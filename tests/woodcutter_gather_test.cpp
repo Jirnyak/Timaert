@@ -476,6 +476,12 @@ void test_the_vendor_sells_at_the_nearest_city() {
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime crt{};
     crt.homeSettlementId = 3;   // the VILLAGE: vendors are the village's arm
+    // РЫНОК — ИЗ ПОРУЧЕНИЯ (2026-09-19): рейс к рынку читает errandObject,
+    // а не феодальное ребро, — потому что тем же рейсом горожане едут
+    // закупаться В ДЕРЕВНЮ. Фикстура называет рынок так же, как его назвал
+    // бы аукцион.
+    crt.errandVerb = std::uint8_t(ErrandVerb::Sell);
+    crt.errandObject = 1u;      // the city's ordinal
     crt.targetSettlementId = -1;
     crt.targetX = 10.0f;
     crt.targetY = 10.0f;

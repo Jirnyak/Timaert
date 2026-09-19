@@ -74,16 +74,23 @@ struct Crew {
     std::uint32_t object;
 };
 
-std::vector<Crew> live_crews(ecs::World& w) {
+// Артели ОДНОГО дома: с 2026-09-19 крестьянскую строку носит и ГОРОД (артель
+// горожан за покупками — рейс к рынку тем же ИИ, ребро вниз), поэтому счёт
+// «чьи это артели» обязан спрашивать дом, иначе инварианты деревни судят
+// чужие крю.
+std::vector<Crew> live_crews_of(ecs::World& w, int homeId) {
     std::vector<Crew> out;
     for (auto [e, kind, rt]
          : w.reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
         (void)e;
         if (kind.type != std::uint16_t(NPCType::Peasant)) continue;
+        if (rt.homeSettlementId != homeId) continue;
         out.push_back(Crew{rt.errandVerb, rt.errandObject});
     }
     return out;
 }
+
+std::vector<Crew> live_crews(ecs::World& w) { return live_crews_of(w, 3); }
 
 void test_auction_raises_errand_bearing_peasants() {
     GameState gs = make_world(/*pop*/100);
@@ -97,6 +104,11 @@ void test_auction_raises_errand_bearing_peasants() {
     gs.landmarks[0].inventory.add("bread", 3200);
     stock_comforts(gs.landmarks[0]);
     gs.landmarks[0].titheOwedCoin = 200;            // долг дани — цель сбыта
+    // ГОРОДУ ЕСТЬ С ЧЕМ ЕХАТЬ: излишек своего ремесла (город ткёт) — это и
+    // товар на продажу, и покупательная способность рейса. Пустому городу
+    // аукцион честно откажет: менять нечего, и это правильный отказ.
+    gs.landmarks[1].inventory.add(
+        "cloth", (500 / 32) * kDaysPerSeason * 2);
 
     DepositLayer dep{};
     allocate_deposit_fields(dep, kMap, kMap);
@@ -113,10 +125,24 @@ void test_auction_raises_errand_bearing_peasants() {
     const int raised = rotate_worker_squads(mw, /*day*/1);
     const std::vector<Crew> crews = live_crews(w);
 
+    const std::vector<Crew> townsfolk = live_crews_of(w, 9);
     CHECK(raised > 0, "мир с целями поднимает артели");
-    CHECK(int(crews.size()) == raised,
+    CHECK(int(crews.size()) + int(townsfolk.size()) == raised,
           "каждый подъём — крестьянская артель (профессии не поднимаются)");
-    CHECK(raised <= 4, "подъём ограничен строками ростера (N×Peasant = 4)");
+    CHECK(int(crews.size()) <= 4,
+          "подъём деревни ограничен строками её ростера (N×Peasant = 4)");
+    // НОВЫЙ ЗАКОН (владелец 2026-09-19): у города есть своя крестьянская
+    // строка — артель ГОРОЖАН за покупками, и её рейс идёт ВНИЗ по
+    // феодальному ребру, в деревню-вассала. Сделка обязана случаться на
+    // дешёвом конце: голодному городу первая буханка стоит база × сезонную
+    // нужду / 2, и купить он не может ни при каком кошельке.
+    bool townsfolkShop = !townsfolk.empty();
+    for (const Crew& c : townsfolk) {
+        if (c.verb != std::uint8_t(ErrandVerb::Sell) || c.object != 3u)
+            townsfolkShop = false;
+    }
+    CHECK(townsfolkShop,
+          "город поднял артель горожан с рейсом к СВОЕЙ деревне (ребро вниз)");
 
     const int ironRow = gather_goal_row(ResourceFieldId::Iron);
     const int treeRow = gather_goal_row(ResourceFieldId::Trees);
@@ -218,6 +244,10 @@ void test_tithe_alone_raises_the_sell_run() {
 // не испаряются — консервация проверяется суммой.
 void test_boundary_court_resizes_standing_crews() {
     GameState gs = make_world(/*pop*/100);
+    // Город-сюзерен остаётся РЕБРОМ, но без душ: с 2026-09-19 он поднимает
+    // свою артель горожан, а этот тест судит ПУЛ ДЕРЕВНИ — чужие крю с
+    // другим пулом сделали бы «все составы равны» ложью о двух законах.
+    gs.landmarks[1].population = 0;
     gs.landmarks[0].inventory.add("food", 5000);
     gs.landmarks[0].inventory.add("bread", 3200 * 4);   // сезоны впрок
     gs.landmarks[0].titheOwedCoin = 200;

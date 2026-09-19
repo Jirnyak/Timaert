@@ -1805,12 +1805,22 @@ void ai_caravan(entt::entity self, MacroPos& p,
     }
 }
 
-// The village vendor (owner 2026-08-30: the village ALWAYS sells at its
-// own city's market). One run a day: load the home surplus, walk to the
-// city the world already assigned this village (its suzerain edge — known
-// by construction, not by rumour), sell everything, buy the home's lacks,
-// walk back. The labour rotation raises and dissolves the crew like any
-// working squad.
+// РЕЙС К РЫНКУ — одна машина для ЛЮБЫХ двух мест (владелец 2026-09-19:
+// «добавим сквад горожан, которые идут в деревню закупаться»). Рынок берётся
+// из ПОРУЧЕНИЯ (errandObject = ординал рынка — так глагол Sell и описан в
+// npc_ai.h), а не из феодального ребра: деревня едет к сюзерену, горожане —
+// в деревню домена, и это ОДИН рейс, а не два ИИ.
+// ПОЧЕМУ ЭТО НЕ УДОБСТВО, А НЕОБХОДИМОСТЬ, циферью (замер 2026-09-19):
+// продать еду ГОЛОДНОМУ городу невозможно арифметически — при сезонной
+// гиперболе первая буханка у пустой полки стоит база × сезонная нужда / 2
+// (≈185 000 у города на 1200 душ), и кошелька на неё нет ни у кого. Зонд
+// показал ловушку ликвидности прямо: 4035 артелей в рейсах сбыта — 45
+// сделок в день на весь мир, деревни с 3.6 млн хлеба, города выедены в
+// ноль. Сделка обязана происходить НА ДЕШЁВОМ КОНЦЕ: покупатель едет туда,
+// где товар изобилен (цена 1-2), и его кошелька хватает на горы. Один
+// закон цены, ни одного нового — просто рейс в правильную сторону.
+// Рейс: погрузить дешёвое дома, дойти до рынка поручения, продать, купить
+// домашние нехватки, вернуться. Ротация поднимает и судит крю как любую.
 void ai_vendor(entt::entity self, MacroPos& p,
                ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                const TickContext& ctx) {
@@ -1845,7 +1855,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
                           float(ctx.mapW), float(ctx.mapH)) >= 4.0f) {
             if (Landmark* m2 = landmark_by_id(*ctx.mw.gs,
                                               rt.targetSettlementId);
-                m2 && m2->type == LandmarkType::City) {
+                m2 && landmark_is_settlement(m2->type)) {
                 rt.targetX = float(m2->x);
                 rt.targetY = float(m2->y);
                 rt.state = std::uint8_t(NS::Traveling);
@@ -1856,9 +1866,12 @@ void ai_vendor(entt::entity self, MacroPos& p,
             }
             return;
         }
-        Landmark* market = landmark_by_id(*ctx.mw.gs,
-                                          homeLm->suzerainLandmarkId);
-        if (!market || market->type != LandmarkType::City) {
+        // РЫНОК — ИЗ ПОРУЧЕНИЯ (аукцион его и выбрал: деревне — сюзерен,
+        // городу — деревня домена). Прежний жёсткий сюзерен был хардкодом
+        // «рынок бывает только городом»: с ним горожанам было некуда ехать.
+        Landmark* market = landmark_by_id(*ctx.mw.gs, int(rt.errandObject));
+        if (!market || !landmark_is_settlement(market->type)
+            || market->id == homeLm->id) {
             ai_home_wanderer(p, rt, pools, ctx);
             return;
         }
@@ -1973,7 +1986,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
         if (rt.stateTimer > 0) return;
         if (Landmark* market = landmark_by_id(*ctx.mw.gs,
                                               rt.targetSettlementId);
-            market && market->type == LandmarkType::City) {
+            market && landmark_is_settlement(market->type)) {
             const MemoryEntry* snap = recall(
                 *mem, AgentMemoryKind::MarketSnapshot,
                 std::uint16_t(rt.homeSettlementId));
@@ -4095,9 +4108,32 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // излишке» умер этим вердиктом.
             // Локальность закона: никакого знания цен рынка — только СВОЙ
             // склад; сама сделка честно решится на месте (ai_vendor).
-            const Landmark* city = landmark_by_id(gs, s.suzerainLandmarkId);
-            if (city && city->type == LandmarkType::City
-                && city->id != s.id) {
+            // РЫНОК РЕЙСА — ФЕОДАЛЬНОЕ РЕБРО В ЛЮБУЮ СТОРОНУ (владелец
+            // 2026-09-19): у деревни это её сюзерен, у города — БЛИЖАЙШИЙ
+            // его вассал. Одно ребро, один рейс, один закон цены — просто
+            // горожане едут закупаться туда, где товар изобилен, потому что
+            // на голодном конце сделка арифметически невозможна (см.
+            // ai_vendor: первая буханка у пустой полки стоит база × сезонную
+            // нужду / 2). Вассал ищется перебором по ребру — оно у места
+            // одно, а не хранимым списком (S24 «узел знает сюзерена»).
+            const Landmark* partner = nullptr;
+            if (s.suzerainLandmarkId >= 0) {
+                partner = landmark_by_id(gs, s.suzerainLandmarkId);
+            } else {
+                float bestSq = 0.0f;
+                for (const Landmark& v : gs.landmarks) {
+                    if (v.suzerainLandmarkId != s.id || v.id == s.id) continue;
+                    if (!landmark_is_settlement(v.type) || v.population <= 0)
+                        continue;
+                    const float d2 = torus_dist_sq(
+                        home.x, home.y, float(v.x), float(v.y),
+                        float(ctx.mapW), float(ctx.mapH));
+                    if (!partner || d2 < bestSq) { partner = &v; bestSq = d2; }
+                }
+            }
+            if (partner && landmark_is_settlement(partner->type)
+                && partner->id != s.id) {
+                const Landmark* city = partner;
                 long long value = s.titheOwedCoin > 0 ? s.titheOwedCoin : 0;
                 // Проход ПРОДАЖИ: что повезём (дома дешевле базы, сверх
                 // сезонного амбара) — и это же ПОКУПАТЕЛЬНАЯ СПОСОБНОСТЬ

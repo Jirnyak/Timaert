@@ -224,7 +224,18 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // держит гарнизон дома за полцены содержания.
     {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
                    {NPCType::Guard, CrewGate::Auction, /*solo*/false,
-                    /*garrison*/true}}, 2,
+                    /*garrison*/true},
+                   // АРТЕЛЬ ГОРОЖАН ЗА ПОКУПКАМИ (владелец 2026-09-19:
+                   // «добавим сквад горожан, которые типа идут в деревню
+                   // закупаться — бонусом разнообразие и доп контекст»).
+                   // Тот же аукцион, тот же рейс к рынку (ai_vendor), просто
+                   // ребро смотрит вниз: город едет к своему вассалу, где
+                   // еда изобильна и потому ДЁШЕВА, — на голодном конце
+                   // сделка арифметически невозможна (замер: 4035 рейсов
+                   // сбыта дали 45 сделок в день, деревни с 3.6 млн хлеба,
+                   // города выедены в ноль). Вид пока крестьянский — свой
+                   // спрайт горожанам придёт строкой таблицы видов (S16).
+                   {NPCType::Peasant, CrewGate::Auction}}, 3,
      /*crowdRoles*/{}, 0,   // v96: fixed posts cut — the street IS the stripe
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Артели деревни — N ОДИНАКОВЫХ крестьянских строк (снос профессий,
