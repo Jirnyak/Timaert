@@ -156,7 +156,7 @@ inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
 //
 // Одна строка отвечает не за неуют, а за ГОЛОД. Она НЕ НАЗВАНА словом — она
 // УЗНАЁТСЯ, ровно по тем двум колонкам, по которым её и судит
-// econ_consume_season: нужда, у которой одна единица кроет один житель-день
+// econ_debt_boundary: нужда, у которой одна единица кроет один житель-день
 // (popPerUnitDay == 1). Что она из категории ЕДА — закон, который держит
 // свидетель: ярус товара (CommodityTier) умер 2026-09-18, «что это за вещь»
 // отвечает ОДНА категория каталога (items.h ItemType).
@@ -306,25 +306,45 @@ int econ_produce_day(Inventory& store, const Skills& hands, int workers,
                      int mintFactionIdx = -1);
 
 struct ConsumeOutcome {
-    int fedPop = 0;         // pops whose vital need was met today
-    int starvedPop = 0;     // pops that went without bread today
-    int unmetComfort = 0;   // non-daily units short of demand
-    int comfortDemand = 0;  // total non-daily units demanded (unmet's scale)
+    int fedPop = 0;         // souls who lived through the boundary fed
+    int starvedPop = 0;     // souls the unpaid hunger debt KILLED (caller
+                            //   subtracts them from the population)
+    int unmetComfort = 0;   // non-hunger debt left unpaid (gates growth)
+    int comfortDemand = 0;  // total non-hunger season demand (unmet's scale)
     bool famineActive = false;
 };
 
-// Population eats down the needs ladder ONCE A SEASON, a season ahead
-// (CANON S19.2 — единое окно мира; owner 2026-09-17: «все эконом соц списания
-// балансы по сезонам, и город и армия… зерна типа хватит сколько городу на
-// сезон»). Each need is A SEASON of demand and is either covered WHOLE or not
-// debited at all (owner: «просто не списывать, если не хватает — 1/8 = НЕ
-// ПОКРЫТО»; for a landmark the un-covered season is a hungry season and the
-// population law does the rest — no second mortality mechanic). Call it on
-// season_boundary(day) only; `famineWasActive` carries last season's state so
-// FamineStarted/FamineEnded fire exactly on the transitions.
-ConsumeOutcome econ_consume_season(Inventory& store, int population,
-                                   bool famineWasActive,
-                                   EconFactSink sink, void* user);
+// ПОТРЕБЛЕНИЕ — ЭТО ДОЛГ, А НЕ СПИСАНИЕ (CANON S10, владелец 2026-09-19:
+// «вот новый сезон — тебе новый долг… если не полностью погашен, то
+// отнимается популяция не вся, а ПРОПОРЦИОНАЛЬНО долгу»). Границей сезона
+// (season_boundary — единое окно S19.2) место проходит три шага:
+//   1. ВЗЫСКАНИЕ прошлого счёта: непогашенный ХЛЕБ уходит населением
+//      насмерть — по душе за каждый непокрытый душевой сезон (остаток /
+//      kDaysPerSeason; хвост меньше душевого сезона прощается — зеркало
+//      закона «кусок меньше сезона не кормит никого»). Смерть —
+//      ЕДИНСТВЕННАЯ кара голода (вердикт 2026-09-19): выжившие сыты,
+//      fedPop == population − starvedPop, и рост судит только комфорт.
+//      Непогашенные ПРОЧИЕ строки гасят РОСТ через unmetComfort — от
+//      нехватки ткани не умирают. Старый долг не переносится.
+//   2. НОВЫЙ СЧЁТ: сезонная нужда лестницы по населению ПОСЛЕ смертей,
+//      перезаписью в needDebt (товарный ординал — зеркало titheOwedGoods).
+//   3. НЕМЕДЛЕННОЕ ГАШЕНИЕ из склада (econ_pay_debt) — посевной амбар и
+//      прошлый излишек платят по счёту в ту же минуту.
+// `famineWasActive` carries last season's state so FamineStarted/FamineEnded
+// fire exactly on the transitions. Смерти применяет ВЫЗЫВАЮЩИЙ (дверь одна —
+// settle_landmark_day); мёртвому месту счёт закрывается.
+ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
+                                  int population, bool famineWasActive,
+                                  EconFactSink sink, void* user);
+
+// ГАШЕНИЕ ДОЛГА — одна дверь «склад платит по счёту» (CANON S10: «всё, что
+// падает в него, идёт в уплату долга»). Съеденное СПИСЫВАЕТСЯ со склада
+// (факт Consumed) — после вызова на складе лежит только излишек. Зовётся
+// границей (шаг 3 выше) и днём места как страховочный такт; порция Б
+// проведёт её через двери прихода (haul/craft/transfer) — «сразу» без лага.
+// Возвращает единиц погашено.
+int econ_pay_debt(Inventory& store, std::int32_t* needDebt,
+                  EconFactSink sink, void* user);
 
 // Daily slot hygiene, split out of the old daily consume (CANON «Крафт/
 // Скрап»): the store past half occupancy melts its cheapest non-fungible

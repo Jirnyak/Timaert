@@ -42,6 +42,7 @@ int fail(const char* msg) {
 struct Ledger {
     std::array<long, sm::kCommodityCount> gathered{};
     std::array<long, sm::kCommodityCount> produced{};
+    std::array<long, sm::kCommodityCount> consumed{};
     int starvedEvents = 0;
     int famineStarted = 0;
     int famineEnded = 0;
@@ -59,7 +60,12 @@ void sink(void* user, const sm::EconFact& f) {
         case sm::EconFact::Kind::Starved: ++led->starvedEvents; break;
         case sm::EconFact::Kind::FamineStarted: ++led->famineStarted; break;
         case sm::EconFact::Kind::FamineEnded: ++led->famineEnded; break;
-        case sm::EconFact::Kind::Consumed: break;   // counted by the caller
+        case sm::EconFact::Kind::Consumed:
+            // Потребление стало ДОЛГОМ (CANON S10): ест дверь гашения
+            // (econ_pay_debt), и ест ДНЯМИ, не границей — ручной дифф
+            // склада больше не накрывает все точки, факт накрывает.
+            led->consumed[std::size_t(f.commodity)] += f.amount;
+            break;
         case sm::EconFact::Kind::Minted: break;     // no mint in this fixture
         case sm::EconFact::Kind::Scrapped: break;   // no clog in this fixture
     }
@@ -174,7 +180,10 @@ int main() {
     // The store IS the inventory now (one dictionary, one container).
     Inventory village{};
     Inventory city{};
-    std::array<long, kCommodityCount> consumed{};
+    // Счета мест (CANON S10, потребление — долг): граница выставляет,
+    // приход гасит; в мире долг живёт на Landmark, здесь — рядом со складом.
+    std::int32_t villageDebt[kCommodityCount] = {};
+    std::int32_t cityDebt[kCommodityCount] = {};
 
     // The GATHER half lives with the field agents now (ai_gatherer; the
     // pure econ_gather_day died with the owner's 2026-08-31 ruling — «уже
@@ -226,35 +235,33 @@ int main() {
         city.remove_of(commodity_item_index(breadIdx), breadBack);
         village.add_of(commodity_item_index(breadIdx), breadBack);
 
-        // Consumption, ledgered by store diffs — on the BOUNDARY only, a
-        // whole season judged at once (S19.2). The day-1 window meets empty
-        // stores and honestly starves: that is the warm-up.
+        // ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10): граница выставляет счёт и
+        // взыскивает прошлый, ДНЕВНОЕ гашение платит по нему тем, что
+        // пришло, — ровно как settle_landmark_day в мире. Съеденное
+        // ложится в леджер фактами Consumed.
         if (season_boundary(day)) {
-            Inventory beforeV = village;
-            const ConsumeOutcome ov = econ_consume_season(
-                village, villagePop, villageFamine, &sink, &led);
+            const ConsumeOutcome ov = econ_debt_boundary(
+                village, villageDebt, villagePop, villageFamine, &sink, &led);
             villageFamine = ov.famineActive;
-            Inventory beforeC = city;
-            const ConsumeOutcome oc = econ_consume_season(
-                city, cityPop, cityFamine, &sink, &led);
+            const ConsumeOutcome oc = econ_debt_boundary(
+                city, cityDebt, cityPop, cityFamine, &sink, &led);
             cityFamine = oc.famineActive;
-            for (int c = 0; c < kCommodityCount; ++c) {
-                consumed[std::size_t(c)] +=
-                    (beforeV.count_of(commodity_item_index(c)) - village.count_of(commodity_item_index(c)))
-                    + (beforeC.count_of(commodity_item_index(c)) - city.count_of(commodity_item_index(c)));
-            }
-            // Law 3: past the warm-up window the pair covers every season.
-            if (day > 1 && (ov.starvedPop > 0 || oc.starvedPop > 0)) {
+            // Law 3: the pair pays every season's bill — nobody dies at any
+            // boundary (the first bill is issued on day 1 and cannot kill;
+            // every later one must find the season already paid).
+            if (ov.starvedPop > 0 || oc.starvedPop > 0) {
                 std::fprintf(stderr,
                              "day=%d starvedV=%d starvedC=%d "
-                             "breadV=%d breadC=%d grainC=%d\n",
+                             "debtV=%d debtC=%d breadC=%d\n",
                              day, ov.starvedPop, oc.starvedPop,
-                             beforeV.count_of(commodity_item_index(breadIdx)),
-                             beforeC.count_of(commodity_item_index(breadIdx)),
-                             beforeC.count_of(commodity_item_index(grainIdx)));
+                             villageDebt[breadIdx], cityDebt[breadIdx],
+                             city.count_of(commodity_item_index(breadIdx)));
                 ++boundariesStarvedAfterWarmup;
             }
         }
+        // Дневной такт гашения — та же дверь, что в settle_landmark_day.
+        econ_pay_debt(village, villageDebt, &sink, &led);
+        econ_pay_debt(city, cityDebt, &sink, &led);
         for (int c = 0; c < kCommodityCount; ++c) {
             if (village.count_of(commodity_item_index(c)) < 0 || city.count_of(commodity_item_index(c)) < 0) {
                 return fail("negative stock — bookkeeping bug");
@@ -273,7 +280,7 @@ int main() {
     }
     for (int c = 0; c < kCommodityCount; ++c) {
         const long lhs = led.gathered[std::size_t(c)] + led.produced[std::size_t(c)];
-        const long rhs = usedAsInputs[std::size_t(c)] + consumed[std::size_t(c)]
+        const long rhs = usedAsInputs[std::size_t(c)] + led.consumed[std::size_t(c)]
             + village.count_of(commodity_item_index(c)) + city.count_of(commodity_item_index(c));
         if (lhs != rhs) {
             std::fprintf(stderr, "commodity=%s lhs=%ld rhs=%ld\n",
@@ -286,42 +293,69 @@ int main() {
     // the live layers; the pure-step drain died with econ_gather_day.)
 
     // ── Famine transitions fire once, not every window ──────────────────
+    // Долговой закон сдвигает голод на окно (первая граница только
+    // выставляет счёт — убить ей нечего) и делает смерть ПРОПОРЦИЕЙ:
+    // место, платящее полсчёта, каждый сезон хоронит половину — 32 → 16 →
+    // 8 → 4 → 2, хронический голод при живом месте. Место вовсе без
+    // прихода умирает ЦЕЛИКОМ за одно взыскание — это закон, не поломка.
     Ledger fled{};
     Inventory poor{};
+    std::int32_t poorDebt[kCommodityCount] = {};
     bool famine = false;
-    for (int window = 0; window < 4; ++window) {
-        const ConsumeOutcome o =
-            econ_consume_season(poor, 8, famine, &sink, &fled);
+    int poorPop = 32;
+    for (int window = 0; window < 5; ++window) {
+        const ConsumeOutcome o = econ_debt_boundary(
+            poor, poorDebt, poorPop, famine, &sink, &fled);
         famine = o.famineActive;
-        if (o.starvedPop != 8) return fail("empty store must starve everyone");
+        if (window == 0 && o.starvedPop != 0) {
+            return fail("the first bill cannot kill before it is due");
+        }
+        if (window > 0 && o.starvedPop != poorPop / 2) {
+            std::fprintf(stderr, "window=%d pop=%d starved=%d debtBread=%d\n",
+                         window, poorPop, o.starvedPop, poorDebt[breadIdx]);
+            return fail("a half-paid season must claim exactly half the souls");
+        }
+        poorPop -= o.starvedPop;   // как settle_landmark_day: умершие ушли
+        // Привоз в полсчёта: гасится СРАЗУ той же дверью, что в мире.
+        poor.add_of(commodity_item_index(breadIdx),
+                    poorDebt[breadIdx] / 2);
+        econ_pay_debt(poor, poorDebt, &sink, &fled);
     }
     if (fled.famineStarted != 1) return fail("FamineStarted must fire ONCE");
     if (fled.starvedEvents != 4) return fail("Starved must report per window");
-    poor.remove_of(commodity_item_index(breadIdx),
-                  poor.count_of(commodity_item_index(breadIdx)));
-    poor.add_of(commodity_item_index(breadIdx), 8 * kDaysPerSeason);
-    const ConsumeOutcome relief =
-        econ_consume_season(poor, 8, famine, &sink, &fled);
+    // Рельеф — привоз, кроющий счёт целиком: следующая граница не
+    // взыскивает никого, и FamineEnded стреляет ровно раз.
+    poor.add_of(commodity_item_index(breadIdx), poorDebt[breadIdx]);
+    econ_pay_debt(poor, poorDebt, &sink, &fled);
+    const ConsumeOutcome relief = econ_debt_boundary(
+        poor, poorDebt, poorPop, famine, &sink, &fled);
     if (relief.starvedPop != 0 || relief.famineActive) {
-        return fail("a season of bread must end the famine");
+        return fail("a paid season must end the famine");
     }
     if (fled.famineEnded != 1) return fail("FamineEnded must fire ONCE");
 
-    // ── 4. Consume: EVERY shortfall lands somewhere (Session 18) ────────
-    // A season of bread in full, everything else absent. The hunger row
-    // feeds; every other row's shortfall must be COUNTED — before the fix
-    // the two non-daily Vital rows (cloth, bricks) matched neither branch
-    // and fell into the void. All-or-nothing per row: an absent row's unmet
-    // is its WHOLE season of demand.
+    // ── 4. Boundary: EVERY shortfall lands somewhere (Session 18) ───────
+    // A season of bread in full, everything else absent. Под долгом (CANON
+    // S10) недоплата видна ВЗЫСКАНИЕМ — на границе, следующей за счётом:
+    // первая граница выставляет счёт и хлеб платит его на месте, вторая
+    // судит остаток — хлебный долг погашен (никто не умер), долг каждой
+    // прочей строки обязан лечь в unmetComfort целиком, не в пустоту.
     {
         Inventory s{};
+        std::int32_t debt[kCommodityCount] = {};
         const int pop = 256;
-        s.remove_of(commodity_item_index(commodity_index("bread")),
-                s.count_of(commodity_item_index(commodity_index("bread"))));
         s.add_of(commodity_item_index(commodity_index("bread")),
                  pop * kDaysPerSeason);
+        const ConsumeOutcome first =
+            econ_debt_boundary(s, debt, pop, false, nullptr, nullptr);
+        if (first.starvedPop != 0) {
+            return fail("the first bill cannot kill before it is due");
+        }
+        if (s.count_of(commodity_item_index(commodity_index("bread"))) != 0) {
+            return fail("the bill must eat the whole shelf on the spot");
+        }
         const ConsumeOutcome o =
-            econ_consume_season(s, pop, false, nullptr, nullptr);
+            econ_debt_boundary(s, debt, pop, false, nullptr, nullptr);
         if (o.fedPop != pop || o.starvedPop != 0) {
             return fail("bread-only pop must be fed in full");
         }
@@ -335,46 +369,45 @@ int main() {
         }
     }
 
-    // ── 5. Half a season of bread feeds HALF the town ───────────────────
-    // СЫТОСТЬ ПРОПОРЦИОНАЛЬНА (владелец 2026-09-18, CANON S25): кромка —
-    // про ДУШУ, не про место. Душа сыта, если ЕЁ сезон покрыт целиком;
-    // полсезона хлеба кормит полгорода и уходит со склада, вторая половина
-    // честно голодает. Старая кромка «всё или ничего» давала полный голод
-    // при почти полных закромах (измерено: 94 645 душ-дней за 64 дня у
-    // горных хуторов) и была снята вердиктом.
+    // ── 5. Half a season of bread starves HALF the town — a season late ─
+    // ПРОПОРЦИЯ ЖИВЁТ ВО ВЗЫСКАНИИ (CANON S10 + вердикт 2026-09-19
+    // «смерть — единственная кара»): полсезона хлеба гасят полсчёта,
+    // непокрытая половина уходит населением на СЛЕДУЮЩЕЙ границе — по
+    // душе за каждый непокрытый душевой сезон. Выжившая половина сыта
+    // (fedPop), рост её судит только комфорт.
     {
         Inventory s{};
+        std::int32_t debt[kCommodityCount] = {};
         const int pop = 128;
         const int half = pop * kDaysPerSeason / 2;
-        s.remove_of(commodity_item_index(commodity_index("bread")),
-                s.count_of(commodity_item_index(commodity_index("bread"))));
         s.add_of(commodity_item_index(commodity_index("bread")), half);
+        econ_debt_boundary(s, debt, pop, false, nullptr, nullptr);
+        // Каждая единица на полке платит по счёту — склад пуст, долг
+        // помнит ровно вторую половину.
+        if (s.count_of(commodity_item_index(commodity_index("bread"))) != 0) {
+            return fail("every unit on the shelf must pay the bill");
+        }
+        if (debt[commodity_index("bread")] != half) {
+            return fail("the debt must remember exactly the unpaid half");
+        }
         const ConsumeOutcome o =
-            econ_consume_season(s, pop, false, nullptr, nullptr);
-        if (o.fedPop != pop / 2 || o.starvedPop != pop - pop / 2
+            econ_debt_boundary(s, debt, pop, false, nullptr, nullptr);
+        if (o.starvedPop != pop - pop / 2 || o.fedPop != pop / 2
             || !o.famineActive) {
-            return fail("half a season must feed exactly half the souls");
+            return fail("half a season must starve exactly half the souls");
         }
-        // Съеденное — ровно сезоны накормленных душ: полсезона города =
-        // 64 души × сезон = весь запас; остаток меньше душевого сезона
-        // остался бы лежать (проверено нечётным кусочком ниже).
-        if (s.count_of(commodity_item_index(commodity_index("bread")))
-            != half - (pop / 2) * kDaysPerSeason) {
-            return fail("the fed souls' seasons leave the store, no more");
-        }
-        // Нечётный хвост: кусок меньше одного душевого сезона не кормит
-        // никого и не трогается — негативный контроль дробного списания.
+        // Хвост меньше душевого сезона ПРОЩАЕТСЯ на взыскании (зеркало
+        // старого «кусок меньше сезона не кормит никого»): 31 хлеба гасят
+        // 31 единицу счёта и снимают со смертей ровно одну душу.
         Inventory tail{};
-        tail.remove_of(commodity_item_index(commodity_index("bread")),
-                tail.count_of(commodity_item_index(commodity_index("bread"))));
+        std::int32_t tailDebt[kCommodityCount] = {};
         tail.add_of(commodity_item_index(commodity_index("bread")),
                     kDaysPerSeason - 1);
+        econ_debt_boundary(tail, tailDebt, pop, false, nullptr, nullptr);
         const ConsumeOutcome ot =
-            econ_consume_season(tail, pop, false, nullptr, nullptr);
-        if (ot.fedPop != 0
-            || tail.count_of(commodity_item_index(commodity_index("bread")))
-                   != kDaysPerSeason - 1) {
-            return fail("a sub-season scrap feeds nobody and stays home");
+            econ_debt_boundary(tail, tailDebt, pop, false, nullptr, nullptr);
+        if (ot.starvedPop != pop - 1) {
+            return fail("a sub-season scrap forgives exactly one death");
         }
     }
 
@@ -594,9 +627,11 @@ int main() {
         Inventory inv;
         inv.add("food", 100);
         inv.add("potion_hp", 3);   // NOT a commodity — must ride untouched
+        std::int32_t debt[kCommodityCount] = {};
         econ_produce_day(inv, VILLAGE, /*workers*/4,
                          /*population*/40, nullptr, nullptr);
-        econ_consume_season(inv, /*population*/40, false, nullptr, nullptr);
+        econ_debt_boundary(inv, debt, /*population*/40, false,
+                           nullptr, nullptr);
         if (inv.count("potion_hp") != 3) {
             return fail("a day of economy disturbed what is not a commodity");
         }

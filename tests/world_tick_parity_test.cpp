@@ -299,8 +299,12 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     gs.mapH = 64;
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
 
-    // A town with mouths and no bread: it starves from the first day and keeps
-    // starving, which is exactly the shape that would flood a naive recorder.
+    // A town with mouths and no bread. Под долгом (CANON S10) голод — это
+    // ВЗЫСКАНИЕ: счёт выставляется первой границей (день 1), а смерть
+    // приходит второй (день 33), когда сезон прожит неоплаченным. Сорок
+    // дней кроют обе границы; место без прихода умирает целиком за одно
+    // взыскание — ровно та форма, что затопила бы наивного летописца,
+    // пиши он состояние, а не переход.
     sm::Landmark s{};
     s.type = sm::LandmarkType::City;
     s.id = 1;
@@ -312,7 +316,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 7u);
-    constexpr int kDays = 20;
+    constexpr int kDays = 40;
     runtime.pendingDailyTicks = kDays;
     runtime.nextDailyTickDay = 1;
     sm::process_world_daily_ticks(gs, runtime, 64);

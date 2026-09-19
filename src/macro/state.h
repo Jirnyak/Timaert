@@ -340,7 +340,9 @@ namespace sm {
 // строкой Horses ПЕРЕД блоком жил (скар-блоки сейва сдвинулись), фича
 // FT_Pasture = байт 14, таблица NPC выросла строкой Horse. Старые сейвы
 // ничего не стоят (закон P1).
-constexpr int kSaveVersion = 98;
+// v99 (2026-09-19): ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10) — Landmark несёт
+// needDebt[kCommodityCount]: сезонный счёт лестницы нужд, гасится приходом.
+constexpr int kSaveVersion = 99;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -470,7 +472,7 @@ struct Landmark {
     std::uint16_t unmetYesterday = 0;
     std::uint8_t  famineActive = 0;
     // THE SEASON WINDOW'S VERDICT (v95, CANON S19.2): wellbeing quantized to
-    // a byte, written on the boundary day by econ_consume_season's outcome
+    // a byte, written on the boundary day by econ_debt_boundary's outcome
     // and read by the mood band + population law every day until the next
     // boundary. Born 255: a landmark seeded mid-life starts its life fed.
     std::uint8_t  seasonWellbeing = 255;
@@ -509,6 +511,14 @@ struct Landmark {
     // of whether the vendor left this morning.
     std::int32_t titheAvgGoods[kCommodityCount] = {};
     std::int64_t titheAvgCoin = 0;
+    // ── ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10, вердикт 2026-09-19; v99) ─────────
+    // На границе сезона место получает СЧЁТ = сезонная нужда по каждой
+    // строке лестницы (индекс — товарный ординал, зеркало titheOwedGoods;
+    // не-лестничные ординалы всегда нули). Приход гасит долг СРАЗУ и
+    // съедается — на складе лежит только ИЗЛИШЕК, всё видимое свободно.
+    // Непогашенный хлеб на следующей границе уходит населением НАСМЕРТЬ
+    // (доля = остаток / душевой сезон), прочие строки гасят рост.
+    std::int32_t needDebt[kCommodityCount] = {};
 };
 
 enum class GameSubStateKind : std::uint8_t {

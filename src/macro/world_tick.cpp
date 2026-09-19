@@ -55,14 +55,24 @@ void settle_landmark_day(Landmark& lm, int day,
     startedFamine = false;
     startedRevolt = false;
     diedOut = false;
-    // THE SEASON WINDOW (CANON S19.2, единое окно мира): the balance debit
-    // happens once, on the boundary day, a season ahead — straight onto the
-    // ONE store. The outcome is parked on the landmark as a quantized
-    // wellbeing, and every day until the next boundary lives off that number:
-    // the mood band and the population law run daily, the debit does not.
+    // THE SEASON WINDOW (CANON S19.2, единое окно мира) — теперь граница
+    // ДОЛГА (CANON S10, вердикт 2026-09-19): взыскание прошлого счёта,
+    // новый счёт, немедленное гашение из склада. The outcome is parked on
+    // the landmark as a quantized wellbeing, and every day until the next
+    // boundary lives off that number: the mood band and the population law
+    // run daily, the boundary does not.
     if (season_boundary(day)) {
-        const ConsumeOutcome o = econ_consume_season(
-            lm.inventory, lm.population, lm.famineActive != 0, sink, user);
+        const ConsumeOutcome o = econ_debt_boundary(
+            lm.inventory, lm.needDebt, lm.population, lm.famineActive != 0,
+            sink, user);
+        // СМЕРТЬ — единственная кара голода (вердикт 2026-09-19): доля
+        // непогашенного хлеба уходит населением здесь, в единственной
+        // двери; рост выживших ниже судит только комфорт (fedPop равен
+        // населению после смертей — fedFrac == 1 по построению).
+        if (o.starvedPop > 0) {
+            lm.population = std::max(lm.population - o.starvedPop, 0);
+            diedOut = lm.population == 0;
+        }
         lm.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
         lm.unmetYesterday   = std::uint16_t(std::min(o.unmetComfort, 0xFFFF));
         // The TRANSITIONS are the story, not the states. A town that has been
@@ -74,6 +84,11 @@ void settle_landmark_day(Landmark& lm, int day,
             std::clamp(settlement_wellbeing(o, lm.population), 0.0f, 1.0f)
             * 255.0f));
     }
+    // ДНЕВНОЕ ГАШЕНИЕ — страховочный такт той же двери (порция Б проведёт
+    // её через двери прихода — «сразу» без лага): вчерашний привоз и
+    // сегодняшняя выпечка (econ_produce_day идёт ПЕРЕД этим днём) платят
+    // по счёту не позже суток.
+    econ_pay_debt(lm.inventory, lm.needDebt, sink, user);
     // Daily slot hygiene (CANON «Крафт/Скрап») — hygiene, not a balance.
     econ_store_hygiene(lm.inventory, sink, user);
 

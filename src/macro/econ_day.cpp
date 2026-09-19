@@ -202,74 +202,98 @@ int econ_produce_day(Inventory& store, const Skills& hands, int workers,
     return total;
 }
 
-ConsumeOutcome econ_consume_season(Inventory& store, int population,
-                                   bool famineWasActive,
-                                   EconFactSink sink, void* user) {
+int econ_pay_debt(Inventory& store, std::int32_t* needDebt,
+                  EconFactSink sink, void* user) {
+    // ОДНА дверь гашения (CANON S10: «всё, что падает в него, идёт в уплату
+    // долга»): склад платит по счёту, оплаченное СЪЕДЕНО — списано с фактом
+    // Consumed. После вызова видимый склад — только излишек, и потому всё
+    // видимое свободно для погрузки и оплаты.
+    const ResolvedTables& t = resolved();
+    int paid = 0;
+    for (int i = 0; i < kNeedCount; ++i) {
+        const int idx = t.needIdx[i];
+        if (idx < 0) continue;
+        const std::int32_t debt = needDebt[idx];
+        if (debt <= 0) continue;
+        const int have = store.count_of(commodity_item_index(idx));
+        const int eaten = have < debt ? have : int(debt);
+        if (eaten <= 0) continue;
+        store.remove_of(commodity_item_index(idx), eaten);
+        needDebt[idx] -= eaten;
+        paid += eaten;
+        report(sink, user, EconFact::Kind::Consumed, idx, eaten);
+    }
+    return paid;
+}
+
+ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
+                                  int population, bool famineWasActive,
+                                  EconFactSink sink, void* user) {
     ConsumeOutcome out{};
+    const ResolvedTables& t = resolved();
     if (population <= 0) {
+        // Мёртвое место — не должник: счёт закрывается вместе с жизнью.
+        for (int i = 0; i < kNeedCount; ++i) {
+            if (t.needIdx[i] >= 0) needDebt[t.needIdx[i]] = 0;
+        }
         out.famineActive = false;
         if (famineWasActive) {
             report(sink, user, EconFact::Kind::FamineEnded, -1, 1);
         }
         return out;
     }
-    const ResolvedTables& t = resolved();
-    // СЫТОСТЬ ПРОПОРЦИОНАЛЬНА (владелец 2026-09-18, CANON S25): накормлено
-    // столько, на сколько хватило. Кромка «всё или ничего» была про МЕСТО и
-    // била по малым квадратично: хутору на 30 душ нужда ложилась одним
-    // куском 960, и промах на единицу давал ПОЛНЫЙ голод при почти полных
-    // закромах (измерено: 94 645 душ-дней за 64 дня). Теперь кромка — про
-    // ДУШУ: душа сыта, если ЕЁ сезон покрыт целиком; остаток меньше одного
-    // душевого сезона честно лежит до следующего окна. Этим же движением
-    // «богато добывает → хорошо растёт» впервые становится измеримым — и
-    // недоед гасит рост в той же точке, что пустые полки комфорта
-    // (0.5 × 1.0 == 1.0 × 0.5, арифметика закона роста S25).
-    int fed = population;
+    // 1. ВЗЫСКАНИЕ прошлого счёта. Хлеб: по душе за каждый непокрытый
+    // душевой сезон — пропорция «доля долга × население» выходит сама,
+    // хранить исходный счёт не нужно (счёт и был население × душевой
+    // сезон); хвост меньше душевого сезона прощается — зеркало закона
+    // «кусок меньше сезона не кормит никого». Прочие строки: непогашенное
+    // гасит РОСТ (S25 «сытость × комфорт») — от нехватки ткани не умирают.
+    // Шкала комфорта пересчитана по СЕГОДНЯШНЕМУ населению: с выставления
+    // счёта оно дрейфует ростом, но доля читается на той же границе, где
+    // выставится новый счёт, — одна мера, не вторая.
+    int deaths = 0;
     for (int i = 0; i < kNeedCount; ++i) {
         const int idx = t.needIdx[i];
         if (idx < 0) continue;
-        const int demand = (population / kNeeds[i].popPerUnitDay)
-                         * kDaysPerSeason;
-        if (demand <= 0) continue;
-        const int have = store.count_of(commodity_item_index(idx));
-        // THE hunger row, asked of the one door that knows which it is
-        // (econ_day.h kHungerNeedRow — the same two columns this branch used
-        // to re-derive inline). One definition, three eaters: the population
-        // here, the garrison in world_tick, the squad in npc_ai.
+        const std::int32_t remaining = needDebt[idx];
         if (i == kHungerNeedRow) {
-            // Душ, чей сезон склад кроет целиком (голодная строка — 1 юнит
-            // на душу-день по построению, static_assert в econ_day.h).
-            const int fedHere =
-                std::min(population, have / kDaysPerSeason);
-            const int eaten = fedHere * kDaysPerSeason;
-            if (eaten > 0) {
-                store.remove_of(commodity_item_index(idx), eaten);
-                report(sink, user, EconFact::Kind::Consumed, idx, eaten);
-            }
-            fed = std::min(fed, fedHere);
+            // Душевой сезон голодной строки = kDaysPerSeason юнитов
+            // (popPerUnitDay == 1 по построению, static_assert в econ_day.h).
+            deaths = std::min(population, int(remaining / kDaysPerSeason));
         } else {
-            // Комфорт тем же законом: съедено сколько есть, недостача
-            // считается пропорционально — благополучие читает доли.
-            const int eaten = have < demand ? have : demand;
-            if (eaten > 0) {
-                store.remove_of(commodity_item_index(idx), eaten);
-                report(sink, user, EconFact::Kind::Consumed, idx, eaten);
-            }
+            const int demand = (population / kNeeds[i].popPerUnitDay)
+                             * kDaysPerSeason;
+            if (demand <= 0) continue;
             out.comfortDemand += demand;
-            out.unmetComfort += demand - eaten;
+            out.unmetComfort += remaining < demand ? int(remaining) : demand;
         }
     }
-    out.fedPop = fed;
-    out.starvedPop = population - fed;
-    out.famineActive = out.starvedPop > 0;
-    if (out.starvedPop > 0) {
-        report(sink, user, EconFact::Kind::Starved, -1, out.starvedPop);
+    // СМЕРТЬ — ЕДИНСТВЕННАЯ кара голода (вердикт владельца 2026-09-19):
+    // недоевшие умерли, выжившие сыты — рост судит только комфорт. Умерших
+    // вычитает из населения ВЫЗЫВАЮЩИЙ (settle_landmark_day).
+    out.starvedPop = deaths;
+    out.fedPop = population - deaths;
+    out.famineActive = deaths > 0;
+    if (deaths > 0) {
+        report(sink, user, EconFact::Kind::Starved, -1, deaths);
     }
     if (out.famineActive && !famineWasActive) {
-        report(sink, user, EconFact::Kind::FamineStarted, -1, out.starvedPop);
+        report(sink, user, EconFact::Kind::FamineStarted, -1, deaths);
     } else if (!out.famineActive && famineWasActive) {
         report(sink, user, EconFact::Kind::FamineEnded, -1, 1);
     }
+    // 2. НОВЫЙ СЧЁТ — по населению ПОСЛЕ смертей, перезаписью: старый долг
+    // не переносится (взыскали — выставили новый).
+    const int popAfter = population - deaths;
+    for (int i = 0; i < kNeedCount; ++i) {
+        const int idx = t.needIdx[i];
+        if (idx < 0) continue;
+        needDebt[idx] = std::int32_t(
+            (popAfter / kNeeds[i].popPerUnitDay) * kDaysPerSeason);
+    }
+    // 3. НЕМЕДЛЕННОЕ ГАШЕНИЕ: посевной амбар и прошлый излишек платят по
+    // счёту в ту же минуту — та же дверь, что у прихода.
+    econ_pay_debt(store, needDebt, sink, user);
     return out;
 }
 
@@ -305,9 +329,10 @@ void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
                              int factionIdx, std::uint32_t seedSalt) {
     if (population <= 0) return;
     // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the
-    // season window (econ_consume_season) debits a whole season of bread on
-    // the boundary day — a place seeded with less dies of arithmetic at its
-    // first window, before it has lived a day. The larder IS a season.
+    // first boundary (econ_debt_boundary) bills a whole season of bread and
+    // the larder pays it on the spot — a place seeded with less starts life
+    // in debt and must out-produce it or bury the shortfall a season later.
+    // The larder IS a season.
     constexpr int kSeedVitalDays = kDaysPerSeason;
     static_assert(kSeedVitalDays == kDaysPerSeason,
                   "the seed larder must survive the first season window");

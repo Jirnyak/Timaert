@@ -772,6 +772,7 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.titheSeasonAssessed);
     w.pod(lm.titheAvgGoods);        // v74: the season-average base (EMA)
     w.pod(lm.titheAvgCoin);
+    w.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
 }
 
 void read_landmark(Reader& r, Landmark& lm) {
@@ -799,6 +800,7 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.titheSeasonAssessed);
     r.pod(lm.titheAvgGoods);        // v74: the season-average base (EMA)
     r.pod(lm.titheAvgCoin);
+    r.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
 }
 
 void write_marker(Writer& w, const Marker& m) {
