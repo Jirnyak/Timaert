@@ -36,18 +36,33 @@ namespace ecs { struct NpcTraits; }
 float mood_price_mult(SettlementMood mood, bool buying);
 float trait_price_mult(const ecs::NpcTraits* traits, bool buying);
 
-// THE trade price — ONE law (owner ruling 2026-08-05). Squad-agnostic since
-// the 2026-09-03 sweep (was `player_*`, but the player is a squad like any
-// other — NPC vendors already priced through it, so the name lied). Base =
-// the canonical charisma+bargaining pricing (cha_trade_discount, THE one
-// CHA formula); context — the settlement's mood or the merchant's
-// temperament — enters as ONE multiplier column resolved by the caller.
-// `bargaining` is the Trade skill's column (CANON S14), 0 until it lands.
-int trade_price(int baseValue, int charisma, int bargaining,
+// THE trade price — ОДИН закон и ДВЕ СТОРОНЫ (CANON S25, владелец
+// 2026-09-18: «лавки как таковой нет — есть две макросущности… просто
+// сравнение харизм двух, и у кого больше, тот и наценивает»).
+//
+// Обе стороны называют ОДНО число — финальное производное торговой силы
+// (attributes.h DerivedBonuses::tradeDiscountPct, атрибут × скилл), и
+// наценку берёт тот, у кого оно выше; величина — РАЗНИЦА. Поэтому:
+//   · равные стороны торгуют ровно по цене — наценки нет и быть не должно;
+//   · сильный покупает дешевле и продаёт дороже ОДНОЙ формулой, без
+//     отдельной «маржи лавки»;
+//   · спелл обаяния, артефакт и перк входят в цену бесплатно — они меняют
+//     лист, а сделка спрашивает только производное.
+//
+// ЧТО УМЕРЛО ВМЕСТЕ С ЭТИМ (все три — назначенные числа, CANON S26):
+// постоянный спред продажи ×0.7 («дом берёт своё» — дома у сделки больше
+// нет), пол скидки 0.5 и потолок надбавки 1.5 (граница выводится из анкет
+// или её не существует), и `bargaining_edge` — второе место, где считалась
+// торговая сила.
+//
+// Пол цены 1 остаётся: это не кламп наценки, а закон «ничто не бесплатно».
+// `contextMult` — настроение места или нрав купца — по-прежнему ОДНА
+// колонка, которую разрешает вызывающий.
+int trade_price(int baseValue, int myTradePct, int theirTradePct,
                        float contextMult, bool buying);
 
-int trade_buy_price (int basePrice, int charisma, int bargaining);
-int trade_sell_price(int basePrice, int charisma, int bargaining);
+int trade_buy_price (int basePrice, int myTradePct, int theirTradePct);
+int trade_sell_price(int basePrice, int myTradePct, int theirTradePct);
 
 // ── Price FROM STOCK (the starcluster law, owner-approved) ───────────────
 //

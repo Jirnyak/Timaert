@@ -108,32 +108,34 @@ int main() {
 
     // ── 3. One price law ────────────────────────────────────────────────
     {
-        // Canon base: buy discount 1%/point cha + the Trade ROW's percent per
-        // bargaining rank (kSkillDefs — 1 today), floor 0.5; sell 0.7 ×
-        // (1 + same bonus), cap 1.5. Context multiplies the base value
-        // BEFORE the canon so its clamps still govern.
+        // Canon (S25): наценка = РАЗНИЦА торговых сил двух анкет, одна
+        // формула на обе половины. Сильнее на 10 пунктов — покупаю за 90 и
+        // продаю за 110; РАВНЫЕ стороны торгуют ровно по цене. Спред 0.7 и
+        // клампы 0.5/1.5 умерли вместе с «домом» у сделки. Контекст
+        // множит базу ДО закона, как и прежде.
         if (trade_price(100, 10, 0, 1.0f, true) != 90) {
-            return fail("buy: cha 10 must price 100 at 90");
+            return fail("buy: перевес 10 пунктов покупает 100 за 90");
         }
-        // Bargaining walks the table door: rank 10 at the row's 1%/rank is
-        // the same 10% edge charisma 10 buys — the tooltip and the till must
-        // quote one column. (The old law charged an inline 2%/rank the
-        // panel never promised; no assertion ever pinned it.)
-        if (trade_price(100, 0, 10, 1.0f, true) != 90) {
-            return fail("buy: bargaining 10 must price 100 at 90 (table 1%/rank)");
+        if (trade_price(100, 0, 10, 1.0f, true) != 110) {
+            return fail("buy: слабее на 10 — переплата 110 (та же разница)");
         }
-        if (trade_price(100, 0, 10, 1.0f, false) != 77) {
-            return fail("sell: bargaining 10 must price 100 at 77 (0.7 * 1.1)");
+        if (trade_price(100, 42, 42, 1.0f, true) != 100
+            || trade_price(100, 42, 42, 1.0f, false) != 100) {
+            return fail("равные анкеты торгуют по цене: наценки нет");
         }
-        if (trade_price(100, 10, 0, 1.0f, false) != 77) {
-            return fail("sell: cha 10 must price 100 at 77 (0.7 * 1.1)");
+        if (trade_price(100, 10, 0, 1.0f, false) != 110) {
+            return fail("sell: перевес 10 пунктов продаёт 100 за 110");
         }
         if (trade_price(100, 10, 0, 1.2f, true)
             != trade_price(120, 10, 0, 1.0f, true)) {
             return fail("context multiplier must equal scaling the base value");
         }
-        if (trade_price(100, 200, 0, 1.0f, true) != 50) {
-            return fail("buy discount must floor at 0.5 of base");
+        // ПОЛА СКИДКИ 0.5 НЕТ (S25): граница выводится из анкет или её не
+        // существует — назначенный пол вернул бы кламп под другим именем.
+        // Подавляющий перевес доводит цену до ПОЛА ЗАКОНА, единицы: это
+        // «ничто не бесплатно», а не потолок наценки.
+        if (trade_price(100, 200, 0, 1.0f, true) != 1) {
+            return fail("подавляющий перевес упирается в пол закона, не в кламп");
         }
         if (trade_price(1, 0, 0, 0.1f, false) < 1) {
             return fail("prices never fall below 1 gold");

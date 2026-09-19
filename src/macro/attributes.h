@@ -85,13 +85,19 @@ constexpr std::array<std::uint8_t, kMaxAttributes> attribute_bases() {
 struct Attributes {
     std::array<std::uint8_t, kMaxAttributes> score = attribute_bases();
 
-    std::uint8_t& operator[](AttributeId id) {
+    // constexpr, как у Skills ниже: анкета МЕСТА — таблица времени
+    // компиляции (characters.h kLandmarkSheets), и атрибут в ней должен
+    // писаться там же, где скилл. Асимметрия двух соседних операторов была
+    // случайной — одна из них просто не понадобилась раньше.
+    constexpr std::uint8_t& operator[](AttributeId id) {
         return score[std::size_t(id)];
     }
-    std::uint8_t operator[](AttributeId id) const {
+    constexpr std::uint8_t operator[](AttributeId id) const {
         return score[std::size_t(id)];
     }
-    int of(AttributeId id) const { return int(score[std::size_t(id)]); }
+    constexpr int of(AttributeId id) const {
+        return int(score[std::size_t(id)]);
+    }
 };
 
 // What an attribute IS, in the sheet's own words. The character panel walks
@@ -604,7 +610,16 @@ inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     // it buys DISTANCE per bar of stamina, not speed (macro/movement_cost.h).
     d.moveSpeedPct   = quickness_pct(a.of(AttributeId::Spd))
                        * skill_mult_pct(s, SkillId::Athletics) / 100;
-    d.tradeDiscountPct = cha_trade_discount_pct(a.of(AttributeId::Cha));
+    // ТОРГОВАЯ СИЛА — ОДНО ПРОИЗВОДНОЕ (CANON S25, владелец 2026-09-18:
+    // «наценка от производного, который уже после атрибута харизмы и скила
+    // эффективного всего… она берёт финалочку»). Форма ровно как у скорости
+    // строкой выше: атрибут — природная мощь, скилл МНОЖИТ её. До этого
+    // торговая сила считалась в ДВУХ местах — здесь без скилла и ещё раз в
+    // economy.cpp (bargaining_edge), то есть ровно дефект S26; вместе с этой
+    // свёрткой второе место умерло. Спеллы, артефакты и аффиксы попадают в
+    // цену бесплатно: они меняют лист, а сделка спрашивает только это число.
+    d.tradeDiscountPct = cha_trade_discount_pct(a.of(AttributeId::Cha))
+                         * skill_mult_pct(s, SkillId::Trade) / 100;
     return d;
 }
 

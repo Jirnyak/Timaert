@@ -42,7 +42,15 @@ int main() {
     city.type = sm::LandmarkType::City;
     city.population = 64;
     CHECK(city.inventory.add("wood", 2000), "fixture: city wood glut");
-    CHECK(city.inventory.add("coin_empire_copper", 600), "fixture: city purse");
+    // КОШЕЛЁК ФИКСТУРЫ ПОДНЯТ ДО НОВЫХ ЦЕН (S25, тот же переезд, что у
+    // вендора и лесоруба на снятии коридора): без «домашней маржи» ×0.7
+    // сделка стоит полную цену кривой, и тонкая казна доплачивала ТОВАРОМ
+    // (pay_value_dense) — город отдавал назад только что купленный хлеб и
+    // проваливался ниже собственной сезонной нужды по дровам. Свидетель
+    // сторожит ТОРГОВЛЮ, поэтому его рынок обязан быть платёжеспособным;
+    // сама находка — «оплата натурой ест сезонный амбар» — записана хвостом
+    // в NEXT_SESSION, она старше этой правки и ею не лечится.
+    CHECK(city.inventory.add("coin_empire_copper", 6000), "fixture: city purse");
 
     sm::Inventory hold;
     CHECK(hold.add("bread", 200), "fixture: hold bread");
@@ -60,10 +68,12 @@ int main() {
         "wood", city.population,
         sm::landmark_sheet(sm::LandmarkType::City).skills, &city.inventory);
 
-    // Charisma 0 here: the corridor checks below stay the raw price law's;
-    // the sheet edge is asserted separately at the end.
+    // РАВНЫЕ АНКЕТЫ (S25): обе стороны называют одну торговую силу, значит
+    // наценки нет и границы ниже — границы САМОЙ кривой цены, без примеси
+    // чьего-то преимущества. Перевес судится отдельной фикстурой в конце.
     const sm::CaravanDeal st = sm::trade_caravan_at_station(
-        hold, /*capacityKg=*/1e6f, city, /*charisma=*/0, /*bargaining=*/0);
+        hold, /*capacityKg=*/1e6f, city,
+        /*myTradePct=*/0, /*theirTradePct=*/0);
 
     CHECK(sm::coin_census_value(hold) + sm::coin_census_value(city.inventory)
               == coinBefore,
@@ -89,6 +99,10 @@ int main() {
     const int breadMoved = city.inventory.count("bread");
     CHECK(st.boughtValue >= woodMoved,
           "station: even a glut lot is never free (floor 1/unit)");
+    // Границы — той же кривой: ни одна единица не бесплатна (пол 1) и ни
+    // одна не дороже цены ПУСТОЙ полки своей кривой. Прежний потолок нёс в
+    // себе ×0.7 «домашней маржи» — она умерла вместе с домом у сделки
+    // (S25), и при равных анкетах продажа доходит ровно до цены кривой.
     CHECK(st.soldValue <= (long long)breadMoved
                               * sm::stock_price(breadBase, 0, breadDemand)
               && st.soldValue >= breadMoved,
@@ -119,7 +133,8 @@ int main() {
         sm::coin_census_value(bag) + sm::coin_census_value(town.inventory);
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
         bag, 1e6f, town, &snap, /*homePopulation=*/50,
-        sm::landmark_sheet(sm::LandmarkType::Village).skills, /*charisma=*/0, /*bargaining=*/0);
+        sm::landmark_sheet(sm::LandmarkType::Village).skills,
+        /*myTradePct=*/0, /*theirTradePct=*/0);
 
     CHECK(sm::coin_census_value(bag) + sm::coin_census_value(town.inventory)
               == vCoinBefore,
@@ -149,7 +164,7 @@ int main() {
     // таблице выше уровень и харизма» — the deal reads the sheet, so two
     // identical fixtures differing ONLY in charisma must settle differently,
     // in the trader's favour on both halves.)
-    const auto run_fixture = [](int cha) {
+    const auto run_fixture = [](int edge) {
         sm::Landmark m{};
         m.type = sm::LandmarkType::City;
         m.population = 64;
@@ -158,7 +173,8 @@ int main() {
         sm::Inventory h;
         h.add("bread", 200);
         h.add("coin_empire_copper", 4000);
-        return sm::trade_caravan_at_station(h, 1e6f, m, cha, 0);
+        // Перевес — РАЗНИЦА сил (S25): рынок назван нулём, караван — edge.
+        return sm::trade_caravan_at_station(h, 1e6f, m, edge, 0);
     };
     const sm::CaravanDeal plain = run_fixture(0);
     const sm::CaravanDeal silver = run_fixture(10);

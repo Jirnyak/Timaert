@@ -13,35 +13,35 @@ namespace sm {
 namespace {
 inline float jround(float v) { return std::round(v); }
 
-// The bargaining edge is the Trade ROW's percent (kSkillDefs), not a number
-// of this file's own: the skill tooltip quotes the column, so the till must
-// charge the column. An inline 0.02f lived here — a second truth the panel
-// never promised (owner ruling 2026-09-06: торговля = 1%/ранг, таблица).
-inline float bargaining_edge(int bargaining) {
-    return skill_mult_of(SkillId::Trade, bargaining) - 1.0f;
+// НАЦЕНКА = РАЗНИЦА ТОРГОВЫХ СИЛ, в долях (CANON S25). Положительная — моя
+// сторона сильнее и наценивает в свою пользу; отрицательная — наценивает
+// другая. Одно вычитание: никакого «кто здесь хозяин лавки».
+inline float trade_edge(int myTradePct, int theirTradePct) {
+    return float(myTradePct - theirTradePct) * 0.01f;
 }
 } // namespace
 
-int trade_buy_price(int basePrice, int charisma, int bargaining) {
-    const float discount = 1.0f - (cha_trade_discount(charisma)
-                                  + bargaining_edge(bargaining));
-    const float scaled = static_cast<float>(basePrice) * std::max(0.5f, discount);
+int trade_buy_price(int basePrice, int myTradePct, int theirTradePct) {
+    // Покупаю Я: сильнее — сбиваю цену, слабее — переплачиваю.
+    const float scaled = float(basePrice)
+                       * (1.0f - trade_edge(myTradePct, theirTradePct));
     return std::max(1, static_cast<int>(jround(scaled)));
 }
 
-int trade_sell_price(int basePrice, int charisma, int bargaining) {
-    const float bonus = 1.0f + (cha_trade_discount(charisma)
-                               + bargaining_edge(bargaining));
-    const float scaled = static_cast<float>(basePrice) * 0.7f * std::min(1.5f, bonus);
+int trade_sell_price(int basePrice, int myTradePct, int theirTradePct) {
+    // Продаю Я: та же разница, другой знак — и ни одного второго числа
+    // (×0.7 спреда не существует: у сделки нет дома, который брал бы своё).
+    const float scaled = float(basePrice)
+                       * (1.0f + trade_edge(myTradePct, theirTradePct));
     return std::max(1, static_cast<int>(jround(scaled)));
 }
 
-int trade_price(int baseValue, int charisma, int bargaining,
+int trade_price(int baseValue, int myTradePct, int theirTradePct,
                        float contextMult, bool buying) {
     const int scaledBase = std::max(1,
         static_cast<int>(jround(static_cast<float>(baseValue) * contextMult)));
-    return buying ? trade_buy_price(scaledBase, charisma, bargaining)
-                  : trade_sell_price(scaledBase, charisma, bargaining);
+    return buying ? trade_buy_price(scaledBase, myTradePct, theirTradePct)
+                  : trade_sell_price(scaledBase, myTradePct, theirTradePct);
 }
 
 float stock_scarcity(int supply, int demandPerDay) {

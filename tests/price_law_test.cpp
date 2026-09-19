@@ -63,6 +63,11 @@ void test_arbitrage_dies_two_ways() {
         };
         int trips = 0;
         for (int s = 2; s <= 512; s *= 2) {
+            // РАВНЫЕ АНКЕТЫ (S25): обе стороны называют одну торговую силу,
+            // наценки нет, и единственное, что решает круг, — СЛИППЕДЖ.
+            // Свип по силе остаётся, но обе стороны идут одним числом:
+            // закон теперь про РАЗНИЦУ, и «моя сила против нуля» — это уже
+            // не прокрутка, а грабёж слабого (см. пин ниже).
             for (int cha = 0; cha <= 200; cha += 50) {
                 for (const auto& c : ctx) {
                     for (int base : {5, 10, 100}) {
@@ -74,10 +79,10 @@ void test_arbitrage_dies_two_ways() {
                             if (demand >= s) continue;
                             const int buyUnit = trade_price(
                                 stock_price(base, 0, demand),
-                                cha, 0, c[0], /*buying=*/true);
+                                cha, cha, c[0], /*buying=*/true);
                             const int sellUnit = trade_price(
                                 stock_price(base, s, demand),
-                                cha, 0, c[1], /*buying=*/false);
+                                cha, cha, c[1], /*buying=*/false);
                             ++trips;
                             CHECK(sellUnit <= buyUnit,
                                   "full-shelf round trips never profit");
@@ -88,6 +93,29 @@ void test_arbitrage_dies_two_ways() {
             }
         }
         CHECK(trips > 100, "the sweep actually swept");
+    }
+
+    // ...И ПЕРЕВЕС ЧЕСТНО ПРИБЫЛЕН — это ЗАКОН, а не дыра в нём (S25:
+    // «у кого больше, тот и наценивает»). Прокачанный торговец обирает
+    // слабую сторону на разницу анкет; сторожит это не кламп, которого
+    // больше нет, а WALL 2 ниже — КОШЕЛЁК контрагента конечен.
+    {
+        const int shelf = 64, base = 10, demand = 8;
+        const int strongBuys = trade_price(stock_price(base, 0, demand),
+                                           /*mine=*/60, /*theirs=*/0,
+                                           1.0f, /*buying=*/true);
+        const int strongSells = trade_price(stock_price(base, shelf, demand),
+                                            /*mine=*/60, /*theirs=*/0,
+                                            1.0f, /*buying=*/false);
+        const int evenBuys = trade_price(stock_price(base, 0, demand),
+                                         0, 0, 1.0f, true);
+        const int evenSells = trade_price(stock_price(base, shelf, demand),
+                                          0, 0, 1.0f, false);
+        CHECK(strongBuys < evenBuys && strongSells > evenSells,
+              "перевес анкеты двигает ОБА конца в пользу сильного");
+        CHECK(evenSells <= evenBuys,
+              "негативный контроль: при равных анкетах тот же круг не "
+              "приносит ничего — работает только слиппедж");
     }
 
     // WALL 2 — THE PURSE: whatever per-unit drip a favourable multiplier

@@ -1765,21 +1765,21 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
     return bestId;
 }
 
-// The trader's OWN sheet, derived the ordinal way (leader_sheet_seed) —
-// the deal reads charisma (and one day the trade skill) off it: the row's
-// weights and level are the entire advantage (owner 2026-08-30).
-int leader_charisma_(ecs::World& w, entt::entity self) {
-    // Through THE sheet door (ММОРПГ-модель): a named merchant's OWNED
-    // charisma, a transient crew's generic roll — one law, no re-derive
-    // branch per reader.
-    return int(sheet_of(w, self).attributes.of(AttributeId::Cha));
+// ТОРГОВАЯ СИЛА ТОРГОВЦА — ОДНО число с его листа (CANON S25): финальное
+// производное (attributes.h, харизма × торговля), то же, что показывает
+// панель. Две половины — атрибут и скилл — больше не ходят по коду порознь:
+// они сложены там, где считается весь производный блок, и сделка спрашивает
+// ИТОГ. Отсюда спеллы, артефакты и перки входят в цену бесплатно.
+int leader_trade_power_(ecs::World& w, entt::entity self) {
+    const CharacterSheet& sh = sheet_of(w, self);
+    return calculate_derived(sh.attributes, sh.skills).tradeDiscountPct;
 }
 
-// ...and the same derivation's TRADE rank (phase 6): the caravan master's
-// haggling edge, fed into the price law's `bargaining` argument, which had
-// waited as a literal 0 since the law was written.
-int leader_trade_rank_(ecs::World& w, entt::entity self) {
-    return sheet_of(w, self).skills.of(SkillId::Trade);
+// ...и ТОРГОВАЯ СИЛА МЕСТА — та же дверь над анкетой ландмарка (S25: у
+// сделки две макросущности, и место — полноправная сторона, а не «лавка»).
+int landmark_trade_power_(const Landmark& lm) {
+    const CharacterSheet& sh = landmark_sheet(lm.type);
+    return calculate_derived(sh.attributes, sh.skills).tradeDiscountPct;
 }
 
 // (No own_type_ any more: sheet_of asks the entity itself — «the haggler's
@@ -1908,10 +1908,12 @@ void ai_caravan(entt::entity self, MacroPos& p,
             // into this market\'s shortage, buy its surplus — every number
             // read off the market the caravan STANDS ON. Arbitrage with no
             // knowledge of anywhere else.
+            // ДВЕ СТОРОНЫ (S25): сила каравана против силы РЫНКА — у кого
+            // выше, тот и наценивает; равные торгуют по цене.
             const CaravanDeal deal = trade_caravan_at_station(
                 bag->inv, rt.carryCap, *market,
-                leader_charisma_(*ctx.mw.world, self),
-                leader_trade_rank_(*ctx.mw.world, self));
+                leader_trade_power_(*ctx.mw.world, self),
+                landmark_trade_power_(*market));
             // The exchange is DONE — that one moment is the fact (S20.1: a
             // deal is a transition by nature; the ride on is the same
             // cargo, not a second deal). Subject = the home city whose
@@ -2194,8 +2196,8 @@ void ai_vendor(entt::entity self, MacroPos& p,
                 bag->inv, rt.carryCap, *market, snap,
                 homeLm->population,
                 landmark_sheet(homeLm->type).skills,
-                leader_charisma_(*ctx.mw.world, self),
-                /*bargaining=*/0);
+                leader_trade_power_(*ctx.mw.world, self),
+                landmark_trade_power_(*market));
             if (deal.movedTableValue > 0) {
                 record_landmark_fact(*ctx.mw.gs, FactKind::Traded,
                                      rt.homeSettlementId,
@@ -3542,7 +3544,7 @@ int max_affordable_lot_(int base, int have, int demand, bool selling,
 // cheap here is exactly what the next hungry station pays above base for.
 CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                                      Landmark& market,
-                                     int charisma, int bargaining) {
+                                     int myTradePct, int theirTradePct) {
     CaravanDeal out{};
     Inventory& ms = market.inventory;
     const Skills& site = landmark_sheet(market.type).skills;
@@ -3572,7 +3574,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
             // 2026-08-30).
             const int price = trade_sell_price(
                 stock_price(base, have + moved, demand),
-                charisma, bargaining);
+                myTradePct, theirTradePct);
             out.soldValue += transfer_value_dense(ms, hold, moved * price);
             out.movedTableValue += base * moved;
         } else if (have > need) {
@@ -3592,7 +3594,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
             const int cost =
                 moved * trade_buy_price(
                             stock_price(base, have - moved, demand),
-                            charisma, bargaining);
+                            myTradePct, theirTradePct);
             out.boughtValue += transfer_value_dense(hold, ms, cost);
             out.movedTableValue += base * moved;
         }
@@ -3611,7 +3613,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
                                    int homePopulation, const Skills& homeSite,
-                                   int charisma, int bargaining) {
+                                   int myTradePct, int theirTradePct) {
     CaravanDeal out{};
     Inventory& ms = market.inventory;
     const Skills& site = landmark_sheet(market.type).skills;
@@ -3641,7 +3643,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         // with a peasant's charisma, a caravan with a trader's — the sheet
         // is the whole difference.
         const int price = trade_sell_price(
-            stock_price(base, have + moved, demand), charisma, bargaining);
+            stock_price(base, have + moved, demand), myTradePct, theirTradePct);
         out.soldValue += transfer_value_dense(ms, bag, moved * price);
         out.movedTableValue += base * moved;
     }
@@ -3683,7 +3685,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
             const int demand = daily_demand_for(id, market.population,
                                                 site, &ms);
             const int buyHere = trade_buy_price(
-                stock_price(base, have, demand), charisma, bargaining);
+                stock_price(base, have, demand), myTradePct, theirTradePct);
             // Чего это стоит ДОМА: запас — по классу своей памяти, спрос —
             // по своему населению и своему виду места.
             const int homeSupply =
@@ -3732,7 +3734,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
             const int cost =
                 moved * trade_buy_price(
                             stock_price(base, have - moved, demand),
-                            charisma, bargaining);
+                            myTradePct, theirTradePct);
             out.boughtValue += transfer_value_dense(bag, ms, cost);
             out.movedTableValue += base * moved;
         }

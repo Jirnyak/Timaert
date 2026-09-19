@@ -450,12 +450,17 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         CHECK(rt.scoutRank == 0,
               "negative control: a rankless sheet clears the cache");
     }
-    // 2. Bargaining is ALIVE in the price law.
+    // 2. Торговая сила ЖИВА в законе цены — и она ДВУСТОРОННЯЯ (S25):
+    //    считается разница анкет, поэтому «натренированный» выигрывает
+    //    ровно настолько, насколько превосходит того, с кем торгует.
     {
-        CHECK(trade_buy_price(1000, 0, 50) < trade_buy_price(1000, 0, 0),
-              "a trained haggler buys cheaper through the one price law");
-        CHECK(trade_sell_price(1000, 0, 50) > trade_sell_price(1000, 0, 0),
-              "and sells dearer through the same law");
+        CHECK(trade_buy_price(1000, 50, 0) < trade_buy_price(1000, 0, 0),
+              "перевес торговой силы покупает дешевле — один закон цены");
+        CHECK(trade_sell_price(1000, 50, 0) > trade_sell_price(1000, 0, 0),
+              "и продаёт дороже тем же законом");
+        CHECK(trade_buy_price(1000, 50, 50) == trade_sell_price(1000, 50, 50)
+                  && trade_buy_price(1000, 50, 50) == 1000,
+              "равные анкеты: наценки нет вовсе, у сделки нет «дома»");
     }
     // 3. Foraging thins the SEASON'S bread draw (the daily feed died with
     // the boundary window, CANON S19.2). The trained forager is FOUND,

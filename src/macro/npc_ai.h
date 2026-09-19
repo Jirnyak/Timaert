@@ -221,7 +221,7 @@ struct CaravanDeal {
 // its row rolls better numbers — never a hardcode (owner 2026-08-30).
 CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                                      Landmark& market,
-                                     int charisma, int bargaining);
+                                     int myTradePct, int theirTradePct);
 // The village crew selling at its nearest city: unload everything, then
 // spend the WHOLE purse down the home's needs ladder («деревня не копит
 // капитал», owner 2026-08-30) — each line up to a season's stock at home;
@@ -230,7 +230,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
                                    int homePopulation, const Skills& homeSite,
-                                   int charisma, int bargaining);
+                                   int myTradePct, int theirTradePct);
 
 // ── ПОРУЧЕНИЕ: цель сквада = {глагол, объект} ────────────────────────────
 // (CANON S10 «универсальный ИИ сквадов», владелец 2026-09-02.) Один слой
