@@ -240,6 +240,38 @@ void test_the_governed_numbers_follow_the_row() {
           "and it does NOT make him faster: one skill, one meaning");
 }
 
+// ── The third currency: 5-5-5 at creation, 1-1-1 per level (CANON S14) ───
+// The perk GRAPH is consciously absent (stub, owner 2026-09-19) — what must
+// already be true is the ECONOMY: perk points accrue symmetrically with the
+// other two currencies, for the player and for every procedural sheet, and
+// the 256-bit mask answers has_perk without a graph to walk. The old
+// «perk point every 10th level» died with this witness watching.
+void test_the_third_currency_accrues() {
+    LevelData ld = default_level_data();
+    CHECK(ld.attributePoints == 5 && ld.learnPicks == 5 && ld.perkPoints == 5,
+          "creation is the K-K-K budget: 5-5-5 (owner 2026-09-14)");
+    ld.exp = ld.expToNext;
+    CHECK(try_level_up(ld), "the threshold levels");
+    CHECK(ld.attributePoints == 6 && ld.skillPoints == 1 && ld.perkPoints == 6,
+          "a level grants 1-1-1: full isotropy, no special levels");
+    // A level-N procedural sheet is budget-identical to a level-N player;
+    // the perk pool accrues UNSPENT while the graph is a stub.
+    const CharacterSheet cs =
+        make_character_sheet(NPCType(0), 6, leader_sheet_seed(1u));
+    CHECK(cs.levelData.perkPoints == 5 + 5,
+          "an NPC sheet accrues the perk pool it cannot spend yet");
+    bool bornEmpty = true;
+    for (int i = 0; i < 256; ++i) bornEmpty &= !cs.perks.has_perk(i);
+    CHECK(bornEmpty, "a sheet's mask is born all zeroes — no graph, no perks");
+    // The mask itself: 1-instruction reads by ordinal across the envelope.
+    PerkMask m{};
+    m.set_perk(0); m.set_perk(63); m.set_perk(64); m.set_perk(255);
+    CHECK(m.has_perk(0) && m.has_perk(63) && m.has_perk(64) && m.has_perk(255),
+          "set/has round-trips across word boundaries");
+    CHECK(!m.has_perk(1) && !m.has_perk(62) && !m.has_perk(254),
+          "and neighbours stay untouched");
+}
+
 // ── A role's opinion of every skill is stated, not defaulted ─────────────
 void test_every_role_rates_every_skill() {
     for (int r = 0; r < int(NPCType::Count); ++r) {
@@ -291,6 +323,7 @@ int main() {
     test_ranks_are_a_flat_envelope();
     test_one_door_and_the_row_decides();
     test_the_cap_belongs_to_the_law();
+    test_the_third_currency_accrues();
     test_the_governed_numbers_follow_the_row();
     test_every_role_rates_every_skill();
     return sm::test::report("sheet_registry_test");

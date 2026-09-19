@@ -159,9 +159,12 @@ ShellResult draw_character_creation(CreationState& cs) {
         }
         ImGui::Spacing();
         ImGui::Text("Perks");
-        // Honest, not coy: the system is designed separately (CANON S14) and
-        // creation owes one starter-pool pick when it lands.
-        ImGui::TextDisabled("One starter perk arrives with\nthe perk system.");
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%d points)", ld.perkPoints);
+        // Honest, not coy: the third currency accrues (5 at creation, +1
+        // every level — CANON S14 5-5-5/1-1-1), the constellation graph it
+        // spends into is consciously absent for the demo (owner 2026-09-19).
+        ImGui::TextDisabled("Points accrue; the constellation\ngraph arrives after the demo.");
 
         // ── skills: 5 learn picks; rank 1 = known ──
         ImGui::TableNextColumn();

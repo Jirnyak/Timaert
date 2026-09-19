@@ -35,6 +35,10 @@ struct CharacterSheet {
     Attributes attributes;
     Skills     skills;
     LevelData  levelData;
+    // The 256-bit learned-perk set (CANON S26 DOD architecture) — all zeroes
+    // until the constellation graph lands (stub, owner 2026-09-19). Saved
+    // with the sheet (v100) so the graph arrives without a save move.
+    PerkMask   perks;
 };
 
 namespace csheet_detail {
@@ -307,11 +311,14 @@ inline std::uint32_t leader_sheet_seed(std::uint32_t spawnOrdinal) {
 // (role, level, seed) always yields the same sheet, matching the subworld's
 // "everything regenerates from the seed" contract. The generator spends the
 // EXACT player point economy for `level` (CANON S14, 2026-09-03): creation is
-// 5 attribute points and 5 LEARN PICKS, every level adds +1 attribute and +1
-// skill point, and skill points spend ONLY into what the creation picks
-// taught — so a level-N NPC is budget-identical to a level-N player, merely
-// allocated toward its role. Points are fully consumed (levelData pools end
-// at 0). Plot NPCs supply an authored sheet instead of calling this.
+// 5 attribute points, 5 LEARN PICKS and 5 perk points, every level adds
+// +1-+1-+1 (isotropy, 2026-09-14), and skill points spend ONLY into what the
+// creation picks taught — so a level-N NPC is budget-identical to a level-N
+// player, merely allocated toward its role. Attribute and skill pools are
+// fully consumed (end at 0); perk points ACCRUE unspent while the graph is a
+// stub (owner 2026-09-19) — when kPerkNodes lands, this is where the role's
+// constellation vector walks its N steps (CANON S26 §5). Plot NPCs supply an
+// authored sheet instead of calling this.
 inline CharacterSheet make_character_sheet(NPCType role, int level,
                                            std::uint32_t seed) {
     if (level < 1) level = 1;
@@ -323,6 +330,7 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     cs.levelData.expToNext = exp_to_next_level(level);
     cs.levelData.attributePoints = 5 + (level - 1);
     cs.levelData.skillPoints     = (level - 1);
+    cs.levelData.perkPoints      = 5 + (level - 1);
 
     const csheet_detail::RoleWeights& w = csheet_detail::role_weights(role);
     // TWO streams, and LEVEL is in NEITHER seed — this is what makes a

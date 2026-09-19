@@ -455,7 +455,8 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     if (m.hasSheet) {
         w.pod(m.sheet.attributes);
         w.pod(m.sheet.skills);
-        w.pod(m.sheet.levelData);
+        w.pod(m.sheet.levelData);   // v100: grew perkPoints (third K, S14)
+        w.pod(m.sheet.perks);       // v100: 256-bit learned-perk mask (S26)
     }
     w.pod(m.hasOrders);
     w.pod(m.dead);
@@ -484,7 +485,8 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     if (m.hasSheet) {
         r.pod(m.sheet.attributes);
         r.pod(m.sheet.skills);
-        r.pod(m.sheet.levelData);
+        r.pod(m.sheet.levelData);   // v100
+        r.pod(m.sheet.perks);       // v100
     }
     r.pod(m.hasOrders);
     r.pod(m.dead);
@@ -681,8 +683,9 @@ void write_player(Writer& w, const PlayerState& p) {
     // (No combatStats block since v85: the player's bars ride the macro-ECS
     // snapshot inside his squad's MacroNpcRecord like every lord's — a second
     // copy of the same three bars on disk was the defect landing 4 removed.)
-    // (No perk block since v76: the perk system was purged whole pending its
-    // redesign — CANON S14. The bytes return when the perks do.)
+    // (No perk block HERE: since v100 the perk bytes — points in LevelData,
+    // the 256-bit mask beside it — ride the owned CharacterSheet inside his
+    // squad's MacroNpcRecord, the same door every named character uses.)
     // (No inventory block: his bag is an ordinary NpcInventory on his squad
     // entity, and rides the macro snapshot with every other squad's.)
     // No reputation map: the player's standing is his row in gs.factions, which

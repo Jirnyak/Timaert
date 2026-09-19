@@ -370,15 +370,38 @@ inline int skill_mult_pct(const Skills& s, SkillId id) {
     return skill_mult_pct_of(id, s.of(id));
 }
 
-// ── Perks: PURGED 2026-09-03 ───────────────────────────────────
+// ── Perks: THE STUB (owner verdict 2026-09-19; graph is content-stage) ────
 //
-// The TS-era perk block (24 ids, 8 tooltip rows, effects on TWO) died whole:
-// six of the eight rows promised mechanics that did not exist, and the system
-// is to be REDESIGNED from scratch (CANON S14 — Underrail-grade, one perk at a
-// time, once the RPG core stands). Until then the game carries no perk state:
-// no enum, no bag, no points, no save bytes (kSaveVersion 76). The one thing
-// that survives is the aura DOOR (character_sheet.h squad_bonuses) — the
-// mechanism perks will feed rows into when they return.
+// The TS-era perk block (24 ids, 8 tooltip rows, effects on TWO) died whole
+// 2026-09-03: six of the eight rows promised mechanics that did not exist.
+// The redesigned system is CANON S14 «СОЗВЕЗДИЯ ПЕРКОВ»: a flat constexpr
+// node graph (kPerkNodes, edges[4]), constellation quadrants, effects as
+// rows of the ONE bonus registry. That graph is CONTENT — weeks of authored
+// nodes — and the owner ruled it consciously ABSENT for the demo.
+//
+// What exists NOW is the third currency and its storage, symmetric with the
+// other two (5-5-5 at creation, 1-1-1 per level, CANON S14 2026-09-14):
+//   - LevelData.perkPoints — 5 at creation, +1 EVERY level; nothing spends
+//     them until the graph lands, so they honestly accrue;
+//   - PerkMask below — the 256-bit learned-set (32 bytes) inside every
+//     CharacterSheet, all zeroes until kPerkNodes exists. has_perk is the
+//     1-instruction reader the graph was architected around (S26).
+// The aura DOOR (character_sheet.h squad_bonuses) still stands: when nodes
+// arrive they feed BonusTotals rows through it, not new code.
+
+struct PerkMask {
+    std::uint64_t bits[4] = {};   // 256 node ordinals — kPerkNodes' envelope
+
+    bool has_perk(int ordinal) const {
+        return (bits[std::size_t(ordinal >> 6) & 3]
+                >> (std::uint32_t(ordinal) & 63u)) & 1u;
+    }
+    void set_perk(int ordinal) {
+        bits[std::size_t(ordinal >> 6) & 3] |=
+            std::uint64_t(1) << (std::uint32_t(ordinal) & 63u);
+    }
+};
+static_assert(sizeof(PerkMask) == 32, "CANON S26: 256-bit mask, 32 bytes");
 
 // ── Bar ceilings ───────────────────────────────────────────────
 //
@@ -431,8 +454,11 @@ struct LevelData {
     int attributePoints   = 5;
     int skillPoints       = 0;
     int learnPicks        = 5;
-    // (perkPoints return with the redesigned perk system — every 10th level
-    // + one starter-pool pick at creation, CANON S14. No state until then.)
+    // The third K of the creation budget (CANON S14 1-1-1, owner 2026-09-14):
+    // 5 perk points toward the starting constellation lanes, +1 every level.
+    // The graph they spend into is consciously absent (stub, owner
+    // 2026-09-19) — they accrue, and no door spends them yet.
+    int perkPoints        = 5;
 };
 
 // (No `attribute_value` switches either. A score is `attributes[AttributeId::X]`
@@ -662,11 +688,10 @@ inline float get_overload_penalty(float weightKg, float capacityKg) {
 
 // ── Level-up ───────────────────────────────────────────────────
 
-// THE level grant (CANON S14, owner verdict 2026-09-03 evening): +1 attribute
-// point AND +1 skill point EVERY level — 1:1, «для чистоты». Specialization
-// is held by perk GATES (designed against this income, up to "requires 100"),
-// not by point scarcity. The perk point (every 10th level) returns with the
-// perk system itself — no state to accrue into until then.
+// THE level grant (CANON S14, owner verdict 2026-09-14): +1 attribute point,
+// +1 skill point AND +1 perk point EVERY level — 1-1-1, full level isotropy:
+// no «special» levels, no artificial gates. Specialization is held by the
+// perk graph's TOPOLOGY (distance to a keystone), not by point scarcity.
 inline bool try_level_up(LevelData& ld) {
     if (ld.exp < ld.expToNext) return false;
     ld.exp           -= ld.expToNext;
@@ -674,6 +699,7 @@ inline bool try_level_up(LevelData& ld) {
     ld.expToNext      = exp_to_next_level(ld.level);
     ld.attributePoints += 1;
     ld.skillPoints     += 1;
+    ld.perkPoints      += 1;
     return true;
 }
 

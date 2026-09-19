@@ -1000,7 +1000,14 @@ namespace sm::ui
                     // (The perk grid died with the 2026-09-03 purge: six of
                     // its eight rows promised mechanics that did not exist,
                     // and the Talented branch was the hardcode the bonus
-                    // registry forbids. Perks return redesigned — CANON S14.)
+                    // registry forbids. Since v100 the third currency accrues
+                    // honestly — the constellation graph it spends into is
+                    // consciously absent for the demo, owner 2026-09-19.)
+                    ImGui::Spacing();
+                    ImGui::Text("Perks");
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(%d points)", sheet.levelData.perkPoints);
+                    ImGui::TextDisabled("Points accrue; the constellation graph arrives after the demo.");
                     ImGui::EndTabItem();
                 }
 

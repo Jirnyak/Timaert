@@ -342,7 +342,11 @@ namespace sm {
 // ничего не стоят (закон P1).
 // v99 (2026-09-19): ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10) — Landmark несёт
 // needDebt[kCommodityCount]: сезонный счёт лестницы нужд, гасится приходом.
-constexpr int kSaveVersion = 99;
+// v100 (2026-09-19): ПЕРКИ — ТРЕТЬЯ ВАЛЮТА (CANON S14 5-5-5/1-1-1, заглушка
+// по вердикту владельца: графа осознанно нет) — LevelData вырос perkPoints,
+// CharacterSheet несёт 256-битную маску PerkMask (32 байта, S26); граф
+// сядет в этот конверт без движения сейва.
+constexpr int kSaveVersion = 100;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
