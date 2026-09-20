@@ -4401,6 +4401,29 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         float(ctx.mapW), float(ctx.mapH)));
                 return 2.0f * cells / kSustainedMarchCellsPerDay;
             };
+            // ── ЦЕННОСТЬ И ДЛИТЕЛЬНОСТЬ РЕЙСА — ИЗ МИРА (CANON S10) ─────
+            // Артель копает, пока не полна спина (ai_gatherer «backsFull»),
+            // значит рейс привозит домой ПОЛНУЮ СПИНУ, чего бы он ни копал:
+            //     ценность рейса = цена единицы × (спина / вес единицы)
+            //     дни работы     = спина / (дневной тейк × вес единицы)
+            // Души сокращаются: и обоз, и дневной тейк растут с их числом,
+            // поэтому число душ в скор не входит и знать его до подъёма
+            // артели не нужно. Строка, чей выход ложится в РОСТЕР (лошадь),
+            // спиной не ограничена — её мера по закону упряжки одна голова
+            // на душу, то есть ровно одна за рейс на душу.
+            const NPCType crewKind = [&]() -> NPCType {
+                const LandmarkDef& ldc = landmark_def(s.type);
+                for (int i = 0; i < int(ldc.crewCount); ++i)
+                    if (!ldc.crews[i].garrison && !ldc.crews[i].solo)
+                        return ldc.crews[i].npc;
+                return NPCType::Peasant;
+            }();
+            const CharacterSheet crewSheet =
+                make_character_sheet(crewKind, 1, 0u);
+            const float crewHaul = npc_def(crewKind).haulMult;
+            const float carryPerSoul =
+                get_carry_capacity(crewSheet.attributes, crewSheet.skills)
+                * (crewHaul > 0.0f ? crewHaul : 1.0f);
             // Цели добычи: строка открыта, когда мир предъявил рабочее
             // место (find_worksite — тот же предикат, каким работает сама
             // артель); ценность = домашняя цена товара × дневной тейк
@@ -4454,10 +4477,23 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 } else if (!find_worksite(gd, ctx, homePos, home, site)) {
                     continue;
                 }
-                const float road = road_days_(site);
-                const float score = float(unitPrice)
-                                    * float(gd.perWorkerDay)
-                                    / (1.0f + road)
+                // СКОР = ВЫРАБОТКА В ДЕНЬ РЕЙСА. Одна величина на все
+                // заявки — стоимость в день, — поэтому добыча и сбыт
+                // наконец сравнимы в одной рулетке. Назначенного `1 +`
+                // больше нет: делитель есть настоящая длина рейса.
+                const ItemDef* gdef =
+                    gd.commodity ? item_def(gd.commodity) : nullptr;
+                const float unitKg =
+                    gdef && gdef->weight > 0.0f ? gdef->weight : 1.0f;
+                const float perSoul = gd.rosterYield != NPCType::Count
+                                          ? 1.0f
+                                          : carryPerSoul / unitKg;
+                const float workDays =
+                    gd.perWorkerDay > 0 ? perSoul / float(gd.perWorkerDay)
+                                        : 0.0f;
+                const float tripDays = road_days_(site) + workDays;
+                if (!(tripDays > 0.0f)) continue;
+                const float score = float(unitPrice) * perSoul / tripDays
                                     - fear_of(site);
                 if (score <= 0.0f) continue;
                 bids[bidCount++] = GoalBid{
@@ -4545,9 +4581,15 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 }
                 if (value > 0) {
                     const XY citySite{float(city->x), float(city->y)};
-                    const float road = road_days_(citySite);
+                    // Та же величина: стоимость сделки, размазанная по
+                    // длине рейса. Торг не занимает дней — сделка
+                    // заключается в момент прибытия, — поэтому вся
+                    // длительность рейса это дорога туда-обратно.
+                    const float tripDays = road_days_(citySite);
                     const float score =
-                        float(value) / (1.0f + road) - fear_of(citySite);
+                        tripDays > 0.0f
+                            ? float(value) / tripDays - fear_of(citySite)
+                            : 0.0f;
                     if (score > 0.0f) {
                         bids[bidCount++] = GoalBid{
                             std::uint8_t(ErrandVerb::Sell),
