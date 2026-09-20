@@ -4208,6 +4208,50 @@ bool run_turn_based_cycle_smoke(App& app) {
                  harvested ? 1 : 0, unsigned(gateAfterAct));
     std::fflush(stderr);
 
+    // ── РЕЖИМ НЕ ПЕРЕЖИВАЕТ ВЫХОД (баг владельца, пойман в игре
+    // 2026-09-20) ────────────────────────────────────────────────────────
+    // Он оставался взведённым при подъёме на карту, и СЛЕДУЮЩИЙ спуск
+    // замерзал на первом же кадре: сцена не тикает — тела не стримятся —
+    // игрок видит пустой мир и вынужден жать P, чтобы тот ожил. Тот же
+    // закон, что set_paused уже держит для паузы игрока: не оставляй
+    // взведённым то, во что выйдешь.
+    // Взводим ВСЁ, что закон обязан погасить, и уходим наверх.
+    app.turnBasedMode = true;
+    app.playerPaused  = true;
+    app.simSpeed      = 8.0f;
+    app.ui.character  = true;          // панель, которая паузит мир
+    app.subworld.set_player_attack_held(true);
+    app.subworld.leave(true);
+    advance_sim_steps(app, 2, false);       // кадр, который ловит выходную кромку
+    if (app.turnBasedMode || app.playerPaused || app.ui.character
+        || app.simSpeed != 1.0f) {
+        std::fprintf(stderr,
+                     "[smoke] survived the climb: mode=%d paused=%d panel=%d "
+                     "speed=%.1f\n",
+                     app.turnBasedMode ? 1 : 0, app.playerPaused ? 1 : 0,
+                     app.ui.character ? 1 : 0, double(app.simSpeed));
+        std::fflush(stderr);
+        smoke_fail(app, "scene state survived the climb out — the next "
+                        "descent would start frozen, before its bodies ever "
+                        "streamed in");
+        return false;
+    }
+    // …и ВХОД тоже чистит, каким бы способом сцена ни кончилась: взводим
+    // снова, уже на карте, и спускаемся.
+    app.turnBasedMode = true;
+    app.ui.map = true;
+    enter_subworld(app);
+    if (app.turnBasedMode || app.ui.map) {
+        app.turnBasedMode = false; app.ui.map = false;
+        smoke_fail(app, "entering a scene did not clear the session state — "
+                        "a scene must always start moving");
+        return false;
+    }
+    if (!advance_sim_steps(app, 8, false).ticked) {
+        smoke_fail(app, "a freshly entered scene does not tick");
+        return false;
+    }
+
     // Off — the ordinary real-time scene returns.
     app.turnBasedMode = false;
     if (!advance_sim_steps(app, 8, false).ticked) {

@@ -339,6 +339,9 @@ sm::MacroWorld macro_world(App& app) {
 // early call sites enter battle through the same one transition.
 void rebake_world(App& app, bool uploadNow = true);
 void enter_subworld(App& app);
+// Состояние сцены живёт ровно одну сцену (вердикт 2026-09-20) — одна дверь,
+// зовётся с ОБОИХ концов перехода. Определена ниже, у списка панелей.
+void reset_scene_session_state(App& app);
 
 // The full-screen macro map page is open: the M toggle, on the macro layer,
 // in play. Everyone who swaps a camera or reroutes an input asks THIS.
@@ -1502,6 +1505,11 @@ void rebake_world(App& app, bool uploadNow) {
 // dirty flush, and below ground the macro map is not drawn at all.
 void enter_subworld(App& app) {
     rebake_world(app, /*uploadNow=*/false);
+    // ЧИСТАЯ СЦЕНА, чем бы ни кончилась прошлая (вердикт «и там, и там»):
+    // выходов из субмира много и не все штатны — смерть, сюжет, загрузка
+    // сейва, — а вход ОДИН, и он гарантирует, что мир под ногами тикает,
+    // руки пусты и ни одна панель не держит кадр.
+    reset_scene_session_state(app);
     app.subworld.enter(macro_world(app), app.bus);
 }
 
@@ -1911,6 +1919,50 @@ bool pausing_panel_open(const App& app) {
            app.ui.character ||
            app.ui.settings ||
            app.ui.controls;
+}
+
+// ── СОСТОЯНИЕ СЦЕНЫ ЖИВЁТ РОВНО ОДНУ СЦЕНУ ───────────────────────────────
+//
+// Вердикт владельца 2026-09-20 (после бага, пойманного в игре: режим P
+// переживал подъём, и следующий спуск замерзал на первом кадре — тела не
+// успевали появиться): «сделать единую систему, что в субмире каждый закон
+// по умолчанию сбрасывается между заходами (паузы, режимы и т.д.)».
+//
+// ЗАКОН БЫЛ, НО ТРЕМЯ МАНЕРАМИ — и потому дырявый: `simSpeed` гасился на
+// входе («DROPPED, not merely ignored»), `playerPaused` отказывался
+// взводиться внизу (set_paused), а `turnBasedMode` не делал ни того ни
+// другого. Один закон, три глагола — ровно тот «второй словарь», что S26
+// запрещает, только спрятанный в действиях, а не в данных: четвёртый режим
+// списал бы не у того соседа, и баг вернулся бы под новым именем.
+//
+// ЗДЕСЬ ОН ОДИН. Зовётся С ОБОИХ КОНЦОВ перехода (вердикт «и там, и там»):
+// вход гарантирует ЧИСТУЮ СЦЕНУ, каким бы способом предыдущая ни кончилась
+// (ногами, смертью, сюжетом, загрузкой сейва — не все выходы штатны), выход
+// гарантирует ЧИСТУЮ КАРТУ, куда ничего не ждёт взведённым.
+//
+// ЧТО НЕ ВХОДИТ И ПОЧЕМУ: ВЫБОР игрока — активный спелл книги, вкладка
+// листа — не режим, а решение, и оно живёт (владелец не отметил его в
+// сбросе). Сбрасывать выбор значило бы заставлять переназначать боевой
+// спелл на каждом спуске.
+void reset_scene_session_state(App& app) {
+    // Режимы сцены: ни один не переживает переход.
+    app.turnBasedMode = false;
+    app.playerPaused  = false;
+    app.simSpeed      = 1.0f;
+    app.simStepCarry  = 0.0f;
+    app.restUntilTick = 0;
+    // Интенты ввода: зажатая клавиша — это состояние РУК, а не мира, и новое
+    // тело не должно бить и бежать за того, кто держал кнопку в прошлой
+    // сцене (интент ПЕРСИСТЕНТЕН — см. poll_movement, «HANDS OFF THE KEYS»).
+    app.subworld.set_player_attack_held(false);
+    app.subworld.set_move_intent(0.0f, 0.0f);
+    app.lastJumpHeld = false;
+    // Окна: открытая панель ПАУЗИТ мир (pausing_panel_open выше), так что
+    // забытый инвентарь даёт ровно тот же замороженный вход, что и режим P.
+    // Список — тот же, что судит пауза; расходиться им нечем.
+    app.ui.diplomacy = app.ui.settlement = app.ui.quest = app.ui.codex =
+        app.ui.map = app.ui.character = app.ui.settings = app.ui.controls =
+            false;
 }
 
 bool gameplay_panel_open(const App& app) {
@@ -3338,8 +3390,13 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // The S7 exit edge: the frame that finds the subworld gone rebakes the
     // derived world from the truths the stay below paid up (trees felled,
     // heads taken, veins drained). CPU truth now; textures at the flush.
-    if (app.subworldWasActive && !app.subworld.active())
+    if (app.subworldWasActive && !app.subworld.active()) {
         rebake_world(app, /*uploadNow=*/false);
+        // …и состояние сцены гаснет ОДНОЙ дверью (закон «состояние сцены
+        // живёт ровно одну сцену», вердикт владельца 2026-09-20): на карту
+        // ничего не выходит взведённым.
+        reset_scene_session_state(app);
+    }
     app.subworldWasActive = app.subworld.active();
     constexpr float dt = sm::kStepSeconds;
     RuntimeFrameStats stats{};
