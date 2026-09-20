@@ -506,6 +506,30 @@ bool nav_ensure(const MacroWorld& mw, NavWorld& nv) {
     return nv.baked();
 }
 
+std::uint32_t nav_path_cost(const NavWorld& nv, int ax, int ay,
+                            int bx, int by) {
+    if (!nv.baked()) return kNavFar;
+    const std::size_t R = nv.regionLandmarkId.size();
+    const std::uint16_t ra = nav_region_at(nv, ax, ay);
+    const std::uint16_t rb = nav_region_at(nv, bx, by);
+    if (std::size_t(ra) >= R || std::size_t(rb) >= R) return kNavFar;
+    const std::uint16_t da = nv.distHome[nv.cell(ax, ay)];
+    const std::uint16_t db = nv.distHome[nv.cell(bx, by)];
+    if (da == kNavUnreached || db == kNavUnreached) return kNavFar;
+    if (ra == rb) return std::uint32_t(da) + std::uint32_t(db);
+    const std::uint32_t mid = nv.routeDist[std::size_t(ra) * R + std::size_t(rb)];
+    if (mid == kNavFar) return kNavFar;
+    return std::uint32_t(da) + mid + std::uint32_t(db);
+}
+
+float nav_path_days(const NavWorld& nv, int ax, int ay, int bx, int by,
+                    float cellsPerDay) {
+    const std::uint32_t c = nav_path_cost(nv, ax, ay, bx, by);
+    if (c == kNavFar) return -1.0f;
+    if (!(cellsPerDay > 0.0f)) return -1.0f;
+    return (float(c) / 16.0f) / cellsPerDay;
+}
+
 bool nav_step(const NavWorld& nv, int x, int y, int tx, int ty,
               int& sdx, int& sdy) {
     if (!nv.baked()) return false;

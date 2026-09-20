@@ -254,6 +254,69 @@ int main() {
               "shore water is owned by the water tier");
     }
 
+    // ── ЦЕНА ПУТИ — ОДНА ДВЕРЬ, И ОНА ЗНАЕТ ПРО ОБХОД (CANON S7) ───────
+    {
+        // Недостижимое честно: карман озера — это НЕТ ПУТИ, а не большое
+        // число. Тот же класс тихой ошибки, что «недостижимость нулём»:
+        // вес рулетки перевернулся бы, и место за водой стало бы лучшим.
+        CHECK(sm::nav_path_cost(base.nav, 5, 32, 56, 8) == sm::kNavFar,
+              "no path answers kNavFar, never a big number");
+        // ЗАКОН, НА КОТОРОМ СТОЯТ ВСЕ ЧИТАТЕЛИ: из МЕСТА дверь точна —
+        // цена до любой клетки его округи равна ровно distHome этой клетки,
+        // тому самому числу, которым ходит артель и которое хранит опись.
+        {
+            const std::int32_t rc0 = base.nav.regionCell[0];
+            CHECK(rc0 >= 0, "region 0 names a cell");
+            const int lx = int(rc0 % base.nav.mapW);
+            const int ly = int(rc0 / base.nav.mapW);
+            CHECK(base.nav.distHome[base.nav.cell(lx, ly)] == 0u,
+                  "a place stands at the zero of its own field");
+            CHECK(sm::nav_path_cost(base.nav, lx, ly, lx, ly) == 0u,
+                  "from a place to itself the path costs nothing");
+            int checked = 0;
+            for (int y = 0; y < H && checked < 64; ++y)
+                for (int x = 0; x < W && checked < 64; ++x) {
+                    if (sm::nav_region_at(base.nav, x, y) != 0) continue;
+                    const std::uint32_t dh =
+                        base.nav.distHome[base.nav.cell(x, y)];
+                    if (dh == sm::kNavUnreached) continue;
+                    ++checked;
+                    if (sm::nav_path_cost(base.nav, lx, ly, x, y) != dh) {
+                        CHECK(false,
+                              "from a place the door is exactly distHome");
+                        y = H; break;
+                    }
+                }
+            CHECK(checked >= 16, "the law was actually exercised");
+        }
+
+        // ЗАКОН: путь НИКОГДА не дешевле хорды — и на этой карте есть пары,
+        // где он строго дороже. Именно эту разницу теряла прямая, и на ней
+        // провиант вылазки недокармливал сквад, идущий в обход.
+        std::uint32_t seed = 20260920u;
+        int sampled = 0, cheaper = 0, detour = 0;
+        for (int i = 0; i < 400 && sampled < 120; ++i) {
+            const int ax = int(lcg(seed) % unsigned(W));
+            const int ay = int(lcg(seed) % unsigned(H));
+            const int bx = int(lcg(seed) % unsigned(W));
+            const int by = int(lcg(seed) % unsigned(H));
+            if (!base.standable(ax, ay) || !base.standable(bx, by)) continue;
+            const std::uint32_t c = sm::nav_path_cost(base.nav, ax, ay, bx, by);
+            if (c == sm::kNavFar) continue;
+            ++sampled;
+            const float cells = float(c) / 16.0f;
+            const float chord = std::sqrt(sm::torus_dist_sq(
+                float(ax), float(ay), float(bx), float(by),
+                float(W), float(H)));
+            if (cells + 0.125f < chord) ++cheaper;
+            if (cells > chord + 1.0f) ++detour;
+        }
+        CHECK(sampled >= 40, "the sampler actually found reachable pairs");
+        CHECK(cheaper == 0, "the path is never cheaper than the chord");
+        CHECK(detour > 0,
+              "and on a world with a river some pairs must go around");
+    }
+
     // ── СВЕЖЕСТЬ — ПО СОБЫТИЮ, А НЕ ПО ОПРОСУ (CANON S9, 2026-09-20) ────
     {
         Fixture f;

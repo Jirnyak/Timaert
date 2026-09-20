@@ -60,10 +60,8 @@ NavWorld make_nav(const GameState& gs) {
     nv.mapW = kMap;
     nv.mapH = kMap;
     nv.bakedSeed = gs.worldSeed;
-    std::uint32_t live = 0;
-    for (const Landmark& lm : gs.landmarks)
-        if (lm.type != LandmarkType::None) ++live;
-    nv.bakedLandmarks = live;
+    // Свежесть — ПО СОБЫТИЮ (CANON S9), см. threat_field_test.
+    nv.bakedNavEpoch = gs.navEpoch;
     const std::size_t cells = std::size_t(kMap) * std::size_t(kMap);
     nv.regionOf.assign(cells, 0);
     for (int y = 0; y < kMap; ++y)

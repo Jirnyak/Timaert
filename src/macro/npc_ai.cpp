@@ -4369,6 +4369,38 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 return float(threat_on_route(*nvF, homeRF, r)
                              >> kThreatFearShift);
             };
+            // ДОРОГА В СКОРЕ — ЦЕНА ПУТИ, А НЕ ПРЯМАЯ (CANON S7, дверь
+            // nav_path_cost), И В ДНЯХ ТУДА-ОБРАТНО: рейс возвращается.
+            // Жила за горой и рынок за заливом перестали выглядеть
+            // близкими. Прямая остаётся там, где другого ответа нет, — в
+            // мире без запечённой навигации (голые фикстуры).
+            //
+            // ЦЕНА ПРАВДЫ, ИЗМЕРЕННАЯ И ПРИНЯТАЯ (64 дня, сид 7): мир
+            // добывает меньше — дерево 139 014 → 79 987, железо 1070 → 210.
+            // Вердикт владельца: «добыча упала, но не сломалась; если по
+            // архитектуре и математике верно — так и надо».
+            //
+            // ЧТО ЗДЕСЬ ЕЩЁ НЕ ЗАКОН (открыто вслух): сам скор размерно не
+            // сходится — у заявки добычи числитель это стоимость В ДЕНЬ, у
+            // заявки сбыта полная сумма сделки, а `1 +` не выведено ниоткуда.
+            // Честная форма — ВЫРАБОТКА В ДЕНЬ РЕЙСА: ценность, произведённая
+            // за рейс, делённая на его длительность (2 × дни пути + дни
+            // работы). Тогда обе заявки меряются одной величиной и назначенных
+            // чисел не остаётся. Отдельный ход со своим замером.
+            const auto road_days_ = [&](const XY& site) -> float {
+                float cells = -1.0f;
+                if (nvF && nvF->baked()) {
+                    const std::uint32_t c =
+                        nav_path_cost(*nvF, int(home.x), int(home.y),
+                                      int(site.x), int(site.y));
+                    if (c != kNavFar) cells = float(c) / 16.0f;
+                }
+                if (cells < 0.0f)
+                    cells = std::sqrt(torus_dist_sq(
+                        home.x, home.y, site.x, site.y,
+                        float(ctx.mapW), float(ctx.mapH)));
+                return 2.0f * cells / kSustainedMarchCellsPerDay;
+            };
             // Цели добычи: строка открыта, когда мир предъявил рабочее
             // место (find_worksite — тот же предикат, каким работает сама
             // артель); ценность = домашняя цена товара × дневной тейк
@@ -4422,9 +4454,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 } else if (!find_worksite(gd, ctx, homePos, home, site)) {
                     continue;
                 }
-                const float road = std::sqrt(torus_dist_sq(
-                    home.x, home.y, site.x, site.y,
-                    float(ctx.mapW), float(ctx.mapH)));
+                const float road = road_days_(site);
                 const float score = float(unitPrice)
                                     * float(gd.perWorkerDay)
                                     / (1.0f + road)
@@ -4514,10 +4544,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     purse -= buyable * base;
                 }
                 if (value > 0) {
-                    const float road = std::sqrt(torus_dist_sq(
-                        home.x, home.y, float(city->x), float(city->y),
-                        float(ctx.mapW), float(ctx.mapH)));
                     const XY citySite{float(city->x), float(city->y)};
+                    const float road = road_days_(citySite);
                     const float score =
                         float(value) / (1.0f + road) - fear_of(citySite);
                     if (score > 0.0f) {
@@ -4575,15 +4603,17 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             for (const std::uint16_t r : wave) {
                 const std::uint32_t t = nv->threat[r];
                 if (t == 0u) continue;
-                const std::uint32_t rd =
-                    r == homeR ? 0u
-                               : nv->routeDist[std::size_t(homeR) * R + r];
-                if (rd == kNavFar) continue;
-                // Кванты цены пути — 1/16 клетки (nav_field.h distHome).
-                const float distCells = float(rd) / 16.0f;
-                const float days =
-                    2.0f * distCells / kSustainedMarchCellsPerDay
-                    + float(kPatrolDwellDays);
+                // ОДНА ДВЕРЬ ЦЕНЫ ПУТИ (CANON S7) вместо сырого чтения
+                // таблицы: дом → клетка округи, и сразу в ДНЯХ марша —
+                // единице, в которой считается жалованье вылазки.
+                const std::int32_t rc = nv->regionCell[r];
+                if (rc < 0 || nv->mapW <= 0) continue;
+                const float days0 =
+                    nav_path_days(*nv, int(home.x), int(home.y),
+                                  int(rc % nv->mapW), int(rc / nv->mapW),
+                                  kSustainedMarchCellsPerDay);
+                if (days0 < 0.0f) continue;   // пути нет — заявки нет
+                const float days = 2.0f * days0 + float(kPatrolDwellDays);
                 const float score =
                     float(t) - days * float(take) * float(premium);
                 if (score <= 0.0f) continue;
@@ -4714,9 +4744,25 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             prt.errandObject = errandObject[i];
             if (auto* bag = reg.try_get<ecs::NpcInventory>(ent)) {
                 const XY d = dest[i];
-                const float dist = std::sqrt(torus_dist_sq(
-                    home.x, home.y, d.x, d.y,
-                    float(ctx.mapW), float(ctx.mapH)));
+                // ДОРОГА — ПО ЦЕНЕ ПУТИ, А НЕ ПО ПРЯМОЙ (CANON S7). Ноги
+                // ведёт nav_step вокруг горы и вокруг залива, а провиант
+                // считался по ХОРДЕ: сквад, чей путь вдвое длиннее прямой,
+                // выходил из дому заведомо голодным. Одна дверь цены пути —
+                // и решение снаряжает ровно ту дорогу, которую пройдут.
+                float dist = -1.0f;
+                if (ctx.mw.nav) {
+                    const std::uint32_t c =
+                        nav_path_cost(*ctx.mw.nav, int(home.x), int(home.y),
+                                      int(d.x), int(d.y));
+                    if (c != kNavFar) dist = float(c) / 16.0f;
+                }
+                // Вырожденный случай назван: мир без запечённой навигации
+                // (голые фикстуры) отвечает прямой — единственный ответ,
+                // который у него есть.
+                if (dist < 0.0f)
+                    dist = std::sqrt(torus_dist_sq(
+                        home.x, home.y, d.x, d.y,
+                        float(ctx.mapW), float(ctx.mapH)));
                 // Ломоть на марш + патрульные дни тем же законом провианта:
                 // дни на месте пересчитаны в клетки марша, которых стоят.
                 provision_squad(
