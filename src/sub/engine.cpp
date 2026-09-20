@@ -1,4 +1,5 @@
 #include "sub/engine.h"
+#include "sub/ability.h"   // THE ability door — every act pays the one gate
 #include "content/spells/casting.h"   // kSpellCasterRadius — the player body radius's one home
 #include "macro/macro_stock.h"
 #include "macro/cell_facts.h"
@@ -2138,10 +2139,47 @@ void SubworldEngine::tick_player_melee() {
     set_status(status);
 }
 
+// ЗАРЯД ГЕЙТА для действий субмира — один на движок (CANON S13, «всё
+// способность»). Берёт ДЛИНУ, которую назвала строка действия, и делит её
+// той же дверью восстановления, что удар и каст: Spd-асимптота × Армсмастер
+// (это руки — глоток, рычаг и топор живут в одном домене). Лист берётся с
+// тела через мирную дверь: у аватара он свой, и хаста ускоряет обыск ровно
+// так же, как замах.
+void SubworldEngine::charge_act(float baseSeconds) {
+    if (!ecs_ || baseSeconds <= 0.0f) return;
+    auto& reg = ecs_->reg;
+    for (auto pe : reg.view<ecs::AvatarTag, ecs::Combat>()) {
+        const CharacterSheet* cs = sub::state_of<CharacterSheet>(reg, pe);
+        static const Attributes kBareA{};
+        static const Skills kBareS{};
+        sub::charge_ability(&reg.get<ecs::Combat>(pe), baseSeconds,
+                            cs ? cs->attributes : kBareA,
+                            cs ? cs->skills : kBareS,
+                            SkillId::Armsmaster);
+        break;
+    }
+}
+
 bool SubworldEngine::harvest_action(float reachOverride) {
     if (!active_ || !ecs_ || !gs_) return false;
     if (player_display_hp() <= 0) return false;
     auto& reg = ecs_->reg;
+    // РУБКА — СПОСОБНОСТЬ, как всё в субмире (CANON S13, вердикт владельца
+    // 2026-09-19). Гейт спрашивается ЗДЕСЬ, до всякой работы, и заряжается
+    // только когда удар по дереву действительно состоялся (ниже, у самого
+    // выхода true) — отказ по своей причине («нечего рубить») рекавери не
+    // жжёт, это граница закона способностей.
+    {
+        const ecs::Combat* gate = nullptr;
+        for (auto pe : reg.view<ecs::AvatarTag, ecs::Combat>()) {
+            gate = &reg.get<ecs::Combat>(pe);
+            break;
+        }
+        if (!sub::body_is_free(gate)) {
+            set_status("Still recovering.");
+            return false;
+        }
+    }
     // Arm's reach — the same envelope the melee swing measures with (+1.5
     // covers the trunk radius the point-range does not model).
     float reach = 1.5f;
@@ -2177,6 +2215,8 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // QUADRATIC law of zero in a single move — felling on an empty bar is
     // never refused, it bites HP at the spend (CANON S14.1, 2026-09-17).
     if (pay) apply_stamina_cost(*pay, sp_price(pay->maxSp, kGatherPerWorkerDay));
+    // …и ВРЕМЯ, не только выносливость: рубка занимает руки на свой срок.
+    charge_act(kHarvestActSeconds);
     return true;
 }
 
@@ -2233,6 +2273,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         const std::string msg = std::string(verb) + " (" + picked + ")";
         set_status(msg.c_str());
     }
+    charge_act(kHarvestActSeconds);
     return true;
 }
 
@@ -2522,6 +2563,20 @@ const char* SubworldEngine::interact_prompt() const {
 bool SubworldEngine::interact() {
     if (!active_ || !ecs_ || !gs_) return false;
     auto& reg = ecs_->reg;
+    // РУКА ЗАНЯТА — значит занята и для рычага (CANON S13). Та же дверь, тот
+    // же гейт: обыскивать тело посреди замаха нельзя, и в пошаговом режиме
+    // обыск честно отдаёт миру свой ход.
+    {
+        const ecs::Combat* gate = nullptr;
+        for (auto pe : reg.view<ecs::AvatarTag, ecs::Combat>()) {
+            gate = &reg.get<ecs::Combat>(pe);
+            break;
+        }
+        if (!sub::body_is_free(gate)) {
+            set_status("Still recovering.");
+            return false;
+        }
+    }
     const entt::entity best = aimed_corpse();
     if (best == entt::null) {
         // Nothing dead under the reticle — then it is a prop, and the prop's
@@ -2576,10 +2631,12 @@ bool SubworldEngine::interact() {
     }
     if (leftBehind) {
         set_status("Your pack is full.");
+        charge_act(interact_row(InteractId::Loot).actSeconds);
         return true;
     }
     reg.destroy(best);
     set_status("Loot recovered.");
+    charge_act(interact_row(InteractId::Loot).actSeconds);
     return true;
 }
 

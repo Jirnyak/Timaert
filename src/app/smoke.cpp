@@ -4176,6 +4176,38 @@ bool run_turn_based_cycle_smoke(App& app) {
         smoke_fail(app, "turn_based_cycle: drained gate did not re-freeze");
         return false;
     }
+    // ── СПОСОБНОСТИ ПЛАТЯТ ТОТ ЖЕ ГЕЙТ (CANON S13, 2026-09-19) ──────────
+    // Дыра, которую это закрывает: пока «зелья/интеракции вне гейта» было
+    // законом, в ЗАСТЫВШЕМ мире можно было пить и обыскивать бесконечно —
+    // мир стоит, а действия бесплатны. Проверяем ДОБЫЧЕЙ: она есть в любой
+    // сцене (дерево рядом), и она обязана занять руки, то есть сдвинуть мир
+    // ровно на свою длину.
+    if (player_gate_steps(app) != 0) {
+        app.turnBasedMode = false;
+        smoke_fail(app, "turn_based_cycle: hand not free before the act test");
+        return false;
+    }
+    const bool harvested = app.subworld.harvest_action(12.0f);
+    const std::uint32_t gateAfterAct = player_gate_steps(app);
+    if (harvested) {
+        if (gateAfterAct == 0) {
+            app.turnBasedMode = false;
+            smoke_fail(app, "turn_based_cycle: a HARVEST bought no recovery — "
+                            "an act is free in a frozen world");
+            return false;
+        }
+        // …и второй раз подряд рука отказывает, пока не отстоялась.
+        if (app.subworld.harvest_action(12.0f)) {
+            app.turnBasedMode = false;
+            smoke_fail(app, "turn_based_cycle: a busy hand harvested anyway");
+            return false;
+        }
+        while (player_gate_steps(app) > 0) advance_sim_steps(app, 4, false);
+    }
+    std::fprintf(stderr, "[smoke] turn_based_cycle act: harvested=%d gate=%u\n",
+                 harvested ? 1 : 0, unsigned(gateAfterAct));
+    std::fflush(stderr);
+
     // Off — the ordinary real-time scene returns.
     app.turnBasedMode = false;
     if (!advance_sim_steps(app, 8, false).ticked) {
@@ -5771,6 +5803,13 @@ bool run_console_smoke(App& app) {
             }
             const int spBefore = pay->sp;
             const int maxSp = pay->maxSp;
+            // РУКА ДОЛЖНА БЫТЬ СВОБОДНА (CANON S13, 2026-09-19: в субмире
+            // всё — способность, и рубка платит тот же гейт). Этот свидетель
+            // меряет ЦЕНУ SP, а не занятость, поэтому он ждёт, пока тело
+            // отстоится после всего, что делал смоук до него — иначе он
+            // покраснеет на законном отказе и соврёт про «нечего рубить».
+            for (int i = 0; i < 4096 && player_gate_steps(app) > 0; ++i)
+                advance_sim_steps(app, 4, false);
             if (!app.subworld.harvest_action(
                     float(sm::sub::kFullSize) * 2.0f)) {
                 if (!wasActive) app.subworld.leave(true);

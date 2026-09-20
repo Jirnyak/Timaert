@@ -250,6 +250,9 @@ public:
     // reach): spawn points sit on roads, so a deterministic witness of the
     // SP law needs the window's reach — the game always calls bare.
     bool harvest_action(float reachOverride = -1.0f);
+    // Занять руки на срок, который назвала СТРОКА действия (CANON S13 «в
+    // субмире всё — способность»): одна точка заряда гейта на весь движок.
+    void charge_act(float baseSeconds);
     // Pay out a broken world prop through the ONE loot registry: its kind
     // names a profile (map_data.h structure_loot_id), the profile rolls items,
     // the yield scales by the prop's own metric height. Items go straight to

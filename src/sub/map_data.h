@@ -400,23 +400,32 @@ struct InteractRow {
     // is arm's length (the melee reach every other contact uses); a corpse is
     // picked up from a little further because you loot what fell around you.
     float reachTiles;
+    // СКОЛЬКО ВРЕМЕНИ ЗАНИМАЕТ ЭТО ДЕЙСТВИЕ, в секундах базы (CANON S13:
+    // «в субмире всё — способность, и у всего есть рекавери», вердикт
+    // владельца 2026-09-19). База — колонка ЗДЕСЬ; делит её дверь
+    // восстановления (Spd-асимптота × генерик домена), как у удара и каста,
+    // так что ловкий герой шарит по сундуку быстрее — и ни одной новой
+    // формулы ради этого не написано.
+    // НОЛЬ — честный частный случай: пройти в дверь времени не стоит, а
+    // обыскать тело или напиться из колодца — стоит.
+    float actSeconds;
 };
 // Indexed by InteractId; the static_assert refuses a drifted table.
 // (Scar: the rows once ran Search/Drink/Read against an enum that ran
 // Drink/Read/Search, so the well prompted "Search", the sign "Drink" and the
 // chest "Read". Same 5-tile reach on all three hid it from every smoke.)
 inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
-    { InteractId::None,   "",             0.0f},
-    { InteractId::Door,   "Enter",        5.0f},
+    { InteractId::None,   "",             0.0f, 0.0f},
+    { InteractId::Door,   "Enter",        5.0f, 0.0f},
     // "Climb", not "Take stairs": a shaft is a ladder one way and a lid the
     // other, and there has never been a flight of steps anywhere in the game
     // for the word to name.
-    { InteractId::Stairs, "Climb",        5.0f},
-    { InteractId::Loot,   "Loot",        12.0f},
-    { InteractId::Drink,  "Drink",        5.0f},
-    { InteractId::Read,   "Read",         5.0f},
-    { InteractId::Search, "Search",       5.0f},
-    { InteractId::Learn,  "Learn spell",  5.0f},
+    { InteractId::Stairs, "Climb",        5.0f, 0.0f},
+    { InteractId::Loot,   "Loot",        12.0f, 1.0f},
+    { InteractId::Drink,  "Drink",        5.0f, 1.5f},
+    { InteractId::Read,   "Read",         5.0f, 2.0f},
+    { InteractId::Search, "Search",       5.0f, 1.5f},
+    { InteractId::Learn,  "Learn spell",  5.0f, 3.0f},
 };
 static_assert(rows_in_enum_order(kInteractRows, &InteractRow::id),
               "kInteractRows row order must mirror InteractId");

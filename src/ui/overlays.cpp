@@ -1,4 +1,5 @@
-#include "macro/econ_day.h"   // sp_price — THE one price of an action
+#include "macro/econ_day.h"
+#include "sub/ability.h"   // THE ability door — a sip pays the one gate   // sp_price — THE one price of an action
 #include "macro/seasons.h"    // kDaysPerSeason — the upkeep bill's horizon
 #include "ui/overlays.h"
 #include "macro/cell_facts.h"   // the Map preview's REAL cell context
@@ -1037,6 +1038,21 @@ namespace sm::ui
                             if (item_type_consumable(def->type)
                                 && ImGui::SmallButton("Use"))
                             {
+                                // ГЛОТОК — СПОСОБНОСТЬ (CANON S13, вердикт
+                                // владельца 2026-09-19): рука должна быть
+                                // свободна, и глоток занимает её на срок,
+                                // который назвала СТРОКА зелья. Иначе в
+                                // пошаговом режиме застывший мир позволял
+                                // пить бесконечно — мир-то стоит.
+                                ecs::Combat* gate = nullptr;
+                                for (auto pe : world.reg.view<ecs::AvatarTag,
+                                                              ecs::Combat>()) {
+                                    gate = &world.reg.get<ecs::Combat>(pe);
+                                    break;
+                                }
+                                if (!sm::sub::body_is_free(gate)) {
+                                    lastUseMessage = "Still recovering.";
+                                } else {
                                 PlayerCombatSlice pc{
                                     pools.hp, pools.maxHp,
                                     pools.mp, pools.maxMp,
@@ -1046,6 +1062,14 @@ namespace sm::ui
                                 pools.hp = pc.currentHp;
                                 pools.mp = pc.currentMp;
                                 pools.sp = pc.currentSp;
+                                // Занять руки — через ТУ ЖЕ дверь, что удар
+                                // и каст; лист берётся эффективный, так что
+                                // хаста ускоряет глоток без кода здесь.
+                                sm::sub::charge_ability(
+                                    gate, def->useSeconds,
+                                    effPanel.attributes, effPanel.skills,
+                                    sm::SkillId::Armsmaster);
+                                }
                             }
                             // SCRAP — the reverse ход of the one reaction
                             // (CANON «Крафт/Скрап»: «игрок разбирает

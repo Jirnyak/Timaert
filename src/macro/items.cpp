@@ -64,9 +64,17 @@ constexpr ItemDef kCatalog[] = {
 
     // Consumables
     {"potion_hp",   "Health Potion",   ItemType::Potion,     50, 0.30f, "\xE2\x9D\xA4",
-        "Restores 30 HP", {{std::uint8_t(BonusId::HealHp), 30}}},
+        "Restores 30 HP", {{std::uint8_t(BonusId::HealHp), 30}},
+        // Глоток в бою — ДЕЙСТВИЕ (CANON S13): секунда базы, делимая
+        // дверью восстановления. До 2026-09-19 зелья пились даром.
+        /*slot*/0, /*blocks*/0, /*armor*/{}, /*dice*/{},
+        /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
+        /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
     {"potion_mp",   "Mana Potion",     ItemType::Potion,     75, 0.30f, "\xE2\x9C\xA8",
-        "Restores 15 MP", {{std::uint8_t(BonusId::HealMp), 15}}},
+        "Restores 15 MP", {{std::uint8_t(BonusId::HealMp), 15}},
+        /*slot*/0, /*blocks*/0, /*armor*/{}, /*dice*/{},
+        /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
+        /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
     // The economy's NOUNS live in THIS catalog too (owner's one-dictionary
     // ruling): the bread a city bakes and the bread in the player's bag are
     // one row. Ids and weights match macro/commodity.h verbatim — the link
