@@ -1665,7 +1665,7 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     city.population = 500;
     // Steer gen_delivery through the honest surface: tools are the town's
     // SCARCEST consumed good (bread plentiful, everything else stocked).
-    city.inventory.add("bread", 2048);
+    city.inventory.add("food", 2048);
     city.inventory.add("cloth", 128);
     city.inventory.add("bricks", 128);
     city.inventory.add("furniture", 128);
@@ -1779,7 +1779,7 @@ void test_generated_delivery_quest_flow() {
     settlement.y = 18;
     settlement.population = 1000;
     settlement.factionIdx = 0;
-    settlement.inventory.add("bread", 2048);
+    settlement.inventory.add("food", 2048);
     settlement.inventory.add("cloth", 128);
     settlement.inventory.add("bricks", 128);
     settlement.inventory.add("furniture", 128);

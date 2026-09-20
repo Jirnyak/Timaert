@@ -262,8 +262,8 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
             // (popPerUnitDay == 1 по построению, static_assert в econ_day.h).
             deaths = std::min(population, int(remaining / kDaysPerSeason));
         } else {
-            const int demand = (population / kNeeds[i].popPerUnitDay)
-                             * kDaysPerSeason;
+            const int demand = season_need_units(population,
+                                                 kNeeds[i].popPerUnitDay);
             if (demand <= 0) continue;
             comfortDemand += demand;
             unmetComfort += remaining < demand ? int(remaining) : demand;
@@ -292,7 +292,7 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
         const int idx = t.needIdx[i];
         if (idx < 0) continue;
         needDebt[idx] = std::int32_t(
-            (popAfter / kNeeds[i].popPerUnitDay) * kDaysPerSeason);
+            season_need_units(popAfter, kNeeds[i].popPerUnitDay));
     }
     // 3. НЕМЕДЛЕННОЕ ГАШЕНИЕ: посевной амбар и прошлый излишек платят по
     // счёту в ту же минуту — та же дверь, что у прихода.
@@ -347,14 +347,18 @@ void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
         // выводом того же предиката.
         const int qty = (i == kHungerNeedRow)
             ? population * kSeedVitalDays
-            : (population / kNeeds[i].popPerUnitDay) * needDays;
+            : (population * needDays) / kNeeds[i].popPerUnitDay;
         if (qty > 0) inv.add(kNeeds[i].commodity, qty);
     }
     // Raw buffers per head — {commodity, units·population >> shift}. A
     // Village, whose whole business is raw, holds double.
     struct RawSeed { const char* id; int shift; };
     constexpr RawSeed kRawSeeds[] = {
-        {"food", 0}, {"wood", 0}, {"stone", 1}, {"clay", 2}, {"iron", 3},
+        // ПИЩА УШЛА ИЗ СЫРЬЕВЫХ БУФЕРОВ (2026-09-20): она больше не материал,
+        // а голодная строка лестницы — и та уже выдаёт новорождённому месту
+        // СЕЗОН харча выше. Оставь её здесь — место родится с сезоном плюс
+        // ещё одним днём, и закон «амбар рождения = ровно сезон» тихо врёт.
+        {"wood", 0}, {"stone", 1}, {"clay", 2}, {"iron", 3},
     };
     const int siteMult = isCity ? 1 : 2;
     for (const RawSeed& r : kRawSeeds) {

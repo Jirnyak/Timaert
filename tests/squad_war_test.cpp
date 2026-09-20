@@ -496,20 +496,20 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         const int stock = 8 * kDaysPerSeason * 2;
         for (const entt::entity e : {forager, untrained}) {
             auto& bag = w.reg.get<ecs::NpcInventory>(e).inv;
-            bag.add("bread", stock);
+            bag.add("food", stock);
             bag.add("coin_empire_copper", 8 * 3 * kDaysPerSeason * 4);
         }
         MacroWorld mw{&gs, nullptr, &w};
         CHECK(squad_season_window(mw, 2) == 0,
               "no window off the boundary (negative control)");
-        CHECK(w.reg.get<ecs::NpcInventory>(untrained).inv.count("bread")
+        CHECK(w.reg.get<ecs::NpcInventory>(untrained).inv.count("food")
                   == stock,
               "an ordinary day draws no bread at all");
         squad_season_window(mw, 1);
         const int foragerLeft =
-            w.reg.get<ecs::NpcInventory>(forager).inv.count("bread");
+            w.reg.get<ecs::NpcInventory>(forager).inv.count("food");
         const int untrainedLeft =
-            w.reg.get<ecs::NpcInventory>(untrained).inv.count("bread");
+            w.reg.get<ecs::NpcInventory>(untrained).inv.count("food");
         CHECK(untrainedLeft == stock - 8 * kDaysPerSeason,
               "an untrained camp eats a season's loaf a head — the M&B law "
               "at the window's scale");

@@ -104,8 +104,17 @@ void test_table_laws() {
         const int idx = item_index(kCommodities[c].id);
         CHECK(idx >= 0, "every commodity resolves in the catalog");
         const ItemDef* cd = item_def_at(idx);
-        if (cd && cd->type == ItemType::Material) {
-            CHECK(is_terminal(idx), "raw commodity rows are terminal");
+        // МАТЕРИЯ МИРА ТЕРМИНАЛЬНА, СДЕЛАННОЕ — СОСТАВНО. Материя приходит
+        // из мира двумя потоками: РЕСУРС (Material — копают, рубят) и ПИЩА
+        // (Food — растят, добывают охотой). Ни тот, ни другой ни из чего не
+        // варится, поэтому «состоит из себя» — закон обоих; составом обязаны
+        // БЛАГА (Goods), которые сделаны руками. До 2026-09-20 пища лежала в
+        // Material и закон читался одной категорией — это было следствием
+        // того, что мир считал едой только испечённый хлеб.
+        const bool worldMatter = cd && (cd->type == ItemType::Material
+                                        || cd->type == ItemType::Food);
+        if (worldMatter) {
+            CHECK(is_terminal(idx), "world matter is terminal — ore and food alike");
         } else {
             CHECK(!is_terminal(idx), "produced goods carry a composition");
         }
@@ -275,7 +284,7 @@ void test_auto_scrap() {
     dear.count = 1;
     dear.seed = 7;
     inv.add_ref(dear);
-    inv.add("bread", 40);
+    inv.add("food", 40);
     const int used = inv.used_slots();
     CHECK(used > kAutoScrapSlots, "the fixture overflows (negative control)");
 
@@ -285,14 +294,14 @@ void test_auto_scrap() {
           "the container came back to the half mark");
     CHECK(inv.count("iron") == 0,
           "cheap daggers melt to nothing: floor(1/2) burns the unit");
-    CHECK(inv.count("bread") == 40, "plain stacks are never candidates");
+    CHECK(inv.count("food") == 40, "plain stacks are never candidates");
     CHECK(inv.count_of(statue) == 1,
           "cheapest-first: the dear statue outlived every cheap dagger");
 
     // Below the mark the law is silent.
     Inventory calm;
-    calm.add("bread", 10);
-    CHECK(auto_scrap_overflow(calm) == 0 && calm.count("bread") == 10,
+    calm.add("food", 10);
+    CHECK(auto_scrap_overflow(calm) == 0 && calm.count("food") == 10,
           "under half occupancy nothing is touched (negative control)");
 }
 

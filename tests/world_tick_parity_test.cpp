@@ -138,11 +138,11 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     army->push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 78u));
     sm::Inventory* purse = sm::player_inventory(world);
-    purse->add("bread", sm::kDaysPerSeason);
+    purse->add("food", sm::kDaysPerSeason);
     purse->add("coin_empire_copper", wageSeason);   // + the 5 already there
     CHECK(sm::squad_season_window(mw, 65) == 0,
           "a covered window deserts nobody");
-    CHECK(purse->count("bread") == 0,
+    CHECK(purse->count("food") == 0,
           "a covered window eats the whole season of bread at once");
     CHECK(sm::inventory_value(*purse) == 5,
           "a covered window debits exactly the season's wage");
@@ -176,7 +176,7 @@ void test_garrison_never_exceeds_its_cap() {
     // The maintenance law bleeds a SHORTED garrison at once (2026-08-31),
     // and this test is about recruiting — keep the men fed and paid.
     s.inventory.add("coin_empire_copper", 1 << 16);
-    s.inventory.add("bread", 1 << 13);
+    s.inventory.add("food", 1 << 13);
     // Место СТОИТ на месте, иначе оно вырастет под тестом и уведёт цель
     // гарнизона из-под проверки. Благополучие 0 — это «стоим» (владелец
     // 2026-09-19: ватерлинии нет, мера И ЕСТЬ ход роста); прежние 128 были
@@ -208,7 +208,7 @@ void test_garrison_never_exceeds_its_cap() {
     hollow.garrison = sm::SoldierSquad{};
     hollow.inventory = sm::Inventory{};
     hollow.inventory.add("coin_empire_copper", 1 << 16);
-    hollow.inventory.add("bread", 1 << 13);
+    hollow.inventory.add("food", 1 << 13);
     slow.landmarks.push_back(hollow);
     sm::WorldTickRuntime slowRuntime{};
     sm::reset_world_tick_runtime(slowRuntime, 4242u);
@@ -471,16 +471,16 @@ void test_garrison_ceiling_trims_the_surplus() {
           "the cut men swell the deserter pool, they do not evaporate");
     // Зверь — под нож по своей стоимости, и мясо платит по счёту В ТУ ЖЕ
     // МИНУТУ (S10): на полке ноль, долг упал ровно на стоимость туш.
-    const int breadValue = sm::item_def("bread")->value;
+    const int breadValue = sm::item_def("food")->value;
     const int meatPerHorse =
         sm::hire_price_for(std::uint16_t(sm::NPCType::Horse), 1) / breadValue;
     const int bill = 30 * sm::kDaysPerSeason;
     const int debtNow =
-        out.needDebt[sm::commodity_index("bread")];
+        out.needDebt[sm::commodity_index("food")];
     CHECK(debtNow < bill, "the knife fed the bill");
     CHECK((bill - debtNow) % meatPerHorse == 0,
           "the bill fell by whole carcasses, valued by the one price law");
-    CHECK(out.inventory.count("bread") == 0,
+    CHECK(out.inventory.count("food") == 0,
           "meat above nothing: the hungry bill ate every unit on the spot");
 }
 

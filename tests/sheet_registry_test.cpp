@@ -89,7 +89,12 @@ void test_the_registry_is_addressable_by_ordinal() {
     // so the row waits at pctPerRank 0 instead of lying in a tooltip). The
     // list is spelled HERE, in the witness, so adding a sleeper costs a
     // deliberate line in a test — not a silent zero in a table.
-    const SkillId kSleepers[] = {SkillId::Unarmored};
+    // ГОТОВКА СПИТ с 2026-09-20: её единственным рецептом был ХЛЕБ, а он
+    // вырезан вместе с обязательным звеном «поле → печь → рот» (владелец:
+    // «уберём крафт из пищи, уберём хлеб, и вся пища станет пищей»). Строка
+    // остаётся в реестре названной спящей, а не притворяется живой: работа у
+    // неё появится вместе с кухней как контентом.
+    const SkillId kSleepers[] = {SkillId::Unarmored, SkillId::Cooking};
     int craftRows = 0;
     int sleepers = 0;
     for (int i = 0; i < int(SkillId::Count); ++i) {
@@ -114,14 +119,14 @@ void test_the_registry_is_addressable_by_ordinal() {
               "recipe, or be a NAMED sleeper — a row that does none of the "
               "three is a dead column");
     }
-    CHECK(sleepers == 1,
-          "exactly one row sleeps today (Unarmored, owner 2026-09-19) — the "
-          "sweep above actually judged it");
+    CHECK(sleepers == 2,
+          "exactly two rows sleep today (Unarmored 2026-09-19, Cooking "
+          "2026-09-20) — the sweep above actually judged them");
     // The negative control of the sweep itself: it must have SEEN crafts, or
     // the clause above proved nothing about them (testing law #3).
-    CHECK(craftRows == 5,
-          "five crafts are named by the recipe table — the sweep above "
-          "actually judged them");
+    CHECK(craftRows == 4,
+          "four crafts are named by the recipe table (Cooking left with the "
+          "bread row) — the sweep above actually judged them");
 }
 
 // ── The ranks are a flat envelope, addressed by index ────────────────────

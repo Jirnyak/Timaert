@@ -51,18 +51,22 @@ bool test_full_resource_still_uses_consumable_with_zero_message() {
 
 bool test_food_and_non_consumables() {
     sm::Inventory inv;
-    inv.add("bread", 1);
+    inv.add("food", 1);
     inv.add("wood", 3);
     sm::PlayerCombatSlice pc{80, 100, 20, 40, 10, 30};
 
-    const std::string food = sm::use_item(inv, "bread", pc);
+    const std::string food = sm::use_item(inv, "food", pc);
     const std::string material = sm::use_item(inv, "wood", pc);
     const std::string missing = sm::use_item(inv, "missing_id", pc);
-    return expect(food == "Used Bread: +10 HP",
+    return expect(food == "Used Provisions: +5 HP",
                   "food message/effect does not match TS")
-        && expect(pc.currentHp == 90,
+        // 80 → 85: строка ПИЩИ лечит на свою стоимость (5). Прототип на TS
+        // кормил игрока ХЛЕБОМ (+10) — хлеб вырезан из мира 2026-09-20, и
+        // паритет держится по закону «еда лечит на стоимость», а не по
+        // исчезнувшей строке (AGENTS.md: прототип — история, C++ — продукт).
+        && expect(pc.currentHp == 85,
                   "food did not restore HP")
-        && expect(inv.count("bread") == 0,
+        && expect(inv.count("food") == 0,
                   "food was not consumed")
         && expect(material.empty() && inv.count("wood") == 3,
                   "non-consumable item was used or removed")

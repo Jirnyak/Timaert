@@ -112,8 +112,8 @@ void test_a_write_through_the_door_lands_in_the_world() {
 
     Inventory* store = store_of(w, subject_of_landmark(42));
     CHECK_OR_RETURN(store != nullptr, "the village store opens");
-    store->add("bread", 3);
-    CHECK(landmark_by_id(gs, 42)->inventory.count("bread") == 3,
+    store->add("food", 3);
+    CHECK(landmark_by_id(gs, 42)->inventory.count("food") == 3,
           "bread added through the door sits in the village record itself");
 
     // The symmetry the menu will trade on: hire_npc already takes two

@@ -45,18 +45,31 @@ void test_scarcity_shape() {
           "a price never reaches zero — «ничто не бесплатно» is the floor");
     // Без счёта (nullptr) прямая часть — лестница населения × сезон; со
     // счётом она читала бы ОСТАТОК долга (закон мира, юниты те же).
-    CHECK(season_demand_for("bread", nullptr, 128, CITY, nullptr)
-                  == 128 * kDaysPerSeason
-              && season_demand_for("cloth", nullptr, 128, CITY, nullptr)
-                  == 4 * kDaysPerSeason
-              && season_demand_for("wpn_dagger", nullptr, 128, CITY, nullptr)
-                  == 0,
-          "demand reads the ONE needs ladder");
+    // У ГОЛОДНОЙ СТРОКИ ДВЕ НУЖДЫ СРАЗУ, и это не удвоение: её едят (прямая
+    // половина) и ею прядут (производная — ткань варится из пищи). Число
+    // второй половины берётся из СОСТАВА ткани, а не переписывается сюда
+    // литералом, иначе свидетель разойдётся с каталогом молча.
+    {
+        const int clothSeason =
+            season_demand_for("cloth", nullptr, 128, CITY, nullptr);
+        int foodPerCloth = 0;
+        for (const ItemPart& part : item_parts(item_index("cloth"))) {
+            if (int(part.def) == item_index(hunger_item_id()))
+                foodPerCloth += part.count;
+        }
+        CHECK(foodPerCloth > 0, "fixture: cloth is spun from the hunger row");
+        CHECK(season_demand_for(hunger_item_id(), nullptr, 128, CITY, nullptr)
+                      == 128 * kDaysPerSeason + clothSeason * foodPerCloth
+                  && clothSeason == 4 * kDaysPerSeason
+                  && season_demand_for("wpn_dagger", nullptr, 128, CITY,
+                                       nullptr) == 0,
+              "demand reads the ONE needs ladder");
+    }
     // СПРОС ЧИТАЕТ ДОЛГ: полупогашенный счёт хлеба — и спрос ровно он.
     {
         std::int32_t debt[kCommodityCount] = {};
-        debt[commodity_index("bread")] = 777;
-        CHECK(season_demand_for("bread", debt, 128, CITY, nullptr) == 777,
+        debt[commodity_index("food")] = 777;
+        CHECK(season_demand_for("food", debt, 128, CITY, nullptr) == 777,
               "the direct demand IS the unpaid bill");
     }
 }
@@ -133,7 +146,7 @@ void test_arbitrage_dies_two_ways() {
         Inventory merchant;
         player.add("coin_empire_copper", 1000);
         merchant.add("coin_empire_copper", 200);   // his whole purse
-        merchant.add("bread", 64);
+        merchant.add("food", 64);
         const int myStart = coin_census_value(player);
         int rounds = 0;
         bool farmDied = false;
@@ -144,7 +157,7 @@ void test_arbitrage_dies_two_ways() {
         int stale = 0;
         for (; rounds < 10000; ++rounds) {
             const int purseBefore = coin_census_value(player);
-            const int supply = merchant.count("bread");
+            const int supply = merchant.count("food");
             // Сильная анкета против слабой: покупаю со скидкой, продаю с
             // наценкой — прибыльный круг, который и должен упереться в его
             // кошелёк.
@@ -155,17 +168,17 @@ void test_arbitrage_dies_two_ways() {
             if (sellUnit <= buyUnit) { farmDied = true; break; }   // profitless
             if (coin_census_value(player) < buyUnit) break;
             if (!transfer_value_dense(player, merchant, buyUnit)) break;
-            merchant.remove("bread", 1);
-            player.add("bread", 1);
+            merchant.remove("food", 1);
+            player.add("food", 1);
             if (!transfer_value_dense(merchant, player, sellUnit)) {
                 // He cannot pay: the deal does not happen — put it back.
-                player.remove("bread", 1);
-                merchant.add("bread", 1);
+                player.remove("food", 1);
+                merchant.add("food", 1);
                 farmDied = true;   // he cannot pay: the purse wall
                 break;
             }
-            player.remove("bread", 1);
-            merchant.add("bread", 1);
+            player.remove("food", 1);
+            merchant.add("food", 1);
             if (coin_census_value(player) <= purseBefore) {
                 if (++stale >= 3) { farmDied = true; break; }
             } else {

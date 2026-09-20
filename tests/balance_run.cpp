@@ -251,7 +251,7 @@ int main(int argc, char** argv) {
         std::fprintf(fl, "day\tid\ttype\tpop\twellbeing\tstarved\tunmet\tbread"
                          "\tgrain\tcloth\tiron\tcoin\n");
 
-        const int breadIdx = sm::item_index("bread");
+        const int breadIdx = sm::item_index("food");
         const int grainIdx = sm::item_index("food");
         const int clothIdx = sm::item_index("cloth");
         const int ironIdx = sm::item_index("iron");

@@ -101,7 +101,7 @@ void test_auction_raises_errand_bearing_peasants() {
     // спроса (полный амбар ⇒ зерно не нужно) любой запас зерна — излишек,
     // и его стоимость глушила бы рулетку; рейс сбыта здесь живёт данью —
     // его скор сопоставим с жилой и лесом, и диверсификация ВИДНА.
-    gs.landmarks[0].inventory.add("bread", 3200);
+    gs.landmarks[0].inventory.add("food", 3200);
     stock_comforts(gs.landmarks[0]);
     gs.landmarks[0].titheOwedCoin = 200;            // долг дани — цель сбыта
     // ГОРОДУ ЕСТЬ С ЧЕМ ЕХАТЬ: излишек своего ремесла (город ткёт) — это и
@@ -227,7 +227,7 @@ void test_tithe_alone_raises_the_sell_run() {
     gs.landmarks[0].titheOwedCoin = 300;
     // Хлеб — только на условие создания (сезон содержания); целей добычи
     // он не рождает, единственная живая цель остаётся рейсом сбыта.
-    gs.landmarks[0].inventory.add("bread", 3200);
+    gs.landmarks[0].inventory.add("food", 3200);
     ecs::World w;
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
@@ -256,7 +256,7 @@ void test_boundary_court_resizes_standing_crews() {
     // другим пулом сделали бы «все составы равны» ложью о двух законах.
     gs.landmarks[1].population = 0;
     gs.landmarks[0].inventory.add("food", 5000);
-    gs.landmarks[0].inventory.add("bread", 3200 * 4);   // сезоны впрок
+    gs.landmarks[0].inventory.add("food", 3200 * 4);   // сезоны впрок
     gs.landmarks[0].titheOwedCoin = 200;
     DepositLayer dep{};
     allocate_deposit_fields(dep, kMap, kMap);
@@ -374,7 +374,7 @@ void test_station_is_a_weighted_roulette() {
         // Единственная живая цель — долг дани: без жил и леса аукцион
         // поднимает ТОЛЬКО рейс сбыта, и объект поручения есть станция.
         vil.titheOwedCoin = 300;
-        vil.inventory.add("bread", 3200);
+        vil.inventory.add("food", 3200);
         gs.landmarks.push_back(vil);
         const int xs[3] = {132, 700, 1060};   // 32 / 600 / 960 клеток пути
         for (int k = 0; k < 3; ++k) {

@@ -55,7 +55,7 @@ int main() {
         city.x = 60;                     // near the east seam
         city.y = 32;
         city.population = 100;
-        city.inventory.add("bread", 2048);
+        city.inventory.add("food", 2048);
         gs.landmarks.push_back(city);
 
         Landmark sameSide{};             // 30 cells west, same side — far

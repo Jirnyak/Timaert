@@ -109,7 +109,7 @@ void test_facts_raise_the_patrol() {
     GameState gs = make_world();
     NavWorld nv = make_nav(gs);
     nv.threat[1] = 100000u;   // горячая округа деревни — дороже любого похода
-    gs.landmarks[0].inventory.add("bread", 100);
+    gs.landmarks[0].inventory.add("food", 100);
     fill_garrison(gs.landmarks[0], 10);
 
     ecs::World w;
@@ -141,7 +141,7 @@ void test_facts_raise_the_patrol() {
 
     // Провиант на марш + патрульные дни — тем же законом ломтя.
     const auto& bag = w.reg.get<ecs::NpcInventory>(g);
-    CHECK(bag.inv.count("bread") > 0, "вылазка вышла с хлебом со склада");
+    CHECK(bag.inv.count("food") > 0, "вылазка вышла с хлебом со склада");
 
     // Строка занята живым патрулём — второй вылазки нет, пока эта в поле
     // (поднятый стоит Idle у крыльца — растворился бы; в пути держит строку).
@@ -155,7 +155,7 @@ void test_facts_raise_the_patrol() {
 void test_silence_keeps_the_garrison_home() {
     GameState gs = make_world();
     NavWorld nv = make_nav(gs);   // поле пустое: тишина
-    gs.landmarks[0].inventory.add("bread", 100);
+    gs.landmarks[0].inventory.add("food", 100);
     fill_garrison(gs.landmarks[0], 10);
 
     ecs::World w;
@@ -174,7 +174,7 @@ void test_returned_souls_rejoin_the_garrison() {
     GameState gs = make_world();
     NavWorld nv = make_nav(gs);
     nv.threat[1] = 100000u;
-    gs.landmarks[0].inventory.add("bread", 100);
+    gs.landmarks[0].inventory.add("food", 100);
     fill_garrison(gs.landmarks[0], 10);
 
     ecs::World w;
@@ -213,7 +213,7 @@ void test_peasants_pay_the_threat_price() {
     dep.grid(DepositKind::Iron).write(44, 10, 64);   // жила округи деревни
     // Сезонный амбар: условие создания (S19.2) списывает при подъёме
     // 32 дня хлеба на каждый рот артели.
-    gs.landmarks[1].inventory.add("bread", 8192);
+    gs.landmarks[1].inventory.add("food", 8192);
     // Полки комфорта закрыты на сезон: рейс сбыта-закупки ценит ОБА конца
     // (вердикт 2026-09-18), и голая полка cloth/tools при сезонной цене без
     // коридора даёт скор на порядки выше любого страха. А сторожит этот

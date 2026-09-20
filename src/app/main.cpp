@@ -1692,7 +1692,7 @@ void boot_world(App& app, std::uint32_t seed,
         // the homeland's family once the creation screen names it.
         sm::add_value_in_coins(*bag, sm::faction_index("empire"), 1000);
         bag->add("potion_hp", 2);
-        bag->add("bread", 5);
+        bag->add("food", 5);
     }
     boot_trace("starter kit dealt");
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring

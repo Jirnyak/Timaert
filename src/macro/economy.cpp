@@ -91,7 +91,7 @@ int demand_for_(const char* itemId, const std::int32_t* needDebt,
         if (std::strcmp(kNeeds[i].commodity, itemId) == 0) {
             demand += needDebt
                 ? int(needDebt[commodity_index(itemId)])
-                : (population / kNeeds[i].popPerUnitDay) * kDaysPerSeason;
+                : season_need_units(population, kNeeds[i].popPerUnitDay);
             break;
         }
     }
@@ -153,26 +153,22 @@ int demand_for_(const char* itemId, const std::int32_t* needDebt,
 // редко, как самое редкое из нужного». Растёт лестница — двигается и пол;
 // новой константы не рождается. Дальше всё делает ОДНА уже живущая кривая:
 // склад полон — цена падает, склад пуст — растёт.
-constexpr int weakest_need_per_unit_day() {
-    int weakest = 1;
-    for (const NeedDef& n : kNeeds) {
-        if (n.popPerUnitDay > weakest) weakest = n.popPerUnitDay;
-    }
-    return weakest;
-}
-
 int season_demand_for(const char* itemId, const std::int32_t* needDebt,
                       int population, const Skills& hands,
                       const Inventory* store) {
     // Depth 4 covers chains far past today's one-step recipes (ore → metal
     // → part → tool) and caps any future accidental cycle.
-    const int direct = demand_for_(itemId, needDebt, population, hands,
-                                   store, 4);
-    if (population <= 0) return direct;
-    // Пол спроса — та же слабейшая нужда лестницы, сезонной меркой.
-    const int floorDemand =
-        (population / weakest_need_per_unit_day()) * kDaysPerSeason;
-    return direct > floorDemand ? direct : floorDemand;
+    // ПОЛ СПРОСА УМЕР ВМЕСТЕ С ТРЕТЬИМ ПОТОКОМ (владелец, 2026-09-20: «у
+    // ресурсов да, нет нужды, они только на крафт»). Он выражал «нулевого
+    // спроса не бывает» и был выведен из слабейшей строки лестницы — но той
+    // же арифметикой давал РОВНО НОЛЬ у всякого места мельче 512 душ, то есть
+    // у всех деревень мира: закон работал только для городов, а деревня,
+    // стоящая на жиле, всё равно не копала.
+    // Теперь ноль у РЕСУРСА — это закон, а не дыра: ресурс нужен станку, а
+    // не рту, и спрос на него производный, от рецептов. Чтобы деревня всё же
+    // копала НА ЭКСПОРТ, решение о труде читает не только свою цену — см.
+    // аукцион добычи (npc_ai.cpp, цена сюзерена).
+    return demand_for_(itemId, needDebt, population, hands, store, 4);
 }
 
 

@@ -71,8 +71,6 @@ constexpr ItemDef kCatalog[] = {
     // ruling): the bread a city bakes and the bread in the player's bag are
     // one row. Ids and weights match macro/commodity.h verbatim — the link
     // law in econ_v1_test holds the two tables together.
-    {"bread",  "Bread",           ItemType::Food,       10, 1.00f, "\xF0\x9F\x8D\x9E",
-        "Restores 10 HP", {{std::uint8_t(BonusId::HealHp), 10}}},
     {"food_meat",   "Raw Meat",        ItemType::Food,       15, 0.50f, "\xF0\x9F\x8D\x96",
         "Restores 15 HP", {{std::uint8_t(BonusId::HealHp), 15}}},
 
@@ -96,8 +94,14 @@ constexpr ItemDef kCatalog[] = {
         "Mint metal", {}},
     {"gold",    "Gold Ore",        ItemType::Material, 12800, 4.00f, "\xF0\x9F\x9F\xA1",
         "Mint metal", {}},
-    {"food",    "Provisions",      ItemType::Material,    5, 1.00f, "\xF0\x9F\x8C\xBE",
-        "Raw provisions — grain from the field, meat from the hunt", {}},
+    // ПИЩА — категория ЕДА, а не материал: ею гасят голод (econ_day.h
+    // лестница), и она терминальна — её растят и добывают, а не варят.
+    {"food",    "Provisions",      ItemType::Food,        5, 1.00f, "\xF0\x9F\x8C\xBE",
+        "Raw provisions — grain from the field, meat from the hunt",
+        // Съеденное лечит — как всякая еда каталога; величина от СТОИМОСТИ
+        // строки (5), чтобы не заводить второго числа о той же вещи: хлеб
+        // стоил 10 и лечил 10, мясо стоит 15 и лечит 15.
+        {{std::uint8_t(BonusId::HealHp), 5}}},
     {"stone",   "Stone",           ItemType::Material,    5, 4.00f, "\xF0\x9F\xAA\xA8",
         "Quarried stone", {}},
     {"clay",    "Clay",            ItemType::Material,    5, 2.00f, "\xF0\x9F\xBA",
@@ -264,7 +268,6 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
     // «1 добытчик кормит 32 душ» chain-wide) — pinned by econ_v1_test.
     {"potion_hp",   {{"mat_herb", 2}}, 1, 8},
     {"potion_mp",   {{"mat_herb", 2}}, 1, 8},
-    {"bread",       {{"food", 1}}, 1, 32},
     // The economy's goods — former kRecipes inputs AND tempos, verbatim.
     {"cloth",       {{"food", 2}}, 1, 4},
     {"bricks",      {{"clay", 1}}, 1, 8},
@@ -388,27 +391,29 @@ struct LootEntry {
 // 6 Witch, 7 Sorceress.
 
 constexpr LootEntry kPeasantLoot[] = {
-    {"bread", 0.6f, 1, 3, 0},
+    // ПИЩА на месте хлеба (2026-09-20, снос хлеба): у крестьянина в котомке
+    // харч — тот же, каким мир гасит голод.
+    {"food",   0.6f, 1, 3, 0},
     {"wood",   0.4f, 1, 4, 0},
     {"mat_herb",   0.2f, 1, 2, 0},
 };
 constexpr LootEntry kWoodcutterLoot[] = {
+    {"food",   0.5f, 1, 2, 0},
     {"wood",   1.0f, 2, 7, 0},
-    {"bread", 0.5f, 1, 2, 0},
 };
 // (kMinerLoot / kQuarrymanLoot / kClayDiggerLoot died 2026-09-18 with the
 // crowd professions — verdict №2: no spawner raises those rows, so a loot
 // table for them was a profile of nobody.)
 constexpr LootEntry kMerchantLoot[] = {
+    {"food",   0.6f, 2, 6, 0},
     {"potion_hp",  0.7f, 1, 3, 0},
-    {"bread", 0.6f, 2, 6, 0},
     {"potion_mp",  0.5f, 1, 2, 0},
     {"iron",   0.4f, 1, 3, 0},
     {"misc_gem",   0.3f, 1, 1, 0},
     {"wpn_dagger", 0.2f, 1, 1, 0},
 };
 constexpr LootEntry kCaravanLoot[] = {
-    {"bread", 1.0f, 3, 7, 0},
+    {"food",   1.0f, 3, 7, 0},
     {"potion_hp",  0.7f, 1, 3, 0},
     {"iron",   0.6f, 2, 5, 0},
     {"misc_gem",   0.4f, 1, 2, 0},
@@ -419,7 +424,7 @@ constexpr LootEntry kBanditLoot[] = {
     {"misc_gem",   0.4f, 1, 2, 0},
 };
 constexpr LootEntry kGuardLoot[] = {
-    {"bread",  0.6f, 1, 3, 0},
+    {"food",   0.6f, 1, 3, 0},
     {"potion_hp",   0.5f, 1, 1, 0},
     {"arm_leather", 0.3f, 1, 1, 3},
 };

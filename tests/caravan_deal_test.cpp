@@ -43,7 +43,7 @@ int main() {
     sm::Landmark city{};
     city.type = sm::LandmarkType::City;
     city.population = 64;
-    city.needDebt[sm::commodity_index("bread")] =
+    city.needDebt[sm::commodity_index("food")] =
         city.population * sm::kDaysPerSeason;
     CHECK(city.inventory.add("wood", 2000), "fixture: city wood glut");
     // КОШЕЛЁК ФИКСТУРЫ ПОДНЯТ ДО НОВЫХ ЦЕН (S25, тот же переезд, что у
@@ -57,7 +57,7 @@ int main() {
     CHECK(city.inventory.add("coin_empire_copper", 6000), "fixture: city purse");
 
     sm::Inventory hold;
-    CHECK(hold.add("bread", 200), "fixture: hold bread");
+    CHECK(hold.add("food", 200), "fixture: hold bread");
     // Кошелёк кроет закупку дров МОНЕТОЙ (весь глут 2000 дров стоит 10000
     // по после-сделочной полке): оплата идёт по плотности ценности, и
     // тонкая монета доплачивала бы ХЛЕБОМ — город съедал бы его как платёж
@@ -69,11 +69,11 @@ int main() {
         sm::coin_census_value(hold) + sm::coin_census_value(city.inventory);
     const long long woodBefore = commodity_total(hold, city.inventory, "wood");
     const long long breadBefore =
-        commodity_total(hold, city.inventory, "bread");
+        commodity_total(hold, city.inventory, "food");
     const int breadDebtBefore =
-        city.needDebt[sm::commodity_index("bread")];
+        city.needDebt[sm::commodity_index("food")];
     const int breadDemand = sm::season_demand_for(
-        "bread", city.needDebt, city.population,
+        "food", city.needDebt, city.population,
         sm::landmark_sheet(sm::LandmarkType::City).skills, &city.inventory);
     const int woodDemand = sm::season_demand_for(
         "wood", city.needDebt, city.population,
@@ -93,14 +93,14 @@ int main() {
     // съедается (CANON S10) — исчезнувшее с полок равно погашенному,
     // единица в единицу.
     const int breadDebtPaid = breadDebtBefore
-        - city.needDebt[sm::commodity_index("bread")];
+        - city.needDebt[sm::commodity_index("food")];
     CHECK(commodity_total(hold, city.inventory, "wood") == woodBefore
-              && commodity_total(hold, city.inventory, "bread")
+              && commodity_total(hold, city.inventory, "food")
                          + breadDebtPaid
                      == breadBefore,
           "station: goods are conserved (bread — through the bill)");
     CHECK(st.soldValue > 0, "station: the shortage was sold into");
-    const int soldBread = int(breadBefore) - hold.count("bread");
+    const int soldBread = int(breadBefore) - hold.count("food");
     CHECK(soldBread > 0 && soldBread <= breadDemand,
           "station: sells only up to the market's own unpaid need");
     CHECK(breadDebtPaid > 0,
@@ -112,7 +112,7 @@ int main() {
     // Price bounds derived from the SAME law the code reads: no unit is
     // free (floor 1) and no unit costs more than the empty-shelf price of
     // its own curve — a bound read off the door, never a recomputation.
-    const int breadBase = sm::item_def("bread")->value;
+    const int breadBase = sm::item_def("food")->value;
     const int woodMoved = hold.count("wood");
     CHECK(st.boughtValue >= woodMoved,
           "station: even a glut lot is never free (floor 1/unit)");
@@ -133,7 +133,7 @@ int main() {
     town.population = 64;
     // Хлебный счёт не погашен — из него производный спрос на зерно (город
     // печёт); счёт по инструментам оплачен, полка с ними — ИЗЛИШЕК.
-    town.needDebt[sm::commodity_index("bread")] =
+    town.needDebt[sm::commodity_index("food")] =
         town.population * sm::kDaysPerSeason;
     CHECK(town.inventory.add("tools", 50), "fixture: town tools");
     // The purse covers the load at the SEASONAL famine price (the corridor
@@ -167,7 +167,14 @@ int main() {
     CHECK(sm::coin_census_value(bag) + sm::coin_census_value(town.inventory)
               == vCoinBefore,
           "vendor: coin is conserved");
-    CHECK(bag.count("food") == 0 && town.inventory.count("food") == 300,
+    // Проданное в место с непогашенным счётом гасится и СЪЕДАЕТСЯ в дверях
+    // прихода (CANON S10), поэтому «весь груз продан» читается суммой полки
+    // и оплаченного счёта — с 2026-09-20 голодная строка и есть пища, и
+    // привезённое зерно ложится ровно в тот счёт, который город не покрыл.
+    const int townDebtPaid = town.population * sm::kDaysPerSeason
+        - town.needDebt[sm::commodity_index("food")];
+    CHECK(bag.count("food") == 0
+              && town.inventory.count("food") + townDebtPaid == 300,
           "vendor: the whole load was sold");
     CHECK(vd.soldValue > 0, "vendor: the sale paid real coin");
     CHECK(bag.count("tools") > 0,
@@ -192,20 +199,20 @@ int main() {
         glut.population = 2520;
         // Счёт сезона ВЫСТАВЛЕН целиком — довод «у него же есть нужда» снят
         // заранее: нужда есть, и гора всё равно делает хлеб дешёвым дома.
-        glut.needDebt[sm::commodity_index("bread")] =
+        glut.needDebt[sm::commodity_index("food")] =
             glut.population * sm::kDaysPerSeason;
-        CHECK(glut.inventory.add("bread", 45000000),
+        CHECK(glut.inventory.add("food", 45000000),
               "fixture: the bread mountain");
         CHECK(sm::publish_landmark_ledgers(ggs, /*day=*/1) == 1,
               "fixture: the glutted city published its ledger");
-        CHECK(glut.ledger.price[sm::commodity_index("bread")]
+        CHECK(glut.ledger.price[sm::commodity_index("food")]
                   < sm::stock_price(breadBase, 0, 1),
               "the ledger prices a mountain far under an empty shelf");
 
         sm::Landmark mkt{};
         mkt.type = sm::LandmarkType::City;
         mkt.population = 64;
-        CHECK(mkt.inventory.add("bread", 4000), "fixture: market bread");
+        CHECK(mkt.inventory.add("food", 4000), "fixture: market bread");
         CHECK(mkt.inventory.add("coin_empire_copper", 20000),
               "fixture: market purse");
 
@@ -213,7 +220,7 @@ int main() {
         CHECK(bag3.add("food", 300), "fixture: crew load");
         sm::trade_vendor_at_market(bag3, 1e6f, mkt, &glut.ledger,
                                    /*myTradePct=*/0, /*theirTradePct=*/0);
-        CHECK(bag3.count("bread") == 0,
+        CHECK(bag3.count("food") == 0,
               "the bread mountain buys no bread: the pump is off");
     }
 
@@ -243,10 +250,10 @@ int main() {
     broke.type = sm::LandmarkType::City;
     broke.population = 64;
     sm::Inventory bag2;
-    CHECK(bag2.add("bread", 50), "fixture: control bread");
+    CHECK(bag2.add("food", 50), "fixture: control bread");
     const sm::CaravanDeal none = sm::trade_caravan_at_station(
         bag2, 1e6f, broke, 0, 0);
-    CHECK(none.soldValue == 0 && bag2.count("bread") == 50,
+    CHECK(none.soldValue == 0 && bag2.count("food") == 50,
           "no coin, no sale, no confiscation");
 
     // ── The sheet edge: a charismatic trader closes the same deal better ──
@@ -262,14 +269,14 @@ int main() {
         sm::Landmark m{};
         m.type = sm::LandmarkType::City;
         m.population = 64;
-        m.needDebt[sm::commodity_index("bread")] =
+        m.needDebt[sm::commodity_index("food")] =
             m.population * sm::kDaysPerSeason;
         // Казна с запасом НАД честной ценой лота (полный лот 200 хлеба в
         // голодный счёт ≈ 20 400): упрись оба варианта в одну и ту же
         // казну — эдж стал бы невидим (оба заплатили бы всё, что есть).
         m.inventory.add("coin_empire_copper", 30000);
         sm::Inventory h;
-        h.add("bread", 200);
+        h.add("food", 200);
         // Перевес — РАЗНИЦА сил (S25): рынок назван нулём, караван — edge.
         return sm::trade_caravan_at_station(h, 1e6f, m, edge, 0);
     };

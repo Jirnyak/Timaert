@@ -164,7 +164,7 @@ void test_deposit_writes_both_channels() {
     roster.squad.push(make_soldier(std::uint16_t(NPCType::Peasant), 1, 1u));
     roster.squad.push(make_soldier(std::uint16_t(NPCType::Peasant), 1, 2u));
     auto& bag = rig.w.reg.emplace<ecs::NpcInventory>(e);
-    bag.inv.add("bread", 10);
+    bag.inv.add("food", 10);
 
     const auto& dcell = rig.w.reg.get<ecs::MacroCell>(e);
     scent_squad_deposit(e, MacroPos{float(ecs::cell_x(dcell, rig.ctx.mapW)),

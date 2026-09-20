@@ -422,14 +422,14 @@ void test_agent_memory_is_bounded_and_current() {
           "past the cap the OLDEST memory is forgotten");
 
     Inventory store;
-    store.add("bread", 2000);   // plenty
+    store.add("food", 2000);   // plenty
     store.add("wood", 100);     // stocked
     store.add("iron", 10);      // scarce
     const MemoryEntry snap = pack_market_snapshot(store, 7, 40);
-    CHECK(market_stock_class(snap, commodity_index("bread")) == 3
+    CHECK(market_stock_class(snap, commodity_index("food")) == 3
               && market_stock_class(snap, commodity_index("wood")) == 2
               && market_stock_class(snap, commodity_index("iron")) == 1
-              && market_stock_class(snap, commodity_index("food")) == 0,
+              && market_stock_class(snap, commodity_index("clay")) == 0,
           "the snapshot packs stock classes per commodity");
 }
 
@@ -444,7 +444,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     city.x = 10;
     city.y = 10;
     city.population = 100;
-    city.inventory.add("bread", 2000);   // plenty: the export
+    city.inventory.add("food", 2000);   // plenty: the export
     // The deal PAYS now (owner 2026-08-30): a coinless fixture is the
     // deadlock the payment law exists to refuse. The purse covers the
     // grain lot at the SEASONAL famine price (corridor died 2026-09-18) —
@@ -468,7 +468,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // ДОМ ГОЛОДЕН СЧЁТОМ (CANON S10): «дома нет хлеба» = непогашенный
     // сезонный счёт — из него и читается нужда, которую вендор едет
     // закрывать покупкой.
-    vil.needDebt[commodity_index("bread")] =
+    vil.needDebt[commodity_index("food")] =
         vil.population * kDaysPerSeason;
     gs.landmarks.push_back(vil);
     // МИР ПУБЛИКУЕТ ВЕДОМОСТЬ (CANON S10, ярус 2), и только потом крю
@@ -521,24 +521,28 @@ void test_the_vendor_sells_at_the_nearest_city() {
 
     const auto& bag = reg.get<ecs::NpcInventory>(e).inv;
     const int cityGrain = gs.landmarks[0].inventory.count("food");
-    const int vilBread = gs.landmarks[1].inventory.count("bread");
+    const int vilBread = gs.landmarks[1].inventory.count("food");
     CHECK(cityGrain > 0,
           "the vendor sold the village surplus at the nearest city");
     // ПОД ДОЛГОМ (CANON S10) «купил домой хлеб» видно СЧЁТОМ: привезённое
     // гасит его в дверях прихода и съедается — полка держит только излишек.
     const int vilBreadDebtPaid = 50 * kDaysPerSeason
-        - gs.landmarks[1].needDebt[commodity_index("bread")];
+        - gs.landmarks[1].needDebt[commodity_index("food")];
     CHECK(vilBreadDebtPaid > 0,
           "the earnings FED the home's lack — the bread bill fell");
     CHECK(recall(reg.get<AgentMemory>(e),
                  AgentMemoryKind::MarketSnapshot, 3) != nullptr,
           "the departure snapshot of the vendor's OWN home lives in memory");
-    const int grainTotal = cityGrain + bag.count("food")
-                           + gs.landmarks[1].inventory.count("food");
-    const int breadTotal = vilBread + bag.count("bread")
-                           + gs.landmarks[0].inventory.count("bread");
-    CHECK(grainTotal == 4000 && breadTotal + vilBreadDebtPaid == 2000,
+    // КОНСЕРВАЦИЯ ОДНОЙ ПИЩЕЙ (2026-09-20, снос хлеба): до этого дня в мире
+    // было ДВЕ съедобные строки — зерно и хлеб, — и сумма считалась по каждой
+    // отдельно. Теперь поток один: всё, что не лежит на полках и не едет в
+    // спине, ОПЛАТИЛО СЧЁТ и съедено в дверях прихода (CANON S10).
+    const int foodOnShelves = gs.landmarks[0].inventory.count("food")
+                              + gs.landmarks[1].inventory.count("food")
+                              + bag.count("food");
+    CHECK(foodOnShelves + vilBreadDebtPaid == 2000 + 4000,
           "CONSERVATION: cargo moves or pays the bill — never dropped");
+    (void)vilBread;
     // ...and the deal's other half obeys the same law: coin travels between
     // the three purses (city, village, hold) and is never minted or burned.
     const int coinTotal = gs.landmarks[0].inventory.count("coin_timaert_copper")

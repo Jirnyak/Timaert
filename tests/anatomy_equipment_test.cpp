@@ -114,7 +114,7 @@ void test_equip_finds_a_cell_the_mask_names() {
 void test_an_unwearable_row_is_refused() {
     Equipment eq{};
     ItemRef bread{};
-    bread.def = std::uint16_t(item_index("bread"));
+    bread.def = std::uint16_t(item_index("food"));
     bread.count = 1;
     CHECK(equip(eq, bread) == -1, "a loaf has no slot mask and goes nowhere");
     ItemRef nothing{};

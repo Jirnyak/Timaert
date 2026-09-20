@@ -111,7 +111,6 @@ inline constexpr RecipeDef kRecipes[] = {
     // pair feeds 16 and the slack pays for crafts and the road.
     // (What each output CONSUMES — and HOW FAST it turns — lives on its
     // catalog row: items.cpp kPartsAuthoring composition + labour columns.)
-    {"bread",     SkillId::Cooking,     1},
     // ЧЕКАНКА — кузнечное дело высокого ранга. Права чеканки КОЛОНКОЙ не
     // существует (канон, вердикт №12): чеканит тот, чьи руки умеют.
     {kMintOutput, SkillId::Blacksmith, 30},
@@ -141,7 +140,10 @@ struct NeedDef {
     int popPerUnitDay;
 };
 inline constexpr NeedDef kNeeds[] = {
-    {"bread",     1},    // 1 хлеб = 1 житель-день; ЕДИНСТВЕННАЯ голодная нужда v1
+    // ЯКОРЬ ГОЛОДА — СЫРАЯ ПИЩА (владелец, 2026-09-20): 1 единица = 1
+    // житель-день, поэтому голодный счёт И ЕСТЬ житель-дни. Хлеб из мира
+    // вырезан: он был вторым словом о той же нужде.
+    {"food",      1},
     {"cloth",     32},   // одежда изнашивается: 1 на 32 жителе-дня
     {"bricks",    64},   // поддержание жилья
     {"tools",     16},
@@ -151,6 +153,22 @@ inline constexpr NeedDef kNeeds[] = {
     {"statue",    512},
 };
 inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
+
+// СЕЗОННЫЙ СЧЁТ СТРОКИ — УМНОЖЕНИЕ ПЕРЕД ДЕЛЕНИЕМ, И ЭТО НЕ КОСМЕТИКА.
+// Везде стояло `(население / popPerUnitDay) * сезон`, и целочисленное деление
+// давало РОВНО НОЛЬ у всякого места мельче своего делителя:
+//   · хутор в 30 душ не хотел ни ткани (30/32 = 0), ни кирпича (30/64 = 0);
+//   · место мельче 512 душ — то есть КАЖДАЯ деревня мира — не хотело статуй;
+//   · и той же формулой считался ПОЛ спроса, так что закон «нулевого спроса
+//     не бывает» (CANON S10) существовал только для городов.
+// Цена нуля названа числом: место с нулевой нуждой НЕЛЬЗЯ снабдить — сделка
+// продаёт В НУЖДУ, — а купить у него можно всё. Именно поэтому караван,
+// впущенный в деревни, выгребал их досуха (замер 2026-09-20: голодавших
+// +363 %, зерно в деревнях −41 %).
+constexpr int season_need_units(int population, int popPerUnitDay) {
+    if (population <= 0 || popPerUnitDay <= 0) return 0;
+    return (population * kDaysPerSeason) / popPerUnitDay;
+}
 
 // ── ГОЛОДНАЯ СТРОКА ЛЕСТНИЦЫ — одна дверь на всех, кто ест ────────────────
 //

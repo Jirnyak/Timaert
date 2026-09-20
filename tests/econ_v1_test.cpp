@@ -174,7 +174,7 @@ int main() {
     const int clayIdx = commodity_index("clay");
     const int ironIdx = commodity_index("iron");
     const int stoneIdx = commodity_index("stone");
-    const int breadIdx = commodity_index("bread");
+    const int breadIdx = commodity_index("food");
 
     Ledger led{};
     // The store IS the inventory now (one dictionary, one container).
@@ -218,20 +218,23 @@ int main() {
             village.remove_of(commodity_item_index(c), village.count_of(commodity_item_index(c)));
         }
 
-        // The city bakes for the PAIR — its own table plus the village's
-        // bread that rides back on the return leg. Twelve workers, not the
-        // old eight: the seasonal window (S19.2) makes the city BANK a
-        // season of bread between boundaries, so steady-state production
-        // must beat consumption + export with headroom, not sit on the old
-        // daily knife-edge (measured: 8 workers banked 840 of the 1024).
+        // ОБОЗ ПИЩИ ВВЕРХ — ВМЕСТО ХЛЕБА ВНИЗ (2026-09-20, снос хлеба): поле
+        // растит еду, и еда КОРМИТ САМА, поэтому обратного плеча «испечённое
+        // возвращается в деревню» больше нет. Город получает свою долю
+        // дневного харча, деревня оставляет себе свою — ровно то, что в мире
+        // делает вендорский рейс.
+        // Деревня оставляет себе СВОЙ день и отдаёт излишек: город ест не
+        // только ртами, но и станками — ткань прядётся из пищи, — поэтому
+        // фиксированная доля «по ртам» его не кроет (измерено: долг 446).
+        const int foodToCity = std::max(
+            0, village.count_of(commodity_item_index(grainIdx)) - villagePop);
+        village.remove_of(commodity_item_index(grainIdx), foodToCity);
+        city.add_of(commodity_item_index(grainIdx), foodToCity);
+
+        // Город работает НЕ НАД ЕДОЙ: двенадцать рук кроют лестницу благ
+        // пары (ткань, кирпич, инструмент) — это и есть его вклад в обмен.
         econ_produce_day(city, cityDebt, CITY, 12, cityPop + villagePop,
                          &sink, &led);
-
-        // The return leg: the village's daily bread comes back.
-        const int breadBack =
-            std::min(villagePop, city.count_of(commodity_item_index(breadIdx)));
-        city.remove_of(commodity_item_index(breadIdx), breadBack);
-        village.add_of(commodity_item_index(breadIdx), breadBack);
 
         // ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10): граница выставляет счёт и
         // взыскивает прошлый, ДНЕВНОЕ гашение платит по нему тем, что
@@ -350,14 +353,14 @@ int main() {
         Inventory s{};
         std::int32_t debt[kCommodityCount] = {};
         const int pop = 256;
-        s.add_of(commodity_item_index(commodity_index("bread")),
+        s.add_of(commodity_item_index(commodity_index("food")),
                  pop * kDaysPerSeason);
         const ConsumeOutcome first =
             econ_debt_boundary(s, debt, pop, nullptr, nullptr);
         if (first.starvedPop != 0) {
             return fail("the first bill cannot kill before it is due");
         }
-        if (s.count_of(commodity_item_index(commodity_index("bread"))) != 0) {
+        if (s.count_of(commodity_item_index(commodity_index("food"))) != 0) {
             return fail("the bill must eat the whole shelf on the spot");
         }
         const ConsumeOutcome o =
@@ -384,14 +387,14 @@ int main() {
         std::int32_t debt[kCommodityCount] = {};
         const int pop = 128;
         const int half = pop * kDaysPerSeason / 2;
-        s.add_of(commodity_item_index(commodity_index("bread")), half);
+        s.add_of(commodity_item_index(commodity_index("food")), half);
         econ_debt_boundary(s, debt, pop, nullptr, nullptr);
         // Каждая единица на полке платит по счёту — склад пуст, долг
         // помнит ровно вторую половину.
-        if (s.count_of(commodity_item_index(commodity_index("bread"))) != 0) {
+        if (s.count_of(commodity_item_index(commodity_index("food"))) != 0) {
             return fail("every unit on the shelf must pay the bill");
         }
-        if (debt[commodity_index("bread")] != half) {
+        if (debt[commodity_index("food")] != half) {
             return fail("the debt must remember exactly the unpaid half");
         }
         const ConsumeOutcome o =
@@ -404,7 +407,7 @@ int main() {
         // 31 единицу счёта и снимают со смертей ровно одну душу.
         Inventory tail{};
         std::int32_t tailDebt[kCommodityCount] = {};
-        tail.add_of(commodity_item_index(commodity_index("bread")),
+        tail.add_of(commodity_item_index(commodity_index("food")),
                     kDaysPerSeason - 1);
         econ_debt_boundary(tail, tailDebt, pop, nullptr, nullptr);
         const ConsumeOutcome ot =
@@ -435,7 +438,7 @@ int main() {
         if (s.count_of(commodity_item_index(commodity_index("bricks"))) <= 0) {
             return fail("first recipe hogged every worker - no output diversity");
         }
-        if (s.count_of(commodity_item_index(commodity_index("bread"))) <= 0) {
+        if (s.count_of(commodity_item_index(commodity_index("food"))) <= 0) {
             return fail("fair shares must not starve the FIRST recipe either");
         }
     }
@@ -462,11 +465,22 @@ int main() {
             }
         }
     }
-    // The productivity ANCHOR (owner: «1 добытчик кормит 32 душ» chain-wide)
-    // is bread's labour column — the person-day the whole economy is scaled
-    // by. If this drifts, every balance number silently reprices.
-    if (item_labour(item_index("bread")) != kGatherPerWorkerDay) {
-        return fail("bread labour must equal the person-day anchor");
+    // ЯКОРЬ ПРОИЗВОДИТЕЛЬНОСТИ (владелец: «1 добытчик кормит 32 душ»).
+    // Раньше он держался ДВУМЯ числами — дневной добычей и трудовой колонкой
+    // ХЛЕБА, — и закон читался как «каждое звено цепи поле→печь→рот равно
+    // одному человеко-дню». Хлеб вырезан 2026-09-20, звено осталось одно, и
+    // якорь замыкается на двух таблицах напрямую: день добытчика даёт
+    // kGatherPerWorkerDay единиц пищи, а единица пищи кроет РОВНО ОДИН
+    // житель-день (голодная строка лестницы, popPerUnitDay == 1). Произведение
+    // и есть «кормит 32 душ»; разойдись любая из двух — переоценится весь мир.
+    if (kNeeds[kHungerNeedRow].popPerUnitDay != 1
+        || kGatherPerWorkerDay * kNeeds[kHungerNeedRow].popPerUnitDay != 32) {
+        return fail("the gatherer-day must feed exactly 32 souls for a day");
+    }
+    // ...и голодная строка обязана быть ТЕРМИНАЛЬНОЙ материей мира: еду
+    // растят и добывают, печь между полем и ртом больше не стоит.
+    if (!item_parts(hunger_item_index()).empty()) {
+        return fail("the hunger row must be world matter, not a recipe output");
     }
 
     // ── 7б. The overflow law rides the consume day (CANON «Крафт/Скрап») ─
@@ -512,8 +526,8 @@ int main() {
         Inventory city;
         const int empire = faction_index("empire");
         seed_landmark_inventory(city, pop, true, empire, 0x1234u);
-        if (city.count("bread") != pop * kDaysPerSeason) {
-            return fail("birth larder must hold a SEASON of bread — a place "
+        if (city.count("food") != pop * kDaysPerSeason) {
+            return fail("birth larder must hold a SEASON of food — a place "
                         "seeded thinner dies of arithmetic at its first "
                         "window (S19.2)");
         }
@@ -526,7 +540,11 @@ int main() {
         Inventory village;
         seed_landmark_inventory(village, pop, false, empire,
                                 0x1234u);
-        if (village.count("food") <= city.count("food")) {
+        // ДЕЛО ДЕРЕВНИ — СЫРЬЁ, и мерить это надо СЫРЬЁМ (2026-09-20): пища
+        // с этого дня не материал, а голодная строка, и её амбар рождения
+        // равен сезону у всех — деревня перестала «держать больше еды» не
+        // потому, что обеднела, а потому, что еда сменила поток.
+        if (village.count("wood") <= city.count("wood")) {
             return fail("a village's whole business is raw - it holds more");
         }
         if (village.count("cloth") >= city.count("cloth")) {
@@ -534,7 +552,7 @@ int main() {
         }
         Inventory again;
         seed_landmark_inventory(again, pop, true, empire, 0x1234u);
-        if (again.count("bread") != city.count("bread")
+        if (again.count("food") != city.count("food")
             || again.used_slots() != city.used_slots()) {
             return fail("birth stocks must be deterministic from population");
         }

@@ -264,7 +264,7 @@ static void test_roll_loot_profile() {
     // loot: it is the faction's coin, added by make_npc (macro/currency.h).
     auto peasant = roll_loot_profile("peasant", 1, rng_zero, 0);
     CHECK(peasant.size() == 3, "peasant/rng_zero: all three entries drop");
-    CHECK(count_of(peasant, "bread") == 1
+    CHECK(count_of(peasant, "food") == 1
           && count_of(peasant, "wood") == 1
           && count_of(peasant, "mat_herb") == 1,
           "peasant/rng_zero: quantities pinned at min");
@@ -311,7 +311,7 @@ static void test_roll_loot_profile() {
     // 1 + int(0.5*3) = 1 + 1 = 2. Then wood: {0.9 (skip)}, herb: {0.0,0.0->1}.
     seq_set({0.1f, 0.5f, 0.9f, 0.0f, 0.0f});
     auto scripted = roll_loot_profile("peasant", 1, rng_seq, 0);
-    CHECK(count_of(scripted, "bread") == 2, "scripted: bread qty = min + int(0.5*range)");
+    CHECK(count_of(scripted, "food") == 2, "scripted: bread qty = min + int(0.5*range)");
     CHECK(count_of(scripted, "wood") == -1, "scripted: wood skipped (roll>=chance)");
     CHECK(count_of(scripted, "mat_herb") == 1, "scripted: herb fires at min");
 }
@@ -387,7 +387,7 @@ static void test_affix_door() {
     // The door refuses what cannot be worn — bread rolls nothing, spends no
     // seed, and the caller did not have to know the distinction.
     ItemRef bread{};
-    bread.def = std::uint16_t(item_index("bread"));
+    bread.def = std::uint16_t(item_index("food"));
     bread.count = 1;
     grant_affixes(bread, 255, rng_zero);
     CHECK(affix_count(bread) == 0 && bread.seed == 0,
