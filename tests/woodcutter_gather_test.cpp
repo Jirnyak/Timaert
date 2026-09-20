@@ -471,6 +471,12 @@ void test_the_vendor_sells_at_the_nearest_city() {
     vil.needDebt[commodity_index("bread")] =
         vil.population * kDaysPerSeason;
     gs.landmarks.push_back(vil);
+    // МИР ПУБЛИКУЕТ ВЕДОМОСТЬ (CANON S10, ярус 2), и только потом крю
+    // торгует: что везти домой, судит прейскурант дома, а не память крю.
+    // В живом мире это делает генезис и каждая граница сезона; фикстура
+    // поднимает мир руками — значит и публикует руками.
+    CHECK(publish_landmark_ledgers(gs, /*day=*/1) == 2,
+          "fixture: both places published their ledgers");
 
     ecs::World w;
     auto& reg = w.reg;

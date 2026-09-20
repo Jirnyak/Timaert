@@ -2,6 +2,8 @@
 
 #include "macro/currency.h"   // add_value_in_coins — the treasury seed
 #include "macro/economy.h"    // stock_price — ranking asks THE price law
+#include "macro/state.h"      // GameState/Landmark — ведомость пишется в место
+#include "macro/characters.h" // landmark_sheet — анкета места судит спрос
 
 #include <algorithm>
 #include <bit>
@@ -379,6 +381,37 @@ void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
         const int seeded = int(std::int64_t(base) * (768 + (h & 511)) / 1024);
         add_value_in_coins(inv, factionIdx, seeded);
     }
+}
+
+// ── ВЕДОМОСТЬ (контракт в econ_day.h) ────────────────────────────────────
+
+int publish_landmark_ledgers(GameState& gs, int day) {
+    int published = 0;
+    for (Landmark& lm : gs.landmarks) {
+        // Чистый лист: ведомость — ОТВЕТ на состояние места, а не его
+        // память (тот же закон, что у описи округи). Мёртвое место цен не
+        // выписывает, и его прошлогодний прейскурант не должен пережить его.
+        lm.ledger = LandmarkLedger{};
+        if (lm.type == LandmarkType::None) continue;
+        const Skills& hands = landmark_sheet(lm.type).skills;
+        for (int i = 0; i < kCommodityCount; ++i) {
+            const char* id = kCommodities[i].id;
+            const ItemDef* def = item_def(id);
+            const int base = def ? def->value : 0;
+            if (base <= 0) continue;
+            // ТА ЖЕ кривая, которой торгуется сделка: склад точный, спрос —
+            // из счёта места и С НЕТТИНГОМ по своему же складу.
+            const int demand = season_demand_for(id, lm.needDebt,
+                                                 lm.population, hands,
+                                                 &lm.inventory);
+            lm.ledger.price[std::size_t(i)] =
+                stock_price(base, lm.inventory.count(id), demand);
+            lm.ledger.demand[std::size_t(i)] = demand;
+        }
+        lm.ledger.day = day;
+        ++published;
+    }
+    return published;
 }
 
 } // namespace sm

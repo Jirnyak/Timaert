@@ -574,7 +574,14 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             // строки вместо поиска: место описывает свою нав-округу, артель
             // только решает, куда идти. Один проход по живым клеткам родов
             // раз в сезон вместо поиска на каждую артель в каждом аукционе.
-            if (season_boundary(day)) survey_landmark_regions(*macro, day);
+            if (season_boundary(day)) {
+                survey_landmark_regions(*macro, day);
+                // ВЕДОМОСТЬ (CANON S10, ярус 2) — тем же тактом и рядом:
+                // опись отвечает «ЧТО рядом», ведомость — «ЧТО ПОЧЁМ».
+                // Обе после дневных проходов мест, поэтому цена выписана по
+                // складу и счёту УЖЕ наступившего сезона.
+                publish_landmark_ledgers(gs, day);
+            }
             // The labour rotation (npc_ai.h): yesterday's crews dissolve
             // into the population, today's are raised to its size.
             rotate_worker_squads(*macro, day);

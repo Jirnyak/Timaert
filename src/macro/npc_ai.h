@@ -231,14 +231,23 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 // spend the WHOLE purse down the home's needs ladder («деревня не копит
 // капитал», owner 2026-08-30) — each line up to a season's stock at home;
 // what the market cannot supply leaves coin to ride home for the tax graph.
-// `homeDebt` — живой счёт дома (Landmark::needDebt): закупка идёт по
-// НЕПОГАШЕННОЙ нужде дома — тот же класс живости, что homePopulation.
-// nullptr (фикстура) — спрос дома по лестнице населения.
+//
+// `homeLedger` — ВЕДОМОСТЬ ДОМА (state.h LandmarkLedger, CANON S10 ярус 2):
+// что почём у дома по его собственному прейскуранту, выписанному на границе
+// сезона его точным складом и его счётом. Она и решает, что стоит везти:
+// товар берут, если дома за него дают больше, чем просят здесь.
+// nullptr или ещё не опубликованная (мир до первой границы) — крю НИЧЕГО НЕ
+// ПОКУПАЕТ и уезжает с выручкой: без знания о доме честнее не гадать, а
+// продать и вернуться (CANON S10, ярус 1 — торговля стоит и без знания).
+//
+// ЧТО ЗДЕСЬ УМЕРЛО 2026-09-20: `homeSnapshot` (4-битный класс памяти крю с
+// потолком «много = 4096» — из-за него город с 45 млн хлеба выглядел
+// голодным и мир качал хлеб ВВЕРХ) вместе с `homeDebt`, `homePopulation` и
+// `homeSite`, которые существовали только чтобы пересчитать домашний спрос
+// по этому огрублённому снимку. Память сквада (ярус 3) веса не несёт нигде.
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
-                                   const MemoryEntry* homeSnapshot,
-                                   const std::int32_t* homeDebt,
-                                   int homePopulation, const Skills& homeSite,
+                                   const LandmarkLedger* homeLedger,
                                    int myTradePct, int theirTradePct,
                                    EconFactSink sink = nullptr,
                                    void* user = nullptr);

@@ -142,10 +142,18 @@ int main() {
     // which is the affordability law working, not the vendor failing.
     CHECK(town.inventory.add("coin_empire_copper", 20000), "fixture: town purse");
 
-    sm::Inventory homeStore;   // the village store: grain-rich, tool-less
-    CHECK(homeStore.add("food", 5000), "fixture: home grain");
-    const sm::MemoryEntry snap =
-        sm::pack_market_snapshot(homeStore, 7, /*day=*/1);
+    // ДОМ — МЕСТО СО СВОЕЙ ВЕДОМОСТЬЮ (CANON S10, ярус 2): зерна навалом,
+    // инструментов нет. Прейскурант выписывает тот же публикатор, что и
+    // сезонная граница мира, — не рукописная табличка в тесте.
+    sm::GameState hgs{};
+    hgs.landmarks.push_back(sm::Landmark{});
+    sm::Landmark& home = hgs.landmarks.back();
+    home.type = sm::LandmarkType::Village;
+    home.id = 1;
+    home.population = 50;
+    CHECK(home.inventory.add("food", 5000), "fixture: home grain");
+    CHECK(sm::publish_landmark_ledgers(hgs, /*day=*/1) == 1,
+          "fixture: the home published its ledger");
 
     sm::Inventory bag;
     CHECK(bag.add("food", 300), "fixture: vendor grain");
@@ -153,9 +161,7 @@ int main() {
     const long long vCoinBefore =
         sm::coin_census_value(bag) + sm::coin_census_value(town.inventory);
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
-        bag, 1e6f, town, &snap, /*homeDebt=*/nullptr,
-        /*homePopulation=*/50,
-        sm::landmark_sheet(sm::LandmarkType::Village).skills,
+        bag, 1e6f, town, &home.ledger,
         /*myTradePct=*/0, /*theirTradePct=*/0);
 
     CHECK(sm::coin_census_value(bag) + sm::coin_census_value(town.inventory)
@@ -169,6 +175,68 @@ int main() {
     CHECK(vd.boughtValue > 0 && vd.boughtValue <= vd.soldValue
               + 0 /* the crew carried no purse of its own */,
           "vendor: purchases are funded by the sale alone");
+
+    // ── НАСОС ВЫКЛЮЧЕН: дом, тонущий в хлебе, хлеба НЕ покупает ─────────
+    // Закон, ради которого ведомость и построена (CANON S10, 2026-09-20).
+    // Пока запас дома читался 4-битным КЛАССОМ памяти крю с потолком
+    // «много = 4096», город с 45 млн хлеба при сезонной нужде 80 640
+    // выглядел голодным (цена дома ≈ база × 19.7), и крю честно скупало
+    // хлеб, чтобы привезти ДОМОЙ, — мир качал хлеб ВВЕРХ. Ведомость знает
+    // точный склад: та же самая закупка обязана не состояться.
+    {
+        sm::GameState ggs{};
+        ggs.landmarks.push_back(sm::Landmark{});
+        sm::Landmark& glut = ggs.landmarks.back();
+        glut.type = sm::LandmarkType::City;
+        glut.id = 1;
+        glut.population = 2520;
+        // Счёт сезона ВЫСТАВЛЕН целиком — довод «у него же есть нужда» снят
+        // заранее: нужда есть, и гора всё равно делает хлеб дешёвым дома.
+        glut.needDebt[sm::commodity_index("bread")] =
+            glut.population * sm::kDaysPerSeason;
+        CHECK(glut.inventory.add("bread", 45000000),
+              "fixture: the bread mountain");
+        CHECK(sm::publish_landmark_ledgers(ggs, /*day=*/1) == 1,
+              "fixture: the glutted city published its ledger");
+        CHECK(glut.ledger.price[sm::commodity_index("bread")]
+                  < sm::stock_price(breadBase, 0, 1),
+              "the ledger prices a mountain far under an empty shelf");
+
+        sm::Landmark mkt{};
+        mkt.type = sm::LandmarkType::City;
+        mkt.population = 64;
+        CHECK(mkt.inventory.add("bread", 4000), "fixture: market bread");
+        CHECK(mkt.inventory.add("coin_empire_copper", 20000),
+              "fixture: market purse");
+
+        sm::Inventory bag3;
+        CHECK(bag3.add("food", 300), "fixture: crew load");
+        sm::trade_vendor_at_market(bag3, 1e6f, mkt, &glut.ledger,
+                                   /*myTradePct=*/0, /*theirTradePct=*/0);
+        CHECK(bag3.count("bread") == 0,
+              "the bread mountain buys no bread: the pump is off");
+    }
+
+    // ── БЕЗ ВЕДОМОСТИ КРЮ НЕ ГАДАЕТ ──────────────────────────────────────
+    // Мир до первой границы сезона: прейскуранта дома нет. Крю обязано
+    // продать и уехать с выручкой, а не покупать вслепую (ярус 1 — торговля
+    // стоит и без знания).
+    {
+        sm::Landmark mkt{};
+        mkt.type = sm::LandmarkType::City;
+        mkt.population = 64;
+        CHECK(mkt.inventory.add("tools", 50), "fixture: unlit market tools");
+        CHECK(mkt.inventory.add("coin_empire_copper", 20000),
+              "fixture: unlit market purse");
+        sm::Inventory bag4;
+        CHECK(bag4.add("food", 300), "fixture: unlit crew load");
+        const sm::LandmarkLedger blank{};
+        const sm::CaravanDeal d = sm::trade_vendor_at_market(
+            bag4, 1e6f, mkt, &blank, /*myTradePct=*/0, /*theirTradePct=*/0);
+        CHECK(d.soldValue > 0 && d.boughtValue == 0
+                  && bag4.count("tools") == 0,
+              "no ledger, no guessing: the crew sells and rides home");
+    }
 
     // ── Negative control: a coinless market buys nothing, loses nothing ──
     sm::Landmark broke{};

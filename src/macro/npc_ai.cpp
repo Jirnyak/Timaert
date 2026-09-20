@@ -2224,9 +2224,6 @@ void ai_vendor(entt::entity self, MacroPos& p,
         if (Landmark* market = landmark_by_id(*ctx.mw.gs,
                                               rt.targetSettlementId);
             market && landmark_is_settlement(market->type)) {
-            const MemoryEntry* snap = recall(
-                *mem, AgentMemoryKind::MarketSnapshot,
-                std::uint16_t(rt.homeSettlementId));
             // The tribute lands FIRST — it is owed, not traded (a crew cut
             // down on the road drops it with the cargo, and the debt
             // honestly stands). Delivered IN KIND, per position (owner
@@ -2264,10 +2261,11 @@ void ai_vendor(entt::entity self, MacroPos& p,
                                          rt.targetSettlementId);
                 }
             }
+            // ЧТО ВЕЗТИ ДОМОЙ судит ВЕДОМОСТЬ ДОМА, а не память крю
+            // (CANON S10, ярус 2): дом сам выписал свои цены точным
+            // складом и своим счётом.
             const CaravanDeal deal = trade_vendor_at_market(
-                bag->inv, rt.carryCap, *market, snap,
-                homeLm->needDebt, homeLm->population,
-                landmark_sheet(homeLm->type).skills,
+                bag->inv, rt.carryCap, *market, &homeLm->ledger,
                 leader_trade_power_(*ctx.mw.world, self),
                 landmark_trade_power_(*market),
                 ctx.mw.econFacts, ctx.mw.econFactsUser);
@@ -3690,9 +3688,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 // departure, never a rumour.
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
-                                   const MemoryEntry* homeSnapshot,
-                                   const std::int32_t* homeDebt,
-                                   int homePopulation, const Skills& homeSite,
+                                   const LandmarkLedger* homeLedger,
                                    int myTradePct, int theirTradePct,
                                    EconFactSink sink, void* user) {
     CaravanDeal out{};
@@ -3754,7 +3750,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
     // дом = дефицит = высокая домашняя цена, до ×4), затоваренное отсеивается
     // САМО (×0.25), а серебро с горы становится товаром без единой строки
     // «металл — это нужда».
-    if (homeSnapshot) {
+    if (homeLedger && homeLedger->published()) {
         struct Lot { int i; float gainPerKg; int homeCap; };
         Lot lots[std::size_t(kCommodityCount)];
         int lotCount = 0;
@@ -3770,21 +3766,19 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                                  &ms);
             const int buyHere = trade_buy_price(
                 stock_price(base, have, demand), myTradePct, theirTradePct);
-            // Чего это стоит ДОМА: запас — по классу своей памяти, спрос —
-            // по ЖИВОМУ СЧЁТУ дома (тот же класс живости, что населённость
-            // homePopulation, которую крю всегда читало живой).
-            const int homeSupply =
-                stock_class_supply(market_stock_class(*homeSnapshot, i));
-            // У крю только классовый СНИМОК дома, не склад: спрос дома
-            // считается без неттинга (nullptr) — названо вслух в economy.h.
-            const int homeDemand = season_demand_for(
-                id, homeDebt, homePopulation, homeSite, nullptr);
-            const int worthHome = stock_price(base, homeSupply, homeDemand);
+            // Чего это стоит ДОМА — ВЕДОМОСТЬ ДОМА (CANON S10, ярус 2):
+            // цена, которую дом выписал сам, своим точным складом и своим
+            // счётом, с неттингом производного спроса. Ни огрубления, ни
+            // второго диалекта цены: ведомость посчитана той же кривой
+            // (stock_price), что и цена сделки здесь.
+            const int worthHome = homeLedger->price[std::size_t(i)];
+            if (worthHome <= 0) continue;         // дома этой строке нет цены
             if (worthHome <= buyHere) continue;   // рейс не окупает закупку
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
             // ПОТОЛОК СТРОКИ — сезон домашней нужды (спрос уже сезонный),
             // но он больше НЕ ворота: у товара, который дома никто не ест,
             // потолок — только трюм и кошелёк.
+            const int homeDemand = homeLedger->demand[std::size_t(i)];
             const int seasonCap = homeDemand > 0 ? homeDemand : (1 << 20);
             lots[std::size_t(lotCount++)] =
                 Lot{i, float(worthHome - buyHere) / kg, seasonCap};

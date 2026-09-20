@@ -13,6 +13,7 @@
 #include "ecs/world.h"
 #include "macro/chronicle.h"
 #include "macro/deposit_layer.h"
+#include "macro/econ_day.h"   // publish_landmark_ledgers — первая ведомость
 #include "macro/knowledge.h"
 #include "macro/landmark_grid.h"
 #include "macro/map_generator.h"
@@ -374,6 +375,13 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // makes it hold immediately after genesis, before the first tick.
         ensure_macro_player_entity(gs, *out.world);
     }
+
+    // ПЕРВАЯ ВЕДОМОСТЬ — ПО ФАКТУ РОЖДЕНИЯ МИРА (CANON S9 «рождение и смерть
+    // места — события», S10 ярус 2). Дальше её перевыписывает граница
+    // сезона; без этого вызова мир прожил бы первый сезон вообще без
+    // прейскурантов, и всякий крю честно отказывался бы покупать (ярус 1).
+    // Место рождается уже с ценами, как рождается уже со складом.
+    publish_landmark_ledgers(gs, std::max(1, gs.worldTime.day()));
 }
 
 }  // namespace sm
