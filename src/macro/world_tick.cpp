@@ -113,39 +113,37 @@ void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
     if (!hasSuzerain) return;
     // The assessment BASE is the season's AVERAGE store (owner 2026-09-02:
     // «лучше среднего склада за месяц, а то пустой склад случайно — и
-    // ничего не платит, или наоборот»): a po2 EMA with the season's own
-    // horizon, fed daily, so the pay day stops being a lottery of whether
-    // the vendor happened to leave this morning. A young store's average
-    // grows from zero, so a young world honestly owes little in its first
-    // season.
+    // ничего не платит, или наоборот»): ПАМЯТЬ МИРА с горизонтом сезона,
+    // одна дверь на всех (macro/memory.h, CANON S19.2), кормится ежедневно,
+    // и день уплаты перестаёт быть лотереей «уехал ли вендор этим утром».
+    // Склад — это УРОВЕНЬ, поэтому глагол СЛЕЖЕНИЕ. Молодой склад растёт с
+    // нуля, так что молодой мир честно должен мало в свой первый сезон.
     //
-    // The shift is NOT symmetric, and that is the ruling, not an oversight
-    // (owner 2026-09-09, audit ECON-3). A signed >> floors toward minus
-    // infinity, so the step is one full unit DOWN for any shortfall at all,
-    // and zero UP until the store exceeds the average by the whole horizon:
-    // the memory tracks a shrinking store exactly and a growing one only
-    // once the growth is worth a whole unit of memory. Two consequences,
-    // both accepted: the average settles a horizon BELOW the true store, and
-    // a stack that never exceeds 31 keeps an average of zero — so the small
-    // stock is never tithed. Whole units are all this field can hold; a
-    // rounding rule cannot invent resolution the representation does not
-    // have (holding the average pre-scaled would, and was declined —
-    // the tithe's weight is a balance question for a measured run, not a
-    // defect to patch here).
-    constexpr int kTitheAvgShift = 5;
-    static_assert(1 << kTitheAvgShift == kDaysPerSeason,
-                  "the tithe average's horizon IS the season");
+    // ПОЧЕМУ ПРЕДМАСШТАБИРОВАНО (v104, исправление 2026-09-21). Здесь стоял
+    // разностный шаг по значению КАК ЕСТЬ, и прежняя запись объявляла его
+    // асимметрию вердиктом: знаковый >> округляет к минус бесконечности,
+    // поэтому шаг вниз был целой единицей при любой недостаче, а шаг вверх —
+    // нулём, пока склад не превысит среднее на ВЕСЬ горизонт. Следствия
+    // назывались «принятыми», и оба были дефектом, а не решением:
+    //   · среднее оседало на горизонт НИЖЕ настоящего склада;
+    //   · склад, ни разу не превысивший 31, держал среднее РОВНО НОЛЬ
+    //     вечно — то есть вся лестница комфорта (в мире 21 инструмент на
+    //     1860 мест) не облагалась данью НИКОГДА.
+    // Реальная ставка выходила 0 % у мелкого места и 12.1 % у крупного при
+    // законе «1/8 со всего» — закон в каноне был просто неправдой, и тем
+    // сильнее, чем место мельче. Прежняя запись отвергала предмасштабирование
+    // словами «разрешения, которого нет у представления, не выдумать
+    // округлением» — верно, и именно поэтому его выдумывает не округление, а
+    // ШИРИНА: память держит значение × горизонт.
     for (int c = 0; c < kCommodityCount; ++c) {
-        lm.titheAvgGoods[c] +=
-            (std::int32_t(lm.inventory.count_of(commodity_item_index(c)))
-             - lm.titheAvgGoods[c]) >> kTitheAvgShift;
+        memory_track(lm.titheAvgGoods[c],
+                     lm.inventory.count_of(commodity_item_index(c)));
     }
     // The coin half of the assessment censuses COIN rows only
     // (coin_census_value) — the goods half already averages the store's
     // commodities right above, and a whole-bag valuation here would tithe
     // the same grain twice.
-    lm.titheAvgCoin += (std::int64_t(coin_census_value(lm.inventory))
-                        - lm.titheAvgCoin) >> kTitheAvgShift;
+    memory_track(lm.titheAvgCoin, coin_census_value(lm.inventory));
     // The CHARGE lands on the season boundary — the world's one window
     // (CANON S19.2; the per-ordinal pay-day smear is history, owner
     // 2026-09-17: «ДА, УМИРАЕТ»). The average above still feeds DAILY —
@@ -154,10 +152,15 @@ void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
     const int season = day / kDaysPerSeason;
     if (lm.titheSeasonAssessed == season) return;
     lm.titheSeasonAssessed = season;
+    // 1/8 ОТ ТОГО, ЧЕМ МЕСТО РАСПОЛАГАЛО ВЕСЬ СЕЗОН (владелец, 2026-09-21:
+    // дань — налог на ИМУЩЕСТВО, а не на приход). Память читается своей
+    // дверью: сырое поле — это значение × горизонт, и `>> 3` по нему дал бы
+    // ставку в 32 раза больше закона.
     for (int c = 0; c < kCommodityCount; ++c) {
-        lm.titheOwedGoods[c] += lm.titheAvgGoods[c] >> 3;
+        lm.titheOwedGoods[c] +=
+            std::int32_t(memory_value(lm.titheAvgGoods[c]) >> 3);
     }
-    lm.titheOwedCoin += lm.titheAvgCoin >> 3;
+    lm.titheOwedCoin += memory_value(lm.titheAvgCoin) >> 3;
 }
 
 // The pure econ steps are landmark-blind (they see one Inventory); this relay

@@ -770,7 +770,7 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.titheOwedGoods);       // v73: the per-position tribute debts
     w.pod(lm.titheOwedCoin);
     w.pod(lm.titheSeasonAssessed);
-    w.pod(lm.titheAvgGoods);        // v74: the season-average base (EMA)
+    w.pod(lm.titheAvgGoods);        // v104: память × горизонт (memory.h)
     w.pod(lm.titheAvgCoin);
     w.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
 }
@@ -795,7 +795,7 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.titheOwedGoods);       // v73
     r.pod(lm.titheOwedCoin);
     r.pod(lm.titheSeasonAssessed);
-    r.pod(lm.titheAvgGoods);        // v74: the season-average base (EMA)
+    r.pod(lm.titheAvgGoods);        // v104: память × горизонт (memory.h)
     r.pod(lm.titheAvgCoin);
     r.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
 }

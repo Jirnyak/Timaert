@@ -1254,6 +1254,11 @@ timaert_test(price_law_test
         src/macro/items.cpp
     LINK_ENTT)
 
+# ПАМЯТЬ МИРА — header-only закон (macro/memory.h над seasons.h), поэтому у
+# свидетеля нет ни одной единицы трансляции: он пинит арифметику горизонта и
+# держит негативный контроль на ПРЕЖНЮЮ, непредмасштабированную форму.
+timaert_test(world_memory_test)
+
 # The barter law works over the ONE item catalog: the container resolves an
 # authoring id to its ordinal, so the test links the catalog TU.
 timaert_test(barter_test

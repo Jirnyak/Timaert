@@ -11,6 +11,7 @@
 #include "macro/character_sheet.h"
 #include "macro/commodity.h"   // kCommodityCount — дань по позициям (v73)
 #include "macro/items.h"
+#include "macro/memory.h"   // WorldMemory — память мира с горизонтом сезона
 #include "macro/agent_memory.h"
 #include "macro/army.h"
 #include "macro/landmark_registry.h"
@@ -350,7 +351,7 @@ namespace sm {
 // «теперь только есть благополучие и оно даёт рост») — настроение, реестр
 // его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
 // seasonWellbeing и needDebt.
-constexpr int kSaveVersion = 103;   // v103: волокно — вход ткани вместо пищи (15 товаров)
+constexpr int kSaveVersion = 104;   // v104: память дани предмасштабирована (int64, memory.h)
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -507,11 +508,20 @@ struct Landmark {
     // v74: the assessment BASE is the season's AVERAGE store, not the
     // pay-day snapshot (owner 2026-09-02: «лучше среднего склада за месяц,
     // а то пустой склад случайно — и ничего не платит, или наоборот»).
-    // Average = po2 EMA with the season's own horizon (>> log2(32)),
-    // updated daily by assess_tithe_ — the pay day stops being a lottery
-    // of whether the vendor left this morning.
-    std::int32_t titheAvgGoods[kCommodityCount] = {};
-    std::int64_t titheAvgCoin = 0;
+    // Память с горизонтом СЕЗОНА, одна дверь на весь мир (macro/memory.h,
+    // CANON S19.2) — день уплаты перестал быть лотереей «уехал ли вендор
+    // этим утром».
+    //
+    // v104: ПРЕДМАСШТАБИРОВАНА. Здесь лежал std::int32_t со значением КАК
+    // ЕСТЬ, и разностный шаг `(склад − avg) >> 5` обнулялся на всякой
+    // разнице меньше 32: склад, ни разу не превысивший 31, держал среднее
+    // РОВНО НОЛЬ вечно — то есть вся лестница комфорта не облагалась данью
+    // никогда, а «1/8 со всего» было неправдой тем сильнее, чем место
+    // мельче (0 % у мелкого, 12.1 % у крупного против обещанных 12.5 %).
+    // Теперь поле держит значение × горизонт и читается memory_value();
+    // ширина 64 бита не запас, а расчёт (см. ЗАКОН ТИПА в memory.h).
+    WorldMemory titheAvgGoods[kCommodityCount] = {};
+    WorldMemory titheAvgCoin = 0;
     // ── ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10, вердикт 2026-09-19; v99) ─────────
     // На границе сезона место получает СЧЁТ = сезонная нужда по каждой
     // строке лестницы (индекс — товарный ординал, зеркало titheOwedGoods;
