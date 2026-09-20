@@ -48,8 +48,12 @@ namespace sm::ui {
 struct PlayerHaggler {
     CharacterSheet sheet{};     // the EFFECTIVE sheet (phase 4)
     BonusTotals    standing{};  // same totals, for the derived carry cells
-    int cha = 0;
-    int trade = 0;              // the Trade rank haggling beside CHA (ph. 6)
+    // ТОРГОВАЯ СИЛА — ОДНО число с эффективного листа (CANON S25), ровно то
+    // же, которым торгует весь макромир. Здесь лежали ДВЕ половины — сырая
+    // харизма и ранг Торговли, — и панель скармливала их цене как «моя сила»
+    // и «ЕГО сила»: анкета контрагента не спрашивалась, а прокачка Торговли
+    // играла ПРОТИВ игрока (дефект найден 2026-09-21, дверь trade_power_of).
+    int tradePct = 0;
 };
 
 inline PlayerHaggler player_haggler(ecs::World& w) {
@@ -57,8 +61,7 @@ inline PlayerHaggler player_haggler(ecs::World& w) {
     const entt::entity squad = player_squad_entity(w);
     if (squad != entt::null) h.standing = standing_bonuses_of(w, squad);
     h.sheet = player_effective_sheet(w);
-    h.cha   = h.sheet.attributes.of(AttributeId::Cha);
-    h.trade = h.sheet.skills.of(SkillId::Trade);
+    h.tradePct = trade_power_of(h.sheet);
     return h;
 }
 

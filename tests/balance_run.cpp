@@ -232,7 +232,7 @@ int main(int argc, char** argv) {
         // пул дезертиров (кровь закона 1/8). Ответ на «почему зерно не
         // едет»: мало рейсов или пустые сделки.
         std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tcoinLootPool\tfamineStarts"
-                         "\tstarvedPops\tminted\ttrades\ttradedValue\tgrainHolds"
+                         "\tstarvedPops\tminted\ttrades\ttradedValue\tfoodHolds"
                          "\tcrewsGather\tcrewsSell\tcrewsOther\tdeserters"
                          // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
                          // табуны в гарнизонах и спины в отрядах, миром.
@@ -244,17 +244,42 @@ int main(int argc, char** argv) {
                          id, id, id, id, id, id);
         }
         std::fprintf(fw, "\n");
-        // cloth/iron per landmark: the horizon-split hypothesis (NEXT_SESSION
-        // 2026-09-18) is about MEDIANS across places — bread drowns the floor
-        // clamp while manufactured rows starve at the ceiling — and the world
-        // aggregate cannot show a median.
-        std::fprintf(fl, "day\tid\ttype\tpop\twellbeing\tstarved\tunmet\tbread"
-                         "\tgrain\tcloth\tiron\tcoin\n");
+        // ТРИ ПОТОКА МАТЕРИИ, ПО МЕСТАМ (CANON S10, 2026-09-20): гипотеза о
+        // расщеплении горизонта — про МЕДИАНЫ по местам (еда топит пол
+        // кривой, а рукотворные строки голодают у потолка), и мировой
+        // агрегат медианы показать не может. По строке на поток: food =
+        // ЕДА, cloth = БЛАГА, iron = РЕСУРС.
+        //
+        // ДВЕ КОЛОНКИ ДОЛГА ВМЕСТО ОДНОГО ЛИТЕРАЛЬНОГО НУЛЯ (починка прибора
+        // 2026-09-21). Здесь печаталось `unmet` константой 0, а `bread` и
+        // `grain` были ОДНИМ И ТЕМ ЖЕ ординалом — наследие сноса хлеба,
+        // пережившее его на день. Прибор, который печатает одну величину
+        // дважды под разными именами и назначенный ноль под третьим, не
+        // меряет, а успокаивает: все числа сессий 4-5 про «хлеб в городах»
+        // и «зерно» сняты с этих колонок. Долг — та самая величина, которой
+        // МЕРЯЕТСЯ нужда с 2026-09-19 (CANON S10, потребление = долг):
+        // голодный счёт хранится в житель-днях (popPerUnitDay == 1), и
+        // непогашенный остаток на границе И ЕСТЬ то, чем место умрёт.
+        std::fprintf(fl, "day\tid\ttype\tpop\twellbeing\tstarved"
+                         "\tdebtFood\tdebtComfort\tfood\tcloth\tiron\tcoin\n");
 
-        const int breadIdx = sm::item_index("food");
-        const int grainIdx = sm::item_index("food");
+        // Голодная строка — ДВЕРЬ (econ_day.h hunger_item_*), не литерал:
+        // ровно та причина, по которой дверь и заведена — переименуй строку
+        // лестницы, и литерал в приборе замолчит, не сломавшись.
+        const int foodIdx = sm::hunger_item_index();
         const int clothIdx = sm::item_index("cloth");
         const int ironIdx = sm::item_index("iron");
+        // needDebt индексируется ТОВАРНЫМ ординалом (state.h) — берём его у
+        // той же таблицы лестницы, которую читает econ_debt_boundary, а не
+        // переписываем её здесь второй копией (закон тестов §5).
+        const int hungerOrd = sm::commodity_index(sm::hunger_item_id());
+        int comfortOrd[sm::kNeedCount] = {};
+        int comfortOrdCount = 0;
+        for (int i = 0; i < sm::kNeedCount; ++i) {
+            if (i == sm::kHungerNeedRow) continue;
+            const int ord = sm::commodity_index(sm::kNeeds[i].commodity);
+            if (ord >= 0) comfortOrd[comfortOrdCount++] = ord;
+        }
         std::uint32_t ringCursor = gs.chronicle.nextSeq;
 
         // ── The days: the live loop's cadence without its frames ─────────
@@ -290,26 +315,29 @@ int main(int argc, char** argv) {
                 const bool settled = lm.type == sm::LandmarkType::City
                                   || lm.type == sm::LandmarkType::Village;
                 if (settled) {
+                    long long debtComfort = 0;
+                    for (int k = 0; k < comfortOrdCount; ++k)
+                        debtComfort += lm.needDebt[comfortOrd[k]];
                     std::fprintf(fl,
-                                 "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d"
-                                 "\t%lld\n",
+                                 "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%d\t%d"
+                                 "\t%d\t%lld\n",
                                  gs.worldTime.day(), lm.id, int(lm.type),
                                  lm.population, int(lm.seasonWellbeing),
                                  int(lm.starvedYesterday),
-                                 0,
-                                 lm.inventory.count_of(breadIdx),
-                                 lm.inventory.count_of(grainIdx),
+                                 hungerOrd >= 0 ? lm.needDebt[hungerOrd] : 0,
+                                 debtComfort,
+                                 lm.inventory.count_of(foodIdx),
                                  lm.inventory.count_of(clothIdx),
                                  lm.inventory.count_of(ironIdx),
                                  coins_in(lm.inventory, coinIdx));
                 }
             }
-            long long coinSquads = 0, grainHolds = 0;
+            long long coinSquads = 0, foodHolds = 0;
             for (auto [e, bag]
                  : ecs.reg.view<sm::ecs::NpcInventory>().each()) {
                 (void)e;
                 coinSquads += coins_in(bag.inv, coinIdx);
-                grainHolds += bag.inv.count(grainIdx >= 0 ? "food" : "");
+                foodHolds += bag.inv.count_of(foodIdx);
             }
             long long horsesGarr = 0;
             for (const sm::Landmark& lm : gs.landmarks) {
@@ -361,7 +389,7 @@ int main(int argc, char** argv) {
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
                          (long long)gs.lootPoolValue,
                          accum.famineStarts, accum.starvedPops,
-                         accum.mintedCoins, trades, tradedValue, grainHolds,
+                         accum.mintedCoins, trades, tradedValue, foodHolds,
                          crewsGather, crewsSell, crewsOther,
                          int(gs.deserterPool.size()));
             std::fprintf(fw, "\t%lld\t%lld\t%lld",

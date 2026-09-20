@@ -346,20 +346,25 @@ namespace sm::ui
         // настроением: у цены остались кривая дефицита и разница торговых
         // сил, третьего множителя не существует.)
 
-        // `bargaining` is the shopper's TRADE rank (phase 6, off the
-        // effective sheet) — the price law's own argument, fed a literal 0
-        // until the skill woke. Required, not defaulted.
-        int trade_overlay_buy_price(int baseValue, int charisma,
-                                    int bargaining)
+        // ДВЕ СТОРОНЫ, ДВЕ АНКЕТЫ (CANON S25; починено 2026-09-21). Здесь
+        // стояло `trade_price(база, харизма, ранг Торговли)` — то есть на
+        // месте ЧУЖОЙ торговой силы стоял собственный скилл покупателя, а
+        // контрагента сделка не спрашивала вовсе. Следствия оба видны
+        // игроку: наценка выходила `(Cha − ранг Trade)/100`, значит прокачка
+        // Торговли ДЕЛАЛА ЦЕНУ ХУЖЕ, а торг с нищим бродягой и со столицей
+        // стоил одинаково. Обе стороны теперь называют своё производное
+        // одной дверью trade_power_of.
+        int trade_overlay_buy_price(int baseValue, int myTradePct,
+                                    int theirTradePct)
         {
-            return sm::trade_price(baseValue, charisma, bargaining,
+            return sm::trade_price(baseValue, myTradePct, theirTradePct,
                                    /*buying*/ true);
         }
 
-        int trade_overlay_sell_price(int baseValue, int charisma,
-                                     int bargaining)
+        int trade_overlay_sell_price(int baseValue, int myTradePct,
+                                     int theirTradePct)
         {
-            return sm::trade_price(baseValue, charisma, bargaining,
+            return sm::trade_price(baseValue, myTradePct, theirTradePct,
                                    /*buying*/ false);
         }
 
@@ -618,15 +623,10 @@ namespace sm::ui
             return cache.ready;
         }
 
-        void draw_info_overview_row(const char *label, const char *value)
-        {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::TextDisabled("%s", label);
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(value);
-        }
-
+        // (Строковая перегрузка этой строки умерла вместе со своим последним
+        // читателем и с тех пор только светила -Wunused-function: каждая
+        // анкета панели печатает ЧИСЛО. Вернётся — вернётся вместе с
+        // читателем.)
         void draw_info_overview_row(const char *label, int value)
         {
             ImGui::TableNextRow();
@@ -1906,7 +1906,9 @@ namespace sm::ui
                                         value_of(ref),
                                         bag->inv.count_of(int(ref.def)) - n,
                                         0),
-                                    h.cha, h.trade);
+                                    h.tradePct,
+                                    trade_power_of(
+                                        sheet_of(world, squadSubject)));
                             };
                             const auto sellUnit = [&](const ItemRef &ref,
                                                       const ItemDef &d,
@@ -1917,7 +1919,9 @@ namespace sm::ui
                                         value_of(ref),
                                         bag->inv.count_of(int(ref.def)) + n,
                                         0),
-                                    h.cha, h.trade);
+                                    h.tradePct,
+                                    trade_power_of(
+                                        sheet_of(world, squadSubject)));
                             };
                             draw_barter_body(
                                 "Trader stock", g_squadTrade,
@@ -2113,7 +2117,9 @@ namespace sm::ui
                                             landmark_sheet(
                                                 s->type).skills,
                                             &s->inventory)),
-                            h.cha, h.trade);
+                            h.tradePct,
+                            trade_power_of(
+                                landmark_sheet(s->type)));
                     };
                     const auto sellUnit = [&](const ItemRef &ref,
                                               const ItemDef &def, int n) {
@@ -2126,7 +2132,9 @@ namespace sm::ui
                                             landmark_sheet(
                                                 s->type).skills,
                                             &s->inventory)),
-                            h.cha, h.trade);
+                            h.tradePct,
+                            trade_power_of(
+                                landmark_sheet(s->type)));
                     };
                     draw_barter_body(
                         "Settlement stock", g_settlementTrade,

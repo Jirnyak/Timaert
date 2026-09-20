@@ -214,10 +214,68 @@ void test_arbitrage_dies_two_ways() {
     }
 }
 
+// ── ТОРГОВАЯ СИЛА — ОДНА ДВЕРЬ, И ОБЕ СТОРОНЫ НАЗЫВАЮТ ЕЮ СЕБЯ ────────────
+// Свидетель заведён 2026-09-21 на дефект, проживший в панели ИГРОКА всё
+// время существования двусторонней цены: `trade_price(база, МОЯ сила, ЕГО
+// сила)` звалась как `trade_price(база, харизма, ранг Торговли)`. Два
+// симптома, оба видны игроку, оба пинятся здесь:
+//   1. ранг Торговли стоял на месте ЧУЖОЙ силы ⇒ прокачка скилла ухудшала
+//      цену (наценка выходила «моя харизма минус мой же скилл»);
+//   2. анкета контрагента не спрашивалась вовсе ⇒ торг со столицей и с
+//      нищим бродягой стоил одинаково.
+// Пинится СВОЙСТВО, а не число: монотонность силы по обеим осям листа и то,
+// что чужая анкета цену двигает. Литералов из таблицы здесь нет — лист
+// собирается тут же, и правка балансных чисел анкет тест не уронит.
+void test_trade_power_is_one_door() {
+    // 1. Сила растёт по ОБЕИМ осям листа: атрибут — природная мощь, скилл её
+    //    МНОЖИТ (attributes.h). Инверсия по второй оси и была дефектом.
+    CharacterSheet weak{};
+    weak.attributes[AttributeId::Cha] = 10;
+    weak.skills[SkillId::Trade] = 0;
+    CharacterSheet skilled = weak;
+    skilled.skills[SkillId::Trade] = 30;
+    CharacterSheet charming = weak;
+    charming.attributes[AttributeId::Cha] = 30;
+    CHECK(trade_power_of(skilled) > trade_power_of(weak),
+          "ранг Торговли УСИЛИВАЕТ торговую силу, а не ослабляет её");
+    CHECK(trade_power_of(charming) > trade_power_of(weak),
+          "харизма усиливает торговую силу");
+
+    // 2. Цену двигает РАЗНИЦА анкет, значит контрагент обязан быть спрошен:
+    //    у сильного места слабый покупатель платит больше, чем у слабого.
+    const int base = 100;
+    const int atStrong = trade_price(base, trade_power_of(weak),
+                                     trade_power_of(skilled), /*buying=*/true);
+    const int atWeak = trade_price(base, trade_power_of(weak),
+                                   trade_power_of(weak), /*buying=*/true);
+    CHECK(atStrong > atWeak,
+          "у сильной стороны тот же товар дороже — анкета контрагента "
+          "участвует в цене");
+
+    // 3. Прокачка Торговли улучшает цену покупателю при ТОМ ЖЕ контрагенте.
+    //    Это прямой пин симптома №1.
+    const int skilledBuys = trade_price(base, trade_power_of(skilled),
+                                        trade_power_of(weak), true);
+    const int weakBuys = trade_price(base, trade_power_of(weak),
+                                     trade_power_of(weak), true);
+    CHECK(skilledBuys < weakBuys,
+          "прокачанный торговец покупает ДЕШЕВЛЕ — скилл работает НА игрока");
+
+    // 4. Негативный контроль: равные анкеты — наценки нет вовсе. Без него
+    //    проверки выше прошли бы и на законе «цена всегда в пользу того, кто
+    //    спросил» (CANON S25: «равные стороны торгуют ровно по цене»).
+    CHECK(trade_price(base, trade_power_of(skilled),
+                      trade_power_of(skilled), true) == base
+          && trade_price(base, trade_power_of(skilled),
+                         trade_power_of(skilled), false) == base,
+          "негативный контроль: равные анкеты дают ровно базу с обоих концов");
+}
+
 } // namespace
 
 int main() {
     test_scarcity_shape();
     test_arbitrage_dies_two_ways();
+    test_trade_power_is_one_door();
     return sm::test::report("price_law_test");
 }
