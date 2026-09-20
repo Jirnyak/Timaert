@@ -1186,6 +1186,43 @@ void run_roundtrip() {
                 path.c_str(), bytes.size(), loaded.mapW, loaded.mapH,
                 unsigned(loadedQuests[0].ordinal));
 
+    // ОРДИНАЛ И ЕСТЬ АДРЕС — и запасной ход честен (2026-09-20).
+    // В живом мире ординалы плотны (один монотонный выдатчик, ростер только
+    // дополняется), поэтому landmarks[id-1].id == id и by-id ходит без
+    // скана. Фикстура выше нарочно НЕ такая: id 7 / 70 / 3 лежат в позициях
+    // 0 / 1 / 2, и тот же by-id обязан найти всех троих — корректность не
+    // смеет опираться на инвариант, который нечем застраховать
+    // static_assert'ом.
+    for (const sm::Landmark& lm : loaded.landmarks) {
+        if (sm::landmark_by_id(loaded, lm.id) != &lm) {
+            FAIL_BAIL("by-id find missed a place whose ordinal is not its address");
+        }
+    }
+    if (sm::landmark_by_id(loaded, 4242) != nullptr
+        || sm::landmark_by_id(loaded, 0) != nullptr
+        || sm::landmark_by_id(loaded, -1) != nullptr) {
+        FAIL_BAIL("by-id find answered for an id no place holds");
+    }
+    {
+        // И тот же закон на ПЛОТНОМ ростере — там, где адрес и есть ответ.
+        sm::GameState dense{};
+        for (int i = 1; i <= 5; ++i) {
+            sm::Landmark lm{};
+            lm.type = sm::LandmarkType::Village;
+            lm.id = i;
+            dense.landmarks.push_back(lm);
+        }
+        for (int i = 1; i <= 5; ++i) {
+            if (sm::landmark_by_id(dense, i)
+                != &dense.landmarks[std::size_t(i - 1)]) {
+                FAIL_BAIL("ordinal is not the address on a dense roster");
+            }
+        }
+        if (sm::landmark_by_id(dense, 6) != nullptr) {
+            FAIL_BAIL("dense roster answered past its end");
+        }
+    }
+
     remove_slot_files(truncatedPath);
     remove_slot_files(corruptPath);
     remove_slot_files(badVersionPath);

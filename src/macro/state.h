@@ -858,19 +858,45 @@ struct GameState {
 // nothing is paid.
 inline std::uint32_t* landmark_renown_slot(GameState& gs, int id) {
     if (id <= 0) return nullptr;
+    // Same law as landmark_by_id below: the ordinal IS the address.
+    const std::size_t i = std::size_t(id - 1);
+    if (i < gs.landmarks.size() && gs.landmarks[i].id == id)
+        return &gs.landmarks[i].renown;
     for (auto& lm : gs.landmarks) if (lm.id == id) return &lm.renown;
     return nullptr;
 }
 
 // THE by-id find over the one landmark roster. Ids are world-unique (v54's
 // single ordinal issuer), so no kind is needed to resolve one.
+//
+// ОРДИНАЛ И ЕСТЬ АДРЕС (2026-09-20). The issuer is monotone
+// (GameState::nextLandmarkOrdinal, first id = 1) and the roster is
+// APPEND-ONLY — a place dies by turning LandmarkType::None, never by leaving
+// the vector — so `landmarks[id - 1].id == id` holds by construction, the
+// load path included (save.cpp restores in file order under the same
+// issuer). The arithmetic hit IS the law; the scan under it is the honest
+// fallback, kept because correctness must not rest on an invariant no
+// static_assert can hold. It is not a second table: nothing is stored and
+// nothing can drift out of sync.
+//
+// WHY IT MATTERS (numbers, AGENTS 8): sizeof(Landmark) is ~12.5 KB — the
+// 256-slot inventory alone is 9 KiB and the garrison 3 KiB — so the roster
+// is ~23 MB. One linear scan touched up to 1882 cache lines scattered across
+// it with no locality, and a single trade decision paid up to NINE of them:
+// the by-id find, not the route table, was the hot loop of that path.
 inline Landmark* landmark_by_id(GameState& gs, int id) {
     if (id < 0) return nullptr;
+    const std::size_t i = std::size_t(id - 1);
+    if (i < gs.landmarks.size() && gs.landmarks[i].id == id)
+        return &gs.landmarks[i];
     for (auto& lm : gs.landmarks) if (lm.id == id) return &lm;
     return nullptr;
 }
 inline const Landmark* landmark_by_id(const GameState& gs, int id) {
     if (id < 0) return nullptr;
+    const std::size_t i = std::size_t(id - 1);
+    if (i < gs.landmarks.size() && gs.landmarks[i].id == id)
+        return &gs.landmarks[i];
     for (const auto& lm : gs.landmarks) if (lm.id == id) return &lm;
     return nullptr;
 }
