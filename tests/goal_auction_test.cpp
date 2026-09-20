@@ -347,10 +347,89 @@ void test_boundary_court_resizes_standing_crews() {
           "ссаженные души вернулись в население");
 }
 
+// ── СТАНЦИЯ РЕЙСА — РУЛЕТКА ПО ВЕСУ, А НЕ ПЕРВЫЙ СОСЕД (владелец
+// 2026-09-20: «просто ходит по весу случайно к соседям»). Два утверждения, и
+// второе — про А, не только про Б (§49): (а) выбор РАСХОДИТСЯ по соседям
+// (детерминированный ближний умер), (б) ближний ВЕРОЯТНЕЕ дальнего — вес
+// есть, а не просто равномерный жребий.
+//
+// ПОЧЕМУ КАРТА ШИРОКАЯ: вес = 1/(1 + ДНИ пути, темп 96 клеток в день), и на
+// карте 64 все соседи лежат в сотых доли дня — закон там почти равномерен ПО
+// ПОСТРОЕНИЮ, разглядеть в нём вес невозможно. Свидетель обязан развести
+// станции по ДНЯМ, иначе он подтверждает не закон, а свою фикстуру.
+void test_station_is_a_weighted_roulette() {
+    constexpr int kWide = 2048;          // дни развести нечем на 64 клетках
+    const auto make_three_stations = [&](int day) {
+        GameState gs{};
+        gs.mapW = kWide;
+        gs.mapH = kWide;
+        gs.worldSeed = 7u;
+        Landmark vil{};
+        vil.type = LandmarkType::Village;
+        vil.id = 3;
+        vil.x = 100;
+        vil.y = 100;
+        vil.population = 100;
+        vil.suzerainLandmarkId = 9;
+        // Единственная живая цель — долг дани: без жил и леса аукцион
+        // поднимает ТОЛЬКО рейс сбыта, и объект поручения есть станция.
+        vil.titheOwedCoin = 300;
+        vil.inventory.add("bread", 3200);
+        gs.landmarks.push_back(vil);
+        const int xs[3] = {132, 700, 1060};   // 32 / 600 / 960 клеток пути
+        for (int k = 0; k < 3; ++k) {
+            Landmark city{};
+            city.type = LandmarkType::City;
+            city.id = 9 + k;
+            city.x = xs[k];
+            city.y = 100;
+            city.population = 0;   // город без душ не поднимает своих артелей
+            gs.landmarks.push_back(city);
+        }
+        // Место без душ остаётся станцией: гейт выбора смотрит население
+        // КАНДИДАТА, поэтому души городам нужны — но крю их не поднимут,
+        // пока у них нет ни склада, ни долга (отказ аукциона честен).
+        for (int k = 0; k < 3; ++k) gs.landmarks[std::size_t(1 + k)].population = 50;
+        (void)day;
+        return gs;
+    };
+    int hits[3] = {0, 0, 0};
+    // Подъём случается на границе сезона, поэтому броски — ГРАНИЦЫ.
+    constexpr int kDraws = 24;
+    for (int k = 0; k < kDraws; ++k) {
+        const int day = 1 + k * kDaysPerSeason;
+        GameState gs = make_three_stations(day);
+        ecs::World w;
+        TerrainData absent{};
+        MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
+        rotate_worker_squads(mw, day);
+        for (const Crew& c : live_crews_of(w, 3)) {
+            if (c.verb != std::uint8_t(ErrandVerb::Sell)) continue;
+            const int idx = int(c.object) - 9;
+            if (idx >= 0 && idx < 3) ++hits[idx];
+        }
+    }
+    const int total = hits[0] + hits[1] + hits[2];
+    CHECK(total > 0, "рейс сбыта поднят: станция выбрана (фикстура жива)");
+    int visited = 0;
+    for (const int h : hits) visited += h > 0 ? 1 : 0;
+    CHECK(visited >= 2,
+          "станция РАСХОДИТСЯ по соседям: детерминированный ближний умер");
+    // ПОРОГ ВЫВЕДЕН ИЗ ЗАКОНА, А НЕ ИЗ НАБЛЮДЕНИЯ: 32 клетки = 0.33 дня
+    // (вес 0.75), 960 клеток = 10 дней (вес 0.091) — закон предсказывает
+    // восемь к одному. Равновероятный жребий предсказывает один к одному.
+    // Порог 3:1 отделяет одно от другого с запасом в обе стороны; негативный
+    // контроль (вес заменён единицей) даёт 36/28/32 и валит именно его,
+    // тогда как «больше» прошло бы случайно.
+    CHECK(hits[0] > 3 * hits[2],
+          "ближний вероятнее дальнего В РАЗЫ: вес 1/(1+дни), не равный жребий");
+}
+
 } // namespace
 
 int main() {
     test_auction_raises_errand_bearing_peasants();
+    test_station_is_a_weighted_roulette();
     test_refusal_is_the_auctions_verdict();
     test_tithe_alone_raises_the_sell_run();
     test_boundary_court_resizes_standing_crews();

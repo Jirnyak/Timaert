@@ -1772,76 +1772,118 @@ bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
 //    сквадов это горячий цикл, а у мира есть свой граф соседства.
 // Цена шага теперь — перебор мембран своей округи (единицы), и знание
 // агента строго локально: видно только соседей.
+//
+// ВЕС ЕСТЬ ДНИ ПУТИ (владелец 2026-09-20, второе уточнение — вердикт S4
+// читается дословно: «ходит ПО ВЕСУ случайно к соседям»). Одна рулетка с
+// ядром `1/(1 + дни)` на ОБЕ ветки двери: «мир без дорог» и «мир с графом»
+// перестали быть двумя законами — они отличаются только тем, откуда взяты
+// дни (цена пути или хорда), а форма выбора одна.
+//
+// ЧТО ЗДЕСЬ УМЕРЛО И ПОЧЕМУ (три находки одного вскрытия, 2026-09-20):
+//  · РАВНОВЕРОЯТНЫЙ выбор соседа — веса не было вовсе, хотя вердикт его
+//    называл: дальний сосед за хребтом тянулся из урны ровно так же часто,
+//    как соседняя деревня за рекой, и рейс сгорал в дороге;
+//  · КАП «первые восемь мембран» — он был НЕ произволом порядка хранения:
+//    порталы округи отсортированы по цене перехода (nav_field.cpp,
+//    `distHome[c] + ребро + distHome[n]` — цена пути от моего ландмарка до
+//    соседского), поэтому кап означал «восемь БЛИЖАЙШИХ соседей». Это тот
+//    же закон «не ходи далеко», только ступенькой вместо веса — и потому
+//    снятый ОТДЕЛЬНО он и оказался хуже (замер: сделок 8523 против 8977,
+//    голод +19 %): урна впустила самых дорогих соседей РАВНОПРАВНО. С весом
+//    ступенька лишняя: дальний сосед получает малую вероятность вместо
+//    нулевой, и цепочка прыжков достаёт всю карту, не платя временем;
+//  · ДЕТЕРМИНИЗМ ВЕНДОРСКОГО КАНАЛА — аукцион заявок звал дверь без RNG
+//    (`TickContext{}` в rotate_worker_squads), поэтому 98 % торговли мира
+//    (~3040 крю против 67 караванов) брали `cand[0]` — ландмарк САМОГО
+//    дешёвого портала. Каждая деревня возила в ОДНОГО И ТОГО ЖЕ соседа всю
+//    свою жизнь. Бросок теперь есть (дневная струя `worldTickRt.jitter`),
+//    и вырождение «нет броска → ближний» осталось только там, где кидать
+//    нечем.
+//
+// Дальний хвост, съевший рулетку по ВСЕЙ карте (CANON S4, пять замеров),
+// здесь не воскресает: урна — только соседние округи, мест в ней единицы, и
+// самый дальний кандидат всё равно сосед.
 int pick_next_station_(const TickContext& ctx, const MacroPos& p,
                        int currentId, int prevId, float& outX, float& outY) {
     if (!ctx.mw.gs) return -1;
     const NavWorld* nv = ctx.mw.nav;
     const std::size_t R = nv ? nv->regionLandmarkId.size() : 0;
-    const std::uint16_t here =
-        (nv && nv->baked()) ? nav_region_at(*nv, int(p.x), int(p.y))
-                            : kNavNoRegion;
-    if (!nv || !nv->baked() || std::size_t(here) >= R) {
+    const bool baked = nv && nv->baked();
+    const std::uint16_t here = baked ? nav_region_at(*nv, int(p.x), int(p.y))
+                                     : kNavNoRegion;
+    // ДНИ ДО КАНДИДАТА — одна мера решения (та же, что у road_days_ в
+    // аукционе): цена пути, когда мир запечён, хорда — когда дорог ещё нет.
+    // В одну сторону: крю идёт ТУДА и едет дальше, а не возвращается.
+    // Отрицательное = пути нет (kNavFar), и молчаливой подмены геометрией в
+    // запечённом мире не бывает — кандидат просто выбывает.
+    const auto days_to_ = [&](int tx, int ty) -> float {
+        if (baked) {
+            const std::uint32_t c =
+                nav_path_cost(*nv, int(p.x), int(p.y), tx, ty);
+            if (c == kNavFar) return -1.0f;
+            return float(c) / 16.0f / kSustainedMarchCellsPerDay;
+        }
+        return std::sqrt(torus_dist_sq(p.x, p.y, float(tx), float(ty),
+                                       float(ctx.mapW), float(ctx.mapH)))
+               / kSustainedMarchCellsPerDay;
+    };
+    // РУЛЕТКА ОДНИМ ПРОХОДОМ (взвешенный резервуар): кандидат берёт урну с
+    // вероятностью своего веса в накопленной сумме. Второй проход по
+    // ростеру мира стоил бы вдвое, а закон от порядка не зависит.
+    // Без броска (дверь зовут без RNG) рулетка честно вырождается в ПЕРВЫЙ
+    // вес — у запечённого мира это ближайший сосед, потому что порталы
+    // округи отсортированы по цене.
+    float total = 0.0f;
+    int pickId = -1;
+    const auto offer_ = [&](const Landmark& c) {
+        const float days = days_to_(c.x, c.y);
+        if (days < 0.0f) return;              // пути нет — не кандидат
+        const float w = 1.0f / (1.0f + days);
+        total += w;
+        bool take = pickId < 0;   // первый кандидат берёт урну целиком
+        if (!take && ctx.rng) {
+            const float roll =
+                float(rand_int(ctx, 1 << 20)) / float(1 << 20);
+            take = roll * total < w;
+        }
+        if (take) {
+            pickId = c.id;
+            outX = float(c.x);
+            outY = float(c.y);
+        }
+    };
+    if (!baked || std::size_t(here) >= R) {
         // МИР БЕЗ ДОРОГ (граф округ не запечён — синтетическая фикстура,
-        // молодой мир): соседство спрашивается у ГЕОМЕТРИИ. Не «ближайший»
-        // — РУЛЕТКА ПО БЛИЗОСТИ (владелец 2026-09-20: «если один ближе, то
-        // будет всегда идти в него — надо ослабить»): вес = 1/(1+дистанция),
-        // ближний вероятнее в разы, но достижимо ВСЁ, и купец иногда уходит
-        // за горизонт. Тот же приём, что у аукциона целей: рулетка по скору
-        // вместо argmax — детерминированный минимум обслуживал бы одно
-        // место и морил соседей.
-        float total = 0.0f;
+        // молодой мир): соседство спрашивается у ГЕОМЕТРИИ. Урна — весь
+        // ростер, потому что другого понятия соседства здесь нет.
         for (const Landmark& c : ctx.mw.gs->landmarks) {
             if (c.id == currentId || c.id == prevId) continue;
             if (!landmark_is_settlement(c.type) || c.population <= 0) continue;
-            total += 1.0f / (1.0f + std::sqrt(torus_dist_sq(
-                p.x, p.y, float(c.x), float(c.y),
-                float(ctx.mapW), float(ctx.mapH))));
+            offer_(c);
         }
-        if (total <= 0.0f) return -1;
-        // Без броска (аукцион зовёт дверь без своего RNG) рулетка честно
-        // вырождается в первый вес — ближнего; случайность не обязана
-        // существовать там, где её нечем взять.
-        float roll = ctx.rng
-            ? float(rand_int(ctx, 1 << 20)) / float(1 << 20) * total
-            : 0.0f;
-        for (const Landmark& c : ctx.mw.gs->landmarks) {
-            if (c.id == currentId || c.id == prevId) continue;
-            if (!landmark_is_settlement(c.type) || c.population <= 0) continue;
-            roll -= 1.0f / (1.0f + std::sqrt(torus_dist_sq(
-                p.x, p.y, float(c.x), float(c.y),
-                float(ctx.mapW), float(ctx.mapH))));
-            if (roll <= 0.0f) {
-                outX = float(c.x);
-                outY = float(c.y);
-                return c.id;
-            }
-        }
-        return -1;
+        return pickId;
     }
-    // Кандидаты — жилые места соседних округ. Больше восьми мембран у
-    // округи не берём: выбор шага не должен стоить обхода всей карты.
-    int cand[8];
-    int candCount = 0;
+    // Кандидаты — жилые места ВСЕХ соседних округ (кап мембран снят: его
+    // работу делает вес). Дубли по паре округ — два сегмента общей границы
+    // на торе — считаются один раз: это одно место, а не два шанса.
+    std::uint16_t seen[kNavMaxPortalsPerRegion];
+    int seenCount = 0;
     const std::uint32_t begin = nv->portalBegin[here];
-    for (int pi = 0; pi < int(nv->portalCount[here]) && candCount < 8; ++pi) {
+    for (int pi = 0; pi < int(nv->portalCount[here]); ++pi) {
         const std::uint16_t to = nv->portals[begin + std::uint32_t(pi)].toRegion;
         if (std::size_t(to) >= R) continue;
+        bool dup = false;
+        for (int s = 0; s < seenCount; ++s) dup = dup || seen[s] == to;
+        if (dup) continue;
+        if (seenCount < kNavMaxPortalsPerRegion) seen[seenCount++] = to;
         const int lmId = int(nv->regionLandmarkId[to]);
         if (lmId < 0 || lmId == currentId || lmId == prevId) continue;
         const Landmark* lm = landmark_by_id(*ctx.mw.gs, lmId);
         if (!lm || !landmark_is_settlement(lm->type) || lm->population <= 0)
             continue;
-        bool seen = false;
-        for (int c = 0; c < candCount; ++c) seen = seen || cand[c] == lmId;
-        if (!seen) cand[candCount++] = lmId;
+        offer_(*lm);
     }
-    if (candCount <= 0) return -1;   // тупик: рейс кончается, крю идёт домой
-    const Landmark* pick = landmark_by_id(
-        *ctx.mw.gs, cand[ctx.rng ? rand_int(ctx, candCount) : 0]);
-    if (!pick) return -1;
-    outX = float(pick->x);
-    outY = float(pick->y);
-    return pick->id;
+    return pickId;   // -1 = тупик: рейс кончается, крю идёт домой
 }
 
 // ТОРГОВАЯ СИЛА ТОРГОВЦА — ОДНО число с его листа (CANON S25): финальное
@@ -1981,7 +2023,15 @@ void ai_caravan(entt::entity self, MacroPos& p,
         if (rt.stateTimer > 0) return;
         if (Landmark* market = landmark_by_id(*ctx.mw.gs,
                                               rt.targetSettlementId);
-            market && market->type == LandmarkType::City) {
+            market && landmark_is_settlement(market->type)) {
+            // «ТОРГУЮ ТОЛЬКО В ГОРОДЕ» УМЕРЛО (владелец 2026-09-20; тот же
+            // класс ворот, что «рынок бывает только городом», снесённый
+            // 2026-09-19): маршрут выбирает станцию среди ВСЕХ поселений, а
+            // сделка судила её по роду места — караван, которого диффузия
+            // привела в деревню, стоял там привал и уезжал порожняком.
+            // Станция теперь одна на всех возящих товар — ровно тот же
+            // предикат, по которому её и выбрали (и по которому вендор
+            // торгует с 2026-09-19).
             // THE station stop (npc_ai.h trade_caravan_at_station): sell
             // into this market\'s shortage, buy its surplus — every number
             // read off the market the caravan STANDS ON. Arbitrage with no
@@ -4316,6 +4366,28 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                       "outMask is one byte: one bit per crew row");
         const XY home{float(s.x), float(s.y)};
         const MacroPos homePos{home.x, home.y};
+        // БРОСОК СТАНЦИИ ЭТОГО ДОМА — тот же детерминизм, что у рулетки
+        // заявок ниже: (сид, день, дом). Ротация не трогает мировые
+        // RNG-потоки, поэтому решение места не зависит от того, сколько мест
+        // прошло до него в свипе.
+        //
+        // ЗАЧЕМ ОН ПОЯВИЛСЯ: дверь выбора станции звалась с ПУСТЫМ
+        // TickContext, то есть без RNG, и рулетка честно вырождалась в
+        // первый вес — ландмарк самого дешёвого портала. Каждая деревня всю
+        // свою жизнь возила товар к ОДНОМУ И ТОМУ ЖЕ соседу, а это 98 %
+        // торгового канала мира (~3040 вендорских крю против 67 караванов).
+        // Случайность здесь не «добавлена» — её отсутствие было дефектом
+        // проводки, а не законом.
+        //
+        // Номер потока = первый номер ЗА строками ростера: третий аргумент
+        // hash3 в этой функции всюду означает СТРОКУ (0-7, static_assert
+        // выше), и поток станции по построению не может столкнуться ни с
+        // одной из них.
+        Rng stationRoll(hash3(gs.worldSeed ^ std::uint32_t(day),
+                              std::uint32_t(s.id),
+                              sizeof(LandmarkDef::crews)
+                                  / sizeof(LandmarkCrewRow)));
+        ctx.rng = &stationRoll;
         int live[8];
         int liveCount = 0;
         int solo[8];
