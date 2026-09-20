@@ -468,14 +468,17 @@ bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
 }
 
 bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
-                       int x, int y, float seaLevel)
+                       int x, int y, float seaLevel, FeatureType parcel)
 {
+    // ЧЕМ ЗАСЕЯНО — КОЛОНКА ФИЧИ, А НЕ ВТОРАЯ ДВЕРЬ (2026-09-20): земля,
+    // проверка и цена у хлебной и льняной парцеллы одни и те же, поэтому
+    // вспашка одна, а вид парцеллы — её аргумент.
     int wheat = 0;
     if (!plough_cell_ok(fl, world, x, y, wheat, seaLevel)) return false;
     const int wx = FeatureLayer::wrap_coord(x, fl.width);
     const int wy = FeatureLayer::wrap_coord(y, fl.height);
     fl.data[std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx)] =
-        FT_Field;
+        std::uint8_t(parcel);
     return true;
 }
 

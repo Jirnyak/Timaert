@@ -49,6 +49,13 @@ enum FeatureType : std::uint8_t {
     // ЛОШАДЬ — ЮНИТ (CANON S10, 2026-09-19): the fenced parcel that works
     // the HERD row — the plough's exact sibling, sown with horses.
     FT_Pasture = 14,
+    // ЛЬНЯНОЕ ПОЛЕ (владелец, 2026-09-20: «на пашне уже пшеница-пища, значит
+    // нужна фича льняное поле») — ровно тот случай, который эта таблица сама
+    // и предсказала строкой ниже: «a potato field and a poppy field are new
+    // rows of THIS table, working the same number». Лён сеют на той же
+    // плодородной земле, поэтому НОВОГО ресурсного ряда нет: клетка под
+    // льном — это клетка, НЕ занятая хлебом, и конкуренция за землю честна.
+    FT_FlaxField = 15,
     FT_Count,
 };
 
@@ -75,6 +82,7 @@ static_assert(FT_ClayPit == 5 && FT_IronMine == 6 && FT_Quarry == 7
               "FeatureType byte layout (mines, v71)");
 static_assert(FT_WoodBridge == 9, "FeatureType byte layout (v72)");
 static_assert(FT_Pasture == 14, "FeatureType byte layout (v98)");
+static_assert(FT_FlaxField == 15, "FeatureType byte layout (v103)");
 static_assert(FT_Port == 10 && FT_BeachedShip == 11,
               "FeatureType byte layout (ships, v74)");
 static_assert(FT_CopperMine == 12 && FT_GoldMine == 13,
@@ -193,6 +201,10 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // waist-high grass hides nothing, tended not garrisoned — and works the
     // herd row instead of the arable one.
     {FT_Pasture,  1.8f, 1.00f, 0.0f, ResourceFieldId::Horses, kBuildsPerDay},
+    // Льняное поле — те же колонки, что у пашни: та же вспаханная земля, тот
+    // же арабельный ряд, та же цена работы. Отличается ТОЛЬКО тем, что с неё
+    // берут (строка цели в kGathererDefs), — как и обещала строка выше.
+    {FT_FlaxField, 1.8f, 1.00f, 0.0f, ResourceFieldId::Wheat, kBuildsPerDay},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "

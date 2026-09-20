@@ -102,6 +102,10 @@ constexpr ItemDef kCatalog[] = {
         // строки (5), чтобы не заводить второго числа о той же вещи: хлеб
         // стоил 10 и лечил 10, мясо стоит 15 и лечит 15.
         {{std::uint8_t(BonusId::HealHp), 5}}},
+    // Волокно: стоимость вчетверо ниже ткани (20) — прядение и есть та
+    // работа, что поднимает цену, и второго числа об этом не заводится.
+    {"fibre",   "Fibre",           ItemType::Material,    5, 1.00f, "\xF0\x9F\xAA\xA2",
+        "Flax fibre — what cloth is spun from", {}},
     {"stone",   "Stone",           ItemType::Material,    5, 4.00f, "\xF0\x9F\xAA\xA8",
         "Quarried stone", {}},
     {"clay",    "Clay",            ItemType::Material,    5, 2.00f, "\xF0\x9F\xBA",
@@ -269,7 +273,7 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
     {"potion_hp",   {{"mat_herb", 2}}, 1, 8},
     {"potion_mp",   {{"mat_herb", 2}}, 1, 8},
     // The economy's goods — former kRecipes inputs AND tempos, verbatim.
-    {"cloth",       {{"food", 2}}, 1, 4},
+    {"cloth",       {{"fibre", 2}}, 1, 4},
     {"bricks",      {{"clay", 1}}, 1, 8},
     {"tools",       {{"iron", 1}, {"wood", 1}}, 1, 2},
     {"furniture",   {{"wood", 2}}, 1, 2},

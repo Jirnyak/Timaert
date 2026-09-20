@@ -358,7 +358,7 @@ void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
         // а голодная строка лестницы — и та уже выдаёт новорождённому месту
         // СЕЗОН харча выше. Оставь её здесь — место родится с сезоном плюс
         // ещё одним днём, и закон «амбар рождения = ровно сезон» тихо врёт.
-        {"wood", 0}, {"stone", 1}, {"clay", 2}, {"iron", 3},
+        {"wood", 0}, {"fibre", 1}, {"stone", 1}, {"clay", 2}, {"iron", 3},
     };
     const int siteMult = isCity ? 1 : 2;
     for (const RawSeed& r : kRawSeeds) {

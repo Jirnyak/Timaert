@@ -145,8 +145,11 @@ void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
 // already / water / rock / lean soil). Torus-wrapped.
 bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
                     int x, int y, int& wheatOut, float seaLevel = 0.40f);
+// `parcel` — ЧЕМ засеяно (FT_Field хлебом, FT_FlaxField льном): земля и цена
+// у них одни, различается только строка цели, которая с парцеллы берёт.
 bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
-                       int x, int y, float seaLevel = 0.40f);
+                       int x, int y, float seaLevel = 0.40f,
+                       FeatureType parcel = FT_Field);
 
 // The pasture's same two doors (CANON S10 «ЛОШАДЬ — ЮНИТ»): the plough
 // gates with the HERD row's fertility bar, laying FT_Pasture. There is no

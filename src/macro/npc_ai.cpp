@@ -253,7 +253,7 @@ void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
 // picks the parcel now; distance only breaks ties. A box with nothing
 // standing offers no work — the crew is honestly not raised that day.
 bool find_home_field(const TickContext& ctx, float px, float py,
-                     const XY& home, XY& out) {
+                     const XY& home, XY& out, FeatureType parcel = FT_Field) {
     if (!ctx.mw.features) return false;
     bool found = false;
     int bestStock = 0;
@@ -262,7 +262,7 @@ bool find_home_field(const TickContext& ctx, float px, float py,
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             const int cx = int(home.x) + dx;
             const int cy = int(home.y) + dy;
-            if (ctx.mw.features->at(cx, cy) != FT_Field) continue;
+            if (ctx.mw.features->at(cx, cy) != std::uint8_t(parcel)) continue;
             const int stock =
                 resource_field_read(ctx.mw, ResourceFieldId::Wheat, cx, cy);
             if (stock <= 0) continue;   // eaten bare — nothing to reap here
@@ -834,6 +834,7 @@ void ai_home_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
 enum class Worksite : std::uint8_t {
     ForestCell,   // nearest forest-class cell (the TreeGrid index)
     HomeField,    // the home's nearest FT_Field parcel
+    HomeFlaxField,// ...и льняная парцелла: та же земля, своя культура
     Deposit,      // the home's nearest deposit cell of the row's kind
     // ОХОТА: зверь живёт на КАЖДОЙ клетке (поле фауны — природа, не фича),
     // поэтому «где охотиться» — это лучшая по поголовью клетка своей округи,
@@ -871,6 +872,13 @@ constexpr GathererDef kGathererDefs[] = {
     {ResourceFieldId::Wheat,  "food",   Worksite::HomeField,
      kGatherPerWorkerDay},
     {ResourceFieldId::Fauna,  "food",   Worksite::HomeFauna,
+     kGatherPerWorkerDay / 4},
+    // ЛЁН — ТА ЖЕ ЗЕМЛЯ, СВОЯ ПАРЦЕЛЛА (владелец, 2026-09-20: «на пашне уже
+    // пшеница-пища, значит нужна фича льняное поле»). Ряд тот же арабельный:
+    // клетка под льном — это клетка, не занятая хлебом, и конкуренция за
+    // землю выходит сама, без второго поля и без нового ресурса. Четверть
+    // якоря — тем же числом охота слабее пашни (крутилка дубль-прогона).
+    {ResourceFieldId::Wheat,  "fibre",  Worksite::HomeFlaxField,
      kGatherPerWorkerDay / 4},
     {ResourceFieldId::Silver, "silver", Worksite::Deposit,
      kGatherPerWorkerDay},
@@ -1117,6 +1125,8 @@ bool find_worksite(const GathererDef& def, const TickContext& ctx,
         }
         case Worksite::HomeField:
             return find_home_field(ctx, p.x, p.y, home, out);
+        case Worksite::HomeFlaxField:
+            return find_home_field(ctx, p.x, p.y, home, out, FT_FlaxField);
         case Worksite::HomeFauna:
             return find_home_fauna(ctx, p.x, p.y, home, out);
         case Worksite::HomePasture:
@@ -1610,7 +1620,13 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             // so it is priced by that row like every other build (S14.1).
             const GathererDef* gd = gatherer_def_of(rt);
             const bool fence = gd && gd->rosterYield != NPCType::Count;
-            const FeatureType parcel = fence ? FT_Pasture : FT_Field;
+            // ПАРЦЕЛЛА — СВОЯ У КАЖДОЙ ЦЕЛИ: загон табуну, льняное поле
+            // льну, пашня хлебу. Вид берётся из строки цели, а не из ветки
+            // по товару (2026-09-20, вместе с волокном).
+            const FeatureType parcel =
+                fence ? FT_Pasture
+                      : (gd && gd->worksite == Worksite::HomeFlaxField
+                             ? FT_FlaxField : FT_Field);
             const int cycleCost =
                 sp_price(int(pools.maxSp), feature_builds_per_day(parcel));
             const bool built = int(pools.sp) >= cycleCost && ctx.mw.features
@@ -1620,7 +1636,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                                              int(rt.targetX), int(rt.targetY))
                         : plough_field_cell(*ctx.mw.features, ctx.mw,
                                             int(rt.targetX),
-                                            int(rt.targetY)));
+                                            int(rt.targetY), 0.40f, parcel));
             if (built) {
                 // The day of MAKING pays the same cycle the day of taking
                 // pays — one labour law (S14).

@@ -53,6 +53,12 @@ inline constexpr CommodityDef kCommodities[] = {
     {"stone",     "Камень", 4.0f,  0},
     {"iron",      "Железо", 4.0f,  0},
     {"clay",      "Глина", 2.0f,  0},
+    // ВОЛОКНО — ЛЁН ПАШНИ (владелец, 2026-09-20). Оно существует ради одного
+    // закона: НИ ОДНО БЛАГО НЕ ВАРИТСЯ ИЗ ПИЩИ. Пока ткань пряли из зерна
+    // (льняная заглушка), любое давление труда в сторону благ съедало хлеб
+    // мира — измерено после сноса хлеба: ткани ×40, голодавших в городах
+    // ×300, мир спрял свою еду в рубахи. Вход ткани переехал сюда.
+    {"fibre",     "Волокно", 1.0f,  0},
 
     // Монетный металл (CANON S10 чеканка): жила → слиток → монета фракции.
     {"silver",    "Серебро", 4.0f,  0},
@@ -86,9 +92,9 @@ inline constexpr CommodityDef kCommodities[] = {
 
 inline constexpr int kCommodityCount =
     int(sizeof(kCommodities) / sizeof(kCommodities[0]));
-inline constexpr int kRawCommodityCount = 5;
+inline constexpr int kRawCommodityCount = 6;
 
-static_assert(kCommodityCount == 14, "v1 scope of the economy's ordinals");
+static_assert(kCommodityCount == 15, "v1 scope of the economy's ordinals");
 // «Сырьё идёт первым и подряд» держал ярус товарной строки; ярус умер
 // 2026-09-18, а СМЫСЛ утверждения — битовое пространство materialMask — жив.
 // Сторожит его теперь свидетель (econ_v1_test), который спрашивает КАТЕГОРИЮ

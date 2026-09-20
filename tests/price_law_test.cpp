@@ -45,25 +45,39 @@ void test_scarcity_shape() {
           "a price never reaches zero — «ничто не бесплатно» is the floor");
     // Без счёта (nullptr) прямая часть — лестница населения × сезон; со
     // счётом она читала бы ОСТАТОК долга (закон мира, юниты те же).
-    // У ГОЛОДНОЙ СТРОКИ ДВЕ НУЖДЫ СРАЗУ, и это не удвоение: её едят (прямая
-    // половина) и ею прядут (производная — ткань варится из пищи). Число
-    // второй половины берётся из СОСТАВА ткани, а не переписывается сюда
-    // литералом, иначе свидетель разойдётся с каталогом молча.
+    CHECK(season_demand_for(hunger_item_id(), nullptr, 128, CITY, nullptr)
+                  == 128 * kDaysPerSeason
+              && season_demand_for("cloth", nullptr, 128, CITY, nullptr)
+                  == 4 * kDaysPerSeason
+              && season_demand_for("wpn_dagger", nullptr, 128, CITY, nullptr)
+                  == 0,
+          "demand reads the ONE needs ladder");
+
+    // НИ ОДНО БЛАГО НЕ ВАРИТСЯ ИЗ ПИЩИ — сквозной закон по ВСЕЙ таблице
+    // составов (владелец, 2026-09-20; ради него и заведено ВОЛОКНО со своей
+    // парцеллой). ПОЧЕМУ ЭТО ЗАКОН, А НЕ ВКУС: пока ткань пряли из зерна,
+    // любое давление труда в сторону благ съедало хлеб мира. Измерено в день,
+    // когда хлеб вырезали и городские руки остались без дела: ткани ×40,
+    // съедено ртами 13.8 М → 11.2 М при ВДВОЕ большей добыче, голодавших в
+    // городах 306 → 92 901. Свидетель стоит на ВСЕЙ таблице, потому что
+    // следующая заглушка («мясо в клей», «зерно в бумагу») придёт другой
+    // строкой, и поймать её должен закон, а не проверка про ткань.
     {
-        const int clothSeason =
-            season_demand_for("cloth", nullptr, 128, CITY, nullptr);
-        int foodPerCloth = 0;
-        for (const ItemPart& part : item_parts(item_index("cloth"))) {
-            if (int(part.def) == item_index(hunger_item_id()))
-                foodPerCloth += part.count;
+        const int hungerIdx = item_index(hunger_item_id());
+        bool anyGoods = false, foodFree = true;
+        for (int c = 0; c < kCommodityCount; ++c) {
+            const int idx = item_index(kCommodities[c].id);
+            const ItemDef* d = item_def_at(idx);
+            if (!d || d->type != ItemType::Goods) continue;
+            anyGoods = true;
+            for (const ItemPart& part : item_parts(idx)) {
+                if (int(part.def) == hungerIdx) foodFree = false;
+            }
         }
-        CHECK(foodPerCloth > 0, "fixture: cloth is spun from the hunger row");
-        CHECK(season_demand_for(hunger_item_id(), nullptr, 128, CITY, nullptr)
-                      == 128 * kDaysPerSeason + clothSeason * foodPerCloth
-                  && clothSeason == 4 * kDaysPerSeason
-                  && season_demand_for("wpn_dagger", nullptr, 128, CITY,
-                                       nullptr) == 0,
-              "demand reads the ONE needs ladder");
+        CHECK(anyGoods, "the sweep actually saw goods rows (negative control)");
+        CHECK(foodFree,
+              "no comfort good is spun from the hunger row — the world must "
+              "not be able to weave its bread into shirts");
     }
     // СПРОС ЧИТАЕТ ДОЛГ: полупогашенный счёт хлеба — и спрос ровно он.
     {
