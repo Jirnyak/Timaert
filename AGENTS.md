@@ -308,6 +308,30 @@ is CANON.md S26; these are the working rules that follow from it.
    это ни о чём, это DOD-подход». A 256-slot inventory on EVERY entity is
    RIGHT. You may shrink a structure by lowering a DERIVED cap; you may not
    shrink it by introducing pointers or variable-size containers.
+
+   **THE BUDGET, STATED AS A NUMBER (owner, 2026-09-21).** Verbatim: «если
+   проблема нескольких мегабайт оперативы, то всегда лучше структура, и не
+   жалко, что лишние десяток мегабайтов оперативы займёт… оператива у нас
+   бесконечная на масштабах десятков и даже сотен мегабайт — типа у нас
+   выделено на игру до 8 ГБ легко». So:
+   - **tens, and even hundreds, of megabytes are FREE.** The budget is ~8 GB.
+     A design that costs 32 MB and answers the question honestly beats one
+     that costs 16 MB and answers it approximately — always, and without a
+     discussion;
+   - therefore **"it would double the field" is NOT an argument.** Doubling a
+     32 MB field to widen a value, to pre-scale a memory, or to keep a layer
+     flat costs nothing this project cares about. Say the number out loud and
+     take the better structure;
+   - the ONLY memory arguments that survive are about the SIMULATION BOUND
+     (O(N), cache lines walked per tick — those are TIME, not bytes) and about
+     rule 8 below (compression is gated because it trades away ANSWERS).
+   *Why this is written down:* the temptation is always local and always
+   reads as virtue. «uint16 хватит», «зачем 64 бита», «поле удвоится» — each
+   is a small, sensible-sounding sentence, and each one has already bought
+   this project a silent defect (the tithe's dead zone lived in exactly that
+   argument, spelled as «разрешения, которого нет у представления, не
+   выдумать округлением»). Width is chosen by CALCULATION (ЗАКОН ТИПА), and
+   when the calculation says wider, wider is free.
 3. **Strings are an AUTHORING key, never a runtime one.** Tables may name a
    row `"bread"`; the runtime record carries the resolved ordinal (the
    `faction_index` / `npc_def` idiom). A `std::string` compared per tick is a
