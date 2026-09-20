@@ -20,6 +20,14 @@ items, inventory, equipment, loot.
 > consciously absent; nothing spends a point yet. The aura door still
 > stands, returning empty, and is where node rows will feed `BonusTotals`.
 >
+> **2026-09-20 — ВСЁ В СУБМИРЕ СТАЛО СПОСОБНОСТЬЮ** (CANON S13): one door
+> ([sub/ability.h](src/sub/ability.h)) takes a sip, a lever, an axe, a swing
+> and a cast through the body's ONE recovery gate; the length is a COLUMN of
+> the acting row (`ItemDef::useSeconds`, `InteractRow::actSeconds`), divided
+> by the same recovery door as everything else, and 0 is an honest special
+> case. This is the hook ToME-style active abilities of items and perks will
+> hang on — they need no new machinery, only a row.
+>
 > **Session Е (2026-09-19) also closed four combat debts:** an NPC now
 > strikes with his own sheet (`multPct` from training, both ends of S13 in
 > one commit), the armour skills finally multiply their own kind, a spell's

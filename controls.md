@@ -69,6 +69,17 @@ are non-fatal — defaults stand; a hand-edited duplicate within one world
 resolves to the LAST line, the earlier holder left visibly unbound. Saved on
 every rebind and on the panel's Reset.
 
+**Состояние сцены живёт ровно одну сцену** (owner, in play 2026-09-20).
+Every MODE the keys can arm below — turn-based P, the player's pause, the
+time speed, the rest — plus the held INTENTS (attack, direction, jump) and
+the open PANELS are cleared by one door (`reset_scene_session_state`,
+main.cpp) at BOTH ends of the subworld transition. The bug that taught it:
+P survived the climb out, so the next descent froze on its first frame and
+the bodies never streamed in — the player saw an empty world. The law
+existed before in three manners (speed dropped on entry, pause refused to
+arm below, P did neither), which is why it leaked. A player's CHOICE — the
+active spell, the sheet tab — is not a mode and is deliberately kept.
+
 **Retired defaults migrate at load.** `save_keymap` dumps every row, chosen
 or not — so a prefs line that repeats an OLD table default is the old table
 talking, not the player, and it loads as the CURRENT default. Without this,
