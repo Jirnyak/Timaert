@@ -113,35 +113,64 @@ static void test_project_combat_melee() {
 }
 
 static void test_project_combat_missile() {
-    // Identical sheet, missile base: damage bonus must come from SPELL stats.
+    // РАСКЛЕЙКА КАСТА И ВЫСТРЕЛА (2026-09-19, CANON S14). This witness used
+    // to pin the OPPOSITE law — «a Missile row takes the SPELL bonus» — and
+    // that was exactly the defect: `attackKind == Missile` meant "caster"
+    // only because every Missile row in the game happened to be one, so the
+    // first NPC archer would have drawn INT into his arrows. A row now NAMES
+    // its spell, and the three cases are told apart by the ROW, not by a
+    // column about delivery.
     CharacterSheet cs;
     cs.attributes[sm::AttributeId::Str] = 12;
     cs.attributes[sm::AttributeId::Intl] = 7;
     cs.skills[sm::SkillId::Armsmaster] = 4;
     cs.skills[sm::SkillId::Spellcraft] = 3;
-
-    CombatTemplate base{};
-    base.hp = 60; base.dice = {8, 1}; base.attackKind = CombatTemplate::Missile;
-
-    const CombatTemplate out = project_combat(cs, base);
     const DerivedBonuses expD = calculate_derived(cs.attributes, cs.skills);
-
-    CHECK(out.flatAdd == std::int16_t(std::floor(expD.rawSpellDamage)),
-          "missile: flatAdd == floor(rawSpellDamage) — the bonus is the SPELL one");
-    CHECK(out.attackKind == CombatTemplate::Missile, "missile: kind preserved");
-    // Sanity: the raw spell add (intl 7) differs from the raw phys add
-    // (str 12), so the branch actually matters.
+    // The branch is meaningful only while the two adds differ — else every
+    // claim below would pass on an arithmetic accident.
     CHECK(!approx(expD.rawSpellDamage, expD.rawPhysDamage),
-          "missile: phys vs spell bonus differ (branch is meaningful)");
-    // Tempo branch: a caster's recovery divides by SPELLCRAFT's rank, not
-    // Armsmaster's — the same door, the domain's own generic.
-    CombatTemplate cdBase{};
-    cdBase.cooldown = 2.0f; cdBase.attackKind = CombatTemplate::Missile;
-    CHECK(approx(project_combat(cs, cdBase).cooldown,
+          "fixture: phys and spell adds differ, so the split is observable");
+
+    // A SHOT: Missile, no spell named.
+    CombatTemplate shot{};
+    shot.hp = 60; shot.dice = {8, 1};
+    shot.attackKind = CombatTemplate::Missile;
+    const CombatTemplate shotOut = project_combat(cs, shot);
+    CHECK(shotOut.flatAdd == 0,
+          "shot: NO attribute add — not INT and not STR (S14 «урон "
+          "стрелкового БЕЗ добавки атрибута»)");
+    CHECK(shotOut.attackKind == CombatTemplate::Missile,
+          "shot: delivery preserved");
+    CHECK(shotOut.dice.n == shot.dice.n && shotOut.dice.m == shot.dice.m,
+          "shot: a row with no spell keeps its OWN dice");
+
+    // A CAST: the row names a spell, and the blow IS that spell.
+    const int ord = sm::spell_ordinal("magic_bolt");
+    CHECK(sm::spell_ordinal_ok(ord), "fixture: the named spell exists");
+    CombatTemplate cast = shot;
+    cast.castSpell = ord;
+    const CombatTemplate castOut = project_combat(cs, cast);
+    CHECK(castOut.flatAdd == std::int16_t(std::floor(expD.rawSpellDamage)),
+          "cast: the add is the caster's INT — magic, and it says so");
+    CHECK(castOut.dice.n == sm::kSpellDefs[ord].dice.n,
+          "cast: a caster has no dice of his own — the SPELL's are the blow");
+
+    // TEMPO follows the same split: Spellcraft paces a cast, Armsmaster
+    // paces a shot (a bow is drawn by arms, not by a casting hand).
+    CombatTemplate cdShot{};
+    cdShot.cooldown = 2.0f; cdShot.attackKind = CombatTemplate::Missile;
+    CombatTemplate cdCast = cdShot;
+    cdCast.castSpell = ord;
+    CHECK(approx(project_combat(cs, cdCast).cooldown,
                  seconds_from_steps(std::uint32_t(recovery_steps(
-                     cdBase.cooldown, cs.attributes, cs.skills,
+                     cdCast.cooldown, cs.attributes, cs.skills,
                      sm::SkillId::Spellcraft)))),
-          "missile: cooldown == the recovery door's verdict (Spellcraft)");
+          "cast: cooldown == the recovery door's verdict (Spellcraft)");
+    CHECK(approx(project_combat(cs, cdShot).cooldown,
+                 seconds_from_steps(std::uint32_t(recovery_steps(
+                     cdShot.cooldown, cs.attributes, cs.skills,
+                     sm::SkillId::Armsmaster)))),
+          "shot: cooldown == the recovery door's verdict (Armsmaster)");
 }
 
 // ── make_character_sheet: the level point-budget identity ────────────────────
