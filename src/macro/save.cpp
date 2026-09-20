@@ -1148,7 +1148,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
         if (lm.id >= 0
             && std::uint32_t(lm.id) >= s.nextLandmarkOrdinal)
             s.nextLandmarkOrdinal = std::uint32_t(lm.id) + 1u;
-        s.landmarks.push_back(std::move(lm));
+        add_landmark(s, std::move(lm));
     }
 
     if (!read_count(r, n, kMaxMarkers)) return;

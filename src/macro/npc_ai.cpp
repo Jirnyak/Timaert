@@ -96,6 +96,11 @@ void stamp_feature_if_bare(const TickContext& ctx, int x, int y,
     if (FeatureLayer::decode(b) != FT_None) return;
     b = std::uint8_t(ft);
     ctx.mw.gs->builtFeatures.push_back(BuiltFeature{x, y, std::uint8_t(ft)});
+    // МОСТ МЕНЯЕТ ПРОХОДИМОСТЬ — и это СОБЫТИЕ (CANON S9/S7): запечённая
+    // навигация поднимается по факту, а не по ежедневному пересчёту фич.
+    // Распашка и шахта проходимости не меняют и поле не трогают — тот же
+    // урок, что однажды убил перф глобальной инвалидацией по builtFeatures.
+    if (ft == FT_Bridge || ft == FT_WoodBridge) ++ctx.mw.gs->navEpoch;
 }
 
 // Ближайший корпус МОЕЙ округи (причал). Читается ЧЕСТНО: список фич,
@@ -1327,6 +1332,8 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                     ctx.mw.gs->builtFeatures.push_back(BuiltFeature{
                         int(rt.targetX), int(rt.targetY),
                         std::uint8_t(ft)});
+                    // Пролёт лёг — навигация поднимается по СОБЫТИЮ (S7).
+                    ++ctx.mw.gs->navEpoch;
                     // The day of making pays the working cycle (S14).
                     pools.spCarry -= float(cycleCost);
                     settle_sp_carry(pools);

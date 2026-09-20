@@ -69,14 +69,6 @@ struct BakeHeap {
     bool empty() const { return items.empty(); }
 };
 
-std::uint64_t count_bridge_builts(const GameState& gs) {
-    std::uint64_t n = 0;
-    for (const BuiltFeature& b : gs.builtFeatures)
-        if (b.ft == std::uint8_t(FT_Bridge) || b.ft == std::uint8_t(FT_WoodBridge))
-            ++n;
-    return n;
-}
-
 } // namespace
 
 std::size_t NavWorld::cell(int x, int y) const {
@@ -485,9 +477,7 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
     run_tables(adjSea, nv.routeDistSea.data(), nv.routeNextSea.data());
 
     nv.bakedSeed = gs.worldSeed;
-    nv.bakedLandmarks = std::uint32_t(R);
-    nv.bakedBridgeBuilts = count_bridge_builts(gs);
-    nv.seenBuiltCount = gs.builtFeatures.size();
+    nv.bakedNavEpoch = gs.navEpoch;
 
     // Сводка запекания — вслух, как учит статья: «рисуйте промежуточные
     // данные»; запекание редкое, строка дешёвая.
@@ -506,18 +496,12 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
 bool nav_ensure(const MacroWorld& mw, NavWorld& nv) {
     if (!mw.gs) return false;
     const GameState& gs = *mw.gs;
-    std::uint32_t live = 0;
-    for (const Landmark& lm : gs.landmarks)
-        if (lm.type != LandmarkType::None) ++live;
-    bool stale = !nv.baked() || nv.bakedSeed != gs.worldSeed
-              || nv.bakedLandmarks != live
-              || nv.mapW != gs.mapW || nv.mapH != gs.mapH;
-    if (!stale && nv.seenBuiltCount != gs.builtFeatures.size()) {
-        // Дельту смотрим на МОСТЫ: только они меняют проходимость.
-        const std::uint64_t bridges = count_bridge_builts(gs);
-        if (bridges != nv.bakedBridgeBuilts) stale = true;
-        else nv.seenBuiltCount = gs.builtFeatures.size();
-    }
+    // Четыре сравнения целых — и ни одного прохода по миру. Состав мест и
+    // мосты объявляют себя СОБЫТИЕМ (gs.navEpoch); сид и размеры ловят
+    // подмену мира под живым NavWorld.
+    const bool stale = !nv.baked() || nv.bakedSeed != gs.worldSeed
+                    || nv.bakedNavEpoch != gs.navEpoch
+                    || nv.mapW != gs.mapW || nv.mapH != gs.mapH;
     if (stale) nav_bake(mw, nv);
     return nv.baked();
 }

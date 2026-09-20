@@ -107,14 +107,14 @@ struct Fixture {
         main.x = 5;
         main.y = 32;
         main.population = 100;
-        gs.landmarks.push_back(std::move(main));
+        sm::add_landmark(gs, std::move(main));
         sm::Landmark isle{};
         isle.id = 2;
         isle.type = sm::LandmarkType::Village;
         isle.x = 40;
         isle.y = 32;
         isle.population = 100;
-        gs.landmarks.push_back(std::move(isle));
+        sm::add_landmark(gs, std::move(isle));
         mw.gs = &gs;
         mw.pathCost = &pc;
         sm::nav_bake(mw, nav);
@@ -252,6 +252,46 @@ int main() {
         CHECK(sea.nav.waterRegionOf[std::size_t(32) * W + 44]
                   != sm::kNavNoRegion,
               "shore water is owned by the water tier");
+    }
+
+    // ── СВЕЖЕСТЬ — ПО СОБЫТИЮ, А НЕ ПО ОПРОСУ (CANON S9, 2026-09-20) ────
+    {
+        Fixture f;
+        f.build(0, 0);
+        // Метка в производном поле: пережила nav_ensure — значит перепёка
+        // НЕ БЫЛО. Это наблюдаемый способ утверждать «работа не делалась».
+        const std::uint16_t mark = 0xBEEFu;
+        f.nav.regionOf[0] = mark;
+        CHECK(sm::nav_ensure(f.mw, f.nav),
+              "ensure answers on an already baked world");
+        CHECK(f.nav.regionOf[0] == mark,
+              "an unchanged world is not rebaked: no poll, no work");
+
+        // ПЕРЕХОД ПЛЮС РОЖДЕНИЕ В ОДНОМ ОКНЕ — ровно та тихая ошибка, на
+        // которой стоял старый сторож: он сравнивал ЧИСЛО ЖИВЫХ мест, а
+        // деревня, ставшая руиной, живой считается по-прежнему — сторож не
+        // видел НИЧЕГО, хотя реестровая строка места сменилась. Событию
+        // такое не сойдёт.
+        sm::set_landmark_type(f.gs, f.gs.landmarks[1],
+                              sm::LandmarkType::Ruin);
+        sm::Landmark born{};
+        born.id = 3;
+        born.type = sm::LandmarkType::Village;
+        born.x = 40;
+        born.y = 32;
+        born.population = 100;
+        sm::add_landmark(f.gs, std::move(born));
+        CHECK(sm::nav_ensure(f.mw, f.nav),
+              "ensure still answers after the swap");
+        CHECK(f.nav.regionOf[0] != mark,
+              "death plus birth in one window still rebakes");
+        bool sawDead = false, sawBorn = false;
+        for (std::int32_t lid : f.nav.regionLandmarkId) {
+            sawDead = sawDead || lid == 2;
+            sawBorn = sawBorn || lid == 3;
+        }
+        CHECK(sawDead && sawBorn,
+              "the ruin still stands and seeds its region, the newborn too");
     }
 
     return sm::test::report("nav_region_test");

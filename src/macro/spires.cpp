@@ -121,7 +121,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
             sp.population = landmark_born_population(
                 int(def.bornPopBase), int(def.bornPopPerScore), tier, popRng);
         }
-        gs.landmarks.push_back(std::move(sp));
+        add_landmark(gs, std::move(sp));
     }
 }
 

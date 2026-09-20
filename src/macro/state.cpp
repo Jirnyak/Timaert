@@ -196,7 +196,7 @@ void populate_landmarks_from_politik(GameState& gs,
         } else {
             s.name = !c.name.empty() ? c.name : "Outpost";
         }
-        gs.landmarks.push_back(std::move(s));
+        add_landmark(gs, std::move(s));
     }
 
     // THE suzerain edges (CANON S24), stamped here — the one place that
@@ -368,7 +368,7 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.name = s.factionIdx >= 0
                 ? generate_name(lang_of(s.factionIdx), rng)
                 : "Hamlet";
-            gs.landmarks.push_back(std::move(vil));
+            add_landmark(gs, std::move(vil));
         }
     }
 }

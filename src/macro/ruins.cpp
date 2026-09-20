@@ -108,7 +108,7 @@ void generate_ruins(GameState& gs, const ZoneLayer& zones,
                 int(def.bornPopBase), int(def.bornPopPerScore),
                 int(zones.at(bestX, bestY)), popRng);
         }
-        gs.landmarks.push_back(std::move(ruin));
+        add_landmark(gs, std::move(ruin));
         ++placed;
     }
     std::printf("[worldgen] ruins: %d of %d placed (%d cities)\n",
