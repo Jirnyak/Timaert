@@ -1742,38 +1742,99 @@ bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
            && int(pools.sp) > int(pools.maxSp) / 2;
 }
 
-// Pick the caravan's next STATION: the nearest other city, never the one it
-// just left; a coin-flip between the two nearest keeps one pair of towns
-// from monopolising the leg. Pure geometry over the landmark list — the
-// road graph prices the march anyway (pathCost), so "nearest" IS "next
-// down the road" in practice.
+// СЛЕДУЮЩАЯ СТАНЦИЯ ТОРГОВЦА — СОСЕД ПО ГРАФУ ОКРУГ (владелец 2026-09-20:
+// «пусть горожане несут не ближайшего, а просто тоже гуляют как караван —
+// та же диффузия, зато единообразно»).
+//
+// ОДИН закон движения на всякого, кто возит товар: караван, деревенский
+// вендор, артель горожан. Место в СОСЕДНЕЙ округе через мембрану, кроме
+// той, откуда пришёл; несколько прыжков — и домой (заём склада обязан
+// вернуться, S5). Решает всё не маршрут, а ЦЕНА на месте: продал там, где
+// дорого, купил там, где дёшево, — это и есть диффузия вдоль ценового
+// градиента, а голодное место дорого по построению (непогашенный счёт).
+//
+// ЧТО УМЕРЛО ЗДЕСЬ (всё три — назначенные правила, CANON S26):
+//  · «ближайший вассал» у артели горожан — он был ПОЛНЫМ СКАНОМ всех мест
+//    (1738 записей на город) плюс нелокальностью: место читало состояние
+//    двух десятков соседей разом, и городской хлеб тёк ровно в одну
+//    деревню из двадцати шести (замер 2026-09-20: 63 обслуженных деревни
+//    из 1675, гора в 45 млн стоит);
+//  · «станция бывает только городом» — фильтр по виду места, тот же класс
+//    ворот, что «рынок бывает только городом», снесённый 2026-09-19;
+//  · выбор станции полным сканом ландмарков по прямой — на тысячах
+//    сквадов это горячий цикл, а у мира есть свой граф соседства.
+// Цена шага теперь — перебор мембран своей округи (единицы), и знание
+// агента строго локально: видно только соседей.
 int pick_next_station_(const TickContext& ctx, const MacroPos& p,
                        int currentId, int prevId, float& outX, float& outY) {
-    int bestId = -1, secondId = -1;
-    float bestD = 1e30f, secondD = 1e30f;
-    float bX = 0, bY = 0, sX = 0, sY = 0;
-    for (auto& c : ctx.mw.gs->landmarks) {
-        if (c.type != LandmarkType::City) continue;
-        if (c.id == currentId || c.id == prevId) continue;
-        const float d = torus_dist_sq(p.x, p.y, float(c.x), float(c.y),
-                                      float(ctx.mapW), float(ctx.mapH));
-        if (d < bestD) {
-            secondId = bestId; secondD = bestD; sX = bX; sY = bY;
-            bestId = c.id; bestD = d; bX = float(c.x); bY = float(c.y);
-        } else if (d < secondD) {
-            secondId = c.id; secondD = d; sX = float(c.x); sY = float(c.y);
+    if (!ctx.mw.gs) return -1;
+    const NavWorld* nv = ctx.mw.nav;
+    const std::size_t R = nv ? nv->regionLandmarkId.size() : 0;
+    const std::uint16_t here =
+        (nv && nv->baked()) ? nav_region_at(*nv, int(p.x), int(p.y))
+                            : kNavNoRegion;
+    if (!nv || !nv->baked() || std::size_t(here) >= R) {
+        // МИР БЕЗ ДОРОГ (граф округ не запечён — синтетическая фикстура,
+        // молодой мир): соседство спрашивается у ГЕОМЕТРИИ. Не «ближайший»
+        // — РУЛЕТКА ПО БЛИЗОСТИ (владелец 2026-09-20: «если один ближе, то
+        // будет всегда идти в него — надо ослабить»): вес = 1/(1+дистанция),
+        // ближний вероятнее в разы, но достижимо ВСЁ, и купец иногда уходит
+        // за горизонт. Тот же приём, что у аукциона целей: рулетка по скору
+        // вместо argmax — детерминированный минимум обслуживал бы одно
+        // место и морил соседей.
+        float total = 0.0f;
+        for (const Landmark& c : ctx.mw.gs->landmarks) {
+            if (c.id == currentId || c.id == prevId) continue;
+            if (!landmark_is_settlement(c.type) || c.population <= 0) continue;
+            total += 1.0f / (1.0f + std::sqrt(torus_dist_sq(
+                p.x, p.y, float(c.x), float(c.y),
+                float(ctx.mapW), float(ctx.mapH))));
         }
+        if (total <= 0.0f) return -1;
+        // Без броска (аукцион зовёт дверь без своего RNG) рулетка честно
+        // вырождается в первый вес — ближнего; случайность не обязана
+        // существовать там, где её нечем взять.
+        float roll = ctx.rng
+            ? float(rand_int(ctx, 1 << 20)) / float(1 << 20) * total
+            : 0.0f;
+        for (const Landmark& c : ctx.mw.gs->landmarks) {
+            if (c.id == currentId || c.id == prevId) continue;
+            if (!landmark_is_settlement(c.type) || c.population <= 0) continue;
+            roll -= 1.0f / (1.0f + std::sqrt(torus_dist_sq(
+                p.x, p.y, float(c.x), float(c.y),
+                float(ctx.mapW), float(ctx.mapH))));
+            if (roll <= 0.0f) {
+                outX = float(c.x);
+                outY = float(c.y);
+                return c.id;
+            }
+        }
+        return -1;
     }
-    if (bestId < 0) return -1;
-    // The coin-flip diversifies COMPARABLY near stations only (second within
-    // twice the best's distance — ×4 on the squared metric): a road fork is
-    // a choice, a town across the map is not.
-    if (secondId >= 0 && secondD <= bestD * 4.0f && rand_int(ctx, 2) == 0) {
-        outX = sX; outY = sY;
-        return secondId;
+    // Кандидаты — жилые места соседних округ. Больше восьми мембран у
+    // округи не берём: выбор шага не должен стоить обхода всей карты.
+    int cand[8];
+    int candCount = 0;
+    const std::uint32_t begin = nv->portalBegin[here];
+    for (int pi = 0; pi < int(nv->portalCount[here]) && candCount < 8; ++pi) {
+        const std::uint16_t to = nv->portals[begin + std::uint32_t(pi)].toRegion;
+        if (std::size_t(to) >= R) continue;
+        const int lmId = int(nv->regionLandmarkId[to]);
+        if (lmId < 0 || lmId == currentId || lmId == prevId) continue;
+        const Landmark* lm = landmark_by_id(*ctx.mw.gs, lmId);
+        if (!lm || !landmark_is_settlement(lm->type) || lm->population <= 0)
+            continue;
+        bool seen = false;
+        for (int c = 0; c < candCount; ++c) seen = seen || cand[c] == lmId;
+        if (!seen) cand[candCount++] = lmId;
     }
-    outX = bX; outY = bY;
-    return bestId;
+    if (candCount <= 0) return -1;   // тупик: рейс кончается, крю идёт домой
+    const Landmark* pick = landmark_by_id(
+        *ctx.mw.gs, cand[ctx.rng ? rand_int(ctx, candCount) : 0]);
+    if (!pick) return -1;
+    outX = float(pick->x);
+    outY = float(pick->y);
+    return pick->id;
 }
 
 // ТОРГОВАЯ СИЛА ТОРГОВЦА — ОДНО число с его листа (CANON S25): финальное
@@ -4385,29 +4446,17 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // излишке» умер этим вердиктом.
             // Локальность закона: никакого знания цен рынка — только СВОЙ
             // склад; сама сделка честно решится на месте (ai_vendor).
-            // РЫНОК РЕЙСА — ФЕОДАЛЬНОЕ РЕБРО В ЛЮБУЮ СТОРОНУ (владелец
-            // 2026-09-19): у деревни это её сюзерен, у города — БЛИЖАЙШИЙ
-            // его вассал. Одно ребро, один рейс, один закон цены — просто
-            // горожане едут закупаться туда, где товар изобилен, потому что
-            // на голодном конце сделка арифметически невозможна (см.
-            // ai_vendor: первая буханка у пустой полки стоит база × сезонную
-            // нужду / 2). Вассал ищется перебором по ребру — оно у места
-            // одно, а не хранимым списком (S24 «узел знает сюзерена»).
-            const Landmark* partner = nullptr;
-            if (s.suzerainLandmarkId >= 0) {
-                partner = landmark_by_id(gs, s.suzerainLandmarkId);
-            } else {
-                float bestSq = 0.0f;
-                for (const Landmark& v : gs.landmarks) {
-                    if (v.suzerainLandmarkId != s.id || v.id == s.id) continue;
-                    if (!landmark_is_settlement(v.type) || v.population <= 0)
-                        continue;
-                    const float d2 = torus_dist_sq(
-                        home.x, home.y, float(v.x), float(v.y),
-                        float(ctx.mapW), float(ctx.mapH));
-                    if (!partner || d2 < bestSq) { partner = &v; bestSq = d2; }
-                }
-            }
+            // ПЕРВАЯ СТАНЦИЯ РЕЙСА — СОСЕД ПО ГРАФУ ОКРУГ, как у всякого
+            // торговца (владелец 2026-09-20, диффузия): ни феодального
+            // ребра, ни «ближайшего вассала» полным сканом мест. Дальше
+            // крю идёт той же диффузией (pick_next_station_), а КУДА течёт
+            // товар, решает цена на месте, а не выбор маршрута.
+            const MacroPos homePos{home.x, home.y};
+            float stX = 0.0f, stY = 0.0f;
+            const int firstId = pick_next_station_(ctx, homePos, s.id, -1,
+                                                   stX, stY);
+            const Landmark* partner =
+                firstId >= 0 ? landmark_by_id(gs, firstId) : nullptr;
             if (partner && landmark_is_settlement(partner->type)
                 && partner->id != s.id) {
                 const Landmark* city = partner;
