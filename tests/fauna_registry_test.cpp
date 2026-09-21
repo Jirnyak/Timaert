@@ -67,12 +67,21 @@ int main() {
     }
 
     // ── the humanoid rows are never creatures ────────────────────────────────
+    // ПРИРОДА СУДИТ, А НЕ КАТАЛОГ (2026-09-21): каталог — вид на ОДНУ
+    // таблицу тел, и строку он отдаёт всякому существующему роду; «человек
+    // ли он» — отдельный вопрос отдельной двери. Прежде здесь стоял гейт
+    // «гуманоид не тварь», и он вычёркивал бы культиста из его же каталога.
     for (std::uint16_t k : {std::uint16_t(sm::NPCType::Peasant),
                             std::uint16_t(sm::NPCType::Guard),
                             std::uint16_t(sm::NPCType::Sorceress),
-                            std::uint16_t(sm::NPCType::ClayDigger)}) {
-        CHECK(sm::creature_def_from_kind(k) == nullptr,
-               "a humanoid row is not a creature");
+                            std::uint16_t(sm::NPCType::Merchant)}) {
+        CHECK(sm::is_folk_kind(k), "народ — это строка природы, не каталога");
+        CHECK(!sm::is_fauna_kind(k), "и народ не живность");
+    }
+    for (std::uint16_t k : {std::uint16_t(sm::NPCType::Wolf),
+                            std::uint16_t(sm::NPCType::Horse)}) {
+        CHECK(sm::is_fauna_kind(k), "живность — живность");
+        CHECK(!sm::is_folk_kind(k), "и не народ");
     }
 
     // ── a kind that names no row at all -> nullptr ───────────────────────────

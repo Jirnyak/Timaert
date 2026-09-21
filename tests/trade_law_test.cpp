@@ -74,43 +74,26 @@ int main() {
         acrossSeam.population = 50;
         gs.landmarks.push_back(acrossSeam);
 
+        // ЗАКОН ПИНАЕТСЯ ПРЯМО В СВОЮ ДВЕРЬ (2026-09-21): прежде его
+        // водил ИИ каравана, а род каравана снесён — караван оказался
+        // сквадом, притворившимся видом существа. Дверь та же, что ведёт
+        // рейсы сбыта артелей сегодня.
         ecs::World w;
-        auto& reg = w.reg;
-        const auto e = reg.create();
-        reg.emplace<ecs::MacroCell>(e, ecs::cell_index(60, 32, 64));
-        reg.emplace<ecs::MacroVisual>(e, 60.0f, 32.0f, 0.0f);
-        reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Caravan),
-                                  std::uint16_t(faction_index("timaert")));
-        ecs::MacroNpcRuntime rt{};
-        rt.homeSettlementId = 0;
-        rt.targetSettlementId = -1;
-        rt.targetX = 60.0f;
-        rt.targetY = 32.0f;
-        rt.state = std::uint8_t(NPCState::Idle);
-        rt.stateTimer = 0;
-        ecs::Pools pools{};
-        pools.hp = pools.maxHp = 25;
-        refresh_body_from_sheet(pools, &rt, make_character_sheet(
-            NPCType::Caravan, 3, leader_sheet_seed(21u)), NPCType::Caravan);
-        pools.sp = pools.maxSp;
-        reg.emplace<ecs::Pools>(e, pools);
-        reg.emplace<ecs::MacroNpcRuntime>(e, rt);
-        reg.emplace<ecs::MacroSpawnId>(e, 21u);
-        reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-        reg.emplace<ecs::SquadRoster>(e);
-        reg.emplace<ecs::NpcInventory>(e);
-        reg.emplace<AgentMemory>(e);
-
-        MacroNpcAiRuntime ai{};
-        reset_macro_npc_ai_runtime(ai, 90u);
         MacroWorld mw{.gs = &gs, .world = &w};
-        tick_macro_npc_ai(mw, ai, kAiTicks);
-
-        const auto& out = reg.get<ecs::MacroNpcRuntime>(e);
-        if (out.state != std::uint8_t(NPCState::Traveling)) {
-            return fail("the caravan did not set out");
+        TickContext ctx{};
+        ctx.mw = mw;
+        ctx.mapW = gs.mapW;
+        ctx.mapH = gs.mapH;
+        Rng roll(90u);
+        ctx.rng = &roll;
+        float sx = 0.0f, sy = 0.0f;
+        const int pick = pick_next_station_(ctx, MacroPos{60.0f, 32.0f},
+                                            /*currentId*/0, /*prevId*/-1,
+                                            sx, sy);
+        if (pick < 0) {
+            return fail("the trade door named no station at all");
         }
-        if (out.targetSettlementId != acrossSeam.id) {
+        if (pick != acrossSeam.id) {
             return fail("TORUS LAW: the seam-side CITY is nearer and must win");
         }
     }

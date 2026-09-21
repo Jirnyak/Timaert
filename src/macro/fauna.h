@@ -156,7 +156,8 @@ int fauna_cell_capacity_at(const MacroWorld& w, int x, int y);
 // ── Creature views over THE one body table ───────────────────────────
 // The source of truth for every creature (rabbit → dragon) is the same
 // `kNpcTypeDefs` row it is for a peasant (macro/npc.h, CANON S16); these are
-// convenience views over its creature stripe (`is_creature_row`). Ids are one
+// convenience views over its creature stripe (природа строки — не человек).
+// Ids are one
 // contiguous ordinal space — the old `0x100 | catalog index` encoding is DEAD
 // (2026-08-20) — so `creature_def_from_kind` is just "the row, if it is a
 // beast", serving the death / loot path.

@@ -103,17 +103,12 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Peasant     — hardy laborer: pitchfork and flail, forage and endure
     {NPCType::Peasant, {3, 3, 1, 1, 1, 1, 1, 2},
      {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0,0, 0,0,3,1,0}},
-    // Woodcutter  — strong laborer: the axe is the trade and the argument
-    {NPCType::Woodcutter, {4, 3, 1, 1, 1, 1, 1, 1},
-     {0,4,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 1,0,0,0, 0,0,2,0,0}},
     // Merchant    — social, lucky, sedentary: the ledger, not the blade
     {NPCType::Merchant, {1, 2, 2, 1, 1, 3, 4, 3},
      {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,1,0,2, 2,0,0,0, 4,2,0,2,0}},
     // Caravan     — mobile trader: lives on the road, hence the road skills
     // Cha 5: the trade house on wheels — its whole market edge is this row
     // (owner 2026-08-30: «у каравана в таблице выше уровень и харизма»).
-    {NPCType::Caravan, {2, 3, 1, 1, 3, 2, 5, 2},
-     {0,0,0,1,0,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 4,0,0,0, 4,3,2,1,0}},
     // Bandit      — aggressive raider: knife and bow, fast on his feet
     {NPCType::Bandit, {4, 3, 1, 1, 3, 2, 1, 1},
      {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2,0, 0,0,1,0,0}},
@@ -128,14 +123,7 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
      {0,0,0,0,0,0,2, 0,1,2,0, 3,0,2,0,3,2, 0,5, 0,4,1,1,0, 1,0,0,0, 0,0,0,2,0}},
     // Miner       — strong laborer: the pick swings like a mace, the eye
     // reads the vein (Prospecting is the trade's whole point)
-    {NPCType::Miner, {4, 3, 1, 1, 1, 1, 1, 1},
-     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 0,0,0,4, 0,0,1,0,0}},
-    // Quarryman   — strong laborer: stone over ore, the back over the eye
-    {NPCType::Quarryman, {4, 3, 1, 1, 1, 1, 1, 1},
-     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,5, 0,0,0,2, 0,0,1,0,0}},
     // Clay-digger — hardy laborer (the peasant's build, wetter)
-    {NPCType::ClayDigger, {3, 3, 1, 1, 1, 1, 1, 2},
-     {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0,0, 0,0,2,1,0}},
     // ── The creature rows ────────────────────────────────────────────────
     // A beast has a sheet like a man has a sheet (owner, 2026-08-20: one
     // system, "у всех лист статов как в обливионе"). What differs is only the
@@ -190,13 +178,7 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // world for "an adventurer", e.g. a projected body of his squad).
     {NPCType::Adventurer,   {2, 2, 2, 2, 2, 2, 2, 2},
      {1,1,1,1,1,1,1, 1,1,1,1, 1,1,1,1,1,1, 1,1, 1,1,1,1,1, 1,1,1,1, 1,1,1,1,0}},
-    // Vendor — the village hauler on the town road: a labourer's back with a
-    // seller's tongue (the Woodcutter body, a pinch of the Merchant charm).
-    {NPCType::Vendor,       {3, 3, 1, 1, 1, 1, 1, 2},
-     {0,0,0,1,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,2,1,3, 2,0,0,0, 3,1,1,1,0}},
     // Silver-miner — the miner's body, row for row.
-    {NPCType::SilverMiner,  {4, 3, 1, 1, 1, 1, 1, 1},
-     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 0,0,0,4, 0,0,1,0,0}},
     // Tax-collector — a courier's legs, a clerk's head.
     {NPCType::TaxCollector, {2, 3, 2, 2, 3, 1, 2, 2},
      {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 3,0,0,0, 2,2,0,2,0}},

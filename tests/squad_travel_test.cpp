@@ -61,7 +61,10 @@ entt::entity make_walker(ecs::World& w, int mapW, float x, float y,
     auto e = w.reg.create();
     w.reg.emplace<ecs::MacroCell>(e, ecs::cell_index(int(x), int(y), mapW));
     w.reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
-    w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Caravan),
+    // Ходок фикстуры — машина БЕЗ ДОМА: она сваливается в ai_nomad и просто
+    // идёт к цели. Артель (Gatherer) без дома не двигается вовсе, а род
+    // Caravan, водивший этот тест, снесён 2026-09-21 вместе со своим ИИ.
+    w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::TaxCollector),
                                 std::uint16_t{0});
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = -1;
@@ -142,7 +145,7 @@ void test_greedy_walks_around_a_wet_cell() {
     auto e = make_walker(w, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 21u);
-    CHECK(drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 8),
+    CHECK(drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 12),
           "the walker reaches its destination past the wet cell");
     // Seven-to-eight weight-1 cells cost that many × kStaminaPerCell; ONE
     // swum cell would add ten more. Derived, never pinned: the ledger says
@@ -166,7 +169,7 @@ void test_river_is_a_wall_and_a_bridge_is_the_door() {
         auto e = make_walker(w, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 22u);
-        CHECK(!drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 12),
+        CHECK(!drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 18),
               "a river with no bridge is a WALL, not a ford");
         CHECK(float(ecs::cell_x(w.reg.get<ecs::MacroCell>(e), gs.mapW)) <= 15.0f,
               "the walker halted at the bank — never a cell of water under "

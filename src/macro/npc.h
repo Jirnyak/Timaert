@@ -24,10 +24,9 @@
 namespace sm {
 
 enum class NPCType : std::uint8_t {
-    Peasant = 0, Woodcutter, Merchant, Caravan, Bandit, Guard, Witch, Sorceress,
+    Peasant = 0, Merchant, Bandit, Guard, Witch, Sorceress,
     // The gatherer professions of the deposit rows (resources.md): a
     // profession per resource, appended so saved kinds stay stable.
-    Miner, Quarryman, ClayDigger,
     // ── and every creature, in the SAME space ─────────────────────────────
     // The monster catalog used to be a second table addressed by `0x100 | row`
     // — a second vocabulary written as a number. It is gone: a wolf is a row
@@ -43,10 +42,8 @@ enum class NPCType : std::uint8_t {
     Adventurer,
     // The village vendor (owner 2026-08-30): the crew that walks the home
     // surplus to the nearest city market. Appended, so saved ordinals stay.
-    Vendor,
     // The silver villages' man (CANON S10 чеканка): the same gatherer loop
     // as every profession — a row, never a branch. Appended.
-    SilverMiner,
     // The feudal graph's carrier (CANON S24): walks the town's tithe up to
     // its capital — «налог течёт по рёбрам носителями». Appended.
     TaxCollector,
@@ -82,15 +79,41 @@ enum class NPCType : std::uint8_t {
     Count,
 };
 
-// ЧТО ЭТА СТРОКА ДЕЛАЕТ В ОТРЯДЕ — тег строки существа, ровно как ItemType
-// у предмета (владелец 2026-09-19: «лошадям дать тег mount — уже есть
-// система, что теги товары и теги еда у предметов»). ОДНА колонка на
-// строку, не маска: существо играет в ростере одну роль, и роли не
-// складываются. None = обычный боец/зверь.
+// ЧТО ЭТА СТРОКА ЕСТЬ — ПРИРОДА, не роль (владелец, 2026-09-21: «это не роль
+// в отряде, а типа природа... типа единая система»). ОДНА колонка на строку
+// на все вопросы мира о том, чем является душа; роли из неё не торчат.
+//
+// Прежде здесь стоял тег РОЛИ (None/Mount), и он отвечал ровно на один
+// вопрос — «ездовое ли». Природа отвечает на все сразу и каждым своим
+// читателем:
+//   Human — НАРОД мест: только эти души составляют население ландмарка,
+//           размножаются и заселяют пустой город (владелец: «тип human, это
+//           логично, потому что они все могут размножаться»);
+//   Fauna — живность: не население, а имущество и МЯСО (нож излишка режет
+//           именно её), и она же несёт спины под закон упряжки;
+//   Void  — нежить и нечисть: ни народ, ни мясо.
+// Ездовое НЕ стало четвёртым значением: «спина» — это уже своя колонка
+// (haulMult), и лошадь ездовая потому, что её спина больше человеческой, а
+// не потому, что кто-то назвал её ездовой вторым словом (S26).
+enum class NpcNature : std::uint8_t {
+    Human = 0,
+    Fauna,
+    Void,
+};
+
+// ЧТО ЭТА СТРОКА ДЕЛАЕТ В ОТРЯДЕ — РОЛЬ, и она отдельна от природы
+// (владелец 2026-09-19 завёл тег, 2026-09-21 подтвердил: «по нему будем
+// оценивать»). Природа говорит, ЧЕМ душа является; тег — КЕМ она служит в
+// ростере. Роли не складываются: одна колонка, None = обычный боец.
+//
+// ПОЧЕМУ НЕ ВЫВОДИТСЯ ИЗ СПИНЫ (haulMult), как я было сделал: спина — это
+// СКОЛЬКО он везёт, а не ЧЕМ он служит. Вывод «большая спина = вьючный»
+// сразу потребовал приписки «и не человек» (строка Caravan несёт 32 спины),
+// то есть выродился в правило с исключением. Ездовое называется словом.
 enum class NpcTag : std::uint8_t {
     None = 0,
     // ЕЗДОВОЕ/ВЬЮЧНОЕ: не рука и не боец в первую очередь, а СПИНА под
-    // человека. Отсюда закон упряжки ниже — их столько же, сколько душ.
+    // человека. Отсюда закон упряжки — их столько же, сколько душ.
     Mount,
 };
 
@@ -262,11 +285,16 @@ struct NpcTypeDef {
     int hireGold = 0;
 
     // Роль строки в ростере (NpcTag выше). Умолчание None: всякая строка,
-    // которая молчит, — обычный боец. Колонка, а не список «кто лошадь»:
-    // верблюд и мул становятся ездовыми, назвав ТЕГ, не тронув ни одной
-    // ветки (закон спецпутей — списка исключений не существует). Последняя
-    // на месте: opt-in колонка в хвосте не стоит остальным строкам запятой.
+    // которая молчит, — обычный боец. Последняя на месте: opt-in колонка в
+    // хвосте не стоит остальным строкам запятой.
     NpcTag tag = NpcTag::None;
+
+    // ПРИРОДА СТРОКИ ЖИВЁТ НЕ ЗДЕСЬ, а в kNpcNature ниже — таблицей-сестрой
+    // по ординалу (идиома kNpcPurse / kNpcMapColor). Причина честная: эта
+    // колонка стоит в ХВОСТЕ длинного ряда, и чтобы назвать её, строке
+    // пришлось бы выписать десяток промежуточных умолчаний руками — ровно
+    // тот рукописный пересбор, на котором поля выпадают молча. У сестры
+    // одна строка на род, и `rows_in_enum_order` не даст ей отстать.
 };
 
 // ── «ИМЕНОВАННОСТЬ» — субъектность рода (owner verdict 2026-09-10) ─────────
@@ -308,7 +336,6 @@ inline constexpr bool npc_named(NPCType t) {
 inline constexpr CombatTemplate kPeasantCombat   {25,{3,1}, 1.0f, 2.0f, 3.0f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 inline constexpr CombatTemplate kWoodcutterCombat{30,{8,1}, 1.0f, 2.0f, 2.75f, "Wdc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 inline constexpr CombatTemplate kMerchantCombat  {30,{5,1}, 1.25f, 2.0f, 3.0f, "Mrc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kCaravanCombat   {25,{4,1}, 1.5f, 2.0f, 3.0f, "Cvn", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 inline constexpr CombatTemplate kBanditCombat    {50,{12,1}, 2.25f, 3.0f, 2.5f, "Bnd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 inline constexpr CombatTemplate kGuardCombat     {55,{14,1}, 1.75f, 3.0f, 2.5f, "Grd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 // The adventurer's own template — the PLAYER's row. Base hp 100: the bare
@@ -391,22 +418,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
-    // Woodcutter
-    {
-        NPCType::Woodcutter, "woodcutter", "Woodcutter", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
-        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Borislav","Timofey","Yegor","Luka","Matvey"}}, 5,
-        {{"These woods hold many secrets.",
-          "Good timber is hard to find lately.",
-          "Watch for wolves near the tree line.",
-          "I chop from dawn to dusk. Honest work."}}, 4,
-        // Defaults to reach the price column: upkeep 1 × 30 days.
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
-        /*hireGold=*/30,
-    },
     // Merchant
     {
         NPCType::Merchant, "merchant", "Merchant", SpriteId::Caravan, 3,
@@ -417,28 +428,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Gold makes the world go round, friend.",
           "I travel between settlements. The roads are dangerous.",
           "Business has been slow. Perhaps you need something?"}}, 4,
-    },
-    // Caravan
-    {
-        // baseLevel 3 (vendor rolls 1): the row's level, with Cha weight 5
-        // (character_sheet.h), IS the caravan's market edge — the deal
-        // reads the sheet, never the type (owner 2026-08-30).
-        NPCType::Caravan, "caravan", "Caravan", SpriteId::Caravan, 3,
-        AIBehaviour::CaravanTrade, kCaravanCombat, kNpcUpkeepNone, false, 20,
-        /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Putnik","Dorozhkin","Obozov","Strannik","Koleso"}}, 5,
-        {{"Long road ahead. Care to trade before I move on?",
-          "I have seen many lands. Each stranger than the last.",
-          "The roads between settlements grow more perilous.",
-          "My oxen grow weary. We rest here briefly."}}, 4,
-        // No carried light — the four zeroes are the dark default, spelled
-        // out here only because the wagons that follow them are not.
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f,
-        // "My oxen grow weary" — this row says it in its own talk line. Wagons
-        // and a team, not a rucksack.
-        /*haulMult=*/32.0f,
     },
     // Bandit
     {
@@ -500,52 +489,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Few mortals seek me out willingly.",
           "I deal in mysteries beyond your understanding.",
           "Power has a price. Are you willing to pay?"}}, 4,
-    },
-    // Miner — the iron villages' man (spawned where a vein anchors the home)
-    {
-        NPCType::Miner, "miner", "Miner", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
-        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Prokhor","Savva","Demyan","Zakhar","Foma"}}, 5,
-        {{"The vein runs deep, but so do we.",
-          "Iron feeds this village better than grain ever did.",
-          "Mind the shafts after rain.",
-          "Every ingot you buy began as my day's sweat."}}, 4,
-        // Defaults to reach the price column: upkeep 1 × 30 days.
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
-        /*hireGold=*/30,
-    },
-    // Quarryman — stone out of the mountain, the same law of labour
-    {
-        NPCType::Quarryman, "quarryman", "Quarryman", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
-        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Gavril","Osip","Trofim","Nazar","Kondrat"}}, 5,
-        {{"Stone does not grow back. Good thing there is a mountain of it.",
-          "Every wall you have ever leaned on came through hands like mine.",
-          "The quarry sings if you strike it right."}}, 3,
-        // Defaults to reach the price column: upkeep 1 × 30 days.
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
-        /*hireGold=*/30,
-    },
-    // Clay-digger — the riverbank's man
-    {
-        NPCType::ClayDigger, "clay_digger", "Clay-digger", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
-        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Yermolai","Panteley","Averyan","Selivan","Mitrofan"}}, 5,
-        {{"Good clay wants a river and patience.",
-          "Bricks, pots, ovens - it all starts in my pit.",
-          "Cold work, wet work, honest work."}}, 3,
-        // Defaults to reach the price column: upkeep 1 × 30 days.
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
-        /*hireGold=*/30,
     },
     // Rabbit
     {
@@ -695,37 +638,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
         {{}}, 0, {{}}, 0,
     },
-    // Vendor — the village surplus on the road to town (owner 2026-08-30).
-    // haulMult 1: no wagon train — the crew's carry is the sum of its backs
-    // (spawn_squad), and the rotation sizes the crew to the village.
-    {
-        NPCType::Vendor, "vendor", "Vendor", SpriteId::Peasant, 1,
-        AIBehaviour::VendorTrade, kWoodcutterCombat, 0, true, 12,
-        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Matvey","Luka","Yefim","Silanty","Avdey"}}, 5,
-        {{"Fresh from the village, best prices before noon.",
-          "The road eats a share of every sack, but town coin is real.",
-          "Buy now - by evening the good grain is gone."}}, 3,
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
-        /*hireGold=*/30,
-    },
-    // Silver-miner — the mint's first hand (owner 2026-08-30)
-    {
-        NPCType::SilverMiner, "silver_miner", "Silver-miner",
-        SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
-        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Yakov","Naum","Tikhon","Arkhip","Kuzma"}}, 5,
-        {{"The white metal pays better than iron, and weighs on the soul.",
-          "Every coin in your purse was a rock in somebody's barrow.",
-          "The vein glitters, the lungs pay."}}, 3,
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
-        /*hireGold=*/30,
-    },
     // Tax-collector — the feudal graph's own courier (owner 2026-08-30)
     {
         NPCType::TaxCollector, "tax_collector", "Tax-collector",
@@ -751,7 +663,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         SpriteId::Bandit, 3,
         AIBehaviour::Aggressive, kAmbusherCombat, kNpcUpkeepNone, false, 20,
         // He drops what a bandit drops, named in his own column: his ordinal
-        // sits past the creature boundary (is_creature_row), where the
+        // sits in the creature stripe of the table, where the
         // per-role loot list no longer answers.
         /*weight*/0, /*loot*/"bandit", /*radius*/0.0f,
         {{"Krivoy","Sukhoy","Gnily","Ryaboy","Tishina"}}, 5,
@@ -1041,6 +953,80 @@ inline constexpr const NpcTypeDef& npc_def(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)];
 }
 
+// ── ПРИРОДА РОДА: одна строка на род, по ординалу (NpcNature выше) ────────
+// Это та самая «единая система» (владелец 2026-09-21): один столбец данных
+// вместо трёх разных вопросов, которые код задавал тремя разными способами.
+//
+// ЧТО ОН ЗАМЕНЯЕТ И ПОЧЕМУ ЭТО НЕ КОСМЕТИКА. До него «человек ли это»
+// отвечала ГРАНИЦА ОРДИНАЛА (`is_creature_row`: всё, что стоит в enum после
+// Rabbit, — зверь), и про неё в этом же файле было написано «это граница
+// ординалов, и она намеренно уродлива, чтобы её не приняли за факт о мире».
+// Её и не приняли — она ВРАЛА: человеческие рода (Adventurer, TaxCollector,
+// RoadAmbusher) дописаны в enum ПОСЛЕ звериного блока, и мир считал их
+// зверьём. Сборщик дани, растворяясь дома, уходил не в население, а в
+// гарнизон — как пойманная лошадь.
+//
+// ОТКРЫТО, НАЗВАНО ВСЛУХ (ничего мехaнического сегодня от этого не зависит:
+// эти рода не стоят в ростерах мест): гоблин, орк и кобольд поставлены Void
+// как «нечисть». Если по замыслу это народы со своими поселениями — они
+// Human, и тогда их деревня получит население той же дверью, без единой
+// ветки. Ждёт слова владельца.
+struct NpcNatureRow { NPCType type; NpcNature nature; };
+inline constexpr NpcNatureRow kNpcNature[std::size_t(NPCType::Count)] = {
+    {NPCType::Peasant,      NpcNature::Human},
+    {NPCType::Merchant,     NpcNature::Human},
+    {NPCType::Bandit,       NpcNature::Human},
+    {NPCType::Guard,        NpcNature::Human},
+    {NPCType::Witch,        NpcNature::Human},
+    {NPCType::Sorceress,    NpcNature::Human},
+    {NPCType::Rabbit,       NpcNature::Fauna},
+    {NPCType::Deer,         NpcNature::Fauna},
+    {NPCType::Fox,          NpcNature::Fauna},
+    {NPCType::Wolf,         NpcNature::Fauna},
+    {NPCType::Bear,         NpcNature::Fauna},
+    {NPCType::Boar,         NpcNature::Fauna},
+    {NPCType::Snake,        NpcNature::Fauna},
+    {NPCType::Hawk,         NpcNature::Fauna},
+    {NPCType::Frog,         NpcNature::Fauna},
+    {NPCType::Goat,         NpcNature::Fauna},
+    {NPCType::Eagle,        NpcNature::Fauna},
+    {NPCType::Croc,         NpcNature::Fauna},
+    {NPCType::Goblin,       NpcNature::Fauna},
+    {NPCType::Skeleton,     NpcNature::Void},
+    {NPCType::Troll,        NpcNature::Fauna},
+    {NPCType::SwampThing,   NpcNature::Void},
+    {NPCType::IceWraith,    NpcNature::Void},
+    {NPCType::SandScorpion, NpcNature::Fauna},
+    {NPCType::StoneGolem,   NpcNature::Void},
+    {NPCType::Adventurer,   NpcNature::Human},
+    {NPCType::TaxCollector, NpcNature::Human},
+    {NPCType::RoadAmbusher, NpcNature::Human},
+    {NPCType::Dragon,       NpcNature::Fauna},
+    {NPCType::GiantRat,     NpcNature::Fauna},
+    {NPCType::CaveBat,      NpcNature::Fauna},
+    {NPCType::Kobold,       NpcNature::Fauna},
+    {NPCType::CaveSpider,   NpcNature::Fauna},
+    {NPCType::Imp,          NpcNature::Void},
+    {NPCType::Zombie,       NpcNature::Void},
+    {NPCType::Orc,          NpcNature::Fauna},
+    {NPCType::Ghoul,        NpcNature::Void},
+    {NPCType::Harpy,        NpcNature::Fauna},
+    {NPCType::Cultist,      NpcNature::Human},
+    {NPCType::Gargoyle,     NpcNature::Void},
+    {NPCType::Wraith,       NpcNature::Void},
+    {NPCType::Ogre,         NpcNature::Fauna},
+    {NPCType::Minotaur,     NpcNature::Fauna},
+    {NPCType::Basilisk,     NpcNature::Fauna},
+    {NPCType::Lich,         NpcNature::Void},
+    {NPCType::Horse,        NpcNature::Fauna},
+};
+static_assert(rows_in_enum_order(kNpcNature, &NpcNatureRow::type),
+              "kNpcNature row order must mirror NPCType");
+
+inline constexpr NpcNature npc_nature(NPCType t) {
+    return kNpcNature[std::size_t(t)].nature;
+}
+
 // THE man-shaped half-width (world units ≈ metres): what a row that authors
 // no radius IS — a person. This default lived twice (here as the humanoid
 // rows' silence, and as CombatTemplate::bodyRadius's 0.55 that no row ever
@@ -1077,18 +1063,13 @@ inline constexpr float npc_body_radius(const NpcTypeDef& def) {
 struct NpcPurseRow { NPCType type; int min, max; };
 inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     {NPCType::Peasant,    1, 10},
-    {NPCType::Woodcutter, 1, 10},
     {NPCType::Merchant,   50, 200},
-    {NPCType::Caravan,    50, 200},
     {NPCType::Bandit,     5, 30},
     {NPCType::Guard,      5, 20},
     {NPCType::Witch,      10, 40},
     {NPCType::Sorceress,  10, 40},
     // The gatherer professions carry a labourer's pocket, like the
     // peasant/woodcutter class they share their build with.
-    {NPCType::Miner,      1, 10},
-    {NPCType::Quarryman,  1, 10},
-    {NPCType::ClayDigger, 1, 10},
     // A beast carries no purse — it has no pockets and no use for coin.
     // The one exception is the goblin, who robs what he kills.
     {NPCType::Rabbit,       0, 0},
@@ -1113,8 +1094,6 @@ inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     // The player's purse is his INVENTORY — what he actually carries — never a
     // rolled amount, so his row asks for nothing.
     {NPCType::Adventurer,   0, 0},
-    {NPCType::Vendor,       1, 10},
-    {NPCType::SilverMiner,  1, 10},
     {NPCType::TaxCollector, 1, 10},
     // He robs the road for a living, exactly like the bandit he is.
     {NPCType::RoadAmbusher, 5, 30},
@@ -1163,17 +1142,12 @@ inline constexpr const NpcPurseRow& npc_purse(NPCType t) {
 struct NpcMapColorRow { NPCType type; std::uint32_t rgb; };
 inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
     {NPCType::Peasant,      0xDCC8A0u},
-    {NPCType::Woodcutter,   0x5A9646u},
     {NPCType::Merchant,     0xF0C850u},
-    {NPCType::Caravan,      0xB48C50u},
     {NPCType::Bandit,       0xDC3C3Cu},
     {NPCType::Guard,        0x508CDCu},
     {NPCType::Witch,        0xB464C8u},
     {NPCType::Sorceress,    0x78C8E6u},
     // Every other row wears the neutral crowd grey the old default painted.
-    {NPCType::Miner,        0xC8C8C8u},
-    {NPCType::Quarryman,    0xC8C8C8u},
-    {NPCType::ClayDigger,   0xC8C8C8u},
     {NPCType::Rabbit,       0xC8C8C8u},
     {NPCType::Deer,         0xC8C8C8u},
     {NPCType::Fox,          0xC8C8C8u},
@@ -1194,8 +1168,6 @@ inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
     {NPCType::SandScorpion, 0xC8C8C8u},
     {NPCType::StoneGolem,   0xC8C8C8u},
     {NPCType::Adventurer,   0xC8C8C8u},
-    {NPCType::Vendor,       0xC8C8C8u},
-    {NPCType::SilverMiner,  0xC8C8C8u},
     {NPCType::TaxCollector, 0xC8C8C8u},
     {NPCType::RoadAmbusher, 0xDC3C3Cu},   // bandit red — he is one
     {NPCType::Dragon,       0xB03030u},   // драконья киноварь — цвет спрайта
@@ -1237,14 +1209,11 @@ inline bool valid_npc_kind(std::uint16_t raw) {
 // The last remnant of the old split, and it is TEMPORARY: two births still
 // exist below (sub/spawn.cpp), one that projects a sheet and one that reads a
 // row's raw combat line. They merge in the next step and this predicate dies
-// with them. It is an ordinal boundary and it is deliberately ugly, so that
-// nobody mistakes it for a fact about the world.
-inline constexpr bool is_creature_row(NPCType t) {
-    return t >= NPCType::Rabbit;
-}
-inline bool is_monster_kind(std::uint16_t raw) {
-    return valid_npc_kind(raw) && is_creature_row(NPCType(raw));
-}
+// (Здесь стояла ГРАНИЦА ОРДИНАЛА — `is_creature_row` / `is_monster_kind`:
+// «всё, что в enum после Rabbit, — зверь». Снесена 2026-09-21 вместе с
+// вопросом, на который отвечала: природу рода говорит его строка
+// (kNpcNature), а не место в перечислении. Она врала на человеческих родах,
+// дописанных в хвост, и молча переехала бы на новый род завтра.)
 
 // The row behind a record, or Peasant for a number that names none. One
 // resolver, three spellings: the raw kind is the identity, the record and
@@ -1282,6 +1251,19 @@ inline int soldier_upkeep(const SoldierRecord& s) {
 }
 inline int soldier_upkeep(const SoldierSlot& s) {
     return soldier_upkeep(s.kind, s.level);
+}
+
+// ── ПРИРОДА, СПРОШЕННАЯ У ЗАПИСИ РОСТЕРА ──────────────────────────────────
+// Три двери, один столбец данных. Имя рода ни в одной из них не звучит:
+// верблюд, мул и овца-вьюк становятся ездовыми, назвав свою спину, а народ
+// нового вида — назвав свою природу.
+inline bool is_folk_kind(std::uint16_t kind) {
+    return valid_npc_kind(kind)
+        && npc_nature(NPCType(kind)) == NpcNature::Human;
+}
+inline bool is_fauna_kind(std::uint16_t kind) {
+    return valid_npc_kind(kind)
+        && npc_nature(NPCType(kind)) == NpcNature::Fauna;
 }
 
 // ЕЗДОВАЯ ЛИ ЭТА СТРОКА — ОДНА дверь тега, чтобы «лошадь» нигде не
@@ -1323,10 +1305,13 @@ inline int mount_allowance(const SoldierSquad& squad) {
 // (haulMult) and a mouth (upkeep column), never a hand: a horse does not
 // mine, does not count toward a crew's want, and must not dissolve into a
 // town's population as a person.
+// СПРАШИВАЕТ ПРИРОДУ (kNpcNature), а не границу ординала: до 2026-09-21
+// здесь стоял `!is_monster_kind`, и пять человеческих родов, дописанных в
+// enum после звериного блока, молча не считались людьми.
 inline int count_human_souls(const SoldierSquad& squad) {
     int n = 0;
     for (const SoldierSlot& s : squad) {
-        if (!is_monster_kind(s.kind)) n += int(s.count);
+        if (is_folk_kind(s.kind)) n += int(s.count);
     }
     return n;
 }
@@ -1433,9 +1418,9 @@ inline int hire_npc(SoldierSquad& playerSquad, SoldierSquad& garrison,
 }
 
 // Case-insensitive token → registry row, matched against the row's stable
-// machine `id` FIRST ("clay_digger" → NPCType::ClayDigger) — that column
+// machine `id` FIRST ("tax_collector" → NPCType::TaxCollector) — that column
 // exists precisely to be what content names a row by — with the display
-// `label` kept as a convenience fallback ("Clay-digger" still works at the
+// `label` kept as a convenience fallback ("Tax-collector" still works at the
 // console). Purely data-driven off kNpcTypeDefs: a new type is matchable the
 // moment its row exists, no per-type branch. Returns false on no match — the
 // CALLER decides its own fallback (the subworld console spawner keeps its

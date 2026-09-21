@@ -252,11 +252,8 @@ static void test_sheet_determinism() {
 
 static void test_npc_loot_id() {
     CHECK(std::string(npc_loot_id(0)) == "peasant", "npc_loot_id(0)=peasant");
-    // The crowd professions died 2026-09-18 (verdict №2: professions are
-    // emergent, no spawner raises those rows) — their ordinals stay in the
-    // enum for the save's sake, and their loot answer is the dead row's "".
-    CHECK(std::string(npc_loot_id(int(sm::NPCType::ClayDigger))).empty(),
-          "a dead profession ordinal dresses nobody");
+    // Рода профессий СНЕСЕНЫ 2026-09-21: их работу давно делает одна строка
+    // Peasant с поручением аукциона, и мёртвых ординалов в enum больше нет.
     CHECK(std::string(npc_loot_id(int(sm::NPCType::Count))) == "",
           "one past the registry end is out of range");
     CHECK(std::string(npc_loot_id(-1)) == "", "npc_loot_id(-1)= (negative)");
@@ -268,12 +265,7 @@ static void test_npc_loot_id() {
     for (int t = 0; t < int(NPCType::Count); ++t) {
         const char* id = npc_loot_id(t);
         char msg[96];
-        // Dead profession ordinals (verdict №2, 2026-09-18) defer like
-        // creatures: nothing spawns them, so no profile dresses them.
-        const bool deadProfession = t == int(sm::NPCType::Miner)
-            || t == int(sm::NPCType::Quarryman)
-            || t == int(sm::NPCType::ClayDigger);
-        if (sm::is_creature_row(NPCType(t)) || deadProfession) {
+        if (!sm::is_folk_kind(std::uint16_t(t))) {
             std::snprintf(msg, sizeof msg,
                           "row %d defers its loot to its own column", t);
             CHECK(std::string(id).empty(), msg);

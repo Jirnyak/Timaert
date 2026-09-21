@@ -529,18 +529,13 @@ constexpr LootProfile kLootProfiles[] = {
 struct NpcLootRow { NPCType type; const char* id; };
 constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     {NPCType::Peasant,      "peasant"},
-    {NPCType::Woodcutter,   "woodcutter"},
     {NPCType::Merchant,     "merchant"},
-    {NPCType::Caravan,      "caravan"},
     {NPCType::Bandit,       "bandit"},
     {NPCType::Guard,        "guard"},
     {NPCType::Witch,        "witch"},
     {NPCType::Sorceress,    "sorceress"},
     // Dead ordinals since 2026-09-18 (verdict №2): the rows stay for the
     // save's sake, but nothing spawns them and no profile dresses them.
-    {NPCType::Miner,        nullptr},
-    {NPCType::Quarryman,    nullptr},
-    {NPCType::ClayDigger,   nullptr},
     // creatures — see npc.h `lootId` / `factionId`
     {NPCType::Rabbit,       nullptr},
     {NPCType::Deer,         nullptr},
@@ -562,15 +557,13 @@ constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     {NPCType::SandScorpion, nullptr},
     {NPCType::StoneGolem,   nullptr},
     // The player: his loot is the bag he carries, not a profile.
-    {NPCType::Adventurer,   nullptr},
-    {NPCType::Vendor,       nullptr},
-    {NPCType::SilverMiner,  nullptr},
-    {NPCType::TaxCollector, nullptr},
+    {NPCType::Adventurer,   "peasant"},
+    {NPCType::TaxCollector, "merchant"},
     // The ambusher's ordinal falls past the creature boundary (npc.h
-    // is_creature_row is a plain ordinal line and this row is appended), so
+    // природа строки судит это, а не порядок в enum), so
     // he names his drop in his OWN lootId column like every creature does —
     // the per-ROLE list stops where the roles stop.
-    {NPCType::RoadAmbusher, nullptr},
+    {NPCType::RoadAmbusher, "bandit"},
     // Дракон: пер-рольного лута нет — клад логова придёт артефакт-столом.
     {NPCType::Dragon, nullptr},
     // The populated bestiary (2026-09-11): every row falls through to its
@@ -587,7 +580,7 @@ constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     {NPCType::Orc,        nullptr},
     {NPCType::Ghoul,      nullptr},
     {NPCType::Harpy,      nullptr},
-    {NPCType::Cultist,    nullptr},
+    {NPCType::Cultist,    "bandit"},
     {NPCType::Gargoyle,   nullptr},
     {NPCType::Wraith,     nullptr},
     {NPCType::Ogre,       nullptr},

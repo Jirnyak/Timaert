@@ -14,6 +14,7 @@
 #include "macro/roster_window.h"   // ОДИН суд границы на всякий ростер
 #include "macro/characters.h"   // landmark_sheet — анкета места (что оно умеет)
 #include "macro/econ_day.h"
+#include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
 #include "macro/currency.h"
 #include "macro/fauna.h"
 #include "macro/macro_stock.h"
@@ -62,7 +63,7 @@ void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
     // даёт рост»).
     if (season_boundary(day)) {
         const ConsumeOutcome o = econ_debt_boundary(
-            lm.inventory, lm.needDebt, lm.population, sink, user);
+            lm.inventory, lm.needDebt, souls_home(lm), sink, user);
         // СМЕРТЬ — единственная кара голода: доля непогашенного хлеба
         // уходит населением здесь, в единственной двери.
         if (o.starvedPop > 0) {
@@ -83,7 +84,7 @@ void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
     econ_store_hygiene(lm.inventory, sink, user);
 
     lm.popGrowthCarry += population_delta_per_day(
-        lm.population, float(lm.seasonWellbeing) / 255.0f);
+        souls_flock(lm), float(lm.seasonWellbeing) / 255.0f);
     const int whole = int(lm.popGrowthCarry);
     if (whole != 0) {
         lm.popGrowthCarry -= float(whole);
@@ -219,10 +220,10 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         // place ever differs from its kind).
         econ_produce_day(s.inventory, s.needDebt,
                          landmark_sheet(s.type).skills,
-                         s.population > 0
-                             ? std::max(1, s.population / kHeadsPerCityWorker)
+                         souls_home(s) > 0
+                             ? std::max(1, souls_home(s) / kHeadsPerCityWorker)
                              : 0,
-                         s.population, rs, ru,
+                         souls_home(s), rs, ru,
                          faction_or_freefolk(s.factionIdx));
 
         // Порядок дня границы: НАСЕЛЕНИЕ ЕСТ ПЕРВЫМ (settle), потом гарнизон
@@ -230,7 +231,7 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         // казне), и платёж раньше окна еды мог бы сжечь городской хлеб в
         // пул лута перед собственным столом.
         bool famine = false, died = false;
-        const int headsBefore = s.population;
+        const int headsBefore = souls_home(s);
         settle_landmark_day(s, day, famine, died, rs, ru);
 
         garrison_upkeep_(gs, s, day, rs, ru);
@@ -339,7 +340,7 @@ int garrison_cap_(const Landmark& s) {
     const int wage =
         (npc_def(NPCType::Guard).upkeepGoldPerDay * kDaysPerSeason) >> 1;
     const int perSoulSeason = std::max(1, board + wage);
-    const int flock = s.population + count_human_souls(s.garrison.squad);
+    const int flock = souls_flock(s) + count_human_souls(s.garrison.squad);
     return garrison_target_strength(s.type, flock)
          + inventory_value(s.inventory) / perSoulSeason;
 }
@@ -379,7 +380,11 @@ void garrison_trim_(GameState& gs, Landmark& s,
         const int take = std::min(excess, int(cut.count));
         if (!s.garrison.squad.remove_from_slot(weak, take)) break;
         excess -= take;
-        if (is_mount_kind(cut.kind)) {
+        // ПОД НОЖ ИДЁТ ЖИВНОСТЬ — вся, а не только вьючная (природа строки,
+        // kNpcNature, владелец 2026-09-21): прежде нож спрашивал тег Mount,
+        // и пойманный олень в армии места ножа не знал — он уходил в пул
+        // дезертиров человеком.
+        if (is_fauna_kind(cut.kind)) {
             meat += take * (weakPrice / breadValue);
         } else {
             cut.count = take;
@@ -414,16 +419,16 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
         // works with no code here either.
         econ_produce_day(v.inventory, v.needDebt,
                          landmark_sheet(v.type).skills,
-                         v.population > 0
-                             ? std::max(1, v.population / kHeadsPerCityWorker)
+                         souls_home(v) > 0
+                             ? std::max(1, souls_home(v) / kHeadsPerCityWorker)
                              : 0,
-                         v.population, rs, ru);
+                         souls_home(v), rs, ru);
 
         // Порядок дня границы — как у города: население ест первым, потом
         // гарнизон (жалованье стоимостью не выедает стол деревни), потом
         // дань (§42 Инк 7, the ONE garrison law by column).
         bool famine = false, died = false;
-        const int headsBefore = v.population;
+        const int headsBefore = souls_home(v);
         settle_landmark_day(v, day, famine, died, rs, ru);
 
         garrison_upkeep_(gs, v, day, rs, ru);
@@ -478,11 +483,11 @@ void regrow_dungeon_populations(const MacroWorld& w, int day) {
     for (auto& lm : w.gs->landmarks) {
         const LandmarkDef& def = landmark_def(lm.type);
         if (def.bornPopBase == 0) continue;   // settlements keep their own law
-        if (lm.population <= 0) continue;     // wiped clean stays dead
+        if (souls_flock(lm) <= 0) continue;   // wiped clean stays dead
         if ((lm.id % kGrowthEpochDays) != (day % kGrowthEpochDays)) continue;
         const int mean = int(def.bornPopBase)
                        + int(def.bornPopPerScore) * landmark_context_score(w, lm);
-        if (lm.population < mean) ++lm.population;
+        if (souls_flock(lm) < mean) ++lm.population;
     }
 }
 
@@ -553,7 +558,6 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             // The fleet law (npc_spawn.h): a city without a caravan outfits
             // one from its population — losses stay permanent, the trade
             // arm regrows through the world (CANON S4).
-            replenish_caravans(gs, *macro->world, *macro->terrain);
             // Поле угрозы (threat_field.h): влить свежие Died-факты,
             // диффузия по мембранам, распад — ПЕРЕД ротацией, чтобы
             // аукцион дня (патрули стражи, страх артелей) читал уже

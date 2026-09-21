@@ -422,7 +422,7 @@ int main(int argc, char** argv) {
             for (auto [e, kind, rt]
                  : ecs.reg.view<sm::ecs::NPCKind,
                                 sm::ecs::MacroNpcRuntime>().each()) {
-                long long souls = sm::is_monster_kind(kind.type) ? 0 : 1;
+                long long souls = sm::is_folk_kind(kind.type) ? 1 : 0;
                 if (const auto* ro =
                         ecs.reg.try_get<sm::ecs::SquadRoster>(e))
                     souls += sm::count_human_souls(ro->squad);
@@ -531,18 +531,9 @@ int main(int argc, char** argv) {
                     vendorLoad += (long long)sm::inventory_weight(bag.inv);
                     continue;
                 }
-                if (kind.type != std::uint16_t(sm::NPCType::Caravan))
-                    continue;
-                ++caravans;
-                std::fprintf(stderr,
-                             "[caravan] home=%d state=%d sp=%d/%d cap=%.0f "
-                             "load=%.0f coin=%lld grain=%d wood=%d clay=%d\n",
-                             crt.homeSettlementId, int(crt.state),
-                             cpools.sp, cpools.maxSp, crt.carryCap,
-                             sm::inventory_weight(bag.inv),
-                             coins_in(bag.inv, coinIdx),
-                             bag.inv.count("food"), bag.inv.count("wood"),
-                             bag.inv.count("clay"));
+                // ЗОНД КАРАВАНОВ СНЯТ 2026-09-21: род NPCType::Merchant
+                // снесён — караван был сквадом, притворившимся видом.
+
             }
             std::fprintf(stderr,
                          "[balance] caravans=%d vendors=%d (idle=%d away=%d "

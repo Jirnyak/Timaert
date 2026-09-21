@@ -117,7 +117,7 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     const auto bandit = make_squad_at(w, NPCType::Bandit, "bandits", 5,
                                       10.0f, 10.0f, 1u, {11u, 12u, 13u, 14u},
                                       NPCType::Bandit, 4);
-    const auto caravan = make_squad_at(w, NPCType::Caravan, "timaert", 1,
+    const auto caravan = make_squad_at(w, NPCType::Merchant, "timaert", 1,
                                        10.0f, 10.0f, 2u, {21u},
                                        NPCType::Peasant, 1);
     w.reg.get<ecs::NpcInventory>(caravan).inv.add("wood", 5);
@@ -149,7 +149,7 @@ void test_the_weak_flee_and_fighters_pursue() {
     const auto bandit = make_squad_at(w, NPCType::Bandit, "bandits", 6,
                                       10.0f, 10.0f, 1u, {11u, 12u, 13u, 14u},
                                       NPCType::Bandit, 5);
-    const auto caravan = make_squad_at(w, NPCType::Caravan, "timaert", 1,
+    const auto caravan = make_squad_at(w, NPCType::Merchant, "timaert", 1,
                                        14.0f, 10.0f, 2u, {},
                                        NPCType::Peasant, 1);
     // Freeze the bandits: resting with empty stamina, so the caravan's
@@ -182,7 +182,7 @@ void test_the_weak_flee_and_fighters_pursue() {
     const auto hunter = make_squad_at(w2, NPCType::Bandit, "bandits", 6,
                                       10.0f, 10.0f, 1u, {11u, 12u, 13u, 14u},
                                       NPCType::Bandit, 5);
-    const auto prey = make_squad_at(w2, NPCType::Caravan, "timaert", 1,
+    const auto prey = make_squad_at(w2, NPCType::Merchant, "timaert", 1,
                                     15.0f, 10.0f, 2u, {},
                                     NPCType::Peasant, 1);
     {
@@ -211,7 +211,7 @@ void test_neutral_squads_ignore_each_other() {
     const auto a = make_squad_at(w, NPCType::Bandit, "bandits", 5,
                                  10.0f, 10.0f, 1u, {11u, 12u},
                                  NPCType::Bandit, 4);
-    const auto b = make_squad_at(w, NPCType::Caravan, "timaert", 1,
+    const auto b = make_squad_at(w, NPCType::Merchant, "timaert", 1,
                                  10.0f, 10.0f, 2u, {21u},
                                  NPCType::Peasant, 1);
     MacroNpcAiRuntime rt{};
@@ -231,7 +231,7 @@ void test_no_auto_battle_when_the_ground_owns_the_fight() {
     const auto a = make_squad_at(w, NPCType::Bandit, "bandits", 5,
                                  10.0f, 10.0f, 1u, {11u, 12u},
                                  NPCType::Bandit, 4);
-    const auto b = make_squad_at(w, NPCType::Caravan, "timaert", 1,
+    const auto b = make_squad_at(w, NPCType::Merchant, "timaert", 1,
                                  10.0f, 10.0f, 2u, {21u},
                                  NPCType::Peasant, 1);
     MacroNpcAiRuntime rt{};

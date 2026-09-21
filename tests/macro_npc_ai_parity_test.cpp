@@ -120,7 +120,7 @@ void test_woodcutter_targets_nearest_tree() {
     sm::build_tree_grid(grid, trees, gs.mapW, gs.mapH, 32);
 
     sm::ecs::World world;
-    auto e = spawn_ai(world, sm::NPCType::Woodcutter, 21.0f, 20.0f, 1);
+    auto e = spawn_ai(world, sm::NPCType::Peasant, 21.0f, 20.0f, 1);
     {
         // Работа именуется поручением (аукцион, CANON S10): рубка = Gather
         // над строкой целей Trees; тип — лишь лист и спина.
@@ -170,7 +170,9 @@ void test_nomad_excludes_current_target() {
     gs.landmarks.push_back(settlement(2, 40, 10));
 
     sm::ecs::World world;
-    auto e = spawn_ai(world, sm::NPCType::Caravan, 40.0f, 10.0f, -1);
+    // Бродяга — ЛЮБАЯ машина без дома: она сваливается в ai_nomad (род
+    // Caravan, водивший этот тест, снесён вместе со своим ИИ 2026-09-21).
+    auto e = spawn_ai(world, sm::NPCType::TaxCollector, 40.0f, 10.0f, -1);
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
     rt.targetSettlementId = 2;
 

@@ -246,7 +246,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     sm::remember(player.memory,
                  sm::make_debt_fact(sm::kDebtToSettlement, 7, 15, 3));
     add_soldiers(player.roster, sm::NPCType::Peasant, 4, 1000u);
-    add_soldiers(player.roster, sm::NPCType::Woodcutter, 3, 1100u);
+    add_soldiers(player.roster, sm::NPCType::Peasant, 3, 1100u);
     add_soldiers(player.roster, sm::NPCType::Guard, 2, 1200u);
     player.roster.push(sm::SoldierRecord{
         9999u, static_cast<std::uint8_t>(sm::NPCType::Guard), -12});
@@ -370,7 +370,7 @@ sm::GameState make_state() {
     // (The player's MEN are not a field of PlayerState any more: his squad is
     // an ordinary squad entity, so his roster rides the macro snapshot with
     // every other squad's — see the player record in make_macro_records.)
-    add_soldiers(gs.deserterPool, sm::NPCType::Woodcutter, 2, 1300u);
+    add_soldiers(gs.deserterPool, sm::NPCType::Peasant, 2, 1300u);
 
     sm::Landmark settlement{};
     settlement.type = sm::LandmarkType::City;
@@ -851,7 +851,7 @@ void run_roundtrip() {
         if (a.roster[2].kind != std::uint16_t(sm::NPCType::Wolf)
             || a.roster[2].level != 3
             || a.roster[2].entityId != 902u
-            || !sm::is_monster_kind(a.roster[2].kind)) {
+            || sm::is_folk_kind(a.roster[2].kind)) {
             FAIL_BAIL("a beast member did not survive the save");
         }
     }
@@ -990,7 +990,7 @@ void run_roundtrip() {
         FAIL_BAIL("sub-state lost");
     }
     if (sm::count_soldiers_of_kind(
-            loaded.deserterPool, static_cast<std::uint8_t>(sm::NPCType::Woodcutter)) != 2) {
+            loaded.deserterPool, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 2) {
         FAIL_BAIL("deserter pool lost");
     }
     for (std::size_t k = 0; k < std::size_t(sm::kDepositKindCount); ++k) {

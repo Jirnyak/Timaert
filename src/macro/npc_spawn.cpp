@@ -272,18 +272,10 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     if (cities.empty()) return;
     const std::size_t nSet = cities.size();
 
-    // Caravans: max(1, 0.3 * settlements)
-    int caravanCount = int(nSet * 3 / 10);
-    if (caravanCount < 1) caravanCount = 1;
-    for (int i = 0; i < caravanCount; ++i) {
-        auto& home = *cities[rng.next_u32() % nSet];
-        // A caravan flies the flag of the town it sets out FROM (the same home
-        // id it already carries), not of a guild — same rule as its merchant.
-        // Born ON the town cell (owner 2026-08-31).
-        make_npc(w, NPCType::Caravan,
-                 settlement_faction_index(home),
-                 home.x, home.y, gs.mapW, home.id, rng, spawnIndex);
-    }
+    // ЗАСЕВ КАРАВАНОВ ВЫРЕЗАН 2026-09-21 вместе с родом NPCType::Caravan:
+    // караван — это СКВАД, а не вид существа, и его обоз считает ростер
+    // (сумма спин: люди плюс лошади), а не вписанные в породу 32 спины.
+    // Торговый канал мира держат артели рейсами сбыта (ai_vendor).
 
     // БАНДИТСКИЙ ЗАСЕВ ВЫРЕЗАН 2026-09-21 (владелец: «вырезаем бандитов… щас
     // не до них»). Строка NPCType::Bandit в таблице существ остаётся — мир
@@ -603,48 +595,5 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
     return leader;
 }
 
-
-int replenish_caravans(GameState& gs, ecs::World& w,
-                       const TerrainData& terrain) {
-    // The living fleet per home landmark — one O(NPC) sweep into rows.
-    std::vector<int> fleet(gs.landmarks.size(), 0);
-    const auto row_of = [&](int id) -> int {
-        for (std::size_t i = 0; i < gs.landmarks.size(); ++i)
-            if (gs.landmarks[i].id == id) return int(i);
-        return -1;
-    };
-    for (auto [e, kind, rt]
-         : w.reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
-        (void)e;
-        if (kind.type != std::uint16_t(NPCType::Caravan)) continue;
-        const int row = row_of(rt.homeSettlementId);
-        if (row >= 0) fleet[std::size_t(row)] += 1;
-    }
-    int raised = 0;
-    for (std::size_t i = 0; i < gs.landmarks.size(); ++i) {
-        Landmark& s = gs.landmarks[i];
-        if (s.type != LandmarkType::City) continue;
-        if (fleet[i] > 0) continue;
-        // The same population bar the garrison recruiter uses
-        // (world_tick.cpp): a town too small to spare men raises neither
-        // soldiers nor traders. One caravan per city is the v1 fleet norm —
-        // the genesis 0.3/city left most towns with no trade arm at all,
-        // and a dead caravan starved its city forever (measured,
-        // balance_run 2026-08-30). One raise per day is the call cadence.
-        if (s.population < 20) continue;
-        SquadSpec spec{};
-        spec.leaderType = NPCType::Caravan;
-        spec.x = s.x;
-        spec.y = s.y;
-        spec.homeSettlementId = s.id;
-        if (spawn_squad(gs, w, terrain, spec) != entt::null) {
-            // The soul walks out of the town — population is the stock every
-            // recruitment draws from (CANON S25).
-            s.population -= 1;
-            ++raised;
-        }
-    }
-    return raised;
-}
 
 } // namespace sm

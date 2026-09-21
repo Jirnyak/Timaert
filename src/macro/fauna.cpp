@@ -97,16 +97,11 @@ constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
     // raises them. (Known cost, accepted: ai_mage_hunt loses its ambient
     // Magika prey until the crowd returns under its own law.)
     {NPCType::Peasant,      kHabTown},
-    {NPCType::Woodcutter,   0},
     {NPCType::Merchant,     0},
-    {NPCType::Caravan,      0},
     {NPCType::Bandit,       0},
     {NPCType::Guard,        kHabTown},
     {NPCType::Witch,        0},
     {NPCType::Sorceress,    0},
-    {NPCType::Miner,        0},
-    {NPCType::Quarryman,    0},
-    {NPCType::ClayDigger,   0},
     {NPCType::Rabbit,       hab(Meadow) | hab(Valley) | hab(Steppe) | hab(Taiga)
                           | hab(Tundra) | hab(Snow) | kHabForest, -1, "wildlife"},
     {NPCType::Deer,         hab(Meadow) | hab(Valley) | hab(Steppe)
@@ -138,8 +133,6 @@ constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
     // an adventurer out of a habitat, it raises exactly one and he wears the
     // flag. Mask 0, no wild banner.
     {NPCType::Adventurer,   0},
-    {NPCType::Vendor,       0},
-    {NPCType::SilverMiner,  0},
     {NPCType::TaxCollector, 0},
     // Ambient spawning never raises him: the prologue's plot places him by
     // hand, exactly as the bandit's own 0 says of ambient banditry.
@@ -393,7 +386,10 @@ int creature_index(const FaunaEntry* entry) {
 
 const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
     if (!valid_npc_kind(kindType)) return nullptr;      // names no row at all
-    if (!is_creature_row(NPCType(kindType))) return nullptr; // a man, not a beast
+    // ПРИРОДУ ЗДЕСЬ НЕ СПРАШИВАЮТ (2026-09-21): каталог — это ВИД на ту же
+    // таблицу тел, а «человек ли он» — отдельный вопрос с отдельной дверью
+    // (is_folk_kind). Культист человек И живёт в подземелье; прежний гейт
+    // «не человек» вычёркивал бы его из собственного каталога.
     // The kind IS the row. There is no index to mask and no second array to
     // index into — that masking (`kindType & 0xFF` into the catalog) was the
     // old encoding's last hiding place, and it silently answered with the

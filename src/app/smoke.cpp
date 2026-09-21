@@ -1920,9 +1920,7 @@ entt::entity smoke_find_macro_npc_trace_target(App& app) {
         if (hp.hp <= 0) continue;
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
         if (fallback == entt::null) fallback = e;
-        if (kind.type == std::uint16_t(sm::NPCType::Caravan)
-            || kind.type == std::uint16_t(sm::NPCType::Merchant)
-            || kind.type == std::uint16_t(sm::NPCType::Woodcutter)) {
+        if (kind.type == std::uint16_t(sm::NPCType::Merchant)) {
             return e;
         }
     }
@@ -2031,7 +2029,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     visual.vx = float(baseX);
     visual.vy = float(baseY);
     visual.speed = 0.0f;
-    kind.type = std::uint16_t(sm::NPCType::Caravan);
+    kind.type = std::uint16_t(sm::NPCType::Merchant);
     rt.targetX = float(sm::wrapi(baseX + 3, app.gs.mapW));
     rt.targetY = float(baseY);
     rt.targetSettlementId = -1;
@@ -5543,7 +5541,7 @@ bool run_console_smoke(App& app) {
                              sm::ecs::Pools>(
             entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
         for (auto e : view) {
-            if (sm::is_monster_kind(view.get<sm::ecs::NPCKind>(e).type)) ++n;
+            if (!sm::is_folk_kind(view.get<sm::ecs::NPCKind>(e).type)) ++n;
         }
         return n;
     };

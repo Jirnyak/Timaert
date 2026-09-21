@@ -54,7 +54,7 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     const auto e = reg.create();
     reg.emplace<ecs::MacroCell>(e, ecs::cell_index(int(x), int(y), kMap));
     reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Woodcutter),
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = homeVillageId;
@@ -65,8 +65,8 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     rt.stateTimer = 0;
     ecs::Pools pools{};
     const CharacterSheet sheet = make_character_sheet(
-        NPCType::Woodcutter, 3, leader_sheet_seed(11u));
-    refresh_body_from_sheet(pools, &rt, sheet, NPCType::Woodcutter);
+        NPCType::Peasant, 3, leader_sheet_seed(11u));
+    refresh_body_from_sheet(pools, &rt, sheet, NPCType::Peasant);
     pools.sp = pools.maxSp;
     // Работа именуется ПОРУЧЕНИЕМ, не типом (аукцион, CANON S10): рубка =
     // Gather над строкой целей Trees — то, что рулетка ротации выдала бы.
@@ -351,7 +351,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     const auto e = reg.create();
     reg.emplace<ecs::MacroCell>(e, ecs::cell_index(10, 10, kMap));
     reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Miner),
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = vil.id;
@@ -362,8 +362,8 @@ void test_the_mine_runs_while_the_player_is_away() {
     rt.stateTimer = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
-        pools, &rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
-        NPCType::Miner);
+        pools, &rt, make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(13u)),
+        NPCType::Peasant);
     pools.sp = pools.maxSp;
     rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
@@ -483,7 +483,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     const auto e = reg.create();
     reg.emplace<ecs::MacroCell>(e, ecs::cell_index(16, 10, kMap));
     reg.emplace<ecs::MacroVisual>(e, 16.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Vendor),
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime crt{};
     crt.homeSettlementId = 3;   // the VILLAGE: vendors are the village's arm
@@ -500,8 +500,8 @@ void test_the_vendor_sells_at_the_nearest_city() {
     crt.stateTimer = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
-        pools, &crt, make_character_sheet(NPCType::Vendor, 3, leader_sheet_seed(13u)),
-        NPCType::Vendor);
+        pools, &crt, make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(13u)),
+        NPCType::Peasant);
     pools.sp = pools.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, crt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
@@ -600,7 +600,7 @@ void test_the_miner_works_the_vein() {
     const auto e = reg.create();
     reg.emplace<ecs::MacroCell>(e, ecs::cell_index(10, 10, kMap));
     reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Miner),
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = vil.id;
@@ -611,8 +611,8 @@ void test_the_miner_works_the_vein() {
     rt.stateTimer = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
-        pools, &rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
-        NPCType::Miner);
+        pools, &rt, make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(13u)),
+        NPCType::Peasant);
     pools.sp = pools.maxSp;
     rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
@@ -676,7 +676,7 @@ void test_the_miner_works_the_vein() {
     const auto e2 = w2.reg.create();
     w2.reg.emplace<ecs::MacroCell>(e2, ecs::cell_index(10, 10, kMap));
     w2.reg.emplace<ecs::MacroVisual>(e2, 10.0f, 10.0f, 0.0f);
-    w2.reg.emplace<ecs::NPCKind>(e2, std::uint16_t(NPCType::Miner),
+    w2.reg.emplace<ecs::NPCKind>(e2, std::uint16_t(NPCType::Peasant),
                                  std::uint16_t(faction_index("timaert")));
     w2.reg.emplace<ecs::MacroNpcRuntime>(e2, rt);
     w2.reg.emplace<ecs::MacroSpawnId>(e2, 14u);

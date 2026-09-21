@@ -1,4 +1,5 @@
 #include "macro/econ_day.h"
+#include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
 
 #include "macro/currency.h"   // add_value_in_coins — the treasury seed
 #include "macro/economy.h"    // stock_price — ranking asks THE price law
@@ -406,7 +407,7 @@ int publish_landmark_ledgers(GameState& gs, int day) {
             // ТА ЖЕ кривая, которой торгуется сделка: склад точный, спрос —
             // из счёта места и С НЕТТИНГОМ по своему же складу.
             const int demand = season_demand_for(id, lm.needDebt,
-                                                 lm.population, hands,
+                                                 souls_home(lm), hands,
                                                  &lm.inventory);
             lm.ledger.price[std::size_t(i)] =
                 stock_price(base, lm.inventory.count(id), demand);
