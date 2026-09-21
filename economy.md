@@ -290,7 +290,10 @@ time in the track's history (seed 1: 220.7k born → 192.8k at day 384 →
   ROSTER only (a lone leader needs nothing); every squad a landmark raises
   is loaded with bread = soldiers × (roundtrip days + the work day)
   (provision_squad). Unprovisioned crews were bleeding an eighth a day
-  into the deserter pool → bandits.
+  into the deserter pool. ПЕРЕСМОТРЕНО 2026-09-21: взыскание
+  ПРОПОРЦИОНАЛЬНО (доля неоплаченного = доля ушедших, v105), бандитов из
+  пула больше не поднимают, а «лидер не ест» — не льгота, а закон: ест
+  РОСТЕР, сквад же есть агент макромира и желудка не имеет (CANON S4).
 - **The living plough + the ripest field**: a crew whose parcel gave out
   spends its remaining cycle stamping a NEW field (plough_cell_ok — the
   worldgen stamp's own gates); find_home_field picks the RIPEST parcel,
@@ -359,8 +362,9 @@ courier, robbable) → its capital; silver veins → the mint recipe (the price
 table IS the mint, seigniorage emergent); garrison wages by the ONE upkeep
 law into a value-purse, soldiers eat off the town store; squads eat bread
 out of their own bags on the march; a shorted day (pay or bread — TWO parallel
-needs) bleeds an EIGHTH of the roster into the deserter pool AT ONCE
-(owner: no patience counters). Wages and tithes are SEASONAL — each
+needs) bleeds the roster into the deserter pool ПРОПОРЦИОНАЛЬНО доле
+неоплаченного (v105; доля 1/8 и кромка «покрыто целиком» умерли
+2026-09-21 — измерено: мир терял три четверти осёдлого населения). Wages and tithes are SEASONAL — each
 landmark pays on its own day of the 32-day season (ordinal % season), the
 world's one slow cycle; paid wages LEAVE the economy into the loot pool
 (spent soldiers' coin is lost money — ruins and dungeons will return it). Deaths with no victor fold their worth into the world LOOT POOL

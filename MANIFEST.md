@@ -485,8 +485,9 @@ the spawn/pathfinding/pace tests to the shipped laws; the three added
 2026-08-20 are `torus_wrap_test` (THE wrap, after six private
 copies of it folded into one), `subworld_cell_identity_test` (a cell is a
 place: the same macro cell is the same subworld however you arrive, and the
-world's seam still joins) and `deserter_bands_test` (the pool pays out — nobody
-minted, nobody lost))
+world's seam still joins) (`deserter_bands_test` стоял третьим в этом ряду и СНЯТ 2026-09-21
+вместе со своей механикой: подъём банд из пула вырезан, свидетель, переживший
+свою механику, сторожил бы дефект — AGENTS, закон тестов §7))
 are — the list below is a snapshot and the `enable_testing()` block at the tail
 of `CMakeLists.txt` remains the source of truth:
 

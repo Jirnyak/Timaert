@@ -188,16 +188,16 @@ subworld embodies their members. Everything below follows from that one line.
   the map: no ghost entity, no empty banner. This is the macro write-back of a
   subworld fight (macro/macro_stock.h — the roster is a stock like population,
   tree count and the wild headcount `fauna_count`, Session 16).
-* **Kill the leader but not the troops → the survivors go to the deserter pool**
-  (`GameState::deserterPool`, serialized; `drain_dead_leader_squads` in
-  `macro/squad.h` is its writer). The pool now has its READER too —
-  **`raise_deserter_bands`** (`macro/npc_spawn.cpp`, called daily from
-  `world_tick.cpp`): √(pool) men walk off per day, the strongest survivor takes
-  slot 0, the band flies bandit colours, and a refused spawn puts every man
-  back (the pool is a conservation law). WHERE is not the pool's question
-  (owner, 2026-08-20): the pool is an abstract stock, the placement is uniform
-  today and moves to the blood field when that field exists (CANON S5). This is
-  where a good part of the world's danger comes from — the other part is the
+* **ПУЛ ДЕЗЕРТИРОВ — ПЕРЕСТРОЙКА 2026-09-21.** По вердикту владельца у пула
+  ровно ОДИН законный источник — НЕОПЛАТА на границе сезона (в скваде или в
+  ландмарке); «при бое убитый сквад не должен идти в дезертиры, он погибает»
+  (CANON S9 п.6). Сегодня `drain_dead_leader_squads` (`macro/squad.h`) всё ещё
+  льёт туда выживших мёртвого лидера — это НАЗВАННЫЙ ДОЛГ, порция Б-3 наряда.
+  Отток пула (`raise_deserter_bands`, √(пул) душ в день) **ВЫРЕЗАН вместе с
+  бандитами** (`463170c6`): мир идёт от минимума системы (problems.md §54),
+  бандиты и патрули не рождаются, строки таблицы существ при этом сохранены.
+  Пока Б-3 не построена, пул — контейнер без оттока, и его размер честно
+  печатает прибор колонкой `soulsPool`. Опасность мира сейчас держит
   ambient spawn law itself (habitat × danger match over the one body table,
   [macro/fauna.h](src/macro/fauna.h); a place can force its faction through
   the registry's `spawnFaction` column — see [context.md](context.md)).
@@ -328,9 +328,9 @@ Full record: git history of proposals/session-prompts.md «Сессия 21»
    this project keeps closing.
 3. **Kill the leader and the squad lives on, leaderless, until the fight ends.**
    That is the "faceless squad of peasants" form. Only when the fight is over
-   (or the player leaves) do the survivors fall into the deserter pool, out of
-   which the macro sim raises deserter and bandit squads — built:
-   `raise_deserter_bands`, see above.
+   (or the player leaves) do the survivors fall into the deserter pool.
+   ОТМЕНЕНО 2026-09-21: по канону S9 п.6 убитый ПОГИБАЕТ, а подъём банд из
+   пула вырезан вместе с бандитами — см. выше.
 
 Implementation order these imply — the roster is a macro STOCK
 (macro/macro_stock.h), so members embodied below are borrowed and their deaths
