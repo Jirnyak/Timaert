@@ -3978,38 +3978,39 @@ int squad_season_window(MacroWorld& mw, int day) {
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime, ecs::NpcInventory,
                     ecs::SquadRoster>().each()) {
         (void)kind; (void)rt;
-        const SquadSeasonNeeds needs =
+        // ── 1. ВЗЫСКАНИЕ ПРОШЛОГО СЧЁТА — ПРОПОРЦИОНАЛЬНО ────────────────
+        // Зеркало закона мест (econ_debt_boundary): доля НЕОПЛАЧЕННОГО и
+        // есть доля ушедших. Счёт пересчитывается по СЕГОДНЯШНЕМУ составу —
+        // ровно как у места он считается по сегодняшнему населению, и
+        // потому хранить исходную сумму не нужно.
+        //
+        // ЧТО ЗДЕСЬ УМЕРЛО (владелец, 2026-09-21): кромка «покрыто ЦЕЛИКОМ
+        // или не списывается», доля 1/8 и пол «хотя бы одна душа». Все три
+        // — один и тот же дефект, который у МЕСТ был снят ещё 2026-09-18
+        // вердиктом «сытость пропорциональна»: артель из трёх душ теряла
+        // треть вместо восьмой (тот же «штраф за малость», что ловили у
+        // хуторов), а артель, покрывшая нужду на 99 %, теряла столько же,
+        // сколько не покрывшая ничего. Измерено прогоном 512 дней: мир
+        // терял три четверти населения, НЕ ГОЛОДАЯ НИ ДНЯ.
+        const SquadSeasonNeeds lastBill =
             squad_season_needs(*mw.world, e, roster.squad);
-        const int boardNeed = needs.board;
-        const int wageNeed = needs.wage;
-        if (boardNeed <= 0 && wageNeed <= 0) continue;
-        // Each need covered WHOLE or not debited at all (owner 2026-09-17:
-        // «не списывать, если не хватает — 1/8 = НЕ ПОКРЫТО»).
-        bool shorted = false;
-        if (boardNeed > 0) {
-            // Голодная строка лестницы одной дверью (econ_day.h), не словом.
-            const int boardIdx = hunger_item_index();
-            if (bag.inv.count_of(boardIdx) >= boardNeed) {
-                bag.inv.remove_of(boardIdx, boardNeed);
-            } else {
-                shorted = true;
-            }
+        const int boardIdx = hunger_item_index();
+        const int boardOrd = hunger_commodity_ordinal();
+        const std::int32_t boardLeft =
+            boardOrd >= 0 ? roster.needDebt[boardOrd] : 0;
+        float unpaid = 0.0f;
+        if (lastBill.board > 0 && boardLeft > 0)
+            unpaid = float(boardLeft) / float(lastBill.board);
+        if (lastBill.wage > 0 && roster.wageDebt > 0) {
+            const float wageShare =
+                float(roster.wageDebt) / float(lastBill.wage);
+            if (wageShare > unpaid) unpaid = wageShare;
         }
-        if (wageNeed > 0) {
-            // ОПЛАТА СТОИМОСТЬЮ (владелец 2026-09-18): монеты первыми
-            // арифметикой плотности value/kg, без монет — натурой
-            // (pay_value_dense). «ЖАЛОВАНИЕ СГОРАЕТ ЕСТЕСТВЕННО!» — the
-            // paid value leaves the economy into the loot pool.
-            if (inventory_value(bag.inv) >= wageNeed) {
-                gs.lootPoolValue += pay_value_dense(bag.inv, wageNeed);
-            } else {
-                shorted = true;
-            }
-        }
-        if (!shorted) continue;
-        // ANY uncovered need bleeds an eighth of the roster ONCE per window
-        // — the same law the shorted garrison bleeds by (?34, one mechanic).
-        int walkers = std::max(1, roster.squad.size() / 8);
+        // Душа уходит, если ей не досталось ЛИБО харча, ЛИБО платы —
+        // поэтому берётся ХУДШАЯ из двух долей, а не их сумма: один и тот
+        // же человек может быть и не кормлен, и не плачен.
+        if (unpaid > 1.0f) unpaid = 1.0f;
+        int walkers = int(float(roster.squad.size()) * unpaid);
         while (walkers-- > 0 && !roster.squad.empty()) {
             SoldierRecord walker{};
             if (!roster.squad.pop_soul_back(walker)) break;
@@ -4019,6 +4020,35 @@ int squad_season_window(MacroWorld& mw, int day) {
             }
             ++deserted;
         }
+        // ── 2. НОВЫЙ СЧЁТ по составу ПОСЛЕ ухода, перезаписью ────────────
+        // Старая недоимка не переносится: взыскали — выставили новый (тот
+        // же закон, что у места).
+        const SquadSeasonNeeds needs =
+            squad_season_needs(*mw.world, e, roster.squad);
+        if (boardOrd >= 0) roster.needDebt[boardOrd] = needs.board;
+        roster.wageDebt = needs.wage;
+        // ── 3. НЕМЕДЛЕННОЕ ГАШЕНИЕ, И ОНО ЧАСТИЧНОЕ ──────────────────────
+        // Харч — той же дверью, что у места (econ_pay_debt по лестнице):
+        // что есть в сумке, то и съедено сейчас, остальное остаётся долгом
+        // и будет гаситься приходом весь сезон.
+        if (boardOrd >= 0 && roster.needDebt[boardOrd] > 0) {
+            econ_pay_debt(bag.inv, roster.needDebt, mw.econFacts,
+                          mw.econFactsUser);
+        }
+        // ПЛАТА — стоимостью (владелец 2026-09-18): монеты первыми
+        // арифметикой плотности value/kg, без монет — натурой. «ЖАЛОВАНИЕ
+        // СГОРАЕТ ЕСТЕСТВЕННО» — уплаченная стоимость уходит из экономики в
+        // пул лута. Частично — законно: платим, сколько несём.
+        if (roster.wageDebt > 0) {
+            const std::int64_t canPay =
+                std::min<std::int64_t>(roster.wageDebt,
+                                       inventory_value(bag.inv));
+            if (canPay > 0) {
+                gs.lootPoolValue += pay_value_dense(bag.inv, int(canPay));
+                roster.wageDebt -= canPay;
+            }
+        }
+        (void)boardIdx;
         // Состав изменился — обоз заново (squad.h): ушедшая душа унесла и
         // свою спину.
         refresh_squad_carry(*mw.world, e);
@@ -4137,6 +4167,17 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
         // for its bag, and the PlayerTag bag's decisions come from input —
         // «автоматическое уничтожение вещей игрока строго запрещено».
         if (!reg.any_of<ecs::PlayerTag>(e)) melted += auto_scrap_overflow(bag.inv);
+        // ── ПРИХОД ГАСИТ СЧЁТ ВЕСЬ СЕЗОН (CANON S10, v105) ───────────────
+        // Страховочный дневной такт гашения — ровно тот же, что у места
+        // (world_tick settle_landmark_day). Двери прихода у сквада разные
+        // (добыл, купил, отнял), и городить у каждой свою уплату значило бы
+        // писать закон пятый раз; вместо этого ростер ест то, что приехало,
+        // тем же вечером. «Добыча привезла — часть съелась» (владелец,
+        // 2026-09-21), и это ТОТ ЖЕ econ_pay_debt, которым платит ландмарк.
+        if (auto* ro = reg.try_get<ecs::SquadRoster>(e)) {
+            econ_pay_debt(bag.inv, ro->needDebt, mw.econFacts,
+                          mw.econFactsUser);
+        }
     }
     return melted;
 }
@@ -4350,21 +4391,39 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // у окна (squad_season_needs — вторых правд содержания не бывает);
     // погрузка — перенос со склада в сумку, судит ОКНО в тот же день.
     const bool boundary = season_boundary(day);
+    // ДОМ ГАСИТ СЧЁТ СВОЕЙ АРТЕЛИ — И ДЕЛАЕТ ЭТО ПРИ ВЫХОДЕ, А НЕ ТОЛЬКО НА
+    // ГРАНИЦЕ (владелец 2026-09-21: «снаряжать норм»). Прежде эта дверь
+    // звалась ровно из двух мест, и оба — «дома, на границе»: артель,
+    // ушедшая в рейс, встречала следующую границу с пустой сумкой (она
+    // везёт руду и лес, а не еду) и теряла душу. Измерено: 154 385 душ в
+    // пуле дезертиров за 512 дней при НУЛЕВОМ голоде мест.
+    //
+    // Снаряжение — не костыль, а часть закона «у всякого, кто кормит, есть
+    // счёт»: дом гасит долг уходящей артели ВПЕРЁД, как уже снаряжает её
+    // тяглом из стойла (outfit_crew_mounts, двухтактный обоз). Физика
+    // проверена: сезон харча души — 32 кг при спине 154 кг, пятая часть.
+    // Берётся РОВНО НЕДОСТАЮЩЕЕ по счёту, поэтому повторный вызов в тот же
+    // день ничего не грузит и склад не сосётся дважды.
     const auto load_season_upkeep = [&](Landmark& lm, entt::entity e) {
         auto* bag = reg.try_get<ecs::NpcInventory>(e);
         auto* roster = reg.try_get<ecs::SquadRoster>(e);
         if (!bag || !roster) return;
-        const SquadSeasonNeeds needs =
-            squad_season_needs(*mw.world, e, roster->squad);
+        const int boardOrd = hunger_commodity_ordinal();
+        const int owed = boardOrd >= 0 ? roster->needDebt[boardOrd] : 0;
         const int haveBoard = bag->inv.count_of(hunger_item_index());
-        if (needs.board > haveBoard) {
+        if (owed > haveBoard) {
             haul_between(lm.inventory, bag->inv, hunger_item_id(),
-                         needs.board - haveBoard, 1e9f);
+                         owed - haveBoard, 1e9f);
         }
-        const int haveCoin = inventory_value(bag->inv);
-        if (needs.wage > haveCoin) {
-            transfer_value_dense(lm.inventory, bag->inv, needs.wage - haveCoin);
+        const std::int64_t haveCoin = inventory_value(bag->inv);
+        if (roster->wageDebt > haveCoin) {
+            transfer_value_dense(lm.inventory, bag->inv,
+                                 int(roster->wageDebt - haveCoin));
         }
+        // Погасить тем, что только что легло в сумку: долг умирает в ту же
+        // минуту, что и приход (одна дверь на весь мир).
+        econ_pay_debt(bag->inv, roster->needDebt, mw.econFacts,
+                      mw.econFactsUser);
     };
 
     // 2) RAISE today's crews off the place's OWN registry row (owner
@@ -4981,6 +5040,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // (по коню на душу, сколько стоит) — рядом с провиантом
                 // ниже, тот же акт над вторым контейнером.
                 outfit_crew_mounts(*mw.world, s, standing);
+                // ...И СЧЁТОМ (v105): тот же такт снаряжения, второй
+                // контейнер. Уходящая артель уносит непогашенный харч и
+                // плату, поэтому граница застаёт её не с пустой сумкой.
+                load_season_upkeep(s, standing);
                 // ПРИВЕДЕНИЕ СОСТАВА (S19.2, 2026-09-18): на границе
                 // стоящая артель дышит к пулу — добор из населения (дома,
                 // сколько прокормит склад: окно этого же дня спишет сезон

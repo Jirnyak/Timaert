@@ -257,41 +257,66 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
 void garrison_upkeep_(GameState& gs, Landmark& s, int day) {
     if (!season_boundary(day)) return;
     if (landmark_def(s.type).garrisonShift == 0xFFu) return;
-    if (total_soldiers(s.garrison) <= 0) return;
-    bool shorted = false;
-    // БОРД — голодная строка лестницы, спрошенная ДВЕРЬЮ (econ_day.h
-    // hunger_item_index), а не словом "bread", которое стояло здесь. Армия
-    // ест ровно эту строку и ничего сверх неё — вердикт владельца
-    // 2026-09-18: горожанин судится по всей лестнице, солдат по харчу и
-    // плате. Разница намеренная, потому дверь и отдаёт ОДНУ строку.
-    const int boardIdx = hunger_item_index();
-    const int need = (total_soldiers(s.garrison) * kDaysPerSeason) >> 1;
-    if (s.inventory.count_of(boardIdx) >= need) {
-        s.inventory.remove_of(boardIdx, need);
-    } else {
-        shorted = true;
+    const int boardOrd = hunger_commodity_ordinal();
+    if (boardOrd < 0) return;
+    // ── 1. ВЗЫСКАНИЕ ПРОШЛОГО СЧЁТА — ПРОПОРЦИОНАЛЬНО (v105) ─────────────
+    // Один закон на всякого, кто кормит (CANON S10, владелец 2026-09-21):
+    // доля НЕОПЛАЧЕННОГО и есть доля ушедших. Здесь стояла копия прежнего
+    // окна сквадов — «покрыто ЦЕЛИКОМ или не списывается» и `max(1, N/8)`,
+    // — и умирает она по той же причине: гарнизон из трёх душ терял треть
+    // вместо восьмой, а покрывший 99 % нужды терял столько же, сколько не
+    // покрывший ничего. У НАСЕЛЕНИЯ этого места кромка снята ещё
+    // 2026-09-18 («сытость пропорциональна»); теперь снята и у его армии.
+    const int soldiers = total_soldiers(s.garrison);
+    // ДОМА — ВСЁ СОДЕРЖАНИЕ >>1 («гарнизон платит пол цены содержания, как
+    // в Mount & Blade»); в поле — полное, и разница есть «доплата за поле»
+    // в скоре патрульного аукциона.
+    const int billBoard = (soldiers * kDaysPerSeason) >> 1;
+    const std::int64_t billWage =
+        (std::int64_t(calculate_squad_upkeep(s.garrison)) * kDaysPerSeason) >> 1;
+    const std::int32_t boardLeft = s.garrisonDebt[boardOrd];
+    float unpaid = 0.0f;
+    if (billBoard > 0 && boardLeft > 0)
+        unpaid = float(boardLeft) / float(billBoard);
+    if (billWage > 0 && s.garrisonWageDebt > 0) {
+        const float wageShare = float(s.garrisonWageDebt) / float(billWage);
+        if (wageShare > unpaid) unpaid = wageShare;
     }
-    const int wage = (calculate_squad_upkeep(s.garrison) * kDaysPerSeason) >> 1;
-    if (wage > 0) {
-        // ОПЛАТА СТОИМОСТЬЮ (владелец 2026-09-18, currency.h
-        // pay_value_dense): дефолт — монеты, но арифметикой плотности
-        // value/kg, не веткой; пустая казна платит натурой. Уплаченная
-        // стоимость СГОРАЕТ в пул лута, переплата хвоста — щедрость.
-        if (inventory_value(s.inventory) >= wage) {
-            gs.lootPoolValue += pay_value_dense(s.inventory, wage);
-        } else {
-            shorted = true;
+    if (unpaid > 1.0f) unpaid = 1.0f;
+    int walkers = int(float(soldiers) * unpaid);
+    while (walkers-- > 0 && !s.garrison.empty()) {
+        SoldierRecord walker{};
+        if (!s.garrison.pop_soul_back(walker)) break;
+        if (!gs.deserterPool.push(walker)) {
+            s.garrison.push(walker);   // pool full: the man stays
+            break;
         }
     }
-    if (shorted) {
-        int walkers = std::max(1, total_soldiers(s.garrison) / 8);
-        while (walkers-- > 0 && !s.garrison.empty()) {
-            SoldierRecord walker{};
-            if (!s.garrison.pop_soul_back(walker)) break;
-            if (!gs.deserterPool.push(walker)) {
-                s.garrison.push(walker);   // pool full: the man stays
-                break;
-            }
+    // ── 2. НОВЫЙ СЧЁТ по составу ПОСЛЕ ухода, перезаписью ────────────────
+    const int left = total_soldiers(s.garrison);
+    s.garrisonDebt[boardOrd] =
+        std::int32_t((left * kDaysPerSeason) >> 1);
+    s.garrisonWageDebt =
+        (std::int64_t(calculate_squad_upkeep(s.garrison)) * kDaysPerSeason) >> 1;
+    if (left <= 0) {
+        s.garrisonDebt[boardOrd] = 0;
+        s.garrisonWageDebt = 0;
+        return;
+    }
+    // ── 3. НЕМЕДЛЕННОЕ ГАШЕНИЕ, И ОНО ЧАСТИЧНОЕ ──────────────────────────
+    // Харч — ТОЙ ЖЕ дверью, что у населения этого же склада (econ_pay_debt
+    // по лестнице): армия ест ровно голодную строку и ничего сверх неё
+    // (вердикт 2026-09-18 — горожанин судится по всей лестнице, солдат по
+    // харчу и плате), и дверь отдаёт эту строку одна.
+    econ_pay_debt(s.inventory, s.garrisonDebt, nullptr, nullptr);
+    // ПЛАТА — стоимостью; уплаченное СГОРАЕТ в пул лута.
+    if (s.garrisonWageDebt > 0) {
+        const std::int64_t canPay =
+            std::min<std::int64_t>(s.garrisonWageDebt,
+                                   inventory_value(s.inventory));
+        if (canPay > 0) {
+            gs.lootPoolValue += pay_value_dense(s.inventory, int(canPay));
+            s.garrisonWageDebt -= canPay;
         }
     }
 }

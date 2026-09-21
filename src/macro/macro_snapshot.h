@@ -71,6 +71,13 @@ struct MacroNpcRecord {
     // bodies that have any.
     Equipment            gear;
     SoldierSquad roster;                    // SquadRoster.squad (no leader)
+    // СЧЁТ СОДЕРЖАНИЯ РОСТЕРА (v105, CANON S10 «у всякого, кто кормит, есть
+    // счёт»): непогашенный харч по лестнице и непогашенная плата. Едут в
+    // сейв, потому что это ДОЛГ — состояние мира, а не производное: сквад,
+    // сохранённый в середине сезона, обязан проснуться должным ровно
+    // столько же, иначе перезагрузка кормит его армию бесплатно.
+    std::int32_t rosterNeedDebt[kCommodityCount] = {};
+    std::int64_t rosterWageDebt = 0;
 };
 
 // Flatten every persistent macro NPC (the view is keyed by MacroSpawnId — the

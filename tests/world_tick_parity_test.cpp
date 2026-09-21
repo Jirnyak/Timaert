@@ -82,6 +82,12 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     sm::SoldierSquad* army = sm::player_roster(world);
     army->push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 77u));
+    // Вторая душа — не украшение фикстуры: закон v105 взыскивает ДОЛЮ
+    // ростера, и на ростере из одного «доля» неотличима от «хотя бы
+    // один» — то есть от той самой отменённой кромки. Двое — минимум, на
+    // котором пропорция вообще может быть измерена.
+    army->push(sm::make_soldier(
+        static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 79u));
     sm::MacroWorld mw{};
     mw.gs = &gs;
     mw.world = &world;
@@ -119,35 +125,57 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     CHECK(sm::inventory_value((*sm::player_inventory(world))) == 5,
           "no window off the boundary: nothing debited");
 
-    // An UNCOVERED window (5 coins against a season's wage, no bread):
-    // nothing is debited («не покрыто — не списывать») and an eighth of the
-    // roster — floor one soul — walks into the deserter pool, ONCE.
-    const std::size_t poolBefore = gs.deserterPool.size();
-    CHECK(sm::squad_season_window(mw, 33) == 1,
-          "an uncovered window bleeds an eighth (floor one) of the roster");
-    CHECK(sm::inventory_value((*sm::player_inventory(world))) == 5,
-          "an uncovered wage is NOT debited");
-    CHECK(gs.deserterPool.size() == poolBefore + 1,
-          "the walker lands in the deserter pool");
-    CHECK(gs.lootPoolValue == 0,
-          "an unpaid wage burns nothing into the loot pool");
+    // ── СЧЁТ, А НЕ КРОМКА (v105, CANON S10 «у всякого, кто кормит, есть
+    // счёт»; владелец 2026-09-21) ───────────────────────────────────────
+    // Свидетель переехал вместе с законом. Здесь пинилось ТРИ правила,
+    // которые все умерли одним вердиктом: «покрыто ЦЕЛИКОМ или не
+    // списывается», доля 1/8 и пол «хотя бы одна душа». Цена прежней формы
+    // измерена прогоном 512 дней: мир терял три четверти населения, НЕ
+    // ГОЛОДАЯ НИ ДНЯ — 154 385 душ уходили в дезертиры, потому что артель
+    // в поле встречала границу с пустой сумкой.
+    //
+    // Новый закон — зеркало закона МЕСТ (econ_debt_boundary): на границе
+    // выставляется счёт, он гасится сразу и ЧАСТИЧНО, а на СЛЕДУЮЩЕЙ
+    // границе непогашенная ДОЛЯ и есть доля ушедших.
 
-    // A COVERED window: re-arm the roster, fund a season of both needs —
-    // bread leaves whole, the wage BURNS into the loot pool («жалование
-    // сгорает»), the roster holds.
+    // ПЕРВАЯ граница: счёта ещё не было, значит взыскивать нечего —
+    // дезертиров ноль, но 5 монет кошелька уходят в уплату НОВОГО счёта.
+    const std::size_t poolBefore = gs.deserterPool.size();
+    CHECK(sm::squad_season_window(mw, 33) == 0,
+          "первая граница выставляет счёт, а не взыскивает: долга не было");
+    CHECK(gs.deserterPool.size() == poolBefore,
+          "никто не ушёл — уходят за НЕОПЛАЧЕННОЕ, а счёт только что выписан");
+    CHECK(sm::inventory_value(*sm::player_inventory(world)) == 0,
+          "частичная оплата ЗАКОННА: что было в кошельке, то и ушло в счёт");
+    CHECK(gs.lootPoolValue == 5,
+          "уплаченная часть платы сгорает в пул лута, как и полная");
+
+    // ВТОРАЯ граница, кошелёк пуст: счёт не погашен почти целиком, и
+    // уходит ровно ЭТА доля ростера — не восьмая и не «хотя бы один».
+    const int roster = army->size();
+    CHECK(roster >= 2, "негативный контроль: ростеру есть кого терять");
+    const int walked = sm::squad_season_window(mw, 65);
+    CHECK(walked > 0, "неоплаченный сезон стоит людей");
+    CHECK(walked == roster,
+          "ушла ВСЯ доля неоплаченного — при пустом кошельке это весь "
+          "ростер, а не назначенная восьмая");
+    CHECK(gs.deserterPool.size() == poolBefore + std::size_t(walked),
+          "ушедшие легли в пул дезертиров");
+
+    // ПОКРЫТЫЙ сезон: вернуть душу, дать харч и плату — счёт гасится
+    // целиком, и следующая граница не уводит никого.
     army->push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 78u));
     sm::Inventory* purse = sm::player_inventory(world);
     purse->add("food", sm::kDaysPerSeason);
-    purse->add("coin_empire_copper", wageSeason);   // + the 5 already there
-    CHECK(sm::squad_season_window(mw, 65) == 0,
-          "a covered window deserts nobody");
+    purse->add("coin_empire_copper", wageSeason);
+    const std::int64_t burnedBefore = gs.lootPoolValue;
+    CHECK(sm::squad_season_window(mw, 97) == 0,
+          "покрытый сезон не уводит никого");
     CHECK(purse->count("food") == 0,
-          "a covered window eats the whole season of bread at once");
-    CHECK(sm::inventory_value(*purse) == 5,
-          "a covered window debits exactly the season's wage");
-    CHECK(gs.lootPoolValue == wageSeason,
-          "the paid wage burns into the world loot pool");
+          "покрытый сезон съедает харч сезона разом");
+    CHECK(gs.lootPoolValue > burnedBefore,
+          "уплаченная плата сгорает в пул лута («жалование сгорает»)");
 }
 
 

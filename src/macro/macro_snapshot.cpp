@@ -33,7 +33,14 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
         m.character = view.get<ecs::NpcCharacter>(e);
         m.book      = view.get<SpellBook>(e);
         m.inventory = view.get<ecs::NpcInventory>(e).inv;
-        m.roster    = view.get<ecs::SquadRoster>(e).squad;
+        {
+            const ecs::SquadRoster& ro = view.get<ecs::SquadRoster>(e);
+            m.roster = ro.squad;
+            // Счёт едет вместе с ростером, которому он выставлен (v105).
+            for (int c = 0; c < kCommodityCount; ++c)
+                m.rosterNeedDebt[c] = ro.needDebt[c];
+            m.rosterWageDebt = ro.wageDebt;
+        }
         if (const auto* orders = reg.try_get<ecs::SquadOrders>(e)) {
             m.orders = *orders;
             m.hasOrders = 1;
@@ -80,7 +87,14 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         reg.emplace<ecs::NpcCharacter>(e, m.character);
         reg.emplace<SpellBook>(e, m.book);
         reg.emplace<ecs::NpcInventory>(e, ecs::NpcInventory{m.inventory});
-        reg.emplace<ecs::SquadRoster>(e, ecs::SquadRoster{m.roster});
+        {
+            ecs::SquadRoster ro{};
+            ro.squad = m.roster;
+            for (int c = 0; c < kCommodityCount; ++c)
+                ro.needDebt[c] = m.rosterNeedDebt[c];
+            ro.wageDebt = m.rosterWageDebt;
+            reg.emplace<ecs::SquadRoster>(e, ro);
+        }
         if (m.hasOrders) reg.emplace<ecs::SquadOrders>(e, m.orders);
         if (m.hasSheet) reg.emplace<CharacterSheet>(e, m.sheet);
         if (m.designOrdinal >= 0) {

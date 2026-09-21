@@ -465,6 +465,8 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     write_inventory(w, m.inventory);
     write_equipment(w, m.gear);
     write_squad(w, m.roster);
+    w.pod(m.rosterNeedDebt);   // v105: счёт содержания ростера
+    w.pod(m.rosterWageDebt);
 }
 
 void read_macro_npc(Reader& r, MacroNpcRecord& m) {
@@ -507,6 +509,8 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     read_inventory(r, m.inventory);
     read_equipment(r, m.gear);
     read_squad(r, m.roster);
+    r.pod(m.rosterNeedDebt);   // v105
+    r.pod(m.rosterWageDebt);
 }
 
 // Written OLDEST FIRST, so the file carries a past and not a ring's seam: a
@@ -773,6 +777,8 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.titheAvgGoods);        // v104: память × горизонт (memory.h)
     w.pod(lm.titheAvgCoin);
     w.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
+    w.pod(lm.garrisonDebt);      // v105: счёт содержания гарнизона
+    w.pod(lm.garrisonWageDebt);
 }
 
 void read_landmark(Reader& r, Landmark& lm) {
@@ -798,6 +804,8 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.titheAvgGoods);        // v104: память × горизонт (memory.h)
     r.pod(lm.titheAvgCoin);
     r.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
+    r.pod(lm.garrisonDebt);      // v105
+    r.pod(lm.garrisonWageDebt);
 }
 
 void write_marker(Writer& w, const Marker& m) {

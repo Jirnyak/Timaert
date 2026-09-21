@@ -230,6 +230,15 @@ inline int hunger_item_index() {
     return idx;
 }
 
+// И ТОВАРНЫМ ОРДИНАЛОМ — то, ЧЕМ она адресуется в СЧЁТЕ (needDebt индексируется
+// товарным ординалом, а не каталожным: state.h Landmark, ecs::SquadRoster).
+// Третьего написания у этого вопроса быть не должно: и место, и ростер спрашивают
+// голодную строку одной дверью, иначе счёт одного окажется в строке другого.
+inline int hunger_commodity_ordinal() {
+    static const int ord = commodity_index(hunger_item_id());
+    return ord;
+}
+
 // One worker per this many heads (po2) — the BENCH quota: the share of
 // hands staffing the recipes (econ_produce_day). The daily CREWS are the
 // landmark's own law since 2026-08-31 (landmark_registry: crews rows +
