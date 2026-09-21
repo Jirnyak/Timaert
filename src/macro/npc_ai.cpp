@@ -4212,13 +4212,25 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // Вердикт владельца: «добыча упала, но не сломалась; если по
             // архитектуре и математике верно — так и надо».
             //
-            // ЧТО ЗДЕСЬ ЕЩЁ НЕ ЗАКОН (открыто вслух): сам скор размерно не
-            // сходится — у заявки добычи числитель это стоимость В ДЕНЬ, у
-            // заявки сбыта полная сумма сделки, а `1 +` не выведено ниоткуда.
-            // Честная форма — ВЫРАБОТКА В ДЕНЬ РЕЙСА: ценность, произведённая
-            // за рейс, делённая на его длительность (2 × дни пути + дни
-            // работы). Тогда обе заявки меряются одной величиной и назначенных
-            // чисел не остаётся. Отдельный ход со своим замером.
+            // ── ОДНА ВЕЛИЧИНА НА ВЕСЬ МИР: МОНЕТ НА ДУШУ В ДЕНЬ ─────────
+            // (владелец 2026-09-21: «чинить, одна размерность у обеих
+            // заявок».) Прежде здесь стояло признание, что скор размерно НЕ
+            // сходится: у добычи числитель — стоимость одной СПИНЫ, у сбыта
+            // ПОЛНАЯ маржа склада, а страх вычитался НЕДЕЛЁНЫМ. Следствие
+            // было не «неточность», а перекос ЗНАКА: маржа целого склада
+            // делает страх неразличимым, а у добычи тот же страх глушит
+            // заявку целиком — то есть решение «ехать или нет» принималось
+            // разными единицами. Под новым законом рождения крю это стало бы
+            // хуже, чем неточность: число сквадов равно числу заявок с
+            // ПОЛОЖИТЕЛЬНЫМ скором, то есть несогласованная единица начала бы
+            // решать, сколько душ место выводит в поле.
+            //
+            //     скор = (что произведёт ОДНА СПИНА за рейс − страх) / дни
+            //
+            // Оба слагаемых числителя — монеты, делитель — дни; ноль новых
+            // констант. «Одна спина» у добычи была и раньше (carryPerSoul /
+            // вес единицы), у сбыта её вводит проход ниже — ТОЙ ЖЕ дверью
+            // value_dense_order(), какой крю потом и грузится.
             const auto road_days_ = [&](const XY& site) -> float {
                 float cells = -1.0f;
                 if (nvF && nvF->baked()) {
@@ -4357,8 +4369,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                                         : 0.0f;
                 const float tripDays = road_days_(site) + workDays;
                 if (!(tripDays > 0.0f)) continue;
-                const float score = float(unitPrice) * perSoul / tripDays
-                                    - fear_of(site);
+                const float score =
+                    (float(unitPrice) * perSoul - fear_of(site)) / tripDays;
                 if (score <= 0.0f) continue;
                 bids[bidCount++] = GoalBid{
                     std::uint8_t(SquadType::Artel), std::uint32_t(g),
@@ -4398,13 +4410,33 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // покупательная способность это суммарная стоимость
                 // инвентаря»). Дань — долг, не кошелёк.
                 long long purse = 0;
-                for (int c = 0; c < kCommodityCount; ++c) {
+                // ПО ОДНОЙ СПИНЕ И В ПОРЯДКЕ ПОГРУЗКИ. Обход идёт
+                // value_dense_order() — ТОЙ ЖЕ дверью, какой крю грузится
+                // дома (load_cheap_at_home_) и какой везёт дань, — и
+                // останавливается, когда спина полна. Поэтому «что решили» и
+                // «что повезли» перестали быть двумя разными числами: скор
+                // больше не обещает маржу, которая в обоз не влезет.
+                // Дань в спине ПЕРВАЯ: долг обязан ехать (тот же приоритет,
+                // что у погрузки), и она же съедает место у излишка.
+                float freeKg = carryPerSoul;
+                for (int oi = 0; oi < kCommodityCount && freeKg > 0.0f; ++oi) {
+                    const int c = value_dense_order()[std::size_t(oi)];
                     const char* id = kCommodities[c].id;
                     const ItemDef* d = item_def(id);
                     const int base = d ? d->value : 0;
                     if (base <= 0) continue;
-                    if (s.titheOwedGoods[c] > 0)
-                        value += (long long)s.titheOwedGoods[c] * base;
+                    const float kg = d->weight > 0.0f ? d->weight : 1.0f;
+                    const auto fits = [&](long long want) -> long long {
+                        const long long cap = (long long)(freeKg / kg);
+                        return want < cap ? want : cap;
+                    };
+                    if (s.titheOwedGoods[c] > 0) {
+                        const long long fit = fits(s.titheOwedGoods[c]);
+                        if (fit > 0) {
+                            value += fit * base;
+                            freeKg -= float(fit) * kg;
+                        }
+                    }
                     const int have = s.inventory.count(id);
                     // Спрос уже СЕЗОННЫЙ (остаток счёта + производный).
                     const int demand = season_demand_for(id, s.needDebt,
@@ -4413,10 +4445,13 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                                                          &s.inventory);
                     const int homePrice =
                         stock_price(base, have, demand);
-                    if (have > demand && homePrice < base) {
-                        value += (long long)(have - demand)
-                                 * (base - homePrice);
-                        purse += (long long)(have - demand) * base;
+                    if (have > demand && homePrice < base && freeKg > 0.0f) {
+                        const long long fit = fits(have - demand);
+                        if (fit > 0) {
+                            value += fit * (base - homePrice);
+                            purse += fit * base;
+                            freeKg -= float(fit) * kg;
+                        }
                     }
                 }
                 // Проход ЗАКУПКИ, капнутый кошельком: дефицитная цена может
@@ -4452,7 +4487,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const float tripDays = road_days_(citySite);
                     const float score =
                         tripDays > 0.0f
-                            ? float(value) / tripDays - fear_of(citySite)
+                            ? (float(value) - fear_of(citySite)) / tripDays
                             : 0.0f;
                     if (score > 0.0f) {
                         bids[bidCount++] = GoalBid{
