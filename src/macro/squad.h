@@ -193,7 +193,7 @@ inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
 
 // Any dead leader still holding men — the state the drain above leaves ONLY
 // when the pool refused (its cap). The tick drivers ask this to know whether
-// to unload the pool on the spot (raise_deserter_bands) and drain again
+// to drain again (разгрузка пула бандами вырезана 2026-09-21)
 // (AI-2; owner 2026-09-10: «мёртвые не должны стоять вообще» — a full pool
 // is not an excuse for a corpse-row to live to the daily rotation).
 inline bool dead_rosters_remain(ecs::World& w) {

@@ -584,14 +584,7 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             resource_fields_daily_growth(*macro, day);
         }
 
-        // The deserter pool's other half. Beaten armies pour INTO it
-        // (macro/squad.h) and, from here, walk back OUT of it as bands — the
-        // conservation law closed. The pool is an abstract count, so the day's
-        // exodus is √(pool) men and the site is the field's business, not the
-        // stock's (macro/npc_spawn.h).
         if (macro && macro->world && macro->terrain) {
-            raise_deserter_bands(gs, *macro->world, *macro->terrain, day,
-                                 esink, euser);
             // The fleet law (npc_spawn.h): a city without a caravan outfits
             // one from its population — losses stay permanent, the trade
             // arm regrows through the world (CANON S4).

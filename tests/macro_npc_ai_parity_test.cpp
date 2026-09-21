@@ -506,66 +506,10 @@ void test_a_marching_body_does_not_mend() {
 
 } // namespace
 
-// ── AI-2: мёртвые не стоят ────────────────────────────────────────────────
-// Owner verdict (2026-09-10): a killed squad's men go to the deserter pool
-// UNIVERSALLY, and a full pool is not an excuse — it is UNLOADED on the spot
-// (raise_deserter_bands, the very door the daily sim uses) until the dead
-// are drained. Before this, a war-filled pool refused the drain, the dead
-// lord's band stood on the map, and the next daily rotation returned dead
-// souls to a village as living population.
-void test_a_full_pool_is_unloaded_on_the_spot() {
-    sm::GameState gs{};
-    gs.mapW = 8;
-    gs.mapH = 8;
-    gs.worldSeed = 7u;
-    // An 8×8 all-land world, the travel-test idiom: alpha 255 = dry footing,
-    // height above the sea, so find_valid_spawn always has somewhere to put
-    // a raised band.
-    sm::TerrainData terrain;
-    terrain.width = 8;
-    terrain.height = 8;
-    terrain.rgba.assign(8u * 8u * 4u, 255u);
-    for (std::size_t i = 0; i < 8u * 8u; ++i) terrain.rgba[i * 4u] = 180u;
-
-    sm::ecs::World world;
-    // The pool at its ceiling — a world mid-war.
-    while (!gs.deserterPool.full()) {
-        gs.deserterPool.push(
-            sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 9000u));
-    }
-    // A dead lord whose band survived him, killed this very tick.
-    const auto e = spawn_ai(world, sm::NPCType::Bandit, 3.0f, 3.0f, -1,
-                            sm::NPCState::Idle, 0, 100, /*mapW*/8);
-    world.reg.emplace<sm::ecs::MacroSpawnId>(e, 55u);
-    auto& roster = world.reg.emplace<sm::ecs::SquadRoster>(e);
-    constexpr int kBandSize = 12;
-    for (int i = 0; i < kBandSize; ++i) {
-        roster.squad.push(
-            sm::make_soldier(std::uint16_t(sm::NPCType::Bandit), 3,
-                             100u + std::uint32_t(i)));
-    }
-    world.reg.emplace<sm::ecs::Dead>(e);
-    const int soulsBefore = gs.deserterPool.size() + kBandSize;
-
-    sm::MacroNpcAiRuntime runtime;
-    sm::reset_macro_npc_ai_runtime(runtime, 1u);
-    sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
-    sm::tick_macro_npc_ai(mw, runtime, sm::kAiTicks);
-
-    CHECK(!world.reg.valid(e),
-          "the dead squad LEFT the map this tick — a full pool is no excuse");
-    // Conservation: every living soul is either in the pool or walking in a
-    // raised band (its leader entity + its roster).
-    int walking = 0;
-    for (auto [be, br] : world.reg.view<sm::ecs::SquadRoster>().each()) {
-        (void)be;
-        walking += 1 + br.squad.size();
-    }
-    CHECK(gs.deserterPool.size() + walking == soulsBefore,
-          "souls are conserved: pool + raised bands hold every man");
-    CHECK(walking > 0,
-          "negative control: the unload actually raised a band to make room");
-}
+// ── AI-2: свидетель «полный пул разгружается на месте» ВЫРЕЗАН 2026-09-21
+// вместе с самой механикой (raise_deserter_bands): бандитов в мире больше не
+// рождают. Тест, переживший свою механику, сторожил бы дефект, а не закон
+// (AGENTS, закон тестов §7).
 
 // The rotation half of the same defect: the dissolve view took any Idle crew
 // at home — dead included — and paid its souls back to the landmark (or, for
@@ -583,13 +527,16 @@ void test_rotation_does_not_dissolve_the_dead() {
     for (std::size_t i = 0; i < 8u * 8u; ++i) terrain.rgba[i * 4u] = 180u;
 
     sm::ecs::World world;
-    // A DEAD guard crew standing at its home city, Idle — the exact state
-    // the dissolve used to swallow.
-    const auto dead = spawn_ai(world, sm::NPCType::Guard, 50.0f, 50.0f, 1);
+    // A DEAD crew standing at its home city, Idle — the exact state the
+    // dissolve used to swallow. Род взят ЖИВОЙ строкой ростера города
+    // (Peasant, артель горожан): патрульная строка Guard вырезана
+    // 2026-09-21, и свидетель на ней проверял бы уже не закон, а пустоту —
+    // rotate_worker_squads не считает крю то, чего место не поднимает.
+    const auto dead = spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, 1);
     world.reg.emplace<sm::ecs::MacroSpawnId>(dead, 77u);
     auto& deadRoster = world.reg.emplace<sm::ecs::SquadRoster>(dead);
     deadRoster.squad.push(
-        sm::make_soldier(std::uint16_t(sm::NPCType::Guard), 2, 200u));
+        sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 200u));
     world.reg.emplace<sm::ecs::Dead>(dead);
 
     const int popBefore = gs.landmarks[0].population;
@@ -604,16 +551,32 @@ void test_rotation_does_not_dissolve_the_dead() {
     CHECK(world.reg.valid(dead),
           "the corpse-row is the drain's business, not the rotation's");
 
-    // Negative control: the SAME crew alive dissolves into the garrison —
-    // the exclusion above is about death, not a dead door.
-    const auto alive = spawn_ai(world, sm::NPCType::Guard, 50.0f, 50.0f, 1);
-    world.reg.emplace<sm::ecs::MacroSpawnId>(alive, 78u);
-    auto& aliveRoster = world.reg.emplace<sm::ecs::SquadRoster>(alive);
-    aliveRoster.squad.push(
-        sm::make_soldier(std::uint16_t(sm::NPCType::Guard), 2, 201u));
-    sm::rotate_worker_squads(mw, /*day=*/4);
-    CHECK(gs.landmarks[0].garrison.size() > garrisonBefore,
-          "negative control: a LIVING guard crew does dissolve home");
+    // Negative control: ЖИВЫЕ артели той же строки этот же проход РАСПУСКАЕТ
+    // — значит исключение выше про СМЕРТЬ, а не про мёртвую дверь. Город
+    // держит ОДНУ крестьянскую строку, поэтому из двух стоящих дома артелей
+    // одна занимает её, а лишняя распускается (суд границы, S19.2) —
+    // наблюдаем это прямо по смерти сущности, а не по арифметике населения,
+    // которую та же граница двигает ещё и набором.
+    for (std::uint32_t i = 0; i < 2u; ++i) {
+        const auto alive =
+            spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, 1);
+        world.reg.emplace<sm::ecs::MacroSpawnId>(alive, 78u + i);
+        auto& aliveRoster = world.reg.emplace<sm::ecs::SquadRoster>(alive);
+        aliveRoster.squad.push(
+            sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2,
+                             201u + i));
+    }
+    sm::rotate_worker_squads(mw, /*day=*/33);   // граница сезона
+    int livingLeft = 0;
+    for (auto [e2, k2] : world.reg.view<sm::ecs::NPCKind>().each()) {
+        if (k2.type == std::uint16_t(sm::NPCType::Peasant)
+            && !world.reg.all_of<sm::ecs::Dead>(e2))
+            ++livingLeft;
+    }
+    CHECK(livingLeft < 2,
+          "negative control: лишняя ЖИВАЯ артель распущена тем же проходом");
+    CHECK(world.reg.valid(dead),
+          "и труп пережил границу — растворение его по-прежнему не трогает");
 }
 
 int main() {
@@ -630,7 +593,6 @@ int main() {
     test_a_resting_lord_mends_at_the_players_rate();
     test_a_marching_body_does_not_mend();
     test_macro_visual_smoothing_and_snap();
-    test_a_full_pool_is_unloaded_on_the_spot();
     test_rotation_does_not_dissolve_the_dead();
     return sm::test::report("macro_npc_ai_parity_test");
 }

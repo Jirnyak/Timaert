@@ -285,17 +285,10 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
                  home.x, home.y, gs.mapW, home.id, rng, spawnIndex);
     }
 
-    // Bandits: 0.3 * settlements + 2
-    int banditCount = int(nSet * 3 / 10) + 2;
-    for (int i = 0; i < banditCount; ++i) {
-        auto& ref = *cities[rng.next_u32() % nSet];
-        float angle = rng.next_f01() * 6.2831853f;
-        int dist  = 20 + int(rng.next_u32() % 30u);
-        int cx = wrapi(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
-        int cy = wrapi(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
-        auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
-        make_npc(w, NPCType::Bandit, std::uint16_t(faction_index("bandits")), p.x, p.y, gs.mapW, -1, rng, spawnIndex);
-    }
+    // БАНДИТСКИЙ ЗАСЕВ ВЫРЕЗАН 2026-09-21 (владелец: «вырезаем бандитов… щас
+    // не до них»). Строка NPCType::Bandit в таблице существ остаётся — мир
+    // просто перестал их рождать, пока экономика не станет безупречной
+    // базой (problems.md §54: идти от минимума системы).
 
     // Witches: max(1, 0.1 * settlements)
     int witchCount = int(nSet / 10); if (witchCount < 1) witchCount = 1;
@@ -610,96 +603,6 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
     return leader;
 }
 
-int raise_deserter_bands(GameState& gs, ecs::World& w,
-                         const TerrainData& terrain, int day,
-                         EconFactSink sink, void* user) {
-    SoldierSquad& pool = gs.deserterPool;
-    if (pool.empty() || gs.mapW <= 0 || gs.mapH <= 0) return 0;
-
-    // √(pool) men walk off today — the garrison's own law, applied to the pile
-    // (see the header for why this needs no rate constant). At least one, never
-    // more than the pool holds: the pool is the only bound.
-    const int poolSize = pool.size();
-    const int take = std::min(poolSize,
-                              std::max(1, int(std::sqrt(float(poolSize)))));
-
-    // The freshest arrivals leave first — the men of the last rout, still
-    // together, walk off before the old hands who have been drifting for weeks.
-    SoldierSquad band{};
-    for (int i = 0; i < take; ++i) {
-        SoldierRecord rec{};
-        if (!pool.pop_soul_back(rec)) break;
-        if (!band.push(rec)) {
-            pool.push(rec);   // band form refused: the man stays pooled
-            break;
-        }
-    }
-
-    // Slot 0 is the leader, always (CANON.md S4): the strongest man of the
-    // group is the one the rest follow. Ties break on the earlier record so the
-    // choice is deterministic.
-    // Slot 0 is the leader, always (CANON S4) — and the leader is a MAN
-    // (2026-09-19: «по карте ходят только лидеры»; a horse follows, it does
-    // not raise a band). A pool tail of nothing but beasts walks back.
-    int best = -1;
-    for (int i = 0; i < band.slot_count(); ++i) {
-        if (is_monster_kind(band[i].kind)) continue;
-        if (best < 0 || band[i].level > band[best].level) best = i;
-    }
-    if (best < 0) {
-        move_squad(pool, band);   // conservation: nobody dissolves
-        return 0;
-    }
-    SoldierRecord captain{};
-    if (!band.take_soul_at(best, captain)) return 0;
-
-    // WHERE is not the pool's question (header): uniform land today, the blood
-    // field tomorrow — this is the single line that changes then.
-    Rng rng(hash3(std::uint32_t(day), gs.worldSeed, 0xDE5E27u));
-    const XY site = find_valid_spawn(int(rng.next_u32() % std::uint32_t(gs.mapW)),
-                                     int(rng.next_u32() % std::uint32_t(gs.mapH)),
-                                     /*radius*/8, rng, gs.mapW, gs.mapH, terrain);
-
-    SquadSpec spec{};
-    spec.leaderType = valid_npc_kind(captain.kind)
-        ? NPCType(captain.kind) : NPCType::Bandit;
-    spec.leaderLevel = captain.level;
-    spec.x = site.x;
-    spec.y = site.y;
-    // A leaderless armed man is an outlaw — deserters fly no realm's colours.
-    spec.factionIndex = faction_index("bandits");
-    spec.members = std::move(band);
-
-    if (spawn_squad(gs, w, terrain, spec) == entt::null) {
-        // The map refused the spawn: the men go back, because the pool is a
-        // conservation law and a failed roll may not eat anybody. The room
-        // MUST be there — exactly `take` records just left — so a refused
-        // return is a bookkeeping bug, and it says so out loud rather than
-        // dissolving people in silence.
-        const bool captainBack = pool.push(captain);
-        const int menExpected = spec.members.size();
-        const int menBack = move_squad(pool, spec.members);
-        if (!captainBack || menBack != menExpected) {
-            std::fprintf(stderr,
-                         "[deserters] pool refused the rollback of a failed "
-                         "spawn (captain %d, men %d/%d) — men lost\n",
-                         int(captainBack), menBack, menExpected);
-        }
-        return 0;
-    }
-    // Банда встала — столько душ ушло из контейнера «пул» в контейнер
-    // «сквад» (ведомость склада душ, econ_day.h). Адреса нет намеренно: у
-    // пула его нет по построению (см. шапку в npc_spawn.h) — и ровно это
-    // противоречит вердикту владельца «банды это население ландмарка логово
-    // бандитов», то есть колонка мерит в том числе саму недостроенность.
-    if (sink) {
-        EconFact f{};
-        f.kind = EconFact::Kind::SoulsBanded;
-        f.amount = take;
-        sink(user, f);
-    }
-    return take;
-}
 
 int replenish_caravans(GameState& gs, ecs::World& w,
                        const TerrainData& terrain) {

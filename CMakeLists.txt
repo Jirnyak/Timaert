@@ -700,14 +700,6 @@ timaert_test(torus_wrap_test
     SOURCES
         src/macro/deposit_layer.cpp)
 
-timaert_test(deserter_bands_test
-    SOURCES
-        src/macro/npc_spawn.cpp
-        src/macro/items.cpp
-        # npc.h answers for both halves of the kind id space (monsters too).
-        src/macro/fauna.cpp
-    LINK_SDL LINK_ENTT)
-
 timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
@@ -1408,28 +1400,6 @@ timaert_test(scent_field_test
 # Стража (CANON S10 «стража + поле угрозы»): факты → вылазка душами из
 # гарнизона, тишина → гарнизон, возврат → души назад, страх артелей —
 # отказ рейса ценой.
-timaert_test(guard_patrol_test
-    SOURCES
-        src/macro/npc_ai.cpp
-        # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (recovery.h recover_bar), never a copy.
-        src/macro/recovery.cpp
-        src/macro/nav_field.cpp
-        src/macro/threat_field.cpp
-        src/macro/economy.cpp
-        src/macro/chronicle.cpp
-        src/macro/macro_stock.cpp
-        src/macro/deposit_layer.cpp
-        src/macro/fauna.cpp
-        src/macro/tree_layer.cpp
-        src/macro/npc_spawn.cpp
-        src/macro/items.cpp
-        src/macro/econ_day.cpp
-        # anatomy.cpp worn_bonuses — сезонные нужды артелей идут
-        # эффективным листом лидера (squad_season_needs).
-        src/macro/anatomy.cpp
-    LINK_SDL LINK_ENTT)
-
 timaert_test(rng_contract_test)
 
 timaert_test(dice_door_test)

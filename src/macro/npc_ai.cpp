@@ -5350,11 +5350,6 @@ void settle_dead_squads(MacroWorld& mw) {
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
     drain_dead_leader_squads(w, gs.deserterPool);
-    while (mw.terrain && dead_rosters_remain(w)) {
-        if (raise_deserter_bands(gs, w, *mw.terrain,
-                                 gs.worldTime.day()) <= 0) break;
-        if (drain_dead_leader_squads(w, gs.deserterPool) <= 0) break;
-    }
     destroy_dead_macro_squads(w, &gs.lootPoolValue);
 }
 

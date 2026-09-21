@@ -87,38 +87,12 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
 int replenish_caravans(GameState& gs, ecs::World& w,
                        const TerrainData& terrain);
 
-// ── The deserter pool's OUTFLOW ───────────────────────────────────────────
-//
-// `GameState::deserterPool` is the world's conservation law for beaten armies:
-// kill a leader and his surviving men do not evaporate, they fall in here
-// (macro/squad.h drain_dead_leader_squads). Until this function it had no
-// reader at all — men fell in and the pile only grew, which is not a
-// conservation law, it is a grave.
-//
-// The pool is deliberately ABSTRACT and non-local (owner, 2026-08-20): it is a
-// COUNT, not a place, so it remembers nothing about where the rout happened.
-// A stock answers "how many"; WHERE the band stands up is a separate question,
-// and its answer is a FIELD — the coming blood field (a battle spills onto the
-// cells, diffuses, and bands rise more often where more men died). Until that
-// field exists the site is drawn uniformly from the land, which is the honest
-// placeholder and the only line that changes when the field lands.
-//
-// The day's exodus is √(pool) men — the same "a place fields the root of its
-// people" idiom the garrison already uses — so a thousand-man rout haunts the
-// country for weeks in shrinking bands while a skirmish's leftovers are gone in
-// days, and neither needs a rate constant. The strongest of the group leads it
-// (S4: slot 0 is the leader, always) and the rest are his roster; they take the
-// outlaw faction, because that is what a leaderless armed man becomes.
-//
-// Deterministic from (worldSeed, day): no RNG state is consumed, so a reload
-// cannot re-roll or replay the day. Returns how many men left the pool.
-//
-// Докладывает свой отток в ведомость склада душ (econ_day.h SoulsBanded):
-// пул — это контейнер душ, а всякое движение душ между контейнерами обязано
-// иметь имя, иначе вечерний уровень не отличить от суммы двух встречных
-// потоков. Канал необязателен (мир без слушателя работает так же).
-int raise_deserter_bands(GameState& gs, ecs::World& w,
-                         const TerrainData& terrain, int day,
-                         EconFactSink sink = nullptr, void* user = nullptr);
+// ── ОТТОК ПУЛА ДЕЗЕРТИРОВ ВЫРЕЗАН 2026-09-21 ─────────────────────────────
+// `raise_deserter_bands` поднимала из пула банду в день по закону √(пул).
+// Вырезана вместе с бандитами (владелец: «щас не до них»). ПОСЛЕДСТВИЕ
+// НАЗВАНО ВСЛУХ: пока не построен вердикт «убитый ПОГИБАЕТ, а не
+// дезертирует» (CANON S9), пул остаётся контейнером БЕЗ ОТТОКА — его
+// размер печатает прибор колонкой `soulsPool`, и это честная мера
+// неоплаты, а не молчание.
 
 } // namespace sm
