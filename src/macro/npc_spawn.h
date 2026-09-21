@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <vector>
 #include "ecs/world.h"
+#include "macro/econ_day.h"   // EconFactSink — доклад оттока пула душ
 #include "macro/npc.h"
 #include "macro/state.h"
 #include "macro/map_generator.h"
@@ -111,7 +112,13 @@ int replenish_caravans(GameState& gs, ecs::World& w,
 //
 // Deterministic from (worldSeed, day): no RNG state is consumed, so a reload
 // cannot re-roll or replay the day. Returns how many men left the pool.
+//
+// Докладывает свой отток в ведомость склада душ (econ_day.h SoulsBanded):
+// пул — это контейнер душ, а всякое движение душ между контейнерами обязано
+// иметь имя, иначе вечерний уровень не отличить от суммы двух встречных
+// потоков. Канал необязателен (мир без слушателя работает так же).
 int raise_deserter_bands(GameState& gs, ecs::World& w,
-                         const TerrainData& terrain, int day);
+                         const TerrainData& terrain, int day,
+                         EconFactSink sink = nullptr, void* user = nullptr);
 
 } // namespace sm

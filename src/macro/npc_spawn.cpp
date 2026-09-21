@@ -611,7 +611,8 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
 }
 
 int raise_deserter_bands(GameState& gs, ecs::World& w,
-                         const TerrainData& terrain, int day) {
+                         const TerrainData& terrain, int day,
+                         EconFactSink sink, void* user) {
     SoldierSquad& pool = gs.deserterPool;
     if (pool.empty() || gs.mapW <= 0 || gs.mapH <= 0) return 0;
 
@@ -685,6 +686,17 @@ int raise_deserter_bands(GameState& gs, ecs::World& w,
                          int(captainBack), menBack, menExpected);
         }
         return 0;
+    }
+    // Банда встала — столько душ ушло из контейнера «пул» в контейнер
+    // «сквад» (ведомость склада душ, econ_day.h). Адреса нет намеренно: у
+    // пула его нет по построению (см. шапку в npc_spawn.h) — и ровно это
+    // противоречит вердикту владельца «банды это население ландмарка логово
+    // бандитов», то есть колонка мерит в том числе саму недостроенность.
+    if (sink) {
+        EconFact f{};
+        f.kind = EconFact::Kind::SoulsBanded;
+        f.amount = take;
+        sink(user, f);
     }
     return take;
 }

@@ -3977,7 +3977,7 @@ int squad_season_window(MacroWorld& mw, int day) {
     for (auto [e, kind, rt, bag, roster]
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime, ecs::NpcInventory,
                     ecs::SquadRoster>().each()) {
-        (void)kind; (void)rt;
+        (void)kind;
         // ── 1. ВЗЫСКАНИЕ ПРОШЛОГО СЧЁТА — ПРОПОРЦИОНАЛЬНО ────────────────
         // Зеркало закона мест (econ_debt_boundary): доля НЕОПЛАЧЕННОГО и
         // есть доля ушедших. Счёт пересчитывается по СЕГОДНЯШНЕМУ составу —
@@ -3999,18 +3999,24 @@ int squad_season_window(MacroWorld& mw, int day) {
         const std::int32_t boardLeft =
             boardOrd >= 0 ? roster.needDebt[boardOrd] : 0;
         float unpaid = 0.0f;
+        // ПО КАКОЙ СТРОКЕ ушли — харч или плата. Доля берётся ХУДШАЯ (ниже),
+        // значит у ухода всегда есть ОДНА победившая строка, и назвать её
+        // стоит один bool: без него вечерний уровень говорит «сто душ ушло»
+        // и молчит о том, кормить их надо было или платить.
+        bool byWage = false;
         if (lastBill.board > 0 && boardLeft > 0)
             unpaid = float(boardLeft) / float(lastBill.board);
         if (lastBill.wage > 0 && roster.wageDebt > 0) {
             const float wageShare =
                 float(roster.wageDebt) / float(lastBill.wage);
-            if (wageShare > unpaid) unpaid = wageShare;
+            if (wageShare > unpaid) { unpaid = wageShare; byWage = true; }
         }
         // Душа уходит, если ей не досталось ЛИБО харча, ЛИБО платы —
         // поэтому берётся ХУДШАЯ из двух долей, а не их сумма: один и тот
         // же человек может быть и не кормлен, и не плачен.
         if (unpaid > 1.0f) unpaid = 1.0f;
         int walkers = int(float(roster.squad.size()) * unpaid);
+        int walked = 0;
         while (walkers-- > 0 && !roster.squad.empty()) {
             SoldierRecord walker{};
             if (!roster.squad.pop_soul_back(walker)) break;
@@ -4019,6 +4025,19 @@ int squad_season_window(MacroWorld& mw, int day) {
                 break;
             }
             ++deserted;
+            ++walked;
+        }
+        // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h): ОДИН факт = ОДНА артель,
+        // провалившая окно, поэтому слушатель считает и артели (числом
+        // фактов), и души (суммой). Адрес — ДОМ артели: по канону S9 это
+        // его ресурс ушёл, а не «мировой».
+        if (walked > 0 && mw.econFacts) {
+            EconFact f{};
+            f.kind = byWage ? EconFact::Kind::SoulsDesertedUnpaid
+                            : EconFact::Kind::SoulsDesertedUnfed;
+            f.amount = walked;
+            f.landmarkId = rt.homeSettlementId;
+            mw.econFacts(mw.econFactsUser, f);
         }
         // ── 2. НОВЫЙ СЧЁТ по составу ПОСЛЕ ухода, перезаписью ────────────
         // Старая недоимка не переносится: взыскали — выставили новый (тот

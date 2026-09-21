@@ -95,6 +95,17 @@ void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
         const int before = lm.population;
         lm.population = std::max(lm.population + whole, 0);
         diedOut = before > 0 && lm.population == 0;
+        // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h SoulsBorn): единственный приход
+        // на склад душ во всём мире. Убыль у склада своя — голод здесь же
+        // (Starved выше), дезертирство в окне артели, бой. Доклад идёт
+        // только о приходе: закон сохранения собирается из прихода, убыли
+        // и уровней, а не из трёх копий одной величины.
+        if (whole > 0 && sink) {
+            EconFact f{};
+            f.kind = EconFact::Kind::SoulsBorn;
+            f.amount = whole;
+            sink(user, f);
+        }
     }
 }
 
@@ -579,7 +590,8 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         // exodus is √(pool) men and the site is the field's business, not the
         // stock's (macro/npc_spawn.h).
         if (macro && macro->world && macro->terrain) {
-            raise_deserter_bands(gs, *macro->world, *macro->terrain, day);
+            raise_deserter_bands(gs, *macro->world, *macro->terrain, day,
+                                 esink, euser);
             // The fleet law (npc_spawn.h): a city without a caravan outfits
             // one from its population — losses stay permanent, the trade
             // arm regrows through the world (CANON S4).

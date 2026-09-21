@@ -54,6 +54,17 @@ struct DayAccum {
     int famineStarts = 0;
     int starvedPops = 0;
     long long mintedCoins = 0;
+    // ── ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h, CANON S9) ──────────────────────
+    // Уровни (кто где стоит) прибор снимает сам вечерним свипом; ПОТОКИ к
+    // вечеру не видны — место, выплатившее сто душ в артель, и место,
+    // потерявшее сто душ, выглядят одинаково. Эти четыре величины и есть
+    // разница между «мир умирает» и «мир переливается».
+    long long soulsBorn = 0;
+    int crewsUnfed = 0;          // артелей провалило окно по ХАРЧУ...
+    long long soulsUnfed = 0;    // ...и сколько душ из них ушло
+    int crewsUnpaid = 0;         // то же по ПЛАТЕ
+    long long soulsUnpaid = 0;
+    long long soulsBanded = 0;   // поднято из пула в банды
 
     void reset() { *this = DayAccum{}; }
 };
@@ -81,6 +92,22 @@ void econ_fact_sink(void* user, const sm::EconFact& f) {
         // Slot hygiene, not a flow of goods: what the melt RETURNS is not
         // reported as Produced on purpose (entropy is a sink, not a source).
         case sm::EconFact::Kind::Scrapped: break;
+        // Ведомость склада душ. Один факт дезертирства = одна артель,
+        // поэтому здесь считаются ОБЕ величины: артели фактами, души суммой.
+        case sm::EconFact::Kind::SoulsBorn:
+            a->soulsBorn += f.amount;
+            break;
+        case sm::EconFact::Kind::SoulsDesertedUnfed:
+            a->crewsUnfed += 1;
+            a->soulsUnfed += f.amount;
+            break;
+        case sm::EconFact::Kind::SoulsDesertedUnpaid:
+            a->crewsUnpaid += 1;
+            a->soulsUnpaid += f.amount;
+            break;
+        case sm::EconFact::Kind::SoulsBanded:
+            a->soulsBanded += f.amount;
+            break;
     }
 }
 
@@ -236,7 +263,23 @@ int main(int argc, char** argv) {
                          "\tcrewsGather\tcrewsSell\tcrewsOther\tdeserters"
                          // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
                          // табуны в гарнизонах и спины в отрядах, миром.
-                         "\thorsesGarr\thorsesSquads\tpastures");
+                         "\thorsesGarr\thorsesSquads\tpastures"
+                         // ── БАЛАНС ДУШ МИРА (CANON S9, владелец
+                         // 2026-09-21) ──────────────────────────────────
+                         // Население — РЕСУРС места, которым оно платит за
+                         // артель; значит «мир умирает» и «мир переливает
+                         // осёдлых в вооружённых» — разные события, и
+                         // различает их только полный счёт по контейнерам.
+                         // Контейнеров пять: склады душ мест (по родам),
+                         // сквады с домом, сквады без дома (банды),
+                         // гарнизоны, пул дезертиров. soulsWorld — их
+                         // сумма, и падать она может ТОЛЬКО от смерти.
+                         "\tpopCity\tpopVil\tpopLair\tpopElse"
+                         "\tsoulsHomed\tsoulsFree\tsoulsGarr\tsoulsPool"
+                         "\tsoulsWorld"
+                         // Потоки дня (ведомость склада душ, econ_day.h).
+                         "\tsoulsBorn\tcrewsUnfed\tsoulsUnfed"
+                         "\tcrewsUnpaid\tsoulsUnpaid\tsoulsBanded");
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             const char* id = sm::kCommodities[c].id;
             std::fprintf(fw, "\t%s_stock\t%s_gathered\t%s_produced"
@@ -298,11 +341,25 @@ int main(int argc, char** argv) {
 
             // Day-end sampling: stocks from the landmarks, flows from facts.
             long long popTotal = 0, coinLm = 0;
+            // Склады душ мест по родам. Логово выделено отдельной колонкой
+            // не для красоты: по вердикту владельца «банды это население
+            // ландмарка логово бандитов» — значит колонка обязана быть
+            // ненулевой, а сегодня она ноль, и это измеряемая недостройка.
+            long long popCity = 0, popVil = 0, popLair = 0, popElse = 0;
             long long stock[sm::kCommodityCount] = {};
             long long stockCity[sm::kCommodityCount] = {};
             long long stockVil[sm::kCommodityCount] = {};
             for (const auto& lm : gs.landmarks) {
                 popTotal += lm.population;
+                switch (lm.type) {
+                    case sm::LandmarkType::City: popCity += lm.population;
+                        break;
+                    case sm::LandmarkType::Village: popVil += lm.population;
+                        break;
+                    case sm::LandmarkType::Lair: popLair += lm.population;
+                        break;
+                    default: popElse += lm.population; break;
+                }
                 coinLm += coins_in(lm.inventory, coinIdx);
                 for (int c = 0; c < sm::kCommodityCount; ++c) {
                     const long long n = lm.inventory.count_of(
@@ -339,10 +396,15 @@ int main(int argc, char** argv) {
                 coinSquads += coins_in(bag.inv, coinIdx);
                 foodHolds += bag.inv.count_of(foodIdx);
             }
-            long long horsesGarr = 0;
+            long long horsesGarr = 0, soulsGarr = 0;
             for (const sm::Landmark& lm : gs.landmarks) {
                 horsesGarr += sm::count_soldiers_of_kind(
                     lm.garrison, std::uint16_t(sm::NPCType::Horse));
+                // Гарнизон — ЧЕТВЁРТЫЙ контейнер душ места (CANON S4:
+                // «ландмарк = неподвижный сквад, гарнизон = его ростер»).
+                // Считаются ЛЮДИ: табун у места свой столбец, и душой
+                // населения лошадь не была никогда.
+                soulsGarr += sm::count_human_souls(lm.garrison);
             }
             long long horsesSquads = 0;
             for (auto [e, ro]
@@ -351,6 +413,30 @@ int main(int argc, char** argv) {
                 horsesSquads += sm::count_soldiers_of_kind(
                     ro.squad, std::uint16_t(sm::NPCType::Horse));
             }
+            // ДУШИ В СКВАДАХ, разделённые ПО АДРЕСУ ДОМА. Лидер — такая же
+            // душа, как любая в ростере (CANON S4: «одиночка = лидер с
+            // пустым ростером»), поэтому он +1, а не особый случай.
+            // Бездомный сквад — это банда: выплаченная кем-то душа, которую
+            // не ждёт ни один склад. По вердикту владельца такого состояния
+            // быть не должно вовсе («банды это население ландмарка логово
+            // бандитов»), и эта колонка меряет, сколько мира сейчас живёт
+            // мимо закона.
+            long long soulsHomed = 0, soulsFree = 0;
+            for (auto [e, kind, rt]
+                 : ecs.reg.view<sm::ecs::NPCKind,
+                                sm::ecs::MacroNpcRuntime>().each()) {
+                long long souls = sm::is_monster_kind(kind.type) ? 0 : 1;
+                if (const auto* ro =
+                        ecs.reg.try_get<sm::ecs::SquadRoster>(e))
+                    souls += sm::count_human_souls(ro->squad);
+                if (souls <= 0) continue;
+                if (sm::landmark_by_id(gs, rt.homeSettlementId) != nullptr)
+                    soulsHomed += souls;
+                else
+                    soulsFree += souls;
+            }
+            const long long soulsPool =
+                sm::count_human_souls(gs.deserterPool);
             long long pastures = 0;
             if (!features.data.empty()) {
                 for (const std::uint8_t f : features.data)
@@ -394,6 +480,20 @@ int main(int argc, char** argv) {
                          int(gs.deserterPool.size()));
             std::fprintf(fw, "\t%lld\t%lld\t%lld",
                          horsesGarr, horsesSquads, pastures);
+            // Баланс душ мира. soulsWorld печатается суммой, а не считается
+            // читателем TSV, ровно по той же причине, по какой прибор вообще
+            // существует: величина, которую каждый читатель складывает сам,
+            // рано или поздно складывается по-разному.
+            std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld"
+                             "\t%lld\t%lld\t%lld\t%lld\t%lld"
+                             "\t%lld\t%d\t%lld\t%d\t%lld\t%lld",
+                         popCity, popVil, popLair, popElse,
+                         soulsHomed, soulsFree, soulsGarr, soulsPool,
+                         popTotal + soulsHomed + soulsFree + soulsGarr
+                             + soulsPool,
+                         accum.soulsBorn, accum.crewsUnfed, accum.soulsUnfed,
+                         accum.crewsUnpaid, accum.soulsUnpaid,
+                         accum.soulsBanded);
             for (int c = 0; c < sm::kCommodityCount; ++c) {
                 std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld",
                              stock[c], accum.gathered[c], accum.produced[c],
