@@ -125,7 +125,7 @@ void test_woodcutter_targets_nearest_tree() {
         // Работа именуется поручением (аукцион, CANON S10): рубка = Gather
         // над строкой целей Trees; тип — лишь лист и спина.
         auto& wrt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
-        wrt.errandVerb = std::uint8_t(sm::ErrandVerb::Gather);
+        wrt.squadType = std::uint8_t(sm::SquadType::Artel);
         wrt.errandObject = std::uint32_t(
             sm::gather_goal_row(sm::ResourceFieldId::Trees));
     }

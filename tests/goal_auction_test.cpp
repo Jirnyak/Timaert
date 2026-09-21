@@ -87,7 +87,7 @@ std::vector<Crew> live_crews_of(ecs::World& w, int homeId) {
         (void)e;
         if (kind.type != std::uint16_t(NPCType::Peasant)) continue;
         if (rt.homeSettlementId != homeId) continue;
-        out.push_back(Crew{rt.errandVerb, rt.errandObject});
+        out.push_back(Crew{rt.squadType, rt.errandObject});
     }
     return out;
 }
@@ -140,7 +140,7 @@ void test_auction_raises_errand_bearing_peasants() {
     // нужду / 2, и купить он не может ни при каком кошельке.
     bool townsfolkShop = !townsfolk.empty();
     for (const Crew& c : townsfolk) {
-        if (c.verb != std::uint8_t(ErrandVerb::Sell) || c.object != 3u)
+        if (c.verb != std::uint8_t(SquadType::Caravan) || c.object != 3u)
             townsfolkShop = false;
     }
     CHECK(townsfolkShop,
@@ -153,9 +153,9 @@ void test_auction_raises_errand_bearing_peasants() {
     bool everyErrandLegal = true;
     for (const Crew& c : crews) {
         const bool gather =
-            c.verb == std::uint8_t(ErrandVerb::Gather)
+            c.verb == std::uint8_t(SquadType::Artel)
             && (int(c.object) == ironRow || int(c.object) == treeRow);
-        const bool sell = c.verb == std::uint8_t(ErrandVerb::Sell)
+        const bool sell = c.verb == std::uint8_t(SquadType::Caravan)
                           && c.object == 9u;
         if (!gather && !sell) everyErrandLegal = false;
     }
@@ -239,7 +239,7 @@ void test_tithe_alone_raises_the_sell_run() {
     CHECK(raised > 0, "долг дани сам по себе — цель с положительным скором");
     bool allSell = !crews.empty();
     for (const Crew& c : crews) {
-        if (c.verb != std::uint8_t(ErrandVerb::Sell) || c.object != 9u)
+        if (c.verb != std::uint8_t(SquadType::Caravan) || c.object != 9u)
             allSell = false;
     }
     CHECK(allSell,
@@ -406,7 +406,7 @@ void test_station_is_a_weighted_roulette() {
         MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
         rotate_worker_squads(mw, day);
         for (const Crew& c : live_crews_of(w, 3)) {
-            if (c.verb != std::uint8_t(ErrandVerb::Sell)) continue;
+            if (c.verb != std::uint8_t(SquadType::Caravan)) continue;
             const int idx = int(c.object) - 9;
             if (idx >= 0 && idx < 3) ++hits[idx];
         }

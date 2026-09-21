@@ -446,10 +446,10 @@ int main(int argc, char** argv) {
                 (void)e;
                 if (kind.type != std::uint16_t(sm::NPCType::Peasant))
                     continue;
-                if (crt.errandVerb == std::uint8_t(sm::ErrandVerb::Gather))
+                if (crt.squadType == std::uint8_t(sm::SquadType::Artel))
                     ++crewsGather;
-                else if (crt.errandVerb
-                         == std::uint8_t(sm::ErrandVerb::Sell))
+                else if (crt.squadType
+                         == std::uint8_t(sm::SquadType::Caravan))
                     ++crewsSell;
                 else
                     ++crewsOther;
@@ -525,7 +525,7 @@ int main(int argc, char** argv) {
                 (void)e;
                 // Рейс сбыта — поручение крестьян (аукцион, CANON S10):
                 // «вендор» смотра = артель с errand=Sell, тип умер.
-                if (crt.errandVerb == std::uint8_t(sm::ErrandVerb::Sell)) {
+                if (crt.squadType == std::uint8_t(sm::SquadType::Caravan)) {
                     ++vendors;
                     if (crt.state == 0) ++vIdle; else ++vAway;
                     vendorLoad += (long long)sm::inventory_weight(bag.inv);

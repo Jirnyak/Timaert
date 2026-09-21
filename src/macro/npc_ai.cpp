@@ -904,7 +904,7 @@ constexpr int kGathererGoalCount =
 // The crew's OWN goal row, named by its errand — nullptr when the errand is
 // not a gather (no goal = no conjured work, the fail-closed rule).
 const GathererDef* gatherer_def_of(const ecs::MacroNpcRuntime& rt) {
-    if (rt.errandVerb != std::uint8_t(ErrandVerb::Gather)) return nullptr;
+    if (rt.squadType != std::uint8_t(SquadType::Artel)) return nullptr;
     if (rt.errandObject >= std::uint32_t(kGathererGoalCount)) return nullptr;
     return &kGathererDefs[rt.errandObject];
 }
@@ -1171,13 +1171,11 @@ void ai_gatherer(entt::entity self, MacroPos& p,
     (void)kind;   // the errand, not the type, names the work (CANON S10)
     XY home;
     if (!home_pos(rt, ctx, home)) return;
-    // ПОРУЧЕНИЕ РЕШАЕТ (аукцион, CANON S10): Sell — рейс сбыта вендорской
-    // машиной той же артелью; Gather — строка таблицы целей; None — артель
-    // без цели живёт домоседом (вывод аукциона: сидеть дома).
-    if (rt.errandVerb == std::uint8_t(ErrandVerb::Sell)) {
-        ai_vendor(self, p, rt, pools, ctx);
-        return;
-    }
+    // (ЗДЕСЬ СТОЯЛА ВЕТКА «squadType == Caravan → отдать управление
+    // ai_vendor» — пятая машина ИИ, спрятанная ВНУТРИ первой. Снята
+    // 2026-09-21: тип сквада разбирает `dispatch`, и корован попадает в свою
+    // машину напрямую. Артель теперь занимается только добычей — ровно то
+    // строгое разделение, которого требует замысел.)
     const GathererDef* def = gatherer_def_of(rt);
     if (!def) { ai_home_wanderer(p, rt, pools, ctx); return; }
 
@@ -3266,8 +3264,18 @@ void ai_waypoints(entt::entity e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 //   4. строка типа (kNpcTypeDefs.ai) — род как он есть.
 // Новая модель ИИ = функция + строка enum; новая ступень = данные на
 // сущности + одна строка здесь.
-AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
-                                const ecs::NPCKind& kind) {
+// ПОВЕДЕНИЕ НЕТИПИЗИРОВАННОГО СКВАДА — и это ЕДИНСТВЕННАЯ ТОЧКА, ГДЕ
+// МАКРОМИР ЕЩЁ ЧИТАЕТ КАТАЛОГ ТЕЛ (CANON S2 «Протокол двух миров»; до
+// 2026-09-21 таких точек было четыре, и ни одна не была названа).
+// Зовётся ТОЛЬКО из ветки SquadType::ByKind — то есть для сквадов, у которых
+// нет макро-источника поведения вовсе: генезисных одиночек и квестовой цели.
+// Лестница честная и по убыванию authority: маршрут в приказе (он и есть
+// приказ — вердикт владельца), строка стола анкет (МАКРО-таблица, законно),
+// и только потом мобная строка лидера — та самая течь.
+// С их сносом (порция Б-6, «всё через универсальную систему анкет») эта
+// функция умирает целиком, а не переезжает.
+AIBehaviour untyped_squad_behaviour(entt::registry& reg, entt::entity e,
+                                     const ecs::NPCKind& kind) {
     if (const auto* orders = reg.try_get<ecs::SquadOrders>(e)) {
         if (orders->waypointCount > 0) return AIBehaviour::Waypoints;
     }
@@ -3349,7 +3357,14 @@ void settle_exhaustion(entt::entity e, const MacroPos& p,
     }
 }
 
-void dispatch(AIBehaviour b, entt::entity e, MacroPos& p,
+// ОДНА ДВЕРЬ «ЧТО ДЕЛАЕТ ЭТОТ СКВАД» (владелец 2026-09-21: «сквад должен
+// знать, кто он — тип задаёт поведение аи агента»). Прежде на этот вопрос
+// отвечали ЧЕТЫРЕ словаря, и `dispatch` знал только один из них: поведение
+// приходило ему АРГУМЕНТОМ, уже посчитанным из мобной строки, а тип сквада
+// разбирался ВЕТКОЙ ВНУТРИ ai_gatherer — пятой машиной внутри первой.
+// Теперь порядок обратный и единственный: сперва ТИП (макро-колонка), и лишь
+// нетипизированный сквад падает на каталог тел.
+void dispatch(entt::entity e, MacroPos& p,
               const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx) {
     // Каждый думающий сквад следит — писатель полей следов один (CANON S10).
@@ -3358,12 +3373,25 @@ void dispatch(AIBehaviour b, entt::entity e, MacroPos& p,
     // Визуального врага нет — может, есть запах: охота съедает think, роль
     // ждёт получаса потише (макроцель в rt не тронута — пауза, не амнезия).
     if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
-    switch (b) {
+    // ТИП СКВАДА — ПЕРВЫЙ И ГЛАВНЫЙ ОТВЕТ.
+    switch (SquadType(rt.squadType)) {
+        case SquadType::Artel:   ai_gatherer(e, p, kind, rt, pools, ctx); return;
+        case SquadType::Caravan: ai_vendor  (e, p, rt, pools, ctx);       return;
+        case SquadType::ByKind:  break;   // ниже — течь, названная по имени
+    }
+    switch (untyped_squad_behaviour(ctx.mw.world->reg, e, kind)) {
+        // ПОСЛЕДНИЕ ДВЕ МАКРО-РОЛИ, ЕЩЁ ЖИВУЩИЕ В КАТАЛОГЕ ТЕЛ (CANON S2):
+        // `Gatherer` на строке Peasant и `Trader` на строке Merchant. Они
+        // здесь не потому, что нетипизированный сквад должен добывать, а
+        // потому что их несут СТРОКИ, и снести значение раньше строки нельзя.
+        // Нетипизированный крестьянин проваливается в ai_gatherer до
+        // gatherer_def_of, тот отдаёт nullptr (тип не Artel) — и артель живёт
+        // домоседом, ровно как до переезда. Обе уйдут вместе со своими
+        // строками (порция Б-6), и тогда этот switch перестанет знать про
+        // макро-роли вовсе.
         case AIBehaviour::Gatherer:     ai_gatherer(e, p, kind, rt, pools, ctx); break;
-        case AIBehaviour::VendorTrade:  ai_vendor    (e, p, rt, pools, ctx); break;
         case AIBehaviour::TaxRun:       ai_taxrun    (e, p, rt, pools, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, pools, ctx); break;
-        case AIBehaviour::Nomad:        ai_nomad        (p, rt, pools, ctx); break;
         case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, pools, ctx); break;
         case AIBehaviour::Patrol:       ai_patrol       (p, rt, pools, ctx); break;
         case AIBehaviour::Teleporter:   ai_teleporter   (p, rt, pools, ctx); break;
@@ -4131,7 +4159,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // march the crew is about to walk (npc_ai.h provision_squad) — and
         // the errand pair itself, stamped onto the raised crew's runtime.
         XY dest[8];
-        std::uint8_t errandVerb[8] = {};
+        std::uint8_t squadType[8] = {};
         std::uint32_t errandObject[8] = {};
         for (int i = 0; i < 8; ++i) dest[i] = home;
 
@@ -4143,7 +4171,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // дорога роняет делителем. Терм опасности (Died-факты у маршрута)
         // добавляется ПОСЛЕ, вес — дубль-прогоном.
         struct GoalBid {
-            std::uint8_t  verb;
+            std::uint8_t  type;   // SquadType — кем встанет взявший заявку
             std::uint32_t object;
             XY            site;
             float         score;
@@ -4333,7 +4361,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                                     - fear_of(site);
                 if (score <= 0.0f) continue;
                 bids[bidCount++] = GoalBid{
-                    std::uint8_t(ErrandVerb::Gather), std::uint32_t(g),
+                    std::uint8_t(SquadType::Artel), std::uint32_t(g),
                     site, score};
             }
             // Рейс сбыта-закупки (цели крестьян, вердикты 2026-09-02 и
@@ -4428,7 +4456,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                             : 0.0f;
                     if (score > 0.0f) {
                         bids[bidCount++] = GoalBid{
-                            std::uint8_t(ErrandVerb::Sell),
+                            std::uint8_t(SquadType::Caravan),
                             std::uint32_t(city->id), citySite, score};
                     }
                 }
@@ -4465,7 +4493,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         if (draw <= 0.0f) { pick = b; break; }
                     }
                     dest[i] = bids[pick].site;
-                    errandVerb[i] = bids[pick].verb;
+                    squadType[i] = bids[pick].type;
                     errandObject[i] = bids[pick].object;
                     open = true;
                     break;
@@ -4536,7 +4564,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // объект} — рулетка этой строки уже решила; рефлекс
                 // прерывает не спрашивая.
                 auto& prt = reg.get<ecs::MacroNpcRuntime>(standing);
-                prt.errandVerb = errandVerb[i];
+                prt.squadType = squadType[i];
                 prt.errandObject = errandObject[i];
                 prt.stateTimer = 0;   // новый рейс — этим же думом
                 // ТАКТ 2: дом снаряжает уходящую артель тяглом из стойла
@@ -4650,7 +4678,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 s.population -= 1 + spec.members.size();
                 ++raised;
                 auto& prt = reg.get<ecs::MacroNpcRuntime>(ent);
-                prt.errandVerb = errandVerb[i];
+                prt.squadType = squadType[i];
                 prt.errandObject = errandObject[i];
                 // Сезонный груз содержания вместо провианта на рейс: еда —
                 // баланс окна теперь, рейсовый ломоть умер у артелей
@@ -4891,7 +4919,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
                    float(ecs::cell_y(cell, gs.mapW))};
         const float x0 = p.x, y0 = p.y;
         if (gate == ThinkGate::Think)
-            dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, hp, ctx);
+            dispatch(e, p, kind, rt, hp, ctx);
         settle_march_rhythm(e, p, rt, hp, p.x != x0 || p.y != y0, ctx);
         cell.idx = ecs::cell_index(int(p.x), int(p.y), gs.mapW);
     }
@@ -5035,8 +5063,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                                float(ecs::cell_y(cell, gs.mapW))};
                     const float x0 = p.x, y0 = p.y;
                     if (gate == ThinkGate::Think) {
-                        dispatch(effective_behaviour(reg, e, kind), e, p, kind,
-                                 rt, hp, ctx);
+                        dispatch(e, p, kind, rt, hp, ctx);
                     }
                     settle_march_rhythm(e, p, rt, hp,
                                         p.x != x0 || p.y != y0, ctx);

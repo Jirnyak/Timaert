@@ -70,7 +70,7 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     pools.sp = pools.maxSp;
     // Работа именуется ПОРУЧЕНИЕМ, не типом (аукцион, CANON S10): рубка =
     // Gather над строкой целей Trees — то, что рулетка ротации выдала бы.
-    rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    rt.squadType = std::uint8_t(SquadType::Artel);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Trees));
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 11u);
@@ -190,7 +190,7 @@ void test_the_farmer_works_the_field() {
         pools, &prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    prt.squadType = std::uint8_t(SquadType::Artel);
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
@@ -268,7 +268,7 @@ void test_farmer_without_terrain_conjures_nothing() {
         pools, &prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    prt.squadType = std::uint8_t(SquadType::Artel);
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
@@ -365,7 +365,7 @@ void test_the_mine_runs_while_the_player_is_away() {
         pools, &rt, make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(13u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    rt.squadType = std::uint8_t(SquadType::Artel);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
@@ -491,7 +491,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // а не феодальное ребро, — потому что тем же рейсом горожане едут
     // закупаться В ДЕРЕВНЮ. Фикстура называет рынок так же, как его назвал
     // бы аукцион.
-    crt.errandVerb = std::uint8_t(ErrandVerb::Sell);
+    crt.squadType = std::uint8_t(SquadType::Caravan);
     crt.errandObject = 1u;      // the city's ordinal
     crt.targetSettlementId = -1;
     crt.targetX = 10.0f;
@@ -614,7 +614,7 @@ void test_the_miner_works_the_vein() {
         pools, &rt, make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(13u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    rt.squadType = std::uint8_t(SquadType::Artel);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
@@ -750,7 +750,7 @@ void test_the_catch_lands_in_the_roster() {
         make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(77u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    prt.squadType = std::uint8_t(SquadType::Artel);
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Horses));
     prt.carryPerSoul = 40.0f;
     prt.carryCap = 40.0f;

@@ -22,7 +22,7 @@ enum class AIBehaviour : std::uint8_t {
     // resource-field registry, haul the commodity home. The per-profession
     // nuance is a kGathererDefs row (npc_ai.cpp); with no worksite or no wired
     // layer the man falls back to the home wander, fail closed.
-    Gatherer = 0, Trader, Nomad,
+    Gatherer = 0, Trader,
     Aggressive, Patrol, Teleporter, Wanderer,
     // The city's trading agent (W2b): remembers the home market at departure
     // (AgentMemory MarketSnapshot), carries exports to the city's villages in
@@ -37,12 +37,11 @@ enum class AIBehaviour : std::uint8_t {
     // `FaunaAi::Flee`): a rabbit's whole behaviour, and the honest column for
     // any row that is prey rather than a fighter.
     Flee,
-    // The village crew at market (owner 2026-08-30: «крестьяне просто всегда
-    // идут продавать на рынок ближайшего города»): carries the home surplus
-    // to the nearest city, sells it all, buys the home's lacks, walks back —
-    // then the daily labour rotation dissolves it into the population like
-    // every working crew.
-    VendorTrade,
+    // (`VendorTrade` и `Nomad` СНЕСЕНЫ 2026-09-21: их не несла НИ ОДНА строка
+    // ни каталога тел, ни стола анкет, и ветки в `dispatch` были мёртвыми.
+    // Рейс сбыта — это ТИП СКВАДА `Caravan` (npc_ai.h), вопрос макромира; а
+    // `ai_nomad` жив и без своего значения — он фолбэк, который машины зовут
+    // напрямую. Значение без строки — колонка без писателя, AGENTS §9.)
     // The feudal courier (CANON S24): carry the town's tithe up the graph to
     // its capital and walk home — «каждый узел знает только своих прямых
     // подчинённых и сюзерена», and this walker IS that edge.

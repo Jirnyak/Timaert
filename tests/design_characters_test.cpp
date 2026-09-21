@@ -4,7 +4,7 @@
 //   1. Строка стола рождается в мир ОДНИМ телом: тег с ординалом, владеемый
 //      лист (индивид, «он как игрок»), дом из контекста мира, маршрут
 //      «дом ↔ ближайший ландмарк рода из агенды» приказом в SquadOrders.
-//   2. Лестница effective_behaviour: приказ > анкета > строка типа — и
+//   2. Лестница untyped_squad_behaviour: приказ > анкета > строка типа — и
 //      ступень анкеты ПРОВЕРЯЕМО отличается от строки типа (Merchant.ai =
 //      Trader, анкета говорит Waypoints).
 //   3. Снапшот несёт ординал (designOrdinal, v92) и восстанавливает тег;
@@ -129,10 +129,10 @@ void test_spawn_births_the_row() {
     // Лестница: приказ первым; без приказа — ступень анкеты, и она
     // ПРОВЕРЯЕМО не строка типа (Merchant.ai = Trader).
     const auto& kind = w.reg.get<ecs::NPCKind>(e);
-    CHECK(effective_behaviour(w.reg, e, kind) == AIBehaviour::Waypoints,
+    CHECK(untyped_squad_behaviour(w.reg, e, kind) == AIBehaviour::Waypoints,
           "with the route present, the order rung answers");
     w.reg.remove<ecs::SquadOrders>(e);
-    CHECK(effective_behaviour(w.reg, e, kind) == row.behaviour,
+    CHECK(untyped_squad_behaviour(w.reg, e, kind) == row.behaviour,
           "without the route, the design-row rung answers");
     CHECK(kNpcTypeDefs[std::uint16_t(row.body)].ai != row.behaviour,
           "negative control: the row rung provably differs from the type "
@@ -213,7 +213,7 @@ void test_king_peasant_births_by_home_faction() {
     // Лестница: приказов нет — ступень анкеты, доказуемо не строка типа
     // (Peasant.ai = Gatherer).
     const auto& kind = w.reg.get<ecs::NPCKind>(king);
-    CHECK(effective_behaviour(w.reg, king, kind) == AIBehaviour::MageHunt,
+    CHECK(untyped_squad_behaviour(w.reg, king, kind) == AIBehaviour::MageHunt,
           "the design rung answers MageHunt for the king");
     CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Peasant)].ai
               != AIBehaviour::MageHunt,
@@ -271,7 +271,7 @@ void test_dragons_nest_on_mountain_peaks() {
     CHECK(owned_sheet(w, d1) != nullptr,
           "the dragon OWNS his sheet like every design character");
     const auto& kind = w.reg.get<ecs::NPCKind>(d1);
-    CHECK(effective_behaviour(w.reg, d1, kind) == AIBehaviour::LairSorties,
+    CHECK(untyped_squad_behaviour(w.reg, d1, kind) == AIBehaviour::LairSorties,
           "the design rung answers LairSorties");
     CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Dragon)].ai
               != AIBehaviour::LairSorties,
