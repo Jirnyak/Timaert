@@ -246,7 +246,13 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     const auto& kind = rig.w.reg.get<ecs::NPCKind>(e);
 
     // Макроцель на месте до и после охоты: отвлечение — пауза, не амнезия.
-    rt.errandVerb = std::uint8_t(ErrandVerb::Patrol);
+    // Глагол здесь — ЛЮБОЙ живой: закон не про патруль, а про то, что
+    // рефлекс не затирает поручение. Взят Sell, потому что его контракт
+    // объекта — ординал рынка (npc_ai.h), и 42 для него осмысленное число;
+    // у Gather объект это строка kGathererDefs, где 42 вне таблицы.
+    // (Прежде стоял ErrandVerb::Patrol — он снят 2026-09-21 вместе с
+    // патрульной механикой.)
+    rt.errandVerb = std::uint8_t(ErrandVerb::Sell);
     rt.errandObject = 42u;
     rt.targetX = 50.0f;
     rt.targetY = 50.0f;
@@ -260,7 +266,7 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     scent_reset(rig.gs.scent, 64, 64);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
     CHECK(scent_hunt_step(e, p, kind, rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx), "охота пошла (фикстура)");
-    CHECK(rt.errandVerb == std::uint8_t(ErrandVerb::Patrol)
+    CHECK(rt.errandVerb == std::uint8_t(ErrandVerb::Sell)
               && rt.errandObject == 42u
               && int(rt.targetX) == 50 && int(rt.targetY) == 50,
           "макроцель не тронута: глагол, объект и курс поручения целы");

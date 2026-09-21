@@ -58,18 +58,28 @@ enum class CrewGate : std::uint8_t {
     Suzerain = 1,   // the realm has a capital that is not this town itself
 };
 struct LandmarkCrewRow {
-    NPCType  npc  = NPCType::Peasant;
+    // ДЕФОЛТ — НЕВАЛИДНОЕ ЗНАЧЕНИЕ, И ЭТО СВИДЕТЕЛЬ (грабля 2026-09-21).
+    // Здесь стоял `NPCType::Peasant`, то есть дефолтная строка была
+    // НЕОТЛИЧИМА от авторской крестьянской, — и когда патрульную строку
+    // города заменили комментарием, не убавив `crewCount`, город год
+    // поднимал ЛИШНЮЮ артель горожан, которой никто не писал. Невидимость
+    // была не в числе, а в том, что рукописная свёртка позиционного
+    // агрегата молча доливает дефолты (грабля «выпавшее из свёртки поле
+    // невидимо»). С `Count` дефолт перестаёт быть похожим на строку, и
+    // расхождение ловит компилятор — crew_rows_match_count ниже.
+    NPCType  npc  = NPCType::Count;
     CrewGate gate = CrewGate::Auction;
     // A solo row rides ALONE (the tax courier); otherwise the crew takes an
     // even split of the place's crew pool (pop >> labourShift) across the
     // rows whose gates are open today — even split = zero new constants.
     bool     solo = false;
-    // ДУШИ ИЗ ГАРНИЗОНА (CANON S10 «стража», владелец 2026-09-02): строка
-    // комплектуется ЗАПИСЯМИ ГАРНИЗОНА, не населением — патруль = вылазка
-    // (вернулся — души назад в гарнизон; погибший патруль = дыра в
-    // обороне), а гейт Auction для такой строки решает ПАТРУЛЬНЫЙ аукцион
-    // (горячие округи поля угрозы), не аукцион добычи.
-    bool     garrison = false;
+    // (КОЛОНКА `garrison` УМЕРЛА 2026-09-21 вместе с патрульной механикой.
+    // Она означала «строка комплектуется записями гарнизона, а не
+    // населением», и её единственная строка — патруль города — была
+    // вырезана 463170c6. После этого в таблице не осталось НИ ОДНОЙ строки
+    // с garrison=true, то есть колонка потеряла писателя, а вместе с ней
+    // стали недостижимы патрульная урна и вылазка гарнизона. Патруль
+    // вернётся своей строкой вместе со своей механикой — AGENTS §9.)
 };
 
 // ── Crowd role rows: fixed posts the street crowd fills FIRST (§42) ──────
@@ -239,7 +249,34 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
                    // сбыта дали 45 сделок в день, деревни с 3.6 млн хлеба,
                    // города выедены в ноль). Вид пока крестьянский — свой
                    // спрайт горожанам придёт строкой таблицы видов (S16).
-                   {NPCType::Peasant, CrewGate::Auction}}, 3,
+                   // ЭТА СТРОКА И ЕСТЬ КОРОВАН ГОРОДА: рода NPCType::Caravan
+                   // в мире нет (умер в v106 — караван оказался сквадом,
+                   // притворившимся видом), и торговый рейс города едет той
+                   // же машиной ai_vendor по глаголу Sell, что рейс деревни.
+                   // «Горожане на рынок» и «корован» — одна строка, названная
+                   // с двух концов; второй торговой сущности у города нет.
+                   //
+                   // СТРОК У ГОРОДА ДВЕ, И ЭТО ПРОВЕРЯЕТ КОМПИЛЯТОР
+                   // (crew_rows_match_count ниже). Здесь стояло `3` — счётчик
+                   // не убавили, вырезая патрульную строку, и её место молча
+                   // занял ДЕФОЛТ: вторая копия артели горожан, которой никто
+                   // не писал. Она прожила так с 463170c6.
+                   // ЦЕНА ПРИЗРАКА ИЗМЕРЕНА ПЕРЕД СНОСОМ (64 дня, сид 7,
+                   // разошлись 77 колонок из 122): с ним `food_city`
+                   // 2 131 042 → 1 063 062 (−50 %), зато `starvedPops`
+                   // 3 291 → 744 душ (−78 %), `wood_gathered` 51 706 →
+                   // 76 961 (+49 %). То есть неавторенная строка держала
+                   // ТРЕТЬ мировой добычи дерева. Механика: perCrew = пул /
+                   // число живых строк, поэтому две строки дают вдвое больше
+                   // артелей вдвое меньшего размера.
+                   // ВЕРДИКТ ВЛАДЕЛЬЦА 2026-09-21 — СНОСИТЬ И ЖДАТЬ ДАНЬ:
+                   // «лучше сносим и ждём дани, мб она поможет с городом, и
+                   // потом у нас ещё будут рычаги — больше корованов, которые
+                   // меньше размером». Голод городов лечится Б-4 (дань кормит
+                   // город), а не строкой-призраком; названный рычаг «число
+                   // против размера» — это и есть реформа рождения крю, где
+                   // они перестают выводиться друг из друга.
+                   {NPCType::Peasant, CrewGate::Auction}}, 2,
      /*crowdRoles*/{}, 0,   // v96: fixed posts cut — the street IS the stripe
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Артели деревни — N ОДИНАКОВЫХ крестьянских строк (снос профессий,
@@ -268,6 +305,35 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
 };
 static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
               "kLandmarks row order must mirror LandmarkType");
+
+// ── СВИДЕТЕЛЬ НА СВЁРТКУ: `crewCount` ПРОТИВ ЧИСЛА ВЫПИСАННЫХ СТРОК ───────
+// Два числа, которые обязаны совпадать, и рукописный позиционный агрегат их
+// НЕ СВЯЗЫВАЕТ: строку можно удалить, не тронув счётчик, — и тогда её место
+// молча занимает дефолт. Именно так город получил третью строку-призрак
+// (2026-09-21): патрульную строку заменили комментарием, `crewCount` остался
+// 3, и мир поднимал артель, которой никто не писал. Зелёная сюита этого не
+// говорит — говорит только сверка, и теперь её делает компилятор.
+//
+// Закон, который проверяется: строки [0, crewCount) — авторские (род назван),
+// строка crewCount и все за ней — дефолтные (род `Count`). Плотность здесь
+// часть формы, как у слотов реестра интересов: дырок в списке не бывает.
+inline constexpr bool crew_rows_match_count(const LandmarkDef* rows,
+                                            std::size_t n) {
+    for (std::size_t r = 0; r < n; ++r) {
+        const LandmarkDef& ld = rows[r];
+        constexpr std::size_t kCap =
+            sizeof(LandmarkDef::crews) / sizeof(LandmarkCrewRow);
+        if (std::size_t(ld.crewCount) > kCap) return false;
+        for (std::size_t i = 0; i < kCap; ++i) {
+            const bool authored = ld.crews[i].npc != NPCType::Count;
+            if (authored != (i < std::size_t(ld.crewCount))) return false;
+        }
+    }
+    return true;
+}
+static_assert(crew_rows_match_count(kLandmarks,
+                                    sizeof(kLandmarks) / sizeof(LandmarkDef)),
+              "crewCount must equal the number of AUTHORED crew rows");
 
 // THE two labour laws of a city meet at the same eighth of its people, and
 // until now that meeting was a claim in a COMMENT: the crew pool's shift

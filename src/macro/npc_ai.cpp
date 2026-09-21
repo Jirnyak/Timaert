@@ -2783,16 +2783,20 @@ void ai_lair_sorties(entt::entity self, MacroPos& p,
     rt.stateTimer = std::int16_t(3 + rand_int(ctx, 5));
 }
 
-// ── Патруль стражи (CANON S10 «стража + поле угрозы», 2026-09-02) ────────
-// Досягаемость кандидатов патруля — ШАГИ ГРАФА округ от своей: округа =
-// клетка ткани мира, и «в K шагах» — вопрос о мембранах, не о клетках.
-constexpr int kPatrolReachHops = 3;
-// Дни роама на месте до поворота домой — и слагаемое цены похода в скоре
-// (доплата за поле платится и за них). Крутилка дубль-прогона.
-constexpr int kPatrolDwellDays = 2;
-// Патрульные дни в тиках мысли: у роам-таймера один календарь с ротацией.
-constexpr int kPatrolDwellThinks =
-    kPatrolDwellDays * int(kTicksPerDay / kAiTicks);
+// (ЗДЕСЬ ЖИЛА ПАТРУЛЬНАЯ ВЫЛАЗКА — снесена 2026-09-21 вместе с механикой.
+// Ушли: kPatrolReachHops / kPatrolDwellDays / kPatrolDwellThinks,
+// PatrolRoamCells, collect_trouble_cells_, ai_patrol_errand (91 строка),
+// патрульная урна run_patrol_auction и подъём вылазки из гарнизона.
+// ПРИЧИНА — не «не нравится», а отсутствие писателя: строку {Guard,
+// garrison=true} вырезали из реестра 463170c6, после чего в таблице не
+// осталось ни одной garrison-строки, и весь этот код стал недостижим —
+// ~160 строк законов без свидетеля, которые следующий читатель принял бы
+// за живую систему (problems §55). `ErrandVerb::Patrol` умер там же: его
+// ставила ровно патрульная урна.
+// `ai_patrol` ОСТАЛСЯ — но только своим легаси-кругом у дома: генезис
+// по-прежнему сеет 1-2 стражника на город (npc_spawn.cpp), и это вечные
+// одиночки вне ротации. Они уходят вместе с генезисным засевом, порция Б-6.
+// Поле угрозы и страх артелей ЖИВЫ — kThreatFearShift ниже читает аукцион.)
 // Вес страха артелей: threat худшей округи маршрута >> shift — минусом в
 // скор аукциона (те же деньги против той же ценности рейса; скор ≤ 0 =
 // отказ рейса ценой). Стартовая четверть — крутилка дубль-прогона: полный
@@ -2800,128 +2804,8 @@ constexpr int kPatrolDwellThinks =
 // летопись.
 constexpr int kThreatFearShift = 2;
 
-// Клетки свежей беды у цели патруля: роам ходит ПО ФАКТАМ летописи, не по
-// кругу — та же летопись, что подняла поле угрозы и вывела патруль.
-struct PatrolRoamCells {
-    std::int16_t x[8];
-    std::int16_t y[8];
-    int n = 0;
-};
-
-void collect_trouble_cells_(void* user, const WorldFact& f) {
-    auto* rc = static_cast<PatrolRoamCells*>(user);
-    if (rc->n >= 8) return;
-    if (f.kind != std::uint16_t(FactKind::Died)
-        && f.kind != std::uint16_t(FactKind::Killed))
-        return;
-    rc->x[rc->n] = f.x;
-    rc->y[rc->n] = f.y;
-    ++rc->n;
-}
-
-// ── ПАТРУЛЬ-ВЫЛАЗКА (CANON S10 «стража», глагол Patrol) ──────────────────
-// Марш к ландмарку горячей округи (походка сама ведёт по routeNext), роам у
-// клеток Died/Killed-фактов kPatrolDwellDays, домой; Idle у крыльца — и
-// ротация растворяет вылазку обратно в гарнизон. Бандитов бьёт не эта
-// машина, а универсальный рефлекс (squad_threat_step) — строка Patrol
-// боевая (combatant_behaviour), догоняет всё враждебное по своему закону.
-// Возвращает true, когда думает поручение; false = поручения нет, живёт
-// легаси-кругом у дома (генезис-стража до первого растворения).
-bool ai_patrol_errand(MacroPos& p, ecs::MacroNpcRuntime& rt,
-                      ecs::Pools& pools, const TickContext& ctx) {
-    if (rt.errandVerb != std::uint8_t(ErrandVerb::Patrol) || !ctx.mw.gs)
-        return false;
-    GameState& gs = *ctx.mw.gs;
-    const Landmark* tgt = landmark_by_id(gs, int(rt.errandObject));
-    XY home;
-    const bool haveHome = home_pos(rt, ctx, home);
-    if (!tgt) {
-        // Округа умерла вместе со своим ландмарком — миссия снята, домой.
-        rt.errandVerb = std::uint8_t(ErrandVerb::None);
-        rt.errandObject = 0;
-        if (haveHome) {
-            rt.targetX = home.x;
-            rt.targetY = home.y;
-            rt.state = std::uint8_t(NS::Returning);
-        }
-        return true;
-    }
-    switch (NS(rt.state)) {
-        case NS::Idle:
-            // Свежая вылазка — и возврат в строй после рефлекса (пауза не
-            // амнезия): курс на округу.
-            rt.targetX = float(tgt->x);
-            rt.targetY = float(tgt->y);
-            rt.state = std::uint8_t(NS::Traveling);
-            return true;
-        case NS::Chasing:
-            // Погоня выдохлась (враг ушёл из виду) — продолжить миссию.
-            rt.state = std::uint8_t(NS::Idle);
-            return true;
-        case NS::Traveling:
-            if (!at_target(p, rt, ctx)) {
-                try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
-                return true;
-            }
-            rt.state = std::uint8_t(NS::Patrolling);
-            rt.stateTimer = std::int16_t(kPatrolDwellThinks);
-            return true;
-        case NS::Patrolling:
-            if (--rt.stateTimer <= 0) {
-                // Отпатрулировано: домой; поручение живёт до крыльца —
-                // легаси-круг не имеет права перехватить полдороги.
-                if (haveHome) {
-                    rt.targetX = home.x;
-                    rt.targetY = home.y;
-                }
-                rt.state = std::uint8_t(NS::Returning);
-                return true;
-            }
-            if (at_target(p, rt, ctx)) {
-                // Роам у КЛЕТОК ФАКТОВ: свежая беда ведёт ноги; тишина в
-                // летописи — круг у ландмарка округи.
-                PatrolRoamCells rc{};
-                chronicle_near(gs.chronicle, tgt->x, tgt->y,
-                               /*radiusCells*/12,
-                               gs.worldTime.day()
-                                   - int(fact_kind_def(FactKind::Died)
-                                             .interestDays),
-                               &collect_trouble_cells_, &rc);
-                XY t;
-                if (rc.n > 0) {
-                    const int k = rand_int(ctx, rc.n);
-                    t = pick_random_nearby(float(rc.x[k]), float(rc.y[k]),
-                                           2, ctx);
-                } else {
-                    t = pick_random_nearby(float(tgt->x), float(tgt->y),
-                                           6, ctx);
-                }
-                rt.targetX = t.x;
-                rt.targetY = t.y;
-                return true;
-            }
-            try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
-            return true;
-        case NS::Returning:
-            if (at_target(p, rt, ctx)) {
-                // У крыльца: поручение исполнено, сидеть Idle до ротации —
-                // она вернёт души в гарнизон (растворение вылазки).
-                rt.errandVerb = std::uint8_t(ErrandVerb::None);
-                rt.errandObject = 0;
-                rt.state = std::uint8_t(NS::Idle);
-                rt.stateTimer = std::int16_t(kPatrolDwellThinks);
-                return true;
-            }
-            try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
-            return true;
-        default:
-            return true;   // Fleeing и прочее — рефлекс сам вернёт в Idle
-    }
-}
-
 void ai_patrol(MacroPos& p, ecs::MacroNpcRuntime& rt,
                ecs::Pools& pools, const TickContext& ctx) {
-    if (ai_patrol_errand(p, rt, pools, ctx)) return;
     XY home;
     if (!home_pos(rt, ctx, home)) return;
     float dh = torus_dist_sq(p.x, p.y, home.x, home.y,
@@ -4019,27 +3903,22 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     };
 
     // 1) COLLECT crews standing home Idle. С 2026-09-17 (CANON S19.2) они
-    //    БЕССРОЧНЫ: домой пришла — НЕ исчезла. Растворяются только (а)
-    //    вылазки гарнизона — их души всегда возвращаются в гарнизон, вылазка
-    //    не состав, а реакция на угрозу; (б) «первая вернувшаяся» по суду
-    //    перекомплекта ниже. Остальные стоят и получают пере-аукцион дня.
+    //    БЕССРОЧНЫ: домой пришла — НЕ исчезла. Растворяет их только суд
+    //    перекомплекта ниже — стоящая артель, которой не досталось строки.
     //    Collect first, mutate after — the registry is never touched under
     //    its own view.
-    // Гарнизонная ли это строка дома — вернувшийся патруль растворяется В
-    // ГАРНИЗОН, не в население (CANON S10 «души из гарнизона», 2026-09-02).
-    const auto garrison_row_of_type = [](const LandmarkDef& ld,
-                                         std::uint16_t type) {
-        for (int i = 0; i < int(ld.crewCount); ++i)
-            if (ld.crews[i].garrison
-                && std::uint16_t(ld.crews[i].npc) == type) return true;
-        return false;
-    };
+    //    (ВЕТКА ВЫЛАЗОК ГАРНИЗОНА — вектор `done` и предикат
+    //    garrison_row_of_type — снесена 2026-09-21: garrison-строк в
+    //    реестре не осталось ни одной, и она была недостижима. Её ЗАКОН
+    //    растворения — «зверь не душа населения» — не потерян: он переехал
+    //    в dissolve_population_crew ниже, где и оказался единственной
+    //    живой дверью распуска. До переезда живая дверь считала табун
+    //    людьми, а правильный закон стоял в недостижимой ветке.)
     std::vector<entt::entity> homeIdle;
-    std::vector<entt::entity> done;
     // exclude<Dead>: a dead crew at its home cell is NOT a crew coming home —
     // it is a corpse-row awaiting the drain (AI-2). Without the exclusion a
     // dead leader and his dead men dissolved into the landmark as living
-    // souls (and, on a garrison row, dead records marched into the garrison).
+    // souls.
     for (auto [e, kind, rt, cell]
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
                     ecs::MacroCell>(entt::exclude<ecs::Dead>).each()) {
@@ -4057,69 +3936,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                           float(lm.x), float(lm.y),
                           float(gs.mapW), float(gs.mapH)) >= 4.0f)
             continue;
-        if (garrison_row_of_type(landmark_def(lm.type), kind.type)) {
-            done.push_back(e);   // вылазка домой = души в гарнизон, всегда
-        } else {
-            homeIdle.push_back(e);
-        }
-    }
-    for (const entt::entity e : done) {
-        const auto& rt = reg.get<ecs::MacroNpcRuntime>(e);
-        const int row = row_of(rt.homeSettlementId);
-        if (row < 0) continue;
-        Landmark& lm = gs.landmarks[std::size_t(row)];
-        if (auto* bag = reg.try_get<ecs::NpcInventory>(e)) {
-            // Leftovers home: cargo by the haul door, coin by the wallet
-            // door — a dissolved crew owns nothing (CANON S5, the loan law).
-            for (int c = 0; c < kCommodityCount; ++c)
-                haul_between(bag->inv, depot_(lm, mw), kCommodities[c].id,
-                             1 << 30, 1e9f);
-            transfer_value_dense(bag->inv, depot_(lm, mw),
-                           inventory_value(bag->inv));
-        }
-        const auto& kind = reg.get<ecs::NPCKind>(e);
-        if (garrison_row_of_type(landmark_def(lm.type), kind.type)) {
-            // ДУШИ НАЗАД В ГАРНИЗОН: записи ростера как есть (роды и уровни
-            // пережили вылазку), лидер — записью своего рода и уровня под
-            // своим вечным ординалом. Гарнизону тесно (кап контейнера) —
-            // лишние честно уходят в пул дезертиров, никто не испаряется.
-            SoldierRecord lead{};
-            lead.kind = kind.type;
-            if (const auto* lvl = reg.try_get<ecs::NpcLevel>(e))
-                lead.level = std::int16_t(normalize_soldier_level(lvl->value));
-            if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(e))
-                lead.entityId = sid->index;
-            if (!lm.garrison.squad.push(lead)) gs.deserterPool.push(lead);
-            if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
-                for (const SoldierSlot& rec : roster->squad) {
-                    if (!lm.garrison.squad.push_slot(rec)) gs.deserterPool.push_slot(rec);
-                }
-            }
-        } else {
-            // ЗВЕРЬ — НЕ ДУША НАСЕЛЕНИЯ: лошади (и всякий creature-род)
-            // растворяющейся артели встают в ГАРНИЗОН места — «гарнизон =
-            // армия ландмарка», табун города живёт в его армии, виден,
-            // продаётся и грабится (вердикт 2026-09-19). Люди — в
-            // популяцию, как всегда.
-            int souls = 1;
-            if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
-                for (const SoldierSlot& sl : roster->squad) {
-                    // НАРОД — В НАСЕЛЕНИЕ, остальное — в армию места
-                    // (природа строки, kNpcNature). Прежняя граница ординала
-                    // отправляла в гарнизон и человеческие рода, дописанные
-                    // в enum после звериного блока, — сборщик дани домой
-                    // возвращался «лошадью».
-                    if (is_folk_kind(sl.kind)) {
-                        souls += int(sl.count);
-                    } else {
-                        if (!lm.garrison.squad.push_slot(sl))
-                            gs.deserterPool.push_slot(sl);
-                    }
-                }
-            }
-            lm.population += souls;
-        }
-        reg.destroy(e);
+        homeIdle.push_back(e);
     }
 
     // Which crew rows have a squad truly OUT (on the road, at the field):
@@ -4162,8 +3979,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     roster->squad, std::uint16_t(NPCType::Horse));
             }
             afield[std::size_t(row)] += souls;
-            if (!garrison_row_of_type(ld, kind.type)
-                && is_home_idle(e)) {
+            if (is_home_idle(e)) {
                 standingHome = true;
                 standingSouls[std::size_t(row)] += souls;
                 idleByRow.push_back({row, e});
@@ -4194,9 +4010,38 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             transfer_value_dense(bag->inv, depot_(lm, mw),
                                  inventory_value(bag->inv));
         }
+        // ЗВЕРЬ — НЕ ДУША НАСЕЛЕНИЯ (вердикт владельца 2026-09-21: «популяция
+        // считает только типа HUMAN из таблицы существ»). Лошади (и всякий
+        // не-людской род) растворяющейся артели встают в ГАРНИЗОН места —
+        // «гарнизон = армия ландмарка», табун города живёт в его армии, виден,
+        // продаётся и грабится (вердикт 2026-09-19).
+        //
+        // ЗДЕСЬ БЫЛО `souls += roster->squad.size()`, а size() суммирует count
+        // ВСЕХ слотов (army.h) — то есть каждая граница сезона превращала
+        // табун распущенной артели в горожан: кони выходили из мира людьми.
+        // Правильный закон существовал всё это время в ветке растворения
+        // вылазок гарнизона — В НЕДОСТИЖИМОЙ, — и снос патрулей сделал его
+        // ЕДИНСТВЕННЫМ, вместо того чтобы унести с собой. Двух дверей
+        // «артель пришла домой» больше нет.
+        //
+        // ФОРМА, КОТОРАЯ ПРИДЁТ С ПЕРЕВОРОТОМ НАСЕЛЕНИЯ (владелец, тот же
+        // день: «буквально перенос между гарнизоном — весь гарнизон артели
+        // отдаётся в город, и артель пустая удаляется»): когда души дома
+        // станут РОСТЕРОМ места, обе половины ниже сольются в один перенос
+        // ростер→ростер, и человек с лошадью поедут одной дверью. Сегодня
+        // население и гарнизон — два разных склада, поэтому и переносов два.
         int souls = 1;
-        if (const auto* roster = reg.try_get<ecs::SquadRoster>(e))
-            souls += roster->squad.size();
+        if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
+            for (const SoldierSlot& sl : roster->squad) {
+                if (is_folk_kind(sl.kind)) {
+                    souls += int(sl.count);
+                } else if (!lm.garrison.squad.push_slot(sl)) {
+                    // Гарнизону тесно (кап контейнера) — лишние честно
+                    // уходят в пул, никто не испаряется.
+                    gs.deserterPool.push_slot(sl);
+                }
+            }
+        }
         lm.population += souls;
         reg.destroy(e);
         return souls;
@@ -4281,8 +4126,6 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         int liveCount = 0;
         int solo[8];
         int soloCount = 0;
-        int guard[8];
-        int guardCount = 0;
         // The errand's destination, per crew row — what the auction already
         // resolved, kept so provisioning can size the loaf by the SAME
         // march the crew is about to walk (npc_ai.h provision_squad) — and
@@ -4375,8 +4218,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             const NPCType crewKind = [&]() -> NPCType {
                 const LandmarkDef& ldc = landmark_def(s.type);
                 for (int i = 0; i < int(ldc.crewCount); ++i)
-                    if (!ldc.crews[i].garrison && !ldc.crews[i].solo)
-                        return ldc.crews[i].npc;
+                    if (!ldc.crews[i].solo) return ldc.crews[i].npc;
                 return NPCType::Peasant;
             }();
             const CharacterSheet crewSheet =
@@ -4593,92 +4435,12 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             }
         };
 
-        // ── ПАТРУЛЬНЫЙ АУКЦИОН строки гарнизона (CANON S10 «стража»,
-        // владелец 2026-09-02). Кандидаты = горячие округи поля угрозы в
-        // kPatrolReachHops шагах графа порталов от своей; скор ДЕНЬГАМИ:
-        // threat (стоимость погибших душ) минус цена похода — доплата за
-        // поле (дома ВСЁ содержание >>1, в поле полное: разница жалованья
-        // и провианта за марш-дни и патрульные дни, на каждую душу
-        // вылазки). Ни одной цели дороже похода = тишина: стража сидит в
-        // гарнизоне за полцены, казна экономит — вывод аукциона, как у
-        // артелей.
-        const auto run_patrol_auction = [&](int rowIdx) -> bool {
-            NavWorld* nv = ctx.mw.nav;
-            if (!nv || !nv->baked() || nv->threat.empty()) return false;
-            const int take = total_soldiers(s.garrison.squad) >> 1;
-            if (take < 2) return false;   // вылазка меньше пары — не выход
-            const std::uint16_t homeR = nav_region_at(*nv, s.x, s.y);
-            const std::size_t R = nv->regionLandmarkId.size();
-            if (std::size_t(homeR) >= R || nv->threat.size() != R)
-                return false;
-            // Волна по мембранам: границы досягаемости патруля — ШАГИ
-            // ГРАФА, не клетки (локальность округ, CANON S7).
-            std::vector<std::uint8_t> hop(R, 0xFFu);
-            std::vector<std::uint16_t> wave;
-            wave.push_back(homeR);
-            hop[homeR] = 0;
-            for (std::size_t head = 0; head < wave.size(); ++head) {
-                const std::uint16_t r = wave[head];
-                if (hop[r] >= kPatrolReachHops) continue;
-                const std::uint32_t begin = nv->portalBegin[r];
-                for (int pi = 0; pi < int(nv->portalCount[r]); ++pi) {
-                    const std::uint16_t to =
-                        nv->portals[begin + std::uint32_t(pi)].toRegion;
-                    if (std::size_t(to) >= R || hop[to] != 0xFFu) continue;
-                    hop[to] = std::uint8_t(hop[r] + 1);
-                    wave.push_back(to);
-                }
-            }
-            const int wage = npc_upkeep_base(NPCType::Guard);
-            const ItemDef* bd = item_def(hunger_item_id());
-            const int board = bd && bd->value > 0 ? bd->value : 1;
-            const int premium =
-                (wage - (wage >> 1)) + (board - (board >> 1));
-            struct PatrolBid { std::uint16_t region; float score; };
-            std::vector<PatrolBid> pb;
-            for (const std::uint16_t r : wave) {
-                const std::uint32_t t = nv->threat[r];
-                if (t == 0u) continue;
-                // ОДНА ДВЕРЬ ЦЕНЫ ПУТИ (CANON S7) вместо сырого чтения
-                // таблицы: дом → клетка округи, и сразу в ДНЯХ марша —
-                // единице, в которой считается жалованье вылазки.
-                const std::int32_t rc = nv->regionCell[r];
-                if (rc < 0 || nv->mapW <= 0) continue;
-                const float days0 =
-                    nav_path_days(*nv, int(home.x), int(home.y),
-                                  int(rc % nv->mapW), int(rc / nv->mapW),
-                                  kSustainedMarchCellsPerDay);
-                if (days0 < 0.0f) continue;   // пути нет — заявки нет
-                const float days = 2.0f * days0 + float(kPatrolDwellDays);
-                const float score =
-                    float(t) - days * float(take) * float(premium);
-                if (score <= 0.0f) continue;
-                pb.push_back(PatrolBid{r, score});
-            }
-            if (pb.empty()) return false;
-            // Та же рулетка, тот же детерминизм (сид, день, дом, строка).
-            Rng roll(hash3(gs.worldSeed ^ std::uint32_t(day),
-                           std::uint32_t(s.id), std::uint32_t(rowIdx)));
-            float total = 0.0f;
-            for (const PatrolBid& b : pb) total += b.score;
-            float draw = roll.next_f01() * total;
-            std::size_t pick = pb.size() - 1;
-            for (std::size_t b = 0; b < pb.size(); ++b) {
-                draw -= pb[b].score;
-                if (draw <= 0.0f) { pick = b; break; }
-            }
-            const std::uint16_t r = pb[pick].region;
-            const std::int32_t lmId = nv->regionLandmarkId[r];
-            const std::int32_t cellIdx = nv->regionCell[r];
-            if (lmId <= 0 || cellIdx < 0) return false;
-            dest[rowIdx] = XY{float(cellIdx % nv->mapW),
-                              float(cellIdx / nv->mapW)};
-            errandVerb[rowIdx] = std::uint8_t(ErrandVerb::Patrol);
-            // Объект = ОРДИНАЛ ландмарка округи (вечен), не её номер
-            // (умирает с перепёком графа) — контракт ErrandVerb::Patrol.
-            errandObject[rowIdx] = std::uint32_t(lmId);
-            return true;
-        };
+        // (ЗДЕСЬ СТОЯЛА ПАТРУЛЬНАЯ УРНА run_patrol_auction — 86 строк,
+        // снесена 2026-09-21: её звала только строка с garrison=true, а
+        // таких в реестре не осталось. Она же была единственным писателем
+        // ErrandVerb::Patrol. Патруль вернётся своей строкой вместе со
+        // своей механикой — и тогда его заявка встанет в ОБЩУЮ урну выше
+        // одной размерностью со всеми, а не отдельным аукционом.)
 
         for (int i = 0; i < int(ld.crewCount); ++i) {
             if (outMask[row] & (1u << i)) continue;
@@ -4686,10 +4448,6 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             bool open = false;
             switch (cr.gate) {
                 case CrewGate::Auction: {
-                    if (cr.garrison) {
-                        open = run_patrol_auction(i);
-                        break;
-                    }
                     run_auction();
                     if (bidCount <= 0) break;   // отказ = вывод аукциона
                     // РУЛЕТКА по скору — свой бросок на строку, детерминизм
@@ -4723,90 +4481,11 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             }
             if (!open) continue;
             if (cr.solo)          solo[soloCount++] = i;
-            else if (cr.garrison) guard[guardCount++] = i;
             else                  live[liveCount++] = i;
         }
-        // ── ВЫЛАЗКА ГАРНИЗОНА (строки garrison; CANON S10 «стража») ──────
-        // ПЕРЕД гейтом отлучки: души патруля — записи гарнизона, население
-        // города вылазка не трогает, и мерить её меркой «дома больше, чем
-        // в поле» не за что.
-        for (int gi = 0; gi < guardCount; ++gi) {
-            const int i = guard[gi];
-            const int take = total_soldiers(s.garrison.squad) >> 1;
-            if (take < 2) continue;
-            SquadSpec spec{};
-            spec.leaderType = ld.crews[i].npc;
-            spec.x = s.x;
-            spec.y = s.y;
-            spec.homeSettlementId = s.id;
-            // Души ИЗ ГАРНИЗОНА, записи как есть — роды и уровни переживают
-            // вылазку; первая снятая — лицо патруля, её уровень носит лидер.
-            // Лидер вылазки — ЧЕЛОВЕК (S4: «по карте ходят только
-            // лидеры», процедурный лидер — душа с именем, не зверь): лошадь
-            // с хвоста гарнизона не может встать во главе патруля, но в
-            // ЧЛЕНЫ идёт свободно — обоз вылазки.
-            int leadSlot = -1;
-            for (int si = s.garrison.squad.slot_count() - 1; si >= 0; --si) {
-                if (is_folk_kind(s.garrison.squad[si].kind)) {
-                    leadSlot = si;
-                    break;
-                }
-            }
-            if (leadSlot < 0) continue;   // a herd alone raises no patrol
-            SoldierRecord lead{};
-            if (!s.garrison.squad.take_soul_at(leadSlot, lead)) continue;
-            for (int t = 1; t < take; ++t) {
-                SoldierRecord rec{};
-                if (!s.garrison.squad.pop_soul_back(rec)) break;
-                if (!spec.members.push(rec)) {
-                    s.garrison.squad.push(rec);   // no slot: the man stands home
-                    break;
-                }
-            }
-            spec.leaderLevel = normalize_soldier_level(lead.level);
-            const entt::entity ent =
-                spawn_squad(gs, *mw.world, *mw.terrain, spec);
-            if (ent == entt::null) {
-                // Мир отказал в спавне — души назад, оборона цела.
-                s.garrison.squad.push(lead);
-                for (const SoldierSlot& rec : spec.members)
-                    s.garrison.squad.push_slot(rec);
-                continue;
-            }
-            ++raised;
-            auto& prt = reg.get<ecs::MacroNpcRuntime>(ent);
-            prt.errandVerb = errandVerb[i];
-            prt.errandObject = errandObject[i];
-            if (auto* bag = reg.try_get<ecs::NpcInventory>(ent)) {
-                const XY d = dest[i];
-                // ДОРОГА — ПО ЦЕНЕ ПУТИ, А НЕ ПО ПРЯМОЙ (CANON S7). Ноги
-                // ведёт nav_step вокруг горы и вокруг залива, а провиант
-                // считался по ХОРДЕ: сквад, чей путь вдвое длиннее прямой,
-                // выходил из дому заведомо голодным. Одна дверь цены пути —
-                // и решение снаряжает ровно ту дорогу, которую пройдут.
-                float dist = -1.0f;
-                if (ctx.mw.nav) {
-                    const std::uint32_t c =
-                        nav_path_cost(*ctx.mw.nav, int(home.x), int(home.y),
-                                      int(d.x), int(d.y));
-                    if (c != kNavFar) dist = float(c) / 16.0f;
-                }
-                // Вырожденный случай назван: мир без запечённой навигации
-                // (голые фикстуры) отвечает прямой — единственный ответ,
-                // который у него есть.
-                if (dist < 0.0f)
-                    dist = std::sqrt(torus_dist_sq(
-                        home.x, home.y, d.x, d.y,
-                        float(ctx.mapW), float(ctx.mapH)));
-                // Ломоть на марш + патрульные дни тем же законом провианта:
-                // дни на месте пересчитаны в клетки марша, которых стоят.
-                provision_squad(
-                    s.inventory, bag->inv, spec.members.size(),
-                    2.0f * dist
-                        + float(kPatrolDwellDays) * kSustainedMarchCellsPerDay,
-                    prt.carryCap - inventory_weight(bag->inv));
-            }
-        }
+        // (ЗДЕСЬ ПОДНИМАЛАСЬ ВЫЛАЗКА ГАРНИЗОНА — 81 строка, снесена
+        // 2026-09-21 вместе с патрульной механикой: строк garrison в
+        // реестре не осталось, guardCount был вечным нулём.)
         // СЕЗОННАЯ ПОГРУЗКА стоящих дома артелей (S19.2): на границе дом
         // грузит каждую свою стоящую артель содержанием на сезон вперёд —
         // ДО окна сквадов (порядок дня: ротация раньше окна). Погрузка —
