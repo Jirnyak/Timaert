@@ -1888,9 +1888,11 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
     // на торе — считаются один раз: это одно место, а не два шанса.
     std::uint16_t seen[kNavMaxPortalsPerRegion];
     int seenCount = 0;
-    const std::uint32_t begin = nv->portalBegin[here];
-    for (int pi = 0; pi < int(nv->portalCount[here]); ++pi) {
-        const std::uint16_t to = nv->portals[begin + std::uint32_t(pi)].toRegion;
+    int portalCount = 0;
+    const NavPortal* membranes =
+        nav_region_portals(*nv, std::uint16_t(here), portalCount);
+    for (int pi = 0; pi < portalCount; ++pi) {
+        const std::uint16_t to = membranes[pi].toRegion;
         if (std::size_t(to) >= R) continue;
         bool dup = false;
         for (int s = 0; s < seenCount; ++s) dup = dup || seen[s] == to;

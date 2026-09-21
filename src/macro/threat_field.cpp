@@ -66,15 +66,15 @@ void threat_field_daily(const MacroWorld& mw, int day) {
     for (std::size_t r = 0; r < R; ++r) {
         const std::uint32_t t = nv->threat[r];
         if (t == 0u) continue;
-        const int deg = r < nv->portalCount.size()
-                            ? int(nv->portalCount[r]) : 0;
+        int deg = 0;
+        const NavPortal* membranes =
+            nav_region_portals(*nv, std::uint16_t(r), deg);
         if (deg <= 0) continue;
         const std::uint32_t out = t >> kThreatDiffusionShift;
         const std::uint32_t per = out / std::uint32_t(deg);
         if (per == 0u) continue;
-        const std::uint32_t begin = nv->portalBegin[r];
         for (int i = 0; i < deg; ++i) {
-            const NavPortal& p = nv->portals[begin + std::uint32_t(i)];
+            const NavPortal& p = membranes[i];
             if (std::size_t(p.toRegion) >= R) continue;
             delta[p.toRegion] += std::int64_t(per);
             delta[r] -= std::int64_t(per);

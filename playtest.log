@@ -8,7 +8,7 @@
 [audio] procedural sfx spell-cast (spell-cast.wav: file not found)
 [audio] procedural sfx player-hurt (player-hurt.wav: file not found)
 [audio] procedural sfx death (death.wav: file not found)
-[imgui] descriptor pool created: 0x128080000 maxSets=256
+[imgui] descriptor pool created: 0x1200a8000 maxSets=256
 [sprite] loaded city_256.png (256x256)
 [sprite] loaded village_256.png (256x256)
 [sprite] loaded spireA_256.png (256x256)
@@ -20,19 +20,28 @@
 [sprite] loaded imp_golem_256.png (256x256)
 [sprite] loaded coins.png (48x48)
 [sprite_bank] 5/5 drawn bodies resident (256x256)
-[deposits] clay=477817 iron=1663428 stone=1219413449 silver=574703 (cells 304/1839/57922/3123)
-[far] sheet cell=0,0 verts=304130 tris=560640 span=6144m step=32m build=12.65ms
-[far] sheet cell=0,1 verts=304130 tris=560640 span=6144m step=32m build=15.14ms
-[nav] baked R=1549 portals=11936 planes=42 dryUnreached=9636
+[deposits] clay=907792/656 iron=1849163/2063 stone=1443649326/63696 silver=7054/3245 copper=120299/8516 gold=386/386  (units/cells)
+[far] sheet cell=0,0 verts=304130 tris=560640 span=6144m step=32m build=15.95ms
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=00 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
+[pause] advance_sim_steps(1) bought NO tick — mask=00 player=0 panel=0 modal=0 menu=0 sub=1
+[nav] baked R=1891 portals=14343 planes=38 dryUnreached=4701
 [pause] advance_sim_steps(1) bought NO tick — mask=04 player=0 panel=0 modal=1 menu=0 sub=0
 [pause] advance_sim_steps(1) bought NO tick — mask=04 player=0 panel=0 modal=1 menu=0 sub=0
-[far] sheet cell=158,160 verts=304130 tris=560640 span=6144m step=32m build=13.72ms
-[pause] advance_sim_steps(1) bought NO tick — mask=02 player=0 panel=1 modal=0 menu=0 sub=1
-[pause] advance_sim_steps(1) bought NO tick — mask=02 player=0 panel=1 modal=0 menu=0 sub=1
-[pause] advance_sim_steps(1) bought NO tick — mask=02 player=0 panel=1 modal=0 menu=0 sub=1
-[pause] advance_sim_steps(1) bought NO tick — mask=02 player=0 panel=1 modal=0 menu=0 sub=1
-[pause] advance_sim_steps(1) bought NO tick — mask=02 player=0 panel=1 modal=0 menu=0 sub=1
-[far] sheet cell=158,161 verts=304130 tris=560640 span=6144m step=32m build=14.67ms
-[pause] advance_sim_steps(1) bought NO tick — mask=02 player=0 panel=1 modal=0 menu=0 sub=1
+[far] sheet cell=83,195 verts=304130 tris=560640 span=6144m step=32m build=13.98ms
+[pause] advance_sim_steps(1) bought NO tick — mask=10 player=0 panel=0 modal=0 menu=0 sub=1
 [pause] advance_sim_steps(1) bought NO tick — mask=02 player=0 panel=1 modal=0 menu=0 sub=1
 [worldgen] ruins: 69 of 69 placed (65 cities)

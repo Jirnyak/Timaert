@@ -95,6 +95,33 @@ std::uint16_t nav_region_at(const NavWorld& nv, int x, int y) {
     return nv.regionOf[nv.cell(x, y)];
 }
 
+const NavPortal* nav_region_portals(const NavWorld& nv, std::uint16_t region,
+                                    int& outCount) {
+    outCount = 0;
+    if (!nv.baked()) return nullptr;
+    const std::size_t r = std::size_t(region);
+    if (r >= nv.portalBegin.size() || r >= nv.portalCount.size())
+        return nullptr;
+    const int n = int(nv.portalCount[r]);
+    if (n <= 0) return nullptr;
+    const std::uint32_t begin = nv.portalBegin[r];
+    if (std::size_t(begin) + std::size_t(n) > nv.portals.size())
+        return nullptr;
+    outCount = n;
+    return nv.portals.data() + begin;
+}
+
+bool nav_regions_adjacent(const NavWorld& nv, std::uint16_t a,
+                          std::uint16_t b) {
+    if (a == kNavNoRegion || b == kNavNoRegion) return false;
+    if (a == b) return true;   // «своя округа» — тот же горизонт
+    int n = 0;
+    const NavPortal* p = nav_region_portals(nv, a, n);
+    for (int i = 0; i < n; ++i)
+        if (p[i].toRegion == b) return true;
+    return false;
+}
+
 void nav_bake(const MacroWorld& mw, NavWorld& nv) {
     if (!mw.gs) return;
     const GameState& gs = *mw.gs;
