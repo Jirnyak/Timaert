@@ -753,6 +753,41 @@ int main() {
         }
     }
 
+    // ── ДЕРЕВНЯ УМЕЕТ ВСЁ, КРОМЕ МОНЕТНОГО ДВОРА (владелец, 2026-09-21) ──
+    // «Деревня производит по той же модели… просто чеканить монеты не может
+    // — типа крутой рецепт, не хардкод, а потолок по скилам». Связь живёт
+    // между ДВУМЯ таблицами в разных единицах трансляции — столом анкет
+    // (characters.h) и каталогом рецептов (econ_day.h), — и компилятору она
+    // недоступна: отсюда свидетель, а не static_assert.
+    //
+    // Пинится ЗАКОН, а не числа: ни одна нечеканная строка не должна быть
+    // закрыта деревне, и монетная — должна. Поднимется ранг украшений или
+    // появится новое ремесло — тест скажет, что анкета отстала, вместо того
+    // чтобы мир молча перестал что-то делать (ровно так и умерла деревенская
+    // выпечка: строку Cooking вырезали, а ранг остался).
+    {
+        int closedToVillage = 0, mintRows = 0, openToVillage = 0;
+        for (int i = 0; i < kRecipeCount; ++i) {
+            const RecipeDef& r = kRecipes[i];
+            const bool isMint = std::strcmp(r.output, kMintOutput) == 0;
+            const bool village = recipe_known(VILLAGE, r.craft, r.minRank);
+            const bool city = recipe_known(CITY, r.craft, r.minRank);
+            if (isMint) {
+                ++mintRows;
+                CHECK(!village, "деревня НЕ чеканит — ранг ниже монетного");
+                CHECK(city, "город чеканит — иначе монеты нет ни у кого");
+                continue;
+            }
+            if (village) ++openToVillage; else ++closedToVillage;
+        }
+        CHECK(mintRows > 0, "негативный контроль: монетная строка найдена");
+        CHECK(openToVillage > 0,
+              "негативный контроль: свип видел открытые деревне строки");
+        CHECK(closedToVillage == 0,
+              "деревне открыты ВСЕ нечеканные рецепты — разница с городом "
+              "выходит из населения, а не из второй стены по виду места");
+    }
+
     std::printf("econ_v1_test: dictionary=ok conservation=ok deposits=ok "
                 "no_starvation=ok famine_transitions=ok consume_laws=ok "
                 "produce_fair=ok birth_stocks=ok population_law=ok "
