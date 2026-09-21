@@ -762,7 +762,7 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.y);
     w.pod(lm.population);
     write_inventory(w, lm.inventory);
-    write_squad(w, lm.garrison);   // v96: history ring cut (verdict №4, S20.1)
+    write_squad(w, lm.garrison.squad);   // v96: history ring cut (verdict №4, S20.1)
     w.pod(lm.factionIdx);          // v94: faction registry index (kingdoms cut)
     w.pod(lm.suzerainLandmarkId);  // v94: the one feudal edge (S24)
     w.pod(lm.starvedYesterday);  // v29: the honest day's readouts
@@ -777,8 +777,8 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.titheAvgGoods);        // v104: память × горизонт (memory.h)
     w.pod(lm.titheAvgCoin);
     w.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
-    w.pod(lm.garrisonDebt);      // v105: счёт содержания гарнизона
-    w.pod(lm.garrisonWageDebt);
+    w.pod(lm.garrison.needDebt);   // v105: счёт содержания ростера места
+    w.pod(lm.garrison.wageDebt);   // порядок байт тот же — бампа нет
 }
 
 void read_landmark(Reader& r, Landmark& lm) {
@@ -789,7 +789,7 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.y);
     r.pod(lm.population);
     read_inventory(r, lm.inventory);
-    read_squad(r, lm.garrison);   // v96: history ring cut (verdict №4, S20.1)
+    read_squad(r, lm.garrison.squad);   // v96: history ring cut (verdict №4, S20.1)
     r.pod(lm.factionIdx);          // v94
     r.pod(lm.suzerainLandmarkId);  // v94
     r.pod(lm.starvedYesterday);  // v29
@@ -804,8 +804,8 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.titheAvgGoods);        // v104: память × горизонт (memory.h)
     r.pod(lm.titheAvgCoin);
     r.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
-    r.pod(lm.garrisonDebt);      // v105
-    r.pod(lm.garrisonWageDebt);
+    r.pod(lm.garrison.needDebt);   // v105
+    r.pod(lm.garrison.wageDebt);
 }
 
 void write_marker(Writer& w, const Marker& m) {

@@ -11,6 +11,7 @@
 // world by exactly that many.
 
 #include "macro/world_tick.h"
+#include "macro/roster_window.h"   // ОДИН суд границы на всякий ростер
 #include "macro/characters.h"   // landmark_sheet — анкета места (что оно умеет)
 #include "macro/econ_day.h"
 #include "macro/currency.h"
@@ -193,7 +194,8 @@ void relay_econ_fact_(void* user, const EconFact& fact) {
 // ── Settlement daily tick ─────────────────────────────────────
 // The garrison's day (§42 Инк 7) — ONE law for every kind that keeps one;
 // bodies below tick_settlements_, shared by both loops.
-void garrison_upkeep_(GameState& gs, Landmark& s, int day);
+void garrison_upkeep_(GameState& gs, Landmark& s, int day,
+                      EconFactSink sink, void* user);
 void garrison_recruit_(GameState& gs, Landmark& s, WorldTickRuntime& runtime);
 void garrison_trim_(GameState& gs, Landmark& s,
                     EconFactSink sink, void* user);
@@ -231,7 +233,7 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         const int headsBefore = s.population;
         settle_landmark_day(s, day, famine, died, rs, ru);
 
-        garrison_upkeep_(gs, s, day);
+        garrison_upkeep_(gs, s, day, rs, ru);
 
         // ONE suzerain edge (S24): a place owes whoever the column names;
         // a capital (and any masterless place) names nobody.
@@ -257,78 +259,41 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
 // the City-only branches this replaces were the same class of gate the
 // population door wore for two refactors.
 //
-// UPKEEP (owner 2026-08-30/31 + 2026-09-17; CANON S10, S19.2): an army wants
-// BOARD and PAY — both are judged ONCE, at the season boundary, a season
-// ahead. Each need is covered WHOLE or not debited at all («не покрыто — не
-// списывать»); ANY uncovered need costs an eighth of the roster, ONCE per
-// window («ВСЕ НУЖДЫ ДОЛЖНЫ БЫТЬ ПОКРЫТЫ, иначе потеря 1/8»). The paid wage
-// leaves the economy INTO THE LOOT POOL. ДОМА — ВСЁ СОДЕРЖАНИЕ >>1
-// («гарнизон платит пол цены содержания, как в Mount & Blade»); в поле —
-// полное, и разница — «доплата за поле» в скоре патрульного аукциона.
-void garrison_upkeep_(GameState& gs, Landmark& s, int day) {
+// UPKEEP (owner 2026-08-30/31 + 2026-09-17 + 2026-09-21; CANON S10, S19.2):
+// an army wants BOARD and PAY, and both are judged ONCE at the season
+// boundary. ЗАКОН СУДА ЗДЕСЬ БОЛЬШЕ НЕ ЖИВЁТ: он один на всякий ростер мира
+// (macro/roster_window.h) — место, армия игрока, артель на дороге судятся
+// ОДНОЙ дверью. Здесь остаётся ровно то, что есть КОНТЕКСТ этого ростера:
+// его счёт.
+void garrison_upkeep_(GameState& gs, Landmark& s, int day,
+                      EconFactSink sink, void* user) {
     if (!season_boundary(day)) return;
     if (landmark_def(s.type).garrisonShift == 0xFFu) return;
-    const int boardOrd = hunger_commodity_ordinal();
-    if (boardOrd < 0) return;
-    // ── 1. ВЗЫСКАНИЕ ПРОШЛОГО СЧЁТА — ПРОПОРЦИОНАЛЬНО (v105) ─────────────
-    // Один закон на всякого, кто кормит (CANON S10, владелец 2026-09-21):
-    // доля НЕОПЛАЧЕННОГО и есть доля ушедших. Здесь стояла копия прежнего
-    // окна сквадов — «покрыто ЦЕЛИКОМ или не списывается» и `max(1, N/8)`,
-    // — и умирает она по той же причине: гарнизон из трёх душ терял треть
-    // вместо восьмой, а покрывший 99 % нужды терял столько же, сколько не
-    // покрывший ничего. У НАСЕЛЕНИЯ этого места кромка снята ещё
-    // 2026-09-18 («сытость пропорциональна»); теперь снята и у его армии.
-    const int soldiers = total_soldiers(s.garrison);
-    // ДОМА — ВСЁ СОДЕРЖАНИЕ >>1 («гарнизон платит пол цены содержания, как
-    // в Mount & Blade»); в поле — полное, и разница есть «доплата за поле»
-    // в скоре патрульного аукциона.
-    const int billBoard = (soldiers * kDaysPerSeason) >> 1;
-    const std::int64_t billWage =
-        (std::int64_t(calculate_squad_upkeep(s.garrison)) * kDaysPerSeason) >> 1;
-    const std::int32_t boardLeft = s.garrisonDebt[boardOrd];
-    float unpaid = 0.0f;
-    if (billBoard > 0 && boardLeft > 0)
-        unpaid = float(boardLeft) / float(billBoard);
-    if (billWage > 0 && s.garrisonWageDebt > 0) {
-        const float wageShare = float(s.garrisonWageDebt) / float(billWage);
-        if (wageShare > unpaid) unpaid = wageShare;
-    }
-    if (unpaid > 1.0f) unpaid = 1.0f;
-    int walkers = int(float(soldiers) * unpaid);
-    while (walkers-- > 0 && !s.garrison.empty()) {
-        SoldierRecord walker{};
-        if (!s.garrison.pop_soul_back(walker)) break;
-        if (!gs.deserterPool.push(walker)) {
-            s.garrison.push(walker);   // pool full: the man stays
-            break;
-        }
-    }
-    // ── 2. НОВЫЙ СЧЁТ по составу ПОСЛЕ ухода, перезаписью ────────────────
-    const int left = total_soldiers(s.garrison);
-    s.garrisonDebt[boardOrd] =
-        std::int32_t((left * kDaysPerSeason) >> 1);
-    s.garrisonWageDebt =
-        (std::int64_t(calculate_squad_upkeep(s.garrison)) * kDaysPerSeason) >> 1;
-    if (left <= 0) {
-        s.garrisonDebt[boardOrd] = 0;
-        s.garrisonWageDebt = 0;
-        return;
-    }
-    // ── 3. НЕМЕДЛЕННОЕ ГАШЕНИЕ, И ОНО ЧАСТИЧНОЕ ──────────────────────────
-    // Харч — ТОЙ ЖЕ дверью, что у населения этого же склада (econ_pay_debt
-    // по лестнице): армия ест ровно голодную строку и ничего сверх неё
-    // (вердикт 2026-09-18 — горожанин судится по всей лестнице, солдат по
-    // харчу и плате), и дверь отдаёт эту строку одна.
-    econ_pay_debt(s.inventory, s.garrisonDebt, nullptr, nullptr);
-    // ПЛАТА — стоимостью; уплаченное СГОРАЕТ в пул лута.
-    if (s.garrisonWageDebt > 0) {
-        const std::int64_t canPay =
-            std::min<std::int64_t>(s.garrisonWageDebt,
-                                   inventory_value(s.inventory));
-        if (canPay > 0) {
-            gs.lootPoolValue += pay_value_dense(s.inventory, int(canPay));
-            s.garrisonWageDebt -= canPay;
-        }
+    // ДОМА — ВСЁ СОДЕРЖАНИЕ >>1 («гарнизон платит пол цены содержания, как в
+    // Mount & Blade»); в поле — полное, и разница есть «доплата за поле» в
+    // скоре патрульного аукциона. Это свойство КОНТЕКСТА (ростер стоит у
+    // своего склада), а не рода контейнера, поэтому счёт считается здесь и
+    // стоит на виду, а не прячется веткой внутри общей двери.
+    const auto bill = [](const SoldierSquad& sq) {
+        return RosterBill{
+            (sq.size() * kDaysPerSeason) >> 1,
+            (std::int64_t(calculate_squad_upkeep(sq)) * kDaysPerSeason) >> 1};
+    };
+    const RosterWindowOutcome out =
+        roster_season_window(s.garrison, s.inventory, bill(s.garrison.squad),
+                             bill, gs.deserterPool, gs.lootPoolValue,
+                             sink, user);
+    // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h). До 2026-09-21 армия места уходила
+    // МОЛЧА: у этих двух колонок прибора не было отправителя со стороны
+    // мест, и убыль гарнизонов читалась как «безымянная». Адрес факта —
+    // само место: по S9 это его ресурс ушёл.
+    if (out.walked > 0 && sink) {
+        EconFact f{};
+        f.kind = out.byWage ? EconFact::Kind::SoulsDesertedUnpaid
+                            : EconFact::Kind::SoulsDesertedUnfed;
+        f.amount = out.walked;
+        f.landmarkId = s.id;
+        sink(user, f);
     }
 }
 
@@ -342,13 +307,13 @@ void garrison_recruit_(GameState& gs, Landmark& s,
                        WorldTickRuntime& runtime) {
     if (s.population < 20) return;
     const int target = garrison_target_strength(s.type, s.population);
-    const int current = total_soldiers(s.garrison);
+    const int current = total_soldiers(s.garrison.squad);
     if (current >= target) return;
     const int packet =
         std::min(target - current, std::max(1, target >> 4));
     auto gr = generate_garrison(packet,
                                 [&runtime] { return rand01_(runtime); });
-    const int taken = move_squad(s.garrison, gr.garrison);
+    const int taken = move_squad(s.garrison.squad, gr.garrison);
     s.population = std::max(0, s.population - taken);
 }
 
@@ -374,7 +339,7 @@ int garrison_cap_(const Landmark& s) {
     const int wage =
         (npc_def(NPCType::Guard).upkeepGoldPerDay * kDaysPerSeason) >> 1;
     const int perSoulSeason = std::max(1, board + wage);
-    const int flock = s.population + count_human_souls(s.garrison);
+    const int flock = s.population + count_human_souls(s.garrison.squad);
     return garrison_target_strength(s.type, flock)
          + inventory_value(s.inventory) / perSoulSeason;
 }
@@ -391,7 +356,7 @@ int garrison_cap_(const Landmark& s) {
 // его стоит, буквально.
 void garrison_trim_(GameState& gs, Landmark& s,
                     EconFactSink sink, void* user) {
-    int excess = total_soldiers(s.garrison) - garrison_cap_(s);
+    int excess = total_soldiers(s.garrison.squad) - garrison_cap_(s);
     if (excess <= 0) return;
     const int breadIdx = hunger_item_index();
     const ItemDef* bread = item_def_at(breadIdx);
@@ -400,8 +365,8 @@ void garrison_trim_(GameState& gs, Landmark& s,
     while (excess > 0) {
         int weak = -1;
         int weakPrice = 0;
-        for (int i = 0; i < s.garrison.slot_count(); ++i) {
-            const SoldierSlot& sl = s.garrison[i];
+        for (int i = 0; i < s.garrison.squad.slot_count(); ++i) {
+            const SoldierSlot& sl = s.garrison.squad[i];
             if (sl.count <= 0) continue;
             const int p = hire_price_for(sl.kind, sl.level);
             if (weak < 0 || p < weakPrice) {
@@ -410,16 +375,16 @@ void garrison_trim_(GameState& gs, Landmark& s,
             }
         }
         if (weak < 0) break;
-        SoldierSlot cut = s.garrison[weak];
+        SoldierSlot cut = s.garrison.squad[weak];
         const int take = std::min(excess, int(cut.count));
-        if (!s.garrison.remove_from_slot(weak, take)) break;
+        if (!s.garrison.squad.remove_from_slot(weak, take)) break;
         excess -= take;
         if (is_mount_kind(cut.kind)) {
             meat += take * (weakPrice / breadValue);
         } else {
             cut.count = take;
             if (!gs.deserterPool.push_slot(cut)) {
-                s.garrison.push_slot(cut);   // pool full: the men stay
+                s.garrison.squad.push_slot(cut);   // pool full: the men stay
                 break;
             }
         }
@@ -461,7 +426,7 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
         const int headsBefore = v.population;
         settle_landmark_day(v, day, famine, died, rs, ru);
 
-        garrison_upkeep_(gs, v, day);
+        garrison_upkeep_(gs, v, day, rs, ru);
 
         // The village owes its market city — the same one edge (CANON S24).
         assess_tithe_(v, day, landmark_by_id(gs, v.suzerainLandmarkId) != nullptr);

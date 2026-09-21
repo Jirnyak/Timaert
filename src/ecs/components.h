@@ -3,6 +3,7 @@
 #include "ecs/pools.h"
 #include "macro/army.h"
 #include "macro/commodity.h"   // kCommodityCount — счёт содержания ростера
+#include "macro/roster.h"      // sm::Roster — ОДИН ростер на место и на сквад
 #include "macro/items.h"
 #include "macro/anatomy.h"
 #include <array>
@@ -541,33 +542,21 @@ inline constexpr std::uint32_t kPlayerSquadOrdinal = 0x7FFFFFFFu;
 // gone and whose leader is dead is gone from the map by that general rule.
 // Runtime-only until the macro snapshot save (Session 17) — the ECS is never
 // serialized, so no kSaveVersion cost today.
-struct SquadRoster {
-    // Flat and capped (macro/army.h SoldierSquad, 1024 members): a memcpy-able
-    // component with no heap header on every one of the 16384 macro entities,
-    // and the SAME type the player's own squad, a garrison and the deserter
-    // pool are — one roster shape for the whole world.
-    SoldierSquad squad{};
-    // ── СЧЁТ СОДЕРЖАНИЯ — ТА ЖЕ ФОРМА, ЧТО У МЕСТА (CANON S10, v105) ─────
-    // «У ВСЯКОГО, КТО КОРМИТ, ЕСТЬ СЧЁТ» (владелец, 2026-09-21). Ландмарк и
-    // сквад — одна система сущностей (S4: место есть неподвижный сквад), и
-    // потребление у них обязано считаться ОДНИМ законом. У места он стоял с
-    // 2026-09-19 (Landmark::needDebt), у ростера его не было вовсе: окно
-    // сезона судило «покрыто ЦЕЛИКОМ или не списывается» и снимало 1/8.
-    //
-    // ЧЕМ ЭТО БЫЛО ИЗМЕРЕНО: за 512 дней на четырёх сидах в местах НИ ОДНОЙ
-    // голодной смерти (у них долг), а мир при этом потерял три четверти
-    // населения через ростеры (у них долга не было) — 154 385 душ в пуле
-    // дезертиров. Эксперимент поставлен самим миром: сущность со счётом не
-    // голодает, сущность без счёта обескровливает мир.
-    //
-    // ХАРЧ — строка лестницы, поэтому он живёт в том же виде, что у места
-    // (индекс = товарный ординал), и гасится ТОЙ ЖЕ дверью econ_pay_debt:
-    // добыча привезла — часть съелась в тот же день. ПЛАТА — стоимость, у
-    // неё своя колонка и своя дверь (pay_value_dense), и платится она
-    // ЧАСТИЧНО: кромка «всё или ничего» умерла здесь вместе с 1/8.
-    std::int32_t needDebt[sm::kCommodityCount] = {};
-    std::int64_t wageDebt = 0;
-};
+// ЭТО НЕ «ТАКОЙ ЖЕ» РОСТЕР, ЧТО У МЕСТА — ЭТО БУКВАЛЬНО ОДИН ТИП
+// (macro/roster.h, CANON S4: «гарнизон = ростер ландмарка, армия = ростер,
+// артель = ростер; одна система, одна арифметика пищи, один суд границы»).
+// До 2026-09-21 здесь стояла своя тройка полей (squad + needDebt + wageDebt),
+// а у места — своя (garrison + garrisonDebt + garrisonWageDebt), поле в поле
+// одна и та же, и над ними ДВЕ копии закона. Имя компонента остаётся: entt
+// адресует компонент типом, и «ростер сквада» — честное имя роли, а не
+// второго вида ростера.
+//
+// ЧЕМ РАЗДВОЕНИЕ БЫЛО ИЗМЕРЕНО: за 512 дней на четырёх сидах в местах НИ
+// ОДНОЙ голодной смерти (у них долг), а мир при этом потерял три четверти
+// населения через ростеры (у них долга не было) — 154 385 душ в пуле
+// дезертиров. Эксперимент поставлен самим миром: сущность со счётом не
+// голодает, сущность без счёта обескровливает мир.
+using SquadRoster = sm::Roster;
 
 // A waypoint route a squad was ORDERED onto (Session 15, Inc 7) — OPT-IN,
 // and the route's presence IS the order (owner's ruling: no second knob):

@@ -1,5 +1,6 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
+#include "macro/roster_window.h"   // ОДИН суд границы на всякий ростер
 #include "macro/agent_memory.h"
 #include "macro/characters.h"  // стол анкет — ступень лестницы поведения
 #include "macro/chronicle.h"
@@ -207,7 +208,7 @@ void deliver_mounts_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
         const SoldierSlot stall = ro->squad[i];
         // Credit BEFORE debit (S5): a full garrison leaves the beasts IN
         // the roster rather than burning them.
-        if (!lm->garrison.push_slot(stall)) continue;
+        if (!lm->garrison.squad.push_slot(stall)) continue;
         ro->squad.remove_slot_at(i);
         moved = true;
     }
@@ -3912,14 +3913,14 @@ int outfit_crew_mounts(ecs::World& w, Landmark& home, entt::entity crew) {
     int given = 0;
     while (want > 0) {
         int si = -1;
-        for (int i = home.garrison.slot_count() - 1; i >= 0; --i) {
-            if (is_mount_kind(home.garrison[i].kind)) { si = i; break; }
+        for (int i = home.garrison.squad.slot_count() - 1; i >= 0; --i) {
+            if (is_mount_kind(home.garrison.squad[i].kind)) { si = i; break; }
         }
         if (si < 0) break;   // стойло пусто — артель идёт пешей
         SoldierRecord mount{};
-        if (!home.garrison.take_soul_at(si, mount)) break;
+        if (!home.garrison.squad.take_soul_at(si, mount)) break;
         if (!ro->squad.push(mount)) {
-            home.garrison.push(mount);   // нет слота — конь остаётся дома
+            home.garrison.squad.push(mount);   // нет слота — конь остаётся дома
             break;
         }
         ++given;
@@ -3981,96 +3982,31 @@ int squad_season_window(MacroWorld& mw, int day) {
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime, ecs::NpcInventory,
                     ecs::SquadRoster>().each()) {
         (void)kind;
-        // ── 1. ВЗЫСКАНИЕ ПРОШЛОГО СЧЁТА — ПРОПОРЦИОНАЛЬНО ────────────────
-        // Зеркало закона мест (econ_debt_boundary): доля НЕОПЛАЧЕННОГО и
-        // есть доля ушедших. Счёт пересчитывается по СЕГОДНЯШНЕМУ составу —
-        // ровно как у места он считается по сегодняшнему населению, и
-        // потому хранить исходную сумму не нужно.
-        //
-        // ЧТО ЗДЕСЬ УМЕРЛО (владелец, 2026-09-21): кромка «покрыто ЦЕЛИКОМ
-        // или не списывается», доля 1/8 и пол «хотя бы одна душа». Все три
-        // — один и тот же дефект, который у МЕСТ был снят ещё 2026-09-18
-        // вердиктом «сытость пропорциональна»: артель из трёх душ теряла
-        // треть вместо восьмой (тот же «штраф за малость», что ловили у
-        // хуторов), а артель, покрывшая нужду на 99 %, теряла столько же,
-        // сколько не покрывшая ничего. Измерено прогоном 512 дней: мир
-        // терял три четверти населения, НЕ ГОЛОДАЯ НИ ДНЯ.
-        const SquadSeasonNeeds lastBill =
-            squad_season_needs(*mw.world, e, roster.squad);
-        const int boardIdx = hunger_item_index();
-        const int boardOrd = hunger_commodity_ordinal();
-        const std::int32_t boardLeft =
-            boardOrd >= 0 ? roster.needDebt[boardOrd] : 0;
-        float unpaid = 0.0f;
-        // ПО КАКОЙ СТРОКЕ ушли — харч или плата. Доля берётся ХУДШАЯ (ниже),
-        // значит у ухода всегда есть ОДНА победившая строка, и назвать её
-        // стоит один bool: без него вечерний уровень говорит «сто душ ушло»
-        // и молчит о том, кормить их надо было или платить.
-        bool byWage = false;
-        if (lastBill.board > 0 && boardLeft > 0)
-            unpaid = float(boardLeft) / float(lastBill.board);
-        if (lastBill.wage > 0 && roster.wageDebt > 0) {
-            const float wageShare =
-                float(roster.wageDebt) / float(lastBill.wage);
-            if (wageShare > unpaid) { unpaid = wageShare; byWage = true; }
-        }
-        // Душа уходит, если ей не досталось ЛИБО харча, ЛИБО платы —
-        // поэтому берётся ХУДШАЯ из двух долей, а не их сумма: один и тот
-        // же человек может быть и не кормлен, и не плачен.
-        if (unpaid > 1.0f) unpaid = 1.0f;
-        int walkers = int(float(roster.squad.size()) * unpaid);
-        int walked = 0;
-        while (walkers-- > 0 && !roster.squad.empty()) {
-            SoldierRecord walker{};
-            if (!roster.squad.pop_soul_back(walker)) break;
-            if (!gs.deserterPool.push(walker)) {
-                roster.squad.push(walker);   // pool full: the man stays
-                break;
-            }
-            ++deserted;
-            ++walked;
-        }
+        // СУД — ОДНА ДВЕРЬ НА ВЕСЬ МИР (macro/roster_window.h). Здесь
+        // остаётся только СЧЁТ этой артели: её мера харча берёт скидку с
+        // фуражирского ранга ведущего — контекст ростера, а не форма
+        // контейнера, и потому он стоит на виду вызова.
+        const auto bill = [&](const SoldierSquad& sq) {
+            const SquadSeasonNeeds n = squad_season_needs(*mw.world, e, sq);
+            return RosterBill{n.board, n.wage};
+        };
+        const RosterWindowOutcome out = roster_season_window(
+            roster, bag.inv, bill(roster.squad), bill,
+            gs.deserterPool, gs.lootPoolValue,
+            mw.econFacts, mw.econFactsUser);
+        deserted += out.walked;
         // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h): ОДИН факт = ОДНА артель,
         // провалившая окно, поэтому слушатель считает и артели (числом
         // фактов), и души (суммой). Адрес — ДОМ артели: по канону S9 это
         // его ресурс ушёл, а не «мировой».
-        if (walked > 0 && mw.econFacts) {
+        if (out.walked > 0 && mw.econFacts) {
             EconFact f{};
-            f.kind = byWage ? EconFact::Kind::SoulsDesertedUnpaid
-                            : EconFact::Kind::SoulsDesertedUnfed;
-            f.amount = walked;
+            f.kind = out.byWage ? EconFact::Kind::SoulsDesertedUnpaid
+                                : EconFact::Kind::SoulsDesertedUnfed;
+            f.amount = out.walked;
             f.landmarkId = rt.homeSettlementId;
             mw.econFacts(mw.econFactsUser, f);
         }
-        // ── 2. НОВЫЙ СЧЁТ по составу ПОСЛЕ ухода, перезаписью ────────────
-        // Старая недоимка не переносится: взыскали — выставили новый (тот
-        // же закон, что у места).
-        const SquadSeasonNeeds needs =
-            squad_season_needs(*mw.world, e, roster.squad);
-        if (boardOrd >= 0) roster.needDebt[boardOrd] = needs.board;
-        roster.wageDebt = needs.wage;
-        // ── 3. НЕМЕДЛЕННОЕ ГАШЕНИЕ, И ОНО ЧАСТИЧНОЕ ──────────────────────
-        // Харч — той же дверью, что у места (econ_pay_debt по лестнице):
-        // что есть в сумке, то и съедено сейчас, остальное остаётся долгом
-        // и будет гаситься приходом весь сезон.
-        if (boardOrd >= 0 && roster.needDebt[boardOrd] > 0) {
-            econ_pay_debt(bag.inv, roster.needDebt, mw.econFacts,
-                          mw.econFactsUser);
-        }
-        // ПЛАТА — стоимостью (владелец 2026-09-18): монеты первыми
-        // арифметикой плотности value/kg, без монет — натурой. «ЖАЛОВАНИЕ
-        // СГОРАЕТ ЕСТЕСТВЕННО» — уплаченная стоимость уходит из экономики в
-        // пул лута. Частично — законно: платим, сколько несём.
-        if (roster.wageDebt > 0) {
-            const std::int64_t canPay =
-                std::min<std::int64_t>(roster.wageDebt,
-                                       inventory_value(bag.inv));
-            if (canPay > 0) {
-                gs.lootPoolValue += pay_value_dense(bag.inv, int(canPay));
-                roster.wageDebt -= canPay;
-            }
-        }
-        (void)boardIdx;
         // Состав изменился — обоз заново (squad.h): ушедшая душа унесла и
         // свою спину.
         refresh_squad_carry(*mw.world, e);
@@ -4302,10 +4238,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 lead.level = std::int16_t(normalize_soldier_level(lvl->value));
             if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(e))
                 lead.entityId = sid->index;
-            if (!lm.garrison.push(lead)) gs.deserterPool.push(lead);
+            if (!lm.garrison.squad.push(lead)) gs.deserterPool.push(lead);
             if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
                 for (const SoldierSlot& rec : roster->squad) {
-                    if (!lm.garrison.push_slot(rec)) gs.deserterPool.push_slot(rec);
+                    if (!lm.garrison.squad.push_slot(rec)) gs.deserterPool.push_slot(rec);
                 }
             }
         } else {
@@ -4318,7 +4254,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
                 for (const SoldierSlot& sl : roster->squad) {
                     if (is_monster_kind(sl.kind)) {
-                        if (!lm.garrison.push_slot(sl))
+                        if (!lm.garrison.squad.push_slot(sl))
                             gs.deserterPool.push_slot(sl);
                     } else {
                         souls += int(sl.count);
@@ -4612,7 +4548,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const int base = yieldRow.hireGold;
                     if (base <= 0) continue;
                     const int herd = count_soldiers_of_kind(
-                        s.garrison, std::uint16_t(gd.rosterYield))
+                        s.garrison.squad, std::uint16_t(gd.rosterYield))
                         + horsesStanding[row];
                     // НУЖДА — ТОТ ЖЕ ЗАКОН УПРЯЖКИ (владелец 2026-09-19:
                     // «по лошадке на душу»): месту нужно столько ездовых,
@@ -4811,7 +4747,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         const auto run_patrol_auction = [&](int rowIdx) -> bool {
             NavWorld* nv = ctx.mw.nav;
             if (!nv || !nv->baked() || nv->threat.empty()) return false;
-            const int take = total_soldiers(s.garrison) >> 1;
+            const int take = total_soldiers(s.garrison.squad) >> 1;
             if (take < 2) return false;   // вылазка меньше пары — не выход
             const std::uint16_t homeR = nav_region_at(*nv, s.x, s.y);
             const std::size_t R = nv->regionLandmarkId.size();
@@ -4939,7 +4875,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // в поле» не за что.
         for (int gi = 0; gi < guardCount; ++gi) {
             const int i = guard[gi];
-            const int take = total_soldiers(s.garrison) >> 1;
+            const int take = total_soldiers(s.garrison.squad) >> 1;
             if (take < 2) continue;
             SquadSpec spec{};
             spec.leaderType = ld.crews[i].npc;
@@ -4953,20 +4889,20 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // с хвоста гарнизона не может встать во главе патруля, но в
             // ЧЛЕНЫ идёт свободно — обоз вылазки.
             int leadSlot = -1;
-            for (int si = s.garrison.slot_count() - 1; si >= 0; --si) {
-                if (!is_monster_kind(s.garrison[si].kind)) {
+            for (int si = s.garrison.squad.slot_count() - 1; si >= 0; --si) {
+                if (!is_monster_kind(s.garrison.squad[si].kind)) {
                     leadSlot = si;
                     break;
                 }
             }
             if (leadSlot < 0) continue;   // a herd alone raises no patrol
             SoldierRecord lead{};
-            if (!s.garrison.take_soul_at(leadSlot, lead)) continue;
+            if (!s.garrison.squad.take_soul_at(leadSlot, lead)) continue;
             for (int t = 1; t < take; ++t) {
                 SoldierRecord rec{};
-                if (!s.garrison.pop_soul_back(rec)) break;
+                if (!s.garrison.squad.pop_soul_back(rec)) break;
                 if (!spec.members.push(rec)) {
-                    s.garrison.push(rec);   // no slot: the man stands home
+                    s.garrison.squad.push(rec);   // no slot: the man stands home
                     break;
                 }
             }
@@ -4975,9 +4911,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 spawn_squad(gs, *mw.world, *mw.terrain, spec);
             if (ent == entt::null) {
                 // Мир отказал в спавне — души назад, оборона цела.
-                s.garrison.push(lead);
+                s.garrison.squad.push(lead);
                 for (const SoldierSlot& rec : spec.members)
-                    s.garrison.push_slot(rec);
+                    s.garrison.squad.push_slot(rec);
                 continue;
             }
             ++raised;

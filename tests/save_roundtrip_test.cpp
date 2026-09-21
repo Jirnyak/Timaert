@@ -380,8 +380,8 @@ sm::GameState make_state() {
     settlement.y = 80;
     settlement.population = 777;
     settlement.inventory.add("wood", 19);
-    add_soldiers(settlement.garrison, sm::NPCType::Guard, 5, 2000u);
-    add_soldiers(settlement.garrison, sm::NPCType::Peasant, 1, 2100u);
+    add_soldiers(settlement.garrison.squad, sm::NPCType::Guard, 5, 2000u);
+    add_soldiers(settlement.garrison.squad, sm::NPCType::Peasant, 1, 2100u);
     settlement.factionIdx = 2;
     // Honest-day readouts (v29) — every field non-default.
     settlement.starvedYesterday = 12;
@@ -950,7 +950,7 @@ void run_roundtrip() {
     if (city.name != "Round City"
         || city.inventory.count("wood") != 19
         || sm::count_soldiers_of_kind(
-            city.garrison, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 1) {
+            city.garrison.squad, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 1) {
         FAIL_BAIL("settlement details lost");
     }
     if (city.starvedYesterday != 12 || !nearf(city.popGrowthCarry, 0.375f)) {

@@ -2016,7 +2016,7 @@ namespace sm::ui
                         draw_info_overview_row("Faction index", int(s->factionIdx));
                         draw_info_overview_row("Starved last boundary",
                                                int(s->starvedYesterday));
-                        draw_info_overview_row("Garrison units", total_soldiers(s->garrison));
+                        draw_info_overview_row("Garrison units", total_soldiers(s->garrison.squad));
                         draw_info_overview_row("Inventory stacks", s->inventory.used_slots());
                         draw_info_overview_row("Inventory items", s->inventory.total());
                         ImGui::EndTable();
@@ -2156,7 +2156,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Garrison;
                 if (garrisonOpen)
                 {
-                    int total = total_soldiers(s->garrison);
+                    int total = total_soldiers(s->garrison.squad);
                     ImGui::Text("Total: %d units", total);
                     ImGui::Spacing();
                     if (ImGui::BeginTable("garrison", 2,
@@ -2166,7 +2166,7 @@ namespace sm::ui
                         {
                             const NPCType t = npc_type_at(ti);
                             const int count = count_soldiers_of_kind(
-                                s->garrison, static_cast<std::uint8_t>(t));
+                                s->garrison.squad, static_cast<std::uint8_t>(t));
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
                             ImGui::TableNextRow();
@@ -2197,10 +2197,10 @@ namespace sm::ui
                         const NPCType t = npc_type_at(ti);
                         if (!npc_hireable(t))
                             continue;
-                        const SoldierSlot* offer = first_soldier_of_kind(s->garrison, t);
+                        const SoldierSlot* offer = first_soldier_of_kind(s->garrison.squad, t);
                         int cost = offer ? hire_price_for(*offer) : npc_hire_price_base(t);
                         int avail = count_soldiers_of_kind(
-                            s->garrison, static_cast<std::uint8_t>(t));
+                            s->garrison.squad, static_cast<std::uint8_t>(t));
                         SoldierSquad* playerArmy = player_roster(world);
                         int owned = playerArmy ? count_soldiers_of_kind(
                             *playerArmy, static_cast<std::uint8_t>(t)) : 0;
@@ -2213,7 +2213,7 @@ namespace sm::ui
                         {
                             int purse = inventory_value(playerBag);
                             const int paid = playerArmy
-                                ? hire_npc(*playerArmy, s->garrison, t, purse)
+                                ? hire_npc(*playerArmy, s->garrison.squad, t, purse)
                                 : 0;
                             if (paid > 0)
                             {
@@ -2231,7 +2231,7 @@ namespace sm::ui
                                                              playerBag, moved);
                                     SoldierRecord back{};
                                     if (playerArmy->pop_soul_back(back))
-                                        s->garrison.push(back);
+                                        s->garrison.squad.push(back);
                                 }
                             }
                         }

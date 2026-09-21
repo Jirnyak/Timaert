@@ -178,7 +178,7 @@ void populate_landmarks_from_politik(GameState& gs,
             auto gr = generate_garrison(
                 garrison_target_strength(s.type, s.population),
                 [&grng] { return grng.next_f01(); });
-            s.garrison = std::move(gr.garrison);
+            s.garrison.squad = std::move(gr.garrison);
             s.population = std::max(1, s.population - gr.popCost);
         }
         // Born mid-life (owner): the market has wares on day one, and the
@@ -356,7 +356,7 @@ void populate_landmarks_from_politik(GameState& gs,
                 auto gr = generate_garrison(
                     garrison_target_strength(vil.type, vil.population),
                     [&grng] { return grng.next_f01(); });
-                vil.garrison = std::move(gr.garrison);
+                vil.garrison.squad = std::move(gr.garrison);
                 vil.population = std::max(1, vil.population - gr.popCost);
             }
             seed_landmark_inventory(

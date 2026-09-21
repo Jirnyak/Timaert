@@ -14,6 +14,7 @@
 #include "macro/memory.h"   // WorldMemory — память мира с горизонтом сезона
 #include "macro/agent_memory.h"
 #include "macro/army.h"
+#include "macro/roster.h"   // Roster — ОДИН ростер на место и на сквад (S4)
 #include "macro/landmark_registry.h"
 #include "macro/resource_field.h"
 #include "macro/npc.h"
@@ -456,7 +457,13 @@ struct Landmark {
     // ОПИСЬ СВОЕЙ ОКРУГИ — производная, в сейв не едет (см. LandmarkSurvey).
     LandmarkSurvey survey;
     LandmarkLedger ledger;       // ЧТО ПОЧЁМ здесь — тот же сезонный такт
-    SoldierSquad garrison;       // empty unless the kind keeps one (cities)
+    // РОСТЕР МЕСТА — ТОТ ЖЕ ТИП, ЧТО У СКВАДА (macro/roster.h, CANON S4:
+    // «гарнизон = ростер ландмарка»). Инвентарь существ плюс его счёт
+    // содержания одной записью; пуст, если строка реестра гарнизона не
+    // держит. Слово «гарнизон» осталось ИМЕНЕМ РОЛИ, а не вторым видом
+    // контейнера: судит его та же дверь, что артель и армию игрока
+    // (macro/roster_window.h).
+    Roster garrison;
     // WHOSE place this is — a faction registry index (owner 2026-09-11:
     // «королевств нет, только фракции — одна система»). -1 = nobody's,
     // which resolves to the free folk through faction_or_freefolk. It
@@ -530,22 +537,6 @@ struct Landmark {
     // Непогашенный хлеб на следующей границе уходит населением НАСМЕРТЬ
     // (доля = остаток / душевой сезон), прочие строки гасят рост.
     std::int32_t needDebt[kCommodityCount] = {};
-    // ── СЧЁТ СОДЕРЖАНИЯ ГАРНИЗОНА (v105) — ТА ЖЕ ФОРМА, ЧТО У СКВАДА ─────
-    // «У всякого, кто кормит, есть счёт» (владелец, 2026-09-21). У места
-    // ДВА рода иждивенцев, и спрос у них разный по последствию: населению
-    // непокрытая еда стоит ЖИЗНЕЙ (needDebt выше), гарнизону — ДЕЗЕРТИРОВ.
-    // Поэтому счёта два, а закон один: те же три шага (взыскание долей →
-    // новый счёт → немедленное частичное гашение) и та же дверь
-    // econ_pay_debt над одним и тем же складом.
-    //
-    // Форма НАМЕРЕННО зеркалит ecs::SquadRoster: место есть неподвижный
-    // сквад (вердикт владельца 2026-09-21, «гарнизоны слить в ростер»), и
-    // когда слияние структур состоится, счёт переезжать не будет — он уже
-    // той же формы. Массив там, где живёт одна строка, — это цена
-    // единообразия в 60 байт на место, и по бюджету памяти (AGENTS) она не
-    // обсуждается.
-    std::int32_t garrisonDebt[kCommodityCount] = {};
-    std::int64_t garrisonWageDebt = 0;
 };
 
 enum class GameSubStateKind : std::uint8_t {

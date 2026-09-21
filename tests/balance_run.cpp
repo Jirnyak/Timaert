@@ -396,12 +396,12 @@ int main(int argc, char** argv) {
             long long horsesGarr = 0, soulsGarr = 0;
             for (const sm::Landmark& lm : gs.landmarks) {
                 horsesGarr += sm::count_soldiers_of_kind(
-                    lm.garrison, std::uint16_t(sm::NPCType::Horse));
+                    lm.garrison.squad, std::uint16_t(sm::NPCType::Horse));
                 // Гарнизон — ЧЕТВЁРТЫЙ контейнер душ места (CANON S4:
                 // «ландмарк = неподвижный сквад, гарнизон = его ростер»).
                 // Считаются ЛЮДИ: табун у места свой столбец, и душой
                 // населения лошадь не была никогда.
-                soulsGarr += sm::count_human_souls(lm.garrison);
+                soulsGarr += sm::count_human_souls(lm.garrison.squad);
             }
             long long horsesSquads = 0;
             for (auto [e, ro]

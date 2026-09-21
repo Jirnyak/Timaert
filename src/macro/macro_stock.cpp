@@ -123,7 +123,7 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
 SoldierSquad* find_garrison(const MacroWorld& w, std::int32_t subject) {
     if (!w.gs || subject < 0) return nullptr;
     Landmark* lm = landmark_by_id(*w.gs, subject);
-    return lm ? &lm->garrison : nullptr;
+    return lm ? &lm->garrison.squad : nullptr;
 }
 
 int read_garrison(const MacroWorld& w, MacroStockKey k) {

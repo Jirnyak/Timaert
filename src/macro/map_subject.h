@@ -93,7 +93,7 @@ inline SoldierSquad* roster_of(const MacroWorld& w, MapSubject s) {
     case MapSubjectKind::Landmark: {
         if (!w.gs) return nullptr;
         Landmark* lm = landmark_by_id(*w.gs, int(s.landmark));
-        return lm ? &lm->garrison : nullptr;
+        return lm ? &lm->garrison.squad : nullptr;
     }
     case MapSubjectKind::None: break;
     }

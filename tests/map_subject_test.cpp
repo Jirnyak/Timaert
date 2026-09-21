@@ -29,7 +29,7 @@ sm::GameState make_world() {
     city.x = 10;
     city.y = 10;
     city.population = 300;
-    city.garrison.push(sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 11u));
+    city.garrison.squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 11u));
     gs.landmarks.push_back(city);
     // A VILLAGE and a SPIRE on the same one id space (v54): the door must
     // answer for them exactly as it does for the city — kind-blind.
@@ -82,7 +82,7 @@ void test_the_door_opens_the_old_addresses() {
               == &landmark_by_id(gs, 7)->inventory,
           "a landmark's store IS the record's inventory field, the very object");
     CHECK(roster_of(w, subject_of_landmark(7))
-              == &landmark_by_id(gs, 7)->garrison,
+              == &landmark_by_id(gs, 7)->garrison.squad,
           "a landmark's roster IS the record's garrison field, the very object");
 
     // PLAY-2's law: the door is KIND-BLIND. A village and a spire answer

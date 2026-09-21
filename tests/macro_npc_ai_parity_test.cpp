@@ -540,13 +540,13 @@ void test_rotation_does_not_dissolve_the_dead() {
     world.reg.emplace<sm::ecs::Dead>(dead);
 
     const int popBefore = gs.landmarks[0].population;
-    const int garrisonBefore = gs.landmarks[0].garrison.size();
+    const int garrisonBefore = gs.landmarks[0].garrison.souls();
     sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
     sm::rotate_worker_squads(mw, /*day=*/3);
 
     CHECK(gs.landmarks[0].population == popBefore,
           "a dead crew's souls never return to the population");
-    CHECK(gs.landmarks[0].garrison.size() == garrisonBefore,
+    CHECK(gs.landmarks[0].garrison.souls() == garrisonBefore,
           "and dead records never march into the garrison");
     CHECK(world.reg.valid(dead),
           "the corpse-row is the drain's business, not the rotation's");

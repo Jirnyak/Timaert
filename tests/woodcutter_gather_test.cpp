@@ -781,7 +781,7 @@ void test_the_catch_lands_in_the_roster() {
     });
 
     const int stabled = count_soldiers_of_kind(
-        gs.landmarks[0].garrison, std::uint16_t(NPCType::Horse));
+        gs.landmarks[0].garrison.squad, std::uint16_t(NPCType::Horse));
     CHECK(caught + stabled > 0, "the catch landed as SOULS, not as cargo");
     CHECK(lost == caught + stabled,
           "CONSERVATION через два контейнера: упряжка + стойло == голов, "
@@ -814,13 +814,13 @@ void test_the_catch_lands_in_the_roster() {
         }
         Landmark& home = gs.landmarks[0];
         const int stall = count_soldiers_of_kind(
-            home.garrison, std::uint16_t(NPCType::Horse));
+            home.garrison.squad, std::uint16_t(NPCType::Horse));
         CHECK(stall >= 2, "фикстура: в стойле есть из чего снаряжать");
         // Лидер без членов — одна душа, значит ровно один конь.
         const int given = outfit_crew_mounts(w, home, e);
         CHECK(given == 1 && count_mount_souls(roMut) == 1,
               "ТАКТ 2: дом выдал по ездовому на душу — одному лидеру коня");
-        CHECK(count_soldiers_of_kind(home.garrison,
+        CHECK(count_soldiers_of_kind(home.garrison.squad,
                                      std::uint16_t(NPCType::Horse))
                   == stall - given,
               "CONSERVATION такта 2: сколько вышло из стойла, столько и "

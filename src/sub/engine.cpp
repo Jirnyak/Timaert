@@ -1431,7 +1431,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
                     // (macro/macro_stock.h) instead of vanishing without trace.
                     ctx.landmark.id,
                     wcx, wcy, faunaCount,
-                    lmRec ? &lmRec->garrison : nullptr,
+                    lmRec ? &lmRec->garrison.squad : nullptr,
                     // THE CLOCK, because how many of this cell's people are on
                     // its streets is a question about the hour (city_layout.h
                     // crowd_outdoor_share01) — the rest are behind their doors.
