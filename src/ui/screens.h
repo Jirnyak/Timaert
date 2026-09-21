@@ -168,7 +168,7 @@ struct ToolbarResult {
     // second one. `menu` opens the Esc screen.
     bool pause = false, resume = false, menu = false, speed4 = false, rest = false;
     bool stats = false, inventory = false, map = false, build = false, quests = false;
-    bool party = false, equipment = false, codex = false, diplomacy = false;
+    bool party = false, equipment = false, codex = false;
     bool toggleSubworld = false;
     bool zoomIn = false, zoomOut = false;
 };

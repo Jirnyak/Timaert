@@ -34,7 +34,6 @@ enum class ActionId : std::uint8_t {
     Codex,
     Map,
     Quests,
-    Diplomacy,
     Settlement,
     EnterLeave,
     Save,

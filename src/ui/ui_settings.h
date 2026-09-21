@@ -35,7 +35,6 @@ enum class UiElementId : std::uint8_t {
     MacroOverlay,
     QuestMarkers,
     NpcProximity,
-    PanelDiplomacy,
     PanelSettlement,
     SubMinimap,
     SubCombatLog,

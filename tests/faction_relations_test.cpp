@@ -16,8 +16,11 @@
 //     an existing row;
 //   • five parallel id/index vocabularies with colliding indices (a bandit NPC
 //     and a demon creature shared index 3) — one index space now;
-//   • relations decided by an if-chain over id strings — now a symmetric
-//     temperament matrix plus an authored pair-override table, both data.
+//   • relations decided by an if-chain over id strings, then by a sampled
+//     temperament-band matrix — BOTH cut 2026-09-21: политики нет до
+//     играбельного ядра, матрица рождается нейтральной, и ЭТОТ тест теперь
+//     свидетель именно нейтральности (свидетель вырезанного закона обязан
+//     сторожить новый, иначе он остаток).
 
 #include "check.h"
 #include "macro/state.h"
@@ -87,23 +90,13 @@ int main() {
         return fail("no-faction sentinel does not degrade to neutral");
     }
 
-    // ── Temperament matrix is symmetric by data ───────────────────────────
-    for (int a = 0; a < int(Temperament::Count); ++a) {
-        for (int b = 0; b < int(Temperament::Count); ++b) {
-            const RelationBand ab = kTemperamentBands[a][b];
-            const RelationBand ba = kTemperamentBands[b][a];
-            if (ab.lo != ba.lo || ab.hi != ba.hi) {
-                return fail("temperament band matrix is not symmetric");
-            }
-            if (ab.lo > ab.hi) {
-                return fail("inverted relation band (lo > hi)");
-            }
-        }
-    }
-
-    // ── Sampled matrix semantics, across seeds ────────────────────────────
-    // Outlaw/Abyssal WAR bands and the Feral band are fixed by data, so these
-    // verdicts must hold for EVERY seed, not by luck of one sample.
+    // ── МАТРИЦА РОЖДАЕТСЯ НЕЙТРАЛЬНОЙ (вердикт владельца 2026-09-21) ─────
+    // Прежде здесь стояли проверки враждебности фракций: демоны против
+    // империи, бандиты против королевств, «магика» с ненулевыми связями. Все
+    // они сторожили СЭМПЛИНГ из темпераментных банд — дословный порт
+    // прототипа, вырезанный вместе с панелью дипломатии. Политика вернётся
+    // после играбельного ядра ОДНИМ законом над реестром интересов, и тогда
+    // сюда придут её свидетели.
     for (std::uint32_t seed : {12345u, 1u, 777u, 2026u}) {
         GameState gs;
         create_factions(gs, seed);
@@ -116,48 +109,53 @@ int main() {
             }
         }
 
-        // CORE of the goblin fix: demons vs a town guard's kingdom.
-        if (!hostile(gs, "demons", "empire") || !hostile(gs, "empire", "demons")) {
-            return fail("demons/empire not mutually hostile — goblins vs guards broken");
-        }
-        if (relation(gs, "demons", "empire") != relation(gs, "empire", "demons")) {
-            return fail("relation matrix is not symmetric");
+        // МАТРИЦА = АВТОРСКАЯ ТАБЛИЦА, БУКВА В БУКВУ. Каждая пара обязана
+        // равняться тому, что говорит kFactionRelations, — и ничему больше:
+        // это и сторожит «одно число на пару, без броска».
+        for (int a = 0; a < kFactionCount; ++a) {
+            for (int b = a + 1; b < kFactionCount; ++b) {
+                const int want = sm::authored_relation(kFactionDefs[a].id,
+                                                       kFactionDefs[b].id);
+                if (relation(gs, kFactionDefs[a].id, kFactionDefs[b].id) != want) {
+                    return fail("матрица разошлась с авторской таблицей пар");
+                }
+            }
         }
 
-        // Bandits: at war with every kingdom.
-        if (!hostile(gs, "bandits", "empire") || !hostile(gs, "bandits", "timaert")
-            || !hostile(gs, "bandits", "barbarian_north")) {
-            return fail("bandits not hostile to kingdoms");
+        // СИД НА МАТРИЦУ НЕ ВЛИЯЕТ ВООБЩЕ: вместе с бандами ушёл и RNG-поток
+        // генезиса фракций. Демоны враждебны империи на КАЖДОМ сиде, а не по
+        // удаче броска — ровно то, чего прежняя система не гарантировала.
+        if (relation(gs, "demons", "empire") != -100
+            || !hostile(gs, "demons", "empire")) {
+            return fail("демоны не враждебны империи — бой в субмире выключен");
         }
-
-        // Wildlife drifts in [-30,30]: never hostile, so deer don't storm towns.
+        if (!hostile(gs, "bandits", "empire") || !hostile(gs, "bandits", "timaert")) {
+            return fail("бандиты не враждебны королевствам");
+        }
+        // Культ против магов — до дна шкалы; против прочих слегка, не война.
+        if (relation(gs, "cults", "magika") != sm::kRelationMin) {
+            return fail("охота на магов не дошла до дна шкалы");
+        }
+        if (hostile(gs, "cults", "empire")) {
+            return fail("культ воюет с империей — звёздочка перебила пару");
+        }
+        // ЗВЕРЬ НЕЙТРАЛЕН (и был им всегда: банда Feral {-30,30} при пороге
+        // -50 не давала враждебности ни на одном сиде) — олени не штурмуют
+        // деревню.
         if (hostile(gs, "wildlife", "empire") || hostile(gs, "wildlife", "timaert")) {
             return fail("wildlife wrongly hostile (deer would swarm town)");
         }
 
-        // Magika Orders are REAL now: they have sampled relations (any value is
-        // legal — Magical vs Lawful is the uneasy band — but the row must exist)
-        // and demons are at war with them like with everyone else.
-        if (relation(gs, "magika", "empire") == 0
-            && relation(gs, "magika", "old_magica") == 0
-            && relation(gs, "magika", "timaert") == 0) {
-            return fail("'magika' relations all zero — row didn't join the matrix");
-        }
-        if (!hostile(gs, "demons", "magika")) {
-            return fail("demons not hostile to the magika orders");
+        // Симметрия — закон записи (set_relation), а не свойство сэмпла.
+        if (relation(gs, "demons", "empire") != relation(gs, "empire", "demons")) {
+            return fail("relation matrix is not symmetric");
         }
 
-        // Authored pair overrides survive the temperament default.
-        if (relation(gs, "timaert", "cults") >= kWarBand.hi + 1) {
-            return fail("timaert/cults WAR override not applied");
-        }
-        if (relation(gs, "empire", "lower_magica") < kAllyBand.lo) {
-            return fail("empire/lower_magica ALLY override not applied");
-        }
-
-        // Self-relation is 100 — no friendly fire within a faction.
-        if (hostile(gs, "empire", "empire") || hostile(gs, "demons", "demons")) {
-            return fail("faction hostile to itself");
+        // Сам себе — ВЕРХ ШКАЛЫ, а не круглая сотня (CANON S26, закон
+        // диапазона): своих не бьют ни при каком представлении.
+        if (relation(gs, "empire", "empire") != sm::kRelationMax
+            || hostile(gs, "empire", "empire") || hostile(gs, "demons", "demons")) {
+            return fail("self-relation is not the top of the scale");
         }
 
         // Unknown ids still degrade to neutral (fail-closed for stale data).
@@ -166,20 +164,23 @@ int main() {
             return fail("unknown faction id did not degrade to neutral");
         }
 
-        // The reputation seed column: a fresh player is hunted by bandits and
-        // demons, mildly distrusted by cults, neutral with the rest. The player
-        // is an ordinary row, so his standing IS his row in the same matrix —
-        // seeded by create_factions, symmetric, and never sampled from a band.
+        // ИГРОК — ОБЫЧНАЯ СТРОКА МАТРИЦЫ. Колонки playerReputation больше нет
+        // (вырезана 2026-09-21): его встречают те же авторские пары, что и
+        // всякого чужого, и проверяется это той же дверью.
         for (int i = 0; i < kFactionCount; ++i) {
             const char* id = kFactionDefs[i].id;
             if (std::strcmp(id, kPlayerFactionId) == 0) continue;
-            if (player_reputation(&gs, id) != kFactionDefs[i].playerReputation) {
-                return fail("player standing not seeded from the registry column");
+            const int want = sm::authored_relation(id, kPlayerFactionId);
+            if (player_reputation(&gs, id) != want
+                || faction_relation(&gs, id, kPlayerFactionId) != want) {
+                return fail("игрок встречен не по авторской таблице");
             }
-            if (faction_relation(&gs, id, kPlayerFactionId)
-                != kFactionDefs[i].playerReputation) {
-                return fail("player standing is not symmetric in the matrix");
-            }
+        }
+        // Бандиты и демоны хотят его смерти БЕЗ отдельной колонки — по той же
+        // звёздочке, что делает их врагами всем.
+        if (!hostile(gs, "bandits", kPlayerFactionId)
+            || !hostile(gs, "demons", kPlayerFactionId)) {
+            return fail("игрока не встречают враждебно бандиты и демоны");
         }
         // And moving it moves both directions at once.
         add_player_reputation(gs, "empire", -30);
@@ -190,9 +191,9 @@ int main() {
     }
 
     std::printf("OK faction_relations_test: registry=%d factions, one index "
-                "space, symmetric bands, magika registered, kingdoms resolve, "
-                "overrides applied (threshold=%d)\n",
-                kFactionCount, sm::kHostileThreshold);
+                "space, matrix born NEUTRAL (politics cut), self=%d, player row "
+                "seeded from the registry column (threshold=%d)\n",
+                kFactionCount, sm::kRelationMax, sm::kHostileThreshold);
     CHECK(true, "every gate above held");
     return sm::test::report("faction_relations_test");
 }

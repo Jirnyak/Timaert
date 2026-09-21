@@ -1,6 +1,4 @@
-// Faithful port of state.ts factories: defaultPlayer / createGameState /
-// createFactions.  Faction relations sampled deterministically from `seed`
-// via the band system in state.ts (ALLY / WAR / HOSTILE_LIGHT / NEUTRAL).
+// defaultPlayer / createGameState / createFactions.
 #include "macro/state.h"
 #include "macro/codex.h"
 #include "macro/econ_day.h"
@@ -21,42 +19,33 @@ namespace sm {
 
 // ── Factions ───────────────────────────────────────────────────
 // The registry (macro/faction.h) is the single source of truth: one row per
-// faction — kingdoms included — with temperament, colour, description and the
-// player-reputation seed. Relations come from ONE place: an authored pair
-// override or the temperament matrix, sampled per world seed. The legacy
-// split (universal list + kingdom list + resolve_band id-chain) is gone.
-
-static int sample_band(Rng& rng, RelationBand b) {
-    return b.lo + int(rng.next_f01() * float(b.hi - b.lo + 1));
-}
-
-// ── createFactions ─────────────────────────────────────────────
-void create_factions(GameState& gs, std::uint32_t seed) {
+// faction — kingdoms included — with colour, description and the
+// player-reputation seed.
+//
+// ПОЛИТИКА ВЫРЕЗАНА 2026-09-21 (вердикт владельца: «политики пока не будет…
+// политику мы сделаем, но после того как будет ядро играбельное»). Матрица
+// фракций рождается НЕЙТРАЛЬНОЙ: сэмплинг из «банд» по паре темпераментов был
+// дословным портом прототипа и не имел в каноне ни одной строки — разбор в
+// macro/faction.h на месте вырезанного блока. Вместе с ним ушёл и РNG-поток
+// генезиса фракций: мир стал на один источник случайности проще.
+//
+// Остаётся ОДНА политическая колонка — `playerReputation`, «как мир встречает
+// игрока»: она отвечает на вопрос демо (кто рад ему, кто хочет убить), а не на
+// вопрос держав, и обоснована каноном отдельно.
+void create_factions(GameState& gs, std::uint32_t) {
     gs.relations = RelationMatrix{};
     claim_registry_slots(gs.relations);
 
-    // Symmetric relation matrix sampled from `seed`, in REGISTRY order (stable
-    // and explicit — the old code iterated a std::map, so inserting a faction
-    // reshuffled every sampled relation after it alphabetically). Each pair is
-    // written once now: set_relation owns the symmetry, so no caller can set
-    // one direction and forget the other.
-    Rng rng{seed ^ 0x9e3779b9u};
+    // МАТРИЦА ЗАПОЛНЯЕТСЯ АВТОРСКОЙ ТАБЛИЦЕЙ ПАР (faction.h
+    // kFactionRelations): одно число на пару, ноль броска, ноль темперамента.
+    // Всё неупомянутое остаётся нулём — политики в мире нет. Игрок здесь
+    // обычная строка и получает своё по тем же правилам, что всякий чужой.
     for (int i = 0; i < kFactionCount; ++i) {
         for (int j = i + 1; j < kFactionCount; ++j) {
-            set_relation(gs.relations, i, j, sample_band(rng, faction_band(i, j)));
+            const int v = authored_relation(kFactionDefs[i].id,
+                                            kFactionDefs[j].id);
+            if (v != 0) set_relation(gs.relations, i, j, v);
         }
-    }
-
-    // The player's row is the one pair set NOT sampled from a temperament band:
-    // a new game must open with the standing the registry declares (bandits and
-    // demons already want him dead, cults are wary, the realms are indifferent),
-    // and play moves it from there. This is also the extension seam: a new
-    // faction states its opening stance toward the player in its own
-    // playerReputation column — one column, no code anywhere.
-    const FactionSlot player = faction_slot(gs.relations, kPlayerFactionId);
-    for (int i = 0; i < kFactionCount; ++i) {
-        if (i == player) continue;
-        set_relation(gs.relations, player, i, kFactionDefs[i].playerReputation);
     }
 }
 

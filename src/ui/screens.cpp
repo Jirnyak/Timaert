@@ -677,7 +677,6 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive,
     ImGui::TextDisabled("|"); ImGui::SameLine();
     if (tbtn("Esc", "Menu [Esc]"))                  r.menu       = true; ImGui::SameLine();
     if (tbtn("Cdx", tip("Codex", ActionId::Codex)))            r.codex     = true; ImGui::SameLine();
-    if (tbtn("Dip", tip("Diplomacy", ActionId::Diplomacy)))    r.diplomacy = true; ImGui::SameLine();
     if (tbtn(subworldActive ? "Out" : "In",
              tip(subworldActive ? "Leave subworld" : "Enter cell",
                  ActionId::EnterLeave)))

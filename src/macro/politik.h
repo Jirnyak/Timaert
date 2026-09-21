@@ -3,9 +3,9 @@
 //
 // KINGDOMS ARE GONE (owner 2026-09-11: «королевств теперь нет, у нас только
 // фракции — одна система»). The Kingdom struct was already a shell by then:
-// its name/colour/temperament were materialized DUPLICATES of the faction
+// its name/colour were materialized DUPLICATES of the faction
 // registry (macro/faction.h, the single source of truth since 2026-07-30),
-// its relations lived in the registry's temperament matrix, and the save
+// its relations lived in the registry's relation matrix, and the save
 // never carried it. What survives it found new homes:
 //   * a realm's IDENTITY — the faction registry row (was Kingdom::id);
 //   * a city's OWNER — City::factionIdx and Landmark::factionIdx, a direct
@@ -30,7 +30,7 @@
 namespace sm {
 
 // World-generation seed data for one realm: WHERE a faction's cities grow.
-// IDENTITY — name, colour, description, temperament (which drives all
+// IDENTITY — name, colour, description (which drive all
 // relations) — is NOT here: `factionId` references a row of the faction
 // registry, and everything the realm IS lives on that row.
 struct RealmSeedDef {

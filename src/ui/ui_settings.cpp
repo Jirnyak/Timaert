@@ -23,7 +23,6 @@ const UiElementSpec kUiElementSpec[kUiElementCount] = {
     {UiElementId::MacroOverlay,   "macro.overlay",    "Map hover & path",   UiScope::Macro, true,  false,1.0f,  1.0f,  1.0f, "World-map hover highlight, tooltip and the click-to-move path line."},
     {UiElementId::QuestMarkers,   "macro.questmarks", "Quest markers",      UiScope::Macro, true,  true, 0.60f, 1.80f, 1.0f, "Yellow \"!\" pins floating over active quest targets on the world map."},
     {UiElementId::NpcProximity,   "macro.npcnear",    "Nearby NPCs",        UiScope::Macro, true,  true, 0.60f, 1.80f, 1.0f, "Right-edge stack of nearby characters."},
-    {UiElementId::PanelDiplomacy, "panel.diplomacy",  "Diplomacy panel",    UiScope::Macro, true,  true, 0.60f, 2.00f, 1.0f, "Faction relations."},
     {UiElementId::PanelSettlement,"panel.settlement", "Settlement panel",   UiScope::Macro, true,  true, 0.60f, 2.00f, 1.0f, "Town: build / trade / garrison / recruit."},
     {UiElementId::SubMinimap,     "sub.minimap",      "Minimap",            UiScope::Sub,   true,  true, 0.60f, 2.00f, 1.0f, "Compass minimap disc (top-right)."},
     {UiElementId::SubCombatLog,   "sub.combatlog",    "Combat log",         UiScope::Sub,   true,  true, 0.60f, 1.80f, 1.0f, "Recent hit / damage messages."},

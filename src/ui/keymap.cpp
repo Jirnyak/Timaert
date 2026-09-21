@@ -24,7 +24,6 @@ const ActionSpec kActionSpec[kActionCount] = {
     {ActionId::Codex,        "act.codex",      "Codex",                 UiScope::Both, SDL_SCANCODE_C},
     {ActionId::Map,          "act.map",        "Map",                   UiScope::Both, SDL_SCANCODE_M},
     {ActionId::Quests,       "act.quests",     "Quest log",             UiScope::Both, SDL_SCANCODE_Q},
-    {ActionId::Diplomacy,    "act.diplomacy",  "Diplomacy",             UiScope::Both, SDL_SCANCODE_K},
     {ActionId::Settlement,   "act.settlement", "Settlement",            UiScope::Both, SDL_SCANCODE_T},
     {ActionId::EnterLeave,   "act.enterleave", "Enter / leave cell",    UiScope::Both, SDL_SCANCODE_RETURN},
     {ActionId::Save,         "act.save",       "Quick save",            UiScope::Both, SDL_SCANCODE_F5},

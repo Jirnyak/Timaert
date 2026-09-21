@@ -1911,8 +1911,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
 // debug HUD is deliberately NOT in this list — that one exists to WATCH the
 // world move, and freezing it would blank the very numbers it is opened for.
 bool pausing_panel_open(const App& app) {
-    return app.ui.diplomacy ||
-           app.ui.settlement ||
+    return app.ui.settlement ||
            app.ui.quest ||
            app.ui.codex ||
            app.ui.map ||
@@ -1960,7 +1959,7 @@ void reset_scene_session_state(App& app) {
     // Окна: открытая панель ПАУЗИТ мир (pausing_panel_open выше), так что
     // забытый инвентарь даёт ровно тот же замороженный вход, что и режим P.
     // Список — тот же, что судит пауза; расходиться им нечем.
-    app.ui.diplomacy = app.ui.settlement = app.ui.quest = app.ui.codex =
+    app.ui.settlement = app.ui.quest = app.ui.codex =
         app.ui.map = app.ui.character = app.ui.settings = app.ui.controls =
             false;
 }
@@ -2554,7 +2553,6 @@ void handle_event_playing(App& app, const SDL_Event& e) {
             };
             if (sc == SDL_SCANCODE_ESCAPE) { app.state = sm::ui::AppState::Menu; }
             else if (is(ActionId::DebugOverlay)) { app.showDebug = !app.showDebug; }
-            else if (is(ActionId::Diplomacy))  { app.ui.diplomacy = !app.ui.diplomacy; }
             else if (is(ActionId::Settlement)) { toggle_settlement_panel(app); }
             else if (is(ActionId::Quests))     { app.ui.quest = !app.ui.quest; }
             else if (is(ActionId::Character)) {
@@ -3195,7 +3193,6 @@ bool modal_overlay_active(const App& app) {
 
 bool macro_overlay_blocks_npc_proximity(const App& app) {
     return modal_overlay_active(app) ||
-           app.ui.diplomacy ||
            app.ui.settlement ||
            app.ui.quest ||
            app.ui.codex ||
@@ -5860,7 +5857,6 @@ void frame(App& app, int simSteps) {
                 if (tb.rest && !app.subworld.active())
                     aim_rest_until_rested(app);
                 if (tb.menu)          app.state          = sm::ui::AppState::Menu;
-                if (tb.diplomacy)     app.ui.diplomacy   = !app.ui.diplomacy;
                 if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Build);
                 if (tb.quests)        app.ui.quest       = !app.ui.quest;
                 if (tb.codex)         app.ui.codex       = !app.ui.codex;
@@ -5905,8 +5901,6 @@ void frame(App& app, int simSteps) {
             sm::dev::draw_debug_console(app.console);
             draw_debug_panels(app);
             draw_session_feed(app);
-            if (app.uiSettings.visible(sm::ui::UiElementId::PanelDiplomacy))
-                sm::ui::draw_diplomacy(app.gs, &app.ui.diplomacy, app.uiSettings.scale(sm::ui::UiElementId::PanelDiplomacy));
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))
                 sm::ui::draw_character_panel(app.gs, app.ecs, &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
             if (app.ui.settlement && app.subjectSquad == entt::null)

@@ -190,38 +190,12 @@ namespace sm::ui
         return state.open && state.story != nullptr;
     }
 
-    void draw_diplomacy(GameState &gs, bool *open, float scale)
-    {
-        if (!open || !*open)
-            return;
-        ImGui::SetNextWindowSize(ImVec2(420 * scale, 380 * scale), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Diplomacy", open))
-        {
-            ImGui::SetWindowFontScale(scale);
-            // Every faction the world HAS: the registry's rows plus whatever
-            // runtime slots this world claimed (macro/relations.h). Names come
-            // from the registry, standings from the matrix — one source each.
-            int shown = 0;
-            for (int i = 0; i < sm::kMaxWorldFactions; ++i)
-            {
-                if (!gs.relations.used[i]) continue;
-                ++shown;
-            }
-            ImGui::Text("Factions: %d", shown);
-            ImGui::Separator();
-            for (int i = 0; i < sm::kMaxWorldFactions; ++i)
-            {
-                if (!gs.relations.used[i]) continue;
-                const char *fid = sm::faction_id_of_slot(gs.relations, i);
-                const sm::FactionDef *fd = sm::faction_def_by_index(std::uint16_t(i));
-                ImGui::Text("%-16s  rep:%4d", fd ? fd->name : fid,
-                            player_reputation(&gs, fid));
-            }
-            // (The "Kingdoms: N" tail died 2026-09-11 with the kingdoms —
-            // the panel above IS the one system: faction rows + reputation.)
-        }
-        ImGui::End();
-    }
+    // (ПАНЕЛЬ ДИПЛОМАТИИ ВЫРЕЗАНА 2026-09-21, вердикт владельца: «вырезаем
+    // панель дипломатии», «политики пока не будет… политику мы сделаем, но
+    // после того как будет ядро играбельное». Она показывала список фракций и
+    // репутацию игрока — то есть окно в систему, которой в демо нет. Матрица
+    // отношений жива как БАЗА реестра интересов, а окно вернётся вместе с
+    // политикой, одним законом над реестром.)
 
     namespace
     {
@@ -1979,9 +1953,7 @@ namespace sm::ui
             ImGui::PopFont();
             ImGui::SameLine();
             ImGui::TextDisabled("(%.*s)", int(def.label.size()), def.label.data());
-            ImGui::Text("Faction: %s   Temperament: %s",
-                        fd ? fd->name : "Unaligned",
-                        fd ? temperament_label(fd->temperament) : "?");
+            ImGui::Text("Faction: %s", fd ? fd->name : "Unaligned");
             ImGui::Text("Population: %d", s->population);
             ImGui::Text("Wellbeing: %d%%", wellbeing_pct(*s));
             ImGui::Text("Starved last boundary: %d",

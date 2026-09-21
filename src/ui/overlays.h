@@ -1,4 +1,4 @@
-// ImGui overlays — Diplomacy, Settlement, Quest, Codex, Map. Each panel is
+// ImGui overlays — Settlement, Quest, Codex, Map. Each panel is
 // a free function that draws into the current ImGui frame and is toggled by
 // a boolean owned by the application. Mirrors svelte overlays in TS.
 #pragma once
@@ -44,7 +44,6 @@ enum class SettlementPanelTab : std::uint8_t {
 };
 
 struct Toggles {
-    bool diplomacy   = false;
     bool settlement  = false;
     bool quest       = false;
     bool codex       = false;
@@ -74,7 +73,6 @@ struct DialogOverlayState {
     std::array<char, 64> nodeId{};
 };
 
-void draw_diplomacy(GameState& gs, bool* open, float scale = 1.0f);
 // `world` is here because the player's ROSTER is an ordinary squad on his
 // macro entity now (macro/player_entity.h), not a field of PlayerState. The UI
 // sits above every layer and may read from them; it still owns no game logic.

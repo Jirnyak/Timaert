@@ -4742,7 +4742,6 @@ bool run_subworld_reputation_hit_smoke(App& app) {
 }
 
 void smoke_close_gameplay_panels(App& app) {
-    app.ui.diplomacy = false;
     app.ui.settlement = false;
     app.ui.quest = false;
     app.ui.codex = false;

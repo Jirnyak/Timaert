@@ -1,5 +1,5 @@
 // THE faction registry — the single source of truth for every faction in the
-// game: identity (id / name / description / colour), temperament, starting
+// game: identity (id / name / description / colour), starting
 // player reputation, and the default relation between any two factions.
 //
 // WHY THIS EXISTS (owner decision, 2026-07-30: "единая система истины, никаких
@@ -26,10 +26,9 @@
 //   • ONE row per faction — kingdoms are ordinary rows, not a separate class.
 //   • ONE index space: ecs::NPCKind.factionIdx is an index into kFactionDefs,
 //     for humanoids and monsters alike. 0xFFFF (kNoFaction) = factionless.
-//   • ONE relation source: temperament × temperament → band, plus an authored
-//     pair-override table. Adding a faction is ONE ROW — its relations to
-//     everyone follow from its temperament, its reputation column seeds the
-//     player standing, and no code anywhere changes.
+//   • ONE relation source: the matrix (relations.h), born NEUTRAL — politics
+//     is cut until the core is playable (see the block below); a faction's
+//     reputation column still seeds how the world meets the PLAYER.
 //
 // Header-only POD tables in .rodata; no allocation, no exceptions, no init
 // order. The player side is deliberately NOT a row: the player's standing with
@@ -49,14 +48,20 @@ namespace sm {
 // disagree about who is at war. It lives HERE because relations live here.
 // The predicate that applies it is factions_hostile (macro/state.h) — apply
 // the threshold through it, not by hand.
-inline constexpr int kHostileThreshold = -50;
+// ПОРОГИ — СТЕПЕНИ ДВОЙКИ (владелец, 2026-09-21: «сделай эти пороги 64 32 —
+// вдруг там магией духа машины мы его удобрим степенями двойки»). Это не
+// украшение: шкала кончается на 127 (CANON S26, закон диапазона), и половина
+// её — 64, четверть — 32. Прежние −50 и 50 были круглыми десятичными, то есть
+// не делили шкалу ни на что; теперь враждебность это РОВНО половина плеча, а
+// союз — четверть, и обе границы выводятся из ширины байта, а не назначаются.
+inline constexpr int kHostileThreshold = -64;
 
 // THE friendship line, the other end of the same scale: at or above this a
 // faction is an ALLY — it cannot be provoked into a private grudge by a stray
 // hit (maybe_flip_temp_hostile), and the stance colours saturate to full
 // friend here. Lived as a private constant in engine.cpp while the hostile
 // line lived here; the two ends of one scale belong on one shelf.
-inline constexpr int kAllyRepThreshold = 50;
+inline constexpr int kAllyRepThreshold = 32;
 
 // THE price of a kill the world holds against you (a life is a life, whoever
 // swung). It lived privately in sub/engine.cpp while only the subworld reaper
@@ -64,43 +69,12 @@ inline constexpr int kAllyRepThreshold = 50;
 // two copies of one price is exactly how the two layers drift apart.
 inline constexpr int kKillRepPenalty = -1;
 
-// ── Temperament — how a faction behaves toward strangers ───────────────────
-// The relation between two factions with no authored override is a pure
-// function of their temperaments (kTemperamentBands below).
-enum class Temperament : std::uint8_t {
-    Lawful = 0,     // theocratic order — magic is suspect
-    Magical,        // mage-ruled realms and orders
-    Mercantile,     // trade republics — neutral and wealthy
-    Savage,         // feudal warlords — anything can happen
-    Outlaw,         // raiders — at war with all civilised folk
-    Abyssal,        // forces of the abyss — war against everything
-    Cultist,        // hidden worshippers — hunted, and hunting mages
-    Feral,          // beasts — indifferent to mortal politics
-    Count
-};
-
-inline const char* temperament_label(Temperament t) {
-    switch (t) {
-        case Temperament::Lawful:     return "Lawful";
-        case Temperament::Magical:    return "Magical";
-        case Temperament::Mercantile: return "Mercantile";
-        case Temperament::Savage:     return "Savage";
-        case Temperament::Outlaw:     return "Outlaw";
-        case Temperament::Abyssal:    return "Abyssal";
-        case Temperament::Cultist:    return "Cultist";
-        case Temperament::Feral:      return "Feral";
-        default:                      return "?";
-    }
-}
-
 // ── The registry ───────────────────────────────────────────────────────────
 struct FactionDef {
     const char*   id;               // stable machine id — THE universal key
     const char*   name;
     const char*   description;
     std::uint32_t color;            // 0xRRGGBB
-    Temperament   temperament;
-    int           playerReputation; // new-game seed for gs.player.reputation
     // Killing a member of this faction is NOT a crime — no reputation is lost
     // for it (damage-door track Inc 5). Beasts, outlaws and the abyss: nobody
     // mourns them, nobody avenges them by law. It was a strcmp if-chain over
@@ -143,53 +117,53 @@ inline constexpr FactionDef kFactionDefs[] = {
     // ── Universal factions ────────────────────────────────────────────────
     {"wildlife", "Wildlife",
      "Beasts and roaming creatures. Indifferent to mortal politics.",
-     0x6b8e23, Temperament::Feral,   0, /*killIsNoCrime*/true},
+     0x6b8e23, /*killIsNoCrime*/true},
     {"bandits",  "Bandit Clans",
      "Outlaws and raiders. Hostile to all civilised folk.",
-     0x7a3a1a, Temperament::Outlaw,  -100, /*killIsNoCrime*/true},
+     0x7a3a1a, /*killIsNoCrime*/true},
     {"demons",   "Demonic Hordes",
      "Forces of the abyss. War against everything.",
-     0x8b0000, Temperament::Abyssal, -100, /*killIsNoCrime*/true},
+     0x8b0000, /*killIsNoCrime*/true},
     {"cults",    "Demonic Cults",
      "Worshippers of the Old Ones. Hunted everywhere.",
-     0x581c87, Temperament::Cultist, -10, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
+     0x581c87, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     // The wandering mage orders — previously emitted by the spawn vocabulary
     // but never registered, so every relation involving them silently read
     // neutral. A real faction now, closing that gap by construction.
     {"magika",   "Magika Orders",
      "Itinerant mages sworn to no single realm.",
-     0x8b5cf6, Temperament::Magical, 0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
+     0x8b5cf6, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     // ── Kingdoms — ordinary rows; politik references them by id ───────────
     {"old_magica",      "Old Magica",
      "Ruled by powerful mages. High magic economy.",
-     0xa78bfa, Temperament::Magical,    0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
+     0xa78bfa, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     {"northern_magica", "Northern Magica",
      "Ruled by powerful mages. High magic economy.",
-     0x7c3aed, Temperament::Magical,    0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
+     0x7c3aed, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     {"lower_magica",    "Lower Magica",
      "Ruled by powerful mages. High magic economy.",
-     0xc4b5fd, Temperament::Magical,    0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
+     0xc4b5fd, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     {"lake_duchy",      "Lake Duchy",
      "Ruled by powerful mages. High magic economy.",
-     0x60a5fa, Temperament::Magical,    0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
+     0x60a5fa, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     {"empire",          "Empire of Light",
      "Theocratic empire. Magic is forbidden.",
-     0xf59e0b, Temperament::Lawful,     0, false, {"coin_empire_copper", "coin_empire_silver", "coin_empire_gold"}},
+     0xf59e0b, false, {"coin_empire_copper", "coin_empire_silver", "coin_empire_gold"}},
     {"timaert",         "Republic of Timaert",
      "Maritime trade republic. Neutral and wealthy.",
-     0x10b981, Temperament::Mercantile, 0, false, {"coin_timaert_copper", "coin_timaert_silver", "coin_timaert_gold"}},
+     0x10b981, false, {"coin_timaert_copper", "coin_timaert_silver", "coin_timaert_gold"}},
     {"barbarian_north", "North Barbarians",
      "Feudal lords ruling by might and steel.",
-     0x991b1b, Temperament::Savage,     0, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
+     0x991b1b, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
     {"barbarian_south", "South Barbarians",
      "Feudal lords ruling by might and steel.",
-     0xb91c1c, Temperament::Savage,     0, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
+     0xb91c1c, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
     {"barbarian_west",  "West Barbarians",
      "Feudal lords ruling by might and steel.",
-     0xdc2626, Temperament::Savage,     0, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
+     0xdc2626, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
     {"barbarian_east",  "East Barbarians",
      "Feudal lords ruling by might and steel.",
-     0xef4444, Temperament::Savage,     0, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
+     0xef4444, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
     // ── The unruled ───────────────────────────────────────────────────────
     // Everyone who answers to no crown: a settlement no faction owns, a town
     // that has thrown its lord out, a landmark held by whoever lives in it.
@@ -202,7 +176,7 @@ inline constexpr FactionDef kFactionDefs[] = {
     // construction, with no code anywhere to change.
     {"freefolk",        "Free Folk",
      "Towns and holdings that answer to no crown.",
-     0x94a3b8, Temperament::Mercantile, 0},
+     0x94a3b8,},
     // ── The player's own realm ────────────────────────────────────────────
     // The player is an ORDINARY ROW (owner's ruling, 2026-08-04: «пусть просто
     // будет фракция игрока в общей матрице фракций… и она и станет королевством
@@ -211,14 +185,13 @@ inline constexpr FactionDef kFactionDefs[] = {
     // matrix — the same storage every other pair uses, not a private map on the
     // side (see macro/state.h player_reputation / add_player_reputation).
     //
-    // The temperament below is never consulted for HIS relations: create_factions
-    // seeds the player's row from each faction's playerReputation column and play
-    // moves it from there, so adding a faction sets its stance toward the player
-    // in that faction's own row — one column, no code. Mercantile is the label
-    // a UI shows, nothing more.
+    // Его отношения НИЧЕМ не особенные: строки авторской таблицы ниже
+    // встречают игрока так же, как всякого чужого (бандиты и демоны — по
+    // звёздочке насмерть, культы слегка, королевства нейтрально), а игра
+    // двигает их дальше через add_player_reputation.
     {"player",          "Your Realm",
      "You, your household, and everyone who marches under your banner.",
-     0xfacc15, Temperament::Mercantile, 100},
+     0xfacc15,},
     // ── Дизайн-персонажи стола анкет (macro/characters.h) ─────────────────
     // Вердикт владельца 2026-09-10: фракция царя-крестьянина — ОН САМ
     // (индивид-субъект как игрок: своя строка одной матрицы, не чужое
@@ -226,10 +199,10 @@ inline constexpr FactionDef kFactionDefs[] = {
     // ординалы фракций едут в записях снапшота.
     {"king_peasant",    "King-Peasant",
      "The peasant who crowned himself. His war is with the Magika alone.",
-     0xb45309, Temperament::Savage, 0},
+     0xb45309,},
     {"dragons",         "Dragons",
      "The old fire above the peaks. Mortal politics do not reach them.",
-     0xdc2626, Temperament::Feral, -50, /*killIsNoCrime*/true},
+     0xdc2626, /*killIsNoCrime*/true},
 };
 inline constexpr int kFactionCount =
     int(sizeof(kFactionDefs) / sizeof(kFactionDefs[0]));
@@ -292,67 +265,89 @@ inline bool kill_is_no_crime(const char* factionId) {
     return i < 0 ? true : kFactionDefs[i].killIsNoCrime;
 }
 
-// ── Relations ──────────────────────────────────────────────────────────────
-// A relation is sampled (per world seed) from a band [lo, hi]. The band for a
-// pair is: authored pair override if one exists, else the temperament matrix.
-struct RelationBand { int lo, hi; };
+// ── ПОЛИТИКА ВЫРЕЗАНА 2026-09-21 (вердикт владельца) ─────────────────────
+// Дословно: «политики пока не будет… политику мы сделаем, но после того как
+// будет ядро играбельное»; и про вырезанное: «темперамент надо вырезать
+// точно», «вырезаем всё, что не касается фундаментальных систем, и чисто
+// нещадно».
+//
+// ЧТО ЗДЕСЬ СТОЯЛО И ПОЧЕМУ УШЛО. Отношение двух фракций при рождении мира
+// СЭМПЛИРОВАЛОСЬ из «банды» [lo, hi], выбранной по паре ТЕМПЕРАМЕНТОВ: шесть
+// именованных банд, матрица 8×8 и три авторских оверрайда пар — около семидесяти
+// чисел, ни одно из которых не выведено. Ни банд, ни темпераментов, ни
+// сэмплинга НЕТ В КАНОНЕ ни одной строкой: это дословный порт прототипа, и
+// сам файл state.cpp в этом признавался в своей первой строке («Faithful port
+// of state.ts factories… via the band system in state.ts»).
+//
+// ЧТО ОСТАЛОСЬ ВМЕСТО НИХ: авторская таблица ненулевых пар (ниже) — одно
+// число на пару, без броска и без темперамента. Всё неупомянутое нейтрально.
+// Личные связи субъектов живут в реестре интересов (macro/interests.h), и
+// матрица остаётся их БАЗОЙ.
+//
+// КОГДА ПОЛИТИКА ВЕРНЁТСЯ (после играбельного ядра), она вернётся ОДНИМ
+// законом над реестром интересов, а не второй системой рядом с ним.
 
-inline constexpr RelationBand kAllyBand      = {  55,  90};
-inline constexpr RelationBand kWarBand       = {-100, -75};
-inline constexpr RelationBand kHostileBand   = { -50,   0};
-inline constexpr RelationBand kNeutralBand   = { -50,  50};
-// «ЛЮБОЕ» ЗНАЧИТ ВСЯ ШКАЛА, А НЕ КРУГЛОЕ ЧИСЛО (владелец 2026-09-21):
-// банда была {-100, 100} и потому врала своему имени — четверть байта
-// вне её досягаемости. Прочие банды — АВТОРСКИЕ значения внутри шкалы
-// (союз 55..90 и т. д.), и они остаются данными, а не границей.
-inline constexpr RelationBand kAnyBand       = {kRelationMin, kRelationMax};
-inline constexpr RelationBand kCultPairBand  = { -60, -20};
-inline constexpr RelationBand kWildPairBand  = { -30,  30};
-
-// The matrix — symmetric by construction (asserted by faction_relations_test).
-// Row/column order = Temperament order. This replaces the resolve_band()
-// if-chain verbatim, including its precedence quirks:
-//   • Outlaw and Abyssal are at war with everything (checked first there);
-//   • Cultist fights Magical (witch hunts cut both ways), is lightly hostile
-//     to everyone else INCLUDING Feral (the chain hit its cult branch before
-//     its wildlife branch), and two cult factions circle each other;
-//   • Feral drifts in the wildlife band against all civilised temperaments;
-//   • Magical realms are anything to each other, at war with Savage, uneasy
-//     with Lawful; Savage is volatile with everyone; the rest are neutral.
-inline constexpr RelationBand
-kTemperamentBands[int(Temperament::Count)][int(Temperament::Count)] = {
-    //                Lawful        Magical       Mercantile    Savage        Outlaw    Abyssal   Cultist        Feral
-    /*Lawful*/     {kNeutralBand, kHostileBand, kNeutralBand, kAnyBand,     kWarBand, kWarBand, kHostileBand,  kWildPairBand},
-    /*Magical*/    {kHostileBand, kAnyBand,     kNeutralBand, kWarBand,     kWarBand, kWarBand, kWarBand,      kWildPairBand},
-    /*Mercantile*/ {kNeutralBand, kNeutralBand, kNeutralBand, kAnyBand,     kWarBand, kWarBand, kHostileBand,  kWildPairBand},
-    /*Savage*/     {kAnyBand,     kWarBand,     kAnyBand,     kAnyBand,     kWarBand, kWarBand, kHostileBand,  kWildPairBand},
-    /*Outlaw*/     {kWarBand,     kWarBand,     kWarBand,     kWarBand,     kWarBand, kWarBand, kWarBand,      kWarBand},
-    /*Abyssal*/    {kWarBand,     kWarBand,     kWarBand,     kWarBand,     kWarBand, kWarBand, kWarBand,      kWarBand},
-    /*Cultist*/    {kHostileBand, kWarBand,     kHostileBand, kHostileBand, kWarBand, kWarBand, kCultPairBand, kHostileBand},
-    /*Feral*/      {kWildPairBand,kWildPairBand,kWildPairBand,kWildPairBand,kWarBand, kWarBand, kHostileBand,  kWildPairBand},
+// ── ОТНОШЕНИЯ ФРАКЦИЙ — АВТОРСКАЯ ТАБЛИЦА ПАР ✓ (владелец, 2026-09-21) ────
+// Дословно: «система такая, я утверждаю: 64 фракции, уже просто матрица 64×64
+// всех их отношений, и у каждого воплощённого есть фракция из контекста
+// макромира — всё это должно дать в субмире враждебное поведение»; и рамка:
+// «помним, что это МИНИМАЛЬНАЯ система, суперлайт, просто чтобы боёвка и РПГ
+// работали».
+//
+// МАТРИЦА — ИСТОЧНИК, ТАБЛИЦА — ЕЁ АВТОРИНГ. Перечислены только НЕНУЛЕВЫЕ
+// пары; всё неупомянутое — ноль, то есть нейтралитет, потому что политики в
+// мире нет. Ни броска, ни темперамента, ни банды: одно число на пару.
+//
+// `b == nullptr` значит «КО ВСЕМ ПРОЧИМ» — одна строка вместо восемнадцати.
+// Конкретная пара БЬЁТ звёздочку, поэтому «культы против всех слегка, а
+// против магов насмерть» — это две строки, а не ветка в коде.
+//
+// ИГРОК ЗДЕСЬ НЕ ОСОБЫЙ, И ПОЭТОМУ КОЛОНКИ `playerReputation` БОЛЬШЕ НЕТ
+// (вердикт владельца того же дня, дословно: «никакой плеер репуташн, вырезать
+// уничтожить»). Она отвечала на тот же вопрос вторым голосом: «как этот народ
+// относится к чужим», просто чужим был один игрок. Теперь его встречают те же
+// строки, что и всякого: бандиты и демоны — насмерть по звёздочке, культы —
+// слегка, королевства — нейтрально.
+struct FactionRelationDef {
+    const char* a;
+    const char* b;       // nullptr = ко всем прочим
+    int         value;
+};
+inline constexpr FactionRelationDef kFactionRelations[] = {
+    // Абисс и разбой — против всего живого, включая друг друга и себе
+    // подобных: банда грабит банду, демону не свой никто.
+    {"demons",  nullptr,  -100},
+    {"bandits", nullptr,  -100},
+    // Охота на магов взаимна и идёт до дна шкалы; со всеми прочими культ —
+    // нежеланный гость, но не война.
+    {"cults",   "magika", kRelationMin},
+    {"cults",   nullptr,   -32},
+    // ЗВЕРЬ НЕЙТРАЛЕН, И ЭТО НЕ УПУЩЕНИЕ. Прежняя банда Feral была
+    // {-30, 30} при пороге враждебности -50 — то есть фауна НИКОГДА не была
+    // враждебной ни на одном сиде, и охота хищника через матрицу не шла
+    // никогда. Право атаковать даёт фракция, а ЖЕЛАНИЕ — строка существа:
+    // волк охотится потому, что хищник, а стадо оленей не пойдёт на деревню,
+    // потому что ему нечем этого хотеть.
 };
 
-// Authored exceptions — data, checked before the temperament matrix.
-struct FactionPairOverride { const char* a; const char* b; RelationBand band; };
-inline constexpr FactionPairOverride kFactionPairOverrides[] = {
-    {"timaert", "northern_magica", kAllyBand},
-    {"empire",  "lower_magica",    kAllyBand},
-    {"timaert", "cults",           kWarBand},
-};
-
-// Band for a pair of registry indices (order-independent).
-inline RelationBand faction_band(int ia, int ib) {
-    if (ia < 0 || ib < 0 || ia >= kFactionCount || ib >= kFactionCount)
-        return kNeutralBand;
-    const char* a = kFactionDefs[ia].id;
-    const char* b = kFactionDefs[ib].id;
-    for (const auto& o : kFactionPairOverrides) {
-        if ((std::strcmp(o.a, a) == 0 && std::strcmp(o.b, b) == 0) ||
-            (std::strcmp(o.a, b) == 0 && std::strcmp(o.b, a) == 0))
-            return o.band;
+// Отношение пары по авторской таблице: конкретная пара, иначе звёздочка,
+// иначе НОЛЬ. Обе стороны спрашиваются симметрично — матрицу пишет
+// set_relation, у которого симметрия в законе.
+inline int authored_relation(const char* a, const char* b) {
+    if (!a || !b) return 0;
+    for (const auto& r : kFactionRelations)          // точная пара — старше
+        if (r.b && ((std::strcmp(r.a, a) == 0 && std::strcmp(r.b, b) == 0)
+                 || (std::strcmp(r.a, b) == 0 && std::strcmp(r.b, a) == 0)))
+            return r.value;
+    int worst = 0;                                   // затем «ко всем прочим»
+    for (const auto& r : kFactionRelations) {
+        if (r.b) continue;
+        if ((std::strcmp(r.a, a) == 0 || std::strcmp(r.a, b) == 0)
+            && r.value < worst) {
+            worst = r.value;
+        }
     }
-    return kTemperamentBands[int(kFactionDefs[ia].temperament)]
-                            [int(kFactionDefs[ib].temperament)];
+    return worst;
 }
 
 } // namespace sm
