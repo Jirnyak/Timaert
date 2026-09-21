@@ -476,6 +476,21 @@ struct Landmark {
     // -1 = owes nobody: a capital, a masterless place. ONE column for the
     // whole feudal graph, stamped at genesis by populate_landmarks.
     int suzerainLandmarkId = -1;
+    // ОБРАТНОЕ РЕБРО — ВТОРАЯ ПОЛОВИНА S24, И ОНА ПРОИЗВОДНАЯ (2026-09-21).
+    // Канон говорит «каждый узел знает прямых подчинённых И сюзерена»; в
+    // коде была построена только вторая половина, и потому дань могла течь
+    // лишь ВВЕРХ — должник нёс её сам. Сборщик идёт ВНИЗ (S4), а для этого
+    // месту нужен список своих вассалов.
+    //
+    // Односвязный список через ординалы: `vassalHead` — первый вассал,
+    // `vassalNext` — следующий вассал ТОГО ЖЕ сюзерена. −1 = конец.
+    // В СЕЙВ НЕ ЕДЕТ: истина — колонка `suzerainLandmarkId` у вассала,
+    // а это её обратный индекс, пересобираемый по событию состава мест
+    // (navEpoch — та же дверь, по которой перепекается навигация S9).
+    // Второго ответа на «чей это вассал» не заводится: список строится
+    // ИЗ колонок и никогда не правится отдельно.
+    int vassalHead = -1;
+    int vassalNext = -1;
     // The honest economy's daily readouts (v29): yesterday's hunger and
     // comfort shortfall (for the eye and the mood), the famine edge flag,
     // and the fractional carry of the LOGISTIC population law.
@@ -837,6 +852,12 @@ struct GameState {
     // Производное состояние сессии, В СЕЙВ НЕ ЕДЕТ: загрузка поднимает
     // места через ту же дверь и тем самым честно взводит счётчик заново.
     std::uint32_t navEpoch = 0;
+    // Эпоха, на которой собран обратный феодальный индекс (vassalHead/
+    // vassalNext). Сравнивается с navEpoch: совпало — индекс свеж, не
+    // совпало — состав мест сменился и его надо пересобрать. Это СОБЫТИЕ,
+    // а не опрос: пересборка идёт только когда мир реально менялся.
+    // Рождается расхождением (0xFFFFFFFF), чтобы первый же спрос собрал.
+    std::uint32_t vassalEpoch = 0xFFFFFFFFu;
     // The ONE issuer of QUEST ordinals (v63), same law again. Issued at
     // ACCEPT (QuestEngine::accept) — the moment an offer stops being a
     // seed-regenerated projection and becomes an object the world stores;
@@ -984,6 +1005,48 @@ inline Landmark* landmark_by_id(GameState& gs, int id) {
         return &gs.landmarks[i];
     for (auto& lm : gs.landmarks) if (lm.id == id) return &lm;
     return nullptr;
+}
+
+// ПЕРЕСБОРКА ОБРАТНОГО ФЕОДАЛЬНОГО ИНДЕКСА — по СОБЫТИЮ состава мест
+// (CANON S9: «опросов не существует»). Индекс производный, поэтому его не
+// правят по кусочкам: он выбрасывается и собирается целиком из колонок
+// `suzerainLandmarkId` — то есть разъехаться с истиной физически не может.
+//
+// Цена: один линейный проход по ростеру мест, и только когда navEpoch
+// сдвинулся. За 512 дней прогона состав менялся один-два раза на мир, так
+// что этот проход — событие, а не такт.
+//
+// Обход идёт С КОНЦА, потому что вставка в ГОЛОВУ списка переворачивает
+// порядок: с конца назад список выходит по возрастанию ординалов, то есть
+// детерминированным для одного и того же состояния мира.
+inline void ensure_vassal_edges(GameState& gs) {
+    if (gs.vassalEpoch == gs.navEpoch) return;
+    for (Landmark& lm : gs.landmarks) {
+        lm.vassalHead = -1;
+        lm.vassalNext = -1;
+    }
+    for (std::size_t i = gs.landmarks.size(); i-- > 0;) {
+        Landmark& v = gs.landmarks[i];
+        // Мёртвое место (вид None) вассалом не числится: смерть здесь —
+        // смена вида, строка из ростера не уходит (S9).
+        if (v.type == LandmarkType::None) continue;
+        if (v.suzerainLandmarkId < 0 || v.suzerainLandmarkId == v.id) continue;
+        Landmark* suz = landmark_by_id(gs, v.suzerainLandmarkId);
+        if (!suz) continue;        // висячее ребро: сюзерена в мире нет
+        v.vassalNext = suz->vassalHead;
+        suz->vassalHead = v.id;
+    }
+    gs.vassalEpoch = gs.navEpoch;
+}
+
+// ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг по позициям — он же ведомость
+// «с кого собрано»: собранный вассал отвечает «нет» по построению, и второго
+// признака («посещён в этом сезоне») в мире не заводится (S26).
+inline bool owes_tithe(const Landmark& lm) {
+    if (lm.titheOwedCoin > 0) return true;
+    for (int c = 0; c < kCommodityCount; ++c)
+        if (lm.titheOwedGoods[c] > 0) return true;
+    return false;
 }
 inline const Landmark* landmark_by_id(const GameState& gs, int id) {
     if (id < 0) return nullptr;
