@@ -3946,8 +3946,11 @@ SquadSeasonNeeds squad_season_needs(ecs::World& world, entt::entity e,
     // leader's. The old gate on the leader's type was the player-special
     // door in disguise (Adventurer.upkeep=0 kept the player's roster
     // free), and it also fed a caravan's guards nothing because the
-    // CARAVAN row is unpriced. A beast in a roster stays free — its own
-    // row says kNpcUpkeepNone, the same column the payroll reads.
+    // CARAVAN row is unpriced.
+    // ЗДЕСЬ СТОЯЛО «зверь в ростере бесплатен — его строка говорит
+    // kNpcUpkeepNone»: НЕПРАВДА про собственную таблицу (строка Horse несёт
+    // 0, то есть лошадь ест). Комментарий вырезан 2026-09-21 вместе с
+    // доводом; сам сигнал −1 ждёт своей порции (CANON S4 «едят все живые»).
     int mouths = 0;
     int wageDay = 0;
     for (const SoldierSlot& s : roster) {

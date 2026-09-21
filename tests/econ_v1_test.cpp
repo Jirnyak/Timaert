@@ -11,8 +11,8 @@
 //        gathered + produced == used_as_inputs + consumed + stock_remaining
 //      Nothing is created from population, nothing vanishes.
 //   3. NO SILENT STARVATION — the balanced scenario feeds everyone every day;
-//      the famine scenario starves, emits FamineStarted exactly once, and
-//      emits FamineEnded exactly once when bread arrives (facts fire on
+//      the famine scenario starves (the ONE hunger fact is Starved —
+//      FamineStarted/FamineEnded were cut 2026-09-21 as emitterless,
 //      TRANSITIONS, not every day).
 
 #include "macro/characters.h"   // landmark_sheet — руки места
@@ -44,8 +44,6 @@ struct Ledger {
     std::array<long, sm::kCommodityCount> produced{};
     std::array<long, sm::kCommodityCount> consumed{};
     int starvedEvents = 0;
-    int famineStarted = 0;
-    int famineEnded = 0;
 };
 
 void sink(void* user, const sm::EconFact& f) {
@@ -57,9 +55,8 @@ void sink(void* user, const sm::EconFact& f) {
         case sm::EconFact::Kind::Produced:
             led->produced[std::size_t(f.commodity)] += f.amount;
             break;
+        default: break;
         case sm::EconFact::Kind::Starved: ++led->starvedEvents; break;
-        case sm::EconFact::Kind::FamineStarted: ++led->famineStarted; break;
-        case sm::EconFact::Kind::FamineEnded: ++led->famineEnded; break;
         case sm::EconFact::Kind::Consumed:
             // Потребление стало ДОЛГОМ (CANON S10): ест дверь гашения
             // (econ_pay_debt), и ест ДНЯМИ, не границей — ручной дифф

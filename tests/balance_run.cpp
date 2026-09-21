@@ -51,7 +51,6 @@ struct DayAccum {
     long long gathered[sm::kCommodityCount] = {};
     long long produced[sm::kCommodityCount] = {};
     long long consumed[sm::kCommodityCount] = {};
-    int famineStarts = 0;
     int starvedPops = 0;
     long long mintedCoins = 0;
     // ── ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h, CANON S9) ──────────────────────
@@ -83,9 +82,7 @@ void econ_fact_sink(void* user, const sm::EconFact& f) {
         case sm::EconFact::Kind::Consumed:
             if (hasCommodity) a->consumed[f.commodity] += f.amount;
             break;
-        case sm::EconFact::Kind::FamineStarted: a->famineStarts += 1; break;
         case sm::EconFact::Kind::Starved: a->starvedPops += f.amount; break;
-        case sm::EconFact::Kind::FamineEnded: break;
         // amount = coins struck (commodity carries the INPUT silver row, so
         // this is its own counter, not a produced[] line).
         case sm::EconFact::Kind::Minted: a->mintedCoins += f.amount; break;
@@ -258,7 +255,7 @@ int main(int argc, char** argv) {
         // артелей — счёт живых крестьянских крю по глаголу поручения, плюс
         // пул дезертиров (кровь закона 1/8). Ответ на «почему зерно не
         // едет»: мало рейсов или пустые сделки.
-        std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tcoinLootPool\tfamineStarts"
+        std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tcoinLootPool"
                          "\tstarvedPops\tminted\ttrades\ttradedValue\tfoodHolds"
                          "\tcrewsGather\tcrewsSell\tcrewsOther\tdeserters"
                          // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
@@ -470,11 +467,11 @@ int main(int argc, char** argv) {
             ringCursor = gs.chronicle.nextSeq;
 
             std::fprintf(fw,
-                         "%d\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%lld\t%lld"
+                         "%d\t%lld\t%lld\t%lld\t%lld\t%d\t%lld\t%lld"
                          "\t%lld\t%lld\t%d\t%d\t%d\t%d",
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
                          (long long)gs.lootPoolValue,
-                         accum.famineStarts, accum.starvedPops,
+                         accum.starvedPops,
                          accum.mintedCoins, trades, tradedValue, foodHolds,
                          crewsGather, crewsSell, crewsOther,
                          int(gs.deserterPool.size()));

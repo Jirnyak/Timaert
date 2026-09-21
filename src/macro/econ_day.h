@@ -297,12 +297,17 @@ struct EconFact {
     enum class Kind : std::uint8_t {
         Gathered = 0,       // commodity, amount
         Produced = 1,       // commodity, amount
-        FamineStarted = 2,  // amount = starved pops today
-        FamineEnded = 3,
-        Starved = 4,        // amount = pops that went unfed today
-        Consumed = 5,       // commodity, amount — the needs ladder's take
-        Minted = 6,         // amount = coins struck (commodity = silver row)
-        Scrapped = 7,       // amount = non-fungible stacks melted to matter
+        // ЗДЕСЬ СТОЯЛИ FamineStarted/FamineEnded — ВЫРЕЗАНЫ 2026-09-21.
+        // У обеих было НОЛЬ отправителей во всём исходнике, и `econ_v1_test`
+        // их считал, ни разу не проверив, а шапка теста утверждала обратное.
+        // Цена этого трупа названа в problems.md §54: сессия 5 прочла
+        // `famineStarts == 0` и записала в наряд «мир не голодает ни дня» —
+        // при 155-166 тысячах душ, умирающих от голода за горизонт. Голод у
+        // мира ОДИН, и он называется `Starved`.
+        Starved = 2,        // amount = pops that went unfed today
+        Consumed = 3,       // commodity, amount — the needs ladder's take
+        Minted = 4,         // amount = coins struck (commodity = silver row)
+        Scrapped = 5,       // amount = non-fungible stacks melted to matter
                             // by the overflow law (items.h auto_scrap_overflow)
         // ── ВЕДОМОСТЬ СКЛАДА ДУШ (CANON S9, владелец 2026-09-21) ─────────
         // «население это их ресурс (их инвентарь и тд)» — а у склада есть
@@ -316,12 +321,12 @@ struct EconFact {
         // только УРОВНИ по контейнерам, а уровень есть сумма нескольких
         // причин: место, потерявшее сто душ, и место, выплатившее сто душ
         // в артель, к вечеру выглядят одинаково.
-        SoulsBorn = 8,         // amount = души, рождённые ростом места
-        SoulsDesertedUnfed = 9,    // amount = души, ушедшие НЕКОРМЛЕННЫМИ;
+        SoulsBorn = 6,         // amount = души, рождённые ростом места
+        SoulsDesertedUnfed = 7,    // amount = души, ушедшие НЕКОРМЛЕННЫМИ;
                                    // landmarkId = дом артели. Один факт =
                                    // одна артель, провалившая окно сезона.
-        SoulsDesertedUnpaid = 10,  // то же, но провал по ПЛАТЕ
-        SoulsBanded = 11,      // amount = души, поднятые из пула в банду
+        SoulsDesertedUnpaid = 8,  // то же, но провал по ПЛАТЕ
+        SoulsBanded = 9,      // amount = души, поднятые из пула в банду
     };
     Kind kind{};
     int commodity = -1;

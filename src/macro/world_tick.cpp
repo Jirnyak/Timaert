@@ -627,7 +627,10 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             rotate_worker_squads(*macro, day);
             // THE SQUAD SEASON WINDOW (npc_ai.h, CANON S19.2): on the
             // boundary day every roster settles board AND pay a season
-            // ahead — covered whole or not debited, any miss = 1/8 once.
+            // ahead. ВЗЫСКАНИЕ ПРОПОРЦИОНАЛЬНО (v105): доля неоплаченного
+            // и есть доля ушедших. Кромка «покрыто целиком или не
+            // списывается» и доля 1/8, которые здесь были описаны, умерли
+            // 2026-09-21 — описание пережило закон на день.
             // The player's squad pays here like everyone («игрок == нпц»).
             squad_season_window(*macro, day);
             // Daily bag hygiene (the auto-scrap half of the old feed loop).
