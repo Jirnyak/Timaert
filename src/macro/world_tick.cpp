@@ -239,7 +239,7 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         // ONE suzerain edge (S24): a place owes whoever the column names;
         // a capital (and any masterless place) names nobody.
         assess_tithe_(s, day,
-                      landmark_by_id(gs, s.suzerainLandmarkId) != nullptr);
+                      landmark_by_id(gs, suzerain_of(s)) != nullptr);
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, s.id, s.x, s.y,
                                  int(s.starvedYesterday));
@@ -434,7 +434,7 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
         garrison_upkeep_(gs, v, day, rs, ru);
 
         // The village owes its market city — the same one edge (CANON S24).
-        assess_tithe_(v, day, landmark_by_id(gs, v.suzerainLandmarkId) != nullptr);
+        assess_tithe_(v, day, landmark_by_id(gs, suzerain_of(v)) != nullptr);
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, v.id, v.x, v.y,
                                  int(v.starvedYesterday));
@@ -539,6 +539,16 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
     void* euser = macro ? macro->econFactsUser : nullptr;
     while (runtime.pendingDailyTicks > 0 && processed < max_daily_ticks) {
         const int day = runtime.nextDailyTickDay;
+        // ДЕНЬ СРОКА СВЯЗЕЙ (interests.h): срочные отношения — перемирия,
+        // контракты — убавляются на день, дотикавшие снимаются. Стоит ДО
+        // остального дня намеренно: истёкший вассалитет не должен успеть
+        // начислить дань за день, которого у него уже нет.
+        //
+        // Сегодня все связи мира бессрочны (феод ставится с term = 0), и
+        // проход не снимает ничего. Он существует ВМЕСТЕ со своим законом,
+        // а не вместо него: колонка срока без тика была бы ровно той
+        // половиной, которой §55 посвящён целиком.
+        for (Landmark& lm : gs.landmarks) interests_tick_day(lm.interests);
         tick_settlements_(gs, day, runtime, esink, euser);
         tick_villages_   (gs, day, runtime, esink, euser);
         tick_player_daily_(gs.player);

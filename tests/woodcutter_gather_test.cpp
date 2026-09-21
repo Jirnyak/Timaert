@@ -457,7 +457,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     vil.id = 3;
     vil.x = 16;
     vil.y = 10;
-    vil.suzerainLandmarkId = 1;
+
     vil.population = 50;
     // A GENUINE surplus: the loading law keeps the seasonal larder home
     // (S19.2 + verdict 2026-09-18 «дома дешевле базы» decides the load),

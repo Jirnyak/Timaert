@@ -15,6 +15,7 @@
 #include "macro/agent_memory.h"
 #include "macro/army.h"
 #include "macro/roster.h"   // Roster — ОДИН ростер на место и на сквад (S4)
+#include "macro/interests.h"   // Interests — ВСЕ связи субъекта одной таблицей
 #include "macro/landmark_registry.h"
 #include "macro/resource_field.h"
 #include "macro/npc.h"
@@ -352,7 +353,7 @@ namespace sm {
 // «теперь только есть благополучие и оно даёт рост») — настроение, реестр
 // его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
 // seasonWellbeing и needDebt.
-constexpr int kSaveVersion = 106;   // v106: снос шести мёртвых родов — ординалы родов сдвинулись
+constexpr int kSaveVersion = 107;   // v107: реестр интересов вместо феодального ребра
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -470,27 +471,21 @@ struct Landmark {
     // replaced kingdomIdx, which named a row of a Kingdom vector that was
     // itself just a materialized copy of the registry.
     std::int16_t factionIdx = -1;
-    // THE suzerain edge (CANON S24: «каждый узел знает только сюзерена»):
-    // the landmark this one owes its tithe to — a village's market city
-    // (was nearestCityId), a city's capital (was Kingdom::capitalLandmarkId).
-    // -1 = owes nobody: a capital, a masterless place. ONE column for the
-    // whole feudal graph, stamped at genesis by populate_landmarks.
-    int suzerainLandmarkId = -1;
-    // ОБРАТНОЕ РЕБРО — ВТОРАЯ ПОЛОВИНА S24, И ОНА ПРОИЗВОДНАЯ (2026-09-21).
-    // Канон говорит «каждый узел знает прямых подчинённых И сюзерена»; в
-    // коде была построена только вторая половина, и потому дань могла течь
-    // лишь ВВЕРХ — должник нёс её сам. Сборщик идёт ВНИЗ (S4), а для этого
-    // месту нужен список своих вассалов.
+    // ── ИНТЕРЕСЫ МЕСТА — ВСЕ ЕГО СВЯЗИ В ОДНОЙ ТАБЛИЦЕ (владелец, 2026-09-21).
+    // Феодальное ребро здесь — ЧАСТНЫЙ СЛУЧАЙ отношения, а не своя система
+    // (вердикт: «тогда отдельная феодальная система не нужна, она будет
+    // частным случаем отношений»). Форма и отвергнутые колонки — в
+    // macro/interests.h.
     //
-    // Односвязный список через ординалы: `vassalHead` — первый вассал,
-    // `vassalNext` — следующий вассал ТОГО ЖЕ сюзерена. −1 = конец.
-    // В СЕЙВ НЕ ЕДЕТ: истина — колонка `suzerainLandmarkId` у вассала,
-    // а это её обратный индекс, пересобираемый по событию состава мест
-    // (navEpoch — та же дверь, по которой перепекается навигация S9).
-    // Второго ответа на «чей это вассал» не заводится: список строится
-    // ИЗ колонок и никогда не правится отдельно.
-    int vassalHead = -1;
-    int vassalNext = -1;
+    // ЧТО ЭТО ПОЛЕ ЗАМЕНИЛО, ПОИМЁННО:
+    //   `suzerainLandmarkId` — «кому я плачу», одна колонка на весь феодальный
+    //      граф. Теперь это запись Stance::Suzerain;
+    //   `vassalHead` / `vassalNext` — односвязный производный индекс «кто мои
+    //      вассалы», построенный 2026-09-21 и НЕ ПОЛУЧИВШИЙ НИ ОДНОГО
+    //      ЧИТАТЕЛЯ (его строитель ensure_vassal_edges не звался ниоткуда —
+    //      problems §55). Теперь это записи Stance::Vassal, которые ставит
+    //      та же дверь, что и обратную им: половин у S24 больше нет.
+    Interests interests{};
     // The honest economy's daily readouts (v29): yesterday's hunger and
     // comfort shortfall (for the eye and the mood), the famine edge flag,
     // and the fractional carry of the LOGISTIC population law.
@@ -554,22 +549,29 @@ struct Landmark {
     std::int32_t needDebt[kCommodityCount] = {};
 };
 // ── РАЗМЕР МЕСТА ЗАКРЕПЛЁН (AGENTS п.10, владелец 2026-09-21) ─────────────
-// 12 896 Б × 32 768 мест = 403 МиБ по капу; в замеренном мире (1 880 мест)
-// 23 МиБ. Из них 12 360 Б (95.8 %) — ОБЩЕЕ ЯДРО СУБЪЕКТА: inventory (9 216) +
+// 13 912 Б × 32 768 мест = 435 МиБ по капу; в замеренном мире (1 880 мест)
+// 25 МиБ. Из них 12 360 Б (88.8 %) — ОБЩЕЕ ЯДРО СУБЪЕКТА: inventory (9 216) +
 // garrison (3 144). Ровно то же ядро несёт макро-сквад — это и есть «ландмарк
 // есть неподвижный сквад» (CANON S4), уже выполненное в памяти.
 //
-// РАСХОДЯТСЯ ОНИ НА 536 Б, И ЭТО СПИСОК НЕДОДЕЛОК, А НЕ ЗАМЫСЕЛ (problems §56):
+// РАСХОДЯТСЯ ОНИ НА 1 552 Б. Больше половины — РЕЕСТР ИНТЕРЕСОВ (1 024 Б,
+// 128 связей): он пришёл 2026-09-21 на место феодального ребра, и сквад
+// получит ТОТ ЖЕ реестр, когда у отношений сквадов появится первый читатель
+// (условие в interests.h: только после слияния пространств ординалов).
+//
+// ОСТАЛЬНОЕ РАСХОЖДЕНИЕ — СПИСОК НЕДОДЕЛОК, А НЕ ЗАМЫСЕЛ (problems §56):
 //   name 24 Б      — std::string на структуре ×32768: AGENTS п.1 и п.3 прямым
 //                    текстом; у сквада имя — ординал (NpcCharacter::nameIdx);
 //   titheAvg* 128  — ВТОРАЯ ПАМЯТЬ: у сквада память это AgentMemory (8 слотов);
 //   needDebt 60    — ВТОРОЙ ДОЛГ: рядом garrison.needDebt, оба в сейве;
-//   феод 12        — suzerain/vassalHead/vassalNext уезжают в реестр отношений;
 //   population 4   — станет производным от ростера (переворот населения).
-// Остальные 308 Б честно свои: опись округи, прейскурант, дань, адрес, анкета.
-static_assert(sizeof(Landmark) == 12896,
-              "место = ядро субъекта (12360) + 536 Б своего и недоделанного");
-static_assert(sizeof(Landmark) == sizeof(Inventory) + sizeof(Roster) + 536,
+// Прочее честно своё: опись округи, прейскурант, дань, адрес, анкета.
+// (Феод из этого списка ВЫШЕЛ 2026-09-21: три колонки — 12 Б — заменены
+// записями реестра, и половина S24 закрыта.)
+static_assert(sizeof(Landmark) == 13912,
+              "место = ядро субъекта (12360) + реестр (1024) + 528 Б своего");
+static_assert(sizeof(Landmark) == sizeof(Inventory) + sizeof(Roster)
+                                      + sizeof(Interests) + 528,
               "ядро субъекта у места и у сквада ОДНО (CANON S4)");
 
 enum class GameSubStateKind : std::uint8_t {
@@ -870,12 +872,6 @@ struct GameState {
     // Производное состояние сессии, В СЕЙВ НЕ ЕДЕТ: загрузка поднимает
     // места через ту же дверь и тем самым честно взводит счётчик заново.
     std::uint32_t navEpoch = 0;
-    // Эпоха, на которой собран обратный феодальный индекс (vassalHead/
-    // vassalNext). Сравнивается с navEpoch: совпало — индекс свеж, не
-    // совпало — состав мест сменился и его надо пересобрать. Это СОБЫТИЕ,
-    // а не опрос: пересборка идёт только когда мир реально менялся.
-    // Рождается расхождением (0xFFFFFFFF), чтобы первый же спрос собрал.
-    std::uint32_t vassalEpoch = 0xFFFFFFFFu;
     // The ONE issuer of QUEST ordinals (v63), same law again. Issued at
     // ACCEPT (QuestEngine::accept) — the moment an offer stops being a
     // seed-regenerated projection and becomes an object the world stores;
@@ -1025,36 +1021,45 @@ inline Landmark* landmark_by_id(GameState& gs, int id) {
     return nullptr;
 }
 
-// ПЕРЕСБОРКА ОБРАТНОГО ФЕОДАЛЬНОГО ИНДЕКСА — по СОБЫТИЮ состава мест
-// (CANON S9: «опросов не существует»). Индекс производный, поэтому его не
-// правят по кусочкам: он выбрасывается и собирается целиком из колонок
-// `suzerainLandmarkId` — то есть разъехаться с истиной физически не может.
+// ── ФЕОДАЛЬНОЕ РЕБРО — ОДНА ДВЕРЬ НА ОБА КОНЦА (владелец, 2026-09-21) ─────
+// CANON S24 требует, чтобы узел знал И сюзерена, И прямых подчинённых. Год
+// эта пара жила как ДВЕ ПОЛОВИНЫ: колонка `suzerainLandmarkId` у вассала и
+// производный индекс `vassalHead`/`vassalNext`, который никто не собирал и
+// никто не читал (problems §55). Половины разъезжаются молча — поэтому концы
+// ставятся ОДНИМ вызовом и снимаются одним, ровно как RelationMatrix держит
+// свою симметрию одним set_relation.
 //
-// Цена: один линейный проход по ростеру мест, и только когда navEpoch
-// сдвинулся. За 512 дней прогона состав менялся один-два раза на мир, так
-// что этот проход — событие, а не такт.
-//
-// Обход идёт С КОНЦА, потому что вставка в ГОЛОВУ списка переворачивает
-// порядок: с конца назад список выходит по возрастанию ординалов, то есть
-// детерминированным для одного и того же состояния мира.
-inline void ensure_vassal_edges(GameState& gs) {
-    if (gs.vassalEpoch == gs.navEpoch) return;
-    for (Landmark& lm : gs.landmarks) {
-        lm.vassalHead = -1;
-        lm.vassalNext = -1;
+// Старого сюзерена дверь снимает САМА: у места ровно один сюзерен, и смена
+// его без снятия прежнего оставила бы вассала, платящего двоим.
+inline void set_suzerain(GameState& gs, int vassalId, int suzerainId,
+                         int value = 0, int term = 0) {
+    Landmark* v = landmark_by_id(gs, vassalId);
+    if (!v || vassalId == suzerainId) return;
+    // Прежний сюзерен теряет этого вассала — с обоих концов.
+    for (int i = 0; i < kMaxInterests; ++i) {
+        Interest& it = v->interests.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance != std::uint8_t(Stance::Suzerain)) continue;
+        if (Landmark* old = landmark_by_id(gs, it.object))
+            interest_clear(old->interests, vassalId);
+        interest_clear(v->interests, it.object);
+        break;                     // сюзерен у места ровно один
     }
-    for (std::size_t i = gs.landmarks.size(); i-- > 0;) {
-        Landmark& v = gs.landmarks[i];
-        // Мёртвое место (вид None) вассалом не числится: смерть здесь —
-        // смена вида, строка из ростера не уходит (S9).
-        if (v.type == LandmarkType::None) continue;
-        if (v.suzerainLandmarkId < 0 || v.suzerainLandmarkId == v.id) continue;
-        Landmark* suz = landmark_by_id(gs, v.suzerainLandmarkId);
-        if (!suz) continue;        // висячее ребро: сюзерена в мире нет
-        v.vassalNext = suz->vassalHead;
-        suz->vassalHead = v.id;
+    if (suzerainId < 0) return;    // «стал ничьим» — это и есть весь вызов
+    Landmark* s = landmark_by_id(gs, suzerainId);
+    if (!s) return;                // висячего ребра не заводим
+    interest_set(v->interests, suzerainId, Stance::Suzerain, value, term);
+    interest_set(s->interests, vassalId, Stance::Vassal, value, term);
+}
+
+// Кому это место платит дань; -1 — никому (столица, бесхозное место).
+inline int suzerain_of(const Landmark& lm) {
+    for (int i = 0; i < kMaxInterests; ++i) {
+        const Interest& it = lm.interests.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance == std::uint8_t(Stance::Suzerain)) return it.object;
     }
-    gs.vassalEpoch = gs.navEpoch;
+    return -1;
 }
 
 // ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг по позициям — он же ведомость

@@ -216,7 +216,10 @@ void populate_landmarks_from_politik(GameState& gs,
             Landmark& lm = gs.landmarks[i];
             const int cap = lm.factionIdx >= 0
                 ? capitalOf[std::size_t(lm.factionIdx)] : -1;
-            lm.suzerainLandmarkId = (cap == lm.id) ? -1 : cap;
+            // ОДНА ДВЕРЬ НА ОБА КОНЦА (S24): столица тем же вызовом получает
+            // свою запись Vassal, поэтому «кто мои вассалы» не требует ни
+            // второго индекса, ни его пересборки.
+            set_suzerain(gs, lm.id, (cap == lm.id) ? -1 : cap);
         }
     }
 
@@ -347,8 +350,10 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.population    = kVillageBornBase
                               + int(rng.next_u32()
                                     % std::uint32_t(kVillageBornSpread));
-            // The village's suzerain IS its market city (one edge, S24).
-            vil.suzerainLandmarkId = s.id;
+            // The village's suzerain IS its market city (one edge, S24) —
+            // ставится НИЖЕ, после add_landmark: дверь пишет ОБА конца, а
+            // значит вассал уже должен стоять в ростере мест.
+            const int suzerainId = s.id;
             // The village's own small army, by the SAME one law (§42 Инк 7).
             {
                 Rng grng(gs.worldSeed ^ 0x6A121500u
@@ -368,7 +373,9 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.name = s.factionIdx >= 0
                 ? generate_name(lang_of(s.factionIdx), rng)
                 : "Hamlet";
+            const int vilId = vil.id;
             add_landmark(gs, std::move(vil));
+            set_suzerain(gs, vilId, suzerainId);
         }
     }
 }

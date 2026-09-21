@@ -40,7 +40,6 @@ GameState make_world() {
     vil.x = 40;
     vil.y = 10;
     vil.population = 100;
-    vil.suzerainLandmarkId = 9;
     gs.landmarks.push_back(vil);
     chronicle_init(gs.chronicle, kMap, kMap);
     return gs;

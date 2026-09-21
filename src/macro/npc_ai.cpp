@@ -2227,14 +2227,16 @@ void ai_vendor(entt::entity self, MacroPos& p,
     }
 }
 
-// The SUZERAIN landmark a town owes — the one feudal edge a place knows
-// (CANON S24: «каждый узел знает только прямых подчинённых и сюзерена»),
-// stamped as Landmark::suzerainLandmarkId at populate_landmarks_from_politik
-// — the edge survives any future S9 transition that moves what stands on
-// the cell. A capital (suzerain -1) answers nullptr: it owes nobody.
+// The SUZERAIN landmark a town owes — a place's Stance::Suzerain row in its
+// interest registry (CANON S24 «каждый узел знает прямых подчинённых И
+// сюзерена», обе половины с 2026-09-21), stamped by set_suzerain at
+// populate_landmarks_from_politik — the edge survives any future S9
+// transition that moves what stands on the cell. A capital answers nullptr:
+// it owes nobody.
 Landmark* capital_of_(const TickContext& ctx, const Landmark& town) {
-    if (town.suzerainLandmarkId < 0) return nullptr;
-    Landmark* cap = landmark_by_id(*ctx.mw.gs, town.suzerainLandmarkId);
+    const int suz = suzerain_of(town);
+    if (suz < 0) return nullptr;
+    Landmark* cap = landmark_by_id(*ctx.mw.gs, suz);
     return cap && cap->type == LandmarkType::City ? cap : nullptr;
 }
 
@@ -4446,9 +4448,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // (CANON S7: «отношение знает КТО, путь знает КАК») и
                     // ярус 2 знания о цене (ведомость, S10). Незнакомых мест
                     // деревня по-прежнему не видит.
-                    if (const Landmark* suz = s.suzerainLandmarkId >= 0
-                            ? landmark_by_id(gs, s.suzerainLandmarkId)
-                            : nullptr;
+                    if (const Landmark* suz =
+                            landmark_by_id(gs, suzerain_of(s));
                         suz && suz->ledger.published()) {
                         const int ci = commodity_index(gd.commodity);
                         if (ci >= 0) {
@@ -4716,8 +4717,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // hardcode raised a courier in EVERY city, and the
                     // capital's one walked to its own gate. The edge is
                     // the landmark's own column now (S24).
-                    open = s.suzerainLandmarkId >= 0
-                        && s.suzerainLandmarkId != s.id;
+                    open = suzerain_of(s) >= 0 && suzerain_of(s) != s.id;
                     break;
                 }
             }

@@ -1681,8 +1681,8 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     village.x = 24;
     village.y = 22;
     village.population = 80;
-    village.suzerainLandmarkId = city.id;
     gs.landmarks.push_back(village);
+    sm::set_suzerain(gs, village.id, city.id);
 
     const auto cityQuests =
         sm::generate_quests_for_settlement(city, gs, gs.worldSeed);

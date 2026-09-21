@@ -396,11 +396,13 @@ sm::GameState make_state() {
     village.y = 85;
     village.population = 111;
     village.inventory.add("food_meat", 4);
-    village.suzerainLandmarkId = settlement.id;
     village.factionIdx = 2;
     village.starvedYesterday = 5;
     village.popGrowthCarry = -0.25f;
     gs.landmarks.push_back(village);
+    // Феод — запись реестра интересов (v107), и ставится он дверью на оба
+    // конца: сейв обязан привезти обратно ИМЕННО пару, а не половину.
+    sm::set_suzerain(gs, village.id, settlement.id, /*value*/80, /*term*/0);
 
     sm::Landmark spire{};
     spire.type = sm::LandmarkType::Spire;

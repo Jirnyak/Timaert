@@ -9,7 +9,8 @@
 // paying, every frame, to look up something the world already numbered.
 //
 // It is a plain `std::int8_t rel[64][64]`: 4 KiB, one contiguous block, saved
-// byte-for-byte. A relation is -100..100, which is what an int8 is for.
+// byte-for-byte. A relation lives on THE ONE relation scale (interests.h:
+// -127..127 by the border of int8, owner 2026-09-21).
 //
 // WHY 64, and why that is not a new number: the battle masks are capped at 64
 // factions by construction (`kMaxCrowdFactions`, an enemy mask is a u64), so
@@ -22,6 +23,7 @@
 // behaves like every other row from that moment on. Nothing invents a phantom
 // row in a map any more, and nothing is silently dropped.
 #pragma once
+#include "macro/interests.h"   // kRelationMin/Max — ОДНА шкала отношений
 #include "core/table_guard.h"
 #include "macro/faction.h"
 
@@ -49,8 +51,10 @@ inline constexpr FactionSlot kNoFactionSlot = -1;
 // because a faction that is not in the registry has nowhere else to keep its
 // name — and it is bounded by the same ceiling.
 struct RelationMatrix {
-    // rel[a][b] = how A regards B, -100..100. Symmetric by construction (every
-    // writer goes through set_relation), diagonal 100.
+    // rel[a][b] = how A regards B on the ONE scale, -127..127. Symmetric by
+    // construction (every writer goes through set_relation); the diagonal is
+    // kRelationMax — «сам себе самый близкий» есть ВЕРХ шкалы, а не круглая
+    // сотня, иначе шкала опять двойная.
     std::int8_t rel[kMaxWorldFactions][kMaxWorldFactions]{};
     // Slot claimed? Registry slots are claimed at world creation; tail slots
     // when someone first names them.
@@ -96,7 +100,7 @@ inline FactionSlot claim_faction_slot(RelationMatrix& m, const char* id) {
         if (m.used[i]) continue;
         m.used[i] = true;
         std::snprintf(m.runtimeIds[i], RelationMatrix::kMaxIdLen, "%s", id);
-        m.rel[i][i] = 100;
+        m.rel[i][i] = std::int8_t(kRelationMax);
         return i;
     }
     return kNoFactionSlot;
@@ -115,7 +119,7 @@ inline int relation_of(const RelationMatrix& m, FactionSlot a, FactionSlot b) {
     if (a < 0 || b < 0 || a >= kMaxWorldFactions || b >= kMaxWorldFactions) {
         return 0;     // fail-closed: an unplaced faction is neutral
     }
-    if (a == b) return 100;
+    if (a == b) return kRelationMax;   // верх шкалы, а не круглое число
     return int(m.rel[a][b]);
 }
 
@@ -127,7 +131,14 @@ inline void set_relation(RelationMatrix& m, FactionSlot a, FactionSlot b,
         || a == b) {
         return;
     }
-    const int v = value < -100 ? -100 : (value > 100 ? 100 : value);
+    // ОДНА ШКАЛА НА ВЕСЬ МИР (владелец 2026-09-21): граница берётся по
+    // границе ТИПА, а не по круглому «сто». Прежние -100..100 оставляли
+    // четверть байта неиспользуемой и, главное, расходились бы со шкалой
+    // личных отношений в реестре интересов — две шкалы одного качества
+    // это S26. Дверь клампа здесь одна, поэтому перевод стоил одну строку.
+    const int v = value < kRelationMin ? kRelationMin
+                                       : (value > kRelationMax ? kRelationMax
+                                                               : value);
     m.rel[a][b] = std::int8_t(v);
     m.rel[b][a] = std::int8_t(v);
 }
@@ -137,7 +148,7 @@ inline void set_relation(RelationMatrix& m, FactionSlot a, FactionSlot b,
 inline void claim_registry_slots(RelationMatrix& m) {
     for (int i = 0; i < kFactionCount; ++i) {
         m.used[i] = true;
-        m.rel[i][i] = 100;
+        m.rel[i][i] = std::int8_t(kRelationMax);
     }
 }
 

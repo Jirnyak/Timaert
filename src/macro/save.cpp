@@ -764,7 +764,8 @@ void write_landmark(Writer& w, const Landmark& lm) {
     write_inventory(w, lm.inventory);
     write_squad(w, lm.garrison.squad);   // v96: history ring cut (verdict №4, S20.1)
     w.pod(lm.factionIdx);          // v94: faction registry index (kingdoms cut)
-    w.pod(lm.suzerainLandmarkId);  // v94: the one feudal edge (S24)
+    w.pod(lm.interests);           // v107: ВСЕ связи места одной таблицей
+                                   // (феод — частный случай, S24 целиком)
     w.pod(lm.starvedYesterday);  // v29: the honest day's readouts
     w.pod(lm.seasonWellbeing);   // v95: the season window's verdict (S19.2)
     w.pod(lm.popGrowthCarry);
@@ -791,7 +792,7 @@ void read_landmark(Reader& r, Landmark& lm) {
     read_inventory(r, lm.inventory);
     read_squad(r, lm.garrison.squad);   // v96: history ring cut (verdict №4, S20.1)
     r.pod(lm.factionIdx);          // v94
-    r.pod(lm.suzerainLandmarkId);  // v94
+    r.pod(lm.interests);           // v107
     r.pod(lm.starvedYesterday);  // v29
     r.pod(lm.seasonWellbeing);   // v95
     r.pod(lm.popGrowthCarry);

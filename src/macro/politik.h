@@ -10,9 +10,10 @@
 //   * a realm's IDENTITY — the faction registry row (was Kingdom::id);
 //   * a city's OWNER — City::factionIdx and Landmark::factionIdx, a direct
 //     registry index (was the kingdomIdx → kingdoms[i].id indirection);
-//   * the SUZERAIN edge — Landmark::suzerainLandmarkId (was
-//     Kingdom::capitalLandmarkId + the village's nearestCityId: one column,
-//     CANON S24 «каждый узел знает только сюзерена»);
+//   * the SUZERAIN edge — a Stance::Suzerain row of Landmark::interests (was
+//     Kingdom::capitalLandmarkId + the village's nearestCityId, then the lone
+//     column suzerainLandmarkId; since 2026-09-21 the feudal tie is a CASE of
+//     the one interest registry, CANON S24 with both halves);
 //   * the naming LANGUAGE — derived per faction (language.h
 //     faction_language), never stored;
 //   * the GEOMETRY seed below (RealmSeedDef — was KingdomDef: not a kingdom,

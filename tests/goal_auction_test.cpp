@@ -43,7 +43,6 @@ GameState make_world(int villagePop) {
     vil.x = 10;
     vil.y = 10;
     vil.population = villagePop;
-    vil.suzerainLandmarkId = 9;
     gs.landmarks.push_back(vil);
     Landmark city{};
     city.type = LandmarkType::City;
@@ -52,6 +51,9 @@ GameState make_world(int villagePop) {
     city.y = 10;
     city.population = 500;
     gs.landmarks.push_back(city);
+    // Феод ставится ОДНОЙ дверью и только когда оба места в ростере: она
+    // пишет ОБА конца (S24), и полуребра в мире не бывает.
+    set_suzerain(gs, 3, 9);
     return gs;
 }
 
@@ -207,7 +209,7 @@ void test_auction_raises_errand_bearing_peasants() {
 void test_refusal_is_the_auctions_verdict() {
     // Миру нечего предъявить: ни жил, ни леса, ни рынка, пустой склад.
     GameState gs = make_world(/*pop*/100);
-    gs.landmarks[0].suzerainLandmarkId = -1;
+    set_suzerain(gs, gs.landmarks[0].id, -1);
     ecs::World w;
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
@@ -370,7 +372,6 @@ void test_station_is_a_weighted_roulette() {
         vil.x = 100;
         vil.y = 100;
         vil.population = 100;
-        vil.suzerainLandmarkId = 9;
         // Единственная живая цель — долг дани: без жил и леса аукцион
         // поднимает ТОЛЬКО рейс сбыта, и объект поручения есть станция.
         vil.titheOwedCoin = 300;
@@ -390,6 +391,7 @@ void test_station_is_a_weighted_roulette() {
         // КАНДИДАТА, поэтому души городам нужны — но крю их не поднимут,
         // пока у них нет ни склада, ни долга (отказ аукциона честен).
         for (int k = 0; k < 3; ++k) gs.landmarks[std::size_t(1 + k)].population = 50;
+        set_suzerain(gs, 3, 9);
         (void)day;
         return gs;
     };

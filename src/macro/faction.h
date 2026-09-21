@@ -37,6 +37,7 @@
 // it through one callback — see SubworldEngine::battle_relation_callback.
 #pragma once
 #include <cstdint>
+#include "macro/interests.h"   // kRelationMin/Max — ОДНА шкала отношений
 #include <cstring>
 
 namespace sm {
@@ -300,7 +301,11 @@ inline constexpr RelationBand kAllyBand      = {  55,  90};
 inline constexpr RelationBand kWarBand       = {-100, -75};
 inline constexpr RelationBand kHostileBand   = { -50,   0};
 inline constexpr RelationBand kNeutralBand   = { -50,  50};
-inline constexpr RelationBand kAnyBand       = {-100, 100};
+// «ЛЮБОЕ» ЗНАЧИТ ВСЯ ШКАЛА, А НЕ КРУГЛОЕ ЧИСЛО (владелец 2026-09-21):
+// банда была {-100, 100} и потому врала своему имени — четверть байта
+// вне её досягаемости. Прочие банды — АВТОРСКИЕ значения внутри шкалы
+// (союз 55..90 и т. д.), и они остаются данными, а не границей.
+inline constexpr RelationBand kAnyBand       = {kRelationMin, kRelationMax};
 inline constexpr RelationBand kCultPairBand  = { -60, -20};
 inline constexpr RelationBand kWildPairBand  = { -30,  30};
 

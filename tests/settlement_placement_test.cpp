@@ -202,9 +202,9 @@ void test_villages_feed_themselves() {
         const SettlementSiteTerms t = settlement_site_terms(ctx, v.x, v.y);
         const bool feeds = t.arable >= kVillageArableGate
                         || t.deposit >= kVillageDepositGate;
-        if (!feeds && v.suzerainLandmarkId >= 0
-            && std::size_t(v.suzerainLandmarkId) < failedOf.size())
-            ++failedOf[std::size_t(v.suzerainLandmarkId)];
+        const int suz = sm::suzerain_of(v);
+        if (!feeds && suz >= 0 && std::size_t(suz) < failedOf.size())
+            ++failedOf[std::size_t(suz)];
     }
     for (const int n : failedOf) {
         CHECK(n <= 1, "beyond the forced first hamlet, every village can "
@@ -289,7 +289,7 @@ void test_villages_scatter_around_their_town() {
         if (hinterland_scores(w, c).empty()) continue;
         int mine = 0;
         for (const auto* vp : villages)
-            if (vp->suzerainLandmarkId == s.id) ++mine;
+            if (sm::suzerain_of(*vp) == s.id) ++mine;
         CHECK(mine >= 1, "a city with admissible ground is never hamlet-less");
     }
 }
@@ -304,7 +304,7 @@ void test_count_derives_from_capacity() {
     const auto villages = villages_of(w.gs);
     const int lushCityId = cities.empty() ? -1 : cities[0]->id;
     for (const auto* vp : villages) {
-        if (vp->suzerainLandmarkId == lushCityId) ++lush;
+        if (sm::suzerain_of(*vp) == lushCityId) ++lush;
         else ++dry;
     }
     CHECK(lush >= 1, "the river belt hinterland feeds at least one village");
