@@ -60,6 +60,14 @@ struct RelationMatrix {
     static constexpr int kMaxIdLen = 24;
     char runtimeIds[kMaxWorldFactions][kMaxIdLen]{};
 };
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). Одна штука на мир — 5 696 Б, и это ВСЯ
+// политика народов. Матрица остаётся БАЗОЙ отношений (вердикт владельца
+// 2026-09-21): она отвечает «народ к народу», а личные связи субъектов
+// (сюзерен, вассал, друг, враг) лежат поверх неё своим реестром. Одна дверь
+// чтения: есть личная строка — она, нет — матрица (закон S10 «база из
+// таблицы, мир — модуляция»).
+static_assert(sizeof(RelationMatrix) == 5696,
+              "64×64 отношений + 64 клейма + 64 имени по 24 = 5696 Б");
 
 // The slot of `id` if it already has one, else kNoFactionSlot. Registry ids
 // resolve without touching the runtime names at all.

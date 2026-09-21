@@ -23,7 +23,7 @@ namespace sm {
 // THE spell-capacity envelope (owner verdict 2026-09-10: «точно не больше
 // 256 спеллов»): the ceiling on DIFFERENT spells the registry may ever hold
 // — not a per-body limit; a body may learn all of them. 256 bits = 32 B a
-// row, 16384 bodies × 72 B of book ≈ 1.2 MB — DOD money (CANON S26). If the
+// row, 16384 bodies × 80 B of book = 1.25 MiB — DOD money (CANON S26). If the
 // registry ever outgrows it, this assert fails LOUDLY and the arrays below
 // grow by one stride each; nothing truncates silently.
 inline constexpr int kSpellBookCapacity = 256;
@@ -43,6 +43,11 @@ struct SpellBook {
     // of 3 mana/second is 3/64 per step and the pool is an integer.
     float sustainedDrainCarry = 0.0f;
 };
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10): комментарий выше обещал 72 Б — правда 80,
+// потому что `sustained` выравнивается на 8 и добавляет 4 Б дырки после
+// `activeSpell` плюс 4 Б хвоста. Разница молчала, пока её не посчитали.
+static_assert(sizeof(SpellBook) == 80,
+              "книга: 2 плана по 32 Б + ординал + перенос = 80 Б");
 
 inline constexpr bool spell_ordinal_ok(int ord) noexcept {
     return ord >= 0 && ord < kSpellCount;

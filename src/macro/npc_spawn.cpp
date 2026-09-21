@@ -24,6 +24,40 @@ namespace sm {
 
 namespace {
 
+// ── ВЕДОМОСТЬ ПАМЯТИ МАКРО-СКВАДА (AGENTS п.10, владелец 2026-09-21) ───────
+// Стоит ЗДЕСЬ, потому что make_npc ниже — единственная дверь рождения сквада:
+// из чего он собирается, там и сказано, сколько он весит. Любая новая
+// колонка на скваде валит этот ассерт ГРОМКО и заставляет назвать цену.
+//
+//   структура              Б       ×16384 сквадов
+//   NpcInventory        9 216      144.00 МиБ   ← 72 % всей памяти мира
+//   SquadRoster (Roster) 3 144       49.13 МиБ   ← ещё 25 %
+//   AgentMemory            136        2.13 МиБ
+//   MacroNpcRuntime         96        1.50 МиБ
+//   SpellBook               80        1.25 МиБ
+//   Pools                   36        0.56 МиБ
+//   MacroVisual             12        0.19 МиБ
+//   NpcCharacter            12        0.19 МиБ
+//   MacroCell/NPCKind/MacroSpawnId  4+4+4   0.19 МиБ
+//   NpcLevel 2 + NpcTraits 3         5       0.08 МиБ
+//   ИТОГО безусловно    12 749      199.2 МиБ  (замер 6 700 сквадов: 81.5 МиБ)
+//   + CharacterSheet       144  — только именным (npc_named)
+//   + SquadOrders           34  — только патрулям
+//
+// ЯДРО СУБЪЕКТА — inventory + roster, 12 360 Б — то же самое, что у места
+// (state.h, Landmark): «ландмарк есть неподвижный сквад» (CANON S4) в памяти
+// УЖЕ выполнено, расходятся они только на своей обвязке.
+inline constexpr int kMacroSquadBytes =
+    sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) + sizeof(AgentMemory)
+    + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook) + sizeof(ecs::Pools)
+    + sizeof(ecs::MacroVisual) + sizeof(ecs::NpcCharacter)
+    + sizeof(ecs::MacroCell) + sizeof(ecs::NPCKind) + sizeof(ecs::MacroSpawnId)
+    + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits);
+static_assert(kMacroSquadBytes == 12749,
+              "макро-сквад весит 12 749 Б; 16384 таких = 199 МиБ (AGENTS п.10)");
+static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 12360,
+              "ядро субъекта — то же, что у Landmark (CANON S4)");
+
 // Thread-local Rng adapter so we can pass the existing
 // `RngFn = float(*)()` API into items.cpp without rewriting it.
 thread_local Rng* tl_rng = nullptr;

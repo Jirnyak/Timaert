@@ -364,6 +364,14 @@ struct Inventory {
     }
     void clear() { slots.fill(ItemRef{}); }
 };
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). САМАЯ ТЯЖЁЛАЯ СТРУКТУРА МИРА: 9 216 Б несёт
+// КАЖДЫЙ сквад и КАЖДОЕ место, то есть 144 МиБ по капу сквадов + 288 МиБ по
+// капу мест — 72 % всей памяти макромира. Форма НАМЕРЕННАЯ (AGENTS п.2,
+// владелец: «256 слотов на каждой сущности это RIGHT»); число записано
+// здесь, чтобы следующий читал его, а не догадывался.
+static_assert(sizeof(Inventory) == kMaxInventorySlots * sizeof(ItemRef),
+              "инвентарь = 256 плоских слотов, без счётчика и без дырок");
+static_assert(sizeof(Inventory) == 9216, "и это 9216 Б ровно");
 
 // Player combat slice consumed by `useItem` (mirrors TS inline type).
 struct PlayerCombatSlice {

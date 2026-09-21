@@ -356,7 +356,7 @@ struct LightEmitter {
 
 // Macroworld NPC runtime — per-NPC mutable state for the AI tick
 // (mirrors fields on TS `NPC` not already covered by Position / NPCKind).
-// Pure POD, ~36 bytes. The home/target landmark ids draw on the ONE landmark
+// Pure POD, 96 bytes (assert below). The home/target landmark ids draw on the ONE landmark
 // id space (GameState::nextLandmarkOrdinal, v54) — a home may be a city or a
 // village, and the id alone says which place it is (-1 = none). The v27
 // homeIsVillage register bit died with the second id space it existed to
@@ -498,6 +498,14 @@ struct MacroNpcRuntime {
     std::int16_t  lairX = -1;
     std::int16_t  lairY = -1;
 };
+// РАЗМЕР ЗАКРЕПЛЁН КОМПИЛЯТОРОМ (AGENTS п.10, владелец 2026-09-21): шапка
+// этой структуры обещала «~36 bytes» — правда 96, и разошлось это молча,
+// потому что число жило только в прозе. Из 96 байт 9 — выравнивание, ещё 8 —
+// два мёртвых поля (stationsLeft, prevStationId: ноль писателей, ноль
+// читателей во всём src/; снос меняет LAYOUT, то есть сейв, поэтому идёт
+// своим инкрементом, а не здесь).
+static_assert(sizeof(MacroNpcRuntime) == 96,
+              "рантайм марша: 96 Б × 16384 сквадов = 1.5 МиБ (AGENTS п.10)");
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
 // in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one

@@ -358,6 +358,11 @@ struct SoldierSquad {
         return take_soul_at(slotCount - 1, out);
     }
 };
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10): 256 слотов лежат ПЛОСКО и ЦЕЛИКОМ у
+// каждого носителя ростера, занятых там 0 или 256 — форма по AGENTS п.2.
+static_assert(sizeof(SoldierSquad) == kMaxSquadSlots * sizeof(SoldierSlot) + 4,
+              "инвентарь существ: 256 × 12 Б слотов + счётчик");
+static_assert(sizeof(SoldierSquad) == 3076, "и это 3076 Б ровно");
 
 inline SoldierSquad default_squad() { return {}; }
 
