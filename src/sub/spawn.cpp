@@ -451,16 +451,9 @@ void spawn_landmark_population(ecs::World& w,
         std::max(populationRadius * 2.0f, float(kCellSize) * 0.45f),
         populationRadius);
 
-    // Fixed posts as DATA (registry crowd role rows): the first bodies take
-    // the rows' types in order — max(min, div ? target/div : 0) each — and
-    // the rest roll the place's crowd stripe. No branch by kind.
-    int roleQuota[4] = {};
-    for (int r = 0; r < int(def.crowdRoleCount); ++r) {
-        const LandmarkCrowdRole& role = def.crowdRoles[r];
-        roleQuota[r] = std::max(int(role.min),
-                                role.div ? target / int(role.div) : 0);
-    }
-    int roleRow = 0;
+    // (Строки фиксированных постов вырезаны 2026-09-22 вместе с колонкой
+    // реестра: она стояла пустой у всех родов мест, и эта ветка была
+    // недостижима по данным. Толпу целиком катает полоса места.)
 
     int refused = 0;
     for (int i = 0; i < target; ++i) {
@@ -473,14 +466,8 @@ void spawn_landmark_population(ecs::World& w,
             ++refused;
             continue;
         }
-        while (roleRow < int(def.crowdRoleCount) && roleQuota[roleRow] <= 0) {
-            ++roleRow;
-        }
         NPCType type = NPCType::Peasant;
-        if (roleRow < int(def.crowdRoleCount)) {
-            type = def.crowdRoles[roleRow].npc;
-            --roleQuota[roleRow];
-        } else {
+        {
             std::uint32_t ts = rng.state;
             type = pick_crowd_row(townCtx, ts);
             rng.state = ts;

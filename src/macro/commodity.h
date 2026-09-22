@@ -35,33 +35,39 @@ namespace sm {
 
 struct CommodityDef {
     const char*   id;            // stable string id — the ONE name everywhere
-    const char*   name;          // display
-    float         weightKg;      // carried weight (caravans, inventories)
     // NO price column — deliberately. The one price anchor is the same row's
     // ItemDef.value (macro/items.h, one-dictionary ruling): a second table of
     // gold numbers here had already drifted from the one the game reads.
-    // Allowed-materials groundwork: bit i = raw row i of THIS table may be the
-    // instance's material. 0 = the commodity has no material variants (all of
-    // v1). A future sword archetype sets e.g. bit(iron)|bit(wood).
-    std::uint16_t materialMask;
+    //
+    // ТРИ КОЛОНКИ УМЕРЛИ ЗДЕСЬ 2026-09-22 (§57, вердикт владельца):
+    //   `name`         — подпись товара с НУЛЁМ читателей во всём мире;
+    //   `weightKg`     — ВТОРОЙ СЛОВАРЬ рядом с ItemDef::weight. Вся
+    //                    арифметика веса шла и идёт через каталог; сторож
+    //                    «две таблицы согласны о массе» существовал ровно
+    //                    потому, что существовала вторая таблица;
+    //   `materialMask` — заготовка под материалы вещей, все 15 строк = 0,
+    //                    читателей ноль. Вернётся строкой каталога, когда
+    //                    придёт крафт материалов, — не заготовкой.
+    // ОСТАЛСЯ ОРДИНАЛ. Он не спутник: по нему живут построчная ведомость и
+    // долг нужды — это АДРЕСНОЕ ПРОСТРАНСТВО, а не вторая правда о вещи.
 };
 
 // Raw rows FIRST and contiguous — the material mask bit space is their index.
 inline constexpr CommodityDef kCommodities[] = {
     // ── Raw (материалы) ──────────────────────────────────────────────────
-    {"wood",      "Дерево", 2.0f,  0},
-    {"stone",     "Камень", 4.0f,  0},
-    {"iron",      "Железо", 4.0f,  0},
-    {"clay",      "Глина", 2.0f,  0},
+    {"wood"},
+    {"stone"},
+    {"iron"},
+    {"clay"},
     // ВОЛОКНО — ЛЁН ПАШНИ (владелец, 2026-09-20). Оно существует ради одного
     // закона: НИ ОДНО БЛАГО НЕ ВАРИТСЯ ИЗ ПИЩИ. Пока ткань пряли из зерна
     // (льняная заглушка), любое давление труда в сторону благ съедало хлеб
     // мира — измерено после сноса хлеба: ткани ×40, голодавших в городах
     // ×300, мир спрял свою еду в рубахи. Вход ткани переехал сюда.
-    {"fibre",     "Волокно", 1.0f,  0},
+    {"fibre"},
 
     // Монетный металл (CANON S10 чеканка): жила → слиток → монета фракции.
-    {"silver",    "Серебро", 4.0f,  0},
+    {"silver"},
     // ── ПИЩА — ПОТОК МАТЕРИИ, А НЕ СЫРЬЁ (владелец, 2026-09-20: «три потока
     // материала — 1) пища… 2) блага для роста 3) ресурсы для производства»;
     // «уберём крафт из пищи, уберём хлеб, и вся пища станет пищей без
@@ -74,20 +80,20 @@ inline constexpr CommodityDef kCommodities[] = {
     // кормилась хлебом, а поле растило «материал», и между ними стоял
     // обязательный рецепт. Сырая пища утоляет голод сама; печь не нужна
     // миру, чтобы он ел.
-    {"food",      "Пища", 1.0f,  0},
+    {"food"},
     // ── Vital (жизненно необходимое) ─────────────────────────────────────
-    {"bricks",    "Кирпичи", 4.0f,  0},
+    {"bricks"},
     // Одежда варится из зерна как из льна-заглушки: отдельная культура волокна
     // (лён/шерсть) — будущая строка сырья, рецепт тогда меняет один вход.
-    {"cloth",     "Одежда", 1.0f,  0},
+    {"cloth"},
     // ── Instrument (инструментально-развитие) ───────────────────────────
-    {"tools",     "Инструменты", 2.0f,  0},
-    {"furniture", "Мебель", 8.0f,  0},
-    {"wagon",     "Повозка", 32.0f, 0},
+    {"tools"},
+    {"furniture"},
+    {"wagon"},
     // ── Luxury (роскошь) ─────────────────────────────────────────────────
-    {"jewelry",   "Украшения", 1.0f,  0},
-    {"carving",   "Резьба", 2.0f,  0},
-    {"statue",    "Статуя", 64.0f, 0},
+    {"jewelry"},
+    {"carving"},
+    {"statue"},
 };
 
 inline constexpr int kCommodityCount =
@@ -95,14 +101,12 @@ inline constexpr int kCommodityCount =
 inline constexpr int kRawCommodityCount = 6;
 
 static_assert(kCommodityCount == 15, "v1 scope of the economy's ordinals");
-// «Сырьё идёт первым и подряд» держал ярус товарной строки; ярус умер
-// 2026-09-18, а СМЫСЛ утверждения — битовое пространство materialMask — жив.
-// Сторожит его теперь свидетель (econ_v1_test), который спрашивает КАТЕГОРИЮ
-// каталога: первые kRawCommodityCount строк обязаны быть ItemType::Material,
-// следующая — нет. Компилятору это недоступно: каталог виден только своей
-// единице трансляции.
-static_assert(kRawCommodityCount <= 16,
-              "materialMask is uint16 — widen it before adding a 17th raw row");
+// «СЫРЬЁ ИДЁТ ПЕРВЫМ И ПОДРЯД» — закон живой, и после смерти materialMask
+// его держит уже не битовое пространство, а САМ ПОРЯДОК ОРДИНАЛОВ: сев
+// закромов и голодная дверь читают «первые kRawCommodityCount строк —
+// материал». Сторожит его свидетель (econ_v1_test), который спрашивает
+// КАТЕГОРИЮ каталога. Компилятору это недоступно: каталог виден только
+// своей единице трансляции.
 
 // Index by id; -1 if unknown. Linear scan over 14 rows — call at load/wire
 // time, cache the index in hot paths (same contract as the faction registry).
@@ -114,8 +118,7 @@ inline int commodity_index(const char* id) {
     return -1;
 }
 
-inline const CommodityDef& commodity_def(int index) {
-    return kCommodities[index];
-}
+// (`commodity_def(i)` вырезана 2026-09-22 — дверь с нулём вызовов: все
+// читатели берут `kCommodities[i]` напрямую, и это честнее.)
 
 } // namespace sm

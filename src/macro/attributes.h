@@ -606,12 +606,9 @@ inline BarCeilings bar_ceilings(const Attributes& a, const Skills& s,
 inline int cha_trade_discount_pct(int cha) {
     return cha;
 }
-// The float application some price math still speaks (economy.cpp works in
-// fractional multipliers before its own jround) — ×0.01 of THE law above,
-// never a second spelling of it.
-inline float cha_trade_discount(int cha) {
-    return float(cha_trade_discount_pct(cha)) * 0.01f;
-}
+// (Дробный близнец `cha_trade_discount` вырезан 2026-09-22: ноль вызовов, а
+// его комментарий утверждал, что «economy.cpp works in fractional
+// multipliers» — в economy.cpp вызова не было. Закон один и целочисленный.)
 
 // ── Natural quickness — THE Spd asymptote ──────────────────────
 // The body's own tempo curve, one shape for every limb (CANON S14 «один рычаг

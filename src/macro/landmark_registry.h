@@ -97,17 +97,12 @@ struct LandmarkCrewRow {
 
 // ── Crowd role rows: fixed posts the street crowd fills FIRST (§42) ──────
 // The guard/merchant/woodcutter prefix used to be a City/Village branch in
-// the street spawner («первые N — стража» as code). A role row is one such
-// post as DATA: the crowd's first bodies take the rows' types, in order,
-// `max(min, div ? crowd/div : 0)` each; the rest roll pick_crowd_row. The
-// Guard rows DIED with Инк 7: street guards are the place's own GARRISON
-// records now (никаких бесплатных тел — убил стража, в гарнизоне дыра).
-struct LandmarkCrowdRole {
-    NPCType      npc = NPCType::Peasant;
-    std::uint8_t div = 0;   // one body per `div` souls of the crowd; 0 = none
-    std::uint8_t min = 0;   // the floor, whatever the crowd's size
-};
-
+// the street spawner («первые N — стража» as code). Строки постов УМЕРЛИ
+// ЦЕЛИКОМ 2026-09-22: Guard-строки ушли ещё с Инк 7 (уличная стража — это
+// записи ГАРНИЗОНА места, никаких бесплатных тел), а после них колонка
+// стояла пустой У ВСЕХ РОДОВ до единого — читатель в субмире был
+// недостижим по данным. Пост как данные вернётся строкой, у которой есть
+// хозяин, а не заготовкой в реестре.
 struct LandmarkDef {
     // MUST equal the row's index in kLandmarks (guard below the table).
     LandmarkType     type;
@@ -216,10 +211,6 @@ struct LandmarkDef {
     std::uint8_t     labourShift = 3;
     LandmarkCrewRow  crews[8] = {};
     std::uint8_t     crewCount = 0;
-    // Fixed posts of the street crowd (see LandmarkCrowdRole above).
-    LandmarkCrowdRole crowdRoles[4] = {};
-    std::uint8_t      crowdRoleCount = 0;
-
     // ── The interaction verbs this KIND offers (меню-сессия, 2026-09-11) ──
     // macro/map_actions.h bits: what the universal menu lists when the
     // player stands beside one of these. 0 = the walk-in minimum (info +
@@ -292,7 +283,6 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
                    // они перестают выводиться друг из друга.
                    {NPCType::Peasant, CrewGate::Auction,
                     /*solo*/false, SquadType::Caravan}}, 2,
-     /*crowdRoles*/{}, 0,   // v96: fixed posts cut — the street IS the stripe
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // ОДНА строка артели — ШАБЛОН, а не слот (CANON S4, 2026-09-22). Здесь
     // стояли ЧЕТЫРЕ одинаковые крестьянские строки, и четвёрка была
@@ -301,7 +291,6 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // получили положительный скор, — а пул рук его урезает; строка же
     // объявляет только КОГО поднимать и КАКОГО ТИПА.
     {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false, SquadType::Artel}}, 1,
-     /*crowdRoles*/{}, 0,   // v96: fixed posts cut — the street IS the stripe
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and

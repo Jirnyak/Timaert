@@ -99,22 +99,17 @@ int main() {
                 return fail("duplicate commodity id");
             }
         }
-        // СЫРЬЁ ИДЁТ ПЕРВЫМ И ПОДРЯД — это битовое пространство materialMask,
-        // и спрашивается оно у ЕДИНСТВЕННОГО словаря «что это за вещь»:
-        // категории каталога (ярус товарной строки умер 2026-09-18). Раньше
-        // это держал static_assert по ярусу; компилятору категория недоступна
+        // СЫРЬЁ ИДЁТ ПЕРВЫМ И ПОДРЯД — закон ПОРЯДКА ОРДИНАЛОВ, и
+        // спрашивается он у ЕДИНСТВЕННОГО словаря «что это за вещь»:
+        // категории каталога (ярус товарной строки умер 2026-09-18,
+        // materialMask — 2026-09-22). Раньше это держал static_assert по
+        // ярусу; компилятору категория недоступна
         // — каталог виден только своей единице трансляции, — поэтому закон
         // переехал сюда целиком, не ослабнув.
         const ItemDef* cd = item_def(kCommodities[i].id);
         if (!cd) return fail("commodity id names no catalog row");
         if ((i < kRawCommodityCount) != (cd->type == ItemType::Material)) {
             return fail("raw rows must be exactly the first kRawCommodityCount");
-        }
-        if (kCommodities[i].materialMask >> kRawCommodityCount) {
-            return fail("materialMask addresses a non-raw row");
-        }
-        if (kCommodities[i].weightKg <= 0.0f) {
-            return fail("commodity weight must be positive");
         }
         // The PRICE is not a column here: the one anchor is the same row's
         // ItemDef.value, pinned positive by the link law of section 8 below.
@@ -505,15 +500,14 @@ int main() {
 
     // ── 8. ONE dictionary (owner's ruling): every commodity is an item ──
     // The bread a city bakes and the bread in the player's bag are the same
-    // row — a commodity id must resolve in the item catalog, and the two
-    // tables must agree on MASS (there is one truth of weight).
+    // row — a commodity id must resolve in the item catalog. Сверки МАССЫ
+    // здесь больше нет, и её отсутствие — не ослабление: она сверяла две
+    // таблицы весов, а вторая (CommodityDef::weightKg) вырезана 2026-09-22.
+    // Правда о массе теперь ОДНА — ItemDef::weight, сверять её не с чем.
     for (int i = 0; i < kCommodityCount; ++i) {
         const ItemDef* item = item_def(kCommodities[i].id);
         if (!item) return fail("commodity id missing from the item catalog");
-        const float dw = item->weight - kCommodities[i].weightKg;
-        if (dw > 0.001f || dw < -0.001f) {
-            return fail("commodity and item disagree on weight");
-        }
+        if (item->weight <= 0.0f) return fail("commodity item has no mass");
         if (item->value <= 0) return fail("commodity item has no value");
     }
 

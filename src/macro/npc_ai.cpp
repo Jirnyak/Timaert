@@ -1680,11 +1680,9 @@ void ai_gatherer(entt::entity self, MacroPos& p,
 // ── The city's trading agent (W2b) ───────────────────────────────────────
 // An honest caravan: no TradeRoute abstraction settles anything — the goods
 // ride in the caravan's OWN bag between real inventories, so a robbery on
-// the road takes REAL cargo. What to haul is decided by MEMORY, not
-// omniscience: at departure the caravan snapshots the home market
-// (AgentMemory MarketSnapshot, the owner's design) and at the village loads
-// what that snapshot says the city LACKS — it can be wrong by the time it
-// returns, and that is a trader's life.
+// the road takes REAL cargo. What to haul is decided by the home's LEDGER —
+// the place's own running account of what it lacks (LandmarkLedger): it can
+// be stale by the time the crew returns, and that is a trader's life.
 //
 // How much it hauls is its OWN carry law and nothing else: rt.carryCap =
 // get_carry_capacity(sheet) × the row's haulMult (squad.h
@@ -2191,12 +2189,9 @@ void ai_vendor(entt::entity self, MacroPos& p,
             ai_home_wanderer(p, rt, pools, ctx);
             return;
         }
-        // The crew's memory of ITS OWN home at departure — what the buy
-        // half of the market deal shops against.
-        remember(*mem, pack_market_snapshot(
-                           homeLm->inventory,
-                           std::uint16_t(rt.homeSettlementId),
-                           ctx.mw.gs->worldTime.day()));
+        // (Здесь крю снимало СНИМОК своего рынка на выезде. Снимок вырезан
+        // 2026-09-22: на вопрос «чего дому не хватает» отвечает ВЕДОМОСТЬ
+        // места, и отвечала всегда она — снимок писался и не читался.)
         // МОРСКОЙ РЕЙС: сперва ПРИЧАЛ — ближайший корпус своей округи
         // становится доком рейса (dock = «мой причал», не только «мой
         // корабль»). ЛЕС ВЕРФИ грузится только когда округа безлодочна —
@@ -3706,9 +3701,8 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 // «крестьяне просто всегда идут продавать на рынок ближайшего города»).
 // Not an arbitrageur: sells EVERYTHING it carried (the village's surplus,
 // at whatever the local law prices it), then spends the earnings down the
-// home's needs ladder — what the home snapshot says the village lacks
-// (class ≤ 1). The snapshot is the crew's memory of ITS OWN home at
-// departure, never a rumour.
+// home's needs ladder — what the home's own LEDGER says the village lacks.
+// Ведомость принадлежит МЕСТУ, а не слуху: крю читает счёт своего дома.
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const LandmarkLedger* homeLedger,

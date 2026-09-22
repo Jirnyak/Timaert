@@ -394,43 +394,32 @@ void test_the_mine_runs_while_the_player_is_away() {
 }
 
 void test_agent_memory_is_bounded_and_current() {
+    // ЖИЛЕЦ ПАМЯТИ СЕГОДНЯ ОДИН — ДОЛГ. Снимок рынка (первый жилец) вырезан
+    // 2026-09-22: он писался каждым выездом и не читался ни одной строкой
+    // мира. Законы САМОГО ВМЕСТИЛИЩА от этого не изменились, и свидетель
+    // обязан проверять их на живом роде, а не на снесённом.
     AgentMemory m{};
-    MemoryEntry e{};
-    e.kind = std::uint8_t(AgentMemoryKind::MarketSnapshot);
-    e.subject = 5;
-    e.day = 10;
-    e.payload[0] = 0x21;
-    remember(m, e);
-    CHECK(m.count == 1 && recall(m, AgentMemoryKind::MarketSnapshot, 5),
+    remember(m, make_debt_fact(kDebtToSettlement, 5, 100, 10));
+    const MemoryEntry* d = recall(m, AgentMemoryKind::Debt, 5,
+                                  kDebtToSettlement);
+    CHECK(m.count == 1 && d && memory_amount(*d) == 100,
           "a memory can be recalled by (kind, subject)");
-    e.day = 20;
-    e.payload[0] = 0x33;
-    remember(m, e);
-    CHECK(m.count == 1
-              && recall(m, AgentMemoryKind::MarketSnapshot, 5)->day == 20,
-          "the same (kind, subject) OVERWRITES - one current belief");
+    remember(m, make_debt_fact(kDebtToSettlement, 5, 40, 20));
+    d = recall(m, AgentMemoryKind::Debt, 5, kDebtToSettlement);
+    CHECK(m.count == 1 && d && memory_amount(*d) == 140 && d->day == 20,
+          "the same (kind, subject) FOLDS by its own law - a debt SUMS");
+    CHECK(recall(m, AgentMemoryKind::Debt, 5, kDebtToFaction) == nullptr,
+          "the key is (kind, subject, SPACE): owing a town is not owing a "
+          "crown");
     for (int i = 0; i < kAgentMemorySlots + 3; ++i) {
-        MemoryEntry x{};
-        x.kind = std::uint8_t(AgentMemoryKind::MarketSnapshot);
-        x.subject = std::uint16_t(100 + i);
-        x.day = std::uint32_t(30 + i);
-        remember(m, x);
+        remember(m, make_debt_fact(kDebtToSettlement,
+                                   std::uint16_t(100 + i), 1,
+                                   std::uint32_t(30 + i)));
     }
     CHECK(int(m.count) == kAgentMemorySlots,
           "a bounded head never grows past its slots");
-    CHECK(recall(m, AgentMemoryKind::MarketSnapshot, 5) == nullptr,
+    CHECK(recall(m, AgentMemoryKind::Debt, 5, kDebtToSettlement) == nullptr,
           "past the cap the OLDEST memory is forgotten");
-
-    Inventory store;
-    store.add("food", 2000);   // plenty
-    store.add("wood", 100);     // stocked
-    store.add("iron", 10);      // scarce
-    const MemoryEntry snap = pack_market_snapshot(store, 7, 40);
-    CHECK(market_stock_class(snap, commodity_index("food")) == 3
-              && market_stock_class(snap, commodity_index("wood")) == 2
-              && market_stock_class(snap, commodity_index("iron")) == 1
-              && market_stock_class(snap, commodity_index("clay")) == 0,
-          "the snapshot packs stock classes per commodity");
 }
 
 void test_the_vendor_sells_at_the_nearest_city() {
@@ -530,9 +519,6 @@ void test_the_vendor_sells_at_the_nearest_city() {
         - gs.landmarks[1].needDebt[commodity_index("food")];
     CHECK(vilBreadDebtPaid > 0,
           "the earnings FED the home's lack — the bread bill fell");
-    CHECK(recall(reg.get<AgentMemory>(e),
-                 AgentMemoryKind::MarketSnapshot, 3) != nullptr,
-          "the departure snapshot of the vendor's OWN home lives in memory");
     // КОНСЕРВАЦИЯ ОДНОЙ ПИЩЕЙ (2026-09-20, снос хлеба): до этого дня в мире
     // было ДВЕ съедобные строки — зерно и хлеб, — и сумма считалась по каждой
     // отдельно. Теперь поток один: всё, что не лежит на полках и не едет в

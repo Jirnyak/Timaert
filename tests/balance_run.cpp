@@ -63,7 +63,6 @@ struct DayAccum {
     long long soulsUnfed = 0;    // ...и сколько душ из них ушло
     int crewsUnpaid = 0;         // то же по ПЛАТЕ
     long long soulsUnpaid = 0;
-    long long soulsBanded = 0;   // поднято из пула в банды
 
     void reset() { *this = DayAccum{}; }
 };
@@ -101,9 +100,6 @@ void econ_fact_sink(void* user, const sm::EconFact& f) {
         case sm::EconFact::Kind::SoulsDesertedUnpaid:
             a->crewsUnpaid += 1;
             a->soulsUnpaid += f.amount;
-            break;
-        case sm::EconFact::Kind::SoulsBanded:
-            a->soulsBanded += f.amount;
             break;
     }
 }
@@ -276,7 +272,7 @@ int main(int argc, char** argv) {
                          "\tsoulsWorld"
                          // Потоки дня (ведомость склада душ, econ_day.h).
                          "\tsoulsBorn\tcrewsUnfed\tsoulsUnfed"
-                         "\tcrewsUnpaid\tsoulsUnpaid\tsoulsBanded");
+                         "\tcrewsUnpaid\tsoulsUnpaid");
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             const char* id = sm::kCommodities[c].id;
             std::fprintf(fw, "\t%s_stock\t%s_gathered\t%s_produced"
@@ -483,14 +479,13 @@ int main(int argc, char** argv) {
             // рано или поздно складывается по-разному.
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld"
                              "\t%lld\t%lld\t%lld\t%lld\t%lld"
-                             "\t%lld\t%d\t%lld\t%d\t%lld\t%lld",
+                             "\t%lld\t%d\t%lld\t%d\t%lld",
                          popCity, popVil, popLair, popElse,
                          soulsHomed, soulsFree, soulsGarr, soulsPool,
                          popTotal + soulsHomed + soulsFree + soulsGarr
                              + soulsPool,
                          accum.soulsBorn, accum.crewsUnfed, accum.soulsUnfed,
-                         accum.crewsUnpaid, accum.soulsUnpaid,
-                         accum.soulsBanded);
+                         accum.crewsUnpaid, accum.soulsUnpaid);
             for (int c = 0; c < sm::kCommodityCount; ++c) {
                 std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld",
                              stock[c], accum.gathered[c], accum.produced[c],

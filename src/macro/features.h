@@ -218,9 +218,8 @@ inline constexpr ResourceFieldId feature_works_row(FeatureType f) {
     return kFeatureDefs[std::size_t(f) < std::size_t(FT_Count)
                             ? std::size_t(f) : 0].worksRow;
 }
-inline constexpr bool feature_is_worked(FeatureType f) {
-    return feature_works_row(f) != ResourceFieldId::Count;
-}
+// (`feature_is_worked` вырезана 2026-09-22 — ноль вызовов: читатели
+// спрашивают саму строку `feature_works_row`, а не её предикат.)
 
 // How many of this a body raises in a day — the rate its SP price is the bar
 // divided by (CANON S14.1). 0 = hands do not raise it.

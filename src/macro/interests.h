@@ -85,15 +85,11 @@ enum class Stance : std::uint8_t {
     Vassal,     // этот субъект — МОЙ вассал: я собираю с него дань
 };
 
-// Зеркало типа: чем Я прихожусь тому, кому ОН приходится вот этим.
-inline constexpr Stance mirror_stance(Stance s) {
-    switch (s) {
-    case Stance::Suzerain: return Stance::Vassal;
-    case Stance::Vassal:   return Stance::Suzerain;
-    case Stance::None:     break;
-    }
-    return Stance::None;
-}
+// (`mirror_stance` вырезана 2026-09-22 — дверь с нулём вызовов. Зеркальность
+// феодального ребра выписана руками в одной точке, которая его и ставит
+// (state.h, Suzerain/Vassal литералами): пока писатель ОДИН, дверь была
+// вторым экземпляром закона, из которых работал не тот, что назван. Когда
+// писателей станет двое — дверь вернётся ВМЕСТЕ с ними.)
 
 struct Interest {
     // КТО. Ординал субъекта; см. отвергнутую колонку `kind` в шапке —

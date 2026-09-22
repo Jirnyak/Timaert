@@ -106,13 +106,9 @@ inline FactionSlot claim_faction_slot(RelationMatrix& m, const char* id) {
     return kNoFactionSlot;
 }
 
-// The id a slot answers to: the registry's own literal for a registry slot,
-// the claimed name for a tail one, "" for an unclaimed slot.
-inline const char* faction_id_of_slot(const RelationMatrix& m, FactionSlot s) {
-    if (s < 0 || s >= kMaxWorldFactions || !m.used[s]) return "";
-    if (s < kFactionCount) return kFactionDefs[s].id;
-    return m.runtimeIds[s];
-}
+// (`faction_id_of_slot` вырезана 2026-09-22 — ноль вызовов: мир ходит по
+// СЛОТАМ, строка фракции нужна только авторингу и оверлею, и те читают
+// kFactionDefs напрямую.)
 
 // Relation by SLOT — the hot form: two array reads, no strings anywhere.
 inline int relation_of(const RelationMatrix& m, FactionSlot a, FactionSlot b) {

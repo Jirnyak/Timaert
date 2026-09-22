@@ -24,10 +24,10 @@ enum class AIBehaviour : std::uint8_t {
     // layer the man falls back to the home wander, fail closed.
     Gatherer = 0, Trader,
     Aggressive, Teleporter, Wanderer,
-    // The city's trading agent (W2b): remembers the home market at departure
-    // (AgentMemory MarketSnapshot), carries exports to the city's villages in
-    // its OWN bag and hauls back what the snapshot says the city LACKS. Falls
-    // back to the old nomad wander when the world has no villages.
+    // The city's trading agent (W2b): carries exports to the city's villages
+    // in its OWN bag and hauls back what the home's LEDGER says the city
+    // LACKS. Falls back to the old nomad wander when the world has no
+    // villages.
     // Follows the waypoint route in the squad's SquadOrders (Session 15, Inc
     // 7). No type row uses it and no label names it: the dispatcher selects it
     // whenever a squad CARRIES a route — the route's presence is the order

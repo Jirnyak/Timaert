@@ -1,7 +1,8 @@
 // Agent memory (owner's design, W2b): what a squad's leader REMEMBERS.
 //
-// A caravan sets out remembering its city's market as it stood at departure;
-// a peasant may one day remember that his village was raided. The system is
+// A squad remembers who owes it what; a peasant may one day remember that his
+// village was raided. (Первым жильцом был снимок рынка — он умер 2026-09-22,
+// разбор в перечислении ниже.) The system is
 // the owner's brief made structural: entries of DIFFERENT KINDS under one
 // roof ("под флажками разное"), flexible and extensible — a new kind of
 // memory is a row in the kind enum and a pack/unpack pair, never a new
@@ -29,11 +30,13 @@ namespace sm {
 
 enum class AgentMemoryKind : std::uint8_t {
     None = 0,
-    // The subject settlement's market as last seen: per-commodity STOCK
-    // CLASS in 4-bit nibbles (payload[i>>1], low nibble first) —
-    // 0 none / 1 scarce / 2 stocked / 3 plenty. Fourteen commodities fit in
-    // seven of the eight payload bytes.
-    MarketSnapshot = 1,
+    // ОРДИНАЛ 1 ПУСТ: здесь стоял MarketSnapshot — снимок рынка дома,
+    // сделанный на выезде. Он был ВТОРЫМ ответом на вопрос «чего дому не
+    // хватает», и проиграл: живой ответ даёт ВЕДОМОСТЬ места
+    // (LandmarkLedger), которую сделка и спрашивает. Снимок писался каждым
+    // выездом вендора и не читался НИ ОДНОЙ строкой мира — половина,
+    // вырезанная 2026-09-22 (Х-10, «сносится в любом случае»). Ординал не
+    // переиспользуется: он адрес, а сейвы прошлых миров его помнят.
     // A DEBT owed to the subject (owner's ruling: debt is a FACT, not a
     // reputation dent — «кто-то должен кому-то столько-то»). payload[0..3] =
     // amount in universal value (i32, LE); flags = which id space `subject`
@@ -43,8 +46,8 @@ enum class AgentMemoryKind : std::uint8_t {
 };
 
 // FACT ARITHMETIC (owner): same-typed facts COMBINE — one binary fold per
-// kind, a table, not branching call sites. A snapshot REPLACES the old
-// belief; debts SUM.
+// kind, a table, not branching call sites. Debts SUM; a belief about a thing
+// (the default fold) REPLACES the previous one.
 enum class MemoryFold : std::uint8_t { Replace = 0, Sum = 1 };
 
 inline MemoryFold fold_for_kind(std::uint8_t kind) {
@@ -148,36 +151,14 @@ inline const MemoryEntry* recall(const AgentMemory& m, AgentMemoryKind kind,
     return nullptr;
 }
 
-// ── MarketSnapshot packing ───────────────────────────────────────────────
-
 // Stock classes are po2 thresholds — coarse on purpose: a trader's memory of
-// a market is "they were drowning in bread", not a ledger.
+// a market is "they were drowning in bread", not a ledger. (Пережил снимок
+// рынка: его читает процедурный квест — content/quests/procedural.cpp.)
 inline int stock_class(int count) {
     if (count <= 0) return 0;        // none
     if (count < 64) return 1;        // scarce
     if (count < 1024) return 2;      // stocked
     return 3;                        // plenty
 }
-
-inline MemoryEntry pack_market_snapshot(const Inventory& store,
-                                        std::uint16_t subject, int day) {
-    MemoryEntry e{};
-    e.kind = std::uint8_t(AgentMemoryKind::MarketSnapshot);
-    e.subject = subject;
-    e.day = std::uint32_t(day < 0 ? 0 : day);
-    static_assert(kCommodityCount <= 16,
-                  "seven payload bytes hold at most 16 nibble classes");
-    for (int i = 0; i < kCommodityCount; ++i) {
-        const int cls = stock_class(store.count(kCommodities[i].id));
-        e.payload[i >> 1] |= std::uint8_t((cls & 0xF) << ((i & 1) * 4));
-    }
-    return e;
-}
-
-inline int market_stock_class(const MemoryEntry& e, int commodityIdx) {
-    if (commodityIdx < 0 || commodityIdx >= kCommodityCount) return 0;
-    return (e.payload[commodityIdx >> 1] >> ((commodityIdx & 1) * 4)) & 0xF;
-}
-
 
 } // namespace sm
