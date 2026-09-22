@@ -52,13 +52,15 @@ struct DepositGenRow {
     std::int32_t unitScale;
     std::uint32_t salt;
 };
-// КАМЕНЬ: 65536 → 32768 (2026-09-22, вместе с сужением клетки поля до uint16).
-// Старое число было ровно НА ЕДИНИЦУ выше потолка uint16, и оно единственное
-// во всей таблице не влезало. Перетюнёвка ничего не стоит, потому что в тот же
-// день камень стал ЗАЖИВАТЬ: бесконечность во времени заменила бесконечность в
-// запасе, и вторая перестала быть нужна. Мир камня вдвое меньше по единовре-
-// менному запасу и по-прежнему неисчерпаем по времени (добыча за 512 дней —
-// 740 тыс. против ~50 млн в земле).
+// КАМЕНЬ ЗАНИМАЕТ КЛЕТКУ ЦЕЛИКОМ — и это НЕ «65535 подобрано», а ИМЯ потолка
+// клетки: `kMaxFieldUnitsPerCell`. Камень — самый толстый род в мире
+// («quasi-infinite quarry»), поэтому его шкала и есть вся ширина ряда; связь
+// видна прямо в таблице, и день, когда ряд станет шире, сам подвинет камень.
+//
+// Было 65536 — ровно НА ЕДИНИЦУ выше потолка uint16, единственное число во
+// всей таблице, которое не влезало. Промежуточная правка до 32768 («по-два
+// ступенькой ниже») выбрасывала ПОЛОВИНУ запаса там, где не хватало одной
+// единицы, и владелец её снял: «просто камень пусть будет 64к лимит».
 //
 // Thresholds and scales are CALIBRATED against the hash law's world totals
 // (the fingerprint line below is the instrument): the money supply and the
@@ -91,7 +93,7 @@ constexpr DepositGenRow kDepositGen[kDepositKindCount] = {
     //                       profile            affinity              period thresh scale  salt
     {DepositKind::Clay,   OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f,  12288, 0xC1A70000u},
     {DepositKind::Iron,   OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f,   2048, 0x1F0E0000u},
-    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  32768, 0x570E0000u},
+    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  kMaxFieldUnitsPerCell, 0x570E0000u},
     // The mint metals: the lowest period and the highest bar — few nests,
     // truly rare, but a found one is a mining town's whole reason. Copper is
     // the base metal of the three, so its bar is the lowest of them.
