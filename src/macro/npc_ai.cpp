@@ -185,18 +185,6 @@ Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
     return lm ? &lm->inventory : nullptr;
 }
 
-// ── ОДНА ДВЕРЬ ОБМЕНА ИНВЕНТАРЯМИ (владелец, 2026-09-22) ────────────────
-// Переехали сюда с середины файла, потому что первый их пользователь стоит
-// ЗДЕСЬ. Приёмник-МЕСТО (CANON S10) — это склад ПЛЮС счёт ПЛЮС канал фактов
-// мира: дверь прихода гасит долг СРАЗУ тем, что упало. Сумки в Depot не
-// заворачиваются (неявная конверсия из Inventory&, долга нет).
-int haul_between(Inventory& from, Depot to, const char* id,
-                 int maxUnits, float capacityLeftKg);
-
-inline Depot depot_(Landmark& lm, const MacroWorld& mw) {
-    return Depot(lm.inventory, lm.needDebt, mw.econFacts, mw.econFactsUser);
-}
-
 // ТАКТ 1 — СДАЧА (двухтактный обоз, вердикт владельца 2026-09-19):
 // зеркало разгрузки сумки для РОСТЕРА. Отряд сдаёт домой ВСЁ ездовое, ровно
 // как рудокоп сдаёт всю руду: табун — имущество МЕСТА, а не личная
@@ -236,23 +224,13 @@ void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
     auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(self);
     if (!bag) return;
     const int n = bag->inv.count(id);
-    Landmark* lm = home_landmark(rt, ctx);
-    if (n <= 0 || !lm) return;
-    // ЧЕРЕЗ ЕДИНУЮ ДВЕРЬ ОБМЕНА (владелец, 2026-09-22). До этого дня артель
-    // сдавала добычу в СЫРОЙ склад (`home_inventory()->add`), а вендор,
-    // сборщик и распускаемая крю — в ПРИЁМНИК-МЕСТО. Четыре выгрузки не
-    // просто повторяли друг друга: они РАСХОДИЛИСЬ. Долг дома гасится в
-    // дверях прихода, и добыча собственной артели — единственная, которая
-    // его не гасила: привезённый хлеб ложился на полку и ждал дневного
-    // такта, пока место числилось голодным.
-    // Потолок приёма берётся с ОТДАЮЩЕЙ стороны: у склада места предела по
-    // объёму нет вовсе (CANON S10), поэтому «сколько несём — столько и
-    // сдаём», а не выдуманное большое число.
-    // Кредит прежде дебета (S5) живёт внутри двери: полный склад оставляет
-    // добычу НА СПИНЕ, а не сжигает её.
-    const int moved = haul_between(bag->inv, depot_(*lm, ctx.mw), id, n,
-                                   inventory_weight(bag->inv));
-    if (moved > 0) {
+    Inventory* store = home_inventory(rt, ctx);
+    // Credit BEFORE debit (economy.md's conservation law): the store accepts
+    // first, the bag pays only what was accepted — a full store leaves the
+    // haul ON THE GATHERER'S BACK instead of burning it. (Near-unreachable
+    // with 256 slots and stack-merging, but the law is the law.)
+    if (n > 0 && store && store->add(id, n)) {
+        bag->inv.remove(id, n);
         // The arrival IS the gather flow: the pure econ steps announce their
         // own facts, but the agent work-loop lands its haul here — without
         // this fact every *_gathered column of the дубль-прогон reads zero
@@ -261,7 +239,7 @@ void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
             EconFact f{};
             f.kind = EconFact::Kind::Gathered;
             f.commodity = commodity_index(id);
-            f.amount = moved;
+            f.amount = n;
             f.landmarkId = rt.homeSettlementId;
             ctx.mw.econFacts(ctx.mw.econFactsUser, f);
         }
@@ -1170,9 +1148,15 @@ constexpr int kBridgeMaterialUnits = kGatherPerWorkerDay;
 bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
                      const ecs::MacroNpcRuntime& rt,
                      const ecs::Pools& pools);
-// (`depot_` и объявление `haul_between` переехали В НАЧАЛО файла 2026-09-22:
-// первым их пользователем стала выгрузка артели домой, и держать дверь ниже
-// её первого вызова значило бы заводить рядом вторую.)
+int haul_between(Inventory& from, Depot to, const char* id,
+                 int maxUnits, float capacityLeftKg);
+
+// Приёмник-МЕСТО (CANON S10): склад + счёт + канал фактов мира — дверь
+// прихода гасит долг СРАЗУ тем, что упало. Сумки в Depot не заворачиваются
+// (неявная конверсия из Inventory&, долга нет).
+inline Depot depot_(Landmark& lm, const MacroWorld& mw) {
+    return Depot(lm.inventory, lm.needDebt, mw.econFacts, mw.econFactsUser);
+}
 
 // The sell-run machine (defined with the trade behaviours below): the
 // peasant crew whose errand is Sell walks the SAME machine the vendor
