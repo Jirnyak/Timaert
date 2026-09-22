@@ -56,31 +56,10 @@ struct XY { float x, y; };
 // (`fold_d` — торова складка разности координат — умерла вместе со сканом жил:
 // обход бокса от дома строит смещения сам, складывать нечего.)
 
-// ── КОРАБЛИ = ЧИСЛО ФИЧИ В СЛОЕ РАЗРАБОТКИ (CANON S10/S5) ────────────────
-// «У фич часто свои счётчики: у поля урожай, у шахты залежи, у порта
-// корабли — элегантно». Счётчик стоит в ЕДИНОМ поле разработки на клетке
-// порта или брошенного корпуса (gs.worked): смысл числу задаёт фича,
-// стоящая ровно на той клетке, и второго числа там быть не может, потому
-// что клетка разрабатывается ровно одним способом. Хеш gs.shipsAtCell —
-// третий хеш мира — умер здесь же 2026-09-18 вместе со своим сканом.
-int ships_at(const TickContext& ctx, int x, int y) {
-    if (!ctx.mw.gs) return 0;
-    return worked_read(*ctx.mw.gs, x, y);
-}
-void ships_add(const TickContext& ctx, int x, int y, int delta) {
-    if (!ctx.mw.gs) return;
-    worked_add(*ctx.mw.gs, x, y, delta);
-}
-
-// Корпус стоит недели заготовки: 8 человеко-дней леса (= 8 дневных нош,
-// вывод из kGatherPerWorkerDay, не назначение) — крутилка дубль-прогона.
-constexpr int kShipWoodUnits = 8 * kGatherPerWorkerDay;
-
-// (Вода корабля жила здесь вторым литералом того же закона — «корабль делает
-// воду дешёвой», владелец 2026-09-02 — рядом с kNavSeaWeight, который печёт
-// ту же цену в поля-округи. Один закон двумя числами держится ровно до первой
-// перетюнёвки одного из них: маршрут, запечённый по одной цене, шагался по
-// другой. Имя теперь одно — macro/nav_field.h kNavSeaWeight.)
+// (КОРАБЛИ, ПОРТЫ И МОРСКОЙ ХОД ВЫРЕЗАНЫ 2026-09-22, сессия 14, вердикт
+// владельца: «никакого транспорта корабли механики и всё пока вырезаем
+// полностью из кода потому что не дошли до них». Здесь жили ships_at /
+// ships_add над слоем разработки и цена корпуса kShipWoodUnits.)
 
 // Штамп фичи на голую клетку + правда мира (строка Built, как мост/шахта).
 void stamp_feature_if_bare(const TickContext& ctx, int x, int y,
@@ -102,54 +81,7 @@ void stamp_feature_if_bare(const TickContext& ctx, int x, int y,
     // навигация поднимается по факту, а не по ежедневному пересчёту фич.
     // Распашка и шахта проходимости не меняют и поле не трогают — тот же
     // урок, что однажды убил перф глобальной инвалидацией по builtFeatures.
-    if (ft == FT_Bridge || ft == FT_WoodBridge) ++ctx.mw.gs->navEpoch;
-}
-
-// Ближайший корпус МОЕЙ округи (причал). Читается ЧЕСТНО: список фич,
-// которые построил мир (gs.builtFeatures — правда мира, строка сейва
-// Built), отфильтрован по виду «порт/брошенный корабль», и у каждой такой
-// клетки спрашивается её число в слое разработки. Скан хеша всех клеток
-// мира умер вместе с хешем: причалов в мире десятки, а обходить мир, чтобы
-// узнать «где ближайший», — фигура §52.
-bool nearest_region_ship(const TickContext& ctx, int x, int y,
-                         std::uint16_t region, XY& out) {
-    if (!ctx.mw.gs || !ctx.mw.nav || region == kNavNoRegion) return false;
-    float best = 1e30f;
-    bool found = false;
-    for (const BuiltFeature& bf : ctx.mw.gs->builtFeatures) {
-        const FeatureType ft = FeatureType(bf.ft);
-        if (ft != FT_Port && ft != FT_BeachedShip) continue;
-        const int sx = bf.x;
-        const int sy = bf.y;
-        if (worked_read(*ctx.mw.gs, sx, sy) <= 0) continue;
-        if (nav_region_at(*ctx.mw.nav, sx, sy) != region) continue;
-        const float d = torus_dist_sq(float(x), float(y), float(sx),
-                                      float(sy), float(ctx.mapW),
-                                      float(ctx.mapH));
-        if (d < best) {
-            best = d;
-            out = XY{float(sx), float(sy)};
-            found = true;
-        }
-    }
-    return found;
-}
-
-// Маршрут сушей недостижим (по графу округ) — а МОРЕМ достижим: морской
-// рейс. Профили-таблицы CANON S10: пеший читает сухую, море предлагается,
-// только когда морская таблица маршрут ЗНАЕТ (иначе плавание в никуда —
-// честный отказ рейса). Fail-closed без запечённой навигации.
-bool route_dry_unreachable(const TickContext& ctx, int x, int y,
-                           int tx, int ty) {
-    NavWorld* nv = ctx.mw.nav;
-    if (!nv || !nv->baked()) return false;
-    const std::uint16_t rc = nav_region_at(*nv, x, y);
-    const std::uint16_t rt2 = nav_region_at(*nv, tx, ty);
-    if (rc == kNavNoRegion || rt2 == kNavNoRegion || rc == rt2) return false;
-    const std::size_t R = nv->regionLandmarkId.size();
-    if (nv->routeNext[std::size_t(rc) * R + rt2] != kNavNoRegion)
-        return false;   // суша знает дорогу
-    return nv->routeNextSea[std::size_t(rc) * R + rt2] != kNavNoRegion;
+    if (ft == FT_Bridge) ++ctx.mw.gs->navEpoch;
 }
 
 XY pick_random_nearby(float cx, float cy, int range, const TickContext& ctx) {
@@ -418,10 +350,7 @@ void settle_march_rhythm(entt::entity e, const MacroPos& p,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                          bool moved, const TickContext& ctx) {
     const int maxSp = std::max<int>(1, hp.maxSp);
-    // Палуба — лагерь: сквад НА корабле стоит на якоре и отдыхает; тонет
-    // только тот, кого вода застала БЕЗ корпуса под ногами.
-    const bool canCamp =
-        rt.aboard != 0 || can_stand_at(ctx, int(p.x), int(p.y));
+    const bool canCamp = can_stand_at(ctx, int(p.x), int(p.y));
 
     // The automaton's CAMP decision, BEFORE debt (npc_ai.h kCampBarDivisor):
     // legs below an eighth of the bar on campable ground pitch camp now; the
@@ -522,18 +451,7 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
     // «недостижимо посуху», док не нужен, рельеф не платится, любая клетка
     // держит — ОДИН цикл марша, меняется только стихия (образец кораблей).
     const bool flying = rt.flying != 0;
-    const bool seaTrip = !flying
-        && route_dry_unreachable(ctx, ix, iy, realTx, realTy);
-    // «ГДЕ МОЙ КОРАБЛЬ» — универсальная дисциплина дока (CANON S10): пеший
-    // рейс, недостижимый сушей, у сквада с пришвартованным корпусом идёт
-    // СНАЧАЛА к своей швартовке — не в надежде на счастливый берег. Без
-    // этой дисциплины уплывшие за море артели застревали на чужом берегу
-    // навсегда, и деревня вымирала в ноль за двадцать дней (измерено).
-    if (!rt.aboard && rt.dockX >= 0 && seaTrip
-        && (ix != int(rt.dockX) || iy != int(rt.dockY))) {
-        itx = int(rt.dockX);
-        ity = int(rt.dockY);
-    }
+    (void)realTx; (void)realTy;
     const float oldX = p.x, oldY = p.y;
     const float mapWf = float(ctx.mapW), mapHf = float(ctx.mapH);
 
@@ -568,31 +486,14 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         // through is finally forded at its honest price. O(8) per cell:
         // 16384 squads can afford it where a pathfind each would starve
         // the frame.
-        // ПРОАКТИВНАЯ ПОСАДКА: стоишь на причале с корпусами, а НАСТОЯЩАЯ
-        // цель за морем — садись сейчас, не жди отказа ног (иначе жадный
-        // шаг ведёт вдоль берега МИМО причала в тупик, и там строится
-        // лишний корпус — измерено: 393 корпуса на 52 клетках).
-        if (!rt.aboard && seaTrip && ships_at(ctx, ix, iy) > 0) {
-            ships_add(ctx, ix, iy, -1);
-            rt.aboard = 1;
-            rt.dockX = -1;
-            rt.dockY = -1;
-            itx = realTx;   // корабль под ногами — курс на настоящую цель
-            ity = realTy;
-        }
-        const bool sailing = rt.aboard != 0;
-        const bool standingDry = sailing || can_stand_at(ctx, ix, iy);
+        const bool standingDry = can_stand_at(ctx, ix, iy);
         int bx = -1, by = -1;
         float bw = 1e30f;
 
         // ЗАПЕЧЁННАЯ ПОХОДКА (CANON S7, 2026-09-02): округи + порталы +
-        // граф — три чтения, ни волны, ни поиска. Любой рейс любого сквада
-        // идёт системой: пеший — сухим ярусом, ПАРУС В ВОДЕ — водным
-        // (спуск по водному полю ведёт по фьордам); жадный шаг остаётся
-        // мокрым ногам без корпуса и миру без запечённого слоя.
-        if (!flying
-            && (sailing ? cell_is_water(ctx, ix, iy) : standingDry)
-            && ctx.mw.nav && ctx.mw.nav->baked()) {
+        // граф — три чтения, ни волны, ни поиска. Жадный шаг остаётся миру
+        // без запечённого слоя.
+        if (!flying && standingDry && ctx.mw.nav && ctx.mw.nav->baked()) {
             int fdx = 0, fdy = 0;
             if (nav_step(*ctx.mw.nav, ix, iy, itx, ity, fdx, fdy)) {
                 bx = wrapi(ix + fdx, ctx.mapW);
@@ -615,13 +516,8 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
             // …and the gate binds only DRY feet: a body already floating (a
             // genesis accident, a shipwreck) may step wherever gets it out —
             // its unpayable steps bleed by the sea-bite law below.
-            // Цена шага глазами ходока: под парусом вода — его дорога
-            // (kNavSeaWeight — ТА ЖЕ цена, по которой запечён морской ярус
-            // полей-округ), суша — причал (обычная цена).
             const auto walker_w = [&](int nx2, int ny2) {
                 if (flying) return 1.0f;   // воздух — дорога летуна
-                if (sailing && cell_is_water(ctx, nx2, ny2))
-                    return kNavSeaWeight;
                 return edge_weight(ctx, ix, iy, nx2, ny2);
             };
             // БРОД — исключение РЕФЛЕКСА, не маршрута (владелец 2026-09-02):
@@ -635,8 +531,7 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
             const bool fleeingFord =
                 rt.state == std::uint8_t(NPCState::Fleeing);
             const auto walker_stands = [&](int nx2, int ny2) {
-                return sailing || flying || fleeingFord
-                       || can_stand_at(ctx, nx2, ny2);
+                return flying || fleeingFord || can_stand_at(ctx, nx2, ny2);
             };
             if (!standingDry || walker_stands(straight.nx, straight.ny)) {
                 bx = straight.nx;
@@ -667,21 +562,7 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                 }
             }
         }
-        if (bx < 0) {
-            // НОГИ КОНЧИЛИСЬ У ВОДЫ. Если на этой клетке стоит корабль
-            // (счётчик порта/брошенного) — сквад САДИТСЯ и меняет стихию:
-            // состояние, не сущность (CANON S10 «корабли через фичу»).
-            if (!rt.aboard && seaTrip && ships_at(ctx, ix, iy) > 0) {
-                ships_add(ctx, ix, iy, -1);
-                rt.aboard = 1;
-                rt.dockX = -1;
-                rt.dockY = -1;
-                itx = realTx;   // курс на настоящую цель
-                ity = realTy;
-                continue;   // ноги сменились — шаг выбирается заново
-            }
-            break;   // nowhere to stand: the leg ends at the bank
-        }
+        if (bx < 0) break;   // nowhere to stand: the leg ends at the bank
 
         // Entry-side stamp: the signed step of THIS cell change, torus-folded
         // (stepping east off the map's edge is still +1, not -(w-1)).
@@ -699,8 +580,8 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         const float stepCost = travel_stamina_cost(
             bw, 1.0f, int(rt.overloadCost), efficiency);
         if (float(pools.sp) + pools.spCarry < stepCost
-            && (sailing || flying || can_stand_at(ctx, ix, iy))) {
-            break;   // палуба держит якорную стоянку не хуже лагеря
+            && (flying || can_stand_at(ctx, ix, iy))) {
+            break;
         }
 
         rt.entryDir = pack_entry_dir(dx, dy);
@@ -708,17 +589,6 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
 
         ix = bx; iy = by;
         rt.moveBudget -= 1.0f;
-
-        // ШВАРТОВКА: парус коснулся суши — корабль остаётся ЧИСЛОМ у
-        // берега (порт, если стоит; иначе фича брошенного корабля — «можно
-        // много бросить»), сквад снова пеший и помнит, ГДЕ его корабль.
-        if (rt.aboard && !cell_is_water(ctx, ix, iy)) {
-            ships_add(ctx, ix, iy, +1);
-            stamp_feature_if_bare(ctx, ix, iy, FT_BeachedShip);
-            rt.aboard = 0;
-            rt.dockX = std::int16_t(wrapi(ix, ctx.mapW));
-            rt.dockY = std::int16_t(wrapi(iy, ctx.mapH));
-        }
 
         // The step pays THE cell price — the same rows and formula the
         // player's march is charged (travel_stamina_cost), through the
@@ -987,12 +857,11 @@ namespace {
 static_assert(kNavHandReach == kGathererReach,
               "радиус рук артелей — один на гейт и навигацию (CANON S7)");
 
-// The home's nearest REACHABLE live cell of the row's deposit kind — dry
-// routes first (by the world partition's own march price); failing every
-// dry vein, the nearest vein reachable across one bridgeable water gap
-// (bridgeOut = the water cell to span; untouched when the pick is dry).
-// Without a baked NavWorld (bare test fixtures) the pick degrades to the
-// nearest vein in the box by straight line — the pre-v72 behaviour.
+// The home's nearest REACHABLE live cell of the row's deposit kind — ДРУГИХ
+// случаев не осталось: мостовой случай («жила за одним водным разрывом»)
+// вырезан 2026-09-22 вместе со стройкой артелей. Without a baked NavWorld
+// (bare test fixtures) the pick degrades to the nearest vein in the box by
+// straight line — the pre-v72 behaviour.
 // The sustained march pace every plan walks by: kMacroWalkCellsPerHour × 24
 // game hours, halved because the automaton rests to half a bar between
 // marches (think_gate) — half the calendar walks, half sleeps.
@@ -1008,7 +877,7 @@ constexpr float kSustainedMarchCellsPerDay =
 // цену ПОИСКА, снимать надо сам поиск, а не подпирать его радиусом.)
 
 bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
-                       const XY& home, XY& out, XY* bridgeOut = nullptr) {
+                       const XY& home, XY& out) {
     if (!ctx.mw.deposits || ctx.mapW <= 0) return false;
     const DepositKind kind =
         DepositKind(std::uint8_t(row) - std::uint8_t(ResourceFieldId::Clay));
@@ -1019,10 +888,10 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     const bool navReady = nv && nav_ensure(ctx.mw, *nv);
     const std::uint16_t myRegion =
         navReady ? nav_region_at(*nv, hx, hy) : kNavNoRegion;
-    std::uint32_t bestDry = ~0u, bestGapCost = ~0u;
+    std::uint32_t bestDry = ~0u;
     float bestSq = 1e30f;
-    XY dryAt{}, gapVein{}, gapCell{};
-    bool haveDry = false, haveGap = false, haveNear = false;
+    XY dryAt{};
+    bool haveDry = false, haveNear = false;
     XY nearAt{};
     // THE ERRAND IS A NEIGHBOURHOOD QUESTION, so it walks a neighbourhood: the
     // hand's own box (kNavHandReach), which is all this door answers now —
@@ -1054,34 +923,7 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
             }
             return;
         }
-        if (reg != kNavNoRegion) return;   // чужая округа — сосед возьмёт
-        // Жила в водяном кармане: мостовой закон — РОВНО ОДИН разрыв от
-        // моей округи (та же метка, что несла волна).
-        for (int wy = -1; wy <= 1; ++wy) {
-            for (int wx = -1; wx <= 1; ++wx) {
-                if (wx == 0 && wy == 0) continue;
-                const int gx = wrapi(x + wx, ctx.mapW);
-                const int gy = wrapi(y + wy, ctx.mapH);
-                if (can_stand_at(ctx, gx, gy)) continue;   // разрыв = вода
-                for (int by = -1; by <= 1; ++by) {
-                    for (int bx = -1; bx <= 1; ++bx) {
-                        if (bx == 0 && by == 0) continue;
-                        const int cx2 = wrapi(gx + bx, ctx.mapW);
-                        const int cy2 = wrapi(gy + by, ctx.mapH);
-                        if (nav_region_at(*nv, cx2, cy2) != myRegion)
-                            continue;
-                        const std::uint32_t cost =
-                            nv->distHome[nv->cell(cx2, cy2)] + 32u;
-                        if (cost < bestGapCost) {
-                            bestGapCost = cost;
-                            gapVein = XY{float(x), float(y)};
-                            gapCell = XY{float(gx), float(gy)};
-                            haveGap = true;
-                        }
-                    }
-                }
-            }
-        }
+        return;   // не моя округа — сосед возьмёт
     };
     for (int dy = -kNavHandReach; dy <= kNavHandReach; ++dy) {
         for (int dx = -kNavHandReach; dx <= kNavHandReach; ++dx) {
@@ -1094,11 +936,6 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     }
     if (haveDry) {
         out = dryAt;
-        return true;
-    }
-    if (haveGap) {
-        out = gapVein;
-        if (bridgeOut) *bridgeOut = gapCell;
         return true;
     }
     return false;
@@ -1138,11 +975,6 @@ bool find_worksite(const GathererDef& def, const TickContext& ctx,
     }
     return false;
 }
-
-// One bridge span costs one worker's DAY of gathering in material
-// (= kGatherPerWorkerDay — the plank/stone load one back brings home in a
-// working day; the owner's «32» of 2026-08-31, derived, not assigned).
-constexpr int kBridgeMaterialUnits = kGatherPerWorkerDay;
 
 // Defined with the trade behaviours below; the crews share both laws.
 bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
@@ -1206,7 +1038,6 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 }
             }
             XY site;
-            XY gap{-1.0f, -1.0f};
             bool found = false;
             if (def->worksite == Worksite::Deposit) {
                 // СНАЧАЛА ОПИСЬ СВОЕЙ ОКРУГИ: место уже нашло — артель
@@ -1223,36 +1054,10 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                     }
                 }
                 if (!found) {
-                    found = find_home_deposit(ctx, def->row, home, site, &gap);
+                    found = find_home_deposit(ctx, def->row, home, site);
                 }
             } else {
                 found = find_worksite(*def, ctx, p, home, site);
-            }
-            if (found && gap.x >= 0.0f) {
-                // The route needs its BRIDGE first (owner 2026-08-31): load
-                // a span's worth of whichever material the home store holds
-                // MORE of («из того, чего на складе больше, из того и
-                // строят») and walk to the gap. No material today — no
-                // errand: the vein waits for the woodcutters.
-                Inventory* store = home_inventory(rt, ctx);
-                auto* bag = ctx.mw.world
-                    ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
-                    : nullptr;
-                const int wood  = store ? store->count("wood") : 0;
-                const int stone = store ? store->count("stone") : 0;
-                const char* mat = stone > wood ? "stone" : "wood";
-                if (store && bag
-                    && std::max(wood, stone) >= kBridgeMaterialUnits
-                    && haul_between(*store, bag->inv, mat,
-                                    kBridgeMaterialUnits, 1e9f)
-                           >= kBridgeMaterialUnits) {
-                    rt.targetX = gap.x;
-                    rt.targetY = gap.y;
-                    rt.state = std::uint8_t(NS::Bridging);
-                    return;
-                }
-                rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
-                return;
             }
             if (found) {
                 rt.targetX = site.x; rt.targetY = site.y;
@@ -1291,79 +1096,6 @@ void ai_gatherer(entt::entity self, MacroPos& p,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Bridging)) {
-        // Someone spanned it first (or the wave was stale): the errand is
-        // done without us — tomorrow's think routes across the deck.
-        if (can_stand_at(ctx, int(rt.targetX), int(rt.targetY))) {
-            rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = 1;
-            return;
-        }
-        const float dsq = torus_dist_sq(p.x, p.y, rt.targetX, rt.targetY,
-                                        float(ctx.mapW), float(ctx.mapH));
-        if (dsq <= 2.5f) {   // standing at the bank beside the gap
-            // A SPAN IS A BUILD, so its price is its own row's (CANON S14.1,
-            // features.h buildsPerDay). Stone and timber lay different decks
-            // but are the same day's work, so either row answers the same.
-            const int cycleCost =
-                sp_price(int(pools.maxSp), feature_builds_per_day(FT_Bridge));
-            auto* bag = ctx.mw.world
-                ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
-                : nullptr;
-            if (!bag || !ctx.mw.features || !ctx.mw.gs) {
-                rt.state = std::uint8_t(NS::Returning);
-                rt.targetX = home.x; rt.targetY = home.y;
-                return;
-            }
-            if (int(pools.sp) < cycleCost) return;   // stand — the regen law
-                                                  // rests refused legs now
-            const bool haveStone =
-                bag->inv.count("stone") >= kBridgeMaterialUnits;
-            const bool haveWood =
-                bag->inv.count("wood") >= kBridgeMaterialUnits;
-            if (haveStone || haveWood) {
-                // Stone lays the road planner's own span; timber lays the
-                // plank deck («камень — каменный, дерево — деревянный»).
-                const FeatureType ft = haveStone ? FT_Bridge : FT_WoodBridge;
-                FeatureLayer& fl = *ctx.mw.features;
-                std::size_t total = 0;
-                if (FeatureLayer::cell_count_for(fl.width, fl.height, total)
-                    && fl.data.size() >= total) {
-                    const int wx =
-                        FeatureLayer::wrap_coord(int(rt.targetX), fl.width);
-                    const int wy =
-                        FeatureLayer::wrap_coord(int(rt.targetY), fl.height);
-                    fl.data[std::size_t(wy) * std::size_t(fl.width)
-                            + std::size_t(wx)] = ft;
-                    bag->inv.remove(haveStone ? "stone" : "wood",
-                                    kBridgeMaterialUnits);
-                    // The span is WORLD TRUTH: it rides the save as a Built
-                    // work and the load re-stamps it (state.h v71).
-                    ctx.mw.gs->builtFeatures.push_back(BuiltFeature{
-                        int(rt.targetX), int(rt.targetY),
-                        std::uint8_t(ft)});
-                    // Пролёт лёг — навигация поднимается по СОБЫТИЮ (S7).
-                    ++ctx.mw.gs->navEpoch;
-                    // The day of making pays the working cycle (S14).
-                    pools.spCarry -= float(cycleCost);
-                    settle_sp_carry(pools);
-                }
-            }
-            // Built — or the material was lost on the road: either way the
-            // next think re-decides with honest eyes.
-            rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = 1;
-            return;
-        }
-        const float ox = p.x, oy = p.y;
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
-        if (march_is_stuck_(p, ox, oy, rt, pools)) {
-            rt.targetX = home.x;
-            rt.targetY = home.y;
-            rt.state = std::uint8_t(NS::Returning);
-        }
-        return;
-    }
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
@@ -1395,55 +1127,11 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             if (ctx.mw.world) {
                 const int tx = int(rt.targetX);
                 const int ty = int(rt.targetY);
-                // The MINE opens before the vein is worked (owner
-                // 2026-08-31, CANON S10 «шахта — фича, как поле»): a
-                // mining crew at a BARE vein spends this cycle BUILDING
-                // the kind's own mine — the stamp consolidates the locally
-                // connected cluster of veins into this cell (absorbed
-                // cells leave the map, the mine holds their sum) and rides
-                // the save as a Built work (v71). The next cycle digs.
-                // A cell already carrying a feature (a road) digs bare —
-                // no shaft, no consolidation, exactly as before.
-                // ПАСТБИЩЕ ПЕРВЫМ (S10 «фичи создаются сквадами»): цель
-                // ловли стоит на неогороженной клетке — этот день артель
-                // тратит на ЗАБОР, тем же путём, каким пашет пашню; ловля —
-                // назавтра, как у шахты день шахты и день руды.
-                if (def->rosterYield != NPCType::Count && ctx.mw.features
-                    && ctx.mw.features->at(tx, ty) != FT_Pasture) {
-                    rt.state = std::uint8_t(NS::Plowing);
-                    return;   // target stays: the fence rises HERE
-                }
-                if (def->worksite == Worksite::Deposit && ctx.mw.features
-                    && ctx.mw.deposits && ctx.mw.gs
-                    && ctx.mw.features->at(tx, ty) == FT_None) {
-                    const DepositKind dk = DepositKind(
-                        std::uint8_t(def->row)
-                        - std::uint8_t(ResourceFieldId::Clay));
-                    const FeatureType mineFt = deposit_def(dk).mineFeature;
-                    FeatureLayer& fl = *ctx.mw.features;
-                    std::size_t total = 0;
-                    if (FeatureLayer::cell_count_for(fl.width, fl.height,
-                                                     total)
-                        && fl.data.size() >= total) {
-                        consolidate_deposit_cluster(*ctx.mw.deposits, dk,
-                                                    tx, ty);
-                        const int wx =
-                            FeatureLayer::wrap_coord(tx, fl.width);
-                        const int wy =
-                            FeatureLayer::wrap_coord(ty, fl.height);
-                        fl.data[std::size_t(wy) * std::size_t(fl.width)
-                                + std::size_t(wx)] = mineFt;
-                        ctx.mw.gs->builtFeatures.push_back(
-                            BuiltFeature{tx, ty, std::uint8_t(mineFt)});
-                        // The day of MAKING pays the working cycle (S14).
-                        pools.spCarry -= float(cycleCost);
-                        settle_sp_carry(pools);
-                        rt.targetX = home.x;
-                        rt.targetY = home.y;
-                        rt.state = std::uint8_t(NS::Returning);
-                        return;
-                    }
-                }
+                // (ЗДЕСЬ АРТЕЛЬ СТРОИЛА ШАХТУ НАД ГОЛОЙ ЖИЛОЙ И ЗАГОН ПОД
+                // ТАБУН. ВЫРЕЗАНО 2026-09-22, сессия 14, вердикт владельца:
+                // «СТРОИТЕЛЬСТВО КРЕСТЬЯНАМИ НЕ РАБОТАЕТ НА НЕГО НЕЛЬЗЯ
+                // ПОЛАГАТЬСЯ… ПОЛЯ ШАХТЫ и тд буду прегенериться с миром».
+                // Фичи ставит генерация мира; артель только добывает.)
                 MacroWorld mw = ctx.mw;  // the envelope, whole — never a
                                          // partial re-pick of its layers
                 const int have = resource_field_read(mw, def->row, tx, ty);
@@ -1537,42 +1225,6 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                                              int(def->row) + 1);
                     }
                 }
-                // The plough decision (owner 2026-08-31, CANON S10 «фичи
-                // создаются сквадами»): the parcel could not fill the cycle
-                // — eaten bare — and the bar still holds another cycle, so
-                // the crew spends it MAKING land instead of walking home
-                // light: prospect the best ploughable cell by the home (the
-                // same ±3 box find_home_field harvests) and walk there;
-                // arrival works the day's second cycle into a new field.
-                if (def->row == ResourceFieldId::Wheat
-                    && have < workers
-                    && int(pools.sp) >= cycleCost && ctx.mw.features) {
-                    int bestWheat = 0;
-                    XY plot{};
-                    for (int dy = -kSettlementReach; dy <= kSettlementReach;
-                         ++dy) {
-                        for (int dx = -kSettlementReach;
-                             dx <= kSettlementReach; ++dx) {
-                            if (dx == 0 && dy == 0) continue;  // the town
-                            const int cx = int(home.x) + dx;
-                            const int cy = int(home.y) + dy;
-                            int wheat = 0;
-                            if (!plough_cell_ok(*ctx.mw.features, ctx.mw,
-                                                cx, cy, wheat))
-                                continue;
-                            if (wheat > bestWheat) {
-                                bestWheat = wheat;
-                                plot = XY{float(cx), float(cy)};
-                            }
-                        }
-                    }
-                    if (bestWheat > 0) {
-                        rt.targetX = plot.x;
-                        rt.targetY = plot.y;
-                        rt.state = std::uint8_t(NS::Plowing);
-                        return;
-                    }
-                }
             }
             // THE HAUL IS EMERGENT (owner, 2026-09-16). The crew used to walk
             // home after ONE take because the take was a whole trip's worth by
@@ -1611,49 +1263,6 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             rt.targetX = home.x; rt.targetY = home.y;
             rt.state = std::uint8_t(NS::Returning);
         }
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Plowing)) {
-        if (at_target(p, rt, ctx)) {
-            // PLOUGHING IS A BUILD — it raises the GOAL's own parcel (the
-            // arable field, or the pasture when the yield is a creature) —
-            // so it is priced by that row like every other build (S14.1).
-            const GathererDef* gd = gatherer_def_of(rt);
-            const bool fence = gd && gd->rosterYield != NPCType::Count;
-            // ПАРЦЕЛЛА — СВОЯ У КАЖДОЙ ЦЕЛИ: загон табуну, льняное поле
-            // льну, пашня хлебу. Вид берётся из строки цели, а не из ветки
-            // по товару (2026-09-20, вместе с волокном).
-            const FeatureType parcel =
-                fence ? FT_Pasture
-                      : (gd && gd->worksite == Worksite::HomeFlaxField
-                             ? FT_FlaxField : FT_Field);
-            const int cycleCost =
-                sp_price(int(pools.maxSp), feature_builds_per_day(parcel));
-            const bool built = int(pools.sp) >= cycleCost && ctx.mw.features
-                && ctx.mw.gs
-                && (fence
-                        ? fence_pasture_cell(*ctx.mw.features, ctx.mw,
-                                             int(rt.targetX), int(rt.targetY))
-                        : plough_field_cell(*ctx.mw.features, ctx.mw,
-                                            int(rt.targetX),
-                                            int(rt.targetY), 0.40f, parcel));
-            if (built) {
-                // The day of MAKING pays the same cycle the day of taking
-                // pays — one labour law (S14).
-                pools.spCarry -= float(cycleCost);
-                settle_sp_carry(pools);
-                // The work is WORLD TRUTH: it rides the save as the Built
-                // row and the load re-stamps it (state.h v71).
-                ctx.mw.gs->builtFeatures.push_back(BuiltFeature{
-                    int(rt.targetX), int(rt.targetY),
-                    std::uint8_t(parcel)});
-            }
-            rt.targetX = home.x;
-            rt.targetY = home.y;
-            rt.state = std::uint8_t(NS::Returning);
-            return;
-        }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)
@@ -2192,30 +1801,6 @@ void ai_vendor(entt::entity self, MacroPos& p,
         // (Здесь крю снимало СНИМОК своего рынка на выезде. Снимок вырезан
         // 2026-09-22: на вопрос «чего дому не хватает» отвечает ВЕДОМОСТЬ
         // места, и отвечала всегда она — снимок писался и не читался.)
-        // МОРСКОЙ РЕЙС: сперва ПРИЧАЛ — ближайший корпус своей округи
-        // становится доком рейса (dock = «мой причал», не только «мой
-        // корабль»). ЛЕС ВЕРФИ грузится только когда округа безлодочна —
-        // раньше КАЖДЫЙ новый вендор грузил 1024 кг брёвен, и дань-серебро
-        // не влезало в спину все 96 дней (измерено: склад 5381 стоял
-        // колом, а на берегах пухли лишние корпуса).
-        if (route_dry_unreachable(ctx, int(home.x), int(home.y),
-                                  market->x, market->y)) {
-            XY berth;
-            if (rt.dockX < 0
-                && nearest_region_ship(ctx, int(home.x), int(home.y),
-                                       nav_region_at(*ctx.mw.nav,
-                                                     int(home.x),
-                                                     int(home.y)),
-                                       berth)) {
-                rt.dockX = std::int16_t(int(berth.x));
-                rt.dockY = std::int16_t(int(berth.y));
-            }
-            if (rt.dockX < 0) {
-                haul_between(homeLm->inventory, bag->inv, "wood",
-                             kShipWoodUnits,
-                             rt.carryCap - inventory_weight(bag->inv));
-            }
-        }
         // (ШОВ ДАНИ ВЫРЕЗАН 2026-09-22. Здесь рейс сбыта грузил долг
         // вассала и вёз его НА ЛЮБОЙ рынок, куда ехал сам, — то есть дань
         // рассеивалась случайному соседу вместо сюзерена, и это был
@@ -2250,24 +1835,6 @@ void ai_vendor(entt::entity self, MacroPos& p,
         const float ox = p.x, oy = p.y;
         try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
         if (march_is_stuck_(p, ox, oy, rt, pools)) {
-            // ВЕРФЬ НА БЕРЕГУ: рейс упёрся в воду без корабля — сквад
-            // строит (порт-фича + корпус за лес из сумки) и следующий
-            // think отчаливает. Нет леса — честный отказ рейса (закон
-            // вендора): домой.
-            bool water = false;
-            for (int oy2 = -1; oy2 <= 1 && !water; ++oy2)
-                for (int ox2 = -1; ox2 <= 1 && !water; ++ox2) {
-                    if (ox2 == 0 && oy2 == 0) continue;
-                    water = cell_is_water(ctx, int(p.x) + ox2,
-                                          int(p.y) + oy2);
-                }
-            if (!rt.aboard && water
-                && bag->inv.count("wood") >= kShipWoodUnits) {
-                bag->inv.remove("wood", kShipWoodUnits);
-                stamp_feature_if_bare(ctx, int(p.x), int(p.y), FT_Port);
-                ships_add(ctx, int(p.x), int(p.y), +1);
-                return;
-            }
             rt.targetX = home.x;
             rt.targetY = home.y;
             rt.state = std::uint8_t(NS::Returning);

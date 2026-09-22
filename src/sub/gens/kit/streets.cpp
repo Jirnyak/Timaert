@@ -281,9 +281,7 @@ void edge_anchor_target(const CellContext& ctx, int dx, int dy,
 
 bool is_road_feature(std::uint8_t f) {
     // A bridge is a road for connectivity: the banks' roads aim their edge
-    // anchors at it, and its own carve line runs bank to bank. Wooden or
-    // stone — the crossing connects either way (v72).
-    return f == FT_Road || f == FT_DirtRoad || f == FT_Bridge
-        || f == FT_WoodBridge;
+    // anchors at it, and its own carve line runs bank to bank.
+    return f == FT_Road || f == FT_DirtRoad || f == FT_Bridge;
 }
 } // namespace sm::sub::kit

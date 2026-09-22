@@ -255,18 +255,14 @@ void test_empty_and_malformed_inputs_are_safe()
                      && sm::FeatureLayer::decode(std::uint8_t(sm::FT_Bridge))
                             == sm::FT_Bridge,
                  "FT_Bridge must be a first-class feature byte");
-    // Bytes 5..9 are the mines and the wooden bridge (v71/v72) — validity
-    // comes from the ENUM now, not a hand list: the frontier is FT_Count.
+    // Bytes 5..10 are the mines — validity comes from the ENUM, not a hand
+    // list: the frontier is FT_Count. (Свидетель деревянного моста снят
+    // 2026-09-22 вместе с самим байтом: артель больше не строит ничего.)
     CHECK(sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_SilverMine))
                      && sm::FeatureLayer::decode(
                             std::uint8_t(sm::FT_SilverMine))
                             == sm::FT_SilverMine,
                  "a mine is a first-class feature byte");
-    CHECK(sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_WoodBridge))
-                     && sm::FeatureLayer::decode(
-                            std::uint8_t(sm::FT_WoodBridge))
-                            == sm::FT_WoodBridge,
-                 "the wooden bridge is a first-class feature byte");
     CHECK(!sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_Count))
                      && sm::FeatureLayer::decode(std::uint8_t(sm::FT_Count))
                             == sm::FT_None,

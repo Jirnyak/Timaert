@@ -87,7 +87,7 @@ bool nav_can_stand(const MacroWorld& mw, int x, int y) {
     if (!pc->water[std::size_t(wy) * std::size_t(pc->width) + wx]) return true;
     if (!mw.features) return false;
     const FeatureType ft = FeatureType(mw.features->at(x, y));
-    return ft == FT_Bridge || ft == FT_WoodBridge;
+    return ft == FT_Bridge;
 }
 
 std::uint16_t nav_region_at(const NavWorld& nv, int x, int y) {

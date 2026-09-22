@@ -79,10 +79,7 @@ SubworldMode resolve_mode(const CellContext& ctx) {
     if (feature == FT_DirtRoad) return SubworldMode::Road;
     // A bridge is the road continued over a water cell: Road mode carves the
     // line, and gen_road's Biome::Water branch raises the span. The crews'
-    // wooden bridge (v72) rides the same mode — the deck material is a
-    // rendering nuance, the crossing is the crossing.
     if (feature == FT_Bridge)     return SubworldMode::Road;
-    if (feature == FT_WoodBridge) return SubworldMode::Road;
     if (feature == FT_Field)    return SubworldMode::Field;
     if (feature == FT_Pasture)  return SubworldMode::Field;
     if (ctx.biome == Biome::Mountain) return SubworldMode::Mountain;

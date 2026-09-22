@@ -8,7 +8,6 @@
 // Mountain biome with a high tree count, no feature byte involved.
 #pragma once
 #include "core/table_guard.h"
-#include "macro/resource_field.h"   // ResourceFieldId — what a built cell works
 #include "core/torus.h"
 #include <cstddef>
 #include <cstdint>
@@ -21,41 +20,20 @@ enum FeatureType : std::uint8_t {
     FT_None = 0, FT_Road = 1, FT_DirtRoad = 2, FT_Field = 3, FT_Bridge = 4,
     // The MINES (owner 2026-08-31, CANON S10 «шахта — фича клетки, как
     // поле»): one feature per DepositKind — «шахты-фичи разных типов…
-    // несколько независимых фич — это нормально» (DOD-инкапсуляция). A
-    // mining crew arriving at a bare vein spends its first work day
-    // BUILDING the kind's mine (ai_gatherer), which consolidates the
-    // locally CONNECTED cluster of same-kind veins into this one cell —
-    // the cells zero out, the mine holds their sum, «как поле переводит
-    // фертильность в зерно». The deposit stock itself stays in the deposit
-    // layer AT the mine's cell, so every worksite law reads on unchanged.
+    // несколько независимых фич — это нормально» (DOD-инкапсуляция). Фичу
+    // шахты ставит МИР при генерации (вердикт владельца 2026-09-22: артели
+    // не строят ничего), и она конденсирует связный кластер жил своего рода.
     FT_ClayPit = 5, FT_IronMine = 6, FT_Quarry = 7, FT_SilverMine = 8,
-    // The WOODEN bridge (owner 2026-08-31): crews span one-cell water gaps
-    // on the way to their veins with whatever the home store holds more of
-    // — stone lays the road planner's own FT_Bridge, timber lays this. Same
-    // water-only law as FT_Bridge; the bed column below prices the
-    // difference (a plank deck marches like a dirt lane, not a paved road).
-    FT_WoodBridge = 9,
-    // КОРАБЛИ — ЧЕРЕЗ ФИЧУ (владелец 2026-09-02, CANON S10): порт — фича
-    // берега со СЧЁТЧИКОМ кораблей («у поля урожай, у шахты залежи, у
-    // порта корабли»); счётчик живёт в gs.shipsAtCell (v74). Порт строит
-    // верфь-работа сквада за дерево; БРОШЕННЫЙ КОРАБЛЬ — та же форма без
-    // намерения: пристал к дикому берегу — корабль остаётся фичей («можно
-    // много бросить»), вернёшься — уплывёшь.
-    FT_Port = 10, FT_BeachedShip = 11,
-    // The other two mint metals' mines (v96, with the three coin nominals):
-    // «4 разных шахты — разные типы, множим сколько угодно» — a kind is a row
-    // here and a row in the deposit registry, and no code grows.
-    FT_CopperMine = 12, FT_GoldMine = 13,
-    // ЛОШАДЬ — ЮНИТ (CANON S10, 2026-09-19): the fenced parcel that works
-    // the HERD row — the plough's exact sibling, sown with horses.
-    FT_Pasture = 14,
-    // ЛЬНЯНОЕ ПОЛЕ (владелец, 2026-09-20: «на пашне уже пшеница-пища, значит
-    // нужна фича льняное поле») — ровно тот случай, который эта таблица сама
-    // и предсказала строкой ниже: «a potato field and a poppy field are new
-    // rows of THIS table, working the same number». Лён сеют на той же
-    // плодородной земле, поэтому НОВОГО ресурсного ряда нет: клетка под
-    // льном — это клетка, НЕ занятая хлебом, и конкуренция за землю честна.
-    FT_FlaxField = 15,
+    FT_CopperMine = 9, FT_GoldMine = 10,
+    // ЛОШАДЬ — ЮНИТ (CANON S10, 2026-09-19): огороженная парцелла, работающая
+    // ряд ТАБУНА — точный близнец пашни, засеянный конями. Владелец
+    // 2026-09-22: «пастбище лошадей / овечник / поле пшеницы — единая
+    // система», и различие между ними живёт одной колонкой строки цели.
+    FT_Pasture = 11,
+    // ЛЬНЯНОЕ ПОЛЕ (владелец, 2026-09-20): та же плодородная земля, своя
+    // культура. Нового ресурсного ряда нет: клетка под льном — это клетка,
+    // НЕ занятая хлебом, и конкуренция за землю честна.
+    FT_FlaxField = 12,
     FT_Count,
 };
 
@@ -78,15 +56,15 @@ static_assert(FT_DirtRoad == 2, "FeatureType byte layout");
 static_assert(FT_Field == 3, "FeatureType byte layout");
 static_assert(FT_Bridge == 4, "FeatureType byte layout");
 static_assert(FT_ClayPit == 5 && FT_IronMine == 6 && FT_Quarry == 7
-                  && FT_SilverMine == 8,
-              "FeatureType byte layout (mines, v71)");
-static_assert(FT_WoodBridge == 9, "FeatureType byte layout (v72)");
-static_assert(FT_Pasture == 14, "FeatureType byte layout (v98)");
-static_assert(FT_FlaxField == 15, "FeatureType byte layout (v103)");
-static_assert(FT_Port == 10 && FT_BeachedShip == 11,
-              "FeatureType byte layout (ships, v74)");
-static_assert(FT_CopperMine == 12 && FT_GoldMine == 13,
-              "FeatureType byte layout (mint metals, v96)");
+                  && FT_SilverMine == 8 && FT_CopperMine == 9
+                  && FT_GoldMine == 10,
+              "FeatureType byte layout (mines)");
+static_assert(FT_Pasture == 11 && FT_FlaxField == 12,
+              "FeatureType byte layout (parcels)");
+// (ВЫРЕЗАНЫ 2026-09-22, сессия 14: FT_WoodBridge, FT_Port, FT_BeachedShip.
+// Деревянный мост — единственное, что артель ещё строила; корабли и порты —
+// весь транспортный слой, до которого мир не дошёл. Байты перенумерованы
+// сплошь: сейв старых миров не стоит ничего, закон P1.)
 
 // ── THE feature registry (CANON S16, 2026-08-29) ─────────────────────────
 // Everything the world says ABOUT a feature is a column of ONE row. These
@@ -114,28 +92,10 @@ struct FeatureDef {
     // (zones.cpp): how strongly a built thing pushes the wilderness back.
     // 0 = builds no safety of its own (a field is tended, not garrisoned).
     float civStrength;
-    // WHAT THIS BUILT CELL WORKS — the discriminator of the WORKED LAYER
-    // (CANON S5 «два слоя, и постройка — перенос между ними»).
-    //
-    // The world carries two kinds of resource field. NATURE has one array per
-    // kind (ore, forest, beasts, fertility): it lies on every cell, needs no
-    // discriminator because the array IS the kind, and coexists with
-    // everything. The WORKED layer is ONE array over the world, and a number
-    // in it means whatever the feature standing on that cell says it means —
-    // which is unambiguous because a cell is worked exactly one way («1 шахта
-    // в клетке одно поле в клетке»).
-    //
-    // BUILDING IS THE TRANSFER between them: a mine, going up, swallows the
-    // connected cluster of its kind out of nature's array and lays the sum in
-    // the worked array beneath itself. A plough does the same movement with
-    // fertility — except fertility is not spent by it (owner, 2026-09-16:
-    // land does not grow poorer for being tilled), so there it is the CAP the
-    // standing crop grows back toward.
-    //
-    // `Count` means "this feature works nothing" — a road, a bridge, a port.
-    // Not a sentinel to branch on: it is the legal zero of the column, and a
-    // cell that works nothing simply holds nothing.
-    ResourceFieldId worksRow;
+    // (КОЛОНКА `worksRow` ВЫРЕЗАНА 2026-09-22, сессия 14: ноль читателей за
+    // всю жизнь, при том что её шапка звала себя «THE one door». Живая связь
+    // «фича → что с неё берут» написана строкой цели kGathererDefs.row
+    // (npc_ai.cpp) и всегда была написана только там.)
     // HOW MANY OF THIS A BODY RAISES IN A DAY — the feature's own rate, and
     // therefore its SP price through the one labour law (CANON S14.1:
     // price = bar / rate). Ploughing a parcel, spanning a gap, sinking a
@@ -165,61 +125,35 @@ struct FeatureDef {
 inline constexpr int kBuildsPerDay = 4;
 
 inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
-    //                     bed   optics  civ   works
-    {FT_None,     0.0f, 1.00f, 0.0f, ResourceFieldId::Count,  0},
-    {FT_Road,     1.0f, 0.65f, 0.35f, ResourceFieldId::Count, 0},
-    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, ResourceFieldId::Count, 0},
-    // The ploughed parcel works the ARABLE row. Which crop it is sown with
-    // is a matter of the feature TYPE, not of a second row: a potato field
-    // and a poppy field are new rows of THIS table, working the same number.
-    {FT_Field,    1.8f, 1.00f, 0.0f, ResourceFieldId::Wheat,  kBuildsPerDay},
-    // The bridge carries the stone road's own columns: its deck IS the paved
-    // bed (the march never notices the river under it), it is the same open
-    // corridor to light and sight, and it seeds the same civilization pull.
-    {FT_Bridge,   1.0f, 0.65f, 0.35f, ResourceFieldId::Count, kBuildsPerDay},
-    // Mines share the field's columns: worked ground, not an engineered
-    // bed (0 = the biome's own footing), nothing to hide behind, and a
-    // workplace that is tended, not garrisoned.
-    {FT_ClayPit,    0.0f, 1.00f, 0.0f, ResourceFieldId::Clay,   kBuildsPerDay},
-    {FT_IronMine,   0.0f, 1.00f, 0.0f, ResourceFieldId::Iron,   kBuildsPerDay},
-    {FT_Quarry,     0.0f, 1.00f, 0.0f, ResourceFieldId::Stone,  kBuildsPerDay},
-    {FT_SilverMine, 0.0f, 1.00f, 0.0f, ResourceFieldId::Silver, kBuildsPerDay},
-    // Planks march like the dirt lane (bed 1.5 — the same half-again the
-    // paved bed dirt pays), carry the bridge's open sight line, and seed
-    // the dirt lane's own modest civilization pull.
-    {FT_WoodBridge, 1.5f, 0.65f, 0.22f, ResourceFieldId::Count, kBuildsPerDay},
-    // The harbour is worked shore: a plank apron (dirt-lane bed), open to
-    // sight, with the dirt lane's modest civilization pull.
-    {FT_Port,        1.5f, 0.85f, 0.22f, ResourceFieldId::Count, kBuildsPerDay},
-    // A beached hull builds nothing and guards nothing — it just waits.
-    {FT_BeachedShip, 0.0f, 1.00f, 0.0f, ResourceFieldId::Count, 0},
-    // The other mint metals' shafts: the silver mine's own columns, working
-    // their own rows.
-    {FT_CopperMine, 0.0f, 1.00f, 0.0f, ResourceFieldId::Copper, kBuildsPerDay},
-    {FT_GoldMine,   0.0f, 1.00f, 0.0f, ResourceFieldId::Gold,   kBuildsPerDay},
-    // The pasture carries the ploughed parcel's own columns — worked ground,
-    // waist-high grass hides nothing, tended not garrisoned — and works the
-    // herd row instead of the arable one.
-    {FT_Pasture,  1.8f, 1.00f, 0.0f, ResourceFieldId::Horses, kBuildsPerDay},
-    // Льняное поле — те же колонки, что у пашни: та же вспаханная земля, тот
-    // же арабельный ряд, та же цена работы. Отличается ТОЛЬКО тем, что с неё
-    // берут (строка цели в kGathererDefs), — как и обещала строка выше.
-    {FT_FlaxField, 1.8f, 1.00f, 0.0f, ResourceFieldId::Wheat, kBuildsPerDay},
+    //                     bed   optics  civ
+    {FT_None,     0.0f, 1.00f, 0.0f,  0},
+    {FT_Road,     1.0f, 0.65f, 0.35f, 0},
+    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, 0},
+    // Вспаханная парцелла. Какой культурой засеяна — вопрос ТИПА фичи, а не
+    // второго ресурсного ряда: картофельное и маковое поля будут новыми
+    // строками ЭТОЙ таблицы, работающими то же число.
+    {FT_Field,    1.8f, 1.00f, 0.0f,  kBuildsPerDay},
+    // Мост несёт колонки каменной дороги: его настил И ЕСТЬ мощёное ложе
+    // (марш не замечает реки под ним), тот же коридор свету и взгляду, та же
+    // тяга цивилизации. Кладёт его планировщик дорог при генерации мира.
+    {FT_Bridge,   1.0f, 0.65f, 0.35f, kBuildsPerDay},
+    // Шахты делят колонки пашни: разработанная земля, не инженерное ложе
+    // (0 = своё основание биома), прятаться не за чем, и рабочее место,
+    // которое возделывают, а не держат гарнизоном.
+    {FT_ClayPit,    0.0f, 1.00f, 0.0f, kBuildsPerDay},
+    {FT_IronMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay},
+    {FT_Quarry,     0.0f, 1.00f, 0.0f, kBuildsPerDay},
+    {FT_SilverMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay},
+    {FT_CopperMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay},
+    {FT_GoldMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay},
+    // Пастбище и льняное поле несут колонки пашни: та же возделанная земля,
+    // та же трава по пояс, которая ничего не прячет, та же цена работы.
+    {FT_Pasture,  1.8f, 1.00f, 0.0f,  kBuildsPerDay},
+    {FT_FlaxField, 1.8f, 1.00f, 0.0f, kBuildsPerDay},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
               "feature IS its row here");
-
-// WHAT THE CELL UNDER THIS FEATURE WORKS. `ResourceFieldId::Count` = nothing.
-// THE one door: the worked layer never asks a switch what a feature means, it
-// reads the feature's own row — so a new kind of mine or a new crop is a row
-// here and nowhere else.
-inline constexpr ResourceFieldId feature_works_row(FeatureType f) {
-    return kFeatureDefs[std::size_t(f) < std::size_t(FT_Count)
-                            ? std::size_t(f) : 0].worksRow;
-}
-// (`feature_is_worked` вырезана 2026-09-22 — ноль вызовов: читатели
-// спрашивают саму строку `feature_works_row`, а не её предикат.)
 
 // How many of this a body raises in a day — the rate its SP price is the bar
 // divided by (CANON S14.1). 0 = hands do not raise it.

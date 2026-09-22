@@ -40,7 +40,8 @@ namespace {
 //   NpcCharacter            12        0.19 МиБ
 //   MacroCell/NPCKind/MacroSpawnId  4+4+4   0.19 МиБ
 //   NpcLevel 2 + NpcTraits 3         5       0.08 МиБ
-//   ИТОГО безусловно    12 749      199.2 МиБ  (замер 6 700 сквадов: 81.5 МиБ)
+//   ИТОГО безусловно    12 745      199.1 МиБ  (замер 6 700 сквадов: 81.5 МиБ)
+//   (было 12 749 до 2026-09-22: снос морского хода снял 4 Б с рантайма марша)
 //   + CharacterSheet       144  — только именным (npc_named)
 //   + SquadOrders           34  — только патрулям
 //
@@ -53,8 +54,8 @@ inline constexpr int kMacroSquadBytes =
     + sizeof(ecs::MacroVisual) + sizeof(ecs::NpcCharacter)
     + sizeof(ecs::MacroCell) + sizeof(ecs::NPCKind) + sizeof(ecs::MacroSpawnId)
     + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits);
-static_assert(kMacroSquadBytes == 12749,
-              "макро-сквад весит 12 749 Б; 16384 таких = 199 МиБ (AGENTS п.10)");
+static_assert(kMacroSquadBytes == 12745,
+              "макро-сквад весит 12 745 Б; 16384 таких = 199 МиБ (AGENTS п.10)");
 static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 12360,
               "ядро субъекта — то же, что у Landmark (CANON S4)");
 
