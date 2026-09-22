@@ -2039,24 +2039,79 @@ int landmark_trade_power_(const Landmark& lm) {
 // нужда съедается в момент прихода, на складе лежит только ИЗЛИШЕК —
 // «незачем беречь то, что уже проедено по дороге». Всё видимое свободно;
 // судит одна цена.
-void load_cheap_at_home_(Inventory& store, const std::int32_t* needDebt,
-                         Inventory& bag, int population,
-                         const Skills& site, float capKg) {
-    for (int oi = 0; oi < kCommodityCount
-                    && inventory_weight(bag) < capKg; ++oi) {
-        const int i = value_dense_order()[std::size_t(oi)];
-        const char* id = kCommodities[i].id;
-        const ItemDef* d = item_def(id);
-        const int base = d ? d->value : 0;
-        if (base <= 0) continue;
-        const int have = store.count(id);
-        if (have <= 0) continue;
-        const int demand = season_demand_for(id, needDebt, population,
-                                             site, &store);
-        if (stock_price(base, have, demand) >= base) continue;
-        haul_between(store, bag, id, have,
-                     capKg - inventory_weight(bag));
+// ── ГРУЗ ДОМА — ОДНА ДВЕРЬ, ДВА ЧИТАТЕЛЯ (CANON S10) ────────────────────
+// Вердикт владельца 2026-09-22, дословно: «надо универсально — город грузит
+// в путь ВСЕ товары, то есть у нас просто система, что всё в инвентаре это
+// товар (так и должно быть)».
+//
+// Обход идёт по ПЛОТНОСТИ СТОИМОСТИ (тот же закон, каким платит всякая
+// сделка — currency.h densest_value_slot), а НЕ по пятнадцати строкам
+// kCommodities, как было до 2026-09-22. Следствие, ради которого это и
+// сделано: МОНЕТА ПЕРЕСТАЁТ БЫТЬ НЕВИДИМОЙ. Прежний обход брал строку,
+// только если `stock_price(...) < base`, а у монеты цена И ЕСТЬ база —
+// условие не выполнялось никогда, и казна физически не могла уехать в рейс
+// (Х-13, «названо вслух, не проверено» — проверено замером 2026-09-22:
+// у медианного города еда 0 при 3 682 монетах, и он не мог купить хлеба).
+// Никакого «пути для монет» при этом не заводится: монета просто самый
+// плотный груз на складе (S10 «спецпутей и ворот для монет не существует»).
+//
+// Строка, у которой есть СЕЗОННАЯ НУЖДА, грузится только СВЕРХ неё — дом не
+// вывозит то, чего ему самому не хватает. Всё прочее (монета, инструмент,
+// трофей) нужды не имеет и едет целиком.
+//
+// `bag == nullptr` — НИЧЕГО НЕ ДВИГАТЬ, только посчитать стоимость, которую
+// рейс увезёт: так дверь спрашивает АУКЦИОН. Оттого «что решили» и «что
+// повезли» — одно число, посчитанное одним кодом, а не два (S26).
+long long plan_home_load_(Inventory& store, const std::int32_t* needDebt,
+                          int population, const Skills& site, float capKg,
+                          Inventory* bag) {
+    long long planned = 0;
+    bool done[kMaxInventorySlots] = {};
+    float used = bag ? inventory_weight(*bag) : 0.0f;
+    while (used < capKg) {
+        int best = -1, bestV = 0;
+        float bestW = 0.0f;
+        for (int i = 0; i < int(store.slots.size()); ++i) {
+            if (done[std::size_t(i)]) continue;
+            const ItemRef& sl = store.slots[std::size_t(i)];
+            if (sl.empty()) continue;
+            const int v = value_of(sl);
+            if (v <= 0) continue;
+            const ItemDef* d = item_def_at(int(sl.def));
+            const float w = d && d->weight > 0.0f ? d->weight : 0.0f;
+            const bool denser =
+                best < 0 || float(v) * bestW > float(bestV) * w
+                || (float(v) * bestW == float(bestV) * w && v > bestV);
+            if (denser) { best = i; bestV = v; bestW = w; }
+        }
+        if (best < 0) break;
+        done[std::size_t(best)] = true;
+        const ItemRef& sl = store.slots[std::size_t(best)];
+        const ItemDef* d = item_def_at(int(sl.def));
+        if (!d) continue;
+        int count = int(sl.count);
+        // Сезонная нужда дома неприкосновенна — вывозится только излишек.
+        if (commodity_index(d->id) >= 0) {
+            const int have = store.count(d->id);
+            const int demand = season_demand_for(d->id, needDebt, population,
+                                                 site, &store);
+            const int surplus = have - demand;
+            if (surplus <= 0) continue;
+            if (count > surplus) count = surplus;
+        }
+        int fit = count;
+        if (bestW > 0.0f) {
+            const int byWeight = int((capKg - used) / bestW);
+            if (fit > byWeight) fit = byWeight;
+        }
+        if (fit <= 0) continue;
+        planned += (long long)fit * bestV;
+        used += float(fit) * bestW;
+        if (bag)
+            haul_between(store, *bag, d->id, fit,
+                         capKg - inventory_weight(*bag));
     }
+    return planned;
 }
 
 // (ЗДЕСЬ ЖИЛ ai_caravan — 163 строки рейса «город → город со станциями».
@@ -2195,8 +2250,9 @@ void ai_vendor(entt::entity self, MacroPos& p,
         // (load_cheap_at_home_): never a row the home itself is short of
         // (склад держит только излишек — долг съел нужду приходом).
         const Skills& homeSite = landmark_sheet(homeLm->type).skills;
-        load_cheap_at_home_(homeLm->inventory, homeLm->needDebt, bag->inv,
-                            souls_home(*homeLm), homeSite, rt.carryCap);
+        plan_home_load_(homeLm->inventory, homeLm->needDebt,
+                        souls_home(*homeLm), homeSite, rt.carryCap,
+                        &bag->inv);
         if (inventory_weight(bag->inv) <= 0.0f
             && inventory_value(bag->inv) <= 0) {
             // Nothing to sell and nothing owed: wait out the morning.
@@ -4165,7 +4221,13 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // строка i занята. И СКОЛЬКО ДУШ КАЖДОГО ДОМА СЕЙЧАС В ПОЛЕ (владелец,
     // 2026-09-02): сквады знают свой ландмарк — считаем на месте, ничего
     // не помним.
-    std::vector<std::uint8_t> outMask(gs.landmarks.size(), 0);
+    // СКОЛЬКО ЭКЗЕМПЛЯРОВ КАЖДОЙ СТРОКИ УЖЕ В ПОЛЕ (CANON S4 «строка крю
+    // становится ШАБЛОНОМ, число экземпляров говорят аукцион и пул рук»).
+    // ЗДЕСЬ БЫЛ `outMask` — БИТ на строку, то есть потолок «один сквад на
+    // строку» и заодно потолок 8 на всё место. Он и был тем, что делало
+    // строку СЛОТОМ: город с одной торговой строкой физически не мог
+    // поднять двух корованов, сколько бы излишка ни лежало на складе.
+    std::vector<std::array<std::uint8_t, 8>> outCount(gs.landmarks.size());
     std::vector<int> afield(gs.landmarks.size(), 0);
     // Души артелей, СТОЯЩИХ ДОМА, — часть базы пула труда: суд границы,
     // меривший пул одним населением, ужимал составы каждый сезон (души
@@ -4205,8 +4267,14 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         if (standingHome) continue;   // its row stays OPEN for re-dispatch
         for (int i = 0; i < int(ld.crewCount); ++i) {
             if (std::uint16_t(ld.crews[i].npc) != kind.type) continue;
-            if (outMask[std::size_t(row)] & (1u << i)) continue;
-            outMask[std::size_t(row)] |= std::uint8_t(1u << i);
+            // Экземпляр приписывается строке СВОЕГО ТИПА: у места строки
+            // теперь различаются типом сквада, а не позицией в списке.
+            const SquadType rowType = ld.crews[i].type;
+            if (rowType != SquadType::ByKind
+                && std::uint8_t(rowType) != rt.squadType)
+                continue;
+            if (outCount[std::size_t(row)][std::size_t(i)] < 255)
+                ++outCount[std::size_t(row)][std::size_t(i)];
             break;
         }
     }
@@ -4314,7 +4382,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         if (ld.crewCount == 0 || souls_flock(s) <= 0) continue;
         static_assert(sizeof(LandmarkDef::crews) / sizeof(LandmarkCrewRow)
                           <= 8,
-                      "outMask is one byte: one bit per crew row");
+                      "outCount — восемь счётчиков на место: по строке");
         const XY home{float(s.x), float(s.y)};
         const MacroPos homePos{home.x, home.y};
         // БРОСОК СТАНЦИИ ЭТОГО ДОМА — тот же детерминизм, что у рулетки
@@ -4339,18 +4407,21 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                               sizeof(LandmarkDef::crews)
                                   / sizeof(LandmarkCrewRow)));
         ctx.rng = &stationRoll;
-        int live[8];
+        // ЭКЗЕМПЛЯРЫ, А НЕ СТРОКИ: `live` хранит индекс СТРОКИ столько раз,
+        // сколько сквадов она сегодня поднимает. Потолок — не закон, а
+        // предохранитель от рулевой ошибки; настоящий потолок один и он
+        // назван владельцем: половина паствы (labour.h field_pool).
+        static constexpr int kMaxCrewInstances = 64;
+        int live[kMaxCrewInstances];
         int liveCount = 0;
         int solo[8];
         int soloCount = 0;
-        // The errand's destination, per crew row — what the auction already
-        // resolved, kept so provisioning can size the loaf by the SAME
-        // march the crew is about to walk (npc_ai.h provision_squad) — and
-        // the errand pair itself, stamped onto the raised crew's runtime.
-        XY dest[8];
-        std::uint8_t squadType[8] = {};
-        std::uint32_t errandObject[8] = {};
-        for (int i = 0; i < 8; ++i) dest[i] = home;
+        // Сколько экземпляров строка ХОЧЕТ сегодня — СПРОС, а не реестр.
+        int want[8] = {};
+        // (Здесь стоял `dest[8]` — «цель поручения на строку, чтобы провиант
+        // мерился тем же маршем». У него не было НИ ОДНОГО читателя во всём
+        // src/: колонка-призрак, §55. Снесена вместе с переездом на
+        // экземпляры, а не оставлена «на всякий случай».)
 
         // ── АУКЦИОН ЦЕЛЕЙ этого дома (CANON S10, владелец 2026-09-02) ────
         // Кандидаты считаются ОДИН раз на ландмарк в день (лениво — только
@@ -4367,6 +4438,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         };
         GoalBid bids[kGathererGoalCount + 1];
         int bidCount = -1;   // -1 = аукцион ещё не считан
+        // СПРОС НА КОРОВАНЫ — число трюмов излишка (см. run_auction ниже).
+        int caravanHolds = 0;
         const Skills& homeSite = landmark_sheet(s.type).skills;
         const auto run_auction = [&] {
             if (bidCount >= 0) return;
@@ -4598,7 +4671,22 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // рейса (владелец 2026-09-18: «у нас бартер-система —
                 // покупательная способность это суммарная стоимость
                 // инвентаря»). Дань — долг, не кошелёк.
-                long long purse = 0;
+                // КОШЕЛЁК РЕЙСА — ТА ЖЕ ДВЕРЬ ПОГРУЗКИ, СПРОШЕННАЯ
+                // БЕЗ ДВИЖЕНИЯ: что крю реально увезёт из дома, включая
+                // КАЗНУ (владелец 2026-09-22: всё в инвентаре — товар).
+                // Оттого голодный богатый город впервые видит положительный
+                // скор «поехать КУПИТЬ»: покупательная способность больше
+                // не равна нулю от того, что продавать ему нечего.
+                long long purse = plan_home_load_(
+                    s.inventory, s.needDebt, souls_home(s), homeSite,
+                    carryPerSoul, nullptr);
+                const long long purseAtHome = purse;   // трюм ОДНОЙ спины
+                // СКОЛЬКО ТРЮМОВ ИЗЛИШКА ЛЕЖИТ ДОМА — это и есть СПРОС на
+                // корованы (CANON S4 «число караванов — функция контекста
+                // места», владелец: «население и склада да»). Обе величины
+                // в ДОМАШНИХ ценах, поэтому отношение — чистое число спин.
+                long long surplusValue = 0;   // весь излишек на вывоз
+                long long needValue = 0;      // вся нехватка на ввоз
                 // ПО ОДНОЙ СПИНЕ И В ПОРЯДКЕ ПОГРУЗКИ. Обход идёт
                 // value_dense_order() — ТОЙ ЖЕ дверью, какой крю грузится
                 // дома (load_cheap_at_home_) и какой везёт дань, — и
@@ -4648,12 +4736,16 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         const long long fit = fits(have - demand);
                         if (fit > 0) {
                             value += fit * (therePrice - homePrice);
-                            // ПОКУПАТЕЛЬНАЯ СПОСОБНОСТЬ — то, что груз
-                            // выручит ТАМ, а не его домашняя оценка.
-                            purse += fit * therePrice;
+                            // (Кошелёк сюда БОЛЬШЕ НЕ ПРИБАВЛЯЕТСЯ: он уже
+                            // посчитан ОДНОЙ дверью погрузки выше, и второе
+                            // слагаемое было бы тем же грузом, посчитанным
+                            // дважды.)
                             freeKg -= float(fit) * kg;
                         }
                     }
+                    if (have > demand && homePrice > 0)
+                        surplusValue +=
+                            (long long)(have - demand) * homePrice;
                 }
                 // Проход ЗАКУПКИ, капнутый кошельком: дефицитная цена может
                 // быть сколь угодно громкой (коридора нет — и не будет), но
@@ -4687,6 +4779,25 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     value += buyable * (homePrice - therePrice);
                     purse -= buyable * therePrice;
                 }
+                // НЕХВАТКА ДОМА — второй конец той же работы: город,
+                // которому нечего вывозить, но нужно ВВЕЗТИ, снаряжает
+                // обозы ровно так же (иначе спрос считался бы только у
+                // продавца, и голодный богатый город остался бы с одним
+                // корованом — измерено 2026-09-22).
+                for (int c = 0; c < kCommodityCount; ++c) {
+                    const char* id = kCommodities[c].id;
+                    const ItemDef* d = item_def(id);
+                    const int base = d ? d->value : 0;
+                    if (base <= 0) continue;
+                    const int have = s.inventory.count(id);
+                    const int demand = season_demand_for(id, s.needDebt,
+                                                         souls_home(s),
+                                                         homeSite,
+                                                         &s.inventory);
+                    if (demand <= have) continue;
+                    needValue += (long long)(demand - have)
+                                 * stock_price(base, have, demand);
+                }
                 if (value > 0) {
                     const XY citySite{float(city->x), float(city->y)};
                     // Та же величина: стоимость сделки, размазанная по
@@ -4702,6 +4813,23 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         bids[bidCount++] = GoalBid{
                             std::uint8_t(SquadType::Caravan),
                             std::uint32_t(city->id), citySite, score};
+                        // Излишка на N спин — значит и обозов до N. Пул рук
+                        // ниже это число только УРЕЗАЕТ, но не назначает
+                        // (та же форма, что у числа сборщиков, CANON S4).
+                        // СКОЛЬКО ТРЮМОВ РАБОТЫ ЕСТЬ У ЭТОГО МЕСТА —
+                        // обоими концами: вывезти излишек ИЛИ ввезти
+                        // нехватку. Мера трюма — то, что одна спина реально
+                        // увозит из дома (та же дверь погрузки). Пул рук
+                        // ниже это число только УРЕЗАЕТ (CANON S4).
+                        const long long work =
+                            std::max(surplusValue, needValue);
+                        caravanHolds =
+                            purseAtHome > 0
+                                ? int(std::min<long long>(
+                                      work / purseAtHome,
+                                      kMaxCrewInstances))
+                                : 1;
+                        if (caravanHolds < 1) caravanHolds = 1;
                     }
                 }
             }
@@ -4714,31 +4842,60 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // своей механикой — и тогда его заявка встанет в ОБЩУЮ урну выше
         // одной размерностью со всеми, а не отдельным аукционом.)
 
+        // Строка берёт только заявки своего типа; ByKind = вся урна.
+        const auto row_takes_ = [](const LandmarkCrewRow& cr,
+                                   const GoalBid& b) -> bool {
+            return cr.type == SquadType::ByKind
+                   || b.type == std::uint8_t(cr.type);
+        };
+        // БРОСОК НА КАЖДЫЙ ЭКЗЕМПЛЯР, А НЕ НА СТРОКУ: два корована одного
+        // города тянут РАЗНЫЕ станции, две артели одной деревни — разные
+        // цели. Детерминизм тот же (сид, день, дом), плюс номер экземпляра.
+        const auto draw_bid_ = [&](const LandmarkCrewRow& cr,
+                                   int nonce) -> const GoalBid* {
+            float total = 0.0f;
+            for (int b = 0; b < bidCount; ++b)
+                if (row_takes_(cr, bids[b])) total += bids[b].score;
+            if (!(total > 0.0f)) return nullptr;
+            Rng roll(hash3(gs.worldSeed ^ std::uint32_t(day),
+                           std::uint32_t(s.id), std::uint32_t(nonce)));
+            float draw = roll.next_f01() * total;
+            const GoalBid* pick = nullptr;
+            for (int b = 0; b < bidCount; ++b) {
+                if (!row_takes_(cr, bids[b])) continue;
+                pick = &bids[b];
+                draw -= bids[b].score;
+                if (draw <= 0.0f) break;
+            }
+            return pick;
+        };
+
         for (int i = 0; i < int(ld.crewCount); ++i) {
-            if (outMask[row] & (1u << i)) continue;
             const LandmarkCrewRow& cr = ld.crews[i];
             bool open = false;
             switch (cr.gate) {
                 case CrewGate::Auction: {
                     run_auction();
                     if (bidCount <= 0) break;   // отказ = вывод аукциона
-                    // РУЛЕТКА по скору — свой бросок на строку, детерминизм
-                    // от (сид, день, дом, строка): ротация не трогает
-                    // мировые RNG-потоки, как и раньше.
-                    Rng roll(hash3(gs.worldSeed ^ std::uint32_t(day),
-                                   std::uint32_t(s.id), std::uint32_t(i)));
-                    float total = 0.0f;
+                    // ── СТРОКА БЕРЁТ ТОЛЬКО ЗАЯВКИ СВОЕГО ТИПА (CANON S4
+                    //    «ЗАНЯТИЕ — ЭТО СТРОКА РОСТЕРА») ──────────────────
+                    // Деревенская строка объявлена `Artel`, городская —
+                    // `Caravan`, и разделение живёт ДАННЫМИ: ни одной ветки
+                    // по роду места. `ByKind` = тип не объявлен, урна вся.
+                    int mine = 0;
                     for (int b = 0; b < bidCount; ++b)
-                        total += bids[b].score;
-                    float draw = roll.next_f01() * total;
-                    int pick = bidCount - 1;
-                    for (int b = 0; b < bidCount; ++b) {
-                        draw -= bids[b].score;
-                        if (draw <= 0.0f) { pick = b; break; }
-                    }
-                    dest[i] = bids[pick].site;
-                    squadType[i] = bids[pick].type;
-                    errandObject[i] = bids[pick].object;
+                        if (row_takes_(cr, bids[b])) ++mine;
+                    if (mine <= 0) break;   // своих заявок нет
+                    // ── СКОЛЬКО ЭКЗЕМПЛЯРОВ: СПРОС, А НЕ РЕЕСТР ─────────
+                    // Добыча: сколько целей с ПОЛОЖИТЕЛЬНЫМ скором — столько
+                    // артелей и есть смысл поднять (каждая возьмёт свою
+                    // рулеткой, диверсификация без координации).
+                    // Сбыт: сколько ТРЮМОВ излишка лежит на складе.
+                    // Дань (Б-4) встанет сюда же своим ответом: сколько
+                    // вассалов-должников. Пул рук ниже только УРЕЗАЕТ.
+                    want[i] = cr.type == SquadType::Caravan
+                                  ? std::max(1, caravanHolds)
+                                  : mine;
                     open = true;
                     break;
                 }
@@ -4752,8 +4909,16 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 }
             }
             if (!open) continue;
-            if (cr.solo)          solo[soloCount++] = i;
-            else                  live[liveCount++] = i;
+            if (cr.solo) {
+                if (outCount[row][std::size_t(i)] == 0 && soloCount < 8)
+                    solo[soloCount++] = i;
+                continue;
+            }
+            // Уже в поле — не поднимаем заново: строка хочет `want`, в поле
+            // стоит `outCount`, разница и есть сегодняшний наряд.
+            int need = want[i] - int(outCount[row][std::size_t(i)]);
+            while (need-- > 0 && liveCount < kMaxCrewInstances)
+                live[liveCount++] = i;
         }
         // (ЗДЕСЬ ПОДНИМАЛАСЬ ВЫЛАЗКА ГАРНИЗОНА — 81 строка, снесена
         // 2026-09-21 вместе с патрульной механикой: строк garrison в
@@ -4797,10 +4962,26 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // мимо всякого счёта рук (одна из девяти половин, §55).
         const int soloCost = std::min(soloCount, pool);
         int soloBudget = soloCost;
+        // ── ПУЛ РУК УРЕЗАЕТ ЧИСЛО, А НЕ ТОЛЬКО РАЗМЕР (CANON S4) ────────
+        // «Пул труда места не НАЗНАЧАЕТ это число, а только УРЕЗАЕТ его,
+        // когда рук не хватает.» Без этой строки спрос на много экземпляров
+        // ронял `perCrew` в НОЛЬ, и место не поднимало НИ ОДНОГО сквада —
+        // то есть изобилие целей читалось как «рук нет вовсе» (измерено:
+        // корованов 63 из спроса в сотни).
+        const int handsForCrews = std::max(0, pool - soloCost);
+        if (liveCount > handsForCrews) liveCount = handsForCrews;
         const int perCrew =
-            liveCount > 0 ? (pool - soloCost) / liveCount : 0;
+            liveCount > 0 ? handsForCrews / liveCount : 0;
         for (int li = 0; li < liveCount; ++li) {
             const int i = live[li];
+            // Своё поручение на экземпляр (nonce = строка × потолок + номер):
+            // сквады одной строки расходятся по разным целям, а не идут
+            // колонной в одно место.
+            const GoalBid* myBid =
+                draw_bid_(ld.crews[i], i * kMaxCrewInstances + li);
+            if (!myBid) continue;
+            const std::uint8_t myType = myBid->type;
+            const std::uint32_t myObject = myBid->object;
             const entt::entity standing =
                 claim_standing(std::uint16_t(ld.crews[i].npc));
             if (standing != entt::null) {
@@ -4808,8 +4989,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // объект} — рулетка этой строки уже решила; рефлекс
                 // прерывает не спрашивая.
                 auto& prt = reg.get<ecs::MacroNpcRuntime>(standing);
-                prt.squadType = squadType[i];
-                prt.errandObject = errandObject[i];
+                prt.squadType = myType;
+                prt.errandObject = myObject;
                 prt.stateTimer = 0;   // новый рейс — этим же думом
                 // ТАКТ 2: дом снаряжает уходящую артель тяглом из стойла
                 // (по коню на душу, сколько стоит) — рядом с провиантом
@@ -4922,8 +5103,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 s.population -= 1 + spec.members.size();
                 ++raised;
                 auto& prt = reg.get<ecs::MacroNpcRuntime>(ent);
-                prt.squadType = squadType[i];
-                prt.errandObject = errandObject[i];
+                prt.squadType = myType;
+                prt.errandObject = myObject;
                 // Сезонный груз содержания вместо провианта на рейс: еда —
                 // баланс окна теперь, рейсовый ломоть умер у артелей
                 // (остался у вылазок гарнизона — они не подсудны суду

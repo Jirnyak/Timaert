@@ -16,6 +16,7 @@
                                 // city's labourShift is log2 of (guard below)
 #include "macro/map_actions.h"  // the verb bits the `actions` column declares
 #include "macro/npc.h"   // NPCType — the crew rows below name who a place raises
+#include "macro/squad_type.h"  // SquadType — строка объявляет, КОГО она поднимает
 #include <string_view>
 
 namespace sm {
@@ -73,6 +74,18 @@ struct LandmarkCrewRow {
     // even split of the place's crew pool (pop >> labourShift) across the
     // rows whose gates are open today — even split = zero new constants.
     bool     solo = false;
+    // ── СТРОКА ОБЪЯВЛЯЕТ ТИП СКВАДА, КОТОРЫЙ ПОДНИМАЕТ (CANON S4
+    //    «ЗАНЯТИЕ — ЭТО СТРОКА РОСТЕРА, А НЕ РОД МЕСТА», 2026-09-22) ──────
+    // Дословно у владельца: «крестьяне из деревни только добыча/
+    // строительство, корованы только торговля, стража только патруль,
+    // сборщик только дань». Это «строгое разделение» в форме ДАННЫХ, а не
+    // ветками по роду места: аукцион предлагает строке ТОЛЬКО заявки её
+    // типа, и деревне заявка сбыта не строится вовсе.
+    // `ByKind` (0) = строка типа не объявляет — аукцион предлагает ей всё,
+    // как было до 2026-09-22. Так живут НЕаукционные строки (курьер дани
+    // идёт своим гейтом) и всякая будущая строка, которой разделение ещё не
+    // назначено.
+    SquadType type = SquadType::ByKind;
     // (КОЛОНКА `garrison` УМЕРЛА 2026-09-21 вместе с патрульной механикой.
     // Она означала «строка комплектуется записями гарнизона, а не
     // населением», и её единственная строка — патруль города — была
@@ -276,18 +289,17 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
                    // город), а не строкой-призраком; названный рычаг «число
                    // против размера» — это и есть реформа рождения крю, где
                    // они перестают выводиться друг из друга.
-                   {NPCType::Peasant, CrewGate::Auction}}, 2,
+                   {NPCType::Peasant, CrewGate::Auction,
+                    /*solo*/false, SquadType::Caravan}}, 2,
      /*crowdRoles*/{}, 0,   // v96: fixed posts cut — the street IS the stripe
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
-    // Артели деревни — N ОДИНАКОВЫХ крестьянских строк (снос профессий,
-    // CANON S10): каждая берёт поручение своим броском рулетки аукциона —
-    // диверсификация без координации. N = одновременность артелей, крутилка
-    // дубль-прогона (4 ≈ поле+лес+жила+сбыт живого мира; строки Vendor и
-    // шести профессий умерли — их работу раздаёт аукцион).
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction},
-                   {NPCType::Peasant, CrewGate::Auction},
-                   {NPCType::Peasant, CrewGate::Auction},
-                   {NPCType::Peasant, CrewGate::Auction}}, 4,
+    // ОДНА строка артели — ШАБЛОН, а не слот (CANON S4, 2026-09-22). Здесь
+    // стояли ЧЕТЫРЕ одинаковые крестьянские строки, и четвёрка была
+    // крутилкой «одновременность артелей», то есть числом с потолка в
+    // таблице. Теперь число артелей говорит СПРОС — сколько целей добычи
+    // получили положительный скор, — а пул рук его урезает; строка же
+    // объявляет только КОГО поднимать и КАКОГО ТИПА.
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false, SquadType::Artel}}, 1,
      /*crowdRoles*/{}, 0,   // v96: fixed posts cut — the street IS the stripe
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
