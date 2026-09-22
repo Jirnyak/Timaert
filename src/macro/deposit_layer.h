@@ -108,6 +108,13 @@ struct DepositLayer {
     // scarcity". 64-bit because stone on an all-mountain 1024^2 map is ~2^30
     // units and the growth law sums in 64-bit anyway.
     std::int64_t virginUnits[kDepositKindCount] = {};
+    // КАК ЭТОТ СЛОЙ РОДИЛСЯ — чтобы он умел РОДИТЬ ТО ЖЕ САМОЕ снова.
+    // Залечивание клетки обязано вернуть ровно ту ёмкость, которую дала
+    // генерация, поэтому параметры рождения живут на самом слое, а не у того,
+    // кто его однажды построил. Производные, в сейв не едут: их восстановит
+    // тот же мир (worldSeed) при загрузке.
+    std::uint32_t birthSeed = 0;
+    float         birthSeaLevel = 0.0f;
     // Runtime dirty counter for future consumers; never serialized.
     std::uint32_t revision = 0;
 
@@ -152,6 +159,13 @@ void allocate_deposit_fields(DepositLayer& layer, int width, int height);
 // base amounts are the po2 constants in deposit_layer.cpp (clay 1/64 of
 // river-adjacent land, stone 1/64 of mountains quasi-infinite, iron 1/256 of
 // mountains finite).
+// ЁМКОСТЬ КЛЕТКИ ПО ЭТОМУ РОДУ — чистая функция терраина и сида, как
+// фертильность у пашни (владелец, 2026-09-22). Не убывает никогда: убывает и
+// заживает только разработанное. Та же функция и РОЖДАЕТ мир при генерации, и
+// ЗАЛЕЧИВАЕТ клетку на сезонном визите ходока роста — один закон, не два.
+std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
+                               float seaLevel, DepositKind kind, int x, int y);
+
 DepositLayer build_deposit_layer(const TerrainData& terrain,
                                  std::uint32_t seed, float seaLevel);
 
@@ -179,12 +193,6 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded);
 // мир оскудел», and the dead path guarded a second copy of it.)
 
 // The lump a fresh vein of THIS KIND opens with — the Geology domain's
-// growth number, read off the kind's own generation row (the `veinBase`
-// column). One door for six metals: the two hand-written functions that
-// stood here (iron_vein_lump / silver_vein_lump) were a per-kind dialect,
-// and the third metal would have been a third copy. 0 = this kind does not
-// regrow.
-int deposit_vein_lump(DepositKind kind);
 
 // The MINE's consolidation (owner 2026-08-31, CANON S10 «шахта — фича, как
 // поле»): flood the locally CONNECTED cluster of same-kind veins

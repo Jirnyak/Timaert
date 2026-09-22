@@ -190,10 +190,6 @@ void trees_apply(MacroWorld& w, int x, int y, int delta) {
 }
 
 // The registry row id → the deposit layer's kind (the deposit rows are a
-// contiguous enum block; the static_assert below keeps that a fact).
-DepositKind deposit_kind_of(ResourceFieldId f) {
-    return DepositKind(std::uint8_t(f) - std::uint8_t(ResourceFieldId::Clay));
-}
 static_assert(int(ResourceFieldId::Iron) == int(ResourceFieldId::Clay) + 1
                   && int(ResourceFieldId::Stone) == int(ResourceFieldId::Clay) + 2
                   && int(ResourceFieldId::Silver) == int(ResourceFieldId::Clay) + 3,
@@ -212,8 +208,28 @@ template <DepositKind K>
 void deposit_apply(MacroWorld& w, int x, int y, int delta) {
     if (!w.deposits || delta == 0) return;
     const std::int32_t r = w.deposits->remaining_at(K, x, y);
-    if (r == 0) return;   // fail closed: no vein here to move
-    set_deposit_remaining(*w.deposits, K, x, y, r + delta);
+    // Потолок клетки — её ЁМКОСТЬ, та же чистая функция, что родила мир:
+    // залечивание не может надуть жилу сверх того, что в этой точке залегало.
+    //
+    // БЕЗ ТЕРРАИНА ЁМКОСТЬ НЕ ВЫВОДИТСЯ, и тогда потолком служит то, что в
+    // клетке уже стоит: голый мир-фикстура (слой жил без карты) по-прежнему
+    // умеет тратить и не умеет надувать. Fail-closed на приход, fail-open на
+    // расход — иначе добыча молча переставала работать там, где терраина нет.
+    const int cap = w.terrain
+        ? int(deposit_virgin_at(*w.terrain, w.deposits->birthSeed,
+                                w.deposits->birthSeaLevel, K, x, y))
+        : int(r);
+    if (cap <= 0) return;   // здесь геологии нет — добыча её не изобретает
+    const std::int32_t next = std::int32_t(std::clamp(int(r) + delta, 0, cap));
+    if (r == 0) {
+        // Выработанная клетка возвращается к жизни ТОЙ ЖЕ дверью, какой мир
+        // её однажды родил: у «жила появилась» ровно один вход, и ни одна
+        // производная (счёт живых клеток, диск досягаемости) не может от него
+        // отстать.
+        create_deposit(*w.deposits, K, x, y, next);
+        return;
+    }
+    set_deposit_remaining(*w.deposits, K, x, y, next);
 }
 
 // ── The growth laws — the per-row CONTEXT of the one birth mechanism ──────
@@ -302,68 +318,75 @@ int horses_growth_at(const MacroWorld& w, int x, int y) {
     return (2 * alive >= cap) ? 1 : 0;
 }
 
-// A VEIN KIND is born where it is SCARCE (the owner's negative context) —
-// the lump its own row opens with; the walker's Geology domain owns the
-// global scarcity roll and the host-cell pick (the W2c rule as a table row).
-// One template for every metal: iron_growth_at and silver_growth_at were two
-// copies of this line, and six metals would have been six.
+// ЁМКОСТЬ ЖИЛЫ — ТА ЖЕ ФЕРТИЛЬНОСТЬ, ТОЛЬКО ДЛЯ КАМНЯ (владелец, 2026-09-22).
+// Чистая функция терраина и сида; слой помнит, как он родился, поэтому
+// залечивание возвращает ровно ту ёмкость, которую дала генерация.
 template <DepositKind K>
-int vein_growth_at(const MacroWorld&, int, int) {
-    return deposit_vein_lump(K);
+int vein_baseline(const MacroWorld& w, int x, int y) {
+    if (!w.terrain || !w.deposits) return 0;
+    return int(deposit_virgin_at(*w.terrain, w.deposits->birthSeed,
+                                 w.deposits->birthSeaLevel, K, x, y));
+}
+
+// СКОЛЬКО ПОРОДЫ ВОЗВРАЩАЕТСЯ ЗА СЕЗОННЫЙ ВИЗИТ — ровно тем же числом, каким
+// залечивается пашня (kWheatSeasonsToRegrow): у мира ОДИН темп восстановления,
+// а не темп на каждый род. Выработанная клетка приходит в себя за то же число
+// сезонов, что и выеденное поле.
+template <DepositKind K>
+int vein_growth_at(const MacroWorld& w, int x, int y) {
+    return std::max(1, vein_baseline<K>(w, x, y) / kWheatSeasonsToRegrow);
 }
 
 constexpr ResourceFieldDef kResourceFields[] = {
     /* Wheat */ {"wheat", &wheat_baseline,
-                 GrowthDomain::OwnScars, &wheat_growth_at,
-                 ResourceFieldId::Wheat, nullptr, nullptr, 0},
+                 GrowthDomain::HealToBaseline, &wheat_growth_at,
+                 nullptr, nullptr, 0},
     /* Fauna */ {"fauna", &fauna_baseline,
-                 GrowthDomain::OwnScars, &fauna_growth_at,
-                 ResourceFieldId::Fauna, nullptr, nullptr, 0},
-    // The forest reaches nobody: no gate asks «is there wood near» today.
-    // And the day one does, this 0 is NOT the whole of it — the promise that
-    // used to stand here («and nothing else») was false in two ways. Trees
-    // are a CARRIER row: their live state is the TreeLayer, so
-    // allocate_world_fields skips them and there is no ResourceGrid whose
-    // reach disc could be stamped; and that allocator passes a literal 0 for
-    // every scar row anyway, never reading this column. The reach a row
-    // actually gets asked about today is the vein rows', owned by the deposit
-    // layer (deposit_layer.cpp, kGathererReach). Teaching the forest the
-    // neighbourhood question means giving the carrier rows a reach field of
-    // their own — a build, not a flipped digit.
+                 GrowthDomain::HealToBaseline, &fauna_growth_at,
+                 nullptr, nullptr, 0},
+    // ЛЕС — ЕДИНСТВЕННОЕ ИСКЛЮЧЕНИЕ ЗАКОНА, и оно названо вслух: базовой у
+    // него нет, потому что нетронутая земля зарастает ГУЩЕ девственной.
+    // The forest reaches nobody: no gate asks «is there wood near» today, и
+    // этот 0 — не вся правда: лес есть НОСИТЕЛЬ, его живое состояние — это
+    // TreeLayer, поэтому allocate_world_fields его пропускает и диска
+    // досягаемости у него нет вовсе.
     /* Trees */ {"trees", nullptr,
-                 GrowthDomain::CarrierGrid, &trees_growth_at,
-                 ResourceFieldId::Trees, &trees_read, &trees_apply, 0},
+                 GrowthDomain::CarrierSpread, &trees_growth_at,
+                 &trees_read, &trees_apply, 0},
     /* Horses */ {"horses", &horses_baseline,
-                 GrowthDomain::OwnScars, &horses_growth_at,
-                 ResourceFieldId::Horses, nullptr, nullptr, 0},
-    /* Clay  */ {"clay",  nullptr,
-                 GrowthDomain::None, nullptr, ResourceFieldId::Clay,
+                 GrowthDomain::HealToBaseline, &horses_growth_at,
+                 nullptr, nullptr, 0},
+    // ЖИЛЫ — ТОТ ЖЕ ЗАКОН, ЧТО У ПАШНИ (2026-09-22): ёмкость чистой функцией,
+    // клетка держит взятое, взятое заживает. Ни рождения, ни исчезновения с
+    // карты: «метал не убывает как и фертильность».
+    /* Clay  */ {"clay",  &vein_baseline<DepositKind::Clay>,
+                 GrowthDomain::HealToBaseline,
+                 &vein_growth_at<DepositKind::Clay>,
                  &deposit_read<DepositKind::Clay>,
                  &deposit_apply<DepositKind::Clay>, kGathererReach},
-    /* Iron  */ {"iron",  nullptr,
-                 GrowthDomain::Geology, &vein_growth_at<DepositKind::Iron>,
-                 ResourceFieldId::Stone,
+    /* Iron  */ {"iron",  &vein_baseline<DepositKind::Iron>,
+                 GrowthDomain::HealToBaseline,
+                 &vein_growth_at<DepositKind::Iron>,
                  &deposit_read<DepositKind::Iron>,
                  &deposit_apply<DepositKind::Iron>, kGathererReach},
-    /* Stone */ {"stone", nullptr,
-                 GrowthDomain::None, nullptr, ResourceFieldId::Stone,
+    /* Stone */ {"stone", &vein_baseline<DepositKind::Stone>,
+                 GrowthDomain::HealToBaseline,
+                 &vein_growth_at<DepositKind::Stone>,
                  &deposit_read<DepositKind::Stone>,
                  &deposit_apply<DepositKind::Stone>, kGathererReach},
-    /* Silver */ {"silver", nullptr,
-                 GrowthDomain::Geology, &vein_growth_at<DepositKind::Silver>,
-                 ResourceFieldId::Stone,
+    /* Silver */ {"silver", &vein_baseline<DepositKind::Silver>,
+                 GrowthDomain::HealToBaseline,
+                 &vein_growth_at<DepositKind::Silver>,
                  &deposit_read<DepositKind::Silver>,
                  &deposit_apply<DepositKind::Silver>, kGathererReach},
-    // The other two mint metals (v96): same born-where-scarce geology, same
-    // stone host, their own rows — «новый род = новый массив и строка закона».
-    /* Copper */ {"copper", nullptr,
-                 GrowthDomain::Geology, &vein_growth_at<DepositKind::Copper>,
-                 ResourceFieldId::Stone,
+    /* Copper */ {"copper", &vein_baseline<DepositKind::Copper>,
+                 GrowthDomain::HealToBaseline,
+                 &vein_growth_at<DepositKind::Copper>,
                  &deposit_read<DepositKind::Copper>,
                  &deposit_apply<DepositKind::Copper>, kGathererReach},
-    /* Gold  */ {"gold", nullptr,
-                 GrowthDomain::Geology, &vein_growth_at<DepositKind::Gold>,
-                 ResourceFieldId::Stone,
+    /* Gold  */ {"gold", &vein_baseline<DepositKind::Gold>,
+                 GrowthDomain::HealToBaseline,
+                 &vein_growth_at<DepositKind::Gold>,
                  &deposit_read<DepositKind::Gold>,
                  &deposit_apply<DepositKind::Gold>, kGathererReach},
 };
@@ -558,15 +581,12 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
     if (!w.gs || day <= 0) return;
     for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
         const ResourceFieldDef& def = kResourceFields[f];
+        const ResourceFieldId row = ResourceFieldId(f);
         switch (def.growthDomain) {
-        case GrowthDomain::None:
-            break;
-
-        case GrowthDomain::CarrierGrid: {
-            // The due 1/32 slice of the dense carrier (32768 cells of the
-            // 1024² map): each cell is visited once per epoch and gets an
-            // epoch's worth of growth — smooth long-term dynamics, no
-            // full-map day.
+        case GrowthDomain::CarrierSpread: {
+            // ЛЕС. Клеток/32 плотного носителя за день: клетка навещается раз
+            // в эпоху и получает эпоху роста — плавная долгая динамика без
+            // полнокарточного дня и без работы в тике.
             if (!w.trees || !w.trees->has_complete_storage()) break;
             const int W = w.trees->width;
             const std::size_t n = w.trees->cell_count();
@@ -575,125 +595,33 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
                 const int x = int(idx % std::size_t(W));
                 const int y = int(idx / std::size_t(W));
                 const int born = def.growthAt(w, x, y);
-                if (born > 0) {
-                    resource_field_apply(w, ResourceFieldId(f), x, y, born);
-                }
+                if (born > 0) resource_field_apply(w, row, x, y, born);
             }
             break;
         }
 
-        case GrowthDomain::OwnScars: {
-            // Only scarred cells can grow (capacity is the baseline), and the
-            // row's own FIELD is walked — its live cells ARE the scarred
-            // ones, which is the same work the hash did without pretending
-            // the world was a bag of keys. The due indices are collected
-            // first because the write below heals cells out from under the
-            // walk (a grid's zero is a legal value, but the count moves).
+        case GrowthDomain::HealToBaseline: {
+            // ВСЁ ОСТАЛЬНОЕ — ОДНОЙ ПЕТ�енькой. Ходок берёт свой срез КАРТЫ, а
+            // не «только поцарапанные клетки»: ряд-носитель (жила) вообще не
+            // умеет перечислить недобранные клетки, а ряд-шрам на пустой
+            // клетке просто ничего не делает. Одна петля дешевле двух
+            // диалектов обхода — клеток/32 в день, тот же срез, что у леса.
             if (!w.terrain || w.terrain->width <= 0) break;
-            const ResourceGrid& scars = w.gs->resourceScarCells[f];
-            if (!scars.live()) break;
-            std::vector<std::uint32_t> due;
-            scars.for_each_live([&](std::uint32_t idx, std::int32_t) {
-                if (growth_cell_due(idx, day)) due.push_back(idx);
-            });
-            for (const std::uint32_t idx : due) {
-                const int x = int(idx % std::uint32_t(w.terrain->width));
-                const int y = int(idx / std::uint32_t(w.terrain->width));
+            const int W = w.terrain->width;
+            const std::size_t n =
+                std::size_t(W) * std::size_t(w.terrain->height);
+            for (std::size_t idx = std::size_t(day % kGrowthEpochDays);
+                 idx < n; idx += std::size_t(kGrowthEpochDays)) {
+                const int x = int(idx % std::size_t(W));
+                const int y = int(idx / std::size_t(W));
+                // Полная клетка не лечится: спрашиваем ёмкость ДО закона
+                // роста, потому что для жилы ёмкость — это шум, и платить за
+                // него на каждой полной клетке незачем.
+                const int cap = def.baseline ? def.baseline(w, x, y) : 0;
+                if (cap <= 0) continue;
+                if (resource_field_read(w, row, x, y) >= cap) continue;
                 const int born = def.growthAt(w, x, y);
-                if (born > 0) {
-                    resource_field_apply(w, ResourceFieldId(f), x, y, born);
-                }
-            }
-            break;
-        }
-
-        case GrowthDomain::Geology: {
-            // Lump birth on the HOST row's cells that lack this row — the
-            // scarcer the world's stock, the likelier a strike (W2c):
-            // chance/day = depletion × 1/8. Deterministic: the roll is a
-            // pure hash of (worldSeed, day) — no RNG stream consumed, a
-            // reload replays the same calendar.
-            if (!w.deposits) break;
-            const std::size_t ownKind =
-                std::size_t(deposit_kind_of(ResourceFieldId(f)));
-            const auto& own = w.deposits->cells[ownKind];
-            // Scarcity is world level vs BORN level (owner, 2026-08-28):
-            // virginUnits is derived from terrain + seed at layer build, so
-            // annihilated veins need no memorial and a world born without
-            // the metal never prospects for it.
-            const std::int64_t virgin = w.deposits->virginUnits[ownKind];
-            const int lump = def.growthAt(w, 0, 0);
-            if (lump <= 0 || virgin <= 0) break;
-            std::int64_t remaining = 0;
-            own.for_each_live([&](std::uint32_t idx, std::int32_t rem) {
-                (void)idx;
-                remaining += rem;
-            });
-            // Discovery can push the live stock ABOVE the born level; a
-            // richer-than-born world simply misses nothing (a negative
-            // deficit cast to unsigned would prospect every day, forever).
-            const std::int64_t deficit =
-                remaining < virgin ? virgin - remaining : 0;
-            // depletion ∈ [0,1] in 1/8 steps of the day roll below: the
-            // comparison runs in integers — hash24 < depletion × 2^24 / 8.
-            const std::uint64_t hash24 =
-                hash3(std::uint32_t(day), 0x6E0Cu, w.gs->worldSeed) >> 8;
-            const std::uint64_t bar =
-                std::uint64_t(deficit * (1 << 24) / (virgin * 8));
-            if (hash24 >= bar) break;
-            // Candidates: host cells not yet holding this row. A FIELD walks
-            // itself in index order, so the list comes out sorted by
-            // construction — the explicit sort that used to stand here existed
-            // only because a hash's iteration order is unspecified and the
-            // pick must never depend on it.
-            const ResourceGrid& host =
-                w.deposits->grid(deposit_kind_of(def.growthHost));
-            std::vector<std::uint32_t> candidates;
-            candidates.reserve(std::size_t(host.liveCells));
-            host.for_each_live([&](std::uint32_t idx, std::int32_t rem) {
-                (void)rem;
-                if (own.at_index(idx) == 0) candidates.push_back(idx);
-            });
-            if (candidates.empty()) break;
-            const std::uint32_t pick =
-                hash3(std::uint32_t(day), 0x51F7u, w.gs->worldSeed)
-                % std::uint32_t(candidates.size());
-            const std::uint32_t idx = candidates[pick];
-            const int x = int(idx % std::uint32_t(w.deposits->width));
-            const int y = int(idx / std::uint32_t(w.deposits->width));
-            create_deposit(*w.deposits,
-                           deposit_kind_of(ResourceFieldId(f)), x, y, lump);
-            // New geology is a FACT of the world (FactKind::Discovered:
-            // "found what the world did not know it had"), not a UI line:
-            // the legends will be asked where the late-age iron came from,
-            // and whoever stands nearby learns it through his journal. The
-            // land itself struck it — no ordinal takes the credit — so the
-            // subject is the PLACE, and amount names the row, +1, the same
-            // deed-against-the-land shape the gatherer's Drained writes.
-            {
-                WorldFact df{};
-                df.day = day;
-                df.kind = std::uint16_t(FactKind::Discovered);
-                df.subjectKind = std::uint8_t(FactSubject::Cell);
-                df.x = std::int16_t(x);
-                df.y = std::int16_t(y);
-                df.amount = int(f) + 1;
-                // THROUGH THE ONE DOOR (вердикт №9, 2026-09-17: прямые
-                // chronicle_record «сводим в одну систему»): record_deed
-                // files the fact AND settles what it was worth by the one
-                // law — a bare chronicle_record here was a writer that filed
-                // for free, and the two halves of S20.1 must never come
-                // apart. The land takes the credit, so no subject ordinal is
-                // handed over (a cell has no renown to earn, which the door
-                // answers with 0 rather than with a branch).
-                if (w.world) {
-                    record_deed(*w.world, *w.gs, df);
-                } else {
-                    // No ECS wired (a field-only test world): the fact is
-                    // still the world's memory — fail OPEN on the memory,
-                    // never on the deed.
-                    chronicle_record(w.gs->chronicle, df);
-                }
+                if (born > 0) resource_field_apply(w, row, x, y, born);
             }
             break;
         }

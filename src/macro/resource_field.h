@@ -13,10 +13,10 @@
 // a flat array over the world's cells — ResourceGrid below. There is no second
 // dialect. What differs between rows is only WHAT the cell holds, and the
 // registry already says which:
-//   · a row with NO baseline is its own stock (trees, veins): the cell IS the
-//     live count, and it may grow past its virgin derivation — the baseline
-//     was an initial condition, not an attractor (untouched land thickens
-//     into чащобы).
+//   · a row with NO baseline is its own stock — и такой ряд остался ОДИН,
+//     лес: клетка ЕСТЬ живой счёт, и он может перерасти девственный вывод,
+//     потому что нетронутая земля зарастает в чащобы. Жилы были здесь же до
+//     2026-09-22 и переехали в строку ниже: у руды теперь ЕСТЬ базовая.
 //   · a row WITH a baseline is capacity minus what play took (wheat, fauna):
 //     the cell holds the SCAR, and the world tends back to the baseline. A
 //     scar subtracts correctly from any embodied yield a subworld invents;
@@ -111,16 +111,28 @@ inline bool growth_cell_due(std::uint32_t cellIdx, int day) {
         == day % kGrowthEpochDays;
 }
 
-// What ground the walker covers for a row:
-//   None        — the field does not grow (stone, clay: quasi-static).
-//   CarrierGrid — every cell of the dense carrier (trees: чащобы thicken,
-//                 forests spread into neighbours).
-//   OwnScars    — only cells play has scarred (wheat, fauna: capacity is
-//                 the baseline, so unscarred cells have nowhere to grow).
-//   Geology     — lump birth on the HOST row's cells that lack this row
-//                 (iron: the scarcer the world's iron, the likelier a stone
-//                 quarry turns out to hold a vein — the W2c rule as a row).
-enum class GrowthDomain : std::uint8_t { None, CarrierGrid, OwnScars, Geology };
+// ОДИН ЗАКОН РОСТА: ЗАЛЕЧИВАНИЕ К БАЗОВОЙ (владелец, 2026-09-22, дословно:
+// «давай тогда метал не убывает как и фертильность… то есть та же механика с
+// шахтой как с полем»).
+//
+// Ёмкость клетки есть чистая функция терраина и сида — она НЕ УБЫВАЕТ НИКОГДА.
+// Убывает и заживает только ВЗЯТОЕ. Пшеница, лён, зверь, табун и вся руда
+// ходят этим одним законом; отличается у них ровно диалект хранения (шрам
+// против живого числа носителя), а не право на второй закон.
+//
+//   HealToBaseline — всё, у чего есть базовая: шрам заживает, живое число
+//                    носителя дорастает обратно до ёмкости.
+//   CarrierSpread  — ЕДИНСТВЕННОЕ ИСКЛЮЧЕНИЕ, и оно названо вслух: лес. У
+//                    него базовой НЕТ, потому что нетронутая земля зарастает
+//                    ГУЩЕ девственной (чащобы), и прибавка пропорциональна
+//                    тому, что стоит в 3×3.
+//
+// (ЗДЕСЬ БЫЛО ЧЕТЫРЕ ДОМЕНА. `Geology` — рождение новых жил «где скудно» —
+// вырезан 2026-09-22 вердиктом владельца: «НЕ БУДЕТ РОЖДАТЬСЯ ЖИЛ В ТЕЧЕНИЕ
+// ПАРТИИ МЫ ЭТО ВЫРЕЗАЕМ». `None` умер вместе с ним: не осталось ряда, который
+// не растёт. Вместе с `Geology` ушли обратная связь от дефицита, колонка
+// хозяина рождения и колонка кома свежей жилы.)
+enum class GrowthDomain : std::uint8_t { HealToBaseline, CarrierSpread };
 
 struct ResourceFieldDef {
     const char* id;
@@ -129,12 +141,11 @@ struct ResourceFieldDef {
     // row's baseline is its initial condition only (null: the carrier was
     // filled by worldgen and lives its own life from there).
     int (*baseline)(const MacroWorld& w, int x, int y);
-    // The growth law. growthAt = units born at a DUE cell this visit (for
-    // Geology: the lump a fresh vein opens with). Pure and deterministic —
-    // context in, delta out; the walker owns dueness and the write.
+    // The growth law. growthAt = units regained at a DUE cell this visit.
+    // Pure and deterministic — context in, delta out; the walker owns dueness,
+    // the write, and the clamp to the row's own baseline.
     GrowthDomain growthDomain;
     int (*growthAt)(const MacroWorld& w, int x, int y);
-    ResourceFieldId growthHost;   // Geology only: whose cells host the birth
     // Carrier hooks — both set = the row's live state is a dense structure
     // outside the scar maps (trees: the TreeLayer grid the map renders).
     // Read is the current count; apply clamps to the row's own cap, writes

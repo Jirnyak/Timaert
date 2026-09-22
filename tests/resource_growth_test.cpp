@@ -215,34 +215,38 @@ void test_iron_is_born_where_scarce() {
     }
     const std::size_t stoneBefore = stoneCells();
 
-    // Annihilation (v55/v56): the worked-out veins LEFT the map, and only
-    // the DERIVED born-with baseline still says the world ever knew iron —
-    // which is what keeps the scarcity law prospecting. (Under the field
-    // law of geology, v72, a vein's units vary with the nest's profile, so
-    // the baseline is a positive SUM, no longer count × lump.)
-    CHECK(ironCells() == 0
-              && deposits.virginUnits[std::size_t(DepositKind::Iron)] > 0,
-          "mined-out veins are annihilated; the baseline is derived");
+    // ЖИЛА ЗАЖИВАЕТ, КАК ПАШНЯ (владелец, 2026-09-22: «метал не убывает как и
+    // фертильность»). Выработанная клетка держит ноль — но ноль это ВЫРАБОТКА,
+    // а не приговор: ёмкость клетки есть чистая функция терраина и сида, она
+    // не убывала никогда, и сезонный ходок возвращает взятое обратно.
+    //
+    // (ЗДЕСЬ СТОЯЛ СВИДЕТЕЛЬ ДВУХ ОТМЕНЁННЫХ ЗАКОНОВ: аннигиляции выработанной
+    // жилы, 2026-08-28, и рождения новой «где скудно» на клетке-хозяине.
+    // Оба сняты вердиктом владельца, поэтому свидетель ПЕРЕПИСАН под новый
+    // закон, а не подогнан ожиданием под новый ответ.)
+    CHECK(ironCells() == 0,
+          "свежевыработанный мир держит ноль железа в клетках");
 
-    // A mined-out world prospects at depletion/8 = 12.5 %/day: over 256
-    // days the horizon is generous, and the roll is a PURE function of the
-    // calendar, so this is exact, not flaky.
     run_days(w, 256);
     CHECK(ironCells() > 0,
-          "a mined-out world struck new iron within the horizon");
+          "выработанный мир зажил: железо вернулось на СВОИ клетки");
     CHECK(stoneCells() == stoneBefore,
-          "every strike landed IN a quarry and deleted no stone");
-    // The fresh vein holds real metal on a stone host.
-    bool freshOnStone = false;
+          "залечивание железа не тронуло ни одной клетки камня");
+    // Заживает ровно до своей ёмкости и ни на юнит выше: потолок клетки — та
+    // же чистая функция, которой мир родился.
+    bool overCap = false;
     deposits.grid(DepositKind::Iron).for_each_live(
         [&](std::uint32_t idx, std::int32_t rem) {
-            if (rem > 0
-                && deposits.grid(DepositKind::Stone).at_index(idx) != 0) {
-                freshOnStone = true;
+            const int x = deposits.grid(DepositKind::Iron).x_of(idx);
+            const int y = deposits.grid(DepositKind::Iron).y_of(idx);
+            if (rem > deposit_virgin_at(td, deposits.birthSeed,
+                                        deposits.birthSeaLevel,
+                                        DepositKind::Iron, x, y)) {
+                overCap = true;
             }
         });
-    CHECK(freshOnStone, "the fresh vein carries metal and shares its cell "
-                        "with the host quarry");
+    CHECK(!overCap,
+          "ни одна клетка не зажила выше своей ёмкости");
 
     // EXTINCTION is the honest end of the breeding law: a world whose
     // fauna is gone EVERYWHERE has nobody left to breed, anywhere, ever.

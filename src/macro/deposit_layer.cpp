@@ -51,12 +51,6 @@ struct DepositGenRow {
     // world's money supply IS its silver geology × catalog value 32).
     std::int32_t unitScale;
     std::uint32_t salt;
-    // The lump a FRESH vein opens with (the Geology growth domain's «born
-    // where it is scarce»). A column since 2026-09-18: it lived as two
-    // hand-written functions (iron_vein_lump / silver_vein_lump), which is
-    // exactly the shape that cannot grow to six metals without growing code.
-    // 0 = this kind does not regrow (clay and stone are not born scarce).
-    std::int32_t veinBase;
 };
 // Thresholds and scales are CALIBRATED against the hash law's world totals
 // (the fingerprint line below is the instrument): the money supply and the
@@ -86,16 +80,16 @@ struct DepositGenRow {
 // is a balance-run tunable; the yield they are all divided against lives on
 // the coin rows (items.cpp), not here.
 constexpr DepositGenRow kDepositGen[kDepositKindCount] = {
-    //                       profile            affinity              period thresh scale  salt        vein
-    {DepositKind::Clay,   OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f,  12288, 0xC1A70000u,    0},
-    {DepositKind::Iron,   OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f,   2048, 0x1F0E0000u, 2048},
-    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  65536, 0x570E0000u,    0},
+    //                       profile            affinity              period thresh scale  salt
+    {DepositKind::Clay,   OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f,  12288, 0xC1A70000u},
+    {DepositKind::Iron,   OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f,   2048, 0x1F0E0000u},
+    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  65536, 0x570E0000u},
     // The mint metals: the lowest period and the highest bar — few nests,
     // truly rare, but a found one is a mining town's whole reason. Copper is
     // the base metal of the three, so its bar is the lowest of them.
-    {DepositKind::Silver, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.96f,      5, 0x517E0000u,    7},
-    {DepositKind::Copper, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.90f,     30, 0xC0BB0000u,   43},
-    {DepositKind::Gold,   OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.995f,     1, 0x901D0000u,    1},
+    {DepositKind::Silver, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.96f,      5, 0x517E0000u},
+    {DepositKind::Copper, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.90f,     30, 0xC0BB0000u},
+    {DepositKind::Gold,   OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.995f,     1, 0x901D0000u},
 };
 static_assert(rows_in_enum_order(kDepositGen, &DepositGenRow::kind),
               "kDepositGen row order must mirror DepositKind");
@@ -140,58 +134,79 @@ void allocate_deposit_fields(DepositLayer& layer, int width, int height) {
     }
 }
 
+// ЁМКОСТЬ КЛЕТКИ — ЧИСТАЯ ФУНКЦИЯ ТЕРРАИНА И СИДА, как фертильность
+// (владелец, 2026-09-22: «метал не убывает как и фертильность… та же механика
+// с шахтой как с полем»). Она НЕ УБЫВАЕТ НИКОГДА: убывает и заживает только
+// разработанное, ровно как стоящий урожай на пашне.
+//
+// Почему это функция, а не второй массив: шум дорог, но спрашивают его ТОЛЬКО
+// на сезонном срезе ходока роста (клеток/32 в день), а горячий путь читает
+// сохранённое текущее число. Второе поле ёмкости стоило бы 25 МиБ и не купило
+// бы ничего.
+std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
+                               float seaLevel, DepositKind kind, int x, int y) {
+    if (terrain.width <= 0 || terrain.height <= 0
+        || !terrain.has_rgba_storage()) {
+        return 0;
+    }
+    const int wx = wrapi(x, terrain.width);
+    const int wy = wrapi(y, terrain.height);
+    const std::uint8_t sea8 = std::uint8_t(seaLevel * 255.0f);
+    if (terrain.is_water(wx, wy, sea8)) return 0;
+    const DepositGenRow& g = kDepositGen[std::size_t(kind)];
+    // The terrain WEIGHT (never a gate): metals ride height⁴ — mountains ~1,
+    // plains vanishing but legal; clay rides the river-wetted lowland.
+    float weight = 0.0f;
+    switch (g.affinity) {
+        case OreAffinity::MountainHeight: {
+            const float h01 = float(terrain.height_at(wx, wy)) / 255.0f;
+            weight = h01 * h01 * h01 * h01;
+            break;
+        }
+        case OreAffinity::RiverMoisture: {
+            const float m01 = float(terrain.moisture_at(wx, wy)) / 255.0f;
+            weight = river_adjacent(terrain, wx, wy) ? m01 : m01 / 8.0f;
+            break;
+        }
+    }
+    // Below-threshold weight cannot crest whatever the noise says — skip the
+    // fbm for the 90% of cells it cannot help.
+    if (weight <= g.threshold) return 0;
+    const float ux = (float(wx) + 0.5f) / float(terrain.width);
+    const float uy = (float(wy) + 0.5f) / float(terrain.height);
+    const float fseed = float(seed % 100000u);
+    const float n = terrain_fbm(ux * g.period, uy * g.period, 3, 0.5f,
+                                g.period, fseed + float(g.salt & 0xFFFFu));
+    const float c = weight
+        * (g.profile == OreProfile::Ridge
+               ? std::pow(1.0f - std::fabs(n), 3.0f)
+               : n * 0.5f + 0.5f);
+    if (c <= g.threshold) return 0;
+    return std::max<std::int32_t>(
+        1, std::int32_t(float(g.unitScale) * (c - g.threshold)
+                        / (1.0f - g.threshold)));
+}
+
 DepositLayer build_deposit_layer(const TerrainData& terrain,
                                  std::uint32_t seed, float seaLevel) {
     DepositLayer layer;
     layer.width = terrain.width;
     layer.height = terrain.height;
+    layer.birthSeed = seed;
+    layer.birthSeaLevel = seaLevel;
     allocate_deposit_fields(layer, terrain.width, terrain.height);
     if (terrain.width <= 0 || terrain.height <= 0
         || !terrain.has_rgba_storage()) {
         return layer;
     }
-    const std::uint8_t sea8 = std::uint8_t(seaLevel * 255.0f);
-    // The one seed→float cast, the noise's own idiom (map_generator.cpp).
-    const float fseed = float(seed % 100000u);
+    // Генерация — ТА ЖЕ чистая функция, что потом залечивает клетку: один
+    // закон ёмкости, а не два спеллинга одного шума.
     for (int y = 0; y < terrain.height; ++y) {
-        const float uy = (float(y) + 0.5f) / float(terrain.height);
         for (int x = 0; x < terrain.width; ++x) {
-            if (terrain.is_water(x, y, sea8)) continue;
-            const float ux = (float(x) + 0.5f) / float(terrain.width);
-            const float h01 = float(terrain.height_at(x, y)) / 255.0f;
             for (int k = 0; k < kDepositKindCount; ++k) {
-                const DepositGenRow& g = kDepositGen[std::size_t(k)];
-                // The terrain WEIGHT (never a gate): metals ride height⁴ —
-                // mountains ~1, plains vanishing but legal; clay rides the
-                // river-wetted lowland.
-                float weight = 0.0f;
-                switch (g.affinity) {
-                    case OreAffinity::MountainHeight:
-                        weight = h01 * h01 * h01 * h01;
-                        break;
-                    case OreAffinity::RiverMoisture: {
-                        const float m01 =
-                            float(terrain.moisture_at(x, y)) / 255.0f;
-                        weight = river_adjacent(terrain, x, y) ? m01
-                                                               : m01 / 8.0f;
-                        break;
-                    }
-                }
-                // Below-threshold weight cannot crest whatever the noise
-                // says — skip the fbm for the 90% of cells it cannot help.
-                if (weight <= g.threshold) continue;
-                const float n =
-                    terrain_fbm(ux * g.period, uy * g.period, 3, 0.5f,
-                                g.period, fseed + float(g.salt & 0xFFFFu));
-                const float c = weight
-                    * (g.profile == OreProfile::Ridge
-                           ? std::pow(1.0f - std::fabs(n), 3.0f)
-                           : n * 0.5f + 0.5f);
-                if (c <= g.threshold) continue;
-                const std::int32_t amount = std::max<std::int32_t>(
-                    1, std::int32_t(float(g.unitScale)
-                                    * (c - g.threshold)
-                                    / (1.0f - g.threshold)));
+                const std::int32_t amount = deposit_virgin_at(
+                    terrain, seed, seaLevel, DepositKind(k), x, y);
+                if (amount <= 0) continue;
                 layer.cells[std::size_t(k)].write(x, y, amount);
                 layer.virginUnits[std::size_t(k)] += amount;
             }
@@ -218,10 +233,16 @@ bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
                            int x, int y, std::int32_t remaining) {
     if (layer.width <= 0 || layer.height <= 0) return false;
     ResourceGrid& g = layer.grid(kind);
-    if (g.at(x, y) == 0) return false;   // mining invents no geology
-    // ANNIHILATION (owner, 2026-08-28): a worked-out vein is a vein that no
-    // longer exists — in a field, that is the value 0. The reach disc leaves
-    // with it inside the grid's own write, so no door has to remember.
+    // ГЕОЛОГИЮ ДОБЫЧА НЕ ИЗОБРЕТАЕТ: эта дверь двигает то, что уже стоит, и
+    // в пустую клетку не пишет. Возврат выработанной клетки к жизни идёт
+    // своей дверью — create_deposit, — и идёт он только там, где ЁМКОСТЬ
+    // клетки положительна (macro_stock.cpp deposit_apply).
+    //
+    // (ЗАКОН АННИГИЛЯЦИИ, 2026-08-28, «выработанная жила — это жила, которой
+    // больше нет», ОТМЕНЁН вердиктом владельца 2026-09-22: «метал не убывает
+    // как и фертильность». Ноль в клетке больше не приговор — это выработка,
+    // и она заживает.)
+    if (g.at(x, y) == 0) return false;
     g.write(x, y, remaining <= 0 ? 0 : remaining);
     ++layer.revision;
     return true;
@@ -260,11 +281,6 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
         // either — it rode every write above.
     }
     ++layer.revision;
-}
-
-int deposit_vein_lump(DepositKind kind) {
-    return std::size_t(kind) < std::size_t(kDepositKindCount)
-        ? int(kDepositGen[std::size_t(kind)].veinBase) : 0;
 }
 
 int consolidate_deposit_cluster(DepositLayer& layer, DepositKind kind,

@@ -61,28 +61,8 @@ struct XY { float x, y; };
 // полностью из кода потому что не дошли до них». Здесь жили ships_at /
 // ships_add над слоем разработки и цена корпуса kShipWoodUnits.)
 
-// Штамп фичи на голую клетку + правда мира (строка Built, как мост/шахта).
-void stamp_feature_if_bare(const TickContext& ctx, int x, int y,
-                           FeatureType ft) {
-    if (!ctx.mw.features || !ctx.mw.gs) return;
-    FeatureLayer& fl = *ctx.mw.features;
-    std::size_t total = 0;
-    if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
-        || fl.data.size() < total)
-        return;
-    const int wx = FeatureLayer::wrap_coord(x, fl.width);
-    const int wy = FeatureLayer::wrap_coord(y, fl.height);
-    std::uint8_t& b =
-        fl.data[std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx)];
-    if (FeatureLayer::decode(b) != FT_None) return;
-    b = std::uint8_t(ft);
-    ctx.mw.gs->builtFeatures.push_back(BuiltFeature{x, y, std::uint8_t(ft)});
-    // МОСТ МЕНЯЕТ ПРОХОДИМОСТЬ — и это СОБЫТИЕ (CANON S9/S7): запечённая
-    // навигация поднимается по факту, а не по ежедневному пересчёту фич.
-    // Распашка и шахта проходимости не меняют и поле не трогают — тот же
-    // урок, что однажды убил перф глобальной инвалидацией по builtFeatures.
-    if (ft == FT_Bridge) ++ctx.mw.gs->navEpoch;
-}
+// (`stamp_feature_if_bare` ВЫРЕЗАНА 2026-09-22: фичи ставит генерация мира,
+// а не сквады — артель больше не строит ничего.)
 
 XY pick_random_nearby(float cx, float cy, int range, const TickContext& ctx) {
     float nx = wrapf(cx + float(rand_int(ctx, range * 2) - range),
@@ -267,7 +247,6 @@ enum class ThinkGate : std::uint8_t { Dead, Rest, Think };
 void settle_exhaustion(entt::entity e, const MacroPos& p,
                        ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                        bool canCamp, const TickContext& ctx);
-bool cell_is_water(const TickContext& ctx, int x, int y);
 
 // THE standing predicate (owner 2026-08-30; CANON S7): the cell types a
 // walking NPC almost never enters are exactly the cells where NO CAMP CAN
@@ -3058,18 +3037,6 @@ bool can_stand_at(const TickContext& ctx, int x, int y) {
     return nav_can_stand(ctx.mw, x, y);
 }
 
-bool cell_is_water(const TickContext& ctx, int x, int y) {
-    const PathCostData* pc = ctx.mw.pathCost;
-    if (!pc || pc->width <= 0 || pc->height <= 0
-        || pc->water.size()
-               != std::size_t(pc->width) * std::size_t(pc->height)) {
-        return false;
-    }
-    const int wx = wrapi(x, pc->width);
-    const int wy = wrapi(y, pc->height);
-    return pc->water[std::size_t(wy) * std::size_t(pc->width)
-                     + std::size_t(wx)] != 0u;
-}
 
 void settle_exhaustion(entt::entity e, const MacroPos& p,
                        ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
