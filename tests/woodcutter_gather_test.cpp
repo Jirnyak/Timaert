@@ -536,8 +536,18 @@ void test_the_vendor_sells_at_the_nearest_city() {
                           + bag.count("coin_timaert_copper");
     CHECK(coinTotal == 40000 + 50 * 2,
           "CONSERVATION: coin moves through the deal, never minted");
-    CHECK(gs.landmarks[1].inventory.count("coin_timaert_copper") > 0,
-          "the village EARNED coin for its raw — the payment is real");
+    // КОШЕЛЁК ДЕРЕВНИ — ЭТО ПОЛКА ПЛЮС ТРЮМ ЕЁ СОБСТВЕННОЙ КРЮ. С
+    // 2026-09-22 крю грузит в рейс ВСЁ, включая КАЗНУ (владелец: «всё в
+    // инвентаре — товар»), и у сезонного резерва дома нет товарной строки
+    // для монеты — стак уезжает целиком. Поэтому «монета на полке» в
+    // произвольный тик читает ФАЗУ РЕЙСА, а не заработок: на 600-м думе
+    // вся казна деревни законно едет в обозе, и прежняя редакция этой
+    // проверки падала на мире, который работает правильно.
+    const int vilPurse = gs.landmarks[1].inventory.count("coin_timaert_copper")
+                         + bag.count("coin_timaert_copper");
+    CHECK(vilPurse > 50 * 2,
+          "the village EARNED coin for its raw — the payment is real "
+          "(purse = shelf + its own crew's hold: a run is not a loss)");
 
     // The DEAL is a fact of the world (S20.1): filed at the village the
     // moment the exchange happened — a transition by nature, so every visit

@@ -9,14 +9,18 @@
 //     нечего поднимать, пока артели в поле;
 //   · отказ = вывод аукциона: миру нечего предъявить — деревня не
 //     поднимает никого (ноль целей = ноль артелей, ничего не наколдовано);
-//   · дань-относ — цель крестьян: один долг, без излишков и жил, уже
-//     поднимает рейс сбыта.
+//   · ДАНЬ — ЗАЯВКА СЮЗЕРЕНА, А НЕ ГРУЗ ДОЛЖНИКА (CANON S4 «сборщик идёт
+//     вниз», 2026-09-22): долг вассала поднимает СБОРЩИКА У СЮЗЕРЕНА, и
+//     объект поручения есть должник. Прежде этот файл утверждал обратное —
+//     что долг поднимает рейс сбыта у самого должника, — и утверждал по
+//     снесённому закону.
 #include "check.h"
 
 #include "ecs/components.h"
 #include "macro/deposit_layer.h"
 #include "macro/econ_day.h"
 #include "macro/npc.h"
+#include "macro/nav_field.h"
 #include "macro/npc_ai.h"
 #include "macro/resource_field.h"
 #include "macro/tree_layer.h"
@@ -71,6 +75,34 @@ void stock_comforts(Landmark& lm) {
     }
 }
 
+// ОДНА ОКРУГА НА ВСЮ КАРТУ, хозяин — деревня 3. Нав здесь не декорация:
+// опись округи (survey_landmark_regions) без запечённой навигации не
+// работает вовсе — «своей земли» у места нет, — а цель-ЖИЛА родится только
+// из строки описи. Без нава у деревни живёт ровно одна цель добычи (лес),
+// и «рулетка не диверсифицирует» читалось бы как дефект закона, тогда как
+// это немота фикстуры. Свежесть объявлена по событию (CANON S9), чтобы
+// боевой nav_ensure не перепёк рукоделие.
+NavWorld make_one_region_nav(const GameState& gs) {
+    NavWorld nv{};
+    nv.mapW = kMap;
+    nv.mapH = kMap;
+    nv.bakedSeed = gs.worldSeed;
+    nv.bakedNavEpoch = gs.navEpoch;
+    const std::size_t cells = std::size_t(kMap) * std::size_t(kMap);
+    nv.regionOf.assign(cells, 0);
+    nv.distHome.assign(cells, 16);
+    nv.stepHome.assign(cells, 0);
+    nv.waterRegionOf.assign(cells, kNavNoRegion);
+    nv.regionLandmarkId = {3};
+    nv.regionCell = {10 * kMap + 10};
+    nv.portals.clear();
+    nv.portalBegin = {0};
+    nv.portalCount = {0};
+    nv.routeDist = {0u};
+    nv.routeNext = {0};
+    return nv;
+}
+
 struct Crew {
     std::uint8_t  verb;
     std::uint32_t object;
@@ -121,9 +153,15 @@ void test_auction_raises_errand_bearing_peasants() {
 
     ecs::World w;
     TerrainData absent{};
+    NavWorld nav = make_one_region_nav(gs);
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent,
-                  .deposits = &dep, .treeGrid = &grid};
+                  .deposits = &dep, .treeGrid = &grid, .nav = &nav};
 
+    // ОПИСЬ ОКРУГИ — ТЕМ ЖЕ ТАКТОМ, ЧТО В МИРЕ (world_tick: опись и
+    // ротация стоят на одной границе сезона). Без неё цель-жила не
+    // рождается вовсе — аукциону нечего предъявить, кроме леса, — и
+    // «рулетка не диверсифицирует» читалось бы как дефект закона.
+    survey_landmark_regions(mw, /*day*/1);
     const int raised = rotate_worker_squads(mw, /*day*/1);
     const std::vector<Crew> crews = live_crews(w);
 
@@ -133,18 +171,27 @@ void test_auction_raises_errand_bearing_peasants() {
           "каждый подъём — крестьянская артель (профессии не поднимаются)");
     CHECK(int(crews.size()) <= 4,
           "подъём деревни ограничен строками её ростера (N×Peasant = 4)");
-    // НОВЫЙ ЗАКОН (владелец 2026-09-19): у города есть своя крестьянская
-    // строка — артель ГОРОЖАН за покупками, и её рейс идёт ВНИЗ по
-    // феодальному ребру, в деревню-вассала. Сделка обязана случаться на
-    // дешёвом конце: голодному городу первая буханка стоит база × сезонную
-    // нужду / 2, и купить он не может ни при каком кошельке.
-    bool townsfolkShop = !townsfolk.empty();
+    // КРЮ ГОРОДА ИДЁТ ВНИЗ ПО ФЕОДАЛЬНОМУ РЕБРУ — и с 2026-09-22 это
+    // СБОРЩИК: дань перестала ехать попутным грузом чужого рейса, у неё
+    // своя заявка и своя машина. Объект поручения — вассал-должник.
+    bool townsfolkGoDown = !townsfolk.empty();
     for (const Crew& c : townsfolk) {
-        if (c.verb != std::uint8_t(SquadType::Caravan) || c.object != 3u)
-            townsfolkShop = false;
+        if (c.object != 3u) townsfolkGoDown = false;
+        if (c.verb != std::uint8_t(SquadType::Collector)
+            && c.verb != std::uint8_t(SquadType::Caravan)) {
+            townsfolkGoDown = false;
+        }
     }
-    CHECK(townsfolkShop,
-          "город поднял артель горожан с рейсом к СВОЕЙ деревне (ребро вниз)");
+    CHECK(townsfolkGoDown,
+          "город поднял крю ВНИЗ по феодальному ребру, к своему вассалу");
+    bool tithesHaveTheirOwnBid = false;
+    for (const Crew& c : townsfolk) {
+        if (c.verb == std::uint8_t(SquadType::Collector)) {
+            tithesHaveTheirOwnBid = true;
+        }
+    }
+    CHECK(tithesHaveTheirOwnBid,
+          "долг вассала поднимает СБОРЩИКА у сюзерена — своей заявкой");
 
     const int ironRow = gather_goal_row(ResourceFieldId::Iron);
     const int treeRow = gather_goal_row(ResourceFieldId::Trees);
@@ -183,8 +230,10 @@ void test_auction_raises_errand_bearing_peasants() {
                            gsd.landmarks[0].needDebt,
                            gsd.landmarks[0].population, nullptr, nullptr);
         ecs::World wd;
+        NavWorld navd = make_one_region_nav(gsd);
         MacroWorld mwd{.gs = &gsd, .world = &wd, .terrain = &absent,
-                       .deposits = &dep, .treeGrid = &grid};
+                       .deposits = &dep, .treeGrid = &grid, .nav = &navd};
+        survey_landmark_regions(mwd, day);
         rotate_worker_squads(mwd, day);
         for (const Crew& c : live_crews(wd))
             distinct.insert({int(c.verb), int(c.object)});
@@ -222,29 +271,36 @@ void test_refusal_is_the_auctions_verdict() {
           "невзятая работа не трогает души деревни");
 }
 
-void test_tithe_alone_raises_the_sell_run() {
-    // Один долг дани — без излишков, жил и леса: рейс сбыта обязан ехать
-    // (дань-относ = цель крестьян, вердикт 2026-09-02).
+void test_tithe_raises_the_collector_at_the_suzerain() {
+    // ДОЛГ ПОДНИМАЕТ СБОРЩИКА У СЮЗЕРЕНА (CANON S4, 2026-09-22). До этого
+    // дня файл утверждал обратное — «один долг дани поднимает рейс сбыта у
+    // должника», — и это был закон, который сборщик-идущий-вниз заменил:
+    // дань больше не едет попутным грузом чужого рейса.
     GameState gs = make_world(/*pop*/100);
-    gs.landmarks[0].titheOwedValue = 300;
-    // Хлеб — только на условие создания (сезон содержания); целей добычи
-    // он не рождает, единственная живая цель остаётся рейсом сбыта.
+    gs.landmarks[0].titheOwedValue = 300;          // долг лежит на вассале
+    // Хлеб обоим: условие создания крю — сезон содержания на складе ДОМА.
     gs.landmarks[0].inventory.add("food", 3200);
+    gs.landmarks[1].inventory.add("food", 16000);
     ecs::World w;
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
 
     const int raised = rotate_worker_squads(mw, /*day*/1);
-    const std::vector<Crew> crews = live_crews(w);
-    CHECK(raised > 0, "долг дани сам по себе — цель с положительным скором");
-    bool allSell = !crews.empty();
-    for (const Crew& c : crews) {
-        if (c.verb != std::uint8_t(SquadType::Caravan) || c.object != 9u)
-            allSell = false;
+    CHECK(raised > 0, "долг дани — цель с положительным скором");
+    const std::vector<Crew> atDebtor = live_crews_of(w, 3);
+    for (const Crew& c : atDebtor) {
+        CHECK(c.verb != std::uint8_t(SquadType::Collector),
+              "должник не снаряжает сборщика сам себе");
     }
-    CHECK(allSell,
-          "единственная живая цель — рейс сбыта к своему рынку (объект = "
-          "ординал города)");
+    const std::vector<Crew> atSuzerain = live_crews_of(w, 9);
+    bool collectorGoesDown = !atSuzerain.empty();
+    for (const Crew& c : atSuzerain) {
+        if (c.verb != std::uint8_t(SquadType::Collector) || c.object != 3u) {
+            collectorGoesDown = false;
+        }
+    }
+    CHECK(collectorGoesDown,
+          "сюзерен поднял СБОРЩИКА, и объект поручения — вассал-должник");
 }
 
 // ── ДВА РЕГУЛЯТОРА суда границы (S19.2, владелец 2026-09-18): строки —
@@ -366,33 +422,57 @@ void test_station_is_a_weighted_roulette() {
         gs.mapW = kWide;
         gs.mapH = kWide;
         gs.worldSeed = 7u;
-        Landmark vil{};
-        vil.type = LandmarkType::Village;
-        vil.id = 3;
-        vil.x = 100;
-        vil.y = 100;
-        vil.population = 100;
-        // Единственная живая цель — долг дани: без жил и леса аукцион
-        // поднимает ТОЛЬКО рейс сбыта, и объект поручения есть станция.
-        vil.titheOwedValue = 300;
-        vil.inventory.add("food", 3200);
-        gs.landmarks.push_back(vil);
-        const int xs[3] = {132, 700, 1060};   // 32 / 600 / 960 клеток пути
+        // ДОМ РЕЙСА — ГОРОД. Прежде здесь стояла ДЕРЕВНЯ, поднимавшая
+        // рейс сбыта своим долгом дани; оба основания умерли 2026-09-22:
+        // строка деревни объявляет только артель добычи, а дань уехала в
+        // заявку сюзерена. Рейс сбыта носит ГОРОДСКАЯ строка, и свидетель
+        // закона о станции обязан ехать на ней — иначе он судит закон по
+        // сквадам, которых в мире не рождается.
+        Landmark home{};
+        home.type = LandmarkType::City;
+        home.id = 3;
+        home.x = 100;
+        home.y = 100;
+        home.population = 100;
+        // Живая цель одна — СБЫТ ИЗЛИШКА: ни жил, ни леса, ни вассалов,
+        // поэтому объект всякого поручения есть станция.
+        home.inventory.add("food", 8000);           // сезон содержания крю
+        home.inventory.add("cloth", 4000);          // излишек на вывоз
+        home.inventory.add("tools", 4000);
+        gs.landmarks.push_back(home);
+        // ТРИ СТАНЦИИ, РАЗВЕДЁННЫЕ ПО ДНЯМ ПУТИ: 32 / 600 / 960 клеток.
+        const int xs[3] = {132, 700, 1060};
         for (int k = 0; k < 3; ++k) {
-            Landmark city{};
-            city.type = LandmarkType::City;
-            city.id = 9 + k;
-            city.x = xs[k];
-            city.y = 100;
-            city.population = 0;   // город без душ не поднимает своих артелей
-            gs.landmarks.push_back(city);
+            Landmark st{};
+            st.type = LandmarkType::City;
+            st.id = 9 + k;
+            st.x = xs[k];
+            st.y = 100;
+            // Души станции нужны: гейт кандидата смотрит паству. Своих крю
+            // станция не поднимет — ей нечего вывозить, и это честный
+            // отказ аукциона, а не немота фикстуры.
+            st.population = 50;
+            gs.landmarks.push_back(st);
         }
-        // Место без душ остаётся станцией: гейт выбора смотрит население
-        // КАНДИДАТА, поэтому души городам нужны — но крю их не поднимут,
-        // пока у них нет ни склада, ни долга (отказ аукциона честен).
-        for (int k = 0; k < 3; ++k) gs.landmarks[std::size_t(1 + k)].population = 50;
-        set_suzerain(gs, 3, 9);
-        (void)day;
+        // Вассалов у дома нет намеренно: заявка сборщика увела бы крю с
+        // рейса, и рулетка станции судилась бы по чужому поручению.
+        //
+        // СТАНЦИИ ПРОШЛИ ГРАНИЦУ СЕЗОНА И ОСТАЛИСЬ ДОЛЖНЫ. Без непокрытой
+        // нужды полка станции стоит на ПОЛУ цены, мировое среднее равно
+        // единице — и спред рейса равен нулю по построению. Рынок,
+        // которому ничего не надо, не рынок.
+        for (int k = 0; k < 3; ++k) {
+            Landmark& st = gs.landmarks[std::size_t(1 + k)];
+            econ_debt_boundary(st.inventory, st.needDebt, st.population,
+                               nullptr, nullptr);
+        }
+        // ВЕДОМОСТИ ПУБЛИКУЮТСЯ, КАК В МИРЕ (world_tick: публикация и
+        // ротация стоят на одной границе сезона). Без них яруса 2 знания
+        // нет вовсе и цена ТАМ равна нулю — рейс сбыта не рождается ни
+        // один. Прежняя редакция фикстуры этого не знала, потому что её
+        // рейс держала ДАНЬ полной стоимостью, а дань уехала в заявку
+        // сюзерена 2026-09-22.
+        publish_landmark_ledgers(gs, day);
         return gs;
     };
     int hits[3] = {0, 0, 0};
@@ -433,7 +513,7 @@ int main() {
     test_auction_raises_errand_bearing_peasants();
     test_station_is_a_weighted_roulette();
     test_refusal_is_the_auctions_verdict();
-    test_tithe_alone_raises_the_sell_run();
+    test_tithe_raises_the_collector_at_the_suzerain();
     test_boundary_court_resizes_standing_crews();
     return sm::test::report("goal_auction_test");
 }

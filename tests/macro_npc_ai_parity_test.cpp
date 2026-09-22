@@ -170,10 +170,13 @@ void test_nomad_excludes_current_target() {
     gs.landmarks.push_back(settlement(2, 40, 10));
 
     sm::ecs::World world;
-    // Бродяга — ЛЮБАЯ машина без дома: она сваливается в ai_nomad (род
-    // Caravan, водивший этот тест, снесён вместе со своим ИИ 2026-09-21).
-    auto e = spawn_ai(world, sm::NPCType::TaxCollector, 40.0f, 10.0f, -1);
+    // Бродяга — ТИП СКВАДА без дома: диспетчер спрашивает тип первым, а
+    // корован без дома честно сваливается в ai_nomad. На роли тела этот
+    // тест стоять больше не может — роль TaxCollector осталась без машины
+    // 2026-09-22, и фикстура молча перестала ехать.
+    auto e = spawn_ai(world, sm::NPCType::Peasant, 40.0f, 10.0f, -1);
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
+    rt.squadType = std::uint8_t(sm::SquadType::Caravan);
     rt.targetSettlementId = 2;
 
     sm::MacroNpcAiRuntime runtime;
@@ -295,32 +298,11 @@ void test_aggressive_spares_a_friend() {
           "an aggressive row does not chase a faction it is not at war with");
 }
 
-void test_patrol_returns_when_far_from_home() {
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
-    gs.landmarks.push_back(settlement(1, 50, 50));
-
-    sm::ecs::World world;
-    auto e = spawn_ai(world, sm::NPCType::Guard, 70.0f, 50.0f, 1);
-    sm::MacroNpcAiRuntime runtime;
-    sm::reset_macro_npc_ai_runtime(runtime, 60u);
-    // Enough thinks for three whole cells at the derived budget — the law
-    // under test is decide-and-MOVE, not any particular pace.
-    const float perThink =
-        sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
-    const int thinks = int(std::ceil(3.0f / perThink));
-    for (int i = 0; i < thinks; ++i) tick_once(gs, world, runtime);
-
-    auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
-    CHECK(in_state(rt, sm::NPCState::Returning),
-          "a Patrol that strayed past its leash turns back");
-    CHECK(targets(rt, 50.0f, 50.0f),
-          "the returning Patrol aims at the settlement it guards");
-    CHECK(sm::ecs::cell_x(world.reg.get<sm::ecs::MacroCell>(e), 128) == 67,
-          "the Patrol actually MOVES homeward once it decides to "
-          "(three cells at the derived march budget)");
-}
+// (ПАТРУЛЬ ВЫРЕЗАН 2026-09-22 вместе со своим свидетелем: `ai_patrol`,
+// значение `AIBehaviour::Patrol` и состояние `NPCState::Patrolling` снесены
+// курсом «идти от минимума системы». Патруль вернётся ростером сквада-
+// ландмарка после слияния гарнизона (CANON S10, наряд Б-1) — и свидетеля
+// тогда писать ПО НОВОЙ ФОРМЕ, а не воскрешать этот.)
 
 void test_teleporter_cooldown_counts_down() {
     sm::GameState gs{};
@@ -588,7 +570,6 @@ int main() {
     test_nomad_excludes_current_target();
     test_aggressive_chases_visible_player();
     test_aggressive_spares_a_friend();
-    test_patrol_returns_when_far_from_home();
     test_teleporter_cooldown_counts_down();
     test_wanderer_enters_wandering_state();
     test_resting_recovery_prevents_permanent_stall();

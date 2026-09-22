@@ -61,12 +61,16 @@ entt::entity make_walker(ecs::World& w, int mapW, float x, float y,
     auto e = w.reg.create();
     w.reg.emplace<ecs::MacroCell>(e, ecs::cell_index(int(x), int(y), mapW));
     w.reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
-    // Ходок фикстуры — машина БЕЗ ДОМА: она сваливается в ai_nomad и просто
-    // идёт к цели. Артель (Gatherer) без дома не двигается вовсе, а род
-    // Caravan, водивший этот тест, снесён 2026-09-21 вместе со своим ИИ.
-    w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::TaxCollector),
+    // НОСИТЕЛЬ МАРША — ЖИВОЙ (2026-09-22). Прежде ходок ехал на роли
+    // TaxCollector и сваливался в ai_nomad фолбэком снесённого ai_taxrun:
+    // роль умерла, фолбэк вместе с ней, и девятнадцать законов марша разом
+    // перестали проверяться ЧЕМ БЫ ТО НИ БЫЛО, оставаясь при этом целыми.
+    // Теперь ходок — ТИП СКВАДА (первый ответ диспетчера): корован без
+    // дома честно доходит до того же ai_nomad и просто идёт к цели.
+    w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
                                 std::uint16_t{0});
     ecs::MacroNpcRuntime rt{};
+    rt.squadType = std::uint8_t(SquadType::Caravan);
     rt.homeSettlementId = -1;
     rt.targetSettlementId = -1;
     rt.targetX = tx;
