@@ -105,7 +105,7 @@ void test_auction_raises_errand_bearing_peasants() {
     // его скор сопоставим с жилой и лесом, и диверсификация ВИДНА.
     gs.landmarks[0].inventory.add("food", 3200);
     stock_comforts(gs.landmarks[0]);
-    gs.landmarks[0].titheOwedCoin = 200;            // долг дани — цель сбыта
+    gs.landmarks[0].titheOwedValue = 200;            // долг дани — цель сбыта
     // ГОРОДУ ЕСТЬ С ЧЕМ ЕХАТЬ: излишек своего ремесла (город ткёт) — это и
     // товар на продажу, и покупательная способность рейса. Пустому городу
     // аукцион честно откажет: менять нечего, и это правильный отказ.
@@ -173,7 +173,7 @@ void test_auction_raises_errand_bearing_peasants() {
         const int day = 1 + k * kDaysPerSeason;
         GameState gsd = make_world(/*pop*/100);
         stock_comforts(gsd.landmarks[0]);
-        gsd.landmarks[0].titheOwedCoin = 200;
+        gsd.landmarks[0].titheOwedValue = 200;
         // МИР ПОСЛЕ ГРАНИЦЫ (CANON S10): счёт выставлен и оплачен посевным
         // амбаром — склад держит излишек, не сезонный запас. Былой глут
         // хлеба 3200 при нулевом счёте давил бы рулетку в argmax сбыта:
@@ -226,7 +226,7 @@ void test_tithe_alone_raises_the_sell_run() {
     // Один долг дани — без излишков, жил и леса: рейс сбыта обязан ехать
     // (дань-относ = цель крестьян, вердикт 2026-09-02).
     GameState gs = make_world(/*pop*/100);
-    gs.landmarks[0].titheOwedCoin = 300;
+    gs.landmarks[0].titheOwedValue = 300;
     // Хлеб — только на условие создания (сезон содержания); целей добычи
     // он не рождает, единственная живая цель остаётся рейсом сбыта.
     gs.landmarks[0].inventory.add("food", 3200);
@@ -259,7 +259,7 @@ void test_boundary_court_resizes_standing_crews() {
     gs.landmarks[1].population = 0;
     gs.landmarks[0].inventory.add("food", 5000);
     gs.landmarks[0].inventory.add("food", 3200 * 4);   // сезоны впрок
-    gs.landmarks[0].titheOwedCoin = 200;
+    gs.landmarks[0].titheOwedValue = 200;
     DepositLayer dep{};
     allocate_deposit_fields(dep, kMap, kMap);
     dep.grid(DepositKind::Iron).write(14, 10, 64);
@@ -374,7 +374,7 @@ void test_station_is_a_weighted_roulette() {
         vil.population = 100;
         // Единственная живая цель — долг дани: без жил и леса аукцион
         // поднимает ТОЛЬКО рейс сбыта, и объект поручения есть станция.
-        vil.titheOwedCoin = 300;
+        vil.titheOwedValue = 300;
         vil.inventory.add("food", 3200);
         gs.landmarks.push_back(vil);
         const int xs[3] = {132, 700, 1060};   // 32 / 600 / 960 клеток пути
