@@ -2490,6 +2490,11 @@ void ai_collector(entt::entity self, MacroPos& p,
             rt.stateTimer = std::int16_t(2 + rand_int(ctx, 3));
             return;
         }
+        // НОГИ. Без этой строки машина СТОИТ, вечно числясь «в пути»:
+        // ровно так и было при первой сборке 2026-09-22 — гистограмма
+        // состояний показала Traveling 799 563 при Working РОВНО НОЛЬ, и
+        // канал дани был пуст, хотя заявки и рождение работали.
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -2508,8 +2513,32 @@ void ai_collector(entt::entity self, MacroPos& p,
         // Чего дому не хватает — говорит ЕГО ВЕДОМОСТЬ (ярус 2): крю в поле
         // домашний склад живьём не видит.
         if (owed > 0 && homeLm->ledger.published()) {
+            // ПОРЯДОК НУЖДЫ — ПО ТОМУ, ЧЕГО ДОМУ НЕ ХВАТАЕТ БОЛЬШЕ ВСЕГО
+            // В СТОИМОСТИ (нехватка × домашняя цена), а НЕ по плотности.
+            // Измерено 2026-09-22: с плотностью еда стоит последней (она
+            // самая дешёвая на килограмм), долг кончался на серебре, и
+            // город продолжал голодать при работающем сборщике
+            // (food_city −99.4 %). Цена дома уже несёт срочность —
+            // непокрытая нужда сама дорожает, — поэтому ноль новых правил.
+            int order[kCommodityCount];
+            long long urgency[kCommodityCount];
+            for (int c = 0; c < kCommodityCount; ++c) {
+                order[c] = c;
+                const char* cid = kCommodities[c].id;
+                const int lk = homeLm->ledger.demand[std::size_t(c)]
+                               - homeLm->inventory.count(cid);
+                urgency[c] = lk > 0
+                    ? (long long)lk
+                          * homeLm->ledger.price[std::size_t(c)]
+                    : 0;
+            }
+            for (int a = 1; a < kCommodityCount; ++a)
+                for (int b = a; b > 0
+                                && urgency[order[b]] > urgency[order[b - 1]];
+                     --b)
+                    std::swap(order[b], order[b - 1]);
             for (int oi = 0; oi < kCommodityCount && owed > 0; ++oi) {
-                const int c = value_dense_order()[std::size_t(oi)];
+                const int c = order[oi];
                 const char* id = kCommodities[c].id;
                 const ItemDef* d = item_def(id);
                 const int base = d ? d->value : 0;
@@ -2563,7 +2592,9 @@ void ai_collector(entt::entity self, MacroPos& p,
                                  inventory_value(bag->inv));
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
+            return;
         }
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
         return;
     }
     rt.state = std::uint8_t(NS::Idle);
