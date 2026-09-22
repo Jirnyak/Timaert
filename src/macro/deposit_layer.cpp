@@ -46,53 +46,33 @@ struct DepositGenRow {
     // map_generator.cpp, same lesson). Lower period = fewer, larger nests.
     float        period;
     float        threshold;   // the field's crest line: vein above, none below
-    // Units per full point of excess concentration — calibrated so world
-    // totals stay the order the hash law produced (silver especially: the
-    // world's money supply IS its silver geology × catalog value 32).
-    std::int32_t unitScale;
     std::uint32_t salt;
 };
-// Камень — самый толстый род мира; 65536 не влезало в клетку поля на одну
-// единицу, поэтому 65535.
+// РЕДКОСТЬ ЖИВЁТ В ДВУХ КОЛОНКАХ, И ТРЕТЬЕЙ НЕ БЫВАЕТ (владелец, 2026-09-22:
+// «это оч тупая система ВЫРЕЗАТЬ И УНИЧТОЖИТЬ ЭТО ОШИБКА… ТАКОГО ЗАМЫСЛА
+// НЕТ»). Род редок тем, что его несут НЕМНОГИЕ КЛЕТКИ (порог + сродство), и
+// дорог тем, что дорога его СТРОКА КАТАЛОГА. Сколько лежит в клетке — один
+// закон на все роды, потому что камень, железо и золото суть просто ресурсы.
 //
-// Thresholds and scales are CALIBRATED against the hash law's world totals
-// (the fingerprint line below is the instrument): the money supply and the
-// tool economy must not jump an order of magnitude because the SHAPE of
-// geology changed. Targets (1024², seed-family means): clay ~1.2M units,
-// iron ~0.8M, stone ~100M (quasi-infinite).
+// ЗДЕСЬ СТОЯЛА КОЛОНКА `unitScale` — «сколько единиц в самой богатой клетке
+// этого рода», по числу на род: золото 1, серебро 5, медь 30, железо 2048,
+// глина 12288, камень 65536. Ни одно из них не было выведено из мира; шапка
+// этой же таблицы признавалась, что они «откалиброваны против мировых итогов»
+// УЖЕ МЁРТВОГО закона генерации, то есть подогнаны под вчерашний результат.
+// Это нарушение ЗАКОНА КОНСТАНТ в чистом виде, и владелец снял колонку
+// целиком, а не перетюнил.
 //
-// THE MINT METALS' VALUE CEILING (owner verdict 2026-09-18, «пересчёт жил
-// ÷10»): a metal's units × its catalog price is the world's coin ceiling in
-// that metal, and the price is the mint yield (32) × the nominal it strikes.
-// Silver went from nominal 1 to nominal 10 with the three-coin family, so
-// its price went 32 → 320 and its VEINS are rescaled ÷10 to hold the same
-// ceiling the balance runs were calibrated against (~16M of value).
-//
-// THE RARITY LADDER IS THE OWNER'S (2026-09-18): «медь чаще, серебро
-// среднее, золото самое редкое». It is spelled in TWO columns, because
-// rarity has two halves: the threshold decides HOW MANY cells carry the
-// metal at all (copper 0.90 → thousands of nests, silver 0.96 → a couple of
-// thousand, gold 0.995 → a few hundred), and unitScale decides how rich a
-// nest is. Measured at 1024² ([deposits] fingerprint below is the
-// instrument), one seed:
-//   copper 87k units over 6.2k cells × price 128   ≈ 11.2M of value
-//   silver  5k units over 2.3k cells × price 1280  ≈  6.4M
-//   gold   278 units over 278 cells  × price 12800 ≈  3.6M
-// — the ladder holds on both halves, and the world ceiling (~21M) is the
-// order the single-metal world was calibrated at (~16M). Every number here
-// is a balance-run tunable; the yield they are all divided against lives on
-// the coin rows (items.cpp), not here.
 constexpr DepositGenRow kDepositGen[kDepositKindCount] = {
-    //                       profile            affinity              period thresh scale  salt
-    {DepositKind::Clay,   OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f,  12288, 0xC1A70000u},
-    {DepositKind::Iron,   OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f,   2048, 0x1F0E0000u},
-    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  65535, 0x570E0000u},
+    //                       profile            affinity              period thresh  salt
+    {DepositKind::Clay,   OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f, 0xC1A70000u},
+    {DepositKind::Iron,   OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f, 0x1F0E0000u},
+    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f, 0x570E0000u},
     // The mint metals: the lowest period and the highest bar — few nests,
     // truly rare, but a found one is a mining town's whole reason. Copper is
     // the base metal of the three, so its bar is the lowest of them.
-    {DepositKind::Silver, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.96f,      5, 0x517E0000u},
-    {DepositKind::Copper, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.90f,     30, 0xC0BB0000u},
-    {DepositKind::Gold,   OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.995f,     1, 0x901D0000u},
+    {DepositKind::Silver, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.96f, 0x517E0000u},
+    {DepositKind::Copper, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.90f, 0xC0BB0000u},
+    {DepositKind::Gold,   OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.995f, 0x901D0000u},
 };
 static_assert(rows_in_enum_order(kDepositGen, &DepositGenRow::kind),
               "kDepositGen row order must mirror DepositKind");
@@ -146,23 +126,6 @@ void allocate_deposit_fields(DepositLayer& layer, int width, int height) {
 // на сезонном срезе ходока роста (клеток/32 в день), а горячий путь читает
 // сохранённое текущее число. Второе поле ёмкости стоило бы 25 МиБ и не купило
 // бы ничего.
-// Сторож ширины: проверяется на СБОРКЕ (static_assert ниже), а функция
-// существует затем, чтобы свидетель мог назвать закон вслух.
-namespace {
-constexpr bool all_kinds_fit_cell() {
-    for (int k = 0; k < kDepositKindCount; ++k) {
-        if (kDepositGen[std::size_t(k)].unitScale > kMaxFieldUnitsPerCell) {
-            return false;
-        }
-    }
-    return true;
-}
-}  // namespace
-static_assert(all_kinds_fit_cell(),
-              "род руды жирнее клетки поля (uint16): либо перетюнь unitScale, "
-              "либо расширяй ВЕСЬ штабель полей — ширина у рядов одна");
-bool deposit_kinds_fit_field_cell() { return all_kinds_fit_cell(); }
-
 std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
                                float seaLevel, DepositKind kind, int x, int y) {
     if (terrain.width <= 0 || terrain.height <= 0
@@ -202,8 +165,11 @@ std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
                ? std::pow(1.0f - std::fabs(n), 3.0f)
                : n * 0.5f + 0.5f);
     if (c <= g.threshold) return 0;
+    // СКОЛЬКО В КЛЕТКЕ — ОДИН ЗАКОН НА ВСЕ РОДЫ: насколько шум перевалил за
+    // свой гребень, растянутое на всю ширину клетки поля. Камень, железо и
+    // золото считаются ОДИНАКОВО.
     return std::max<std::int32_t>(
-        1, std::int32_t(float(g.unitScale) * (c - g.threshold)
+        1, std::int32_t(float(kMaxFieldUnitsPerCell) * (c - g.threshold)
                         / (1.0f - g.threshold)));
 }
 
