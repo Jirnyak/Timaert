@@ -254,6 +254,13 @@ if(MSVC)
 else()
     target_compile_options(timaert_build_flags INTERFACE
         -Wall -Wextra -Wno-unused-parameter
+        # ПОРЯДОК ИМЕНОВАННЫХ ПОЛЕЙ — НЕ СТИЛЬ, А ПЕРЕНОСИМОСТЬ (2026-09-22).
+        # ISO C++ требует designated-инициализаторы в порядке объявления;
+        # clang принимает нарушение как расширение и МОЛЧИТ под -Wall -Wextra,
+        # а GCC/MinGW отвергает. Поймано ценой: перевод каталога существ на
+        # именованные поля собрался на маке зелёным и доехал бы до винды
+        # сломанным. Флаг стоит здесь, чтобы это ловила сборка, а не тестер.
+        -Wreorder-init-list
         -fno-rtti -fno-exceptions
         # -fno-finite-math-only keeps NaN/Inf checks working under fast-math.
         -ffast-math -fno-finite-math-only)
