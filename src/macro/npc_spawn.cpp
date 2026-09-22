@@ -233,7 +233,7 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
         // (macro/npc.h kNpcPurse), because the subworld's derived bodies pay
         // out of it too (damage-door Inc 5) — a macro merchant and the corpse
         // of a merchant below are one creature and answer with one number.
-        const NpcPurseRow& purse = npc_purse(type);
+        const NpcPurse purse = npc_purse(type);
         const int coins = purse.min
             + int(rng.next_u32() % std::uint32_t(purse.max - purse.min + 1));
         // The purse value lands as the banner's own coins, change-made
@@ -296,11 +296,12 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
             make_npc(w, NPCType::Merchant, fIdx, s.x, s.y, gs.mapW, s.id, rng,
                      spawnIndex);
         }
-        int guardCount = 1 + int(rng.next_u32() % 2u);
-        for (int i = 0; i < guardCount; ++i) {
-            make_npc(w, NPCType::Guard, fIdx, s.x, s.y, gs.mapW, s.id, rng,
-                     spawnIndex);
-        }
+        // ГЕНЕЗИСНЫЕ ОДИНОЧКИ-СТРАЖНИКИ (1-2 на город) ВЫРЕЗАНЫ 2026-09-22
+        // по вердикту владельца («пока никаких стражников, это усложняет
+        // систему»). Они и до того нарушали §42 Инк 7: именное тело идёт
+        // через анкеты, массовое — через ростер места, а вечный одиночка
+        // вне ротации не был ни тем ни другим. Строка `NPCType::Guard` в
+        // каталоге тел жива — вырезан не вид, а то, что город его спавнит.
     }
 
     if (cities.empty()) return;

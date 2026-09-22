@@ -23,7 +23,7 @@ enum class AIBehaviour : std::uint8_t {
     // nuance is a kGathererDefs row (npc_ai.cpp); with no worksite or no wired
     // layer the man falls back to the home wander, fail closed.
     Gatherer = 0, Trader,
-    Aggressive, Patrol, Teleporter, Wanderer,
+    Aggressive, Teleporter, Wanderer,
     // The city's trading agent (W2b): remembers the home market at departure
     // (AgentMemory MarketSnapshot), carries exports to the city's villages in
     // its OWN bag and hauls back what the snapshot says the city LACKS. Falls
@@ -66,7 +66,11 @@ enum class AIBehaviour : std::uint8_t {
 // `subworld_ai_for`) and the macro pursue decision (npc_ai.cpp threat step)
 // both delegate here.
 inline constexpr bool combatant_behaviour(AIBehaviour ai) {
-    return ai == AIBehaviour::Aggressive || ai == AIBehaviour::Patrol;
+    // `Patrol` стоял здесь вторым и умер 2026-09-22 вместе со своей
+    // машиной и генезисными одиночками. Строка Guard переведена в
+    // Aggressive ИМЕННО чтобы этот предикат ответил про неё то же самое:
+    // стойка тела в сцене не изменилась ни на бит.
+    return ai == AIBehaviour::Aggressive;
 }
 
 } // namespace sm

@@ -462,11 +462,17 @@ void test_the_leaders_training_reads_at_the_new_doors() {
                   && trade_buy_price(1000, 50, 50) == 1000,
               "равные анкеты: наценки нет вовсе, у сделки нет «дома»");
     }
-    // 3. Foraging thins the SEASON'S bread draw (the daily feed died with
-    // the boundary window, CANON S19.2). The trained forager is FOUND,
-    // not authored — leaders derive their sheets — so the scan pins that the
-    // derivation can produce the rank at all; the Guard's role weights say 0
-    // Foraging, which is the untrained control.
+    // 3. СЧЁТ ХАРЧА — СУММА РАЦИОНОВ СТРОК, И НИЧЕГО БОЛЬШЕ (2026-09-22).
+    // Здесь стоял свидетель СКИДКИ ФУРАЖИРА («a trained forager's camp lives
+    // partly off the land»). Вердикт владельца снял её вместе с половинной
+    // ставкой у мест: «один закон без исключений». Тест переписан не в
+    // «проверку отсутствия», а в свидетеля ДЕЙСТВУЮЩЕГО закона, и у него
+    // два конца:
+    //   · лист ведущего на счёт НЕ ВЛИЯЕТ — обученный фуражир и необученный
+    //     контроль тянут ОДНО И ТО ЖЕ (прежде этот CHECK был бы красным);
+    //   · рот объявляет КОЛОНКА РАЦИОНА строки, а не колонка платы: зверь с
+    //     `kNpcUpkeepNone` ест наравне с людьми. До этой правки он в поле не
+    //     ел вовсе, хотя у места ел — то самое расхождение двух копий.
     {
         GameState gs = make_world(0);
         ecs::World w;
@@ -487,14 +493,21 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         const entt::entity untrained = make_squad_at(
             w, NPCType::Guard, "timaert", 3, 20.0f, 20.0f, 999u,
             {11u, 12u, 13u, 14u, 15u, 16u, 17u, 18u}, NPCType::Guard, 1);
+        // ЗВЕРЬ В РОСТЕРЕ — ТРЕТИЙ ЛАГЕРЬ: его строка несёт kNpcUpkeepNone,
+        // то есть жалованья он не берёт, а рацион по своей строке — берёт.
+        const entt::entity beasts = make_squad_at(
+            w, NPCType::Peasant, "timaert", 1, 30.0f, 30.0f, 777u,
+            {21u, 22u, 23u, 24u, 25u, 26u, 27u, 28u}, NPCType::Wolf, 1);
         CHECK(make_character_sheet(NPCType::Guard, 3, leader_sheet_seed(999u))
                       .skills.of(SkillId::Foraging) == 0,
               "the Guard control is honestly untrained");
+        CHECK(npc_def(NPCType::Wolf).upkeepGoldPerDay == kNpcUpkeepNone,
+              "негативный контроль строки: волк и правда не на жалованье");
         // A season of bread and a season of wages in each bag: the window
         // judges BOTH needs whole, and an uncovered wage would bleed the
         // roster before the bread law under test ever showed.
         const int stock = 8 * kDaysPerSeason * 2;
-        for (const entt::entity e : {forager, untrained}) {
+        for (const entt::entity e : {forager, untrained, beasts}) {
             auto& bag = w.reg.get<ecs::NpcInventory>(e).inv;
             bag.add("food", stock);
             bag.add("coin_empire_copper", 8 * 3 * kDaysPerSeason * 4);
@@ -510,14 +523,24 @@ void test_the_leaders_training_reads_at_the_new_doors() {
             w.reg.get<ecs::NpcInventory>(forager).inv.count("food");
         const int untrainedLeft =
             w.reg.get<ecs::NpcInventory>(untrained).inv.count("food");
-        CHECK(untrainedLeft == stock - 8 * kDaysPerSeason,
-              "an untrained camp eats a season's loaf a head — the M&B law "
-              "at the window's scale");
-        CHECK(foragerLeft > untrainedLeft,
-              "a trained forager's camp lives partly off the land");
-        CHECK(foragerLeft < stock,
-              "negative control: foraging thins the draw, it is not a "
-              "free kitchen below rank 100");
+        const int beastsLeft =
+            w.reg.get<ecs::NpcInventory>(beasts).inv.count("food");
+        // Восемь душ × рацион строки × сезон — счёт читается прямо из
+        // таблицы существ, а не из литерала теста.
+        const int draw = 8 * npc_board_per_day(NPCType::Peasant)
+                       * kDaysPerSeason;
+        CHECK(untrainedLeft == stock - draw,
+              "лагерь ест сумму рационов своих строк за сезон");
+        CHECK(foragerLeft == untrainedLeft,
+              "лист ведущего счёт НЕ МЕНЯЕТ: один закон без исключений");
+        CHECK(beastsLeft
+                  == stock - 8 * npc_board_per_day(NPCType::Wolf)
+                                 * kDaysPerSeason,
+              "рот объявляет КОЛОНКА РАЦИОНА: зверь без жалованья всё равно "
+              "ест по своей строке");
+        CHECK(beastsLeft < stock,
+              "негативный контроль: зверьё не бесплатно — до 2026-09-22 эта "
+              "строка была бы равна stock");
     }
 }
 

@@ -346,7 +346,7 @@ static void test_generate_loot_gold() {
         return generate_loot_gold(int(NPCType::Bandit), 1,
                                   CorpseLootContext{danger, wealth}, r);
     };
-    const NpcPurseRow& row = npc_purse(NPCType::Bandit);
+    const NpcPurse row = npc_purse(NPCType::Bandit);
     CHECK(bandit(rng_zero, 1.0f) == row.min,
           "a level-1 body on open land carries its row's floor");
     CHECK(bandit(rng_high, 1.0f) == row.max - 1,

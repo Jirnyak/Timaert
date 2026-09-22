@@ -63,122 +63,17 @@ static const FaunaEntry& kLich = kNpcTypeDefs[std::size_t(NPCType::Lich)];
 
 namespace {
 
-// ── THE spawn law (see fauna.h) ──────────────────────────────────────
-//
-// The habitat COLUMN of the one body table, enum-ordered beside the law
-// that reads it (the kNpcPurse / kGathererDefs idiom). Membership is the
-// thirteen old list-tables, verbatim, folded into bits — the lists and the
-// switch ladder that chose between them are gone (canon-audit F5).
-struct SpawnHabitatRow {
-    NPCType       type;
-    std::uint16_t mask;
-    // A profession stands in the crowd only where its ground does: the
-    // DepositKind whose live vein within reach opens this row (-1 = no gate).
-    // The same pairing the macro gatherer table works by (kGathererDefs).
-    std::int8_t   depositGate = -1;
-    // Under whose banner this row stands when the SPAWNER is the open land
-    // (owner ruling 2026-08-27: a creature row carries NO faction — faction is
-    // an instance property the spawner assigns). The banner is the spawn
-    // law's own data: the wild raises beasts as "wildlife" and monsters as
-    // "demons"; a PLACE overrides it (landmark spawnFaction — a ruin's wolves
-    // ARE demons), a squad embodies under its leader's, a town under its
-    // kingdom's. nullptr = this row is never raised by the open land (the
-    // humanoid stripe: towns and macro spawns name their own). When the dark
-    // field lands (CANON S15), the wild banner becomes the field's answer and
-    // this column dies.
-    const char*   wildFaction = nullptr;
-};
-constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
-    // THE town stripe is Peasant + Guard and nothing else (owner, 2026-09-18,
-    // verdict №2 of the second audit: professions are emergent — «профессии
-    // нет» — and the crowd verdict taken literally: «пусть пока в городе
-    // только стражники и пизанты»). Woodcutter/Miner/Quarryman/ClayDigger,
-    // Merchant and Witch keep their rows as dead save ordinals; no spawner
-    // raises them. (Known cost, accepted: ai_mage_hunt loses its ambient
-    // Magika prey until the crowd returns under its own law.)
-    {NPCType::Peasant,      kHabTown},
-    {NPCType::Merchant,     0},
-    {NPCType::Bandit,       0},
-    {NPCType::Guard,        kHabTown},
-    {NPCType::Witch,        0},
-    {NPCType::Sorceress,    0},
-    {NPCType::Rabbit,       hab(Meadow) | hab(Valley) | hab(Steppe) | hab(Taiga)
-                          | hab(Tundra) | hab(Snow) | kHabForest, -1, "wildlife"},
-    {NPCType::Deer,         hab(Meadow) | hab(Valley) | hab(Steppe)
-                          | hab(Tropics) | hab(Taiga) | kHabForest, -1, "wildlife"},
-    {NPCType::Fox,          hab(Meadow) | hab(Valley) | hab(Steppe)
-                          | hab(Taiga) | hab(Tundra) | kHabForest, -1, "wildlife"},
-    {NPCType::Wolf,         hab(Meadow) | hab(Valley) | hab(Taiga)
-                          | hab(Tundra) | hab(Snow) | hab(Mountain)
-                          | kHabForest, -1, "wildlife"},
-    {NPCType::Bear,         hab(Taiga) | kHabForest, -1, "wildlife"},
-    {NPCType::Boar,         hab(Meadow) | hab(Valley) | hab(Steppe)
-                          | hab(Tropics) | kHabForest, -1, "wildlife"},
-    {NPCType::Snake,        hab(Desert) | hab(Steppe) | hab(Swamp)
-                          | hab(Tropics) | kHabRuin, -1, "wildlife"},
-    {NPCType::Hawk,         hab(Meadow) | hab(Valley) | hab(Desert)
-                          | hab(Steppe), -1, "wildlife"},
-    {NPCType::Frog,         hab(Swamp), -1, "wildlife"},
-    {NPCType::Goat,         hab(Mountain), -1, "wildlife"},
-    {NPCType::Eagle,        hab(Mountain), -1, "wildlife"},
-    {NPCType::Croc,         hab(Swamp) | hab(Tropics), -1, "wildlife"},
-    {NPCType::Goblin,       kHabForest | kHabRuin | kHabSpire, -1, "demons"},
-    {NPCType::Skeleton,     kHabRuin | kHabSpire, -1, "demons"},
-    {NPCType::Troll,        kHabRuin | kHabSpire, -1, "demons"},
-    {NPCType::SwampThing,   hab(Swamp), -1, "demons"},
-    {NPCType::IceWraith,    hab(Tundra) | hab(Snow) | kHabSpire, -1, "demons"},
-    {NPCType::SandScorpion, hab(Desert), -1, "demons"},
-    {NPCType::StoneGolem,   hab(Mountain) | kHabSpire, -1, "demons"},
-    // The player's row stands on no ground of its own: the world never raises
-    // an adventurer out of a habitat, it raises exactly one and he wears the
-    // flag. Mask 0, no wild banner.
-    {NPCType::Adventurer,   0},
-    {NPCType::TaxCollector, 0},
-    // Ambient spawning never raises him: the prologue's plot places him by
-    // hand, exactly as the bandit's own 0 says of ambient banditry.
-    {NPCType::RoadAmbusher,  0},
-    // Амбиент дракона не поднимает: он приходит ТОЛЬКО строкой стола
-    // анкет (вершина массива), как засадник — рукой пролога.
-    {NPCType::Dragon,        0},
-    // ── The bestiary's ground (content, 2026-09-11) ──────────────────────
-    // WHOSE ground, and nothing else: how strong a row is, and therefore
-    // which danger band it actually appears in, is already decided by its
-    // combat columns (spawn_strength × danger_match). So these masks are
-    // read as "could this thing live here at all", and the law does the
-    // rest — an ogre carries the Ruin bit and still never stands in a
-    // starting-zone ruin, because the match term buries him there.
-    //
-    // The dens overlap ON PURPOSE. kHabRuin is what a CAVE rolls too
-    // (dungeon kind rows name the Ruin family), so the rows that carry it
-    // are the ones that make a hole in a hillside worth entering; kHabSpire
-    // is the tower's own crowd. A row in both reads as "found where men do
-    // not light, whatever the roof is made of".
-    {NPCType::GiantRat,   kHabRuin | hab(Mountain), -1, "wildlife"},
-    {NPCType::CaveBat,    kHabRuin | hab(Mountain), -1, "wildlife"},
-    {NPCType::Kobold,     kHabRuin | kHabForest | hab(Mountain), -1, "demons"},
-    {NPCType::CaveSpider, kHabRuin | kHabForest | hab(Mountain), -1, "wildlife"},
-    {NPCType::Imp,        kHabSpire | kHabRuin, -1, "demons"},
-    {NPCType::Zombie,     kHabRuin | kHabSpire | hab(Swamp), -1, "demons"},
-    {NPCType::Orc,        kHabForest | kHabRuin | hab(Steppe) | hab(Valley),
-                          -1, "demons"},
-    {NPCType::Ghoul,      kHabRuin | kHabSpire, -1, "demons"},
-    {NPCType::Harpy,      kHabSpire | hab(Mountain), -1, "demons"},
-    {NPCType::Cultist,    kHabSpire | kHabRuin, -1, "demons"},
-    {NPCType::Gargoyle,   kHabSpire | hab(Mountain), -1, "demons"},
-    {NPCType::Wraith,     kHabSpire | kHabRuin, -1, "demons"},
-    {NPCType::Ogre,       kHabRuin | kHabForest | hab(Mountain), -1, "demons"},
-    {NPCType::Minotaur,   kHabRuin | kHabSpire, -1, "demons"},
-    {NPCType::Basilisk,   kHabRuin | hab(Swamp) | hab(Desert), -1, "demons"},
-    // Верхушка подъёма: только шпиль. Лич — не то, на что натыкаются в
-    // норе; его находят там, где мир хуже всего.
-    {NPCType::Lich,       kHabSpire, -1, "demons"},
-    // Wild herds graze the open grass; weight 0 keeps them out of blind
-    // ambient rolls — the pasture crews are how the world meets them (S10).
-    {NPCType::Horse,      hab(Steppe) | hab(Meadow) | hab(Valley),
-                          -1, "wildlife"},
-};
-static_assert(rows_in_enum_order(kSpawnHabitats, &SpawnHabitatRow::type),
-              "every body row states its ground — the table IS the system");
+// ── АРЕАЛ ПЕРЕЕХАЛ В СТРОКУ (CANON S26 «Одна строка на род») ────────────
+// Здесь стояла ШЕСТАЯ и последняя таблица-спутник `kSpawnHabitats` с тремя
+// колонками (маска ареала, гейт жилы, дикое знамя). Она была хуже прочих
+// одним: жила в .cpp, то есть из самой строки существа была НЕВИДИМА, и
+// «где этот род водится» приходилось искать во втором файле — при том что
+// её собственная шапка объявляла «the table IS the system». Влита
+// 2026-09-22 в NpcTypeDef колонками `habitat` / `depositGate` /
+// `wildFaction`; биты kHab* переехали туда же (npc.h), и fauna.h цитирует
+// их теперь как читатель. Свидетель порядка ушёл с таблицей: колонке строки
+// не нужен свидетель порядка, она И ЕСТЬ строка. Транскрипция сверена
+// машиной — 46 рядов × 3 колонки, ноль расхождений.
 
 // How many heads a place rolls — one row per biome plus the derived-class
 // overrides, holding the old thirteen tables' min/max counts verbatim.
@@ -277,7 +172,7 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
     std::uint64_t total = 0;
     std::uint32_t w[std::size_t(NPCType::Count)] = {};
     for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
-        if (!(kSpawnHabitats[i].mask & bit)) continue;
+        if (!(npc_def(NPCType(i)).habitat & bit)) continue;
         const NpcTypeDef& row = kNpcTypeDefs[i];
         if (row.weight == 0) continue;   // never rolled blind (the row's law)
         w[i] = std::uint32_t(row.weight)
@@ -296,7 +191,7 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
                 const NpcTypeDef& row = kNpcTypeDefs[i];
                 out.push_back({&row, placeFaction
                                          ? placeFaction
-                                         : kSpawnHabitats[i].wildFaction});
+                                         : npc_def(NPCType(i)).wildFaction});
                 break;
             }
         }
@@ -314,8 +209,8 @@ NPCType pick_crowd_row(const SpawnContext& ctx, std::uint32_t& rngState) {
     std::uint64_t total = 0;
     std::uint32_t w[std::size_t(NPCType::Count)] = {};
     for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
-        const SpawnHabitatRow& habRow = kSpawnHabitats[i];
-        if (!(habRow.mask & stripe)) continue;
+        const NpcTypeDef& habRow = npc_def(NPCType(i));
+        if (!(habRow.habitat & stripe)) continue;
         const NpcTypeDef& row = kNpcTypeDefs[i];
         if (row.weight == 0) continue;
         if (habRow.depositGate >= 0

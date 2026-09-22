@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "macro/army.h"
+#include "macro/biomes.h"   // Biome — младшие биты ареала строки
 #include "macro/damage_types.h"
 #include "macro/spells.h"   // spell_ordinal — a casting row names its spell
 #include "macro/sprite_rows.h"
@@ -118,7 +119,11 @@ enum class NpcTag : std::uint8_t {
 };
 
 enum class NPCState : std::uint8_t {
-    Idle = 0, Wandering, Traveling, Returning, Working, Chasing, Patrolling, Resting,
+    // `Patrolling` стояло шестым и умерло 2026-09-22 вместе с ai_patrol:
+    // состояние без машины — колонка без писателя. Ординалы за ним
+    // сдвинулись, и это безопасно: rt.state не едет ни в сейв, ни в снимок
+    // (проверено), а все сравнения идут по имени.
+    Idle = 0, Wandering, Traveling, Returning, Working, Chasing, Resting,
     // Running from a stronger hostile squad (Session 15): set by the universal
     // threat step in npc_ai.cpp, cleared by it when the threat is gone.
     // Runtime-only like every state here — the ECS is never serialized.
@@ -153,6 +158,19 @@ constexpr int kNpcUpkeepNone = -1;
 // macro/damage_types.h (kArmorHalving, ArmorProfile, mitigate_amount) — one
 // home, because both laws of battle read them: the damage door
 // (sub/damage.cpp) and the auto-resolve (auto_battle.h).
+
+// ── БИТЫ АРЕАЛА: 0..10 — ординалы Biome, дальше производные классы ───────
+// Стояли в fauna.h рядом со своей таблицей-спутником; переехали сюда
+// 2026-09-22 вместе с колонкой, которую описывают (CANON S26 «Одна строка
+// на род»). fauna.h их по-прежнему цитирует своими static_assert'ами —
+// теперь как ЧИТАТЕЛЬ, а не как хозяин.
+inline constexpr std::uint16_t kHabForest = 1u << 11; // forest-CLASS cell
+inline constexpr std::uint16_t kHabRuin   = 1u << 12; // ruin denizen
+inline constexpr std::uint16_t kHabSpire  = 1u << 13; // spire denizen
+inline constexpr std::uint16_t kHabTown   = 1u << 14; // settlement crowd
+inline constexpr std::uint16_t hab(Biome b) {
+    return std::uint16_t(1u << std::uint16_t(b));
+}
 
 struct NpcTypeDef {
     // MUST equal the row's index in kNpcTypeDefs (guard below the table).
@@ -289,12 +307,60 @@ struct NpcTypeDef {
     // хвосте не стоит остальным строкам запятой.
     NpcTag tag = NpcTag::None;
 
-    // ПРИРОДА СТРОКИ ЖИВЁТ НЕ ЗДЕСЬ, а в kNpcNature ниже — таблицей-сестрой
-    // по ординалу (идиома kNpcPurse / kNpcMapColor). Причина честная: эта
-    // колонка стоит в ХВОСТЕ длинного ряда, и чтобы назвать её, строке
-    // пришлось бы выписать десяток промежуточных умолчаний руками — ровно
-    // тот рукописный пересбор, на котором поля выпадают молча. У сестры
-    // одна строка на род, и `rows_in_enum_order` не даст ей отстать.
+    // ── ЧТО ЭТО ЗА СУЩЕСТВО: ВЛИТЫЕ СПУТНИКИ (CANON S26 «Одна строка на
+    // род», владелец 2026-09-22: «просто надо сделать ЕДИНУЮ таблицу реестр
+    // всех нпц, и каждый нпц/моб в игре это просто строка в ней»).
+    // Здесь стояли ТРИ отдельных массива по тому же ординалу NPCType —
+    // kNpcNature, kNpcPurse, kNpcMapColor. Ни один не был решением: все три
+    // были обходом позиционной инициализации, которой в этой структуре
+    // больше нет. Их свидетели `rows_in_enum_order` ушли вместе с ними —
+    // колонке строки не нужен свидетель порядка, она И ЕСТЬ строка.
+
+    // Человек / зверь / нежить. Спрашивается вместо границы ординала,
+    // которая врала: человеческие рода дописаны в enum ПОСЛЕ звериного
+    // блока, и мир считал их зверьём.
+    NpcNature nature = NpcNature::Human;
+
+    // СКОЛЬКО ЕСТ В ДЕНЬ, в единицах голодной строки — ровно та же единица,
+    // что у населения (econ_day.h kNeeds: 1 = один житель-день), поэтому
+    // счёт ростера и счёт населения складываются без переводного
+    // множителя. Близнец `upkeepGoldPerDay`: тот говорит, сколько род
+    // ПОЛУЧАЕТ, этот — сколько ПОТРЕБЛЯЕТ, и обе колонки читает одна дверь
+    // счёта (roster_window.h roster_bill). 0 = не ест вовсе.
+    int boardPerDay = 1;
+
+    // Кошелёк рода: у зверя карманов нет под каким бы знаменем он ни дрался,
+    // купец богат потому, что купец. Богатство МЕСТА модулирует сверху.
+    int purseMin = 0;
+    int purseMax = 0;
+
+    // Цвет метки на карте мира.
+    std::uint32_t mapColor = 0xFFFFFFFFu;
+
+    // ГДЕ ЭТОТ РОД ВОДИТСЯ — битовая маска ареала (kHab* выше). Шестая и
+    // последняя таблица-спутник (`kSpawnHabitats`, fauna.cpp) влита сюда
+    // 2026-09-22: она жила в .cpp, то есть была невидима отсюда, и колонка
+    // рода стояла в двух файлах сразу.
+    std::uint16_t habitat = 0;
+
+    // Профессия стоит в толпе только там, где её земля: DepositKind, чья
+    // живая жила в досягаемости открывает эту строку. -1 = гейта нет.
+    std::int8_t depositGate = -1;
+
+    // Под чьим знаменем строка встаёт, когда её поднимает ОТКРЫТАЯ ЗЕМЛЯ:
+    // фракция — свойство экземпляра, а не рода, и дикая земля назначает её
+    // сама. nullptr = открытая земля этот род не поднимает (человеческая
+    // полоса: города и макро-спавны называют знамя сами).
+    const char* wildFaction = nullptr;
+
+    // ЗДЕСЬ СТОЯЛО ОБЪЯСНЕНИЕ, ПОЧЕМУ ПРИРОДА ЛЕЖИТ НЕ ЗДЕСЬ: «эта колонка
+    // стоит в ХВОСТЕ длинного ряда, и чтобы назвать её, строке пришлось бы
+    // выписать десяток промежуточных умолчаний руками». Довод был ЧЕСТНЫЙ и
+    // ровно поэтому опасный — он оправдывал обход, а не чинил причину.
+    // Причина — позиционная инициализация; ряды переведены на ИМЕНОВАННЫЕ
+    // поля 2026-09-22, и вместе с ней исчез сам вопрос: новая колонка стоит
+    // одну строку здесь и НОЛЬ правок в сорока шести рядах, а строка
+    // называет только своё. Три спутника влиты выше.
 };
 
 // ── «ИМЕНОВАННОСТЬ» — субъектность рода (owner verdict 2026-09-10) ─────────
@@ -399,233 +465,703 @@ inline constexpr CombatTemplate kDragonCombat    {500,{3,20}, 1.6f, 40.0f,3.0f, 
 // бандиты). Цена найма — своя колонка hireGold, от нуля жалованья не
 // зависит.
 inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
+
     // Peasant
     {
-        NPCType::Peasant, "peasant", "Peasant", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kPeasantCombat, 0, true, 10,
-        /*weight*/55, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
-          "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}}, 15,
-        {{"The harvest has been poor this year...",
+        .type = NPCType::Peasant,
+        .id = "peasant",
+        .label = "Peasant",
+        .sprite = SpriteId::Peasant,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Gatherer,
+        .combat = kPeasantCombat,
+        .upkeepGoldPerDay = 0,
+        .hireable = true,
+        .xpReward = 10,
+        .weight = 55,
+        .lootId = "peasant",
+        .names = {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
+          "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}},
+        .nameCount = 15,
+        .talkLines = {{"The harvest has been poor this year...",
           "Have you heard? Bandits roam the roads at night.",
           "Blessings upon you, traveler.",
           "I sell nothing of interest, but the merchant might.",
-          "Stay safe out there. The wilderness is harsh."}}, 5,
+          "Stay safe out there. The wilderness is harsh."}},
+        .talkCount = 5,
         // Dark, one back, own skin — the defaults, spelled out only to reach
         // the price column at the row's end: upkeep 1 × 30 days.
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
-        /*hireGold=*/30,
+        .hireGold = 30,
+        .nature = NpcNature::Human,
+        .purseMin = 1,
+        .purseMax = 10,
+        .mapColor = 0xDCC8A0u,
+        .habitat = kHabTown,
     },
+
     // Merchant
     {
-        NPCType::Merchant, "merchant", "Merchant", SpriteId::Caravan, 3,
-        AIBehaviour::Trader, kMerchantCombat, kNpcUpkeepNone, false, 30,
-        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Kartash","Bazukin","Torgin","Menkov","Skaldin"}}, 5,
-        {{"Looking to trade? I have fine wares!",
+        .type = NPCType::Merchant,
+        .id = "merchant",
+        .label = "Merchant",
+        .sprite = SpriteId::Caravan,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Trader,
+        .combat = kMerchantCombat,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = 30,
+        .weight = 21,
+        .lootId = "merchant",
+        .names = {{"Kartash","Bazukin","Torgin","Menkov","Skaldin"}},
+        .nameCount = 5,
+        .talkLines = {{"Looking to trade? I have fine wares!",
           "Gold makes the world go round, friend.",
           "I travel between settlements. The roads are dangerous.",
-          "Business has been slow. Perhaps you need something?"}}, 4,
+          "Business has been slow. Perhaps you need something?"}},
+        .talkCount = 4,
+        .nature = NpcNature::Human,
+        .purseMin = 50,
+        .purseMax = 200,
+        .mapColor = 0xF0C850u,
     },
+
     // Bandit
     {
-        NPCType::Bandit, "bandit", "Bandit", SpriteId::Bandit, 2,
-        AIBehaviour::Aggressive, kBanditCombat, kNpcUpkeepNone, false, 20,
-        /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Razboy","Diki","Grozny","Slyak","Khvat"}}, 5,
-        {{"Your gold or your life!",
+        .type = NPCType::Bandit,
+        .id = "bandit",
+        .label = "Bandit",
+        .sprite = SpriteId::Bandit,
+        .baseLevel = 2,
+        .ai = AIBehaviour::Aggressive,
+        .combat = kBanditCombat,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = 20,
+        .lootId = "bandit",
+        .names = {{"Razboy","Diki","Grozny","Slyak","Khvat"}},
+        .nameCount = 5,
+        .talkLines = {{"Your gold or your life!",
           "Heh, another fool wandering the wilds.",
           "I take what I want. Got a problem with that?",
-          "The strong survive. The weak feed us."}}, 4,
+          "The strong survive. The weak feed us."}},
+        .talkCount = 4,
+        .nature = NpcNature::Human,
+        .purseMin = 5,
+        .purseMax = 30,
+        .mapColor = 0xDC3C3Cu,
     },
+
     // Guard
     {
-        NPCType::Guard, "guard", "Guard", SpriteId::Peasant, 3,
-        AIBehaviour::Patrol, kGuardCombat, 3, true, 30,
-        /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Strazhnik","Boyar","Vityaz","Desyatnik","Druzhina"}}, 5,
-        {{"Move along, citizen. Nothing to see here.",
+        // Колонка `ai` стала `Aggressive` 2026-09-22 вместе со сносом
+        // `AIBehaviour::Patrol`, и это НЕ смена характера в сцене: стойку
+        // тела даёт `combatant_behaviour`, а она отвечала `true` и на
+        // Patrol, и на Aggressive — `subworld_ai_for` даст тот же
+        // `SubworldAi::Combat` байт в байт. Дать сюда `Flee`, как получили
+        // Merchant и Peasant, было бы нельзя: страж побежал бы от драки.
+        .type = NPCType::Guard,
+        .id = "guard",
+        .label = "Guard",
+        .sprite = SpriteId::Peasant,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Aggressive,
+        .combat = kGuardCombat,
+        .upkeepGoldPerDay = 3,
+        .hireable = true,
+        .xpReward = 30,
+        .lootId = "guard",
+        .names = {{"Strazhnik","Boyar","Vityaz","Desyatnik","Druzhina"}},
+        .nameCount = 5,
+        .talkLines = {{"Move along, citizen. Nothing to see here.",
           "The settlement is safe under our watch.",
           "Report any bandit sightings to the elder.",
-          "Stay on the roads if you value your life."}}, 4,
+          "Stay on the roads if you value your life."}},
+        .talkCount = 4,
         // Night-watch torch: a warm carried light, a touch smaller and dimmer
         // than the player's lantern (radius 16 / intensity 1.35) so the player's
         // own pool still reads as primary and a patrolled street gains pools of
         // firelight that move with the guards. Additive over the directional
         // term ⇒ a warm pool at night, washed out by day, exactly like the
         // lantern — no day/night special-casing. Seated 1.1 m up (chest/held).
-        /*lightRadius=*/11.0f, /*lightIntensity=*/1.15f,
-        /*lightR=*/1.00f, /*lightG=*/0.66f, /*lightB=*/0.34f,
-        /*lightHeight=*/1.1f,
+        .lightRadius = 11.0f,
+        .lightIntensity = 1.15f,
+        .lightR = 1.00f,
+        .lightG = 0.66f,
+        .lightB = 0.34f,
+        .lightHeight = 1.1f,
         // The disciplined tank of the table wears what his row already
         // describes. `haulMult` is spelled out only because the plate after it
         // is not the default; kArmorHalving is what makes 10 legible — it
         // HALVES a plain blow.
-        /*haulMult=*/1.0f,
-        /*armor=*/uniform_armor(10),
+        .armor = uniform_armor(10),
         // The price column: upkeep 3 × 30 days.
-        /*hireGold=*/90,
+        .hireGold = 90,
+        .nature = NpcNature::Human,
+        .purseMin = 5,
+        .purseMax = 20,
+        .mapColor = 0x508CDCu,
+        .habitat = kHabTown,
     },
+
     // Witch
     {
-        NPCType::Witch, "witch", "Witch", SpriteId::Witch, 5,
-        AIBehaviour::Teleporter, kWitchCombat, kNpcUpkeepNone, false, 50,
-        /*weight*/3, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Yaga","Vedma","Znakharka","Koldunia","Volshebnitsa"}}, 5,
-        {{"The spirits whisper of your coming...",
+        .type = NPCType::Witch,
+        .id = "witch",
+        .label = "Witch",
+        .sprite = SpriteId::Witch,
+        .baseLevel = 5,
+        .ai = AIBehaviour::Teleporter,
+        .combat = kWitchCombat,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = 50,
+        .weight = 3,
+        .lootId = "witch",
+        .names = {{"Yaga","Vedma","Znakharka","Koldunia","Volshebnitsa"}},
+        .nameCount = 5,
+        .talkLines = {{"The spirits whisper of your coming...",
           "I see great trials ahead for you.",
           "Herbs and potions are my trade. Interested?",
-          "The forest knows all. Listen carefully."}}, 4,
+          "The forest knows all. Listen carefully."}},
+        .talkCount = 4,
+        .nature = NpcNature::Human,
+        .purseMin = 10,
+        .purseMax = 40,
+        .mapColor = 0xB464C8u,
     },
+
     // Sorceress
     {
-        NPCType::Sorceress, "sorceress", "Sorceress", SpriteId::Sorceress, 6,
-        AIBehaviour::Wanderer, kSorceressCombat, kNpcUpkeepNone, false, 60,
-        /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Charodejka","Zaklinatelnitsa","Mistika","Runara","Svetozara"}}, 5,
-        {{"The arcane currents shift around you...",
+        .type = NPCType::Sorceress,
+        .id = "sorceress",
+        .label = "Sorceress",
+        .sprite = SpriteId::Sorceress,
+        .baseLevel = 6,
+        .ai = AIBehaviour::Wanderer,
+        .combat = kSorceressCombat,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = 60,
+        .lootId = "sorceress",
+        .names = {{"Charodejka","Zaklinatelnitsa","Mistika","Runara","Svetozara"}},
+        .nameCount = 5,
+        .talkLines = {{"The arcane currents shift around you...",
           "Few mortals seek me out willingly.",
           "I deal in mysteries beyond your understanding.",
-          "Power has a price. Are you willing to pay?"}}, 4,
+          "Power has a price. Are you willing to pay?"}},
+        .talkCount = 4,
+        .nature = NpcNature::Human,
+        .purseMin = 10,
+        .purseMax = 40,
+        .mapColor = 0x78C8E6u,
     },
+
     // Rabbit
     {
-        NPCType::Rabbit, "rabbit", "Rabbit", SpriteId::Rabbit, 1,
-        AIBehaviour::Flee, {5, {0,1}, 2.75f, 0, 9.0f, "Rbt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/15, /*loot*/nullptr, /*radius*/0.4f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Rabbit,
+        .id = "rabbit",
+        .label = "Rabbit",
+        .sprite = SpriteId::Rabbit,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Flee,
+        .combat = {5, {0,1}, 2.75f, 0, 9.0f, "Rbt"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 15,
+        .radius = 0.4f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Meadow) | hab(Valley) | hab(Steppe) | hab(Taiga)
+                          | hab(Tundra) | hab(Snow) | kHabForest,
+        .wildFaction = "wildlife",
     },
+
     // Deer
     {
-        NPCType::Deer, "deer", "Deer", SpriteId::Deer, 1,
-        AIBehaviour::Flee, {15, {2,1}, 2.5f, 2, 2.0f, "Der"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/12, /*loot*/nullptr, /*radius*/0.6f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Deer,
+        .id = "deer",
+        .label = "Deer",
+        .sprite = SpriteId::Deer,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Flee,
+        .combat = {15, {2,1}, 2.5f, 2, 2.0f, "Der"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 12,
+        .radius = 0.6f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
+                          | hab(Tropics) | hab(Taiga) | kHabForest,
+        .wildFaction = "wildlife",
     },
+
     // Fox
     {
-        NPCType::Fox, "fox", "Fox", SpriteId::Fox, 1,
-        AIBehaviour::Wanderer, {12, {4,1}, 2.25f, 2, 1.2f, "Fox"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/8, /*loot*/nullptr, /*radius*/0.5f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Fox,
+        .id = "fox",
+        .label = "Fox",
+        .sprite = SpriteId::Fox,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Wanderer,
+        .combat = {12, {4,1}, 2.25f, 2, 1.2f, "Fox"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 8,
+        .radius = 0.5f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
+                          | hab(Taiga) | hab(Tundra) | kHabForest,
+        .wildFaction = "wildlife",
     },
+
     // Wolf
     {
-        NPCType::Wolf, "wolf", "Wolf", SpriteId::Wolf, 2,
-        AIBehaviour::Aggressive, {30, {10,1}, 2.5f, 3, 1.0f, "Wlf"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
-        /*weight*/6, /*loot*/nullptr, /*radius*/0.7f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Wolf,
+        .id = "wolf",
+        .label = "Wolf",
+        .sprite = SpriteId::Wolf,
+        .baseLevel = 2,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {30, {10,1}, 2.5f, 3, 1.0f, "Wlf"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/15,
+        .weight = 6,
+        .radius = 0.7f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Meadow) | hab(Valley) | hab(Taiga)
+                          | hab(Tundra) | hab(Snow) | hab(Mountain)
+                          | kHabForest,
+        .wildFaction = "wildlife",
     },
+
     // Bear
     {
-        NPCType::Bear, "bear", "Bear", SpriteId::Bear, 3,
-        AIBehaviour::Aggressive, {80, {18,1}, 1.75f, 3, 1.5f, "Ber"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
-        /*weight*/3, /*loot*/nullptr, /*radius*/1.0f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Bear,
+        .id = "bear",
+        .label = "Bear",
+        .sprite = SpriteId::Bear,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {80, {18,1}, 1.75f, 3, 1.5f, "Ber"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/20,
+        .weight = 3,
+        .radius = 1.0f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Taiga) | kHabForest,
+        .wildFaction = "wildlife",
     },
+
     // Boar
     {
-        NPCType::Boar, "boar", "Boar", SpriteId::Boar, 2,
-        AIBehaviour::Aggressive, {40, {12,1}, 2.0f, 3, 1.2f, "Bor"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
-        /*weight*/5, /*loot*/nullptr, /*radius*/0.7f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Boar,
+        .id = "boar",
+        .label = "Boar",
+        .sprite = SpriteId::Boar,
+        .baseLevel = 2,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {40, {12,1}, 2.0f, 3, 1.2f, "Bor"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/15,
+        .weight = 5,
+        .radius = 0.7f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
+                          | hab(Tropics) | kHabForest,
+        .wildFaction = "wildlife",
     },
+
     // Snake
     {
-        NPCType::Snake, "snake", "Snake", SpriteId::Snake, 1,
-        AIBehaviour::Aggressive, {10, {8,1}, 1.5f, 2, 0.8f, "Snk"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/4, /*loot*/nullptr, /*radius*/0.3f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Snake,
+        .id = "snake",
+        .label = "Snake",
+        .sprite = SpriteId::Snake,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {10, {8,1}, 1.5f, 2, 0.8f, "Snk"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 4,
+        .radius = 0.3f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Desert) | hab(Steppe) | hab(Swamp)
+                          | hab(Tropics) | kHabRuin,
+        .wildFaction = "wildlife",
     },
+
     // Hawk
     {
-        NPCType::Hawk, "hawk", "Hawk", SpriteId::Hawk, 1,
+        .type = NPCType::Hawk,
+        .id = "hawk",
+        .label = "Hawk",
+        .sprite = SpriteId::Hawk,
+        .baseLevel = 1,
         // ЛЕТУН: cruiseM 5 — ястреб честно в воздухе (полёт-посадка
         // 2026-09-10), гравитации нет, конверт общий с игроком.
-        AIBehaviour::Wanderer, {8, {5,1}, 3.0f, 3, 1.0f, "Hwk", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 5.0f}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/3, /*loot*/nullptr, /*radius*/0.4f,
-        {{}}, 0, {{}}, 0,
+        .ai = AIBehaviour::Wanderer,
+        .combat = {8, {5,1}, 3.0f, 3, 1.0f, "Hwk", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 5.0f},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 3,
+        .radius = 0.4f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Meadow) | hab(Valley) | hab(Desert)
+                          | hab(Steppe),
+        .wildFaction = "wildlife",
     },
+
     // Frog
     {
-        NPCType::Frog, "frog", "Frog", SpriteId::Frog, 1,
-        AIBehaviour::Flee, {3, {0,1}, 1.5f, 0, 9.0f, "Frg"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/10, /*loot*/nullptr, /*radius*/0.3f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Frog,
+        .id = "frog",
+        .label = "Frog",
+        .sprite = SpriteId::Frog,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Flee,
+        .combat = {3, {0,1}, 1.5f, 0, 9.0f, "Frg"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 10,
+        .radius = 0.3f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Swamp),
+        .wildFaction = "wildlife",
     },
+
     // Mountain Goat
     {
-        NPCType::Goat, "goat", "Mountain Goat", SpriteId::Goat, 1,
-        AIBehaviour::Flee, {20, {5,1}, 2.0f, 2, 1.5f, "Mgt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/8, /*loot*/nullptr, /*radius*/0.6f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Goat,
+        .id = "goat",
+        .label = "Mountain Goat",
+        .sprite = SpriteId::Goat,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Flee,
+        .combat = {20, {5,1}, 2.0f, 2, 1.5f, "Mgt"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 8,
+        .radius = 0.6f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Mountain),
+        .wildFaction = "wildlife",
     },
+
     // Eagle
     {
-        NPCType::Eagle, "eagle", "Eagle", SpriteId::Eagle, 2,
+        .type = NPCType::Eagle,
+        .id = "eagle",
+        .label = "Eagle",
+        .sprite = SpriteId::Eagle,
+        .baseLevel = 2,
         // ЛЕТУН: cruiseM 6 — орёл выше ястреба, тот же закон.
-        AIBehaviour::Wanderer, {12, {7,1}, 3.25f, 3, 1.0f, "Egl", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 6.0f}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
-        /*weight*/4, /*loot*/nullptr, /*radius*/0.5f,
-        {{}}, 0, {{}}, 0,
+        .ai = AIBehaviour::Wanderer,
+        .combat = {12, {7,1}, 3.25f, 3, 1.0f, "Egl", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 6.0f},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/15,
+        .weight = 4,
+        .radius = 0.5f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Mountain),
+        .wildFaction = "wildlife",
     },
+
     // Crocodile
     {
-        NPCType::Croc, "crocodile", "Crocodile", SpriteId::Crocodile, 3,
-        AIBehaviour::Aggressive, {50, {15,1}, 1.25f, 3, 1.5f, "Crc"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
-        /*weight*/4, /*loot*/nullptr, /*radius*/0.8f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Croc,
+        .id = "crocodile",
+        .label = "Crocodile",
+        .sprite = SpriteId::Crocodile,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {50, {15,1}, 1.25f, 3, 1.5f, "Crc"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/20,
+        .weight = 4,
+        .radius = 0.8f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Swamp) | hab(Tropics),
+        .wildFaction = "wildlife",
     },
+
     // Goblin
     {
-        NPCType::Goblin, "goblin", "Goblin", SpriteId::Goblin, 2,
-        AIBehaviour::Aggressive, {25, {8,1}, 2.0f, 3, 1.0f, "Gbl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
-        /*weight*/4, /*loot*/nullptr, /*radius*/0.6f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Goblin,
+        .id = "goblin",
+        .label = "Goblin",
+        .sprite = SpriteId::Goblin,
+        .baseLevel = 2,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {25, {8,1}, 2.0f, 3, 1.0f, "Gbl"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/15,
+        .weight = 4,
+        .radius = 0.6f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 1,
+        .purseMax = 12,
+        .mapColor = 0xC8C8C8u,
+        .habitat = kHabForest | kHabRuin | kHabSpire,
+        .wildFaction = "demons",
     },
+
     // Skeleton
     {
-        NPCType::Skeleton, "skeleton", "Skeleton", SpriteId::Skeleton, 3,
-        AIBehaviour::Aggressive, {35, {10,1}, 1.5f, 3, 1.2f, "Skl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
-        /*weight*/3, /*loot*/nullptr, /*radius*/0.6f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Skeleton,
+        .id = "skeleton",
+        .label = "Skeleton",
+        .sprite = SpriteId::Skeleton,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {35, {10,1}, 1.5f, 3, 1.2f, "Skl"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/20,
+        .weight = 3,
+        .radius = 0.6f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Void,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = kHabRuin | kHabSpire,
+        .wildFaction = "demons",
     },
+
     // Troll
     {
-        NPCType::Troll, "troll", "Troll", SpriteId::Troll, 5,
-        AIBehaviour::Aggressive, {120, {25,1}, 1.25f, 4, 2.0f, "Trl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
-        /*weight*/1, /*loot*/nullptr, /*radius*/1.2f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Troll,
+        .id = "troll",
+        .label = "Troll",
+        .sprite = SpriteId::Troll,
+        .baseLevel = 5,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {120, {25,1}, 1.25f, 4, 2.0f, "Trl"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/30,
+        .weight = 1,
+        .radius = 1.2f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = kHabRuin | kHabSpire,
+        .wildFaction = "demons",
     },
+
     // Swamp Thing
     {
-        NPCType::SwampThing, "swamp_thing", "Swamp Thing", SpriteId::SwampThing, 3,
-        AIBehaviour::Aggressive, {60, {14,1}, 1.0f, 4, 1.5f, "Swt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
-        /*weight*/3, /*loot*/nullptr, /*radius*/0.9f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::SwampThing,
+        .id = "swamp_thing",
+        .label = "Swamp Thing",
+        .sprite = SpriteId::SwampThing,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {60, {14,1}, 1.0f, 4, 1.5f, "Swt"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/20,
+        .weight = 3,
+        .radius = 0.9f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Void,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Swamp),
+        .wildFaction = "demons",
     },
+
     // Ice Wraith
     {
-        NPCType::IceWraith, "ice_wraith", "Ice Wraith", SpriteId::IceWraith, 4,
-        AIBehaviour::Aggressive, {45, {16,1}, 1.75f, 5, 1.3f, "Iwr"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/25,
-        /*weight*/2, /*loot*/nullptr, /*radius*/0.7f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::IceWraith,
+        .id = "ice_wraith",
+        .label = "Ice Wraith",
+        .sprite = SpriteId::IceWraith,
+        .baseLevel = 4,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {45, {16,1}, 1.75f, 5, 1.3f, "Iwr"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/25,
+        .weight = 2,
+        .radius = 0.7f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Void,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Tundra) | hab(Snow) | kHabSpire,
+        .wildFaction = "demons",
     },
+
     // Sand Scorpion
     {
-        NPCType::SandScorpion, "sand_scorpion", "Sand Scorpion", SpriteId::SandScorpion, 2,
-        AIBehaviour::Aggressive, {35, {12,1}, 1.75f, 3, 1.0f, "Ssc"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
-        /*weight*/5, /*loot*/nullptr, /*radius*/0.6f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::SandScorpion,
+        .id = "sand_scorpion",
+        .label = "Sand Scorpion",
+        .sprite = SpriteId::SandScorpion,
+        .baseLevel = 2,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {35, {12,1}, 1.75f, 3, 1.0f, "Ssc"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/15,
+        .weight = 5,
+        .radius = 0.6f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Desert),
+        .wildFaction = "demons",
     },
+
     // Stone Golem
     {
-        NPCType::StoneGolem, "stone_golem", "Stone Golem", SpriteId::StoneGolem, 5,
-        AIBehaviour::Aggressive, {150, {20,1}, 0.75f, 4, 2.5f, "Glm"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
-        /*weight*/1, /*loot*/nullptr, /*radius*/1.3f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::StoneGolem,
+        .id = "stone_golem",
+        .label = "Stone Golem",
+        .sprite = SpriteId::StoneGolem,
+        .baseLevel = 5,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {150, {20,1}, 0.75f, 4, 2.5f, "Glm"},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/30,
+        .weight = 1,
+        .radius = 1.3f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Void,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
+        .habitat = hab(Mountain) | kHabSpire,
+        .wildFaction = "demons",
     },
+
     // The player. An ordinary row of the ordinary table (owner, 2026-08-27),
     // because his macro squad is an ordinary squad and a squad names a row
     // here. `weight` 0: the world never rolls an adventurer out of thin air —
@@ -633,44 +1169,86 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // hireable, worth no XP (his death is a game-over, not a kill), and his
     // loot is the bag he actually carries rather than a rolled profile.
     {
-        NPCType::Adventurer, "adventurer", "Adventurer", SpriteId::Peasant, 1,
-        AIBehaviour::Wanderer, kAdventurerCombat, kNpcUpkeepNone, false, 0,
-        /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Adventurer,
+        .id = "adventurer",
+        .label = "Adventurer",
+        .sprite = SpriteId::Peasant,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Wanderer,
+        .combat = kAdventurerCombat,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = 0,
+        .lootId = "peasant",
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Human,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xC8C8C8u,
     },
+
     // Tax-collector — the feudal graph's own courier (owner 2026-08-30)
     {
-        NPCType::TaxCollector, "tax_collector", "Tax-collector",
-        SpriteId::Peasant, 2,
-        AIBehaviour::TaxRun, kWoodcutterCombat, 0, true, 12,
-        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
-        {{"Foka","Yeremey","Lavrenty","Sofron","Nikanor"}}, 5,
-        {{"The crown's eighth, weighed and sealed.",
+        .type = NPCType::TaxCollector,
+        .id = "tax_collector",
+        .label = "Tax-collector",
+        .sprite = SpriteId::Peasant,
+        .baseLevel = 2,
+        .ai = AIBehaviour::TaxRun,
+        .combat = kWoodcutterCombat,
+        .upkeepGoldPerDay = 0,
+        .hireable = true,
+        .xpReward = 12,
+        .weight = 21,
+        .lootId = "merchant",
+        .names = {{"Foka","Yeremey","Lavrenty","Sofron","Nikanor"}},
+        .nameCount = 5,
+        .talkLines = {{"The crown's eighth, weighed and sealed.",
           "Rob me and you rob the capital - think on that.",
-          "Every realm stands on carried coin."}}, 3,
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
-        /*hireGold=*/30,
+          "Every realm stands on carried coin."}},
+        .talkCount = 3,
+        .hireGold = 30,
+        .nature = NpcNature::Human,
+        .purseMin = 1,
+        .purseMax = 10,
+        .mapColor = 0xC8C8C8u,
     },
+
     // Road ambusher — the prologue's teeth (owner 2026-09-09). A bandit in
     // body, sprite, behaviour and loot; his row exists for two columns the
     // world's bandits must NOT inherit: he watches the whole road
     // (kAmbusherCombat sight) and he cannot be beaten at level 1 (its HP).
     // Appended, so every saved ordinal stays where it was.
     {
-        NPCType::RoadAmbusher, "road_ambusher", "Ambusher",
-        SpriteId::Bandit, 3,
-        AIBehaviour::Aggressive, kAmbusherCombat, kNpcUpkeepNone, false, 20,
+        .type = NPCType::RoadAmbusher,
+        .id = "road_ambusher",
+        .label = "Ambusher",
+        .sprite = SpriteId::Bandit,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Aggressive,
+        .combat = kAmbusherCombat,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = 20,
         // He drops what a bandit drops, named in his own column: his ordinal
         // sits in the creature stripe of the table, where the
         // per-role loot list no longer answers.
-        /*weight*/0, /*loot*/"bandit", /*radius*/0.0f,
-        {{"Krivoy","Sukhoy","Gnily","Ryaboy","Tishina"}}, 5,
-        {{"We have been watching this road all morning.",
+        .lootId = "bandit",
+        .names = {{"Krivoy","Sukhoy","Gnily","Ryaboy","Tishina"}},
+        .nameCount = 5,
+        .talkLines = {{"We have been watching this road all morning.",
           "Nothing personal, traveller. The road is ours.",
-          "Down. Stay down and it goes easier."}}, 3,
+          "Down. Stay down and it goes easier."}},
+        .talkCount = 3,
+        .nature = NpcNature::Human,
+        .purseMin = 5,
+        .purseMax = 30,
+        .mapColor = 0xDC3C3Cu,
     },
+
     // Dragon (owner 2026-09-10, стол анкет): первый ЛЕТУН-боец —
     // kDragonCombat несёт cruiseM 10 (честный полёт, конверт игрока) и
     // огненный шар обычными Missile-колонками (3d20 Fire, бласт 2.5 м).
@@ -679,12 +1257,27 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // спавн-таблицей, будет просто кружить. weight 0 — вслепую мир его
     // не выбрасывает: дракон приходит только по имени (анкета, данж).
     {
-        NPCType::Dragon, "dragon", "Dragon", SpriteId::Dragon, 10,
-        AIBehaviour::Wanderer, kDragonCombat, kNpcUpkeepNone, false,
-        /*xp*/ 500,
-        /*weight*/0, /*loot*/nullptr, /*radius*/1.6f,
-        {{}}, 0, {{}}, 0,
+        .type = NPCType::Dragon,
+        .id = "dragon",
+        .label = "Dragon",
+        .sprite = SpriteId::Dragon,
+        .baseLevel = 10,
+        .ai = AIBehaviour::Wanderer,
+        .combat = kDragonCombat,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = 500,
+        .radius = 1.6f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xB03030u,
     },
+
     // ── THE BESTIARY OF THE POPULATED PLACES (content, 2026-09-11) ────────
     //
     // Sixteen species authored against each other, not in isolation. Three
@@ -717,210 +1310,479 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
 
     // Giant rat — what lives under a floor nobody sweeps. Fast, weak, many.
     {
-        NPCType::GiantRat, "giant_rat", "Giant Rat", SpriteId::GiantRat, 1,
-        AIBehaviour::Aggressive,
-        {14, {2,4}, 2.5f, 2.0f, 1.0f, "Rat", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::GiantRat,
+        .id = "giant_rat",
+        .label = "Giant Rat",
+        .sprite = SpriteId::GiantRat,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {14, {2,4}, 2.5f, 2.0f, 1.0f, "Rat", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.5f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/6, /*loot*/nullptr, /*radius*/0.35f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 6,
+        .radius = 0.35f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x6A5A4Au,
+        .habitat = kHabRuin | hab(Mountain),
+        .wildFaction = "wildlife",
     },
+
     // Cave bat — the first thing a torch finds. Cruises at 2.5 m: high
     // enough to be a nuisance, low enough that a cave's ceiling still holds
     // it (the envelope is shared, so a row that cruised into the rock would
     // simply be pinned against it — a number, not a bug).
     {
-        NPCType::CaveBat, "cave_bat", "Cave Bat", SpriteId::CaveBat, 1,
-        AIBehaviour::Aggressive,
-        {8, {1,6}, 3.0f, 2.0f, 0.9f, "Bat", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::CaveBat,
+        .id = "cave_bat",
+        .label = "Cave Bat",
+        .sprite = SpriteId::CaveBat,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {8, {1,6}, 3.0f, 2.0f, 0.9f, "Bat", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.4f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce, /*cruiseM*/2.5f},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/6, /*loot*/nullptr, /*radius*/0.3f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 6,
+        .radius = 0.3f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x4A4048u,
+        .habitat = kHabRuin | hab(Mountain),
+        .wildFaction = "wildlife",
     },
+
     // Kobold — the goblin's smaller cousin, and the first thing in the game
     // that carries a purse worth taking off it.
     {
-        NPCType::Kobold, "kobold", "Kobold", SpriteId::Kobold, 1,
-        AIBehaviour::Aggressive,
-        {20, {2,4}, 2.2f, 3.0f, 1.1f, "Kbd", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Kobold,
+        .id = "kobold",
+        .label = "Kobold",
+        .sprite = SpriteId::Kobold,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {20, {2,4}, 2.2f, 3.0f, 1.1f, "Kbd", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.1f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/5, /*loot*/nullptr, /*radius*/0.45f,
-        {{"Skree","Yip","Gnash","Tikka","Vess"}}, 5,
-        {{"Not yours! Not yours!",
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .weight = 5,
+        .radius = 0.45f,
+        .names = {{"Skree","Yip","Gnash","Tikka","Vess"}},
+        .nameCount = 5,
+        .talkLines = {{"Not yours! Not yours!",
           "Down the hole with you.",
-          "Sharp! Sharp and quick!"}}, 3,
+          "Sharp! Sharp and quick!"}},
+        .talkCount = 3,
+        .nature = NpcNature::Fauna,
+        .purseMin = 1,
+        .purseMax = 6,
+        .mapColor = 0x8A6A3Au,
+        .habitat = kHabRuin | kHabForest | hab(Mountain),
+        .wildFaction = "demons",
     },
+
     // Cave spider — slow to notice, fast to close. Pierce fangs.
     {
-        NPCType::CaveSpider, "cave_spider", "Cave Spider", SpriteId::CaveSpider, 2,
-        AIBehaviour::Aggressive,
-        {26, {2,6}, 2.4f, 2.0f, 1.0f, "Spd", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::CaveSpider,
+        .id = "cave_spider",
+        .label = "Cave Spider",
+        .sprite = SpriteId::CaveSpider,
+        .baseLevel = 2,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {26, {2,6}, 2.4f, 2.0f, 1.0f, "Spd", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.7f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
-        /*weight*/4, /*loot*/nullptr, /*radius*/0.5f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/15,
+        .weight = 4,
+        .radius = 0.5f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x2A2A3Au,
+        .habitat = kHabRuin | kHabForest | hab(Mountain),
+        .wildFaction = "wildlife",
     },
+
     // Imp — a spire's smallest servant: quick, burning, and never alone.
     {
-        NPCType::Imp, "imp", "Imp", SpriteId::Imp, 2,
-        AIBehaviour::Aggressive,
-        {18, {2,5}, 2.8f, 2.0f, 0.9f, "Imp", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Imp,
+        .id = "imp",
+        .label = "Imp",
+        .sprite = SpriteId::Imp,
+        .baseLevel = 2,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {18, {2,5}, 2.8f, 2.0f, 0.9f, "Imp", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.8f, kNpcSightDefaultM, 100, 100,
          DamageType::Fire},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
-        /*weight*/5, /*loot*/nullptr, /*radius*/0.35f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/15,
+        .weight = 5,
+        .radius = 0.35f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Void,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xA03050u,
+        .habitat = kHabSpire | kHabRuin,
+        .wildFaction = "demons",
     },
+
     // Zombie — the slowest thing that will still kill you. Its threat is the
     // 2.0 s cooldown meeting 55 hp: you cannot out-trade it, you walk away.
     {
-        NPCType::Zombie, "zombie", "Zombie", SpriteId::Zombie, 2,
-        AIBehaviour::Aggressive,
-        {55, {2,8}, 0.8f, 3.0f, 2.0f, "Zmb", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Zombie,
+        .id = "zombie",
+        .label = "Zombie",
+        .sprite = SpriteId::Zombie,
+        .baseLevel = 2,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {55, {2,8}, 0.8f, 3.0f, 2.0f, "Zmb", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.75f, kNpcSightDefaultM, 100, 100,
          DamageType::Blunt},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
-        /*weight*/4, /*loot*/nullptr, /*radius*/0.55f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/15,
+        .weight = 4,
+        .radius = 0.55f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Void,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x6A7A5Au,
+        .habitat = kHabRuin | kHabSpire | hab(Swamp),
+        .wildFaction = "demons",
     },
+
     // Orc — the raider of the open land, and the one new row that belongs
     // outdoors as much as underground.
     {
-        NPCType::Orc, "orc", "Orc", SpriteId::Orc, 3,
-        AIBehaviour::Aggressive,
-        {60, {2,8}, 1.8f, 3.0f, 1.4f, "Orc", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Orc,
+        .id = "orc",
+        .label = "Orc",
+        .sprite = SpriteId::Orc,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {60, {2,8}, 1.8f, 3.0f, 1.4f, "Orc", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
          DamageType::Slash},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
-        /*weight*/4, /*loot*/nullptr, /*radius*/0.6f,
-        {{"Gruth","Mazgar","Ukk","Snaga","Dorgul","Brakk"}}, 6,
-        {{"Blood for the warband.",
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/20,
+        .weight = 4,
+        .radius = 0.6f,
+        .names = {{"Gruth","Mazgar","Ukk","Snaga","Dorgul","Brakk"}},
+        .nameCount = 6,
+        .talkLines = {{"Blood for the warband.",
           "You walk where you should not.",
-          "Come on then. Come on!"}}, 3,
+          "Come on then. Come on!"}},
+        .talkCount = 3,
+        .nature = NpcNature::Fauna,
+        .purseMin = 2,
+        .purseMax = 12,
+        .mapColor = 0x5A7A4Au,
+        .habitat = kHabForest | kHabRuin | hab(Steppe) | hab(Valley),
+        .wildFaction = "demons",
     },
+
     // Ghoul — the zombie's opposite reading of the same corpse: fast,
     // lighter, three smaller dice instead of two big ones.
     {
-        NPCType::Ghoul, "ghoul", "Ghoul", SpriteId::Ghoul, 3,
-        AIBehaviour::Aggressive,
-        {48, {3,6}, 2.4f, 3.0f, 1.2f, "Ghl", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Ghoul,
+        .id = "ghoul",
+        .label = "Ghoul",
+        .sprite = SpriteId::Ghoul,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {48, {3,6}, 2.4f, 3.0f, 1.2f, "Ghl", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.7f, kNpcSightDefaultM, 100, 100,
          DamageType::Slash},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
-        /*weight*/3, /*loot*/nullptr, /*radius*/0.5f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/20,
+        .weight = 3,
+        .radius = 0.5f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Void,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x9A8A7Au,
+        .habitat = kHabRuin | kHabSpire,
+        .wildFaction = "demons",
     },
+
     // Harpy — the crags' own. Cruises at 8 m, which is above a man's reach
     // and below a tower's crown: she is fought by looking UP.
     {
-        NPCType::Harpy, "harpy", "Harpy", SpriteId::Harpy, 3,
-        AIBehaviour::Aggressive,
-        {30, {2,7}, 2.9f, 3.0f, 1.0f, "Hrp", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Harpy,
+        .id = "harpy",
+        .label = "Harpy",
+        .sprite = SpriteId::Harpy,
+        .baseLevel = 3,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {30, {2,7}, 2.9f, 3.0f, 1.0f, "Hrp", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.6f, kNpcSightDefaultM, 100, 100,
          DamageType::Slash, /*cruiseM*/8.0f},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
-        /*weight*/3, /*loot*/nullptr, /*radius*/0.55f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/20,
+        .weight = 3,
+        .radius = 0.55f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0xB07850u,
+        .habitat = kHabSpire | hab(Mountain),
+        .wildFaction = "demons",
     },
+
     // Cultist — the man who serves the spire. The crowd's first SHOOTER:
     // ordinary Missile columns, arcane bolt, no blast — he is dangerous
     // because he stands behind the ogres, not because his numbers are big.
     {
-        NPCType::Cultist, "cultist", "Cultist", SpriteId::Cultist, 4,
-        AIBehaviour::Aggressive,
-        {45, {3,6}, 1.5f, 22.0f, 2.2f, "Cul", CombatTemplate::Missile, 190,
+        .type = NPCType::Cultist,
+        .id = "cultist",
+        .label = "Cultist",
+        .sprite = SpriteId::Cultist,
+        .baseLevel = 4,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {45, {3,6}, 1.5f, 22.0f, 2.2f, "Cul", CombatTemplate::Missile, 190,
          0.0f, 0xFFA060E0u, /*bodyHeight*/1.8f, kNpcSightDefaultM, 100, 100,
          DamageType::Arcane, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("magic_bolt")},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/25,
-        /*weight*/3, /*loot*/nullptr, /*radius*/0.55f,
-        {{"Brother Vas","Sister Ilm","Novice Korr","The Pale Hand","Acolyte Zeb"}}, 5,
-        {{"The tower drinks, and we pour.",
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/25,
+        .weight = 3,
+        .lootId = "bandit",
+        .radius = 0.55f,
+        .names = {{"Brother Vas","Sister Ilm","Novice Korr","The Pale Hand","Acolyte Zeb"}},
+        .nameCount = 5,
+        .talkLines = {{"The tower drinks, and we pour.",
           "You are late. It has already begun.",
-          "Kneel, and it will be quick."}}, 3,
+          "Kneel, and it will be quick."}},
+        .talkCount = 3,
+        .nature = NpcNature::Human,
+        .purseMin = 2,
+        .purseMax = 14,
+        .mapColor = 0x50306Au,
+        .habitat = kHabSpire | kHabRuin,
+        .wildFaction = "demons",
     },
+
     // Gargoyle — a tower's airborne masonry. Earth damage against the armour
     // table, Hulk silhouette, 90 hp: the first new row that must be planned
     // for rather than met.
     {
-        NPCType::Gargoyle, "gargoyle", "Gargoyle", SpriteId::Gargoyle, 5,
-        AIBehaviour::Aggressive,
-        {90, {3,8}, 1.4f, 3.0f, 1.6f, "Grg", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Gargoyle,
+        .id = "gargoyle",
+        .label = "Gargoyle",
+        .sprite = SpriteId::Gargoyle,
+        .baseLevel = 5,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {90, {3,8}, 1.4f, 3.0f, 1.6f, "Grg", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.2f, kNpcSightDefaultM, 100, 100,
          DamageType::Earth, /*cruiseM*/7.0f},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
-        /*weight*/2, /*loot*/nullptr, /*radius*/0.9f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/30,
+        .weight = 2,
+        .radius = 0.9f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Void,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x60605Au,
+        .habitat = kHabSpire | hab(Mountain),
+        .wildFaction = "demons",
     },
+
     // Wraith — the ice wraith's rootless cousin: Void instead of cold, so a
     // player kitted against one is not kitted against the other.
     {
-        NPCType::Wraith, "wraith", "Wraith", SpriteId::Wraith, 5,
-        AIBehaviour::Aggressive,
-        {55, {3,8}, 2.0f, 4.0f, 1.4f, "Wrh", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Wraith,
+        .id = "wraith",
+        .label = "Wraith",
+        .sprite = SpriteId::Wraith,
+        .baseLevel = 5,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {55, {3,8}, 2.0f, 4.0f, 1.4f, "Wrh", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
          DamageType::Void},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
-        /*weight*/2, /*loot*/nullptr, /*radius*/0.6f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/30,
+        .weight = 2,
+        .radius = 0.6f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Void,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x7060A0u,
+        .habitat = kHabSpire | kHabRuin,
+        .wildFaction = "demons",
     },
+
     // Ogre — the wall of the crowd. 3d12 at 2.2 s: it hits like a siege and
     // misses a fleeing man completely.
     {
-        NPCType::Ogre, "ogre", "Ogre", SpriteId::Ogre, 6,
-        AIBehaviour::Aggressive,
-        {140, {3,12}, 1.2f, 4.0f, 2.2f, "Ogr", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Ogre,
+        .id = "ogre",
+        .label = "Ogre",
+        .sprite = SpriteId::Ogre,
+        .baseLevel = 6,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {140, {3,12}, 1.2f, 4.0f, 2.2f, "Ogr", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/3.0f, kNpcSightDefaultM, 100, 100,
          DamageType::Blunt},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/35,
-        /*weight*/1, /*loot*/nullptr, /*radius*/1.2f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/35,
+        .weight = 1,
+        .radius = 1.2f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x8A7050u,
+        .habitat = kHabRuin | kHabForest | hab(Mountain),
+        .wildFaction = "demons",
     },
+
     // Minotaur — the ogre's answer for a player who thought running was the
     // answer: nearly the same weight of blow, at a man's speed.
     {
-        NPCType::Minotaur, "minotaur", "Minotaur", SpriteId::Minotaur, 6,
-        AIBehaviour::Aggressive,
-        {130, {4,10}, 1.9f, 4.0f, 1.8f, "Min", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Minotaur,
+        .id = "minotaur",
+        .label = "Minotaur",
+        .sprite = SpriteId::Minotaur,
+        .baseLevel = 6,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {130, {4,10}, 1.9f, 4.0f, 1.8f, "Min", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.6f, kNpcSightDefaultM, 100, 100,
          DamageType::Slash},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/35,
-        /*weight*/1, /*loot*/nullptr, /*radius*/1.0f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/35,
+        .weight = 1,
+        .radius = 1.0f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x6A3A2Au,
+        .habitat = kHabRuin | kHabSpire,
+        .wildFaction = "demons",
     },
+
     // Basilisk — the swamp's and the desert's heavy. Serpent silhouette, so
     // the eye reads it instantly among the uprights.
     {
-        NPCType::Basilisk, "basilisk", "Basilisk", SpriteId::Basilisk, 6,
-        AIBehaviour::Aggressive,
-        {95, {3,10}, 1.6f, 3.0f, 1.5f, "Bsk", CombatTemplate::Melee, 0, 0,
+        .type = NPCType::Basilisk,
+        .id = "basilisk",
+        .label = "Basilisk",
+        .sprite = SpriteId::Basilisk,
+        .baseLevel = 6,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {95, {3,10}, 1.6f, 3.0f, 1.5f, "Bsk", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.4f, kNpcSightDefaultM, 100, 100,
          DamageType::Earth},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/35,
-        /*weight*/1, /*loot*/nullptr, /*radius*/0.8f,
-        {{}}, 0, {{}}, 0,
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/35,
+        .weight = 1,
+        .radius = 0.8f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x3A6A4Au,
+        .habitat = kHabRuin | hab(Swamp) | hab(Desert),
+        .wildFaction = "demons",
     },
+
     // Lich — what is at the top of the climb. The only new row that both
     // shoots and blasts (3 m), the only one that hoards a purse, and the
     // strongest thing in the table below the dragon.
     {
-        NPCType::Lich, "lich", "Lich", SpriteId::Lich, 8,
-        AIBehaviour::Aggressive,
-        {110, {4,12}, 1.1f, 28.0f, 2.6f, "Lch", CombatTemplate::Missile, 210,
+        .type = NPCType::Lich,
+        .id = "lich",
+        .label = "Lich",
+        .sprite = SpriteId::Lich,
+        .baseLevel = 8,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {110, {4,12}, 1.1f, 28.0f, 2.6f, "Lch", CombatTemplate::Missile, 210,
          3.0f, 0xFF90FFB0u, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
          DamageType::Void, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("void_arrow")},
-        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/45,
-        /*weight*/1, /*loot*/nullptr, /*radius*/0.6f,
-        {{"Vashkar","The Grey Crown","Ozimandel","Neth-Ur"}}, 4,
-        {{"I was old when your kingdom was a camp.",
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .xpReward = /*xp = 5*(baseLevel+1)*/45,
+        .weight = 1,
+        .radius = 0.6f,
+        .names = {{"Vashkar","The Grey Crown","Ozimandel","Neth-Ur"}},
+        .nameCount = 4,
+        .talkLines = {{"I was old when your kingdom was a camp.",
           "Breathe. It is a habit you will lose.",
-          "Come closer. I want to see it happen."}}, 3,
+          "Come closer. I want to see it happen."}},
+        .talkCount = 3,
+        .nature = NpcNature::Void,
+        .purseMin = 8,
+        .purseMax = 40,
+        .mapColor = 0xC0D0B0u,
+        .habitat = kHabSpire,
+        .wildFaction = "demons",
     },
+
     // Horse — the roster's beast of burden (CANON S10 «ЛОШАДЬ — ЮНИТ»).
     // A sturdy flighty grazer: hooves 1d4, faster than any march. It EATS
     // (upkeep 0 = a mouth on the board law, no wage — the column humans
@@ -928,22 +1790,34 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // NOT say), and it is hireable: the town's herd sells through the one
     // hire door, no horse-shop path.
     {
-        NPCType::Horse, "horse", "Horse", SpriteId::Deer, 1,
-        AIBehaviour::Flee, {40, {1,4}, 2.2f, 1.2f, 1.6f, "Hrs"},
-        /*upkeep*/0, /*hireable*/true, /*xp = 5*(baseLevel+1)*/10,
-        /*weight*/0, /*loot*/nullptr, /*radius*/0.8f,
-        {{}}, 0, {{}}, 0,
-        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
-        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f,
+        .type = NPCType::Horse,
+        .id = "horse",
+        .label = "Horse",
+        .sprite = SpriteId::Deer,
+        .baseLevel = 1,
+        .ai = AIBehaviour::Flee,
+        .combat = {40, {1,4}, 2.2f, 1.2f, 1.6f, "Hrs"},
+        .upkeepGoldPerDay = 0,
+        .hireable = true,
+        .xpReward = /*xp = 5*(baseLevel+1)*/10,
+        .radius = 0.8f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
         // One horse carries eight men's backs — the pack saddle against the
         // rucksack (a man hauls ~15 kg on foot, a pack horse ~120).
-        /*haulMult=*/8.0f,
-        /*armor=*/{},
+        .haulMult = 8.0f,
         // The price of the backs it replaces: eight peasant hires (30 each,
         // the row above) — dearer than a soldier, cheaper than a house.
-        /*hireGold=*/240,
-        /*tag=*/NpcTag::Mount,
+        .hireGold = 240,
+        .tag = NpcTag::Mount,
+        .nature = NpcNature::Fauna,
+        .purseMin = 0,
+        .purseMax = 0,
+        .mapColor = 0x8A6A42u,
+        .habitat = hab(Steppe) | hab(Meadow) | hab(Valley),
+        .wildFaction = "wildlife",
     },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
@@ -953,78 +1827,19 @@ inline constexpr const NpcTypeDef& npc_def(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)];
 }
 
-// ── ПРИРОДА РОДА: одна строка на род, по ординалу (NpcNature выше) ────────
-// Это та самая «единая система» (владелец 2026-09-21): один столбец данных
-// вместо трёх разных вопросов, которые код задавал тремя разными способами.
-//
-// ЧТО ОН ЗАМЕНЯЕТ И ПОЧЕМУ ЭТО НЕ КОСМЕТИКА. До него «человек ли это»
-// отвечала ГРАНИЦА ОРДИНАЛА (`is_creature_row`: всё, что стоит в enum после
-// Rabbit, — зверь), и про неё в этом же файле было написано «это граница
-// ординалов, и она намеренно уродлива, чтобы её не приняли за факт о мире».
-// Её и не приняли — она ВРАЛА: человеческие рода (Adventurer, TaxCollector,
-// RoadAmbusher) дописаны в enum ПОСЛЕ звериного блока, и мир считал их
-// зверьём. Сборщик дани, растворяясь дома, уходил не в население, а в
-// гарнизон — как пойманная лошадь.
-//
-// ОТКРЫТО, НАЗВАНО ВСЛУХ (ничего мехaнического сегодня от этого не зависит:
-// эти рода не стоят в ростерах мест): гоблин, орк и кобольд поставлены Void
-// как «нечисть». Если по замыслу это народы со своими поселениями — они
-// Human, и тогда их деревня получит население той же дверью, без единой
-// ветки. Ждёт слова владельца.
-struct NpcNatureRow { NPCType type; NpcNature nature; };
-inline constexpr NpcNatureRow kNpcNature[std::size_t(NPCType::Count)] = {
-    {NPCType::Peasant,      NpcNature::Human},
-    {NPCType::Merchant,     NpcNature::Human},
-    {NPCType::Bandit,       NpcNature::Human},
-    {NPCType::Guard,        NpcNature::Human},
-    {NPCType::Witch,        NpcNature::Human},
-    {NPCType::Sorceress,    NpcNature::Human},
-    {NPCType::Rabbit,       NpcNature::Fauna},
-    {NPCType::Deer,         NpcNature::Fauna},
-    {NPCType::Fox,          NpcNature::Fauna},
-    {NPCType::Wolf,         NpcNature::Fauna},
-    {NPCType::Bear,         NpcNature::Fauna},
-    {NPCType::Boar,         NpcNature::Fauna},
-    {NPCType::Snake,        NpcNature::Fauna},
-    {NPCType::Hawk,         NpcNature::Fauna},
-    {NPCType::Frog,         NpcNature::Fauna},
-    {NPCType::Goat,         NpcNature::Fauna},
-    {NPCType::Eagle,        NpcNature::Fauna},
-    {NPCType::Croc,         NpcNature::Fauna},
-    {NPCType::Goblin,       NpcNature::Fauna},
-    {NPCType::Skeleton,     NpcNature::Void},
-    {NPCType::Troll,        NpcNature::Fauna},
-    {NPCType::SwampThing,   NpcNature::Void},
-    {NPCType::IceWraith,    NpcNature::Void},
-    {NPCType::SandScorpion, NpcNature::Fauna},
-    {NPCType::StoneGolem,   NpcNature::Void},
-    {NPCType::Adventurer,   NpcNature::Human},
-    {NPCType::TaxCollector, NpcNature::Human},
-    {NPCType::RoadAmbusher, NpcNature::Human},
-    {NPCType::Dragon,       NpcNature::Fauna},
-    {NPCType::GiantRat,     NpcNature::Fauna},
-    {NPCType::CaveBat,      NpcNature::Fauna},
-    {NPCType::Kobold,       NpcNature::Fauna},
-    {NPCType::CaveSpider,   NpcNature::Fauna},
-    {NPCType::Imp,          NpcNature::Void},
-    {NPCType::Zombie,       NpcNature::Void},
-    {NPCType::Orc,          NpcNature::Fauna},
-    {NPCType::Ghoul,        NpcNature::Void},
-    {NPCType::Harpy,        NpcNature::Fauna},
-    {NPCType::Cultist,      NpcNature::Human},
-    {NPCType::Gargoyle,     NpcNature::Void},
-    {NPCType::Wraith,       NpcNature::Void},
-    {NPCType::Ogre,         NpcNature::Fauna},
-    {NPCType::Minotaur,     NpcNature::Fauna},
-    {NPCType::Basilisk,     NpcNature::Fauna},
-    {NPCType::Lich,         NpcNature::Void},
-    {NPCType::Horse,        NpcNature::Fauna},
-};
-static_assert(rows_in_enum_order(kNpcNature, &NpcNatureRow::type),
-              "kNpcNature row order must mirror NPCType");
+// ── ДВЕРИ К КОЛОНКАМ СТРОКИ ──────────────────────────────────────────────
+// Здесь стояли ТРИ таблицы-спутника (kNpcNature / kNpcPurse / kNpcMapColor)
+// со своими свидетелями порядка. Влиты колонками в строку каталога
+// 2026-09-22 (CANON S26 «Одна строка на род»). Двери остались: читателей у
+// колонки много, и спрашивать они обязаны одним голосом.
 
 inline constexpr NpcNature npc_nature(NPCType t) {
-    return kNpcNature[std::size_t(t)].nature;
+    return kNpcTypeDefs[std::size_t(t)].nature;
+}
+
+// СКОЛЬКО ЭТА СТРОКА ЕСТ В ДЕНЬ, в единицах голодной строки.
+inline constexpr int npc_board_per_day(NPCType t) {
+    return kNpcTypeDefs[std::size_t(t)].boardPerDay;
 }
 
 // THE man-shaped half-width (world units ≈ metres): what a row that authors
@@ -1042,160 +1857,17 @@ inline constexpr float npc_body_radius(const NpcTypeDef& def) {
 }
 
 // ── THE purse: how much coin a body of this row carries ───────────────────
-// One table, enum-ordered beside the row it describes (the kSpawnHabitats /
-// kGathererDefs idiom). It lived inside macro/npc_spawn.cpp's make_npc, so
-// only PERSISTENT macro bodies had a purse; the derived bodies of the
-// subworld paid out through a second, faction-keyed multiplier in
-// items.cpp (wildlife 0.1× / demons 0.6× / bandits 0.8×) — a second wealth
-// vocabulary that the faction ruling of 2026-08-27 made outright wrong: with
-// faction an INSTANCE property, the very same wolf carried six times more
-// coin under a ruin's banner than in a meadow.
-//
-// The row answers now, for both worlds: a beast has no pockets whatever
-// banner it fights under, a merchant is rich because he is a merchant. What
-// the world modulates on top is the WEALTH OF THE PLACE (landmark_registry
-// wealthMul, through the one context door), and what the banner still decides
-// is which realm's COIN it is — S10's «база из таблицы, мир — модуляция».
-//
-// (Scar: this table silently zero-filled when NPCType grew the three gatherer
-// professions — a miner spawned with an empty purse. The row-order guard
-// makes a short table refuse to compile instead.)
-struct NpcPurseRow { NPCType type; int min, max; };
-inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
-    {NPCType::Peasant,    1, 10},
-    {NPCType::Merchant,   50, 200},
-    {NPCType::Bandit,     5, 30},
-    {NPCType::Guard,      5, 20},
-    {NPCType::Witch,      10, 40},
-    {NPCType::Sorceress,  10, 40},
-    // The gatherer professions carry a labourer's pocket, like the
-    // peasant/woodcutter class they share their build with.
-    // A beast carries no purse — it has no pockets and no use for coin.
-    // The one exception is the goblin, who robs what he kills.
-    {NPCType::Rabbit,       0, 0},
-    {NPCType::Deer,         0, 0},
-    {NPCType::Fox,          0, 0},
-    {NPCType::Wolf,         0, 0},
-    {NPCType::Bear,         0, 0},
-    {NPCType::Boar,         0, 0},
-    {NPCType::Snake,        0, 0},
-    {NPCType::Hawk,         0, 0},
-    {NPCType::Frog,         0, 0},
-    {NPCType::Goat,         0, 0},
-    {NPCType::Eagle,        0, 0},
-    {NPCType::Croc,         0, 0},
-    {NPCType::Goblin,       1, 12},
-    {NPCType::Skeleton,     0, 0},
-    {NPCType::Troll,        0, 0},
-    {NPCType::SwampThing,   0, 0},
-    {NPCType::IceWraith,    0, 0},
-    {NPCType::SandScorpion, 0, 0},
-    {NPCType::StoneGolem,   0, 0},
-    // The player's purse is his INVENTORY — what he actually carries — never a
-    // rolled amount, so his row asks for nothing.
-    {NPCType::Adventurer,   0, 0},
-    {NPCType::TaxCollector, 1, 10},
-    // He robs the road for a living, exactly like the bandit he is.
-    {NPCType::RoadAmbusher, 5, 30},
-    // Дракон монет не носит — его богатство лежит в логове (артефакт-стол
-    // положит клад контентом; кошелёк зверя честно пуст).
-    {NPCType::Dragon, 0, 0},
-    // The bestiary's purses (2026-09-11). Deliberately THIN: a purse is a
-    // coin MINT at the moment a body dies, and a spire fields hundreds of
-    // bodies — a generous row here would pour more silver into the world in
-    // one raid than a season of villages earns (the wallet-tap tail, §34).
-    // So only the three rows that plausibly carry money carry any: the
-    // kobold scavenges, the orc raids, the cultist is tithed, the lich
-    // hoards. Beasts and constructs own nothing, which is also the honest
-    // answer to "what is in a rat".
-    {NPCType::GiantRat,   0, 0},
-    {NPCType::CaveBat,    0, 0},
-    {NPCType::Kobold,     1, 6},
-    {NPCType::CaveSpider, 0, 0},
-    {NPCType::Imp,        0, 0},
-    {NPCType::Zombie,     0, 0},
-    {NPCType::Orc,        2, 12},
-    {NPCType::Ghoul,      0, 0},
-    {NPCType::Harpy,      0, 0},
-    {NPCType::Cultist,    2, 14},
-    {NPCType::Gargoyle,   0, 0},
-    {NPCType::Wraith,     0, 0},
-    {NPCType::Ogre,       0, 0},
-    {NPCType::Minotaur,   0, 0},
-    {NPCType::Basilisk,   0, 0},
-    {NPCType::Lich,       8, 40},
-    {NPCType::Horse,      0, 0},
-};
-static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
-              "kNpcPurse row order must mirror NPCType");
-
-inline constexpr const NpcPurseRow& npc_purse(NPCType t) {
-    return kNpcPurse[std::size_t(t)];
+// Кошелёк рода — колонка строки. Дверь возвращает пару как было, чтобы её
+// читателям (npc_spawn) не пришлось знать про переезд.
+struct NpcPurse { int min, max; };
+inline constexpr NpcPurse npc_purse(NPCType t) {
+    const NpcTypeDef& r = kNpcTypeDefs[std::size_t(t)];
+    return NpcPurse{r.purseMin, r.purseMax};
 }
 
-// ── The map dot's colour: one row per kind ────────────────────────────────
-// What the MACRO map paints a walker of this row (ui/macro_overlay.cpp),
-// enum-ordered beside the row like kNpcPurse. These are the overlay's own
-// historical colours, deliberately NOT the sprite tints: kSpriteRows[].tint
-// colours the procedural BODY, and three town kinds share one sprite row
-// while wearing three different dots. 0xRRGGBB.
-struct NpcMapColorRow { NPCType type; std::uint32_t rgb; };
-inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
-    {NPCType::Peasant,      0xDCC8A0u},
-    {NPCType::Merchant,     0xF0C850u},
-    {NPCType::Bandit,       0xDC3C3Cu},
-    {NPCType::Guard,        0x508CDCu},
-    {NPCType::Witch,        0xB464C8u},
-    {NPCType::Sorceress,    0x78C8E6u},
-    // Every other row wears the neutral crowd grey the old default painted.
-    {NPCType::Rabbit,       0xC8C8C8u},
-    {NPCType::Deer,         0xC8C8C8u},
-    {NPCType::Fox,          0xC8C8C8u},
-    {NPCType::Wolf,         0xC8C8C8u},
-    {NPCType::Bear,         0xC8C8C8u},
-    {NPCType::Boar,         0xC8C8C8u},
-    {NPCType::Snake,        0xC8C8C8u},
-    {NPCType::Hawk,         0xC8C8C8u},
-    {NPCType::Frog,         0xC8C8C8u},
-    {NPCType::Goat,         0xC8C8C8u},
-    {NPCType::Eagle,        0xC8C8C8u},
-    {NPCType::Croc,         0xC8C8C8u},
-    {NPCType::Goblin,       0xC8C8C8u},
-    {NPCType::Skeleton,     0xC8C8C8u},
-    {NPCType::Troll,        0xC8C8C8u},
-    {NPCType::SwampThing,   0xC8C8C8u},
-    {NPCType::IceWraith,    0xC8C8C8u},
-    {NPCType::SandScorpion, 0xC8C8C8u},
-    {NPCType::StoneGolem,   0xC8C8C8u},
-    {NPCType::Adventurer,   0xC8C8C8u},
-    {NPCType::TaxCollector, 0xC8C8C8u},
-    {NPCType::RoadAmbusher, 0xDC3C3Cu},   // bandit red — he is one
-    {NPCType::Dragon,       0xB03030u},   // драконья киноварь — цвет спрайта
-    // The bestiary on the map: each row quotes its own sprite tint, so the
-    // pin and the body the player walks up to are the same colour.
-    {NPCType::GiantRat,     0x6A5A4Au},
-    {NPCType::CaveBat,      0x4A4048u},
-    {NPCType::Kobold,       0x8A6A3Au},
-    {NPCType::CaveSpider,   0x2A2A3Au},
-    {NPCType::Imp,          0xA03050u},
-    {NPCType::Zombie,       0x6A7A5Au},
-    {NPCType::Orc,          0x5A7A4Au},
-    {NPCType::Ghoul,        0x9A8A7Au},
-    {NPCType::Harpy,        0xB07850u},
-    {NPCType::Cultist,      0x50306Au},
-    {NPCType::Gargoyle,     0x60605Au},
-    {NPCType::Wraith,       0x7060A0u},
-    {NPCType::Ogre,         0x8A7050u},
-    {NPCType::Minotaur,     0x6A3A2Au},
-    {NPCType::Basilisk,     0x3A6A4Au},
-    {NPCType::Lich,         0xC0D0B0u},
-    {NPCType::Horse,        0x8A6A42u},
-};
-static_assert(rows_in_enum_order(kNpcMapColor, &NpcMapColorRow::type),
-              "kNpcMapColor row order must mirror NPCType");
-
+// Цвет метки на карте — колонка строки.
 inline constexpr std::uint32_t npc_map_color(NPCType t) {
-    return kNpcMapColor[std::size_t(t)].rgb;
+    return kNpcTypeDefs[std::size_t(t)].mapColor;
 }
 
 // THE id space, and it has one half now. Any "kind" that travels — a roster
@@ -1360,37 +2032,39 @@ inline int npc_xp_reward(NPCType t, int level) {
 // One soul, one name space — a record that walked garrison → patrol →
 // garrison keeps one identity for its whole life.)
 
-struct GarrisonResult { SoldierSquad garrison; int popCost = 0; };
-
-// One recruiting packet of a place's own army (§42 Инк 7, owner: «гарнизон
-// = армия ландмарка»). `budget` = how many souls to raise — the CALLER
-// derives it from the registry law (population >> LandmarkDef::
-// garrisonShift, minus what already stands); the old law here — √pop×0.3
-// capped at 10 — sized a tavern recruit pool, not a defense force.
-// Composition is a soldiery with a recruit tail: 60 % Guard / 40 %
-// Peasant (the hire pool lives on inside the army, not the other way
-// round). The packet pours GENERIC STACKS (CANON S4: mass fighters have no
-// entityId — the old per-soul ordinal draw died with the roster-as-
-// inventory), so a thousand-strong garrison is two slots, not a wall.
-template <class Rng01>
-inline GarrisonResult generate_garrison(int budget, Rng01&& rng) {
-    GarrisonResult r{};
-    if (budget <= 0) return r;
-    for (int i = 0; i < budget; ++i) {
-        const float roll = rng();
-        // 60 % soldiery, 40 % recruit tail. The tail is Peasant alone since
-        // 2026-09-18 (verdict №2: professions are emergent, no body IS a
-        // woodcutter) — the old 25 % Woodcutter share folds into it.
-        NPCType kind = NPCType::Guard;
-        if (roll >= 0.60f) kind = NPCType::Peasant;
-        const int level = npc_def(kind).baseLevel;
-        if (!r.garrison.push_stack(std::uint16_t(kind),
-                                   std::int16_t(level), 1)) {
-            break;   // a full roster refuses out loud; the town keeps the head
-        }
-        r.popCost += 1;
-    }
-    return r;
+// ── ПАСТВА ВСТАЁТ В РОСТЕР ОДНОЙ СТРОКОЙ ─────────────────────────────────
+// Здесь стоял `generate_garrison` (и тип `GarrisonResult` при нём): бросок
+// монетки на КАЖДУЮ душу, 60 % Guard / 40 % Peasant. Вырезан 2026-09-22 по
+// вердикту владельца: «в мире только СКВАДЫ и РОСТЕРЫ… пока никаких
+// стражников, это усложняет систему; потом будем думать, когда вернём
+// патрули и стражу».
+//
+// ЧТО ЭТИМ УМЕРЛО, КРОМЕ СТРАЖИ:
+//   · ТРИ ПОТОКА RNG. Состав ростера был жребием — на генезисе города, на
+//     генезисе деревни и в ежедневном наборе. Теперь состав — факт, а не
+//     бросок, и три `Rng grng(...)` у вызывающих ушли вместе с ним.
+//   · ПОСЛЕДНИЙ ПЛАТЕЛЬЩИК ЖАЛОВАНЬЯ В МИРЕ. У крестьянина
+//     `upkeepGoldPerDay` = 0 («работают за еду»), у лошади 0, у зверья −1.
+//     Значит `wageDebt` мира становится СТРУКТУРНЫМ НУЛЁМ, а с ним —
+//     колонки прибора `soulsUnpaid`/`crewsUnpaid` и ветка `byWage` в окне
+//     ростера. Колонка НЕ СНОСИТСЯ: жалованье вернётся с наёмниками, и это
+//     известная спящая половина (§55), а не забытая.
+//   · СТОК МОНЕТЫ. «Уплаченное сгорает в пул лута» перестаёт качать монету
+//     из мира этой дверью.
+//
+// Строка каталога тел `NPCType::Guard` ОСТАЁТСЯ — прецедент тот же, что у
+// патрульной строки реестра мест: «вырезан не вид, а то, что город его
+// спавнит». Её носят авто-бой, сцена и двадцать тестов.
+//
+// Возвращает СКОЛЬКО ВСТАЛО: ростер полон (256 слотов) — место оставляет
+// душу себе, и это отказ вслух, а не молчаливая потеря.
+inline int raise_flock_into_roster(SoldierSquad& roster, int souls) {
+    if (souls <= 0) return 0;
+    const NpcTypeDef& row = npc_def(NPCType::Peasant);
+    return roster.push_stack(std::uint16_t(NPCType::Peasant),
+                             std::int16_t(row.baseLevel), souls)
+               ? souls
+               : 0;
 }
 
 inline int hire_npc(SoldierSquad& playerSquad, SoldierSquad& garrison,

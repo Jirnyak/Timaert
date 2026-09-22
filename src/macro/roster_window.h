@@ -7,17 +7,25 @@
 // копии делали одно и то же в три шага: взыскать прошлый счёт пропорционально,
 // перевыставить по составу после убыли, погасить чем есть.
 //
-// ЧТО ОСТАЁТСЯ ЗА ВЫЗЫВАЮЩИМ И ПОЧЕМУ. Дверь не считает СЧЁТ — его приносят.
-// Цена содержания зависит от контекста (дома ли ростер, чей фуражир его ведёт,
-// какие строки существ в нём стоят), и это законные различия КОНТЕКСТА, а не
-// формы контейнера. Спрятав их внутрь, мы получили бы ветку по роду владельца —
-// ровно ту стену по виду, которую S16 запрещает. Поэтому счёт — параметр, и
-// два сегодняшних расхождения (полцены дома у гарнизона, скидка фуражира у
-// артели) стоят на виду в двух вызовах, а не прячутся в общем теле.
+// СЧЁТ ТОЖЕ ЖИВЁТ ЗДЕСЬ — И ЭТО ПРАВКА 2026-09-22, ОТМЕНЯЮЩАЯ ПРЕЖНЮЮ ЗАПИСЬ.
+// Здесь стояло: «дверь не считает СЧЁТ — его приносят; цена содержания
+// зависит от контекста (дома ли ростер, чей фуражир его ведёт), и это
+// законные различия КОНТЕКСТА». Вердикт владельца 2026-09-22 снял оба
+// различия («один закон без исключений»), и довод вместе с ними: полцены
+// дома было хардкодом `>> 1` без вывода (почему половина, а не треть?), а
+// скидка фуражира — вторым ответом на «сколько ест ростер». Контекста не
+// осталось — значит счёт не параметр, а ЗАКОН, и место закона здесь.
+//
+// ЧТО ЭТИМ СНЕСЕНО, ПОИМЁННО: шаблонный параметр `BillFn`, две лямбды в двух
+// вызовах, `squad_season_needs`/`SquadSeasonNeeds` (npc_ai) и расхождение
+// «кто считается ртом» — у места ели ВСЕ головы, у сквада только строки с
+// `upkeepGoldPerDay >= 0`, то есть зверьё в поле не ело вовсе. Теперь рот —
+// это строка существа и её колонка рациона (npc.h `npc_board_per_day`).
 #pragma once
 
 #include "macro/currency.h"   // pay_value_dense / inventory_value — плата стоимостью
 #include "macro/econ_day.h"   // econ_pay_debt, hunger_commodity_ordinal, EconFactSink
+#include "macro/npc.h"        // npc_board_per_day / soldier_upkeep — счёт по строкам
 #include "macro/roster.h"
 
 #include <algorithm>
@@ -31,25 +39,43 @@ struct RosterBill {
     std::int64_t wage  = 0;   // жалованье: стоимостью
 };
 
+// ОДИН ПРОХОД НА ОБЕ СТРОКИ СЧЁТА, И ОБЕ — ПО ТАБЛИЦЕ СУЩЕСТВ.
+// Считает по СЛОТАМ, а не по душам: тысячная деревня — это два-три слота
+// (генерики стоят стопкой), поэтому цена двери не зависит от размера
+// ростера. Прежние две копии делали ДВА прохода по тем же слотам
+// (`sq.size()` и отдельно `calculate_squad_upkeep`) — эта дверь строго
+// дешевле той, которую заменяет.
+inline RosterBill roster_bill(const SoldierSquad& sq) {
+    int boardDay = 0;
+    int wageDay  = 0;
+    for (const SoldierSlot& s : sq) {
+        // Обе колонки спрашиваются у ОДНОЙ строки, своими дверьми:
+        // `npc_board_per_day` — рацион, `soldier_upkeep` — плата (она же
+        // читает `kNpcUpkeepNone` как ноль, поэтому зверь ест, но не
+        // получает, и это сказано данными, а не веткой).
+        boardDay += npc_board_per_day(soldier_npc_type(s)) * int(s.count);
+        wageDay  += soldier_upkeep(s) * int(s.count);
+    }
+    return RosterBill{boardDay * kDaysPerSeason,
+                      std::int64_t(wageDay) * kDaysPerSeason};
+}
+
 struct RosterWindowOutcome {
     int  walked = 0;      // душ снято с ростера за неоплату
     bool byWage = false;  // КАКАЯ строка победила: плата (true) или харч
 };
 
-// Один суд, три шага. `bill` пересчитывает счёт по СЕГОДНЯШНЕМУ составу —
-// шаблоном, а не указателем на функцию: у артели он спрашивает лист ведущего,
-// у места — свою половинную ставку, и ни одна из этих зависимостей не имеет
-// права протечь в этот заголовок.
-template <class BillFn>
-RosterWindowOutcome roster_season_window(Roster& r, Inventory& store,
-                                         const RosterBill& lastBill,
-                                         BillFn&& bill,
-                                         SoldierSquad& pool,
-                                         std::int64_t& burnedValue,
-                                         EconFactSink sink, void* user) {
+// Один суд, три шага. Счёт берётся ДВАЖДЫ одной и той же дверью: до убыли —
+// как знаменатель доли неоплаченного, после — как новая недоимка.
+inline RosterWindowOutcome roster_season_window(Roster& r, Inventory& store,
+                                                SoldierSquad& pool,
+                                                std::int64_t& burnedValue,
+                                                EconFactSink sink,
+                                                void* user) {
     RosterWindowOutcome out{};
     const int boardOrd = hunger_commodity_ordinal();
     if (boardOrd < 0) return out;   // мир без голодной строки не судит никого
+    const RosterBill lastBill = roster_bill(r.squad);
 
     // ── 1. ВЗЫСКАНИЕ ПРОШЛОГО СЧЁТА — ПРОПОРЦИОНАЛЬНО ────────────────────
     // Доля НЕОПЛАЧЕННОГО и есть доля ушедших: зеркало закона мест
@@ -85,7 +111,7 @@ RosterWindowOutcome roster_season_window(Roster& r, Inventory& store,
     // ── 2. НОВЫЙ СЧЁТ по составу ПОСЛЕ убыли, ПЕРЕЗАПИСЬЮ ────────────────
     // Старая недоимка не переносится: взыскали — выставили новый. Поэтому
     // хранить исходную сумму не нужно, она пересчитывается из состава.
-    const RosterBill next = bill(r.squad);
+    const RosterBill next = roster_bill(r.squad);
     r.needDebt[boardOrd] = std::int32_t(next.board);
     r.wageDebt = next.wage;
     if (r.squad.empty()) {

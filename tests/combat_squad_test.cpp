@@ -96,26 +96,25 @@ int main() {
         return fail("squad upkeep must be the plain soldier-row sum");
     }
 
-    FixedRng rng{};
-    // §42 Инк 7: the argument is the recruiting BUDGET now (the caller
-    // derives it from population >> the registry shift), not a population.
-    const sm::GarrisonResult generated = sm::generate_garrison(9, rng);
-    if (generated.garrison.empty()) {
-        return fail("population garrison generator returned empty squad");
+    // ПАСТВА ВСТАЁТ В РОСТЕР ОДНОЙ СТРОКОЙ (2026-09-22). Здесь проверялся
+    // `generate_garrison` с броском монетки на каждую душу (60 % Guard /
+    // 40 % Peasant); он вырезан вместе со стражей, и состав перестал быть
+    // жребием — значит `FixedRng` этой проверке больше не нужен вовсе.
+    sm::SoldierSquad flock{};
+    const int raised = sm::raise_flock_into_roster(flock, 9);
+    if (raised != 9 || flock.size() != 9) {
+        return fail("паства не встала в ростер полностью");
     }
-    // The packet pours GENERIC stacks (CANON S4): no entityId, souls counted
-    // by the stack law, every head paid out of the population.
-    int generatedSouls = 0;
-    for (const sm::SoldierSlot& s : generated.garrison) {
-        if (!sm::valid_npc_kind(s.kind)
-            || !sm::npc_hireable(static_cast<sm::NPCType>(s.kind))
-            || s.entityId != 0 || s.count <= 0) {
-            return fail("generated garrison contains invalid soldier slot");
+    // ОДИН РОД — ОДИН СЛОТ: генерики стоят стопкой (CANON S4), поэтому
+    // девять душ это ОДНА строка ростера, а не девять.
+    if (flock.slot_count() != 1) {
+        return fail("девять крестьян обязаны стоять одним стаком");
+    }
+    for (const sm::SoldierSlot& s : flock) {
+        if (s.kind != std::uint16_t(sm::NPCType::Peasant) || s.entityId != 0
+            || s.count != 9) {
+            return fail("в ростере места стоят только крестьяне-генерики");
         }
-        generatedSouls += int(s.count);
-    }
-    if (generatedSouls != 9 || generated.popCost != 9) {
-        return fail("generated garrison does not pay its budget in souls");
     }
 
     if (sm::npc_xp_reward(sm::NPCType::Guard, 4)
@@ -123,7 +122,7 @@ int main() {
         return fail("NPC XP reward does not scale by level");
     }
 
-    sm::SoldierSquad selfAppend = generated.garrison;
+    sm::SoldierSquad selfAppend = flock;
     const int selfAppendBase = selfAppend.size();
     const int selfAppendSlots = selfAppend.slot_count();
     sm::add_squad(selfAppend, selfAppend);
@@ -253,7 +252,7 @@ int main() {
 
     std::printf("OK combat_squad_test hired=%d garrison=%d upkeep=%d generated=%d projected=%d malformed_tiles=%d ai_owner=1 unique_ids=1\n",
                 player.size(), garrison.size(),
-                baseUpkeep, generated.garrison.size(),
+                baseUpkeep, flock.size(),
                 projected, malformedProjected);
     CHECK(true, "every gate above held");
     return sm::test::report("combat_squad_test");

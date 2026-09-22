@@ -67,14 +67,9 @@ using FaunaEntry = NpcTypeDef;
 // control that no number is scaled on the body after the pick stands
 // (subworld_spawn_parity_test; the autolevel stays dead).
 
-// Habitat bits: 0..10 = the Biome ordinals; then the derived classes.
-inline constexpr std::uint16_t kHabForest = 1u << 11; // forest-CLASS cell
-inline constexpr std::uint16_t kHabRuin   = 1u << 12; // ruin denizen
-inline constexpr std::uint16_t kHabSpire  = 1u << 13; // spire denizen
-inline constexpr std::uint16_t kHabTown   = 1u << 14; // settlement crowd
-inline constexpr std::uint16_t hab(Biome b) {
-    return std::uint16_t(1u << std::uint16_t(b));
-}
+// Биты ареала (kHabForest/kHabRuin/kHabSpire/kHabTown, hab(Biome)) переехали
+// в macro/npc.h 2026-09-22 — к колонке строки, которую они описывают. Здесь
+// они остались только ЦИТАТОЙ в двух свидетелях ниже.
 // The landmark registry's faunaHabitat column quotes these bits as data
 // (its header cannot include this one) — a drifted quote refuses to compile.
 // (The Spire line died with §42 Инк 5: its wild fauna returned to the

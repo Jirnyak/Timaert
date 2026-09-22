@@ -514,100 +514,30 @@ constexpr LootProfile kLootProfiles[] = {
 };
 #undef SM_LOOT_PROFILE
 
-// NPCType -> loot-profile id, one row per enum value with the enum as a
-// COLUMN under the rows_in_enum_order guard (the kNpcPurse idiom): the old
-// positional list was checked for COUNT only, so an insertion in the middle
-// of NPCType would silently re-key every profile after it. There used to be
-// a SECOND door beside this one — a kNpcLoot[] indexed by the same enum,
-// with a comment asking that the two be kept in sync. A comment is not a
-// mechanism (problems.md 18).
-//
-// The creature rows name their profile in their own `lootId` column and fall
-// back to their faction's default, which is why they carry a nullptr rather
-// than a made-up name: one row, one answer, and the column that already
-// existed wins over a second list.
-struct NpcLootRow { NPCType type; const char* id; };
-constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
-    {NPCType::Peasant,      "peasant"},
-    {NPCType::Merchant,     "merchant"},
-    {NPCType::Bandit,       "bandit"},
-    {NPCType::Guard,        "guard"},
-    {NPCType::Witch,        "witch"},
-    {NPCType::Sorceress,    "sorceress"},
-    // Dead ordinals since 2026-09-18 (verdict №2): the rows stay for the
-    // save's sake, but nothing spawns them and no profile dresses them.
-    // creatures — see npc.h `lootId` / `factionId`
-    {NPCType::Rabbit,       nullptr},
-    {NPCType::Deer,         nullptr},
-    {NPCType::Fox,          nullptr},
-    {NPCType::Wolf,         nullptr},
-    {NPCType::Bear,         nullptr},
-    {NPCType::Boar,         nullptr},
-    {NPCType::Snake,        nullptr},
-    {NPCType::Hawk,         nullptr},
-    {NPCType::Frog,         nullptr},
-    {NPCType::Goat,         nullptr},
-    {NPCType::Eagle,        nullptr},
-    {NPCType::Croc,         nullptr},
-    {NPCType::Goblin,       nullptr},
-    {NPCType::Skeleton,     nullptr},
-    {NPCType::Troll,        nullptr},
-    {NPCType::SwampThing,   nullptr},
-    {NPCType::IceWraith,    nullptr},
-    {NPCType::SandScorpion, nullptr},
-    {NPCType::StoneGolem,   nullptr},
-    // The player: his loot is the bag he carries, not a profile.
-    {NPCType::Adventurer,   "peasant"},
-    {NPCType::TaxCollector, "merchant"},
-    // The ambusher's ordinal falls past the creature boundary (npc.h
-    // природа строки судит это, а не порядок в enum), so
-    // he names his drop in his OWN lootId column like every creature does —
-    // the per-ROLE list stops where the roles stop.
-    {NPCType::RoadAmbusher, "bandit"},
-    // Дракон: пер-рольного лута нет — клад логова придёт артефакт-столом.
-    {NPCType::Dragon, nullptr},
-    // The populated bestiary (2026-09-11): every row falls through to its
-    // faction's default profile, like every creature above it. Named drops
-    // (a lich's phylactery, an orc chieftain's blade) belong to the artefact
-    // table, which is its own content pass — a made-up id here would be a
-    // second loot vocabulary standing beside the one registry.
-    {NPCType::GiantRat,   nullptr},
-    {NPCType::CaveBat,    nullptr},
-    {NPCType::Kobold,     nullptr},
-    {NPCType::CaveSpider, nullptr},
-    {NPCType::Imp,        nullptr},
-    {NPCType::Zombie,     nullptr},
-    {NPCType::Orc,        nullptr},
-    {NPCType::Ghoul,      nullptr},
-    {NPCType::Harpy,      nullptr},
-    {NPCType::Cultist,    "bandit"},
-    {NPCType::Gargoyle,   nullptr},
-    {NPCType::Wraith,     nullptr},
-    {NPCType::Ogre,       nullptr},
-    {NPCType::Minotaur,   nullptr},
-    {NPCType::Basilisk,   nullptr},
-    {NPCType::Lich,       nullptr},
-    {NPCType::Horse,      nullptr},
-};
-static_assert(rows_in_enum_order(kNpcLootId, &NpcLootRow::type),
-              "kNpcLootId row order must mirror NPCType");
-
+// ── ЛУТ-ПРОФИЛЬ — КОЛОНКА СТРОКИ (CANON S26 «Одна строка на род») ────────
+// Здесь стояла ПЯТАЯ таблица-спутник `kNpcLootId` по ординалу NPCType, и она
+// была хуже прочих: колонка `NpcTypeDef::lootId` отвечала на ТОТ ЖЕ вопрос,
+// а склеены они были ЦЕПОЧКОЙ ФОЛБЭКА (squad.h: своя колонка → роль-таблица
+// → знамя фракции). Два словаря об одном плюс порядок опроса как закон.
+// Влита в строку 2026-09-22; перед сносом сверено машиной, а не глазами:
+// колонки не расходились НИ В ОДНОМ из 46 рядов (у 9 значение было только в
+// роль-таблице, ни у одного — только в строке), поэтому перенос
+// поведения не меняет.
+// СВИДЕТЕЛЬ: ни одна строка не называет профиля, которого нет в реестре.
 constexpr bool every_npc_loot_id_resolves() {
-    for (const NpcLootRow& row : kNpcLootId) {
-        // nullptr is an ANSWER, not a gap: this row defers to its own column
-        // and its faction's default (the creature rows). What must not happen
-        // is a row naming a profile the registry does not have.
-        if (!row.id) continue;
+    for (const NpcTypeDef& row : kNpcTypeDefs) {
+        if (!row.lootId) continue;   // молчание — ответ, а не пробел
         bool found = false;
         for (const LootProfile& p : kLootProfiles) {
-            found = found || std::string_view(row.id) == std::string_view(p.id);
+            found = found
+                    || std::string_view(row.lootId) == std::string_view(p.id);
         }
         if (!found) return false;
     }
     return true;
 }
 static_assert(every_npc_loot_id_resolves(),
-              "an NPC row names a loot profile that is not in the registry");
+              "строка существа называет лут-профиль, которого нет в реестре");
 
 // ── The affix table (owner's design 2026-09-07) ───────────────────────────
 // What the random half of the one issuance door (grant_affixes) rolls from.
@@ -1029,18 +959,17 @@ const char* affix_suffix(const ItemRef& item) noexcept {
 }
 
 const char* npc_loot_id(int npcType) noexcept {
-    if (npcType < 0 || npcType >= static_cast<int>(std::size(kNpcLootId))) return "";
-    // A row that names no profile of its own answers with the empty string, not
-    // with a null the caller has to remember to check. The creature rows are
-    // that case: they defer to their own column and their faction's default.
-    const char* id = kNpcLootId[npcType].id;
+    if (npcType < 0 || npcType >= int(NPCType::Count)) return "";
+    // Пустая строка, а не nullptr: у звателя не должно быть второй ветки на
+    // «профиля нет» — на это отвечает знамя фракции ниже по цепочке.
+    const char* id = kNpcTypeDefs[std::size_t(npcType)].lootId;
     return id ? id : "";
 }
 
 int generate_loot_gold(int npcType, int level, const CorpseLootContext& ctx,
                        RngFn rng) {
     if (npcType < 0 || npcType >= int(NPCType::Count)) return 0;
-    const NpcPurseRow& purse = npc_purse(NPCType(std::uint8_t(npcType)));
+    const NpcPurse purse = npc_purse(NPCType(std::uint8_t(npcType)));
     if (purse.max <= 0) return 0;          // no pockets: a beast, honestly
     // 1. The BODY: its row's span, rolled, grown by its own level (a veteran
     //    bandit has robbed more than a fresh recruit; level 1 is the row's

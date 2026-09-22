@@ -39,9 +39,10 @@ namespace {
 // 2026-09-18: что место УМЕЕТ, теперь говорит его анкета — characters.h
 // landmark_sheet, — а рецепт называет ремесло и ранг.)
 
-inline float rand01_(WorldTickRuntime& runtime) {
-    return runtime.jitter.next_f01();
-}
+// (`rand01_` умер 2026-09-22 вместе с жребием состава ростера: его
+// единственным читателем был `garrison_recruit_`, бросавший монетку
+// «страж или крестьянин» на КАЖДУЮ набранную душу. Состав перестал быть
+// случайным — и поток вместе с ним.)
 
 } // namespace
 
@@ -257,25 +258,18 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
 // an army wants BOARD and PAY, and both are judged ONCE at the season
 // boundary. ЗАКОН СУДА ЗДЕСЬ БОЛЬШЕ НЕ ЖИВЁТ: он один на всякий ростер мира
 // (macro/roster_window.h) — место, армия игрока, артель на дороге судятся
-// ОДНОЙ дверью. Здесь остаётся ровно то, что есть КОНТЕКСТ этого ростера:
-// его счёт.
+// ОДНОЙ дверью. С 2026-09-22 там же живёт и СЧЁТ: здесь стояла половинная
+// ставка «гарнизон платит пол цены содержания, как в Mount & Blade»
+// (`>> 1`), и вердикт владельца снял её вместе со скидкой фуражира у
+// артели — «один закон без исключений». Полцены было хардкодом без вывода:
+// ни одно число не объясняло, почему половина, а не треть.
 void garrison_upkeep_(GameState& gs, Landmark& s, int day,
                       EconFactSink sink, void* user) {
     if (!season_boundary(day)) return;
     if (landmark_def(s.type).garrisonShift == 0xFFu) return;
-    // ДОМА — ВСЁ СОДЕРЖАНИЕ >>1 («гарнизон платит пол цены содержания, как в
-    // Mount & Blade»); в поле — полное, и разница есть «доплата за поле» в
-    // скоре патрульного аукциона. Это свойство КОНТЕКСТА (ростер стоит у
-    // своего склада), а не рода контейнера, поэтому счёт считается здесь и
-    // стоит на виду, а не прячется веткой внутри общей двери.
-    const auto bill = [](const SoldierSquad& sq) {
-        return RosterBill{
-            (sq.size() * kDaysPerSeason) >> 1,
-            (std::int64_t(calculate_squad_upkeep(sq)) * kDaysPerSeason) >> 1};
-    };
     const RosterWindowOutcome out =
-        roster_season_window(s.garrison, s.inventory, bill(s.garrison.squad),
-                             bill, gs.deserterPool, gs.lootPoolValue,
+        roster_season_window(s.garrison, s.inventory,
+                             gs.deserterPool, gs.lootPoolValue,
                              sink, user);
     // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h). До 2026-09-21 армия места уходила
     // МОЛЧА: у этих двух колонок прибора не было отправителя со стороны
@@ -299,15 +293,14 @@ void garrison_upkeep_(GameState& gs, Landmark& s, int day,
 // by leading, being hired into a story, or being possessed.
 void garrison_recruit_(GameState& gs, Landmark& s,
                        WorldTickRuntime& runtime) {
+    (void)runtime;   // НАБОР БОЛЬШЕ НЕ ЖРЕБИЙ: состав — факт, а не бросок
     if (s.population < 20) return;
     const int target = garrison_target_strength(s.type, s.population);
     const int current = total_soldiers(s.garrison.squad);
     if (current >= target) return;
     const int packet =
         std::min(target - current, std::max(1, target >> 4));
-    auto gr = generate_garrison(packet,
-                                [&runtime] { return rand01_(runtime); });
-    const int taken = move_squad(s.garrison.squad, gr.garrison);
+    const int taken = raise_flock_into_roster(s.garrison.squad, packet);
     s.population = std::max(0, s.population - taken);
 }
 
@@ -328,11 +321,14 @@ void garrison_recruit_(GameState& gs, Landmark& s,
 // табун поднимал бы себе потолок сам.
 int garrison_cap_(const Landmark& s) {
     const ItemDef* bread = item_def_at(hunger_item_index());
-    const int board = (kDaysPerSeason >> 1)
-                    * (bread && bread->value > 0 ? bread->value : 1);
-    const int wage =
-        (npc_def(NPCType::Guard).upkeepGoldPerDay * kDaysPerSeason) >> 1;
-    const int perSoulSeason = std::max(1, board + wage);
+    // ЦЕНА ДУШИ ЗА СЕЗОН — ПО СТРОКЕ ТОГО, КОГО МЕСТО ДЕРЖИТ, и это теперь
+    // крестьянин. Слагаемое жалованья ушло вместе со стражей: у крестьянина
+    // `upkeepGoldPerDay` = 0, и «+0» в формуле было бы половиной, которая
+    // врёт читателю. Половинная ставка `>> 1` ушла раньше, с вердиктом
+    // «один закон без исключений» (garrison_upkeep_ выше).
+    const int perSoulSeason = std::max(
+        1, npc_board_per_day(NPCType::Peasant) * kDaysPerSeason
+               * (bread && bread->value > 0 ? bread->value : 1));
     const int flock = souls_flock(s) + count_human_souls(s.garrison.squad);
     return garrison_target_strength(s.type, flock)
          + inventory_value(s.inventory) / perSoulSeason;

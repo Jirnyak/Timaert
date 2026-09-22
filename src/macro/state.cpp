@@ -157,18 +157,16 @@ void populate_landmarks_from_politik(GameState& gs,
         // Politik prices every city's souls from its ground (R2); the old
         // 200+rng%800 fallback was the last population dice standing.
         s.population  = std::max(1, c.population);
-        // Born WITH its army (§42 Инк 7, the «born mid-life» precedent the
-        // inventory set below): the registry target (pop >> garrisonShift),
-        // souls honestly paid out of the population, identities from THE
-        // one macro ordinal issuer (the boot NPC spawn continues it).
+        // Born WITH its roster (§42 Инк 7): the registry target
+        // (pop >> garrisonShift), souls honestly paid out of the population.
+        // СОСТАВ БОЛЬШЕ НЕ ЖРЕБИЙ (2026-09-22): здесь бросалась монетка на
+        // КАЖДУЮ душу — 60 % Guard / 40 % Peasant, — и вместе со стражей
+        // умер поток `Rng grng`, заведённый только под этот бросок.
         {
-            Rng grng(gs.worldSeed ^ 0x6A121500u
-                     ^ (std::uint32_t(s.id) * 2654435761u));
-            auto gr = generate_garrison(
-                garrison_target_strength(s.type, s.population),
-                [&grng] { return grng.next_f01(); });
-            s.garrison.squad = std::move(gr.garrison);
-            s.population = std::max(1, s.population - gr.popCost);
+            const int taken = raise_flock_into_roster(
+                s.garrison.squad,
+                garrison_target_strength(s.type, s.population));
+            s.population = std::max(1, s.population - taken);
         }
         // Born mid-life (owner): the market has wares on day one, and the
         // town has stocks to live on while the first caravans find their legs.
@@ -343,15 +341,12 @@ void populate_landmarks_from_politik(GameState& gs,
             // ставится НИЖЕ, после add_landmark: дверь пишет ОБА конца, а
             // значит вассал уже должен стоять в ростере мест.
             const int suzerainId = s.id;
-            // The village's own small army, by the SAME one law (§42 Инк 7).
+            // The village's own roster, by the SAME one law (§42 Инк 7).
             {
-                Rng grng(gs.worldSeed ^ 0x6A121500u
-                         ^ (std::uint32_t(vil.id) * 2654435761u));
-                auto gr = generate_garrison(
-                    garrison_target_strength(vil.type, vil.population),
-                    [&grng] { return grng.next_f01(); });
-                vil.garrison.squad = std::move(gr.garrison);
-                vil.population = std::max(1, vil.population - gr.popCost);
+                const int taken = raise_flock_into_roster(
+                    vil.garrison.squad,
+                    garrison_target_strength(vil.type, vil.population));
+                vil.population = std::max(1, vil.population - taken);
             }
             seed_landmark_inventory(
                 vil.inventory, vil.population,

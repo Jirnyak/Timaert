@@ -334,9 +334,12 @@ AIBehaviour untyped_squad_behaviour(entt::registry& reg, entt::entity e,
 // why a lone rider is honestly immune to hunger). On the season BOUNDARY
 // every squad with a roster settles BOTH needs a season ahead, out of its
 // OWN bag:
-//   · board — one bread a day per roster soul whose OWN row is on upkeep
-//     (upkeepGoldPerDay >= 0; beasts and monsters are not), scaled by the
-//     leader's Foraging like every reader of that skill;
+//   · board — РАЦИОН СВОЕЙ СТРОКИ в день на каждую душу ростера, чей бы он
+//     ни был (npc.h `npc_board_per_day`, 2026-09-22). Здесь стояло «одна
+//     душа, чья строка на содержании (upkeepGoldPerDay >= 0; звери и
+//     монстры — нет), со скидкой на Foraging ведущего» — и то и другое
+//     снесено: рот теперь объявляет колонка рациона, а не колонка платы, и
+//     скидки на счёт больше нет («один закон без исключений»);
 //   · pay — the one upkeep law × the season, and the paid coin BURNS into
 //     the world loot pool («жалованье сгорает»).
 // Each need is covered WHOLE or not debited at all; ANY miss bleeds an
@@ -373,9 +376,11 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // по харчу и жалованью. Поле звалось `bread` и тем самым делало литерал
 // "bread" на месте списания «правильным на вид»; борд — это ГОЛОДНАЯ СТРОКА
 // лестницы, какой бы она ни была (econ_day.h hunger_item_index).
-struct SquadSeasonNeeds { int board = 0; int wage = 0; };
-SquadSeasonNeeds squad_season_needs(ecs::World& world, entt::entity e,
-                                    const SoldierSquad& roster);
+//
+// ЗДЕСЬ СТОЯЛИ `SquadSeasonNeeds` И `squad_season_needs` — снесены
+// 2026-09-22: счёт ростера стал ОДНИМ на весь мир и переехал к суду,
+// которому служит (macro/roster_window.h `roster_bill`). Разбор — в теле,
+// на месте бывшего определения (npc_ai.cpp).
 
 // ── THE provisioning law of squad creation (owner 2026-08-31, CANON S10):
 // «универсальная механика создания сквада — он должен быть загружен

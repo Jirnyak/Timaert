@@ -676,8 +676,11 @@ inline void roll_fallen_spoils(const MacroWorld& mw, std::uint16_t kind,
             landmark_def(mw.landmarks->at(cellX, cellY).type).wealthMul;
     }
     gSquadLootRng = &rng;
+    // ЦЕПОЧКА СТАЛА ДВУЗВЕННОЙ (2026-09-22): средним звеном стояла
+    // роль-таблица `kNpcLootId` — второй словарь о том же, что колонка
+    // строки. Влита в строку, и порядок опроса перестал быть законом:
+    // своя колонка, иначе знамя.
     const char* lootId = npc_def(type).lootId;
-    if (!lootId || !lootId[0]) lootId = npc_loot_id(int(type));
     if (!lootId || !lootId[0]) lootId = factionId;
     for (const ItemRef& s :
          roll_loot_profile(lootId, level, &squad_loot_rng_f01,

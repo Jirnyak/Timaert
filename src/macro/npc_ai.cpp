@@ -2998,45 +2998,18 @@ void ai_lair_sorties(entt::entity self, MacroPos& p,
 // Ушли: kPatrolReachHops / kPatrolDwellDays / kPatrolDwellThinks,
 // PatrolRoamCells, collect_trouble_cells_, ai_patrol_errand (91 строка),
 // патрульная урна run_patrol_auction и подъём вылазки из гарнизона.
-// ПРИЧИНА — не «не нравится», а отсутствие писателя: строку {Guard,
-// garrison=true} вырезали из реестра 463170c6, после чего в таблице не
-// осталось ни одной garrison-строки, и весь этот код стал недостижим —
-// ~160 строк законов без свидетеля, которые следующий читатель принял бы
-// за живую систему (problems §55). `ErrandVerb::Patrol` умер там же: его
-// ставила ровно патрульная урна.
-// `ai_patrol` ОСТАЛСЯ — но только своим легаси-кругом у дома: генезис
-// по-прежнему сеет 1-2 стражника на город (npc_spawn.cpp), и это вечные
-// одиночки вне ротации. Они уходят вместе с генезисным засевом, порция Б-6.
+//
+// А 2026-09-22 ушёл и `ai_patrol` — последний легаси-круг у дома, который
+// ходили генезисные одиночки-стражники. Их вырезали тем же ходом
+// (npc_spawn.cpp), и машина осталась без единого носителя. Вместе с ней
+// умерли значение `AIBehaviour::Patrol` и состояние `NPCState::Patrolling`:
+// колонка без писателя — дефект (AGENTS §9), а не задел.
+//
+// СЦЕНА ЭТОГО НЕ ЗАМЕТИТ, и это проверено, а не обещано: стойку тела даёт
+// `combatant_behaviour`, она отвечала `true` и на Patrol, и на Aggressive, а
+// строка Guard переведена именно в Aggressive — `subworld_ai_for` вернёт тот
+// же `SubworldAi::Combat`.
 // Поле угрозы и страх артелей ЖИВЫ — kThreatFearShift ниже читает аукцион.)
-void ai_patrol(MacroPos& p, ecs::MacroNpcRuntime& rt,
-               ecs::Pools& pools, const TickContext& ctx) {
-    XY home;
-    if (!home_pos(rt, ctx, home)) return;
-    float dh = torus_dist_sq(p.x, p.y, home.x, home.y,
-                             float(ctx.mapW), float(ctx.mapH));
-    if (dh > 144.0f) {
-        rt.targetX = home.x; rt.targetY = home.y;
-        rt.state = std::uint8_t(NS::Returning);
-    }
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
-            XY t = pick_random_nearby(home.x, home.y, 8, ctx);
-            rt.targetX = t.x; rt.targetY = t.y;
-            rt.state = std::uint8_t(NS::Patrolling);
-        }
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Patrolling)
-        || rt.state == std::uint8_t(NS::Returning)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(6 + rand_int(ctx, 10));
-            return;
-        }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
-    }
-}
 
 void ai_teleporter(MacroPos& p, ecs::MacroNpcRuntime& rt,
                    ecs::Pools& pools, const TickContext& ctx) {
@@ -3607,7 +3580,6 @@ void dispatch(entt::entity e, MacroPos& p,
         case AIBehaviour::TaxRun:       ai_wanderer     (p, rt, pools, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, pools, ctx); break;
         case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, pools, ctx); break;
-        case AIBehaviour::Patrol:       ai_patrol       (p, rt, pools, ctx); break;
         case AIBehaviour::Teleporter:   ai_teleporter   (p, rt, pools, ctx); break;
         case AIBehaviour::Wanderer:     ai_wanderer     (p, rt, pools, ctx); break;
         // Prey. Running is not its own errand: the threat step above already
@@ -3918,36 +3890,23 @@ int provision_squad(Inventory& store, Inventory& bag, int soldiers,
     return haul_between(store, bag, hunger_item_id(), portion, freeCarryKg);
 }
 
-SquadSeasonNeeds squad_season_needs(ecs::World& world, entt::entity e,
-                                    const SoldierSquad& roster) {
-    // Board and pay are judged by each SOLDIER'S OWN row, never the
-    // leader's. The old gate on the leader's type was the player-special
-    // door in disguise (Adventurer.upkeep=0 kept the player's roster
-    // free), and it also fed a caravan's guards nothing because the
-    // CARAVAN row is unpriced.
-    // ЗДЕСЬ СТОЯЛО «зверь в ростере бесплатен — его строка говорит
-    // kNpcUpkeepNone»: НЕПРАВДА про собственную таблицу (строка Horse несёт
-    // 0, то есть лошадь ест). Комментарий вырезан 2026-09-21 вместе с
-    // доводом; сам сигнал −1 ждёт своей порции (CANON S4 «едят все живые»).
-    int mouths = 0;
-    int wageDay = 0;
-    for (const SoldierSlot& s : roster) {
-        if (npc_def(soldier_npc_type(s)).upkeepGoldPerDay < 0) continue;
-        mouths += int(s.count);
-        wageDay += soldier_upkeep(s) * s.count;
-    }
-    // The leader's FORAGING lives off the land — the season's draw
-    // shrinks by THE cost-down skill law (-1 %/rank; rank 100 = the
-    // squad feeds itself whole). EVERY leader's rank is his EFFECTIVE
-    // sheet's (посадка Б): the player is nobody special here.
-    const int foragingRank =
-        effective_sheet_of(world, e).skills.of(SkillId::Foraging);
-    SquadSeasonNeeds needs{};
-    needs.board = mouths * kDaysPerSeason
-        * skill_mult_pct_of(SkillId::Foraging, foragingRank) / 100;
-    needs.wage = wageDay * kDaysPerSeason;
-    return needs;
-}
+// ЗДЕСЬ СТОЯЛ `squad_season_needs` — ВТОРОЙ ЗАКОН СОДЕРЖАНИЯ, И ОН УМЕР
+// 2026-09-22 вместе со своим близнецом у мест. Он расходился с ним в двух
+// местах, и оба расхождения были дефектом, а не контекстом:
+//   · РОТ. Здесь ртом считалась только строка с `upkeepGoldPerDay >= 0`, то
+//     есть зверьё с `kNpcUpkeepNone` в поле НЕ ЕЛО ВОВСЕ, а у места ело.
+//     Комментарий этого места сам признавал долг: «сам сигнал −1 ждёт своей
+//     порции (CANON S4 «едят все живые»)». Порция пришла: рот — это колонка
+//     рациона строки (npc.h `npc_board_per_day`), а плата — своя колонка, и
+//     «ест, но не получает» говорится ДАННЫМИ, а не пропуском итерации.
+//   · ФУРАЖИР. Скидка ведущего по SkillId::Foraging была вторым ответом на
+//     «сколько ест ростер». Вердикт владельца 2026-09-22: «оба снести — один
+//     закон без исключений». СЛЕДСТВИЕ, НАЗВАННОЕ ВСЛУХ (§55): у навыка
+//     Foraging не осталось НИ ОДНОГО механического читателя в мире — строка
+//     в таблице навыков и бонус к ней живы, читателя нет. Его законное место
+//     — добыча пищи В ПУТИ, а не скидка на счёт; до тех пор это известная
+//     спящая колонка, а не забытая.
+// Счёт теперь один: `roster_bill` (macro/roster_window.h).
 
 int squad_season_window(MacroWorld& mw, int day) {
     if (!mw.gs || !mw.world) return 0;
@@ -3959,17 +3918,11 @@ int squad_season_window(MacroWorld& mw, int day) {
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime, ecs::NpcInventory,
                     ecs::SquadRoster>().each()) {
         (void)kind;
-        // СУД — ОДНА ДВЕРЬ НА ВЕСЬ МИР (macro/roster_window.h). Здесь
-        // остаётся только СЧЁТ этой артели: её мера харча берёт скидку с
-        // фуражирского ранга ведущего — контекст ростера, а не форма
-        // контейнера, и потому он стоит на виду вызова.
-        const auto bill = [&](const SoldierSquad& sq) {
-            const SquadSeasonNeeds n = squad_season_needs(*mw.world, e, sq);
-            return RosterBill{n.board, n.wage};
-        };
+        // СУД И СЧЁТ — ОДНА ДВЕРЬ НА ВЕСЬ МИР (macro/roster_window.h).
+        // Артель судится тем же телом и тем же счётом, что ростер места и
+        // армия игрока: своего у неё здесь не осталось ничего.
         const RosterWindowOutcome out = roster_season_window(
-            roster, bag.inv, bill(roster.squad), bill,
-            gs.deserterPool, gs.lootPoolValue,
+            roster, bag.inv, gs.deserterPool, gs.lootPoolValue,
             mw.econFacts, mw.econFactsUser);
         deserted += out.walked;
         // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h): ОДИН факт = ОДНА артель,
@@ -4301,7 +4254,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         return souls;
     };
     // ── Сезонная погрузка содержания (S19.2): та же арифметика нужд, что
-    // у окна (squad_season_needs — вторых правд содержания не бывает);
+    // у окна (roster_bill — вторых правд содержания не бывает);
     // погрузка — перенос со склада в сумку, судит ОКНО в тот же день.
     const bool boundary = season_boundary(day);
     // ДОМ ГАСИТ СЧЁТ СВОЕЙ АРТЕЛИ — И ДЕЛАЕТ ЭТО ПРИ ВЫХОДЕ, А НЕ ТОЛЬКО НА
@@ -5063,7 +5016,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // поднимается»): «условие поднятия артели — это сколько ей
             // надо на сезон, а внутрь её загружать уже не обязательно;
             // худшее — если задержится, потеряет 1/8 по общему закону».
-            // Сезонная нужда остаётся МЕРОЙ (squad_season_needs — её судит
+            // Сезонная нужда остаётся МЕРОЙ (roster_bill — её судит
             // окно), погрузка ниже — сколько склад даёт (haul_between
             // берёт что есть), недостача на окне = 1/8 ростера в дезертиры
             // (squad_season_window) — тот же закон, каким кровит гарнизон.
