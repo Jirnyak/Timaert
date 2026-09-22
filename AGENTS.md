@@ -325,6 +325,33 @@ is CANON.md S26; these are the working rules that follow from it.
    - the ONLY memory arguments that survive are about the SIMULATION BOUND
      (O(N), cache lines walked per tick — those are TIME, not bytes) and about
      rule 8 below (compression is gated because it trades away ANSWERS).
+   **THE INDEX IS THE EXCEPTION, AND IT IS ITS OWN LAW (owner, 2026-09-22 —
+   CANON S26 «Закон узкого индекса»).** The budget rule above forbids
+   narrowing a VALUE to save bytes. It says nothing about an INDEX into a flat
+   array, whose cap is known by construction — and there the law is the
+   opposite:
+   - an index is stored in the NARROWEST type that fits the cap, and the cap
+     sits beside it under a `static_assert` — never under a comment. A narrow
+     type IS a cap stated silently, and a cap raised later truncates in
+     silence (`distHome`, ceiling 4095, clamp MUTE — the defect already exists
+     by name);
+   - **"no element" is the type's LAST value, not `−1`** (owner: «я не люблю
+     −1»). The cap loses one: 255 for `uint8`, 65535 for `uint16`.
+     `kNavNoRegion` already does this and is now the named precedent; the
+     `−1`s (`homeSettlementId`, `lairX/Y`, `kNoFactionSlot`) get cleaned in
+     their own pass;
+   - **the narrowing must REACH sizeof.** A lone narrow member beside a wide
+     one saves NOTHING: `{uint8, int32}` is the same 8 bytes as
+     `{int32, int32}` — alignment eats it, and reordering does not help
+     (size is a multiple of alignment, so the hole moves to the tail). Narrow
+     fields must be packed TOGETHER to fill the hole, and the result pinned
+     with a `static_assert` on `sizeof`. The project's own scar: affixes as an
+     array of `{u8 row, i16 value}` cost 4 bytes per cell, not 3 — a quarter
+     of the block was air, in a struct the game keeps 256 of per container.
+     The v82 fix was not the types (already narrow) but the LAYOUT: two flat
+     columns instead of an array of pairs. `ItemRef` is the model — `def` u16
+     + `material` u8 + `quality` u8 land in exactly four bytes.
+
    *Why this is written down:* the temptation is always local and always
    reads as virtue. «uint16 хватит», «зачем 64 бита», «поле удвоится» — each
    is a small, sensible-sounding sentence, and each one has already bought
