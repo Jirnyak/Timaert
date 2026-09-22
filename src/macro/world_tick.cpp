@@ -148,15 +148,12 @@ void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
     // словами «разрешения, которого нет у представления, не выдумать
     // округлением» — верно, и именно поэтому его выдумывает не округление, а
     // ШИРИНА: память держит значение × горизонт.
-    for (int c = 0; c < kCommodityCount; ++c) {
-        memory_track(lm.titheAvgGoods[c],
-                     lm.inventory.count_of(commodity_item_index(c)));
-    }
-    // The coin half of the assessment censuses COIN rows only
-    // (coin_census_value) — the goods half already averages the store's
-    // commodities right above, and a whole-bag valuation here would tithe
-    // the same grain twice.
-    memory_track(lm.titheAvgCoin, coin_census_value(lm.inventory));
+    // ОДНА ПАМЯТЬ — СТОИМОСТЬ СКЛАДА ЦЕЛИКОМ (владелец 2026-09-22: «всё в
+    // инвентаре это товар»). Здесь стояли пятнадцать слежений по строкам
+    // плюс шестнадцатое по монете, и они же были причиной оговорки «монету
+    // считаем отдельно, чтобы не обложить зерно дважды»: у стоимости склада
+    // этой оговорки нет — она одна и по определению не двоится.
+    memory_track(lm.titheAvgValue, inventory_value(lm.inventory));
     // The CHARGE lands on the season boundary — the world's one window
     // (CANON S19.2; the per-ordinal pay-day smear is history, owner
     // 2026-09-17: «ДА, УМИРАЕТ»). The average above still feeds DAILY —
@@ -169,11 +166,7 @@ void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
     // дань — налог на ИМУЩЕСТВО, а не на приход). Память читается своей
     // дверью: сырое поле — это значение × горизонт, и `>> 3` по нему дал бы
     // ставку в 32 раза больше закона.
-    for (int c = 0; c < kCommodityCount; ++c) {
-        lm.titheOwedGoods[c] +=
-            std::int32_t(memory_value(lm.titheAvgGoods[c]) >> 3);
-    }
-    lm.titheOwedCoin += memory_value(lm.titheAvgCoin) >> 3;
+    lm.titheOwedValue += memory_value(lm.titheAvgValue) >> 3;
 }
 
 // The pure econ steps are landmark-blind (they see one Inventory); this relay

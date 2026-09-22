@@ -772,11 +772,9 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.renown);            // v53: a place's standing is world memory
     w.pod(lm.spellId);
     write_bool(w, lm.depleted);
-    w.pod(lm.titheOwedGoods);       // v73: the per-position tribute debts
-    w.pod(lm.titheOwedCoin);
+    w.pod(lm.titheOwedValue);       // v108: долг дани — ОДНА стоимость
     w.pod(lm.titheSeasonAssessed);
-    w.pod(lm.titheAvgGoods);        // v104: память × горизонт (memory.h)
-    w.pod(lm.titheAvgCoin);
+    w.pod(lm.titheAvgValue);        // v108: одна память × горизонт
     w.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
     w.pod(lm.garrison.needDebt);   // v105: счёт содержания ростера места
     w.pod(lm.garrison.wageDebt);   // порядок байт тот же — бампа нет
@@ -799,11 +797,9 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.renown);            // v53
     r.pod(lm.spellId);
     read_bool(r, lm.depleted);
-    r.pod(lm.titheOwedGoods);       // v73
-    r.pod(lm.titheOwedCoin);
+    r.pod(lm.titheOwedValue);       // v108
     r.pod(lm.titheSeasonAssessed);
-    r.pod(lm.titheAvgGoods);        // v104: память × горизонт (memory.h)
-    r.pod(lm.titheAvgCoin);
+    r.pod(lm.titheAvgValue);        // v108
     r.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
     r.pod(lm.garrison.needDebt);   // v105
     r.pod(lm.garrison.wageDebt);

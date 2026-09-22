@@ -353,7 +353,7 @@ namespace sm {
 // «теперь только есть благополучие и оно даёт рост») — настроение, реестр
 // его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
 // seasonWellbeing и needDebt.
-constexpr int kSaveVersion = 107;   // v107: реестр интересов вместо феодального ребра
+constexpr int kSaveVersion = 108;   // v108: долг дани и его база — ОДНА стоимость
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -537,8 +537,16 @@ struct Landmark {
     // 100 days). A slice of every stack is a slice of everything the vassal
     // is rich in — the mint metal included. Missed seasons accumulate
     // honestly, per position.
-    std::int32_t titheOwedGoods[kCommodityCount] = {};
-    std::int64_t titheOwedCoin = 0;
+    // ── ДОЛГ ДАНИ — ОДНА СТОИМОСТЬ (владелец 2026-09-22) ──────────────
+    // Здесь лежали ДВА ответа на «сколько должен»: `titheOwedGoods[15]` по
+    // строкам плюс `titheOwedCoin` отдельно. Оба умерли вместе с вердиктом
+    // «всё в инвентаре — товар»: долг есть СТОИМОСТЬ, и платится он по
+    // ПЛОТНОСТИ (currency.h transfer_value_dense — первым уходит самое
+    // ценное). Это строже прежней защиты «доля каждого стака»: там вассал
+    // отдавал по щепотке отовсюду, здесь — самое дорогое, что у него есть,
+    // и «заплачу зерном, серебро оставлю» невозможно ни с какой стороны.
+    // Минус 60 Б у места и минус одна из четырёх «вторых колонок» §56.
+    std::int64_t titheOwedValue = 0;
     std::int32_t titheSeasonAssessed = -1;   // last season charged (-1 never)
     // v74: the assessment BASE is the season's AVERAGE store, not the
     // pay-day snapshot (owner 2026-09-02: «лучше среднего склада за месяц,
@@ -555,8 +563,11 @@ struct Landmark {
     // мельче (0 % у мелкого, 12.1 % у крупного против обещанных 12.5 %).
     // Теперь поле держит значение × горизонт и читается memory_value();
     // ширина 64 бита не запас, а расчёт (см. ЗАКОН ТИПА в memory.h).
-    WorldMemory titheAvgGoods[kCommodityCount] = {};
-    WorldMemory titheAvgCoin = 0;
+    // v108: ОДНА ПАМЯТЬ ВМЕСТО ШЕСТНАДЦАТИ. База начисления — среднее за
+    // сезон СТОИМОСТИ СКЛАДА целиком (inventory_value), а не пятнадцать
+    // средних по строкам плюс шестнадцатое по монете: долг стоимостный,
+    // значит и база его стоимостная. Минус 120 Б у места.
+    WorldMemory titheAvgValue = 0;
     // ── ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10, вердикт 2026-09-19; v99) ─────────
     // На границе сезона место получает СЧЁТ = сезонная нужда по каждой
     // строке лестницы (индекс — товарный ординал, зеркало titheOwedGoods;
@@ -580,16 +591,23 @@ struct Landmark {
 // ОСТАЛЬНОЕ РАСХОЖДЕНИЕ — СПИСОК НЕДОДЕЛОК, А НЕ ЗАМЫСЕЛ (problems §56):
 //   name 24 Б      — std::string на структуре ×32768: AGENTS п.1 и п.3 прямым
 //                    текстом; у сквада имя — ординал (NpcCharacter::nameIdx);
-//   titheAvg* 128  — ВТОРАЯ ПАМЯТЬ: у сквада память это AgentMemory (8 слотов);
+//   titheAvgValue 8 — ВТОРАЯ ПАМЯТЬ: у сквада память это AgentMemory
+//                    (8 слотов). Было 128 Б — шестнадцать памятей по строкам;
+//                    сжато до одной 2026-09-22 вместе со стоимостным долгом;
 //   needDebt 60    — ВТОРОЙ ДОЛГ: рядом garrison.needDebt, оба в сейве;
 //   population 4   — станет производным от ростера (переворот населения).
 // Прочее честно своё: опись округи, прейскурант, дань, адрес, анкета.
 // (Феод из этого списка ВЫШЕЛ 2026-09-21: три колонки — 12 Б — заменены
 // записями реестра, и половина S24 закрыта.)
-static_assert(sizeof(Landmark) == 13912,
-              "место = ядро субъекта (12360) + реестр (1024) + 528 Б своего");
+// 2026-09-22: место похудело на 184 Б (528 → 344) — стоимостный долг дани
+// вместо пятнадцати колонок плюс монеты и ОДНА память вместо шестнадцати.
+// Свидетель поймал обе правки компилятором, как и обещает AGENTS п.10:
+// число живёт в коде, а не в прозе. (Моя прикидка «−180» была на 4 Б
+// неверна — выравнивание; ЗАМЕР поправил, и это ровно то, зачем он тут.)
+static_assert(sizeof(Landmark) == 13728,
+              "место = ядро субъекта (12360) + реестр (1024) + 344 Б своего");
 static_assert(sizeof(Landmark) == sizeof(Inventory) + sizeof(Roster)
-                                      + sizeof(Interests) + 528,
+                                      + sizeof(Interests) + 344,
               "ядро субъекта у места и у сквада ОДНО (CANON S4)");
 
 enum class GameSubStateKind : std::uint8_t {
@@ -1087,10 +1105,7 @@ inline int suzerain_of(const Landmark& lm) {
 // «с кого собрано»: собранный вассал отвечает «нет» по построению, и второго
 // признака («посещён в этом сезоне») в мире не заводится (S26).
 inline bool owes_tithe(const Landmark& lm) {
-    if (lm.titheOwedCoin > 0) return true;
-    for (int c = 0; c < kCommodityCount; ++c)
-        if (lm.titheOwedGoods[c] > 0) return true;
-    return false;
+    return lm.titheOwedValue > 0;
 }
 inline const Landmark* landmark_by_id(const GameState& gs, int id) {
     if (id < 0) return nullptr;

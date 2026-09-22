@@ -2221,31 +2221,12 @@ void ai_vendor(entt::entity self, MacroPos& p,
                              rt.carryCap - inventory_weight(bag->inv));
             }
         }
-        // The TRIBUTE loads FIRST and IN KIND (owner 2026-09-02: «по 1/8
-        // всего со склада» — per-position debts, world_tick assess_tithe_):
-        // the back's priority belongs to the debt, so the slice of every
-        // stack — the silver included — actually leaves the village.
-        // ЦЕННОЕ-НА-КГ ПЕРВЫМ (value_dense_order — та же дверь, что уже
-        // лечила «брёвна-первые оставляли серебро в деревнях»): дань по
-        // индексам грузила зерно и дровяной долг до отказа спины, а
-        // серебро (c=5) оставалось дома каждый сезон (измерено: owed=494,
-        // moved=0, freeKg=4). Дешёвые позиции доедут следующими рейсами —
-        // долг по позициям копится честно.
-        for (int oi = 0; oi < kCommodityCount
-                        && inventory_weight(bag->inv) < rt.carryCap;
-             ++oi) {
-            const int c = value_dense_order()[std::size_t(oi)];
-            const int owed = homeLm->titheOwedGoods[c];
-            if (owed <= 0) continue;
-            haul_between(homeLm->inventory, bag->inv, kCommodities[c].id,
-                         owed, rt.carryCap - inventory_weight(bag->inv));
-        }
-        if (homeLm->titheOwedCoin > 0) {
-            transfer_value_dense(homeLm->inventory, bag->inv,
-                           int(std::min<std::int64_t>(
-                               homeLm->titheOwedCoin,
-                               inventory_value(homeLm->inventory))));
-        }
+        // (ШОВ ДАНИ ВЫРЕЗАН 2026-09-22. Здесь рейс сбыта грузил долг
+        // вассала и вёз его НА ЛЮБОЙ рынок, куда ехал сам, — то есть дань
+        // рассеивалась случайному соседу вместо сюзерена, и это был
+        // главный «врёт читателю» проекта, живший с сессии 7 (§55).
+        // Дань теперь ходит своей машиной СВЕРХУ ВНИЗ: сюзерен поднимает
+        // сборщика на каждого должника, CANON S4 «Сборщик идёт вниз».)
         // Load what is cheap at home — the one loading law
         // (load_cheap_at_home_): never a row the home itself is short of
         // (склад держит только излишек — долг съел нужду приходом).
@@ -2304,43 +2285,6 @@ void ai_vendor(entt::entity self, MacroPos& p,
         if (Landmark* market = landmark_by_id(*ctx.mw.gs,
                                               rt.targetSettlementId);
             market && landmark_is_settlement(market->type)) {
-            // The tribute lands FIRST — it is owed, not traded (a crew cut
-            // down on the road drops it with the cargo, and the debt
-            // honestly stands). Delivered IN KIND, per position (owner
-            // 2026-09-02): the slice of each stack goes to the suzerain as
-            // itself — the debt can no longer be paid off in grain while
-            // the silver stays home.
-            {
-                long long paidValue = 0;
-                for (int c = 0; c < kCommodityCount; ++c) {
-                    const int owed = homeLm->titheOwedGoods[c];
-                    if (owed <= 0) continue;
-                    const char* id = kCommodities[c].id;
-                    const int moved = haul_between(
-                        bag->inv, depot_(*market, ctx.mw), id, owed, 1e9f);
-                    if (moved <= 0) continue;
-                    homeLm->titheOwedGoods[c] -= moved;
-                    const ItemDef* d = item_def(id);
-                    paidValue += (long long)moved * (d ? d->value : 0);
-                }
-                if (homeLm->titheOwedCoin > 0) {
-                    const int coins = transfer_value_dense(
-                        bag->inv, depot_(*market, ctx.mw),
-                        int(std::min<std::int64_t>(
-                            homeLm->titheOwedCoin,
-                            inventory_value(bag->inv))));
-                    homeLm->titheOwedCoin -= coins;
-                    paidValue += coins;
-                }
-                if (paidValue > 0) {
-                    record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
-                                         rt.homeSettlementId,
-                                         int(rt.targetX), int(rt.targetY),
-                                         int(std::min<long long>(
-                                             paidValue, 1 << 30)),
-                                         rt.targetSettlementId);
-                }
-            }
             // ЧТО ВЕЗТИ ДОМОЙ судит ВЕДОМОСТЬ ДОМА, а не память крю
             // (CANON S10, ярус 2): дом сам выписал свои цены точным
             // складом и своим счётом.
@@ -2478,25 +2422,27 @@ void ai_vendor(entt::entity self, MacroPos& p,
 }
 
 // The SUZERAIN landmark a town owes — a place's Stance::Suzerain row in its
-// interest registry (CANON S24 «каждый узел знает прямых подчинённых И
-// сюзерена», обе половины с 2026-09-21), stamped by set_suzerain at
-// populate_landmarks_from_politik — the edge survives any future S9
-// transition that moves what stands on the cell. A capital answers nullptr:
-// it owes nobody.
-Landmark* capital_of_(const TickContext& ctx, const Landmark& town) {
-    const int suz = suzerain_of(town);
-    if (suz < 0) return nullptr;
-    Landmark* cap = landmark_by_id(*ctx.mw.gs, suz);
-    return cap && cap->type == LandmarkType::City ? cap : nullptr;
-}
+// (`capital_of_` СНЕСЁН 2026-09-22 вместе с дорогой дани ВВЕРХ: он отвечал
+//  «кому этот город платит», а платить наверх больше некому — сюзерен сам
+//  посылает сборщика вниз. Наряд сессии 7 требовал этого сноса, и вот он.)
 
-// The feudal courier (owner 2026-08-30; CANON S24): walk the town's eighth
-// up the graph to its capital, pay, walk home, dissolve with the rotation.
-// The same carrier law as the village tithe riding with the vendor — an
-// edge of the ONE graph, walked by a body that can be robbed.
-void ai_taxrun(entt::entity self, MacroPos& p,
-               ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
-               const TickContext& ctx) {
+// ── СБОРЩИК ИДЁТ ВНИЗ (CANON S4 «Сборщик идёт вниз», Б-4) ───────────────
+// Здесь стоял `ai_taxrun` — 145 строк, и он носил дань ВВЕРХ: вассал сам
+// снаряжал курьера к сюзерену. Канон говорит обратное, и владелец повторил
+// это дословно: «город рождает… сборщика налогов, который ходит в
+// вассальные деревни». Машина перевёрнута 2026-09-22.
+//
+// Поручение ставит ТОТ ЖЕ аукцион, что поднимает артель и корована: заявка
+// сборщика — одна на КАЖДОГО должника, объект = ординал вассала, скор —
+// та же выработка в день рейса (стоимость долга / дни пути). Пул рук
+// урезает, как и всех (CANON S4 «рождение сквада — один закон»).
+//
+// ДОЛГ БЕРЁТСЯ ПО ПЛОТНОСТИ СТОИМОСТИ (владелец 2026-09-22): первым уходит
+// самое ценное, что есть у вассала. Это строже прежнего «доля каждого
+// стака» — заплатить зерном, оставив серебро, невозможно.
+void ai_collector(entt::entity self, MacroPos& p,
+                  ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+                  const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home) || !ctx.mw.world) {
         ai_nomad(p, rt, pools, ctx);
@@ -2505,7 +2451,12 @@ void ai_taxrun(entt::entity self, MacroPos& p,
     auto& reg = ctx.mw.world->reg;
     auto* bag = reg.try_get<ecs::NpcInventory>(self);
     Landmark* homeLm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
-    if (!bag || !homeLm || homeLm->type != LandmarkType::City) {
+    if (!bag || !homeLm) {
+        ai_nomad(p, rt, pools, ctx);
+        return;
+    }
+    Landmark* vassal = landmark_by_id(*ctx.mw.gs, int(rt.errandObject));
+    if (!vassal || vassal->id == homeLm->id) {
         ai_home_wanderer(p, rt, pools, ctx);
         return;
     }
@@ -2513,106 +2464,89 @@ void ai_taxrun(entt::entity self, MacroPos& p,
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer > 0) return;
-        Landmark* cap = capital_of_(ctx, *homeLm);
-        if (!cap || cap->id == homeLm->id) {
-            // The capital pays nobody above it — the courier stands down.
-            rt.stateTimer = std::int16_t(200);
+        // Дома и с пустыми руками — идём за долгом; дома с грузом — сдаём.
+        if (torus_dist_sq(p.x, p.y, home.x, home.y,
+                          float(ctx.mapW), float(ctx.mapH)) >= 4.0f) {
+            rt.targetX = float(vassal->x);
+            rt.targetY = float(vassal->y);
+            rt.state = std::uint8_t(NS::Traveling);
             return;
         }
-        // DEBT-driven (owner 2026-08-31), delivered IN KIND per position
-        // (owner 2026-09-02: «по 1/8 всего со склада»): the courier rides
-        // whenever the town owes, loading the slice of each stack plus the
-        // coin eighth — as much as his back carries; the rest waits.
-        bool owesAny = homeLm->titheOwedCoin > 0;
-        for (int c = 0; !owesAny && c < kCommodityCount; ++c)
-            owesAny = homeLm->titheOwedGoods[c] > 0;
-        if (!owesAny) {
-            rt.stateTimer = std::int16_t(64);   // nothing owed today
+        if (!owes_tithe(*vassal)) {
+            // Должник рассчитался (собрали или простили) — ждать нечего,
+            // ротация завтра переторгует эту строку заново.
+            rt.stateTimer = std::int16_t(8 + rand_int(ctx, 8));
             return;
         }
-        long long loaded = 0;
-        for (int oi = 0; oi < kCommodityCount
-                        && inventory_weight(bag->inv) < rt.carryCap;
-             ++oi) {
-            const int c = value_dense_order()[std::size_t(oi)];
-            const int owed = homeLm->titheOwedGoods[c];
-            if (owed <= 0) continue;
-            const char* id = kCommodities[c].id;
-            const int moved = haul_between(
-                homeLm->inventory, bag->inv, id, owed,
-                rt.carryCap - inventory_weight(bag->inv));
-            if (moved <= 0) continue;
-            const ItemDef* d = item_def(id);
-            loaded += (long long)moved * (d ? d->value : 0);
-        }
-        if (homeLm->titheOwedCoin > 0) {
-            loaded += transfer_value_dense(
-                homeLm->inventory, bag->inv,
-                int(std::min<std::int64_t>(homeLm->titheOwedCoin,
-                                           inventory_value(homeLm->inventory))));
-        }
-        rt.taxCarried = int(std::min<long long>(loaded, 1 << 30));
-        if (rt.taxCarried <= 0) {
-            rt.stateTimer = std::int16_t(200);   // owed, but the store is bare
-            return;
-        }
-        rt.targetSettlementId = cap->id;
-        rt.targetX = float(cap->x);
-        rt.targetY = float(cap->y);
+        rt.targetSettlementId = vassal->id;
+        rt.targetX = float(vassal->x);
+        rt.targetY = float(vassal->y);
         rt.state = std::uint8_t(NS::Traveling);
         return;
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Working);
-            rt.stateTimer = std::int16_t(4 + rand_int(ctx, 4));
+            rt.stateTimer = std::int16_t(2 + rand_int(ctx, 3));
             return;
-        }
-        const float ox = p.x, oy = p.y;
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
-        if (march_is_stuck_(p, ox, oy, rt, pools)) {
-            rt.targetX = home.x;
-            rt.targetY = home.y;
-            rt.state = std::uint8_t(NS::Returning);
         }
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer > 0) return;
-        if (Landmark* cap = landmark_by_id(*ctx.mw.gs,
-                                           rt.targetSettlementId);
-            cap && cap->type == LandmarkType::City && rt.taxCarried > 0) {
-            // In kind, per position (owner 2026-09-02) — the same delivery
-            // law as the village vendor's tribute above.
-            long long paid = 0;
-            for (int c = 0; c < kCommodityCount; ++c) {
-                const int owed = homeLm->titheOwedGoods[c];
-                if (owed <= 0) continue;
+        // ВЗЫСКАНИЕ И ПОГАШЕНИЕ — В ОДНОЙ ТОЧКЕ: сколько увёз, столько и
+        // списал, поэтому шва между «взято» и «зачтено» физически нет.
+        long long owed = vassal->titheOwedValue;
+        long long took = 0;
+        // ── СНАЧАЛА ПО НУЖДЕ ДОМА, ОСТАТОК — ПО ПЛОТНОСТИ ───────────────
+        // Вердикт владельца 2026-09-21, дословно: «грузит ПО НУЖДЕ ДОМА,
+        // остаток — по value_dense_order. Иначе сборщик везёт домой
+        // серебро, а меряем мы еду». Это ровно то, что измерилось
+        // 2026-09-22, когда порядок был только по плотности: город получал
+        // казну и продолжал голодать (food_city −99.8 %).
+        // Чего дому не хватает — говорит ЕГО ВЕДОМОСТЬ (ярус 2): крю в поле
+        // домашний склад живьём не видит.
+        if (owed > 0 && homeLm->ledger.published()) {
+            for (int oi = 0; oi < kCommodityCount && owed > 0; ++oi) {
+                const int c = value_dense_order()[std::size_t(oi)];
                 const char* id = kCommodities[c].id;
-                const int moved = haul_between(
-                    bag->inv, depot_(*cap, ctx.mw), id, owed, 1e9f);
-                if (moved <= 0) continue;
-                homeLm->titheOwedGoods[c] -= moved;
                 const ItemDef* d = item_def(id);
-                paid += (long long)moved * (d ? d->value : 0);
+                const int base = d ? d->value : 0;
+                if (base <= 0) continue;
+                const int lack = homeLm->ledger.demand[std::size_t(c)]
+                                 - homeLm->inventory.count(id);
+                if (lack <= 0) continue;
+                const long long affordable = owed / base;
+                if (affordable <= 0) continue;
+                const int want = int(std::min<long long>(lack, affordable));
+                const int moved = haul_between(
+                    vassal->inventory, bag->inv, id, want,
+                    rt.carryCap - inventory_weight(bag->inv));
+                if (moved <= 0) continue;
+                owed -= (long long)moved * base;
+                took += (long long)moved * base;
             }
-            if (homeLm->titheOwedCoin > 0) {
-                const int coins = transfer_value_dense(
-                    bag->inv, depot_(*cap, ctx.mw),
-                    int(std::min<std::int64_t>(homeLm->titheOwedCoin,
-                                               inventory_value(bag->inv))));
-                homeLm->titheOwedCoin -= coins;
-                paid += coins;
+        }
+        // ОСТАТОК ДОЛГА — ПО ПЛОТНОСТИ: самое ценное, что осталось у
+        // вассала. Заплатить зерном, оставив серебро, нельзя ни с какой
+        // стороны — нужда дома уже взяла своё зерно выше.
+        if (owed > 0) {
+            const int dense = transfer_value_dense(
+                vassal->inventory, Depot(bag->inv),
+                int(std::min<long long>(owed, 1 << 30)));
+            if (dense > 0) {
+                owed -= dense;
+                took += dense;
             }
-            if (paid > 0) {
-                record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
-                                     rt.homeSettlementId,
-                                     int(rt.targetX), int(rt.targetY),
-                                     int(std::min<long long>(paid, 1 << 30)),
-                                     rt.targetSettlementId);
-            }
-            rt.taxCarried = 0;
+        }
+        if (took > 0) {
+            vassal->titheOwedValue -= took;
+            if (vassal->titheOwedValue < 0) vassal->titheOwedValue = 0;
+            record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
+                                 vassal->id, int(p.x), int(p.y),
+                                 int(std::min<long long>(took, 1 << 30)),
+                                 rt.homeSettlementId);
         }
         rt.targetX = home.x;
         rt.targetY = home.y;
@@ -2622,22 +2556,18 @@ void ai_taxrun(entt::entity self, MacroPos& p,
     if (rt.state == std::uint8_t(NS::Wandering)
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
-            if (rt.state == std::uint8_t(NS::Returning)) {
-                // Anything undelivered rides back into the town store —
-                // wares now too, since the tribute is paid in kind (v71).
-                for (int i = 0; i < kCommodityCount; ++i) {
-                    haul_between(bag->inv, depot_(*homeLm, ctx.mw),
-                                 kCommodities[i].id, 1 << 30, 1e9f);
-                }
-                transfer_value_dense(bag->inv, depot_(*homeLm, ctx.mw),
-                               inventory_value(bag->inv));
-            }
+            for (int i = 0; i < kCommodityCount; ++i)
+                haul_between(bag->inv, depot_(*homeLm, ctx.mw),
+                             kCommodities[i].id, 1 << 30, 1e9f);
+            transfer_value_dense(bag->inv, depot_(*homeLm, ctx.mw),
+                                 inventory_value(bag->inv));
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
-            return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        return;
     }
+    rt.state = std::uint8_t(NS::Idle);
+    rt.stateTimer = std::int16_t(4);
 }
 
 void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
@@ -3622,6 +3552,7 @@ void dispatch(entt::entity e, MacroPos& p,
     switch (SquadType(rt.squadType)) {
         case SquadType::Artel:   ai_gatherer(e, p, kind, rt, pools, ctx); return;
         case SquadType::Caravan: ai_vendor  (e, p, rt, pools, ctx);       return;
+        case SquadType::Collector: ai_collector(e, p, rt, pools, ctx);    return;
         case SquadType::ByKind:  break;   // ниже — течь, названная по имени
     }
     switch (untyped_squad_behaviour(ctx.mw.world->reg, e, kind)) {
@@ -3635,7 +3566,14 @@ void dispatch(entt::entity e, MacroPos& p,
         // строками (порция Б-6), и тогда этот switch перестанет знать про
         // макро-роли вовсе.
         case AIBehaviour::Gatherer:     ai_gatherer(e, p, kind, rt, pools, ctx); break;
-        case AIBehaviour::TaxRun:       ai_taxrun    (e, p, rt, pools, ctx); break;
+        // (`AIBehaviour::TaxRun` БОЛЬШЕ НЕ ДИСПЕТЧЕРИЗУЕТСЯ 2026-09-22:
+        //  сборщик стал ТИПОМ СКВАДА, а не ролью тела. Значение умрёт со
+        //  строкой TaxCollector в каталоге тел, порция Б-6.)
+        // `TaxRun` ОСТАЛСЯ БЕЗ МАКРО-СМЫСЛА 2026-09-22 (сборщик стал ТИПОМ
+        // сквада). Значение ещё несёт строка TaxCollector каталога тел,
+        // поэтому ветка обязана существовать — но ведёт она туда же, куда
+        // ведёт всякая роль без занятия. Умрёт вместе со строкой (Б-6).
+        case AIBehaviour::TaxRun:       ai_wanderer     (p, rt, pools, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, pools, ctx); break;
         case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, pools, ctx); break;
         case AIBehaviour::Patrol:       ai_patrol       (p, rt, pools, ctx); break;
@@ -4665,7 +4603,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             if (partner && landmark_is_settlement(partner->type)
                 && partner->id != s.id) {
                 const Landmark* city = partner;
-                long long value = s.titheOwedCoin > 0 ? s.titheOwedCoin : 0;
+                // (ДАНЬ ОТСЮДА УШЛА 2026-09-22: она больше не едет
+                // попутным грузом рейса сбыта — у неё своя заявка и своя
+                // машина, CANON S4 «Сборщик идёт вниз».)
+                long long value = 0;
                 // Проход ПРОДАЖИ: что повезём (дома дешевле базы, сверх
                 // сезонного амбара) — и это же ПОКУПАТЕЛЬНАЯ СПОСОБНОСТЬ
                 // рейса (владелец 2026-09-18: «у нас бартер-система —
@@ -4707,13 +4648,6 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         const long long cap = (long long)(freeKg / kg);
                         return want < cap ? want : cap;
                     };
-                    if (s.titheOwedGoods[c] > 0) {
-                        const long long fit = fits(s.titheOwedGoods[c]);
-                        if (fit > 0) {
-                            value += fit * base;
-                            freeKg -= float(fit) * kg;
-                        }
-                    }
                     const int have = s.inventory.count(id);
                     // Спрос уже СЕЗОННЫЙ (остаток счёта + производный).
                     const int demand = season_demand_for(id, s.needDebt,
@@ -4832,6 +4766,29 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         if (caravanHolds < 1) caravanHolds = 1;
                     }
                 }
+            }
+            // ── ЗАЯВКИ СБОРЩИКА: ПО ОДНОЙ НА КАЖДОГО ДОЛЖНИКА ──────────────
+        // CANON S4 «ЧИСЛО СБОРЩИКОВ = ЧИСЛО ВАССАЛОВ-ДОЛЖНИКОВ» (владелец:
+        // «по сборщику на вассала… по числу вассалов должников если быть
+        // точным»). Урна ОБЩАЯ и единица ОДНА — «выработка в день рейса»:
+        // стоимость долга, делённая на дни пути. Приоритета как сущности
+        // нет: заявка дани конкурирует со сбытом и добычей в той же
+        // рулетке, и это ровно то, что записано каноном.
+            for (int k = 0; k < kMaxInterests; ++k) {
+                const Interest& it = s.interests.slots[std::size_t(k)];
+                if (it.stance == std::uint8_t(Stance::None)) break;
+                if (it.stance != std::uint8_t(Stance::Vassal)) continue;
+                const Landmark* v = landmark_by_id(gs, it.object);
+                if (!v || !owes_tithe(*v)) continue;
+                if (bidCount >= int(sizeof(bids) / sizeof(bids[0]))) break;
+                const XY site{float(v->x), float(v->y)};
+                const float tripDays = road_days_(site);
+                if (!(tripDays > 0.0f)) continue;
+                const float score =
+                    (float(v->titheOwedValue) - fear_of(site)) / tripDays;
+                if (score <= 0.0f) continue;
+                bids[bidCount++] = GoalBid{std::uint8_t(SquadType::Collector),
+                                           std::uint32_t(v->id), site, score};
             }
         };
 
@@ -4992,6 +4949,14 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 prt.squadType = myType;
                 prt.errandObject = myObject;
                 prt.stateTimer = 0;   // новый рейс — этим же думом
+                // НОВОЕ ПОРУЧЕНИЕ НАЧИНАЕТСЯ С НАЧАЛА (найдено замером
+                // 2026-09-22): здесь сбрасывался ТОЛЬКО таймер, а состояние
+                // оставалось от прошлого рейса. Переторгованная крю,
+                // стоявшая в `Working`, входила в новую машину сразу
+                // «на месте работы» — и сборщики зависали в Working, ни
+                // разу не тронувшись в путь (гистограмма состояний:
+                // 899 559 вызовов Working против НУЛЯ Traveling).
+                prt.state = std::uint8_t(NS::Idle);
                 // ТАКТ 2: дом снаряжает уходящую артель тяглом из стойла
                 // (по коню на душу, сколько стоит) — рядом с провиантом
                 // ниже, тот же акт над вторым контейнером.

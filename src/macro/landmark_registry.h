@@ -245,7 +245,8 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/3, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false,
+                     SquadType::Collector},
                    // ПАТРУЛЬНАЯ СТРОКА ВЫРЕЗАНА 2026-09-21 (владелец:
                    // «вырезаем бандитов, патрули — даже не временно; потом
                    // по уму их всегда сможем норм добавить»). Строка
