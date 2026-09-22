@@ -1685,6 +1685,9 @@ timaert_test(sheet_registry_test)
 # the air moves the picture and never the verdict.
 timaert_test(air_law_test)
 
+# ПЕРЕПИСЬ ШТАБЕЛЕЙ — свидетель структурного инварианта (2026-09-22).
+timaert_test(stack_census_test LINK_ENTT)
+
 timaert_test(ground_table_test
     SOURCES
         # sub/material.h is the authority on the id space the table indexes.

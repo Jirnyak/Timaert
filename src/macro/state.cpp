@@ -10,6 +10,10 @@
 #include "macro/settlement_score.h"
 #include "macro/world_tick.h"      // garrison_target_strength (§42 Инк 7)
 #include "core/rng.h"
+// ПЕРЕПИСЬ ШТАБЕЛЕЙ висит на сборке ядра, а не на отдельном тесте:
+// сторожа размеров обязаны срабатывать при ЛЮБОЙ сборке мира, иначе
+// костыль успевает встать до того, как кто-то запустит сюиту.
+#include "core/stacks.h"
 #include "core/torus.h"
 #include <algorithm>
 #include <array>
