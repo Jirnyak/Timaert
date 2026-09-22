@@ -416,6 +416,32 @@ int publish_landmark_ledgers(GameState& gs, int day) {
         lm.ledger.day = day;
         ++published;
     }
+    // ── МИРОВОЕ СРЕДНЕЕ — ТЕМ ЖЕ ПРОХОДОМ, ИЗ ТЕХ ЖЕ ЦЕН (CANON S10,
+    //    ярус 2: «число не назначено, а посчитано из самой таблицы», S26) ──
+    // Складывается только то, что место ВЫПИСАЛО: строка с нулевой базой у
+    // места цены не получила, и в среднее она не идёт — иначе среднее
+    // считало бы молчание за дешевизну. Делитель свой на строку по той же
+    // причине.
+    gs.worldLedger = WorldLedger{};
+    if (published > 0) {
+        long long sum[std::size_t(kCommodityCount)] = {};
+        int count[std::size_t(kCommodityCount)] = {};
+        for (const Landmark& lm : gs.landmarks) {
+            if (!lm.ledger.published()) continue;
+            for (int i = 0; i < kCommodityCount; ++i) {
+                const std::int32_t p = lm.ledger.price[std::size_t(i)];
+                if (p <= 0) continue;
+                sum[std::size_t(i)] += p;
+                ++count[std::size_t(i)];
+            }
+        }
+        for (int i = 0; i < kCommodityCount; ++i)
+            if (count[std::size_t(i)] > 0)
+                gs.worldLedger.price[std::size_t(i)] =
+                    std::int32_t(sum[std::size_t(i)]
+                                 / count[std::size_t(i)]);
+        gs.worldLedger.day = day;
+    }
     return published;
 }
 

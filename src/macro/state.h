@@ -445,6 +445,24 @@ struct LandmarkLedger {
     bool published() const { return day > 0; }
 };
 
+// МИРОВОЕ СРЕДНЕЕ — ЦЕНА МЕСТА ЗА ГОРИЗОНТОМ (CANON S10, ярус 2, владелец
+// 2026-09-20: «За горизонтом место оценивается по МИРОВОМУ СРЕДНЕМУ из той
+// же ведомости: число не назначено, а посчитано из самой таблицы»).
+//
+// ОДНА строка на мир, считается ТЕМ ЖЕ проходом, что публикует ведомости
+// мест, из ИХ ЖЕ цен — ни одного назначенного числа (S26). Следствие,
+// названное каноном: дальнее место выглядит «обычным рынком» — туда ездят,
+// но без предпочтения; целенаправленный дальний рейс принадлежит ярусу 3.
+//
+// ПОЧЕМУ ЭТО НЕ КОЛОНКА В КАЖДОЙ ВЕДОМОСТИ: число одно на мир, и копия его
+// в 1 880 местах была бы вторым ответом на тот же вопрос (S26).
+// ПРОИЗВОДНОЕ, В СЕЙВ НЕ ЕДЕТ — как и сами ведомости.
+struct WorldLedger {
+    std::int32_t price[std::size_t(kCommodityCount)]{};
+    std::int32_t day = 0;   // день публикации; 0 = среднего ещё нет
+    bool published() const { return day > 0; }
+};
+
 struct Landmark {
     int id = -1;             // world-unique ordinal (nextLandmarkOrdinal, v54)
     LandmarkType type = LandmarkType::None;  // THE kind column (registry row)
@@ -817,6 +835,9 @@ struct GameState {
     // priority for a contested cell is for_each_landmark's yield order
     // (landmark_iter.h), not storage order.
     std::vector<Landmark>   landmarks;
+    // ЦЕНА ЗА ГОРИЗОНТОМ (CANON S10, ярус 2). Пересобирается тем же тактом,
+    // что ведомости мест, из их же цен; в сейв не едет.
+    WorldLedger             worldLedger;
     std::vector<Marker>     markers;
     // The player's map knowledge (v40): Unknown / Explored / Visible per cell.
     // Explored persists; Visible is re-derived from the player's position

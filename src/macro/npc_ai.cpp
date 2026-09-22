@@ -1908,6 +1908,27 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
     return pickId;   // -1 = тупик: рейс кончается, крю идёт домой
 }
 
+int market_price_seen(const MacroWorld& mw, int fromX, int fromY,
+                      const Landmark& at, int commodityIdx) {
+    if (!mw.gs) return 0;
+    if (commodityIdx < 0 || commodityIdx >= kCommodityCount) return 0;
+    const std::size_t ci = std::size_t(commodityIdx);
+    // ЯРУС 2, БЛИЖНЯЯ ПОЛОВИНА: место в горизонте — его СОБСТВЕННАЯ
+    // ведомость. Горизонт спрашивается из точки, где стоит спрашивающий.
+    if (at.ledger.published() && mw.nav && mw.nav->baked()) {
+        const std::uint16_t rFrom = nav_region_at(*mw.nav, fromX, fromY);
+        const std::uint16_t rAt = nav_region_at(*mw.nav, at.x, at.y);
+        if (nav_regions_adjacent(*mw.nav, rFrom, rAt))
+            return at.ledger.price[ci];
+    }
+    // ЯРУС 2, ДАЛЬНЯЯ ПОЛОВИНА: за горизонтом — мировое среднее, и оттого
+    // дальнее место выглядит «обычным рынком»: туда ездят, но без
+    // предпочтения (CANON S10). Ноль — цены нет ни на одном ярусе.
+    return mw.gs->worldLedger.published()
+               ? mw.gs->worldLedger.price[ci]
+               : 0;
+}
+
 namespace {
 
 // ТОРГОВАЯ СИЛА ТОРГОВЦА — ОДНО число с его листа (CANON S25): финальное
@@ -4447,11 +4468,23 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                                                          &s.inventory);
                     const int homePrice =
                         stock_price(base, have, demand);
-                    if (have > demand && homePrice < base && freeKg > 0.0f) {
+                    // ЦЕНА ТАМ — ЯРУС 2, ИЗ ТОЧКИ ДОМА (CANON S10). До
+                    // 2026-09-22 здесь стояло `base − homePrice`, то есть
+                    // «насколько дёшево моё излишнее добро У МЕНЯ ДОМА» —
+                    // мера ГОТОВНОСТИ СБРОСИТЬ, а не выручки рейса
+                    // (problems §55-II). Спред против прейскуранта партнёра
+                    // — это и есть выручка, и знание на него законно.
+                    const int therePrice =
+                        market_price_seen(ctx.mw, int(home.x), int(home.y),
+                                          *city, c);
+                    if (have > demand && therePrice > homePrice
+                        && freeKg > 0.0f) {
                         const long long fit = fits(have - demand);
                         if (fit > 0) {
-                            value += fit * (base - homePrice);
-                            purse += fit * base;
+                            value += fit * (therePrice - homePrice);
+                            // ПОКУПАТЕЛЬНАЯ СПОСОБНОСТЬ — то, что груз
+                            // выручит ТАМ, а не его домашняя оценка.
+                            purse += fit * therePrice;
                             freeKg -= float(fit) * kg;
                         }
                     }
@@ -4473,12 +4506,20 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                                                          &s.inventory);
                     const int homePrice =
                         stock_price(base, have, demand);
-                    if (have >= demand || homePrice <= base) continue;
+                    // Тот же спред другим концом: везти домой стоит то, что
+                    // ТАМ дешевле, чем дома. База заменена ценой партнёра по
+                    // той же причине, что и в проходе продажи.
+                    const int therePrice =
+                        market_price_seen(ctx.mw, int(home.x), int(home.y),
+                                          *city, c);
+                    if (have >= demand || therePrice <= 0
+                        || homePrice <= therePrice)
+                        continue;
                     const long long buyable = std::min<long long>(
-                        demand - have, purse / base);
+                        demand - have, purse / therePrice);
                     if (buyable <= 0) continue;
-                    value += buyable * (homePrice - base);
-                    purse -= buyable * base;
+                    value += buyable * (homePrice - therePrice);
+                    purse -= buyable * therePrice;
                 }
                 if (value > 0) {
                     const XY citySite{float(city->x), float(city->y)};
