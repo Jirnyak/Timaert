@@ -246,9 +246,37 @@ void resource_fields_daily_growth(MacroWorld& w, int day);
 // its own stock (trees, veins), a row with one is a baseline minus what play
 // took, so its field holds the SCAR. One shape, one meaning per row, and the
 // `baseline` column is the reader that was already there.
+// ШИРИНА КЛЕТКИ РЕСУРСНОГО ПОЛЯ — `uint16` (владелец, 2026-09-22, дословно:
+// «uint16 для ресурсов да будет так я одобряю ДЛЯ ВСЕХ НЫНЕШНИХ И БУДУЩИХ
+// РЕСУРСОВ»).
+//
+// ЗАКОН ФОРМЫ, к которому это относится: поле есть плоский массив над тором с
+// ОДНОЙ дверью записи; ширина ячейки — свойство РЯДА, минимальная из
+// достаточных. Поэтому `uint8` у терраина, фич и зон, `float` у весов и
+// `uint16` здесь — не три исключения, а один закон.
+//
+// ПОЧЕМУ НЕ `int32`. Считано по фактическим потолкам (сторож ниже): самый
+// толстый ряд занимает четверть диапазона. Половина памяти — не главное;
+// главное КЭШ: на линию 64 Б ложится 32 клетки вместо 16, и проходы, которые
+// упираются в память (сезонный ходок роста, штамп диска досягаемости),
+// ускоряются вдвое. Это свойство скелета «соседняя клетка — соседняя память»,
+// а не микрооптимизация.
+//
+// ПОЧЕМУ БЕЗЗНАКОВЫЙ. Счёт, ёмкость и шрам отрицательными не бывают (ЗАКОН
+// ТИПА). Ноль — законная пустота ряда, поэтому сторожевое значение полю не
+// нужно и весь диапазон 0…65535 рабочий.
+using FieldCell = std::uint16_t;
+inline constexpr int kMaxFieldUnitsPerCell = 65535;
+
+// ПОТОЛКИ РЯДОВ, КОТОРЫЕ НЕ ЖИЛЫ (жилы сторожит deposit_layer.h): оба сильно
+// ниже клетки, и оба закреплены здесь, чтобы ретюн шкалы не проехал мимо
+// ширины молча. Пшеница — четверть шестнадцатой диапазона, лес — четверть.
+static_assert(kMaxWheatStandsPerCell <= kMaxFieldUnitsPerCell,
+              "шкала пашни переросла клетку поля");
+
 struct ResourceGrid {
     int width = 0, height = 0;
-    std::vector<std::int32_t> cells;
+    std::vector<FieldCell> cells;
     // How far this row reaches, copied from its registry column at build. The
     // grid keeps its OWN derived field in step (see write below), so no door
     // can forget to — which is the whole reason the radius lives here and not
@@ -275,8 +303,8 @@ struct ResourceGrid {
         return std::uint32_t(wrapi(y, height)) * std::uint32_t(width)
              + std::uint32_t(wrapi(x, width));
     }
-    std::int32_t at(int x, int y) const {
-        return live() ? cells[index(x, y)] : 0;
+    int at(int x, int y) const {
+        return live() ? int(cells[index(x, y)]) : 0;
     }
     // "Is a live cell of this row within the row's reach of here?" — the
     // O(1) answer the scan used to compute. Fail-closed on a row with no
@@ -292,14 +320,22 @@ struct ResourceGrid {
     // somebody adds a fifth caller. (It had four, and a hand-run negative
     // control found that removing the stamp from any one of them left the
     // world silently wrong: ore gone, trade still granted.)
-    void write(int x, int y, std::int32_t value) {
+    // Значение ЗАЖИМАЕТСЯ в ширину ряда прямо здесь, у единственной двери:
+    // иначе перелив был бы невидимым — клетка молча заворачивалась бы в малое
+    // число, и мир беднел бы без единого следа. Сторож ширины (ниже по файлу)
+    // держит потолки рядов под этим числом, поэтому зажим — страховка на
+    // случай арифметики, а не рабочий режим.
+    void write(int x, int y, int value) {
         if (!live()) return;
         const std::uint32_t i = index(x, y);
-        const std::int32_t was = cells[i];
-        if (was == value) return;
-        cells[i] = value;
-        if (was == 0 && value != 0) { ++liveCells; stamp(x, y, +1); }
-        else if (was != 0 && value == 0) { --liveCells; stamp(x, y, -1); }
+        const FieldCell v = FieldCell(value < 0 ? 0
+                                      : (value > kMaxFieldUnitsPerCell
+                                             ? kMaxFieldUnitsPerCell : value));
+        const FieldCell was = cells[i];
+        if (was == v) return;
+        cells[i] = v;
+        if (was == 0 && v != 0) { ++liveCells; stamp(x, y, +1); }
+        else if (was != 0 && v == 0) { --liveCells; stamp(x, y, -1); }
         ++revision;
     }
 
@@ -330,8 +366,8 @@ struct ResourceGrid {
     // callers that walk the array and then need to know WHERE they are.
     int x_of(std::uint32_t i) const { return int(i % std::uint32_t(width)); }
     int y_of(std::uint32_t i) const { return int(i / std::uint32_t(width)); }
-    std::int32_t at_index(std::uint32_t i) const {
-        return i < cells.size() ? cells[i] : 0;
+    int at_index(std::uint32_t i) const {
+        return i < cells.size() ? int(cells[i]) : 0;
     }
 
     // Two fields are the same field when they cover the same world and hold

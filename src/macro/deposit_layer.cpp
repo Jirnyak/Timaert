@@ -52,6 +52,14 @@ struct DepositGenRow {
     std::int32_t unitScale;
     std::uint32_t salt;
 };
+// КАМЕНЬ: 65536 → 32768 (2026-09-22, вместе с сужением клетки поля до uint16).
+// Старое число было ровно НА ЕДИНИЦУ выше потолка uint16, и оно единственное
+// во всей таблице не влезало. Перетюнёвка ничего не стоит, потому что в тот же
+// день камень стал ЗАЖИВАТЬ: бесконечность во времени заменила бесконечность в
+// запасе, и вторая перестала быть нужна. Мир камня вдвое меньше по единовре-
+// менному запасу и по-прежнему неисчерпаем по времени (добыча за 512 дней —
+// 740 тыс. против ~50 млн в земле).
+//
 // Thresholds and scales are CALIBRATED against the hash law's world totals
 // (the fingerprint line below is the instrument): the money supply and the
 // tool economy must not jump an order of magnitude because the SHAPE of
@@ -83,7 +91,7 @@ constexpr DepositGenRow kDepositGen[kDepositKindCount] = {
     //                       profile            affinity              period thresh scale  salt
     {DepositKind::Clay,   OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f,  12288, 0xC1A70000u},
     {DepositKind::Iron,   OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f,   2048, 0x1F0E0000u},
-    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  65536, 0x570E0000u},
+    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  32768, 0x570E0000u},
     // The mint metals: the lowest period and the highest bar — few nests,
     // truly rare, but a found one is a mining town's whole reason. Copper is
     // the base metal of the three, so its bar is the lowest of them.
@@ -143,6 +151,23 @@ void allocate_deposit_fields(DepositLayer& layer, int width, int height) {
 // на сезонном срезе ходока роста (клеток/32 в день), а горячий путь читает
 // сохранённое текущее число. Второе поле ёмкости стоило бы 25 МиБ и не купило
 // бы ничего.
+// Сторож ширины: проверяется на СБОРКЕ (static_assert ниже), а функция
+// существует затем, чтобы свидетель мог назвать закон вслух.
+namespace {
+constexpr bool all_kinds_fit_cell() {
+    for (int k = 0; k < kDepositKindCount; ++k) {
+        if (kDepositGen[std::size_t(k)].unitScale > kMaxFieldUnitsPerCell) {
+            return false;
+        }
+    }
+    return true;
+}
+}  // namespace
+static_assert(all_kinds_fit_cell(),
+              "род руды жирнее клетки поля (uint16): либо перетюнь unitScale, "
+              "либо расширяй ВЕСЬ штабель полей — ширина у рядов одна");
+bool deposit_kinds_fit_field_cell() { return all_kinds_fit_cell(); }
+
 std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
                                float seaLevel, DepositKind kind, int x, int y) {
     if (terrain.width <= 0 || terrain.height <= 0

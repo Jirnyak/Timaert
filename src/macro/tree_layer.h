@@ -27,6 +27,7 @@
 //   - felling a tree in the subworld decrements the owning cell's count
 //     through the registry (resource_field_apply → this grid).
 #pragma once
+#include "macro/resource_field.h"   // FieldCell — общая ширина клетки поля
 #include <cstdint>
 #include <vector>
 #include "macro/biomes.h"
@@ -37,6 +38,11 @@ namespace sm {
 
 // 2^14 — the densest forest cell (a massif cell with 8 massif neighbours).
 constexpr int kMaxTreesPerCell = 16384;
+// Лес уже живёт в uint16 своим носителем, но потолок закрепляется ТЕМ ЖЕ
+// числом, что и у ресурсных полей: в день, когда лес переедет в общий штабель
+// (наряд M-91), ширина не должна оказаться сюрпризом.
+static_assert(kMaxTreesPerCell <= kMaxFieldUnitsPerCell,
+              "потолок леса переросл клетку поля");
 
 // Half the golden max (2^13): the forest-CLASS threshold — THE one binary
 // "is forest" line. A cell at or above it behaves as forest everywhere:
