@@ -1931,6 +1931,85 @@ int market_price_seen(const MacroWorld& mw, int fromX, int fromY,
 
 namespace {
 
+// ── СТОИМОСТЬ СДЕЛКИ, ОЖИДАЕМОЙ В ТОЧКЕ `at` (CANON S10) ────────────────
+// ОДНА арифметика на всех, кто решает «стоит ли туда ехать»: аукцион дома и
+// сам рейс на станции. Расходятся они только ВХОДОМ, и это законно —
+// решающий дома видит свой склад живьём, решающий в поле видит его
+// ВЕДОМОСТЬЮ (ярус 2). Поэтому цена дома и нехватка дома приходят
+// массивами, а не читаются внутри: второго правила о спреде не заводится
+// (S26), но и вранья «крю видит дом насквозь через полмира» не возникает.
+//
+//   выручка строки = единицы × (цена ТАМ − цена ДОМА), и ноль, если там не
+//   дороже; обратный конец — то же самое другой стороной.
+//
+// `mine[c]`     — единицы строки, которые решатель повезёт на продажу;
+// `homePrice[c]`— почём строка дома; `homeLack[c]` — сколько дому ещё надо.
+// Кошелёк рейса — то, что груз выручит ТАМ (бартер, S25): решение весит
+// только то, что можно оплатить (S10).
+// Вес страха на маршруте: threat худшей округи маршрута >> shift — минусом
+// в скор (те же деньги против той же ценности рейса; скор ≤ 0 = отказ рейса
+// ценой). Стартовая четверть — крутилка дубль-прогона: полный вес после
+// любой резни морил бы округу голодом дольше, чем горюет летопись.
+// ПЕРЕЕХАЛ СЮДА 2026-09-22: страх стал нужен не только аукциону, но и
+// развилке рейса на станции, а она выше по файлу.
+constexpr int kThreatFearShift = 2;
+
+// ДНИ МАРША МЕЖДУ ДВУМЯ ТОЧКАМИ, В ОДНУ СТОРОНУ (CANON S7, та же дверь
+// nav_path_cost, что у аукциона; хорда — только в мире без дорог). Рейсу со
+// станции нужны ноги ОТ МЕСТА СТОЯНИЯ, а лямбда аукциона считает от дома —
+// это одна мера с двумя концами, а не второй закон.
+float march_days_(const TickContext& ctx, int ax, int ay, int bx, int by) {
+    const NavWorld* nv = ctx.mw.nav;
+    float cells = -1.0f;
+    if (nv && nv->baked()) {
+        const std::uint32_t c = nav_path_cost(*nv, ax, ay, bx, by);
+        if (c != kNavFar) cells = float(c) / 16.0f;
+    }
+    if (cells < 0.0f)
+        cells = std::sqrt(torus_dist_sq(float(ax), float(ay), float(bx),
+                                        float(by), float(ctx.mapW),
+                                        float(ctx.mapH)));
+    return cells / kSustainedMarchCellsPerDay;
+}
+
+// СТРАХ МАРШРУТА между двумя точками — тот же терм, что в аукционе: худшая
+// округа маршрута платит стоимостью погибших там душ.
+float route_fear_(const TickContext& ctx, int ax, int ay, int bx, int by) {
+    NavWorld* nv = ctx.mw.nav;
+    if (!nv || !nv->baked() || nv->threat.empty()) return 0.0f;
+    const std::uint16_t ra = nav_region_at(*nv, ax, ay);
+    const std::uint16_t rb = nav_region_at(*nv, bx, by);
+    if (ra == kNavNoRegion || rb == kNavNoRegion) return 0.0f;
+    return float(threat_on_route(*nv, ra, rb) >> kThreatFearShift);
+}
+
+long long trade_bid_value_(const MacroWorld& mw, int fromX, int fromY,
+                           const Landmark& at, const int* mine,
+                           const int* homePrice, const int* homeLack) {
+    long long value = 0;
+    long long purse = 0;
+    int therePrice[kCommodityCount];
+    for (int c = 0; c < kCommodityCount; ++c) {
+        therePrice[c] = market_price_seen(mw, fromX, fromY, at, c);
+        const long long units = mine ? (long long)mine[c] : 0;
+        if (units <= 0 || therePrice[c] <= 0) continue;
+        purse += units * therePrice[c];
+        if (therePrice[c] > homePrice[c])
+            value += units * (therePrice[c] - homePrice[c]);
+    }
+    for (int c = 0; c < kCommodityCount && purse > 0; ++c) {
+        const long long lack = homeLack ? (long long)homeLack[c] : 0;
+        if (lack <= 0 || therePrice[c] <= 0) continue;
+        if (homePrice[c] <= therePrice[c]) continue;
+        const long long buyable =
+            std::min<long long>(lack, purse / therePrice[c]);
+        if (buyable <= 0) continue;
+        value += buyable * (homePrice[c] - therePrice[c]);
+        purse -= buyable * therePrice[c];
+    }
+    return value;
+}
+
 // ТОРГОВАЯ СИЛА ТОРГОВЦА — ОДНО число с его листа (CANON S25): финальное
 // производное (attributes.h, харизма × торговля), то же, что показывает
 // панель. Две половины — атрибут и скилл — больше не ходят по коду порознь:
@@ -2221,7 +2300,101 @@ void ai_vendor(entt::entity self, MacroPos& p,
                                      deal.movedTableValue,
                                      rt.targetSettlementId);
             }
+        // ── РАЗВИЛКА РЕЙСА: «ДАЛЬШЕ» ПРОТИВ «ДОМОЙ» (CANON S10) ──────────
+        // Здесь до 2026-09-22 стоял безусловный разворот домой — рейс
+        // кончался ПРИБЫТИЕМ, один рынок за выезд. Это был один из четырёх
+        // ответов на «пора ли кончать» (problems §55-III); теперь ответ один
+        // на всех: ДОМОЙ — ЭТО ПРОСТО ЕЩЁ ОДНА ЗАЯВКА В ТОМ ЖЕ АУКЦИОНЕ,
+        // обе в «монетах на душу в день», выбор — рулетка.
+        // Ни счётчика станций, ни таймера рейса: таймер живёт в знаменателе,
+        // и потому у дальности рейса нет потолка (владелец 2026-09-22).
+        {
+            // ЧТО ДОМУ НУЖНО И ПОЧЁМ — ВЕДОМОСТЬ ДОМА (ярус 2): крю в поле
+            // не видит домашний склад живьём и видеть не должно.
+            int homePrice[kCommodityCount] = {};
+            int homeLack[kCommodityCount] = {};
+            int cargo[kCommodityCount] = {};
+            const bool haveLedger = homeLm->ledger.published();
+            long long homeValue = 0;
+            for (int c = 0; c < kCommodityCount; ++c) {
+                const char* id = kCommodities[c].id;
+                const ItemDef* d = item_def(id);
+                const int base = d ? d->value : 0;
+                homePrice[c] = haveLedger
+                                   ? homeLm->ledger.price[std::size_t(c)]
+                                   : base;
+                const int lack =
+                    haveLedger
+                        ? homeLm->ledger.demand[std::size_t(c)]
+                              - homeLm->inventory.count(id)
+                        : 0;
+                homeLack[c] = lack > 0 ? lack : 0;
+                cargo[c] = bag->inv.count(id);
+                // ЗАЯВКА «ДОМОЙ» — «что уже в трюме стоит ДЛЯ НУЖДЫ ДОМА»,
+                // а не вся стоимость груза: серебро, которого дому не надо,
+                // домой не торопится. Оттого числитель растёт ровно по мере
+                // того, как трюм набивается НУЖНЫМ, — и рейс кончается сам,
+                // без квоты и без счётчика.
+                const long long fit =
+                    std::min<long long>(cargo[c], homeLack[c]);
+                if (fit > 0) homeValue += fit * homePrice[c];
+            }
+            const float daysHome =
+                march_days_(ctx, int(p.x), int(p.y), int(home.x),
+                            int(home.y));
+            const float bidHome =
+                daysHome > 0.0f ? float(homeValue) / daysHome : 0.0f;
+            // КАНДИДАТ — СОСЕД ПО МЕМБРАНЕ, ИЗ ТОЧКИ СТОЯНИЯ (S7,
+            // диффузия), и НЕ тот, откуда пришли: рынок, который только что
+            // обслужили, шанса не получает.
+            float nextX = 0.0f, nextY = 0.0f;
+            const int nextId = pick_next_station_(ctx, p, market->id,
+                                                  rt.prevStationId,
+                                                  nextX, nextY);
+            float bidGo = 0.0f;
+            const Landmark* next =
+                nextId >= 0 ? landmark_by_id(*ctx.mw.gs, nextId) : nullptr;
+            if (next && next->id != homeLm->id) {
+                const long long gain =
+                    trade_bid_value_(ctx.mw, int(p.x), int(p.y), *next,
+                                     cargo, homePrice, homeLack);
+                // ДЛИТЕЛЬНОСТЬ — ВЕСЬ ОСТАТОК РЕЙСА: туда И оттуда домой.
+                // Иначе «дальше» дешевело бы по построению, и крю уходило бы
+                // от дома бесконечно — знаменатель обязан расти с отъездом.
+                const float daysGo =
+                    march_days_(ctx, int(p.x), int(p.y), next->x, next->y)
+                    + march_days_(ctx, next->x, next->y, int(home.x),
+                                  int(home.y));
+                if (daysGo > 0.0f)
+                    bidGo = (float(gain)
+                             - route_fear_(ctx, int(p.x), int(p.y),
+                                           next->x, next->y))
+                            / daysGo;
+            }
+            // РУЛЕТКА, А НЕ ARGMAX — закон аукциона целей. Ни одной
+            // положительной заявки = домой: сквад без возвращения есть
+            // молчаливая утечка склада душ (S4).
+            bool goOn = false;
+            if (bidGo > 0.0f) {
+                const float total =
+                    bidGo + (bidHome > 0.0f ? bidHome : 0.0f);
+                const float roll =
+                    ctx.rng ? float(rand_int(ctx, 1 << 20)) / float(1 << 20)
+                            : 1.0f;
+                goOn = roll * total < bidGo;
+            }
+            if (goOn && next) {
+                rt.prevStationId = market->id;
+                rt.errandObject = std::uint32_t(next->id);
+                rt.targetSettlementId = next->id;
+                rt.targetX = nextX;
+                rt.targetY = nextY;
+                rt.state = std::uint8_t(NS::Traveling);
+                return;
+            }
         }
+        }
+        rt.prevStationId = -1;
         rt.targetX = home.x;
         rt.targetY = home.y;
         rt.state = std::uint8_t(NS::Returning);
@@ -2818,13 +2991,6 @@ void ai_lair_sorties(entt::entity self, MacroPos& p,
 // по-прежнему сеет 1-2 стражника на город (npc_spawn.cpp), и это вечные
 // одиночки вне ротации. Они уходят вместе с генезисным засевом, порция Б-6.
 // Поле угрозы и страх артелей ЖИВЫ — kThreatFearShift ниже читает аукцион.)
-// Вес страха артелей: threat худшей округи маршрута >> shift — минусом в
-// скор аукциона (те же деньги против той же ценности рейса; скор ≤ 0 =
-// отказ рейса ценой). Стартовая четверть — крутилка дубль-прогона: полный
-// вес после любой резни морил бы округу голодом дольше, чем горюет
-// летопись.
-constexpr int kThreatFearShift = 2;
-
 void ai_patrol(MacroPos& p, ecs::MacroNpcRuntime& rt,
                ecs::Pools& pools, const TickContext& ctx) {
     XY home;

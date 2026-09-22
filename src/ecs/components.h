@@ -364,11 +364,18 @@ struct LightEmitter {
 struct MacroNpcRuntime {
     std::int32_t  homeSettlementId;
     std::int32_t  targetSettlementId;
-    // The trading run (owner 2026-08-30: caravans walk CITY to CITY, station
-    // by station, deciding from the market they stand in — no omniscience).
-    // stationsLeft counts the stops before the run turns home; prevStationId
-    // keeps the leg from ping-ponging between two neighbours. Runtime-only.
+    // РЕЙС, СТАНЦИЯ ЗА СТАНЦИЕЙ (владелец 2026-08-30: «решает с того рынка,
+    // на котором стоит — никакого всеведения»). Runtime-only, в сейв не едет.
+    //
+    // `stationsLeft` — МЁРТВ И УМРЁТ: это счётчик остановок снесённого
+    // ai_caravan, то есть НЕВЕРНЫЙ ЗАКОН конца рейса (CANON S10 «ДОМОЙ» —
+    // ЭТО ПРОСТО ЕЩЁ ОДНА ЗАЯВКА В ТОМ ЖЕ АУКЦИОНЕ»: возврат решается
+    // ГРУЗОМ, а не числом станций). Ноль писателей, ноль читателей; снос
+    // меняет LAYOUT, поэтому идёт своим инкрементом.
     std::uint8_t  stationsLeft = 0;
+    // `prevStationId` — ОЖИЛ 2026-09-22 вместе с многоскачковым рейсом:
+    // станция, с которой крю пришло, чтобы рулетка соседей не гоняла его
+    // обратно на только что обслуженный рынок. -1 = рейс только начат.
     std::int32_t  prevStationId = -1;
     // The tithe riding in the bag toward the suzerain (the feudal tax graph,
     // CANON S24): set at departure, paid out at the market. Runtime-only.
@@ -506,10 +513,11 @@ struct MacroNpcRuntime {
 };
 // РАЗМЕР ЗАКРЕПЛЁН КОМПИЛЯТОРОМ (AGENTS п.10, владелец 2026-09-21): шапка
 // этой структуры обещала «~36 bytes» — правда 96, и разошлось это молча,
-// потому что число жило только в прозе. Из 96 байт 9 — выравнивание, ещё 8 —
-// два мёртвых поля (stationsLeft, prevStationId: ноль писателей, ноль
-// читателей во всём src/; снос меняет LAYOUT, то есть сейв, поэтому идёт
-// своим инкрементом, а не здесь).
+// потому что число жило только в прозе. Из 96 байт 9 — выравнивание, ещё
+// 1 — мёртвое поле `stationsLeft` (ноль писателей, ноль читателей во всём
+// src/; снос меняет LAYOUT, то есть сейв, поэтому идёт своим инкрементом).
+// `prevStationId` из мёртвых вышел 2026-09-22 — его читает и пишет
+// многоскачковый рейс корована.
 static_assert(sizeof(MacroNpcRuntime) == 96,
               "рантайм марша: 96 Б × 16384 сквадов = 1.5 МиБ (AGENTS п.10)");
 
