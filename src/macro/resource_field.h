@@ -36,7 +36,7 @@
 #pragma once
 
 #include "macro/seasons.h"
-#include "core/torus.h"   // wrapi — a field is indexed by the TORUS
+#include "core/torus.h"   // cell_of — адрес клетки мира, одна дверь
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -295,13 +295,21 @@ struct ResourceGrid {
     // renderer's tree texture). Never serialized.
     std::uint32_t revision = 0;
 
+    // ЖИВОСТЬ ВКЛЮЧАЕТ ИНВАРИАНТ МИРА (ЗАКОН АДРЕСА, AGENTS.md): сторона —
+    // степень двойки, мир КВАДРАТЕН. Проверка стоит ЗДЕСЬ, а не комментарием
+    // у `index`, потому что адрес считается маской: поле, родившееся не по
+    // инварианту, отвечало бы не «медленно», а НЕВЕРНО и молча. Fail-closed —
+    // ровно так же, как уже поступает неаллоцированное поле.
     bool live() const {
-        return width > 0 && height > 0
+        return width > 0 && width == height
+            && std::has_single_bit(std::uint32_t(width))
             && cells.size() == std::size_t(width) * std::size_t(height);
     }
+    // Адрес клетки — ЕДИНСТВЕННАЯ дверь мира (`core/torus.h cell_of`).
+    // Здесь стоял собственный спеллинг через `wrapi`, то есть аппаратное
+    // деление по рантайм-делителю на самом горячем пути полей.
     std::uint32_t index(int x, int y) const {
-        return std::uint32_t(wrapi(y, height)) * std::uint32_t(width)
-             + std::uint32_t(wrapi(x, width));
+        return cell_of(x, y, width);
     }
     int at(int x, int y) const {
         return live() ? int(cells[index(x, y)]) : 0;

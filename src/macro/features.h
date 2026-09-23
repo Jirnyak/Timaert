@@ -273,19 +273,18 @@ struct FeatureLayer {
         height = h;
         data.assign(n, 0);
     }
+    // Адрес — ЕДИНСТВЕННАЯ дверь мира (`core/torus.h`). Гейт включает
+    // ИНВАРИАНТ (ЗАКОН АДРЕСА): мир квадратен и степень двойки, иначе
+    // fail-closed — потому что маска на незаконном мире врёт молча.
     FeatureType at(int x, int y) const {
-        if (width <= 0 || height <= 0 || data.empty()) return FT_None;
-        const int wx = wrap_coord(x, width);
-        const int wy = wrap_coord(y, height);
-        const std::size_t i = std::size_t(wy) * std::size_t(width) + std::size_t(wx);
+        if (!world_shape_ok(width, height) || data.empty()) return FT_None;
+        const std::size_t i = cell_of(x, y, width);
         if (i >= data.size()) return FT_None;
         return decode(data[i]);
     }
     void set(int x, int y, FeatureType t) {
-        if (width <= 0 || height <= 0 || data.empty()) return;
-        const int wx = wrap_coord(x, width);
-        const int wy = wrap_coord(y, height);
-        const std::size_t i = std::size_t(wy) * std::size_t(width) + std::size_t(wx);
+        if (!world_shape_ok(width, height) || data.empty()) return;
+        const std::size_t i = cell_of(x, y, width);
         if (i >= data.size()) return;
         data[i] = std::uint8_t(decode(std::uint8_t(t)));
     }

@@ -44,10 +44,8 @@ struct ZoneLayer {
     }
 
     std::uint8_t at(int x, int y) const {
-        if (width <= 0 || height <= 0 || data.empty()) return 0;
-        const int wx = wrapi(x, width);
-        const int wy = wrapi(y, height);
-        const std::size_t i = std::size_t(wy) * std::size_t(width) + std::size_t(wx);
+        if (!world_shape_ok(width, height) || data.empty()) return 0;
+        const std::size_t i = cell_of(x, y, width);
         return i < data.size() ? data[i] : std::uint8_t(0);
     }
 };

@@ -59,10 +59,9 @@ struct KnowledgeLayer {
     // screen. Torus-wrapped; an absent grid answers Unknown (fail closed:
     // a world with no knowledge layer shows nothing, not everything).
     std::uint8_t at(int x, int y) const {
-        if (width <= 0 || height <= 0 || data.empty()) return kKnowledgeUnknown;
-        const int wx = FeatureLayer::wrap_coord(x, width);
-        const int wy = FeatureLayer::wrap_coord(y, height);
-        const std::size_t i = std::size_t(wy) * std::size_t(width) + std::size_t(wx);
+        if (!world_shape_ok(width, height) || data.empty())
+            return kKnowledgeUnknown;
+        const std::size_t i = cell_of(x, y, width);
         return i < data.size() ? data[i] : std::uint8_t(kKnowledgeUnknown);
     }
 };

@@ -1,6 +1,7 @@
 // ECS components — small POD structs as per AGENTS.md.
 #pragma once
 #include "ecs/pools.h"
+#include "core/torus.h"        // cell_of — ОДИН адрес клетки мира
 #include "macro/army.h"
 #include "macro/commodity.h"   // kCommodityCount — счёт содержания ростера
 #include "macro/roster.h"      // sm::Roster — ОДИН ростер на место и на сквад
@@ -45,18 +46,20 @@ struct MacroVisual { float vx, vy, speed; };
 // squad keeps THIS, and no pass can mistake one for the other.
 struct MacroCell { std::uint32_t idx; };
 
-// The three spellings of one address, beside the type they speak for.
-// `mapW` is the po2 map side (gs.mapW); wrap is masking, y is a shift.
+// The three spellings of one address, beside the type they speak for — и все
+// три теперь ВЕДУТ В ОДНУ ДВЕРЬ (`core/torus.h`, ЗАКОН АДРЕСА 2026-09-23).
+// Здесь лежала вторая, независимая реализация того же адреса: она считала
+// маской (правильно и быстро), тогда как `ResourceGrid::index` считал
+// делением — два ответа на вопрос «где эта клетка», совпадавшие ровно
+// потому, что мир квадратный. Совпадение по случаю — это не согласие.
 inline std::uint32_t cell_index(int x, int y, int mapW) {
-    const std::uint32_t m = std::uint32_t(mapW - 1);
-    return (std::uint32_t(y) & m) * std::uint32_t(mapW)
-         + (std::uint32_t(x) & m);
+    return cell_of(x, y, mapW);
 }
 inline int cell_x(MacroCell c, int mapW) {
-    return int(c.idx & std::uint32_t(mapW - 1));
+    return sm::cell_x(c.idx, mapW);
 }
 inline int cell_y(MacroCell c, int mapW) {
-    return int(c.idx / std::uint32_t(mapW));
+    return sm::cell_y(c.idx, mapW);
 }
 
 // THE POOLS OF A BODY — moved to its own entt-free header (ecs/pools.h) so

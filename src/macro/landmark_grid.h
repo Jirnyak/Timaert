@@ -48,10 +48,8 @@ struct LandmarkGrid {
             || slot.size() != std::size_t(width) * std::size_t(height)) {
             return {};
         }
-        const int xi = wrapi(x, width);
-        const int yi = wrapi(y, height);
-        const std::uint16_t s =
-            slot[std::size_t(yi) * std::size_t(width) + std::size_t(xi)];
+        if (!world_shape_ok(width, height)) return {};
+        const std::uint16_t s = slot[cell_of(x, y, width)];
         return s == kNoLandmark ? LandmarkRef{} : refs[s];
     }
 };
@@ -65,10 +63,7 @@ inline LandmarkGrid build_landmark_grid(const GameState& gs) {
                   LandmarkGrid::kNoLandmark);
     g.refs.clear();
     for_each_landmark(gs, [&](const LandmarkView& lv) {
-        const int xi = wrapi(lv.x, g.width);
-        const int yi = wrapi(lv.y, g.height);
-        auto& s = g.slot[std::size_t(yi) * std::size_t(g.width)
-                         + std::size_t(xi)];
+        auto& s = g.slot[cell_of(lv.x, lv.y, g.width)];
         // First landmark yielded at a cell owns it — the iterator's order is
         // the ONE priority (it is the same order resolve_context used to scan).
         if (s != LandmarkGrid::kNoLandmark) return;
@@ -82,7 +77,9 @@ inline LandmarkGrid build_landmark_grid(const GameState& gs) {
             std::fprintf(stderr,
                          "[landmark-grid] slot space exhausted at %zu "
                          "landmarks — cell %d,%d left unowned\n",
-                         g.refs.size(), xi, yi);
+                         g.refs.size(), cell_x(cell_of(lv.x, lv.y, g.width),
+                                               g.width),
+                         cell_y(cell_of(lv.x, lv.y, g.width), g.width));
             return;
         }
         s = std::uint16_t(g.refs.size());

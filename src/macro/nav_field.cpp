@@ -72,8 +72,7 @@ struct BakeHeap {
 } // namespace
 
 std::size_t NavWorld::cell(int x, int y) const {
-    return std::size_t(wrapi(y, mapH)) * std::size_t(mapW)
-         + std::size_t(wrapi(x, mapW));
+    return cell_of(x, y, mapW);   // ЗАКОН АДРЕСА: одна дверь, маска
 }
 
 bool nav_can_stand(const MacroWorld& mw, int x, int y) {

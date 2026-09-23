@@ -98,27 +98,27 @@ int main()
     CHECK(enoughBudget.found,
                  "same path should succeed when cap allows target pop");
 
-    sm::TerrainData td = make_terrain(2, 1);
-    CHECK(td.cell_count() == 2u && td.has_rgba_storage(),
+    sm::TerrainData td = make_terrain(2, 2);
+    CHECK(td.cell_count() == 4u && td.has_rgba_storage(),
                  "terrain storage helpers must accept valid RGBA backing data");
     CHECK(!td.has_river_storage(),
                  "terrain river helper must reject missing river backing data");
     sm::FeatureLayer fullFeatures;
-    fullFeatures.resize(2, 1);
+    fullFeatures.resize(2, 2);
     fullFeatures.set(0, 0, sm::FT_Road);
 
     // Cell (1,0) is a mountain by ELEVATION (biome), not a feature: raise its
     // height above the mountain level so build_cost_grid classifies it Mountain
     // and pulls the 5.0 weight from the biome table.
-    sm::TerrainData mtnTerrain = make_terrain(2, 1);
+    sm::TerrainData mtnTerrain = make_terrain(2, 2);
     mtnTerrain.rgba[4] = 220u; // height 0.863 >= kMountainBiomeLevel (0.75)
 
     const sm::PathCostData withFeatures = sm::build_cost_grid(mtnTerrain, &fullFeatures);
-    CHECK(withFeatures.width == 2 && withFeatures.height == 1,
+    CHECK(withFeatures.width == 2 && withFeatures.height == 2,
                  "valid cost grid must preserve terrain dimensions");
-    CHECK(withFeatures.costGrid.size() == 2u,
+    CHECK(withFeatures.costGrid.size() == 4u,
                  "valid cost grid must have one cost per cell");
-    if (withFeatures.costGrid.size() == 2u)
+    if (withFeatures.costGrid.size() == 4u)
     {
         CHECK(nearly(withFeatures.costGrid[0], 1.0f),
                      "road feature must apply road movement cost");
@@ -162,7 +162,7 @@ int main()
 
     sm::FeatureLayer shortFeatures;
     shortFeatures.width = 2;
-    shortFeatures.height = 1;
+    shortFeatures.height = 2;
     shortFeatures.data.assign(1u, std::uint8_t(sm::FT_Road));
     const sm::PathCostData noFeatures = sm::build_cost_grid(td, nullptr);
     const sm::PathCostData shortFeatureCosts = sm::build_cost_grid(td, &shortFeatures);
@@ -177,13 +177,13 @@ int main()
                  "dimension-mismatched feature storage must be ignored");
 
     sm::FeatureLayer invalidFeatures;
-    invalidFeatures.resize(2, 1);
+    invalidFeatures.resize(2, 2);
     invalidFeatures.data[0] = 255u;
     invalidFeatures.set(1, 0, sm::FT_Road);
     const sm::PathCostData invalidFeatureCosts = sm::build_cost_grid(td, &invalidFeatures);
-    CHECK(invalidFeatureCosts.costGrid.size() == 2u,
+    CHECK(invalidFeatureCosts.costGrid.size() == 4u,
                  "invalid-byte feature grid must still build a complete cost grid");
-    if (invalidFeatureCosts.costGrid.size() == 2u && noFeatures.costGrid.size() == 2u)
+    if (invalidFeatureCosts.costGrid.size() == 4u && noFeatures.costGrid.size() == 4u)
     {
         CHECK(nearly(invalidFeatureCosts.costGrid[0], noFeatures.costGrid[0]),
                      "invalid feature byte must fail closed to biome movement cost");

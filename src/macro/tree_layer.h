@@ -117,10 +117,8 @@ struct TreeLayer {
         return n > 0u && data.size() >= n;
     }
     std::uint16_t at(int x, int y) const {
-        if (width <= 0 || height <= 0 || data.empty()) return 0;
-        const int wx = FeatureLayer::wrap_coord(x, width);
-        const int wy = FeatureLayer::wrap_coord(y, height);
-        const std::size_t i = std::size_t(wy) * std::size_t(width) + std::size_t(wx);
+        if (!world_shape_ok(width, height) || data.empty()) return 0;
+        const std::size_t i = cell_of(x, y, width);
         return i < data.size() ? data[i] : std::uint16_t(0);
     }
 };

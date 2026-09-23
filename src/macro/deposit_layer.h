@@ -128,8 +128,7 @@ struct DepositLayer {
     // Packs a WRAPPED cell into a flat index. The wrap itself is the one in
     // core/torus.h; it used to be written out twice inline right here.
     std::uint32_t wrap_index(int x, int y) const {
-        return std::uint32_t(wrapi(y, height)) * std::uint32_t(width)
-             + std::uint32_t(wrapi(x, width));
+        return cell_of(x, y, width);   // ЗАКОН АДРЕСА: одна дверь, маска
     }
     // The kind's units standing at a WRAPPED cell; 0 = no deposit here (a
     // worked-out one is annihilated, so "dry" is not a state a cell has).

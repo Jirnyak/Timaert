@@ -248,7 +248,11 @@ void test_large_road_search_restores_same_land_detour()
 // span at x=5.
 sm::TerrainData make_two_barrier_terrain()
 {
-    sm::TerrainData td = make_terrain(20, 9, 160);
+    // ЗАКОН АДРЕСА (владелец, 2026-09-23): мир ВСЕГДА квадрат и степень
+    // двойки — здесь стояло 20×9. Ширина ВЫРОСЛА, а не упала: оба барьера
+    // (река x=5, пролив x=13..14) и полоса суши между проливом и швом
+    // обязаны уцелеть, иначе фикстура проверяла бы другую геометрию.
+    sm::TerrainData td = make_terrain(32, 32, 160);
     for (int y = 0; y < td.height; ++y)
     {
         set_cell(td, 5, y, 90);   // one-cell river (water: 90 < 102)
@@ -324,7 +328,11 @@ void test_two_separating_straits_stay_unbridged()
     // The negative control of the bridge law: BOTH barriers two cells wide —
     // nothing is bridgeable, the shores are honest separate components and
     // the edge dies exactly as it always did.
-    sm::TerrainData td = make_terrain(20, 9, 160);
+    // ЗАКОН АДРЕСА (владелец, 2026-09-23): мир ВСЕГДА квадрат и степень
+    // двойки — здесь стояло 20×9. Ширина ВЫРОСЛА, а не упала: оба барьера
+    // (река x=5, пролив x=13..14) и полоса суши между проливом и швом
+    // обязаны уцелеть, иначе фикстура проверяла бы другую геометрию.
+    sm::TerrainData td = make_terrain(32, 32, 160);
     for (int y = 0; y < td.height; ++y)
     {
         set_cell(td, 5, y, 90);
@@ -524,7 +532,7 @@ void test_politik_malformed_terrain_fails_closed()
 // stamped one across anything that was not water).
 void test_dirt_roads_lay_a_star_lanes()
 {
-    sm::TerrainData td = make_terrain(16, 8, 160);
+    sm::TerrainData td = make_terrain(16, 16, 160);   // ЗАКОН АДРЕСА: квадрат, po2
     sm::FeatureLayer features;
     features.resize(td.width, td.height);
     features.set(12, 4, sm::FT_Road); // the city stands on stone already
@@ -552,7 +560,7 @@ void test_dirt_roads_refuse_unreachable_targets()
 {
     // Two islands: land x in [0..5] and [10..13], ocean elsewhere. The old
     // lerp would have stamped a causeway; the law says no road at all.
-    sm::TerrainData td = make_terrain(16, 8, 0);
+    sm::TerrainData td = make_terrain(16, 16, 0);     // ЗАКОН АДРЕСА: квадрат, po2
     for (int y = 0; y < td.height; ++y)
     {
         for (int x = 0; x <= 5; ++x) set_cell(td, x, y, 160);

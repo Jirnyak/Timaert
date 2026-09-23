@@ -156,7 +156,7 @@ void test_empty_and_malformed_inputs_are_safe()
     shortStorage.set(3, 3, sm::FT_Road);
 
     sm::FeatureLayer invalidStorage;
-    invalidStorage.resize(2, 1);
+    invalidStorage.resize(2, 2);
     invalidStorage.data[0] = 255u;
     invalidStorage.data[1] = std::uint8_t(sm::FT_DirtRoad);
 
@@ -165,7 +165,7 @@ void test_empty_and_malformed_inputs_are_safe()
     invalidSet.set(0, 0, static_cast<sm::FeatureType>(255u));
 
     sm::FeatureLayer validStorage;
-    validStorage.resize(2, 1);
+    validStorage.resize(2, 2);
     validStorage.data[0] = std::uint8_t(sm::FT_Road);
     validStorage.data[1] = std::uint8_t(sm::FT_DirtRoad);
 
@@ -205,7 +205,7 @@ void test_empty_and_malformed_inputs_are_safe()
     CHECK(invalidStorage.has_invalid_cell_bytes(),
                  "complete feature storage must report invalid cell bytes");
     CHECK(invalidStorage.copy_sanitized_cells(sanitized)
-                     && sanitized.size() == 2u
+                     && sanitized.size() == 4u
                      && sanitized[0] == std::uint8_t(sm::FT_None)
                      && sanitized[1] == std::uint8_t(sm::FT_DirtRoad),
                  "feature sanitized copy must normalize invalid bytes only");
@@ -235,7 +235,13 @@ void test_empty_and_malformed_inputs_are_safe()
     hugeExtent.height = 1;
     hugeExtent.data.assign(1u, std::uint8_t(sm::FT_Road));
     hugeExtent.set(std::numeric_limits<int>::max() - 1, 0, sm::FT_DirtRoad);
-    CHECK(hugeExtent.at(0, 0) == sm::FT_Road
+    // ЗАКОН АДРЕСА (владелец, 2026-09-23) СДЕЛАЛ ЭТОТ ОТКАЗ ПОЛНЫМ. Прежде
+    // слой с уродливыми размерами доверялся ЧАСТИЧНО: клетка (0,0) ещё
+    // отвечала своим байтом, и только дальняя падала в None. Теперь мир,
+    // не бывший квадратом степени двойки, не является миром вовсе, и слой
+    // отвечает None ВЕЗДЕ. Ожидание переписано под новый закон, а не
+    // подогнано: обещание строки («fail closed») стало исполняться СИЛЬНЕЕ.
+    CHECK(hugeExtent.at(0, 0) == sm::FT_None
                      && hugeExtent.at(std::numeric_limits<int>::max() - 1, 0) == sm::FT_None,
                  "malformed huge feature extents must wrap safely and fail closed");
     CHECK(!sm::FeatureLayer::is_valid_byte(255u)
@@ -324,7 +330,8 @@ void test_feature_land_mask_trusts_alpha()
     // its stored height, and a masked lane there is a paid crossing — it
     // stamps FT_Bridge (stone, whichever pass paid), never the lane's own
     // ground class.
-    sm::TerrainData td = make_terrain(3, 1, 240);
+    // ЗАКОН АДРЕСА: мир ВСЕГДА квадрат и степень двойки — здесь стояло 3×1.
+    sm::TerrainData td = make_terrain(4, 4, 240);
     set_alpha(td, 2, 0, 0);   // force cell (2,0) to water via the land mask
 
     std::vector<std::uint8_t> dirt(std::size_t(td.width) * td.height, 0);
@@ -342,7 +349,8 @@ void test_feature_land_mask_trusts_alpha()
 
 void test_feature_water_filter_uses_map_sea_level()
 {
-    sm::TerrainData td = make_terrain(3, 1, 120);
+    // ЗАКОН АДРЕСА: квадрат, степень двойки — здесь стояло 3×1.
+    sm::TerrainData td = make_terrain(4, 4, 120);
     set_height(td, 0, 0, 80);
     set_height(td, 1, 0, 100);
     set_height(td, 2, 0, 120);

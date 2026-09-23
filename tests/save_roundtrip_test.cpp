@@ -259,8 +259,13 @@ sm::GameState make_state() {
     gs.version = sm::kSaveVersion;
     gs.saveName = "roundtrip";
     gs.worldSeed = 0x12345678u;
+    // ЗАКОН АДРЕСА (владелец, 2026-09-23): мир ВСЕГДА степень двойки и
+    // ВСЕГДА квадрат. Здесь стояло 512×256 — мир, которого не бывает.
+    // Фикстура переписана ПОД НОВЫЙ ЗАКОН, а не подогнана ожиданием: поля
+    // мира теперь адресуются маской, и незаконный мир они честно отвергают
+    // (`ResourceGrid::live`), отчего прежняя фикстура молча глотала записи.
     gs.mapW = 512;
-    gs.mapH = 256;
+    gs.mapH = 512;
     gs.mapParams.seed = float(gs.worldSeed % 100000u);
     gs.mapParams.seaLevel = 0.55f;
     gs.mapParams.heightScale = 1.25f;
@@ -485,7 +490,7 @@ std::vector<std::uint16_t> make_tree_counts() {
 // from the fixture because it is gone from the world.
 sm::DepositLayer make_deposits() {
     sm::DepositLayer d;
-    sm::allocate_deposit_fields(d, 512, 256);
+    sm::allocate_deposit_fields(d, 512, 512);   // ЗАКОН АДРЕСА: квадрат, po2
     auto put = [&](sm::DepositKind k, std::uint32_t idx, std::int32_t v) {
         auto& g = d.grid(k);
         g.write(g.x_of(idx), g.y_of(idx), v);
@@ -665,7 +670,7 @@ void run_roundtrip() {
     if (loaded.saveName != "roundtrip") FAIL_BAIL("save name lost");
     if (loaded.savedAt != summary.savedAt) FAIL_BAIL("savedAt lost");
     if (loaded.worldSeed != gs.worldSeed) FAIL_BAIL("world seed lost");
-    if (loaded.mapW != 512 || loaded.mapH != 256) FAIL_BAIL("map size lost");
+    if (loaded.mapW != 512 || loaded.mapH != 512) FAIL_BAIL("map size lost");
     if (loaded.cityCountTarget != 77) FAIL_BAIL("city target lost");
     if (!nearf(loaded.mapParams.seaLevel, 0.55f)
         || !nearf(loaded.mapParams.heightScale, 1.25f)

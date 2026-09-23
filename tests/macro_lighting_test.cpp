@@ -205,7 +205,7 @@ int main() {
 
     // ---- open feature layer degrades gracefully to radial falloff ----
     {
-        const int W = 24, H = 24;
+        const int W = 32, H = 32;
         FeatureLayer feat;
         feat.resize(W, H);  // all FT_None
         MacroLight L{};
@@ -227,7 +227,7 @@ int main() {
 
     // ---- forest dims light: edge transmits, interior darkens ----
     {
-        const int W = 40, H = 40;
+        const int W = 32, H = 32;
         MacroLight L{};
         L.nx = (20.0f + 0.5f) / W;
         L.ny = (20.0f + 0.5f) / H;
@@ -267,7 +267,7 @@ int main() {
 
     // ---- roads carry light further than open ground ----
     {
-        const int W = 40, H = 40;
+        const int W = 32, H = 32;
         FeatureLayer feat;
         feat.resize(W, H);
         for (int x = 21; x <= 32; ++x)
@@ -294,7 +294,7 @@ int main() {
 
     // ---- a ridge east of the emitter blocks glow; flat control passes ----
     {
-        const int W = 40, H = 40;
+        const int W = 32, H = 32;
         MacroLight L{};
         L.nx = (20.0f + 0.5f) / W;
         L.ny = (20.0f + 0.5f) / H;
