@@ -257,6 +257,16 @@ int main(int argc, char** argv) {
                          // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
                          // табуны в гарнизонах и спины в отрядах, миром.
                          "\thorsesGarr\thorsesSquads\tpastures"
+                         // ПАРЦЕЛЛЫ — свидетель ЗАСЕЯННОЙ ЗЕМЛИ (M-96).
+                         // Матушка-земля одна: поле фертильности не знает,
+                         // кто на нём стоит, а фича сверху говорит, что с
+                         // клетки снимают. Поэтому парцелла — ОДНО число:
+                         // хлеб и лён качают одно поле (kGathererDefs
+                         // Worksite::HomeField / HomeFlaxField). Читает
+                         // разбор еды: «еда просела — пахать стало негде»
+                         // отличается от «еда просела — некому пахать»
+                         // ТОЛЬКО этой колонкой.
+                         "\tparcels"
                          // ── БАЛАНС ДУШ МИРА (CANON S9, владелец
                          // 2026-09-21) ──────────────────────────────────
                          // Население — РЕСУРС места, которым оно платит за
@@ -430,10 +440,13 @@ int main(int argc, char** argv) {
             }
             const long long soulsPool =
                 sm::count_human_souls(gs.deserterPool);
-            long long pastures = 0;
+            long long pastures = 0, parcels = 0;
             if (!features.data.empty()) {
-                for (const std::uint8_t f : features.data)
+                for (const std::uint8_t f : features.data) {
                     if (f == sm::FT_Pasture) ++pastures;
+                    else if (f == sm::FT_Field || f == sm::FT_FlaxField)
+                        ++parcels;
+                }
             }
             int crewsGather = 0, crewsSell = 0, crewsOther = 0;
             for (auto [e, kind, crt]
@@ -471,8 +484,8 @@ int main(int argc, char** argv) {
                          accum.mintedCoins, trades, tradedValue, foodHolds,
                          crewsGather, crewsSell, crewsOther,
                          int(gs.deserterPool.size()));
-            std::fprintf(fw, "\t%lld\t%lld\t%lld",
-                         horsesGarr, horsesSquads, pastures);
+            std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld",
+                         horsesGarr, horsesSquads, pastures, parcels);
             // Баланс душ мира. soulsWorld печатается суммой, а не считается
             // читателем TSV, ровно по той же причине, по какой прибор вообще
             // существует: величина, которую каждый читатель складывает сам,
