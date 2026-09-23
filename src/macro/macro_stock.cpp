@@ -472,8 +472,20 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
     if (fl.data[idx] != FT_None) return false;  // roads win
     const std::uint8_t alpha = td.rgba[idx * 4u + 3];
     const float height01 = float(td.rgba[idx * 4u + 0]) / 255.0f;
-    if (alpha == 0 || height01 < seaLevel) return false;   // water
-    if (height01 >= kMountainBiomeLevel) return false;     // no rock terraces
+    // ЕДИНСТВЕННЫЙ ЗАПРЕТ МИРА — ВОДА (владелец, 2026-09-23, дословно:
+    // «никаких запретов в расселении у нас подход через веса проходимости
+    // единая система (дорога дешевле всего горы и вода дороже всего) и НА
+    // ВОДУ НЕЛЬЗЯ В ОСТАЛЬНЫХ МЕСТАХ МОЖНО, поля тоже не запрет а ПО
+    // ФЕРТИЛЬНОСТИ СМОТРИМ»).
+    if (alpha == 0 || height01 < seaLevel) return false;
+    // ЗДЕСЬ СТОЯЛ ВТОРОЙ ЗАПРЕТ: `height01 >= kMountainBiomeLevel` — «no rock
+    // terraces». Он снят вердиктом выше, и снят БЕЗ ЗАМЕНЫ: камень отсеивает
+    // не запрет, а ГЕЙТ ФЕРТИЛЬНОСТИ у звонящего (`plough_cell_ok`:
+    // `wheatOut >= field_wheat_min()`), потому что на скале её и так нет.
+    // Запрет был лишним слоем поверх веса — ровно та форма, которую вердикт
+    // называет неправильной: мир решает ЦЕНОЙ, а не разрешением.
+    // ЗАМЕРЕНО ПРИБОРОМ (колонка `parcels`, четыре сида, 2026-09-23):
+    // 4842/4436/4346/4560 до правки — число после стоит в коммите.
     idxOut = idx;
     return true;
 }
