@@ -140,8 +140,29 @@ inline std::uint8_t sea_level_byte(float seaLevel) {
 // long axis-aligned Manhattan runs, while the small amplitude keeps rivers
 // hugging the Voronoi biome edge they follow.
 constexpr int kRiverMeanderAmp = 7;      // max extra trace cost from meander
-constexpr int kRiverMeanderCoarse = 22;  // broad meander lattice spacing (cells)
+// ШАГ РЕШЁТКИ — СТЕПЕНЬ ДВОЙКИ, И ЭТО НЕ КОСМЕТИКА (владелец, 2026-09-23).
+// Крупный шаг был 22 — число с потолка, единственное в макромире, из-за
+// которого период решётки (`w / шаг` = 46 на мире 1024) переставал быть
+// степенью двойки. Три следствия разом:
+//   · заворот решётки становится МАСКОЙ, и `wrapi` уходит из макромира
+//     ПОЛНОСТЬЮ, без исключения-сноски (ЗАКОН АДРЕСА, п.4);
+//   · остаток исчезает ПО ПОСТРОЕНИЮ. При шаге 22 карта была 46.5 решёточных
+//     клеток в ширину, целочисленное деление роняло половину, и шов чинили
+//     пересчётом шага (`cellX = w / periodX`). Теперь `w / (w / шаг) == шаг`
+//     тождественно, и чинить нечего — компенсация ниже стала проверкой;
+//   · между крупной и мелкой решёткой встаёт ЧИСТАЯ ОКТАВА ×4 (32 против 8).
+//     Прежняя пара 22/8 давала 2.75 — два масштаба дрожи слипались в один.
+// ЦЕНА НАЗВАНА ЗАРАНЕЕ: форма рек меняется на ВСЕХ сидах (поле дрожи другое).
+// Русло этим не переписывается — его задаёт граница биомов через `ed*ed` до
+// 225 в цене шага, а меандр весь укладывается в 7.
+constexpr int kRiverMeanderCoarse = 32;  // broad meander lattice spacing (cells)
 constexpr int kRiverMeanderFine = 8;     // fine wiggle lattice spacing (cells)
+static_assert(kRiverMeanderCoarse > 0
+                  && (kRiverMeanderCoarse & (kRiverMeanderCoarse - 1)) == 0
+                  && kRiverMeanderFine > 0
+                  && (kRiverMeanderFine & (kRiverMeanderFine - 1)) == 0,
+              "шаг решётки меандра — степень двойки: иначе период решётки "
+              "перестаёт быть степенью двойки и заворот маской врёт молча");
 
 // Gentle downhill bias. An uphill step adds (rise >> kRiverClimbShift) to the
 // trace cost; downhill/flat steps pay nothing extra. This curves rivers off
@@ -159,12 +180,11 @@ inline std::uint32_t river_hash(int x, int y, std::uint32_t seed) {
 }
 
 inline float river_lattice(int gx, int gy, int periodX, int periodY, std::uint32_t seed) {
-    // ЗАКОН АДРЕСА, п.4: это ПЕРИОД РЕШЁТКИ РЕК (`w / cell`), а НЕ сторона
-    // мира — степенью двойки он не обязан быть. Здесь и живёт единственное
-    // законное применение `wrapi`. (Дважды поймано: сплошная замена на
-    // `wrap_axis` замаскировала бы период и молча сдвинула все реки мира.)
-    const int wx = wrapi(gx, periodX);
-    const int wy = wrapi(gy, periodY);
+    // Период решётки есть `сторона / шаг`, и обе величины — степени двойки
+    // (`kRiverMeanderCoarse/Fine` выше, сторона мира по ЗАКОНУ АДРЕСА),
+    // значит период тоже степень двойки и заворот есть маска.
+    const int wx = wrap_axis(gx, periodX);
+    const int wy = wrap_axis(gy, periodY);
     return float(river_hash(wx, wy, seed) & 0xffffu) * (1.0f / 65535.0f);
 }
 
