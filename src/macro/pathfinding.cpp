@@ -27,16 +27,14 @@ namespace sm
                                         1.0f, 1.4142136f, 1.0f, 1.4142136f};
 
         // (was a private copy of the torus wrap — core/torus.h owns it)
-        inline int pf_wrap(int v, int m) { return wrapi(v, m); }
 
         inline float octile_torus(int x1, int y1, int x2, int y2, int w, int h)
         {
-            int dx = std::abs(x2 - x1);
-            int dy = std::abs(y2 - y1);
-            if (dx > w / 2)
-                dx = w - dx;
-            if (dy > h / 2)
-                dy = h - dy;
+            // Эвристика СВОЯ (октиль), а кратчайший размах по оси — общий
+            // (core/torus.h torus_span). Здесь стояло шестое, последнее в
+            // макромире рукописное тело половинного размаха.
+            const int dx = int(torus_span(float(x2), float(x1), float(w)));
+            const int dy = int(torus_span(float(y2), float(y1), float(h)));
             return dx > dy
                        ? float(dx) + 0.4142136f * float(dy)
                        : float(dy) + 0.4142136f * float(dx);
@@ -100,8 +98,8 @@ namespace sm
         if (W <= 0 || H <= 0)
             return out;
 
-        const int sx = pf_wrap(startX, W), sy = pf_wrap(startY, H);
-        const int ex = pf_wrap(endX, W), ey = pf_wrap(endY, H);
+        const int sx = wrap_axis(startX, W), sy = wrap_axis(startY, H);
+        const int ex = wrap_axis(endX, W), ey = wrap_axis(endY, H);
 
         if (sx == ex && sy == ey)
         {
@@ -155,8 +153,8 @@ namespace sm
 
             for (int d = 0; d < 8; ++d)
             {
-                int nx = pf_wrap(cur.x + DX[d], W);
-                int ny = pf_wrap(cur.y + DY[d], H);
+                int nx = wrap_axis(cur.x + DX[d], W);
+                int ny = wrap_axis(cur.y + DY[d], H);
                 std::size_t nidx = std::size_t(ny) * W + nx;
                 if (scratch.closed_at(nidx))
                     continue;

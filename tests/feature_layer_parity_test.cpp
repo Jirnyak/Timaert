@@ -187,7 +187,15 @@ void test_empty_and_malformed_inputs_are_safe()
                  "empty feature resize must clear storage");
     CHECK(empty.at(0, 0) == sm::FT_None,
                  "empty feature lookup must be safe");
-    CHECK(sm::FeatureLayer::wrap_coord(std::numeric_limits<int>::min(), 3) == 1,
+    // ЗАКОН АДРЕСА (владелец, 2026-09-23): сторона мира — ВСЕГДА степень
+    // двойки, поэтому заворот оси есть маска. Здесь стоял предел 3 —
+    // ширина, которой у мира не бывает; проверка переписана под новый закон
+    // на законную сторону. Инвариант тот же и он сильнее: маска не
+    // переполняется НИ НА ОДНОЙ координате, включая INT_MIN, потому что в
+    // ней нет ни деления, ни промежуточного сложения.
+    CHECK(sm::FeatureLayer::wrap_coord(std::numeric_limits<int>::min(), 4) == 0
+                     && sm::FeatureLayer::wrap_coord(std::numeric_limits<int>::max(), 4) == 3
+                     && sm::FeatureLayer::wrap_coord(-1, 1024) == 1023,
                  "feature coordinate wrap must handle INT_MIN without overflow");
     CHECK(shortStorage.at(0, 0) == sm::FT_DirtRoad,
                  "short feature storage must allow valid prefix lookup");

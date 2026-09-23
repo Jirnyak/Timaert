@@ -193,7 +193,7 @@ void test_road_tracing_uses_map_sea_level()
 
 void test_large_road_search_restores_same_land_detour()
 {
-    sm::TerrainData td = make_terrain(300, 300, 160);
+    sm::TerrainData td = make_terrain(256, 256, 160);   // ЗАКОН АДРЕСА: po2
     // TWO water columns: a one-cell wall would be bridgeable now (every wall
     // cell has land on both E/W sides), and this test is about the search
     // BUDGET — the wall must force the long detour, not invite a span.

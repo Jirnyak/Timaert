@@ -77,16 +77,16 @@ constexpr DepositGenRow kDepositGen[kDepositKindCount] = {
 static_assert(rows_in_enum_order(kDepositGen, &DepositGenRow::kind),
               "kDepositGen row order must mirror DepositKind");
 
+// ПЕРВЫЙ ЖИЛЕЦ `cell_step` — и ровно тот случай, ради которого дверь
+// заводилась: обход 3×3 по тору. Здесь стояли ДВЕ рукописные свёртки
+// `((v % n) + n) % n`, последние в макромире (перепись 2026-09-23).
 bool river_adjacent(const TerrainData& t, int x, int y) {
-    if (!t.has_river_storage()) return false;
+    if (!t.has_river_storage() || !world_shape_ok(t.width, t.height))
+        return false;
+    const std::uint32_t at = cell_of(x, y, t.width);
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
-            const int xi = ((x + dx) % t.width + t.width) % t.width;
-            const int yi = ((y + dy) % t.height + t.height) % t.height;
-            if (t.riverData[std::size_t(yi) * std::size_t(t.width) + std::size_t(xi)]
-                == 255) {
-                return true;
-            }
+            if (t.riverData[cell_step(at, dx, dy, t.width)] == 255) return true;
         }
     }
     return false;

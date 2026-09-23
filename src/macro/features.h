@@ -198,7 +198,9 @@ struct FeatureLayer {
     // six — its guard and its 64-bit intermediate are what `wrapi` now has —
     // and the name survives because a dozen call sites read it as documentation
     // ("wrap this into the feature grid").
-    static int wrap_coord(int value, int limit) { return wrapi(value, limit); }
+    // ЗАКОН АДРЕСА: заворот оси мира — маска, одна реализация на проект.
+    // Имя остаётся: у 45 мест вызова оно читается как документация.
+    static int wrap_coord(int value, int limit) { return wrap_axis(value, limit); }
 
     std::size_t cell_count() const {
         std::size_t n = 0;

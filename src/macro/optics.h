@@ -79,7 +79,6 @@ struct NodeGreater {
     bool operator()(const Node& a, const Node& b) const { return a.d > b.d; }
 };
 // (was a private copy of the torus wrap — core/torus.h owns it)
-inline int wrap_index(int v, int n) { return wrapi(v, n); }
 }  // namespace optics_detail
 
 // Bounded Dijkstra from (sx, sy): calls visit(cellIdx, opticalDist) exactly
@@ -121,11 +120,10 @@ void optical_sweep(int width, int height, int sx, int sy, float budget,
 
     using optics_detail::Node;
     using optics_detail::NodeGreater;
-    using optics_detail::wrap_index;
 
     std::priority_queue<Node, std::vector<Node>, NodeGreater> pq;
-    const int wsx = wrap_index(sx, width);
-    const int wsy = wrap_index(sy, height);
+    const int wsx = wrap_axis(sx, width);
+    const int wsy = wrap_axis(sy, height);
     const std::size_t s = index(wsx, wsy);
     scratch.dist[s] = 0.0f;
     scratch.touched.push_back(s);
@@ -141,8 +139,8 @@ void optical_sweep(int width, int height, int sx, int sy, float budget,
         visit(ci, cur.d);
 
         for (int k = 0; k < 8; ++k) {
-            const int nx = wrap_index(cur.x + kNX[k], width);
-            const int ny = wrap_index(cur.y + kNY[k], height);
+            const int nx = wrap_axis(cur.x + kNX[k], width);
+            const int ny = wrap_axis(cur.y + kNY[k], height);
             const std::size_t ni = index(nx, ny);
             float base = feat ? feature_optical_cost(feat->at(nx, ny)) : 1.0f;
             if (td) base += kCanopyOpticalCost * (*td)[ni];

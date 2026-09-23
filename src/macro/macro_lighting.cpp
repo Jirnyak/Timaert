@@ -48,7 +48,6 @@ void push_light(std::vector<MacroLight>& out, int w, int h,
 }
 
 // (was a private copy of the torus wrap — core/torus.h owns it)
-inline int wrap_index(int v, int n) { return wrapi(v, n); }
 
 // Accumulate one light's isotropic radial (Euclidean) contribution — the
 // increment-A path, used when no feature layer is supplied. Exact falloff, so
@@ -70,8 +69,8 @@ void accumulate_radial(const MacroLight& L, int width, int height,
             if (f <= 0.0f)
                 continue;
             const float w2 = f * f;
-            const int tx = wrap_index(sx + dx, width);
-            const int ty = wrap_index(sy + dy, height);
+            const int tx = wrap_axis(sx + dx, width);
+            const int ty = wrap_axis(sy + dy, height);
             const std::size_t o = (std::size_t(ty) * std::size_t(width)
                                    + std::size_t(tx)) * 3u;
             acc[o + 0] += wr * w2;

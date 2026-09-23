@@ -52,6 +52,15 @@ inline int world_side_log2(int side) {
          ? std::countr_zero(std::uint32_t(side)) : 0;
 }
 
+// ОДНА ОСЬ МИРА. Для мест, где по существу нужна КООРДИНАТА, а не адрес —
+// геометрия, отрисовка, диалог с чужим индексом. Заворот маской, потому что
+// сторона мира есть степень двойки (ЗАКОН АДРЕСА). `side`, не бывшая стороной
+// МИРА, сюда не передаётся: для периодов, которые миром не являются (период
+// шума), есть `wrapi` ниже, и это ЕДИНСТВЕННОЕ его законное применение.
+inline int wrap_axis(int v, int side) {
+    return int(std::uint32_t(v) & (std::uint32_t(side) - 1u));
+}
+
 // АДРЕС КЛЕТКИ — ОДНО ЧИСЛО. Заворот обеих осей — одна маска (мир квадратен).
 inline std::uint32_t cell_of(int x, int y, int side) {
     const std::uint32_t m = std::uint32_t(side) - 1u;
@@ -131,19 +140,33 @@ inline float torus_delta(float d, float period) {
     return period > 0.0f ? std::remainder(d, period) : d;
 }
 
+// КРАТЧАЙШИЙ РАЗМАХ ПО ОДНОЙ ОСИ — одна формула на весь проект, в двух
+// представлениях. Половинный размах был расписан руками ЧЕТЫРЕЖДЫ внутри
+// этого самого файла (`torus_dist`, `torus_dist_sq`, `torus_bearing`,
+// `torus_step_toward`) и ещё дважды снаружи — `politik.cpp torus_dist2` и
+// `pathfinding.cpp octile_torus`. Шесть тел одной арифметики: ровно та
+// форма, из-за которой UI однажды промахивался мимо метки на целый мир.
+inline float torus_span(float a, float b, float period) {
+    const float d = std::fabs(a - b);
+    return d > period * 0.5f ? period - d : d;
+}
+// Знаковая версия для целых осей: «куда и насколько», короткой стороной.
+inline int torus_offset(int from, int to, int period) {
+    int d = to - from;
+    if (d >  period / 2) d -= period;
+    else if (d < -period / 2) d += period;
+    return d;
+}
+
 inline float torus_dist(float ax, float ay, float bx, float by, float w, float h) {
-    float dx = std::fabs(ax - bx);
-    float dy = std::fabs(ay - by);
-    if (dx > w * 0.5f) dx = w - dx;
-    if (dy > h * 0.5f) dy = h - dy;
+    const float dx = torus_span(ax, bx, w);
+    const float dy = torus_span(ay, by, h);
     return std::sqrt(dx * dx + dy * dy);
 }
 
 inline float torus_dist_sq(float ax, float ay, float bx, float by, float w, float h) {
-    float dx = std::fabs(ax - bx);
-    float dy = std::fabs(ay - by);
-    if (dx > w * 0.5f) dx = w - dx;
-    if (dy > h * 0.5f) dy = h - dy;
+    const float dx = torus_span(ax, bx, w);
+    const float dy = torus_span(ay, by, h);
     return dx * dx + dy * dy;
 }
 
@@ -154,10 +177,8 @@ inline float torus_dist_sq(float ax, float ay, float bx, float by, float w, floa
 // torus_dist_sq so bearings agree with the distance metric.
 inline bool torus_bearing(int fx, int fy, int tx, int ty, int w, int h,
                           float& ux, float& uy) {
-    int dx = tx - fx;
-    int dy = ty - fy;
-    if (dx >  w / 2) dx -= w; else if (dx < -w / 2) dx += w;
-    if (dy >  h / 2) dy -= h; else if (dy < -h / 2) dy += h;
+    const int dx = torus_offset(fx, tx, w);
+    const int dy = torus_offset(fy, ty, h);
     const float len = std::sqrt(float(dx) * float(dx) + float(dy) * float(dy));
     if (len < 1e-6f) { ux = 0.0f; uy = 0.0f; return false; }
     ux = float(dx) / len;
@@ -182,10 +203,8 @@ inline bool torus_bearings_parallel(int fx, int fy, int ax, int ay,
 
 struct Step { int nx, ny; };
 inline Step torus_step_toward(int fx, int fy, int tx, int ty, int w, int h) {
-    int dx = tx - fx;
-    int dy = ty - fy;
-    if (dx >  w / 2) dx -= w; else if (dx < -w / 2) dx += w;
-    if (dy >  h / 2) dy -= h; else if (dy < -h / 2) dy += h;
+    const int dx = torus_offset(fx, tx, w);
+    const int dy = torus_offset(fy, ty, h);
     int nx = fx + (dx == 0 ? 0 : (dx > 0 ? 1 : -1));
     int ny = fy + (dy == 0 ? 0 : (dy > 0 ? 1 : -1));
     return {wrapi(nx, w), wrapi(ny, h)};

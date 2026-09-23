@@ -11,11 +11,11 @@
 namespace sm {
 
 // Toroidal squared distance helper used by both placement and MST passes.
+// Целая копия `torus_dist_sq` (core/torus.h). Тело ушло в общий `torus_span`
+// — имя осталось местным, потому что оно читается в скоре расселения.
 static inline int torus_dist2(int ax, int ay, int bx, int by, int W, int H) {
-    int dx = std::abs(ax - bx);
-    int dy = std::abs(ay - by);
-    if (dx > W / 2) dx = W - dx;
-    if (dy > H / 2) dy = H - dy;
+    const int dx = int(torus_span(float(ax), float(bx), float(W)));
+    const int dy = int(torus_span(float(ay), float(by), float(H)));
     return dx * dx + dy * dy;
 }
 
