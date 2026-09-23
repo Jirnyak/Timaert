@@ -1049,9 +1049,8 @@ float macro_cell_cost_weight(const App& app) {
     const sm::ecs::MacroCell* pcell = sm::player_flag_cell(
         const_cast<App&>(app).ecs);
     if (!pcell) return 1.0f;
-    const int cx = sm::wrapi(sm::ecs::cell_x(*pcell, app.gs.mapW), pc.width);
-    const int cy = sm::wrapi(sm::ecs::cell_y(*pcell, app.gs.mapW), pc.height);
-    return pc.costGrid[std::size_t(cy) * std::size_t(pc.width) + std::size_t(cx)];
+    return pc.cost_at(sm::ecs::cell_x(*pcell, app.gs.mapW),
+                      sm::ecs::cell_y(*pcell, app.gs.mapW));
 }
 
 // Can the player make camp where he stands? The same DECISION the macro AI
@@ -1068,10 +1067,8 @@ bool player_can_make_camp(const App& app) {
     const sm::ecs::MacroCell* pcell = sm::player_flag_cell(
         const_cast<App&>(app).ecs);
     if (!pcell) return true;
-    const int cx = sm::wrapi(sm::ecs::cell_x(*pcell, app.gs.mapW), pc.width);
-    const int cy = sm::wrapi(sm::ecs::cell_y(*pcell, app.gs.mapW), pc.height);
-    return pc.water[std::size_t(cy) * std::size_t(pc.width)
-                    + std::size_t(cx)] == 0u;
+    return !pc.water_at(sm::ecs::cell_x(*pcell, app.gs.mapW),
+                        sm::ecs::cell_y(*pcell, app.gs.mapW));
 }
 
 // His carry, through the one door. The scratch fallback is the same shape

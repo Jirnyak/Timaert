@@ -81,9 +81,7 @@ bool nav_can_stand(const MacroWorld& mw, int x, int y) {
         || pc->water.size() != std::size_t(pc->width) * std::size_t(pc->height)) {
         return true;   // без слоя воды весь мир — суша (нулевой вклад)
     }
-    const int wx = wrapi(x, pc->width);
-    const int wy = wrapi(y, pc->height);
-    if (!pc->water[std::size_t(wy) * std::size_t(pc->width) + wx]) return true;
+    if (!pc->water_at(x, y)) return true;
     if (!mw.features) return false;
     const FeatureType ft = FeatureType(mw.features->at(x, y));
     return ft == FT_Bridge;

@@ -63,7 +63,7 @@ bool has_connection(const sm::City& c, int target)
 
 void test_road_prunes_water_only_connection()
 {
-    sm::TerrainData td = make_terrain(5, 5, 0);
+    sm::TerrainData td = make_terrain(8, 8, 0);   // ЗАКОН АДРЕСА: квадрат, po2
     set_cell(td, 1, 1, 160);
     set_cell(td, 3, 3, 160);
 

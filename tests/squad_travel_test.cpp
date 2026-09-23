@@ -398,10 +398,15 @@ void test_a_map_of_marchers_survives_the_new_law() {
 // ── THE anchor: a fresh bar buys ~8 game hours of road, squad or player ────
 void test_road_bar_lasts_a_days_march() {
     GameState gs{};
+    // ЗАКОН АДРЕСА: мир ВСЕГДА квадрат и степень двойки (было 1024x8).
+    // Полуширина тора не изменилась (512 > 300 целевых клеток), а
+    // адресация только пришла в согласие с собой: ecs::cell_index и так
+    // маскировал ОБЕ оси по mapW, то есть мир уже был квадратным для
+    // адреса и тонким только для аллокации.
     gs.mapW = 1024;
-    gs.mapH = 8;
+    gs.mapH = 1024;
     ecs::World w;
-    PathCostData grid = make_grid(1024, 8, 1.0f);   // one long road
+    PathCostData grid = make_grid(1024, 1024, 1.0f);   // one long road
 
     // Target 300 cells EAST — beyond the ~251 the bar can pay, and well
     // under the torus half-width so the straight step never discovers a
@@ -476,10 +481,15 @@ void test_banking_a_part_cell_is_not_resting() {
     // Wide enough that the target is far inside the torus half-width: at 512
     // the greedy straight step found the SEAM a shorter way and walked west,
     // which is correct behaviour and a useless fixture.
+    // ЗАКОН АДРЕСА: мир ВСЕГДА квадрат и степень двойки (было 1024x8).
+    // Полуширина тора не изменилась (512 > 300 целевых клеток), а
+    // адресация только пришла в согласие с собой: ecs::cell_index и так
+    // маскировал ОБЕ оси по mapW, то есть мир уже был квадратным для
+    // адреса и тонким только для аллокации.
     gs.mapW = 1024;
-    gs.mapH = 8;
+    gs.mapH = 1024;
     ecs::World w;
-    PathCostData grid = make_grid(1024, 8, 1.0f);   // one long road
+    PathCostData grid = make_grid(1024, 1024, 1.0f);   // one long road
 
     auto e = make_walker(w, gs.mapW, 10.0f, 4.0f, 400.0f, 4.0f, /*maxSp*/110);
     auto& npc = w.reg.get<ecs::MacroNpcRuntime>(e);
@@ -522,9 +532,9 @@ void test_banking_a_part_cell_is_not_resting() {
 void test_a_laden_squad_pays_for_its_load() {
     GameState gs{};
     gs.mapW = 256;
-    gs.mapH = 8;
+    gs.mapH = 256;   // ЗАКОН АДРЕСА: квадрат, po2
     ecs::World w;
-    PathCostData grid = make_grid(256, 8, 1.0f);   // one long road
+    PathCostData grid = make_grid(256, 256, 1.0f);   // one long road
 
     // Bodies that SURVIVE the measurement: an overloaded march in debt bites
     // HP every moving think, and this fixture used to let the laden walker

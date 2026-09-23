@@ -99,8 +99,7 @@ namespace sm
                         continue;
                     const auto land = [&](int lx, int ly)
                     {
-                        return cg.water[std::size_t(wrapi(ly, H)) * W
-                                        + wrapi(lx, W)] == 0u;
+                        return !cg.water_at(lx, ly);
                     };
                     std::uint8_t a = 0;
                     if (land(x - 1, y) && land(x + 1, y))
@@ -384,7 +383,7 @@ namespace sm
             build_land_components(td, seaLevel, &waterAxes);
 
         for (const City &c : P.cities)
-            cg.costGrid[std::size_t(wrapi(c.y, H)) * W + wrapi(c.x, W)] = kRoadShare;
+            cg.costGrid[cell_of(c.x, c.y, W)] = kRoadShare;
 
         std::vector<std::pair<int, int>> dropPairs;
         PathScratch pathScratch;

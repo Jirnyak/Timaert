@@ -392,10 +392,7 @@ float cell_weight(const TickContext& ctx, int x, int y) {
                != std::size_t(pc->width) * std::size_t(pc->height)) {
         return 1.0f;
     }
-    const int wx = wrapi(x, pc->width);
-    const int wy = wrapi(y, pc->height);
-    return pc->costGrid[std::size_t(wy) * std::size_t(pc->width)
-                        + std::size_t(wx)];
+    return pc->cost_at(x, y);
 }
 
 // The EDGE weight of one greedy step — the cell half from the baked grid

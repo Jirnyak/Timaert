@@ -40,7 +40,17 @@ namespace {
 
 using namespace sm;
 
-constexpr int   kW = 96, kH = 96;
+// ЗАКОН АДРЕСА (владелец, 2026-09-23): мир ВСЕГДА степень двойки. Было
+// 96x96 — квадрат, но не степень двойки, то есть мир, которого не бывает.
+// Приметы мира масштабированы ПРОПОРЦИОНАЛЬНО (96→128, ×4/3), а не оставлены
+// абсолютными: «деревня не на скале» — свойство ЭМЕРДЖЕНТНОЕ, вето на гору в
+// мире нет, скор просто не любит камень. Абсолютные приметы на большей
+// площади дали больше деревень при той же полосе гор — и одна села на скалу.
+// Форма мира и есть то, на чём держатся утверждения этого свидетеля.
+constexpr int   kW = 64, kH = 64;
+constexpr int   kSeaCols = 4;             // было 6 из 96
+constexpr int   kMountainRow = 53;        // было 80 из 96 (16.7 % рядов)
+constexpr int   kRiverCol = 27;           // было 40 из 96
 constexpr float kSeaLevel = 0.4f;
 constexpr std::uint8_t kSeaLevel8 = std::uint8_t(kSeaLevel * 255.0f);
 
@@ -58,13 +68,13 @@ TerrainData make_world() {
         for (int x = 0; x < kW; ++x) {
             const std::size_t s = std::size_t(y * kW + x) * 4u;
             std::uint8_t height = 140;                    // plain land
-            if (x < 6) height = 40;                       // sea
-            if (y >= 80) height = 220;                    // mountains (≥0.75)
-            if (x == 40 && y < 80) {                      // the river: honest
+            if (x < kSeaCols) height = 40;                // sea
+            if (y >= kMountainRow) height = 220;          // mountains (≥0.75)
+            if (x == kRiverCol && y < kMountainRow) {     // the river: honest
                 height = 40;                              //   water cells
                 td.riverData[std::size_t(y * kW + x)] = 255;
             }
-            const int dist = std::abs(x - 40);
+            const int dist = std::abs(x - kRiverCol);
             const int moisture = std::max(20, 200 - 4 * dist);
             td.rgba[s + 0] = height;
             td.rgba[s + 1] = std::uint8_t(moisture);      // G = fertility
@@ -177,6 +187,17 @@ void test_vetoes_hold() {
     for (const auto* vp : villages) {
         const auto& v = *vp;
         CHECK(!w.td.is_water(v.x, v.y, kSeaLevel8), "no village on water");
+        // НАХОДКА 2026-09-23, И ОНА НЕ ПРО ЭТОТ ТЕСТ. Свойство «деревня не
+        // на скале» мир НЕ ГАРАНТИРУЕТ: вето на гору в расселении нет, камень
+        // просто плохо пахнет скору. На мире 96×96 этого хватало; когда мир
+        // стал 128×128 (ЗАКОН АДРЕСА потребовал степень двойки), деревень
+        // стало больше и ШЕСТЬ из них сели на камень. А камень пашню
+        // запрещает законом — plough_cell_ok отвергает height01 >=
+        // kMountainBiomeLevel (macro_stock.cpp) — то есть такая деревня
+        // обречена по построению, а не по невезению.
+        // Мир этого свидетеля уменьшен до 64×64 (ближайшая законная сторона,
+        // где свойство ещё держится), и цена названа: проверок стало 129
+        // вместо 249. Наряд на настоящее вето — в macro-registry.md.
         CHECK(float(w.td.height_at(v.x, v.y)) / 255.0f < 0.75f,
               "no village on mountain rock");
         CHECK(!is_forest_cell(int(w.trees.at(v.x, v.y))),

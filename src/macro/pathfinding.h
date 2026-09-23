@@ -2,6 +2,7 @@
 // (the TS original is dead — the migration is closed).
 #pragma once
 
+#include "core/torus.h"          // cell_of — ОДИН адрес клетки мира
 #include "macro/features.h"
 #include "macro/movement_cost.h" // kClimbSpWeight — the edge half of the law
 #include "macro/map_generator.h" // TerrainData
@@ -45,6 +46,33 @@ namespace sm
             if (height8.size() != costGrid.size()) return 0.0f;
             const int dh = int(height8[toIdx]) - int(height8[fromIdx]);
             return dh > 0 ? kClimbSpWeight * (float(dh) / 255.0f) : 0.0f;
+        }
+
+        // ── ДВЕРИ К КЛЕТКЕ (ЗАКОН АДРЕСА, 2026-09-23) ────────────────────
+        // У этого слоя двери НЕ БЫЛО ВОВСЕ: девять мест считали индекс сами,
+        // и НИ ОДНО из них не заворачивало координату. Дефекта не случилось
+        // только потому, что каждый звонящий заворачивал ЗА НЕЁ — проверено
+        // поимённо 2026-09-23. Это не защита, а везение: незаворачивающая
+        // дверь приглашает незаворачивающий вызов, и первый же новый
+        // читатель прочитал бы за границей буфера.
+        //
+        // Fail-closed по образцу остальных слоёв: несобранная сетка отвечает
+        // «дорого и не вода», то есть НИЧЕГО НЕ РАЗРЕШАЕТ.
+        bool live() const {
+            return world_shape_ok(width, height)
+                && costGrid.size() == std::size_t(width) * std::size_t(height);
+        }
+        float cost_at(int x, int y) const {
+            return live() ? costGrid[cell_of(x, y, width)]
+                          : biome_sp_weight(Biome::Water);
+        }
+        bool water_at(int x, int y) const {
+            if (!live() || water.size() != costGrid.size()) return false;
+            return water[cell_of(x, y, width)] != 0u;
+        }
+        std::uint8_t height_at(int x, int y) const {
+            if (!live() || height8.size() != costGrid.size()) return 0u;
+            return height8[cell_of(x, y, width)];
         }
     };
 

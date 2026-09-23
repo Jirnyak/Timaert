@@ -64,14 +64,27 @@ struct TerrainData {
         return n > 0u && riverData.size() >= n;
     }
 
+    // ── ДВЕРИ К КЛЕТКЕ (ЗАКОН АДРЕСА, 2026-09-23) ────────────────────────
+    // Здесь стоял сырой `y * width + x` БЕЗ ЗАВОРОТА, и так у всех трёх
+    // каналов. Дефекта не случилось: все 19 сегодняшних звонящих заворачивают
+    // координату сами, проверено поимённо. Но незаворачивающая дверь — это
+    // приглашение: первый же читатель, который решит, что «тор и так тор»,
+    // прочитает за границей буфера, и тихо.
+    //
+    // Fail-closed при незаконной форме мира отдаёт НОЛЬ, а ноль высоты ниже
+    // любого уровня моря — то есть незаконный мир целиком вода и на нём
+    // ничего не ставится. Это отказ, а не выдуманная суша.
     inline std::uint8_t height_at(int x, int y) const {
-        return rgba[std::size_t(y * width + x) * 4 + 0];
+        if (!world_shape_ok(width, height)) return 0u;
+        return rgba[std::size_t(cell_of(x, y, width)) * 4 + 0];
     }
     inline std::uint8_t moisture_at(int x, int y) const {
-        return rgba[std::size_t(y * width + x) * 4 + 1];
+        if (!world_shape_ok(width, height)) return 0u;
+        return rgba[std::size_t(cell_of(x, y, width)) * 4 + 1];
     }
     inline std::uint8_t temperature_at(int x, int y) const {
-        return rgba[std::size_t(y * width + x) * 4 + 2];
+        if (!world_shape_ok(width, height)) return 0u;
+        return rgba[std::size_t(cell_of(x, y, width)) * 4 + 2];
     }
     inline bool is_water(int x, int y, std::uint8_t seaLevel) const {
         return height_at(x, y) < seaLevel;
