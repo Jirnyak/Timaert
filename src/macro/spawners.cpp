@@ -155,13 +155,11 @@ namespace sm
                 for (std::size_t head = 0; head < queue.size(); ++head)
                 {
                     const int cur = queue[head];
-                    const int x = cur % W;
-                    const int y = cur / W;
+                    // Сосед фронта — шаг ИНДЕКСА (cell_step, ЗАКОН АДРЕСА).
                     for (int dir = 0; dir < 8; ++dir)
                     {
-                        const int nx = wrapi(x + dx[dir], W);
-                        const int ny = wrapi(y + dy[dir], H);
-                        const int ni = ny * W + nx;
+                        const int ni = int(
+                            cell_step(std::uint32_t(cur), dx[dir], dy[dir], W));
                         const std::size_t k = std::size_t(ni);
                         if (component[k] >= 0 || !enterable(k))
                             continue;
@@ -226,19 +224,18 @@ namespace sm
         {
             riverExclude.assign(totalCells, 0);
             constexpr int kRiverBuffer = 2;
+            // Буфер вокруг рек — шаги ИНДЕКСА от речной клетки (cell_step,
+            // ЗАКОН АДРЕСА): координаты не нужны вовсе.
             for (std::size_t ri = 0; ri < totalCells; ++ri)
             {
                 if (td.riverData[ri] == 0)
                     continue;
-                const int rx = int(ri % std::size_t(mw));
-                const int ry = int(ri / std::size_t(mw));
                 for (int dy = -kRiverBuffer; dy <= kRiverBuffer; ++dy)
                 {
-                    const int by = wrapi(ry + dy, mh);
                     for (int dx = -kRiverBuffer; dx <= kRiverBuffer; ++dx)
                     {
-                        const int bx = wrapi(rx + dx, mw);
-                        riverExclude[std::size_t(by) * mw + bx] = 1;
+                        riverExclude[cell_step(std::uint32_t(ri), dx, dy, mw)]
+                            = 1;
                     }
                 }
             }
@@ -410,10 +407,10 @@ namespace sm
                 const City &B = P.cities[std::size_t(b)];
                 ++localStats.attemptedEdges;
 
-                const int ax = wrapi(a.x, W);
-                const int ay = wrapi(a.y, H);
-                const int bx = wrapi(B.x, W);
-                const int by = wrapi(B.y, H);
+                const int ax = wrap_axis(a.x, W);
+                const int ay = wrap_axis(a.y, H);
+                const int bx = wrap_axis(B.x, W);
+                const int by = wrap_axis(B.y, H);
                 const int aComponent = landComponent[std::size_t(ay) * W + ax];
                 const int bComponent = landComponent[std::size_t(by) * W + bx];
                 if (aComponent < 0 || aComponent != bComponent)
@@ -545,7 +542,7 @@ namespace sm
         // village anchors price at the dirt bed exactly as city anchors price
         // at the paved bed in the stone pass.
         for (const VillageRoadSite &v : villages)
-            stamp(wrapi(v.x, W), wrapi(v.y, H));
+            stamp(wrap_axis(v.x, W), wrap_axis(v.y, H));
 
         auto lay = [&](int ax, int ay, int bx, int by)
         {
@@ -568,13 +565,13 @@ namespace sm
                 continue; // stone rows are trace_roads' business
             for (const VillageRoadSite &v : villages)
             {
-                const int vx = wrapi(v.x, W);
-                const int vy = wrapi(v.y, H);
+                const int vx = wrap_axis(v.x, W);
+                const int vy = wrap_axis(v.y, H);
                 switch (row.link)
                 {
                 case RoadLink::VillageHomeCity:
                     if (v.hasCity)
-                        lay(vx, vy, wrapi(v.cityX, W), wrapi(v.cityY, H));
+                        lay(vx, vy, wrap_axis(v.cityX, W), wrap_axis(v.cityY, H));
                     break;
                 case RoadLink::VillageNearestLandmark:
                 {
@@ -583,8 +580,8 @@ namespace sm
                     int bestD = landmarkReach, bx = -1, by = -1;
                     for (const RoadSite &lm : landmarks)
                     {
-                        const int lx = wrapi(lm.x, W);
-                        const int ly = wrapi(lm.y, H);
+                        const int lx = wrap_axis(lm.x, W);
+                        const int ly = wrap_axis(lm.y, H);
                         int dx = std::abs(lx - vx);
                         dx = std::min(dx, W - dx);
                         int dy = std::abs(ly - vy);
@@ -696,7 +693,6 @@ namespace sm
             return;
 
         const int w = fl.width;
-        const int h = fl.height;
         auto cell_ok = [&](int x, int y, int& wheatOut) {
             return plough_cell_ok(fl, world, x, y, wheatOut, seaLevel);
         };
@@ -709,12 +705,14 @@ namespace sm
             struct Candidate { int x, y; int wheat; };
             Candidate best[kFieldsPerVillage];
             int found = 0;
+            const std::uint32_t vIdx = cell_of(v.x, v.y, w);
             for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
                 for (int dx = -kSettlementReach; dx <= kSettlementReach;
                      ++dx) {
                     if (dx == 0 && dy == 0) continue;
-                    const int x = FeatureLayer::wrap_coord(v.x + dx, w);
-                    const int y = FeatureLayer::wrap_coord(v.y + dy, h);
+                    const std::uint32_t n = cell_step(vIdx, dx, dy, w);
+                    const int x = cell_x(n, w);
+                    const int y = cell_y(n, w);
                     int wheat = 0;
                     if (!cell_ok(x, y, wheat)) continue;
                     // Insertion into the fattest-first shortlist.

@@ -62,6 +62,8 @@ void accumulate_radial(const MacroLight& L, int width, int height,
     const float wg = L.g * L.intensity;
     const float wb = L.b * L.intensity;
 
+    // Клетки диска — шаги ИНДЕКСА от источника (cell_step, ЗАКОН АДРЕСА).
+    const std::uint32_t at = cell_of(sx, sy, width);
     for (int dy = -reach; dy <= reach; ++dy) {
         for (int dx = -reach; dx <= reach; ++dx) {
             const float dist = std::sqrt(float(dx * dx + dy * dy));
@@ -69,10 +71,8 @@ void accumulate_radial(const MacroLight& L, int width, int height,
             if (f <= 0.0f)
                 continue;
             const float w2 = f * f;
-            const int tx = wrap_axis(sx + dx, width);
-            const int ty = wrap_axis(sy + dy, height);
-            const std::size_t o = (std::size_t(ty) * std::size_t(width)
-                                   + std::size_t(tx)) * 3u;
+            const std::size_t o =
+                std::size_t(cell_step(at, dx, dy, width)) * 3u;
             acc[o + 0] += wr * w2;
             acc[o + 1] += wg * w2;
             acc[o + 2] += wb * w2;

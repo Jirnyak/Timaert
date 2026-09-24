@@ -372,8 +372,10 @@ struct ResourceGrid {
 
     // A flat index back into coordinates — the inverse of index(), for the
     // callers that walk the array and then need to know WHERE they are.
-    int x_of(std::uint32_t i) const { return int(i % std::uint32_t(width)); }
-    int y_of(std::uint32_t i) const { return int(i / std::uint32_t(width)); }
+    // Через двери cell_x/cell_y: здесь стояло `% width` / `/ width` —
+    // аппаратное деление по рантайм-делителю на пути мира (ЗАКОН АДРЕСА).
+    int x_of(std::uint32_t i) const { return cell_x(i, width); }
+    int y_of(std::uint32_t i) const { return cell_y(i, width); }
     int at_index(std::uint32_t i) const {
         return i < cells.size() ? int(cells[i]) : 0;
     }
@@ -412,11 +414,14 @@ private:
     // licence to answer a different one.
     void stamp(int x, int y, int delta) {
         if (reachCells <= 0 || reach.size() != cells.size()) return;
+        // Клетки диска — шаги ИНДЕКСА через cell_step (ЗАКОН АДРЕСА): центр
+        // адресуется один раз, сосед есть арифметика, а не вторая свёртка.
+        const std::uint32_t at = index(x, y);
         const int R = reachCells;
         for (int dy = -R; dy <= R; ++dy) {
             const int span = int(std::sqrt(double(R * R - dy * dy)));
             for (int dx = -span; dx <= span; ++dx) {
-                std::uint16_t& c = reach[index(x + dx, y + dy)];
+                std::uint16_t& c = reach[cell_step(at, dx, dy, width)];
                 // A count can only be walked down by a cell that walked it up,
                 // so the floor is a statement about write() rather than a
                 // clamp. Guarded anyway: an underflow grants forever.

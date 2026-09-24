@@ -67,8 +67,8 @@ float tl_rng_f01() { return tl_rng ? tl_rng->next_f01() : 0.0f; }
 inline bool is_land(const TerrainData& t, int mapW, int mapH, int x, int y) {
     if (t.width != mapW || t.height != mapH || !t.has_rgba_storage())
         return true;
-    const int xx = wrapi(x, t.width);
-    const int yy = wrapi(y, t.height);
+    const int xx = wrap_axis(x, t.width);
+    const int yy = wrap_axis(y, t.height);
     std::size_t idx = (std::size_t(yy) * std::size_t(t.width) + std::size_t(xx)) * 4u + 3u;
     if (idx >= t.rgba.size() || t.rgba[idx] < 128) return false;
     // The BIOME is the water authority, not the alpha channel: a river cell
@@ -85,8 +85,8 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
                     int mapW, int mapH, const TerrainData& terr,
                     int maxAttempts = 20) {
     for (int i = 0; i < maxAttempts; ++i) {
-        int x = wrapi(cx + int(rng.next_u32() % std::uint32_t(radius * 2)) - radius, mapW);
-        int y = wrapi(cy + int(rng.next_u32() % std::uint32_t(radius * 2)) - radius, mapH);
+        int x = wrap_axis(cx + int(rng.next_u32() % std::uint32_t(radius * 2)) - radius, mapW);
+        int y = wrap_axis(cy + int(rng.next_u32() % std::uint32_t(radius * 2)) - radius, mapH);
         if (is_land(terr, mapW, mapH, x, y)) return {x, y};
     }
     return {cx, cy};
@@ -324,8 +324,8 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         auto& ref = *cities[rng.next_u32() % nSet];
         float angle = rng.next_f01() * 6.2831853f;
         int dist  = 25 + int(rng.next_u32() % 35u);
-        int cx = wrapi(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
-        int cy = wrapi(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
+        int cx = wrap_axis(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
+        int cy = wrap_axis(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.3f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
@@ -338,8 +338,8 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         auto& ref = *cities[rng.next_u32() % nSet];
         float angle = rng.next_f01() * 6.2831853f;
         int dist  = 30 + int(rng.next_u32() % 40u);
-        int cx = wrapi(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
-        int cy = wrapi(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
+        int cx = wrap_axis(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
+        int cy = wrap_axis(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.5f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
@@ -543,7 +543,7 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
     // when in the session the event arrives.
     Rng rng(hash3(std::uint32_t(x), std::uint32_t(y),
                   gs.worldSeed ^ 0x51AE57u));
-    const XY p = find_valid_spawn(wrapi(x, gs.mapW), wrapi(y, gs.mapH),
+    const XY p = find_valid_spawn(wrap_axis(x, gs.mapW), wrap_axis(y, gs.mapH),
                                   6, rng, gs.mapW, gs.mapH, terrain);
 
     // The possession-identity ordinal (MacroSpawnId) comes from the ONE
@@ -576,7 +576,7 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
     // raised by one starts exactly where its home stands. The scatter
     // fallback survives only for a WET spec cell (a blood-field band whose
     // field peak lies on a river).
-    const XY named{wrapi(spec.x, gs.mapW), wrapi(spec.y, gs.mapH)};
+    const XY named{wrap_axis(spec.x, gs.mapW), wrap_axis(spec.y, gs.mapH)};
     const XY p = is_land(terrain, gs.mapW, gs.mapH, named.x, named.y)
         ? named
         : find_valid_spawn(named.x, named.y, 4, rng, gs.mapW, gs.mapH,

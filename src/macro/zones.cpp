@@ -124,11 +124,6 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
         return float(waterMaskA[i * 4 + 0]) / 255.0f >= kMountainBiomeLevel;
     };
 
-    auto idx = [&](int x, int y) -> std::size_t {
-        const int wx = wrapi(x, width);
-        const int wy = wrapi(y, height);
-        return std::size_t(wy) * std::size_t(width) + std::size_t(wx);
-    };
 
     // ── 1. Civilization pull — through the ONE baker (CANON S7) ─────────
     // Re-tied to optical_sweep by the owner's ruling (2026-08-29), on the
@@ -180,13 +175,14 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     std::size_t head = 0;
     while (head < mq.size()) {
         const std::size_t i = mq[head++];
-        const int x = int(i % std::size_t(width));
-        const int y = int(i / std::size_t(width));
         const float d = mtnDepth[i];
+        // Сосед фронта — шаг ИНДЕКСА (cell_step, ЗАКОН АДРЕСА): координаты
+        // и деление на стороне мира здесь не нужны вовсе.
         for (int dy = -1; dy <= 1; ++dy) {
             for (int dx = -1; dx <= 1; ++dx) {
                 if (!dx && !dy) continue;
-                const std::size_t j = idx(x + dx, y + dy);
+                const std::size_t j =
+                    cell_step(std::uint32_t(i), dx, dy, width);
                 if (!is_mountain(j)) continue;
                 const float nd = d + ((dx == 0 || dy == 0) ? 1.0f : 1.41421356f);
                 if (nd < mtnDepth[j] - 1e-4f) {

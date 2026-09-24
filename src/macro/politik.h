@@ -93,8 +93,8 @@ inline std::uint16_t faction_index_for_cell(const Politik& politik,
         || politik.cellOwner.size() != std::size_t(w) * std::size_t(h)) {
         return faction_or_freefolk(-1);
     }
-    const int wx = wrapi(cx, w);
-    const int wy = wrapi(cy, h);
+    const int wx = wrap_axis(cx, w);
+    const int wy = wrap_axis(cy, h);
     const std::uint8_t owner =
         politik.cellOwner[std::size_t(wy) * std::size_t(w) + std::size_t(wx)];
     return faction_or_freefolk(owner == 0xffu ? -1 : int(owner));

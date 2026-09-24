@@ -252,13 +252,19 @@ int wheat_growth_at(const MacroWorld& w, int x, int y) {
 // a wiped-out region has nobody left to breed, and repopulates from its
 // edges inward — or never, if the whole valley was emptied.
 int fauna_growth_at(const MacroWorld& w, int x, int y) {
+    // Обход 3×3 — арифметика ИНДЕКСА через дверь cell_step (ЗАКОН АДРЕСА);
+    // без терраина все девять чтений и так отвечали нулём — отказ тот же.
+    if (!w.terrain || !world_shape_ok(w.terrain->width, w.terrain->height))
+        return 0;
+    const int side = w.terrain->width;
+    const std::uint32_t at = cell_of(x, y, side);
     int alive = 0, cap = 0;
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
-            cap   += fauna_cell_capacity_at(w,
-                                            x + dx, y + dy);
-            alive += resource_field_read(w, ResourceFieldId::Fauna,
-                                         x + dx, y + dy);
+            const std::uint32_t n = cell_step(at, dx, dy, side);
+            const int nx = cell_x(n, side), ny = cell_y(n, side);
+            cap   += fauna_cell_capacity_at(w, nx, ny);
+            alive += resource_field_read(w, ResourceFieldId::Fauna, nx, ny);
         }
     }
     if (cap <= 0) return 0;
@@ -277,12 +283,17 @@ int fauna_growth_at(const MacroWorld& w, int x, int y) {
 // tropics (≥1024) grow at full rate, meadow at ~0.6, desert (40) almost
 // never, water not at all.
 int trees_growth_at(const MacroWorld& w, int x, int y) {
-    if (!w.trees || !w.gs || !w.terrain || !w.terrain->has_rgba_storage())
+    if (!w.trees || !w.gs || !w.terrain || !w.terrain->has_rgba_storage()
+        || !world_shape_ok(w.terrain->width, w.terrain->height))
         return 0;
+    const int side = w.terrain->width;
+    const std::uint32_t at = cell_of(x, y, side);
     int sum = 0;
     for (int dy = -1; dy <= 1; ++dy)
-        for (int dx = -1; dx <= 1; ++dx)
-            sum += int(w.trees->at(x + dx, y + dy));
+        for (int dx = -1; dx <= 1; ++dx) {
+            const std::uint32_t n = cell_step(at, dx, dy, side);
+            sum += int(w.trees->at(cell_x(n, side), cell_y(n, side)));
+        }
     int growth = sum * kGrowthEpochDays / (9 * 1024);
     if (growth <= 0) return 0;
     // THE cell cascade (map_generator.h biome_at_cell) — fail-closed to
@@ -306,12 +317,17 @@ int horses_baseline(const MacroWorld& w, int x, int y) {
 // one head per seasonal visit while at least half the 3×3 valley's capacity
 // is alive; an emptied range repopulates from its edges inward.
 int horses_growth_at(const MacroWorld& w, int x, int y) {
+    if (!w.terrain || !world_shape_ok(w.terrain->width, w.terrain->height))
+        return 0;
+    const int side = w.terrain->width;
+    const std::uint32_t at = cell_of(x, y, side);
     int alive = 0, cap = 0;
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
-            cap   += horses_baseline(w, x + dx, y + dy);
-            alive += resource_field_read(w, ResourceFieldId::Horses,
-                                         x + dx, y + dy);
+            const std::uint32_t n = cell_step(at, dx, dy, side);
+            const int nx = cell_x(n, side), ny = cell_y(n, side);
+            cap   += horses_baseline(w, nx, ny);
+            alive += resource_field_read(w, ResourceFieldId::Horses, nx, ny);
         }
     }
     if (cap <= 0) return 0;
@@ -604,8 +620,8 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             const std::size_t n = w.trees->cell_count();
             for (std::size_t idx = std::size_t(day % kGrowthEpochDays);
                  idx < n; idx += std::size_t(kGrowthEpochDays)) {
-                const int x = int(idx % std::size_t(W));
-                const int y = int(idx / std::size_t(W));
+                const int x = cell_x(std::uint32_t(idx), W);
+                const int y = cell_y(std::uint32_t(idx), W);
                 const int born = def.growthAt(w, x, y);
                 if (born > 0) resource_field_apply(w, row, x, y, born);
             }
@@ -624,8 +640,8 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
                 std::size_t(W) * std::size_t(w.terrain->height);
             for (std::size_t idx = std::size_t(day % kGrowthEpochDays);
                  idx < n; idx += std::size_t(kGrowthEpochDays)) {
-                const int x = int(idx % std::size_t(W));
-                const int y = int(idx / std::size_t(W));
+                const int x = cell_x(std::uint32_t(idx), W);
+                const int y = cell_y(std::uint32_t(idx), W);
                 // Полная клетка не лечится: спрашиваем ёмкость ДО закона
                 // роста, потому что для жилы ёмкость — это шум, и платить за
                 // него на каждой полной клетке незачем.

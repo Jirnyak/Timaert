@@ -96,7 +96,9 @@ void test_road_prunes_water_only_connection()
 
 void test_road_survives_land_detour_without_water_cells()
 {
-    sm::TerrainData td = make_terrain(5, 3, 160);
+    // ЗАКОН АДРЕСА: квадрат, po2 (была 5×3 — незаконная форма мира; носитель
+    // теста — обход водяного столба ЧЕРЕЗ ЗАВОРОТ ТОРА — сохранён).
+    sm::TerrainData td = make_terrain(8, 8, 160);
     for (int y = 0; y < td.height; ++y)
     {
         set_cell(td, 2, y, 0);
@@ -154,7 +156,9 @@ void test_road_uses_a_star_on_open_land_connection()
 
 void test_road_tracing_uses_map_sea_level()
 {
-    sm::TerrainData td = make_terrain(5, 1, 90);
+    // ЗАКОН АДРЕСА: квадрат, po2 (была 5×1 — незаконная форма мира; носитель
+    // теста — активный уровень моря решает связность — сохранён).
+    sm::TerrainData td = make_terrain(8, 8, 90);
     for (std::size_t i = 0; i < td.cell_count(); ++i)
     {
         td.rgba[i * 4u + 3] = 255u;
@@ -636,8 +640,9 @@ void test_dirt_roads_fail_closed_on_malformed_inputs()
     CHECK(sm::trace_dirt_roads(features, shortTd, villages, {}, 4) == 0,
           "dirt-road tracing must fail closed on malformed terrain storage");
 
-    // Feature layer that does not cover the terrain.
-    sm::TerrainData td = make_terrain(5, 5, 160);
+    // Feature layer that does not cover the terrain. (8×8 против 4×4 —
+    // ЗАКОН АДРЕСА: мир po2; носитель теста — НЕСОВПАДЕНИЕ размеров.)
+    sm::TerrainData td = make_terrain(8, 8, 160);
     sm::FeatureLayer mismatched;
     mismatched.resize(4, 4);
     CHECK(sm::trace_dirt_roads(mismatched, td, villages, {}, 4) == 0,

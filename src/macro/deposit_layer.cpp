@@ -132,8 +132,10 @@ std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
         || !terrain.has_rgba_storage()) {
         return 0;
     }
-    const int wx = wrapi(x, terrain.width);
-    const int wy = wrapi(y, terrain.height);
+    // Сторона МИРА → заворот маской (ЗАКОН АДРЕСА); wrapi здесь был
+    // аппаратным делением на пути сезонного ходока.
+    const int wx = wrap_axis(x, terrain.width);
+    const int wy = wrap_axis(y, terrain.height);
     const std::uint8_t sea8 = std::uint8_t(seaLevel * 255.0f);
     if (terrain.is_water(wx, wy, sea8)) return 0;
     const DepositGenRow& g = kDepositGen[std::size_t(kind)];
@@ -275,32 +277,32 @@ int consolidate_deposit_cluster(DepositLayer& layer, DepositKind kind,
     ResourceGrid& g = layer.grid(kind);
     const std::uint32_t mineIdx = layer.wrap_index(x, y);
     if (g.at(x, y) == 0) return 0;   // no vein under the mine — nothing owns
-    // BFS over live same-kind cells, 8-adjacent, torus-wrapped. The frontier
-    // is coordinates (a flat index cannot step to its neighbours across the
-    // wrap without re-deriving x/y anyway).
-    std::vector<std::pair<int, int>> frontier{{x, y}};
+    // BFS over live same-kind cells, 8-adjacent. Фронтир — ИНДЕКСЫ: сосед
+    // есть cell_step (ЗАКОН АДРЕСА); прежний фронтир пар x/y существовал
+    // ровно потому, что этой двери в проекте не было.
+    std::vector<std::uint32_t> frontier{mineIdx};
     std::vector<std::uint32_t> seen{mineIdx};
     std::int64_t sum = g.at(x, y);
     int absorbed = 0;
     while (!frontier.empty()) {
-        const auto [cx, cy] = frontier.back();
+        const std::uint32_t c = frontier.back();
         frontier.pop_back();
         for (int dy = -1; dy <= 1; ++dy) {
             for (int dx = -1; dx <= 1; ++dx) {
                 if (dx == 0 && dy == 0) continue;
-                const int nx = cx + dx, ny = cy + dy;
-                const std::uint32_t idx = layer.wrap_index(nx, ny);
+                const std::uint32_t idx = cell_step(c, dx, dy, layer.width);
                 if (std::find(seen.begin(), seen.end(), idx) != seen.end())
                     continue;
-                const std::int32_t here = g.at(nx, ny);
+                const std::int32_t here = g.at_index(idx);
                 if (here == 0) continue;
                 seen.push_back(idx);
                 sum += here;
-                g.write(nx, ny, 0);    // the absorbed vein leaves the map —
+                g.write(g.x_of(idx), g.y_of(idx), 0);
+                                       // the absorbed vein leaves the map —
                                        // and its reach disc with it, inside
                                        // the write, not beside it
                 ++absorbed;
-                frontier.emplace_back(nx, ny);
+                frontier.push_back(idx);
             }
         }
     }

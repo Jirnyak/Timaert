@@ -150,8 +150,7 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
     BakeHeap heap;
     for (int r = 0; r < R; ++r) {
         const std::uint32_t c = std::uint32_t(nv.regionCell[std::size_t(r)]);
-        if (!nav_can_stand(mw, int(c % std::uint32_t(W)),
-                           int(c / std::uint32_t(W))))
+        if (!nav_can_stand(mw, cell_x(c, W), cell_y(c, W)))
             continue;   // ландмарк в воде не тянет округу (честный ноль)
         if (g[c] == 0.0f) continue;   // два ландмарка на клетке: первый взял
         g[c] = 0.0f;
@@ -159,18 +158,15 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
         nv.distHome[c] = 0;
         heap.push(0.0f, c);
     }
+    // Сосед волны — шаг ИНДЕКСА (cell_step, ЗАКОН АДРЕСА): здесь стояли
+    // деление на клетку и две рукописные композиции wrapi.
     while (!heap.empty()) {
         const auto cur = heap.pop();
         const std::uint32_t c = cur.idx;
         if (cur.g > g[c]) continue;
-        const int cx = int(c % std::uint32_t(W));
-        const int cy = int(c / std::uint32_t(W));
         for (int d = 0; d < 8; ++d) {
-            const int nx = wrapi(cx + kNavDX[d], W);
-            const int ny = wrapi(cy + kNavDY[d], H);
-            const std::uint32_t n =
-                std::uint32_t(ny) * std::uint32_t(W) + std::uint32_t(nx);
-            if (!nav_can_stand(mw, nx, ny)) continue;
+            const std::uint32_t n = cell_step(c, kNavDX[d], kNavDY[d], W);
+            if (!nav_can_stand(mw, cell_x(n, W), cell_y(n, W))) continue;
             const float ng = cur.g + edge_cost_of(pc, c, n, d);
             if (ng >= g[n]) continue;
             g[n] = ng;
@@ -192,14 +188,11 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
         BakeHeap wheap;
         for (std::size_t c = 0; c < cells; ++c) {
             if (nv.regionOf[c] == kNavNoRegion) continue;   // сид — суша округи
-            const int cx = int(c % std::size_t(W));
-            const int cy = int(c / std::size_t(W));
             for (int d = 0; d < 8; ++d) {
-                const int nx = wrapi(cx + kNavDX[d], W);
-                const int ny = wrapi(cy + kNavDY[d], H);
-                if (nav_can_stand(mw, nx, ny)) continue;   // вода — не суша
-                const std::uint32_t n = std::uint32_t(
-                    std::size_t(ny) * std::size_t(W) + std::size_t(nx));
+                const std::uint32_t n =
+                    cell_step(std::uint32_t(c), kNavDX[d], kNavDY[d], W);
+                if (nav_can_stand(mw, cell_x(n, W), cell_y(n, W)))
+                    continue;   // вода — не суша
                 if (wg[n] <= 0.0f) continue;
                 wg[n] = 0.0f;
                 nv.waterRegionOf[n] = nv.regionOf[c];
@@ -212,14 +205,11 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
             const auto cur = wheap.pop();
             const std::uint32_t c = cur.idx;
             if (cur.g > wg[c]) continue;
-            const int cx = int(c % std::uint32_t(W));
-            const int cy = int(c / std::uint32_t(W));
             for (int d = 0; d < 8; ++d) {
-                const int nx = wrapi(cx + kNavDX[d], W);
-                const int ny = wrapi(cy + kNavDY[d], H);
-                if (nav_can_stand(mw, nx, ny)) continue;   // ярус — вода
-                const std::uint32_t n = std::uint32_t(
-                    std::size_t(ny) * std::size_t(W) + std::size_t(nx));
+                const std::uint32_t n =
+                    cell_step(c, kNavDX[d], kNavDY[d], W);
+                if (nav_can_stand(mw, cell_x(n, W), cell_y(n, W)))
+                    continue;   // ярус — вода
                 const float stepLen =
                     (kNavDX[d] != 0 && kNavDY[d] != 0) ? 1.4142136f : 1.0f;
                 const float ng = cur.g + kNavSeaWeight * stepLen;
@@ -241,15 +231,11 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
     std::unordered_map<std::uint64_t, std::vector<Crossing>> byPair;
     std::unordered_map<std::uint64_t, std::vector<Crossing>> byPairWater;
     for (std::size_t c = 0; c < cells; ++c) {
-        const int cx = int(c % std::size_t(W));
-        const int cy = int(c / std::size_t(W));
         const std::uint16_t ra = nv.regionOf[c];
         const std::uint16_t wa = nv.waterRegionOf[c];
         for (int d = 0; d < 8; ++d) {
-            const int nx = wrapi(cx + kNavDX[d], W);
-            const int ny = wrapi(cy + kNavDY[d], H);
             const std::size_t n =
-                std::size_t(ny) * std::size_t(W) + std::size_t(nx);
+                cell_step(std::uint32_t(c), kNavDX[d], kNavDY[d], W);
             if (ra != kNavNoRegion) {
                 const std::uint16_t rb = nv.regionOf[n];
                 if (rb != kNavNoRegion && rb != ra) {
@@ -307,13 +293,9 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
                             bestIdx = ei;
                         }
                     }
-                    const int cx = int(c % std::uint32_t(W));
-                    const int cy = int(c / std::uint32_t(W));
                     for (int d = 0; d < 8; ++d) {
-                        const std::uint32_t n = std::uint32_t(
-                            std::size_t(wrapi(cy + kNavDY[d], H))
-                                * std::size_t(W)
-                            + std::size_t(wrapi(cx + kNavDX[d], W)));
+                        const std::uint32_t n =
+                            cell_step(c, kNavDX[d], kNavDY[d], W);
                         if (!bySrc.count(n) || segSeen.count(n)) continue;
                         segSeen.insert(n);
                         stack.push_back(n);
@@ -381,13 +363,9 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
                 const auto cur = ph.pop();
                 const std::uint32_t c = cur.idx;
                 if (quant16(cur.g) > plane[c]) continue;
-                const int cx = int(c % std::uint32_t(W));
-                const int cy = int(c / std::uint32_t(W));
                 for (int d = 0; d < 8; ++d) {
-                    const int nx = wrapi(cx + kNavDX[d], W);
-                    const int ny = wrapi(cy + kNavDY[d], H);
-                    const std::uint32_t n = std::uint32_t(
-                        std::size_t(ny) * std::size_t(W) + std::size_t(nx));
+                    const std::uint32_t n =
+                        cell_step(c, kNavDX[d], kNavDY[d], W);
                     // Обрезка ярусом своей стихии — строка статьи: сухой
                     // план льётся по суше округи, водный — по её воде;
                     // суша и вода одной округи не пересекаются, планы в
@@ -508,8 +486,8 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
     std::size_t unreached = 0;
     for (std::size_t c = 0; c < cells; ++c)
         if (nv.regionOf[c] == kNavNoRegion
-            && nav_can_stand(mw, int(c % std::size_t(W)),
-                             int(c / std::size_t(W))))
+            && nav_can_stand(mw, cell_x(std::uint32_t(c), W),
+                             cell_y(std::uint32_t(c), W)))
             ++unreached;
     std::fprintf(stderr,
                  "[nav] baked R=%d portals=%zu planes=%d "
@@ -566,11 +544,11 @@ bool nav_step(const NavWorld& nv, int x, int y, int tx, int ty,
     if (rt == kNavNoRegion) return false;
     const int W = nv.mapW, H = nv.mapH;
     const auto step_to = [&](std::size_t n) {
-        const int nx = int(n % std::size_t(W));
-        const int ny = int(n / std::size_t(W));
-        int dx = nx - wrapi(x, W);
+        const int nx = cell_x(std::uint32_t(n), W);
+        const int ny = cell_y(std::uint32_t(n), W);
+        int dx = nx - wrap_axis(x, W);
         if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
-        int dy = ny - wrapi(y, H);
+        int dy = ny - wrap_axis(y, H);
         if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
         sdx = dx;
         sdy = dy;
@@ -620,14 +598,11 @@ bool nav_step(const NavWorld& nv, int x, int y, int tx, int ty,
         const std::uint16_t* plane =
             nv.planes.data()
             + std::size_t(p.plane) * (std::size_t(W) * std::size_t(H));
-        const int cx = wrapi(x, W), cy = wrapi(y, H);
         std::uint16_t best = plane[c];
         std::size_t bestCell = c;
         for (int d = 0; d < 8; ++d) {
-            const int nx = wrapi(cx + kNavDX[d], W);
-            const int ny = wrapi(cy + kNavDY[d], H);
             const std::size_t n =
-                std::size_t(ny) * std::size_t(W) + std::size_t(nx);
+                cell_step(std::uint32_t(c), kNavDX[d], kNavDY[d], W);
             if (nv.waterRegionOf[n] != wr) continue;
             if (plane[n] < best) {
                 best = plane[n];
@@ -648,10 +623,8 @@ bool nav_step(const NavWorld& nv, int x, int y, int tx, int ty,
         for (int guard = 0; guard < 1 << 14; ++guard) {
             const std::uint8_t dir = nv.stepHome[cur];
             if (dir == kNavNoStep) break;   // дошли до ландмарка мимо нас
-            const int px = wrapi(int(cur % std::size_t(W)) + kNavDX[dir], W);
-            const int py = wrapi(int(cur / std::size_t(W)) + kNavDY[dir], H);
             const std::size_t parent =
-                std::size_t(py) * std::size_t(W) + std::size_t(px);
+                cell_step(std::uint32_t(cur), kNavDX[dir], kNavDY[dir], W);
             if (parent == c) return step_to(cur);
             cur = parent;
         }
@@ -695,14 +668,11 @@ bool nav_step(const NavWorld& nv, int x, int y, int tx, int ty,
     const std::uint16_t* plane =
         nv.planes.data()
         + std::size_t(p.plane) * (std::size_t(W) * std::size_t(H));
-    const int cx = wrapi(x, W), cy = wrapi(y, H);
     std::uint16_t best = plane[c];
     std::size_t bestCell = c;
     for (int d = 0; d < 8; ++d) {
-        const int nx = wrapi(cx + kNavDX[d], W);
-        const int ny = wrapi(cy + kNavDY[d], H);
         const std::size_t n =
-            std::size_t(ny) * std::size_t(W) + std::size_t(nx);
+            cell_step(std::uint32_t(c), kNavDX[d], kNavDY[d], W);
         if (nv.regionOf[n] != rc) continue;
         if (plane[n] < best) {
             best = plane[n];

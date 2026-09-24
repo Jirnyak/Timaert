@@ -125,7 +125,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     // Land predicate (defaults to "everywhere is land" when no terrain).
     auto is_land = [&](int x, int y) -> bool {
         if (!useTerrain) return true;
-        x = wrapi(x, mapW); y = wrapi(y, mapH);
+        x = wrap_axis(x, mapW); y = wrap_axis(y, mapH);
         return terrain->rgba[std::size_t(y * mapW + x) * 4 + 0] >= seaLevel8;
     };
 
@@ -153,17 +153,19 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         // to 2×spacing and take the first valid cell, vetoes waived — a
         // realm is crowned even in a wasteland (the old 120-cell spiral's
         // one honest job).
-        int cx = wrapi(int(def.cx * mapW), mapW);
-        int cy = wrapi(int(def.cy * mapH), mapH);
+        int cx = wrap_axis(int(def.cx * mapW), mapW);
+        int cy = wrap_axis(int(def.cy * mapH), mapH);
         if (useTerrain) {
             int bestX = cx, bestY = cy, bestScore = -1;
             bool placed = false;
+            const std::uint32_t seedIdx = cell_of(cx, cy, mapW);
             for (int rad = 0; rad <= 2 * minDist && !placed; ++rad) {
                 for (int dy = -rad; dy <= rad && !placed; ++dy) {
                     for (int dx = -rad; dx <= rad && !placed; ++dx) {
                         if (std::abs(dx) != rad && std::abs(dy) != rad) continue;
-                        const int tx = wrapi(cx + dx, mapW);
-                        const int ty = wrapi(cy + dy, mapH);
+                        const std::uint32_t n = cell_step(seedIdx, dx, dy, mapW);
+                        const int tx = cell_x(n, mapW);
+                        const int ty = cell_y(n, mapW);
                         if (!is_land(tx, ty)) continue;
                         if (find_close_city(P, tx, ty, minDist, mapW, mapH) >= 0)
                             continue;
@@ -215,10 +217,10 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                     r.next_u32() % std::uint32_t(mine.size()))];
                 const int ax = P.cities[std::size_t(anchorIdx)].x;
                 const int ay = P.cities[std::size_t(anchorIdx)].y;
-                const int rx = wrapi(ax + int(r.next_u32()
+                const int rx = wrap_axis(ax + int(r.next_u32()
                                               % std::uint32_t(2 * jitter + 1))
                                         - jitter, mapW);
-                const int ry = wrapi(ay + int(r.next_u32()
+                const int ry = wrap_axis(ay + int(r.next_u32()
                                               % std::uint32_t(2 * jitter + 1))
                                         - jitter, mapH);
                 if (!is_land(rx, ry)) continue;
@@ -265,10 +267,10 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                     int(r.next_u32() % std::uint32_t(P.cities.size()));
                 const int ax = P.cities[std::size_t(anchor)].x;
                 const int ay = P.cities[std::size_t(anchor)].y;
-                const int rx = wrapi(ax + int(r.next_u32()
+                const int rx = wrap_axis(ax + int(r.next_u32()
                                               % std::uint32_t(2 * topupJitter + 1))
                                         - topupJitter, mapW);
-                const int ry = wrapi(ay + int(r.next_u32()
+                const int ry = wrap_axis(ay + int(r.next_u32()
                                               % std::uint32_t(2 * topupJitter + 1))
                                         - topupJitter, mapH);
                 if (!is_land(rx, ry)) continue;
@@ -438,19 +440,21 @@ void snap_cities_to_land(Politik& p, const TerrainData& td,
     if (!td.has_rgba_storage()) return;
     const int W = td.width, H = td.height;
     auto is_land = [&](int x, int y) {
-        x = wrapi(x, W); y = wrapi(y, H);
+        x = wrap_axis(x, W); y = wrap_axis(y, H);
         return td.rgba[std::size_t(y * W + x) * 4 + 0] >= seaLevel8;
     };
     for (auto& c : p.cities) {
         if (is_land(c.x, c.y)) continue;
-        // Spiral outward in concentric square rings.
+        // Spiral outward in concentric square rings — шаги ИНДЕКСА (cell_step).
         int found = 0, fx = c.x, fy = c.y;
+        const std::uint32_t cIdx = cell_of(c.x, c.y, W);
         for (int r = 1; r <= radius && !found; ++r) {
             for (int dy = -r; dy <= r && !found; ++dy) {
                 for (int dx = -r; dx <= r && !found; ++dx) {
                     if (std::abs(dx) != r && std::abs(dy) != r) continue;
-                    int nx = c.x + dx, ny = c.y + dy;
-                    if (is_land(nx, ny)) { fx = wrapi(nx, W); fy = wrapi(ny, H); found = 1; }
+                    const std::uint32_t n = cell_step(cIdx, dx, dy, W);
+                    const int nx = cell_x(n, W), ny = cell_y(n, W);
+                    if (is_land(nx, ny)) { fx = nx; fy = ny; found = 1; }
                 }
             }
         }
@@ -471,9 +475,12 @@ void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8)
     };
     auto count_local_water = [&](int cx, int cy, int r) {
         int n = 0;
+        const std::uint32_t at = cell_of(cx, cy, W);
         for (int dy = -r; dy <= r; ++dy)
-            for (int dx = -r; dx <= r; ++dx)
-                if (is_water(wrapi(cx + dx, W), wrapi(cy + dy, H))) ++n;
+            for (int dx = -r; dx <= r; ++dx) {
+                const std::uint32_t s = cell_step(at, dx, dy, W);
+                if (is_water(cell_x(s, W), cell_y(s, W))) ++n;
+            }
         return n;
     };
 
@@ -492,11 +499,13 @@ void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8)
         if (!cap) continue;
         if (count_local_water(cap->x, cap->y, kLakeScanRadius) >= 4) continue;
         bool placed = false;
+        const std::uint32_t capIdx = cell_of(cap->x, cap->y, W);
         for (int r = 1; r < 80 && !placed; ++r) {
             for (int dy = -r; dy <= r && !placed; ++dy) {
                 for (int dx = -r; dx <= r && !placed; ++dx) {
                     if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
-                    int x = wrapi(cap->x + dx, W), y = wrapi(cap->y + dy, H);
+                    const std::uint32_t s = cell_step(capIdx, dx, dy, W);
+                    const int x = cell_x(s, W), y = cell_y(s, W);
                     if (!is_land(x, y)) continue;
                     if (count_local_water(x, y, kLakeScanRadius) >= 4) {
                         cap->x = x; cap->y = y; placed = true;
@@ -514,7 +523,7 @@ void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8)
     queue.reserve(n);
     for (const City& c : p.cities) {
         if (c.factionIdx < 0) continue;
-        int x = wrapi(c.x, W), y = wrapi(c.y, H);
+        int x = wrap_axis(c.x, W), y = wrap_axis(c.y, H);
         if (!is_land(x, y)) continue;
         std::size_t idx = std::size_t(y) * W + x;
         if (owner[idx]) continue;

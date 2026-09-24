@@ -172,10 +172,14 @@ bool find_home_field(const TickContext& ctx, float px, float py,
     bool found = false;
     int bestStock = 0;
     float best = 1e30f;
+    // Бокс — арифметика ИНДЕКСА через cell_step (ЗАКОН АДРЕСА); наружу
+    // уходит ЗАВЁРНУТАЯ клетка — ровно та форма, что у find_home_deposit.
+    const std::uint32_t homeIdx = cell_of(int(home.x), int(home.y), ctx.mapW);
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
-            const int cx = int(home.x) + dx;
-            const int cy = int(home.y) + dy;
+            const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
+            const int cx = cell_x(n, ctx.mapW);
+            const int cy = cell_y(n, ctx.mapW);
             if (ctx.mw.features->at(cx, cy) != std::uint8_t(parcel)) continue;
             const int stock =
                 resource_field_read(ctx.mw, ResourceFieldId::Wheat, cx, cy);
@@ -201,10 +205,12 @@ bool find_home_fauna(const TickContext& ctx, float px, float py,
     bool found = false;
     int bestStock = 0;
     float best = 1e30f;
+    const std::uint32_t homeIdx = cell_of(int(home.x), int(home.y), ctx.mapW);
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
-            const int cx = int(home.x) + dx;
-            const int cy = int(home.y) + dy;
+            const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
+            const int cx = cell_x(n, ctx.mapW);
+            const int cy = cell_y(n, ctx.mapW);
             const int stock =
                 resource_field_read(ctx.mw, ResourceFieldId::Fauna, cx, cy);
             if (stock <= 0) continue;   // выбито — здесь не охотятся
@@ -403,12 +409,10 @@ float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
     float w = cell_weight(ctx, tx, ty);
     if (pc && pc->width > 0 && pc->height > 0
         && pc->height8.size() == pc->costGrid.size()) {
-        const std::size_t fi =
-            std::size_t(wrapi(fy, pc->height)) * std::size_t(pc->width)
-            + std::size_t(wrapi(fx, pc->width));
-        const std::size_t ti =
-            std::size_t(wrapi(ty, pc->height)) * std::size_t(pc->width)
-            + std::size_t(wrapi(tx, pc->width));
+        // Адрес клетки — одна дверь cell_of (здесь стояли две рукописные
+        // композиции wrapi·w + wrapi, деление на пути каждого шага марша).
+        const std::size_t fi = cell_of(fx, fy, pc->width);
+        const std::size_t ti = cell_of(tx, ty, pc->width);
         w += pc->climb(fi, ti);
     }
     return w;
@@ -449,8 +453,8 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
 
     // What the leader's own training says a cell costs him (travel skill).
     const float efficiency = skill_mult_of(SkillId::Travel, int(rt.travelRank));
-    const int playerCellX = wrapi(int(ctx.playerX), ctx.mapW);
-    const int playerCellY = wrapi(int(ctx.playerY), ctx.mapH);
+    const int playerCellX = wrap_axis(int(ctx.playerX), ctx.mapW);
+    const int playerCellY = wrap_axis(int(ctx.playerY), ctx.mapH);
 
     while (rt.moveBudget >= 1.0f && (ix != itx || iy != ity)) {
         // Greedy steering (Session 21, owner's choice over per-squad A*):
@@ -465,6 +469,10 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         const bool standingDry = can_stand_at(ctx, ix, iy);
         int bx = -1, by = -1;
         float bw = 1e30f;
+        // Сосед шага — арифметика ИНДЕКСА (cell_step, ЗАКОН АДРЕСА): здесь
+        // стояло четыре wrapi — аппаратное деление на каждом шаге марша
+        // каждого сквада.
+        const std::uint32_t hereIdx = cell_of(ix, iy, ctx.mapW);
 
         // ЗАПЕЧЁННАЯ ПОХОДКА (CANON S7, 2026-09-02): округи + порталы +
         // граф — три чтения, ни волны, ни поиска. Жадный шаг остаётся миру
@@ -472,8 +480,9 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         if (!flying && standingDry && ctx.mw.nav && ctx.mw.nav->baked()) {
             int fdx = 0, fdy = 0;
             if (nav_step(*ctx.mw.nav, ix, iy, itx, ity, fdx, fdy)) {
-                bx = wrapi(ix + fdx, ctx.mapW);
-                by = wrapi(iy + fdy, ctx.mapH);
+                const std::uint32_t n = cell_step(hereIdx, fdx, fdy, ctx.mapW);
+                bx = cell_x(n, ctx.mapW);
+                by = cell_y(n, ctx.mapW);
                 bw = edge_weight(ctx, ix, iy, bx, by);
             }
         }
@@ -520,8 +529,10 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
             for (int oy = -1; oy <= 1; ++oy) {
                 for (int ox = -1; ox <= 1; ++ox) {
                     if (ox == 0 && oy == 0) continue;
-                    const int nx = wrapi(ix + ox, ctx.mapW);
-                    const int ny = wrapi(iy + oy, ctx.mapH);
+                    const std::uint32_t n =
+                        cell_step(hereIdx, ox, oy, ctx.mapW);
+                    const int nx = cell_x(n, ctx.mapW);
+                    const int ny = cell_y(n, ctx.mapW);
                     if (nx == bx && ny == by) continue;
                     const float d = torus_dist_sq(float(nx), float(ny),
                                                   float(itx), float(ity),
@@ -765,10 +776,12 @@ bool find_home_pasture(const TickContext& ctx, float px, float py,
     bool found = false;
     int bestStock = 0;
     float best = 1e30f;
+    const std::uint32_t homeIdx = cell_of(int(home.x), int(home.y), ctx.mapW);
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
-            const int cx = int(home.x) + dx;
-            const int cy = int(home.y) + dy;
+            const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
+            const int cx = cell_x(n, ctx.mapW);
+            const int cy = cell_y(n, ctx.mapW);
             if (ctx.mw.features->at(cx, cy) != FT_Pasture) continue;
             const int stock =
                 resource_field_read(ctx.mw, ResourceFieldId::Horses, cx, cy);
@@ -789,7 +802,8 @@ bool find_home_pasture(const TickContext& ctx, float px, float py,
     // trip (measured: 8 928 pastures in eight days, сид 7).
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
-            if (ctx.mw.features->at(int(home.x) + dx, int(home.y) + dy)
+            const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
+            if (ctx.mw.features->at(cell_x(n, ctx.mapW), cell_y(n, ctx.mapW))
                 == FT_Pasture)
                 return false;
         }
@@ -798,8 +812,9 @@ bool find_home_pasture(const TickContext& ctx, float px, float py,
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             if (dx == 0 && dy == 0) continue;  // the town
-            const int cx = int(home.x) + dx;
-            const int cy = int(home.y) + dy;
+            const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
+            const int cx = cell_x(n, ctx.mapW);
+            const int cy = cell_y(n, ctx.mapW);
             int herd = 0;
             if (!pasture_cell_ok(*ctx.mw.features, ctx.mw, cx, cy, herd))
                 continue;
@@ -876,10 +891,12 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     // за одним водным разрывом, которая по определению лежит вплотную. A field
     // is indexed by the torus, so the box IS the loop: 33×33 reads, no
     // candidate discarded (problems.md §52 is the same lesson, one door over).
+    const std::uint32_t homeIdx = cell_of(hx, hy, ctx.mapW);
     const auto consider = [&](int dx, int dy) {
-        const int x = wrapi(hx + dx, ctx.mapW);
-        const int y = wrapi(hy + dy, ctx.mapH);
-        if (cells.at(x, y) == 0) return;   // no vein standing here
+        const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
+        const int x = cell_x(n, ctx.mapW);
+        const int y = cell_y(n, ctx.mapW);
+        if (cells.at_index(n) == 0) return;   // no vein standing here
         if (!navReady) {
             const float dsq = float(dx * dx + dy * dy);
             if (dsq < bestSq) {
@@ -2445,8 +2462,8 @@ void ai_lair_sorties(entt::entity self, MacroPos& p,
     // Логово самозалечивается: тело без дома объявляет домом место, где
     // проснулось (спавн-дверь анкеты пишет честную клетку раньше).
     if (rt.lairX < 0 || rt.lairY < 0) {
-        rt.lairX = std::int16_t(wrapi(int(p.x), ctx.mapW));
-        rt.lairY = std::int16_t(wrapi(int(p.y), ctx.mapH));
+        rt.lairX = std::int16_t(wrap_axis(int(p.x), ctx.mapW));
+        rt.lairY = std::int16_t(wrap_axis(int(p.y), ctx.mapH));
     }
     // Радиус вылетов — агенда СТРОКИ анкеты (данные в строке — решения в
     // функции); тело без анкеты, если когда-то получит эту модель, кружит
@@ -2837,7 +2854,7 @@ void scent_squad_deposit(entt::entity e, const MacroPos& p,
     if (const auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(e)) {
         worth += std::uint32_t(std::max(0, inventory_value(bag->inv)));
     }
-    scent_deposit(sf, f, wrapi(int(p.x), sf.w), wrapi(int(p.y), sf.h),
+    scent_deposit(sf, f, wrap_axis(int(p.x), sf.w), wrap_axis(int(p.y), sf.h),
                   power <= 0.0f ? 0u : std::uint32_t(power), worth);
 }
 
@@ -2900,8 +2917,8 @@ bool scent_hunt_step(entt::entity self, MacroPos& p,
         }
     };
 
-    const int x0 = wrapi(int(p.x), sf.w);
-    const int y0 = wrapi(int(p.y), sf.h);
+    const int x0 = wrap_axis(int(p.x), sf.w);
+    const int y0 = wrap_axis(int(p.y), sf.h);
     std::uint32_t hereStr = 0, hereWea = 0;
     sniff(x0, y0, hereStr, hereWea);
 
@@ -2912,11 +2929,14 @@ bool scent_hunt_step(entt::entity self, MacroPos& p,
     // перехватил, — либо след остыл и артель возвращается к делу).
     std::uint32_t best = std::max(hereWea, kHuntScentFloor - 1u);
     int bx = -1, by = -1;
+    // Сосед по запаху — шаг ИНДЕКСА над полем мира (cell_step, ЗАКОН АДРЕСА).
+    const std::uint32_t at0 = cell_of(x0, y0, sf.w);
     for (int oy = -1; oy <= 1; ++oy) {
         for (int ox = -1; ox <= 1; ++ox) {
             if (ox == 0 && oy == 0) continue;
-            const int x = wrapi(x0 + ox, sf.w);
-            const int y = wrapi(y0 + oy, sf.h);
+            const std::uint32_t n = cell_step(at0, ox, oy, sf.w);
+            const int x = cell_x(n, sf.w);
+            const int y = cell_y(n, sf.w);
             std::uint32_t s = 0, v = 0;
             sniff(x, y, s, v);
             if (v <= best) continue;

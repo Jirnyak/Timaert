@@ -124,11 +124,10 @@ constexpr std::uint16_t kRiverDistInf = 65535u;
 constexpr int kRiverExploreCap = 60000;
 constexpr int kRiverDirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
-// (was a private copy of the torus wrap — core/torus.h owns it)
-
-inline int cell_index(int x, int y, int w) {
-    return y * w + x;
-}
+// (was a private copy of the torus wrap — core/torus.h owns it. Здесь же жил
+// ОМОНИМ `cell_index(x,y,w) = y*w+x` — второй ответ на «где эта клетка», без
+// свёртки; перепись 2026-09-23 назвала его поимённо, адрес теперь один:
+// `cell_of`, шаг к соседу — `cell_step`.)
 
 inline std::uint8_t sea_level_byte(float seaLevel) {
     const int v = int(std::floor(std::clamp(seaLevel, 0.0f, 1.0f) * 255.0f));
@@ -307,7 +306,8 @@ std::vector<std::pair<int, int>> build_river_path(int source, int goal,
     std::vector<std::pair<int, int>> path;
     int cur = goal;
     while (cur != source) {
-        path.push_back({cur % w, cur / w});
+        path.push_back({cell_x(std::uint32_t(cur), w),
+                        cell_y(std::uint32_t(cur), w)});
         const int previous = scratch.parent[std::size_t(cur)];
         if (previous < 0) {
             break;
@@ -352,13 +352,10 @@ std::vector<std::pair<int, int>> trace_river_to_water(
             return build_river_path(source, cur, scratch, w);
         }
 
-        const int cx = cur % w;
-        const int cy = cur / w;
         const int curH = int(height[std::size_t(cur)]);
         for (const auto& d : kRiverDirs) {
-            const int nx = wrap_axis(cx + d[0], w);
-            const int ny = wrap_axis(cy + d[1], h);
-            const int ni = cell_index(nx, ny, w);
+            const int ni =
+                int(cell_step(std::uint32_t(cur), d[0], d[1], w));
             const int ed = std::min<int>(edgeDist[std::size_t(ni)], 15);
             const int nH = int(height[std::size_t(ni)]);
             const int climb = nH > curH ? ((nH - curH) >> kRiverClimbShift) : 0;
@@ -384,19 +381,17 @@ void stamp_river_path(const std::vector<std::pair<int, int>>& path,
                       int w,
                       int h,
                       const std::vector<std::uint16_t>& waterDist) {
+    (void)h;   // квадрат мира: одна сторона на обе оси (ЗАКОН АДРЕСА)
     for (const auto& p : path) {
-        const int px = p.first;
-        const int py = p.second;
-        const std::uint16_t wd = waterDist[std::size_t(py * w + px)];
+        const std::uint32_t at = cell_of(p.first, p.second, w);
+        const std::uint16_t wd = waterDist[at];
         const int radius = wd < 4u ? 1 : 0;
         for (int dy = -radius; dy <= radius; ++dy) {
             for (int dx = -radius; dx <= radius; ++dx) {
                 if (dx * dx + dy * dy > radius * radius) {
                     continue;
                 }
-                const int nx = wrap_axis(px + dx, w);
-                const int ny = wrap_axis(py + dy, h);
-                const int ni = cell_index(nx, ny, w);
+                const int ni = int(cell_step(at, dx, dy, w));
                 if (height[std::size_t(ni)] > seaLevel8) {
                     riverMask[std::size_t(ni)] = 255;
                 }
@@ -409,12 +404,11 @@ int count_river_neighbours(const std::vector<std::uint8_t>& riverMask,
                            int idx,
                            int w,
                            int h) {
-    const int x = idx % w;
-    const int y = idx / w;
+    (void)h;   // квадрат мира: одна сторона на обе оси (ЗАКОН АДРЕСА)
     int count = 0;
     for (const auto& d : kRiverDirs) {
-        const int ni = cell_index(wrap_axis(x + d[0], w), wrap_axis(y + d[1], h), w);
-        if (riverMask[std::size_t(ni)] > 0) {
+        const std::uint32_t ni = cell_step(std::uint32_t(idx), d[0], d[1], w);
+        if (riverMask[ni] > 0) {
             ++count;
         }
     }
@@ -429,7 +423,7 @@ std::vector<int> find_river_tips(const std::vector<std::uint8_t>& riverMask,
     std::vector<int> tips;
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            const int idx = cell_index(x, y, w);
+            const int idx = int(cell_of(x, y, w));
             if (riverMask[std::size_t(idx)] == 0 || height[std::size_t(idx)] <= seaLevel8) {
                 continue;
             }
@@ -437,11 +431,12 @@ std::vector<int> find_river_tips(const std::vector<std::uint8_t>& riverMask,
             int riverNbrs = 0;
             bool hasSea = false;
             for (const auto& d : kRiverDirs) {
-                const int ni = cell_index(wrap_axis(x + d[0], w), wrap_axis(y + d[1], h), w);
-                if (riverMask[std::size_t(ni)] > 0) {
+                const std::uint32_t ni =
+                    cell_step(std::uint32_t(idx), d[0], d[1], w);
+                if (riverMask[ni] > 0) {
                     ++riverNbrs;
                 }
-                if (height[std::size_t(ni)] <= seaLevel8) {
+                if (height[ni] <= seaLevel8) {
                     hasSea = true;
                 }
             }
@@ -472,12 +467,11 @@ bool continue_river_from_tip(int tipIdx,
             riverMask[std::size_t(cur)] = 0;
         }
 
-        const int cx = cur % w;
-        const int cy = cur / w;
         int next = -1;
         int nextRiverNbrs = 0;
         for (const auto& d : kRiverDirs) {
-            const int ni = cell_index(wrap_axis(cx + d[0], w), wrap_axis(cy + d[1], h), w);
+            const int ni =
+                int(cell_step(std::uint32_t(cur), d[0], d[1], w));
             if (riverMask[std::size_t(ni)] > 0) {
                 next = ni;
                 nextRiverNbrs = count_river_neighbours(riverMask, ni, w, h);
@@ -579,14 +573,15 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     edgeQueue.reserve(std::size_t(n) / 8);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            const int idx = cell_index(x, y, w);
+            const int idx = int(cell_of(x, y, w));
             const std::uint8_t b = biome[std::size_t(idx)];
             if (b == 255) {
                 continue;
             }
             for (const auto& d : kRiverDirs) {
-                const int ni = cell_index(wrap_axis(x + d[0], w), wrap_axis(y + d[1], h), w);
-                if (biome[std::size_t(ni)] != b) {
+                const std::uint32_t ni =
+                    cell_step(std::uint32_t(idx), d[0], d[1], w);
+                if (biome[ni] != b) {
                     edgeDist[std::size_t(idx)] = 0;
                     edgeQueue.push_back(idx);
                     break;
@@ -605,10 +600,9 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
         if (d >= 15u) {
             continue;
         }
-        const int bx = idx % w;
-        const int by = idx / w;
         for (const auto& dir : kRiverDirs) {
-            const int ni = cell_index(wrap_axis(bx + dir[0], w), wrap_axis(by + dir[1], h), w);
+            const int ni =
+                int(cell_step(std::uint32_t(idx), dir[0], dir[1], w));
             if (edgeDist[std::size_t(ni)] > std::uint16_t(d + 1u)
                 && biome[std::size_t(ni)] != 255) {
                 edgeDist[std::size_t(ni)] = std::uint16_t(d + 1u);
@@ -634,10 +628,9 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     while (head < waterQueue.size()) {
         const int idx = waterQueue[head++];
         const std::uint16_t d = waterDist[std::size_t(idx)];
-        const int bx = idx % w;
-        const int by = idx / w;
         for (const auto& dir : kRiverDirs) {
-            const int ni = cell_index(wrap_axis(bx + dir[0], w), wrap_axis(by + dir[1], h), w);
+            const int ni =
+                int(cell_step(std::uint32_t(idx), dir[0], dir[1], w));
             if (waterDist[std::size_t(ni)] > std::uint16_t(d + 1u)) {
                 waterDist[std::size_t(ni)] = std::uint16_t(d + 1u);
                 waterQueue.push_back(ni);
@@ -666,14 +659,12 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
 
     std::vector<std::uint8_t> taken(std::size_t(n), 0);
     auto markTaken = [&](int idx, int radius) {
-        const int sx = idx % w;
-        const int sy = idx / w;
         for (int dy = -radius; dy <= radius; ++dy) {
             for (int dx = -radius; dx <= radius; ++dx) {
                 if (dx * dx + dy * dy > radius * radius) {
                     continue;
                 }
-                taken[std::size_t(cell_index(wrap_axis(sx + dx, w), wrap_axis(sy + dy, h), w))] = 1;
+                taken[cell_step(std::uint32_t(idx), dx, dy, w)] = 1;
             }
         }
     };
@@ -698,7 +689,7 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
                 const float hi = river_meander_noise(x, y, w, h, kRiverMeanderFine,
                                                      mseed ^ 0x9e3779b9u);
                 const float v = 0.65f * lo + 0.35f * hi;
-                meander[std::size_t(cell_index(x, y, w))] = std::uint8_t(
+                meander[cell_of(x, y, w)] = std::uint8_t(
                     std::clamp(int(v * float(kRiverMeanderAmp) + 0.5f), 0, kRiverMeanderAmp));
             }
         }

@@ -25,11 +25,17 @@ constexpr int kTermMax = 16;
 // through the ONE registry door (baseline − scars), never the raw channel.
 int arable_term(const SettlementSiteContext& ctx, int x, int y) {
     int best[kFieldsPerVillage] = {};
+    // Бокс — шаги ИНДЕКСА через cell_step (ЗАКОН АДРЕСА); терраин гарантирован
+    // гардом settlement_site_terms.
+    const int side = ctx.w.terrain->width;
+    const std::uint32_t at = cell_of(x, y, side);
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             if (dx == 0 && dy == 0) continue;   // the town stands here
+            const std::uint32_t n = cell_step(at, dx, dy, side);
             const int wheat = resource_field_read(ctx.w, ResourceFieldId::Wheat,
-                                                  x + dx, y + dy);
+                                                  cell_x(n, side),
+                                                  cell_y(n, side));
             // Insertion into the fattest-first shortlist.
             int at = -1;
             for (int k = 0; k < kFieldsPerVillage; ++k) {
@@ -52,14 +58,16 @@ int arable_term(const SettlementSiteContext& ctx, int x, int y) {
 // covers river and coast alike. Halving per cell of distance: 16/8/4/2.
 int water_term(const SettlementSiteContext& ctx, int x, int y) {
     const TerrainData& td = *ctx.w.terrain;
+    const std::uint32_t at = cell_of(x, y, td.width);
     constexpr int kWaterReach = 4;
     for (int d = 1; d <= kWaterReach; ++d) {
         for (int dy = -d; dy <= d; ++dy) {
             for (int dx = -d; dx <= d; ++dx) {
                 if (std::max(std::abs(dx), std::abs(dy)) != d) continue;
-                const int wx = FeatureLayer::wrap_coord(x + dx, td.width);
-                const int wy = FeatureLayer::wrap_coord(y + dy, td.height);
-                if (td.is_water(wx, wy, ctx.seaLevel8)) return 32 >> d;
+                const std::uint32_t n = cell_step(at, dx, dy, td.width);
+                if (td.is_water(cell_x(n, td.width), cell_y(n, td.width),
+                                ctx.seaLevel8))
+                    return 32 >> d;
             }
         }
     }
@@ -70,9 +78,15 @@ int water_term(const SettlementSiteContext& ctx, int x, int y) {
 int forest_term(const SettlementSiteContext& ctx, int x, int y) {
     if (!ctx.w.trees) return 0;
     int best = 0;
+    const int side = ctx.w.terrain->width;
+    const std::uint32_t at = cell_of(x, y, side);
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy)
-        for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx)
-            best = std::max(best, int(ctx.w.trees->at(x + dx, y + dy)));
+        for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
+            const std::uint32_t n = cell_step(at, dx, dy, side);
+            best = std::max(best,
+                            int(ctx.w.trees->at(cell_x(n, side),
+                                                cell_y(n, side))));
+        }
     // kMaxTreesPerCell = 16384 → /1024 lands in 0..16.
     return std::min(kTermMax, best / 1024);
 }
@@ -148,19 +162,18 @@ int settlement_site_score(const SettlementSiteContext& ctx,
 std::vector<std::uint16_t> build_deposit_reach_field(const DepositLayer& dl,
                                                      int mapW, int mapH) {
     std::vector<std::uint16_t> field;
-    if (mapW <= 0 || mapH <= 0) return field;
+    if (!world_shape_ok(mapW, mapH)) return field;
     field.assign(std::size_t(mapW) * std::size_t(mapH), 0);
     // Veins are SPARSE — splatting each one's worth ladder over the crews'
     // working box is a few tens of millions of writes once per world, where
     // the per-candidate box scan it replaces priced billions of hash
-    // lookups per generation.
+    // lookups per generation. Клетка сплата — шаг ИНДЕКСА от жилы через
+    // cell_step (ЗАКОН АДРЕСА): координаты здесь не нужны вовсе.
     for (int k = 0; k < kDepositKindCount; ++k) {
         const int worth = kDepositDefs[k].siteWorth;
         dl.cells[std::size_t(k)].for_each_live(
                 [&](std::uint32_t idx, std::int32_t remaining) {
             (void)remaining;   // presence is what settles people
-            const int cx = int(idx % std::uint32_t(mapW));
-            const int cy = int(idx / std::uint32_t(mapW));
             for (int dy = -kGathererReach; dy <= kGathererReach; ++dy) {
                 for (int dx = -kGathererReach; dx <= kGathererReach; ++dx) {
                     const int d = std::max(std::abs(dx), std::abs(dy));
@@ -171,11 +184,7 @@ std::vector<std::uint16_t> build_deposit_reach_field(const DepositLayer& dl,
                         ? worth
                         : worth >> (d / (kSettlementReach + 1));
                     if (v <= 0) continue;
-                    const int x = FeatureLayer::wrap_coord(cx + dx, mapW);
-                    const int y = FeatureLayer::wrap_coord(cy + dy, mapH);
-                    auto& slot =
-                        field[std::size_t(y) * std::size_t(mapW)
-                              + std::size_t(x)];
+                    auto& slot = field[cell_step(idx, dx, dy, mapW)];
                     slot = std::uint16_t(
                         std::min(kTermMax, std::max(int(slot), v)));
                 }

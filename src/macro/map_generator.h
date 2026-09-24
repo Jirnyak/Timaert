@@ -111,8 +111,10 @@ struct TerrainData {
 // walk, grow or hunt — the zero contribution, never a crash).
 inline Biome biome_at_cell(const TerrainData& td, int x, int y) {
     if (!td.has_rgba_storage()) return Biome::Water;
-    const int xi = wrapi(x, td.width);
-    const int yi = wrapi(y, td.height);
+    // Сторона мира → маска (ЗАКОН АДРЕСА); wrapi здесь был аппаратным
+    // делением в САМОМ горячем каскаде классификации клетки.
+    const int xi = wrap_axis(x, td.width);
+    const int yi = wrap_axis(y, td.height);
     const std::size_t s =
         (std::size_t(yi) * std::size_t(td.width) + std::size_t(xi)) * 4u;
     if (td.rgba[s + 3u] == 0u) return Biome::Water;   // the baked land mask

@@ -17,11 +17,6 @@ TreeLayer build_tree_layer(const TerrainData& terrain,
 
     const int W = terrain.width, H = terrain.height;
     const bool haveMask = forestMask != nullptr && forestMaskCount >= n;
-    auto massif_at = [&](int x, int y) -> bool {
-        const int wx = FeatureLayer::wrap_coord(x, W);
-        const int wy = FeatureLayer::wrap_coord(y, H);
-        return forestMask[std::size_t(wy) * std::size_t(W) + std::size_t(wx)] != 0;
-    };
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
@@ -32,9 +27,12 @@ TreeLayer build_tree_layer(const TerrainData& terrain,
             const Biome biome = biome_at_cell(terrain, x, y);
             int forest = 0;
             if (haveMask) {
+                // Сосед массива — шаг ИНДЕКСА (cell_step, ЗАКОН АДРЕСА);
+                // здесь стояла лямбда с собственной парой свёрток координат.
                 for (int dy = -1; dy <= 1; ++dy)
                     for (int dx = -1; dx <= 1; ++dx)
-                        if (massif_at(x + dx, y + dy)) ++forest;
+                        if (forestMask[cell_step(std::uint32_t(i), dx, dy, W)]
+                            != 0) ++forest;
             }
             layer.data[i] = derived_tree_count(biome, float(forest) / 9.0f);
         }

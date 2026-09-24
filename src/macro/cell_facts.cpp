@@ -18,8 +18,8 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     // missing world has no land to walk, grow or hunt).
     if (!w.terrain || !w.terrain->has_rgba_storage()) return f;
     const TerrainData& td = *w.terrain;
-    f.x = wrapi(x, td.width);
-    f.y = wrapi(y, td.height);
+    f.x = wrap_axis(x, td.width);
+    f.y = wrap_axis(y, td.height);
     const std::size_t idx =
         std::size_t(f.y) * std::size_t(td.width) + std::size_t(f.x);
 

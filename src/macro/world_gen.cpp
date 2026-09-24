@@ -71,9 +71,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         std::vector<std::uint8_t> forestMask(
             std::size_t(gs.mapW) * std::size_t(gs.mapH), 0);
         for (const auto& t : *out.trees) {
-            const std::size_t i = std::size_t(wrapi(t.y, gs.mapH))
-                                * std::size_t(gs.mapW)
-                                + std::size_t(wrapi(t.x, gs.mapW));
+            const std::size_t i = cell_of(t.x, t.y, gs.mapW);
             if (i < forestMask.size()) forestMask[i] = 1;
         }
         *out.treeLayer = build_tree_layer(*out.terrain, forestMask.data(),
@@ -115,11 +113,13 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         for (const Landmark* vp : villageRows) {
             const auto& v = *vp;
             bool water = false, plough = false, deposit = false;
+            const std::uint32_t vIdx = cell_of(v.x, v.y, gs.mapW);
             for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy)
                 for (int dx = -kSettlementReach; dx <= kSettlementReach;
                      ++dx) {
-                    const int x = wrapi(v.x + dx, gs.mapW);
-                    const int y = wrapi(v.y + dy, gs.mapH);
+                    const std::uint32_t n = cell_step(vIdx, dx, dy, gs.mapW);
+                    const int x = cell_x(n, gs.mapW);
+                    const int y = cell_y(n, gs.mapW);
                     if (out.terrain->is_water(x, y, sea8)) water = true;
                     else if (out.terrain->moisture_at(x, y)
                              >= kFieldMoistureMin) plough = true;
@@ -311,16 +311,19 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                 stoneCells += b == std::uint8_t(FT_Road) ? 1u : 0u;
                 dirtCells += b == std::uint8_t(FT_DirtRoad) ? 1u : 0u;
                 if (b == std::uint8_t(FT_Bridge)) {
-                    const int bx = int(i % std::size_t(out.features->width));
-                    const int by = int(i / std::size_t(out.features->width));
+                    const int side = out.features->width;
+                    const int bx = cell_x(std::uint32_t(i), side);
+                    const int by = cell_y(std::uint32_t(i), side);
                     if (bridgeCells == 0u) { bridgeX = bx; bridgeY = by; }
                     if (forkX < 0) {
                         int roadNeighbours = 0;
                         for (int dy = -1; dy <= 1; ++dy) {
                             for (int dx = -1; dx <= 1; ++dx) {
                                 if (dx == 0 && dy == 0) continue;
-                                const FeatureType f =
-                                    out.features->at(bx + dx, by + dy);
+                                const std::uint32_t n = cell_step(
+                                    std::uint32_t(i), dx, dy, side);
+                                const FeatureType f = out.features->at(
+                                    cell_x(n, side), cell_y(n, side));
                                 if (f == FT_Road || f == FT_DirtRoad
                                     || f == FT_Bridge) {
                                     ++roadNeighbours;

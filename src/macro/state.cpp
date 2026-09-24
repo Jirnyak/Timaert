@@ -272,14 +272,17 @@ void populate_landmarks_from_politik(GameState& gs,
 
     for (const auto& s : cityRefs) {
         cands.clear();
+        // Кольцо кандидатов — шаги ИНДЕКСА через cell_step (ЗАКОН АДРЕСА).
+        const std::uint32_t cityIdx = cell_of(s.x, s.y, gs.mapW);
         for (int dy = -reach; dy <= reach; ++dy) {
             for (int dx = -reach; dx <= reach; ++dx) {
                 // The town works its own kSettlementReach ring; a village
                 // starts beyond it.
                 if (std::max(std::abs(dx), std::abs(dy)) <= kSettlementReach)
                     continue;
-                const int x = wrapi(s.x + dx, gs.mapW);
-                const int y = wrapi(s.y + dy, gs.mapH);
+                const std::uint32_t n = cell_step(cityIdx, dx, dy, gs.mapW);
+                const int x = cell_x(n, gs.mapW);
+                const int y = cell_y(n, gs.mapW);
                 const int score = settlement_site_score(
                     site, SettlementScoreRow::Village, x, y);
                 if (score < 0) continue;   // vetoed ground
