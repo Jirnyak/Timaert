@@ -15,7 +15,11 @@
 
 namespace sm {
 
-inline constexpr int kMaxSoldierLevel = 32767;
+// ЕДИНАЯ ЛЕСТНИЦА УРОВНЯ (владелец, 2026-09-24, эпик единой таблицы):
+// уровень экземпляра — колонка `level` слота В (items.h ItemRef), ширина u8,
+// кап 255 назван вслух и принят; та же лестница дальше ведёт зоны сложности
+// и дроп по уровню. Прежний кап 32767 был шириной int16 старого SoldierSlot.
+inline constexpr int kMaxSoldierLevel = 255;
 
 // THE default perception radius, in subworld metres: how far a body notices
 // an enemy on its own when its row says nothing more specific. ONE home for

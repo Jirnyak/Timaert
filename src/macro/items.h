@@ -19,6 +19,7 @@
 #include "macro/damage_types.h"
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -273,6 +274,26 @@ int item_index(const std::string& id) noexcept;
 // The row an ordinal names; nullptr when the ordinal is out of the catalog.
 const ItemDef* item_def_at(int idx) noexcept;
 
+// ГРАНИЦА РОДОВ СТРОКИ МИРА — У САМОГО КАТАЛОГА (M-73, одно пространство
+// ординалов). Строка мира ниже размера предметного каталога есть ПРЕДМЕТ,
+// всё выше — существо. Определение живёт рядом с каталогом (items.cpp);
+// все ОСТАЛЬНЫЕ двери пространства ординалов (macro/world_row.h) строятся
+// НА этой — второго вывода границы не существует. Контейнеру ниже она
+// нужна потому, что закон РАЗМЕЩЕНИЯ слота зависит от рода строки.
+bool world_row_is_item(std::uint16_t row) noexcept;
+
+// ── ЗАКОН ДВУХ ОБЛАСТЕЙ ЕДИНОГО КОНТЕЙНЕРА (M-71, слияние 2026-09-24) ─────
+// Предметы и существа лежат в ОДНИХ 1024 слотах, но селятся с разных концов:
+// предметы — СНИЗУ ВВЕРХ (первый пустой слот, как всегда), существа —
+// ПЛОТНОЙ ОБЛАСТЬЮ СВЕРХУ ВНИЗ, зеркалом старого плотного ростера. Зачем:
+// закон ходока «свежие уходят первыми» (дезертирство, roster_window) есть
+// закон ПОРЯДКА слотов, и порядок держится ЗАКОНОМ РАЗМЕЩЕНИЯ двери, а не
+// тегом в слоте — тега «существо» не бывает (CANON:5599). Отображение на
+// старый ростер точное: старый slots[0..n-1] = новые [1023..first],
+// новейший слот области — НАИМЕНЬШИЙ индекс; дыра от снятого слота
+// затыкается НОВЕЙШИМ (зеркало swap-with-last), поэтому дырок в области
+// существ не бывает по построению. Пустая середина между областями —
+// оплаченная пустота (вердикт владельца).
 struct Inventory {
     std::array<ItemRef, kMaxInventorySlots> slots{};
 
@@ -301,6 +322,19 @@ struct Inventory {
     }
     bool full() const noexcept { return used_slots() >= kMaxInventorySlots; }
 
+    // Нижняя граница плотной области существ: [first, kMaxInventorySlots)
+    // заняты строками существ, всё ниже — мир предметов. Пустой области —
+    // kMaxInventorySlots. Цена — проход по области, не по контейнеру.
+    int creature_first() const noexcept {
+        int first = kMaxInventorySlots;
+        while (first > 0) {
+            const ItemRef& s = slots[std::size_t(first - 1)];
+            if (s.empty() || world_row_is_item(s.def)) break;
+            --first;
+        }
+        return first;
+    }
+
     // ── Writing ───────────────────────────────────────────────────────────
     // Returns FALSE when the container has no room (owner's ruling: the thing
     // stays where it was — a refused pickup leaves the corpse holding it, a
@@ -311,14 +345,30 @@ struct Inventory {
         if (what.count <= 0) return true;          // nothing to add
         for (ItemRef& s : slots) {
             if (!s.empty() && s.same_kind_as(what)) {
+                // Отказ переполнения ГРОМКИЙ (закон старого ростера, теперь
+                // общий): int32-стак — единственный оставшийся кап.
+                if (s.count > std::numeric_limits<std::int32_t>::max()
+                                   - what.count) {
+                    return false;
+                }
                 s.count += what.count;
                 return true;
             }
         }
-        for (ItemRef& s : slots) {
-            if (s.empty()) { s = what; return true; }
+        if (world_row_is_item(what.def)) {
+            for (ItemRef& s : slots) {
+                if (s.empty()) { s = what; return true; }
+            }
+            return false;
         }
-        return false;
+        // Существо: новый слот — ровно ПОД областью (плотность = закон).
+        // Слот занят предметом — области столкнулись, отказ громкий.
+        const int first = creature_first();
+        if (first == 0) return false;
+        ItemRef& s = slots[std::size_t(first - 1)];
+        if (!s.empty()) return false;
+        s = what;
+        return true;
     }
     // By ORDINAL — what a system that already knows the row uses (the economy
     // day, the loot roll). The string forms below are the authoring-facing
@@ -339,12 +389,26 @@ struct Inventory {
         if (slot < 0 || slot >= kMaxInventorySlots || n <= 0) return false;
         ItemRef& s = slots[std::size_t(slot)];
         if (s.empty() || s.count < n) return false;
+        const bool creature = !world_row_is_item(s.def);
+        const int first = creature ? creature_first() : 0;
         s.count -= n;
-        if (s.empty()) s = ItemRef{};
+        if (s.empty()) {
+            s = ItemRef{};
+            // Дыра в плотной области существ затыкается НОВЕЙШИМ слотом
+            // (slots[first]) — зеркало swap-with-last старого ростера.
+            if (creature && first < slot) {
+                slots[std::size_t(slot)] = slots[std::size_t(first)];
+                slots[std::size_t(first)] = ItemRef{};
+            }
+        }
         return true;
     }
+    // ПРЕДМЕТНАЯ дверь: строка существа отказывается громко — её снятие
+    // обязано чинить плотность области и ходит типизированной дверью
+    // (macro/world_row.h), а не ординальной.
     bool remove_of(int defIdx, int n) {
         if (defIdx < 0 || n <= 0 || count_of(defIdx) < n) return false;
+        if (!world_row_is_item(std::uint16_t(defIdx))) return false;
         int left = n;
         for (ItemRef& s : slots) {
             if (s.empty() || s.def != std::uint16_t(defIdx)) continue;
