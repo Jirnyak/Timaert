@@ -707,6 +707,12 @@ timaert_test(torus_wrap_test
     SOURCES
         src/macro/deposit_layer.cpp)
 
+# Строка мира — одно пространство ординалов (M-73): дверь читает предметный
+# каталог, поэтому линкует его TU; таблица существ — header-only.
+timaert_test(world_row_test
+    SOURCES
+        src/macro/items.cpp)
+
 timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
