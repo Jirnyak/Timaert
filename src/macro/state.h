@@ -353,7 +353,7 @@ namespace sm {
 // «теперь только есть благополучие и оно даёт рост») — настроение, реестр
 // его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
 // seasonWellbeing и needDebt.
-constexpr int kSaveVersion = 108;   // v108: долг дани и его база — ОДНА стоимость
+constexpr int kSaveVersion = 109;   // v109: единый слот объекта — level и entityId
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -604,8 +604,10 @@ struct Landmark {
 // Свидетель поймал обе правки компилятором, как и обещает AGENTS п.10:
 // число живёт в коде, а не в прозе. (Моя прикидка «−180» была на 4 Б
 // неверна — выравнивание; ЗАМЕР поправил, и это ровно то, зачем он тут.)
-static_assert(sizeof(Landmark) == 13728,
-              "место = ядро субъекта (12360) + реестр (1024) + 344 Б своего");
+// 2026-09-24: слот вырос 36 → 40 Б (слот В эпика: level + entityId), ядро
+// субъекта 12360 → 13384; замер поймал компилятором, как положено.
+static_assert(sizeof(Landmark) == 14752,
+              "место = ядро субъекта (13384) + реестр (1024) + 344 Б своего");
 static_assert(sizeof(Landmark) == sizeof(Inventory) + sizeof(Roster)
                                       + sizeof(Interests) + 344,
               "ядро субъекта у места и у сквада ОДНО (CANON S4)");

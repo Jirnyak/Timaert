@@ -812,7 +812,7 @@ int auto_scrap_overflow(Inventory& inv) {
             const ItemRef& r = inv.slots[std::size_t(s)];
             if (r.empty()) continue;
             const bool fungible = r.seed == 0 && r.material == 0
-                && r.quality == 0 && affix_count(r) == 0;
+                && r.level == 0 && r.entityId == 0u && affix_count(r) == 0;
             if (fungible) continue;
             if (item_parts(int(r.def)).empty()) continue;
             const long v = long(value_of(r)) * r.count;

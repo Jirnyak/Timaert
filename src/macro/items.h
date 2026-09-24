@@ -204,9 +204,20 @@ struct ItemRef {
     // part 0 of the row's composition (owner verdict 2026-09-11): a steel
     // sword returns steel, not the row's default iron.
     std::uint8_t  material = 0;
-    std::uint8_t  quality = 0;     // 0 = ordinary
+    // ЕДИНАЯ КОЛОНКА УРОВНЯ ЭКЗЕМПЛЯРА (владелец, 2026-09-24, эпик единой
+    // таблицы): у предмета — прежнее «качество» (0 = обычный), у существа —
+    // уровень. Одна лестница дальше ведёт зоны сложности и дроп («существо
+    // уровня N сыплет вещи ~того же уровня, с весами»). Ширина u8 — кап 255.
+    std::uint8_t  level = 0;
     std::int32_t  count = 0;       // 0 = THIS SLOT IS EMPTY
     std::uint32_t seed = 0;        // 0 = plain, not procedurally rolled
+    // ИМЕННОЙ ЭКЗЕМПЛЯР (слот В эпика, владелец 2026-09-24): 0 = безликий
+    // стак; ≠0 — экземпляр с историей, к которому мир обращается по номеру:
+    // душа существа (К-3), артефакт, квестовая вещь. Раздельно от seed
+    // СОЗНАТЕЛЬНО: превращение существо↔предмет (окаменевший лорд → статуя)
+    // везёт идентичность сквозь смену рода, не перетолковывая её в прокат.
+    // Именное не стакуется (закон в same_kind_as ниже).
+    std::uint32_t entityId = 0;
     // The affixes, SoA: rows in one flat array, values in another. The array
     // of {u8 row, i16 value} pairs this replaces paid a padding byte per cell
     // to alignment — a third of the affix block spent on nothing, in the one
@@ -225,9 +236,13 @@ struct ItemRef {
         affixRow[i] = b.row;
         affixValue[i] = b.value;
     }
-    // Everything except the count — the whole stacking rule.
+    // Everything except the count — the whole stacking rule. ИМЕННОЕ НЕ
+    // СТАКУЕТСЯ НИКОГДА: экземпляр с историей (entityId ≠ 0) — это count == 1
+    // по построению (К-3), и слить две истории в один стак значит потерять
+    // одну из них молча.
     bool same_kind_as(const ItemRef& o) const {
-        if (def != o.def || material != o.material || quality != o.quality
+        if (entityId != 0u || o.entityId != 0u) return false;
+        if (def != o.def || material != o.material || level != o.level
             || seed != o.seed) {
             return false;
         }
@@ -241,10 +256,11 @@ struct ItemRef {
     }
 };
 
-// The byte price is a stated fact, not a discovery: 12 of header + 8 rows +
-// 16 values = 36, no padding. A field added without reading this line trips
-// here instead of silently growing every container in the game by kilobytes.
-static_assert(sizeof(ItemRef) == 36, "ItemRef grew — reprice the containers");
+// The byte price is a stated fact, not a discovery: 16 of header + 8 rows +
+// 16 values = 40, no padding (слот В эпика единой таблицы, владелец
+// 2026-09-24). A field added without reading this line trips here instead of
+// silently growing every container in the game by kilobytes.
+static_assert(sizeof(ItemRef) == 40, "ItemRef grew — reprice the containers");
 
 // The catalog ordinal of an authoring id, or -1. Strings name rows in tables;
 // nothing compares them per tick.
@@ -364,14 +380,14 @@ struct Inventory {
     }
     void clear() { slots.fill(ItemRef{}); }
 };
-// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). САМАЯ ТЯЖЁЛАЯ СТРУКТУРА МИРА: 9 216 Б несёт
-// КАЖДЫЙ сквад и КАЖДОЕ место, то есть 144 МиБ по капу сквадов + 288 МиБ по
-// капу мест — 72 % всей памяти макромира. Форма НАМЕРЕННАЯ (AGENTS п.2,
-// владелец: «256 слотов на каждой сущности это RIGHT»); число записано
-// здесь, чтобы следующий читал его, а не догадывался.
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). САМАЯ ТЯЖЁЛАЯ СТРУКТУРА МИРА: 10 240 Б
+// несёт КАЖДЫЙ сквад и КАЖДОЕ место. Форма НАМЕРЕННАЯ (AGENTS п.2, владелец:
+// «256 слотов на каждой сущности это RIGHT»; слот 40 Б — вердикт слота В,
+// 2026-09-24); число записано здесь, чтобы следующий читал его, а не
+// догадывался. Ёмкость 256 → 1024 (32×32) придёт шагом слияния контейнеров.
 static_assert(sizeof(Inventory) == kMaxInventorySlots * sizeof(ItemRef),
               "инвентарь = 256 плоских слотов, без счётчика и без дырок");
-static_assert(sizeof(Inventory) == 9216, "и это 9216 Б ровно");
+static_assert(sizeof(Inventory) == 10240, "и это 10 240 Б ровно");
 
 // Player combat slice consumed by `useItem` (mirrors TS inline type).
 struct PlayerCombatSlice {

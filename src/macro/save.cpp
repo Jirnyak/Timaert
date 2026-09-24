@@ -275,9 +275,10 @@ void write_inventory(Writer& w, const Inventory& inv) {
         if (s.empty()) continue;
         w.pod(s.def);
         w.pod(s.material);
-        w.pod(s.quality);
+        w.pod(s.level);
         w.pod(s.count);
         w.pod(s.seed);
+        w.pod(s.entityId);
         w.pod(s.affixRow);
         w.pod(s.affixValue);
     }
@@ -298,9 +299,10 @@ void write_equipment(Writer& w, const Equipment& eq) {
         w.pod(cell);
         w.pod(s.def);
         w.pod(s.material);
-        w.pod(s.quality);
+        w.pod(s.level);
         w.pod(s.count);
         w.pod(s.seed);
+        w.pod(s.entityId);
         w.pod(s.affixRow);
         w.pod(s.affixValue);
     }
@@ -318,9 +320,10 @@ void read_equipment(Reader& r, Equipment& eq) {
         r.pod(cell);
         r.pod(s.def);
         r.pod(s.material);
-        r.pod(s.quality);
+        r.pod(s.level);
         r.pod(s.count);
         r.pod(s.seed);
+        r.pod(s.entityId);
         r.pod(s.affixRow);
         r.pod(s.affixValue);
         if (cell >= std::uint8_t(eq.cells())) { r.ok = false; return; }
@@ -340,9 +343,10 @@ void read_inventory(Reader& r, Inventory& inv) {
         ItemRef s{};
         r.pod(s.def);
         r.pod(s.material);
-        r.pod(s.quality);
+        r.pod(s.level);
         r.pod(s.count);
         r.pod(s.seed);
+        r.pod(s.entityId);
         r.pod(s.affixRow);
         r.pod(s.affixValue);
         if (!r.ok) break;

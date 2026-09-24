@@ -93,8 +93,8 @@ static_assert(sizeof(ecs::MacroNpcRuntime) == 92,
 static_assert(sizeof(ecs::Pools) == 36, "строка полос");
 static_assert(sizeof(ecs::MacroVisual) == 12, "строка вида");
 static_assert(sizeof(ecs::NpcCharacter) == 12, "строка лица");
-static_assert(sizeof(ecs::NpcInventory) == 9216,
-              "инвентарь сущности: 256 стаков");
+static_assert(sizeof(ecs::NpcInventory) == 10240,
+              "инвентарь сущности: 256 стаков по 40 Б (слот В, 2026-09-24)");
 static_assert(sizeof(ecs::SquadRoster) == 3144,
               "ростер = инвентарь существ (CANON S4)");
 static_assert(sizeof(ResourceGrid) == 72, "заголовок поля над миром");
@@ -119,7 +119,7 @@ static_assert(sizeof(ResourceFields) == 720,
 // СИСТЕМУ СКВАДОВ»): это второй штабель сущностей рядом со сквадами, и он
 // держит число клетки (`population`) внутри своей записи вместо поля над
 // миром. До сноса — пусть хотя бы не растёт молча.
-static_assert(sizeof(Landmark) == 13728,
+static_assert(sizeof(Landmark) == 14752,
               "ПОДЛЕЖИТ СНОСУ (M-90): второй штабель сущностей");
 
 // ── ПЕРЕПИСЬ ─────────────────────────────────────────────────────────────
