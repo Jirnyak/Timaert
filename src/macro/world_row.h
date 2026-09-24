@@ -94,13 +94,17 @@ inline ItemRef creature_slot(NPCType kind, int level, std::int32_t n,
 // или int32-переполнение стака — единственный оставшийся кап.
 inline bool creatures_push_stack(Inventory& inv, NPCType kind, int level,
                                  std::int32_t n) {
-    if (n <= 0) return false;
+    // Отказ в точке РОЖДЕНИЯ: род, которого нет в каталоге, не входит —
+    // прежний путь отмывал его в Peasant (soldier_npc_type), и порчу ловил
+    // только писатель сейва.
+    if (n <= 0 || !valid_npc_kind(std::uint16_t(kind))) return false;
     return inv.add_ref(creature_slot(kind, level, n));
 }
 
 // Одна душа или один генерик — монета всякого переноса (найм, ходок,
 // строка сейва). entityId == 0 идёт законом стака.
 inline bool creatures_push(Inventory& inv, const SoldierRecord& s) {
+    if (!valid_npc_kind(s.kind)) return false;   // отказ, не отмывание
     return inv.add_ref(
         creature_slot(soldier_npc_type(s.kind), s.level, 1, s.entityId));
 }
@@ -268,6 +272,102 @@ struct CreatureHeadsRange {
 };
 inline CreatureHeadsRange creature_heads_range(const Inventory& inv) {
     return CreatureHeadsRange{&inv, inv.creature_first()};
+}
+
+// ── ВЗГЛЯДЫ ПО КОЛОНКАМ СТРОКИ (переехали из npc.h слиянием M-71) ─────────
+// Всё по ЗАКОНУ СТРОКИ КАТАЛОГА: не «это существо?», а колонка рода —
+// ездовая спина, природа Human, колонка жалованья.
+
+// Сколько ездовых стоит в области — вторая половина закона упряжки.
+inline int count_mount_souls(const Inventory& inv) {
+    int n = 0;
+    for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
+        const ItemRef& s = inv.slots[std::size_t(i)];
+        if (is_mount_kind(std::uint16_t(creature_of_world_row(s.def)))) {
+            n += s.count;
+        }
+    }
+    return n;
+}
+
+// ЗАКОН УПРЯЖКИ (владелец, 2026-09-19: «по лошадке на душу»): отряд ведёт
+// столько ездовых, сколько в нём НЕ-ездовых душ — по одной на душу, и ни
+// одной лишней. Лидер — своя душа, он тоже ведёт коня, поэтому +1.
+//
+// Это МЕРА ВЫДАЧИ, а не право собственности: табун принадлежит МЕСТУ
+// (ДВУХТАКТНЫЙ ОБОЗ, вердикт владельца 2026-09-19) — на приходе отряд
+// сдаёт в стойло ВСЁ ездовое, на выходе место выдаёт ему столько, сколько
+// говорит эта мера и сколько стоит в стойле.
+inline int mount_allowance(const Inventory& inv) {
+    int riders = 1;   // лидер
+    for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
+        const ItemRef& s = inv.slots[std::size_t(i)];
+        if (!is_mount_kind(std::uint16_t(creature_of_world_row(s.def)))) {
+            riders += s.count;
+        }
+    }
+    return riders;
+}
+
+// ЛЮДИ области — руки и рты ведомости труда, подсудимые суда крю. Зверь —
+// спина и рот, но не рука. Спрашивает ПРИРОДУ (kNpcNature), не границу.
+inline int count_human_souls(const Inventory& inv) {
+    int n = 0;
+    for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
+        const ItemRef& s = inv.slots[std::size_t(i)];
+        if (is_folk_kind(std::uint16_t(creature_of_world_row(s.def)))) {
+            n += s.count;
+        }
+    }
+    return n;
+}
+
+// Upkeep is MAINTENANCE, not a deal: один закон, одно число, чей бы
+// контейнер ни был.
+inline int calculate_squad_upkeep(const Inventory& inv) {
+    int base = 0;
+    for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
+        const ItemRef& s = inv.slots[std::size_t(i)];
+        base += soldier_upkeep(std::uint16_t(creature_of_world_row(s.def)),
+                               s.level)
+                * s.count;
+    }
+    return base;
+}
+
+// Паства встаёт в область ОДНОЙ строкой (вердикт 2026-09-22: стражи нет,
+// состав — факт). Возвращает СКОЛЬКО ВСТАЛО: отказ контейнера — вслух.
+inline int raise_flock_into_roster(Inventory& inv, int souls) {
+    if (souls <= 0) return 0;
+    const NpcTypeDef& row = npc_def(NPCType::Peasant);
+    return creatures_push_stack(inv, NPCType::Peasant, row.baseLevel, souls)
+               ? souls
+               : 0;
+}
+
+// Найм: рекрут ПЕРЕЕЗЖАЕТ между двумя контейнерами, и отказать может любой
+// конец. Ищется старейший слот рода (старый обход slots[0..n) = 1023 →
+// first). Возвращает цену или 0.
+inline int hire_npc(Inventory& playerInv, Inventory& garrison,
+                    NPCType kind, int& playerGold) {
+    if (!npc_hireable(kind)) return 0;
+    const std::uint16_t row = world_row_of_creature(kind);
+    const int first = garrison.creature_first();
+    for (int i = kMaxInventorySlots - 1; i >= first; --i) {
+        if (garrison.slots[std::size_t(i)].def != row) continue;
+        const int cost = hire_price_for(std::uint16_t(kind),
+                                        garrison.slots[std::size_t(i)].level);
+        if (playerGold < cost) return 0;
+        SoldierRecord recruit{};
+        if (!creatures_take_at(garrison, i, recruit)) return 0;
+        if (!creatures_push(playerInv, recruit)) {
+            creatures_push(garrison, recruit);   // no room: the man stays home
+            return 0;
+        }
+        playerGold -= cost;
+        return cost;
+    }
+    return 0;
 }
 
 } // namespace sm

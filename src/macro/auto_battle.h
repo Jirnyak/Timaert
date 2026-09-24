@@ -26,6 +26,7 @@
 #include "macro/army.h"
 #include "macro/character_sheet.h"
 #include "macro/npc.h"
+#include "macro/world_row.h" // область существ единого контейнера (M-71)
 
 #include <algorithm>
 #include <cmath>
@@ -54,7 +55,9 @@ struct AutoBattleSide {
     // every NPC leader does.
     float         leaderHpOverride  = -1.0f;
     float         leaderDpsOverride = -1.0f;
-    const SoldierSquad* roster = nullptr;   // may be empty/null
+    // ЕДИНЫЙ КОНТЕЙНЕР сквада (M-71): бой читает только область существ
+    // (creature_heads_range), предметная область для него не существует.
+    const Inventory* roster = nullptr;   // may be empty/null
     BonusTotals   bonuses{};
     // Context, composed by the caller from what the cell and the squad say:
     // terrain advantage (defender's hill, forest cover — data rows when the
@@ -141,13 +144,18 @@ inline float fighter_power(NPCType type, int level, std::uint32_t seed,
 // LEVEL, which fix the sheet's entire point budget; the seed only shuffles
 // its allocation. Deterministic from the member's own identity so the same
 // battle re-resolved is the same battle.
-inline std::uint32_t member_seed(const SoulRef& r) {
+inline std::uint32_t member_seed(const CreatureHead& r) {
     // A generic soul has no name; its ADDRESS (slot, index) stands in, so
     // the same composition re-resolved is the same battle (the id formula
-    // for storied souls is the historical one, verbatim).
+    // for storied souls is the historical one, verbatim). Слот здесь —
+    // СТАРЫЙ РОСТЕРНЫЙ ординал (0 = старейший): область существ растёт
+    // сверху вниз, поэтому он ВЫЧИСЛЯЕТСЯ из слота контейнера — та же
+    // композиция даёт тот же бой, что до слияния M-71.
+    const std::uint32_t rosterSlot =
+        std::uint32_t(kMaxInventorySlots - 1 - r.slot);
     const std::uint32_t name = r.entityId != 0
         ? r.entityId
-        : ((std::uint32_t(r.slot) << 16) | (std::uint32_t(r.index) + 1u));
+        : ((rosterSlot << 16) | (std::uint32_t(r.index) + 1u));
     return (name * 2654435761u) ^ (std::uint32_t(r.kind) << 16)
          ^ std::uint32_t(r.level);
 }
@@ -169,7 +177,7 @@ inline float squad_power(const AutoBattleSide& s) {
                               /*aura*/nullptr, s.leaderHealthFraction);
     }
     if (s.roster) {
-        for (const SoulRef r : s.roster->souls()) {
+        for (const CreatureHead r : creature_heads_range(*s.roster)) {
             if (!valid_npc_kind(r.kind)) continue;
             power += fighter_power(NPCType(r.kind),
                                    normalize_soldier_level(r.level),
@@ -222,12 +230,13 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     // and only a broken side can lose him outright.
     auto distribute = [&rng](const AutoBattleSide& side, float lossFrac,
                              std::vector<SoldierRecord>& casualties) {
-        if (!side.roster || side.roster->empty()) return;
+        if (!side.roster || creatures_empty(*side.roster)) return;
         std::vector<SoldierRecord> souls;
-        souls.reserve(std::size_t(side.roster->size()));
-        for (const SoulRef r : side.roster->souls()) {
+        souls.reserve(std::size_t(creature_heads(*side.roster)));
+        for (const CreatureHead r : creature_heads_range(*side.roster)) {
             if (valid_npc_kind(r.kind))
-                souls.push_back(SoldierRecord{r.entityId, r.kind, r.level});
+                souls.push_back(SoldierRecord{r.entityId, r.kind,
+                                              std::int16_t(r.level)});
         }
         const int n = int(souls.size());
         const int fallen = std::clamp(
@@ -254,8 +263,13 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     const auto roster_size = [](const AutoBattleSide& s) {
         int n = 0;
         if (s.roster) {
-            for (const SoldierSlot& r : *s.roster) {
-                if (valid_npc_kind(r.kind)) n += int(r.count);
+            for (int i = s.roster->creature_first();
+                 i < kMaxInventorySlots; ++i) {
+                const ItemRef& r = s.roster->slots[std::size_t(i)];
+                if (valid_npc_kind(
+                        std::uint16_t(creature_of_world_row(r.def)))) {
+                    n += r.count;
+                }
             }
         }
         return n;

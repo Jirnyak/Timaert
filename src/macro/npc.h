@@ -1888,16 +1888,14 @@ inline bool valid_npc_kind(std::uint16_t raw) {
 // дописанных в хвост, и молча переехала бы на новый род завтра.)
 
 // The row behind a record, or Peasant for a number that names none. One
-// resolver, three spellings: the raw kind is the identity, the record and
-// the slot are the two containers a soldier arrives in.
+// resolver, two spellings: the raw kind is the identity, the record is the
+// transfer coin. (Слот единого контейнера несёт СТРОКУ МИРА, не сырой род —
+// его читают дверями macro/world_row.h, третьего спеллинга здесь нет.)
 inline NPCType soldier_npc_type(std::uint16_t kind) {
     return kind < std::uint16_t(NPCType::Count) ? NPCType(kind)
                                                 : NPCType::Peasant;
 }
 inline NPCType soldier_npc_type(const SoldierRecord& s) {
-    return soldier_npc_type(s.kind);
-}
-inline NPCType soldier_npc_type(const SoldierSlot& s) {
     return soldier_npc_type(s.kind);
 }
 
@@ -1921,9 +1919,6 @@ inline int soldier_upkeep(std::uint16_t kind, int level) {
 inline int soldier_upkeep(const SoldierRecord& s) {
     return soldier_upkeep(s.kind, s.level);
 }
-inline int soldier_upkeep(const SoldierSlot& s) {
-    return soldier_upkeep(s.kind, s.level);
-}
 
 // ── ПРИРОДА, СПРОШЕННАЯ У ЗАПИСИ РОСТЕРА ──────────────────────────────────
 // Три двери, один столбец данных. Имя рода ни в одной из них не звучит:
@@ -1945,59 +1940,10 @@ inline bool is_mount_kind(std::uint16_t kind) {
     return valid_npc_kind(kind) && npc_def(NPCType(kind)).tag == NpcTag::Mount;
 }
 
-// Сколько ездовых стоит в ростере — вторая половина закона упряжки.
-inline int count_mount_souls(const SoldierSquad& squad) {
-    int n = 0;
-    for (const SoldierSlot& s : squad) {
-        if (is_mount_kind(s.kind)) n += int(s.count);
-    }
-    return n;
-}
-
-// ЗАКОН УПРЯЖКИ (владелец, 2026-09-19: «по лошадке на душу»): отряд ведёт
-// столько ездовых, сколько в нём НЕ-ездовых душ — по одной на душу, и ни
-// одной лишней. Лидер — своя душа, он тоже ведёт коня, поэтому +1.
-//
-// Это МЕРА ВЫДАЧИ, а не право собственности: табун принадлежит МЕСТУ
-// (ДВУХТАКТНЫЙ ОБОЗ, вердикт владельца 2026-09-19) — на приходе отряд
-// сдаёт в стойло ВСЁ ездовое, на выходе место выдаёт ему столько, сколько
-// говорит эта мера и сколько стоит в стойле. Отсюда даром: табун можно
-// угнать в набеге, продать караваном и увидеть в анкете места, а тяглом
-// пользуется тот, кого дом сегодня послал за тяжёлым.
-inline int mount_allowance(const SoldierSquad& squad) {
-    int riders = 1;   // лидер
-    for (const SoldierSlot& s : squad) {
-        if (!is_mount_kind(s.kind)) riders += int(s.count);
-    }
-    return riders;
-}
-
-// The roster's PEOPLE — the souls that are hands, mouths of the labour
-// ledger and subjects of the crew суд. A beast in the roster is a BACK
-// (haulMult) and a mouth (upkeep column), never a hand: a horse does not
-// mine, does not count toward a crew's want, and must not dissolve into a
-// town's population as a person.
-// СПРАШИВАЕТ ПРИРОДУ (kNpcNature), а не границу ординала: до 2026-09-21
-// здесь стоял `!is_monster_kind`, и пять человеческих родов, дописанных в
-// enum после звериного блока, молча не считались людьми.
-inline int count_human_souls(const SoldierSquad& squad) {
-    int n = 0;
-    for (const SoldierSlot& s : squad) {
-        if (is_folk_kind(s.kind)) n += int(s.count);
-    }
-    return n;
-}
-
-// Upkeep is MAINTENANCE, not a deal (owner 2026-09-17, сессия сезонов): the
-// CHA/Trade discount that used to haggle the player's payroll down was a
-// player-special path and died with the unified season window — bargaining
-// belongs to HIRE, which already prices through the trade law. One law, one
-// number, whoever's roster it is.
-inline int calculate_squad_upkeep(const SoldierSquad& squad) {
-    int base = 0;
-    for (const SoldierSlot& s : squad) base += soldier_upkeep(s) * s.count;
-    return base;
-}
+// (count_mount_souls / mount_allowance / count_human_souls /
+// calculate_squad_upkeep переехали в macro/world_row.h слиянием M-71: они —
+// взгляды на область существ единого контейнера, а пересчёт строка ↔ род
+// живёт только там. Колонки, которые они читают, остались здесь.)
 
 // The row's price column × THE one level law (soldier_level_factor) — the
 // same product the old inline `upkeep × 30` computed, read from data
@@ -2008,9 +1954,6 @@ inline int hire_price_for(std::uint16_t kind, int level) {
            * soldier_level_factor(level);
 }
 inline int hire_price_for(const SoldierRecord& s) {
-    return hire_price_for(s.kind, s.level);
-}
-inline int hire_price_for(const SoldierSlot& s) {
     return hire_price_for(s.kind, s.level);
 }
 
@@ -2056,40 +1999,8 @@ inline int npc_xp_reward(NPCType t, int level) {
 // патрульной строки реестра мест: «вырезан не вид, а то, что город его
 // спавнит». Её носят авто-бой, сцена и двадцать тестов.
 //
-// Возвращает СКОЛЬКО ВСТАЛО: ростер полон (256 слотов) — место оставляет
-// душу себе, и это отказ вслух, а не молчаливая потеря.
-inline int raise_flock_into_roster(SoldierSquad& roster, int souls) {
-    if (souls <= 0) return 0;
-    const NpcTypeDef& row = npc_def(NPCType::Peasant);
-    return roster.push_stack(std::uint16_t(NPCType::Peasant),
-                             std::int16_t(row.baseLevel), souls)
-               ? souls
-               : 0;
-}
-
-inline int hire_npc(SoldierSquad& playerSquad, SoldierSquad& garrison,
-                    NPCType kind, int& playerGold) {
-    if (!npc_hireable(kind)) return 0;
-    // A recruit MOVES between two rosters — and the move can be refused at
-    // either end: an empty garrison has nobody, a full squad has no room. The
-    // ceiling is the same one every squad has (kMaxSquadSlots): the player's
-    // army used to have none at all, which walked straight into the save's
-    // 8192-record wall and made the whole file refuse to write.
-    for (int i = 0; i < garrison.slot_count(); ++i) {
-        if (garrison[i].kind != static_cast<std::uint8_t>(kind)) continue;
-        const int cost = hire_price_for(garrison[i]);
-        if (playerGold < cost) return 0;
-        SoldierRecord recruit{};
-        if (!garrison.take_soul_at(i, recruit)) return 0;
-        if (!playerSquad.push(recruit)) {
-            garrison.push(recruit);   // no room: the man stays home
-            return 0;
-        }
-        playerGold -= cost;
-        return cost;
-    }
-    return 0;
-}
+// (raise_flock_into_roster и hire_npc переехали в macro/world_row.h
+// слиянием M-71 — обе двери двигают души между едиными контейнерами.)
 
 // Case-insensitive token → registry row, matched against the row's stable
 // machine `id` FIRST ("tax_collector" → NPCType::TaxCollector) — that column

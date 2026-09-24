@@ -1,6 +1,7 @@
 #include "macro/save.h"
 #include "macro/save_stream.h"
 #include "macro/world_fields.h"
+#include "macro/world_row.h"   // область существ единого контейнера (M-71)
 #include "macro/deposit_layer.h"
 #include "macro/state.h"
 #include "macro/macro_snapshot.h"
@@ -36,8 +37,8 @@ constexpr std::uint32_t kMaxMarkers = 16384u;
 constexpr std::uint32_t kMaxQuests = 4096u;
 // (the field caps live with the rows: macro/world_fields.cpp)
 constexpr std::uint32_t kMaxQuestParts = 4096u;
-// (kMaxSoldiers 8192 died with v97: the disk row is a SLOT now, and the
-// slot cap is the roster's own kMaxSquadSlots — one number, one home.)
+// (kMaxSoldiers 8192 died with v97; с v110 существа едут внутри инвентаря —
+// один кап слотов, один дом: kMaxInventoryStacks.)
 // The macro-ECS snapshot (v23): one record per living macro NPC. The cap is
 // the owner's macro-squad ceiling — the same golden 2^14 the subworld uses.
 constexpr std::uint32_t kMaxMacroNpcs = 16384u;
@@ -269,10 +270,27 @@ void read_string_vector(Reader& r, std::vector<std::string>& v,
 // The spellbook's cooldowns are STEPS now (core/time.h), so the map they ride
 // in is integer. Kept beside its float twin rather than templated: two callers,
 // two plain functions, and a reader can see exactly what lands on disk.
+// v110 (слияние M-71): стак едет С АДРЕСОМ СЛОТА. Позиция — носитель закона:
+// область существ растёт сверху вниз, и её порядок ЕСТЬ закон ходока «свежие
+// уходят первыми» — восстановление через add_ref перевернуло бы очередь
+// дезертирства молча. Файл несёт занятые слоты с их индексами, читатель
+// кладёт байты РОВНО туда же.
 void write_inventory(Writer& w, const Inventory& inv) {
     if (!w.count(std::size_t(inv.used_slots()), kMaxInventoryStacks)) return;
-    for (const ItemRef& s : inv.slots) {
+    for (int i = 0; i < kMaxInventorySlots; ++i) {
+        const ItemRef& s = inv.slots[std::size_t(i)];
         if (s.empty()) continue;
+        // Fail-closed НА ЗАПИСИ (закон бывшего write_squad): строка, которой
+        // нет ни в предметном каталоге, ни в каталоге существ, — порча, и
+        // файл отказывается, а не увозит призрака.
+        const bool knownRow = world_row_is_item(s.def)
+            ? item_def_at(int(s.def)) != nullptr
+            : world_row_is_creature(s.def);
+        if (!knownRow) {
+            w.ok = false;
+            return;
+        }
+        w.pod(std::uint16_t(i));
         w.pod(s.def);
         w.pod(s.material);
         w.pod(s.level);
@@ -340,6 +358,8 @@ void read_inventory(Reader& r, Inventory& inv) {
     if (!read_count(r, n, kMaxInventoryStacks)) return;
     inv.clear();
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint16_t slot = 0;
+        r.pod(slot);
         ItemRef s{};
         r.pod(s.def);
         r.pod(s.material);
@@ -350,61 +370,32 @@ void read_inventory(Reader& r, Inventory& inv) {
         r.pod(s.affixRow);
         r.pod(s.affixValue);
         if (!r.ok) break;
-        // A row the catalog does not know, or a stack of nothing, is a save
-        // from a different game — refuse it out loud rather than carry a
-        // phantom item nobody can name.
-        if (item_def_at(int(s.def)) == nullptr || s.count <= 0) {
+        // A row the world does not know, a stack of nothing, an address
+        // outside the container or a doubly-written slot is a save from a
+        // different game — refuse it out loud rather than carry a phantom.
+        // Строка существа легальна (M-71): она живёт за предметным
+        // каталогом, но внутри world_row_count().
+        const bool knownRow = world_row_is_item(s.def)
+            ? item_def_at(int(s.def)) != nullptr
+            : world_row_is_creature(s.def);
+        if (!knownRow || s.count <= 0
+            || slot >= std::uint16_t(kMaxInventorySlots)
+            || !inv.slots[std::size_t(slot)].empty()) {
             r.ok = false;
             return;
         }
-        if (!inv.add_ref(s)) { r.ok = false; return; }
-    }
-}
-
-// The roster loop, shared by every roster the save carries: the player's
-// army, the deserter pool, garrisons, and the macro snapshot's squad rosters.
-// On DISK the roster is its SLOTS (v97, CANON S4 — the same stack law the
-// in-memory form obeys): count-prefixed slot rows, so a thousand-soul
-// generic stack is one 12-byte row, never a wall of per-soul records.
-void write_squad(Writer& w, const SoldierSquad& squad) {
-    if (!w.count(std::size_t(squad.slot_count()), kMaxSquadSlots)) return;
-    for (const SoldierSlot& s : squad) {
-        if (!valid_npc_kind(s.kind)) {
-            w.ok = false;
-            return;
-        }
-        w.pod(s.kind);
-        w.pod(s.level);
-        w.pod(s.count);
-        w.pod(s.entityId);
-    }
-}
-
-void read_squad(Reader& r, SoldierSquad& squad) {
-    std::uint32_t n = 0;
-    if (!read_count(r, n, std::uint32_t(kMaxSquadSlots))) return;
-    squad.clear();
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        SoldierSlot s{};
-        r.pod(s.kind);
-        r.pod(s.level);
-        r.pod(s.count);
-        r.pod(s.entityId);
-        if (!r.ok) break;
-        // A slot that breaks the roster's own invariants (army.h: levels
-        // are live, counts positive, a storied soul is exactly one) is a
-        // save from a different game: refuse it loudly.
-        if (!valid_npc_kind(s.kind) || s.level <= 0 || s.count <= 0
-            || (s.entityId != 0 && s.count != 1)) {
+        // Инварианты области существ (бывший read_squad): уровень живой,
+        // душа с историей — ровно одна.
+        if (world_row_is_creature(s.def)
+            && (s.level == 0 || (s.entityId != 0 && s.count != 1))) {
             r.ok = false;
             return;
         }
-        if (!squad.push_slot(s)) {
-            r.ok = false;
-            return;
-        }
+        inv.slots[std::size_t(slot)] = s;
     }
 }
+// (write_squad/read_squad умерли слиянием M-71: существа едут внутри
+// write_inventory — область существ со своими адресами слотов.)
 
 void write_spell_book(Writer& w, const SpellBook& spellBook) {
     // v89: the ENVELOPE is written first (the owner's 256), so a book saved
@@ -466,9 +457,8 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.dead);
     w.pod(m.playerFlag);   // v87: PlayerTag rides the snapshot honestly
     w.pod(m.designOrdinal);   // v92: строка стола анкет, −1 у обычных
-    write_inventory(w, m.inventory);
+    write_inventory(w, m.inventory);   // v110: существа едут здесь (M-71)
     write_equipment(w, m.gear);
-    write_squad(w, m.roster);
     w.pod(m.rosterNeedDebt);   // v105: счёт содержания ростера
     w.pod(m.rosterWageDebt);
 }
@@ -510,9 +500,8 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     // The READ order is the WRITE order, field for field. It has to be said
     // out loud because these two functions are a hundred lines apart and a
     // block inserted into one of them reads the next block's bytes.
-    read_inventory(r, m.inventory);
+    read_inventory(r, m.inventory);   // v110: существа едут здесь (M-71)
     read_equipment(r, m.gear);
-    read_squad(r, m.roster);
     r.pod(m.rosterNeedDebt);   // v105
     r.pod(m.rosterWageDebt);
 }
@@ -766,7 +755,6 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.y);
     w.pod(lm.population);
     write_inventory(w, lm.inventory);
-    write_squad(w, lm.garrison.squad);   // v96: history ring cut (verdict №4, S20.1)
     w.pod(lm.factionIdx);          // v94: faction registry index (kingdoms cut)
     w.pod(lm.interests);           // v107: ВСЕ связи места одной таблицей
                                    // (феод — частный случай, S24 целиком)
@@ -792,7 +780,6 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.y);
     r.pod(lm.population);
     read_inventory(r, lm.inventory);
-    read_squad(r, lm.garrison.squad);   // v96: history ring cut (verdict №4, S20.1)
     r.pod(lm.factionIdx);          // v94
     r.pod(lm.interests);           // v107
     r.pod(lm.starvedYesterday);  // v29
@@ -1075,7 +1062,7 @@ void write_payload(Writer& w, const GameState& s,
     write_relations(w, s.relations);
 
     write_sub_state(w, s.subState);
-    write_squad(w, s.deserterPool);
+    write_inventory(w, s.deserterPool);   // v110: пул = единый контейнер
 
 
     // The saved world FIELDS ride as registry rows (macro/world_fields.h):
@@ -1172,7 +1159,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     read_relations(r, s.relations);
 
     read_sub_state(r, s.subState);
-    read_squad(r, s.deserterPool);
+    read_inventory(r, s.deserterPool);   // v110: пул = единый контейнер
 
     // The saved world FIELDS, by registry row (macro/world_fields.h) — the
     // mirror of the write side; the caller validates trees against the

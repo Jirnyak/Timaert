@@ -24,6 +24,7 @@
 #include "core/rng.h"
 #include "core/torus.h"
 #include "macro/deposit_layer.h"
+#include "macro/world_row.h"
 #include "macro/npc_ai.h"          // kGathererReach — the crews' working box
 #include "macro/politik.h"
 #include "macro/settlement_score.h"
@@ -338,11 +339,11 @@ void test_count_derives_from_capacity() {
     // vanished: the bijection witness sums both sides.
     for (const auto* vp : villages) {
         const auto& v = *vp;
-        const int born = v.population + total_soldiers(v.garrison.squad);
+        const int born = v.population + creature_heads(v.inventory);
         CHECK(born >= kVillageBornBase
                   && born < kVillageBornBase + kVillageBornSpread,
               "a village is born at the owner's scale, army included");
-        CHECK(total_soldiers(v.garrison.squad) > 0,
+        CHECK(creature_heads(v.inventory) > 0,
               "a village is born with its own small army (§42 Инк 7)");
     }
 }

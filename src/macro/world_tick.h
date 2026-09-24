@@ -33,8 +33,8 @@ struct WorldTickResult {
 // packet under it — sized a tavern recruit pool, not a defense force. The
 // target is population-bound by construction (a shift of a bounded
 // number), so the runaway that once crossed the save guard (audit II.4)
-// cannot recur; the roster's own capacity (kMaxSquadSlots) is the one
-// physical wall left, and push refuses out loud at it.
+// cannot recur; the container's own slot ceiling is the one physical wall
+// left, and the creature door refuses out loud at it.
 inline int garrison_target_strength(LandmarkType type, int population) {
     const std::uint8_t shift = landmark_def(type).garrisonShift;
     if (shift == 0xFFu || population <= 0) return 0;

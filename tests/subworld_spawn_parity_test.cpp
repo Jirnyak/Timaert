@@ -1,5 +1,6 @@
 #include "check.h"
 #include "macro/faction.h"
+#include "macro/world_row.h"
 #include "sub/spawn.h"
 #include "sub/record.h"   // THE door: whose record is this body (mirror law)
 #include "core/rng.h"
@@ -314,8 +315,8 @@ void spawn_all_cells(sm::ecs::World& world,
 }
 
 bool run_water_blocked_squad_case() {
-    sm::SoldierSquad squad{};
-    squad.push(sm::make_soldier(
+    sm::Inventory squad{};
+    sm::creatures_push(squad, sm::make_soldier(
         std::uint8_t(sm::NPCType::Guard), 4, 77u));
 
     sm::ecs::World world{};
@@ -342,9 +343,9 @@ bool run_city_population_projection_case(
     // GUARDS are the place's own GARRISON records now (§42 Инк 7): the
     // street shows exactly who is on the wall, so the fixture brings a
     // five-man wall and expects five fighting guards.
-    sm::SoldierSquad wall{};
+    sm::Inventory wall{};
     for (int i = 0; i < 5; ++i) {
-        wall.push(sm::make_soldier(
+        sm::creatures_push(wall, sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard),
             sm::npc_def(sm::NPCType::Guard).baseLevel,
             4000u + std::uint32_t(i)));
@@ -596,11 +597,13 @@ bool run_beast_member_projection_case(
     reg.emplace<sm::ecs::NpcLevel>(leader, std::int16_t(3));
     reg.emplace<sm::ecs::NpcCharacter>(leader, sm::ecs::NpcCharacter{});
 
-    sm::ecs::SquadRoster roster{};
-    roster.squad.push(sm::make_soldier(kBeast, 2, 5001u));
-    roster.squad.push(sm::make_soldier(
-        std::uint16_t(sm::NPCType::Guard), 2, 5002u));
-    reg.emplace<sm::ecs::SquadRoster>(leader, roster);
+    reg.emplace<sm::ecs::SquadRoster>(leader);
+    {
+        auto& bag = reg.get_or_emplace<sm::ecs::NpcInventory>(leader);
+        sm::creatures_push(bag.inv, sm::make_soldier(kBeast, 2, 5001u));
+        sm::creatures_push(bag.inv, sm::make_soldier(
+            std::uint16_t(sm::NPCType::Guard), 2, 5002u));
+    }
 
     const int projected = sm::sub::project_macro_npcs_into_subworld(
         world, mgr, /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u);

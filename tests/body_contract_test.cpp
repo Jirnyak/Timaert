@@ -22,6 +22,7 @@
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
 #include "macro/army.h"
+#include "macro/world_row.h"
 #include "macro/character_sheet.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
@@ -35,12 +36,16 @@ namespace {
 // A roster of mixed kinds: the owner's rule is that a squad is CONTEXT from the
 // macro world and may hold anyone the tables know, so the contract must hold
 // for every kind alike, not just for the one the fixture happened to pick.
-sm::SoldierSquad mixed_squad() {
-    sm::SoldierSquad squad{};
-    squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Guard),    4, 11u));
-    squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Peasant),  1, 22u));
-    squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Bandit),   3, 33u));
-    squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Sorceress),5, 44u));
+sm::Inventory mixed_squad() {
+    sm::Inventory squad{};
+    sm::creatures_push(squad,
+        sm::make_soldier(std::uint8_t(sm::NPCType::Guard),    4, 11u));
+    sm::creatures_push(squad,
+        sm::make_soldier(std::uint8_t(sm::NPCType::Peasant),  1, 22u));
+    sm::creatures_push(squad,
+        sm::make_soldier(std::uint8_t(sm::NPCType::Bandit),   3, 33u));
+    sm::creatures_push(squad,
+        sm::make_soldier(std::uint8_t(sm::NPCType::Sorceress),5, 44u));
     return squad;
 }
 
@@ -360,10 +365,11 @@ void test_a_squad_on_the_map_projects_its_roster() {
         /*hp*/30.0f, /*maxHp*/30.0f, /*visualSeed*/0xCAFEu);
     reg.emplace<ecs::MacroSpawnId>(macro, std::uint32_t(9));
     {
-        auto& roster = reg.emplace<ecs::SquadRoster>(macro);
-        roster.squad.push(make_soldier(
+        reg.emplace<ecs::SquadRoster>(macro);
+        auto& mbag = reg.get_or_emplace<ecs::NpcInventory>(macro);
+        creatures_push(mbag.inv, make_soldier(
             std::uint8_t(NPCType::Guard), 4, 77u));
-        roster.squad.push(make_soldier(
+        creatures_push(mbag.inv, make_soldier(
             std::uint8_t(NPCType::Bandit), 2, 88u));
     }
 
@@ -414,7 +420,7 @@ void test_a_squad_on_the_map_projects_its_roster() {
     for (auto e : reg.view<ecs::MacroDebt, ecs::SubworldTag>()) {
         settle_macro_debt(w, reg.get<ecs::MacroDebt>(e), -1);
     }
-    CHECK(reg.get<ecs::SquadRoster>(macro).squad.empty(),
+    CHECK(creatures_empty(reg.get<ecs::NpcInventory>(macro).inv),
           "both deaths below emptied the roster above, by name");
     CHECK(!reg.all_of<ecs::Dead>(macro),
           "the leader outlives his men: an empty roster is a squad of one");

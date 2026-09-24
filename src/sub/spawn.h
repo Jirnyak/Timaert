@@ -237,7 +237,7 @@ void spawn_cell_npcs(ecs::World& w,
                      // with the Garrison loan: killed on the wall = struck
                      // from the roll; out on patrol / hired away = not in
                      // this roster = not on the street. nullptr = none.
-                     const SoldierSquad* garrison,
+                     const Inventory* garrison,
                      // WHAT HOUR IT IS, and it is not optional. How many of a
                      // place's people stand on its streets is a question about
                      // the sun (city_layout.h crowd_outdoor_share01); the rest
@@ -375,8 +375,8 @@ int toroidal_cell_offset(int a, int c, int n);
 // Run after rebase on a re-centre to evict exactly the cells that left the 3×3.
 void despawn_subworld_entities_outside_window(ecs::World& w);
 
-// Project a macro squad into the current subworld as real ECS NPC entities. The
-// macro SoldierSquad remains the persistent source of truth.
+// Project a macro squad into the current subworld as real ECS NPC entities.
+// The macro container's creature area remains the persistent source of truth.
 //
 // THE RULE (owner, 2026-08-04): a squad's members all wear the faction of the
 // squad's OWNER on the macro layer, whoever the members happen to be. A warband
@@ -398,7 +398,7 @@ void despawn_subworld_entities_outside_window(ecs::World& w);
 // deaths back into HIS squad, not into the player ordinal (A2, 2026-09-17).
 // Defaults name the ordinary hero squad, which is what every fixture has.
 void spawn_player_squad(ecs::World& w,
-                        const SoldierSquad& squad,
+                        const Inventory& squad,
                         const SeamlessSubworldManager& mgr,
                         float playerX,
                         float playerY,
@@ -411,7 +411,7 @@ void spawn_player_squad(ecs::World& w,
                         std::int16_t rosterCy = 0);
 
 void spawn_player_squad(ecs::World& w,
-                        const SoldierSquad& squad,
+                        const Inventory& squad,
                         const std::vector<std::uint8_t>& tiles,
                         float playerX,
                         float playerY,

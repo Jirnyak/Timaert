@@ -1,4 +1,5 @@
 #include "macro/save.h"
+#include "macro/world_row.h"
 #include "macro/state.h"
 #include "macro/macro_snapshot.h"
 #include "macro/deposit_layer.h"
@@ -75,10 +76,10 @@ bool read_all(const std::string& path, std::vector<std::uint8_t>& out) {
     return closeOk;
 }
 
-void add_soldiers(sm::SoldierSquad& squad, sm::NPCType kind, int count,
+void add_soldiers(sm::Inventory& inv, sm::NPCType kind, int count,
                   std::uint32_t idBase) {
     for (int i = 0; i < count; ++i) {
-        squad.push(sm::make_soldier(
+        sm::creatures_push(inv, sm::make_soldier(
             static_cast<std::uint8_t>(kind), sm::npc_def(kind).baseLevel,
             idBase + static_cast<std::uint32_t>(i)));
     }
@@ -163,13 +164,16 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     // id is refused at the door instead of riding to disk and surfacing as
     // "Unknown item" in a panel three systems later.
     a.inventory.add("food", 3);
-    a.roster.push(sm::make_soldier(std::uint16_t(sm::NPCType::Guard), 4, 900u));
-    a.roster.push(sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 901u));
+    // Существа — в ТОМ ЖЕ контейнере (M-71), областью сверху.
+    sm::creatures_push(a.inventory, sm::make_soldier(
+        std::uint16_t(sm::NPCType::Guard), 4, 900u));
+    sm::creatures_push(a.inventory, sm::make_soldier(
+        std::uint16_t(sm::NPCType::Peasant), 2, 901u));
     // v42: a BEAST in the roster. A squad is a squad whatever it is made of
     // (CANON.md S4/S16), and while `kind` was a byte the monster half of the id
     // space (0x100 | catalog row) could not be written down at all — the record
     // was silently dropped by the validity gate on the way out.
-    a.roster.push(sm::make_soldier(
+    sm::creatures_push(a.inventory, sm::make_soldier(
         std::uint16_t(sm::NPCType::Wolf), 3, 902u));
     out.push_back(std::move(a));
 
@@ -245,10 +249,10 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     // debt fact, summed by the fact arithmetic.
     sm::remember(player.memory,
                  sm::make_debt_fact(sm::kDebtToSettlement, 7, 15, 3));
-    add_soldiers(player.roster, sm::NPCType::Peasant, 4, 1000u);
-    add_soldiers(player.roster, sm::NPCType::Peasant, 3, 1100u);
-    add_soldiers(player.roster, sm::NPCType::Guard, 2, 1200u);
-    player.roster.push(sm::SoldierRecord{
+    add_soldiers(player.inventory, sm::NPCType::Peasant, 4, 1000u);
+    add_soldiers(player.inventory, sm::NPCType::Peasant, 3, 1100u);
+    add_soldiers(player.inventory, sm::NPCType::Guard, 2, 1200u);
+    sm::creatures_push(player.inventory, sm::SoldierRecord{
         9999u, static_cast<std::uint8_t>(sm::NPCType::Guard), -12});
     out.push_back(player);
     return out;
@@ -385,8 +389,8 @@ sm::GameState make_state() {
     settlement.y = 80;
     settlement.population = 777;
     settlement.inventory.add("wood", 19);
-    add_soldiers(settlement.garrison.squad, sm::NPCType::Guard, 5, 2000u);
-    add_soldiers(settlement.garrison.squad, sm::NPCType::Peasant, 1, 2100u);
+    add_soldiers(settlement.inventory, sm::NPCType::Guard, 5, 2000u);
+    add_soldiers(settlement.inventory, sm::NPCType::Peasant, 1, 2100u);
     settlement.factionIdx = 2;
     // Honest-day readouts (v29) — every field non-default.
     settlement.starvedYesterday = 12;
@@ -843,22 +847,29 @@ void run_roundtrip() {
             FAIL_BAIL("macro squad orders lost");
         }
         if (a.dead != 0) FAIL_BAIL("living macro NPC loaded dead");
-        if (a.inventory.used_slots() != 1
+        // Единый контейнер (M-71): 1 предметный стак + 3 души.
+        if (a.inventory.used_slots() != 4
             || a.inventory.count("food") != 3) {
             FAIL_BAIL("macro inventory lost");
         }
-        if (a.roster.size() != 3
-            || a.roster[0].kind != std::uint16_t(sm::NPCType::Guard)
-            || a.roster[0].level != 4
-            || a.roster[1].entityId != 901u) {
+        std::vector<sm::CreatureHead> heads;
+        for (const sm::CreatureHead h :
+             sm::creature_heads_range(a.inventory)) {
+            heads.push_back(h);
+        }
+        // Порядок области — старый порядок ростера (старейший первым).
+        if (heads.size() != 3
+            || heads[0].kind != std::uint16_t(sm::NPCType::Guard)
+            || heads[0].level != 4
+            || heads[1].entityId != 901u) {
             FAIL_BAIL("macro roster lost");
         }
         // The beast came back a beast — not truncated to its low byte, not
         // dropped, not turned into whatever humanoid that byte would name.
-        if (a.roster[2].kind != std::uint16_t(sm::NPCType::Wolf)
-            || a.roster[2].level != 3
-            || a.roster[2].entityId != 902u
-            || sm::is_folk_kind(a.roster[2].kind)) {
+        if (heads[2].kind != std::uint16_t(sm::NPCType::Wolf)
+            || heads[2].level != 3
+            || heads[2].entityId != 902u
+            || sm::is_folk_kind(heads[2].kind)) {
             FAIL_BAIL("a beast member did not survive the save");
         }
     }
@@ -956,8 +967,8 @@ void run_roundtrip() {
     const sm::Landmark& city = *cityLm;
     if (city.name != "Round City"
         || city.inventory.count("wood") != 19
-        || sm::count_soldiers_of_kind(
-            city.garrison.squad, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 1) {
+        || sm::creature_heads_of(city.inventory, sm::NPCType::Peasant)
+               != 1) {
         FAIL_BAIL("settlement details lost");
     }
     if (city.starvedYesterday != 12 || !nearf(city.popGrowthCarry, 0.375f)) {
@@ -996,8 +1007,8 @@ void run_roundtrip() {
         || loaded.subState.pendingEncounterIdx != 4) {
         FAIL_BAIL("sub-state lost");
     }
-    if (sm::count_soldiers_of_kind(
-            loaded.deserterPool, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 2) {
+    if (sm::creature_heads_of(loaded.deserterPool, sm::NPCType::Peasant)
+        != 2) {
         FAIL_BAIL("deserter pool lost");
     }
     for (std::size_t k = 0; k < std::size_t(sm::kDepositKindCount); ++k) {
@@ -1162,12 +1173,22 @@ void run_roundtrip() {
         FAIL_BAIL("bad version inspect status wrong");
     }
 
-    // A roster row naming a kind the tables do not know must REFUSE the save,
-    // whichever roster carries it — the deserter pool is one of the four the
-    // shared writer serves.
+    // A slot naming a row the world does not know must REFUSE the save.
+    // Дверь существ такую порчу уже не пускает (creatures_push отказывает
+    // невалидному роду — проверено ниже), поэтому порча сажается В СЛОТ
+    // НАПРЯМУЮ: предмет свидетеля — fail-closed ПИСАТЕЛЯ.
     sm::GameState invalidSquadState = gs;
-    invalidSquadState.deserterPool.push(sm::SoldierRecord{
-        10001u, static_cast<std::uint8_t>(sm::NPCType::Count), 1});
+    if (sm::creatures_push(invalidSquadState.deserterPool, sm::SoldierRecord{
+            10001u, std::uint16_t(sm::NPCType::Count), 1})) {
+        FAIL_BAIL("the creature door accepted a kind the tables do not know");
+    }
+    {
+        sm::ItemRef rot{};
+        rot.def = sm::world_row_count();   // строка ЗА концом пространства
+        rot.count = 1;
+        invalidSquadState.deserterPool
+            .slots[std::size_t(sm::kMaxInventorySlots - 1)] = rot;
+    }
     if (sm::save_game(invalidSquadState, quests, macroFixture, treeCounts,
                       deposits,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {

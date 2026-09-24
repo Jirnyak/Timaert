@@ -296,11 +296,11 @@ void garrison_recruit_(GameState& gs, Landmark& s,
     (void)runtime;   // НАБОР БОЛЬШЕ НЕ ЖРЕБИЙ: состав — факт, а не бросок
     if (s.population < 20) return;
     const int target = garrison_target_strength(s.type, s.population);
-    const int current = total_soldiers(s.garrison.squad);
+    const int current = creature_heads(s.inventory);
     if (current >= target) return;
     const int packet =
         std::min(target - current, std::max(1, target >> 4));
-    const int taken = raise_flock_into_roster(s.garrison.squad, packet);
+    const int taken = raise_flock_into_roster(s.inventory, packet);
     s.population = std::max(0, s.population - taken);
 }
 
@@ -329,7 +329,7 @@ int garrison_cap_(const Landmark& s) {
     const int perSoulSeason = std::max(
         1, npc_board_per_day(NPCType::Peasant) * kDaysPerSeason
                * (bread && bread->value > 0 ? bread->value : 1));
-    const int flock = souls_flock(s) + count_human_souls(s.garrison.squad);
+    const int flock = souls_flock(s) + count_human_souls(s.inventory);
     return garrison_target_strength(s.type, flock)
          + inventory_value(s.inventory) / perSoulSeason;
 }
@@ -346,39 +346,46 @@ int garrison_cap_(const Landmark& s) {
 // его стоит, буквально.
 void garrison_trim_(GameState& gs, Landmark& s,
                     EconFactSink sink, void* user) {
-    int excess = total_soldiers(s.garrison.squad) - garrison_cap_(s);
+    int excess = creature_heads(s.inventory) - garrison_cap_(s);
     if (excess <= 0) return;
     const int breadIdx = hunger_item_index();
     const ItemDef* bread = item_def_at(breadIdx);
     const int breadValue = bread && bread->value > 0 ? bread->value : 1;
     int meat = 0;
     while (excess > 0) {
+        // Область существ единого контейнера (M-71); обход 1023 → first =
+        // старый порядок слотов, ничья по цене достаётся старейшему.
         int weak = -1;
         int weakPrice = 0;
-        for (int i = 0; i < s.garrison.squad.slot_count(); ++i) {
-            const SoldierSlot& sl = s.garrison.squad[i];
+        std::uint16_t weakKind = 0;
+        for (int i = kMaxInventorySlots - 1;
+             i >= s.inventory.creature_first(); --i) {
+            const ItemRef& sl = s.inventory.slots[std::size_t(i)];
             if (sl.count <= 0) continue;
-            const int p = hire_price_for(sl.kind, sl.level);
+            const std::uint16_t kind =
+                std::uint16_t(creature_of_world_row(sl.def));
+            const int p = hire_price_for(kind, sl.level);
             if (weak < 0 || p < weakPrice) {
                 weak = i;
                 weakPrice = p;
+                weakKind = kind;
             }
         }
         if (weak < 0) break;
-        SoldierSlot cut = s.garrison.squad[weak];
+        ItemRef cut = s.inventory.slots[std::size_t(weak)];
         const int take = std::min(excess, int(cut.count));
-        if (!s.garrison.squad.remove_from_slot(weak, take)) break;
+        if (!s.inventory.remove_at(weak, take)) break;
         excess -= take;
         // ПОД НОЖ ИДЁТ ЖИВНОСТЬ — вся, а не только вьючная (природа строки,
         // kNpcNature, владелец 2026-09-21): прежде нож спрашивал тег Mount,
         // и пойманный олень в армии места ножа не знал — он уходил в пул
         // дезертиров человеком.
-        if (is_fauna_kind(cut.kind)) {
+        if (is_fauna_kind(weakKind)) {
             meat += take * (weakPrice / breadValue);
         } else {
             cut.count = take;
-            if (!gs.deserterPool.push_slot(cut)) {
-                s.garrison.squad.push_slot(cut);   // pool full: the men stay
+            if (!creatures_push_slot(gs.deserterPool, cut)) {
+                creatures_push_slot(s.inventory, cut);  // pool full: men stay
                 break;
             }
         }

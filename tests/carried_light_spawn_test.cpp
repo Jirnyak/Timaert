@@ -26,6 +26,7 @@
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/faction.h"
+#include "macro/world_row.h"
 #include "macro/npc.h"
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
@@ -96,9 +97,9 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
     // Street guards are the place's GARRISON records now (§42 Инк 7) — the
     // fixture brings a three-man wall, and every one of them must be lit.
-    sm::SoldierSquad wall{};
+    sm::Inventory wall{};
     for (int i = 0; i < 3; ++i) {
-        wall.push(sm::make_soldier(
+        sm::creatures_push(wall, sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard),
             sm::npc_def(sm::NPCType::Guard).baseLevel,
             7000u + std::uint32_t(i)));

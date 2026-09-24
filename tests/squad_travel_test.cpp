@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "macro/npc_ai.h"
+#include "macro/world_row.h"
 #include "macro/movement_cost.h"
 #include "macro/pathfinding.h"
 #include "macro/squad.h"
@@ -256,10 +257,10 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         auto e = make_walker(w, gs.mapW, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
                              /*hp*/30.0f);
         w.reg.replace<ecs::MacroSpawnId>(e, 55u);
-        auto& roster = w.reg.get<ecs::SquadRoster>(e);
-        roster.squad.push(make_soldier(
+        auto& bag = w.reg.get_or_emplace<ecs::NpcInventory>(e);
+        creatures_push(bag.inv, make_soldier(
             std::uint8_t(NPCType::Peasant), 1, 101u));
-        roster.squad.push(make_soldier(
+        creatures_push(bag.inv, make_soldier(
             std::uint8_t(NPCType::Peasant), 1, 102u));
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 24u);
@@ -273,7 +274,7 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         CHECK(!w.reg.valid(e),
               "an ocean the bar cannot pay kills, and the dead squad leaves "
               "the map: there is no Resting at sea and no corpse-row after");
-        CHECK(total_soldiers(gs.deserterPool) == 2,
+        CHECK(creature_heads(gs.deserterPool) == 2,
               "the drowned lord's men settled by the standing dead-leader "
               "rule");
     }

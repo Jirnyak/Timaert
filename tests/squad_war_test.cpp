@@ -17,6 +17,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
+#include "macro/world_row.h"
 #include "macro/npc_spawn.h"
 #include "macro/squad.h"
 #include "macro/player_entity.h"
@@ -77,12 +78,12 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, ordinal);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-    auto& roster = reg.emplace<ecs::SquadRoster>(e);
+    reg.emplace<ecs::SquadRoster>(e);
+    auto& bag = reg.emplace<ecs::NpcInventory>(e);
     for (std::uint32_t id : memberIds) {
-        roster.squad.push(
-            make_soldier(std::uint8_t(memberKind), memberLevel, id));
+        creatures_push(bag.inv,
+                       make_soldier(std::uint8_t(memberKind), memberLevel, id));
     }
-    reg.emplace<ecs::NpcInventory>(e);
     return e;
 }
 
@@ -287,9 +288,9 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     // The player's men are a roster on his own SQUAD ENTITY now — the same
     // shape the enemy lord below has, settled through the same doors.
     ensure_macro_player_entity(gs, w);
-    SoldierSquad* army = player_roster(w);
-    army->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
-    army->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
+    Inventory* army = player_inventory(w);
+    creatures_push(*army, make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
+    creatures_push(*army, make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
     player_pools(w)->maxHp = 100;
     player_pools(w)->hp = 100;
     const int level0 = sm::player_sheet(w)->levelData.level;
@@ -315,7 +316,9 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     MacroWorld mw{}; mw.gs = &gs; mw.world = &w;
     const int xp = settle_player_auto_battle(mw, enemy, win,
                                              /*playerIsA*/true);
-    CHECK(total_soldiers(*army) == 1 && (*army)[0].entityId == 502u,
+    CHECK(creature_heads(*army) == 1
+              && army->slots[std::size_t(army->creature_first())].entityId
+                     == 502u,
           "the player's fallen soldier left the army by name");
     CHECK(player_pools(w)->hp == 60,
           "the player's wound landed as the fraction, in THE store — his squad's Pools");
@@ -333,9 +336,11 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     GameState gs2 = make_world(-80);
     ecs::World w2;
     ensure_macro_player_entity(gs2, w2);
-    SoldierSquad* army2 = player_roster(w2);
-    army2->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
-    army2->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 602u));
+    Inventory* army2 = player_inventory(w2);
+    creatures_push(*army2,
+                   make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
+    creatures_push(*army2,
+                   make_soldier(std::uint8_t(NPCType::Guard), 3, 602u));
     player_pools(w2)->maxHp = 100;
     player_pools(w2)->hp = 100;
     const auto victor = make_squad_at(w2, NPCType::Bandit, "bandits", 6,
@@ -349,7 +354,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     loss.leaderFractionB = 0.9f;
     MacroWorld mw2{}; mw2.gs = &gs2; mw2.world = &w2;
     settle_player_auto_battle(mw2, victor, loss, /*playerIsA*/true);
-    CHECK(total_soldiers(*army2) == 1,
+    CHECK(creature_heads(*army2) == 1,
           "defeat took the fallen and left the survivor");
     CHECK(player_pools(w2)->hp >= 1,
           "while one of his men stands, defeat wounds the player - "
@@ -396,7 +401,7 @@ void test_spawn_squad_is_one_spec_one_door() {
           "the leader came out of the ONE creation door, whole");
     CHECK(w.reg.get<ecs::NpcLevel>(leader).value == 4,
           "the spec's level pinned the leader's level");
-    CHECK(w.reg.get<ecs::SquadRoster>(leader).squad.size() == 2,
+    CHECK(creature_heads(w.reg.get<ecs::NpcInventory>(leader).inv) == 2,
           "the roster rows are the spec's rows");
     const auto* orders = w.reg.try_get<ecs::SquadOrders>(leader);
     CHECK(orders != nullptr && orders->waypointCount == 2,

@@ -60,13 +60,53 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
 // plus the roster rows and an optional waypoint route. The route's presence
 // IS the order (owner's ruling); a new KIND of squad AI is a type row with
 // its own ai column, never a field here.
+// Авторский список членов при рождении — заявка СТАКАМИ, как у старого
+// ростера: генерик одного рода и уровня СЛИВАЕТСЯ (городская артель — это
+// тысячи душ и ОДИН стак, а не тысячи записей), душа с историей — своя
+// строка. Кап 256 — прежний потолок СЛОТОВ ростера (стаков, не душ); отказ
+// push громкий, как был. Дом душ — единый контейнер лидера (M-71), спек
+// лишь несёт заявку.
+struct SquadSpecMembers {
+    static constexpr int kCap = 256;
+    struct Stack {
+        SoldierRecord rec{};
+        std::int32_t  n = 0;
+    };
+    std::array<Stack, kCap> rows{};
+    int slots = 0;
+    bool push(const SoldierRecord& r) {
+        if (r.entityId == 0) {
+            for (int i = 0; i < slots; ++i) {
+                Stack& s = rows[std::size_t(i)];
+                if (s.rec.entityId == 0 && s.rec.kind == r.kind
+                    && s.rec.level == r.level) {
+                    ++s.n;
+                    return true;
+                }
+            }
+        }
+        if (slots >= kCap) return false;
+        rows[std::size_t(slots)] = Stack{r, 1};
+        ++slots;
+        return true;
+    }
+    // ДУШИ, не слоты — то, что списывается с населения при рождении.
+    int size() const {
+        int n = 0;
+        for (int i = 0; i < slots; ++i) n += rows[std::size_t(i)].n;
+        return n;
+    }
+    const Stack* begin() const { return rows.data(); }
+    const Stack* end() const { return rows.data() + slots; }
+};
+
 struct SquadSpec {
     NPCType leaderType  = NPCType::Peasant;
     int     leaderLevel = -1;          // -1 = the row's default + roll
     int     x = 0, y = 0;              // macro cell (wrapped, nudged to land)
     int     factionIndex = -1;         // -1 = the land decides (politik)
     int     homeSettlementId = -1;
-    SoldierSquad members;                 // roster rows, caller-authored
+    SquadSpecMembers members;          // заявка ростера, caller-authored
     std::uint8_t waypointCount = 0;
     std::array<std::int16_t, 16> waypoints{};   // 8 × (x, y)
 };

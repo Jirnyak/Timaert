@@ -353,7 +353,7 @@ namespace sm {
 // «теперь только есть благополучие и оно даёт рост») — настроение, реестр
 // его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
 // seasonWellbeing и needDebt.
-constexpr int kSaveVersion = 109;   // v109: единый слот объекта — level и entityId
+constexpr int kSaveVersion = 110;   // v110: слияние M-71 — существа в контейнере
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -608,8 +608,10 @@ struct Landmark {
 // субъекта 12360 → 13384; замер поймал компилятором, как положено.
 // 2026-09-24, шаг А слияния: ёмкость контейнера 256 → 1024 (32×32), ядро
 // субъекта 13384 → 44104.
-static_assert(sizeof(Landmark) == 45472,
-              "место = ядро субъекта (44104) + реестр (1024) + 344 Б своего");
+// 2026-09-24, шаг Б слияния: существа уехали В КОНТЕЙНЕР, ростер стал
+// обвязкой счетов (72 Б) — ядро субъекта 44104 → 41032.
+static_assert(sizeof(Landmark) == 42400,
+              "место = ядро субъекта (41032) + реестр (1024) + 344 Б своего");
 static_assert(sizeof(Landmark) == sizeof(Inventory) + sizeof(Roster)
                                       + sizeof(Interests) + 344,
               "ядро субъекта у места и у сквада ОДНО (CANON S4)");
@@ -707,10 +709,10 @@ struct PlayerState {
     // (gs.factions["player"].relations) — see player_reputation /
     // add_player_reputation below. Two stores for one number meant the battle
     // pass and the macro matrix could disagree about the same pair.
-    // (No `army` field. The player's squad is an ORDINARY squad — the roster
-    // is ecs::SquadRoster on his macro entity, reached through
-    // macro/player_entity.h player_roster(). It sat here as a SoldierSquad of
-    // its own until 2026-08-27, and every consumer of it was a
+    // (No `army` field. The player's squad is an ORDINARY squad — his men
+    // live in the creature area of his ONE container (M-71), reached through
+    // macro/player_entity.h player_inventory(). It sat here as its own
+    // roster until 2026-08-27, and every consumer of it was a
     // player-specific path CANON S4 forbids by name.)
     // Codex unlock state: one bit per article ordinal (macro/codex.h
     // CodexArticleId; the static_assert there is the loud cap). Replaced a
@@ -933,7 +935,9 @@ struct GameState {
     std::vector<std::string> logicNodesRegistered;
     std::vector<std::string> logicNodesActive;
     GameSubState subState;
-    SoldierSquad deserterPool;             // Fired/deserted NPC soldiers.
+    // ПУЛ ДЕЗЕРТИРОВ — тот же ЕДИНЫЙ контейнер (M-71): существа строками
+    // мира в области сверху, предметной областью пул не пользуется.
+    Inventory deserterPool;
     // THE WORLD'S LOOT POOL — one VALUE, not a warehouse (owner 2026-08-30,
     // CANON S5/S10): the belongings of every squad that died with NO victor
     // (exhaustion, drowning) fold into their catalog worth and add here.

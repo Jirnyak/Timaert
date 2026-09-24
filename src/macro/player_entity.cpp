@@ -243,17 +243,6 @@ CharacterSheet player_effective_sheet(ecs::World& world) {
     return effective_sheet_of(world, e);
 }
 
-SoldierSquad* player_roster(ecs::World& world) {
-    const entt::entity e = player_flag_entity(world);
-    if (e == entt::null) return nullptr;
-    auto* roster = world.reg.try_get<ecs::SquadRoster>(e);
-    return roster ? &roster->squad : nullptr;
-}
-
-const SoldierSquad* player_roster(const ecs::World& world) {
-    return player_roster(const_cast<ecs::World&>(world));
-}
-
 Inventory* player_inventory(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;

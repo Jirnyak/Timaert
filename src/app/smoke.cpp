@@ -7869,8 +7869,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "hostile squad did not force the encounter");
                 break;
             }
-            const sm::SoldierSquad* pArmy = sm::player_roster(app.ecs);
-            const int armyBefore = pArmy ? sm::total_soldiers(*pArmy) : 0;
+            const sm::Inventory* pArmy = sm::player_inventory(app.ecs);
+            const int armyBefore = pArmy ? sm::creature_heads(*pArmy) : 0;
             const int hpBefore = player_pools(app).hp;
             perform_encounter_auto(app, hostile, sm::Ambush::None);
             if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
@@ -7884,9 +7884,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 && reg.get<sm::ecs::Pools>(hostile).hp
                        < reg.get<sm::ecs::Pools>(hostile).maxHp;
             const bool playerPaid =
-                (sm::player_roster(app.ecs)
-                     ? sm::total_soldiers(*sm::player_roster(app.ecs)) : 0)
-                    < armyBefore
+                (sm::player_inventory(app.ecs)
+                     ? sm::creature_heads(*sm::player_inventory(app.ecs))
+                     : 0) < armyBefore
                 || player_pools(app).hp < hpBefore;
             if (!enemyGone && !enemyHurt && !playerPaid) {
                 smoke_fail(app, "auto-resolve settled nothing on either side");

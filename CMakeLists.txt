@@ -587,6 +587,9 @@ timaert_test(spell_casting_effects_test
 
 timaert_test(combat_squad_test
     SOURCES
+        # M-71: контейнер сам различает области предметов и существ —
+        # world_row_is_item живёт у каталога (items.cpp)
+        src/macro/items.cpp
         src/sub/ai.cpp
         src/sub/spawn.cpp
         # The projection asks what would CARRY a body where it lands
@@ -1431,6 +1434,9 @@ timaert_test(point_light_cull_test)
 
 timaert_test(settlement_faction_test
     SOURCES
+        # M-71: контейнер сам различает области предметов и существ —
+        # world_row_is_item живёт у каталога (items.cpp)
+        src/macro/items.cpp
         src/sub/spawn.cpp
         # The projection asks what would CARRY a body where it lands
         # (sub/height.h is_dry_footing over the solidity index), so a
@@ -1453,6 +1459,9 @@ timaert_test(settlement_faction_test
 
 timaert_test(carried_light_spawn_test
     SOURCES
+        # M-71: контейнер сам различает области предметов и существ —
+        # world_row_is_item живёт у каталога (items.cpp)
+        src/macro/items.cpp
         src/sub/spawn.cpp
         # The projection asks what would CARRY a body where it lands
         # (sub/height.h is_dry_footing over the solidity index), so a
@@ -1479,6 +1488,9 @@ timaert_test(carried_light_spawn_test
 
 timaert_test(city_population_inside_walls_test
     SOURCES
+        # M-71: контейнер сам различает области предметов и существ —
+        # world_row_is_item живёт у каталога (items.cpp)
+        src/macro/items.cpp
         src/sub/spawn.cpp
         # The projection asks what would CARRY a body where it lands
         # (sub/height.h is_dry_footing over the solidity index), so a
@@ -1549,6 +1561,9 @@ timaert_test(resource_growth_test
 
 timaert_test(macro_stock_test
     SOURCES
+        # M-71: контейнер сам различает области предметов и существ —
+        # world_row_is_item живёт у каталога (items.cpp)
+        src/macro/items.cpp
         src/macro/macro_stock.cpp
         # a struck vein is a chronicle fact now (v58)
         src/macro/chronicle.cpp
@@ -1597,6 +1612,9 @@ timaert_test(spell_broadphase_parity_test
 # version can be simulated headless with the shipping steering.
 timaert_test(auto_battle_test
     SOURCES
+        # M-71: контейнер сам различает области предметов и существ —
+        # world_row_is_item живёт у каталога (items.cpp)
+        src/macro/items.cpp
         src/sub/movement.cpp
         # npc.h answers for both halves of the kind id space (monsters too).
         src/macro/fauna.cpp)

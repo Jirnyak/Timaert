@@ -17,6 +17,7 @@
 #include "check.h"
 
 #include "macro/auto_battle.h"
+#include "macro/world_row.h"
 #include "macro/movement_cost.h"
 #include "sub/movement.h"
 
@@ -43,18 +44,18 @@ MoveGround flat_terrain() {
 
 constexpr std::uint64_t mask_of(int faction) { return 1ull << faction; }
 
-SoldierSquad roster_of(NPCType kind, int level, int n,
-                       std::uint32_t idBase) {
-    SoldierSquad r{};
+Inventory roster_of(NPCType kind, int level, int n,
+                    std::uint32_t idBase) {
+    Inventory r{};
     for (int i = 0; i < n; ++i) {
-        r.push(make_soldier(std::uint8_t(kind), level,
-                            idBase + std::uint32_t(i)));
+        creatures_push(r, make_soldier(std::uint8_t(kind), level,
+                                       idBase + std::uint32_t(i)));
     }
     return r;
 }
 
 AutoBattleSide side_of(NPCType leader, int leaderLevel,
-                       const SoldierSquad* roster) {
+                       const Inventory* roster) {
     AutoBattleSide s{};
     s.leaderType = leader;
     s.leaderLevel = leaderLevel;
@@ -121,7 +122,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         add_fighter(s.leaderType, s.leaderLevel, s.leaderSeed, nullptr,
                     s.leaderHealthFraction, side);
         if (s.roster) {
-            for (const SoulRef r : s.roster->souls()) {
+            for (const CreatureHead r : creature_heads_range(*s.roster)) {
                 if (!valid_npc_kind(r.kind)) continue;
                 add_fighter(NPCType(r.kind), normalize_soldier_level(r.level),
                             auto_battle_detail::member_seed(r), &s.bonuses,
@@ -253,7 +254,8 @@ void test_a_clear_advantage_cannot_be_rolled_away() {
         const AutoBattleOutcome o =
             resolve_auto_battle(strong, weak, Ambush::None, rng);
         if (o.winner == 0) ++strongWins;
-        if (int(o.casualtiesB.size()) * 2 >= int(weakR.size())) ++loserBled;
+        if (int(o.casualtiesB.size()) * 2 >= creature_heads(weakR))
+            ++loserBled;
         CHECK(o.leaderFractionA > 0.0f,
               "a winner's leader limps out - only a broken side can lose its head");
     }
@@ -290,7 +292,8 @@ void test_a_leaders_head_is_never_given_to_chance() {
         const AutoBattleOutcome o =
             resolve_auto_battle(strong, weak, Ambush::None, rng);
         CHECK_OR_RETURN(o.winner == 0, "the fixture's strong side must win");
-        const bool wiped = int(o.casualtiesB.size()) >= weakR.size();
+        const bool wiped =
+            int(o.casualtiesB.size()) >= creature_heads(weakR);
         if (wiped) {
             CHECK(o.leaderFractionB == 0.0f,
                   "a loser with no men left falls with the last of them");
@@ -363,8 +366,10 @@ void agreement_case(const char* what, const AutoBattleSide& a,
         const auto& loserCas = o.winner == 0 ? o.casualtiesB : o.casualtiesA;
         const auto& winnerCas = o.winner == 0 ? o.casualtiesA : o.casualtiesB;
         const AutoBattleSide& winner = o.winner == 0 ? a : b;
-        const int loserMen = loser.roster ? int(loser.roster->size()) : 0;
-        const int winnerMen = winner.roster ? int(winner.roster->size()) : 0;
+        const int loserMen =
+            loser.roster ? creature_heads(*loser.roster) : 0;
+        const int winnerMen =
+            winner.roster ? creature_heads(*winner.roster) : 0;
         // The fought loser is annihilated (the sim runs to conclusion); the
         // resolved loser must at least be BROKEN - the majority down - or the
         // two worlds tell different stories about the same defeat.

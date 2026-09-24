@@ -11,6 +11,7 @@
 
 #include "ecs/world.h"
 #include "macro/map_subject.h"
+#include "macro/world_row.h"
 #include "macro/squad.h"
 #include "macro/state.h"
 
@@ -29,7 +30,8 @@ sm::GameState make_world() {
     city.x = 10;
     city.y = 10;
     city.population = 300;
-    city.garrison.squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 11u));
+    sm::creatures_push(city.inventory,
+        sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 11u));
     gs.landmarks.push_back(city);
     // A VILLAGE and a SPIRE on the same one id space (v54): the door must
     // answer for them exactly as it does for the city — kind-blind.
@@ -54,8 +56,9 @@ entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal) {
     const auto e = w.reg.create();
     w.reg.emplace<sm::ecs::MacroSpawnId>(e, ordinal);
     w.reg.emplace<sm::ecs::NpcInventory>(e);
-    auto& roster = w.reg.emplace<sm::ecs::SquadRoster>(e);
-    roster.squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 21u));
+    w.reg.emplace<sm::ecs::SquadRoster>(e);
+    sm::creatures_push(w.reg.get<sm::ecs::NpcInventory>(e).inv,
+        sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 21u));
     return e;
 }
 
@@ -75,15 +78,15 @@ void test_the_door_opens_the_old_addresses() {
               == &world.reg.get<ecs::NpcInventory>(squad).inv,
           "a squad's store IS its NpcInventory component, the very object");
     CHECK(roster_of(w, subject_of_squad(squad))
-              == &world.reg.get<ecs::SquadRoster>(squad).squad,
-          "a squad's roster IS its SquadRoster component, the very object");
+              == &world.reg.get<ecs::NpcInventory>(squad).inv,
+          "a squad's roster IS its one container (M-71), the very object");
 
     CHECK(store_of(w, subject_of_landmark(7))
               == &landmark_by_id(gs, 7)->inventory,
           "a landmark's store IS the record's inventory field, the very object");
     CHECK(roster_of(w, subject_of_landmark(7))
-              == &landmark_by_id(gs, 7)->garrison.squad,
-          "a landmark's roster IS the record's garrison field, the very object");
+              == &landmark_by_id(gs, 7)->inventory,
+          "a landmark's roster IS its one container (M-71), the very object");
 
     // PLAY-2's law: the door is KIND-BLIND. A village and a spire answer
     // through the same door a city does — no LandmarkType filter anywhere.
@@ -117,17 +120,19 @@ void test_a_write_through_the_door_lands_in_the_world() {
           "bread added through the door sits in the village record itself");
 
     // The symmetry the menu will trade on: hire_npc already takes two
-    // SoldierSquad& — the door's returns feed it directly, both ways.
-    SoldierSquad* garrison = roster_of(w, subject_of_landmark(7));
-    SoldierSquad* men = roster_of(w, subject_of_squad(squad));
+    // Inventory& — the door's returns feed it directly, both ways (M-71).
+    Inventory* garrison = roster_of(w, subject_of_landmark(7));
+    Inventory* men = roster_of(w, subject_of_squad(squad));
     CHECK_OR_RETURN(garrison != nullptr && men != nullptr,
                     "both rosters open through the one door");
-    const int before = total_soldiers(*garrison);
+    const int before = creature_heads(*garrison);
     SoldierRecord moved{};
-    CHECK_OR_RETURN(garrison->take_soul_at(0, moved),
-                    "the garrison yields its first soul");
-    men->push(moved);
-    CHECK(total_soldiers(*garrison) == before - 1 && total_soldiers(*men) == 2,
+    CHECK_OR_RETURN(
+        creatures_take_at(*garrison, garrison->creature_first(), moved),
+        "the garrison yields a soul");
+    creatures_push(*men, moved);
+    CHECK(creature_heads(*garrison) == before - 1
+              && creature_heads(*men) == 2,
           "a garrison record moves into a squad roster: one type, no seam");
 }
 

@@ -35,8 +35,8 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
         m.inventory = view.get<ecs::NpcInventory>(e).inv;
         {
             const ecs::SquadRoster& ro = view.get<ecs::SquadRoster>(e);
-            m.roster = ro.squad;
-            // Счёт едет вместе с ростером, которому он выставлен (v105).
+            // Счёт едет вместе с ростером, которому он выставлен (v105);
+            // сами существа — в m.inventory (единый контейнер, M-71).
             for (int c = 0; c < kCommodityCount; ++c)
                 m.rosterNeedDebt[c] = ro.needDebt[c];
             m.rosterWageDebt = ro.wageDebt;
@@ -89,7 +89,6 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         reg.emplace<ecs::NpcInventory>(e, ecs::NpcInventory{m.inventory});
         {
             ecs::SquadRoster ro{};
-            ro.squad = m.roster;
             for (int c = 0; c < kCommodityCount; ++c)
                 ro.needDebt[c] = m.rosterNeedDebt[c];
             ro.wageDebt = m.rosterWageDebt;

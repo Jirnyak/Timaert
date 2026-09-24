@@ -910,11 +910,15 @@ void draw_pre_battle_modal(App& app) {
     const int level = reg.get<sm::ecs::NpcLevel>(npc).value;
     ImGui::Text("%s the %s (level %d) blocks your way!",
                 name, def.label, level);
-    if (const auto* roster = reg.try_get<sm::ecs::SquadRoster>(npc);
-        roster && !roster->squad.empty()) {
+    if (const auto* bag = reg.try_get<sm::ecs::NpcInventory>(npc);
+        bag && !sm::creatures_empty(bag->inv)) {
         int byKind[int(sm::NPCType::Count)] = {};
-        for (const sm::SoldierSlot& r : roster->squad) {
-            if (sm::valid_npc_kind(r.kind)) byKind[r.kind] += int(r.count);
+        for (int i = bag->inv.creature_first(); i < sm::kMaxInventorySlots;
+             ++i) {
+            const sm::ItemRef& r = bag->inv.slots[std::size_t(i)];
+            const std::uint16_t kind =
+                std::uint16_t(sm::creature_of_world_row(r.def));
+            if (sm::valid_npc_kind(kind)) byKind[kind] += r.count;
         }
         ImGui::TextUnformatted("At their back:");
         for (int k = 0; k < int(sm::NPCType::Count); ++k) {

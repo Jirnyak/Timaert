@@ -9,6 +9,7 @@
 #include "check.h"
 
 #include "macro/npc.h"
+#include "macro/world_row.h"
 #include "macro/npc_ai.h"   // squad_season_window — THE boundary window
 #include "macro/world_tick.h"
 #include "macro/player_entity.h"
@@ -79,14 +80,14 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // The player's men live on his SQUAD ENTITY now (owner, 2026-08-27), so
     // the fixture raises one — the same shape a lord's warband has — and the
     // daily tick reads his wages from it through the envelope.
-    sm::SoldierSquad* army = sm::player_roster(world);
-    army->push(sm::make_soldier(
+    sm::Inventory* army = sm::player_inventory(world);
+    sm::creatures_push(*army, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 77u));
     // Вторая душа — не украшение фикстуры: закон v105 взыскивает ДОЛЮ
     // ростера, и на ростере из одного «доля» неотличима от «хотя бы
     // один» — то есть от той самой отменённой кромки. Двое — минимум, на
     // котором пропорция вообще может быть измерена.
-    army->push(sm::make_soldier(
+    sm::creatures_push(*army, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 79u));
     sm::MacroWorld mw{};
     mw.gs = &gs;
@@ -140,10 +141,10 @@ void test_daily_processing_applies_player_upkeep_and_age() {
 
     // ПЕРВАЯ граница: счёта ещё не было, значит взыскивать нечего —
     // дезертиров ноль, но 5 монет кошелька уходят в уплату НОВОГО счёта.
-    const int poolBefore = gs.deserterPool.size();   // size() — int (army.h)
+    const int poolBefore = sm::creature_heads(gs.deserterPool);
     CHECK(sm::squad_season_window(mw, 33) == 0,
           "первая граница выставляет счёт, а не взыскивает: долга не было");
-    CHECK(gs.deserterPool.size() == poolBefore,
+    CHECK(sm::creature_heads(gs.deserterPool) == poolBefore,
           "никто не ушёл — уходят за НЕОПЛАЧЕННОЕ, а счёт только что выписан");
     CHECK(sm::inventory_value(*sm::player_inventory(world)) == 0,
           "частичная оплата ЗАКОННА: что было в кошельке, то и ушло в счёт");
@@ -152,19 +153,19 @@ void test_daily_processing_applies_player_upkeep_and_age() {
 
     // ВТОРАЯ граница, кошелёк пуст: счёт не погашен почти целиком, и
     // уходит ровно ЭТА доля ростера — не восьмая и не «хотя бы один».
-    const int roster = army->size();
+    const int roster = sm::creature_heads(*army);
     CHECK(roster >= 2, "негативный контроль: ростеру есть кого терять");
     const int walked = sm::squad_season_window(mw, 65);
     CHECK(walked > 0, "неоплаченный сезон стоит людей");
     CHECK(walked == roster,
           "ушла ВСЯ доля неоплаченного — при пустом кошельке это весь "
           "ростер, а не назначенная восьмая");
-    CHECK(gs.deserterPool.size() == poolBefore + walked,
+    CHECK(sm::creature_heads(gs.deserterPool) == poolBefore + walked,
           "ушедшие легли в пул дезертиров");
 
     // ПОКРЫТЫЙ сезон: вернуть душу, дать харч и плату — счёт гасится
     // целиком, и следующая граница не уводит никого.
-    army->push(sm::make_soldier(
+    sm::creatures_push(*army, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 78u));
     sm::Inventory* purse = sm::player_inventory(world);
     purse->add("food", sm::kDaysPerSeason);
@@ -212,8 +213,8 @@ void test_garrison_never_exceeds_its_cap() {
     s.seasonWellbeing = 0;
     // One below the target: exactly one recruit wanted. A standing army is
     // a GENERIC stack (CANON S4) — 624 souls is one slot, not a wall.
-    s.garrison.squad.push_stack(std::uint16_t(sm::NPCType::Guard), 1,
-                          std::int32_t(target - 1));
+    sm::creatures_push_stack(s.inventory, sm::NPCType::Guard, 1,
+                             std::int32_t(target - 1));
     gs.landmarks.push_back(s);
 
     sm::WorldTickRuntime runtime{};
@@ -222,7 +223,7 @@ void test_garrison_never_exceeds_its_cap() {
     runtime.nextDailyTickDay = 3;
     sm::process_world_daily_ticks(gs, runtime, 1);
 
-    const int after = sm::total_soldiers(gs.landmarks[0].garrison.squad);
+    const int after = sm::creature_heads(gs.landmarks[0].inventory);
     CHECK(after <= sm::garrison_target_strength(
                        gs.landmarks[0].type, gs.landmarks[0].population + 1),
           "a day of recruiting never carries a garrison past its target");
@@ -233,8 +234,7 @@ void test_garrison_never_exceeds_its_cap() {
     // day — the same slow heal desertion bleeds at (1/8), never instantly.
     sm::GameState slow{};
     sm::Landmark hollow = s;
-    hollow.garrison.squad = sm::SoldierSquad{};
-    hollow.inventory = sm::Inventory{};
+    hollow.inventory = sm::Inventory{};   // пусто: и склад, и область существ
     hollow.inventory.add("coin_empire_copper", 1 << 16);
     hollow.inventory.add("food", 1 << 13);
     slow.landmarks.push_back(hollow);
@@ -243,7 +243,7 @@ void test_garrison_never_exceeds_its_cap() {
     slowRuntime.pendingDailyTicks = 1;
     slowRuntime.nextDailyTickDay = 3;
     sm::process_world_daily_ticks(slow, slowRuntime, 1);
-    const int refilled = sm::total_soldiers(slow.landmarks[0].garrison.squad);
+    const int refilled = sm::creature_heads(slow.landmarks[0].inventory);
     CHECK(refilled > 0 && refilled <= std::max(1, target >> 4),
           "a hollowed garrison heals by a day-packet, never in one morning");
 }
@@ -472,8 +472,8 @@ void test_garrison_ceiling_trims_the_surplus() {
     v.x = 8; v.y = 8;
     // Богатства нет — потолок только населенческий. Стойло переполнено:
     // 4 стража (найм 30) + 8 лошадей (найм 240) при потолке 3.
-    v.garrison.squad.push_stack(std::uint16_t(sm::NPCType::Guard), 3, 4);
-    v.garrison.squad.push_stack(std::uint16_t(sm::NPCType::Horse), 1, 8);
+    sm::creatures_push_stack(v.inventory, sm::NPCType::Guard, 3, 4);
+    sm::creatures_push_stack(v.inventory, sm::NPCType::Horse, 1, 8);
     gs.landmarks.push_back(v);
 
     sm::WorldTickRuntime runtime{};
@@ -483,19 +483,16 @@ void test_garrison_ceiling_trims_the_surplus() {
     sm::process_world_daily_ticks(gs, runtime, 64);
 
     sm::Landmark& out = gs.landmarks[0];
-    CHECK(sm::total_soldiers(out.garrison.squad) == 4,
+    CHECK(sm::creature_heads(out.inventory) == 4,
           "the surplus above the context ceiling is gone");
     // Слабейшие первыми: вся стража (30) ушла раньше первой лошади (240).
-    CHECK(sm::count_soldiers_of_kind(
-              out.garrison.squad, std::uint16_t(sm::NPCType::Guard)) == 0,
+    CHECK(sm::creature_heads_of(out.inventory, sm::NPCType::Guard) == 0,
           "the cheapest rows are cut first — no guard outlived a horse");
-    CHECK(sm::count_soldiers_of_kind(
-              out.garrison.squad, std::uint16_t(sm::NPCType::Horse)) == 4,
+    CHECK(sm::creature_heads_of(out.inventory, sm::NPCType::Horse) == 4,
           "the ceiling keeps exactly what the place is worth");
     // Люди — в пул дезертиров (плюс один харчевой ходок окна содержания —
     // голодный гарнизон терял 1/8 и до потолка, тот закон не тронут).
-    CHECK(sm::count_soldiers_of_kind(
-              gs.deserterPool, std::uint16_t(sm::NPCType::Guard)) == 4,
+    CHECK(sm::creature_heads_of(gs.deserterPool, sm::NPCType::Guard) == 4,
           "the cut men swell the deserter pool, they do not evaporate");
     // Зверь — под нож по своей стоимости, и мясо платит по счёту В ТУ ЖЕ
     // МИНУТУ (S10): на полке ноль, долг упал ровно на стоимость туш.

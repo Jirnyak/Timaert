@@ -19,6 +19,7 @@
 
 #include "check.h"
 #include "macro/squad.h"
+#include "macro/world_row.h"
 #include "macro/player_entity.h"
 #include "macro/npc_spawn.h"
 #include "macro/currency.h"
@@ -59,9 +60,10 @@ entt::entity squad(ecs::World& w, NPCType leaderType, const char* factionId,
     reg.emplace<ecs::Pools>(e, 100, 100);
     reg.emplace<ecs::MacroSpawnId>(e, spawnIndex);
     reg.emplace<ecs::MacroNpcRuntime>(e, ecs::MacroNpcRuntime{});
-    auto& roster = reg.emplace<ecs::SquadRoster>(e);
+    reg.emplace<ecs::SquadRoster>(e);
+    auto& bag = reg.get_or_emplace<ecs::NpcInventory>(e);
     for (int i = 0; i < members; ++i) {
-        roster.squad.push(
+        creatures_push(bag.inv,
             make_soldier(std::uint16_t(NPCType::Merchant), level,
                          std::uint32_t(spawnIndex * 100u + std::uint32_t(i))));
     }
@@ -74,7 +76,8 @@ AutoBattleOutcome wipe_of(ecs::World& w, entt::entity loser, bool loserIsB) {
     AutoBattleOutcome o{};
     o.winner = loserIsB ? 0 : 1;
     auto& cas = loserIsB ? o.casualtiesB : o.casualtiesA;
-    for (const SoulRef r : w.reg.get<ecs::SquadRoster>(loser).squad.souls()) {
+    for (const CreatureHead r :
+         creature_heads_range(w.reg.get<ecs::NpcInventory>(loser).inv)) {
         cas.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
     (loserIsB ? o.leaderFractionB : o.leaderFractionA) = 0.0f;
@@ -180,8 +183,17 @@ void test_spoils_are_rolled_not_scavenged() {
     // A merchant band: rich rows, and NOT ONE of them carries a bag — roster
     // members are records, not entities. Before the roll they dropped nothing.
     const entt::entity enemy = squad(w, NPCType::Merchant, "empire", 4, 3, 7u);
-    CHECK(!w.reg.any_of<ecs::NpcInventory>(enemy),
-          "the fixture's premise: nobody here carries a bag");
+    // Слияние M-71: контейнер у сквада ЕСТЬ (в нём живут его люди), но
+    // ПРЕДМЕТНАЯ область пуста — до броска ронять по-прежнему нечего.
+    {
+        const Inventory& einv = w.reg.get<ecs::NpcInventory>(enemy).inv;
+        int goods = 0;
+        for (const ItemRef& sl : einv.slots) {
+            if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
+        }
+        CHECK(goods == 0,
+              "the fixture's premise: nobody here carries goods");
+    }
     settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
 
     // The realm's whole coin FAMILY (three nominals since verdict №1): a

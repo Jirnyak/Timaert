@@ -1,10 +1,10 @@
 // THE one name for "a thing on the macro map you can interact with" — and the
 // one pair of doors to what it owns (меню-сессия, owner verdicts 2026-09-11).
 //
-// THE FACT THESE DOORS REST ON (verified 2026-09-11): a squad and a landmark
-// already hold the SAME types — one Inventory (its bag, market, granary and
-// treasury in one, coins included) and one SoldierSquad (its roster / its
-// garrison; population.md: «гарнизон = армия ландмарка»). What differed was
+// THE FACT THESE DOORS REST ON (verified 2026-09-11; слияние M-71): a squad
+// and a landmark hold the SAME type — ONE Inventory (bag, market, granary,
+// treasury AND roster in one: существа лежат областью того же контейнера;
+// population.md: «гарнизон = армия ландмарка»). What differed was
 // only the ADDRESS: the squad carries them as ECS components on its leader
 // entity (ecs::NpcInventory / ecs::SquadRoster), the landmark as bare fields
 // of its record in gs.landmarks. Every consumer that wanted "this object's
@@ -80,20 +80,20 @@ inline Inventory* store_of(const MacroWorld& w, MapSubject s) {
 }
 
 // ── THE roster door ──────────────────────────────────────────────────────
-// The subject's standing men: a squad's members (everyone but the leader) or
-// a landmark's garrison — ONE SoldierSquad shape, so hire_npc, upkeep and the
-// strike-through loan already speak it on both sides.
-inline SoldierSquad* roster_of(const MacroWorld& w, MapSubject s) {
+// The subject's standing men live in the ONE container (M-71): a squad's —
+// its NpcInventory, a landmark's — its store; hire_npc, upkeep and the
+// strike-through loan all speak the creature area of the same Inventory.
+inline Inventory* roster_of(const MacroWorld& w, MapSubject s) {
     switch (s.kind) {
     case MapSubjectKind::Squad: {
         if (!w.world || !w.world->reg.valid(s.squad)) return nullptr;
-        auto* r = w.world->reg.try_get<ecs::SquadRoster>(s.squad);
-        return r ? &r->squad : nullptr;
+        auto* r = w.world->reg.try_get<ecs::NpcInventory>(s.squad);
+        return r ? &r->inv : nullptr;
     }
     case MapSubjectKind::Landmark: {
         if (!w.gs) return nullptr;
         Landmark* lm = landmark_by_id(*w.gs, int(s.landmark));
-        return lm ? &lm->garrison.squad : nullptr;
+        return lm ? &lm->inventory : nullptr;
     }
     case MapSubjectKind::None: break;
     }

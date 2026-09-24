@@ -140,10 +140,10 @@ inline bool player_wears_another_body(ecs::World& world) {
     return flag != entt::null && home != entt::null && flag != home;
 }
 
-SoldierSquad* player_roster(ecs::World& world);
-const SoldierSquad* player_roster(const ecs::World& world);
+// (player_roster умер слиянием M-71: армия игрока — область существ его же
+// контейнера, то есть ответ и на «ростер», и на «сумка» — player_inventory.)
 
-// …and his BAG, which is the ordinary ecs::NpcInventory every macro body
+// …his BAG, which is the ordinary ecs::NpcInventory every macro body
 // carries. It was `PlayerState::inventory`: the last large field that made the
 // player a different kind of thing from the squads around him.
 Inventory* player_inventory(ecs::World& world);

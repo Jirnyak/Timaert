@@ -11,6 +11,7 @@
 
 #include "ecs/components.h"
 #include "macro/army.h"
+#include "macro/world_row.h"
 #include "macro/currency.h"
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
@@ -160,10 +161,12 @@ void test_deposit_writes_both_channels() {
     CHECK(fVil >= 0, "фикстура: фракция реестра существует");
     auto e = rig.spawn(NPCType::Peasant, fVil, 20.0f, 20.0f);
 
-    auto& roster = rig.w.reg.emplace<ecs::SquadRoster>(e);
-    roster.squad.push(make_soldier(std::uint16_t(NPCType::Peasant), 1, 1u));
-    roster.squad.push(make_soldier(std::uint16_t(NPCType::Peasant), 1, 2u));
+    rig.w.reg.emplace<ecs::SquadRoster>(e);
     auto& bag = rig.w.reg.emplace<ecs::NpcInventory>(e);
+    creatures_push(bag.inv,
+                   make_soldier(std::uint16_t(NPCType::Peasant), 1, 1u));
+    creatures_push(bag.inv,
+                   make_soldier(std::uint16_t(NPCType::Peasant), 1, 2u));
     bag.inv.add("food", 10);
 
     const auto& dcell = rig.w.reg.get<ecs::MacroCell>(e);

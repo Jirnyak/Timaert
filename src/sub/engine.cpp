@@ -767,8 +767,8 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
             squadFaction = kind->factionIdx;
         }
     }
-    spawn_player_squad(ecs, player_roster(ecs) ? *player_roster(ecs)
-                                              : SoldierSquad{},
+    spawn_player_squad(ecs, player_inventory(ecs) ? *player_inventory(ecs)
+                                                  : Inventory{},
                        mgr_, playerX_, playerY_,
         cell_seed(gs.worldSeed, cx, cy) ^ kSquadSpawnSalt,
         squadFaction, &playerBonuses, rosterSubject, rosterCx, rosterCy);
@@ -1431,7 +1431,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
                     // (macro/macro_stock.h) instead of vanishing without trace.
                     ctx.landmark.id,
                     wcx, wcy, faunaCount,
-                    lmRec ? &lmRec->garrison.squad : nullptr,
+                    lmRec ? &lmRec->inventory : nullptr,
                     // THE CLOCK, because how many of this cell's people are on
                     // its streets is a question about the hour (city_layout.h
                     // crowd_outdoor_share01) — the rest are behind their doors.

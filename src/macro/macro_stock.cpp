@@ -7,6 +7,7 @@
 #include "ecs/world.h"
 #include "macro/army.h"
 #include "macro/deposit_layer.h"
+#include "macro/world_row.h"  // двери существ единого контейнера (M-71)
 #include "macro/fauna.h"
 #include "macro/map_generator.h"
 #include "macro/squad.h"     // record_deed — THE chronicle door (вердикт №9)
@@ -73,20 +74,22 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
 // a consequence instead of a special case: members die through this row, the
 // leader dies through the tracked-body path, and a Dead leader with an empty
 // roster simply is no squad any more — nothing extra removes it.
-ecs::SquadRoster* find_roster(const MacroWorld& w, std::int32_t subject) {
+// Слияние M-71: члены сквада живут в области существ ЕДИНОГО контейнера
+// (NpcInventory), обвязка счетов (SquadRoster) им больше не дом.
+Inventory* find_roster(const MacroWorld& w, std::int32_t subject) {
     if (!w.world || subject < 0) return nullptr;
-    auto view = w.world->reg.view<ecs::MacroSpawnId, ecs::SquadRoster>();
+    auto view = w.world->reg.view<ecs::MacroSpawnId, ecs::NpcInventory>();
     for (auto e : view) {
         if (view.get<ecs::MacroSpawnId>(e).index == std::uint32_t(subject)) {
-            return &view.get<ecs::SquadRoster>(e);
+            return &view.get<ecs::NpcInventory>(e).inv;
         }
     }
     return nullptr;
 }
 
 int read_roster(const MacroWorld& w, MacroStockKey k) {
-    const ecs::SquadRoster* r = find_roster(w, k.subject);
-    return r ? int(r->squad.size()) : 0;
+    const Inventory* r = find_roster(w, k.subject);
+    return r ? creature_heads(*r) : 0;
 }
 
 void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
@@ -98,7 +101,7 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
         // other malformed receipt.
         return;
     }
-    ecs::SquadRoster* r = find_roster(w, k.subject);
+    Inventory* r = find_roster(w, k.subject);
     if (!r) return;
     // The receipt names its member or it pays nothing: by entityId for a
     // storied soul, by {kind, level} for a generic one (detailLevel > 0 is
@@ -109,26 +112,25 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
     who.level = k.detailLevel;
     if (who.entityId == 0 && who.level <= 0) return;
     for (int i = 0; i < -delta; ++i) {
-        if (!remove_one_soldier(r->squad, who)) break;
+        if (!creatures_remove_one(*r, who)) break;
     }
 }
 
 // ── garrison: the standing army of a NAMED place (§42 Инк 7) ──────────────
-// The roster whose OWNER is a landmark rather than a squad — the same one
-// SoldierSquad form, the same by-name strike (remove_one_soldier_by_
-// entity_id, the exact helper the Roster row runs), a different address
-// book: `subject` = the landmark's world-unique id (the v54 issuer), and
-// `detail` names the member. A street guard's death pays here: killed on
-// the wall = struck from the roll — «убил стража, в гарнизоне дыра».
-SoldierSquad* find_garrison(const MacroWorld& w, std::int32_t subject) {
+// The roster whose OWNER is a landmark rather than a squad — те же слоты
+// существ ЕДИНОГО контейнера места (M-71), та же by-name strike, a
+// different address book: `subject` = the landmark's world-unique id (the
+// v54 issuer), and `detail` names the member. A street guard's death pays
+// here: killed on the wall = struck from the roll.
+Inventory* find_garrison(const MacroWorld& w, std::int32_t subject) {
     if (!w.gs || subject < 0) return nullptr;
     Landmark* lm = landmark_by_id(*w.gs, subject);
-    return lm ? &lm->garrison.squad : nullptr;
+    return lm ? &lm->inventory : nullptr;
 }
 
 int read_garrison(const MacroWorld& w, MacroStockKey k) {
-    const SoldierSquad* g = find_garrison(w, k.subject);
-    return g ? total_soldiers(*g) : 0;
+    const Inventory* g = find_garrison(w, k.subject);
+    return g ? creature_heads(*g) : 0;
 }
 
 void write_garrison(MacroWorld& w, MacroStockKey k, int delta) {
@@ -137,10 +139,10 @@ void write_garrison(MacroWorld& w, MacroStockKey k, int delta) {
         // — a bare positive delta names nobody, so it moves nothing.
         return;
     }
-    SoldierSquad* g = find_garrison(w, k.subject);
+    Inventory* g = find_garrison(w, k.subject);
     if (!g || k.detail == -1) return;
     for (int i = 0; i < -delta; ++i) {
-        if (!remove_one_soldier_by_entity_id(*g, std::uint32_t(k.detail))) {
+        if (!creatures_remove_one_by_entity_id(*g, std::uint32_t(k.detail))) {
             break;
         }
     }

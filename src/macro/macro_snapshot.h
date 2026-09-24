@@ -70,7 +70,8 @@ struct MacroNpcRecord {
     // the crowd costs four bytes each and the gear rides whole for the few
     // bodies that have any.
     Equipment            gear;
-    SoldierSquad roster;                    // SquadRoster.squad (no leader)
+    // (Слоты существ ростера уехали в `inventory` слиянием M-71 — область
+    // существ единого контейнера едет вместе с предметами одной копией.)
     // СЧЁТ СОДЕРЖАНИЯ РОСТЕРА (v105, CANON S10 «у всякого, кто кормит, есть
     // счёт»): непогашенный харч по лестнице и непогашенная плата. Едут в
     // сейв, потому что это ДОЛГ — состояние мира, а не производное: сквад,

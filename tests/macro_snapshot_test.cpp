@@ -13,6 +13,7 @@
 #include "check.h"
 
 #include "macro/macro_snapshot.h"
+#include "macro/world_row.h"
 #include "macro/npc_spawn.h"
 #include "macro/deposit_layer.h"
 #include "macro/save.h"
@@ -143,7 +144,7 @@ void test_snapshot_round_trips_the_living_map() {
               && ecs::cell_y(w2.reg.get<ecs::MacroCell>(a2), 64) == 21,
           "the march stands - the cell is the saved one, not the spawn one");
     CHECK(w2.reg.get<ecs::NpcLevel>(a2).value == 5, "the level survives");
-    CHECK(w2.reg.get<ecs::SquadRoster>(a2).squad.size() == 2,
+    CHECK(creature_heads(w2.reg.get<ecs::NpcInventory>(a2).inv) == 2,
           "the roster rows survive");
     const auto* orders2 = w2.reg.try_get<ecs::SquadOrders>(a2);
     CHECK(orders2 != nullptr && orders2->waypointCount == 2,

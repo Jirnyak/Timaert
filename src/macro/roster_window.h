@@ -27,6 +27,7 @@
 #include "macro/econ_day.h"   // econ_pay_debt, hunger_commodity_ordinal, EconFactSink
 #include "macro/npc.h"        // npc_board_per_day / soldier_upkeep — счёт по строкам
 #include "macro/roster.h"
+#include "macro/world_row.h"  // область существ единого контейнера (M-71)
 
 #include <algorithm>
 
@@ -40,21 +41,22 @@ struct RosterBill {
 };
 
 // ОДИН ПРОХОД НА ОБЕ СТРОКИ СЧЁТА, И ОБЕ — ПО ТАБЛИЦЕ СУЩЕСТВ.
-// Считает по СЛОТАМ, а не по душам: тысячная деревня — это два-три слота
-// (генерики стоят стопкой), поэтому цена двери не зависит от размера
-// ростера. Прежние две копии делали ДВА прохода по тем же слотам
-// (`sq.size()` и отдельно `calculate_squad_upkeep`) — эта дверь строго
-// дешевле той, которую заменяет.
-inline RosterBill roster_bill(const SoldierSquad& sq) {
+// Считает по СЛОТАМ области существ ЕДИНОГО контейнера (M-71), а не по
+// душам: тысячная деревня — это два-три слота (генерики стоят стопкой),
+// поэтому цена двери не зависит от размера ростера.
+inline RosterBill roster_bill(const Inventory& container) {
     int boardDay = 0;
     int wageDay  = 0;
-    for (const SoldierSlot& s : sq) {
+    for (int i = container.creature_first(); i < kMaxInventorySlots; ++i) {
+        const ItemRef& s = container.slots[std::size_t(i)];
+        const std::uint16_t kind =
+            std::uint16_t(creature_of_world_row(s.def));
         // Обе колонки спрашиваются у ОДНОЙ строки, своими дверьми:
         // `npc_board_per_day` — рацион, `soldier_upkeep` — плата (она же
         // читает `kNpcUpkeepNone` как ноль, поэтому зверь ест, но не
         // получает, и это сказано данными, а не веткой).
-        boardDay += npc_board_per_day(soldier_npc_type(s)) * int(s.count);
-        wageDay  += soldier_upkeep(s) * int(s.count);
+        boardDay += npc_board_per_day(soldier_npc_type(kind)) * s.count;
+        wageDay  += soldier_upkeep(kind, s.level) * s.count;
     }
     return RosterBill{boardDay * kDaysPerSeason,
                       std::int64_t(wageDay) * kDaysPerSeason};
@@ -67,15 +69,17 @@ struct RosterWindowOutcome {
 
 // Один суд, три шага. Счёт берётся ДВАЖДЫ одной и той же дверью: до убыли —
 // как знаменатель доли неоплаченного, после — как новая недоимка.
+// `store` — ЕДИНЫЙ контейнер владельца (M-71): его область существ и есть
+// ростер, его предметная область и есть склад; суд читает обе.
 inline RosterWindowOutcome roster_season_window(Roster& r, Inventory& store,
-                                                SoldierSquad& pool,
+                                                Inventory& pool,
                                                 std::int64_t& burnedValue,
                                                 EconFactSink sink,
                                                 void* user) {
     RosterWindowOutcome out{};
     const int boardOrd = hunger_commodity_ordinal();
     if (boardOrd < 0) return out;   // мир без голодной строки не судит никого
-    const RosterBill lastBill = roster_bill(r.squad);
+    const RosterBill lastBill = roster_bill(store);
 
     // ── 1. ВЗЫСКАНИЕ ПРОШЛОГО СЧЁТА — ПРОПОРЦИОНАЛЬНО ────────────────────
     // Доля НЕОПЛАЧЕННОГО и есть доля ушедших: зеркало закона мест
@@ -83,7 +87,7 @@ inline RosterWindowOutcome roster_season_window(Roster& r, Inventory& store,
     // доля 1/8 и пол «хотя бы одна душа» умерли 2026-09-21 — все три были
     // одним дефектом: ростер из трёх душ терял треть вместо восьмой, а
     // покрывший 99 % нужды терял столько же, сколько не покрывший ничего.
-    const int souls = r.squad.size();
+    const int souls = creature_heads(store);
     float unpaid = 0.0f;
     if (lastBill.board > 0 && r.needDebt[boardOrd] > 0) {
         unpaid = float(r.needDebt[boardOrd]) / float(lastBill.board);
@@ -98,11 +102,11 @@ inline RosterWindowOutcome roster_season_window(Roster& r, Inventory& store,
     }
     if (unpaid > 1.0f) unpaid = 1.0f;
     int walkers = int(float(souls) * unpaid);
-    while (walkers-- > 0 && !r.squad.empty()) {
+    while (walkers-- > 0 && !creatures_empty(store)) {
         SoldierRecord walker{};
-        if (!r.squad.pop_soul_back(walker)) break;
-        if (!pool.push(walker)) {
-            r.squad.push(walker);   // пул полон: человек остаётся
+        if (!creatures_pop_back(store, walker)) break;
+        if (!creatures_push(pool, walker)) {
+            creatures_push(store, walker);   // пул полон: человек остаётся
             break;
         }
         ++out.walked;
@@ -111,10 +115,10 @@ inline RosterWindowOutcome roster_season_window(Roster& r, Inventory& store,
     // ── 2. НОВЫЙ СЧЁТ по составу ПОСЛЕ убыли, ПЕРЕЗАПИСЬЮ ────────────────
     // Старая недоимка не переносится: взыскали — выставили новый. Поэтому
     // хранить исходную сумму не нужно, она пересчитывается из состава.
-    const RosterBill next = roster_bill(r.squad);
+    const RosterBill next = roster_bill(store);
     r.needDebt[boardOrd] = std::int32_t(next.board);
     r.wageDebt = next.wage;
-    if (r.squad.empty()) {
+    if (creatures_empty(store)) {
         r.needDebt[boardOrd] = 0;
         r.wageDebt = 0;
         return out;

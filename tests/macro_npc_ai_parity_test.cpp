@@ -10,6 +10,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
+#include "macro/world_row.h"
 #include "macro/map_generator.h"
 #include "macro/recovery.h"
 #include "macro/resource_field.h"
@@ -518,19 +519,21 @@ void test_rotation_does_not_dissolve_the_dead() {
     // rotate_worker_squads не считает крю то, чего место не поднимает.
     const auto dead = spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, 1);
     world.reg.emplace<sm::ecs::MacroSpawnId>(dead, 77u);
-    auto& deadRoster = world.reg.emplace<sm::ecs::SquadRoster>(dead);
-    deadRoster.squad.push(
+    world.reg.emplace<sm::ecs::SquadRoster>(dead);
+    sm::creatures_push(
+        world.reg.get_or_emplace<sm::ecs::NpcInventory>(dead).inv,
         sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 200u));
     world.reg.emplace<sm::ecs::Dead>(dead);
 
     const int popBefore = gs.landmarks[0].population;
-    const int garrisonBefore = gs.landmarks[0].garrison.souls();
+    const int garrisonBefore =
+        sm::creature_heads(gs.landmarks[0].inventory);
     sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
     sm::rotate_worker_squads(mw, /*day=*/3);
 
     CHECK(gs.landmarks[0].population == popBefore,
           "a dead crew's souls never return to the population");
-    CHECK(gs.landmarks[0].garrison.souls() == garrisonBefore,
+    CHECK(sm::creature_heads(gs.landmarks[0].inventory) == garrisonBefore,
           "and dead records never march into the garrison");
     CHECK(world.reg.valid(dead),
           "the corpse-row is the drain's business, not the rotation's");
@@ -545,8 +548,9 @@ void test_rotation_does_not_dissolve_the_dead() {
         const auto alive =
             spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, 1);
         world.reg.emplace<sm::ecs::MacroSpawnId>(alive, 78u + i);
-        auto& aliveRoster = world.reg.emplace<sm::ecs::SquadRoster>(alive);
-        aliveRoster.squad.push(
+        world.reg.emplace<sm::ecs::SquadRoster>(alive);
+        sm::creatures_push(
+            world.reg.get_or_emplace<sm::ecs::NpcInventory>(alive).inv,
             sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2,
                              201u + i));
     }

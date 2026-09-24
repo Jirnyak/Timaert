@@ -57,12 +57,13 @@ inline constexpr int kMacroSquadBytes =
 // 2026-09-24: слот единой таблицы 36 → 40 Б (level + entityId, слот В) —
 // инвентарь 9216 → 10240, сквад 12 745 → 13 769 Б; 16384 таких = 215 МиБ.
 // 2026-09-24, шаг А слияния: ёмкость контейнера 256 → 1024 (32×32, вердикт
-// владельца) — инвентарь 10 240 → 40 960, сквад 13 769 → 44 489 Б;
-// 16384 таких = 695 МиБ. Цена названа и принята (CANON:5615, ~1.8 ГиБ по
-// капам вместе со слиянием) — не «экономить».
-static_assert(kMacroSquadBytes == 44489,
-              "макро-сквад весит 44 489 Б; 16384 таких = 695 МиБ (AGENTS п.10)");
-static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 44104,
+// владельца) — инвентарь 10 240 → 40 960; 16384 таких = 695 МиБ. Цена
+// названа и принята (CANON:5615, ~1.8 ГиБ по капам вместе со слиянием).
+// 2026-09-24, шаг Б слияния: существа УЕХАЛИ В КОНТЕЙНЕР, ростер стал
+// обвязкой счетов (3144 → 72) — сквад 44 489 → 41 417 Б; 16384 = 647 МиБ.
+static_assert(kMacroSquadBytes == 41417,
+              "макро-сквад весит 41 417 Б; 16384 таких = 647 МиБ (AGENTS п.10)");
+static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 41032,
               "ядро субъекта — то же, что у Landmark (CANON S4)");
 
 // Thread-local Rng adapter so we can pass the existing
@@ -609,13 +610,18 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
         make_npc(w, spec.leaderType, f, p.x, p.y, gs.mapW, spec.homeSettlementId,
                  rng, gs.nextMacroSpawnOrdinal, spec.leaderLevel);
 
-    // The roster rows — through the same append every other producer uses.
-    auto& roster = w.reg.get<ecs::SquadRoster>(leader);
-    for (const SoldierSlot& r : spec.members) {
-        if (!valid_npc_kind(r.kind)) continue;
-        if (!roster.squad.push_slot(r)) {
-            break;   // the ceiling refuses out loud (macro/army.h)
-        }
+    // The roster rows — through the same append every other producer uses:
+    // души встают в область существ ЕДИНОГО контейнера лидера (M-71),
+    // генерик-заявка — стаком, душа с историей — записью.
+    auto& bag = w.reg.get<ecs::NpcInventory>(leader);
+    for (const SquadSpecMembers::Stack& st : spec.members) {
+        if (!valid_npc_kind(st.rec.kind)) continue;
+        const bool ok = st.rec.entityId == 0
+            ? creatures_push_stack(bag.inv,
+                                   soldier_npc_type(st.rec.kind),
+                                   st.rec.level, st.n)
+            : creatures_push(bag.inv, st.rec);
+        if (!ok) break;   // the ceiling refuses out loud
     }
     // The squad's carry is the SUM of its backs (CANON S10, literal: «берёт
     // по своей грузоподъёмности — СУММА ЛИСТОВ ЧЛЕНОВ») — through THE door

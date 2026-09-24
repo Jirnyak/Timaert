@@ -11,6 +11,7 @@
 
 #include "ecs/components.h"
 #include "macro/npc_spawn.h"
+#include "macro/world_row.h"
 
 namespace {
 
@@ -50,8 +51,8 @@ void test_every_macro_npc_is_a_squad_of_one() {
         ++macroNpcs;
         CHECK(world.reg.all_of<sm::ecs::SquadRoster>(e),
               "every macro NPC must carry a SquadRoster - the entity IS a squad");
-        if (const auto* roster = world.reg.try_get<sm::ecs::SquadRoster>(e)) {
-            CHECK(roster->squad.empty(),
+        if (const auto* bg = world.reg.try_get<sm::ecs::NpcInventory>(e)) {
+            CHECK(sm::creatures_empty(bg->inv),
                   "a freshly spawned wanderer is a squad of ONE: empty roster, "
                   "the entity itself is the leader");
         }

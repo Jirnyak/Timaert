@@ -18,6 +18,7 @@
 #include "check.h"
 
 #include "macro/player_entity.h"
+#include "macro/world_row.h"
 #include "macro/npc_ai.h"
 #include "macro/squad.h"
 #include "macro/macro_snapshot.h"
@@ -50,10 +51,12 @@ entt::entity npc_squad(ecs::World& w, float x, float y, std::uint32_t ordinal,
     rt.targetY = y;
     rt.state = std::uint8_t(NPCState::Idle);
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
-    auto& roster = reg.emplace<ecs::SquadRoster>(e);
+    reg.emplace<ecs::SquadRoster>(e);
+    auto& bag = reg.get_or_emplace<ecs::NpcInventory>(e);
     for (int i = 0; i < members; ++i) {
-        roster.squad.push(make_soldier(std::uint16_t(NPCType::Bandit), 2,
-                                       ordinal * 100u + std::uint32_t(i)));
+        creatures_push(bag.inv,
+                       make_soldier(std::uint16_t(NPCType::Bandit), 2,
+                                    ordinal * 100u + std::uint32_t(i)));
     }
     return e;
 }
@@ -81,7 +84,6 @@ void test_player_carries_everything_a_squad_carries() {
           "the player's squad matches the macro-snapshot view whole");
     CHECK(w.reg.get<ecs::MacroSpawnId>(e).index == ecs::kPlayerSquadOrdinal,
           "he is found by his reserved ordinal");
-    CHECK(player_roster(w) != nullptr, "his roster is reachable");
     CHECK(player_inventory(w) != nullptr, "his bag is reachable");
 
     // And he is proved to be IN the snapshot, not merely shaped like it.
@@ -226,11 +228,12 @@ void test_the_players_men_never_desert() {
     ecs::World w;
     ensure_macro_player_entity(gs, w);
     const entt::entity mine = player_squad_entity(w);
-    SoldierSquad* roster = player_roster(w);
+    Inventory* roster = player_inventory(w);
     CHECK(roster != nullptr, "his roster is there to lose");
     for (int i = 0; i < 4; ++i) {
-        roster->push(make_soldier(std::uint16_t(NPCType::Guard), 1,
-                                  9000u + std::uint32_t(i)));
+        creatures_push(*roster,
+                       make_soldier(std::uint16_t(NPCType::Guard), 1,
+                                    9000u + std::uint32_t(i)));
     }
 
     // `Dead` on the player's squad is not supposed to happen — but the drain
@@ -240,14 +243,14 @@ void test_the_players_men_never_desert() {
     const entt::entity fallen = npc_squad(w, 30.0f, 30.0f, 7u, 3);
     w.reg.emplace<ecs::Dead>(fallen);
 
-    SoldierSquad pool{};
+    Inventory pool{};
     const int moved = drain_dead_leader_squads(w, pool);
 
     CHECK(moved == 3, "only the fallen NPC leader's three men walked away");
-    CHECK(pool.size() == 3, "and only they landed in the pool");
-    CHECK(player_roster(w)->size() == 4,
+    CHECK(creature_heads(pool) == 3, "and only they landed in the pool");
+    CHECK(creature_heads(*player_inventory(w)) == 4,
           "the player's four are still his, dead flag or not");
-    CHECK(w.reg.get<ecs::SquadRoster>(fallen).squad.empty(),
+    CHECK(creatures_empty(w.reg.get<ecs::NpcInventory>(fallen).inv),
           "negative control: the NPC's roster WAS emptied by the same call");
 }
 
@@ -377,7 +380,7 @@ void test_one_door_assembles_every_battle_side() {
           "honest");
     CHECK(mine.fatigue > 0.2f && mine.fatigue < 0.3f,
           "and so does his tiredness");
-    CHECK(mine.roster == player_roster(w),
+    CHECK(mine.roster == player_inventory(w),
           "his men are his roster — the same lookup, not a second one");
 }
 
@@ -406,7 +409,8 @@ void test_the_players_wound_settles_through_the_one_door() {
     o.winner = 0;                 // the player's side takes it
     o.leaderFractionA = 0.5f;     // ...limping
     o.leaderFractionB = 0.0f;
-    for (const SoulRef r : w.reg.get<ecs::SquadRoster>(foe).squad.souls()) {
+    for (const CreatureHead r :
+         creature_heads_range(w.reg.get<ecs::NpcInventory>(foe).inv)) {
         o.casualtiesB.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
     settle_player_auto_battle(mw, foe, o, /*playerIsA*/true);

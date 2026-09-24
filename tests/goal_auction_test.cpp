@@ -18,6 +18,7 @@
 
 #include "ecs/components.h"
 #include "macro/deposit_layer.h"
+#include "macro/world_row.h"
 #include "macro/econ_day.h"
 #include "macro/npc.h"
 #include "macro/nav_field.h"
@@ -334,8 +335,8 @@ void test_boundary_court_resizes_standing_crews() {
              : w.reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
             (void)kind; (void)rt;
             total += 1;
-            if (const auto* ro = w.reg.try_get<ecs::SquadRoster>(e))
-                total += ro->squad.size();
+            if (const auto* bg = w.reg.try_get<ecs::NpcInventory>(e))
+                total += creature_heads(bg->inv);
         }
         return total;
     };
@@ -344,8 +345,8 @@ void test_boundary_court_resizes_standing_crews() {
         for (auto [e, kind, rt]
              : w.reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
             (void)kind; (void)rt;
-            if (const auto* ro = w.reg.try_get<ecs::SquadRoster>(e))
-                sizes.push_back(int(ro->squad.size()));
+            if (const auto* bg = w.reg.try_get<ecs::NpcInventory>(e))
+                sizes.push_back(creature_heads(bg->inv));
         }
         return sizes;
     };
@@ -357,12 +358,13 @@ void test_boundary_court_resizes_standing_crews() {
         (void)kind; first = e; break;
     }
     CHECK(first != entt::null, "есть артель для среза (фикстура)");
-    auto& ro = w.reg.get<ecs::SquadRoster>(first);
-    CHECK(ro.squad.size() > 3, "ростер больше среза (фикстура)");
-    const int cutTo = ro.squad.size() - 3;
-    while (ro.squad.size() > cutTo) {
+    auto& fbag = w.reg.get<ecs::NpcInventory>(first);
+    CHECK(creature_heads(fbag.inv) > 3, "ростер больше среза (фикстура)");
+    const int cutTo = creature_heads(fbag.inv) - 3;
+    while (creature_heads(fbag.inv) > cutTo) {
         SoldierRecord fallen{};
-        CHECK(ro.squad.pop_soul_back(fallen), "срез снимает душу с хвоста");
+        CHECK(creatures_pop_back(fbag.inv, fallen),
+              "срез снимает душу с хвоста");
     }
     const int soulsAfterLoss = souls_total();
 
@@ -383,13 +385,14 @@ void test_boundary_court_resizes_standing_crews() {
     // ПЕРЕБОР: той же артели вручную вливают семь лишних душ (модель:
     // домой пришла распухшая) — граница ССАЖИВАЕТ лишних В население.
     const int popBeforeShed = gs.landmarks[0].population;
-    const int sizeBeforeShed = int(w.reg.get<ecs::SquadRoster>(first).squad.size());
+    const int sizeBeforeShed =
+        creature_heads(w.reg.get<ecs::NpcInventory>(first).inv);
     for (int k = 0; k < 7; ++k) {
         SoldierRecord rec{};
         rec.entityId = 900000u + std::uint32_t(k);
         rec.kind = std::uint16_t(NPCType::Peasant);
         rec.level = 1;
-        w.reg.get<ecs::SquadRoster>(first).squad.push(rec);
+        creatures_push(w.reg.get<ecs::NpcInventory>(first).inv, rec);
     }
     const int soulsInflated = souls_total();
     rotate_worker_squads(mw, /*day*/65);
@@ -398,7 +401,7 @@ void test_boundary_court_resizes_standing_crews() {
     // Want дня 65 пересчитан от базы, потолстевшей на семь влитых душ, так
     // что он может встать на голову-другую выше прежнего — пин не «равно
     // старому», а «перебор срезан к пулу».
-    CHECK(int(w.reg.get<ecs::SquadRoster>(first).squad.size())
+    CHECK(creature_heads(w.reg.get<ecs::NpcInventory>(first).inv)
               < sizeBeforeShed + 7,
           "перебор ссажен: артель не жиреет мимо пула");
     CHECK(gs.landmarks[0].population > popBeforeShed,

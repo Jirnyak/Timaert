@@ -9,6 +9,7 @@
 #include "macro/npc_ai.h"          // kGathererReach — the field's press radius
 #include "macro/settlement_score.h"
 #include "macro/world_tick.h"      // garrison_target_strength (§42 Инк 7)
+#include "macro/world_row.h"       // raise_flock_into_roster (M-71)
 #include "core/rng.h"
 // ПЕРЕПИСЬ ШТАБЕЛЕЙ висит на сборке ядра, а не на отдельном тесте:
 // сторожа размеров обязаны срабатывать при ЛЮБОЙ сборке мира, иначе
@@ -99,7 +100,7 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
     gs.cityCountTarget = cityCountTarget;
     gs.worldTime    = world_time_at(1, 8, 0);   // day 1, 08:00
     gs.subState     = GameSubState{};       // Exploring
-    gs.deserterPool = default_squad();
+    gs.deserterPool = Inventory{};
     gs.player       = default_player();
     create_factions(gs, seed);
     return gs;
@@ -168,7 +169,7 @@ void populate_landmarks_from_politik(GameState& gs,
         // умер поток `Rng grng`, заведённый только под этот бросок.
         {
             const int taken = raise_flock_into_roster(
-                s.garrison.squad,
+                s.inventory,
                 garrison_target_strength(s.type, s.population));
             s.population = std::max(1, s.population - taken);
         }
@@ -351,7 +352,7 @@ void populate_landmarks_from_politik(GameState& gs,
             // The village's own roster, by the SAME one law (§42 Инк 7).
             {
                 const int taken = raise_flock_into_roster(
-                    vil.garrison.squad,
+                    vil.inventory,
                     garrison_target_strength(vil.type, vil.population));
                 vil.population = std::max(1, vil.population - taken);
             }

@@ -154,9 +154,11 @@ inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
     const float leaderHaul = npc_def(NPCType(kind->type)).haulMult;
     const float lh = leaderHaul > 0.0f ? leaderHaul : 1.0f;
     float souls = 1.0f;   // лидер — своя спина, она уже в carryPerSoul
-    if (const auto* ro = w.reg.try_get<ecs::SquadRoster>(leader)) {
-        for (const SoldierSlot& m : ro->squad) {
-            const float h = npc_def(soldier_npc_type(m)).haulMult;
+    if (const auto* bag = w.reg.try_get<ecs::NpcInventory>(leader)) {
+        for (int i = bag->inv.creature_first(); i < kMaxInventorySlots; ++i) {
+            const ItemRef& m = bag->inv.slots[std::size_t(i)];
+            const float h =
+                npc_def(creature_of_world_row(m.def)).haulMult;
             souls += (h > 0.0f ? h : 1.0f) / lh * float(m.count);
         }
     }
@@ -172,21 +174,24 @@ inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
 // still holds members; a live leader's squad is never touched, and a swept
 // roster is emptied so the pool can never be paid twice for the same men.
 // Returns how many soldiers walked away.
-inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
+inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
     int moved = 0;
     // The player's own squad never deserts wholesale: he is not a leader whose
     // men wander off when he falls, and losing his roster into the pool would
     // be silent — the tag is the guard the ordinal check would be, for free.
-    for (auto [e, roster] :
-         w.reg.view<ecs::SquadRoster, ecs::Dead>(
+    // Существа живут в ЕДИНОМ контейнере сквада (M-71); SquadRoster в view —
+    // маркер «это сквад» и обвязка счетов.
+    for (auto [e, bag, roster] :
+         w.reg.view<ecs::NpcInventory, ecs::SquadRoster, ecs::Dead>(
              entt::exclude<ecs::PlayerSquadTag>).each()) {
         (void)e;
-        if (roster.squad.empty()) continue;
-        // The pool CAN refuse (its own kMaxSquadSlots ceiling): only the
-        // men it actually took leave the roster; the rest STAY as the dead
-        // lord's band and the next sweep tries again — nobody is destroyed
-        // for standing past a cap (CANON S26).
-        moved += move_squad(deserterPool, roster.squad);
+        (void)roster;
+        if (creatures_empty(bag.inv)) continue;
+        // The pool CAN refuse (its own slot ceiling): only the men it
+        // actually took leave the roster; the rest STAY as the dead lord's
+        // band and the next sweep tries again — nobody is destroyed for
+        // standing past a cap (CANON S26).
+        moved += creatures_move(deserterPool, bag.inv);
     }
     return moved;
 }
@@ -221,10 +226,11 @@ inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
 inline int destroy_dead_macro_squads(ecs::World& w,
                                      std::int64_t* lootPoolValue = nullptr) {
     std::vector<entt::entity> doomed;
-    auto view = w.reg.view<ecs::MacroSpawnId, ecs::SquadRoster, ecs::Dead>(
+    auto view = w.reg.view<ecs::MacroSpawnId, ecs::SquadRoster,
+                           ecs::NpcInventory, ecs::Dead>(
         entt::exclude<ecs::PlayerTag, ecs::PlayerSquadTag, ecs::SubworldTag>);
     for (auto e : view) {
-        if (!view.get<ecs::SquadRoster>(e).squad.empty()) continue;
+        if (!creatures_empty(view.get<ecs::NpcInventory>(e).inv)) continue;
         doomed.push_back(e);
     }
     for (entt::entity e : doomed) {
@@ -481,8 +487,8 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
         s.fatigue = std::clamp(
             float(hp->sp) / float(std::max<int>(1, hp->maxSp)), 0.1f, 1.0f);
     }
-    if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
-        s.roster = &roster->squad;
+    if (const auto* bag = reg.try_get<ecs::NpcInventory>(e)) {
+        s.roster = &bag->inv;   // область существ единого контейнера (M-71)
     }
     if (owned_sheet(w, e)) {
         // A named leader's hp ceiling is his OWN sheet's, not a roll of his
@@ -785,6 +791,9 @@ inline void loot_fallen_owner(ecs::World& w, entt::entity fallen,
     if (!bag) return;
     for (ItemRef& stack : bag->inv.slots) {
         if (stack.empty()) continue;
+        // ЛУТ — ТОЛЬКО ПРЕДМЕТНАЯ ОБЛАСТЬ (M-71): выжившие люди павшего —
+        // не добыча, их судьба — пул дезертиров (drain_dead_leader_squads).
+        if (!world_row_is_item(stack.def)) continue;
         // Credit first: a stack the victor's bag refuses (full) STAYS on the
         // fallen — a refused pickup leaves the corpse holding it (items.h's
         // conservation ruling), never a cleared slot over an evaporated good.

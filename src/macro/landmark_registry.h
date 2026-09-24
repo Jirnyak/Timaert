@@ -185,7 +185,8 @@ struct LandmarkDef {
     // Target strength = population >> this; 0xFF = the kind keeps no
     // garrison (the honest default — a spire's «garrison» is its
     // population, Инк 4). The garrison is the place's OWN army in the ONE
-    // roster form (SoldierSquad, S4: поимённо): born with the place, fed
+    // container form (область существ его Inventory, M-71): born with the
+    // place, fed
     // and paid by it, thinned by street deaths through the Garrison stock,
     // hired from, patrolled out of. The old law — √pop×0.3 capped at 10 —
     // sized a tavern recruit pool, not a defense force, and the pop/10

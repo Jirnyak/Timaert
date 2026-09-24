@@ -16,6 +16,7 @@
 #include "check.h"
 
 #include "macro/deposit_layer.h"
+#include "macro/world_row.h"
 #include "macro/macro_stock.h"
 #include "macro/squad.h"
 #include "macro/state.h"
@@ -243,9 +244,10 @@ entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal,
     const auto e = w.reg.create();
     w.reg.emplace<sm::ecs::MacroNpcRuntime>(e);
     w.reg.emplace<sm::ecs::MacroSpawnId>(e, ordinal);
-    auto& roster = w.reg.emplace<sm::ecs::SquadRoster>(e);
+    w.reg.emplace<sm::ecs::SquadRoster>(e);
+    auto& bag = w.reg.get_or_emplace<sm::ecs::NpcInventory>(e);
     for (std::uint32_t id : memberIds) {
-        roster.squad.push(sm::make_soldier(
+        sm::creatures_push(bag.inv, sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard), 2, id));
     }
     return e;
@@ -317,10 +319,10 @@ void test_dead_leader_squads_fall_into_the_pool() {
     make_squad(world, 11, {3u});
     world.reg.emplace<ecs::Dead>(fallen);
 
-    SoldierSquad pool{};
+    Inventory pool{};
     CHECK(drain_dead_leader_squads(world, pool) == 2,
           "the dead leader's survivors walk away, all of them");
-    CHECK(total_soldiers(pool) == 2,
+    CHECK(creature_heads(pool) == 2,
           "and they land in the deserter pool");
     MacroWorld w{nullptr, nullptr, &world};
     CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{10, 0, 0}) == 0,
@@ -329,7 +331,7 @@ void test_dead_leader_squads_fall_into_the_pool() {
           "a live leader keeps his men");
 
     CHECK(drain_dead_leader_squads(world, pool) == 0
-              && total_soldiers(pool) == 2,
+              && creature_heads(pool) == 2,
           "draining again pays nothing: the pool is never billed twice");
 }
 

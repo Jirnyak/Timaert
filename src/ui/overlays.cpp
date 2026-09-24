@@ -209,14 +209,17 @@ namespace sm::ui
             return static_cast<NPCType>(static_cast<std::uint8_t>(idx));
         }
 
-        const SoldierSlot* first_soldier_of_kind(const SoldierSquad& squad,
-                                                  NPCType kind)
+        // Старейший слот рода в области существ (обход 1023 → first =
+        // старый порядок ростера) — цена найма показывается по нему.
+        const ItemRef* first_soldier_of_kind(const Inventory& inv,
+                                             NPCType kind)
         {
-            const std::uint8_t raw = static_cast<std::uint8_t>(kind);
-            for (const SoldierSlot& soldier : squad)
+            const std::uint16_t row = world_row_of_creature(kind);
+            for (int i = kMaxInventorySlots - 1;
+                 i >= inv.creature_first(); --i)
             {
-                if (soldier.kind == raw)
-                    return &soldier;
+                if (inv.slots[std::size_t(i)].def == row)
+                    return &inv.slots[std::size_t(i)];
             }
             return nullptr;
         }
@@ -753,7 +756,7 @@ namespace sm::ui
         ecs::Pools *poolsPtr = player_pools(world);
         ecs::Pools poolsFallback{};
         ecs::Pools &pools = poolsPtr ? *poolsPtr : poolsFallback;
-        const SoldierSquad *army = player_roster(world);
+        const Inventory *army = bagPtr;   // армия = область существ (M-71)
         const CharacterPanelTab current = tab ? *tab : CharacterPanelTab::Stats;
         // His BASE sheet, through the one door (посадка Б) — same fallback
         // shape as the bag and the bars: a world that has none yet shows a
@@ -777,7 +780,7 @@ namespace sm::ui
         const float carryCap = get_carry_capacity(effPanel.attributes,
                                                   effPanel.skills,
                                                   panelStanding);
-        const int armyTotal = army ? total_soldiers(*army) : 0;
+        const int armyTotal = army ? creature_heads(*army) : 0;
         // Upkeep is maintenance, not a deal (2026-09-17): no CHA discount,
         // and the bill is the SEASON'S — paid a season ahead at the boundary
         // window, the same law every squad pays by.
@@ -1296,8 +1299,8 @@ namespace sm::ui
                         for (int ti = 0; ti < npc_type_count(); ++ti)
                         {
                             const NPCType t = npc_type_at(ti);
-                            const int count = army ? count_soldiers_of_kind(
-                                *army, static_cast<std::uint8_t>(t)) : 0;
+                            const int count =
+                                army ? creature_heads_of(*army, t) : 0;
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
                             ImGui::TableNextRow();
@@ -1823,13 +1826,11 @@ namespace sm::ui
                             draw_info_overview_row("HP", int(pools->hp));
                             draw_info_overview_row(
                                 "Faction index", int(kind.factionIdx));
-                            if (const auto *roster =
-                                    world.reg.try_get<ecs::SquadRoster>(
-                                        squadSubject))
+                            if (bag)
                             {
                                 draw_info_overview_row(
                                     "Soldiers",
-                                    total_soldiers(roster->squad));
+                                    creature_heads(bag->inv));
                             }
                             if (bag)
                             {
@@ -1988,7 +1989,8 @@ namespace sm::ui
                         draw_info_overview_row("Faction index", int(s->factionIdx));
                         draw_info_overview_row("Starved last boundary",
                                                int(s->starvedYesterday));
-                        draw_info_overview_row("Garrison units", total_soldiers(s->garrison.squad));
+                        draw_info_overview_row(
+                            "Garrison units", creature_heads(s->inventory));
                         draw_info_overview_row("Inventory stacks", s->inventory.used_slots());
                         draw_info_overview_row("Inventory items", s->inventory.total());
                         ImGui::EndTable();
@@ -2128,7 +2130,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Garrison;
                 if (garrisonOpen)
                 {
-                    int total = total_soldiers(s->garrison.squad);
+                    int total = creature_heads(s->inventory);
                     ImGui::Text("Total: %d units", total);
                     ImGui::Spacing();
                     if (ImGui::BeginTable("garrison", 2,
@@ -2137,8 +2139,8 @@ namespace sm::ui
                         for (int ti = 0; ti < npc_type_count(); ++ti)
                         {
                             const NPCType t = npc_type_at(ti);
-                            const int count = count_soldiers_of_kind(
-                                s->garrison.squad, static_cast<std::uint8_t>(t));
+                            const int count =
+                                creature_heads_of(s->inventory, t);
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
                             ImGui::TableNextRow();
@@ -2169,13 +2171,15 @@ namespace sm::ui
                         const NPCType t = npc_type_at(ti);
                         if (!npc_hireable(t))
                             continue;
-                        const SoldierSlot* offer = first_soldier_of_kind(s->garrison.squad, t);
-                        int cost = offer ? hire_price_for(*offer) : npc_hire_price_base(t);
-                        int avail = count_soldiers_of_kind(
-                            s->garrison.squad, static_cast<std::uint8_t>(t));
-                        SoldierSquad* playerArmy = player_roster(world);
-                        int owned = playerArmy ? count_soldiers_of_kind(
-                            *playerArmy, static_cast<std::uint8_t>(t)) : 0;
+                        const ItemRef* offer =
+                            first_soldier_of_kind(s->inventory, t);
+                        int cost = offer
+                            ? hire_price_for(
+                                  std::uint16_t(t), offer->level)
+                            : npc_hire_price_base(t);
+                        int avail = creature_heads_of(s->inventory, t);
+                        Inventory* playerArmy = &playerBag;
+                        int owned = creature_heads_of(playerBag, t);
                         ImGui::PushID(static_cast<int>(t));
                         bool can = avail > 0
                                    && inventory_value(playerBag) >= cost;
@@ -2185,7 +2189,7 @@ namespace sm::ui
                         {
                             int purse = inventory_value(playerBag);
                             const int paid = playerArmy
-                                ? hire_npc(*playerArmy, s->garrison.squad, t, purse)
+                                ? hire_npc(*playerArmy, s->inventory, t, purse)
                                 : 0;
                             if (paid > 0)
                             {
@@ -2202,8 +2206,8 @@ namespace sm::ui
                                         transfer_value_dense(s->inventory,
                                                              playerBag, moved);
                                     SoldierRecord back{};
-                                    if (playerArmy->pop_soul_back(back))
-                                        s->garrison.squad.push(back);
+                                    if (creatures_pop_back(*playerArmy, back))
+                                        creatures_push(s->inventory, back);
                                 }
                             }
                         }
@@ -2215,11 +2219,9 @@ namespace sm::ui
                         ImGui::PopID();
                     }
                     ImGui::Spacing();
-                    if (const SoldierSquad* army = player_roster(world)) {
-                        ImGui::TextDisabled(
-                            "Season upkeep: %d g",
-                            calculate_squad_upkeep(*army) * kDaysPerSeason);
-                    }
+                    ImGui::TextDisabled(
+                        "Season upkeep: %d g",
+                        calculate_squad_upkeep(playerBag) * kDaysPerSeason);
                     ImGui::EndTabItem();
                 }
                 }   // acts & kMapActHire

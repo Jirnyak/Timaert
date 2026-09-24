@@ -1024,7 +1024,7 @@ void spawn_cell_npcs(ecs::World& w,
                      int macroCellX,
                      int macroCellY,
                      int faunaCount,
-                     const SoldierSquad* garrison,
+                     const Inventory* garrison,
                      const WorldTime& now) {
     auto& reg = w.reg;
     const int originX = (ox + 1) * kCellSize;
@@ -1061,7 +1061,7 @@ void spawn_cell_npcs(ecs::World& w,
     // hired away = not in this roster = not on this street. Garrison souls
     // were paid out of the population at recruitment, so they stand BESIDE
     // the crowd's partition, never inside it.
-    if (garrison && garrison->size() > 0 && landmarkSubjectId >= 0) {
+    if (garrison && creature_heads(*garrison) > 0 && landmarkSubjectId >= 0) {
         Rng grng(cellSeed ^ 0x6A121501u);
         const float centerX = float(originX) + float(kCellSize) * 0.5f;
         const float centerY = float(originY) + float(kCellSize) * 0.5f;
@@ -1106,17 +1106,20 @@ void spawn_cell_npcs(ecs::World& w,
         const float quarterR = city_upper_radius(landmarkPop);
         int refused = 0;
         int i = -1;
-        for (const SoulRef rec : garrison->souls()) {
+        for (const CreatureHead rec : creature_heads_range(*garrison)) {
             ++i;
             if (!valid_npc_kind(rec.kind)) continue;
             // The face and the seed: a storied soul keeps its entityId (the
             // face survives re-entry for the same man); a generic one derives
             // from its ADDRESS (slot, index) — CANON S4: «лицо генерика
-            // выводится, а не хранится».
+            // выводится, а не хранится». Слот — СТАРЫЙ ростерный ординал
+            // (0 = старейший), вычисленный из слота контейнера (M-71): та
+            // же композиция даёт то же лицо, что до слияния.
+            const std::uint32_t rosterSlot =
+                std::uint32_t(kMaxInventorySlots - 1 - rec.slot);
             const std::uint32_t soulId = rec.entityId != 0
                 ? rec.entityId
-                : ((std::uint32_t(rec.slot) << 16)
-                   | (std::uint32_t(rec.index) + 1u));
+                : ((rosterSlot << 16) | (std::uint32_t(rec.index) + 1u));
             // Every other man of the roll takes the quarter, so the split is
             // exact for any roster size and needs no second roll to decide it.
             const bool inQuarter = haveKeep && (i % 2) == 0;
@@ -1157,7 +1160,8 @@ void spawn_cell_npcs(ecs::World& w,
             std::fprintf(stderr,
                          "[spawn] WARN garrison of landmark %d: %d of %d "
                          "soldiers found no ground\n",
-                         landmarkSubjectId, refused, garrison->size());
+                         landmarkSubjectId, refused,
+                         creature_heads(*garrison));
         }
     }
 
@@ -1275,7 +1279,7 @@ void despawn_subworld_entities_outside_window(ecs::World& w) {
 }
 
 void spawn_player_squad(ecs::World& w,
-                        const SoldierSquad& squad,
+                        const Inventory& squad,
                         const SeamlessSubworldManager& mgr,
                         float playerX,
                         float playerY,
@@ -1290,7 +1294,7 @@ void spawn_player_squad(ecs::World& w,
 }
 
 void spawn_player_squad(ecs::World& w,
-                        const SoldierSquad& squad,
+                        const Inventory& squad,
                         const std::vector<std::uint8_t>& tiles,
                         float playerX,
                         float playerY,
@@ -1300,18 +1304,18 @@ void spawn_player_squad(ecs::World& w,
                         std::int32_t rosterSubject,
                         std::int16_t rosterCx,
                         std::int16_t rosterCy) {
-    if (squad.empty()) return;
+    if (creatures_empty(squad)) return;
 
     auto& reg = w.reg;
     Rng rng(seed ^ 0x51AD5A11u);
     constexpr float kPi = 3.1415926535f;
     constexpr float kTau = kPi * 2.0f;
-    const int count = std::max(1, squad.size());
+    const int count = std::max(1, creature_heads(squad));
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
 
     int i = -1;
-    for (const SoulRef soldier : squad.souls()) {
+    for (const CreatureHead soldier : creature_heads_range(squad)) {
         ++i;
         if (!valid_npc_kind(soldier.kind)) continue;
 
@@ -1541,12 +1545,12 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // other placement here; a member that finds no land stands ON the
         // leader's spot rather than being lost. The whole roster walks in —
         // no ceiling (§42 Инк 6): an army of hundreds meets you as hundreds.
-        if (const auto* roster = reg.try_get<ecs::SquadRoster>(macro)) {
+        if (const auto* mbag = reg.try_get<ecs::NpcInventory>(macro)) {
             const auto* sid = reg.try_get<ecs::MacroSpawnId>(macro);
             constexpr float kTau = 6.2831853f;
-            const int memberCount = int(roster->squad.size());
+            const int memberCount = int(creature_heads(mbag->inv));
             int m = -1;
-            for (const SoulRef rec : roster->squad.souls()) {
+            for (const CreatureHead rec : creature_heads_range(mbag->inv)) {
                 ++m;
                 if (!valid_npc_kind(rec.kind)) continue;
 
@@ -1592,10 +1596,13 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                         static_cast<NPCType>(rec.kind), mfx, mfy,
                         kind.factionIdx,
                         normalize_soldier_level(rec.level),
+                        // Слот — старый ростерный ординал (0 = старейший),
+                        // из слота контейнера (M-71): то же тело до и после.
                         ((seed ^ salt) + std::uint32_t(m) * 2654435761u)
                             ^ ((rec.entityId != 0
                                     ? rec.entityId
-                                    : ((std::uint32_t(rec.slot) << 16)
+                                    : ((std::uint32_t(kMaxInventorySlots - 1
+                                                      - rec.slot) << 16)
                                        | (std::uint32_t(rec.index) + 1u)))
                                << 7),
                         /*combatant*/true},

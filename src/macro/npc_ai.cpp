@@ -111,18 +111,23 @@ Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
 void deliver_mounts_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
                          const TickContext& ctx) {
     if (!ctx.mw.world) return;
-    auto* ro = ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
-    if (!ro) return;
+    auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(self);
+    if (!bag) return;
     Landmark* lm = home_landmark(rt, ctx);
     if (!lm) return;
     bool moved = false;
-    for (int i = ro->squad.slot_count() - 1; i >= 0; --i) {
-        if (!is_mount_kind(ro->squad[i].kind)) continue;
-        const SoldierSlot stall = ro->squad[i];
+    // Область существ единого контейнера (M-71); обход first → 1023 =
+    // старый порядок «новейший первым». Снятие слота приводит на его место
+    // УЖЕ осмотренный новейший (ремонт плотности) — курсор шагает дальше.
+    for (int i = bag->inv.creature_first(); i < kMaxInventorySlots; ++i) {
+        const ItemRef stall = bag->inv.slots[std::size_t(i)];
+        if (!is_mount_kind(std::uint16_t(creature_of_world_row(stall.def)))) {
+            continue;
+        }
         // Credit BEFORE debit (S5): a full garrison leaves the beasts IN
         // the roster rather than burning them.
-        if (!lm->garrison.squad.push_slot(stall)) continue;
-        ro->squad.remove_slot_at(i);
+        if (!creatures_push_slot(lm->inventory, stall)) continue;
+        bag->inv.remove_at(i, stall.count);
         moved = true;
     }
     if (moved) refresh_squad_carry(*ctx.mw.world, self);
@@ -1131,14 +1136,12 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // Every soul in the squad works: headcount multiplies the
                 // cycle's yield at the squad's one fixed SP price (owner:
                 // «SP тратится столько же, добывают кратно больше»).
-                const auto* roster =
-                    ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
-                // Руки — ЛЮДИ: лошадь в ростере — спина и рот, не рука
-                // (count_human_souls, npc.h) — иначе пойманный табун сам
-                // становился бы добытчиком и контур шёл вразнос.
-                const int workers = production_hands(
-                    roster ? count_human_souls(roster->squad) : 0);
                 auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(self);
+                // Руки — ЛЮДИ: лошадь в ростере — спина и рот, не рука
+                // (count_human_souls, world_row.h) — иначе пойманный табун
+                // сам становился бы добытчиком и контур шёл вразнос.
+                const int workers = production_hands(
+                    bag ? count_human_souls(bag->inv) : 0);
                 // «Берёт ПО СВОЕЙ ГРУЗОПОДЪЁМНОСТИ» — CANON S10 дословно:
                 // спины сквада ограничивают тейк. Без этой скобы артель
                 // грузила цикл×души невзирая на вес и каменела перегрузом
@@ -1168,17 +1171,15 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // (refresh_squad_carry, та же дверь, что у добора). Credit
                 // BEFORE debit: поле платит только за вставших.
                 if (take > 0 && def->rosterYield != NPCType::Count) {
-                    auto* ro =
-                        ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
                     // ПОТОЛКА ЛОВЛИ НЕТ (двухтактный обоз): ловец гонит
                     // ПАЧКУ и сдаёт её домой целиком, поэтому «не больше,
                     // чем душ» тут было бы вечным кругом «поймал — отдал».
                     // Тормоз — ЦЕНА: аукцион дешевеет по мере насыщения
                     // стойла (стоимость строки × та же кривая дефицита),
                     // и рулетка сама уводит руки в другую цель.
-                    if (take > 0 && ro && ro->squad.push_stack(
-                            std::uint16_t(def->rosterYield),
-                            std::int16_t(npc_def(def->rosterYield).baseLevel),
+                    if (take > 0 && bag && creatures_push_stack(
+                            bag->inv, def->rosterYield,
+                            npc_def(def->rosterYield).baseLevel,
                             take)) {
                         resource_field_apply(mw, def->row, tx, ty, -take);
                         pools.spCarry -= float(cycleCost);
@@ -2831,11 +2832,14 @@ bool squad_threat_step(entt::entity self, MacroPos& p,
 // (лидер — субъект, как в законе хлеба: 0 бойцов = 0 запаха богатства).
 static std::uint32_t roster_worth(ecs::World& w, entt::entity e) {
     std::uint32_t worth = 0;
-    if (const auto* roster = w.reg.try_get<ecs::SquadRoster>(e)) {
-        for (const SoldierSlot& r : roster->squad) {
-            if (!valid_npc_kind(r.kind)) continue;
+    if (const auto* bag = w.reg.try_get<ecs::NpcInventory>(e)) {
+        for (int i = bag->inv.creature_first(); i < kMaxInventorySlots; ++i) {
+            const ItemRef& r = bag->inv.slots[std::size_t(i)];
+            const std::uint16_t kind =
+                std::uint16_t(creature_of_world_row(r.def));
+            if (!valid_npc_kind(kind)) continue;
             worth += std::uint32_t(
-                std::max(0, npc_def(NPCType(std::uint8_t(r.kind))).hireGold))
+                std::max(0, npc_def(NPCType(kind)).hireGold))
                 * std::uint32_t(r.count);
         }
     }
@@ -3401,20 +3405,27 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
 // спин (squad.h refresh_squad_carry), поэтому выданный конь — это +8 спин
 // тому, кто сегодня идёт за рудой, и ни одного нового числа.
 int outfit_crew_mounts(ecs::World& w, Landmark& home, entt::entity crew) {
-    auto* ro = w.reg.try_get<ecs::SquadRoster>(crew);
-    if (!ro) return 0;
-    int want = mount_allowance(ro->squad) - count_mount_souls(ro->squad);
+    auto* bag = w.reg.try_get<ecs::NpcInventory>(crew);
+    if (!bag) return 0;
+    int want = mount_allowance(bag->inv) - count_mount_souls(bag->inv);
     int given = 0;
     while (want > 0) {
+        // Новейший ездовой слот стойла — наименьший индекс области (старый
+        // обход slot_count-1 → 0 = здесь first → 1023).
         int si = -1;
-        for (int i = home.garrison.squad.slot_count() - 1; i >= 0; --i) {
-            if (is_mount_kind(home.garrison.squad[i].kind)) { si = i; break; }
+        for (int i = home.inventory.creature_first();
+             i < kMaxInventorySlots; ++i) {
+            if (is_mount_kind(std::uint16_t(creature_of_world_row(
+                    home.inventory.slots[std::size_t(i)].def)))) {
+                si = i;
+                break;
+            }
         }
         if (si < 0) break;   // стойло пусто — артель идёт пешей
         SoldierRecord mount{};
-        if (!home.garrison.squad.take_soul_at(si, mount)) break;
-        if (!ro->squad.push(mount)) {
-            home.garrison.squad.push(mount);   // нет слота — конь остаётся дома
+        if (!creatures_take_at(home.inventory, si, mount)) break;
+        if (!creatures_push(bag->inv, mount)) {
+            creatures_push(home.inventory, mount);   // нет слота — конь дома
             break;
         }
         ++given;
@@ -3718,11 +3729,11 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         bool standingHome = false;
         if (is_crew(kind.type)) {
             int souls = 1;
-            if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
+            if (const auto* bag = reg.try_get<ecs::NpcInventory>(e)) {
                 // Труд-гроссбух считает ЛЮДЕЙ; табун отряда — в дроссель.
-                souls += count_human_souls(roster->squad);
-                horsesStanding[std::size_t(row)] += count_soldiers_of_kind(
-                    roster->squad, std::uint16_t(NPCType::Horse));
+                souls += count_human_souls(bag->inv);
+                horsesStanding[std::size_t(row)] +=
+                    creature_heads_of(bag->inv, NPCType::Horse);
             }
             afield[std::size_t(row)] += souls;
             if (is_home_idle(e)) {
@@ -3783,14 +3794,19 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // ростер→ростер, и человек с лошадью поедут одной дверью. Сегодня
         // население и гарнизон — два разных склада, поэтому и переносов два.
         int souls = 1;
-        if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
-            for (const SoldierSlot& sl : roster->squad) {
-                if (is_folk_kind(sl.kind)) {
-                    souls += int(sl.count);
-                } else if (!lm.garrison.squad.push_slot(sl)) {
+        if (const auto* bag = reg.try_get<ecs::NpcInventory>(e)) {
+            // Обход области существ 1023 → first = старый порядок слотов
+            // (старейший первым); источник не мутируется — энтити умирает.
+            for (int i = kMaxInventorySlots - 1;
+                 i >= bag->inv.creature_first(); --i) {
+                const ItemRef& sl = bag->inv.slots[std::size_t(i)];
+                if (is_folk_kind(
+                        std::uint16_t(creature_of_world_row(sl.def)))) {
+                    souls += sl.count;
+                } else if (!creatures_push_slot(lm.inventory, sl)) {
                     // Гарнизону тесно (кап контейнера) — лишние честно
                     // уходят в пул, никто не испаряется.
-                    gs.deserterPool.push_slot(sl);
+                    creatures_push_slot(gs.deserterPool, sl);
                 }
             }
         }
@@ -4014,8 +4030,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const NpcTypeDef& yieldRow = npc_def(gd.rosterYield);
                     const int base = yieldRow.hireGold;
                     if (base <= 0) continue;
-                    const int herd = count_soldiers_of_kind(
-                        s.garrison.squad, std::uint16_t(gd.rosterYield))
+                    const int herd =
+                        creature_heads_of(s.inventory, gd.rosterYield)
                         + horsesStanding[row];
                     // НУЖДА — ТОТ ЖЕ ЗАКОН УПРЯЖКИ (владелец 2026-09-19:
                     // «по лошадке на душу»): месту нужно столько ездовых,
@@ -4500,9 +4516,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // с ПОЛНОГО состава), ссадка лишних обратно в население
                 // (перенос, не баланс). В поле состав не трогается.
                 if (boundary && perCrew > 0) {
-                    if (auto* ro = reg.try_get<ecs::SquadRoster>(standing)) {
+                    if (auto* bg = reg.try_get<ecs::NpcInventory>(standing)) {
                         const int want = perCrew - 1;   // члены без лидера
-                        int have = count_human_souls(ro->squad);
+                        int have = count_human_souls(bg->inv);
                         const int canFeed =
                             s.inventory.count_of(hunger_item_index())
                                 / kDaysPerSeason;
@@ -4516,25 +4532,30 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                             SoldierRecord rec{};
                             rec.kind = std::uint16_t(ld.crews[i].npc);
                             rec.level = 1;
-                            if (!ro->squad.push(rec)) break;
+                            if (!creatures_push(bg->inv, rec)) break;
                             s.population -= 1;
                         }
                         // ССАДКА СУДИТ ЛЮДЕЙ: последняя человеческая
                         // душа сходит в население; табун артели суду
                         // состава не подсуден — лошадь не человек и в
                         // want не входит (дроссель ловли — в аукционе).
-                        for (have = count_human_souls(ro->squad);
+                        // Новейший людской слот = наименьший индекс области
+                        // (старый обход slot_count-1 → 0 = first → 1023).
+                        for (have = count_human_souls(bg->inv);
                              have > want; --have) {
                             int si = -1;
-                            for (int k = ro->squad.slot_count() - 1; k >= 0;
-                                 --k) {
-                                if (is_folk_kind(ro->squad[k].kind)) {
+                            for (int k = bg->inv.creature_first();
+                                 k < kMaxInventorySlots; ++k) {
+                                if (is_folk_kind(std::uint16_t(
+                                        creature_of_world_row(
+                                            bg->inv.slots[std::size_t(k)]
+                                                .def)))) {
                                     si = k;
                                     break;
                                 }
                             }
                             SoldierRecord off{};
-                            if (si < 0 || !ro->squad.take_soul_at(si, off))
+                            if (si < 0 || !creatures_take_at(bg->inv, si, off))
                                 break;
                             s.population += 1;
                         }
@@ -4772,7 +4793,7 @@ namespace {
 
 // THE settlement of the dead, shared by both tick drivers (AI-2; owner
 // 2026-09-10: «мёртвые не должны стоять вообще», survivors to the pool
-// UNIVERSALLY). The pool CAN refuse (kMaxSquadSlots) — and a refusal used
+// UNIVERSALLY). The pool CAN refuse (its slot ceiling) — and a refusal used
 // to leave the dead lord's band standing until the daily rotation returned
 // dead souls to a village as living population. Now the refusal UNLOADS the
 // pool on the spot through the very door the daily sim uses

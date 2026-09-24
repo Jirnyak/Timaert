@@ -34,6 +34,7 @@
 #include "macro/map_generator.h"
 #include "macro/nav_field.h"
 #include "macro/npc_ai.h"
+#include "macro/world_row.h"
 #include "macro/pathfinding.h"
 #include "macro/spawners.h"
 #include "macro/state.h"
@@ -401,20 +402,19 @@ int main(int argc, char** argv) {
             }
             long long horsesGarr = 0, soulsGarr = 0;
             for (const sm::Landmark& lm : gs.landmarks) {
-                horsesGarr += sm::count_soldiers_of_kind(
-                    lm.garrison.squad, std::uint16_t(sm::NPCType::Horse));
-                // Гарнизон — ЧЕТВЁРТЫЙ контейнер душ места (CANON S4:
-                // «ландмарк = неподвижный сквад, гарнизон = его ростер»).
-                // Считаются ЛЮДИ: табун у места свой столбец, и душой
-                // населения лошадь не была никогда.
-                soulsGarr += sm::count_human_souls(lm.garrison.squad);
+                horsesGarr += sm::creature_heads_of(
+                    lm.inventory, sm::NPCType::Horse);
+                // Гарнизон — область существ ЕДИНОГО контейнера места
+                // (M-71). Считаются ЛЮДИ: табун у места свой столбец, и
+                // душой населения лошадь не была никогда.
+                soulsGarr += sm::count_human_souls(lm.inventory);
             }
             long long horsesSquads = 0;
-            for (auto [e, ro]
-                 : ecs.reg.view<sm::ecs::SquadRoster>().each()) {
+            for (auto [e, bag2]
+                 : ecs.reg.view<sm::ecs::NpcInventory>().each()) {
                 (void)e;
-                horsesSquads += sm::count_soldiers_of_kind(
-                    ro.squad, std::uint16_t(sm::NPCType::Horse));
+                horsesSquads += sm::creature_heads_of(
+                    bag2.inv, sm::NPCType::Horse);
             }
             // ДУШИ В СКВАДАХ, разделённые ПО АДРЕСУ ДОМА. Лидер — такая же
             // душа, как любая в ростере (CANON S4: «одиночка = лидер с
@@ -429,9 +429,9 @@ int main(int argc, char** argv) {
                  : ecs.reg.view<sm::ecs::NPCKind,
                                 sm::ecs::MacroNpcRuntime>().each()) {
                 long long souls = sm::is_folk_kind(kind.type) ? 1 : 0;
-                if (const auto* ro =
-                        ecs.reg.try_get<sm::ecs::SquadRoster>(e))
-                    souls += sm::count_human_souls(ro->squad);
+                if (const auto* bg =
+                        ecs.reg.try_get<sm::ecs::NpcInventory>(e))
+                    souls += sm::count_human_souls(bg->inv);
                 if (souls <= 0) continue;
                 if (sm::landmark_by_id(gs, rt.homeSettlementId) != nullptr)
                     soulsHomed += souls;
@@ -483,7 +483,7 @@ int main(int argc, char** argv) {
                          accum.starvedPops,
                          accum.mintedCoins, trades, tradedValue, foodHolds,
                          crewsGather, crewsSell, crewsOther,
-                         int(gs.deserterPool.size()));
+                         int(sm::creature_heads(gs.deserterPool)));
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld",
                          horsesGarr, horsesSquads, pastures, parcels);
             // Баланс душ мира. soulsWorld печатается суммой, а не считается
