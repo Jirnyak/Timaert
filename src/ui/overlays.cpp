@@ -984,7 +984,7 @@ namespace sm::ui
                     // should, and no category is restated here.
                     if (!lastUseMessage.empty())
                         ImGui::TextDisabled("%s", lastUseMessage.c_str());
-                    // THE 16×16 GRID (владелец 2026-09-11): the bag draws
+                    // THE 32×32 GRID (владелец 2026-09-11): the bag draws
                     // the very shape the data always had — one widget, the
                     // same the two trade counters draw. Click selects; the
                     // detail line below names the stack and offers Use.

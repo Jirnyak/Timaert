@@ -269,10 +269,11 @@ void test_auto_scrap() {
     const int dagger = item_index("wpn_dagger");
     const int statue = item_index("statue");
     Inventory inv;
-    // 130 distinct rolled daggers (each seed its own stack, the exact
-    // non-fungible clog CANON describes), one dear rolled statue, and a plain
-    // bread pile that must survive untouched.
-    for (int i = 0; i < 130; ++i) {
+    // Distinct rolled daggers past the half mark (each seed its own stack,
+    // the exact non-fungible clog CANON describes), one dear rolled statue,
+    // and a plain bread pile that must survive untouched. The count derives
+    // from the same constant the law reads — the 256-slot era pinned 130.
+    for (int i = 0; i < kAutoScrapSlots + 2; ++i) {
         ItemRef r{};
         r.def = std::uint16_t(dagger);
         r.count = 1;

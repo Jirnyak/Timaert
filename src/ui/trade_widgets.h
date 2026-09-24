@@ -226,10 +226,11 @@ inline void barter_clamp(BarterPackage& pkg, const Inventory& shelf) {
     }
 }
 
-// ── THE INVENTORY GRID (владелец 2026-09-11: «инвентарь-СЕТКА 16×16») ────
+// ── THE INVENTORY GRID (владелец 2026-09-11: «инвентарь-СЕТКА»; 32×32 с
+// шага А слияния 2026-09-24: единый контейнер 1024 слота) ────────────────
 // One widget for every container view — the character's bag and both
 // counters of a deal draw THE SAME grid. The data always was this shape
-// (kMaxInventorySlots = 256 «16×16, the player's grid»); only the UI drew
+// (kMaxInventorySlots = 1024 «32×32, the one container»); only the UI drew
 // a list. A cell shows the item's short mark and count; hovering names it
 // in full (title, affixes, bonuses, value + the caller's own lines).
 // `staged` (nullable) draws the deal's RESERVATION on the very stack it
@@ -244,7 +245,7 @@ inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
                                      const BarterPackage* staged,
                                      TooltipExtraFn tooltipExtra) {
     GridClick out;
-    constexpr int kGridCols = 16;
+    constexpr int kGridCols = 32;
     static_assert(kMaxInventorySlots % kGridCols == 0,
                   "the grid draws every slot of the flat store");
     const float cell = ImGui::GetTextLineHeight() * 1.8f;
@@ -341,7 +342,7 @@ inline int barter_package_value(const BarterPackage& pkg,
 }
 
 // (draw_barter_column — the LIST shelf — died 2026-09-11 with the grid:
-// the 16x16 grid above is THE container view, list and grid were becoming
+// the grid above is THE container view, list and grid were becoming
 // two parallel shopfronts.)
 
 // The footer: the two totals face each other and ONE button settles the
@@ -378,7 +379,7 @@ inline bool draw_barter_deal_button(BarterState& st,
     return dealt;
 }
 
-// The BODY every counter shares: receipt line, the two 16×16 grids, the
+// The BODY every counter shares: receipt line, the two 32×32 grids, the
 // one Deal button. Staging is IN-PLACE (владелец: «резервировать то, что
 // на продажу, в стеке продающего»): LMB reserves +Amount from the stack
 // under the cursor, RMB releases — no third grid, the goods stay where

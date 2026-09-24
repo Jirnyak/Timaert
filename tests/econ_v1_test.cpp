@@ -482,11 +482,14 @@ int main() {
     {
         Inventory s{};
         const int dagger = item_index("wpn_dagger");
-        for (int i = 0; i < 200; ++i) {
+        // Past the half mark BY THE CONSTANT the law reads, not a literal
+        // calibrated to one capacity (the 256-slot era pinned 200 here).
+        const int clogSlots = kAutoScrapSlots + kAutoScrapSlots / 2;
+        for (int i = 0; i < clogSlots; ++i) {
             ItemRef r{};
             r.def = std::uint16_t(dagger);
             r.count = 1;
-            r.seed = std::uint32_t(1 + i);   // distinct seeds: 200 slots
+            r.seed = std::uint32_t(1 + i);   // distinct seeds: a slot each
             s.add_ref(r);
         }
         if (s.used_slots() <= kAutoScrapSlots) {

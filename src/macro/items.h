@@ -186,7 +186,11 @@ struct ItemDef {
 // STACKING is one sentence: two records merge only when everything except
 // `count` is equal. Bread merges with bread; two procedurally rolled swords
 // never merge, because their seeds differ. No second rule, no second table.
-inline constexpr int kMaxInventorySlots = 256;   // 16×16, the player's grid
+// 32×32 — ёмкость ЕДИНОГО контейнера (вердикт владельца 2026-09-22, эпик
+// единой таблицы: «слияние и расширение до 32×32 единого контейнера у каждого
+// сквада, и мобы == предметы»). Предметы и существа лежат в ОДНИХ слотах;
+// пустота у деревни оплачена сознательно — «страх перед пустотой» отвергнут.
+inline constexpr int kMaxInventorySlots = 1024;  // 32×32, the one container
 
 // An affix IS a bonus (macro/bonus.h `Bonus`): a row of the one registry and
 // how much of it. The name stays because "affix" is what a rolled modifier on
@@ -221,7 +225,7 @@ struct ItemRef {
     // The affixes, SoA: rows in one flat array, values in another. The array
     // of {u8 row, i16 value} pairs this replaces paid a padding byte per cell
     // to alignment — a third of the affix block spent on nothing, in the one
-    // struct the game keeps 256 × per container. Two arrays carry the same
+    // struct the game keeps 1024 × per container. Two arrays carry the same
     // facts at 3 bytes a cell exactly, and the save writes them without the
     // padding it used to (v82). Readers go through affix_at/set_affix, so the
     // layout is this struct's own business.
@@ -380,14 +384,14 @@ struct Inventory {
     }
     void clear() { slots.fill(ItemRef{}); }
 };
-// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). САМАЯ ТЯЖЁЛАЯ СТРУКТУРА МИРА: 10 240 Б
-// несёт КАЖДЫЙ сквад и КАЖДОЕ место. Форма НАМЕРЕННАЯ (AGENTS п.2, владелец:
-// «256 слотов на каждой сущности это RIGHT»; слот 40 Б — вердикт слота В,
-// 2026-09-24); число записано здесь, чтобы следующий читал его, а не
-// догадывался. Ёмкость 256 → 1024 (32×32) придёт шагом слияния контейнеров.
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). САМАЯ ТЯЖЁЛАЯ СТРУКТУРА МИРА: 40 960 Б
+// несёт КАЖДЫЙ сквад и КАЖДОЕ место. Форма НАМЕРЕННАЯ (AGENTS п.2, вердикт
+// владельца 2026-09-22: единый контейнер 32×32, пустота оплачена сознательно;
+// слот 40 Б — вердикт слота В, 2026-09-24); число записано здесь, чтобы
+// следующий читал его, а не догадывался.
 static_assert(sizeof(Inventory) == kMaxInventorySlots * sizeof(ItemRef),
-              "инвентарь = 256 плоских слотов, без счётчика и без дырок");
-static_assert(sizeof(Inventory) == 10240, "и это 10 240 Б ровно");
+              "инвентарь = 1024 плоских слота, без счётчика и без дырок");
+static_assert(sizeof(Inventory) == 40960, "и это 40 960 Б ровно");
 
 // Player combat slice consumed by `useItem` (mirrors TS inline type).
 struct PlayerCombatSlice {
@@ -485,7 +489,7 @@ bool scrap_at(Inventory& inv, int slot, int n);
 // whole, cheapest first by value_of × count, into raw matter. Returns stacks
 // scrapped. The player's own bag NEVER passes through here — his scrap is a
 // manual act (owner law, same CANON section).
-inline constexpr int kAutoScrapSlots = kMaxInventorySlots / 2;  // 128 = 50%
+inline constexpr int kAutoScrapSlots = kMaxInventorySlots / 2;  // 512 = 50%
 int auto_scrap_overflow(Inventory& inv);
 
 // Loot generation. `rng()` returns float in [0, 1).

@@ -140,7 +140,7 @@ void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
     // Credit BEFORE debit (economy.md's conservation law): the store accepts
     // first, the bag pays only what was accepted — a full store leaves the
     // haul ON THE GATHERER'S BACK instead of burning it. (Near-unreachable
-    // with 256 slots and stack-merging, but the law is the law.)
+    // with 1024 slots and stack-merging, but the law is the law.)
     if (n > 0 && store && store->add(id, n)) {
         bag->inv.remove(id, n);
         // The arrival IS the gather flow: the pure econ steps announce their

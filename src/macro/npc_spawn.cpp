@@ -56,9 +56,13 @@ inline constexpr int kMacroSquadBytes =
     + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits);
 // 2026-09-24: слот единой таблицы 36 → 40 Б (level + entityId, слот В) —
 // инвентарь 9216 → 10240, сквад 12 745 → 13 769 Б; 16384 таких = 215 МиБ.
-static_assert(kMacroSquadBytes == 13769,
-              "макро-сквад весит 13 769 Б; 16384 таких = 215 МиБ (AGENTS п.10)");
-static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 13384,
+// 2026-09-24, шаг А слияния: ёмкость контейнера 256 → 1024 (32×32, вердикт
+// владельца) — инвентарь 10 240 → 40 960, сквад 13 769 → 44 489 Б;
+// 16384 таких = 695 МиБ. Цена названа и принята (CANON:5615, ~1.8 ГиБ по
+// капам вместе со слиянием) — не «экономить».
+static_assert(kMacroSquadBytes == 44489,
+              "макро-сквад весит 44 489 Б; 16384 таких = 695 МиБ (AGENTS п.10)");
+static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 44104,
               "ядро субъекта — то же, что у Landmark (CANON S4)");
 
 // Thread-local Rng adapter so we can pass the existing
