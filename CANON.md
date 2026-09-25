@@ -5550,6 +5550,32 @@ HP, состояние ИИ, инвентарь, личность), ландма
 **Никаких подсказок-двойников**: если интерфейс называет клавишу, он обязан цитировать
 живую привязку.
 
+
+### РЕШЕНИЯ ПО ВВОДУ И НАСТРОЙКАМ ИНТЕРФЕЙСА (с владельцем; пересказ агента из снесённых controls.md / ui-settings.md, 2026-09-25)
+
+Одна перебиндиваемая таблица клавиш `kActionSpec` (`ui/keymap.h`) на оба мира и один реестр показа/размера HUD (`ui/ui_settings.h`) — обе «строка таблицы → авто-UI». Решения, принятые с владельцем (English — пересказ агента, не текст владельца):
+
+| Decision | Choice | Why |
+|----------|--------|-----|
+| What is fixed | **Only Esc** | Esc opens the menu and cancels a rebind — the way back can never be bound away. Everything else, F5/F9/Enter included, is the player's. |
+| Key identity | **Scancodes, not keysyms** | Positional bindings survive keyboard layouts; the old code mixed `SDLK_*` (layout-dependent) with scancodes and would scatter on non-QWERTY. An unbound action holds scancode 0, which SDL keeps permanently unpressed — no special case. |
+| Conflicts | **Steal within a world** | Binding a key that another action of an overlapping scope holds *unbinds* that action (shown as “—”), never silently duplicates. Macro and Sub never conflict with each other — Space is pause above ground and jump below by design; `Both` overlaps everything. |
+| Aliases | **One action, one binding** | The Tab→inventory and arrows→pan hardcoded aliases died with the rewrite. |
+| Mouse | **Fixed (v1)** | LMB attack, wheel zoom, middle/right drag pan stay hardcoded. |
+| Hints | **No hint bar; live quotes only** | The bottom hint bar was removed outright. Any UI text that names a key (toolbar tooltips, the `II PAUSED [..]` badge) formats it from the live keymap at draw time, so a rebind updates every hint the same frame and none can go stale. |
+
+Three product choices are baked in (chosen with the owner):
+
+| Decision | Choice | Why |
+|----------|--------|-----|
+| Persistence | **Global file on disk** | Prefs survive restarts and are shared across all saves — they are a *player* preference, not per-world state. |
+| Access | **Pause menu only** | An **"Interface"** entry in the Esc pause menu. No toolbar button, no hotkey — keeps the HUD uncluttered and the discovery path obvious. |
+| Coverage | **Everything hideable, panels too** | Chrome *and* pop-up panels each get on/off and (where meaningful) size. |
+
+And one architectural choice: **one system for both worlds.** The macro and
+micro views share the same registry, the same panel, and the same prefs file,
+so features never get "multiplied" per world.
+
 ## S23. Звук идёт из мира, а не из ввода
 
 **Шаг звучит потому, что тело коснулось опоры** ✓, а не потому, что нажата клавиша; удар —

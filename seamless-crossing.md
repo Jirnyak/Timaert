@@ -18,7 +18,7 @@ Source of truth for **how a subworld cell-boundary crossing stays invisible**:
 no hitch, no texture/lighting pop, no vanishing structures. This is a
 cross-cutting system — it spans the seamless manager ([microworld.md](microworld.md)),
 the Vulkan terrain upload ([render.md](render.md)), and one GPU-texture
-primitive ([vulkan.md](vulkan.md)) — so it gets its own doc. Read those three
+primitive (vulkan.md (vulkan.md снесён 2026-09-25 — см. CANON S22 / SKELETON III.4)) — so it gets its own doc. Read those three
 for the surrounding subsystems; read this for the crossing itself.
 
 > **Status (2026-08-05, end of the pass).** Inc 4-8 took the crossing frame from
@@ -323,7 +323,7 @@ the full rebuild and are not exercised.
 
 See [microworld.md](microworld.md) for the seamless manager and worker model,
 [render.md](render.md) for the terrain/material render passes, and
-[vulkan.md](vulkan.md) for the `VulkanTexture` primitives.
+vulkan.md (vulkan.md снесён 2026-09-25 — см. CANON S22 / SKELETON III.4) for the `VulkanTexture` primitives.
 
 
 ---

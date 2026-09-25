@@ -1,7 +1,7 @@
 # Rendering — Timaert (Vulkan)
 
 Source of truth for the **Vulkan render path**. Companion to
-[vulkan.md](vulkan.md) (backend + GPU-assisted compute) and
+vulkan.md (vulkan.md снесён 2026-09-25 — см. CANON S22 / SKELETON III.4) (backend + GPU-assisted compute) and
 [ARCHITECTURE.md](history/ARCHITECTURE.md) §Rendering & Compute Backend.
 
 > **Status (2026-08-23).** The shipping game uses the Vulkan path for macro and
@@ -13,7 +13,7 @@ Source of truth for the **Vulkan render path**. Companion to
 
 All backend objects live in `src/gpu/`; game logic never includes Vulkan
 headers. Shaders are GLSL compiled to SPIR-V by `glslc` at build time (see
-[vulkan.md](vulkan.md) §Shader toolchain).
+vulkan.md (vulkan.md снесён 2026-09-25 — см. CANON S22 / SKELETON III.4) §Shader toolchain).
 
 ---
 
@@ -1200,4 +1200,4 @@ The **2D view is the map / minimap**, not a separate tile renderer to port — i
 is already the macro synth ([shaders/macro.frag](shaders/macro.frag)); the
 first-person 3D view is the subworld renderer.
 
-See [vulkan.md](vulkan.md) for the backend module map.
+See vulkan.md (vulkan.md снесён 2026-09-25 — см. CANON S22 / SKELETON III.4) for the backend module map.
