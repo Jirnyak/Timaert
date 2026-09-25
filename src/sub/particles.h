@@ -15,7 +15,7 @@
 // Rendering: ParticleSystem::pack() flattens the live pool into ParticleInstance
 // records (world position + size + colour + alpha) that the renderer uploads as
 // ONE buffer feeding TWO instanced billboard passes, split by the preset's
-// blend class (proposals/particles-unified-matter.md):
+// blend class (CANON S18, «Частицы-материя»):
 //   ENERGY (additive, shaders/particle.vert|frag) — light that adds: magic,
 //     fire, sparks. Additive is commutative ⇒ order-independent ⇒ no sort.
 //   MATTER (alpha-over, lit, shaders/particle_matter.vert|frag) — stuff that

@@ -17,10 +17,9 @@ README переписан; CANON — структура + вердикты вл�
    `A1-кадр-приложения` (main.cpp frame целиком, smoke, ui) — дампов нет. Промпты
    срезов — в скрипте воркфлоу этой сессии (skeleton-code-recon), повторить
    двумя Opus-агентами и дописать SKELETON III.2/III.5.
-2. Верификация 15 доков субмира/оболочки (context, controls, debug, dungeons, ground,
-   macro-lighting, microcombat, microworld, population, render, seamless-crossing,
-   shell-screens, sprites, ui-settings, vulkan; + proposals/): извлечь дословные
-   цитаты владельца → CANON, факты → SKELETON III, снести. Промпт — docs-verify-extract.
+2. Доки субмира снесены 2026-09-25 (вердикты → CANON S17/S18/S22/S27/S28); остались
+   ground.md (закон цвета земли — перенести в SKELETON III + CANON S17) и debug.md
+   (плейбук профилирования — оставить или свести в README).
 3. Реестр: завести наряды из SKELETON часть IV (25 расхождений + вердикты владельца
    2026-09-25). Готовые формулировки — в SKELETON IV «Предложения нарядов».
 4. Комментарии кода, ссылающиеся на снесённые доки (править в сессии кода):
