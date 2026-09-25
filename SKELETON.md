@@ -797,19 +797,124 @@ write_payload                                    save.cpp:1031
 субмиры без контекста клетки, движок тот же; симуляция изотропна по xyz; одна
 плоскость воды на одном уровне.
 
-Что из этого ПРОВЕРЕНО на 2026-09-25 (срез «стык»): генераторы клетки читают
-только `CellContext` (`sub/gens/`, `sub/base_generator.cpp`; исключения —
-`FeatureLayer::decode` в `gens/dispatch.cpp:56,103,113`, `gens/field.cpp:163`,
-`gens/road.cpp:507` и поля `depositsNear` в `spawn.cpp`) — **ПРАВДА**;
-`Engine::tick` (`sub/engine.cpp:4644`): `tick_zones :4660` → `tick_day_pump
-:4662` → `check_boundary :4675` → [ре-центр] → `mirror_bodies_from_record
-:4749` → … → `resolve_subworld_deaths :4875` → `report_player_damage :4879` —
-**ПРАВДА**; тела и макро-записи — один `entt::registry` (Часть II).
+Срез «рождение клетки» (генераторы `gens/`, `kit/`, `dgn/`, `spawn.cpp`) и срез
+«кадр приложения» перепись 2026-09-25 не успела (остановлена по бюджету); их
+дампов нет. Ниже — только проверенное срезами «тик субмира» и «рендер».
 
-**Полная карта субмира (тик, окно 3×3, рождение клетки, память тел, рендер)
-дописывается по срезам S1–S3 и A1 этой же переписи; до её появления утверждения
-о субмире из снесённых доков `microworld.md`, `seamless-crossing.md`,
-`render.md`, `vulkan.md` в этот файл НЕ переносятся — они не проверены.**
+## III.1 — Окно 3×3 и тик
+
+Клетка = 1024 тайла, окно = 3072² (`sub/map_data.h:20-21`); игрок держится в
+центральной клетке `[1024,2048)²`, порог шва `seamless_manager.cpp:922-925`. —
+**ПРАВДА**
+
+```
+tick_playing_runtime: dt = kStepSeconds = 1/64 (constexpr)   app/main.cpp:3400, core/time.h:82
+├─ poll_movement → set_move_intent (только НАМЕРЕНИЕ)          sub/engine.cpp:4501
+├─ tick_world_subworld_steps: 64 шага = 1 тик мира              world_tick.cpp:639
+└─ SubworldEngine::tick(dt)                                    sub/engine.cpp:4644
+   ├─ pull_player_entity_to_scalars                           :4658
+   ├─ tick_zones (пишет gs_->chronicle по ходу)               :4660 → :1712
+   ├─ tick_day_pump (горожане: улица/дом, рождения с займом)   :4662 → :1557
+   ├─ check_boundary → [ре-центр: memmove композита, перестановка cells_,
+   │    очереди генерации; repopulate_after_recenter :1462]    :4675 → seamless_manager.cpp:915
+   ├─ Renderer3DVk::upload (только при dev_): heightVtxM_, материал GPU  :4710
+   ├─ StructureIndex::rebuild при dirty (CSR 96×96 бинов)      :4722 → collide.cpp:26
+   ├─ mirror_bodies_from_record (Pools записи → тело, hp кламп) :4749 → :1196
+   ├─ вертикаль наземных: ОДИН vertical_step, Airborne, урон падения  :4764 → height.h:147
+   ├─ летуны: конверт z ∈ [опора, max_terrain+120]             :4806
+   ├─ sync_player_vertical (тот же vertical_step)              :4830 → :4468
+   ├─ tick_npc_ai — мозг пишет только намерение               :4832 → sub/ai.cpp:28
+   ├─ tick_subworld_bodies:                                    :4841 → :2996
+   │    сбор ECS→SoA crowd_ (игрок — обычное тело B_Passive :3050-3061)
+   │    → маски фракций K² (строки!) :3105 → UnitGrid ×2 + InfluenceField :3136
+   │    → steer_bodies — ОДИН ходок на всех :3167 → movement.cpp:441
+   │    → scatter SoA→ECS :3178 → удары NPC: apply_damage / стрела :3221
+   ├─ tick_player_melee (свой выбор цели hostile-first)         :4846 → :1997
+   ├─ tick_visual_interp · tick_combat_recovery (целые шаги)   ecs/systems.cpp:18,35
+   ├─ tick_spell_projectiles (фракционно слепы; реап ≤512)     sub/spell_effects.cpp:388
+   ├─ tick_hit_flashes · tick_damage_fx                        :2396, :2325
+   ├─ resolve_subworld_deaths (жнец: макро-записи, лут, XP)    :4875 → :3257
+   ├─ report_player_damage                                     :4879 → :1235
+   ├─ ParticleSystem::tick (пул 2048, CPU)                     :4888 → particles.cpp:163
+   └─ угольки факелов (FX-LOD по дистанции — представление) · кровавый след  :4897, :4937
+```
+
+## III.2 — Паспорт памяти субмира
+
+| буфер | тип × кап | ОЗУ | владелец | дверь | статус |
+|---|---|---|---|---|---|
+| тайлы окна `composite_tiles_` | u8 × 3072² | 9 МиБ | `SeamlessSubworldManager` (`seamless_manager.h:246`) | `tiles()`; ходок читает через указатель `MoveGround` (`movement.cpp:721-722`) | **ПРАВДА**; сдвиг на шве — линейный `memmove` перекрытия, не кольцо |
+| высоты окна `composite_height_` | f32 × 3072² | 36 МиБ | менеджер (`:247`) | `heightmap()` — **симуляция его НЕ читает** (0 вызовов в `engine.cpp`) | см. ниже |
+| `cells_[9]` (тайлы, trav, высоты, структуры на клетку) | ≈6 МиБ × 9 | 54 МиБ | менеджер (`:245`) | `generate_one`, перестановка при шве | **ПРАВДА** |
+| **`heightVtxM_` — высоты, которые читает СИМУЛЯЦИЯ** | f32 × 193² (шаг 16 тайлов) | 149 КиБ | `Renderer3DVk` (`vk_renderer_3d.h:243`) | `sample_height_m` — 16 вызовов из `engine.cpp` (тела, снаряды, мозг, частицы); заполняется только при `dev_ != nullptr` (`engine.cpp:4710`), иначе высота = 0 (`vk_renderer_3d.cpp:3758`) | **РАСХОЖДЕНИЕ** — два ответа «какая здесь высота» (композит 1 тайл и сетка рендера); вход симуляции живёт в рендерере и зависит от устройства; наряда нет |
+| `StructureIndex` (твёрдые тела) | Entry 40 Б × S; бины 96²+1 | 36 КиБ + 40·S | `SubworldEngine::structIndex_` (`collide.h:131`) | `support_at/blocked_at/solid_at/resolve_step` (`collide.cpp:120-195`) | **ПРАВДА**; `static_assert` на Entry нет |
+| **`crowd_` — ходовой/боевой SoA `BodyCrowd`** (17 колонок) | 64 Б/тело × 16384 | 1 МиБ | `SubworldEngine` (`engine.h:620`; `movement.h:190`) | `add/clear/reserve`; steer пишет колонки по индексу (SoA по замыслу) | **ПРАВДА**; кап `kMaxBodyCrowd = 16384` (`movement.h:77`) |
+| `crowdFine_`/`crowdPick_` (`UnitGrid`) | ≤256² ячеек | ≈1.2 МБ | `engine.h:624-625` | `build_unit_grid` (`movement.cpp:153`, counting sort) | **ПРАВДА** |
+| `crowdField_` (`InfluenceField`, поле влияния + цепь тревоги) | 22 Б × ≤97² × планы ≤64 | до 13 МБ (0.5 при 2 фракциях) | `engine.h:626` | `build_influence_field` (`movement.cpp:218`) | **ПРАВДА** |
+| `crowdFactions_` (`FactionSet`) | 64 × (const char* + u64) | 1 КиБ | `engine.h:643` | `intern` — сперва указатель, затем **strcmp** (`movement.cpp:53-64`) | **РАСХОЖДЕНИЕ** — ключ фракции строкой в тике; M-103 |
+| частицы `pool_` | Particle 64 Б × 2048 | 128 КиБ | `particles_` (`particles.h:193`) | `emit*/tick`, переполнение — отброс | **ПРАВДА** |
+| `stampRing_` (метки крови) | 24 Б × без капа в тике; обрезка до 1024 в `prepare_frame` | — | `engine.h:609` | `push_stamp :4985` | **РАСХОЖДЕНИЕ** — `push_back` в тике без капа |
+| EnTT тело субмира | Position 12 + Pools 36 + Combat 28 + SubworldAi 40 + NPCKind 4 + Sprite 20 + VisualPos 12 + BodyRadius 4 + MacroDebt 24 + MacroOrigin 4 + LastHit 4 = 184 Б | ≈3 МБ при 16384 | `App::ecs.reg` — **ОДИН registry на оба мира** (`app_state.h:201`) | `spawn_derived_body` (`spawn.cpp:520`); `apply_damage` (`damage.cpp:129`) | **РАСХОЖДЕНИЕ** — общий registry (M-106); `static_assert(sizeof)` только у Pools; Combat 28, SubworldAi 40, Projectile 68 (дыра 3 Б после `chainDecayPct`) не закреплены |
+| ленивые компоненты тика (Airborne, HitFlash, DamageFx, GoingHome) | 2–8 Б | — | registry | `emplace/remove` в горячем тике (`engine.cpp:4782,4785,2419,2394,1665`; `damage.cpp:120-146`) | **РАСХОЖДЕНИЕ** — churn разрежённых множеств в тике; наряда нет |
+| static буферы broad phase | u32 × 16384 × 2 | 128 КиБ | function-static (`spell_effects.cpp:111`, `targeting.cpp:66`) | — | **РАСХОЖДЕНИЕ** — глобальное состояние; ещё два литерала 16384 (`spell_effects.cpp:83`, `targeting.h:48`) |
+
+## III.3 — Реестр субмира
+
+| что | как в коде | статус |
+|---|---|---|
+| `sub/battle.h`, `kMaxBattleUnits`, `UnitGrid` боевого SoA (AGENTS §4 п.4, §6, §7) | файла нет; кап — `kMaxBodyCrowd` (`movement.h:77`), SoA — `BodyCrowd` (`movement.h:190`), сетка — `UnitGrid` (`movement.h:221`); модуль переименован в mover (`movement.h:1-14`); карта имён: battle→movement, steer_battle→steer_bodies, BattleTerrain→MoveGround, BattleUnits→BodyCrowd, BU_*→B_*, battle_ai_test→movement_steering_test | **РАСХОЖДЕНИЕ документа** — AGENTS цитирует мёртвые имена; правит владелец |
+| 16384 — единый кап, `kMaxBattleUnits == kMaxEntityInstances` | четыре независимых литерала 16384: `movement.h:77`, `vk_renderer_3d.cpp:168`, `spell_effects.cpp:83`, `targeting.h:48`; связывающего `static_assert` — 0 | **РАСХОЖДЕНИЕ** — ЗАКОН КОНСТАНТ; наряда нет |
+| один ходок на все тела, включая игрока | сбор всех живых `SubworldTag` (`engine.cpp:2996-3092`); игрок — обычное тело с намерением клавиш; единственная запись x/y — `steer_bodies` (`movement.cpp:849-850`); мозг `Position` не пишет; харнесс-дверь `move_player` (`:4528`) — только `smoke.cpp` | **ПРАВДА** |
+| одна вертикаль и один урон падения | `vertical_step` (`height.h:147`): NPC `:4784`, игрок `:4468`; `apply_fall_damage` (`:217`) | **ПРАВДА** |
+| один закон урона | `hp -=` в `src/sub` — единственное `damage.cpp:129`; вызовы `apply_damage`: `engine.cpp:222,2100,3199`, `spell_effects.cpp:151`; удар ложится на ЗАПИСЬ через `pools_of` (`record.h:94`) | **ПРАВДА** |
+| ноль здоровья — событие, hp в минус свободно | зеркало клампит `[0,maxHp]` (`:1227`); оболочка игрока при спавне (`:971`); смерть в чужом теле `hp=0` (`:1281`); жнец `mh->hp = 0.0f` (`:3307`) | **РАСХОЖДЕНИЕ** — три точки стирают отрицательный остаток; наряда нет |
+| строгий O(N), без O(N²) | основной путь O(N): сетки, поле, потолки визитов `maxPickVisits=64`/`maxSepVisits=48` (`movement.h:367-368`); фолбэки: полный скан на снаряд при −1 от broad phase (`spell_effects.cpp:127-129`), мили-фолбэк (`targeting.cpp:77-79`), `tick_day_pump` surplus×doors (`engine.cpp:1655-1660`), `macro_entity_by_spawn_id` — линейный скан макро-сквадов на убийство ростерным телом (`engine.cpp:3359`) | **ПРАВДА в основном пути; РАСХОЖДЕНИЕ в фолбэках** — наряда нет |
+| никаких LOD-скипов и заморозки NPC | в тике субмира пропусков тел нет; смерти сверх 512 откладываются, не пропускаются (`:87,:3266`); FX-LOD факелов — представление (`:4901`) | **ПРАВДА** (макромир фоном — backlog-skip, M-105) |
+| ре-центр за O(нового контента) | генерация свежих клеток асинхронна — O(нового) (`seamless_manager.cpp:970-978`); но CPU-композит сдвигается `memmove` всего перекрытия (`:72-100`), структуры пересобираются по всем 9 клеткам (`:442-463`), rebase всех тел (`spawn.cpp:1239-1256`), `StructureIndex` целиком; GPU — ping-pong blit перекрытия (`vk_renderer_3d.cpp:2742`), не кольцевой адрес | **РАСХОЖДЕНИЕ** — CPU-сторона O(окна); наряда нет |
+| кросс-кадровое состояние боя пересобирается каждый тик | `crowd_`, сетки, поле, маски — каждый тик (`:2980-3141`) | **ПРАВДА** |
+| снаряды и спеллы фракционно слепы | `is_spell_target` без фракций (`spell_effects.cpp:48-70`); AoE бьёт и кастера (`:257-261`); исключение — только отрезок дула в тик рождения (`:541-573`) | **ПРАВДА**; `Projectile.friendlyFire` (`ecs/components.h:647`) — читателей в `src/sub` 0 (колонка-сирота) |
+| игрок — обычное тело без игрок-кода | движение — общий ходок; но удар игрока — свой путь `melee_pick_target` hostile-first (`targeting.cpp:24-80`); мозг Flee боится только позиции игрока (`ai.cpp:109-118`); godMode откатывает запись (`:1260-1266`, dev) | **РАСХОЖДЕНИЕ** — второй путь выбора цели; вопрос владельцу |
+| таймеры симуляции — в целых шагах (`core/time.h:49-59`) | `recoverySteps` — целые (`ecs/systems.cpp:35-42`) — ПРАВДА; `SubworldAi.aiTimer -= dt` (`ai.cpp:93,121`), `Projectile.lifeTimer -= dt` (`spell_effects.cpp:409`), `Combat.cooldown` float-секунды с переводом на каждом ударе (`:2027,:3208,:3250`); `kLightFieldRebuildFrames` выведен из 60 fps (`lighting.h:56-67`) без пометки «представление»; харнесс гонит тик с dt ≠ 1/64 в 56 из 56 вызовов (`smoke.cpp`) | **РАСХОЖДЕНИЕ** — наряда нет |
+| макро-сторона шва спрашивает соседа дверью | `cell_step` в `src/sub` — 0; `%` по рантайм-делителю 12 строк `engine.cpp`; `toroidal_cell_offset` — рукописная копия `torus_offset` (`spawn.cpp:512-517`); пары `center_c[xy]()±` — 20 | **РАСХОЖДЕНИЕ** — ЗАКОН АДРЕСА п.5; наряда нет |
+| ноль строк в тике | `faction_id_for_kind` → `intern` по строке (`engine.cpp:232-234,3038`); K² `faction_relation` strcmp (`state.h:1209-1213`); Flee → `hostile_to_player_entity` на тело; `roll_loot_profile(lootId)` → `std::vector` на смерть (`:3443`); `spell_ordinal("haste")` каждый кадр в `record_main` (`:5084-5087`) — и результат передаётся в закомментированные параметры | **РАСХОЖДЕНИЕ** — M-103 |
+| одна высота тела | `kBodyEyeM = 1.7` (`height.h:91`), `kBodyHeightM = 1.7` (`collide.h:53`, дефолт для ВСЕХ тел — дракон 1.7 м), `kHumanHeightM = 1.8` (`body.h:106`) | **РАСХОЖДЕНИЕ** — три константы одной величины; наряда нет |
+| `B_Pinned` — флаг тела игрока (шапка `movement.h:149-151`) | писателей в `src` 0; только тесты | **РАСХОЖДЕНИЕ** — мёртвое назначение |
+| ЗАКОН ТРЁХ ДВЕРЕЙ | рукописное насыщение `recoverySteps` (`ecs/systems.cpp:39`) | **РАСХОЖДЕНИЕ** — M-102 |
+
+## III.4 — Рендер (GPU рисует; мир на CPU)
+
+**Кадр** (`app/main.cpp:5563-6246`): симуляция и `upload()` ДО `acquire_frame`
+(`:5646`) → `acquire_frame` (фенс слота, кладбище `collect_deferred`,
+`gpu/vk_renderer.cpp:239-244`) → `SubworldEngine::prepare_frame` (`sub/engine.cpp:5010`):
+барьер WAR → `flush_uploads` из staging-арены (терраин, высоты, материал
+ping-pong, инстансы) → `rebuild_light_field` (CPU-сплат 1024² RGBA8, каданс 8
+кадров) → **тела: ОДИН view `<Position,Sprite>` → `bodyInstBuf_`** → частицы
+(`pack` на CPU → `vkCmdUpdateBuffer`) → канвас пятен → `record_shadow` near
+4096² (деревья, боксы, цилиндры, тела; радиус 256 м) и far 4096² (без тел,
+1024 м) → главный проход `record_main` (`vk_renderer_3d.cpp:3048`): sky → far
+→ terrain → trees → structs → **bodies одним draw `bodyPipe_`** → particles
+(matter alpha, затем energy additive) → water → rain → ImGui → `end_frame`.
+Макрокарта — ОДИН fullscreen draw `macro.frag` по шести текстурам
+(`macro/vk_macro_renderer.cpp:454`); зоны, свет ночи и туман знания
+синтезируются в шейдере.
+
+| что | как в коде | статус |
+|---|---|---|
+| compute-шейдеров 0; ничего, что читает симуляция, на GPU не живёт | 39 файлов шейдеров (16 frag, 15 vert, 8 glsl), 31 стадия vert/frag; `vkCmdDispatch`/`COMPUTE_BIT` — 0; `read_back` — только под `TIMAERT_SEAM_SELFCHECK` (`vk_renderer_3d.cpp:2769`); `take_capture` — только смоук | **ПРАВДА** |
+| канвас пятен — состояние только на GPU, не сохраняемое | `stainCanvas_` 8192² RGBA8 = **256 МиБ VRAM** (60 % бюджета субмир-рендера ≈430 МиБ) | **ПРАВДА**; вопрос владельцу — нужны ли следы в CPU/дельте |
+| тела рендерятся ОДНИМ проходом | один view, один буфер, один пайплайн, один draw (`:1124-1176,:3377`); `body.frag:45-57` ветвит по `bb_is_drawn(kind)` на инстанс, не по роду | **ПРАВДА** |
+| спрайт-закон: вид тела — из строки | слот банка из строки с asset, иначе процедурный план `archetype`; строка без обоих не рисуется (`:1128-1133`); банк 5 слоёв 256² из `kSpriteRows` (`sprite_bank.h:44-49`) | **ПРАВДА** |
+| кукла не вернулась | механизма нет; имена остались: `doll_pool.glsl`, `doll_sample/uDolls` (`body.frag:32,47`), локальная `dolls` (`:2967,:3367`) — 21 строка в 11 файлах | **ПРАВДА, имена — мусор** |
+| одна раскладка инстанса | `gpu::BbInstance` 32 Б под `static_assert` (`bb_instance.h:55-64`), одна таблица атрибутов для деревьев и тел; но `kBbInstanceAttrCount = 6` — ручной счёт (`:76`); сентинелы «нет слота» разные: `SpriteBank::kNoSlot = 0xFFFFFFFF`, `kBbNoSlot = 0xFFFF` (шапка `bb_instance.h:22-23` утверждает «тот же») | **РАСХОЖДЕНИЕ** — два мелких; наряда нет |
+| кладбище по фенсу | `defer_destroy` (`:2464,:2497`), `collect_deferred` строго после фенса; `static_assert kGraveyardDelayFrames >= kMaxFramesInFlight` | **ПРАВДА** для субмира |
+| макро-рендер не уничтожает ресурсы в открытом кадре | `MacroRendererVk::upload`: `vkDeviceWaitIdle` + пересоздание + `vkUpdateDescriptorSets` (`vk_macro_renderer.cpp:159-161,254`); `boot_world` из `apply_shell_actions` (`main.cpp:6227`) идёт ПОСЛЕ `macro.record` (`:5729`) и до `end_frame` | **РАСХОЖДЕНИЕ, PLAUSIBLE** — при `regenerateCustom` с загруженным превью записанный буфер кадра ссылается на уничтоженное; не проверено запуском |
+| host-mapped буферы кольцуются по кадрам в полёте | `farVtx_/farIdx_` перезаписываются `memcpy` на месте из `tick` (`:1475-1476`) без кольца и фенса, пока кадр N−1 может читать их как vertex input | **РАСХОЖДЕНИЕ, PLAUSIBLE WAR-гонка** — проверить под sync validation |
+| staging светового поля кольцуется | slot = `lightFieldFrame_ % 2` при гейте `% 8 == 0` ⇒ всегда 0; `lightFieldStaging_[1]` (4 МиБ) не пишется никогда | **РАСХОЖДЕНИЕ** — корректность держится кадансом, не кольцом |
+| буферы аллоцируются на входе в сцену | в `init` — тела, частицы, стампы, световое поле, тени, `heightTex_`, SSBO; **в кадре** — tree/struct/cyl инстансы при росте (`:2503`, cap = count·1.5+64, без именованного капа), staging-арена при росте (`:2470`), терраин при первом билде (`:2530,:2551`), материал при Create (`:2656`) | **РАСХОЖДЕНИЕ** — DOD п.4; наряда нет |
+| все пайплайны используются | `shadowMeshPipe_` создаётся и уничтожается, биндится 0 раз; `shadow_mesh.vert/frag` компилируются | **РАСХОЖДЕНИЕ** — мёртвый пайплайн; `SpriteArray::begin_frame/upload_slot` + `staging_` — мёртвый покадровый API | 
+| реальные секунды — только представление, и единственное место — `kAiPeriodSeconds` | `MacroPush.elapsed = SDL_GetTicks()*0.001` (`main.cpp:5732`, `vk_macro_renderer.cpp:31` — «real seconds, haze flow») — законно, но второе место; каданс широкой тени обоснован «a game day is ~two real minutes» (`vk_renderer_3d.cpp:2986-2990`) | **РАСХОЖДЕНИЕ** — ЗАКОН КОНСТАНТ (довод от секунд) |
+| вид дерева — строка, выбранная контекстом до рендера | `tree_type_for_temperature` по билинейной температуре клеток окна В РЕНДЕРЕ (`vk_renderer_3d.cpp:2305-2321`); запись дерева симуляции вида не несёт | **ВОПРОС ВЛАДЕЛЬЦУ** — представление или второй ответ «какое дерево» |
+| субмир-рендер не читает `GameState`/`MacroWorld` | 0 упоминаний в `vk_renderer_3d.cpp`; но включены `macro/fauna.h`, `macro/state.h` (`:17-18`) без найденного потребителя | **ПРАВДА**; включения — кандидат в чистку канала M-98 |
 
 ---
 
