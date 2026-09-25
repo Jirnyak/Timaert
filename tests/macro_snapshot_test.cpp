@@ -26,7 +26,9 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -203,9 +205,96 @@ void test_snapshot_round_trips_the_living_map() {
     std::remove(path.c_str());
 }
 
+// ── 1д (сессия 19): раундтрип-свидетель STORE, весь формат по построению ──
+// Тест выше проверяет поля ПОИМЁННО — и потому слеп к колонке, выпавшей из
+// restore, или попавшей в снапшот мимо него (грабля
+// handwritten-foldup-drops-fields). Этот свидетель закрывает формат целиком:
+// снапшот → restore в СВЕЖИЙ store → снапшот обязан дать тот же байтовый
+// поток — записи зеро-инициализированы, сортировка по ординалу делает одно
+// состояние мира одним потоком байт (та же пара условий, на которых стоит
+// save_payload_fingerprint).
+void test_resnapshot_is_byte_identical() {
+    static_assert(std::is_trivially_copyable_v<MacroNpcRecord>,
+                  "запись снапшота обязана сниматься байтами (DOD)");
+    GameState gs{};
+    gs.mapW = 64;
+    gs.mapH = 64;
+    gs.worldSeed = 777u;
+    TerrainData absent{};
+    ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
+
+    // Та же пара судеб, что в тесте выше: походивший именной лорд с
+    // приказами и владеемым листом + убитый транзиент — обе ветки формата
+    // (hasOrders, дивергенция листа, байт судьбы) живые.
+    SquadSpec specA{};
+    specA.leaderType = NPCType::Bandit;
+    specA.leaderLevel = 5;
+    specA.x = 20;
+    specA.y = 20;
+    specA.factionIndex = faction_index("bandits");
+    specA.members.push(make_soldier(std::uint8_t(NPCType::Guard), 3, 1001u));
+    specA.waypointCount = 1;
+    specA.waypoints[0] = 24; specA.waypoints[1] = 20;
+    const entt::entity a = spawn_squad(gs, w, sm::store_of(w), absent, specA);
+    CHECK_OR_RETURN(a != entt::null, "squad A spawned");
+    (*sm::body_state<ecs::MacroNpcRuntime>(w.reg, a)).xp = 777;
+    w.reg.emplace<ecs::PlayerTag>(a);
+    CHECK_OR_RETURN(owned_sheet(w, a) != nullptr, "named lord owns his sheet");
+    owned_sheet(w, a)->attributes[AttributeId::End] = 13;
+
+    SquadSpec specB{};
+    specB.leaderType = NPCType::Peasant;
+    specB.leaderLevel = 2;
+    specB.x = 40;
+    specB.y = 40;
+    specB.factionIndex = faction_index("timaert");
+    const entt::entity b = spawn_squad(gs, w, sm::store_of(w), absent, specB);
+    CHECK_OR_RETURN(b != entt::null, "squad B spawned");
+    (*sm::body_state<ecs::Pools>(w.reg, b)).hp = 0.0f;
+    sm::macro_mark_dead(w.reg, b);
+
+    const std::vector<MacroNpcRecord> snap1 = snapshot_macro_ecs(w);
+    CHECK_OR_RETURN(snap1.size() == 2, "the snapshot names both squads");
+
+    ecs::World w2;
+    auto w2Store_ = sm::make_macro_store();
+    sm::store_attach(w2, w2Store_.get());
+    restore_macro_ecs(snap1, w2, gs);
+    std::vector<MacroNpcRecord> snap2 = snapshot_macro_ecs(w2);
+    CHECK_OR_RETURN(snap2.size() == snap1.size(),
+                    "the re-snapshot names the same count");
+
+    int samples = 0, mismatches = 0;
+    for (std::size_t i = 0; i < snap1.size(); ++i) {
+        ++samples;
+        if (std::memcmp(&snap1[i], &snap2[i], sizeof(MacroNpcRecord)) != 0)
+            ++mismatches;
+    }
+    CHECK(samples > 0 && mismatches == 0,
+          "snapshot -> restore -> snapshot is the SAME byte stream");
+
+    // Негативный контроль, и он утверждается сам: детектор обязан ВИДЕТЬ
+    // дельту — иначе зелёный memcmp выше не доказывает ничего.
+    const entt::entity a2 = find_by_ordinal(
+        w2, (*sm::body_state<ecs::MacroSpawnId>(w.reg, a)).index);
+    CHECK_OR_RETURN(a2 != entt::null, "lord A restored for the control");
+    (*sm::body_state<ecs::MacroNpcRuntime>(w2.reg, a2)).xp += 1;
+    const std::vector<MacroNpcRecord> snap3 = snapshot_macro_ecs(w2);
+    int controlDiffs = 0;
+    for (std::size_t i = 0; i < snap3.size(); ++i) {
+        if (std::memcmp(&snap2[i], &snap3[i], sizeof(MacroNpcRecord)) != 0)
+            ++controlDiffs;
+    }
+    CHECK(controlDiffs == 1,
+          "the byte witness SEES a one-column mutation (negative control)");
+}
+
 } // namespace
 
 int main() {
     test_snapshot_round_trips_the_living_map();
+    test_resnapshot_is_byte_identical();
     return sm::test::report("macro_snapshot_test");
 }
