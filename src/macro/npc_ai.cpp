@@ -3652,9 +3652,12 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     if (mw.nav) nav_ensure(mw, *mw.nav);   // гейты читают округи
 
     const auto row_of = [&](int id) -> int {
-        for (std::size_t i = 0; i < gs.landmarks.size(); ++i)
-            if (gs.landmarks[i].id == id) return int(i);
-        return -1;
+        // O(1) дверью «ординал и есть адрес» (landmark_by_id) вместо чистого
+        // линейного скана, звавшегося на КАЖДУЮ сущность дважды в день
+        // (O(сущности × N) — худшая точка переписи M-90). Результат тот же:
+        // ординал уникален, а дверь несёт тот же скан-фоллбек.
+        const Landmark* lm = landmark_by_id(gs, id);
+        return lm ? int(lm - gs.landmarks.data()) : -1;
     };
     // A type is a CREW exactly when some landmark's registry row raises it —
     // the old hand-kept list (professions + Vendor + TaxCollector) is now a

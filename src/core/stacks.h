@@ -77,6 +77,12 @@ struct StackRow {
 // умножаются на размеры строк.
 inline constexpr std::size_t kWorldCells  = 1024u * 1024u;
 inline constexpr std::size_t kWorldSquads = 16384u;
+// ПОТОЛОК МЕСТ — ЕДИНСТВЕННЫЙ ИСТОЧНИК (2026-09-25): прежде жил дублем-
+// литералом в save.cpp, а перепись мест не имела вовсе. Вывод числа — v62:
+// старые kMaxSettlements 4096 + kMaxVillages 16384 + шпили, суммой до
+// следующей po2. ПОДЛЕЖИТ СНОСУ вместе со штабелем Landmark (M-90): место
+// станет неподвижным сквадом единого массива, и кап у них будет один.
+inline constexpr std::size_t kWorldLandmarks = 32768u;
 
 // СКОЛЬКО РЯДОВ РЕАЛЬНО ВЫДЕЛЯЮТ СВОЁ ПОЛЕ ШРАМОВ. Не десять: ряд-НОСИТЕЛЬ
 // (лес и шесть жил) держит живое состояние в своём контейнере, и
@@ -163,6 +169,12 @@ inline constexpr StackRow kStacks[] = {
      sizeof(ecs::SquadRoster), kWorldSquads},
     {"полосы сквада", "ecs::Pools", StackKind::ByOrdinal,
      sizeof(ecs::Pools), kWorldSquads},
+    // ВТОРОЙ ШТАБЕЛЬ СУЩНОСТЕЙ, ПОДЛЕЖИТ СНОСУ (M-90). Строки не было —
+    // размер был закреплён ассертом, а перепись молчала (дыра найдена
+    // переписью с.18): 42 400 Б × 32 768 = 1.36 ГиБ по капу, ~76 МиБ в
+    // замеренном мире (~1 880 мест).
+    {"место (Landmark, под снос M-90)", "Landmark", StackKind::ByOrdinal,
+     sizeof(Landmark), kWorldLandmarks},
 
     // СКАЛЯРЫ МИРА — единственный экземпляр, названное исключение.
     {"состояние мира", "GameState", StackKind::Scalars, sizeof(GameState), 1},

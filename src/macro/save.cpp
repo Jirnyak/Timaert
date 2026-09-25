@@ -4,6 +4,7 @@
 #include "macro/world_row.h"   // область существ единого контейнера (M-71)
 #include "macro/deposit_layer.h"
 #include "macro/state.h"
+#include "core/stacks.h"       // капы штабелей — один источник (перепись)
 #include "macro/macro_snapshot.h"
 #include "macro/characters.h"
 #include "events/quests/quest_types.h"
@@ -30,9 +31,10 @@ constexpr std::uint64_t kMaxPayloadBytes = 64ull * 1024ull * 1024ull;
 constexpr std::uint32_t kMaxInventoryStacks =
     std::uint32_t(kMaxInventorySlots);
 constexpr std::uint32_t kMaxSmallVector = 8192u;
-// v62: one roster, one cap — the old kMaxSettlements 4096 + kMaxVillages
-// 16384 + spires, summed and rounded to the next power of two (S26).
-constexpr std::uint32_t kMaxLandmarks = 32768u;
+// v62: one roster, one cap. С 2026-09-25 ЧИСЛО живёт в переписи штабелей
+// (core/stacks.h kWorldLandmarks) — здесь только сторож сейва, дубля-литерала
+// больше нет (второй словарь капа, найден переписью с.18).
+constexpr std::uint32_t kMaxLandmarks = std::uint32_t(kWorldLandmarks);
 constexpr std::uint32_t kMaxMarkers = 16384u;
 constexpr std::uint32_t kMaxQuests = 4096u;
 // (the field caps live with the rows: macro/world_fields.cpp)
@@ -40,8 +42,9 @@ constexpr std::uint32_t kMaxQuestParts = 4096u;
 // (kMaxSoldiers 8192 died with v97; с v110 существа едут внутри инвентаря —
 // один кап слотов, один дом: kMaxInventoryStacks.)
 // The macro-ECS snapshot (v23): one record per living macro NPC. The cap is
-// the owner's macro-squad ceiling — the same golden 2^14 the subworld uses.
-constexpr std::uint32_t kMaxMacroNpcs = 16384u;
+// the owner's macro-squad ceiling — the same golden 2^14 the subworld uses;
+// с 2026-09-25 число берётся из переписи (kWorldSquads), не дублем.
+constexpr std::uint32_t kMaxMacroNpcs = std::uint32_t(kWorldSquads);
 constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
 
 struct SaveHeader {
