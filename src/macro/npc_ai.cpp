@@ -143,7 +143,7 @@ void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
     if (!bag) return;
     const int n = bag->inv.count(id);
     Inventory* store = home_inventory(rt, ctx);
-    // Credit BEFORE debit (economy.md's conservation law): the store accepts
+    // Credit BEFORE debit (CANON S10 (бывший economy.md)'s conservation law): the store accepts
     // first, the bag pays only what was accepted — a full store leaves the
     // haul ON THE GATHERER'S BACK instead of burning it. (Near-unreachable
     // with 1024 slots and stack-merging, but the law is the law.)
@@ -682,7 +682,7 @@ void ai_home_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
 
 // ── The ONE gatherer loop — a GOAL is a ROW, never a branch ───────────────
 // (owner: «у сквада не должно быть специализации — они берут контекстно
-// самую выгодную цель», CANON S10 аукцион; resources.md). Idle → find the
+// самую выгодную цель», CANON S10 аукцион; CANON S10 (бывший resources.md)). Idle → find the
 // worksite the row names → travel → WORK (take from the resource-field
 // registry into the OWN bag — kill the man on the road and the haul is
 // loot, not bookkeeping) → return (deliver into the HOME store).
@@ -2628,7 +2628,7 @@ void ai_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
 // ONE universal step, run before every role behaviour: does a hostile squad
 // stand near me, and what do I do about it? Before this, macro NPCs were
 // ghosts to each other — the only "other" any behaviour ever saw was the
-// player. The rules are the owner's design (macrosim.md):
+// player. The rules are the owner's design (CANON S4/S13 (бывший macrosim.md)):
 //   · perception through the transient SquadIndex, hostility through the ONE
 //     relation matrix at the ONE line (faction.h kHostileThreshold) — the
 //     same numbers the subworld battle masks read;

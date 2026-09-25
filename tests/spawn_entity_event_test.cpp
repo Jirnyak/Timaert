@@ -2,7 +2,7 @@
 //
 // Before 2026-08-05 the SpawnEntity event had two producers (quest onAccept,
 // content/quests/procedural.cpp) and ZERO consumers — it was emitted into the
-// void and kill-contracts never produced their targets (audit.md II.5). This
+// void and kill-contracts never produced their targets (history/audit.md II.5). This
 // test pins the consumer's contract:
 //   * a known token spawns exactly one macro NPC of that registry type;
 //   * an Aggressive type joins the "bandits" faction (boot-spawner parity);

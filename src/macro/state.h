@@ -123,7 +123,7 @@ namespace sm {
 // at placement, tower storey count, guard site) derives from it, and the
 // subworld may not reach up into the spell registry to recompute it.
 // v39: the tier cache dies — the spell registry moved into the world layers
-// (macro/spells.h, ARCHITECTURE.md Rule 13), so every consumer derives tier
+// (macro/spells.h, history/ARCHITECTURE.md Rule 13), so every consumer derives tier
 // from spellId at the moment of reading. The save stops carrying a registry
 // number as cargo.
 // v40: the player's knowledge of the map (macro/knowledge.h) — the explored
@@ -578,7 +578,7 @@ struct Landmark {
     std::int32_t needDebt[kCommodityCount] = {};
 };
 // ── РАЗМЕР МЕСТА ЗАКРЕПЛЁН (AGENTS п.10; числа пересняты с.18) ────────────
-// 42 400 Б × 32 768 мест (кап kWorldLandmarks, core/stacks.h) = 1.36 ГиБ по
+// 42 400 Б × 32 768 мест (кап kWorldLandmarks, core/stacks.h) = 1.29 ГиБ по
 // капу; в замеренном мире (~1 880 мест) — 76 МиБ. (Прежняя редакция этого
 // комментария держала 13 912 Б / 435 МиБ / 25 МиБ — числа ТРЁХ ведомостей
 // назад; ассерт ниже был прав, проза врала.) Из них 41 032 Б (96.8 %) —

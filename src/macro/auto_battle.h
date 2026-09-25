@@ -1,4 +1,4 @@
-// AUTO-RESOLVE — the macro law of battle (owner, 2026-08-06, macrosim.md):
+// AUTO-RESOLVE — the macro law of battle (owner, 2026-08-06, CANON S4/S13 (бывший macrosim.md)):
 // two AI squads meeting on the map must produce a winner without a subworld,
 // or the macro sim cannot run a war at all. ONE resolver, fed by what the
 // rosters already say — the same table rows, the same character sheets, the

@@ -195,7 +195,7 @@ struct Skills {
 
 // What ONE RANK of a skill is worth, and which way it pushes.
 //
-// `pctPerRank` is the column that made the law honest. rpg.md and the canon
+// `pctPerRank` is the column that made the law honest. CANON S14 (бывший rpg.md) and the canon
 // audit (A7) both record the debt it settles: the law said "one rank is one
 // percent, ceiling ×2", and four of the most expensive numbers in the game —
 // maxHp, maxMp, and both raw damages — were computed inline at 0.05 per rank

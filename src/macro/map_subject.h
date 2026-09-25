@@ -59,7 +59,7 @@ inline MapSubject subject_of_landmark(int id) {
 }
 
 // ── THE store door ───────────────────────────────────────────────────────
-// The subject's universal Inventory: bag == market == treasury (economy.md).
+// The subject's universal Inventory: bag == market == treasury (CANON S10 (бывший economy.md)).
 // Coins live inside it as stacks, so wallet_value / transfer_value /
 // barter_swap need nothing beyond what this door returns.
 inline Inventory* store_of(const MacroWorld& w, MapSubject s) {

@@ -3488,7 +3488,7 @@ void SubworldEngine::leave(bool force) {
     if (active_) {
         resolve_subworld_deaths(true);
         // The fight is over when the player leaves (owner ruling 3,
-        // macrosim.md): a squad whose leader died fought on FACELESS to this
+        // CANON S4/S13 (бывший macrosim.md)): a squad whose leader died fought on FACELESS to this
         // moment; now its survivors stop being a squad and fall into the
         // deserter pool, out of which the macro sim later raises deserter and
         // bandit bands. First gameplay writer that pool has ever had.

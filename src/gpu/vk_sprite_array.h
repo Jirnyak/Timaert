@@ -28,7 +28,7 @@
 // Slots are filled on demand: a CPU LRU cache (in assets/) maps a
 // sprite-frame hash -> slot index, then calls upload_slot(cmd, slot, rgba),
 // which records a staging copy onto the FRAME command buffer — no per-upload
-// submit/fence (the no-stall transfer rule from ARCHITECTURE.md). Record these
+// submit/fence (the no-stall transfer rule from history/ARCHITECTURE.md). Record these
 // uploads BEFORE begin_render_pass(): a layout transition of a non-attachment
 // image is illegal inside an active render pass. upload_slot_now() is the
 // load-time blocking variant for preloading a batch before the first frame.

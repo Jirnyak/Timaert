@@ -349,7 +349,7 @@ void smoke_fail(App& app, const char* reason) {
 // points read (0,0,0) and the ninth, clipping the island's edge, read (5,0,0)
 // against a threshold of 24. So `wait_visible` was red on every seed over a
 // perfectly drawn map, and the suite carried that red as if it meant something
-// (postdemoaudit.md SMOKE-6).
+// (history/postdemoaudit.md SMOKE-6).
 //
 // So look where the world IS: a dense grid over the CENTRAL HALF of the frame,
 // which is where the camera keeps the player in both worlds. Central, because
@@ -2929,7 +2929,7 @@ bool run_dungeon_cave_smoke(App& app) {
             // anyone break away with hostiles at his back; on seed 7 the first
             // highland mouth sits in exactly such a cell (31 head of vermin
             // about) and the scenario read the correct refusal as a red
-            // (postdemoaudit.md SMOKE-5). Ask the gate the same question the
+            // (history/postdemoaudit.md SMOKE-5). Ask the gate the same question the
             // door will ask, from the very spot the entry is attempted, and
             // walk on if the answer is no.
             // Asked WITHOUT moving anyone and WITHOUT a tick, on purpose. The

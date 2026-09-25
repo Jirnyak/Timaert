@@ -550,7 +550,7 @@ public:
     // here and now? Public because a caller may legitimately need to know
     // BEFORE it acts — the cave smoke picks a mouth it can actually open, and
     // a mouth standing in a danger cell with a hostile beside it is not a
-    // defect to report but a subject to skip (postdemoaudit.md SMOKE-5).
+    // defect to report but a subject to skip (history/postdemoaudit.md SMOKE-5).
     // Read-only: it answers, it never disengages.
     bool exit_blocked_by_danger() const;
     int combat_log_count() const { return combatLogCount_; }

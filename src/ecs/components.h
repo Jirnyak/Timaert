@@ -554,7 +554,7 @@ struct MacroSlot { std::uint16_t slot = 0xFFFFu; };
 // be while staying a positive number.
 inline constexpr std::uint32_t kPlayerSquadOrdinal = 0x7FFFFFFFu;
 
-// THE macro entity is a SQUAD, not a person (owner's design, macrosim.md
+// THE macro entity is a SQUAD, not a person (owner's design, CANON S4/S13 (бывший macrosim.md)
 // "Squad as THE macro entity"). This component is that ruling made structural:
 // every macro NPC carries one, and `members` holds everyone EXCEPT the leader
 // — the leader IS the carrying entity, with its sheet, inventory, wounds and

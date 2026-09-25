@@ -158,13 +158,13 @@ inline constexpr StackRow kStacks[] = {
     //
     // Строки ниже описывают то, что есть НА САМОМ ДЕЛЕ, а не то, как должно
     // быть: перепись обязана быть правдой, иначе она бесполезна.
-    {"поля-шрамы (пшеница, зверь, табун)", "std::int32_t",
-     StackKind::ByCell, 4, kWorldCells * kScarRows},
-    {"жилы (шесть родов)", "std::int32_t", StackKind::ByCell, 4,
+    {"поля-шрамы (пшеница, зверь, табун)", "std::uint16_t",
+     StackKind::ByCell, 2, kWorldCells * kScarRows},
+    {"жилы (шесть родов)", "std::uint16_t", StackKind::ByCell, 2,
      kWorldCells * kDepositKindCount},
     {"лес", "std::uint16_t", StackKind::ByCell, 2, kWorldCells},
     {"фичи", "std::uint8_t", StackKind::ByCell, 1, kWorldCells},
-    {"числа фич (слой разработки)", "std::int32_t", StackKind::ByCell, 4,
+    {"числа фич (слой разработки)", "std::uint16_t", StackKind::ByCell, 2,
      kWorldCells},
 
     // ШТАБЕЛЯ ПО ОРДИНАЛУ — сущности. ОДИН ШТАБЕЛЬ НА КОЛОНКУ (вердикт
@@ -179,7 +179,7 @@ inline constexpr StackRow kStacks[] = {
      sizeof(ecs::Pools), kWorldSquads},
     // ВТОРОЙ ШТАБЕЛЬ СУЩНОСТЕЙ, ПОДЛЕЖИТ СНОСУ (M-90). Строки не было —
     // размер был закреплён ассертом, а перепись молчала (дыра найдена
-    // переписью с.18): 42 400 Б × 32 768 = 1.36 ГиБ по капу, ~76 МиБ в
+    // переписью с.18): 42 400 Б × 32 768 = 1.29 ГиБ по капу, ~76 МиБ в
     // замеренном мире (~1 880 мест).
     {"место (Landmark, под снос M-90)", "Landmark", StackKind::ByOrdinal,
      sizeof(Landmark), kWorldLandmarks},

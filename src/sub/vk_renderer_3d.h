@@ -1,6 +1,6 @@
 // Vulkan port of Renderer3D (subworld first-person 3D). Compiles unused next
 // to the GL Renderer3D until the flip (PHASE B); each pass is filled per
-// vulkan_plan.md PHASE A by copying the matching pass from tests/gpu_smoke3d.cpp
+// (мёртвый план миграции) PHASE A by copying the matching pass from tests/gpu_smoke3d.cpp
 // and feeding it the same real data the GL Renderer3D reads today.
 //
 // Rendering is split so the depth-only SHADOW pass can be recorded BEFORE the

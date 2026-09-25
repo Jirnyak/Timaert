@@ -653,7 +653,7 @@ int main() {
     // (registry.cpp) hardcodes chainRemaining/chainDecay/chainRadius to zero
     // and never feeds them from the row, which declares chainCount 4 and
     // chainDecay 0.70 — so `apply_spell_chain` returns on its first line and
-    // the spell is a plain bolt (audit.md III.15, problems.md §19.4).
+    // the spell is a plain bolt (history/audit.md III.15, problems.md §19.4).
     //
     // Until 2026-08-06 this block REQUIRED those three zeros. That made a
     // green ctest the proof that the feature is missing: wiring the chain up

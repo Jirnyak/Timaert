@@ -570,7 +570,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
 }
 
 // The miner: the SAME gatherer row-loop as the chop above, pointed at a
-// deposit (resources.md — a profession per resource, a row not a branch).
+// deposit (CANON S10 (бывший resources.md) — a profession per resource, a row not a branch).
 // Pinned: the ore leaves through the Iron carrier row, hauls home into the
 // village store, CONSERVES, the drained vein stays a VISIBLE cell at 0 and
 // a dry world gives the miner nothing further; no deposit layer wired = no

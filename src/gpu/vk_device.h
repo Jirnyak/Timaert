@@ -1,5 +1,5 @@
 // Vulkan instance + surface + device bring-up (no rendering yet).
-// Phase 1 of the OpenGL -> Vulkan migration. See ARCHITECTURE.md
+// Phase 1 of the OpenGL -> Vulkan migration. See history/ARCHITECTURE.md
 // §Rendering & Compute Backend.
 #pragma once
 

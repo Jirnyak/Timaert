@@ -5,7 +5,7 @@
 // down), so the zone gate IS the distance law. The spell's tier picks how deep
 // into the wild band the spire must stand — read straight from the spell
 // registry (macro/spells.h), which lives in the world layers precisely so
-// worldgen can ask it (ARCHITECTURE.md Rule 13).
+// worldgen can ask it (history/ARCHITECTURE.md Rule 13).
 #pragma once
 #include <cstdint>
 
