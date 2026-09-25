@@ -31,7 +31,7 @@ struct SeasonDef {
     // (foliage today; biome tint / spawn rosters are natural future readers).
     // Signed; consumers clamp the sum back into [0,1].
     float         tempOffset;
-    // Scales agricultural yield for a future economy consumer (see seasons.md).
+    // Scales agricultural yield for a future economy consumer (CANON S19, бывший seasons.md).
     // Declared now so the harvest cycle is one multiply away, not a schema change.
     float         yieldMul;
     std::uint32_t tintRGB;   // seasonal tint (0xRRGGBB): consumed by the subworld

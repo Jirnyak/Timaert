@@ -13,7 +13,7 @@
 // (assets/sprite_bank.h): one slot per KIND with drawn art, all filled once at
 // boot — no LRU, no eviction, no working-set churn. (The per-soul paper-doll
 // pool this container was built for — thousands of composited (seed, anim,
-// dir, frame) slots — is gone; sprites.md.)
+// dir, frame) slots — is gone; СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16).)
 //
 // Slots and Vulkan array layers are DIFFERENT axes: `subTiles` packs a
 // subTiles×subTiles grid of slots into each layer (slot = layer·subTiles² +
@@ -28,7 +28,7 @@
 // Slots are filled on demand: a CPU LRU cache (in assets/) maps a
 // sprite-frame hash -> slot index, then calls upload_slot(cmd, slot, rgba),
 // which records a staging copy onto the FRAME command buffer — no per-upload
-// submit/fence (the no-stall transfer rule from ARCHITECTURE.md). Record these
+// submit/fence (the no-stall transfer rule from history/ARCHITECTURE.md). Record these
 // uploads BEFORE begin_render_pass(): a layout transition of a non-attachment
 // image is illegal inside an active render pass. upload_slot_now() is the
 // load-time blocking variant for preloading a batch before the first frame.

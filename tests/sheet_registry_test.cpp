@@ -3,12 +3,12 @@
 // It used to take five files to add a skill: a named field in `Skills`, a
 // value in the `SkillId` enum, a case in each of the two `skill_value`
 // switches, a row in the UI table (ui/overlays.cpp) and a weight column in the
-// per-role table (macro/character_sheet.h). rpg.md called that "four too many
+// per-role table (macro/character_sheet.h). CANON S14 (бывший rpg.md) called that "four too many
 // for a game that will grow many more skills". It is one row and one weight
 // now — and the weight is a compile error until every role answers, because a
 // role that silently rates a new skill at zero is a role that never trains it.
 //
-// The percent is a COLUMN. rpg.md and the canon audit (A7) both record the
+// The percent is a COLUMN. CANON S14 (бывший rpg.md) and the canon audit (A7) both record the
 // debt that settles: the law promised "one rank is one percent, ceiling ×2",
 // while four of the most expensive numbers in the game — maxHp, maxMp and both
 // raw damages — were computed inline at 0.05 per rank with NO clamp. So

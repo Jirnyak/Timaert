@@ -87,7 +87,7 @@ enum class BonusTarget : std::uint8_t {
 enum class DerivedModId : std::uint8_t { DmgFlat, SwingPct, MovePct, CarryKg, Count };
 
 // The three pools a body actually carries. They are NOT part of the sheet
-// (rpg.md: combat is derived from the sheet, never stored inside it), which is
+// (CANON S14 (бывший rpg.md): combat is derived from the sheet, never stored inside it), which is
 // exactly why they need their own small id space here.
 enum class PoolId : std::uint8_t { Hp, Mp, Sp, Count };
 

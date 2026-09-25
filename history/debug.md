@@ -1,3 +1,5 @@
+> **ИСТОРИЯ (перенесено 2026-09-25, наряд M-107).** Живые куски — дев-консоль (CANON S22), приборы и переменные окружения (README «Проверка»). Здесь остался macOS-плейбук профилирования; ссылки на снесённые доки внутри устарели.
+
 # Debugging & Profiling — Timaert
 
 Optimization and CPU/GPU time are the top priority for this game. This is the
@@ -41,7 +43,7 @@ cmake -S . -B build -G Ninja -DTIMAERT_NATIVE=ON && cmake --build build
 Targets: `timaert` (game), `gpu_smoke` (Vulkan bring-up), `gpu_smoke3d`
 (subworld 3D harness — the dependable path to a LOOK-able headless frame, and
 since 2026-08-20 the crowd that exercises BOTH branches of `body.frag`; see
-[render.md](render.md) §Frame capture), and the `*_test` execs.
+render.md (render.md снесён 2026-09-25 — см. CANON S17/S27/S28, SKELETON III) §Frame capture), and the `*_test` execs.
 Build one target only with `cmake --build build --target gpu_smoke`.
 
 Note: the `build-prof` directory is **created by the command above** — it is

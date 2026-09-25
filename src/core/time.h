@@ -56,7 +56,7 @@ inline constexpr std::uint64_t kSubworldTickDivisor = 64;   // 2^6
 // something you live through rather than something the calendar meters out.
 //
 // This is a law, not an exception. Cooldowns used to be floats decremented by
-// dt: three rates quoted in real seconds while time.md claimed exactly one
+// dt: three rates quoted in real seconds while time.md (снесён; CANON S3) claimed exactly one
 // documented exception (kSubworldWalkTilesPerSecond). Now the exception is
 // named and it is this ladder — integers, deterministic, and no wall clock in
 // sight, which is the property the tick ladder exists to protect.

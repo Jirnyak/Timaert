@@ -3,7 +3,7 @@
 // a body plan the shader draws, the other names a PNG the artist drew, and a
 // reader of this file never has to know there were ever two mechanisms.
 //
-// The law (sprites.md):
+// The law (СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16)):
 //   * drawn art wins — a row with an `asset` is that picture;
 //   * the procedural archetype is the FLOOR, not a fallback of shame — a row
 //     without art is drawn by shaders/creature_sprite.glsl from its body plan,
@@ -145,7 +145,7 @@ inline constexpr SpriteDef kSpriteRows[std::size_t(SpriteId::Count_)] = {
     {SpriteId::SpireSpent,   "spire_spent",   "spireD_256.png",     kNoBody, 0u},
 
     // The player borrows `peasant` until his own figure is drawn — one row to
-    // change, not a branch anywhere (sprites.md, stage 1).
+    // change, not a branch anywhere (СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16), stage 1).
     {SpriteId::Peasant,      "peasant",       "peasant_256.png",
                                               std::uint8_t(CreatureArchetype::Biped), 0xB0A090u},
     {SpriteId::Caravan,      "caravan",       "corovan_256.png",

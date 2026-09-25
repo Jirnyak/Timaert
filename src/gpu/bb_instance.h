@@ -17,7 +17,7 @@
 // A BODY (anything alive: a peasant, a wolf, a goblin) packs BOTH halves of the
 // sprite law into `kind`, because whether a kind is drawn or procedural is a
 // property of its ROW, not of what sort of creature it is, and the draw path
-// must stop asking the second question (sprites.md). The low half is the bank
+// must stop asking the second question (СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16)). The low half is the bank
 // slot or kBbNoSlot; the high half is the procedural body plan used when there
 // is no slot. Two fields in one lane, no magic bit, and the sentinel is the
 // same one sm::SpriteBank::kNoSlot speaks.

@@ -1,9 +1,11 @@
+> **ИСТОРИЯ (перенесено 2026-09-25, наряд M-107).** Закон земли живёт в SKELETON.md III.5, вердикты владельца — в CANON S17; здесь остались замеры и ход работы. Ссылки на снесённые доки внутри устарели.
+
 # THE ground surface — the procedural skin of the subworld
 
 > **This is THE document for what the ground LOOKS like.** The material
 > ROUTING — which tile carries which material id, how the 3×3 biome ring
 > dithers, why the id is sampled per-fragment — lives in
-> [src/sub/material.h](src/sub/material.h) and [render.md](render.md). This
+> [src/sub/material.h](src/sub/material.h) and render.md (render.md снесён 2026-09-25 — см. CANON S17/S27/S28, SKELETON III). This
 > file is the other half: given an id, what the surface is made of.
 
 Three files hold it, and nothing else does:
@@ -261,7 +263,7 @@ is the part worth writing down.
 **Why it happened.** `u_material` is an R8 texture, **one texel per world tile
 (1 m), sampled NEAREST** — deliberately, because that per-fragment lookup is
 what keeps a 1-tile road connected instead of dissolving between the terrain
-mesh's 16 m vertices (see [render.md](render.md)). The price is that a POINT
+mesh's 16 m vertices (see render.md (render.md снесён 2026-09-25 — см. CANON S17/S27/S28, SKELETON III)). The price is that a POINT
 SAMPLE of it is a step function, so every joint was a 1 m axis-aligned
 staircase. Ground↔ground biome boundaries were already softened —
 `pick_ground_biome` dithers two climates across a ~250-tile band — but the

@@ -54,7 +54,7 @@ inline bool crit_procs(Rng& rng, int luck) {
 }
 
 // Auto-resolve reads the die's EXPECTATION, not a roll — the macro fight has
-// no per-swing rng (combat.md: fighter_power is the algebraic inverse of the
+// no per-swing rng (CANON S13, бывший combat.md: fighter_power is the algebraic inverse of the
 // fought path). Doubled so it stays exact in ints: E[NdM]·2 = n·(m+1).
 inline int dice_mean_x2(Dice d) { return int(d.n) * (int(d.m) + 1); }
 

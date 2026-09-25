@@ -21,7 +21,7 @@
 // the resolver varies per variant.
 //
 // No ceiling is stamped: the sky is not a column, it is the absence of
-// masonry (dungeons.md §3). No lid, no walls, no sea.
+// masonry (CANON S27 §3). No lid, no walls, no sea.
 #include "sub/dgn/dispatch.h"
 #include "sub/base_generator.h"
 

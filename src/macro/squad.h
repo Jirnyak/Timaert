@@ -1,5 +1,5 @@
 // Squad lifecycle helpers — the macro side of "THE macro entity is a squad"
-// (macrosim.md, ecs::SquadRoster doctrine). The squad IS its leader entity;
+// (CANON S4/S13 (бывший macrosim.md), ecs::SquadRoster doctrine). The squad IS its leader entity;
 // what lives here is what happens to the roster around the leader's own
 // life and death. Header-only: pure ECS + army.h record moves, no engine,
 // no renderer, so every layer (subworld leave, the coming auto-resolve,
@@ -167,7 +167,7 @@ inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
     rt->carryCap = rt->carryPerSoul * souls;
 }
 
-// Owner ruling 3 (macrosim.md): kill the leader and the squad lives on,
+// Owner ruling 3 (CANON S4/S13 (бывший macrosim.md)): kill the leader and the squad lives on,
 // FACELESS, until the fight ends — only then do the survivors stop being a
 // squad and fall into the deserter pool, out of which the macro sim later
 // raises deserter and bandit bands. "The fight ends" is the caller's word:

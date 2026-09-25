@@ -11,7 +11,7 @@
 //   * star brightness / sizes stay in range.
 //
 // HONEST SCOPE, so nobody reads this file as more than it is: `celestial.h` is
-// currently included by NO file in `src/` (audit.md III.25). The sky renderer
+// currently included by NO file in `src/` (history/audit.md III.25). The sky renderer
 // draws one always-full moon and procedural stars, so these tables are authored
 // data with no consumer yet. This test guards the data against rot; it does not
 // prove anything reaches the screen.

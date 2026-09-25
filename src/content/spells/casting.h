@@ -1,4 +1,4 @@
-// The spell BINDING layer (ARCHITECTURE.md Rule 13): where a pure-data row
+// The spell BINDING layer (history/ARCHITECTURE.md Rule 13): where a pure-data row
 // (macro/spells.h kSpellDefs) meets its subworld effect. The spawn functions
 // live in effects.cpp, bound to the data rows by ordinal (kSpellEffects, one
 // static_assert per row) — the same shape as creature row → archetype

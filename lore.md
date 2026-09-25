@@ -6,7 +6,7 @@ made of**.
 
 - **Source of record:** the owner's own account (conversation transcript,
   2026-08-05). Everything below is his canon; this file only organises it.
-- **Design authority:** [design.md](design.md) (systems), this file (fiction).
+- **Design authority:** [design.md](history/design.md) (systems), this file (fiction).
 - **Rule of this document:** lore and mechanics are **the same thing**. A lore
   claim that no system produces is marked `— NOT BUILT`, and a system that
   contradicts the fiction is a bug in one of the two, to be resolved by the
@@ -255,12 +255,12 @@ brightest thing in it before his disappearance at barely thirty years of age.
 **The clock in engine terms.** **Year 0 is tick 0** — there is no calendar era,
 no in-fiction dating system, no "Year 312 of the Third Concord". The world's
 origin point *is* the start of the game, and the clock the player reads is the
-one the engine keeps ([time.md](time.md)). Ten in-game years = 10 × 2²⁰ ticks =
+one the engine keeps (time.md (time.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)). Ten in-game years = 10 × 2²⁰ ticks =
 **10 485 760 ticks** = 1280 days ≈ **45.5 hours of real time** at the shipped
 ladder (64 ticks / real second, day = 8192, year = 2²⁰). The dates in the table
 above are relative to that zero and exist for authors, not for the player.
 
-The plot's duration and [design.md](design.md) §17.6 ("around ten in-game years,
+The plot's duration and [design.md](history/design.md) §17.6 ("around ten in-game years,
 late plot around level 100") agree; this is the arithmetic that ties them.
 
 ## 3. The powers
@@ -624,8 +624,8 @@ army and watch from a hill. — *the growth curve and settlement capture are
 **The shadow field is the NEGATIVE half of THE FIELD (§1.1).** The primary
 object is not the artifact; it is the field — one signed per-cell world layer,
 black energy on the minus side, magic on the plus. It belongs to the family this
-engine already builds: danger zones ([zones.md](zones.md)) and the baked
-night-glow field with occluded spread ([macro-lighting.md](macro-lighting.md)).
+engine already builds: danger zones (zones.md (zones.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)) and the baked
+night-glow field with occluded spread (macro-lighting.md (macro-lighting.md снесён 2026-09-25 — см. CANON S17/S27/S28, SKELETON III)).
 **Black artifacts only feed it, contextually.**
 
 The rules of the field (owner's ruling):
@@ -878,11 +878,11 @@ chosen over Ruach.
   she feels less systematic than the Peasant King: he walks a region on an
   errand, she is simply *somewhere*, and then somewhere else. It also needs
   almost nothing new — the macro AI already has a **teleporter** behaviour among
-  its kinds ([design.md](design.md) §3 baseline; `macro/npc_spawn`), so a witch
+  its kinds ([design.md](history/design.md) §3 baseline; `macro/npc_spawn`), so a witch
   is a party row with the teleport behaviour and her own quest generator.
 - **What they give you:** each witch hands out **procedural quests in her own
   theme**. One quest generator per witch, seeded by her theme — the same
-  procedural machinery the settlements use ([quests.md](quests.md)), not a
+  procedural machinery the settlements use (quests.md (quests.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)), not a
   hand-authored line per witch.
 - **Sepheret (Сеферет)** is a hard fight, and the fiction explicitly rates her
   far below the Sacrilegist. *Which of the four she is — and which one carries
@@ -1145,7 +1145,7 @@ problems. The owner named exactly this trap («либо делать для ни
 work.
 
 - **The cleric casts ordinary spells from the ONE spell registry** — same
-  `SpellDef` rows, same mana, same cooldowns ([spells.md](spells.md)) — but
+  `SpellDef` rows, same mana, same cooldowns (spells.md (spells.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)) — but
   acquires them from **the Church of Light instead of a spire**, and the UI
   calls them **miracles**. Zero new systems: one new *acquisition channel*, one
   label.
@@ -1157,10 +1157,10 @@ work.
   spell do the same thing to the same wound.
 - **The paladin needs no magic at all** — he needs *anti*-magic, which is
   suppression, resistance and dispel: exactly what **perks and equipment**
-  already express ([rpg.md](rpg.md): attributes add, skills multiply). Imperial
+  already express (rpg.md (rpg.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/): attributes add, skills multiply). Imperial
   issue relics and magebane perks, no new resource.
 - **WIS is their attribute**, and it currently anchors no archetype at all in
-  [design.md](design.md) §14.5 — so this fills a real hole rather than carving a
+  [design.md](history/design.md) §14.5 — so this fills a real hole rather than carving a
   new one.
 
 ### THE ACTIVE-ABILITY LAW
@@ -1168,7 +1168,7 @@ work.
 The ruling generalises past clerics, and it is the important part:
 
 > **Every active ability in the game is a spell.** One registry
-> ([spells.md](spells.md)), one set of rows, one resource path, one cast path —
+> (spells.md (spells.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)), one set of rows, one resource path, one cast path —
 > miracles, magebane dispels, black-energy powers, whatever comes later.
 
 It is **technically honest**: a miracle is not a spell wearing a costume, it *is*
@@ -1496,7 +1496,7 @@ of bosses waiting for the player: each eunuch **travels between the Empire's
 cities with a large army and a retinue**, holds his **own sphere of influence**,
 and periodically they **convene a council in the capital**. AI state plus
 context, in the macro-party model the game is already built around (a party IS
-its leader NPC — see the macro-parties design and [macrosim.md](macrosim.md)).
+its leader NPC — see the macro-parties design and macrosim.md (macrosim.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)).
 
 Two ways to reach one, and the world produces both without authoring them:
 
@@ -1516,7 +1516,7 @@ Two ways to reach one, and the world produces both without authoring them:
 **What their deaths do to the Empire — fact → rule.** A eunuch's death is a
 **fact of the world**, not a scripted cutscene, and the rules read the facts.
 This is the project's existing condition→effect machinery
-([progression.md](progression.md): EventBus + LogicNodeEngine), so it needs no
+(progression.md (progression.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/): EventBus + LogicNodeEngine), so it needs no
 new system:
 
 | Facts accumulated | The rule that fires |
@@ -1593,7 +1593,7 @@ game. It is not e-sport balance; nobody is owed symmetry.
 
 - **Mage — borderline unplayable, on purpose.** Spells are rare. They are
   *guaranteed* in the spires — and the spires stand in mountains and deep forest
-  wilds, guarded (zone ≥ 5, see [zones.md](zones.md)). You start with **Magic
+  wilds, guarded (zone ≥ 5, see zones.md (zones.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)). You start with **Magic
   Bolt** and one real advantage: you need no bow, no arrows, no musket, no
   powder — your ammunition is your own mana. You are a man with an infinite but
   very weak pistol. You grind goblins **within sprinting distance of the village
@@ -1625,11 +1625,11 @@ game. It is not e-sport balance; nobody is owed symmetry.
   serving under your banner. Found the break-even point, broke the economy, and
   in-fiction it is even correct: people pay dues to stand under a legend's
   protection. — *the CHA-100 sign flip is `NOT BUILT` as a stated rule; confirm
-  against `microcombat.md` recruitment.*
+  against `microcombat.md` (снесён 2026-09-25 → CANON S13) recruitment.*
 
 **The terrain proves the asymmetry better than any stat screen.** Three builds,
-one situation — stranded in the mountains ([macroworld.md](macroworld.md) SP
-penalty, [rpg.md](rpg.md) `travel` / `athletics`):
+one situation — stranded in the mountains (macroworld.md (macroworld.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/) SP
+penalty, rpg.md (rpg.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/) `travel` / `athletics`):
 
 - **Mage:** out of mana. Cannot fly, cannot teleport. Restoring mana needs sleep
   and food; there is no food up here; without mana he cannot kill a mountain
@@ -1740,7 +1740,7 @@ the mages still rule.
 | **Empire of Light** | Sterile, rich, gold and white, caliphate order | Mass, taxation and total control |
 
 This is **not decoration** — it is the visible output of the economy simulation
-([economy.md](economy.md), [macrosim.md](macrosim.md)). The owner's evidence
+(economy.md (economy.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), macrosim.md (macrosim.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)). The owner's evidence
 that this reads correctly: a 70-year-old relative who has never touched a
 computer looked at the screen and said *"ah, the peasants are working in the
 fields, they've run to the fields"*. Archetypal legibility is the visual
@@ -1831,11 +1831,11 @@ the ten years.
   Empire by accident.
 - Nine attributes exactly as the fiction splits them (3 warrior / 3 mage /
   3 misc), with LCK present for the black-energy path.
-- Spires gated on danger zone ≥ 5 ([zones.md](zones.md)) — the mage's spells
+- Spires gated on danger zone ≥ 5 (zones.md (zones.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)) — the mage's spells
   really are out in the guarded wilds.
-- Ten-year plot horizon and level ~100 late plot ([design.md](design.md) §17.6).
+- Ten-year plot horizon and level ~100 late plot ([design.md](history/design.md) §17.6).
 - The world runs without the player: macro NPCs, caravans, economy, kingdoms
-  ([macrosim.md](macrosim.md)).
+  (macrosim.md (macrosim.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)).
 - Possession — the player is a movable flag on an ordinary body
   (вселение = перенос флажка) — is the mechanical seed of "kill anyone,
   become anyone".
@@ -1997,12 +1997,12 @@ a game once they find one.
 ## Connections
 
 Systems that carry the fiction: factions and relations
-(`src/macro/faction.h`, [macroworld.md](macroworld.md)); the ten-year clock
-([time.md](time.md)); the plot arc, endings and events
-([progression.md](progression.md), [quests.md](quests.md)); the archetypes and
-the nine attributes ([rpg.md](rpg.md), [design.md](design.md) §14.5); the mage's
-spire grind ([zones.md](zones.md), [landmarks.md](landmarks.md),
-[spells.md](spells.md)); the class-defining feel of each faction's army
-([microcombat.md](microcombat.md), [macrosim.md](macrosim.md)); the visible
-prosperity of a freed village ([economy.md](economy.md)); killing and becoming
-anyone (вселение = перенос флажка, [monsters.md](monsters.md)).
+(`src/macro/faction.h`, macroworld.md (macroworld.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the ten-year clock
+(time.md (time.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the plot arc, endings and events
+(progression.md (progression.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), quests.md (quests.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the archetypes and
+the nine attributes (rpg.md (rpg.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), [design.md](history/design.md) §14.5); the mage's
+spire grind (zones.md (zones.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), landmarks.md (landmarks.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/),
+spells.md (spells.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the class-defining feel of each faction's army
+([microcombat.md](microcombat.md), macrosim.md (macrosim.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the visible
+prosperity of a freed village (economy.md (economy.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); killing and becoming
+anyone (вселение = перенос флажка, monsters.md (monsters.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)).

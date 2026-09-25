@@ -20,7 +20,7 @@
 //      cell, NO bed anywhere in the forest cells, and the shared entry pad
 //      standing ON the bed of the entered (0,0) variant.
 //   3. OPEN SKY — no Structure::Wall anywhere: no lid, no masonry ring. The
-//      sky is the absence of a ceiling (dungeons.md), and this is the
+//      sky is the absence of a ceiling (CANON S27), and this is the
 //      assertion that keeps it absent. And no sea: waterLevel == 0.
 //   4. THE FOREST — real Structure::Tree solids in force in every variant,
 //      none standing on the bed, and DIFFERENT woods per variant (the

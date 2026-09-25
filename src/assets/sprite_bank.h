@@ -4,7 +4,7 @@
 // mechanism.
 //
 // It replaced the paper-doll pool, and the difference is the point of the
-// sprite law (sprites.md). The pool composed 37 layers per (seed, animation,
+// sprite law (СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16)). The pool composed 37 layers per (seed, animation,
 // direction, frame) and needed 8192 slots for one city because a face was
 // generated per SOUL. A drawn kind is one picture for every member of that
 // kind, so the working set is not a crowd size — it is the number of PICTURES

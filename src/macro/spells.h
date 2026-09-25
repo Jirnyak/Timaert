@@ -1,4 +1,4 @@
-// Spell registry — the DATA rows of the spell content class (ARCHITECTURE.md
+// Spell registry — the DATA rows of the spell content class (history/ARCHITECTURE.md
 // Rule 13, owner ruling 2026-08-14). A spell's numbers and strings live HERE,
 // in the world layers, beside kFactionDefs / kNpcTypeDefs / the creature
 // catalog, so macro worldgen (spire placement asks tier), the subworld and the

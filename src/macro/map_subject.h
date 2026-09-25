@@ -4,7 +4,7 @@
 // THE FACT THESE DOORS REST ON (verified 2026-09-11; слияние M-71): a squad
 // and a landmark hold the SAME type — ONE Inventory (bag, market, granary,
 // treasury AND roster in one: существа лежат областью того же контейнера;
-// population.md: «гарнизон = армия ландмарка»). What differed was
+// population.md, снесён (CANON S28): «гарнизон = армия ландмарка»). What differed was
 // only the ADDRESS: the squad carries them as ECS components on its leader
 // entity (ecs::NpcInventory / ecs::SquadRoster), the landmark as bare fields
 // of its record in gs.landmarks. Every consumer that wanted "this object's
@@ -60,7 +60,7 @@ inline MapSubject subject_of_landmark(int id) {
 }
 
 // ── THE store door ───────────────────────────────────────────────────────
-// The subject's universal Inventory: bag == market == treasury (economy.md).
+// The subject's universal Inventory: bag == market == treasury (CANON S10 (бывший economy.md)).
 // Coins live inside it as stacks, so wallet_value / transfer_value /
 // barter_swap need nothing beyond what this door returns.
 inline Inventory* store_of(const MacroWorld& w, MapSubject s) {

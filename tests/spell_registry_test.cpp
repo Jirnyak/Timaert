@@ -1,4 +1,4 @@
-// Guards of the spell DATA registry (macro/spells.h, ARCHITECTURE.md Rule 13).
+// Guards of the spell DATA registry (macro/spells.h, history/ARCHITECTURE.md Rule 13).
 //
 // The one thing this file must never stop guarding: ORDINALS ARE APPEND-ONLY.
 // The row index rides in saves (Spire.spellOrdinal) and events, so the pins

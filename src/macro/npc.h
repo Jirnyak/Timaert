@@ -26,7 +26,7 @@ namespace sm {
 
 enum class NPCType : std::uint8_t {
     Peasant = 0, Merchant, Bandit, Guard, Witch, Sorceress,
-    // The gatherer professions of the deposit rows (resources.md): a
+    // The gatherer professions of the deposit rows (CANON S10 (бывший resources.md)): a
     // profession per resource, appended so saved kinds stay stable.
     // ── and every creature, in the SAME space ─────────────────────────────
     // The monster catalog used to be a second table addressed by `0x100 | row`

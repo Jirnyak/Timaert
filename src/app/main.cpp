@@ -556,7 +556,7 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
 
 // ── Forced encounter — the pre-battle screen (Session 15, Inc 6) ──────────
 //
-// A hostile squad on the map FORCES an encounter (owner, macrosim.md, the
+// A hostile squad on the map FORCES an encounter (owner, CANON S4/S13 (бывший macrosim.md), the
 // M&B way): the geometric meeting — one macro cell — stops the march and
 // opens a screen of ACTIONS instead of walking through. The actions are a
 // TABLE (label / availability / effect) because this screen will grow the
@@ -3148,7 +3148,7 @@ void handle_pending_battle_start_events(App& app) {
 
 // The SpawnEntity consumer. The event had two producers (quest onAccept in
 // content/quests/procedural.cpp) and ZERO consumers — kill-contracts never
-// produced their targets (audit.md II.5). Each event now becomes one hostile
+// produced their targets (history/audit.md II.5). Each event now becomes one hostile
 // macro NPC at the named cell; walking there embodies it in the subworld via
 // the ordinary macro projection (Inc 5d), and its death feeds the DestroyNpc
 // objective through the ordinary NpcDeath path.
@@ -3771,7 +3771,7 @@ RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput) {
     //
     // Three macro-time smokes have come back "the world advanced nothing"
     // inside a long sweep and been green every time they were run alone
-    // (postdemoaudit.md SMOKE-7). The symptom is all any of them could say;
+    // (history/postdemoaudit.md SMOKE-7). The symptom is all any of them could say;
     // the CAUSE could only be the pause gate below, because this loop has no
     // wall-clock budget — it runs the steps it was given, and a step that
     // buys nothing was gated. So name the gate while it is still shut,

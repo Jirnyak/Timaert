@@ -14,7 +14,7 @@ namespace sm
 
     // Every tag below has at least one producer AND at least one consumer, or
     // is one edit away from it — the 2026-08-05 producer/consumer census
-    // (audit.md Часть II) deleted the 16 tags nothing outside this enum ever
+    // (history/audit.md Часть II) deleted the 16 tags nothing outside this enum ever
     // referenced (PlayerLevelUp, PlayerDeath, NpcSpawn, NpcGreeted, Encounter,
     // SettlementChangeOwner, QuestAbandoned, Trade, NpcHpChange,
     // SettlementMoodChange, PlayerStatChange, BattleEnd, MagicSurge,
