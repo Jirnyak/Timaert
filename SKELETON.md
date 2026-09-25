@@ -796,9 +796,8 @@ write_payload                                    save.cpp:1031
 субмиры без контекста клетки, движок тот же; симуляция изотропна по xyz; одна
 плоскость воды на одном уровне.
 
-Срез «рождение клетки» (генераторы `gens/`, `kit/`, `dgn/`, `spawn.cpp`) и срез
-«кадр приложения» перепись 2026-09-25 не успела (остановлена по бюджету); их
-дампов нет. Ниже — только проверенное срезами «тик субмира» и «рендер».
+Срез «кадр приложения» (main.cpp целиком, smoke, ui) перепись 2026-09-25 не
+успела; срез «рождение клетки» дочитан по коду 2026-09-25 (III.1b).
 
 ## III.1 — Окно 3×3 и тик
 
@@ -837,6 +836,43 @@ tick_playing_runtime: dt = kStepSeconds = 1/64 (constexpr)   app/main.cpp:3400, 
    ├─ ParticleSystem::tick (пул 2048, CPU)                     :4888 → particles.cpp:163
    └─ угольки факелов (FX-LOD по дистанции — представление) · кровавый след  :4897, :4937
 ```
+
+## III.1b — Рождение клетки (генерация из контекста)
+
+```
+SeamlessSubworldManager: generate_one / воркер → dispatch_generate(ctx, nbHeights[9], nbBiome[9], nbBiome5, nbFeature, …)
+                                                     seamless_manager.cpp:283, :355 → gens/dispatch.cpp:95
+├─ ctx.dungeon.kind != None → dispatch_generate_dungeon(ctx, out)      dispatch.cpp:52-55 → dgn/dispatch.cpp:237
+│     (интерьер выше всего: клетка показывает то, что ЗА дверью; модули dgn/house, cave, spire_tower, prologue_road)
+├─ resolve_mode(ctx) — РОД КЛЕТКИ ПО КОНТЕКСТУ, порядок приоритета:        dispatch.cpp:52-94
+│     место: City / Village / Ruin / Spire по ctx.landmark.kind (:57-70; Lair/Shrine/Mine/Tower — модуля нет → земля)
+│     → фича: FT_Road / FT_DirtRoad / FT_Bridge → Road; FT_Field / FT_Pasture → Field (:78-83)
+│     → биом: Mountain / Water / Swamp (:84-86) → лес по СЧЁТУ деревьев is_forest_cell (:90) → Grassland
+├─ generate_heightmap(out.heightmap, 1024, nbHeights[9], nbBiome[9], nbBiome5, …)   dispatch.cpp:57 → base_generator.cpp:260
+│     высоты клетки — из 3×3 макро-высот + шум с периодом, замкнутым на мире (1024 × 1024 тайлов, :268-);
+│     хребты: mountain_ridges01 от той же 3×3 (:173-257), долина ≥ kWaterLevel + 0.08 (:243)
+├─ out.waterLevel = WATER_LEVEL = 0.40 (base_generator.h:35) — ОДНА плоскость воды, = порогу моря макромира; в метрах kSeaLevelM (height.h:50)   dispatch.cpp:64
+├─ switch (mode) → ОДИН модуль на род: gen_city · gen_village · gen_ruin · gen_spire · gen_road (мост — ветка Biome::Water) ·
+│     gen_field · gen_mountain · gen_water · gen_swamp · gen_forest · gen_open (Grassland)   dispatch.cpp:150-175; gens/*.cpp
+│     (поселения — kit/: outline → growth → lanes → streets → plots → props)
+├─ smooth_road_heights (под дорогой/площадью)                              dispatch.cpp:78 → base_generator.cpp:856
+└─ kit::sync_water_tiles_from_heightmap (тайлы ниже воды — вода)           dispatch.cpp:82
+Заселение клетки окна: spawn_cell (engine.cpp:1388) → spawn_cell_npcs (spawn.cpp:1010):
+   1) население места — spawn_landmark_population (:395; займ Population/Garrison, :133-141)
+   2) фауна — «danger weights the TABLE» (:159-166), бюджет = FaunaCount стока (:175-180), займ FaunaCount, spawn_derived_body (:214)
+   + проекция макро-сквадов project_macro_npcs_into_subworld (:1400) — тела-зеркала с MacroOrigin
+```
+
+| что | как в коде | статус |
+|---|---|---|
+| генерация из 2D высот макромира и контекста 3×3 | `nbHeights[9]`, `nbBiome[9]`, `nbBiome5` (5×5 биомов) на входе `dispatch_generate`; генераторы читают только `CellContext`/`GenInput` | **ПРАВДА** |
+| модуль на род биома/фичи, шов по сиду | `resolve_mode` → один `gen_*` на род (11 модулей); шум замкнут на мире (тайл-спан 1024×1024, `base_generator.cpp:268-`); стык клеток — 3×3 высоты, `nbBiome5` | **ПРАВДА** |
+| одна плоскость воды = уровень моря макромира | `WATER_LEVEL = 0.40f` (`base_generator.h:35`) = `LayerParameters::seaLevel = 0.40f` (`map_generator.h:21`) — ДВА литерала одного числа без вывода одного из другого | **ПРАВДА по значению, РАСХОЖДЕНИЕ по форме** — ЗАКОН КОНСТАНТ; вердикт 2026-09-25 «единый порог для макро и микро» → вывести одно из другого |
+| род клетки — из колонок контекста, не switch по имени | `resolve_mode` — switch по `LandmarkType` с `default: break` (`dispatch.cpp:68`) и if-цепь по `FeatureType`/`Biome` | **РАСХОЖДЕНИЕ** — ЗАКОН СТРОКИ КАТАЛОГА п.4 (`default:` глотает новые роды мест; колонки «модуль генератора» в строке места нет); наряда нет |
+| роды Lair/Shrine/Mine/Tower | строки реестра есть, модуля нет → клетка показывает землю (`dispatch.cpp:62-69`) | **ПРАВДА** (честный отказ, GEN-5) |
+| данж — тот же движок без контекста клетки | `dispatch_generate_dungeon` (`dgn/dispatch.cpp:237`) идёт до терраина; но население интерьеров берётся из клетки двери (Часть II) | **РАСХОЖДЕНИЕ** по заселению (вердикт 2026-09-25: два агностичных потока) |
+| два потока заселения | в одной функции `spawn_cell_npcs`: население места (займ Population/Garrison) и фауна по таблице (займ FaunaCount) — уже раздельные шаги, но одна дверь и один контекст | **ПРАВДА по шагам**, форма «два потока» — наряд ЗАСЕЛЕНИЕ-СУБ-1 |
+| контекст ВЫБИРАЕТ строку, тело не масштабируется | `spawn_cell_npcs` комментарий `:29-33`: «zone must weight the TABLE, not the body»; уровень +1 от зоны и √(pop/100) — читать при наряде | **ПРОВЕРИТЬ** — строки `:29-33` описывают снесённый автолевел; исполнение не подтверждено чтением |
 
 ## III.2 — Паспорт памяти субмира
 
