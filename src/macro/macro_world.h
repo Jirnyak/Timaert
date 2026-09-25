@@ -21,17 +21,20 @@ namespace sm {
 
 // A fact the macro layer produces about a fight it resolved. One kind so far;
 // it grows like every other row-shaped thing here. `victim` and `killer` are
-// entity bits (0 = a roster row, which has no entity of its own — it is named
-// by its record id in `detail`), so the app can raise this as the ordinary
-// NpcDeath the whole story layer already listens to: an auto-resolved death
-// and a fought death are the SAME fact, which is exactly the point (CANON
-// S13: one law of battle at both scales).
+// PACKED store handles — {slot | gen<<16}, macro_handle_bits (store.h);
+// all-ones = a roster row, which has no slot of its own — it is named by its
+// record id in `detail`. (Шаг 1г: прежний сентинель 0 был легальным слотом —
+// первый рождённый сквад получает слот 0 — и его смерть молча читалась как
+// «никто».) The app raises this as the ordinary NpcDeath the whole story
+// layer already listens to: an auto-resolved death and a fought death are
+// the SAME fact, which is exactly the point (CANON S13: one law of battle
+// at both scales).
 struct BattleFact {
     enum class Kind : std::uint8_t { Death = 0 };
     Kind          kind    = Kind::Death;
     std::uint16_t npcType = 0;       // the fallen body's row (NpcDeath.ix)
-    std::uint32_t victim  = 0;       // entity bits, 0 for a roster member
-    std::uint32_t killer  = 0;       // entity bits of the victorious leader
+    std::uint32_t victim  = 0xFFFFFFFFu;  // packed handle; ones = roster row
+    std::uint32_t killer  = 0xFFFFFFFFu;  // packed handle of the victor
     std::int32_t  detail  = -1;      // the roster record id, -1 for a leader
     int           level   = 1;
     const char*   factionId = "";    // whose colours the fallen wore

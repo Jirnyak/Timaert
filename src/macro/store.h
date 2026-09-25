@@ -189,6 +189,24 @@ inline MacroHandle handle_of(entt::registry& reg, entt::entity e) {
     return MacroHandle{slot, store_of(reg).generation[slot]};
 }
 
+// Упаковка хэндла в 32 бита для POD-конвертов (BattleFact, GameEvent):
+// слот в нижних 16, поколение в верхних. «Никого» — ВСЕ ЕДИНИЦЫ, и это
+// закрывает молчаливую ловушку: прежний сентинель 0 был ЛЕГАЛЬНЫМ слотом
+// (первый рождённый — слот 0), и сквад слота 0 при смерти молча становился
+// безымянным. Низшие 16 бит == kMacroNoSlot — единственный признак «нет».
+inline constexpr std::uint32_t kMacroHandleNoneBits = 0xFFFFFFFFu;
+inline constexpr std::uint32_t macro_handle_bits(MacroHandle h) {
+    return h.slot == kMacroNoSlot
+        ? kMacroHandleNoneBits
+        : (std::uint32_t(h.slot) | (std::uint32_t(h.gen) << 16));
+}
+inline constexpr MacroHandle macro_handle_from_bits(std::uint32_t bits) {
+    return (bits & 0xFFFFu) == kMacroNoSlot
+        ? MacroHandle{}
+        : MacroHandle{std::uint16_t(bits & 0xFFFFu),
+                      std::uint16_t(bits >> 16)};
+}
+
 // ОБРАТНАЯ ДВЕРЬ МОСТА (шаг 1г; умирает в 1е вместе с MacroSlot): entt-тело
 // носителя слота. Линейный скан моста — законен только ВНЕ тика (клик UI,
 // вход в бой); в 1е двери принимают слот, и нужда в скане исчезает.

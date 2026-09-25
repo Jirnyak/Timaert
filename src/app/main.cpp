@@ -201,20 +201,20 @@ bool modal_overlay_active(const App& app);
 // MacroSpawnId means the same body for the life of the world. 0 = this body
 // has no identity — a roster row, a body below — and the chronicle will say
 // so by naming the place instead of a figure.
-std::uint32_t macro_identity_of(const App& app, std::uint32_t entityBits) {
-    if (entityBits == 0u) return 0u;
-    const entt::entity e = entt::entity(entityBits);
-    if (!app.ecs.reg.valid(e)) return 0u;
-    const auto* id = body_state<sm::ecs::MacroSpawnId>(app.ecs.reg, e);
+std::uint32_t macro_identity_of(const App& app, std::uint32_t handleBits) {
+    const sm::MacroHandle h = sm::macro_handle_from_bits(handleBits);
+    const auto* id =
+        sm::body_state<sm::ecs::MacroSpawnId>(sm::store_of(app.ecs), h);
     return id ? id->index : 0u;
 }
 
 // Has this band done enough to be somebody? ONE number answers, and it lives
-// on the band (ecs::MacroNpcRuntime::renown), so there is no flag beside it to
-// disagree. A body with no runtime — a roster row, a corpse — is nobody.
-bool squad_is_named(const App& app, entt::entity e) {
-    if (!app.ecs.reg.valid(e)) return false;
-    const auto* rt = body_state<sm::ecs::MacroNpcRuntime>(app.ecs.reg, e);
+// on the band (MacroNpcRuntime::renown — колонка store), so there is no flag
+// beside it to disagree. A stale handle — a roster row, a corpse — is nobody.
+bool squad_is_named(const App& app, std::uint32_t handleBits) {
+    const sm::MacroHandle h = sm::macro_handle_from_bits(handleBits);
+    const auto* rt =
+        sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(app.ecs), h);
     return rt && sm::renown_is_named(rt->renown);
 }
 
@@ -281,31 +281,28 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     // below overwrites this when the killer turns out to be somebody.
     wf.subjectKind = std::uint8_t(sm::FactSubject::Cell);
     if (victimId != 0u) {
-        wf.objectKind =
-            sm::fact_subject(sm::FactSubject::Squad,
-                             squad_is_named(app, entt::entity(fact.victim)));
+        wf.objectKind = sm::fact_subject(sm::FactSubject::Squad,
+                                         squad_is_named(app, fact.victim));
         wf.object = victimId;
     }
     wf.amount = 1;
     // WHERE it happened: the killer's cell if he has one, else the victim's.
     // A fact with no place would be invisible to the only question the
-    // chronicle exists to answer.
-    const entt::entity where = fact.killer != 0u
-        ? entt::entity(fact.killer) : entt::entity(fact.victim);
-    if (app.ecs.reg.valid(where)) {
-        if (const auto* c = body_state<sm::ecs::MacroCell>(app.ecs.reg, where)) {
-            wf.x = std::int16_t(sm::ecs::cell_x(*c, app.gs.mapW));
-            wf.y = std::int16_t(sm::ecs::cell_y(*c, app.gs.mapW));
-        }
+    // chronicle exists to answer. Хэндлы (1г): протухший отвечает nullptr.
+    const sm::MacroStore& st = sm::store_of(app.ecs);
+    const sm::MacroHandle killerH = sm::macro_handle_from_bits(fact.killer);
+    const sm::MacroHandle whereH = st.valid(killerH)
+        ? killerH : sm::macro_handle_from_bits(fact.victim);
+    if (const auto* c = sm::body_state<sm::ecs::MacroCell>(st, whereH)) {
+        wf.x = std::int16_t(sm::ecs::cell_x(*c, app.gs.mapW));
+        wf.y = std::int16_t(sm::ecs::cell_y(*c, app.gs.mapW));
     }
     // Filed AND paid, through the one door (macro/squad.h): the deed makes
     // something of the doer. A nameless band that keeps doing notable things
     // crosses the bar and becomes a figure, after which its deeds go into the
     // annals. Before that they are weather — which is exactly why sixteen
     // thousand bands do not drown the world's memory.
-    sm::record_deed(app.ecs, app.gs, wf,
-                    fact.killer != 0u ? entt::entity(fact.killer)
-                                      : entt::null);
+    sm::record_deed(app.ecs, app.gs, wf, killerH);
 }
 
 // THE player's bag, from his squad entity (macro/player_entity.h). A world
@@ -635,7 +632,7 @@ float encounter_flee_chance(App& app, entt::entity npc) {
 
 void close_pre_battle(App& app, bool grace) {
     if (grace) app.encounterGraceNpc = app.preBattleNpc;
-    app.preBattleNpc = entt::null;
+    app.preBattleNpc = {};
     app.encounterTalkLine.clear();
     if (app.gs.subState.kind == sm::GameSubStateKind::PreBattle) {
         app.gs.subState.kind = sm::GameSubStateKind::Exploring;
@@ -832,27 +829,25 @@ void detect_forced_encounter(App& app) {
     const int px = sm::ecs::cell_x(*pcell, app.gs.mapW);
     const int py = sm::ecs::cell_y(*pcell, app.gs.mapW);
 
-    // A graced squad stops gracing the moment the two part cells.
-    if (app.encounterGraceNpc != entt::null) {
-        bool together = false;
-        if (reg.valid(app.encounterGraceNpc)) {
-            if (const auto* gc =
-                    body_state<sm::ecs::MacroCell>(reg, app.encounterGraceNpc)) {
-                together =
-                    sm::ecs::cell_x(*gc, app.gs.mapW) == px
-                    && sm::ecs::cell_y(*gc, app.gs.mapW) == py;
-            }
-        }
-        if (!together) app.encounterGraceNpc = entt::null;
-    }
-
     sm::MacroStore& st = sm::store_of(app.ecs);
+
+    // A graced squad stops gracing the moment the two part cells.
+    if (app.encounterGraceNpc.slot != sm::kMacroNoSlot) {
+        bool together = false;
+        if (const auto* gc = sm::body_state<sm::ecs::MacroCell>(
+                st, app.encounterGraceNpc)) {
+            together = sm::ecs::cell_x(*gc, app.gs.mapW) == px
+                && sm::ecs::cell_y(*gc, app.gs.mapW) == py;
+        }
+        if (!together) app.encounterGraceNpc = {};
+    }
     auto view = reg.view<sm::ecs::MacroSlot>(
         entt::exclude<sm::ecs::PlayerTag,
                       sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
-        if (e == app.encounterGraceNpc) continue;
         const std::uint16_t slot = sm::slot_of(reg, e);
+        if (sm::MacroHandle{slot, st.generation[slot]}
+            == app.encounterGraceNpc) continue;
         if (st.dead[slot] != 0) continue;
         const auto& hp = st.pools[slot];
         if (hp.hp <= 0) continue;
@@ -868,7 +863,7 @@ void detect_forced_encounter(App& app) {
                                    sm::faction_id_for_index(kind.factionIdx))) {
             continue;
         }
-        app.preBattleNpc = e;
+        app.preBattleNpc = sm::MacroHandle{slot, st.generation[slot]};
         app.encounterTalkLine.clear();
         app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
         app.cursor.path.clear();
@@ -883,11 +878,13 @@ void detect_forced_encounter(App& app) {
 void draw_pre_battle_modal(App& app) {
     if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) return;
     auto& reg = app.ecs.reg;
-    const entt::entity npc = app.preBattleNpc;
-    if (npc == entt::null || !reg.valid(npc)
-        || !reg.all_of<sm::ecs::MacroSlot>(npc)
-        || sm::macro_dead(reg, npc)
-        || (*body_state<sm::ecs::Pools>(reg, npc)).hp <= 0) {
+    // Хэндл — носитель ссылки (1г); entt-тело резолвится мостом на кадр,
+    // потому что действия тракта (route/auto/flee) до 1е принимают энтити.
+    const sm::MacroStore& st = sm::store_of(app.ecs);
+    const sm::MacroHandle h = app.preBattleNpc;
+    const entt::entity npc = sm::macro_entity_of(reg, h);
+    if (npc == entt::null || sm::macro_dead(st, h)
+        || st.pools[h.slot].hp <= 0) {
         close_pre_battle(app, false);   // fail closed (stale save / dead foe)
         return;
     }
@@ -5940,8 +5937,7 @@ void frame(App& app, int simSteps) {
                             sm::ecs::cell_y(*cell, app.gs.mapW));
                     }
                     app.subjectSquad = {};
-                    app.preBattleNpc =
-                        sm::macro_entity_of(app.ecs.reg, attackReq);
+                    app.preBattleNpc = attackReq;
                     app.encounterTalkLine.clear();
                     app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
                     app.cursor.path.clear();

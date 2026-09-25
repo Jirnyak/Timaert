@@ -336,8 +336,9 @@ struct App {
     // does not re-force the encounter while the two still share a cell;
     // separation clears the grace. Runtime-only: entt handles are not save
     // material, and a loaded PreBattle kind with no live target fails closed.
-    entt::entity preBattleNpc      = entt::null;
-    entt::entity encounterGraceNpc = entt::null;
+    sm::MacroHandle preBattleNpc{};        // шаг 1г: {slot,gen} вместо
+    sm::MacroHandle encounterGraceNpc{};   //   entt-энтити; протухание
+                                           //   мертвит поколение
     // THE subject panel's squad (меню-сессия: одна панель на всех — клик по
     // сквад-ряду открывает её на нём; kMacroNoSlot = панель показывает
     // ландмарк ui.settlementId). Runtime-only, как preBattleNpc; хэндл

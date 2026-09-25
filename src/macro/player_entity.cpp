@@ -23,22 +23,29 @@ namespace {
 // landing 4 turned this lookup from "a handful of calls on a transition"
 // into a per-frame door (bars, death check, HUD, spellbook, rest) and a
 // linear scan of sixteen thousand squads per call stopped being free.
-struct PlayerSquadCache { entt::entity e = entt::null; };
+// Шаг 1г: носитель ссылки — хэндл {slot,gen}; entt-энтити при нём —
+// мостовая производная (умирает в 1е вместе с MacroSlot), потому что
+// ~20 звонящих player_squad_entity до 1е хотят энтити, а скан на каждый
+// зов — ровно то, ради чего кэш родился.
+struct PlayerSquadCache { entt::entity e = entt::null; MacroHandle h{}; };
 
 // The player's macro squad, found by its reserved ordinal — through the
-// cache, revalidated on every hit: a stale entity id must never be trusted
-// (load rebuilds the world; leave() tears entities down), so a cached id
-// only answers while it is alive AND still wears the reserved ordinal.
+// cache, revalidated on every hit: a stale id must never be trusted
+// (load rebuilds the world; leave() tears entities down), so a cached pair
+// only answers while the handle is alive AND still wears the reserved
+// ordinal (the generation kills reuse the ordinal check alone could miss).
 entt::entity find_player_squad(ecs::World& world) {
     auto& cache = world.reg.ctx().emplace<PlayerSquadCache>();
     if (cache.e != entt::null && world.reg.valid(cache.e)) {
-        const auto* ms = world.reg.try_get<ecs::MacroSlot>(cache.e);
-        if (ms && store_of(world).spawnId[ms->slot].index
-                      == ecs::kPlayerSquadOrdinal) {
+        MacroStore& st = store_of(world);
+        if (st.valid(cache.h)
+            && st.spawnId[cache.h.slot].index == ecs::kPlayerSquadOrdinal) {
             return cache.e;
         }
     }
     cache.e = macro_entity_by_spawn_id(world, ecs::kPlayerSquadOrdinal);
+    cache.h = cache.e != entt::null ? handle_of(world.reg, cache.e)
+                                    : MacroHandle{};
     return cache.e;
 }
 

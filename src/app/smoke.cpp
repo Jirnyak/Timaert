@@ -7866,7 +7866,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.cursor.pathIdx = 0;
             detect_forced_encounter(app);
             if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle
-                || app.preBattleNpc != hostile) {
+                || app.preBattleNpc != sm::handle_of(reg, hostile)) {
                 smoke_fail(app, "hostile squad did not force the encounter");
                 break;
             }

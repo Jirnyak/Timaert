@@ -73,7 +73,10 @@ namespace sm
     struct GameEvent
     {
         EventTag tag = EventTag::Custom;
-        std::uint32_t a = 0, b = 0; // entity / settlement / npc ids
+        // Пространство id зависит от тега: макро-NpcDeath несёт ПАКОВАННЫЙ
+        // хэндл store (macro_handle_bits, все единицы = никого), сценная
+        // смерть — биты entt-энтити тела, квесты — свои ординалы.
+        std::uint32_t a = 0, b = 0; // packed handle / entity / ordinal ids
         float fx = 0, fy = 0;
         int ix = 0, iy = 0;
         std::string s1{}, s2{}; // ids, text payloads

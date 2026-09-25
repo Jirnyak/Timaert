@@ -467,15 +467,10 @@ inline void grant_renown(ecs::World& w, GameState& gs,
 // дела идут в анналы»), subject and object alike. No writer hand-marks it: a
 // hand-written `true` was how the player's deals filed him as a figure he had
 // not yet become.
-inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
-                                 entt::entity subject = entt::null) {
-    if (subject != entt::null && w.reg.valid(subject)) {
-        const auto* id = body_state<ecs::MacroSpawnId>(w.reg, subject);
-        if (id && id->index != 0u) {
-            fact.subjectKind = std::uint8_t(FactSubject::Squad);
-            fact.subject = id->index;
-        }
-    }
+// Общий хвост обеих дверей записи дела: figure-ность из славы, летопись,
+// плата славой — субъект к этому моменту уже разрешён в ординал.
+inline std::uint32_t record_deed_filed(ecs::World& w, GameState& gs,
+                                       WorldFact fact) {
     fact.subjectKind = fact_subject(
         FactSubject(fact_subject_kind(fact.subjectKind)),
         renown_is_named(renown_of(w, gs, fact.subjectKind, fact.subject)));
@@ -498,6 +493,29 @@ inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
         grant_renown(w, gs, fact.subjectKind, fact.subject, gain);
     }
     return seq;
+}
+
+inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
+                                 entt::entity subject = entt::null) {
+    if (subject != entt::null && w.reg.valid(subject)) {
+        const auto* id = body_state<ecs::MacroSpawnId>(w.reg, subject);
+        if (id && id->index != 0u) {
+            fact.subjectKind = std::uint8_t(FactSubject::Squad);
+            fact.subject = id->index;
+        }
+    }
+    return record_deed_filed(w, gs, fact);
+}
+
+// Субъект хэндлом (1г) — ординал из колонки, entt не участвует.
+inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
+                                 MacroHandle subject) {
+    const MacroStore& st = store_of(w);
+    if (st.valid(subject) && st.spawnId[subject.slot].index != 0u) {
+        fact.subjectKind = std::uint8_t(FactSubject::Squad);
+        fact.subject = st.spawnId[subject.slot].index;
+    }
+    return record_deed_filed(w, gs, fact);
 }
 
 // ── Auto-battle glue: entity ⇄ the pure resolver ──────────────────────────
@@ -689,15 +707,25 @@ inline void report_death(const MacroWorld& mw, std::uint16_t npcType,
     BattleFact f{};
     f.kind = BattleFact::Kind::Death;
     f.npcType = npcType;
-    f.victim = victim == entt::null
-        ? 0u : std::uint32_t(entt::to_integral(victim));
-    f.killer = killer == entt::null
-        ? 0u : std::uint32_t(entt::to_integral(killer));
+    // Пакуется ХЭНДЛ, не биты энтити (1г): сентинель «никого» — все единицы,
+    // потому что 0 — легальный слот store (шрам: сквад слота 0 умирал
+    // безымянным). Согласие сентинелей закреплено ассертом ниже.
+    const auto packed = [&](entt::entity e) {
+        return e == entt::null || !mw.world
+            ? kMacroHandleNoneBits
+            : macro_handle_bits(handle_of(mw.world->reg, e));
+    };
+    f.victim = packed(victim);
+    f.killer = packed(killer);
     f.detail = detail;
     f.level = level;
     f.factionId = factionId ? factionId : "";
     mw.facts(mw.factsUser, f);
 }
+// Дефолт конверта и пак-дверь store обязаны называть одно «никого».
+static_assert(BattleFact{}.victim == kMacroHandleNoneBits
+                  && BattleFact{}.killer == kMacroHandleNoneBits,
+              "сентинель BattleFact = kMacroHandleNoneBits (store.h)");
 
 // The faction a macro body wears — its INSTANCE colours (Inc 2), not its row.
 inline const char* squad_faction_id(ecs::World& w, entt::entity e) {
