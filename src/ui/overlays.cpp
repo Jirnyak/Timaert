@@ -33,6 +33,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/engine.h"
 #include "sub/map_data.h"
+#include "macro/store.h"
 #include <stb_image.h>
 #include <algorithm>
 #include <bit>
@@ -1332,11 +1333,8 @@ namespace sm::ui
                     if (const entt::entity pe = player_squad_entity(world);
                         pe != entt::null)
                     {
-                        // A body that has never worn anything has no
-                        // container — the opt-in that keeps sixteen thousand
-                        // squads free of one. Wanting to wear something is
-                        // when it starts existing.
-                        eqc = &world.reg.get_or_emplace<ecs::BodyEquipment>(pe);
+                        // ФЛИП 1в: гир — колонка store у каждого сквада.
+                        eqc = &store_of(world).gear[slot_of(world.reg, pe)];
                     }
 
                     if (!eqc)
@@ -1743,22 +1741,22 @@ namespace sm::ui
                                     ecs::Pools>(squadSubject)
                 && !world.reg.all_of<ecs::PlayerSquadTag>(squadSubject);
             const ecs::Pools *pools = alive
-                ? &world.reg.get<ecs::Pools>(squadSubject) : nullptr;
+                ? &(*body_state<ecs::Pools>(world.reg, squadSubject)) : nullptr;
             if (!alive || pools->hp <= 0.0f)
             {
                 *open = false;   // the counterparty is gone: fail closed
                 return;
             }
-            const auto &kind = world.reg.get<ecs::NPCKind>(squadSubject);
-            const auto &ch = world.reg.get<ecs::NpcCharacter>(squadSubject);
+            const auto &kind = (*body_state<ecs::NPCKind>(world.reg, squadSubject));
+            const auto &ch = (*body_state<ecs::NpcCharacter>(world.reg, squadSubject));
             const NPCType t =
                 kind.type < std::uint16_t(NPCType::Count)
                     ? NPCType(std::uint8_t(kind.type)) : NPCType::Peasant;
             const auto &def = npc_def(t);
-            const auto *lvl = world.reg.try_get<ecs::NpcLevel>(squadSubject);
+            const auto *lvl = body_state<ecs::NpcLevel>(world.reg, squadSubject);
             const auto *traits =
-                world.reg.try_get<ecs::NpcTraits>(squadSubject);
-            auto *bag = world.reg.try_get<ecs::NpcInventory>(squadSubject);
+                body_state<ecs::NpcTraits>(world.reg, squadSubject);
+            auto *bag = body_state<ecs::NpcInventory>(world.reg, squadSubject);
             const char *npcName = npc_display_name(def, ch);
             const FactionDef *fd = faction_def_by_index(kind.factionIdx);
             g_squadTrade.sync_to(int(entt::to_integral(squadSubject)));

@@ -13,6 +13,7 @@
 
 #include "macro/journal.h"
 #include "macro/squad.h"
+#include "macro/store.h"
 
 #include <cstdint>
 
@@ -48,12 +49,15 @@ void stand_at(ecs::World& w, int x, int y) {
     entt::entity e = entt::null;
     for (auto ent : w.reg.view<ecs::PlayerTag>()) e = ent;
     if (e == entt::null) {
+        sm::MacroStore& st = sm::store_of(w);
+        const sm::MacroHandle h = sm::store_birth(st);
         e = w.reg.create();
+        w.reg.emplace<ecs::MacroSlot>(e, h.slot);
         w.reg.emplace<ecs::PlayerTag>(e);
-        w.reg.emplace<ecs::MacroSpawnId>(e,
-                                         ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal});
+        st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};
     }
-    w.reg.emplace_or_replace<ecs::MacroCell>(e, ecs::cell_index(x, y, 64));
+    sm::store_of(w).cell[sm::slot_of(w.reg, e)] =
+        ecs::MacroCell{ecs::cell_index(x, y, 64)};
 }
 
 void test_participation_locality_and_silence() {
@@ -61,7 +65,9 @@ void test_participation_locality_and_silence() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    ecs::World w;   // the flag holder is nobody's LORD → he wears nobody
+    ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());   // the flag holder is nobody's LORD → he wears nobody
     stand_at(w, 10, 10);
 
     // (a) The player's own deed, far away — learned by PARTICIPATION.
@@ -122,6 +128,8 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     stand_at(w, 5, 5);
 
     // Fill to the cap in slices small enough that the ring never evicts
@@ -166,6 +174,8 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     stand_at(w, 5, 5);
 
     // Not possessing: the lord's far-away deed is somebody else's.
@@ -180,8 +190,11 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     // Possessing him: the same deed, wherever it happened, is HIS. «Whom do
     // I wear» is the flag on the lord himself (v87) — the world is asked, no
     // out-of-snapshot field.
+    sm::MacroStore& stL = sm::store_of(w);
+    const sm::MacroHandle hL = sm::store_birth(stL);
     const entt::entity lord = w.reg.create();
-    w.reg.emplace<ecs::MacroSpawnId>(lord, ecs::MacroSpawnId{42u});
+    w.reg.emplace<ecs::MacroSlot>(lord, hL.slot);
+    stL.spawnId[hL.slot] = ecs::MacroSpawnId{42u};
     // Possession MOVES the one flag (exactly-one invariant): find the
     // stand-in holder FIRST, remove after — never mutate a pool mid-walk.
     entt::entity prev = entt::null;
@@ -208,6 +221,8 @@ void test_a_captured_copy_carries_no_ring_link() {
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     stand_at(w, 5, 5);
 
     // Two facts on one cell: the second's ring slot LINKS to the first.
@@ -235,11 +250,16 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
 
     // A band with a save-stable identity and a renown store…
+    sm::MacroStore& stB = sm::store_of(w);
+    const sm::MacroHandle hB = sm::store_birth(stB);
     const entt::entity band = w.reg.create();
-    w.reg.emplace<ecs::MacroSpawnId>(band, ecs::MacroSpawnId{7u});
-    auto& rt = w.reg.emplace<ecs::MacroNpcRuntime>(band);
+    w.reg.emplace<ecs::MacroSlot>(band, hB.slot);
+    stB.spawnId[hB.slot] = ecs::MacroSpawnId{7u};
+    auto& rt = stB.runtime[hB.slot];
     rt.renown = 0u;
     // …robs a town of some standing: the deed is worth its row's base plus a
     // tenth of what the VICTIM was worth (fame is made of fame).

@@ -5,6 +5,7 @@
 // settlement placement reads them (R2); spires need the zone field; dirt
 // lanes need the spires; fields never overwrite a road of either class.
 #include "macro/world_gen.h"
+#include "macro/store.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -35,6 +36,10 @@
 namespace sm {
 
 void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
+    // Store прицепляется к ctx мира ЗДЕСЬ — одна дверь на всех звонящих
+    // генезис (бут, balance_run, фикстуры): двери store_of дальше не
+    // спрашивают, кто их позвал (мост 1в, умирает в 1е).
+    store_attach(*out.world, out.store);
     GameState& gs = *out.gs;
 
     LayerParameters lp = p.lpOverride ? *p.lpOverride : LayerParameters{};
@@ -363,8 +368,8 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // A loaded world does NOT respawn its people from the seed — the macro
     // snapshot restores them (Session 17); only a NEW world gets a genesis.
     if (p.spawnMacroNpcs) {
-        spawn_macro_npcs(gs, *out.world, *out.terrain, gs.worldSeed,
-                         out.deposits);
+        spawn_macro_npcs(gs, *out.world, *out.store, *out.terrain,
+                         gs.worldSeed, out.deposits);
         // (Генезисный цензус профессий умер со сносом профессий — поручения
         // раздаёт аукцион ротации, CANON S10, владелец 2026-09-02.)
     }

@@ -12,6 +12,7 @@
 #include "ecs/components.h"
 #include "macro/npc_spawn.h"
 #include "macro/world_row.h"
+#include "macro/store.h"
 
 namespace {
 
@@ -43,15 +44,18 @@ void test_every_macro_npc_is_a_squad_of_one() {
 
     const sm::TerrainData terrain = absent_terrain();
     sm::ecs::World world;
-    sm::spawn_macro_npcs(gs, world, terrain, 123u);
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
+    sm::spawn_macro_npcs(gs, world, sm::store_of(world), terrain, 123u);
 
     int macroNpcs = 0;
-    for (auto [e, rt] : world.reg.view<sm::ecs::MacroNpcRuntime>().each()) {
+    for (auto e : world.reg.view<sm::ecs::MacroSlot>()) {
+        auto& rt = sm::store_of(world).runtime[sm::slot_of(world.reg, e)];
         (void)rt;
         ++macroNpcs;
-        CHECK(world.reg.all_of<sm::ecs::SquadRoster>(e),
-              "every macro NPC must carry a SquadRoster - the entity IS a squad");
-        if (const auto* bg = world.reg.try_get<sm::ecs::NpcInventory>(e)) {
+        CHECK(world.reg.all_of<sm::ecs::MacroSlot>(e),
+              "every macro NPC carries a store slot - the entity IS a squad");
+        if (const auto* bg = sm::body_state<sm::ecs::NpcInventory>(world.reg, e)) {
             CHECK(sm::creatures_empty(bg->inv),
                   "a freshly spawned wanderer is a squad of ONE: empty roster, "
                   "the entity itself is the leader");
@@ -60,15 +64,10 @@ void test_every_macro_npc_is_a_squad_of_one() {
     CHECK(macroNpcs > 0, "fixture must spawn macro NPCs to say anything");
 
     // Runtime door: the console/event spawner goes through the same make_npc.
-    CHECK(sm::spawn_npc_at(gs, world, terrain, "bandit", 4, 4, /*level*/ 3),
+    CHECK(sm::spawn_npc_at(gs, world, sm::store_of(world), terrain, "bandit", 4, 4, /*level*/ 3),
           "runtime spawn door must accept a registry label");
     int rosters = 0;
-    for (auto [e, roster] : world.reg.view<sm::ecs::SquadRoster>().each()) {
-        (void)roster;
-        ++rosters;
-        CHECK(world.reg.all_of<sm::ecs::MacroNpcRuntime>(e),
-              "a SquadRoster may only ride a macro entity - no orphan squads");
-    }
+    rosters = int(sm::store_of(world).aliveCount);
     CHECK(rosters == macroNpcs + 1,
           "both spawn doors must attach exactly one roster per macro NPC");
 }

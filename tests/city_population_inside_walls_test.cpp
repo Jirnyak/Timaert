@@ -33,6 +33,7 @@
 #include "sub/map_data.h"
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
+#include "macro/store.h"
 
 #include <array>
 #include <cmath>
@@ -125,6 +126,8 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                const sm::WorldTime& now) {
     Spread s{};
     sm::ecs::World world{};
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,

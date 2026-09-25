@@ -9,6 +9,7 @@
 #include <cmath>
 #include "events/event_bus.h"
 #include "events/event_types.h"
+#include "macro/store.h"
 
 namespace sm::sub {
 
@@ -36,7 +37,7 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
         return kUntrained;
     }();
     int armour = 0;
-    if (const auto* kind = reg.try_get<ecs::NPCKind>(target)) {
+    if (const auto* kind = body_state<ecs::NPCKind>(reg, target)) {
         if (kind->type < std::uint16_t(NPCType::Count)) {
             // A creature ROW's own armour — hide, scale, issued plate — times
             // the wearer's training (sheet_armor_mult_pct: the род lives in
@@ -139,13 +140,13 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     reg.emplace_or_replace<ecs::DamageFx>(target,
                                           ecs::DamageFx{out.lethal, false});
 
-    if (out.lethal && !reg.any_of<ecs::Dead>(target)) {
-        reg.emplace<ecs::Dead>(target);
+    if (out.lethal && !macro_dead(reg, target)) {
+        macro_mark_dead(reg, target);
         if (bus != nullptr && !reg.any_of<ecs::AvatarTag>(target)) {
             GameEvent ev{EventTag::NpcDeath};
             ev.a = std::uint32_t(entt::to_integral(target));
             ev.b = src.attackerId;
-            const auto* kindRow = reg.try_get<ecs::NPCKind>(target);
+            const auto* kindRow = body_state<ecs::NPCKind>(reg, target);
             ev.ix = kindRow ? int(kindRow->type) : kNoNpcType;
             ev.iy = int(src.spellId);
             bus->emit(ev);

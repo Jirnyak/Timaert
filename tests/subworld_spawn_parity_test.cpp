@@ -9,6 +9,7 @@
 #include "macro/player_entity.h"
 #include "sub/base_generator.h"
 #include "sub/map_factory.h"
+#include "macro/store.h"
 
 #include <algorithm>
 #include <cmath>
@@ -320,6 +321,10 @@ bool run_water_blocked_squad_case() {
         std::uint8_t(sm::NPCType::Guard), 4, 77u));
 
     sm::ecs::World world{};
+
+    auto worldStore_ = sm::make_macro_store();
+
+    sm::store_attach(world, worldStore_.get());
     std::vector<std::uint8_t> water(
         std::size_t(sm::sub::kFullSize) * sm::sub::kFullSize,
         sm::sub::TILE_WATER);
@@ -338,6 +343,8 @@ bool run_water_blocked_squad_case() {
 bool run_city_population_projection_case(
     const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     // City in the CENTRE window cell (ox=oy=0) — off-centre cities are covered
     // by the carry-across case; here we lock the citizen role mix. The
     // GUARDS are the place's own GARRISON records now (§42 Инк 7): the
@@ -424,6 +431,8 @@ bool run_population_does_not_scale_bodies_case(
 
     for (Town& t : towns) {
         sm::ecs::World world{};
+        auto worldStore_ = sm::make_macro_store();
+        sm::store_attach(world, worldStore_.get());
         sm::sub::spawn_cell_npcs(world,
                                  sm::Biome::Meadow, sm::FT_None,
                                  sm::LandmarkType::City, /*danger*/0, /*depositsNear*/0, mgr,
@@ -462,6 +471,10 @@ bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr) {
     const float kFull = float(sm::sub::kFullSize);
 
     sm::ecs::World world{};
+
+    auto worldStore_ = sm::make_macro_store();
+
+    sm::store_attach(world, worldStore_.get());
     spawn_all_cells(world, mgr);
     const std::vector<SpawnRecord> before = actual_fauna(world);
     if (before.empty()) return false;
@@ -517,10 +530,16 @@ bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr) {
 bool run_reentry_determinism_case(
     const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World a{};
+    auto aStore_ = sm::make_macro_store();
+    sm::store_attach(a, aStore_.get());
     spawn_cell_at(a, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3);
     const std::vector<SpawnRecord> first = actual_fauna(a);
 
     sm::ecs::World b{};
+
+    auto bStore_ = sm::make_macro_store();
+
+    sm::store_attach(b, bStore_.get());
     spawn_cell_at(b, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3);
     const std::vector<SpawnRecord> second = actual_fauna(b);
 
@@ -547,17 +566,19 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
     auto mk = [&](sm::NPCType type, std::uint16_t faction, int cx, int cy,
                   int hp, int maxHp, std::int16_t level,
                   std::uint32_t vseed) {
+        sm::MacroStore& st = sm::store_of(reg);
+        const sm::MacroHandle h = sm::store_birth(st);
         auto e = reg.create();
-        reg.emplace<sm::ecs::MacroNpcRuntime>(e);
-        reg.emplace<sm::ecs::MacroSpawnId>(e, spawnIndex++);
-        reg.emplace<sm::ecs::MacroCell>(
-            e, sm::ecs::cell_index(cx, cy, 1024));
-        reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), faction);
-        reg.emplace<sm::ecs::Pools>(e, hp, maxHp);
-        reg.emplace<sm::ecs::NpcLevel>(e, level);
+        reg.emplace<sm::ecs::MacroSlot>(e, h.slot);
+        st.spawnId[h.slot] = sm::ecs::MacroSpawnId{spawnIndex++};
+        st.cell[h.slot] = sm::ecs::MacroCell{
+            sm::ecs::cell_index(cx, cy, 1024)};
+        st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), faction};
+        st.pools[h.slot] = sm::ecs::Pools{hp, maxHp};
+        st.level[h.slot] = sm::ecs::NpcLevel{level};
         sm::ecs::NpcCharacter ch{};
         ch.visualSeed = vseed;
-        reg.emplace<sm::ecs::NpcCharacter>(e, ch);
+        st.character[h.slot] = ch;
         return e;
     };
     MacroSeeds s;
@@ -585,21 +606,24 @@ bool run_beast_member_projection_case(
     constexpr std::uint16_t kBeast = std::uint16_t(sm::NPCType::Wolf);
 
     sm::ecs::World world{};
+
+    auto worldStore_ = sm::make_macro_store();
+
+    sm::store_attach(world, worldStore_.get());
     auto& reg = world.reg;
 
+    sm::MacroStore& stl = sm::store_of(reg);
+    const sm::MacroHandle hl = sm::store_birth(stl);
     auto leader = reg.create();
-    reg.emplace<sm::ecs::MacroNpcRuntime>(leader);
-    reg.emplace<sm::ecs::MacroSpawnId>(leader, std::uint32_t(0));
-    reg.emplace<sm::ecs::MacroCell>(leader, sm::ecs::cell_index(0, 0, 1024));
-    reg.emplace<sm::ecs::NPCKind>(leader, std::uint16_t(sm::NPCType::Bandit),
-                                  std::uint16_t(3));
-    reg.emplace<sm::ecs::Pools>(leader, 10, 10);
-    reg.emplace<sm::ecs::NpcLevel>(leader, std::int16_t(3));
-    reg.emplace<sm::ecs::NpcCharacter>(leader, sm::ecs::NpcCharacter{});
-
-    reg.emplace<sm::ecs::SquadRoster>(leader);
+    reg.emplace<sm::ecs::MacroSlot>(leader, hl.slot);
+    stl.spawnId[hl.slot] = sm::ecs::MacroSpawnId{std::uint32_t(0)};
+    stl.cell[hl.slot] = sm::ecs::MacroCell{sm::ecs::cell_index(0, 0, 1024)};
+    stl.kind[hl.slot] = sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
+                                         std::uint16_t(3)};
+    stl.pools[hl.slot] = sm::ecs::Pools{10, 10};
+    stl.level[hl.slot] = sm::ecs::NpcLevel{std::int16_t(3)};
     {
-        auto& bag = reg.get_or_emplace<sm::ecs::NpcInventory>(leader);
+        auto& bag = stl.inventory[hl.slot];
         sm::creatures_push(bag.inv, sm::make_soldier(kBeast, 2, 5001u));
         sm::creatures_push(bag.inv, sm::make_soldier(
             std::uint16_t(sm::NPCType::Guard), 2, 5002u));
@@ -611,7 +635,7 @@ bool run_beast_member_projection_case(
 
     int beasts = 0, men = 0;
     for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>()) {
-        const std::uint16_t t = reg.get<sm::ecs::NPCKind>(e).type;
+        const std::uint16_t t = (*sm::body_state<sm::ecs::NPCKind>(reg, e)).type;
         if (t == kBeast) {
             // Built from the WOLF's line: its picture is the wolf's sprite row
             // and its bulk is the wolf's authored radius, not a man's. (The old
@@ -693,6 +717,10 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     const float kC = float(sm::sub::kCellSize);
 
     sm::ecs::World world{};
+
+    auto worldStore_ = sm::make_macro_store();
+
+    sm::store_attach(world, worldStore_.get());
     auto& reg = world.reg;
     const MacroSeeds s = seed_macro_npcs(reg, kMapW);
 
@@ -714,7 +742,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
 
     // Macro entities are UNTOUCHED: still MacroNpcRuntime, never tagged/linked.
     for (entt::entity m : {s.bandit, s.peasant, s.wrap, s.far}) {
-        if (!reg.all_of<sm::ecs::MacroNpcRuntime>(m)) return false;
+        if (!reg.all_of<sm::ecs::MacroSlot>(m)) return false;
         if (reg.any_of<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>(m)) return false;
     }
 
@@ -725,7 +753,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
         ++projCount;
         const entt::entity origin = reg.get<sm::ecs::MacroOrigin>(e).macro;
-        if (!reg.valid(origin) || !reg.all_of<sm::ecs::MacroNpcRuntime>(origin)) {
+        if (!reg.valid(origin) || !reg.all_of<sm::ecs::MacroSlot>(origin)) {
             return false;
         }
         if (origin == s.bandit) pBandit = e;
@@ -752,7 +780,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // of whatever his sheet gives him down here — that is the invariant, and it
     // survives any rebalance of either side.
     {
-        const auto& h = reg.get<sm::ecs::Pools>(pBandit);
+        const auto& h = (*sm::body_state<sm::ecs::Pools>(reg, pBandit));
         if (!(h.maxHp > 0 && h.hp >= 1 && h.hp <= h.maxHp)) return false;
         const float frac = float(h.hp) / float(h.maxHp);
         if (!(frac > 0.4f && frac < 0.6f)) return false;
@@ -760,7 +788,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // The control: an untouched macro entity arrives untouched. Without this,
     // "wounded arrives wounded" would also pass if every body arrived at half.
     {
-        const auto& h = reg.get<sm::ecs::Pools>(pWrap);
+        const auto& h = (*sm::body_state<sm::ecs::Pools>(reg, pWrap));
         if (!(h.maxHp > 0.0f && h.hp == h.maxHp)) return false;
     }
     // Combat SYNTHESISED from the fresh sheet (capability): the row's dice
@@ -769,9 +797,9 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     if (!(reg.get<sm::ecs::Combat>(pBandit).flatAdd > 0)) return false;
 
     // Identity + faction copied verbatim from the macro NPC.
-    if (reg.get<sm::ecs::NpcCharacter>(pBandit).visualSeed != 0xB0B0u) return false;
-    if (reg.get<sm::ecs::NPCKind>(pBandit).factionIdx != 3) return false;
-    if (reg.get<sm::ecs::NPCKind>(pWrap).factionIdx != 2) return false;
+    if ((*sm::body_state<sm::ecs::NpcCharacter>(reg, pBandit)).visualSeed != 0xB0B0u) return false;
+    if ((*sm::body_state<sm::ecs::NPCKind>(reg, pBandit)).factionIdx != 3) return false;
+    if ((*sm::body_state<sm::ecs::NPCKind>(reg, pWrap)).factionIdx != 2) return false;
 
     // Placement: each projection lands in ITS window cell's sub-region (never
     // outside the composite window). Centre → [kC,2kC); +1,0 → [2kC,3kC); the
@@ -801,6 +829,8 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // Determinism: an identical macro set + same centre + same seed reproduces
     // the same projected scene bit-for-bit (the re-entry guarantee).
     sm::ecs::World world2{};
+    auto world2Store_ = sm::make_macro_store();
+    sm::store_attach(world2, world2Store_.get());
     seed_macro_npcs(world2.reg, kMapW);
     const int projected2 = sm::sub::project_macro_npcs_into_subworld(
         world2, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed);
@@ -834,6 +864,8 @@ int main() {
     // TS-derived roll, now scattered within the centre sub-region only. ──
     const sm::sub::CellContext centre = meadow_cell(0, 0);
     sm::ecs::World world{};
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
 
     const std::vector<SpawnRecord> expected =
@@ -994,15 +1026,19 @@ int main() {
     // from.
     {
         sm::ecs::World world{};
+        auto worldStore_ = sm::make_macro_store();
+        sm::store_attach(world, worldStore_.get());
         auto& reg = world.reg;
 
+        sm::MacroStore& stq = sm::store_of(reg);
+        const sm::MacroHandle hq = sm::store_birth(stq);
         auto lord = reg.create();
-        reg.emplace<sm::ecs::MacroSpawnId>(lord, std::uint32_t(11));
-        reg.emplace<sm::ecs::NPCKind>(lord, std::uint16_t(sm::NPCType::Bandit),
-                                      std::uint16_t(3));
-        reg.emplace<sm::ecs::Pools>(lord, 10, 10);
-        reg.emplace<sm::ecs::NpcLevel>(lord, std::int16_t(7));
-        reg.emplace<sm::ecs::NpcCharacter>(lord, sm::ecs::NpcCharacter{});
+        reg.emplace<sm::ecs::MacroSlot>(lord, hq.slot);
+        stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(11)};
+        stq.kind[hq.slot] = sm::ecs::NPCKind{
+            std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
+        stq.pools[hq.slot] = sm::ecs::Pools{10, 10};
+        stq.level[hq.slot] = sm::ecs::NpcLevel{std::int16_t(7)};
 
         // HIS sheet — deliberately NOT the one his row and level would roll
         // from the cell seed, so "he arrived as himself" is a claim that can
@@ -1011,13 +1047,7 @@ int main() {
             sm::make_character_sheet(sm::NPCType::Bandit, 7, 0xA11CEu);
         own.attributes[sm::AttributeId::Str] =
             std::uint8_t(own.attributes.of(sm::AttributeId::Str) + 7);
-        reg.emplace<sm::CharacterSheet>(lord, own);
-
-        // ...and everything else the record may hold.
-        reg.emplace<sm::ecs::NpcInventory>(lord);
-        reg.emplace<sm::ecs::NpcTraits>(lord);
-        reg.emplace<sm::ecs::BodyEquipment>(lord);
-        reg.emplace<sm::SpellBook>(lord);
+        stq.sheet[hq.slot] = own;
 
         const entt::entity body = sm::sub::spawn_tracked_body(
             reg, lord, 100.0f, 100.0f, /*seed*/0xD1FFu, /*combatant*/true);
@@ -1046,7 +1076,7 @@ int main() {
               "absent from the body");
 
         const auto* carried = body != entt::null
-            ? reg.try_get<sm::CharacterSheet>(body) : nullptr;
+            ? sm::body_state<sm::CharacterSheet>(reg, body) : nullptr;
         CHECK(carried != nullptr, "a body always has a sheet");
         CHECK(carried && carried->attributes.of(sm::AttributeId::Str)
                   == own.attributes.of(sm::AttributeId::Str),
@@ -1062,7 +1092,7 @@ int main() {
         anon.seed = 0xD1FFu;
         const entt::entity stranger =
             sm::sub::spawn_derived_body(reg, anon, /*faceSalt*/0u);
-        const auto* strangerSheet = reg.try_get<sm::CharacterSheet>(stranger);
+        const auto* strangerSheet = sm::body_state<sm::CharacterSheet>(reg, stranger);
         CHECK(strangerSheet != nullptr, "a derived body has a sheet");
         CHECK(strangerSheet && strangerSheet->attributes.of(sm::AttributeId::Str)
                   != own.attributes.of(sm::AttributeId::Str),
@@ -1084,15 +1114,19 @@ int main() {
     // grew a third.
     {
         sm::ecs::World world{};
+        auto worldStore_ = sm::make_macro_store();
+        sm::store_attach(world, worldStore_.get());
         auto& reg = world.reg;
 
+        sm::MacroStore& stq = sm::store_of(reg);
+        const sm::MacroHandle hq = sm::store_birth(stq);
         auto lord = reg.create();
-        reg.emplace<sm::ecs::MacroSpawnId>(lord, std::uint32_t(12));
-        reg.emplace<sm::ecs::NPCKind>(lord, std::uint16_t(sm::NPCType::Bandit),
-                                      std::uint16_t(3));
-        reg.emplace<sm::ecs::Pools>(lord, 40, 40);
-        reg.emplace<sm::ecs::NpcLevel>(lord, std::int16_t(5));
-        reg.emplace<sm::ecs::NpcCharacter>(lord, sm::ecs::NpcCharacter{});
+        reg.emplace<sm::ecs::MacroSlot>(lord, hq.slot);
+        stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(12)};
+        stq.kind[hq.slot] = sm::ecs::NPCKind{
+            std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
+        stq.pools[hq.slot] = sm::ecs::Pools{40, 40};
+        stq.level[hq.slot] = sm::ecs::NpcLevel{std::int16_t(5)};
 
         // Both bodies are created BEFORE any pointer is taken: a spawn
         // reallocates component storage, and a reference held across one is
@@ -1115,11 +1149,11 @@ int main() {
               "a body nothing above remembers answers for itself — the other "
               "honest birth, not a fallback");
 
-        CHECK(sm::sub::pools_of(reg, body) == &reg.get<sm::ecs::Pools>(lord),
+        CHECK(sm::sub::pools_of(reg, body) == &(*sm::body_state<sm::ecs::Pools>(reg, lord)),
               "the bars a projected body spends are LITERALLY the record's "
               "block — one memory, so there is nothing to fold back up");
         CHECK(sm::sub::pools_of(reg, citizen)
-                  == &reg.get<sm::ecs::Pools>(citizen),
+                  == &(*sm::body_state<sm::ecs::Pools>(reg, citizen)),
               "a derived body spends its own bars");
 
         // NEGATIVE CONTROL, asserted: strip the backlink and the very same
@@ -1129,7 +1163,7 @@ int main() {
         reg.remove<sm::ecs::MacroOrigin>(body);
         CHECK(sm::sub::record_of(reg, body) == body
                   && sm::sub::pools_of(reg, body)
-                         == &reg.get<sm::ecs::Pools>(body),
+                         == &(*sm::body_state<sm::ecs::Pools>(reg, body)),
               "without the backlink the door answers SELF — the detector "
               "above is reading a real difference");
 
@@ -1156,16 +1190,19 @@ int main() {
     // expensive bug, an always-no gate is the stale one.
     {
         sm::ecs::World world{};
+        auto worldStore_ = sm::make_macro_store();
+        sm::store_attach(world, worldStore_.get());
         auto& reg = world.reg;
 
+        sm::MacroStore& stq = sm::store_of(reg);
+        const sm::MacroHandle hq = sm::store_birth(stq);
         auto lord = reg.create();
-        reg.emplace<sm::ecs::MacroSpawnId>(lord, std::uint32_t(13));
-        reg.emplace<sm::ecs::NPCKind>(lord, std::uint16_t(sm::NPCType::Bandit),
-                                      std::uint16_t(3));
-        reg.emplace<sm::ecs::Pools>(lord, 50, 50);
-        reg.emplace<sm::ecs::NpcLevel>(lord, std::int16_t(6));
-        reg.emplace<sm::ecs::NpcCharacter>(lord, sm::ecs::NpcCharacter{});
-        reg.emplace<sm::ecs::BodyEquipment>(lord);
+        reg.emplace<sm::ecs::MacroSlot>(lord, hq.slot);
+        stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(13)};
+        stq.kind[hq.slot] = sm::ecs::NPCKind{
+            std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
+        stq.pools[hq.slot] = sm::ecs::Pools{50, 50};
+        stq.level[hq.slot] = sm::ecs::NpcLevel{std::int16_t(6)};
 
         const entt::entity body = sm::sub::spawn_tracked_body(
             reg, lord, 32.0f, 32.0f, /*seed*/0xBEEFu, /*combatant*/true);
@@ -1185,7 +1222,7 @@ int main() {
         // directly, so the claim does not rest on which catalog row happens to
         // grant what today — the strength is authored right here.
         {
-            auto& gear = reg.get<sm::ecs::BodyEquipment>(lord).gear;
+            auto& gear = (*sm::body_state<sm::ecs::BodyEquipment>(reg, lord)).gear;
             sm::ItemRef ring{};
             ring.def = 0;
             ring.count = 1;

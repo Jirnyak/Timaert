@@ -27,6 +27,7 @@
 
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "macro/store.h"
 
 namespace sm {
 
@@ -38,12 +39,20 @@ struct SquadWalkEntry {
 // Собрать view в порядок закона. `out` — скрэтч звонящего: у тиковых
 // драйверов он живёт членом рантайма (ноль аллокаций после прогрева), у
 // дневных проходов — локально, как их прочие дневные вектора.
-template <typename View>
-inline void collect_squads_by_ordinal(entt::registry& reg, const View& view,
-                                      std::vector<SquadWalkEntry>& out) {
+// С флипа 1в ординал живёт колонкой store (spawnId), а фильтр состава —
+// предикатом по слоту (байт dead и т.п.): view сужается до MacroSlot,
+// которого не носит ни одно тело сцены.
+template <typename View, typename Pred>
+inline void collect_squads_by_ordinal(entt::registry& reg,
+                                      const MacroStore& st, const View& view,
+                                      std::vector<SquadWalkEntry>& out,
+                                      Pred keep) {
     out.clear();
-    for (auto e : view)
-        out.push_back({reg.get<ecs::MacroSpawnId>(e).index, e});
+    for (auto e : view) {
+        const std::uint16_t slot = reg.get<ecs::MacroSlot>(e).slot;
+        if (!keep(slot)) continue;
+        out.push_back({st.spawnId[slot].index, e});
+    }
     std::sort(out.begin(), out.end(),
               [](const SquadWalkEntry& a, const SquadWalkEntry& b) {
                   return a.ordinal < b.ordinal;

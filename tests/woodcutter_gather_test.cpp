@@ -21,6 +21,7 @@
 #include "macro/squad.h"
 #include "macro/deposit_layer.h"
 #include "macro/tree_layer.h"
+#include "macro/store.h"
 
 #include <cstdint>
 
@@ -52,11 +53,14 @@ FactTally tally_facts(const Chronicle& c, FactKind kind, int x, int y) {
 entt::entity make_woodcutter(ecs::World& w, float x, float y,
                              int homeVillageId) {
     auto& reg = w.reg;
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const auto e = reg.create();
-    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(int(x), int(y), kMap));
-    reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
-                              std::uint16_t(faction_index("timaert")));
+    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), kMap)};
+    st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
+                                   std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = homeVillageId;
     rt.targetSettlementId = -1;
@@ -73,13 +77,11 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     // Gather над строкой целей Trees — то, что рулетка ротации выдала бы.
     rt.squadType = std::uint8_t(SquadType::Artel);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Trees));
-    reg.emplace<ecs::MacroNpcRuntime>(e, rt);
-    reg.emplace<ecs::MacroSpawnId>(e, 11u);
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
+    st.runtime[h.slot] = rt;
+    st.spawnId[h.slot] = ecs::MacroSpawnId{11u};
+    st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
     pools.hp = pools.maxHp = 30;
-    reg.emplace<ecs::Pools>(e, pools);
-    reg.emplace<ecs::SquadRoster>(e);
-    reg.emplace<ecs::NpcInventory>(e);
+    st.pools[h.slot] = pools;
     return e;
 }
 
@@ -109,6 +111,10 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     build_tree_grid(grid, trees, kMap, kMap);
 
     ecs::World w;
+
+    auto wStore_ = sm::make_macro_store();
+
+    sm::store_attach(w, wStore_.get());
     const entt::entity wc = make_woodcutter(w, 10.0f, 10.0f, vil.id);
 
     MacroNpcAiRuntime rt{};
@@ -124,7 +130,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     const int layerLost = 16 - int(layer.at(14, 10));
     const int storeGained = gs.landmarks[0].inventory.count("wood");
     const int inBag =
-        w.reg.get<ecs::NpcInventory>(wc).inv.count("wood");
+        (*sm::body_state<ecs::NpcInventory>(w.reg, wc)).inv.count("wood");
 
     CHECK(layerLost > 0, "the chop really fell trees in the layer");
     CHECK(storeGained > 0, "the haul reached the village store");
@@ -173,12 +179,19 @@ void test_the_farmer_works_the_field() {
     }
 
     ecs::World w;
+
+    auto wStore_ = sm::make_macro_store();
+
+    sm::store_attach(w, wStore_.get());
     auto& reg = w.reg;
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const auto e = reg.create();
-    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(10, 10, kMap));
-    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
-                              std::uint16_t(faction_index("timaert")));
+    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
+    st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
+                                   std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
     prt.homeSettlementId = vil.id;
     prt.targetSettlementId = -1;
@@ -193,13 +206,11 @@ void test_the_farmer_works_the_field() {
     pools.sp = pools.maxSp;
     prt.squadType = std::uint8_t(SquadType::Artel);
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
-    reg.emplace<ecs::MacroNpcRuntime>(e, prt);
-    reg.emplace<ecs::MacroSpawnId>(e, 12u);
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
+    st.runtime[h.slot] = prt;
+    st.spawnId[h.slot] = ecs::MacroSpawnId{12u};
+    st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
     pools.hp = pools.maxHp = 20;
-    reg.emplace<ecs::Pools>(e, pools);
-    reg.emplace<ecs::SquadRoster>(e);
-    reg.emplace<ecs::NpcInventory>(e);
+    st.pools[h.slot] = pools;
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
@@ -209,7 +220,7 @@ void test_the_farmer_works_the_field() {
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
     const int grain = gs.landmarks[0].inventory.count("food");
-    const int inBag = w.reg.get<ecs::NpcInventory>(e).inv.count("food");
+    const int inBag = (*sm::body_state<ecs::NpcInventory>(w.reg, e)).inv.count("food");
     CHECK(grain > 0, "the farmer's grain reached the village store");
     // THE BATCH LAW THIS USED TO PIN IS GONE (owner, 2026-09-16). It read
     // `grain % kGatherPerCycle == 0` — "the haul arrives in whole cycle
@@ -251,12 +262,19 @@ void test_farmer_without_terrain_conjures_nothing() {
     features.set(12, 10, FT_Field);
 
     ecs::World w;
+
+    auto wStore_ = sm::make_macro_store();
+
+    sm::store_attach(w, wStore_.get());
     auto& reg = w.reg;
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const auto e = reg.create();
-    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(10, 10, kMap));
-    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
-                              std::uint16_t(faction_index("timaert")));
+    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
+    st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
+                                   std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
     prt.homeSettlementId = vil.id;
     prt.targetSettlementId = -1;
@@ -271,13 +289,11 @@ void test_farmer_without_terrain_conjures_nothing() {
     pools.sp = pools.maxSp;
     prt.squadType = std::uint8_t(SquadType::Artel);
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
-    reg.emplace<ecs::MacroNpcRuntime>(e, prt);
-    reg.emplace<ecs::MacroSpawnId>(e, 12u);
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
+    st.runtime[h.slot] = prt;
+    st.spawnId[h.slot] = ecs::MacroSpawnId{12u};
+    st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
     pools.hp = pools.maxHp = 20;
-    reg.emplace<ecs::Pools>(e, pools);
-    reg.emplace<ecs::SquadRoster>(e);
-    reg.emplace<ecs::NpcInventory>(e);
+    st.pools[h.slot] = pools;
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
@@ -307,6 +323,8 @@ void test_no_layer_no_chop() {
     TreeGrid grid;
     build_tree_grid(grid, trees, kMap, kMap);
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     make_woodcutter(w, 10.0f, 10.0f, vil.id);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
@@ -348,12 +366,19 @@ void test_the_mine_runs_while_the_player_is_away() {
     deposits.grid(DepositKind::Iron).write(14, 10, 20);
 
     ecs::World w;
+
+    auto wStore_ = sm::make_macro_store();
+
+    sm::store_attach(w, wStore_.get());
     auto& reg = w.reg;
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const auto e = reg.create();
-    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(10, 10, kMap));
-    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
-                              std::uint16_t(faction_index("timaert")));
+    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
+    st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
+                                   std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = vil.id;
     rt.targetSettlementId = -1;
@@ -368,13 +393,11 @@ void test_the_mine_runs_while_the_player_is_away() {
     pools.sp = pools.maxSp;
     rt.squadType = std::uint8_t(SquadType::Artel);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
-    reg.emplace<ecs::MacroNpcRuntime>(e, rt);
-    reg.emplace<ecs::MacroSpawnId>(e, 13u);
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
+    st.runtime[h.slot] = rt;
+    st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
+    st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
     pools.hp = pools.maxHp = 30;
-    reg.emplace<ecs::Pools>(e, pools);
-    reg.emplace<ecs::SquadRoster>(e);
-    reg.emplace<ecs::NpcInventory>(e);
+    st.pools[h.slot] = pools;
 
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
@@ -469,12 +492,19 @@ void test_the_vendor_sells_at_the_nearest_city() {
           "fixture: both places published their ledgers");
 
     ecs::World w;
+
+    auto wStore_ = sm::make_macro_store();
+
+    sm::store_attach(w, wStore_.get());
     auto& reg = w.reg;
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const auto e = reg.create();
-    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(16, 10, kMap));
-    reg.emplace<ecs::MacroVisual>(e, 16.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
-                              std::uint16_t(faction_index("timaert")));
+    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(16, 10, kMap)};
+    st.visual[h.slot] = ecs::MacroVisual{16.0f, 10.0f, 0.0f};
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
+                                   std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime crt{};
     crt.homeSettlementId = 3;   // the VILLAGE: vendors are the village's arm
     // РЫНОК — ИЗ ПОРУЧЕНИЯ (2026-09-19): рейс к рынку читает errandObject,
@@ -493,14 +523,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
         pools, &crt, make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(13u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    reg.emplace<ecs::MacroNpcRuntime>(e, crt);
-    reg.emplace<ecs::MacroSpawnId>(e, 13u);
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
+    st.runtime[h.slot] = crt;
+    st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
+    st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
     pools.hp = pools.maxHp = 25;
-    reg.emplace<ecs::Pools>(e, pools);
-    reg.emplace<ecs::SquadRoster>(e);
-    reg.emplace<ecs::NpcInventory>(e);
-    reg.emplace<AgentMemory>(e);
+    st.pools[h.slot] = pools;
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 70u);
@@ -509,7 +536,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
-    const auto& bag = reg.get<ecs::NpcInventory>(e).inv;
+    const auto& bag = (*sm::body_state<ecs::NpcInventory>(reg, e)).inv;
     const int cityGrain = gs.landmarks[0].inventory.count("food");
     const int vilBread = gs.landmarks[1].inventory.count("food");
     CHECK(cityGrain > 0,
@@ -593,12 +620,19 @@ void test_the_miner_works_the_vein() {
     deposits.grid(DepositKind::Iron).write(14, 10, 20);
 
     ecs::World w;
+
+    auto wStore_ = sm::make_macro_store();
+
+    sm::store_attach(w, wStore_.get());
     auto& reg = w.reg;
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const auto e = reg.create();
-    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(10, 10, kMap));
-    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
-                              std::uint16_t(faction_index("timaert")));
+    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
+    st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
+                                   std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = vil.id;
     rt.targetSettlementId = -1;
@@ -613,13 +647,11 @@ void test_the_miner_works_the_vein() {
     pools.sp = pools.maxSp;
     rt.squadType = std::uint8_t(SquadType::Artel);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
-    reg.emplace<ecs::MacroNpcRuntime>(e, rt);
-    reg.emplace<ecs::MacroSpawnId>(e, 13u);
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
+    st.runtime[h.slot] = rt;
+    st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
+    st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
     pools.hp = pools.maxHp = 30;
-    reg.emplace<ecs::Pools>(e, pools);
-    reg.emplace<ecs::SquadRoster>(e);
-    reg.emplace<ecs::NpcInventory>(e);
+    st.pools[h.slot] = pools;
 
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
@@ -632,7 +664,7 @@ void test_the_miner_works_the_vein() {
     const int veinLeft = int(ironCells.at_index(veinIdx));
     const int veinLost = 20 - veinLeft;
     const int storeGained = gs.landmarks[0].inventory.count("iron");
-    const int inBag = w.reg.get<ecs::NpcInventory>(e).inv.count("iron");
+    const int inBag = (*sm::body_state<ecs::NpcInventory>(w.reg, e)).inv.count("iron");
 
     CHECK(veinLost > 0, "the dig really drained the vein");
     CHECK(storeGained > 0, "the haul reached the village store");
@@ -670,22 +702,25 @@ void test_the_miner_works_the_vein() {
     gs2.mapH = kMap;
     gs2.landmarks.push_back(vil);
     ecs::World w2;
+    auto w2Store_ = sm::make_macro_store();
+    sm::store_attach(w2, w2Store_.get());
+    sm::MacroStore& st2 = sm::store_of(w2);
+    const sm::MacroHandle h2 = sm::store_birth(st2);
     const auto e2 = w2.reg.create();
-    w2.reg.emplace<ecs::MacroCell>(e2, ecs::cell_index(10, 10, kMap));
-    w2.reg.emplace<ecs::MacroVisual>(e2, 10.0f, 10.0f, 0.0f);
-    w2.reg.emplace<ecs::NPCKind>(e2, std::uint16_t(NPCType::Peasant),
-                                 std::uint16_t(faction_index("timaert")));
-    w2.reg.emplace<ecs::MacroNpcRuntime>(e2, rt);
-    w2.reg.emplace<ecs::MacroSpawnId>(e2, 14u);
-    w2.reg.emplace<ecs::NpcLevel>(e2, std::int16_t(3));
+    w2.reg.emplace<ecs::MacroSlot>(e2, h2.slot);
+    st2.cell[h2.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
+    st2.visual[h2.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
+    st2.kind[h2.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
+                                     std::uint16_t(faction_index("timaert"))};
+    st2.runtime[h2.slot] = rt;
+    st2.spawnId[h2.slot] = ecs::MacroSpawnId{14u};
+    st2.level[h2.slot] = ecs::NpcLevel{std::int16_t(3)};
     {
         ecs::Pools p2{};
         p2.hp = p2.maxHp = 30;
         p2.sp = p2.maxSp = 100;
-        w2.reg.emplace<ecs::Pools>(e2, p2);
+        st2.pools[h2.slot] = p2;
     }
-    w2.reg.emplace<ecs::SquadRoster>(e2);
-    w2.reg.emplace<ecs::NpcInventory>(e2);
     MacroNpcAiRuntime art2{};
     reset_macro_npc_ai_runtime(art2, 71u);
     for (int i = 0; i < 200; ++i) {
@@ -728,12 +763,19 @@ void test_the_catch_lands_in_the_roster() {
     }
 
     ecs::World w;
+
+    auto wStore_ = sm::make_macro_store();
+
+    sm::store_attach(w, wStore_.get());
     auto& reg = w.reg;
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const auto e = reg.create();
-    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(10, 10, kMap));
-    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
-                              std::uint16_t(faction_index("timaert")));
+    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
+    st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
+                                   std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
     prt.homeSettlementId = vil.id;
     prt.targetSettlementId = -1;
@@ -751,13 +793,11 @@ void test_the_catch_lands_in_the_roster() {
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Horses));
     prt.carryPerSoul = 40.0f;
     prt.carryCap = 40.0f;
-    reg.emplace<ecs::MacroNpcRuntime>(e, prt);
-    reg.emplace<ecs::MacroSpawnId>(e, 77u);
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
+    st.runtime[h.slot] = prt;
+    st.spawnId[h.slot] = ecs::MacroSpawnId{77u};
+    st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
     pools.hp = pools.maxHp = 20;
-    reg.emplace<ecs::Pools>(e, pools);
-    reg.emplace<ecs::SquadRoster>(e);
-    reg.emplace<ecs::NpcInventory>(e);
+    st.pools[h.slot] = pools;
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 77u);
@@ -767,7 +807,7 @@ void test_the_catch_lands_in_the_roster() {
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
 
-    const Inventory& roster = reg.get<ecs::NpcInventory>(e).inv;
+    const Inventory& roster = (*sm::body_state<ecs::NpcInventory>(reg, e)).inv;
     const int caught = creature_heads_of(roster, NPCType::Horse);
     const ResourceGrid& herdScars =
         gs.resourceScarCells[std::size_t(ResourceFieldId::Horses)];
@@ -785,7 +825,7 @@ void test_the_catch_lands_in_the_roster() {
     CHECK(stabled > 0,
           "ТАКТ 1: отряд сдал табун ДОМОЙ — стойло места, не карман артели");
     CHECK(gs.landmarks[0].inventory.count("food") == 0
-              && reg.get<ecs::NpcInventory>(e).inv.count("food") == 0,
+              && (*sm::body_state<ecs::NpcInventory>(reg, e)).inv.count("food") == 0,
           "a creature yield rides NO bag: nothing landed in the store");
     CHECK(is_mount_kind(std::uint16_t(NPCType::Horse)),
           "строка лошади несёт тег Mount — закон спрашивает ТЕГ, не род");
@@ -802,7 +842,7 @@ void test_the_catch_lands_in_the_roster() {
     // из суда ротации, здесь — прямо, чтобы свидетель судил ЗАКОН, а не
     // расписание дня: место выдаёт по коню на душу и ни одного сверх.
     {
-        auto& roMut = reg.get<ecs::NpcInventory>(e).inv;
+        auto& roMut = (*sm::body_state<ecs::NpcInventory>(reg, e)).inv;
         while (!creatures_empty(roMut)) {         // пешая артель
             SoldierRecord off{};
             if (!creatures_pop_back(roMut, off)) break;
@@ -824,7 +864,7 @@ void test_the_catch_lands_in_the_roster() {
               "мера — потолок, а не запрос: снаряжённый отряд второго коня "
               "не берёт, даже когда стойло полно");
         // И обоз вырос ровно на спину коня — та же дверь, что у добора.
-        const auto& rtNow = reg.get<ecs::MacroNpcRuntime>(e);
+        const auto& rtNow = (*sm::body_state<ecs::MacroNpcRuntime>(reg, e));
         CHECK(rtNow.carryCap >= rtNow.carryPerSoul * (1.0f + 8.0f) - 0.5f,
               "выданный конь — восемь спин в обозе (haulMult)");
     }

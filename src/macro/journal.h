@@ -23,6 +23,7 @@
 #include "ecs/world.h"
 #include "macro/player_entity.h"
 #include "macro/state.h"
+#include "macro/store.h"
 
 namespace sm {
 
@@ -57,7 +58,7 @@ inline void player_journal_capture(GameState& gs, ecs::World& world) {
     int possessed = -1;
     if (player_wears_another_body(world)) {
         if (const auto* sid =
-                world.reg.try_get<ecs::MacroSpawnId>(player_flag_entity(world))) {
+                body_state<ecs::MacroSpawnId>(world.reg, player_flag_entity(world))) {
             possessed = int(sid->index);
         }
     }

@@ -2,6 +2,7 @@
 #include "sub/map_data.h"
 #include "ecs/components.h"
 #include "core/rng.h"
+#include "macro/store.h"
 #include "macro/macro_stock.h" // MacroStock::Roster — чьи люди стоят без чувств
 #include "macro/npc.h"   // cruiseM — крейсерская высота рода летуна
 #include "sub/record.h"  // record_of — «без сознания» читается через зеркало
@@ -43,7 +44,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     for (auto sq : reg.view<ecs::PlayerSquadTag>()) {
         if (!reg.all_of<ecs::PlayerTag>(sq)) {
             unconsciousRec = sq;
-            if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(sq)) {
+            if (const auto* sid = body_state<ecs::MacroSpawnId>(reg, sq)) {
                 unconsciousSubject = std::int32_t(sid->index);
             }
         }
@@ -165,7 +166,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         // беглец предпочитает вдвое выше: высота — его дорога. Темп
         // подъёма = его же wanderSpeed: одно тело — один темп.
         if (heightFn && reg.any_of<ecs::Flying>(e)) {
-            const auto* kind = reg.try_get<ecs::NPCKind>(e);
+            const auto* kind = body_state<ecs::NPCKind>(reg, e);
             const float cruise =
                 kind && kind->type < std::uint16_t(NPCType::Count)
                     ? kNpcTypeDefs[kind->type].combat.cruiseM : 0.0f;

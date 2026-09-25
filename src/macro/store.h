@@ -36,6 +36,7 @@
 
 #include "core/stacks.h"
 #include "ecs/components.h"
+#include "ecs/world.h"
 #include "macro/agent_memory.h"
 #include "macro/character_sheet.h"
 #include "macro/spell_book_state.h"
@@ -143,6 +144,71 @@ inline void store_death(MacroStore& s, MacroHandle h) {
     ++s.generation[h.slot];
     s.freeSlots[s.freeCount++] = h.slot;
     --s.aliveCount;
+}
+
+// Слот макро-сквада по entt-мосту (шаг 1в; мост умирает в 1е вместе с этой
+// дверью). Сущность без MacroSlot здесь незаконна — get громко падает в
+// дебаге, как и всякий доступ мимо закона рождения.
+inline std::uint16_t slot_of(entt::registry& reg, entt::entity e) {
+    return reg.get<ecs::MacroSlot>(e).slot;
+}
+
+// Store из контекста реестра — МОСТ ПЕРЕЕЗДА, как PlayerSquadCache: живёт
+// в ctx мира (не глобальное состояние — умирает с миром), чтобы ~30 дверей
+// с сигнатурой (World&) не рябили параметром на время флипа. Ставится
+// одной точкой на рождении мира; умирает в 1е вместе с MacroSlot.
+// Колонка по ТИПУ компоненты — мост 1в: тип выбирает массив, ошибиться
+// колонкой невозможно (типы колонок уникальны, список один — X-macro).
+template <typename C> inline auto& store_col(MacroStore& s) = delete;
+#define SM_X(name, T)                                                        \
+    template <> inline auto& store_col<T>(MacroStore& s) { return s.name; }
+SM_MACRO_STORE_COLUMNS(SM_X)
+#undef SM_X
+
+inline void store_attach(ecs::World& w, MacroStore* st) {
+    w.reg.ctx().insert_or_assign(std::move(st));
+}
+inline MacroStore& store_of(ecs::World& w) {
+    return *w.reg.ctx().get<MacroStore*>();
+}
+inline const MacroStore& store_of(const ecs::World& w) {
+    return *w.reg.ctx().get<MacroStore*>();
+}
+inline MacroStore& store_of(entt::registry& reg) {
+    return *reg.ctx().get<MacroStore*>();
+}
+
+// ── ДВОЙНАЯ ДВЕРЬ СОСТОЯНИЯ ТЕЛА (закон записи, sub/record.h) ─────────────
+// Макро-сквад (несёт MacroSlot) отвечает КОЛОНКОЙ store; тело сцены без
+// бэклинка — «само себе запись» — своей entt-компонентой. Одна дверь на оба
+// рода читателя: двери листа/полос/сумки зовутся с обоими.
+template <typename C>
+inline C* body_state(entt::registry& reg, entt::entity e) {
+    if (const auto* ms = reg.try_get<ecs::MacroSlot>(e))
+        return &store_col<C>(store_of(reg))[ms->slot];
+    return reg.try_get<C>(e);
+}
+template <typename C>
+inline const C* body_state(const entt::registry& reg, entt::entity e) {
+    return body_state<C>(const_cast<entt::registry&>(reg), e);
+}
+
+// Судьба — та же двойная дверь: у макро-сквада смерть лежит байтом колонки
+// (труп стоит до слива, AI-2), у тела сцены — прежним тегом ecs::Dead.
+inline bool macro_dead(entt::registry& reg, entt::entity e) {
+    if (const auto* ms = reg.try_get<ecs::MacroSlot>(e))
+        return store_of(reg).dead[ms->slot] != 0;
+    return reg.all_of<ecs::Dead>(e);
+}
+inline bool macro_dead(const entt::registry& reg, entt::entity e) {
+    return macro_dead(const_cast<entt::registry&>(reg), e);
+}
+inline void macro_mark_dead(entt::registry& reg, entt::entity e) {
+    if (const auto* ms = reg.try_get<ecs::MacroSlot>(e)) {
+        store_of(reg).dead[ms->slot] = 1;
+        return;
+    }
+    reg.emplace_or_replace<ecs::Dead>(e);
 }
 
 } // namespace sm

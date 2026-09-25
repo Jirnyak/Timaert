@@ -38,6 +38,7 @@
 #include "macro/pathfinding.h"
 #include "macro/spawners.h"
 #include "macro/state.h"
+#include "macro/store.h"
 #include "macro/tree_layer.h"
 #include "macro/world_gen.h"
 #include "macro/world_tick.h"
@@ -182,6 +183,8 @@ int main(int argc, char** argv) {
         sm::LandmarkGrid landmarkGrid;
         sm::PathCostData pathCost;
         sm::ecs::World ecs;
+        auto macroStore = sm::make_macro_store();
+        sm::store_attach(ecs, macroStore.get());
 
         sm::WorldGenParams gp{};
         gp.seed = seed;
@@ -197,6 +200,7 @@ int main(int argc, char** argv) {
         go.landmarkGrid = &landmarkGrid;
         go.pathCost = &pathCost;
         go.world = &ecs;
+        go.store = macroStore.get();
         sm::generate_macro_world(go, gp);
 
         // Muster law: nobody is BORN at sea.
@@ -225,6 +229,7 @@ int main(int argc, char** argv) {
         mw.nav = &nav;
         mw.trees = &treeLayer;
         mw.world = &ecs;
+        mw.store = macroStore.get();
         mw.terrain = &terrain;
         mw.deposits = &deposits;
         mw.features = &features;
@@ -394,9 +399,10 @@ int main(int argc, char** argv) {
                 }
             }
             long long coinSquads = 0, foodHolds = 0;
-            for (auto [e, bag]
-                 : ecs.reg.view<sm::ecs::NpcInventory>().each()) {
-                (void)e;
+            for (std::uint16_t slot = 0;
+                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                if (macroStore->alive[slot] == 0) continue;
+                const auto& bag = macroStore->inventory[slot];
                 coinSquads += coins_in(bag.inv, coinIdx);
                 foodHolds += bag.inv.count_of(foodIdx);
             }
@@ -410,11 +416,11 @@ int main(int argc, char** argv) {
                 soulsGarr += sm::count_human_souls(lm.inventory);
             }
             long long horsesSquads = 0;
-            for (auto [e, bag2]
-                 : ecs.reg.view<sm::ecs::NpcInventory>().each()) {
-                (void)e;
+            for (std::uint16_t slot = 0;
+                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                if (macroStore->alive[slot] == 0) continue;
                 horsesSquads += sm::creature_heads_of(
-                    bag2.inv, sm::NPCType::Horse);
+                    macroStore->inventory[slot].inv, sm::NPCType::Horse);
             }
             // ДУШИ В СКВАДАХ, разделённые ПО АДРЕСУ ДОМА. Лидер — такая же
             // душа, как любая в ростере (CANON S4: «одиночка = лидер с
@@ -425,13 +431,14 @@ int main(int argc, char** argv) {
             // бандитов»), и эта колонка меряет, сколько мира сейчас живёт
             // мимо закона.
             long long soulsHomed = 0, soulsFree = 0;
-            for (auto [e, kind, rt]
-                 : ecs.reg.view<sm::ecs::NPCKind,
-                                sm::ecs::MacroNpcRuntime>().each()) {
+            for (std::uint16_t slot = 0;
+                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                if (macroStore->alive[slot] == 0) continue;
+                const auto& kind = macroStore->kind[slot];
+                const auto& rt = macroStore->runtime[slot];
                 long long souls = sm::is_folk_kind(kind.type) ? 1 : 0;
-                if (const auto* bg =
-                        ecs.reg.try_get<sm::ecs::NpcInventory>(e))
-                    souls += sm::count_human_souls(bg->inv);
+                souls += sm::count_human_souls(
+                    macroStore->inventory[slot].inv);
                 if (souls <= 0) continue;
                 if (sm::landmark_by_id(gs, rt.homeSettlementId) != nullptr)
                     soulsHomed += souls;
@@ -449,10 +456,11 @@ int main(int argc, char** argv) {
                 }
             }
             int crewsGather = 0, crewsSell = 0, crewsOther = 0;
-            for (auto [e, kind, crt]
-                 : ecs.reg.view<sm::ecs::NPCKind,
-                                sm::ecs::MacroNpcRuntime>().each()) {
-                (void)e;
+            for (std::uint16_t slot = 0;
+                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                if (macroStore->alive[slot] == 0) continue;
+                const auto& kind = macroStore->kind[slot];
+                const auto& crt = macroStore->runtime[slot];
                 if (kind.type != std::uint16_t(sm::NPCType::Peasant))
                     continue;
                 if (crt.squadType == std::uint8_t(sm::SquadType::Artel))
@@ -526,11 +534,11 @@ int main(int argc, char** argv) {
         {
             int caravans = 0, vendors = 0, vIdle = 0, vAway = 0;
             long long vendorLoad = 0;
-            for (auto [e, kind, crt, cpools, bag]
-                 : ecs.reg.view<sm::ecs::NPCKind, sm::ecs::MacroNpcRuntime,
-                                sm::ecs::Pools,
-                                sm::ecs::NpcInventory>().each()) {
-                (void)e;
+            for (std::uint16_t slot = 0;
+                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                if (macroStore->alive[slot] == 0) continue;
+                const auto& crt = macroStore->runtime[slot];
+                const auto& bag = macroStore->inventory[slot];
                 // Рейс сбыта — поручение крестьян (аукцион, CANON S10):
                 // «вендор» смотра = артель с errand=Sell, тип умер.
                 if (crt.squadType == std::uint8_t(sm::SquadType::Caravan)) {

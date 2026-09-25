@@ -15,6 +15,7 @@
 #include "macro/player_entity.h"
 #include "macro/macro_world.h"
 #include "macro/currency.h"
+#include "macro/store.h"
 
 #include <cstdint>
 
@@ -73,6 +74,8 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     sm::GameState gs{};
     // The purse rides his squad entity now; the daily tick is handed it.
     sm::ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     sm::ensure_macro_player_entity(gs, world);
     sm::player_inventory(world)->add("coin_empire_copper", 5);
     gs.player.ageDays = 1000;

@@ -30,6 +30,7 @@
 #include "macro/npc.h"
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
+#include "macro/store.h"
 
 #include <cmath>
 #include <cstdint>
@@ -95,6 +96,8 @@ bool run_type_table_contract() {
 // guards — carries an ecs::LightEmitter equal to its type row, seated on +Y.
 bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     // Street guards are the place's GARRISON records now (§42 Инк 7) — the
     // fixture brings a three-man wall, and every one of them must be lit.
     sm::Inventory wall{};

@@ -97,6 +97,7 @@
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_vulkan.h"
+#include "macro/store.h"
 #include <vulkan/vulkan.h>
 
 // The screenshot PNG encoder (stb impl) moved to app/smoke.cpp with its one
@@ -204,7 +205,7 @@ std::uint32_t macro_identity_of(const App& app, std::uint32_t entityBits) {
     if (entityBits == 0u) return 0u;
     const entt::entity e = entt::entity(entityBits);
     if (!app.ecs.reg.valid(e)) return 0u;
-    const auto* id = app.ecs.reg.try_get<sm::ecs::MacroSpawnId>(e);
+    const auto* id = body_state<sm::ecs::MacroSpawnId>(app.ecs.reg, e);
     return id ? id->index : 0u;
 }
 
@@ -213,7 +214,7 @@ std::uint32_t macro_identity_of(const App& app, std::uint32_t entityBits) {
 // disagree. A body with no runtime — a roster row, a corpse — is nobody.
 bool squad_is_named(const App& app, entt::entity e) {
     if (!app.ecs.reg.valid(e)) return false;
-    const auto* rt = app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(e);
+    const auto* rt = body_state<sm::ecs::MacroNpcRuntime>(app.ecs.reg, e);
     return rt && sm::renown_is_named(rt->renown);
 }
 
@@ -292,7 +293,7 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     const entt::entity where = fact.killer != 0u
         ? entt::entity(fact.killer) : entt::entity(fact.victim);
     if (app.ecs.reg.valid(where)) {
-        if (const auto* c = app.ecs.reg.try_get<sm::ecs::MacroCell>(where)) {
+        if (const auto* c = body_state<sm::ecs::MacroCell>(app.ecs.reg, where)) {
             wf.x = std::int16_t(sm::ecs::cell_x(*c, app.gs.mapW));
             wf.y = std::int16_t(sm::ecs::cell_y(*c, app.gs.mapW));
         }
@@ -523,13 +524,10 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
     if (!app.worldLoaded || app.subworld.active()) return false;
     auto& reg = app.ecs.reg;
     if (!reg.valid(npc)) return false;
-    if (!reg.all_of<sm::ecs::MacroCell, sm::ecs::NPCKind,
-                    sm::ecs::Pools, sm::ecs::NpcLevel,
-                    sm::ecs::NpcCharacter>(npc)) {
-        return false;
-    }
+    // ФЛИП 1в: макро-сквад = носитель слота store, колонки есть у всех.
+    if (!reg.all_of<sm::ecs::MacroSlot>(npc)) return false;
 
-    const auto& hp = reg.get<sm::ecs::Pools>(npc);
+    const auto& hp = (*body_state<sm::ecs::Pools>(reg, npc));
     if (hp.hp <= 0) return false;
 
     app.cursor.path.clear();
@@ -598,7 +596,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     const sm::ecs::BodyEquipment* eqp = nullptr;
     if (const entt::entity sq = sm::player_flag_entity(app.ecs);
         sq != entt::null)
-        eqp = app.ecs.reg.try_get<sm::ecs::BodyEquipment>(sq);
+        eqp = body_state<sm::ecs::BodyEquipment>(app.ecs.reg, sq);
     const sm::StrikeFields hs = sm::hand_strike_fields(
         eff.attributes, eff.skills, eqp ? &eqp->gear : nullptr);
     const float swing = float(
@@ -617,7 +615,7 @@ int encounter_payoff_cost(App& app, entt::entity npc) {
     const float their =
         sm::squad_power(sm::auto_battle_side_of(app.ecs, npc));
     int cost = std::max(10, int(their / 10.0f));
-    if (const auto* tr = app.ecs.reg.try_get<sm::ecs::NpcTraits>(npc)) {
+    if (const auto* tr = body_state<sm::ecs::NpcTraits>(app.ecs.reg, npc)) {
         for (std::uint8_t i = 0; i < tr->count; ++i) {
             if (tr->traits[i] == std::uint8_t(sm::NPCTrait::Greedy)) cost *= 2;
         }
@@ -671,7 +669,7 @@ void perform_encounter_auto(App& app, entt::entity npc, sm::Ambush ambush) {
                   int(o.casualtiesA.size()), int(o.casualtiesB.size()), xp);
     push_combat_log(app, line);
     const bool enemyGone = !app.ecs.reg.valid(npc)
-        || app.ecs.reg.all_of<sm::ecs::Dead>(npc);
+        || sm::macro_dead(app.ecs.reg, npc);
     close_pre_battle(app, /*grace*/!enemyGone);
 }
 
@@ -692,7 +690,7 @@ const PreBattleAction kPreBattleActions[] = {
      },
      [](App&, entt::entity) { return true; },
      [](App& app, entt::entity npc) {
-         const auto& kind = app.ecs.reg.get<sm::ecs::NPCKind>(npc);
+         const auto& kind = (*body_state<sm::ecs::NPCKind>(app.ecs.reg, npc));
          const sm::NpcTypeDef& def =
              sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
          if (def.talkCount > 0) {
@@ -719,7 +717,7 @@ const PreBattleAction kPreBattleActions[] = {
          // reports what actually changed hands.
          int paid = cost;
          if (auto* bag =
-                 app.ecs.reg.try_get<sm::ecs::NpcInventory>(npc)) {
+                 body_state<sm::ecs::NpcInventory>(app.ecs.reg, npc)) {
              paid = sm::transfer_value_dense(player_bag(app), bag->inv, cost);
          } else {
              paid = sm::pay_value_dense(player_bag(app), cost);
@@ -744,7 +742,7 @@ const PreBattleAction kPreBattleActions[] = {
              // Slip two cells straight away from them, dodging water; a
              // failed search leaves you where you stand — graced, but they
              // may catch you again.
-             const auto& ec = app.ecs.reg.get<sm::ecs::MacroCell>(npc);
+             const auto& ec = (*body_state<sm::ecs::MacroCell>(app.ecs.reg, npc));
              const sm::ecs::MacroCell* pcell =
                  sm::player_flag_cell(app.ecs);
              if (!pcell) return true;
@@ -839,7 +837,7 @@ void detect_forced_encounter(App& app) {
         bool together = false;
         if (reg.valid(app.encounterGraceNpc)) {
             if (const auto* gc =
-                    reg.try_get<sm::ecs::MacroCell>(app.encounterGraceNpc)) {
+                    body_state<sm::ecs::MacroCell>(reg, app.encounterGraceNpc)) {
                 together =
                     sm::ecs::cell_x(*gc, app.gs.mapW) == px
                     && sm::ecs::cell_y(*gc, app.gs.mapW) == py;
@@ -848,20 +846,22 @@ void detect_forced_encounter(App& app) {
         if (!together) app.encounterGraceNpc = entt::null;
     }
 
-    auto view = reg.view<sm::ecs::MacroCell, sm::ecs::NPCKind,
-                         sm::ecs::MacroNpcRuntime, sm::ecs::Pools>(
-        entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
+    sm::MacroStore& st = sm::store_of(app.ecs);
+    auto view = reg.view<sm::ecs::MacroSlot>(
+        entt::exclude<sm::ecs::PlayerTag,
                       sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
         if (e == app.encounterGraceNpc) continue;
-        const auto& hp = view.get<sm::ecs::Pools>(e);
+        const std::uint16_t slot = sm::slot_of(reg, e);
+        if (st.dead[slot] != 0) continue;
+        const auto& hp = st.pools[slot];
         if (hp.hp <= 0) continue;
-        const auto& cell = view.get<sm::ecs::MacroCell>(e);
+        const auto& cell = st.cell[slot];
         if (sm::ecs::cell_x(cell, app.gs.mapW) != px
             || sm::ecs::cell_y(cell, app.gs.mapW) != py) {
             continue;
         }
-        const auto& kind = view.get<sm::ecs::NPCKind>(e);
+        const auto& kind = st.kind[slot];
         // Hostile to the PLAYER by the one relation law — the same predicate
         // the battle masks bake and the AI wars ask.
         if (!sm::player_hostile_to(&app.gs,
@@ -885,10 +885,9 @@ void draw_pre_battle_modal(App& app) {
     auto& reg = app.ecs.reg;
     const entt::entity npc = app.preBattleNpc;
     if (npc == entt::null || !reg.valid(npc)
-        || !reg.all_of<sm::ecs::MacroCell, sm::ecs::NPCKind, sm::ecs::Pools,
-                       sm::ecs::NpcLevel, sm::ecs::NpcCharacter>(npc)
-        || reg.all_of<sm::ecs::Dead>(npc)
-        || reg.get<sm::ecs::Pools>(npc).hp <= 0) {
+        || !reg.all_of<sm::ecs::MacroSlot>(npc)
+        || sm::macro_dead(reg, npc)
+        || (*body_state<sm::ecs::Pools>(reg, npc)).hp <= 0) {
         close_pre_battle(app, false);   // fail closed (stale save / dead foe)
         return;
     }
@@ -902,16 +901,16 @@ void draw_pre_battle_modal(App& app) {
         return;
     }
 
-    const auto& kind = reg.get<sm::ecs::NPCKind>(npc);
+    const auto& kind = (*body_state<sm::ecs::NPCKind>(reg, npc));
     const sm::NpcTypeDef& def =
         sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
-    const auto& face = reg.get<sm::ecs::NpcCharacter>(npc);
+    const auto& face = (*body_state<sm::ecs::NpcCharacter>(reg, npc));
     const char* name = def.nameCount > 0
         ? def.names[face.nameIdx % def.nameCount] : def.label;
-    const int level = reg.get<sm::ecs::NpcLevel>(npc).value;
+    const int level = (*body_state<sm::ecs::NpcLevel>(reg, npc)).value;
     ImGui::Text("%s the %s (level %d) blocks your way!",
                 name, def.label, level);
-    if (const auto* bag = reg.try_get<sm::ecs::NpcInventory>(npc);
+    if (const auto* bag = body_state<sm::ecs::NpcInventory>(reg, npc);
         bag && !sm::creatures_empty(bag->inv)) {
         int byKind[int(sm::NPCType::Count)] = {};
         for (int i = bag->inv.creature_first(); i < sm::kMaxInventorySlots;
@@ -1651,6 +1650,7 @@ void boot_world(App& app, std::uint32_t seed,
     go.landmarkGrid = &app.landmarkGrid;
     go.pathCost     = &app.pathCost;
     go.world        = &app.ecs;
+    go.store        = app.macroStore.get();
     sm::generate_macro_world(go, gp);
     boot_trace("macro world generated");
     // The bus is the DOOR into the world's memory; the memory itself is the
@@ -3161,7 +3161,7 @@ void handle_pending_spawn_entity_events(App& app) {
     for (std::size_t i = begin; i < end; ++i) {
         const sm::GameEvent& ev = events[i];
         if (ev.tag != sm::EventTag::SpawnEntity) continue;
-        if (sm::spawn_npc_at(app.gs, app.ecs, app.terrain,
+        if (sm::spawn_npc_at(app.gs, app.ecs, *app.macroStore, app.terrain,
                              ev.s1.c_str(), ev.ix, ev.iy, int(ev.a))) {
             std::string line = "Word spreads of trouble near the marked area: ";
             line += ev.s1;
@@ -3598,9 +3598,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             const entt::entity squad = sm::player_squad_entity(app.ecs);
             if (squad != entt::null) {
                 auto& reg = app.ecs.reg;
-                if (auto* pools = reg.try_get<sm::ecs::Pools>(squad)) {
+                if (auto* pools = body_state<sm::ecs::Pools>(reg, squad)) {
                     const auto* rt =
-                        reg.try_get<sm::ecs::MacroNpcRuntime>(squad);
+                        body_state<sm::ecs::MacroNpcRuntime>(reg, squad);
                     sm::rest_pools(
                         *pools,
                         float(stats.timeTick.minutesAdvanced) / 60.0f,
@@ -3622,7 +3622,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         if (const entt::entity fe = sm::player_flag_entity(app.ecs);
             fe != entt::null) {
             if (auto* frt =
-                    app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(fe)) {
+                    body_state<sm::ecs::MacroNpcRuntime>(app.ecs.reg, fe)) {
                 frt->tickAccum +=
                     std::uint32_t(stats.timeTick.ticksAdvanced);
                 while (frt->tickAccum >= sm::kAiTicks) {
@@ -3725,9 +3725,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             const entt::entity flag = sm::player_flag_entity(app.ecs);
             const auto* homePools =
                 home != entt::null
-                    ? app.ecs.reg.try_get<sm::ecs::Pools>(home) : nullptr;
+                    ? body_state<sm::ecs::Pools>(app.ecs.reg, home) : nullptr;
             const bool homeAlive = homePools && homePools->hp > 0
-                && !app.ecs.reg.all_of<sm::ecs::Dead>(home);
+                && !sm::macro_dead(app.ecs.reg, home);
             if (!(flag == home && homeAlive)) {
                 app.state = sm::ui::AppState::Dead;
             }
@@ -3919,7 +3919,9 @@ void console_recompute_maxima(App& app) {
 sm::ecs::BodyEquipment* console_player_equipment(App& app) {
     const entt::entity pe = sm::player_squad_entity(app.ecs);
     if (pe == entt::null) return nullptr;
-    return &app.ecs.reg.get_or_emplace<sm::ecs::BodyEquipment>(pe);
+    // ФЛИП 1в: гир — колонка store у КАЖДОГО сквада (вердикт 2026-09-25),
+    // opt-in умер вместе с «16384 не платят».
+    return &sm::store_of(app.ecs).gear[sm::slot_of(app.ecs.reg, pe)];
 }
 
 // Console loot rolls: one stream per process with a fixed seed, so an `exec`
@@ -4213,18 +4215,18 @@ void register_console_commands(App& app) {
                     std::uint8_t(memberKind), mlvl,
                     0x40000000u | (seq << 8) | std::uint32_t(i)));
             }
-            const entt::entity leader =
-                sm::spawn_squad(app.gs, app.ecs, app.terrain, spec);
+            const entt::entity leader = sm::spawn_squad(
+                app.gs, app.ecs, *app.macroStore, app.terrain, spec);
             if (leader == entt::null) {
                 c.error("spawn_squad failed (bad map)");
                 return true;
             }
             const auto* sid =
-                app.ecs.reg.try_get<sm::ecs::MacroSpawnId>(leader);
+                body_state<sm::ecs::MacroSpawnId>(app.ecs.reg, leader);
             c.printfln(Lvl::Ok, "squad #%u: %s (level %d) + %d x %s",
                        sid ? sid->index : 0u,
                        sm::npc_def(spec.leaderType).label,
-                       app.ecs.reg.get<sm::ecs::NpcLevel>(leader).value,
+                       (*body_state<sm::ecs::NpcLevel>(app.ecs.reg, leader)).value,
                        members, sm::npc_def(memberKind).label);
             return true;
         });
@@ -4239,13 +4241,8 @@ void register_console_commands(App& app) {
             if (a.empty()) return false;
             int ordinal = -1;
             if (!sm::dev::arg_int(a, 0, ordinal) || ordinal < 0) return false;
-            entt::entity target = entt::null;
-            for (auto [e, sid, roster] :
-                 app.ecs.reg.view<sm::ecs::MacroSpawnId,
-                                  sm::ecs::SquadRoster>().each()) {
-                (void)roster;
-                if (sid.index == std::uint32_t(ordinal)) { target = e; break; }
-            }
+            entt::entity target = sm::macro_entity_by_spawn_id(
+                app.ecs, std::uint32_t(ordinal));
             if (target == entt::null) {
                 c.error("no squad with that ordinal");
                 return true;
@@ -4807,7 +4804,7 @@ void register_console_commands(App& app) {
             const sm::ecs::BodyEquipment* eqc = nullptr;
             if (const entt::entity pe = sm::player_squad_entity(app.ecs);
                 pe != entt::null)
-                eqc = app.ecs.reg.try_get<sm::ecs::BodyEquipment>(pe);
+                eqc = body_state<sm::ecs::BodyEquipment>(app.ecs.reg, pe);
             const sm::ItemDef* w = eqc ? sm::weapon_in_hand(eqc->gear) : nullptr;
             const sm::StrikeFields hf = sm::hand_strike_fields(
                 eff.attributes, eff.skills, eqc ? &eqc->gear : nullptr);
@@ -5082,7 +5079,7 @@ void draw_debug_panels(App& app) {
                     ImGui::TableNextColumn();
                     ImGui::Text("%u", unsigned(entt::to_integral(e)));
                     ImGui::TableNextColumn();
-                    if (const auto* k = reg.try_get<sm::ecs::NPCKind>(e)) {
+                    if (const auto* k = body_state<sm::ecs::NPCKind>(reg, e)) {
                         ImGui::TextUnformatted(
                             sm::valid_npc_kind(std::uint8_t(k->type))
                                 ? sm::npc_def(sm::NPCType(k->type)).label : "?");
@@ -5094,11 +5091,11 @@ void draw_debug_panels(App& app) {
                         ImGui::TextUnformatted("-");
                     }
                     ImGui::TableNextColumn();
-                    if (const auto* lv = reg.try_get<sm::ecs::NpcLevel>(e))
+                    if (const auto* lv = body_state<sm::ecs::NpcLevel>(reg, e))
                         ImGui::Text("%d", int(lv->value));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
-                    if (const auto* h = reg.try_get<sm::ecs::Pools>(e))
+                    if (const auto* h = body_state<sm::ecs::Pools>(reg, e))
                         ImGui::Text("%.0f/%.0f", double(h->hp), double(h->maxHp));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
@@ -5114,7 +5111,7 @@ void draw_debug_panels(App& app) {
                     ImGui::TableNextColumn();
                     char tags[8]; int ti = 0;
                     if (reg.any_of<sm::ecs::SubworldTag>(e))        tags[ti++] = 'S';
-                    if (reg.any_of<sm::ecs::Dead>(e))               tags[ti++] = 'D';
+                    if (sm::macro_dead(reg, e))               tags[ti++] = 'D';
                     if (reg.any_of<sm::ecs::PlayerSoldierTag>(e))   tags[ti++] = 'A';
                     if (reg.any_of<sm::ecs::TempHostileToPlayer>(e))tags[ti++] = 'H';
                     tags[ti] = '\0';
@@ -5139,18 +5136,18 @@ void draw_debug_panels(App& app) {
             struct Row { const char* name; std::size_t count; };
             const Row rows[] = {
                 {"Position(scene)", cnt(reg.view<sm::ecs::Position>())},
-                {"MacroCell",       cnt(reg.view<sm::ecs::MacroCell>())},
-                {"Health",          cnt(reg.view<sm::ecs::Pools>())},
+                {"MacroSquads",     std::size_t(
+                     sm::store_of(app.ecs).aliveCount)},
+                {"Health(scene)",   cnt(reg.view<sm::ecs::Pools>())},
                 {"Combat",          cnt(reg.view<sm::ecs::Combat>())},
                 {"NPCKind",         cnt(reg.view<sm::ecs::NPCKind>())},
                 {"SubworldTag",     cnt(reg.view<sm::ecs::SubworldTag>())},
                 {"SubworldAi",      cnt(reg.view<sm::ecs::SubworldAi>())},
-                {"NpcLevel",        cnt(reg.view<sm::ecs::NpcLevel>())},
+
                 {"Projectile",      cnt(reg.view<sm::ecs::Projectile>())},
                 {"Structure",       cnt(reg.view<sm::ecs::Structure>())},
                 {"Sprite",          cnt(reg.view<sm::ecs::Sprite>())},
-                {"MacroNpcRuntime", cnt(reg.view<sm::ecs::MacroNpcRuntime>())},
-                {"Dead",            cnt(reg.view<sm::ecs::Dead>())},
+                {"Dead(scene)",     cnt(reg.view<sm::ecs::Dead>())},
                 {"PlayerSoldier",   cnt(reg.view<sm::ecs::PlayerSoldierTag>())},
                 {"TempHostile",     cnt(reg.view<sm::ecs::TempHostileToPlayer>())},
                 {"HitFlash",        cnt(reg.view<sm::ecs::HitFlash>())},
@@ -5500,15 +5497,16 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     int  npcs = 0, gliding = 0, moved = 0;
     float maxGap = 0.0f;
     entt::entity sample = entt::null;
-    auto view = app.ecs.reg.view<sm::ecs::MacroCell, sm::ecs::MacroVisual,
-                                 sm::ecs::MacroNpcRuntime>(
-        entt::exclude<sm::ecs::Dead,
-                      sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>);
+    sm::MacroStore& st = sm::store_of(app.ecs);
+    auto view = app.ecs.reg.view<sm::ecs::MacroSlot>(
+        entt::exclude<sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
-        const auto& c = view.get<sm::ecs::MacroCell>(e);
+        const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
+        if (st.dead[slot] != 0) continue;
+        const auto& c = st.cell[slot];
         const float cx = float(sm::ecs::cell_x(c, app.gs.mapW));
         const float cy = float(sm::ecs::cell_y(c, app.gs.mapW));
-        const auto& v = view.get<sm::ecs::MacroVisual>(e);
+        const auto& v = st.visual[slot];
         ++npcs;
         const float gap = sm::torus_dist(cx, cy, v.vx, v.vy,
                                          float(app.gs.mapW),
@@ -5530,9 +5528,9 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     float px = 0.0f, py = 0.0f, vx = 0.0f, vy = 0.0f, vspeed = 0.0f;
     int   sstate = -1;
     if (sample != entt::null) {
-        const auto& c = app.ecs.reg.get<sm::ecs::MacroCell>(sample);
-        const auto& v = app.ecs.reg.get<sm::ecs::MacroVisual>(sample);
-        const auto& rt = app.ecs.reg.get<sm::ecs::MacroNpcRuntime>(sample);
+        const auto& c = (*body_state<sm::ecs::MacroCell>(app.ecs.reg, sample));
+        const auto& v = (*body_state<sm::ecs::MacroVisual>(app.ecs.reg, sample));
+        const auto& rt = (*body_state<sm::ecs::MacroNpcRuntime>(app.ecs.reg, sample));
         px = float(sm::ecs::cell_x(c, app.gs.mapW));
         py = float(sm::ecs::cell_y(c, app.gs.mapW));
         vx = v.vx; vy = v.vy;
@@ -6275,6 +6273,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     // аллокация на сборке, не в тике) — 1460 МиБ по капу, преаллокация
     // оплачена вердиктом владельца 2026-09-25 (M-106).
     app.macroStore = sm::make_macro_store();
+    sm::store_attach(app.ecs, app.macroStore.get());
     if (!parse_smoke_script(std::getenv(kSmokeScriptEnv), app.smoke)) return 2;
     if (!boot_window(app)) return 1;
     boot_audio(app);

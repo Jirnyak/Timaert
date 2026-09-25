@@ -25,6 +25,7 @@
 #include "macro/npc_ai.h"
 #include "macro/resource_field.h"
 #include "macro/tree_layer.h"
+#include "macro/store.h"
 
 #include <cstdint>
 #include <set>
@@ -115,9 +116,11 @@ struct Crew {
 // чужие крю.
 std::vector<Crew> live_crews_of(ecs::World& w, int homeId) {
     std::vector<Crew> out;
-    for (auto [e, kind, rt]
-         : w.reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
-        (void)e;
+    const sm::MacroStore& st = sm::store_of(w);
+    for (auto e : w.reg.view<ecs::MacroSlot>()) {
+        const std::uint16_t slot = sm::slot_of(w.reg, e);
+        const auto& kind = st.kind[slot];
+        const auto& rt = st.runtime[slot];
         if (kind.type != std::uint16_t(NPCType::Peasant)) continue;
         if (rt.homeSettlementId != homeId) continue;
         out.push_back(Crew{rt.squadType, rt.errandObject});
@@ -153,6 +156,10 @@ void test_auction_raises_errand_bearing_peasants() {
     build_tree_grid(grid, trees, kMap, kMap, 32);
 
     ecs::World w;
+
+    auto wStore_ = sm::make_macro_store();
+
+    sm::store_attach(w, wStore_.get());
     TerrainData absent{};
     NavWorld nav = make_one_region_nav(gs);
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent,
@@ -231,6 +238,8 @@ void test_auction_raises_errand_bearing_peasants() {
                            gsd.landmarks[0].needDebt,
                            gsd.landmarks[0].population, nullptr, nullptr);
         ecs::World wd;
+        auto wdStore_ = sm::make_macro_store();
+        sm::store_attach(wd, wdStore_.get());
         NavWorld navd = make_one_region_nav(gsd);
         MacroWorld mwd{.gs = &gsd, .world = &wd, .terrain = &absent,
                        .deposits = &dep, .treeGrid = &grid, .nav = &navd};
@@ -244,10 +253,9 @@ void test_auction_raises_errand_bearing_peasants() {
 
     // Счёт по типу: артели в поле занимают строки — второй ротации нечего
     // поднимать (Idle дома растворился бы; в пути — держит строку).
-    for (auto [e, kind, rt]
-         : w.reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
-        (void)e; (void)kind;
-        rt.state = std::uint8_t(NPCState::Traveling);
+    for (auto e : w.reg.view<ecs::MacroSlot>()) {
+        sm::store_of(w).runtime[sm::slot_of(w.reg, e)].state =
+            std::uint8_t(NPCState::Traveling);
     }
     // Граница сезона (день 33): контроль честен только там, где подъём
     // вообще возможен — вне границы ноль тривиален.
@@ -261,6 +269,8 @@ void test_refusal_is_the_auctions_verdict() {
     GameState gs = make_world(/*pop*/100);
     set_suzerain(gs, gs.landmarks[0].id, -1);
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
 
@@ -283,6 +293,8 @@ void test_tithe_raises_the_collector_at_the_suzerain() {
     gs.landmarks[0].inventory.add("food", 3200);
     gs.landmarks[1].inventory.add("food", 16000);
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
 
@@ -324,6 +336,8 @@ void test_boundary_court_resizes_standing_crews() {
     TreeGrid grid;
     build_tree_grid(grid, trees, kMap, kMap, 32);
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent,
                   .deposits = &dep, .treeGrid = &grid};
@@ -331,21 +345,17 @@ void test_boundary_court_resizes_standing_crews() {
 
     const auto souls_total = [&] {
         int total = gs.landmarks[0].population;
-        for (auto [e, kind, rt]
-             : w.reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
-            (void)kind; (void)rt;
+        for (auto e : w.reg.view<ecs::MacroSlot>()) {
             total += 1;
-            if (const auto* bg = w.reg.try_get<ecs::NpcInventory>(e))
+            if (const auto* bg = sm::body_state<ecs::NpcInventory>(w.reg, e))
                 total += creature_heads(bg->inv);
         }
         return total;
     };
     const auto crew_sizes = [&] {
         std::vector<int> sizes;
-        for (auto [e, kind, rt]
-             : w.reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
-            (void)kind; (void)rt;
-            if (const auto* bg = w.reg.try_get<ecs::NpcInventory>(e))
+        for (auto e : w.reg.view<ecs::MacroSlot>()) {
+            if (const auto* bg = sm::body_state<ecs::NpcInventory>(w.reg, e))
                 sizes.push_back(creature_heads(bg->inv));
         }
         return sizes;
@@ -354,11 +364,9 @@ void test_boundary_court_resizes_standing_crews() {
     // ПОТЕРЯ В ПОЛЕ: у первой артели гибнут трое (души честно исчезают из
     // мира — сумма падает ровно на троих).
     entt::entity first = entt::null;
-    for (auto [e, kind] : w.reg.view<ecs::NPCKind>().each()) {
-        (void)kind; first = e; break;
-    }
+    for (auto e : w.reg.view<ecs::MacroSlot>()) { first = e; break; }
     CHECK(first != entt::null, "есть артель для среза (фикстура)");
-    auto& fbag = w.reg.get<ecs::NpcInventory>(first);
+    auto& fbag = (*sm::body_state<ecs::NpcInventory>(w.reg, first));
     CHECK(creature_heads(fbag.inv) > 3, "ростер больше среза (фикстура)");
     const int cutTo = creature_heads(fbag.inv) - 3;
     while (creature_heads(fbag.inv) > cutTo) {
@@ -386,13 +394,13 @@ void test_boundary_court_resizes_standing_crews() {
     // домой пришла распухшая) — граница ССАЖИВАЕТ лишних В население.
     const int popBeforeShed = gs.landmarks[0].population;
     const int sizeBeforeShed =
-        creature_heads(w.reg.get<ecs::NpcInventory>(first).inv);
+        creature_heads((*sm::body_state<ecs::NpcInventory>(w.reg, first)).inv);
     for (int k = 0; k < 7; ++k) {
         SoldierRecord rec{};
         rec.entityId = 900000u + std::uint32_t(k);
         rec.kind = std::uint16_t(NPCType::Peasant);
         rec.level = 1;
-        creatures_push(w.reg.get<ecs::NpcInventory>(first).inv, rec);
+        creatures_push((*sm::body_state<ecs::NpcInventory>(w.reg, first)).inv, rec);
     }
     const int soulsInflated = souls_total();
     rotate_worker_squads(mw, /*day*/65);
@@ -401,7 +409,7 @@ void test_boundary_court_resizes_standing_crews() {
     // Want дня 65 пересчитан от базы, потолстевшей на семь влитых душ, так
     // что он может встать на голову-другую выше прежнего — пин не «равно
     // старому», а «перебор срезан к пулу».
-    CHECK(creature_heads(w.reg.get<ecs::NpcInventory>(first).inv)
+    CHECK(creature_heads((*sm::body_state<ecs::NpcInventory>(w.reg, first)).inv)
               < sizeBeforeShed + 7,
           "перебор ссажен: артель не жиреет мимо пула");
     CHECK(gs.landmarks[0].population > popBeforeShed,
@@ -485,6 +493,8 @@ void test_station_is_a_weighted_roulette() {
         const int day = 1 + k * kDaysPerSeason;
         GameState gs = make_three_stations(day);
         ecs::World w;
+        auto wStore_ = sm::make_macro_store();
+        sm::store_attach(w, wStore_.get());
         TerrainData absent{};
         MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
         rotate_worker_squads(mw, day);

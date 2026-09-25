@@ -10,6 +10,7 @@
 #include "macro/spell_book_state.h"
 #include "macro/spells.h"
 #include "macro/squad.h"
+#include "macro/store.h"
 #include <algorithm>
 #include <array>
 
@@ -31,8 +32,9 @@ struct PlayerSquadCache { entt::entity e = entt::null; };
 entt::entity find_player_squad(ecs::World& world) {
     auto& cache = world.reg.ctx().emplace<PlayerSquadCache>();
     if (cache.e != entt::null && world.reg.valid(cache.e)) {
-        if (const auto* sid = world.reg.try_get<ecs::MacroSpawnId>(cache.e);
-            sid && sid->index == ecs::kPlayerSquadOrdinal) {
+        const auto* ms = world.reg.try_get<ecs::MacroSlot>(cache.e);
+        if (ms && store_of(world).spawnId[ms->slot].index
+                      == ecs::kPlayerSquadOrdinal) {
             return cache.e;
         }
     }
@@ -70,14 +72,17 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
             sx = gs.politik.cities[0].x;
             sy = gs.politik.cities[0].y;
         }
+        MacroStore& st = store_of(world);
+        const MacroHandle h = store_birth(st);
+        if (!st.valid(h)) return;   // отказ капа уже прозвучал вслух
         squad = reg.create();
-        reg.emplace<ecs::MacroSpawnId>(squad, ecs::kPlayerSquadOrdinal);
-        reg.emplace<ecs::MacroCell>(squad,
-                                    ecs::cell_index(sx, sy, gs.mapW));
-        reg.emplace<ecs::MacroVisual>(squad, float(sx), float(sy), 0.0f);
-        reg.emplace<ecs::NPCKind>(
-            squad, std::uint16_t(NPCType::Adventurer),
-            std::uint16_t(faction_index(kPlayerFactionId)));
+        reg.emplace<ecs::MacroSlot>(squad, h.slot);
+        st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};
+        st.cell[h.slot]    = ecs::MacroCell{ecs::cell_index(sx, sy, gs.mapW)};
+        st.visual[h.slot]  = ecs::MacroVisual{float(sx), float(sy), 0.0f};
+        st.kind[h.slot]    = ecs::NPCKind{
+            std::uint16_t(NPCType::Adventurer),
+            std::uint16_t(faction_index(kPlayerFactionId))};
         // His OWNED sheet, born WITH the body like every named character's
         // (посадка Б, v91) — the default creation-screen build (the same
         // default_* trio default_player used to copy into PlayerState);
@@ -88,31 +93,19 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         birth.attributes = default_attributes();
         birth.skills     = default_skills();
         birth.levelData  = default_level_data();
-        const CharacterSheet& sheet = reg.emplace<CharacterSheet>(squad, birth);
-        reg.emplace<ecs::NpcLevel>(
-            squad, std::int16_t(std::max(1, sheet.levelData.level)));
-        ecs::Pools& pools = reg.emplace<ecs::Pools>(squad, ecs::Pools{});
-        reg.emplace<ecs::NpcTraits>(squad, ecs::NpcTraits{});
+        st.sheet[h.slot] = birth;
+        const CharacterSheet& sheet = st.sheet[h.slot];
+        st.level[h.slot] = ecs::NpcLevel{
+            std::int16_t(std::max(1, sheet.levelData.level))};
+        ecs::Pools& pools = st.pools[h.slot];
         {
             Rng faceRng(ecs::kPlayerSquadOrdinal ^ 0x9E3779B9u);
-            reg.emplace<ecs::NpcCharacter>(
-                squad, ecs::roll_npc_character(faceRng, 160));
+            st.character[h.slot] = ecs::roll_npc_character(faceRng, 160);
         }
-        reg.emplace<AgentMemory>(squad);
         // His book, born WITH the body like every squad's (v89) — with the
         // starter spell the old PlayerState default carried (state.cpp).
-        {
-            SpellBook book{};
-            spellbook_learn(book, spell_ordinal("magic_bolt"));
-            reg.emplace<SpellBook>(squad, book);
-        }
-        // The snapshot's view names every component make_npc emplaces, and the
-        // player's squad is saved BY IT now — neither his roster nor his bag
-        // nor his head is a field of PlayerState any more.
-        reg.emplace<ecs::NpcInventory>(squad, ecs::NpcInventory{});
-        // A squad of one, its own leader — the same empty roster every macro
-        // squad is born with (macro/npc_spawn.cpp make_npc).
-        reg.emplace<ecs::SquadRoster>(squad);
+        // Память/ростер/сумка/черты уже обнулены рождением слота.
+        spellbook_learn(st.spellBook[h.slot], spell_ordinal("magic_bolt"));
         // The march caches come from the player's OWN sheet, through the same
         // door every leader's do.
         ecs::MacroNpcRuntime rt{};
@@ -136,7 +129,7 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         pools.hp = pools.maxHp;
         pools.mp = pools.maxMp;
         pools.sp = pools.maxSp;
-        reg.emplace<ecs::MacroNpcRuntime>(squad, rt);
+        st.runtime[h.slot] = rt;
     }
 
     // «Чей это отряд» — emplaced OUTSIDE the creation branch on purpose: a
@@ -149,9 +142,11 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // walker steps it, the jump door writes it, the snapshot restores it.
     // The scalar mirror this block used to re-project died with v88 — the
     // anaesthesia-bridge of §41 root 4.
-    if (const auto* own = reg.try_get<CharacterSheet>(squad)) {
-        reg.emplace_or_replace<ecs::NpcLevel>(
-            squad, std::int16_t(std::max(1, own->levelData.level)));
+    {
+        MacroStore& st = store_of(world);
+        const std::uint16_t slot = slot_of(reg, squad);
+        st.level[slot] = ecs::NpcLevel{std::int16_t(
+            std::max(1, st.sheet[slot].levelData.level))};
     }
     // The SAME door every lord's numbers go through (squad.h) — the sheet is
     // the law, ceilings and march caches are its cache, and there is one
@@ -194,9 +189,10 @@ bool wake_player_in_original_body(ecs::World& world) {
     // same way the world asks it of every other body — the tag the reaper
     // stamps, and the bars themselves, because a body can be at zero for a tick
     // before anything marks it.
-    if (reg.all_of<ecs::Dead>(home)) return false;
-    const auto* homePools = reg.try_get<ecs::Pools>(home);
-    if (!homePools || homePools->hp <= 0.0f) return false;
+    MacroStore& st = store_of(world);
+    const std::uint16_t homeSlot = slot_of(reg, home);
+    if (st.dead[homeSlot] != 0) return false;
+    if (st.pools[homeSlot].hp <= 0.0f) return false;
     // One displacement of one flag — вселение, проигранное назад. Exactly-one
     // holds by the move itself (sub/spawn.h possess_entity does the same).
     for (auto e : reg.view<ecs::PlayerTag>()) {
@@ -228,7 +224,7 @@ bool wake_player_in_original_body(ecs::World& world) {
 CharacterSheet* player_sheet(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
-    return world.reg.try_get<CharacterSheet>(e);
+    return &store_of(world).sheet[slot_of(world.reg, e)];
 }
 
 const CharacterSheet* player_sheet(const ecs::World& world) {
@@ -246,8 +242,7 @@ CharacterSheet player_effective_sheet(ecs::World& world) {
 Inventory* player_inventory(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
-    auto* bag = world.reg.try_get<ecs::NpcInventory>(e);
-    return bag ? &bag->inv : nullptr;
+    return &store_of(world).inventory[slot_of(world.reg, e)].inv;
 }
 
 const Inventory* player_inventory(const ecs::World& world) {
@@ -257,14 +252,13 @@ const Inventory* player_inventory(const ecs::World& world) {
 float* player_sp_carry(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
-    auto* pools = world.reg.try_get<ecs::Pools>(e);
-    return pools ? &pools->spCarry : nullptr;
+    return &store_of(world).pools[slot_of(world.reg, e)].spCarry;
 }
 
 ecs::Pools* player_pools(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
-    return world.reg.try_get<ecs::Pools>(e);
+    return &store_of(world).pools[slot_of(world.reg, e)];
 }
 
 const ecs::Pools* player_pools(const ecs::World& world) {
@@ -274,27 +268,26 @@ const ecs::Pools* player_pools(const ecs::World& world) {
 void refresh_player_body(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return;
-    auto* pools = world.reg.try_get<ecs::Pools>(e);
-    if (!pools) return;
-    const auto* own = world.reg.try_get<CharacterSheet>(e);
-    if (!own) return;
-    auto* rt = world.reg.try_get<ecs::MacroNpcRuntime>(e);
+    MacroStore& ms = store_of(world);
+    const std::uint16_t slot = slot_of(world.reg, e);
+    ecs::Pools* pools = &ms.pools[slot];
+    const CharacterSheet* own = &ms.sheet[slot];
+    auto* rt = &ms.runtime[slot];
     const BonusTotals st = standing_bonuses_of(world, e);
     // The ROW is the record's own (A1, 2026-09-17): the door follows the
     // flag, so its row must too — a worn lord's ceilings and haul are his
     // row's, not the Adventurer's. His own squad IS an Adventurer by birth
     // (ensure above), so the fallback for a record without a row says the
     // same thing the old literal did — for exactly the body it was true of.
-    const auto* kind = world.reg.try_get<ecs::NPCKind>(e);
+    const auto& kind = ms.kind[slot];
     refresh_body_from_sheet(*pools, rt, effective_sheet(*own, st),
-                            kind ? NPCType(kind->type) : NPCType::Adventurer,
-                            &st);
+                            NPCType(kind.type), &st);
 }
 
 SpellBook* player_spellbook(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
-    return world.reg.try_get<SpellBook>(e);
+    return &store_of(world).spellBook[slot_of(world.reg, e)];
 }
 
 const SpellBook* player_spellbook(const ecs::World& world) {
@@ -304,7 +297,7 @@ const SpellBook* player_spellbook(const ecs::World& world) {
 AgentMemory* player_head(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
-    return world.reg.try_get<AgentMemory>(e);
+    return &store_of(world).memory[slot_of(world.reg, e)];
 }
 
 const AgentMemory* player_head(const ecs::World& world) {

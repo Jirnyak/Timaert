@@ -21,6 +21,7 @@
 #include "macro/squad.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
+#include "macro/store.h"
 
 #include <entt/entt.hpp>
 
@@ -241,11 +242,12 @@ void test_malformed_receipts_do_nothing() {
 // ordinal is its save-stable name, the roster holds everyone else.
 entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal,
                         std::initializer_list<std::uint32_t> memberIds) {
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const auto e = w.reg.create();
-    w.reg.emplace<sm::ecs::MacroNpcRuntime>(e);
-    w.reg.emplace<sm::ecs::MacroSpawnId>(e, ordinal);
-    w.reg.emplace<sm::ecs::SquadRoster>(e);
-    auto& bag = w.reg.get_or_emplace<sm::ecs::NpcInventory>(e);
+    w.reg.emplace<sm::ecs::MacroSlot>(e, h.slot);
+    st.spawnId[h.slot] = sm::ecs::MacroSpawnId{ordinal};
+    auto& bag = st.inventory[h.slot];
     for (std::uint32_t id : memberIds) {
         sm::creatures_push(bag.inv, sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard), 2, id));
@@ -258,9 +260,11 @@ entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal,
 void test_the_roster_row_pays_by_name() {
     using namespace sm;
     ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     make_squad(world, 5, {11u, 22u, 0x80000021u});   // high-bit id: a garrison-
     const auto other = make_squad(world, 6, {77u});  // born soldier's shape
-    MacroWorld w{.world = &world};
+    MacroWorld w{.world = &world, .store = &sm::store_of(world)};
 
     const MacroStockKey member11{5, 0, 0, 11};
     CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 3,
@@ -315,16 +319,18 @@ void test_the_roster_row_pays_by_name() {
 void test_dead_leader_squads_fall_into_the_pool() {
     using namespace sm;
     ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     const auto fallen = make_squad(world, 10, {1u, 2u});
     make_squad(world, 11, {3u});
-    world.reg.emplace<ecs::Dead>(fallen);
+    sm::macro_mark_dead(world.reg, fallen);
 
     Inventory pool{};
     CHECK(drain_dead_leader_squads(world, pool) == 2,
           "the dead leader's survivors walk away, all of them");
     CHECK(creature_heads(pool) == 2,
           "and they land in the deserter pool");
-    MacroWorld w{.world = &world};
+    MacroWorld w{.world = &world, .store = &sm::store_of(world)};
     CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{10, 0, 0}) == 0,
           "the faceless squad is emptied: nothing left to pay twice");
     CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{11, 0, 0}) == 1,

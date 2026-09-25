@@ -1,6 +1,7 @@
 #include "check.h"
 #include "macro/npc_spawn.h"
 #include "ecs/components.h"
+#include "macro/store.h"
 
 #include <cstdio>
 
@@ -26,9 +27,10 @@ sm::Landmark make_settlement(int id, int x, int y) {
 }
 
 int count_macro_npcs(const sm::ecs::World& world) {
+    // ФЛИП 1в: макро-сквад = носитель MacroSlot; состояние — колонки store.
     int count = 0;
-    auto view = world.reg.view<const sm::ecs::NPCKind, const sm::ecs::MacroCell>();
-    for (auto entity : view) {
+    for (auto entity :
+         const_cast<sm::ecs::World&>(world).reg.view<sm::ecs::MacroSlot>()) {
         (void)entity;
         ++count;
     }
@@ -49,9 +51,10 @@ int count_macro_npcs(const sm::ecs::World& world) {
 // it.
 int bodies_without_a_full_block(const sm::ecs::World& world) {
     int bad = 0;
-    auto view = world.reg.view<const sm::ecs::NPCKind, const sm::ecs::Pools>();
-    for (auto entity : view) {
-        const auto& pools = view.get<const sm::ecs::Pools>(entity);
+    auto& w = const_cast<sm::ecs::World&>(world);
+    const sm::MacroStore& st = sm::store_of(w);
+    for (auto entity : w.reg.view<sm::ecs::MacroSlot>()) {
+        const auto& pools = st.pools[sm::slot_of(w.reg, entity)];
         if (pools.maxHp <= 0 || pools.hp <= 0) ++bad;
         if (pools.maxMp <= 0 || pools.mp <= 0) ++bad;
     }
@@ -59,9 +62,10 @@ int bodies_without_a_full_block(const sm::ecs::World& world) {
 }
 
 bool positions_inside_map(const sm::ecs::World& world, int mapW, int mapH) {
-    auto view = world.reg.view<const sm::ecs::NPCKind, const sm::ecs::MacroCell>();
-    for (auto entity : view) {
-        const auto& c = view.template get<const sm::ecs::MacroCell>(entity);
+    auto& w = const_cast<sm::ecs::World&>(world);
+    const sm::MacroStore& st = sm::store_of(w);
+    for (auto entity : w.reg.view<sm::ecs::MacroSlot>()) {
+        const auto& c = st.cell[sm::slot_of(w.reg, entity)];
         const int x = sm::ecs::cell_x(c, mapW);
         const int y = sm::ecs::cell_y(c, mapW);
         if (x < 0 || x >= mapW || y < 0 || y >= mapH) return false;
@@ -83,7 +87,11 @@ int main() {
     invalidTerrain.rgba.assign(3u, 255u);
 
     sm::ecs::World world;
-    sm::spawn_macro_npcs(gs, world, invalidTerrain, 123u);
+
+    auto worldStore_ = sm::make_macro_store();
+
+    sm::store_attach(world, worldStore_.get());
+    sm::spawn_macro_npcs(gs, world, sm::store_of(world), invalidTerrain, 123u);
 
     const int spawned = count_macro_npcs(world);
     if (spawned <= 0)
@@ -100,7 +108,11 @@ int main() {
     mismatchedTerrain.rgba.assign(std::size_t(8 * 8 * 4), 0u);
 
     sm::ecs::World mismatchWorld;
-    sm::spawn_macro_npcs(gs, mismatchWorld, mismatchedTerrain, 124u);
+
+    auto mismatchWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(mismatchWorld, mismatchWorldStore_.get());
+    sm::spawn_macro_npcs(gs, mismatchWorld, sm::store_of(mismatchWorld), mismatchedTerrain, 124u);
     if (count_macro_npcs(mismatchWorld) <= 0)
         return fail("mismatched terrain should be treated as absent terrain");
     if (!positions_inside_map(mismatchWorld, gs.mapW, gs.mapH))
@@ -112,7 +124,11 @@ int main() {
     invalidMap.landmarks.push_back(make_settlement(8, 0, 0));
 
     sm::ecs::World invalidMapWorld;
-    sm::spawn_macro_npcs(invalidMap, invalidMapWorld, invalidTerrain, 125u);
+
+    auto invalidMapWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(invalidMapWorld, invalidMapWorldStore_.get());
+    sm::spawn_macro_npcs(invalidMap, invalidMapWorld, sm::store_of(invalidMapWorld), invalidTerrain, 125u);
     if (count_macro_npcs(invalidMapWorld) != 0)
         return fail("invalid map dimensions must fail closed without NPC spawns");
 

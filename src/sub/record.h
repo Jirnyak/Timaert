@@ -31,6 +31,7 @@
 #pragma once
 
 #include "ecs/components.h"
+#include "macro/store.h"
 #include "macro/bonus.h"   // BonusTotals — «что на нём стоит», and its ==
 
 #include <entt/entt.hpp>
@@ -63,9 +64,11 @@ template <class C>
 inline C* state_of(entt::registry& reg, entt::entity body) {
     const entt::entity rec = record_of(reg, body);
     if (rec != entt::null) {
-        if (C* owned = reg.try_get<C>(rec)) return owned;
+        // ФЛИП 1в (M-106): запись-макро отвечает КОЛОНКОЙ store, тело без
+        // бэклинка — своей компонентой; body_state — одна дверь на оба рода.
+        if (C* owned = body_state<C>(reg, rec)) return owned;
     }
-    return reg.try_get<C>(body);
+    return body_state<C>(reg, body);
 }
 
 template <class C>

@@ -24,6 +24,7 @@
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
 #include "macro/squad.h"
+#include "macro/store.h"
 
 #include <cstdio>
 
@@ -70,8 +71,10 @@ GameState make_world() {
 }
 
 entt::entity find_design(ecs::World& w, std::int16_t ord) {
-    for (auto e : w.reg.view<ecs::DesignCharacterTag>()) {
-        if (w.reg.get<ecs::DesignCharacterTag>(e).ordinal == ord) return e;
+    // Тег стола — колонка store: ordinal >= 0 и есть анкета (флип 1в).
+    const sm::MacroStore& st = sm::store_of(w);
+    for (auto e : w.reg.view<ecs::MacroSlot>()) {
+        if (st.designTag[sm::slot_of(w.reg, e)].ordinal == ord) return e;
     }
     return entt::null;
 }
@@ -96,9 +99,11 @@ void test_spawn_births_the_row() {
     GameState gs = make_world();
     const TerrainData terrain = make_terrain();
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     Rng rng(1234u);
     gs.nextMacroSpawnOrdinal = 0;
-    spawn_design_characters(gs, w, terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     const entt::entity e = find_design(w, 0);
     CHECK_OR_RETURN(e != entt::null, "the preacher row became one body");
@@ -109,16 +114,16 @@ void test_spawn_births_the_row() {
     CHECK_OR_RETURN(own != nullptr, "the design character OWNS his sheet");
     CHECK(own->levelData.level == int(row.level),
           "the row's level reached the owned sheet");
-    CHECK(w.reg.get<ecs::NpcLevel>(e).value == row.level,
+    CHECK((*sm::body_state<ecs::NpcLevel>(w.reg, e)).value == row.level,
           "...and the map-side level column agrees");
-    CHECK(int(w.reg.get<ecs::NPCKind>(e).factionIdx)
+    CHECK(int((*sm::body_state<ecs::NPCKind>(w.reg, e)).factionIdx)
               == faction_index(row.factionId),
           "the row's faction reached the body");
-    CHECK(w.reg.get<ecs::MacroNpcRuntime>(e).homeSettlementId == 1,
+    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(w.reg, e)).homeSettlementId == 1,
           "home resolved to the world's city (row: City #0)");
 
     // Маршрут: дом ↔ БЛИЖАЙШАЯ деревня (20,10), не дальняя (40,40).
-    const auto* orders = w.reg.try_get<ecs::SquadOrders>(e);
+    const auto* orders = sm::body_state<ecs::SquadOrders>(w.reg, e);
     CHECK_OR_RETURN(orders != nullptr && orders->waypointCount == 2,
                     "the circuit order landed: two waypoints");
     CHECK(orders->waypoints[0] == 10 && orders->waypoints[1] == 10,
@@ -128,7 +133,7 @@ void test_spawn_births_the_row() {
 
     // Лестница: приказ первым; без приказа — ступень анкеты, и она
     // ПРОВЕРЯЕМО не строка типа (Merchant.ai = Trader).
-    const auto& kind = w.reg.get<ecs::NPCKind>(e);
+    const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, e));
     CHECK(untyped_squad_behaviour(w.reg, e, kind) == AIBehaviour::Waypoints,
           "with the route present, the order rung answers");
     w.reg.remove<ecs::SquadOrders>(e);
@@ -143,9 +148,11 @@ void test_snapshot_carries_the_ordinal() {
     GameState gs = make_world();
     const TerrainData terrain = make_terrain();
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     Rng rng(777u);
     gs.nextMacroSpawnOrdinal = 0;
-    spawn_design_characters(gs, w, terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     // Обычный сквад рядом — негативный контроль на −1. Через ту же одну
     // дверь создания (spawn_squad → make_npc).
     SquadSpec plain{};
@@ -153,7 +160,7 @@ void test_snapshot_carries_the_ordinal() {
     plain.x = 30;
     plain.y = 30;
     plain.factionIndex = faction_index("bandits");
-    CHECK_OR_RETURN(spawn_squad(gs, w, terrain, plain) != entt::null,
+    CHECK_OR_RETURN(spawn_squad(gs, w, sm::store_of(w), terrain, plain) != entt::null,
                     "the plain control squad spawned");
 
     const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(w);
@@ -171,6 +178,10 @@ void test_snapshot_carries_the_ordinal() {
           "negative control: the plain squad rides with -1");
 
     ecs::World w2;
+
+    auto w2Store_ = sm::make_macro_store();
+
+    sm::store_attach(w2, w2Store_.get());
     GameState gs2 = make_world();
     restore_macro_ecs(snap, w2, gs2);
     const entt::entity back = find_design(w2, 0);
@@ -192,19 +203,21 @@ void test_king_peasant_births_by_home_faction() {
 
     const TerrainData terrain = make_terrain();
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     Rng rng(555u);
     gs.nextMacroSpawnOrdinal = 0;
-    spawn_design_characters(gs, w, terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     const entt::entity king = find_design(w, 1);
     CHECK_OR_RETURN(king != entt::null,
                     "the king row became one body near the barbarian city");
-    CHECK(w.reg.get<ecs::MacroNpcRuntime>(king).homeSettlementId == 9,
+    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(w.reg, king)).homeSettlementId == 9,
           "his home is the BARBARIAN city, not the freefolk one — the "
           "faction-prefix filter picked the row's home");
     // Фракция — ОН САМ (вердикт владельца): своя строка одной матрицы,
     // как у игрока, а не знамя города, где он живёт.
-    CHECK(int(w.reg.get<ecs::NPCKind>(king).factionIdx)
+    CHECK(int((*sm::body_state<ecs::NPCKind>(w.reg, king)).factionIdx)
               == faction_index("king_peasant"),
           "his faction is his OWN registry row");
     const CharacterSheet* own = owned_sheet(w, king);
@@ -212,7 +225,7 @@ void test_king_peasant_births_by_home_faction() {
     CHECK(own->levelData.level == 70, "the level-70 roll reached the sheet");
     // Лестница: приказов нет — ступень анкеты, доказуемо не строка типа
     // (Peasant.ai = Gatherer).
-    const auto& kind = w.reg.get<ecs::NPCKind>(king);
+    const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, king));
     CHECK(untyped_squad_behaviour(w.reg, king, kind) == AIBehaviour::MageHunt,
           "the design rung answers MageHunt for the king");
     CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Peasant)].ai
@@ -227,9 +240,11 @@ void test_king_needs_a_barbarian_city() {
     GameState gs = make_world();
     const TerrainData terrain = make_terrain();
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     Rng rng(556u);
     gs.nextMacroSpawnOrdinal = 0;
-    spawn_design_characters(gs, w, terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     CHECK(find_design(w, 0) != entt::null,
           "Varnava is born in a world without barbarians");
     CHECK(find_design(w, 1) == entt::null,
@@ -249,9 +264,11 @@ void test_dragons_nest_on_mountain_peaks() {
         }
     }
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     Rng rng(999u);
     gs.nextMacroSpawnOrdinal = 0;
-    spawn_design_characters(gs, w, terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     // Один массив = одна вершина: Dragon1 рождается, №2/№3 (вершины с
     // разносом ≥ mapW/8) — честно нет.
@@ -260,17 +277,17 @@ void test_dragons_nest_on_mountain_peaks() {
     CHECK(find_design(w, 3) == entt::null && find_design(w, 4) == entt::null,
           "one massif births one dragon — spacing is honest");
 
-    const auto& rt = w.reg.get<ecs::MacroNpcRuntime>(d1);
+    const auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(w.reg, d1));
     CHECK(rt.lairX == 48 && rt.lairY == 48,
           "his LAIR is the massif's highest cell");
     CHECK(rt.flying == 1,
           "the row's cruiseM cached as the march-side flying byte (v93)");
-    CHECK(int(w.reg.get<ecs::NPCKind>(d1).factionIdx)
+    CHECK(int((*sm::body_state<ecs::NPCKind>(w.reg, d1)).factionIdx)
               == faction_index("dragons"),
           "dragons share the ONE dragons faction row (owner verdict)");
     CHECK(owned_sheet(w, d1) != nullptr,
           "the dragon OWNS his sheet like every design character");
-    const auto& kind = w.reg.get<ecs::NPCKind>(d1);
+    const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, d1));
     CHECK(untyped_squad_behaviour(w.reg, d1, kind) == AIBehaviour::LairSorties,
           "the design rung answers LairSorties");
     CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Dragon)].ai
@@ -284,12 +301,15 @@ void test_no_home_no_birth() {
     gs.mapH = kH;
     const TerrainData terrain = make_terrain();
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     Rng rng(42u);
     gs.nextMacroSpawnOrdinal = 0;
-    spawn_design_characters(gs, w, terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     int tags = 0;
-    for ([[maybe_unused]] auto e : w.reg.view<ecs::DesignCharacterTag>())
-        ++tags;
+    for (auto e : w.reg.view<ecs::MacroSlot>())
+        if (sm::store_of(w).designTag[sm::slot_of(w.reg, e)].ordinal >= 0)
+            ++tags;
     CHECK(tags == 0, "a world without the row's home births nobody");
 }
 

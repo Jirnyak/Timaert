@@ -24,7 +24,8 @@ namespace sm {
 // quarryman / clay-digger); specialisation is CONTEXT, never a village
 // type (owner ruling, R2). nullptr = no mining professions spawn.
 struct DepositLayer;
-void spawn_macro_npcs(GameState& gs, ecs::World& w,
+struct MacroStore;   // гладкая память макро-сквадов (macro/store.h, M-106)
+void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
                       const TerrainData& terrain, std::uint32_t seed,
                       const DepositLayer* deposits = nullptr);
 
@@ -35,7 +36,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
 // контекста мира (N-й ландмарк рода / клетка); мир, в котором дома нет,
 // эту анкету честно не рождает. Публична ради headless-свидетеля — тест
 // зовёт её на фикстуре напрямую, без полного генезиса.
-void spawn_design_characters(GameState& gs, ecs::World& w,
+void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
                              const TerrainData& terrain, Rng& rng,
                              std::uint32_t& spawnIndex);
 
@@ -45,7 +46,8 @@ void spawn_design_characters(GameState& gs, ecs::World& w,
 // against kNpcTypeDefs labels (npc_type_from_label); unknown token spawns
 // nothing and returns false. Aggressive types join "bandits"; civil types take
 // the faction of the land they stand on. Level > 0 pins the NPC's level.
-bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
+bool spawn_npc_at(GameState& gs, ecs::World& w, MacroStore& st,
+                  const TerrainData& terrain,
                   const char* typeToken, int x, int y, int level);
 
 // NOTE: idx→faction-id lookups live in macro/faction.h (faction_id_for_index)
@@ -114,7 +116,7 @@ struct SquadSpec {
 // Returns the leader entity (the squad IS its leader), entt::null on a bad
 // map. Runtime ordinals continue past the current maximum — the same rule
 // (and the same known reuse hole, problems.md 19.24) as spawn_npc_at.
-entt::entity spawn_squad(GameState& gs, ecs::World& w,
+entt::entity spawn_squad(GameState& gs, ecs::World& w, MacroStore& store,
                          const TerrainData& terrain, const SquadSpec& spec);
 
 

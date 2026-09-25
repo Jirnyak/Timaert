@@ -6,6 +6,7 @@
 #include "ecs/world.h"
 #include "sub/ai.h"
 #include "sub/spawn.h"
+#include "macro/store.h"
 
 #include <cstdio>
 #include <vector>
@@ -152,6 +153,10 @@ int main() {
     }
 
     sm::ecs::World world{};
+
+    auto worldStore_ = sm::make_macro_store();
+
+    sm::store_attach(world, worldStore_.get());
     std::vector<std::uint8_t> emptyTiles;
     const std::uint16_t playerFaction =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
@@ -186,6 +191,10 @@ int main() {
     }
 
     sm::ecs::World malformedWorld{};
+
+    auto malformedWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(malformedWorld, malformedWorldStore_.get());
     std::vector<std::uint8_t> malformedTiles(1, 0u);
     sm::sub::spawn_player_squad(malformedWorld, player, malformedTiles,
                                 512.0f, 512.0f, 100u, playerFaction);

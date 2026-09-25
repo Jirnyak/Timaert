@@ -12,11 +12,11 @@ namespace {
 inline bool melee_candidate(entt::registry& reg, entt::entity e) {
     if (!reg.all_of<ecs::Position, ecs::Pools, ecs::NPCKind,
                     ecs::SubworldTag>(e)
-        || reg.any_of<ecs::Dead>(e)) {
+        || macro_dead(reg, e)) {
         return false;
     }
     if (reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(e)) return false;
-    return reg.get<ecs::Pools>(e).hp > 0;
+    return (*body_state<ecs::Pools>(reg, e)).hp > 0;
 }
 
 } // namespace

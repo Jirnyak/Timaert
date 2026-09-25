@@ -3,6 +3,7 @@
 #include "ecs/components.h"
 #include "sub/base_generator.h"
 #include "sub/body.h"
+#include "macro/store.h"
 
 #include <array>
 #include <cmath>
@@ -58,7 +59,7 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     // (caster_spawn_offset / the NPC muzzle offset), and its own AoE blast
     // still catches it if it stands in the blast.
     if (!reg.any_of<ecs::Pools>(e)) return false;
-    if (reg.any_of<ecs::Dead>(e)) return false;
+    if (macro_dead(reg, e)) return false;
     if (reg.any_of<ecs::Projectile>(e)) return false;
     if (!reg.any_of<ecs::SubworldTag>(e) && !reg.any_of<ecs::AvatarTag>(e)) {
         return false;

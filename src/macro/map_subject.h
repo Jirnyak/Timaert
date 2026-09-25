@@ -32,6 +32,7 @@
 #include "macro/macro_world.h"
 #include "macro/map_actions.h"
 #include "macro/state.h"
+#include "macro/store.h"
 
 #include <cstdint>
 
@@ -66,7 +67,7 @@ inline Inventory* store_of(const MacroWorld& w, MapSubject s) {
     switch (s.kind) {
     case MapSubjectKind::Squad: {
         if (!w.world || !w.world->reg.valid(s.squad)) return nullptr;
-        auto* c = w.world->reg.try_get<ecs::NpcInventory>(s.squad);
+        auto* c = body_state<ecs::NpcInventory>(w.world->reg, s.squad);
         return c ? &c->inv : nullptr;
     }
     case MapSubjectKind::Landmark: {
@@ -87,7 +88,7 @@ inline Inventory* roster_of(const MacroWorld& w, MapSubject s) {
     switch (s.kind) {
     case MapSubjectKind::Squad: {
         if (!w.world || !w.world->reg.valid(s.squad)) return nullptr;
-        auto* r = w.world->reg.try_get<ecs::NpcInventory>(s.squad);
+        auto* r = body_state<ecs::NpcInventory>(w.world->reg, s.squad);
         return r ? &r->inv : nullptr;
     }
     case MapSubjectKind::Landmark: {

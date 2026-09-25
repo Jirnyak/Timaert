@@ -28,6 +28,7 @@
 #pragma once
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "macro/store.h"
 #include "macro/character_sheet.h"
 #include "macro/entry_context.h"
 #include "macro/spell_book_state.h"
@@ -73,12 +74,12 @@ inline entt::entity player_flag_entity(ecs::World& world) {
 inline ecs::MacroCell* player_flag_cell(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
-    return world.reg.try_get<ecs::MacroCell>(e);
+    return &store_of(world).cell[slot_of(world.reg, e)];
 }
 inline ecs::MacroVisual* player_flag_visual(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
-    return world.reg.try_get<ecs::MacroVisual>(e);
+    return &store_of(world).visual[slot_of(world.reg, e)];
 }
 
 // THE macro jump (escape teleport, console goto, subworld exit door): set
@@ -91,17 +92,16 @@ inline void player_jump_to_cell(GameState& gs, ecs::World& world,
                                 int x, int y) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return;
-    auto& reg = world.reg;
-    reg.emplace_or_replace<ecs::MacroCell>(
-        e, ecs::cell_index(x, y, gs.mapW));
+    MacroStore& st = store_of(world);
+    const std::uint16_t slot = slot_of(world.reg, e);
+    st.cell[slot] = ecs::MacroCell{ecs::cell_index(x, y, gs.mapW)};
     // A jump is not a walk: no entry edge for the next subworld enter, and
     // the think cadence restarts (the accumulator doubles as the player's
     // entry-tick clock — same kAiTicks law as every squad's think).
-    if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(e)) {
-        rt->entryDir = kEntryDirNone;
-        rt->entryTicks = 0;
-        rt->tickAccum = 0;
-    }
+    auto& rt = st.runtime[slot];
+    rt.entryDir = kEntryDirNone;
+    rt.entryTicks = 0;
+    rt.tickAccum = 0;
 }
 
 // ОЧНУТЬСЯ В СВОЁМ ТЕЛЕ — the one thing that makes possession an EFFECT rather

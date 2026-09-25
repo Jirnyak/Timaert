@@ -30,6 +30,7 @@
 #include "assets/sprite_atlas.h"
 
 #include "imgui.h"
+#include "macro/store.h"
 
 #include <cmath>
 #include <algorithm>
@@ -362,15 +363,18 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // cleanly — at zoom < 10 px/cell a 256-px sprite shrinks to a
     // monochromatic blob that visually competes with the GLSL features.
     if (zoom >= 10.0f) {
-        auto view = w.reg.view<ecs::MacroCell, ecs::NPCKind, ecs::Pools>(
-            entt::exclude<ecs::Dead, ecs::PlayerTag,
+        MacroStore& st = store_of(w);
+        auto view = w.reg.view<ecs::MacroSlot>(
+            entt::exclude<ecs::PlayerTag,
                           ecs::PlayerSquadTag>);  // the player is his own marker, under possession too
         for (auto e : view) {
-            const auto& cell = view.get<ecs::MacroCell>(e);
-            const auto& kind = view.get<ecs::NPCKind>(e);
-            const auto& hp   = view.get<ecs::Pools>(e);
+            const std::uint16_t slot = slot_of(w.reg, e);
+            if (st.dead[slot] != 0) continue;
+            const auto& cell = st.cell[slot];
+            const auto& kind = st.kind[slot];
+            const auto& hp   = st.pools[slot];
             if (hp.hp <= 0) continue;
-            const ecs::MacroVisual* visual = w.reg.try_get<ecs::MacroVisual>(e);
+            const ecs::MacroVisual* visual = &st.visual[slot];
             const float drawX = visual ? visual->vx
                                        : float(ecs::cell_x(cell, gs.mapW));
             const float drawY = visual ? visual->vy
@@ -493,8 +497,8 @@ std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
     // что на него инпут» (owner, подпосадка 4). No flag standing = no legs.
     const entt::entity e = player_flag_entity(w);
     if (e == entt::null) return 0u;
-    ecs::MacroCell* cell = w.reg.try_get<ecs::MacroCell>(e);
-    ecs::MacroNpcRuntime* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
+    ecs::MacroCell* cell = body_state<ecs::MacroCell>(w.reg, e);
+    ecs::MacroNpcRuntime* rt = body_state<ecs::MacroNpcRuntime>(w.reg, e);
     if (!cell || !rt) return 0u;
 
     const int W = gs.mapW;
@@ -630,8 +634,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
 
     if (showRows) {
 
-        auto view = w.reg.view<ecs::MacroCell, ecs::NPCKind, ecs::Pools,
-                               ecs::NpcLevel, ecs::NpcCharacter>(
+        MacroStore& st = store_of(w);
+        auto view = w.reg.view<ecs::MacroSlot>(
             entt::exclude<ecs::PlayerTag,
                           ecs::PlayerSquadTag>);  // never list the player as a party standing next to himself
 
@@ -678,8 +682,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
         };
 
         for (auto e : view) {
-            const auto& cell = view.get<ecs::MacroCell>(e);
-            const auto& hp  = view.get<ecs::Pools>(e);
+            const std::uint16_t slot = slot_of(w.reg, e);
+            const auto& cell = st.cell[slot];
+            const auto& hp  = st.pools[slot];
             if (hp.hp <= 0) continue;
 
             int nx = ecs::cell_x(cell, W);
@@ -750,8 +755,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     std::uint16_t rowFaction = kNoFaction;
                     NPCType t = NPCType::Peasant;
                     if (isSquad) {
-                        const auto& kind = view.get<ecs::NPCKind>(r.subject.squad);
-                        const auto& ch   = view.get<ecs::NpcCharacter>(r.subject.squad);
+                        const std::uint16_t rslot =
+                            slot_of(w.reg, r.subject.squad);
+                        const auto& kind = st.kind[rslot];
+                        const auto& ch   = st.character[rslot];
                         t = npc_type_or_default(kind.type);
                         const auto& def = npc_def(t);
                         rowName = npc_display_name(def, ch);
@@ -882,8 +889,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     ImGui::Text("%s", r.dir);
                     ImGui::PopStyleColor();
                     if (isSquad) {
-                        const auto& hp  = view.get<ecs::Pools>(r.subject.squad);
-                        const auto& lvl = view.get<ecs::NpcLevel>(r.subject.squad);
+                        const std::uint16_t rslot2 =
+                            slot_of(w.reg, r.subject.squad);
+                        const auto& hp  = st.pools[rslot2];
+                        const auto& lvl = st.level[rslot2];
                         ImGui::TextDisabled("Lv.%d", int(lvl.value));
                         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 90, 90, 255));
                         ImGui::Text("%d/%d", int(hp.hp), int(hp.maxHp));

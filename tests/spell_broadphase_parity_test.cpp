@@ -22,6 +22,7 @@
 #include "sub/movement.h"
 #include "sub/body.h"
 #include "ecs/components.h"
+#include "macro/store.h"
 
 #include <cmath>
 #include <cstdint>
@@ -165,6 +166,8 @@ enum class Mode { Full, Grid, Fallback, Lossy };
 // body's hp in creation order.
 std::vector<float> run_scenario(int scenario, Mode mode) {
     sm::ecs::World w{};
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     auto& reg = w.reg;
     build_scene(reg, scenario);
     const auto bodies = bodies_in_creation_order(reg);

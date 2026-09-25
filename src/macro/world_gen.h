@@ -27,6 +27,8 @@ struct PathCostData;
 struct LayerParameters;
 namespace ecs { struct World; }
 
+struct MacroStore;
+
 struct WorldGenParams {
     std::uint32_t seed = 0;
     int mapW = 1024;   // CANON S1: the torus is 1024×1024 cells
@@ -58,6 +60,7 @@ struct WorldGenOut {
     LandmarkGrid*           landmarkGrid = nullptr;
     PathCostData*           pathCost = nullptr;
     ecs::World*             world = nullptr;
+    MacroStore*             store = nullptr;   // гладкая память сквадов (M-106)
 };
 
 void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p);

@@ -9,6 +9,7 @@
 
 #include "ecs/world.h"
 #include "sub/targeting.h"
+#include "macro/store.h"
 
 #include <cmath>
 
@@ -100,7 +101,7 @@ int main() {
               "Dead entities excluded even when nearer");
         // Zero-HP but not yet tagged Dead is also excluded.
         entt::entity downed = make_enemy(reg, 102, 100);
-        reg.get<ecs::Pools>(downed).hp = 0.0f;
+        (*sm::body_state<ecs::Pools>(reg, downed)).hp = 0.0f;
         CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "zero-HP entities excluded even when nearer");
     }

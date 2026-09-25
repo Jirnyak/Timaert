@@ -23,6 +23,7 @@
 #include "macro/player_entity.h"
 #include "macro/npc_spawn.h"
 #include "macro/currency.h"
+#include "macro/store.h"
 
 #include <cstdio>
 #include <vector>
@@ -52,16 +53,17 @@ void collect(void* user, const BattleFact& f) {
 entt::entity squad(ecs::World& w, NPCType leaderType, const char* factionId,
                    int level, int members, std::uint32_t spawnIndex) {
     auto& reg = w.reg;
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const entt::entity e = reg.create();
+    reg.emplace<ecs::MacroSlot>(e, h.slot);
     reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(leaderType),
-                              std::uint16_t(faction_index(factionId)));
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-    reg.emplace<ecs::Pools>(e, 100, 100);
-    reg.emplace<ecs::MacroSpawnId>(e, spawnIndex);
-    reg.emplace<ecs::MacroNpcRuntime>(e, ecs::MacroNpcRuntime{});
-    reg.emplace<ecs::SquadRoster>(e);
-    auto& bag = reg.get_or_emplace<ecs::NpcInventory>(e);
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(leaderType),
+                                   std::uint16_t(faction_index(factionId))};
+    st.level[h.slot] = ecs::NpcLevel{std::int16_t(level)};
+    st.pools[h.slot] = ecs::Pools{100, 100};
+    st.spawnId[h.slot] = ecs::MacroSpawnId{spawnIndex};
+    auto& bag = st.inventory[h.slot];
     for (int i = 0; i < members; ++i) {
         creatures_push(bag.inv,
             make_soldier(std::uint16_t(NPCType::Merchant), level,
@@ -77,7 +79,7 @@ AutoBattleOutcome wipe_of(ecs::World& w, entt::entity loser, bool loserIsB) {
     o.winner = loserIsB ? 0 : 1;
     auto& cas = loserIsB ? o.casualtiesB : o.casualtiesA;
     for (const CreatureHead r :
-         creature_heads_range(w.reg.get<ecs::NpcInventory>(loser).inv)) {
+         creature_heads_range((*sm::body_state<ecs::NpcInventory>(w.reg, loser)).inv)) {
         cas.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
     (loserIsB ? o.leaderFractionB : o.leaderFractionA) = 0.0f;
@@ -89,6 +91,8 @@ void test_every_death_is_reported_once() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     FactLog log{};
     MacroWorld mw{};
     mw.gs = &gs;
@@ -126,13 +130,15 @@ void test_no_facts_when_nobody_listens() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     MacroWorld mw{};       // no sink: a headless fixture
     mw.gs = &gs;
     mw.world = &w;
     const entt::entity a = squad(w, NPCType::Guard, "empire", 3, 0, 1u);
     const entt::entity b = squad(w, NPCType::Bandit, "bandits", 2, 2, 2u);
     settle_auto_battle(mw, a, b, wipe_of(w, b, true));
-    CHECK(w.reg.all_of<ecs::Dead>(b),
+    CHECK(sm::macro_dead(w.reg, b),
           "the battle still settles with nobody listening — a null channel "
           "is the zero contribution, not a broken path");
 }
@@ -143,6 +149,8 @@ void test_kill_price_is_the_registry_column() {
         GameState gs{};
         gs.mapW = gs.mapH = 64;
         ecs::World w;
+        auto wStore_ = sm::make_macro_store();
+        sm::store_attach(w, wStore_.get());
         MacroWorld mw{};
         mw.gs = &gs;
         mw.world = &w;
@@ -159,6 +167,8 @@ void test_kill_price_is_the_registry_column() {
         GameState gs{};
         gs.mapW = gs.mapH = 64;
         ecs::World w;
+        auto wStore_ = sm::make_macro_store();
+        sm::store_attach(w, wStore_.get());
         MacroWorld mw{};
         mw.gs = &gs;
         mw.world = &w;
@@ -176,6 +186,8 @@ void test_spoils_are_rolled_not_scavenged() {
     gs.mapW = gs.mapH = 64;
     gs.worldSeed = 4242u;
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     MacroWorld mw{};
     mw.gs = &gs;
     mw.world = &w;
@@ -186,7 +198,7 @@ void test_spoils_are_rolled_not_scavenged() {
     // Слияние M-71: контейнер у сквада ЕСТЬ (в нём живут его люди), но
     // ПРЕДМЕТНАЯ область пуста — до броска ронять по-прежнему нечего.
     {
-        const Inventory& einv = w.reg.get<ecs::NpcInventory>(enemy).inv;
+        const Inventory& einv = (*sm::body_state<ecs::NpcInventory>(w.reg, enemy)).inv;
         int goods = 0;
         for (const ItemRef& sl : einv.slots) {
             if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
@@ -210,6 +222,8 @@ void test_spoils_are_rolled_not_scavenged() {
     gs2.mapW = gs2.mapH = 64;
     gs2.worldSeed = 4242u;
     ecs::World w2;
+    auto w2Store_ = sm::make_macro_store();
+    sm::store_attach(w2, w2Store_.get());
     MacroWorld mw2{};
     mw2.gs = &gs2;
     mw2.world = &w2;
@@ -232,6 +246,8 @@ void test_beasts_pay_no_coin() {
     gs.mapW = gs.mapH = 64;
     gs.worldSeed = 99u;
     ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
     MacroWorld mw{};
     mw.gs = &gs;
     mw.world = &w;

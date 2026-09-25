@@ -24,6 +24,7 @@
 #include "macro/squad.h"
 #include "macro/world_tick.h"
 #include "macro/state.h"
+#include "macro/store.h"
 
 #include <cstdio>
 #include <vector>
@@ -79,6 +80,8 @@ int main() {
         // сквадом, притворившимся видом существа. Дверь та же, что ведёт
         // рейсы сбыта артелей сегодня.
         ecs::World w;
+        auto wStore_ = sm::make_macro_store();
+        sm::store_attach(w, wStore_.get());
         MacroWorld mw{.gs = &gs, .world = &w};
         TickContext ctx{};
         ctx.mw = mw;

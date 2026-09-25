@@ -7,6 +7,7 @@
 #include "ecs/world.h"
 #include "sub/spell_effects.h"
 #include "sub/body.h"
+#include "macro/store.h"
 
 #include <cmath>
 #include <cstdio>
@@ -97,7 +98,7 @@ std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
 }
 
 float hp_of(sm::ecs::World& w, entt::entity e) {
-    const auto* hp = w.reg.try_get<sm::ecs::Pools>(e);
+    const auto* hp = sm::body_state<sm::ecs::Pools>(w.reg, e);
     return hp ? hp->hp : -1.0f;
 }
 
@@ -136,6 +137,10 @@ float seq_rng01(void* user) {
 int main() {
 
     sm::ecs::World world;
+
+    auto worldStore_ = sm::make_macro_store();
+
+    sm::store_attach(world, worldStore_.get());
     sm::SpellBook book;
     sm::ecs::Pools combat{};
     combat.mp = 2000;
@@ -506,6 +511,10 @@ int main() {
     }
 
     sm::ecs::World fireExpiryWorld;
+
+    auto fireExpiryWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(fireExpiryWorld, fireExpiryWorldStore_.get());
     sm::SpellBook fireExpiryBook;
     sm::ecs::Pools fireExpiryCombat{};
     fireExpiryCombat.mp = 1000;
@@ -526,6 +535,10 @@ int main() {
     }
 
     sm::ecs::World blastWorld;
+
+    auto blastWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(blastWorld, blastWorldStore_.get());
     auto blastProjectile = blastWorld.create();
     blastWorld.reg.emplace<sm::ecs::Position>(blastProjectile, 0.0f, 0.0f, 0.0f);
     blastWorld.reg.emplace<sm::ecs::Projectile>(blastProjectile,
@@ -547,6 +560,10 @@ int main() {
     }
 
     sm::ecs::World iceWorld;
+
+    auto iceWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(iceWorld, iceWorldStore_.get());
     sm::SpellBook iceBook;
     sm::ecs::Pools iceCombat{};
     iceCombat.mp = 1000;
@@ -784,6 +801,10 @@ int main() {
     }
 
     sm::ecs::World hitWorld;
+
+    auto hitWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(hitWorld, hitWorldStore_.get());
     sm::SpellBook hitBook;
     sm::ecs::Pools hitCombat{};
     hitCombat.mp = 1000;
@@ -808,6 +829,8 @@ int main() {
     // its own fresh world (fresh cooldown, clear lane) — the stages no longer
     // share one projectile now that nothing flies through a friendly.
     sm::ecs::World hostWorld;
+    auto hostWorldStore_ = sm::make_macro_store();
+    sm::store_attach(hostWorld, hostWorldStore_.get());
     sm::SpellBook hostBook;
     sm::ecs::Pools hostCombat{};
     hostCombat.mp = 1000;
@@ -829,6 +852,10 @@ int main() {
     }
 
     sm::ecs::World beamWorld;
+
+    auto beamWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(beamWorld, beamWorldStore_.get());
     sm::SpellBook beamBook;
     sm::ecs::Pools beamCombat{};
     beamCombat.mp = 1000;
@@ -853,6 +880,10 @@ int main() {
     }
 
     sm::ecs::World chainWorld;
+
+    auto chainWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(chainWorld, chainWorldStore_.get());
     sm::SpellBook chainBook;
     sm::ecs::Pools chainCombat{};
     chainCombat.mp = 1000;
@@ -887,6 +918,10 @@ int main() {
     }
 
     sm::ecs::World armWorld;
+
+    auto armWorldStore_ = sm::make_macro_store();
+
+    sm::store_attach(armWorld, armWorldStore_.get());
     sm::SpellBook armBook;
     sm::ecs::Pools armCombat{};
     armCombat.mp = 2000;
@@ -975,6 +1010,8 @@ int main() {
         // blast catches the player when the player stands in it, and the hit
         // is still attributed player-owned (XP/log route to the player).
         sm::ecs::World selfWorld;
+        auto selfWorldStore_ = sm::make_macro_store();
+        sm::store_attach(selfWorld, selfWorldStore_.get());
         auto selfPlayer = selfWorld.create();
         selfWorld.reg.emplace<sm::ecs::Position>(selfPlayer, 0.0f, 0.0f, 0.0f);
         selfWorld.reg.emplace<sm::ecs::Pools>(selfPlayer, 100, 100);
@@ -1004,6 +1041,8 @@ int main() {
         // any exclusion rule, is all that keeps a live cast off its own shell.
         // This bolt is placed ON its player caster, so it must connect.
         sm::ecs::World shieldWorld;
+        auto shieldWorldStore_ = sm::make_macro_store();
+        sm::store_attach(shieldWorld, shieldWorldStore_.get());
         auto shieldPlayer = shieldWorld.create();
         shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f, 0.0f);
         shieldWorld.reg.emplace<sm::ecs::Pools>(shieldPlayer, 100, 100);
@@ -1030,6 +1069,8 @@ int main() {
         // friendlyFire blast catches its OWN NPC caster too, and the hit is
         // NOT player-owned (no XP leaks to the player sheet).
         sm::ecs::World npcWorld;
+        auto npcWorldStore_ = sm::make_macro_store();
+        sm::store_attach(npcWorld, npcWorldStore_.get());
         auto npcCaster = npcWorld.create();
         npcWorld.reg.emplace<sm::ecs::Position>(npcCaster, 0.0f, 0.0f, 0.0f);
         npcWorld.reg.emplace<sm::ecs::Pools>(npcCaster, 100, 100);
@@ -1074,6 +1115,8 @@ int main() {
                                  14.3f, 20.6f, 27.0f, 35.8f};
         for (const float range : kRanges) {
             sm::ecs::World sweepWorld;
+            auto sweepWorldStore_ = sm::make_macro_store();
+            sm::store_attach(sweepWorld, sweepWorldStore_.get());
             sm::SpellBook sweepBook;
             sm::ecs::Pools sweepCombat{};
             sweepCombat.mp = 1000;

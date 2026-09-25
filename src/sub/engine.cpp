@@ -44,6 +44,7 @@
 #include "macro/zones.h"
 #include "core/rng.h"
 #include "core/torus.h"
+#include "macro/store.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -181,7 +182,7 @@ Inventory& player_bag_of(ecs::World* ecs) {
 }
 
 float body_sight(const entt::registry& reg, entt::entity e) {
-    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    const auto* kind = body_state<ecs::NPCKind>(reg, e);
     if (const NpcTypeDef* row = row_for(kind)) {
         if (row->combat.sight > 0.0f) return row->combat.sight;
     }
@@ -285,9 +286,9 @@ std::uint32_t string_hash(const char* s) {
 // could not carry a name. Faces are derived in ONE place now: sub/spawn.cpp.)
 
 bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
-    const auto* h = reg.try_get<ecs::Pools>(e);
+    const auto* h = body_state<ecs::Pools>(reg, e);
     return h && h->hp > 0.0f && reg.all_of<ecs::SubworldTag>(e)
-        && !reg.any_of<ecs::Dead>(e);
+        && !macro_dead(reg, e);
 }
 
 bool hostile_to_player_entity(entt::registry& reg,
@@ -297,7 +298,7 @@ bool hostile_to_player_entity(entt::registry& reg,
         return false;
     }
     if (reg.any_of<ecs::TempHostileToPlayer>(e)) return true;
-    const char* factionId = faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
+    const char* factionId = faction_id_for_kind(body_state<ecs::NPCKind>(reg, e));
     return player_hostile_to(gs, factionId);
 }
 
@@ -312,7 +313,7 @@ bool hostile_to_player_entity(entt::registry& reg,
 // own mask — same semantics, integer cost.
 
 const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
-    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    const auto* kind = body_state<ecs::NPCKind>(reg, e);
     if (kind && kind->type < std::uint16_t(NPCType::Count)) {
         const NPCType type = static_cast<NPCType>(std::uint8_t(kind->type));
         return npc_def(type).label;
@@ -347,7 +348,7 @@ void apply_player_hit_reputation(entt::registry& reg,
     if (!gs || !reg.valid(target)) return;
     if (hostile_to_player_entity(reg, target, gs)) return;
 
-    const char* factionId = faction_id_for_kind(reg.try_get<ecs::NPCKind>(target));
+    const char* factionId = faction_id_for_kind(body_state<ecs::NPCKind>(reg, target));
     if (!factionId || factionId[0] == '\0') return;
     add_player_reputation(*gs, factionId, kHitRepPenalty);
     maybe_flip_temp_hostile(reg, target, gs, factionId);
@@ -492,7 +493,7 @@ void clear_subworld_entities(ecs::World& w) {
 float player_stance(entt::registry& reg, entt::entity e, const GameState* gs) {
     if (is_player_side(reg, e)) return 1.0f;                    // own side
     if (reg.any_of<ecs::TempHostileToPlayer>(e)) return -1.0f;  // provoked
-    const char* factionId = faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
+    const char* factionId = faction_id_for_kind(body_state<ecs::NPCKind>(reg, e));
     const int rep = player_reputation(gs, factionId);
     if (rep >= 0) {
         return std::min(1.0f, float(rep) / float(kAllyRepThreshold));
@@ -629,11 +630,11 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     std::uint8_t entryDir = kEntryDirNone;
     std::uint8_t entryTicks = 0;
     if (const entt::entity fe = player_flag_entity(ecs); fe != entt::null) {
-        if (const auto* fc = ecs.reg.try_get<ecs::MacroCell>(fe)) {
+        if (const auto* fc = body_state<ecs::MacroCell>(ecs.reg, fe)) {
             cx = ecs::cell_x(*fc, gs.mapW);
             cy = ecs::cell_y(*fc, gs.mapW);
         }
-        if (const auto* frt = ecs.reg.try_get<ecs::MacroNpcRuntime>(fe)) {
+        if (const auto* frt = body_state<ecs::MacroNpcRuntime>(ecs.reg, fe)) {
             entryDir = frt->entryDir;
             entryTicks = frt->entryTicks;
         }
@@ -756,14 +757,14 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     std::int16_t rosterCx = 0, rosterCy = 0;
     std::uint16_t squadFaction = std::uint16_t(faction_index(kPlayerFactionId));
     if (flagRec != entt::null) {
-        if (const auto* sid = ecs.reg.try_get<ecs::MacroSpawnId>(flagRec)) {
+        if (const auto* sid = body_state<ecs::MacroSpawnId>(ecs.reg, flagRec)) {
             rosterSubject = std::int32_t(sid->index);
         }
-        if (const auto* mc = ecs.reg.try_get<ecs::MacroCell>(flagRec)) {
+        if (const auto* mc = body_state<ecs::MacroCell>(ecs.reg, flagRec)) {
             rosterCx = std::int16_t(ecs::cell_x(*mc, gs.mapW));
             rosterCy = std::int16_t(ecs::cell_y(*mc, gs.mapW));
         }
-        if (const auto* kind = ecs.reg.try_get<ecs::NPCKind>(flagRec)) {
+        if (const auto* kind = body_state<ecs::NPCKind>(ecs.reg, flagRec)) {
             squadFaction = kind->factionIdx;
         }
     }
@@ -980,7 +981,7 @@ void SubworldEngine::spawn_player_entity() {
     // macro state, the body is its projection. Refreshed each tick beside the
     // pace, so drawing a dagger changes the next swing, not the next descent.
     const ecs::BodyEquipment* eqp = nullptr;
-    if (flagRec != entt::null) eqp = reg.try_get<ecs::BodyEquipment>(flagRec);
+    if (flagRec != entt::null) eqp = body_state<ecs::BodyEquipment>(reg, flagRec);
     // The EFFECTIVE sheet swings and paces (phase 4): the ring's +STR is in
     // the blow, the sustained haste's +SPD is in the step. The totals are
     // assembled ONCE — the sheet copy takes the attr/skill cells, and the
@@ -1011,7 +1012,7 @@ void SubworldEngine::spawn_player_entity() {
     // for himself, the worn record's for a possession.
     float armReach = kAdventurerCombat.attackRange;
     if (flagRec != entt::null) {
-        if (const auto* k = reg.try_get<ecs::NPCKind>(flagRec)) {
+        if (const auto* k = body_state<ecs::NPCKind>(reg, flagRec)) {
             armReach = npc_def(NPCType(k->type)).combat.attackRange;
         }
     }
@@ -1148,7 +1149,7 @@ void SubworldEngine::sync_player_entity_position() {
                     eff.attributes, eff.skills, st);
                 const ecs::BodyEquipment* eqp = nullptr;
                 if (rec != entt::null)
-                    eqp = reg.try_get<ecs::BodyEquipment>(rec);
+                    eqp = body_state<ecs::BodyEquipment>(reg, rec);
                 const StrikeFields hs = hand_strike_fields(
                     eff.attributes, eff.skills,
                     eqp ? &eqp->gear : nullptr);
@@ -1171,7 +1172,7 @@ void SubworldEngine::sync_player_entity_position() {
                 {
                     float armReach = kAdventurerCombat.attackRange;
                     if (rec != entt::null) {
-                        if (const auto* k = reg.try_get<ecs::NPCKind>(rec)) {
+                        if (const auto* k = body_state<ecs::NPCKind>(reg, rec)) {
                             armReach =
                                 npc_def(NPCType(k->type)).combat.attackRange;
                         }
@@ -1220,7 +1221,7 @@ void SubworldEngine::mirror_bodies_from_record() {
          reg.view<ecs::MacroOrigin, ecs::Pools, ecs::SubworldTag>().each()) {
         (void)body;
         if (!reg.valid(origin.macro)) continue;
-        const auto* record = reg.try_get<ecs::Pools>(origin.macro);
+        const auto* record = body_state<ecs::Pools>(reg, origin.macro);
         if (!record || record->maxHp <= 0) continue;
         mirror = *record;
         mirror.maxHp = std::max(1, mirror.maxHp);
@@ -2789,7 +2790,7 @@ bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
     if (body == entt::null) return false;
 
     char msg[160]{};
-    const auto& kind = reg.get<ecs::NPCKind>(body);
+    const auto& kind = (*body_state<ecs::NPCKind>(reg, body));
     std::snprintf(msg, sizeof(msg), "Encounter: %s",
                   npc_def(static_cast<NPCType>(kind.type)).label);
     set_status(msg);
@@ -3031,7 +3032,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // keeps its own colours. «Ты полностью тот, в чьём теле стоишь» — в
         // том числе для чужих глаз; перекраска любого AvatarTag-тела в
         // «player» делала одержимого лорда предателем собственных стен.
-        const auto* bodyKind = reg.try_get<ecs::NPCKind>(e);
+        const auto* bodyKind = body_state<ecs::NPCKind>(reg, e);
         d.faction = std::int16_t(
             isPlayer && !bodyKind
                 ? crowdPlayerFaction_
@@ -3303,10 +3304,10 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // knows a body has died, so this is the only place that can be.
             if (const auto* origin = reg.try_get<ecs::MacroOrigin>(e)) {
                 if (reg.valid(origin->macro)) {
-                    if (auto* mh = reg.try_get<ecs::Pools>(origin->macro)) {
+                    if (auto* mh = body_state<ecs::Pools>(reg, origin->macro)) {
                         mh->hp = 0.0f;
                     }
-                    reg.emplace_or_replace<ecs::Dead>(origin->macro);
+                    macro_mark_dead(reg, origin->macro);
                     // …and his men stop being a squad THE MOMENT he falls,
                     // exactly as they do when the auto-resolve kills him
                     // (CANON S4: a leaderless squad's survivors fall into the
@@ -3318,8 +3319,8 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 }
             }
             const auto* pos = reg.try_get<ecs::Position>(e);
-            const auto* kind = reg.try_get<ecs::NPCKind>(e);
-            const auto* level = reg.try_get<ecs::NpcLevel>(e);
+            const auto* kind = body_state<ecs::NPCKind>(reg, e);
+            const auto* level = body_state<ecs::NpcLevel>(reg, e);
             const auto* lastHit = reg.try_get<ecs::LastHit>(e);
             const int lvl = normalize_soldier_level(level ? level->value : 1);
 
@@ -3368,7 +3369,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                                             ecs::PlayerSoldierTag>(killerBody);
                 }
                 if (leader != entt::null && mw_.world->reg.valid(leader)
-                    && !mw_.world->reg.any_of<ecs::Dead>(leader)) {
+                    && !macro_dead(mw_.world->reg, leader)) {
                     // One row, one formula (owner, 2026-08-29): what a kill
                     // is worth is npc_xp_reward — the row's own xpReward
                     // stepped by level, for EVERY row and EVERY killer.

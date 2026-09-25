@@ -27,6 +27,7 @@
 #include "macro/politik.h"
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
+#include "macro/store.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -125,6 +126,10 @@ bool run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     const std::uint16_t empire = std::uint16_t(sm::faction_index("empire"));
 
     sm::ecs::World world{};
+
+    auto worldStore_ = sm::make_macro_store();
+
+    sm::store_attach(world, worldStore_.get());
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
@@ -165,6 +170,10 @@ bool run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
     const std::uint16_t empire = std::uint16_t(sm::faction_index("empire"));
 
     sm::ecs::World world{};
+
+    auto worldStore_ = sm::make_macro_store();
+
+    sm::store_attach(world, worldStore_.get());
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,

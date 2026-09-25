@@ -23,6 +23,7 @@
 #include "macro/squad_walk.h"
 #include "macro/state.h"
 #include "macro/zones.h"
+#include "macro/store.h"
 
 #include <algorithm>
 #include <cmath>
@@ -148,14 +149,14 @@ inline void refresh_body_from_sheet(ecs::Pools& pools,
 // груза он всё равно как-то ограничивает. Каждое место, меняющее ростер,
 // обязано позвать эту дверь.
 inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
-    auto* rt = w.reg.try_get<ecs::MacroNpcRuntime>(leader);
-    const auto* kind = w.reg.try_get<ecs::NPCKind>(leader);
+    auto* rt = body_state<ecs::MacroNpcRuntime>(w.reg, leader);
+    const auto* kind = body_state<ecs::NPCKind>(w.reg, leader);
     if (!rt || !kind) return;
     if (rt->carryPerSoul <= 0.0f) rt->carryPerSoul = rt->carryCap;
     const float leaderHaul = npc_def(NPCType(kind->type)).haulMult;
     const float lh = leaderHaul > 0.0f ? leaderHaul : 1.0f;
     float souls = 1.0f;   // лидер — своя спина, она уже в carryPerSoul
-    if (const auto* bag = w.reg.try_get<ecs::NpcInventory>(leader)) {
+    if (const auto* bag = body_state<ecs::NpcInventory>(w.reg, leader)) {
         for (int i = bag->inv.creature_first(); i < kMaxInventorySlots; ++i) {
             const ItemRef& m = bag->inv.slots[std::size_t(i)];
             const float h =
@@ -185,12 +186,15 @@ inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
     // Порядок слива — закон (squad_walk.h): пул принимает души слотами, и
     // «чьи люди легли первыми» не должно зависеть от кишки EnTT. Вектор
     // пуст почти каждый тик (смерть — редкое событие), аллокации нет.
-    auto view = w.reg.view<ecs::NpcInventory, ecs::SquadRoster, ecs::Dead>(
+    MacroStore& st = store_of(w);
+    auto view = w.reg.view<ecs::MacroSlot>(
         entt::exclude<ecs::PlayerSquadTag>);
     std::vector<SquadWalkEntry> order;
-    collect_squads_by_ordinal(w.reg, view, order);
+    collect_squads_by_ordinal(
+        w.reg, st, view, order,
+        [&](std::uint16_t slot) { return st.dead[slot] != 0; });
     for (const SquadWalkEntry& sw : order) {
-        auto& bag = w.reg.get<ecs::NpcInventory>(sw.e);
+        auto& bag = st.inventory[slot_of(w.reg, sw.e)];
         if (creatures_empty(bag.inv)) continue;
         // The pool CAN refuse (its own slot ceiling): only the men it
         // actually took leave the roster; the rest STAY as the dead lord's
@@ -233,14 +237,16 @@ inline int destroy_dead_macro_squads(ecs::World& w,
     // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
     // (destroy под собственным view незаконен), закон порядка достался ему
     // бесплатно.
-    auto view = w.reg.view<ecs::MacroSpawnId, ecs::SquadRoster,
-                           ecs::NpcInventory, ecs::Dead>(
+    MacroStore& st = store_of(w);
+    auto view = w.reg.view<ecs::MacroSlot>(
         entt::exclude<ecs::PlayerTag, ecs::PlayerSquadTag, ecs::SubworldTag>);
     std::vector<SquadWalkEntry> snapshot;
-    collect_squads_by_ordinal(w.reg, view, snapshot);
+    collect_squads_by_ordinal(
+        w.reg, st, view, snapshot,
+        [&](std::uint16_t slot) { return st.dead[slot] != 0; });
     std::vector<entt::entity> doomed;
     for (const SquadWalkEntry& sw : snapshot) {
-        if (!creatures_empty(w.reg.get<ecs::NpcInventory>(sw.e).inv))
+        if (!creatures_empty(st.inventory[slot_of(w.reg, sw.e)].inv))
             continue;
         doomed.push_back(sw.e);
     }
@@ -254,10 +260,12 @@ inline int destroy_dead_macro_squads(ecs::World& w,
         // contextual outflow: loot is ROLLED from tables with a budget
         // drawn off this value — variety by law, O(1) memory.
         if (lootPoolValue) {
-            if (const auto* bag = w.reg.try_get<ecs::NpcInventory>(e)) {
+            if (const auto* bag = body_state<ecs::NpcInventory>(w.reg, e)) {
                 *lootPoolValue += inventory_value(bag->inv);
             }
         }
+        const std::uint16_t slot = slot_of(w.reg, e);
+        store_death(st, MacroHandle{slot, st.generation[slot]});
         w.reg.destroy(e);
     }
     return int(doomed.size());
@@ -270,8 +278,10 @@ inline int destroy_dead_macro_squads(ecs::World& w,
 // hot loop: a death, a possession, a load.
 inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
                                              std::uint32_t index) {
-    for (auto e : w.reg.view<ecs::MacroSpawnId>()) {
-        if (w.reg.get<ecs::MacroSpawnId>(e).index == index) return e;
+    const MacroStore& st = store_of(w);
+    for (auto e : w.reg.view<ecs::MacroSlot>()) {
+        if (st.spawnId[w.reg.get<ecs::MacroSlot>(e).slot].index == index)
+            return e;
     }
     return entt::null;
 }
@@ -288,7 +298,23 @@ inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
 // The OWNED sheet, when this body has one — the writable store a level-up
 // or a future teacher mutates. nullptr = transient (derive instead).
 inline CharacterSheet* owned_sheet(entt::registry& reg, entt::entity e) {
-    return reg.try_get<CharacterSheet>(e);
+    // ФЛИП 1в: колонка листа есть у ВСЕХ (гладкая память), но ЗАКОН
+    // ВЛАДЕНИЯ на структурном шаге — прежний: листом ЖИВУТ именной род,
+    // анкета стола и сквад игрока; транзиент деривирует по уровню (пути
+    // роста XP расходятся ровно этим предикатом — пойман паритетом с.18:
+    // третий раунд авто-боя бил другими числами). Снятие дуализма — «у
+    // каждого своя анкета качается» (ММОРПГ-вердикт 2026-09-25) — идёт
+    // ОТДЕЛЬНЫМ поведенческим шагом после паритетного флипа.
+    const auto* ms = reg.try_get<ecs::MacroSlot>(e);
+    if (!ms) return reg.try_get<CharacterSheet>(e);   // тело сцены — своё
+    MacroStore& st = store_of(reg);
+    const auto& kind = st.kind[ms->slot];
+    const bool owns =
+        (kind.type < std::uint16_t(NPCType::Count)
+         && npc_named(NPCType(std::uint8_t(kind.type))))
+        || st.designTag[ms->slot].ordinal >= 0
+        || reg.any_of<ecs::PlayerTag, ecs::PlayerSquadTag>(e);
+    return owns ? &st.sheet[ms->slot] : nullptr;
 }
 inline CharacterSheet* owned_sheet(ecs::World& w, entt::entity e) {
     return owned_sheet(w.reg, e);
@@ -299,9 +325,9 @@ inline CharacterSheet* owned_sheet(ecs::World& w, entt::entity e) {
 // and no caller may hold a reference across a tick (ecs-ref grabla).
 inline CharacterSheet sheet_of(entt::registry& reg, entt::entity e) {
     if (const CharacterSheet* own = owned_sheet(reg, e)) return *own;
-    const auto* kind = reg.try_get<ecs::NPCKind>(e);
-    const auto* lvl  = reg.try_get<ecs::NpcLevel>(e);
-    const auto* sid  = reg.try_get<ecs::MacroSpawnId>(e);
+    const auto* kind = body_state<ecs::NPCKind>(reg, e);
+    const auto* lvl  = body_state<ecs::NpcLevel>(reg, e);
+    const auto* sid  = body_state<ecs::MacroSpawnId>(reg, e);
     const NPCType type = kind && kind->type < std::uint16_t(NPCType::Count)
         ? NPCType(std::uint8_t(kind->type)) : NPCType::Peasant;
     return make_character_sheet(type, lvl ? int(lvl->value) : 1,
@@ -321,10 +347,10 @@ inline CharacterSheet sheet_of(ecs::World& w, entt::entity e) {
 // is itself a term of.
 inline BonusTotals standing_bonuses_of(entt::registry& reg, entt::entity e) {
     BonusTotals t{};
-    if (const auto* eq = reg.try_get<ecs::BodyEquipment>(e)) {
+    if (const auto* eq = body_state<ecs::BodyEquipment>(reg, e)) {
         t += worn_bonuses(eq->gear);
     }
-    if (const auto* book = reg.try_get<SpellBook>(e)) {
+    if (const auto* book = body_state<SpellBook>(reg, e)) {
         const Skills base = sheet_of(reg, e).skills;
         for (int ord = 0; ord < kSpellCount; ++ord) {
             if (!spellbook_has_sustained(*book, ord)) continue;
@@ -370,7 +396,7 @@ inline std::uint32_t* renown_slot(ecs::World& w, GameState& gs,
         case std::uint8_t(FactSubject::Squad): {
             const entt::entity e = macro_entity_by_spawn_id(w, ordinal);
             if (e == entt::null) return nullptr;
-            auto* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
+            auto* rt = body_state<ecs::MacroNpcRuntime>(w.reg, e);
             return rt ? &rt->renown : nullptr;
         }
         case std::uint8_t(FactSubject::Landmark):
@@ -422,7 +448,7 @@ inline void grant_renown(ecs::World& w, GameState& gs,
 inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
                                  entt::entity subject = entt::null) {
     if (subject != entt::null && w.reg.valid(subject)) {
-        const auto* id = w.reg.try_get<ecs::MacroSpawnId>(subject);
+        const auto* id = body_state<ecs::MacroSpawnId>(w.reg, subject);
         if (id && id->index != 0u) {
             fact.subjectKind = std::uint8_t(FactSubject::Squad);
             fact.subject = id->index;
@@ -478,18 +504,18 @@ inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
 inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
     AutoBattleSide s{};
     auto& reg = w.reg;
-    if (const auto* kind = reg.try_get<ecs::NPCKind>(e)) {
+    if (const auto* kind = body_state<ecs::NPCKind>(reg, e)) {
         if (kind->type < std::uint16_t(NPCType::Count)) {
             s.leaderType = NPCType(std::uint8_t(kind->type));
         }
     }
-    if (const auto* lvl = reg.try_get<ecs::NpcLevel>(e)) {
+    if (const auto* lvl = body_state<ecs::NpcLevel>(reg, e)) {
         s.leaderLevel = normalize_soldier_level(lvl->value);
     }
-    if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(e)) {
+    if (const auto* sid = body_state<ecs::MacroSpawnId>(reg, e)) {
         s.leaderSeed = leader_sheet_seed(sid->index);
     }
-    if (const auto* hp = reg.try_get<ecs::Pools>(e)) {
+    if (const auto* hp = body_state<ecs::Pools>(reg, e)) {
         s.leaderHealthFraction = hp->maxHp > 0
             ? std::clamp(float(hp->hp) / float(hp->maxHp), 0.0f, 1.0f) : 1.0f;
         // sp may be a NEGATIVE debt (exhaustion); the 0.1 floor already
@@ -498,7 +524,7 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
         s.fatigue = std::clamp(
             float(hp->sp) / float(std::max<int>(1, hp->maxSp)), 0.1f, 1.0f);
     }
-    if (const auto* bag = reg.try_get<ecs::NpcInventory>(e)) {
+    if (const auto* bag = body_state<ecs::NpcInventory>(reg, e)) {
         s.roster = &bag->inv;   // область существ единого контейнера (M-71)
     }
     if (owned_sheet(w, e)) {
@@ -540,8 +566,8 @@ inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp);
 inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
     if (xp <= 0) return 0;
     auto& reg = w.reg;
-    auto* rt = reg.try_get<ecs::MacroNpcRuntime>(e);
-    auto* lvl = reg.try_get<ecs::NpcLevel>(e);
+    auto* rt = body_state<ecs::MacroNpcRuntime>(reg, e);
+    auto* lvl = body_state<ecs::NpcLevel>(reg, e);
     if (!rt || !lvl) return 0;
     rt->xp += xp;
     int gained = 0;
@@ -552,11 +578,11 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
         ++gained;
     }
     if (gained > 0) {
-        if (auto* hp = reg.try_get<ecs::Pools>(e)) {
-            if (const auto* kind = reg.try_get<ecs::NPCKind>(e);
+        if (auto* hp = body_state<ecs::Pools>(reg, e)) {
+            if (const auto* kind = body_state<ecs::NPCKind>(reg, e);
                 kind && kind->type < std::uint16_t(NPCType::Count)) {
                 const NPCType type = NPCType(std::uint8_t(kind->type));
-                const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
+                const auto* sid = body_state<ecs::MacroSpawnId>(reg, e);
                 const std::uint32_t seed =
                     leader_sheet_seed(sid ? sid->index : 0u);
                 // The new level's sheet — rolled by the one growth law. A
@@ -568,7 +594,7 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
                 // construction). A transient's roll is used and dropped.
                 const CharacterSheet grown =
                     make_character_sheet(type, lvl->value, seed);
-                if (CharacterSheet* own = reg.try_get<CharacterSheet>(e)) {
+                if (CharacterSheet* own = body_state<CharacterSheet>(reg, e)) {
                     *own = grown;
                 }
                 // Ceilings, fractions and march caches all follow the new
@@ -600,17 +626,17 @@ inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp) {
         // Уровень на карте и потолки следуют за листом — та же пара
         // движений, что у транзиента в award_leader_xp, но лист НЕ
         // перекатывается из сида: владеемое владеем (ММОРПГ-модель).
-        if (auto* lvl = w.reg.try_get<ecs::NpcLevel>(leader)) {
+        if (auto* lvl = body_state<ecs::NpcLevel>(w.reg, leader)) {
             lvl->value = std::int16_t(
                 std::min<int>(kMaxSoldierLevel, own->levelData.level));
         }
-        if (auto* pools = w.reg.try_get<ecs::Pools>(leader)) {
-            const auto* kind = w.reg.try_get<ecs::NPCKind>(leader);
+        if (auto* pools = body_state<ecs::Pools>(w.reg, leader)) {
+            const auto* kind = body_state<ecs::NPCKind>(w.reg, leader);
             const NPCType type =
                 kind && kind->type < std::uint16_t(NPCType::Count)
                     ? NPCType(std::uint8_t(kind->type)) : NPCType::Peasant;
             refresh_body_from_sheet(
-                *pools, w.reg.try_get<ecs::MacroNpcRuntime>(leader),
+                *pools, body_state<ecs::MacroNpcRuntime>(w.reg, leader),
                 effective_sheet_of(w, leader), type);
         }
     }
@@ -653,7 +679,7 @@ inline void report_death(const MacroWorld& mw, std::uint16_t npcType,
 
 // The faction a macro body wears — its INSTANCE colours (Inc 2), not its row.
 inline const char* squad_faction_id(ecs::World& w, entt::entity e) {
-    const auto* kind = w.reg.try_get<ecs::NPCKind>(e);
+    const auto* kind = body_state<ecs::NPCKind>(w.reg, e);
     return kind ? faction_id_for_index(kind->factionIdx) : "";
 }
 
@@ -723,8 +749,8 @@ inline void report_battle_deaths(const MacroWorld& mw, entt::entity side,
                      normalize_soldier_level(r.level), factionId);
     }
     if (leaderFell) {
-        const auto* kind = reg.try_get<ecs::NPCKind>(side);
-        const auto* lvl = reg.try_get<ecs::NpcLevel>(side);
+        const auto* kind = body_state<ecs::NPCKind>(reg, side);
+        const auto* lvl = body_state<ecs::NpcLevel>(reg, side);
         report_death(mw, kind ? kind->type : std::uint16_t(0), side, killer,
                      -1, normalize_soldier_level(lvl ? lvl->value : 1),
                      factionId);
@@ -737,11 +763,13 @@ inline void settle_squad_casualties(GameState& gs, ecs::World& w,
                                     entt::entity e,
                                     const std::vector<SoldierRecord>& ids) {
     auto& reg = w.reg;
-    const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
-    const auto* cell = reg.try_get<ecs::MacroCell>(e);
+    const auto* sid = body_state<ecs::MacroSpawnId>(reg, e);
+    const auto* cell = body_state<ecs::MacroCell>(reg, e);
     if (!sid) return;
-    MacroWorld mw{.gs = &gs, .world = &w};  // named, not positional — the
-                                            // envelope grows, positions rot
+    MacroWorld mw{.gs = &gs, .world = &w, .store = &store_of(w)};
+    // named, not positional — the envelope grows, positions rot; store
+    // ОБЯЗАН ехать в каждом локальном конверте (шрам с.18: без него
+    // find_roster отказывал в no-op и потери авто-боя молча не списывались)
     MacroStockKey key{};
     key.subject = std::int32_t(sid->index);
     key.cellX = cell ? std::int16_t(ecs::cell_x(*cell, gs.mapW)) : std::int16_t(0);
@@ -760,11 +788,11 @@ inline void settle_squad_casualties(GameState& gs, ecs::World& w,
 // to everything upstream.
 inline void settle_leader_fraction(ecs::World& w, entt::entity e,
                                    float fraction) {
-    auto* hp = w.reg.try_get<ecs::Pools>(e);
+    auto* hp = body_state<ecs::Pools>(w.reg, e);
     if (!hp) return;
     if (fraction <= 0.0f) {
         hp->hp = 0;
-        w.reg.emplace_or_replace<ecs::Dead>(e);
+        macro_mark_dead(w.reg, e);
         return;
     }
     hp->hp = std::clamp(int(float(hp->maxHp) * fraction), 1, hp->maxHp);
@@ -784,9 +812,9 @@ inline int xp_for_fallen(ecs::World& w, entt::entity loser,
                             normalize_soldier_level(r.level));
     }
     if (leaderFell) {
-        if (const auto* kind = reg.try_get<ecs::NPCKind>(loser);
+        if (const auto* kind = body_state<ecs::NPCKind>(reg, loser);
             kind && kind->type < std::uint16_t(NPCType::Count)) {
-            const auto* lvl = reg.try_get<ecs::NpcLevel>(loser);
+            const auto* lvl = body_state<ecs::NpcLevel>(reg, loser);
             xp += npc_xp_reward(NPCType(std::uint8_t(kind->type)),
                                 normalize_soldier_level(lvl ? lvl->value : 1));
         }
@@ -798,7 +826,7 @@ inline int xp_for_fallen(ecs::World& w, entt::entity loser,
 // macro bag or the player's own.
 inline void loot_fallen_owner(ecs::World& w, entt::entity fallen,
                               Inventory& into) {
-    auto* bag = w.reg.try_get<ecs::NpcInventory>(fallen);
+    auto* bag = body_state<ecs::NpcInventory>(w.reg, fallen);
     if (!bag) return;
     for (ItemRef& stack : bag->inv.slots) {
         if (stack.empty()) continue;
@@ -839,7 +867,7 @@ inline void record_battle_facts(const MacroWorld& mw,
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
     auto& reg = w.reg;
-    const auto* battleCell = reg.try_get<ecs::MacroCell>(winner);
+    const auto* battleCell = body_state<ecs::MacroCell>(reg, winner);
     const std::int16_t bx = std::int16_t(
         battleCell ? ecs::cell_x(*battleCell, gs.mapW) : 0);
     const std::int16_t by = std::int16_t(
@@ -849,7 +877,7 @@ inline void record_battle_facts(const MacroWorld& mw,
         f.day = gs.worldTime.day();
         f.kind = std::uint16_t(FactKind::Killed);
         f.objectKind = std::uint8_t(FactSubject::Squad);
-        const auto* lid = reg.try_get<ecs::MacroSpawnId>(loser);
+        const auto* lid = body_state<ecs::MacroSpawnId>(reg, loser);
         f.object = lid ? lid->index : 0u;
         f.x = bx;
         f.y = by;
@@ -859,7 +887,7 @@ inline void record_battle_facts(const MacroWorld& mw,
     const auto bereave = [&](entt::entity side, entt::entity foe,
                              std::int32_t dead) {
         if (dead <= 0) return;
-        const auto* srt = reg.try_get<ecs::MacroNpcRuntime>(side);
+        const auto* srt = body_state<ecs::MacroNpcRuntime>(reg, side);
         if (!srt || landmark_by_id(gs, srt->homeSettlementId) == nullptr)
             return;   // the homeless bereave nobody — Killed already spoke
         WorldFact f{};
@@ -867,7 +895,7 @@ inline void record_battle_facts(const MacroWorld& mw,
         f.kind = std::uint16_t(FactKind::Died);
         f.subjectKind = std::uint8_t(FactSubject::Landmark);
         f.subject = std::uint32_t(srt->homeSettlementId);
-        const auto* fid = reg.try_get<ecs::MacroSpawnId>(foe);
+        const auto* fid = body_state<ecs::MacroSpawnId>(reg, foe);
         const std::uint32_t foeOrd = fid ? fid->index : 0u;
         if (foeOrd != 0u
             && renown_is_named(renown_of(
@@ -875,7 +903,7 @@ inline void record_battle_facts(const MacroWorld& mw,
             f.objectKind = std::uint8_t(FactSubject::Squad);
             f.object = foeOrd;
         } else {
-            const auto* fkind = reg.try_get<ecs::NPCKind>(foe);
+            const auto* fkind = body_state<ecs::NPCKind>(reg, foe);
             f.objectKind = std::uint8_t(FactSubject::Faction);
             f.object = fkind ? fkind->factionIdx : 0u;
         }
@@ -917,8 +945,8 @@ inline void settle_auto_battle(const MacroWorld& mw,
     settle_leader_fraction(w, ea, o.leaderFractionA);
     settle_leader_fraction(w, eb, o.leaderFractionB);
 
-    if (reg.all_of<ecs::Dead>(loser)) {
-        if (auto* winnerBag = reg.try_get<ecs::NpcInventory>(winner)) {
+    if (macro_dead(reg, loser)) {
+        if (auto* winnerBag = body_state<ecs::NpcInventory>(reg, winner)) {
             loot_fallen_owner(w, loser, winnerBag->inv);
         }
     }
@@ -1017,7 +1045,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // bags of their own (they are records, not entities), and this is where
     // they stop dropping nothing at all.
     if (playerWon) {
-        const auto* ecell = w.reg.try_get<ecs::MacroCell>(enemy);
+        const auto* ecell = body_state<ecs::MacroCell>(w.reg, enemy);
         const int cx = ecell ? ecs::cell_x(*ecell, gs.mapW) : 0;
         const int cy = ecell ? ecs::cell_y(*ecell, gs.mapW) : 0;
         Rng lootRng(hash3(std::uint32_t(entt::to_integral(enemy)),
@@ -1031,8 +1059,8 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
                                *playerBag);
         }
         if (enemyFraction <= 0.0f) {
-            const auto* kind = w.reg.try_get<ecs::NPCKind>(enemy);
-            const auto* lvl = w.reg.try_get<ecs::NpcLevel>(enemy);
+            const auto* kind = body_state<ecs::NPCKind>(w.reg, enemy);
+            const auto* lvl = body_state<ecs::NpcLevel>(w.reg, enemy);
             roll_fallen_spoils(mw, kind ? kind->type : std::uint16_t(0),
                                normalize_soldier_level(lvl ? lvl->value : 1),
                                cx, cy, enemyFaction, lootRng,
@@ -1042,7 +1070,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
 
     settle_squad_casualties(gs, w, enemy, enemyCas);
     settle_leader_fraction(w, enemy, enemyFraction);
-    if (playerWon && w.reg.all_of<ecs::Dead>(enemy)) {
+    if (playerWon && macro_dead(w.reg, enemy)) {
         loot_fallen_owner(w, enemy, *playerBag);
     }
     drain_dead_leader_squads(w, gs.deserterPool);

@@ -14,6 +14,7 @@
 #include "macro/world_row.h"
 #include "macro/squad.h"
 #include "macro/state.h"
+#include "macro/store.h"
 
 #include <entt/entt.hpp>
 
@@ -53,11 +54,12 @@ sm::GameState make_world() {
 }
 
 entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal) {
+    sm::MacroStore& st = sm::store_of(w);
+    const sm::MacroHandle h = sm::store_birth(st);
     const auto e = w.reg.create();
-    w.reg.emplace<sm::ecs::MacroSpawnId>(e, ordinal);
-    w.reg.emplace<sm::ecs::NpcInventory>(e);
-    w.reg.emplace<sm::ecs::SquadRoster>(e);
-    sm::creatures_push(w.reg.get<sm::ecs::NpcInventory>(e).inv,
+    w.reg.emplace<sm::ecs::MacroSlot>(e, h.slot);
+    st.spawnId[h.slot] = sm::ecs::MacroSpawnId{ordinal};
+    sm::creatures_push(st.inventory[h.slot].inv,
         sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 21u));
     return e;
 }
@@ -68,6 +70,8 @@ void test_the_door_opens_the_old_addresses() {
     using namespace sm;
     GameState gs = make_world();
     ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     // Grabla (ECS ref not across tick): every entity is created BEFORE any
     // pointer is taken — a later create() may reallocate component storage.
     const auto squad = make_squad(world, 5);
@@ -75,10 +79,10 @@ void test_the_door_opens_the_old_addresses() {
     MacroWorld w{.gs = &gs, .world = &world};
 
     CHECK(store_of(w, subject_of_squad(squad))
-              == &world.reg.get<ecs::NpcInventory>(squad).inv,
+              == &(*sm::body_state<ecs::NpcInventory>(world.reg, squad)).inv,
           "a squad's store IS its NpcInventory component, the very object");
     CHECK(roster_of(w, subject_of_squad(squad))
-              == &world.reg.get<ecs::NpcInventory>(squad).inv,
+              == &(*sm::body_state<ecs::NpcInventory>(world.reg, squad)).inv,
           "a squad's roster IS its one container (M-71), the very object");
 
     CHECK(store_of(w, subject_of_landmark(7))
@@ -110,6 +114,8 @@ void test_a_write_through_the_door_lands_in_the_world() {
     using namespace sm;
     GameState gs = make_world();
     ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     const auto squad = make_squad(world, 5);
     MacroWorld w{.gs = &gs, .world = &world};
 
@@ -143,6 +149,8 @@ void test_actions_are_declared_by_data() {
     using namespace sm;
     GameState gs = make_world();
     ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     const auto squad = make_squad(world, 5);
     MacroWorld w{.gs = &gs, .world = &world};
 
@@ -173,6 +181,8 @@ void test_the_door_fails_closed() {
     using namespace sm;
     GameState gs = make_world();
     ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
     const auto squad = make_squad(world, 5);
     MacroWorld w{.gs = &gs, .world = &world};
 

@@ -27,6 +27,7 @@
 #include "ecs/components.h"
 #include "events/event_bus.h"
 #include "events/event_types.h"
+#include "macro/store.h"
 
 #include <cstdio>
 
@@ -160,7 +161,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
           "a blow the plate outweighs never lands — 100% reduction is real");
     CHECK(tink.blocked && !tink.lethal,
           "and the result names it BLOCKED, distinct from a dead-target no-op");
-    CHECK(reg.get<sm::ecs::Pools>(turtle).hp == 100,
+    CHECK((*sm::body_state<sm::ecs::Pools>(reg, turtle)).hp == 100,
           "the flesh under the plate is untouched");
     CHECK(reg.all_of<sm::ecs::HitFlash>(turtle)
               && reg.all_of<sm::ecs::DamageFx>(turtle),
@@ -290,7 +291,7 @@ void test_survivor_protocol() {
           "a body in its own skin keeps the whole blow: armour 0 is the "
           "limiting case of the law, applied == asked to the bit");
     CHECK(!hit.lethal, "a survivable blow is not lethal");
-    CHECK(reg.get<sm::ecs::Pools>(e).hp == 20.0f,
+    CHECK((*sm::body_state<sm::ecs::Pools>(reg, e)).hp == 20.0f,
           "hp drops by exactly the applied amount");
     CHECK(!reg.any_of<sm::ecs::Dead>(e), "a survivor is not Dead");
     CHECK(death_events(bus) == 0, "a survivor emits nothing");
@@ -346,12 +347,12 @@ void test_no_second_blow() {
     const entt::entity e = make_body(reg, 10.0f);
     apply_damage(reg, e, DamageSource{1u, false}, 50.0f, DamageKind::Melee, sm::DamageType::Blunt,
                  &bus);
-    const float hpAfterDeath = reg.get<sm::ecs::Pools>(e).hp;
+    const float hpAfterDeath = (*sm::body_state<sm::ecs::Pools>(reg, e)).hp;
     const DamageResult again = apply_damage(reg, e, DamageSource{2u, false},
                                             50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
     CHECK(again.applied == 0.0f, "a corpse takes no damage");
     CHECK(!again.lethal, "a no-op blow is not lethal");
-    CHECK(reg.get<sm::ecs::Pools>(e).hp == hpAfterDeath,
+    CHECK((*sm::body_state<sm::ecs::Pools>(reg, e)).hp == hpAfterDeath,
           "a corpse's hp does not move");
     CHECK(death_events(bus) == 1, "a corpse dies once — one event, ever");
     CHECK(reg.get<sm::ecs::LastHit>(e).attackerId == 1u,
@@ -369,7 +370,7 @@ void test_execution_helper() {
         reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);
     CHECK(hit.lethal, "an execution is lethal by construction");
     CHECK(hit.applied == 37, "an execution strikes exactly remaining hp");
-    CHECK(reg.get<sm::ecs::Pools>(e).hp == 0.0f,
+    CHECK((*sm::body_state<sm::ecs::Pools>(reg, e)).hp == 0.0f,
           "an execution lands the body at exactly zero");
     const DamageResult again = apply_lethal_damage(
         reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);
@@ -424,10 +425,10 @@ void test_the_blow_lands_on_the_record() {
         apply_damage(reg, body, DamageSource{}, 30, DamageKind::Script,
                      sm::DamageType::Blunt, &bus);
     CHECK(hit.applied == 30, "the blow landed");
-    CHECK(reg.get<sm::ecs::Pools>(record).hp == 70,
+    CHECK((*sm::body_state<sm::ecs::Pools>(reg, record)).hp == 70,
           "a projected body's wound is its RECORD's wound, in the tick it "
           "lands — there is nothing left to fold up");
-    CHECK(reg.get<sm::ecs::Pools>(body).hp == 100,
+    CHECK((*sm::body_state<sm::ecs::Pools>(reg, body)).hp == 100,
           "...and the body's own block is untouched: it is the scene's copy, "
           "not a second memory the world must reconcile");
 
@@ -444,7 +445,7 @@ void test_the_blow_lands_on_the_record() {
     const entt::entity orphan = make_body(reg, 100);
     apply_damage(reg, orphan, DamageSource{}, 30, DamageKind::Script,
                  sm::DamageType::Blunt, &bus);
-    CHECK(reg.get<sm::ecs::Pools>(orphan).hp == 70,
+    CHECK((*sm::body_state<sm::ecs::Pools>(reg, orphan)).hp == 70,
           "a body nothing above remembers spends its own bar — the detector "
           "above reads a real difference");
 
@@ -455,7 +456,7 @@ void test_the_blow_lands_on_the_record() {
                      sm::DamageType::Blunt, &bus);
     }
     CHECK(reg.any_of<sm::ecs::Dead>(body)
-              && reg.get<sm::ecs::Pools>(record).hp <= 0,
+              && (*sm::body_state<sm::ecs::Pools>(reg, record)).hp <= 0,
           "lethality is judged on the record, and the corpse tag lands on the "
           "body that fell");
 }

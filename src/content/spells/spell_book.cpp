@@ -2,6 +2,7 @@
 #include "core/time.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "macro/store.h"
 #include "macro/character_sheet.h"  // the record's sheet — casterLevel
 #include "sub/body.h"   // body_radius — the caster shell the muzzle clears
 #include "sub/record.h" // record_of — whose sheet the casting body mirrors
@@ -226,7 +227,7 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
         school != SkillId::Count ? skills.of(school) : 0);
     if (caster != entt::null) {
         const entt::entity rec = sub::record_of(w.reg, caster);
-        if (const auto* cs = w.reg.try_get<CharacterSheet>(rec)) {
+        if (const auto* cs = body_state<CharacterSheet>(w.reg, rec)) {
             ctx.casterLevel = std::int16_t(cs->levelData.level);
         }
     }

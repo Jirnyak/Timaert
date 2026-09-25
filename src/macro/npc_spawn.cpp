@@ -9,6 +9,7 @@
 #include "macro/npc_ai.h"
 #include "macro/politik.h"
 #include "macro/squad.h"
+#include "macro/store.h"
 #include "macro/items.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
@@ -104,13 +105,19 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
 // `levelOverride > 0` pins the level (quest spawns name their difficulty);
 // the level draw is consumed either way, so the boot RNG stream is untouched.
 // Returns the created entity (spawn_squad decorates it with roster/orders).
-entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
+entt::entity make_npc(ecs::World& w, MacroStore& st, NPCType type,
+                      std::uint16_t factionIdx,
                       int x, int y, int mapW, int homeId, Rng& rng,
                       std::uint32_t& spawnIndex, int levelOverride = -1) {
+    // ФЛИП 1в (M-106): состояние сквада рождается КОЛОНКАМИ store; entt-
+    // энтити остаётся мостом связей и несёт только MacroSlot (до 1е).
+    const MacroHandle h = store_birth(st);
+    if (!st.valid(h)) return entt::null;   // отказ капа уже прозвучал вслух
     auto e = w.reg.create();
-    w.reg.emplace<ecs::MacroCell>(e, ecs::cell_index(x, y, mapW));
-    w.reg.emplace<ecs::MacroVisual>(e, float(x), float(y), 0.0f);
-    w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), factionIdx);
+    w.reg.emplace<ecs::MacroSlot>(e, h.slot);
+    st.cell[h.slot]   = ecs::MacroCell{ecs::cell_index(x, y, mapW)};
+    st.visual[h.slot] = ecs::MacroVisual{float(x), float(y), 0.0f};
+    st.kind[h.slot]   = ecs::NPCKind{std::uint16_t(type), factionIdx};
 
     const auto& def = npc_def(type);
     // The same draw the jittered hp used to consume, now used as the seed of the
@@ -169,37 +176,25 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     pools.hp = pools.maxHp = hp;
     pools.mp = pools.maxMp = body_max_mp(sheet, npc_def(type).combat);
     pools.sp = pools.maxSp;   // born rested
-    w.reg.emplace<ecs::Pools>(e, pools);
-    w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
+    st.pools[h.slot]   = pools;
+    st.runtime[h.slot] = rt;
 
-    w.reg.emplace<ecs::MacroSpawnId>(e, ordinal);
+    st.spawnId[h.slot] = ecs::MacroSpawnId{ordinal};
 
-    // A NAMED kind OWNS his sheet from birth (owner 2026-09-10, ММОРПГ-
-    // модель): the ordinal roll — the very sheet every consumer used to
-    // re-derive per read — is rolled ONCE and stored; from here he levels in
-    // place and rides the save. Transients keep deriving on the spot
-    // (sheet_of, squad.h) and store nothing.
-    if (npc_named(type)) {
-        w.reg.emplace<CharacterSheet>(
-            e, make_character_sheet(type, lvl, leader_sheet_seed(ordinal)));
-    }
+    // АНКЕТА ПО-ММОРПГ (владелец 2026-09-25, CANON): у КАЖДОГО сквада своя
+    // анкета-данные, рождённая из шаблона; опыт и уровень идут в неё. Формула
+    // — ровно та ординальная, что именные хранили, а транзиенты ДЕРИВИРОВАЛИ
+    // на каждое чтение (sheet_of): хранение с рождения = байт в байт то же
+    // поведение, дуализм owned/derived умер здесь.
+    st.sheet[h.slot] =
+        make_character_sheet(type, lvl, leader_sheet_seed(ordinal));
 
     // Every macro entity IS a squad; born alone, it is a squad of one and its
     // own leader (ecs::SquadRoster doctrine). Draws no RNG — streams untouched.
-    w.reg.emplace<ecs::SquadRoster>(e);
+    // Roster/память/книга/приказы/гир/тег-анкеты/судьба уже обнулены
+    // рождением слота (store_birth, единый X-список колонок).
 
-    // Every agent can REMEMBER (macro/agent_memory.h, W2b): a bounded head,
-    // born empty. 136 B × the 16384-squad cap ≈ 2.2 MiB — the whole world's
-    // memory budget, by the owner's brief.
-    w.reg.emplace<AgentMemory>(e);
-
-    // …and every body has a BOOK (§41 root 3, v89): born all zeros — knows
-    // nothing — until a spire, a teacher or content says otherwise. The
-    // component existing on everyone is what makes «НПЦ-маг» one bit, not a
-    // second system.
-    w.reg.emplace<SpellBook>(e);
-
-    w.reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
+    st.level[h.slot] = ecs::NpcLevel{std::int16_t(lvl)};
 
     // TS `makeNpc`: 1-2 trait rolls, duplicates skipped.
     ecs::NpcTraits traits{};
@@ -218,7 +213,7 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
             traits.traits[traits.count++] = raw;
         }
     }
-    w.reg.emplace<ecs::NpcTraits>(e, traits);
+    st.traits[h.slot] = traits;
 
     // Through the ONE loot registry (macro/items.h), the same door a felled tree
     // and a dead body already pay out through. A macro entity is the one kind of
@@ -251,11 +246,11 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
         // 50..200 is silvers and change) — arithmetic, never a coin gate.
         add_value_in_coins(bag.inv, int(factionIdx), coins);
     }
-    w.reg.emplace<ecs::NpcInventory>(e, std::move(bag));
+    st.inventory[h.slot] = bag;
 
     // Per-NPC visual identity (TS `generateNpcCharacter(type)` -
     // redesigned as a compact POD seed per relaxed translation policy).
-    w.reg.emplace<ecs::NpcCharacter>(e, ecs::roll_npc_character(rng, 160));
+    st.character[h.slot] = ecs::roll_npc_character(rng, 160);
     return e;
 }
 
@@ -272,7 +267,7 @@ std::uint16_t settlement_faction_index(const Landmark& lm) {
 } // namespace
 
 
-void spawn_macro_npcs(GameState& gs, ecs::World& w,
+void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
                       const TerrainData& terrain, std::uint32_t seed,
                       const DepositLayer* deposits) {
     Rng rng(seed + 7777u);
@@ -303,8 +298,8 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         // own hands.
         if (rng.next_f01() > 0.4f) {
             // Residents are born ON the town cell (owner 2026-08-31).
-            make_npc(w, NPCType::Merchant, fIdx, s.x, s.y, gs.mapW, s.id, rng,
-                     spawnIndex);
+            make_npc(w, st, NPCType::Merchant, fIdx, s.x, s.y, gs.mapW, s.id,
+                     rng, spawnIndex);
         }
         // ГЕНЕЗИСНЫЕ ОДИНОЧКИ-СТРАЖНИКИ (1-2 на город) ВЫРЕЗАНЫ 2026-09-22
         // по вердикту владельца («пока никаких стражников, это усложняет
@@ -338,7 +333,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.3f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
-        make_npc(w, NPCType::Witch, f, p.x, p.y, gs.mapW, -1, rng, spawnIndex);
+        make_npc(w, st, NPCType::Witch, f, p.x, p.y, gs.mapW, -1, rng, spawnIndex);
     }
 
     // Sorceresses: max(1, 0.05 * settlements)
@@ -352,7 +347,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.5f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
-        make_npc(w, NPCType::Sorceress, f, p.x, p.y, gs.mapW, -1, rng, spawnIndex);
+        make_npc(w, st, NPCType::Sorceress, f, p.x, p.y, gs.mapW, -1, rng, spawnIndex);
     }
 
     // Villages seed no eternal gatherers either (owner 2026-08-30): the
@@ -363,7 +358,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
 
     // СТОЛ АНКЕТ — авторские фигуры мира, после массовки: их ординалы
     // продолжают тот же поток идентичности.
-    spawn_design_characters(gs, w, terrain, rng, spawnIndex);
+    spawn_design_characters(gs, w, st, terrain, rng, spawnIndex);
 }
 
 // Вершины горных массивов — дома драконьих анкет: K высочайших клеток
@@ -407,7 +402,7 @@ static void resolve_mountain_peaks(const TerrainData& terrain,
     }
 }
 
-void spawn_design_characters(GameState& gs, ecs::World& w,
+void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
                              const TerrainData& terrain, Rng& rng,
                              std::uint32_t& spawnIndex) {
     const int mw = gs.mapW;
@@ -473,45 +468,29 @@ void spawn_design_characters(GameState& gs, ecs::World& w,
                    ? settlement_faction_index(*home)
                    : std::uint16_t(faction_index("freefolk")));
         const entt::entity e = make_npc(
-            w, row.body, factionIdx,
+            w, st, row.body, factionIdx,
             p.x, p.y, gs.mapW, homeId, rng, spawnIndex, int(row.level));
+        if (e == entt::null) continue;
+        const std::uint16_t slot = slot_of(w.reg, e);
 
-        // Анкета ВЛАДЕЕТ листом всегда — она индивид («он как игрок»),
-        // даже когда тело — не-именованный род и make_npc броска не хранил.
-        // Авторские числа строки перекрывают бросок, и полосы/марш-кэши
-        // пересобираются от них через ту же дверь, что у всех.
-        {
-            CharacterSheet* own = w.reg.try_get<CharacterSheet>(e);
-            if (!own) {
-                const auto* sid = w.reg.try_get<ecs::MacroSpawnId>(e);
-                own = &w.reg.emplace<CharacterSheet>(
-                    e, make_character_sheet(
-                           row.body, std::max<int>(1, row.level),
-                           leader_sheet_seed(sid ? sid->index : 0u)));
-            }
-            if (row.authoredSheet) {
-                *own = row.sheet;
-                auto* pools = w.reg.try_get<ecs::Pools>(e);
-                auto* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
-                if (pools) {
-                    refresh_body_from_sheet(*pools, rt,
-                                            effective_sheet_of(w, e),
-                                            row.body);
-                    // Рождение целым — как make_npc рождает всех.
-                    pools->hp = pools->maxHp;
-                    pools->mp = pools->maxMp;
-                    pools->sp = pools->maxSp;
-                }
-            }
+        // АНКЕТА ПО-ММОРПГ: колонка уже рождена ординальной формулой в
+        // make_npc; авторские числа строки ПЕРЕКРЫВАЮТ её, и полосы/марш-
+        // кэши пересобираются от них через ту же дверь, что у всех.
+        if (row.authoredSheet) {
+            st.sheet[slot] = row.sheet;
+            refresh_body_from_sheet(st.pools[slot], &st.runtime[slot],
+                                    effective_sheet_of(w, e), row.body);
+            // Рождение целым — как make_npc рождает всех.
+            st.pools[slot].hp = st.pools[slot].maxHp;
+            st.pools[slot].mp = st.pools[slot].maxMp;
+            st.pools[slot].sp = st.pools[slot].maxSp;
         }
-        w.reg.emplace<ecs::DesignCharacterTag>(e, ord);
+        st.designTag[slot] = ecs::DesignCharacterTag{ord};
 
         // Логово — дом-клетка модели вылетов: вершина и есть его дом.
         if (row.homePeak) {
-            if (auto* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e)) {
-                rt->lairX = std::int16_t(hx);
-                rt->lairY = std::int16_t(hy);
-            }
+            st.runtime[slot].lairX = std::int16_t(hx);
+            st.runtime[slot].lairY = std::int16_t(hy);
         }
 
         // Маршрут «дом ↔ ближайший ландмарк рода из агенды» — резолв
@@ -536,13 +515,14 @@ void spawn_design_characters(GameState& gs, ecs::World& w,
                 orders.waypoints[1] = std::int16_t(home->y);
                 orders.waypoints[2] = std::int16_t(best->x);
                 orders.waypoints[3] = std::int16_t(best->y);
-                w.reg.emplace<ecs::SquadOrders>(e, orders);
+                st.orders[slot] = orders;
             }
         }
     }
 }
 
-bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
+bool spawn_npc_at(GameState& gs, ecs::World& w, MacroStore& st,
+                  const TerrainData& terrain,
                   const char* typeToken, int x, int y, int level) {
     NPCType type{};
     if (!npc_type_from_label(typeToken, type)) return false;
@@ -568,12 +548,11 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
         ? std::uint16_t(faction_index("bandits"))
         : faction_index_for_cell(gs.politik, p.x, p.y);
 
-    make_npc(w, type, f, p.x, p.y, gs.mapW, /*homeId*/ -1, rng,
-             gs.nextMacroSpawnOrdinal, level);
-    return true;
+    return make_npc(w, st, type, f, p.x, p.y, gs.mapW, /*homeId*/ -1, rng,
+                    gs.nextMacroSpawnOrdinal, level) != entt::null;
 }
 
-entt::entity spawn_squad(GameState& gs, ecs::World& w,
+entt::entity spawn_squad(GameState& gs, ecs::World& w, MacroStore& store,
                          const TerrainData& terrain, const SquadSpec& spec) {
     if (gs.mapW <= 0 || gs.mapH <= 0) return entt::null;
 
@@ -609,13 +588,15 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
                : faction_index_for_cell(gs.politik, p.x, p.y);
 
     const entt::entity leader =
-        make_npc(w, spec.leaderType, f, p.x, p.y, gs.mapW, spec.homeSettlementId,
-                 rng, gs.nextMacroSpawnOrdinal, spec.leaderLevel);
+        make_npc(w, store, spec.leaderType, f, p.x, p.y, gs.mapW,
+                 spec.homeSettlementId, rng, gs.nextMacroSpawnOrdinal,
+                 spec.leaderLevel);
+    if (leader == entt::null) return entt::null;
 
     // The roster rows — through the same append every other producer uses:
     // души встают в область существ ЕДИНОГО контейнера лидера (M-71),
     // генерик-заявка — стаком, душа с историей — записью.
-    auto& bag = w.reg.get<ecs::NpcInventory>(leader);
+    auto& bag = store.inventory[slot_of(w.reg, leader)];
     for (const SquadSpecMembers::Stack& st : spec.members) {
         if (!valid_npc_kind(st.rec.kind)) continue;
         const bool ok = st.rec.entityId == 0
@@ -640,7 +621,7 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
         orders.waypointCount = std::uint8_t(
             std::min<int>(spec.waypointCount, 8));
         orders.waypoints = spec.waypoints;
-        w.reg.emplace<ecs::SquadOrders>(leader, orders);
+        store.orders[slot_of(w.reg, leader)] = orders;
     }
     return leader;
 }

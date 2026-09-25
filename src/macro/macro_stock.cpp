@@ -3,6 +3,7 @@
 // serves; adding a quantity is a row here plus a value in the enum, and the
 // static_assert below refuses to build if those two ever disagree.
 #include "macro/macro_stock.h"
+#include "macro/store.h"
 
 #include "ecs/world.h"
 #include "macro/army.h"
@@ -77,11 +78,17 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
 // Слияние M-71: члены сквада живут в области существ ЕДИНОГО контейнера
 // (NpcInventory), обвязка счетов (SquadRoster) им больше не дом.
 Inventory* find_roster(const MacroWorld& w, std::int32_t subject) {
+    // ФЛИП 1в: скан одной u32-колонки store вместо entt-пары — дешевле и
+    // без entt вовсе (за O(1) по ординалу придёт таблица слота, 1е/M-37).
+    // Store берём из ctx мира: конверт может его не нести (тестовые
+    // фикстуры), а мир без store — это мир без сквадов, честный nullptr.
     if (!w.world || subject < 0) return nullptr;
-    auto view = w.world->reg.view<ecs::MacroSpawnId, ecs::NpcInventory>();
-    for (auto e : view) {
-        if (view.get<ecs::MacroSpawnId>(e).index == std::uint32_t(subject)) {
-            return &view.get<ecs::NpcInventory>(e).inv;
+    MacroStore& st = store_of(*w.world);
+    for (std::uint16_t slot = 0; slot < std::uint16_t(kMacroEntityCap);
+         ++slot) {
+        if (st.alive[slot] != 0
+            && st.spawnId[slot].index == std::uint32_t(subject)) {
+            return &st.inventory[slot].inv;
         }
     }
     return nullptr;
