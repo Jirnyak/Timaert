@@ -830,3 +830,205 @@ seaLevel»), `kWaterLevel = WATER_LEVEL` (`base_generator.cpp:92`),
   ординалу, гейт `allowAutoBattle`, `AgentMemory`).
 - Коммит: `fix(app): броски встречи игрока — свой сеяный Rng, думки мира не
   зависят от UI (M-123)`.
+
+---
+
+## П-12. M-122 (часть 2) — `boot_world` НЕ ВНУТРИ ЗАПИСЫВАЕМОГО КАДРА
+
+**Что не так (SKELETON III.4, «РАСХОЖДЕНИЕ ПО ПОСТРОЕНИЮ», перечитано
+2026-09-25):** `frame()` записывает командный буфер (`acquire_frame`
+`main.cpp:5646` … `end_frame` `:6246`); внутри записи, ПОСЛЕ того как
+`macro.record` (`:5733`) привязал дескриптор `set_` с текстурами мира,
+вызывается `apply_shell_actions` (`:6227`), а она тремя путями зовёт
+`boot_world` (`:5389,:5394,:5427`) и `destroy_world`/`boot_world_from_save`
+(`:5453-5474`). `boot_world` → `macro.upload` (`:1675`) →
+`vkDeviceWaitIdle` (ждёт только УЖЕ ОТПРАВЛЕННЫЕ кадры) → немедленный
+`VulkanTexture::destroy` (`vk_texture.cpp:775`) → `vkUpdateDescriptorSets` на
+`set_`, привязанный в буфере, который ещё ЗАПИСЫВАЕТСЯ (update-after-bind в
+дереве нет) → `end_frame` отправляет буфер с уничтоженными образами. Путь:
+второй «перегенерировать» на экране кастомного мира с превью; новая игра /
+загрузка / «в главное меню» из игрового меню при живой карте. Запуском не
+воспроизведено — валидация Vulkan обязана это назвать.
+
+**1. Контекст.** Читать: `src/app/main.cpp:5336-5486` (`merge_shell_result`,
+`apply_shell_actions`), `:5563-5600` (шапка `frame`), `:5640-5650`
+(`acquire_frame`), `:6225-6250` (хвост кадра), `:1262-1310` (`destroy_world`),
+`:1583-1600` и `:1670-1680` (`boot_world` → `macro.upload`);
+`src/app/smoke.cpp:9349-9360` (`smoke_after_shell_actions`, проверка
+инвариантов сноса — ОБЯЗАНА идти после реального сноса);
+`src/macro/vk_macro_renderer.cpp:153-165` (`upload`: wait-idle + free).
+Остальное не читать.
+
+**2. Закон.** AGENTS §6 «GPU рисует; мир живёт на CPU» — ресурсы, на которые
+ссылается записываемый кадр, не уничтожаются до его отправки и фенса;
+SKELETON III.4 строка «кладбище по фенсу» — образец дисциплины; ЗАКОН
+ГЛАДКОЙ ПАМЯТИ/DOD п.4 не затрагиваются.
+
+**3. Хирургическая правка — отложить МИРОВЫЕ действия оболочки на начало
+следующего оборота, до `acquire_frame`:**
+- Разделить `ShellResult` на два рода действий (не новый тип — та же
+  структура, две фазы применения): (I) действия СОСТОЯНИЯ ОБОЛОЧКИ
+  (`splashDone`, `introFinished`, `cancelCreation`, `openCustomNewGame`,
+  `cancelLoad`, `openCodex/Interface/Controls`, `resume`, `quit`,
+  `creationDefault`, `startNewGame`, `startCustomNewGame`) — применяются
+  как сейчас, в кадре; (II) действия МИРА (`startCreatedGame`,
+  `regenerateCustom`, `cancelCustomNewGame` при `worldLoaded`,
+  `loadGame`/`loadAutosave` при `state == Load`, `returnToTitle`,
+  `saveGame`) — всё, что зовёт `boot_world`, `boot_world_from_save`,
+  `destroy_world`, `build_world_preview`, `save_game_checked`.
+- Было: `apply_shell_actions(app, shell)` (`:6227`) делает всё сразу.
+  Стало: в кадре применяется только (I); (II) складывается в
+  `app.pendingWorldShell` (поле `ShellResult` в `App`, слитое через
+  `merge_shell_result`), а в НАЧАЛЕ `frame()` (`:5563`, до
+  `advance_sim_steps` и до `ImGui::NewFrame`) стоит
+  `apply_world_shell_actions(app)`: применяет (II) из очереди и очищает её.
+  В этот момент ни один командный буфер не записывается: `vkDeviceWaitIdle`
+  в `macro.upload` дождётся кадра N−1, снос текстур и обновление `set_`
+  законны.
+- `smoke_after_shell_actions` (`:6228`) — перенести за
+  `apply_world_shell_actions` в начале кадра (проверка инвариантов сноса
+  после сноса, не до).
+- `apply_creation` + `begin_scene` идут ВМЕСТЕ с `boot_world` в (II)
+  (`:5397-5403`) — один блок, тот же порядок.
+- Один оборот задержки для мировых действий — норма: мир рождается на
+  следующем тике, оболочка уже показала «Playing». Если кадр между ними
+  рисует пустой мир — `worldLoaded == false` его не рисует (`:5697`).
+- Никакого `vkQueueWaitIdle`/`vkDeviceWaitIdle` внутри кадра как лечения.
+
+**4. Приёмка.**
+- `check` зелёный; смоуки `sh smoke.sh all 12345` — все сценарии с
+  `new_game`, `load`, `destroy_*` (`rg -n "verifyDestroyAfterShell|returnToTitle" src/app/smoke.cpp`)
+  PASS.
+- Стенд владельца с валидацией (`TIMAERT_VK_VALIDATION=1`, macOS
+  `DYLD_LIBRARY_PATH=/opt/homebrew/lib`): кастомный мир → «перегенерировать»
+  дважды → ДО правки ждём `[vk] … VUID-vkUpdateDescriptorSets-…` /
+  `VUID-vkCmdDraw-…` (уничтоженный образ); ПОСЛЕ — 0 строк `[vk]`. Затем
+  новая игра из игрового меню при живой карте — то же. Если ДО правки
+  валидация молчит — записать честно (дефект по построению, прибором не
+  пойман), правка всё равно по закону.
+- Доки: SKELETON III.4 строка «макро-рендер не уничтожает ресурсы в
+  открытом кадре» → ПРАВДА (`file:line` очереди и точки применения);
+  III.6 граф кадра — обновить порядок (мировые действия — в начале
+  оборота); реестр `M-122` → ПОЛОВИНА/ПОСТРОЕНО по остатку.
+- Коммит: `fix(app): мировые действия оболочки применяются до
+  acquire_frame, а не внутри записываемого кадра (M-122)`.
+
+---
+
+## П-13. M-121 (часть «кап») — ОДИН КАП ТЕЛ СУБМИРА СО `static_assert`
+
+**Инвариант (AGENTS §7):** «16384 (2^14) — ЕДИНЫЙ кап энтити субмира, одна
+по-двойка на симуляцию и рендер: тело, которое нельзя нарисовать, нельзя и
+симулировать. Любая новая пер-энтити система субмира меряется этим же
+капом». Сегодня это ЧЕТЫРЕ литерала без `static_assert` (SKELETON III.2):
+`kMaxBodyCrowd = 16384` (`sub/movement.h:77`), `kMaxEntityInstances = 16384`
+(`sub/vk_renderer_3d.cpp:168`), `kMaxSpellNeighbors = 16384`
+(`sub/spell_effects.cpp:83`, комментарий `:80` сам ссылается на
+`kMaxBodyCrowd`), `kMaxMeleeNeighbors = 16384` (`sub/targeting.h:48`).
+Четыре числа одной величины — ЗАКОН КОНСТАНТ и ЗАКОН СЛОВАРЯ п.3.
+
+**1. Контекст.** Читать: `src/sub/movement.h:60-90`, `src/sub/vk_renderer_3d.cpp:160-175`,
+`src/sub/spell_effects.cpp:75-90`, `src/sub/targeting.h:40-55`; `rg -n
+"kMaxBodyCrowd|kMaxEntityInstances|kMaxSpellNeighbors|kMaxMeleeNeighbors" src tests`
+— только список читателей (не читать тела). `AGENTS.md` §7 (первый пункт).
+Остальное не читать.
+
+**2. Закон.** ЗАКОН КОНСТАНТ; ЗАКОН СЛОВАРЯ п.3-4; DOD п.10 (`static_assert`
+на названный размер); слои §11 — константа субмира живёт в `sub/`, рендер
+субмира (`sub/vk_renderer_3d.cpp`) её читает, не наоборот.
+
+**3. Хирургическая правка.**
+- Единственный источник: `kMaxBodyCrowd` в `sub/movement.h:77` (он уже
+  назван инвариантом в AGENTS) получает комментарий-вывод: «2^14 — единый
+  кап тел субмира: симуляция (BodyCrowd), рендер (инстансы), снимки
+  соседей (спеллы, ближний бой) — тело, которое нельзя нарисовать, нельзя и
+  симулировать (AGENTS §7)».
+- Было: три других `= 16384`. Стало: `constexpr std::uint32_t
+  kMaxEntityInstances = std::uint32_t(kMaxBodyCrowd);`,
+  `constexpr int kMaxSpellNeighbors = kMaxBodyCrowd;`,
+  `constexpr int kMaxMeleeNeighbors = kMaxBodyCrowd;` — с `#include
+  "sub/movement.h"` там, где его нет (проверить, что это не заводит цикл
+  включений: `movement.h` не должен включать `targeting.h`/`spell_effects`;
+  если заводит — вынести `kMaxBodyCrowd` в маленький `sub/body_cap.h` без
+  включений, и все четыре читают его). Имена оставить (у каждого свой
+  смысл-читатель), число — одно.
+- `static_assert(kMaxEntityInstances == std::uint32_t(kMaxBodyCrowd))` в
+  `vk_renderer_3d.cpp` рядом с определением — как требует AGENTS §7 (там
+  прямо сказано «сегодня два литерала без static_assert»).
+- Литералы `16384` в КОММЕНТАРИЯХ (`base_generator.cpp:565`,
+  `map_data.h:307`, `engine.h:619`, `movement.h:2`) — это другой смысл
+  («самый густой лес» — кап деревьев клетки) или прозаический пример; не
+  трогать, кроме тех, что дублируют кап тел (`engine.h:619`, `movement.h:2` —
+  заменить число на имя константы в тексте). `lighting.h:324
+  kAirEFoldM = 16384.0f` — метры, другая величина, не трогать.
+
+**4. Приёмка.**
+- `rg -n "= *16384\\b" src/sub src/gpu` — ровно одна строка (`kMaxBodyCrowd`).
+- `check` зелёный (тесты `battle_ai_test`, `spell_*`, `targeting_*`
+  компилируются с той же арифметикой).
+- Доки: SKELETON III.2 строка про четыре литерала → ПРАВДА; AGENTS §7
+  первый пункт — снять «сегодня два литерала без static_assert» (это
+  единственная разрешённая правка AGENTS: факт, не закон); реестр `M-121`
+  → ПОЛОВИНА (остаток — высота симуляции из композита, таймеры в шагах,
+  `static_assert` на Combat/SubworldAi/Projectile, `stampRing_`).
+- Коммит: `refactor(sub): единый кап тел субмира — одна константа,
+  static_assert на рендер (M-121)`.
+
+---
+
+## П-14. M-112 (часть 1) — `FeatureLayer::set` ЕДИНСТВЕННАЯ ЗАПИСЬ ФИЧ
+
+**Закон:** ЗАКОН ПОЛЯ (число на клетке — поле, доступ дверью); ЗАКОН АДРЕСА
+п.2 (адрес — одно число, `cell_of`; рукописный `y*w+x` — налог и дефект);
+DOD п.6 (две записи одной фичи — второй ответ). SKELETON I.2 (`:210`,
+`:162`): дверь `FeatureLayer::set` (`features.h:287-292`) — **0 вызовов**;
+вся запись фич идёт сырым индексом в `data[]`.
+
+**Сырые записи (9) и сырые чтения (проверено 2026-09-25, перепроверить):**
+записи — `app/main.cpp:1900`, `macro_stock.cpp:533,558`
+(`plough_field_cell` и сосед), `spawners.cpp:533` (дороги генезиса),
+`:658,:660,:668,:670` (мосты/дороги), `:732` (пашни генезиса — мимо
+`plough_field_cell`, которая для этого и существует, SKELETON `:162`);
+чтения мимо `at` — `spawners.cpp:528` (`decode(features.data[idx])`),
+`macro_stock.cpp:490`, `world_gen.cpp:310`.
+
+**1. Контекст.** Читать: `src/macro/features.h:165-300` (`FeatureLayer`,
+`at`, `set`, `decode`), `src/macro/macro_stock.cpp:480-565`
+(`plough_field_cell` и соседняя дверь), и по ±8 строк вокруг каждой из
+точек списка. Остальное не читать.
+
+**2. Закон.** См. выше; ЗАКОН АГНОСТИЧНОСТИ — дверь не знает, кто её зовёт
+(никаких веток «если генезис»).
+
+**3. Хирургическая правка.**
+- Дверь по ИНДЕКСУ: в `FeatureLayer` добавить `void set(std::uint32_t cell,
+  FeatureType t)` (индекс уже свёрнут — маска не нужна, только проверка
+  `cell < data.size()`) и `FeatureType at(std::uint32_t cell) const`;
+  существующие `set(x, y, t)`/`at(x, y)` → тонкие обёртки через `cell_of`.
+  Это НЕ вторая дверь — это та же дверь на каноническом адресе (ЗАКОН
+  АДРЕСА п.2: адрес — одно число).
+- Каждая из девяти записей → `set(...)` (по индексу там, где звонящий уже
+  держит `i`/`idx`; по `x,y` там, где держит пару). `spawners.cpp:732`
+  (пашни генезиса) → `plough_field_cell(fl, world, x, y, seaLevel,
+  FT_Field)` — та дверь, что уже есть (`macro_stock.cpp:523`), с её
+  проверками; если у генезиса нет `world`/`seaLevel` под рукой — передать,
+  не копировать проверку.
+- Три сырых чтения → `at(...)`.
+- `data` остаётся публичным полем (сейв пишет байты блоком; `rg -n
+  "features\\.data|fl\\.data" src/macro/save.cpp` — это законный провод
+  сейва, не запись фичи).
+- Ничего не менять в СМЫСЛЕ записей (какая фича куда) — только дверь.
+
+**4. Приёмка.**
+- `rg -n "\\.data\\[[^]]*\\] *=" src --type cpp | rg -i "feature|fl\\b"` = 0
+  вне `features.h`; `rg -n "FeatureLayer::set|\\.set\\(" src/macro/spawners.cpp
+  src/macro/macro_stock.cpp src/app/main.cpp` ≥ 9.
+- `check` зелёный; `balance_run 12345 64` ДО/ПОСЛЕ — колонки числа дорог/
+  мостов/пашен по ИМЕНИ равны (смысл не менялся — это и есть проверка,
+  что дверь ничего не «санитизировала»; если разошлось — назвать какую
+  запись дверь отвергла и почему, это находка, не подгонка).
+- Доки: SKELETON I.2 строки `:210` и `:162` → ПРАВДА; часть IV п.4 —
+  половина; реестр `M-112` → ПОЛОВИНА (остаток — `TreeLayer` одна
+  адресация, `builtFeatures`, `growth_cell_due`, `regrow_dungeon_populations`).
+- Коммит: `refactor(macro): запись фич только дверью FeatureLayer::set по
+  индексу клетки (M-112)`.
