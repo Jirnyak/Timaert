@@ -3342,7 +3342,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 
     // ── A7: THE bodies (drawn after structures, before water). One pipeline,
     //    one buffer, one draw: a peasant and a wolf are the same instance
-    //    record and the fragment stage reads each one's row (sprites.md). ──
+    //    record and the fragment stage reads each one's row (СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16)). ──
     if (bodyCount_ > 0) {
         BbPush nb{};
         std::memcpy(nb.mvp, mvp.m, sizeof(nb.mvp));

@@ -1,6 +1,6 @@
 // THE sprite table (macro/sprite_rows.h) — the binding, not the numbers.
 //
-// The law it serves (sprites.md): every visible kind resolves to SOMETHING —
+// The law it serves (СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16)): every visible kind resolves to SOMETHING —
 // drawn art if the artist has drawn it, a procedural body plan if he has not.
 // One table holds both, so a goblin and a peasant sit in the same list.
 //

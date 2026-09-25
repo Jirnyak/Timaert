@@ -625,7 +625,7 @@ army and watch from a hill. — *the growth curve and settlement capture are
 object is not the artifact; it is the field — one signed per-cell world layer,
 black energy on the minus side, magic on the plus. It belongs to the family this
 engine already builds: danger zones (zones.md (zones.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)) and the baked
-night-glow field with occluded spread ([macro-lighting.md](macro-lighting.md)).
+night-glow field with occluded spread (macro-lighting.md (macro-lighting.md снесён 2026-09-25 — см. CANON S17/S27/S28, SKELETON III)).
 **Black artifacts only feed it, contextually.**
 
 The rules of the field (owner's ruling):

@@ -1,5 +1,5 @@
 // The drawn-sprite bank. Decoding lives here; the law it serves is in
-// sprite_bank.h and sprites.md.
+// sprite_bank.h and СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16).
 
 #define STBI_NO_HDR
 #define STBI_NO_LINEAR

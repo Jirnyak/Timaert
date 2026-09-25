@@ -13,7 +13,7 @@
 // (assets/sprite_bank.h): one slot per KIND with drawn art, all filled once at
 // boot — no LRU, no eviction, no working-set churn. (The per-soul paper-doll
 // pool this container was built for — thousands of composited (seed, anim,
-// dir, frame) slots — is gone; sprites.md.)
+// dir, frame) slots — is gone; СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16).)
 //
 // Slots and Vulkan array layers are DIFFERENT axes: `subTiles` packs a
 // subTiles×subTiles grid of slots into each layer (slot = layer·subTiles² +
