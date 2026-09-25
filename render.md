@@ -2,7 +2,7 @@
 
 Source of truth for the **Vulkan render path**. Companion to
 [vulkan.md](vulkan.md) (backend + GPU-assisted compute) and
-[ARCHITECTURE.md](ARCHITECTURE.md) §Rendering & Compute Backend.
+[ARCHITECTURE.md](history/ARCHITECTURE.md) §Rendering & Compute Backend.
 
 > **Status (2026-08-23).** The shipping game uses the Vulkan path for macro and
 > subworld rendering. The subworld renderer has terrain, sky, water, structures,

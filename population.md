@@ -198,7 +198,7 @@ feudal graph with taxes as its first tenant.
 
 ## Related docs
 
-[monsters.md](monsters.md) — the one body table and THE spawn law;
+monsters.md (monsters.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/) — the one body table and THE spawn law;
 [microworld.md](microworld.md) — the subworld the bodies stand in;
-[dungeons.md](dungeons.md) — interiors; [resources.md](resources.md) —
+[dungeons.md](dungeons.md) — interiors; resources.md (resources.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/) —
 deposit gates in the crowd; CANON.md S28 — the law this file serves.

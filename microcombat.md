@@ -12,7 +12,7 @@ player spell direction.
   [macro/character_sheet.h](src/macro/character_sheet.h) (`project_combat`),
   [sub/ai.cpp](src/sub/ai.cpp), [sub/engine.h](src/sub/engine.h),
   [sub/spawn.h](src/sub/spawn.h)
-- **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Combat System
+- **Architecture:** [ARCHITECTURE.md](history/ARCHITECTURE.md) §Combat System
 
 ## Model
 
@@ -117,14 +117,14 @@ player spell direction.
   gangs into natural formations; `kDetectionRadius` awareness.
 - **Death:** killing blow → XP to the killer's owner; corpse holds data-driven
   loot resolved through the one `roll_loot_profile` registry
-  ([monsters.md](monsters.md), [rpg.md](rpg.md)); zone danger gates whether the
+  (monsters.md (monsters.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), rpg.md (rpg.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); zone danger gates whether the
   player may leave.
 
 ## Data-driven extension
 
 Make a kind hireable/soldier-capable → tag it + set one stat row + one upkeep
 number in the registry. Add loot → one loot-profile row keyed by `lootId`
-([monsters.md](monsters.md)). Add a monster → one row of `kNpcTypeDefs` (the
+(monsters.md (monsters.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)). Add a monster → one row of `kNpcTypeDefs` (the
 ONE table; `FaunaEntry` is an alias of `NpcTypeDef`).
 
 ## Backend — the crowd is CPU (owner's ruling 2026-08-20)

@@ -1,7 +1,7 @@
 # Vulkan Backend & GPU-Assisted Computation — Timaert
 
 Source of truth for the **Vulkan backend** (`src/gpu/`). Companion to
-[render.md](render.md) (the graphics passes) and [ARCHITECTURE.md](ARCHITECTURE.md)
+[render.md](render.md) (the graphics passes) and [ARCHITECTURE.md](history/ARCHITECTURE.md)
 §Rendering & Compute Backend / §GPU is graphics; the world is CPU.
 
 > **Why Vulkan, not "faster GL".** The game draws thousands of lit, shadowed bodies

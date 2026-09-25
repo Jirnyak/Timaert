@@ -38,7 +38,8 @@ Magic 6/7/8 — одна игра, два масштаба** (AGENTS.md, шап�
 | Кейс-стади самых трудных и критичных граблей, чтобы не наступать заново | [problems.md](problems.md) |
 | Лор мира — фикшн и механика, которая его производит | [lore.md](lore.md) |
 | Релиз: границы демо, Steam, ассеты, риски | [release.md](release.md) |
-| Архив: старые аудиты, дизайн-док, архитектура «как построено» до SKELETON | [history/](history/) — только история, не источник правды |
+| Архив: старые аудиты, дизайн-док, архитектура «как построено» до SKELETON, сырьё переписи 2026-09-25 | [history/](history/) — только история, не источник правды |
+| Доки субмира/рендера/оболочки (`microworld`, `seamless-crossing`, `dungeons`, `ground`, `sprites`, `render`, `vulkan`, `macro-lighting`, `population`, `context`, `microcombat`, `shell-screens`, `ui-settings`, `controls`, `debug`) | ещё НЕ верифицированы против кода и НЕ перенесены в SKELETON; читать как свидетеля с датой внутри файла, не как правду |
 
 Порядок чтения перед кодом задан в AGENTS.md §0. Любой документ и любой код —
 свидетель, а не судья; полный замысел существует только у владельца.
@@ -126,6 +127,14 @@ TIMAERT_SMOKE_HOUR=1 TIMAERT_SMOKE_YAW=180 TIMAERT_SHOT_PATH=/tmp/moon.png \
 Мутация ECS откладывает захват минимум на кадр (AGENTS §8 п.10). Безоконный путь
 к кадру — харнесс `gpu_smoke3d` (`GPU_SMOKE_SHOT=<path>.ppm`,
 `GPU_SMOKE_FRAMES=N`, `GPU_SMOKE_NIGHT=1`, `GPU_SMOKE_LIGHT=1`, `GPU_SMOKE_FX=1`).
+
+**Приборы.** `balance_run [seedsCsv] [days] [outDir]` (по умолчанию `12345 256
+balance_out`; `tests/balance_run.cpp:1-13`) — мир играет сам себя без окна и
+пишет `world_<seed>.tsv`, `landmarks_<seed>.tsv`; код выхода 1 = сломан закон
+мира; `check` его не собирает. `TIMAERT_BOOT_TRACE=1` (в Debug всегда,
+`src/app/main.cpp:155-162`) печатает отчёт генезиса `[worldgen] …`, `[roads] …`.
+Консоль (`` ` ``): `simspeed [mult]`, `rest`, `revealmap`, `spawn_squad`,
+`chop [radius]` (`src/app/main.cpp:4045-4992`).
 
 Ноль предупреждений: предупреждение — будущий баг, чинится, а не отчитывается.
 

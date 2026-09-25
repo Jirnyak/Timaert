@@ -175,7 +175,7 @@ storey's DOWN pad — `dungeon_shaft_arrival_point` is the one dispatch that
 keeps the engine's placement and the module's pads agreeing). The top storey's
 climb leaves the tower: its roof pad is the last rung, and it ends the session
 on the CROWN in the open-air scene, where the orb waits
-([spells.md](spells.md) §Learning).
+(spells.md (spells.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/) §Learning).
 
 The hall's radius is its **own** number (`kSpireTowerHallRadiusTiles`), not the
 exterior radius times a scale. The house multiplies because a facade VARIES and
@@ -266,7 +266,7 @@ for the older word to name.
 | `Search` | chest | a stack of the owning landmark's store, at a price in standing | `Landmark::inventory` + `add_player_reputation` |
 | `Drink` | well | an hour of rest, standing | `kSpRegenPctPerHour` |
 | `Read` | signboard | names the place | the settlement roster |
-| `Learn` | spire orb | flips the spire depleted, burns the orb out of the scene, teaches the spell | `EventTag::SpireDepleted` → the effect applicator's ordinal resolve ([spells.md](spells.md) §Learning) |
+| `Learn` | spire orb | flips the spire depleted, burns the orb out of the scene, teaches the spell | `EventTag::SpireDepleted` → the effect applicator's ordinal resolve (spells.md (spells.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/) §Learning) |
 
 (The row order of `kInteractRows` mirrors the enum UNDER GUARD now — each
 row carries its `InteractId` and a `rows_in_enum_order` static_assert

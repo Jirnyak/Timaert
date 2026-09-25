@@ -10,7 +10,7 @@ is the macro map / minimap, not a subworld mode.
   [seamless_manager.h](src/sub/seamless_manager.h),
   [base_generator.h](src/sub/base_generator.h),
   [vk_renderer_3d.h](src/sub/vk_renderer_3d.h)
-- **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §L2 — Microworld (Subworld)
+- **Architecture:** [ARCHITECTURE.md](history/ARCHITECTURE.md) §L2 — Microworld (Subworld)
 
 ## Model
 
@@ -49,7 +49,7 @@ is the macro map / minimap, not a subworld mode.
 - **Walk speed is DERIVED** — `kSubworldWalkTilesPerSecond = 96` carries its
   derivation from the macro march (8 cells/game hour over the stretched
   underground hour = 93.75, +2.4 % named allowance): the A8 "two walking
-  speeds" debt is closed — see [time.md](time.md).
+  speeds" debt is closed — see time.md (time.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/).
 - **Every global-coordinate noise closes on the world.** The detail waves, both
   ridge octaves, the domain warp, the crag, the massif edge, the dune and the
   bog all take the world's tile span (1024 × 1024) as their period, snapped to
@@ -723,7 +723,7 @@ macro stock. `enter_dungeon_scene` takes the same `MacroWorld` envelope, and
 interiors spawn by the same laws as the street: residents through the door
 cell's `pick_crowd_row` (deposit-gated professions live in houses too), vermin
 through `roll_spawns` with the door cell's danger byte
-([monsters.md](monsters.md)). The whole layer, the prop table it stands on
+(monsters.md (monsters.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)). The whole layer, the prop table it stands on
 and the one E-verb dispatch are written up in **[dungeons.md](dungeons.md)**.
 How the subworld gets its PEOPLE is being unified into THE settlement system
 (source × placement × one birth door) — **[population.md](population.md)**,
@@ -731,9 +731,9 @@ CANON S28.
 
 ## Connections
 
-Reads the macroworld as source of truth ([macroworld.md](macroworld.md)).
+Reads the macroworld as source of truth (macroworld.md (macroworld.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)).
 Hosts all combat ([microcombat.md](microcombat.md)) and spell visuals
-([spells.md](spells.md)). The combatant crowd is CPU-simulated under the O(N) bound (CANON.md S5). Overworld NPCs within ±1 cell are projected into
+(spells.md (spells.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)). The combatant crowd is CPU-simulated under the O(N) bound (CANON.md S5). Overworld NPCs within ±1 cell are projected into
 the 3×3 as real combat bodies. A projection OWNS NOTHING — its bars, bag, gear and
 sheet are its macro record's, read through one door (`sub/record.h`), so what you
 do to it happens to HIM in the tick it happens, and nothing is folded back on the

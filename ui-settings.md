@@ -100,7 +100,7 @@ adding or removing a UI element never invalidates an existing prefs file.
 - **Independent of `save.bin`.** Prefs are global and get their own file with
   its own `# … v1` header. They never touch the per-slot binary save, so they
   never force a `kSaveVersion` bump (which would silently invalidate saves — see
-  the Save/Load rule in [ARCHITECTURE.md](ARCHITECTURE.md)).
+  the Save/Load rule in [ARCHITECTURE.md](history/ARCHITECTURE.md)).
 
 ## Access — the pause-menu "Interface" entry
 

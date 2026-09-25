@@ -22,8 +22,8 @@ the renderer or the shader.
 - **Hooks (bake triggers):** [src/app/main.cpp](src/app/main.cpp)
   (`bake_macro_light_field` / `rebake_macro_lights`)
 - **Companion docs:** [render.md](render.md) §Macro night lighting,
-  [macroworld.md](macroworld.md), [features.md](features.md) (occlusion grid),
-  [landmarks.md](landmarks.md) (`LandmarkDef.lightColor` / `lightPop`)
+  macroworld.md (macroworld.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), features.md (features.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/) (occlusion grid),
+  landmarks.md (landmarks.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/) (`LandmarkDef.lightColor` / `lightPop`)
 
 ---
 
@@ -52,7 +52,7 @@ the GPU target keeps its minimal link set.
 ## 1. The emitter census — `collect_macro_lights(gs)`
 
 Enumerates every night emitter into a flat `std::vector<MacroLight>`. Fully
-data-driven off the landmark table ([landmarks.md](landmarks.md)):
+data-driven off the landmark table (landmarks.md (landmarks.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)):
 
 - **Inhabited landmarks** (settlements, villages) glow with their type's
   `LandmarkDef.lightColor`, scaled by **live population** through the TS
