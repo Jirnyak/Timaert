@@ -1283,7 +1283,7 @@ CharacterCreation, Playing (HUD, панели, консоль), Menu, Dead) →
 | M-121 (СУБ-1) | высота симуляции из композита, не из сетки рендера; четыре литерала 16384 → один со `static_assert`; таймеры в шагах; `static_assert` на Combat/SubworldAi/Projectile; `stampRing_` кап | III | M |
 | M-122 (РЕНДЕР-1) | `farVtx_` кольцо по кадрам; макро-upload после записи кадра; `shadowMeshPipe_` и мёртвый API `SpriteArray` снести; буферы деревьев/структур с капом | III.4 | S–M |
 | M-123 (AI-1) | курсор бюджетного драйвера по ординалу; RNG свипа отдельно от UI; один ответ гейта `allowAutoBattle`; `AgentMemory` читатель или снос | I.8 | S–M |
-| APP-1 (номер не выдан) | `src/app` под ЗАКОН АДРЕСА (свёртка, `wrapi`, индекс, спеллинг воды); индекс клетка→сквады как поле и `detect_forced_encounter` через него; один предикат «сквад стоит» для игрока и NPC; `step_macro_walk` из `ui/` в `macro/`; путь полёта — режим `find_path` | III.6 | M |
+| M-124 (APP-1) | `src/app` под ЗАКОН АДРЕСА (свёртка, `wrapi`, индекс, спеллинг воды); индекс клетка→сквады как поле и `detect_forced_encounter` через него; один предикат «сквад стоит» для игрока и NPC; `step_macro_walk` из `ui/` в `macro/`; путь полёта — режим `find_path` | III.6 | M |
 
 ---
 
