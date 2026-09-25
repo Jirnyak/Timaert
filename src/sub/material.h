@@ -17,7 +17,7 @@
 // pepper where nature puts patches (owner, 2026-09-12, photographed on a
 // treeline). It is now a correlated FIELD, and the same one for every
 // boundary this file draws — see THE GROUND-BOUNDARY LAW below, and
-// [ground.md] for the measured before/after.
+// SKELETON.md III.5 (measured before/after: history/ground.md).
 //
 // RING CONTRACT: the 9 entries are GROUND aliases, never Water — a flooded
 // cell (river/lake/coast) enters the ring as its unflooded climate ground
@@ -240,7 +240,7 @@ namespace sm::sub
 
     // ONE octave, not two. A second, finer octave would fray the patch's
     // edge — and mesh.frag already frays every boundary it draws, by up to
-    // edge_m metres, with a field of its own (ground.md, "the joint"). Paying
+    // edge_m metres, with a field of its own (SKELETON III.5, the joint). Paying
     // for the same fringe twice would cost the material fill a second field
     // per tile, and the fill runs 9.4 million times on a full build.
     inline float ground_dither01(long long ax, long long ay) {

@@ -1,3 +1,5 @@
+> **ИСТОРИЯ (перенесено 2026-09-25, наряд M-107).** Закон земли живёт в SKELETON.md III.5, вердикты владельца — в CANON S17; здесь остались замеры и ход работы. Ссылки на снесённые доки внутри устарели.
+
 # THE ground surface — the procedural skin of the subworld
 
 > **This is THE document for what the ground LOOKS like.** The material

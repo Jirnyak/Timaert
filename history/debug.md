@@ -1,3 +1,5 @@
+> **ИСТОРИЯ (перенесено 2026-09-25, наряд M-107).** Живые куски — дев-консоль (CANON S22), приборы и переменные окружения (README «Проверка»). Здесь остался macOS-плейбук профилирования; ссылки на снесённые доки внутри устарели.
+
 # Debugging & Profiling — Timaert
 
 Optimization and CPU/GPU time are the top priority for this game. This is the

@@ -38,8 +38,7 @@ Magic 6/7/8 — одна игра, два масштаба** (AGENTS.md, шап�
 | Кейс-стади самых трудных и критичных граблей, чтобы не наступать заново | [problems.md](problems.md) |
 | Лор мира — фикшн и механика, которая его производит | [lore.md](lore.md) |
 | Релиз: границы демо, Steam, ассеты, риски | [release.md](release.md) |
-| Архив: старые аудиты, дизайн-док, архитектура «как построено» до SKELETON, сырьё переписи 2026-09-25 | [history/](history/) — только история, не источник правды |
-| Доки, оставшиеся вне тройки: `ground.md` (закон цвета земли, данные `data/*.csv`), `debug.md` (плейбук профилирования) | ещё НЕ верифицированы против кода и НЕ перенесены в SKELETON; читать как свидетеля с датой внутри файла, не как правду |
+| Архив: старые аудиты, дизайн-док, архитектура «как построено» до SKELETON, сырьё переписи 2026-09-25, `ground.md` (замеры вида земли) и `debug.md` (macOS-плейбук профилирования: Instruments, ASan, MoltenVK, lldb) | [history/](history/) — только история, не источник правды |
 
 Порядок чтения перед кодом задан в AGENTS.md §0. Любой документ и любой код —
 свидетель, а не судья; полный замысел существует только у владельца.
@@ -133,8 +132,42 @@ balance_out`; `tests/balance_run.cpp:1-13`) — мир играет сам се�
 пишет `world_<seed>.tsv`, `landmarks_<seed>.tsv`; код выхода 1 = сломан закон
 мира; `check` его не собирает. `TIMAERT_BOOT_TRACE=1` (в Debug всегда,
 `src/app/main.cpp:155-162`) печатает отчёт генезиса `[worldgen] …`, `[roads] …`.
-Консоль (`` ` ``): `simspeed [mult]`, `rest`, `revealmap`, `spawn_squad`,
-`chop [radius]` (`src/app/main.cpp:4045-4992`).
+**Консоль** (`` ` `` в игре) — ЕДИНАЯ тест-система (вердикт владельца
+2026-09-07, CANON S22): состояние игры собирается командами, `exec <file>`
+прогоняет файл команд как один сценарий (останов на первой ошибке). Реестр —
+49 строк `register_cmd` в `register_console_commands` (`src/app/main.cpp:3930`);
+`help` и `help <cmd>` печатают всё из реестра. Группы: мир (`tp`,
+`tp_settlement`, `settime`, `addtime`, `simspeed [mult]`, `rest`, `revealmap`,
+`chop [radius]`, `pos`, `time`), спавн (`spawn`, `spawn_squad`, `squad_orders`,
+`test_battle`, `spawn_fauna`, `killall`, `possess`), инвентарь (`items`, `give`,
+`take`, `gold`, `loots`/`loot`, `roll`), лист (`skills`/`skill`, `attrs`/`attr`,
+`addexp`, `levelup`, `sheet`), снаряжение (`gear`, `equip`, `unequip`), спеллы
+(`spells`, `learn`, `learnall`), читы (`heal`, `godmode`, `flight`), диагностика
+рендера (`fpshud`, `sunfreeze`, `lightdbg [march|clouds|map|nl|haze|off]` —
+сбрасываются на каждой новой игре, не настройки).
+
+**F3 HUD и что значит низкий FPS.** Один оборот цикла — один тик и один кадр,
+поэтому FPS и темп мира — одно число: строка `World: N / 64 ticks/s` ниже
+номинала помечается `SLOW MOTION` и означает, что мир живёт медленнее, а не
+что картинка дёргается (`src/app/main.cpp:3840-3843`); `Present: fifo` —
+дисплей задаёт потолок тиков (платформа, не баг).
+
+**Переменные окружения** (все читаются в `src/app/`, `src/sub/`, `tests/`):
+`TIMAERT_BOOT_TRACE`, `TIMAERT_GPU_STATS` (таймстампы GPU — не зависят от
+vsync; wall-clock под vsync слеп), `TIMAERT_SHADOW_STATS`, `TIMAERT_SEAM_TRACE`
+(разбивка загрузки терраина по режимам: вход / пересечение / async / дорога —
+читать метку, не последнюю строку), `TIMAERT_SEAM_SELFCHECK` (сверка
+инкрементальных путей с пересчётом с нуля, включая readback материала; УДВАИВАЕТ
+работу — не для замеров), `TIMAERT_NPC_VISUAL_TRACE` (`moved=0` — мёртвый мозг,
+`moved>0, ticks=0` — мёртвый глаз), `TIMAERT_COMBAT_LOG`, `TIMAERT_STORY_UI_TRACE`,
+`TIMAERT_VK_VALIDATION`, `TIMAERT_SMOKE_*` (см. выше), `GPU_SMOKE_*` для
+`gpu_smoke3d`. Замер без пиненного сида (`TIMAERT_SMOKE_SEED`) — не число:
+пересечение шва на разных мирах давало от 0.2 до 19.7 мс чисто от рельефа.
+
+Сборки для профилирования: `-DCMAKE_BUILD_TYPE=RelWithDebInfo` (Instruments /
+perf), `-DTIMAERT_ASAN=ON` (Address + UB), `-DTIMAERT_NATIVE=ON` (только dev).
+macOS-плейбук (Instruments, `sample`, `leaks`, MoltenVK-знобы, lldb, шаблон
+отчёта) — `history/debug.md`.
 
 Ноль предупреждений: предупреждение — будущий баг, чинится, а не отчитывается.
 
