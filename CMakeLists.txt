@@ -716,6 +716,11 @@ timaert_test(world_row_test
     SOURCES
         src/macro/items.cpp)
 
+# Закон порядка обхода сквадов (эпик 2 шаг 1а): дверь чисто заголовочная,
+# тест — реестр + сортировка, продакшен-TU не нужны.
+timaert_test(squad_walk_test
+    LINK_ENTT)
+
 timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp

@@ -44,6 +44,11 @@ entt::entity spawn_ai(sm::ecs::World& world,
                       int sp = 100,
                       int mapW = 128) {
     auto e = world.reg.create();
+    // Ординал рождения безусловен у всякого сквада (закон мира: make_npc
+    // ставит его всем) — с 1а по нему идёт порядок обхода (squad_walk.h),
+    // и фикстура, рождающая мимо двери, обязана исполнять тот же закон.
+    static std::uint32_t nextOrdinal = 0;
+    world.reg.emplace<sm::ecs::MacroSpawnId>(e, nextOrdinal++);
     world.reg.emplace<sm::ecs::MacroCell>(
         e, sm::ecs::cell_index(int(x), int(y), mapW));
     world.reg.emplace<sm::ecs::MacroVisual>(e, x, y, 0.0f);

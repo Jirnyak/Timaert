@@ -20,6 +20,7 @@
 #include "macro/player_entity.h"
 #include "macro/spell_book_state.h"
 #include "macro/spells.h"
+#include "macro/squad_walk.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 
@@ -181,11 +182,15 @@ inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
     // be silent — the tag is the guard the ordinal check would be, for free.
     // Существа живут в ЕДИНОМ контейнере сквада (M-71); SquadRoster в view —
     // маркер «это сквад» и обвязка счетов.
-    for (auto [e, bag, roster] :
-         w.reg.view<ecs::NpcInventory, ecs::SquadRoster, ecs::Dead>(
-             entt::exclude<ecs::PlayerSquadTag>).each()) {
-        (void)e;
-        (void)roster;
+    // Порядок слива — закон (squad_walk.h): пул принимает души слотами, и
+    // «чьи люди легли первыми» не должно зависеть от кишки EnTT. Вектор
+    // пуст почти каждый тик (смерть — редкое событие), аллокации нет.
+    auto view = w.reg.view<ecs::NpcInventory, ecs::SquadRoster, ecs::Dead>(
+        entt::exclude<ecs::PlayerSquadTag>);
+    std::vector<SquadWalkEntry> order;
+    collect_squads_by_ordinal(w.reg, view, order);
+    for (const SquadWalkEntry& sw : order) {
+        auto& bag = w.reg.get<ecs::NpcInventory>(sw.e);
         if (creatures_empty(bag.inv)) continue;
         // The pool CAN refuse (its own slot ceiling): only the men it
         // actually took leave the roster; the rest STAY as the dead lord's
@@ -225,13 +230,19 @@ inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
 // the map.
 inline int destroy_dead_macro_squads(ecs::World& w,
                                      std::int64_t* lootPoolValue = nullptr) {
-    std::vector<entt::entity> doomed;
+    // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
+    // (destroy под собственным view незаконен), закон порядка достался ему
+    // бесплатно.
     auto view = w.reg.view<ecs::MacroSpawnId, ecs::SquadRoster,
                            ecs::NpcInventory, ecs::Dead>(
         entt::exclude<ecs::PlayerTag, ecs::PlayerSquadTag, ecs::SubworldTag>);
-    for (auto e : view) {
-        if (!creatures_empty(view.get<ecs::NpcInventory>(e).inv)) continue;
-        doomed.push_back(e);
+    std::vector<SquadWalkEntry> snapshot;
+    collect_squads_by_ordinal(w.reg, view, snapshot);
+    std::vector<entt::entity> doomed;
+    for (const SquadWalkEntry& sw : snapshot) {
+        if (!creatures_empty(w.reg.get<ecs::NpcInventory>(sw.e).inv))
+            continue;
+        doomed.push_back(sw.e);
     }
     for (entt::entity e : doomed) {
         // THE loot pool (owner 2026-08-30, CANON S5): a squad that died

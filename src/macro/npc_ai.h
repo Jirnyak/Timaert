@@ -12,6 +12,7 @@
 #include "macro/state.h"
 #include "macro/spawners.h"
 #include "macro/squad_type.h"
+#include "macro/squad_walk.h"
 #include "macro/tree_layer.h"
 
 namespace sm {
@@ -113,6 +114,10 @@ void build_tree_grid(TreeGrid& g, const std::vector<TreePoint>& trees,
 // threat step scans the neighbouring buckets instead of every entity.
 struct SquadIndex {
     CellBuckets grid;
+    // Порядок закона (macro/squad_walk.h): скаттер идёт по ординалу, поэтому
+    // содержимое бакетов не зависит от внутренностей EnTT. Член — чтобы
+    // пересборка на каждый свип не аллоцировала (тот же довод, что cursor).
+    std::vector<SquadWalkEntry> order;
 };
 
 void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
@@ -124,6 +129,9 @@ struct MacroNpcAiRuntime {
     int         pendingSweeps = 0;
     std::size_t sweepCursor = 0;
     SquadIndex  squadIndex;         // rebuilt per drive; buckets reused
+    // Порядок свипа по ординалу (macro/squad_walk.h) — скрэтч драйверов,
+    // ноль аллокаций после прогрева.
+    std::vector<SquadWalkEntry> sweepOrder;
 };
 
 struct MacroNpcAiSliceResult {

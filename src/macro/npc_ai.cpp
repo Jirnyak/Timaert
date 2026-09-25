@@ -1,5 +1,6 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
+#include "core/stacks.h"           // kWorldSquads — резерв скрэтчей порядка
 #include "macro/roster_window.h"   // ОДИН суд границы на всякий ростер
 #include "macro/agent_memory.h"
 #include "macro/characters.h"  // стол анкет — ступень лестницы поведения
@@ -3470,10 +3471,18 @@ int squad_season_window(MacroWorld& mw, int day) {
     GameState& gs = *mw.gs;
     auto& reg = mw.world->reg;
     int deserted = 0;
-    for (auto [e, kind, rt, bag, roster]
-         : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime, ecs::NpcInventory,
-                    ecs::SquadRoster>().each()) {
-        (void)kind;
+    // Окно делит ОДИН пул дезертиров и один пул лута на всех — порядок суда
+    // есть закон мира (squad_walk.h): по ординалу. Скрэтч локальный, как у
+    // прочих дневных проходов.
+    auto view = reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
+                         ecs::NpcInventory, ecs::SquadRoster>();
+    std::vector<SquadWalkEntry> order;
+    collect_squads_by_ordinal(reg, view, order);
+    for (const SquadWalkEntry& sw : order) {
+        const entt::entity e = sw.e;
+        auto& rt     = reg.get<ecs::MacroNpcRuntime>(e);
+        auto& bag    = reg.get<ecs::NpcInventory>(e);
+        auto& roster = reg.get<ecs::SquadRoster>(e);
         // СУД И СЧЁТ — ОДНА ДВЕРЬ НА ВЕСЬ МИР (macro/roster_window.h).
         // Артель судится тем же телом и тем же счётом, что ростер места и
         // армия игрока: своего у неё здесь не осталось ничего.
@@ -3600,10 +3609,15 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
     if (!mw.gs || !mw.world) return 0;
     auto& reg = mw.world->reg;
     int melted = 0;
-    for (auto [e, kind, rt, bag]
-         : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
-                    ecs::NpcInventory>().each()) {
-        (void)kind; (void)rt;
+    // Порядок по ординалу (squad_walk.h): авто-скрап и гашение счёта трогают
+    // цену дня через факты — одна очередь фактов на всех.
+    auto view = reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
+                         ecs::NpcInventory>();
+    std::vector<SquadWalkEntry> order;
+    collect_squads_by_ordinal(reg, view, order);
+    for (const SquadWalkEntry& sw : order) {
+        const entt::entity e = sw.e;
+        auto& bag = reg.get<ecs::NpcInventory>(e);
         // Camp-life slot hygiene (CANON «Крафт/Скрап»: авто-скрап ИИ по
         // порогу >50% — «склад города ИЛИ МЕШОК СКВАДА»): the same daily
         // overflow law the settlement store runs. The gate is not a player
@@ -3670,9 +3684,18 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // it is a corpse-row awaiting the drain (AI-2). Without the exclusion a
     // dead leader and his dead men dissolved into the landmark as living
     // souls.
-    for (auto [e, kind, rt, cell]
-         : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
-                    ecs::MacroCell>(entt::exclude<ecs::Dead>).each()) {
+    // Порядок по ординалу (squad_walk.h): idleByRow ниже раздаётся законом
+    // «первая подходящая» (claim_standing) и растворяется в том же порядке —
+    // «кто первым встал» обязан быть законом мира, не кишкой EnTT.
+    auto idleView = reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
+                             ecs::MacroCell>(entt::exclude<ecs::Dead>);
+    std::vector<SquadWalkEntry> idleOrder;
+    collect_squads_by_ordinal(reg, idleView, idleOrder);
+    for (const SquadWalkEntry& sw : idleOrder) {
+        const entt::entity e = sw.e;
+        const auto& kind = reg.get<ecs::NPCKind>(e);
+        const auto& rt   = reg.get<ecs::MacroNpcRuntime>(e);
+        const auto& cell = reg.get<ecs::MacroCell>(e);
         if (!is_crew(kind.type)) continue;
         if (rt.state != std::uint8_t(NS::Idle)) continue;
         const int row = row_of(rt.homeSettlementId);
@@ -3720,8 +3743,14 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     const auto is_home_idle = [&](entt::entity e) {
         return std::binary_search(homeIdle.begin(), homeIdle.end(), e);
     };
-    for (auto [e, kind, rt]
-         : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
+    // Тот же закон порядка: этот проход заполняет idleByRow.
+    auto crewView = reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>();
+    std::vector<SquadWalkEntry> crewOrder;
+    collect_squads_by_ordinal(reg, crewView, crewOrder);
+    for (const SquadWalkEntry& sw : crewOrder) {
+        const entt::entity e = sw.e;
+        const auto& kind = reg.get<ecs::NPCKind>(e);
+        const auto& rt   = reg.get<ecs::MacroNpcRuntime>(e);
         const int row = row_of(rt.homeSettlementId);
         if (row < 0) continue;
         const LandmarkDef& ld =
@@ -4716,6 +4745,10 @@ void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
                                 std::uint32_t seed) {
     runtime = MacroNpcAiRuntime{};
     runtime.jitter = Rng{seed ^ 0xA1F0u};
+    // Аллокация на сборке мира, не в тике (DOD п.4): скрэтчи закона порядка
+    // (squad_walk.h) греются до капа один раз, свипы дальше zero-alloc.
+    runtime.sweepOrder.reserve(kWorldSquads);
+    runtime.squadIndex.order.reserve(kWorldSquads);
 }
 
 void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
@@ -4732,22 +4765,23 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
     auto view = w.reg.view<ecs::MacroCell, ecs::NPCKind,
                            ecs::MacroNpcRuntime>(
         entt::exclude<ecs::Dead>);
-    // Two passes over the view — count, then scatter — which is what buys the
-    // allocation-free rebuild. The view is cheap to walk twice; sixteen
-    // thousand vector headers were not cheap to rebuild once.
-    std::size_t total = 0;
-    for (auto e : view) {
-        const auto& c = view.get<ecs::MacroCell>(e);
+    // ОДИН проход по view — в порядок закона (squad_walk.h), потом count и
+    // scatter идут по собранному: содержимое бакета отсортировано по
+    // ординалу, и читатели «первого подходящего» (threat step, охота)
+    // перестают зависеть от внутренностей EnTT. Скрэтч — член, пересборка
+    // на свип по-прежнему аллокаций не делает.
+    collect_squads_by_ordinal(w.reg, view, g.order);
+    for (const SquadWalkEntry& s : g.order) {
+        const auto& c = w.reg.get<ecs::MacroCell>(s.e);
         bucket_count(b, wrapi(ecs::cell_x(c, mapW) / b.cellSize, b.cols),
                      wrapi(ecs::cell_y(c, mapW) / b.cellSize, b.rows));
-        ++total;
     }
-    bucket_prefix(b, total);
-    for (auto e : view) {
-        const auto& c = view.get<ecs::MacroCell>(e);
+    bucket_prefix(b, g.order.size());
+    for (const SquadWalkEntry& s : g.order) {
+        const auto& c = w.reg.get<ecs::MacroCell>(s.e);
         bucket_scatter(b, wrapi(ecs::cell_x(c, mapW) / b.cellSize, b.cols),
                        wrapi(ecs::cell_y(c, mapW) / b.cellSize, b.rows),
-                       std::uint32_t(entt::to_integral(e)));
+                       std::uint32_t(entt::to_integral(s.e)));
     }
 }
 
@@ -4833,11 +4867,15 @@ void tick_macro_npc_ai(MacroWorld& mw,
     TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
     scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
-    for (auto e : view) {
-        auto& cell = view.get<ecs::MacroCell>(e);
-        auto& kind = view.get<ecs::NPCKind>(e);
-        auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
-        auto& hp   = view.get<ecs::Pools>(e);
+    // Свип делит ОДИН RNG на всех — порядок обхода есть закон мира
+    // (squad_walk.h): по ординалу, не по кишке EnTT.
+    collect_squads_by_ordinal(reg, view, runtime.sweepOrder);
+    for (const SquadWalkEntry& sw : runtime.sweepOrder) {
+        const entt::entity e = sw.e;
+        auto& cell = reg.get<ecs::MacroCell>(e);
+        auto& kind = reg.get<ecs::NPCKind>(e);
+        auto& rt   = reg.get<ecs::MacroNpcRuntime>(e);
+        auto& hp   = reg.get<ecs::Pools>(e);
 
         // One think per call at most, as before: a caller that hands over a
         // huge jump does not get a burst of catch-up thinking, it gets one.
@@ -4978,20 +5016,23 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
     scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
+    // Тот же закон порядка, что у карт-драйвера (squad_walk.h): курсор —
+    // позиция В ЭТОМ порядке. Лист собран на вызов; умерший внутри свипа
+    // отсеивается проверкой Dead ниже, ровно как раньше.
+    collect_squads_by_ordinal(reg, view, runtime.sweepOrder);
+
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {
-        std::size_t index = 0;
-        bool sawEntity = false;
         bool reachedEnd = true;
 
-        for (auto e : view) {
-            sawEntity = true;
-            if (index++ < runtime.sweepCursor) continue;
+        for (std::size_t i = runtime.sweepCursor;
+             i < runtime.sweepOrder.size(); ++i) {
+            const entt::entity e = runtime.sweepOrder[i].e;
 
-            auto& cell = view.get<ecs::MacroCell>(e);
-            auto& kind = view.get<ecs::NPCKind>(e);
-            auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
-            auto& hp   = view.get<ecs::Pools>(e);
+            auto& cell = reg.get<ecs::MacroCell>(e);
+            auto& kind = reg.get<ecs::NPCKind>(e);
+            auto& rt   = reg.get<ecs::MacroNpcRuntime>(e);
+            auto& hp   = reg.get<ecs::Pools>(e);
             if (kind.type < std::uint16_t(NPCType::Count)
                 && !reg.all_of<ecs::Dead>(e)) {   // may have died this sweep
                 const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
@@ -5019,7 +5060,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
             }
         }
 
-        if (!sawEntity) {
+        if (runtime.sweepOrder.empty()) {
             runtime.pendingSweeps = 0;
             runtime.sweepCursor = 0;
             break;
