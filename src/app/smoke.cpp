@@ -344,7 +344,7 @@ void smoke_fail(App& app, const char* reason) {
 // The probe used to sit on nine points of the quarter/half/three-quarter grid,
 // which encodes an assumption nobody stated: that a frame showing the world is
 // lit ALL OVER. On the macro map that is false BY DESIGN — the fog of war
-// (map.md) blacks out everything the player has not seen, and at boot he has
+// (CANON S11, бывший map.md) blacks out everything the player has not seen, and at boot he has
 // seen one island around himself. Measured on seed 12345: eight of the nine
 // points read (0,0,0) and the ninth, clipping the island's edge, read (5,0,0)
 // against a threshold of 24. So `wait_visible` was red on every seed over a

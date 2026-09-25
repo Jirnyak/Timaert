@@ -4,7 +4,7 @@
 // THE FACT THESE DOORS REST ON (verified 2026-09-11; слияние M-71): a squad
 // and a landmark hold the SAME type — ONE Inventory (bag, market, granary,
 // treasury AND roster in one: существа лежат областью того же контейнера;
-// population.md: «гарнизон = армия ландмарка»). What differed was
+// population.md, снесён (CANON S28): «гарнизон = армия ландмарка»). What differed was
 // only the ADDRESS: the squad carries them as ECS components on its leader
 // entity (ecs::NpcInventory / ecs::SquadRoster), the landmark as bare fields
 // of its record in gs.landmarks. Every consumer that wanted "this object's

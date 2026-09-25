@@ -1625,7 +1625,7 @@ game. It is not e-sport balance; nobody is owed symmetry.
   serving under your banner. Found the break-even point, broke the economy, and
   in-fiction it is even correct: people pay dues to stand under a legend's
   protection. — *the CHA-100 sign flip is `NOT BUILT` as a stated rule; confirm
-  against `microcombat.md` recruitment.*
+  against `microcombat.md` (снесён 2026-09-25 → CANON S13) recruitment.*
 
 **The terrain proves the asymmetry better than any stat screen.** Three builds,
 one situation — stranded in the mountains (macroworld.md (macroworld.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/) SP
