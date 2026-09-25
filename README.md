@@ -39,7 +39,7 @@ Magic 6/7/8 — одна игра, два масштаба** (AGENTS.md, шап�
 | Лор мира — фикшн и механика, которая его производит | [lore.md](lore.md) |
 | Релиз: границы демо, Steam, ассеты, риски | [release.md](release.md) |
 | Архив: старые аудиты, дизайн-док, архитектура «как построено» до SKELETON, сырьё переписи 2026-09-25 | [history/](history/) — только история, не источник правды |
-| Доки субмира/рендера/оболочки (`microworld`, `seamless-crossing`, `dungeons`, `ground`, `sprites`, `render`, `vulkan`, `macro-lighting`, `population`, `context`, `microcombat`, `shell-screens`, `ui-settings`, `controls`, `debug`) | ещё НЕ верифицированы против кода и НЕ перенесены в SKELETON; читать как свидетеля с датой внутри файла, не как правду |
+| Доки субмира/рендера/оболочки (`microworld`, `seamless-crossing`, `dungeons`, `ground`, `sprites`, `render`, `vulkan`, `macro-lighting`, `population`, `context`, `shell-screens`, `ui-settings`, `controls`, `debug`) | ещё НЕ верифицированы против кода и НЕ перенесены в SKELETON; читать как свидетеля с датой внутри файла, не как правду |
 
 Порядок чтения перед кодом задан в AGENTS.md §0. Любой документ и любой код —
 свидетель, а не судья; полный замысел существует только у владельца.
