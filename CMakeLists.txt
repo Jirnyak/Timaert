@@ -721,6 +721,11 @@ timaert_test(world_row_test
 timaert_test(squad_walk_test
     LINK_ENTT)
 
+# Гладкая память макромира (эпик 2 шаг 1б, M-106): хранилище заголовочное,
+# тест — рождение/смерть/переиспользование под gen-защитой.
+timaert_test(macro_store_test
+    LINK_ENTT)
+
 timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
