@@ -44,6 +44,7 @@ struct EconFact;
 using EconFactSink = void (*)(void* user, const EconFact& fact);
 
 struct GameState;
+struct MacroStore;
 struct TreeLayer;
 struct DepositLayer;
 struct TerrainData;
@@ -59,6 +60,8 @@ struct MacroWorld {
     GameState*  gs    = nullptr;
     TreeLayer*  trees = nullptr;
     ecs::World* world = nullptr;   // the roster row lives on squad entities
+    MacroStore* store = nullptr;   // гладкая память макро-сквадов (M-106):
+                                   //   состояние — колонками по MacroSlot
     const TerrainData* terrain = nullptr;   // the fauna row derives its
                                             //   baseline from the cell's biome
     DepositLayer* deposits = nullptr;       // the Clay/Iron/Stone carrier

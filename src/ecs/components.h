@@ -535,6 +535,13 @@ static_assert(sizeof(MacroNpcRuntime) == 92,
 // free: it changes the blob and pays a kSaveVersion bump like Skills does.
 struct MacroSpawnId { std::uint32_t index = 0; };
 
+// ── МОСТ ПЕРЕЕЗДА НА ГЛАДКУЮ ПАМЯТЬ (эпик 2 шаг 1в, M-106) ────────────────
+// Слот макро-сквада в MacroStore (macro/store.h): ключом связей пока
+// остаётся entt-энтити, а СОСТОЯНИЕ лежит колонками store по этому слоту.
+// ВРЕМЕННЫЙ ЖИЛЕЦ: умирает в шаге 1е вместе с макро-компонентами EnTT,
+// когда ссылки переедут на MacroHandle {slot, gen}.
+struct MacroSlot { std::uint16_t slot = 0xFFFFu; };
+
 // The PLAYER's squad ordinal — reserved at the top of the space so it can
 // never collide with the 0,1,2… the world spawner hands out. His squad is an
 // ordinary macro squad (owner, 2026-08-27) and therefore needs an ordinal like

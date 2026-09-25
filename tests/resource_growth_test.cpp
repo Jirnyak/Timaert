@@ -93,7 +93,7 @@ void test_forest_plants_the_forest() {
     // An isolated brush cell far from any forest: below the seeding
     // threshold, surrounded by bare ground.
     set_tree_count(trees, 20, 6, 100);
-    MacroWorld w{&gs, &trees, nullptr, &td};
+    MacroWorld w{.gs = &gs, .trees = &trees, .terrain = &td};
 
     // The owner's invariant: a clear-cut inside a living massif returns to
     // forest class in ~4 game years. Allow the loose window [2, 6] years —
@@ -135,7 +135,7 @@ void test_biome_gate_starves_the_desert() {
     }
     const int desertBefore = int(trees.at(3, 5));
     const int meadowBefore = int(trees.at(21, 5));
-    MacroWorld w{&gs, &trees, nullptr, &td};
+    MacroWorld w{.gs = &gs, .trees = &trees, .terrain = &td};
     run_days(w, 512);
 
     const int desertGrown = int(trees.at(3, 5)) - desertBefore;
@@ -150,7 +150,7 @@ void test_beasts_breed_where_beasts_are() {
     gs.mapW = kW;
     gs.mapH = kH;
     const TerrainData td = make_terrain();
-    MacroWorld w{&gs, nullptr, nullptr, &td};
+    MacroWorld w{.gs = &gs, .terrain = &td};
 
     const int cap = resource_field_read(w, ResourceFieldId::Fauna, 10, 10);
     CHECK_OR_RETURN(cap >= 2, "the meadow carries beasts to hunt");
@@ -194,7 +194,7 @@ void test_iron_is_born_where_scarce() {
     };
     CHECK_OR_RETURN(stoneCells() > 0, "the mountain band yields stone hosts");
     CHECK_OR_RETURN(ironCells() > 0, "the fixture holds iron to exhaust");
-    MacroWorld w{&gs, nullptr, nullptr, &td, &deposits};
+    MacroWorld w{.gs = &gs, .terrain = &td, .deposits = &deposits};
 
     // A VIRGIN world strikes nothing, however long it waits.
     const std::size_t virginIron = ironCells();
@@ -254,7 +254,7 @@ void test_iron_is_born_where_scarce() {
         GameState gsx{};
         gsx.mapW = kW;
         gsx.mapH = kH;
-        MacroWorld wx{&gsx, nullptr, nullptr, &td};
+        MacroWorld wx{.gs = &gsx, .terrain = &td};
         for (int y = 0; y < kH; ++y)
             for (int x = 0; x < kW; ++x)
                 resource_field_apply(wx, ResourceFieldId::Fauna, x, y, -999);
@@ -275,7 +275,7 @@ void test_iron_is_born_where_scarce() {
     gs2.mapH = kH;
     gs2.worldSeed = 12345u;
     DepositLayer deposits2 = build_deposit_layer(td, gs2.worldSeed, 0.4f);
-    MacroWorld w2{&gs2, nullptr, nullptr, &td, &deposits2};
+    MacroWorld w2{.gs = &gs2, .terrain = &td, .deposits = &deposits2};
     for (const std::uint32_t idx : veins) {
         resource_field_apply(w2, ResourceFieldId::Iron,
                              int(idx % std::uint32_t(kW)),

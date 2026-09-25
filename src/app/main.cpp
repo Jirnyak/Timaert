@@ -324,6 +324,7 @@ sm::MacroWorld macro_world(App& app) {
     mw.gs       = &app.gs;
     mw.trees    = &app.treeLayer;
     mw.world    = &app.ecs;
+    mw.store    = app.macroStore.get();
     mw.terrain  = &app.terrain;
     mw.deposits = &app.deposits;
     mw.features = &app.features;
@@ -6270,6 +6271,10 @@ int main(int /*argc*/, char* /*argv*/[]) {
     SetUnhandledExceptionFilter(crash_filter);
 #endif
     App app;
+    // Гладкая память макромира рождается ВМЕСТЕ с приложением (DOD п.4:
+    // аллокация на сборке, не в тике) — 1460 МиБ по капу, преаллокация
+    // оплачена вердиктом владельца 2026-09-25 (M-106).
+    app.macroStore = sm::make_macro_store();
     if (!parse_smoke_script(std::getenv(kSmokeScriptEnv), app.smoke)) return 2;
     if (!boot_window(app)) return 1;
     boot_audio(app);

@@ -72,7 +72,7 @@ void test_the_door_opens_the_old_addresses() {
     // pointer is taken — a later create() may reallocate component storage.
     const auto squad = make_squad(world, 5);
     const auto bare = world.reg.create();   // an entity with no bag, no men
-    MacroWorld w{&gs, nullptr, &world};
+    MacroWorld w{.gs = &gs, .world = &world};
 
     CHECK(store_of(w, subject_of_squad(squad))
               == &world.reg.get<ecs::NpcInventory>(squad).inv,
@@ -111,7 +111,7 @@ void test_a_write_through_the_door_lands_in_the_world() {
     GameState gs = make_world();
     ecs::World world;
     const auto squad = make_squad(world, 5);
-    MacroWorld w{&gs, nullptr, &world};
+    MacroWorld w{.gs = &gs, .world = &world};
 
     Inventory* store = store_of(w, subject_of_landmark(42));
     CHECK_OR_RETURN(store != nullptr, "the village store opens");
@@ -144,7 +144,7 @@ void test_actions_are_declared_by_data() {
     GameState gs = make_world();
     ecs::World world;
     const auto squad = make_squad(world, 5);
-    MacroWorld w{&gs, nullptr, &world};
+    MacroWorld w{.gs = &gs, .world = &world};
 
     CHECK(actions_of(w, subject_of_squad(squad))
               == (kMapActTalk | kMapActTrade | kMapActAttack),
@@ -174,7 +174,7 @@ void test_the_door_fails_closed() {
     GameState gs = make_world();
     ecs::World world;
     const auto squad = make_squad(world, 5);
-    MacroWorld w{&gs, nullptr, &world};
+    MacroWorld w{.gs = &gs, .world = &world};
 
     CHECK(store_of(w, MapSubject{}) == nullptr
               && roster_of(w, MapSubject{}) == nullptr,
@@ -191,7 +191,7 @@ void test_the_door_fails_closed() {
     CHECK(store_of(w, subject_of_squad(dead)) == nullptr,
           "a destroyed entity names nobody");
 
-    MacroWorld headless{nullptr, nullptr, nullptr};
+    MacroWorld headless{};
     CHECK(store_of(headless, subject_of_landmark(7)) == nullptr
               && roster_of(headless, subject_of_squad(squad)) == nullptr,
           "an absent layer answers nullptr, never a crash (S6 zero contribution)");

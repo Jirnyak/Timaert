@@ -39,7 +39,7 @@ MacroStockKey cell_key(int x, int y) {
 void test_untouched_cell_reads_capacity() {
     GameState gs;
     const TerrainData terrain = meadow_terrain();
-    MacroWorld w{&gs, nullptr, nullptr, &terrain};
+    MacroWorld w{.gs = &gs, .terrain = &terrain};
 
     MacroWorld capW{.gs = &gs, .terrain = &terrain};
     const int cap = fauna_cell_capacity_at(capW, 1, 1);
@@ -55,7 +55,7 @@ void test_untouched_cell_reads_capacity() {
 void test_hunt_thins_and_return_does_not_resurrect() {
     GameState gs;
     const TerrainData terrain = meadow_terrain();
-    MacroWorld w{&gs, nullptr, nullptr, &terrain};
+    MacroWorld w{.gs = &gs, .terrain = &terrain};
     const int cap = macro_stock_read(w, MacroStock::FaunaCount, cell_key(2, 2));
     CHECK(cap >= 2, "the fixture needs at least two heads to hunt");
 
@@ -80,7 +80,7 @@ void test_hunt_thins_and_return_does_not_resurrect() {
 void test_regrow_self_cleans_at_baseline() {
     GameState gs;
     const TerrainData terrain = meadow_terrain();
-    MacroWorld w{&gs, nullptr, nullptr, &terrain};
+    MacroWorld w{.gs = &gs, .terrain = &terrain};
     const int cap = macro_stock_read(w, MacroStock::FaunaCount, cell_key(0, 3));
 
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(0, 3), -2);
@@ -98,7 +98,7 @@ void test_regrow_self_cleans_at_baseline() {
 void test_regrow_runs_on_game_days() {
     GameState gs;
     const TerrainData terrain = meadow_terrain();
-    MacroWorld w{&gs, nullptr, nullptr, &terrain};
+    MacroWorld w{.gs = &gs, .terrain = &terrain};
     const int cap = macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1));
     CHECK(cap >= 3, "the fixture needs three heads to cull");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(3, 1), -3);
@@ -131,7 +131,7 @@ void test_regrow_runs_on_game_days() {
 
 void test_no_context_fails_closed() {
     GameState gs;
-    MacroWorld w{&gs, nullptr, nullptr, nullptr};
+    MacroWorld w{.gs = &gs};
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) == 0,
           "no terrain wired = nothing stands here");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(1, 1), -3);

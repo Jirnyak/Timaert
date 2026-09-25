@@ -125,7 +125,8 @@ static_assert(sizeof(TreeLayer) == 40, "заголовок слоя леса");
 static_assert(sizeof(GameState) == 49456,
               "состояние мира: новое поле здесь = нарушение инварианта "
               "штабеля, пока не заведено строкой переписи");
-static_assert(sizeof(MacroWorld) == 120,
+// 2026-09-25: +8 Б — указатель на MacroStore (гладкая память, M-106).
+static_assert(sizeof(MacroWorld) == 128,
               "конверт мира — только указатели на штабеля, ничего своего");
 static_assert(sizeof(DepositLayer) == 504,
               "слой жил: шесть полей + параметры рождения");

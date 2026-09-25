@@ -88,7 +88,7 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
 }
 
 int roster_count(ecs::World& w, GameState& gs, std::uint32_t ordinal) {
-    MacroWorld mw{&gs, nullptr, &w};
+    MacroWorld mw{.gs = &gs, .world = &w};
     return macro_stock_read(mw, MacroStock::Roster,
                             MacroStockKey{std::int32_t(ordinal), 0, 0});
 }
@@ -517,7 +517,7 @@ void test_the_leaders_training_reads_at_the_new_doors() {
             bag.add("food", stock);
             bag.add("coin_empire_copper", 8 * 3 * kDaysPerSeason * 4);
         }
-        MacroWorld mw{&gs, nullptr, &w};
+        MacroWorld mw{.gs = &gs, .world = &w};
         CHECK(squad_season_window(mw, 2) == 0,
               "no window off the boundary (negative control)");
         CHECK(w.reg.get<ecs::NpcInventory>(untrained).inv.count("food")

@@ -113,7 +113,7 @@ void test_borrow_and_return_are_symmetric() {
     trees.width = gs.mapW;
     trees.height = gs.mapH;
     trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 500);
-    MacroWorld w{&gs, &trees};
+    MacroWorld w{.gs = &gs, .trees = &trees};
 
     const MacroStockKey town{7, 10, 10};
     const MacroStockKey cell{-1, 3, 4};
@@ -145,7 +145,7 @@ void test_stocks_are_bounded() {
     trees.width = gs.mapW;
     trees.height = gs.mapH;
     trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 10);
-    MacroWorld w{&gs, &trees};
+    MacroWorld w{.gs = &gs, .trees = &trees};
 
     macro_stock_apply(w, MacroStock::Population, MacroStockKey{7, 10, 10}, -100000);
     CHECK(macro_stock_read(w, MacroStock::Population, MacroStockKey{7, 10, 10}) == 0,
@@ -167,7 +167,7 @@ void test_stocks_are_bounded() {
 void test_debts_bill_their_own_subject() {
     using namespace sm;
     sm::GameState gs = make_world();
-    MacroWorld w{&gs, nullptr};
+    MacroWorld w{.gs = &gs};
 
     entt::registry reg;
     const auto citizen = reg.create();
@@ -213,7 +213,7 @@ void test_debts_bill_their_own_subject() {
 void test_malformed_receipts_do_nothing() {
     using namespace sm;
     sm::GameState gs = make_world();
-    MacroWorld w{&gs, nullptr};
+    MacroWorld w{.gs = &gs};
     const int before = population_of(gs, 7);
 
     ecs::MacroDebt zeroAmount{std::uint8_t(MacroStock::Population), 7, 10, 10, 0};
@@ -229,7 +229,7 @@ void test_malformed_receipts_do_nothing() {
           "a receipt for nothing, for an unknown stock or for nobody moves no stock");
 
     // And a world with no tree layer at all must not pretend it wrote one.
-    MacroWorld headless{&gs, nullptr};
+    MacroWorld headless{.gs = &gs};
     macro_stock_apply(headless, MacroStock::TreeCount, MacroStockKey{-1, 0, 0}, -5);
     CHECK(macro_stock_read(headless, MacroStock::TreeCount, MacroStockKey{-1, 0, 0}) == 0,
           "a missing tree layer reads zero and swallows writes instead of crashing");
@@ -260,7 +260,7 @@ void test_the_roster_row_pays_by_name() {
     ecs::World world;
     make_squad(world, 5, {11u, 22u, 0x80000021u});   // high-bit id: a garrison-
     const auto other = make_squad(world, 6, {77u});  // born soldier's shape
-    MacroWorld w{nullptr, nullptr, &world};
+    MacroWorld w{.world = &world};
 
     const MacroStockKey member11{5, 0, 0, 11};
     CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 3,
@@ -324,7 +324,7 @@ void test_dead_leader_squads_fall_into_the_pool() {
           "the dead leader's survivors walk away, all of them");
     CHECK(creature_heads(pool) == 2,
           "and they land in the deserter pool");
-    MacroWorld w{nullptr, nullptr, &world};
+    MacroWorld w{.world = &world};
     CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{10, 0, 0}) == 0,
           "the faceless squad is emptied: nothing left to pay twice");
     CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{11, 0, 0}) == 1,
@@ -359,7 +359,7 @@ void test_trees_are_a_carrier_row() {
         td.rgba[i + 0] = 180;   // height: land, below the mountain line
         td.rgba[i + 3] = 255;   // mask: land
     }
-    MacroWorld w{&gs, &trees, nullptr, &td};
+    MacroWorld w{.gs = &gs, .trees = &trees, .terrain = &td};
 
     const std::uint32_t rev0 = trees.revision;
     resource_field_apply(w, ResourceFieldId::Trees, 5, 6, -123);
@@ -399,7 +399,7 @@ void test_deposits_are_carrier_rows() {
     allocate_deposit_fields(deposits, gs.mapW, gs.mapH);
     deposits.grid(DepositKind::Stone).write(9, 9, 1000);
     deposits.grid(DepositKind::Iron).write(9, 9, 64);   // a vein IN the quarry
-    MacroWorld w{&gs, nullptr, nullptr, nullptr, &deposits};
+    MacroWorld w{.gs = &gs, .deposits = &deposits};
 
     CHECK(resource_field_read(w, ResourceFieldId::Stone, 9, 9) == 1000
               && resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 64,

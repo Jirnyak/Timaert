@@ -33,6 +33,7 @@
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
 #include "macro/state.h"
+#include "macro/store.h"     // гладкая память макро-сквадов (M-106)
 #include "macro/character_sheet.h"
 #include "macro/knowledge.h"
 #include "ui/map_screen.h"
@@ -198,6 +199,11 @@ struct App {
     // cache: zeroed on load, so a loaded coat re-registers on step one.
     sm::BonusTotals      lastStandingBonuses{};
     sm::ecs::World       ecs;
+    // ГЛАДКАЯ ПАМЯТЬ МАКРОМИРА (macro/store.h, M-106): колонки состояния
+    // макро-сквадов; entt выше остаётся движком СЦЕНЫ и мостом связей до
+    // шага 1е. Родится один раз на старте приложения — преаллокация мира
+    // (1460 МиБ по капу, вердикт владельца 2026-09-25).
+    std::unique_ptr<sm::MacroStore> macroStore;
     sm::EventBus         bus;
     sm::LogicNodeEngine  logic;
     sm::QuestEngine      quests;

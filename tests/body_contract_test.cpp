@@ -416,7 +416,7 @@ void test_a_squad_on_the_map_projects_its_roster() {
     // The return trip, end to end: a member's death pays the roster row, the
     // second death empties it — and an empty roster around a LIVE leader is a
     // squad of one, alive and well, not a special case anyone must clean up.
-    MacroWorld w{nullptr, nullptr, &world};
+    MacroWorld w{.world = &world};
     for (auto e : reg.view<ecs::MacroDebt, ecs::SubworldTag>()) {
         settle_macro_debt(w, reg.get<ecs::MacroDebt>(e), -1);
     }

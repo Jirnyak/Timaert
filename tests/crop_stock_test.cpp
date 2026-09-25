@@ -43,7 +43,7 @@ MacroStockKey cell_key(int x, int y) {
 void test_untouched_cell_reads_fertility_estimate() {
     GameState gs;
     const TerrainData terrain = flat_terrain(160);
-    MacroWorld w{&gs, nullptr, nullptr, &terrain};
+    MacroWorld w{.gs = &gs, .terrain = &terrain};
 
     const int est = macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1));
     CHECK(est > 0, "a fertile cell carries standing wheat - the estimate is real");
@@ -60,7 +60,7 @@ void test_estimate_follows_fertility() {
     // Cell (1,1) is wetter than cell (2,2) — the wetter one must read more.
     terrain.rgba[(std::size_t(1) * 4 + 1) * 4 + 1] = 220;
     terrain.rgba[(std::size_t(2) * 4 + 2) * 4 + 1] = 100;
-    MacroWorld w{&gs, nullptr, nullptr, &terrain};
+    MacroWorld w{.gs = &gs, .terrain = &terrain};
 
     const int wet = macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1));
     const int dry = macro_stock_read(w, MacroStock::CropCount, cell_key(2, 2));
@@ -72,7 +72,7 @@ void test_estimate_follows_fertility() {
 void test_harvest_thins_and_return_does_not_resurrect() {
     GameState gs;
     const TerrainData terrain = flat_terrain(160);
-    MacroWorld w{&gs, nullptr, nullptr, &terrain};
+    MacroWorld w{.gs = &gs, .terrain = &terrain};
     const int est = macro_stock_read(w, MacroStock::CropCount, cell_key(2, 2));
     CHECK(est >= 2, "the fixture needs at least two stands to cut");
     const int neighbourBefore =
@@ -106,7 +106,7 @@ void test_harvest_thins_and_return_does_not_resurrect() {
 void test_regrow_self_cleans_when_whole() {
     GameState gs;
     const TerrainData terrain = flat_terrain(160);
-    MacroWorld w{&gs, nullptr, nullptr, &terrain};
+    MacroWorld w{.gs = &gs, .terrain = &terrain};
 
     // Reap the parcel BARE, so the regrowth law is measured against the
     // field's own potential (the same number the code reads), never a
@@ -146,7 +146,7 @@ void test_regrow_self_cleans_when_whole() {
 
 void test_no_terrain_fails_closed() {
     GameState gs;
-    MacroWorld w{&gs, nullptr, nullptr, nullptr};
+    MacroWorld w{.gs = &gs};
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1)) == 0,
           "no terrain wired: nothing stands here");
     macro_stock_apply(w, MacroStock::CropCount, cell_key(1, 1), -3);
