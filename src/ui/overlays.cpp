@@ -241,7 +241,10 @@ namespace sm::ui
         // The squad banner's Talk stub (the S27 hook): the line shown inline
         // under the banner, keyed by the subject so another squad's panel
         // never inherits a stranger's words.
-        entt::entity g_squadTalkFor = entt::null;
+        // Хэндл {slot,gen} вместо entt-энтити (шаг 1г): статик переживает
+        // кадры и миры, и поколение честно мертвит его при переиспользовании
+        // слота — биты энтити это только маскировали.
+        MacroHandle  g_squadTalkFor{};
         const char*  g_squadTalkLine = nullptr;
 
         const char* npc_display_name(const NpcTypeDef& def,
@@ -1712,7 +1715,7 @@ namespace sm::ui
     void draw_settlement(GameState &gs,
                          ecs::World &world,
                          int settlementId,
-                         entt::entity squadSubject,
+                         MacroHandle squadSubject,
                          const MacroWorld *mw,
                          const std::vector<Quest> &availableQuests,
                          std::vector<Quest> &activeQuests,
@@ -1720,7 +1723,7 @@ namespace sm::ui
                          EventBus &bus,
                          SettlementPanelTab *tab,
                          bool *open,
-                         entt::entity *attackRequest,
+                         MacroHandle *attackRequest,
                          float scale)
     {
         if (!open || !*open)
@@ -1734,35 +1737,39 @@ namespace sm::ui
         // Same window, same pause law, same tab bar as a settlement —
         // «система меню единая» (владелец): only the banner and the tab
         // set differ, and both come from the subject.
-        if (squadSubject != entt::null)
+        if (squadSubject.slot != kMacroNoSlot)
         {
-            const bool alive = world.reg.valid(squadSubject)
-                && world.reg.all_of<ecs::NPCKind, ecs::NpcCharacter,
-                                    ecs::Pools>(squadSubject)
-                && !world.reg.all_of<ecs::PlayerSquadTag>(squadSubject);
+            // ФЛИП 1в/1г: субъект-сквад — хэндл store, гейт читает колонки.
+            // Прежний гейт требовал entt-компоненты, которых у макро-сквада
+            // после флипа нет, — панель закрывалась для ЛЮБОГО сквада.
+            MacroStore &st = store_of(world);
+            const bool alive = st.valid(squadSubject)
+                && !macro_dead(st, squadSubject)
+                && st.spawnId[squadSubject.slot].index
+                       != ecs::kPlayerSquadOrdinal;
             const ecs::Pools *pools = alive
-                ? &(*body_state<ecs::Pools>(world.reg, squadSubject)) : nullptr;
+                ? &st.pools[squadSubject.slot] : nullptr;
             if (!alive || pools->hp <= 0.0f)
             {
                 *open = false;   // the counterparty is gone: fail closed
                 return;
             }
-            const auto &kind = (*body_state<ecs::NPCKind>(world.reg, squadSubject));
-            const auto &ch = (*body_state<ecs::NpcCharacter>(world.reg, squadSubject));
+            const auto &kind = st.kind[squadSubject.slot];
+            const auto &ch   = st.character[squadSubject.slot];
             const NPCType t =
                 kind.type < std::uint16_t(NPCType::Count)
                     ? NPCType(std::uint8_t(kind.type)) : NPCType::Peasant;
             const auto &def = npc_def(t);
-            const auto *lvl = body_state<ecs::NpcLevel>(world.reg, squadSubject);
-            const auto *traits =
-                body_state<ecs::NpcTraits>(world.reg, squadSubject);
-            auto *bag = body_state<ecs::NpcInventory>(world.reg, squadSubject);
+            const auto *lvl = &st.level[squadSubject.slot];
+            const auto *traits = &st.traits[squadSubject.slot];
+            auto *bag = &st.inventory[squadSubject.slot];
             const char *npcName = npc_display_name(def, ch);
             const FactionDef *fd = faction_def_by_index(kind.factionIdx);
-            g_squadTrade.sync_to(int(entt::to_integral(squadSubject)));
+            g_squadTrade.sync_to(int(squadSubject.slot)
+                                 | (int(squadSubject.gen) << 16));
             if (g_squadTalkFor != squadSubject)
             {
-                g_squadTalkFor = entt::null;
+                g_squadTalkFor = MacroHandle{};
                 g_squadTalkLine = nullptr;
             }
             const SettlementPanelTab current =
@@ -1881,7 +1888,7 @@ namespace sm::ui
                                         0),
                                     h.tradePct,
                                     trade_power_of(
-                                        sheet_of(world, squadSubject)));
+                                        sheet_of(st, squadSubject)));
                             };
                             const auto sellUnit = [&](const ItemRef &ref,
                                                       const ItemDef &d,
@@ -1894,22 +1901,19 @@ namespace sm::ui
                                         0),
                                     h.tradePct,
                                     trade_power_of(
-                                        sheet_of(world, squadSubject)));
+                                        sheet_of(st, squadSubject)));
                             };
                             draw_barter_body(
                                 "Trader stock", g_squadTrade,
                                 playerBag, bag->inv,
                                 buyUnit, sellUnit,
                                 [&](int gave, int took) {
-                                    if (const auto *sid =
-                                            world.reg.try_get<
-                                                ecs::MacroSpawnId>(
-                                                squadSubject))
-                                    {
-                                        record_npc_deal_fact(
-                                            gs, world, sid->index,
-                                            gave, took);
-                                    }
+                                    // Ординал — колонка store (1в); try_get
+                                    // у энтити молчал, и факт сделки терялся.
+                                    record_npc_deal_fact(
+                                        gs, world,
+                                        st.spawnId[squadSubject.slot].index,
+                                        gave, took);
                                 });
                             ImGui::EndTabItem();
                         }

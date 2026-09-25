@@ -496,7 +496,7 @@ void refresh_available_settlement_quests(App& app) {
 }
 
 void toggle_settlement_panel(App& app) {
-    app.subjectSquad = entt::null;   // T names the PLACE, not a neighbour
+    app.subjectSquad = {};           // T names the PLACE, not a neighbour
     refresh_player_settlement(app);
     if (app.cursor.hoverSettlementId >= 0) {
         app.ui.settlementId = app.cursor.hoverSettlementId;
@@ -508,7 +508,7 @@ void toggle_settlement_panel(App& app) {
 }
 
 void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
-    app.subjectSquad = entt::null;
+    app.subjectSquad = {};
     refresh_player_settlement(app);
     if (app.cursor.hoverSettlementId >= 0) {
         app.ui.settlementId = app.cursor.hoverSettlementId;
@@ -5903,7 +5903,7 @@ void frame(App& app, int simSteps) {
             draw_session_feed(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))
                 sm::ui::draw_character_panel(app.gs, app.ecs, &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
-            if (app.ui.settlement && app.subjectSquad == entt::null)
+            if (app.ui.settlement && app.subjectSquad.slot == sm::kMacroNoSlot)
                 refresh_available_settlement_quests(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelSettlement)) {
                 // ОДНА панель субъекта: сквад или ландмарк — окно, пауза и
@@ -5911,7 +5911,7 @@ void frame(App& app, int simSteps) {
                 // ЗАКОН ПЕРЕНОСА исполняет app: атакующий, объявляя бой,
                 // ДОХОДИТ (player_jump_to_cell в клетку защитника) — вся
                 // встреча всегда одна клетка, позиции макромира целы.
-                entt::entity attackReq = entt::null;
+                sm::MacroHandle attackReq{};
                 sm::MacroWorld panelMw = macro_world(app);
                 sm::ui::draw_settlement(app.gs,
                                         app.ecs,
@@ -5926,17 +5926,22 @@ void frame(App& app, int simSteps) {
                                         &app.ui.settlement,
                                         &attackReq,
                                         app.uiSettings.scale(sm::ui::UiElementId::PanelSettlement));
-                if (!app.ui.settlement) app.subjectSquad = entt::null;
-                if (attackReq != entt::null) {
-                    if (const auto* cell = app.ecs.reg.try_get<
-                            sm::ecs::MacroCell>(attackReq)) {
+                if (!app.ui.settlement) app.subjectSquad = {};
+                if (attackReq.slot != sm::kMacroNoSlot) {
+                    // Клетка защитника — колонка store (прежний try_get у
+                    // энтити молчал, и закон переноса не исполнялся).
+                    sm::MacroStore& ast = sm::store_of(app.ecs);
+                    if (const auto* cell =
+                            sm::body_state<sm::ecs::MacroCell>(ast,
+                                                               attackReq)) {
                         sm::player_jump_to_cell(
                             app.gs, app.ecs,
                             sm::ecs::cell_x(*cell, app.gs.mapW),
                             sm::ecs::cell_y(*cell, app.gs.mapW));
                     }
-                    app.subjectSquad = entt::null;
-                    app.preBattleNpc = attackReq;
+                    app.subjectSquad = {};
+                    app.preBattleNpc =
+                        sm::macro_entity_of(app.ecs.reg, attackReq);
                     app.encounterTalkLine.clear();
                     app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
                     app.cursor.path.clear();
@@ -6192,14 +6197,14 @@ void frame(App& app, int simSteps) {
                                                      app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));
                 // Клик по ряду = СРАЗУ панель субъекта («система меню
                 // единая»): одна и та же панель, у сквада своя ветка.
-                if (npcResult.openSquad != entt::null) {
+                if (npcResult.openSquad.slot != sm::kMacroNoSlot) {
                     app.subjectSquad = npcResult.openSquad;
                     app.ui.settlementId = -1;
                     app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
                     app.ui.settlement = true;
                 }
                 if (npcResult.openSettlementId >= 0) {
-                    app.subjectSquad = entt::null;
+                    app.subjectSquad = {};
                     app.ui.settlementId = npcResult.openSettlementId;
                     app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
                     refresh_available_settlement_quests(app);

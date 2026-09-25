@@ -74,6 +74,8 @@ inline constexpr std::uint16_t kMacroNoSlot = 0xFFFFu;
 struct MacroHandle {
     std::uint16_t slot = kMacroNoSlot;
     std::uint16_t gen  = 0;
+    friend constexpr bool operator==(const MacroHandle&,
+                                     const MacroHandle&) = default;
 };
 static_assert(kMacroEntityCap < kMacroNoSlot,
               "кап обязан умещаться в u16 с местом под «нет элемента»");
@@ -178,6 +180,25 @@ inline MacroStore& store_of(entt::registry& reg) {
     return *reg.ctx().get<MacroStore*>();
 }
 
+// Хэндл из entt-моста (шаг 1г). slot_of отвечает голым слотом БЕЗ поколения —
+// долгоживущей ссылке этого мало: слот переиспользуется, и только пара
+// {slot,gen} мертвеет вместе с жильцом. Сущность без MacroSlot незаконна,
+// как и в slot_of.
+inline MacroHandle handle_of(entt::registry& reg, entt::entity e) {
+    const std::uint16_t slot = slot_of(reg, e);
+    return MacroHandle{slot, store_of(reg).generation[slot]};
+}
+
+// ОБРАТНАЯ ДВЕРЬ МОСТА (шаг 1г; умирает в 1е вместе с MacroSlot): entt-тело
+// носителя слота. Линейный скан моста — законен только ВНЕ тика (клик UI,
+// вход в бой); в 1е двери принимают слот, и нужда в скане исчезает.
+inline entt::entity macro_entity_of(entt::registry& reg, MacroHandle h) {
+    if (!store_of(reg).valid(h)) return entt::null;
+    for (auto [e, ms] : reg.view<ecs::MacroSlot>().each())
+        if (ms.slot == h.slot) return e;
+    return entt::null;
+}
+
 // ── ДВОЙНАЯ ДВЕРЬ СОСТОЯНИЯ ТЕЛА (закон записи, sub/record.h) ─────────────
 // Макро-сквад (несёт MacroSlot) отвечает КОЛОНКОЙ store; тело сцены без
 // бэклинка — «само себе запись» — своей entt-компонентой. Одна дверь на оба
@@ -193,6 +214,17 @@ inline const C* body_state(const entt::registry& reg, entt::entity e) {
     return body_state<C>(const_cast<entt::registry&>(reg), e);
 }
 
+// Та же дверь по хэндлу — БЕЗ entt вовсе: колонка под valid()-гардой.
+// Это ЦЕЛЕВАЯ форма чтения макро-сквада; entt-перегрузки выше умирают в 1е.
+template <typename C>
+inline C* body_state(MacroStore& s, MacroHandle h) {
+    return s.valid(h) ? &store_col<C>(s)[h.slot] : nullptr;
+}
+template <typename C>
+inline const C* body_state(const MacroStore& s, MacroHandle h) {
+    return body_state<C>(const_cast<MacroStore&>(s), h);
+}
+
 // Судьба — та же двойная дверь: у макро-сквада смерть лежит байтом колонки
 // (труп стоит до слива, AI-2), у тела сцены — прежним тегом ecs::Dead.
 inline bool macro_dead(entt::registry& reg, entt::entity e) {
@@ -202,6 +234,11 @@ inline bool macro_dead(entt::registry& reg, entt::entity e) {
 }
 inline bool macro_dead(const entt::registry& reg, entt::entity e) {
     return macro_dead(const_cast<entt::registry&>(reg), e);
+}
+// Судьба по хэндлу: протухший хэндл отвечает «мёртв» — fail-closed чтение,
+// жилец слота сменился, и спрашивать о нём больше нечего.
+inline bool macro_dead(const MacroStore& s, MacroHandle h) {
+    return !s.valid(h) || s.dead[h.slot] != 0;
 }
 inline void macro_mark_dead(entt::registry& reg, entt::entity e) {
     if (const auto* ms = reg.try_get<ecs::MacroSlot>(e)) {

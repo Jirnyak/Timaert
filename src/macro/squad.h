@@ -295,6 +295,18 @@ inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
 // the spot — «они уничтожаются своим ландмарком», there is nothing of
 // theirs to store. One door, an honest ontology split — never «игрок/НПЦ».
 
+// Владение листом по колонкам слота — ОДИН предикат на обе двери (entt-мост
+// и хэндл): именной род, анкета стола, сквад игрока (его ординал — колонка,
+// и это тот же признак, каким PlayerSquadCache ревалидируется). До 1е
+// entt-дверь добавляет к нему теги игрока — страховка моста, не второй закон.
+inline bool sheet_owned_at(const MacroStore& st, std::uint16_t slot) {
+    const auto& kind = st.kind[slot];
+    return (kind.type < std::uint16_t(NPCType::Count)
+            && npc_named(NPCType(std::uint8_t(kind.type))))
+        || st.designTag[slot].ordinal >= 0
+        || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal;
+}
+
 // The OWNED sheet, when this body has one — the writable store a level-up
 // or a future teacher mutates. nullptr = transient (derive instead).
 inline CharacterSheet* owned_sheet(entt::registry& reg, entt::entity e) {
@@ -308,11 +320,7 @@ inline CharacterSheet* owned_sheet(entt::registry& reg, entt::entity e) {
     const auto* ms = reg.try_get<ecs::MacroSlot>(e);
     if (!ms) return reg.try_get<CharacterSheet>(e);   // тело сцены — своё
     MacroStore& st = store_of(reg);
-    const auto& kind = st.kind[ms->slot];
-    const bool owns =
-        (kind.type < std::uint16_t(NPCType::Count)
-         && npc_named(NPCType(std::uint8_t(kind.type))))
-        || st.designTag[ms->slot].ordinal >= 0
+    const bool owns = sheet_owned_at(st, ms->slot)
         || reg.any_of<ecs::PlayerTag, ecs::PlayerSquadTag>(e);
     return owns ? &st.sheet[ms->slot] : nullptr;
 }
@@ -335,6 +343,20 @@ inline CharacterSheet sheet_of(entt::registry& reg, entt::entity e) {
 }
 inline CharacterSheet sheet_of(ecs::World& w, entt::entity e) {
     return sheet_of(w.reg, e);
+}
+
+// Лист по хэндлу — та же онтология, целиком по колонкам (без entt; после 1е
+// это единственная макро-дверь). Протухший хэндл отвечает дефолтным
+// деривативом — читатель обязан был спросить valid() раньше.
+inline CharacterSheet sheet_of(const MacroStore& st, MacroHandle h) {
+    if (!st.valid(h))
+        return make_character_sheet(NPCType::Peasant, 1, leader_sheet_seed(0));
+    if (sheet_owned_at(st, h.slot)) return st.sheet[h.slot];
+    const auto& kind = st.kind[h.slot];
+    const NPCType type = kind.type < std::uint16_t(NPCType::Count)
+        ? NPCType(std::uint8_t(kind.type)) : NPCType::Peasant;
+    return make_character_sheet(type, int(st.level[h.slot].value),
+                                leader_sheet_seed(st.spawnId[h.slot].index));
 }
 
 // WHAT STANDS ON A MACRO BODY, summed once: what it is wearing

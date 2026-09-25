@@ -692,7 +692,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
             int dx = wrap_chebyshev(nx - px, W);
             int dy = wrap_chebyshev(ny - py, H);
             if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;
-            push_row(subject_of_squad(e), dx, dy);
+            push_row(subject_of_squad(MacroHandle{slot, st.generation[slot]}),
+                     dx, dy);
         }
 
         // Landmarks pop the same panel (owner's verdict: «деревни, города,
@@ -755,8 +756,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     std::uint16_t rowFaction = kNoFaction;
                     NPCType t = NPCType::Peasant;
                     if (isSquad) {
-                        const std::uint16_t rslot =
-                            slot_of(w.reg, r.subject.squad);
+                        const std::uint16_t rslot = r.subject.squad.slot;
                         const auto& kind = st.kind[rslot];
                         const auto& ch   = st.character[rslot];
                         t = npc_type_or_default(kind.type);
@@ -787,8 +787,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     }
 
                     // Row group — ONE clickable card (клик → меню, PLAY-1).
+                    // Ключ виджета: слот уникален среди ЖИВЫХ сквадов кадра;
+                    // ландмарки — свой бит, пространства не пересекаются.
                     ImGui::PushID(isSquad
-                        ? int(entt::to_integral(r.subject.squad))
+                        ? int(r.subject.squad.slot)
                         : int(0x40000000 | r.subject.landmark));
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(20, 14, 8, 220));
                     ImGui::PushStyleColor(ImGuiCol_Border,
@@ -889,8 +891,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     ImGui::Text("%s", r.dir);
                     ImGui::PopStyleColor();
                     if (isSquad) {
-                        const std::uint16_t rslot2 =
-                            slot_of(w.reg, r.subject.squad);
+                        const std::uint16_t rslot2 = r.subject.squad.slot;
                         const auto& hp  = st.pools[rslot2];
                         const auto& lvl = st.level[rslot2];
                         ImGui::TextDisabled("Lv.%d", int(lvl.value));

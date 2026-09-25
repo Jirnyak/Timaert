@@ -20,7 +20,7 @@
 // book the address came from. If the military layer one day makes landmarks
 // entities, only the bodies of these two functions change.
 //
-// A MapSubject is TRANSIENT UI/runtime state (an entt handle is not save
+// A MapSubject is TRANSIENT UI/runtime state (a store handle is not save
 // material — same ruling as the PreBattle target): name things by it inside
 // a frame, never across a save. Fail closed everywhere: an absent layer, a
 // dead entity or an unknown id answers nullptr, which every caller treats as
@@ -42,9 +42,11 @@ enum class MapSubjectKind : std::uint8_t { None = 0, Squad, Landmark };
 
 struct MapSubject {
     MapSubjectKind kind = MapSubjectKind::None;
-    entt::entity   squad = entt::null;   // valid when kind == Squad: the
-                                         //   leader entity (the squad IS its
-                                         //   leader, CANON S14)
+    MacroHandle    squad{};              // valid when kind == Squad: the
+                                         //   store handle of the leader slot
+                                         //   (the squad IS its leader, CANON
+                                         //   S14; шаг 1г — {slot,gen}, не
+                                         //   entt-энтити)
     std::int32_t   landmark = -1;        // valid when kind == Landmark: the
                                          //   world-unique Landmark::id (v54,
                                          //   ONE id space, ANY kind — a
@@ -52,11 +54,11 @@ struct MapSubject {
                                          //   honestly as a city)
 };
 
-inline MapSubject subject_of_squad(entt::entity e) {
-    return MapSubject{MapSubjectKind::Squad, e, -1};
+inline MapSubject subject_of_squad(MacroHandle h) {
+    return MapSubject{MapSubjectKind::Squad, h, -1};
 }
 inline MapSubject subject_of_landmark(int id) {
-    return MapSubject{MapSubjectKind::Landmark, entt::null, id};
+    return MapSubject{MapSubjectKind::Landmark, MacroHandle{}, id};
 }
 
 // ── THE store door ───────────────────────────────────────────────────────
@@ -66,8 +68,8 @@ inline MapSubject subject_of_landmark(int id) {
 inline Inventory* store_of(const MacroWorld& w, MapSubject s) {
     switch (s.kind) {
     case MapSubjectKind::Squad: {
-        if (!w.world || !w.world->reg.valid(s.squad)) return nullptr;
-        auto* c = body_state<ecs::NpcInventory>(w.world->reg, s.squad);
+        if (!w.store) return nullptr;
+        auto* c = body_state<ecs::NpcInventory>(*w.store, s.squad);
         return c ? &c->inv : nullptr;
     }
     case MapSubjectKind::Landmark: {
@@ -87,8 +89,8 @@ inline Inventory* store_of(const MacroWorld& w, MapSubject s) {
 inline Inventory* roster_of(const MacroWorld& w, MapSubject s) {
     switch (s.kind) {
     case MapSubjectKind::Squad: {
-        if (!w.world || !w.world->reg.valid(s.squad)) return nullptr;
-        auto* r = body_state<ecs::NpcInventory>(w.world->reg, s.squad);
+        if (!w.store) return nullptr;
+        auto* r = body_state<ecs::NpcInventory>(*w.store, s.squad);
         return r ? &r->inv : nullptr;
     }
     case MapSubjectKind::Landmark: {
@@ -111,7 +113,7 @@ inline Inventory* roster_of(const MacroWorld& w, MapSubject s) {
 inline std::uint16_t actions_of(const MacroWorld& w, MapSubject s) {
     switch (s.kind) {
     case MapSubjectKind::Squad: {
-        if (!w.world || !w.world->reg.valid(s.squad)) return 0;
+        if (!w.store || !w.store->valid(s.squad)) return 0;
         return kMapActTalk | kMapActTrade | kMapActAttack;
     }
     case MapSubjectKind::Landmark: {

@@ -7730,7 +7730,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             // The ONE subject panel, opened on the squad's Trade tab —
             // the same door a row click opens (App state, no module hook).
-            app.subjectSquad = target;
+            app.subjectSquad = sm::handle_of(app.ecs.reg, target);
             app.ui.settlementId = -1;
             app.ui.settlementTab = sm::ui::SettlementPanelTab::Trade;
             app.ui.settlement = true;

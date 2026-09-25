@@ -339,9 +339,10 @@ struct App {
     entt::entity preBattleNpc      = entt::null;
     entt::entity encounterGraceNpc = entt::null;
     // THE subject panel's squad (меню-сессия: одна панель на всех — клик по
-    // сквад-ряду открывает её на нём; entt::null = панель показывает
-    // ландмарк ui.settlementId). Runtime-only, как preBattleNpc.
-    entt::entity subjectSquad      = entt::null;
+    // сквад-ряду открывает её на нём; kMacroNoSlot = панель показывает
+    // ландмарк ui.settlementId). Runtime-only, как preBattleNpc; хэндл
+    // {slot,gen} вместо entt-энтити — шаг 1г.
+    sm::MacroHandle subjectSquad{};
     std::string  encounterTalkLine;
     // Toolbar `>>` / dev console: how many world ticks a turn buys (1.0 =
     // normal). Only the interactive loop honours it; scripted/smoke steps keep

@@ -4,6 +4,7 @@
 #pragma once
 #include "ecs/world.h"
 #include "macro/state.h"
+#include "macro/store.h"   // MacroHandle — субъект-сквад после шага 1г
 #include "events/quests/quest_engine.h"
 #include <array>
 #include <cstdint>
@@ -91,7 +92,7 @@ void draw_character_panel(GameState& gs, ecs::World& world, bool* open,
 void draw_settlement(GameState& gs,
                      ecs::World& world,
                      int settlementId,
-                     entt::entity squadSubject,
+                     MacroHandle squadSubject,
                      const MacroWorld* mw,
                      const std::vector<Quest>& availableQuests,
                      std::vector<Quest>& activeQuests,
@@ -99,7 +100,7 @@ void draw_settlement(GameState& gs,
                      EventBus& bus,
                      SettlementPanelTab* tab,
                      bool* open,
-                     entt::entity* attackRequest,
+                     MacroHandle* attackRequest,
                      float scale = 1.0f);
 // `closeKeyName` is the LIVE name of the key that toggles this panel
 // (SDL_GetScancodeName of the Quests binding) — the Close button quotes it,

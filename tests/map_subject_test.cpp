@@ -3,8 +3,9 @@
 // The fact under test is not "the functions return something" but the CLAIM
 // the menu session stands on: a squad and a landmark hold the SAME types
 // (Inventory / SoldierSquad), and store_of/roster_of return THE VERY OBJECTS
-// the two old address books held — the ECS components on the leader entity,
-// the bare fields of the landmark record — never copies, never a third store.
+// the two address books hold — the store COLUMNS of the leader's slot (шаг
+// 1г: субъект = {slot,gen}, двери отвечают колонками без entt), the bare
+// fields of the landmark record — never copies, never a third store.
 // And the landmark side must answer for ANY kind: the City filter of the old
 // settlement panel (PLAY-2) is exactly what this door exists to end.
 #include "check.h"
@@ -53,15 +54,14 @@ sm::GameState make_world() {
     return gs;
 }
 
-entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal) {
-    sm::MacroStore& st = sm::store_of(w);
+// Шаг 1г: субъект несёт хэндл {slot,gen}, и двери отвечают колонками store
+// без entt вовсе — рождение сквада для этой двери есть рождение слота.
+sm::MacroHandle make_squad(sm::MacroStore& st, std::uint32_t ordinal) {
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = w.reg.create();
-    w.reg.emplace<sm::ecs::MacroSlot>(e, h.slot);
     st.spawnId[h.slot] = sm::ecs::MacroSpawnId{ordinal};
     sm::creatures_push(st.inventory[h.slot].inv,
         sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 21u));
-    return e;
+    return h;
 }
 
 // The door answers with the SAME object the old path held — address equality,
@@ -69,20 +69,16 @@ entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal) {
 void test_the_door_opens_the_old_addresses() {
     using namespace sm;
     GameState gs = make_world();
-    ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    // Grabla (ECS ref not across tick): every entity is created BEFORE any
-    // pointer is taken — a later create() may reallocate component storage.
-    const auto squad = make_squad(world, 5);
-    const auto bare = world.reg.create();   // an entity with no bag, no men
-    MacroWorld w{.gs = &gs, .world = &world};
+    MacroStore& st = *worldStore_;
+    const MacroHandle squad = make_squad(st, 5);
+    MacroWorld w{.gs = &gs, .store = &st};
 
     CHECK(store_of(w, subject_of_squad(squad))
-              == &(*sm::body_state<ecs::NpcInventory>(world.reg, squad)).inv,
-          "a squad's store IS its NpcInventory component, the very object");
+              == &st.inventory[squad.slot].inv,
+          "a squad's store IS its inventory column, the very object");
     CHECK(roster_of(w, subject_of_squad(squad))
-              == &(*sm::body_state<ecs::NpcInventory>(world.reg, squad)).inv,
+              == &st.inventory[squad.slot].inv,
           "a squad's roster IS its one container (M-71), the very object");
 
     CHECK(store_of(w, subject_of_landmark(7))
@@ -101,11 +97,11 @@ void test_the_door_opens_the_old_addresses() {
               && roster_of(w, subject_of_landmark(13)) != nullptr,
           "a spire answers the door like any place");
 
-    // An entity that carries no bag and no men is an honest "nothing", not
-    // a crash and not somebody else's store.
-    CHECK(store_of(w, subject_of_squad(bare)) == nullptr
-              && roster_of(w, subject_of_squad(bare)) == nullptr,
-          "a component-less entity answers nullptr, fail closed");
+    // Хэндл, который никогда не рождался, — честное «ничего», не чужой
+    // склад и не падение (наследник контроля «энтити без компонент»).
+    CHECK(store_of(w, subject_of_squad(MacroHandle{})) == nullptr
+              && roster_of(w, subject_of_squad(MacroHandle{})) == nullptr,
+          "a never-born handle answers nullptr, fail closed");
 }
 
 // One object behind the door: a write through the door is visible through
@@ -113,11 +109,10 @@ void test_the_door_opens_the_old_addresses() {
 void test_a_write_through_the_door_lands_in_the_world() {
     using namespace sm;
     GameState gs = make_world();
-    ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const auto squad = make_squad(world, 5);
-    MacroWorld w{.gs = &gs, .world = &world};
+    MacroStore& st = *worldStore_;
+    const MacroHandle squad = make_squad(st, 5);
+    MacroWorld w{.gs = &gs, .store = &st};
 
     Inventory* store = store_of(w, subject_of_landmark(42));
     CHECK_OR_RETURN(store != nullptr, "the village store opens");
@@ -148,11 +143,10 @@ void test_a_write_through_the_door_lands_in_the_world() {
 void test_actions_are_declared_by_data() {
     using namespace sm;
     GameState gs = make_world();
-    ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const auto squad = make_squad(world, 5);
-    MacroWorld w{.gs = &gs, .world = &world};
+    MacroStore& st = *worldStore_;
+    const MacroHandle squad = make_squad(st, 5);
+    MacroWorld w{.gs = &gs, .store = &st};
 
     CHECK(actions_of(w, subject_of_squad(squad))
               == (kMapActTalk | kMapActTrade | kMapActAttack),
@@ -171,7 +165,7 @@ void test_actions_are_declared_by_data() {
 
     CHECK(actions_of(w, MapSubject{}) == 0
               && actions_of(w, subject_of_landmark(9999)) == 0
-              && actions_of(w, subject_of_squad(entt::null)) == 0,
+              && actions_of(w, subject_of_squad(MacroHandle{})) == 0,
           "nobody offers no verbs, fail closed");
 }
 
@@ -180,11 +174,10 @@ void test_actions_are_declared_by_data() {
 void test_the_door_fails_closed() {
     using namespace sm;
     GameState gs = make_world();
-    ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const auto squad = make_squad(world, 5);
-    MacroWorld w{.gs = &gs, .world = &world};
+    MacroStore& st = *worldStore_;
+    const MacroHandle squad = make_squad(st, 5);
+    MacroWorld w{.gs = &gs, .store = &st};
 
     CHECK(store_of(w, MapSubject{}) == nullptr
               && roster_of(w, MapSubject{}) == nullptr,
@@ -192,14 +185,16 @@ void test_the_door_fails_closed() {
     CHECK(store_of(w, subject_of_landmark(9999)) == nullptr
               && roster_of(w, subject_of_landmark(9999)) == nullptr,
           "an unknown landmark id names nobody");
-    CHECK(store_of(w, subject_of_squad(entt::null)) == nullptr
-              && roster_of(w, subject_of_squad(entt::null)) == nullptr,
-          "a null entity names nobody");
+    CHECK(store_of(w, subject_of_squad(MacroHandle{})) == nullptr
+              && roster_of(w, subject_of_squad(MacroHandle{})) == nullptr,
+          "a never-born handle names nobody");
 
-    const auto dead = world.reg.create();
-    world.reg.destroy(dead);
-    CHECK(store_of(w, subject_of_squad(dead)) == nullptr,
-          "a destroyed entity names nobody");
+    // Поколение мертвит пережившую смерть ссылку: тот же слот, но старый
+    // хэндл — «никто» (наследник контроля «уничтоженная энтити»).
+    const MacroHandle doomed = make_squad(st, 6);
+    sm::store_death(st, doomed);
+    CHECK(store_of(w, subject_of_squad(doomed)) == nullptr,
+          "a handle outliving its slot's death names nobody");
 
     MacroWorld headless{};
     CHECK(store_of(headless, subject_of_landmark(7)) == nullptr

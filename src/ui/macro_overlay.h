@@ -5,7 +5,7 @@
 #pragma once
 
 #include "macro/pathfinding.h"
-#include <entt/entity/entity.hpp>
+#include "macro/store.h"   // MacroHandle — ссылка на сквад после шага 1г
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -44,8 +44,9 @@ struct MacroCursor {
 // mutates world state itself — it reports the clicked subject and the app
 // opens the ONE subject panel (ui/overlays.h draw_settlement) on it.
 struct NpcProximityResult {
-    entt::entity openSquad = entt::null;   // a squad row was clicked
-    int  openSettlementId = -1;            // a landmark row was clicked
+    MacroHandle openSquad{};      // a squad row was clicked ({slot,gen},
+                                  //   kMacroNoSlot = ничего не кликнуто)
+    int  openSettlementId = -1;   // a landmark row was clicked
 };
 
 using MacroWalkReachedFn = void (*)(void* user, int x, int y);
