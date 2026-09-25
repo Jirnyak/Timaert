@@ -547,10 +547,9 @@ frame(app, simSteps)                                       main.cpp:5561
 ## I.10 — ПАСПОРТ ПЛОСКОЙ ПАМЯТИ МАКРОМИРА
 
 Источник в коде — перепись штабелей `core/stacks.h` (`kStacks :147-189`,
-сторожа `sizeof` `:104-141`). **Перепись врёт в трёх местах и молчит в
-семи:** ряды шрамов и жил объявлены `std::int32_t` по 4 Б (`stacks.h:160-168`)
-при `FieldCell = std::uint16_t` (`resource_field.h:268`) — байты по клетке
-завышены вдвое; `MacroStore` (1.46 ГиБ) в переписи нет; `StackKind::Catalog`
+сторожа `sizeof` `:104-141`). **Перепись молчит в
+семи местах** (тип полей int32/4 Б вместо `FieldCell` u16/2 Б исправлен
+2026-09-25, коммит `6a53e46`); `MacroStore` (1.46 ГиБ) в переписи нет; `StackKind::Catalog`
 объявлен (`:62`), строк с ним 0; нет строк `ScentField` (76 МиБ), `rgba`,
 `riverData`, `ZoneLayer`, `KnowledgeLayer`, `PathCostData`, `NavWorld`,
 `LandmarkGrid`, `cellOwner`, `reach` жил (12 МиБ). — **РАСХОЖДЕНИЕ**, наряд
@@ -573,7 +572,7 @@ libstdc++ (эта машина): `sizeof(std::string) = 32`, `sizeof(Landmark) =
 | терраин | `rgba` u8×4 × N | 4 МиБ | `App::terrain` (`app_state.h:140`); `MacroWorld::terrain` const* | `height_at/moisture_at/temperature_at`, `is_water`, `biome_at_cell` / писатели — генератор | `cell_of` в дверях; `biome_at_cell` — `wrap_axis`+ручной | **52** (`macro` 24, `app` 13, `ui/overlays.cpp` 15) | `map_generator.h:36` |
 | реки | u8 × N | 1 МиБ | `App::terrain` | двери чтения НЕТ / `stamp_river_path` | `cell_step` | 3 (`deposit_layer.cpp:89`, `map_generator.cpp:716`, `spawners.cpp:231`) | `map_generator.h:38` |
 | лес | u16 × N | 2 МиБ | `App::treeLayer` (`app_state.h:151`); `MacroWorld::trees` | `TreeLayer::at` / `set_tree_count` (1 вызов) | чтение `cell_of`; запись `wrap_coord`+ручной | 4 чтения (`main.cpp:1398`, `pathfinding.cpp:76`, `zones.cpp:221`, `vk_macro_renderer.cpp:89`) + 2 прохода целиком в сейв | `tree_layer.h:106` |
-| шрамы (3 живых ряда из 10) | `FieldCell` u16 × N × 3 | 6 МиБ (+ 720 Б заголовков) | `GameState::resourceScarCells` (`state.h:977`) | `ResourceGrid::at` / `ResourceGrid::write` | `cell_of` | 1 (`macro_stock.cpp:607` внутри двери) | `resource_field.h:268,277` |
+| шрамы (3 живых ряда из 10) | `FieldCell` u16 × N × 3 | 6 МиБ (+ 720 Б заголовков; перепись `stacks.h` исправлена 2026-09-25) | `GameState::resourceScarCells` (`state.h:977`) | `ResourceGrid::at` / `ResourceGrid::write` | `cell_of` | 1 (`macro_stock.cpp:607` внутри двери) | `resource_field.h:268,277` |
 | жилы ×6 + `reach` ×6 | u16 × N × 6 + u16 × N × 6 | 12 + 12 МиБ | `App::deposits` (`app_state.h:161`); `MacroWorld::deposits` | `remaining_at/kind_near/any_at` / `create_deposit`, `set_deposit_remaining` → `write` | `cell_of`; диск `cell_step` | 0 | `deposit_layer.h:101` |
 | фичи | u8 × N | 1 МиБ | `App::features` (`app_state.h:141`); `MacroWorld::features` | `at` / `set` (**0 вызовов**) | `cell_of` в дверях | 12 поэлементных (9 записей) + 2 указателя на массив | `features.h:173` |
 | числа фич `worked` | u16 × N | 2 МиБ | `GameState::worked` (`state.h:986`) | `worked_read` / `worked_write/add` — **0 внешних вызовов** | `cell_of` | 0 | `state.h:986` |
