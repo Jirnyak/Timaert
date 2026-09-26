@@ -51,6 +51,49 @@ int fail(const char* msg) {
 
 constexpr float kTwoPi = 6.28318530718f;
 
+// ── THE TWO LAWS THE OLD LITERALS STOOD IN FOR (M-132) ────────────────────
+//
+// A settlement's only inputs are its POPULATION, its 3×3 surroundings and its
+// seed, so every expectation about it has to come from those — never from a
+// number calibrated on one run. Two claims below used four literals between
+// them (`citizens < 100` for a city, `< 50` for a village; `fracOuterHalf <
+// 0.55f` twice), which is also "two literals on one law" spelled twice over.
+//
+// 1. HOW FULL THE STREET IS — THE DAY'S PUMP. A town's people are a conserved
+//    quantity in two vessels, and the SUN moves them
+//    (city_layout.h crowd_outdoor_share01). A door keeps
+//    `souls × (1 − share) + phase` of its household, floored — so it can hold
+//    at most one soul more than its exact share, and the street can therefore
+//    be short of `pop × share` by at most ONE SOUL PER DOOR. That is the floor,
+//    and it is exact rather than generous: at noon (share 1.0) it reads 988 of
+//    1200 against a measured street of 1200, where the old literal read 100.
+int doors_of(const sm::sub::SeamlessSubworldManager& mgr) {
+    int doors = 0;
+    for (const auto& st : mgr.structures())
+        if (st.kind == sm::sub::Structure::House) ++doors;
+    return doors;
+}
+
+int street_floor(int pop, int doors, const sm::WorldTime& t) {
+    return int(float(pop) * sm::sub::crowd_outdoor_share01(t)) - doors;
+}
+
+// 2. HOW WIDE THE CROWD STANDS — THE AREA LAW, stated as the discriminator
+//    between the two hypotheses this claim exists to tell apart:
+//      · scattered BY AREA (the law): the outer half of the radius is
+//        1 − (1/2)² = three quarters of the ground, so it carries 0.75 of the
+//        people;
+//      · the radius sampled LINEARLY (the bug the old message named): exactly
+//        0.50 of them land there.
+//    The floor is their MIDPOINT — above it the area law explains the crowd
+//    better than the bug does. The literal it replaces, 0.55, sat almost on top
+//    of the bug's own signature: a linearly-sampled town would have passed it on
+//    any seed with a little noise. Measured 0.89 city / 0.80 village.
+constexpr float kAreaShareOuterHalf   = 0.75f;   // 1 − (1/2)², the law
+constexpr float kLinearShareOuterHalf = 0.50f;   // the bug's signature
+constexpr float kOuterHalfFloor =
+    (kAreaShareOuterHalf + kLinearShareOuterHalf) * 0.5f;
+
 // A cell resolver that puts ONE settlement of `pop` souls on cell (0,0) and
 // leaves the eight neighbours plain meadow — so the composite the manager hands
 // the spawner carries a real generated town, walls and all.
@@ -292,7 +335,13 @@ int main() {
                                  0xC17015Eu, noon);
         sm::sub::clear_saved_subworlds();
 
-        if (s.citizens < 100) return fail("a 1200-soul city fielded no crowd");
+        if (s.citizens < street_floor(1200, doors_of(mgr), noon)) {
+            std::fprintf(stderr, "  street %d, the sun owes at least %d of "
+                         "1200 souls (%d doors)\n", s.citizens,
+                         street_floor(1200, doors_of(mgr), noon), doors_of(mgr));
+            return fail("the noon street holds the share of the town the SUN "
+                        "dictates, bar one soul per door");
+        }
         if (s.outsideReach != 0) {
             std::fprintf(stderr, "  %d/%d citizens beyond the town's reach "
                          "(maxR %.1f)\n", s.outsideReach, s.citizens, s.maxR);
@@ -302,9 +351,14 @@ int main() {
             return fail("city citizens spawned at or beyond the town wall");
         }
         if (s.onSolid != 0) return fail("city citizens spawned in water/masonry");
-        if (s.fracOuterHalf < 0.55f) {
-            return fail("city citizens clumped near the centre "
-                        "(radius sampled linearly instead of by area?)");
+        if (s.fracOuterHalf < kOuterHalfFloor) {
+            std::fprintf(stderr, "  fracOuterHalf %.3f (area law %.2f, the "
+                         "linear bug %.2f)\n", double(s.fracOuterHalf),
+                         double(kAreaShareOuterHalf),
+                         double(kLinearShareOuterHalf));
+            return fail("the crowd is scattered BY AREA, not along the radius "
+                        "— the outer half of the disk carries the outer half's "
+                        "share of the ground");
         }
         if (s.emptySectors != 0) return fail("city has an empty angular sector");
 
@@ -371,7 +425,13 @@ int main() {
                                  0x71114Eu, vnoon);
         sm::sub::clear_saved_subworlds();
 
-        if (s.citizens < 50) return fail("a 400-soul village fielded no crowd");
+        if (s.citizens < street_floor(400, doors_of(mgr), vnoon)) {
+            std::fprintf(stderr, "  green %d, the sun owes at least %d of 400 "
+                         "souls (%d doors)\n", s.citizens,
+                         street_floor(400, doors_of(mgr), vnoon), doors_of(mgr));
+            return fail("the same pump law at village scale — one law, not a "
+                        "second literal");
+        }
         if (s.outsideReach != 0) {
             std::fprintf(stderr, "  %d/%d villagers beyond the town's reach "
                          "(maxR %.1f)\n", s.outsideReach, s.citizens, s.maxR);
@@ -381,8 +441,11 @@ int main() {
             return fail("villagers spawned at or beyond the village wall");
         }
         if (s.onSolid != 0) return fail("villagers spawned in water/masonry");
-        if (s.fracOuterHalf < 0.55f) {
-            return fail("villagers clumped on the green");
+        if (s.fracOuterHalf < kOuterHalfFloor) {
+            std::fprintf(stderr, "  fracOuterHalf %.3f\n",
+                         double(s.fracOuterHalf));
+            return fail("the same area law on the green — villagers are not "
+                        "piled on the well");
         }
         if (s.emptySectors != 0) return fail("village has an empty angular sector");
 

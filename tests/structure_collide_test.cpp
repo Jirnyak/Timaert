@@ -9,11 +9,14 @@
 // the wall itself blocks at street level.
 #include "check.h"
 
+#include "sub/city_layout.h"
 #include "sub/collide.h"
+#include "sub/gens/kit/outline.h"   // Outline::kBearings — the ring's own resolution
 #include "sub/gens/dispatch.h"
 #include "sub/height.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <queue>
 #include <vector>
@@ -187,22 +190,47 @@ void part_b_generated_city() {
     SubworldMapData out{};
     dispatch_generate(city, nbH, nbB, /*nbBiome5*/nullptr, nbF, out);
 
-    // Structure inventory: oriented walls, round towers, gate lintels,
-    // rotated houses with independent extents.
+    // ── Structure inventory ───────────────────────────────────────────────
+    // THE CURTAIN'S OWN DIMENSION, asked of the public ring model the
+    // generator itself reads (sub/city_layout.h). A TOWER reads as a tower
+    // only when it stands proud of the curtain on BOTH faces by the curtain's
+    // own thickness (2 × halfThickness) — a round body centred on the ring
+    // protrudes `radius − halfThickness` per side, so that law is
+    // radius >= 3 × halfThickness. Anything rounder but thinner is a gate
+    // JAMB: the stub that finishes a curtain end.
+    const float halfThick = kSettlementWallRing.halfThickness;
+    const float kTowerR   = halfThick * 3.0f;
+
     int lintels = 0;
-    int cylinders = 0;
+    int towers = 0;
+    int jambs = 0;
     int orientedWalls = 0;
+    int houses = 0;
     int rotatedHouses = 0;
     int oblongHouses = 0;
+    int thinMasonry = 0;        // round bodies thinner than the curtain itself
+    float maxChordHx = 0.0f;    // longest curtain piece the generator emitted
+    float openingLen = 0.0f;    // ring length that is gateway, not curtain
     for (const Structure& s : out.structures) {
         if (s.kind == Structure::Wall) {
-            if (s.zBase > 0.0f) ++lintels;
-            if (s.shape == Structure::Cylinder) ++cylinders;
+            if (s.zBase > 0.0f) {
+                ++lintels;
+                // Over-stated on purpose: a lintel overhangs its opening on
+                // both sides, so 2·hx is MORE than the gap it bridges, and
+                // over-subtracting keeps the chord floor below conservative.
+                openingLen += 2.0f * s.hx;
+            }
+            if (s.shape == Structure::Cylinder) {
+                if (s.radius >= kTowerR - 1e-4f) ++towers; else ++jambs;
+                if (s.radius < halfThick) ++thinMasonry;
+            }
             if (s.shape == Structure::Box && s.hx > 0.0f
                 && std::fabs(s.yaw) > 1e-3f) {
                 ++orientedWalls;
+                if (s.zBase == 0.0f) maxChordHx = std::max(maxChordHx, s.hx);
             }
         } else if (s.kind == Structure::House) {
+            ++houses;
             if (std::fabs(s.yaw) > 1e-3f) ++rotatedHouses;
             if (s.hx > 0.0f && s.hy > 0.0f
                 && std::fabs(s.hx - s.hy) > 0.05f) {
@@ -210,11 +238,88 @@ void part_b_generated_city() {
             }
         }
     }
+    // ── The inventory's laws, every number a function of the generator's own
+    // ── input: the feature's POPULATION and the public ring model.
+    //
+    // Every literal that used to stand here (`cylinders >= 8`,
+    // `orientedWalls >= 40`, `rotatedHouses >= 10`, `oblongHouses >= 10`) was
+    // calibrated on one run of one seed and derived from nothing (M-132). A
+    // city's only inputs are its population, its 3×3 surroundings and its seed
+    // — so a claim about what it built has to come from those.
     CHECK(lintels >= 2, "each road gate carries a lintel (>= 2 for two axes)");
-    CHECK(cylinders >= 8, "wall towers and gate jambs are round");
-    CHECK(orientedWalls >= 40, "wall runs are yawed chords following the ring");
-    CHECK(rotatedHouses >= 10, "houses draw a random orientation");
-    CHECK(oblongHouses >= 10, "houses keep independent width/length");
+
+    // THE RING'S LENGTH, from the population alone. A town grows until it holds
+    // the ground its hearths need (city_target_area, itself population ÷ hearth
+    // law × ground-per-house). The isoperimetric inequality gives the SHORTEST
+    // closed curve that can enclose that area — 2√(πA), with equality only for
+    // a perfect circle — so an organically grown ring is always longer than
+    // this. Measured for pop 6000: 1838 tiles of chord against a floor of 1493.
+    constexpr float kPi = 3.14159265f;
+    const int population = int(city.landmark.size);
+    const float ringFloor =
+        2.0f * std::sqrt(kPi * city_target_area(population));
+
+    // …and the CHORD COUNT follows by division: to cover a length with pieces
+    // none longer than the longest piece present, you need at least
+    // length/longest of them. Both terms are measured from this very run, so no
+    // retune of the piece length can make the claim stale.
+    CHECK_OR_RETURN(maxChordHx > 0.0f,
+                    "the ring is built from ORIENTED chords at all — a town "
+                    "walled by four axis-aligned slabs is not a town");
+    const int chordFloor = int((ringFloor - openingLen) / (2.0f * maxChordHx));
+    if (orientedWalls < chordFloor) {
+        std::fprintf(stderr,
+            "  pop=%d area=%.0f ringFloor=%.0f openings=%.0f maxHx=%.2f "
+            "need>=%d got=%d\n", population, double(city_target_area(population)),
+            double(ringFloor), double(openingLen), double(maxChordHx),
+            chordFloor, orientedWalls);
+    }
+    CHECK(orientedWalls >= chordFloor,
+          "the curtain's yawed chords are enough to CLOSE a ring around the "
+          "ground this population needs — the count follows the town's size, "
+          "it is not a number");
+
+    // ROUND STONE BY ITS ROLE. The two round bodies of a curtain are the tower
+    // and the gate jamb, and they are told apart by the law above, not by a
+    // hand-picked radius.
+    CHECK(thinMasonry == 0,
+          "no round body on the ring is thinner than the curtain it belongs "
+          "to — masonry, never a pebble");
+    // A curtain with no tower does not read as fortified. The floor is the
+    // ring's own shape: it carries a non-zero THIRD harmonic
+    // (kSettlementWallRing.harmonic3Amp), so it has three lobes and therefore
+    // at least three salients for a tower to flank. The count itself is
+    // deliberately parameter-free in the generator (towers stand where the ring
+    // turns), so a higher floor would be an invented number — measured 23.
+    static_assert(kSettlementWallRing.harmonic3Amp > 0.0f,
+                  "the ring is lobed — that is what gives a tower its corner");
+    CHECK(towers >= 3,
+          "the ring is TOWERED at its salients — at least one per lobe of its "
+          "lowest harmonic");
+    // THE OTHER HALF OF THAT LAW — "not every other node, which is a lattice"
+    // — IS DELIBERATELY NOT ASSERTED HERE, and the reason is worth writing
+    // down: a city has more than one ring (the upper quarter carries its own
+    // curtain with its own towers), so this count is a SUM over rings and
+    // cannot be compared against one ring's Outline::kBearings. Measured 23 for
+    // two rings — a ceiling of 32 would pass today and red the day a third
+    // ring lands, which is a witness guarding an accident rather than a law.
+    // Attributing a tower to a ring needs the layout the generator holds, and
+    // copying that here would be a second implementation (§8 п.5).
+    // A jamb finishes a curtain end, so an arch is jambed — unless that spot is
+    // itself roadway, where the generator rightly skips it (measured: 7 jambs
+    // for 4 arches).
+    CHECK(jambs >= lintels,
+          "every arch is finished by a jamb, bar the ones whose footing is the "
+          "road itself");
+
+    // HOUSES: stated as relations, so no retune of a town's size can date them.
+    CHECK_OR_RETURN(houses > 0, "the city built houses to assert about");
+    CHECK(rotatedHouses > houses - rotatedHouses,
+          "a random orientation is the RULE of a house, not the exception — "
+          "the axis-aligned stamp is dead");
+    CHECK(oblongHouses > houses - oblongHouses,
+          "so is an independent width and length: most houses are oblong, not "
+          "square");
 
     // Solidity over the generated cell (cell-local coords; the index spans
     // whatever the records span). Seat solids on the actual generated relief.

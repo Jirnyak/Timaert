@@ -30,6 +30,7 @@
 // is a breach.
 
 #include "check.h"
+#include "sub/city_layout.h"
 #include "sub/gens/dispatch.h"
 #include "sub/map_data.h"
 
@@ -233,9 +234,39 @@ void check_town(const char* what, LandmarkType kind, std::uint32_t seed,
     const Town t = make_town(kind, seed, population, roadDirs);
     char msg[256];
 
+    // HOW MUCH MASONRY A POPULATION IS OWED, and it is not a number: a town's
+    // only inputs are its population, its 3×3 surroundings and its seed, so the
+    // floor comes from the population through the same laws the generator reads
+    // (sub/city_layout.h).
+    //
+    //   · a CITY grows until it holds the ground its hearths need
+    //     (city_target_area). The isoperimetric inequality gives the SHORTEST
+    //     closed curve that can enclose that area — 2√(πA), equality only for a
+    //     perfect circle — and an organically grown ring is always longer;
+    //   · a VILLAGE keeps its circular core, so its ring is 2πR about the
+    //     conservative radius wall_inner_bound already states for exactly this
+    //     purpose ("the innermost tile a ring of this radius can ever reach").
+    //
+    // The curtain is stamped with a 3×3 brush, so it is at least one tile thick
+    // along that length — the floor is therefore in TILES without a fudge.
+    // Measured against it: 6751 tiles for pop 6000 (floor 1493), 1720 for a
+    // 400-soul village (floor 441). The literal it replaces was `> 200`, which
+    // a town twenty times too small would still have passed (M-132).
     const int wallTiles = count_tiles(t, TILE_WALL);
-    std::snprintf(msg, sizeof msg, "%s: raises a wall (%d tiles)", what, wallTiles);
-    CHECK(wallTiles > 200, msg);
+    constexpr float kPi = 3.14159265f;
+    const float enclosed =
+        kind == LandmarkType::City
+            ? city_target_area(population)
+            : kPi * wall_inner_bound(village_wall_radius(population),
+                                     kSettlementWallRing.villageRoughness)
+                  * wall_inner_bound(village_wall_radius(population),
+                                     kSettlementWallRing.villageRoughness);
+    const int wallFloor = int(2.0f * std::sqrt(kPi * enclosed));
+    std::snprintf(msg, sizeof msg,
+                  "%s: the curtain is long enough to CLOSE around the ground "
+                  "this population needs (%d tiles, floor %d)",
+                  what, wallTiles, wallFloor);
+    CHECK(wallTiles >= wallFloor, msg);
 
     const GateAudit a = audit_ring(t);
     std::snprintf(msg, sizeof msg,
@@ -264,14 +295,31 @@ void check_town(const char* what, LandmarkType kind, std::uint32_t seed,
     // platform, over the gate, where the road comes in. Demanding four stone
     // towers of a hamlet is what produced a hamlet with four stone towers.
     if (kind == LandmarkType::City) {
+        // WHAT COUNTS AS A TOWER, asked of the ring model rather than of a
+        // hand-picked radius (the old test said `radius > 2.5f`, a number
+        // between the two classes it happened to see — M-132). A tower reads as
+        // a tower only when it stands proud of the curtain on BOTH faces by the
+        // curtain's own thickness; a round body centred on the ring protrudes
+        // `radius − halfThickness` per side, so that law is exactly
+        // radius >= 3 × halfThickness. Anything rounder but thinner is a gate
+        // JAMB — the stub finishing a curtain end.
+        const float towerR = kSettlementWallRing.halfThickness * 3.0f;
         int towers = 0;
         for (const Structure& s : t.map.structures) {
             if (s.kind == Structure::Wall && s.shape == Structure::Cylinder
-                && s.radius > 2.5f) ++towers;   // > a gate jamb
+                && s.radius >= towerR - 1e-4f) ++towers;
         }
-        std::snprintf(msg, sizeof msg, "%s: the ring is towered (%d towers)",
-                      what, towers);
-        CHECK(towers >= 4, msg);
+        // The floor is the ring's own SHAPE: it carries a non-zero third
+        // harmonic, so it has three lobes and therefore at least three salients
+        // for a tower to flank. Higher would be invented — the generator's rule
+        // is deliberately parameter-free ("a tower where the ring turns"), so
+        // the count is whatever the shape asks for. Measured 22–25.
+        static_assert(kSettlementWallRing.harmonic3Amp > 0.0f,
+                      "the ring is lobed — that is what gives a tower a corner");
+        std::snprintf(msg, sizeof msg,
+                      "%s: the ring is TOWERED at its salients, one per lobe at "
+                      "least (%d towers)", what, towers);
+        CHECK(towers >= 3, msg);
     } else {
         // The platform is a LIFTED timber span standing on the gate beam —
         // the only thing in a village that is both raised off the ground and

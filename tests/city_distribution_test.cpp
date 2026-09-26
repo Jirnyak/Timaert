@@ -31,11 +31,34 @@ namespace {
 
 constexpr float kTwoPi = 6.28318530718f;
 
+// The angular resolution of every claim below: eight sectors of 45°, which is
+// what "a whole quadrant stood empty" was measured in.
+constexpr int kSectors = 8;
+
+// THE BALANCE CLAIM: the thinnest sector holds at least this share of the
+// busiest. The old generator read 0 against 189 (a dead quadrant); the grown
+// town reads ~0.68.
+constexpr float kMinSectorShare = 0.20f;
+
+// …AND THE FLOOR THAT CLAIM NEEDS, which is arithmetic rather than taste. For
+// `min/max >= 1/5` to say anything about a DISTRIBUTION instead of about
+// integer rounding, the busiest sector has to hold at least 1/kMinSectorShare
+// houses: at five-per-sector the ratio can fail, below it a lopsided town
+// passes by accident (1 against 3 is already 0.33). So a city is measurable
+// when it has kSectors sectors' worth of that, and no sooner.
+//
+// This replaces a bare `houses < 40` — the same number with nothing attached
+// to it (M-132). It is not a world law and must not read as one: the world's
+// own house count is the hearth law (`city_house_target`), guarded where it
+// belongs, in subworld_generator_parity_test. This is the PRECONDITION OF A
+// MEASUREMENT, and it is derived from the measurement it precedes.
+constexpr int kMinHousesToMeasure = kSectors * int(1.0f / kMinSectorShare);
+
 struct Spread {
     int   houses = 0;
     float meanR = 0.0f;
     float maxR = 0.0f;
-    std::array<int, 8> sector{};   // angular histogram, 8 sectors of 45°
+    std::array<int, kSectors> sector{};   // angular histogram, 45° apiece
     float fracOuterHalf = 0.0f;    // houses beyond half of maxR
     int   emptySectors = 0;
     int   minSector = 0;
@@ -83,8 +106,8 @@ Spread measure_city(int cx, int cy, std::uint32_t seed, int population) {
         if (rr > s.maxR) s.maxR = rr;
         float a = std::atan2(dy, dx);
         if (a < 0.0f) a += kTwoPi;
-        int sec = int(a / (kTwoPi / 8.0f));
-        if (sec >= 8) sec = 7;
+        int sec = int(a / (kTwoPi / float(kSectors)));
+        if (sec >= kSectors) sec = kSectors - 1;
         if (sec < 0) sec = 0;
         ++s.sector[std::size_t(sec)];
     }
@@ -102,7 +125,7 @@ Spread measure_city(int cx, int cy, std::uint32_t seed, int population) {
 
     s.minSector = 1 << 30;
     s.maxSector = 0;
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < kSectors; ++i) {
         const int c = s.sector[std::size_t(i)];
         if (c == 0) ++s.emptySectors;
         if (c < s.minSector) s.minSector = c;
@@ -130,14 +153,13 @@ int main() {
     for (const Case& c : cases) {
         const Spread s = measure_city(c.cx, c.cy, c.seed, c.pop);
 
-        // Порог 40 — ЧИСЛО С ПОТОЛКА, названное вслух (наряд M-132): он не
-        // выведен ни из населения, ни из строки генератора. Утверждение по
-        // смыслу верно («городу есть чем меряться»), но число обязано прийти
-        // из закона, а не из сегодняшнего прогона.
-        if (s.houses < 40) {
-            CHECK(s.houses >= 40,
-                  "the city produced enough houses to assess spread at all "
-                  "(threshold still hardcoded — M-132)");
+        if (s.houses < kMinHousesToMeasure) {
+            std::fprintf(stderr, "seed=0x%X pop=%d houses=%d (need %d)\n",
+                         c.seed, c.pop, s.houses, kMinHousesToMeasure);
+            CHECK(s.houses >= kMinHousesToMeasure,
+                  "the city has enough doors for a per-sector share to MEAN "
+                  "something — below the balance claim's own resolution the "
+                  "assertions below pass on rounding");
             continue;
         }
         ++measured;
@@ -158,13 +180,13 @@ int main() {
         // (2) Angular balance: the thinnest sector holds a real share of the
         // busiest one. Old min/max was 0.00 (0 vs 189); the plan gives ~0.68.
         if (s.maxSector <= 0
-            || float(s.minSector) / float(s.maxSector) < 0.20f) {
+            || float(s.minSector) / float(s.maxSector) < kMinSectorShare) {
             std::fprintf(stderr,
                 "seed=0x%X pop=%d angular min/max=%d/%d\n",
                 c.seed, c.pop, s.minSector, s.maxSector);
         }
         CHECK(s.maxSector > 0
-                  && float(s.minSector) / float(s.maxSector) >= 0.20f,
+                  && float(s.minSector) / float(s.maxSector) >= kMinSectorShare,
               "the thinnest sector holds a real share of the busiest — the "
               "old generator read 0 against 189");
 
