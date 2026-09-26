@@ -153,11 +153,25 @@ int main() {
             return fail("recipe output has no labour (batches/person-day)");
         }
     }
-    for (int n = 0; n < kNeedCount; ++n) {
-        if (commodity_index(kNeeds[n].commodity) < 0) {
-            return fail("need id unknown");
+    // ЛЕСТНИЦА kNeeds УМЕРЛА (M-137): нужда есть доля бюджета горожанина, а
+    // строка комфорта УЗНАЁТСЯ категорией каталога. Закон, который этот
+    // свидетель охраняет, тот же — «у всякой строки нужды есть каталожная
+    // строка и ненулевая стоимость, иначе делить долю нечем»; проверяется он
+    // теперь через ту же дверь, которой живёт мир.
+    {
+        int comfortRows = 0;
+        for (int c = 0; c < kCommodityCount; ++c) {
+            if (!commodity_is_comfort(c)) continue;
+            ++comfortRows;
+            const ItemDef* d = item_def_at(commodity_item_index(c));
+            CHECK(d && d->value > 0,
+                  "строка комфорта обязана иметь каталожную строку и цену");
         }
-        if (kNeeds[n].popPerUnitDay <= 0) return fail("need divisor <= 0");
+        CHECK(comfortRows == comfort_row_count() && comfortRows > 0,
+              "N строк комфорта ВЫВОДИТСЯ проходом и не бывает нулём");
+        CHECK(hunger_commodity_ordinal() >= 0
+                  && !commodity_is_comfort(hunger_commodity_ordinal()),
+              "голодная строка одна и она НЕ комфорт — за еду отвечает голод");
     }
 
     // ── 2+3. Self-play: village gathers, city crafts, both eat ──────────
@@ -465,10 +479,11 @@ int main() {
     // kGatherPerWorkerDay единиц пищи, а единица пищи кроет РОВНО ОДИН
     // житель-день (голодная строка лестницы, popPerUnitDay == 1). Произведение
     // и есть «кормит 32 душ»; разойдись любая из двух — переоценится весь мир.
-    if (kNeeds[kHungerNeedRow].popPerUnitDay != 1
-        || kGatherPerWorkerDay * kNeeds[kHungerNeedRow].popPerUnitDay != 32) {
-        return fail("the gatherer-day must feed exactly 32 souls for a day");
-    }
+    // Якорь спрашивается ДВЕРЬЮ ГОЛОДА, а не колонкой умершей лестницы:
+    // сезон харча 32 душ, делённый на дни сезона, и есть дневная добыча.
+    CHECK(season_hunger_units(32) / kDaysPerSeason == kGatherPerWorkerDay
+              && season_hunger_units(1) == kDaysPerSeason,
+          "the gatherer-day must feed exactly 32 souls for a day");
     // ...и голодная строка обязана быть ТЕРМИНАЛЬНОЙ материей мира: еду
     // растят и добывают, печь между полем и ртом больше не стоит.
     if (!item_parts(hunger_item_index()).empty()) {
@@ -525,11 +540,10 @@ int main() {
                         "seeded thinner dies of arithmetic at its first "
                         "window (S19.2)");
         }
-        for (int i = 0; i < kNeedCount; ++i) {
-            if (pop / kNeeds[i].popPerUnitDay <= 0) continue;
-            if (city.count(kNeeds[i].commodity) <= 0) {
-                return fail("a consumed need row was born empty");
-            }
+        for (int c = 0; c < kCommodityCount; ++c) {
+            if (season_comfort_units(pop, c) <= 0) continue;
+            CHECK(city.count_of(commodity_item_index(c)) > 0,
+                  "a consumed need row was born empty");
         }
         Inventory village;
         seed_landmark_inventory(village, pop, false, empire,

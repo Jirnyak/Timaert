@@ -69,11 +69,13 @@ GameState make_world(int villagePop) {
 // бы не разглядеть. Закрытая полка глушит покупной конец, оставляя целям
 // дня сопоставимые скоры — ровно как до вердикта.
 void stock_comforts(Landmark& lm) {
-    for (const NeedDef& n : kNeeds) {
-        if (n.popPerUnitDay == 1) continue;   // хлеб фикстуры кладут сами
-        const int seasonNeed = (lm.population / n.popPerUnitDay)
-                             * kDaysPerSeason;
-        if (seasonNeed > 0) lm.inventory.add(n.commodity, seasonNeed);
+    // Нужда считается ОДНОЙ дверью мира (M-137: доля бюджета горожанина), а не
+    // второй копией её арифметики в фикстуре (§8 п.5).
+    for (int c = 0; c < kCommodityCount; ++c) {
+        const int seasonNeed = season_comfort_units(lm.population, c);
+        if (seasonNeed > 0) {
+            lm.inventory.add_of(commodity_item_index(c), seasonNeed);
+        }
     }
 }
 

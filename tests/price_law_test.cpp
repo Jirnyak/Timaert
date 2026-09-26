@@ -43,15 +43,61 @@ void test_scarcity_shape() {
           "price = base x scarcity");
     CHECK(stock_price(10, 1 << 20, 0) >= 1,
           "a price never reaches zero — «ничто не бесплатно» is the floor");
-    // Без счёта (nullptr) прямая часть — лестница населения × сезон; со
-    // счётом она читала бы ОСТАТОК долга (закон мира, юниты те же).
-    CHECK(season_demand_for(hunger_item_id(), nullptr, 128, CITY, nullptr)
-                  == 128 * kDaysPerSeason
-              && season_demand_for("cloth", nullptr, 128, CITY, nullptr)
-                  == 4 * kDaysPerSeason
-              && season_demand_for("wpn_dagger", nullptr, 128, CITY, nullptr)
-                  == 0,
-          "demand reads the ONE needs ladder");
+    // ── СПРОС БЕЗ СЧЁТА — ДОЛЯ БЮДЖЕТА ГОРОЖАНИНА (M-137) ────────────────
+    // ПОЧЕМУ ЭТОТ СВИДЕТЕЛЬ ПЕРЕПИСАН 2026-09-26: он прибивал ЧИСЛО умершей
+    // лестницы (`cloth` = 4 единицы в день, потому что в таблице стояло
+    // `popPerUnitDay = 32`) и краснел ровно на том, что было УЛУЧШЕНИЕМ —
+    // §8 ЗАКОН НУЛЕВОЙ п.5/п.7: он охранял случай, а не закон. Теперь
+    // утверждается сам закон, и ни одного прибитого числа в нём нет.
+    {
+        const int pop = 128;
+        // 1. ГОЛОД — житель-дни: одна единица кроет один день одной души.
+        CHECK(season_demand_for(hunger_item_index(), nullptr, pop, CITY,
+                                nullptr) == pop * kDaysPerSeason,
+              "голод спрашивается житель-днями, и это своя система");
+        // 2. НЕ ТОВАР — НЕ НУЖДА: у кинжала прямого спроса нет вовсе.
+        CHECK(season_demand_for(item_index("wpn_dagger"), nullptr, pop, CITY,
+                                nullptr) == 0,
+              "строка, товаром не являющаяся, прямой нужды не имеет");
+        // 3. БЮДЖЕТ: сумма стоимости всех строк комфорта не превышает
+        //    население × сезон × бюджет дня и не отстаёт от него больше, чем
+        //    на усечение по строке (целое деление роняет остаток дешевле
+        //    одной единицы каждой строки). Второй копии формулы здесь нет —
+        //    только её ПОТОЛОК и граница усечения.
+        long long spend = 0, truncation = 0;
+        int comfortRows = 0, dearer = -1, dearerUnits = -1;
+        for (int c = 0; c < kCommodityCount; ++c) {
+            if (!commodity_is_comfort(c)) continue;
+            ++comfortRows;
+            const int idx = commodity_item_index(c);
+            const int units = season_demand_for(idx, nullptr, pop, CITY,
+                                                nullptr);
+            const int value = item_def_at(idx)->value;
+            spend += (long long)units * value;
+            truncation += value;
+            // 4. ДОРОЖЕ — РЕЖЕ: строгая обратная монотонность по стоимости.
+            if (dearer < 0 || value > dearer) {
+                if (dearer >= 0) {
+                    CHECK(units <= dearerUnits,
+                          "дорогая строка нужна не чаще дешёвой");
+                }
+                dearer = value;
+                dearerUnits = units;
+            }
+            // 5. МАСШТАБ: вдвое больше душ — вдвое больше нужды (с точностью
+            //    до того же усечения).
+            const int twice = season_demand_for(idx, nullptr, pop * 2, CITY,
+                                                nullptr);
+            CHECK(twice >= units * 2 - 1 && twice <= units * 2 + 1,
+                  "нужда линейна по населению");
+        }
+        const long long budget =
+            (long long)pop * kDaysPerSeason * kComfortValuePerPopDay;
+        CHECK(comfortRows > 0, "негативный контроль: строки комфорта найдены");
+        CHECK(spend <= budget && spend > budget - truncation,
+              "стоимость всей нужды сезона = бюджет горожанина, с точностью "
+              "до усечения по строке");
+    }
 
     // НИ ОДНО БЛАГО НЕ ВАРИТСЯ ИЗ ПИЩИ — сквозной закон по ВСЕЙ таблице
     // составов (владелец, 2026-09-20; ради него и заведено ВОЛОКНО со своей
@@ -63,7 +109,7 @@ void test_scarcity_shape() {
     // следующая заглушка («мясо в клей», «зерно в бумагу») придёт другой
     // строкой, и поймать её должен закон, а не проверка про ткань.
     {
-        const int hungerIdx = item_index(hunger_item_id());
+        const int hungerIdx = hunger_item_index();
         bool anyGoods = false, foodFree = true;
         for (int c = 0; c < kCommodityCount; ++c) {
             const int idx = item_index(kCommodities[c].id);
@@ -83,7 +129,8 @@ void test_scarcity_shape() {
     {
         std::int32_t debt[kCommodityCount] = {};
         debt[commodity_index("food")] = 777;
-        CHECK(season_demand_for("food", debt, 128, CITY, nullptr) == 777,
+        CHECK(season_demand_for(hunger_item_index(), debt, 128, CITY,
+                                nullptr) == 777,
               "the direct demand IS the unpaid bill");
     }
 }

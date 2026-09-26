@@ -82,22 +82,33 @@ namespace {
 // tool), cycles must not hang.
 // Без счёта (needDebt == nullptr — снимок чужого дома, фикстура) прямая
 // часть честно падает на лестницу населения × сезон.
-int demand_for_(const char* itemId, const std::int32_t* needDebt,
+int demand_for_(int itemIdx, const std::int32_t* needDebt,
                 int population, const Skills& hands,
                 const Inventory* store, int depth) {
-    if (!itemId || population <= 0) return 0;
+    if (itemIdx < 0 || population <= 0) return 0;
     int demand = 0;
-    for (int i = 0; i < kNeedCount; ++i) {
-        if (std::strcmp(kNeeds[i].commodity, itemId) == 0) {
-            demand += needDebt
-                ? int(needDebt[commodity_index(itemId)])
-                : season_need_units(population, kNeeds[i].popPerUnitDay);
-            break;
-        }
+    // ПРЯМАЯ ПОЛОВИНА — строка лестницы, найденная ТОВАРНЫМ ординалом: тот
+    // же вопрос, что решал `strcmp` по восьми строкам на каждый вызов. Строка
+    // каталога, товаром не являющаяся (оружие, монета), лестницы не касается
+    // и честно получает ноль прямого спроса — производный ниже у неё есть.
+    const int commodity = commodity_of_item(itemIdx);
+    if (commodity >= 0) {
+        // Со счётом — ОСТАТОК счёта (он и есть непокрытая нужда, сезонная
+        // мерка по построению). Без счёта (снимок чужого дома, фикстура) —
+        // та же формула, которой счёт и выставляется: голод житель-днями,
+        // комфорт долей бюджета (M-137). Строка, которой нужды нет вовсе
+        // (сырьё, монета), даёт ноль обоими путями — её счёт никогда не
+        // выставляется.
+        demand += needDebt
+            ? int(needDebt[commodity])
+            : (commodity == hunger_commodity_ordinal()
+                   ? season_hunger_units(population)
+                   : season_comfort_units(population, commodity));
     }
     if (depth > 0) {
-        const int target = item_index(itemId);
-        for (const RecipeDef& r : kRecipes) {
+        const int target = itemIdx;
+        for (int ri = 0; ri < kRecipeCount; ++ri) {
+            const RecipeDef& r = kRecipes[ri];
             // Derived demand exists only where the recipe CAN run: hands
             // that bake nothing want no grain beyond their own needs,
             // however hungry their future bakery would be — without this
@@ -109,7 +120,7 @@ int demand_for_(const char* itemId, const std::int32_t* needDebt,
             // matter table, items.h). The mint's output is no catalog row
             // (-1 → empty span), and its silver demand was always zero:
             // nothing NEEDS coin down the needs ladder.
-            const int outIdx = item_index(r.output);
+            const int outIdx = recipe_out_item(ri);
             for (const ItemPart& part : item_parts(outIdx)) {
                 if (int(part.def) != target) continue;
                 // НЕТТИНГ СКЛАДОМ ВЫХОДА (владелец 2026-09-18, «смотреть
@@ -120,7 +131,7 @@ int demand_for_(const char* itemId, const std::int32_t* needDebt,
                 // амбар хочет в полную силу. С долгом обе величины —
                 // СЕЗОННЫЕ ЧИСЛА по построению, дробь «туда-обратно» через
                 // дневную мерку умерла вместе с календарём кривой.
-                long long outSeason = demand_for_(r.output, needDebt,
+                long long outSeason = demand_for_(outIdx, needDebt,
                                                   population, hands,
                                                   store, depth - 1);
                 if (store) {
@@ -153,7 +164,7 @@ int demand_for_(const char* itemId, const std::int32_t* needDebt,
 // редко, как самое редкое из нужного». Растёт лестница — двигается и пол;
 // новой константы не рождается. Дальше всё делает ОДНА уже живущая кривая:
 // склад полон — цена падает, склад пуст — растёт.
-int season_demand_for(const char* itemId, const std::int32_t* needDebt,
+int season_demand_for(int itemIdx, const std::int32_t* needDebt,
                       int population, const Skills& hands,
                       const Inventory* store) {
     // Depth 4 covers chains far past today's one-step recipes (ore → metal
@@ -168,7 +179,7 @@ int season_demand_for(const char* itemId, const std::int32_t* needDebt,
     // не рту, и спрос на него производный, от рецептов. Чтобы деревня всё же
     // копала НА ЭКСПОРТ, решение о труде читает не только свою цену — см.
     // аукцион добычи (npc_ai.cpp, цена сюзерена).
-    return demand_for_(itemId, needDebt, population, hands, store, 4);
+    return demand_for_(itemIdx, needDebt, population, hands, store, 4);
 }
 
 

@@ -97,7 +97,11 @@ int stock_price(int baseValue, int supply, int demandSeason);
 // слабейшей нужды лестницы, той же сезонной меркой.
 struct Skills;
 struct Inventory;
-int season_demand_for(const char* itemId, const std::int32_t* needDebt,
+// ОРДИНАЛ КАТАЛОГА, А НЕ СТРОКА (ЗАКОН СЛОВАРЯ И ОРДИНАЛА): эта дверь стоит
+// внутри ведомости (места × товары × день) и внутри каждого рыночного цикла,
+// а рекурсия по рецептам множит её на глубину 4 — строковый ключ здесь был
+// самым глубоким потребителем хеша в симуляции (замер PMU 2026-09-24).
+int season_demand_for(int itemIdx, const std::int32_t* needDebt,
                       int population, const Skills& hands,
                       const Inventory* store);
 

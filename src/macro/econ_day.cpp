@@ -3,12 +3,14 @@
 
 #include "macro/currency.h"   // add_value_in_coins — the treasury seed
 #include "macro/economy.h"    // stock_price — ranking asks THE price law
+#include "macro/faction.h"    // монетная семья фракции — ординалы номиналов
 #include "macro/state.h"      // GameState/Landmark — ведомость пишется в место
 #include "macro/characters.h" // landmark_sheet — анкета места судит спрос
 
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <vector>   // обратный мост ординалов — одна таблица, один резолв
 
 namespace sm {
 
@@ -35,7 +37,6 @@ struct ResolvedRecipe {
 
 struct ResolvedTables {
     ResolvedRecipe recipes[kRecipeCount];
-    int needIdx[kNeedCount];
 };
 
 const ResolvedTables& resolved() {
@@ -46,9 +47,6 @@ const ResolvedTables& resolved() {
             rr.output = commodity_index(kRecipes[i].output);
             rr.outItem = item_index(kRecipes[i].output);
             rr.isMint = std::strcmp(kRecipes[i].output, kMintOutput) == 0;
-        }
-        for (int i = 0; i < kNeedCount; ++i) {
-            r.needIdx[i] = commodity_index(kNeeds[i].commodity);
         }
         return r;
     }();
@@ -77,11 +75,10 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
     // gold, which is exactly the nominal's point. Each nominal consumes its
     // OWN metal through the one craft door; a metal the town lacks simply
     // runs zero batches.
-    int mintRows[3] = {-1, -1, -1};
-    if (mintFactionIdx >= 0) {
-        const char* const* coins = faction_coins(mintFactionIdx);
-        for (int i = 0; i < 3; ++i) mintRows[i] = item_index(coins[2 - i]);
-    }
+    // Строки номиналов — ОРДИНАЛАМИ, резолв один раз на фракцию (ЗАКОН
+    // СЛОВАРЯ п.1: три хеш-поиска на КАЖДОЕ место-день были тиком, а не
+    // проводкой). Таблица выводится из того же реестра фракций.
+    const std::array<int, 3>& mintRows = faction_mint_rows(mintFactionIdx);
     const ResolvedTables& t = resolved();
 
     // РАНЖИРОВАНИЕ РУК (CANON S10, владелец 2026-09-18: «руки идут туда, где
@@ -128,7 +125,7 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
         if (!def || def->value <= 0) return;
         cands[std::size_t(candCount++)] = Cand{
             outIdx, commodity, isMint,
-            season_demand_for(def->id, needDebt, population, hands, &store),
+            season_demand_for(outIdx, needDebt, population, hands, &store),
             std::max(1, item_labour(outIdx) * popLog / 4),
             item_yield(outIdx), def->value};
     };
@@ -194,10 +191,9 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
         if (cd.isMint) {
             // The fact names the METAL spent (part 0's commodity row) — the
             // money-supply counter balance_run watches.
-            const ItemDef* metal =
-                item_def_at(int(item_parts(cd.outIdx)[0].def));
             report(sink, user, EconFact::Kind::Minted,
-                   metal ? commodity_index(metal->id) : -1, units);
+                   commodity_of_item(int(item_parts(cd.outIdx)[0].def)),
+                   units);
         } else {
             report(sink, user, EconFact::Kind::Produced, cd.commodity,
                    units);
@@ -212,11 +208,12 @@ int econ_pay_debt(Inventory& store, std::int32_t* needDebt,
     // долга»): склад платит по счёту, оплаченное СЪЕДЕНО — списано с фактом
     // Consumed. После вызова видимый склад — только излишек, и потому всё
     // видимое свободно для погрузки и оплаты.
-    const ResolvedTables& t = resolved();
+    // Проход по ВСЕМУ словарю, а не по списку нужд: дверь гашения не обязана
+    // знать, кто и по какому закону выставил счёт — она платит по тому, что
+    // выставлено (ЗАКОН АГНОСТИЧНОСТИ). Строка без счёта стоит нулём и
+    // пропускается первой же проверкой.
     int paid = 0;
-    for (int i = 0; i < kNeedCount; ++i) {
-        const int idx = t.needIdx[i];
-        if (idx < 0) continue;
+    for (int idx = 0; idx < kCommodityCount; ++idx) {
         const std::int32_t debt = needDebt[idx];
         if (debt <= 0) continue;
         const int have = store.count_of(commodity_item_index(idx));
@@ -234,12 +231,10 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
                                   int population,
                                   EconFactSink sink, void* user) {
     ConsumeOutcome out{};
-    const ResolvedTables& t = resolved();
     if (population <= 0) {
-        // Мёртвое место — не должник: счёт закрывается вместе с жизнью.
-        for (int i = 0; i < kNeedCount; ++i) {
-            if (t.needIdx[i] >= 0) needDebt[t.needIdx[i]] = 0;
-        }
+        // Мёртвое место — не должник: счёт закрывается вместе с жизнью, и
+        // закрывается ЦЕЛИКОМ — проход по словарю, а не по списку нужд.
+        for (int c = 0; c < kCommodityCount; ++c) needDebt[c] = 0;
         out.wellbeing = 0.0f;
         return out;
     }
@@ -252,23 +247,27 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
     // СЕГОДНЯШНЕМУ населению: с выставления счёта оно дрейфует ростом, но
     // доля читается на той же границе, где выставится новый счёт.
     int deaths = 0;
-    int comfortDemand = 0;
-    int unmetComfort = 0;
-    for (int i = 0; i < kNeedCount; ++i) {
-        const int idx = t.needIdx[i];
-        if (idx < 0) continue;
-        const std::int32_t remaining = needDebt[idx];
-        if (i == kHungerNeedRow) {
-            // Душевой сезон голодной строки = kDaysPerSeason юнитов
-            // (popPerUnitDay == 1 по построению, static_assert в econ_day.h).
+    // ДОЛЯ КОМФОРТА МЕРЯЕТСЯ СТОИМОСТЬЮ, А НЕ ШТУКАМИ (вердикт владельца
+    // 2026-09-26, подтверждён прямо). Бюджет горожанина задан в стоимости,
+    // значит и «сколько из него не покрыто» — стоимость: в штуках кирпич
+    // весил бы столько же, сколько статуя, и рост судил бы не то.
+    long long comfortValue = 0;
+    long long unmetValue = 0;
+    const int hungerOrd = hunger_commodity_ordinal();
+    for (int c = 0; c < kCommodityCount; ++c) {
+        const std::int32_t remaining = needDebt[c];
+        if (c == hungerOrd) {
+            // Душевой сезон голодной строки = kDaysPerSeason юнитов.
             deaths = std::min(population, int(remaining / kDaysPerSeason));
-        } else {
-            const int demand = season_need_units(population,
-                                                 kNeeds[i].popPerUnitDay);
-            if (demand <= 0) continue;
-            comfortDemand += demand;
-            unmetComfort += remaining < demand ? int(remaining) : demand;
+            continue;
         }
+        const int demand = season_comfort_units(population, c);
+        if (demand <= 0) continue;
+        const ItemDef* def = item_def_at(commodity_item_index(c));
+        const long long unit = def ? def->value : 0;
+        comfortValue += (long long)demand * unit;
+        unmetValue += (long long)(remaining < demand ? remaining : demand)
+                      * unit;
     }
     out.starvedPop = deaths;
     if (deaths > 0) {
@@ -282,18 +281,17 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
     // вторая кара: мёртвых уже не вернуть, а живые просто не плодятся,
     // пока не прокормятся.
     const float foodShare = float(population - deaths) / float(population);
-    const float comfortShare = comfortDemand > 0
-        ? 1.0f - float(unmetComfort) / float(comfortDemand)
+    const float comfortShare = comfortValue > 0
+        ? 1.0f - float(unmetValue) / float(comfortValue)
         : 1.0f;
     out.wellbeing = foodShare * comfortShare;
     // 2. НОВЫЙ СЧЁТ — по населению ПОСЛЕ смертей, перезаписью: старый долг
     // не переносится (взыскали — выставили новый).
     const int popAfter = population - deaths;
-    for (int i = 0; i < kNeedCount; ++i) {
-        const int idx = t.needIdx[i];
-        if (idx < 0) continue;
-        needDebt[idx] = std::int32_t(
-            season_need_units(popAfter, kNeeds[i].popPerUnitDay));
+    for (int c = 0; c < kCommodityCount; ++c) {
+        needDebt[c] = std::int32_t(c == hungerOrd
+            ? season_hunger_units(popAfter)
+            : season_comfort_units(popAfter, c));
     }
     // 3. НЕМЕДЛЕННОЕ ГАШЕНИЕ: посевной амбар и прошлый излишек платят по
     // счёту в ту же минуту — та же дверь, что у прихода.
@@ -329,6 +327,100 @@ int commodity_item_index(int commodityIdx) {
         ? kMap[std::size_t(commodityIdx)] : -1;
 }
 
+// Обратный конец того же моста, О(1) по каталожному ординалу. Резолв один раз
+// за процесс (таблица каталога неизменна), дальше — чтение массива: строковый
+// поиск товара по строке каталога был в топ-10 самых тяжёлых вызовов
+// симуляции (замер PMU 2026-09-24).
+const std::array<int, 3>& faction_mint_rows(int factionIdx) {
+    static const std::vector<std::array<int, 3>> kRows = [] {
+        // +1 слот: последний — имперская семья, ответ для индекса вне реестра
+        // (ровно fallback `faction_coins`, не второй закон).
+        std::vector<std::array<int, 3>> rows(std::size_t(kFactionCount) + 1);
+        for (int f = 0; f <= kFactionCount; ++f) {
+            const char* const* coins = faction_coins(f);
+            for (int i = 0; i < 3; ++i) {
+                rows[std::size_t(f)][std::size_t(i)] =
+                    item_index(coins[2 - i]);
+            }
+        }
+        return rows;
+    }();
+    static const std::array<int, 3> kNoMint{-1, -1, -1};
+    if (factionIdx < 0) return kNoMint;
+    const int slot = factionIdx < kFactionCount ? factionIdx : kFactionCount;
+    return kRows[std::size_t(slot)];
+}
+
+// ── ФОРМУЛА НУЖДЫ: ОДНА ДВЕРЬ, ТРИ ВОПРОСА (M-137) ───────────────────────
+
+bool commodity_is_comfort(int commodityIdx) {
+    const ItemDef* d = item_def_at(commodity_item_index(commodityIdx));
+    return d && d->type == ItemType::Goods && d->value > 0;
+}
+
+int comfort_row_count() {
+    static const int kCount = [] {
+        int n = 0;
+        for (int c = 0; c < kCommodityCount; ++c) {
+            if (commodity_is_comfort(c)) ++n;
+        }
+        return n;
+    }();
+    return kCount;
+}
+
+int season_comfort_units(int population, int commodityIdx) {
+    if (population <= 0) return 0;
+    if (!commodity_is_comfort(commodityIdx)) return 0;
+    const int rows = comfort_row_count();
+    if (rows <= 0) return 0;
+    const ItemDef* d = item_def_at(commodity_item_index(commodityIdx));
+    // ОДНО деление на всё: население × сезон × бюджет / (строк × стоимость).
+    const long long units = (long long)population * kDaysPerSeason
+                          * kComfortValuePerPopDay
+                          / ((long long)rows * d->value);
+    return int(units);
+}
+
+int hunger_commodity_ordinal() {
+    static const int kOrd = [] {
+        int found = -1, count = 0;
+        for (int c = 0; c < kCommodityCount; ++c) {
+            const ItemDef* d = item_def_at(commodity_item_index(c));
+            if (!d || d->type != ItemType::Food) continue;
+            if (found < 0) found = c;
+            ++count;
+        }
+        // Ровно одна пищевая строка словаря — закон, прибитый static_assert'ом
+        // в items.cpp (там каталог виден компилятору). Здесь fail-closed на
+        // случай, если словарь и каталог разъедутся правкой одного из них.
+        return count == 1 ? found : -1;
+    }();
+    return kOrd;
+}
+
+int hunger_item_index() { return commodity_item_index(hunger_commodity_ordinal()); }
+
+int recipe_out_item(int recipeRow) {
+    return (recipeRow >= 0 && recipeRow < kRecipeCount)
+        ? resolved().recipes[recipeRow].outItem : -1;
+}
+
+int commodity_of_item(int itemIdx) {
+    static const std::vector<std::int16_t> kBack = [] {
+        std::vector<std::int16_t> b(item_catalog().size(), -1);
+        for (int i = 0; i < kCommodityCount; ++i) {
+            const int row = commodity_item_index(i);
+            if (row >= 0 && row < int(b.size())) {
+                b[std::size_t(row)] = std::int16_t(i);
+            }
+        }
+        return b;
+    }();
+    return (itemIdx >= 0 && itemIdx < int(kBack.size()))
+        ? int(kBack[std::size_t(itemIdx)]) : -1;
+}
+
 void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
                              int factionIdx, std::uint32_t seedSalt) {
     if (population <= 0) return;
@@ -341,15 +433,17 @@ void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
     static_assert(kSeedVitalDays == kDaysPerSeason,
                   "the seed larder must survive the first season window");
     const int needDays = isCity ? 32 : 8;   // a season / days
-    for (int i = 0; i < kNeedCount; ++i) {
-        const int idx = commodity_index(kNeeds[i].commodity);
-        if (idx < 0) continue;
-        // ГОЛОДНАЯ строка — одной дверью (kHungerNeedRow), а не вторым
-        // выводом того же предиката.
-        const int qty = (i == kHungerNeedRow)
+    const int hungerOrd = hunger_commodity_ordinal();
+    for (int c = 0; c < kCommodityCount; ++c) {
+        // ГОЛОД — своя система (сезон харча), комфорт — доля бюджета за
+        // столько дней, сколько живёт амбар этого рода места. Долю считает
+        // ОДНА дверь (season_comfort_units), поэтому «сколько дней» осталось
+        // единственным числом редактора здесь.
+        const int qty = c == hungerOrd
             ? population * kSeedVitalDays
-            : (population * needDays) / kNeeds[i].popPerUnitDay;
-        if (qty > 0) inv.add(kNeeds[i].commodity, qty);
+            : (season_comfort_units(population, c) * needDays)
+                  / kDaysPerSeason;
+        if (qty > 0) inv.add_of(commodity_item_index(c), qty);
     }
     // Raw buffers per head — {commodity, units·population >> shift}. A
     // Village, whose whole business is raw, holds double.
@@ -400,8 +494,8 @@ int publish_landmark_ledgers(GameState& gs, int day) {
         if (lm.type == LandmarkType::None) continue;
         const Skills& hands = landmark_sheet(lm.type).skills;
         for (int i = 0; i < kCommodityCount; ++i) {
-            const char* id = kCommodities[i].id;
-            const ItemDef* def = item_def(id);
+            const int id = commodity_item_index(i);
+            const ItemDef* def = item_def_at(id);
             const int base = def ? def->value : 0;
             if (base <= 0) continue;
             // ТА ЖЕ кривая, которой торгуется сделка: склад точный, спрос —
@@ -410,7 +504,7 @@ int publish_landmark_ledgers(GameState& gs, int day) {
                                                  souls_home(lm), hands,
                                                  &lm.inventory);
             lm.ledger.price[std::size_t(i)] =
-                stock_price(base, lm.inventory.count(id), demand);
+                stock_price(base, lm.inventory.count_of(id), demand);
             lm.ledger.demand[std::size_t(i)] = demand;
         }
         lm.ledger.day = day;

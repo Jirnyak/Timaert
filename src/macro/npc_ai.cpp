@@ -136,21 +136,23 @@ void deliver_mounts_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
     if (moved) refresh_squad_carry(*ctx.mw.world, self);
 }
 
-// Empty the gatherer's own bag of `id` into his home store — the shared
-// arrival half of every honest work-loop (woodcutter, farmer).
+// Empty the gatherer's own bag of the catalog row `defIdx` into his home
+// store — the shared arrival half of every honest work-loop (woodcutter,
+// farmer). ОРДИНАЛ, А НЕ СТРОКА (ЗАКОН СЛОВАРЯ): строка цели переводится в
+// ординал один раз рядом со своей таблицей (gatherer_item_index).
 void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
-                      const TickContext& ctx, const char* id) {
+                      const TickContext& ctx, int defIdx) {
     if (!ctx.mw.world) return;
     auto* bag = body_state<ecs::NpcInventory>(ctx.mw.world->reg, self);
     if (!bag) return;
-    const int n = bag->inv.count(id);
+    const int n = bag->inv.count_of(defIdx);
     Inventory* store = home_inventory(rt, ctx);
     // Credit BEFORE debit (CANON S10 (бывший economy.md)'s conservation law): the store accepts
     // first, the bag pays only what was accepted — a full store leaves the
     // haul ON THE GATHERER'S BACK instead of burning it. (Near-unreachable
     // with 1024 slots and stack-merging, but the law is the law.)
-    if (n > 0 && store && store->add(id, n)) {
-        bag->inv.remove(id, n);
+    if (n > 0 && store && store->add_of(defIdx, n)) {
+        bag->inv.remove_of(defIdx, n);
         // The arrival IS the gather flow: the pure econ steps announce their
         // own facts, but the agent work-loop lands its haul here — without
         // this fact every *_gathered column of the дубль-прогон reads zero
@@ -158,7 +160,7 @@ void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
         if (ctx.mw.econFacts) {
             EconFact f{};
             f.kind = EconFact::Kind::Gathered;
-            f.commodity = commodity_index(id);
+            f.commodity = commodity_of_item(defIdx);
             f.amount = n;
             f.landmarkId = rt.homeSettlementId;
             ctx.mw.econFacts(ctx.mw.econFactsUser, f);
@@ -766,6 +768,31 @@ constexpr GathererDef kGathererDefs[] = {
 constexpr int kGathererGoalCount =
     int(sizeof(kGathererDefs) / sizeof(kGathererDefs[0]));
 
+// ОРДИНАЛ ВЫХОДА СТРОКИ ЦЕЛИ — РЕЗОЛВ ОДИН РАЗ, РЯДОМ СО СВОЕЙ ТАБЛИЦЕЙ
+// (ЗАКОН СЛОВАРЯ И ОРДИНАЛА п.1: строка живёт на границе, внутри мира — число;
+// образец — `r.needIdx` в econ_day.cpp). -1 у строки, чей выход СУЩЕСТВО
+// (`commodity == nullptr`): у него нет каталожной строки товара, он встаёт
+// душой в ростер. Резолв ленивый, потому что каталог виден только своей
+// единице трансляции — `constexpr` тут недостижим, а вывод из ТОЙ ЖЕ строки
+// сохранён: разъехаться с таблицей эта колонка не может по построению.
+int gatherer_item_index(int goal) {
+    static const std::array<int, std::size_t(kGathererGoalCount)> kOut = [] {
+        std::array<int, std::size_t(kGathererGoalCount)> m{};
+        for (int g = 0; g < kGathererGoalCount; ++g) {
+            m[std::size_t(g)] = kGathererDefs[g].commodity
+                ? item_index(kGathererDefs[g].commodity) : -1;
+        }
+        return m;
+    }();
+    return (goal >= 0 && goal < kGathererGoalCount)
+        ? kOut[std::size_t(goal)] : -1;
+}
+
+// Та же строка цели ординалом ТОВАРА — для фактов и прейскуранта.
+int gatherer_commodity_index(int goal) {
+    return commodity_of_item(gatherer_item_index(goal));
+}
+
 // The crew's OWN goal row, named by its errand — nullptr when the errand is
 // not a gather (no goal = no conjured work, the fail-closed rule).
 const GathererDef* gatherer_def_of(const ecs::MacroNpcRuntime& rt) {
@@ -981,7 +1008,7 @@ bool find_worksite(const GathererDef& def, const TickContext& ctx,
 bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
                      const ecs::MacroNpcRuntime& rt,
                      const ecs::Pools& pools);
-int haul_between(Inventory& from, Depot to, const char* id,
+int haul_between(Inventory& from, Depot to, int defIdx,
                  int maxUnits, float capacityLeftKg);
 
 // Приёмник-МЕСТО (CANON S10): склад + счёт + канал фактов мира — дверь
@@ -1011,6 +1038,9 @@ void ai_gatherer(entt::entity self, MacroPos& p,
     // строгое разделение, которого требует замысел.)
     const GathererDef* def = gatherer_def_of(rt);
     if (!def) { ai_home_wanderer(p, rt, pools, ctx); return; }
+    // Выход строки цели ОРДИНАЛОМ, один резолв на таблицу (ЗАКОН СЛОВАРЯ):
+    // -1 = выход существо, у него каталожной строки товара нет.
+    const int outIdx = gatherer_item_index(int(rt.errandObject));
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -1026,10 +1056,10 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                     : nullptr) {
                 // (a CREATURE yield rides the roster, not the bag — there
                 // is no «full back» to send home early)
-                const ItemDef* idef = item_def(def->commodity);
+                const ItemDef* idef = item_def_at(outIdx);
                 const float unitKg =
                     idef && idef->weight > 0.0f ? idef->weight : 1.0f;
-                if (bagIdle->inv.count(def->commodity) > 0
+                if (bagIdle->inv.count_of(outIdx) > 0
                     && rt.carryCap - inventory_weight(bagIdle->inv)
                            < unitKg) {
                     rt.targetX = home.x;
@@ -1153,7 +1183,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // с 2400 кг серебра на спине в 2145 кг, сид 7).
                 int carryMax = have;
                 if (bag && def->rosterYield == NPCType::Count) {
-                    const ItemDef* idef = item_def(def->commodity);
+                    const ItemDef* idef = item_def_at(outIdx);
                     const float unitKg =
                         idef && idef->weight > 0.0f ? idef->weight : 1.0f;
                     const float freeKg =
@@ -1195,8 +1225,13 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // Credit BEFORE debit (CANON S5): the field pays only what
                 // the OWN bag actually took — a bagless walker, or a bag
                 // with no room, drains nothing and writes no Drained fact.
-                else if (take > 0 && bag
-                         && bag->inv.add(def->commodity, take)) {
+                // `outIdx >= 0` сказано ВСЛУХ: ординальная дверь `add_of`
+                // на -1 отвечает «положил» молча (ничего не положив), и без
+                // этой проверки строка без выхода-товара опустошала бы поле
+                // в пустоту. Строковая дверь на этом месте падала в UB
+                // (std::string из nullptr) — тот же дефект, только громче.
+                else if (take > 0 && bag && outIdx >= 0
+                         && bag->inv.add_of(outIdx, take)) {
                     resource_field_apply(mw, def->row, tx, ty, -take);
                     // The cycle is PAID the moment it produced — through
                     // the same fractional carry the march charges
@@ -1238,7 +1273,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                     : nullptr;
                 bool backsFull = false;
                 if (bagNow && def->rosterYield == NPCType::Count) {
-                    const ItemDef* idef = item_def(def->commodity);
+                    const ItemDef* idef = item_def_at(outIdx);
                     const float unitKg =
                         idef && idef->weight > 0.0f ? idef->weight : 1.0f;
                     backsFull =
@@ -1271,8 +1306,8 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // ОДИН ПРИХОД, ДВА КОНТЕЙНЕРА (S25): груз — на склад,
                 // лишние спины — в стойло. У существа нет товарной колонки,
                 // поэтому сумка его и не видит.
-                if (def->commodity != nullptr)
-                    deliver_bag_home(self, rt, ctx, def->commodity);
+                if (outIdx >= 0)
+                    deliver_bag_home(self, rt, ctx, outIdx);
                 deliver_mounts_home(self, rt, ctx);
             }
             rt.state = std::uint8_t(NS::Idle);
@@ -1319,7 +1354,7 @@ const std::array<int, std::size_t(kCommodityCount)>& value_dense_order() {
         std::array<int, std::size_t(kCommodityCount)> order{};
         for (int i = 0; i < kCommodityCount; ++i) order[std::size_t(i)] = i;
         const auto density = [](int i) {
-            const ItemDef* d = item_def(kCommodities[i].id);
+            const ItemDef* d = item_def_at(commodity_item_index(i));
             if (!d || d->value <= 0) return 0.0f;
             return float(d->value) / (d->weight > 0.0f ? d->weight : 1.0f);
         };
@@ -1334,19 +1369,19 @@ const std::array<int, std::size_t(kCommodityCount)>& value_dense_order() {
 // цене относительно стоимости, и список решал бы за него, что бывает товаром.)
 
 
-int haul_between(Inventory& from, Depot to, const char* id,
+int haul_between(Inventory& from, Depot to, int defIdx,
                  int maxUnits, float capacityLeftKg) {
     if (maxUnits <= 0 || capacityLeftKg <= 0.0f) return 0;
-    const ItemDef* def = item_def(id);
+    const ItemDef* def = item_def_at(defIdx);
     const float unitKg = def && def->weight > 0.0f ? def->weight : 1.0f;
     const int byWeight = int(capacityLeftKg / unitKg);
-    const int n = std::min({maxUnits, byWeight, from.count(id)});
+    const int n = std::min({maxUnits, byWeight, from.count_of(defIdx)});
     if (n <= 0) return 0;
     // Credit before debit (CANON S5): a hold with no free slot refuses, the
     // cargo stays where it was, and "units moved" is never said of goods
     // that evaporated between two bags.
-    if (!to.inv.add(id, n)) return 0;
-    from.remove(id, n);
+    if (!to.inv.add_of(defIdx, n)) return 0;
+    from.remove_of(defIdx, n);
     // Приход в МЕСТО гасит долг СРАЗУ (CANON S10): упавшее по счёту
     // съедено с фактом Consumed, на полке остаётся излишек. Вернувшееся n
     // честно: сделка/дань состоялась — судьба груза дальше дело приёмника.
@@ -1695,10 +1730,13 @@ long long plan_home_load_(Inventory& store, const std::int32_t* needDebt,
         if (!d) continue;
         int count = int(sl.count);
         // Сезонная нужда дома неприкосновенна — вывозится только излишек.
-        if (commodity_index(d->id) >= 0) {
-            const int have = store.count(d->id);
-            const int demand = season_demand_for(d->id, needDebt, population,
-                                                 site, &store);
+        // Ординал уже В РУКАХ: слот несёт `sl.def`, и мост товара читается
+        // обратным концом (commodity_of_item) — строка каталога в тик не
+        // заходит вовсе.
+        if (commodity_of_item(int(sl.def)) >= 0) {
+            const int have = store.count_of(int(sl.def));
+            const int demand = season_demand_for(int(sl.def), needDebt,
+                                                 population, site, &store);
             const int surplus = have - demand;
             if (surplus <= 0) continue;
             if (count > surplus) count = surplus;
@@ -1712,7 +1750,7 @@ long long plan_home_load_(Inventory& store, const std::int32_t* needDebt,
         planned += (long long)fit * bestV;
         used += float(fit) * bestW;
         if (bag)
-            haul_between(store, *bag, d->id, fit,
+            haul_between(store, *bag, int(sl.def), fit,
                          capKg - inventory_weight(*bag));
     }
     return planned;
@@ -1876,8 +1914,8 @@ void ai_vendor(entt::entity self, MacroPos& p,
             const bool haveLedger = homeLm->ledger.published();
             long long homeValue = 0;
             for (int c = 0; c < kCommodityCount; ++c) {
-                const char* id = kCommodities[c].id;
-                const ItemDef* d = item_def(id);
+                const int id = commodity_item_index(c);
+                const ItemDef* d = item_def_at(id);
                 const int base = d ? d->value : 0;
                 homePrice[c] = haveLedger
                                    ? homeLm->ledger.price[std::size_t(c)]
@@ -1885,10 +1923,10 @@ void ai_vendor(entt::entity self, MacroPos& p,
                 const int lack =
                     haveLedger
                         ? homeLm->ledger.demand[std::size_t(c)]
-                              - homeLm->inventory.count(id)
+                              - homeLm->inventory.count_of(id)
                         : 0;
                 homeLack[c] = lack > 0 ? lack : 0;
-                cargo[c] = bag->inv.count(id);
+                cargo[c] = bag->inv.count_of(id);
                 // ЗАЯВКА «ДОМОЙ» — «что уже в трюме стоит ДЛЯ НУЖДЫ ДОМА»,
                 // а не вся стоимость груза: серебро, которого дому не надо,
                 // домой не торопится. Оттого числитель растёт ровно по мере
@@ -1967,7 +2005,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
                 // rotation dissolves the crew at dawn.
                 for (int i = 0; i < kCommodityCount; ++i) {
                     haul_between(bag->inv, depot_(*homeLm, ctx.mw),
-                                 kCommodities[i].id, 1 << 30, 1e9f);
+                                 commodity_item_index(i), 1 << 30, 1e9f);
                 }
                 transfer_value_dense(bag->inv, depot_(*homeLm, ctx.mw),
                                inventory_value(bag->inv));
@@ -2083,9 +2121,9 @@ void ai_collector(entt::entity self, MacroPos& p,
             long long urgency[kCommodityCount];
             for (int c = 0; c < kCommodityCount; ++c) {
                 order[c] = c;
-                const char* cid = kCommodities[c].id;
+                const int cid = commodity_item_index(c);
                 const int lk = homeLm->ledger.demand[std::size_t(c)]
-                               - homeLm->inventory.count(cid);
+                               - homeLm->inventory.count_of(cid);
                 urgency[c] = lk > 0
                     ? (long long)lk
                           * homeLm->ledger.price[std::size_t(c)]
@@ -2098,12 +2136,12 @@ void ai_collector(entt::entity self, MacroPos& p,
                     std::swap(order[b], order[b - 1]);
             for (int oi = 0; oi < kCommodityCount && owed > 0; ++oi) {
                 const int c = order[oi];
-                const char* id = kCommodities[c].id;
-                const ItemDef* d = item_def(id);
+                const int id = commodity_item_index(c);
+                const ItemDef* d = item_def_at(id);
                 const int base = d ? d->value : 0;
                 if (base <= 0) continue;
                 const int lack = homeLm->ledger.demand[std::size_t(c)]
-                                 - homeLm->inventory.count(id);
+                                 - homeLm->inventory.count_of(id);
                 if (lack <= 0) continue;
                 const long long affordable = owed / base;
                 if (affordable <= 0) continue;
@@ -2146,7 +2184,7 @@ void ai_collector(entt::entity self, MacroPos& p,
         if (at_target(p, rt, ctx)) {
             for (int i = 0; i < kCommodityCount; ++i)
                 haul_between(bag->inv, depot_(*homeLm, ctx.mw),
-                             kCommodities[i].id, 1 << 30, 1e9f);
+                             commodity_item_index(i), 1 << 30, 1e9f);
             transfer_value_dense(bag->inv, depot_(*homeLm, ctx.mw),
                                  inventory_value(bag->inv));
             rt.state = std::uint8_t(NS::Idle);
@@ -3208,8 +3246,8 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
     const Depot msd(market.inventory, market.needDebt, sink, user);
     const Skills& site = landmark_sheet(market.type).skills;
     for (int i = 0; i < kCommodityCount; ++i) {
-        const char* id = kCommodities[i].id;
-        const ItemDef* def = item_def(id);
+        const int id = commodity_item_index(i);
+        const ItemDef* def = item_def_at(id);
         const int base = def ? def->value : 0;
         if (base <= 0) continue;
         const int demand = season_demand_for(id, market.needDebt,
@@ -3217,11 +3255,11 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
         // Спрос уже СЕЗОННЫЙ (остаток счёта + производный) — прежний
         // множитель горизонта умер вместе с календарём кривой.
         const int need = demand;
-        const int have = ms.count(id);
+        const int have = ms.count_of(id);
         if (need > have) {
             // SELL into the shortage, up to the market's own seasonal need,
             // bounded by what its whole store can PAY (max_affordable_lot_).
-            int n = std::min(hold.count(id), need - have);
+            int n = std::min(hold.count_of(id), need - have);
             if (n <= 0) continue;
             n = max_affordable_lot_(base, have, demand, /*selling=*/true,
                                     inventory_value(ms), n);
@@ -3279,20 +3317,20 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
     // Рынок — МЕСТО (CANON S10): проданное гасит его долг сразу.
     const Depot msd(market.inventory, market.needDebt, sink, user);
     const Skills& site = landmark_sheet(market.type).skills;
-    const auto base_value = [](const char* id) {
-        const ItemDef* d = item_def(id);
+    const auto base_value = [](int defIdx) {
+        const ItemDef* d = item_def_at(defIdx);
         return d ? d->value : 0;
     };
     // SELL the whole load first — the coin below buys the home's lacks.
     for (int i = 0; i < kCommodityCount; ++i) {
-        const char* id = kCommodities[i].id;
+        const int id = commodity_item_index(i);
         const int base = base_value(id);
         if (base <= 0) continue;
-        int n = bag.count(id);
+        int n = bag.count_of(id);
         if (n <= 0) continue;
         const int demand = season_demand_for(id, market.needDebt,
                                              souls_home(market), site, &ms);
-        const int have = ms.count(id);
+        const int have = ms.count_of(id);
         // Affordability by the exact door (max_affordable_lot_), as at the
         // station: the lot pays the post-trade shelf, so a famine ceiling
         // price never blanks a sale the market can genuinely afford.
@@ -3338,11 +3376,11 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         Lot lots[std::size_t(kCommodityCount)];
         int lotCount = 0;
         for (int i = 0; i < kCommodityCount; ++i) {
-            const char* id = kCommodities[i].id;
-            const ItemDef* def = item_def(id);
+            const int id = commodity_item_index(i);
+            const ItemDef* def = item_def_at(id);
             const int base = def ? def->value : 0;
             if (base <= 0) continue;
-            const int have = ms.count(id);
+            const int have = ms.count_of(id);
             if (have <= 0) continue;
             const int demand = season_demand_for(id, market.needDebt,
                                                  souls_home(market), site,
@@ -3373,13 +3411,13 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         });
         for (int li = 0; li < lotCount; ++li) {
             const int i = lots[li].i;
-            const char* id = kCommodities[i].id;
-            const ItemDef* def = item_def(id);
+            const int id = commodity_item_index(i);
+            const ItemDef* def = item_def_at(id);
             const int base = def->value;
             const int demand = season_demand_for(id, market.needDebt,
                                                  souls_home(market), site,
                                                  &ms);
-            const int have = ms.count(id);
+            const int have = ms.count_of(id);
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
             int n = std::min({have, lots[li].homeCap,
                               int((capacityKg - inventory_weight(bag)) / kg)});
@@ -3454,7 +3492,8 @@ int provision_squad(Inventory& store, Inventory& bag, int soldiers,
     const int portion = soldiers * days;
     // The haul door already speaks credit-before-debit and respects the
     // carry the loaf must ride on.
-    return haul_between(store, bag, hunger_item_id(), portion, freeCarryKg);
+    return haul_between(store, bag, hunger_item_index(), portion,
+                        freeCarryKg);
 }
 
 // ЗДЕСЬ СТОЯЛ `squad_season_needs` — ВТОРОЙ ЗАКОН СОДЕРЖАНИЯ, И ОН УМЕР
@@ -3818,7 +3857,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // Leftovers home: cargo by the haul door, coin by the wallet
             // door — a dissolved crew owns nothing (CANON S5, the loan law).
             for (int c = 0; c < kCommodityCount; ++c)
-                haul_between(bag->inv, depot_(lm, mw), kCommodities[c].id,
+                haul_between(bag->inv, depot_(lm, mw), commodity_item_index(c),
                              1 << 30, 1e9f);
             transfer_value_dense(bag->inv, depot_(lm, mw),
                                  inventory_value(bag->inv));
@@ -3895,7 +3934,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         const int owed = boardOrd >= 0 ? roster->needDebt[boardOrd] : 0;
         const int haveBoard = bag->inv.count_of(hunger_item_index());
         if (owed > haveBoard) {
-            haul_between(lm.inventory, bag->inv, hunger_item_id(),
+            haul_between(lm.inventory, bag->inv, hunger_item_index(),
                          owed - haveBoard, 1e9f);
         }
         const std::int64_t haveCoin = inventory_value(bag->inv);
@@ -4102,12 +4141,13 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         1, field_pool(s, afield[row], standingSouls[row]));
                     unitPrice = stock_price(base, herd, wanted);
                 } else {
-                    const ItemDef* idef = item_def(gd.commodity);
+                    const int goalItem = gatherer_item_index(g);
+                    const ItemDef* idef = item_def_at(goalItem);
                     const int base = idef ? idef->value : 0;
                     if (base <= 0) continue;
-                    const int have = s.inventory.count(gd.commodity);
+                    const int have = s.inventory.count_of(goalItem);
                     const int demand = season_demand_for(
-                        gd.commodity, s.needDebt, souls_home(s), homeSite,
+                        goalItem, s.needDebt, souls_home(s), homeSite,
                         &s.inventory);
                     unitPrice = stock_price(base, have, demand);
                     // ЛУЧШАЯ ИЗВЕСТНАЯ ЦЕНА, А НЕ ТОЛЬКО СВОЯ (владелец,
@@ -4134,7 +4174,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     if (const Landmark* suz =
                             landmark_by_id(gs, suzerain_of(s));
                         suz && suz->ledger.published()) {
-                        const int ci = commodity_index(gd.commodity);
+                        const int ci = gatherer_commodity_index(g);
                         if (ci >= 0) {
                             const int there = suz->ledger.price[std::size_t(ci)];
                             if (there > unitPrice) unitPrice = there;
@@ -4159,7 +4199,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // наконец сравнимы в одной рулетке. Назначенного `1 +`
                 // больше нет: делитель есть настоящая длина рейса.
                 const ItemDef* gdef =
-                    gd.commodity ? item_def(gd.commodity) : nullptr;
+                    item_def_at(gatherer_item_index(g));
                 const float unitKg =
                     gdef && gdef->weight > 0.0f ? gdef->weight : 1.0f;
                 const float perSoul = gd.rosterYield != NPCType::Count
@@ -4240,8 +4280,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 float freeKg = carryPerSoul;
                 for (int oi = 0; oi < kCommodityCount && freeKg > 0.0f; ++oi) {
                     const int c = value_dense_order()[std::size_t(oi)];
-                    const char* id = kCommodities[c].id;
-                    const ItemDef* d = item_def(id);
+                    const int id = commodity_item_index(c);
+                    const ItemDef* d = item_def_at(id);
                     const int base = d ? d->value : 0;
                     if (base <= 0) continue;
                     const float kg = d->weight > 0.0f ? d->weight : 1.0f;
@@ -4249,7 +4289,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         const long long cap = (long long)(freeKg / kg);
                         return want < cap ? want : cap;
                     };
-                    const int have = s.inventory.count(id);
+                    const int have = s.inventory.count_of(id);
                     // Спрос уже СЕЗОННЫЙ (остаток счёта + производный).
                     const int demand = season_demand_for(id, s.needDebt,
                                                          souls_home(s),
@@ -4288,11 +4328,11 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // грузом. Без капа пустая полка города весила миллионы и
                 // глушила и страх, и добычу (измерено, guard_patrol).
                 for (int c = 0; c < kCommodityCount && purse > 0; ++c) {
-                    const char* id = kCommodities[c].id;
-                    const ItemDef* d = item_def(id);
+                    const int id = commodity_item_index(c);
+                    const ItemDef* d = item_def_at(id);
                     const int base = d ? d->value : 0;
                     if (base <= 0) continue;
-                    const int have = s.inventory.count(id);
+                    const int have = s.inventory.count_of(id);
                     const int demand = season_demand_for(id, s.needDebt,
                                                          souls_home(s),
                                                          homeSite,
@@ -4320,11 +4360,11 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // продавца, и голодный богатый город остался бы с одним
                 // корованом — измерено 2026-09-22).
                 for (int c = 0; c < kCommodityCount; ++c) {
-                    const char* id = kCommodities[c].id;
-                    const ItemDef* d = item_def(id);
+                    const int id = commodity_item_index(c);
+                    const ItemDef* d = item_def_at(id);
                     const int base = d ? d->value : 0;
                     if (base <= 0) continue;
-                    const int have = s.inventory.count(id);
+                    const int have = s.inventory.count_of(id);
                     const int demand = season_demand_for(id, s.needDebt,
                                                          souls_home(s),
                                                          homeSite,

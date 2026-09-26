@@ -324,13 +324,11 @@ int main(int argc, char** argv) {
         // needDebt индексируется ТОВАРНЫМ ординалом (state.h) — берём его у
         // той же таблицы лестницы, которую читает econ_debt_boundary, а не
         // переписываем её здесь второй копией (закон тестов §5).
-        const int hungerOrd = sm::commodity_index(sm::hunger_item_id());
-        int comfortOrd[sm::kNeedCount] = {};
+        const int hungerOrd = sm::hunger_commodity_ordinal();
+        int comfortOrd[sm::kCommodityCount] = {};
         int comfortOrdCount = 0;
-        for (int i = 0; i < sm::kNeedCount; ++i) {
-            if (i == sm::kHungerNeedRow) continue;
-            const int ord = sm::commodity_index(sm::kNeeds[i].commodity);
-            if (ord >= 0) comfortOrd[comfortOrdCount++] = ord;
+        for (int c = 0; c < sm::kCommodityCount; ++c) {
+            if (sm::commodity_is_comfort(c)) comfortOrd[comfortOrdCount++] = c;
         }
         std::uint32_t ringCursor = gs.chronicle.nextSeq;
 

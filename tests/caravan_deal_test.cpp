@@ -73,10 +73,10 @@ int main() {
     const int breadDebtBefore =
         city.needDebt[sm::commodity_index("food")];
     const int breadDemand = sm::season_demand_for(
-        "food", city.needDebt, city.population,
+        sm::item_index("food"), city.needDebt, city.population,
         sm::landmark_sheet(sm::LandmarkType::City).skills, &city.inventory);
     const int woodDemand = sm::season_demand_for(
-        "wood", city.needDebt, city.population,
+        sm::item_index("wood"), city.needDebt, city.population,
         sm::landmark_sheet(sm::LandmarkType::City).skills, &city.inventory);
 
     // РАВНЫЕ АНКЕТЫ (S25): обе стороны называют одну торговую силу, значит

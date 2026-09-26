@@ -2087,7 +2087,7 @@ namespace sm::ui
                             stock_price(value_of(ref),
                                         s->inventory.count_of(int(ref.def)) - n,
                                         season_demand_for(
-                                            def.id, s->needDebt,
+                                            int(ref.def), s->needDebt,
                                             s->population,
                                             landmark_sheet(
                                                 s->type).skills,
@@ -2102,7 +2102,7 @@ namespace sm::ui
                             stock_price(value_of(ref),
                                         s->inventory.count_of(int(ref.def)) + n,
                                         season_demand_for(
-                                            def.id, s->needDebt,
+                                            int(ref.def), s->needDebt,
                                             s->population,
                                             landmark_sheet(
                                                 s->type).skills,
