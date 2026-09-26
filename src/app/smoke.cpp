@@ -155,6 +155,63 @@ static bool smoke_possess_via_spell(App& app, entt::entity target) {
     return reg.valid(target) && reg.all_of<sm::ecs::AvatarTag>(target);
 }
 
+// СВИДЕТЕЛЬ РОЖАЕТ СВОЁ ПРЕДУСЛОВИЕ (AGENTS §8 п.11, вердикт владельца
+// 2026-09-26). Сценарию, которому для вопроса нужен ЧУЖОЙ сквад, его даёт эта
+// дверь, а не везение генератора: надежда на мир краснеет не законом, а
+// невезением, и следующий агент идёт подгонять мир под везение. Замерено на
+// сиде 12345: `possessed_death` не находил второго живого проецируемого сквада
+// в окне, `force_encounter` — враждебного во всём мире (бандиты вырезаны из
+// генерации 2026-09-21), `subworld_exit_remap` в композиции — ни одной чужой
+// проекции в уже поднятой сцене.
+//
+// Рождение идёт ЕДИНСТВЕННОЙ дверью рождения сквада (macro/npc_spawn.h
+// spawn_squad) — харнесс не знает второго способа завести сквад и не заводит.
+//
+// Род и фракция — АРГУМЕНТЫ, потому что враждебность есть колонка ФРАКЦИИ, а
+// не свойство рода (ЗАКОН СТРОКИ КАТАЛОГА): мирный сосед берёт -1 («земля
+// решает»), враг — строку `bandits`, чья авторская пара -100 (faction.h
+// kFactionRelations) ниже порога kHostileThreshold = -64, так что «враг»
+// говорит матрица мира тем же предикатом, что читает detect_forced_encounter.
+// Харнесс враждебность НЕ подделывает.
+//
+// Возвращает лидера (сквад ЕСТЬ его лидер) или entt::null.
+static entt::entity smoke_birth_squad_at_player(App& app, sm::NPCType leader,
+                                                int factionIndex) {
+    if (app.subworld.active()) return entt::null;   // рождение — макро-дело
+    sm::SquadSpec spec{};
+    spec.leaderType = leader;
+    spec.leaderLevel = 3;
+    spec.x = int(smoke_player_x(app));
+    spec.y = int(smoke_player_y(app));
+    spec.factionIndex = factionIndex;
+    // Фикстурный id души: ни один из этих сценариев не спрашивает о личности
+    // рядового, поэтому он один на все рождения.
+    spec.members.push(sm::make_soldier(std::uint8_t(leader), 2, 0x50000001u));
+    const entt::entity born = sm::spawn_squad(
+        app.gs, app.ecs, *app.macroStore, app.terrain, spec);
+    if (born == entt::null) return entt::null;
+    // Pin the squad to the player's cell: spawn_squad scatters within a 4-cell
+    // radius, and the enter-time projection only sees the 3x3 window. Arranging
+    // the subject is the harness's job; the LAW under test is never placement.
+    auto& reg = app.ecs.reg;
+    const int pcx = int(smoke_player_x(app));
+    const int pcy = int(smoke_player_y(app));
+    (*body_state<sm::ecs::MacroCell>(reg, born)).idx =
+        sm::ecs::cell_index(pcx, pcy, app.gs.mapW);
+    auto& vis = (*body_state<sm::ecs::MacroVisual>(reg, born));
+    vis.vx = float(pcx);
+    vis.vy = float(pcy);
+    auto& rt = (*body_state<sm::ecs::MacroNpcRuntime>(reg, born));
+    rt.targetX = float(pcx);
+    rt.targetY = float(pcy);
+    std::fprintf(stderr,
+                 "[smoke] squad spawned at player cell %d,%d faction=%d "
+                 "ordinal=%u\n", pcx, pcy, factionIndex,
+                 (*body_state<sm::ecs::MacroSpawnId>(reg, born)).index);
+    std::fflush(stderr);
+    return born;
+}
+
 constexpr int kSubworldSmokeFrames = 1000;
 constexpr int kSubworldSeamSmokeSettleFrames = 120;
 constexpr int kSmokeMacroTravelSteps = 3;
@@ -6645,27 +6702,23 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "possessed_death without world");
                 break;
             }
-            // Встать на ближайшего макро-НПЦ и войти — так сцена ГАРАНТИРОВАННО
-            // содержит тело с записью (то же, чем пользуется exit_remap: взять
-            // можно только того, у кого запись есть).
-            auto stand_on_a_neighbour_and_enter = [&]() -> bool {
+            // Родить себе соседа и войти — так сцена ГАРАНТИРОВАННО содержит
+            // тело с записью (взять можно только того, у кого запись есть).
+            //
+            // РАНЬШЕ ЗДЕСЬ ИСКАЛСЯ ближайший живой макро-сквад и игрок
+            // телепортировался к нему. Половина 1 так проходила, половина 2
+            // краснела «nothing to take»: свой носитель она в половине 1
+            // убивает, а второго живого проецируемого сквада на сиде 12345 в
+            // окне нет. Это краснота от НЕВЕЗЕНИЯ, а не от нарушения закона
+            // (AGENTS §8 п.11) — у обеих половин один предмет, и он теперь
+            // рождается, а не ищется.
+            auto birth_a_neighbour_and_enter = [&]() -> bool {
                 if (app.subworld.active()) app.subworld.leave(true);
-                const int pcx = int(smoke_player_x(app));
-                const int pcy = int(smoke_player_y(app));
-                int bestX = -1, bestY = -1;
-                long bestD = 1L << 60;
-                for (auto e : app.ecs.reg.view<sm::ecs::MacroSlot>(
-                         entt::exclude<sm::ecs::PlayerSquadTag>)) {
-                    if (sm::macro_dead(app.ecs.reg, e)) continue;
-                    const auto& c = (*body_state<sm::ecs::MacroCell>(app.ecs.reg, e));
-                    const int nx = sm::ecs::cell_x(c, app.gs.mapW);
-                    const int ny = sm::ecs::cell_y(c, app.gs.mapW);
-                    const long dx = nx - pcx, dy = ny - pcy;
-                    const long d = dx * dx + dy * dy;
-                    if (d < bestD) { bestD = d; bestX = nx; bestY = ny; }
+                if (smoke_birth_squad_at_player(app, sm::NPCType::Peasant,
+                                                /*factionIndex*/-1)
+                    == entt::null) {
+                    return false;
                 }
-                if (bestX < 0) return false;
-                smoke_teleport_player(app, bestX, bestY);
                 app.gs.subState.settlementId = -1;
                 app.ui.settlementId = -1;
                 enter_subworld(app);
@@ -6699,16 +6752,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             };
 
             // ── ПОЛОВИНА 1: оригинал ЖИВ ⇒ очнулся дома, игра идёт ──────
-            if (!stand_on_a_neighbour_and_enter()) {
-                smoke_fail(app, "possessed_death: no neighbour to enter beside");
-                break;
-            }
+            // Предусловие РОЖДЕНО, а не найдено, поэтому его отсутствие —
+            // сломанный ФАКТ (считается, краснеет адресно, прогон живёт), а не
+            // мёртвое предусловие, гасящее сценарий (AGENTS §8 п.11).
+            SMOKE_CHECK(app, birth_a_neighbour_and_enter(),
+                        "рождённый сосед даёт сцену, в которую можно войти");
+            if (!app.subworld.active()) break;
             const entt::entity home = sm::player_squad_entity(app.ecs);
             sm::MacroHandle worn = take_a_projected_body();
-            if (worn.slot == sm::kMacroNoSlot || home == entt::null) {
-                smoke_fail(app, "possessed_death: nothing with a record to take");
-                break;
-            }
+            SMOKE_CHECK(app, worn.slot != sm::kMacroNoSlot && home != entt::null,
+                        "в сцене есть живое чужое тело с записью — его и берут");
+            if (worn.slot == sm::kMacroNoSlot || home == entt::null) break;
             // Где стоит ТВОЁ тело — оно всё это время стоит без сознания там,
             // где ты его оставил, и проснуться ты обязан именно там.
             const int homeX = int(sm::ecs::cell_x(
@@ -6740,15 +6794,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // Тот же сценарий, отличается ОДНО число — полоса оставленного
             // тела. Без этой половины первая доказывала бы лишь «смерть в
             // одержимости не убивает», что неверно.
-            if (!stand_on_a_neighbour_and_enter()) {
-                smoke_fail(app, "possessed_death: no neighbour for the second half");
-                break;
-            }
+            SMOKE_CHECK(app, birth_a_neighbour_and_enter(),
+                        "вторая половина рождает себе СВОЕГО соседа — носитель "
+                        "первой половины уже мёртв");
+            if (!app.subworld.active()) break;
             worn = take_a_projected_body();
-            if (worn.slot == sm::kMacroNoSlot) {
-                smoke_fail(app, "possessed_death: nothing to take for the second half");
-                break;
-            }
+            SMOKE_CHECK(app, worn.slot != sm::kMacroNoSlot,
+                        "у второй половины есть своё живое тело с записью");
+            if (worn.slot == sm::kMacroNoSlot) break;
             // Пока тебя нет, твоё тело убивают. Ты этого не замечаешь — дверь
             // смерти спрашивает про ТЕБЯ, а ты сейчас лорд.
             (*body_state<sm::ecs::Pools>(app.ecs.reg, home)).hp = 0.0f;
@@ -6790,30 +6843,24 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "subworld_exit_remap without world");
                 break;
             }
-            // Relocate onto the nearest persistent macro NPC so the projection is
-            // guaranteed a body to possess.
-            if (!app.subworld.active()) {
-                const int pcx = int(smoke_player_x(app)), pcy = int(smoke_player_y(app));
-                int bestX = -1, bestY = -1;
-                long bestD = 1L << 60;
-                for (auto e : app.ecs.reg.view<sm::ecs::MacroSlot>(
-                         entt::exclude<sm::ecs::PlayerSquadTag>)) {
-                    const auto& c = (*body_state<sm::ecs::MacroCell>(app.ecs.reg, e));
-                    const int nx = sm::ecs::cell_x(c, app.gs.mapW);
-                    const int ny = sm::ecs::cell_y(c, app.gs.mapW);
-                    const long dx = nx - pcx, dy = ny - pcy;
-                    const long d = dx * dx + dy * dy;
-                    if (d < bestD) { bestD = d; bestX = nx; bestY = ny; }
-                }
-                if (bestX < 0) {
-                    smoke_fail(app, "exit_remap: no macro NPC to project");
-                    break;
-                }
-                                smoke_teleport_player(app, int(float(bestX)), int(float(bestY)));
-                app.gs.subState.settlementId = -1;
-                app.ui.settlementId = -1;
-                enter_subworld(app);
-            }
+            // СВОЯ СЦЕНА И СВОЙ НОСИТЕЛЬ, ВСЕГДА (AGENTS §8 п.11). Раньше
+            // ветка стояла под `if (!app.subworld.active())`: голым сценарий
+            // переезжал на ближайшего макро-НПЦ и был зелёным, а в композиции
+            // (сюита, строка `…,fauna_kill_writeback,subworld_exit_remap,…`)
+            // сцена УЖЕ поднята — ветка пропускалась, и он спрашивал о чужой
+            // сцене, в которой проекций нет вовсе: «no projected body with a
+            // backlink». Теперь сценарий поднимает СВОЮ сцену вокруг
+            // рождённого им сквада, и его краснота больше не зависит от того,
+            // что стояло в строке сюиты перед ним.
+            if (app.subworld.active()) app.subworld.leave(true);
+            const entt::entity bornForRemap = smoke_birth_squad_at_player(
+                app, sm::NPCType::Peasant, /*factionIndex*/-1);
+            SMOKE_CHECK(app, bornForRemap != entt::null,
+                        "сценарий рождает себе тело, которое можно взять");
+            if (bornForRemap == entt::null) break;
+            app.gs.subState.settlementId = -1;
+            app.ui.settlementId = -1;
+            enter_subworld(app);
             if (!app.subworld.active()) {
                 smoke_fail(app, "exit_remap: enter failed");
                 break;
@@ -6836,10 +6883,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         body = e; origin = m; break;
                     }
                 }
-                if (body == entt::null) {
-                    smoke_fail(app, "exit_remap: no projected body with a backlink");
-                    break;
-                }
+                SMOKE_CHECK(app, body != entt::null,
+                            "рождённый сквад спроецирован в сцену и несёт "
+                            "обратную дверь к своей записи");
+                if (body == entt::null) break;
                 // Force the origin to a distinctive OFF-CENTRE cell so landing on
                 // it is provably the remap, not a coincidental centre-snap.
                 const int W = app.terrain.width, H = app.terrain.height;
@@ -7958,40 +8005,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "spawn_squad_at_player inside the subworld");
                 break;
             }
-            sm::SquadSpec spec{};
-            spec.leaderType = sm::NPCType::Peasant;   // neutral: no encounter
-            spec.leaderLevel = 3;
-            spec.x = int(smoke_player_x(app));
-            spec.y = int(smoke_player_y(app));
-            spec.factionIndex = -1;                   // the land decides
-            spec.members.push(sm::make_soldier(
-                std::uint8_t(sm::NPCType::Peasant), 2, 0x50000001u));
-            const entt::entity leader = sm::spawn_squad(
-                app.gs, app.ecs, *app.macroStore, app.terrain, spec);
-            if (leader == entt::null) {
-                smoke_fail(app, "spawn_squad_at_player: spawn failed");
-                break;
-            }
-            // Pin the squad to the player's cell: spawn_squad scatters within
-            // a 4-cell radius, and the enter-time projection only sees the
-            // 3x3 window. Arranging the subject is the harness's job; the
-            // LAW under test is the writeback, not spawn placement.
-            auto& reg = app.ecs.reg;
-            const int pcx = int(smoke_player_x(app));
-            const int pcy = int(smoke_player_y(app));
-            (*body_state<sm::ecs::MacroCell>(reg, leader)).idx =
-                sm::ecs::cell_index(pcx, pcy, app.gs.mapW);
-            auto& vis = (*body_state<sm::ecs::MacroVisual>(reg, leader));
-            vis.vx = float(pcx);
-            vis.vy = float(pcy);
-            auto& rt = (*body_state<sm::ecs::MacroNpcRuntime>(reg, leader));
-            rt.targetX = float(pcx);
-            rt.targetY = float(pcy);
-            std::fprintf(stderr,
-                         "[smoke] squad spawned at player cell %d,%d "
-                         "ordinal=%u\n", pcx, pcy,
-                         (*body_state<sm::ecs::MacroSpawnId>(reg, leader)).index);
-            std::fflush(stderr);
+            // Нейтральный сосед: `-1` — земля решает фракцию, поэтому встречи
+            // он не форсирует (её форсирует враждебность, а не присутствие).
+            const entt::entity leader = smoke_birth_squad_at_player(
+                app, sm::NPCType::Peasant, /*factionIndex*/-1);
+            SMOKE_CHECK(app, leader != entt::null,
+                        "дверь рождения даёт сквад на клетке игрока");
+            if (leader == entt::null) break;
             ++app.smoke.cursor;
             break;
         }
@@ -8006,26 +8026,31 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             smoke_clear_modal_overlays(app);
             auto& reg = app.ecs.reg;
-            entt::entity hostile = entt::null;
-            sm::MacroStore& stf = sm::store_of(app.ecs);
-            auto view = reg.view<sm::ecs::MacroSlot>(
-                entt::exclude<sm::ecs::PlayerTag,
-                              sm::ecs::PlayerSquadTag>);
-            for (auto e : view) {
-                const std::uint16_t slot = sm::slot_of(reg, e);
-                if (stf.dead[slot] != 0) continue;
-                if (stf.pools[slot].hp <= 0) continue;
-                const auto& kind = stf.kind[slot];
-                if (sm::player_hostile_to(
-                        &app.gs, sm::faction_id_for_index(kind.factionIdx))) {
-                    hostile = e;
-                    break;
-                }
-            }
-            if (hostile == entt::null) {
-                smoke_fail(app, "force_encounter found no hostile squad");
-                break;
-            }
+            // ВРАГА СВИДЕТЕЛЬНИЦА РОЖДАЕТ (AGENTS §8 п.11). Она искала
+            // враждебный сквад по всему миру и краснела «found no hostile
+            // squad»: с вырезкой бандитов из генерации (2026-09-21) в мире их
+            // нет ни на одном сиде, то есть до закона под проверкой — «встреча
+            // ОСТАНАВЛИВАЕТ карту и авторезолв отдаёт её назад» — дело не
+            // доходило вовсе.
+            //
+            // Враждебность даёт КОЛОНКА ФРАКЦИИ, а не род существа (ЗАКОН
+            // СТРОКИ КАТАЛОГА): строка `bandits` стоит в авторской таблице пар
+            // на -100 (faction.h kFactionRelations) против порога -64, и
+            // предикат player_hostile_to тот же, что читает
+            // detect_forced_encounter. Харнесс ничего не подделывает — он
+            // ставит на клетку сквад, которого мир и так считает врагом.
+            const entt::entity hostile = smoke_birth_squad_at_player(
+                app, sm::NPCType::Peasant, sm::faction_index("bandits"));
+            SMOKE_CHECK(app, hostile != entt::null,
+                        "враждебный сквад рождается на клетке игрока");
+            if (hostile == entt::null) break;
+            SMOKE_CHECK(app,
+                        sm::player_hostile_to(
+                            &app.gs,
+                            sm::faction_id_for_index(
+                                sm::store_of(app.ecs)
+                                    .kind[sm::slot_of(reg, hostile)].factionIdx)),
+                        "рождённый сквад враждебен игроку по матрице мира");
             const auto& hcell = (*body_state<sm::ecs::MacroCell>(reg, hostile));
                         smoke_teleport_player(app, int(float(sm::ecs::cell_x(hcell, app.gs.mapW))), int(float(sm::ecs::cell_y(hcell, app.gs.mapW))));
             app.cursor.path.clear();
