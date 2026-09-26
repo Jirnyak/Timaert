@@ -31,13 +31,6 @@
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/trade_law_test.cpp", 0);
-    return 1;
-}
-
 } // namespace
 
 int main() {
@@ -93,12 +86,11 @@ int main() {
         const int pick = pick_next_station_(ctx, MacroPos{60.0f, 32.0f},
                                             /*currentId*/0, /*prevId*/-1,
                                             sx, sy);
-        if (pick < 0) {
-            return fail("the trade door named no station at all");
-        }
-        if (pick != acrossSeam.id) {
-            return fail("TORUS LAW: the seam-side CITY is nearer and must win");
-        }
+        CHECK(pick >= 0, "the trade door named a station at all");
+        CHECK(pick == acrossSeam.id,
+              "ЗАКОН АДРЕСА: the city 6 cells away THROUGH the seam beats the "
+              "one 30 cells away on the same side — the world is a connected "
+              "torus, so flat dx²+dy² is the wrong metric for it");
     }
 
     // ── 2. Garrison target (§42 Инк 7: population >> the registry shift;
@@ -107,23 +99,21 @@ int main() {
         const int pop = 1200;
         const int target =
             garrison_target_strength(LandmarkType::City, pop);   // 1200>>3
-        if (target != pop >> 3) {
-            return fail("the garrison target is the registry law");
-        }
-        if (garrison_wants_recruits(LandmarkType::City, pop, target - 1)
-            != true) {
-            return fail("one below the target must still recruit");
-        }
-        if (garrison_wants_recruits(LandmarkType::City, pop, target)
-            != false) {
-            return fail("at the target recruiting must stop");
-        }
-        if (garrison_target_strength(LandmarkType::Spire, 1000) != 0) {
-            return fail("a kind whose column says none keeps no garrison");
-        }
+        // The expectation is DERIVED from the same law the code reads
+        // (population >> the registry shift), never a remembered number.
+        CHECK(target == pop >> 3,
+              "the garrison target IS the registry law applied to population");
+        CHECK(garrison_wants_recruits(LandmarkType::City, pop, target - 1),
+              "one below the target, the place still recruits");
+        CHECK(!garrison_wants_recruits(LandmarkType::City, pop, target),
+              "AT the target recruiting stops — the cap binds, and it binds "
+              "through the row, not through a clamp somewhere downstream");
+        // NEGATIVE CONTROL of the row itself: a kind whose column says NONE
+        // keeps no garrison at any population. Without it the three checks
+        // above would also pass for a rule that just multiplies population.
+        CHECK(garrison_target_strength(LandmarkType::Spire, 1000) == 0,
+              "a kind whose column says none keeps no garrison at all");
     }
 
-    std::printf("trade_law_test: caravan_torus=ok garrison_cap=ok\n");
-    CHECK(true, "every gate above held");
     return sm::test::report("trade_law_test");
 }

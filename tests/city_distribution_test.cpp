@@ -29,13 +29,6 @@ using namespace sm::sub;
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/city_distribution_test.cpp", 0);
-    return 1;
-}
-
 constexpr float kTwoPi = 6.28318530718f;
 
 struct Spread {
@@ -129,11 +122,25 @@ int main() {
         {  -5, -2, 0x13572468u, 1200 },   // small city, still spread
     };
 
+    // Every case is measured. The verdicts used to `return fail(...)`, so the
+    // first lopsided city ended the run and the other three seeds were never
+    // looked at — and a spread law is exactly the kind that holds on one seed
+    // and fails on the next.
+    int measured = 0;
     for (const Case& c : cases) {
         const Spread s = measure_city(c.cx, c.cy, c.seed, c.pop);
 
-        if (s.houses < 40)
-            return fail("city produced too few houses to assess spread");
+        // Порог 40 — ЧИСЛО С ПОТОЛКА, названное вслух (наряд M-132): он не
+        // выведен ни из населения, ни из строки генератора. Утверждение по
+        // смыслу верно («городу есть чем меряться»), но число обязано прийти
+        // из закона, а не из сегодняшнего прогона.
+        if (s.houses < 40) {
+            CHECK(s.houses >= 40,
+                  "the city produced enough houses to assess spread at all "
+                  "(threshold still hardcoded — M-132)");
+            continue;
+        }
+        ++measured;
 
         // (1) No empty angular sector — the direct guard against the "clump in
         // one corner" bug. The old generator left up to 4 of 8 sectors at 0.
@@ -143,8 +150,10 @@ int main() {
                 c.seed, c.pop,
                 s.sector[0], s.sector[1], s.sector[2], s.sector[3],
                 s.sector[4], s.sector[5], s.sector[6], s.sector[7]);
-            return fail("a whole angular sector has no houses (clumped city)");
         }
+        CHECK(s.emptySectors == 0,
+              "no angular sector is EMPTY — the direct guard against the "
+              "clump-in-one-corner bug, where 4 of 8 sectors read zero");
 
         // (2) Angular balance: the thinnest sector holds a real share of the
         // busiest one. Old min/max was 0.00 (0 vs 189); the plan gives ~0.68.
@@ -153,8 +162,11 @@ int main() {
             std::fprintf(stderr,
                 "seed=0x%X pop=%d angular min/max=%d/%d\n",
                 c.seed, c.pop, s.minSector, s.maxSector);
-            return fail("houses angularly lopsided (min/max < 0.20)");
         }
+        CHECK(s.maxSector > 0
+                  && float(s.minSector) / float(s.maxSector) >= 0.20f,
+              "the thinnest sector holds a real share of the busiest — the "
+              "old generator read 0 against 189");
 
         // (3) Radial spread: houses must reach out into the footprint, not pile
         // downtown. A meaningful fraction sits in the outer half of the disk.
@@ -163,19 +175,23 @@ int main() {
                 "seed=0x%X pop=%d fracOuterHalf=%.2f meanR=%.1f maxR=%.1f\n",
                 c.seed, c.pop, double(s.fracOuterHalf),
                 double(s.meanR), double(s.maxR));
-            return fail("houses pinched near centre (outer-half frac < 0.30)");
         }
+        CHECK(s.fracOuterHalf >= 0.30f,
+              "houses REACH into the footprint instead of piling downtown");
 
-        // (4) Mean radius is well off-centre relative to the reach.
-        if (s.maxR <= 1.0f || s.meanR < s.maxR * 0.30f)
-            return fail("mean house radius too close to centre");
+        // (4) Mean radius is well off-centre relative to the reach. Stated as
+        // a RATIO of the city's own reach, so it survives any retune of size.
+        CHECK(s.maxR > 1.0f, "the city has a footprint to speak of");
+        CHECK(s.meanR >= s.maxR * 0.30f,
+              "the AVERAGE house sits well off centre relative to that reach");
     }
+    CHECK(measured == int(sizeof(cases) / sizeof(cases[0])),
+          "every city in the table was actually measured, not skipped");
 
     std::printf("OK city_distribution_test: %d cities — houses fill all 8 "
                 "angular sectors (no empty quadrant), angularly balanced "
                 "(min/max >= 0.20) and radially spread (outer-half frac "
                 ">= 0.30), across seeds/populations\n",
                 int(sizeof(cases) / sizeof(cases[0])));
-    CHECK(true, "every gate above held");
     return sm::test::report("city_distribution_test");
 }
