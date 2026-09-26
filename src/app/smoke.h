@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <vector>
 #include <vulkan/vulkan.h>
+#include "ecs/components.h"   // sm::MacroHandle — the tracked-record probe
 #include "ecs/world.h"     // entt::entity for the tracked-body probes
 #include "ui/screens.h"    // sm::ui::ShellResult, the harness's frame verdict
 
@@ -150,7 +151,9 @@ struct SmokeScript {
     // kill → let a tick pass → read the map.
     int trackedPhase = 0;
     entt::entity trackedBody = entt::null;
-    entt::entity trackedMacro = entt::null;
+    // Запись — хэндлом store (шаг 2 1е): свидетель смерти слота обязан
+    // тухнуть вместе с поколением, как всякая долгоживущая ссылка.
+    sm::MacroHandle trackedMacro{};
     float trackedMacroHp0 = 0.0f;
     // fauna_kill_writeback: the culled creature's cell key and the cell's
     // headcount before the kill (the body is reaped before phase 1 reads).

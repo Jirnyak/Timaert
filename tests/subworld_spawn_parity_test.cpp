@@ -752,13 +752,13 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     int projCount = 0;
     for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
         ++projCount;
-        const entt::entity origin = reg.get<sm::ecs::MacroOrigin>(e).macro;
-        if (!reg.valid(origin) || !reg.all_of<sm::ecs::MacroSlot>(origin)) {
+        const sm::MacroHandle origin = reg.get<sm::ecs::MacroOrigin>(e).macro;
+        if (!sm::store_of(reg).valid(origin)) {
             return false;
         }
-        if (origin == s.bandit) pBandit = e;
-        else if (origin == s.peasant) pPeasant = e;
-        else if (origin == s.wrap) pWrap = e;
+        if (origin == sm::handle_of(reg, s.bandit)) pBandit = e;
+        else if (origin == sm::handle_of(reg, s.peasant)) pPeasant = e;
+        else if (origin == sm::handle_of(reg, s.wrap)) pWrap = e;
         else return false;   // far NPC or a stranger — must not be projected
     }
     if (projCount != 3 || pBandit == entt::null || pPeasant == entt::null
@@ -1143,13 +1143,13 @@ int main() {
         CHECK(body != entt::null && citizen != entt::null,
               "the fixture must project both kinds of body");
 
-        CHECK(sm::sub::record_of(reg, body) == lord,
+        CHECK(sm::sub::macro_record_of(reg, body) == hq,
               "a projected body's state belongs to the record it projects");
-        CHECK(sm::sub::record_of(reg, citizen) == citizen,
+        CHECK(sm::sub::macro_record_of(reg, citizen) == sm::MacroHandle{},
               "a body nothing above remembers answers for itself — the other "
               "honest birth, not a fallback");
 
-        CHECK(sm::sub::pools_of(reg, body) == &(*sm::body_state<sm::ecs::Pools>(reg, lord)),
+        CHECK(sm::sub::pools_of(reg, body) == &stq.pools[hq.slot],
               "the bars a projected body spends are LITERALLY the record's "
               "block — one memory, so there is nothing to fold back up");
         CHECK(sm::sub::pools_of(reg, citizen)
@@ -1161,7 +1161,7 @@ int main() {
         // equality above could be passing because both handles happen to name
         // the same storage, and nobody would know.
         reg.remove<sm::ecs::MacroOrigin>(body);
-        CHECK(sm::sub::record_of(reg, body) == body
+        CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
                   && sm::sub::pools_of(reg, body)
                          == &(*sm::body_state<sm::ecs::Pools>(reg, body)),
               "without the backlink the door answers SELF — the detector "
@@ -1170,9 +1170,15 @@ int main() {
         // A record reaped out from under a standing body degrades to self,
         // never to nothing: a body with no bars at all would be an
         // invulnerable ghost, which is worse than losing the write-back.
-        reg.emplace<sm::ecs::MacroOrigin>(body, lord);
+        // Протухание — механикой store (шаг 2 1е): store_death бампает
+        // поколение слота, и всякий старый хэндл мертвеет; entt-двойник
+        // умирает следом, как в жнеце мира.
+        reg.emplace<sm::ecs::MacroOrigin>(body, hq);
+        sm::store_death(stq, hq);
         reg.destroy(lord);
-        CHECK(sm::sub::record_of(reg, body) == body,
+        CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
+                  && sm::sub::pools_of(reg, body)
+                         == &(*sm::body_state<sm::ecs::Pools>(reg, body)),
               "a stale backlink degrades to the body itself, not to null");
     }
 

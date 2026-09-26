@@ -226,8 +226,9 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     ctx.schoolRank = std::uint8_t(
         school != SkillId::Count ? skills.of(school) : 0);
     if (caster != entt::null) {
-        const entt::entity rec = sub::record_of(w.reg, caster);
-        if (const auto* cs = body_state<CharacterSheet>(w.reg, rec)) {
+        // Дверь записи целиком (шаг 2 1е): запись → колонка store, derived
+        // тело → своя компонента; fixture body с пустыми руками — новичок.
+        if (const auto* cs = sub::state_of<CharacterSheet>(w.reg, caster)) {
             ctx.casterLevel = std::int16_t(cs->levelData.level);
         }
     }

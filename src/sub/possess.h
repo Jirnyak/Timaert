@@ -74,7 +74,12 @@ inline bool possess_entity(ecs::World& w, entt::entity target) {
     //     STAYS HOME. The scene flag alone rides it, and the exit reset
     //     («одержим генерик — при выходе сброс») is not written anywhere: the
     //     body dies with the scene while your macro flag never left you.
-    const entt::entity rec = record_of(reg, target);
+    // Запись — хэндлом (шаг 2 1е); флажку игрока до 1е-шага 4 нужен ЕNTT-
+    // носитель записи, и обратная дверь моста (macro_entity_of, линейный
+    // скан) законна здесь — одержимость есть клик, не тик.
+    const MacroHandle recH = macro_record_of(reg, target);
+    const entt::entity rec = recH.slot != kMacroNoSlot
+        ? macro_entity_of(reg, recH) : target;
     if (rec == entt::null) return false;
 
     if (reg.valid(cur)) {

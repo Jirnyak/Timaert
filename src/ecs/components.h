@@ -12,6 +12,24 @@
 #include <string>
 #include <entt/entt.hpp>
 
+namespace sm {
+
+// ── MacroHandle — долгоживущая ссылка на слот MacroStore (M-106, 1г/1е) ────
+// Живёт в слое ecs, потому что его несёт через шов миров компонента
+// ecs::MacroOrigin ниже (вердикт Б, с.19); двери — macro/store.h. Хэндл
+// слота: «нет элемента» — последнее значение типа (закон узкого индекса,
+// S26; кап 32768 в u16 умещается с запасом). Поколение — та же защита от
+// протухшей ссылки, что версия в хэндле EnTT, только своя.
+inline constexpr std::uint16_t kMacroNoSlot = 0xFFFFu;
+struct MacroHandle {
+    std::uint16_t slot = kMacroNoSlot;
+    std::uint16_t gen  = 0;
+    friend constexpr bool operator==(const MacroHandle&,
+                                     const MacroHandle&) = default;
+};
+
+} // namespace sm
+
 namespace sm::ecs {
 
 // World-space position: x,y are tile coords; z is absolute world-space altitude
@@ -276,7 +294,11 @@ struct MacroDebt {
 // Also how leave() maps the flagged body back to a macro cell on exit, and how
 // the reaper (clear_subworld_world_entities) knows to leave projections be.
 // Runtime-only: never serialized, so it does not bump kSaveVersion.
-struct MacroOrigin { entt::entity macro; };
+//
+// ХЭНДЛОМ STORE, не entt-сущностью (эпик 2 шаг 1е): запись — слот MacroStore
+// {slot,gen}; протухание = поколение слота ушло (store_death), и дверь шва
+// (sub/record.h macro_record_of) честно деградирует тело в «сам себе запись».
+struct MacroOrigin { MacroHandle macro; };
 
 // Last damaging owner — the killer's BODY, and nothing else. The death
 // reaper resolves the body to its macro LEADER (MacroOrigin / roster

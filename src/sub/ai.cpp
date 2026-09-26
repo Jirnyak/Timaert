@@ -40,10 +40,10 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     // с ростерным займом на тот же сквад. Флажок вернулся — мозги проснулись
     // на следующем же тике, без единого компонента.
     std::int32_t unconsciousSubject = -1;
-    entt::entity unconsciousRec = entt::null;
+    MacroHandle unconsciousRec{};
     for (auto sq : reg.view<ecs::PlayerSquadTag>()) {
         if (!reg.all_of<ecs::PlayerTag>(sq)) {
-            unconsciousRec = sq;
+            unconsciousRec = handle_of(reg, sq);
             if (const auto* sid = body_state<ecs::MacroSpawnId>(reg, sq)) {
                 unconsciousSubject = std::int32_t(sid->index);
             }
@@ -66,8 +66,8 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         if (reg.any_of<ecs::AvatarTag>(e)) continue;
         // …и тело брошенного сквада стоит без чувств (предикат выше): сам
         // сквад — по записи, его люди — по ростерному займу.
-        if (unconsciousRec != entt::null) {
-            if (record_of(reg, e) == unconsciousRec) {
+        if (unconsciousRec.slot != kMacroNoSlot) {
+            if (macro_record_of(reg, e) == unconsciousRec) {
                 auto& stillA = view.get<ecs::SubworldAi>(e);
                 stillA.wantVx = stillA.wantVy = 0.0f;
                 continue;

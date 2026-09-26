@@ -3700,7 +3700,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         const entt::entity home = sm::player_squad_entity(app.ecs);
         const bool foreignBody =
             avatarBody != entt::null
-                ? sm::sub::record_of(app.ecs.reg, avatarBody) != home
+                ? (home == entt::null
+                   || sm::sub::macro_record_of(app.ecs.reg, avatarBody)
+                          != sm::handle_of(app.ecs.reg, home))
                 : sm::player_wears_another_body(app.ecs);
         if (app.subworld.in_dungeon() && storyNode != nullptr) {
             end_scene_by_death(app, storyNode);

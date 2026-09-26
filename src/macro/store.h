@@ -67,16 +67,8 @@ namespace sm {
     X(designTag, ecs::DesignCharacterTag)                                    \
     X(dead,      std::uint8_t)
 
-// Хэндл слота: «нет элемента» — последнее значение типа (закон узкого
-// индекса, S26; кап 32768 в u16 умещается с запасом). Поколение — та же
-// защита от протухшей ссылки, что версия в хэндле EnTT, только своя.
-inline constexpr std::uint16_t kMacroNoSlot = 0xFFFFu;
-struct MacroHandle {
-    std::uint16_t slot = kMacroNoSlot;
-    std::uint16_t gen  = 0;
-    friend constexpr bool operator==(const MacroHandle&,
-                                     const MacroHandle&) = default;
-};
+// Сам MacroHandle живёт в ecs/components.h (шаг 2 1е, вердикт Б с.19):
+// его несёт через шов миров компонента ecs::MacroOrigin. Здесь — его законы.
 static_assert(kMacroEntityCap < kMacroNoSlot,
               "кап обязан умещаться в u16 с местом под «нет элемента»");
 
@@ -264,6 +256,11 @@ inline void macro_mark_dead(entt::registry& reg, entt::entity e) {
         return;
     }
     reg.emplace_or_replace<ecs::Dead>(e);
+}
+// Смерть по хэндлу: протухший хэндл — no-op (жилец уже сменился, мертвить
+// некого); это та же fail-closed пара к macro_dead(store, h) выше.
+inline void macro_mark_dead(MacroStore& s, MacroHandle h) {
+    if (s.valid(h)) s.dead[h.slot] = 1;
 }
 
 } // namespace sm

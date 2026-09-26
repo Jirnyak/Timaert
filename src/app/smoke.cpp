@@ -72,8 +72,10 @@ static bool smoke_projects_foreign_record(App& app, entt::entity body) {
     auto& reg = app.ecs.reg;
     if (!reg.valid(body)) return false;
     const auto* origin = reg.try_get<sm::ecs::MacroOrigin>(body);
-    if (!origin || !reg.valid(origin->macro)) return false;
-    return origin->macro != sm::player_squad_entity(app.ecs);
+    if (!origin || !sm::store_of(reg).valid(origin->macro)) return false;
+    const entt::entity psq = sm::player_squad_entity(app.ecs);
+    return psq == entt::null
+        || origin->macro != sm::handle_of(reg, psq);
 }
 
 // His book, through the one door (v89) — scratch like the main app's own
@@ -5681,7 +5683,7 @@ bool run_console_smoke(App& app) {
         // about derived bodies, so it must SAY that its target is one. The day a
         // console spawn starts backlinking a macro record, this line fails loudly
         // instead of the test below silently passing for the wrong reason.
-        if (sm::sub::record_of(reg, target) != target) {
+        if (sm::sub::macro_record_of(reg, target).slot != sm::kMacroNoSlot) {
             restore();
             smoke_fail(app, "possess: console-spawned bandit is not a derived body");
             return false;
@@ -6514,22 +6516,23 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // первом же тике — по правильному закону и не по той причине,
             // которую половина проверяла. Свидетельница, взявшая мертвеца,
             // проверяет не то, что написано в её названии.
-            auto take_a_projected_body = [&]() -> entt::entity {
+            auto take_a_projected_body = [&]() -> sm::MacroHandle {
                 auto& reg = app.ecs.reg;
+                sm::MacroStore& st = sm::store_of(reg);
                 for (auto e : reg.view<sm::ecs::SubworldTag,
                                        sm::ecs::MacroOrigin>()) {
                     if (!smoke_projects_foreign_record(app, e)) continue;
-                    const entt::entity m = reg.get<sm::ecs::MacroOrigin>(e).macro;
-                    if (!reg.all_of<sm::ecs::MacroSlot>(m)) continue;
-                    if (sm::macro_dead(reg, m)) continue;
-                    const auto* mp = body_state<sm::ecs::Pools>(reg, m);
+                    const sm::MacroHandle m =
+                        reg.get<sm::ecs::MacroOrigin>(e).macro;
+                    if (sm::macro_dead(st, m)) continue;
+                    const auto* mp = body_state<sm::ecs::Pools>(st, m);
                     if (!mp || mp->hp <= 0.0f) continue;
                     // Взятие — СПЕЛЛОМ, сквозь тот же рантайм, что у игрока
                     // (2026-09-17): выучить, взвести, кастануть в прицел.
                     if (!smoke_possess_via_spell(app, e)) continue;
                     return m;
                 }
-                return entt::null;
+                return sm::MacroHandle{};
             };
 
             // ── ПОЛОВИНА 1: оригинал ЖИВ ⇒ очнулся дома, игра идёт ──────
@@ -6538,8 +6541,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const entt::entity home = sm::player_squad_entity(app.ecs);
-            entt::entity worn = take_a_projected_body();
-            if (worn == entt::null || home == entt::null) {
+            sm::MacroHandle worn = take_a_projected_body();
+            if (worn.slot == sm::kMacroNoSlot || home == entt::null) {
                 smoke_fail(app, "possessed_death: nothing with a record to take");
                 break;
             }
@@ -6579,7 +6582,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             worn = take_a_projected_body();
-            if (worn == entt::null) {
+            if (worn.slot == sm::kMacroNoSlot) {
                 smoke_fail(app, "possessed_death: nothing to take for the second half");
                 break;
             }
@@ -6662,8 +6665,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 entt::entity body = entt::null, origin = entt::null;
                 for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
                     if (!smoke_projects_foreign_record(app, e)) continue;
-                    const entt::entity m = reg.get<sm::ecs::MacroOrigin>(e).macro;
-                    if (reg.all_of<sm::ecs::MacroSlot>(m)) {
+                    // Свидетельнице нужен entt-носитель записи (флажок игрока
+                    // до 1е-шага 4 — entt): обратная дверь моста, вне тика.
+                    const entt::entity m = sm::macro_entity_of(
+                        reg, reg.get<sm::ecs::MacroOrigin>(e).macro);
+                    if (m != entt::null) {
                         body = e; origin = m; break;
                     }
                 }
@@ -6851,7 +6857,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                            == body_state<sm::CharacterSheet>(reg, origin);
                 const bool bodyIsHis =
                     av != entt::null
-                    && sm::sub::record_of(reg, av) == origin;
+                    && sm::sub::macro_record_of(reg, av)
+                           == sm::handle_of(reg, origin);
                 std::fprintf(stderr,
                              "[smoke] subworld_exit_remap reenter ok=%d tags=%d "
                              "rides_origin=%d doors_alive=%d body_is_his=%d\n",
@@ -6872,9 +6879,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // отсутствие флажка, прочитанное дверью ИИ через зеркало.
                 sm::app::advance_sim_seconds(app, 0.016f, false);
                 entt::entity abandoned = entt::null;
+                const sm::MacroHandle homeH = sm::handle_of(reg, home);
                 for (auto b : reg.view<sm::ecs::SubworldTag,
                                        sm::ecs::MacroOrigin>()) {
-                    if (reg.get<sm::ecs::MacroOrigin>(b).macro == home
+                    if (reg.get<sm::ecs::MacroOrigin>(b).macro == homeH
                         && !reg.any_of<sm::ecs::AvatarTag>(b)) {
                         abandoned = b;
                         break;
@@ -8034,16 +8042,16 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "macro_kill_writeback found no tracked body");
                     break;
                 }
-                const entt::entity macro =
+                const sm::MacroHandle macro =
                     reg.get<sm::ecs::MacroOrigin>(body).macro;
-                if (!reg.valid(macro)
-                    || !reg.all_of<sm::ecs::MacroSlot>(macro)) {
+                if (!sm::store_of(reg).valid(macro)) {
                     smoke_fail(app, "tracked body backlinks nothing");
                     break;
                 }
                 app.smoke.trackedBody = body;
                 app.smoke.trackedMacro = macro;
-                app.smoke.trackedMacroHp0 = (*body_state<sm::ecs::Pools>(reg, macro)).hp;
+                app.smoke.trackedMacroHp0 =
+                    (*body_state<sm::ecs::Pools>(sm::store_of(reg), macro)).hp;
                 // The wound is STRUCK, through the one door every blow in this
                 // game goes through (sub/damage.cpp) — and `script` is the row
                 // authored for exactly this: settlement, not a weapon, so no
@@ -8065,18 +8073,20 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                              "[smoke] tracked body struck for %d "
                              "(macro hp %.1f -> %.1f)\n",
                              wound, double(app.smoke.trackedMacroHp0),
-                             double((*body_state<sm::ecs::Pools>(reg, macro)).hp));
+                             double((*body_state<sm::ecs::Pools>(
+                                         sm::store_of(reg), macro)).hp));
                 std::fflush(stderr);
                 app.smoke.trackedPhase = 1;
                 break;      // let a tick carry it up
             }
             if (app.smoke.trackedPhase == 1) {
-                if (!reg.valid(app.smoke.trackedMacro)
+                if (!sm::store_of(reg).valid(app.smoke.trackedMacro)
                     || !reg.valid(app.smoke.trackedBody)) {
                     smoke_fail(app, "tracked pair vanished before the wound landed");
                     break;
                 }
-                const auto& mh = (*body_state<sm::ecs::Pools>(reg, app.smoke.trackedMacro));
+                const auto& mh = (*body_state<sm::ecs::Pools>(
+                    sm::store_of(reg), app.smoke.trackedMacro));
                 std::fprintf(stderr,
                              "[smoke] macro hp %.1f -> %.1f after wound\n",
                              double(app.smoke.trackedMacroHp0), double(mh.hp));
@@ -8098,10 +8108,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // drained Dead squad, and the macro clock still ticks (slowly)
             // underground, so which of the two we observe is timing. What
             // would fail is the old bug: alive-and-whole on the map.
-            const bool gone = !reg.valid(app.smoke.trackedMacro);
+            const bool gone = !sm::store_of(reg).valid(app.smoke.trackedMacro);
             const bool dead = gone
-                || (sm::macro_dead(reg, app.smoke.trackedMacro)
-                    && (*body_state<sm::ecs::Pools>(reg, app.smoke.trackedMacro)).hp
+                || (sm::macro_dead(sm::store_of(reg), app.smoke.trackedMacro)
+                    && (*body_state<sm::ecs::Pools>(
+                            sm::store_of(reg), app.smoke.trackedMacro)).hp
                            <= 0.0f);
             std::fprintf(stderr, "[smoke] macro entity dead=%d gone=%d\n",
                          dead ? 1 : 0, gone ? 1 : 0);

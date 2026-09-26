@@ -648,7 +648,7 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
     // it is the ADDRESS — of the bars he spends, the bag he carries and the
     // plate he wears. It used to be described as «where the return trip writes»;
     // there is no return trip any more, because there is no copy to return.
-    reg.emplace<ecs::MacroOrigin>(e, macro);
+    reg.emplace<ecs::MacroOrigin>(e, handle_of(reg, macro));
     // What stood on him when the numbers above were derived — the comparison
     // the per-tick re-derive is gated on (sub/record.h StandingMirror).
     reg.emplace<StandingMirror>(e, standing);
@@ -659,8 +659,12 @@ bool refresh_body_strike(entt::registry& reg, entt::entity body) {
     if (!reg.valid(body)) return false;
     auto* cache = reg.try_get<StandingMirror>(body);
     if (!cache) return false;                  // not a mirror; nothing to track
-    const entt::entity rec = record_of(reg, body);
-    if (rec == entt::null) return false;
+    // Зеркало без живой записи не пере-деривится: протухший бэклинк —
+    // мертвец, чей клинок больше никого не касается (шаг 2 1е: запись —
+    // хэндлом, деградация в тело здесь бессмысленна — у зеркала нет своего
+    // гира и книги, гейт сравнивал бы нули).
+    const MacroHandle rec = sub::macro_record_of(reg, body);
+    if (rec.slot == kMacroNoSlot) return false;
     // A body with no row has no creature template to project a swing from —
     // the hero husk is exactly that, and his hands are assembled elsewhere
     // (hand_strike_fields), from the same effective sheet.
@@ -671,12 +675,13 @@ bool refresh_body_strike(entt::registry& reg, entt::entity body) {
 
     // THE GATE. Everything below it is the expensive half (CANON's 0.00196 ms);
     // everything above is the 0.00041 ms the owner accepted paying every tick.
-    const BonusTotals now = standing_bonuses_of(reg, rec);
+    const MacroStore& st = store_of(reg);
+    const BonusTotals now = standing_bonuses_of(st, rec);
     if (now == cache->totals) return false;
     cache->totals = now;
 
     const NpcTypeDef& def = npc_def(NPCType(std::uint8_t(kind->type)));
-    const CharacterSheet eff = effective_sheet(sheet_of(reg, rec), now);
+    const CharacterSheet eff = effective_sheet(sheet_of(st, rec), now);
     // His own clock survives the re-derive: it says how busy the hand is, not
     // how strong it is (ecs::Combat::recoverySteps).
     const std::uint32_t recovering = combat->recoverySteps;
@@ -1451,7 +1456,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // struck (sub/record.h), and the body was only ever a mirror of it. (The
     // per-tick `reconcile_tracked_bodies_to_macro` this used to credit died
     // with the fold-up architecture; the mirror law left nothing to pay up.)
-    std::vector<entt::entity> alreadyProjected;
+    std::vector<MacroHandle> alreadyProjected;
     for (auto [body, origin] :
          reg.view<ecs::MacroOrigin, ecs::SubworldTag>().each()) {
         (void)body;
@@ -1467,7 +1472,8 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         const int ox = toroidal_cell_offset(mcx, centerCx, mapW);
         const int oy = toroidal_cell_offset(mcy, centerCy, mapH);
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
-        if (std::find(alreadyProjected.begin(), alreadyProjected.end(), macro)
+        if (std::find(alreadyProjected.begin(), alreadyProjected.end(),
+                      handle_of(reg, macro))
             != alreadyProjected.end()) continue;
 
         // (The projection cap that stood here — kMaxProjectedMacroNpcs, 128

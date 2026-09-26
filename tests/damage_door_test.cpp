@@ -206,13 +206,17 @@ void test_players_worn_plate_stands_underground() {
     // has to know about.
     const entt::entity body = make_body(reg, 100.0f, /*withKind*/false);
     reg.emplace<sm::ecs::AvatarTag>(body);
-    // His squad on the map: the gear's one home. arm_leather is the phase's
-    // own promise made flesh — «+2 END» AND a coat worth its column.
-    const entt::entity squad = reg.create();
-    reg.emplace<sm::ecs::PlayerSquadTag>(squad);
-    reg.emplace<sm::ecs::Pools>(squad, 100, 100);
+    // His squad on the map: the gear's one home — СЛОТ STORE (шаг 2 1е:
+    // запись есть хэндл по построению, entt-двойник фикстуре не нужен).
+    // arm_leather is the phase's own promise made flesh — «+2 END» AND a
+    // coat worth its column.
+    auto store = sm::make_macro_store();
+    reg.ctx().insert_or_assign(store.get());
+    const sm::MacroHandle squad = sm::store_birth(*store);
+    store->pools[squad.slot].hp = 100;
+    store->pools[squad.slot].maxHp = 100;
     reg.emplace<sm::ecs::MacroOrigin>(body, squad);
-    auto& eq = reg.emplace<sm::ecs::BodyEquipment>(squad);
+    auto& eq = store->gear[squad.slot];
     const int coatIdx = sm::item_index("arm_leather");
     CHECK_OR_RETURN(coatIdx >= 0, "the catalog knows the leather coat");
     sm::ItemRef coat{};
@@ -417,15 +421,20 @@ void test_the_blow_lands_on_the_record() {
     entt::registry reg;
     sm::EventBus bus;
 
-    const entt::entity record = make_body(reg, 100);
-    const entt::entity body   = make_body(reg, 100);
+    // Запись — СЛОТ STORE (шаг 2 1е): фикстура рожает слот, как рожает мир.
+    auto store = sm::make_macro_store();
+    reg.ctx().insert_or_assign(store.get());
+    const sm::MacroHandle record = sm::store_birth(*store);
+    store->pools[record.slot].hp = 100;
+    store->pools[record.slot].maxHp = 100;
+    const entt::entity body = make_body(reg, 100);
     reg.emplace<sm::ecs::MacroOrigin>(body, record);
 
     const DamageResult hit =
         apply_damage(reg, body, DamageSource{}, 30, DamageKind::Script,
                      sm::DamageType::Blunt, &bus);
     CHECK(hit.applied == 30, "the blow landed");
-    CHECK((*sm::body_state<sm::ecs::Pools>(reg, record)).hp == 70,
+    CHECK((*sm::body_state<sm::ecs::Pools>(*store, record)).hp == 70,
           "a projected body's wound is its RECORD's wound, in the tick it "
           "lands — there is nothing left to fold up");
     CHECK((*sm::body_state<sm::ecs::Pools>(reg, body)).hp == 100,
@@ -434,9 +443,10 @@ void test_the_blow_lands_on_the_record() {
 
     // The protocol still stamps the BODY — the flash, the corpse tag and the
     // killer attribution describe the thing standing in the scene, which is
-    // what the eye and the reaper look at.
-    CHECK(reg.any_of<sm::ecs::HitFlash>(body)
-              && !reg.any_of<sm::ecs::HitFlash>(record),
+    // what the eye and the reaper look at. (Запись — слот store: entt-штампа
+    // на ней не существует по построению, вторая половина старой проверки
+    // умерла вместе с entt-записью.)
+    CHECK(reg.any_of<sm::ecs::HitFlash>(body),
           "the visible protocol stamps the body, not the record");
 
     // NEGATIVE CONTROL: no backlink, no record — the very same call spends the
@@ -456,7 +466,7 @@ void test_the_blow_lands_on_the_record() {
                      sm::DamageType::Blunt, &bus);
     }
     CHECK(reg.any_of<sm::ecs::Dead>(body)
-              && (*sm::body_state<sm::ecs::Pools>(reg, record)).hp <= 0,
+              && (*sm::body_state<sm::ecs::Pools>(*store, record)).hp <= 0,
           "lethality is judged on the record, and the corpse tag lands on the "
           "body that fell");
 }

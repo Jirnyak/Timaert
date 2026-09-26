@@ -38,17 +38,24 @@
 
 namespace sm::sub {
 
-// The entity whose components ARE this body's state. Never null for a valid
-// body: a stale backlink (the record was reaped while the body still stood)
-// degrades to the body itself rather than to nothing, because a body without
-// bars would be an invulnerable ghost — the one failure mode worse than
-// losing the write-back.
-inline entt::entity record_of(const entt::registry& reg, entt::entity body) {
-    if (body == entt::null || !reg.valid(body)) return entt::null;
-    if (const auto* origin = reg.try_get<ecs::MacroOrigin>(body)) {
-        if (reg.valid(origin->macro)) return origin->macro;
-    }
-    return body;
+// The RECORD of this body — a store handle (эпик 2 шаг 2: MacroOrigin несёт
+// MacroHandle, entt в адресе записи не участвует). Валидный хэндл = тело есть
+// проекция макро-записи; невалидный = тело САМО СЕБЕ запись — либо честное
+// derived-рождение (гражданин, волк, консольный спавн), либо протухший
+// бэклинк (запись пожата store_death, пока тело стояло). Оба деградируют в
+// тело, а не в ничто: a body without bars would be an invulnerable ghost —
+// the one failure mode worse than losing the write-back.
+//
+// ctx().find, а не store_of: у фикстур с голым registry store нет, и «нет
+// store» отвечает тем же честным «записи нет», что и протухший хэндл.
+inline MacroHandle macro_record_of(const entt::registry& reg,
+                                   entt::entity body) {
+    if (body == entt::null || !reg.valid(body)) return MacroHandle{};
+    const auto* origin = reg.try_get<ecs::MacroOrigin>(body);
+    if (!origin) return MacroHandle{};
+    MacroStore* const* st = reg.ctx().find<MacroStore*>();
+    if (!st || !(*st)->valid(origin->macro)) return MacroHandle{};
+    return origin->macro;
 }
 
 // THE accessor every typed door below is made of. One template, deliberately:
@@ -62,11 +69,11 @@ inline entt::entity record_of(const entt::registry& reg, entt::entity body) {
 // does not keep this kind of state at all leaves the body answering for itself.
 template <class C>
 inline C* state_of(entt::registry& reg, entt::entity body) {
-    const entt::entity rec = record_of(reg, body);
-    if (rec != entt::null) {
-        // ФЛИП 1в (M-106): запись-макро отвечает КОЛОНКОЙ store, тело без
-        // бэклинка — своей компонентой; body_state — одна дверь на оба рода.
-        if (C* owned = body_state<C>(reg, rec)) return owned;
+    // Запись-макро отвечает КОЛОНКОЙ store по хэндлу (шаг 2 1е); тело без
+    // записи — своей компонентой (self-fallback — вторая честная форма).
+    const MacroHandle rec = macro_record_of(reg, body);
+    if (rec.slot != kMacroNoSlot) {
+        if (C* owned = body_state<C>(store_of(reg), rec)) return owned;
     }
     return body_state<C>(reg, body);
 }

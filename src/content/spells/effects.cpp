@@ -231,7 +231,8 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     // record under the avatar means the caster is already wearing somebody.
     entt::entity home = entt::null;
     for (auto e : reg.view<ecs::PlayerSquadTag>()) { home = e; break; }
-    if (home != entt::null && sub::record_of(reg, caster) != home) return;
+    if (home != entt::null
+        && sub::macro_record_of(reg, caster) != handle_of(reg, home)) return;
     // The body under the reticle, within THIS row's reach. The row is this
     // function's own binding (kSpellEffects), so reading it back is the
     // ordinal law, not a lookup of somebody else's numbers.

@@ -940,7 +940,8 @@ void SubworldEngine::spawn_player_entity() {
     // things follow from this one emplace: the fold-up passes lose their
     // reason to exist, and no damage/spend path needs to know which kind of
     // body it is holding.
-    if (flagRec != entt::null) reg.emplace<ecs::MacroOrigin>(e, flagRec);
+    if (flagRec != entt::null)
+        reg.emplace<ecs::MacroOrigin>(e, handle_of(reg, flagRec));
     // Inc 4b: the player is a full combat participant, not an inert anchor.
     //  - Pools MIRROR the record the flag stands in (sub/record.h);
     //    mirror_bodies_from_record re-pulls the block at each tick top, and
@@ -1139,17 +1140,17 @@ void SubworldEngine::sync_player_entity_position() {
                 // The record is the husk's own backlink (mirror law): the
                 // FLAG record, not the ordinal — a worn lord swings by HIS
                 // gear and his standing effects (A2, §45 «два ответа»).
-                const entt::entity rec = record_of(reg, e);
-                const BonusTotals st = rec != entt::null
-                    ? standing_bonuses_of(*ecs_, rec) : BonusTotals{};
+                const MacroHandle rec = sub::macro_record_of(reg, e);
+                const BonusTotals st = rec.slot != kMacroNoSlot
+                    ? standing_bonuses_of(store_of(reg), rec)
+                    : standing_bonuses_of(reg, e);
                 const CharacterSheet* base = player_sheet(*ecs_);
                 const CharacterSheet eff = base
                     ? effective_sheet(*base, st) : CharacterSheet{};
                 const DerivedBonuses d = calculate_derived(
                     eff.attributes, eff.skills, st);
-                const ecs::BodyEquipment* eqp = nullptr;
-                if (rec != entt::null)
-                    eqp = body_state<ecs::BodyEquipment>(reg, rec);
+                const ecs::BodyEquipment* eqp =
+                    sub::state_of<ecs::BodyEquipment>(reg, e);
                 const StrikeFields hs = hand_strike_fields(
                     eff.attributes, eff.skills,
                     eqp ? &eqp->gear : nullptr);
@@ -1171,11 +1172,9 @@ void SubworldEngine::sync_player_entity_position() {
                               ? ecs::Combat::Missile : ecs::Combat::Melee;
                 {
                     float armReach = kAdventurerCombat.attackRange;
-                    if (rec != entt::null) {
-                        if (const auto* k = body_state<ecs::NPCKind>(reg, rec)) {
-                            armReach =
-                                npc_def(NPCType(k->type)).combat.attackRange;
-                        }
+                    if (const auto* k = sub::state_of<ecs::NPCKind>(reg, e)) {
+                        armReach =
+                            npc_def(NPCType(k->type)).combat.attackRange;
                     }
                     c->attackRange =
                         c->kind == ecs::Combat::Missile && hs.range > 0.0f
@@ -1220,8 +1219,7 @@ void SubworldEngine::mirror_bodies_from_record() {
     for (auto [body, origin, mirror] :
          reg.view<ecs::MacroOrigin, ecs::Pools, ecs::SubworldTag>().each()) {
         (void)body;
-        if (!reg.valid(origin.macro)) continue;
-        const auto* record = body_state<ecs::Pools>(reg, origin.macro);
+        const auto* record = body_state<ecs::Pools>(store_of(reg), origin.macro);
         if (!record || record->maxHp <= 0) continue;
         mirror = *record;
         mirror.maxHp = std::max(1, mirror.maxHp);
@@ -2772,8 +2770,9 @@ bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
     // в субмир»). Бой ОБЪЯВЛЕН — противник сошёлся: уже стоящее тело
     // встаёт в то же кольцо, куда встало бы рождённое, той же рукой
     // (place_body_ring выше) — а второго тела для одного лорда не бывает.
+    const MacroHandle macroH = handle_of(reg, macro);
     for (auto e : reg.view<ecs::MacroOrigin>()) {
-        if (reg.get<ecs::MacroOrigin>(e).macro != macro) continue;
+        if (reg.get<ecs::MacroOrigin>(e).macro != macroH) continue;
         if (auto* p = reg.try_get<ecs::Position>(e)) {
             p->x = fx;
             p->y = fy;
@@ -3303,11 +3302,10 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // for (problems.md 19.13). The reaper above is the ONE place that
             // knows a body has died, so this is the only place that can be.
             if (const auto* origin = reg.try_get<ecs::MacroOrigin>(e)) {
-                if (reg.valid(origin->macro)) {
-                    if (auto* mh = body_state<ecs::Pools>(reg, origin->macro)) {
-                        mh->hp = 0.0f;
-                    }
-                    macro_mark_dead(reg, origin->macro);
+                MacroStore& st = store_of(reg);
+                if (auto* mh = body_state<ecs::Pools>(st, origin->macro)) {
+                    mh->hp = 0;
+                    macro_mark_dead(st, origin->macro);
                     // …and his men stop being a squad THE MOMENT he falls,
                     // exactly as they do when the auto-resolve kills him
                     // (CANON S4: a leaderless squad's survivors fall into the
@@ -3347,7 +3345,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // sheet grows like the player's, a transient rolls.
                 const entt::entity killerBody =
                     entt::entity(lastHit->attackerId);
-                entt::entity leader = entt::null;
+                MacroHandle leader{};
                 bool playerHand = false;
                 if (reg.valid(killerBody)) {
                     if (const auto* origin =
@@ -3357,23 +3355,27 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                                    reg.try_get<ecs::MacroDebt>(killerBody);
                                debt && debt->stock
                                    == std::uint8_t(MacroStock::Roster)) {
-                        leader = macro_entity_by_spawn_id(
+                        const entt::entity le = macro_entity_by_spawn_id(
                             *mw_.world, std::uint32_t(debt->subject));
+                        if (le != entt::null)
+                            leader = handle_of(mw_.world->reg, le);
                     } else if (reg.any_of<ecs::AvatarTag,
                                           ecs::PlayerSoldierTag>(killerBody)) {
-                        leader = player_squad_entity(*ecs_);
+                        const entt::entity ps = player_squad_entity(*ecs_);
+                        if (ps != entt::null)
+                            leader = handle_of(mw_.world->reg, ps);
                     }
                     // «Рука игрока» — сценная правда для репутации: его
                     // аватар (включая одержимое тело) или его солдат.
                     playerHand = reg.any_of<ecs::AvatarTag,
                                             ecs::PlayerSoldierTag>(killerBody);
                 }
-                if (leader != entt::null && mw_.world->reg.valid(leader)
-                    && !macro_dead(mw_.world->reg, leader)) {
+                MacroStore& mst = store_of(mw_.world->reg);
+                if (mst.valid(leader) && !macro_dead(mst, leader)) {
                     // One row, one formula (owner, 2026-08-29): what a kill
                     // is worth is npc_xp_reward — the row's own xpReward
                     // stepped by level, for EVERY row and EVERY killer.
-                    award_kill_xp(*mw_.world, leader,
+                    award_kill_xp(mst, leader,
                                   npc_xp_reward(NPCType(std::uint8_t(
                                                     kind ? kind->type : 0)),
                                                 lvl));

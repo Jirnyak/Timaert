@@ -243,7 +243,8 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     // The backlink is the ADDRESS of all of the above — and of his bars. Without
     // it the encounter is a stranger who happens to look like him.
     CHECK(reg.all_of<ecs::MacroOrigin>(body)
-              && reg.get<ecs::MacroOrigin>(body).macro == macro,
+              && reg.get<ecs::MacroOrigin>(body).macro
+                     == sm::handle_of(reg, macro),
           "a tracked body knows which entity it is");
 
     // A whole entity arrives whole: the control that stops "arrives wounded"
