@@ -286,6 +286,31 @@ inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
     return entt::null;
 }
 
+// ── ПРИКАЗ РУКОЙ — ОДНА ДВЕРЬ ДЛЯ ГРАНИЦЫ (консоль, будущая панель приказов) ─
+//
+// У ПРИКАЗА ОДИН ДОМ. Маршрут живёт колонкой `orders` store, и читает его мир
+// той же дверью `body_state` (`npc_ai.cpp` лестница поведения). Граница НЕ
+// СМЕЕТ иметь своего дома для приказа: до 2026-09-26 консоль писала
+// entt-компоненту `ecs::SquadOrders`, недостижимую по построению (первая ветвь
+// `body_state` отвечает колонкой всякому носителю `MacroSlot`), поэтому команда
+// `squad_orders` печатала успех и не меняла мир с флипа 1в — второй ответ на
+// один вопрос мира (DOD п.6), проживший сутки ровно потому, что устаревший
+// путь не снесли в тот же день (AGENTS §6 «легаси не живёт»).
+//
+// СНЯТИЕ ПРИКАЗА — ЭТА ЖЕ ДВЕРЬ С ПУСТЫМ МАРШРУТОМ, а не второй вход: наличие
+// маршрута И ЕСТЬ приказ (вердикт владельца 2026-09-10, «одна крутилка, не
+// две»), значит «отменить» есть запись маршрута нулевой длины. Отказ — вслух у
+// звонящего: дверь возвращает false на неизвестный ординал и не трогает мир.
+inline bool order_squad_route(ecs::World& w, std::uint32_t ordinal,
+                             const ecs::SquadOrders& route) {
+    const entt::entity e = macro_entity_by_spawn_id(w, ordinal);
+    if (e == entt::null) return false;
+    auto* col = body_state<ecs::SquadOrders>(w.reg, e);
+    if (col == nullptr) return false;
+    *col = route;
+    return true;
+}
+
 // ── THE SHEET OF A MACRO BODY (owner verdict 2026-09-10, ММОРПГ-модель) ───
 //
 // A NAMED character (npc.h kNamedKinds) OWNS his sheet: the CharacterSheet

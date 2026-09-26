@@ -459,6 +459,37 @@ void test_spawn_squad_is_one_spec_one_door() {
     CHECK((*sm::body_state<ecs::MacroSpawnId>(w.reg, second)).index
               != (*sm::body_state<ecs::MacroSpawnId>(w.reg, leader)).index,
           "each created squad gets its own save-stable ordinal");
+
+    // ── ПРИКАЗ РУКОЙ ХОДИТ ТОЙ ЖЕ ДВЕРЬЮ, ЧТО ЧИТАЕТ МИР (M-136) ─────────
+    // Охраняемый закон: у приказа ОДИН дом (DOD п.6). Консоль до 2026-09-26
+    // писала entt-компоненту `ecs::SquadOrders`, которую не читает никто:
+    // `body_state` первой же ветвью отвечает КОЛОНКОЙ всякому носителю
+    // `MacroSlot`. Свидетель спрашивает ровно то, что команда обещает в своём
+    // выводе, — и спрашивает у ЧИТАТЕЛЯ МИРА, а не у писателя. Марш по
+    // маршруту утверждён выше (маршрут из спеки), здесь он не переутверждается
+    // сознательно: эта секция про ДОМ приказа, не про ноги.
+    const std::uint32_t ord =
+        (*sm::body_state<ecs::MacroSpawnId>(w.reg, leader)).index;
+    CHECK(sm::order_squad_route(w, ord, ecs::SquadOrders{}),
+          "дверь нашла сквад по его ординалу");
+    CHECK((*sm::body_state<ecs::SquadOrders>(w.reg, leader)).waypointCount == 0,
+          "«released to its own life» видно ЧИТАТЕЛЮ: колонка пуста");
+    ecs::SquadOrders hand{};
+    hand.waypointCount = 2;
+    hand.waypoints[0] = 31; hand.waypoints[1] = 29;
+    hand.waypoints[2] = 20; hand.waypoints[3] = 20;
+    CHECK(sm::order_squad_route(w, ord, hand), "приказ рукой принят");
+    const auto& live = *sm::body_state<ecs::SquadOrders>(w.reg, leader);
+    CHECK(live.waypointCount == 2 && live.waypoints[0] == 31
+              && live.waypoints[1] == 29 && live.waypoints[2] == 20,
+          "«now patrols 2 waypoint(s)» — те самые клетки в колонке мира");
+    // Негативный контроль: ординала 0xFFFFFFFF в мире нет (эмитент
+    // монотонный и начинается с нуля), и отказ обязан быть ПОЛНЫМ — дверь
+    // не трогает ничей приказ, промахнувшись адресом.
+    CHECK(!sm::order_squad_route(w, 0xFFFFFFFFu, ecs::SquadOrders{}),
+          "негативный контроль: неизвестный ординал получает отказ");
+    CHECK((*sm::body_state<ecs::SquadOrders>(w.reg, leader)).waypointCount == 2,
+          "...и отказ ничего не переписал");
 }
 
 } // namespace

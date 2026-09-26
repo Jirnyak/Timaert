@@ -4239,12 +4239,6 @@ void register_console_commands(App& app) {
             if (a.empty()) return false;
             int ordinal = -1;
             if (!sm::dev::arg_int(a, 0, ordinal) || ordinal < 0) return false;
-            entt::entity target = sm::macro_entity_by_spawn_id(
-                app.ecs, std::uint32_t(ordinal));
-            if (target == entt::null) {
-                c.error("no squad with that ordinal");
-                return true;
-            }
             sm::ecs::SquadOrders orders{};
             for (std::size_t i = 1; i + 1 < a.size()
                  && orders.waypointCount < 8; i += 2) {
@@ -4259,14 +4253,19 @@ void register_console_commands(App& app) {
                     std::int16_t(sm::wrapi(y, app.gs.mapH));
                 ++orders.waypointCount;
             }
+            // ОДНА ДВЕРЬ НА ОБА ИСХОДА: пустой маршрут ЕСТЬ снятие приказа
+            // (macro/squad.h order_squad_route) — граница не держит своего дома
+            // для приказа и не знает, где он лежит.
+            if (!sm::order_squad_route(app.ecs, std::uint32_t(ordinal),
+                                       orders)) {
+                c.error("no squad with that ordinal");
+                return true;
+            }
             if (orders.waypointCount == 0) {
-                app.ecs.reg.remove<sm::ecs::SquadOrders>(target);
                 c.printfln(Lvl::Ok, "squad #%d released to its own life",
                            ordinal);
                 return true;
             }
-            app.ecs.reg.emplace_or_replace<sm::ecs::SquadOrders>(target,
-                                                                 orders);
             c.printfln(Lvl::Ok, "squad #%d now patrols %d waypoint(s)",
                        ordinal, int(orders.waypointCount));
             return true;

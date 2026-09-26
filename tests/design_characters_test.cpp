@@ -136,9 +136,30 @@ void test_spawn_births_the_row() {
     const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, e));
     CHECK(untyped_squad_behaviour(w.reg, e, kind) == AIBehaviour::Waypoints,
           "with the route present, the order rung answers");
-    w.reg.remove<ecs::SquadOrders>(e);
+    // ПРИКАЗ СНИМАЕТСЯ ТОЙ ЖЕ ДВЕРЬЮ, ЧТО ЕГО СТАВИТ (M-136). Здесь стояло
+    // `w.reg.remove<ecs::SquadOrders>(e)` — НО-ОП с флипа 1в: приказ лежит
+    // колонкой store, а entt-компоненты на этом скводе нет вовсе. Значит
+    // проверка ниже все эти дни исполняла НЕ ТУ ступень (отвечала первая, с
+    // целым маршрутом), и совпадала с ожиданием лишь потому, что у строки 0
+    // `behaviour` тоже `Waypoints`.
+    // Ординал СПРАШИВАЕТСЯ у сущности, а не угадывается порядком спавна:
+    // допущение «проповедник родился нулевым» и есть тот род надежды, который
+    // §8 п.11 запрещает свидетелю.
+    const std::uint32_t ord =
+        (*sm::body_state<ecs::MacroSpawnId>(w.reg, e)).index;
+    CHECK(sm::order_squad_route(w, ord, ecs::SquadOrders{}),
+          "приказ снят дверью мира, а не компонентой мимо колонки");
+    CHECK((*sm::body_state<ecs::SquadOrders>(w.reg, e)).waypointCount == 0,
+          "и снятие видно читателю: маршрута в колонке больше нет");
     CHECK(untyped_squad_behaviour(w.reg, e, kind) == row.behaviour,
           "without the route, the design-row rung answers");
+    // ЧЕГО ЭТА СЕКЦИЯ НЕ ДОКАЗЫВАЕТ, СКАЗАНО ВСЛУХ (§8 п.7): у строки 0
+    // `behaviour == Waypoints`, поэтому ступени 1 и 3 дают ОДИН ответ, и
+    // проверка выше их не различает — она свидетельствует лишь то, что после
+    // снятия маршрута дверь лестницы не падает и отвечает строкой. Различающий
+    // свидетель ступени 3 требует строки, чей `behaviour` НЕ `Waypoints`, и её
+    // дома в этой фикстуре нет; дыра названа в реестре (M-133), а не
+    // замаскирована подгонкой ожидания.
     CHECK(kNpcTypeDefs[std::uint16_t(row.body)].ai != row.behaviour,
           "negative control: the row rung provably differs from the type "
           "row for this body — the ladder step is real");
