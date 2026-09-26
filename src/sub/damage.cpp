@@ -27,7 +27,7 @@ namespace {
 // changes to gain it.
 int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
     // WHAT HE WAS TRAINED TO WEAR (CANON S14, built 2026-09-19). The sheet is
-    // the body's own — through THE door (record_of), like every other piece of
+    // the body's own — through THE door (state_of), like every other piece of
     // its state — and a body without one (a prop, a headless test fixture)
     // answers with the untrained ×1 the law already gave everyone.
     static const Skills kUntrained{};

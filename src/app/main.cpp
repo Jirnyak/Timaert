@@ -73,7 +73,7 @@
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
 #include "sub/damage.h"
-#include "sub/record.h"   // pools_of/record_of — the death check asks the
+#include "sub/record.h"   // pools_of/macro_record_of — the death check asks the
                           // body the player is STANDING IN, mirror-law wise
 #include "sub/dgn/dispatch.h"
 #include "sub/height.h"

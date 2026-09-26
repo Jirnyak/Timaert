@@ -147,6 +147,16 @@ inline MacroHandle store_birth(MacroStore& s) {
 // Смерть слота: поколение растёт — всякий старый хэндл мертвеет мгновенно;
 // колонки НЕ трутся здесь (их обнулит следующее рождение из списка) —
 // значит читать мёртвый слот нельзя ничем, кроме valid()-гарды.
+//
+// ПРЕДЕЛ НАЗВАН ВСЛУХ: поколение 16-битное и ЗАВОРАЧИВАЕТСЯ. После 65 536
+// смертей ОДНОГО слота древний хэндл снова станет валидным и покажет на
+// постороннего. Насыщения здесь нет сознательно: насыщенное поколение
+// сделало бы слот навсегда неперепользуемым (утечка слота — хуже), а
+// сравнение с «мёртвым навсегда» значением требует второго словаря судьбы
+// рядом с alive. Числом: 65 536 смертей одного слота при капе 32 768 — это
+// ~2.1 млрд смертей сквадов на полном обороте массива, то есть вне
+// достижимого горизонта партии; когда горизонт изменится, лечением будет
+// ширина поколения, а не насыщение.
 inline void store_death(MacroStore& s, MacroHandle h) {
     if (!s.valid(h)) return;   // двойная смерть — no-op, не порча freelist
     s.alive[h.slot] = 0;
@@ -194,6 +204,19 @@ inline MacroStore& store_of(entt::registry& reg) {
 inline MacroHandle handle_of(entt::registry& reg, entt::entity e) {
     const std::uint16_t slot = slot_of(reg, e);
     return MacroHandle{slot, store_of(reg).generation[slot]};
+}
+
+// Та же дверь для звонящего, который НЕ ЗНАЕТ, макро-сквад ли перед ним:
+// сущность сцены (или реестр фикстуры без store) честно отвечает «никого»
+// вместо падения. handle_of выше остаётся ТРЕБОВАНИЕМ: где закон says «это
+// сквад», молчаливая деградация была бы хуже падения.
+inline MacroHandle try_handle_of(const entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return MacroHandle{};
+    const auto* ms = reg.try_get<ecs::MacroSlot>(e);
+    if (!ms) return MacroHandle{};
+    MacroStore* const* st = reg.ctx().find<MacroStore*>();
+    if (!st) return MacroHandle{};
+    return MacroHandle{ms->slot, (*st)->generation[ms->slot]};
 }
 
 // Упаковка хэндла в 32 бита для POD-конвертов (BattleFact, GameEvent):

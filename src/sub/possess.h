@@ -50,7 +50,7 @@ inline entt::entity current_player_body(ecs::World& w) {
 // No-op returning false if target is null / invalid / unpositioned / already
 // the player. Which flags move is record.h's two births read out loud (закон
 // шва, owner verdict 2026-09-17): a body with a RECORD carries both flags —
-// you remain him across the seam; a DERIVED body (record_of answers with the
+// you remain him across the seam; a DERIVED body (macro_record_of answers with no
 // body itself) carries only the scene flag — the macro flag stays home, so
 // leaving the scene IS the reset, written nowhere. Pure ECS: the caller
 // re-mirrors the position scalars from the new body afterwards (the engine
@@ -64,7 +64,7 @@ inline bool possess_entity(ecs::World& w, entt::entity target) {
 
     // ЗАКОН ШВА (вердикт владельца 2026-09-17) — record.h's two honest births
     // read out loud, each getting exactly the possession it can carry:
-    //   · a PROJECTION answers `record_of` with the macro entity it backlinks
+    //   · a PROJECTION answers `macro_record_of` with the store slot it backlinks
     //     — BOTH flags move, and leaving the scene you simply REMAIN him
     //     («одержим лордом… который контекстно анкета макромира — остаётся
     //     им»);

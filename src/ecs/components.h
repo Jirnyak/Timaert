@@ -283,7 +283,7 @@ struct MacroDebt {
 // and, with the possession spell, wear — the very lords/bandits/peasants that
 // roam the overworld.
 //
-// THIS HANDLE IS THE SEAM'S ONE DOOR (sub/record.h record_of / pools_of): the
+// THIS HANDLE IS THE SEAM'S ONE DOOR (sub/record.h macro_record_of / pools_of): the
 // record is AUTHORITATIVE and the body is its MIRROR, re-pulled every tick
 // top, so a wound or a spend written on the body evaporates a frame later and
 // must go to the record instead. The line that stood here — «the macro entity

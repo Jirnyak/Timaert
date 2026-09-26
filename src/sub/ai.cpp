@@ -5,7 +5,7 @@
 #include "macro/store.h"
 #include "macro/macro_stock.h" // MacroStock::Roster — чьи люди стоят без чувств
 #include "macro/npc.h"   // cruiseM — крейсерская высота рода летуна
-#include "sub/record.h"  // record_of — «без сознания» читается через зеркало
+#include "sub/record.h"  // macro_record_of — «без сознания» читается через зеркало
 #include <cmath>
 #include <algorithm>
 
@@ -43,7 +43,9 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     MacroHandle unconsciousRec{};
     for (auto sq : reg.view<ecs::PlayerSquadTag>()) {
         if (!reg.all_of<ecs::PlayerTag>(sq)) {
-            unconsciousRec = handle_of(reg, sq);
+            // try_, не handle_of: это ТИК, и он не вправе требовать формы —
+            // сцена без store (фикстура) отвечает «никого», а не падает.
+            unconsciousRec = try_handle_of(reg, sq);
             if (const auto* sid = body_state<ecs::MacroSpawnId>(reg, sq)) {
                 unconsciousSubject = std::int32_t(sid->index);
             }

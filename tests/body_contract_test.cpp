@@ -281,12 +281,14 @@ void test_a_body_that_is_not_an_entity_is_refused() {
           "nothing embodies nothing");
 
     // A monster id (0x100 | index) is not a humanoid row and must never alias
-    // one — the guard is on the WIDE type, before any narrowing.
-    const auto monster = reg.create();
-    reg.emplace<ecs::NPCKind>(monster, std::uint16_t(0x103), std::uint16_t(1));
-    reg.emplace<ecs::Pools>(monster, 10, 10);
-    reg.emplace<ecs::NpcLevel>(monster, std::int16_t(2));
-    reg.emplace<ecs::NpcCharacter>(monster, ecs::NpcCharacter{});
+    // one — the guard is on the WIDE type, before any narrowing. Рождается
+    // ПОЛНОЦЕННОЙ записью (слот store), иначе отказ пришёл бы по ФОРМЕ и это
+    // утверждение стало бы проверять не то, что написано в его тексте.
+    const auto monster = make_macro_lord(
+        reg, NPCType::Peasant, /*faction*/1, /*level*/2,
+        /*hp*/10, /*maxHp*/10, /*visualSeed*/0u);
+    sm::store_of(reg).kind[reg.get<ecs::MacroSlot>(monster).slot].type =
+        std::uint16_t(0x103);
     CHECK(sub::spawn_tracked_body(reg, monster, 5.0f, 5.0f, 1u, false)
               == entt::null,
           "a monster id cannot pass for a humanoid row");

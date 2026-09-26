@@ -14,7 +14,7 @@
 #include "macro/spell_book_state.h"   // SpellBook — part of the record a body inherits
 #include "macro/squad.h"              // sheet_of — THE door to "who is this"
 #include "macro/player_entity.h"      // player_squad_entity — «чья это запись»
-#include "sub/record.h"              // record_of / StandingMirror — дверь шва
+#include "sub/record.h"              // macro_record_of / StandingMirror — дверь шва
 #include "sub/body.h"
 #include "macro/store.h"
 #include <algorithm>
@@ -579,23 +579,22 @@ bool tracked_body_owns_nothing(const entt::registry& reg,
     // for the wrong reason.
     // ФЛИП 1в: у записи-носителя слота владение живёт КОЛОНКАМИ store по
     // построению — вторая половина утверждения истинна типом, спрашивать
-    // entt-компоненты у неё больше нечего.
+    // entt-компоненты у неё больше нечего. Шаг 2: и ДРУГОЙ записи не бывает —
+    // бэклинк несёт MacroHandle, а хэндлом адресуется только слот.
     return TrackedInheritance::none_on(reg, body)
-        && (reg.all_of<ecs::MacroSlot>(macro)
-            || TrackedInheritance::any_on(reg, macro));
+        && reg.all_of<ecs::MacroSlot>(macro);
 }
 
 entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant) {
     if (macro == entt::null || !reg.valid(macro)) return entt::null;
-    // ФЛИП 1в: «тело-образная запись» = носитель слота store (все колонки
-    // есть по построению) ЛИБО сценическая сущность с прежним набором.
-    if (!reg.all_of<ecs::MacroSlot>(macro)
-        && !reg.all_of<ecs::NPCKind, ecs::Pools, ecs::NpcLevel,
-                       ecs::NpcCharacter>(macro)) {
-        return entt::null;
-    }
+    // ЗАПИСЬ ЕСТЬ СЛОТ STORE, и другой формы больше нет (шаг 2 1е). Прежде
+    // гард пускал и «сценическую» сущность с полным набором компонент — а
+    // строкой ниже бэклинк берётся ХЭНДЛОМ, которым такая сущность не
+    // адресуется вовсе: гард обещал форму, которую дверь не умеет исполнить
+    // (assert в дебаге, UB в релизе). Обещание снято, а не подпёрто.
+    if (!reg.all_of<ecs::MacroSlot>(macro)) return entt::null;
     const auto& kind = (*body_state<ecs::NPCKind>(reg, macro));
     // A kind that names no row at all is refused; a kind that names one is
     // trackable, whatever it is. The extra refusal that stood here — "not a

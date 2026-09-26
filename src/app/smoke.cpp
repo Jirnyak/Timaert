@@ -29,7 +29,7 @@
 #include "sub/city_layout.h"  // city_house_target — what the town ASKED for
 #include "sub/possess.h"   // current_player_body — «рука игрока» атрибуции
 #include "sub/spawn.h"
-#include "sub/record.h"    // record_of / pools_of — дверь шва «чья это запись»
+#include "sub/record.h"    // macro_record_of / pools_of — дверь шва «чья это запись»
 #include "macro/codex.h"
 #include "macro/items.h"
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness

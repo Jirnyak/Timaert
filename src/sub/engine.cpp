@@ -18,7 +18,7 @@
 #include "sub/movement.h"
 #include "sub/spell_effects.h"
 #include "sub/damage.h"
-#include "sub/record.h"   // record_of / pools_of — THE door of the seam
+#include "sub/record.h"   // macro_record_of / pools_of — THE door of the seam
 #include "sub/base_generator.h"
 #include "sub/dgn/dispatch.h"
 #include "sub/body.h"
@@ -1216,10 +1216,14 @@ void SubworldEngine::mirror_bodies_from_record() {
     // Dead bodies included on purpose: the reaper settles a death by reading
     // the record, and a corpse whose mirror still showed a live bar would be
     // drawn standing for one frame.
+    // Store берётся ОДИН раз на проход, не на тело: это ctx-поиск, а цикл
+    // считает свой бюджет в 0.00041 мс на тело (шапка ниже) — lookup на
+    // каждое тело был бы налогом того же порядка, что вся работа.
+    const MacroStore& st = store_of(reg);
     for (auto [body, origin, mirror] :
          reg.view<ecs::MacroOrigin, ecs::Pools, ecs::SubworldTag>().each()) {
         (void)body;
-        const auto* record = body_state<ecs::Pools>(store_of(reg), origin.macro);
+        const auto* record = body_state<ecs::Pools>(st, origin.macro);
         if (!record || record->maxHp <= 0) continue;
         mirror = *record;
         mirror.maxHp = std::max(1, mirror.maxHp);
