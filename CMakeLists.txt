@@ -1729,6 +1729,91 @@ timaert_test(ground_table_test
 target_compile_definitions(ground_table_test
     PRIVATE TIMAERT_REPO_DIR="${CMAKE_SOURCE_DIR}")
 
+# ── ДВЕ ТЕХНИЧЕСКИЕ СТЕНЫ ЦЕНЫ СБОРКИ (наряды M-127, M-128) ────────────────
+#
+# ЗАЧЕМ. 2026-09-25 одна строка в заголовке (`make_macro_store`,
+# `src/macro/store.h`) стала держать 97 % машинного времени сборки: 161 TU
+# подорожал медианой 90.1 с против 0.36 с у остальных 1125, машина умерла от
+# jetsam семь раз за сутки, а сборка при этом была ЗЕЛЁНОЙ — ни ошибки, ни
+# предупреждения, `.o` байт в байт того же размера. Проза этого не ловит
+# (владелец 2026-09-26: «надо чёто типа статик асерт бить их по рукам
+# ТЕХНИЧЕСКИ чтобы ложило код»), поэтому цена сборки закреплена ДВУМЯ
+# приборами, по оси каждый:
+#   · `header_cost_test` — ПАМЯТЬ заголовка, замером, гейт `check`
+#     (детерминирован: пиковый RSS процесса от загрузки машины не зависит);
+#   · `tu_time_jump` — ВРЕМЯ TU по `build/.ninja_log`, отдельный таргет
+#     (стенное время помнит -j, свап и холодные сборки, красным `check` от
+#     него быть нельзя — вердикт владельца 2026-09-26).
+#
+# Список заголовков и аргументы пробника РОЖДАЮТСЯ ЗДЕСЬ, из тех же глобов и
+# таргетов, чем собирается игра: второй список флагов разъехался бы с первым
+# (§9 — флаги живут в ОДНОМ месте), а рукописный список заголовков забыл бы
+# новый файл ровно так же, как забывал тесты до timaert_test().
+file(GLOB_RECURSE TIMAERT_WORLD_HEADERS CONFIGURE_DEPENDS
+    RELATIVE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/*.h)
+list(SORT TIMAERT_WORLD_HEADERS)
+list(JOIN TIMAERT_WORLD_HEADERS "\n" _timaert_header_list_text)
+file(WRITE ${CMAKE_BINARY_DIR}/generated/header_probe_list.txt
+    "${_timaert_header_list_text}\n")
+
+# Флаги сборки как ОДИН аргумент на строку: пробник зовёт компилятор напрямую,
+# без оболочки, значит разбивать нечего и цитировать нечего.
+string(TOUPPER "${CMAKE_BUILD_TYPE}" _timaert_cfg)
+set(_timaert_cfg_flags "")
+if(_timaert_cfg)
+    set(_timaert_cfg_flags "${CMAKE_CXX_FLAGS_${_timaert_cfg}}")
+endif()
+separate_arguments(_timaert_probe_head NATIVE_COMMAND
+    "${CMAKE_CXX_FLAGS} ${_timaert_cfg_flags}")
+list(PREPEND _timaert_probe_head "-std=c++${CMAKE_CXX_STANDARD}")
+foreach(_dir ${TIMAERT_SDL2_INCLUDE_DIRS})
+    list(APPEND _timaert_probe_head "-I${_dir}")
+endforeach()
+if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+    get_target_property(_timaert_mixer_incs ${TIMAERT_SDL2_MIXER_TARGET}
+        INTERFACE_INCLUDE_DIRECTORIES)
+    if(_timaert_mixer_incs)
+        foreach(_dir ${_timaert_mixer_incs})
+            list(APPEND _timaert_probe_head "-I${_dir}")
+        endforeach()
+    endif()
+endif()
+list(JOIN _timaert_probe_head "\n" _timaert_probe_head_text)
+file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/generated/header_probe.args CONTENT
+"${_timaert_probe_head_text}
+$<JOIN:$<TARGET_PROPERTY:timaert_build_flags,INTERFACE_COMPILE_OPTIONS>,\n>
+-D$<JOIN:$<TARGET_PROPERTY:${PROJECT_NAME},COMPILE_DEFINITIONS>,\n-D>
+-I$<JOIN:$<TARGET_PROPERTY:${PROJECT_NAME},INCLUDE_DIRECTORIES>,\n-I>
+$<$<BOOL:$<TARGET_PROPERTY:EnTT::EnTT,INTERFACE_INCLUDE_DIRECTORIES>>:-I$<JOIN:$<TARGET_PROPERTY:EnTT::EnTT,INTERFACE_INCLUDE_DIRECTORIES>,\n-I>>
+$<$<BOOL:$<TARGET_PROPERTY:Vulkan::Vulkan,INTERFACE_INCLUDE_DIRECTORIES>>:-I$<JOIN:$<TARGET_PROPERTY:Vulkan::Vulkan,INTERFACE_INCLUDE_DIRECTORIES>,\n-I>>
+")
+
+# Стена держится на fork/wait4/proc_pid_rusage — POSIX. Windows проверяется
+# Actions в зеркале и тестов там не собирает (`--target timaert`), так что
+# кроссплатформенной эта дверь быть не обязана; зато и молчать о своём
+# отсутствии она не умеет — на не-POSIX её просто нет в списке ctest.
+if(UNIX)
+    timaert_test(header_cost_test)
+    target_compile_definitions(header_cost_test PRIVATE
+        TIMAERT_BUILD_DIR="${CMAKE_BINARY_DIR}"
+        TIMAERT_CXX="${CMAKE_CXX_COMPILER}")
+endif()
+
+# Прибор времени TU: логика в одном файле, две двери к ней — таргет над живым
+# журналом и тест над фикстурой. Второй копии разбора нет (§8 п.5).
+add_executable(tu_time_jump tests/tu_time_jump_main.cpp tests/tu_time_jump.cpp)
+set_target_properties(tu_time_jump PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_link_libraries(tu_time_jump PRIVATE timaert_build_flags)
+
+timaert_test(tu_time_jump_test SOURCES tests/tu_time_jump.cpp)
+if(CMAKE_GENERATOR MATCHES "Ninja")
+    target_compile_definitions(tu_time_jump_test
+        PRIVATE TIMAERT_NINJA_LOG="${CMAKE_BINARY_DIR}/.ninja_log")
+endif()
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # There is nothing here any more, and that is the point: timaert_test() calls
 # add_test() for every target it creates, so "built" and "registered" cannot
@@ -1755,4 +1840,6 @@ add_custom_target(check
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Building the game and all tests, then running the suite"
     USES_TERMINAL)
-add_dependencies(check ${PROJECT_NAME} ${_timaert_tests})
+# `tu_time_jump` ctest не гоняет (вердикт по стенному времени был бы ложью),
+# но СОБИРАЕТСЯ он здесь: прибор, который никто не компилирует, сгниёт молча.
+add_dependencies(check ${PROJECT_NAME} ${_timaert_tests} tu_time_jump)

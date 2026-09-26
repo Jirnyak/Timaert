@@ -29,6 +29,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>    // std::snprintf ниже — заголовок несёт, чем пользуется
 #include <cstring>
 
 namespace sm {
