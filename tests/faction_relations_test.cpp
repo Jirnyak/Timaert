@@ -27,18 +27,10 @@
 #include "macro/faction.h"   // registry + kHostileThreshold — THE hostility line lives with the relations
 #include "macro/politik.h"
 
-#include <cstdio>
+#include <cstdint>
 #include <cstring>
-#include <string>
 
 namespace {
-
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/faction_relations_test.cpp", 0);
-    return 1;
-}
 
 // The lookup under test, asked the way the game asks it: by SLOT over the flat
 // matrix (macro/relations.h). An id the world never placed answers neutral,
@@ -53,147 +45,195 @@ bool hostile(const sm::GameState& gs, const char* a, const char* b) {
     return relation(gs, a, b) < sm::kHostileThreshold;
 }
 
+// ── Registry integrity (seed-independent) ─────────────────────────────────
+// Unique non-empty ids, and the index door inverts the table in both
+// directions. A loop that stopped at the first bad row would hide how much of
+// the registry drifted, so every claim is counted over the WHOLE table.
+void test_the_registry_is_one_index_space() {
+    using namespace sm;
+    int rows = 0, nameless = 0, duplicated = 0, notInverted = 0, badReverse = 0;
+    for (int i = 0; i < kFactionCount; ++i) {
+        ++rows;
+        if (!kFactionDefs[i].id || kFactionDefs[i].id[0] == '\0') {
+            ++nameless;
+            continue;               // the claims below need an id to ask with
+        }
+        for (int j = i + 1; j < kFactionCount; ++j) {
+            if (std::strcmp(kFactionDefs[i].id, kFactionDefs[j].id) == 0)
+                ++duplicated;
+        }
+        if (faction_index(kFactionDefs[i].id) != i) ++notInverted;
+        if (std::strcmp(faction_id_for_index(std::uint16_t(i)),
+                        kFactionDefs[i].id) != 0) ++badReverse;
+    }
+    CHECK(rows == kFactionCount, "every registry row was actually examined");
+    CHECK(rows > 0, "the registry is not empty — a world has factions");
+    CHECK(nameless == 0, "every faction carries an id to be named by");
+    CHECK(duplicated == 0,
+          "no two factions answer to the same id — one index space, no "
+          "colliding vocabularies");
+    CHECK(notInverted == 0,
+          "faction_index INVERTS the registry: a row's id maps back to its own "
+          "ordinal");
+    CHECK(badReverse == 0,
+          "and faction_id_for_index maps the ordinal back to the same row");
+}
+
+void test_every_realm_names_an_existing_registry_row() {
+    using namespace sm;
+    int realms = 0, orphaned = 0;
+    for (const auto& kd : realm_seed_defs()) {
+        ++realms;
+        if (faction_index(kd.factionId) < 0) ++orphaned;
+    }
+    CHECK(realms > 0, "the world is seeded with realms to check");
+    CHECK(orphaned == 0,
+          "every realm points at a registry row — the split registry that "
+          "could drift is gone, so no realm's identity can vanish");
+}
+
+// Sentinels degrade safely, never alias a real faction. Each door alone.
+void test_the_no_faction_sentinel_degrades_to_neutral() {
+    using namespace sm;
+    CHECK(faction_index(nullptr) < 0, "a null id is nobody, not row zero");
+    CHECK(faction_index("") < 0, "an empty id is nobody either");
+    CHECK(faction_id_for_index(kNoFaction)[0] == '\0',
+          "the no-faction ordinal names no one");
+    CHECK(faction_def_by_index(kNoFaction) == nullptr,
+          "and hands back no row to read columns from");
+}
+
+// ── МАТРИЦА РОЖДАЕТСЯ ИЗ АВТОРСКОЙ ТАБЛИЦЫ (вердикт владельца 2026-09-21) ──
+// Прежде здесь стояли проверки враждебности из СЭМПЛИНГА темпераментных банд —
+// дословный порт прототипа, вырезанный вместе с панелью дипломатии. Политика
+// вернётся после играбельного ядра ОДНИМ законом над реестром интересов, и
+// тогда сюда придут её свидетели.
+void check_one_seed(std::uint32_t seed) {
+    using namespace sm;
+    GameState gs;
+    create_factions(gs, seed);
+
+    // Every registry faction holds its own slot — including "magika", the id
+    // that historically was emitted but never registered.
+    int slots = 0, displaced = 0;
+    for (int i = 0; i < kFactionCount; ++i) {
+        ++slots;
+        if (faction_slot(gs.relations, kFactionDefs[i].id) != i) ++displaced;
+    }
+    CHECK(slots == kFactionCount, "every faction was looked up in the matrix");
+    CHECK(displaced == 0,
+          "a born world seats every registry faction at its OWN ordinal");
+
+    // МАТРИЦА = АВТОРСКАЯ ТАБЛИЦА, БУКВА В БУКВУ. Каждая пара обязана
+    // равняться тому, что говорит kFactionRelations, — и ничему больше: это и
+    // сторожит «одно число на пару, без броска».
+    int pairs = 0, drifted = 0;
+    for (int a = 0; a < kFactionCount; ++a) {
+        for (int b = a + 1; b < kFactionCount; ++b) {
+            ++pairs;
+            const int want = authored_relation(kFactionDefs[a].id,
+                                               kFactionDefs[b].id);
+            if (relation(gs, kFactionDefs[a].id, kFactionDefs[b].id) != want)
+                ++drifted;
+        }
+    }
+    CHECK(pairs == kFactionCount * (kFactionCount - 1) / 2,
+          "every unordered pair of factions was compared");
+    CHECK(drifted == 0,
+          "every pair equals the AUTHORED number and nothing else — one "
+          "number per pair, no roll");
+
+    // СИД НА МАТРИЦУ НЕ ВЛИЯЕТ ВООБЩЕ: вместе с бандами ушёл и RNG-поток
+    // генезиса фракций. Враждебность есть свойство мира, а не удачи броска.
+    CHECK(relation(gs, "demons", "empire") == -100,
+          "demons meet the empire at the authored depth on EVERY seed");
+    CHECK(hostile(gs, "demons", "empire"),
+          "and that depth is past the hostility line — subworld combat is on");
+    CHECK(hostile(gs, "bandits", "empire"),
+          "bandits are hostile to the empire, every world");
+    CHECK(hostile(gs, "bandits", "timaert"),
+          "and to the realm the player starts in");
+    // Культ против магов — до дна шкалы; против прочих слегка, не война.
+    CHECK(relation(gs, "cults", "magika") == kRelationMin,
+          "the cult's hunt for mages runs to the BOTTOM of the scale");
+    CHECK(!hostile(gs, "cults", "empire"),
+          "but the cult is not at war with the empire — one authored pair "
+          "does not bleed into the rest of the row");
+    // ЗВЕРЬ НЕЙТРАЛЕН (и был им всегда: банда Feral {-30,30} при пороге -50 не
+    // давала враждебности ни на одном сиде) — олени не штурмуют деревню.
+    CHECK(!hostile(gs, "wildlife", "empire"),
+          "wildlife is not hostile to the empire — deer do not storm a town");
+    CHECK(!hostile(gs, "wildlife", "timaert"),
+          "nor to the realm: the beast is neutral to everyone's banner");
+
+    // Симметрия — закон ЗАПИСИ (set_relation), а не свойство сэмпла.
+    CHECK(relation(gs, "demons", "empire") == relation(gs, "empire", "demons"),
+          "the matrix is symmetric: enmity reads the same from both sides");
+
+    // Сам себе — ВЕРХ ШКАЛЫ, а не круглая сотня (CANON S26, закон диапазона).
+    CHECK(relation(gs, "empire", "empire") == kRelationMax,
+          "a faction stands with itself at the TOP of the scale, whatever the "
+          "scale's representation");
+    CHECK(!hostile(gs, "empire", "empire"), "and never fights itself");
+    CHECK(!hostile(gs, "demons", "demons"), "not even the demons do");
+
+    // Unknown ids still degrade to neutral (fail-closed for stale data).
+    CHECK(!hostile(gs, "no_such_faction", "empire"),
+          "an id the world never placed is met neutrally, not with a sword");
+    CHECK(!hostile(gs, "empire", "no_such_faction"),
+          "and neutrally in the other direction too");
+
+    // ИГРОК — ОБЫЧНАЯ СТРОКА МАТРИЦЫ. Колонки playerReputation больше нет
+    // (вырезана 2026-09-21): его встречают те же авторские пары, что и всякого
+    // чужого, и проверяется это той же дверью.
+    int rows = 0, byOwnLaw = 0, byTheDoor = 0;
+    for (int i = 0; i < kFactionCount; ++i) {
+        const char* id = kFactionDefs[i].id;
+        if (std::strcmp(id, kPlayerFactionId) == 0) continue;
+        ++rows;
+        const int want = authored_relation(id, kPlayerFactionId);
+        if (player_reputation(&gs, id) != want) ++byOwnLaw;
+        if (faction_relation(&gs, id, kPlayerFactionId) != want) ++byTheDoor;
+    }
+    CHECK(rows == kFactionCount - 1,
+          "every faction but the player's own was asked about the player");
+    CHECK(byOwnLaw == 0,
+          "the player is met by the AUTHORED pair, like any other stranger — "
+          "he has no column of his own");
+    CHECK(byTheDoor == 0,
+          "and the general relation door answers the same as the player one — "
+          "one law, two spellings");
+
+    // Бандиты и демоны хотят его смерти БЕЗ отдельной колонки — по той же
+    // звёздочке, что делает их врагами всем.
+    CHECK(hostile(gs, "bandits", kPlayerFactionId),
+          "bandits want the player dead — off the same wildcard that makes "
+          "them everyone's enemy");
+    CHECK(hostile(gs, "demons", kPlayerFactionId), "and so do the demons");
+
+    // And moving it moves both directions at once.
+    add_player_reputation(gs, "empire", -30);
+    CHECK(player_reputation(&gs, "empire") == -30,
+          "a deed against the empire moves the player's standing");
+    CHECK(faction_relation(&gs, "empire", kPlayerFactionId) == -30,
+          "...in BOTH directions at once — there is one number, not two");
+}
+
+void test_the_matrix_is_the_authored_table_on_every_seed() {
+    int seeds = 0;
+    for (std::uint32_t seed : {12345u, 1u, 777u, 2026u}) {
+        ++seeds;
+        check_one_seed(seed);
+    }
+    CHECK(seeds == 4, "all four worlds were actually built and examined");
+}
+
 } // namespace
 
 int main() {
-    using namespace sm;
-
-    // ── Registry integrity (seed-independent) ─────────────────────────────
-    // Unique non-empty ids; every kingdom the politik layer grows references an
-    // existing registry row (the old split-registry drift is impossible).
-    for (int i = 0; i < kFactionCount; ++i) {
-        if (!kFactionDefs[i].id || kFactionDefs[i].id[0] == '\0') {
-            return fail("registry row with empty id");
-        }
-        for (int j = i + 1; j < kFactionCount; ++j) {
-            if (std::strcmp(kFactionDefs[i].id, kFactionDefs[j].id) == 0) {
-                return fail("duplicate faction id in the registry");
-            }
-        }
-        if (faction_index(kFactionDefs[i].id) != i) {
-            return fail("faction_index does not invert the registry");
-        }
-        if (std::strcmp(faction_id_for_index(std::uint16_t(i)),
-                        kFactionDefs[i].id) != 0) {
-            return fail("faction_id_for_index does not match the registry");
-        }
-    }
-    for (const auto& kd : realm_seed_defs()) {
-        if (faction_index(kd.factionId) < 0) {
-            return fail("realm faction id has no registry row — identity would vanish");
-        }
-    }
-    // Sentinels degrade safely, never alias a real faction.
-    if (faction_index(nullptr) >= 0 || faction_index("") >= 0
-        || faction_id_for_index(kNoFaction)[0] != '\0'
-        || faction_def_by_index(kNoFaction) != nullptr) {
-        return fail("no-faction sentinel does not degrade to neutral");
-    }
-
-    // ── МАТРИЦА РОЖДАЕТСЯ НЕЙТРАЛЬНОЙ (вердикт владельца 2026-09-21) ─────
-    // Прежде здесь стояли проверки враждебности фракций: демоны против
-    // империи, бандиты против королевств, «магика» с ненулевыми связями. Все
-    // они сторожили СЭМПЛИНГ из темпераментных банд — дословный порт
-    // прототипа, вырезанный вместе с панелью дипломатии. Политика вернётся
-    // после играбельного ядра ОДНИМ законом над реестром интересов, и тогда
-    // сюда придут её свидетели.
-    for (std::uint32_t seed : {12345u, 1u, 777u, 2026u}) {
-        GameState gs;
-        create_factions(gs, seed);
-
-        // Every registry faction holds its own slot — including "magika", the
-        // id that historically was emitted but never registered.
-        for (int i = 0; i < kFactionCount; ++i) {
-            if (sm::faction_slot(gs.relations, kFactionDefs[i].id) != i) {
-                return fail("registry faction is not at its own ordinal");
-            }
-        }
-
-        // МАТРИЦА = АВТОРСКАЯ ТАБЛИЦА, БУКВА В БУКВУ. Каждая пара обязана
-        // равняться тому, что говорит kFactionRelations, — и ничему больше:
-        // это и сторожит «одно число на пару, без броска».
-        for (int a = 0; a < kFactionCount; ++a) {
-            for (int b = a + 1; b < kFactionCount; ++b) {
-                const int want = sm::authored_relation(kFactionDefs[a].id,
-                                                       kFactionDefs[b].id);
-                if (relation(gs, kFactionDefs[a].id, kFactionDefs[b].id) != want) {
-                    return fail("матрица разошлась с авторской таблицей пар");
-                }
-            }
-        }
-
-        // СИД НА МАТРИЦУ НЕ ВЛИЯЕТ ВООБЩЕ: вместе с бандами ушёл и RNG-поток
-        // генезиса фракций. Демоны враждебны империи на КАЖДОМ сиде, а не по
-        // удаче броска — ровно то, чего прежняя система не гарантировала.
-        if (relation(gs, "demons", "empire") != -100
-            || !hostile(gs, "demons", "empire")) {
-            return fail("демоны не враждебны империи — бой в субмире выключен");
-        }
-        if (!hostile(gs, "bandits", "empire") || !hostile(gs, "bandits", "timaert")) {
-            return fail("бандиты не враждебны королевствам");
-        }
-        // Культ против магов — до дна шкалы; против прочих слегка, не война.
-        if (relation(gs, "cults", "magika") != sm::kRelationMin) {
-            return fail("охота на магов не дошла до дна шкалы");
-        }
-        if (hostile(gs, "cults", "empire")) {
-            return fail("культ воюет с империей — звёздочка перебила пару");
-        }
-        // ЗВЕРЬ НЕЙТРАЛЕН (и был им всегда: банда Feral {-30,30} при пороге
-        // -50 не давала враждебности ни на одном сиде) — олени не штурмуют
-        // деревню.
-        if (hostile(gs, "wildlife", "empire") || hostile(gs, "wildlife", "timaert")) {
-            return fail("wildlife wrongly hostile (deer would swarm town)");
-        }
-
-        // Симметрия — закон записи (set_relation), а не свойство сэмпла.
-        if (relation(gs, "demons", "empire") != relation(gs, "empire", "demons")) {
-            return fail("relation matrix is not symmetric");
-        }
-
-        // Сам себе — ВЕРХ ШКАЛЫ, а не круглая сотня (CANON S26, закон
-        // диапазона): своих не бьют ни при каком представлении.
-        if (relation(gs, "empire", "empire") != sm::kRelationMax
-            || hostile(gs, "empire", "empire") || hostile(gs, "demons", "demons")) {
-            return fail("self-relation is not the top of the scale");
-        }
-
-        // Unknown ids still degrade to neutral (fail-closed for stale data).
-        if (hostile(gs, "no_such_faction", "empire")
-            || hostile(gs, "empire", "no_such_faction")) {
-            return fail("unknown faction id did not degrade to neutral");
-        }
-
-        // ИГРОК — ОБЫЧНАЯ СТРОКА МАТРИЦЫ. Колонки playerReputation больше нет
-        // (вырезана 2026-09-21): его встречают те же авторские пары, что и
-        // всякого чужого, и проверяется это той же дверью.
-        for (int i = 0; i < kFactionCount; ++i) {
-            const char* id = kFactionDefs[i].id;
-            if (std::strcmp(id, kPlayerFactionId) == 0) continue;
-            const int want = sm::authored_relation(id, kPlayerFactionId);
-            if (player_reputation(&gs, id) != want
-                || faction_relation(&gs, id, kPlayerFactionId) != want) {
-                return fail("игрок встречен не по авторской таблице");
-            }
-        }
-        // Бандиты и демоны хотят его смерти БЕЗ отдельной колонки — по той же
-        // звёздочке, что делает их врагами всем.
-        if (!hostile(gs, "bandits", kPlayerFactionId)
-            || !hostile(gs, "demons", kPlayerFactionId)) {
-            return fail("игрока не встречают враждебно бандиты и демоны");
-        }
-        // And moving it moves both directions at once.
-        add_player_reputation(gs, "empire", -30);
-        if (player_reputation(&gs, "empire") != -30
-            || faction_relation(&gs, "empire", kPlayerFactionId) != -30) {
-            return fail("add_player_reputation did not write both directions");
-        }
-    }
-
-    std::printf("OK faction_relations_test: registry=%d factions, one index "
-                "space, matrix born NEUTRAL (politics cut), self=%d, player row "
-                "seeded from the registry column (threshold=%d)\n",
-                kFactionCount, sm::kRelationMax, sm::kHostileThreshold);
-    CHECK(true, "every gate above held");
+    test_the_registry_is_one_index_space();
+    test_every_realm_names_an_existing_registry_row();
+    test_the_no_faction_sentinel_degrades_to_neutral();
+    test_the_matrix_is_the_authored_table_on_every_seed();
     return sm::test::report("faction_relations_test");
 }

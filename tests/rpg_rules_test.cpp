@@ -14,174 +14,204 @@
 
 #include "check.h"
 #include "macro/attributes.h"
+#include "macro/character_sheet.h"   // body_max_hp — THE ceiling door
 #include "macro/economy.h"
+#include "macro/npc.h"               // npc_def — THE row the ceiling reads
 #include "macro/squad.h"
 
 #include <cstdio>
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/rpg_rules_test.cpp", 0);
-    return 1;
+// ── 1. A moved ceiling preserves the FRACTION («доля у всех») ──────────────
+// Owner 2026-09-10: the lord's level-up law is the ONLY rescale — a point
+// spent, a level gained or a coat donned moves the ceiling and the bar follows
+// proportionally. Never a free heal (the old player law full-restored on
+// level-up), never a theft (the old «keep the number» clamp silently shrank
+// the fraction).
+void test_a_moved_ceiling_keeps_the_wound_fraction() {
+    using namespace sm;
+    CharacterSheet sheet{};
+    ecs::Pools p{};
+    ecs::MacroNpcRuntime rt{};
+    refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
+    // ОДИН ПОТОЛОК, ОДНА ДВЕРЬ. Ожидание не повторяет числа строки и не
+    // переписывает закон: оно спрашивает ТУ ЖЕ таблицу, что читает код
+    // (`npc_def(...).combat`), ТОЙ ЖЕ дверью (`body_max_hp`), которой
+    // пользуется сам `refresh_body_from_sheet`. Канонические 100/100/100
+    // приключенца прибиты У СВОЕГО ИСТОЧНИКА — `static_assert` в `npc.h`
+    // рядом с `kAdventurerCombat`, и второй копии здесь не нужно (M-132).
+    CHECK(p.maxHp == body_max_hp(sheet, npc_def(NPCType::Adventurer).combat),
+          "a fresh body's ceiling is what the ONE ceiling door answers for its "
+          "row — the refresh door has no bar law of its own");
+
+    // И этот пол читается ИЗ КОЛОНКИ СТРОКИ, а не из спрятанного дефолта
+    // (§41 корень 2: до посадки 4 база жила в аргументе по умолчанию, и
+    // строка не могла её переопределить — у всех тел мира был один и тот же
+    // смуглённый мимо таблицы потолок). Тот же лист на другой строке обязан
+    // дать другой пол, и РАЗНИЦА равна разнице колонок: у пустого листа
+    // множитель Bodybuilding — единица, поэтому закон виден начисто.
+    ecs::Pools peasantBody{};
+    refresh_body_from_sheet(peasantBody, nullptr, sheet, NPCType::Peasant);
+    CHECK(peasantBody.maxHp < p.maxHp,
+          "the SAME sheet on a leaner row gets a leaner body — a hidden "
+          "default would answer identically for both");
+    CHECK(p.maxHp - peasantBody.maxHp
+              == int(npc_def(NPCType::Adventurer).combat.hp)
+                     - int(npc_def(NPCType::Peasant).combat.hp),
+          "and the gap between them IS the gap between their rows' own hp "
+          "columns — the table decides the floor, nothing else");
+
+    p.hp = p.maxHp / 2;   // wounded at one half
+    p.mp = p.maxMp / 4;
+    p.sp = p.maxSp;       // rested
+    const int ceilingBefore = p.maxHp;
+    ++sheet.attributes[AttributeId::End];  // the spend
+    refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
+    CHECK(p.maxHp == body_max_hp(sheet, npc_def(NPCType::Adventurer).combat),
+          "a spent point moves the CEILING: the maxima recompute from the new "
+          "attributes, through the same one door");
+    CHECK(p.maxHp > ceilingBefore,
+          "and it moves it UPWARD — a point of END buys bar, or it bought "
+          "nothing");
+
+    const float hpFrac = float(p.hp) / float(p.maxHp);
+    if (hpFrac < 0.49f || hpFrac > 0.51f || p.hp >= p.maxHp)
+        std::fprintf(stderr, "  hp=%d/%d frac=%.3f\n", p.hp, p.maxHp,
+                     double(hpFrac));
+    CHECK(hpFrac >= 0.49f && hpFrac <= 0.51f,
+          "a body wounded at one half stays wounded at one half when its "
+          "ceiling grows — no free heal, no theft");
+    CHECK(p.hp < p.maxHp,
+          "and it is still WOUNDED: a grown ceiling never tops the bar up");
+    CHECK(p.sp == p.maxSp,
+          "a rested bar stays rested when its ceiling grows — the fraction "
+          "law reads 1.0 as 1.0");
+
+    // A bar whose ceiling did not move is not touched at all: this door is
+    // walked every macro tick, so an unconditional rescale would be a slow
+    // rounding drain rather than an identity.
+    const int hpStable = p.hp;
+    refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
+    CHECK(p.hp == hpStable,
+          "a ceiling that did not move leaves the bar EXACTLY where it was");
+
+    // Dead stays dead: a growing ceiling must not resurrect.
+    ecs::Pools corpse{};
+    refresh_body_from_sheet(corpse, nullptr, sheet, NPCType::Adventurer);
+    corpse.hp = 0;
+    ++sheet.attributes[AttributeId::End];
+    refresh_body_from_sheet(corpse, nullptr, sheet, NPCType::Adventurer);
+    CHECK(corpse.hp == 0,
+          "a grown ceiling does not resurrect a body at zero hp — dead stays "
+          "dead");
+}
+
+// ── 2. The wis dividend ───────────────────────────────────────────────────
+void test_wisdom_pays_a_dividend_on_every_grant() {
+    using namespace sm;
+    Attributes a{};
+    a[AttributeId::Wis] = 10;
+    const int multPct = calculate_derived(a, Skills{}).expMultPct;
+
+    LevelData ld = default_level_data();
+    award_exp(ld, 100, multPct);
+    if (ld.exp != 110) std::fprintf(stderr, "  exp=%d\n", ld.exp);
+    CHECK(ld.exp == 110,
+          "wis 10 is +1% per point: a grant of 100 lands as 110");
+
+    LevelData ld2 = default_level_data();
+    award_exp(ld2, 25, multPct);  // 27.5 -> round half up -> 28
+    if (ld2.exp != 28) std::fprintf(stderr, "  exp=%d\n", ld2.exp);
+    CHECK(ld2.exp == 28,
+          "the dividend rounds half UP — a half point of xp is never eaten");
+
+    LevelData ld3 = default_level_data();
+    award_exp(ld3, 100, 100);
+    CHECK(ld3.exp == 100,
+          "a sheet with no dividend (100%) leaves the grant untouched");
+}
+
+// ── 3. One price law ──────────────────────────────────────────────────────
+// Canon (S25): наценка = РАЗНИЦА торговых сил двух анкет, одна формула на обе
+// половины. Сильнее на 10 пунктов — покупаю за 90 и продаю за 110; РАВНЫЕ
+// стороны торгуют ровно по цене. Спред 0.7 и клампы 0.5/1.5 умерли вместе с
+// «домом» у сделки, а контекстный множитель (настроение места, нрав купца) —
+// 2026-09-19: у цены остались кривая дефицита и разница торговых сил.
+void test_one_price_law_reads_only_the_difference_in_bargaining() {
+    using namespace sm;
+    CHECK(trade_price(100, 10, 0, true) == 90,
+          "buying: ten points of advantage take a hundred down to ninety");
+    CHECK(trade_price(100, 0, 10, true) == 110,
+          "buying weaker by ten costs a hundred and ten — the SAME difference, "
+          "mirrored");
+    CHECK(trade_price(100, 42, 42, true) == 100,
+          "equal sheets buy at the price itself, however strong both are");
+    CHECK(trade_price(100, 42, 42, false) == 100,
+          "...and sell at it too: the law reads the difference, not the size");
+    CHECK(trade_price(100, 10, 0, false) == 110,
+          "selling: ten points of advantage take a hundred up to a hundred "
+          "and ten");
+
+    // ПОЛА СКИДКИ 0.5 НЕТ (S25): граница выводится из анкет или её не
+    // существует — назначенный пол вернул бы кламп под другим именем.
+    // Подавляющий перевес доводит цену до ПОЛА ЗАКОНА, единицы: это «ничто не
+    // бесплатно», а не потолок наценки.
+    CHECK(trade_price(100, 200, 0, true) == 1,
+          "an overwhelming advantage runs into the law's own floor of one "
+          "coin, not into a named discount ceiling");
+    CHECK(trade_price(1, 0, 0, false) >= 1,
+          "nothing in the world is free: a price never falls below one coin");
+}
+
+// ── 4. THE recovery door (CANON S14 «один рычаг», 2026-09-07) ─────────────
+// Shape, not pinned numbers (testing law #4/#5): each claim breaks alone.
+void test_the_recovery_door_is_one_lever() {
+    using namespace sm;
+    const float base = 0.5f;   // the one-handed anchor
+    Attributes a{};
+    a[AttributeId::Spd] = 0;   // the bases start at 1 — zero the ONE input
+    Skills s{};
+    const int blank = recovery_steps(base, a, s, SkillId::Armsmaster);
+    CHECK(blank == int(steps_from_seconds(base)),
+          "a zeroed sheet swings at exactly the row's own base tempo");
+
+    // Spd quickens through the SAME asymptote the legs walk on…
+    Attributes fast = a;
+    fast[AttributeId::Spd] = 50;
+    const int quick = recovery_steps(base, fast, s, SkillId::Armsmaster);
+    CHECK(quick < blank, "Spd quickens the arm, as it quickens the legs");
+    CHECK(quickness_pct(50) == 150,
+          "and through the legs' OWN curve: half-saturation sits at spd 50");
+
+    // …and the GENERIC skill multiplies on top — the typed one must NOT
+    // (one handle, one lever: Sword already multiplied the dice).
+    Skills sw{};
+    sw[SkillId::Sword] = 100;
+    CHECK(recovery_steps(base, a, sw, SkillId::Armsmaster) == blank,
+          "a TYPED weapon skill does not touch the tempo — it already "
+          "multiplies the dice, and one handle pulls one lever");
+    s[SkillId::Armsmaster] = 100;
+    const int master = recovery_steps(base, a, s, SkillId::Armsmaster);
+    CHECK(master < blank, "the GENERIC skill is the one that quickens");
+
+    // Healthy to the ENGINE caps (attribute 255, rank 100): monotone,
+    // positive, floored at the simulation's own quantum — never 0.
+    Attributes cap{};
+    cap[AttributeId::Spd] = 255;
+    const int demigod = recovery_steps(base, cap, s, SkillId::Armsmaster);
+    CHECK(demigod >= 1, "even at the byte cap a swing costs at least one step");
+    CHECK(demigod <= master, "and the curve stays monotone all the way there");
+    CHECK(recovery_steps(0.001f, cap, s, SkillId::Armsmaster) == 1,
+          "the floor is ONE simulation step: no action is ever free of time");
 }
 
 } // namespace
 
 int main() {
-    using namespace sm;
-
-    // ── 1. A moved ceiling preserves the FRACTION («доля у всех») ────────
-    // Owner 2026-09-10: the lord's level-up law is the ONLY rescale — a
-    // point spent, a level gained or a coat donned moves the ceiling and the
-    // bar follows proportionally. Never a free heal (the old player law
-    // full-restored on level-up), never a theft (the old «keep the number»
-    // clamp silently shrank the fraction).
-    {
-        CharacterSheet sheet{};
-        ecs::Pools p{};
-        ecs::MacroNpcRuntime rt{};
-        refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
-        if (p.maxHp != bar_ceilings(sheet.attributes, sheet.skills, 100, 100, 100).maxHp) {
-            return fail("the adventurer row's base must be the sheet law's "
-                        "own 100 — one ceiling, no hidden default");
-        }
-        p.hp = p.maxHp / 2;   // wounded at one half
-        p.mp = p.maxMp / 4;
-        p.sp = p.maxSp;       // rested
-        ++sheet.attributes[AttributeId::End];  // the spend
-        refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
-        if (p.maxHp != bar_ceilings(sheet.attributes, sheet.skills,
-                                    /*baseHp=*/100, 100, 100).maxHp) {
-            return fail("maxima must recompute from the new attributes");
-        }
-        const float hpFrac = float(p.hp) / float(p.maxHp);
-        if (hpFrac < 0.49f || hpFrac > 0.51f || p.hp >= p.maxHp) {
-            std::fprintf(stderr, "hp=%d/%d\n", p.hp, p.maxHp);
-            return fail("a grown ceiling must keep the wound fraction — "
-                        "no free heal, no theft");
-        }
-        if (p.sp != p.maxSp) {
-            return fail("a rested bar stays rested when its ceiling grows");
-        }
-        // A bar whose ceiling did not move is not touched at all: the
-        // every-tick walk must be an identity, not a rounding drain.
-        const int hpStable = p.hp;
-        refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
-        if (p.hp != hpStable) {
-            return fail("an unchanged ceiling must not touch the bar");
-        }
-        // Dead stays dead: a growing ceiling must not resurrect.
-        ecs::Pools corpse{};
-        refresh_body_from_sheet(corpse, nullptr, sheet, NPCType::Adventurer);
-        corpse.hp = 0;
-        ++sheet.attributes[AttributeId::End];
-        refresh_body_from_sheet(corpse, nullptr, sheet, NPCType::Adventurer);
-        if (corpse.hp != 0) {
-            return fail("a grown ceiling must not resurrect a zero hp");
-        }
-    }
-
-    // ── 2. The wis dividend ─────────────────────────────────────────────
-    {
-        Attributes a{};
-        a[AttributeId::Wis] = 10;
-        const int multPct = calculate_derived(a, Skills{}).expMultPct;
-        LevelData ld = default_level_data();
-        award_exp(ld, 100, multPct);
-        if (ld.exp != 110) {
-            std::fprintf(stderr, "exp=%d\n", ld.exp);
-            return fail("wis 10 must turn 100 xp into 110");
-        }
-        LevelData ld2 = default_level_data();
-        award_exp(ld2, 25, multPct);  // 27.5 -> round half up -> 28
-        if (ld2.exp != 28) {
-            std::fprintf(stderr, "exp=%d\n", ld2.exp);
-            return fail("the dividend rounds half up (25 * 110% = 28)");
-        }
-        LevelData ld3 = default_level_data();
-        award_exp(ld3, 100, 100);
-        if (ld3.exp != 100) return fail("expMultPct 100 must be the identity");
-    }
-
-    // ── 3. One price law ────────────────────────────────────────────────
-    {
-        // Canon (S25): наценка = РАЗНИЦА торговых сил двух анкет, одна
-        // формула на обе половины. Сильнее на 10 пунктов — покупаю за 90 и
-        // продаю за 110; РАВНЫЕ стороны торгуют ровно по цене. Спред 0.7 и
-        // клампы 0.5/1.5 умерли вместе с «домом» у сделки, а контекстный
-        // множитель (настроение места, нрав купца) — 2026-09-19: у цены
-        // остались кривая дефицита и разница торговых сил.
-        if (trade_price(100, 10, 0, true) != 90) {
-            return fail("buy: перевес 10 пунктов покупает 100 за 90");
-        }
-        if (trade_price(100, 0, 10, true) != 110) {
-            return fail("buy: слабее на 10 — переплата 110 (та же разница)");
-        }
-        if (trade_price(100, 42, 42, true) != 100
-            || trade_price(100, 42, 42, false) != 100) {
-            return fail("равные анкеты торгуют по цене: наценки нет");
-        }
-        if (trade_price(100, 10, 0, false) != 110) {
-            return fail("sell: перевес 10 пунктов продаёт 100 за 110");
-        }
-        // ПОЛА СКИДКИ 0.5 НЕТ (S25): граница выводится из анкет или её не
-        // существует — назначенный пол вернул бы кламп под другим именем.
-        // Подавляющий перевес доводит цену до ПОЛА ЗАКОНА, единицы: это
-        // «ничто не бесплатно», а не потолок наценки.
-        if (trade_price(100, 200, 0, true) != 1) {
-            return fail("подавляющий перевес упирается в пол закона, не в кламп");
-        }
-        if (trade_price(1, 0, 0, false) < 1) {
-            return fail("prices never fall below 1 gold");
-        }
-    }
-
-    // ── 4. THE recovery door (CANON S14 «один рычаг», 2026-09-07) ───────
-    // Shape, not pinned numbers (testing law #4/#5): each claim breaks alone.
-    {
-        const float base = 0.5f;   // the one-handed anchor
-        Attributes a{};
-        a[AttributeId::Spd] = 0;   // the bases start at 1 — zero the ONE input
-        Skills s{};
-        const int blank = recovery_steps(base, a, s, SkillId::Armsmaster);
-        if (blank != int(steps_from_seconds(base))) {
-            return fail("a zeroed sheet swings at exactly the row's base");
-        }
-        // Spd quickens through the SAME asymptote the legs walk on…
-        Attributes fast = a;
-        fast[AttributeId::Spd] = 50;
-        const int quick = recovery_steps(base, fast, s, SkillId::Armsmaster);
-        if (!(quick < blank)) return fail("Spd must quicken the arm");
-        if (quickness_pct(50) != 150) {
-            return fail("half-saturation must sit at spd 50 (the legs' curve)");
-        }
-        // …and the GENERIC skill multiplies on top — the typed one must NOT
-        // (one handle, one lever: Sword already multiplied the dice).
-        Skills sw{};
-        sw[SkillId::Sword] = 100;
-        if (recovery_steps(base, a, sw, SkillId::Armsmaster) != blank) {
-            return fail("a typed skill must not touch the tempo");
-        }
-        s[SkillId::Armsmaster] = 100;
-        const int master = recovery_steps(base, a, s, SkillId::Armsmaster);
-        if (!(master < blank)) return fail("Armsmaster must quicken the arm");
-        // Healthy to the ENGINE caps (attribute 255, rank 100): monotone,
-        // positive, floored at the simulation's own quantum — never 0.
-        Attributes cap{};
-        cap[AttributeId::Spd] = 255;
-        const int demigod = recovery_steps(base, cap, s, SkillId::Armsmaster);
-        if (!(demigod >= 1 && demigod <= master)) {
-            return fail("the law must stay sane to the byte cap");
-        }
-        if (recovery_steps(0.001f, cap, s, SkillId::Armsmaster) != 1) {
-            return fail("the floor is one simulation step");
-        }
-    }
-
-    std::printf("rpg_rules_test: preserve=ok wis=ok price_law=ok recovery=ok\n");
-    CHECK(true, "every gate above held");
+    test_a_moved_ceiling_keeps_the_wound_fraction();
+    test_wisdom_pays_a_dividend_on_every_grant();
+    test_one_price_law_reads_only_the_difference_in_bargaining();
+    test_the_recovery_door_is_one_lever();
     return sm::test::report("rpg_rules_test");
 }

@@ -41,13 +41,6 @@ using namespace sm::sub;
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/house_pad_flatten_test.cpp", 0);
-    return 1;
-}
-
 // Height values are 0..1; the renderer scales by kHeightScale = 1500 m. Express
 // the tolerance in that world scale so the number is physically meaningful.
 constexpr float kHeightScale = 1500.0f;
@@ -146,26 +139,31 @@ PadStat measure(int cx, int cy, std::uint32_t seed, int population,
     return st;
 }
 
-} // namespace
-
-int main() {
-    // Two complementary invariants (world-units of the 1500 m height scale):
-    //
-    //  * MEAN pad range — the primary, bulletproof signal. A flattened pad has
-    //    ~zero internal range; measured mean is ~0.002-0.011 world-u across all
-    //    settlements vs ~0.58-1.19 un-flattened (a 100-500x drop). 0.10 is a
-    //    generous ceiling no flattened town approaches yet is ~50x below the
-    //    un-flattened floor.
-    //
-    //  * WORST single pad range — a loose guard. It is NOT ~0 because the road
-    //    smoother's shoulder pass (base_generator.cpp pass 3) runs AFTER the
-    //    flatten and pulls a pad's road-FRONTING edge 55% toward the street
-    //    height, ramping the doorway into the road instead of leaving a curb.
-    //    That is intentional, so the worst-case ceiling only has to stay
-    //    comfortably under the un-flattened floor (worst un-flattened ranges
-    //    were 1.4-12.7 world-u).
+// Two complementary invariants (world-units of the 1500 m height scale):
+//
+//  * MEAN pad range — the primary, bulletproof signal. A flattened pad has
+//    ~zero internal range; measured mean is ~0.002-0.011 world-u across all
+//    settlements vs ~0.58-1.19 un-flattened (a 100-500x drop). 0.10 is a
+//    generous ceiling no flattened town approaches yet is ~50x below the
+//    un-flattened floor.
+//
+//  * WORST single pad range — a loose guard. It is NOT ~0 because the road
+//    smoother's shoulder pass (base_generator.cpp pass 3) runs AFTER the
+//    flatten and pulls a pad's road-FRONTING edge 55% toward the street
+//    height, ramping the doorway into the road instead of leaving a curb.
+//    That is intentional, so the worst-case ceiling only has to stay
+//    comfortably under the un-flattened floor (worst un-flattened ranges
+//    were 1.4-12.7 world-u).
+//
+// The walk keeps the WORST value of each metric instead of stopping at the
+// first town over the line: one bad settlement must not hide the other three.
+void test_every_house_sits_on_a_flattened_pad() {
     constexpr float kMaxMeanRange  = 0.10f;
     constexpr float kMaxWorstRange = 4.0f;
+    // The negative control's own two numbers: the hillside must be a REAL
+    // hillside, and a flattened pad must be a tiny fraction of it.
+    constexpr float kMinRelief     = 5.0f;
+    constexpr float kMaxMeanOfRelief = 0.1f;
 
     struct Case { int cx, cy; std::uint32_t seed; int pop; LandmarkType kind; };
     const Case cases[] = {
@@ -174,21 +172,26 @@ int main() {
         { 13, -3, 0x00C0FFEEu, 120,  LandmarkType::Village },
         { 20, 14, 0x51A7E110u, 9000, LandmarkType::City },
     };
+    constexpr int kCases = int(sizeof(cases) / sizeof(cases[0]));
 
     float worstMean = 0.0f;
     float worstRange = 0.0f;
     float reliefSeen = 0.0f;
     int totalFootprints = 0;
+    int measured = 0, tooFewHouses = 0;
     for (const Case& c : cases) {
         const PadStat st = measure(c.cx, c.cy, c.seed, c.pop, c.kind);
-        if (st.footprints < 5)
-            return fail("settlement produced too few houses to assess flatness");
+        ++measured;
+        if (st.footprints < 5) {
+            std::fprintf(stderr, "  seed=%u footprints=%d\n", c.seed,
+                         st.footprints);
+            ++tooFewHouses;
+            continue;   // a pad-flatness metric over 0-4 pads proves nothing
+        }
         if (st.meanRange > kMaxMeanRange || st.worstRange > kMaxWorstRange) {
             std::fprintf(stderr,
                 "  seed=%u footprints=%d meanRange=%.4f worstRange=%.4f relief=%.3f\n",
                 c.seed, st.footprints, st.meanRange, st.worstRange, st.terrainRelief);
-            return fail("house footprints are not flat "
-                        "(town seated on a slope, not on flattened pads)");
         }
         if (st.meanRange > worstMean) worstMean = st.meanRange;
         if (st.worstRange > worstRange) worstRange = st.worstRange;
@@ -196,31 +199,46 @@ int main() {
         totalFootprints += st.footprints;
     }
 
-    // Negative control: the metric must be able to SEE an un-flattened pad, or a
-    // no-op flatten would pass silently. Assert the terrain relief across the
-    // hillside settlements is large (proving the neighbourhood really is sloped,
-    // so a footprint COULD span a big range) AND that the worst mean pad range
-    // is a tiny fraction of it. If flatten were a no-op, worstMean would be on
-    // the order of the relief, not <1% of it.
-    if (reliefSeen < 5.0f) {
-        std::fprintf(stderr, "  reliefSeen=%.3f\n", reliefSeen);
-        return fail("test neighbourhood was not sloped enough to be a real "
-                    "flatness test (negative control failed)");
-    }
-    if (worstMean >= reliefSeen * 0.1f) {
-        std::fprintf(stderr, "  worstMean=%.4f reliefSeen=%.3f\n",
-                     worstMean, reliefSeen);
-        return fail("mean pad range is not small relative to terrain relief "
-                    "(flatten appears ineffective)");
-    }
+    // The counts gate the thresholds: the worst-value accumulators start at
+    // zero and would sail past every ceiling below if nothing was measured.
+    CHECK(measured == kCases, "every settlement in the table was generated");
+    CHECK_OR_RETURN(tooFewHouses == 0,
+                    "every settlement grows enough houses to judge its pads by "
+                    "— a town of four huts is not a measurement");
+    CHECK(totalFootprints > 0, "there are house footprints to stand on at all");
 
-    std::printf("OK house_pad_flatten_test: %d house footprints across 4 "
-                "settlements sit on flattened pads — worst MEAN internal range "
-                "%.4f world-u (<= %.2f), worst single pad %.3f (<= %.1f, road-"
-                "shoulder edges), on hillsides up to %.1f world-u of relief "
-                "(negative control: mean range is %.2f%% of relief)\n",
-                totalFootprints, worstMean, kMaxMeanRange, worstRange,
+    std::printf("house_pad_flatten_test: %d house footprints across %d "
+                "settlements — worst MEAN internal range %.4f world-u (<= %.2f), "
+                "worst single pad %.3f (<= %.1f, road-shoulder edges), on "
+                "hillsides up to %.1f world-u of relief (mean range is %.2f%% "
+                "of relief)\n",
+                totalFootprints, kCases, worstMean, kMaxMeanRange, worstRange,
                 kMaxWorstRange, reliefSeen, 100.0f * worstMean / reliefSeen);
-    CHECK(true, "every gate above held");
+
+    CHECK(worstMean <= kMaxMeanRange,
+          "a house floor is DEAD LEVEL: the mean height range under a footprint "
+          "is ~zero, so the terrain mesh meets the box base instead of poking "
+          "through it uphill and floating downhill");
+    CHECK(worstRange <= kMaxWorstRange,
+          "and even the worst single pad stays far under the un-flattened "
+          "floor — only its road-fronting edge ramps into the street");
+
+    // Negative control: the metric must be able to SEE an un-flattened pad, or
+    // a no-op flatten would pass silently. The neighbourhood really is sloped
+    // (so a footprint COULD span a big range), and the worst mean pad range is
+    // a tiny fraction of that slope. Were flatten a no-op, worstMean would be
+    // on the order of the relief, not under a tenth of it.
+    CHECK(reliefSeen >= kMinRelief,
+          "the towns were seated on a GENUINE hillside — a flat neighbourhood "
+          "would make every claim above pass trivially");
+    CHECK(worstMean < reliefSeen * kMaxMeanOfRelief,
+          "and the pads are flat RELATIVE to that hillside — the flatten did "
+          "real work, it is not a no-op the metric cannot see");
+}
+
+} // namespace
+
+int main() {
+    test_every_house_sits_on_a_flattened_pad();
     return sm::test::report("house_pad_flatten_test");
 }
