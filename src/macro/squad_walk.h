@@ -31,9 +31,15 @@
 
 namespace sm {
 
+// СЛОТ — ключ мира (эпик 2 шаг 3): всякий читатель порядка спрашивает
+// колонки store по нему напрямую, без диспетча body_state по компоненте.
+// Энтити остаётся ПОКА рядом — мост MacroSlot жив до шага 5, и старые
+// двери (авто-бой, факты, спавн) ещё говорят на нём; поле умрёт вместе с
+// мостом, и ни один читатель порядка от этого не изменится.
 struct SquadWalkEntry {
-    std::uint32_t ordinal;
-    entt::entity  e;
+    std::uint32_t  ordinal;
+    std::uint16_t  slot;
+    entt::entity   e;
 };
 
 // Собрать view в порядок закона. `out` — скрэтч звонящего: у тиковых
@@ -51,7 +57,7 @@ inline void collect_squads_by_ordinal(entt::registry& reg,
     for (auto e : view) {
         const std::uint16_t slot = reg.get<ecs::MacroSlot>(e).slot;
         if (!keep(slot)) continue;
-        out.push_back({st.spawnId[slot].index, e});
+        out.push_back({st.spawnId[slot].index, slot, e});
     }
     std::sort(out.begin(), out.end(),
               [](const SquadWalkEntry& a, const SquadWalkEntry& b) {

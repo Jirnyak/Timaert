@@ -2312,6 +2312,7 @@ entt::entity nearest_magika_mage(entt::entity self, const MacroPos& p,
     const CellBuckets& b = g.grid;
     if (b.cols <= 0 || b.rows <= 0) return entt::null;
     auto& reg = ctx.mw.world->reg;
+    const MacroStore& st = store_of(reg);
     const int magika = faction_index("magika");
     const int cx0 = int(p.x) / b.cellSize;
     const int cy0 = int(p.y) / b.cellSize;
@@ -2324,12 +2325,15 @@ entt::entity nearest_magika_mage(entt::entity self, const MacroPos& p,
             for (const std::uint32_t* it = b.cell_begin(gx, gy),
                                     * end = b.cell_end(gx, gy);
                  it != end; ++it) {
-                const entt::entity e = entt::entity(*it);
-                if (e == self || !reg.valid(e)) continue;
-                if (macro_dead(reg, e)) continue;
-                const auto* oc = body_state<ecs::MacroCell>(reg, e);
-                const auto* ok = body_state<ecs::NPCKind>(reg, e);
-                if (!oc || !ok) continue;
+                // Бакет несёт индекс в порядке (шаг 3): слот — ключ к
+                // колонкам, энтити — для дверей, ещё стоящих на мосту.
+                const SquadWalkEntry& sw = g.order[*it];
+                const entt::entity e = sw.e;
+                if (e == self) continue;
+                if (st.dead[sw.slot] != 0) continue;
+                const auto& mcell = st.cell[sw.slot];
+                const auto* oc = &mcell;
+                const auto* ok = &st.kind[sw.slot];
                 // Маг = род тела, не флаг: ведьма и чародейка — строки
                 // реестра. Крестьянин Магики проходит мимо этого фильтра
                 // ЖИВЫМ — ровно то, что владелец назвал важным.
@@ -2424,6 +2428,7 @@ entt::entity nearest_weaker_squad(entt::entity self, const MacroPos& p,
     const CellBuckets& b = g.grid;
     if (b.cols <= 0 || b.rows <= 0) return entt::null;
     auto& reg = ctx.mw.world->reg;
+    const MacroStore& st = store_of(reg);
     const float myPower =
         squad_power(auto_battle_side_of(*ctx.mw.world, self));
     const int cx0 = int(p.x) / b.cellSize;
@@ -2437,18 +2442,20 @@ entt::entity nearest_weaker_squad(entt::entity self, const MacroPos& p,
             for (const std::uint32_t* it = b.cell_begin(gx, gy),
                                     * end = b.cell_end(gx, gy);
                  it != end; ++it) {
-                const entt::entity e = entt::entity(*it);
-                if (e == self || !reg.valid(e)) continue;
-                if (macro_dead(reg, e)) continue;
-                const auto* oc = body_state<ecs::MacroCell>(reg, e);
-                if (!oc) continue;
+                const SquadWalkEntry& sw = g.order[*it];
+                const entt::entity e = sw.e;
+                if (e == self) continue;
+                if (st.dead[sw.slot] != 0) continue;
+                const auto& oc = st.cell[sw.slot];
                 const float d = torus_dist_sq(
                     p.x, p.y,
-                    float(ecs::cell_x(*oc, ctx.mapW)),
-                    float(ecs::cell_y(*oc, ctx.mapW)),
+                    float(ecs::cell_x(oc, ctx.mapW)),
+                    float(ecs::cell_y(oc, ctx.mapW)),
                     float(ctx.mapW), float(ctx.mapH));
                 if (d >= best) continue;
-                if (squad_power(auto_battle_side_of(*ctx.mw.world, e))
+                if (squad_power(auto_battle_side_of(st,
+                                                    MacroHandle{sw.slot,
+                                                        st.generation[sw.slot]}))
                         >= myPower) {
                     continue;   // добыча — только слабее
                 }
@@ -2684,6 +2691,7 @@ entt::entity nearest_hostile_squad(entt::entity self, const MacroPos& p,
     const CellBuckets& b = g.grid;
     if (b.cols <= 0 || b.rows <= 0) return entt::null;
     auto& reg = ctx.mw.world->reg;
+    const MacroStore& st = store_of(reg);
     const char* myFaction = faction_id_for_index(kind.factionIdx);
     const int cx0 = int(p.x) / b.cellSize;
     const int cy0 = int(p.y) / b.cellSize;
@@ -2698,20 +2706,20 @@ entt::entity nearest_hostile_squad(entt::entity self, const MacroPos& p,
             for (const std::uint32_t* it = b.cell_begin(gx, gy),
                                     * end = b.cell_end(gx, gy);
                  it != end; ++it) {
-                const entt::entity e = entt::entity(*it);
-                if (e == self || !reg.valid(e)) continue;
-                const auto* oc = body_state<ecs::MacroCell>(reg, e);
-                const auto* ok = body_state<ecs::NPCKind>(reg, e);
-                if (!oc || !ok) continue;
+                const SquadWalkEntry& sw = g.order[*it];
+                const entt::entity e = sw.e;
+                if (e == self) continue;
+                const auto& oc = st.cell[sw.slot];
+                const auto& ok = st.kind[sw.slot];
                 const float d = torus_dist_sq(
                     p.x, p.y,
-                    float(ecs::cell_x(*oc, ctx.mapW)),
-                    float(ecs::cell_y(*oc, ctx.mapW)),
+                    float(ecs::cell_x(oc, ctx.mapW)),
+                    float(ecs::cell_y(oc, ctx.mapW)),
                     float(ctx.mapW),
                     float(ctx.mapH));
                 if (d >= best) continue;
                 if (!factions_hostile(ctx.mw.gs, myFaction,
-                                      faction_id_for_index(ok->factionIdx))) {
+                                      faction_id_for_index(ok.factionIdx))) {
                     continue;
                 }
                 best = d;
@@ -4793,16 +4801,19 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
         w.reg, st, view, g.order,
         [&](std::uint16_t slot) { return st.dead[slot] == 0; });
     for (const SquadWalkEntry& s : g.order) {
-        const auto& c = st.cell[slot_of(w.reg, s.e)];
+        const auto& c = st.cell[s.slot];
         bucket_count(b, wrapi(ecs::cell_x(c, mapW) / b.cellSize, b.cols),
                      wrapi(ecs::cell_y(c, mapW) / b.cellSize, b.rows));
     }
     bucket_prefix(b, g.order.size());
-    for (const SquadWalkEntry& s : g.order) {
-        const auto& c = st.cell[slot_of(w.reg, s.e)];
+    // Бакет несёт ИНДЕКС В ПОРЯДКЕ, а не биты энтити (шаг 3): читатель по
+    // нему получает СРАЗУ и слот (колонки store читаются прямо, без
+    // диспетча body_state), и энтити для дверей, которые ещё на мосту.
+    // Порядок внутри бакета остаётся ординальным — скаттер идёт по g.order.
+    for (std::uint32_t i = 0; i < std::uint32_t(g.order.size()); ++i) {
+        const auto& c = st.cell[g.order[i].slot];
         bucket_scatter(b, wrapi(ecs::cell_x(c, mapW) / b.cellSize, b.cols),
-                       wrapi(ecs::cell_y(c, mapW) / b.cellSize, b.rows),
-                       std::uint32_t(entt::to_integral(s.e)));
+                       wrapi(ecs::cell_y(c, mapW) / b.cellSize, b.rows), i);
     }
 }
 
