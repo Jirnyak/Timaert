@@ -2485,12 +2485,11 @@ static float aim_score(float px, float py, float yaw, float tx, float ty) {
     return dot >= kInteractConeCos ? dot : -1.0f;
 }
 
-const Structure* SubworldEngine::aimed_prop() const {
+const Structure* SubworldEngine::aimed_prop(float reach, float& outScore) const {
     const Structure* best = nullptr;
     float bestScore = -1.0f;
     for (const Structure& s : interactProps_) {
-        const InteractRow& row = interact_row(structure_interact(s.kind));
-        const float reach = row.reachTiles;
+        if (structure_interact(s.kind) == InteractId::None) continue;
         float d2 = structure_surface_dist2(s, playerX_, playerY_);
         if (s.zBase > 0.0f || s.zWorld) {
             // A LIFTED prop (the roof orb) is reachable from its own deck,
@@ -2513,14 +2512,15 @@ const Structure* SubworldEngine::aimed_prop() const {
             best = &s;
         }
     }
+    outScore = bestScore;
     return best;
 }
 
-// The corpse under the reticle, by the same cone and the Loot verb's reach.
-entt::entity SubworldEngine::aimed_corpse() const {
+// The corpse under the reticle, by the same cone and the SAME reach as a prop.
+entt::entity SubworldEngine::aimed_corpse(float reach, float& outScore) const {
+    outScore = -1.0f;
     if (!ecs_) return entt::null;
     auto& reg = ecs_->reg;
-    const float reach = interact_row(InteractId::Loot).reachTiles;
     entt::entity best = entt::null;
     float bestScore = -1.0f;
     auto view = reg.view<ecs::Position, ecs::Structure, ecs::CorpseLoot,
@@ -2539,18 +2539,54 @@ entt::entity SubworldEngine::aimed_corpse() const {
             best = e;
         }
     }
+    outScore = bestScore;
     return best;
 }
 
+// ── ОДНА ЦЕЛЬ ПОД ПРИЦЕЛОМ, ОДНА МЕРА, ОДИН ПРЕДЕЛ (владелец, 2026-09-26) ──
+// Раньше вопрос «на что смотрит игрок» имел ДВА ответа, и оба пути — подсказка
+// и нажатие — спрашивали труп РАНЬШЕ пропа, то есть решали ветку по РОДУ, а не
+// прицелом. С предельными числами у ВЕЩЕЙ (лут 12 тайлов против 5 у двери при
+// руке 3.0) это давало ровно то, что владелец видел глазами: «Loot» через всю
+// комнату, перебивающий «Enter» у двери в двух шагах, — и капкан на верхнем
+// этаже шпиля, где зачищенная стража не даёт открыть люк (красный
+// `spire_climb`, M-104: диагноз «два автора высоты короны» был ложен, до того
+// кода дело не доходило).
+//
+// Теперь:
+//   • ПРЕДЕЛ ОДИН и он у ТЕЛА — рука той строки, в которой игрок сейчас
+//     находится (`player_arm_reach`). Вселился в волка — тянешься на волчью
+//     руку, и ни одной ветки ради этого не написано;
+//   • МЕРА ОДНА — `aim_score`, «по взгляду, а не по близости к ногам»
+//     (вердикт владельца 2026-08-12), и оба кандидата судятся ею одинаково.
+// Ровно одно из двух полей заполнено; `id` — глагол строки, чтобы подсказка и
+// нажатие не могли расходиться по построению.
+SubworldEngine::AimedTarget SubworldEngine::aimed_target() const {
+    AimedTarget out{};
+    if (!active_ || !ecs_) return out;
+    const float reach = player_arm_reach();
+    float propScore = -1.0f, corpseScore = -1.0f;
+    const Structure* prop = aimed_prop(reach, propScore);
+    const entt::entity corpse = aimed_corpse(reach, corpseScore);
+    if (corpse != entt::null && corpseScore >= propScore) {
+        out.corpse = corpse;
+        out.id = InteractId::Loot;
+        return out;
+    }
+    if (prop != nullptr) {
+        out.prop = prop;
+        out.id = structure_interact(prop->kind);
+    }
+    return out;
+}
+
 const char* SubworldEngine::interact_prompt() const {
-    if (!active_ || !ecs_) return "";
-    // Corpses first — a body you just felled lies closer than the door
-    // behind it, and looting it is what the player means.
-    if (aimed_corpse() != entt::null) {
+    const AimedTarget t = aimed_target();
+    if (t.corpse != entt::null) {
         return interact_row(InteractId::Loot).verb;
     }
-    if (const Structure* p = aimed_prop()) {
-        const InteractId id = structure_interact(p->kind);
+    if (t.prop != nullptr) {
+        const InteractId id = t.id;
         // The one door reads both ways: from the street it takes you in, from
         // inside it puts you out. The ACTION is identical (one prop, one row,
         // one dispatch) — only the word the player is shown follows the side
@@ -2580,16 +2616,18 @@ bool SubworldEngine::interact() {
             return false;
         }
     }
-    const entt::entity best = aimed_corpse();
+    // ОДИН резолвер на подсказку и на нажатие: что HUD обещал, то и делается.
+    const AimedTarget target = aimed_target();
+    const entt::entity best = target.corpse;
     if (best == entt::null) {
         // Nothing dead under the reticle — then it is a prop, and the prop's
         // own row says what happens. One dispatch, one place to extend.
-        const Structure* prop = aimed_prop();
+        const Structure* prop = target.prop;
         if (!prop) {
             set_status("Nothing to interact with.");
             return false;
         }
-        switch (structure_interact(prop->kind)) {
+        switch (target.id) {
             case InteractId::Search:
                 return search_chest(*prop);
             case InteractId::Drink:

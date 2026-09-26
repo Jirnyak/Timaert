@@ -396,10 +396,17 @@ struct InteractRow {
     InteractId id;   // MUST equal the row's index (guard below)
     // Shown in the HUD prompt as "[E] <verb>".
     const char* verb;
-    // How far the player may stand from the prop's surface, in tiles. A door
-    // is arm's length (the melee reach every other contact uses); a corpse is
-    // picked up from a little further because you loot what fell around you.
-    float reachTiles;
+    // КОЛОНКА `reachTiles` СНЕСЕНА 2026-09-26 (вердикт владельца: «один
+    // предел = рука тела»). Дотягивание есть свойство ТОГО, КТО ТЯНЕТСЯ, а не
+    // вещи: предел один для всех родов и приходит из строки существа
+    // (`CombatTemplate::attackRange`, дверь `SubworldEngine::player_arm_reach`).
+    // Было восемь чисел без вывода — шесть по 5.0 и лут на 12.0 при руке 3.0;
+    // двенадцать тайлов и есть тот баг, который владелец видел глазами:
+    // подсказка «Loot» висела под прицелом через всю комнату И ПЕРЕБИВАЛА
+    // «Enter» у двери в двух шагах, потому что труп судился раньше пропа.
+    // Шрам в довесок: одинаковый 5-тайловый предел у Search/Drink/Read прятал
+    // расхождение таблицы с enum (колодец печатал «Search»), — предел,
+    // одинаковый у всех строк, колонкой не был.
     // СКОЛЬКО ВРЕМЕНИ ЗАНИМАЕТ ЭТО ДЕЙСТВИЕ, в секундах базы (CANON S13:
     // «в субмире всё — способность, и у всего есть рекавери», вердикт
     // владельца 2026-09-19). База — колонка ЗДЕСЬ; делит её дверь
@@ -415,17 +422,17 @@ struct InteractRow {
 // Drink/Read/Search, so the well prompted "Search", the sign "Drink" and the
 // chest "Read". Same 5-tile reach on all three hid it from every smoke.)
 inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
-    { InteractId::None,   "",             0.0f, 0.0f},
-    { InteractId::Door,   "Enter",        5.0f, 0.0f},
+    { InteractId::None,   "",             0.0f},
+    { InteractId::Door,   "Enter",        0.0f},
     // "Climb", not "Take stairs": a shaft is a ladder one way and a lid the
     // other, and there has never been a flight of steps anywhere in the game
     // for the word to name.
-    { InteractId::Stairs, "Climb",        5.0f, 0.0f},
-    { InteractId::Loot,   "Loot",        12.0f, 1.0f},
-    { InteractId::Drink,  "Drink",        5.0f, 1.5f},
-    { InteractId::Read,   "Read",         5.0f, 2.0f},
-    { InteractId::Search, "Search",       5.0f, 1.5f},
-    { InteractId::Learn,  "Learn spell",  5.0f, 3.0f},
+    { InteractId::Stairs, "Climb",        0.0f},
+    { InteractId::Loot,   "Loot",         1.0f},
+    { InteractId::Drink,  "Drink",        1.5f},
+    { InteractId::Read,   "Read",         2.0f},
+    { InteractId::Search, "Search",       1.5f},
+    { InteractId::Learn,  "Learn spell",  3.0f},
 };
 static_assert(rows_in_enum_order(kInteractRows, &InteractRow::id),
               "kInteractRows row order must mirror InteractId");

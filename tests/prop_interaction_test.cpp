@@ -7,8 +7,10 @@
 //
 // What is promised and asserted here:
 //   1. TABLE CONSISTENCY — pure, no generation. Every kind that declares an
-//      interaction has a usable InteractRow behind it (non-empty verb, a reach
-//      you can actually stand inside); every lit kind carries a colour and
+//      interaction has a usable InteractRow behind it (a non-empty verb; the
+//      REACH is no longer a column of that row — it is the arm of the body
+//      reaching, asserted once at the top of this file); every lit kind
+//      carries a colour and
 //      hangs its flame above its seat; every kind the SOLID pass draws has a
 //      height floor to draw. Derived from the table, never from restated
 //      numbers, and the row count is static_asserted against
@@ -23,7 +25,7 @@
 //      (the engine hangs its LightEmitter off structure_is_lit, so a lantern
 //      that is not lit is an unlit post).
 //   4. INTERIOR PROPS — the way OUT is a prop, not paint: exactly one Door on
-//      the ground storey, inside the Door row's own reach of the shared
+//      the ground storey, within an ARM's reach of the shared
 //      dungeon_entry_point; and every shaft this storey carries stands a
 //      Stairs block, tagged 1 up / 0 down, exactly on the shared
 //      dungeon_stair_point. The cellar is a seeded coin, so the test takes
@@ -39,10 +41,21 @@
 #include "sub/gens/dispatch.h"
 #include "sub/map_data.h"
 #include "sub/map_factory.h"
+// Дотягивание — свойство ТЕЛА, не вещи (вердикт владельца 2026-09-26), поэтому
+// свидетель берёт предел из строки того тела, которым игрок начинает игру, той
+// же колонкой, что читает движок через player_arm_reach().
+#include "macro/npc.h"
 
 #include <cmath>
 #include <cstdint>
 #include <vector>
+
+// ОДИН ФАКТ ВМЕСТО ВОСЬМИ КОЛОНОК, И ОН ИЗВЕСТЕН КОМПИЛЯТОРУ (§8 п.6): предел
+// любой интеракции — рука ТЕЛА, поэтому «внутрь предела можно встать»
+// спрашивается один раз о руке, а не по разу о каждом роде пропа. Строка
+// стартового тела и есть та, чью колонку отдаёт SubworldEngine::player_arm_reach.
+static_assert(sm::kAdventurerCombat.attackRange > 0.0f,
+              "рука тела — предел любой интеракции, и она положительна");
 
 using namespace sm;
 using namespace sm::sub;
@@ -140,13 +153,14 @@ void test_table_consistency() {
         const auto kind = Structure::Kind(k);
         const StructureKindRow& row = structure_kind_row(kind);
 
-        // An interactive kind must have a verb to print and a reach to stand
-        // inside — an interaction with reach 0 is a prompt nobody can trigger.
+        // An interactive kind must have a verb to print. РЕАЧ БОЛЬШЕ НЕ
+        // КОЛОНКА ЭТОЙ СТРОКИ (2026-09-26): предел дотягивания один и он у
+        // тела, поэтому «можно ли внутрь него встать» спрашивается ниже — один
+        // раз о руке, а не по разу о каждом роде.
         const InteractId id = structure_interact(kind);
         if (id != InteractId::None) {
             ++interactive;
-            const InteractRow& ir = interact_row(id);
-            if (!(ir.reachTiles > 0.0f) || empty_str(ir.verb)) ++badInteract;
+            if (empty_str(interact_row(id).verb)) ++badInteract;
         }
 
         // A lit kind carries a colour and hangs its flame above its seat;
@@ -167,7 +181,7 @@ void test_table_consistency() {
     CHECK(rows == Structure::kKindCount,
           "the sweep read one prop row for every Structure::Kind");
     CHECK(interactive > 0 && badInteract == 0,
-          "every interactive kind has a verb and a positive reach");
+          "every interactive kind has a verb to print");
     CHECK(lit > 0 && badLight == 0,
           "every lit kind carries a colour and hangs above its seat");
     CHECK(solidDrawn > 0 && badSolidHeight == 0,
@@ -180,7 +194,7 @@ void test_table_consistency() {
         ++ids;
         const InteractRow& ir = interact_row(InteractId(i));
         if (InteractId(i) == InteractId::None) {
-            if (!empty_str(ir.verb) || ir.reachTiles != 0.0f) ++missingVerb;
+            if (!empty_str(ir.verb)) ++missingVerb;
         } else if (empty_str(ir.verb)) {
             ++missingVerb;
         }
@@ -301,9 +315,12 @@ void test_interior_props() {
                     "the ground storey carries exactly one Door prop");
     float px = 0.0f, py = 0.0f;
     dungeon_entry_point(ctx.dungeon, px, py);
-    const float reach = interact_row(InteractId::Door).reachTiles;
+    // Предел — РУКА тела, которым игрок начинает (та же колонка, что отдаёт
+    // SubworldEngine::player_arm_reach): дверь обязана стоять в пределах
+    // вытянутой руки от площадки входа, иначе с порога её не открыть.
+    const float reach = sm::kAdventurerCombat.attackRange;
     CHECK(structure_surface_dist2(*door, px, py) <= reach * reach,
-          "the exit door stands within its own row's reach of the entry pad");
+          "the exit door stands within an arm's reach of the entry pad");
 
     // Shafts. The NW shaft climbs and exists whenever the room is big enough
     // to be worth a storey; the NE shaft descends on a seeded coin.

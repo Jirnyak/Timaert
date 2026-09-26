@@ -217,10 +217,23 @@ public:
     // resolves the spell ordinal and teaches the book (layering: only
     // content/ knows the registry).
     bool learn_from_spire_orb(const Structure& orb);
+    // WHAT IS UNDER THE RETICLE — one answer, one measure, one reach (owner,
+    // 2026-09-26). Exactly one of `prop`/`corpse` is set; `id` is the row's
+    // verb id. The reach is the ARM of the body the player is currently in
+    // (player_arm_reach) for both kinds — reaching is a property of the one
+    // who reaches, never of the thing — and the winner between a corpse and a
+    // prop is decided by the SAME aim score, so there is no branch by kind.
+    struct AimedTarget {
+        const Structure* prop = nullptr;
+        entt::entity corpse = entt::null;
+        InteractId id = InteractId::None;
+    };
+    AimedTarget aimed_target() const;
     // What pressing E right now would do, as the verb the HUD shows under the
     // crosshair ("Enter", "Loot", …). Empty string = nothing is being looked
-    // at. Pure query — the same resolution the keypress runs, so the prompt
-    // can never promise an action the key will not perform.
+    // at. Pure query over aimed_target — the same resolution the keypress
+    // runs, so the prompt can never promise an action the key will not
+    // perform.
     const char* interact_prompt() const;
     // Walk onto the shaft this storey carries and take it — the harness face
     // of the stair the player reaches with E. `up` picks the climbing (NW)
@@ -830,12 +843,14 @@ private:
     // Runs on the same "structures changed" signal as the solidity index.
     void rebuild_prop_cache();
     // The prop the player is looking at, or nullptr. Pure query over the
-    // interactive cache: forward cone on the camera yaw, within the verb's
-    // own reach measured to the prop's SURFACE.
-    const Structure* aimed_prop() const;
-    // The corpse under the reticle (entt::null if none) — same cone, the
-    // Loot verb's own reach.
-    entt::entity aimed_corpse() const;
+    // interactive cache: forward cone on the camera yaw, within the reach it
+    // is GIVEN (the body's arm — the reach is not the prop's property),
+    // measured to the prop's SURFACE. `outScore` carries the winner's aim
+    // score so the one resolver can compare it against a corpse's.
+    const Structure* aimed_prop(float reach, float& outScore) const;
+    // The corpse under the reticle (entt::null if none) — same cone, same
+    // reach, same score, so the two candidates are comparable.
+    entt::entity aimed_corpse(float reach, float& outScore) const;
     // Step through a door prop: resolves the building it belongs to (its
     // `tag` is that house's ordinal within the window cell) and raises the
     // interior. False if the building cannot be resolved.

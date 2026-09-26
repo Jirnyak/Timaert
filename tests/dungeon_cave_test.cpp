@@ -37,6 +37,9 @@
 #include "sub/dgn/dispatch.h"
 #include "sub/gens/dispatch.h"
 #include "sub/map_data.h"
+// Предел дотягивания — колонка СТРОКИ ТЕЛА (вердикт владельца 2026-09-26), а не
+// таблицы пропов: свидетель спрашивает ту же колонку, что player_arm_reach().
+#include "macro/npc.h"
 
 #include <algorithm>
 #include <cmath>
@@ -343,12 +346,14 @@ void test_props() {
           "the lid is a solid body — nothing is shot or flown out through the hill");
 
     // The door must be usable from the threshold the engine puts the body on:
-    // the reach is the table's own column, measured to the prop's SURFACE
-    // exactly as the interaction path measures it.
-    const float reach = interact_row(InteractId::Door).reachTiles;
-    CHECK(reach > 0.0f, "contract: the Door verb has a reach in the table");
+    // the reach is the ARM of the body standing there (2026-09-26 — дотягивание
+    // есть свойство того, кто тянется), measured to the prop's SURFACE exactly
+    // as the interaction path measures it.
+    const float reach = sm::kAdventurerCombat.attackRange;
+    static_assert(sm::kAdventurerCombat.attackRange > 0.0f,
+                  "рука стартового тела положительна — иначе дверей не открыть");
     CHECK(structure_surface_dist2(door, px, py) <= reach * reach,
-          "the exit door is within the table's reach of the entry threshold");
+          "the exit door is within an arm's reach of the entry threshold");
     CHECK(structure_interact(Structure::Door) == InteractId::Door,
           "contract: the Door prop carries the Door verb");
 

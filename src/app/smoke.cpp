@@ -2447,6 +2447,35 @@ bool run_subworld_loot_xp_smoke(App& app) {
         const auto& st = corpses.get<sm::ecs::Structure>(e);
         if (st.kind == sm::ecs::Structure::Corpse) corpseFound = true;
     }
+    // ── НЕГАТИВНЫЙ КОНТРОЛЬ ЗАКОНА ДОТЯГИВАНИЯ (§8 п.6) ─────────────────
+    // Предел дотягивания ОДИН и он РУКА ТЕЛА (вердикт владельца 2026-09-26).
+    // Контроль обязан РЕАЛЬНО падать при возврате прежней формы: до правки у
+    // лута был свой предел 12 тайлов против 5 у двери, и труп в конце комнаты
+    // не только предлагался, но и ПЕРЕБИВАЛ дверь в двух шагах (капкан на
+    // верхнем этаже шпиля, M-104). Отодвигаем труп на две руки — ни подсказки,
+    // ни взятия; потом возвращаем в половину руки и мерим настоящий закон.
+    const float arm = app.subworld.player_arm_reach();
+    auto place_corpses_at = [&](float dx) {
+        for (auto e : corpses) {
+            const auto& st = corpses.get<sm::ecs::Structure>(e);
+            if (st.kind != sm::ecs::Structure::Corpse) continue;
+            if (auto* cp = reg.try_get<sm::ecs::Position>(e)) {
+                cp->x = app.subworld.player_x() + dx;
+                cp->y = app.subworld.player_y();
+            }
+            if (auto* vp = reg.try_get<sm::ecs::VisualPos>(e)) {
+                vp->vx = app.subworld.player_x() + dx;
+                vp->vy = app.subworld.player_y();
+            }
+        }
+    };
+    place_corpses_at(arm * 2.0f);
+    const char* farPrompt = app.subworld.interact_prompt();
+    SMOKE_CHECK(app, farPrompt == nullptr || farPrompt[0] == '\0',
+                "труп за пределом руки не предлагается под прицелом");
+    SMOKE_CHECK(app, !app.subworld.interact(),
+                "труп за пределом руки не берётся нажатием");
+    place_corpses_at(arm * 0.5f);
     // Corpse-vs-player altitude in the diagnostic: interact() gates on a 3D
     // distance, so a z divergence (e.g. a body seated on a structure top) is
     // the first thing to rule out when interact=0 with the corpse present.
@@ -2561,12 +2590,14 @@ bool run_dungeon_house_smoke(App& app) {
         return false;
     }
     const sm::sub::Structure door = structs[std::size_t(best)];
-    // Stand on the door's outward normal, just inside the door verb's reach
-    // (kInteractRows), and LOOK at it — targeting is by aim now, so the smoke
-    // must aim like a player. Standing at the edge of reach rather than nose
-    // to the timber is also what a capture wants: a door you can SEE.
-    const float standoff =
-        sm::sub::interact_row(sm::sub::InteractId::Door).reachTiles - 1.0f;
+    // Stand on the door's outward normal, HALF AN ARM out, and LOOK at it —
+    // targeting is by aim, so the smoke must aim like a player. Half the arm
+    // and not its edge, because the edge is where float wobble decides
+    // whether the target exists; and not nose to the timber, because a
+    // capture wants a door you can SEE. The arm is the body's own (2026-09-26:
+    // предел дотягивания — свойство тела), so this standoff follows possession
+    // instead of quoting a table the reach no longer lives in.
+    const float standoff = app.subworld.player_arm_reach() * 0.5f;
     const float standX = door.x - standoff * std::sin(door.yaw);
     const float standY = door.y + standoff * std::cos(door.yaw);
     auto face_door = [&]() {
