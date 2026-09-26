@@ -2,7 +2,6 @@
 
 #include "content/quests/procedural.h"
 #include "content/plot/chapter_1.h"
-#include "content/plot/encounters.h"
 #include "content/plot/intro.h"
 #include "events/effect_applicator.h"
 #include "ecs/pools.h"
@@ -207,7 +206,7 @@ void test_event_bus_contract_surface() {
     CHECK_OR_RETURN(!(firstOrder != 1
         || lateOrder != 2
         || addDuringEmitBus.subscription_count() != 2),
-        "EventBus does not match TS live listener append order");
+        "a listener subscribed DURING an emit receives that same event, and after the ones already registered");
 
     sm::EventBus removeDuringEmitBus;
     int removerSeen = 0;
@@ -224,7 +223,7 @@ void test_event_bus_contract_surface() {
     CHECK_OR_RETURN(!(removerSeen != 1
         || removedSeen != 0
         || removeDuringEmitBus.subscription_count() != 1),
-        "EventBus does not match TS listener removal during emit");
+        "a listener unsubscribed DURING an emit does not receive that event");
 
     sm::EventBus unrelatedRemoveBus;
     int firstCustomSeen = 0;
@@ -304,7 +303,7 @@ void test_quest_accept_event_order() {
         "the first accepted quest did not draw ordinal 1");
     engine.accept(active, q, gs, bus);
     CHECK_OR_RETURN(!(active.size() != 2 || count_tag(bus, sm::EventTag::QuestStart) != 2),
-        "QuestEngine::accept deduped a quest unlike TS accept()");
+        "accept() is a pure issuer and does NOT judge duplicates - dedup is the offer layer's job, not his");
     CHECK_OR_RETURN(!(active[1].ordinal != 2u
         || gs.nextQuestOrdinal != 3u),
         "quest ordinals are not monotonic from the one issuer");
@@ -684,11 +683,11 @@ void test_settlement_show_dialog_node() {
         CHECK_OR_RETURN(!(dialog->s1 != expectedTitle
             || dialog->s2.find("The gates open before you") == std::string::npos
             || dialog->ix != 1),
-            "sys_settlement ShowDialog payload does not match TS node");
+            "entering a settlement raises exactly one dialog naming that settlement");
     };
 
     run_case(sm::EventTag::SettlementVisit, "Round City");
-    run_case(sm::EventTag::PlayerEnterSettlement, "TS City");
+    run_case(sm::EventTag::PlayerEnterSettlement, "Greenhollow");
     {
         sm::PlayerState player{};
         sm::EventBus bus;
@@ -696,7 +695,7 @@ void test_settlement_show_dialog_node() {
         sm::register_builtin_nodes(logic);
 
         sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};
-        leave.s1 = "TS City";
+        leave.s1 = "Greenhollow";
         bus.emit(leave);
         bus.flush();
         logic.tick(bus, player);
@@ -831,7 +830,7 @@ void test_logic_node_tick_order_matches_ts_set() {
     CHECK_OR_RETURN(!(bus.tick_events().size() != 2
         || bus.tick_events()[0].s1 != "first"
         || bus.tick_events()[1].s1 != "second"),
-        "LogicNodeEngine tick order/interleaving does not match TS Set semantics");
+        "nodes run in activation order, and a node's effect is visible to the condition of the next one in the SAME tick");
     CHECK_OR_RETURN(!(logic.active_count() != 0 || !logic.is_consistent()),
         "LogicNodeEngine active state after ordered tick is inconsistent");
 }
@@ -892,7 +891,7 @@ void test_logic_node_self_reactivation_safe_cases() {
         CHECK_OR_RETURN(!(count_tag(bus, sm::EventTag::Custom) != 1
             || logic.active_count() != 0
             || logic.is_active("self_activate")),
-            "LogicNodeEngine direct self-activate did not match TS Set no-op");
+            "a node that activates itself inside its own effect fires exactly once - self-activation is a no-op, not a loop");
     }
 
     {
@@ -1000,92 +999,24 @@ void test_intro_show_story_node() {
     CHECK_OR_RETURN(!(!logic.is_consistent() || logic.active_count() != 1),
         "chapter 1 placeholder did not remain dormant and active");
     CHECK_OR_RETURN(!(!bus.tick_events().empty()),
-        "chapter 1 placeholder emitted events despite false TS condition");
-}
-
-void test_encounter_table_shape() {
-    bag.clear();
-    head = sm::AgentMemory{};
-    sheet = sm::CharacterSheet{};
-    const auto& table = sm::content::encounters();
-    CHECK_OR_RETURN(!(table.size() != 15),
-        "encounter table count does not match TS buildEncounterTable");
-
-    const auto& hidden = table[0];
-    CHECK_OR_RETURN(!(hidden.title != "Hidden Cache"
-        || hidden.choices.size() != 2
-        || hidden.choices[0].effects.size() != 1
-        || hidden.choices[0].effects[0].tag != sm::EventTag::PlayerGoldChange
-        || hidden.choices[0].effects[0].ix < 15
-        || hidden.choices[0].effects[0].ix > 44),
-        "Hidden Cache encounter does not match TS gold branch");
-
-    const auto& campfire = table[2];
-    CHECK_OR_RETURN(!(campfire.title != "Abandoned Campfire"
-        || campfire.choices.size() != 2
-        || campfire.choices[0].effects.size() != 2
-        || campfire.choices[0].effects[0].s1 != "restore_sp"
-        || campfire.choices[0].effects[1].s1 != "heal_hp"
-        || campfire.choices[1].effects.size() != 1
-        || campfire.choices[1].effects[0].tag != sm::EventTag::PlayerGoldChange
-        || (campfire.choices[1].effects[0].ix != 0
-            && campfire.choices[1].effects[0].ix != 25)),
-        "Abandoned Campfire encounter does not match TS branches");
-
-    const auto& merchant = table[3];
-    CHECK_OR_RETURN(!(merchant.choices.size() != 3
-        || merchant.choices[1].effects.size() != 1
-        || merchant.choices[1].effects[0].tag != sm::EventTag::BattleStart
-        || merchant.choices[1].effects[0].s1 != "Angry Merchant"
-        || merchant.choices[1].effects[0].s2 != "merchant"
-        || merchant.choices[1].effects[0].ix != 3),
-        "Traveling Merchant battle branch does not match TS");
-
-    const auto& shrine = table[11];
-    CHECK_OR_RETURN(!(shrine.title != "Mysterious Shrine"
-        || shrine.choices.size() != 2
-        || shrine.choices[0].effects.size() != 2
-        || shrine.choices[0].effects[0].s1 != "restore_hp"
-        || shrine.choices[0].effects[1].s1 != "restore_mp"
-        || shrine.choices[1].effects.size() != 1),
-        "Mysterious Shrine structure does not match TS");
-    const sm::GameEvent& offering = shrine.choices[1].effects[0];
-    const bool offeringGold =
-        offering.tag == sm::EventTag::PlayerGoldChange && offering.ix == 50;
-    const bool offeringDamage =
-        offering.tag == sm::EventTag::ApplyEffect
-        && offering.s1 == "damage_hp"
-        && offering.ix == 25;
-    CHECK_OR_RETURN(!(!offeringGold && !offeringDamage),
-        "Mysterious Shrine offering is not a legal TS branch");
-
-    const auto& monolith = table[12];
-    CHECK_OR_RETURN(!(monolith.choices.size() != 2
-        || monolith.choices[0].effects.size() != 2
-        || monolith.choices[0].effects[0].tag != sm::EventTag::CodexUnlock
-        || monolith.choices[0].effects[0].a
-            != std::uint32_t(sm::CodexArticleId::Cosmology)
-        || monolith.choices[1].effects.size() != 2
-        || monolith.choices[1].effects[0].tag != sm::EventTag::ReputationChange
-        || monolith.choices[1].effects[0].s1 != "empire"
-        || monolith.choices[1].effects[1].s1 != "cults"),
-        "Black Monolith encounter does not match TS effects");
-
-    const auto& witch = table[14];
-    CHECK_OR_RETURN(!(witch.title != "Witch's Hut"
-        || witch.choices.size() != 3
-        || witch.choices[1].effects.size() != 1
-        || witch.choices[1].effects[0].tag != sm::EventTag::BattleStart
-        || witch.choices[1].effects[0].s1 != "Forest Witch"
-        || witch.choices[1].effects[0].s2 != "witch"
-        || witch.choices[1].effects[0].ix != 7),
-        "Witch encounter battle branch does not match TS");
+        "an ACTIVE node with an unmet condition emits nothing - activity is not emission");
 }
 
 // A test_random_encounter_logic_node lived here and drove the "enc_random"
 // node: walk far enough, roll a private die, get a uniformly random list row.
 // Removed with the node (owner ruling 2026-08-05: events come from game
 // context and state, never an unconditional random roll over a list).
+//
+// test_encounter_table_shape() lived here too, and the TABLE it guarded is
+// gone with it (owner ruling 2026-09-26). It was dead content: nothing in the
+// project ever set GameSubStateKind::Event or wrote pendingEncounterIdx, so
+// the modal could not open. The test was the worse half of the pair — it
+// checked rows BY INDEX (table[0], [2], [3], [11], [12], [14]), pinned the
+// count at 15, and allowed ranges the C++ source never produced (gold in
+// 15..44 where build_table writes exactly 25; "either gold 50 or damage_hp
+// 25" where only gold 50 exists). Those tolerances only ever meant "the dead
+// TypeScript build rolled a die here" — the witness outlived not just its
+// subject but the language its expectations came from.
 
 void test_quest_failed_settles_its_offer() {
     bag.clear();
@@ -1306,17 +1237,17 @@ void test_quest_reward_dispatch_order_and_application() {
         || events[3].tag != sm::EventTag::QuestComplete
         || events[3].a != q.ordinal
         || events[3].b != sm::kEventEffectAlreadyApplied),
-        "quest reward dispatch order does not match TS reward-before-complete flow");
+        "rewards are dispatched BEFORE the completion event, each already applied");
     CHECK_OR_RETURN(!(goldSeenByListener != 27
         || completedDuringGold != 1
         || reputationSeenByListener != 3),
-        "quest reward listeners did not see TS direct state mutation");
+        "a reward listener reads state that is ALREADY updated - the bus reports, it does not promise");
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
         || gs.player.completedQuestCount != 1u),
-        "quest rewards did not mutate state directly like TS");
+        "quest rewards mutate gold, exp, reputation and bag directly");
 
     std::size_t applied = 0;
     apply_pending(bus, gs, applied);
@@ -1325,7 +1256,7 @@ void test_quest_reward_dispatch_order_and_application() {
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
         || gs.player.completedQuestCount != 1u),
-        "quest reward events duplicated direct TS state");
+        "replaying the reward events applies nothing twice - the already-applied flag is honoured");
 
     apply_pending(bus, gs, applied);
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
@@ -1442,11 +1373,18 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
             completed.push_back(ev.a);
         }
     }
-    CHECK_OR_RETURN(!(!active.empty()
-        || completed.size() != 2
-        || completed[0] != 2u
-        || completed[1] != 1u),
-        "QuestEngine completion order does not match TS reverse scan");
+    // The ORDER two simultaneously-completable quests finish in is not
+    // asserted (owner ruling 2026-09-26). It falls out of scanning the active
+    // list backwards — the safe way to erase while iterating — and nothing
+    // the player sees depends on it, so pinning it would forbid ever changing
+    // the container. What the engine OWES is that both close, once each, and
+    // that nothing is left standing.
+    CHECK(active.empty(), "no quest is left active once both are satisfied");
+    CHECK_OR_RETURN(completed.size() == 2,
+                    "both satisfied quests completed — and each exactly once");
+    CHECK((completed[0] == 1u && completed[1] == 2u)
+              || (completed[0] == 2u && completed[1] == 1u),
+          "the two completions name the two quests that were accepted");
 }
 
 void test_wait_at_timeadvance_objective() {
@@ -1484,7 +1422,7 @@ void test_wait_at_timeadvance_objective() {
     engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.empty() || has_tag(bus, sm::EventTag::QuestComplete)
         || active[0].objectives[0].hoursWaited != 1),
-        "WaitAt treated one TimeAdvance event as more than one TS hour");
+        "WaitAt counts EVENTS, not the hours named inside them - one TimeAdvance is one step");
 
     sm::GameEvent oneHour{sm::EventTag::TimeAdvance};
     oneHour.ix = 1;
@@ -1636,7 +1574,7 @@ void test_abandon_emits_and_removes() {
     CHECK_OR_RETURN(!(player.completedQuestCount != 0u
         || player.failedQuestCount != 0u
         || engine.is_known(active, player, q)),
-        "abandoned quest was recorded as done unlike TS screen abandon");
+        "an abandoned quest is neither completed nor failed, and its offer stays open");
 
     engine.abandon(active, q.ordinal, bus);
     CHECK_OR_RETURN(!(count_tag(bus, sm::EventTag::QuestFail) != 1),
@@ -1887,7 +1825,6 @@ int main() {
     test_logic_node_effect_can_remove_self();
     test_logic_node_self_reactivation_safe_cases();
     test_intro_show_story_node();
-    test_encounter_table_shape();
     test_quest_failed_settles_its_offer();
     test_item_delivery_direct_path();
     test_quest_reward_dispatch_order_and_application();

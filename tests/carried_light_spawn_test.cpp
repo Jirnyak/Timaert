@@ -38,13 +38,6 @@
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/carried_light_spawn_test.cpp", 0);
-    return 1;
-}
-
 bool near(float a, float b, float eps = 1e-4f) {
     return std::fabs(a - b) <= eps;
 }
@@ -70,15 +63,17 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
 // Guard opts IN (a warm torch); every other row is dark by default. This pins
 // the "strictly opt-in, one data row" property at the source, independent of any
 // spawn: adding a lit type can only ever be a row edit that trips this counter.
-bool run_type_table_contract() {
+void run_type_table_contract() {
     const sm::NpcTypeDef& guard = sm::npc_def(sm::NPCType::Guard);
-    if (!(guard.lightRadius > 0.0f)) return false;      // Guard carries a light
-    if (!(guard.lightIntensity > 0.0f)) return false;
+    CHECK(guard.lightRadius > 0.0f, "the Guard row carries a light at all");
+    CHECK(guard.lightIntensity > 0.0f, "the Guard row's light has intensity");
     // Warm firelight: red ≥ green ≥ blue, and not pure white (a torch, not a
     // lantern-white bulb) — the row's colour intent, not an exact tuple.
-    if (!(guard.lightR >= guard.lightG && guard.lightG >= guard.lightB)) return false;
-    if (!(guard.lightB < guard.lightR)) return false;
-    if (!(guard.lightHeight > 0.0f)) return false;      // seated off the feet
+    CHECK(guard.lightR >= guard.lightG && guard.lightG >= guard.lightB,
+          "the carried light is WARM — red >= green >= blue");
+    CHECK(guard.lightB < guard.lightR,
+          "the carried light is a torch, not a lantern-white bulb");
+    CHECK(guard.lightHeight > 0.0f, "the light is seated off the feet");
 
     // Exactly the intended set is lit — every other row defaults to dark. If a
     // future row opts in, bump the expected count here on purpose (a deliberate
@@ -87,14 +82,15 @@ bool run_type_table_contract() {
     for (std::size_t i = 0; i < std::size_t(sm::NPCType::Count); ++i) {
         if (sm::kNpcTypeDefs[i].lightRadius > 0.0f) ++lit;
     }
-    if (lit != 1) return false;   // only Guard today
-    return true;
+    CHECK(lit == 1,
+          "exactly ONE row opts into carrying a light (Guard today) — every "
+          "other row is dark by default; a new lit row bumps this on purpose");
 }
 
 // ── 2 + 3. The spawn wiring, through the SHIPPING path ────────────────────────
 // Populate a City cell (guarantees guards) and assert every guard — and ONLY the
 // guards — carries an ecs::LightEmitter equal to its type row, seated on +Y.
-bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
+void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
@@ -132,6 +128,13 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     int guards = 0;
     int guardsLit = 0;
     int nonGuardsLit = 0;
+    // The loop COUNTS mismatches instead of bailing on the first one, so the
+    // failure says which of the row's properties drifted — and so the count
+    // of what was actually inspected can be asserted (§8 п.3: a loop that
+    // measures must assert that it MEASURED).
+    int colourDrift = 0;
+    int strengthDrift = 0;
+    int offsetDrift = 0;
 
     auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>();
     for (auto e : view) {
@@ -141,20 +144,20 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
 
         if (isGuard) {
             ++guards;
-            if (!hasLight) return false;   // every guard must be lit
+            if (!hasLight) continue;       // counted below as an unlit guard
             ++guardsLit;
             // Verbatim copy of the type row → tuning is a one-row data edit.
             const auto& le = world.reg.get<sm::ecs::LightEmitter>(e);
-            if (!near(le.radius, guardDef.lightRadius)) return false;
-            if (!near(le.intensity, guardDef.lightIntensity)) return false;
-            if (!near(le.r, guardDef.lightR)) return false;
-            if (!near(le.g, guardDef.lightG)) return false;
-            if (!near(le.b, guardDef.lightB)) return false;
+            if (!near(le.radius, guardDef.lightRadius)
+                || !near(le.intensity, guardDef.lightIntensity)) ++strengthDrift;
+            if (!near(le.r, guardDef.lightR)
+                || !near(le.g, guardDef.lightG)
+                || !near(le.b, guardDef.lightB)) ++colourDrift;
             // Seated on world-up (+Y), no horizontal bias — matches the player
             // lantern and the gather's g.pos[1] = wy + le.offY.
-            if (!near(le.offX, 0.0f)) return false;
-            if (!near(le.offY, guardDef.lightHeight)) return false;
-            if (!near(le.offZ, 0.0f)) return false;
+            if (!near(le.offX, 0.0f)
+                || !near(le.offY, guardDef.lightHeight)
+                || !near(le.offZ, 0.0f)) ++offsetDrift;
         } else {
             // Only lit types (dark by default) get an emitter. No civilian row is
             // lit today, so any emitter on a non-guard is a wiring bug.
@@ -162,10 +165,16 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
         }
     }
 
-    if (guards < 2) return false;          // a city fields ≥ 2 guards
-    if (guardsLit != guards) return false; // all of them lit
-    if (nonGuardsLit != 0) return false;   // and nobody else
-    return true;
+    CHECK_OR_RETURN(guards >= 2, "a city street fields at least two guards");
+    CHECK(guardsLit == guards, "EVERY guard on the street carries his light");
+    CHECK(nonGuardsLit == 0,
+          "and NOBODY else does — an emitter on a civilian is wiring, not data");
+    CHECK(strengthDrift == 0,
+          "the attached light's radius and intensity are the type row VERBATIM "
+          "— tuning stays a one-row data edit");
+    CHECK(colourDrift == 0, "the attached light's colour is the type row verbatim");
+    CHECK(offsetDrift == 0,
+          "the light is seated on world-up (+Y) with no horizontal bias");
 }
 
 }  // namespace
@@ -176,21 +185,15 @@ int main() {
     mgr.init(0, 0, meadow_cell);
     mgr.consume_composite_dirty();
 
-    if (!run_type_table_contract()) {
-        sm::sub::clear_saved_subworlds();
-        return fail("NpcTypeDef light data contract violated "
-                    "(guard unlit / not warm / wrong lit-row count)");
-    }
+    // Both contracts assert for themselves now. They used to hand `main` a
+    // bool, and `main` turned it into ONE message listing the four things it
+    // might have meant ("guard unlit / values not verbatim / offset not +Y /
+    // civilian lit") — a verdict carried by a return value, which is the exact
+    // shape §8 п.1 forbids, and the reason the file's only counted check was
+    // the un-failable `CHECK(true, "every gate above held")`.
+    run_type_table_contract();
+    run_spawn_attach_contract(mgr);
 
-    if (!run_spawn_attach_contract(mgr)) {
-        sm::sub::clear_saved_subworlds();
-        return fail("carried-light attach wrong "
-                    "(guard unlit / values not verbatim / offset not +Y / "
-                    "civilian lit)");
-    }
-
-    std::printf("OK carried_light_spawn_test type_contract=1 spawn_attach=1\n");
     sm::sub::clear_saved_subworlds();
-    CHECK(true, "every gate above held");
     return sm::test::report("carried_light_spawn_test");
 }

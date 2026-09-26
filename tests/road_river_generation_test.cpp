@@ -440,7 +440,7 @@ void test_tree_spawner_respects_river_buffer()
             dx += river.width;
         }
         CHECK(dx < -2 || dx > 2,
-              "trees must respect TS two-cell river exclusion buffer");
+              "no tree grows within the river exclusion buffer - not in the channel, not on its bank");
         if (sm::test::failures() != failsBefore)
         {
             break;

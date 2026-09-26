@@ -70,10 +70,10 @@ int main()
     CHECK(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_Road, 1.0f), 1.0f),
                  "a road through a forest is a cut: the bed gates the canopy");
     CHECK(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255), sm::FT_None), 2.0f),
-                 "unknown biome must match TS default movement weight");
+                 "an out-of-table biome FAILS CLOSED to the default weight - never to 0.0, which would be free movement");
     CHECK(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255),
                                            static_cast<sm::FeatureType>(255)), 2.0f),
-                 "unknown feature and biome must fail closed to TS default movement weight");
+                 "garbage in BOTH columns still fails closed to the default weight");
     CHECK(nearly(sm::cell_sp_weight(sm::Meadow,
                                            static_cast<sm::FeatureType>(255)), 2.0f),
                  "unknown feature must fall through to biome movement weight");
@@ -252,7 +252,7 @@ int main()
                  "valid water-mask zone generation must expose complete storage");
     CHECK(nearly(waterCont[0],
                         std::min(1.0f, baselineCont[0] + 0.05f)),
-                 "valid water mask must apply TS water boost to matching cells");
+                 "the water mask lifts the zone value of ITS OWN cells and leaves the neighbouring land alone");
     CHECK(nearly(waterCont[1], baselineCont[1]),
                  "valid water mask must not alter land cells");
     std::vector<float> shortWaterCont;

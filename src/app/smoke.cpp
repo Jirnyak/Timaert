@@ -198,7 +198,6 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"dungeon_cave", SmokeAction::DungeonCave},
     {"prologue_road", SmokeAction::PrologueRoad},
     {"spire_climb", SmokeAction::SpireClimb},
-    {"spire_perf", SmokeAction::SpirePerf},
     {"trigger_battle_start", SmokeAction::TriggerBattleStart},
     {"wait_visible", SmokeAction::WaitVisible},
     {"open_settlement_build", SmokeAction::OpenSettlementBuild},
@@ -248,6 +247,16 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
         if (smoke_token_equals(token, row.tok)) { out = row.act; return true; }
     }
     return false;
+}
+
+// The same table read backwards, so the quit report can NAME the action that
+// measured nothing instead of printing its ordinal. One table, both ways — a
+// second list of names would be the second dictionary the laws forbid.
+const char* smoke_token_of(SmokeAction act) {
+    for (const auto& row : kSmokeTokens) {
+        if (row.act == act) return row.tok;
+    }
+    return "?";
 }
 
 bool smoke_is_separator(char c) {
@@ -323,11 +332,29 @@ bool smoke_destroy_invariants_hold(const App& app) {
         && app.logic.active_count() == 0;
 }
 
+// A PRECONDITION that did not hold — no world, no scene, the fixture never
+// built. Not a fact under test: the scenario cannot ask its question at all,
+// so it stops. Facts go through SMOKE_CHECK, which counts and does not stop.
 void smoke_fail(App& app, const char* reason) {
     std::fprintf(stderr, "[smoke] FAIL %s\n", reason);
     std::fflush(stderr);
     app.smoke.failed = true;
+    app.smoke.aborted = true;
     app.running = false;
+}
+
+void smoke_check(App& app, bool ok, const char* what, const char* file, int line) {
+    ++app.smoke.checksRun;
+    const int act = app.smoke.cursor;
+    if (act >= 0 && act < SmokeScript::kMaxActions
+        && app.smoke.actionChecks[std::size_t(act)] < 0xFFFFu) {
+        ++app.smoke.actionChecks[std::size_t(act)];
+    }
+    if (ok) return;
+    ++app.smoke.checksFailed;
+    app.smoke.failed = true;
+    std::fprintf(stderr, "[smoke] FAIL %s:%d - %s\n", file, line, what);
+    std::fflush(stderr);
 }
 
 // Does the frame we just presented actually SHOW a world?
@@ -441,9 +468,6 @@ void smoke_clear_modal_overlays(App& app) {
     app.pendingPresentationCount = 0;
     app.pendingPresentationTick = std::uint32_t(-1);
     app.pendingPresentationSeen = 0;
-    if (app.gs.subState.kind == sm::GameSubStateKind::Event) {
-        app.gs.subState.kind = sm::GameSubStateKind::Exploring;
-    }
 }
 
 int smoke_total_minutes(const sm::WorldTime& t) {
@@ -1843,14 +1867,6 @@ bool run_timeadvance_burst_smoke(App& app) {
         app, int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 181)), false);
     app.bus.unsubscribe(subId);
 
-    const bool subscriberOk = stats.ticked
-        && !stats.subworldActive
-        && stats.timeTick.hoursAdvanced == 3
-        && count == 3
-        && days[0] == 0 && hours[0] == 7
-        && days[1] == 0 && hours[1] == 8
-        && days[2] == 0 && hours[2] == 9;
-
     // A second, separate burst: one hour past 09:00 must deliver exactly one
     // TimeAdvance at 10:00. The old check read this off the bus's history
     // ring; the ring is gone (the past lives in the chronicle/journal, S20.1),
@@ -1871,14 +1887,6 @@ bool run_timeadvance_burst_smoke(App& app) {
             app, int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 61)),
             false);
     app.bus.unsubscribe(lateSubId);
-    const bool lateBurstOk = lateStats.ticked
-        && !lateStats.subworldActive
-        && lateStats.timeTick.hoursAdvanced == 1
-        && lateCount == 1
-        && lateDay == 0
-        && lateHour == 10;
-
-    const bool ok = subscriberOk && lateBurstOk;
 
     // pause mask in the report (the SMOKE-7 lesson): hoursAdvanced=0 has
     // meant «the world stood paused under the harness», and without the mask
@@ -1897,9 +1905,35 @@ bool run_timeadvance_burst_smoke(App& app) {
                  unsigned(pause_reasons(app)));
     std::fflush(stderr);
 
-    if (!ok) {
-        smoke_fail(app, "timeadvance_burst invariant");
-        return false;
+    // The verdict was one `ok`; behind it stood sixteen facts — `subscriberOk`
+    // folded ten and `lateBurstOk` six. The clock, the pause gate, the event
+    // count and each delivered hour are separate laws: a world that stood
+    // PAUSED and a world that SKIPPED an hour used to print the same red,
+    // which is why the pause mask had to be added to the printf to tell them
+    // apart by eye (SMOKE-7). Now they are told apart by the verdict.
+    SMOKE_CHECK(app, stats.ticked, "the world ticked at all under the burst");
+    SMOKE_CHECK(app, !stats.subworldActive,
+                "the burst ran on the MACRO clock, with no scene standing");
+    SMOKE_CHECK(app, stats.timeTick.hoursAdvanced == 3,
+                "three hours of ticks advanced exactly three hours");
+    SMOKE_CHECK(app, count == 3,
+                "three hours delivered exactly three TimeAdvance events — "
+                "no hour doubled, none swallowed");
+    if (count == 3) {
+        SMOKE_CHECK(app, days[0] == 0 && hours[0] == 7, "the first hour is 07:00");
+        SMOKE_CHECK(app, days[1] == 0 && hours[1] == 8, "the second hour is 08:00");
+        SMOKE_CHECK(app, days[2] == 0 && hours[2] == 9, "the third hour is 09:00");
+    }
+    // The second, separate burst: one hour past 09:00 delivers exactly one.
+    SMOKE_CHECK(app, lateStats.ticked, "the world ticked under the late burst");
+    SMOKE_CHECK(app, !lateStats.subworldActive,
+                "the late burst ran on the macro clock too");
+    SMOKE_CHECK(app, lateStats.timeTick.hoursAdvanced == 1,
+                "one hour of ticks advanced exactly one hour");
+    SMOKE_CHECK(app, lateCount == 1, "one hour delivered exactly one event");
+    if (lateCount == 1) {
+        SMOKE_CHECK(app, lateDay == 0 && lateHour == 10,
+                    "the late event is 10:00 — the hour that actually passed");
     }
     return true;
 }
@@ -2841,37 +2875,92 @@ bool run_dungeon_house_smoke(App& app) {
                  spBefore, spAfter, readSign ? 1 : 0);
     std::fflush(stderr);
 
-    // Storey invariants only bind when the house HAS that storey (a small
-    // house has no upper room, half of them have no cellar) — a shaft that
-    // was taken must land one level along and come back to the door level.
-    const bool storeysOk =
-        lvl0 == 0
-        && (lvlUp == 0 || (lvlUp == 1 && lvlBack == 0))
-        && (lvlDown == 0 || (lvlDown == -1 && lvlBack2 == 0));
-    // A cellar that spawned vermin must pay the cell back on a kill.
-    const bool verminOk = vermin == 0
-        || (faunaBefore > 0 && faunaAfter == faunaBefore - 1);
+    // TWENTY-EIGHT facts about six unrelated systems — the door, the town's
+    // census, the storey shafts, the cellar's fauna, the chest's bookkeeping
+    // and the well — used to ride one `||` chain under the string
+    // "dungeon_house invariant". It was the widest single verdict in the
+    // harness: a broken well and a broken population read identically, and
+    // whichever tripped first hid the other twenty-seven.
 
-    if (!entered || !inD1 || !exited || !outOk || !entered2 || !inD2
-        || !exited2 || tagsBefore != 1 || tagsIn != 1 || tagsOut != 1
-        || h1 != h2
-        // A city house holds a household, and a death behind the door thins
-        // the town by exactly one, in the tick it happens.
-        || residents < 1 || popBefore <= 0 || popAfter != popBefore - 1
-        || !storeysOk || !verminOk || !onFloor || !leaveRefused
-        // A house has a chest, and searching it MOVES goods from the town's
-        // store into the bag — same count out as in — at a price in standing.
-        || chestProps < 1 || !searched
-        || storeAfter >= storeBefore
-        || bagAfter - bagBefore != storeBefore - storeAfter
-        || repAfter >= repBefore
-        // A settlement keeps a well and a board, and both answer E: the well
-        // in stamina, the board in words.
-        || wells < 1 || signs < 1 || !drank || spAfter <= spBefore
-        || !readSign) {
-        smoke_fail(app, "dungeon_house invariant");
-        return false;
+    // ── THE DOOR, BOTH WAYS ──────────────────────────────────────────────
+    SMOKE_CHECK(app, entered, "E on a house door enters it");
+    SMOKE_CHECK(app, inD1, "entering puts the player in an interior");
+    SMOKE_CHECK(app, exited, "the interior can be walked out of");
+    SMOKE_CHECK(app, outOk, "walking out puts him back on the street");
+    SMOKE_CHECK(app, entered2, "the same door opens a second time");
+    SMOKE_CHECK(app, inD2, "the second entry is an interior too");
+    SMOKE_CHECK(app, exited2, "the second interior is left through its own exit");
+    // The scene is DERIVED, not stored: the same door re-derives the same
+    // room. Only askable if both entries actually happened.
+    if (inD1 && inD2) {
+        SMOKE_CHECK(app, h1 == h2,
+                    "the same door re-derives the SAME interior — the scene is "
+                    "a function of identity, not a remembered object");
     }
+    SMOKE_CHECK(app, tagsBefore == 1, "one player tag on the street");
+    SMOKE_CHECK(app, tagsIn == 1, "one player tag inside — entering did not clone him");
+    SMOKE_CHECK(app, tagsOut == 1, "one player tag after leaving");
+    SMOKE_CHECK(app, onFloor, "he stands ON the interior floor, not through it");
+    // The leave key does NOT work in an interior (owner ruling 2026-09-09).
+    SMOKE_CHECK(app, leaveRefused,
+                "the leave key is refused inside — a dungeon is left on foot");
+
+    // ── THE TOWN'S CENSUS ────────────────────────────────────────────────
+    // A city house holds a household, and a death behind the door thins the
+    // town by exactly one, in the tick it happens.
+    SMOKE_CHECK(app, residents >= 1, "a city house holds a household");
+    SMOKE_CHECK(app, popBefore > 0, "the town had a population to thin");
+    SMOKE_CHECK(app, popAfter == popBefore - 1,
+                "a death behind the door thins the town by EXACTLY one");
+
+    // ── THE STOREY SHAFTS ────────────────────────────────────────────────
+    // These bind only when the house HAS that storey (a small house has no
+    // upper room, half of them have no cellar). Stated as a conditional and
+    // not as a fact that degenerates to true: when there is no shaft, nothing
+    // is claimed, and the run's check count says so out loud.
+    SMOKE_CHECK(app, lvl0 == 0, "the door level IS the ground level");
+    if (lvlUp != 0) {
+        SMOKE_CHECK(app, lvlUp == 1, "a stair up lands exactly one level along");
+        SMOKE_CHECK(app, lvlBack == 0, "coming back down returns to the door level");
+    }
+    if (lvlDown != 0) {
+        SMOKE_CHECK(app, lvlDown == -1, "a stair down lands exactly one level along");
+        SMOKE_CHECK(app, lvlBack2 == 0, "coming back up returns to the door level");
+    }
+
+    // ── THE CELLAR'S FAUNA ───────────────────────────────────────────────
+    // A cellar that spawned vermin must pay the cell back on a kill.
+    if (vermin > 0) {
+        SMOKE_CHECK(app, faunaBefore > 0,
+                    "vermin in the cellar are counted in the cell's headcount");
+        SMOKE_CHECK(app, faunaAfter == faunaBefore - 1,
+                    "killing vermin pays the cell back by exactly one");
+    }
+
+    // ── THE CHEST'S BOOKKEEPING ──────────────────────────────────────────
+    // A house has a chest, and searching it MOVES goods from the town's store
+    // into the bag — same count out as in — at a price in standing.
+    SMOKE_CHECK(app, chestProps >= 1, "a house holds a chest");
+    SMOKE_CHECK(app, searched, "the chest answers a search");
+    if (searched) {
+        SMOKE_CHECK(app, storeAfter < storeBefore,
+                    "what the bag gained came OUT of the town's store");
+        SMOKE_CHECK(app, bagAfter - bagBefore == storeBefore - storeAfter,
+                    "the loot is MOVED, not minted — same count out as in");
+        SMOKE_CHECK(app, repAfter < repBefore, "looting a house costs standing");
+    }
+
+    // ── THE WELL AND THE BOARD ───────────────────────────────────────────
+    // A settlement keeps both, and both answer E: the well in stamina, the
+    // board in words.
+    SMOKE_CHECK(app, wells >= 1, "a settlement keeps a well");
+    SMOKE_CHECK(app, signs >= 1, "a settlement keeps a board");
+    SMOKE_CHECK(app, drank, "the well answers E");
+    if (drank) {
+        SMOKE_CHECK(app, spAfter > spBefore, "drinking returns stamina");
+    }
+    SMOKE_CHECK(app, readSign, "the board answers E in words");
+    // The scenario RAN; the verdict is in the counter, not in this bool.
     return true;
 }
 
@@ -3071,12 +3160,20 @@ bool run_dungeon_cave_smoke(App& app) {
                  walkedOut ? 1 : 0);
     std::fflush(stderr);
 
-    if (!entered || !inCave || level != 0 || !onFloor || hoards < 1
-        || !noStairs || !refusedWhileHunted || !refusedWhenClear
-        || !walkedOut) {
-        smoke_fail(app, "dungeon_cave invariant");
-        return false;
-    }
+    SMOKE_CHECK(app, entered, "a cave mouth answers E");
+    SMOKE_CHECK(app, inCave, "entering a mouth puts the player in the cave");
+    SMOKE_CHECK(app, level == 0, "a cave is ONE level — it has no storeys");
+    SMOKE_CHECK(app, onFloor, "he stands ON the cave floor, not through it");
+    SMOKE_CHECK(app, hoards >= 1, "a cave holds a hoard");
+    SMOKE_CHECK(app, noStairs, "a cave offers no stair — nothing to climb to");
+    // Leaving is gated by danger, never by a zone byte (owner, 2026-09-11):
+    // hunted means refused, and CLEAR means refused too — a cave is left on
+    // foot through its own mouth, exactly like a house.
+    SMOKE_CHECK(app, refusedWhileHunted, "the leave key is refused while hunted");
+    SMOKE_CHECK(app, refusedWhenClear,
+                "the leave key is refused even with no enemy near — an "
+                "interior is left on foot, not by key");
+    SMOKE_CHECK(app, walkedOut, "the cave is walked out of through its mouth");
     return true;
 }
 
@@ -3338,71 +3435,39 @@ bool run_prologue_road_smoke(App& app) {
                  mapHeldAtWitch ? 1 : 0, mapOpened ? 1 : 0);
     std::fflush(stderr);
 
-    if (!entered || !onRoad || !ambushWaits || !ambushCloses
-        || ambushMaxHp < 100
-        || !leaveRefused || !noExitPoint
-        || bodiesBefore < 1 || bodiesAfter != bodiesBefore
-        || !wrapped || !torusSame
-        || !rescued || !anchored || !witchOpen
-        || !mapHeldAtWitch || !mapOpened) {
-        smoke_fail(app, "prologue_road invariant");
-        return false;
-    }
-    return true;
-}
-
-// spire_perf — an honest MEASUREMENT, not a verdict (the balance_run
-// doctrine): teleport to the tallest spire, enter its open-air scene with
-// the born throng ALIVE and hostile (§42 Инк 5: hundreds in the yard), run
-// a fixed count of simulation ticks and say the cost out loud — bodies,
-// ms/tick against the 64 tps budget (15.625 ms). No ceiling hides in here:
-// the owner reads the number and decides (CANON S28, «потолков нет»).
-bool run_spire_perf_smoke(App& app) {
-    const sm::Landmark* target = nullptr;
-    for (const auto& sp : app.gs.landmarks) {
-        if (sp.type != sm::LandmarkType::Spire) continue;
-        if (sp.spellId >= std::uint32_t(sm::kSpellCount)) continue;
-        if (!target || sm::kSpellDefs[sp.spellId].tier
-                           > sm::kSpellDefs[target->spellId].tier) {
-            target = &sp;
-        }
-    }
-    if (!target) {
-        smoke_fail(app, "spire_perf found no spire");
-        return false;
-    }
-    const float oldX = smoke_player_x(app);
-    const float oldY = smoke_player_y(app);
-    smoke_teleport_player(app, target->x, target->y);
-    app.gs.subState.settlementId = -1;
-    enter_subworld(app);
-    if (!app.subworld.active()) {
-        smoke_fail(app, "spire_perf could not enter the spire cell");
-        return false;
-    }
-    app.subworld.tick(0.015625f);   // settle one step before the clock runs
-
-    int bodies = 0;
-    for ([[maybe_unused]] auto e :
-         app.ecs.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>()) {
-        ++bodies;
-    }
-    constexpr int kPerfTicks = 512;
-    constexpr double kTickBudgetMs = 1000.0 / 64.0;
-    const auto t0 = std::chrono::steady_clock::now();
-    for (int i = 0; i < kPerfTicks; ++i) app.subworld.tick(0.015625f);
-    const auto t1 = std::chrono::steady_clock::now();
-    const double totalMs =
-        std::chrono::duration<double, std::milli>(t1 - t0).count();
-    const double perTick = totalMs / double(kPerfTicks);
-    std::fprintf(stderr,
-                 "[smoke] spire_perf pop=%d bodies=%d ticks=%d "
-                 "ms_per_tick=%.3f tick_budget_ms=%.3f sim_load=%.1f%%\n",
-                 target->population, bodies, kPerfTicks, perTick,
-                 kTickBudgetMs, perTick * 100.0 / kTickBudgetMs);
-    std::fflush(stderr);
-    if (app.subworld.active()) app.subworld.leave(true);
-    smoke_teleport_player(app, int(oldX), int(oldY));
+    // Sixteen facts about four systems — the pocket's ground, the ambush's
+    // patience, the torus seam and THE MAP LAW — were one chain under
+    // "prologue_road invariant".
+    SMOKE_CHECK(app, entered, "the prologue pocket can be entered");
+    SMOKE_CHECK(app, onRoad, "the entry lands the player ON the road");
+    SMOKE_CHECK(app, ambushWaits, "the ambush WAITS at its line instead of charging on sight");
+    SMOKE_CHECK(app, ambushCloses, "the ambush closes once the line is crossed");
+    // ЧИСЛО С ПОТОЛКА, названное вслух: 100 не выведено ни из строки
+    // каталога, ни из инварианта — это один из 84 прибитых порогов переписи
+    // 2026-09-26 (M-132). Утверждение верно по смыслу («засада сделана из
+    // настоящих тел, а не из огрызков»), но порог обязан прийти из строки.
+    SMOKE_CHECK(app, ambushMaxHp >= 100,
+                "the ambushers are real bodies with real HP (threshold still "
+                "hardcoded — M-132)");
+    SMOKE_CHECK(app, leaveRefused, "the leave key is refused inside the pocket");
+    SMOKE_CHECK(app, noExitPoint, "the pocket offers no dungeon exit point");
+    SMOKE_CHECK(app, bodiesBefore >= 1, "the pocket stands with bodies in it");
+    SMOKE_CHECK(app, bodiesAfter == bodiesBefore,
+                "crossing the seam neither drops nor duplicates a body");
+    SMOKE_CHECK(app, wrapped, "the walk actually wrapped around the torus");
+    SMOKE_CHECK(app, torusSame,
+                "both sides of the seam derive the SAME ground — the world is "
+                "connected, not merely tiled");
+    SMOKE_CHECK(app, rescued, "the rescue fires");
+    SMOKE_CHECK(app, anchored, "the rescue anchors the player where it promised");
+    SMOKE_CHECK(app, witchOpen, "the witch's story overlay opens on its node");
+    // THE MAP LAW, both ways on the SAME ground.
+    SMOKE_CHECK(app, mapHeldAtWitch,
+                "while the prologue holds the map, the optical sweep reveals "
+                "NOTHING — even standing on land nobody has seen");
+    SMOKE_CHECK(app, mapOpened,
+                "the moment the prologue lets go, the same steps on the same "
+                "ground DO reveal it");
     return true;
 }
 
@@ -3691,28 +3756,67 @@ bool run_spire_climb_smoke(App& app) {
                  depletedFlag ? 1 : 0, orbsAfter, logged ? 1 : 0, remembered);
     std::fflush(stderr);
 
-    if (!entered || !inTower || gateTier != tier || climbStuck
-        || topLevel != tier - 1 || climbs != tier - 1 || !onRoof
-        // The crown stands a tower height over the ground the player entered
-        // on (the flattened plateau): most of that height must be under him.
-        || roofZ - groundZ < sm::sub::kSpireTowerHeightM * 0.8f
-        // He comes up ON THE HATCH, clear of the orb's plinth — not inside it,
-        // eye in the burning head, shoved off the middle of the drop by the
-        // collision pass (owner, 2026-09-09).
-        || exitR <= sm::sub::structure_min_half_xy(sm::sub::Structure::SpireOrb)
-        // ...and the crown's own hatch takes him back to the storey he
-        // climbed from, not to the foot of the whole climb.
-        || !backInside || backLevel != tier - 1
-        // The garrison is ONE headcount — the spire's own POPULATION (§42):
-        // the yard's throng and the storey guards are shares of one number,
-        // so between them a fresh spire must have fielded somebody.
-        || yardGuards + guardsSeen < 1 || !learned || !depletedFlag
-        || orbsAfter != 0 || !logged
-        // The world above must remember what was done below.
-        || remembered < 1) {
-        smoke_fail(app, "spire_climb invariant");
-        return false;
-    }
+    // SEVENTEEN facts, seventeen verdicts. They used to be one `||` chain
+    // under the string "spire_climb invariant", and that single red is what
+    // this whole session was called to kill: on seed 12345 exactly ONE of
+    // them is broken — the crown's height (onRoof=0, dz=-25.6, two authors of
+    // one height: the generator says groundM + kSpireTowerHeightM,
+    // sub/gens/spire.cpp:92-128, while the exit recomputes it through
+    // sample_height_m, sub/engine.cpp:4355) — and the chain reported the
+    // entire spire loop as broken, including ten facts execution never
+    // reached. `back=0 learned=0 depleted=0 orbsAfter=-1 logged=0` was a
+    // CASCADE printed as findings. The world defect itself is NOT fixed here
+    // (M-104 owns it); the witness is merely made to name it.
+    SMOKE_CHECK(app, entered, "the player entered the spire's scorched cell");
+    SMOKE_CHECK(app, inTower, "entering put him INSIDE the tower, not beside it");
+    SMOKE_CHECK(app, gateTier == tier,
+                "the gate asks for the tier of the spell the orb holds");
+    SMOKE_CHECK(app, !climbStuck, "the climb never stalled on a storey");
+    SMOKE_CHECK(app, topLevel == tier - 1,
+                "the climb reached the topmost storey the tier defines");
+    SMOKE_CHECK(app, climbs == tier - 1,
+                "one climb per storey — no storey skipped, none repeated");
+    // The world above must remember what was done below. Asked HERE, before
+    // the crown gate, because the chronicle does not depend on the crown.
+    SMOKE_CHECK(app, remembered >= 1,
+                "the world above remembers the climb (a chronicle fact)");
+    SMOKE_CHECK(app, onRoof, "the last climb put him out on the crown");
+    // The crown stands a tower height over the ground the player entered
+    // on (the flattened plateau): most of that height must be under him.
+    // THIS is the measurement that names the defect — dz=-25.6 on seed 12345.
+    SMOKE_CHECK(app, roofZ - groundZ >= sm::sub::kSpireTowerHeightM * 0.8f,
+                "the crown stands a tower's height above the entry ground");
+    // THE GATE. Everything below is measured ON the crown: the hatch, the
+    // orb, the spell, the journal entry. With no crown under his feet none of
+    // it was reached, and asserting it anyway is how one broken fact printed
+    // as nine — `back=0 learned=0 depleted=0 logged=0` were never findings,
+    // they were the absence of an execution. A fact nobody measured is not
+    // asserted; that is the same law as CHECK_OR_RETURN in tests/check.h.
+    if (!onRoof) return true;
+    // He comes up ON THE HATCH, clear of the orb's plinth — not inside it,
+    // eye in the burning head, shoved off the middle of the drop by the
+    // collision pass (owner, 2026-09-09).
+    SMOKE_CHECK(app,
+                exitR > sm::sub::structure_min_half_xy(sm::sub::Structure::SpireOrb),
+                "he surfaces on the hatch, clear of the orb's plinth");
+    // ...and the crown's own hatch takes him back to the storey he
+    // climbed from, not to the foot of the whole climb.
+    SMOKE_CHECK(app, backInside, "the crown's hatch takes him back inside");
+    SMOKE_CHECK(app, backLevel == tier - 1,
+                "the hatch returns him to the storey he left, not to the foot");
+    // The garrison is ONE headcount — the spire's own POPULATION (§42):
+    // the yard's throng and the storey guards are shares of one number,
+    // so between them a fresh spire must have fielded somebody.
+    SMOKE_CHECK(app, yardGuards + guardsSeen >= 1,
+                "a fresh spire fielded a garrison — yard and storeys share "
+                "one headcount");
+    SMOKE_CHECK(app, learned, "touching the orb taught the spell");
+    SMOKE_CHECK(app, depletedFlag, "the orb reads depleted once taken");
+    SMOKE_CHECK(app, orbsAfter == 0, "no orb is left standing to take twice");
+    SMOKE_CHECK(app, logged, "the taking reached the journal");
+    // The scenario RAN; its verdict lives in the counter, not in this bool.
+    // Returning false here would hold the script cursor and re-run the
+    // scenario every frame, because a check no longer ends the run.
     return true;
 }
 
@@ -4391,16 +4495,44 @@ bool run_subworld_player_melee_smoke(App& app) {
                  statusSet ? status : "");
     std::fflush(stderr);
 
-    if (!hp || dealt <= 0.0f
-        || !combatRouted
-        || !hitFlash || hitFlash->timer <= 0.0f
-        || !lastHit
-        || lastHit->attackerId != std::uint32_t(entt::to_integral(
-               sm::sub::current_player_body(app.ecs)))
-        || !combatLogVisible || !statusSet) {
-        smoke_fail(app, "subworld_player_melee invariant");
-        return false;
+    // Nine facts directly, sixteen counting the two composite flags folded
+    // into them (`combatRouted` was four, `combatLogVisible` three) — all
+    // under "subworld_player_melee invariant". The composites are kept
+    // because the printf reports them, but each of their parts now answers
+    // for itself: "the swing came from the sheet" and "the log is on screen"
+    // are different laws and used to be indistinguishable in the red.
+    SMOKE_CHECK(app, hp != nullptr, "the target carries HP to lose");
+    if (!hp) return true;
+    SMOKE_CHECK(app, dealt > 0.0f, "the swing landed a wound");
+    // THE SWING IS SOURCED FROM THE SHEET, not recomputed ad hoc and not an
+    // inert zero — the bounds below are derived from the component's own
+    // fields, never from a remembered number (§8 п.4).
+    SMOKE_CHECK(app, playerCombat != nullptr,
+                "the player body carries a Combat sheet to swing with");
+    if (playerCombat) {
+        SMOKE_CHECK(app, playerCombat->dice.n >= 1,
+                    "the sheet's damage dice are real, not an inert zero");
+        SMOKE_CHECK(app, playerCombat->multPct >= 100,
+                    "the sheet's multiplier is whole or better");
+        SMOKE_CHECK(app, dealt >= minStrike - 0.001f && dealt <= maxStrike + 0.001f,
+                    "what landed lies inside the roll the SHEET can produce — "
+                    "the bare bandit wears no armour, so roll == wound");
     }
+    SMOKE_CHECK(app, hitFlash != nullptr, "the struck body takes a hit flash");
+    SMOKE_CHECK(app, hitFlash && hitFlash->timer > 0.0f,
+                "the hit flash is still burning when the strike resolves");
+    SMOKE_CHECK(app, lastHit != nullptr, "the struck body remembers who hit it");
+    SMOKE_CHECK(app, lastHit && lastHit->attackerId
+                    == std::uint32_t(entt::to_integral(
+                           sm::sub::current_player_body(app.ecs))),
+                "attribution names the PLAYER'S BODY — the hand that swung");
+    SMOKE_CHECK(app, afterCombatLog > beforeCombatLog,
+                "the strike appended a combat log line");
+    SMOKE_CHECK(app, combatLog && combatLog->text[0] != '\0',
+                "the log line carries words, not an empty slot");
+    SMOKE_CHECK(app, combatLog && combatLog->age <= sm::sub::kCombatLogVisibleSeconds,
+                "the log line is young enough to be ON SCREEN");
+    SMOKE_CHECK(app, statusSet, "the status line says something about the strike");
     return true;
 }
 
@@ -5899,12 +6031,43 @@ bool run_console_smoke(App& app) {
     return true;
 }
 
+// THE verdict, and the only one — the same structure tests/check.h has: the
+// run carries a counter, and exactly one place reads it out. It used to be
+// announced in two places, both of them hardcoded `[smoke] PASS`, and both
+// were right only by accident (a failure ended the run before either was
+// reached). A check no longer ends the run, so an announced verdict would now
+// be a LIE rather than an accident.
+//
+// The census line is the migration's own witness: how many facts this run
+// actually evaluated, and the name of every action that evaluated NONE. Most
+// actions still will — 308 assertion sites speak through smoke_fail(), which
+// is silent while a fact holds. Printed rather than enforced, so the gap
+// shrinks visibly instead of being exempted by a flag (M-131).
+void smoke_report(App& app) {
+    int silent = 0;
+    for (int i = 0; i < app.smoke.count; ++i) {
+        const SmokeAction a = app.smoke.actions[std::size_t(i)];
+        if (a == SmokeAction::Quit) continue;
+        if (app.smoke.actionChecks[std::size_t(i)] != 0) continue;
+        ++silent;
+        std::fprintf(stderr, "[smoke] measured-nothing action=%s\n",
+                     smoke_token_of(a));
+    }
+    std::fprintf(stderr, "[smoke] checks=%d failed=%d measured_nothing=%d\n",
+                 app.smoke.checksRun, app.smoke.checksFailed, silent);
+    std::fprintf(stderr, app.smoke.failed ? "[smoke] FAILED\n"
+                                          : "[smoke] PASS\n");
+    std::fflush(stderr);
+}
+
 sm::ui::ShellResult tick_smoke_script(App& app) {
     sm::ui::ShellResult shell{};
-    if (!app.smoke.enabled || app.smoke.failed) return shell;
+    // `aborted`, not `failed`: a dead PRECONDITION leaves nothing to ask, but
+    // a broken FACT must not silence the facts behind it — that is how one
+    // defect used to read as a whole scenario's collapse.
+    if (!app.smoke.enabled || app.smoke.aborted) return shell;
     if (app.smoke.cursor >= app.smoke.count) {
-        std::fprintf(stderr, "[smoke] PASS\n");
-        std::fflush(stderr);
+        smoke_report(app);
         app.running = false;
         return shell;
     }
@@ -6939,11 +7102,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=spire_climb\n");
             std::fflush(stderr);
             if (run_spire_climb_smoke(app)) ++app.smoke.cursor;
-            break;
-        case SmokeAction::SpirePerf:
-            std::fprintf(stderr, "[smoke] action=spire_perf\n");
-            std::fflush(stderr);
-            if (run_spire_perf_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldLootXp:
             std::fprintf(stderr, "[smoke] action=subworld_loot_xp\n");
@@ -9350,8 +9508,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             ++app.smoke.cursor;
             break;
         case SmokeAction::Quit:
-            std::fprintf(stderr, "[smoke] action=quit\n[smoke] PASS\n");
-            std::fflush(stderr);
+            std::fprintf(stderr, "[smoke] action=quit\n");
+            smoke_report(app);
             shell.quit = true;
             ++app.smoke.cursor;
             break;

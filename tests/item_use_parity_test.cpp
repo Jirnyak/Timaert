@@ -28,7 +28,7 @@ bool test_hp_potion_clamps_and_removes_one() {
 
     const std::string msg = sm::use_item(inv, "potion_hp", pc);
     return expect(msg == "Used Health Potion: +5 HP",
-                  "hp potion message does not match TS clamp")
+                  "the message reports what was ACTUALLY restored, not the potion's nominal value")
         && expect(pc.currentHp == 100 && pc.currentMp == 12 && pc.currentSp == 7,
                   "hp potion mutated wrong combat field")
         && expect(inv.count("potion_hp") == 1,
@@ -42,7 +42,7 @@ bool test_full_resource_still_uses_consumable_with_zero_message() {
 
     const std::string msg = sm::use_item(inv, "potion_mp", pc);
     return expect(msg == "Used Mana Potion: +0 MP",
-                  "full MP potion should report +0 MP like TS")
+                  "at full MP the potion reports +0 and is still spent - use costs the item whether or not it helped")
         && expect(pc.currentMp == 40,
                   "full MP potion changed capped MP")
         && expect(inv.count("potion_mp") == 0,
@@ -59,7 +59,7 @@ bool test_food_and_non_consumables() {
     const std::string material = sm::use_item(inv, "wood", pc);
     const std::string missing = sm::use_item(inv, "missing_id", pc);
     return expect(food == "Used Provisions: +5 HP",
-                  "food message/effect does not match TS")
+                  "provisions heal by the value their row names")
         // 80 → 85: строка ПИЩИ лечит на свою стоимость (5). Прототип на TS
         // кормил игрока ХЛЕБОМ (+10) — хлеб вырезан из мира 2026-09-20, и
         // паритет держится по закону «еда лечит на стоимость», а не по

@@ -366,10 +366,18 @@ void run_worker_restore_saved_case() {
 }
 
 void run_water_plane_invariant_case() {
-    CHECK_OR_RETURN(std::fabs(sm::sub::WATER_LEVEL - 0.40f) <= 0.0001f,
-                    "WATER_LEVEL drifted from TS 0.40");
-    CHECK_OR_RETURN(std::fabs(sm::sub::kLandMargin - 0.02f) <= 0.0001f,
-                    "kLandMargin drifted from TS port margin 0.02");
+    // Two assertions stood here: WATER_LEVEL == 0.40f and kLandMargin == 0.02f,
+    // each "drifted from TS". They compared a constant to its own literal —
+    // a tautology that can only fail when someone retunes the water plane ON
+    // PURPOSE, which is not a defect but a design decision. Retuning is
+    // exactly what this project is doing to its core right now, so a witness
+    // whose only power is to forbid retuning is a brake, not a guard (§8
+    // ЗАКОН НУЛЕВОЙ п.7). What water actually OWES is asserted below, against
+    // the symbols rather than their values: no water tile sits above the
+    // plane, no land or shore tile below it.
+    CHECK_OR_RETURN(sm::sub::kLandMargin > 0.0f,
+                    "the shore is a BAND above the water plane, not a line — "
+                    "a zero margin would leave no tile that is neither");
 
     sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;

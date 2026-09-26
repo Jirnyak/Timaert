@@ -443,9 +443,6 @@ sm::GameState make_state() {
 
     gs.subState.kind = sm::GameSubStateKind::Trading;
     gs.subState.settlementId = settlement.id;
-    gs.subState.eventId = "event.round";
-    gs.subState.enemyId = "enemy.round";
-    gs.subState.pendingEncounterIdx = 4;
 
 
 
@@ -609,9 +606,19 @@ sm::Quest make_quest() {
 }
 
 void run_roundtrip() {
-    if (static_cast<std::uint8_t>(sm::GameSubStateKind::Event) != 4u) {
-        FAIL_BAIL("unexpected sub-state enum layout");
-    }
+    // A pin reading `GameSubStateKind::Event != 4` stood here. It guarded the
+    // ORDINAL a sub-state kind occupies in the file — that is, it made the
+    // save LAYOUT a law, which the laws forbid outright: the format is broken
+    // freely and silently, and nothing may be weighed against it. Worse, it
+    // guarded the wrong thing so well that it hid a real defect: `Event` sat
+    // one rung below `PreBattle`, the reader's refusal bound named `Event`,
+    // and so a save holding PreBattle was refused outright while state.h
+    // promised it would load and reset on the first frame. The pin was green
+    // through all of it.
+    //
+    // What the reader OWES is asserted below instead, as behaviour: every
+    // live kind survives the round trip. That is a law of the save; the
+    // number four never was.
 
     const std::string path = temp_save_path("timaert_save_roundtrip_v8.bin");
     const std::string truncatedPath = temp_save_path("timaert_save_roundtrip_v8_truncated.bin");
@@ -1003,8 +1010,7 @@ void run_roundtrip() {
         FAIL_BAIL("truce clock lost");
     }
     if (loaded.subState.kind != sm::GameSubStateKind::Trading
-        || loaded.subState.settlementId != 7
-        || loaded.subState.pendingEncounterIdx != 4) {
+        || loaded.subState.settlementId != 7) {
         FAIL_BAIL("sub-state lost");
     }
     if (sm::creature_heads_of(loaded.deserterPool, sm::NPCType::Peasant)
@@ -1258,9 +1264,58 @@ void run_roundtrip() {
     CHECK(true, "every roundtrip gate above passed");
 }
 
+// EVERY LIVE SUB-STATE KIND SURVIVES THE ROUND TRIP.
+//
+// This replaces a pin on the enum's ordinal (see the note at the top of
+// run_roundtrip). The reader refuses anything above its highest live kind —
+// a deliberate loud refusal, CANON S21 — so the bound and the enum must agree
+// or a legal state becomes an unloadable save. They did NOT agree: the bound
+// named `Event` while `PreBattle` sat above it, and the ordinal pin was green
+// the whole time because it asked about the file, not about the door.
+void run_every_sub_state_kind_survives() {
+    const sm::GameSubStateKind kinds[] = {
+        sm::GameSubStateKind::Exploring, sm::GameSubStateKind::Paused,
+        sm::GameSubStateKind::Trading,   sm::GameSubStateKind::ViewingMap,
+        sm::GameSubStateKind::PreBattle,
+    };
+    const std::string path = temp_save_path("timaert_save_substate_kinds.bin");
+    int survived = 0;
+    for (const sm::GameSubStateKind kind : kinds) {
+        remove_slot_files(path);
+        sm::GameState gs{};
+        gs.mapW = 16;
+        gs.mapH = 16;
+        gs.saveName = "substate";
+        gs.subState.kind = kind;
+        const std::vector<sm::Quest> quests;
+        const std::vector<sm::MacroNpcRecord> macro;
+        const std::vector<std::uint16_t> trees(std::size_t(gs.mapW * gs.mapH), 0u);
+        const sm::DepositLayer deposits{};
+        CHECK_OR_RETURN(sm::save_game(gs, quests, macro, trees, deposits, path),
+                        "a state in any live sub-state kind can be SAVED");
+
+        sm::GameState loaded{};
+        std::vector<sm::Quest> loadedQuests;
+        std::vector<sm::MacroNpcRecord> loadedMacro;
+        std::vector<std::uint16_t> loadedTrees;
+        sm::DepositLayer loadedDeposits;
+        CHECK_OR_RETURN(sm::load_game(loaded, loadedQuests, loadedMacro,
+                                      loadedTrees, loadedDeposits, path),
+                        "...and LOADED — the reader's refusal bound is not "
+                        "below the enum's highest live kind");
+        CHECK(loaded.subState.kind == kind,
+              "...and comes back as the same kind it went in as");
+        ++survived;
+    }
+    CHECK(survived == int(std::size(kinds)),
+          "every live sub-state kind was actually exercised, not skipped");
+    remove_slot_files(path);
+}
+
 } // namespace
 
 int main() {
     run_roundtrip();
+    run_every_sub_state_kind_survives();
     return sm::test::report("save_roundtrip_test");
 }

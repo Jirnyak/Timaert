@@ -44,13 +44,6 @@ using namespace sm::sub;
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/mountain_mesh_smoothness_test.cpp", 0);
-    return 1;
-}
-
 // The renderer scales normalised heights by kHeightScale = 1500 m. Express the
 // curvature threshold in that world scale so the number is physically meaningful
 // ("metres of kink over one 16 m mesh quad").
@@ -167,8 +160,14 @@ int main() {
         {0xDEADBEEFu, 0.95f}, {0x00FF00FFu, 0.72f},
     };
 
+    // The verdicts moved OUT of this loop and onto the worst values it
+    // collects. They used to `return fail(...)` on the first bad massif, so a
+    // regression on seed one hid every other seed — and a loop that stops
+    // measuring cannot say how bad the worst case is, which is the only thing
+    // a threshold on the worst case means (§8 п.3).
     float worstMedian = 0.0f, worstRange = 1e9f, worstMedianMtn = 1e9f;
     float worstRangeRatio = 1e9f, worstCurvRatio = 1e9f;
+    int measured = 0;
     for (const Case& c : cases) {
         const MeshStat mtn = measure(composite(Mountain, c.seed, c.macroH));
         // Plains reference at a lowland height with the SAME seed.
@@ -181,26 +180,22 @@ int main() {
                 "(spiky peaks). Did the C1 smooth crest 4*s*(1-s) regress to the "
                 "ridged fold (1-|2s-1|)^2?\n",
                 c.seed, c.macroH, mtn.medianCurv, kMaxMedianCurv);
-            return fail("mountain mesh is too spiky (crest fold aliasing)");
         }
         if (mtn.range < kMinMountainRange || mtn.medianCurv < kMinMountainMedian) {
             std::fprintf(stderr,
                 "  seed=0x%08X range=%.4f median=%.2f\n",
                 c.seed, mtn.range, mtn.medianCurv);
-            return fail("mountain has too little relief/curvature "
-                        "(pancaked into plains — over-smoothed)");
         }
         const float rangeRatio = pln.range > 1e-6f ? mtn.range / pln.range : 1e9f;
         const float curvRatio  = pln.medianCurv > 1e-6f
                                      ? mtn.medianCurv / pln.medianCurv : 1e9f;
         if (rangeRatio < kMinRangeRatio) {
             std::fprintf(stderr, "  seed=0x%08X rangeRatio=%.1f\n", c.seed, rangeRatio);
-            return fail("mountain range no longer dominates plains (parity)");
         }
         if (curvRatio < kMinCurvRatio) {
             std::fprintf(stderr, "  seed=0x%08X curvRatio=%.1f\n", c.seed, curvRatio);
-            return fail("mountain lost its curvature character vs plains");
         }
+        ++measured;
 
         worstMedian = std::max(worstMedian, mtn.medianCurv);
         worstRange = std::min(worstRange, mtn.range);
@@ -216,6 +211,23 @@ int main() {
                 "plains)\n",
                 sizeof(cases) / sizeof(cases[0]), worstMedian, kMaxMedianCurv,
                 worstRange, worstMedianMtn, worstRangeRatio, worstCurvRatio);
-    CHECK(true, "every gate above held");
+    // The count is asserted first and GATES the rest: the worst-value
+    // accumulators start at sentinels that would sail past every threshold
+    // below if the loop had measured nothing.
+    const int expected = int(sizeof(cases) / sizeof(cases[0]));
+    CHECK(measured == expected,
+          "every massif in the table was actually measured");
+    if (measured != expected) return sm::test::report("mountain_mesh_smoothness_test");
+    CHECK(worstMedian <= kMaxMedianCurv,
+          "no massif's crest is ALIASING on the 16-tile mesh — the C1 smooth "
+          "crest 4*s*(1-s) has not regressed to the ridged fold (1-|2s-1|)^2");
+    CHECK(worstRange >= kMinMountainRange,
+          "no massif was pancaked into plains — relief survives the smoothing");
+    CHECK(worstMedianMtn >= kMinMountainMedian,
+          "...and so does curvature: a smooth mountain is still a mountain");
+    CHECK(worstRangeRatio >= kMinRangeRatio,
+          "a mountain still DOMINATES the plains it is measured against");
+    CHECK(worstCurvRatio >= kMinCurvRatio,
+          "and still differs from them in character, not only in height");
     return sm::test::report("mountain_mesh_smoothness_test");
 }

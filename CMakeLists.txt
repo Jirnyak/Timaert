@@ -460,7 +460,6 @@ timaert_test(quest_lifecycle_test
         src/events/logic_nodes.cpp
         src/events/node_registry.cpp
         src/events/quests/quest_engine.cpp
-        src/content/plot/encounters.cpp
         src/content/plot/intro.cpp
         src/content/quests/procedural.cpp
         # gen_delivery reads the one item catalog now (W2b-4).

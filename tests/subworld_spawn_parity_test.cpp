@@ -264,7 +264,7 @@ int compare_records(const std::vector<SpawnRecord>& expected,
     if (expected.size() != actual.size()) {
         std::fprintf(stderr, "expected=%zu actual=%zu\n",
                      expected.size(), actual.size());
-        return fail("fauna count differs from TS-derived roll");
+        return fail("the cell spawns exactly as many creatures as its seeded roll names");
     }
 
     for (std::size_t i = 0; i < expected.size(); ++i) {
@@ -281,7 +281,7 @@ int compare_records(const std::vector<SpawnRecord>& expected,
                 e.damage, int(e.ai), e.r, e.g, e.b,
                 a.type, a.faction, int(a.level), a.x, a.y, a.hp,
                 a.damage, int(a.ai), a.r, a.g, a.b);
-            return fail("fauna ECS record differs from TS-derived expected");
+            return fail("every spawned creature matches its catalogue row and stands inside its OWN cell");
         }
     }
     return 0;

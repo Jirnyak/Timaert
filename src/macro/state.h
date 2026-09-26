@@ -620,10 +620,11 @@ static_assert(sizeof(Landmark) == sizeof(Inventory) + sizeof(Roster)
               "ядро субъекта у места и у сквада ОДНО (CANON S4)");
 
 enum class GameSubStateKind : std::uint8_t {
-    Exploring, Paused, Trading, ViewingMap, Event,
+    Exploring, Paused, Trading, ViewingMap,
     // Forced pre-battle encounter (Session 15): a hostile squad on the map
     // stopped the player — the M&B screen is up and the world is paused.
-    // Appended LAST: Event == 4 is pinned by save_roundtrip_test. The target
+    // Appended LAST and the highest live kind, which read_sub_state uses as
+    // its refusal bound. The target
     // squad is runtime App state (an entt handle is not save material); a
     // loaded save that says PreBattle with no live target resets to
     // Exploring on the first frame — fail closed, no version bump.
@@ -632,10 +633,16 @@ enum class GameSubStateKind : std::uint8_t {
 struct GameSubState {
     GameSubStateKind kind = GameSubStateKind::Exploring;
     int settlementId = -1;
-    std::string eventId;
-    std::string enemyId;
-    int pendingEncounterIdx = -1; // index into kEncounters; -1 = none
 };
+// (Four columns are gone with the random-encounter table: the `Event` sub-state
+// kind, `eventId`, `enemyId` and `pendingEncounterIdx`. NOTHING in the project
+// ever set that kind or wrote that index — the only writers were the modal's
+// own resets and the save — so the modal could not open on any state the game
+// could reach, and the three strings had no reader at all. The trigger behind
+// them was removed by owner ruling 2026-08-05 (an unconditional random roll
+// over a list is not a system); the table and modal were parked for a future
+// context-driven trigger and parked furniture is not how this project waits —
+// the наряд lives in the registry, not in dead columns (DOD п.9).)
 
 // (struct Faction is gone. Its four identity columns — id, name, description,
 // colour — were verbatim copies of the registry row that already declares them

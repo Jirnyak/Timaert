@@ -415,7 +415,7 @@ int main() {
         || grassTrailOut.tiles[std::size_t(center) * kCellSize + center]
             == TILE_ROAD) {
         return fail("grassland wilderness cell must NOT carve roads "
-                    "(TS needsRoadStitch requires a road-like centre)");
+                    "(a road is built from the cell's OWN feature, never from its neighbours)");
     }
 
     CellContext forestTrail = ctx;
@@ -434,7 +434,7 @@ int main() {
         || forestTrailOut.tiles[std::size_t(center) * kCellSize + center]
             == TILE_ROAD) {
         return fail("forest wilderness cell must NOT carve roads "
-                    "(TS needsRoadStitch requires a road-like centre)");
+                    "(a road is built from the cell's OWN feature, never from its neighbours)");
     }
 
     CellContext swampTrail{};
@@ -456,7 +456,7 @@ int main() {
         || swampTrailOut.tiles[std::size_t(center) * kCellSize + center]
             == TILE_ROAD) {
         return fail("swamp wilderness cell must NOT carve roads "
-                    "(TS needsRoadStitch requires a road-like centre)");
+                    "(a road is built from the cell's OWN feature, never from its neighbours)");
     }
 
     CellContext mountainTrail{};
@@ -478,7 +478,7 @@ int main() {
         || mountainTrailOut.tiles[std::size_t(center) * kCellSize + center]
             == TILE_ROAD) {
         return fail("mountain wilderness cell must NOT carve roads "
-                    "(TS needsRoadStitch requires a road-like centre)");
+                    "(a road is built from the cell's OWN feature, never from its neighbours)");
     }
 
     CellContext spire{};
@@ -518,7 +518,7 @@ int main() {
         }
     }
     if (towerCount != 1) {
-        return fail("spire generator did not create one TS-sized round central tower");
+        return fail("a spire cell carries exactly ONE round central tower, sized from the shared spire constants");
     }
 
     // ── The crown is a PLACE a body stands on ───────────────────────────────
@@ -1006,14 +1006,22 @@ int main() {
         // by eye until a fixture exists that separates them.
     }
 
-    if (std::fabs(biome_config(Meadow).treeDensity - 0.035f) > 0.0001f
-        || biome_config(Meadow).treeStep != 4
-        || std::fabs(biome_config(Taiga).treeDensity - 0.20f) > 0.0001f
-        || biome_config(Taiga).treeStep != 3
-        || std::fabs(biome_config(Swamp).treeDensity - 0.08f) > 0.0001f
-        || biome_config(Swamp).treeStep != 3) {
-        return fail("biome config constants drifted from TS base-generator.ts");
-    }
+    // Six assertions stood here, copying the treeDensity/treeStep of three
+    // biomes out of base_generator.cpp and comparing the table to itself
+    // ("drifted from TS base-generator.ts"). A test that repeats the data it
+    // reads guards nothing but the typing: retuning a forest by design — the
+    // one thing these numbers exist for — went red for no defect.
+    //
+    // The RELATION between them is a law and survives any retune: taiga is
+    // denser forest than meadow, swamp sits between, and a denser biome does
+    // not sample on a coarser grid.
+    CHECK(biome_config(Taiga).treeDensity > biome_config(Swamp).treeDensity,
+          "taiga is denser forest than swamp");
+    CHECK(biome_config(Swamp).treeDensity > biome_config(Meadow).treeDensity,
+          "swamp carries more trees than open meadow");
+    CHECK(biome_config(Taiga).treeStep <= biome_config(Meadow).treeStep,
+          "the denser biome samples on a grid no coarser than the sparse one "
+          "— otherwise its density could not be realised");
 
     CellContext grass{};
     grass.cx = -6;
@@ -1031,7 +1039,7 @@ int main() {
     dispatch_generate(grass, nbH, nbB, /*nbBiome5*/nullptr, nbF, grassOut);
     if (resolve_mode(grass) != SubworldMode::Grassland
         || std::fabs(grassOut.waterLevel - WATER_LEVEL) > 0.0001f) {
-        return fail("plain wilderness did not resolve to TS grassland/waterLevel");
+        return fail("a cell with no feature resolves to Grassland and sits on the one water plane");
     }
 
     CellContext invalidFeatureGrass = grass;
@@ -1160,7 +1168,7 @@ int main() {
                   << " land=" << coastLand
                   << " badWater=" << badCoastWater
                   << " badLand=" << badCoastLand << "\n";
-        return fail("coastal water cell did not expose TS-style shore/land bands");
+        return fail("a coastal cell carries water, shore and land at once, and no tile contradicts its height");
     }
 
     CellContext swamp{};

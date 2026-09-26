@@ -50,7 +50,6 @@ enum class SmokeAction : std::uint8_t {
     DungeonCave,
     PrologueRoad,
     SpireClimb,
-    SpirePerf,
     TriggerBattleStart,
     WaitVisible,
     OpenSettlementBuild,
@@ -100,6 +99,38 @@ struct SmokeScript {
     std::array<SmokeAction, kMaxActions> actions{};
     int count = 0;
     int cursor = 0;
+    // THE ASSERTION COUNTER — the discipline tests/check.h has had for a year
+    // and this harness never did. A smoke scenario used to carry its verdict
+    // in one `if (a && b && … && q) smoke_fail(app, "<name> invariant")`, so a
+    // run could say nothing at all and still exit green: FIFTEEN of the 67
+    // suite lines asserted not one fact about their own subject, and the whole
+    // suite evaluated NINE counted facts between them (census 2026-09-26).
+    // `spire_perf` was the clearest case and is gone: it measured ms/tick,
+    // printed the budget and `return true`d unconditionally — a scenario in a
+    // PASS/FAIL suite that could not go red. Its measurement was honest and
+    // deliberate (CANON S28, «потолков нет»), which is exactly why it did not
+    // belong in the suite: an instrument reports, a suite judges.
+    //
+    // A check writes here, on BOTH paths, so "this run measured nothing" is a
+    // countable statement instead of a silence. Per-ACTION, not per-run,
+    // because smoke.sh wraps every scenario in new_game,wait_boot_done…quit:
+    // count per run and the prefix's own checks would answer for the scenario.
+    //
+    // MIGRATION, named so it cannot be mistaken for the finished state: the
+    // verdict "an action that ran zero checks FAILS" is not armed yet. 308 of
+    // the harness's assertion sites still speak through smoke_fail(), which
+    // fires only when a fact is already broken and is invisible when it holds;
+    // arming before they migrate would redden all 67, and exempting them with
+    // a flag would be the very crutch this counter exists to remove. Until
+    // then every quit prints the gap (M-131).
+    std::array<std::uint16_t, kMaxActions> actionChecks{};
+    int checksRun = 0;
+    int checksFailed = 0;
+    // A PRECONDITION died (smoke_fail): the script stops where it stands,
+    // because there is nothing left to ask. Kept apart from `failed` — which
+    // a mere broken FACT also sets — so that a red check no longer silences
+    // the rest of the run and the verdict report never gets to print.
+    bool aborted = false;
     int bootsObserved = 0;
     int visibleChecks = 0;
     bool enabled = false;
@@ -168,6 +199,24 @@ bool parse_smoke_script(const char* script, SmokeScript& out);
 sm::ui::ShellResult tick_smoke_script(App& app);
 void smoke_after_shell_actions(App& app);
 void smoke_fail(App& app, const char* reason);
+void smoke_check(App& app, bool ok, const char* what, const char* file, int line);
 bool write_smoke_frame_png(App& app, int actionIndex, const char* label);
 
 } // namespace sm::app
+
+// ONE fact, named where it stands. Two things separate this from smoke_fail:
+//
+//   * it counts on the green path too, so a scenario that measured nothing is
+//     distinguishable from one whose every fact held; and
+//   * it does NOT stop the run. A conjunction of seventeen facts under one
+//     verdict reports the FIRST thing that tripped and nothing after it —
+//     that is why `spire_climb` printed ten zeroes for facts its execution had
+//     never reached, and why the red read as "the whole spire is broken" when
+//     one fact (the roof) was. Every check speaks for itself, so the log names
+//     what actually broke; downstream facts that depend on it still fall, but
+//     each falls BY NAME and its cascade is visible as a cascade.
+//
+// The message states what MUST hold, so the failure line reads as the broken
+// promise; file:line comes from the compiler, never from a stale string.
+#define SMOKE_CHECK(app, expr, why) \
+    ::sm::app::smoke_check((app), static_cast<bool>(expr), (why), __FILE__, __LINE__)

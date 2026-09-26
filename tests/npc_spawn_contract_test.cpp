@@ -7,13 +7,6 @@
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/npc_spawn_contract_test.cpp", 0);
-    return 1;
-}
-
 sm::Landmark make_settlement(int id, int x, int y) {
     sm::Landmark s{};
     s.type = sm::LandmarkType::City;
@@ -93,11 +86,17 @@ int main() {
     sm::store_attach(world, worldStore_.get());
     sm::spawn_macro_npcs(gs, world, sm::store_of(world), invalidTerrain, 123u);
 
+    // FAIL-CLOSED, BOTH WAYS. A terrain the world cannot read must not
+    // silence the world (no NPCs at all), and must not let it write outside
+    // itself either. The two used to share `return fail(...)`, so the first
+    // ended the test and the second was never reached on the run that needed
+    // it most.
     const int spawned = count_macro_npcs(world);
-    if (spawned <= 0)
-        return fail("invalid terrain should not suppress all macro NPC spawns");
-    if (!positions_inside_map(world, gs.mapW, gs.mapH))
-        return fail("macro NPC fallback positions must stay inside map bounds");
+    CHECK(spawned > 0,
+          "unreadable terrain does not suppress macro NPC spawns — the world "
+          "falls back, it does not go empty");
+    CHECK(positions_inside_map(world, gs.mapW, gs.mapH),
+          "...and every fallback position still lands INSIDE the map");
     CHECK(bodies_without_a_full_block(world) == 0,
           "every body the world raises is born with EVERY pool filled — "
           "mana included, for all of them, not for the player alone");
@@ -113,10 +112,11 @@ int main() {
 
     sm::store_attach(mismatchWorld, mismatchWorldStore_.get());
     sm::spawn_macro_npcs(gs, mismatchWorld, sm::store_of(mismatchWorld), mismatchedTerrain, 124u);
-    if (count_macro_npcs(mismatchWorld) <= 0)
-        return fail("mismatched terrain should be treated as absent terrain");
-    if (!positions_inside_map(mismatchWorld, gs.mapW, gs.mapH))
-        return fail("mismatched terrain fallback positions must stay inside map bounds");
+    CHECK(count_macro_npcs(mismatchWorld) > 0,
+          "terrain whose size disagrees with the map is treated as ABSENT "
+          "terrain, not as a reason to spawn nobody");
+    CHECK(positions_inside_map(mismatchWorld, gs.mapW, gs.mapH),
+          "...and its fallback positions stay inside the map too");
 
     sm::GameState invalidMap;
     invalidMap.mapW = 0;
@@ -129,11 +129,15 @@ int main() {
 
     sm::store_attach(invalidMapWorld, invalidMapWorldStore_.get());
     sm::spawn_macro_npcs(invalidMap, invalidMapWorld, sm::store_of(invalidMapWorld), invalidTerrain, 125u);
-    if (count_macro_npcs(invalidMapWorld) != 0)
-        return fail("invalid map dimensions must fail closed without NPC spawns");
+    // THE NEGATIVE CONTROL of the two above, and the reason they are not
+    // vacuous: a world with no dimensions has nowhere to put anybody, so the
+    // spawner must refuse rather than fall back. If this ever passed by
+    // spawning zero for the WRONG reason, the two "does not go empty" checks
+    // above would be the ones to notice.
+    CHECK(count_macro_npcs(invalidMapWorld) == 0,
+          "a map with no dimensions fails CLOSED — nobody is spawned at all");
 
     std::printf("npc_spawn_contract_test: ok spawned=%d mismatch=%d\n",
                 spawned, count_macro_npcs(mismatchWorld));
-    CHECK(true, "every gate above held");
     return sm::test::report("npc_spawn_contract_test");
 }

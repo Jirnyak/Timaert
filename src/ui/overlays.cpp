@@ -21,7 +21,6 @@
 #include "macro/items.h"
 #include "macro/politik.h"
 #include "content/spells/spell_book.h"
-#include "content/plot/encounters.h"
 #include "content/plot/intro.h"
 #include "events/event_bus.h"
 #include "ui/ui_gpu.h"
@@ -2753,50 +2752,6 @@ namespace sm::ui
         ImGui::EndPopup();
     }
 
-
-    // ── Encounter modal ──────────────────────────────────────────
-    void draw_encounter_modal(GameState &gs, EventBus &bus)
-    {
-        if (gs.subState.kind != GameSubStateKind::Event)
-            return;
-        const auto &table = content::encounters();
-        int idx = gs.subState.pendingEncounterIdx;
-        if (idx < 0 || idx >= int(table.size()))
-        {
-            gs.subState.kind = GameSubStateKind::Exploring;
-            gs.subState.pendingEncounterIdx = -1;
-            return;
-        }
-        const auto &enc = table[size_t(idx)];
-
-        ImGui::OpenPopup("Encounter");
-        ImGuiViewport *vp = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-        ImGui::SetNextWindowSize(ImVec2(520, 0));
-        if (ImGui::BeginPopupModal("Encounter", nullptr,
-                                   ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", enc.title.c_str());
-            ImGui::Separator();
-            ImGui::TextWrapped("%s", enc.body.c_str());
-            ImGui::Spacing();
-            ImGui::Separator();
-            for (size_t i = 0; i < enc.choices.size(); ++i)
-            {
-                const auto &ch = enc.choices[i];
-                ImGui::PushID(int(i));
-                if (ImGui::Button(ch.label.c_str(), ImVec2(-1, 0)))
-                {
-                    bus.emit_all(ch.effects);
-                    gs.subState.kind = GameSubStateKind::Exploring;
-                    gs.subState.pendingEncounterIdx = -1;
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::PopID();
-            }
-            ImGui::EndPopup();
-        }
-    }
 
     // ---------------------------------------------------------------- Subworld minimap
 

@@ -3186,7 +3186,6 @@ void emit_time_advance_if_needed(App& app, const sm::WorldTickResult& tick) {
 bool modal_overlay_active(const App& app) {
     return app.showDialogOpen ||
            sm::ui::story_overlay_active(app.storyOverlay) ||
-           app.gs.subState.kind == sm::GameSubStateKind::Event ||
            app.gs.subState.kind == sm::GameSubStateKind::PreBattle;
 }
 
@@ -6176,7 +6175,6 @@ void frame(App& app, int simSteps) {
             // (Macro: the M toggle is the full-screen map PAGE — drawn on the
             // world-overlay path above (ui/map_screen.h), not a window here.
             // The 256px minimap window died with it.)
-            sm::ui::draw_encounter_modal(app.gs, app.bus);
             draw_pre_battle_modal(app);
             // Right-edge nearby-NPC stack (mirrors NpcProximityPanel.svelte).
             // Macro view only. The badge stack follows TS anyOverlayOpen

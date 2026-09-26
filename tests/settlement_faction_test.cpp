@@ -35,13 +35,6 @@
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/settlement_faction_test.cpp", 0);
-    return 1;
-}
-
 // A flat meadow cell — the resolver the manager calls for each window cell.
 sm::sub::CellContext meadow_cell(int cx, int cy) {
     sm::sub::CellContext c{};
@@ -59,21 +52,26 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
 }
 
 // ── 1. The fallback law over the stored column ──────────────────────────────
-bool run_resolver_contract() {
+void run_resolver_contract() {
     // An ownerless place belongs to the free folk — never quietly to the empire.
     const int freeIdx = sm::faction_index("freefolk");
-    if (freeIdx < 0) return false;
+    CHECK_OR_RETURN(freeIdx >= 0, "the free folk are a row of the ONE registry");
     const std::uint16_t freefolk = std::uint16_t(freeIdx);
 
     const int magica = sm::faction_index("old_magica");
-    if (sm::faction_or_freefolk(magica) != std::uint16_t(magica)) return false;
-    if (sm::faction_or_freefolk(-1) != freefolk) return false;   // unowned
-    if (sm::faction_or_freefolk(9999) != freefolk) return false; // garbage byte
-    if (sm::faction_or_freefolk(int(sm::kNoFaction)) != freefolk) return false;
+    CHECK(sm::faction_or_freefolk(magica) == std::uint16_t(magica),
+          "a place with an owner keeps that owner");
+    CHECK(sm::faction_or_freefolk(-1) == freefolk,
+          "an UNOWNED place belongs to the free folk");
+    CHECK(sm::faction_or_freefolk(9999) == freefolk,
+          "a garbage owner byte fails closed to the free folk, never to a crown");
+    CHECK(sm::faction_or_freefolk(int(sm::kNoFaction)) == freefolk,
+          "the explicit no-faction sentinel resolves to the free folk too");
     // The unruled are their own realm, not an alias of a crown.
-    if (freeIdx == sm::faction_index("empire")) return false;
-    if (magica == sm::faction_index("empire")) return false;
-    return true;
+    CHECK(freeIdx != sm::faction_index("empire"),
+          "the free folk are their OWN realm, not an alias of the empire");
+    CHECK(magica != sm::faction_index("empire"),
+          "old_magica is its own realm — the registry has no two rows for one");
 }
 
 // ── 1b. The same question asked of the GROUND ───────────────────────────────
@@ -81,7 +79,7 @@ bool run_resolver_contract() {
 // spawn) inherits the realm that holds the cell it stands on. This is the answer
 // to "no context", so it must be exactly as honest as the settlement rule — and
 // must degrade, never guess, when the world has no ownership map yet.
-bool run_ground_owner_contract() {
+void run_ground_owner_contract() {
     const std::uint16_t freefolk = std::uint16_t(sm::faction_index("freefolk"));
 
     // The byte IS the faction registry index now (kingdoms cut 2026-09-11).
@@ -94,26 +92,33 @@ bool run_ground_owner_contract() {
     politik.cellOwner[5] =
         std::uint8_t(sm::faction_index("timaert"));      // (1,1)
 
-    if (sm::faction_index_for_cell(politik, 0, 0)
-        != std::uint16_t(sm::faction_index("old_magica"))) return false;
-    if (sm::faction_index_for_cell(politik, 1, 1)
-        != std::uint16_t(sm::faction_index("timaert"))) return false;
-    if (sm::faction_index_for_cell(politik, 2, 0) != freefolk) return false; // wilds
-    // The map is a torus: coordinates wrap instead of reading out of bounds.
-    if (sm::faction_index_for_cell(politik, 4, 2)
-        != std::uint16_t(sm::faction_index("old_magica"))) return false;
-    if (sm::faction_index_for_cell(politik, -4, -2)
-        != std::uint16_t(sm::faction_index("old_magica"))) return false;
+    CHECK(sm::faction_index_for_cell(politik, 0, 0)
+              == std::uint16_t(sm::faction_index("old_magica")),
+          "a claimed cell answers with the realm that holds it");
+    CHECK(sm::faction_index_for_cell(politik, 1, 1)
+              == std::uint16_t(sm::faction_index("timaert")),
+          "a second claimed cell answers with ITS realm, not the first's");
+    CHECK(sm::faction_index_for_cell(politik, 2, 0) == freefolk,
+          "the unclaimed wilds belong to the free folk");
+    // ЗАКОН АДРЕСА: the map is a torus — coordinates WRAP, they never read
+    // out of bounds, and the far side of the seam is the same cell.
+    CHECK(sm::faction_index_for_cell(politik, 4, 2)
+              == std::uint16_t(sm::faction_index("old_magica")),
+          "a coordinate past the far edge wraps to the same cell");
+    CHECK(sm::faction_index_for_cell(politik, -4, -2)
+              == std::uint16_t(sm::faction_index("old_magica")),
+          "a negative coordinate wraps the same way — the torus has no edge");
 
     // No ownership map at all (a world mid-generation, a bare test fixture):
     // unclaimed, not a garbage index off the end of the vector.
     sm::Politik empty{};
-    if (sm::faction_index_for_cell(empty, 0, 0) != freefolk) return false;
+    CHECK(sm::faction_index_for_cell(empty, 0, 0) == freefolk,
+          "a world with no ownership map yet answers UNCLAIMED, not garbage");
     // A truncated map is rejected the same way rather than indexed into.
     sm::Politik torn = politik;
     torn.cellOwner.resize(3);
-    if (sm::faction_index_for_cell(torn, 0, 0) != freefolk) return false;
-    return true;
+    CHECK(sm::faction_index_for_cell(torn, 0, 0) == freefolk,
+          "a truncated map degrades to unclaimed instead of being indexed into");
 }
 
 // ── 2. The shipping spawn path, with the negative control ───────────────────
@@ -121,7 +126,7 @@ bool run_ground_owner_contract() {
 // wears that realm's colours. Fauna is excluded: a creature's faction is its own
 // FaunaEntry row, not the town's (NPCKind.type < NPCType::Count is the
 // humanoid/creature discriminator used everywhere else).
-bool run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) {
+void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) {
     const std::uint16_t magica = std::uint16_t(sm::faction_index("old_magica"));
     const std::uint16_t empire = std::uint16_t(sm::faction_index("empire"));
 
@@ -159,14 +164,21 @@ bool run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
         if (kind.factionIdx == empire) ++imperial;
     }
 
-    if (citizens < 10) return false;      // a 2000-soul city fields a crowd
-    if (wrongFaction != 0) return false;  // all of them Magica
-    if (imperial != 0) return false;      // NEGATIVE CONTROL: not one imperial
-    return true;
+    // The count is asserted FIRST: without it the two zero-checks below pass
+    // on an empty street, which is the §8 п.3 trap exactly.
+    CHECK_OR_RETURN(citizens >= 10,
+                    "a 2000-soul city actually fielded a crowd to inspect");
+    CHECK(wrongFaction == 0, "every citizen wears the realm that owns the town");
+    // NEGATIVE CONTROL, and now its own verdict: the bug this test was written
+    // for spawned IMPERIAL bodies in a Magica town. Folded into the bool above
+    // it could not say which half had broken.
+    CHECK(imperial == 0,
+          "not one imperial body stands in a Magica town — the bug this test "
+          "exists for");
 }
 
 // The empire itself must still work — the fix must not invert the bug.
-bool run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mgr) {
+void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mgr) {
     const std::uint16_t empire = std::uint16_t(sm::faction_index("empire"));
 
     sm::ecs::World world{};
@@ -192,14 +204,17 @@ bool run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
                              sm::world_time_at(1, 12, 0));
 
     int citizens = 0;
+    int foreign = 0;
     auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>();
     for (auto e : view) {
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
         if (kind.type >= std::uint16_t(sm::NPCType::Count)) continue;
         ++citizens;
-        if (kind.factionIdx != empire) return false;
+        if (kind.factionIdx != empire) ++foreign;
     }
-    return citizens > 0;
+    CHECK_OR_RETURN(citizens > 0, "the imperial village fielded citizens at all");
+    CHECK(foreign == 0,
+          "and every one of them is imperial — the fix did not INVERT the bug");
 }
 
 }  // namespace
@@ -210,30 +225,15 @@ int main() {
     mgr.init(0, 0, meadow_cell);
     mgr.consume_composite_dirty();
 
-    if (!run_resolver_contract()) {
-        sm::sub::clear_saved_subworlds();
-        return fail("faction_or_freefolk wrong "
-                    "(real index not passed through / fallback not free folk)");
-    }
-    if (!run_ground_owner_contract()) {
-        sm::sub::clear_saved_subworlds();
-        return fail("faction_index_for_cell wrong "
-                    "(ground owner not resolved / wilds not free folk / "
-                    "missing map not degraded)");
-    }
-    if (!run_citizens_wear_their_realm(mgr)) {
-        sm::sub::clear_saved_subworlds();
-        return fail("citizens of a non-empire city are not that city's faction "
-                    "(imperial bodies spawned in a Magica town)");
-    }
-    if (!run_imperial_city_still_imperial(mgr)) {
-        sm::sub::clear_saved_subworlds();
-        return fail("an imperial settlement stopped spawning imperial citizens");
-    }
+    // Each contract asserts for itself. They used to hand `main` a bool that
+    // became ONE message listing the three things it might have meant — and
+    // the file's only COUNTED check was the un-failable `CHECK(true, "every
+    // gate above held")` at the bottom (§8 ЗАКОН НУЛЕВОЙ п.6).
+    run_resolver_contract();
+    run_ground_owner_contract();
+    run_citizens_wear_their_realm(mgr);
+    run_imperial_city_still_imperial(mgr);
 
-    std::printf("OK settlement_faction_test resolver=1 ground=1 "
-                "realm_citizens=1 empire_unbroken=1\n");
     sm::sub::clear_saved_subworlds();
-    CHECK(true, "every gate above held");
     return sm::test::report("settlement_faction_test");
 }

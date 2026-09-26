@@ -848,16 +848,19 @@ void read_relations(Reader& r, RelationMatrix& m) {
 void write_sub_state(Writer& w, const GameSubState& s) {
     write_enum8(w, s.kind);
     w.pod(s.settlementId);
-    w.str(s.eventId);
-    w.str(s.enemyId);
-    w.pod(s.pendingEncounterIdx);
 }
 
 void read_sub_state(Reader& r, GameSubState& s) {
     std::uint8_t raw = 0;
-    r.pod(raw);
+    // The refusal bound is the HIGHEST live kind. It used to name `Event`,
+    // which sat one rung BELOW PreBattle — so a save holding PreBattle was
+    // refused outright, while state.h promised it would load and reset to
+    // Exploring on the first frame. The two disagreed and nobody could see it,
+    // because `Event` was unreachable state: removing the dead kind is what
+    // exposed the bound as wrong. It names the real top rung now.
     constexpr std::uint8_t kMaxLiveSubState =
-        static_cast<std::uint8_t>(GameSubStateKind::Event);
+        static_cast<std::uint8_t>(GameSubStateKind::PreBattle);
+    r.pod(raw);
     if (!r.ok) return;
     // An unknown kind is a loud refusal, not a silent remap: an old save is
     // worth nothing (CANON S21).
@@ -867,9 +870,6 @@ void read_sub_state(Reader& r, GameSubState& s) {
     }
     s.kind = static_cast<GameSubStateKind>(raw);
     r.pod(s.settlementId);
-    r.str(s.eventId);
-    r.str(s.enemyId);
-    r.pod(s.pendingEncounterIdx);
 }
 
 void write_event(Writer& w, const GameEvent& ev) {

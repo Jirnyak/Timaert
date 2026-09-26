@@ -32,9 +32,12 @@ const GameEvent* find_settlement_enter_event(const EventBus& bus) {
 // by owner ruling (2026-08-05): events must arise from GAME CONTEXT and
 // STATE, never from an unconditional random roll over a list — that trigger
 // was the old disease, not a system. The encounter TABLE (content/plot/
-// encounters.cpp) and the whole ShowDialog-with-choices → effect_applicator
-// path stay: they are the presentation half a future context-driven trigger
-// (work_vector №3) will drive.
+// encounters.cpp) was kept at the time as "the presentation half a future
+// context-driven trigger will drive" — and it was deleted on 2026-09-26,
+// unread for fourteen months, because parked furniture is not how this
+// project waits: the наряд lives in the registry, the dead columns did not.
+// The ShowDialog-with-choices → effect_applicator path stays; it has live
+// callers (sys_settlement, the story overlays).
 
 // A "sys_level_up" node used to sit here, waiting on EventTag::PlayerLevelUp to
 // pop a "Level Up!" dialog. Nothing in the project ever emitted that event —

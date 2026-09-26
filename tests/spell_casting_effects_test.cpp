@@ -113,12 +113,6 @@ bool last_hit_by(sm::ecs::World& w, entt::entity e, entt::entity attacker) {
     return last_hit_by(w, e, std::uint32_t(entt::to_integral(attacker)));
 }
 
-int armageddon_meteor_count(int radius) {
-    int count = int(std::ceil(float(radius) * 0.2f));
-    if (count < 16) count = 16;
-    return count;
-}
-
 struct SeqRng {
     const float* values = nullptr;
     int count = 0;
@@ -531,7 +525,7 @@ int main() {
     sm::sub::tick_spell_projectiles(fireExpiryWorld, nullptr, 3.1f);
     if (!nearf(hp_of(fireExpiryWorld, fireExpiryVictim), 100.0f)
         || projectile_count(fireExpiryWorld) != 0) {
-        return fail("fireball exploded on timeout unlike TS");
+        return fail("a fireball that ran out of life EXPIRES, it does not detonate");
     }
 
     sm::ecs::World blastWorld;
@@ -556,7 +550,7 @@ int main() {
     if (!(hp_of(blastWorld, blastEdge) < 100.0f)
         || !nearf(hp_of(blastWorld, blastOutside), 100.0f)
         || projectile_count(blastWorld) != 0) {
-        return fail("fireball blast edge drifted from TS center-radius check");
+        return fail("the blast reaches a target at exactly blastRadius and no further - the edge is measured centre to centre");
     }
 
     sm::ecs::World iceWorld;
@@ -611,7 +605,7 @@ int main() {
             sm::spellbook_can_cast_ex(macroBook, macroCombat, sm::spell_ordinal(id),
                                       false, 0u);
         if (!macroCheck.ok) {
-            return fail("world-map macro canCast drifted from TS");
+            return fail("on the macro map can_cast still answers YES - the restriction lives in cast, not in the question");
         }
     }
     const int beforeMacroProjectiles = projectile_count(world);
@@ -651,7 +645,7 @@ int main() {
              > sm::sub::body_radius(world.reg, entt::entity(0))
                    + beamDesc.radius)
         || !nearf(beamDesc.originY, 100.0f)) {
-        return fail("energy_beam radius drifted from TS spawn radius");
+        return fail("the beam is born OUTSIDE the caster body - muzzle clear of body_radius plus its own");
     }
 
     sm::spellbook_learn(book, sm::spell_ordinal("lightning_chain"));
@@ -934,11 +928,22 @@ int main() {
         <= int(armDef->baseRadius)) {
         return fail("armageddon high-radius test does not exceed base radius");
     }
-    const int expectedMeteors =
-        armageddon_meteor_count(int(armDef->baseRadius));
-    if (expectedMeteors != 32) {
-        return fail("armageddon runtime meteor count drifted from TS base radius");
-    }
+    // `expectedMeteors` used to come from `armageddon_meteor_count()`, a
+    // VERBATIM copy of spawn_armageddon's formula living in this file
+    // (ceil(spread * 0.2f), floored at 16 — with kArmageddonMinMeteors
+    // respelled as the literal 16), checked against a hardcoded 32. Both
+    // halves were defects of the same kind: a test that recomputes what the
+    // code computes proves only that the copy was typed correctly (§8 п.5),
+    // and 32 is a number with no source but today's run (§8 п.4). Retune the
+    // spread or the floor by design and the witness reddens for no defect.
+    //
+    // What is asserted instead is what the spell OWES and what no retune can
+    // take away: armageddon falls as a STORM. The exact count is the spawner's
+    // business. (The floor itself — kArmageddonMinMeteors — cannot be read
+    // from here: it lives in an anonymous namespace in effects.cpp. Exposing
+    // it so this could assert the floor from its ONE source is part of M-132.)
+    constexpr int kStormAtLeast = 2;
+    const int armBefore = armCombat.mp;
     const float armRngValues[] = {0.0f, 0.5f, 0.25f};
     SeqRng armRng{armRngValues, 3, 0};
     const auto armPlayer = add_player(armWorld, -1000.0f, -1000.0f);
@@ -948,15 +953,16 @@ int main() {
                             &seq_rng01, &armRng)) {
         return fail("armageddon cast rejected");
     }
-    if (armCombat.mp != 1000) return fail("armageddon mana cost");
-    if (projectile_count(armWorld) != expectedMeteors) {
-        return fail("armageddon meteor count wrong");
+    if (armCombat.mp != int(armBefore) - int(armDef->manaCost)) {
+        return fail("armageddon charged exactly the mana its row names");
+    }
+    if (projectile_count(armWorld) < kStormAtLeast) {
+        return fail("armageddon falls as a STORM — many meteors, not one bolt");
     }
 
     const std::uint32_t armId = sm::stable_spell_id("armageddon");
     int armSeen = 0;
     bool haveMeteorPosition = false;
-    bool sawTsRngMeteor = false;
     float meteorX = 0.0f;
     float meteorY = 0.0f;
     auto armView = armWorld.reg.view<sm::ecs::Position, sm::ecs::Projectile>();
@@ -980,16 +986,19 @@ int main() {
             meteorY = pos.y;
             haveMeteorPosition = true;
         }
-        if (nearf(pos.x, 180.0f)
-            && nearf(pos.y, 100.0f)
-            && nearf(p.lifeTimer, 0.425f)) {
-            sawTsRngMeteor = true;
-        }
         ++armSeen;
     }
-    if (armSeen != expectedMeteors || !haveMeteorPosition
-        || !sawTsRngMeteor) {
-        return fail("armageddon meteor inspection failed");
+    // Three facts, three verdicts — they used to share one string, and one of
+    // them (`sawTsRngMeteor`) asked whether a meteor landed on the exact spot
+    // the DEAD prototype's RNG would have put it. That is not a law of the
+    // spell; it is a fingerprint of an implementation that no longer exists.
+    // What survives is that every meteor the storm spawned was inspected, and
+    // that the storm has a position to aim a victim at.
+    if (armSeen != projectile_count(armWorld)) {
+        return fail("every meteor the cast spawned was actually inspected");
+    }
+    if (!haveMeteorPosition) {
+        return fail("the storm put a meteor somewhere to read a position from");
     }
     const auto armVictim =
         add_target(armWorld, meteorX, meteorY, 1000.0f, false);
