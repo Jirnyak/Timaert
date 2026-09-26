@@ -328,6 +328,14 @@ inline CharacterSheet* owned_sheet(ecs::World& w, entt::entity e) {
     return owned_sheet(w.reg, e);
 }
 
+// Владеемый лист по хэндлу (1е, каскад слот-нативных дверей): тот же ОДИН
+// предикат sheet_owned_at, БЕЗ тег-страховки — она свойство моста и умирает
+// с ним; ординал сквада игрока — колонка, предикат читает её.
+inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
+    return st.valid(h) && sheet_owned_at(st, h.slot)
+        ? &st.sheet[h.slot] : nullptr;
+}
+
 // THE sheet, whoever asks: the owned component verbatim, or the generic
 // birth roll a transient IS. By value — the derive path builds one anyway,
 // and no caller may hold a reference across a tick (ecs-ref grabla).
@@ -367,13 +375,14 @@ inline CharacterSheet sheet_of(const MacroStore& st, MacroHandle h) {
 // his squad entity like on any lord's. Sustained magnitudes are scaled by
 // the BASE training on purpose: the standing sum cannot read the sheet it
 // is itself a term of.
-inline BonusTotals standing_bonuses_of(entt::registry& reg, entt::entity e) {
+// Сам закон суммирования — ОДИН, от указателей: обе двери ниже (entt-тело
+// и слот store) зовут его, второй копии закона не существует (метод §5 п.1).
+inline BonusTotals standing_bonuses_sum(const ecs::BodyEquipment* eq,
+                                        const SpellBook* book,
+                                        const Skills& base) {
     BonusTotals t{};
-    if (const auto* eq = body_state<ecs::BodyEquipment>(reg, e)) {
-        t += worn_bonuses(eq->gear);
-    }
-    if (const auto* book = body_state<SpellBook>(reg, e)) {
-        const Skills base = sheet_of(reg, e).skills;
+    if (eq) t += worn_bonuses(eq->gear);
+    if (book) {
         for (int ord = 0; ord < kSpellCount; ++ord) {
             if (!spellbook_has_sustained(*book, ord)) continue;
             const SpellDef& def = kSpellDefs[ord];
@@ -384,10 +393,23 @@ inline BonusTotals standing_bonuses_of(entt::registry& reg, entt::entity e) {
     }
     return t;
 }
+inline BonusTotals standing_bonuses_of(entt::registry& reg, entt::entity e) {
+    const auto* eq   = body_state<ecs::BodyEquipment>(reg, e);
+    const auto* book = body_state<SpellBook>(reg, e);
+    return standing_bonuses_sum(eq, book,
+                                book ? sheet_of(reg, e).skills : Skills{});
+}
 // Registry face of the same door (the sheet_of idiom): the subworld seam holds
 // a registry, not a World, and it must ask this question of a record.
 inline BonusTotals standing_bonuses_of(ecs::World& w, entt::entity e) {
     return standing_bonuses_of(w.reg, e);
+}
+// Та же дверь по хэндлу — целиком по колонкам. Entt-лицо выше ПЕРЕЖИВЁТ 1е:
+// тела сцены «сами себе запись» несут гир и книгу своими компонентами.
+inline BonusTotals standing_bonuses_of(const MacroStore& st, MacroHandle h) {
+    if (!st.valid(h)) return BonusTotals{};
+    return standing_bonuses_sum(&st.gear[h.slot], &st.spellBook[h.slot],
+                                sheet_of(st, h).skills);
 }
 
 // The sheet the world should actually ask about ANY macro body — THE
@@ -398,6 +420,10 @@ inline BonusTotals standing_bonuses_of(ecs::World& w, entt::entity e) {
 // sheet, never to this copy.
 inline CharacterSheet effective_sheet_of(ecs::World& w, entt::entity e) {
     return effective_sheet(sheet_of(w, e), standing_bonuses_of(w, e));
+}
+// Эффективный лист по хэндлу — та же композиция, оба слагаемых по колонкам.
+inline CharacterSheet effective_sheet_of(const MacroStore& st, MacroHandle h) {
+    return effective_sheet(sheet_of(st, h), standing_bonuses_of(st, h));
 }
 
 // ── STANDING, FOR ANY MACRO PARTICIPANT (CANON S20.1) ─────────────────────
@@ -541,33 +567,27 @@ inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
 // the same about everyone else. Посадка Б retired the parameter itself:
 // the sheet lives ON the entity now, so the door reads it like every other
 // component above.)
-inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
+inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     AutoBattleSide s{};
-    auto& reg = w.reg;
-    if (const auto* kind = body_state<ecs::NPCKind>(reg, e)) {
-        if (kind->type < std::uint16_t(NPCType::Count)) {
-            s.leaderType = NPCType(std::uint8_t(kind->type));
-        }
+    if (!st.valid(h)) return s;
+    const std::uint16_t slot = h.slot;
+    if (st.kind[slot].type < std::uint16_t(NPCType::Count)) {
+        s.leaderType = NPCType(std::uint8_t(st.kind[slot].type));
     }
-    if (const auto* lvl = body_state<ecs::NpcLevel>(reg, e)) {
-        s.leaderLevel = normalize_soldier_level(lvl->value);
-    }
-    if (const auto* sid = body_state<ecs::MacroSpawnId>(reg, e)) {
-        s.leaderSeed = leader_sheet_seed(sid->index);
-    }
-    if (const auto* hp = body_state<ecs::Pools>(reg, e)) {
-        s.leaderHealthFraction = hp->maxHp > 0
-            ? std::clamp(float(hp->hp) / float(hp->maxHp), 0.0f, 1.0f) : 1.0f;
+    s.leaderLevel = normalize_soldier_level(st.level[slot].value);
+    s.leaderSeed  = leader_sheet_seed(st.spawnId[slot].index);
+    {
+        const ecs::Pools& hp = st.pools[slot];
+        s.leaderHealthFraction = hp.maxHp > 0
+            ? std::clamp(float(hp.hp) / float(hp.maxHp), 0.0f, 1.0f) : 1.0f;
         // sp may be a NEGATIVE debt (exhaustion); the 0.1 floor already
         // says "a squad never fights at literal zero". Same block as the
         // wound now — one read, one component.
         s.fatigue = std::clamp(
-            float(hp->sp) / float(std::max<int>(1, hp->maxSp)), 0.1f, 1.0f);
+            float(hp.sp) / float(std::max<int>(1, hp.maxSp)), 0.1f, 1.0f);
     }
-    if (const auto* bag = body_state<ecs::NpcInventory>(reg, e)) {
-        s.roster = &bag->inv;   // область существ единого контейнера (M-71)
-    }
-    if (owned_sheet(w, e)) {
+    s.roster = &st.inventory[slot].inv;   // область существ контейнера (M-71)
+    if (sheet_owned_at(st, slot)) {
         // A named leader's hp ceiling is his OWN sheet's, not a roll of his
         // row — and his aura is what his perks and skills actually say. The
         // EFFECTIVE sheet (phase 4): the fought path swings by it, so the
@@ -577,12 +597,17 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
         // melee identity (sub/engine.h), and macro is L1 — it may not reach
         // up. The caller that knows both worlds states that one number.
         // Through THE hp door with his own ROW's floor (§41 root 2).
-        const CharacterSheet eff = effective_sheet_of(w, e);
+        const CharacterSheet eff = effective_sheet_of(st, h);
         s.leaderHpOverride = float(
             body_max_hp(eff, npc_def(s.leaderType).combat));
         s.bonuses = squad_bonuses(eff);
     }
     return s;
+}
+// Entt-лицо — ШИМ моста (умирает в 1е): все звонящие держат макро-сквады
+// (перепись с.20: main.cpp ×7, npc_ai.cpp ×14 — тел сцены нет), закон один.
+inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
+    return auto_battle_side_of(store_of(w), handle_of(w.reg, e));
 }
 
 // Pay a leader's victory. XP flows through the ONE reward law
@@ -603,62 +628,60 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
 // award_leader_xp — форвард здесь, тело ниже по файлу.
 inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp);
 
-inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
-    if (xp <= 0) return 0;
-    auto& reg = w.reg;
-    auto* rt = body_state<ecs::MacroNpcRuntime>(reg, e);
-    auto* lvl = body_state<ecs::NpcLevel>(reg, e);
-    if (!rt || !lvl) return 0;
-    rt->xp += xp;
+inline int award_leader_xp(MacroStore& st, MacroHandle h, int xp) {
+    if (xp <= 0 || !st.valid(h)) return 0;
+    const std::uint16_t slot = h.slot;
+    ecs::MacroNpcRuntime& rt = st.runtime[slot];
+    ecs::NpcLevel& lvl = st.level[slot];
+    rt.xp += xp;
     int gained = 0;
-    while (rt->xp >= exp_to_next_level(lvl->value)) {
-        rt->xp -= exp_to_next_level(lvl->value);
-        lvl->value = std::int16_t(
-            std::min<int>(kMaxSoldierLevel, lvl->value + 1));
+    while (rt.xp >= exp_to_next_level(lvl.value)) {
+        rt.xp -= exp_to_next_level(lvl.value);
+        lvl.value = std::int16_t(
+            std::min<int>(kMaxSoldierLevel, lvl.value + 1));
         ++gained;
     }
-    if (gained > 0) {
-        if (auto* hp = body_state<ecs::Pools>(reg, e)) {
-            if (const auto* kind = body_state<ecs::NPCKind>(reg, e);
-                kind && kind->type < std::uint16_t(NPCType::Count)) {
-                const NPCType type = NPCType(std::uint8_t(kind->type));
-                const auto* sid = body_state<ecs::MacroSpawnId>(reg, e);
-                const std::uint32_t seed =
-                    leader_sheet_seed(sid ? sid->index : 0u);
-                // The new level's sheet — rolled by the one growth law. A
-                // NAMED leader OWNS his: the roll is WRITTEN into his
-                // component (ММОРПГ-модель — the campaign persists; a
-                // future teacher diverges it from the seed and nothing
-                // here overwrites that day's hand-spent points… until
-                // content adds spending, the roll and the store agree by
-                // construction). A transient's roll is used and dropped.
-                const CharacterSheet grown =
-                    make_character_sheet(type, lvl->value, seed);
-                if (CharacterSheet* own = body_state<CharacterSheet>(reg, e)) {
-                    *own = grown;
-                }
-                // Ceilings, fractions and march caches all follow the new
-                // level's sheet through THE one refresh door above. The
-                // fraction-preserving arithmetic that used to be spelled out
-                // here, bar by hand-written bar, IS that door now — a bar
-                // added to Pools and forgotten in a hand-written fold is the
-                // project's oldest bug shape.
-                refresh_body_from_sheet(*hp, rt, grown, type);
-            }
-        }
+    if (gained > 0
+        && st.kind[slot].type < std::uint16_t(NPCType::Count)) {
+        const NPCType type = NPCType(std::uint8_t(st.kind[slot].type));
+        const std::uint32_t seed = leader_sheet_seed(st.spawnId[slot].index);
+        // The new level's sheet — rolled by the one growth law. A
+        // NAMED leader OWNS his: the roll is WRITTEN into his
+        // component (ММОРПГ-модель — the campaign persists; a
+        // future teacher diverges it from the seed and nothing
+        // here overwrites that day's hand-spent points… until
+        // content adds spending, the roll and the store agree by
+        // construction). A transient's roll is used and dropped.
+        // (Колонка листа есть у ВСЕХ — бросок пишется всем, как писала
+        // entt-дверь через body_state<CharacterSheet>; закон ВЛАДЕНИЯ
+        // живёт в owned_sheet, не здесь.)
+        const CharacterSheet grown =
+            make_character_sheet(type, lvl.value, seed);
+        st.sheet[slot] = grown;
+        // Ceilings, fractions and march caches all follow the new
+        // level's sheet through THE one refresh door above. The
+        // fraction-preserving arithmetic that used to be spelled out
+        // here, bar by hand-written bar, IS that door now — a bar
+        // added to Pools and forgotten in a hand-written fold is the
+        // project's oldest bug shape.
+        refresh_body_from_sheet(st.pools[slot], &rt, grown, type);
     }
     return gained;
 }
+// Entt-лицо — ШИМ моста (умирает в 1е); звонящие — макро-лидеры.
+inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
+    return award_leader_xp(store_of(w), handle_of(w.reg, e), xp);
+}
 
-inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp) {
-    if (xp <= 0 || leader == entt::null || !w.reg.valid(leader)) return;
-    CharacterSheet* own = owned_sheet(w, leader);
+inline void award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
+    if (xp <= 0 || !st.valid(h)) return;
+    CharacterSheet* own = owned_sheet(st, h);
     if (!own) {
         // Транзиент: бросок из ординала, как жил всегда.
-        award_leader_xp(w, leader, xp);
+        award_leader_xp(st, h, xp);
         return;
     }
-    const CharacterSheet eff = effective_sheet_of(w, leader);
+    const CharacterSheet eff = effective_sheet_of(st, h);
     const int before = own->levelData.level;
     award_exp(own->levelData, xp,
               calculate_derived(eff.attributes, eff.skills).expMultPct);
@@ -666,20 +689,21 @@ inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp) {
         // Уровень на карте и потолки следуют за листом — та же пара
         // движений, что у транзиента в award_leader_xp, но лист НЕ
         // перекатывается из сида: владеемое владеем (ММОРПГ-модель).
-        if (auto* lvl = body_state<ecs::NpcLevel>(w.reg, leader)) {
-            lvl->value = std::int16_t(
-                std::min<int>(kMaxSoldierLevel, own->levelData.level));
-        }
-        if (auto* pools = body_state<ecs::Pools>(w.reg, leader)) {
-            const auto* kind = body_state<ecs::NPCKind>(w.reg, leader);
-            const NPCType type =
-                kind && kind->type < std::uint16_t(NPCType::Count)
-                    ? NPCType(std::uint8_t(kind->type)) : NPCType::Peasant;
-            refresh_body_from_sheet(
-                *pools, body_state<ecs::MacroNpcRuntime>(w.reg, leader),
-                effective_sheet_of(w, leader), type);
-        }
+        const std::uint16_t slot = h.slot;
+        st.level[slot].value = std::int16_t(
+            std::min<int>(kMaxSoldierLevel, own->levelData.level));
+        const NPCType type =
+            st.kind[slot].type < std::uint16_t(NPCType::Count)
+                ? NPCType(std::uint8_t(st.kind[slot].type)) : NPCType::Peasant;
+        refresh_body_from_sheet(st.pools[slot], &st.runtime[slot],
+                                effective_sheet_of(st, h), type);
     }
+}
+// Entt-лицо — ШИМ моста (умирает в 1е); гард нулевого лидера остаётся у
+// шима: звонящие (settle, жнец, игрок) законно приходят с entt::null.
+inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp) {
+    if (xp <= 0 || leader == entt::null || !w.reg.valid(leader)) return;
+    award_kill_xp(store_of(w), handle_of(w.reg, leader), xp);
 }
 
 // ── The settling halves — one set of doors for EVERY consumer ──────────────
