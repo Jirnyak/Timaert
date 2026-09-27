@@ -1813,6 +1813,35 @@ if(CMAKE_GENERATOR MATCHES "Ninja")
         PRIVATE TIMAERT_NINJA_LOG="${CMAKE_BINARY_DIR}/.ninja_log")
 endif()
 
+# Прибор на ссылки документов — та же форма, что у прибора времени TU: ядро в
+# одном файле, две двери к нему, второй копии разбора нет (§8 п.5). Дверь,
+# которая СУДИТ, входит в `check`; дверь, которая ПРАВИТ номера, стоит
+# отдельным таргетом — сборка, молча меняющая файлы дерева, отобрала бы смысл у
+# `git status --short` (§5 п.12).
+timaert_test(doc_refs_test SOURCES tests/doc_refs.cpp)
+target_compile_definitions(doc_refs_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+add_executable(docs_sync_tool tests/docs_sync_main.cpp tests/doc_refs.cpp)
+set_target_properties(docs_sync_tool PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(docs_sync_tool PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+target_compile_definitions(docs_sync_tool
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(docs_sync_tool PRIVATE timaert_build_flags)
+
+# `--target docs_sync` обязан ПРАВИТЬ, а не собирать: таргет-исполнитель поверх
+# бинарника, как `check` поверх ctest. Иначе «позови docs_sync» из красного
+# вердикта означало бы «собери его и догадайся запустить».
+add_custom_target(docs_sync
+    COMMAND docs_sync_tool
+    DEPENDS docs_sync_tool
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Переписываю номера строк в доках по именам и отпечаткам"
+    USES_TERMINAL)
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # There is nothing here any more, and that is the point: timaert_test() calls
 # add_test() for every target it creates, so "built" and "registered" cannot

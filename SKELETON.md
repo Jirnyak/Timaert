@@ -19,9 +19,26 @@
 > `ARCHITECTURE.md` ушёл в `history/`, его роль — здесь.
 >
 > **ПРАВИЛО ФАЙЛА:** сюда нельзя записать то, что не проверено греп-ссылкой.
-> Утверждение без `file:line` — не строка этого файла. Шапка модуля
-> доказательством НЕ является: шапки в этом проекте врали, и не раз. Пути —
-> относительно `src/`.
+> Утверждение без адреса — не строка этого файла. Шапка модуля доказательством
+> НЕ является: шапки в этом проекте врали, и не раз. Пути — относительно `src/`.
+>
+> **ФОРМА АДРЕСА — ТРИ РОДА, И НОМЕР СТРОКИ СРЕДИ НИХ ПРОИЗВОДНЫЙ**
+> (2026-09-27, прибор `doc_refs_test`). Номер гниёт молча: код правится, строки
+> съезжают, сборка зелёная. Поэтому рядом с номером обязано стоять то, что от
+> правки соседей не двигается:
+>
+> 1. **`symbol@path`** — «вещь живёт вот здесь», номера НЕТ вовсе и гнить
+>    нечему: `plough_field_cell@src/macro/macro_stock.cpp`;
+> 2. **`` `имя` (`путь:N`) ``** — старая форма; прибор терпит её белым списком,
+>    но новых не пускает: номер тут может адресовать место ВНУТРИ функции, и
+>    машина его не правит, чтобы не увести ссылку от смысла;
+> 3. **`путь:N «отпечаток»`** — дословная цитата той строки. Единственная форма,
+>    чей номер машина правит САМА: `cmake --build build --target docs_sync`
+>    находит цитату и переписывает число, потому что совпасть не с той строкой
+>    цитата не может.
+>
+> Прибор судит `check`-ом и краснеет на трёх объективных отказах — файла нет,
+> строки нет (файл короче), имя файла в дереве не одно.
 
 ## Как читать карту
 
@@ -888,21 +905,22 @@ tick_playing_runtime: dt = kStepSeconds = 1/64 (constexpr)   app/main.cpp:3400, 
 ```
 SeamlessSubworldManager: generate_one / воркер → dispatch_generate(ctx, nbHeights[9], nbBiome[9], nbBiome5, nbFeature, …)
                                                      seamless_manager.cpp:283, :355 → gens/dispatch.cpp:95
-├─ ctx.dungeon.kind != None → dispatch_generate_dungeon(ctx, out)      dispatch.cpp:52-55 → dgn/dispatch.cpp:237
+├─ ctx.dungeon.kind != None → dispatch_generate_dungeon@src/sub/dgn/dispatch.cpp
 │     (интерьер выше всего: клетка показывает то, что ЗА дверью; модули dgn/house, cave, spire_tower, prologue_road)
-├─ resolve_mode(ctx) — РОД КЛЕТКИ ПО КОНТЕКСТУ, порядок приоритета:        dispatch.cpp:52-94
-│     место: City / Village / Ruin / Spire по ctx.landmark.kind (:57-70; Lair/Shrine/Mine/Tower — модуля нет → земля)
-│     → фича: FT_Road / FT_DirtRoad / FT_Bridge → Road; FT_Field / FT_Pasture → Field (:78-83)
-│     → биом: Mountain / Water / Swamp (:84-86) → лес по СЧЁТУ деревьев is_forest_cell (:90) → Grassland
-├─ generate_heightmap(out.heightmap, 1024, nbHeights[9], nbBiome[9], nbBiome5, …)   dispatch.cpp:57 → base_generator.cpp:260
-│     высоты клетки — из 3×3 макро-высот + шум с периодом, замкнутым на мире (1024 × 1024 тайлов, :268-);
-│     хребты: mountain_ridges01 от той же 3×3 (:173-257), долина ≥ kWaterLevel + 0.08 (:243)
-├─ out.waterLevel = WATER_LEVEL = 0.40 (base_generator.h:35) — ОДНА плоскость воды, = порогу моря макромира; в метрах kSeaLevelM (height.h:50)   dispatch.cpp:64
+├─ resolve_mode@src/sub/gens/dispatch.cpp — РОД КЛЕТКИ ПО КОНТЕКСТУ, порядок приоритета:
+│     место: City / Village / Ruin / Spire по ctx.landmark.kind (Lair/Shrine/Mine/Tower — модуля нет → земля)
+│     → фича: FT_Road / FT_DirtRoad / FT_Bridge → Road; FT_Field / FT_Pasture → Field
+│     → биом: Mountain / Water / Swamp → лес по СЧЁТУ деревьев is_forest_cell@src/sub/gens/dispatch.cpp → Grassland
+├─ generate_heightmap@src/sub/base_generator.cpp — высоты клетки из 3×3 макро-высот + шум
+│     с периодом, замкнутым на мире (1024 × 1024 тайлов); хребты mountain_ridges01@src/sub/base_generator.cpp
+│     от той же 3×3, долина ≥ kWaterLevel + 0.08
+├─ out.waterLevel = WATER_LEVEL — ОДНА плоскость воды, = порогу моря макромира;
+│     в метрах kSeaLevelM@src/sub/height.h
 ├─ switch (mode) → ОДИН модуль на род: gen_city · gen_village · gen_ruin · gen_spire · gen_road (мост — ветка Biome::Water) ·
-│     gen_field · gen_mountain · gen_water · gen_swamp · gen_forest · gen_open (Grassland)   dispatch.cpp:150-175; gens/*.cpp
+│     gen_field · gen_mountain · gen_water · gen_swamp · gen_forest · gen_open (Grassland)   gens/*.cpp, строка kGenKindRows
 │     (поселения — kit/: outline → growth → lanes → streets → plots → props)
-├─ smooth_road_heights (под дорогой/площадью)                              dispatch.cpp:78 → base_generator.cpp:856
-└─ kit::sync_water_tiles_from_heightmap (тайлы ниже воды — вода)           dispatch.cpp:82
+├─ smooth_road_heights@src/sub/base_generator.cpp (под дорогой/площадью)
+└─ kit::sync_water_tiles_from_heightmap@src/sub/gens/kit/tiles.cpp (тайлы ниже воды — вода)
 Заселение клетки окна: spawn_cell (engine.cpp:1388) → spawn_cell_npcs (spawn.cpp:1010):
    1) население места — spawn_landmark_population (:395; займ Population/Garrison, :133-141)
    2) фауна — «danger weights the TABLE» (:159-166), бюджет = FaunaCount стока (:175-180), займ FaunaCount, spawn_derived_body (:214)
@@ -914,9 +932,9 @@ SeamlessSubworldManager: generate_one / воркер → dispatch_generate(ctx, 
 | генерация из 2D высот макромира и контекста 3×3 | `nbHeights[9]`, `nbBiome[9]`, `nbBiome5` (5×5 биомов) на входе `dispatch_generate`; генераторы читают только `CellContext`/`GenInput` | **ПРАВДА** |
 | модуль на род биома/фичи, шов по сиду | `resolve_mode` → один `gen_*` на род (11 модулей); шум замкнут на мире (тайл-спан 1024×1024, `base_generator.cpp:268-`); стык клеток — 3×3 высоты, `nbBiome5` | **ПРАВДА** |
 | одна плоскость воды = уровень моря макромира | `WATER_LEVEL = 0.40f` (`base_generator.h:35`) = `LayerParameters::seaLevel = 0.40f` (`map_generator.h:21`) — ДВА литерала одного числа без вывода одного из другого | **ПРАВДА по значению, РАСХОЖДЕНИЕ по форме** — ЗАКОН КОНСТАНТ; вердикт 2026-09-25 «единый порог для макро и микро» → вывести одно из другого |
-| род клетки — из колонок контекста, не switch по имени | `resolve_mode` — switch по `LandmarkType` с `default: break` (`dispatch.cpp:68`) и if-цепь по `FeatureType`/`Biome` | **РАСХОЖДЕНИЕ** — ЗАКОН СТРОКИ КАТАЛОГА п.4 (`default:` глотает новые роды мест; колонки «модуль генератора» в строке места нет); наряда нет |
-| роды Lair/Shrine/Mine/Tower | строки реестра есть, модуля нет → клетка показывает землю (`dispatch.cpp:62-69`) | **ПРАВДА** (честный отказ, GEN-5) |
-| данж — тот же движок без контекста клетки | `dispatch_generate_dungeon` (`dgn/dispatch.cpp:237`) идёт до терраина; но население интерьеров берётся из клетки двери (Часть II) | **РАСХОЖДЕНИЕ** по заселению (вердикт 2026-09-25: два агностичных потока) |
+| род клетки — из колонок контекста, не switch по имени | `resolve_mode` — switch по `LandmarkType` с `default: break` (`src/sub/gens/dispatch.cpp:69` «default:») и if-цепь по `FeatureType`/`Biome` | **РАСХОЖДЕНИЕ** — ЗАКОН СТРОКИ КАТАЛОГА п.4 (`default:` глотает новые роды мест; колонки «модуль генератора» в строке места нет); наряда нет |
+| роды Lair/Shrine/Mine/Tower | строки реестра есть, модуля нет → клетка показывает землю (`src/sub/gens/dispatch.cpp:62-70` «Registry kinds no world places yet») | **ПРАВДА** (честный отказ, GEN-5) |
+| данж — тот же движок без контекста клетки | `dispatch_generate_dungeon@src/sub/dgn/dispatch.cpp` идёт до терраина; но население интерьеров берётся из клетки двери (Часть II) | **РАСХОЖДЕНИЕ** по заселению (вердикт 2026-09-25: два агностичных потока) |
 | два потока заселения | в одной функции `spawn_cell_npcs`: население места (займ Population/Garrison) и фауна по таблице (займ FaunaCount) — уже раздельные шаги, но одна дверь и один контекст | **ПРАВДА по шагам**, форма «два потока» — наряд ЗАСЕЛЕНИЕ-СУБ-1 |
 | контекст ВЫБИРАЕТ строку, тело не масштабируется | `spawn_cell_npcs` комментарий `:29-33`: «zone must weight the TABLE, not the body»; уровень +1 от зоны и √(pop/100) — читать при наряде | **ПРОВЕРИТЬ** — строки `:29-33` описывают снесённый автолевел; исполнение не подтверждено чтением |
 
@@ -1336,6 +1354,34 @@ CharacterCreation, Playing (HUD, панели, консоль), Menu, Dead) →
 | M-122 (РЕНДЕР-1) | `farVtx_` кольцо по кадрам; макро-upload после записи кадра; `shadowMeshPipe_` и мёртвый API `SpriteArray` снести; буферы деревьев/структур с капом | III.4 | S–M |
 | M-123 (AI-1) | курсор бюджетного драйвера по ординалу; RNG свипа отдельно от UI; один ответ гейта `allowAutoBattle`; `AgentMemory` читатель или снос | I.8 | S–M |
 | M-124 (APP-1) | `src/app` под ЗАКОН АДРЕСА (свёртка, `wrapi`, индекс, спеллинг воды); индекс клетка→сквады как поле и `detect_forced_encounter` через него; один предикат «сквад стоит» для игрока и NPC; `step_macro_walk` из `ui/` в `macro/`; путь полёта — режим `find_path` | III.6 | M |
+
+---
+
+## IV.1 — ПРИБОРЫ НАД ДЕРЕВОМ (не над миром)
+
+Три свидетеля судят не симуляцию, а само дерево. Каждый — по своей оси, и ни
+один не повторяет другого; форма у всех одна: ядро в одном файле, две двери к
+нему (судящая и действующая), второй копии разбора нет (AGENTS §8 п.5).
+
+| прибор | ось | гейт `check` | вердикт |
+|---|---|---|---|
+| `header_cost_test@tests/header_cost_test.cpp` | ПАМЯТЬ заголовка: пробник `#include` на каждый `src/**.h`, стена 12× медианы пикового RSS | да (пиковый RSS от загрузки машины не зависит) | **ПРАВДА** (M-127) |
+| `tu_time_jump@tests/tu_time_jump.cpp` | ВРЕМЯ TU: скачок 7× против лучшего прошлого того же `.o`, своя ведомость `build/tu_time_baseline.tsv` | нет — стенное время помнит `-j` и свап (вердикт владельца 2026-09-26) | **ПРАВДА** (M-128) |
+| `scan_tree@tests/doc_refs.cpp`, судит `test_real_docs@tests/doc_refs_test.cpp` | АДРЕС в доках: номер строки — производное от имени или отпечатка; правит `docs_sync` | да, и только на трёх объективных отказах: файла нет, строки нет, имя файла в дереве не одно | **ПРАВДА** (2026-09-27) |
+
+**ССЫЛКИ ДОКОВ, ЧИСЛАМИ НА 2026-09-27** (прогон `doc_refs_test`, десять живых
+`.md` корня; `problems.md` не судится — он сам объявляет себя журналом истории):
+ссылок **1950**, из них ЦЕЛЫХ **228**, старой формы «имя+номер» **203**, без
+иголки вовсе **1501**, иголка исчезла из файла **18**. Твёрдых отказов — **0**
+(было 21: одиннадцать «строка за концом файла», девять «имя файла не одно»,
+один «файла нет»; все починены в той же сессии). Белый список — **1598** строк,
+и он умеет только таять: правишь абзац — приводишь его ссылки в форму.
+
+*Границы, вслух:* прибор проверяет, что ссылка ЦЕЛА, и НИЧЕГО не говорит о том,
+правда ли утверждение рядом с ней — «дверь одна», «вызовов семь» по-прежнему
+проверяются только ПЕРЕПИСЬЮ СО СЧЁТОМ (§5 п.1). Короткая `:NNN`, наследующая
+файл из абзаца, считается, но не судится: путь у неё угадывает парсер, а
+обвинять по догадке нельзя ни в чём.
 
 ---
 

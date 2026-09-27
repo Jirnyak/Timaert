@@ -163,7 +163,7 @@
    сами двери НЕ удалять (у них другие жильцы, проверить `rg`).
 4. `check` — зелёный, ноль предупреждений. Тесты, которые могут покраснеть
    (урок AGENTS §5 п.6 — искать, чьим НОСИТЕЛЕМ была механика):
-   `trade_law_test.cpp:103-121` (проверяет ЦЕЛЬ набора, не потолок —
+   `tests/trade_law_test.cpp:103-119` (проверяет ЦЕЛЬ набора, не потолок —
    должен остаться зелёным; шапка `:11-13` про «hard cap» врёт — поправить
    комментарий), `save_roundtrip_test`, `balance_run` (код выхода 1 =
    сломан закон мира — читать, какой).
@@ -802,7 +802,7 @@ seaLevel»), `kWaterLevel = WATER_LEVEL` (`base_generator.cpp:92`),
    `biome_from_climate` без Mountain.
 Порог горы — два числа одной величины: 0.75 и 0.80.
 
-**1. Контекст.** Читать: `src/macro/biomes.h:40-80`,
+**1. Контекст.** Читать: `src/macro/biomes.h:40-76`,
 `src/macro/map_generator.h:105-130`, `src/macro/map_generator.cpp:540-600`
 (трассер: как читается `biome[]` дальше — где «край биома» ведёт реку),
 `src/macro/spawners.cpp:240-300`. Тесты: `tests/river_generation_test.cpp`
@@ -1062,7 +1062,7 @@ DOD п.6 (две записи одной фичи — второй ответ). 
 чтения мимо `at` — `spawners.cpp:528` (`decode(features.data[idx])`),
 `macro_stock.cpp:497-499`. **Пункт «`world_gen.cpp:310`» СНЯТ проверкой 2026-09-27:** прямых чтений `features.data[` в этом файле нет НИ ОДНОГО (`rg -n 'features\.data\[' src/macro/world_gen.cpp` → 0), так что чинить там нечего.
 
-**1. Контекст.** Читать: `src/macro/features.h:165-300` (`FeatureLayer`,
+**1. Контекст.** Читать: `src/macro/features.h:165-295` (`FeatureLayer`,
 `at`, `set`, `decode`), `src/macro/macro_stock.cpp:480-565`
 (`plough_field_cell` и соседняя дверь), и по ±8 строк вокруг каждой из
 точек списка. Остальное не читать.
@@ -1300,7 +1300,7 @@ src/sub`); `src/sub/dgn/dispatch.h` — колонки рода интерьер
 `MacroNpcAiRuntime` (`rg -n "sweepAccum|pendingSweeps|sweepCursor|sweepOrder"
 src/macro/npc_ai.h`), `src/app/main.cpp:3486-3496, 3538-3545, 3630-3640`,
 `src/macro/state.h:810-830` (`MacroAiRhythm` — что едет в сейве),
-`src/macro/world_tick.h:110-120` (`tick_world_subworld_steps`). Остальное
+`tick_world_subworld_steps@src/macro/world_tick.h`. Остальное
 не читать.
 
 **2. Закон.** AGENTS §6 (без читов), ЗАКОН ГЛАДКОЙ ПАМЯТИ/эпик 2 (курсор —
