@@ -68,7 +68,9 @@ inline constexpr int kSettlementReach = 3;
 // prices cells through the ONE registry door.
 struct SettlementSiteContext {
     MacroWorld   w{};
-    std::uint8_t seaLevel8 = 0;
+    // Колонка `seaLevel8` стояла здесь — КОПИЯ плоскости моря, которую несёт
+    // карта (`TerrainData::seaLevel8`, M-109). Контекст держит `w.terrain`,
+    // значит порог у него уже был, а вторая запись могла разъехаться молча.
     // The deposit-reach FIELD (owner 2026-08-31, «полевой подход»): the
     // sparse veins splatted once per world to the crews' working reach so
     // the score sees what the hands actually mine — a per-candidate 33²

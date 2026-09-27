@@ -113,8 +113,11 @@ struct DepositLayer {
     // генерация, поэтому параметры рождения живут на самом слое, а не у того,
     // кто его однажды построил. Производные, в сейв не едут: их восстановит
     // тот же мир (worldSeed) при загрузке.
+    // Рядом стояла колонка `birthSeaLevel` — КОПИЯ плоскости моря, чьим
+    // единственным читателем был `deposit_virgin_at`. Плоскость одна на мир и
+    // живёт у карты (`TerrainData::seaLevel8`), значит копия была вторым
+    // словарём, способным разъехаться с картой молча.
     std::uint32_t birthSeed = 0;
-    float         birthSeaLevel = 0.0f;
     // Runtime dirty counter for future consumers; never serialized.
     std::uint32_t revision = 0;
 
@@ -163,10 +166,10 @@ void allocate_deposit_fields(DepositLayer& layer, int width, int height);
 // заживает только разработанное. Та же функция и РОЖДАЕТ мир при генерации, и
 // ЗАЛЕЧИВАЕТ клетку на сезонном визите ходока роста — один закон, не два.
 std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
-                               float seaLevel, DepositKind kind, int x, int y);
+                               DepositKind kind, int x, int y);
 
 DepositLayer build_deposit_layer(const TerrainData& terrain,
-                                 std::uint32_t seed, float seaLevel);
+                                 std::uint32_t seed);
 
 // THE quantity door (the registry's carrier hook lands here): a write down
 // to zero ANNIHILATES the cell, bumps the revision. A cell that was never a

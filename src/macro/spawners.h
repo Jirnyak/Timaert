@@ -23,8 +23,7 @@ struct RoadTraceStats {
     int expansions = 0;
 };
 
-std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed,
-                                   float seaLevel = 0.40f);
+std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed);
 
 // ── THE road-class registry (owner approved, 2026-08-29) ────────────────
 // A road is a ROW: the surface it lays (whose bed weight is already a column
@@ -67,7 +66,6 @@ inline constexpr RoadClassDef kRoadClasses[] = {
 std::vector<std::uint8_t> trace_roads(const TerrainData& td,
                                       Politik& politik,
                                       RoadTraceStats* stats = nullptr,
-                                      float seaLevel = 0.40f,
                                       // The living forest: the planner walks
                                       // THE step law, and the law's canopy
                                       // term routes roads around deep woods.
@@ -99,7 +97,6 @@ int trace_dirt_roads(FeatureLayer& features, const TerrainData& td,
                      const std::vector<VillageRoadSite>& villages,
                      const std::vector<RoadSite>& landmarks,
                      int landmarkReach,
-                     float seaLevel = 0.40f,
                      const TreeLayer* treeLayer = nullptr);
 
 // Build the FeatureLayer from terrain + roads. Features are the MAN-MADE
@@ -109,8 +106,7 @@ int trace_dirt_roads(FeatureLayer& features, const TerrainData& td,
 // neither touches this grid.
 FeatureLayer build_feature_layer(const TerrainData& td,
                                  const std::vector<std::uint8_t>& roadMask,
-                                 const std::vector<std::uint8_t>* dirtMask,
-                                 float seaLevel = 0.40f);
+                                 const std::vector<std::uint8_t>* dirtMask);
 
 // Stamp FT_Field farmland around villages — the owner-requested man-made
 // feature and the grain DEPOSIT of the economy loop. Fully CONTEXTUAL, no
@@ -134,8 +130,7 @@ inline constexpr std::uint8_t kFieldMoistureMin = 96;  // of 255
 // the ploughable threshold travels with it instead of being re-derived.
 int field_wheat_min();
 void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
-                          const std::vector<FieldSite>& villages,
-                          float seaLevel = 0.40f);
+                          const std::vector<FieldSite>& villages);
 
 // The RUNTIME half of the field stamp (owner 2026-08-31, CANON S10 «фичи
 // создаются сквадами»): ONE cell ploughed by a crew's day of work — the
@@ -144,20 +139,19 @@ void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
 // disagree. Returns false when the cell refuses the plough (feature there
 // already / water / rock / lean soil). Torus-wrapped.
 bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
-                    int x, int y, int& wheatOut, float seaLevel = 0.40f);
+                    int x, int y, int& wheatOut);
 // `parcel` — ЧЕМ засеяно (FT_Field хлебом, FT_FlaxField льном): земля и цена
 // у них одни, различается только строка цели, которая с парцеллы берёт.
 bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
-                       int x, int y, float seaLevel = 0.40f,
-                       FeatureType parcel = FT_Field);
+                       int x, int y, FeatureType parcel = FT_Field);
 
 // The pasture's same two doors (CANON S10 «ЛОШАДЬ — ЮНИТ»): the plough
 // gates with the HERD row's fertility bar, laying FT_Pasture. There is no
 // worldgen stamp for pastures — a crew raises the first one the day the
 // horse goal wins its auction, which is the same bootstrap every mine has.
 bool pasture_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
-                     int x, int y, int& herdOut, float seaLevel = 0.40f);
+                     int x, int y, int& herdOut);
 bool fence_pasture_cell(FeatureLayer& fl, const MacroWorld& world,
-                        int x, int y, float seaLevel = 0.40f);
+                        int x, int y);
 
 } // namespace sm

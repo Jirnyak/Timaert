@@ -1479,8 +1479,7 @@ void rebake_world(App& app, bool uploadNow) {
     }
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
                                    zsCities, zsVills, app.features,
-                                   app.terrain.rgba.data(),
-                                   app.terrain.rgba.size(), &app.treeLayer);
+                                   &app.terrain, &app.treeLayer);
     app.landmarkGrid = sm::build_landmark_grid(app.gs);
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
                                        &app.treeLayer);
@@ -5235,7 +5234,9 @@ void draw_debug_panels(App& app) {
 void build_world_preview(App& app, int side = 384) {
     if (!app.worldLoaded || app.terrain.rgba.empty()) return;
     const auto& td = app.terrain;
-    const std::uint8_t sea8 = std::uint8_t(app.customParams.layer.seaLevel * 255.0f);
+    // Пятый рукописный перевод float→байт стоял здесь; порог у карты уже есть,
+    // и предпросмотр обязан рисовать ТУ ЖЕ плоскость, что симулирует мир.
+    const std::uint8_t sea8 = td.seaLevel8;
     std::vector<std::uint8_t> img(std::size_t(side) * side * 4);
     for (int y = 0; y < side; ++y) {
         const int sy = y * td.height / side;

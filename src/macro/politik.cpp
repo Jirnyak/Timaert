@@ -51,7 +51,7 @@ static int city_site_score(const SettlementSiteContext* site, int x, int y) {
 // optimum, small enough that placement stays O(cities).
 constexpr int kCityCandidateDraws = 64;
 
-int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
+int derive_city_spacing(const TerrainData* terrain,
                         int mapW, int mapH, int totalCities) {
     std::size_t totalCells = 0;
     if (!TerrainData::cell_count_for(mapW, mapH, totalCells)) return 8;
@@ -64,7 +64,7 @@ int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
         for (int y = 0; y < mapH; y += 4)
             for (int x = 0; x < mapW; x += 4) {
                 ++sampled;
-                if (terrain->rgba[std::size_t(y * mapW + x) * 4 + 0] >= seaLevel8) ++land;
+                if (!terrain->is_water(x, y)) ++land;
             }
         if (sampled > 0)
             areaCells = int(float(land) / float(sampled) * float(mapW * mapH));
@@ -74,7 +74,7 @@ int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
 }
 
 Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
-                        const TerrainData* terrain, std::uint8_t seaLevel8,
+                        const TerrainData* terrain,
                         int targetTotalCities,
                         const SettlementSiteContext* site) {
     Politik P;
@@ -120,13 +120,12 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     const int totalTarget = (targetTotalCities > 0) ? targetTotalCities
                                                     : registryTotal;
     const int minDist = derive_city_spacing(useTerrain ? terrain : nullptr,
-                                            seaLevel8, mapW, mapH, totalTarget);
+                                            mapW, mapH, totalTarget);
 
     // Land predicate (defaults to "everywhere is land" when no terrain).
     auto is_land = [&](int x, int y) -> bool {
         if (!useTerrain) return true;
-        x = wrap_axis(x, mapW); y = wrap_axis(y, mapH);
-        return terrain->rgba[std::size_t(y * mapW + x) * 4 + 0] >= seaLevel8;
+        return !terrain->is_water(x, y);
     };
 
     // Seed capitals + cities per realm.
@@ -435,14 +434,10 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     return P;
 }
 
-void snap_cities_to_land(Politik& p, const TerrainData& td,
-                         std::uint8_t seaLevel8, int radius) {
+void snap_cities_to_land(Politik& p, const TerrainData& td, int radius) {
     if (!td.has_rgba_storage()) return;
-    const int W = td.width, H = td.height;
-    auto is_land = [&](int x, int y) {
-        x = wrap_axis(x, W); y = wrap_axis(y, H);
-        return td.rgba[std::size_t(y * W + x) * 4 + 0] >= seaLevel8;
-    };
+    const int W = td.width;
+    auto is_land = [&](int x, int y) { return !td.is_water(x, y); };
     for (auto& c : p.cities) {
         if (is_land(c.x, c.y)) continue;
         // Spiral outward in concentric square rings — шаги ИНДЕКСА (cell_step).
@@ -464,15 +459,13 @@ void snap_cities_to_land(Politik& p, const TerrainData& td,
 
 // ── Multi-source BFS Voronoi over land cells (TS buildCellOwnership). ──
 // Plus lake-snap for any realm whose seed def has capital_requires_lake.
-void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8) {
+void finalize_politik(Politik& p, const TerrainData& td) {
     if (!td.has_rgba_storage()) return;
     const int W = td.width, H = td.height;
-    auto is_land = [&](int x, int y) {
-        return td.rgba[(std::size_t(y) * W + x) * 4 + 0] >= seaLevel8;
-    };
-    auto is_water = [&](int x, int y) {
-        return td.rgba[(std::size_t(y) * W + x) * 4 + 0] < seaLevel8;
-    };
+    // Пять рукописных сравнений `rgba[..*4+0] >= seaLevel8` стояли здесь и
+    // выше — шестой спеллинг «вода ли клетка», мимо двери карты (M-109).
+    auto is_land = [&](int x, int y) { return !td.is_water(x, y); };
+    auto is_water = [&](int x, int y) { return td.is_water(x, y); };
     auto count_local_water = [&](int cx, int cy, int r) {
         int n = 0;
         const std::uint32_t at = cell_of(cx, cy, W);

@@ -43,6 +43,7 @@ TerrainData banded_terrain() {
     t.width = kW;
     t.height = kH;
     t.rgba.assign(std::size_t(kW * kH) * 4u, 128);
+    t.seaLevel8 = kSea8;   // плоскость моря — колонка карты (M-109)
     for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < 8; ++x) {
             const std::size_t i = (std::size_t(y) * kW + std::size_t(x)) * 4u;
@@ -105,7 +106,7 @@ void test_one_spire_per_spell_in_the_band() {
     GameState gs = world(12345u);
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
-    generate_spires(gs, zones, terrain, kSea8);
+    generate_spires(gs, zones, terrain);
 
     const LandmarkDef& def = landmark_def(LandmarkType::Spire);
     const std::vector<const Landmark*> spires = spires_of(gs);
@@ -127,7 +128,7 @@ void test_one_spire_per_spell_in_the_band() {
         CHECK(sp.spellId == std::uint32_t(i),
               "the spire carries its spell's registry ordinal");
         CHECK(!sp.depleted, "a fresh spire holds its spell");
-        CHECK(!terrain.is_water(sp.x, sp.y, kSea8), "a spire stands on land");
+        CHECK(!terrain.is_water(sp.x, sp.y), "a spire stands on land");
         CHECK(int(zones.at(sp.x, sp.y)) >= int(def.minZone),
               "a spire stands inside the landmark table's zone band");
     }
@@ -151,9 +152,9 @@ void test_placement_is_a_fact_of_the_seed() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     GameState a = world(12345u), b = world(12345u), c = world(777u);
-    generate_spires(a, zones, terrain, kSea8);
-    generate_spires(b, zones, terrain, kSea8);
-    generate_spires(c, zones, terrain, kSea8);
+    generate_spires(a, zones, terrain);
+    generate_spires(b, zones, terrain);
+    generate_spires(c, zones, terrain);
 
     const std::vector<const Landmark*> sa = spires_of(a);
     const std::vector<const Landmark*> sb = spires_of(b);
@@ -183,7 +184,7 @@ void test_no_admissible_ground_places_nothing() {
         tame.width = kW;
         tame.height = kH;
         tame.data.assign(std::size_t(kW * kH), 0);
-        generate_spires(gs, tame, terrain, kSea8);
+        generate_spires(gs, tame, terrain);
         CHECK(spires_of(gs).empty(), "no wild land = no spires");
     }
     // Negative control 2: an all-ocean world offers no site either.
@@ -193,7 +194,7 @@ void test_no_admissible_ground_places_nothing() {
         ocean.width = kW;
         ocean.height = kH;
         ocean.rgba.assign(std::size_t(kW * kH) * 4u, 0);
-        generate_spires(gs, banded_zones(), ocean, kSea8);
+        generate_spires(gs, banded_zones(), ocean);
         CHECK(spires_of(gs).empty(), "no land = no spires");
     }
 }
@@ -216,7 +217,7 @@ void test_named_places_veto_their_cells() {
 
     {
         GameState gs = world(12345u);
-        generate_spires(gs, pin, terrain, kSea8);
+        generate_spires(gs, pin, terrain);
         const std::vector<const Landmark*> spires = spires_of(gs);
         CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                         "the wild block hosts every spire");
@@ -237,7 +238,7 @@ void test_named_places_veto_their_cells() {
                 v.y = y;
                 gs.landmarks.push_back(v);
             }
-        generate_spires(gs, pin, terrain, kSea8);
+        generate_spires(gs, pin, terrain);
         CHECK(spires_of(gs).empty(),
               "named places on every admissible cell veto the spire");
     }
@@ -250,8 +251,8 @@ void test_genesis_births_souls_and_ruins() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     GameState gs = world(12345u);
-    generate_spires(gs, zones, terrain, kSea8);
-    generate_ruins(gs, zones, terrain, kSea8);
+    generate_spires(gs, zones, terrain);
+    generate_ruins(gs, zones, terrain);
 
     // Spires are born garrisoned: the registry's born columns × the spell's
     // tier, a bell — never zero, never one fixed number for all.
@@ -274,7 +275,7 @@ void test_genesis_births_souls_and_ruins() {
     for (const auto& lm : gs.landmarks) {
         if (lm.type != LandmarkType::Ruin) continue;
         ++ruins;
-        CHECK(!terrain.is_water(lm.x, lm.y, kSea8), "a ruin stands on land");
+        CHECK(!terrain.is_water(lm.x, lm.y), "a ruin stands on land");
         const int z = int(zones.at(lm.x, lm.y));
         CHECK(z >= int(ruinDef.minZone) && z <= int(ruinDef.maxZone),
               "a ruin stands inside its registry zone band");
@@ -284,8 +285,8 @@ void test_genesis_births_souls_and_ruins() {
 
     // Determinism: the same seed births the same ruins, souls included.
     GameState b = world(12345u);
-    generate_spires(b, zones, terrain, kSea8);
-    generate_ruins(b, zones, terrain, kSea8);
+    generate_spires(b, zones, terrain);
+    generate_ruins(b, zones, terrain);
     CHECK_OR_RETURN(b.landmarks.size() == gs.landmarks.size(),
                     "same seed, same landmark census");
     bool same = true;

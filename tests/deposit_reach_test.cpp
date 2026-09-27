@@ -80,6 +80,7 @@ TerrainData make_world() {
     td.height = h;
     td.rgba.assign(std::size_t(w) * h * 4u, 0);
     td.riverData.assign(std::size_t(w) * h, 0);
+    td.seaLevel8 = sm::sea_level_byte(0.40f);   // плоскость моря — у карты
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const std::size_t s = std::size_t(y * w + x) * 4u;
@@ -111,7 +112,7 @@ bool first_vein(const DepositLayer& layer, DepositKind kind, int& x, int& y) {
 int main() {
     using namespace sm::test;
 
-    DepositLayer layer = build_deposit_layer(make_world(), 0x51A2B3C4u, 0.40f);
+    DepositLayer layer = build_deposit_layer(make_world(), 0x51A2B3C4u);
 
     // ── 0. THE FIXTURE HAS GEOLOGY, AND THE SWEEP CAN SEE BOTH ANSWERS ────
     // Without this the whole file could pass on an empty world by agreeing
@@ -186,7 +187,7 @@ int main() {
     // The field is DERIVED and never saved, so the load path owes it a
     // re-stamp. A world restored without one answers every question NO.
     {
-        DepositLayer fresh = build_deposit_layer(make_world(), 0x51A2B3C4u, 0.40f);
+        DepositLayer fresh = build_deposit_layer(make_world(), 0x51A2B3C4u);
         restore_deposit_cells(fresh, layer);
         int examined = 0;
         CHECK(disagreements(fresh, examined) == 0,

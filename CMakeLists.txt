@@ -849,6 +849,16 @@ timaert_test(river_generation_test
         src/macro/map_generator.cpp
         src/sub/base_generator.cpp)
 
+# ОДНА ПЛОСКОСТЬ МОРЯ (M-109): свидетель гоняет генератор и спрашивает трёх
+# потребителей порога разом — дверь карты, каскад биома и цену пути, — поэтому
+# линкует терраин и сетку цены.
+timaert_test(water_answer_test
+    SOURCES
+        src/macro/map_generator.cpp
+        src/macro/pathfinding.cpp
+        src/macro/tree_layer.cpp
+        src/sub/base_generator.cpp)
+
 # The field stamp reads fertility through the resource-field registry (R2),
 # so spawners.cpp now carries the registry chain (and entt via the
 # macro_stock context envelope).

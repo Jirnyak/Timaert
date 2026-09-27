@@ -75,17 +75,15 @@ static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 41032,
 inline bool is_land(const TerrainData& t, int mapW, int mapH, int x, int y) {
     if (t.width != mapW || t.height != mapH || !t.has_rgba_storage())
         return true;
-    const int xx = wrap_axis(x, t.width);
-    const int yy = wrap_axis(y, t.height);
-    std::size_t idx = (std::size_t(yy) * std::size_t(t.width) + std::size_t(xx)) * 4u + 3u;
-    if (idx >= t.rgba.size() || t.rgba[idx] < 128) return false;
-    // The BIOME is the water authority, not the alpha channel: a river cell
-    // is land by alpha and water by biome, and the daily crew rotation was
-    // born INTO the rivers of its own riverside villages — ~11 souls a day
-    // straight onto ground where no camp can stand, ground to death by the
-    // exhaustion law (measured 2026-08-31: 46 at sea by day 4, thousands of
-    // bite ticks). One standing predicate for spawn and step alike.
-    return biome_at_cell(t, xx, yy) != Biome::Water;
+    // ОДИН ПРЕДИКАТ, А НЕ ДВА: здесь стояла маска A < 128 И каскад биома —
+    // проверка «маска говорит суша, а биом вода» (речная клетка). Каскад
+    // биома теперь САМ отвечает порогом карты (`is_water`), значит второй
+    // вопрос был вопросом к спеллингу, а не к миру.
+    // Шрам, который эту двойную проверку поставил, никуда не делся и остаётся
+    // охраняемым: дневная смена рождалась В РЕКИ своих же деревень — ~11 душ
+    // в день на землю, где не стоит лагерь (замер 2026-08-31: 46 в море к
+    // четвёртому дню). Один стоящий предикат для спавна и для шага.
+    return biome_at_cell(t, x, y) != Biome::Water;
 }
 
 struct XY { int x, y; };

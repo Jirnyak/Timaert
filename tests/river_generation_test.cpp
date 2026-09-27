@@ -107,15 +107,16 @@ long max_axis_run(const sm::TerrainData& td)
 // (kRiverDirs is 4-connected, so river paths are 4-connected) starts from the
 // open sea and spreads through the whole water network; any river cell it fails
 // to reach is a river that does not connect to the sea. "Water" uses the
-// generator's own terminal sea test (height <= seaLevel8 — the river trace's
-// `done` condition), so the boundary sea cells rivers drain into count as
-// reachable water. Carved river cells (byte 94) are well under that.
+// generator's own terminal sea test (height < seaLevel8 — the river trace's
+// `done` condition; строго НИЖЕ плоскости, один закон на весь мир, M-109), so
+// the boundary sea cells rivers drain into count as reachable water. Carved
+// river cells (byte 94) are well under that.
 long count_non_draining_rivers(const sm::TerrainData& td, std::uint8_t seaB)
 {
     const int w = td.width;
     const int h = td.height;
     const std::size_t n = std::size_t(w) * std::size_t(h);
-    auto is_water = [&](std::size_t i) { return height_byte(td, i) <= seaB; };
+    auto is_water = [&](std::size_t i) { return height_byte(td, i) < seaB; };
     auto is_river = [&](std::size_t i) { return td.riverData[i] > 0; };
 
     std::vector<std::uint8_t> seen(n, 0u);

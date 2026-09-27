@@ -9,6 +9,32 @@
 
 namespace sm {
 
+// ── УРОВЕНЬ МОРЯ — ОДНА ПЛОСКОСТЬ НА ВЕСЬ МИР (владелец, 2026-09-27) ──────
+// Дословно: «у нас фиксированная плоскость УРОВЕНЬ моря на весь макромир и
+// микромир её наследует». Следствия, и они оба отрицательные:
+//   • это НЕ поле над клетками — клеточная величина здесь ровно одна, байт
+//     высоты в канале R, а порог к ней один на весь тор;
+//   • это НЕ колонка биома — `BiomeConfig` субмира держал её одиннадцать раз
+//     одинаковой, и одиннадцать копий одного числа колонкой не являются.
+// Число 0.40 — дефолт РЕДАКТОРА, а не вывод из инварианта: уровень моря
+// авторский, его двигает ползунок экрана кастомного мира. Инвариант, который
+// тут действительно есть, другой — порог ОДИН, и живёт он в одном месте.
+inline constexpr float kDefaultSeaLevel = 0.40f;
+
+// Порог в том же словаре, в котором лежит высота: unorm8 (`to_unorm8`,
+// map_generator.cpp). `floor`, а не округление: клетка ровно на плоскости —
+// суша (вода строго НИЖЕ уровня, вердикт владельца 2026-09-25 «есть уровнеь
+// рельефа ниже котрого вода»). Единственный переводчик float→байт в проекте:
+// четыре рукописных `uint8_t(seaLevel * 255.0f)` звали эту же величину,
+// усекая её по-своему.
+inline constexpr std::uint8_t sea_level_byte(float seaLevel) {
+    // Усечение неотрицательного И ЕСТЬ floor, поэтому дверь обходится без
+    // <cmath> и остаётся constexpr: свидетелям порог нужен под компилятором
+    // (ЗАКОН НУЛЕВОЙ п.6), а заголовок не платит за тело (§5 п.13).
+    const float c = seaLevel < 0.0f ? 0.0f : (seaLevel > 1.0f ? 1.0f : seaLevel);
+    return std::uint8_t(int(c * 255.0f));
+}
+
 struct LayerParameters {
     // The world's seed IS an integer (CANON S26 «всё дискретно»); it was a
     // float here, so every consumer round-tripped through casts and any seed
@@ -18,7 +44,7 @@ struct LayerParameters {
     // representable, so the generated world is bit-identical.
     std::uint32_t seed = 1u;
     // THE macroworld synthesis defaults — this struct is the source of truth.
-    float seaLevel = 0.40f;
+    float seaLevel = kDefaultSeaLevel;
     float heightScale = 1.0f;
     float moistureScale = 1.0f;
     float temperatureVariation = 0.30f;
@@ -36,6 +62,17 @@ struct TerrainData {
     std::vector<std::uint8_t> rgba;
     // R8 river mask generated from the terrain heightmap. 255 = river cell.
     std::vector<std::uint8_t> riverData;
+    // Плоскость моря ЭТОЙ карты. Кто читает и зачем: `is_water` ниже, и через
+    // неё весь макромир — это единственный ответ на «вода ли клетка»; больше
+    // её не читает никто. Почему колонкой карты, а не параметром у каждой
+    // двери: порог есть свойство ЗАПЕЧЁННОЙ карты (по нему запекались маска и
+    // врез рек), и девять дефолтов `float seaLevel = 0.40f` в `spawners.h`
+    // были девятью копиями этого свойства, разъехаться с которым карта могла
+    // молча. Прецедент формы — `DepositLayer::birthSeaLevel`.
+    // Ставится в РОЖДЕНИИ карты (`generate_terrain`/`generate_river_data`);
+    // дефолт — плоскость дефолтного мира, чтобы карта, собранная руками в
+    // харнессе, отвечала как мир, а не как «всё суша».
+    std::uint8_t seaLevel8 = sea_level_byte(kDefaultSeaLevel);
 
     static bool cell_count_for(int w, int h, std::size_t& out) {
         out = 0;
@@ -86,38 +123,53 @@ struct TerrainData {
         if (!world_shape_ok(width, height)) return 0u;
         return rgba[std::size_t(cell_of(x, y, width)) * 4 + 2];
     }
-    inline bool is_water(int x, int y, std::uint8_t seaLevel) const {
-        return height_at(x, y) < seaLevel;
+    // ── ЕДИНСТВЕННЫЙ ОТВЕТ «ВОДА ЛИ КЛЕТКА» ──────────────────────────────
+    // Вердикт владельца (2026-09-25, дословно): «НИКАКИХ МАСОК строго единый
+    // порог высоты УРОВЕНЬ моря это кстати и для макро и для микро верно».
+    // До него вопрос отвечали ВОСЕМЬЮ способами (перепись 2026-09-27): маска
+    // A==0 — 10 чтений, маска <128, float `h/255 < seaLevel` — 4, рукописный
+    // байт мимо двери — 5 в `politik.cpp`, трассер рек через `<=` — 7 (клетка
+    // ровно на плоскости была ему водой, а маске сушей), плюс харнесс смоуков
+    // и шейдер. Маска при этом не была вторым ЗНАНИЕМ — она была вторым
+    // СПЕЛЛИНГОМ: её последним действием переписывает тот же порог
+    // (`map_generator.cpp`, врез рек), так что расходиться они могли только
+    // округлением, и ровно этим и расходились на берегу.
+    // Адрес — ОДНО ЧИСЛО (ЗАКОН АДРЕСА): первичная форма берёт индекс, пара
+    // x,y входит через `cell_of` и остаётся для тех, у кого на руках геометрия.
+    // Fail-closed в ВОДУ: карты нет — суши нет (ноль вклада, не выдуманная
+    // земля и не падение).
+    inline bool is_water(std::uint32_t cell) const {
+        if (!has_rgba_storage()) return true;
+        return rgba[std::size_t(cell) * 4u + 0u] < seaLevel8;
+    }
+    inline bool is_water(int x, int y) const {
+        if (!world_shape_ok(width, height)) return true;
+        return is_water(cell_of(x, y, width));
     }
 };
 
 // ── THE cell biome classifier (CANON S6, 2026-08-24) ─────────────────────
-// One cascade for a WORLD CELL: the baked land mask decides Water, elevation
+// One cascade for a WORLD CELL: the sea-level plane decides Water, elevation
 // decides Mountain, the climate matrix fills in the rest. `biome_at`
 // (biomes.h) stays the pure-math core for callers that do not hold a cell —
 // the shader mirror and world-gen scratch buffers.
 //
-// The mask, not the threshold: both mask writers (the climate synth and the
-// river carve) derive A from the SAME quantized height the R channel stores,
-// so the mask exists precisely to make "is this water" answer identically
-// everywhere. Before this door the question was answered five ways — the
-// subworld read the mask, travel/pathfinding/fauna re-derived it from float
-// height vs a float sea level, and two UI twins disagreed with each other at
-// the coast (canon-audit C5/H10) — a coastal cell could be Meadow to a boot
-// and Water to a wolf. The sea level itself vanishes from the query: the mask
-// already carries it.
+// ПОРОГ, А НЕ МАСКА (вердикт владельца 2026-09-25, снявший прежнюю доктрину
+// этой шапки «The mask, not the threshold»): воду называет `is_water`, то есть
+// плоскость моря карты. Прежний довод за маску был верен по факту и ложен по
+// форме — маска писалась ИЗ того же байта высоты, значит знания не добавляла,
+// а второй спеллинг одного вопроса добавляла. Байт A остаётся ЖИВЫМ, но уже
+// только как канал ТЕКСТУРЫ для шейдера (`macro.frag`); мир его не спрашивает.
 //
 // Torus-wrapped; fail-closed to Water (a world with no storage has no land to
 // walk, grow or hunt — the zero contribution, never a crash).
 inline Biome biome_at_cell(const TerrainData& td, int x, int y) {
     if (!td.has_rgba_storage()) return Biome::Water;
-    // Сторона мира → маска (ЗАКОН АДРЕСА); wrapi здесь был аппаратным
-    // делением в САМОМ горячем каскаде классификации клетки.
-    const int xi = wrap_axis(x, td.width);
-    const int yi = wrap_axis(y, td.height);
-    const std::size_t s =
-        (std::size_t(yi) * std::size_t(td.width) + std::size_t(xi)) * 4u;
-    if (td.rgba[s + 3u] == 0u) return Biome::Water;   // the baked land mask
+    // Адрес клетки — одно число (ЗАКОН АДРЕСА); здесь стояли две свёртки
+    // координат `wrap_axis` и рукописный `y * width + x` — хвост M-108.
+    const std::uint32_t cell = cell_of(x, y, td.width);
+    if (td.is_water(cell)) return Biome::Water;
+    const std::size_t s = std::size_t(cell) * 4u;
     const float h = float(td.rgba[s + 0u]) / 255.0f;
     if (h >= kMountainBiomeLevel) return Biome::Mountain;
     return biome_from_climate(float(td.rgba[s + 2u]) / 255.0f,

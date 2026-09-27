@@ -126,17 +126,16 @@ int main()
                      "mountain biome (by height) must apply mountain movement cost");
     }
 
-    // Water rides the baked land MASK (map_generator.h biome_at_cell) — the
-    // sea level is baked into the alpha channel by the terrain writers, so
-    // the cost grid asks the mask, never a float threshold of its own. (The
-    // old probes handed build_cost_grid sea levels of 0.401 / -0.1 / 1.1 and
-    // pinned the threshold arithmetic — the exact coastal double-answer the
-    // one cascade was built to end.)
+    // ВОДА — ПЛОСКОСТЬ МОРЯ КАРТЫ, А НЕ БАЙТ МАСКИ (вердикт владельца
+    // 2026-09-25 «НИКАКИХ МАСОК», M-109). Этот блок звался mask-* и
+    // утверждал обратное: он делал воду, ОПУСКАЯ ТОЛЬКО альфу и не трогая
+    // высоту, а комментарий прямо говорил «маска — авторитет». Это и был
+    // коастальный двойной ответ, а не защита от него.
     sm::TerrainData maskTerrain = make_terrain(2, 1);
     const float defaultLandWeight = sm::cell_sp_weight(
         sm::biome_from_climate(128.0f / 255.0f, 128.0f / 255.0f),
         sm::FT_None);
-    maskTerrain.rgba[3] = 0u;   // cell 0: mask says water — height untouched
+    maskTerrain.rgba[0] = 40u;   // cell 0: высота НИЖЕ плоскости — вот и вода
     const sm::PathCostData maskCosts =
         sm::build_cost_grid(maskTerrain, nullptr);
     CHECK(maskCosts.costGrid.size() == 2u,
@@ -145,20 +144,22 @@ int main()
     {
         CHECK(nearly(maskCosts.costGrid[0], 10.0f)
                          && maskCosts.water[0] == 1u,
-                     "a cell the mask calls water must price and flag as water");
+                     "клетка ниже плоскости моря стоит и флажится как вода");
         CHECK(nearly(maskCosts.costGrid[1], defaultLandWeight)
                          && maskCosts.water[1] == 0u,
-                     "a cell the mask calls land must keep its biome cost");
+                     "клетка выше плоскости держит цену своего биома");
     }
-    // Negative control: flip ONLY the mask back to land — same height byte —
-    // and the water pricing must vanish with it (the mask is the authority).
-    maskTerrain.rgba[3] = 255u;
+    // НЕГАТИВНЫЙ КОНТРОЛЬ ЗАКОНА: поднять высоту выше плоскости и СОЛГАТЬ
+    // маской (A = 0, «вода») — цена воды обязана исчезнуть вместе с высотой.
+    // Пока маска была авторитетом, этот же случай красил бы наоборот.
+    maskTerrain.rgba[0] = 128u;
+    maskTerrain.rgba[3] = 0u;
     const sm::PathCostData maskFlipped =
         sm::build_cost_grid(maskTerrain, nullptr);
     CHECK(maskFlipped.costGrid.size() == 2u
                      && nearly(maskFlipped.costGrid[0], defaultLandWeight)
                      && maskFlipped.water[0] == 0u,
-                 "flipping the mask alone must reclassify the cell");
+                 "маска солгала про воду — мир ответил по плоскости, землёй");
 
     sm::FeatureLayer shortFeatures;
     shortFeatures.width = 2;
@@ -215,13 +216,13 @@ int main()
     std::vector<float> baselineCont;
     const sm::ZoneLayer baselineZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures, nullptr,
-                           0u, nullptr, &baselineCont);
+                           nullptr, &baselineCont);
     CHECK(baselineZones.has_complete_storage(),
                  "generated zone layer must expose complete storage");
     std::vector<float> shortFeatCont;
     const sm::ZoneLayer shortFeatureZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, shortZoneFeatures,
-                           nullptr, 0u, nullptr, &shortFeatCont);
+                           nullptr, nullptr, &shortFeatCont);
     CHECK(shortFeatureZones.data == baselineZones.data
                      && shortFeatCont == baselineCont,
                  "short feature storage must be ignored by zone generator");
@@ -231,37 +232,45 @@ int main()
     std::vector<float> invalidFeatCont;
     const sm::ZoneLayer invalidFeatureZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, invalidZoneFeatures,
-                           nullptr, 0u, nullptr, &invalidFeatCont);
+                           nullptr, nullptr, &invalidFeatCont);
     CHECK(invalidFeatureZones.data == baselineZones.data
                      && invalidFeatCont == baselineCont,
                  "invalid feature bytes must be ignored by zone generator");
-    std::vector<std::uint8_t> waterMask(std::size_t(4 * 4 * 4), 255u);
-    // Land cells must be mid-elevation, not peaks: an all-255 mask would make
+    // ЗОНЫ СПРАШИВАЮТ КАРТУ, А НЕ ЕЁ БАЙТЫ (M-109): здесь стоял сырой
+    // буфер RGBA, и «вода» задавалась байтом маски вручную. Теперь вода — это
+    // высота ниже плоскости моря самой карты.
+    // Land cells must be mid-elevation, not peaks: all-255 height would make
     // every land cell the Mountain biome (height >= kMountainBiomeLevel) and pull
-    // in the mountain danger boost. This block exercises the WATER boost, so knock
-    // the height (red) channel down to ordinary ground.
+    // in the mountain danger boost. This block exercises the WATER boost, so the
+    // height (red) channel stays ordinary ground.
+    sm::TerrainData waterTd;
+    waterTd.width = 4;
+    waterTd.height = 4;
+    waterTd.rgba.assign(std::size_t(4 * 4 * 4), 255u);
+    waterTd.seaLevel8 = sm::sea_level_byte(0.40f);
     for (int i = 0; i < 4 * 4; ++i)
-        waterMask[std::size_t(i) * 4u + 0u] = 128u;
-    waterMask[3] = 0u; // cell 0 alpha -> water
+        waterTd.rgba[std::size_t(i) * 4u + 0u] = 128u;
+    waterTd.rgba[0] = 40u;  // cell 0 below the plane -> water
     std::vector<float> waterCont;
     const sm::ZoneLayer waterZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures,
-                           waterMask.data(), waterMask.size(), nullptr,
-                           &waterCont);
+                           &waterTd, nullptr, &waterCont);
     CHECK(waterZones.has_complete_storage(),
                  "valid water-mask zone generation must expose complete storage");
     CHECK(nearly(waterCont[0],
                         std::min(1.0f, baselineCont[0] + 0.05f)),
-                 "the water mask lifts the zone value of ITS OWN cells and leaves the neighbouring land alone");
+                 "a water cell lifts the zone value of ITS OWN cell and leaves the neighbouring land alone");
     CHECK(nearly(waterCont[1], baselineCont[1]),
-                 "valid water mask must not alter land cells");
+                 "water must not alter land cells");
     std::vector<float> shortWaterCont;
+    sm::TerrainData shortTd = waterTd;
+    shortTd.rgba.resize(3u);   // storage that does not cover the map
     const sm::ZoneLayer shortWaterZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures,
-                           waterMask.data(), 3u, nullptr, &shortWaterCont);
+                           &shortTd, nullptr, &shortWaterCont);
     CHECK(shortWaterZones.data == baselineZones.data
                      && shortWaterCont == baselineCont,
-                 "short supplied water mask must be ignored by zone generator");
+                 "terrain whose storage does not cover the map must be ignored");
     CHECK(sm::generate_zones(0, 4, 123u, noSeeds, noSeeds,
                                     zoneFeatures, nullptr).data.empty(),
                  "invalid zone dimensions must return an empty layer");

@@ -1299,7 +1299,6 @@ struct TreeLayer;
 struct DepositLayer;
 void populate_landmarks_from_politik(GameState& gs,
                                      const TerrainData& terrain,
-                                     std::uint8_t seaLevel8,
                                      TreeLayer& trees,
                                      DepositLayer& deposits);
 

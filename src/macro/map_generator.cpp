@@ -43,6 +43,11 @@ void synth_master(TerrainData& td, const LayerParameters& p) {
     const int   heightOct = int(p.heightOctaves);
     const int   moistOct  = int(p.moistureOctaves);
     const float cScale    = std::max(0.001f, p.continentScale);
+    // Маска A пишется ТЕМ ЖЕ порогом, что отвечает на «вода ли клетка»
+    // (`TerrainData::is_water`): здесь стоял float-компаратор
+    // `noiseHeight < p.seaLevel` ДО квантования, то есть девятый спеллинг
+    // одного вопроса — он мог не совпасть с байтовым на округлении.
+    const std::uint8_t sea8 = sea_level_byte(p.seaLevel);
     for (int y = 0; y < h; ++y) {
         const float uy = (float(y) + 0.5f) / float(h);
         for (int x = 0; x < w; ++x) {
@@ -111,7 +116,7 @@ void synth_master(TerrainData& td, const LayerParameters& p) {
             td.rgba[s + 0] = to_unorm8(noiseHeight);
             td.rgba[s + 1] = to_unorm8(noiseMoist);
             td.rgba[s + 2] = to_unorm8(temp01);
-            td.rgba[s + 3] = noiseHeight < p.seaLevel ? std::uint8_t(0) : std::uint8_t(255);
+            td.rgba[s + 3] = td.rgba[s + 0] < sea8 ? std::uint8_t(0) : std::uint8_t(255);
         }
     }
 }
@@ -128,11 +133,6 @@ constexpr int kRiverDirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 // ОМОНИМ `cell_index(x,y,w) = y*w+x` — второй ответ на «где эта клетка», без
 // свёртки; перепись 2026-09-23 назвала его поимённо, адрес теперь один:
 // `cell_of`, шаг к соседу — `cell_step`.)
-
-inline std::uint8_t sea_level_byte(float seaLevel) {
-    const int v = int(std::floor(std::clamp(seaLevel, 0.0f, 1.0f) * 255.0f));
-    return std::uint8_t(std::clamp(v, 0, 255));
-}
 
 // River meander noise — a low-frequency, seed-stable value-noise added to the
 // river trace cost. It bends least-cost paths into natural curves instead of
@@ -346,7 +346,7 @@ std::vector<std::pair<int, int>> trace_river_to_water(
         }
         ++explored;
 
-        const bool done = height[std::size_t(cur)] <= seaLevel8
+        const bool done = height[std::size_t(cur)] < seaLevel8
             || (cur != source && riverMask[std::size_t(cur)] > 0);
         if (done) {
             return build_river_path(source, cur, scratch, w);
@@ -392,7 +392,7 @@ void stamp_river_path(const std::vector<std::pair<int, int>>& path,
                     continue;
                 }
                 const int ni = int(cell_step(at, dx, dy, w));
-                if (height[std::size_t(ni)] > seaLevel8) {
+                if (height[std::size_t(ni)] >= seaLevel8) {
                     riverMask[std::size_t(ni)] = 255;
                 }
             }
@@ -424,7 +424,7 @@ std::vector<int> find_river_tips(const std::vector<std::uint8_t>& riverMask,
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const int idx = int(cell_of(x, y, w));
-            if (riverMask[std::size_t(idx)] == 0 || height[std::size_t(idx)] <= seaLevel8) {
+            if (riverMask[std::size_t(idx)] == 0 || height[std::size_t(idx)] < seaLevel8) {
                 continue;
             }
 
@@ -436,7 +436,7 @@ std::vector<int> find_river_tips(const std::vector<std::uint8_t>& riverMask,
                 if (riverMask[ni] > 0) {
                     ++riverNbrs;
                 }
-                if (height[ni] <= seaLevel8) {
+                if (height[ni] < seaLevel8) {
                     hasSea = true;
                 }
             }
@@ -536,7 +536,17 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     const int w = td.width;
     const int h = td.height;
     const int n = w * h;
-    const std::uint8_t seaLevel8 = sea_level_byte(params.seaLevel);
+    // РОЖДЕНИЕ ПЛОСКОСТИ МОРЯ: карта уносит порог, по которому её врезали, с
+    // собой — дальше её никто не переспрашивает (§5 п.3: отказ и запись — в
+    // точке рождения, не на чтении). Это же вход для свидетелей, которые
+    // гоняют врез рек на синтетической карте напрямую.
+    td.seaLevel8 = sea_level_byte(params.seaLevel);
+    // ОДИН ЗАКОН ПОРОГА НА ВЕСЬ ТРАССЕР (M-109): вода — строго НИЖЕ плоскости
+    // (`R < seaLevel8`), земля — `R >= seaLevel8`. Восемь сравнений ниже
+    // стояли через `<=` и `>`, то есть клетку РОВНО на плоскости трассер
+    // считал водой, а вся остальная игра — сушей: река могла «дойти до моря»
+    // на клетке, по которой ходят пешком, и не дотечь до настоящей воды.
+    const std::uint8_t seaLevel8 = td.seaLevel8;
 
     td.riverData.assign(std::size_t(n), 0);
     if (n <= 0 || td.rgba.size() < std::size_t(n) * 4) {
@@ -555,7 +565,7 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
 
     std::vector<std::uint8_t> biome(std::size_t(n), 255);
     for (int i = 0; i < n; ++i) {
-        if (heightBytes[std::size_t(i)] <= seaLevel8) {
+        if (heightBytes[std::size_t(i)] < seaLevel8) {
             continue;
         }
         // The ONE climate classifier (biomes.h biome_from_climate): the 3x3
@@ -615,7 +625,7 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     std::vector<int> waterQueue;
     waterQueue.reserve(std::size_t(n) / 4);
     for (int i = 0; i < n; ++i) {
-        if (heightBytes[std::size_t(i)] <= seaLevel8) {
+        if (heightBytes[std::size_t(i)] < seaLevel8) {
             waterDist[std::size_t(i)] = 0;
             waterQueue.push_back(i);
         }
@@ -641,7 +651,7 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     std::vector<RiverCandidate> candidates;
     candidates.reserve(std::size_t(n) / 32);
     for (int i = 0; i < n; ++i) {
-        if (heightBytes[std::size_t(i)] > seaLevel8
+        if (heightBytes[std::size_t(i)] >= seaLevel8
             && edgeDist[std::size_t(i)] <= 2u
             && waterDist[std::size_t(i)] > 4u) {
             candidates.push_back({i, waterDist[std::size_t(i)]});
@@ -713,7 +723,7 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     const std::uint8_t carveH = std::uint8_t(std::max(1, int(seaLevel8) - 8));
     for (int i = 0; i < n; ++i) {
         const std::size_t s = std::size_t(i) * 4;
-        if (td.riverData[std::size_t(i)] > 0 && td.rgba[s + 0] > seaLevel8) {
+        if (td.riverData[std::size_t(i)] > 0 && td.rgba[s + 0] >= seaLevel8) {
             td.rgba[s + 0] = std::min(td.rgba[s + 0], carveH);
         }
     }
@@ -744,6 +754,7 @@ TerrainData generate_terrain(int w, int h, const LayerParameters& params) {
     }
     TerrainData td;
     td.width = w; td.height = h;
+    td.seaLevel8 = sea_level_byte(params.seaLevel);
     td.rgba.assign(std::size_t(w) * h * 4, 0);
     td.riverData.assign(std::size_t(w) * h, 0);
 

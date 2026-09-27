@@ -60,13 +60,15 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     reset_world_tick_runtime(gs.worldTickRt, p.seed);
 
     *out.terrain = generate_terrain(gs.mapW, gs.mapH, lp);
-    const std::uint8_t sea8 = std::uint8_t(lp.seaLevel * 255.0f);
+    // Здесь стоял рукописный перевод `uint8_t(lp.seaLevel * 255.0f)` и жил
+    // дальше десятью аргументами по всей генерации. Плоскость моря карта
+    // унесла с собой при рождении (`TerrainData::seaLevel8`, M-109).
 
     // The owner's causality IS the boot order: terrain → climate → RESOURCES →
     // and only then settlement. Trees and deposits are pure functions of
     // terrain + seed (neither reads politik), so they are derived before the
     // political layer — settlement placement reads them (R2).
-    *out.trees = spawn_trees(*out.terrain, gs.worldSeed, lp.seaLevel);
+    *out.trees = spawn_trees(*out.terrain, gs.worldSeed);
     // The per-cell tree-count layer: the spawn_trees massif mask (the organic
     // FBM лесные массивы) carries the forest term, biomes add a small
     // ambience (16384 = the golden densest massif interior). This derivation
@@ -82,8 +84,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         *out.treeLayer = build_tree_layer(*out.terrain, forestMask.data(),
                                           forestMask.size());
     }
-    *out.deposits = build_deposit_layer(*out.terrain, gs.worldSeed,
-                                        lp.seaLevel);
+    *out.deposits = build_deposit_layer(*out.terrain, gs.worldSeed);
     // The world's OWN fields are born with it (CANON S5, v96): the scar grid
     // of every sparse row and the ONE worked layer. Born here rather than on
     // first use for the same reason the deposit fields are — a field
@@ -97,12 +98,11 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     siteCtx.w.trees    = out.treeLayer;
     siteCtx.w.terrain  = out.terrain;
     siteCtx.w.deposits = out.deposits;
-    siteCtx.seaLevel8  = sea8;
     gs.politik = generate_politik(gs.worldSeed, gs.mapW, gs.mapH, out.terrain,
-                                  sea8, p.targetTotalCities, &siteCtx);
-    snap_cities_to_land(gs.politik, *out.terrain, sea8);
-    finalize_politik(gs.politik, *out.terrain, sea8);
-    populate_landmarks_from_politik(gs, *out.terrain, sea8, *out.treeLayer,
+                                  p.targetTotalCities, &siteCtx);
+    snap_cities_to_land(gs.politik, *out.terrain);
+    finalize_politik(gs.politik, *out.terrain);
+    populate_landmarks_from_politik(gs, *out.terrain, *out.treeLayer,
                                     *out.deposits);
     if (p.trace) {
         // The R2 report card: how many villages actually stand next to the
@@ -125,7 +125,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                     const std::uint32_t n = cell_step(vIdx, dx, dy, gs.mapW);
                     const int x = cell_x(n, gs.mapW);
                     const int y = cell_y(n, gs.mapW);
-                    if (out.terrain->is_water(x, y, sea8)) water = true;
+                    if (out.terrain->is_water(n)) water = true;
                     else if (out.terrain->moisture_at(x, y)
                              >= kFieldMoistureMin) plough = true;
                     if (out.deposits->any_at(x, y)) deposit = true;
@@ -175,7 +175,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
 
     RoadTraceStats roadStats;
     auto roads = trace_roads(*out.terrain, gs.politik, &roadStats,
-                             lp.seaLevel, out.treeLayer);
+                             out.treeLayer);
     if (p.trace) {
         std::fprintf(stderr,
                      "[roads] cities=%d attempted=%d kept=%d pruned=%d "
@@ -207,8 +207,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // Stone first (kRoadClasses hierarchy): the feature layer carries only
     // the main roads here; dirt lanes land in it AFTER zones and spires, so
     // their A* can both target the spires and price the stone at its bed.
-    *out.features = build_feature_layer(*out.terrain, roads, nullptr,
-                                        lp.seaLevel);
+    *out.features = build_feature_layer(*out.terrain, roads, nullptr);
     build_tree_grid(*out.treeGrid, *out.trees, gs.mapW, gs.mapH);
 
     std::vector<ZoneSeed> zsCities, zsVills;
@@ -217,9 +216,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         if (v.type == LandmarkType::Village) zsVills.push_back({v.x, v.y});
     *out.zones = generate_zones(gs.mapW, gs.mapH, gs.worldSeed,
                                 zsCities, zsVills, *out.features,
-                                out.terrain->rgba.data(),
-                                out.terrain->rgba.size(),
-                                out.treeLayer);
+                                out.terrain, out.treeLayer);
 
     // Spires need the zone field (their placement law), so they are the one
     // landmark placed after generate_zones rather than in
@@ -230,12 +227,12 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // vectors became ONE roster in v54, CANON S9 — this comment named them
     // for a month after they stopped existing.)
     {
-        generate_spires(gs, *out.zones, *out.terrain, sea8);
+        generate_spires(gs, *out.zones, *out.terrain);
         // Ruins follow the same zone-field law (§42 Инк 5): the row, the
         // subworld route and the surface generator stood ready for months —
         // this call is the ONE missing genesis pass that kept the kind
         // stillborn. After the settlement passes, whose cells it avoids.
-        generate_ruins(gs, *out.zones, *out.terrain, sea8);
+        generate_ruins(gs, *out.zones, *out.terrain);
         // The landmark set is complete — bake the cell → landmark index the
         // whole game asks (macro/landmark_grid.h).
         *out.landmarkGrid = build_landmark_grid(gs);
@@ -300,10 +297,10 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // (politik.h derive_city_spacing) — one city spacing, not a magic
         // radius: a village's world ends about where the next town's begins.
         const int landmarkReach = derive_city_spacing(
-            out.terrain, sea8, gs.mapW, gs.mapH, int(citiesFlat.size()));
+            out.terrain, gs.mapW, gs.mapH, int(citiesFlat.size()));
         const int dirtStamped = trace_dirt_roads(
             *out.features, *out.terrain, villageSites, landmarkSites,
-            landmarkReach, lp.seaLevel, out.treeLayer);
+            landmarkReach, out.treeLayer);
         if (p.trace) {
             std::size_t stoneCells = 0, dirtCells = 0, bridgeCells = 0;
             int bridgeX = -1, bridgeY = -1; // first span, for MACROPOS repros
@@ -358,8 +355,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         for (const auto& v : gs.landmarks)
             if (v.type == LandmarkType::Village)
                 fieldSites.push_back(FieldSite{v.x, v.y});
-        stamp_field_features(*out.features, siteCtx.w, fieldSites,
-                             lp.seaLevel);
+        stamp_field_features(*out.features, siteCtx.w, fieldSites);
     }
 
     *out.pathCost = build_cost_grid(*out.terrain, out.features, out.treeLayer);

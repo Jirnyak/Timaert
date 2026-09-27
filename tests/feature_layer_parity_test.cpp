@@ -18,6 +18,7 @@ sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
     td.height = h;
     td.rgba.assign(std::size_t(w) * std::size_t(h) * 4u, 0);
     td.riverData.assign(std::size_t(w) * std::size_t(h), 0);
+    td.seaLevel8 = sm::sea_level_byte(0.40f);   // плоскость моря — у карты
     for (int i = 0; i < w * h; ++i)
     {
         const std::size_t s = std::size_t(i) * 4u;
@@ -67,18 +68,14 @@ sm::FeatureLayer build_reference_feature_layer(
     if (td.rgba.size() < total * 4u)
         return fl;
 
-    constexpr std::uint8_t kSeaLvl8 = std::uint8_t(0.40f * 255.0f);
+    // ОДИН ПРЕДИКАТ ВОДЫ, КАК В МИРЕ (M-109, вердикт владельца «НИКАКИХ
+    // МАСОК»): здесь их было два — «маска ИЛИ высота» и «только маска», — и
+    // разницу между ними оправдывала «полоса несогласия берега». Полосы нет:
+    // порог один, и он на карте. Мокрая клетка под платным путём есть пролёт
+    // (FT_Bridge, всегда камень), сухая — полотно своего класса.
     auto is_water = [&](std::size_t i)
     {
-        return td.rgba[i * 4u + 3] == 0 || td.rgba[i * 4u + 0] < kSeaLvl8;
-    };
-    // Biome water (the baked alpha mask): a masked road cell here is a paid
-    // one-cell crossing and stamps FT_Bridge — always stone, whichever pass
-    // paid for it. The broader is_water keeps the coast's height/mask
-    // disagreement strip feature-free, exactly as before.
-    auto biome_water = [&](std::size_t i)
-    {
-        return td.rgba[i * 4u + 3] == 0;
+        return td.rgba[i * 4u + 0] < td.seaLevel8;
     };
 
     if (dirtMask)
@@ -88,9 +85,9 @@ sm::FeatureLayer build_reference_feature_layer(
         {
             if ((*dirtMask)[i] == 0)
                 continue;
-            if (biome_water(i))
+            if (is_water(i))
                 fl.data[i] = sm::FT_Bridge;
-            else if (!is_water(i))
+            else
                 fl.data[i] = sm::FT_DirtRoad;
         }
     }
@@ -99,9 +96,9 @@ sm::FeatureLayer build_reference_feature_layer(
     {
         if (roadMask[i] == 0)
             continue;
-        if (biome_water(i))
+        if (is_water(i))
             fl.data[i] = sm::FT_Bridge;
-        else if (!is_water(i))
+        else
             fl.data[i] = sm::FT_Road;
     }
     return fl;
@@ -331,20 +328,26 @@ void test_feature_layer_reference_matrix()
     }
 }
 
-void test_feature_land_mask_trusts_alpha()
+void test_feature_water_is_the_plane_not_the_mask()
 {
-    // The feature layer's only height-adjacent responsibility is honouring
-    // the land/water mask: an alpha-zero cell is biome water regardless of
-    // its stored height, and a masked lane there is a paid crossing — it
-    // stamps FT_Bridge (stone, whichever pass paid), never the lane's own
-    // ground class.
+    // ЭТОТ СВИДЕТЕЛЬ ПЕРЕВЁРНУТ ВЕРДИКТОМ ВЛАДЕЛЬЦА (2026-09-25, дословно:
+    // «НИКАКИХ МАСОК строго единый порог высоты УРОВЕНЬ моря»). Он звался
+    // `test_feature_land_mask_trusts_alpha` и утверждал ровно обратное: что
+    // байт маски A есть авторитет воды НЕЗАВИСИМО от высоты. Это охраняло не
+    // закон мира, а второй спеллинг одного вопроса (ЗАКОН НУЛЕВОЙ п.5), и
+    // ровно этим спеллингом мир расходился с собой на берегу.
     // ЗАКОН АДРЕСА: мир ВСЕГДА квадрат и степень двойки — здесь стояло 3×1.
     sm::TerrainData td = make_terrain(4, 4, 240);
-    set_alpha(td, 2, 0, 0);   // force cell (2,0) to water via the land mask
+    set_height(td, 2, 0, 40);   // ниже плоскости — вода, и только поэтому
+    // НЕГАТИВНЫЙ КОНТРОЛЬ ЗАКОНА: маска лжёт про воду на клетке, чья высота
+    // выше плоскости. Мир обязан ответить ЗЕМЛЯ — иначе авторитет вернулся к
+    // маске, и вердикт нарушен.
+    set_alpha(td, 3, 0, 0);
 
     std::vector<std::uint8_t> dirt(std::size_t(td.width) * td.height, 0);
     dirt[idx(td, 0, 0)] = 255;
     dirt[idx(td, 2, 0)] = 255;
+    dirt[idx(td, 3, 0)] = 255;
     const std::vector<std::uint8_t> empty(std::size_t(td.width) * td.height, 0);
     const sm::FeatureLayer fl =
         sm::build_feature_layer(td, empty, &dirt);
@@ -352,38 +355,49 @@ void test_feature_land_mask_trusts_alpha()
     CHECK(fl.at(0, 0) == sm::FT_DirtRoad,
                  "dirt pass must stamp features on land cells");
     CHECK(fl.at(2, 0) == sm::FT_Bridge,
-                 "alpha-zero water under a paid lane must stamp FT_Bridge");
+                 "a cell BELOW the sea plane under a paid lane stamps FT_Bridge");
+    CHECK(fl.at(3, 0) == sm::FT_DirtRoad,
+                 "маска A не авторитет: высота выше плоскости — земля, не пролёт");
 }
 
 void test_feature_water_filter_uses_map_sea_level()
 {
     // ЗАКОН АДРЕСА: квадрат, степень двойки — здесь стояло 3×1.
+    // ОДНО ЧИСЛО ДВИЖЕТ МИР (M-109): высоты 80 и 100 — берег при плоскости
+    // 0.30 и дно при 0.40, и различаются два прогона ровно этим числом.
+    // Рукописная простановка A=255 отсюда снята: она делала «несогласие
+    // маски и высоты», то есть ровно тот второй спеллинг, которого больше нет.
     sm::TerrainData td = make_terrain(4, 4, 120);
     set_height(td, 0, 0, 80);
     set_height(td, 1, 0, 100);
     set_height(td, 2, 0, 120);
-    set_alpha(td, 0, 0, 255);
-    set_alpha(td, 1, 0, 255);
-    set_alpha(td, 2, 0, 255);
 
     std::vector<std::uint8_t> road(std::size_t(td.width) * td.height, 0);
     std::vector<std::uint8_t> dirt(std::size_t(td.width) * td.height, 0);
     road[idx(td, 0, 0)] = 255;
     dirt[idx(td, 1, 0)] = 255;
 
+    sm::TerrainData lowSeaTd = td;
+    lowSeaTd.seaLevel8 = sm::sea_level_byte(0.30f);
+    sm::TerrainData defaultSeaTd = td;
+    defaultSeaTd.seaLevel8 = sm::sea_level_byte(0.40f);
     const sm::FeatureLayer lowSea =
-        sm::build_feature_layer(td, road, &dirt, 0.30f);
+        sm::build_feature_layer(lowSeaTd, road, &dirt);
     const sm::FeatureLayer defaultSea =
-        sm::build_feature_layer(td, road, &dirt, 0.40f);
+        sm::build_feature_layer(defaultSeaTd, road, &dirt);
 
     CHECK(lowSea.at(0, 0) == sm::FT_Road,
                  "feature water filter must use active low sea level for roads");
     CHECK(lowSea.at(1, 0) == sm::FT_DirtRoad,
                  "feature water filter must use active low sea level for dirt roads");
-    CHECK(defaultSea.at(0, 0) == sm::FT_None,
-                 "feature water filter must reject cells below active default sea level");
-    CHECK(defaultSea.at(1, 0) == sm::FT_None,
-                 "feature water filter must reject dirt cells below active default sea level");
+    // Под плоскостью 0.40 те же клетки — вода, а путь по воде ЕСТЬ платный
+    // пролёт: камень (FT_Bridge), а не пустота. Прежде здесь ждали FT_None —
+    // и это был не закон, а следствие несогласия маски с высотой: широкий
+    // предикат воды снимал фичу, узкий отказывался звать её мостом.
+    CHECK(defaultSea.at(0, 0) == sm::FT_Bridge,
+                 "дорога под плоскостью моря — пролёт, и он камень");
+    CHECK(defaultSea.at(1, 0) == sm::FT_Bridge,
+                 "грунтовка под плоскостью моря — тот же пролёт, тот же камень");
 }
 
 } // namespace
@@ -393,7 +407,7 @@ int main()
     test_feature_priority_and_water_filter();
     test_empty_and_malformed_inputs_are_safe();
     test_feature_layer_reference_matrix();
-    test_feature_land_mask_trusts_alpha();
+    test_feature_water_is_the_plane_not_the_mask();
     test_feature_water_filter_uses_map_sea_level();
     return sm::test::report("feature_layer_parity_test");
 }

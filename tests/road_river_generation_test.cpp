@@ -16,6 +16,8 @@ sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
     td.height = h;
     td.rgba.assign(std::size_t(w) * std::size_t(h) * 4, 0);
     td.riverData.assign(std::size_t(w) * std::size_t(h), 0);
+    // Плоскость моря живёт на карте (M-109) — свидетель ставит её сам.
+    td.seaLevel8 = sm::sea_level_byte(0.40f);
     for (int i = 0; i < w * h; ++i)
     {
         const std::size_t s = std::size_t(i) * 4;
@@ -164,6 +166,13 @@ void test_road_tracing_uses_map_sea_level()
         td.rgba[i * 4u + 3] = 255u;
     }
 
+    // ОДНО ЧИСЛО ДВИЖЕТ МИР: уровень моря — колонка карты, поэтому два
+    // сравниваемых мира различаются ровно им, а не аргументом двери (M-109).
+    sm::TerrainData lowSeaTd = td;
+    lowSeaTd.seaLevel8 = sm::sea_level_byte(0.30f);
+    sm::TerrainData defaultSeaTd = td;
+    defaultSeaTd.seaLevel8 = sm::sea_level_byte(0.40f);
+
     sm::Politik lowSeaPolitik;
     lowSeaPolitik.mapW = td.width;
     lowSeaPolitik.mapH = td.height;
@@ -171,7 +180,7 @@ void test_road_tracing_uses_map_sea_level()
     lowSeaPolitik.cities.push_back(make_city(4, 0, 0));
     sm::RoadTraceStats lowSeaStats;
     const std::vector<std::uint8_t> lowSeaRoads =
-        sm::trace_roads(td, lowSeaPolitik, &lowSeaStats, 0.30f);
+        sm::trace_roads(lowSeaTd, lowSeaPolitik, &lowSeaStats);
 
     sm::Politik defaultSeaPolitik;
     defaultSeaPolitik.mapW = td.width;
@@ -180,7 +189,7 @@ void test_road_tracing_uses_map_sea_level()
     defaultSeaPolitik.cities.push_back(make_city(4, 0, 0));
     sm::RoadTraceStats defaultSeaStats;
     const std::vector<std::uint8_t> defaultSeaRoads =
-        sm::trace_roads(td, defaultSeaPolitik, &defaultSeaStats, 0.40f);
+        sm::trace_roads(defaultSeaTd, defaultSeaPolitik, &defaultSeaStats);
 
     CHECK(lowSeaStats.keptEdges == 1 && lowSeaStats.prunedEdges == 0,
           "road tracing must use active low sea level for land connectivity");
@@ -450,16 +459,18 @@ void test_tree_spawner_respects_river_buffer()
 
 void test_tree_spawner_uses_map_sea_level()
 {
-    sm::TerrainData td = make_terrain(64, 64, 90);
-    for (std::size_t i = 0; i < td.cell_count(); ++i)
-    {
-        td.rgba[i * 4u + 3] = 255u;
-    }
+    // Та же карта, одно различие — ПЛОСКОСТЬ МОРЯ (M-109): при 0.30 высота 90
+    // это берег, при 0.40 — дно. Байт маски здесь больше ни при чём, поэтому
+    // ручная простановка A=255 снята: она и была той самой второй правдой.
+    sm::TerrainData lowSeaTd = make_terrain(64, 64, 90);
+    lowSeaTd.seaLevel8 = sm::sea_level_byte(0.30f);
+    sm::TerrainData defaultSeaTd = make_terrain(64, 64, 90);
+    defaultSeaTd.seaLevel8 = sm::sea_level_byte(0.40f);
 
     const std::vector<sm::TreePoint> lowSeaTrees =
-        sm::spawn_trees(td, std::uint32_t{42}, 0.30f);
+        sm::spawn_trees(lowSeaTd, std::uint32_t{42});
     const std::vector<sm::TreePoint> defaultSeaTrees =
-        sm::spawn_trees(td, std::uint32_t{42}, 0.40f);
+        sm::spawn_trees(defaultSeaTd, std::uint32_t{42});
 
     CHECK(!lowSeaTrees.empty(),
           "tree spawner must allow active low-sea shoreline land cells");
@@ -502,7 +513,7 @@ void test_politik_malformed_terrain_fails_closed()
     td.height = 4;
     td.rgba.assign(3u, 255u);
 
-    sm::Politik p = sm::generate_politik(123u, 8, 8, &td, 102u, 12);
+    sm::Politik p = sm::generate_politik(123u, 8, 8, &td, 12);
 
     CHECK(!td.has_rgba_storage(),
           "malformed Politik input must be rejected by terrain helper");
@@ -518,12 +529,12 @@ void test_politik_malformed_terrain_fails_closed()
               "Politik fallback cities must stay inside map bounds");
     }
 
-    sm::snap_cities_to_land(p, td, 102u, 8);
-    sm::finalize_politik(p, td, 102u);
+    sm::snap_cities_to_land(p, td, 8);
+    sm::finalize_politik(p, td);
     CHECK(p.cellOwner.size() == 64u,
           "malformed terrain finalization must not corrupt ownership storage");
 
-    const sm::Politik invalidMap = sm::generate_politik(123u, 0, 8, &td, 102u, 12);
+    const sm::Politik invalidMap = sm::generate_politik(123u, 0, 8, &td, 12);
     CHECK(invalidMap.mapW == 0 && invalidMap.mapH == 0
               && invalidMap.cellOwner.empty() && invalidMap.cities.empty(),
           "invalid Politik map dimensions must fail closed");
@@ -591,7 +602,7 @@ void test_dirt_roads_refuse_unreachable_targets()
     int wetDirt = 0;
     for (int y = 0; y < td.height; ++y)
         for (int x = 0; x < td.width; ++x)
-            if (td.is_water(x, y, 102) && features.at(x, y) != sm::FT_None)
+            if (td.is_water(x, y) && features.at(x, y) != sm::FT_None)
                 ++wetDirt;
     CHECK(wetDirt == 0, "dirt lanes must never stamp water cells");
 }

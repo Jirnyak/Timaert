@@ -20,8 +20,8 @@ TreeLayer build_tree_layer(const TerrainData& terrain,
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
-            const std::uint8_t mask = terrain.rgba[i * 4u + 3u];
-            if (!mask) continue; // water cell: 0 trees
+            // Вода — дверь карты, не маска A (M-109).
+            if (terrain.is_water(std::uint32_t(i))) continue; // 0 деревьев
             // THE cell cascade (map_generator.h biome_at_cell) — the private
             // copy that lived here was canon-audit C5.
             const Biome biome = biome_at_cell(terrain, x, y);

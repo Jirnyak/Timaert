@@ -97,10 +97,13 @@ TerrainData make_terrain() {
     for (int y = 0; y < 8; ++y)
         for (int x = 0; x < 8; ++x) {
             const std::size_t i = std::size_t(y) * 8 + x;
-            td.rgba[i * 4 + 0] = 128;              // height 0.50 → land biome
+            // Ряд 0 — ВОДА ВЫСОТОЙ, а не байтом маски (M-109): вода есть
+            // высота ниже плоскости моря карты, и фикстура обязана делать её
+            // так же, как мир, иначе она проверяет спеллинг, а не закон.
+            td.rgba[i * 4 + 0] = (y == 0) ? 40 : 128;  // 40 < плоскость 102
             td.rgba[i * 4 + 1] = 128;              // moisture → Meadow column
             td.rgba[i * 4 + 2] = 128;              // temperature → Meadow row
-            td.rgba[i * 4 + 3] = (y == 0) ? 0 : 255; // row 0 = water
+            td.rgba[i * 4 + 3] = (y == 0) ? 0 : 255; // маска следует за высотой
         }
     td.rgba[((3 * 8) + 3) * 4 + 0] = 250;          // (3,3): mountain elevation
     return td;

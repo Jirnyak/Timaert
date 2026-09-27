@@ -43,7 +43,7 @@ bool cell_occupied(const GameState& gs, int x, int y) {
 } // namespace
 
 void generate_spires(GameState& gs, const ZoneLayer& zones,
-                     const TerrainData& terrain, std::uint8_t seaLevel8) {
+                     const TerrainData& terrain) {
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
         || !zones.has_complete_storage()) {
         return;
@@ -76,7 +76,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
             for (int t = 0; t < kSpireCandidateTries; ++t) {
                 const int x = int(rng.next_u32() % std::uint32_t(gs.mapW));
                 const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
-                if (terrain.is_water(x, y, seaLevel8)) continue;
+                if (terrain.is_water(x, y)) continue;
                 if (int(zones.at(x, y)) < gate) continue;
                 if (cell_occupied(gs, x, y)) continue;
                 int score = gs.mapW + gs.mapH;   // no spires yet: any site wins

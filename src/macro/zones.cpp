@@ -93,21 +93,15 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
                          const std::vector<ZoneSeed>& cities,
                          const std::vector<ZoneSeed>& villages,
                          const FeatureLayer& features,
-                         const std::uint8_t* waterMaskA,
-                         std::size_t waterMaskByteCount,
+                         const TerrainData* terrain,
                          const TreeLayer* treeLayer,
                          std::vector<float>* continuousOut) {
     ZoneLayer zl;
     std::size_t total = 0;
     if (!FeatureLayer::cell_count_for(width, height, total))
         return zl;
-    const std::size_t requiredWaterBytes =
-        total > std::numeric_limits<std::size_t>::max() / 4u
-            ? std::numeric_limits<std::size_t>::max()
-            : total * 4u;
-    const bool hasWaterMask = waterMaskA
-        && requiredWaterBytes != std::numeric_limits<std::size_t>::max()
-        && waterMaskByteCount >= requiredWaterBytes;
+    const bool hasTerrain = terrain && terrain->width == width
+        && terrain->height == height && terrain->has_rgba_storage();
 
     const std::uint8_t *featureData =
         features.covers(width, height) ? features.data.data() : nullptr;
@@ -119,9 +113,9 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     // not a feature. Detect them from the terrain height (red channel) on land
     // cells — water is never a mountain regardless of height.
     auto is_mountain = [&](std::size_t i) -> bool {
-        if (!hasWaterMask) return false;
-        if (waterMaskA[i * 4 + 3] < 128) return false;
-        return float(waterMaskA[i * 4 + 0]) / 255.0f >= kMountainBiomeLevel;
+        if (!hasTerrain) return false;
+        if (terrain->is_water(std::uint32_t(i))) return false;
+        return float(terrain->rgba[i * 4 + 0]) / 255.0f >= kMountainBiomeLevel;
     };
 
 
@@ -222,7 +216,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
                                      / float(kMaxTreesPerCell));
             }
 
-            if (hasWaterMask && waterMaskA[i * 4 + 3] < 128) {
+            if (hasTerrain && terrain->is_water(std::uint32_t(i))) {
                 z += WATER_BOOST;
             }
 

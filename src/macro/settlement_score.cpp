@@ -65,9 +65,7 @@ int water_term(const SettlementSiteContext& ctx, int x, int y) {
             for (int dx = -d; dx <= d; ++dx) {
                 if (std::max(std::abs(dx), std::abs(dy)) != d) continue;
                 const std::uint32_t n = cell_step(at, dx, dy, td.width);
-                if (td.is_water(cell_x(n, td.width), cell_y(n, td.width),
-                                ctx.seaLevel8))
-                    return 32 >> d;
+                if (td.is_water(n)) return 32 >> d;
             }
         }
     }
@@ -125,7 +123,7 @@ SettlementSiteTerms settlement_site_terms(const SettlementSiteContext& ctx,
     // металл мира лежит в горах (affinity MountainHeight), деревень в горах
     // не бывало, и мир не добывал ни железа, ни серебра ВООБЩЕ. Гора теперь
     // просто плохая земля — её отговаривает пашенный терм, а не запрет.
-    if (td.is_water(wx, wy, ctx.seaLevel8)) return t;
+    if (td.is_water(wx, wy)) return t;
     if (ctx.w.trees && is_forest_cell(int(ctx.w.trees->at(wx, wy)))) return t;
 
     t.arable  = arable_term(ctx, wx, wy);
@@ -145,7 +143,7 @@ int settlement_site_score(const SettlementSiteContext& ctx,
     // Vetoes: water and the inside of a forest massif. The mountain veto died
     // 2026-09-18 (see settlement_site_terms above): гора — плохая земля, а не
     // запретная.
-    if (td.is_water(wx, wy, ctx.seaLevel8)) return -1;
+    if (td.is_water(wx, wy)) return -1;
     if (ctx.w.trees && is_forest_cell(int(ctx.w.trees->at(wx, wy)))) return -1;
 
     const SettlementSiteTerms t = settlement_site_terms(ctx, wx, wy);

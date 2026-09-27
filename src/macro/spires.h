@@ -22,6 +22,6 @@ struct ZoneLayer;
 // its gate relaxed down to the table minimum; a world with no admissible land
 // at all simply lacks that spire (logged).
 void generate_spires(GameState& gs, const ZoneLayer& zones,
-                     const TerrainData& terrain, std::uint8_t seaLevel8);
+                     const TerrainData& terrain);
 
 } // namespace sm

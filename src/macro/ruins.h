@@ -24,6 +24,6 @@ struct ZoneLayer;
 // generate_zones (and after the settlement passes, whose cells it avoids).
 // A world with no admissible land simply gets fewer ruins (logged).
 void generate_ruins(GameState& gs, const ZoneLayer& zones,
-                    const TerrainData& terrain, std::uint8_t seaLevel8);
+                    const TerrainData& terrain);
 
 } // namespace sm

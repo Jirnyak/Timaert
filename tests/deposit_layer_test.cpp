@@ -42,6 +42,9 @@ TerrainData make_world() {
     td.height = h;
     td.rgba.assign(std::size_t(w) * h * 4u, 0);
     td.riverData.assign(std::size_t(w) * h, 0);
+    // Плоскость моря — колонка КАРТЫ (M-109): свидетель ставит её сам, ровно
+    // тем же порогом, которым ниже пишет байт маски.
+    td.seaLevel8 = sm::sea_level_byte(0.40f);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const std::size_t s = std::size_t(y * w + x) * 4u;
@@ -60,8 +63,7 @@ TerrainData make_world() {
 
 void test_deposits_obey_the_world() {
     const TerrainData td = make_world();
-    const float seaLevel = 0.4f;
-    const DepositLayer layer = build_deposit_layer(td, 777u, seaLevel);
+    const DepositLayer layer = build_deposit_layer(td, 777u);
 
     CHECK_OR_RETURN(total_cells(layer) > 0, "the little world holds deposits");
 
@@ -72,7 +74,7 @@ void test_deposits_obey_the_world() {
     long long landHeightSum = 0, landCells = 0;
     for (int y = 0; y < td.height; ++y)
         for (int x = 0; x < td.width; ++x)
-            if (!td.is_water(x, y, std::uint8_t(seaLevel * 255.0f))) {
+            if (!td.is_water(x, y)) {
                 landHeightSum += td.height_at(x, y);
                 ++landCells;
             }
@@ -84,8 +86,7 @@ void test_deposits_obey_the_world() {
                 [&](std::uint32_t idx, std::int32_t remaining) {
             const int x = int(idx % std::uint32_t(td.width));
             const int y = int(idx / std::uint32_t(td.width));
-            const bool water =
-                td.is_water(x, y, std::uint8_t(seaLevel * 255.0f));
+            const bool water = td.is_water(x, y);
             affinityHolds = affinityHolds && !water && remaining > 0;
             if (DepositKind(k) == DepositKind::Clay) {
                 bool nearRiver = false;
@@ -133,13 +134,13 @@ void test_deposits_obey_the_world() {
     CHECK(nested, "the field law grows NESTS — adjacent same-kind veins");
 
     // One seed, one geology.
-    const DepositLayer again = build_deposit_layer(td, 777u, seaLevel);
+    const DepositLayer again = build_deposit_layer(td, 777u);
     bool same = true;
     for (int k = 0; k < kDepositKindCount; ++k)
         same = same && again.cells[k] == layer.cells[k];
     CHECK(same, "the same seed derives the same geology");
     // A different seed shuffles the sites.
-    const DepositLayer other = build_deposit_layer(td, 778u, seaLevel);
+    const DepositLayer other = build_deposit_layer(td, 778u);
     bool identical = true;
     for (int k = 0; k < kDepositKindCount; ++k)
         identical = identical && other.cells[k] == layer.cells[k];
@@ -148,7 +149,7 @@ void test_deposits_obey_the_world() {
 
 void test_the_quantity_door_and_the_load_path() {
     const TerrainData td = make_world();
-    DepositLayer layer = build_deposit_layer(td, 777u, 0.4f);
+    DepositLayer layer = build_deposit_layer(td, 777u);
     CHECK_OR_RETURN(layer.grid(DepositKind::Stone).liveCells > 0,
                     "fixture holds stone");
 
@@ -189,7 +190,7 @@ void test_the_quantity_door_and_the_load_path() {
     // The load path (v37/v55): the save carries the live cells AND the
     // annihilation counters whole; restoring onto a virgin derivation
     // reproduces the mutated world — the dead vein stays dead.
-    DepositLayer loaded = build_deposit_layer(td, 777u, 0.4f);
+    DepositLayer loaded = build_deposit_layer(td, 777u);
     restore_deposit_cells(loaded, layer);
     CHECK(loaded.remaining_at(DepositKind::Stone, x, y) == 0,
           "the annihilated vein stays gone through a load");

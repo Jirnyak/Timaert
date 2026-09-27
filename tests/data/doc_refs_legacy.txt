@@ -187,7 +187,6 @@ SKELETON.md	:1023
 SKELETON.md	:1025-1046
 SKELETON.md	:103
 SKELETON.md	:113
-SKELETON.md	:116-119
 SKELETON.md	:1168
 SKELETON.md	:1219-1222
 SKELETON.md	:1235
@@ -320,7 +319,6 @@ SKELETON.md	:478
 SKELETON.md	:4784
 SKELETON.md	:481
 SKELETON.md	:488
-SKELETON.md	:490
 SKELETON.md	:4985
 SKELETON.md	:499
 SKELETON.md	:5007
@@ -363,7 +361,6 @@ SKELETON.md	:705
 SKELETON.md	:719-735
 SKELETON.md	:72
 SKELETON.md	:72-100
-SKELETON.md	:723
 SKELETON.md	:743
 SKELETON.md	:743-756
 SKELETON.md	:745-748
@@ -377,7 +374,6 @@ SKELETON.md	:8070
 SKELETON.md	:81
 SKELETON.md	:849
 SKELETON.md	:88
-SKELETON.md	:89-91
 SKELETON.md	:92-95
 SKELETON.md	:94-104
 SKELETON.md	:9512
@@ -589,9 +585,7 @@ SKELETON.md	macro_stock.cpp:360-363
 SKELETON.md	macro_stock.cpp:407-416
 SKELETON.md	macro_stock.cpp:440
 SKELETON.md	macro_stock.cpp:447
-SKELETON.md	macro_stock.cpp:491-499
 SKELETON.md	macro_stock.cpp:523
-SKELETON.md	macro_stock.cpp:530
 SKELETON.md	macro_stock.cpp:533
 SKELETON.md	macro_stock.cpp:559
 SKELETON.md	macro_stock.cpp:577
@@ -635,11 +629,9 @@ SKELETON.md	map_generator.cpp:716
 SKELETON.md	map_generator.cpp:727
 SKELETON.md	map_generator.h:116-117
 SKELETON.md	map_generator.h:116-119
-SKELETON.md	map_generator.h:120
 SKELETON.md	map_generator.h:21
 SKELETON.md	map_generator.h:36
 SKELETON.md	map_generator.h:38
-SKELETON.md	map_generator.h:89-91
 SKELETON.md	map_screen.cpp:238
 SKELETON.md	material.h:20
 SKELETON.md	material.h:50-58
@@ -724,7 +716,6 @@ SKELETON.md	npc_spawn.cpp:396-399
 SKELETON.md	npc_spawn.cpp:64
 SKELETON.md	npc_spawn.cpp:66
 SKELETON.md	npc_spawn.cpp:79-80
-SKELETON.md	npc_spawn.cpp:82
 SKELETON.md	optics.h:141-144
 SKELETON.md	optics.h:142-143
 SKELETON.md	overlays.cpp:2113-2120
@@ -818,13 +809,10 @@ SKELETON.md	spawn.cpp:1239-1256
 SKELETON.md	spawn.cpp:1425-1447
 SKELETON.md	spawn.cpp:520
 SKELETON.md	spawn.cpp:599-601
-SKELETON.md	spawners.cpp:138
 SKELETON.md	spawners.cpp:162
 SKELETON.md	spawners.cpp:210
 SKELETON.md	spawners.cpp:222-241
 SKELETON.md	spawners.cpp:231
-SKELETON.md	spawners.cpp:253
-SKELETON.md	spawners.cpp:263
 SKELETON.md	spawners.cpp:313
 SKELETON.md	spawners.cpp:372-386
 SKELETON.md	spawners.cpp:400-446
@@ -834,13 +822,9 @@ SKELETON.md	spawners.cpp:533
 SKELETON.md	spawners.cpp:545
 SKELETON.md	spawners.cpp:585-589
 SKELETON.md	spawners.cpp:609
-SKELETON.md	spawners.cpp:631-635
 SKELETON.md	spawners.cpp:651-662
 SKELETON.md	spawners.cpp:675-679
 SKELETON.md	spawners.cpp:681
-SKELETON.md	spawners.cpp:700-735
-SKELETON.md	spawners.cpp:733
-SKELETON.md	spawners.h:150
 SKELETON.md	spell_effects.cpp:111
 SKELETON.md	spell_effects.cpp:127-129
 SKELETON.md	spell_effects.cpp:151
@@ -967,7 +951,6 @@ SKELETON.md	threat_field.cpp:21
 SKELETON.md	threat_field.cpp:65
 SKELETON.md	threat_field.cpp:92-94
 SKELETON.md	threat_field.h:55
-SKELETON.md	tree_layer.cpp:23-24
 SKELETON.md	tree_layer.cpp:34
 SKELETON.md	tree_layer.cpp:43-54
 SKELETON.md	tree_layer.cpp:45-47
@@ -1027,7 +1010,6 @@ SKELETON.md	world_tick.cpp:639
 SKELETON.md	world_tick.cpp:74
 SKELETON.md	world_tick.cpp:87
 SKELETON.md	world_tick.h:97-114
-SKELETON.md	zones.cpp:123
 SKELETON.md	zones.cpp:139-166
 SKELETON.md	zones.cpp:159-160
 SKELETON.md	zones.cpp:185
@@ -1360,7 +1342,6 @@ macro-registry.md	attributes.h:612
 macro-registry.md	balance_run.cpp:275
 macro-registry.md	balance_run.cpp:279
 macro-registry.md	balance_run.cpp:473
-macro-registry.md	base_generator.h:35
 macro-registry.md	behaviour.h:28
 macro-registry.md	characters.h:114
 macro-registry.md	chronicle.cpp:61
@@ -1448,7 +1429,6 @@ macro-registry.md	macro_stock.cpp:263-278
 macro-registry.md	macro_stock.cpp:264
 macro-registry.md	macro_stock.cpp:407-416
 macro-registry.md	macro_stock.cpp:476
-macro-registry.md	macro_stock.cpp:481-521
 macro-registry.md	macro_stock.cpp:610-680
 macro-registry.md	macro_stock.cpp:723
 macro-registry.md	main.cpp:130
@@ -1458,7 +1438,6 @@ macro-registry.md	main.cpp:4238-4270
 macro-registry.md	main.cpp:4268
 macro-registry.md	main.cpp:5697
 macro-registry.md	main.cpp:758-761
-macro-registry.md	main.cpp:775
 macro-registry.md	map_generator.cpp:683
 macro-registry.md	map_generator.cpp:736
 macro-registry.md	map_screen.cpp:150
@@ -1540,8 +1519,6 @@ macro-registry.md	smoke.cpp:3486
 macro-registry.md	smoke.cpp:6584
 macro-registry.md	smoke.cpp:6677
 macro-registry.md	smoke.cpp:7868
-macro-registry.md	spawners.cpp:700-738
-macro-registry.md	spawners.h:27
 macro-registry.md	spell_book_state.h:35-44
 macro-registry.md	spire.cpp:128
 macro-registry.md	squad.h:189

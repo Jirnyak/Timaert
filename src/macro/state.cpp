@@ -123,7 +123,6 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 // All deterministic via `gs.worldSeed`. Idempotent: clears prior lists.
 void populate_landmarks_from_politik(GameState& gs,
                                      const TerrainData& terrain,
-                                     std::uint8_t seaLevel8,
                                      TreeLayer& trees,
                                      DepositLayer& deposits) {
     gs.landmarks.clear();
@@ -229,14 +228,12 @@ void populate_landmarks_from_politik(GameState& gs,
     site.w.trees   = &trees;
     site.w.terrain = &terrain;
     site.w.deposits = &deposits;
-    site.seaLevel8 = seaLevel8;
     // The deposit-reach field: the score sees what the crews mine (v71).
     const std::vector<std::uint16_t> depositReach =
         build_deposit_reach_field(deposits, gs.mapW, gs.mapH);
     site.depositReach = depositReach.empty() ? nullptr
                                              : depositReach.data();
-    const int spacing = derive_city_spacing(&terrain, seaLevel8,
-                                            gs.mapW, gs.mapH,
+    const int spacing = derive_city_spacing(&terrain, gs.mapW, gs.mapH,
                                             int(cities.size()));
     const int reach = std::max(4, spacing / 2);
 

@@ -110,7 +110,7 @@ inline std::uint16_t faction_index_for_cell(const Politik& politik,
 // by a subsampled scan (every 4th cell); a null/mismatched terrain
 // counts the whole map as land.
 struct TerrainData;
-int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
+int derive_city_spacing(const TerrainData* terrain,
                         int mapW, int mapH, int totalCities);
 
 // Place capitals and scatter realm cities, build MST + extra inter-realm
@@ -130,21 +130,19 @@ int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
 struct SettlementSiteContext;
 Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                         const TerrainData* terrain = nullptr,
-                        std::uint8_t seaLevel8 = 0,
                         int targetTotalCities = 0,
                         const SettlementSiteContext* site = nullptr);
 
 // Belt-and-suspenders: nudge any city left on water onto the nearest land
 // cell. Becomes mostly a no-op when `generate_politik` is called with a
 // terrain pointer (cities are then placed on land directly).
-void snap_cities_to_land(Politik& p, const TerrainData& td,
-                         std::uint8_t seaLevel8, int radius = 80);
+void snap_cities_to_land(Politik& p, const TerrainData& td, int radius = 80);
 
 // Phase-2: rebuild `cellOwner` via multi-source 4-neighbour BFS over land
 // cells. Each city is a seed; the first wave to reach a cell claims it.
 // Waves cannot cross water — territories are bounded by coastlines.
 // Mirrors politik.ts buildCellOwnership(). Optionally also lake-snaps any
 // realm whose seed def has `capital_requires_lake` (currently Lake Duchy).
-void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8);
+void finalize_politik(Politik& p, const TerrainData& td);
 
 } // namespace sm

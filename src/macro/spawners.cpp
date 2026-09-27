@@ -120,7 +120,6 @@ namespace sm
         // a falsely joined pair just fails its search and is stripped, while
         // a falsely SPLIT pair would lose its road with no appeal.
         std::vector<int> build_land_components(const TerrainData &td,
-                                               float seaLevel,
                                                const std::vector<std::uint8_t>
                                                    *waterCrossAxes = nullptr)
         {
@@ -135,7 +134,7 @@ namespace sm
 
             const auto enterable = [&](std::size_t k)
             {
-                if (float(td.rgba[k * 4 + 0]) / 255.0f >= seaLevel)
+                if (!td.is_water(std::uint32_t(k)))
                     return true; // land walks
                 return waterCrossAxes && (*waterCrossAxes)[k] != 0u; // spans join
             };
@@ -146,7 +145,7 @@ namespace sm
                 // Components SEED on land only: a bridgeable cell joins
                 // shores, it is not a shore.
                 if (component[std::size_t(start)] >= 0 ||
-                    float(td.rgba[std::size_t(start) * 4 + 0]) / 255.0f < seaLevel)
+                    td.is_water(std::uint32_t(start)))
                     continue;
 
                 queue.clear();
@@ -207,9 +206,12 @@ namespace sm
 
     } // namespace
 
-    std::vector<TreePoint> spawn_trees(const TerrainData &td, std::uint32_t seed,
-                                       float seaLevel)
+    std::vector<TreePoint> spawn_trees(const TerrainData &td, std::uint32_t seed)
     {
+        // БЕРЕГОВАЯ ПОЛОСА — вопрос НЕ «вода ли», а «высоко ли над морем»,
+        // поэтому здесь плоскость нужна величиной, а не предикатом: берём её
+        // у карты и переводим один раз (ниже `h < seaLevel + 0.03f`).
+        const float seaLevel = float(td.seaLevel8) / 255.0f;
         const int mw = td.width;
         const int mh = td.height;
         std::vector<TreePoint> out;
@@ -249,8 +251,9 @@ namespace sm
             {
                 const std::size_t idx = std::size_t(y) * std::size_t(mw) + std::size_t(x);
 
-                // Hard exclusion: water (mask channel A == 0).
-                if (td.rgba[idx * 4 + 3] == 0)
+                // Единственный запрет мира — вода, и отвечает на неё дверь
+                // карты (здесь читалась маска A == 0, M-109).
+                if (td.is_water(std::uint32_t(idx)))
                     continue;
                 if (!riverExclude.empty() && riverExclude[idx] > 0)
                     continue;
@@ -312,7 +315,6 @@ namespace sm
     // which land as FT_Bridge (build_feature_layer).
     std::vector<std::uint8_t> trace_roads(const TerrainData &td, Politik &P,
                                           RoadTraceStats *stats,
-                                          float seaLevel,
                                           const TreeLayer *treeLayer)
     {
         const int W = td.width, H = td.height;
@@ -377,7 +379,7 @@ namespace sm
                 cg.costGrid[i] = kRoadWaterReject;
         }
         const std::vector<int> landComponent =
-            build_land_components(td, seaLevel, &waterAxes);
+            build_land_components(td, &waterAxes);
 
         for (const City &c : P.cities)
             cg.costGrid[cell_of(c.x, c.y, W)] = kRoadShare;
@@ -485,7 +487,6 @@ namespace sm
                          const std::vector<VillageRoadSite> &villages,
                          const std::vector<RoadSite> &landmarks,
                          int landmarkReach,
-                         float seaLevel,
                          const TreeLayer *treeLayer)
     {
         const std::size_t totalCells = td.cell_count();
@@ -517,7 +518,7 @@ namespace sm
                 cg.costGrid[i] = kRoadWaterReject;
         }
         const std::vector<int> landComponent =
-            build_land_components(td, seaLevel, &waterAxes);
+            build_land_components(td, &waterAxes);
         const int maxSteps = road_search_max_steps(totalCells);
         PathScratch scratch;
 
@@ -608,8 +609,7 @@ namespace sm
 
     FeatureLayer build_feature_layer(const TerrainData &td,
                                      const std::vector<std::uint8_t> &roadMask,
-                                     const std::vector<std::uint8_t> *dirtMask,
-                                     float seaLevel)
+                                     const std::vector<std::uint8_t> *dirtMask)
     {
         FeatureLayer fl;
         std::size_t total = 0;
@@ -628,20 +628,16 @@ namespace sm
         const std::size_t dirtMaskLimit = dirtMask
             ? std::min(dirtMask->size(), total)
             : 0u;
+        // ЗДЕСЬ БЫЛО ДВА ПРЕДИКАТА ВОДЫ — «маска ИЛИ float-высота» и
+        // «только маска», — и шапка второго объясняла разницу «полосой
+        // несогласия берега». Полоса была не миром, а РАЗНИЦЕЙ ДВУХ
+        // СПЕЛЛИНГОВ одного порога (округление float против байта): маску
+        // генератор пишет тем же порогом, что и `is_water`. Один вопрос —
+        // одна дверь: мокрая клетка под дорогой ЕСТЬ пролёт (FT_Bridge),
+        // сухая — полотно.
         auto is_water = [&](std::size_t idx)
         {
-            return td.rgba[idx * 4u + 3] == 0
-                || float(td.rgba[idx * 4u + 0]) / 255.0f < seaLevel;
-        };
-        // Biome water — THE baked land mask (biome_at_cell's own answer, the
-        // exact cells the planner priced as water). A road path only ever
-        // stands on such a cell by PAYING the bridgeable-water price, so a
-        // wet masked cell IS a span: it stamps FT_Bridge. The broader
-        // is_water above (mask OR raw height) keeps its old job — the
-        // coast's height/mask disagreement strip still gets no feature.
-        auto is_biome_water = [&](std::size_t idx)
-        {
-            return td.rgba[idx * 4u + 3] == 0;
+            return td.is_water(std::uint32_t(idx));
         };
         // The feature layer carries only MAN-MADE structures: dirt roads,
         // then roads (last-writer-wins), bridges where either crossed water.
@@ -654,9 +650,9 @@ namespace sm
             {
                 if (!(*dirtMask)[i])
                     continue;
-                if (is_biome_water(i))
+                if (is_water(i))
                     fl.data[i] = FT_Bridge; // every bridge is stone (owner)
-                else if (!is_water(i))
+                else
                     fl.data[i] = FT_DirtRoad;
             }
         }
@@ -664,9 +660,9 @@ namespace sm
         {
             if (!roadMask[i])
                 continue;
-            if (is_biome_water(i))
+            if (is_water(i))
                 fl.data[i] = FT_Bridge;
-            else if (!is_water(i))
+            else
                 fl.data[i] = FT_Road;
         }
         return fl;
@@ -679,8 +675,7 @@ namespace sm
     // same link seam that keeps world_tick's tests off this file.
 
     void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
-                              const std::vector<FieldSite>& villages,
-                              float seaLevel)
+                              const std::vector<FieldSite>& villages)
     {
         std::size_t total = 0;
         if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
@@ -694,7 +689,7 @@ namespace sm
 
         const int w = fl.width;
         auto cell_ok = [&](int x, int y, int& wheatOut) {
-            return plough_cell_ok(fl, world, x, y, wheatOut, seaLevel);
+            return plough_cell_ok(fl, world, x, y, wheatOut);
         };
 
         for (const FieldSite& v : villages) {

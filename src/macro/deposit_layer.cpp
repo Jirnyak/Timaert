@@ -127,7 +127,7 @@ void allocate_deposit_fields(DepositLayer& layer, int width, int height) {
 // сохранённое текущее число. Второе поле ёмкости стоило бы 25 МиБ и не купило
 // бы ничего.
 std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
-                               float seaLevel, DepositKind kind, int x, int y) {
+                               DepositKind kind, int x, int y) {
     if (terrain.width <= 0 || terrain.height <= 0
         || !terrain.has_rgba_storage()) {
         return 0;
@@ -136,8 +136,11 @@ std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
     // аппаратным делением на пути сезонного ходока.
     const int wx = wrap_axis(x, terrain.width);
     const int wy = wrap_axis(y, terrain.height);
-    const std::uint8_t sea8 = std::uint8_t(seaLevel * 255.0f);
-    if (terrain.is_water(wx, wy, sea8)) return 0;
+    // Уровень моря НЕ ПАРАМЕТР этой двери: плоскость одна на мир и её несёт
+    // сама карта (`TerrainData::seaLevel8`). Здесь стоял четвёртый рукописный
+    // перевод float→байт `uint8_t(seaLevel * 255.0f)` — усечением, тогда как
+    // генератор врезал море по `floor`.
+    if (terrain.is_water(wx, wy)) return 0;
     const DepositGenRow& g = kDepositGen[std::size_t(kind)];
     // The terrain WEIGHT (never a gate): metals ride height⁴ — mountains ~1,
     // plains vanishing but legal; clay rides the river-wetted lowland.
@@ -176,12 +179,11 @@ std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
 }
 
 DepositLayer build_deposit_layer(const TerrainData& terrain,
-                                 std::uint32_t seed, float seaLevel) {
+                                 std::uint32_t seed) {
     DepositLayer layer;
     layer.width = terrain.width;
     layer.height = terrain.height;
     layer.birthSeed = seed;
-    layer.birthSeaLevel = seaLevel;
     allocate_deposit_fields(layer, terrain.width, terrain.height);
     if (terrain.width <= 0 || terrain.height <= 0
         || !terrain.has_rgba_storage()) {
@@ -193,7 +195,7 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
         for (int x = 0; x < terrain.width; ++x) {
             for (int k = 0; k < kDepositKindCount; ++k) {
                 const std::int32_t amount = deposit_virgin_at(
-                    terrain, seed, seaLevel, DepositKind(k), x, y);
+                    terrain, seed, DepositKind(k), x, y);
                 if (amount <= 0) continue;
                 layer.cells[std::size_t(k)].write(x, y, amount);
                 layer.virginUnits[std::size_t(k)] += amount;

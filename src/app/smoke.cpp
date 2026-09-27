@@ -1447,11 +1447,10 @@ bool smoke_cell_is_land(const sm::TerrainData& terrain, int x, int y) {
     if (!terrain.has_rgba_storage() || terrain.width <= 0 || terrain.height <= 0) {
         return false;
     }
-    const int wx = sm::wrapi(x, terrain.width);
-    const int wy = sm::wrapi(y, terrain.height);
-    const std::size_t idx =
-        (std::size_t(wy) * std::size_t(terrain.width) + std::size_t(wx)) * 4u;
-    return idx + 3u < terrain.rgba.size() && terrain.rgba[idx + 3u] != 0u;
+    // Суша — ОДНА дверь мира (M-109): здесь стоял байт маски A и своя пара
+    // свёрток координат, то есть восьмой спеллинг «вода ли клетка» — в
+    // харнессе, который этим же вопросом судит игру.
+    return !terrain.is_water(x, y);
 }
 
 bool smoke_find_danger_land_cell(const App& app, int& outX, int& outY) {
@@ -3103,12 +3102,8 @@ bool run_dungeon_cave_smoke(App& app) {
     bool haveMouth = false;
     for (int cy = 0; cy < app.gs.mapH && mouths == 0; cy += 7) {
         for (int cx = 0; cx < app.gs.mapW && mouths == 0; cx += 7) {
-            const std::size_t midx =
-                (std::size_t(cy) * std::size_t(app.terrain.width)
-                 + std::size_t(cx)) * 4u;
-            if (midx + 3u >= app.terrain.rgba.size()) continue;
-            if (app.terrain.rgba[midx + 3u] < 128) continue;   // sea
-            if (float(app.terrain.rgba[midx + 0u]) / 255.0f
+            if (app.terrain.is_water(cx, cy)) continue;        // sea
+            if (float(app.terrain.height_at(cx, cy)) / 255.0f
                 < sm::kMountainBiomeLevel) continue;
             ++tried;
             if (tried > 24) break;                             // bounded hunt
@@ -6428,12 +6423,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 for (int y = 0; y < app.gs.mapH; ++y) {
                     for (int x = 0; x < app.gs.mapW; ++x) {
                         // Mountain biome = land cell at elevation ≥ level.
-                        const std::size_t midx =
-                            (std::size_t(y) * std::size_t(app.terrain.width)
-                             + std::size_t(x)) * 4u;
-                        if (midx + 3u >= app.terrain.rgba.size()) continue;
-                        if (app.terrain.rgba[midx + 3u] < 128) continue;
-                        if (float(app.terrain.rgba[midx + 0u]) / 255.0f
+                        if (app.terrain.is_water(x, y)) continue;
+                        if (float(app.terrain.height_at(x, y)) / 255.0f
                             < sm::kMountainBiomeLevel) continue;
                         const long dx = x - pcx, dy = y - pcy;
                         const long d = dx * dx + dy * dy;
@@ -6456,11 +6447,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 auto isLand = [&](int x, int y) {
                     if (x < 0 || y < 0 || x >= app.gs.mapW || y >= app.gs.mapH)
                         return true;  // off-map: treat as land (no relocate)
-                    const std::size_t midx =
-                        (std::size_t(y) * std::size_t(app.terrain.width)
-                         + std::size_t(x)) * 4u;
-                    if (midx + 3u >= app.terrain.rgba.size()) return true;
-                    return app.terrain.rgba[midx + 3u] >= 128;
+                    return !app.terrain.is_water(x, y);
                 };
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;

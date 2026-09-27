@@ -39,6 +39,7 @@ TerrainData make_terrain() {
     t.height = kH;
     t.rgba.assign(std::size_t(kW) * kH * 4u, 128);
     t.riverData.assign(std::size_t(kW) * kH, 0);
+    t.seaLevel8 = sm::sea_level_byte(0.40f);   // плоскость моря — у карты
     for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < kW; ++x) {
             const std::size_t s = std::size_t(y * kW + x) * 4u;
@@ -185,7 +186,7 @@ void test_iron_is_born_where_scarce() {
     gs.mapH = kH;
     gs.worldSeed = 12345u;
     const TerrainData td = make_terrain();
-    DepositLayer deposits = build_deposit_layer(td, gs.worldSeed, 0.4f);
+    DepositLayer deposits = build_deposit_layer(td, gs.worldSeed);
     const auto ironCells = [&] {
         return std::size_t(deposits.grid(DepositKind::Iron).liveCells);
     };
@@ -240,7 +241,6 @@ void test_iron_is_born_where_scarce() {
             const int x = deposits.grid(DepositKind::Iron).x_of(idx);
             const int y = deposits.grid(DepositKind::Iron).y_of(idx);
             if (rem > deposit_virgin_at(td, deposits.birthSeed,
-                                        deposits.birthSeaLevel,
                                         DepositKind::Iron, x, y)) {
                 overCap = true;
             }
@@ -274,7 +274,7 @@ void test_iron_is_born_where_scarce() {
     gs2.mapW = kW;
     gs2.mapH = kH;
     gs2.worldSeed = 12345u;
-    DepositLayer deposits2 = build_deposit_layer(td, gs2.worldSeed, 0.4f);
+    DepositLayer deposits2 = build_deposit_layer(td, gs2.worldSeed);
     MacroWorld w2{.gs = &gs2, .terrain = &td, .deposits = &deposits2};
     for (const std::uint32_t idx : veins) {
         resource_field_apply(w2, ResourceFieldId::Iron,

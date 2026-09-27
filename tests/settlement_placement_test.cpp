@@ -53,7 +53,9 @@ constexpr int   kSeaCols = 4;             // было 6 из 96
 constexpr int   kMountainRow = 53;        // было 80 из 96 (16.7 % рядов)
 constexpr int   kRiverCol = 27;           // было 40 из 96
 constexpr float kSeaLevel = 0.4f;
-constexpr std::uint8_t kSeaLevel8 = std::uint8_t(kSeaLevel * 255.0f);
+// Порог в байтах — ТОЙ ЖЕ дверью, что у мира (M-109): рукописное
+// `uint8_t(kSeaLevel * 255.0f)` было пятой копией перевода float→байт.
+constexpr std::uint8_t kSeaLevel8 = sea_level_byte(kSeaLevel);
 
 // A little world with an honest gradient of worth: sea on the left, a river
 // column at x=40 wrapped in a moisture bloom (the lush belt), mountains at
@@ -65,6 +67,7 @@ TerrainData make_world() {
     td.height = kH;
     td.rgba.assign(std::size_t(kW) * kH * 4u, 0);
     td.riverData.assign(std::size_t(kW) * kH, 0);
+    td.seaLevel8 = kSeaLevel8;   // плоскость моря — колонка карты
     for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < kW; ++x) {
             const std::size_t s = std::size_t(y * kW + x) * 4u;
@@ -107,7 +110,7 @@ void make_settled_world(World& w) {
         for (int x = 52; x < 58; ++x)
             mask[std::size_t(y) * kW + x] = 1;
     w.trees = build_tree_layer(w.td, mask.data(), mask.size());
-    w.deposits = build_deposit_layer(w.td, 777u, kSeaLevel);
+    w.deposits = build_deposit_layer(w.td, 777u);
 
     w.gs.worldSeed = 777u;
     w.gs.mapW = kW;
@@ -124,8 +127,7 @@ void make_settled_world(World& w) {
     w.gs.politik.cities.push_back(a);
     w.gs.politik.cities.push_back(b);
 
-    populate_landmarks_from_politik(w.gs, w.td, kSeaLevel8,
-                                    w.trees, w.deposits);
+    populate_landmarks_from_politik(w.gs, w.td, w.trees, w.deposits);
 }
 
 // The village/city rows of the ONE roster, in creation order (v62).
@@ -148,7 +150,6 @@ SettlementSiteContext site_ctx(World& w) {
     ctx.w.trees    = &w.trees;
     ctx.w.terrain  = &w.td;
     ctx.w.deposits = &w.deposits;
-    ctx.seaLevel8  = kSeaLevel8;
     if (w.depositReach.empty())
         w.depositReach = build_deposit_reach_field(w.deposits, kW, kH);
     ctx.depositReach = w.depositReach.empty() ? nullptr
@@ -161,7 +162,7 @@ SettlementSiteContext site_ctx(World& w) {
 // shipping scan: same spacing law, same annulus.
 std::vector<int> hinterland_scores(World& w, const City& c) {
     SettlementSiteContext ctx = site_ctx(w);
-    const int spacing = derive_city_spacing(&w.td, kSeaLevel8, kW, kH,
+    const int spacing = derive_city_spacing(&w.td, kW, kH,
                                             int(w.gs.politik.cities.size()));
     const int reach = std::max(4, spacing / 2);
     std::vector<int> scores;
@@ -187,7 +188,7 @@ void test_vetoes_hold() {
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     for (const auto* vp : villages) {
         const auto& v = *vp;
-        CHECK(!w.td.is_water(v.x, v.y, kSeaLevel8), "no village on water");
+        CHECK(!w.td.is_water(v.x, v.y), "no village on water");
         // НАХОДКА 2026-09-23, И ОНА НЕ ПРО ЭТОТ ТЕСТ. Свойство «деревня не
         // на скале» мир НЕ ГАРАНТИРУЕТ: вето на гору в расселении нет, камень
         // просто плохо пахнет скору. На мире 96×96 этого хватало; когда мир
@@ -254,7 +255,7 @@ void test_roulette_is_red() {
         const int   dist = 4 + int(rng.next_u32() % 11u);
         const int   x = wrapi(c.x + int(std::cos(ang) * float(dist)), kW);
         const int   y = wrapi(c.y + int(std::sin(ang) * float(dist)), kH);
-        if (w.td.is_water(x, y, kSeaLevel8)) continue;
+        if (w.td.is_water(x, y)) continue;
         const SettlementSiteTerms t = settlement_site_terms(ctx, x, y);
         if (t.arable < kVillageArableGate
             && t.deposit < kVillageDepositGate)
@@ -367,7 +368,7 @@ void test_villages_stand_next_to_something() {
                 if (dx == 0 && dy == 0) continue;
                 const int x = wrapi(v.x + dx, kW);
                 const int y = wrapi(v.y + dy, kH);
-                if (!w.td.is_water(x, y, kSeaLevel8)
+                if (!w.td.is_water(x, y)
                     && int(w.td.moisture_at(x, y)) >= int(kFieldMoistureMin))
                     found = true;
                 if (int(w.trees.at(x, y)) >= 4096) found = true;
@@ -408,17 +409,17 @@ void test_cities_read_the_ground() {
     w.td = make_world();
     std::vector<std::uint8_t> mask(std::size_t(kW) * kH, 0);
     w.trees = build_tree_layer(w.td, mask.data(), mask.size());
-    w.deposits = build_deposit_layer(w.td, 777u, kSeaLevel);
+    w.deposits = build_deposit_layer(w.td, 777u);
     w.gs.worldSeed = 777u;
     w.gs.mapW = kW;
     w.gs.mapH = kH;
     SettlementSiteContext ctx = site_ctx(w);
 
-    const Politik scored = generate_politik(777u, kW, kH, &w.td, kSeaLevel8,
+    const Politik scored = generate_politik(777u, kW, kH, &w.td,
                                             12, &ctx);
     CHECK_OR_RETURN(!scored.cities.empty(), "the world holds cities");
     for (const auto& c : scored.cities) {
-        CHECK(!w.td.is_water(c.x, c.y, kSeaLevel8), "no city on water");
+        CHECK(!w.td.is_water(c.x, c.y), "no city on water");
         const int score = settlement_site_score(
             ctx, SettlementScoreRow::City, c.x, c.y);
         const bool isCapital = c.isCapital;
@@ -429,14 +430,14 @@ void test_cities_read_the_ground() {
 
     // The control: the same politics WITHOUT the score (the old first-valid
     // law) settles on measurably poorer ground.
-    const Politik blind = generate_politik(777u, kW, kH, &w.td, kSeaLevel8,
+    const Politik blind = generate_politik(777u, kW, kH, &w.td,
                                            12, nullptr);
     CHECK(mean_city_score_x100(w, scored) > mean_city_score_x100(w, blind),
           "scored placement stands cities on better ground than the blind "
           "first-valid law");
 
     // One seed, one politics.
-    const Politik again = generate_politik(777u, kW, kH, &w.td, kSeaLevel8,
+    const Politik again = generate_politik(777u, kW, kH, &w.td,
                                            12, &ctx);
     CHECK_OR_RETURN(again.cities.size() == scored.cities.size(),
                     "two runs raise the same number of cities");

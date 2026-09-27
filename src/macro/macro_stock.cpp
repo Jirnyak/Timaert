@@ -225,8 +225,7 @@ void deposit_apply(MacroWorld& w, int x, int y, int delta) {
     // умеет тратить и не умеет надувать. Fail-closed на приход, fail-open на
     // расход — иначе добыча молча переставала работать там, где терраина нет.
     const int cap = w.terrain
-        ? int(deposit_virgin_at(*w.terrain, w.deposits->birthSeed,
-                                w.deposits->birthSeaLevel, K, x, y))
+        ? int(deposit_virgin_at(*w.terrain, w.deposits->birthSeed, K, x, y))
         : int(r);
     if (cap <= 0) return;   // здесь геологии нет — добыча её не изобретает
     const std::int32_t next = std::int32_t(std::clamp(int(r) + delta, 0, cap));
@@ -349,8 +348,7 @@ int horses_growth_at(const MacroWorld& w, int x, int y) {
 template <DepositKind K>
 int vein_baseline(const MacroWorld& w, int x, int y) {
     if (!w.terrain || !w.deposits) return 0;
-    return int(deposit_virgin_at(*w.terrain, w.deposits->birthSeed,
-                                 w.deposits->birthSeaLevel, K, x, y));
+    return int(deposit_virgin_at(*w.terrain, w.deposits->birthSeed, K, x, y));
 }
 
 // СКОЛЬКО ПОРОДЫ ВОЗВРАЩАЕТСЯ ЗА СЕЗОННЫЙ ВИЗИТ — ровно тем же числом, каким
@@ -480,8 +478,7 @@ int field_wheat_min() {
 // win, water refuses, no rock terraces): what differs between a field and
 // a pasture is only WHICH row's fertility bars the gate, never the ground.
 static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
-                              int x, int y, float seaLevel,
-                              std::size_t& idxOut) {
+                              int x, int y, std::size_t& idxOut) {
     std::size_t total = 0;
     if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
         || fl.data.size() < total || !world.terrain)
@@ -495,14 +492,14 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
     const std::size_t idx =
         std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx);
     if (fl.data[idx] != FT_None) return false;  // roads win
-    const std::uint8_t alpha = td.rgba[idx * 4u + 3];
-    const float height01 = float(td.rgba[idx * 4u + 0]) / 255.0f;
     // ЕДИНСТВЕННЫЙ ЗАПРЕТ МИРА — ВОДА (владелец, 2026-09-23, дословно:
     // «никаких запретов в расселении у нас подход через веса проходимости
     // единая система (дорога дешевле всего горы и вода дороже всего) и НА
     // ВОДУ НЕЛЬЗЯ В ОСТАЛЬНЫХ МЕСТАХ МОЖНО, поля тоже не запрет а ПО
     // ФЕРТИЛЬНОСТИ СМОТРИМ»).
-    if (alpha == 0 || height01 < seaLevel) return false;
+    // Спрашивается он ОДНОЙ дверью карты: здесь стояло «маска ИЛИ float-
+    // высота» — два спеллинга одного порога в одном условии (M-109).
+    if (td.is_water(std::uint32_t(idx))) return false;
     // ЗДЕСЬ СТОЯЛ ВТОРОЙ ЗАПРЕТ: `height01 >= kMountainBiomeLevel` — «no rock
     // terraces». Он снят вердиктом выше, и снят БЕЗ ЗАМЕНЫ: камень отсеивает
     // не запрет, а ГЕЙТ ФЕРТИЛЬНОСТИ у звонящего (`plough_cell_ok`:
@@ -516,10 +513,10 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
 }
 
 bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
-                    int x, int y, int& wheatOut, float seaLevel)
+                    int x, int y, int& wheatOut)
 {
     std::size_t idx = 0;
-    if (!parcel_ground_ok_(fl, world, x, y, seaLevel, idx)) return false;
+    if (!parcel_ground_ok_(fl, world, x, y, idx)) return false;
     // The ONE fertility door: potential minus what play has taken.
     wheatOut = resource_field_read(world, ResourceFieldId::Wheat,
                                    FeatureLayer::wrap_coord(x, fl.width),
@@ -528,13 +525,13 @@ bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
 }
 
 bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
-                       int x, int y, float seaLevel, FeatureType parcel)
+                       int x, int y, FeatureType parcel)
 {
     // ЧЕМ ЗАСЕЯНО — КОЛОНКА ФИЧИ, А НЕ ВТОРАЯ ДВЕРЬ (2026-09-20): земля,
     // проверка и цена у хлебной и льняной парцеллы одни и те же, поэтому
     // вспашка одна, а вид парцеллы — её аргумент.
     int wheat = 0;
-    if (!plough_cell_ok(fl, world, x, y, wheat, seaLevel)) return false;
+    if (!plough_cell_ok(fl, world, x, y, wheat)) return false;
     const int wx = FeatureLayer::wrap_coord(x, fl.width);
     const int wy = FeatureLayer::wrap_coord(y, fl.height);
     fl.data[std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx)] =
@@ -543,12 +540,12 @@ bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
 }
 
 bool pasture_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
-                     int x, int y, int& herdOut, float seaLevel)
+                     int x, int y, int& herdOut)
 {
     // The plough's own ground gates; the bar is the HERD row's — one head
     // must actually graze here, or the fence would enclose dust.
     std::size_t idx = 0;
-    if (!parcel_ground_ok_(fl, world, x, y, seaLevel, idx)) return false;
+    if (!parcel_ground_ok_(fl, world, x, y, idx)) return false;
     herdOut = resource_field_read(world, ResourceFieldId::Horses,
                                   FeatureLayer::wrap_coord(x, fl.width),
                                   FeatureLayer::wrap_coord(y, fl.height));
@@ -556,10 +553,10 @@ bool pasture_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
 }
 
 bool fence_pasture_cell(FeatureLayer& fl, const MacroWorld& world,
-                        int x, int y, float seaLevel)
+                        int x, int y)
 {
     int herd = 0;
-    if (!pasture_cell_ok(fl, world, x, y, herd, seaLevel)) return false;
+    if (!pasture_cell_ok(fl, world, x, y, herd)) return false;
     const int wx = FeatureLayer::wrap_coord(x, fl.width);
     const int wy = FeatureLayer::wrap_coord(y, fl.height);
     fl.data[std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx)] =
