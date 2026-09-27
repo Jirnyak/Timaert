@@ -1441,7 +1441,6 @@ macro-registry.md	main.cpp:758-761
 macro-registry.md	map_generator.cpp:683
 macro-registry.md	map_generator.cpp:736
 macro-registry.md	map_screen.cpp:150
-macro-registry.md	mesh.frag:421
 macro-registry.md	nav_field.cpp:552
 macro-registry.md	nav_field.h:202
 macro-registry.md	npc.h:1199
