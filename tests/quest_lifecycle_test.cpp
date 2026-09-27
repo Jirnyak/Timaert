@@ -332,6 +332,10 @@ void test_effect_applicator_ts_verbs() {
     verbPools.maxSp = 40;
 
     std::vector<sm::GameEvent> events;
+    // НЕГАТИВНЫЙ КОНТРОЛЬ ВЫДАЧИ (M-139, вердикт владельца 2026-09-26):
+    // положительная дельта золота НИЧЕГО не выдаёт — монет из воздуха больше
+    // нет. Прежде эта же строка проверяла, что +5 печатает медь; теперь она
+    // краснеет ровно тогда, когда выдачу вернули.
     sm::GameEvent gold{sm::EventTag::PlayerGoldChange};
     gold.ix = 5;
     events.push_back(gold);
@@ -421,6 +425,24 @@ void test_effect_applicator_ts_verbs() {
     // number (owner's ruling; the event verb spends what the wallet holds).
     CHECK_OR_RETURN(!(sm::inventory_value(bag) != 0),
         "PlayerGoldChange did not drain the wallet");
+    // НЕГАТИВНЫЙ КОНТРОЛЬ, КОТОРЫЙ РЕАЛЬНО ПАДАЕТ ПРИ ВОЗВРАТЕ ВЫДАЧИ
+    // (§8 п.6): один положительный ивент на отдельный кошелёк и ни одного
+    // вычитания рядом — стоимость обязана остаться той же до монеты.
+    {
+        sm::Inventory purse;
+        purse.add("coin_empire_copper", 4);
+        const int before = sm::inventory_value(purse);
+        sm::GameState grantState{};
+        std::vector<sm::GameEvent> grant;
+        sm::GameEvent plus{sm::EventTag::PlayerGoldChange};
+        plus.ix = 500;
+        grant.push_back(plus);
+        sm::apply_events(grant, grantState, &purse, &verbPools, nullptr,
+                         &sheet);
+        CHECK(sm::inventory_value(purse) == before,
+              "положительная дельта золота НЕ печатает монет — выдача из "
+              "воздуха снесена (M-139)");
+    }
     // HP is 50 rather than 33: the razed verb took nothing, which is the
     // point of razing it.
     CHECK_OR_RETURN(!(verbPools.hp != 50
@@ -1162,8 +1184,21 @@ void test_quest_reward_dispatch_order_and_application() {
     sheet.levelData = sm::default_level_data();
     sheet.levelData.exp = 0;
 
+    // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): у награды обязан быть
+    // ДАРИТЕЛЬ с казной, потому что платит только он — выдача монет из
+    // воздуха для награды без дарителя снесена (M-139, вердикт владельца
+    // 2026-09-26). Место кладём руками, с запасом стоимости на награду.
+    sm::Landmark giver{};
+    giver.id = 1;
+    giver.type = sm::LandmarkType::Village;
+    giver.name = "Giver";
+    giver.population = 64;
+    giver.inventory.add("coin_empire_copper", 40);
+    gs.landmarks.push_back(giver);
+
     sm::Quest q{};
     q.ordinal = 9u;
+    q.giverSettlementId = giver.id;
     q.title = "Reward Order";
     q.description = "Reward parity test";
     sm::Objective objective{};
@@ -1206,9 +1241,10 @@ void test_quest_reward_dispatch_order_and_application() {
     int completedDuringGold = -1;
     int reputationSeenByListener = -1;
     bus.on(sm::EventTag::PlayerGoldChange, [&](const sm::GameEvent&) {
-        // The gold reward is MINTED as coins here (no giver), so the COIN
-        // census is the ledger — the gem reward that lands after it must not
-        // move this number.
+        // Награду ПЕРЕНОСИТ казна дарителя (`transfer_value_dense`), поэтому
+        // монетная перепись и есть ведомость: пришедшие 7 — это те же 7,
+        // что ушли из казны села, а не напечатанные. Награда-самоцвет,
+        // падающая следом, этого числа не двигает.
         goldSeenByListener = sm::coin_census_value(bag);
         completedDuringGold = int(gs.player.completedQuestCount);
     });

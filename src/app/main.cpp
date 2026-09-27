@@ -1690,14 +1690,13 @@ void boot_world(App& app, std::uint32_t seed,
     boot_trace("camera anchored");
     // The starter kit is DEALT INTO HIS BAG, which is a container on his squad
     // entity — a PlayerState cannot carry goods any more, because it is not a
-    // container. Coin of his own realm follows at chargen (the homeland pick
-    // re-mints it), so the opening purse is imperial exactly as it always was.
-    // Chargen content, so it stays app-side — a balance-harness world gets a
-    // player squad but no gift.
+    // container. Chargen content, so it stays app-side — a balance-harness
+    // world gets a player squad but no gift.
+    // СТАРТОВОГО КОШЕЛЬКА НЕТ (M-139, вердикт владельца 2026-09-26): 1000
+    // имперских монет здесь печатались из воздуха, как и всё остальное
+    // золото. Игрок начинает с ВЕЩЕЙ и добывает стоимость обменом; дыра
+    // названа в M-139 и ждёт пула лута, времянки на её месте запрещены.
     if (sm::Inventory* bag = sm::player_inventory(app.ecs)) {
-        // 1000 in imperial coins (change-made: ten golds), re-minted into
-        // the homeland's family once the creation screen names it.
-        sm::add_value_in_coins(*bag, sm::faction_index("empire"), 1000);
         bag->add("potion_hp", 2);
         bag->add("food", 5);
     }
@@ -3052,25 +3051,11 @@ void apply_creation(App& app) {
             : nullptr;
     if (homeland) {
         sm::add_player_reputation(app.gs, homeland, 15);
-        // The starting money is re-minted into the HOMELAND's own coin
-        // family (owner: the player begins with his country's currency) —
-        // the boot seeded imperial as a placeholder. Same VALUE, the home
-        // banner's rows: walk the imperial family off the bag, change-make
-        // the sum back in home coins.
-        const int homeIdx = sm::faction_index(homeland);
-        if (sm::faction_coins(homeIdx) != sm::kImperialCoins) {
-            int value = 0;
-            for (const char* c : sm::kImperialCoins) {
-                const sm::ItemDef* def = sm::item_def(c);
-                const int n = player_bag(app).count(c);
-                if (n <= 0) continue;
-                player_bag(app).remove(c, n);
-                value += n * (def ? def->value : 1);
-            }
-            if (value > 0) {
-                sm::add_value_in_coins(player_bag(app), homeIdx, value);
-            }
-        }
+        // ПЕРЕЧЕКАНКИ СТАРТОВЫХ МОНЕТ НЕТ (M-139): она перекладывала
+        // стоимость из имперской семьи в семью родины, но перекладывать
+        // нечего — стартовый кошелёк снесён вместе со всей выдачей монет из
+        // воздуха. Родина по-прежнему решает, какие монеты для игрока
+        // «свои»: это читает реестр фракций там, где речь о цене и семье.
     }
 
     std::string born = "Born ";
@@ -4349,14 +4334,11 @@ void register_console_commands(App& app) {
             if (a.empty()) return false;
             int n = 1; sm::dev::arg_int(a, 1, n);
             if (n <= 0) { c.error("count must be positive"); return true; }
+            // Псевдо-id «gold» здесь умер вместе с выдачей монет (M-139):
+            // `give` даёт ЛЮБОЙ объект единой таблицы, а монета — такой же
+            // объект, поэтому `give coin_empire_gold 10` и есть тот же путь
+            // без спецслучая (AGENTS: спецпутей для монет не бывает).
             const std::string& id = a[0];
-            if (id == "gold") {
-                sm::add_value_in_coins(player_bag(app),
-                                       sm::faction_index("empire"), n);
-                c.printfln(Lvl::Ok, "value += %d  (bag now %d)", n,
-                           sm::inventory_value(player_bag(app)));
-                return true;
-            }
             if (!sm::item_def(id)) {
                 c.error("unknown item '" + id + "' - type 'items' for the list");
                 return true;
@@ -4432,22 +4414,11 @@ void register_console_commands(App& app) {
             return true;
         });
 
-    con.register_cmd("gold", "gold <delta>",
-        "add (or, if negative, subtract) player gold",
-        [&app](Con& c, const std::vector<std::string>& a) {
-            int delta = 0;
-            if (!sm::dev::arg_int(a, 0, delta)) return false;
-            if (delta >= 0) {
-                sm::add_value_in_coins(player_bag(app),
-                                       sm::faction_index("empire"), delta);
-            } else {
-                sm::pay_value_dense(player_bag(app), -delta);
-            }
-            c.printfln(Lvl::Ok, "bag value = %d",
-                       sm::inventory_value(player_bag(app)));
-            return true;
-        });
-
+    // Команда `gold` снесена целиком (M-139, вердикт владельца 2026-09-26:
+    // «СНЕСТИ … у нас теперь таблица объектов она универсальная»): выдавать
+    // стоимость из воздуха нельзя даже с консоли, а «отнять» умеет `take`
+    // по строке объекта. Имени концепции, которой у мира нет, в консоли не
+    // остаётся.
     con.register_cmd("addexp", "addexp <amount>",
         "grant experience (auto-levels while over the threshold)",
         [&app](Con& c, const std::vector<std::string>& a) {

@@ -659,38 +659,24 @@ struct CorpseLootContext {
     float wealthMul = 1.0f;
 };
 
-// How much this contributes at full danger: the deepest ground doubles a
-// purse. Named because it is a knob, and quoted here so the two ends of the
-// continuum (0 → ×1, 255 → ×2) are readable without running the game.
-inline constexpr float kDangerLootGain = 1.0f;
-
-// And what a LEVEL adds: a tenth of the row's purse per level above the
-// first, so a level-10 bandit carries roughly double a fresh one — the same
-// shape as the danger term, on the body's own honest, visible property
-// (CANON S12: a creature's level is a fact about the creature).
-inline constexpr float kLootLevelGain = 0.1f;
-
-// THE coin a dead body carries (damage-door Inc 5). The ROW says what this
-// creature is worth to rob — a beast has no pockets, a merchant is rich
-// because he is a merchant (macro/npc.h kNpcPurse), and its own level says
-// how long it has been at it — then the WORLD modulates through the context
-// above. The faction-keyed multiplier this replaced was a second wealth
-// vocabulary, and the 2026-08-27 faction ruling made it wrong outright: the
-// same wolf carried six times more coin under a ruin's banner than in a
-// meadow. What the banner still decides is which realm's COIN it is.
-int                    generate_loot_gold(int npcType, int level,
-                                          const CorpseLootContext& ctx,
-                                          RngFn rng);
+// МОНЕТЫ НА ТРУПЕ БОЛЬШЕ НЕ РОЖДАЮТСЯ (M-139, вердикт владельца 2026-09-26).
+// Здесь стояла `generate_loot_gold` — кошелёк строки × опасность клетки ×
+// богатство места — и две её константы (`kDangerLootGain`, `kLootLevelGain`),
+// у которых других читателей не было. Контекст выше ЖИВ: он кормит силу
+// аффиксов предметного лута (`affix_power`), то есть отвечает на «насколько
+// богата вещь», а не «сколько монет из воздуха».
 // (generate_settlement_inventory is gone: the unified-container moment it was
 // kept for arrived — landmark stocks are seeded by the ECONOMY's own law,
 // econ_day.h seed_landmark_inventory, from the one commodity dictionary.)
 
 // ── Unified loot table ─────────────────────────────────────────
-// ONE loot registry keyed by a stable string `lootId`. Every drop — NPC or
-// monster — resolves through `roll_loot_profile`, replacing the old split
-// (NPCType-int vs faction-string) with a single keyed path. Registered ids:
-// the 8 NPC roles (peasant..sorceress), plus faction defaults wildlife /
-// demons / bandits. Unknown / empty id => no items.
+// ONE loot registry keyed by a stable string `lootId`. Зарегистрированы
+// ТОЛЬКО вещи мира — `tree` и `crop`: их строки есть выплата переноса из
+// поля, 1:1 с тем, что ведомость макро-стока списала с клетки. Профили РОЛЕЙ
+// (peasant..sorceress, wildlife/demons/bandits) снесены вердиктом владельца
+// 2026-09-26 (M-139) вместе с колонкой `lootId` строки существа: что несёт
+// тварь, решит ПУЛ ЛУТА по стоимости, весам и контексту. Unknown / empty
+// id => no items.
 // `affixPower` — the context byte the wearable stacks roll their affixes on
 // (affix_power above). NOT defaulted on purpose: a new call site must state
 // what the world says there, and the compiler asks where a comment could not.
@@ -701,9 +687,6 @@ std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng,
 // the id list is never restated anywhere. Index order is the table's.
 std::size_t loot_profile_count() noexcept;
 const char* loot_profile_id(std::size_t i) noexcept;
-
-// NPCType integer -> its loot-profile id (npc.h enum order). "" if out of range.
-const char* npc_loot_id(int npcType) noexcept;
 
 // Apply consumable effect to player. Returns the player-visible message
 // (empty string if item not found, not consumable, or out of stock).

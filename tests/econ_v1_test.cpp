@@ -533,8 +533,7 @@ int main() {
     {
         const int pop = 640;
         Inventory city;
-        const int empire = faction_index("empire");
-        seed_landmark_inventory(city, pop, true, empire, 0x1234u);
+        seed_landmark_inventory(city, pop, true);
         if (city.count("food") != pop * kDaysPerSeason) {
             return fail("birth larder must hold a SEASON of food — a place "
                         "seeded thinner dies of arithmetic at its first "
@@ -546,8 +545,7 @@ int main() {
                   "a consumed need row was born empty");
         }
         Inventory village;
-        seed_landmark_inventory(village, pop, false, empire,
-                                0x1234u);
+        seed_landmark_inventory(village, pop, false);
         // ДЕЛО ДЕРЕВНИ — СЫРЬЁ, и мерить это надо СЫРЬЁМ (2026-09-20): пища
         // с этого дня не материал, а голодная строка, и её амбар рождения
         // равен сезону у всех — деревня перестала «держать больше еды» не
@@ -559,45 +557,22 @@ int main() {
             return fail("a crafting city banks deeper crafted stocks");
         }
         Inventory again;
-        seed_landmark_inventory(again, pop, true, empire, 0x1234u);
+        seed_landmark_inventory(again, pop, true);
         if (again.count("food") != city.count("food")
             || again.used_slots() != city.used_slots()) {
             return fail("birth stocks must be deterministic from population");
         }
-        // The treasury (W2d): money is the kingdom's COIN, living in the
-        // SAME container, and a city's capital runs deep. Since verdict №1
-        // it lands as the family's three nominals (change-made) from
-        // population ± a QUARTER's spread off the world seed — so the check
-        // is a band around the base, not an equality.
-        const auto treasury = [](const Inventory& inv) {
-            return inv.count("coin_empire_gold") * 100
-                 + inv.count("coin_empire_silver") * 10
-                 + inv.count("coin_empire_copper");
-        };
-        const int cityBase = pop * 8;
-        const int vilBase = pop * 2;
-        if (treasury(city) < cityBase * 3 / 4
-            || treasury(city) > cityBase * 5 / 4
-            || treasury(village) < vilBase * 3 / 4
-            || treasury(village) > vilBase * 5 / 4) {
-            return fail("the birth treasury must scale with the heads "
-                        "within the quarter spread");
-        }
-        if (treasury(again) != treasury(city)) {
-            return fail("one salt must seed one treasury (determinism)");
-        }
-        // A different salt walks the spread: over a few salts at least one
-        // treasury must differ, or the spread is decorative.
-        {
-            bool differs = false;
-            for (std::uint32_t salt = 1; salt <= 4 && !differs; ++salt) {
-                Inventory other;
-                seed_landmark_inventory(other, pop, true, empire,
-                                        salt);
-                differs = treasury(other) != treasury(city);
-            }
-            if (!differs) return fail("the quarter spread never spreads");
-        }
+        // КАЗНА ПРИ РОЖДЕНИИ — НОЛЬ, И ЭТО ТЕПЕРЬ ЗАКОН (M-139, вердикт
+        // владельца 2026-09-26). Здесь стояли четыре проверки посева казны
+        // («в пределах четверти разброса», детерминизм по соли, «разброс
+        // разбрасывает») — свидетели ВЫДАЧИ, а не закона мира: они
+        // описывали печать монет из воздуха, и вместе с ней ушли. Свидетель
+        // перевёрнут в негативный контроль: ни одной монетной строки у
+        // новорождённого места быть не может, иначе выдача вернулась.
+        CHECK(coin_census_value(city) == 0 && coin_census_value(village) == 0
+                  && coin_census_value(again) == 0,
+              "новорождённое место рождается БЕЗ монет — выдача монет из "
+              "воздуха снесена (M-139)");
     }
 
     // ── 10. The SUPPLY-CEILING population law (owner, CANON S25 +

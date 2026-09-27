@@ -1,7 +1,6 @@
 #include "macro/econ_day.h"
 #include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
 
-#include "macro/currency.h"   // add_value_in_coins — the treasury seed
 #include "macro/economy.h"    // stock_price — ranking asks THE price law
 #include "macro/faction.h"    // монетная семья фракции — ординалы номиналов
 #include "macro/state.h"      // GameState/Landmark — ведомость пишется в место
@@ -421,8 +420,7 @@ int commodity_of_item(int itemIdx) {
         ? int(kBack[std::size_t(itemIdx)]) : -1;
 }
 
-void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
-                             int factionIdx, std::uint32_t seedSalt) {
+void seed_landmark_inventory(Inventory& inv, int population, bool isCity) {
     if (population <= 0) return;
     // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the
     // first boundary (econ_debt_boundary) bills a whole season of bread and
@@ -460,26 +458,16 @@ void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
         const int qty = (population >> r.shift) * siteMult;
         if (qty > 0) inv.add(r.id, qty);
     }
-    // The TREASURY (owner, W2d): money is the KINGDOM'S OWN COIN, minted
-    // "from the population" and living in the same container as the goods.
-    // A city's capital is deep (8 a head); a village keeps a modest chest.
-    // The treasury is what the market PAYS FROM: a town that runs dry stops
-    // buying — the arbitrage-killer's other half.
-    //
-    // ± a QUARTER's spread off the world seed (owner verdict S10, посев
-    // капитала «от популяции ± четверть разброса от мирового сида»): the
-    // factor walks 768..1279 over 1024 — 3/4..5/4 in po2 arithmetic — so
-    // two towns of one size are born organically unequal, деterministically
-    // per world. The value lands as the faction's own three coins,
-    // change-made largest-first (add_value_in_coins).
-    {
-        const int base = population * (isCity ? 8 : 2);
-        // One xorshift step spreads consecutive salts before the mask.
-        std::uint32_t h = seedSalt;
-        h ^= h << 13; h ^= h >> 17; h ^= h << 5;
-        const int seeded = int(std::int64_t(base) * (768 + (h & 511)) / 1024);
-        add_value_in_coins(inv, factionIdx, seeded);
-    }
+    // КАЗНА ПРИ РОЖДЕНИИ — ПУСТА (M-139, вердикт владельца 2026-09-26,
+    // вариант «в»: «снести всё и держать дыру открытой до пула лута»). Здесь
+    // печаталась казна «от популяции ± четверть разброса от мирового сида»
+    // тремя номиналами фракции — вторая дверь появления стоимости рядом с
+    // чеканкой. Новорождённое место выходит в мир со СКЛАДОМ и без монет:
+    // деньги приходят чеканкой из серебра, а покупает место по плотности
+    // стоимости (`currency.h densest_value_slot`) — ЧИСТЫЙ БАРТЕР, пока
+    // кузнец не дорастёт до монетного ранга. Дыра названа в M-139 и ждёт
+    // пула лута; параметры `factionIdx`/`seedSalt` ушли вместе с блоком —
+    // читать их больше нечему.
 }
 
 // ── ВЕДОМОСТЬ (контракт в econ_day.h) ────────────────────────────────────

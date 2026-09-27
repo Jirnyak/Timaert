@@ -136,15 +136,14 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
             case EventTag::PlayerGoldChange:
                 if (ev.b != kEventEffectAlreadyApplied) {
                     if (!bag) break;
-                    // Gold is VALUE: granted as imperial coins (change-made,
-                    // largest first), taken by the one density law — a coin
-                    // pays first by arithmetic, never by a branch (№1).
-                    if (ev.ix >= 0) {
-                        add_value_in_coins(*bag, faction_index("empire"),
-                                           ev.ix);
-                    } else {
-                        pay_value_dense(*bag, -ev.ix);
-                    }
+                    // Gold is VALUE, и ОТДАТЬ её можно (по одному закону
+                    // плотности), а ВЗЯТЬСЯ ей неоткуда: выдача монет из
+                    // воздуха снесена (M-139, вердикт владельца 2026-09-26).
+                    // Положительная дельта здесь больше не выплачивается —
+                    // платит только тот, у кого стоимость есть (даритель
+                    // квеста через `transfer_value_dense`), а процедурную
+                    // награду будет раздавать пул лута.
+                    if (ev.ix < 0) pay_value_dense(*bag, -ev.ix);
                 }
                 break;
             case EventTag::ApplyEffect:

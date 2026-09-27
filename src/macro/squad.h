@@ -782,53 +782,14 @@ inline const char* squad_faction_id(ecs::World& w, entt::entity e) {
     return kind ? faction_id_for_index(kind->factionIdx) : "";
 }
 
-// The RNG adapter THE loot registry asks for (RngFn is a bare float(*)()).
-// Same shape the macro spawner and the subworld reaper each keep privately.
-inline thread_local Rng* gSquadLootRng = nullptr;
-inline float squad_loot_rng_f01() {
-    return gSquadLootRng ? gSquadLootRng->next_f01() : 0.0f;
-}
-
-// What a fallen body of `kind` at `level` was carrying, rolled through THE
-// loot registry with the SAME context the subworld reaper builds (the row's
-// purse × the cell's danger × the wealth of the place, damage-door Inc 5) —
-// so a merchant robbed on the map and a merchant robbed underfoot pay out by
-// one law. Coin is minted in the fallen's own realm (W2d: an NPC's purse is
-// his faction's currency).
-inline void roll_fallen_spoils(const MacroWorld& mw, std::uint16_t kind,
-                               int level, int cellX, int cellY,
-                               const char* factionId, Rng& rng,
-                               Inventory& into) {
-    if (!valid_npc_kind(kind)) return;
-    const NPCType type = NPCType(std::uint8_t(kind));
-    CorpseLootContext ctx{};
-    if (mw.zones) ctx.danger = mw.zones->at(cellX, cellY);
-    if (mw.landmarks) {
-        ctx.wealthMul =
-            landmark_def(mw.landmarks->at(cellX, cellY).type).wealthMul;
-    }
-    gSquadLootRng = &rng;
-    // ЦЕПОЧКА СТАЛА ДВУЗВЕННОЙ (2026-09-22): средним звеном стояла
-    // роль-таблица `kNpcLootId` — второй словарь о том же, что колонка
-    // строки. Влита в строку, и порядок опроса перестал быть законом:
-    // своя колонка, иначе знамя.
-    const char* lootId = npc_def(type).lootId;
-    if (!lootId || !lootId[0]) lootId = factionId;
-    for (const ItemRef& s :
-         roll_loot_profile(lootId, level, &squad_loot_rng_f01,
-                           affix_power(level, ctx.danger, ctx.wealthMul))) {
-        into.add_ref(s);
-    }
-    const int coins =
-        generate_loot_gold(int(type), level, ctx, &squad_loot_rng_f01);
-    gSquadLootRng = nullptr;
-    // The purse lands as the banner's own coins, change-made largest-first
-    // (a merchant's 200 is two silver hundreds… i.e. 20 silver, not 200
-    // coppers) — plain arithmetic over the mint columns, no currency gate.
-    if (coins > 0) {
-        add_value_in_coins(into, faction_index(factionId), coins);
-    }
-}
+// СПОЙЛОВ ИЗ ВОЗДУХА БОЛЬШЕ НЕТ (M-139, вердикт владельца 2026-09-26).
+// Здесь стояли переходник RNG для реестра лута и `roll_fallen_spoils` —
+// «что павший этой РОЛИ был бы должен нести»: бросок хардкод-профиля роли
+// плюс печать кошелька. Обе таблицы снесены, и с ними эта дверь. Победителю
+// достаётся РОВНО то, что павший нёс: сумку лидера переносит
+// `loot_fallen_owner` ниже, а ростерные записи — это записи, и нести им
+// нечего до ПУЛА ЛУТА, который будет раздавать добычу по стоимости и
+// контексту (дыра названа в M-139).
 
 // Every death this side suffered, told once: the roster rows by their fallen
 // records and the leader by his entity. The casualty coin carries its own
@@ -1137,35 +1098,11 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
         }
     }
 
-    // Spoils: what the fallen CARRIED (their bags) plus what the loot
-    // registry says a body of that row is worth where it fell — the same
-    // roll the subworld reaper makes, so auto-resolving a caravan and
-    // butchering it underfoot pay out by one law. The roster's dead have no
-    // bags of their own (they are records, not entities), and this is where
-    // they stop dropping nothing at all.
-    if (playerWon) {
-        const auto* ecell = body_state<ecs::MacroCell>(w.reg, enemy);
-        const int cx = ecell ? ecs::cell_x(*ecell, gs.mapW) : 0;
-        const int cy = ecell ? ecs::cell_y(*ecell, gs.mapW) : 0;
-        Rng lootRng(hash3(std::uint32_t(entt::to_integral(enemy)),
-                          std::uint32_t(enemyCas.size()),
-                          gs.worldSeed));
-        for (const SoldierRecord& r : enemyCas) {
-            if (!valid_npc_kind(r.kind)) continue;
-            roll_fallen_spoils(mw, r.kind,
-                               normalize_soldier_level(r.level),
-                               cx, cy, enemyFaction, lootRng,
-                               *playerBag);
-        }
-        if (enemyFraction <= 0.0f) {
-            const auto* kind = body_state<ecs::NPCKind>(w.reg, enemy);
-            const auto* lvl = body_state<ecs::NpcLevel>(w.reg, enemy);
-            roll_fallen_spoils(mw, kind ? kind->type : std::uint16_t(0),
-                               normalize_soldier_level(lvl ? lvl->value : 1),
-                               cx, cy, enemyFaction, lootRng,
-                               *playerBag);
-        }
-    }
+    // Spoils: РОВНО то, что павший НЁС. Бросок реестра лута по роли ушёл
+    // вместе с хардкод-таблицами (M-139): сумку павшего лидера переносит
+    // `loot_fallen_owner` ниже — один перенос, ноль печати. Ростерные
+    // мертвецы своих сумок не имеют (они записи, не энтити) и до ПУЛА ЛУТА
+    // не роняют ничего.
 
     settle_squad_casualties(gs, w, enemy, enemyCas);
     settle_leader_fraction(w, enemy, enemyFraction);

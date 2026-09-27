@@ -60,13 +60,14 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
             // and a short wallet pays what it holds.
             int delta = 0;
             if (r.amount >= 0) {
-                // A PROCEDURAL reward is paid off the GIVER'S OWN STORE
-                // (owner 2026-08-31, CANON S20: «деревня наняла — деревня
-                // платит»; minting was canon-audit B3): real coin moves by
-                // transfer_value, and a thin treasury honestly pays what it
-                // holds. Only an AUTHORED reward with NO giver (a story
-                // fixed by design) may still mint — the owner's sanctioned
-                // exception.
+                // НАГРАДУ ПЛАТИТ ДАРИТЕЛЬ, И ТОЛЬКО ОН (owner 2026-08-31,
+                // CANON S20: «деревня наняла — деревня платит»). Прежнее
+                // «санкционированное исключение» — награда БЕЗ дарителя
+                // печатала монеты из воздуха — снесено вердиктом владельца
+                // 2026-09-26 (M-139): у стоимости один вход, и это чеканка.
+                // Значит награда без дарителя не выдаётся ВООБЩЕ; дыра
+                // названа в M-139 и ждёт ПУЛА ЛУТА, который и раздаст
+                // процедурную награду по контексту. Времянки здесь нет.
                 Landmark* giver = giverSettlementId >= 0
                     ? landmark_by_id(gs, giverSettlementId)
                     : nullptr;
@@ -78,13 +79,10 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                                           "The treasury runs thin — you are "
                                           "paid what it holds.");
                     }
-                } else if (add_value_in_coins(*bag, faction_index("empire"),
-                                              r.amount) == r.amount) {
-                    delta = r.amount;
                 } else {
                     session_feed_push(gs.sessionFeed,
-                                      "Your pack is full — the reward "
-                                      "could not be taken.");
+                                      "No one stands behind this reward — "
+                                      "nothing is paid.");
                 }
             } else {
                 // A penalty takes what the wallet holds; the SHORTFALL is a

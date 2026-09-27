@@ -2,7 +2,7 @@
 //
 // These cover pure, deterministic logic that previously had NO direct test:
 //   • character_sheet.h  — project_combat() and make_character_sheet()
-//   • items.cpp          — roll_loot_profile(), npc_loot_id(), generate_loot_gold()
+//   • items.cpp          — roll_loot_profile() (только вещи мира)
 //
 // Assertions go through tests/check.h (CHECK + sm::test::report).
 // project_combat assertions re-derive their expected values from the SAME
@@ -34,21 +34,8 @@ static bool approx(float a, float b, float eps = 1e-3f) {
 static float rng_zero() { return 0.0f; }      // fires every chance>0, qty = min
 static float rng_high() { return 0.9999f; }   // fires only chance==1.0, qty ~ max
 
-static float       g_seq[64];
-static std::size_t g_seqLen = 0;
-static std::size_t g_seqPos = 0;
-static float rng_seq() {
-    const float v = (g_seqPos < g_seqLen) ? g_seq[g_seqPos] : 0.0f;
-    ++g_seqPos;
-    return v;
-}
-static void seq_set(std::initializer_list<float> vals) {
-    g_seqLen = 0;
-    for (float v : vals) {
-        if (g_seqLen < 64) g_seq[g_seqLen++] = v;
-    }
-    g_seqPos = 0;
-}
+// (Сценарный поток `rng_seq`/`seq_set` жил ровно для поштучной сверки
+//  хардкод-таблиц лута существ и умер вместе с ними — M-139.)
 
 static int count_of(const std::vector<ItemRef>& v, const char* id) {
     const int idx = item_index(id);
@@ -250,142 +237,59 @@ static void test_sheet_determinism() {
 
 // ── Unified loot table ───────────────────────────────────────────────────────
 
-static void test_npc_loot_id() {
-    CHECK(std::string(npc_loot_id(0)) == "peasant", "npc_loot_id(0)=peasant");
-    // Рода профессий СНЕСЕНЫ 2026-09-21: их работу давно делает одна строка
-    // Peasant с поручением аукциона, и мёртвых ординалов в enum больше нет.
-    CHECK(std::string(npc_loot_id(int(sm::NPCType::Count))) == "",
-          "one past the registry end is out of range");
-    CHECK(std::string(npc_loot_id(-1)) == "", "npc_loot_id(-1)= (negative)");
-    // Every ROLE row must resolve to a registered, rollable profile. A creature
-    // row answers with "" on purpose — it names its drop in its own `lootId`
-    // column and otherwise takes its faction's default (macro/npc.h), so the
-    // per-role list stops where the roles stop. That boundary is asserted right
-    // below rather than assumed.
-    for (int t = 0; t < int(NPCType::Count); ++t) {
-        const char* id = npc_loot_id(t);
-        char msg[96];
-        if (!sm::is_folk_kind(std::uint16_t(t))) {
-            std::snprintf(msg, sizeof msg,
-                          "row %d defers its loot to its own column", t);
-            CHECK(std::string(id).empty(), msg);
-            continue;
-        }
-        std::snprintf(msg, sizeof msg, "npc_loot_id(%d) resolves to a profile", t);
-        // rng_high on a real profile yields a vector (possibly empty); an
-        // UNKNOWN id would also yield empty, so instead assert rng_zero (which
-        // fires every entry) returns at least one stack for a valid role.
-        CHECK(!roll_loot_profile(id, 1, rng_zero, 0).empty(), msg);
-    }
-}
-
-static void test_roll_loot_profile() {
-    // rng_zero: 0.0 < chance for every entry, qty = min + int(0*range) = min.
-    // Peasant table: bread(min1), wood(min1), herb(min1) — the PURSE is not
-    // loot: it is the faction's coin, added by make_npc (macro/currency.h).
-    auto peasant = roll_loot_profile("peasant", 1, rng_zero, 0);
-    CHECK(peasant.size() == 3, "peasant/rng_zero: all three entries drop");
-    CHECK(count_of(peasant, "food") == 1
-          && count_of(peasant, "wood") == 1
-          && count_of(peasant, "mat_herb") == 1,
-          "peasant/rng_zero: quantities pinned at min");
-
-    // minLevel gate: bandit's wpn_dagger requires level>=3.
-    auto bandit1 = roll_loot_profile("bandit", 1, rng_zero, 0);
-    CHECK(count_of(bandit1, "wpn_dagger") == -1,
-          "bandit L1: level-gated dagger excluded");
-    CHECK(count_of(bandit1, "potion_hp") == 1 && count_of(bandit1, "misc_gem") == 1,
-          "bandit L1: ungated entries still drop");
-    auto bandit3 = roll_loot_profile("bandit", 3, rng_zero, 0);
-    CHECK(count_of(bandit3, "wpn_dagger") == 1,
-          "bandit L3: level-gated dagger now included");
-
-    // rng_high: only chance==1.0 entries fire; qty = min + int(0.9999*range).
-    // Woodcutter: wood chance 1.0, min2 max7 -> 2 + int(0.9999*6) = 7.
-    auto wood = roll_loot_profile("woodcutter", 1, rng_high, 0);
-    CHECK(wood.size() == 1 && count_of(wood, "wood") == 7,
-          "woodcutter/rng_high: only the certain drop, at max qty");
-
-    // World props pay through the same registry, at the ONE exchange rate
-    // (owner 2026-09-12, CANON «Вердикты ТРУДА»): 1 stand = 1 grain, exactly
-    // what the macro harvest debits — the rate is a LAW now, so both ends of
-    // the rng are pinned to it (the harvest door still scales by height).
+// РЕЕСТР ЛУТА ДЕРЖИТ ТОЛЬКО ВЕЩИ МИРА (M-139, вердикт владельца 2026-09-26).
+// Здесь стояли `test_npc_loot_id` (роль → профиль) и проверки десяти
+// хардкод-таблиц существ — свидетели ТАБЛИЦ, которых больше нет: и таблицы, и
+// колонка `lootId` строки снесены («захардкоженый говносрак на существо?
+// конечно сноси»). Осталось то, что таблицей не является, а есть КУРС
+// ПЕРЕНОСА из поля: срубленное дерево платит ровно списанное с клетки дерево,
+// сжатый стебель — ровно списанное зерно.
+static void test_prop_loot_is_the_transfer_rate() {
+    // 1 стебель = 1 зерно, и это ЗАКОН, а не бросок: оба конца rng прибиты к
+    // нему (дверь жатвы отдельно масштабирует по высоте стебля).
     auto crop = roll_loot_profile("crop", 1, rng_zero, 0);
     CHECK(crop.size() == 1 && count_of(crop, "food") == 1,
           "crop/rng_zero: one stand pays its one grain");
     auto cropHigh = roll_loot_profile("crop", 1, rng_high, 0);
     CHECK(count_of(cropHigh, "food") == 1,
           "crop/rng_high: still one grain — the rate is a law, not a roll");
+    // 1 дерево = 1 дерево — ровно то, что ведомость макро-стока списывает с
+    // клетки (`macro_stock_apply(TreeCount, -1)`).
+    auto tree = roll_loot_profile("tree", 1, rng_zero, 0);
+    CHECK(tree.size() == 1 && count_of(tree, "wood") == 1,
+          "tree/rng_zero: one felled tree pays its one wood");
+    auto treeHigh = roll_loot_profile("tree", 9, rng_high, 0);
+    CHECK(count_of(treeHigh, "wood") == 1,
+          "tree/rng_high: уровень рубящего курса переноса не двигает");
 
-    // Unknown / empty id -> no items.
+    // Fail-closed: неизвестный, пустой и нулевой id не дают ничего.
     CHECK(roll_loot_profile("does_not_exist", 5, rng_zero, 0).empty(),
           "unknown lootId -> empty");
     CHECK(roll_loot_profile("", 5, rng_zero, 0).empty(), "empty lootId -> empty");
-    CHECK(roll_loot_profile(nullptr, 5, rng_zero, 0).empty(), "null lootId -> empty");
+    CHECK(roll_loot_profile(nullptr, 5, rng_zero, 0).empty(),
+          "null lootId -> empty");
 
-    // "bandits" faction id reuses the bandit table (the old zero-loot fix).
-    auto bandits = roll_loot_profile("bandits", 5, rng_zero, 0);
-    CHECK(!bandits.empty(), "bandits faction id resolves (not zero-loot)");
-
-    // Exact per-entry qty via a scripted sequence: chance-roll then qty-roll.
-    // Peasant bread: chance 0.6, min1 max3. seq {0.1 (fire), 0.5 (qty)} ->
-    // 1 + int(0.5*3) = 1 + 1 = 2. Then wood: {0.9 (skip)}, herb: {0.0,0.0->1}.
-    seq_set({0.1f, 0.5f, 0.9f, 0.0f, 0.0f});
-    auto scripted = roll_loot_profile("peasant", 1, rng_seq, 0);
-    CHECK(count_of(scripted, "food") == 2, "scripted: bread qty = min + int(0.5*range)");
-    CHECK(count_of(scripted, "wood") == -1, "scripted: wood skipped (roll>=chance)");
-    CHECK(count_of(scripted, "mat_herb") == 1, "scripted: herb fires at min");
+    // НЕГАТИВНЫЙ КОНТРОЛЬ СНОСА (§8 п.6): профили РОЛЕЙ обязаны перестать
+    // резолвиться — вернётся любой из них, и этот свидетель покраснеет.
+    for (const char* role : {"peasant", "woodcutter", "merchant", "caravan",
+                             "bandit", "guard", "witch", "sorceress",
+                             "wildlife", "demons", "bandits"}) {
+        CHECK(roll_loot_profile(role, 5, rng_zero, 0).empty(),
+              "профиль РОЛИ в реестре лута больше не живёт (M-139)");
+    }
+    // И реестр целиком — ровно две строки мира, счёт выводится из таблицы.
+    CHECK(loot_profile_count() == 2,
+          "в реестре лута ровно две строки — вещи мира, не роли");
 }
 
-static void test_generate_loot_gold() {
-    // THE purse law (damage-door Inc 5): the ROW says what this creature is
-    // worth to rob, the PLACE modulates it. Every expectation below is
-    // derived from the row, never a copied literal — retuning kNpcPurse
-    // touches no test.
-    const auto bandit = [](RngFn r, float wealth, std::uint8_t danger = 0) {
-        return generate_loot_gold(int(NPCType::Bandit), 1,
-                                  CorpseLootContext{danger, wealth}, r);
-    };
-    const NpcPurse row = npc_purse(NPCType::Bandit);
-    CHECK(bandit(rng_zero, 1.0f) == row.min,
-          "a level-1 body on open land carries its row's floor");
-    CHECK(bandit(rng_high, 1.0f) == row.max - 1,
-          "the roll spans the row's own range");
-    // The place is the modulation — a city (1.5×) pays more for the same
-    // creature, a ruin (0.5×) less. The direction is the law; the exact
-    // numbers are the landmark rows'.
-    CHECK(bandit(rng_zero, 1.5f) > bandit(rng_zero, 1.0f),
-          "a rich place multiplies the same row's purse");
-    CHECK(bandit(rng_zero, 0.5f) < bandit(rng_zero, 1.0f),
-          "a poor place divides it");
-    // Level grows the purse: a veteran has robbed more than a fresh recruit.
-    CHECK(generate_loot_gold(int(NPCType::Bandit), 10,
-                             CorpseLootContext{}, rng_zero)
-              > bandit(rng_zero, 1.0f),
-          "a higher-level body of the same row carries more");
-    // The danger continuum is the third contribution (owner's design): the
-    // deepest ground doubles the purse, safe ground says nothing at all.
-    CHECK(bandit(rng_zero, 1.0f, 255) > bandit(rng_zero, 1.0f, 0),
-          "dangerous country pays better for the same body");
-    CHECK(bandit(rng_zero, 1.0f, 0) == bandit(rng_zero, 1.0f),
-          "danger 0 is a SILENT contribution, not a discount");
-    // A beast has no pockets — whatever banner it fights under and however
-    // rich the ground it dies on. This is the check that the faction-keyed
-    // multiplier could not make: under it, a ruin's wolf was six times richer
-    // than a meadow's.
-    CHECK(generate_loot_gold(int(NPCType::Wolf), 10,
-                             CorpseLootContext{255, 1.5f}, rng_high) == 0,
-          "a beast carries no coin, in a ruin or in a capital");
-    CHECK(generate_loot_gold(int(NPCType::Goblin), 5,
-                             CorpseLootContext{}, rng_high) > 0,
-          "the goblin, who robs what he kills, does carry coin");
-    // Fail-closed on a kind the table does not know.
-    CHECK(generate_loot_gold(-1, 10, CorpseLootContext{}, rng_high) == 0,
-          "an unknown kind carries nothing rather than a plausible number");
-    CHECK(generate_loot_gold(int(NPCType::Peasant), 0,
-                             CorpseLootContext{}, rng_zero) >= 0,
-          "gold never negative");
-}
+// ЗДЕСЬ СТОЯЛ СВИДЕТЕЛЬ КОШЕЛЬКА (`test_generate_loot_gold`, 12 проверок):
+// «строка говорит, сколько тварь стоит ограбить, место модулирует». Он
+// охранял ВЫДАЧУ МОНЕТ ИЗ ВОЗДУХА, а не закон мира, и умер вместе с ней —
+// M-139, вердикт владельца 2026-09-26. Носитель снесён целиком: колонки
+// `purseMin`/`purseMax`, дверь `npc_purse`, функция `generate_loot_gold` и
+// её две константы. Сколько стоимости несёт тварь, решит ПУЛ ЛУТА по
+// контексту и весам единой таблицы; когда он придёт, свидетеля ему писать
+// заново — и уже про его закон, а не про эту пару авторских чисел.
 
 // ── The affix door (owner's design 2026-09-07) ─────────────────────────────
 
@@ -461,9 +365,7 @@ int main() {
     test_project_combat_missile();
     test_sheet_budget_identity();
     test_sheet_determinism();
-    test_npc_loot_id();
-    test_roll_loot_profile();
-    test_generate_loot_gold();
+    test_prop_loot_is_the_transfer_rate();
     test_affix_door();
     return sm::test::report("rpg_loot_test");
 }

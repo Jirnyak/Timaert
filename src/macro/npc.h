@@ -223,9 +223,10 @@ struct NpcTypeDef {
     // in its spawnFaction, a squad in its leader's, the open land in the
     // spawn law's own wildFaction column (macro/fauna.cpp). The same wolf can
     // be wildlife in a meadow, a demon in a ruin, or the player's own.
-    // Loot profile override; nullptr = the faction default of the one loot
-    // registry (macro/items.h).
-    const char*     lootId     = nullptr;
+    // КОЛОНКИ ЛУТ-ПРОФИЛЯ БОЛЬШЕ НЕТ (M-139, вердикт владельца 2026-09-26):
+    // `lootId` называл хардкод-таблицу «что роняет эта роль», и вместе с
+    // десятью такими таблицами снесён. Что несёт тварь, назовёт ПУЛ ЛУТА по
+    // стоимости, весам единой таблицы объектов и контексту.
     // Body radius in metres — THE one width column of the one body table
     // (damage-door Inc 4: CombatTemplate's shadow copy is gone). 0 = the
     // man-shaped default (npc_body_radius below); the creature rows author it
@@ -329,10 +330,11 @@ struct NpcTypeDef {
     // счёта (roster_window.h roster_bill). 0 = не ест вовсе.
     int boardPerDay = 1;
 
-    // Кошелёк рода: у зверя карманов нет под каким бы знаменем он ни дрался,
-    // купец богат потому, что купец. Богатство МЕСТА модулирует сверху.
-    int purseMin = 0;
-    int purseMax = 0;
+    // КОШЕЛЬКА У РОДА БОЛЬШЕ НЕТ (M-139, вердикт владельца 2026-09-26):
+    // колонки `purseMin`/`purseMax` печатали монеты из воздуха и читались
+    // ровно двумя снесёнными выдачами (кошелёк при спавне, золото трупа).
+    // Сколько стоимости несёт тварь, по контексту и весам универсальной
+    // таблицы решит ПУЛ ЛУТА — авторской пары чисел на роль здесь не будет.
 
     // Цвет метки на карте мира.
     std::uint32_t mapColor = 0xFFFFFFFFu;
@@ -479,7 +481,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .hireable = true,
         .xpReward = 10,
         .weight = 55,
-        .lootId = "peasant",
         .names = {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
           "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}},
         .nameCount = 15,
@@ -493,8 +494,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // the price column at the row's end: upkeep 1 × 30 days.
         .hireGold = 30,
         .nature = NpcNature::Human,
-        .purseMin = 1,
-        .purseMax = 10,
         .mapColor = 0xDCC8A0u,
         .habitat = kHabTown,
     },
@@ -512,7 +511,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .hireable = false,
         .xpReward = 30,
         .weight = 21,
-        .lootId = "merchant",
         .names = {{"Kartash","Bazukin","Torgin","Menkov","Skaldin"}},
         .nameCount = 5,
         .talkLines = {{"Looking to trade? I have fine wares!",
@@ -521,8 +519,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Business has been slow. Perhaps you need something?"}},
         .talkCount = 4,
         .nature = NpcNature::Human,
-        .purseMin = 50,
-        .purseMax = 200,
         .mapColor = 0xF0C850u,
     },
 
@@ -538,7 +534,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .xpReward = 20,
-        .lootId = "bandit",
         .names = {{"Razboy","Diki","Grozny","Slyak","Khvat"}},
         .nameCount = 5,
         .talkLines = {{"Your gold or your life!",
@@ -547,8 +542,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "The strong survive. The weak feed us."}},
         .talkCount = 4,
         .nature = NpcNature::Human,
-        .purseMin = 5,
-        .purseMax = 30,
         .mapColor = 0xDC3C3Cu,
     },
 
@@ -570,7 +563,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .upkeepGoldPerDay = 3,
         .hireable = true,
         .xpReward = 30,
-        .lootId = "guard",
         .names = {{"Strazhnik","Boyar","Vityaz","Desyatnik","Druzhina"}},
         .nameCount = 5,
         .talkLines = {{"Move along, citizen. Nothing to see here.",
@@ -598,8 +590,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // The price column: upkeep 3 × 30 days.
         .hireGold = 90,
         .nature = NpcNature::Human,
-        .purseMin = 5,
-        .purseMax = 20,
         .mapColor = 0x508CDCu,
         .habitat = kHabTown,
     },
@@ -617,7 +607,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .hireable = false,
         .xpReward = 50,
         .weight = 3,
-        .lootId = "witch",
         .names = {{"Yaga","Vedma","Znakharka","Koldunia","Volshebnitsa"}},
         .nameCount = 5,
         .talkLines = {{"The spirits whisper of your coming...",
@@ -626,8 +615,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "The forest knows all. Listen carefully."}},
         .talkCount = 4,
         .nature = NpcNature::Human,
-        .purseMin = 10,
-        .purseMax = 40,
         .mapColor = 0xB464C8u,
     },
 
@@ -643,7 +630,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .xpReward = 60,
-        .lootId = "sorceress",
         .names = {{"Charodejka","Zaklinatelnitsa","Mistika","Runara","Svetozara"}},
         .nameCount = 5,
         .talkLines = {{"The arcane currents shift around you...",
@@ -652,8 +638,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Power has a price. Are you willing to pay?"}},
         .talkCount = 4,
         .nature = NpcNature::Human,
-        .purseMin = 10,
-        .purseMax = 40,
         .mapColor = 0x78C8E6u,
     },
 
@@ -676,8 +660,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe) | hab(Taiga)
                           | hab(Tundra) | hab(Snow) | kHabForest,
@@ -703,8 +685,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
                           | hab(Tropics) | hab(Taiga) | kHabForest,
@@ -730,8 +710,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
                           | hab(Taiga) | hab(Tundra) | kHabForest,
@@ -757,8 +735,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Taiga)
                           | hab(Tundra) | hab(Snow) | hab(Mountain)
@@ -785,8 +761,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Taiga) | kHabForest,
         .wildFaction = "wildlife",
@@ -811,8 +785,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
                           | hab(Tropics) | kHabForest,
@@ -838,8 +810,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Desert) | hab(Steppe) | hab(Swamp)
                           | hab(Tropics) | kHabRuin,
@@ -867,8 +837,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Desert)
                           | hab(Steppe),
@@ -894,8 +862,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Swamp),
         .wildFaction = "wildlife",
@@ -920,8 +886,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Mountain),
         .wildFaction = "wildlife",
@@ -947,8 +911,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Mountain),
         .wildFaction = "wildlife",
@@ -973,8 +935,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Swamp) | hab(Tropics),
         .wildFaction = "wildlife",
@@ -999,8 +959,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 1,
-        .purseMax = 12,
         .mapColor = 0xC8C8C8u,
         .habitat = kHabForest | kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1025,8 +983,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1051,8 +1007,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1077,8 +1031,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Swamp),
         .wildFaction = "demons",
@@ -1103,8 +1055,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Tundra) | hab(Snow) | kHabSpire,
         .wildFaction = "demons",
@@ -1129,8 +1079,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Desert),
         .wildFaction = "demons",
@@ -1155,8 +1103,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Mountain) | kHabSpire,
         .wildFaction = "demons",
@@ -1179,14 +1125,11 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .xpReward = 0,
-        .lootId = "peasant",
         .names = {{}},
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Human,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xC8C8C8u,
     },
 
@@ -1203,7 +1146,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .hireable = true,
         .xpReward = 12,
         .weight = 21,
-        .lootId = "merchant",
         .names = {{"Foka","Yeremey","Lavrenty","Sofron","Nikanor"}},
         .nameCount = 5,
         .talkLines = {{"The crown's eighth, weighed and sealed.",
@@ -1212,8 +1154,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 3,
         .hireGold = 30,
         .nature = NpcNature::Human,
-        .purseMin = 1,
-        .purseMax = 10,
         .mapColor = 0xC8C8C8u,
     },
 
@@ -1236,7 +1176,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // He drops what a bandit drops, named in his own column: his ordinal
         // sits in the creature stripe of the table, where the
         // per-role loot list no longer answers.
-        .lootId = "bandit",
         .names = {{"Krivoy","Sukhoy","Gnily","Ryaboy","Tishina"}},
         .nameCount = 5,
         .talkLines = {{"We have been watching this road all morning.",
@@ -1244,8 +1183,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Down. Stay down and it goes easier."}},
         .talkCount = 3,
         .nature = NpcNature::Human,
-        .purseMin = 5,
-        .purseMax = 30,
         .mapColor = 0xDC3C3Cu,
     },
 
@@ -1273,8 +1210,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xB03030u,
     },
 
@@ -1329,8 +1264,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x6A5A4Au,
         .habitat = kHabRuin | hab(Mountain),
         .wildFaction = "wildlife",
@@ -1360,8 +1293,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x4A4048u,
         .habitat = kHabRuin | hab(Mountain),
         .wildFaction = "wildlife",
@@ -1391,8 +1322,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Sharp! Sharp and quick!"}},
         .talkCount = 3,
         .nature = NpcNature::Fauna,
-        .purseMin = 1,
-        .purseMax = 6,
         .mapColor = 0x8A6A3Au,
         .habitat = kHabRuin | kHabForest | hab(Mountain),
         .wildFaction = "demons",
@@ -1419,8 +1348,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x2A2A3Au,
         .habitat = kHabRuin | kHabForest | hab(Mountain),
         .wildFaction = "wildlife",
@@ -1447,8 +1374,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xA03050u,
         .habitat = kHabSpire | kHabRuin,
         .wildFaction = "demons",
@@ -1476,8 +1401,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x6A7A5Au,
         .habitat = kHabRuin | kHabSpire | hab(Swamp),
         .wildFaction = "demons",
@@ -1507,8 +1430,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Come on then. Come on!"}},
         .talkCount = 3,
         .nature = NpcNature::Fauna,
-        .purseMin = 2,
-        .purseMax = 12,
         .mapColor = 0x5A7A4Au,
         .habitat = kHabForest | kHabRuin | hab(Steppe) | hab(Valley),
         .wildFaction = "demons",
@@ -1536,8 +1457,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x9A8A7Au,
         .habitat = kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1565,8 +1484,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0xB07850u,
         .habitat = kHabSpire | hab(Mountain),
         .wildFaction = "demons",
@@ -1589,7 +1506,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .hireable = false,
         .xpReward = /*xp = 5*(baseLevel+1)*/25,
         .weight = 3,
-        .lootId = "bandit",
         .radius = 0.55f,
         .names = {{"Brother Vas","Sister Ilm","Novice Korr","The Pale Hand","Acolyte Zeb"}},
         .nameCount = 5,
@@ -1598,8 +1514,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Kneel, and it will be quick."}},
         .talkCount = 3,
         .nature = NpcNature::Human,
-        .purseMin = 2,
-        .purseMax = 14,
         .mapColor = 0x50306Au,
         .habitat = kHabSpire | kHabRuin,
         .wildFaction = "demons",
@@ -1628,8 +1542,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x60605Au,
         .habitat = kHabSpire | hab(Mountain),
         .wildFaction = "demons",
@@ -1657,8 +1569,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x7060A0u,
         .habitat = kHabSpire | kHabRuin,
         .wildFaction = "demons",
@@ -1686,8 +1596,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x8A7050u,
         .habitat = kHabRuin | kHabForest | hab(Mountain),
         .wildFaction = "demons",
@@ -1715,8 +1623,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x6A3A2Au,
         .habitat = kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1744,8 +1650,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x3A6A4Au,
         .habitat = kHabRuin | hab(Swamp) | hab(Desert),
         .wildFaction = "demons",
@@ -1776,8 +1680,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Come closer. I want to see it happen."}},
         .talkCount = 3,
         .nature = NpcNature::Void,
-        .purseMin = 8,
-        .purseMax = 40,
         .mapColor = 0xC0D0B0u,
         .habitat = kHabSpire,
         .wildFaction = "demons",
@@ -1813,8 +1715,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .hireGold = 240,
         .tag = NpcTag::Mount,
         .nature = NpcNature::Fauna,
-        .purseMin = 0,
-        .purseMax = 0,
         .mapColor = 0x8A6A42u,
         .habitat = hab(Steppe) | hab(Meadow) | hab(Valley),
         .wildFaction = "wildlife",
@@ -1854,15 +1754,6 @@ inline constexpr float kNpcBodyRadiusDefault = 0.55f;
 // the footprint they stamp, the auto-battle fixture for its bodies).
 inline constexpr float npc_body_radius(const NpcTypeDef& def) {
     return def.radius > 0.0f ? def.radius : kNpcBodyRadiusDefault;
-}
-
-// ── THE purse: how much coin a body of this row carries ───────────────────
-// Кошелёк рода — колонка строки. Дверь возвращает пару как было, чтобы её
-// читателям (npc_spawn) не пришлось знать про переезд.
-struct NpcPurse { int min, max; };
-inline constexpr NpcPurse npc_purse(NPCType t) {
-    const NpcTypeDef& r = kNpcTypeDefs[std::size_t(t)];
-    return NpcPurse{r.purseMin, r.purseMax};
 }
 
 // Цвет метки на карте — колонка строки.

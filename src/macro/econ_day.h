@@ -499,12 +499,11 @@ inline float population_delta_per_day(int population, float wellbeing) {
 //     in a crafting City, days in a gathering Village;
 //   · raw stocks are a production buffer per head — doubled in a Village,
 //     whose whole business is raw.
-//   · the treasury seeds as the faction's own three coins (change-making,
-//     add_value_in_coins), from population ± a quarter's spread off the
-//     world seed (`seedSalt` — world seed ⊕ the landmark's identity), so
-//     twin towns are born organically unequal (CANON S10, посев капитала).
-void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
-                             int factionIdx, std::uint32_t seedSalt);
+//   · КАЗНЫ ПРИ РОЖДЕНИИ НЕТ (M-139, вердикт владельца 2026-09-26): место
+//     рождается со складом и БЕЗ МОНЕТ, потому что выдача монет из воздуха
+//     снесена целиком. Отсюда и сигнатура без `factionIdx`/`seedSalt` —
+//     чьи номиналы печатать и с каким разбросом, спрашивать больше некому.
+void seed_landmark_inventory(Inventory& inv, int population, bool isCity);
 
 
 // ── ВЕДОМОСТЬ: МИР ПУБЛИКУЕТ, ЧТО ПОЧЁМ (CANON S10, ярус 2) ──────────────

@@ -1,7 +1,6 @@
 #include "macro/npc_spawn.h"
 #include "macro/agent_memory.h"
 #include "macro/characters.h"
-#include "macro/currency.h"
 #include "macro/faction.h"
 #include "macro/biomes.h"
 #include "macro/npc.h"
@@ -69,10 +68,9 @@ static_assert(kMacroSquadBytes == 41417,
 static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 41032,
               "ядро субъекта — то же, что у Landmark (CANON S4)");
 
-// Thread-local Rng adapter so we can pass the existing
-// `RngFn = float(*)()` API into items.cpp without rewriting it.
-thread_local Rng* tl_rng = nullptr;
-float tl_rng_f01() { return tl_rng ? tl_rng->next_f01() : 0.0f; }
+// Переходник `RngFn` для реестра лута стоял здесь (`tl_rng`/`tl_rng_f01`) и
+// умер вместе с броском профиля при спавне (M-139): рождению больше нечего
+// катить, сумка выходит пустой.
 
 inline bool is_land(const TerrainData& t, int mapW, int mapH, int x, int y) {
     if (t.width != mapW || t.height != mapH || !t.has_rgba_storage())
@@ -215,37 +213,13 @@ entt::entity make_npc(ecs::World& w, MacroStore& st, NPCType type,
     }
     st.traits[h.slot] = traits;
 
-    // Through the ONE loot registry (macro/items.h), the same door a felled tree
-    // and a dead body already pay out through. A macro entity is the one kind of
-    // body that carries its bag in advance, because its belongings are STATE:
-    // they are what it will still be carrying when it is embodied below.
+    // СУМКА РОЖДАЕТСЯ ПУСТОЙ (M-139, вердикт владельца 2026-09-26). Здесь
+    // стояли ДВЕ выдачи из воздуха: бросок хардкод-профиля лута по роли и
+    // печать монет по колонкам `purseMin`/`purseMax`. Снесены обе вместе со
+    // своими таблицами. Макро-энтити носит своё добро как СОСТОЯНИЕ — но
+    // добро это приходит работой, обменом и, когда он придёт, РЕЖИССЁРОМ
+    // ЛУТА по стоимости и контексту; с рождения у него ноль.
     ecs::NpcInventory bag{};
-    tl_rng = &rng;
-    // Affix power from the body's own level alone: at birth there is no
-    // corpse cell to read danger from, and a veteran's kit is loaded by the
-    // years exactly as his purse is. The cell's own say joins where he FALLS
-    // (roll_fallen_spoils / the subworld reaper).
-    auto stacks = roll_loot_profile(npc_loot_id(int(type)), lvl, &tl_rng_f01,
-                                    affix_power(lvl, 0, 1.0f));
-    tl_rng = nullptr;
-    for (const ItemRef& s : stacks) bag.inv.add_ref(s);
-    // The PURSE (owner, W2d): money is the agent's FACTION coin, carried in
-    // the same bag as everything else — a trader can pay, and killing him
-    // drops his purse like any other loot. Amounts are the data row below;
-    // the extra RNG draw re-rolls worlds (v31 — old saves are void anyway).
-    {
-        // THE purse table now lives beside the row it describes
-        // (macro/npc.h kNpcPurse), because the subworld's derived bodies pay
-        // out of it too (damage-door Inc 5) — a macro merchant and the corpse
-        // of a merchant below are one creature and answer with one number.
-        const NpcPurse purse = npc_purse(type);
-        const int coins = purse.min
-            + int(rng.next_u32() % std::uint32_t(purse.max - purse.min + 1));
-        // The purse value lands as the banner's own coins, change-made
-        // largest first (a labourer's 1..10 is coppers; a merchant's
-        // 50..200 is silvers and change) — arithmetic, never a coin gate.
-        add_value_in_coins(bag.inv, int(factionIdx), coins);
-    }
     st.inventory[h.slot] = bag;
 
     // Per-NPC visual identity (TS `generateNpcCharacter(type)` -

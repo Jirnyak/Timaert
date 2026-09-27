@@ -31,6 +31,7 @@
 #include "sub/spawn.h"
 #include "sub/record.h"    // macro_record_of / pools_of — дверь шва «чья это запись»
 #include "macro/codex.h"
+#include "macro/currency.h"   // coin_census_value — монетная перепись сумки
 #include "macro/items.h"
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
@@ -5187,7 +5188,45 @@ bool run_chronicle_rate_smoke(App& app) {
     }
     smoke_clear_modal_overlays(app);
 
+    // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (AGENTS §8 п.11). Прежде этот прибор
+    // мерил ровно «случилась ли в мире стычка в тот день, который я мерю», и
+    // держался на везении: замер 2026-09-27 на HEAD показал, что сам ДО-код
+    // писал факты только в дни боёв (сид 12345: день 2 — killed=2/died=1,
+    // дни 3-6 — НОЛЬ, день 7 — 6, день 8 — 3, день 9 — НОЛЬ), то есть на
+    // тихом дне ДО-сборка краснела тем же текстом. Поэтому событие, которое
+    // ОБЯЗАНО быть записано, свидетель устраивает сам — тем же путём, каким
+    // это делает `force_encounter`: рождает враждебный сквад на клетке игрока
+    // и решает встречу авторезолвом. Дальше он всё так же гонит целый день и
+    // печатает объём мира как ИНФОРМАЦИЮ, но вердикт выносит по тому, что
+    // обязано было прозвучать.
     const std::uint32_t seqBefore = app.gs.chronicle.nextSeq;
+    {
+        auto& reg = app.ecs.reg;
+        const entt::entity hostile = smoke_birth_squad_at_player(
+            app, sm::NPCType::Peasant, sm::faction_index("bandits"));
+        if (hostile == entt::null) {
+            smoke_fail(app, "chronicle_rate: дверь рождения не дала врага");
+            return false;
+        }
+        const auto& hcell = (*body_state<sm::ecs::MacroCell>(reg, hostile));
+        smoke_teleport_player(app,
+                              int(float(sm::ecs::cell_x(hcell, app.gs.mapW))),
+                              int(float(sm::ecs::cell_y(hcell, app.gs.mapW))));
+        app.cursor.path.clear();
+        app.cursor.pathIdx = 0;
+        detect_forced_encounter(app);
+        if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) {
+            smoke_fail(app, "chronicle_rate: встреча не форсировалась");
+            return false;
+        }
+        perform_encounter_auto(app, hostile, sm::Ambush::None);
+        if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
+            smoke_fail(app, "chronicle_rate: авторезолв не отдал карту");
+            return false;
+        }
+        smoke_clear_modal_overlays(app);
+    }
+    const std::uint32_t factsFromBattle = app.gs.chronicle.nextSeq - seqBefore;
     const int dayBefore = app.gs.worldTime.day();
     // One whole game day of honest ticks (S3: day = 8192).
     const RuntimeFrameStats stats = advance_sim_steps(
@@ -5224,12 +5263,16 @@ bool run_chronicle_rate_smoke(App& app) {
         smoke_fail(app, "chronicle_rate advanced nothing");
         return false;
     }
-    // A living world writes SOMETHING in a day (deaths, deals, hunger). A
-    // silent day means every writer came unplugged — the exact regression
-    // this instrument exists to catch.
-    if (factsInDay == 0) {
-        smoke_fail(app, "a whole world day passed and the chronicle heard "
-                        "nothing: the writers are unplugged");
+    // ВЕРДИКТ — ПО СОБЫТИЮ, КОТОРОЕ СВИДЕТЕЛЬ УСТРОИЛ САМ: бой с гибелью
+    // ОБЯЗАН быть записан (FactKind killed/died — `report_battle_deaths`).
+    // Ноль здесь значит, что дверь записи мира отключена, и это единственный
+    // вывод, который прибор делает БЕЗ опоры на везение.
+    std::printf("[smoke] chronicle_rate battleFacts=%u dayFacts=%u\n",
+                unsigned(factsFromBattle), unsigned(factsInDay - factsFromBattle));
+    std::fflush(stdout);
+    if (factsFromBattle == 0) {
+        smoke_fail(app, "бой с гибелью прошёл, а летопись не услышала: "
+                        "писатели мира отключены");
         return false;
     }
     return true;
@@ -5404,9 +5447,38 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console help produced no output"); return false;
     }
 
-    con.execute("gold 500");
-    if (sm::inventory_value(player_bag(app)) != oldGold + 500) {
-        restore(); smoke_fail(app, "console gold add"); return false;
+    // Команда `gold` и псевдо-id `give gold` снесены вместе с выдачей монет
+    // из воздуха (M-139, вердикт владельца 2026-09-26), и три проверки,
+    // стоявшие здесь, охраняли ВЫДАЧУ, а не закон (§8 ЗАКОН НУЛЕВОЙ п.5).
+    // Заменяют их два контроля: (1) команды `gold` в консоли больше нет —
+    // стоимость сумки не двигается; (2) `give` ходит в ЕДИНУЮ таблицу
+    // объектов, и «gold» там — законная строка РУДЫ («Gold Ore»), а не
+    // монета: стоимость растёт, монетная перепись стоит на месте.
+    {
+        const int vBefore = sm::inventory_value(player_bag(app));
+        const int coinBefore = sm::coin_census_value(player_bag(app));
+        con.execute("gold 500");
+        if (sm::inventory_value(player_bag(app)) != vBefore
+            || sm::coin_census_value(player_bag(app)) != coinBefore) {
+            restore();
+            smoke_fail(app, "команда gold вернулась: консоль печатает "
+                            "стоимость из воздуха (M-139)");
+            return false;
+        }
+        // Счёт МАЛЫЙ намеренно: «gold» — это РУДА по 4 кг, и 250 штук кладут
+        // на игрока тонну перегруза, от которого тело жжёт SP — свидетель
+        // рубки ниже мерит цену SP и краснел бы на честном перегрузе.
+        con.execute("give gold 2");
+        if (sm::inventory_value(player_bag(app)) <= vBefore) {
+            restore();
+            smoke_fail(app, "give не дал объект единой таблицы (gold = руда)");
+            return false;
+        }
+        if (sm::coin_census_value(player_bag(app)) != coinBefore) {
+            restore();
+            smoke_fail(app, "give gold напечатал МОНЕТЫ вместо руды (M-139)");
+            return false;
+        }
     }
 
     const int potBefore = player_bag(app).count("potion_hp");
@@ -5418,14 +5490,6 @@ bool run_console_smoke(App& app) {
     if (player_bag(app).count("potion_hp") != potBefore + 2) {
         restore(); smoke_fail(app, "console take item"); return false;
     }
-    // Value moved by the potions above rides in the bag too, so the check
-    // is a DELTA around this one command, not a running total.
-    const int vBeforeGive = sm::inventory_value(player_bag(app));
-    con.execute("give gold 250");
-    if (sm::inventory_value(player_bag(app)) != vBeforeGive + 250) {
-        restore(); smoke_fail(app, "console give gold"); return false;
-    }
-
     const int lvlBefore = sm::player_sheet(app.ecs)->levelData.level;
     con.execute("addexp 100000");
     if (sm::player_sheet(app.ecs)->levelData.level <= lvlBefore) {
@@ -5455,7 +5519,7 @@ bool run_console_smoke(App& app) {
 
     // A usage error (missing arg) must print but never mutate state.
     const int goldPreUsage = sm::inventory_value(player_bag(app));
-    con.execute("gold");
+    con.execute("take");
     if (sm::inventory_value(player_bag(app)) != goldPreUsage) {
         restore(); smoke_fail(app, "console usage-error mutated state"); return false;
     }

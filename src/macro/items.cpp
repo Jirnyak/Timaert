@@ -430,70 +430,16 @@ struct LootEntry {
     int         minLevel;  // 0 = unrestricted
 };
 
-// NPC_LOOT[npcType] — keys 0-7 mirror NPCType enum in `npc.h`:
-// 0 Peasant, 1 Woodcutter, 2 Merchant, 3 Caravan, 4 Bandit, 5 Guard,
-// 6 Witch, 7 Sorceress.
-
-constexpr LootEntry kPeasantLoot[] = {
-    // ПИЩА на месте хлеба (2026-09-20, снос хлеба): у крестьянина в котомке
-    // харч — тот же, каким мир гасит голод.
-    {"food",   0.6f, 1, 3, 0},
-    {"wood",   0.4f, 1, 4, 0},
-    {"mat_herb",   0.2f, 1, 2, 0},
-};
-constexpr LootEntry kWoodcutterLoot[] = {
-    {"food",   0.5f, 1, 2, 0},
-    {"wood",   1.0f, 2, 7, 0},
-};
-// (kMinerLoot / kQuarrymanLoot / kClayDiggerLoot died 2026-09-18 with the
-// crowd professions — verdict №2: no spawner raises those rows, so a loot
-// table for them was a profile of nobody.)
-constexpr LootEntry kMerchantLoot[] = {
-    {"food",   0.6f, 2, 6, 0},
-    {"potion_hp",  0.7f, 1, 3, 0},
-    {"potion_mp",  0.5f, 1, 2, 0},
-    {"iron",   0.4f, 1, 3, 0},
-    {"misc_gem",   0.3f, 1, 1, 0},
-    {"wpn_dagger", 0.2f, 1, 1, 0},
-};
-constexpr LootEntry kCaravanLoot[] = {
-    {"food",   1.0f, 3, 7, 0},
-    {"potion_hp",  0.7f, 1, 3, 0},
-    {"iron",   0.6f, 2, 5, 0},
-    {"misc_gem",   0.4f, 1, 2, 0},
-};
-constexpr LootEntry kBanditLoot[] = {
-    {"potion_hp",  0.7f, 1, 2, 0},
-    {"wpn_dagger", 0.5f, 1, 1, 3},
-    {"misc_gem",   0.4f, 1, 2, 0},
-};
-constexpr LootEntry kGuardLoot[] = {
-    {"food",   0.6f, 1, 3, 0},
-    {"potion_hp",   0.5f, 1, 1, 0},
-    {"arm_leather", 0.3f, 1, 1, 3},
-};
-constexpr LootEntry kWitchLoot[] = {
-    {"potion_mp",  1.0f, 1, 3, 0},
-    {"mat_herb",   0.7f, 2, 5, 0},
-    {"potion_hp",  0.5f, 1, 2, 0},
-};
-constexpr LootEntry kSorceressLoot[] = {
-    {"potion_mp",  1.0f, 2, 5, 0},
-    {"potion_hp",  1.0f, 1, 3, 0},
-    {"mat_herb",   0.6f, 3, 7, 0},
-    {"misc_gem",   0.4f, 1, 2, 0},
-};
-
-// FAUNA_LOOT — keyed by faction id string.
-constexpr LootEntry kWildlifeLoot[] = {
-    {"food_meat", 0.85f, 1, 3, 0},
-    {"mat_hide",  0.50f, 1, 2, 0},
-};
-constexpr LootEntry kDemonsLoot[] = {
-    {"mat_bone",  0.70f, 1, 3, 0},
-    {"mat_herb",  0.30f, 1, 2, 0},
-    {"misc_gem",  0.15f, 1, 1, 3},
-};
+// ХАРДКОД-ТАБЛИЦ ЛУТА СУЩЕСТВ ЗДЕСЬ БОЛЬШЕ НЕТ (вердикт владельца
+// 2026-09-26, M-139: «сноси все говны … захардкоженый говносрак на
+// существо? конечно сноси»). Стояло ДЕСЯТЬ таблиц и 33 авторские строки
+// «что роняет эта роль»: peasant, woodcutter, merchant, caravan, bandit,
+// guard, witch, sorceress, wildlife, demons. Это был тот же род дефекта, что
+// кошелёк: список вещей, приписанный РОЛИ, мимо единой таблицы объектов и
+// мимо стоимости. Кто что несёт, будет решать ПУЛ ЛУТА как РЕЖИССЁР — по
+// стоимости, весам единой таблицы, тегам и контексту («CONTENTUS EX NIHILO»,
+// владелец). До него павшие роняют РОВНО то, что несли, а спавн кладёт в
+// сумку пусто — дыра названа в M-139.
 
 // PROP_LOOT — the world's own things, not its inhabitants. A felled tree, and
 // later a broken boulder or a rifled cairn, resolves through the SAME registry
@@ -530,46 +476,14 @@ struct LootProfile {
 
 #define SM_LOOT_PROFILE(id_, tbl) {id_, tbl, sizeof(tbl) / sizeof(LootEntry)}
 constexpr LootProfile kLootProfiles[] = {
-    SM_LOOT_PROFILE("peasant",    kPeasantLoot),
-    SM_LOOT_PROFILE("woodcutter", kWoodcutterLoot),
-    SM_LOOT_PROFILE("merchant",   kMerchantLoot),
-    SM_LOOT_PROFILE("caravan",    kCaravanLoot),
-    SM_LOOT_PROFILE("bandit",     kBanditLoot),
-    SM_LOOT_PROFILE("guard",      kGuardLoot),
-    SM_LOOT_PROFILE("witch",      kWitchLoot),
-    SM_LOOT_PROFILE("sorceress",  kSorceressLoot),
-    SM_LOOT_PROFILE("wildlife",   kWildlifeLoot),
-    SM_LOOT_PROFILE("demons",     kDemonsLoot),
-    SM_LOOT_PROFILE("bandits",    kBanditLoot),  // Bandits-faction fauna default
-    SM_LOOT_PROFILE("tree",       kTreeLoot),    // world prop, not an inhabitant
-    SM_LOOT_PROFILE("crop",       kCropLoot),    // world prop, not an inhabitant
+    // ТОЛЬКО ВЕЩИ МИРА. Обе строки — не выдача, а ВЫПЛАТА ПЕРЕНОСА: срубленное
+    // дерево платит ровно то дерево, которое ведомость макро-стока списала с
+    // клетки (`macro_stock_apply(TreeCount, -1)`), сжатый стебель — ровно то
+    // зерно (`CropCount, -1`). Профилей РОЛЕЙ здесь больше нет (M-139).
+    SM_LOOT_PROFILE("tree",       kTreeLoot),
+    SM_LOOT_PROFILE("crop",       kCropLoot),
 };
 #undef SM_LOOT_PROFILE
-
-// ── ЛУТ-ПРОФИЛЬ — КОЛОНКА СТРОКИ (CANON S26 «Одна строка на род») ────────
-// Здесь стояла ПЯТАЯ таблица-спутник `kNpcLootId` по ординалу NPCType, и она
-// была хуже прочих: колонка `NpcTypeDef::lootId` отвечала на ТОТ ЖЕ вопрос,
-// а склеены они были ЦЕПОЧКОЙ ФОЛБЭКА (squad.h: своя колонка → роль-таблица
-// → знамя фракции). Два словаря об одном плюс порядок опроса как закон.
-// Влита в строку 2026-09-22; перед сносом сверено машиной, а не глазами:
-// колонки не расходились НИ В ОДНОМ из 46 рядов (у 9 значение было только в
-// роль-таблице, ни у одного — только в строке), поэтому перенос
-// поведения не меняет.
-// СВИДЕТЕЛЬ: ни одна строка не называет профиля, которого нет в реестре.
-constexpr bool every_npc_loot_id_resolves() {
-    for (const NpcTypeDef& row : kNpcTypeDefs) {
-        if (!row.lootId) continue;   // молчание — ответ, а не пробел
-        bool found = false;
-        for (const LootProfile& p : kLootProfiles) {
-            found = found
-                    || std::string_view(row.lootId) == std::string_view(p.id);
-        }
-        if (!found) return false;
-    }
-    return true;
-}
-static_assert(every_npc_loot_id_resolves(),
-              "строка существа называет лут-профиль, которого нет в реестре");
 
 // ── The affix table (owner's design 2026-09-07) ───────────────────────────
 // What the random half of the one issuance door (grant_affixes) rolls from.
@@ -997,36 +911,6 @@ const char* affix_suffix(const ItemRef& item) noexcept {
         if (const AffixDef* a = affix_def_for_row(b.row)) return a->name;
     }
     return "";
-}
-
-const char* npc_loot_id(int npcType) noexcept {
-    if (npcType < 0 || npcType >= int(NPCType::Count)) return "";
-    // Пустая строка, а не nullptr: у звателя не должно быть второй ветки на
-    // «профиля нет» — на это отвечает знамя фракции ниже по цепочке.
-    const char* id = kNpcTypeDefs[std::size_t(npcType)].lootId;
-    return id ? id : "";
-}
-
-int generate_loot_gold(int npcType, int level, const CorpseLootContext& ctx,
-                       RngFn rng) {
-    if (npcType < 0 || npcType >= int(NPCType::Count)) return 0;
-    const NpcPurse purse = npc_purse(NPCType(std::uint8_t(npcType)));
-    if (purse.max <= 0) return 0;          // no pockets: a beast, honestly
-    // 1. The BODY: its row's span, rolled, grown by its own level (a veteran
-    //    bandit has robbed more than a fresh recruit; level 1 is the row's
-    //    authored number, unscaled).
-    const float span = float(purse.max - purse.min);
-    const float rolled = float(purse.min) + rng() * span;
-    const float body = rolled
-        * (1.0f + kLootLevelGain * float(level > 0 ? level - 1 : 0));
-    // 2. The WORLD: one factor per system, each 1.0 when its system is silent.
-    //    A new system is a new line here and a new field there — no caller
-    //    learns about it.
-    const float danger =
-        1.0f + kDangerLootGain * (float(ctx.danger) / 255.0f);
-    const float place = ctx.wealthMul > 0.0f ? ctx.wealthMul : 1.0f;
-    const int v = int(std::floor(body * danger * place));
-    return v < 0 ? 0 : v;
 }
 
 std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlice& pc) {

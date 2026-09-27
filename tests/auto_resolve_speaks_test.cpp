@@ -13,9 +13,10 @@
 //     leader by his entity — and a survivor is never reported;
 //   * the kill price is the registry's column: a lawful faction charges
 //     kKillRepPenalty per body, an outlaw charges nothing (killIsNoCrime);
-//   * the spoils are ROLLED through the one loot registry, so a fallen
-//     merchant pays coin of his own realm even though his record carried no
-//     bag; a defeat pays the player nothing.
+//   * the spoils are the fallen's OWN goods, moved once: победителю
+//     достаётся ровно то, что павший нёс, и ни строки сверх — бросок
+//     хардкод-профиля роли и печать кошелька снесены (M-139, 2026-09-26);
+//     a defeat pays the player nothing.
 
 #include "check.h"
 #include "macro/squad.h"
@@ -192,30 +193,39 @@ void test_spoils_are_rolled_not_scavenged() {
     mw.gs = &gs;
     mw.world = &w;
     ensure_macro_player_entity(gs, w);
-    // A merchant band: rich rows, and NOT ONE of them carries a bag — roster
-    // members are records, not entities. Before the roll they dropped nothing.
+    // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): чтобы спросить «дошла ли
+    // добыча», у павшего должна БЫТЬ добыча. Раньше её рождал бросок
+    // хардкод-профиля роли — и вопрос стоял «роняет ли ростерная запись то,
+    // чего у неё нет»; вердикт владельца 2026-09-26 (M-139) снёс и профили,
+    // и кошельки, поэтому закон теперь ОДИН и честный: победителю достаётся
+    // РОВНО то, что павший нёс. Кладём купцу настоящий товар руками.
     const entt::entity enemy = squad(w, NPCType::Merchant, "empire", 4, 3, 7u);
-    // Слияние M-71: контейнер у сквада ЕСТЬ (в нём живут его люди), но
-    // ПРЕДМЕТНАЯ область пуста — до броска ронять по-прежнему нечего.
     {
-        const Inventory& einv = (*sm::body_state<ecs::NpcInventory>(w.reg, enemy)).inv;
-        int goods = 0;
-        for (const ItemRef& sl : einv.slots) {
-            if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
-        }
-        CHECK(goods == 0,
-              "the fixture's premise: nobody here carries goods");
+        Inventory& einv = (*sm::body_state<ecs::NpcInventory>(w.reg, enemy)).inv;
+        einv.add("misc_gem", 3);
+        einv.add("coin_empire_silver", 5);
     }
+    const int coinBefore = coin_census_value(player_bag_of(w));
     settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
 
-    // The realm's whole coin FAMILY (three nominals since verdict №1): a
-    // purse change-makes into whichever rows fit its value.
-    const auto realm_coin_value = [](const Inventory& inv, const char* id) {
-        return coin_census_value(inv) > 0
-            && faction_coins(faction_index(id))[0] != nullptr;
-    };
-    CHECK(realm_coin_value(player_bag_of(w), "empire"),
-          "the fallen merchants pay coin of their own realm");
+    // ПЕРЕНОС, А НЕ ПЕЧАТЬ: самоцветы и серебро павшего лежат у победителя, и
+    // ровно в том счёте, в каком были у павшего — сверх этого не появляется
+    // ничего (негативный контроль сноса выдачи, §8 п.6: вернись бросок
+    // профиля или кошелёк — счёт перестанет совпадать).
+    CHECK(player_bag_of(w).count("misc_gem") == 3,
+          "добыча павшего ПЕРЕНОСИТСЯ победителю, ровно своим счётом");
+    CHECK(coin_census_value(player_bag_of(w)) == coinBefore + 5 * 10,
+          "монеты павшего переходят как товар, и НИ ОДНОЙ сверх — выдача "
+          "монет из воздуха снесена (M-139)");
+    {
+        int goods = 0;
+        for (const ItemRef& sl : player_bag_of(w).slots) {
+            if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
+        }
+        CHECK(goods == 2,
+              "в сумке победителя ровно две предметные строки — те, что нёс "
+              "павший, и ни одной наброшенной профилем роли");
+    }
 
     // The negative control: a DEFEAT pays nothing. Loot is the victor's.
     GameState gs2{};
@@ -239,9 +249,12 @@ void test_spoils_are_rolled_not_scavenged() {
           "a defeat pays the player nothing");
 }
 
-// A beast squad is the other end of the purse law reaching the map: wolves
-// carry no coin however the fight was resolved.
-void test_beasts_pay_no_coin() {
+// ПАВШИЙ БЕЗ ДОБРА НЕ ПЛАТИТ НИЧЕМ — второй конец того же закона переноса.
+// Прежде здесь стоял «у волчьей строки нет карманов» (колонки `purseMin`/
+// `purseMax`), и он умер вместе с колонками: M-139. Свидетель остаётся, но
+// охраняет уже перенос, а не кошелёк — волчья стая ничего не несёт, значит
+// победителю не достаётся ни монеты, ни строки.
+void test_empty_handed_fallen_pays_nothing() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
     gs.worldSeed = 99u;
@@ -255,8 +268,14 @@ void test_beasts_pay_no_coin() {
     const entt::entity pack = squad(w, NPCType::Wolf, "wildlife", 3, 0, 9u);
     settle_player_auto_battle(mw, pack, wipe_of(w, pack, true), true);
     CHECK(coin_census_value(player_bag_of(w)) == 0,
-          "a wolf pack pays no coin — the row has no pockets, on the map as "
-          "underfoot");
+          "стая, не нёсшая ничего, не платит ни монеты — ни кошелька строки, "
+          "ни броска профиля больше нет (M-139)");
+    int goods = 0;
+    for (const ItemRef& sl : player_bag_of(w).slots) {
+        if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
+    }
+    CHECK(goods == 0,
+          "и ни одной предметной строки: добыча есть ПЕРЕНОС, а не выдача");
 }
 
 } // namespace
@@ -266,6 +285,6 @@ int main() {
     test_no_facts_when_nobody_listens();
     test_kill_price_is_the_registry_column();
     test_spoils_are_rolled_not_scavenged();
-    test_beasts_pay_no_coin();
+    test_empty_handed_fallen_pays_nothing();
     return sm::test::report("auto_resolve_speaks_test");
 }

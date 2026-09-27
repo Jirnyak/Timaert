@@ -154,8 +154,8 @@ constexpr std::uint32_t kSquadSpawnSalt =
     std::uint32_t{2147483647} + std::uint32_t{622657538};
 constexpr std::uint32_t kMacroProjectionSalt =
     std::uint32_t{2147483647} + std::uint32_t{1181783497};
-constexpr std::uint32_t kEntityLootMix =
-    std::uint32_t{2147483647} + std::uint32_t{506952114};
+// (kEntityLootMix — соль броска лута на труп — снесена вместе с самим
+//  броском: M-139, труп несёт только то, что тело несло.)
 constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 
 // ── Body size and eyesight, straight from the authoring tables ─────────────
@@ -2655,16 +2655,9 @@ bool SubworldEngine::interact() {
     // Credit FIRST, corpse second (the grant_prop_loot rule above): a full
     // bag REFUSES, and what it refuses stays ON the body — the corpse is
     // only destroyed once it holds nothing, never over evaporated spoils.
-    // Coin loot lands as imperial coins in the bag, change-made largest
-    // first (the victim's own purse coins already ride CorpseLoot as items;
-    // this int is the derived-body roll — faction mint when the death path
-    // learns it).
-    if (loot.gold > 0
-        && add_value_in_coins(player_bag_of(ecs_), faction_index("empire"),
-                              loot.gold) == loot.gold) {
-        loot.gold = 0;
-    }
-    bool leftBehind = loot.gold > 0;
+    // Монетной половины здесь больше нет (M-139): труп несёт СТАКИ — свою
+    // сумку, включая монеты, которые убитый заработал как обычный товар.
+    bool leftBehind = false;
     for (ItemRef& s : loot.inv.slots) {
         if (s.empty()) continue;
         if (player_bag_of(ecs_).add_ref(s)) s = ItemRef{};
@@ -3426,89 +3419,33 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             }
 
             // WHAT HE HAD ON HIM — from his record, through the one door
-            // (sub/record.h). For a tracked body that is the lord's own bag, so
-            // the sword you find on the corpse is the sword the map says he
-            // owned; for a derived body the door answers with its own block and
-            // the roll below fills an empty one, exactly as before.
+            // (sub/record.h): for a tracked body that is the lord's own bag,
+            // so the sword you find on the corpse is the sword the map says
+            // he owned. И ЭТО ТЕПЕРЬ ВСЁ, ЧТО НА ТРУПЕ БЫВАЕТ (M-139,
+            // вердикт владельца 2026-09-26): бросок хардкод-профиля роли и
+            // печать кошелька снесены вместе со своими таблицами, поэтому
+            // производное тело, не несшее ничего, трупа-контейнера и не
+            // оставляет. Раздавать добычу по контексту будет ПУЛ ЛУТА —
+            // «режиссёр лута всей игры» (владелец); контейнер вернётся к
+            // нему через ту же единую интеракцию.
             //
-            // ...and it LEAVES the record as it lands on the corpse. Two copies
-            // of one sword is the shape this whole landing exists to remove,
-            // and the record outlives this tick (the Dead sweep reaps it later),
-            // so «he is dead anyway» is not an argument.
+            // ...и добро ПОКИДАЕТ запись, ложась на труп. Две копии одного
+            // меча — ровно та форма, которую это место и существует убрать;
+            // запись переживает тик (Dead-свип жнёт её позже), так что «он
+            // всё равно мёртв» доводом не является.
             Inventory inv{};
             if (auto* bag = state_of<ecs::NpcInventory>(reg, e)) {
                 inv = bag->inv;
                 bag->inv = Inventory{};
             }
 
-            const std::uint32_t seed = gs_->worldSeed
-                ^ (std::uint32_t(entt::to_integral(e)) * kEntityLootMix)
-                ^ std::uint32_t(lvl * 7919);
-            Rng rng(seed);
-            gLootRng = &rng;
-            // The WORLD the body fell in — the danger of its cell and the
-            // wealth of the place standing on it (owner's design 2026-08-27).
-            // Both read from BAKED grids, one array lookup each, never a
-            // facts assembly (the door track's performance contract); a new
-            // contribution is a new field of CorpseLootContext and one more
-            // line here. Assembled BEFORE the rolls because it feeds both:
-            // the purse below, and the affix power the item roll loads its
-            // dice with (the affix track, 2026-09-07).
-            CorpseLootContext lootCtx{};
-            if (pos) {
-                // Window tile → macro cell: the 3×3 window's centre cell is
-                // mgr_.center_cx/cy, its origin one cell back on each axis.
-                const int cellX =
-                    mgr_.center_cx() - 1 + int(pos->x) / int(kCellSize);
-                const int cellY =
-                    mgr_.center_cy() - 1 + int(pos->y) / int(kCellSize);
-                if (mw_.landmarks) {
-                    lootCtx.wealthMul =
-                        landmark_def(mw_.landmarks->at(cellX, cellY).type)
-                            .wealthMul;
-                }
-                if (zones_ && !zones_->data.empty()) {
-                    lootCtx.danger = zones_->at(cellX, cellY);
-                }
-            }
-            if (inv.used_slots() == 0 && kind) {
-                // Single keyed loot path (macro/items.h roll_loot_profile): a
-                // humanoid NPC resolves by role, a monster by its creature-table
-                // lootId (null => faction default). Both share one resolver, so a
-                // Bandits-faction creature now drops real items via the "bandits"
-                // profile instead of nothing (the old faction-string gap).
-                // The row answers first with its own column, then with the
-                // per-role list, and a row that says nothing either way drops
-                // by its faction. One chain for a bandit and for a wolf.
-                const NpcTypeDef* row = row_for(kind);
-                const char* lootId = row && row->lootId && row->lootId[0]
-                    ? row->lootId
-                    : npc_loot_id(int(kind->type));
-                if (!lootId || !lootId[0]) lootId = faction_id_for_kind(kind);
-                auto stacks = roll_loot_profile(
-                    lootId, lvl, &loot_rng_f01,
-                    affix_power(lvl, lootCtx.danger, lootCtx.wealthMul));
-                for (const ItemRef& s : stacks) inv.add_ref(s);
-            }
-            // Only a DERIVED body mints its purse (the same empty-bag gate
-            // the item roll above obeys): a tracked body carries its REAL
-            // wallet in `inv` already, and generating on top of it was the
-            // double mint of canon-audit B2 (owner 2026-08-31: генерик без
-            // инвентаря генерит — это норм; у кого кошелёк есть — роняет
-            // кошелёк).
-            const int gold = (kind && inv.used_slots() == 0)
-                ? generate_loot_gold(int(kind->type), lvl, lootCtx,
-                                     &loot_rng_f01)
-                : 0;
-            gLootRng = nullptr;
-
-            if (pos && (gold > 0 || inv.used_slots() > 0)) {
+            if (pos && inv.used_slots() > 0) {
                 auto corpse = reg.create();
                 reg.emplace<ecs::Position>(corpse, pos->x, pos->y, pos->z);
                 reg.emplace<ecs::SubworldTag>(corpse);
                 reg.emplace<ecs::Structure>(
                     corpse, ecs::Structure::Corpse, pos->x, pos->y, 4.0f, 0.3f);
-                reg.emplace<ecs::CorpseLoot>(corpse, std::move(inv), gold);
+                reg.emplace<ecs::CorpseLoot>(corpse, std::move(inv));
             }
             reg.destroy(e);
         }

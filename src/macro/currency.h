@@ -168,29 +168,19 @@ inline int transfer_value_dense(Inventory& from, Depot to, int value) {
     return moved;
 }
 
-// ── Granting value as coin — change-making over the mint family ──────────
-
-// Add `value` worth of a faction's OWN coin to a bag, largest nominal first
-// (gold → silver → copper; copper is nominal 1, so nothing is dropped).
-// This is where rewards, purses and treasury seeds are MINTED into rows —
-// plain change-making arithmetic over the registry's mint columns, never a
-// mechanic: the coins land as ordinary stacks and trade as ordinary goods.
-// A full bag refuses what it refuses; returns the value actually added.
-inline int add_value_in_coins(Inventory& inv, int factionIdx, int value) {
-    int left = value < 0 ? 0 : value;
-    int added = 0;
-    const char* const* coins = faction_coins(factionIdx);
-    for (int i = 2; i >= 0 && left > 0; --i) {
-        const ItemDef* def = item_def(coins[i]);
-        const int unit = def && def->value > 0 ? def->value : 1;
-        const int n = left / unit;
-        if (n <= 0) continue;
-        if (!inv.add(coins[i], n)) continue;   // full bag: try smaller coin
-        left -= n * unit;
-        added += n * unit;
-    }
-    return added;
-}
+// ── ВЫДАЧИ МОНЕТ ИЗ ВОЗДУХА ЗДЕСЬ БОЛЬШЕ НЕТ (M-139, вердикт владельца
+// 2026-09-26, дословно: «ВЫДАЧА МОНЕТ СНЕМСТИ … не нужно никакого костыль
+// гольд выдачи платят тем что эквиваельнто по сстоимости в миневантаре»).
+// Здесь стояла `add_value_in_coins` — второй путь появления СТОИМОСТИ рядом
+// с чеканкой: она печатала номиналы фракции прямо в сумку, и ею жили посев
+// казны при рождении места, кошелёк NPC при спавне, золото трупа, награда
+// без дарителя и четыре выдачи игроку. Деньги входят в мир ОДНИМ путём —
+// чеканкой рецептом `coin_*` из серебра (`items.cpp`), — а платят по трём
+// столпам: абсолютная стоимость + локальная цена + стоимость/масса, то есть
+// `densest_value_slot` выше. Открытые концы (пустая казна новорождённого
+// места, пустой кошелёк NPC, награда без дарителя) названы в
+// `macro-registry.md` M-139 и ждут ПУЛА ЛУТА; времянки на их месте
+// запрещены (AGENTS §1).
 
 // VALUE of the COIN rows of a bag — a census over the faction registry's
 // mint columns (deduped: culture groups fold onto their realm's family).
