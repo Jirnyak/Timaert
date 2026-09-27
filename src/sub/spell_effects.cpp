@@ -3,6 +3,7 @@
 #include "ecs/components.h"
 #include "sub/base_generator.h"
 #include "sub/body.h"
+#include "sub/movement.h"   // kMaxBodyCrowd — THE subworld body ceiling
 #include "macro/store.h"
 
 #include <array>
@@ -77,11 +78,11 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
 }
 
 // ── Broad phase ────────────────────────────────────────────────────────────
-// The candidate buffer matches the battle snapshot's own ceiling
-// (kMaxBodyCrowd = 16384): the grid can never hold more bodies than that,
-// so overflow is impossible by construction and the -1 arm below is reserved
-// for a broad phase that KNOWS it is incomplete (a truncated gather).
-constexpr int kMaxSpellNeighbors = 16384;
+// The candidate buffer IS the subworld ceiling (sub/movement.h kMaxBodyCrowd,
+// read directly — one number, no local copy): the grid can never hold more
+// bodies than exist, so overflow is impossible by construction and the -1 arm
+// below is reserved for a broad phase that KNOWS it is incomplete (a truncated
+// gather).
 
 // Enumerate every body that MAY matter within `r` of (cx, cy) and hand each
 // (entity, position) to `fn`. Three arms, one promise — nobody is missed:
@@ -100,9 +101,9 @@ void for_each_spell_candidate(ecs::World& w,
     if (neighborsFn) {
         // Static: one 64 KiB buffer for the whole single-threaded spell tick,
         // touched only as far as it is filled.
-        static std::uint32_t buf[kMaxSpellNeighbors];
+        static std::uint32_t buf[kMaxBodyCrowd];
         const int n = neighborsFn(neighborsUser, cx, cy, r,
-                                  buf, kMaxSpellNeighbors);
+                                  buf, kMaxBodyCrowd);
         if (n >= 0) {
             for (int i = 0; i < n; ++i) {
                 const entt::entity e = entt::entity(buf[std::size_t(i)]);

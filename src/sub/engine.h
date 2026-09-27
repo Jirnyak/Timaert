@@ -629,7 +629,8 @@ private:
     // Mass-battle state (sub/movement.h). One SoA snapshot plus its two grids,
     // allocated once and reused every tick — the combat pass never allocates.
     // The ECS stays the authority for damage/death/loot; this is only "where do
-    // bodies want to be", so the same code runs one bandit and 16384 soldiers.
+    // bodies want to be", so one bandit and a full kMaxBodyCrowd of soldiers
+    // run the very same code.
     BodyCrowd             crowd_;
     // Two bucket grids at two scales: bodies are ~1 unit wide, weapons reach up
     // to 25, and one cell size cannot serve both queries without going quadratic

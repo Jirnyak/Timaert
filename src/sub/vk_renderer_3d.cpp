@@ -7,6 +7,7 @@
 #include "sub/lighting.h"
 #include "sub/material.h"
 #include "sub/map_data.h"
+#include "sub/movement.h"   // kMaxBodyCrowd — THE subworld body ceiling
 #include "sub/particles.h"
 #include "sub/seamless_manager.h"
 #include "sub/sky.h"
@@ -161,11 +162,12 @@ struct StructInstance {
 // shadow_cyl.vert): kSides(12) × (6 side + 3 cap) verts.
 constexpr std::uint32_t kCylVertexCount = 12u * 9u;
 
-// Maximum entity instances per category (NPCs, creatures). 16384 = 2^14.
-// The GPU buffers are allocated once at this size; the per-frame staging vectors
-// grow to fit. vkCmdUpdateBuffer is capped at 65536 bytes per call, so uploads
+// Body instances are sized by THE subworld ceiling itself — sub/movement.h
+// kMaxBodyCrowd, read directly at each of the three sites below so there is no
+// second name for one number. ONE lane holds every body alive, the drawn and the
+// procedural together: there are no per-category buffers since the sprite law
+// merged them. vkCmdUpdateBuffer is capped at 65536 bytes per call, so uploads
 // are batched automatically by update_instance_buffer below.
-constexpr std::uint32_t kMaxEntityInstances = 16384;
 
 // Batch vkCmdUpdateBuffer into <=65536-byte chunks for large instance arrays.
 template <typename T>
@@ -375,7 +377,8 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
 
     // ONE instance buffer for every body alive: the drawn and the procedural
     // ride the same lane, distinguished by their row inside `kind`.
-    std::vector<gpu::BbInstance> dummyBodies(kMaxEntityInstances);
+    std::vector<gpu::BbInstance> dummyBodies(
+        static_cast<std::size_t>(kMaxBodyCrowd));
     if (!bodyInstBuf_.create_device_local(dev, dummyBodies.data(),
                                           dummyBodies.size() * sizeof(gpu::BbInstance),
                                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
@@ -1116,14 +1119,14 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         // slice of the city's `rec` column.
         static thread_local std::vector<gpu::BbInstance> bodies;
         bodies.clear();
-        bodies.reserve(kMaxEntityInstances);
+        bodies.reserve(std::size_t(kMaxBodyCrowd));
         // Exclude the player body: first-person, the camera sits at it, so a
         // possessed body must not be drawn over the lens. The hero husk carries
         // no Sprite and never matched anyway.
         auto view = ecs->reg.view<ecs::Position, ecs::Sprite>(
             entt::exclude<ecs::AvatarTag>);
         for (auto e : view) {
-            if (bodies.size() >= kMaxEntityInstances) break;
+            if (bodies.size() >= std::size_t(kMaxBodyCrowd)) break;
             const auto& spr = view.get<ecs::Sprite>(e);
             const SpriteDef& look = sprite_row(SpriteId(spr.spriteRow));
             const std::uint32_t slot = bank_.slot_for(SpriteId(spr.spriteRow));

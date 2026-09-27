@@ -664,9 +664,7 @@ SKELETON.md	movement.cpp:721-722
 SKELETON.md	movement.cpp:849-850
 SKELETON.md	movement.h:1-14
 SKELETON.md	movement.h:149-151
-SKELETON.md	movement.h:190
 SKELETON.md	movement.h:367-368
-SKELETON.md	movement.h:77
 SKELETON.md	nav_field.cpp:122
 SKELETON.md	nav_field.cpp:27
 SKELETON.md	nav_field.cpp:622-630
@@ -855,7 +853,6 @@ SKELETON.md	spell_effects.cpp:127-129
 SKELETON.md	spell_effects.cpp:151
 SKELETON.md	spell_effects.cpp:409
 SKELETON.md	spell_effects.cpp:48-70
-SKELETON.md	spell_effects.cpp:83
 SKELETON.md	spires.cpp:23-29
 SKELETON.md	spires.cpp:45
 SKELETON.md	spires.cpp:67-72
@@ -969,7 +966,6 @@ SKELETON.md	surface_lib.glsl:30
 SKELETON.md	targeting.cpp:24-80
 SKELETON.md	targeting.cpp:66
 SKELETON.md	targeting.cpp:77-79
-SKELETON.md	targeting.h:48
 SKELETON.md	tests/balance_run.cpp:235-236
 SKELETON.md	tests/balance_run.cpp:488
 SKELETON.md	tests/spire_generation_test.cpp:307-316
@@ -998,7 +994,6 @@ SKELETON.md	vk_macro_renderer.cpp:189
 SKELETON.md	vk_macro_renderer.cpp:31
 SKELETON.md	vk_macro_renderer.cpp:89
 SKELETON.md	vk_renderer.cpp:241
-SKELETON.md	vk_renderer_3d.cpp:168
 SKELETON.md	vk_renderer_3d.cpp:1964
 SKELETON.md	vk_renderer_3d.cpp:2305-2321
 SKELETON.md	vk_renderer_3d.cpp:2742

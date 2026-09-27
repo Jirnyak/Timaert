@@ -1,6 +1,6 @@
 // THE MOVER — how a body moves in the subworld. One algorithm for every living
-// thing down here, from a browsing deer to 16384 bodies in a battle line, and
-// for the player among them.
+// thing down here, from a browsing deer to a full kMaxBodyCrowd in a battle
+// line, and for the player among them.
 //
 // It was called "mass battle steering" until 2026-08-30, and the name was a
 // lie the owner caught: «БОЙ В ИГРЕ НИЧЕМ НЕ ОСОБЕННЫЙ, ЭТО ПРОСТО РЯДОМ
@@ -72,9 +72,17 @@
 namespace sm::sub {
 
 // ── Universal capacity ─────────────────────────────────────────────────────
-// One 2^14 ceiling for subworld actors, deliberately equal to the renderer's
-// kMaxEntityInstances: a body that cannot be drawn must not be simulated.
+// THE 2^14 ceiling of the subworld, written down ONCE: this SoA, the renderer's
+// instance buffer (vk_renderer_3d.cpp) and both broad-phase snapshot buffers
+// (spell contact, melee swing) all read THIS name. A body that cannot be drawn
+// must not be simulated, and a snapshot OF bodies can never hold more than
+// exist — three consumers, one number, so there is nothing to keep in sync.
+// Whatever embodied the body — a cell's module design, a squad off the 3×3
+// window, a field's head count, a scripted event, a console spawn — it lands in
+// this one crowd: the ceiling stands on the BODY, never on its source.
 constexpr int kMaxBodyCrowd = 16384;
+static_assert(kMaxBodyCrowd > 0 && (kMaxBodyCrowd & (kMaxBodyCrowd - 1)) == 0,
+              "one power of two for simulation and render alike");
 
 // Sentinel for a squared-distance cache meaning "no such body anywhere".
 // Comfortably past the squared diagonal of the 3×3 window and deliberately

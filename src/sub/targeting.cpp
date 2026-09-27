@@ -1,5 +1,6 @@
 #include "sub/targeting.h"
 #include "sub/body.h"
+#include "sub/movement.h"   // kMaxBodyCrowd — THE subworld body ceiling
 
 #include <cmath>
 
@@ -63,9 +64,9 @@ entt::entity melee_pick_target(entt::registry& reg,
     // bug, so a broad phase that cannot promise completeness answers -1 and
     // the swing falls back to the full scan; null = no grid, headless tests).
     if (neighborsFn) {
-        static std::uint32_t buf[kMaxMeleeNeighbors];
+        static std::uint32_t buf[kMaxBodyCrowd];
         const int n = neighborsFn(neighborsUser, px, py, range,
-                                  buf, kMaxMeleeNeighbors);
+                                  buf, kMaxBodyCrowd);
         if (n >= 0) {
             for (int i = 0; i < n; ++i) {
                 const entt::entity e = entt::entity(buf[std::size_t(i)]);
