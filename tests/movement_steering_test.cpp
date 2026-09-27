@@ -102,7 +102,9 @@ void advance(BodyCrowd& u, UnitGrid& fine, UnitGrid& pick, InfluenceField& f,
 }
 
 struct RunResult {
-    BodyCrowd units;
+    // The crowd lives in its own heap block (movement.h): one flat MiB cannot
+    // ride a stack frame, and a rig returned by value would have copied it.
+    std::unique_ptr<BodyCrowd> units = make_body_crowd();
     MoveStats lastStats;
     std::uint32_t peakEngaged = 0;
     std::uint32_t peakAdvancing = 0;
@@ -112,7 +114,6 @@ RunResult run_battle(int perSide, int ticks, const MoveParams& prm,
                      const MoveGround& terrain, float dt = 1.0f / 60.0f,
                      bool stackAll = false, float sight = kSight) {
     RunResult r{};
-    r.units.reserve(perSide * 2);
     const float cx = kWorld * 0.5f, cy = kWorld * 0.5f;
     // Faction 0 = empire, 1 = bandits (the indices the engine would intern).
     for (int side = 0; side < 2; ++side) {
@@ -120,13 +121,13 @@ RunResult run_battle(int perSide, int ticks, const MoveParams& prm,
         for (int i = 0; i < perSide; ++i) {
             float pos[2] = {cx, cy};
             if (!stackAll) deploy_army_slot(cx, cy, side, i, perSide, pos);
-            r.units.add(soldier(pos[0], pos[1], me, mask_of(foe), sight));
+            r.units->add(soldier(pos[0], pos[1], me, mask_of(foe), sight));
         }
     }
     UnitGrid fine{}, pick{};
     InfluenceField field{};
     for (int t = 0; t < ticks; ++t) {
-        advance(r.units, fine, pick, field, terrain, prm, dt, &r.lastStats);
+        advance(*r.units, fine, pick, field, terrain, prm, dt, &r.lastStats);
         r.peakEngaged = std::max(r.peakEngaged, r.lastStats.engaged);
         r.peakAdvancing = std::max(r.peakAdvancing, r.lastStats.advancing);
     }
@@ -243,13 +244,15 @@ void test_factions() {
 
     // Hostility is per-unit and may be asymmetric: that is how a private grudge
     // (TempHostileToPlayer) rides along without a branch in the hot loop.
-    BodyCrowd u{};
+    auto uOwn = make_body_crowd();
+    BodyCrowd& u = *uOwn;
     u.add(soldier(0, 0, 2, mask_of(3)));    // wildlife with a grudge on the player
     u.add(soldier(0, 0, 3, 0));             // player side, no standing quarrel
     CHECK(u.hostile(0, 1), "grudge-bearing beast sees the player as an enemy");
     CHECK(!u.hostile(1, 0), "hostility is not implicitly reciprocal");
     // A factionless body (-1) fights nobody and is nobody's enemy.
-    BodyCrowd none{};
+    auto noneOwn = make_body_crowd();
+    BodyCrowd& none = *noneOwn;
     none.add(soldier(0, 0, -1, ~0ull));
     none.add(soldier(0, 0, 0, ~0ull));
     CHECK(!none.hostile(1, 0), "a factionless body is never a valid enemy");
@@ -346,7 +349,8 @@ void test_faction_mask_freshness() {
 
 // ── 2–3. Grid correctness and data-derived cell sizes ──────────────────────
 void test_grid() {
-    BodyCrowd u{};
+    auto uOwn = make_body_crowd();
+    BodyCrowd& u = *uOwn;
     for (int i = 0; i < 97; ++i) {
         u.add(soldier(1000.0f + float(i % 10) * 2.0f,
                       1000.0f + float(i / 10) * 2.0f, 0, 0));
@@ -378,7 +382,8 @@ void test_grid() {
     // cell. A dragon-sized crowd must get proportionally larger cells with no
     // code change — that is the whole "радиус из контекста" requirement.
     const float fineSmall = fine_cell_for(u, prm);
-    BodyCrowd big{};
+    auto bigOwn = make_body_crowd();
+    BodyCrowd& big = *bigOwn;
     BodyDesc dragon = soldier(1000.0f, 1000.0f, 0, 0);
     dragon.radius = 8.0f;
     dragon.reach = 20.0f;
@@ -390,7 +395,8 @@ void test_grid() {
     CHECK(pick_cell_for(u, prm) >= fine_cell_for(u, prm),
           "contact grid is never finer than the separation grid");
 
-    BodyCrowd wide{};
+    auto wideOwn = make_body_crowd();
+    BodyCrowd& wide = *wideOwn;
     wide.add(soldier(1.0f, 1.0f, 0, 0));
     wide.add(soldier(3000.0f, 3000.0f, 0, 0));
     UnitGrid gw{};
@@ -399,14 +405,16 @@ void test_grid() {
     CHECK(gw.cell > 4.0f, "cell grew instead of the allocation");
 
     UnitGrid ge{};
-    BodyCrowd empty{};
+    auto emptyOwn = make_body_crowd();
+    BodyCrowd& empty = *emptyOwn;
     build_unit_grid(ge, empty, 4.0f, 256);
     CHECK(ge.begin.size() == 2u && ge.items.empty(), "empty crowd degrades safely");
 }
 
 // ── 4. Influence field ─────────────────────────────────────────────────────
 void test_influence_field() {
-    BodyCrowd u{};
+    auto uOwn = make_body_crowd();
+    BodyCrowd& u = *uOwn;
     u.add(soldier(200.0f, 1000.0f, 0, mask_of(1)));
     for (int i = 0; i < 5; ++i)
         u.add(soldier(1000.0f + float(i) * 2.0f, 1000.0f, 1, mask_of(0)));
@@ -425,7 +433,8 @@ void test_influence_field() {
     CHECK(f.siteX[fi] > 950.0f && f.siteX[fi] < 1050.0f, "site is the enemy mass");
 
     // A faction with no enemies anywhere gets no site: nothing to charge.
-    BodyCrowd lonely{};
+    auto lonelyOwn = make_body_crowd();
+    BodyCrowd& lonely = *lonelyOwn;
     lonely.add(soldier(500.0f, 500.0f, 0, 0));
     InfluenceField f2{};
     build_influence_field(f2, lonely, 32.0f, kWorld);
@@ -445,8 +454,8 @@ void test_alert_chain() {
     // sight. Before the alert chain they stood still and piled up; they must now
     // charge because their front ranks saw the enemy.
     const int perSide = 2000;
-    BodyCrowd u{};
-    u.reserve(perSide * 2);
+    auto uOwn = make_body_crowd();
+    BodyCrowd& u = *uOwn;
     const float cx = kWorld * 0.5f, cy = kWorld * 0.5f;
     int rearmost = -1;
     float rearmostX = cx;
@@ -483,12 +492,13 @@ void test_alert_chain() {
     // assertion above would be proving nothing about the alert chain.
     RunResult blind = run_battle(400, 120, prm, flat, 1.0f / 60.0f, false, 1.0f);
     CHECK(blind.peakAdvancing == 0u, "with nobody able to see, nobody advances");
-    CHECK(centroid_gap(blind.units) > 100.0f, "a blind army holds its ground");
+    CHECK(centroid_gap(*blind.units) > 100.0f, "a blind army holds its ground");
 
     // DISCONNECTED GROUP: exactly the wolves case. One wolf close enough to see
     // the player charges; a second wolf far away, with no comrade between, must
     // stay home — awareness relays through a formation, not by telepathy.
-    BodyCrowd wolves{};
+    auto wolvesOwn = make_body_crowd();
+    BodyCrowd& wolves = *wolvesOwn;
     wolves.add(soldier(1000.0f, 1000.0f, 0, 0));           // the quarry
     wolves.flags[0] |= B_Pinned;
     wolves.add(soldier(1080.0f, 1000.0f, 1, mask_of(0)));  // near wolf: sees it
@@ -503,7 +513,8 @@ void test_alert_chain() {
 
     // RELAY: put a chain of comrades between the far body and the fighting. Now
     // the far body advances although it never saw anything itself.
-    BodyCrowd chain{};
+    auto chainOwn = make_body_crowd();
+    BodyCrowd& chain = *chainOwn;
     chain.add(soldier(1000.0f, 1000.0f, 0, 0));
     chain.flags[0] |= B_Pinned;
     chain.add(soldier(1080.0f, 1000.0f, 1, mask_of(0)));
@@ -527,14 +538,14 @@ void test_no_collapse_and_convergence() {
     // Measure the deployed extent BEFORE the fight, then again after: a formation
     // that squeezes itself into a ball is the bug the screenshot showed.
     RunResult start = run_battle(perSide, 1, prm, flat);
-    const float spread0 = spread_of(start.units, 0);
+    const float spread0 = spread_of(*start.units, 0);
 
     RunResult r = run_battle(perSide, 1200, prm, flat);
-    const float mnn = mean_nearest_neighbour(r.units);
-    const float spread1 = spread_of(r.units, 0);
+    const float mnn = mean_nearest_neighbour(*r.units);
+    const float spread1 = spread_of(*r.units, 0);
     std::fprintf(stderr,
                  "[battle_ai] mnn=%.2f gap=%.1f engaged=%u spread %.1f -> %.1f\n",
-                 mnn, centroid_gap(r.units), r.peakEngaged, spread0, spread1);
+                 mnn, centroid_gap(*r.units), r.peakEngaged, spread0, spread1);
     // Bodies of radius 0.55 must not interpenetrate.
     CHECK(mnn > kBodyRadius, "bodies stay apart (no collapse into a point)");
     // ...and the ARMY must not implode. This is the assertion the first version of
@@ -543,7 +554,7 @@ void test_no_collapse_and_convergence() {
     // few metres (the reported "сгрудились в кучки").
     CHECK(spread1 > spread0 * 0.6f,
           "the formation keeps its extent (no implosion into clumps)");
-    CHECK(centroid_gap(r.units) < 200.0f, "armies converged");
+    CHECK(centroid_gap(*r.units) < 200.0f, "armies converged");
     CHECK(r.peakEngaged > std::uint32_t(perSide / 4),
           "a real front line formed (bodies reached strike contact)");
 
@@ -556,7 +567,7 @@ void test_no_collapse_and_convergence() {
     naive.ringFactor = 0.0f;
     naive.arriveEpsilon = 0.0f;
     RunResult bad = run_battle(perSide, 1200, naive, flat);
-    CHECK(mean_nearest_neighbour(bad.units) < mnn * 0.5f,
+    CHECK(mean_nearest_neighbour(*bad.units) < mnn * 0.5f,
           "negative control reproduces the collapse (control is meaningful)");
 }
 
@@ -590,8 +601,8 @@ void test_thousand_per_side_keeps_formation() {
         }
     };
     auto approach = [&](const MoveParams& prm, int ticks, float* outSpread0) {
-        BodyCrowd u{};
-        u.reserve(perSide * 2);
+        auto uOwn = make_body_crowd();
+        BodyCrowd& u = *uOwn;
         deploy(u, 600.0f);
         if (outSpread0) *outSpread0 = spread_of(u, 0);
         UnitGrid fine{}, pick{};
@@ -714,7 +725,8 @@ void test_line_holds_through_attrition() {
         const int bins = std::max(1, int((y1 - y0) / binW));
 
         Attrition out{};
-        BodyCrowd u{};
+        auto uOwn = make_body_crowd();
+        BodyCrowd& u = *uOwn;
         UnitGrid fine{}, pick{};
         InfluenceField f{};
         std::vector<int> slot;
@@ -722,7 +734,6 @@ void test_line_holds_through_attrition() {
         const float dt = 1.0f / 60.0f;
         for (int t = 0; t < 7200; ++t) {
             u.clear();
-            u.reserve(perSide * 2);
             slot.clear();
             int alive[2] = {0, 0};
             for (std::size_t b = 0; b < bodies.size(); ++b) {
@@ -866,7 +877,8 @@ void test_wide_front_meets_as_one_wall() {
         }
     }
 
-    BodyCrowd u{};
+    auto uOwn = make_body_crowd();
+    BodyCrowd& u = *uOwn;
     UnitGrid fine{}, pick{};
     InfluenceField f{};
     std::vector<int> slot;
@@ -875,7 +887,6 @@ void test_wide_front_meets_as_one_wall() {
     const MoveParams prm{};
     for (int t = 0; t < 1400; ++t) {
         u.clear();
-        u.reserve(perSide * 2);
         slot.clear();
         int alive[2] = {0, 0};
         for (std::size_t b = 0; b < bodies.size(); ++b) {
@@ -981,10 +992,10 @@ void test_terrain_does_not_outvote_the_advance() {
 
     const MoveParams prm{};
     const int perSide = 500;
-    const float spread0 = spread_of(run_battle(perSide, 1, prm, hills).units, 0);
+    const float spread0 = spread_of(*run_battle(perSide, 1, prm, hills).units, 0);
     RunResult r = run_battle(perSide, 600, prm, hills);
-    const float spread1 = spread_of(r.units, 0);
-    const float v1 = mean_speed(r.units);
+    const float spread1 = spread_of(*r.units, 0);
+    const float v1 = mean_speed(*r.units);
 
     std::fprintf(stderr,
                  "[battle_ai] hills spread %.1f -> %.1f  |v|=%.1f engaged=%u\n",
@@ -1002,7 +1013,8 @@ void test_terrain_does_not_outvote_the_advance() {
     // the advance) it is deflected off course entirely. This is the mechanism that
     // dissolved armies, measured in isolation instead of by proxy.
     auto crossing_error = [&](const MoveParams& p) {
-        BodyCrowd u{};
+        auto uOwn = make_body_crowd();
+        BodyCrowd& u = *uOwn;
         u.add(soldier(kWorld * 0.5f - 150.0f, kWorld * 0.5f, 0, mask_of(1), 400.0f));
         u.add(soldier(kWorld * 0.5f + 150.0f, kWorld * 0.5f, 1, 0, 400.0f));
         u.flags[1] |= B_Pinned;
@@ -1030,7 +1042,8 @@ void test_terrain_does_not_outvote_the_advance() {
     // Ungated, victorious troops slide downhill and collect in the nearest
     // depression — reported in-game as guards gathering in a pit once the bandits
     // were dead.
-    BodyCrowd idle{};
+    auto idleOwn = make_body_crowd();
+    BodyCrowd& idle = *idleOwn;
     for (int i = 0; i < 60; ++i) {
         // On a slope (sin' is steepest near x/200 = 0), no enemies at all.
         idle.add(soldier(kWorld * 0.5f + float(i % 10) * 3.0f,
@@ -1080,7 +1093,7 @@ void test_linear_scaling() {
     CHECK(stacked.lastStats.neighborVisits / 600u <= ceiling,
           "degenerate all-stacked start still respects the ceiling");
     RunResult unpacked = run_battle(300, 600, prm, flat, 1.0f / 60.0f, true);
-    CHECK(mean_nearest_neighbour(unpacked.units) > kBodyRadius * 0.5f,
+    CHECK(mean_nearest_neighbour(*unpacked.units) > kBodyRadius * 0.5f,
           "separation unpacks a degenerate stack");
 }
 
@@ -1096,7 +1109,8 @@ void test_terrain_table() {
 
     auto chase = [&](const std::uint8_t* tiles,
                      float (*height)(void*, float, float)) {
-        BodyCrowd u{};
+        auto uOwn = make_body_crowd();
+        BodyCrowd& u = *uOwn;
         u.add(soldier(20.0f, 128.0f, 0, mask_of(1)));
         u.add(soldier(200.0f, 128.0f, 1, 0));
         u.flags[1] |= B_Pinned;                 // the quarry stands still
@@ -1130,7 +1144,8 @@ void test_single_bandit() {
     const MoveParams prm{};
     const MoveGround flat = flat_terrain();
 
-    BodyCrowd u{};
+    auto uOwn = make_body_crowd();
+    BodyCrowd& u = *uOwn;
     u.add(soldier(1000.0f, 1000.0f, 0, 0));      // player body: pinned, no enemies
     u.flags[0] |= B_Pinned;
     u.add(soldier(1150.0f, 1000.0f, 1, mask_of(0)));
@@ -1157,25 +1172,32 @@ void test_determinism_and_capacity() {
     const MoveGround flat = flat_terrain();
     RunResult a = run_battle(120, 400, prm, flat);
     RunResult b = run_battle(120, 400, prm, flat);
-    bool same = a.units.count == b.units.count;
-    for (int i = 0; same && i < a.units.count; ++i) {
-        same = a.units.x[std::size_t(i)] == b.units.x[std::size_t(i)]
-            && a.units.y[std::size_t(i)] == b.units.y[std::size_t(i)]
-            && a.units.vx[std::size_t(i)] == b.units.vx[std::size_t(i)]
-            && a.units.vy[std::size_t(i)] == b.units.vy[std::size_t(i)];
+    bool same = a.units->count == b.units->count;
+    for (int i = 0; same && i < a.units->count; ++i) {
+        same = a.units->x[std::size_t(i)] == b.units->x[std::size_t(i)]
+            && a.units->y[std::size_t(i)] == b.units->y[std::size_t(i)]
+            && a.units->vx[std::size_t(i)] == b.units->vx[std::size_t(i)]
+            && a.units->vy[std::size_t(i)] == b.units->vy[std::size_t(i)];
     }
     CHECK(same, "two identical runs are bitwise identical");
     CHECK(a.lastStats.neighborVisits == b.lastStats.neighborVisits,
           "visit counts match exactly");
 
-    BodyCrowd u{};
-    u.reserve(kMaxBodyCrowd);
+    // CAPACITY is no longer witnessed here: the columns are fixed arrays of
+    // kMaxBodyCrowd, nailed by static_assert(sizeof(BodyCrowd)) in movement.h,
+    // so a capacity out of step with the cap cannot be compiled (AGENTS §8 п.6).
+    // What still needs a run is the REFUSAL — behaviour, not layout: the crowd
+    // must stop taking bodies at the ceiling instead of writing past its last
+    // slot, and it must report each rejection so the gather can raise its
+    // truncated flag rather than go quietly blind.
+    auto uOwn = make_body_crowd();
+    BodyCrowd& u = *uOwn;
     int refused = 0;
     for (int i = 0; i < kMaxBodyCrowd + 16; ++i) {
         if (u.add(soldier(float(i % 3000) + 1.0f, 1.0f, 0, 0)) < 0) ++refused;
     }
-    CHECK(u.count == kMaxBodyCrowd, "capacity is exactly 2^14");
-    CHECK(refused == 16, "overflow refused, never grown");
+    CHECK(u.count == kMaxBodyCrowd, "the ceiling is where adding stops");
+    CHECK(refused == 16, "every body past the ceiling is refused, none written");
 }
 
 } // namespace
@@ -1193,7 +1215,8 @@ void test_intent_and_passive() {
     // Intent executes at the mind's pace — the amble it chose, not the combat
     // sprint on the body's sheet.
     {
-        BodyCrowd u{};
+        auto uOwn = make_body_crowd();
+        BodyCrowd& u = *uOwn;
         u.add(soldier(1000.0f, 1000.0f, 0, 0ull));
         u.intentVx[0] = 3.0f;                    // the sheet says kSpeed = 35
         UnitGrid fine{}, pick{};
@@ -1211,7 +1234,8 @@ void test_intent_and_passive() {
     // fearful one stands. The twin IS the negative control here — it proves
     // the war drive this deer refused was live.
     {
-        BodyCrowd u{};
+        auto uOwn = make_body_crowd();
+        BodyCrowd& u = *uOwn;
         const std::size_t deer = std::size_t(u.add(soldier(
             1000.0f, 1000.0f, 0, mask_of(1))));
         u.flags[deer] |= B_Passive;
@@ -1232,7 +1256,8 @@ void test_intent_and_passive() {
     // War is not a suggestion: a body with an enemy to fight ignores its
     // stroll entirely — no blend, no averaging.
     {
-        BodyCrowd u{};
+        auto uOwn = make_body_crowd();
+        BodyCrowd& u = *uOwn;
         u.add(soldier(1000.0f, 1000.0f, 0, mask_of(1)));
         u.intentVx[0] = -3.0f;                   // the mind wants to walk away…
         u.add(soldier(1100.0f, 1000.0f, 1, mask_of(0)));
@@ -1271,7 +1296,8 @@ void test_capsule_separation() {
     // heightB > 0 makes the second body that tall (0 = the man-column default).
     auto ran_apart = [&](float zA, float zB, float* outMovedA = nullptr,
                          float heightB = 0.0f) {
-        BodyCrowd u{};
+        auto uOwn = make_body_crowd();
+        BodyCrowd& u = *uOwn;
         u.add(soldier(1000.0f, 1000.0f, 0, 0ull));
         BodyDesc b = soldier(1000.3f, 1000.0f, 0, 0ull);
         b.height = heightB;
@@ -1342,7 +1368,8 @@ void test_stop_is_a_stop_not_a_skid() {
     auto skid_on = [&](float grip, float& outResidual) {
         const float grips[1] = {grip};
         const std::uint8_t ground[1] = {0u};
-        BodyCrowd u{};
+        auto uOwn = make_body_crowd();
+        BodyCrowd& u = *uOwn;
         u.add(soldier(1000.0f, 1000.0f, 0, 0ull));
         u.intentVx[0] = 96.0f;                  // the world's march, straight on
         MoveGround t = flat;

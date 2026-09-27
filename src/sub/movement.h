@@ -64,7 +64,9 @@
 // gather/scatter and all gameplay authority (damage, deaths, loot, XP, events)
 // stay in sub/engine.cpp — this module only decides where bodies want to be.
 #pragma once
+#include <array>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "macro/faction.h"   // kMaxFactions — THE world faction limit
@@ -190,29 +192,51 @@ struct BodyDesc {
 };
 
 // ── Struct of arrays ───────────────────────────────────────────────────────
-// One array per attribute. Storage is reserved once and reused every frame, so
-// the hot path never allocates.
+// One FIXED column per attribute, every column the length of THE ceiling:
+// 64 B per body × kMaxBodyCrowd = exactly 1 MiB, in ONE block. Nothing is ever
+// reserved, grown or reallocated — `add` refuses past the last slot, `clear`
+// only rewinds `count` — so no index taken during a pass can dangle, and a
+// capacity that has drifted out of step with the cap cannot exist. That promise
+// used to be a discipline spread over two files (a `reserve` call here, a
+// refusal there); now it is the type.
+//
+// The block is far too big for a stack frame, so the crowd is NON-COPYABLE,
+// NON-MOVABLE and born only through `make_body_crowd()` — the shape
+// `make_macro_store` already uses one layer up. Deliberate: "1 MiB on the
+// stack" stops being a rule somebody must remember and becomes a line that
+// does not compile.
 struct BodyCrowd {
     int count = 0;
-    std::vector<float> x, y, z;
-    std::vector<float> vx, vy;
-    std::vector<float> intentVx, intentVy;
-    std::vector<float> radius, height, speed, reach, sight;
-    std::vector<std::uint64_t> enemyMask;
-    std::vector<std::int16_t>  faction;
-    std::vector<std::uint8_t>  flags;
+    std::array<float, kMaxBodyCrowd> x, y, z;
+    std::array<float, kMaxBodyCrowd> vx, vy;
+    std::array<float, kMaxBodyCrowd> intentVx, intentVy;
+    std::array<float, kMaxBodyCrowd> radius, height, speed, reach, sight;
+    std::array<std::uint64_t, kMaxBodyCrowd> enemyMask;
+    std::array<std::int16_t,  kMaxBodyCrowd> faction;
+    std::array<std::uint8_t,  kMaxBodyCrowd> flags;
     // Outputs, one per unit.
-    std::vector<std::int32_t> target;    // unit index, -1 = nobody in reach-scan
-    std::vector<std::uint8_t> inReach;   // 1 => target is strikeable this tick
+    std::array<std::int32_t, kMaxBodyCrowd> target;  // unit index, -1 = nobody in reach-scan
+    std::array<std::uint8_t, kMaxBodyCrowd> inReach; // 1 => target is strikeable this tick
     // Crowd extremes, maintained by add(). The grids size themselves from these
     // instead of from a constant, so the SAME code is correctly scaled for
     // 0.55-unit peasants and for a dragon.
     float maxRadius = 0.0f;
     float maxReach = 0.0f;
 
-    void reserve(int n);
+    // Born ONLY through make_body_crowd(), i.e. only in its own heap block: the
+    // constructor is private and the factory is its only friend, so `BodyCrowd
+    // u;` in a function does not compile. Copy and move are gone too — a 1 MiB
+    // memberwise copy is never what anybody meant.
+    BodyCrowd(const BodyCrowd&) = delete;
+    BodyCrowd& operator=(const BodyCrowd&) = delete;
+    BodyCrowd(BodyCrowd&&) = delete;
+    BodyCrowd& operator=(BodyCrowd&&) = delete;
+
+    // Rewinds to empty. The columns keep their (stale) contents on purpose:
+    // every slot below `count` is overwritten by `add` before anyone reads it,
+    // and wiping 1 MiB per tick would buy nothing but a memset.
     void clear();
-    // Appends a unit; returns its index, or -1 once kMaxBodyCrowd is hit.
+    // Takes the next slot; returns its index, or -1 once kMaxBodyCrowd is full.
     int add(const BodyDesc& d);
 
     inline bool hostile(int i, int j) const noexcept {
@@ -220,7 +244,22 @@ struct BodyCrowd {
         if (fj < 0) return false;
         return ((enemyMask[std::size_t(i)] >> fj) & 1ull) != 0ull;
     }
+
+private:
+    BodyCrowd() = default;
+    friend std::unique_ptr<BodyCrowd> make_body_crowd();
 };
+// 17 columns × 64 B per body over the ceiling, plus count and the two extremes.
+// Named per DOD п.10: a size that is stated out loud is nailed down here, so it
+// can never quietly drift from the picture of memory.
+static_assert(sizeof(BodyCrowd) == std::size_t(kMaxBodyCrowd) * 64u + 16u,
+              "one flat MiB: 64 B/body, nothing hidden but four bytes of pad");
+
+// Births the crowd in its own heap block. Defined in movement.cpp on purpose:
+// a 1 MiB object named with an initializer inside a HEADER is paid by every
+// translation unit that includes it (AGENTS §5 п.13 — measured at 74× on
+// make_macro_store, 55.6 s for one empty TU).
+std::unique_ptr<BodyCrowd> make_body_crowd();
 
 // ── Fine grid: contact picking + body separation ───────────────────────────
 // Uniform buckets over the units' ACTUAL bounding box, so cost tracks the real

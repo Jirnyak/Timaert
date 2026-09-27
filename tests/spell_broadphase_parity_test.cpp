@@ -102,13 +102,14 @@ std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
 // Same walk, same padding law (fattest body radius; the scene is static so
 // the per-tick-drift term is zero), same -1 overflow honesty.
 struct GridBroadPhase {
-    sm::sub::BodyCrowd units;
+    // One flat MiB in its own block — the rig cannot hold it by value.
+    std::unique_ptr<sm::sub::BodyCrowd> units = sm::sub::make_body_crowd();
     sm::sub::UnitGrid pick;
     std::vector<entt::entity> ents;
     float pad = 0.0f;
 
     void build(entt::registry& reg) {
-        units.clear();
+        units->clear();
         ents.clear();
         auto view = reg.view<Position, Pools>(entt::exclude<sm::ecs::Dead>);
         for (auto e : view) {
@@ -116,18 +117,18 @@ struct GridBroadPhase {
             sm::sub::BodyDesc d{};
             d.x = p.x; d.y = p.y; d.z = p.z;
             d.radius = sm::sub::body_radius(reg, e);
-            units.add(d);
+            units->add(d);
             ents.push_back(e);
         }
         const sm::sub::MoveParams prm{};
-        build_unit_grid(pick, units, pick_cell_for(units, prm), 256);
-        pad = units.maxRadius;
+        build_unit_grid(pick, *units, pick_cell_for(*units, prm), 256);
+        pad = units->maxRadius;
     }
 
     static int fn(void* user, float x, float y, float r,
                   std::uint32_t* out, int maxOut) {
         auto* self = static_cast<GridBroadPhase*>(user);
-        const auto& u = self->units;
+        const auto& u = *self->units;
         const auto& g = self->pick;
         if (u.count <= 0) return 0;
         const float rr = r + self->pad;

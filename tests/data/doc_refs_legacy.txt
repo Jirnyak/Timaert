@@ -522,10 +522,6 @@ SKELETON.md	engine.cpp:3359
 SKELETON.md	engine.cpp:4710
 SKELETON.md	engine.cpp:4782
 SKELETON.md	engine.h:609
-SKELETON.md	engine.h:620
-SKELETON.md	engine.h:624-625
-SKELETON.md	engine.h:626
-SKELETON.md	engine.h:643
 SKELETON.md	event_bus.cpp:23
 SKELETON.md	event_bus.h:27-44
 SKELETON.md	event_bus.h:54-55
@@ -657,9 +653,7 @@ SKELETON.md	mesh.frag:421-422
 SKELETON.md	mesh.frag:477
 SKELETON.md	mesh.frag:689-712
 SKELETON.md	mesh.vert:26
-SKELETON.md	movement.cpp:218
 SKELETON.md	movement.cpp:441
-SKELETON.md	movement.cpp:53-64
 SKELETON.md	movement.cpp:721-722
 SKELETON.md	movement.cpp:849-850
 SKELETON.md	movement.h:1-14

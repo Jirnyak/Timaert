@@ -2934,13 +2934,13 @@ bool SubworldEngine::spell_solid_callback(void* user, float x, float y,
 // The padding is the two things the asker cannot know: the grid holds
 // positions from BEFORE steering moved bodies (≤ crowdMaxStepM_ of drift),
 // and "centre within r" must survive the fattest body in the crowd when the
-// asker measures surface contact (crowd_.maxRadius).
+// asker measures surface contact (crowd_->maxRadius).
 int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
                                              float r, std::uint32_t* out,
                                              int maxOut) {
     auto* self = static_cast<SubworldEngine*>(user);
     if (self->crowdGatherTruncated_) return -1;
-    const BodyCrowd& u = self->crowd_;
+    const BodyCrowd& u = *self->crowd_;
     if (u.count <= 0) return 0;             // an honestly empty world
     const UnitGrid& g = self->crowdPick_;
     const float rr = r + self->crowdMaxStepM_ + u.maxRadius;
@@ -3012,10 +3012,10 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // extend and no vocabulary in the battle code. The relation matrix over the
     // interned set is recomputed only when that set CHANGES or the refresh timer
     // fires, which is what keeps the string lookups off the per-frame path.
-    crowd_.clear();
-    crowdEnts_.clear();
-    crowd_.reserve(kMaxBodyCrowd);
-    crowdEnts_.reserve(std::size_t(kMaxBodyCrowd));
+    // Rewinding the count IS the clear: every column is already the ceiling
+    // long, so there is nothing to reserve and nothing that can reallocate
+    // mid-gather. crowdEnts_ rides the same count.
+    crowd_->clear();
     crowdFactions_.clear();
     // The player side is interned FIRST so it owns a stable index for the tick;
     // it is an ordinary faction with an ordinary id, not a special case.
@@ -3116,7 +3116,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         maxDrive = std::max(maxDrive, std::max(d.speed,
             std::sqrt(d.intentVx * d.intentVx + d.intentVy * d.intentVy)));
 
-        const int idx = crowd_.add(d);
+        const int idx = crowd_->add(d);
         if (idx < 0) {                      // 16k ceiling: shared with the renderer
             // Bodies past the ceiling exist in the world but not in the grids.
             // The spell broad phase must know it is blind to them — it answers
@@ -3124,10 +3124,10 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             crowdGatherTruncated_ = true;
             break;
         }
-        crowdEnts_.push_back(e);
+        crowdEnts_[std::size_t(idx)] = e;
     }
     crowdMaxStepM_ = maxDrive * dt;
-    if (crowd_.count <= 0) {
+    if (crowd_->count <= 0) {
         playerThreatD2_ = kNoThreatDistance2;
         return;
     }
@@ -3144,9 +3144,9 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // Stamp each body's enemy mask from its faction, plus any private grudge, and
     // fold in the nearest-threat-to-the-player distance while the data is hot —
     // the HUD gem and the exit gate read that every frame and must never scan.
-    for (int i = 0; i < crowd_.count; ++i) {
+    for (int i = 0; i < crowd_->count; ++i) {
         const std::size_t si = std::size_t(i);
-        const std::int16_t f = crowd_.faction[si];
+        const std::int16_t f = crowd_->faction[si];
         std::uint64_t mask = f >= 0 ? crowdFactions_.enemyMask[f] : 0ull;
         if (f >= 0 && f == std::int16_t(crowdPlayerFaction_)) {
             mask |= playerExtraMask;
@@ -3154,11 +3154,11 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                    && ((playerExtraMask >> f) & 1ull) != 0ull) {
             mask |= (1ull << crowdPlayerFaction_);
         }
-        crowd_.enemyMask[si] = mask;
+        crowd_->enemyMask[si] = mask;
         if (crowdPlayerFaction_ >= 0
             && ((mask >> crowdPlayerFaction_) & 1ull) != 0ull) {
-            threat2 = std::min(threat2, dist3sq(crowd_.x[si], crowd_.y[si],
-                                                crowd_.z[si],
+            threat2 = std::min(threat2, dist3sq(crowd_->x[si], crowd_->y[si],
+                                                crowd_->z[si],
                                                 playerX_, playerY_, playerZ_));
         }
     }
@@ -3168,11 +3168,11 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // Two bucket grids at two scales — bodies are ~1 unit wide while weapons
     // reach up to 25, and one cell size cannot serve both without becoming
     // either quadratic or blind. Both cell sizes come from the crowd's own data.
-    build_unit_grid(crowdFine_, crowd_, fine_cell_for(crowd_, moveParams_),
+    build_unit_grid(crowdFine_, *crowd_, fine_cell_for(*crowd_, moveParams_),
                     kBattleGridMaxDim);
-    build_unit_grid(crowdPick_, crowd_, pick_cell_for(crowd_, moveParams_),
+    build_unit_grid(crowdPick_, *crowd_, pick_cell_for(*crowd_, moveParams_),
                     kBattleGridMaxDim);
-    build_influence_field(crowdField_, crowd_, moveParams_.influenceCell,
+    build_influence_field(crowdField_, *crowd_, moveParams_.influenceCell,
                           float(kFullSize));
     MoveGround terrain{};
     terrain.heightAt = &SubworldEngine::ground_height_callback;
@@ -3199,31 +3199,31 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // river beneath it (the owner's support law, 2026-08-30).
     terrain.standTile = &SubworldEngine::solid_walk_tile_callback;
     MoveStats stats{};
-    steer_bodies(crowd_, crowdFine_, crowdPick_, crowdField_, terrain,
+    steer_bodies(*crowd_, crowdFine_, crowdPick_, crowdField_, terrain,
                  moveParams_, dt, &stats);
 
     // ── Scatter: SoA → ECS ─────────────────────────────────────────────────
     // Z is deliberately untouched: the ground-follow pass in tick() owns it.
-    for (int i = 0; i < crowd_.count; ++i) {
+    for (int i = 0; i < crowd_->count; ++i) {
         const std::size_t si = std::size_t(i);
-        if ((crowd_.flags[si] & B_Pinned) != 0u) continue;
+        if ((crowd_->flags[si] & B_Pinned) != 0u) continue;
         const entt::entity e = crowdEnts_[si];
         if (!reg.valid(e)) continue;
         auto& p = reg.get<ecs::Position>(e);
-        p.x = crowd_.x[si];
-        p.y = crowd_.y[si];
+        p.x = crowd_->x[si];
+        p.y = crowd_->y[si];
         if (reg.any_of<ecs::AvatarTag>(e)) {
             // The engine's player scalars are a VIEW of his body now, not a
             // second truth beside it: the mover moved him with everyone else,
             // and this is where the camera learns where he ended up.
-            playerX_ = crowd_.x[si];
-            playerY_ = crowd_.y[si];
-            playerVx_ = crowd_.vx[si];
-            playerVy_ = crowd_.vy[si];
+            playerX_ = crowd_->x[si];
+            playerY_ = crowd_->y[si];
+            playerVx_ = crowd_->vx[si];
+            playerVy_ = crowd_->vy[si];
         }
         if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
-            ai->vx = crowd_.vx[si];
-            ai->vy = crowd_.vy[si];
+            ai->vx = crowd_->vx[si];
+            ai->vy = crowd_->vy[si];
         }
     }
 
@@ -3249,9 +3249,9 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // strikeable this tick (3D reach), so this pass is pure gameplay authority:
     // one bounded loop, no distance search, no hostility re-test. Damage,
     // death, loot, XP and events stay exactly where they were — in the ECS.
-    for (int i = 0; i < crowd_.count; ++i) {
+    for (int i = 0; i < crowd_->count; ++i) {
         const std::size_t si = std::size_t(i);
-        if (!crowd_.inReach[si]) continue;
+        if (!crowd_->inReach[si]) continue;
         // The player body — including a possessed NPC wearing PlayerTag — is
         // driven by input + tick_player_melee, never by auto-combat. Fleeing
         // bodies do not fight either. Both are PASSIVE, which is the flag that
@@ -3259,10 +3259,10 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // without naming either case. (It said "pinned" until the movers
         // merged, 2026-08-30: the player was pinned OUT of the mover then, and
         // nothing wears that flag in the shipping engine any more.)
-        if ((crowd_.flags[si] & (B_Passive | B_Pinned)) != 0u) continue;
+        if ((crowd_->flags[si] & (B_Passive | B_Pinned)) != 0u) continue;
         const entt::entity e = crowdEnts_[si];
         if (!reg.valid(e) || !alive_subworld_entity(reg, e)) continue;
-        const std::int32_t t = crowd_.target[si];
+        const std::int32_t t = crowd_->target[si];
         if (t < 0) continue;
         const entt::entity targetEnt = crowdEnts_[std::size_t(t)];
         if (!reg.valid(targetEnt) || !alive_subworld_entity(reg, targetEnt))

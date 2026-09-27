@@ -149,14 +149,14 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
 
     const MoveGround terrain = flat_terrain();
     const MoveParams prm{};
-    BodyCrowd u{};
+    auto uOwn = make_body_crowd();
+    BodyCrowd& u = *uOwn;
     UnitGrid fine{}, pick{};
     InfluenceField field{};
     std::vector<int> slot;
     const float dt = 1.0f / 30.0f;
     for (int t = 0; t < 18000; ++t) {
         u.clear();
-        u.reserve(int(bodies.size()));
         slot.clear();
         int alive[2] = {0, 0};
         for (std::size_t i = 0; i < bodies.size(); ++i) {

@@ -91,47 +91,40 @@ void build_faction_masks(FactionSet& fs,
 
 // ── BodyCrowd ────────────────────────────────────────────────────────────
 
-void BodyCrowd::reserve(int n) {
-    const std::size_t c = std::size_t(n);
-    x.reserve(c); y.reserve(c); z.reserve(c);
-    vx.reserve(c); vy.reserve(c);
-    intentVx.reserve(c); intentVy.reserve(c);
-    radius.reserve(c); height.reserve(c); speed.reserve(c); reach.reserve(c);
-    sight.reserve(c);
-    enemyMask.reserve(c); faction.reserve(c); flags.reserve(c);
-    target.reserve(c); inReach.reserve(c);
+// The one allocation of the crowd's life. `reset(new …)` rather than a named
+// make_unique: a named object with an initializer is what costs a header 74×
+// (AGENTS §5 п.13), and keeping the safe form here keeps it safe if this body
+// is ever inlined upward.
+std::unique_ptr<BodyCrowd> make_body_crowd() {
+    std::unique_ptr<BodyCrowd> c;
+    c.reset(new BodyCrowd());
+    return c;
 }
 
 void BodyCrowd::clear() {
     count = 0;
     maxRadius = 0.0f;
     maxReach = 0.0f;
-    x.clear(); y.clear(); z.clear();
-    vx.clear(); vy.clear();
-    intentVx.clear(); intentVy.clear();
-    radius.clear(); height.clear(); speed.clear(); reach.clear();
-    sight.clear();
-    enemyMask.clear(); faction.clear(); flags.clear();
-    target.clear(); inReach.clear();
 }
 
 int BodyCrowd::add(const BodyDesc& d) {
     if (count >= kMaxBodyCrowd) return -1;
     const int idx = count++;
-    x.push_back(d.x); y.push_back(d.y); z.push_back(d.z);
-    vx.push_back(d.vx); vy.push_back(d.vy);
-    intentVx.push_back(d.intentVx); intentVy.push_back(d.intentVy);
-    radius.push_back(d.radius); speed.push_back(d.speed);
+    const std::size_t i = std::size_t(idx);
+    x[i] = d.x; y[i] = d.y; z[i] = d.z;
+    vx[i] = d.vx; vy[i] = d.vy;
+    intentVx[i] = d.intentVx; intentVy[i] = d.intentVy;
+    radius[i] = d.radius; speed[i] = d.speed;
     // An unstated column takes a person's room (kBodyEyeM — the entt-free
     // man height this module may name); the engine's gather states the row's
     // own drawn height, so a dragon's column towers by its table.
-    height.push_back(d.height > 0.0f ? d.height : kBodyEyeM);
-    reach.push_back(d.reach); sight.push_back(d.sight);
-    enemyMask.push_back(d.enemyMask);
-    faction.push_back(d.faction);
-    flags.push_back(d.flags);
-    target.push_back(-1);
-    inReach.push_back(0u);
+    height[i] = d.height > 0.0f ? d.height : kBodyEyeM;
+    reach[i] = d.reach; sight[i] = d.sight;
+    enemyMask[i] = d.enemyMask;
+    faction[i] = d.faction;
+    flags[i] = d.flags;
+    target[i] = -1;
+    inReach[i] = 0u;
     maxRadius = std::max(maxRadius, d.radius);
     maxReach = std::max(maxReach, d.reach);
     return idx;
