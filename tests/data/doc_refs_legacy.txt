@@ -438,7 +438,6 @@ SKELETON.md	chronicle.h:296
 SKELETON.md	chronicle.h:345
 SKELETON.md	collide.cpp:120-195
 SKELETON.md	collide.cpp:26
-SKELETON.md	collide.h:131
 SKELETON.md	collide.h:53
 SKELETON.md	commodity.h:101
 SKELETON.md	commodity.h:111
@@ -725,7 +724,6 @@ SKELETON.md	npc_ai.cpp:999
 SKELETON.md	npc_ai.h:102
 SKELETON.md	npc_ai.h:155
 SKELETON.md	npc_ai.h:35
-SKELETON.md	npc_ai.h:422
 SKELETON.md	npc_spawn.cpp:107
 SKELETON.md	npc_spawn.cpp:141
 SKELETON.md	npc_spawn.cpp:216
@@ -740,7 +738,6 @@ SKELETON.md	optics.h:141-144
 SKELETON.md	optics.h:142-143
 SKELETON.md	overlays.cpp:2113-2120
 SKELETON.md	particles.cpp:163
-SKELETON.md	particles.h:193
 SKELETON.md	pathfinding.cpp:154-158
 SKELETON.md	pathfinding.cpp:156-157
 SKELETON.md	pathfinding.cpp:45
@@ -828,7 +825,6 @@ SKELETON.md	spawn.cpp:1010
 SKELETON.md	spawn.cpp:1225
 SKELETON.md	spawn.cpp:1239-1256
 SKELETON.md	spawn.cpp:1425-1447
-SKELETON.md	spawn.cpp:512-517
 SKELETON.md	spawn.cpp:520
 SKELETON.md	spawn.cpp:599-601
 SKELETON.md	spawners.cpp:138
@@ -1426,7 +1422,6 @@ macro-registry.md	features.h:117-137
 macro-registry.md	features.h:138
 macro-registry.md	features.h:203
 macro-registry.md	features.h:217
-macro-registry.md	features.h:221
 macro-registry.md	features.h:37
 macro-registry.md	features.h:44
 macro-registry.md	interests.h:200
@@ -1594,7 +1589,6 @@ macro-registry.md	sub/engine.cpp:3317
 macro-registry.md	sub/engine.cpp:4355
 macro-registry.md	sub/map_data.h:424
 macro-registry.md	sub/spawn.cpp:1507
-macro-registry.md	sub/spawn.cpp:459
 macro-registry.md	sub/spawn.cpp:459-481
 macro-registry.md	tests/deposit_layer_test.cpp:167-175
 macro-registry.md	tests/deposit_reach_test.cpp:154

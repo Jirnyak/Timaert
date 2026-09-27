@@ -37,6 +37,14 @@
 >    находит цитату и переписывает число, потому что совпасть не с той строкой
 >    цитата не может.
 >
+> **УТВЕРЖДЕНИЕ ОБ ОТСУТСТВИИ АДРЕСУЕТСЯ СВОИМ СВИДЕТЕЛЕМ** (вердикт владельца
+> 2026-09-27). У «второго входа НЕТ» и «строк в тике ноль» адреса в коде не
+> существует — отсутствие негде показать. Такая строка указывает на ТЕСТ, который
+> её держит (`coin_census_value@tests/quest_lifecycle_test.cpp`), и новой нотации
+> для этого не заводится. Следствие принято сознательно: **закон без свидетеля
+> становится ВИДЕН** — ему просто нечего поставить в ссылку, и тогда он либо
+> получает свидетеля, либо идёт в реестр названной дырой.
+>
 > Прибор судит `check`-ом и краснеет на трёх объективных отказах — файла нет,
 > строки нет (файл короче), имя файла в дереве не одно.
 
@@ -946,12 +954,12 @@ SeamlessSubworldManager: generate_one / воркер → dispatch_generate(ctx, 
 | высоты окна `composite_height_` | f32 × 3072² | 36 МиБ | менеджер (`:247`) | `heightmap()` — **симуляция его НЕ читает** (0 вызовов в `engine.cpp`) | см. ниже |
 | `cells_[9]` (тайлы, trav, высоты, структуры на клетку) | ≈6 МиБ × 9 | 54 МиБ | менеджер (`:245`) | `generate_one`, перестановка при шве | **ПРАВДА** |
 | **`heightVtxM_` — высоты, которые читает СИМУЛЯЦИЯ** | f32 × 193² (шаг 16 тайлов) | 149 КиБ | `Renderer3DVk` (`vk_renderer_3d.h:243`) | `sample_height_m` — 16 вызовов из `engine.cpp` (тела, снаряды, мозг, частицы); заполняется только при `dev_ != nullptr` (`engine.cpp:4710`), иначе высота = 0 (`vk_renderer_3d.cpp:3758`) | **РАСХОЖДЕНИЕ** — два ответа «какая здесь высота» (композит 1 тайл и сетка рендера); вход симуляции живёт в рендерере и зависит от устройства; наряда нет |
-| `StructureIndex` (твёрдые тела) | Entry 40 Б × S; бины 96²+1 | 36 КиБ + 40·S | `SubworldEngine::structIndex_` (`collide.h:131`) | `support_at/blocked_at/solid_at/resolve_step` (`collide.cpp:120-195`) | **ПРАВДА**; `static_assert` на Entry нет |
+| `StructureIndex` (твёрдые тела) | Entry 40 Б × S; бины 96²+1 | 36 КиБ + 40·S | `SubworldEngine::structIndex_` (`src/sub/engine.h:598` «StructureIndex structIndex_;») | `support_at/blocked_at/solid_at/resolve_step` (`collide.cpp:120-195`) | **ПРАВДА**; `static_assert` на Entry нет |
 | **`crowd_` — ходовой/боевой SoA `BodyCrowd`** (17 колонок) | 64 Б/тело × 16384 | 1 МиБ | `SubworldEngine` (`engine.h:620`; `movement.h:190`) | `add/clear/reserve`; steer пишет колонки по индексу (SoA по замыслу) | **ПРАВДА**; кап `kMaxBodyCrowd = 16384` (`movement.h:77`) |
 | `crowdFine_`/`crowdPick_` (`UnitGrid`) | ≤256² ячеек | ≈1.2 МБ | `engine.h:624-625` | `build_unit_grid` (`movement.cpp:153`, counting sort) | **ПРАВДА** |
 | `crowdField_` (`InfluenceField`, поле влияния + цепь тревоги) | 22 Б × ≤97² × планы ≤64 | до 13 МБ (0.5 при 2 фракциях) | `engine.h:626` | `build_influence_field` (`movement.cpp:218`) | **ПРАВДА** |
 | `crowdFactions_` (`FactionSet`) | 64 × (const char* + u64) | 1 КиБ | `engine.h:643` | `intern` — сперва указатель, затем **strcmp** (`movement.cpp:53-64`) | **РАСХОЖДЕНИЕ** — ключ фракции строкой в тике; M-103 |
-| частицы `pool_` | Particle 64 Б × 2048 | 128 КиБ | `particles_` (`particles.h:193`) | `emit*/tick`, переполнение — отброс | **ПРАВДА** |
+| частицы `pool_` | Particle 64 Б × 2048 | 128 КиБ | `particles_` (`src/sub/engine.h:612` «ParticleSystem          particles_;») | `emit*/tick`, переполнение — отброс | **ПРАВДА** |
 | `stampRing_` (метки крови) | 24 Б × без капа в тике; обрезка до 1024 в `prepare_frame` | — | `engine.h:609` | `push_stamp :4985` | **РАСХОЖДЕНИЕ** — `push_back` в тике без капа |
 | EnTT тело субмира | Position 12 + Pools 36 + Combat 28 + SubworldAi 40 + NPCKind 4 + Sprite 20 + VisualPos 12 + BodyRadius 4 + MacroDebt 24 + MacroOrigin 4 + LastHit 4 = 184 Б | ≈3 МБ при 16384 | `App::ecs.reg` — **ОДИН registry на оба мира** (`app_state.h:201`) | `spawn_derived_body` (`spawn.cpp:520`); `apply_damage` (`damage.cpp:129`) | **РАСХОЖДЕНИЕ** — общий registry (M-106); `static_assert(sizeof)` только у Pools; Combat 28, SubworldAi 40, Projectile 68 (дыра 3 Б после `chainDecayPct`) не закреплены |
 | ленивые компоненты тика (Airborne, HitFlash, DamageFx, GoingHome) | 2–8 Б | — | registry | `emplace/remove` в горячем тике (`engine.cpp:4782,4785,2419,2394,1665`; `damage.cpp:120-146`) | **РАСХОЖДЕНИЕ** — churn разрежённых множеств в тике; наряда нет |
@@ -974,7 +982,7 @@ SeamlessSubworldManager: generate_one / воркер → dispatch_generate(ctx, 
 | снаряды и спеллы фракционно слепы | `is_spell_target` без фракций (`spell_effects.cpp:48-70`); AoE бьёт и кастера (`:257-261`); исключение — только отрезок дула в тик рождения (`:541-573`) | **ПРАВДА**; `Projectile.friendlyFire` (`ecs/components.h:647`) — читателей в `src/sub` 0 (колонка-сирота) |
 | игрок — обычное тело без игрок-кода | движение — общий ходок; но удар игрока — свой путь `melee_pick_target` hostile-first (`targeting.cpp:24-80`); мозг Flee боится только позиции игрока (`ai.cpp:109-118`); godMode откатывает запись (`:1260-1266`, dev) | **РАСХОЖДЕНИЕ** — второй путь выбора цели; вопрос владельцу |
 | таймеры симуляции — в целых шагах (`core/time.h:49-59`) | `recoverySteps` — целые (`ecs/systems.cpp:35-42`) — ПРАВДА; `SubworldAi.aiTimer -= dt` (`ai.cpp:93,121`), `Projectile.lifeTimer -= dt` (`spell_effects.cpp:409`), `Combat.cooldown` float-секунды с переводом на каждом ударе (`:2027,:3208,:3250`); `kLightFieldRebuildFrames` выведен из 60 fps (`lighting.h:56-67`) без пометки «представление»; харнесс гонит тик с dt ≠ 1/64 в 56 из 56 вызовов (`smoke.cpp`) | **РАСХОЖДЕНИЕ** — наряда нет |
-| макро-сторона шва спрашивает соседа дверью | `cell_step` в `src/sub` — 0; `%` по рантайм-делителю 12 строк `engine.cpp`; `toroidal_cell_offset` — рукописная копия `torus_offset` (`spawn.cpp:512-517`); пары `center_c[xy]()±` — 20 | **РАСХОЖДЕНИЕ** — ЗАКОН АДРЕСА п.5; наряда нет |
+| макро-сторона шва спрашивает соседа дверью | `cell_step` в `src/sub` — 0; `%` по рантайм-делителю 12 строк `engine.cpp`; `toroidal_cell_offset@src/sub/spawn.cpp` — рукописная копия `torus_offset@src/core/torus.h`; пары `center_c[xy]()±` — 20 | **РАСХОЖДЕНИЕ** — ЗАКОН АДРЕСА п.5; наряда нет |
 | ноль строк в тике | `faction_id_for_kind` → `intern` по строке (`engine.cpp:232-234,3038`); K² `faction_relation` strcmp (`state.h:1209-1213`); Flee → `hostile_to_player_entity` на тело; **[снято 2026-09-27] `roll_loot_profile` на смерть — путь смерти реестр лута больше НЕ ЗОВЁТ** (`f191badf`, M-139: труп несёт ровно то, что тело несло; `std::vector` в реестр остался только у добычи пропа `engine.cpp:2301` и dev-консоли `main.cpp:4630`); `spell_ordinal("haste")` каждый кадр в `record_main` (`:5084-5087`) — и результат передаётся в закомментированные параметры | **РАСХОЖДЕНИЕ** — M-103 |
 | одна высота тела | `kBodyEyeM = 1.7` (`height.h:91`), `kBodyHeightM = 1.7` (`collide.h:53`, дефолт для ВСЕХ тел — дракон 1.7 м), `kHumanHeightM = 1.8` (`body.h:106`) | **РАСХОЖДЕНИЕ** — три константы одной величины; наряда нет |
 | `B_Pinned` — флаг тела игрока (шапка `movement.h:149-151`) | писателей в `src` 0; только тесты | **РАСХОЖДЕНИЕ** — мёртвое назначение |
@@ -1237,7 +1245,7 @@ CharacterCreation, Playing (HUD, панели, консоль), Menu, Dead) →
 `player_sheet` 14, `faction_index` 9, `session_feed_push` 7, `npc_def` 7,
 `squad_power` 5, `auto_battle_side_of` 5, `player_jump_to_cell` 4; тик —
 `tick_world`/`tick_world_subworld_steps`/`process_world_daily_ticks`
-(`world_tick.h:97-114`), `tick_macro_npc_ai[_budgeted]` (`npc_ai.h:422,434`);
+(`world_tick.h:97-114`), `tick_macro_npc_ai@src/macro/npc_ai.h` и `tick_macro_npc_ai_budgeted@src/macro/npc_ai.h`;
 марш — `drain_player_sp_for_macro_cell` (`travel.h:95`); отдых — `rest_pools`
 (`recovery.h:33`); бой — `resolve_auto_battle`/`settle_player_auto_battle`;
 летопись — `record_deed`; зрение — `update_player_sight`/`reveal_area`.
@@ -1371,10 +1379,14 @@ CharacterCreation, Playing (HUD, панели, консоль), Menu, Dead) →
 
 **ССЫЛКИ ДОКОВ, ЧИСЛАМИ НА 2026-09-27** (прогон `doc_refs_test`, десять живых
 `.md` корня; `problems.md` не судится — он сам объявляет себя журналом истории):
-ссылок **1950**, из них ЦЕЛЫХ **228**, старой формы «имя+номер» **203**, без
-иголки вовсе **1501**, иголка исчезла из файла **18**. Твёрдых отказов — **0**
+ссылок **1952**, из них ЦЕЛЫХ **237**, старой формы «имя+номер» **203**, без
+иголки вовсе **1501**, иголка исчезла из файла **11** (было 18 — семь оказались
+настоящими ошибками и починены: `structIndex_` и `particles_` объявлены в
+`engine.h`, а не в `collide.h`/`particles.h`; цитата `«16×16, the player's grid»`
+устарела на `«32×32, the one container»`; `feature_is_worked` и `crowdRoles` в
+дереве снесены). Твёрдых отказов — **0**
 (было 21: одиннадцать «строка за концом файла», девять «имя файла не одно»,
-один «файла нет»; все починены в той же сессии). Белый список — **1598** строк,
+один «файла нет»; все починены в той же сессии). Белый список — **1592** строки,
 и он умеет только таять: правишь абзац — приводишь его ссылки в форму.
 
 *Границы, вслух:* прибор проверяет, что ссылка ЦЕЛА, и НИЧЕГО не говорит о том,
