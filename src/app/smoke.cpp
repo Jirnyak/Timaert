@@ -2833,16 +2833,21 @@ bool run_dungeon_house_smoke(App& app) {
         return true;
     }
 
-    // The chest hands over the TOWN'S OWN goods: the store shrinks by what
-    // the player gains, and the theft is charged to their standing. Nothing
-    // is conjured, so an emptied town has empty chests.
+    // A CHEST IS NOT A WINDOW INTO THE TOWN'S STORE (owner ruling
+    // 2026-09-27): it is an interactor, and what it holds will be issued by
+    // the loot pool's door (M-17). So what is measured here is the LAW, not
+    // the take: searching a chest must leave the settlement's goods and the
+    // player's standing with its faction UNTOUCHED. That stays true after
+    // M-17 lands — the pool pays, the town does not. Until 2026-09-27 this
+    // block asserted the opposite (the store shrank, the theft cost
+    // standing), which is the defect the ruling struck down.
     int chestProps = 0;
     for (const auto& s : app.subworld.mgr().structures()) {
         if (s.kind == sm::sub::Structure::Chest) ++chestProps;
     }
     int storeBefore = 0, storeAfter = 0, bagBefore = 0, bagAfter = 0;
     int repBefore = 0, repAfter = 0;
-    bool searched = false;
+    bool measuredChest = false;
     {
         sm::Landmark* town = nullptr;
         for (auto& s : app.gs.landmarks) {
@@ -2862,10 +2867,11 @@ bool run_dungeon_house_smoke(App& app) {
             storeBefore = town->inventory.total();
             bagBefore = player_bag(app).total();
             repBefore = sm::player_reputation(&app.gs, fid);
-            searched = app.subworld.search_chest(*chest);
+            app.subworld.search_chest(*chest);
             storeAfter = town->inventory.total();
             bagAfter = player_bag(app).total();
             repAfter = sm::player_reputation(&app.gs, fid);
+            measuredChest = true;
         }
     }
 
@@ -2949,7 +2955,7 @@ bool run_dungeon_house_smoke(App& app) {
                  "[smoke] dungeon_house entered=%d/%d in=%d/%d exited=%d/%d "
                  "out=%d tags=%d/%d/%d hash=%08x/%08x residents=%d "
                  "pop=%d->%d storeys=%d/%d/%d/%d/%d vermin=%d fauna=%d->%d "
-                 "floorTile=%d leaveRefused=%d chests=%d searched=%d "
+                 "floorTile=%d leaveRefused=%d chests=%d measured=%d "
                  "store=%d->%d bag=%d->%d rep=%d->%d "
                  "wells=%d signs=%d drank=%d sp=%d->%d read=%d\n",
                  entered ? 1 : 0, entered2 ? 1 : 0, inD1 ? 1 : 0, inD2 ? 1 : 0,
@@ -2958,7 +2964,7 @@ bool run_dungeon_house_smoke(App& app) {
                  popBefore, popAfter,
                  lvl0, lvlUp, lvlBack, lvlDown, lvlBack2,
                  vermin, faunaBefore, faunaAfter, floorTile,
-                 leaveRefused ? 1 : 0, chestProps, searched ? 1 : 0,
+                 leaveRefused ? 1 : 0, chestProps, measuredChest ? 1 : 0,
                  storeBefore, storeAfter, bagBefore, bagAfter,
                  repBefore, repAfter, wells, signs, drank ? 1 : 0,
                  spBefore, spAfter, readSign ? 1 : 0);
@@ -3026,17 +3032,24 @@ bool run_dungeon_house_smoke(App& app) {
                     "killing vermin pays the cell back by exactly one");
     }
 
-    // ── THE CHEST'S BOOKKEEPING ──────────────────────────────────────────
-    // A house has a chest, and searching it MOVES goods from the town's store
-    // into the bag — same count out as in — at a price in standing.
+    // ── THE CHEST IS NOT THE TOWN'S STORE ────────────────────────────────
+    // The prop exists (the interactor's shape is the shape of the promise);
+    // what it must NOT do is reach into the settlement it stands in. Asked
+    // only when a town and a chest were both found — the negative control is
+    // that re-wiring the chest to `Landmark::inventory` turns either of these
+    // red immediately.
     SMOKE_CHECK(app, chestProps >= 1, "a house holds a chest");
-    SMOKE_CHECK(app, searched, "the chest answers a search");
-    if (searched) {
-        SMOKE_CHECK(app, storeAfter < storeBefore,
-                    "what the bag gained came OUT of the town's store");
-        SMOKE_CHECK(app, bagAfter - bagBefore == storeBefore - storeAfter,
-                    "the loot is MOVED, not minted — same count out as in");
-        SMOKE_CHECK(app, repAfter < repBefore, "looting a house costs standing");
+    if (measuredChest) {
+        SMOKE_CHECK(app, storeAfter == storeBefore,
+                    "searching a chest does NOT touch the town's store — a "
+                    "chest is an interactor paid by the loot pool (M-17), "
+                    "never a window into the granary");
+        SMOKE_CHECK(app, repAfter == repBefore,
+                    "searching a chest costs no standing — ownership of an "
+                    "interactor does not exist in the world yet");
+        SMOKE_CHECK(app, bagAfter == bagBefore,
+                    "and nothing is conjured into the bag while the issuing "
+                    "door is unbuilt");
     }
 
     // ── THE WELL AND THE BOARD ───────────────────────────────────────────

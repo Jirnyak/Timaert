@@ -199,11 +199,12 @@ void gen_dungeon_cave(const CellContext& ctx, SubworldMapData& out) {
     }
 
     // The deepest chamber keeps a chest — a cave's reward is what somebody
-    // left in it. It is the same prop as a household coffer; what it pays is
-    // decided by whoever owns the place (engine search_chest), and a cave has
-    // no owner, so this one answers with what the DEAD left: nothing until a
-    // hoard row exists. Placed anyway, because the shape of the promise is
-    // the shape of the thing.
+    // left in it. It is the same prop as a household coffer, and by the
+    // owner's ruling of 2026-09-27 they are the same THING: an interactor
+    // whose contents are issued by the loot pool's door (M-17), never read
+    // out of some owner's store. Until that door exists every chest answers
+    // empty. Placed anyway, because the shape of the promise is the shape of
+    // the thing.
     Structure hoard{};
     hoard.kind = Structure::Chest;
     hoard.x = lastX;

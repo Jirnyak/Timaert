@@ -4035,73 +4035,27 @@ bool SubworldEngine::read_sign(const Structure& sign) {
     return true;
 }
 
-bool SubworldEngine::search_chest(const Structure& chest) {
-    if (!active_ || !gs_ || sceneKind_ != SceneKind::Dungeon) return false;
-    // Whose house is this? The interior carries its landmark from the door
-    // it was entered by, and a landmark's STORE is its Inventory — the same
-    // one the market sells from and the day-loop eats from. So a chest is a
-    // window into the town's own goods, not a second economy.
-    Inventory* store = nullptr;
-    const char* factionId = nullptr;
-    if (dungeon_.settlementId >= 0) {
-        if (Landmark* lm = landmark_by_id(*gs_, dungeon_.settlementId);
-            lm && lm->x == dungeon_.doorCx && lm->y == dungeon_.doorCy) {
-            store = &lm->inventory;
-            factionId = faction_id_for_index(
-                faction_or_freefolk(lm->factionIdx));
-        }
-    }
-    if (!store || store->used_slots() == 0) {
-        set_status("The chest is empty.");
-        return false;
-    }
-
-    // Which stack this chest holds is decided by the chest, not by the die:
-    // its position hashes into the store, so searching the SAME chest twice
-    // in one visit does not re-roll the town's goods into your favour.
-    Rng pick(dungeon_scene_seed(gs_->worldSeed, dungeon_.doorCx,
-                                dungeon_.doorCy, dungeon_.ref.ordinal,
-                                dungeon_.ref.level)
-             ^ (std::uint32_t(chest.x) << 16) ^ std::uint32_t(chest.y));
-    // Pick among the OCCUPIED slots, not among all 256: the flat store has
-    // holes, and rolling over the raw array would mostly hit emptiness and
-    // would make the odds depend on where in the grid a good happens to sit.
-    const int occupied = store->used_slots();
-    int wanted = int(pick.next_u32() % std::uint32_t(occupied));
-    ItemRef* chosen = nullptr;
-    for (ItemRef& s : store->slots) {
-        if (s.empty()) continue;
-        if (wanted-- == 0) { chosen = &s; break; }
-    }
-    if (!chosen) {
-        set_status("The chest is empty.");
-        return false;
-    }
-    const ItemDef* def = item_def_at(int(chosen->def));
-    // A householder's chest holds a householder's portion — one to three of
-    // whatever the town has, never the granary in one armful.
-    const int take = std::min(chosen->count, 1 + int(pick.next_u32() % 3u));
-    ItemRef taken = *chosen;
-    taken.count = take;
-    if (!player_bag_of(ecs_).add_ref(taken)) {
-        set_status("Your pack is full.");
-        return false;
-    }
-    chosen->count -= take;
-    if (chosen->empty()) *chosen = ItemRef{};
-
-    // Theft is theft: the same standing the world already tracks, moved by
-    // the same door a struck bystander moves it (add_player_reputation), so
-    // there is no second crime ledger. Robbing a realm blind eventually
-    // makes it hostile through the ordinary threshold.
-    if (factionId && factionId[0] != '\0') {
-        add_player_reputation(*gs_, factionId, kHitRepPenalty);
-    }
-    char msg[96];
-    std::snprintf(msg, sizeof(msg), "Taken: %s x%d",
-                  def ? def->name : "goods", take);
-    set_status(msg);
-    return true;
+bool SubworldEngine::search_chest(const Structure&) {
+    if (!active_ || sceneKind_ != SceneKind::Dungeon) return false;
+    // A CHEST IS AN INTERACTOR, AND NOTHING ELSE (owner ruling 2026-09-27,
+    // verbatim: «сундук дома это просто интерактор как и лут трупа выдача
+    // через пул лута»; «это и не окно в макроинвентарь сквада города и не
+    // вторая экономика»). What it holds is ISSUED by the loot pool's
+    // director door — CANON «ПУЛ ЛУТА — КАЗНА ТЕНЕВОГО МИРА» («сундук
+    // наполняется»), order M-17 — exactly as a corpse holds what the body
+    // carried. That door does not exist yet, so a chest holds nothing and
+    // says so: the hole stays open and NAMED instead of being papered over
+    // (AGENTS §1 — no stand-in stubs while the core is being polished).
+    //
+    // What stood here until 2026-09-27 read `Landmark::inventory` directly —
+    // the granary the settlement eats from and the market sells from — so
+    // searching a house chest DRAINED the town it stood in, and the take was
+    // charged to the player's standing with its faction. Two defects in one
+    // path: the source (a dungeon reaching into macro at all, ЗАКОН ДВУХ
+    // МИРОВ п.4) and the theft ledger (ownership of an interactor is far
+    // future by the same ruling, so no owner column is left behind).
+    set_status("The chest is empty.");
+    return false;
 }
 
 bool SubworldEngine::try_take_dungeon_stairs() {

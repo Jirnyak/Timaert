@@ -526,7 +526,7 @@ seaLevel»), `kWaterLevel = WATER_LEVEL` (`base_generator.cpp:92`),
 85-95` (таблица `BiomeConfig` — `WATER_LEVEL` в constexpr-строках!),
 `src/sub/height.h:40-55`, `src/sub/seamless_manager.cpp:20-65`,
 `src/sub/gens/dispatch.cpp:145-165` (`out.waterLevel = WATER_LEVEL`),
-`src/sub/engine.cpp:5085-5100` (откуда `waterLevel` идёт в рендер),
+`record_main@src/sub/engine.cpp` (откуда `waterLevel` идёт в рендер),
 `shaders/mesh.frag:415-425, 474-484`, `shaders/water.vert:8-14`; где субмир
 получает контекст входа (`rg -n "struct CellContext" src/sub` и место, где
 `CellContext` заполняется из макро — `rg -n "macroHeight *=" src/sub src/app`).

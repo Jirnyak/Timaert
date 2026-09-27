@@ -295,7 +295,6 @@ SKELETON.md	:383
 SKELETON.md	:3866
 SKELETON.md	:388-416
 SKELETON.md	:3901
-SKELETON.md	:4065-4068
 SKELETON.md	:407
 SKELETON.md	:411
 SKELETON.md	:416-421
@@ -1212,7 +1211,6 @@ jopus_prompts.md	src/sub/base_generator.cpp:10-30
 jopus_prompts.md	src/sub/base_generator.h:1-70
 jopus_prompts.md	src/sub/engine.cpp:3685-3720
 jopus_prompts.md	src/sub/engine.cpp:4700-4715
-jopus_prompts.md	src/sub/engine.cpp:5085-5100
 jopus_prompts.md	src/sub/gens/dispatch.cpp:145-165
 jopus_prompts.md	src/sub/gens/dispatch.cpp:158
 jopus_prompts.md	src/sub/height.h:40-55

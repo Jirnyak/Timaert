@@ -360,9 +360,11 @@ void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out) {
         for (int i = 0; i < rectCount; ++i) {
             const RoomRect& r = rects[i];
             // THE CHEST GOES IN FIRST, and the order is the point. It is the
-            // household's store made touchable — the one prop through which a
-            // door reaches the town's inventory at all (engine search_chest) —
-            // while a bed and a table are what the room is furnished WITH.
+            // household's store made touchable — the room's one INTERACTOR,
+            // paid out of the loot pool once that door exists (M-17; it
+            // reached into the town's own inventory until 2026-09-27, which
+            // the owner struck down) — while a bed and a table are what the
+            // room is furnished WITH.
             // Placed last, it was the piece that failed to fit in a small
             // room: the bed and the table took the floor and the house behind
             // that door had no way into the store it was keeping.
