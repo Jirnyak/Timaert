@@ -118,6 +118,11 @@ struct Combat {
     std::uint32_t recoverySteps;
     enum Kind : std::uint8_t { Melee = 0, Missile = 1 } kind;
 };
+// Прибито по DOD п.10: у структуры, чей размер назван, размер закрепляется.
+// Сторож охраняет не ВЫБОР 28 байт, а тишину: новая колонка здесь стоит
+// ×kMaxBodyCrowd (28 Б → 448 КиБ на кап тел субмира), и такое решение обязано
+// быть осознанным, а не замеченным через месяц.
+static_assert(sizeof(Combat) == 28, "боевой лист тела — 28 Б");
 
 // Extra projectile data for Combat::Missile attackers.
 struct MissileAttack {
@@ -195,6 +200,9 @@ struct SubworldAi {
     // advances per decision, so a standing mind still changes its mind.
     std::uint32_t seq = 0;
 };
+// DOD п.10, тот же сторож, что у Combat: 40 Б × kMaxBodyCrowd = 640 КиБ на
+// кап тел, поэтому новая колонка мозга — решение, а не мелочь.
+static_assert(sizeof(SubworldAi) == 40, "мозг тела субмира — 40 Б");
 
 // GOING HOME. A townsman the day's pump has sent indoors, and the door he is
 // walking to (window tiles). He un-embodies when he reaches it.
@@ -679,5 +687,9 @@ struct Projectile {
     std::uint8_t dmgType;
     bool critical;
 };
+// DOD п.10. Самая широкая из трёх (68 Б), и растёт она легче всех — каждый
+// новый род снаряда просит себе поле. При капе тел субмира это 1088 КиБ, так
+// что сторож стоит здесь именно чтобы рост был ВИДЕН в дифе.
+static_assert(sizeof(Projectile) == 68, "снаряд — 68 Б");
 
 } // namespace sm::ecs
