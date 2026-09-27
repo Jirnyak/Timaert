@@ -63,6 +63,19 @@
 >    утверждение без подтверждённого `file:line` — гипотеза). Разошлось — чини
 >    ссылку и скажи об этом в отчёте, а не подгоняй правку под старый номер.
 >
+> **ССЫЛКИ ПРОВЕРЕНЫ ПРИБОРОМ 2026-09-27** (сессия M-139, после шести сессий
+> правок дерева). Мера: все ПОЛНЫЕ ссылки вида `` `файл.ext:NNN` `` в 19 открытых
+> промтах — **205 штук**; проверено, что файл существует и строка в нём есть
+> (твёрдых ошибок **0**), плюс семантика: лежит ли названный рядом символ в ±26
+> строках от цитаты. Исправлено **16 сгнивших ссылок** (`squad.h` ×4 — файл усох
+> сносом M-139, `main.cpp` кадр ×2, `smoke.cpp` ×1, `state.cpp` ×2, `state.h` ×1,
+> `macro_stock.cpp` ×3, `main.cpp` свёртка ×1, `SKELETON.md` ×1, путь
+> `dispatch.cpp` уточнён до `src/sub/gens/`), и ОДИН пункт снят как неверный по
+> сути: «чтения мимо `at` в `world_gen.cpp:310`» — прямых чтений `features.data[`
+> в том файле нет ни одного. **Чего прибор НЕ судит:** 125 коротких ссылок вида
+> `` `:NNN` `` — они наследуют файл из текста абзаца, и механически различить
+> «унаследовала не тот файл» от «сгнила» нельзя; их читает человек.
+>
 > **Состояние на 2026-09-26 (после сессии 25):** закрыты П-19, П-21, П-22,
 > П-23; остальные девятнадцать ОТКРЫТЫ (их наряды в реестре — «НЕ НАЧАТО»,
 > кроме M-114 у П-8 — «ПОЛОВИНА», тип полей уже исправлен `6a53e46`).
@@ -199,15 +212,15 @@
 
 **Как устроено сейчас (проверено 2026-09-25):** после авторезолва каждая
 смерть идёт ДВУМЯ путями и оба пишут факт `Killed` в летопись и платят славу:
-- путь А: `report_battle_deaths` (`squad.h:712-731`) → `report_death`
+- путь А: `report_battle_deaths` (`squad.h:798-818`) → `report_death`
   (`:636`) → синк конверта `mw.facts` → `raise_macro_fact`
   (`app/main.cpp:255-313`): на КАЖДУЮ смерть — `GameEvent NpcDeath` в шину
   (`:258-263`) **и** `WorldFact Killed` amount=1 через `record_deed` с
   начислением славы (`:275-313`);
-- путь Б: `record_battle_facts` (`squad.h:835-900`): ОДИН `Killed`
+- путь Б: `record_battle_facts` (`squad.h:923-977`): ОДИН `Killed`
   amount=`loserDead` через `record_deed(winner)` (`:850-857`) + `Died` домам
   обеих сторон (`:859-899`).
-Оба вызова `report_battle_deaths` (`squad.h:910-912` ИИ↔ИИ, `:1002` игрок)
+Оба вызова `report_battle_deaths` (`squad.h:998-1000` ИИ↔ИИ, `:1090` игрок)
 спарены с `record_battle_facts` (`:932`, `:1058`). `report_death` других
 звонящих не имеет (`rg` 2026-09-25) — значит `WorldFact` в `raise_macro_fact`
 есть чистый дубль пути Б, а `GameEvent NpcDeath` — НЕ дубль: его читает
@@ -234,7 +247,7 @@ o.npcType`, на каждую смерть) и `damage_door_test`.
 - В шапке `raise_macro_fact` одна строка: «Событие — для квестов и логики
   (на каждую смерть); ФАКТ летописи пишет `record_battle_facts` один раз за
   битву (M-117, вердикт владельца 2026-09-25)».
-- `squad.h:855-857` не трогать: сумма по проигравшему и `Died` по домам — и
+- `squad.h:953-957` не трогать: сумма по проигравшему и `Died` по домам — и
   есть «один раз за битву». Проверить только, что `record_battle_facts`
   вызывается РОВНО один раз на каждый `report_battle_deaths`-парный путь
   (`:932`, `:1058`) — если найдётся третий путь смерти без него, это отчёт
@@ -266,7 +279,7 @@ o.npcType`, на каждую смерть) и `damage_door_test`.
   ИМЕНИ (шапка `world_<seed>.tsv`); падение числа `Killed` ≈ вдвое и более —
   ожидаемо, назвать числом.
 - Доки: SKELETON строка «один бой макромира — одна запись Killed» (I.8,
-  сейчас `SKELETON.md:487`) → ПРАВДА с `file:line`; часть IV п.15 снять;
+  сейчас `SKELETON.md:530`) → ПРАВДА с `file:line`; часть IV п.15 снять;
   реестр `M-117` → ПОСТРОЕНО (хвост наряда — «лут трупа лорда → пул лута»,
   «зеркало без клампа hp» — остаётся, статус ПОЛОВИНА с названием остатка).
 - Коммит: `fix(macro): Killed один раз за битву — дубль факта в синке app
@@ -356,7 +369,7 @@ o.npcType`, на каждую смерть) и `damage_door_test`.
 (SKELETON III.6), но адрес клетки в нём — тот же, что в мире.
 
 **Что нашла перепись (SKELETON III.6, строка «ЗАКОН АДРЕСА в app»):**
-- `main.cpp:758-761` — **рукописная свёртка тора** четырьмя условными
+- `main.cpp:753-757` — **рукописная свёртка тора** четырьмя условными
   вычитаниями при бегстве от встречи (а `build_flight_path` `:2078-2082`
   называл себя «последней копией» такой свёртки в дереве — не последней);
 - `:770-781` — `wrapi(x, t.width)` ×4 по стороне мира, рукописный индекс
@@ -525,7 +538,7 @@ seaLevel»), `kWaterLevel = WATER_LEVEL` (`base_generator.cpp:92`),
   `gs.mapParams.seaLevel` в контекст входа субмира (поле `seaLevel` в
   `CellContext` или в конверт входа — там, где уже едет `macroHeight`;
   НЕ через `GameState*`), и субмир на входе клетки берёт порог ОТТУДА:
-  `out.waterLevel = ctx.seaLevel` (`dispatch.cpp:158`,
+  `out.waterLevel = ctx.seaLevel` (`src/sub/gens/dispatch.cpp:158`,
   `seamless_manager.cpp:27`), `placeholder_height_for` /
   `placeholder_tile_for` — через `ctx.seaLevel`, не `WATER_LEVEL`.
   `WATER_LEVEL` остаётся ТОЛЬКО как значение по умолчанию для харнессов без
@@ -648,7 +661,7 @@ seaLevel»), `kWaterLevel = WATER_LEVEL` (`base_generator.cpp:92`),
 `SKELETON.md:568-615`; перепроверить владельцев и типы по `file:line`):**
 терраин `rgba` u8×4×N (`app_state.h:140`), реки u8×N (`map_generator.h:38`),
 `reach` жил u16×N×6 (`deposit_layer`), стоимость пути f32+u8+u8×N
-(`pathfinding.h`, `app_state.h:306`), знание u8×N (`state.h:872`), сетка
+(`pathfinding.h`, `app_state.h:306`), знание u8×N (`state.h:879`), сетка
 ландмарков u16×N (+refs) (`landmark_grid.h:41`), навигация (6 полей ×N +
 планы u16×planeCount×N, `nav_field.h`), угроза u32×R (`nav_field.h:149`),
 следы u16×F×N×2 (`state.h:884`, `scent_field.h`), владение клеткой u8×N
@@ -703,7 +716,7 @@ seaLevel»), `kWaterLevel = WATER_LEVEL` (`base_generator.cpp:92`),
 четырьмя каналами; `EventBus::record` (`events/event_bus.h:27-51`,
 `event_bus.cpp:62-65`) объявлен «THE DOOR INTO THE WORLD'S MEMORY» и имеет
 **0 вызовов**: летопись пишется напрямую `chronicle_record` /
-`record_deed` из `macro/` (`squad.h:422-460`), и по ЗАКОНУ СЛОЁВ (AGENTS
+`record_deed` из `macro/` (`squad.h:549-559`, перегрузка `:562`), и по ЗАКОНУ СЛОЁВ (AGENTS
 §11) `macro/` (L1) НЕ МОЖЕТ звать `events/` (L3) — дверь мертва по
 построению, не по забывчивости. Вместе с ней мертвы `attach_chronicle`
 (один вызов `main.cpp:1659`, читателей у `chronicle_` кроме `record` нет),
@@ -894,7 +907,7 @@ seaLevel»), `kWaterLevel = WATER_LEVEL` (`base_generator.cpp:92`),
 
 **Что не так (SKELETON III.4, «РАСХОЖДЕНИЕ ПО ПОСТРОЕНИЮ», перечитано
 2026-09-25):** `frame()` записывает командный буфер (`acquire_frame`
-`main.cpp:5646` … `end_frame` `:6246`); внутри записи, ПОСЛЕ того как
+`main.cpp:5612` … `end_frame` `:6215`); внутри записи, ПОСЛЕ того как
 `macro.record` (`:5733`) привязал дескриптор `set_` с текстурами мира,
 вызывается `apply_shell_actions` (`:6227`), а она тремя путями зовёт
 `boot_world` (`:5389,:5394,:5427`) и `destroy_world`/`boot_world_from_save`
@@ -911,7 +924,7 @@ seaLevel»), `kWaterLevel = WATER_LEVEL` (`base_generator.cpp:92`),
 `apply_shell_actions`), `:5563-5600` (шапка `frame`), `:5640-5650`
 (`acquire_frame`), `:6225-6250` (хвост кадра), `:1262-1310` (`destroy_world`),
 `:1583-1600` и `:1670-1680` (`boot_world` → `macro.upload`);
-`src/app/smoke.cpp:9349-9360` (`smoke_after_shell_actions`, проверка
+`src/app/smoke.cpp:9640-9650` (`smoke_after_shell_actions`, проверка
 инвариантов сноса — ОБЯЗАНА идти после реального сноса);
 `src/macro/vk_macro_renderer.cpp:153-165` (`upload`: wait-idle + free).
 Остальное не читать.
@@ -1047,7 +1060,7 @@ DOD п.6 (две записи одной фичи — второй ответ). 
 `:658,:660,:668,:670` (мосты/дороги), `:732` (пашни генезиса — мимо
 `plough_field_cell`, которая для этого и существует, SKELETON `:162`);
 чтения мимо `at` — `spawners.cpp:528` (`decode(features.data[idx])`),
-`macro_stock.cpp:490`, `world_gen.cpp:310`.
+`macro_stock.cpp:497-499`. **Пункт «`world_gen.cpp:310`» СНЯТ проверкой 2026-09-27:** прямых чтений `features.data[` в этом файле нет НИ ОДНОГО (`rg -n 'features\.data\[' src/macro/world_gen.cpp` → 0), так что чинить там нечего.
 
 **1. Контекст.** Читать: `src/macro/features.h:165-300` (`FeatureLayer`,
 `at`, `set`, `decode`), `src/macro/macro_stock.cpp:480-565`
@@ -1140,7 +1153,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
   N: `static_assert`/тест на границе языка). `name_empty(const char*)`.
 - Было: три `std::string name`. Стало: `NameCol name{}` в `Landmark`,
   `City`, `PlayerState`.
-- Писатели: `state.cpp:186-189,366`, `politik.cpp:192,235,295` —
+- Писатели: `state.cpp:184-187,360`, `politik.cpp:192,235,295` —
   `name_set(x.name, generate_name(...))`; `main.cpp:3015` —
   `name_set(app.gs.player.name, cs.name)`.
 - Читатели: `.c_str()` → само поле; `.empty()` → `name[0] == '\0'`;
@@ -1510,7 +1523,7 @@ trees, horses, stone, silver, copper, …) описывает все ряды О
 `DepositLayer::cells` (u16×N×6 + `reach` ×6, `deposit_layer.h:81`), лес —
 `TreeLayer::data` (u16×N, `tree_layer.h:104`) — и реестр ходит между ними
 указателями `carrierRead`/`carrierApply` (`resource_field.h:153-154`,
-`macro_stock.cpp:447,571,581`). Семь из десяти заголовков массива шрамов
+`macro_stock.cpp:454,:578,:588`). Семь из десяти заголовков массива шрамов
 стоят ПУСТЫМИ — цена тройного хранилища, названная числом (`kScarRows`).
 
 **1. Контекст.** Читать: `src/macro/resource_field.h` целиком (`ResourceGrid`,
@@ -1550,7 +1563,7 @@ AGENTS §2 п.4 (связная миграция — малыми шагами, 
   остаётся у вида как производное с пересборкой из ряда. Два ответа на
   «жила ли рядом» недопустимы — выбрать один, сказать в отчёте.
 - Шаг В: снести `carrierRead`/`carrierApply` из `FieldRowDef` и все ветки
-  `if (carrier…)` (`macro_stock.cpp:447,571,581`); `allocate_world_fields`
+  `if (carrier…)` (`macro_stock.cpp:454,:578,:588`); `allocate_world_fields`
   выделяет ВСЕ ряды.
 - Шаг Г: снести структуры `DepositLayer`/`TreeLayer`, если после А–Б они
   стали пустыми обёртками; читатели вне `macro/` (`app`, `sub`, `ui`)
