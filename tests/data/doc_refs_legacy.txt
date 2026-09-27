@@ -1050,7 +1050,6 @@ jopus_prompts.md	app_state.h:151
 jopus_prompts.md	app_state.h:177
 jopus_prompts.md	app_state.h:306
 jopus_prompts.md	balance_run.cpp:260
-jopus_prompts.md	base_generator.cpp:16-26
 jopus_prompts.md	base_generator.cpp:565
 jopus_prompts.md	biomes.h:64
 jopus_prompts.md	chronicle.h:345
@@ -1103,7 +1102,6 @@ jopus_prompts.md	map_generator.h:118-122
 jopus_prompts.md	map_generator.h:120
 jopus_prompts.md	map_generator.h:38
 jopus_prompts.md	map_generator.h:89-91
-jopus_prompts.md	mesh.frag:421
 jopus_prompts.md	movement.h:2
 jopus_prompts.md	nav_field.h:149
 jopus_prompts.md	node_registry.cpp:20
@@ -1120,11 +1118,7 @@ jopus_prompts.md	procedural.cpp:426
 jopus_prompts.md	quest_engine.cpp:203-204
 jopus_prompts.md	quest_engine.cpp:261
 jopus_prompts.md	resource_field.h:284-289
-jopus_prompts.md	seamless_manager.cpp:27
 jopus_prompts.md	settlement_score.cpp:129
-jopus_prompts.md	shaders/mesh.frag:415-425
-jopus_prompts.md	shaders/mesh.frag:421
-jopus_prompts.md	shaders/water.vert:8-14
 jopus_prompts.md	smoke_suite.txt:65
 jopus_prompts.md	spawners.cpp:138
 jopus_prompts.md	spawners.cpp:253
@@ -1134,7 +1128,6 @@ jopus_prompts.md	spawners.cpp:528
 jopus_prompts.md	spawners.cpp:533
 jopus_prompts.md	spawners.cpp:631-635
 jopus_prompts.md	spawners.cpp:732
-jopus_prompts.md	spawners.h:27
 jopus_prompts.md	squad.h:453-460
 jopus_prompts.md	squad.h:549-559
 jopus_prompts.md	squad.h:953-957
@@ -1189,15 +1182,9 @@ jopus_prompts.md	src/macro/state.h:462-475
 jopus_prompts.md	src/macro/state.h:810-830
 jopus_prompts.md	src/macro/vk_macro_renderer.cpp:153-165
 jopus_prompts.md	src/macro/world_tick.cpp:190-450
-jopus_prompts.md	src/sub/base_generator.cpp:10-30
-jopus_prompts.md	src/sub/base_generator.h:1-70
 jopus_prompts.md	src/sub/engine.cpp:3685-3720
 jopus_prompts.md	src/sub/engine.cpp:4700-4715
-jopus_prompts.md	src/sub/gens/dispatch.cpp:145-165
-jopus_prompts.md	src/sub/gens/dispatch.cpp:158
-jopus_prompts.md	src/sub/height.h:40-55
 jopus_prompts.md	src/sub/movement.h:60-90
-jopus_prompts.md	src/sub/seamless_manager.cpp:20-65
 jopus_prompts.md	src/sub/spell_effects.cpp:75-90
 jopus_prompts.md	src/sub/targeting.h:40-55
 jopus_prompts.md	src/sub/vk_renderer_3d.cpp:160-175
@@ -1215,7 +1202,6 @@ jopus_prompts.md	state.h:879
 jopus_prompts.md	state.h:884
 jopus_prompts.md	state.h:943
 jopus_prompts.md	store.h:102
-jopus_prompts.md	sub/base_generator.h:35
 jopus_prompts.md	sub/city_layout.h:431-441
 jopus_prompts.md	sub/damage.cpp:145
 jopus_prompts.md	sub/engine.cpp:1782
@@ -1239,8 +1225,6 @@ jopus_prompts.md	tree_layer.cpp:23-24
 jopus_prompts.md	tree_layer.h:104
 jopus_prompts.md	ui/screens.h:70
 jopus_prompts.md	vk_renderer_3d.cpp:1463-1473
-jopus_prompts.md	vk_renderer_3d.cpp:3444
-jopus_prompts.md	water.vert:11
 jopus_prompts.md	world_gen.cpp:310
 jopus_prompts.md	world_tick.cpp:190-193
 jopus_prompts.md	world_tick.h:38-42
