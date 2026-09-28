@@ -1007,7 +1007,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 `boot_world` (`:5389,:5394,:5427`) и `destroy_world`/`boot_world_from_save`
 (`:5453-5474`). `boot_world` → `macro.upload` (`:1675`) →
 `vkDeviceWaitIdle` (ждёт только УЖЕ ОТПРАВЛЕННЫЕ кадры) → немедленный
-`VulkanTexture::destroy` (`vk_texture.cpp:775`) → `vkUpdateDescriptorSets` на
+`destroy@src/gpu/vk_texture.cpp` → `vkUpdateDescriptorSets` на
 `set_`, привязанный в буфере, который ещё ЗАПИСЫВАЕТСЯ (update-after-bind в
 дереве нет) → `end_frame` отправляет буфер с уничтоженными образами. Путь:
 второй «перегенерировать» на экране кастомного мира с превью; новая игра /
