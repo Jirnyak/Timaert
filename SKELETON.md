@@ -122,9 +122,11 @@
 
 ### Граф генезиса — `generate_macro_world` (`macro/world_gen.cpp:37`)
 
-Вход — `boot_world` (`app/main.cpp:1583`; новая игра `:5389,:5394,:5427`;
-загрузка `:1745` с `spawnMacroNpcs=false, anchorPlayer=false` — путь загрузки
-ТОЖЕ проходит весь генезис от сида, потом накладывает сейв, §I.12).
+Вход — `boot_world` (`app/main.cpp:1572`; новая игра и перегенерация превью —
+`:5435,:5440,:5463`, все три внутри `apply_world_shell_actions`, то есть ВНЕ
+записываемого кадра с 2026-09-29, III.4; загрузка `:1730` с
+`spawnMacroNpcs=false, anchorPlayer=false` — путь загрузки ТОЖЕ проходит весь
+генезис от сида, потом накладывает сейв, §I.12).
 
 ```
  1 default_game_state → create_factions         state.cpp:88        W: GameState, матрица отношений
@@ -1023,8 +1025,9 @@ SeamlessSubworldManager: generate_one / воркер → dispatch_generate(ctx, 
 
 ## III.4 — Рендер (GPU рисует; мир на CPU)
 
-**Кадр** (`app/main.cpp:5563-6246`): симуляция и `upload()` ДО `acquire_frame`
-(`:5646`) → `acquire_frame` (фенс слота, кладбище `collect_deferred`,
+**Кадр** (`frame@src/app/main.cpp`): рождение/снос мира
+(`apply_world_shell_actions@src/app/main.cpp`), симуляция и `upload()` — ДО
+`acquire_frame` → `acquire_frame` (фенс слота, кладбище `collect_deferred`,
 `gpu/vk_renderer.cpp:239-244`) → `SubworldEngine::prepare_frame` (`sub/engine.cpp:5010`):
 барьер WAR → `flush_uploads` из staging-арены (терраин, высоты, материал
 ping-pong, инстансы) → `rebuild_light_field` (CPU-сплат 1024² RGBA8, каданс 8
@@ -1089,7 +1092,7 @@ ping-pong, инстансы) → `rebuild_light_field` (CPU-сплат 1024² RG
 | **в push-блоке одно имя на одну величину** | `viewSize` снят: он и `resolution` получали одно и то же `ext.width/height`, а `main()` делил на первое, чтобы умножить на второе. Выжил делитель `gl_FragCoord` — он честно называет кадровый буфер (`MacroPush@src/macro/vk_macro_renderer.cpp`). Снос поля из СЕРЕДИНЫ блока безопасен именно потому, что заполнение идёт ПО ИМЕНИ: пропуск не компилируется, а не связывается молча (шрам сессии 31) | ЗАКОН КОНСТАНТ: параллельные константы одной величины сводятся к одной | **ПРАВДА** (2026-09-28) |
 | **байтовая сетка грузится ОДНОЙ дверью** | `create_r8@src/gpu/vk_texture.h` для фичи, зоны, деревьев и знания. Было две: `expand_r8` раздувал байт в RGBA8 (байт в R, нули и 255 в остальных), и три сетки ехали вчетверо толще, хотя шейдер читает у них ровно `.r` — а поле знания с самого начала шло `create_r8`, то есть вторая дверь доказывала ненужность первой | −3 МиБ видеопамяти на каждую из трёх сеток карты 1024²; семь сцен побайтово идентичны (R8_UNORM даёт шейдеру то же байт/255) | **ПРАВДА** (2026-09-28) |
 | **шапка `macro.frag` переписана по факту** | врала в ПЯТИ утверждениях: «Four sampled images» при шести; «(master + feature + zone + river)» — биндинга реки не существует; «10 per-biome bt_* textures» при одиннадцати; «night lights remain a later step» при работающем `u_lightField`; «Ported from the GL reference (`src/macro/macro_renderer.cpp`)» — файла нет. Теперь шапка называет вход, конечность потока и десять подсистем, и сама перечисляет, в чём врала | §0 п.2: шапка доказательством не является — поэтому она ссылается на CANON S18.2 и на этот раздел, а не утверждает своей властью | **ПРАВДА** (2026-09-28) |
-| **прибор кадров судит воду НЕ тем словарём, что игра** | `macro_shot` кормит шейдер СЫРЫМ `lp.seaLevel`, игра — нормированным байтом (`src/app/main.cpp:5686` «float(app.terrain.seaLevel8) / 255.0f, tod,»). **СНЯТО 2026-09-28 (M-164):** прибор спрашивает плоскость у карты — `seaLevel01@tests/macro_shot.cpp` и `is_water` вместо мёртвой маски `A`; дохлый параметр `seaLevel` у `densest_river_center@tests/macro_shot.cpp` снят. Замер float32: при дефолтных 0.40 старое и новое написание **побитово одно число** (`0x3ecccccd`, ибо 0.40 × 255 = 102 ровно), так что ни один пиксель не сдвинулся — дефект был реален ПО ПОСТРОЕНИЮ и инертен при текущем значении; на плоскости 0.45 разрыв был бы 0.75 байта | **ПРАВДА** (2026-09-28) |
+| **прибор кадров судит воду НЕ тем словарём, что игра** | `macro_shot` кормит шейдер СЫРЫМ `lp.seaLevel`, игра — нормированным байтом (`src/app/main.cpp:5759` «float(app.terrain.seaLevel8) / 255.0f, tod,»). **СНЯТО 2026-09-28 (M-164):** прибор спрашивает плоскость у карты — `seaLevel01@tests/macro_shot.cpp` и `is_water` вместо мёртвой маски `A`; дохлый параметр `seaLevel` у `densest_river_center@tests/macro_shot.cpp` снят. Замер float32: при дефолтных 0.40 старое и новое написание **побитово одно число** (`0x3ecccccd`, ибо 0.40 × 255 = 102 ровно), так что ни один пиксель не сдвинулся — дефект был реален ПО ПОСТРОЕНИЮ и инертен при текущем значении; на плоскости 0.45 разрыв был бы 0.75 байта | **ПРАВДА** (2026-09-28) |
 | **числа клетки, до шейдера не доезжающие** | числа ресурсных полей (`resource_field.h`) и жилы (`deposit_layer.h`) не привязаны ни одним биндингом: карта показывает НАЛИЧИЕ фичи, но никогда ЧИСЛО в ней | замысел говорит «наличие фич и полей» — наличие, значит это не дефект по букве; но и числа клетки исчерпаны не все | **ПРАВДА ПО БУКВЕ ЗАМЫСЛА**; вопрос владельцу открыт |
 | **10. СПРАЙТЫ СКВАДОВ В КЛЕТКАХ** (владелец 2026-09-28: «это уже через единую систему сквадов») — ВНЕ `macro.frag`: рисует ImGui, `draw_sprite@src/ui/macro_overlay.cpp` | колонка `MacroStore::cell` (адрес одним числом), колонка `kind`, интерполяция `MacroVisual` | **вид и цвет идут от СТРОКИ, не от switch:** `npc_sprite@src/ui/macro_overlay.cpp` → `npc_def(t).sprite`, `npc_color@src/ui/macro_overlay.cpp` → `npc_map_color`; комментарии на месте прямо говорят, что здесь СТОЯЛА if-цепь по реестру и её снесли (CANON S16) | **ПРАВДА — ЗАКОН СТРОКИ КАТАЛОГА исполнен** |
 | — сквад рисуется ОДНИМ спрайтом | `draw_sprite` зовётся один раз на сквад; «how many souls march under it is the roster's business» (вердикт владельца 2026-08-20) | — | **ПРАВДА** |
@@ -1110,7 +1113,7 @@ ping-pong, инстансы) → `rebuild_light_field` (CPU-сплат 1024² RG
 | кукла не вернулась | механизма нет; имена остались: `doll_pool.glsl`, `doll_sample/uDolls` (`body.frag:32,47`), локальная `dolls` (`:2967,:3367`) — 21 строка в 11 файлах | **ПРАВДА, имена — мусор** |
 | одна раскладка инстанса | `gpu::BbInstance` 32 Б под `static_assert` (`bb_instance.h:55-64`), одна таблица атрибутов для деревьев и тел; но `kBbInstanceAttrCount = 6` — ручной счёт (`:76`); сентинелы «нет слота» разные: `SpriteBank::kNoSlot = 0xFFFFFFFF`, `kBbNoSlot = 0xFFFF` (шапка `bb_instance.h:22-23` утверждает «тот же») | **РАСХОЖДЕНИЕ** — два мелких; наряда нет |
 | кладбище по фенсу | `defer_destroy` (`:2464,:2497`), `collect_deferred` строго после фенса; `static_assert kGraveyardDelayFrames >= kMaxFramesInFlight` | **ПРАВДА** для субмира |
-| макро-рендер не уничтожает ресурсы в открытом кадре | `MacroRendererVk::upload`: `vkDeviceWaitIdle` + пересоздание + `vkUpdateDescriptorSets` (`vk_macro_renderer.cpp:159-161,254`); `boot_world` из `apply_shell_actions` (`main.cpp:6227`) идёт ПОСЛЕ `macro.record` (`:5729`) и до `end_frame` | **РАСХОЖДЕНИЕ ПО ПОСТРОЕНИЮ** (перечитано 2026-09-25): блок сцены `:5697` условен только на `worldLoaded && !subworld.active()`, состояния не спрашивает; `apply_shell_actions` зовёт `boot_world` тремя путями (`:5389,:5394,:5427`), `boot_world` → `macro.upload` (`:1675`) → `vkDeviceWaitIdle` (ждёт лишь ОТПРАВЛЕННЫЕ кадры) → `VulkanTexture::destroy` немедленно (`vk_texture.cpp:775`) → `vkUpdateDescriptorSets` на `set_`, уже привязанный в ЗАПИСЫВАЕМОМ буфере (update-after-bind в дереве — 0) → `end_frame` (`:6246`) отправляет буфер с уничтоженными образами. Путь: второй `regenerateCustom` с превью, новая игра/загрузка из игрового меню при живой карте. Запуском не воспроизведено |
+| макро-рендер не уничтожает ресурсы в открытом кадре | мировые действия оболочки (`boot_world`, `boot_world_from_save`, `destroy_world`, `build_world_preview`, `save_game_checked`) применяет `apply_world_shell_actions@src/app/main.cpp` — ПЕРВЫМ в обороте, до `advance_sim_steps`, до `ImGui::NewFrame` и до `acquire_frame`; в хвосте кадра `apply_shell_actions@src/app/main.cpp` ведёт только экраны оболочки и кладёт РЕШЕНИЕ в `pendingWorldShell@src/app/app_state.h` | **ПРАВДА с 2026-09-29** (M-122 часть 2). ДО правки прибор назвал дефект ЧИСЛОМ, а не формой: `TIMAERT_VK_VALIDATION=1` + `VK_LAYER_PATH=/opt/homebrew/share/vulkan/explicit_layer.d` на сиде 12345 дал **33** строки `vkCmd…(): … VkCommandBuffer … is now in an invalid state … because the following objects bound to the command buffer were invalidated` (до `vkEndCommandBuffer` включительно) на сценарии `new_game,wait_boot_done,new_game,wait_boot_done` и **18** на `save_game,open_load,load_game,wait_boot_done`. ПОСЛЕ — **0** на обоих при живом детекторе (12 строк `[vk]` о непотреблённых вершинных атрибутах на месте). `return_title` давал 0 и до правки, и это не «там чисто»: `destroy_world@src/app/main.cpp` макро-текстуры не освобождает, их сносит только `MacroRendererVk::upload` (`vk_macro_renderer.cpp:155` «vkDeviceWaitIdle(dev.device);»), то есть свидетель правки — РОЖДЕНИЕ мира, а не снос |
 | host-mapped буферы кольцуются по кадрам в полёте | `farVtx_/farIdx_` перезаписываются `memcpy` на месте из `tick` (`:1475-1476`) без кольца и фенса, пока кадр N−1 может читать их как vertex input | **РАСХОЖДЕНИЕ ПО ПОСТРОЕНИЮ (WAR)** (перечитано 2026-09-25): `rebuild_far_world` зовётся из `Renderer3DVk::upload` (`:1494`), а тот — из `tick` (`engine.cpp:4710`, ДО `acquire_frame`) и из `prepare_frame` (`:5007,:5057`, ПОСЛЕ); `acquire_frame` ждёт фенс своего слота = кадр N−2 (`vk_renderer.cpp:241`, `kMaxFramesInFlight = 2`), кадр N−1 может исполнять `vkCmdBindVertexBuffers(farVtx_)` (`:3244`) во время `memcpy` (`:1475`). Запуском (sync validation) не воспроизведено |
 | staging светового поля кольцуется | slot = `lightFieldFrame_ % 2` при гейте `% 8 == 0` ⇒ всегда 0; `lightFieldStaging_[1]` (4 МиБ) не пишется никогда | **РАСХОЖДЕНИЕ** — корректность держится кадансом, не кольцом |
 | буферы аллоцируются на входе в сцену | в `init` — тела, частицы, стампы, световое поле, тени, `heightTex_`, SSBO; **в кадре** — tree/struct/cyl инстансы при росте (`:2503`, cap = count·1.5+64, без именованного капа), staging-арена при росте (`:2470`), терраин при первом билде (`:2530,:2551`), материал при Create (`:2656`) | **РАСХОЖДЕНИЕ** — DOD п.4; наряда нет |
@@ -1275,19 +1278,27 @@ worldLoaded && !subworld.active()`; иначе `simSpeed`, `simStepCarry`,
 `:2462-2504`: 128 тиков за оборот ЗАМЕЩАЮТ множитель; отмена — субмир, пауза,
 не-Exploring, непустой путь, полный SP, нет лагеря, кап два дня).
 
-**Граф кадра** (`frame`, `:5563-6246`): события SDL → `advance_sim_steps`
-(`:3754`: `tick_playing_runtime` × ticks) → интерполяция позиций сквадов
-`tick_macro_npc_visuals` на ПРОЖИТЫЕ тики (`:5597`) → ImGui `NewFrame` (до
-acquire: ленивые текстуры) → `acquire_frame` (`:5646`) → субмир
-`prepare_frame` + `record_shadow` (`:5686-5687`) → `begin_render_pass` → сцена:
-`subworld.record_main` **или** `macro.record` (`:5733`; страница карты M — та же
-сцена второй камерой) → оверлеи (`draw_map_screen` / `draw_macro_overlay` +
-клик→`find_path`/`build_flight_path`, `:5756-5824`) → оболочка `switch
-(app.state)` (`:5825-6225`: Splash, Title, CustomNewGame, Load, IntroSlides,
-CharacterCreation, Playing (HUD, панели, консоль), Menu, Dead) →
-`apply_shell_actions` (`:6227`) → смоук → звук/мышь → `end_frame` (`:6246`).
-Переходы состояний — 19 присваиваний `app.state` (`:1366,:2556,:2749,:2763,
-:3732,:3735,:5362-5474`); `boot_world` ВНУТРИ кадра — расхождение III.4.
+**Граф кадра** (`frame`, `:5573-6272`): **мировые действия оболочки
+`apply_world_shell_actions` + проверка инвариантов сноса (`:5579-5580`)** →
+события SDL → `advance_sim_steps` (`:3706`: `tick_playing_runtime` × ticks) →
+интерполяция позиций сквадов `tick_macro_npc_visuals` на ПРОЖИТЫЕ тики
+(`:5617`) → ImGui `NewFrame` (`:5629`, до acquire: ленивые текстуры) →
+`acquire_frame` (`:5664`) → субмир `prepare_frame` + `record_shadow`
+(`:5704-5705`) → `begin_render_pass` → сцена: `subworld.record_main` **или**
+`macro.record` (`:5751`; страница карты M — та же сцена второй камерой) →
+оверлеи (`draw_map_screen` `:5786` / `draw_macro_overlay` `:5792` +
+клик→`find_path`/`build_flight_path`) → оболочка `switch (app.state)` (`:5840`:
+Splash, Title, CustomNewGame, Load, IntroSlides, CharacterCreation, Playing
+(HUD, панели, консоль), Menu, Dead) → `apply_shell_actions` (`:6254`) → смоук →
+звук/мышь → `end_frame` (`:6272`). **РОЖДЕНИЕ МИРА СТОИТ ПЕРВЫМ, А НЕ
+ПОСЛЕДНИМ** (M-122 часть 2, 2026-09-29): оболочка в хвосте кадра только
+ЗАКАЗЫВАЕТ его (`pendingWorldShell@src/app/app_state.h`), а исполняется заказ в
+начале следующего оборота, где командного буфера нет вовсе — см. строку III.4
+про ресурсы в открытом кадре с числами валидации. Переходы состояний — **23**
+присваивания `app.state` (`:1356,:2548,:2737,:2741,:2755,:2758,:3684,:3687,
+:5332-5483`; пересчитано 2026-09-29 — в документе стояло 19 ещё до этой правки,
+и правкой число не менялось: два присваивания лишь переехали в
+`apply_world_shell_actions`).
 
 **Тик игры** (`tick_playing_runtime`, `:3388-3752`; один вызов = ОДИН тик
 `kStepSeconds`, реального времени не читает):
@@ -1458,7 +1469,7 @@ CharacterCreation, Playing (HUD, панели, консоль), Menu, Dead) →
 | M-119 (СЕЙВ-1) | `kMaxPayloadBytes` из суммы капов; кап сквадов 32 768; PreBattle читаем; производные (survey/ledger) пересобирать после загрузки; границы enum из списка | I.12 | S |
 | M-120 (ЗАСЕЛЕНИЕ-СУБ-1) | два агностичных потока заселения (ростер сквадов / поля фауны-сложности); интерьеры не читают население клетки двери | II | M |
 | M-121 (СУБ-1) | высота симуляции из композита, не из сетки рендера; четыре литерала 16384 → один со `static_assert`; таймеры в шагах; `static_assert` на Combat/SubworldAi/Projectile; `stampRing_` кап | III | M |
-| M-122 (РЕНДЕР-1) | `farVtx_` кольцо по кадрам; макро-upload после записи кадра; `shadowMeshPipe_` и мёртвый API `SpriteArray` снести; буферы деревьев/структур с капом | III.4 | S–M |
+| M-122 (РЕНДЕР-1) | ~~макро-upload после записи кадра~~ **СДЕЛАНО 2026-09-29** (`apply_world_shell_actions@src/app/main.cpp`, валидация 33/18 → 0); остаётся: `farVtx_` кольцо по кадрам (умирает внутри M-151), `shadowMeshPipe_` и мёртвый API `SpriteArray` снести; буферы деревьев/структур с капом | III.4 | S–M |
 | M-123 (AI-1) | курсор бюджетного драйвера по ординалу; RNG свипа отдельно от UI; один ответ гейта `allowAutoBattle`; `AgentMemory` читатель или снос | I.8 | S–M |
 | M-124 (APP-1) | `src/app` под ЗАКОН АДРЕСА (свёртка, `wrapi`, индекс, спеллинг воды); индекс клетка→сквады как поле и `detect_forced_encounter` через него; один предикат «сквад стоит» для игрока и NPC; `step_macro_walk` из `ui/` в `macro/`; путь полёта — режим `find_path` | III.6 | M |
 
