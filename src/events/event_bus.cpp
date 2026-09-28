@@ -59,29 +59,15 @@ void EventBus::unsubscribe(std::uint32_t id) {
     }
 }
 
-std::uint32_t EventBus::record(const WorldFact& fact) {
-    if (!chronicle_) return 0u;
-    return chronicle_record(*chronicle_, fact);
-}
-
 void EventBus::flush() {
     last_.swap(tick_);
     tick_.clear();
-    // The frame's facts are a RANGE, not a buffer: where this frame started
-    // becomes where the last one did, and the new frame starts at whatever
-    // the chronicle has reached.
-    lastFrameFirstSeq_ = frameFirstSeq_;
-    frameFirstSeq_ = chronicle_ ? chronicle_->nextSeq : frameFirstSeq_;
     tickCounter_++;
 }
 
 void EventBus::reset() {
     tick_.clear();
     last_.clear();
-    // The chronicle is the WORLD's and is not the bus's to clear; the
-    // bookmarks are the bus's and are.
-    frameFirstSeq_ = chronicle_ ? chronicle_->nextSeq : 1u;
-    lastFrameFirstSeq_ = frameFirstSeq_;
     tickCounter_ = 0;
     nextSubId_ = 1;
     for (auto& subs : subsByTag_) subs.clear();

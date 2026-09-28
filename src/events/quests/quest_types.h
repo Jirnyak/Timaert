@@ -22,7 +22,10 @@ namespace sm
         DeliverItems,
         DestroyNpc,
         WaitAt,
-        InteractCell,
+        // InteractCell жил на двух тегах без отправителя (WorldCellChange,
+        // LandmarkChangeOwner) и без производителя в контенте — снят вместе с
+        // ними (M-116, часть 1). Колонка `action` была его единственной и
+        // ушла туда же.
     };
 
     struct Objective
@@ -42,7 +45,6 @@ namespace sm
         int count = 0, killed = 0;
         float zoneRadius = 0;
         int hoursRequired = 0, hoursWaited = 0;
-        std::string action{};
     };
 
     enum class RewardKind : std::uint8_t

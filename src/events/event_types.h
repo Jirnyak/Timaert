@@ -12,28 +12,33 @@
 namespace sm
 {
 
-    // Every tag below has at least one producer AND at least one consumer, or
-    // is one edit away from it — the 2026-08-05 producer/consumer census
+    // Every tag below HAS A PRODUCER. The 2026-08-05 producer/consumer census
     // (history/audit.md Часть II) deleted the 16 tags nothing outside this enum ever
     // referenced (PlayerLevelUp, PlayerDeath, NpcSpawn, NpcGreeted, Encounter,
     // SettlementChangeOwner, QuestAbandoned, Trade, NpcHpChange,
     // SettlementMoodChange, PlayerStatChange, BattleEnd, MagicSurge,
-    // FactionRelationChange, DialogStart, CameraMove). Values are DENSE and
-    // implicit now: the old TS-parity numeric anchors died with the parity,
-    // and the renumbering invalidated saves => kSaveVersion 20.
+    // FactionRelationChange, DialogStart, CameraMove); the M-116 pass
+    // (2026-09-28) deleted the three that were still referenced only by their
+    // READERS and never emitted (SettlementVisit — the sys_settlement node
+    // accepted it beside PlayerEnterSettlement; LandmarkChangeOwner and
+    // WorldCellChange — the InteractCell objective arm, which went with them).
+    // Values are DENSE and implicit: the old TS-parity numeric anchors died
+    // with the parity, and every renumbering invalidates saves (kSaveVersion).
+    //
+    // Four tags below have a producer but no PRODUCTION reader — QuestStart,
+    // QuestUpdate, SpellCast, PlayerLeaveSettlement. They are facts without a
+    // listener, and who listens is M-116 (CANON S20); they are NOT dead ends
+    // of the same kind as the three above.
     enum class EventTag : std::uint16_t
     {
         PlayerMove = 0,
         NpcDeath,         // a = entity id, b = killer, ix = NPCKind.type
-        SettlementVisit,
         QuestStart,       // a = quest ordinal, s2 = title (feed display)
         QuestUpdate,      // a = quest ordinal
         QuestComplete,    // a = quest ordinal
         QuestFail,        // a = quest ordinal, s2 = "expired"/"abandoned"
         SpellCast,
         SpellLearned,
-        LandmarkChangeOwner,
-        WorldCellChange,
         TimeAdvance,      // a = day, iy = hour, ix = 1 event per elapsed hour
         PlayerGoldChange, // ix = delta, iy = optional new total
         ApplyEffect,      // s1 = effectType, ix = value
@@ -44,7 +49,12 @@ namespace sm
         ShowStory,        // s1 = source node, s2 = story id, ix/iy/a/b = counts
         StoryResult,      // storyResult = choices keyed by phase id
         SpawnEntity,      // s1 = npc type id/name, ix/iy = x/y, a = level
-        Custom,
+        Custom,           // ДЕФОЛТ ИНИЦИАЛИЗАЦИИ, НЕ СОБЫТИЕ: the value a
+                          // freshly declared GameEvent::tag (below) and
+                          // ConditionSlot::tag (events/logic_nodes.h) carry
+                          // before their author names one. Nothing in the world
+                          // emits it; making the default a real tag would have
+                          // every uninitialised event claim to be that one.
         PlayerEnterSettlement, // s1 = settlement name, a/ix = settlement id
         PlayerLeaveSettlement, // s1 = settlement name, a/ix = settlement id
         SpireDepleted,    // a = spire id, b = spell registry ordinal,

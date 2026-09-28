@@ -17,10 +17,7 @@ void add_continue_choice(GameEvent& dialog, const char* label) {
 
 const GameEvent* find_settlement_enter_event(const EventBus& bus) {
     for (const auto& ev : bus.last_tick_events()) {
-        if (ev.tag == EventTag::SettlementVisit
-            || ev.tag == EventTag::PlayerEnterSettlement) {
-            return &ev;
-        }
+        if (ev.tag == EventTag::PlayerEnterSettlement) return &ev;
     }
     return nullptr;
 }
