@@ -236,12 +236,10 @@ SKELETON.md	:257
 SKELETON.md	:257-261
 SKELETON.md	:2582
 SKELETON.md	:26
-SKELETON.md	:263
 SKELETON.md	:2637
 SKELETON.md	:265-276
 SKELETON.md	:267-275
 SKELETON.md	:278
-SKELETON.md	:279
 SKELETON.md	:287
 SKELETON.md	:287-292
 SKELETON.md	:288-291
@@ -566,7 +564,6 @@ SKELETON.md	lighting.h:56-67
 SKELETON.md	logic_nodes.cpp:52
 SKELETON.md	macro/cell_facts.cpp:15-81
 SKELETON.md	macro/entry_context.h:29-85
-SKELETON.md	macro/map_generator.cpp:738-744
 SKELETON.md	macro/player_entity.h:95-104
 SKELETON.md	macro/save.cpp:10
 SKELETON.md	macro/squad.h:290
@@ -624,8 +621,6 @@ SKELETON.md	map_generator.cpp:546-699
 SKELETON.md	map_generator.cpp:556-569
 SKELETON.md	map_generator.cpp:716
 SKELETON.md	map_generator.cpp:727
-SKELETON.md	map_generator.h:116-117
-SKELETON.md	map_generator.h:116-119
 SKELETON.md	map_generator.h:21
 SKELETON.md	map_generator.h:36
 SKELETON.md	map_generator.h:38
