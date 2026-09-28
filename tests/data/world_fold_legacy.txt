@@ -1,0 +1,75 @@
+# ТАЮЩИЙ БЕЛЫЙ СПИСОК СВЁРТКИ МИРА — судья `tests/world_fold_law_test.cpp`.
+#
+# Каждая строка — САЙТ, где клетка мира сворачивается мимо четырёх дверей
+# `core/torus.h` (`cell_of`, `cell_x`, `cell_y`, `cell_step`). Формат:
+#     <путь от корня> TAB <правило> TAB <текст строки, схлопнутые пробелы>
+# Правила: `wrapf` — свёртка float по стороне мира; `mod` — остаток по стороне
+# мира; `index` — рукописный `y * W + x`.
+#
+# СПИСОК УМЕЕТ ТОЛЬКО ТАЯТЬ. Новый сайт вне списка красит `check` (рост долга);
+# строка списка, которой в коде больше нет, красит его же (список врёт о мире,
+# которого уже нет). Дописывать сюда строку, чтобы позеленело, — подгонка под
+# тест (AGENTS §8 ЗАКОН НУЛЕВОЙ п.4), и именно её этот файл делает видимой:
+# правка списка стоит отдельной строкой в дифе и требует объяснения.
+#
+# Номера строк здесь НЕ хранятся сознательно: они производное, а не факт, и
+# любая правка выше по файлу гноила бы список целиком. Адрес с номером прибор
+# печатает сам, когда ругается.
+#
+# Наполнено ЗАМЕРОМ 2026-09-28 (наряд M-169), не рукой.
+src/app/main.cpp	index	const std::size_t s = std::size_t(sy * td.width + sx) * 4;
+src/app/main.cpp	wrapf	app.camX = sm::wrapf(app.camX
+src/app/main.cpp	wrapf	app.camY = sm::wrapf(app.camY
+src/app/main.cpp	wrapf	app.mapScreen.camX = sm::wrapf(
+src/app/main.cpp	wrapf	app.mapScreen.camY = sm::wrapf(
+src/app/smoke.cpp	index	(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4u;
+src/app/smoke.cpp	index	tl[std::size_t(y) * W + cx] == WATER; --y) ++up;
+src/app/smoke.cpp	index	tl[std::size_t(y) * W + cx] == WATER; ++y) ++dn;
+src/app/smoke.cpp	index	tl[std::size_t(y) * W + x] == WATER;
+src/app/smoke.cpp	mod	const int ocx = ((ccx + 7) % W + W) % W;
+src/app/smoke.cpp	mod	const int ocy = ((ccy + 5) % H + H) % H;
+src/macro/cell_facts.cpp	index	std::size_t(f.y) * std::size_t(td.width) + std::size_t(f.x);
+src/macro/map_generator.cpp	index	const std::size_t s = (std::size_t(y) * w + x) * 4;
+src/macro/map_generator.cpp	mod	path.push_back({source % w, source / w});
+src/macro/npc_ai.cpp	wrapf	float nx = wrapf(cx + float(rand_int(ctx, range * 2) - range),
+src/macro/npc_ai.cpp	wrapf	float ny = wrapf(cy + float(rand_int(ctx, range * 2) - range),
+src/macro/npc_ai.cpp	wrapf	rt.targetX = wrapf(float(orders->waypoints[std::size_t(i * 2)]),
+src/macro/npc_ai.cpp	wrapf	rt.targetX = wrapf(p.x + dx / len * 8.0f, float(ctx.mapW));
+src/macro/npc_ai.cpp	wrapf	rt.targetY = wrapf(float(orders->waypoints[std::size_t(i * 2 + 1)]),
+src/macro/npc_ai.cpp	wrapf	rt.targetY = wrapf(p.y + dy / len * 8.0f, float(ctx.mapH));
+src/macro/npc_spawn.cpp	index	terrain.rgba[(std::size_t(y) * mapW + x) * 4u + 0];
+src/macro/optics.h	index	return std::size_t(y) * std::size_t(width) + std::size_t(x);
+src/macro/pathfinding.cpp	index	const std::size_t cidx = std::size_t(cur.y) * W + cur.x;
+src/macro/pathfinding.cpp	index	scratch.set_score(std::size_t(sy) * W + sx, 0.0f, -1, -1);
+src/macro/pathfinding.cpp	index	std::size_t k = std::size_t(cy) * W + cx;
+src/macro/pathfinding.cpp	index	std::size_t nidx = std::size_t(ny) * W + nx;
+src/macro/pathfinding.cpp	mod	const int cx = int(i % std::size_t(td.width));
+src/macro/pathfinding.h	index	return std::size_t(y) * width + x;
+src/macro/politik.cpp	index	P.cellOwner[std::size_t(y) * mapW + x] =
+src/macro/politik.cpp	index	std::size_t idx = std::size_t(y) * W + x;
+src/macro/politik.cpp	index	std::size_t ni = std::size_t(nb[1]) * W + nb[0];
+src/macro/politik.cpp	mod	{(x + 1) % W, y}, {(x + W - 1) % W, y},
+src/macro/politik.cpp	mod	{x, (y + 1) % H}, {x, (y + H - 1) % H},
+src/macro/politik.h	index	politik.cellOwner[std::size_t(wy) * std::size_t(w) + std::size_t(wx)];
+src/macro/ruins.cpp	mod	const int x = int(rng.next_u32() % std::uint32_t(gs.mapW));
+src/macro/ruins.cpp	mod	const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
+src/macro/scent_field.h	index	* std::size_t(sf.w)
+src/macro/scent_field.h	index	return (std::size_t(f) * std::size_t(sf.h) + std::size_t(y))
+src/macro/spawners.cpp	index	const int ac = landComponent[std::size_t(ay) * W + ax];
+src/macro/spawners.cpp	index	const int aComponent = landComponent[std::size_t(ay) * W + ax];
+src/macro/spawners.cpp	index	const int bc = landComponent[std::size_t(by) * W + bx];
+src/macro/spawners.cpp	index	const int bComponent = landComponent[std::size_t(by) * W + bx];
+src/macro/spawners.cpp	index	const std::size_t i = std::size_t(y) * W + x;
+src/macro/spawners.cpp	index	if (cg.costGrid[std::size_t(p.y) * W + p.x]
+src/macro/spawners.cpp	index	std::size_t k = std::size_t(p.y) * W + p.x;
+src/macro/spires.cpp	mod	const int x = int(rng.next_u32() % std::uint32_t(gs.mapW));
+src/macro/spires.cpp	mod	const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
+src/macro/travel.cpp	index	std::size_t(wy) * std::size_t(terrain.width) + std::size_t(wx);
+src/macro/tree_layer.cpp	index	const std::size_t i = std::size_t(wy) * std::size_t(layer.width) + std::size_t(wx);
+src/macro/tree_layer.cpp	index	const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
+src/macro/zones.cpp	index	const std::size_t i = std::size_t(y) * std::size_t(width) + std::size_t(x);
+src/macro/zones.cpp	mod	pull_from(int(i % std::size_t(width)),
+src/ui/macro_overlay.cpp	mod	cx = ((cx % mapW) + mapW) % mapW;
+src/ui/macro_overlay.cpp	mod	cy = ((cy % mapH) + mapH) % mapH;
+src/ui/map_screen.cpp	mod	const int cx = ((int(std::floor(wx)) % mapW) + mapW) % mapW;
+src/ui/map_screen.cpp	mod	const int cy = ((int(std::floor(wy)) % mapH) + mapH) % mapH;

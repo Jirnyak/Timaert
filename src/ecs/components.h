@@ -694,3 +694,58 @@ struct Projectile {
 static_assert(sizeof(Projectile) == 68, "снаряд — 68 Б");
 
 } // namespace sm::ecs
+
+// Включение стоит ЗДЕСЬ, а не наверху файла, и это не небрежность:
+// заголовок пользуется контуром только в блоке ниже, а вставленная
+// наверху строка сдвинула бы ВСЁ содержимое на единицу и сгноила бы
+// каждую ссылку документов в этот файл (замер: одна такая вставка в 17
+// заголовков сломала 10 ссылок в SKELETON.md и промтах). Номер строки —
+// производное (§13 п.5), и дешевле не двигать его вовсе.
+#include "core/row_law.h"
+// ── КОНТУР СТРОК ЭТОГО ФАЙЛА ────────────────────────────────────────────────
+// Судит КОМПИЛЯТОР, а не ревью: строка мира, в которую заложили вектор, строку,
+// карту, умный указатель, функтор или виртуальный метод, отсюда НЕ СОБЕРЁТСЯ, и
+// сообщение назовёт тип поимённо (`core/row_law.h`, наряд M-169).
+// Новая структура в этом файле обязана появиться и в этом списке — за полнотой
+// списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
+TIMAERT_ROW(sm::MacroHandle);
+TIMAERT_ROW(sm::ecs::Position);
+TIMAERT_ROW(sm::ecs::VisualPos);
+TIMAERT_ROW(sm::ecs::MacroVisual);
+TIMAERT_ROW(sm::ecs::MacroCell);
+TIMAERT_ROW(sm::ecs::BodyRadius);
+TIMAERT_ROW(sm::ecs::Combat);
+TIMAERT_ROW(sm::ecs::MissileAttack);
+TIMAERT_ROW(sm::ecs::Dead);
+TIMAERT_ROW(sm::ecs::PlayerTag);
+TIMAERT_ROW(sm::ecs::AvatarTag);
+TIMAERT_ROW(sm::ecs::PlayerSquadTag);
+TIMAERT_ROW(sm::ecs::PlayerSoldierTag);
+TIMAERT_ROW(sm::ecs::TempHostileToPlayer);
+TIMAERT_ROW(sm::ecs::SubworldTag);
+TIMAERT_ROW(sm::ecs::Flying);
+TIMAERT_ROW(sm::ecs::Airborne);
+TIMAERT_ROW(sm::ecs::NPCKind);
+TIMAERT_ROW(sm::ecs::SubworldAi);
+TIMAERT_ROW(sm::ecs::GoingHome);
+TIMAERT_ROW(sm::ecs::NpcLevel);
+TIMAERT_ROW(sm::ecs::NpcInventory);
+TIMAERT_ROW(sm::ecs::BodyEquipment);
+TIMAERT_ROW(sm::ecs::NpcTraits);
+TIMAERT_ROW(sm::ecs::SoldierLink);
+TIMAERT_ROW(sm::ecs::MacroDebt);
+TIMAERT_ROW(sm::ecs::MacroOrigin);
+TIMAERT_ROW(sm::ecs::LastHit);
+TIMAERT_ROW(sm::ecs::HitFlash);
+TIMAERT_ROW(sm::ecs::DamageFx);
+TIMAERT_ROW(sm::ecs::NpcCharacter);
+TIMAERT_ROW(sm::ecs::Sprite);
+TIMAERT_ROW(sm::ecs::LightEmitter);
+TIMAERT_ROW(sm::ecs::MacroNpcRuntime);
+TIMAERT_ROW(sm::ecs::MacroSpawnId);
+TIMAERT_ROW(sm::ecs::MacroSlot);
+TIMAERT_ROW(sm::ecs::SquadOrders);
+TIMAERT_ROW(sm::ecs::DesignCharacterTag);
+TIMAERT_ROW(sm::ecs::Structure);
+TIMAERT_ROW(sm::ecs::CorpseLoot);
+TIMAERT_ROW(sm::ecs::Projectile);

@@ -1902,6 +1902,14 @@ timaert_test(world_fold_law_test)
 target_compile_definitions(world_fold_law_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
+# ГЕЙТ АРХИТЕКТУРЫ (M-169). Делит труд с компилятором: ЗАКОН судит
+# `core/row_law.h` (строка мира с вектором не собирается), а ПОЛНОТУ его
+# применения — этот прибор, плюс два тающих списка (канал macro→sub, адрес у
+# вердикта скелета). Сканирует дерево, поэтому знает его корень.
+timaert_test(arch_guard_test)
+target_compile_definitions(arch_guard_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 # Прибор на ЗАКОН ТУПИКА РЕНДЕРА: вертикальная истина субмира больше не живёт в
 # рендерере и не читается из него. Утверждение об ОТСУТСТВИИ адреса в коде не
 # имеет — оно указывает сюда (§0 п.2). Сканирует дерево, поэтому знает корень.
