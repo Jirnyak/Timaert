@@ -81,7 +81,6 @@ SKELETON.md	:1602
 SKELETON.md	:1606
 SKELETON.md	:164-167
 SKELETON.md	:165-166
-SKELETON.md	:1675
 SKELETON.md	:17-18
 SKELETON.md	:173-176
 SKELETON.md	:1823
@@ -200,21 +199,15 @@ SKELETON.md	:5081
 SKELETON.md	:5084-5087
 SKELETON.md	:510
 SKELETON.md	:52
-SKELETON.md	:5389
-SKELETON.md	:5394
 SKELETON.md	:541-573
-SKELETON.md	:5427
 SKELETON.md	:55-59
 SKELETON.md	:551-553
 SKELETON.md	:566-605
-SKELETON.md	:5697
-SKELETON.md	:5729
 SKELETON.md	:573-605
 SKELETON.md	:576-577
 SKELETON.md	:6070
 SKELETON.md	:61
 SKELETON.md	:620
-SKELETON.md	:6246
 SKELETON.md	:6330
 SKELETON.md	:65
 SKELETON.md	:662
@@ -251,7 +244,6 @@ SKELETON.md	anatomy.h:60
 SKELETON.md	app/app_state.h:161
 SKELETON.md	app/main.cpp:1375
 SKELETON.md	app/main.cpp:1476-1491
-SKELETON.md	app/main.cpp:1583
 SKELETON.md	app/main.cpp:1645
 SKELETON.md	app/main.cpp:1897-1901
 SKELETON.md	app/main.cpp:277
@@ -263,7 +255,6 @@ SKELETON.md	app/main.cpp:3490-3497
 SKELETON.md	app/main.cpp:4064
 SKELETON.md	app/main.cpp:4608-4610
 SKELETON.md	app/main.cpp:4970
-SKELETON.md	app/main.cpp:5563-6246
 SKELETON.md	app/main.cpp:6277
 SKELETON.md	app/main.cpp:6320-6322
 SKELETON.md	app/main.cpp:662
@@ -459,7 +450,6 @@ SKELETON.md	main.cpp:4268
 SKELETON.md	main.cpp:4630
 SKELETON.md	main.cpp:5561
 SKELETON.md	main.cpp:5732
-SKELETON.md	main.cpp:6227
 SKELETON.md	main.cpp:6278
 SKELETON.md	map_data.h:395
 SKELETON.md	map_generator.cpp:185-186
@@ -785,7 +775,6 @@ SKELETON.md	ui/overlays.cpp:1653-1660
 SKELETON.md	ui/overlays.cpp:2764-2765
 SKELETON.md	ui/overlays.cpp:887-899
 SKELETON.md	ui/screens.cpp:387-392
-SKELETON.md	vk_macro_renderer.cpp:159-161
 SKELETON.md	vk_macro_renderer.cpp:189
 SKELETON.md	vk_macro_renderer.cpp:31
 SKELETON.md	vk_macro_renderer.cpp:89
@@ -795,7 +784,6 @@ SKELETON.md	vk_renderer_3d.cpp:2305-2321
 SKELETON.md	vk_renderer_3d.cpp:2742
 SKELETON.md	vk_renderer_3d.cpp:2769
 SKELETON.md	vk_renderer_3d.cpp:2986-2990
-SKELETON.md	vk_texture.cpp:775
 SKELETON.md	world_fields.cpp:268
 SKELETON.md	world_fields.cpp:79
 SKELETON.md	world_gen.cpp:152-156
@@ -1062,7 +1050,6 @@ macro-registry.md	:144
 macro-registry.md	:1539
 macro-registry.md	:156-158
 macro-registry.md	:1631
-macro-registry.md	:1675
 macro-registry.md	:1700
 macro-registry.md	:188
 macro-registry.md	:190
@@ -1107,7 +1094,6 @@ macro-registry.md	:5243
 macro-registry.md	:550
 macro-registry.md	:575
 macro-registry.md	:592
-macro-registry.md	:6227
 macro-registry.md	:6527-6529
 macro-registry.md	:66-73
 macro-registry.md	:662
@@ -1222,7 +1208,6 @@ macro-registry.md	main.cpp:130
 macro-registry.md	main.cpp:292-297
 macro-registry.md	main.cpp:4238-4270
 macro-registry.md	main.cpp:4268
-macro-registry.md	main.cpp:5697
 macro-registry.md	main.cpp:758-761
 macro-registry.md	map_generator.cpp:683
 macro-registry.md	map_generator.cpp:736

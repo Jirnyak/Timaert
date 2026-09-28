@@ -326,6 +326,20 @@ struct App {
     ImTextureID  customPreviewTex   = ImTextureID();  // biome-coloured world preview
     int          customPreviewSide  = 0;        // 0 = no preview built yet
     bool         customWorldReady   = false;    // true after a regen succeeds
+    // Мировые действия оболочки, ОТЛОЖЕННЫЕ до начала следующего оборота
+    // (`apply_world_shell_actions`, main.cpp). Читает её ровно одно место —
+    // начало `frame()`, до `acquire_frame`; пишет ровно одно —
+    // `apply_shell_actions`, которое решает развилки (`state == Load`,
+    // `worldLoaded`) СРАЗУ и кладёт сюда решение, а не сырой флаг.
+    // Зачем колонка (DOD п.9): рождение и снос мира зовут
+    // `MacroRendererVk::upload` → `vkDeviceWaitIdle` + снос образов +
+    // `vkUpdateDescriptorSets`, а экраны оболочки применяются в ХВОСТЕ кадра,
+    // внутри уже записываемого командного буфера, где `macro.record` привязал
+    // `set_` с этими самыми образами. Валидация Vulkan называла это 18 и 33
+    // строками `invalid state` на загрузке и на второй новой игре (M-122).
+    // GPU рисует, мир живёт на CPU (AGENTS §6): мир рождается там, где кадра
+    // нет вовсе.
+    sm::ui::ShellResult pendingWorldShell{};
     SmokeScript smoke;
 
     // Developer console (Quake-style REPL + inspector panels). Toggled with
