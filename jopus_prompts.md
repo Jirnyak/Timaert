@@ -171,7 +171,7 @@
 КОСТЫЛИ НЕ НУЖНЫ»):** `garrison_recruit_` (`:293-304`) и оба вызова
 (`:246`, `:442`), `garrison_wants_recruits` (`world_tick.h:43-46`) и его
 проверки в `trade_law_test.cpp:110-117`. `garrison_target_strength`
-(`world_tick.h:38-42`) и колонка `garrisonShift` (`landmark_registry.h:194`)
+(`world_tick.h:38-42`) и колонка `garrisonShift` (`landmark_registry.h:202`)
 — ОСТАЮТСЯ, у них жильцы вне дневного набора: РОЖДЕНИЕ места
 (`state.cpp:166-173` — состав при генезисе, число у редактора по ЗАКОНУ
 АГНОСТИЧНОСТИ) и планировка города (`sub/city_layout.h:431-441`);
