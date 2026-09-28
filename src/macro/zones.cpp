@@ -109,13 +109,17 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
         return featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
     };
 
-    // Mountains are the Mountain biome (elevation-classified, see biomes.h),
-    // not a feature. Detect them from the terrain height (red channel) on land
-    // cells — water is never a mountain regardless of height.
+    // Гора — это БИОМ Mountain, а не фича, и спрашивается он у ЕДИНСТВЕННОГО
+    // каскада клетки (map_generator.h biome_at_cell, M-110). Здесь стояла
+    // дословная копия первых двух его ветвей — `is_water`, затем байт высоты
+    // против `kMountainBiomeLevel`, — то есть четвёртый ответ на вопрос «какой
+    // биом». Числа совпадали, поэтому сегодня свод ничего не двигает; ценой
+    // было то, что следующий сдвиг каскада эту копию бы не тронул.
     auto is_mountain = [&](std::size_t i) -> bool {
         if (!hasTerrain) return false;
-        if (terrain->is_water(std::uint32_t(i))) return false;
-        return float(terrain->rgba[i * 4 + 0]) / 255.0f >= kMountainBiomeLevel;
+        return biome_at_cell(*terrain, cell_x(std::uint32_t(i), width),
+                             cell_y(std::uint32_t(i), width))
+            == Biome::Mountain;
     };
 
 

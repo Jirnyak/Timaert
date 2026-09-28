@@ -208,10 +208,6 @@ namespace sm
 
     std::vector<TreePoint> spawn_trees(const TerrainData &td, std::uint32_t seed)
     {
-        // БЕРЕГОВАЯ ПОЛОСА — вопрос НЕ «вода ли», а «высоко ли над морем»,
-        // поэтому здесь плоскость нужна величиной, а не предикатом: берём её
-        // у карты и переводим один раз (ниже `h < seaLevel + 0.03f`).
-        const float seaLevel = float(td.seaLevel8) / 255.0f;
         const int mw = td.width;
         const int mh = td.height;
         std::vector<TreePoint> out;
@@ -251,35 +247,43 @@ namespace sm
             {
                 const std::size_t idx = std::size_t(y) * std::size_t(mw) + std::size_t(x);
 
-                // Единственный запрет мира — вода, и отвечает на неё дверь
-                // карты (здесь читалась маска A == 0, M-109).
-                if (td.is_water(std::uint32_t(idx)))
-                    continue;
                 if (!riverExclude.empty() && riverExclude[idx] > 0)
                     continue;
 
-                const float h = float(td.rgba[idx * 4 + 0]) / 255.0f;
-                const std::uint8_t temp = td.rgba[idx * 4 + 2];
-                const std::uint8_t moist = td.rgba[idx * 4 + 1];
-
-                // Shoreline buffer + mountain cap.
-                if (h < seaLevel + 0.03f || h > 0.80f)
+                // ГДЕ ЛЕС НЕ ВСТАЁТ — спрошено у ЕДИНСТВЕННОГО каскада клетки
+                // (map_generator.h biome_at_cell, M-110). Здесь стоял ТРЕТИЙ
+                // каскад: своя дверь воды, СВОЙ горный потолок `h > 0.80f` и
+                // климатическая матрица отдельным вызовом. Потолок и был
+                // дефектом ЗАКОНА КОНСТАНТ: мир судил гору по 0.75, а лес по
+                // 0.80, и полоса между ними — «камень на карте, лес под ногами».
+                const Biome b = biome_at_cell(td, x, y);
+                // Вода и камень — не почва; мерзлота и песок — три ряда матрицы,
+                // на которых лес не растёт. Тайга, холодная СЕРЕДИНА, деревья
+                // держит.
+                if (b == Water || b == Mountain
+                    || b == Tundra || b == Snow || b == Desert)
                     continue;
 
-                // WHERE A FOREST REFUSES TO STAND, asked of THE ONE climate
-                // classifier (biomes.h biome_from_climate — the same door
-                // map_generator reads to paint the world's biome layer).
-                // A private copy stood here: `temp / 86`, a third cut of the
-                // 3×3 matrix with its OWN band edges (0.337/0.675 against the
-                // door's round-to-nearest 0.25/0.75), so the forest's idea of
-                // "this cell is tundra" disagreed with the map's by a band
-                // nearly a tenth of the climate range wide — pines on painted
-                // snow, bald ground on painted taiga.
-                const Biome b = biome_from_climate(float(temp) / 255.0f,
-                                                   float(moist) / 255.0f);
-                // Frozen ground and sand: the three rows of the matrix no
-                // forest grows on. Taiga, the cold MIDDLE, keeps its trees.
-                if (b == Tundra || b == Snow || b == Desert)
+                // БЕРЕГ МЕРИТСЯ В КЛЕТКАХ, КАК БЕРЕГ РЕКИ. Здесь стояло
+                // `h < seaLevel + 0.03f` — тот же запрет «не расти у воды», но
+                // в единицах ВЫСОТЫ, тогда как речной берег двадцатью строками
+                // выше меряется шагами индекса (kRiverBuffer). Один вопрос —
+                // два словаря, и число 0.03 не выводилось ни из чего. Клетка
+                // суши, у которой сосед по `cell_step` — вода, и есть урез: без
+                // числа вообще, и берег выходит одной ширины на обрыве и на
+                // пологой отмели, где полоса высоты растягивалась на десятки
+                // клеток.
+                bool atShore = false;
+                for (int dy = -1; dy <= 1 && !atShore; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (!dx && !dy)
+                            continue;
+                        if (td.is_water(cell_step(std::uint32_t(idx), dx, dy, mw))) {
+                            atShore = true;
+                            break;
+                        }
+                    }
+                if (atShore)
                     continue;
 
                 // Organic noise — domain-warped multi-scale FBM.

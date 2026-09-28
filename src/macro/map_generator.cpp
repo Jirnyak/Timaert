@@ -553,29 +553,33 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
         return;
     }
 
+    // Рабочая копия высот: трассер СРЕЗАЕТ русло по ходу (stamp_river_path), и
+    // резать он обязан свою копию, а не мастер — врез в `td.rgba` идёт один раз
+    // и в конце. Влага и температура своих копий больше не имеют: каскад биома
+    // читает их сам, у карты.
     std::vector<std::uint8_t> heightBytes(static_cast<std::size_t>(n));
-    std::vector<std::uint8_t> moistureBytes(static_cast<std::size_t>(n));
-    std::vector<std::uint8_t> temperatureBytes(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
-        const std::size_t s = std::size_t(i) * 4;
-        heightBytes[std::size_t(i)] = td.rgba[s + 0];
-        moistureBytes[std::size_t(i)] = td.rgba[s + 1];
-        temperatureBytes[std::size_t(i)] = td.rgba[s + 2];
+        heightBytes[std::size_t(i)] = td.rgba[std::size_t(i) * 4];
     }
 
     std::vector<std::uint8_t> biome(std::size_t(n), 255);
     for (int i = 0; i < n; ++i) {
-        if (heightBytes[std::size_t(i)] < seaLevel8) {
+        // ОДИН КАСКАД «КАКОЙ БИОМ» (M-110, CANON S6): здесь стоял СВОЙ каскад —
+        // климатическая матрица без Mountain, — и он делал трассер единственным
+        // читателем мира, для которого горы не существует. Рим массива не был
+        // ему краем биома, поэтому река, спускаясь с гор, прижималась не к тому
+        // рубежу; а порог горы жил при этом ещё и вторым числом в лесу (0.80
+        // против 0.75). Карта на сиде от этой правки ДВИГАЕТСЯ — это и есть
+        // цена второго ответа, которую платили молча.
+        const Biome b = biome_at_cell(td, cell_x(std::uint32_t(i), w),
+                                      cell_y(std::uint32_t(i), w));
+        if (b == Biome::Water) {
+            // 255 — «не биом»: вода трассеру ЦЕЛЬ, а не берег, и в поле краёв
+            // суши она не участвует ни семенем, ни фронтом. Это не второй ответ
+            // про воду — это отказ от участия, и спросил его тот же каскад.
             continue;
         }
-        // The ONE climate classifier (biomes.h biome_from_climate): the 3x3
-        // enum is row-major, so the Biome id IS row*3+col. The old inline
-        // byte formula (min(1,t/128)*3 + min(2,m/86)) collapsed temperature
-        // to two rows — Desert/Steppe/Tropics were unreachable, so river
-        // banks traced against a 2x3 world.
-        biome[std::size_t(i)] = std::uint8_t(biome_from_climate(
-            float(temperatureBytes[std::size_t(i)]) / 255.0f,
-            float(moistureBytes[std::size_t(i)]) / 255.0f));
+        biome[std::size_t(i)] = std::uint8_t(b);
     }
 
     std::vector<std::uint16_t> edgeDist(std::size_t(n), kRiverDistInf);
