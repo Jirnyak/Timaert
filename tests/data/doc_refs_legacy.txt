@@ -17,18 +17,6 @@
 # записью о мире, какого уже нет.
 #
 # Строки ниже отсортированы и порождены прогоном прибора на 2026-09-27.
-AGENTS.md	:143-150
-AGENTS.md	:1695
-AGENTS.md	app/main.cpp:6320-6322
-AGENTS.md	commodity.h:103
-AGENTS.md	econ_day.cpp:413
-AGENTS.md	ecs/components.h:50
-AGENTS.md	macro/npc_ai.h:35
-AGENTS.md	macro_stock.cpp:493
-AGENTS.md	map_generator.cpp:130
-AGENTS.md	npc_ai.cpp:1196
-AGENTS.md	npc_ai.cpp:158
-AGENTS.md	spawners.h:130
 CANON.md	CMakeLists.txt:15
 CANON.md	attributes.h:600-602
 CANON.md	core/stacks.h:160
@@ -65,18 +53,6 @@ CANON.md	ui/overlays.cpp:887-899
 CANON.md	world_tick.cpp:308
 CANON.md	world_tick.h:39
 CANON.md	zones.h:30
-CLAUDE.md	:143-150
-CLAUDE.md	:1695
-CLAUDE.md	app/main.cpp:6320-6322
-CLAUDE.md	commodity.h:103
-CLAUDE.md	econ_day.cpp:413
-CLAUDE.md	ecs/components.h:50
-CLAUDE.md	macro/npc_ai.h:35
-CLAUDE.md	macro_stock.cpp:493
-CLAUDE.md	map_generator.cpp:130
-CLAUDE.md	npc_ai.cpp:1196
-CLAUDE.md	npc_ai.cpp:158
-CLAUDE.md	spawners.h:130
 NEXT_SESSION.md	:2369
 NEXT_SESSION.md	:2371
 NEXT_SESSION.md	:2389
