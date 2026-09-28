@@ -88,9 +88,10 @@ BlockStat block_stat(const sm::TerrainData& td,
         const std::size_t row = std::size_t(y) * std::size_t(mapW);
         for (int x = bx; x < bx + B; ++x) {
             const std::size_t i = row + std::size_t(x);
-            const bool land = td.rgba[i * 4 + 3] >= 128;
-            if (!land || float(td.rgba[i * 4 + 0]) / 255.0f
-                             < sm::kMountainBiomeLevel) continue;
+            // Плоскость спрашивается у карты, не у маски `A` (M-161/M-164).
+            if (td.is_water(std::uint32_t(i))
+                || float(td.rgba[i * 4 + 0]) / 255.0f
+                       < sm::kMountainBiomeLevel) continue;
             ++s.count;
             h += double(td.rgba[i * 4 + 0]) / 255.0;
             t += double(td.rgba[i * 4 + 2]) / 255.0;
@@ -159,11 +160,10 @@ void coldest_mountain_center(const sm::TerrainData& td,
 // what makes them honest water), so we frame by river-mask presence, not by
 // height -- the old "> seaByte" filter matched nothing post-carve.
 long densest_river_center(const sm::TerrainData& td, int mapW, int mapH, int B,
-                          float seaLevel, float& cx, float& cy) {
+                          float& cx, float& cy) {
     cx = float(mapW) * 0.5f;
     cy = float(mapH) * 0.5f;
     if (!td.has_river_storage() || mapW <= 0 || mapH <= 0) return 0;
-    (void)seaLevel;
     long best = 0;
     for (int by = 0; by + B <= mapH; by += B) {
         for (int bx = 0; bx + B <= mapW; bx += B) {
@@ -470,10 +470,13 @@ int main(int argc, char** argv) {
         const std::size_t total = features.cell_count();
         long mtn = 0;
         for (std::size_t i = 0; i < total; ++i) {
-            const bool land = td.rgba[i * 4 + 3] >= 128 &&
-                              float(td.rgba[i * 4 + 0]) / 255.0f >= lp.seaLevel;
-            if (land && float(td.rgba[i * 4 + 0]) / 255.0f
-                            >= sm::kMountainBiomeLevel) {
+            // Плоскость моря спрашивается У КАРТЫ (`TerrainData::is_water` —
+            // тот же байт, которым судит мир), а не сырым float у параметров
+            // генерации: прибор обязан видеть ту же воду, что игрок. И маска
+            // `A` здесь больше не звучит — она производное того же порога.
+            if (!td.is_water(std::uint32_t(i))
+                && float(td.rgba[i * 4 + 0]) / 255.0f
+                       >= sm::kMountainBiomeLevel) {
                 ++mtn;
             }
         }
@@ -502,8 +505,7 @@ int main(int argc, char** argv) {
 
     float riverX = 0.f, riverY = 0.f;
     const long riverCells = densest_river_center(td, td.width, td.height,
-                                                 kFrameBlock, lp.seaLevel,
-                                                 riverX, riverY);
+                                                 kFrameBlock, riverX, riverY);
     std::fprintf(stderr, "[macro_shot] densest river cell (%.0f, %.0f): %ld river\n",
                  double(riverX), double(riverY), riverCells);
 
@@ -542,9 +544,7 @@ int main(int argc, char** argv) {
             for (int x = 0; x < td.width; ++x) {
                 const std::size_t i = std::size_t(y) * td.width + x;
                 if (features.data[i] != sm::FT_None) continue; // skip assigned cells
-                const bool water = td.rgba[i * 4 + 3] == 0 ||
-                                   float(td.rgba[i * 4 + 0]) / 255.0f < lp.seaLevel;
-                if (water) continue;
+                if (td.is_water(std::uint32_t(i))) continue;
                 const float h = float(td.rgba[i * 4 + 0]) / 255.0f;
                 // Keep forests below the mountain foot -> clean iso-height border
                 // where the Mountain biome takes over from the forested lowland.
@@ -565,9 +565,8 @@ int main(int argc, char** argv) {
             const int wx = ((x % td.width) + td.width) % td.width;
             const int wy = ((y % td.height) + td.height) % td.height;
             const std::size_t i = std::size_t(wy) * td.width + wx;
-            const bool water = td.rgba[i * 4 + 3] == 0 ||
-                               float(td.rgba[i * 4 + 0]) / 255.0f < lp.seaLevel;
-            if (water) return; // roads compose over any biome, including mountains
+            if (td.is_water(std::uint32_t(i)))
+                return;  // roads compose over any biome, including mountains
             features.data[i] = std::uint8_t(t);
         };
         auto road = [&](int x0, int y0, int x1, int y1, sm::FeatureType t) {
@@ -627,7 +626,14 @@ int main(int argc, char** argv) {
                          : s.frame == FRAME_RIVER ? riverX : denseX;
         const float camY = s.frame == FRAME_COLD ? coldY
                          : s.frame == FRAME_RIVER ? riverY : denseY;
-        if (!off.shoot(dev, mr, td, camX, camY, zoom, lp.seaLevel, s.tod, pixels)) {
+        // ПОРОГ В ТОМ ЖЕ СЛОВАРЕ, ЧТО У ИГРЫ (M-109): шейдеру едет
+        // нормированный БАЙТ плоскости, а не сырой float параметров
+        // генерации. Сырой расходился с байтом на усечение, то есть на целую
+        // клетку высоты, и клетка ровно на пороге печаталась в снимке водой,
+        // тогда как в игре она суша — прибор врал ровно тем, что M-109
+        // починил в игре.
+        const float seaLevel01 = float(td.seaLevel8) / 255.0f;
+        if (!off.shoot(dev, mr, td, camX, camY, zoom, seaLevel01, s.tod, pixels)) {
             std::fprintf(stderr, "[macro_shot] render FAILED (%s)\n", s.name);
             ++failures;
             continue;

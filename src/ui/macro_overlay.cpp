@@ -27,6 +27,7 @@
 #include "macro/biomes.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
+#include "macro/macro_night.h"   // ОДНА дверь «сколько сейчас ночи» (M-165)
 #include "assets/sprite_atlas.h"
 
 #include "imgui.h"
@@ -121,29 +122,22 @@ void draw_sprite(ImDrawList* dl, ImVec2 c, SpriteId id, float pixSize,
     dl->AddImage(s->tex, tl, br, ImVec2(0, 0), ImVec2(1, 1), tint);
 }
 
-// How dark a FIGURE on the map stands at this hour. The ground has its own
-// celestial light in macro.frag; a figure is drawn over it by ImGui and would
-// otherwise keep full daylight colour at midnight — one law, two renderers.
-float figure_night_darken(const WorldTime& time) {
-    int minutes = time.hour() * 60 + time.minute();
-    minutes %= 24 * 60;
-    if (minutes < 0) minutes += 24 * 60;
-
-    const float progress = float(minutes) / float(24 * 60);
-    if (progress < 0.2f || progress > 0.9f) return 1.0f;
-    if (progress < 0.35f) return 1.0f - (progress - 0.2f) / 0.15f;
-    if (progress < 0.75f) return 0.0f;
-    return (progress - 0.75f) / 0.15f;
-}
-
+// Насколько темна ФИГУРА на карте в этот час. Земля темнеет в `macro.frag`, а
+// фигура рисуется поверх неё ImGui и без этого сохранила бы полный дневной цвет
+// в полночь. Закон ОДИН на оба исполнителя, и он живёт одной дверью —
+// `macro/macro_night.h`. Здесь стояла его вторая копия: та же кривая, тот же
+// тон, те же пять чисел (наряд M-165).
 ImU32 figure_tint_for_time(const WorldTime& time) {
-    const float mix = figure_night_darken(time) * 0.82f;
+    const float mix = macro_night_darken(
+                          macro_time_of_day(time.hour(), time.minute()))
+                    * kNightTintMax;
     if (mix <= 0.0f) return IM_COL32(255, 255, 255, 255);
     auto channel = [mix](float tint) {
         const float v = std::clamp(1.0f + (tint - 1.0f) * mix, 0.0f, 1.0f);
         return int(v * 255.0f + 0.5f);
     };
-    return IM_COL32(channel(0.05f), channel(0.05f), channel(0.15f), 255);
+    return IM_COL32(channel(kNightTintR), channel(kNightTintG),
+                    channel(kNightTintB), 255);
 }
 
 // Universal landmark scale. `zoom` is pixels-per-cell (range [4, 96]); a

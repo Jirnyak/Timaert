@@ -745,38 +745,29 @@ const PreBattleAction kPreBattleActions[] = {
              if (!pcell) return true;
              const int pcx = sm::ecs::cell_x(*pcell, app.gs.mapW);
              const int pcy = sm::ecs::cell_y(*pcell, app.gs.mapW);
-             float dx = float(pcx)
-                 - float(sm::ecs::cell_x(ec, app.gs.mapW));
-             float dy = float(pcy)
-                 - float(sm::ecs::cell_y(ec, app.gs.mapW));
-             const float mw = float(app.gs.mapW), mh = float(app.gs.mapH);
-             if (dx > mw * 0.5f) dx -= mw;
-             if (dx < -mw * 0.5f) dx += mw;
-             if (dy > mh * 0.5f) dy -= mh;
-             if (dy < -mh * 0.5f) dy += mh;
-             if (dx == 0.0f && dy == 0.0f) dx = 1.0f;
-             const float len = std::sqrt(dx * dx + dy * dy);
-             const auto land = [&app](int x, int y) {
-                 const sm::TerrainData& t = app.terrain;
-                 if (t.width != app.gs.mapW || t.height != app.gs.mapH
-                     || !t.has_rgba_storage()) {
-                     return true;
-                 }
-                 const int xx = sm::wrapi(x, t.width);
-                 const int yy = sm::wrapi(y, t.height);
-                 const std::size_t idx =
-                     (std::size_t(yy) * std::size_t(t.width)
-                      + std::size_t(xx)) * 4u + 3u;
-                 return idx < t.rgba.size() && t.rgba[idx] >= 128;
-             };
+             // КУДА ОТ НИХ — канонической дверью тора (наряд M-161). Здесь
+             // стояла рукописная свёртка кратчайшей разницы («если больше
+             // половины мира — отнять мир»), которая правит РОВНО ОДИН период,
+             // и ручная нормировка рядом с ней. `torus_bearing` — та же
+             // арифметика одним телом на весь проект, и она же отвечает
+             // «направления нет», когда оба стоят в одной клетке.
+             float ux = 1.0f, uy = 0.0f;
+             sm::torus_bearing(sm::ecs::cell_x(ec, app.gs.mapW),
+                               sm::ecs::cell_y(ec, app.gs.mapW), pcx, pcy,
+                               app.gs.mapW, app.gs.mapH, ux, uy);
+             if (ux == 0.0f && uy == 0.0f) ux = 1.0f;   // стоят вплотную
              for (float away = 2.0f; away >= 1.0f; away -= 1.0f) {
-                 const int tx = sm::wrapi(
-                     int(std::floor(float(pcx) + dx / len * away)),
-                     app.gs.mapW);
-                 const int ty = sm::wrapi(
-                     int(std::floor(float(pcy) + dy / len * away)),
-                     app.gs.mapH);
-                 if (!land(tx, ty)) continue;
+                 // Заворот клетки мира — МАСКОЙ (`wrap_axis`), не `wrapi`:
+                 // свернуть клетку мира делением названо дефектом дословно.
+                 const int tx = sm::wrap_axis(
+                     int(std::floor(float(pcx) + ux * away)), app.gs.mapW);
+                 const int ty = sm::wrap_axis(
+                     int(std::floor(float(pcy) + uy * away)), app.gs.mapH);
+                 // «Вода ли клетка» — ОДИН ответ на всю игру: байт высоты
+                 // против байта плоскости. Здесь спрашивали МАСКУ `A` мастера,
+                 // а она лишь производное того же порога — третий спеллинг
+                 // одного вопроса, и единственный её читатель во всём дереве.
+                 if (app.terrain.is_water(tx, ty)) continue;
                  sm::player_jump_to_cell(app.gs, app.ecs, tx, ty);
                  app.cursor.path.clear();
                  app.cursor.pathIdx = 0;
@@ -5246,12 +5237,15 @@ void build_world_preview(App& app, int side = 384) {
             const std::uint8_t h = td.rgba[s + 0];
             const std::uint8_t m = td.rgba[s + 1];
             const std::uint8_t t = td.rgba[s + 2];
-            // Deliberately NOT biome_at_cell: this previews the SLIDER's sea
-            // level against the current terrain, before a world is baked — the
-            // one reader whose sea level is a hypothesis, not the mask.
-            sm::Biome b = (h < sea8)
-                ? sm::Water
-                : sm::biome_from_climate(float(t) / 255.0f, float(m) / 255.0f);
+            // ПОЛНЫЙ каскад биома, а не климатическая матрица: гипотезой
+            // здесь является только ПЛОСКОСТЬ МОРЯ (ползунок), и ровно под
+            // это у двери есть параметр. Горный порог гипотезой не был
+            // никогда — а ветви Mountain тут не стояло вовсе, и превью
+            // показывало гору климатическим биомом (M-158).
+            sm::Biome b = sm::biome_at(float(t) / 255.0f, float(m) / 255.0f,
+                                       float(h) / 255.0f,
+                                       float(sea8) / 255.0f,
+                                       sm::kMountainBiomeLevel);
             const auto& bd = sm::kBiomes[b];
             // Soft height shading so land has some relief.
             const float lift = (h < sea8) ? 0.0f
