@@ -116,10 +116,8 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     // биом». Числа совпадали, поэтому сегодня свод ничего не двигает; ценой
     // было то, что следующий сдвиг каскада эту копию бы не тронул.
     auto is_mountain = [&](std::size_t i) -> bool {
-        if (!hasTerrain) return false;
-        return biome_at_cell(*terrain, cell_x(std::uint32_t(i), width),
-                             cell_y(std::uint32_t(i), width))
-            == Biome::Mountain;
+        return hasTerrain
+            && biome_at_cell(*terrain, std::uint32_t(i)) == Biome::Mountain;
     };
 
 

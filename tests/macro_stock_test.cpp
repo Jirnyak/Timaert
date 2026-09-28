@@ -365,6 +365,10 @@ void test_trees_are_a_carrier_row() {
         td.rgba[i + 0] = 180;   // height: land, below the mountain line
         td.rgba[i + 3] = 255;   // mask: land
     }
+    // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
+    // читает поле, а не каскад, поэтому карта без выпечки — карта
+    // НЕДОРОЖДЁННАЯ, и её биом честно отвечает водой.
+    sm::bake_biomes(td);
     MacroWorld w{.gs = &gs, .trees = &trees, .terrain = &td};
 
     const std::uint32_t rev0 = trees.revision;

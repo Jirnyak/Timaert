@@ -81,10 +81,13 @@ TerrainData flat_world(int side, std::uint8_t heightByte) {
         td.rgba[c * 4u + 2u] = 128u;   // температура середины матрицы
         td.rgba[c * 4u + 3u] = heightByte < td.seaLevel8 ? 0u : 255u;
     }
+    bake_biomes(td);
     return td;
 }
 
-// Квадратное плато заданной высоты.
+// Квадратное плато заданной высоты. ВЫСОТА — ИСТОЧНИК БИОМА, значит всякая её
+// правка кончается перепечкой поля: карта, у которой мастер и поле разошлись,
+// есть карта с двумя ответами — ровно то, против чего поле и заведено.
 void stamp_plateau(TerrainData& td, int x0, int y0, int w, int h,
                    std::uint8_t heightByte) {
     for (int y = y0; y < y0 + h; ++y)
@@ -93,6 +96,7 @@ void stamp_plateau(TerrainData& td, int x0, int y0, int w, int h,
             td.rgba[c * 4u + 0u] = heightByte;
             td.rgba[c * 4u + 3u] = heightByte < td.seaLevel8 ? 0u : 255u;
         }
+    bake_biomes(td);
 }
 
 bool touches_water(const TerrainData& td, int x, int y) {
@@ -261,9 +265,56 @@ void test_zones_ask_the_one_cascade() {
                  double(far), double(below), double(at));
 }
 
+// ── 5. ПОЛЕ ЕСТЬ ОТВЕТ, А КАСКАД — ЕГО ПРОШЛОЕ ───────────────────────────
+// Вердикт владельца 2026-09-28: «при генерации мира можно функции там ргб и
+// тд, но когда мир уже сгенерился… там должно всё уже быть структурно
+// системно». Свидетель охраняет обе половины: поле СОГЛАСНО с каскадом на
+// каждой клетке (иначе у мира снова два ответа) и выпечено ПОСЛЕ вреза рек
+// (иначе оно врёт ровно на руслах).
+void test_field_is_the_answer() {
+    const TerrainData td = generate_terrain(kSide, kSide, world_params());
+    CHECK_OR_RETURN(td.has_rgba_storage(), "мир сгенерирован");
+    CHECK(td.biome.size() == td.cell_count(),
+          "поле биома покрывает мир целиком — рождение довело выпечку до конца");
+
+    long samples = 0, disagree = 0, riverCells = 0, riverNotWater = 0;
+    for (std::uint32_t c = 0; c < std::uint32_t(td.cell_count()); ++c) {
+        ++samples;
+        if (biome_at_cell(td, c) != biome_classify(td, c)) ++disagree;
+        if (td.riverData[c]) {
+            ++riverCells;
+            if (biome_at_cell(td, c) != Biome::Water) ++riverNotWater;
+        }
+    }
+    CHECK(samples == long(kSide) * kSide, "перебраны все клетки мира");
+    CHECK(disagree == 0, "поле и каскад согласны на каждой клетке");
+
+    // ПОРЯДОК: врез рек опускает русла ниже плоскости ПОСЛЕ того, как трассер
+    // отработал. Поле, выпеченное до вреза, назвало бы русло лугом. Счёт
+    // русел обязателен — мир без рек доказал бы этим утверждением ничего.
+    CHECK(riverCells > 0, "в мире есть реки — иначе порядок проверять не на чем");
+    CHECK(riverNotWater == 0,
+          "клетка русла читается водой: поле выпечено ПОСЛЕ вреза");
+
+    // КОНТРОЛЬ ОСТРОТЫ (§8 п.6): прибор обязан УМЕТЬ увидеть расхождение.
+    // Без этого «disagree == 0» доказывало бы лишь, что сравнение слепо.
+    TerrainData poked = td;
+    const std::uint32_t victim = cell_of(kSide / 2, kSide / 2, kSide);
+    poked.biome[victim] = std::uint8_t(
+        biome_at_cell(poked, victim) == Biome::Water ? Biome::Desert
+                                                     : Biome::Water);
+    CHECK(biome_at_cell(poked, victim) != biome_classify(poked, victim),
+          "контроль: подменённый байт поля ОБЯЗАН разойтись с каскадом");
+
+    std::fprintf(stderr,
+                 "[biome] поле %zu байт, русел %ld, расхождений %ld\n",
+                 td.biome.size(), riverCells, disagree);
+}
+
 } // namespace
 
 int main() {
+    test_field_is_the_answer();
     test_forest_asks_the_one_cascade();
     test_forest_refuses_the_disputed_band();
     test_river_tracer_sees_the_massif_rim();
