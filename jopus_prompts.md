@@ -924,7 +924,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 **Три каскада сегодня (SKELETON I.1, `SKELETON.md:151`):**
 1. МИР — `biome_at_cell@src/macro/map_generator.h`: вода по маске A (П-5
    меняет на `is_water`), `Mountain` при `h ≥ kMountainBiomeLevel = 0.75`
-   (`biomes.h:64`), иначе `biome_from_climate` (`biomes.h:50`);
+   (`biomes.h:64`), иначе `biome_from_climate@src/macro/biomes.h`;
 2. ТРАССЕР РЕК — свой массив биомов (`map_generator.cpp:552-570`): вода по
    `h <= seaLevel8` (П-5 → `is_water`), `biome_from_climate` БЕЗ Mountain;
 3. ЛЕС — `spawners.cpp:258-280`: свой горный потолок `h > 0.80f` и
