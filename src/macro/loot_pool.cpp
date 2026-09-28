@@ -1,8 +1,48 @@
 #include "macro/loot_pool.h"
 
+#include "macro/fauna.h"   // danger_match_weight — ТА ЖЕ дверь совпадения
+
+#include <algorithm>
+#include <cmath>
 #include <span>
 
 namespace sm {
+
+namespace {
+
+// ── СТОИМОСТНАЯ СИЛА СТРОКИ — ВЫВЕДЕНА, НИКОГДА НЕ АВТОРЕНА ───────────────
+// Близнец `spawn_strength@src/macro/fauna.cpp`, и близнец намеренный: там
+// сила строки есть нормированный log₂ её БОЕВОЙ мощи, здесь — нормированный
+// log₂ её СТОИМОСТИ. Слабейшая строка → 0, дражайшая → 255. Смысл вывода тот
+// же, что у родителя: колонки силы не существует, значит ей нечем разъехаться
+// с числами, которые мир на самом деле считает. Подорожала строка — она сама
+// переехала в богатый контекст, и ни одной правки кода при этом не нужно.
+//
+// Логарифм, а не сама стоимость: каталог тянется от 1 (медная монета) до
+// 12 800 (золотая руда), и на линейной шкале весь мир, кроме трёх строк,
+// слипся бы в нулевой байт.
+std::uint8_t value_strength(int defIdx) {
+    static const std::vector<std::uint8_t> table = [] {
+        const std::span<const ItemDef> cat = item_catalog();
+        std::vector<double> L(cat.size(), 0.0);
+        double lo = 1e30, hi = -1e30;
+        for (std::size_t i = 0; i < cat.size(); ++i) {
+            L[i] = std::log2(std::max(1.0, double(cat[i].value)));
+            lo = std::min(lo, L[i]);
+            hi = std::max(hi, L[i]);
+        }
+        std::vector<std::uint8_t> out(cat.size(), 0);
+        const double span = std::max(1e-6, hi - lo);
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            out[i] = std::uint8_t(std::lround(255.0 * (L[i] - lo) / span));
+        }
+        return out;
+    }();
+    return defIdx >= 0 && defIdx < int(table.size())
+        ? table[std::size_t(defIdx)] : 0;
+}
+
+} // namespace
 
 int loot_issue(int budgetValue, const LootContext& ctx, RngFn rng,
                Inventory& into) {
@@ -22,26 +62,38 @@ int loot_issue(int budgetValue, const LootContext& ctx, RngFn rng,
     // не сумел разместить за проход, возвращается звонящему неистраченным —
     // честнее, чем крутить каталог по кругу, пока не опустеет казна.
     for (int step = 0; step < rows; ++step) {
-        // ── Выбор строки: равновероятно среди тех, что бюджет ПОКРЫВАЕТ ───
-        // Распределение здесь намеренно плоское. Веса по роду вещи и теги
-        // («что уместно в пещере, а что в городском доме») — это МАСКА ТЕГОВ
-        // строки каталога, названная строкой наряда M-17 и не построенная;
-        // поставить сюда веса ДО неё значило бы вписать числа с потолка в
-        // фундаментальную систему. Сегодня дверь честна по СТОИМОСТИ, и это
-        // ровно то, за что отвечает пул.
-        int affordable = 0;
-        for (const ItemDef& d : catalog) {
-            if (d.value > 0 && d.value <= left) ++affordable;
+        // ── ВЫБОР СТРОКИ — ТОТ ЖЕ ЗАКОН, ЧТО У СПАВНА ЖИВНОСТИ ────────────
+        //
+        //   вес(строка, контекст) = danger_match_weight(
+        //                               value_strength(строка), power)
+        //
+        // Это ДОСЛОВНО закон `roll_spawns@src/macro/fauna.cpp`, взятый за
+        // стоимость вместо боевой мощи: там контекст клетки выбирает, КТО в
+        // ней живёт, здесь контекст выдачи выбирает, ЧТО в ней лежит. Дверь
+        // совпадения одна на оба — симметричная вокруг «сила == контекст»,
+        // ополовинивающаяся на каждый `kDangerHalfLife` расхождения, с полом
+        // 1: дорогая вещь в нищей лачуге есть исчезающе малая вероятность,
+        // ЛИТЕРАЛЬНО, и никогда не ноль. Ни отсечек, ни полос, ни авторских
+        // чисел — состав мешка перетекает вслед за контекстом.
+        //
+        // Почему это, а не таблица весов по роду вещи: таблица была бы ВТОРЫМ
+        // словарём рядом с `habitat` и горстью чисел с потолка, а выведенная
+        // сила не может разъехаться с ценами, которые мир и так считает.
+        std::uint64_t total = 0;
+        for (int i = 0; i < rows; ++i) {
+            const ItemDef& d = catalog[std::size_t(i)];
+            if (d.value <= 0 || d.value > left) continue;
+            total += danger_match_weight(value_strength(i), power);
         }
-        if (affordable == 0) break;   // бюджета не хватает даже на дешевейшее
-        int pick = int(rng() * float(affordable));
-        if (pick >= affordable) pick = affordable - 1;   // rng() == 1.0f
-        if (pick < 0) pick = 0;
+        if (total == 0) break;   // бюджета не хватает даже на дешевейшее
+        double roll = double(rng()) * double(total);
         int ordinal = -1;
         for (int i = 0; i < rows; ++i) {
             const ItemDef& d = catalog[std::size_t(i)];
             if (d.value <= 0 || d.value > left) continue;
-            if (pick-- == 0) { ordinal = i; break; }
+            ordinal = i;   // последняя покрытая строка — приют для rng() == 1.0f
+            roll -= double(danger_match_weight(value_strength(i), power));
+            if (roll <= 0.0) break;
         }
         if (ordinal < 0) break;
         const ItemDef& row = catalog[std::size_t(ordinal)];

@@ -50,6 +50,15 @@ int base_value_of_container(const Inventory& inv) {
     return total;
 }
 
+// Сколько ЕДИНИЦ лежит в контейнере. Средняя стоимость единицы (потрачено /
+// единиц) — наблюдаемое следствие закона выбора, и оно не переписывает ни
+// строчки продакшен-логики: свидетель не считает ни силу строки, ни вес.
+long long units_in(const Inventory& inv) {
+    long long n = 0;
+    for (const ItemRef& s : inv.slots) n += s.count;
+    return n;
+}
+
 int affixed_stacks(const Inventory& inv) {
     int n = 0;
     for (const ItemRef& s : inv.slots) {
@@ -194,6 +203,56 @@ void test_poor_treasury_still_pays() {
     CHECK(inventory_value(exact) == spent, "и снова сходится по стоимости");
 }
 
+// ── 7. ЗАКОН ВЫБОРА: СОСТАВ МЕШКА ТЕЧЁТ ЗА КОНТЕКСТОМ ─────────────────────
+// Режиссёр стоит на той же двери совпадения, что и спавн живности: вес строки
+// симметричен вокруг «стоимостная сила == богатство контекста». Наблюдаемое
+// следствие, за которое свидетель и держится, — СРЕДНЯЯ БАЗОВАЯ ЦЕНА СТРОКИ на
+// единицу: богатый контекст обязан набивать мешок дороже бедного при ТОМ ЖЕ
+// бюджете. Свидетель не считает ни силу, ни вес — он смотрит на мешок.
+//
+// СРАВНЕНИЕ ТРЁХТОЧЕЧНОЕ, И ЭТО НЕ ПЕРЕСТРАХОВКА, А ВЫВОД НЕГАТИВНОГО
+// КОНТРОЛЯ. `affix_power` кормит ОДНИМ байтом и выбор строки, и щедрость
+// аффиксов: аффиксная вещь в богатом контексте дороже, съедает больше бюджета
+// и оставляет меньше дешёвых единиц — поэтому пара «бедный против богатого»
+// расходится ДАЖЕ при равномерных весах (проверено: контроль её не покраснил
+// ни по цене экземпляра, ни по базовой). Разделяет только ЛЕСТНИЦА: чтобы
+// средняя цена росла на КАЖДОЙ ступени, нужен именно закон выбора — на
+// равномерных весах ступень посередине ломается, и контроль краснеет.
+void test_context_steers_composition() {
+    struct Sample { long long base = 0, units = 0; int rounds = 0; };
+    const auto measure = [](const LootContext& ctx) {
+        Sample s{};
+        for (std::uint32_t seed = 1u; seed <= 96u; ++seed) {
+            Inventory bag{};
+            rng_reset(seed * 2246822519u + 1u);
+            (void)loot_issue(4000, ctx, &rng_lcg, bag);
+            s.base += base_value_of_container(bag);
+            s.units += units_in(bag);
+            ++s.rounds;
+        }
+        return s;
+    };
+    // Три ступени ОДНОЙ лестницы контекста (уровень × опасность × богатство —
+    // все три сходятся в `affix_power`), а не «до порога / после порога».
+    const Sample poor   = measure(LootContext{0,   1.0f, 1});
+    const Sample middle = measure(LootContext{96,  1.4f, 8});
+    const Sample rich   = measure(LootContext{255, 2.0f, 40});
+    CHECK(poor.rounds > 0 && middle.rounds > 0 && rich.rounds > 0,
+          "все три контекста обязаны были отработать");
+    CHECK(poor.units > 0 && middle.units > 0 && rich.units > 0,
+          "каждый контекст обязан был хоть что-то выдать — иначе сравниваются "
+          "три пустых мешка");
+    const double cheap = double(poor.base) / double(poor.units);
+    const double mid   = double(middle.base) / double(middle.units);
+    const double dear  = double(rich.base) / double(rich.units);
+    CHECK(mid > cheap && dear > mid,
+          "состав мешка ТЕЧЁТ за контекстом: средняя базовая цена единицы "
+          "растёт на КАЖДОЙ ступени лестницы, а не переключается порогом");
+    // Хвост закона (пол веса 1, «исчезающе малая вероятность, но не ноль»)
+    // держит свидетель самой двери совпадения — `subworld_spawn_parity_test`
+    // уже утверждает и пик 1024, и пол 1. Второй копии здесь нет намеренно.
+}
+
 } // namespace
 
 int main() {
@@ -203,5 +262,6 @@ int main() {
     test_full_container_refuses();
     test_deterministic();
     test_poor_treasury_still_pays();
+    test_context_steers_composition();
     return sm::test::report("loot_pool_test");
 }

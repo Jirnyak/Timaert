@@ -1138,7 +1138,12 @@ timaert_test(rpg_loot_test
 timaert_test(loot_pool_test
     SOURCES
         src/macro/items.cpp
-        src/macro/loot_pool.cpp)
+        src/macro/loot_pool.cpp
+        # ...и реестр живности: дверь совпадения `danger_match_weight` живёт
+        # ТАМ, потому что закон выбора строки контекстом в мире ОДИН — спавн
+        # и лут спрашивают его одинаково. Линкуется он же и в свидетеле,
+        # иначе тест проверял бы копию закона, а не закон.
+        src/macro/fauna.cpp)
 # Pure targeting primitive (Inc 5 possession groundwork). Links only the new
 # targeting TU + EnTT — no engine/render code, so it stays independent of the
 # subworld renderer.
