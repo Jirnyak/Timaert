@@ -229,6 +229,25 @@ vec3 bt_mountain(vec2 wp, float sd) {
 // it here (a biome, before the feature overlays) is what dissolves the old hard
 // mountain border: neighbour-blended biome ground grades cleanly into the foot.
 const float MTN_LEVEL = 0.75;   // == sm::kMountainBiomeLevel
+
+// ── ШИРИНА СТЫКА — ОДНА НА ВСЕ ПЕРЕХОДЫ МЕЖДУ КЛЕТКАМИ ───────────────────
+// Макро-карта рисует РЕШЁТКУ, и её работа на границе двух клеток одна и та же,
+// какие бы это ни были клетки: растворить ступеньку. Ширина этого растворения
+// есть свойство РЕШЁТКИ, а не той или иной пары биомов, поэтому она здесь одна
+// и зовётся всеми переходами — и цветовым смешением соседних биомов, и песком
+// на стыке суши с водой.
+//
+// Её было ТРИ: 5.0 у смешения биомов, 4.5 со стороны воды и 12.0 со стороны
+// суши. Последняя — три четверти клетки (клетка шириной 16), и именно она
+// съедала сухопутную клетку у берега целиком: клетка переставала читаться собой
+// (доклад владельца 2026-09-28). Отсюда и предел: стык может забрать у клетки
+// не больше ПОЛОВИНЫ, иначе карта врёт о том, что в клетке стоит. Треть — то,
+// на чём уже сошлись два из трёх прежних чисел.
+//
+// Асимметрии у стыка нет по построению: граница одна, и обе её стороны
+// растворяются на одну и ту же глубину.
+const float BT_CELL = 16.0;            // ширина клетки в единицах узора
+const float BT_SEAM = BT_CELL / 3.0;   // ≤ BT_CELL/2 — клетка читается собой
 int bt_biome(vec2 cell) {
     vec2 uv = fract((cell + 0.5) / pc.mapSize);
     vec4 m  = texture(u_master, uv);
@@ -276,19 +295,27 @@ float bt_edgeNoise(vec2 cell, float edgeId, float coord01, float sd) {
     float s = bt_hash(cell + sd * 0.137 + edgeId * 7.31);
     return (bt_noise(vec2(coord01 * 4.7 + s * 13.0, edgeId * 3.1 + s * 7.0)) - 0.5) * 5.0;
 }
+// ПЕСОК — МАТЕРИАЛ СТЫКА, а не его ширина. Ширину задаёт BT_SEAM (одна на все
+// переходы решётки); здесь остаётся только ПРОФИЛЬ полосы — как песок сохнет,
+// уходя от воды, и как он растворяется на внешнем крае. Профиль выражен долями
+// стыка, поэтому полоса выглядит собой при любой его ширине, а своих чисел
+// длины у неё нет.
 vec3 bt_shoreColor(vec3 baseColor, float d, float grain, vec2 wp, float sd) {
+    float a = abs(d);
+    if (a > BT_SEAM) return baseColor;
+    // Мокрый у самой воды, сухой к внешнему краю — одинаково с обеих сторон
+    // границы, потому что граница одна.
+    vec3 sand = mix(bt_sandWet(), bt_sandDry(),
+                    smoothstep(0.0, BT_SEAM, a)) + grain;
     if (d >= 0.0) {
-        if (d > 4.5) return baseColor;
-        vec3 sand = mix(bt_sandWet(), bt_sandDry(), smoothstep(0.0, 4.0, d)) + grain;
-        float t   = 1.0 - smoothstep(3.5, 4.5, d);
-        return mix(baseColor, sand, t);
+        // Под водой — отмель: сплошная у берега, тающая к последней четверти.
+        return mix(baseColor, sand, 1.0 - smoothstep(BT_SEAM * 0.75, BT_SEAM, a));
     }
-    float a = -d;
-    if (a > 12.0) return baseColor;
-    vec2 P = pc.mapSize * 16.0;
+    // На суше — рваная кромка: тот же профиль, пробитый шумом, чтобы песок
+    // заходил на землю языками, а не дугой.
+    vec2 P = pc.mapSize * BT_CELL;
     float n   = bt_fbm_p(wp * 0.18 + sd * 0.07, P * 0.18, 3);
-    float cov = clamp(smoothstep(12.0, 0.0, a) * (0.55 + n * 0.55), 0.0, 1.0);
-    vec3  sand = mix(bt_sandWet(), bt_sandDry(), smoothstep(0.0, 6.0, a)) + grain;
+    float cov = clamp(smoothstep(BT_SEAM, 0.0, a) * (0.55 + n * 0.55), 0.0, 1.0);
     return mix(baseColor, sand, cov);
 }
 
@@ -361,13 +388,13 @@ vec3 biomeTextureOverlay(vec2 worldPx) {
         if (nbW != cb && nbW != 9) { float d = p.x;        if (d < blendD) { blendD = d; blendBiome = nbW; } }
         if (nbN != cb && nbN != 9) { float d = 16.0 - p.y; if (d < blendD) { blendD = d; blendBiome = nbN; } }
         if (nbS != cb && nbS != 9) { float d = p.y;        if (d < blendD) { blendD = d; blendBiome = nbS; } }
-        if (blendD < 5.0) {
-            float t = smoothstep(5.0, 0.0, blendD) * 0.5;
+        if (blendD < BT_SEAM) {
+            float t = smoothstep(BT_SEAM, 0.0, blendD) * 0.5;
             tex = mix(tex, bt_baseColor(blendBiome) * bt_tex(blendBiome, wp, sd), t);
         }
     }
 
-    float reach = isWater ? 4.5 : 12.0;
+    float reach = BT_SEAM;
     if (dist < reach) {
         float d = sgn * dist;
         tex = bt_shoreColor(tex, d, grain, wp, sd);
