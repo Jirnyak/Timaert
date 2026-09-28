@@ -39,7 +39,7 @@
 #pragma once
 
 #include "core/table_guard.h"
-#include "macro/attributes.h"
+#include "macro/anketa.h"
 #include "tables/damage_types.h"
 
 #include <algorithm>

@@ -20,7 +20,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
-#include "macro/attributes.h"   // SkillId/Skills — ремесло открывает рецепт
+#include "macro/anketa.h"   // SkillId/Skills — ремесло открывает рецепт
 #include "tables/commodity.h"
 #include "tables/seasons.h"
 #include "macro/items.h"

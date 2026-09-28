@@ -13,7 +13,7 @@
 //      with context (mood/trait) as one multiplier column.
 
 #include "check.h"
-#include "macro/attributes.h"
+#include "macro/anketa.h"
 #include "macro/character_sheet.h"   // body_max_hp — THE ceiling door
 #include "macro/economy.h"
 #include "macro/npc.h"               // npc_def — THE row the ceiling reads

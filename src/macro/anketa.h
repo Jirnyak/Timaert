@@ -1,67 +1,32 @@
-// The character sheet's numeric core (CANON S14, finalized 2026-09-03).
+// АНКЕТА — числа КОНКРЕТНОГО носителя, род 2 пакетной шины (наряд M-181).
 //
-// Schema: 8 attributes (str/end/int/wil/spd/lck/cha/wis — VIT and PER died
-// in the canon session; their work is re-dealt: END owns HP AND half of SP,
-// WILL owns MP and the other half), 8 skills, level/XP curve
-// `1000 * level * (0.1 * level + 1)`, universal carry-weight rule.
-// (Perks purged 2026-09-03 pending redesign — see the block below.)
+// Владелец, дословно (2026-09-28): «есть таблица скилов таблица спелов будут
+// потом перки таблица объектов (нпц/мобы/предметы) … это типа как
+// организованный системный игровой контент»; и про анкету: «там вообще всё и
+// инвентарь на данный момент и HP SP MP и скилы и опыт и уровень и где он ща
+// ну типа это прям как знаешь в DND анкета персонажа это полноценный сквад
+// житель макромира в этом моменте и это гладкий плоский массив то есть он
+// заранее фиксированной длины и новые просто заполняют его где пусто а если
+// кто-то удалён зануляется».
 //
-// Naming: `int` is reserved in C++; the attribute is named `intl` (kept short
-// since this struct is hot data). `wil` reads WILL on the sheet.
+// Образец, которым владелец объяснил разделение: «у нас есть гоблин и мы можем
+// расставить кучи гоблинов копии» — ОДНА строка каталога (`tables/`) рождает
+// сколько угодно экземпляров, и каждый дальше живёт СВОЕЙ анкетой: качается,
+// тратит бары, носит вещи, ложится в сейв.
+//
+// Отсюда граница, и она односторонняя: анкета ЧИТАЕТ каталог, каталог об
+// анкете не знает (AGENTS §11). Что здесь лежит — колонки строки сквада; что
+// в `tables/attributes.h` — что эти колонки ЗНАЧАТ.
 #pragma once
-#include "core/table_guard.h"
-#include "core/time.h"     // steps_from_seconds — the recovery door's quantum
+#include "core/time.h"          // steps_from_seconds — квант двери восстановления
+#include "tables/attributes.h"  // каталог: AttributeId/SkillId, строки, THE skill law
 #include <array>
+#include <cstddef>
 #include <cstdint>
-#include <string>
-#include <vector>
 
 namespace sm {
 
-// ── The id spaces ──────────────────────────────────────────────
-// Declared FIRST because the blocks below are addressed BY them: a sheet's
-// ranks are a flat array and its meanings are rows, and both index by these.
-enum class AttributeId : std::uint8_t {
-    Str, End, Intl, Wil, Spd, Lck, Cha, Wis,
-    Count
-};
-
-// The canon skill list (S14, 2026-09-03), in registry groups. ORDINALS ARE
-// FOREVER from kSaveVersion 78 on — append at the END, never insert.
-// Leadership is deliberately absent: its work is undecided (NOT a squad cap —
-// CANON S14), and a row without a law would be a liar; it appends later
-// without moving the save. The old `Fighter` became `Armsmaster` (same idea,
-// the canon name): the generic multiplier ON TOP of the weapon skills.
-enum class SkillId : std::uint8_t {
-    // weapons (7) — rank multiplies damage DONE WITH that weapon type
-    Sword, Axe, Spear, Mace, Dagger, Bow, Staff,
-    // armor (4) — rank multiplies protection OF that armor type
-    HeavyArmor, LightArmor, Unarmored, Shield,
-    // magic schools (6, S15) — rank multiplies power of the school's spells
-    FireMagic, WaterMagic, AirMagic, EarthMagic, ArcaneMagic, VoidMagic,
-    // the generic pair — a SMALLER percent on top of the typed skills
-    Armsmaster, Spellcraft,
-    // body (5)
-    Bodybuilding, Meditation, Marathon, Athletics, Weightlifting,
-    // road & world (4)
-    Travel, Acrobatics, Scouting, Prospecting,
-    // husbandry (4)
-    Trade, Quartermaster, Foraging, Learning,
-    // the EIGHTH weapon (owner verdict 2026-09-05, appended v79 — ordinals
-    // are forever): the bare fist is a weapon type like any other, so an
-    // unarmed monk is a build and not a gap in the law.
-    Unarmed,
-    // РЕМЁСЛА (владелец, 2026-09-18) — пять строк, аппенд, ординалы вечны.
-    // Это НЕ новая система: система скиллов и система крафта уже есть, а эти
-    // пять — та колонка, по рангу которой открывается рецепт (econ_day.h
-    // kRecipes: craft + minRank). Ремесло названо по МАТЕРИИ, с которой
-    // работают руки, а не по товару: одно ремесло владеет многими рецептами,
-    // и «сколько их и на каких рангах» — контент, который дорастёт.
-    Cooking, Blacksmith, Tailoring, Masonry, Alchemy,
-    Count
-};
-
-// ── Attributes ─────────────────────────────────────────────────
+// ── Attributes: ЧИСЛА ТЕЛА ─────────────────────────────────────
 
 // The same shape the ranks have: a fixed envelope of scores, and a TABLE of
 // what they mean. 16 slots for the 9 the game names today — work_vector §5
@@ -72,6 +37,8 @@ enum class SkillId : std::uint8_t {
 // (kMaxAttributeScore below) and enforced at the one door into a score, the
 // same way the rank cap is.
 inline constexpr int kMaxAttributes = 16;
+static_assert(int(AttributeId::Count) <= kMaxAttributes,
+              "the attribute envelope must hold every score the game names");
 
 // Every slot starts at 1 — INCLUDING the reserved tail, so a score that gets
 // named later begins where every other score began, rather than at a zero that
@@ -100,73 +67,10 @@ struct Attributes {
     }
 };
 
-// What an attribute IS, in the sheet's own words. The character panel walks
-// these rows instead of keeping a sixth copy of the same eight facts.
-struct AttributeDef {
-    // MUST equal the row's index in kAttributeDefs (guard below the table).
-    AttributeId id;
-    const char* key;      // authoring id; runtime addresses by ordinal
-    const char* label;    // the short name a player reads
-    const char* effect;   // what one point buys
-};
-
-// The canon eight (S14, 2026-09-03), in the canon's own order. END and WILL
-// each feed half of SP — the one bar with two owners, deliberately: the
-// warrior and the mage come to stamina from opposite sides, the hybrid wins.
-// LCK's reader is the dice door (S13; lands with the dice phase).
-inline constexpr AttributeDef kAttributeDefs[] = {
-    {AttributeId::Str,  "str",  "STR", "+1 physical damage, +10 kg carry per point"},
-    {AttributeId::End,  "end",  "END", "+10 max HP, +5 max SP per point"},
-    {AttributeId::Intl, "intl", "INT", "+1 spell damage per point"},
-    {AttributeId::Wil,  "wil",  "WILL", "+10 max MP, +5 max SP per point"},
-    {AttributeId::Spd,  "spd",  "SPD", "Asymptotic movement speed"},
-    {AttributeId::Lck,  "lck",  "LCK", "Shifts the game's dice in your favor"},
-    {AttributeId::Cha,  "cha",  "CHA", "1% off prices and payroll per point"},
-    {AttributeId::Wis,  "wis",  "WIS", "+1% EXP bonus per point"},
-};
-static_assert(sizeof(kAttributeDefs) / sizeof(kAttributeDefs[0])
-                  == std::size_t(AttributeId::Count),
-              "kAttributeDefs must carry one row per AttributeId");
-static_assert(rows_in_enum_order(kAttributeDefs, &AttributeDef::id),
-              "kAttributeDefs rows must stand in AttributeId order");
-static_assert(int(AttributeId::Count) <= kMaxAttributes,
-              "the attribute envelope must hold every score the game names");
-
-inline constexpr const AttributeDef& attribute_def(AttributeId id) {
-    return kAttributeDefs[std::size_t(id)];
-}
-
-// ── Skills ─────────────────────────────────────────────────────
-
-// ── THE SKILL LAW ──────────────────────────────────────────────
+// ── Skills: РАНГИ ТЕЛА ─────────────────────────────────────────
 //
-// Attributes are what a body IS; skills are what it has been TRAINED to do.
-// So attributes add and skills multiply — mastery framing raw nature — and the
-// multiplier is stated the same way for every skill in the game:
-//
-//     ONE RANK = ONE PERCENT, and a rank is capped at kMaxSkillRank (100).
-//
-// A rank therefore reads directly as the percentage it grants: "Travel 37" is
-// -37% terrain stamina, "Athletics 37" is +37% speed, no formula in the reader's
-// head and none in the balancer's. Linear and capped on purpose: an asymptotic
-// curve (which two of these used to be) cannot be balanced by reading it, and a
-// cap makes the ceiling a design decision instead of an accident.
-//
-// 100 rather than a power of two: nothing indexes an array by rank, so a
-// po2 bound buys nothing here, while "rank == percent" buys legibility every
-// time anyone reads a sheet. (It still fits a byte if ranks are ever packed.)
-//
-// The cap is reachable, and meant to be: the player earns ONE skill point per
-// level across eight skills, so rank 100 is a hundred levels poured into a
-// single mastery. What it grants at that point — up to doubling what the skill
-// governs, or, for a cost skill, removing that cost entirely — is a capstone,
-// not an exploit.
-constexpr int kMaxSkillRank = 100;
-
-// ── Skills: a fixed envelope of ranks, and a TABLE of what they mean ──
-//
-// The ranks are a flat array under a po2 cap and the MEANINGS are rows beneath
-// it — the same shape factions, biomes and creatures already have, and the
+// The ranks are a flat array under a po2 cap and the MEANINGS are rows in the
+// catalog — the same shape factions, biomes and creatures already have, and the
 // shape work_vector §5 asks for by name. Adding a skill used to touch five
 // places (a named field here, the SkillId enum, two `skill_value` switches,
 // the UI row table in ui/overlays.cpp and the per-role weight table in
@@ -176,8 +80,10 @@ constexpr int kMaxSkillRank = 100;
 // 64 slots for the canon ~35 (CANON S14 says the envelope by name): the
 // envelope is the thing the save promises, so it is sized once, generously,
 // in a power of two. A byte per rank because the rank cap is 100 and rank
-// READS as a percent (kMaxSkillRank below).
+// READS as a percent (kMaxSkillRank, tables/attributes.h).
 inline constexpr int kMaxSkills = 64;
+static_assert(int(SkillId::Count) <= kMaxSkills,
+              "the skill envelope must hold every skill the game names");
 
 struct Skills {
     std::array<std::uint8_t, kMaxSkills> rank{};
@@ -193,184 +99,10 @@ struct Skills {
     constexpr int of(SkillId id) const { return int(rank[std::size_t(id)]); }
 };
 
-// What ONE RANK of a skill is worth, and which way it pushes.
-//
-// `pctPerRank` is the column that made the law honest. CANON S14 (бывший rpg.md) and the canon
-// audit (A7) both record the debt it settles: the law said "one rank is one
-// percent, ceiling ×2", and four of the most expensive numbers in the game —
-// maxHp, maxMp, and both raw damages — were computed inline at 0.05 per rank
-// with no clamp, so bodybuilding 100 gave ×6 HP while the doc promised ×2.
-// The owner's ruling (2026-08-27) was to LEGITIMISE the per-skill multiplier
-// as a column rather than flatten every skill to 1 %. So the ceiling is now a
-// DERIVED number and differs per row — bodybuilding tops out at ×6 because its
-// row says 5 — and there is exactly one place that turns a rank into a
-// multiplier, which is what the law was always about.
-struct SkillDef {
-    // MUST equal the row's index in kSkillDefs (guard below the table).
-    SkillId      id;
-    const char*  key;          // authoring id; runtime addresses by ordinal
-    const char*  label;        // what a human reads on the sheet
-    const char*  effect;       // what it does, in the sheet's own words
-    std::uint8_t pctPerRank;
-    // A COST skill buys a price DOWN (1 - rank·pct/100, never past free); every
-    // other skill multiplies a bonus UP (1 + rank·pct/100). One flag rather
-    // than two helpers, because "which direction" is a property of the skill
-    // and belongs in its row.
-    bool         buysCostDown = false;
-};
-
-// Percent verdicts (owner, 2026-09-03 evening): TYPED skills (weapons, armor,
-// schools) = 10 %/rank — capstone ×11 on your own type; the GENERIC pair =
-// 5 %/rank ON TOP — Armsmaster multiplies the FINAL physical damage whatever
-// the weapon, Spellcraft the final spell power whatever the school (the M&M
-// shape; "меньший процент ПОВЕРХ типовых", CANON S14). World-skill rows whose
-// reader is a later phase (weapons → the damage door, schools → S15 wiring,
-// Acrobatics/Scouting/Prospecting/Trade/… → the world readers) still state
-// their law here: the row IS the design, the reader arrives once.
-inline constexpr SkillDef kSkillDefs[] = {
-    {SkillId::Sword,       "sword",       "Sword",
-     "sword damage per rank",                 10},
-    {SkillId::Axe,         "axe",         "Axe",
-     "axe damage per rank",                   10},
-    {SkillId::Spear,       "spear",       "Spear",
-     "spear damage per rank",                 10},
-    {SkillId::Mace,        "mace",        "Mace",
-     "mace damage per rank",                  10},
-    {SkillId::Dagger,      "dagger",      "Dagger",
-     "dagger damage per rank",                10},
-    {SkillId::Bow,         "bow",         "Bow",
-     "bow damage per rank",                   10},
-    {SkillId::Staff,       "staff",       "Staff",
-     "staff damage per rank",                 10},
-    {SkillId::HeavyArmor,  "heavy_armor", "Heavy Armor",
-     "heavy armor protection per rank",       10},
-    {SkillId::LightArmor,  "light_armor", "Light Armor",
-     "light armor protection per rank",       10},
-    // СПИТ (вердикт владельца 2026-09-19, сессия Е): три брата множат ВКЛАД
-    // носимого рода, а у голого тела вклад НОЛЬ — множить нечего, и «ранг
-    // множит защиту своего типа» на этой строке не читается ни одним телом.
-    // Чтобы оно заработало, скилл должен СКЛАДЫВАТЬ броню (вторая форма
-    // закона) или читать уклонение — механики, которой мир ещё не сделал.
-    // Закон рамки скилла (S14) это прямо разрешает: строка ждёт свою систему
-    // с pctPerRank = 0, как ждут ремёсла, а не лжёт процентом в тултипе.
-    {SkillId::Unarmored,   "unarmored",   "Unarmored",
-     "sleeps until the world has the mechanic it reads", 0},
-    {SkillId::Shield,      "shield",      "Shield",
-     "shield block per rank",                 10},
-    {SkillId::FireMagic,   "fire_magic",  "Fire Magic",
-     "fire spell power per rank",             10},
-    {SkillId::WaterMagic,  "water_magic", "Water Magic",
-     "water spell power per rank",            10},
-    {SkillId::AirMagic,    "air_magic",   "Air Magic",
-     "air spell power per rank",              10},
-    {SkillId::EarthMagic,  "earth_magic", "Earth Magic",
-     "earth spell power per rank",            10},
-    {SkillId::ArcaneMagic, "arcane_magic", "Arcane Magic",
-     "arcane spell power per rank",           10},
-    {SkillId::VoidMagic,   "void_magic",  "Void Magic",
-     "void spell power per rank",             10},
-    // The generic pair multiplies the FINAL number on top of the typed skill
-    // (owner, 2026-09-03: «процент поверх итогового — усиляет весь урон»).
-    {SkillId::Armsmaster,  "armsmaster",  "Armsmaster",
-     "ALL physical damage per rank",           5},
-    {SkillId::Spellcraft,  "spellcraft",  "Spellcraft",
-     "ALL spell power per rank",               5},
-    {SkillId::Bodybuilding, "bodybuilding", "Bodybuilding",
-     "max HP per rank",                        5},
-    {SkillId::Meditation,  "meditation",  "Meditation",
-     "max MP per rank",                        5},
-    // Owner ruling, Session 21: the BAR belongs to attributes alone (END and
-    // WILL by half each since the canon eight), so this skill shortens the
-    // REST instead. (Was `endurance`, +5 % max SP — a multiplier that
-    // double-counted the attribute.)
-    {SkillId::Marathon,    "marathon",    "Marathon",
-     "SP recovery rate per rank",              1},
-    {SkillId::Athletics,   "athletics",   "Athletics",
-     "move speed per rank",                    1},
-    {SkillId::Weightlifting, "weightlifting", "Weightlifting",
-     "carry capacity per rank",               10},
-    // How FAR you get on one bar, never how fast (movement_cost.h): a cost
-    // skill, and the reason the flag exists.
-    {SkillId::Travel,      "travel",      "Travel",
-     "terrain stamina cost per rank",          1, /*buysCostDown*/true},
-    {SkillId::Acrobatics,  "acrobatics",  "Acrobatics",
-     "jump height per rank",                   1},
-    {SkillId::Scouting,    "scouting",    "Scouting",
-     "track-field reading per rank",           1},
-    {SkillId::Prospecting, "prospecting", "Prospecting",
-     "deposit sense per rank",                 1},
-    {SkillId::Trade,       "trade",       "Trade",
-     "final price edge per rank",              1},
-    {SkillId::Quartermaster, "quartermaster", "Quartermaster",
-     "squad payroll per rank",                 1, /*buysCostDown*/true},
-    {SkillId::Foraging,    "foraging",    "Foraging",
-     "provision drain per rank",               1, /*buysCostDown*/true},
-    {SkillId::Learning,    "learning",    "Learning",
-     "experience gained per rank",             1},
-    // Appended v79 with its enum row — a weapon skill like the seven above.
-    {SkillId::Unarmed,     "unarmed",     "Unarmed",
-     "unarmed damage per rank",               10},
-    // ── РЕМЁСЛА (2026-09-18) ────────────────────────────────────────────
-    // pctPerRank = 0 СОЗНАТЕЛЬНО: ремесло не множит число, оно ОТКРЫВАЕТ
-    // рецепт. Проценты — язык скиллов, которые усиливают удар или дешевят
-    // цену; у этих строк власть иная, и врать процентом, которого нет, эта
-    // таблица не станет (колонка `effect` говорит, чем строка на самом деле
-    // распоряжается). Когда крафченая вещь станет ЛУЧШЕ от ранга — вот тогда
-    // у ремесла появится свой процент, и появится он здесь.
-    {SkillId::Cooking,     "cooking",     "Cooking",
-     "unlocks cooking recipes by rank",        0},
-    {SkillId::Blacksmith,  "blacksmith",  "Blacksmith",
-     "unlocks smithing recipes by rank",       0},
-    {SkillId::Tailoring,   "tailoring",   "Tailoring",
-     "unlocks tailoring recipes by rank",      0},
-    {SkillId::Masonry,     "masonry",     "Masonry",
-     "unlocks masonry recipes by rank",        0},
-    {SkillId::Alchemy,     "alchemy",     "Alchemy",
-     "unlocks alchemy recipes by rank",        0},
-};
-static_assert(sizeof(kSkillDefs) / sizeof(kSkillDefs[0])
-                  == std::size_t(SkillId::Count),
-              "kSkillDefs must carry one row per SkillId");
-// The table CARRIES its enum as a column, so a drifted row refuses to compile
-// — the same guard biomes, moons and creature roles already stand behind.
-static_assert(rows_in_enum_order(kSkillDefs, &SkillDef::id),
-              "kSkillDefs rows must stand in SkillId order");
-static_assert(int(SkillId::Count) <= kMaxSkills,
-              "the skill envelope must hold every skill the game names");
-
-inline constexpr const SkillDef& skill_def(SkillId id) {
-    return kSkillDefs[std::size_t(id)];
-}
-
-// THE skill law, and the ONE place a rank becomes a multiplier. Everything
-// that a skill governs asks this and nothing else — no formula keeps a private
-// curve, and no formula spells a percent inline. The direction and the percent
-// are the row's; the CAP is the law's.
-inline float skill_mult_of(SkillId id, int rank) {
-    if (rank < 0) rank = 0;
-    if (rank > kMaxSkillRank) rank = kMaxSkillRank;
-    const SkillDef& d = skill_def(id);
-    const float step = float(rank) * float(d.pctPerRank) * 0.01f;
-    if (!d.buysCostDown) return 1.0f + step;
-    return step >= 1.0f ? 0.0f : 1.0f - step;   // a cost never goes past free
-}
-
+// THE skill law applied to a SHEET. The law itself (row → multiplier) lives in
+// the catalog; these two say «чьи ранги» and nothing more.
 inline float skill_mult(const Skills& s, SkillId id) {
     return skill_mult_of(id, s.of(id));
-}
-
-// The SAME law in whole percent, for the integer house (the strike assembly
-// multiplies by multPct/100; the world readers scale counts and radii by
-// pct/100). Both directions, exactly as the float door: a cost-down row
-// walks DOWN and floors at free — Foraging 100 is a squad fed off the land,
-// not a negative loaf.
-inline int skill_mult_pct_of(SkillId id, int rank) {
-    if (rank < 0) rank = 0;
-    if (rank > kMaxSkillRank) rank = kMaxSkillRank;
-    const SkillDef& d = skill_def(id);
-    const int step = rank * int(d.pctPerRank);
-    if (!d.buysCostDown) return 100 + step;
-    return step >= 100 ? 0 : 100 - step;        // a cost never goes past free
 }
 
 inline int skill_mult_pct(const Skills& s, SkillId id) {
@@ -384,7 +116,11 @@ inline int skill_mult_pct(const Skills& s, SkillId id) {
 // The redesigned system is CANON S14 «СОЗВЕЗДИЯ ПЕРКОВ»: a flat constexpr
 // node graph (kPerkNodes, edges[4]), constellation quadrants, effects as
 // rows of the ONE bonus registry. That graph is CONTENT — weeks of authored
-// nodes — and the owner ruled it consciously ABSENT for the demo.
+// nodes — and the owner ruled it consciously ABSENT for the demo. Когда он
+// придёт, СТРОКИ узлов лягут в `tables/`, а эта маска останется здесь: узел
+// — контент, выученность узла — анкета (владелец 2026-09-28: «перки будут в
+// будущем будет со скилами и атрибутами там звёздный граф но он тоже как
+// таблица плоский массив»).
 //
 // What exists NOW is the third currency and its storage, symmetric with the
 // other two (5-5-5 at creation, 1-1-1 per level, CANON S14 2026-09-14):
@@ -751,9 +487,7 @@ inline int award_exp(LevelData& ld, int amount, int expMultPct) {
 // Новая структура в этом файле обязана появиться и в этом списке — за полнотой
 // списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
 TIMAERT_ROW(sm::Attributes);
-TIMAERT_ROW(sm::AttributeDef);
 TIMAERT_ROW(sm::Skills);
-TIMAERT_ROW(sm::SkillDef);
 TIMAERT_ROW(sm::PerkMask);
 TIMAERT_ROW(sm::BarCeilings);
 TIMAERT_ROW(sm::DerivedBonuses);

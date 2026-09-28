@@ -88,7 +88,8 @@ constexpr const char* kLegacyList = "tests/data/arch_legacy.txt";
 constexpr std::string_view kRowHeaders[] = {
     "src/ecs/components.h",        "src/macro/npc.h",
     "src/macro/items.h",           "src/macro/character_sheet.h",
-    "src/macro/attributes.h",      "src/macro/anatomy.h",
+    "src/tables/attributes.h",     "src/macro/anketa.h",
+    "src/macro/anatomy.h",
     "src/macro/army.h",            "src/macro/bonus.h",
     "src/tables/biomes.h",         "src/tables/damage_types.h",
     "src/macro/spells.h",          "src/tables/sprite_rows.h",

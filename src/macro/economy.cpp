@@ -1,5 +1,5 @@
 #include "macro/economy.h"
-#include "macro/attributes.h"
+#include "macro/anketa.h"
 #include "macro/state.h"
 #include "ecs/components.h"
 #include "macro/econ_day.h"

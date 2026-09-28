@@ -27,7 +27,7 @@
 #pragma once
 
 #include "ecs/components.h"      // ecs::Combat — тот самый гейт
-#include "macro/attributes.h"    // recovery_steps — дверь восстановления S14
+#include "macro/anketa.h"    // recovery_steps — дверь восстановления S14
 
 namespace sm::sub {
 

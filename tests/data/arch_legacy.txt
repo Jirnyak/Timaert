@@ -16,7 +16,7 @@
 # прибор печатает сам, когда ругается.
 #
 # Наполнено ЗАМЕРОМ 2026-09-28 (наряд M-169), не рукой.
-channel	src/sub/ability.h	#include "macro/attributes.h"
+channel	src/sub/ability.h	#include "macro/anketa.h"
 channel	src/sub/ai.cpp	#include "macro/macro_stock.h"
 channel	src/sub/ai.cpp	#include "macro/npc.h"
 channel	src/sub/ai.cpp	#include "macro/store.h"
@@ -33,7 +33,7 @@ channel	src/sub/damage.cpp	#include "macro/store.h"
 channel	src/sub/dgn/cave.cpp	#include "macro/npc.h"
 channel	src/sub/dgn/dispatch.h	#include "macro/npc.h"
 channel	src/sub/dgn/house.cpp	#include "macro/npc.h"
-channel	src/sub/engine.cpp	#include "macro/attributes.h"
+channel	src/sub/engine.cpp	#include "macro/anketa.h"
 channel	src/sub/engine.cpp	#include "macro/cell_facts.h"
 channel	src/sub/engine.cpp	#include "macro/character_sheet.h"
 channel	src/sub/engine.cpp	#include "macro/currency.h"

@@ -7,7 +7,7 @@
 
 #include "content/spells/casting.h"
 #include "ecs/pools.h"
-#include "macro/attributes.h"
+#include "macro/anketa.h"
 #include "macro/spell_book_state.h"
 
 namespace sm {

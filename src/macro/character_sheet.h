@@ -2,7 +2,7 @@
 
 #include "core/table_guard.h"
 #include "macro/army.h"      // CombatTemplate (per-role authored base)
-#include "macro/attributes.h"
+#include "macro/anketa.h"
 #include "macro/bonus.h"
 #include "macro/npc.h"
 #include "macro/spell_book_state.h"   // spell_ordinal_ok — the column's guard

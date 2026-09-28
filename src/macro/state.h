@@ -7,7 +7,7 @@
 #include <vector>
 #include "core/rng.h"
 #include "core/time.h"
-#include "macro/attributes.h"
+#include "macro/anketa.h"
 #include "macro/character_sheet.h"
 #include "tables/commodity.h"   // kCommodityCount — дань по позициям (v73)
 #include "macro/items.h"

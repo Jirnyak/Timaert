@@ -20,7 +20,7 @@
 #include "macro/econ_day.h"   // kRecipes — чей ранг открывает рецепт
 #include "check.h"
 
-#include "macro/attributes.h"
+#include "macro/anketa.h"
 #include "macro/character_sheet.h"
 #include "macro/movement_cost.h"
 

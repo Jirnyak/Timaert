@@ -18,7 +18,6 @@
 #
 # Строки ниже отсортированы и порождены прогоном прибора на 2026-09-27.
 CANON.md	CMakeLists.txt:15
-CANON.md	attributes.h:600-602
 CANON.md	core/stacks.h:160
 CANON.md	core/time.h:47
 CANON.md	currency.h:96-168
@@ -68,7 +67,6 @@ SKELETON.md	:1219-1222
 SKELETON.md	:1235
 SKELETON.md	:1258-1279
 SKELETON.md	:1260-1266
-SKELETON.md	:127-130
 SKELETON.md	:1277
 SKELETON.md	:129
 SKELETON.md	:132
@@ -137,7 +135,6 @@ SKELETON.md	:3291
 SKELETON.md	:330
 SKELETON.md	:330-334
 SKELETON.md	:331
-SKELETON.md	:331-338
 SKELETON.md	:334
 SKELETON.md	:335
 SKELETON.md	:3367
@@ -279,8 +276,6 @@ SKELETON.md	app_state.h:201
 SKELETON.md	app_state.h:310
 SKELETON.md	app_state.h:339-340
 SKELETON.md	army.h:179
-SKELETON.md	attributes.h:117
-SKELETON.md	attributes.h:600-602
 SKELETON.md	auto_battle.h:168
 SKELETON.md	auto_battle.h:80
 SKELETON.md	auto_resolve_speaks_test.cpp:196
@@ -1143,8 +1138,6 @@ macro-registry.md	app/main.cpp:758-781
 macro-registry.md	app_state.h:339-340
 macro-registry.md	app_state.h:424-425
 macro-registry.md	army.h:195
-macro-registry.md	attributes.h:600-602
-macro-registry.md	attributes.h:612
 macro-registry.md	balance_run.cpp:275
 macro-registry.md	balance_run.cpp:279
 macro-registry.md	behaviour.h:28

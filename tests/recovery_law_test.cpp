@@ -9,7 +9,7 @@
 #include "check.h"
 
 #include "ecs/pools.h"
-#include "macro/attributes.h"
+#include "macro/anketa.h"
 #include "macro/recovery.h"
 
 #include <cmath>

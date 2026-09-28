@@ -19,7 +19,7 @@
 #include <cstdio>
 #include <string>
 
-#include "macro/attributes.h"
+#include "macro/anketa.h"
 #include "macro/character_sheet.h"
 #include "macro/currency.h"
 #include "macro/items.h"
