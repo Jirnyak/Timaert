@@ -6,7 +6,8 @@
 // test (tests/econ_v1_test.cpp) proves the ledger balances to the unit —
 // that test, run over years of game time, is the balancing arbiter.
 //
-// Anchor unit: the PERSON-DAY. 1 bread feeds 1 pop for 1 day; a gatherer
+// Anchor unit: the PERSON-DAY. 1 unit of the hunger row feeds 1 pop for 1
+// day (the row is ASKED, never named — hunger_commodity_ordinal); a gatherer
 // pulls kGatherPerWorkerDay raw units a day; each recipe names its
 // output-per-worker-day. Round po2-family numbers by house style.
 //
@@ -36,7 +37,7 @@ namespace sm {
 // `Stockpile` of 14 commodity counts used to live here and be converted to and
 // from the landmark's inventory TWICE PER GAME DAY per landmark, through a
 // string lookup each way, because the same noun was addressed by two different
-// ordinals. `bread` is one row of one catalog now.
+// ordinals. Каждое существительное мира — одна строка одного каталога.
 //
 // The day's steps stay PURE (owner: «шаги остаются ЧИСТЫМИ»): they take data
 // and tables, never the world.
@@ -72,10 +73,10 @@ const std::array<int, 3>& faction_mint_rows(int factionIdx);
 
 // v1: buildings are ABSTRACT (owner ruling) — a recipe names the KIND of
 // place it runs in, not a building.
-// Any (owner 2026-08-30, CANON S10): a recipe every settled place can run —
-// the bread row moved here, because «деревня печёт хуже уже потому, что её
-// меньше»: the population-efficiency law below prices the difference, not a
-// second recipe and not a site wall.
+// Рецепт открыт ВСЯКОМУ обжитому месту, чьи руки его умеют, — «деревня
+// работает хуже уже потому, что её меньше» (владелец 2026-08-30, CANON S10):
+// разницу города и деревни оценивает закон КПД по населению ниже, а не второй
+// рецепт и не стена по виду места.
 // (EconSite УМЕР 2026-09-18, вердикт владельца «сносим сайт». Он был стеной
 // ПО ВИДУ: деревне открыт хлеб, всё прочее — City-only, потому что City. Что
 // место УМЕЕТ, теперь говорит его анкета — те же скиллы, тот же лист, что у
@@ -92,7 +93,7 @@ inline bool recipe_known(const Skills& sk, SkillId craft, int minRank) {
 // its TEMPO followed on 2026-09-12 (owner: «единая SP-система труда»):
 // batches-per-person-day is the item's own labour column (macro/items.h
 // item_labour), the same number the hand's SP price divides by. Two tables
-// of «из чего хлеб» — and then two of «сколько труда в хлебе» — each
+// of «из чего ткань» — and then two of «сколько труда в ткани» — each
 // drifted apart exactly once before they were merged.
 struct RecipeDef {
     const char*  output;    // commodity id
@@ -116,8 +117,13 @@ inline constexpr const char* kMintOutput = "coin";
 
 // THE productivity anchor (owner 2026-08-30/31, CANON S10): one worker at ANY
 // link of the chain covers the needs of ~32 souls — «1 добытчик кормит 32
-// душ» extended through the whole chain (поле → печь → рот) on 2026-08-31.
-// Declared above the recipe table because the bread row derives from it.
+// душ» extended through the whole chain (поле → возка → рот) on 2026-08-31.
+// ЧИТАТЕЛИ ЖИВЫЕ И ВНЕ ЭТОГО ФАЙЛА: цена SP за срубленный/сжатый объект
+// (sub/engine.cpp, sub/ability.h — одна добыча = полоса / этот якорь), темпы
+// добывающих нарядов макро-ИИ (npc_ai.cpp) и полоса в оверлее. Строка хлеба
+// из него НЕ выводится — её нет и быть не может (CANON S10 «ЕДА НЕ
+// ПРОИЗВОДИТСЯ»); стоит здесь потому, что таблица рецептов ниже задаёт тот же
+// темп «за рабочий день» и обязана читаться рядом с якорем.
 inline constexpr int kGatherPerWorkerDay = 32;
 
 // РЕМЕСЛО И РАНГ вместо вида места. Ранги расставлены редко и без претензии:
@@ -129,11 +135,11 @@ inline constexpr int kGatherPerWorkerDay = 32;
 // поэтому мебель и резьба квартируют у masonry как «что сложено и сколочено».
 // Переселить их = поменять одну колонку, кода это не касается.
 inline constexpr RecipeDef kRecipes[] = {
-    // BREAD = the anchor made chain-wide: a baker's day turns exactly one
-    // farmer's gather-day of grain (32) into 32 bread, so the farmer+baker
-    // pair feeds 16 and the slack pays for crafts and the road.
-    // (What each output CONSUMES — and HOW FAST it turns — lives on its
-    // catalog row: items.cpp kPartsAuthoring composition + labour columns.)
+    // What each output CONSUMES — and HOW FAST it turns — lives on its
+    // catalog row: items.cpp kPartsAuthoring composition + labour columns.
+    // ПИЩИ ЗДЕСЬ НЕТ И БЫТЬ НЕ МОЖЕТ (CANON S10 «ЕДА НЕ ПРОИЗВОДИТСЯ — ЕДА
+    // ДОБЫВАЕТСЯ»): у пищевой строки нет состава, а кандидат без состава
+    // отсеивается дверью производства (econ_day.cpp item_parts().empty()).
     // ЧЕКАНКА — кузнечное дело высокого ранга. Права чеканки КОЛОНКОЙ не
     // существует (канон, вердикт №12): чеканит тот, чьи руки умеют.
     {kMintOutput, SkillId::Blacksmith, 30},
@@ -382,12 +388,22 @@ struct Depot {
 
 // ── The day, in three pure steps ─────────────────────────────────────────
 
-// Workers run the site's recipes in three passes: today's TABLE first (each
-// consumed output staffed up to the town's daily demand, table order — bread
-// can never be starved by a fair share), then FAIR SHARES of the remaining
-// workers across recipes with inputs (the surplus), then leftovers in table
-// order. Returns total units produced. Conservation: inputs leave the store
-// as outputs enter.
+// РАНЖИРОВАНИЕ РУК (CANON S10, владелец 2026-09-18: «руки идут туда, где выше
+// стоимость выхода на рабочий день»). Кандидат — выходная СТРОКА КАТАЛОГА:
+// одна на товарный рецепт, чьё ремесло и ранг открыты анкете места, плюс по
+// одной на каждый номинал у монетного. Каждый рабочий день уходит в кандидата
+// с наибольшей стоимостью выхода по ТЕКУЩЕЙ цене склада (цена × партий ×
+// выход), где партий не больше, чем даёт труд строки на КПД места и чем
+// кормит сырьё на полке. Цена пересчитывается ПОСЛЕ каждого назначения —
+// слиппедж производства: полка растёт → цена падает → руки сами переходят
+// дальше; сезон проедает склад → цена растёт → возвращаются. Ни порога
+// «работать или нет», ни потолка выпуска колонкой: потолок ВЫВОДИТСЯ из цены.
+// День кончается, когда ни один кандидат не кормится сырьём.
+// Прежние три прохода «стол / честные доли / остатки» УМЕРЛИ 2026-09-18
+// вместе с «нуждой» `1 << 30` (econ_day.cpp, там же замер: они были грубым
+// ранжированием, где все рецепты равно ценны).
+// Returns total units produced. Conservation: inputs leave the store as
+// outputs enter.
 // `mintFactionIdx`: whose coin FAMILY the kMintOutput recipe strikes — the
 // town's faction (its three nominals run gold-first, each off its own metal;
 // faction_coins resolves the free folk to the imperial family). -1 = this
@@ -493,8 +509,8 @@ inline float population_delta_per_day(int population, float wellbeing) {
 // seeds its universal Inventory as if it had been living for years, so the
 // market has wares on day one and nobody starves while the first caravans
 // find their legs. One law, deterministic from population:
-//   · the daily-vital row (bread) holds kSeedVitalDays of the table — a
-//     larder, not a warehouse;
+//   · the HUNGER row (hunger_commodity_ordinal — asked, never named) holds
+//     kSeedVitalDays of the table — a larder, not a warehouse;
 //   · every other need row holds a stretch of its daily demand — a season
 //     in a crafting City, days in a gathering Village;
 //   · raw stocks are a production buffer per head — doubled in a Village,

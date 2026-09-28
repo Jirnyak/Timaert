@@ -73,11 +73,13 @@ namespace {
 // Demand is DIRECT (the place's DEBT, CANON S10 2026-09-19: «спрос кривой
 // дефицита читается из ДОЛГА» — непогашенный остаток счёта И ЕСТЬ
 // непокрытая нужда, сезонной меркой по построению) plus DERIVED (owner
-// track 2026-08-30): a town that eats bread demands grain, because bread
+// track 2026-08-30): a town that wears cloth demands fibre, because cloth
 // is MADE of it — the demand of every recipe output flows down to its
-// inputs × qty. Without this a starving city priced grain at base (nobody
-// "eats" grain), its caravans saw no profit in hauling it, and stone
-// outbid food (measured, balance_run). Recursive over the recipe table
+// inputs × qty. Without this a starving city priced the raw INPUT at base
+// (nobody "eats" a raw input), its caravans saw no profit in hauling it, and
+// stone outbid food (measured, balance_run 2026-08-30 — на тогдашней цепи
+// зерно→хлеб; цепь умерла с производством еды, замер остался в силе для
+// всякой другой). Recursive over the recipe table
 // with a small depth cap: chains are data and may grow (ore → metal →
 // tool), cycles must not hang.
 // Без счёта (needDebt == nullptr — снимок чужого дома, фикстура) прямая
@@ -110,8 +112,8 @@ int demand_for_(int itemIdx, const std::int32_t* needDebt,
         for (int ri = 0; ri < kRecipeCount; ++ri) {
             const RecipeDef& r = kRecipes[ri];
             // Derived demand exists only where the recipe CAN run: hands
-            // that bake nothing want no grain beyond their own needs,
-            // however hungry their future bakery would be — without this
+            // that weave nothing want no fibre beyond their own needs,
+            // however hungry their future loom would be — without this
             // gate the growers' own granaries priced at the scarcity
             // ceiling and the caravans' loans bought a quarter of the lot
             // (measured, balance_run 2026-08-30).

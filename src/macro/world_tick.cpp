@@ -320,7 +320,7 @@ void garrison_recruit_(GameState& gs, Landmark& s,
 // 2026-09-19). Скот в базу не входит: лошадь — имущество, не паства, иначе
 // табун поднимал бы себе потолок сам.
 int garrison_cap_(const Landmark& s) {
-    const ItemDef* bread = item_def_at(hunger_item_index());
+    const ItemDef* hungerDef = item_def_at(hunger_item_index());
     // ЦЕНА ДУШИ ЗА СЕЗОН — ПО СТРОКЕ ТОГО, КОГО МЕСТО ДЕРЖИТ, и это теперь
     // крестьянин. Слагаемое жалованья ушло вместе со стражей: у крестьянина
     // `upkeepGoldPerDay` = 0, и «+0» в формуле было бы половиной, которая
@@ -328,7 +328,7 @@ int garrison_cap_(const Landmark& s) {
     // «один закон без исключений» (garrison_upkeep_ выше).
     const int perSoulSeason = std::max(
         1, npc_board_per_day(NPCType::Peasant) * kDaysPerSeason
-               * (bread && bread->value > 0 ? bread->value : 1));
+               * (hungerDef && hungerDef->value > 0 ? hungerDef->value : 1));
     const int flock = souls_flock(s) + count_human_souls(s.inventory);
     return garrison_target_strength(s.type, flock)
          + inventory_value(s.inventory) / perSoulSeason;
@@ -348,9 +348,10 @@ void garrison_trim_(GameState& gs, Landmark& s,
                     EconFactSink sink, void* user) {
     int excess = creature_heads(s.inventory) - garrison_cap_(s);
     if (excess <= 0) return;
-    const int breadIdx = hunger_item_index();
-    const ItemDef* bread = item_def_at(breadIdx);
-    const int breadValue = bread && bread->value > 0 ? bread->value : 1;
+    const int hungerIdx = hunger_item_index();
+    const ItemDef* hungerDef = item_def_at(hungerIdx);
+    const int hungerValue =
+        hungerDef && hungerDef->value > 0 ? hungerDef->value : 1;
     int meat = 0;
     while (excess > 0) {
         // Область существ единого контейнера (M-71); обход 1023 → first =
@@ -381,7 +382,7 @@ void garrison_trim_(GameState& gs, Landmark& s,
         // и пойманный олень в армии места ножа не знал — он уходил в пул
         // дезертиров человеком.
         if (is_fauna_kind(weakKind)) {
-            meat += take * (weakPrice / breadValue);
+            meat += take * (weakPrice / hungerValue);
         } else {
             cut.count = take;
             if (!creatures_push_slot(gs.deserterPool, cut)) {
@@ -391,7 +392,7 @@ void garrison_trim_(GameState& gs, Landmark& s,
         }
     }
     if (meat > 0) {
-        s.inventory.add_of(breadIdx, meat);
+        s.inventory.add_of(hungerIdx, meat);
         // Мясо платит по счёту В ТУ ЖЕ МИНУТУ — дверь гашения (S10):
         // голодное место режет лошадь и ест, на полку ложится излишек.
         econ_pay_debt(s.inventory, s.needDebt, sink, user);

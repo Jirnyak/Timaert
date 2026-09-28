@@ -1338,7 +1338,7 @@ void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
 // Move up to `maxUnits` of `id` between inventories, bounded by the cargo
 // hold's remaining weight. Returns units moved.
 // The city's purchase PRIORITY: the needs ladder unrolled to its recipe
-// INPUTS (bread ← grain first, then cloth's, bricks'…), then every other
+// INPUTS (cloth ← fibre, bricks ← clay, …), then every other
 // commodity in table order. Derived once from kNeeds × kRecipes — no
 // commodity is named in code. Shared by the deal (what to buy first) and
 // the route choice (which village is worth the ride): without the shared
