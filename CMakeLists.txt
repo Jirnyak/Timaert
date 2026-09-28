@@ -859,6 +859,26 @@ timaert_test(water_answer_test
         src/macro/tree_layer.cpp
         src/sub/base_generator.cpp)
 
+# ОДИН КАСКАД БИОМА (M-110): свидетель спрашивает трёх потребителей каскада
+# разом — трассер рек, лес и зоны опасности, — поэтому линкует терраин,
+# размещение и зоны. Цепь за `spawners.cpp` та же, что у road_river_generation.
+timaert_test(biome_cascade_test
+    SOURCES
+        src/macro/map_generator.cpp
+        src/macro/spawners.cpp
+        src/macro/zones.cpp
+        src/macro/pathfinding.cpp
+        src/macro/politik.cpp
+        src/macro/language.cpp
+        src/macro/settlement_score.cpp
+        src/macro/macro_stock.cpp
+        src/macro/chronicle.cpp
+        src/macro/tree_layer.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/sub/base_generator.cpp
+    LINK_SDL LINK_ENTT)
+
 # ВТОРАЯ ПОЛОВИНА той же плоскости (M-109, П-6): микромир её НАСЛЕДУЕТ. Гоняет
 # настоящий генератор высот без GameState и без рендерера — плоскость входит
 # аргументом, что и есть проверяемая узость канала.

@@ -43,6 +43,10 @@ namespace
             td.rgba[s + 2] = 128u;
             td.rgba[s + 3] = 255u;
         }
+        // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
+        // читает поле, а не каскад, поэтому карта без выпечки — карта
+        // НЕДОРОЖДЁННАЯ, и её биом честно отвечает водой.
+        sm::bake_biomes(td);
         return td;
     }
 
@@ -112,6 +116,9 @@ int main()
     // and pulls the 5.0 weight from the biome table.
     sm::TerrainData mtnTerrain = make_terrain(2, 2);
     mtnTerrain.rgba[4] = 220u; // height 0.863 >= kMountainBiomeLevel (0.75)
+    // ВЫСОТА ИЗМЕНЕНА — ПОЛЕ БИОМА ПЕРЕПЕКАЕТСЯ (ЗАКОН ПОЛЯ): мастер и поле
+    // не имеют права разойтись, иначе у карты снова два ответа.
+    sm::bake_biomes(mtnTerrain);
 
     const sm::PathCostData withFeatures = sm::build_cost_grid(mtnTerrain, &fullFeatures);
     CHECK(withFeatures.width == 2 && withFeatures.height == 2,
@@ -131,16 +138,24 @@ int main()
     // утверждал обратное: он делал воду, ОПУСКАЯ ТОЛЬКО альфу и не трогая
     // высоту, а комментарий прямо говорил «маска — авторитет». Это и был
     // коастальный двойной ответ, а не защита от него.
-    sm::TerrainData maskTerrain = make_terrain(2, 1);
+    // ЗАКОН АДРЕСА: мир КВАДРАТЕН и сторона — степень двойки. Здесь стояло
+    // 2×1 — форма, которой мир не бывает; дверь биома отвечала на ней лишь
+    // потому, что не спрашивала о форме, а `is_water` рядом спрашивала. Носитель
+    // свидетеля — «плоскость решает, а маска не авторитет» — сохранён целиком:
+    // под вопросом те же две клетки 0 и 1, остальные две просто суша.
+    sm::TerrainData maskTerrain = make_terrain(2, 2);
     const float defaultLandWeight = sm::cell_sp_weight(
         sm::biome_from_climate(128.0f / 255.0f, 128.0f / 255.0f),
         sm::FT_None);
     maskTerrain.rgba[0] = 40u;   // cell 0: высота НИЖЕ плоскости — вот и вода
+    // ВЫСОТА ИЗМЕНЕНА — ПОЛЕ БИОМА ПЕРЕПЕКАЕТСЯ (ЗАКОН ПОЛЯ): мастер и поле
+    // не имеют права разойтись, иначе у карты снова два ответа.
+    sm::bake_biomes(maskTerrain);
     const sm::PathCostData maskCosts =
         sm::build_cost_grid(maskTerrain, nullptr);
-    CHECK(maskCosts.costGrid.size() == 2u,
+    CHECK(maskCosts.costGrid.size() == 4u,
                  "mask grid must be complete");
-    if (maskCosts.costGrid.size() == 2u)
+    if (maskCosts.costGrid.size() == 4u)
     {
         CHECK(nearly(maskCosts.costGrid[0], 10.0f)
                          && maskCosts.water[0] == 1u,
@@ -154,9 +169,12 @@ int main()
     // Пока маска была авторитетом, этот же случай красил бы наоборот.
     maskTerrain.rgba[0] = 128u;
     maskTerrain.rgba[3] = 0u;
+    // ВЫСОТА ИЗМЕНЕНА — ПОЛЕ БИОМА ПЕРЕПЕКАЕТСЯ (ЗАКОН ПОЛЯ): мастер и поле
+    // не имеют права разойтись, иначе у карты снова два ответа.
+    sm::bake_biomes(maskTerrain);
     const sm::PathCostData maskFlipped =
         sm::build_cost_grid(maskTerrain, nullptr);
-    CHECK(maskFlipped.costGrid.size() == 2u
+    CHECK(maskFlipped.costGrid.size() == 4u
                      && nearly(maskFlipped.costGrid[0], defaultLandWeight)
                      && maskFlipped.water[0] == 0u,
                  "маска солгала про воду — мир ответил по плоскости, землёй");

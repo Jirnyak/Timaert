@@ -51,6 +51,10 @@ sm::TerrainData make_terrain() {
     set_cell(1, 0, 180u, 128u, 128u); // Meadow
     set_cell(0, 1, 220u, 250u, 250u); // Mountain (height >= 0.75 mountain level)
     set_cell(1, 1, 180u, 10u, 250u);  // Desert, dirt-road wrap target below
+    // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
+    // читает поле, а не каскад, поэтому карта без выпечки — карта НЕДОРОЖДЁННАЯ,
+    // и её биом честно отвечает водой.
+    sm::bake_biomes(terrain);
     return terrain;
 }
 

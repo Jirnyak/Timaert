@@ -26,14 +26,23 @@ sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
         td.rgba[s + 2] = 128;
         td.rgba[s + 3] = height < 102 ? 0 : 255;
     }
+    // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
+    // читает поле, а не каскад, поэтому карта без выпечки — карта НЕДОРОЖДЁННАЯ,
+    // и её биом честно отвечает водой.
+    sm::bake_biomes(td);
     return td;
 }
 
+// ВЫСОТА — ИСТОЧНИК БИОМА, значит правка мастера кончается перепечкой поля
+// (ЗАКОН ПОЛЯ): карта, у которой мастер и поле разошлись, есть карта с двумя
+// ответами — ровно то, против чего поле и заведено. Свидетелю это дёшево, а
+// закон он охраняет тот же, что мир.
 void set_cell(sm::TerrainData& td, int x, int y, std::uint8_t height)
 {
     const std::size_t s = (std::size_t(y) * td.width + x) * 4;
     td.rgba[s + 0] = height;
     td.rgba[s + 3] = height < 102 ? 0 : 255;
+    sm::bake_biomes(td);
 }
 
 sm::City make_city(int x, int y, int connection)
@@ -170,8 +179,10 @@ void test_road_tracing_uses_map_sea_level()
     // сравниваемых мира различаются ровно им, а не аргументом двери (M-109).
     sm::TerrainData lowSeaTd = td;
     lowSeaTd.seaLevel8 = sm::sea_level_byte(0.30f);
+    sm::bake_biomes(lowSeaTd);   // плоскость сдвинута — поле биома за ней
     sm::TerrainData defaultSeaTd = td;
     defaultSeaTd.seaLevel8 = sm::sea_level_byte(0.40f);
+    sm::bake_biomes(defaultSeaTd);   // плоскость сдвинута — поле биома за ней
 
     sm::Politik lowSeaPolitik;
     lowSeaPolitik.mapW = td.width;
@@ -464,8 +475,10 @@ void test_tree_spawner_uses_map_sea_level()
     // ручная простановка A=255 снята: она и была той самой второй правдой.
     sm::TerrainData lowSeaTd = make_terrain(64, 64, 90);
     lowSeaTd.seaLevel8 = sm::sea_level_byte(0.30f);
+    sm::bake_biomes(lowSeaTd);   // плоскость сдвинута — поле биома за ней
     sm::TerrainData defaultSeaTd = make_terrain(64, 64, 90);
     defaultSeaTd.seaLevel8 = sm::sea_level_byte(0.40f);
+    sm::bake_biomes(defaultSeaTd);   // плоскость сдвинута — поле биома за ней
 
     const std::vector<sm::TreePoint> lowSeaTrees =
         sm::spawn_trees(lowSeaTd, std::uint32_t{42});
