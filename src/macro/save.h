@@ -56,6 +56,13 @@ bool load_game(GameState& s, std::vector<Quest>& activeQuests,
                const std::string& path);
 SaveSummary inspect_save(const std::string& path);
 
+// ПОТОЛОК PAYLOAD, ВЫВЕДЕННЫЙ ИЗ СУММЫ КАПОВ БЛОКОВ (save.cpp). Вопрос, а не
+// константа заголовка: слагаемые тянут капы половины мира, и тело в
+// заголовке платил бы каждый включивший (AGENTS §5 п.13) — здесь же цена
+// O(1). Спрашивает его свидетель: сейв реального мира обязан быть строго
+// НИЖЕ суммы, иначе потолок охраняет случай, а не закон.
+std::uint64_t save_max_payload_bytes();
+
 // ── THE witness on the load's fold ────────────────────────────────────────
 //
 // What a world WOULD weigh on disk: the same write_payload every save runs,

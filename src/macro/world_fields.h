@@ -46,6 +46,19 @@ enum class WorldField : std::uint8_t {
     Count,
 };
 
+// ВЕС БЛОКА ПОЛЕЙ В ХУДШЕМ ЛЕГАЛЬНОМ СЛУЧАЕ — слагаемое потолка payload
+// (save.cpp kMaxPayloadBytes). Считается по КАПАМ рядов: каждый ряд весит
+// «кап клеток × байты своей записи», разреженные — по ПЛОТНОМУ капу, потому
+// что сторож обязан мерить худший легальный мир, а не типичный.
+//
+// Число стоит здесь голым, а выводится СТОЛБЦОМ `maxBytes` таблицы
+// kWorldFields (world_fields.cpp) — и прибито там `static_assert`: новый ряд
+// или другая ширина записи красят сборку в этой точке, разъехаться молча они
+// не могут. Столбец не вынесен в заголовок сознательно — он тянул бы сюда
+// deposit_layer.h/resource_field.h/state.h, а тело в заголовке платит каждый
+// включивший (AGENTS §5 п.13).
+inline constexpr std::uint64_t kWorldFieldsMaxBytes = 155'189'328ull;
+
 // The owning stores of the saved rows. Not a second world envelope: load
 // runs BEFORE the app's layers exist (it fills these, and the boot moves
 // them into place), so the rows name the stores directly.
