@@ -1881,10 +1881,10 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // reads features (zones, cost). The list is append-order — the same
     // order the crews built in.
     for (const sm::BuiltFeature& bf : app.gs.builtFeatures) {
-        const int wx = sm::FeatureLayer::wrap_coord(bf.x, app.features.width);
-        const int wy = sm::FeatureLayer::wrap_coord(bf.y, app.features.height);
-        app.features.data[std::size_t(wy) * std::size_t(app.features.width)
-                          + std::size_t(wx)] = sm::FeatureType(bf.ft);
+        // Дверь слоя (M-112): она же заворачивает адрес и она же спрашивает
+        // РОД байта — байт из файла, не бывший законной фичей, ложится
+        // `FT_None`, а не мусором в поле, из которого потом читает зона.
+        app.features.set(bf.x, bf.y, sm::FeatureType(bf.ft));
     }
     rebake_world(app);
     app.macro.upload_tree_field(app.device, &app.treeLayer);

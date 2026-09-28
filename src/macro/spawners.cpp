@@ -525,13 +525,13 @@ namespace sm
         int laid = 0;
         auto stamp = [&](int x, int y)
         {
-            const std::size_t idx = std::size_t(y) * W + x;
-            if (FeatureLayer::decode(features.data[idx]) == FT_None)
+            const std::uint32_t idx = cell_of(x, y, W);
+            if (features.at(idx) == FT_None)
             {
                 // Every bridge is stone (owner, 2026-08-29): a dirt lane that
                 // crosses water lays the same span the highway does — a dirt
                 // bridge would be a second bridge kind for no world reason.
-                features.data[idx] = cg.water[idx] ? FT_Bridge : FT_DirtRoad;
+                features.set(idx, cg.water[idx] ? FT_Bridge : FT_DirtRoad);
                 ++laid;
             }
             const float share = cg.water[idx] ? kBridgeShare : kDirtShare;
@@ -650,20 +650,18 @@ namespace sm
             {
                 if (!(*dirtMask)[i])
                     continue;
-                if (is_water(i))
-                    fl.data[i] = FT_Bridge; // every bridge is stone (owner)
-                else
-                    fl.data[i] = FT_DirtRoad;
+                // `i` ЕСТЬ адрес клетки (маски идут тем же плоским порядком),
+                // поэтому дверь зовётся индексной формой — сворачивать нечего.
+                fl.set(std::uint32_t(i),
+                       is_water(i) ? FT_Bridge   // every bridge is stone (owner)
+                                   : FT_DirtRoad);
             }
         }
         for (std::size_t i = 0; i < roadMaskLimit; ++i)
         {
             if (!roadMask[i])
                 continue;
-            if (is_water(i))
-                fl.data[i] = FT_Bridge;
-            else
-                fl.data[i] = FT_Road;
+            fl.set(std::uint32_t(i), is_water(i) ? FT_Bridge : FT_Road);
         }
         return fl;
     }
@@ -724,8 +722,14 @@ namespace sm
                 }
             }
             for (int k = 0; k < found; ++k) {
-                fl.data[std::size_t(best[k].y) * std::size_t(w)
-                        + std::size_t(best[k].x)] = FT_Field;
+                // ОДНА ВСПАШКА НА ГЕНЕЗИС И НА РАНТАЙМ (ЗАКОН АГНОСТИЧНОСТИ,
+                // M-112): дверь не знает, кто её зовёт, и здесь у неё
+                // появился первый жилец — до этого генезис писал `FT_Field`
+                // сырым индексом мимо неё, то есть на один и тот же вопрос
+                // «как рождается пашня» в мире было два ответа. Гейты те же
+                // самые: шортлист набран `plough_cell_ok`, и дверь спросит
+                // его повторно — на клетках шортлиста он даёт то же «да».
+                plough_field_cell(fl, world, best[k].x, best[k].y, FT_Field);
             }
         }
     }

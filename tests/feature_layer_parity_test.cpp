@@ -1,5 +1,6 @@
 #include "check.h"
 
+#include "core/torus.h"
 #include "macro/spawners.h"
 
 #include <cstddef>
@@ -400,6 +401,64 @@ void test_feature_water_filter_uses_map_sea_level()
                  "грунтовка под плоскостью моря — тот же пролёт, тот же камень");
 }
 
+// ── M-112: ЗАПИСЬ ФИЧИ ХОДИТ ОДНОЙ ДВЕРЬЮ, И АДРЕС У НЕЁ ОДИН ─────────────
+// Наряд снял девять сырых `data[y*w+x] = FT_…`. Утверждение «второй записи
+// нет» адреса в коде не имеет (AGENTS §0 п.2) и потому указывает СЮДА: тут
+// стоит контракт, ради которого сырые записи и снесены — один адрес, один
+// судья рода байта, и доказательство, что снесённое правописание врало.
+void test_feature_write_goes_through_one_door()
+{
+    constexpr int kSide = 16;   // ЗАКОН АДРЕСА: квадрат, степень двойки
+    sm::FeatureLayer fl;
+    fl.resize(kSide, kSide);
+
+    // 1. ДВЕ ФОРМЫ — ОДНА ДВЕРЬ. Пара `x,y` и адрес одним числом обязаны
+    //    отвечать ОДНИМ байтом на каждой клетке мира; разойдись они — у слоя
+    //    два адресных пространства, то есть второй ответ на вопрос «что стоит
+    //    на этой клетке» (DOD п.6). Род берётся из ЕНУМА по адресу, а не
+    //    списком руками: новая строка реестра фич попадёт под свидетеля сама.
+    int samples = 0, mismatches = 0;
+    for (int y = 0; y < kSide; ++y)
+    {
+        for (int x = 0; x < kSide; ++x)
+        {
+            const std::uint32_t cell = sm::cell_of(x, y, kSide);
+            const sm::FeatureType t =
+                sm::FeatureType(cell % std::uint32_t(sm::FT_Count));
+            fl.set(cell, t);                                  // пишем адресом
+            if (fl.at(x, y) != t) ++mismatches;               // читаем парой
+            fl.set(x, y, sm::FT_None);                        // пишем парой
+            if (fl.at(cell) != sm::FT_None) ++mismatches;     // читаем адресом
+            ++samples;
+        }
+    }
+    CHECK(samples == kSide * kSide && mismatches == 0,
+          "дверь по адресу и дверь по паре — одна дверь: один байт на клетку");
+
+    // 2. ДВЕРЬ СУДИТ РОД БАЙТА, А СЫРАЯ ЗАПИСЬ НЕ СУДИЛА НИЧЕГО. Это не
+    //    украшение: ре-штамп загрузки (`main.cpp`, builtFeatures) несёт байт
+    //    ИЗ ФАЙЛА, и до наряда он ложился в поле как есть — незаконный род
+    //    доезжал до зон и стоимости пути.
+    fl.set(0u, static_cast<sm::FeatureType>(255u));
+    CHECK(fl.data[0] == std::uint8_t(sm::FT_None) && fl.at(0u) == sm::FT_None,
+          "дверь по адресу обязана сажать незаконный род в FT_None");
+
+    // 3. НЕГАТИВНЫЙ КОНТРОЛЬ: снесённое правописание ОБЯЗАНО врать. Ручной
+    //    `y*w+x` по незавёрнутой координате уходит мимо клетки — здесь вообще
+    //    за пределы памяти слоя, — и ровно поэтому каждой сырой записи нужны
+    //    были два пред-заворота, которые автор мог забыть. Дверь заворачивает
+    //    сама, и промахнуться ей нечем.
+    const int seamX = kSide + 1;        // тот же столбец мира, что x = 1
+    const int seamY = kSide - 1;
+    const std::size_t raw =
+        std::size_t(seamY) * std::size_t(kSide) + std::size_t(seamX);
+    fl.set(seamX, seamY, sm::FT_Bridge);
+    const std::uint32_t door = sm::cell_of(seamX, seamY, kSide);
+    CHECK(fl.at(door) == sm::FT_Bridge && fl.at(1, kSide - 1) == sm::FT_Bridge
+              && std::size_t(door) != raw && raw >= fl.data.size(),
+          "ручной y*w+x на шве уезжает с клетки — дверь заворачивает адрес");
+}
+
 } // namespace
 
 int main()
@@ -409,5 +468,6 @@ int main()
     test_feature_layer_reference_matrix();
     test_feature_water_is_the_plane_not_the_mask();
     test_feature_water_filter_uses_map_sea_level();
+    test_feature_write_goes_through_one_door();
     return sm::test::report("feature_layer_parity_test");
 }
