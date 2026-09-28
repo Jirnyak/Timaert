@@ -5301,6 +5301,32 @@ void merge_shell_result(sm::ui::ShellResult& dst, const sm::ui::ShellResult& src
 }
 
 
+// ДВЕ ФАЗЫ ОДНОЙ СТРУКТУРЫ, И ГРАНИЦА МЕЖДУ НИМИ — КАДР.
+//
+// `apply_shell_actions` стоит в ХВОСТЕ кадра, внутри командного буфера, куда
+// `macro.record` уже привязал `set_` с текстурами мира. Всё, что рождает или
+// сносит мир, идёт через `MacroRendererVk::upload`: `vkDeviceWaitIdle` (ждёт
+// лишь ОТПРАВЛЕННЫЕ кадры, про записываемый не знает) → снос образов →
+// `vkUpdateDescriptorSets` на привязанный набор. Валидация Vulkan назвала это
+// поимённо: 18 строк `invalid state` на пути «сейв → загрузка» и 33 на второй
+// новой игре — буфер объявлялся мёртвым посреди записи, и `end_frame` отправлял
+// его с уничтоженными образами (M-122).
+//
+// Поэтому действия РАЗДЕЛЕНЫ, а не обёрнуты ожиданием (ожидание внутри кадра
+// лечило бы симптом): здесь применяются действия ОБОЛОЧКИ — экраны, флаги,
+// выход, — а действия МИРА складываются в `app.pendingWorldShell` и
+// применяются `apply_world_shell_actions` в начале следующего оборота, когда
+// ни один буфер не записывается.
+//
+// Задержки при этом нет ни визуальной, ни в тике: экраны оболочки уже
+// нарисованы к этому моменту, то есть мир, рождённый здесь, впервые рисовался
+// всё равно только в следующем обороте. Переезд ставит рождение ПЕРЕД
+// рисованием того же оборота, а не после.
+//
+// В очередь кладётся РЕШЕНИЕ, а не сырой флаг: `loadGame` при `state != Load`
+// есть действие ОБОЛОЧКИ (открыть экран), и тот же флаг, доживший до начала
+// следующего оборота, встретил бы уже `state == Load` и молча загрузил игру
+// вместо показа экрана. Развилки решаются здесь.
 void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
     if (r.splashDone) {
         app.state = sm::ui::AppState::Title;
@@ -5323,6 +5349,82 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
     if (r.creationDefault) {
         sm::ui::creation_apply_default(app.creation);
     }
+    if (r.startCreatedGame) {
+        app.pendingWorldShell.startCreatedGame = true;
+    }
+    if (r.cancelCreation) {
+        app.state = app.creationCustom ? sm::ui::AppState::CustomNewGame
+                                       : sm::ui::AppState::Title;
+    }
+    if (r.openCustomNewGame) {
+        app.state = sm::ui::AppState::CustomNewGame;
+        app.customWorldReady = false;   // force a fresh regen
+    }
+    if (r.cancelCustomNewGame) {
+        app.state = sm::ui::AppState::Title;
+        app.customWorldReady = false;
+        // Снос мира, построенного превью, — действие МИРА: решение принимается
+        // здесь, по живой карте, а сносится она вне кадра.
+        if (app.worldLoaded) app.pendingWorldShell.cancelCustomNewGame = true;
+    }
+    if (r.regenerateCustom) {
+        app.pendingWorldShell.regenerateCustom = true;
+    }
+    if (r.startCustomNewGame) {
+        // The custom world's Start leads through the slideshow and the
+        // creation screen too — a preview-built world (customWorldReady)
+        // survives to its Start. Esc skips the slides in one keypress.
+        app.creation = {};
+        app.creationCustom = true;
+        app.introSlides = {};
+        app.state = sm::ui::AppState::IntroSlides;
+    }
+    if (r.loadGame || r.loadAutosave) {
+        // РАЗВИЛКА РЕШАЕТСЯ ЗДЕСЬ: на экране загрузки это действие МИРА, вне
+        // его — действие ОБОЛОЧКИ (открыть экран). Сырой флаг, доживший до
+        // начала следующего оборота, встретил бы уже `state == Load` и загрузил
+        // игру вместо показа экрана.
+        if (app.state == sm::ui::AppState::Load) {
+            app.pendingWorldShell.loadGame     = r.loadGame;
+            app.pendingWorldShell.loadAutosave = r.loadAutosave;
+        } else {
+            open_load_screen(app);
+        }
+    }
+    if (r.cancelLoad) {
+        app.state = app.loadReturnState;
+    }
+    if (r.saveGame) {
+        app.pendingWorldShell.saveGame = true;
+    }
+    if (r.openCodex) {
+        app.state = sm::ui::AppState::Playing;
+        app.ui.codex = true;
+    }
+    if (r.openInterface) {
+        app.state = sm::ui::AppState::Playing;
+        app.ui.settings = true;
+    }
+    if (r.openControls) {
+        app.state = sm::ui::AppState::Playing;
+        app.ui.controls = true;
+    }
+    if (r.resume)        app.state = sm::ui::AppState::Playing;
+    if (r.returnToTitle) app.pendingWorldShell.returnToTitle = true;
+    if (r.quit)          app.running = false;
+}
+
+// Фаза II: мировые действия оболочки, отложенные `apply_shell_actions`. Зовётся
+// РОВНО ОДИН РАЗ, в начале оборота, до `acquire_frame` — здесь `vkDeviceWaitIdle`
+// внутри `macro.upload` дожидается кадра N−1, и сносить образы с обновлением
+// `set_` законно, потому что ни один буфер не записывается.
+//
+// Порядок тот же, в котором эти же ветки стояли внутри `apply_shell_actions`:
+// один клик может поднять несколько флагов (смоук поднимает три за оборот), и
+// смысл у них позиционный.
+void apply_world_shell_actions(App& app) {
+    const sm::ui::ShellResult r = app.pendingWorldShell;
+    app.pendingWorldShell = sm::ui::ShellResult{};   // снять очередь ДО работы
     if (r.startCreatedGame) {
         if (app.creationCustom) {
             if (!app.customWorldReady) {
@@ -5350,18 +5452,8 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
             begin_scene(app, sm::content::prologue_scene());
         }
     }
-    if (r.cancelCreation) {
-        app.state = app.creationCustom ? sm::ui::AppState::CustomNewGame
-                                       : sm::ui::AppState::Title;
-    }
-    if (r.openCustomNewGame) {
-        app.state = sm::ui::AppState::CustomNewGame;
-        app.customWorldReady = false;   // force a fresh regen
-    }
-    if (r.cancelCustomNewGame) {
-        app.state = sm::ui::AppState::Title;
-        app.customWorldReady = false;
-        if (app.worldLoaded) destroy_world(app);  // drop preview-built world
+    if (r.cancelCustomNewGame && app.worldLoaded) {
+        destroy_world(app);                       // drop preview-built world
     }
     if (r.regenerateCustom) {
         const int side = 1 << app.customParams.mapSizeLog2;
@@ -5373,50 +5465,23 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         build_world_preview(app);
         app.customWorldReady = true;
     }
-    if (r.startCustomNewGame) {
-        // The custom world's Start leads through the slideshow and the
-        // creation screen too — a preview-built world (customWorldReady)
-        // survives to its Start. Esc skips the slides in one keypress.
-        app.creation = {};
-        app.creationCustom = true;
-        app.introSlides = {};
-        app.state = sm::ui::AppState::IntroSlides;
-    }
     if (r.loadGame || r.loadAutosave) {
-        if (app.state == sm::ui::AppState::Load) {
-            const std::string& path =
-                r.loadAutosave ? app.autosavePath : app.savePath;
-            if (boot_world_from_save(app, path)) {
-                app.state = sm::ui::AppState::Playing;
-            } else {
-                std::fprintf(stderr, "load_game: no save at %s\n", path.c_str());
-                refresh_save_summary(app);
-            }
+        const std::string& path =
+            r.loadAutosave ? app.autosavePath : app.savePath;
+        if (boot_world_from_save(app, path)) {
+            app.state = sm::ui::AppState::Playing;
         } else {
-            open_load_screen(app);
+            std::fprintf(stderr, "load_game: no save at %s\n", path.c_str());
+            refresh_save_summary(app);
         }
-    }
-    if (r.cancelLoad) {
-        app.state = app.loadReturnState;
     }
     if (r.saveGame) {
         save_game_checked(app);
     }
-    if (r.openCodex) {
-        app.state = sm::ui::AppState::Playing;
-        app.ui.codex = true;
+    if (r.returnToTitle) {
+        destroy_world(app);
+        app.state = sm::ui::AppState::Title;
     }
-    if (r.openInterface) {
-        app.state = sm::ui::AppState::Playing;
-        app.ui.settings = true;
-    }
-    if (r.openControls) {
-        app.state = sm::ui::AppState::Playing;
-        app.ui.controls = true;
-    }
-    if (r.resume)        app.state = sm::ui::AppState::Playing;
-    if (r.returnToTitle) { destroy_world(app); app.state = sm::ui::AppState::Title; }
-    if (r.quit)          app.running = false;
 }
 
 // TIMAERT_NPC_VISUAL_TRACE=1: one stderr line a second on the macro map,
@@ -5506,6 +5571,14 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
 // ticks and only by ticks, so a machine that cannot keep up draws fewer frames
 // and lives fewer ticks — at the same rate, because they are the same number.
 void frame(App& app, int simSteps) {
+    // РОЖДЕНИЕ И СНОС МИРА — ПЕРВЫМИ В ОБОРОТЕ, до `advance_sim_steps`, до
+    // `ImGui::NewFrame` и до `acquire_frame`: здесь кадра не существует, значит
+    // `macro.upload` вправе ждать устройство, сносить образы и переписывать
+    // `set_`. Заказаны они прошлым оборотом (`apply_shell_actions` → фаза II).
+    // Смоук проверяет инварианты сноса ТУТ ЖЕ, после сноса, а не до него.
+    apply_world_shell_actions(app);
+    smoke_after_shell_actions(app);
+
     SDL_Event e;
     while (SDL_PollEvent(&e)) handle_event(app, e);
     sync_relative_mouse_mode(app);
@@ -6179,7 +6252,6 @@ void frame(App& app, int simSteps) {
     }
     merge_shell_result(shell, tick_smoke_script(app));
     apply_shell_actions(app, shell);
-    smoke_after_shell_actions(app);
     sync_audio_music(app);
     sync_relative_mouse_mode(app);
 
