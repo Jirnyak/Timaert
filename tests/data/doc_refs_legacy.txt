@@ -418,10 +418,7 @@ SKELETON.md	items.h:217
 SKELETON.md	items.h:285
 SKELETON.md	items.h:301-449
 SKELETON.md	items.h:484
-SKELETON.md	items.h:649
 SKELETON.md	items.h:662
-SKELETON.md	items.h:662-667
-SKELETON.md	items.h:672-677
 SKELETON.md	journal.h:39-41
 SKELETON.md	knowledge.cpp:22
 SKELETON.md	knowledge.cpp:36
@@ -1166,7 +1163,6 @@ macro-registry.md	attributes.h:600-602
 macro-registry.md	attributes.h:612
 macro-registry.md	balance_run.cpp:275
 macro-registry.md	balance_run.cpp:279
-macro-registry.md	balance_run.cpp:473
 macro-registry.md	behaviour.h:28
 macro-registry.md	characters.h:114
 macro-registry.md	chronicle.cpp:61
@@ -1329,10 +1325,8 @@ macro-registry.md	resource_field.h:16-19
 macro-registry.md	resource_field.h:238
 macro-registry.md	resource_field.h:424
 macro-registry.md	roster_window.h:110
-macro-registry.md	roster_window.h:135
 macro-registry.md	roster_window.h:48
 macro-registry.md	roster_window.h:56
-macro-registry.md	save.cpp:1057
 macro-registry.md	save.cpp:30
 macro-registry.md	scent_field.cpp:21-32
 macro-registry.md	scent_field.h:88-104
@@ -1345,7 +1339,6 @@ macro-registry.md	spell_book_state.h:35-44
 macro-registry.md	spire.cpp:128
 macro-registry.md	squad.h:189
 macro-registry.md	squad.h:199
-macro-registry.md	squad.h:251
 macro-registry.md	squad.h:821
 macro-registry.md	squad.h:829
 macro-registry.md	squad.h:836
@@ -1357,7 +1350,6 @@ macro-registry.md	state.h:1090-1091
 macro-registry.md	state.h:466
 macro-registry.md	state.h:470-471
 macro-registry.md	state.h:855
-macro-registry.md	state.h:942
 macro-registry.md	state.h:966
 macro-registry.md	store.h:100
 macro-registry.md	store.h:230
