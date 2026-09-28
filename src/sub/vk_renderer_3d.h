@@ -17,6 +17,7 @@
 #include "core/math.h"
 
 #include "assets/sprite_bank.h"
+#include "sub/map_data.h"   // WATER_LEVEL — the default sea plane (seaLevel01_)
 #include "gpu/bb_instance.h"
 #include "gpu/vk_buffer.h"
 #include "gpu/vk_canvas.h"
@@ -127,8 +128,14 @@ public:
     void rebuild_far_world(const gpu::VulkanDevice& dev,
                            const SeamlessSubworldManager& mgr);
 
+    // `seaLevel` is THE SCENE'S sea plane, normalised — the renderer's ONE
+    // intake for it (SubworldEngine::scene_sea_level). It arrives here rather
+    // than per-draw because a scene's plane changes exactly when the window
+    // does: on entry, and on nothing else. Every consumer inside the renderer —
+    // the shore band, the drowned-prop cull, the far seabed, the air's datum —
+    // reads the cached value, so they cannot disagree about where the sea is.
     void upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr,
-                const CompositeDirty& dirty);
+                const CompositeDirty& dirty, float seaLevel);
 
     // Depth-only shadow casters into the shadow map. MUST run before the main
     // render pass begins.
@@ -140,7 +147,7 @@ public:
     // it MUST be the renderer's currentFrame (the frame whose fence acquire_frame
     // just reset) so the buffer we write is GPU-idle. Range [0, kFramesInFlight).
     void record_main(VkCommandBuffer cmd, VkExtent2D ext, const Camera& cam,
-                     const WorldTime& time, float waterLevel,
+                     const WorldTime& time,
                      const SeamlessSubworldManager* mgr, ecs::World* ecs,
                      bool haste, bool flight, float px, float py, float elapsed,
                      std::uint32_t frameIndex);
@@ -268,6 +275,10 @@ private:
     std::uint32_t lightFieldFrame_ = 0;
     std::uint32_t lightDebugMask_ = 0;  // `lightdbg`; 0 in shipping frames
     std::uint32_t groundDebugMask_ = 0; // `grounddbg`; 0 in shipping frames
+    // THE SCENE'S sea plane, normalised — set by upload(), read by everything
+    // in here that needs to know where the water is. Default = the default
+    // world's, for the frames a harness draws before any scene is uploaded.
+    float seaLevel01_ = WATER_LEVEL;
     void rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
                              const sm::vec3& camPos, std::uint32_t slot);
     // Absolute world-space origin (metres) of the current composite: the world

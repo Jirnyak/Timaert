@@ -955,7 +955,16 @@ vec3 mountainOverlay(vec2 worldPx, vec3 col) {
 vec4 chartMaster(vec2 cell) {
     return texture(u_master, fract((cell + 0.5) / pc.mapSize));
 }
-bool chartWater(vec4 m) { return m.a < 0.5 || m.r < pc.seaLevel; }
+// «ВОДА ЛИ КЛЕТКА» — ОДИН ОТВЕТ, И ОН БАЙТОВЫЙ (M-109).
+// Здесь стоял ВОСЬМОЙ спеллинг: маска A ИЛИ порог, в одном условии. Маска —
+// производное того же порога (П-5), так что её половина была мёртвой ветвью,
+// умеющей только соврать иначе. И порог приезжал СЫРЫМ float, тогда как мир
+// судит БАЙТОМ (`is_water` → `rgba.r < seaLevel8`): на уровне, не дающем целого
+// байта, карта красила водой то, что мир зовёт сушей — при 0.45 байт 114 есть
+// суша для мира и вода для карты, расхождение в целую клетку высоты. Теперь
+// `pc.seaLevel` кормится тем самым байтом, нормированным (main.cpp), и сравнение
+// идёт в том же словаре, в котором лежит высота.
+bool chartWater(vec4 m) { return m.r < pc.seaLevel; }
 
 vec3 chartCompose(vec2 worldPx, vec2 mapUV) {
     vec2 cell = floor(worldPx);

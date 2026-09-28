@@ -20,6 +20,43 @@ namespace sm::sub {
 constexpr int kCellSize = 1024;          // tiles per macro cell
 constexpr int kFullSize = kCellSize * 3; // 3×3 grid
 
+// ── THE SEA PLANE, AS THE SUBWORLD SEES IT ────────────────────────────────
+// Owner, 2026-09-27, verbatim: «у нас фиксированная плоскость УРОВЕНЬ моря на
+// весь макромир и микромир её наследует». So the plane is NOT a constant of
+// this layer — it is a value the scene INHERITS, and it travels on the two
+// structs declared in this file: `CellContext::seaLevel` carries it down into
+// generation, `SubworldMapData::waterLevel` is where the finished scene states
+// it. That is why the three names below live here rather than beside the
+// generator: the generator is a CONSUMER of the plane, its owners are here.
+//
+// `WATER_LEVEL` is the DEFAULT plane, and only that: the value a harness with
+// no macroworld behind it (gpu_smoke3d, bare fixtures) answers with. It is
+// pinned to the macro editor's own default under a static_assert in
+// tests/subworld_sea_plane_test.cpp — the two worlds' defaults cannot drift
+// apart without failing to compile. Nothing in a real scene reads it: a real
+// scene reads its own plane.
+constexpr float WATER_LEVEL = 0.40f;
+
+// `kLandMargin` — minimum elevation of a land cell's shoreline ABOVE the
+// plane in the height remap. Without it, just-above-sea land maps to exactly
+// the plane, and the bilinear blend with adjacent water cells (whose remap can
+// reach 0) drags the corner below it → submerged shores and submerged pure-land
+// cells. TS hid this with a single-cell render; the C++ port renders the full
+// 3×3 grid (12 internal seams) so the margin is required. Kept small (0.02) for
+// a gentle, natural beach lift, not a dramatic cliff. A WIDTH, not a plane: it
+// does not move when the plane moves.
+constexpr float kLandMargin = 0.02f;
+
+// `kWetEdgeWidth` — height of the WET EDGE above the waterline: ground below
+// the plane plus this is soaked — shore tiles get painted, fields refuse the
+// plough. One value for both, or the beach and the ploughland disagree about
+// where the water's reach ends. NOT kLandMargin: that one lifts a land cell's
+// REMAP so seam blends cannot sink it; this one classifies final ground height,
+// and the two move for different reasons. Also a WIDTH — the absolute top it
+// describes follows the scene's plane, which is what `wet_edge_top` is for.
+constexpr float kWetEdgeWidth = 0.022f;
+inline float wet_edge_top(float seaLevel) { return seaLevel + kWetEdgeWidth; }
+
 // Tile constants for the subworld grid.
 enum Tile : std::uint8_t {
     TILE_EMPTY = 0, TILE_GRASS, TILE_FIELD, TILE_TREE_DECOR,
@@ -287,6 +324,18 @@ struct CellContext {
     // the macro layer follows. 0 = a bare fixture with no world around it.
     int   worldCellsX = 0, worldCellsY = 0;
     float macroHeight;   // 0..1
+    // THE WORLD'S SEA PLANE, normalised — the one number that says which of
+    // this cell's ground is under water, and the ONLY spelling of it the
+    // subworld has. It rides here, next to `macroHeight`, because it is read in
+    // the same breath as it: the height remap is a function of the two
+    // together, and «микромир её наследует» (owner, 2026-09-27) is precisely
+    // the statement that the plane arrives as CONTEXT rather than as a constant
+    // of this layer. Filled at the macro boundary from `TerrainData::seaLevel8`
+    // — the byte the macroworld itself judges by, so the two worlds agree on
+    // the shore by construction rather than by two roundings that happened to
+    // match. `WATER_LEVEL` default keeps a bare fixture answering like the
+    // default world instead of like a world with no sea.
+    float seaLevel = WATER_LEVEL;
     float macroTemperature = 0.5f; // 0..1, used for TS tree species bands
     Biome biome;
     // The unflooded ground of a Water cell: what its RAW climate would grow
@@ -466,7 +515,8 @@ struct Structure {
     // Does this thing sit on the GROUND, or stand at a level of the WORLD?
     // Almost everything sits: a house follows the hill under it. But a
     // structure over water answers to the water, not to the bed — the sea
-    // plane is one height everywhere (sub/height.h kSeaLevelM), so a bridge
+    // plane is one height everywhere in a scene (SubworldMapData::waterLevel
+    // through sub/height.h sea_level_m), so a bridge
     // deck is level by the same law that makes the water level. Seating such
     // a deck on the bed made its top wobble by the DIFFERENCE between two
     // samplers — the generator reads the exact tile heightmap, the renderer
@@ -906,7 +956,12 @@ struct SubworldMapData {
     // The scene's floor catalog (CANON S28). Empty where the scene never
     // populates — the kind row's own columns say so, not a caller branch.
     std::vector<StandPoint>   standPoints;
-    float waterLevel = 0.4f;
+    // THE SCENE'S OWN SEA PLANE — where this scene's water surface is drawn and
+    // what every consumer of "the waterline" asks. A cell scene inherits the
+    // world's (CellContext::seaLevel); a dungeon states 0.0f, which is beneath
+    // every floor that can exist, because an interior has no sea. This is the
+    // ONE place a finished scene answers from — there is no per-biome copy.
+    float waterLevel = WATER_LEVEL;
 };
 
 inline std::size_t tile_index(int x, int y) { return std::size_t(y) * kFullSize + x; }

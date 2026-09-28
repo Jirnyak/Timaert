@@ -64,9 +64,11 @@ int main() {
                 const float macroH = 0.62f + 0.03f * float((cx + cy) % 5);
                 for (int adj = 0; adj <= 4; ++adj) {
                     const float a = skeleton_cell_peak01(
-                        macroH, false, true, adj, cx, cy, worldSeed);
+                        macroH, false, true, adj, cx, cy, worldSeed,
+                        WATER_LEVEL);
                     const float b = skeleton_cell_peak01(
-                        macroH, false, true, adj, cx, cy, worldSeed);
+                        macroH, false, true, adj, cx, cy, worldSeed,
+                        WATER_LEVEL);
                     if (a != b) ++disagreements;
                     ++samples;
                 }
@@ -80,11 +82,12 @@ int main() {
         // the last column is the same cell, so it has the same crest.
         const std::uint32_t worldSeed = 0x593F45BAu;
         const float onMap = skeleton_cell_peak01(0.88f, false, true, 3,
-                                                 0, 300, worldSeed);
+                                                 0, 300, worldSeed,
+                                                 WATER_LEVEL);
         const float onFoot = skeleton_cell_peak01(
             0.88f, false, true, 3,
             ((kWorldCells % kWorldCells) + kWorldCells) % kWorldCells, 300,
-            worldSeed);
+            worldSeed, WATER_LEVEL);
         CHECK(onMap == onFoot,
               "one place, one crest — the world's edge is not a second cell");
     }
@@ -107,10 +110,12 @@ int main() {
                 const float peak = 0.98f;
                 const float full = mountain_ridges01(macroH, gx, gy, macroH,
                                                      peak, 1.0f, worldTiles,
-                                                     /*coarseOnly=*/false);
+                                                     /*coarseOnly=*/false,
+                                                     WATER_LEVEL);
                 const float coarse = mountain_ridges01(macroH, gx, gy, macroH,
                                                        peak, 1.0f, worldTiles,
-                                                       /*coarseOnly=*/true);
+                                                       /*coarseOnly=*/true,
+                                                       WATER_LEVEL);
                 const float d = std::fabs(full - coarse);
                 worst = std::max(worst, d);
                 // DETAIL, not shape: what the far pass drops must be small
@@ -152,15 +157,15 @@ int main() {
             const int y = gy + k * 613;
             // The two tiles that share the world's edge.
             const float last = far_height01(span - 1, y, 0.88f, 0.98f, 1.0f,
-                                            worldTiles);
+                                            worldTiles, WATER_LEVEL);
             const float first = far_height01(0, y, 0.88f, 0.98f, 1.0f,
-                                             worldTiles);
+                                             worldTiles, WATER_LEVEL);
             acrossSeam = std::max(acrossSeam, std::fabs(last - first));
             // ...against a pair of ordinary neighbours in the same massif.
             const float a = far_height01(300000, y, 0.88f, 0.98f, 1.0f,
-                                         worldTiles);
+                                         worldTiles, WATER_LEVEL);
             const float b = far_height01(300001, y, 0.88f, 0.98f, 1.0f,
-                                         worldTiles);
+                                         worldTiles, WATER_LEVEL);
             interior = std::max(interior, std::fabs(a - b));
             ++samples;
         }
@@ -176,12 +181,12 @@ int main() {
         // so by answering with the manifold itself — not with a flat number,
         // and not with a different one.
         const float flat = far_height01(123456, 654321, 0.55f, 0.70f, 0.0f,
-                                        kWorldTiles);
+                                        kWorldTiles, WATER_LEVEL);
         CHECK(std::fabs(flat - 0.55f) < 1e-6f,
               "lowland far ground IS the macro manifold — nothing is invented "
               "where nothing rises");
         const float mtn = far_height01(123456, 654321, 0.88f, 0.98f, 1.0f,
-                                       kWorldTiles);
+                                       kWorldTiles, WATER_LEVEL);
         CHECK(mtn != 0.88f,
               "a massif far away still HAS a silhouette (the negative control "
               "for the line above)");

@@ -656,7 +656,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // and images not yet created). Consume the manager's dirty (load_all marked
     // it full) and hand it straight to upload(), then clear the accumulator.
     const CompositeDirty enterDirty = mgr_.consume_composite_dirty_cells();
-    if (dev_) renderer3dVk_.upload(*dev_, mgr_, enterDirty);
+    if (dev_) renderer3dVk_.upload(*dev_, mgr_, enterDirty, scene_sea_level());
     active_  = true;
     pendingUpload3d_ = {};
     // The scene's solids, indexed BEFORE anybody is placed in it. This used
@@ -695,7 +695,8 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
         // it identically. Deterministic re-tries within the same entry band,
         // so a re-entry lands in the same place; if the whole band is water
         // (mid-sea cell) the mid-band point stands, as it always did.
-        if (!is_dry_footing(footing_height_m(playerX_, playerY_))) {
+        const float seaM = scene_sea_level_m();
+        if (!is_dry_footing(footing_height_m(playerX_, playerY_), seaM)) {
             Rng landing{cell_seed(gs.worldSeed, cx, cy) ^ 0xB21D6Eu};
             for (int attempt = 0; attempt < 20; ++attempt) {
                 const float tx = float(kCellSize) + entry_axis_pos(
@@ -704,7 +705,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
                 const float ty = float(kCellSize) + entry_axis_pos(
                     sdy, entryTicks, float(kCellSize),
                     landing.next_f01());
-                if (is_dry_footing(footing_height_m(tx, ty))) {
+                if (is_dry_footing(footing_height_m(tx, ty), seaM)) {
                     playerX_ = tx;
                     playerY_ = ty;
                     break;
@@ -793,7 +794,8 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // are part of the scene the player enters.
     const int projected = project_macro_npcs_into_subworld(ecs, mgr_, cx, cy,
         gs.mapW, gs.mapH,
-        cell_seed(gs.worldSeed, cx, cy) ^ kMacroProjectionSalt, &structIndex_);
+        cell_seed(gs.worldSeed, cx, cy) ^ kMacroProjectionSalt,
+        scene_sea_level(), &structIndex_);
     if (projected > 0) {
         char msg[80];
         std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
@@ -1325,6 +1327,14 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     c.cx = f.x; c.cy = f.y;
     c.worldCellsX = terrain_->width; c.worldCellsY = terrain_->height;
     c.macroHeight = f.height01;
+    // THE PLANE CROSSES THE BORDER HERE, and only here. It is a property of the
+    // WORLD, not of this cell, so it comes off the terrain column the same way
+    // `worldCellsX` above does rather than through the per-cell assembler — and
+    // it comes as the BYTE the macroworld judges by (`TerrainData::seaLevel8`,
+    // the sole authority behind `is_water`), normalised once, at the boundary.
+    // Translating here and not in the generator is what keeps this a one-way
+    // narrow channel: below this line the subworld knows a number, not a map.
+    c.seaLevel = world_sea_level();
     // Season shifts ONLY the temperature that drives tree-species selection
     // (foliage turns evergreen/autumn in the cold half of the year). It rides
     // its OWN facts column and is applied at this single sink, so the CPU
@@ -1488,7 +1498,8 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
         const int cy = mgr_.center_cy();
         project_macro_npcs_into_subworld(*ecs_, mgr_, cx, cy,
             gs_->mapW, gs_->mapH,
-            cell_seed(gs_->worldSeed, cx, cy) ^ kMacroProjectionSalt, &structIndex_);
+            cell_seed(gs_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
+            scene_sea_level(), &structIndex_);
     }
 }
 
@@ -3747,7 +3758,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     mgr_.init(ses.doorCx, ses.doorCy, resolver);
     refresh_window_step_weights();
     const CompositeDirty enterDirty = mgr_.consume_composite_dirty_cells();
-    if (dev_) renderer3dVk_.upload(*dev_, mgr_, enterDirty);
+    if (dev_) renderer3dVk_.upload(*dev_, mgr_, enterDirty, scene_sea_level());
     active_ = true;
     pendingUpload3d_ = {};
     structIndexDirty_ = true;
@@ -4362,11 +4373,36 @@ void SubworldEngine::set_flying(bool enabled) {
 // (enter, projection) rather than when it walks, so the probe looks down from
 // the dry-footing ceiling instead of from a pair of feet that has no height
 // yet (sub/height.h).
+// THE SCENE'S SEA PLANE — one expression, and the ONLY place the dungeon's
+// absence of a sea is decided. An interior floor is its cell's own macroHeight,
+// which for a coastal town sits BELOW the world's plane, so a shared plane
+// flooded the room; 0 is beneath every floor that can exist, which retires the
+// whole class of "sea inside a cellar" bugs with one number. A cell scene
+// inherits the macroworld's plane, because «микромир её наследует».
+float SubworldEngine::scene_sea_level() const {
+    if (sceneKind_ == SceneKind::Dungeon)
+        return dungeon_kind_row(dungeon_.ref.kind).waterLevel;
+    return world_sea_level();
+}
+
+// The macro map's own plane, as a number: `TerrainData::seaLevel8` is the byte
+// `is_water` judges by, so normalising it here — and nowhere else — is what makes
+// the two worlds agree on the shore by construction. Defined in the .cpp because
+// the header only forward-declares TerrainData.
+float SubworldEngine::world_sea_level() const {
+    return terrain_ ? float(terrain_->seaLevel8) / 255.0f : WATER_LEVEL;
+}
+
+float SubworldEngine::scene_sea_level_m() const {
+    return sea_level_m(scene_sea_level());
+}
+
 float SubworldEngine::footing_height_m(float x, float y) const {
     float z = renderer3dVk_.sample_height_m(x, y);
     if (!structIndex_.empty()) {
         z = std::max(z, structIndex_.support_at(
-            x, y, player_body_radius(), kSeaLevelM + kDryFootingProbeM,
+            x, y, player_body_radius(),
+            scene_sea_level_m() + kDryFootingProbeM,
             /*stepUp*/0.0f));
     }
     return z;
@@ -4643,7 +4679,8 @@ void SubworldEngine::tick(float dt) {
     }
     if (pendingUpload3d_.any) {
         auto t0 = Clock::now();
-        if (dev_) renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
+        if (dev_) renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_,
+                             scene_sea_level());
         auto t1 = Clock::now();
         upload3dMs = elapsed_ms(t0, t1);
         pendingUpload3d_ = {};
@@ -4940,7 +4977,8 @@ void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
     // writes it queues are recorded by renderer's prepare_frame right below
     // (flush_uploads), so this frame's shadow + main passes read fresh data.
     if (pendingUpload3d_.any) {
-        renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
+        renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_,
+                             scene_sea_level());
         pendingUpload3d_ = {};
     }
     renderer3dVk_.prepare_frame(cmd, ecs_, elapsed_, cam_.pos);
@@ -4990,7 +5028,8 @@ void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
 void SubworldEngine::debug_flush_gpu_uploads() {
     if (!active_ || !dev_) return;
     if (pendingUpload3d_.any) {
-        renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
+        renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_,
+                             scene_sea_level());
         pendingUpload3d_ = {};
     }
     renderer3dVk_.flush_uploads_blocking();
@@ -5022,16 +5061,7 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
          && spellbook_has_sustained(*player_spellbook(*ecs_),
                                     spell_ordinal("haste")));
     const bool flightAura = flying();
-    // An interior has no sea. The world's water plane sits at WATER_LEVEL
-    // (0.40 of the normalised height range) and an interior floor is its
-    // cell's own macroHeight — which for a coastal town is BELOW that, so the
-    // shared plane flooded the room. Heights are normalised [0,1], so 0 is
-    // beneath every floor that can exist: one number retires the whole class
-    // of "sea inside a cellar" bugs.
-    const float waterLevel = sceneKind_ == SceneKind::Dungeon
-        ? dungeon_kind_row(dungeon_.ref.kind).waterLevel
-        : WATER_LEVEL;
-    renderer3dVk_.record_main(cmd, ext, cam_, render_time(), waterLevel,
+    renderer3dVk_.record_main(cmd, ext, cam_, render_time(),
                               &mgr_, ecs_, hasteAura, flightAura,
                               playerX_, playerY_, elapsed_, frameIndex);
 }

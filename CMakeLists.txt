@@ -859,6 +859,16 @@ timaert_test(water_answer_test
         src/macro/tree_layer.cpp
         src/sub/base_generator.cpp)
 
+# ВТОРАЯ ПОЛОВИНА той же плоскости (M-109, П-6): микромир её НАСЛЕДУЕТ. Гоняет
+# настоящий генератор высот без GameState и без рендерера — плоскость входит
+# аргументом, что и есть проверяемая узость канала.
+timaert_test(subworld_sea_plane_test
+    SOURCES
+        src/macro/tree_layer.cpp
+        src/sub/base_generator.cpp
+        src/sub/material.cpp
+        src/sub/tree_atlas.cpp)
+
 # The field stamp reads fertility through the resource-field registry (R2),
 # so spawners.cpp now carries the registry chain (and entt via the
 # macro_stock context envelope).

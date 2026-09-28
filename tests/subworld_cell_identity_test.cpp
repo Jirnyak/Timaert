@@ -55,8 +55,8 @@ std::vector<float> cell_height(int cx, int cy, std::uint32_t worldSeed,
     for (int i = 0; i < 25; ++i) nbB5[i] = biome;
     sm::sub::generate_heightmap(out, kCS, nbH, nbB, nbB5, biome,
                                 sm::sub::cell_seed(worldSeed, cx, cy),
-                                cx * kCS, cy * kCS, nullptr, kWorldCells,
-                                worldSeed);
+                                cx * kCS, cy * kCS, sm::sub::WATER_LEVEL,
+                                nullptr, kWorldCells, worldSeed);
     return out;
 }
 
@@ -206,7 +206,8 @@ int main() {
             std::vector<float> out;
             sm::sub::generate_heightmap(out, kCS, nbH, nbB, nbB5, nbB[4],
                                         sm::sub::cell_seed(worldSeed, cx, cy),
-                                        cx * kCS, cy * kCS, nullptr,
+                                        cx * kCS, cy * kCS,
+                                        sm::sub::WATER_LEVEL, nullptr,
                                         kWorldCells, worldSeed);
             return out;
         };

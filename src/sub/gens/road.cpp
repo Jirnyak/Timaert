@@ -87,7 +87,10 @@ static void add_bridge_segment(SubworldMapData& out, int ax, int ay, int bx, int
     // no sampling of the bed can move it — the old bed-relative lift wobbled
     // by the difference between the generator's exact tile heights and the
     // renderer's 16-tile mesh, which is what built the flight of steps.
-    const float deckTopM = kSeaLevelM + kFreeboardM;
+    // THE SCENE'S water, not a remembered one: a deck is «the water plane plus
+    // a freeboard», so when the plane moves the deck moves with it.
+    const float seaM = sea_level_m(out.waterLevel);
+    const float deckTopM = seaM + kFreeboardM;
     // Where the line runs over LAND the deck is not level but a RAMP falling
     // at a gentle grade, and it ends exactly where it meets the ground — no
     // fixed approach length, no lip to jump: whichever comes first, the bank
@@ -104,7 +107,7 @@ static void add_bridge_segment(SubworldMapData& out, int ax, int ay, int bx, int
         bool anyWet = false;
         for (int i = 0; i <= chords; ++i) {
             wet[std::size_t(i)] =
-                ground_m(float(i) * chordLen) < kSeaLevelM ? 1u : 0u;
+                ground_m(float(i) * chordLen) < seaM ? 1u : 0u;
             anyWet = anyWet || wet[std::size_t(i)] != 0u;
         }
         if (!anyWet) return;  // dry line: the road itself carries it
@@ -311,7 +314,8 @@ static void gen_bridge_crossing(const CellContext& ctx,
     // "Bank" is measured against the DECK's own height, not the waterline, so
     // the two meet by construction: the span begins exactly where the ground
     // has risen to it, which is why no ramp or step is needed at the joint.
-    const float kBankTop01 = (kSeaLevelM + kBridgeFreeboardM) / kHeightScaleM;
+    const float bankTop01 =
+        (sea_level_m(out.waterLevel) + kBridgeFreeboardM) / kHeightScaleM;
     if (out.heightmap.size() != std::size_t(kCellSize) * kCellSize) return;
     const auto height01 = [&](int px, int py) {
         return out.heightmap[std::size_t(py) * kCellSize + px];
@@ -334,7 +338,7 @@ static void gen_bridge_crossing(const CellContext& ctx,
                                       0, kCellSize - 1);
             const int py = std::clamp(int(float(legs[i].y1) + ly * t),
                                       0, kCellSize - 1);
-            if (height01(px, py) < kBankTop01) break;   // the bank ends here
+            if (height01(px, py) < bankTop01) break;   // the bank ends here
             outX = px;
             outY = py;
             any = true;
@@ -449,18 +453,14 @@ void gen_road(const GenInput& in, SubworldMapData& out) {
     const bool spanning = ctx.biome == Biome::Water;
     if (spanning) {
         gen_bridge_crossing(ctx, nbFeature, out);
-        // Under the arches the river is the river. The carved line laid road
-        // tiles across the whole crossing, and the submerged half of them was
-        // a second road lying on the bed — visible through the water beside
-        // its own bridge. The DECK is the road over water; the tiles carry it
-        // only where the ramp has landed on dry ground.
-        if (out.heightmap.size() == out.tiles.size()) {
-            for (std::size_t i = 0; i < out.tiles.size(); ++i) {
-                if (out.tiles[i] == TILE_ROAD && out.heightmap[i] < WATER_LEVEL) {
-                    out.tiles[i] = TILE_WATER;
-                }
-            }
-        }
+        // (The drowned-roadway sweep that used to stand here now runs at the
+        // END of generation — `drown_road_tiles`, gens/dispatch.cpp. It judges
+        // whether a tile is under water, and the road SMOOTHER had not run yet
+        // at this point, so it was judging heights that were still about to
+        // change. Measured on an honest two-bank crossing: four roadway tiles
+        // ended up as much as 0.7 m below the plane and nothing drowned them,
+        // because the one pass that runs later — sync_water_tiles_from_heightmap
+        // — skips built ground by design.)
         scatter_universal_trees(out, kCellSize,
             ctx.cx * kCellSize, ctx.cy * kCellSize,
             nbBiome, nbTreeCount, /*clearRadius*/ 0, ctx.seed);

@@ -28,7 +28,11 @@ using sm::sub::air_transmittance;
 using sm::sub::kAirEFoldM;
 using sm::sub::kAirScaleHeightM;
 using sm::sub::kHeightScaleM;
-using sm::sub::kSeaLevelM;
+// The air law is stated against the DEFAULT world's datum — this witness is
+// about the SHAPE of the integral (thin air over a summit, thick air in a
+// valley), which is a property of the law, not of any one world's sea.
+using sm::sub::kDefaultSeaLevelM;
+constexpr float kSeaLevelM = kDefaultSeaLevelM;
 
 namespace {
 
@@ -65,7 +69,7 @@ int main() {
         int samples = 0;
         float prev = -1.0f;
         for (float d = 100.0f; d <= 200000.0f; d *= 1.5f) {
-            const float t = air_optical_depth(d, kPlainM, kPlainM);
+            const float t = air_optical_depth(d, kPlainM, kPlainM, kSeaLevelM);
             if (t <= prev) worst += 1.0f;
             prev = t;
             ++samples;
@@ -81,7 +85,7 @@ int main() {
         float prev = 1e9f;
         int samples = 0, breaks = 0;
         for (float h = kSeaLevelM; h <= kSummitM; h += 60.0f) {
-            const float t = air_optical_depth(d, kPlainM, h);
+            const float t = air_optical_depth(d, kPlainM, h, kSeaLevelM);
             if (t >= prev) ++breaks;
             prev = t;
             ++samples;
@@ -94,8 +98,8 @@ int main() {
         float mismatches = 0.0f;
         int samples = 0;
         for (float h = kSeaLevelM; h <= kSummitM; h += 120.0f) {
-            const float up   = air_optical_depth(5000.0f, kPlainM, h);
-            const float down = air_optical_depth(5000.0f, h, kPlainM);
+            const float up   = air_optical_depth(5000.0f, kPlainM, h, kSeaLevelM);
+            const float down = air_optical_depth(5000.0f, h, kPlainM, kSeaLevelM);
             if (std::fabs(up - down) > 1e-4f) mismatches += 1.0f;
             ++samples;
         }
@@ -109,9 +113,9 @@ int main() {
         // more accurate of the two, not a different answer.)
         const float eps = 1e-3f * kAirScaleHeightM;   // the guard, in metres
         const float below = air_optical_depth(9000.0f, kPlainM,
-                                              kPlainM + eps * 0.5f);
+                                              kPlainM + eps * 0.5f, kSeaLevelM);
         const float above = air_optical_depth(9000.0f, kPlainM,
-                                              kPlainM + eps * 2.0f);
+                                              kPlainM + eps * 2.0f, kSeaLevelM);
         CHECK(std::fabs(below - above) < 1e-3f * above,
               "the limit branch and the quotient branch agree at the guard");
     }
@@ -126,17 +130,17 @@ int main() {
         // Where the lowland has lost 9/10 of itself.
         float dPlainGone = 0.0f;
         for (float d = 1000.0f; d <= 400000.0f; d += 1000.0f) {
-            if (air_transmittance(d, kPlainM, kPlainM) < 0.10f) {
+            if (air_transmittance(d, kPlainM, kPlainM, kSeaLevelM) < 0.10f) {
                 dPlainGone = d;
                 break;
             }
         }
         CHECK(dPlainGone > 0.0f, "the lowland does dissolve at a finite range");
-        const float summit = air_transmittance(dPlainGone, kPlainM, kSummitM);
+        const float summit = air_transmittance(dPlainGone, kPlainM, kSummitM, kSeaLevelM);
         CHECK(summit > 0.25f,
               "at the range that swallowed the plain, the summit is still there");
         // ...and it is not there forever either, or the air would not be air.
-        CHECK(air_transmittance(6.0f * dPlainGone, kPlainM, kSummitM) < 0.10f,
+        CHECK(air_transmittance(6.0f * dPlainGone, kPlainM, kSummitM, kSeaLevelM) < 0.10f,
               "far enough, the summit goes too — no draw distance, just air");
     }
 
@@ -145,15 +149,15 @@ int main() {
     // and seen from a summit. No code implements this — it must fall out.
     {
         const float d = 100000.0f;                     // 100 macro cells
-        const float fromPlain  = air_transmittance(d, kPlainM, kSummitM);
-        const float fromSummit = air_transmittance(d, kSummitM, kSummitM);
+        const float fromPlain  = air_transmittance(d, kPlainM, kSummitM, kSeaLevelM);
+        const float fromSummit = air_transmittance(d, kSummitM, kSummitM, kSeaLevelM);
         CHECK(fromSummit > 2.0f * fromPlain,
               "climbing a summit MORE THAN DOUBLES what the far ridge shows");
     }
 
     // ── 5. THE OFF STATE, AND THE NEGATIVE CONTROL ────────────────────────
     // A ray of no length takes no air — the identity the harness leans on.
-    CHECK(air_transmittance(0.0f, kPlainM, kPlainM) > 0.999f,
+    CHECK(air_transmittance(0.0f, kPlainM, kPlainM, kSeaLevelM) > 0.999f,
           "zero distance takes nothing");
     {
         // The detector itself: a UNIFORM air (the model this replaced) fails
@@ -164,8 +168,8 @@ int main() {
         const float uniformHigh = d / kAirEFoldM;
         CHECK(uniformLow == uniformHigh,
               "control: uniform air is blind to altitude (what we replaced)");
-        CHECK(air_optical_depth(d, kPlainM, kSummitM)
-                  < air_optical_depth(d, kPlainM, kPlainM),
+        CHECK(air_optical_depth(d, kPlainM, kSummitM, kSeaLevelM)
+                  < air_optical_depth(d, kPlainM, kPlainM, kSeaLevelM),
               "control: the new air is NOT blind to it");
     }
 

@@ -157,7 +157,8 @@ void expected_edge_anchor(const sm::sub::CellContext& ctx, int dx, int dy,
 // deck free.
 //
 // The DECK IS LEVEL, at one world height for every span everywhere
-// (kSeaLevelM + freeboard), because the water it clears is one height —
+// (the scene's water plane + freeboard), because the water it clears is one
+// height —
 // owner, 2026-08-30, on the stepped deck he had to jump up: «у нас вода
 // одной высоты, почему тогда высота моста скачет». So a deck states its
 // span in WORLD metres (Structure::zWorld) instead of lifting off the bed:
@@ -177,6 +178,10 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
     static_assert(structure_material(Structure::Bridge)
                       == StructureKindRow::Material::Stone,
                   "the owner asked for masonry");
+    // THE SCENE'S water, from the scene — the deck's whole law is stated
+    // relative to it, so a witness that used a constant here would pass on a
+    // world whose sea has moved and the bridge has not.
+    const float seaM = sea_level_m(map.waterLevel);
     const float sx = bx - ax;
     const float sy = by - ay;
     const float spanLen = std::sqrt(sx * sx + sy * sy);
@@ -217,8 +222,8 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
             return fail("a deck stands at a world level, not on the bed");
         }
         const float projD = ((s.x - ax) * sx + (s.y - ay) * sy) / spanLen;
-        if (seatM < kSeaLevelM) {
-            if (z1 < kSeaLevelM) {
+        if (seatM < seaM) {
+            if (z1 < seaM) {
                 return fail("a deck top below the water plane is not a bridge");
             }
             wetDeckTops.emplace_back(projD, z1);
@@ -281,7 +286,7 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
         const int ty = std::clamp(int(ay + sy * t), 0, kCellSize - 1);
         const float g =
             map.heightmap[std::size_t(ty) * kCellSize + tx] * kHeightScaleM;
-        if (g >= kSeaLevelM - 0.5f) continue;
+        if (g >= seaM - 0.5f) continue;
         ++wetSamples;
         bool covered = false;
         for (const auto& iv : deckSpans) {
@@ -880,9 +885,17 @@ int main() {
     // east neighbours stand above the sea and the terrain descends into the
     // river inside the cell. That is what gives the span two shores to arch
     // between and two ramps to land on.
+    //
+    // A BANK IS LAND, AND IT HAS TO SAY SO. Raising the height alone left these
+    // two neighbours classified Water at 0.62 — a combination the world cannot
+    // produce (macro/map_generator.h is_water: a cell is water exactly when its
+    // height is below the plane, and rivers are carved below it). The height law
+    // obeyed the lie and squared them up to 0.96, so the "banks" were domes
+    // built out of the very arithmetic M-109 retired. A fixture that can only
+    // exist while a bug does is not a witness to any law (AGENTS §8 п.5).
     for (int i = 0; i < 9; ++i) nbH[i] = 0.30f;
-    nbH[3] = 0.62f;   // west bank
-    nbH[5] = 0.62f;   // east bank
+    nbH[3] = 0.62f;   nbB[3] = Meadow;   // west bank
+    nbH[5] = 0.62f;   nbB[5] = Meadow;   // east bank
     nbF[3] = std::uint8_t(FT_Road);
     nbF[5] = std::uint8_t(FT_Road);
 
@@ -954,10 +967,12 @@ int main() {
     // diagonally, macro/pathfinding.h waterCrossAxes); everything else meets
     // that span at its nearest DRY point.
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
+    // Land banks say they are land — see the through-road fixture above for why
+    // a raised Water cell is a world that cannot exist.
     for (int i = 0; i < 9; ++i) nbH[i] = 0.30f;
-    nbH[3] = 0.62f;                        // west bank
-    nbH[5] = 0.62f;                        // east bank
-    nbH[7] = 0.62f;                        // south shore, carrying a road past
+    nbH[3] = 0.62f;  nbB[3] = Meadow;      // west bank
+    nbH[5] = 0.62f;  nbB[5] = Meadow;      // east bank
+    nbH[7] = 0.62f;  nbB[7] = Meadow;      // south shore, carrying a road past
     nbF[3] = std::uint8_t(FT_Road);
     nbF[5] = std::uint8_t(FT_Road);
     nbF[7] = std::uint8_t(FT_Road);        // the passer-by
@@ -1074,9 +1089,9 @@ int main() {
         mountainNbB[i] = Mountain;
     }
     generate_heightmap(directPlainsHeightmap, 32, directNbH, plainsNbB, /*nbBiome5*/nullptr,
-                       Meadow, grass.seed);
+                       Meadow, grass.seed, 0, 0, grass.seaLevel);
     generate_heightmap(directMountainHeightmap, 32, directNbH, mountainNbB, /*nbBiome5*/nullptr,
-                       Mountain, grass.seed);
+                       Mountain, grass.seed, 0, 0, grass.seaLevel);
     const auto vertical_range = [](const std::vector<float>& hm) {
         float lo = 99.0f, hi = -99.0f;
         for (const float h : hm) {

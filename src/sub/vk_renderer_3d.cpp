@@ -89,7 +89,19 @@ struct MeshPush {
     // which is how the harness (and a frame before the stamp pipeline
     // exists) opts the whole term out.
     float camPos[4];
+    // THE SHORE BAND — and it is TWO values, not a duplicated threshold
+    // (owner's verdict, 2026-09-27). x = the SCENE'S SEA PLANE, normalised: the
+    // band's lower end is the waterline itself, so it moves with the world's
+    // sea. y = the WIDTH of the band, the gentle descent over which discrete
+    // macro cells are stitched into the subworld's smooth surface — «берег был
+    // плавный к линии воды даже на клеточке воды». The width is authored, not
+    // derived, and it does not move when the plane does. zw unused.
+    float shore[4];
 };
+// 208 bytes (13 × vec4), inside MoltenVK's ≥256 B push-constant floor — the
+// same ceiling SkyPush's 224 B is measured against.
+static_assert(sizeof(MeshPush) == 208,
+              "MeshPush must stay inside the 256 B push-constant floor");
 
 // Push-constant block for the procedural sky — matches sky.frag.
 // 224 bytes (= 14 × vec4), within MoltenVK's ≥256 B limit. Filled verbatim
@@ -1348,6 +1360,11 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
 
     sub::FarCellGrid grid;
     grid.radiusCells = kFarCellRadius;
+    // THE HORIZON'S SEA IS THE ONE YOU WALK TO. The far sheet floors its seabed
+    // against the same plane the near generator remaps about, or the coastline
+    // on the horizon sits at a different height than the coastline under your
+    // feet — the one thing CANON S18.1 forbids outright.
+    grid.seaLevel = seaLevel01_;
     const int n = grid.span();
     grid.cells.assign(std::size_t(n) * std::size_t(n), sub::FarCellColumn{});
     const std::uint8_t* biomeMat = sub::biome_ground_materials();
@@ -1395,11 +1412,12 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             if (y > 0)     maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i - std::size_t(n)]));
             if (y + 1 < n) maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i + std::size_t(n)]));
             col.gradient01 = maxDiff;
-            col.skel01 = sub::skeleton_cell_height01(heights[i], water, mtn);
+            col.skel01 = sub::skeleton_cell_height01(heights[i], water, mtn,
+                                                     seaLevel01_);
             col.peak01 = sub::skeleton_cell_peak01(
                 heights[i], water, mtn, adj,
                 camCx + x - kFarCellRadius, camCy + y - kFarCellRadius,
-                worldSeed);
+                worldSeed, seaLevel01_);
             col.ridgeW = mtn ? 1.0f : 0.0f;
             col.waterW = water ? 1.0f : 0.0f;
             col.material = biomeMat[std::size_t(b)];
@@ -1491,7 +1509,10 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
 }
 
 void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr,
-                          const CompositeDirty& dirty) {
+                          const CompositeDirty& dirty, float seaLevel) {
+    // Cached BEFORE anything is built: the far sheet below floors its seabed
+    // against it, so it has to be true by the time rebuild_far_world runs.
+    seaLevel01_ = seaLevel;
     // THE FAR WORLD first: it is a function of which macro cell the window is
     // centred on, and that is exactly what a seam crossing changes.
     rebuild_far_world(dev, mgr);
@@ -1753,7 +1774,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     // bounds (base_generator.cpp peakHeight[]).
                     float h01 = skeleton_cell_height01(
                         c.macroHeight, c.biome == Biome::Water,
-                        c.biome == Biome::Mountain);
+                        c.biome == Biome::Mountain, c.seaLevel);
                     if (c.biome == Biome::Mountain)
                         h01 = std::clamp(h01, 0.80f, 1.04f);
                     cellM[gy * kGridW + gx] = h01 * kHeightScaleM;
@@ -2289,7 +2310,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
                 const float baseM = sample_height_m(s.x, s.y);
-                if (baseM < kSeaLevelM - 0.5f) continue;
+                if (baseM < sea_level_m(seaLevel01_) - 0.5f) continue;
                 // Stable hash for seed (same as GL renderer).
                 const float absX = float((mgr.center_cx() - 1) * kCellSize) + s.x;
                 const float absY = float((mgr.center_cy() - 1) * kCellSize) + s.y;
@@ -2369,7 +2390,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 // also be drawn. A fully submerged solid still skips.
                 float spanZ0, spanZ1;
                 structure_solid_span(s, baseM, spanZ0, spanZ1);
-                if (spanZ1 < kSeaLevelM - 0.5f) {
+                if (spanZ1 < sea_level_m(seaLevel01_) - 0.5f) {
                     continue;
                 }
                 float wx, wz;
@@ -3050,7 +3071,6 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
 // ──────────────────────────────────────────────────────────────────────
 void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                const Camera& cam, const WorldTime& time,
-                               float waterLevel,
                                const SeamlessSubworldManager* /*mgr*/,
                                ecs::World* ecs, bool /*haste*/,
                                bool /*flight*/, float /*px*/, float /*py*/,
@@ -3200,6 +3220,16 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }
 
+    // THE SCENE'S water, cached at upload — one value for the shore band, the
+    // drowned-prop cull and the water plane itself.
+    const float waterLevel = seaLevel01_;
+    // THE WIDTH OF THE GENTLE DESCENT to the waterline, in normalised height.
+    // Owner's verdict, 2026-09-27: this is NOT a second threshold but the band
+    // over which a DISCRETE macro cell is stitched into the subworld's SMOOTH
+    // surface, «чтобы берег был планвый к линии воды даже на клточке воды».
+    // Authored, and changed only on the owner's stand.
+    constexpr float kShoreBandWidth = 0.07f;
+
     // ── A1: Terrain mesh ──
     MeshPush push{};
     std::memcpy(push.mvp, mvp.m, sizeof(push.mvp));
@@ -3228,6 +3258,8 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     push.camPos[1] = cam.pos.y;
     push.camPos[2] = cam.pos.z;
     push.camPos[3] = (stampPipe_.pipeline != VK_NULL_HANDLE) ? 500.0f : 0.0f;
+    push.shore[0] = waterLevel;
+    push.shore[1] = kShoreBandWidth;
 
     // ── A0: THE FAR WORLD, before the composite (CANON S18.1) ──
     // Where they overlap the near ground wins on depth, and that is the right
@@ -3682,7 +3714,7 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     // and the datum it is measured from. The shader gets the datum rather than
     // echoing it as a literal so sub/height.h stays the one vertical authority.
     buf->airParams[0] = 1.0f / kAirScaleHeightM;
-    buf->airParams[1] = kSeaLevelM;
+    buf->airParams[1] = sea_level_m(seaLevel01_);
     buf->airParams[2] = 0.0f;
     buf->airParams[3] = 0.0f;
     // The wide shadow level's matrix, computed by record_shadow just before

@@ -394,7 +394,8 @@ void test_a_squad_on_the_map_projects_its_roster() {
     // centre the window there.
     const int projected = sub::project_macro_npcs_into_subworld(
         world, ground, /*centerCx*/10, /*centerCy*/12,
-        /*mapW*/64, /*mapH*/64, /*seed*/5u);
+        /*mapW*/64, /*mapH*/64, /*seed*/5u,
+        sm::sub::WATER_LEVEL);
     CHECK(projected == 3,
           "a squad of three projects three bodies: the leader and both members");
 

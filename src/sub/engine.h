@@ -401,6 +401,17 @@ public:
     // ground the only thing there is to stand on (a bridge deck and a wall
     // walk are floors too).
     float footing_height_at(float x, float y) const { return footing_height_m(x, y); }
+    // ── THE SCENE'S SEA PLANE, AND THE ONE PLACE THAT DECIDES IT ──────────
+    // «У нас фиксированная плоскость УРОВЕНЬ моря на весь макромир и микромир
+    // её наследует» (owner, 2026-09-27). `world_sea_level` is what the macro map
+    // judges water by — its own byte, normalised at the border and nowhere else.
+    // `scene_sea_level` is what THIS scene answers with, and the dungeon branch
+    // lives here, once: an interior has no sea, so it states 0, which is beneath
+    // every floor that can exist. Everything that used to spell either as a
+    // constant now asks one of these two.
+    float world_sea_level() const;
+    float scene_sea_level() const;
+    float scene_sea_level_m() const;   // = sea_level_m(scene_sea_level())
     // Integral id (index+version) of the subworld player entity carrying
     // AvatarTag — stamps player-cast spell projectiles with a real owner
     // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the

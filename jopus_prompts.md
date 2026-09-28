@@ -703,7 +703,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 «кладбище по фенсу» — образец дисциплины.
 
 **3. Хирургическая правка.** Ровно тот же приём, что у светового SSBO:
-- Было: `gpu::VulkanBuffer farVtx_{}, farIdx_{};` (`vk_renderer_3d.h:209-210`).
+- Было: `gpu::VulkanBuffer farVtx_{}, farIdx_{};` (`vk_renderer_3d.h:216-217`).
   Стало: `std::array<gpu::VulkanBuffer, kFramesInFlight> farVtx_{}, farIdx_{};`
   + `std::uint32_t farWriteSlot_` (в какой слот писал последний rebuild) —
   или проще и честнее: rebuild пишет в слот `(currentFrame)`, который

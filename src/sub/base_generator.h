@@ -8,41 +8,25 @@
 namespace sm::sub
 {
 
-    // Single source of truth for sea level / subworld water plane.
-    // ----------------------------------------------------------------
-    // `WATER_LEVEL`  Heightmap value of the water surface. Used by:
-    //   - `generate_heightmap` to remap macro heights (water cells map to
-    //     [0, WATER_LEVEL] via squared deep-ocean curve; land cells map
-    //     to [WATER_LEVEL + kLandMargin, 1.0]).
-    //   - `renderer_3d` for structure-cull threshold.
-    //   - `engine` for the visible water plane (`kVisualWaterLevel`).
-    // Anything that touches "the water surface" reads this constant.
+    // THE PLANE ITSELF LIVES IN map_data.h — beside the two structs that own
+    // it (`CellContext::seaLevel` carries it into generation,
+    // `SubworldMapData::waterLevel` is the finished scene's answer). This file
+    // holds the LAWS that consume it, and every one of them takes the plane as
+    // an ARGUMENT rather than reading a constant.
     //
-    // `kMacroSeaLevel`  Fixed at 0.40 to match the macroworld generator's
-    //   seaLevel (`map_generator.cpp`, TS `defaultParameters.seaLevel`).
-    //   This is where biome assignment flips Water ↔ Land in macro space
-    //   and is independent of the subworld water plane.
-    //
-    // `kLandMargin`  Minimum elevation of a land cell's shoreline above
-    //   WATER_LEVEL in the remap. Without it, just-above-sea land maps
-    //   to exactly WATER_LEVEL, and bilinear blend with adjacent water
-    //   cells (whose remap can reach 0) drags the corner below the
-    //   plane → submerged shores and submerged pure-land cells. TS
-    //   hides this with a single-cell render; the C++ port renders the
-    //   full 3×3 grid (12 internal seams) so the margin is required.
-    //   Kept small (0.02) for a gentle, natural beach lift, not a
-    //   dramatic cliff.
-    constexpr float WATER_LEVEL    = 0.40f;
-    constexpr float kMacroSeaLevel = 0.40f;
-    constexpr float kLandMargin    = 0.02f;
-
-    // `kWetEdgeTop`  Top of the WET EDGE above the waterline: ground below it
-    //   is soaked — shore tiles get painted, fields refuse the plough. One
-    //   value for both, or the beach and the ploughland disagree about where
-    //   the water's reach ends. NOT kLandMargin: that one lifts a land cell's
-    //   REMAP so seam blends cannot sink it; this one classifies final ground
-    //   height, and the two move for different reasons.
-    constexpr float kWetEdgeTop    = WATER_LEVEL + 0.022f;
+    // That is not style. The plane used to be spelled twice here — `WATER_LEVEL`
+    // for the subworld's water surface and `kMacroSeaLevel` for "where macro
+    // flips Water ↔ Land" — both hardcoded 0.40, both claiming to be
+    // independent of the other. They never were: the remap below divides by one
+    // and multiplies by the other, so they are the SAME number wearing two
+    // names, and the macroworld's plane is an editor value the player moves
+    // (`LayerParameters::seaLevel`, slider 0.10..0.80). Measured on the owner's
+    // stand at 0.60: a water cell legally carries macroH up to 0.60, so
+    // `t = macroH / 0.40` reached 1.5 (there was no upper clamp) and the water
+    // BED came out at 1.5² × 0.40 = 0.90 while the visible plane still drew at
+    // 0.40 — water buried under its own hills, «воды вообще не видно». Below
+    // 0.40 the same arithmetic fails the other way and drowns the land. One
+    // number, one argument, and both directions retire together.
 
     // THE cell-skeleton height law (normalised 0..1): the deterministic
     // per-cell column the generator bilinears into its macro manifold BEFORE
@@ -56,16 +40,36 @@ namespace sm::sub
     // that ridge block the sun", and it is the level real in-window ridges
     // reach, so a massif sliding from apron to window changes its cast
     // shadow least.
+    //
+    // `seaLevel` is the SCENE'S plane (CellContext::seaLevel), inherited from
+    // the macroworld's own — the law has no plane of its own to fall back on,
+    // deliberately: a default here is how the two worlds drifted apart in the
+    // first place.
     inline float skeleton_cell_height01(float macroH, bool isWater,
-                                        bool isMountain) {
+                                        bool isMountain, float seaLevel) {
         if (isWater) {
-            const float t = std::max(0.0f, macroH / kMacroSeaLevel);
-            return t * t * WATER_LEVEL;
+            // t = 1 at the shoreline, 0 in the deep; squared, so deep water
+            // sits well below the plane. A REAL water cell's macroH runs
+            // [0, seaLevel) — that is what makes it water (macro/map_generator.h
+            // is_water) — so t stays inside [0,1) and the bed stays under the
+            // surface without being told to.
+            //
+            // NO UPPER CLAMP, deliberately. A caller CAN hand this a height the
+            // plane calls land while asserting the cell is water — a hand-built
+            // fixture does exactly that — and then t exceeds 1 and the bed
+            // climbs above the water. Clamping would hide that at the point of
+            // READING instead of at the point of birth (AGENTS §5 п.3), and it
+            // is not what the owner's 0.60 report needed: with the plane
+            // INHERITED the case cannot arise from a real world at all. The
+            // streaming placeholder used to clamp here and the generator did
+            // not; they are one door now, and the door does not clamp.
+            const float t = std::max(0.0f, macroH / seaLevel);
+            return t * t * seaLevel;
         }
         if (isMountain) return 0.80f + macroH * 0.15f;
-        constexpr float kLandFloor = WATER_LEVEL + kLandMargin;
-        const float landScale = (1.0f - kLandFloor) / (1.0f - kMacroSeaLevel);
-        return kLandFloor + (macroH - kMacroSeaLevel) * landScale;
+        const float landFloor = seaLevel + kLandMargin;
+        const float landScale = (1.0f - landFloor) / (1.0f - seaLevel);
+        return landFloor + (macroH - seaLevel) * landScale;
     }
 
     // The crest's per-cell jitter — hash noise of the cell's own PLACE and the
@@ -88,20 +92,24 @@ namespace sm::sub
     inline float skeleton_cell_peak01(float macroH, bool isWater,
                                       bool isMountain, int adjMountain,
                                       int cellGX, int cellGY,
-                                      std::uint32_t worldSeed) {
+                                      std::uint32_t worldSeed, float seaLevel) {
         const float jitter = crest_jitter01(cellGX, cellGY, worldSeed) - 0.5f;
         if (isMountain) {
             // Crest base from the skeleton law; jitter and the neighbour-massif
             // lift are the crest's own on top.
-            return std::clamp(skeleton_cell_height01(macroH, false, true)
+            return std::clamp(skeleton_cell_height01(macroH, false, true,
+                                                    seaLevel)
                                   + float(adjMountain) * 0.02f
                                   + jitter * 0.045f,
                               0.80f, 1.04f);
         }
-        return std::clamp(skeleton_cell_height01(macroH, isWater, false)
+        // The crest floor is the plane plus a WIDTH: a non-mountain cell's
+        // ridges aim at least this far above the water, whatever the water is.
+        return std::clamp(skeleton_cell_height01(macroH, isWater, false,
+                                                 seaLevel)
                               + 0.07f + float(adjMountain) * 0.015f
                               + jitter * 0.03f,
-                          WATER_LEVEL + 0.10f, 1.05f);
+                          seaLevel + 0.10f, 1.05f);
     }
 
     // THE MOUNTAIN SILHOUETTE — and THE far world's, because it is the same
@@ -119,9 +127,11 @@ namespace sm::sub
     // `ridgeWeight` are the cell columns blended at this tile; `gx, gy` are
     // WORLD TILE coordinates (wrapped by the caller — the noise closes on
     // `worldTiles` and a tile is its place).
+    // `seaLevel` floors the valley between the ridges: a massif's basin may sit
+    // lower than the plain around it, never below the water.
     float mountain_ridges01(float h, int gx, int gy, float macroH,
                             float peakTarget, float ridgeWeight,
-                            float worldTiles, bool coarseOnly);
+                            float worldTiles, bool coarseOnly, float seaLevel);
 
     // THE GROUND'S OWN DETAIL, and the law of WHICH octaves a mesh may carry.
     //
@@ -158,6 +168,7 @@ namespace sm::sub
     // for every vertex.
     inline float far_height01(int gx, int gy, float macroH01, float peak01,
                               float ridgeWeight, float worldTiles,
+                              float seaLevel,
                               float gradient01 = 0.0f,
                               float heightScale = 0.0f,
                               float mtnScale = 0.0f,
@@ -177,7 +188,7 @@ namespace sm::sub
         if (ridgeWeight <= 0.01f) return std::clamp(h, 0.0f, 2.0f);
         return std::clamp(mountain_ridges01(h, gx, gy, macroH01, peak01,
                                             ridgeWeight, worldTiles,
-                                            /*coarseOnly=*/true),
+                                            /*coarseOnly=*/true, seaLevel),
                           0.0f, 2.0f);
     }
 
@@ -191,7 +202,11 @@ namespace sm::sub
         // and stored verbatim in Structure::height.
         float treeMinHeightM, treeMaxHeightM;
         float heightScale;
-        float waterLevel;
+        // NO `waterLevel` COLUMN. All eleven rows held the same number, and
+        // ELEVEN COPIES OF ONE NUMBER ARE NOT A COLUMN (DOD p.9): it had zero
+        // readers — the scene's plane comes from `SubworldMapData::waterLevel`,
+        // a dungeon's from its own kind row. A biome does not get to decide
+        // where the sea is; the world does.
         bool swampPools;
         bool duneNoise;
     };
@@ -236,8 +251,10 @@ namespace sm::sub
     // Build a kCellSize² heightmap using neighbour-aware blending. `nbHeights`
     // is 9 macro heights in row-major order [NW, N, NE, W, C, E, SW, S, SE];
     // `nbBiome` is 9 matching biome enums (Biome::Mountain drives ridges).
-    // Heights are remapped per-cell with the seaLevel/WATER_LEVEL split (water
-    // cells get a squared deep-ocean curve, land cells get a linear lift) and
+    // Heights are remapped per-cell about `seaLevel` — THE SCENE'S PLANE,
+    // inherited from the macroworld (CellContext::seaLevel), never a constant of
+    // this layer (water cells get a squared deep-ocean curve, land cells get a
+    // linear lift) and
     // then bilinearly blended into a smooth manifold — this single pass
     // produces natural shorelines, river banks for single-cell water, and
     // gradients from plains to foothills to peaks. No post-clamping.
@@ -270,8 +287,24 @@ namespace sm::sub
                             const Biome* nbBiome5,
                             Biome biome,
                             std::uint32_t seed,
-                            int globalOffsetX = 0,
-                            int globalOffsetY = 0,
+                            int globalOffsetX,
+                            int globalOffsetY,
+                            // THE SCENE'S SEA PLANE, normalised — inherited from
+                            // the macroworld through CellContext::seaLevel.
+                            //
+                            // No default, and IN THIS POSITION on purpose. A
+                            // default is how the subworld came to remap about
+                            // its own 0.40 while the map's plane sat elsewhere.
+                            // The position is the other half of the guard:
+                            // sitting before a POINTER, an omitted plane cannot
+                            // be satisfied by anything, so every stale
+                            // positional call fails to COMPILE. Put between
+                            // `biome` and `seed` it was silently satisfied by
+                            // the seed itself — the call built, the world
+                            // remapped about 12345, and only a downstream mesh
+                            // test noticed (caught exactly that way,
+                            // 2026-09-27).
+                            float seaLevel,
                             const TerrainMod *nbMods = nullptr,
                             // The world's width in CELLS. Every global-coordinate
                             // noise below closes on it, so the ground meets

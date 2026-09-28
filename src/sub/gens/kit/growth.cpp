@@ -70,9 +70,14 @@ Outline grow_outline(const SubworldMapData& out, float cx, float cy,
             const std::size_t t = tile_of(gx, gy);
 
             // Wet ground is not built on. The mason refuses exactly what the
-            // plough refuses (base_generator.h kWetEdgeTop), which is what puts
-            // a town on the bank rather than in the water.
-            if (hm[t] < kWetEdgeTop) { forbidden[i] = 1; continue; }
+            // plough refuses (map_data.h wet_edge_top), which is what puts
+            // a town on the bank rather than in the water. The reach follows
+            // the SCENE's plane — a town on a world with a high sea stands
+            // back from that sea, not from a remembered 0.40.
+            if (hm[t] < wet_edge_top(out.waterLevel)) {
+                forbidden[i] = 1;
+                continue;
+            }
 
             // Slope, in metres per metre, priced by the one law (streets.h).
             const int tx = std::min(kCellSize - 2, std::max(1, x0 + gx * kStep));

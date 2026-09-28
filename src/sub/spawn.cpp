@@ -43,14 +43,15 @@ constexpr float kBodyWanderSpeedFraction = 0.35f;
 // this says what would hold a body up regardless of it — a bridge deck, a
 // jetty, a wall walk. Without an index the answer is honestly "no", which is
 // the old tile-only behaviour, unchanged.
-bool carried_above_water(const StructureIndex* solids, float x, float y) {
+bool carried_above_water(const StructureIndex* solids, float x, float y,
+                         float seaLevelM) {
     if (!solids || solids->empty()) return false;
     // Probe from above with no step allowance: the highest solid top under
     // the probe ceiling, whatever it belongs to.
     const float top = solids->support_at(x, y, kNpcBodyRadiusDefault,
-                                         kSeaLevelM + kDryFootingProbeM,
+                                         seaLevelM + kDryFootingProbeM,
                                          /*stepUp*/0.0f);
-    return is_dry_footing(top);
+    return is_dry_footing(top, seaLevelM);
 }
 
 // The face of a DERIVED body: appearance and name rolled from its seed, never
@@ -1403,19 +1404,20 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed,
+                                     std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids) {
     return project_macro_npcs_into_subworld(w, mgr.tiles(), centerCx, centerCy,
-                                            mapW, mapH, seed, solids);
+                                            mapW, mapH, seed, seaLevel, solids);
 }
 
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed,
+                                     std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids) {
     auto& reg = w.reg;
+    const float seaM = sea_level_m(seaLevel);
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
 
@@ -1518,7 +1520,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             if (ix < 0 || ix >= kFullSize || iy < 0 || iy >= kFullSize) continue;
             if (tilesUsable &&
                 tiles[std::size_t(iy) * kFullSize + ix] == TILE_WATER
-                && !carried_above_water(solids, tx, ty)) {
+                && !carried_above_water(solids, tx, ty, seaM)) {
                 continue;
             }
             fx = tx; fy = ty;

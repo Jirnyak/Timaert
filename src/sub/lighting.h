@@ -19,7 +19,7 @@
 #include "macro/biomes.h"   // kMountainBiomeLevel — the air's scale height
 #include "macro/celestial.h"
 #include "macro/state.h"
-#include "sub/height.h"     // kHeightScaleM / kSeaLevelM — the air's datum
+#include "sub/height.h"     // kHeightScaleM / sea_level_m — the air's datum
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -132,7 +132,7 @@ struct GpuLightBuffer {
                                     //       the absolute synth coord;
                                     // w = `grounddbg` bisect mask (0 = off)
     float         airParams[4];     // x = 1 / scale height (1/m),
-                                    // y = sea-level datum (m; kSeaLevelM),
+                                    // y = sea-level datum (m; the scene's),
                                     // zw = free (the far world takes them)
     float         lightMvpFar[16];
     GpuLight      lights[kSubworldMaxLights];
@@ -303,7 +303,7 @@ inline LightParameters compute_light_parameters(int day, float tod) {
 //     tau = d/D0 * f,   f = H/(h1-h0) * (exp(-h0/H) - exp(-h1/H))
 //                       f = exp(-h0/H)                  (limit h1 -> h0)
 //
-// with h measured from kSeaLevelM. f is the ray's MEAN density in sea-level
+// with h measured from the scene's datum. f is the ray's MEAN density in sea-level
 // units, so a ray up to a summit travels thin air and a ray along a valley
 // travels thick air over the very same distance. That is the whole point: the
 // ridge floats over a sea of haze, and climbing one opens the world — with no
@@ -334,9 +334,19 @@ constexpr float kAirEFoldM = 16384.0f;
 // has no g and no lapse rate; the air is scaled to the relief it stands over.
 constexpr float kAirScaleHeightM =
     (1.0f - kMountainBiomeLevel) * kHeightScaleM;
-static_assert(kAirScaleHeightM > 0.0f && kAirScaleHeightM < kSeaLevelM,
-              "the dense air must be a layer INSIDE the world's relief: "
-              "taller than nothing, shorter than the sea-level datum itself");
+// The dense air must be a LAYER, so the scale height has to be positive — that
+// half is a domain guard on the division below and holds for every world.
+static_assert(kAirScaleHeightM > 0.0f,
+              "the dense air must be a layer: taller than nothing");
+// The other half — that the layer is shorter than the datum it is measured from
+// — is a statement about the DEFAULT world, and can only be one now that the
+// datum follows the scene (owner, 2026-09-27). At the slider's low end (plane
+// 0.10 → datum 150 m) the lowland genuinely lives in thicker air than it does
+// at 0.40, and that is the world being different, not the maths breaking: the
+// integral is finite and signed for any altitude either side of the datum.
+static_assert(kAirScaleHeightM < kDefaultSeaLevelM,
+              "in the DEFAULT world the dense air is a layer inside the relief, "
+              "shorter than the sea-level datum itself");
 
 // THE OPTICAL DEPTH of a ray, and the CPU mirror of what lighting.glsl's
 // `aerial_perspective` computes — the same relationship `biome_at` has to the
@@ -348,9 +358,10 @@ static_assert(kAirScaleHeightM > 0.0f && kAirScaleHeightM < kSeaLevelM,
 // `distanceM` is the ray's length; `eyeM` / `surfaceM` are the two endpoints'
 // ABSOLUTE altitudes (the space sub/height.h layer 2 defines, the space the
 // camera Y and vWorld.y already live in).
-inline float air_optical_depth(float distanceM, float eyeM, float surfaceM) {
-    const float a0 = (eyeM     - kSeaLevelM) / kAirScaleHeightM;
-    const float a1 = (surfaceM - kSeaLevelM) / kAirScaleHeightM;
+inline float air_optical_depth(float distanceM, float eyeM, float surfaceM,
+                               float seaLevelM) {
+    const float a0 = (eyeM     - seaLevelM) / kAirScaleHeightM;
+    const float a1 = (surfaceM - seaLevelM) / kAirScaleHeightM;
     const float da = a1 - a0;
     // The mean of exp(-a) along the segment. The guard is a FLOAT guard, not a
     // maths one — see the same lines in lighting.glsl for why 1e-3 and not 0.
@@ -362,8 +373,9 @@ inline float air_optical_depth(float distanceM, float eyeM, float surfaceM) {
 
 // How much of a surface survives the air between it and the eye. 1 = nothing
 // taken, 0 = pure haze.
-inline float air_transmittance(float distanceM, float eyeM, float surfaceM) {
-    return std::exp(-air_optical_depth(distanceM, eyeM, surfaceM));
+inline float air_transmittance(float distanceM, float eyeM, float surfaceM,
+                               float seaLevelM) {
+    return std::exp(-air_optical_depth(distanceM, eyeM, surfaceM, seaLevelM));
 }
 
 // THE AIR'S OWN COLOUR. Two derivations, one line.

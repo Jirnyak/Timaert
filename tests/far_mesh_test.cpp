@@ -46,9 +46,10 @@ FarCellGrid make_grid(int radius, std::uint32_t worldSeed) {
                           && std::abs(cx - kCamCx) <= radius / 2;
             const float macroH = mtn ? 0.88f : 0.55f;
             FarCellColumn c{};
-            c.skel01 = skeleton_cell_height01(macroH, false, mtn);
+            c.skel01 = skeleton_cell_height01(macroH, false, mtn,
+                                              WATER_LEVEL);
             c.peak01 = skeleton_cell_peak01(macroH, false, mtn, mtn ? 2 : 0,
-                                            cx, cy, worldSeed);
+                                            cx, cy, worldSeed, WATER_LEVEL);
             c.ridgeW = mtn ? 1.0f : 0.0f;
             c.material = biomeMat[std::size_t(mtn ? Biome::Mountain
                                                   : Biome::Meadow)];
@@ -133,7 +134,8 @@ int main() {
                 const int gz = wrapi(kCamCy * kCellSize + int(std::floor(wz)),
                                      int(worldTiles));
                 const float expect =
-                    far_height01(gx, gz, skel, peak, ridge, worldTiles)
+                    far_height01(gx, gz, skel, peak, ridge, worldTiles,
+                                 grid.seaLevel)
                     * kHeightScaleM;
                 const float got = mesh.vtx[std::size_t(iz) * std::size_t(dim)
                                            + std::size_t(ix)].py;

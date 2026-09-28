@@ -149,7 +149,8 @@ void gen_field(const GenInput& in, SubworldMapData& out) {
     constexpr float kWallShare    = 0.55f;
     constexpr float kWallCrossGap = 7.0f;
     // Per-tile plough gates — same idioms as everywhere; the wet gate is THE
-    // shared kWetEdgeTop (base_generator.h), the shore law's own line.
+    // shared wet_edge_top (map_data.h), the shore law's own line, measured
+    // from the scene's own plane.
     constexpr float kFieldMaxSlope = 0.36f;
 
     const int gox = ctx.cx * kCellSize;
@@ -208,7 +209,7 @@ void gen_field(const GenInput& in, SubworldMapData& out) {
                            || fr.lane < kDistrictLaneHalf;
 
             const std::size_t idx = std::size_t(y) * kCellSize + x;
-            if (out.heightmap[idx] < kWetEdgeTop) continue;
+            if (out.heightmap[idx] < wet_edge_top(out.waterLevel)) continue;
             const int xm = std::max(0, x - 2);
             const int xp = std::min(kCellSize - 1, x + 2);
             const int ym = std::max(0, y - 2);

@@ -4,15 +4,18 @@
 // (generation, simulation, rendering, tests) derives from the constants here:
 //
 //   1. NORMALISED heightmap — floats produced by `generate_heightmap`
-//      (sub/base_generator.h). Sea surface sits at `WATER_LEVEL` (0.40);
-//      land occupies [WATER_LEVEL + kLandMargin, ~1.2] (soft-compressed
+//      (sub/base_generator.h). Sea surface sits at the SCENE'S PLANE
+//      (SubworldMapData::waterLevel; `WATER_LEVEL` 0.40 only where there is no
+//      world to inherit from); land occupies [plane + kLandMargin, ~1.2]
+//      (soft-compressed
 //      ridge peaks may exceed 1.0; hard safety clamp at 2.0).
 //   2. WORLD METRES — normalised × `kHeightScaleM`. This is the space of
 //      `ecs::Position.z`, the 3D camera Y, point lights, particles and all
 //      combat distance checks. `Renderer3DVk::sample_height_m(x, y)`
 //      returns the terrain surface in this space.
-//   3. The WATER PLANE — one global sea level, `kSeaLevelM` (≈ 600 m).
-//      Rivers and seas are honest heightmap cells carved below it.
+//   3. The WATER PLANE — one sea level per SCENE, `sea_level_m(plane)`, where
+//      the plane is the macroworld's own (CellContext::seaLevel) and a dungeon's
+//      is 0. Rivers and seas are honest heightmap cells carved below it.
 //
 // Vertical simulation rules (enforced in SubworldEngine::tick):
 //   - Grounded bodies REST on the support surface — max(terrain, structure
@@ -46,8 +49,23 @@ namespace sm::sub
     // place the number 1500 may appear.
     constexpr float kHeightScaleM = 1500.0f;
 
-    // World-space sea surface (metres): the global water plane.
-    constexpr float kSeaLevelM = WATER_LEVEL * kHeightScaleM;
+    // ── THE WATER PLANE IN METRES ────────────────────────────────────────
+    // Owner's verdict, 2026-09-27: the datum FOLLOWS THE SCENE. It used to be
+    // `constexpr kSeaLevelM = 0.40 × 1500 = 600 m`, and that constant was not a
+    // harmless echo: a bridge deck is stated as `datum + freeboard`, so on a
+    // world whose sea sits at 0.60 (900 m) every span would have been built
+    // 300 m UNDER its own river, and `is_dry_footing` would have called a seabed
+    // at 700 m dry — bodies materialising in open water, the player not
+    // drowning. The plane is an editor value the player moves; a datum derived
+    // from it cannot be a constant.
+    inline float sea_level_m(float seaLevel01) {
+        return seaLevel01 * kHeightScaleM;
+    }
+
+    // The DEFAULT world's datum — what a harness with no world behind it
+    // answers with, and the value the air's compile-time sanity below is stated
+    // against. Never read by a real scene: a real scene knows its own plane.
+    constexpr float kDefaultSeaLevelM = WATER_LEVEL * kHeightScaleM;
 
     // Flight ceiling margin above the loaded window's highest terrain vertex
     // (`Renderer3DVk::max_height_m()`).
@@ -67,8 +85,11 @@ namespace sm::sub
     // storeys, and beyond this a body would be materialising onto a roof it
     // has no business on.
     constexpr float kDryFootingProbeM = 40.0f;
-    inline bool is_dry_footing(float supportM) {
-        return supportM > kSeaLevelM + 0.05f;
+    // `seaLevelM` is the SCENE's datum (sea_level_m of its plane) — passed in
+    // rather than read, because "above the water" is a question about THIS
+    // world's water.
+    inline bool is_dry_footing(float supportM, float seaLevelM) {
+        return supportM > seaLevelM + 0.05f;
     }
 
     // THE height a humanoid looks and shoots from, above its feet — one number
@@ -241,9 +262,10 @@ namespace sm::sub
     }
 
     // GLSL echoes (shaders can't include this header): mesh.vert normalises
-    // vertex Y with the literal 1500.0 (= kHeightScaleM); mesh.frag's shore
-    // band smoothstep(0.40, 0.47, h) starts at WATER_LEVEL; water.vert takes
-    // the plane Y via push constant (fed from kHeightScaleM in
-    // vk_renderer_3d.cpp). Change a constant here → update those literals.
+    // vertex Y with the literal 1500.0 (= kHeightScaleM). Everything ABOUT THE
+    // WATER now travels as a uniform instead of being echoed as a literal —
+    // mesh.frag's shore band takes the plane and the band's width in
+    // `pc.shore`, water.vert takes the plane Y via push constant — because the
+    // plane is a scene value and a literal cannot follow one.
 
 } // namespace sm::sub

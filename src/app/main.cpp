@@ -5699,7 +5699,13 @@ void frame(App& app, int simSteps) {
             const float rZoom = mapOpen ? app.mapScreen.zoom : app.zoom;
             app.macro.record(cmd, ext, app.terrain,
                              rCamX, rCamY, rZoom,
-                             app.gs.mapParams.seaLevel, tod,
+                             // ПОРОГ В БАЙТОВОМ СЛОВАРЕ, нормированный: карта
+                             // обязана судить воду ровно тем числом, которым
+                             // судит мир (`TerrainData::seaLevel8` — тот самый
+                             // байт, по которому `is_water` отвечает). Сырое
+                             // `mapParams.seaLevel` расходилось с ним на
+                             // усечение, то есть на клетку высоты.
+                             float(app.terrain.seaLevel8) / 255.0f, tod,
                              float(SDL_GetTicks()) * 0.001f,
                              /*mapStyle=*/mapOpen);
         }

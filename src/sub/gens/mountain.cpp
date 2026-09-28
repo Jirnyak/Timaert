@@ -79,7 +79,7 @@ static void stamp_mountain_rock(SubworldMapData& out, const CellContext& ctx) {
             const std::size_t idx = std::size_t(y) * kCellSize + x;
             if (preserves_mountain_surface(out.tiles[idx])) continue;
             const float h = out.heightmap[idx];
-            if (h < WATER_LEVEL + 0.14f) continue;
+            if (h < ctx.seaLevel + 0.14f) continue;
 
             const int xm = std::max(0, x - 1);
             const int xp = std::min(kCellSize - 1, x + 1);

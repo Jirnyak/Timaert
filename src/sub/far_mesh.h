@@ -66,7 +66,7 @@ struct FarCellColumn {
     float        heightScale = 0.0f;
     float        mtnScale    = 0.0f;
     // 1 on a water cell. A far SEABED has to lie BELOW the water plane, not on
-    // it: the skeleton's water curve reaches exactly WATER_LEVEL at the
+    // it: the skeleton's water curve reaches exactly the sea plane at the
     // shoreline, so without this the far ground and the sea surface occupy the
     // same height and the result reads as "water, then land at sea level, then
     // water again" — which is what the owner photographed.
@@ -90,6 +90,12 @@ struct FarMesh {
 struct FarCellGrid {
     int                        radiusCells = 0;
     std::vector<FarCellColumn> cells;      // (2R+1)²
+    // THE WORLD'S SEA PLANE, normalised. One per GRID, not per cell: the plane
+    // is a property of the world, and the far sheet has to floor its seabed
+    // against the very same number the near ground remaps about — otherwise the
+    // horizon's coastline sits at a different height than the one you walk to,
+    // which is the one thing CANON S18.1 forbids outright.
+    float                      seaLevel = WATER_LEVEL;
 
     int span() const { return 2 * radiusCells + 1; }
     bool live() const {
@@ -179,14 +185,15 @@ inline float far_point_height_m(const FarCellGrid& grid, int camCx, int camCy,
     const int gx = worldTiles > 0.0f ? wrapi(rawX, int(worldTiles)) : rawX;
     const int gz = worldTiles > 0.0f ? wrapi(rawZ, int(worldTiles)) : rawZ;
     float h01 = far_height01(gx, gz, skel, peak, ridge, worldTiles,
-                             grad, hs, ms, 2.0f * float(stepM));
+                             grid.seaLevel, grad, hs, ms,
+                             2.0f * float(stepM));
     // A SEABED IS UNDER THE SEA. The ceiling comes down as the ground becomes
     // water and stops one kLandMargin below the plane — the very margin the
     // LAND is lifted by on the other side of the same line, so the two rules
     // are one rule read from both banks.
     if (wet > 0.0f) {
         const float ceil01 = 2.0f * (1.0f - wet)
-                           + (WATER_LEVEL - kLandMargin) * wet;
+                           + (grid.seaLevel - kLandMargin) * wet;
         h01 = std::min(h01, ceil01);
     }
     return h01 * kHeightScaleM;

@@ -57,7 +57,7 @@ void sync_water_tiles_from_heightmap(SubworldMapData& out) {
     std::vector<std::uint8_t> nearWater(out.heightmap.size(), 0);
 
     for (std::size_t i = 0; i < out.heightmap.size(); ++i) {
-        water[i] = out.heightmap[i] < WATER_LEVEL ? 1u : 0u;
+        water[i] = out.heightmap[i] < out.waterLevel ? 1u : 0u;
     }
 
     std::vector<int> prefix(std::size_t(std::max(w, hgt)) + 1u, 0);
@@ -92,13 +92,27 @@ void sync_water_tiles_from_heightmap(SubworldMapData& out) {
     for (std::size_t i = 0; i < out.heightmap.size(); ++i) {
         const std::uint8_t tile = out.tiles[i];
         // Built ground keeps its surface: the terrain may not un-decide what a
-        // generator decided (sub/map_data.h kTileBuilt).
-        if (tile_is(tile, kTileBuilt)) continue;
+        // generator decided (sub/map_data.h kTileBuilt) — EXCEPT ROADWAY, and
+        // the delta is stated here rather than rewritten as a second pass,
+        // which is what that mask is for.
+        //
+        // A ROADWAY UNDER WATER IS NOT A ROAD (owner, 2026-08-30, on the road
+        // drawn beside its own bridge): «the DECK is the road over water», so
+        // roadway carries the crossing only where the ramp has landed on dry
+        // ground. That rule used to live inside `gen_road` as its own loop —
+        // a SECOND answer to "is this tile water", owned by a module that has
+        // no business answering it. And being a second answer, it drifted: it
+        // ran before `smooth_road_heights`, so it judged heights the smoother
+        // was still about to change, and four roadway tiles of an honest
+        // two-bank crossing ended up as much as 0.7 m below the plane with
+        // nothing left to notice them. One classifier, run last, one delta.
+        constexpr std::uint16_t kKeepsItsSurface = kTileBuilt & ~TILE_M_ROAD;
+        if (tile_is(tile, kKeepsItsSurface)) continue;
 
         const float h = out.heightmap[i];
         if (water[i]) {
             out.tiles[i] = TILE_WATER;
-        } else if (h < kWetEdgeTop && nearWater[i]) {
+        } else if (h < wet_edge_top(out.waterLevel) && nearWater[i]) {
             out.tiles[i] = TILE_SHORE;
         } else if (tile == TILE_WATER || tile == TILE_SHORE) {
             out.tiles[i] = TILE_GRASS;

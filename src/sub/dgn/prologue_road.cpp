@@ -111,9 +111,16 @@ void gen_dungeon_prologue_road(const CellContext& ctx, SubworldMapData& out) {
     // cells by construction. Phases roll from the SCENE-WIDE seed
     // (ctx.worldSeed), never the per-cell one: a relief seam between two
     // variants would be a cliff every kilometre.
+    // THE DEFAULT plane as the remap's datum, stated rather than inherited:
+    // this pocket is the third kind (AGENTS, ЗАКОН ДВУХ МИРОВ п.4) — it has no
+    // macro cell behind it to inherit from, and no sea of its own
+    // (out.waterLevel = 0 above). The land branch still needs a reference to
+    // lift from, and `WATER_LEVEL` is exactly that: the default world's plane,
+    // for the callers that have no world.
     const float base = skeleton_cell_height01(ctx.macroHeight,
                                               /*isWater=*/false,
-                                              /*isMountain=*/false);
+                                              /*isMountain=*/false,
+                                              WATER_LEVEL);
     const float period = float(block_cells() * W);
     const std::uint32_t s = ctx.worldSeed * 2654435761u;
     const float p1 = float(s & 0xFFu) * (kTau / 256.0f);

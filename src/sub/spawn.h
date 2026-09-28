@@ -469,18 +469,22 @@ void spawn_player_squad(ecs::World& w,
 // a solid above the water plane (a bridge deck, a jetty, a wall walk) is DRY
 // FOOTING (sub/height.h is_dry_footing) and a body may materialise on it —
 // the placement asks what would hold it up, not what the ground is.
+// `seaLevel` — THE SCENE'S sea plane, normalised (SubworldEngine::
+// scene_sea_level). Dry footing is a question about THIS world's water, so the
+// plane is an argument: projecting onto a seabed because the datum was a
+// remembered 0.40 is exactly the bug the plane's inheritance retires.
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed,
+                                     std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids = nullptr);
 
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed,
+                                     std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids = nullptr);
 
 // (Вселение — перенос флажка — живёт в sub/possess.h: header-only дверь,

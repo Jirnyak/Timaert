@@ -630,7 +630,8 @@ bool run_beast_member_projection_case(
     }
 
     const int projected = sm::sub::project_macro_npcs_into_subworld(
-        world, mgr, /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u);
+        world, mgr, /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u,
+        sm::sub::WATER_LEVEL);
     if (projected != 3) return false;   // the leader and both of his members
 
     int beasts = 0, men = 0;
@@ -737,7 +738,8 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     if (faunaBefore <= 0) return false;   // sanity: fauna actually present
 
     const int projected = sm::sub::project_macro_npcs_into_subworld(
-        world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed);
+        world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+        sm::sub::WATER_LEVEL);
     if (projected != 3) return false;     // three in-window, the far one skipped
 
     // Macro entities are UNTOUCHED: still MacroNpcRuntime, never tagged/linked.
@@ -833,7 +835,8 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::store_attach(world2, world2Store_.get());
     seed_macro_npcs(world2.reg, kMapW);
     const int projected2 = sm::sub::project_macro_npcs_into_subworld(
-        world2, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed);
+        world2, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+        sm::sub::WATER_LEVEL);
     if (projected2 != 3) return false;
     const std::vector<std::array<float, 3>> fp2 = projection_fingerprint(world2);
     if (fp1 != fp2) return false;

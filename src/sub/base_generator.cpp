@@ -13,17 +13,17 @@ namespace sm::sub {
 // Tree height bands are METRES (see BiomeConfig): a mature stand runs roughly
 // 10-20 m, with the cold/dry margins stunted and the tropics overtopping it.
 static const BiomeConfig kConfigs[11] = {
-    /* Tundra   */ {0.018f, 6,  6.0f, 10.0f, 0.8f, WATER_LEVEL, false, false},
-    /* Taiga    */ {0.20f,  3, 12.0f, 19.0f, 1.0f, WATER_LEVEL, false, false},
-    /* Snow     */ {0.025f, 5,  7.0f, 11.0f, 0.9f, WATER_LEVEL, false, false},
-    /* Valley   */ {0.050f, 4, 11.0f, 18.0f, 1.0f, WATER_LEVEL, false, false},
-    /* Meadow   */ {0.035f, 4, 11.0f, 18.0f, 1.0f, WATER_LEVEL, false, false},
-    /* Swamp    */ {0.080f, 3,  9.0f, 15.0f, 0.3f, WATER_LEVEL, true,  false},
-    /* Desert   */ {0.004f, 8,  6.0f, 10.0f, 0.6f, WATER_LEVEL, false, true},
-    /* Steppe   */ {0.018f, 5,  9.0f, 14.0f, 0.8f, WATER_LEVEL, false, false},
-    /* Tropics  */ {0.25f,  2, 13.0f, 20.0f, 1.0f, WATER_LEVEL, false, false},
-    /* Water    */ {0.0f,   16,11.0f, 18.0f, 0.5f, WATER_LEVEL, false, false},
-    /* Mountain */ {0.02f,  6,  8.0f, 14.0f, 1.0f, WATER_LEVEL, false, false},
+    /* Tundra   */ {0.018f, 6,  6.0f, 10.0f, 0.8f, false, false},
+    /* Taiga    */ {0.20f,  3, 12.0f, 19.0f, 1.0f, false, false},
+    /* Snow     */ {0.025f, 5,  7.0f, 11.0f, 0.9f, false, false},
+    /* Valley   */ {0.050f, 4, 11.0f, 18.0f, 1.0f, false, false},
+    /* Meadow   */ {0.035f, 4, 11.0f, 18.0f, 1.0f, false, false},
+    /* Swamp    */ {0.080f, 3,  9.0f, 15.0f, 0.3f, true,  false},
+    /* Desert   */ {0.004f, 8,  6.0f, 10.0f, 0.6f, false, true},
+    /* Steppe   */ {0.018f, 5,  9.0f, 14.0f, 0.8f, false, false},
+    /* Tropics  */ {0.25f,  2, 13.0f, 20.0f, 1.0f, false, false},
+    /* Water    */ {0.0f,   16,11.0f, 18.0f, 0.5f, false, false},
+    /* Mountain */ {0.02f,  6,  8.0f, 14.0f, 1.0f, false, false},
 };
 const BiomeConfig& biome_config(Biome b) {
     const int i = int(b);
@@ -84,12 +84,12 @@ static float smooth_noise_ts(float x, float y, std::uint32_t seed,
          + n11 * sx * sy;
 }
 
-// Sea-level / water-plane constants live in base_generator.h as the
-// single source of truth. We alias here for readability. (kSeaLevel /
-// kLandFloor aliases and the landScale remap they fed died with the
-// terrain-shadow session's rewrite of the land remap — deleted, not kept
-// "for reference"; base_generator.h still owns the real constants.)
-constexpr float kWaterLevel = WATER_LEVEL;
+// NO SEA-LEVEL ALIAS LIVES HERE ANY MORE. It used to — `kWaterLevel =
+// WATER_LEVEL` — and an alias is how a value that should have been an argument
+// stays a constant: two of this file's laws read it instead of asking the
+// scene, so a world whose sea had moved got a valley floor and a swamp bed
+// measured from somebody else's water. The plane arrives as `seaLevel` now,
+// from CellContext (map_data.h).
 
 // The near generator's detail stack, with the octaves a mesh cannot draw left
 // out (base_generator.h). The frequencies, weights and normalisation are the
@@ -181,7 +181,7 @@ static float soft_compress_peak(float h) {
 
 float mountain_ridges01(float h, int gx, int gy, float macroH,
                         float peakTarget, float rw,
-                        float worldTiles, bool coarseOnly) {
+                        float worldTiles, bool coarseOnly, float seaLevel) {
     if (rw <= 0.01f) return h;
     constexpr std::uint32_t kRidgeSeed = 0xD37A115u;
     // Every octave below closes on the world: the period handed to the noise is
@@ -240,7 +240,7 @@ float mountain_ridges01(float h, int gx, int gy, float macroH,
     // the basin without creating a moat at the foot of the wall.
     // Deeper valley floor than the hills round (0.90 → 0.86): ridges rise
     // AND ravines cut — the расселины the flat 0.90 floor erased.
-    const float valleyFloor = std::max(kWaterLevel + 0.08f, macroH * 0.88f);
+    const float valleyFloor = std::max(seaLevel + 0.08f, macroH * 0.88f);
     const float peak        = std::max(valleyFloor + 0.05f, peakTarget);
     const float mtnH        = soft_compress_peak(valleyFloor + ridge * (peak - valleyFloor)
                                                  + (crag - 0.5f) * cragAmp * 2.0f);
@@ -262,7 +262,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                         const Biome nbBiome[9],
                         const Biome* nbBiome5,
                         Biome biome, std::uint32_t seed,
-                        int globalOffsetX, int globalOffsetY,
+                        int globalOffsetX, int globalOffsetY, float seaLevel,
                         const TerrainMod* nbMods, int worldCellsX,
                         std::uint32_t worldSeed) {
     // The world's tile span — what every global-coordinate noise below closes
@@ -336,7 +336,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         // to 1.0 (peak). THE law lives in skeleton_cell_height01
         // (base_generator.h) — the shadow apron reads the same door.
         remapped[i] = skeleton_cell_height01(mh, nbBiome[i] == Biome::Water,
-                                             /*isMountain=*/false);
+                                             /*isMountain=*/false, seaLevel);
 
         // Universal flattening (terrain_mod_for): a cell that carries a road
         // or a settlement calms its OWN ridge/noise/gradient columns. Applied
@@ -377,7 +377,8 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         // thirty kilometres is the ridge you walk up to (CANON S18.1).
         peakHeight[i] = skeleton_cell_peak01(mh, nbBiome[i] == Biome::Water,
                                              isMtn, adjMtn,
-                                             cellGX, cellGY, worldSeed);
+                                             cellGX, cellGY, worldSeed,
+                                             seaLevel);
     }
 
     // Any settlement plateau in the 3×3 ring? (Pixel-loop guard.)
@@ -458,7 +459,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             if (sf > 0.01f) {
                 // Per-pixel swamp flatten BEFORE noise so neighbour heights
                 // don't lift swamp rims into a crater wall.
-                const float swampTarget = kWaterLevel + 0.06f;
+                const float swampTarget = seaLevel + 0.06f;
                 macroH += (swampTarget - macroH) * sf * 0.85f;
             }
 
@@ -499,7 +500,8 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
 
             if (rw > 0.0f) {
                 h = mountain_ridges01(h, gxi, gyi, macroH, localPeak, rw,
-                                      worldTiles, /*coarseOnly=*/false);
+                                      worldTiles, /*coarseOnly=*/false,
+                                      seaLevel);
             }
 
             if (needsDune) {

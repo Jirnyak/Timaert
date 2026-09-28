@@ -58,22 +58,26 @@ sm::sub::CellContext resolve_water_plane_cell(int cx, int cy) {
     return c;
 }
 
+// WHAT THIS WITNESS ACTUALLY GUARDS is that a streaming placeholder answers with
+// THE cell-skeleton height — the same law the finished cell is built from — so
+// that a tile does not move under the player's feet when the real cell lands.
+// It used to state that by RE-DERIVING the law here, which is the one thing
+// AGENTS §8 п.5 forbids: a second copy proves you can copy. It also could not
+// have caught the drift it was standing next to — the copy clamped the water
+// curve's `t` and the generator did not.
 float expected_placeholder_height(const sm::sub::CellContext& c) {
-    if (c.biome == sm::Biome::Water) {
-        const float t = std::clamp(c.macroHeight / sm::sub::kMacroSeaLevel, 0.0f, 1.0f);
-        return t * t * sm::sub::WATER_LEVEL;
-    }
-    const float landFloor = sm::sub::WATER_LEVEL + sm::sub::kLandMargin;
-    const float landScale = (1.0f - landFloor) / (1.0f - sm::sub::kMacroSeaLevel);
-    const float h = landFloor + (c.macroHeight - sm::sub::kMacroSeaLevel) * landScale;
-    return std::clamp(h, landFloor, 2.0f);
+    const float h = sm::sub::skeleton_cell_height01(
+        c.macroHeight, c.biome == sm::Biome::Water,
+        /*isMountain=*/false, c.seaLevel);
+    if (c.biome == sm::Biome::Water) return h;
+    return std::clamp(h, c.seaLevel + sm::sub::kLandMargin, 2.0f);
 }
 
 std::uint8_t expected_placeholder_tile(const sm::sub::CellContext& c, float height) {
-    if (c.biome == sm::Biome::Water || height < sm::sub::WATER_LEVEL) {
+    if (c.biome == sm::Biome::Water || height < c.seaLevel) {
         return sm::sub::TILE_WATER;
     }
-    if (height < sm::sub::WATER_LEVEL + 0.05f) {
+    if (height < c.seaLevel + 0.05f) {
         return sm::sub::TILE_SHORE;
     }
     return sm::sub::TILE_GRASS;

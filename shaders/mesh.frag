@@ -95,7 +95,23 @@ layout(push_constant) uniform Push {
     // same point and now has ONE home. w = the canvas's valid radius in
     // metres; <= 0 means there is no canvas (the smoke harness).
     vec4 camPos;
+    // THE SHORE BAND — two values, and NOT a duplicated threshold (owner's
+    // verdict, 2026-09-27). x = the SCENE'S SEA PLANE in normalised height: the
+    // band starts at the waterline, so it follows the world's sea instead of
+    // remembering 0.40. y = the band's WIDTH, the gentle descent over which a
+    // DISCRETE macro cell is stitched into this smooth surface — «берег был
+    // плавный к линии воды даже на клеточке воды». One is inherited, the other
+    // is authored; a single literal could not have been both.
+    vec4 shore;
 } pc;
+
+// Wetness of ground at a normalised height: 1 at and below the waterline,
+// falling to 0 at the top of the shore band. ONE spelling — the ground pass and
+// the grass pass asked the same question with the same two literals, side by
+// side, which is how a threshold comes to be written twice.
+float shore_wet(float height01) {
+    return 1.0 - smoothstep(pc.shore.x, pc.shore.x + pc.shore.y, height01);
+}
 
 layout(location = 0) out vec4 outColor;
 
@@ -418,8 +434,7 @@ float ground_worn(uint mid, float surfZ, float macroZ) {
 vec3 ground_colour(uint mid, float surfZ, float macroZ, float height01) {
     float worn = ground_worn(mid, surfZ, macroZ);
     vec3 base = mix(kGroundFresh[mid], kGroundWorn[mid], worn);
-    base *= 1.0 - kGroundDamp[mid] * 0.28
-                      * (1.0 - smoothstep(0.40, 0.47, height01));
+    base *= 1.0 - kGroundDamp[mid] * 0.28 * shore_wet(height01);
     vec2 cover = kGroundCover[mid];
     uint cid = uint(cover.x + 0.5);
     if ((ground_debug_bits() & kGdbgCover) != 0u) cover.y = 0.0;
@@ -479,8 +494,7 @@ Ground ground_of(uint mid, vec2 cover, vec2 gWorld, vec3 Pabs, vec3 N, vec3 V,
     // whatever lies under it rather than choosing between constituents, and a
     // scalar cannot invent a hue. One law, one column: sand, lake bed and
     // peat differ by their number, not by a branch that names them.
-    base *= 1.0 - kGroundDamp[mid] * 0.28
-                      * (1.0 - smoothstep(0.40, 0.47, height01));
+    base *= 1.0 - kGroundDamp[mid] * 0.28 * shore_wet(height01);
 
     // ── COVER ──
     // The row says what grows here; the CALLER says how much, because at a

@@ -2908,11 +2908,15 @@ namespace sm::ui
             return heights[std::size_t(y) * src + x];
         }
 
+        // `seaLevel` — ПЛОСКОСТЬ ТОГО МИРА, который рисуется, а не дефолтная.
+        // Здесь стоял `constexpr kWaterLevel = WATER_LEVEL`, и на мире с
+        // уровнем моря выше дефолта вся шкала глубины и высоты считалась от
+        // чужой воды: дно красилось как отмель, суша — как затопленная.
         float sub_map_shade(const std::vector<float> &heights,
                             const SubMapSample &s,
-                            bool detail)
+                            bool detail,
+                            float seaLevel)
         {
-            constexpr float kWaterLevel = sm::sub::WATER_LEVEL;
             const float h = s.height;
             const float hL = sub_map_height_at(heights, s.sx - 4, s.sy);
             const float hR = sub_map_height_at(heights, s.sx + 4, s.sy);
@@ -2927,14 +2931,14 @@ namespace sm::ui
 
             if (s.tile == sub::TILE_WATER)
             {
-                const float depth = std::clamp((kWaterLevel - h) / kWaterLevel,
+                const float depth = std::clamp((seaLevel - h) / seaLevel,
                                                0.0f, 1.0f);
                 return std::clamp(0.96f - depth * 0.28f + (light - 1.0f) * 0.10f,
                                   0.62f, 1.06f);
             }
 
-            const float elev = std::clamp((h - kWaterLevel) /
-                                          (1.0f - kWaterLevel),
+            const float elev = std::clamp((h - seaLevel) /
+                                          (1.0f - seaLevel),
                                           0.0f, 1.0f);
             float shade = (0.82f + 0.28f * elev) * light;
             if (detail && s.tile != sub::TILE_SHORE)
@@ -3134,6 +3138,10 @@ namespace sm::ui
         {
             const auto &tiles = mgr.tiles();
             const auto &heights = mgr.heightmap();
+            // Плоскость окна — через ту же дверь, которой субмир её и получил
+            // (CellContext::seaLevel); окно ОДНО, значит и плоскость одна.
+            const float seaLevel =
+                mgr.resolve_cell(mgr.center_cx(), mgr.center_cy()).seaLevel;
             if (tiles.size() != std::size_t(sub::kFullSize) * sub::kFullSize)
                 return;
             if (heights.size() != tiles.size())
@@ -3191,7 +3199,8 @@ namespace sm::ui
                                         mixc(IM_COL32_G_SHIFT),
                                         mixc(IM_COL32_B_SHIFT), 255);
                     }
-                    const float shade = sub_map_shade(heights, s, detail);
+                    const float shade =
+                        sub_map_shade(heights, s, detail, seaLevel);
                     write_map_pixel(rgba, side, x, y, base, shade);
                 }
             }

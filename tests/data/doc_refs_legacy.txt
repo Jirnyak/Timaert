@@ -347,7 +347,6 @@ SKELETON.md	:61
 SKELETON.md	:620
 SKELETON.md	:6246
 SKELETON.md	:6330
-SKELETON.md	:646
 SKELETON.md	:65
 SKELETON.md	:662
 SKELETON.md	:67
@@ -418,7 +417,6 @@ SKELETON.md	auto_battle.h:168
 SKELETON.md	auto_battle.h:80
 SKELETON.md	auto_resolve_speaks_test.cpp:196
 SKELETON.md	base_generator.cpp:268
-SKELETON.md	base_generator.h:35
 SKELETON.md	bb_instance.h:22-23
 SKELETON.md	biomes.h:64
 SKELETON.md	body.frag:32
@@ -531,7 +529,6 @@ SKELETON.md	features.h:22-25
 SKELETON.md	gens/dispatch.cpp:95
 SKELETON.md	gpu/vk_renderer.cpp:239-244
 SKELETON.md	height.h:147
-SKELETON.md	height.h:47
 SKELETON.md	height.h:91
 SKELETON.md	items.cpp:107
 SKELETON.md	items.cpp:254-303
@@ -639,11 +636,7 @@ SKELETON.md	memory.h:16-22
 SKELETON.md	mesh.frag:277-284
 SKELETON.md	mesh.frag:327
 SKELETON.md	mesh.frag:418-432
-SKELETON.md	mesh.frag:421
-SKELETON.md	mesh.frag:421-422
-SKELETON.md	mesh.frag:477
 SKELETON.md	mesh.frag:689-712
-SKELETON.md	mesh.vert:26
 SKELETON.md	movement.cpp:441
 SKELETON.md	movement.cpp:721-722
 SKELETON.md	movement.cpp:849-850
@@ -975,7 +968,6 @@ SKELETON.md	vk_renderer_3d.cpp:2305-2321
 SKELETON.md	vk_renderer_3d.cpp:2742
 SKELETON.md	vk_renderer_3d.cpp:2769
 SKELETON.md	vk_renderer_3d.cpp:2986-2990
-SKELETON.md	vk_renderer_3d.cpp:3444
 SKELETON.md	vk_renderer_3d.cpp:3758
 SKELETON.md	vk_renderer_3d.h:243
 SKELETON.md	vk_texture.cpp:775

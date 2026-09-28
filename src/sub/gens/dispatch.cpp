@@ -151,11 +151,15 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     generate_heightmap(out.heightmap, kCellSize, nbHeights, nbBiome, nbBiome5,
                        safeCtx.biome, safeCtx.seed,
                        safeCtx.cx * kCellSize, safeCtx.cy * kCellSize,
+                       safeCtx.seaLevel,
                        nbMods, safeCtx.worldCellsX, safeCtx.worldSeed);
     out.tiles.assign(std::size_t(kCellSize) * kCellSize, std::uint8_t(TILE_GRASS));
     out.trav.assign (std::size_t(kCellSize) * kCellSize, 1);
     out.structures.clear();
-    out.waterLevel = WATER_LEVEL;
+    // THE SCENE INHERITS THE WORLD'S PLANE (owner, 2026-09-27: «микромир её
+    // наследует»). Not a constant of this layer and not a biome's column — the
+    // very number the macro map judges `is_water` by, arriving as context.
+    out.waterLevel = safeCtx.seaLevel;
 
     const GenInput in{safeCtx, nbBiome, safeFeature, safeTreeCount, safeFertility};
     const std::size_t row = std::size_t(resolve_mode(safeCtx));

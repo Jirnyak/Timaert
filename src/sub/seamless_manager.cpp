@@ -24,6 +24,8 @@ void clear_placeholder_data(SubworldMapData& out) {
     out.trav.clear();
     out.heightmap.clear();
     out.structures.clear();
+    // A placeholder has no cell context to inherit from, so it states the
+    // DEFAULT plane; the real cell overwrites it the moment it lands.
     out.waterLevel = WATER_LEVEL;
 }
 
@@ -46,20 +48,22 @@ void collect_road_indices(const std::vector<std::uint8_t>& tiles,
     }
 }
 
+// THE PLACEHOLDER IS THE SKELETON LAW, NOT A COPY OF IT. It used to be a
+// hand-written second spelling of `skeleton_cell_height01` — and the two had
+// already drifted: this one clamped the water curve's `t`, the generator did
+// not. One door now, so a streaming tile and the cell that replaces it cannot
+// disagree about where the ground is.
 float placeholder_height_for(const CellContext& ctx) {
-    if (ctx.biome == Biome::Water) {
-        const float t = std::clamp(ctx.macroHeight / kMacroSeaLevel, 0.0f, 1.0f);
-        return t * t * WATER_LEVEL;
-    }
-
-    const float landFloor = WATER_LEVEL + kLandMargin;
-    const float landScale = (1.0f - landFloor) / (1.0f - kMacroSeaLevel);
-    const float h = landFloor + (ctx.macroHeight - kMacroSeaLevel) * landScale;
-    return std::clamp(h, landFloor, 2.0f);
+    const float h = skeleton_cell_height01(ctx.macroHeight,
+                                           ctx.biome == Biome::Water,
+                                           /*isMountain=*/false,
+                                           ctx.seaLevel);
+    if (ctx.biome == Biome::Water) return h;
+    return std::clamp(h, ctx.seaLevel + kLandMargin, 2.0f);
 }
 
 std::uint8_t placeholder_tile_for(const CellContext& ctx, float height) {
-    if (ctx.biome == Biome::Water || height < WATER_LEVEL) {
+    if (ctx.biome == Biome::Water || height < ctx.seaLevel) {
         return TILE_WATER;
     }
     if (ctx.biome == Biome::Mountain) {
