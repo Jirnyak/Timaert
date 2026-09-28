@@ -32,7 +32,7 @@
 
 #include "ecs/components.h"
 #include "macro/store.h"
-#include "macro/bonus.h"   // BonusTotals — «что на нём стоит», and its ==
+#include "macro/anketa.h"   // BonusTotals — «что на нём стоит», and its ==
 
 #include <entt/entt.hpp>
 

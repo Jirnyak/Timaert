@@ -15,7 +15,7 @@
 // econ_v1_test). New rows APPEND — a saved ItemRef carries the ordinal.
 
 #pragma once
-#include "macro/bonus.h"
+#include "macro/anketa.h"
 #include "tables/damage_types.h"
 #include <array>
 #include <cstdint>

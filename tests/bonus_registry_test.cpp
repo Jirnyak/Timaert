@@ -21,7 +21,7 @@
 //      the buff forever.
 #include "check.h"
 
-#include "macro/bonus.h"
+#include "macro/anketa.h"
 #include "macro/character_sheet.h"
 #include "macro/character_sheet.h"
 

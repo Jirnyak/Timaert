@@ -17,7 +17,7 @@
 #pragma once
 #include "core/table_guard.h"
 #include "macro/anketa.h"
-#include "macro/bonus.h"
+#include "macro/anketa.h"
 #include "tables/damage_types.h"
 #include <algorithm>
 #include <cstdint>

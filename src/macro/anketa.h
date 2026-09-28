@@ -20,6 +20,8 @@
 #pragma once
 #include "core/time.h"          // steps_from_seconds — квант двери восстановления
 #include "tables/attributes.h"  // каталог: AttributeId/SkillId, строки, THE skill law
+#include "tables/bonus.h"       // каталог: строки бонусов, чью сумму копит анкета
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -471,6 +473,141 @@ inline int award_exp(LevelData& ld, int amount, int expMultPct) {
     return award_exp(ld, scaled);
 }
 
+// ══ БОНУСЫ, СТОЯЩИЕ НА ТЕЛЕ ═══════════════════════════════════════════════
+// Строки бонусов — КАТАЛОГ (`tables/bonus.h`): их встраивает в себя строка
+// спелла и ординалом носит аффикс предмета. А СУММА того, что стоит на
+// КОНКРЕТНОМ теле, — анкета, и живёт здесь, рядом с ранга́ми, которые она
+// сдвигает.
+
+// ── Standing: accumulate, then read through a modified COPY ───────────────
+
+// Everything standing, summed by address. Flat arrays over the sheet's own
+// envelopes, so a body's whole modifier set is one small POD on the stack and
+// summing it allocates nothing.
+struct BonusTotals {
+    std::array<std::int16_t, kMaxAttributes> attr{};
+    std::array<std::int16_t, kMaxSkills>     skill{};
+    // The affix track's two new address spaces, summed exactly like the
+    // first two. `armor` is read by the defence assembly (sub/damage.cpp)
+    // BESIDE the worn rows' own columns; `derived` is read by each law at
+    // its own output (see DerivedModId).
+    std::array<std::int16_t, kDamageTypeCount>                  armor{};
+    std::array<std::int16_t, std::size_t(DerivedModId::Count)>  derived{};
+    // "Did what stands on him CHANGE?" is a question the per-step bar
+    // refresh asks (app loop) — equality is the whole answer.
+    bool operator==(const BonusTotals&) const = default;
+
+    // Whole-struct merge — what player_standing_bonuses does with the worn
+    // sum. A member so a NEW array here cannot be forgotten at a call site
+    // that copies field by field (a comment asking for lockstep is not a
+    // mechanism).
+    BonusTotals& operator+=(const BonusTotals& o) {
+        for (std::size_t i = 0; i < attr.size(); ++i)    attr[i]    += o.attr[i];
+        for (std::size_t i = 0; i < skill.size(); ++i)   skill[i]   += o.skill[i];
+        for (std::size_t i = 0; i < armor.size(); ++i)   armor[i]   += o.armor[i];
+        for (std::size_t i = 0; i < derived.size(); ++i) derived[i] += o.derived[i];
+        return *this;
+    }
+
+    int derived_of(DerivedModId id) const {
+        return int(derived[std::size_t(id)]);
+    }
+};
+
+inline void accumulate(BonusTotals& t, Bonus b) {
+    if (b.row == 0 || b.row >= std::uint8_t(BonusId::Count)) return;
+    const BonusDef& d = bonus_def(BonusId(b.row));
+    switch (d.target) {
+        case BonusTarget::Attribute:
+            if (d.index < kMaxAttributes) t.attr[d.index] += b.value;
+            break;
+        case BonusTarget::SkillRank:
+            if (d.index < kMaxSkills) t.skill[d.index] += b.value;
+            break;
+        case BonusTarget::Armor:
+            if (d.index < kDamageTypeCount) t.armor[d.index] += b.value;
+            break;
+        case BonusTarget::Derived:
+            if (d.index < std::uint8_t(DerivedModId::Count)) {
+                t.derived[d.index] += b.value;
+            }
+            break;
+        case BonusTarget::Pool:
+            break;   // instant rows do not stand; apply_instant takes them
+    }
+}
+
+inline void accumulate(BonusTotals& t, const Bonus* first, int count) {
+    for (int i = 0; i < count; ++i) accumulate(t, first[i]);
+}
+
+// (`effective_sheet(base, totals)` — the standing half's one reader — lives in
+// macro/character_sheet.h, beside the type it copies. This file stays a leaf
+// above attributes.h so the item catalog can include it without dragging the
+// creature registry in behind it.)
+
+// ── Derived rows meeting their laws ──────────────────────────────────────
+// ONE clamp for every whole-percent derived row (SwingPct, MovePct): ×4
+// either way, po2 — a curse cannot freeze a body and a stack of hastes
+// cannot divide time by zero. Spelled once; the strike assembly
+// (anatomy.cpp) and the overloads below both read it.
+inline constexpr int kDerivedPctFloor = -75;
+inline constexpr int kDerivedPctCeil  = 300;
+
+inline int derived_pct_mult(int base, const BonusTotals& t, DerivedModId id) {
+    const int pct = 100 + std::clamp(t.derived_of(id),
+                                     kDerivedPctFloor, kDerivedPctCeil);
+    const int out = base * pct / 100;
+    return out < 1 ? 1 : out;
+}
+
+// The sheet laws, WITH what stands on the body. These live here and not in
+// attributes.h because that file is below this one and cannot see the totals;
+// a call site that has no totals keeps calling the two-argument law.
+inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s,
+                                        const BonusTotals& t) {
+    DerivedBonuses d = calculate_derived(a, s);
+    d.moveSpeedPct = derived_pct_mult(d.moveSpeedPct, t, DerivedModId::MovePct);
+    return d;
+}
+
+inline float get_carry_capacity(const Attributes& a, const Skills& s,
+                                const BonusTotals& t) {
+    const float kg = get_carry_capacity(a, s)
+                   + float(t.derived_of(DerivedModId::CarryKg));
+    // A back cannot hold a negative load; zero is the honest floor and the
+    // overload law upstairs already prices every carried kilogram over it.
+    return kg < 0.0f ? 0.0f : kg;
+}
+
+// ── Instant: act once on the pools ───────────────────────────────────────
+
+// The three pools, named so this layer can speak about them without knowing
+// which container a particular body keeps them in (every body's Pools,
+// a body's ecs::Pools). Values are ints because pools are ints everywhere.
+struct PoolSlice {
+    int* current[int(PoolId::Count)] = {nullptr, nullptr, nullptr};
+    int  maximum[int(PoolId::Count)] = {0, 0, 0};
+};
+
+// Apply one instant row. Returns how much actually moved — which is NOT the
+// value asked for when the pool was already full or nearly empty, and callers
+// that report to the player ("+30 HP") want the truth rather than the wish.
+inline int apply_instant(const PoolSlice& pools, Bonus b) {
+    if (b.row == 0 || b.row >= std::uint8_t(BonusId::Count)) return 0;
+    const BonusDef& d = bonus_def(BonusId(b.row));
+    if (d.target != BonusTarget::Pool) return 0;
+    if (d.index >= std::uint8_t(PoolId::Count)) return 0;
+    int* cur = pools.current[d.index];
+    if (!cur) return 0;
+    // A wound is a blow, and blows have one door (see the rows above).
+    if (d.index == std::uint8_t(PoolId::Hp) && b.value < 0) return 0;
+    const int max = pools.maximum[d.index];
+    const int before = *cur;
+    *cur = std::clamp(before + int(b.value), 0, std::max(0, max));
+    return *cur - before;
+}
+
 } // namespace sm
 
 // Включение стоит ЗДЕСЬ, а не наверху файла, и это не небрежность:
@@ -492,3 +629,5 @@ TIMAERT_ROW(sm::PerkMask);
 TIMAERT_ROW(sm::BarCeilings);
 TIMAERT_ROW(sm::DerivedBonuses);
 TIMAERT_ROW(sm::LevelData);
+TIMAERT_ROW(sm::BonusTotals);
+TIMAERT_ROW(sm::PoolSlice);
