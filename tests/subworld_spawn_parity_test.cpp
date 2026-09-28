@@ -1,11 +1,11 @@
 #include "check.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/world_row.h"
 #include "sub/spawn.h"
 #include "sub/record.h"   // THE door: whose record is this body (mirror law)
 #include "core/rng.h"
 #include "ecs/components.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/player_entity.h"
 #include "sub/base_generator.h"
 #include "sub/map_factory.h"

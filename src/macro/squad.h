@@ -8,7 +8,7 @@
 
 #include "ecs/world.h"
 #include "macro/anatomy.h"
-#include "macro/army.h"
+#include "macro/anketa.h"
 #include "macro/auto_battle.h"
 #include "core/rng.h"
 #include <cstdio>
@@ -19,7 +19,7 @@
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
 #include "macro/spell_book_state.h"
-#include "macro/spells.h"
+#include "macro/anketa.h"
 #include "macro/squad_walk.h"
 #include "macro/state.h"
 #include "macro/zones.h"

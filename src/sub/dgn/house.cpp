@@ -3,7 +3,7 @@
 // is a projection of the door's Structure record — same seed, same footprint
 // ⇒ byte-identical rooms and furniture, nothing persisted.
 #include "sub/dgn/dispatch.h"
-#include "macro/npc.h"  // kAdventurerCombat — the arm the hall out-reaches
+#include "tables/npc.h"  // kAdventurerCombat — the arm the hall out-reaches
 
 #include "core/rng.h"
 

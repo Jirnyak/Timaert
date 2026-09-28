@@ -23,9 +23,9 @@
 
 #include "core/rng.h"
 #include "macro/anatomy.h"   // sheet_armor_mult_pct — the armour law's training
-#include "macro/army.h"
+#include "macro/anketa.h"
 #include "macro/character_sheet.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/world_row.h" // область существ единого контейнера (M-71)
 
 #include <algorithm>

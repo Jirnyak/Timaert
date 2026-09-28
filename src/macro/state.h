@@ -13,12 +13,12 @@
 #include "macro/items.h"
 #include "macro/memory.h"   // WorldMemory — память мира с горизонтом сезона
 #include "macro/agent_memory.h"
-#include "macro/army.h"
+#include "macro/anketa.h"
 #include "macro/roster.h"   // Roster — ОДИН ростер на место и на сквад (S4)
 #include "macro/interests.h"   // Interests — ВСЕ связи субъекта одной таблицей
 #include "macro/landmark_registry.h"
 #include "macro/resource_field.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/economy.h"
 #include "macro/politik.h"
 #include "macro/relations.h"

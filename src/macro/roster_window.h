@@ -25,7 +25,7 @@
 
 #include "macro/currency.h"   // pay_value_dense / inventory_value — плата стоимостью
 #include "macro/econ_day.h"   // econ_pay_debt, hunger_commodity_ordinal, EconFactSink
-#include "macro/npc.h"        // npc_board_per_day / soldier_upkeep — счёт по строкам
+#include "tables/npc.h"        // npc_board_per_day / soldier_upkeep — счёт по строкам
 #include "macro/roster.h"
 #include "macro/world_row.h"  // область существ единого контейнера (M-71)
 

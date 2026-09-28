@@ -21,8 +21,8 @@
 #include "macro/npc_spawn.h"
 #include "macro/squad.h"
 #include "macro/player_entity.h"
-#include "macro/faction.h"
-#include "macro/npc.h"
+#include "tables/faction.h"
+#include "tables/npc.h"
 #include "core/torus.h"
 #include "macro/store.h"
 

@@ -24,7 +24,7 @@
 
 #include "check.h"
 #include "macro/state.h"
-#include "macro/faction.h"   // registry + kHostileThreshold — THE hostility line lives with the relations
+#include "tables/faction.h"   // registry + kHostileThreshold — THE hostility line lives with the relations
 #include "macro/politik.h"
 
 #include <cstdint>

@@ -17,7 +17,7 @@
 #include "check.h"
 #include "sub/targeting.h"
 #include "sub/body.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 
 #include <cstdio>
 

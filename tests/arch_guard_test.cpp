@@ -86,14 +86,14 @@ constexpr const char* kLegacyList = "tests/data/arch_legacy.txt";
 // `macro/chronicle.h` — 16 типов, замер M-169), сюда не вносится, пока это не
 // починено: наряд в реестре, а не красный гейт.
 constexpr std::string_view kRowHeaders[] = {
-    "src/ecs/components.h",        "src/macro/npc.h",
+    "src/ecs/components.h",        "src/tables/npc.h",
     "src/macro/items.h",           "src/macro/character_sheet.h",
     "src/tables/attributes.h",     "src/macro/anketa.h",
     "src/macro/anatomy.h",
-    "src/macro/army.h",            "src/tables/bonus.h",
+    "src/tables/army.h",           "src/tables/bonus.h",
     "src/tables/biomes.h",         "src/tables/damage_types.h",
-    "src/macro/spells.h",          "src/tables/sprite_rows.h",
-    "src/tables/commodity.h",      "src/macro/faction.h",
+    "src/tables/spells.h",         "src/tables/sprite_rows.h",
+    "src/tables/commodity.h",      "src/tables/faction.h",
     "src/tables/celestial.h",      "src/tables/seasons.h",
     "src/macro/landmark_registry.h",
 };

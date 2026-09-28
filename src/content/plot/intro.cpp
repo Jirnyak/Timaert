@@ -7,7 +7,7 @@
 #include <string_view>
 
 #include "core/rng.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 
 namespace sm::content {
 namespace {

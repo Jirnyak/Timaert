@@ -266,7 +266,7 @@ late plot around level 100") agree; this is the arithmetic that ties them.
 ## 3. The powers
 
 Every realm below is **already a row** in the one faction registry
-(`src/macro/faction.h`) — kingdoms are ordinary rows, and a faction's relations
+(`src/tables/faction.h`) — kingdoms are ordinary rows, and a faction's relations
 follow from its `Temperament` plus authored pair overrides. The lore column and
 the registry column are meant to stay in sync; see §12 for the current diffs.
 
@@ -613,7 +613,7 @@ That last line is where the shadow field stops being atmosphere and becomes
 politics: **the field is what makes a settlement takeable.** And it lands on
 machinery that already exists — a settlement's owner is its `factionIdx`, and
 changing an owner is a data change, not an engine change
-(`src/macro/faction.h`). A city lost to the cults is the same operation as a
+(`src/tables/faction.h`). A city lost to the cults is the same operation as a
 city lost to a rival crown.
 
 The player may do anything with them: clear their sites like dungeons and loot
@@ -1101,7 +1101,7 @@ peasants without any reference to you.
 
 - **your reputation with every faction** — the registry's `playerReputation`
   column is a per-faction seed, so a start is a whole row of standings, not one
-  number (`create_factions`, `src/macro/faction.h`). **The Empire does not like
+  number (`create_factions`, `src/tables/faction.h`). **The Empire does not like
   mages**, and that is a standing you begin with, not one you earn — but the
   numbers stay **small negatives**, not a hunt;
 - **your starting items**;
@@ -1526,7 +1526,7 @@ new system:
 
 Note how cleanly that lands on what already exists: a city whose `factionIdx`
 goes to −1 becomes **Free Folk** by construction, with no code to change
-(`src/macro/faction.h`). The largest state in the world dissolving is, at the
+(`src/tables/faction.h`). The largest state in the world dissolving is, at the
 data level, its cities losing their owner one at a time.
 
 **And the survivors notice** — as everything in this game does. Nothing here is
@@ -1689,7 +1689,7 @@ experiment on the player**, and it is the sharpest idea in the project.
 
 - **Of the nine attributes** — STR / VIT / END (warrior), WIL / INT / WIS
   (mage), SPD / CHA / LCK (misc), matching `AttributeId` in
-  `src/macro/attributes.h` — black energy is touched by **LCK alone**, and even
+  `src/tables/attributes.h` — black energy is touched by **LCK alone**, and even
   then **indirectly and unstated**. Logically airtight: traces of dead gods owe
   nothing to Intelligence or Willpower; they are outside this world's physics.
 - **All-or-nothing abilities**, and **deliberately many of them non-obvious**.
@@ -1822,7 +1822,7 @@ the ten years.
 
 **Shipped and consistent with the fiction:**
 
-- The faction registry (`src/macro/faction.h`) carries every realm as an
+- The faction registry (`src/tables/faction.h`) carries every realm as an
   ordinary row, with the temperaments the lore implies: Magical, Lawful,
   Mercantile, Savage, Outlaw, Abyssal, Cultist, Feral.
 - Cults fight the Magical temperament in the relation matrix — the witch-hunt
@@ -1843,7 +1843,7 @@ the ten years.
   settlement markup multiplies HP or damage after the spawn roll. A creature is
   exactly its row — which is what §1's "the world does not care who is looking"
   requires mechanically.
-- ONE table of bodies — `kNpcTypeDefs[52]` in `src/macro/npc.h` (16 roles + 36
+- ONE table of bodies — `kNpcTypeDefs[52]` in `src/tables/npc.h` (16 roles + 36
   creatures, one id space). "Is this a monster" is no longer a question the
   engine asks; the fiction's "kill anyone, become anyone" has no second
   vocabulary to trip over.
@@ -1997,7 +1997,7 @@ a game once they find one.
 ## Connections
 
 Systems that carry the fiction: factions and relations
-(`src/macro/faction.h`, macroworld.md (macroworld.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the ten-year clock
+(`src/tables/faction.h`, macroworld.md (macroworld.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the ten-year clock
 (time.md (time.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the plot arc, endings and events
 (progression.md (progression.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), quests.md (quests.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the archetypes and
 the nine attributes (rpg.md (rpg.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), [design.md](history/design.md) §14.5); the mage's

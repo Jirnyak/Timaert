@@ -18,8 +18,8 @@
 
 #include "check.h"
 #include "macro/agent_memory.h"
-#include "macro/faction.h"
-#include "macro/npc.h"
+#include "tables/faction.h"
+#include "tables/npc.h"
 #include "macro/npc_ai.h"
 #include "macro/squad.h"
 #include "macro/world_tick.h"

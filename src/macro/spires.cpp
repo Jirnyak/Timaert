@@ -1,7 +1,7 @@
 #include "macro/spires.h"
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"
-#include "macro/spells.h"
+#include "macro/anketa.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 #include "core/rng.h"

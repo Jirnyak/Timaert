@@ -11,11 +11,11 @@
 #include "macro/econ_day.h"
 #include "macro/macro_stock.h"
 #include "macro/entry_context.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/labour.h"           // ОДИН пул рук места (CANON S4)
 #include "macro/landmark_registry.h"
 #include "macro/movement_cost.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/nav_field.h"        // локальные поля-округи (CANON S7)
 #include "macro/player_entity.h"
 #include "macro/npc_spawn.h"

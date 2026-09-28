@@ -2,7 +2,7 @@
 #include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
 
 #include "macro/economy.h"    // stock_price — ranking asks THE price law
-#include "macro/faction.h"    // монетная семья фракции — ординалы номиналов
+#include "tables/faction.h"    // монетная семья фракции — ординалы номиналов
 #include "macro/state.h"      // GameState/Landmark — ведомость пишется в место
 #include "macro/characters.h" // landmark_sheet — анкета места судит спрос
 

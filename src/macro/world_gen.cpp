@@ -25,7 +25,7 @@
 #include "macro/politik.h"
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
-#include "macro/spells.h"
+#include "macro/anketa.h"
 #include "macro/spires.h"
 #include "macro/ruins.h"
 #include "macro/state.h"

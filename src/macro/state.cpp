@@ -3,7 +3,7 @@
 #include "tables/codex.h"
 #include "macro/econ_day.h"
 #include "macro/currency.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/map_generator.h"
 #include "macro/language.h"
 #include "macro/npc_ai.h"          // kGathererReach — the field's press radius

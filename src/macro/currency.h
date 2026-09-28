@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "macro/econ_day.h"   // Depot + econ_pay_debt — приход гасит долг (S10)
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/items.h"
 
 namespace sm {

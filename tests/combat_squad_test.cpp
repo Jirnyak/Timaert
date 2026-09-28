@@ -1,6 +1,6 @@
 #include "check.h"
-#include "macro/faction.h"
-#include "macro/npc.h"
+#include "tables/faction.h"
+#include "tables/npc.h"
 #include "macro/world_row.h"
 #include "ecs/components.h"
 #include "ecs/world.h"

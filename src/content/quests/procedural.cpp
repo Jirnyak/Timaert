@@ -5,7 +5,7 @@
 #include "macro/agent_memory.h"
 #include "tables/commodity.h"
 #include "macro/items.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/politik.h"
 
 #include <algorithm>

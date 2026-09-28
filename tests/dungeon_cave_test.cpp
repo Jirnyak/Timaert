@@ -39,7 +39,7 @@
 #include "sub/map_data.h"
 // Предел дотягивания — колонка СТРОКИ ТЕЛА (вердикт владельца 2026-09-26), а не
 // таблицы пропов: свидетель спрашивает ту же колонку, что player_arm_reach().
-#include "macro/npc.h"
+#include "tables/npc.h"
 
 #include <algorithm>
 #include <cmath>

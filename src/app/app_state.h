@@ -53,7 +53,7 @@
 #include "macro/world_tick.h"
 #include "macro/npc_ai.h"
 #include "macro/entry_context.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/npc_spawn.h"
 #include "macro/macro_snapshot.h"
 #include "macro/currency.h"

@@ -8,7 +8,7 @@
 // zero checks fails by counting.
 #include "check.h"
 
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/world_row.h"
 #include "macro/npc_ai.h"   // squad_season_window — THE boundary window
 #include "macro/world_tick.h"

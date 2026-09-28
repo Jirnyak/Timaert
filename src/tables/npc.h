@@ -10,16 +10,16 @@
 #pragma once
 #include <array>
 #include "core/table_guard.h"
+#include "tables/army.h"        // CombatTemplate — боевой лист строки существа
 #include "tables/behaviour.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include "macro/army.h"
 #include "tables/biomes.h"   // Biome — младшие биты ареала строки
 #include "tables/damage_types.h"
-#include "macro/spells.h"   // spell_ordinal — a casting row names its spell
+#include "tables/spells.h"    // spell_ordinal — a casting row names its spell
 #include "tables/sprite_rows.h"
 
 namespace sm {
@@ -1786,9 +1786,6 @@ inline NPCType soldier_npc_type(std::uint16_t kind) {
     return kind < std::uint16_t(NPCType::Count) ? NPCType(kind)
                                                 : NPCType::Peasant;
 }
-inline NPCType soldier_npc_type(const SoldierRecord& s) {
-    return soldier_npc_type(s.kind);
-}
 
 inline bool npc_hireable(NPCType t) {
     const auto& def = npc_def(t);
@@ -1806,9 +1803,6 @@ inline int npc_upkeep_base(NPCType t) {
 // is a question about a class of thing rather than about this thing's column.
 inline int soldier_upkeep(std::uint16_t kind, int level) {
     return npc_upkeep_base(soldier_npc_type(kind)) * soldier_level_factor(level);
-}
-inline int soldier_upkeep(const SoldierRecord& s) {
-    return soldier_upkeep(s.kind, s.level);
 }
 
 // ── ПРИРОДА, СПРОШЕННАЯ У ЗАПИСИ РОСТЕРА ──────────────────────────────────
@@ -1844,15 +1838,7 @@ inline int hire_price_for(std::uint16_t kind, int level) {
     return npc_def(soldier_npc_type(kind)).hireGold
            * soldier_level_factor(level);
 }
-inline int hire_price_for(const SoldierRecord& s) {
-    return hire_price_for(s.kind, s.level);
-}
 
-inline int npc_hire_price_base(NPCType t) {
-    const SoldierRecord preview = make_soldier(
-        static_cast<std::uint8_t>(t), npc_def(t).baseLevel, 0u);
-    return hire_price_for(preview);
-}
 
 inline int npc_xp_reward(NPCType t, int level) {
     const int base = npc_def(t).xpReward;

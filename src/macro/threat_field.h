@@ -34,7 +34,7 @@
 
 #include "macro/macro_world.h"
 #include "macro/nav_field.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 
 namespace sm {
 

@@ -20,7 +20,10 @@
 #pragma once
 #include "core/time.h"          // steps_from_seconds — квант двери восстановления
 #include "tables/attributes.h"  // каталог: AttributeId/SkillId, строки, THE skill law
+#include "tables/army.h"        // каталог: CombatTemplate — боевой лист строки
 #include "tables/bonus.h"       // каталог: строки бонусов, чью сумму копит анкета
+#include "tables/npc.h"         // каталог: строка существа — цена найма, содержание, награда
+#include "tables/spells.h"      // каталог: строка спелла — что делает каст новичка
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -608,6 +611,106 @@ inline int apply_instant(const PoolSlice& pools, Bonus b) {
     return *cur - before;
 }
 
+// ══ СЛОТ РОСТЕРА ══════════════════════════════════════════════════════════
+// `SoldierRecord` — душа В РОСТЕРЕ конкретного сквада: ординал строки
+// каталога (`kind`), её уровень и стабильный id сейва. Боевой лист самой
+// строки — `CombatTemplate@src/tables/army.h`, и он один на весь вид.
+//
+// ЭТО ДОЖИВАЮЩАЯ ФОРМА, и названо вслух: ростер и инвентарь по вердикту
+// владельца (2026-09-28: «ростер и инвентарь уже по сути почти слиты»)
+// сходятся в ОДИН контейнер 32×32, и тогда слот ростера перестаёт быть
+// отдельным типом. До тех пор он стоит здесь — в анкете, где и был.
+
+struct SoldierRecord {
+    std::uint32_t entityId = 0; // stable save id, not an EnTT handle; 0 =
+                                // a GENERIC soul (no history, stackable)
+    // WHAT this member is, in the ONE id space every body already shares with
+    // the ECS (`ecs::NPCKind.type`): an ordinal of the one npc table — a wolf
+    // is as legal a row as a spearman, so a wolf pack IS a squad, and the byte
+    // this used to be could not say so (CANON.md S4/S16). The old
+    // `0x100 | catalog index` monster encoding is dead with the second table
+    // (npc.h). Sixteen bits, validated by npc.h `valid_npc_kind`.
+    std::uint16_t kind     = 0;
+    std::int16_t  level    = 1;
+};
+
+inline bool operator==(const SoldierRecord& a, const SoldierRecord& b) {
+    return a.entityId == b.entityId && a.kind == b.kind && a.level == b.level;
+}
+inline bool operator!=(const SoldierRecord& a, const SoldierRecord& b) {
+    return !(a == b);
+}
+
+// ── СЛИЯНИЕ M-71 (2026-09-24): ПЛОТНЫЙ РОСТЕР УМЕР ─────────────────────────
+// SoldierSquad / SoldierSlot / kMaxSquadSlots / souls()-развёртка вырезаны:
+// существа лежат СТРОКАМИ МИРА в едином контейнере (Inventory, закон двух
+// областей — items.h), все операции — дверями macro/world_row.h
+// (creatures_push / pop_back / remove_one / move / add, головы, развёртка).
+// Здесь остались боевой лист строки и МОНЕТА ПЕРЕНОСА души.
+
+inline SoldierRecord make_soldier(std::uint16_t kind, int level,
+                                  std::uint32_t entityId) {
+    SoldierRecord s{};
+    s.entityId = entityId;
+    s.kind = kind;
+    s.level = std::int16_t(normalize_soldier_level(level));
+    return s;
+}
+
+// ══ ЦЕНА ЭФФЕКТА В РУКАХ ЭТОГО КАСТЕРА ════════════════════════════════════
+// Строка спелла — каталог (`tables/spells.h`), она говорит, что делает КАСТ
+// НОВИЧКА. А что из неё выйдет у конкретного тела, решают ЕГО ранги — значит
+// функция анкетная, и стоять ей здесь, рядом с ранга́ми, которые она читает.
+
+// What ONE effect cell of a spell is worth in the caster's hands.
+//
+// THE LAW is the project's own, said about magic: attributes ADD, skills
+// MULTIPLY. The row states what a novice's casting does; the caster's
+// training multiplies it through the one door that turns a rank into a
+// multiplier (`skill_mult` выше в этом файле) — so magic's mastery curve is
+// not a private formula and cannot drift from the rest of the sheet.
+//
+// Phase 5 (CANON S15): the training that scales an EFFECT is the spell's own
+// SCHOOL — the line this shape was chosen for. A sleeping tag (school ==
+// SkillId::Count) falls back to Spellcraft, which is exactly what every
+// spell read before schools woke. The school is REQUIRED, not defaulted:
+// callers hold the SpellDef and must say `spell_school(def)` — a default
+// would be silently wrong for exactly the six tags that just woke.
+inline Bonus spell_bonus(const Bonus& base, const Skills& caster,
+                         SkillId school) {
+    if (base.row == 0) return {};
+    const SkillId trained =
+        school != SkillId::Count ? school : SkillId::Spellcraft;
+    const float scaled = float(base.value) * skill_mult(caster, trained);
+    const int rounded = int(scaled < 0.0f ? scaled - 0.5f : scaled + 0.5f);
+    Bonus out = base;
+    out.value = std::int16_t(std::clamp(rounded, -32768, 32767));
+    return out;
+}
+
+// ══ ЗАПИСЬ РОСТЕРА, СПРОШЕННАЯ У КАТАЛОГА ═════════════════════════════════
+// Четыре двери, у которых ОДИН аргумент — слот ростера, а весь ответ лежит в
+// строке каталога (`tables/npc.h`). Стоят здесь, а не там, ровно по границе
+// наряда M-181: каталог не знает, в каком контейнере лежит его экземпляр.
+// Умрут вместе с `SoldierRecord`, когда ростер сольётся с инвентарём.
+inline NPCType soldier_npc_type(const SoldierRecord& s) {
+    return soldier_npc_type(s.kind);
+}
+
+inline int soldier_upkeep(const SoldierRecord& s) {
+    return soldier_upkeep(s.kind, s.level);
+}
+
+inline int hire_price_for(const SoldierRecord& s) {
+    return hire_price_for(s.kind, s.level);
+}
+
+inline int npc_hire_price_base(NPCType t) {
+    const SoldierRecord preview = make_soldier(
+        static_cast<std::uint8_t>(t), npc_def(t).baseLevel, 0u);
+    return hire_price_for(preview);
+}
+
 } // namespace sm
 
 // Включение стоит ЗДЕСЬ, а не наверху файла, и это не небрежность:
@@ -631,3 +734,4 @@ TIMAERT_ROW(sm::DerivedBonuses);
 TIMAERT_ROW(sm::LevelData);
 TIMAERT_ROW(sm::BonusTotals);
 TIMAERT_ROW(sm::PoolSlice);
+TIMAERT_ROW(sm::SoldierRecord);

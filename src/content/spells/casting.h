@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "macro/spells.h"
+#include "macro/anketa.h"
 
 namespace sm::ecs { struct World; }
 

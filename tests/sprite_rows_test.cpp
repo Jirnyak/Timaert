@@ -24,7 +24,7 @@
 #include "check.h"
 
 #include "macro/fauna.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "tables/sprite_rows.h"
 
 #include <cstring>

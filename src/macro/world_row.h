@@ -22,9 +22,9 @@
 #pragma once
 #include <cstdint>
 
-#include "macro/army.h"    // SoldierRecord — монета переноса души
+#include "macro/anketa.h"    // SoldierRecord — монета переноса души
 #include "macro/items.h"   // item_catalog() — предметная половина строк
-#include "macro/npc.h"     // NPCType — половина существ
+#include "tables/npc.h"     // NPCType — половина существ
 
 namespace sm {
 

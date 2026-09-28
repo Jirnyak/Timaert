@@ -28,7 +28,7 @@
 #include "check.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "sub/city_layout.h"
 #include "sub/map_data.h"
 #include "sub/seamless_manager.h"

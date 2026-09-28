@@ -23,7 +23,7 @@
 
 #include "check.h"
 #include "sub/damage.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "ecs/components.h"
 #include "events/event_bus.h"
 #include "events/event_types.h"

@@ -15,7 +15,7 @@
 #include "macro/econ_day.h"     // kHeadsPerCityWorker — the bench quota the
                                 // city's labourShift is log2 of (guard below)
 #include "tables/map_actions.h"  // the verb bits the `actions` column declares
-#include "macro/npc.h"   // NPCType — the crew rows below name who a place raises
+#include "tables/npc.h"   // NPCType — the crew rows below name who a place raises
 #include "tables/squad_type.h"  // SquadType — строка объявляет, КОГО она поднимает
 #include <string_view>
 

@@ -12,10 +12,10 @@
 #include <vector>
 #include "tables/biomes.h"
 #include "macro/features.h"
-#include "macro/army.h"
+#include "macro/anketa.h"
 #include "tables/behaviour.h"
 #include "macro/landmark_registry.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "tables/sprite_rows.h"
 
 namespace sm {

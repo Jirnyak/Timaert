@@ -5,7 +5,7 @@
 #include "macro/npc_ai.h"
 #include "macro/resource_field.h"
 #include "tables/seasons.h"
-#include "macro/spells.h"
+#include "macro/anketa.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
 #include "macro/zones.h"

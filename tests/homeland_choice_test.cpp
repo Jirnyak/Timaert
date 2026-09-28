@@ -14,7 +14,7 @@
 #include "check.h"
 
 #include "content/plot/intro.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 
 #include <cstring>
 #include <string_view>

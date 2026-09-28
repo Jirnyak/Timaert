@@ -24,7 +24,7 @@
 
 #include <algorithm>
 
-#include "macro/npc.h"     // природа строки: кто есть народ (kNpcNature)
+#include "tables/npc.h"     // природа строки: кто есть народ (kNpcNature)
 #include "macro/state.h"   // Landmark — чьи это души
 
 namespace sm {

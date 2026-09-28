@@ -19,7 +19,7 @@
 
 #include "core/rng.h"
 #include "macro/characters.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/macro_snapshot.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"

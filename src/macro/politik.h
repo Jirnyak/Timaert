@@ -25,7 +25,7 @@
 #include <vector>
 #include "core/torus.h"
 #include "macro/language.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 
 namespace sm {
 

@@ -24,7 +24,7 @@
 #include "macro/movement_cost.h"
 #include "macro/pathfinding.h"
 #include "macro/squad.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "core/torus.h"
 #include "macro/store.h"
 

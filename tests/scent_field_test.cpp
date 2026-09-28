@@ -10,10 +10,10 @@
 #include "check.h"
 
 #include "ecs/components.h"
-#include "macro/army.h"
+#include "macro/anketa.h"
 #include "macro/world_row.h"
 #include "macro/currency.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/npc_ai.h"
 #include "macro/scent_field.h"
 #include "macro/store.h"

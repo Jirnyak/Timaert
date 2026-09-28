@@ -6,7 +6,7 @@
 // save-format guard: reordering or inserting mid-table must turn this red,
 // appending must not.
 #include "check.h"
-#include "macro/spells.h"
+#include "macro/anketa.h"
 
 #include <string_view>
 

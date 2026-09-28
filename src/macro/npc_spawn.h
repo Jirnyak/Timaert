@@ -13,7 +13,7 @@
 #include <vector>
 #include "ecs/world.h"
 #include "macro/econ_day.h"   // EconFactSink — доклад оттока пула душ
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/state.h"
 #include "macro/map_generator.h"
 

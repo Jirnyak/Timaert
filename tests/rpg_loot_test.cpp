@@ -13,10 +13,10 @@
 #include "check.h"
 
 #include "macro/anketa.h"
-#include "macro/army.h"
+#include "macro/anketa.h"
 #include "macro/character_sheet.h"
 #include "macro/items.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 
 #include <cmath>
 #include <cstdio>

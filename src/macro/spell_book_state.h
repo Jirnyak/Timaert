@@ -16,7 +16,7 @@
 
 #include <cstdint>
 
-#include "macro/spells.h"
+#include "macro/anketa.h"
 
 namespace sm {
 

@@ -33,7 +33,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "macro/faction.h"
+#include "tables/faction.h"
 
 namespace sm {
 

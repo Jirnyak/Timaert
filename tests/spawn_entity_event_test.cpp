@@ -15,8 +15,8 @@
 
 #include "check.h"
 #include "macro/npc_spawn.h"
-#include "macro/npc.h"
-#include "macro/faction.h"
+#include "tables/npc.h"
+#include "tables/faction.h"
 #include "macro/state.h"
 #include "core/torus.h"
 #include "ecs/components.h"

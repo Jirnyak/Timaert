@@ -23,9 +23,9 @@
 // behaves like every other row from that moment on. Nothing invents a phantom
 // row in a map any more, and nothing is silently dropped.
 #pragma once
-#include "macro/interests.h"   // kRelationMin/Max — ОДНА шкала отношений
+#include "tables/faction.h"      // kRelationMin/Max — ОДНА шкала отношений мира
 #include "core/table_guard.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 
 #include <array>
 #include <cstdint>

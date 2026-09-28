@@ -8,7 +8,7 @@
 // chain of chambers joined by winding galleries, carved OUT of solid rock —
 // everything the walk does not open stays stone.
 #include "sub/dgn/dispatch.h"
-#include "macro/npc.h"  // kAdventurerCombat — the arm chambers are sized to
+#include "tables/npc.h"  // kAdventurerCombat — the arm chambers are sized to
 
 #include "core/rng.h"
 

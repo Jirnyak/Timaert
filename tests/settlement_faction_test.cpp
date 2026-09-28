@@ -23,7 +23,7 @@
 #include "check.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/politik.h"
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"

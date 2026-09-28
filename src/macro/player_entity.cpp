@@ -5,10 +5,10 @@
 #include "macro/anatomy.h"
 #include "macro/entry_context.h"
 #include "macro/character_sheet.h"
-#include "macro/faction.h"
-#include "macro/npc.h"
+#include "tables/faction.h"
+#include "tables/npc.h"
 #include "macro/spell_book_state.h"
-#include "macro/spells.h"
+#include "macro/anketa.h"
 #include "macro/squad.h"
 #include "macro/store.h"
 #include <algorithm>

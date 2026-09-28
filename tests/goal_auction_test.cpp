@@ -20,7 +20,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"
 #include "macro/econ_day.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/nav_field.h"
 #include "macro/npc_ai.h"
 #include "macro/resource_field.h"

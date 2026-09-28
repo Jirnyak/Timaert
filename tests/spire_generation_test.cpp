@@ -17,7 +17,7 @@
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"
 #include "macro/ruins.h"
-#include "macro/spells.h"
+#include "macro/anketa.h"
 #include "macro/spires.h"
 #include "macro/state.h"
 #include "macro/zones.h"

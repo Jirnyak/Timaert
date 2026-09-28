@@ -1,5 +1,5 @@
 #include "macro/politik.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/map_generator.h"
 #include "macro/settlement_score.h"
 #include "core/rng.h"

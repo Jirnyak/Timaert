@@ -21,11 +21,11 @@
 #include "sub/map_data.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
-#include "macro/army.h"
+#include "macro/anketa.h"
 #include "macro/world_row.h"
 #include "macro/character_sheet.h"
-#include "macro/faction.h"
-#include "macro/npc.h"
+#include "tables/faction.h"
+#include "tables/npc.h"
 #include "macro/store.h"
 
 #include <entt/entt.hpp>

@@ -150,46 +150,14 @@ struct CombatTemplate {
     std::int16_t multPct = 100;
 };
 
-struct SoldierRecord {
-    std::uint32_t entityId = 0; // stable save id, not an EnTT handle; 0 =
-                                // a GENERIC soul (no history, stackable)
-    // WHAT this member is, in the ONE id space every body already shares with
-    // the ECS (`ecs::NPCKind.type`): an ordinal of the one npc table — a wolf
-    // is as legal a row as a spearman, so a wolf pack IS a squad, and the byte
-    // this used to be could not say so (CANON.md S4/S16). The old
-    // `0x100 | catalog index` monster encoding is dead with the second table
-    // (npc.h). Sixteen bits, validated by npc.h `valid_npc_kind`.
-    std::uint16_t kind     = 0;
-    std::int16_t  level    = 1;
-};
-
+// ── ЗАКОН УРОВНЯ СТРОКИ ────────────────────────────────────────────────────
+// Уровень — свойство ЭКЗЕМПЛЯРА, но его ГРАНИЦА и его множитель суть законы
+// каталога: их читает и цена найма, и содержание, и награда за убийство, то
+// есть колонки строк ниже. Поэтому обе двери стоят здесь, а не в анкете.
 inline int normalize_soldier_level(int level) {
     if (level < 1) return 1;
     if (level > kMaxSoldierLevel) return kMaxSoldierLevel;
     return level;
-}
-
-inline bool operator==(const SoldierRecord& a, const SoldierRecord& b) {
-    return a.entityId == b.entityId && a.kind == b.kind && a.level == b.level;
-}
-inline bool operator!=(const SoldierRecord& a, const SoldierRecord& b) {
-    return !(a == b);
-}
-
-// ── СЛИЯНИЕ M-71 (2026-09-24): ПЛОТНЫЙ РОСТЕР УМЕР ─────────────────────────
-// SoldierSquad / SoldierSlot / kMaxSquadSlots / souls()-развёртка вырезаны:
-// существа лежат СТРОКАМИ МИРА в едином контейнере (Inventory, закон двух
-// областей — items.h), все операции — дверями macro/world_row.h
-// (creatures_push / pop_back / remove_one / move / add, головы, развёртка).
-// Здесь остались боевой лист строки и МОНЕТА ПЕРЕНОСА души.
-
-inline SoldierRecord make_soldier(std::uint16_t kind, int level,
-                                  std::uint32_t entityId) {
-    SoldierRecord s{};
-    s.entityId = entityId;
-    s.kind = kind;
-    s.level = std::int16_t(normalize_soldier_level(level));
-    return s;
 }
 
 inline int soldier_level_factor(int level) {
@@ -213,4 +181,3 @@ inline int soldier_level_factor(int level) {
 // Новая структура в этом файле обязана появиться и в этом списке — за полнотой
 // списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
 TIMAERT_ROW(sm::CombatTemplate);
-TIMAERT_ROW(sm::SoldierRecord);

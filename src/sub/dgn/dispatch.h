@@ -5,7 +5,7 @@
 // owes the base terrain generator nothing.
 #pragma once
 #include "sub/map_data.h"
-#include "macro/npc.h"  // kAdventurerCombat — the arm the manoeuvre floor is sized to
+#include "tables/npc.h"  // kAdventurerCombat — the arm the manoeuvre floor is sized to
 
 namespace sm::sub {
 

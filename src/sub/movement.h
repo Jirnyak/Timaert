@@ -69,7 +69,7 @@
 #include <memory>
 #include <vector>
 
-#include "macro/faction.h"   // kMaxFactions — THE world faction limit
+#include "tables/faction.h"   // kMaxFactions — THE world faction limit
 
 namespace sm::sub {
 

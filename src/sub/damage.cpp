@@ -2,7 +2,7 @@
 #include "sub/record.h"   // pools_of — a blow lands on the RECORD, not on a copy
 
 #include "ecs/components.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/anatomy.h"
 #include "macro/character_sheet.h"  // the sheet the armour law asks for training
 #include <algorithm>

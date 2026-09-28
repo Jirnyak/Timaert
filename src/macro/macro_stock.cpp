@@ -6,7 +6,7 @@
 #include "macro/store.h"
 
 #include "ecs/world.h"
-#include "macro/army.h"
+#include "macro/anketa.h"
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"  // двери существ единого контейнера (M-71)
 #include "macro/fauna.h"

@@ -7,8 +7,8 @@
 #include "macro/items.h"
 #include "macro/anatomy.h"
 #include "tables/commodity.h"
-#include "macro/faction.h"   // mint columns — what the neutrality witness walks
-#include "macro/npc.h"
+#include "tables/faction.h"   // mint columns — what the neutrality witness walks
+#include "tables/npc.h"
 
 #include <algorithm>
 #include <cmath>

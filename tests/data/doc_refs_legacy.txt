@@ -1137,7 +1137,6 @@ macro-registry.md	app/main.cpp:621
 macro-registry.md	app/main.cpp:758-781
 macro-registry.md	app_state.h:339-340
 macro-registry.md	app_state.h:424-425
-macro-registry.md	army.h:195
 macro-registry.md	balance_run.cpp:275
 macro-registry.md	balance_run.cpp:279
 macro-registry.md	behaviour.h:28
@@ -1188,7 +1187,6 @@ macro-registry.md	features.h:203
 macro-registry.md	features.h:217
 macro-registry.md	features.h:37
 macro-registry.md	features.h:44
-macro-registry.md	interests.h:200
 macro-registry.md	interests.h:89
 macro-registry.md	items.cpp:107
 macro-registry.md	items.cpp:254-303

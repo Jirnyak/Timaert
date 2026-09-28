@@ -2,7 +2,7 @@
 #pragma once
 #include "ecs/pools.h"
 #include "core/torus.h"        // cell_of — ОДИН адрес клетки мира
-#include "macro/army.h"
+#include "macro/anketa.h"
 #include "tables/commodity.h"   // kCommodityCount — счёт содержания ростера
 #include "macro/roster.h"      // sm::Roster — ОДИН ростер на место и на сквад
 #include "macro/items.h"

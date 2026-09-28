@@ -3,11 +3,11 @@
 #include "sub/dgn/dispatch.h"   // dungeon_scene_seed, dungeon_has_upper —
                                 // the household/partition law (CANON S28)
 #include "macro/entry_context.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
 #include "core/rng.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/character_sheet.h"
 #include "macro/macro_stock.h"
 #include "macro/tree_layer.h"

@@ -27,7 +27,7 @@
 #include "macro/currency.h"
 #include "macro/deposit_layer.h"
 #include "macro/econ_day.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/items.h"
 #include "macro/landmark_grid.h"
 #include "macro/macro_world.h"

@@ -4,7 +4,7 @@
 #include "core/rng.h"
 #include "macro/store.h"
 #include "macro/macro_stock.h" // MacroStock::Roster — чьи люди стоят без чувств
-#include "macro/npc.h"   // cruiseM — крейсерская высота рода летуна
+#include "tables/npc.h"   // cruiseM — крейсерская высота рода летуна
 #include "sub/record.h"  // macro_record_of — «без сознания» читается через зеркало
 #include <cmath>
 #include <algorithm>

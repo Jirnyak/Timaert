@@ -22,7 +22,7 @@
 #include <cstdint>
 #include "tables/behaviour.h"
 #include "macro/character_sheet.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/state.h"
 
 namespace sm {

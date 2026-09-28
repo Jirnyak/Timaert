@@ -7,8 +7,8 @@
 #pragma once
 #include <cstdint>
 #include "ecs/world.h"
-#include "macro/army.h"
-#include "macro/faction.h"
+#include "macro/anketa.h"
+#include "tables/faction.h"
 
 namespace sm::sub {
 

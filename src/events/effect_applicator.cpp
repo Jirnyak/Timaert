@@ -1,6 +1,6 @@
 #include "events/effect_applicator.h"
 #include "macro/currency.h"
-#include "macro/spells.h"
+#include "macro/anketa.h"
 #include <cstdio>
 
 namespace sm {

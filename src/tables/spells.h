@@ -16,8 +16,8 @@
 // static_assert there refuses a mismatch).
 #pragma once
 #include "core/table_guard.h"
-#include "macro/anketa.h"
-#include "macro/anketa.h"
+#include "tables/attributes.h"
+#include "tables/bonus.h"
 #include "tables/damage_types.h"
 #include <algorithm>
 #include <cstdint>
@@ -275,32 +275,6 @@ inline constexpr DamageType spell_damage_type(const SpellDef& s) {
 // a sleeping tag (Body/Mind) — no school, Spellcraft alone carries it.
 inline constexpr SkillId spell_school(const SpellDef& s) {
     return kSpellTagDefs[std::size_t(s.tag)].school;
-}
-
-// What ONE effect cell of a spell is worth in the caster's hands.
-//
-// THE LAW is the project's own, said about magic: attributes ADD, skills
-// MULTIPLY. The row states what a novice's casting does; the caster's
-// training multiplies it through the one door that turns a rank into a
-// multiplier (`skill_mult`, macro/attributes.h) — so magic's mastery curve is
-// not a private formula and cannot drift from the rest of the sheet.
-//
-// Phase 5 (CANON S15): the training that scales an EFFECT is the spell's own
-// SCHOOL — the line this shape was chosen for. A sleeping tag (school ==
-// SkillId::Count) falls back to Spellcraft, which is exactly what every
-// spell read before schools woke. The school is REQUIRED, not defaulted:
-// callers hold the SpellDef and must say `spell_school(def)` — a default
-// would be silently wrong for exactly the six tags that just woke.
-inline Bonus spell_bonus(const Bonus& base, const Skills& caster,
-                         SkillId school) {
-    if (base.row == 0) return {};
-    const SkillId trained =
-        school != SkillId::Count ? school : SkillId::Spellcraft;
-    const float scaled = float(base.value) * skill_mult(caster, trained);
-    const int rounded = int(scaled < 0.0f ? scaled - 0.5f : scaled + 0.5f);
-    Bonus out = base;
-    out.value = std::int16_t(std::clamp(rounded, -32768, 32767));
-    return out;
 }
 
 inline constexpr SpellDef kSpellDefs[] = {

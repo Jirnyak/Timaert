@@ -6,7 +6,7 @@
 #include "macro/agent_memory.h"
 #include "tables/codex.h"
 #include "macro/currency.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/entry_context.h"
 #include "events/event_bus.h"
 #include "events/quests/quest_engine.h"

@@ -12,8 +12,8 @@
 #include "macro/character_sheet.h"
 #include "tables/biomes.h"
 #include "macro/features.h"
-#include "macro/army.h"
-#include "macro/npc.h"
+#include "macro/anketa.h"
+#include "tables/npc.h"
 #include "macro/macro_stock.h"
 
 namespace sm::sub {

@@ -36,10 +36,28 @@
 // it through one callback — see SubworldEngine::battle_relation_callback.
 #pragma once
 #include <cstdint>
-#include "macro/interests.h"   // kRelationMin/Max — ОДНА шкала отношений
 #include <cstring>
 
 namespace sm {
+
+// ── ЗАКОН ДИАПАЗОНА (владелец, 2026-09-21) ───────────────────────────────
+// Дословно: «про −100…100 это ОШИБКА, надо −127…127, очевидно, иначе не весь
+// диапазон; у нас везде степени двойки и все диапазоны». Граница шкалы
+// берётся по ГРАНИЦЕ ТИПА, а не по круглому десятичному числу: «сто»
+// выглядит осмысленно и не значит ничего, а 127 — это ровно то, что несёт
+// байт. Закон записан в CANON S26 и распространяется на всякую шкалу мира.
+//
+// ШКАЛА СИММЕТРИЧНА, И ЭТО СТОИТ ОДНОГО ЗНАЧЕНИЯ. int8 даёт −128…127;
+// зеркальность «настолько же враг, насколько друг» важнее лишней единицы,
+// поэтому силой считается только −127…127.
+// `−128` ЗАРЕЗЕРВИРОВАН ВЛАДЕЛЬЦЕМ под особое значение («будем для чего-то
+// особого использовать»), и смысл ему ещё НЕ НАЗНАЧЕН. Это не «свободный
+// байт»: не занимать его без вердикта и не «чинить» асимметрию шкалы.
+inline constexpr int kRelationMax = 127;
+inline constexpr int kRelationMin = -kRelationMax;
+inline constexpr int kRelationReserved = -128;
+static_assert(kRelationMin == -127 && kRelationMax == 127,
+              "шкала отношений симметрична по границе int8 (владелец)");
 
 // THE hostility line: a relation below this is an enemy. One number for every
 // consumer — the subworld battle masks (SubworldEngine::battle_relation_

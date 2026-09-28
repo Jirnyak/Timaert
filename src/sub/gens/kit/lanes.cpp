@@ -2,7 +2,7 @@
 
 #include "sub/gens/kit/streets.h"
 
-#include "macro/npc.h"   // kNpcBodyRadiusDefault — the body a lane is sized to
+#include "tables/npc.h"   // kNpcBodyRadiusDefault — the body a lane is sized to
 
 #include <algorithm>
 #include <array>

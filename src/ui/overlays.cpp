@@ -13,11 +13,11 @@
 #include "macro/landmark_registry.h"
 #include "macro/landmark_iter.h"
 #include "ui/landmark_draw.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/characters.h"   // landmark_sheet — что место умеет
 #include "tables/commodity.h"   // the raw rows the scrap variant byte names
 #include "macro/economy.h"
-#include "macro/faction.h"
+#include "tables/faction.h"
 #include "macro/items.h"
 #include "macro/politik.h"
 #include "content/spells/spell_book.h"

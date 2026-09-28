@@ -31,7 +31,7 @@
 #pragma once
 
 #include "ecs/components.h"
-#include "macro/npc.h"
+#include "tables/npc.h"
 #include "macro/fauna.h"
 #include "macro/store.h"
 #include "sub/height.h"   // kBodyEyeM — the number body_eye_m() hands out
