@@ -27,7 +27,6 @@ namespace {
 constexpr std::uint32_t kMagic = 0x534D5341u; // 'SMSA'
 constexpr std::uint32_t kChecksumSeed = 2166136261u;
 constexpr std::uint32_t kChecksumPrime = 16777619u;
-constexpr std::uint64_t kMaxPayloadBytes = 64ull * 1024ull * 1024ull;
 constexpr std::uint32_t kMaxInventoryStacks =
     std::uint32_t(kMaxInventorySlots);
 constexpr std::uint32_t kMaxSmallVector = 8192u;
@@ -46,6 +45,232 @@ constexpr std::uint32_t kMaxQuestParts = 4096u;
 // с 2026-09-25 число берётся из переписи (kWorldSquads), не дублем.
 constexpr std::uint32_t kMaxMacroNpcs = std::uint32_t(kWorldSquads);
 constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
+
+// ── ПОТОЛОК PAYLOAD — ФАКТ О РАСКЛАДКЕ, А НЕ ЧИСЛО ───────────────────────
+//
+// Было: литерал 64 МиБ с потолка. Он МЕНЬШЕ суммы капов блоков, которые сейв
+// обязан вместить, — легальный мир на капе `save_game` отвергал молча, а
+// форма данных под него уже подгонялась (следы писались разреженно «чтобы не
+// пробить», write_scent_channel ниже). Вердикт владельца 2026-09-25:
+// «вывести kMaxPayloadBytes из суммы капов блоков на сборке, а не литералом».
+//
+// СЛАГАЕМОЕ = КАП БЛОКА × БАЙТЫ ЕГО ЗАПИСИ, по тем же константам, которые
+// читает write_payload, — второго списка капов не заводится (DOD п.6). Байты
+// записи считаются по ПРИМИТИВАМ, которыми блок пишется, а не по `sizeof`
+// структуры: на провод едут поля, а паддинг состоянием не является.
+// Разреженный блок входит своим ПЛОТНЫМ капом: сторож меряет худший
+// ЛЕГАЛЬНЫЙ мир, а не типичный, и разреженность остаётся решением ФОРМАТА
+// ФАЙЛА (DOD п.7), а не следствием потолка.
+//
+// ЧЕГО В СУММЕ НЕТ, И ЭТО НАЗВАНО ВСЛУХ: ТЕЛА СТРОК. У строки нет «байтов
+// записи» — она переменной длины, и единственный её потолок это
+// `savefmt::kMaxStringBytes` (1 МиБ на штуку, сам взят с потолка). Строковых
+// слотов по капам 67.2 млн — сумма с ними дала бы ~70 ТБ, то есть сторож,
+// который не сторож. Поэтому сумма ограничивает ПЛОСКУЮ раскладку (её
+// пробить нельзя по построению), а разбежавшиеся строки ловит тот же сторож
+// в рантайме, в `save_game`.
+//
+// Дыра открыта и НАЗВАНА, своего наряда не заводит: её чинят M-115 (эпик
+// строк — `Landmark::name`, `Marker`, `Quest`, `logicNodes*` в `char[N]` и
+// ординалы) и M-180 (шестнадцать строк мира с heap-контейнером членом). В
+// тот день, когда строка состояния станет плоской, у записи появится
+// РАЗМЕР, `kMaxStringBytes` умрёт, а у этой суммы не останется оговорки.
+constexpr std::uint64_t kCountBytes = sizeof(std::uint32_t);   // Writer::count
+constexpr std::uint64_t kStrBytes = sizeof(std::uint32_t);     // только префикс
+
+// Стак единого контейнера: адрес слота + строка ItemRef (M-71 — существа
+// едут теми же слотами, поэтому кап один).
+constexpr std::uint64_t kItemRefBytes =
+    sizeof(ItemRef::def) + sizeof(ItemRef::material) + sizeof(ItemRef::level)
+    + sizeof(ItemRef::count) + sizeof(ItemRef::seed)
+    + sizeof(ItemRef::entityId) + sizeof(ItemRef::affixRow)
+    + sizeof(ItemRef::affixValue);
+constexpr std::uint64_t kInventoryBytes =            // write_inventory
+    kCountBytes + std::uint64_t(kMaxInventoryStacks)
+    * (sizeof(std::uint16_t) + kItemRefBytes);
+constexpr std::uint64_t kEquipmentBytes =            // write_equipment
+    sizeof(Equipment::anatomy) + kCountBytes
+    + std::uint64_t(kMaxBodyParts) * (sizeof(std::uint8_t) + kItemRefBytes);
+
+// Скаляры мира — один экземпляр, названное исключение переписи штабелей.
+constexpr std::uint64_t kPrefixBytes =
+    sizeof(GameState::worldSeed) + sizeof(GameState::mapW)
+    + sizeof(GameState::mapH) + sizeof(GameState::mapParams)
+    + sizeof(GameState::cityCountTarget) + sizeof(GameState::worldTime)
+    + sizeof(GameState::lastWorldRebakeDay)
+    + sizeof(GameState::nextMacroSpawnOrdinal)
+    + sizeof(GameState::nextLandmarkOrdinal)
+    + sizeof(GameState::nextQuestOrdinal)
+    + kStrBytes + kStrBytes + sizeof(GameState::lootPoolValue);
+
+constexpr std::uint64_t kPlayerBytes =               // write_player
+    kStrBytes + sizeof(PlayerState::sexIdx) + sizeof(PlayerState::ageDays)
+    + sizeof(PlayerState::codexUnlockedBits)
+    + sizeof(PlayerState::factionPeaceUntilDay)
+    + kCountBytes + std::uint64_t(kMaxQuests) * sizeof(SettledQuestOffer)
+    + sizeof(PlayerState::completedQuestCount)
+    + sizeof(PlayerState::failedQuestCount)
+    + kCountBytes
+      + std::uint64_t(PlayerState::kJournalFactsCap) * sizeof(WorldFact)
+    + sizeof(PlayerState::journalSeenSeq) + sizeof(PlayerState::journalFull);
+
+// Места — ВТОРОЙ штабель сущностей, под снос M-90 (core/stacks.h). Пока он
+// жив, он и есть крупнейшее плоское слагаемое потолка.
+constexpr std::uint64_t kLandmarkBytes =             // write_landmark
+    sizeof(Landmark::id) + sizeof(std::uint8_t) + kStrBytes
+    + sizeof(Landmark::x) + sizeof(Landmark::y)
+    + sizeof(Landmark::population) + kInventoryBytes
+    + sizeof(Landmark::factionIdx) + sizeof(Landmark::interests)
+    + sizeof(Landmark::starvedYesterday) + sizeof(Landmark::seasonWellbeing)
+    + sizeof(Landmark::popGrowthCarry) + sizeof(Landmark::renown)
+    + sizeof(Landmark::spellId) + sizeof(std::uint8_t)
+    + sizeof(Landmark::titheOwedValue)
+    + sizeof(Landmark::titheSeasonAssessed)
+    + sizeof(Landmark::titheAvgValue) + sizeof(Landmark::needDebt)
+    + sizeof(Landmark::garrison.needDebt)
+    + sizeof(Landmark::garrison.wageDebt);
+constexpr std::uint64_t kLandmarksBlockBytes =
+    kCountBytes + std::uint64_t(kMaxLandmarks) * kLandmarkBytes;
+
+constexpr std::uint64_t kMarkersBlockBytes =         // write_marker
+    kCountBytes + std::uint64_t(kMaxMarkers)
+    * (kStrBytes + sizeof(std::uint8_t) + sizeof(Marker::x)
+       + sizeof(Marker::y) + kStrBytes);
+
+// Матрица целиком плюс ИМЕНА хвостовых рантайм-слотов. Имя там `char[]`, а
+// не строка мира, поэтому его длина ЗНАЕТСЯ — и этот блок в сумме честен
+// целиком. (Хвостовые слоты подлежат сносу — ЗАКОН ПАКЕТНОЙ ШИНЫ, род 6.)
+constexpr std::uint64_t kRelationsBlockBytes =       // write_relations
+    sizeof(RelationMatrix::rel) + sizeof(RelationMatrix::used)
+    + std::uint64_t(kMaxWorldFactions - kFactionCount)
+      * (kStrBytes + std::uint64_t(RelationMatrix::kMaxIdLen - 1));
+
+constexpr std::uint64_t kSubStateBytes =             // write_sub_state
+    sizeof(std::uint8_t) + sizeof(GameSubState::settlementId);
+
+// Сквады — гладкий массив макро-энтити (ЗАКОН ГЛАДКОЙ ПАМЯТИ). Кап — тот же
+// kWorldSquads переписи, что и у колонок мира.
+constexpr std::uint64_t kSpellBookBytes =            // write_spell_book
+    sizeof(std::int32_t)                             // конверт ёмкости
+    + sizeof(MacroNpcRecord::book.learned)
+    + sizeof(MacroNpcRecord::book.sustained)
+    + sizeof(MacroNpcRecord::book.activeSpell)
+    + sizeof(MacroNpcRecord::book.sustainedDrainCarry);
+constexpr std::uint64_t kSheetBytes =                // лист опционален (v90)
+    sizeof(MacroNpcRecord::sheet.attributes)
+    + sizeof(MacroNpcRecord::sheet.skills)
+    + sizeof(MacroNpcRecord::sheet.levelData)
+    + sizeof(MacroNpcRecord::sheet.perks);
+constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
+    sizeof(MacroNpcRecord::spawnId) + sizeof(MacroNpcRecord::cell)
+    + sizeof(MacroNpcRecord::visual) + sizeof(MacroNpcRecord::kind)
+    + sizeof(MacroNpcRecord::pools) + sizeof(MacroNpcRecord::level)
+    + sizeof(MacroNpcRecord::runtime) + sizeof(MacroNpcRecord::traits)
+    + sizeof(MacroNpcRecord::character) + sizeof(MacroNpcRecord::orders)
+    + sizeof(MacroNpcRecord::memory) + kSpellBookBytes
+    + sizeof(MacroNpcRecord::hasSheet) + kSheetBytes
+    + sizeof(MacroNpcRecord::hasOrders) + sizeof(MacroNpcRecord::dead)
+    + sizeof(MacroNpcRecord::playerFlag)
+    + sizeof(MacroNpcRecord::designOrdinal)
+    + kInventoryBytes + kEquipmentBytes
+    + sizeof(MacroNpcRecord::rosterNeedDebt)
+    + sizeof(MacroNpcRecord::rosterWageDebt);
+constexpr std::uint64_t kMacroNpcsBlockBytes =
+    kCountBytes + std::uint64_t(kMaxMacroNpcs) * kMacroNpcBytes;
+
+constexpr std::uint64_t kRhythmBytes =               // v24, поле за полем
+    sizeof(WorldTickRuntime::pendingDailyTicks)
+    + sizeof(WorldTickRuntime::nextDailyTickDay)
+    + sizeof(WorldTickRuntime::subworldStepRemainder)
+    + sizeof(WorldTickRuntime::jitter.state)
+    + sizeof(MacroAiRhythm::jitter.state)
+    + sizeof(MacroAiRhythm::sweepAccum)
+    + sizeof(MacroAiRhythm::pendingSweeps)
+    + sizeof(MacroAiRhythm::sweepCursor);
+
+constexpr std::uint64_t kFactBytes =                 // write_fact
+    sizeof(WorldFact::day) + sizeof(WorldFact::seq) + sizeof(WorldFact::kind)
+    + sizeof(WorldFact::subjectKind) + sizeof(WorldFact::objectKind)
+    + sizeof(WorldFact::subject) + sizeof(WorldFact::object)
+    + sizeof(WorldFact::x) + sizeof(WorldFact::y) + sizeof(WorldFact::amount);
+constexpr std::uint64_t kChronicleBlockBytes =       // write_chronicle
+    sizeof(Chronicle::nextSeq) + sizeof(Chronicle::countingDay)
+    + sizeof(Chronicle::factsToday) + sizeof(std::uint8_t)
+    + kCountBytes + std::uint64_t(kChronicleFacts) * kFactBytes
+    + kCountBytes + std::uint64_t(kChronicleAnnals) * kFactBytes;
+
+// Следы: ПЛАН НА ФРАКЦИЮ (scent_field.h — `[f*w*h + y*w + x]`), два канала,
+// клетка на проводе = {индекс, значение}. Плотный кап, хотя пишется
+// разреженно: см. шапку выше про формат файла.
+constexpr std::uint64_t kScentBlockBytes =           // write_scent
+    sizeof(ScentField::w) + sizeof(ScentField::h)
+    + sizeof(ScentField::factions)
+    + 2ull * (kCountBytes
+              + std::uint64_t(kFactionCount) * std::uint64_t(kWorldCells)
+                * (sizeof(std::uint32_t) + sizeof(std::uint16_t)));
+
+constexpr std::uint64_t kLogicNodesBlockBytes =      // write_string_vector ×2
+    2ull * (kCountBytes + std::uint64_t(kMaxSmallVector) * kStrBytes);
+
+// Квесты. Кап квеста и кап его частей — литералы без вывода (kMaxQuests,
+// kMaxQuestParts выше): их произведение 4096 × 4096 и делает этот блок
+// крупнейшим слагаемым потолка. Это ОТЧЁТ, а не правка — вывод обоих чисел
+// остаётся за хвостом M-119.
+constexpr std::uint64_t kObjectiveBytes =            // write_objective
+    sizeof(std::uint8_t) + sizeof(std::uint8_t)
+    + sizeof(Objective::ix) + sizeof(Objective::iy)
+    + sizeof(Objective::subX) + sizeof(Objective::subY)
+    + sizeof(Objective::radius) + kStrBytes + sizeof(Objective::quantity)
+    + sizeof(Objective::targetSettlementId) + sizeof(Objective::npcType)
+    + sizeof(Objective::count) + sizeof(Objective::killed);
+constexpr std::uint64_t kRewardBytes =               // write_reward
+    sizeof(std::uint8_t) + sizeof(Reward::amount) + kStrBytes
+    + sizeof(Reward::delta);
+constexpr std::uint64_t kEventBytes =                // write_event
+    sizeof(std::uint16_t) + sizeof(GameEvent::a) + sizeof(GameEvent::b)
+    + sizeof(GameEvent::fx) + sizeof(GameEvent::fy) + sizeof(GameEvent::ix)
+    + sizeof(GameEvent::iy) + kStrBytes + kStrBytes;
+constexpr std::uint64_t kQuestBytes =                // write_quest
+    sizeof(Quest::ordinal) + sizeof(Quest::offerSlot)
+    + sizeof(Quest::bornDay) + kStrBytes + kStrBytes + sizeof(std::uint8_t)
+    + sizeof(Quest::giverSettlementId)
+    + kCountBytes + std::uint64_t(kMaxQuestParts) * kObjectiveBytes
+    + kCountBytes + std::uint64_t(kMaxQuestParts) * kRewardBytes
+    + kCountBytes + std::uint64_t(kMaxQuestParts) * kEventBytes
+    + sizeof(Quest::expireDay) + sizeof(Quest::difficulty);
+constexpr std::uint64_t kQuestsBlockBytes =
+    kCountBytes + std::uint64_t(kMaxQuests) * kQuestBytes;
+
+// ПОРЯДОК СЛАГАЕМЫХ — ПОРЯДОК БЛОКОВ write_payload. Он держится глазами, а
+// не компилятором, и это сказано вслух: пропущенное слагаемое занизит
+// потолок, а не сломает сборку. Прибор на это — свидетель в
+// save_roundtrip_test: реальный сейв обязан быть строго НИЖЕ суммы.
+constexpr std::uint64_t kMaxPayloadBytes =
+      kPrefixBytes
+    + kPlayerBytes
+    + kLandmarksBlockBytes
+    + kMarkersBlockBytes
+    + kRelationsBlockBytes
+    + kSubStateBytes
+    + kInventoryBytes            // пул дезертиров — тот же единый контейнер
+    + kWorldFieldsMaxBytes       // macro/world_fields.h, столбец таблицы рядов
+    + kMacroNpcsBlockBytes
+    + kRhythmBytes
+    + kChronicleBlockBytes
+    + kScentBlockBytes
+    + kLogicNodesBlockBytes
+    + kQuestsBlockBytes;
+
+// Вывод не смеет опустить порог ниже прежнего литерала — иначе правка была
+// бы регрессом, а не выводом.
+static_assert(kMaxPayloadBytes >= 64ull * 1024ull * 1024ull,
+              "выведенный потолок payload ниже прежних 64 МиБ");
+// Заворот u64 на сложении сделал бы сумму МЕНЬШЕ своего крупнейшего
+// слагаемого. `SaveHeader::payloadSize` — u64, так что расти потолку есть
+// куда: сегодняшняя сумма стоит ~25 МБ ниже границы u32, и следующий же
+// поднятый кап её перешагнёт.
+static_assert(kMaxPayloadBytes > kQuestsBlockBytes,
+              "сумма капов блоков завернулась в uint64");
 
 struct SaveHeader {
     std::uint32_t magic = 0;
@@ -568,9 +793,14 @@ void write_chronicle(Writer& w, const Chronicle& c) {
 
 // v75: поля следов фракций (macro/scent_field.h, CANON S10 «хищник-жертва»).
 // Едут в сейве целиком (вердикт владельца: движение не фактируется, реплеить
-// след не из чего). РАЗРЕЖЕННО — планы почти пусты (след живёт на дорогах),
-// а плотные 2×64 плана большой карты пробили бы kMaxPayloadBytes: пишутся
-// только ненулевые клетки парами {индекс, значение}.
+// след не из чего). РАЗРЕЖЕННО — потому что планы почти пусты (след живёт на
+// дорогах), и нули не стоят мегабайтов: пишутся только ненулевые клетки
+// парами {индекс, значение}. Это решение ФОРМАТА ФАЙЛА и только оно (DOD
+// п.7 — разреженное законно для ПРОВОДА сейва, живой слой остаётся полем).
+// Прежнее обоснование — «плотные планы пробили бы kMaxPayloadBytes» — было
+// ложным и перевёрнутым: литерал-потолок диктовал форму данных, чего закон
+// не разрешает. Потолок теперь ВЫВЕДЕН и берёт этот блок ПЛОТНЫМ капом, так
+// что пробить его разреженная запись не может по построению.
 void write_scent_channel(Writer& w, const std::vector<std::uint16_t>& cells) {
     std::size_t live = 0;
     for (const std::uint16_t v : cells)
@@ -1253,6 +1483,8 @@ bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
 
     return atomic_replace(path, h, payload.bytes);
 }
+
+std::uint64_t save_max_payload_bytes() { return kMaxPayloadBytes; }
 
 std::uint32_t save_payload_fingerprint(
     const GameState& s, const std::vector<Quest>& activeQuests,

@@ -19,6 +19,13 @@ namespace {
 // they guard (save.cpp owned them until 2026-08-24).
 constexpr std::uint32_t kMaxFieldCells = 1u << 20;
 
+// Каждый блок открывается СЧЁТОМ (savefmt::Writer::count — u32), поэтому он
+// входит в вес ряда наравне с его клетками. Вес ряда — слагаемое потолка
+// payload (world_fields.h kWorldFieldsMaxBytes): он считается по ПЛОТНОМУ
+// капу и у разреженных рядов тоже, потому что сторож обязан мерить худший
+// ЛЕГАЛЬНЫЙ мир, а не типичный.
+constexpr std::uint64_t kBlockCountBytes = sizeof(std::uint32_t);
+
 // ── Trees: the dense u16 carrier, whole (since v36) ─────────────────────
 void trees_write(savefmt::Writer& w, const WorldFieldStores& st) {
     if (!st.treeCounts) { w.count(0, kMaxFieldCells); return; }
@@ -42,6 +49,8 @@ bool trees_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     for (std::uint32_t i = 0; i < n && r.ok; ++i) r.pod((*st.treeCounts)[i]);
     return r.ok;
 }
+constexpr std::uint64_t kTreesMaxBytes =
+    kBlockCountBytes + std::uint64_t(kMaxFieldCells) * sizeof(std::uint16_t);
 
 // ── Knowledge: the explored map, whole (since v40) ──────────────────────
 // Visible (2) is a session projection of where the player stands — it decays
@@ -82,6 +91,8 @@ bool knowledge_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     ++s.knowledge.revision;
     return r.ok;
 }
+constexpr std::uint64_t kKnowledgeMaxBytes =
+    kBlockCountBytes + std::uint64_t(kMaxFieldCells) * sizeof(std::uint8_t);
 
 // ── Deposits: sparse carrier cells, one block per kind (since v37) ──────
 // Sorted by cell index: the map's iteration order is unspecified and the
@@ -138,6 +149,13 @@ bool deposits_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     }
     return r.ok;
 }
+// Клетка жилы на проводе — пара {индекс, остаток}; эту же пару пишут шрамы и
+// слой разработки, поэтому ширина названа один раз на три ряда.
+constexpr std::uint64_t kSparseCellBytes =
+    sizeof(std::uint32_t) + sizeof(std::int32_t);
+constexpr std::uint64_t kDepositsMaxBytes =
+    std::uint64_t(kDepositKindCount)
+    * (kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes);
 
 // ── Scars: one block per resource row — a FIELD, sparse on the wire ─────
 // v96: the row's scars are a ResourceGrid over the world, so the stream is
@@ -185,6 +203,9 @@ bool scars_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     }
     return r.ok;
 }
+constexpr std::uint64_t kScarsMaxBytes =
+    std::uint64_t(ResourceFieldId::Count)
+    * (kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes);
 
 // ── Worked: THE one layer of S5, sparse on the wire (v96) ───────────────
 // The number under a feature — hulls moored at a harbour today. One block,
@@ -213,6 +234,8 @@ bool worked_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     }
     return r.ok;
 }
+constexpr std::uint64_t kWorkedMaxBytes =
+    kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes;
 
 // ── Built: features squads made — ploughed fields… (since v71) ──────────
 // Verbatim, append-order: the list IS the history of works, and the load
@@ -244,24 +267,51 @@ bool built_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     }
     return r.ok;
 }
+constexpr std::uint64_t kBuiltMaxBytes =
+    kBlockCountBytes + std::uint64_t(kMaxFieldCells)
+    * (sizeof(BuiltFeature::x) + sizeof(BuiltFeature::y)
+       + sizeof(BuiltFeature::ft));
 
 struct WorldFieldRow {
     WorldField id;
     const char* name;
     void (*write)(savefmt::Writer&, const WorldFieldStores&);
     bool (*read)(savefmt::Reader&, const WorldFieldStoresMut&);
+    // Худший ЛЕГАЛЬНЫЙ вес блока — колонка стоит здесь, рядом со своим
+    // писателем, а не в save.cpp: кап ряда знает только ряд.
+    std::uint64_t maxBytes;
 };
 
 constexpr WorldFieldRow kWorldFields[std::size_t(WorldField::Count)] = {
-    {WorldField::Trees,     "trees",     trees_write,     trees_read},
-    {WorldField::Knowledge, "knowledge", knowledge_write, knowledge_read},
-    {WorldField::Deposits,  "deposits",  deposits_write,  deposits_read},
-    {WorldField::Scars,     "scars",     scars_write,     scars_read},
-    {WorldField::Built,     "built",     built_write,     built_read},
-    {WorldField::Worked,    "worked",    worked_write_block, worked_read_block},
+    {WorldField::Trees,     "trees",     trees_write,     trees_read,
+     kTreesMaxBytes},
+    {WorldField::Knowledge, "knowledge", knowledge_write, knowledge_read,
+     kKnowledgeMaxBytes},
+    {WorldField::Deposits,  "deposits",  deposits_write,  deposits_read,
+     kDepositsMaxBytes},
+    {WorldField::Scars,     "scars",     scars_write,     scars_read,
+     kScarsMaxBytes},
+    {WorldField::Built,     "built",     built_write,     built_read,
+     kBuiltMaxBytes},
+    {WorldField::Worked,    "worked",    worked_write_block, worked_read_block,
+     kWorkedMaxBytes},
 };
 static_assert(rows_in_enum_order(kWorldFields, &WorldFieldRow::id),
               "every WorldField needs its row — the table IS the system");
+
+// СТЕНА МЕЖДУ ТАБЛИЦЕЙ И ЧИСЛОМ В ЗАГОЛОВКЕ. Новый ряд полей или другая
+// ширина его записи двигают сумму — и красят сборку ЗДЕСЬ, требуя поправить
+// kWorldFieldsMaxBytes вслух. Молча разойтись проза и правда не могут
+// (AGENTS §8 п.6: лучшая форма свидетеля — нарушение, которое нельзя
+// собрать).
+constexpr std::uint64_t world_fields_max_bytes_sum() {
+    std::uint64_t sum = 0;
+    for (const WorldFieldRow& row : kWorldFields) sum += row.maxBytes;
+    return sum;
+}
+static_assert(world_fields_max_bytes_sum() == kWorldFieldsMaxBytes,
+              "потолок блока полей разошёлся со столбцом maxBytes таблицы "
+              "kWorldFields — поправить число в world_fields.h");
 
 } // namespace
 

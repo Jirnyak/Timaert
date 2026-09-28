@@ -1311,10 +1311,140 @@ void run_every_sub_state_kind_survives() {
     remove_slot_files(path);
 }
 
+// ── ПОТОЛОК PAYLOAD ЕСТЬ ФАКТ О РАСКЛАДКЕ, А НЕ ЧИСЛО (M-119) ────────────
+//
+// Свидетель закрывает ровно тот дефект, которым куплена правка: литерал
+// 64 МиБ был МЕНЬШЕ суммы капов блоков, которые сейв обязан вместить, — и
+// легальный мир `save_game` отвергал МОЛЧА, возвращая false.
+//
+// Мир фикстуры выбран не по вкусу, а по переписи: обе ступени памяти мира
+// стоят на СВОИХ капах (анналы — macro/chronicle.h kChronicleAnnals; журнал
+// игрока — PlayerState::kJournalFactsCap), а мест в нём столько, сколько их
+// насчитала перепись штабелей в ЗАМЕРЕННОМ мире (core/stacks.h: «~76 МиБ в
+// замеренном мире (~1 880 мест)»). Это законный мир, а не патология.
+//
+// НЕГАТИВНЫЙ КОНТРОЛЬ ВСТРОЕН, И ОН НЕ ЧЕРЕЗ `git checkout`: payload такого
+// мира обязан быть БОЛЬШЕ прежнего литерала. На старом коде свидетель
+// красный не оттого, что поменяли ожидание, а оттого, что сейв этого мира не
+// записывался вовсе.
+void run_payload_cap_is_a_fact() {
+    constexpr std::uint64_t kOldLiteralCap = 64ull * 1024ull * 1024ull;
+    constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
+    constexpr int kCensusLandmarks = 1880;   // core/stacks.h, замеренный мир
+
+    const std::string path = temp_save_path("timaert_save_payload_cap.bin");
+    const std::string overPath = temp_save_path("timaert_save_payload_over.bin");
+    remove_slot_files(path);
+    remove_slot_files(overPath);
+
+    sm::GameState gs = make_state();
+
+    // Вечная память мира — на капе.
+    gs.chronicle.annals.clear();
+    gs.chronicle.annals.reserve(sm::kChronicleAnnals);
+    for (std::uint32_t i = 0; i < sm::kChronicleAnnals; ++i) {
+        sm::WorldFact f{};
+        f.day = 1;
+        f.seq = i + 1u;
+        f.kind = std::uint16_t(sm::FactKind::Killed);
+        f.subjectKind = std::uint8_t(sm::FactSubject::Cell);
+        gs.chronicle.annals.push_back(f);
+    }
+    if (gs.chronicle.nextSeq <= sm::kChronicleAnnals) {
+        gs.chronicle.nextSeq = sm::kChronicleAnnals + 1u;
+    }
+
+    // Журнал игрока — его целая игра, тоже на капе (v57).
+    gs.player.journal.clear();
+    gs.player.journal.reserve(sm::PlayerState::kJournalFactsCap);
+    for (std::uint32_t i = 0; i < sm::PlayerState::kJournalFactsCap; ++i) {
+        sm::WorldFact f{};
+        f.day = 2;
+        f.seq = i + 1u;
+        f.kind = std::uint16_t(sm::FactKind::Killed);
+        gs.player.journal.push_back(f);
+    }
+
+    // Места — с ПОЛНЫМИ складами, и это не утяжеление ради числа: единый
+    // контейнер 32×32 входит в кап места целиком (DOD п.2 — «пустота у
+    // деревни оплачена сознательно»), значит худший легальный вес мест
+    // считается именно так. Стаки различаются сидом — набитый склад из
+    // неслипающихся экземпляров мир рождает сам (аффиксный лут не стакается).
+    const int woodDef = sm::item_index("wood");
+    if (woodDef < 0) FAIL_BAIL("fixture item row 'wood' missing from catalog");
+    for (int i = 0; i < kCensusLandmarks; ++i) {
+        sm::Landmark lm{};
+        lm.id = i;
+        lm.type = sm::LandmarkType::Village;
+        lm.x = i % gs.mapW;
+        lm.y = (i / gs.mapW) % gs.mapH;
+        lm.population = 100;
+        for (int s = 0; s < sm::kMaxInventorySlots; ++s) {
+            sm::ItemRef ref{};
+            ref.def = std::uint16_t(woodDef);
+            ref.count = 1;
+            ref.seed = std::uint32_t(i * sm::kMaxInventorySlots + s) + 1u;
+            lm.inventory.slots[std::size_t(s)] = ref;
+        }
+        sm::add_landmark(gs, std::move(lm));
+    }
+
+    const std::vector<sm::MacroNpcRecord> noMacro;
+    const std::vector<std::uint16_t> noTrees;
+    const sm::DepositLayer noDeposits;
+    const std::vector<sm::Quest> noQuests;
+    if (!sm::save_game(gs, noQuests, noMacro, noTrees, noDeposits, path)) {
+        FAIL_BAIL("save_game refused a legal world at the census caps");
+    }
+
+    std::vector<std::uint8_t> bytes;
+    if (!read_all(path, bytes)) FAIL_BAIL("cap fixture save unreadable");
+    if (bytes.size() <= kHeaderBytes) FAIL_BAIL("cap fixture save too small");
+    const std::uint64_t payloadBytes =
+        std::uint64_t(bytes.size()) - kHeaderBytes;
+    const std::uint64_t cap = sm::save_max_payload_bytes();
+
+    std::printf("  payload: сейв %.2f МиБ, выведенный потолок %.2f МиБ, "
+                "прежний литерал %.2f МиБ\n",
+                double(payloadBytes) / 1048576.0, double(cap) / 1048576.0,
+                double(kOldLiteralCap) / 1048576.0);
+
+    CHECK(payloadBytes > kOldLiteralCap,
+          "негативный контроль: мир на капах переписи обязан перевешивать "
+          "прежний литерал 64 МиБ — иначе свидетель зелен и на дефекте");
+    CHECK(payloadBytes < cap,
+          "выведенная сумма капов обязана быть БОЛЬШЕ реально записанного "
+          "сейва — иначе потолок охраняет случай, а не раскладку");
+
+    // Сторож заголовка: заявка выше потолка отвергается ДО чтения payload.
+    std::vector<std::uint8_t> over(kHeaderBytes + 1u, 0u);
+    std::memcpy(over.data(), bytes.data(), kHeaderBytes);
+    const std::uint64_t tooBig = cap + 1ull;
+    std::memcpy(over.data() + 8u, &tooBig, sizeof(tooBig));
+    if (!write_all(overPath, over, over.size())) {
+        FAIL_BAIL("could not write over-cap header file");
+    }
+    sm::GameState overState{};
+    std::vector<sm::Quest> overQuests;
+    std::vector<sm::MacroNpcRecord> overMacro;
+    std::vector<std::uint16_t> overTrees;
+    sm::DepositLayer overDeposits;
+    CHECK(!sm::load_game(overState, overQuests, overMacro, overTrees,
+                         overDeposits, overPath),
+          "заголовок с payloadSize выше потолка обязан быть отвергнут");
+    CHECK(sm::inspect_save(overPath).status
+              == sm::SaveInspectStatus::Unreadable,
+          "inspect_save обязан назвать заголовок выше потолка нечитаемым");
+
+    remove_slot_files(path);
+    remove_slot_files(overPath);
+}
+
 } // namespace
 
 int main() {
     run_roundtrip();
     run_every_sub_state_kind_survives();
+    run_payload_cap_is_a_fact();
     return sm::test::report("save_roundtrip_test");
 }
