@@ -75,7 +75,6 @@ SKELETON.md	:1416
 SKELETON.md	:1423
 SKELETON.md	:1425
 SKELETON.md	:143
-SKELETON.md	:147-189
 SKELETON.md	:1475
 SKELETON.md	:156-158
 SKELETON.md	:1602
@@ -501,7 +500,6 @@ SKELETON.md	node_registry.h:4
 SKELETON.md	npc.h:134
 SKELETON.md	npc.h:333
 SKELETON.md	npc.h:378
-SKELETON.md	npc.h:467
 SKELETON.md	npc_ai.cpp:1185
 SKELETON.md	npc_ai.cpp:1199
 SKELETON.md	npc_ai.cpp:1372
@@ -682,7 +680,6 @@ SKELETON.md	squad.h:932
 SKELETON.md	squad_walk.h:42
 SKELETON.md	squad_walk.h:42-51
 SKELETON.md	stacks.h:125
-SKELETON.md	stacks.h:182
 SKELETON.md	stacks.h:79
 SKELETON.md	stacks.h:85
 SKELETON.md	stacks.h:92
@@ -708,7 +705,6 @@ SKELETON.md	state.h:471
 SKELETON.md	state.h:485
 SKELETON.md	state.h:506
 SKELETON.md	state.h:510
-SKELETON.md	state.h:581
 SKELETON.md	state.h:616
 SKELETON.md	state.h:617
 SKELETON.md	state.h:623-626
