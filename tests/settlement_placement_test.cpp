@@ -3,7 +3,11 @@
 // «полевой подход» — candidates priced by the one score, occupied
 // best-first, every placed village PRESSES the field around itself;
 // separation rules and count quotas died into the field). Pinned here:
-//   · vetoes — no village on water, mountain rock or inside a forest massif;
+//   · вето — ОДНО, и это вода (ЗАКОН ПОЛЯ п.5). Горное умерло 2026-09-18,
+//     лесное 2026-09-28 (M-111). На место второго НИЧЕГО НЕ ВСТАЛО, и это
+//     намеренно: чащу отговорит универсальный алгоритм по рельефу и полям
+//     (после двери шины M-171), а не правило на одно поле. Дыра названа у
+//     `forest_term`; здесь утверждается только само вето, обеими сторонами;
 //   · the PERCENTILE PROPERTY — every village stands at least at the median
 //     of its city's admissible hinterland scores (the field legally trades
 //     some raw quality for spacing, so the bar is 50, not 75);
@@ -86,6 +90,17 @@ TerrainData make_world() {
             td.rgba[s + 3] = height < kSeaLevel8 ? 0 : 255;
         }
     }
+    // ПОСЛЕДНИЙ АКТ РОЖДЕНИЯ (M-110): биом клетки — ПОЛЕ над тором, и
+    // `biome_at_cell` читает его, а не каскад. Строки здесь не было, и
+    // fail-closed поля («нет поля — значит мир не дорождён») отвечал ВОДОЙ на
+    // каждую клетку: `derived_tree_count(Water, …)` возвращает ноль, то есть у
+    // этой фикстуры НЕ БЫЛО НИ ОДНОГО ДЕРЕВА — включая «лесной массив», вокруг
+    // которого построены её утверждения. Вето-свидетель «деревня не в чаще»
+    // при этом оставался ЗЕЛЁНЫМ, потому что на безлесном мире он не может
+    // покраснеть; нашлось это только когда закон потребовал чащу СОЗДАТЬ
+    // (§8 п.11). Мир, который строит тест, обязан дорождаться так же, как
+    // настоящий.
+    bake_biomes(td);
     return td;
 }
 
@@ -202,9 +217,79 @@ void test_vetoes_hold() {
         // вместо 249. Наряд на настоящее вето — в macro-registry.md.
         CHECK(float(w.td.height_at(v.x, v.y)) / 255.0f < 0.75f,
               "no village on mountain rock");
-        CHECK(!is_forest_cell(int(w.trees.at(v.x, v.y))),
-              "no village inside a forest massif");
+        // ЗДЕСЬ СТОЯЛО `CHECK(!is_forest_cell(trees.at(v.x,v.y)))` — свидетель
+        // СНЕСЁННОГО вето (владелец 2026-09-25: «вето лесного массива при
+        // расселении: „весом“», M-111). Утверждение было про запрет, а запрет
+        // в мире остался ровно ОДИН — вода; его и держит test_only_water_vetoes
+        // ниже. Возвращать это сюда нельзя ни в каком виде: сегодня мир чащу
+        // не отговаривает вовсе (открытая дыра, названная у forest_term), а
+        // когда отговорит — отговорит ВЕСОМ, и «деревни в чаще не бывает» всё
+        // равно не станет гарантией. Свидетель такого вида охранял бы везение
+        // (§8 п.5).
     }
+}
+
+// ЕДИНСТВЕННОЕ ВЕТО МИРА — ВОДА (ЗАКОН ПОЛЯ п.5), и это ВСЁ, что сегодня
+// законно утверждать о расселении по лесу. Восемь миров, массив ставит сам
+// тест (§8 п.11), обе стороны вопроса:
+//   · клетка в чаще ДОПУСТИМА — скор её не отвергает;
+//   · водная клетка ОТВЕРГНУТА — вето существует и работает.
+// Негативный контроль, проверенный вживую: вернут `return -1` по лесу в дверь
+// скора — первая половина краснеет.
+//
+// ЧЕГО ЗДЕСЬ СОЗНАТЕЛЬНО НЕТ (AGENTS §8 п.7 — свидетель не охраняет дефект и
+// не обещает больше, чем мир даёт): ни одного утверждения вида «опушка дороже
+// чащи». Такой закон существовал ровно один коммит и был отвергнут владельцем
+// вместе с формулой, которая его держала: отговаривать чащу будет
+// УНИВЕРСАЛЬНЫЙ алгоритм по рельефу и полям (M-111, после двери шины M-171),
+// а не правило на одно поле. До тех пор чаща не отговорена ничем, и это
+// названо у `forest_term`, а не спрятано за зелёным тестом.
+void test_only_water_vetoes() {
+    // Восемь начал блока 6×6. Блок нигде не задевает ни море (x < kSeaCols),
+    // ни речную колонку (x == kRiverCol), ни горный ряд (y >= kMountainRow):
+    // водная клетка несёт ноль деревьев, и «внутренность массива» перестала
+    // бы ею быть — фикстура обязана рождать именно чащу.
+    struct Origin { int x, y; };
+    constexpr Origin kOrigins[] = {
+        {52, 14}, {30, 10}, {18, 30}, {40, 40},
+        {8, 8},   {44, 20}, {12, 44}, {34, 46},
+    };
+    int samples = 0, thicketAdmitted = 0, waterRefused = 0;
+    for (const Origin& o : kOrigins) {
+        World w;
+        w.td = make_world();
+        std::vector<std::uint8_t> mask(std::size_t(kW) * kH, 0);
+        for (int y = o.y; y < o.y + 6; ++y)
+            for (int x = o.x; x < o.x + 6; ++x)
+                mask[std::size_t(y) * kW + x] = 1;
+        w.trees = build_tree_layer(w.td, mask.data(), mask.size());
+        w.deposits = build_deposit_layer(w.td, 777u);
+        w.gs.worldSeed = 777u;
+        w.gs.mapW = kW;
+        w.gs.mapH = kH;
+        SettlementSiteContext ctx = site_ctx(w);
+
+        // Чаща: у клетки (x0+2, y0+2) все восемь соседей лежат в маске, то
+        // есть её 3×3-доля равна 9/9 и счёт деревьев уперся в потолок.
+        const int inX = o.x + 2, inY = o.y + 2;
+        CHECK_OR_RETURN(is_forest_cell(int(w.trees.at(inX, inY))),
+                        "фикстура обязана родить настоящую чащу");
+        ++samples;
+
+        if (settlement_site_score(ctx, SettlementScoreRow::Village, inX, inY)
+            >= 0) ++thicketAdmitted;
+        // Другая сторона того же закона: вето существует, и оно водное. Речная
+        // колонка — честные водные клетки, вырезанные make_world ниже уровня
+        // моря.
+        if (settlement_site_score(ctx, SettlementScoreRow::Village,
+                                  kRiverCol, o.y + 2) < 0) ++waterRefused;
+    }
+    CHECK(samples == int(std::size(kOrigins)),
+          "все восемь миров построились — счётчик померил, а не промолчал");
+    CHECK(thicketAdmitted == samples,
+          "клетка внутри лесного массива ДОПУСТИМА — лесного вето в мире нет");
+    CHECK(waterRefused == samples,
+          "водная клетка ОТВЕРГНУТА — вето существует, и оно ровно одно");
 }
 
 // The FIELD's quality law: souls are the owner's scale, so the land must
@@ -471,6 +556,7 @@ void test_determinism() {
 
 int main() {
     test_vetoes_hold();
+    test_only_water_vetoes();
     test_villages_feed_themselves();
     test_roulette_is_red();
     test_villages_scatter_around_their_town();

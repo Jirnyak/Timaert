@@ -771,7 +771,6 @@ SKELETON.md	seamless_manager.cpp:922-925
 SKELETON.md	seamless_manager.cpp:970-978
 SKELETON.md	seamless_manager.h:246
 SKELETON.md	settlement_score.cpp:103
-SKELETON.md	settlement_score.cpp:129
 SKELETON.md	settlement_score.h:115-116
 SKELETON.md	settlement_score.h:52
 SKELETON.md	settlement_score.h:53
@@ -932,7 +931,6 @@ SKELETON.md	tree_layer.cpp:43-54
 SKELETON.md	tree_layer.cpp:45-47
 SKELETON.md	tree_layer.cpp:5
 SKELETON.md	tree_layer.h:106
-SKELETON.md	tree_layer.h:53-56
 SKELETON.md	ui/macro_overlay.h:87
 SKELETON.md	ui/map_screen.cpp:335
 SKELETON.md	ui/overlays.cpp:1245
@@ -1466,7 +1464,6 @@ macro-registry.md	save.cpp:1057
 macro-registry.md	save.cpp:30
 macro-registry.md	scent_field.cpp:21-32
 macro-registry.md	scent_field.h:88-104
-macro-registry.md	settlement_score.cpp:129
 macro-registry.md	settlement_score.h:154
 macro-registry.md	smoke.cpp:3486
 macro-registry.md	smoke.cpp:6584

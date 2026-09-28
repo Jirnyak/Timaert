@@ -4,7 +4,7 @@
 
 #include "macro/biomes.h"
 #include "macro/deposit_layer.h"
-#include "macro/features.h"        // FeatureLayer::wrap_coord
+#include "macro/features.h"        // FeatureLayer::cell_count_for — форма слоя
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"          // kGathererReach — the crews' working box
 #include "macro/resource_field.h"
@@ -23,12 +23,11 @@ constexpr int kTermMax = 16;
 // Mean of the top-kFieldsPerVillage wheat-potential cells in the working
 // ring — exactly the parcels stamp_field_features would embody. Read
 // through the ONE registry door (baseline − scars), never the raw channel.
-int arable_term(const SettlementSiteContext& ctx, int x, int y) {
+int arable_term(const SettlementSiteContext& ctx, std::uint32_t at) {
     int best[kFieldsPerVillage] = {};
     // Бокс — шаги ИНДЕКСА через cell_step (ЗАКОН АДРЕСА); терраин гарантирован
     // гардом settlement_site_terms.
     const int side = ctx.w.terrain->width;
-    const std::uint32_t at = cell_of(x, y, side);
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             if (dx == 0 && dy == 0) continue;   // the town stands here
@@ -36,14 +35,17 @@ int arable_term(const SettlementSiteContext& ctx, int x, int y) {
             const int wheat = resource_field_read(ctx.w, ResourceFieldId::Wheat,
                                                   cell_x(n, side),
                                                   cell_y(n, side));
-            // Insertion into the fattest-first shortlist.
-            int at = -1;
+            // Insertion into the fattest-first shortlist. Гнездо звалось `at`
+            // и ЗАТЕНЯЛО адрес клетки тем же именем — переименовано, потому
+            // что теперь адрес приходит параметром и путать их нельзя.
+            int slot = -1;
             for (int k = 0; k < kFieldsPerVillage; ++k) {
-                if (wheat > best[k]) { at = k; break; }
+                if (wheat > best[k]) { slot = k; break; }
             }
-            if (at < 0) continue;
-            for (int k = kFieldsPerVillage - 1; k > at; --k) best[k] = best[k - 1];
-            best[at] = wheat;
+            if (slot < 0) continue;
+            for (int k = kFieldsPerVillage - 1; k > slot; --k)
+                best[k] = best[k - 1];
+            best[slot] = wheat;
         }
     }
     int sum = 0;
@@ -56,9 +58,8 @@ int arable_term(const SettlementSiteContext& ctx, int x, int y) {
 // ── Water: the nearest drinkable/navigable cell ──────────────────────────
 // Rivers are honest water cells (carved below sea level), so one predicate
 // covers river and coast alike. Halving per cell of distance: 16/8/4/2.
-int water_term(const SettlementSiteContext& ctx, int x, int y) {
+int water_term(const SettlementSiteContext& ctx, std::uint32_t at) {
     const TerrainData& td = *ctx.w.terrain;
-    const std::uint32_t at = cell_of(x, y, td.width);
     constexpr int kWaterReach = 4;
     for (int d = 1; d <= kWaterReach; ++d) {
         for (int dy = -d; dy <= d; ++dy) {
@@ -73,11 +74,32 @@ int water_term(const SettlementSiteContext& ctx, int x, int y) {
 }
 
 // ── Forest: the thickest stand within reach ─────────────────────────────
-int forest_term(const SettlementSiteContext& ctx, int x, int y) {
+//
+// ЗДЕСЬ ОТКРЫТАЯ И НАЗВАННАЯ ДЫРА, А НЕ ЗАКОНЧЕННЫЙ ТЕРМ (M-111, 2026-09-28).
+// Лесное вето снесено из двух дверей ниже (владелец: «вето лесного массива
+// при расселении: „весом“»), а терм остался ТЕМ ЖЕ, чем был: монотонным
+// максимумом по руке. Значит клетка, погребённая в массиве, получает те же
+// 16, что опушка, и чащу от места сейчас НЕ ОТГОВАРИВАЕТ НИЧТО.
+//
+// ЭТО СДЕЛАНО НАМЕРЕННО И ПО ЗАКОНУ. Агент написал было формулу «лес в руке
+// минус лес под собой», которая чащу отговаривала; владелец её отверг
+// (дословно: «это говно какоето… веса да но они должны быть по рельефу и
+// полям универсально»), и AGENTS §1 говорит то же: снося костыль, не ставь
+// на его место пока-заглушку — дыра остаётся открытой и названной в реестре
+// до постройки настоящей системы. Правило на ОДНО поле среди десяти строк
+// реестра и есть такая заглушка.
+//
+// ЧТО ВСТАНЕТ СЮДА (вердикт владельца, дословно): «получается такой
+// универсальный алгоритм из всех полей мира делается поле весов и ставится
+// город в самое выгодное (ну сперва так столица потом города потом деревни и
+// каждый поставленный тоже влияет на поле) и они соед дорогами ещё». Тогда
+// умрут ВСЕ ЧЕТЫРЕ терма этого файла разом, а не один лес. Наряд — M-111,
+// ждёт двери пакетной шины (M-171): «давай тогда после двери чтобы не писать
+// вхолостую». Пока её нет — правила на род ресурса сюда НЕ ДОБАВЛЯТЬ.
+int forest_term(const SettlementSiteContext& ctx, std::uint32_t at) {
     if (!ctx.w.trees) return 0;
     int best = 0;
     const int side = ctx.w.terrain->width;
-    const std::uint32_t at = cell_of(x, y, side);
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy)
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             const std::uint32_t n = cell_step(at, dx, dy, side);
@@ -97,11 +119,14 @@ int forest_term(const SettlementSiteContext& ctx, int x, int y) {
 // (build_deposit_reach_field, ONE po2 distance ladder); a context without
 // it prices no geology — the same fail-closed zero every absent layer
 // answers.
-int deposit_term(const SettlementSiteContext& ctx, int x, int y) {
+// АДРЕС — ОДНО ЧИСЛО, И ЗДЕСЬ ОН БЫЛ РУКОПИСНЫМ. Стояло `y*width + x` БЕЗ
+// свёртки вообще: ответ держался на том, что звонящий свернул координаты до
+// вызова, то есть корректность лежала не в типе, а в памяти автора. Поле
+// сплата построено той же дверью (`cell_step` в build_deposit_reach_field
+// ниже), значит спрашивать его надо тем же адресом (ЗАКОН АДРЕСА п.2).
+int deposit_term(const SettlementSiteContext& ctx, std::uint32_t at) {
     if (!ctx.depositReach || !ctx.w.terrain) return 0;
-    const std::size_t idx =
-        std::size_t(y) * std::size_t(ctx.w.terrain->width) + std::size_t(x);
-    return int(ctx.depositReach[idx]);
+    return int(ctx.depositReach[at]);
 }
 
 } // namespace
@@ -111,10 +136,17 @@ SettlementSiteTerms settlement_site_terms(const SettlementSiteContext& ctx,
     SettlementSiteTerms t{};
     if (!ctx.w.terrain || !ctx.w.terrain->has_rgba_storage()) return t;
     const TerrainData& td = *ctx.w.terrain;
-    const int wx = FeatureLayer::wrap_coord(x, td.width);
-    const int wy = FeatureLayer::wrap_coord(y, td.height);
+    // АДРЕС КЛЕТКИ — ОДНО ЧИСЛО, И СЧИТАЕТСЯ ОН ЗДЕСЬ ОДИН РАЗ (ЗАКОН АДРЕСА
+    // п.2, хвост M-97/M-108). Стояла пара `wrap_coord(x, width)` /
+    // `wrap_coord(y, height)`, отдающая КООРДИНАТЫ, — а каждый терм ниже тут же
+    // сворачивал их заново своим `cell_of`, и `deposit_term` вообще складывал
+    // индекс руками. Четыре свёртки оси и четыре свёртки адреса на один вопрос
+    // «что за клетка»; теперь термы принимают АДРЕС.
+    const std::uint32_t at = cell_of(x, y, td.width);
 
-    // Vetoes: nobody builds on water, and nobody inside a forest massif.
+    // ЕДИНСТВЕННОЕ ВЕТО МИРА — ВОДА (ЗАКОН ПОЛЯ п.5). Рядом с ним стояли ещё
+    // два почвенных запрета, и оба снесены одним и тем же доводом владельца:
+    //
     // ГОРНОЕ ВЕТО СНЕСЕНО (владелец, 2026-09-18: «почему не бывает горных
     // деревень? убрать говнозапрет, откуда он вообще»). Оно и правда взялось
     // ни из чего — из довода «поля отказываются от скалы, значит и город»,
@@ -123,13 +155,19 @@ SettlementSiteTerms settlement_site_terms(const SettlementSiteContext& ctx,
     // металл мира лежит в горах (affinity MountainHeight), деревень в горах
     // не бывало, и мир не добывал ни железа, ни серебра ВООБЩЕ. Гора теперь
     // просто плохая земля — её отговаривает пашенный терм, а не запрет.
-    if (td.is_water(wx, wy)) return t;
-    if (ctx.w.trees && is_forest_cell(int(ctx.w.trees->at(wx, wy)))) return t;
+    //
+    // ЛЕСНОЕ ВЕТО СНЕСЕНО (владелец, 2026-09-25: «вето лесного массива при
+    // расселении: „весом“», M-111 шаг 1). Здесь стояло
+    // `is_forest_cell(trees->at(wx,wy)) → отказ` — второй порог того же рода:
+    // `kForestClassTreeCount` решал за мир, где жить нельзя, тогда как чаща
+    // есть плохое место, а не запретное. Снято БЕЗ ЗАМЕНЫ: отговаривает
+    // теперь `forest_term` (выше), который меряет рубимое дерево, а не лес.
+    if (td.is_water(at)) return t;
 
-    t.arable  = arable_term(ctx, wx, wy);
-    t.water   = water_term(ctx, wx, wy);
-    t.forest  = forest_term(ctx, wx, wy);
-    t.deposit = deposit_term(ctx, wx, wy);
+    t.arable  = arable_term(ctx, at);
+    t.water   = water_term(ctx, at);
+    t.forest  = forest_term(ctx, at);
+    t.deposit = deposit_term(ctx, at);
     return t;
 }
 
@@ -137,16 +175,17 @@ int settlement_site_score(const SettlementSiteContext& ctx,
                           SettlementScoreRow row, int x, int y) {
     if (!ctx.w.terrain || !ctx.w.terrain->has_rgba_storage()) return -1;
     const TerrainData& td = *ctx.w.terrain;
-    const int wx = FeatureLayer::wrap_coord(x, td.width);
-    const int wy = FeatureLayer::wrap_coord(y, td.height);
+    const std::uint32_t at = cell_of(x, y, td.width);
 
-    // Vetoes: water and the inside of a forest massif. The mountain veto died
-    // 2026-09-18 (see settlement_site_terms above): гора — плохая земля, а не
-    // запретная.
-    if (td.is_water(wx, wy)) return -1;
-    if (ctx.w.trees && is_forest_cell(int(ctx.w.trees->at(wx, wy)))) return -1;
+    // ОДНО ВЕТО — ВОДА. Горное умерло 2026-09-18, лесное 2026-09-28; оба
+    // довода — у settlement_site_terms выше, и оба сводятся к одному: мир
+    // решает ЦЕНОЙ, а не разрешением.
+    if (td.is_water(at)) return -1;
 
-    const SettlementSiteTerms t = settlement_site_terms(ctx, wx, wy);
+    // Дверь термов свернёт `x,y` в ТОТ ЖЕ `at` (маска идемпотентна), поэтому
+    // разворачивать адрес обратно в координаты незачем — это была бы третья
+    // свёртка на один вопрос.
+    const SettlementSiteTerms t = settlement_site_terms(ctx, x, y);
     const SettlementScoreWeights& w =
         kSettlementScoreRows[std::size_t(row)
                                  < std::size_t(SettlementScoreRow::Count)
