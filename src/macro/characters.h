@@ -182,7 +182,6 @@ kLandmarkSheets = [] {
     CharacterSheet& city = a[std::size_t(LandmarkType::City)];
     // Город умеет ВСЁ, чем сегодня живёт экономика, и чеканит: кузнечный
     // ранг дотягивается до монетной строки (kRecipes minRank 30).
-    city.skills[SkillId::Cooking]    = 30;
     city.skills[SkillId::Blacksmith] = 30;
     city.skills[SkillId::Tailoring]  = 30;
     city.skills[SkillId::Masonry]    = 30;
@@ -211,12 +210,12 @@ kLandmarkSheets = [] {
     // различия — числа душ, — и её не надо назначать вторым числом здесь.
     //
     // ЧТО ЭТО ЧИНИТ. После сноса хлеба (2026-09-20) у деревни оставалось
-    // ремесло Cooking 10, а в kRecipes не осталось НИ ОДНОЙ строки на
-    // Cooking — деревня не производила ровно ничего, и econ_produce_day
+    // поварское ремесло рангом 10, а в kRecipes не осталось НИ ОДНОЙ его
+    // строки — деревня не производила ровно ничего, и econ_produce_day
     // крутился вхолостую для ~1700 мест каждый день. Мир умел одно: растить
     // еду. Замер дня 61: пища 28 469 593, кирпичи 18 942, ткань 1 466,
-    // ИНСТРУМЕНТЫ 5 — на весь мир.
-    village.skills[SkillId::Cooking]    = 30;
+    // ИНСТРУМЕНТЫ 5 — на весь мир. Само ремесло вырезано 2026-09-28 (M-148):
+    // рецепта у него не могло появиться никогда, значит и ранга ему не нужно.
     village.skills[SkillId::Tailoring]  = 30;
     village.skills[SkillId::Masonry]    = 30;
     village.skills[SkillId::Alchemy]    = 10;

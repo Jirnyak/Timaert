@@ -249,10 +249,10 @@ static void test_prop_loot_is_the_transfer_rate() {
     // нему (дверь жатвы отдельно масштабирует по высоте стебля).
     auto crop = roll_loot_profile("crop", 1, rng_zero, 0);
     CHECK(crop.size() == 1 && count_of(crop, "food") == 1,
-          "crop/rng_zero: one stand pays its one grain");
+          "crop/rng_zero: one stand pays its one unit of food");
     auto cropHigh = roll_loot_profile("crop", 1, rng_high, 0);
     CHECK(count_of(cropHigh, "food") == 1,
-          "crop/rng_high: still one grain — the rate is a law, not a roll");
+          "crop/rng_high: still one unit — the rate is a law, not a roll");
     // 1 дерево = 1 дерево — ровно то, что ведомость макро-стока списывает с
     // клетки (`macro_stock_apply(TreeCount, -1)`).
     auto tree = roll_loot_profile("tree", 1, rng_zero, 0);
@@ -309,14 +309,14 @@ static void test_affix_door() {
           "wealth adds (стоимость, not the purse law twice)");
     CHECK(affix_power(100, 255, 9.9f) == 255, "the byte clamps, never wraps");
 
-    // The door refuses what cannot be worn — bread rolls nothing, spends no
+    // The door refuses what cannot be worn — food rolls nothing, spends no
     // seed, and the caller did not have to know the distinction.
-    ItemRef bread{};
-    bread.def = std::uint16_t(item_index("food"));
-    bread.count = 1;
-    grant_affixes(bread, 255, rng_zero);
-    CHECK(affix_count(bread) == 0 && bread.seed == 0,
-          "an affix is a WORN thing: bread walks through the door untouched");
+    ItemRef provisions{};
+    provisions.def = std::uint16_t(item_index("food"));
+    provisions.count = 1;
+    grant_affixes(provisions, 255, rng_zero);
+    CHECK(affix_count(provisions) == 0 && provisions.seed == 0,
+          "an affix is a WORN thing: food walks through the door untouched");
 
     // A wearable at the deep end, always-heads: the format's 8 cells, each
     // at the roll cap — and rng_zero deterministically picks the FIRST

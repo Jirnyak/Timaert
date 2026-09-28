@@ -117,7 +117,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // ── THE SQUAD SEASON WINDOW, on the player himself («игрок == нпц») ──
     // The expectation is DERIVED from the same law the window pays by:
     // wage = the plain soldier-row sum × the season (no CHA haggling — the
-    // discount died as a player-special), board = a season of bread per
+    // discount died as a player-special), board = a season of harch per
     // roster soul whose own row is on upkeep.
     const int wageSeason =
         sm::calculate_squad_upkeep(*army) * sm::kDaysPerSeason;
@@ -330,7 +330,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     gs.mapH = 64;
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
 
-    // A town with mouths and no bread. Под долгом (CANON S10) голод — это
+    // A town with mouths and no food. Под долгом (CANON S10) голод — это
     // ВЗЫСКАНИЕ: счёт выставляется первой границей (день 1), а смерть
     // приходит второй (день 33), когда сезон прожит неоплаченным. Сорок
     // дней кроют обе границы; место без прихода умирает целиком за одно
@@ -499,9 +499,9 @@ void test_garrison_ceiling_trims_the_surplus() {
           "the cut men swell the deserter pool, they do not evaporate");
     // Зверь — под нож по своей стоимости, и мясо платит по счёту В ТУ ЖЕ
     // МИНУТУ (S10): на полке ноль, долг упал ровно на стоимость туш.
-    const int breadValue = sm::item_def("food")->value;
+    const int hungerValue = sm::item_def("food")->value;
     const int meatPerHorse =
-        sm::hire_price_for(std::uint16_t(sm::NPCType::Horse), 1) / breadValue;
+        sm::hire_price_for(std::uint16_t(sm::NPCType::Horse), 1) / hungerValue;
     const int bill = 30 * sm::kDaysPerSeason;
     const int debtNow =
         out.needDebt[sm::commodity_index("food")];
