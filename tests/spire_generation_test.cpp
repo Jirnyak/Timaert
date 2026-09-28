@@ -21,6 +21,7 @@
 #include "macro/spires.h"
 #include "macro/state.h"
 #include "macro/zones.h"
+#include "tables/faction.h"    // faction_index / faction_or_freefolk (M-39)
 
 #include <algorithm>
 #include <cstdint>
@@ -318,11 +319,69 @@ void test_genesis_births_souls_and_ruins() {
           "the deliberately-unplaced kinds say so in their rows");
 }
 
+// ── M-39: ОДИН ОТВЕТ НА «ЧЬЯ ЭТО РУИНА» ──────────────────────────────────
+// Закон (§7 «ОДИН РЕЕСТР ФРАКЦИЙ», DOD п.6, вердикт владельца 2026-09-21
+// «руине надо дать фракцию»): владельца места называет ЭКЗЕМПЛЯР, и только
+// он. До M-39 отвечали двое — строковая колонка `spawnFaction` ВИДА места и
+// колонка `factionIdx` экземпляра, — и второй ответ держался лишь тем, что
+// генераторы руин и шпилей не ставили индекс вовсе. Свидетеля у этого не
+// было ни одного: `rg spawnFaction tests/` не давал ни строки.
+//
+// Здесь утверждается СТОРОНА ГЕНЕЗИСА: каждая рождённая руина и каждый шпиль
+// несут индекс демонов, и его видит та самая дверь, которой спрашивает
+// заселение. Вторая половина закона — что знамя места НЕ достаёт до дичи на
+// земле — живёт у своего предмета, в fauna_registry_test.
+// Негативный контроль встроен: прежнее поведение давало `-1`, то есть
+// freefolk через дверь бесхозной земли, и утверждение про демонов краснеет.
+// Сам контроль проверяется — счётчики руин и шпилей обязаны быть > 0, иначе
+// цикл ничего не померил (§8 п.2-3).
+void test_place_faction_is_the_instance_only() {
+    const TerrainData terrain = banded_terrain();
+    const ZoneLayer zones = banded_zones();
+
+    // ОРДИНАЛ ВЫВОДИТСЯ ИЗ ТОГО ЖЕ РЕЕСТРА, что читает мир, никогда не
+    // переписывается числом (§8 п.4).
+    const int demons = faction_index("demons");
+    CHECK_OR_RETURN(demons >= 0, "the faction registry carries the demons row");
+    const int freefolk = faction_index("freefolk");
+    CHECK_OR_RETURN(freefolk >= 0 && freefolk != demons,
+                    "freefolk is a DIFFERENT row — the negative control has "
+                    "something to be wrong about");
+
+    // Один сид — не число: три мира (§5 п.4).
+    int ruins = 0, spires = 0, wrong = 0;
+    for (std::uint32_t seed : {12345u, 777u, 2026u}) {
+        GameState gs = world(seed);
+        generate_spires(gs, zones, terrain);
+        generate_ruins(gs, zones, terrain);
+        for (const auto& lm : gs.landmarks) {
+            if (lm.type != LandmarkType::Ruin
+                && lm.type != LandmarkType::Spire) {
+                continue;
+            }
+            if (lm.type == LandmarkType::Ruin) ++ruins; else ++spires;
+            // Хранимый индекс И ответ двери, которой спрашивает заселение
+            // (sub/engine.cpp spawn_cell / enter_dungeon_scene). Раньше тут
+            // стоял бы freefolk, а демонов доставала колонка вида.
+            if (int(lm.factionIdx) != demons
+                || int(faction_or_freefolk(lm.factionIdx)) != demons) {
+                ++wrong;
+            }
+        }
+    }
+    CHECK(ruins > 0 && spires > 0,
+          "the three worlds really did place ruins AND spires");
+    CHECK(wrong == 0,
+          "every ruin and spire is BORN with its own faction index — the "
+          "kind's column is not what answers");
+}
+
 int main() {
     test_one_spire_per_spell_in_the_band();
     test_placement_is_a_fact_of_the_seed();
     test_no_admissible_ground_places_nothing();
     test_named_places_veto_their_cells();
     test_genesis_births_souls_and_ruins();
+    test_place_faction_is_the_instance_only();
     return sm::test::report("spire_generation_test");
 }

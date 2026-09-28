@@ -1387,18 +1387,13 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
 // with citizens (it no longer depends on being the centre cell), and why the
 // procedural fauna is deterministic per cell (seeded from ctx.seed).
 
-// WHOSE banner a place's crowd wears — one resolve for the street and the
-// interiors (§42): the registry's spawnFaction column wins when the row
-// names one (a spire's crowd IS demons, exactly like its wild rolls),
-// otherwise the place's OWN faction column (kingdoms cut 2026-09-11).
-static std::uint16_t landmark_crowd_faction(LandmarkType kind,
-                                            int factionIdx) {
-    const char* placeFaction = landmark_def(kind).spawnFaction;
-    if (placeFaction != nullptr) {
-        return std::uint16_t(faction_index(placeFaction));
-    }
-    return faction_or_freefolk(factionIdx);
-}
+// (WHOSE banner a place's crowd wears used to be TWO answers resolved here —
+// the registry's spawnFaction column of the place's KIND, falling through to
+// the instance's own faction column. M-39 killed the kind column: a kind is
+// not an owner, so a ruin and a spire are BORN with their faction index
+// (macro/ruins.cpp, macro/spires.cpp) and the ladder is one rung — the
+// instance, through the ownerless-ground door. The string resolve that used
+// to run per spawned crowd is gone with it.)
 
 void SubworldEngine::spawn_cell(int ox, int oy) {
     if (!ecs_ || !gs_ || !terrain_ || terrain_->width <= 0
@@ -1416,12 +1411,13 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const int W = terrain_->width, H = terrain_->height;
     const int wcx = wrapi(ccx, W);
     const int wcy = wrapi(ccy, H);
-    // Citizens belong to the kingdom that owns this cell's settlement — or to
-    // the place's own banner where the registry names one (a spire's crowd IS
-    // demons). Resolved HERE, where the GameState is, and handed to the
-    // spawner as a plain index so sub/spawn.cpp stays free of macro state.
-    const std::uint16_t settlementFaction = landmark_crowd_faction(
-        ctx.landmark.kind, ctx.landmark.factionIdx);
+    // Citizens belong to whoever owns this cell's place — its OWN faction
+    // column, the one answer (a spire's crowd is demons because the spire is
+    // born theirs, not because its kind says so). Resolved HERE, where the
+    // GameState is, and handed to the spawner as a plain index so
+    // sub/spawn.cpp stays free of macro state.
+    const std::uint16_t settlementFaction =
+        faction_or_freefolk(ctx.landmark.factionIdx);
     // The wild headcount standing on this cell — the honest CAP on how many
     // creatures embody (macro/macro_stock.h fauna row: spawn-table capacity
     // minus what the hunt has taken). Asked HERE, where the GameState is,
@@ -1708,8 +1704,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     townCtx.landmark = ctx.landmark.kind;
     townCtx.danger = ctx.zone;
     townCtx.depositsNear = ctx.depositsNear;
-    const std::uint16_t faction = landmark_crowd_faction(
-        ctx.landmark.kind, ctx.landmark.factionIdx);
+    const std::uint16_t faction = faction_or_freefolk(ctx.landmark.factionIdx);
     const MacroStockKey popKey{ctx.landmark.id,
                                std::int16_t(mgr_.center_cx()),
                                std::int16_t(mgr_.center_cy())};
@@ -3670,8 +3665,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
                                     float(winCellX * kCellSize),
                                     float(winCellY * kCellSize));
     ses.landmarkKind = doorCtx.landmark.kind;
-    ses.faction = landmark_crowd_faction(doorCtx.landmark.kind,
-                                         doorCtx.landmark.factionIdx);
+    ses.faction = faction_or_freefolk(doorCtx.landmark.factionIdx);
     // In off the street — or down through the crown, which lands on the roof
     // pad instead of the south threshold (a storey above the ground has no
     // threshold to land on at all).

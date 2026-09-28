@@ -117,9 +117,17 @@ struct LandmarkDef {
     float            lightPop;    // synthetic emitter strength for fixed POIs;
                                   // 0 => inhabited type, scale by live population
 
-    // Faction forced onto every creature this place rolls (spawn law,
-    // fauna.h): a ruin's wolves ARE demons. nullptr = each row keeps its own.
-    const char*      spawnFaction = nullptr;
+    // КОЛОНКА `spawnFaction` УНИЧТОЖЕНА 2026-09-28 (M-39, вердикт владельца
+    // 2026-09-21 «руине надо дать фракцию»). Она была ВТОРЫМ ответом на «чья
+    // это руина»: строковая колонка ВИДА места побеждала колонку ЭКЗЕМПЛЯРА
+    // `Landmark::factionIdx`, и держалась только тем, что ruins.cpp и
+    // spires.cpp не ставили тот индекс вовсе — то есть была КОМПЕНСАЦИЕЙ
+    // незаданной фракции, а не законом (DOD п.6, §7 «ОДИН РЕЕСТР ФРАКЦИЙ»).
+    // Теперь руина и шпиль РОЖДАЮТСЯ со своим индексом, а лестница «чьё это
+    // существо» — одна ступень: экземпляр места для его толпы и гарнизона,
+    // строка вида (`wildFaction`) для дичи на земле. Заодно ушёл
+    // `faction_index(строка)` с пути заселения (ЗАКОН СЛОВАРЯ).
+    // Вид НЕ ЕСТЬ ВЛАДЕЛЕЦ — колонке фракции в этой таблице места нет.
 
     // How RICH this place is — the world's modulation of the coin a body
     // carries (owner ruling 2026-08-27: «кошелёк по строке × богатство
@@ -237,7 +245,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/3, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false,
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/3, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false,
                      SquadType::Collector},
                    // ПАТРУЛЬНАЯ СТРОКА ВЫРЕЗАНА 2026-09-21 (владелец:
                    // «вырезаем бандитов, патрули — даже не временно; потом
@@ -291,7 +299,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // таблице. Теперь число артелей говорит СПРОС — сколько целей добычи
     // получили положительный скор, — а пул рук его урезает; строка же
     // объявляет только КОГО поднимать и КАКОГО ТИПА.
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false, SquadType::Artel}}, 1,
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false, SquadType::Artel}}, 1,
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and
@@ -299,11 +307,11 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // game. The Ruin row keeps kHabRuin: that bit is ALSO the den
     // dictionary (what creeps into cellars and caves), and a ruin's ground
     // honestly crawls.
-    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 13, /*inside*/2, /*born*/128, 64, /*places*/true },
-    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12, /*inside*/0, /*born*/64, 1, /*places*/true },
-    {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f, kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
+    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, /*wealth*/1.25f, /*hab*/kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 13, /*inside*/2, /*born*/128, 64, /*places*/true },
+    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12, /*inside*/0, /*born*/64, 1, /*places*/true },
+    {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, /*wealth*/1.25f, kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
     {LandmarkType::Shrine,  "shrine",  "Shrine",   25, 178, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
-    {LandmarkType::Mine,    "mine",    "Mine",     51, 203, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f, nullptr, /*wealth*/1.25f },
+    {LandmarkType::Mine,    "mine",    "Mine",     51, 203, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f, /*wealth*/1.25f },
     {LandmarkType::Tower,   "tower",   "Tower",    76, 203, 'T', 0xFF6E6E89u, true, 0xFF6E6E89u,  80.0f },
 };
 static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
@@ -337,6 +345,18 @@ inline constexpr bool crew_rows_match_count(const LandmarkDef* rows,
 static_assert(crew_rows_match_count(kLandmarks,
                                     sizeof(kLandmarks) / sizeof(LandmarkDef)),
               "crewCount must equal the number of AUTHORED crew rows");
+
+// РАЗМЕР СТРОКИ НАЗВАН — ЗНАЧИТ ПРИБИТ (DOD п.10). Замер: проба
+// static_assert на clang, дерево m39-faction, 2026-09-28 — 120 байт.
+// Свидетель тут не про байты: их девять строк и они constexpr, экономить
+// нечего. Он про то, ЧТО СЮДА НЕЛЬЗЯ ДОЛИВАТЬ КОЛОНКУ МОЛЧА — и в первую
+// очередь колонку фракции, снесённую выше как второй ответ о владельце
+// (M-39). Возврат `const char* spawnFaction` перестаёт СОБИРАТЬСЯ, а не
+// перестаёт проходить тест: запрет под компилятором не флачит и не
+// подгоняется (§8 п.6). Строку меняют осознанно — вместе с этим числом.
+static_assert(sizeof(LandmarkDef) == 120,
+              "LandmarkDef layout changed — say WHICH column and why, and "
+              "never re-add a faction column: a KIND is not an OWNER (M-39)");
 
 // THE two labour laws of a city meet at the same eighth of its people, and
 // until now that meeting was a claim in a COMMENT: the crew pool's shift
