@@ -141,7 +141,7 @@ constexpr float kPlayerLightB = 0.42f;
 // kKillRepPenalty moved to macro/faction.h — the auto-resolve pays the same
 // price for the same crime.
 // Flight ceiling margin is sub::kFlightMaxAboveTerrainM (height.h): the
-// ceiling itself is renderer3dVk_.max_height_m() + that margin — absolute for
+// ceiling itself is mgr_.height_field().max_m() + that margin — absolute for
 // the loaded window, never below any terrain the window can show.
 // Eye height now lives in sub/height.h as kBodyEyeM — the SAME number the
 // projectile muzzle uses, so the camera and the guns of every body agree.
@@ -1064,7 +1064,7 @@ void SubworldEngine::rebuild_prop_cache() {
     for (const Structure& s : mgr_.structures()) {
         if (!structure_is_lit(s.kind)) continue;
         const StructureKindRow& row = structure_kind_row(s.kind);
-        const float seatM = renderer3dVk_.sample_height_m(s.x, s.y);
+        const float seatM = mgr_.height_field().sample(s.x, s.y);
         const entt::entity e = reg.create();
         reg.emplace<ecs::Position>(e, s.x, s.y, seatM);
         reg.emplace<ecs::SubworldTag>(e);
@@ -1891,7 +1891,7 @@ bool SubworldEngine::spell_can_hit_callback(void* user,
 
 float SubworldEngine::spell_height_callback(void* user, float x, float y) {
     auto* self = static_cast<SubworldEngine*>(user);
-    return self->renderer3dVk_.sample_height_m(x, y);
+    return self->mgr_.height_field().sample(x, y);
 }
 
 void SubworldEngine::spell_fx_emit_callback(void* user,
@@ -2523,21 +2523,26 @@ const Structure* SubworldEngine::aimed_prop(float reach, float& outScore) const 
     float bestScore = -1.0f;
     for (const Structure& s : interactProps_) {
         if (structure_interact(s.kind) == InteractId::None) continue;
-        float d2 = structure_surface_dist2(s, playerX_, playerY_);
-        if (s.zBase > 0.0f || s.zWorld) {
-            // A LIFTED prop (the roof orb) is reachable from its own deck,
-            // not from the ground a tower-height beneath it: the vertical
-            // gap to the prop's solid span joins the reach test. Ground
-            // props (zBase 0) keep the plain 2D math — a doorstep and a
-            // doorstep's doorstep never differ by storeys.
-            const float seat = renderer3dVk_.sample_height_m(s.x, s.y);
-            float zLow, zHigh;
-            structure_solid_span(s, seat, zLow, zHigh);
-            const float dz = playerZ_ < zLow ? zLow - playerZ_
-                           : playerZ_ > zHigh ? playerZ_ - zHigh
-                                              : 0.0f;
-            d2 += dz * dz;
-        }
+        // THE REACH IS ISOTROPIC — every prop, no fork by kind. The vertical
+        // gap to the prop's own solid span always joins the test.
+        //
+        // This used to add the vertical term ONLY when `s.zBase > 0 || s.zWorld`,
+        // on the reasoning that «a doorstep and a doorstep's doorstep never
+        // differ by storeys». True while the player STANDS; flight repeals it,
+        // and the owner caught it in a live run 2026-09-28: over a door's
+        // footprint `structure_surface_dist2` is the distance to a rectangle in
+        // the XY plane and carries no Z at all, so «E enter the door» offered
+        // itself from any altitude. A branch by ROD is what let one of the two
+        // candidates of this very resolver (`aimed_corpse`, dist3sq) be honest
+        // while the other was not.
+        const float seat = mgr_.height_field().sample(s.x, s.y);
+        float zLow, zHigh;
+        structure_solid_span(s, seat, zLow, zHigh);
+        const float dz = playerZ_ < zLow ? zLow - playerZ_
+                       : playerZ_ > zHigh ? playerZ_ - zHigh
+                                          : 0.0f;
+        const float d2 = structure_surface_dist2(s, playerX_, playerY_)
+                       + dz * dz;
         if (d2 > reach * reach) continue;
         const float score = aim_score(playerX_, playerY_, cam_.yaw, s.x, s.y);
         if (score > bestScore) {
@@ -2923,7 +2928,7 @@ float SubworldEngine::ground_travel_weight_at(float fx, float fy) const {
 }
 
 float SubworldEngine::ground_height_at(float x, float y) const {
-    return renderer3dVk_.sample_height_m(x, y);
+    return mgr_.height_field().sample(x, y);
 }
 
 bool SubworldEngine::solid_at(float x, float y, float z) const {
@@ -2934,11 +2939,12 @@ float SubworldEngine::player_ground_travel_weight() const {
     return ground_travel_weight_at(playerX_, playerY_);
 }
 
-// Terrain hook for the battle pass: forwards to the renderer's CPU heightfield.
-// A free function + void* user, not a virtual — sub/movement.h stays Vulkan-free.
+// Terrain hook for the battle pass: forwards to the window's height field.
+// A free function + void* user, not a virtual — sub/movement.h stays free of
+// the window manager's header.
 float SubworldEngine::ground_height_callback(void* user, float x, float y) {
     auto* self = static_cast<SubworldEngine*>(user);
-    return self->renderer3dVk_.sample_height_m(x, y);
+    return self->mgr_.height_field().sample(x, y);
 }
 
 // Solidity hooks: one StructureIndex (sub/collide.h) answers for the battle
@@ -3825,7 +3831,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     playerAttackHeld_ = false;
     pendingSfxCount_ = 0;   // entry resets engine state — no stale one-shots
     reset_player_motion();
-    playerZ_ = renderer3dVk_.sample_height_m(playerX_, playerY_);
+    playerZ_ = mgr_.height_field().sample(playerX_, playerY_);
     playerGrounded_ = true;
     spellRng_ = Rng{dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                  ses.ref.ordinal, ses.ref.level)};
@@ -4085,7 +4091,7 @@ bool SubworldEngine::search_chest(const Structure&) {
 
 bool SubworldEngine::try_take_dungeon_stairs() {
     // `gs_` is real (the cellar roll below reads `gs_->worldSeed`); `terrain_`
-    // was NOT — this path takes its heights from the renderer's heightfield
+    // was NOT — this path takes its heights from the window's height field
     // and never touched the macro map. A gate on a pointer the body does not
     // use is a refusal with no reason, and it made the census read as if a
     // staircase needed the world (наряд M-152).
@@ -4119,9 +4125,10 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     if (dungeon_kind_row(ref.kind).roofHatch && !hasUpper) {
         float rx = 0.0f, ry = 0.0f;
         dungeon_roof_hatch_point(ref, rx, ry);
-        const float rdx = playerX_ - (float(kCellSize) + rx);
-        const float rdy = playerY_ - (float(kCellSize) + ry);
-        if (rdx * rdx + rdy * rdy <= reach2) return try_exit_dungeon();
+        if (within_arm_of(float(kCellSize) + rx, float(kCellSize) + ry,
+                          std::sqrt(reach2))) {
+            return try_exit_dungeon();
+        }
     }
     if (!padNW && !padNE) return false;
 
@@ -4130,9 +4137,7 @@ bool SubworldEngine::try_take_dungeon_stairs() {
         dungeon_stair_point(ref, up, sx, sy);
         ox = float(kCellSize) + sx;
         oy = float(kCellSize) + sy;
-        const float dx = playerX_ - ox;
-        const float dy = playerY_ - oy;
-        return dx * dx + dy * dy <= reach2;
+        return within_arm_of(ox, oy, std::sqrt(reach2));
     };
     float wx = 0.0f, wy = 0.0f;
     // Fixed pairs: the NW shaft joins 0↔+1 and the NE shaft 0↔-1, so the
@@ -4207,7 +4212,7 @@ bool SubworldEngine::debug_take_stairs(bool up) {
 bool SubworldEngine::try_exit_dungeon() {
     // Same as the stairs above: `gs_` is real (the macro player is landed on
     // the door's cell below), `terrain_` was a gate on nothing — the crown
-    // probe asks the renderer's heightfield and the solid index, not the map.
+    // probe asks the window's height field and the solid index, not the map.
     if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_) {
         return false;
     }
@@ -4229,10 +4234,8 @@ bool SubworldEngine::try_exit_dungeon() {
     if (hatched && int(dungeon_.ref.level) == topLevel) {
         float hx = 0.0f, hy = 0.0f;
         dungeon_roof_hatch_point(dungeon_.ref, hx, hy);
-        const float dx = playerX_ - (float(kCellSize) + hx);
-        const float dy = playerY_ - (float(kCellSize) + hy);
-        const float armReach = player_arm_reach();
-        roofExit = dx * dx + dy * dy <= armReach * armReach;
+        roofExit = within_arm_of(float(kCellSize) + hx, float(kCellSize) + hy,
+                                 player_arm_reach());
     }
     if (!roofExit) {
         // From an upper room or a cellar the only way out is back down/up
@@ -4247,10 +4250,7 @@ bool SubworldEngine::try_exit_dungeon() {
         dungeon_entry_point(dungeon_.ref, ex, ey);
         const float wx = float(kCellSize) + ex;
         const float wy = float(kCellSize) + ey;
-        const float dx = playerX_ - wx;
-        const float dy = playerY_ - wy;
-        const float armReach = player_arm_reach();
-        if (dx * dx + dy * dy > armReach * armReach) {
+        if (!within_arm_of(wx, wy, player_arm_reach())) {
             set_status("Nothing to interact with.");
             return false;
         }
@@ -4316,7 +4316,7 @@ bool SubworldEngine::try_exit_dungeon() {
         // be within one of its top. If the index answers nothing, the
         // expected crown stands — the same number as before.
         const float course = structure_min_height(Structure::Wall);
-        const float expected = renderer3dVk_.sample_height_m(playerX_, playerY_)
+        const float expected = mgr_.height_field().sample(playerX_, playerY_)
                              + kSpireTowerHeightM;
         const float support = structIndex_.support_at(
             playerX_, playerY_, player_body_radius(), expected + course, course);
@@ -4420,7 +4420,7 @@ float SubworldEngine::scene_sea_level_m() const {
 }
 
 float SubworldEngine::footing_height_m(float x, float y) const {
-    float z = renderer3dVk_.sample_height_m(x, y);
+    float z = mgr_.height_field().sample(x, y);
     if (!structIndex_.empty()) {
         z = std::max(z, structIndex_.support_at(
             x, y, player_body_radius(),
@@ -4428,6 +4428,13 @@ float SubworldEngine::footing_height_m(float x, float y) const {
             /*stepUp*/0.0f));
     }
     return z;
+}
+
+bool SubworldEngine::within_arm_of(float tx, float ty, float reach) const {
+    const float dx = playerX_ - tx;
+    const float dy = playerY_ - ty;
+    const float dz = playerZ_ - footing_height_m(tx, ty);
+    return dx * dx + dy * dy + dz * dz <= reach * reach;
 }
 
 void SubworldEngine::sync_player_vertical(float dt) {
@@ -4444,13 +4451,13 @@ void SubworldEngine::sync_player_vertical(float dt) {
                                         playerZ_);
         if (!intoSolid) playerZ_ += dz;
     }
-    float supportZ = renderer3dVk_.sample_height_m(playerX_, playerY_);
+    float supportZ = mgr_.height_field().sample(playerX_, playerY_);
     if (!structIndex_.empty()) {
         supportZ = std::max(supportZ, structIndex_.support_at(
             playerX_, playerY_, player_body_radius(), playerZ_));
     }
     if (flying()) {
-        const float ceilZ = renderer3dVk_.max_height_m()
+        const float ceilZ = mgr_.height_field().max_m()
                           + kFlightMaxAboveTerrainM;
         playerZ_ = std::clamp(playerZ_, supportZ, std::max(supportZ, ceilZ));
         playerVz_ = 0.0f;
@@ -4670,7 +4677,13 @@ void SubworldEngine::tick(float dt) {
     }
     const SeamTiming timing = mgr_.last_seam_timing();
     const bool centerChanged = prevCx != mgr_.center_cx() || prevCy != mgr_.center_cy();
+    // The consume is where the world restates its height field (sub/height.h)
+    // — the work that used to be counted inside the renderer's upload. Timed
+    // HERE, beside the upload's own stopwatch, because a crossing budget that
+    // stops counting work it still pays is a budget that lies.
+    const auto heightT0 = Clock::now();
     const CompositeDirty dirtyNow = mgr_.consume_composite_dirty_cells();
+    const double heightMs = elapsed_ms(heightT0, Clock::now());
     if (centerChanged) {
         // A pocket's window coordinates are virtual — a torus loop must not
         // drag the MACRO player across the real map (the pocket ends by the
@@ -4728,8 +4741,9 @@ void SubworldEngine::tick(float dt) {
         // frame's command buffer by prepare_frame (flush_uploads) and no
         // longer block anything here.
         std::fprintf(stderr,
-            "[seam-cross] gen=%.3fms smooth=%.3fms upload3dCpu=%.3fms total=%.3fms\n",
-            timing.genMs, timing.smoothMs, upload3dMs, totalMs);
+            "[seam-cross] gen=%.3fms smooth=%.3fms height=%.3fms "
+            "upload3dCpu=%.3fms total=%.3fms\n",
+            timing.genMs, timing.smoothMs, heightMs, upload3dMs, totalMs);
         std::fflush(stderr);
     }
 
@@ -4760,7 +4774,7 @@ void SubworldEngine::tick(float dt) {
                 entt::exclude<ecs::Flying, ecs::Projectile, ecs::AvatarTag>);
             for (auto e : gv) {
                 auto& p = gv.get<ecs::Position>(e);
-                float supportZ = renderer3dVk_.sample_height_m(p.x, p.y);
+                float supportZ = mgr_.height_field().sample(p.x, p.y);
                 if (!structIndex_.empty()) {
                     supportZ = std::max(supportZ, structIndex_.support_at(
                         p.x, p.y, body_radius(ecs_->reg, e), p.z));
@@ -4796,7 +4810,7 @@ void SubworldEngine::tick(float dt) {
         // instead of passing through it (tick_spell_projectiles), so the window
         // is a closed box for everything and the sky is not a special direction.
         {
-            const float ceilZ = renderer3dVk_.max_height_m()
+            const float ceilZ = mgr_.height_field().max_m()
                               + kFlightMaxAboveTerrainM;
             auto fv = ecs_->reg.view<ecs::Position, ecs::SubworldTag,
                                      ecs::Flying>(entt::exclude<ecs::AvatarTag>);
@@ -4810,7 +4824,7 @@ void SubworldEngine::tick(float dt) {
                         ecs_->reg.try_get<ecs::SubworldAi>(e)) {
                     p.z += ai->wantVz * dt;
                 }
-                float floorZ = renderer3dVk_.sample_height_m(p.x, p.y);
+                float floorZ = mgr_.height_field().sample(p.x, p.y);
                 if (!structIndex_.empty()) {
                     floorZ = std::max(floorZ, structIndex_.support_at(
                         p.x, p.y, body_radius(ecs_->reg, e), p.z));
@@ -4830,7 +4844,7 @@ void SubworldEngine::tick(float dt) {
                     // намерения летунов (третья ось мозга).
                     [](void* user, float x, float y) {
                         return static_cast<SubworldEngine*>(user)
-                            ->renderer3dVk_.sample_height_m(x, y);
+                            ->mgr_.height_field().sample(x, y);
                     },
                     this);
         tick_subworld_bodies(dt);
@@ -4861,7 +4875,7 @@ void SubworldEngine::tick(float dt) {
                                // The window's ONE ceiling — the same surface
                                // flying bodies are clamped to, here used to
                                // close the box over projectiles instead.
-                               renderer3dVk_.max_height_m()
+                               mgr_.height_field().max_m()
                                    + kFlightMaxAboveTerrainM);
         tick_hit_flashes(dt);
         // Turn this tick's damage markers into blood/dust BEFORE deaths are

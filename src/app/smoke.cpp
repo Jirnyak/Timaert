@@ -69,6 +69,26 @@ static void smoke_teleport_player(App& app, int x, int y) {
 // about a lord, and the projection COUNT would have reported one figure more
 // than the scene holds. This is the §44 rule applied — a witness must ask
 // exactly the question the mechanism asks.
+// ПУТЬ ТЕЛА ВНИЗ ПОСЛЕ ТЕЛЕПОРТА — ОДНА ДВЕРЬ ДЛЯ ВСЕХ СВИДЕТЕЛЕЙ.
+// `set_player_pos` двигает тело по XY и НЕ трогает z: телепортированное тело
+// сохраняет высоту прежнего места и висит над новым. Пока предел интеракции
+// игнорировал Z, это было бесплатно — и смоуки годами жали E из воздуха. Предел
+// стал изотропным (M-178), поэтому предусловие «тело СТОИТ» свидетель обязан
+// создавать сам (§8 п.11), а не наследовать от чужой удачи.
+// Сажает тем же интегратором, что и игру (height.h vertical_step) — своей
+// физики здесь нет. Потолок циклов: 200 × 0.05 с = 10 игровых секунд, дольше
+// любого честного падения внутри окна.
+static void smoke_settle_on_foot(App& app) {
+    // ПЕРВЫЙ ТИК — БЕЗУСЛОВНО. `player_grounded()` сразу после телепорта ещё
+    // помнит ПРЕЖНЕЕ место и говорит «стою», хотя тело висит над новым: флаг
+    // обновляет только тик. Цикл с проверкой впереди выходил, не сделав ни
+    // одного шага, и «посадка» была тишиной.
+    app.subworld.tick(0.05f);
+    for (int i = 0; i < 200 && !app.subworld.player_grounded(); ++i) {
+        app.subworld.tick(0.05f);
+    }
+}
+
 static bool smoke_projects_foreign_record(App& app, entt::entity body) {
     auto& reg = app.ecs.reg;
     if (!reg.valid(body)) return false;
@@ -2655,6 +2675,14 @@ bool run_dungeon_house_smoke(App& app) {
     // Re-aim after the settle tick: a frame of simulation can drift the body,
     // and the determinism claim below is about ONE door seen from ONE spot.
     face_door();
+    // AND LET IT LAND. `set_player_pos` moves the body in XY only — z stays
+    // wherever the previous spot left it, and one 16 ms tick of gravity does
+    // not cross six metres. This smoke was therefore pressing E while FLOATING
+    // 6.5 m over the doorstep, and it passed only because the prop reach
+    // ignored Z entirely (M-178). With the reach isotropic the fiction stops
+    // being free, so the witness stands its body up before asking anything.
+    smoke_settle_on_foot(app);
+    face_door();
 
     // Opt-in (TIMAERT_SMOKE_DOORSTEP=1): stop HERE, on the doorstep looking
     // at the door, so a following capture_frame photographs the prop and the
@@ -2670,6 +2698,44 @@ bool run_dungeon_house_smoke(App& app) {
             return false;
         }
         return true;
+    }
+
+    // ── ПРЕДЕЛ РУКИ ИЗОТРОПЕН: Z — НЕ ПРИВИЛЕГИРОВАННАЯ ОСЬ ──────────────
+    // Владелец, живой прогон 2026-09-28: «снова не зависит от расстояния
+    // интерактор E выскакивает даже если ты далеко летишь высоко». Причина
+    // была в форке по РОДУ пропа: наземный проп мерился
+    // `structure_surface_dist2` — расстоянием до прямоугольника В ПЛОСКОСТИ
+    // XY, — и вертикаль добавлялась только поднятым. Над пятном двери
+    // расстояние было нулём на любой высоте.
+    //
+    // Свидетель РОЖДАЕТ своё предусловие (§8 п.11): он сам поднимает тело на
+    // две руки над порогом, а не надеется, что мир его туда поставит. И он
+    // несёт собственный негативный контроль — вторая половина требует, чтобы
+    // на земле подсказка ВЕРНУЛАСЬ: без неё ноль в первой половине значил бы
+    // «двери тут нет вовсе», а не «рука туда не достаёт».
+    {
+        const float groundZ = app.subworld.player_z();
+        const float armUp = app.subworld.player_arm_reach() * 2.0f;
+        app.subworld.debug_set_player_z(groundZ + armUp);
+        const char* highPrompt = app.subworld.interact_prompt();
+        const bool highOffered = highPrompt != nullptr && highPrompt[0] != '\0';
+        const bool highActed = app.subworld.interact();
+        app.subworld.debug_set_player_z(groundZ);
+        const char* lowPrompt = app.subworld.interact_prompt();
+        const bool lowOffered = lowPrompt != nullptr && lowPrompt[0] != '\0';
+        std::fprintf(stderr,
+                     "[smoke] dungeon_house reach_isotropy arm=%.2f "
+                     "high_prompt='%s' high_acted=%d low_prompt='%s'\n",
+                     double(armUp * 0.5f), highPrompt ? highPrompt : "",
+                     highActed ? 1 : 0, lowPrompt ? lowPrompt : "");
+        std::fflush(stderr);
+        SMOKE_CHECK(app, !highOffered,
+                    "дверь не предлагается телу на две руки НАД порогом");
+        SMOKE_CHECK(app, !highActed,
+                    "дверь не открывается нажатием с двух рук над порогом");
+        SMOKE_CHECK(app, lowOffered,
+                    "на пороге дверь ОБЯЗАНА предлагаться — иначе ноль выше "
+                    "ничего не доказывает");
     }
 
     const int tagsBefore = playerTags();
@@ -3196,10 +3262,15 @@ bool run_dungeon_cave_smoke(App& app) {
     }
 
     // Stand off the mouth and look at it — the same aim the player uses.
+    // AND STAND, not hover: `set_player_pos` moves the body in XY only, so a
+    // teleported body keeps the altitude of wherever it came from. The reach
+    // is isotropic (M-178), so pressing E from six metres up is now refused
+    // exactly as it should be — the harness owes the body its feet.
     const sm::sub::Structure m = mouth;
     const float standX = m.x - 4.0f * std::sin(m.yaw);
     const float standY = m.y + 4.0f * std::cos(m.yaw);
     app.subworld.set_player_pos(standX, standY);
+    smoke_settle_on_foot(app);
     app.subworld.rotate_camera(
         std::atan2(m.y - standY, m.x - standX) - app.subworld.cam_yaw(), 0.0f);
     const bool entered = app.subworld.interact();
@@ -3271,6 +3342,7 @@ bool run_dungeon_cave_smoke(App& app) {
     float exitX = 0.0f, exitY = 0.0f;
     if (app.subworld.dungeon_exit_point(exitX, exitY)) {
         app.subworld.set_player_pos(exitX, exitY);
+        smoke_settle_on_foot(app);
         for (const auto& st : app.subworld.mgr().structures()) {
             if (st.kind != sm::sub::Structure::Door) continue;
             app.subworld.rotate_camera(
@@ -3945,7 +4017,7 @@ bool run_spire_climb_smoke(App& app) {
     // them is broken — the crown's height (onRoof=0, dz=-25.6, two authors of
     // one height: the generator says groundM + kSpireTowerHeightM,
     // sub/gens/spire.cpp:92-128, while the exit recomputes it through
-    // sample_height_m, sub/engine.cpp:4355) — and the chain reported the
+    // the window height field, sub/engine.cpp) — and the chain reported the
     // entire spire loop as broken, including ten facts execution never
     // reached. `back=0 learned=0 depleted=0 orbsAfter=-1 logged=0` was a
     // CASCADE printed as findings. The world defect itself is NOT fixed here
@@ -7761,7 +7833,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const float flat = std::sqrt((tx - wx) * (tx - wx)
                                            + (tz - wz) * (tz - wz));
                 const float wantPitch = std::atan2(
-                    app.smoke.gateAimZ - app.subworld.cam_height_m(),
+                    app.smoke.gateAimZ - app.subworld.player_muzzle_z(),
                     std::max(0.001f, flat));
                 app.subworld.rotate_camera(wantYaw - app.subworld.cam_yaw(),
                                            wantPitch - app.subworld.cam_pitch());

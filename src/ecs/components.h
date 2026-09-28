@@ -34,7 +34,7 @@ namespace sm::ecs {
 
 // World-space position: x,y are tile coords; z is absolute world-space altitude
 // in metres (same coordinate system as cam_.pos.y). Ground entities get z set to
-// sample_height_m(x,y) by the per-tick ground-follow system. Flying entities and
+// the window height field's sample(x,y) by the per-tick ground-follow system. Flying entities and
 // projectiles own their z through movement/velocity. Water surface sits at
 // sub::sea_level_m(the scene's plane) ≈ 600 m in the default world — the
 // whole vertical model is sub/height.h.

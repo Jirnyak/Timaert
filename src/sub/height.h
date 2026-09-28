@@ -11,8 +11,9 @@
 //      ridge peaks may exceed 1.0; hard safety clamp at 2.0).
 //   2. WORLD METRES — normalised × `kHeightScaleM`. This is the space of
 //      `ecs::Position.z`, the 3D camera Y, point lights, particles and all
-//      combat distance checks. `Renderer3DVk::sample_height_m(x, y)`
-//      returns the terrain surface in this space.
+//      combat distance checks. `SubworldHeightField::sample(x, y)` below
+//      returns the terrain surface in this space, and it is THE answer: the
+//      renderer is one of its readers, never its owner.
 //   3. The WATER PLANE — one sea level per SCENE, `sea_level_m(plane)`, where
 //      the plane is the macroworld's own (CellContext::seaLevel) and a dungeon's
 //      is 0. Rivers and seas are honest heightmap cells carved below it.
@@ -41,9 +42,16 @@
 #include "sub/base_generator.h"
 
 #include <algorithm>
+#include <cstddef>
 
 namespace sm::sub
 {
+
+    // The window and its change set — the height field's source. Declared, not
+    // included: sub/height.h is pulled in by thirty-odd translation units and
+    // owes none of them the manager's thread pool.
+    class SeamlessSubworldManager;
+    struct CompositeDirty;
 
     // Metres per 1.0 of normalised heightmap. THE vertical scale — the only
     // place the number 1500 may appear.
@@ -68,8 +76,111 @@ namespace sm::sub
     constexpr float kDefaultSeaLevelM = WATER_LEVEL * kHeightScaleM;
 
     // Flight ceiling margin above the loaded window's highest terrain vertex
-    // (`Renderer3DVk::max_height_m()`).
+    // (`SubworldHeightField::max_m()`).
     constexpr float kFlightMaxAboveTerrainM = 120.0f;
+
+    // ── THE WINDOW'S HEIGHT FIELD — the world's own vertical truth ───────
+    //
+    // A vertex grid over the loaded 3×3 window, in metres. It used to live
+    // inside the Vulkan renderer (`Renderer3DVk::heightVtxM_`) and the
+    // simulation read it back out fifteen times — an obverse edge from render
+    // to world, which the RENDER DEAD-END LAW forbids: what goes into the
+    // renderer goes nowhere else, and a question ABOUT THE WORLD is answered
+    // BY the world. It is stated here, filled from the composite heightmap the
+    // window manager already owns, and the renderer is now one reader of it.
+    //
+    // WHY A VERTEX GRID AND NOT THE COMPOSITE ITSELF. The composite carries a
+    // height per TILE (kFullSize², sub/seamless_manager.h). The surface a body
+    // stands on is the DRAWN one — the box-averaged vertex grid the mesh is
+    // built from — so seating bodies on raw tiles would sink them into every
+    // slope the tessellation smooths away. One surface, one answer.
+    //
+    // Sampling step: one vertex per kHeightQuadTiles tiles. Sixteen is not a
+    // taste — a macro cell (kCellSize) must span a WHOLE number of quads so a
+    // cell boundary lands exactly ON a vertex; without that the per-cell
+    // incremental refresh (a stitched cell, a seam shift) cannot name the
+    // block it owns, and the whole window would have to be resampled on every
+    // async drain. Both static_asserts below hold the property.
+    constexpr int kHeightQuadTiles = 16;
+    constexpr int kHeightQuads     = kFullSize / kHeightQuadTiles;  // 192
+    constexpr int kHeightVerts     = kHeightQuads + 1;              // 193
+    static_assert(kFullSize % kHeightQuadTiles == 0,
+                  "the window must be a whole number of height quads");
+    static_assert(kCellSize % kHeightQuadTiles == 0,
+                  "a macro cell boundary must land on a height vertex");
+
+    class SubworldHeightField
+    {
+    public:
+        // THE surface of the world at composite tile coords, in metres.
+        // Bilinear between the four surrounding vertices; clamped at the
+        // window edge. 0 before the first refresh (no window, no ground).
+        float sample(float tileX, float tileY) const;
+        // Highest / lowest terrain vertex of the loaded window, metres.
+        // The flight ceiling is max_m() + kFlightMaxAboveTerrainM (above);
+        // the shadow volume fits itself vertically to BOTH.
+        float max_m() const { return maxM_; }
+        float min_m() const { return minM_; }
+        bool  built() const { return built_; }
+        // Raw vertices, row-major kHeightVerts² — for the consumer that walks
+        // the whole grid (mesh build, normals, the march apron). A reader's
+        // convenience, never a second owner: nobody writes through it.
+        const float* vertices() const { return m_; }
+
+        // Bring the field up to date with the composite. `dirty` is the
+        // window manager's own change set: a full flag resamples everything, a
+        // shift slides the grid toroidally and resamples only the newly
+        // exposed cells, per-cell flags resample just those blocks. The three
+        // paths are BYTE-IDENTICAL by construction — every one of them reaches
+        // the arithmetic through the single `resample_block` below, so there is
+        // no second sampling law to drift (subworld_height_field_test).
+        void refresh(const SeamlessSubworldManager& mgr,
+                     const CompositeDirty& dirty);
+        // The FULL path on its own, over a raw composite heightmap
+        // (kFullSize² normalised floats). refresh() calls exactly this when
+        // the whole window must be resampled; a harness that holds a
+        // heightmap but no window manager calls it directly, so a witness
+        // measuring the drawn surface measures THE law instead of a copy of
+        // it (mountain_mesh_smoothness_test used to keep its own).
+        void rebuild_from(const float* compositeHeight);
+        // Forget the window (leaving a scene). Next refresh rebuilds in full.
+        void clear();
+        // HARNESS ONLY: poke one vertex so a parity witness can prove its own
+        // detector fires. Never called by the game.
+        void debug_poke_vertex(int x, int y, float metres);
+
+    private:
+        // The ONE place the box average is computed, for every path — and ONE
+        // instance of it in machine code, which is what `noinline` buys.
+        //
+        // MEASURED, not feared: with the body inlined at its several call
+        // sites, a seam crossing left 8068 of 37249 vertices disagreeing with
+        // a full resample, worst delta 0.000732 m — one float ulp at this
+        // scale, and only ever on vertices an incremental path had touched.
+        // The shipped TU is built with -ffast-math, so the 289-tile reduction
+        // is free to reassociate, and it reassociates differently under
+        // constant loop bounds (the full-grid call) than under runtime ones (a
+        // cell block). Two spellings of the same sample then disagree in the
+        // last bit, which is a body a hair inside the ground on one path and a
+        // hair above it on the other. One instance, one answer; the cost is
+        // eight calls per refresh, against a block of thousands of vertices.
+        [[gnu::noinline]]
+        void resample_block(const float* hm, int x0, int x1, int y0, int y1);
+        // Window min/max, restated whenever the content changes.
+        void recompute_extent();
+
+        float m_[std::size_t(kHeightVerts) * kHeightVerts];
+        float minM_ = 0.0f;
+        float maxM_ = 0.0f;
+        bool  built_ = false;
+    };
+
+    // 193² floats + the window's extent + the built flag. Pinned because the
+    // size was NAMED (DOD 10): one field lives in the world, ~145.5 KiB.
+    static_assert(sizeof(SubworldHeightField)
+                      == sizeof(float) * std::size_t(kHeightVerts) * kHeightVerts
+                       + 3 * sizeof(float),
+                  "the height field is a flat grid plus its extent - nothing else");
 
     // ── DRY FOOTING — where a body may be MATERIALISED ───────────────────
     // A place is dry when what would carry a body there stands above the

@@ -17,6 +17,8 @@
 #include "core/math.h"
 
 #include "assets/sprite_bank.h"
+#include "sub/height.h"     // kHeightQuads / SubworldHeightField — the world's
+                            // vertical truth, which this renderer only READS
 #include "sub/map_data.h"   // WATER_LEVEL — the default sea plane (seaLevel01_)
 #include "gpu/bb_instance.h"
 #include "gpu/vk_buffer.h"
@@ -38,7 +40,10 @@ class SeamlessSubworldManager;
 
 class Renderer3DVk {
 public:
-    static constexpr int kMeshDim = 192; // quads per side (matches GL)
+    // The terrain mesh has exactly the tessellation of the world's height
+    // field (sub/height.h kHeightQuads) — it is not the renderer's own knob
+    // and never was: a mesh coarser or finer than the surface bodies stand on
+    // would draw ground the world does not have.
     // Shadow-march heightfield domain = the window plus a one-window apron on
     // every side (3× span, 9216 m). Same 16 m texel as the window grid; the
     // apron rows come from the macro cell skeleton (see upload()). 3 windows
@@ -46,7 +51,7 @@ public:
     // is one window span — a wider apron would never be sampled.
     static constexpr int kHeightExtFactor = 3;
     static constexpr int kHeightExtDim =
-        kHeightExtFactor * kMeshDim + 1; // 577 texels per side
+        kHeightExtFactor * kHeightQuads + 1; // 577 texels per side
     // Per-frame-in-flight ring depth. MUST equal gpu::VulkanRenderer::
     // kMaxFramesInFlight — the per-frame light SSBO ring is indexed by the
     // renderer's currentFrame, so a mismatch would alias two frames onto one
@@ -152,11 +157,6 @@ public:
                      bool haste, bool flight, float px, float py, float elapsed,
                      std::uint32_t frameIndex);
 
-    float sample_height_m(float x, float y) const;
-    // Highest terrain vertex (metres) of the loaded 3×3 window. Recomputed
-    // whenever heightVtxM_ changes (full rebuild or seam re-centre); the
-    // flight ceiling derives from it (sub/height.h). 0 until first upload.
-    float max_height_m() const { return maxHeightM_; }
     // `lightdbg` bisect mask (lighting.glsl lit_surface): bit0 march, bit1
     // clouds, bit2 object maps, bit3 N·L, bit4 haze — a set bit lifts that
     // term out of the frame.
@@ -175,7 +175,7 @@ private:
     // from the ONE universal gather: every subworld entity carrying a
     // LightEmitter (player lantern, NPC torches, spell/projectile glows, lit
     // windows) is packed as a GpuLight in window/composite space — the same
-    // space as vWorld — via tile_to_world + sample_height_m + the emitter's
+    // space as vWorld — via tile_to_world + the height field + the emitter's
     // offset. When more than kSubworldMaxLights emitters are live the set is
     // culled to the N NEAREST the camera (camPos, world metres) so the closest
     // pools always survive — the player's own light rides the camera at ≈0 and
@@ -244,24 +244,22 @@ private:
     // here" comment above it claimed a fence contract that did not exist).
     VkDescriptorSet       materialSets_[2]   = {};
     std::uint32_t         matFront_          = 0;
-    // Cached heightmap in metres at vertex-grid resolution (Nv × Nv).
-    // Used by sample_height_m() so the engine can seat the first-person
-    // camera on the terrain without keeping a second copy.
-    std::vector<float>  heightVtxM_;
+    // BORROWED, NEVER OWNED: the world's height field (sub/height.h), handed
+    // over by upload() and read by every pass that needs the ground — the
+    // mesh, the normals, prop seats, the march apron, the shadow volume's
+    // vertical fit. The renderer used to keep this grid itself and the
+    // simulation read it back out of here, an obverse edge the RENDER DEAD-END
+    // LAW forbids. Null before the first upload and after destroy: no window,
+    // no ground.
+    const SubworldHeightField* field_ = nullptr;
     // kHeightExtDim² staging for the march heightfield upload: exact window
     // heights in the interior block, macro-skeleton apron around (upload()).
     std::vector<float>  heightExtM_;
-    // Min/max of heightVtxM_ — the flight ceiling reads the max
-    // (max_height_m()); the SHADOW volume is fitted vertically to BOTH plus a
-    // structure allowance, so a low sun no longer projects a fictitious
-    // ±600/900 m box into a kilometres-wide light span (the morning-blob bug).
-    float minHeightM_ = 0.0f;
-    float maxHeightM_ = 0.0f;
     // Window heightfield (metres, Nv×Nv = vertex grid) on the GPU: sampled by
     // lighting.glsl's terrain_visibility() march, so mountains and hills
     // occlude the sun/moon analytically — no depth map, no zebra, any range.
     // Created zeroed in init() (the set-0 descriptor needs it before the first
-    // upload), pixels refreshed by upload() whenever heightVtxM_ changes.
+    // upload), pixels refreshed by upload() whenever the height field changes.
     gpu::VulkanTexture heightTex_{};
 
     // ── THE LIGHT FIELD (sub/lighting.h) — thousands of small lights as one

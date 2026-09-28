@@ -1040,13 +1040,7 @@ bool SeamlessSubworldManager::cell_flat_tile(int idx, std::uint8_t& outTile) con
     return true;
 }
 
-bool SeamlessSubworldManager::consume_composite_dirty() {
-    const bool dirty = compositeDirty_;
-    clear_composite_dirty();
-    return dirty;
-}
-
-CompositeDirty SeamlessSubworldManager::consume_composite_dirty_cells() {
+CompositeDirty SeamlessSubworldManager::pending_composite_dirty() const {
     CompositeDirty d;
     d.any = compositeDirty_;
     d.fullHeight = dirtyFullHeight_;
@@ -1056,6 +1050,23 @@ CompositeDirty SeamlessSubworldManager::consume_composite_dirty_cells() {
     d.materialCells = dirtyMaterialCells_;
     d.shiftX = dirtyShiftX_;
     d.shiftY = dirtyShiftY_;
+    return d;
+}
+
+bool SeamlessSubworldManager::consume_composite_dirty() {
+    const bool dirty = compositeDirty_;
+    heightField_.refresh(*this, pending_composite_dirty());
+    clear_composite_dirty();
+    return dirty;
+}
+
+CompositeDirty SeamlessSubworldManager::consume_composite_dirty_cells() {
+    const CompositeDirty d = pending_composite_dirty();
+    // THE WORLD'S HEIGHT BEFORE ANYONE ELSE'S. The field is refreshed here, at
+    // the one point where the change set is both complete and not yet cleared —
+    // so the vertical truth is current for every reader (simulation first,
+    // renderer after), whether or not a GPU is attached to this session.
+    heightField_.refresh(*this, d);
     clear_composite_dirty();
     return d;
 }

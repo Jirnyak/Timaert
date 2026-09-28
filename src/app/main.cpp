@@ -4005,9 +4005,9 @@ void register_console_commands(App& app) {
     con.register_cmd("pos", "pos", "print the player position",
         [&app](Con& c, const std::vector<std::string>&) {
             if (app.subworld.active())
-                c.printfln(Lvl::Ok, "subworld pos = %.1f, %.1f  (cam height %.1f m)",
+                c.printfln(Lvl::Ok, "subworld pos = %.1f, %.1f  (eye %.1f m)",
                            app.subworld.player_x(), app.subworld.player_y(),
-                           app.subworld.cam_height_m());
+                           app.subworld.player_muzzle_z());
             else if (const sm::ecs::MacroCell* pc =
                          sm::player_flag_cell(app.ecs))
                 c.printfln(Lvl::Ok, "macro cell = %d, %d",

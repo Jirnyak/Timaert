@@ -464,7 +464,13 @@ public:
         renderer3dVk_.set_light_debug_mask(0);
         renderer3dVk_.set_ground_debug_mask(0);
     }
-    float cam_height_m() const { return cam_.pos.y; }
+    // `cam_height_m()` USED TO LIVE HERE and it was a read back out of the
+    // render pass: cam_.pos is written inside record_shadow, so the console
+    // and the smoke were asking the rendering camera how high the player was.
+    // The number itself was never the camera's — it is player_muzzle_z(), pure
+    // simulation — so both callers now ask the source. What goes into the
+    // renderer comes back out of nothing (RENDER DEAD-END LAW).
+
     // Player feet altitude (metres). Kept under its historical name for the
     // flight smoke, but flight no longer has its own camera scalar — flying
     // is plain 3D movement of playerZ_ with gravity switched off.
@@ -534,6 +540,10 @@ public:
     // next tick re-centres the seamless manager and repopulates if we crossed
     // a cell. Clamped to the walkable window by the implementation.
     void  set_player_pos(float x, float y);
+    // HARNESS ONLY: put the body at an altitude without flying it there, so a
+    // witness can ask a reach question in the Z axis alone. Never called by the
+    // game — gravity and flight own this number everywhere else.
+    void  debug_set_player_z(float z) { playerZ_ = z; playerGrounded_ = false; }
     // Dev console: rebuild the whole 3×3 scene via the enter() path (clear +
     // per-cell re-derive). Fauna is deterministic from each cell's absolute
     // macro seed, so this reproduces the current scene rather than re-rolling.
@@ -917,6 +927,13 @@ private:
     void sync_player_vertical(float dt);
     // What would carry a body arriving at (x, y): max(terrain, solid top).
     float footing_height_m(float x, float y) const;
+    // IS THIS THRESHOLD WITHIN THE BODY'S ARM — measured in all three axes.
+    // A threshold is a place on the floor, so its altitude is the footing
+    // under it; the gap the arm must cross is the honest 3D one. The four
+    // dungeon thresholds (two stair pads, the roof hatch, the entry) used to
+    // ask this in XY alone, which made the arm infinitely long straight up:
+    // hover over a hatch and E opened it. One door, no fork by kind.
+    bool within_arm_of(float tx, float ty, float reach) const;
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee();
     void tick_hit_flashes(float dt);

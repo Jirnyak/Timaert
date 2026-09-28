@@ -12,8 +12,8 @@
 // curvature ~70% while preserving the massif's height/prominence.
 //
 // This test measures EXACTLY what the eye sees in 3D: it reproduces the 3D
-// renderer's mesh sampling (vk_renderer_3d.cpp) — a 192-quad grid, one vertex
-// every kFullSize/192 = 16 tiles, each vertex BOX-AVERAGED over a +/-8-tile
+// mesh sampling (the world's height field, sub/height.h) — a 192-quad grid, one
+// vertex every 16 tiles, each vertex BOX-AVERAGED over a +/-8-tile
 // footprint (the mesh already low-passes) — then measures the discrete
 // Laplacian (|kink|) at the mesh vertices. Tile-scale curvature is the WRONG
 // metric: the mesh never samples per-tile, so per-tile roughness is invisible;
@@ -31,6 +31,7 @@
 
 #include "check.h"
 #include "sub/base_generator.h"
+#include "sub/height.h"
 #include "sub/map_data.h"
 
 #include <algorithm>
@@ -70,30 +71,24 @@ std::vector<float> composite(Biome b, std::uint32_t seed, float macroH) {
     return full;
 }
 
-// Reproduce the 3D renderer's terrain-mesh vertex sampling: 192 quads/side, one
-// vertex every step = kFullSize/192 tiles, each vertex the mean height over a
-// +/-half-tile box (half = step/2). This is vk_renderer_3d.cpp's sampleVertex.
-constexpr int kMeshDim = 192;               // quads per side (matches renderer)
-constexpr int kMeshVtx = kMeshDim + 1;      // vertices per side
+// THE MESH SAMPLING IS THE WORLD'S OWN (sub/height.h). This block used to
+// re-derive it — 192 quads, 16-tile step, +/-8-tile box — which is exactly the
+// second copy of production logic AGENTS §8 п.5 forbids: it proves you can
+// copy, and it would keep passing while the real law drifted out from under it.
+// The field's full-rebuild door takes a raw composite heightmap, so the witness
+// now measures the surface the game actually draws.
+constexpr int kMeshVtx = sm::sub::kHeightVerts;   // vertices per side
 
 std::vector<float> mesh_vertices(const std::vector<float>& hm) {
-    const int step = kFullSize / kMeshDim;      // 16 tiles/quad
-    const int half = std::max(1, step / 2);     // +/-8-tile box
+    // Metres out, normalised in: every number below is a RATIO or a curvature
+    // compared against another of its own kind, so the scale divides out — but
+    // it must divide out of ALL of them, hence one place to undo it.
+    sm::sub::SubworldHeightField field;
+    field.rebuild_from(hm.data());
     std::vector<float> v(std::size_t(kMeshVtx) * kMeshVtx, 0.0f);
-    for (int y = 0; y < kMeshVtx; ++y)
-        for (int x = 0; x < kMeshVtx; ++x) {
-            const int cy = std::min(kFullSize - 1, y * step);
-            const int cx = std::min(kFullSize - 1, x * step);
-            const int y0 = std::max(0, cy - half), y1 = std::min(kFullSize - 1, cy + half);
-            const int x0 = std::max(0, cx - half), x1 = std::min(kFullSize - 1, cx + half);
-            float sum = 0.0f;
-            int cnt = 0;
-            for (int sy = y0; sy <= y1; ++sy) {
-                const std::size_t row = std::size_t(sy) * kFullSize;
-                for (int sx = x0; sx <= x1; ++sx) { sum += hm[row + sx]; ++cnt; }
-            }
-            v[std::size_t(y) * kMeshVtx + x] = cnt ? sum / float(cnt) : 0.0f;
-        }
+    for (std::size_t i = 0; i < v.size(); ++i) {
+        v[i] = field.vertices()[i] / sm::sub::kHeightScaleM;
+    }
     return v;
 }
 

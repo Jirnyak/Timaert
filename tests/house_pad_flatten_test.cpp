@@ -1,7 +1,7 @@
 // Locks the HOUSE-PAD FLATTEN in sub/gens/dispatch.cpp (flatten_footprint,
 // applied by add_house_rect + stamp_landmark_house). The 3D renderer seats each
 // house/keep box at a SINGLE elevation — a bilinear sample of the heightmap at
-// the footprint centre (`sample_height_m(s.x, s.y)` in vk_renderer_3d.cpp) —
+// the footprint centre (`SubworldHeightField::sample`, sub/height.h) —
 // while the terrain MESH under the box follows the per-tile heightmap. If those
 // disagree, the ground pokes THROUGH the floor on the uphill side and the box
 // FLOATS above it on the downhill side: the owner's "towns on cliffs" report.

@@ -1081,7 +1081,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
         materialSetLayout_ = VK_NULL_HANDLE;
     }
     indexCount_ = 0;
-    heightVtxM_.clear();
+    field_ = nullptr;
     dev_  = nullptr;
     pass_ = VK_NULL_HANDLE;
     uploaded_ = false;
@@ -1429,9 +1429,10 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     // THE STITCH. The composite's own height, asked in window metres — this is
     // what makes the join a continuation instead of a cliff. Negative where
     // there is no composite to agree with (a harness with no window built).
-    const auto compositeHeightM = [this](float wx, float wz) {
-        if (heightVtxM_.empty()) return -1.0f;
-        return sample_height_m(wx + kWorldExtent, wz + kWorldExtent);
+    const SubworldHeightField& hf = mgr.height_field();
+    const auto compositeHeightM = [&hf](float wx, float wz) {
+        if (!hf.built()) return -1.0f;
+        return hf.sample(wx + kWorldExtent, wz + kWorldExtent);
     };
     // HALF A MACRO CELL of band, the generator's own blend scale and the very
     // number the march apron feathers over for the same reason.
@@ -1517,9 +1518,8 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
     // centred on, and that is exactly what a seam crossing changes.
     rebuild_far_world(dev, mgr);
 
-    const int N   = kMeshDim;
+    const int N   = kHeightQuads;
     const int Nv  = N + 1;
-    const int step = kFullSize / N;
     const auto& hm = mgr.heightmap();
     const auto& tiles = mgr.tiles();
     if (hm.empty()) return;
@@ -1592,164 +1592,19 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
     groundOriginX_ = float((mgr.center_cx() - 1) * kCellSize) * kTileMeters;
     groundOriginY_ = float((mgr.center_cy() - 1) * kCellSize) * kTileMeters;
 
-    // ── Sample heights into a vertex grid in metres ──
-    // Box-average each vertex over its step-sized footprint (same as GL), as a
-    // pure per-vertex fn so the full and per-cell paths are byte-identical.
+    // ── THE WORLD'S HEIGHT, READ (sub/height.h) ──
+    // The vertex grid used to be resampled HERE and kept HERE, and the
+    // simulation reached up into the renderer fifteen times to ask what the
+    // ground was. The window manager states it now — refreshed from the same
+    // composite by the same arithmetic, on the same dirty set — and this pass
+    // borrows it. `doHeight` still says whether the MESH must be rebuilt; it
+    // no longer says whether the WORLD has a surface.
     const auto vertexCount = std::size_t(Nv) * Nv;
-    heightVtxM_.resize(vertexCount);
-    const int half = std::max(1, step / 2);
-    // A vertex samples composite tile (x*step); one macro cell spans this many
-    // vertices per axis. A cell's re-blit changes exactly the inclusive block
-    // [c*cellVerts, (c+1)*cellVerts] — the ±half footprint of a boundary vertex
-    // reaches one cell in and no further.
-    const int cellVerts = kCellSize / step;
-    auto sampleVertex = [&](int x, int y) -> float {
-        const int cy = std::min(kFullSize - 1, y * step);
-        const int y0 = std::max(0, cy - half);
-        const int y1 = std::min(kFullSize - 1, cy + half);
-        const int cx = std::min(kFullSize - 1, x * step);
-        const int x0 = std::max(0, cx - half);
-        const int x1 = std::min(kFullSize - 1, cx + half);
-        float sum = 0.0f;
-        int count = 0;
-        for (int sy = y0; sy <= y1; ++sy) {
-            const auto row = std::size_t(sy) * kFullSize;
-            for (int sx = x0; sx <= x1; ++sx) {
-                sum += hm[row + std::size_t(sx)];
-                ++count;
-            }
-        }
-        return (count > 0 ? sum / float(count) : 0.0f) * kHeightScaleM;
-    };
+    field_ = &mgr.height_field();
+    const float* heightVtx = field_->vertices();
 
     if (doHeight) {
-        const auto s = profNow();
-        if (doFullHeight) {
-            for (int y = 0; y < Nv; ++y)
-                for (int x = 0; x < Nv; ++x)
-                    heightVtxM_[std::size_t(y) * Nv + x] = sampleVertex(x, y);
-        } else {
-            // Seam crossing (3c): the manager already toroidally shifted
-            // composite_height_; slide our persistent vertex grid the same way
-            // (a memmove, in VERTICES: one cell = cellVerts steps) so the 6/9
-            // (axis) or 4/9 (diagonal) overlap keeps its heights without
-            // resampling, then resample only the fresh cells below. Mirrors
-            // shift_buffer() exactly. No-op when shiftX==shiftY==0 (plain drain).
-            if (shiftHeight && (dirty.shiftX != 0 || dirty.shiftY != 0)) {
-                const int vpx = -dirty.shiftX * cellVerts;
-                const int vpy = -dirty.shiftY * cellVerts;
-                const int adx = vpx < 0 ? -vpx : vpx;
-                const int ady = vpy < 0 ? -vpy : vpy;
-                const int copyW = Nv - adx;
-                const int copyH = Nv - ady;
-                if (copyW > 0 && copyH > 0) {
-                    const int srcX = vpx > 0 ? 0 : -vpx;
-                    const int dstX = vpx > 0 ? vpx : 0;
-                    float* d = heightVtxM_.data();
-                    if (vpy > 0) {
-                        for (int srcY = copyH - 1; srcY >= 0; --srcY)
-                            std::memmove(&d[std::size_t(srcY + vpy) * Nv + dstX],
-                                         &d[std::size_t(srcY) * Nv + srcX],
-                                         std::size_t(copyW) * sizeof(float));
-                    } else {
-                        const int srcY0 = -vpy;
-                        for (int y = 0; y < copyH; ++y)
-                            std::memmove(&d[std::size_t(y) * Nv + dstX],
-                                         &d[std::size_t(srcY0 + y) * Nv + srcX],
-                                         std::size_t(copyW) * sizeof(float));
-                    }
-                }
-                // sampleVertex clamps its ±half footprint at the composite edge,
-                // so an outer-ring vertex needs a smaller footprint than the
-                // interior value the memmove slid into it. half<step ⇒ only the
-                // 1-vertex-thick border ring clamps — resample it (idempotent
-                // with the fresh-cell pass, ~4·Nv verts, all shift directions).
-                for (int x = 0; x < Nv; ++x) {
-                    heightVtxM_[std::size_t(x)] = sampleVertex(x, 0);
-                    heightVtxM_[std::size_t(Nv - 1) * Nv + x] =
-                        sampleVertex(x, Nv - 1);
-                }
-                for (int y = 0; y < Nv; ++y) {
-                    heightVtxM_[std::size_t(y) * Nv] = sampleVertex(0, y);
-                    heightVtxM_[std::size_t(y) * Nv + (Nv - 1)] =
-                        sampleVertex(Nv - 1, y);
-                }
-            }
-            for (int idx = 0; idx < 9; ++idx) {
-                if (!dirty.heightCells[std::size_t(idx)]) continue;
-                const int ox = idx % 3, oy = idx / 3;
-                const int vx0 = ox * cellVerts, vx1 = (ox + 1) * cellVerts;
-                const int vy0 = oy * cellVerts, vy1 = (oy + 1) * cellVerts;
-                // A freshly exposed cell is a placeholder: ONE height across all
-                // 1024² of its tiles. sampleVertex would box-average 289 copies
-                // of that number per vertex, ~4.2k vertices per cell — three
-                // fresh cells on an axis crossing came to 3.7 million scattered
-                // reads of a 37 MB array, which is where the crossing frame's
-                // milliseconds went. The mean of a constant is the constant.
-                //
-                // Only the cell's four shared EDGES need honest sampling: a
-                // vertex's ±half footprint reaches into the neighbour there,
-                // and half < step means it reaches no further than the first
-                // interior vertex. Everything strictly inside is the constant.
-                float flatH = 0.0f;
-                if (mgr.cell_flat_height(idx, flatH)) {
-                    const float hM = flatH * kHeightScaleM;
-                    for (int y = vy0 + 1; y <= vy1 - 1; ++y) {
-                        float* row = &heightVtxM_[std::size_t(y) * Nv];
-                        for (int x = vx0 + 1; x <= vx1 - 1; ++x) row[x] = hM;
-                    }
-                    for (int x = vx0; x <= vx1; ++x) {
-                        heightVtxM_[std::size_t(vy0) * Nv + x] = sampleVertex(x, vy0);
-                        heightVtxM_[std::size_t(vy1) * Nv + x] = sampleVertex(x, vy1);
-                    }
-                    for (int y = vy0; y <= vy1; ++y) {
-                        heightVtxM_[std::size_t(y) * Nv + vx0] = sampleVertex(vx0, y);
-                        heightVtxM_[std::size_t(y) * Nv + vx1] = sampleVertex(vx1, y);
-                    }
-                    continue;
-                }
-                for (int y = vy0; y <= vy1; ++y)
-                    for (int x = vx0; x <= vx1; ++x)
-                        heightVtxM_[std::size_t(y) * Nv + x] = sampleVertex(x, y);
-            }
-            if (kSelfCheck) {
-                // The shipped game builds this TU with -ffast-math, so
-                // sampleVertex is NOT bit-reproducible across its inlined call
-                // sites (the reduction reassociates). Bit-exact "==" therefore
-                // reports phantom mismatches on the resampled border ring even
-                // when the incremental grid is correct. Verify to floating-point
-                // tolerance instead — far below any perceptible or structural
-                // error — and surface the worst delta so a real regression
-                // (wrong cell / off-by-one footprint ⇒ ≥1 world-unit) still
-                // stands out against the ~1e-4-unit fast-math noise floor.
-                std::size_t mism = 0;
-                float maxDiff = 0.0f;
-                for (int y = 0; y < Nv; ++y)
-                    for (int x = 0; x < Nv; ++x) {
-                        const float a = heightVtxM_[std::size_t(y) * Nv + x];
-                        const float b = sampleVertex(x, y);
-                        const float d = std::fabs(a - b);
-                        if (d > maxDiff) maxDiff = d;
-                        if (d > 1e-2f + 1e-5f * std::fabs(b)) ++mism;
-                    }
-                std::fprintf(stderr,
-                    "[seam-selfcheck] height incremental mismatch=%zu/%zu "
-                    "maxdiff=%.6g\n",
-                    mism, vertexCount, double(maxDiff));
-                std::fflush(stderr);
-            }
-        }
-        // The window's height content changed (full rebuild, seam shift or
-        // dirty-cell resample) — refresh the window min/max (flight ceiling
-        // reads the max, the shadow volume's vertical fit reads both). One
-        // pass over ~37k floats, negligible next to the resample.
-        maxHeightM_ = 0.0f;
-        minHeightM_ = 1.0e30f;
-        for (const float h : heightVtxM_) {
-            if (h > maxHeightM_) maxHeightM_ = h;
-            if (h < minHeightM_) minHeightM_ = h;
-        }
-        if (minHeightM_ > maxHeightM_) minHeightM_ = 0.0f;
+        const auto sHeight = profNow();
         // Rebuild the march heightfield (lighting.glsl u_heightM): exact
         // window heights in the interior, macro-skeleton apron around them
         // (kHeightExtFactor), so massifs beyond the window keep casting into
@@ -1779,7 +1634,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                         h01 = std::clamp(h01, 0.80f, 1.04f);
                     cellM[gy * kGridW + gx] = h01 * kHeightScaleM;
                 }
-            const int off = (kHeightExtFactor / 2) * kMeshDim; // interior at 192
+            const int off = (kHeightExtFactor / 2) * kHeightQuads; // interior at 192
             const float extHalfM = float(kHeightExtFactor) * kWorldExtent;
             // Feather half a macro cell from the window edge into the
             // skeleton: the skeleton has no noise/ridges, so a raw step at
@@ -1791,7 +1646,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     const int ix = x - off, iy = y - off;
                     if (ix >= 0 && ix < Nv && iy >= 0 && iy < Nv) {
                         heightExtM_[std::size_t(y) * Ne + x] =
-                            heightVtxM_[std::size_t(iy) * Nv + ix];
+                            heightVtx[std::size_t(iy) * Nv + ix];
                         continue;
                     }
                     const float wx = -extHalfM + float(x) * texelM;
@@ -1817,7 +1672,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                         {0.0f, -kWorldExtent - wz, wz - kWorldExtent});
                     const float w = std::min(
                         1.0f, std::max(dxOut, dzOut) / featherM);
-                    const float edge = heightVtxM_[
+                    const float edge = heightVtx[
                         std::size_t(std::clamp(iy, 0, Nv - 1)) * Nv
                         + std::size_t(std::clamp(ix, 0, Nv - 1))];
                     heightExtM_[std::size_t(y) * Ne + x] =
@@ -1826,12 +1681,12 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             }
             pend_.heightTex = true;
         }
-        if (kProf) msHeight = profMs(s, profNow());
+        if (kProf) msHeight = profMs(sHeight, profNow());
     }
 
     // ── Rebuild the vertex buffer (full) whenever any height changed ──
     // The per-vertex build is trivial (~0.1 ms) and every normal reads the now-
-    // correct persistent heightVtxM_, so we always rebuild the whole array from
+    // correct persistent height field, so we always rebuild the whole array from
     // it; the savings are above, in only resampling the dirty cells' heights.
     // Index topology is constant → build + upload EXACTLY ONCE. When only the
     // material or structures changed the buffer is untouched (already uploaded).
@@ -1845,14 +1700,14 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 const auto i = std::size_t(y) * Nv + x;
                 float wx = -kWorldExtent + float(x) * cell;
                 float wz = -kWorldExtent + float(y) * cell;
-                float wy = heightVtxM_[i];
+                float wy = heightVtx[i];
 
                 int xm = std::max(0, x - 1), xp = std::min(Nv - 1, x + 1);
                 int ym = std::max(0, y - 1), yp = std::min(Nv - 1, y + 1);
-                float hL = heightVtxM_[std::size_t(y) * Nv + xm];
-                float hR = heightVtxM_[std::size_t(y) * Nv + xp];
-                float hD = heightVtxM_[std::size_t(ym) * Nv + x];
-                float hU = heightVtxM_[std::size_t(yp) * Nv + x];
+                float hL = heightVtx[std::size_t(y) * Nv + xm];
+                float hR = heightVtx[std::size_t(y) * Nv + xp];
+                float hD = heightVtx[std::size_t(ym) * Nv + x];
+                float hU = heightVtx[std::size_t(yp) * Nv + x];
                 vec3 n = normalize({hL - hR, 2.0f * cell, hD - hU});
 
                 // Grid UV in [0,1]; mesh.frag samples the full-res tile material
@@ -2286,7 +2141,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
     }
 
     // ── A4/A5: Tree + structure instances from real Structure records ──
-    // Both derive from mgr.structures() and sample_height_m(heightVtxM_), so a
+    // Both derive from mgr.structures() and the world's height field, so a
     // structure-set change OR any height change (dirty.structs — always set
     // alongside heightCells / fullHeight) rebuilds them together. On a
     // material-only update the instance buffers are left as-is (already uploaded).
@@ -2309,7 +2164,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 }
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
-                const float baseM = sample_height_m(s.x, s.y);
+                const float baseM = field_->sample(s.x, s.y);
                 if (baseM < sea_level_m(seaLevel01_) - 0.5f) continue;
                 // Stable hash for seed (same as GL renderer).
                 const float absX = float((mgr.center_cx() - 1) * kCellSize) + s.x;
@@ -2347,7 +2202,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 // Metric build — height (metres) from the record's own roll
                 // scaled by the species, width and seat sink derived from it
                 // by the ONE law in sub/tree_atlas.h. The base sits on the
-                // same surface a body's feet do (sample_height_m), sunk by
+                // same surface a body's feet do (the height field), sunk by
                 // less than one sprite row so the trunk stays in daylight.
                 const TreeBillboard tb =
                     tree_billboard(s.height, s.radius, typeIdx);
@@ -2380,7 +2235,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 if (structure_draw(s.kind) != StructureKindRow::Draw::Solid) {
                     continue;
                 }
-                const float baseM = sample_height_m(s.x, s.y);
+                const float baseM = field_->sample(s.x, s.y);
                 // THE span, from the shared contract (map_data.h
                 // structure_solid_span) — the very function the collision
                 // index reads, so the picture and the solid can no longer be
@@ -2452,7 +2307,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
         // the frame's command buffer and take no blocking wall-clock here.
         std::fprintf(stderr,
             "[upload3d-prof] shift=%d,%d fullH=%d cells=%d "
-            "height=%.3f verts=%.3f "
+            "apron=%.3f verts=%.3f "
             "matFill=%.3f tree=%.3f struct=%.3f TOTAL(cpu)=%.3f (ms)\n",
             dirty.shiftX, dirty.shiftY, doFullHeight ? 1 : 0,
             (dirty.heightCells[0]?1:0)+(dirty.heightCells[1]?1:0)+(dirty.heightCells[2]?1:0)
@@ -2910,10 +2765,17 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
                                   const WorldTime& time) {
     if (!uploaded_ || shadow_.image == VK_NULL_HANDLE) return;
 
+    // The volume is fitted vertically to the WINDOW'S OWN EXTENT, so a low sun
+    // no longer projects a fictitious ±600/900 m box into a kilometres-wide
+    // light span (the morning-blob bug). Both numbers are the world's, read
+    // through the borrowed field — the renderer keeps no extent of its own.
+    const float hfMinM = field_ ? field_->min_m() : 0.0f;
+    const float hfMaxM = field_ ? field_->max_m() : 0.0f;
+
     vec3 lightRight{};
     const float span = compute_shadow_basis(cam, time, shadow_.size,
                                             kShadowNearRadiusM,
-                                            minHeightM_, maxHeightM_,
+                                            hfMinM, hfMaxM,
                                             lightMvp_, lightRight);
     // TIMAERT_SHADOW_STATS=1: one stderr line per ~2 s — the map's REAL texel
     // density in this scene right now, so density claims are measured, never
@@ -2925,7 +2787,7 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
             std::fprintf(stderr,
                          "[shadow] span=%.0fm texel=%.2fm heights=[%.0f..%.0f]m\n",
                          span, span / float(shadow_.size),
-                         minHeightM_, maxHeightM_);
+                         hfMinM, hfMaxM);
         }
     }
     shadow_.begin(cmd);
@@ -3017,7 +2879,7 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
     if (shadowFar_.image == VK_NULL_HANDLE) return;
     vec3 lightRightFar{};
     compute_shadow_basis(cam, time, shadowFar_.size, kShadowFarRadiusM,
-                         minHeightM_, maxHeightM_, lightMvpFar_, lightRightFar);
+                         hfMinM, hfMaxM, lightMvpFar_, lightRightFar);
     shadowFar_.begin(cmd);
     vkCmdSetDepthBias(cmd, 1.0f, 0.0f, 1.5f);
 
@@ -3660,7 +3522,7 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
 // same ecs::LightEmitter and are treated identically here — no per-emitter code.
 //
 // Positions are built in the SAME window/composite space as the terrain's
-// vWorld (tile_to_world for XZ, sample_height_m for the ground Y), then the
+// vWorld (tile_to_world for XZ, the height field for the ground Y), then the
 // emitter's world-space offset is added — so a light lines up exactly with the
 // surface the shader lights. Count is clamped to the SSBO budget.
 void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
@@ -3785,30 +3647,5 @@ void Renderer3DVk::tile_to_world(float tileX, float tileY,
     wz = (tileY - float(kFullSize) * 0.5f) * kTileMeters;
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// sample_height_m — bilinear sample of cached heightmap (metres).
-// Exact copy from GL Renderer3D.
-// ──────────────────────────────────────────────────────────────────────
-float Renderer3DVk::sample_height_m(float tileX, float tileY) const {
-    if (heightVtxM_.empty()) return 0.0f;
-    const int Nv = kMeshDim + 1;
-    float fx = tileX * float(kMeshDim) / float(kFullSize);
-    float fy = tileY * float(kMeshDim) / float(kFullSize);
-    if (fx < 0) fx = 0;
-    if (fy < 0) fy = 0;
-    if (fx > float(Nv - 1)) fx = float(Nv - 1);
-    if (fy > float(Nv - 1)) fy = float(Nv - 1);
-    int xi = int(fx), yi = int(fy);
-    int xn = xi + 1; if (xn > Nv - 1) xn = Nv - 1;
-    int yn = yi + 1; if (yn > Nv - 1) yn = Nv - 1;
-    float tx = fx - float(xi), ty = fy - float(yi);
-    float h00 = heightVtxM_[std::size_t(yi) * Nv + xi];
-    float h10 = heightVtxM_[std::size_t(yi) * Nv + xn];
-    float h01 = heightVtxM_[std::size_t(yn) * Nv + xi];
-    float h11 = heightVtxM_[std::size_t(yn) * Nv + xn];
-    float a = h00 * (1.0f - tx) + h10 * tx;
-    float b = h01 * (1.0f - tx) + h11 * tx;
-    return a * (1.0f - ty) + b * ty;
-}
 
 } // namespace sm::sub

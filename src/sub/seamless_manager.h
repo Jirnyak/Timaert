@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 #include "core/small_function.h"
+#include "sub/height.h"
 #include "sub/map_data.h"
 #include "sub/map_factory.h"
 
@@ -195,6 +196,13 @@ public:
     // the ground is the generator's word everywhere else.
     std::vector<std::uint8_t>& debug_mutable_tiles() { return composite_tiles_; }
     const std::vector<float>&        heightmap() const { return composite_height_; }
+    // THE WORLD'S VERTICAL TRUTH (sub/height.h): the vertex grid every body
+    // stands on and the renderer draws. It lives HERE, beside the composite it
+    // is sampled from and beside the seam shift that relocates both, so the
+    // toroidal slide is stated exactly once. Refreshed by either consume of the
+    // dirty set — that is, whenever anyone asks what changed — so it never
+    // depends on a GPU existing.
+    const SubworldHeightField& height_field() const { return heightField_; }
     const std::vector<Structure>&    structures() const { return composite_struct_; }
     // A window cell whose composite content is one constant (LoadedCell::
     // heightIsFlat) — its height, and its tile id. False for any cell holding
@@ -246,6 +254,11 @@ private:
     std::vector<std::uint8_t> composite_tiles_;
     std::vector<float>        composite_height_;
     std::vector<Structure>    composite_struct_;
+    SubworldHeightField       heightField_;
+
+    // The pending change set as a value, so both consumes read the same facts
+    // (and hand them to the height field) before clearing them.
+    CompositeDirty pending_composite_dirty() const;
 
     void load_all();
     void blit_into_composite(bool smoothRoads);

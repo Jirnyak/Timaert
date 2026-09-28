@@ -1067,11 +1067,26 @@ timaert_test(prop_interaction_test
 
 timaert_test(mountain_mesh_smoothness_test
     SOURCES
-        src/sub/base_generator.cpp)
+        src/sub/base_generator.cpp
+        src/sub/height.cpp)
+
+timaert_test(subworld_height_field_test
+    SOURCES
+        src/sub/seamless_manager.cpp
+        src/sub/height.cpp
+        src/sub/base_generator.cpp
+        src/sub/map_factory.cpp
+        ${TIMAERT_GENS_SOURCES}
+        src/sub/dgn/dispatch.cpp
+        src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
+        src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp)
 
 timaert_test(subworld_async_seam_test
     SOURCES
         src/sub/seamless_manager.cpp
+        src/sub/height.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
@@ -1091,6 +1106,7 @@ timaert_test(subworld_spawn_parity_test
         src/sub/collide.cpp
         src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
+        src/sub/height.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
@@ -1494,6 +1510,7 @@ timaert_test(settlement_faction_test
         src/sub/collide.cpp
         src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
+        src/sub/height.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
@@ -1519,6 +1536,7 @@ timaert_test(carried_light_spawn_test
         src/sub/collide.cpp
         src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
+        src/sub/height.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
@@ -1548,6 +1566,7 @@ timaert_test(city_population_inside_walls_test
         src/sub/collide.cpp
         src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
+        src/sub/height.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
@@ -1867,6 +1886,13 @@ target_compile_definitions(doc_refs_test
 # появились ПОСЛЕ его записи. Сканирует дерево, поэтому знает его корень.
 timaert_test(world_fold_law_test)
 target_compile_definitions(world_fold_law_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+# Прибор на ЗАКОН ТУПИКА РЕНДЕРА: вертикальная истина субмира больше не живёт в
+# рендерере и не читается из него. Утверждение об ОТСУТСТВИИ адреса в коде не
+# имеет — оно указывает сюда (§0 п.2). Сканирует дерево, поэтому знает корень.
+timaert_test(render_dead_end_law_test)
+target_compile_definitions(render_dead_end_law_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 add_executable(docs_sync_tool tests/docs_sync_main.cpp tests/doc_refs.cpp)
