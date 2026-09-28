@@ -240,7 +240,6 @@ SKELETON.md	:779
 SKELETON.md	:79-88
 SKELETON.md	:8016
 SKELETON.md	:8070
-SKELETON.md	:81
 SKELETON.md	:849
 SKELETON.md	:88
 SKELETON.md	:92-95
@@ -453,15 +452,12 @@ SKELETON.md	macro_stock.h:114-116
 SKELETON.md	macro_stock.h:60-74
 SKELETON.md	macro_world.h:63
 SKELETON.md	macro_world.h:68-71
-SKELETON.md	macro_world.h:93
-SKELETON.md	macro_world.h:99
 SKELETON.md	main.cpp:1398
 SKELETON.md	main.cpp:1674
 SKELETON.md	main.cpp:1695
 SKELETON.md	main.cpp:1839-1854
 SKELETON.md	main.cpp:1862
 SKELETON.md	main.cpp:2963
-SKELETON.md	main.cpp:3172-3186
 SKELETON.md	main.cpp:327
 SKELETON.md	main.cpp:3541
 SKELETON.md	main.cpp:3635-3637
@@ -514,7 +510,6 @@ SKELETON.md	npc.h:467
 SKELETON.md	npc_ai.cpp:1185
 SKELETON.md	npc_ai.cpp:1199
 SKELETON.md	npc_ai.cpp:1372
-SKELETON.md	npc_ai.cpp:156-162
 SKELETON.md	npc_ai.cpp:1742
 SKELETON.md	npc_ai.cpp:1790
 SKELETON.md	npc_ai.cpp:1954
@@ -597,7 +592,6 @@ SKELETON.md	quest_engine.cpp:114-116
 SKELETON.md	quest_engine.cpp:232
 SKELETON.md	quest_engine.cpp:234-235
 SKELETON.md	quest_engine.cpp:63
-SKELETON.md	quest_engine.cpp:74
 SKELETON.md	quest_lifecycle_test.cpp:428
 SKELETON.md	record.h:94
 SKELETON.md	recovery.h:33
@@ -685,10 +679,8 @@ SKELETON.md	squad.h:199
 SKELETON.md	squad.h:261
 SKELETON.md	squad.h:262-265
 SKELETON.md	squad.h:378
-SKELETON.md	squad.h:440
 SKELETON.md	squad.h:587
 SKELETON.md	squad.h:656-712
-SKELETON.md	squad.h:712-731
 SKELETON.md	squad.h:785
 SKELETON.md	squad.h:896
 SKELETON.md	squad.h:932
@@ -711,7 +703,6 @@ SKELETON.md	state.h:1066
 SKELETON.md	state.h:1085
 SKELETON.md	state.h:1090
 SKELETON.md	state.h:1172
-SKELETON.md	state.h:1186
 SKELETON.md	state.h:1194-1198
 SKELETON.md	state.h:1209-1213
 SKELETON.md	state.h:1261-1270
@@ -749,7 +740,6 @@ SKELETON.md	sub/engine.cpp:1314
 SKELETON.md	sub/engine.cpp:1346-1356
 SKELETON.md	sub/engine.cpp:1402-1403
 SKELETON.md	sub/engine.cpp:1743
-SKELETON.md	sub/engine.cpp:1786
 SKELETON.md	sub/engine.cpp:2178
 SKELETON.md	sub/engine.cpp:2220
 SKELETON.md	sub/engine.cpp:2245
@@ -786,7 +776,6 @@ SKELETON.md	surface_lib.glsl:30
 SKELETON.md	targeting.cpp:24-80
 SKELETON.md	targeting.cpp:66
 SKELETON.md	targeting.cpp:77-79
-SKELETON.md	tests/balance_run.cpp:235-236
 SKELETON.md	tests/balance_run.cpp:488
 SKELETON.md	tests/spire_generation_test.cpp:307-316
 SKELETON.md	threat_field.cpp:14-17
@@ -841,7 +830,6 @@ SKELETON.md	world_tick.cpp:297
 SKELETON.md	world_tick.cpp:387
 SKELETON.md	world_tick.cpp:477
 SKELETON.md	world_tick.cpp:495
-SKELETON.md	world_tick.cpp:534-549
 SKELETON.md	world_tick.cpp:552-556
 SKELETON.md	world_tick.cpp:616
 SKELETON.md	world_tick.cpp:633-642
@@ -1067,7 +1055,6 @@ jopus_prompts.md	world_gen.cpp:310
 jopus_prompts.md	world_tick.cpp:190-193
 jopus_prompts.md	world_tick.h:38-42
 jopus_prompts.md	zones.cpp:123
-macro-registry.md	:101
 macro-registry.md	:103
 macro-registry.md	:1038
 macro-registry.md	:113-135
@@ -1162,7 +1149,6 @@ macro-registry.md	balance_run.cpp:275
 macro-registry.md	balance_run.cpp:279
 macro-registry.md	behaviour.h:28
 macro-registry.md	characters.h:114
-macro-registry.md	chronicle.cpp:61
 macro-registry.md	chronicle.h:151
 macro-registry.md	chronicle.h:257
 macro-registry.md	commodity.h:117
@@ -1249,7 +1235,6 @@ macro-registry.md	macro_stock.cpp:476
 macro-registry.md	macro_stock.cpp:610-680
 macro-registry.md	main.cpp:130
 macro-registry.md	main.cpp:292-297
-macro-registry.md	main.cpp:297-298
 macro-registry.md	main.cpp:4238-4270
 macro-registry.md	main.cpp:4268
 macro-registry.md	main.cpp:5697
