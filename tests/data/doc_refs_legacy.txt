@@ -1227,7 +1227,6 @@ macro-registry.md	:1700
 macro-registry.md	:188
 macro-registry.md	:190
 macro-registry.md	:2093-2100
-macro-registry.md	:218
 macro-registry.md	:2215
 macro-registry.md	:2245
 macro-registry.md	:2265-2268
@@ -1251,8 +1250,6 @@ macro-registry.md	:3585
 macro-registry.md	:362
 macro-registry.md	:3688
 macro-registry.md	:3712
-macro-registry.md	:397
-macro-registry.md	:412
 macro-registry.md	:419
 macro-registry.md	:4214
 macro-registry.md	:4263
@@ -1524,7 +1521,6 @@ macro-registry.md	ui/macro_overlay.h:87
 macro-registry.md	ui/overlays.cpp:253-260
 macro-registry.md	vk_renderer_3d.cpp:1475
 macro-registry.md	world_gen.cpp:345
-macro-registry.md	world_tick.cpp:199
 macro-registry.md	world_tick.cpp:380
 macro-registry.md	world_tick.cpp:381
 macro-registry.md	world_tick.cpp:540
