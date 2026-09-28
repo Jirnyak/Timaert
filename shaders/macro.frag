@@ -1,23 +1,40 @@
 #version 450
-// Macroworld synth (Phase 4c): the full data-texture pipeline on Vulkan.
-// Four sampled images (master + feature + zone + river) drive a procedural
-// ground: 10 per-biome bt_* textures, neighbour blend, wet-sand shore band,
-// climate (snow/ice) overlay, cobblestone roads,
-// compact tree marks, a hillshaded relief massif for mountains, and a
-// danger-zone tint. Ported from the GL reference (src/macro/macro_renderer.cpp
-// kFS); pixel-art tree sprites + landmarks + night lights remain a later step.
+// МАКРО-КАРТА: картинка макромира одним фрагментом. Замысел системы —
+// CANON.md S18.2, состояние по подсистемам с адресами — SKELETON.md III.4.
+//
+// Слой есть КОНЕЧНЫЙ ПОТОК: вход — числа клетки (высота, влага, температура,
+// байт фичи, счёт деревьев, опасность, знание, ночное свечение) и связность
+// тора; выхода нет вовсе, симуляция отсюда не читает ничего.
+//
+// ШЕСТЬ привязанных образов (перечислены ниже) кормят десять подсистем:
+// одиннадцать процедурных палитр биомов, смешение с соседями и песок на стыке
+// суши с водой, цел-шейдовый массив гор с отбрасываемой тенью, полог леса от
+// поля деревьев, единый азимут светила с бликом по воде, мощёные и грунтовые
+// дороги с пашней, угли опасности, туман знания и ЧАРТ — карта как документ.
+// Спрайты сквадов рисует не шейдер (`src/ui/macro_overlay.cpp`).
+//
+// ⚠ ШАПКА ЗДЕСЬ ВРАЛА В ПЯТИ УТВЕРЖДЕНИЯХ (перепись 2026-09-28, наряд M-162):
+// обещала «четыре образа» при шести, называла среди них биндинг РЕКИ, которого
+// не существует (реки — честные водные клетки, врезанные ниже уровня моря при
+// генерации, и идут общим путём воды), считала палитр десять при одиннадцати,
+// объявляла ночные огни «поздним шагом» при работающем `u_lightField`, и
+// ссылалась на GL-образец `src/macro/macro_renderer.cpp`, удалённый вместе с
+// GL-путём. Шапка доказательством не является — SKELETON §0 п.2.
 layout(set = 0, binding = 0) uniform sampler2D u_master;     // R=h G=moist B=temp A=mask
 layout(set = 0, binding = 1) uniform sampler2D u_featureMap; // R8: FeatureType byte
 layout(set = 0, binding = 2) uniform sampler2D u_zoneMap;    // R8: danger byte 0..255
 layout(set = 0, binding = 3) uniform sampler2D u_lightField; // RGB night glow (macro_lighting bake)
 layout(set = 0, binding = 4) uniform sampler2D u_treeMap;    // R8: tree count / 16384 (macro/tree_layer.h)
 layout(set = 0, binding = 5) uniform sampler2D u_knowledgeMap; // R8: knowledge level / 2 (macro/knowledge.h)
+layout(set = 0, binding = 6) uniform sampler2D u_biomePal;     // RGBA32F Nx1: строка kBiomes (macro/biomes.h)
 
 layout(push_constant) uniform Push {
-    vec2 resolution;
+    vec2 resolution; // кадровый буфер в пикселях — И ЕСТЬ вьюпорт (§ЗАКОН
+                     // КОНСТАНТ: параллельных имён одной величины не держим;
+                     // `viewSize` приезжал тем же `ext.width/height` и был
+                     // снят 2026-09-28)
     vec2 mapSize;
     vec2 cam;        // world-pixel offset at screen centre
-    vec2 viewSize;   // viewport size in pixels
     float zoom;      // pixels per world cell
     float seaLevel;
     float seed;
@@ -90,10 +107,24 @@ float bt_fbm_p(vec2 p, vec2 period, int oct) {
     return v / t;
 }
 
+// ── ЕДИНИЦА УЗОРА — ОДНА НА ВЕСЬ ШЕЙДЕР ──────────────────────────────────
+// Клетка карты рисуется решёткой BT_CELL×BT_CELL под-пикселей: это и шаг
+// квантования узора, и единица, в которой мерится ВСЯКАЯ длина внутри клетки —
+// ширина стыка, полуклетка до центра дороги, радиус кроны, угол берегового SDF.
+// Величина одна, а написана числом была 34 раза при уже живом имени; имя
+// объявлено ЗДЕСЬ, выше всех потребителей, и литерала не осталось ни одного.
+const float BT_CELL = 16.0;
+// Центр клетки — ПРОИЗВОДНОЕ единицы, а не второе число рядом с ней.
+const float BT_HALF = BT_CELL * 0.5;
+// Мир в единицах узора: сторона карты в клетках, умноженная на делитель клетки.
+// Это ПЕРИОД всякого шума над миром — тот самый, который `bt_noise_p` снапит к
+// целой решётке, — и он пересчитывался заново в каждой палитре.
+vec2 bt_worldSpan() { return pc.mapSize * BT_CELL; }
+
 // -- Per-biome procedural textures --
 vec3 bt_tundra(vec2 wp, float sd) {
     wp += sd * 0.17;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float lichen = bt_fbm_p(wp * 0.06, P * 0.06, 3);
     float rock   = bt_noise_p(wp * 0.18 + 30.0, P * 0.18);
     float grain  = bt_hash(wp) * 0.04;
@@ -103,7 +134,7 @@ vec3 bt_tundra(vec2 wp, float sd) {
 }
 vec3 bt_taiga(vec2 wp, float sd) {
     wp += sd * 0.23;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float needles     = bt_fbm_p(wp * 0.12, P * 0.12, 2);
     float undergrowth = bt_noise_p(wp * 0.05 + 50.0, P * 0.05);
     float bark        = bt_hash(wp) * 0.03;
@@ -115,7 +146,7 @@ vec3 bt_taiga(vec2 wp, float sd) {
 }
 vec3 bt_snow(vec2 wp, float sd) {
     wp += sd * 0.31;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float drift   = bt_noise_p(vec2(wp.x * 0.14 + wp.y * 0.04, wp.y * 0.08) + 20.0, vec2(P.x * 0.14, P.y * 0.08));
     float detail  = bt_noise_p(wp * 0.30 + 70.0, P * 0.30);
     float sparkle = step(0.965, bt_hash(wp));
@@ -124,7 +155,7 @@ vec3 bt_snow(vec2 wp, float sd) {
 }
 vec3 bt_valley(vec2 wp, float sd) {
     wp += sd * 0.19;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float grass  = bt_fbm_p(wp * 0.09, P * 0.09, 3);
     float earth  = bt_noise_p(wp * 0.22 + 40.0, P * 0.22);
     float stones = step(0.88, bt_noise_p(wp * 0.45 + 15.0, P * 0.45));
@@ -136,7 +167,7 @@ vec3 bt_valley(vec2 wp, float sd) {
 }
 vec3 bt_meadow(vec2 wp, float sd) {
     wp += sd * 0.13;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float grass = bt_fbm_p(wp * 0.10, P * 0.10, 3);
     float sway  = bt_noise_p(wp * 0.04 + 60.0, P * 0.04);
     float grain = bt_hash(wp) * 0.025;
@@ -153,7 +184,7 @@ vec3 bt_meadow(vec2 wp, float sd) {
 }
 vec3 bt_swamp(vec2 wp, float sd) {
     wp += sd * 0.29;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float murk  = bt_fbm_p(wp * 0.08, P * 0.08, 3);
     float pool  = smoothstep(0.42, 0.32, bt_noise_p(wp * 0.15 + 25.0, P * 0.15));
     float moss  = bt_noise_p(wp * 0.28 + 80.0, P * 0.28);
@@ -164,7 +195,7 @@ vec3 bt_swamp(vec2 wp, float sd) {
 }
 vec3 bt_desert(vec2 wp, float sd) {
     wp += sd * 0.21;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float ripple = bt_noise_p(vec2(wp.x * 0.12 + wp.y * 0.03, wp.y * 0.06) + 35.0, vec2(P.x * 0.12, P.y * 0.06));
     float dune   = bt_noise_p(wp * 0.04 + 90.0, P * 0.04);
     float grain  = bt_hash(wp) * 0.025;
@@ -177,7 +208,7 @@ vec3 bt_desert(vec2 wp, float sd) {
 }
 vec3 bt_steppe(vec2 wp, float sd) {
     wp += sd * 0.37;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float wind  = bt_noise_p(vec2(wp.x * 0.10, wp.y * 0.03) + 45.0, vec2(P.x * 0.10, P.y * 0.03));
     float tufts = bt_fbm_p(wp * 0.14, P * 0.14, 2);
     float grain = bt_hash(wp) * 0.025;
@@ -189,7 +220,7 @@ vec3 bt_steppe(vec2 wp, float sd) {
 }
 vec3 bt_tropics(vec2 wp, float sd) {
     wp += sd * 0.41;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float canopy = bt_fbm_p(wp * 0.11, P * 0.11, 3);
     float gap    = smoothstep(0.58, 0.68, bt_noise_p(wp * 0.20 + 55.0, P * 0.20));
     float leaf   = bt_noise_p(wp * 0.35 + 10.0, P * 0.35);
@@ -199,7 +230,7 @@ vec3 bt_tropics(vec2 wp, float sd) {
 }
 vec3 bt_water(vec2 wp, float sd) {
     wp += sd * 0.11;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float caustic = bt_noise_p(wp * 0.12 + 5.0, P * 0.12) * bt_noise_p(wp * 0.18 + 65.0, P * 0.18);
     float depth   = bt_noise_p(wp * 0.03, P * 0.03);
     float ripple  = bt_noise_p(wp * 0.25 + 120.0, P * 0.25);
@@ -214,7 +245,7 @@ vec3 bt_water(vec2 wp, float sd) {
 // relief (facets, terraces, snow) is composited on top in mountainOverlay().
 vec3 bt_mountain(vec2 wp, float sd) {
     wp += sd * 0.21;
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     float coarse = bt_fbm_p(wp * 0.07, P * 0.07, 3);        // broad rock mottling
     float grit   = bt_noise_p(wp * 0.26 + 60.0, P * 0.26);  // finer scree grain
     float grain  = bt_hash(wp) * 0.04;
@@ -246,7 +277,6 @@ const float MTN_LEVEL = 0.75;   // == sm::kMountainBiomeLevel
 //
 // Асимметрии у стыка нет по построению: граница одна, и обе её стороны
 // растворяются на одну и ту же глубину.
-const float BT_CELL = 16.0;            // ширина клетки в единицах узора
 const float BT_SEAM = BT_CELL / 3.0;   // ≤ BT_CELL/2 — клетка читается собой
 int bt_biome(vec2 cell) {
     vec2 uv = fract((cell + 0.5) / pc.mapSize);
@@ -274,26 +304,37 @@ vec3 bt_tex(int b, vec2 wp, float sd) {
     if (b == 10) return bt_mountain(wp, sd);
     return bt_water(wp, sd);
 }
+// ЦВЕТ БИОМА — ИЗ АВТОРСКОЙ СТРОКИ, А НЕ ИЗ КОПИИ В ШЕЙДЕРЕ (M-158).
+// Здесь стояла рукописная копия `kBiomes` (macro/biomes.h): десять строк
+// совпадали, а ВОДА расходилась — 0.12/0.22/0.42 здесь против 0.18/0.30/0.55
+// в таблице, — и игрок видел ОБА ответа, потому что превью мира при генерации
+// рисует из таблицы, а карта рисовала отсюда. Через границу GLSL/C++
+// `static_assert` не ставится, значит согласие двух копий не охраняемо ПО
+// ПОСТРОЕНИЮ — поэтому копии больше нет. Ординал биома И ЕСТЬ адрес тексела,
+// а счёт строк берётся из САМИХ ДАННЫХ (`textureSize`), так что новый биом
+// становится видимым добавлением строки таблицы и ничем больше.
 vec3 bt_baseColor(int b) {
-    if (b == 0) return vec3(0.50, 0.52, 0.45);
-    if (b == 1) return vec3(0.22, 0.38, 0.28);
-    if (b == 2) return vec3(0.90, 0.92, 0.96);
-    if (b == 3) return vec3(0.55, 0.52, 0.32);
-    if (b == 4) return vec3(0.40, 0.52, 0.28);
-    if (b == 5) return vec3(0.28, 0.38, 0.22);
-    if (b == 6) return vec3(0.82, 0.72, 0.48);
-    if (b == 7) return vec3(0.68, 0.60, 0.32);
-    if (b == 8) return vec3(0.10, 0.35, 0.10);
-    if (b == 10) return vec3(0.55, 0.53, 0.50);   // == kBiomes[Mountain]
-    return vec3(0.12, 0.22, 0.42);
+    int last = textureSize(u_biomePal, 0).x - 1;
+    return texelFetch(u_biomePal, ivec2(clamp(b, 0, last), 0), 0).rgb;
 }
 
 // -- Shore band --
 vec3 bt_sandWet() { return vec3(0.55, 0.50, 0.36); }
 vec3 bt_sandDry() { return vec3(0.76, 0.70, 0.52); }
-float bt_edgeNoise(vec2 cell, float edgeId, float coord01, float sd) {
-    float s = bt_hash(cell + sd * 0.137 + edgeId * 7.31);
-    return (bt_noise(vec2(coord01 * 4.7 + s * 13.0, edgeId * 3.1 + s * 7.0)) - 0.5) * 5.0;
+// ДРОЖЬ КРОМКИ СЕЕТСЯ АДРЕСОМ ГРАНИЦЫ, А НЕ КЛЕТКИ (M-163).
+// Здесь хеш брался от адреса СВОЕЙ клетки и номера СВОЕГО края — значит
+// восточный край клетки A и западный край клетки B, то есть ОДНА И ТА ЖЕ
+// граница, получали РАЗНОЕ смещение, до ±2.5 из 16. Полоса песка получала
+// уступ ровно на стыке, тогда как комментарий над `BT_SEAM` обещает обратное:
+// «граница одна, и обе её стороны растворяются на одну и ту же глубину».
+// Глубина и была одна — расходилось МЕСТО.
+//
+// Граница именуется КАНОНИЧЕСКИ: младшей клеткой пары (`lo`, уже свёрнутой на
+// торе) и осью её нормали. Две стороны спрашивают одно имя, получают одно
+// число, и согласие держится ПО ПОСТРОЕНИЮ, а не по аккуратности звонящего.
+float bt_seamNoise(vec2 lo, float axis, float coord01, float sd) {
+    float s = bt_hash(lo + sd * 0.137 + axis * 7.31);
+    return (bt_noise(vec2(coord01 * 4.7 + s * 13.0, axis * 3.1 + s * 7.0)) - 0.5) * 5.0;
 }
 // ПЕСОК — МАТЕРИАЛ СТЫКА, а не его ширина. Ширину задаёт BT_SEAM (одна на все
 // переходы решётки); здесь остаётся только ПРОФИЛЬ полосы — как песок сохнет,
@@ -313,7 +354,7 @@ vec3 bt_shoreColor(vec3 baseColor, float d, float grain, vec2 wp, float sd) {
     }
     // На суше — рваная кромка: тот же профиль, пробитый шумом, чтобы песок
     // заходил на землю языками, а не дугой.
-    vec2 P = pc.mapSize * BT_CELL;
+    vec2 P = bt_worldSpan();
     float n   = bt_fbm_p(wp * 0.18 + sd * 0.07, P * 0.18, 3);
     float cov = clamp(smoothstep(BT_SEAM, 0.0, a) * (0.55 + n * 0.55), 0.0, 1.0);
     return mix(baseColor, sand, cov);
@@ -321,7 +362,7 @@ vec3 bt_shoreColor(vec3 baseColor, float d, float grain, vec2 wp, float sd) {
 
 // -- Climate overlay --
 vec3 bt_climateOverlay(vec3 col, vec2 wp, float temp01, bool isWater, float sd) {
-    vec2 P = pc.mapSize * 16.0;
+    vec2 P = bt_worldSpan();
     if (isWater) {
         float iceMask = smoothstep(0.22, 0.05, temp01);
         if (iceMask <= 0.0) return col;
@@ -348,9 +389,9 @@ float bt_temperature(vec2 cell) {
 vec3 biomeTextureOverlay(vec2 worldPx) {
     vec2 cell = floor(worldPx);
     vec2 f    = fract(worldPx);
-    vec2 p    = floor(f * 16.0) + 0.5;
+    vec2 p    = floor(f * BT_CELL) + 0.5;
     vec2 wpCell = mod(cell, pc.mapSize);
-    vec2 wp   = wpCell * 16.0 + p;
+    vec2 wp   = wpCell * BT_CELL + p;
     float sd  = pc.seed;
     vec2 cellW = wpCell;
 
@@ -370,13 +411,17 @@ vec3 biomeTextureOverlay(vec2 worldPx) {
 
     float sgn  = isWater ? 1.0 : -1.0;
     float dist = 999.0;
-    if (isWater != (nbE == 9)) { float n = bt_edgeNoise(cellW, 0.0, p.y / 16.0, sd); dist = min(dist, abs((16.0 - p.x) - n)); }
-    if (isWater != (nbW == 9)) { float n = bt_edgeNoise(cellW, 1.0, p.y / 16.0, sd); dist = min(dist, abs(p.x - n)); }
-    if (isWater != (nbN == 9)) { float n = bt_edgeNoise(cellW, 2.0, p.x / 16.0, sd); dist = min(dist, abs((16.0 - p.y) - n)); }
-    if (isWater != (nbS == 9)) { float n = bt_edgeNoise(cellW, 3.0, p.x / 16.0, sd); dist = min(dist, abs(p.y - n)); }
-    if (isWater != (nbNE == 9) && (nbN == 9) == isWater && (nbE == 9) == isWater) dist = min(dist, length(p - vec2(16.0, 16.0)));
-    if (isWater != (nbNW == 9) && (nbN == 9) == isWater && (nbW == 9) == isWater) dist = min(dist, length(p - vec2( 0.0, 16.0)));
-    if (isWater != (nbSE == 9) && (nbS == 9) == isWater && (nbE == 9) == isWater) dist = min(dist, length(p - vec2(16.0,  0.0)));
+    // Знак СМЕЩЕНИЯ на двух сторонах противоположен по геометрии, а не по
+    // произволу: для пары (lo, lo+1) граница стоит у lo на локальном BT_CELL+n,
+    // а у соседа — на локальном n. Именно поэтому одна сторона прибавляет
+    // дрожь, а другая вычитает: смещение-то ОДНО, в мировых единицах.
+    if (isWater != (nbE == 9)) { float n = bt_seamNoise(cellW, 0.0, p.y / BT_CELL, sd); dist = min(dist, abs((BT_CELL - p.x) + n)); }
+    if (isWater != (nbW == 9)) { float n = bt_seamNoise(mod(cellW - vec2(1.0, 0.0), pc.mapSize), 0.0, p.y / BT_CELL, sd); dist = min(dist, abs(p.x - n)); }
+    if (isWater != (nbN == 9)) { float n = bt_seamNoise(cellW, 1.0, p.x / BT_CELL, sd); dist = min(dist, abs((BT_CELL - p.y) + n)); }
+    if (isWater != (nbS == 9)) { float n = bt_seamNoise(mod(cellW - vec2(0.0, 1.0), pc.mapSize), 1.0, p.x / BT_CELL, sd); dist = min(dist, abs(p.y - n)); }
+    if (isWater != (nbNE == 9) && (nbN == 9) == isWater && (nbE == 9) == isWater) dist = min(dist, length(p - vec2(BT_CELL, BT_CELL)));
+    if (isWater != (nbNW == 9) && (nbN == 9) == isWater && (nbW == 9) == isWater) dist = min(dist, length(p - vec2(0.0, BT_CELL)));
+    if (isWater != (nbSE == 9) && (nbS == 9) == isWater && (nbE == 9) == isWater) dist = min(dist, length(p - vec2(BT_CELL, 0.0)));
     if (isWater != (nbSW == 9) && (nbS == 9) == isWater && (nbW == 9) == isWater) dist = min(dist, length(p - vec2( 0.0,  0.0)));
 
     vec3 tex = bt_baseColor(cb) * bt_tex(cb, wp, sd);
@@ -384,9 +429,9 @@ vec3 biomeTextureOverlay(vec2 worldPx) {
     if (!isWater) {
         float blendD     = 999.0;
         int   blendBiome = cb;
-        if (nbE != cb && nbE != 9) { float d = 16.0 - p.x; if (d < blendD) { blendD = d; blendBiome = nbE; } }
+        if (nbE != cb && nbE != 9) { float d = BT_CELL - p.x; if (d < blendD) { blendD = d; blendBiome = nbE; } }
         if (nbW != cb && nbW != 9) { float d = p.x;        if (d < blendD) { blendD = d; blendBiome = nbW; } }
-        if (nbN != cb && nbN != 9) { float d = 16.0 - p.y; if (d < blendD) { blendD = d; blendBiome = nbN; } }
+        if (nbN != cb && nbN != 9) { float d = BT_CELL - p.y; if (d < blendD) { blendD = d; blendBiome = nbN; } }
         if (nbS != cb && nbS != 9) { float d = p.y;        if (d < blendD) { blendD = d; blendBiome = nbS; } }
         if (blendD < BT_SEAM) {
             float t = smoothstep(BT_SEAM, 0.0, blendD) * 0.5;
@@ -497,7 +542,7 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     // orientation hash below (cs + roadHash, seed pushed as 1.0) so the
     // subworld's underfoot furrows plough the same way — keep in lockstep. --
     if (isField) {
-        vec2 fp = floor(fract(pixelCoord) * 16.0) + 0.5;
+        vec2 fp = floor(fract(pixelCoord) * BT_CELL) + 0.5;
         float cs = cell.x * 127.1 + cell.y * 311.7 + pc.seed;
         bool vert = roadHash(cs) > 0.5;
         float coord = vert ? fp.x : fp.y;
@@ -511,25 +556,25 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
         }
         // Soft edge: outer 1.5 px blends into the ground so field patches
         // read as worked land, not painted squares.
-        vec2 rim = min(fp, 16.0 - fp);
+        vec2 rim = min(fp, BT_CELL - fp);
         float edge = smoothstep(0.0, 1.5, min(rim.x, rim.y));
         return mix(baseColor, fieldColor, 0.30 + 0.55 * edge);
     }
 
     if (!isCobble && !isDirt && !isBridge) return baseColor;
 
-    vec2 p = floor(fract(pixelCoord) * 16.0) + 0.5;
-    vec2 ctr = vec2(8.0);
+    vec2 p = floor(fract(pixelCoord) * BT_CELL) + 0.5;
+    vec2 ctr = vec2(BT_HALF);
     float md = 999.0;
     bool connected = false;
-    if (roadAt(cell + vec2( 0,-1))) { md = min(md, roadLineDist(p, ctr, vec2( 8.0,  0.0))); connected = true; }
-    if (roadAt(cell + vec2( 0, 1))) { md = min(md, roadLineDist(p, ctr, vec2( 8.0, 16.0))); connected = true; }
-    if (roadAt(cell + vec2( 1, 0))) { md = min(md, roadLineDist(p, ctr, vec2(16.0,  8.0))); connected = true; }
-    if (roadAt(cell + vec2(-1, 0))) { md = min(md, roadLineDist(p, ctr, vec2( 0.0,  8.0))); connected = true; }
-    if (roadAt(cell + vec2( 1,-1))) { md = min(md, roadLineDist(p, ctr, vec2(16.0,  0.0))); connected = true; }
+    if (roadAt(cell + vec2( 0,-1))) { md = min(md, roadLineDist(p, ctr, vec2(BT_HALF, 0.0))); connected = true; }
+    if (roadAt(cell + vec2( 0, 1))) { md = min(md, roadLineDist(p, ctr, vec2(BT_HALF, BT_CELL))); connected = true; }
+    if (roadAt(cell + vec2( 1, 0))) { md = min(md, roadLineDist(p, ctr, vec2(BT_CELL, BT_HALF))); connected = true; }
+    if (roadAt(cell + vec2(-1, 0))) { md = min(md, roadLineDist(p, ctr, vec2(0.0, BT_HALF))); connected = true; }
+    if (roadAt(cell + vec2( 1,-1))) { md = min(md, roadLineDist(p, ctr, vec2(BT_CELL, 0.0))); connected = true; }
     if (roadAt(cell + vec2(-1,-1))) { md = min(md, roadLineDist(p, ctr, vec2( 0.0,  0.0))); connected = true; }
-    if (roadAt(cell + vec2( 1, 1))) { md = min(md, roadLineDist(p, ctr, vec2(16.0, 16.0))); connected = true; }
-    if (roadAt(cell + vec2(-1, 1))) { md = min(md, roadLineDist(p, ctr, vec2( 0.0, 16.0))); connected = true; }
+    if (roadAt(cell + vec2( 1, 1))) { md = min(md, roadLineDist(p, ctr, vec2(BT_CELL, BT_CELL))); connected = true; }
+    if (roadAt(cell + vec2(-1, 1))) { md = min(md, roadLineDist(p, ctr, vec2(0.0, BT_CELL))); connected = true; }
     if (!connected) md = length(p - ctr);
 
     float hw = isDirt ? 2.6 : 3.0;
@@ -581,7 +626,7 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
 // straight cell edge and never an alpha fade. --
 vec3 featureDecor(vec2 worldPx, vec3 col) {
     vec2 cell = floor(worldPx);
-    vec2 p = floor(fract(worldPx) * 16.0) + 0.5;
+    vec2 p = floor(fract(worldPx) * BT_CELL) + 0.5;
     vec3 acc = vec3(0.0);
     float alpha = 0.0;
     for (int oy = -1; oy <= 1; ++oy) {
@@ -601,7 +646,7 @@ vec3 featureDecor(vec2 worldPx, vec3 col) {
             for (int k = 0; k < 4; ++k) {
                 if (k >= K) break;
                 float fk = float(k);
-                vec2 ctr = vec2(float(ox), float(oy)) * 16.0
+                vec2 ctr = vec2(float(ox), float(oy)) * BT_CELL
                     + vec2(2.0 + 12.0 * bt_hash(src + fk * 17.31 + pc.seed),
                            2.0 + 12.0 * bt_hash(src + fk * 29.77 + pc.seed * 1.7));
                 float r = (2.6 + 2.0 * bt_hash(src + fk * 41.3))
@@ -874,7 +919,7 @@ vec3 mountainOverlay(vec2 worldPx, vec3 col) {
     // sampled at the quantised subcell centre `q`, so each 1/16-cell block is one
     // flat "pixel". The massif FORM (ridged relief, ridgelines, snowy crests) is
     // unchanged -- only its rendering resolution and shading are quantised.
-    vec2 q = (floor(worldPx * 16.0) + 0.5) / 16.0;
+    vec2 q = (floor(worldPx * BT_CELL) + 0.5) / BT_CELL;
 
     float cov = mtnCoverage(q);
     float sh  = mtnCastShadow(q);
@@ -1058,7 +1103,7 @@ void main() {
     // vertical orientation the GL path produced.
     vec2 uv = gl_FragCoord.xy / pc.resolution;
     uv.y = 1.0 - uv.y;
-    vec2 worldPx = (uv - 0.5) * pc.viewSize / pc.zoom + pc.cam;
+    vec2 worldPx = (uv - 0.5) * pc.resolution / pc.zoom + pc.cam;
     vec2 mapUV = fract(worldPx / pc.mapSize);
 
     // The map page draws the CHART and nothing below runs — the living
@@ -1128,11 +1173,11 @@ void main() {
             // sparkle-modulated elongated pool of the light's own colour.
             float el   = max(raw.y, 0.12);              // bound tan(zenith)
             float tanZ = sqrt(max(1.0 - el * el, 0.0)) / el;
-            float eyeH = pc.viewSize.y * 0.45;          // virtual eye, px
+            float eyeH = pc.resolution.y * 0.45;          // virtual eye, px
             // Soft-cap the displacement at ~1/3 of the viewport so the low
             // sun's golden road slides TOWARD the horizon side but never
             // leaves the frame (the moment worth seeing).
-            float off = min(eyeH * tanZ, pc.viewSize.x * 0.34);
+            float off = min(eyeH * tanZ, pc.resolution.x * 0.34);
             vec2  refPx = (worldPx - pc.cam) * pc.zoom
                         - vec2(sign(raw.x) * off, 0.0);
             // SPHERICAL body: one round disc with a soft skirt (the owner's
@@ -1144,7 +1189,7 @@ void main() {
             // half a sea; zooming in clamps at the viewport fraction that
             // already looked right up close.
             float R = clamp(7.5 * pc.zoom, 56.0,
-                            pc.viewSize.y * (0.095 + 0.05 * low));
+                            pc.resolution.y * (0.095 + 0.05 * low));
             vec2  q = refPx / R;
             float spot = exp(-dot(q, q));
             // Gleam with a governed core: the raw term still peaks well

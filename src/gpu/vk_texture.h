@@ -39,6 +39,13 @@ namespace gpu
         bool create_r32f(const VulkanDevice& dev, std::uint32_t width,
                          std::uint32_t height, const float* texels,
                          bool linearFilter, bool repeat);
+        // Четырёхканальный float — для таблиц, которым нужна ТОЧНАЯ авторская
+        // величина, а не её 8-битное приближение: палитра биомов уезжает на
+        // GPU ровно теми числами, что стоят в `kBiomes`, иначе «одна таблица»
+        // превратилась бы в «одна таблица и её округление» (M-158).
+        bool create_rgba32f(const VulkanDevice& dev, std::uint32_t width,
+                            std::uint32_t height, const float* texels,
+                            bool linearFilter, bool repeat);
         // Overwrite a tightly-packed [x,x+w)×[y,y+h) sub-rectangle IN PLACE,
         // reusing the existing image/view/sampler (no realloc, no descriptor
         // rewrite). `pixels` is w*h*bpp bytes, row stride = w*bpp. The whole

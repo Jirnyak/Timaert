@@ -91,6 +91,14 @@ private:
     gpu::VulkanTexture lightField_{};  // per-cell RGB night glow (binding 3)
     gpu::VulkanTexture treeField_{};   // per-cell tree count R8 (binding 4)
     gpu::VulkanTexture knowledgeField_{}; // per-cell knowledge R8 (binding 5)
+    // ПАЛИТРА БИОМОВ — ОДНА ТАБЛИЦА НА ИГРУ (binding 6, M-158). Здесь стояла
+    // её рукописная копия в шейдере: десять строк совпадали с `kBiomes`, а
+    // вода расходилась, и игрок видел ОБА ответа — превью мира рисует из
+    // таблицы, карта рисовала из копии. `static_assert` через границу
+    // GLSL/C++ не поставить, значит согласие копий не охраняемо по
+    // построению — поэтому копии больше нет, а счёт строк шейдер берёт из
+    // самих данных (`textureSize`), не из литерала.
+    gpu::VulkanTexture biomePalette_{};   // kBiomes RGB, RGBA32F Nx1
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
     VkDescriptorSet set_ = VK_NULL_HANDLE;

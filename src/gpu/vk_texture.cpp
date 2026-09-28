@@ -772,6 +772,16 @@ namespace gpu
                                  *this);
     }
 
+    bool VulkanTexture::create_rgba32f(const VulkanDevice& d, std::uint32_t width,
+                                       std::uint32_t height, const float* texels,
+                                       bool linearFilter, bool repeat)
+    {
+        return upload_sampled_2d(d, width, height,
+                                 reinterpret_cast<const std::uint8_t*>(texels),
+                                 VK_FORMAT_R32G32B32A32_SFLOAT, 16, linearFilter,
+                                 repeat, *this);
+    }
+
     void VulkanTexture::destroy(const VulkanDevice& d)
     {
         if (sampler) {

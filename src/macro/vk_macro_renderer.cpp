@@ -2,7 +2,9 @@
 
 #include "gpu/vk_device.h"
 #include "macro/features.h"
+#include "macro/biomes.h"
 #include "macro/knowledge.h"
+#include "macro/macro_night.h"
 #include "macro/map_generator.h"
 #include "macro/tree_layer.h"
 #include "macro/zones.h"
@@ -19,10 +21,16 @@ namespace {
 
 // std140/std430 push-constant block — must match shaders/macro.frag `Push`.
 struct MacroPush {
+    // `viewSize` стоял здесь вторым именем ОДНОЙ величины: и он, и
+    // `resolution` получали `ext.width/height`, а шейдер делил на первое,
+    // чтобы умножить на второе. Параллельные константы одной величины
+    // сводятся к одной (ЗАКОН КОНСТАНТ), выжил делитель `gl_FragCoord` —
+    // он честно называет кадровый буфер. Снос поля из СЕРЕДИНЫ блока
+    // безопасен именно потому, что ниже всё заполняется ПО ИМЕНИ: пропуск
+    // не компилируется, а не связывается молча (шрам сессии 31).
     float resolution[2];
     float mapSize[2];
     float cam[2];
-    float viewSize[2];
     float zoom;
     float seaLevel;
     float seed;
@@ -32,27 +40,13 @@ struct MacroPush {
     float mapStyle; // 0 = the living world; 1 = the CHART (map page document)
 };
 
-// TS GameScreen day/night curve (mirrors the GL MacroRenderer::draw).
-float night_darken(float tod) {
-    if (tod < 0.2f || tod > 0.9f) return 1.0f;
-    if (tod < 0.35f) return 1.0f - (tod - 0.2f) / 0.15f;
-    if (tod < 0.75f) return 0.0f;
-    return (tod - 0.75f) / 0.15f;
-}
-
-// Expand an R8 byte grid to RGBA8 (byte in R) for a combined image sampler;
-// macro.frag reads the R channel and rounds it back to the byte value.
-void expand_r8(const std::uint8_t* src, int w, int h,
-               std::vector<std::uint8_t>& out) {
-    const std::size_t n = std::size_t(w) * std::size_t(h);
-    out.resize(n * 4);
-    for (std::size_t i = 0; i < n; ++i) {
-        out[i * 4 + 0] = src[i];
-        out[i * 4 + 1] = 0;
-        out[i * 4 + 2] = 0;
-        out[i * 4 + 3] = 255;
-    }
-}
+// БАЙТОВАЯ СЕТКА ГРУЗИТСЯ ОДНОЙ ДВЕРЬЮ — `create_r8`.
+// Здесь стояла вторая: `expand_r8` раздувал байт в RGBA8 (байт в R, нули и
+// 255 в остальных трёх), и фича, зона и деревья ехали вчетверо толще, хотя
+// шейдер читает у них ровно канал `.r`. Поле знания с самого начала шло
+// `create_r8` — то есть вторая дверь доказывала ненужность первой. R8_UNORM
+// даёт шейдеру ТО ЖЕ число (байт/255), поэтому картинка не двигается, а
+// видеопамяти на карте 1024² уходит на 3 МиБ меньше на каждую из трёх сеток.
 
 // Encode the knowledge layer for the shader: one byte per cell, level/2 in
 // UNORM (0 / 128 / 255 for Unknown / Explored / Visible). Sampled with LINEAR
@@ -96,10 +90,10 @@ bool encode_tree_field(const TreeLayer* layer, std::vector<std::uint8_t>& out,
 } // namespace
 
 bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
-    // Descriptor set 0 = six combined image samplers
-    // (master/feature/zone + night light field + tree field + knowledge).
-    VkDescriptorSetLayoutBinding bindings[6]{};
-    for (std::uint32_t i = 0; i < 6; ++i) {
+    // Descriptor set 0 = seven combined image samplers (master/feature/zone
+    // + night light field + tree field + knowledge + biome palette).
+    VkDescriptorSetLayoutBinding bindings[7]{};
+    for (std::uint32_t i = 0; i < 7; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
@@ -107,12 +101,12 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
     }
     VkDescriptorSetLayoutCreateInfo dlci{};
     dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dlci.bindingCount = 6;
+    dlci.bindingCount = 7;
     dlci.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6};
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7};
     VkDescriptorPoolCreateInfo dpci{};
     dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     dpci.maxSets = 1;
@@ -142,6 +136,7 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
 }
 
 void MacroRendererVk::free_textures(const gpu::VulkanDevice& dev) {
+    biomePalette_.destroy(dev);
     knowledgeField_.destroy(dev);
     treeField_.destroy(dev);
     lightField_.destroy(dev);
@@ -163,36 +158,31 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
     }
     if (td.width <= 0 || td.height <= 0 || td.rgba.empty()) return;
 
-    std::vector<std::uint8_t> tmp;
     const std::uint8_t blank = 0;
 
     // Master: already RGBA8 (R=height, G=moisture, B=temperature, A=mask).
     master_.create_rgba8(dev, std::uint32_t(td.width), std::uint32_t(td.height),
                          td.rgba.data(), true, true);
 
-    // Feature: sanitized R8 -> RGBA8, nearest.
+    // Feature: sanitized byte grid, R8, nearest.
     const std::uint8_t* fd = features.complete_cells_or_sanitized(scratch_);
     if (fd) {
-        expand_r8(fd, features.width, features.height, tmp);
-        feature_.create_rgba8(dev, std::uint32_t(features.width),
-                              std::uint32_t(features.height), tmp.data(), false, true);
+        feature_.create_r8(dev, std::uint32_t(features.width),
+                           std::uint32_t(features.height), fd, false, true);
     } else {
-        expand_r8(&blank, 1, 1, tmp);
-        feature_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
+        feature_.create_r8(dev, 1, 1, &blank, false, true);
     }
 
-    // Zone: decode -> R8 -> RGBA8, nearest.
+    // Zone: the raw danger byte IS the texel, R8, nearest.
     if (zones.has_complete_storage() && zones.width > 0 && zones.height > 0) {
         const std::size_t n = std::size_t(zones.width) * std::size_t(zones.height);
         std::vector<std::uint8_t> zb(n, 0);
         for (std::size_t i = 0; i < n && i < zones.data.size(); ++i)
             zb[i] = zones.data[i];   // the raw danger byte IS the texel
-        expand_r8(zb.data(), zones.width, zones.height, tmp);
-        zone_.create_rgba8(dev, std::uint32_t(zones.width),
-                           std::uint32_t(zones.height), tmp.data(), false, true);
+        zone_.create_r8(dev, std::uint32_t(zones.width),
+                        std::uint32_t(zones.height), zb.data(), false, true);
     } else {
-        expand_r8(&blank, 1, 1, tmp);
-        zone_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
+        zone_.create_r8(dev, 1, 1, &blank, false, true);
     }
 
     // Light field: per-cell RGB night glow (macro_lighting bake), linear+repeat
@@ -206,19 +196,17 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         lightField_.create_rgba8(dev, 1, 1, blackRGBA, true, true);
     }
 
-    // Tree-count field: R8 density (count/16384) -> RGBA8, nearest — cell
+    // Tree-count field: R8 density (count/16384), nearest — cell
     // probes must read exact per-cell values, like the feature map. 1x1 zero
     // when no layer is supplied, so binding 4 is always valid.
     {
         std::vector<std::uint8_t> tb;
         int tw = 0, th = 0;
         if (encode_tree_field(treeLayer, tb, tw, th)) {
-            expand_r8(tb.data(), tw, th, tmp);
-            treeField_.create_rgba8(dev, std::uint32_t(tw), std::uint32_t(th),
-                                    tmp.data(), false, true);
+            treeField_.create_r8(dev, std::uint32_t(tw), std::uint32_t(th),
+                                 tb.data(), false, true);
         } else {
-            expand_r8(&blank, 1, 1, tmp);
-            treeField_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
+            treeField_.create_r8(dev, 1, 1, &blank, false, true);
         }
     }
 
@@ -240,13 +228,30 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         }
     }
 
-    // Bind the six textures into set 0.
-    const gpu::VulkanTexture* tex[6] = {&master_, &feature_, &zone_,
+    // ПАЛИТРА БИОМОВ — прямая выгрузка авторской строки `kBiomes`, без
+    // квантования: одна таблица на игру, и новый биом становится видимым на
+    // карте добавлением СТРОКИ, а не правкой шейдера. Ширина образа И ЕСТЬ
+    // счёт биомов — шейдер спрашивает её `textureSize`, поэтому литерала
+    // «одиннадцать» не заводится ни там, ни здесь.
+    {
+        std::vector<float> pal(std::size(kBiomes) * 4u);
+        for (std::size_t i = 0; i < std::size(kBiomes); ++i) {
+            pal[i * 4 + 0] = kBiomes[i].r;
+            pal[i * 4 + 1] = kBiomes[i].g;
+            pal[i * 4 + 2] = kBiomes[i].b;
+            pal[i * 4 + 3] = 1.0f;
+        }
+        biomePalette_.create_rgba32f(dev, std::uint32_t(std::size(kBiomes)), 1,
+                                     pal.data(), false, false);
+    }
+
+    // Bind the seven textures into set 0.
+    const gpu::VulkanTexture* tex[7] = {&master_, &feature_, &zone_,
                                         &lightField_, &treeField_,
-                                        &knowledgeField_};
-    VkDescriptorImageInfo dii[6]{};
-    VkWriteDescriptorSet writes[6]{};
-    for (std::uint32_t i = 0; i < 6; ++i) {
+                                        &knowledgeField_, &biomePalette_};
+    VkDescriptorImageInfo dii[7]{};
+    VkWriteDescriptorSet writes[7]{};
+    for (std::uint32_t i = 0; i < 7; ++i) {
         dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         dii[i].imageView = tex[i]->view;
         dii[i].sampler = tex[i]->sampler;
@@ -257,7 +262,7 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo = &dii[i];
     }
-    vkUpdateDescriptorSets(dev.device, 6, writes, 0, nullptr);
+    vkUpdateDescriptorSets(dev.device, 7, writes, 0, nullptr);
     uploaded_ = true;
 }
 
@@ -310,16 +315,14 @@ void MacroRendererVk::upload_tree_field(const gpu::VulkanDevice& dev,
     vkDeviceWaitIdle(dev.device);
     treeField_.destroy(dev);
 
-    std::vector<std::uint8_t> tb, tmp;
+    std::vector<std::uint8_t> tb;
     int tw = 0, th = 0;
     if (encode_tree_field(treeLayer, tb, tw, th)) {
-        expand_r8(tb.data(), tw, th, tmp);
-        treeField_.create_rgba8(dev, std::uint32_t(tw), std::uint32_t(th),
-                                tmp.data(), false, true);
+        treeField_.create_r8(dev, std::uint32_t(tw), std::uint32_t(th),
+                             tb.data(), false, true);
     } else {
         const std::uint8_t blank = 0;
-        expand_r8(&blank, 1, 1, tmp);
-        treeField_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
+        treeField_.create_r8(dev, 1, 1, &blank, false, true);
     }
 
     // Rewrite only binding 4; the other samplers stay live.
@@ -348,21 +351,17 @@ void MacroRendererVk::upload_zone_field(const gpu::VulkanDevice& dev,
     vkDeviceWaitIdle(dev.device);
     zone_.destroy(dev);
 
-    std::vector<std::uint8_t> tmp;
     if (zones.has_complete_storage() && zones.width > 0 && zones.height > 0) {
         const std::size_t n =
             std::size_t(zones.width) * std::size_t(zones.height);
         std::vector<std::uint8_t> zb(n, 0);
         for (std::size_t i = 0; i < n && i < zones.data.size(); ++i)
             zb[i] = zones.data[i];   // the raw danger byte IS the texel
-        expand_r8(zb.data(), zones.width, zones.height, tmp);
-        zone_.create_rgba8(dev, std::uint32_t(zones.width),
-                           std::uint32_t(zones.height), tmp.data(), false,
-                           true);
+        zone_.create_r8(dev, std::uint32_t(zones.width),
+                        std::uint32_t(zones.height), zb.data(), false, true);
     } else {
         const std::uint8_t blank = 0;
-        expand_r8(&blank, 1, 1, tmp);
-        zone_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
+        zone_.create_r8(dev, 1, 1, &blank, false, true);
     }
 
     VkDescriptorImageInfo dii{};
@@ -444,13 +443,22 @@ void MacroRendererVk::record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainD
     pc.mapSize[1] = float(td.height);
     pc.cam[0] = camX;
     pc.cam[1] = camY;
-    pc.viewSize[0] = float(ext.width);
-    pc.viewSize[1] = float(ext.height);
     pc.zoom = zoom;
     pc.seaLevel = seaLevel;
-    pc.seed = 1.0f;  // GL macro renderer hardcodes u_seed = 1.0
+    // ФАЗА УЗОРА МИРА. Шейдер прибавляет `seed * k` (k = 0.11…0.41) к
+    // координате узора, то есть сид работает ФАЗОЙ, а фаза значима лишь по
+    // модулю периода. Поэтому сид складывается в пролёт узора самого мира —
+    // сторона карты в клетках × делитель клетки, — и предел здесь ВЫВЕДЕН, а
+    // не выбран: он ровно того же порядка, что сама координата, поэтому не
+    // уводит хеш в область, где у float32 кончается мантисса. Сторона мира
+    // есть степень двойки (ЗАКОН АДРЕСА), делитель клетки тоже, значит фолд —
+    // МАСКА, и деления на пути кадра не появляется.
+    // Здесь стояло `1.0f` с обоснованием «GL macro renderer hardcodes
+    // u_seed = 1.0» — при том что GL-путь удалён вместе с тем файлом.
+    const std::uint32_t patternSpan = std::uint32_t(td.width) * 16u;
+    pc.seed = float(td.seed & (patternSpan - 1u));
     pc.timeOfDay = timeOfDay;
-    pc.nightDarken = night_darken(timeOfDay);
+    pc.nightDarken = macro_night_darken(timeOfDay);
     pc.elapsed = elapsed;
     pc.mapStyle = mapStyle ? 1.0f : 0.0f;
     vkCmdPushConstants(cmd, pipeline_.layout, VK_SHADER_STAGE_FRAGMENT_BIT,
