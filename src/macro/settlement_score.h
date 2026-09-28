@@ -17,9 +17,14 @@
 // by its resource (owner): peasants work whatever stands around them, so
 // one village row prices grain, water, wood and ore together and the
 // profession emerges from the neighbourhood the score chose. Terms are
-// integers 0..16 (discrete house style); score = Σ weight × term; a veto
-// (water, a forest-massif cell, mountain rock) returns -1 — nobody builds
-// there. Deterministic: pure reads, no dice, ties broken by scan order.
+// integers 0..16 (discrete house style); score = Σ weight × term.
+//
+// ВЕТО РОВНО ОДНО, И ЭТО ВОДА (ЗАКОН ПОЛЯ п.5). Шапка обещала здесь три —
+// «water, a forest-massif cell, mountain rock», — и врала: горное вето
+// снесено 2026-09-18, лесное 2026-09-28 (M-111 шаг 1), а проза пережила оба.
+// Камень и чащу отговаривают ТЕРМЫ: на скале нет фертильности, а в чаще нет
+// места, чтобы встать. Deterministic: pure reads, no dice, ties broken by
+// scan order.
 #pragma once
 
 #include <algorithm>
@@ -43,7 +48,7 @@ struct SettlementScoreWeights {
     const char* id;
     int arable;    // wheat potential the site can plough
     int water;     // river/coast within walking reach
-    int forest;    // standing trees to fell
+    int forest;    // wood the site can fell WITHOUT standing in the thicket
     int deposit;   // veins to mine (iron over stone/clay)
 };
 
@@ -90,13 +95,13 @@ std::vector<std::uint16_t> build_deposit_reach_field(const DepositLayer& dl,
                                                      int mapW, int mapH);
 
 // The one door: capacity of a WRAPPED cell as a settlement site.
-// -1 = vetoed (water / forest-massif cell / mountain rock); otherwise
+// -1 = vetoed, and WATER is the only thing that vetoes; otherwise
 // Σ weight × term with every term in 0..16.
 int settlement_site_score(const SettlementSiteContext& ctx,
                           SettlementScoreRow row, int x, int y);
 
-// The raw terms behind the score — same reads, same vetoes (vetoed ground
-// answers all-zero terms and the score door answers -1). Exposed so birth
+// The raw terms behind the score — same reads, same veto (water answers
+// all-zero terms and the score door answers -1). Exposed so birth
 // gates can ask "CAN this place feed itself" without a second term
 // implementation drifting beside the score's.
 struct SettlementSiteTerms {

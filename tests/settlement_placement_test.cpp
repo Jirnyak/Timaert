@@ -3,7 +3,9 @@
 // «полевой подход» — candidates priced by the one score, occupied
 // best-first, every placed village PRESSES the field around itself;
 // separation rules and count quotas died into the field). Pinned here:
-//   · vetoes — no village on water, mountain rock or inside a forest massif;
+//   · вето — ОДНО, и это вода (ЗАКОН ПОЛЯ п.5). Горное умерло 2026-09-18,
+//     лесное 2026-09-28 (M-111 шаг 1, «весом»), и на место второго встал
+//     закон ТЕРМА: лес максимален на опушке и падает внутрь массива;
 //   · the PERCENTILE PROPERTY — every village stands at least at the median
 //     of its city's admissible hinterland scores (the field legally trades
 //     some raw quality for spacing, so the bar is 50, not 75);
@@ -86,6 +88,17 @@ TerrainData make_world() {
             td.rgba[s + 3] = height < kSeaLevel8 ? 0 : 255;
         }
     }
+    // ПОСЛЕДНИЙ АКТ РОЖДЕНИЯ (M-110): биом клетки — ПОЛЕ над тором, и
+    // `biome_at_cell` читает его, а не каскад. Строки здесь не было, и
+    // fail-closed поля («нет поля — значит мир не дорождён») отвечал ВОДОЙ на
+    // каждую клетку: `derived_tree_count(Water, …)` возвращает ноль, то есть у
+    // этой фикстуры НЕ БЫЛО НИ ОДНОГО ДЕРЕВА — включая «лесной массив», вокруг
+    // которого построены её утверждения. Вето-свидетель «деревня не в чаще»
+    // при этом оставался ЗЕЛЁНЫМ, потому что на безлесном мире он не может
+    // покраснеть; нашлось это только когда закон потребовал чащу СОЗДАТЬ
+    // (§8 п.11). Мир, который строит тест, обязан дорождаться так же, как
+    // настоящий.
+    bake_biomes(td);
     return td;
 }
 
@@ -202,9 +215,92 @@ void test_vetoes_hold() {
         // вместо 249. Наряд на настоящее вето — в macro-registry.md.
         CHECK(float(w.td.height_at(v.x, v.y)) / 255.0f < 0.75f,
               "no village on mountain rock");
-        CHECK(!is_forest_cell(int(w.trees.at(v.x, v.y))),
-              "no village inside a forest massif");
+        // ЗДЕСЬ СТОЯЛО `CHECK(!is_forest_cell(trees.at(v.x,v.y)))` — свидетель
+        // СНЕСЁННОГО вето (владелец 2026-09-25: «вето лесного массива при
+        // расселении: „весом“», M-111 шаг 1). Утверждение было про запрет, а
+        // запрет в мире остался ровно один — вода. Закон, вставший на его
+        // место («терм леса максимален на опушке и падает внутрь массива»),
+        // живёт там, где он и определён — в поле скора, — и его держит
+        // test_forest_is_a_weight_not_a_veto ниже. Сюда его возвращать нельзя:
+        // «деревни в чаще не бывает» мир НЕ ГАРАНТИРУЕТ, он лишь делает чащу
+        // дорогой, и свидетель такого вида охранял бы везение (§8 п.5).
     }
+}
+
+// ЛЕС — ВЕС, А НЕ ЗАПРЕТ (M-111 шаг 1). Три закона на каждом из восьми
+// миров, и все три проверяются в ПОЛЕ СКОРА, потому что именно там закон и
+// определён: через расселение он шёл бы цепочкой politik → давление поля →
+// гейт самокормления, и свидетель стал бы заложником того, чего эта правка
+// не меняет (§8 п.5 — охранять закон, а не случай).
+//
+// ДВА НЕЗАВИСИМЫХ НЕГАТИВНЫХ КОНТРОЛЯ, оба падают вживую:
+//   · вернут `return -1` в дверь скора → закон 1 краснеет (чаща недопустима);
+//   · вернут монотонный терм `best/1024` (без вычитания своей клетки) → закон
+//     2 краснеет: чаща и опушка сойдутся в 16, как и сходились до правки.
+// Свидетель РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ САМ (§8 п.11): массив ставится этим
+// тестом в восемь разных мест карты, а не выпрашивается у генератора.
+void test_forest_is_a_weight_not_a_veto() {
+    // Восемь начал блока 6×6. Блок нигде не задевает ни море (x < kSeaCols),
+    // ни речную колонку (x == kRiverCol), ни горный ряд (y >= kMountainRow):
+    // водная клетка несёт ноль деревьев, и «внутренность массива» перестала
+    // бы ею быть — фикстура обязана рождать именно чащу.
+    struct Origin { int x, y; };
+    constexpr Origin kOrigins[] = {
+        {52, 14}, {30, 10}, {18, 30}, {40, 40},
+        {8, 8},   {44, 20}, {12, 44}, {34, 46},
+    };
+    int samples = 0, notVetoed = 0, edgeTermWins = 0, edgeScoreWins = 0;
+    for (const Origin& o : kOrigins) {
+        World w;
+        w.td = make_world();
+        std::vector<std::uint8_t> mask(std::size_t(kW) * kH, 0);
+        for (int y = o.y; y < o.y + 6; ++y)
+            for (int x = o.x; x < o.x + 6; ++x)
+                mask[std::size_t(y) * kW + x] = 1;
+        w.trees = build_tree_layer(w.td, mask.data(), mask.size());
+        w.deposits = build_deposit_layer(w.td, 777u);
+        w.gs.worldSeed = 777u;
+        w.gs.mapW = kW;
+        w.gs.mapH = kH;
+        SettlementSiteContext ctx = site_ctx(w);
+
+        // Чаща: у клетки (x0+2, y0+2) все восемь соседей лежат в маске, то
+        // есть её 3×3-доля равна 9/9 и счёт деревьев уперся в потолок.
+        const int inX = o.x + 2, inY = o.y + 2;
+        // Опушка: на две клетки ЗА границей массива — сама вне маски (её 3×3
+        // маски не касается, значит на ней только биомная примесь), но клетка
+        // x0+1 внутри руки ±kSettlementReach и уже полная чаща.
+        const int edX = o.x - 2, edY = o.y + 2;
+        CHECK_OR_RETURN(is_forest_cell(int(w.trees.at(inX, inY)))
+                            && !is_forest_cell(int(w.trees.at(edX, edY))),
+                        "фикстура обязана родить и чащу, и опушку рядом с ней");
+        ++samples;
+
+        // ЗАКОН 1: чаща ДОПУСТИМА. Единственный запрет мира — вода.
+        const int scoreIn = settlement_site_score(
+            ctx, SettlementScoreRow::Village, inX, inY);
+        if (scoreIn >= 0) ++notVetoed;
+
+        // ЗАКОН 2: терм леса на опушке СТРОГО больше, чем в чаще — максимум
+        // снаружи массива. Это и есть «дыра весов» под прицелом.
+        const SettlementSiteTerms tIn  = settlement_site_terms(ctx, inX, inY);
+        const SettlementSiteTerms tEd  = settlement_site_terms(ctx, edX, edY);
+        if (tEd.forest > tIn.forest) ++edgeTermWins;
+
+        // ЗАКОН 3: и весь балл опушки выше балла чащи — вес отговаривает.
+        const int scoreEd = settlement_site_score(
+            ctx, SettlementScoreRow::Village, edX, edY);
+        if (scoreEd > scoreIn) ++edgeScoreWins;
+    }
+    CHECK(samples == int(std::size(kOrigins)),
+          "все восемь миров построились — счётчик померил, а не промолчал");
+    CHECK(notVetoed == samples,
+          "клетка внутри лесного массива ДОПУСТИМА: вето мира одно — вода");
+    CHECK(edgeTermWins == samples,
+          "терм леса максимален на опушке и падает внутрь массива — одна "
+          "формула, а не запрет");
+    CHECK(edgeScoreWins == samples,
+          "опушка дороже чащи по полному баллу — лес отговаривает ВЕСОМ");
 }
 
 // The FIELD's quality law: souls are the owner's scale, so the land must
@@ -471,6 +567,7 @@ void test_determinism() {
 
 int main() {
     test_vetoes_hold();
+    test_forest_is_a_weight_not_a_veto();
     test_villages_feed_themselves();
     test_roulette_is_red();
     test_villages_scatter_around_their_town();
