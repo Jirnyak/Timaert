@@ -94,7 +94,7 @@ void apply_pending(sm::EventBus& bus, sm::GameState& gs, std::size_t& applied) {
         const std::size_t begin = applied;
         const std::size_t end = events.size();
         std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
-        sm::apply_events(pending, gs, &bag, nullptr, nullptr, &sheet);
+        sm::apply_events(pending, gs, &bag, nullptr);
         applied = end;
     }
 }
@@ -309,6 +309,12 @@ void test_quest_accept_event_order() {
         "quest ordinals are not monotonic from the one issuer");
 }
 
+// The applicator's arms, one event at a time. The STRING-VERB half of this
+// test died with EventTag::ApplyEffect (M-116, 2026-09-28): nothing in the
+// world emitted that tag, so its verb table was a dictionary serving only its
+// own witness. What the verbs actually guarded lives on below in the half that
+// asks the BONUS REGISTRY directly — that road is the real one, and it is the
+// one a returning `damage_hp` would have to get past.
 void test_effect_applicator_ts_verbs() {
     bag.clear();
     head = sm::AgentMemory{};
@@ -321,15 +327,6 @@ void test_effect_applicator_ts_verbs() {
     sheet.levelData = sm::default_level_data();
     sheet.levelData.exp = 0;
     sheet.levelData.expToNext = 100;
-    // The bars are a BODY block now (landing 4) — the applicator is handed
-    // the Pools the way it is handed the bag.
-    sm::ecs::Pools verbPools{};
-    verbPools.hp = 20;
-    verbPools.maxHp = 50;
-    verbPools.mp = 5;
-    verbPools.maxMp = 30;
-    verbPools.sp = 20;
-    verbPools.maxSp = 40;
 
     std::vector<sm::GameEvent> events;
     // НЕГАТИВНЫЙ КОНТРОЛЬ ВЫДАЧИ (M-139, вердикт владельца 2026-09-26):
@@ -350,63 +347,10 @@ void test_effect_applicator_ts_verbs() {
     ignoredSpell.ix = 999;
     events.push_back(ignoredSpell);
 
-    sm::GameEvent heal{sm::EventTag::ApplyEffect};
-    heal.s1 = "heal_hp";
-    heal.ix = 10;
-    events.push_back(heal);
-
-    sm::GameEvent restoreHp{sm::EventTag::ApplyEffect};
-    restoreHp.s1 = "restore_hp";
-    restoreHp.ix = 99;
-    events.push_back(restoreHp);
-
-    // `damage_hp` is GONE, by ruling: a verb that subtracted the player's
-    // health from a plot file was a second damage system reachable by exactly
-    // one body in the world. It is fired here anyway, as an unknown verb, to
-    // prove the applicator ignores what it does not know instead of guessing.
-    sm::GameEvent razed{sm::EventTag::ApplyEffect};
-    razed.s1 = "damage_hp";
-    razed.ix = 17;
-    events.push_back(razed);
-
-    sm::GameEvent restoreMp{sm::EventTag::ApplyEffect};
-    restoreMp.s1 = "restore_mp";
-    restoreMp.ix = 20;
-    events.push_back(restoreMp);
-
-    sm::GameEvent restoreSp{sm::EventTag::ApplyEffect};
-    restoreSp.s1 = "restore_sp";
-    restoreSp.ix = 15;
-    events.push_back(restoreSp);
-
-    sm::GameEvent drainSp{sm::EventTag::ApplyEffect};
-    drainSp.s1 = "drain_sp";
-    drainSp.ix = 9;
-    events.push_back(drainSp);
-
-    sm::GameEvent xp{sm::EventTag::ApplyEffect};
-    xp.s1 = "grant_xp";
-    xp.ix = 42;
-    events.push_back(xp);
-
-    sm::GameEvent unknown{sm::EventTag::ApplyEffect};
-    unknown.s1 = "unknown_effect";
-    unknown.ix = 999;
-    events.push_back(unknown);
-
     sm::GameEvent reputation{sm::EventTag::ReputationChange};
     reputation.s1 = "guild";
     reputation.ix = 3;
     events.push_back(reputation);
-
-    sm::GameEvent codex{sm::EventTag::CodexUnlock};
-    codex.a = std::uint32_t(sm::CodexArticleId::Witches);
-    events.push_back(codex);
-    events.push_back(codex);
-    // An out-of-range article ordinal is ignored, not a stray bit.
-    sm::GameEvent codexBad{sm::EventTag::CodexUnlock};
-    codexBad.a = 63u;
-    events.push_back(codexBad);
 
     sm::GameEvent complete{sm::EventTag::QuestComplete};
     complete.a = 101u;
@@ -418,7 +362,7 @@ void test_effect_applicator_ts_verbs() {
     events.push_back(failQuest);
     events.push_back(failQuest);
 
-    sm::apply_events(events, verbState, &bag, &verbPools, nullptr, &sheet);
+    sm::apply_events(events, verbState, &bag, nullptr);
 
     // Money is coin now: the wallet drains to ZERO and cannot go negative —
     // the uncovered remainder of a penalty is a DEBT FACT, not a negative
@@ -437,49 +381,25 @@ void test_effect_applicator_ts_verbs() {
         sm::GameEvent plus{sm::EventTag::PlayerGoldChange};
         plus.ix = 500;
         grant.push_back(plus);
-        sm::apply_events(grant, grantState, &purse, &verbPools, nullptr,
-                         &sheet);
+        sm::apply_events(grant, grantState, &purse, nullptr);
         CHECK(sm::inventory_value(purse) == before,
               "положительная дельта золота НЕ печатает монет — выдача из "
               "воздуха снесена (M-139)");
     }
-    // HP is 50 rather than 33: the razed verb took nothing, which is the
-    // point of razing it.
-    CHECK_OR_RETURN(!(verbPools.hp != 50
-        || verbPools.mp != 25
-        || verbPools.sp != 26),
-        "ApplyEffect hp/mp/sp verbs produced wrong combat stats");
-    CHECK_OR_RETURN(!(sheet.levelData.exp != 42 || sheet.levelData.level != 1),
-        "grant_xp did not apply XP without direct level mutation");
     CHECK_OR_RETURN(!(sm::player_reputation(&verbState, "guild") != 3),
         "ReputationChange did not move the player's row in the matrix");
-    // The unlock is a bit per ordinal: emitting twice sets it once, and the
-    // out-of-range ordinal above set nothing.
-    CHECK_OR_RETURN(!(player.codexUnlockedBits
-            != sm::codex_bit(sm::CodexArticleId::Witches)),
-        "CodexUnlock bits are not exactly the one emitted article");
     // Lifetime tallies: two external completions, two external failures —
     // the honest split (the old string ledgers filed a failure into BOTH).
     CHECK_OR_RETURN(!(player.completedQuestCount != 2u
         || player.failedQuestCount != 2u),
         "quest completion/failure tallies did not count external events");
 
-    // NO PLOT FILE CAN WOUND ANYBODY (owner, 2026-08-27). The verb is gone,
-    // and the road it used is closed too: an instant bonus may not drive HP
-    // down, because a wound is a blow and blows have exactly one door.
-    sm::ecs::Pools hurtPools{};
-    hurtPools.hp = 7;
-    hurtPools.maxHp = 50;
-    sm::GameEvent lethal{sm::EventTag::ApplyEffect};
-    lethal.s1 = "damage_hp";
-    lethal.ix = 10;
-    sm::GameState lethalState{};
-    sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), lethalState,
-                     &bag, &hurtPools, nullptr, &sheet);
-    CHECK_OR_RETURN(!(hurtPools.hp != 7),
-        "a razed verb must do NOTHING, not something smaller");
-    // ...and the registry itself refuses the same thing by the other road,
-    // so restoring the verb would not restore the hole.
+    // NO PLOT FILE CAN WOUND ANYBODY (owner, 2026-08-27). The verb that tried
+    // is gone, and so is the tag that carried it — but the LAW is not about a
+    // verb, it is about the road: an instant bonus may not drive HP down,
+    // because a wound is a blow and blows have exactly one door. That road is
+    // asked directly here, which is the stronger question: a plot file can
+    // only ever wound by getting past THIS.
     int hp = 7;
     sm::PoolSlice pools{};
     pools.current[int(sm::PoolId::Hp)] = &hp;
@@ -495,72 +415,62 @@ void test_effect_applicator_ts_verbs() {
 
 }
 
-// Experience is granted and consumed by ONE path (award_exp), whoever pays it.
-// This test used to demand the opposite — that a scripted grant_xp leave the
-// player sitting on unspendable experience — which is the bug, not a contract:
-// only the subworld kill path ever drained the pool, so a hero could finish ten
-// contracts and stay level 1 until he stabbed a wolf.
-//
-// What is still true is that levelling is STATE, not an event: the applicator
-// fabricates no level-up event at all (the PlayerLevelUp tag itself was deleted
-// 2026-08-05 with the rest of the never-referenced tags, so the guarantee is
-// now the type system's, not an assertion's).
-void test_grant_xp_levels_through_the_one_path() {
-    bag.clear();
-    head = sm::AgentMemory{};
-    sheet = sm::CharacterSheet{};
-    sm::GameState xpState{};
-    sheet.levelData = sm::default_level_data();
-    sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend (own test)
-    const int firstThreshold = sheet.levelData.expToNext;
-
-    sm::EventBus bus;
-    std::size_t applied = 0;
-    sm::GameEvent xp1{sm::EventTag::ApplyEffect};
-    xp1.s1 = "grant_xp";
-    xp1.ix = firstThreshold - 10;      // just short of the level
-    bus.emit(xp1);
-    sm::GameEvent xp2{sm::EventTag::ApplyEffect};
-    xp2.s1 = "grant_xp";
-    xp2.ix = 20;                       // ...and over it
-    bus.emit(xp2);
-
-    apply_pending(bus, xpState, applied);
-    CHECK_OR_RETURN(!(sheet.levelData.level != 2),
-        "grant_xp left the player below a threshold he had passed");
-    CHECK_OR_RETURN(!(sheet.levelData.exp != 10),
-        "the remainder past the threshold was not carried");
-    CHECK_OR_RETURN(!(sheet.levelData.expToNext != sm::exp_to_next_level(2)),
-        "the next threshold was not recomputed for the new level");
-    CHECK_OR_RETURN(!(sheet.levelData.attributePoints
-            != sm::default_level_data().attributePoints + 1
-        || sheet.levelData.skillPoints
-            != sm::default_level_data().skillPoints + 1),
-        "levelling through grant_xp did not pay its points (1:1 per level)");
-}
+// (ЗДЕСЬ СТОЯЛ `test_grant_xp_levels_through_the_one_path` — он вёл опыт
+// СКРИПТОВЫМ глаголом `grant_xp` поверх `EventTag::ApplyEffect`. Тег снесён
+// 2026-09-28 (M-116): его не эмитил никто, кроме этого свидетеля. Закон,
+// который он охранял — «опыт выдаётся и тратится ОДНОЙ дверью `award_exp`, и
+// одна выплата берёт СКОЛЬКО УГОДНО порогов» — жив и охраняется
+// `test_quest_xp_reward_levels_the_player` ниже: там три порога разом платит
+// настоящий заказчик, `RewardKind::Xp`. Свидетель умер вместе со своим
+// носителем, закон — нет.)
 
 // The wis dividend (owner ruling 2026-08-05): every XP grant scales by the
 // recipient's expMult (+1% per wis point). Before the wiring, wis was a
 // dead attribute — computed, displayed, consumed by nothing.
+//
+// Спрошено через НАСТОЯЩИЙ путь выплаты — награду квеста, — потому что
+// скриптовый `grant_xp` снесён вместе со своим тегом (M-116). Закон от этого
+// только окреп: дивиденд обязан платиться там, где опыт платят на самом деле,
+// а не в двери, которую никто не звал.
 void test_grant_xp_pays_the_wis_dividend() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState wisState{};
+    wisState.mapW = 64;
+    wisState.mapH = 64;
     sheet.levelData = sm::default_level_data();
+    sheet.levelData.expToNext = 1000;   // выше выплаты: мерим ОПЫТ, не уровень
     sheet.attributes[sm::AttributeId::Wis] = 10;  // expMult = 1.10
 
-    sm::GameEvent grant{sm::EventTag::ApplyEffect};
-    grant.s1 = "grant_xp";
-    grant.ix = 100;
-    sm::apply_events(std::span<const sm::GameEvent>(&grant, 1), wisState, &bag,
-                     nullptr, nullptr, &sheet);
+    sm::Quest q{};
+    q.title = "Paid in wisdom";
+    q.category = sm::QuestCategory::Procedural;
+    g_playerCellX = 0;
+    g_playerCellY = 0;
+    sm::Objective done{};
+    done.kind = sm::ObjectiveKind::VisitCell;
+    done.ix = 0; done.iy = 0; done.radius = 4.0f;
+    q.objectives.push_back(done);
+    sm::Reward xp{};
+    xp.kind = sm::RewardKind::Xp;
+    xp.amount = 100;
+    q.rewards.push_back(xp);
+
+    sm::EventBus bus;
+    sm::QuestEngine engine;
+    std::vector<sm::Quest> active;
+    active.push_back(q);
+    engine.tick(active, bus, wisState, &bag, &head, &sheet,
+                g_playerCellX, g_playerCellY);
+
+    CHECK_OR_RETURN(active.empty(), "the wis-dividend quest did not complete");
     if (sheet.levelData.exp != 110) {
         std::fprintf(stderr, "exp=%d (expected 110)\n",
                      sheet.levelData.exp);
     }
     CHECK(sheet.levelData.exp == 110,
-          "grant_xp ignored the wis expMult");
+          "an XP reward ignored the wis expMult");
 }
 
 // A quest that pays experience must pay the LEVEL it is worth. This is the bug
@@ -644,31 +554,24 @@ void test_unhandled_tag_is_inert_in_applicator() {
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState levelState{};
-    sheet.levelData = sm::default_level_data();
-    sheet.levelData.exp =
-        sm::exp_to_next_level(1) + sm::exp_to_next_level(2) + 5;
-    sheet.levelData.attributePoints = 7;
-    sm::ecs::Pools inertPools{};
-    inertPools.hp = 7;
-    inertPools.maxHp = 9;
+    bag.add("coin_empire_copper", 6);
 
-    const int beforeLevel = sheet.levelData.level;
-    const int beforeExp = sheet.levelData.exp;
-    const int beforeExpToNext = sheet.levelData.expToNext;
-    const int beforeAttributePoints = sheet.levelData.attributePoints;
-    const int beforeHp = inertPools.hp;
-    const int beforeMaxHp = inertPools.maxHp;
+    // ЧТО АППЛИКАТОР ВООБЩЕ МОЖЕТ ТРОНУТЬ — то и спрашиваем. Полосы и лист
+    // он с 2026-09-28 не трогает НЕ ПО ДОГОВОРУ, А ПО ТИПУ: параметры `pools`
+    // и `sheet` умерли вместе с `EventTag::ApplyEffect` (M-116), и «уровень
+    // вырос от чужого тега» стало невыразимо — это сильнее утверждения (§8
+    // п.6). Остаются кошелёк, счётчики игрока и его строка в матрице.
+    const int beforeValue = sm::inventory_value(bag);
+    const std::uint32_t beforeDone = levelState.player.completedQuestCount;
+    const std::uint32_t beforeFailed = levelState.player.failedQuestCount;
 
     sm::GameEvent unhandled{sm::EventTag::Custom};
     unhandled.ix = 99;
     sm::apply_events(std::span<const sm::GameEvent>(&unhandled, 1), levelState,
-                     &bag, &inertPools, nullptr, &sheet);
-    CHECK_OR_RETURN(!(sheet.levelData.level != beforeLevel
-        || sheet.levelData.exp != beforeExp
-        || sheet.levelData.expToNext != beforeExpToNext
-        || sheet.levelData.attributePoints != beforeAttributePoints
-        || inertPools.hp != beforeHp
-        || inertPools.maxHp != beforeMaxHp),
+                     &bag, nullptr);
+    CHECK_OR_RETURN(!(sm::inventory_value(bag) != beforeValue
+        || levelState.player.completedQuestCount != beforeDone
+        || levelState.player.failedQuestCount != beforeFailed),
         "an unhandled tag mutated player inside effect applicator");
 }
 
@@ -1091,7 +994,7 @@ void test_quest_failed_settles_its_offer() {
         || !offer_settled(gs.player, q)),
         "expiry did not settle the offer / count the failure honestly");
 
-    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr, &sheet);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr);
     CHECK_OR_RETURN(!(gs.player.failedQuestCount != 1u),
         "an already-applied QuestFail was double-counted");
     CHECK_OR_RETURN(!(!engine.is_known(active, gs.player, q)),
@@ -1573,7 +1476,7 @@ void test_abandon_emits_and_removes() {
     // settlement may re-offer it the same day, exactly as before.
     sm::GameState abandonState{};
     sm::PlayerState& player = abandonState.player;
-    sm::apply_events(bus.tick_events(), abandonState, &bag, nullptr, nullptr, &sheet);
+    sm::apply_events(bus.tick_events(), abandonState, &bag, nullptr);
     CHECK_OR_RETURN(!(player.completedQuestCount != 0u
         || player.failedQuestCount != 0u
         || engine.is_known(active, player, q)),
@@ -1789,7 +1692,7 @@ void test_generated_delivery_quest_flow() {
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestComplete)),
         "completion did not emit QuestComplete");
 
-    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr, &sheet);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr);
     CHECK_OR_RETURN(!(gs.player.completedQuestCount != 1u),
         "QuestComplete was not applied to player completion state");
     CHECK_OR_RETURN(!(active.empty() && gs.nextQuestOrdinal != 2u),
@@ -1803,7 +1706,7 @@ void test_generated_delivery_quest_flow() {
         "the gold reward was not paid in full");
 
     bus.flush();
-    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr, &sheet);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr);
     CHECK_OR_RETURN(!(sm::inventory_value(bag) - startGold + deliveredValue
                       != paidOnce),
         "empty post-flush tick reapplied reward");
@@ -1816,7 +1719,6 @@ int main() {
     test_event_bus_contract_surface();
     test_quest_accept_event_order();
     test_effect_applicator_ts_verbs();
-    test_grant_xp_levels_through_the_one_path();
     test_grant_xp_pays_the_wis_dividend();
     test_quest_xp_reward_levels_the_player();
     test_builtin_nodes_are_registered_and_active();

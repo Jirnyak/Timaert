@@ -557,28 +557,31 @@ sm::Quest make_quest() {
     leave.a = 7;
     leave.ix = 7;
     q.onAccept.push_back(leave);
-    // The battery below covers every payload FIELD (a, ix, iy, fx/fy, s1, s2)
-    // across distinct surviving tags — the original used the since-deleted
-    // dead tags; the field coverage is what matters to the serializer. Two
-    // slots were re-tagged again on 2026-09-28 (M-116 ч.1) when WorldCellChange
-    // and SettlementVisit died: SpireDepleted keeps the ix/iy/fx triple,
-    // ShowStory keeps s1/s2/ix/iy. Same coverage, live tags.
+    // The battery below covers every payload FIELD (a, ix, iy, fx/fy, s1, s2).
+    // WHICH TAG carries which field is arbitrary by construction — `write_event`
+    // does not branch on the tag, it writes the whole envelope — so the law
+    // being guarded is the FIELDS' round trip, and a tag here is just a live
+    // label to hang them on. Slots get re-labelled whenever a tag dies, and
+    // that is bookkeeping, not a change of contract: 2026-09-28 (M-116 ч.1)
+    // WorldCellChange/SettlementVisit → SpireDepleted/ShowStory; the same day
+    // (M-116) BattleStart/ApplyEffect/CodexUnlock → ShowDialog/SpellCast/
+    // QuestUpdate, field for field.
     sm::GameEvent rep{sm::EventTag::ReputationChange};
     rep.a = 42;
     rep.ix = -5;
     q.onAccept.push_back(rep);
-    sm::GameEvent battle{sm::EventTag::BattleStart};
+    sm::GameEvent battle{sm::EventTag::ShowDialog};
     battle.s1 = "Unrest";
     battle.s2 = "Prosperous";
     battle.a = 7;
     battle.ix = 7;
     q.onAccept.push_back(battle);
-    sm::GameEvent effect{sm::EventTag::ApplyEffect};
+    sm::GameEvent effect{sm::EventTag::SpellCast};
     effect.s1 = "hp";
     effect.ix = 10;
     effect.iy = 12;
     q.onAccept.push_back(effect);
-    sm::GameEvent codex{sm::EventTag::CodexUnlock};
+    sm::GameEvent codex{sm::EventTag::QuestUpdate};
     codex.s1 = "Bandit";
     codex.ix = 1;
     codex.a = 23;
@@ -1092,14 +1095,14 @@ void run_roundtrip() {
         || loadedQuests[0].onAccept[4].tag != sm::EventTag::ReputationChange
         || loadedQuests[0].onAccept[4].a != 42u
         || loadedQuests[0].onAccept[4].ix != -5
-        || loadedQuests[0].onAccept[5].tag != sm::EventTag::BattleStart
+        || loadedQuests[0].onAccept[5].tag != sm::EventTag::ShowDialog
         || loadedQuests[0].onAccept[5].s1 != "Unrest"
         || loadedQuests[0].onAccept[5].s2 != "Prosperous"
-        || loadedQuests[0].onAccept[6].tag != sm::EventTag::ApplyEffect
+        || loadedQuests[0].onAccept[6].tag != sm::EventTag::SpellCast
         || loadedQuests[0].onAccept[6].s1 != "hp"
         || loadedQuests[0].onAccept[6].ix != 10
         || loadedQuests[0].onAccept[6].iy != 12
-        || loadedQuests[0].onAccept[7].tag != sm::EventTag::CodexUnlock
+        || loadedQuests[0].onAccept[7].tag != sm::EventTag::QuestUpdate
         || loadedQuests[0].onAccept[7].s1 != "Bandit"
         || loadedQuests[0].onAccept[7].ix != 1
         || loadedQuests[0].onAccept[7].a != 23u

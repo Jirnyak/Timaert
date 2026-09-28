@@ -12,23 +12,37 @@
 namespace sm
 {
 
-    // Every tag below HAS A PRODUCER. The 2026-08-05 producer/consumer census
-    // (history/audit.md Часть II) deleted the 16 tags nothing outside this enum ever
-    // referenced (PlayerLevelUp, PlayerDeath, NpcSpawn, NpcGreeted, Encounter,
-    // SettlementChangeOwner, QuestAbandoned, Trade, NpcHpChange,
-    // SettlementMoodChange, PlayerStatChange, BattleEnd, MagicSurge,
-    // FactionRelationChange, DialogStart, CameraMove); the M-116 pass
-    // (2026-09-28) deleted the three that were still referenced only by their
-    // READERS and never emitted (SettlementVisit — the sys_settlement node
-    // accepted it beside PlayerEnterSettlement; LandmarkChangeOwner and
-    // WorldCellChange — the InteractCell objective arm, which went with them).
+    // Every tag below HAS A PRODUCER, and that sentence stood here while it was
+    // FALSE — the M-116 census (2026-09-28) counted three tags nobody in the
+    // world emitted, each kept alive by its own READER arm. So the rule is
+    // written as the census states it: a tag is a tag when something in `src/`
+    // constructs it; a reader alone is not a producer, and a shape reachable
+    // only through authored data (Quest::onAccept, Reward::event,
+    // DialogChoicePayload::effects) that no content actually authors is not one
+    // either.
+    //
+    // Deleted by that rule, 2026-09-28 (owner's ruling «сносим всё что не
+    // системное»): ApplyEffect (its arm carried the last string verb table —
+    // "heal_hp"/"restore_mp"/"drain_sp"/"grant_xp" — restating arithmetic the
+    // bonus registry already owns), CodexUnlock (the codex bits live on and are
+    // seeded by macro/state.cpp), BattleStart (its reader booted the subworld
+    // and spawned a body BY STRING NAME — a second way into combat beside the
+    // one that matters, detect_forced_encounter → PreBattle).
+    // Earlier passes deleted 16 tags (2026-08-05: PlayerLevelUp, PlayerDeath,
+    // NpcSpawn, NpcGreeted, Encounter, SettlementChangeOwner, QuestAbandoned,
+    // Trade, NpcHpChange, SettlementMoodChange, PlayerStatChange, BattleEnd,
+    // MagicSurge, FactionRelationChange, DialogStart, CameraMove) and three
+    // more (M-116 part 1: SettlementVisit, LandmarkChangeOwner, WorldCellChange).
     // Values are DENSE and implicit: the old TS-parity numeric anchors died
     // with the parity, and every renumbering invalidates saves (kSaveVersion).
     //
-    // Four tags below have a producer but no PRODUCTION reader — QuestStart,
-    // QuestUpdate, SpellCast, PlayerLeaveSettlement. They are facts without a
-    // listener, and who listens is M-116 (CANON S20); they are NOT dead ends
-    // of the same kind as the three above.
+    // Six tags below have a producer but no PRODUCTION reader — PlayerMove,
+    // QuestStart, QuestUpdate, SpellCast, TimeAdvance, PlayerLeaveSettlement.
+    // They are facts without a listener, and who listens is M-116 (CANON S20);
+    // they are NOT dead ends of the same kind as the deleted ones.
+    // ShowDialog/ShowStory/StoryResult are not world facts at all — they are
+    // requests to the UI (CANON.md «Окна диалогов и сюжетные слайды — не факты,
+    // а просьбы к UI от логических узлов») and leave with M-175.
     enum class EventTag : std::uint16_t
     {
         PlayerMove = 0,
@@ -41,9 +55,6 @@ namespace sm
         SpellLearned,
         TimeAdvance,      // a = day, iy = hour, ix = 1 event per elapsed hour
         PlayerGoldChange, // ix = delta, iy = optional new total
-        ApplyEffect,      // s1 = effectType, ix = value
-        BattleStart,      // s1 = enemyName, s2 = enemyType, ix = enemyLevel
-        CodexUnlock,      // a = article ordinal (macro/codex.h CodexArticleId)
         ReputationChange, // s1 = factionId, ix = delta, iy = optional new value
         ShowDialog,       // s1 = title, s2 = description, ix = choice count
         ShowStory,        // s1 = source node, s2 = story id, ix/iy/a/b = counts

@@ -7509,11 +7509,23 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 return entt::null;
             };
             const int beforeHostiles = countHostiles();
-            sm::GameEvent battle{sm::EventTag::BattleStart};
-            battle.s1 = "Smoke Bandit";
-            battle.s2 = "bandit";
-            battle.ix = 2;
-            app.bus.emit(battle);
+            // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11), и делает это той
+            // же дверью, что три других сценария этого файла. Прежде он звал
+            // `EventTag::BattleStart`, но тег снесён (M-116, 2026-09-28): в
+            // игре его не эмитил НИКТО, единственным отправителем был вот
+            // этот смоук — то есть свидетель держал тег живым сам для себя.
+            // Закон сценария не изменился ни на слово: враг стоит в субмире,
+            // тик идёт, его смерть платит опытом и чистит толпу.
+            if (!app.subworld.active()) {
+                enter_subworld(app);
+            }
+            if (!app.subworld.active()
+                || !app.subworld.spawn_npc_body("bandit", "Smoke Bandit", 2,
+                                                app.gs.worldSeed ^ 0xB471u,
+                                                "bandits", nullptr)) {
+                smoke_fail(app, "battle_start could not stand up a hostile");
+                break;
+            }
             process_world_events(app);
             const int afterHostiles = countHostiles();
             if (!app.subworld.active() || afterHostiles <= beforeHostiles) {

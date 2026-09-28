@@ -218,7 +218,8 @@ struct App {
     int                  availableQuestDay = -1;
     std::size_t          appliedEventCount = 0;
     std::size_t          appliedStoryResultCount = 0;
-    std::size_t          appliedCombatEventCount = 0;
+    // (appliedCombatEventCount died with EventTag::BattleStart — M-116,
+    //  2026-09-28: nothing in the world emitted that tag.)
     std::size_t          appliedSpawnEventCount = 0;
     // (No playerRecovery accumulator. The fractional HP/MP rest remainders
     // are Pools::hpCarry/mpCarry on the player's squad entity — the same

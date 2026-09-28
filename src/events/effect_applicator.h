@@ -6,7 +6,6 @@
 #include "macro/state.h"
 
 namespace sm {
-namespace ecs { struct Pools; }
 
 // Takes the whole GameState, not just the player: a ReputationChange moves the
 // player's row in the ONE relation matrix (gs.factions), which is where his
@@ -22,24 +21,20 @@ namespace ecs { struct Pools; }
 // player's bag is an ordinary NpcInventory on his squad entity now, so the
 // applicator is handed the container rather than reaching into PlayerState.
 // Null = no world yet; a paying effect simply does not pay.
-// `pools` is the body a pool verb (heal_hp / restore_* / drain_sp) writes —
-// the ordinary ecs::Pools on the player's squad entity (landing 4; there is
-// no bar on PlayerState to write to). Null = no body yet; a pool verb
-// simply does not land, the same sentence the bag speaks.
 // `book` — the player's SpellBook component (v89), handed in exactly like
-// `bag` and `pools`: a spell-learn effect writes knowledge into the body
-// that owns it, and there is no PlayerState field to write to any more.
+// `bag`: a spell-learn effect writes knowledge into the body that owns it,
+// and there is no PlayerState field to write to any more.
 // Null = no world yet; a learn effect simply does not land.
-// `sheet` — the player's OWNED CharacterSheet component (посадка Б), the
-// same idiom: a grant_xp effect lands in the body that owns the build.
-// Null = no world yet; the grant simply does not land.
+//
+// `pools` and `sheet` used to ride here too, for the string-verb arm of
+// EventTag::ApplyEffect. Both the tag and the arm were deleted 2026-09-28
+// (M-116) — nothing in the world emitted that tag — so the parameters went
+// with their only reader rather than staying as furniture (DOD п.9).
 void apply_events(std::span<const GameEvent> events, GameState& gs,
-                  Inventory* bag, ecs::Pools* pools, SpellBook* book,
-                  CharacterSheet* sheet,
+                  Inventory* bag, SpellBook* book,
                   std::vector<GameEvent>* followups = nullptr);
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
-                  Inventory* bag, ecs::Pools* pools, SpellBook* book,
-                  CharacterSheet* sheet,
+                  Inventory* bag, SpellBook* book,
                   std::vector<GameEvent>* followups = nullptr);
 
 } // namespace sm

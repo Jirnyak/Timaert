@@ -1,88 +1,26 @@
-#include "macro/bonus.h"
 #include "events/effect_applicator.h"
-#include "ecs/pools.h"
-#include "macro/codex.h"
 #include "macro/currency.h"
 #include "macro/spells.h"
-#include <algorithm>
 #include <cstdio>
 
 namespace sm {
 
-namespace {
-
-// A scripted effect is a ROW of the one bonus registry, named by the plot in
-// the registry's own authoring key. This was the fifth half-door: six string
-// verbs restating, in their own vocabulary, arithmetic that `ItemEffect`
-// already restated in a third — three clamp-adds to the same three pools,
-// spelled out three times in three files.
+// ЗДЕСЬ СТОЯЛА ПЯТАЯ ПОЛУДВЕРЬ — И ОНА СНЕСЕНА ЦЕЛИКОМ (M-116, 2026-09-28).
+// `apply_effect` со своей таблицей `kEffectVerbs` переводила шесть СТРОКОВЫХ
+// глаголов ("heal_hp", "restore_hp", "restore_mp", "restore_sp", "drain_sp",
+// "grant_xp") в строки реестра бонусов — то есть пересказывала своим словарём
+// арифметику, которой реестр уже владеет. Жила она ровно на одной руке
+// `EventTag::ApplyEffect`, а этот тег во всём `src/` не рождал НИКТО: перепись
+// нашла только её же `case` и конструкции в тестах. Тег снесён, и с ним ушёл
+// последний житель-строка внутри аппликатора (ЗАКОН СЛОВАРЯ п.1).
 //
-// The verbs the plot files already speak are kept as ALIASES onto rows rather
-// than renamed, because a plot file is content and content does not get
-// broken by an engine tidy-up. `restore_hp` and `heal_hp` were always the same
-// verb; `drain_sp` is the same row with the other sign, which is the whole
-// reason the registry's value is signed.
-//
-// THERE IS NO `damage_hp`, and its absence is a ruling (owner, 2026-08-27:
-// «лучше единая система урона и НЕЗАВИСИМАЯ ОТ ИГРОКА — ИГРОК = НПЦ, значит
-// это тоже нарушение»). A verb that subtracts the player's health from a plot
-// file was a second damage system that only one body in the world could be
-// hurt by: no mitigation, no death protocol, no attacker, and reachable by
-// nobody except him. Draining STAMINA is not that — exertion has no door and
-// no armour argues with it — which is why `drain_sp` stays and its twin does
-// not.
-struct EffectVerb {
-    const char* verb;
-    BonusId     row;
-    int         sign;   // -1: the verb SPENDS what its row restores
-};
-
-constexpr EffectVerb kEffectVerbs[] = {
-    {"heal_hp",    BonusId::HealHp, +1},
-    {"restore_hp", BonusId::HealHp, +1},   // always was the same verb
-    {"restore_mp", BonusId::HealMp, +1},
-    {"restore_sp", BonusId::HealSp, +1},
-    {"drain_sp",   BonusId::HealSp, -1},
-};
-
-void apply_effect(PlayerState& p, ecs::Pools* cs, CharacterSheet* sheet,
-                  const GameEvent& ev) {
-    const std::string& type = ev.s1;
-    const int value = ev.ix;
-
-    if (type == "grant_xp") {
-        // wis dividend: scripted XP scales by the recipient's expMult too —
-        // one law for every grant path (owner ruling 2026-08-05). XP is not a
-        // pool and not a sheet address; it has its own door and keeps it.
-        if (sheet) {
-            award_exp(sheet->levelData, value,
-                      calculate_derived(sheet->attributes,
-                                        sheet->skills).expMultPct);
-        }
-        return;
-    }
-
-    for (const EffectVerb& v : kEffectVerbs) {
-        if (type != v.verb) continue;
-        if (!cs) break;   // no body yet: a pool verb has nowhere to land
-        PoolSlice pools{};
-        pools.current[int(PoolId::Hp)] = &cs->hp;
-        pools.maximum[int(PoolId::Hp)] = cs->maxHp;
-        pools.current[int(PoolId::Mp)] = &cs->mp;
-        pools.maximum[int(PoolId::Mp)] = cs->maxMp;
-        pools.current[int(PoolId::Sp)] = &cs->sp;
-        pools.maximum[int(PoolId::Sp)] = cs->maxSp;
-        apply_instant(pools, {std::uint8_t(v.row),
-                              std::int16_t(v.sign * value)});
-        return;
-    }
-}
-
-} // namespace
+// Вместе с ним умерли параметры `pools` и `sheet`: их читала только эта дверь.
+// Колонка без читателя не лежит тихо (DOD п.9) — следующий принял бы их за
+// закон. Восстановление здоровья и опыт остаются там, где у них есть настоящие
+// двери: `apply_instant` над реестром бонусов и `award_exp`.
 
 void apply_events(std::span<const GameEvent> events, GameState& gs,
-                  Inventory* bag, ecs::Pools* pools, SpellBook* book,
-                  CharacterSheet* sheet,
+                  Inventory* bag, SpellBook* book,
                   std::vector<GameEvent>* followups) {
     PlayerState& p = gs.player;
     for (auto& ev : events) {
@@ -146,28 +84,10 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                     if (ev.ix < 0) pay_value_dense(*bag, -ev.ix);
                 }
                 break;
-            case EventTag::ApplyEffect:
-                if (ev.b != kEventEffectAlreadyApplied) {
-                    apply_effect(p, pools, sheet, ev);
-                }
-                break;
-            case EventTag::CodexUnlock:
-                // ev.a = article ordinal (macro/codex.h). Setting a bit is
-                // idempotent — the old find-then-push dedup is the OR.
-                if (ev.a < kCodexArticleCount) {
-                    p.codexUnlockedBits |= 1ull << ev.a;
-                }
-                break;
             case EventTag::ReputationChange:
                 if (ev.b != kEventEffectAlreadyApplied) {
                     add_player_reputation(gs, ev.s1.c_str(), ev.ix);
                 }
-                break;
-            case EventTag::BattleStart:
-                // App runtime routes this into subworld NPC combat; the
-                // breadcrumb is a session word and dies with the moment.
-                session_feed_push(gs.sessionFeed,
-                                  ("Encounter: " + ev.s1).c_str());
                 break;
             default: break;
         }
@@ -175,12 +95,10 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
 }
 
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
-                  Inventory* bag, ecs::Pools* pools, SpellBook* book,
-                  CharacterSheet* sheet,
+                  Inventory* bag, SpellBook* book,
                   std::vector<GameEvent>* followups) {
     apply_events(std::span<const GameEvent>(events.data(), events.size()), gs,
-                 bag, pools, book, sheet,
-                 followups);
+                 bag, book, followups);
 }
 
 } // namespace sm

@@ -1262,7 +1262,6 @@ void destroy_world(App& app) {
 #endif
     app.appliedEventCount = 0;
     app.appliedStoryResultCount = 0;
-    app.appliedCombatEventCount = 0;
     app.appliedSpawnEventCount = 0;
     {
         // All three fractional remainders die with the session — they are
@@ -2966,9 +2965,7 @@ void apply_pending_event_effects(App& app) {
         // span points into) — the while loop picks them up as the next batch.
         std::vector<sm::GameEvent> followups;
         sm::apply_events(pending, app.gs, sm::player_inventory(app.ecs),
-                         sm::player_pools(app.ecs),
-                         sm::player_spellbook(app.ecs),
-                         sm::player_sheet(app.ecs), &followups);
+                         sm::player_spellbook(app.ecs), &followups);
         bool spireDied = false;
         for (const sm::GameEvent& ev : pending) {
             if (ev.tag == sm::EventTag::SpireDepleted) spireDied = true;
@@ -3097,33 +3094,11 @@ void apply_pending_story_results(App& app) {
     app.appliedStoryResultCount = end;
 }
 
-void handle_pending_battle_start_events(App& app) {
-    const auto& events = app.bus.tick_events();
-    if (app.appliedCombatEventCount >= events.size()) return;
-
-    const std::size_t begin = app.appliedCombatEventCount;
-    const std::size_t end = events.size();
-    for (std::size_t i = begin; i < end; ++i) {
-        const sm::GameEvent& ev = events[i];
-        if (ev.tag != sm::EventTag::BattleStart) continue;
-
-        if (!app.subworld.active()) {
-            enter_subworld(app);
-            boot_trace_time("battle-start subworld enter", app.gs.worldTime);
-        }
-        const std::uint32_t seed = app.gs.worldSeed
-            ^ (app.bus.tick() * 16777619u)
-            ^ std::uint32_t(i * 2654435761u);
-        if (app.subworld.spawn_npc_body(ev.s2.c_str(), ev.s1.c_str(),
-                                        ev.ix, seed, "bandits",
-                                        nullptr)) {
-            std::string line = "Encounter spawned in subworld: ";
-            line += ev.s1.empty() ? ev.s2 : ev.s1;
-            sm::session_feed_push(app.gs.sessionFeed, line.c_str());
-        }
-    }
-    app.appliedCombatEventCount = end;
-}
+// ЗДЕСЬ СТОЯЛ ВТОРОЙ ВХОД В БОЙ — `handle_pending_battle_start_events`, и он
+// снесён вместе со своим тегом (M-116, 2026-09-28). Он поднимал субмир и
+// спавнил тело ПО СТРОКОВОМУ ИМЕНИ из `ev.s1/ev.s2`, а `EventTag::BattleStart`
+// в игре не рождал никто — единственным отправителем был смоук. Настоящая
+// встреча идёт одной дверью: `detect_forced_encounter` → `PreBattle`.
 
 // The SpawnEntity consumer. The event had two producers (quest onAccept in
 // content/quests/procedural.cpp) and ZERO consumers — kill-contracts never
@@ -3313,12 +3288,10 @@ std::uint64_t quest_marker_signature(const std::vector<sm::Quest>& active) {
 void process_world_events(App& app) {
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
-    handle_pending_battle_start_events(app);
     handle_pending_spawn_entity_events(app);
     app.bus.flush();
     app.appliedEventCount = 0;
     app.appliedStoryResultCount = 0;
-    app.appliedCombatEventCount = 0;
     app.appliedSpawnEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
     {
@@ -3352,7 +3325,6 @@ void process_world_events(App& app) {
     }
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
-    handle_pending_battle_start_events(app);
     handle_pending_spawn_entity_events(app);
     capture_presentation_events(app);
 }

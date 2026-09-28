@@ -367,7 +367,6 @@ SKELETON.md	ecs/systems.cpp:18
 SKELETON.md	ecs/systems.cpp:35-42
 SKELETON.md	ecs/systems.cpp:39
 SKELETON.md	ecs/world.h:8
-SKELETON.md	effect_applicator.cpp:53
 SKELETON.md	effect_applicator.cpp:53-60
 SKELETON.md	effect_applicator.h:12
 SKELETON.md	engine.cpp:1223-1225
@@ -462,7 +461,6 @@ SKELETON.md	main.cpp:1695
 SKELETON.md	main.cpp:1839-1854
 SKELETON.md	main.cpp:1862
 SKELETON.md	main.cpp:2963
-SKELETON.md	main.cpp:3107
 SKELETON.md	main.cpp:3172-3186
 SKELETON.md	main.cpp:327
 SKELETON.md	main.cpp:3541
@@ -596,7 +594,6 @@ SKELETON.md	politik.h:77
 SKELETON.md	politik.h:96-97
 SKELETON.md	politik.h:96-99
 SKELETON.md	quest_engine.cpp:114-116
-SKELETON.md	quest_engine.cpp:165-166
 SKELETON.md	quest_engine.cpp:232
 SKELETON.md	quest_engine.cpp:234-235
 SKELETON.md	quest_engine.cpp:63
@@ -1200,7 +1197,6 @@ macro-registry.md	econ_day.h:265
 macro-registry.md	econ_day.h:320
 macro-registry.md	econ_day.h:329
 macro-registry.md	econ_day.h:385-389
-macro-registry.md	effect_applicator.cpp:143
 macro-registry.md	engine.cpp:3116-3122
 macro-registry.md	engine.cpp:3123
 macro-registry.md	engine.cpp:337
