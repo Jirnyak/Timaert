@@ -1,5 +1,6 @@
 #include "macro/ruins.h"
 #include "macro/landmark_registry.h"
+#include "tables/faction.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 #include "macro/map_generator.h"
@@ -53,6 +54,13 @@ void generate_ruins(GameState& gs, const ZoneLayer& zones,
         if (lm.type == LandmarkType::City) ++cities;
     }
     const int target = kRuinBaseCount + cities;
+    // WHOSE the dead city is, answered ONCE and stored on the instance
+    // (owner 2026-09-21: «руине надо дать фракцию»). The generator is the
+    // EDITOR here — it names the banner; the registry row does not carry a
+    // faction column, because a kind is not an owner. The string lives on
+    // the generation path only (ЗАКОН СЛОВАРЯ: authoring boundary, once per
+    // world), and the ordinal is what the world stores and ships.
+    const std::int16_t haunted = std::int16_t(faction_index("demons"));
     // Own deterministic stream, distinct from the spire pass (0x59B12E50)
     // and the landmark-naming salt (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x2A15DEADu);
@@ -93,10 +101,11 @@ void generate_ruins(GameState& gs, const ZoneLayer& zones,
             continue;
         }
         Landmark ruin{};
-        ruin.type = LandmarkType::Ruin;
-        ruin.id   = int(gs.nextLandmarkOrdinal++);
-        ruin.x    = bestX;
-        ruin.y    = bestY;
+        ruin.type       = LandmarkType::Ruin;
+        ruin.id         = int(gs.nextLandmarkOrdinal++);
+        ruin.x          = bestX;
+        ruin.y          = bestY;
+        ruin.factionIdx = haunted;
         // Born with its haunt: the row's born columns × the site's own
         // danger byte, a discrete bell around the mean — redder land, harder
         // haunt. Its own stream per ruin ordinal, so placement draws above

@@ -1,5 +1,6 @@
 #include "macro/spires.h"
 #include "macro/landmark_registry.h"
+#include "tables/faction.h"
 #include "macro/map_generator.h"
 #include "macro/anketa.h"
 #include "macro/state.h"
@@ -49,6 +50,13 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         return;
     }
     const LandmarkDef& def = landmark_def(LandmarkType::Spire);
+    // WHOSE the tower is, answered ONCE and stored on the instance (owner
+    // 2026-09-21). The generator is the EDITOR: it names the banner, the
+    // registry row carries no faction column, and the string never leaves
+    // the generation path (ЗАКОН СЛОВАРЯ). This is also what makes the
+    // garrison-vs-game line below true — the demons are the POPULATION,
+    // stamped through this index, while the slope's beasts stay wildlife.
+    const std::int16_t infernal = std::int16_t(faction_index("demons"));
     // Own deterministic stream, distinct from the landmark-naming salt in
     // populate_landmarks_from_politik (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x59B12E50u);
@@ -109,6 +117,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         sp.id       = int(gs.nextLandmarkOrdinal++);
         sp.x        = bestX;
         sp.y        = bestY;
+        sp.factionIdx = infernal;
         sp.spellId  = std::uint32_t(ord);
         sp.depleted = false;
         // Born with its garrison (§42 Инк 5): the registry row's own born

@@ -219,10 +219,12 @@ struct NpcTypeDef {
     // NO faction column — deliberately (owner ruling 2026-08-27: «в записи
     // существа вообще не должно быть фракции»). Faction is an INSTANCE
     // property (ecs::NPCKind.factionIdx), assigned at birth by the SPAWNER's
-    // context: a town dresses its crowd in its kingdom's colours, a landmark
-    // in its spawnFaction, a squad in its leader's, the open land in the
-    // spawn law's own wildFaction column (macro/fauna.cpp). The same wolf can
-    // be wildlife in a meadow, a demon in a ruin, or the player's own.
+    // context, and the ladder is ONE rung high (M-39): a place's crowd and
+    // garrison wear THAT PLACE's own factionIdx, a squad wears its leader's,
+    // and everything the LAND rolls wears this row's wildFaction column
+    // (macro/fauna.cpp). The same wolf can be wildlife in a meadow or the
+    // player's own; what it can no longer be is a demon because the KIND of
+    // the place it stands near said so.
     // КОЛОНКИ ЛУТ-ПРОФИЛЯ БОЛЬШЕ НЕТ (M-139, вердикт владельца 2026-09-26):
     // `lootId` называл хардкод-таблицу «что роняет эта роль», и вместе с
     // десятью такими таблицами снесён. Что несёт тварь, назовёт ПУЛ ЛУТА по

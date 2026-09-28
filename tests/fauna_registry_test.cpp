@@ -183,6 +183,51 @@ int main() {
         std::printf("fauna_registry_test: spire throng species=%d\n", species);
     }
 
+    // ── M-39: ДИЧЬ ПРИНАДЛЕЖИТ ЗЕМЛЕ, А НЕ ВИДУ МЕСТА ───────────────────
+    // Закон (§7 «ОДИН РЕЕСТР ФРАКЦИЙ», DOD п.6): на вопрос «чей это зверь»
+    // отвечает ОДНА ступень — строка вида, колонкой `wildFaction`. До M-39
+    // над ней стояла строковая колонка `spawnFaction` ВИДА МЕСТА, и она
+    // побеждала: у шпиля `faunaHabitat = kLandmarkFaunaGround`, то есть его
+    // дикие ролы — обычные звери склона, и колонка штамповала их
+    // Демоническими Ордами. Ровно ту двусмысленность «гарнизон или дичь»
+    // landmark_registry.h объявлял убитой тремя строками выше колонки.
+    // Знамя места достаёт до его ТОЛПЫ и ГАРНИЗОНА (это его население) и не
+    // достаёт до зверя на холме.
+    {
+        sm::SpawnContext ruinCell{};
+        ruinCell.biome = sm::Biome::Meadow;
+        ruinCell.landmark = sm::LandmarkType::Ruin;
+        ruinCell.danger = 128;   // середина руинной полосы реестра (51..229)
+        int picks = 0, nonDemon = 0, mismatched = 0;
+        for (std::uint32_t s = 0; s < 256u; ++s) {
+            std::uint32_t rngState = 0xA11CE000u ^ s;
+            for (const sm::FaunaPick& p : sm::roll_spawns(ruinCell, rngState)) {
+                ++picks;
+                // Ответ РОВНО тот, что сказала строка вида. Это не копия
+                // продакшен-логики: утверждается тождество двух ЧИТАТЕЛЕЙ
+                // одной колонки, а прежний код их разводил.
+                if (p.factionId != sm::npc_def(p.entry->type).wildFaction) {
+                    ++mismatched;
+                }
+                if (std::string_view(p.factionId) != "demons") ++nonDemon;
+            }
+        }
+        CHECK(picks > 0, "a ruin cell really does roll wild heads");
+        CHECK(mismatched == 0,
+              "a wild roll wears its OWN row's banner — no place-kind "
+              "override above it");
+        // НЕГАТИВНЫЙ КОНТРОЛЬ: 35 % веса руинного пула несут строки с
+        // wildFaction="wildlife" (мера: разбор habitat/weight/wildFaction по
+        // tables/npc.h, дерево m39-faction, 2026-09-28 — 20 из 57). Пока
+        // колонка вида жила, ВСЯКАЯ из них выходила демоном, и этот счётчик
+        // был бы нулём. Возврат override красит строку.
+        CHECK(nonDemon > 0,
+              "a ruin's vermin stay vermin: the dead city does not conscript "
+              "rats into the Demonic Hordes");
+        std::printf("fauna_registry_test: ruin picks=%d non-demon=%d\n",
+                    picks, nonDemon);
+    }
+
     std::printf("fauna_registry_test: catalog=%d entries\n", n);
     return sm::test::report("fauna_registry_test");
 }

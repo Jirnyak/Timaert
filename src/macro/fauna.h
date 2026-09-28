@@ -113,8 +113,9 @@ struct SpawnContext {
 struct FaunaPick { const FaunaEntry* entry; const char* factionId; };
 
 // Roll a cell's wild population by the law. Count comes from the place's
-// counts row; faction comes from the landmark's spawnFaction column when it
-// names one (a ruin's wolves ARE demons), else the row's own.
+// counts row; faction comes from the species row's own wildFaction and from
+// nowhere else — a wild roll belongs to the LAND (M-39 killed the place-kind
+// override that used to dress a spire's slope deer as demons).
 std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
                                    std::uint32_t& rngState);
 

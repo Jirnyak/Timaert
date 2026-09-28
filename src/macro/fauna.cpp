@@ -163,12 +163,15 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
     const int count = int(counts.minCount)
         + int(std::floor(r.next_f01() * float(span)));
 
-    // The landmark's own creatures wear its colours (spawnFaction column of
-    // the place registry — a ruin's wolves ARE demons); open land raises the
-    // spawn law's OWN banner (wildFaction column above). The species row says
-    // nothing about faction — a mob is a clean NPC, the spawner dresses it.
-    const char* placeFaction = landmark_def(ctx.landmark).spawnFaction;
-
+    // A wild roll belongs to the LAND, and the land's answer is the species
+    // row's own wildFaction — one rung, no place column above it. (M-39: the
+    // registry's spawnFaction used to override this for a ruin and a spire,
+    // which is how a spire's slope deer became Demonic Hordes — the very
+    // garrison-vs-game ambiguity landmark_registry.h claimed to have killed.
+    // A place's banner reaches its CROWD and its GARRISON, which are its
+    // population; it does not reach the game on the hillside. The demons of a
+    // ruin still roll demons because 18 of the 22 rows that a ruin or spire
+    // can draw carry wildFaction="demons" themselves.)
     std::uint64_t total = 0;
     std::uint32_t w[std::size_t(NPCType::Count)] = {};
     for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
@@ -189,9 +192,7 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
             roll -= double(w[i]);
             if (roll <= 0.0) {
                 const NpcTypeDef& row = kNpcTypeDefs[i];
-                out.push_back({&row, placeFaction
-                                         ? placeFaction
-                                         : npc_def(NPCType(i)).wildFaction});
+                out.push_back({&row, npc_def(NPCType(i)).wildFaction});
                 break;
             }
         }
