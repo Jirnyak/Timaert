@@ -636,35 +636,15 @@ int value_of(const ItemRef& item) noexcept;
 // plain.
 const char* affix_suffix(const ItemRef& item) noexcept;
 
-// ── THE corpse-loot context (owner's design, 2026-08-27) ──────────────────
-// «контекст от таблицы мобов × зоны сложности (0..255) × богатство ландмарка
-// /экономика, и расширяемо — в принципе может быть ещё что-то».
-//
-// So loot is the door's own idiom (CANON S6): a PRODUCT of contributions, one
-// per world system, each of them 1.0 and silent when its system has nothing
-// to say. This struct grows by a FIELD — the weather, the dark field, a
-// place's live stockpile — and no caller signature changes, exactly as
-// MacroWorld grows (macro/macro_world.h). That is why it is a struct and not
-// three arguments.
-struct CorpseLootContext {
-    // The danger byte of the cell the body fell in (macro/zones.h, the 0..255
-    // continuum). Deep country pays better — and this is NOT the buried
-    // autolevel CANON S12 killed: that one multiplied HP and damage on a body
-    // AFTER it was picked. This multiplies what it CARRIES, which is economy,
-    // and it is visible in the loot rather than hidden in a fight.
-    std::uint8_t danger = 0;
-    // The wealth of the place standing on that cell (landmark_registry
-    // wealthMul; 1.0 = open land). When the honest-loan track lands (CANON
-    // S5), this is where the landmark's live stockpile answers instead.
-    float wealthMul = 1.0f;
-};
-
 // МОНЕТЫ НА ТРУПЕ БОЛЬШЕ НЕ РОЖДАЮТСЯ (M-139, вердикт владельца 2026-09-26).
 // Здесь стояла `generate_loot_gold` — кошелёк строки × опасность клетки ×
 // богатство места — и две её константы (`kDangerLootGain`, `kLootLevelGain`),
-// у которых других читателей не было. Контекст выше ЖИВ: он кормит силу
-// аффиксов предметного лута (`affix_power`), то есть отвечает на «насколько
-// богата вещь», а не «сколько монет из воздуха».
+// у которых других читателей не было. Контекст ЖИВ и переехал в свою дверь:
+// `LootContext@src/macro/loot_pool.h`. Здесь он звался `CorpseLootContext` и
+// не имел НИ ОДНОГО читателя во всём дереве — контекст без двери, которая его
+// читает, то есть ровно та колонка-сирота, которую запрещает DOD п.9. Три
+// его колонки сходятся в `affix_power` и отвечают на «насколько богата вещь»,
+// а не «сколько монет из воздуха».
 // (generate_settlement_inventory is gone: the unified-container moment it was
 // kept for arrived — landmark stocks are seeded by the ECONOMY's own law,
 // econ_day.h seed_landmark_inventory, from the one commodity dictionary.)

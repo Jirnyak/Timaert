@@ -1130,6 +1130,15 @@ timaert_test(subworld_spawn_parity_test
 timaert_test(rpg_loot_test
     SOURCES
         src/macro/items.cpp)
+# РЕЖИССЁР ЛУТА: стоимость на входе, вещи на выходе. Дверь агностична — она не
+# знает ни мира, ни сцены, ни чья это казна, — поэтому свидетелю хватает самой
+# двери и таблицы объектов, которую она читает. Ни SDL2, ни EnTT, ни состояния
+# мира: ровно тот набор, что и у rpg_loot_test, плюс сам режиссёр.
+
+timaert_test(loot_pool_test
+    SOURCES
+        src/macro/items.cpp
+        src/macro/loot_pool.cpp)
 # Pure targeting primitive (Inc 5 possession groundwork). Links only the new
 # targeting TU + EnTT — no engine/render code, so it stays independent of the
 # subworld renderer.
