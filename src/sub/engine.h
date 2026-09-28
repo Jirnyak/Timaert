@@ -201,12 +201,10 @@ public:
     // farmed by leaving and coming back. False when there is nothing to
     // take. Public because the harness searches without a reticle.
     bool search_chest(const Structure& chest);
-    // Drink at a well: pays in the ONE currency travel spends. A draught is
-    // worth an hour of rest — the same fraction of the bar the rest law
-    // grants per game hour (macro/attributes.h), so a well shortens a journey
-    // by exactly as much as sitting down for an hour would, and no law is
-    // invented to say it. False when the bar is already full.
-    bool drink_from_well();
+    // `drink_from_well` СНЕСЕНА 2026-09-28 (вердикт владельца: «колодец там sp
+    // вроде восстанваливет это кал внесистмемный»). Возврат SP долей часа
+    // отдыха не выводился ни из одной системы мира; проп остался декорацией,
+    // и колонка `InteractId` его строки теперь `None` (sub/map_data.h).
     // Read a signpost: names the place THE SIGN stands in (its own macro
     // cell, resolved from the prop like the orb's). Costs nothing, changes
     // nothing, and proves the interaction table carries flavour as cheaply as
@@ -701,7 +699,11 @@ private:
     void refresh_window_step_weights();
     GameState*          gs_       = nullptr;
     const TerrainData*  terrain_  = nullptr;
-    const FeatureLayer* features_ = nullptr;
+    // `features_` СНЕСЁН 2026-09-28 (наряд M-152): член присваивался в двух
+    // входах, обнулялся в двух сбросах и НЕ ЧИТАЛСЯ НИ РАЗУ. Колонка без
+    // читателя — дефект по DOD п.9, а не мелочь: следующий принимает её за
+    // закон и пишет под неё код. Фичи окну по-прежнему нужны, но их читает
+    // `cell_facts` через конверт `mw_`, у которого они и живут.
     ecs::World*         ecs_      = nullptr;
     EventBus*           bus_      = nullptr;
     const ZoneLayer*    zones_    = nullptr;

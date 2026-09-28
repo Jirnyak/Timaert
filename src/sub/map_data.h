@@ -408,9 +408,11 @@ inline Biome ground_biome(const CellContext& ctx) {
 // ── What a prop DOES when the player presses E on it ────────────────────────
 // The world is built in two passes: generators place PROPS (geometry — trees,
 // walls, houses, doors, lanterns), then this one column says which of them are
-// also INTERACTIVE and with what verb. Adding "drink from the well" is a row
-// in the prop table plus a case in the one dispatcher — never a new system, and
-// never a special case in the engine's input path.
+// also INTERACTIVE and with what verb. Adding "read the board" is a row in the
+// prop table plus a case in the one dispatcher — never a new system, and never
+// a special case in the engine's input path. The reverse is as cheap: the well
+// lost its verb in 2026-09-28 by having this column set back to None, and the
+// stonework it is went on standing without a line of engine code changing.
 enum class InteractId : std::uint8_t {
     None = 0,
     // Step through into the interior behind this door (sub/dgn). The prop's
@@ -421,10 +423,12 @@ enum class InteractId : std::uint8_t {
     // The corpse of something you killed — not a composite prop but an ECS
     // body; it shares the verb so one prompt and one keypress serve both.
     Loot,
-    // Drink: the well at the heart of a village. It pays in the ONE currency
-    // travel spends — stamina — because the world already prices a journey
-    // in SP and a drink is what shortens one.
-    Drink,
+    // КОЛОНКА `Drink` СНЕСЕНА 2026-09-28 (вердикт владельца: «колодец там sp
+    // вроде восстанваливет это кал внесистмемный»). Глоток из колодца возвращал
+    // SP долей часа отдыха — механика, не выведенная ни из одной системы мира,
+    // и единственный её носитель был `Structure::Well`. Проп остался солидом и
+    // декорацией города, а строка словаря без носителя не лежит (ЗАКОН СЛОВАРЯ
+    // п.3): глагол, который ничего не делает, следующий примет за закон.
     // Read: a signpost. It costs nothing and changes nothing; it tells you
     // where you are. Extensibility is not only about mechanics: a verb with
     // no consequence proves the table carries flavour as cheaply as force.
@@ -455,7 +459,8 @@ struct InteractRow {
     // «Enter» у двери в двух шагах, потому что труп судился раньше пропа.
     // Шрам в довесок: одинаковый 5-тайловый предел у Search/Drink/Read прятал
     // расхождение таблицы с enum (колодец печатал «Search»), — предел,
-    // одинаковый у всех строк, колонкой не был.
+    // одинаковый у всех строк, колонкой не был. (`Drink` с тех пор снесён —
+    // см. перечисление выше; шрам оставлен как шрам.)
     // СКОЛЬКО ВРЕМЕНИ ЗАНИМАЕТ ЭТО ДЕЙСТВИЕ, в секундах базы (CANON S13:
     // «в субмире всё — способность, и у всего есть рекавери», вердикт
     // владельца 2026-09-19). База — колонка ЗДЕСЬ; делит её дверь
@@ -463,7 +468,7 @@ struct InteractRow {
     // так что ловкий герой шарит по сундуку быстрее — и ни одной новой
     // формулы ради этого не написано.
     // НОЛЬ — честный частный случай: пройти в дверь времени не стоит, а
-    // обыскать тело или напиться из колодца — стоит.
+    // обыскать тело или прочесть табличку — стоит.
     float actSeconds;
 };
 // Indexed by InteractId; the static_assert refuses a drifted table.
@@ -478,7 +483,6 @@ inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
     // for the word to name.
     { InteractId::Stairs, "Climb",        0.0f},
     { InteractId::Loot,   "Loot",         1.0f},
-    { InteractId::Drink,  "Drink",        1.5f},
     { InteractId::Read,   "Read",         2.0f},
     { InteractId::Search, "Search",       1.5f},
     { InteractId::Learn,  "Learn spell",  3.0f},
@@ -767,11 +771,14 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   kWalkTileTransparent},
     // Well: waist-high stonework you walk around (solid), drawn as a round
     // curb because that is what a well IS — the cylinder pass already has
-    // the shape, so this costs no geometry.
+    // the shape, so this costs no geometry. NO VERB since 2026-09-28: the
+    // draught it used to pay in SP was outside every system of the world
+    // (вердикт владельца), and what a well does for a settlement that has
+    // no thirst law yet is STAND in it.
     { Structure::Well, "",     1.6f, 1.2f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Well,
-                  InteractId::Drink, DungeonRef::None, false, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // Sign: a board at head height on a thin post. Not solid — you read it,
     // you do not walk into it.

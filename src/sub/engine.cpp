@@ -605,7 +605,6 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
         mw_ = {};
         gs_ = nullptr;
         terrain_ = nullptr;
-        features_ = nullptr;
         ecs_ = nullptr;
         bus_ = nullptr;
         zones_ = nullptr;
@@ -617,9 +616,12 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     }
 
     // The envelope, captured whole; the named pointers are its views (see
-    // engine.h) and are assigned HERE and in the reset paths only.
+    // engine.h) and are assigned HERE and in the reset paths only. The feature
+    // column has no view of its own: the gate above still demands it, because
+    // the window's `cell_facts` reads it THROUGH `mw_` — and a named member
+    // nobody read was simply a column with no reader (DOD п.9, снесён M-152).
     mw_ = mw;
-    gs_ = mw_.gs; terrain_ = mw_.terrain; features_ = mw_.features;
+    gs_ = mw_.gs; terrain_ = mw_.terrain;
     ecs_ = mw_.world; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
     ecs::World& ecs = *ecs_;   // shadows the namespace, as the old parameter did
@@ -1493,7 +1495,14 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
     // lord until a full leave/enter. The door is idempotent now (standing
     // projections are skipped and count against the same cap), so a recenter
     // simply asks it again for the new window. Same salt shape as enter().
-    if (gs_) {
+    //
+    // AN INTERIOR OWNS ITS OWN POPULATION — the same gate `spawn_cell` above
+    // already carries, and it was missing HERE (наряд M-152). A wrapped
+    // pocket (the prologue, `wrapCells = 3`) re-centres with every torus loop,
+    // and its window coordinates are VIRTUAL — so every lap of the prologue
+    // road projected the lords standing on REAL macro cells into the pocket,
+    // by the virtual centre. The macromap has no business in a pocket at all.
+    if (gs_ && sceneKind_ != SceneKind::Dungeon) {
         const int cx = mgr_.center_cx();
         const int cy = mgr_.center_cy();
         project_macro_npcs_into_subworld(*ecs_, mgr_, cx, cy,
@@ -2252,14 +2261,27 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     // the save whole (v36) so it survives load, and thins the map sprite
     // (TreeLayer.revision drives the u_treeMap refresh). Other kinds settle
     // their own rows as they grow them (crops → Field Inc F3).
+    //
+    // …BUT A DOORLESS POCKET OWES NO CELL (`enter_pocket_scene`, and the same
+    // expression `leave()` judges by). Its `doorCx/doorCy` are 0 as a virtual
+    // anchor, so `mcx/mcy` here are window coordinates that mean nothing on
+    // the map: felling the prologue's roadside tree debited — and read — a
+    // REAL square on the far edge of the torus (`cell_of` folds −1 by the
+    // mask, so it was silent). Nothing done in a pocket has a macro meaning
+    // AT ALL: «след в грязи для макромира не существует» (ЗАКОН ШВА). So the
+    // ledger is not asked, and no representation is invented for it. The loot
+    // below is paid as always — the axe still works, the world just never
+    // hears about it.
     int prev = 0;
-    if (victim.kind == Structure::Tree && treeLayer_) {
+    const bool doorlessPocket =
+        sceneKind_ == SceneKind::Dungeon && !dungeon_.hasDoor;
+    if (!doorlessPocket && victim.kind == Structure::Tree && treeLayer_) {
         prev = int(treeLayer_->at(mcx, mcy));
         MacroWorld macroWorld = mw_;
         macro_stock_apply(macroWorld, MacroStock::TreeCount,
                           MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
                           -1);
-    } else if (victim.kind == Structure::Crop) {
+    } else if (!doorlessPocket && victim.kind == Structure::Crop) {
         // One stand cut = one unit off the cell's crop row (the harvest
         // scar): re-entering the cell replants natural yield minus the scar,
         // and the world clock regrows it (crop_daily_regrow).
@@ -2641,8 +2663,6 @@ bool SubworldEngine::interact() {
         switch (target.id) {
             case InteractId::Search:
                 return search_chest(*prop);
-            case InteractId::Drink:
-                return drink_from_well();
             case InteractId::Read:
                 return read_sign(*prop);
             case InteractId::Door:
@@ -2865,6 +2885,15 @@ std::uint16_t SubworldEngine::ground_faction_at(float fx, float fy) const {
 // (the door's performance contract said never; now it holds).
 void SubworldEngine::refresh_window_step_weights() {
     winStepWeightValid_ = false;
+    // AN INTERIOR HAS NO MACRO WINDOW TO ASK (ЗАКОН ДВУХ МИРОВ п.4, наряд
+    // M-152 R2). This used to resolve NINE real cells for a dungeon too, so
+    // walking a house floor was priced by the biome and the canopy of the
+    // street outside — the heaviest of the interior's seven macro reads, and
+    // wrong in the only place it mattered. The weights stay INVALID, so
+    // `ground_travel_weight_at` answers 0: a module's floor is not a thicket,
+    // and that is an ANSWER, not a hole. Same shape as `scene_sea_level`:
+    // in a dungeon the scene's own row decides, in the world the terrain does.
+    if (sceneKind_ == SceneKind::Dungeon) return;
     if (!gs_ || !terrain_ || terrain_->width <= 0 || terrain_->height <= 0) {
         return;
     }
@@ -3542,7 +3571,6 @@ void SubworldEngine::leave(bool force) {
     mw_ = {};
     gs_ = nullptr;
     terrain_ = nullptr;
-    features_ = nullptr;
     ecs_ = nullptr;
     bus_ = nullptr;
     zones_ = nullptr;
@@ -3677,7 +3705,13 @@ void SubworldEngine::enter_pocket_scene(const MacroWorld& mw, EventBus& bus,
 
 void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
                                          EventBus& bus) {
-    if (!mw.gs || !mw.terrain || !mw.features || !mw.world) return;
+    // NO `mw.features` HERE any more (наряд M-152): an interior's ground comes
+    // from the synthetic resolver below, and the one thing that used to reach
+    // the feature column from in here — the nine-cell step weight — is gone
+    // (`refresh_window_step_weights` returns at the door for a dungeon). The
+    // three pointers left are the ones the body actually spends: the seed and
+    // the clock (`gs`), the scene's plane (`terrain`), the bodies (`world`).
+    if (!mw.gs || !mw.terrain || !mw.world) return;
     statusLine_.clear();
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
@@ -3696,7 +3730,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // The envelope, whole — the interior's ledgers (residents borrowed from
     // the town, vermin from the fauna stock) pay through mw_ like any scene.
     mw_ = mw;
-    gs_ = mw_.gs; terrain_ = mw_.terrain; features_ = mw_.features;
+    gs_ = mw_.gs; terrain_ = mw_.terrain;
     ecs_ = mw_.world; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
 
@@ -3916,26 +3950,6 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     }
 }
 
-bool SubworldEngine::drink_from_well() {
-    if (!active_ || !gs_ || !ecs_) return false;
-    ecs::Pools* cs = player_pools(*ecs_);
-    if (!cs) return false;
-    if (cs->sp >= cs->maxSp) {
-        set_status("You are not thirsty.");
-        return false;
-    }
-    // An hour of rest, taken standing: the rest law's own per-hour fraction
-    // of the bar (kRestRegenPctPerHour) — an INTERACTION, not a regen (the
-    // subworld has none, owner 2026-09-10) — so the well cannot be a better
-    // rest than resting and cannot be a worse one.
-    const int gain = std::max(1, int(float(cs->maxSp) * kRestRegenPctPerHour));
-    cs->sp = std::min(cs->maxSp, cs->sp + gain);
-    char msg[64];
-    std::snprintf(msg, sizeof(msg), "You drink deep. +%d SP", gain);
-    set_status(msg);
-    return true;
-}
-
 bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     if (!active_ || !gs_ || !bus_ || !terrain_
         || sceneKind_ != SceneKind::Overworld) {
@@ -4070,7 +4084,12 @@ bool SubworldEngine::search_chest(const Structure&) {
 }
 
 bool SubworldEngine::try_take_dungeon_stairs() {
-    if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_ || !terrain_) {
+    // `gs_` is real (the cellar roll below reads `gs_->worldSeed`); `terrain_`
+    // was NOT — this path takes its heights from the renderer's heightfield
+    // and never touched the macro map. A gate on a pointer the body does not
+    // use is a refusal with no reason, and it made the census read as if a
+    // staircase needed the world (наряд M-152).
+    if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_) {
         return false;
     }
     const DungeonRef ref = dungeon_.ref;
@@ -4186,7 +4205,10 @@ bool SubworldEngine::debug_take_stairs(bool up) {
 }
 
 bool SubworldEngine::try_exit_dungeon() {
-    if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_ || !terrain_) {
+    // Same as the stairs above: `gs_` is real (the macro player is landed on
+    // the door's cell below), `terrain_` was a gate on nothing — the crown
+    // probe asks the renderer's heightfield and the solid index, not the map.
+    if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_) {
         return false;
     }
     // A doorless pocket has no walked exit either — the scene ends by the

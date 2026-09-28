@@ -2623,32 +2623,25 @@ bool run_dungeon_house_smoke(App& app) {
         const float want = std::atan2(door.y - standY, door.x - standX);
         app.subworld.rotate_camera(want - app.subworld.cam_yaw(), 0.0f);
     };
-    // The non-portal verbs, proving the table carries more than doors: a
-    // well pays in the one currency travel spends, a sign pays in words.
-    // Both are exercised through the SAME dispatch a keypress runs. The tick
-    // is load-bearing: the aim reads the prop cache, which the scene builds
-    // on its first tick.
+    // The non-portal verb, proving the table carries more than doors: a sign
+    // pays in words, through the SAME dispatch a keypress runs. The tick is
+    // load-bearing: the aim reads the prop cache, which the scene builds on
+    // its first tick.
+    //
+    // THE WELL'S HALF OF THIS WAS REMOVED WITH ITS MECHANIC (2026-09-28). It
+    // held two checks — «the well answers E» and «drinking returns stamina» —
+    // and the law the first of them really guarded is «E reaches a prop», which
+    // has a second witness three lines down in the board. So the well keeps
+    // exactly the assertion that is still about the world: a settlement
+    // BUILDS one (generation), which was never about interaction at all.
     app.subworld.tick(0.016f);
     int wells = 0, signs = 0;
-    int spBefore = 0, spAfter = 0;
-    bool drank = false, readSign = false;
+    bool readSign = false;
     {
-        const sm::sub::Structure* well = nullptr;
         const sm::sub::Structure* sign = nullptr;
         for (const auto& s : app.subworld.mgr().structures()) {
-            if (s.kind == sm::sub::Structure::Well) { ++wells; if (!well) well = &s; }
+            if (s.kind == sm::sub::Structure::Well) ++wells;
             if (s.kind == sm::sub::Structure::Sign) { ++signs; if (!sign) sign = &s; }
-        }
-        if (well != nullptr) {
-            // Spend some stamina first, or a full bar makes the well refuse —
-            // which is itself correct, and not what we are testing here.
-            player_pools(app).sp =
-                player_pools(app).maxSp / 2;
-            spBefore = player_pools(app).sp;
-            app.subworld.set_player_pos(well->x, well->y - 2.0f);
-            app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
-            drank = app.subworld.interact();
-            spAfter = player_pools(app).sp;
         }
         if (sign != nullptr) {
             app.subworld.set_player_pos(sign->x, sign->y - 2.0f);
@@ -2680,8 +2673,18 @@ bool run_dungeon_house_smoke(App& app) {
     }
 
     const int tagsBefore = playerTags();
+    // ── THE STREET'S PRICE, TAKEN BEFORE THE DOOR (наряд M-152 R2) ───────
+    // What a step costs is a question about the MACRO CELL — biome, feature,
+    // canopy (`refresh_window_step_weights`). On a street that is the honest
+    // answer; inside a house it was the SAME answer, because the door resolved
+    // nine real cells for an interior too, and the floor of a room got priced
+    // by the wood outside its wall. Both sides are sampled here so the
+    // assertion has two ends: > 0 out on the street (the door still works)
+    // and exactly 0 in the room (the interior has no macro window to ask).
+    const float streetStepWeight = app.subworld.player_ground_travel_weight();
     const bool entered = app.subworld.interact();
     const bool inD1 = app.subworld.in_dungeon();
+    const float interiorStepWeight = app.subworld.player_ground_travel_weight();
     const int tagsIn = playerTags();
     const std::uint32_t h1 = inD1 ? hashTiles() : 0u;
     app.subworld.tick(0.016f);
@@ -2974,7 +2977,7 @@ bool run_dungeon_house_smoke(App& app) {
                  "pop=%d->%d storeys=%d/%d/%d/%d/%d vermin=%d fauna=%d->%d "
                  "floorTile=%d leaveRefused=%d chests=%d measured=%d "
                  "store=%d->%d bag=%d->%d rep=%d->%d "
-                 "wells=%d signs=%d drank=%d sp=%d->%d read=%d\n",
+                 "wells=%d signs=%d read=%d stepW=%.3f->%.3f\n",
                  entered ? 1 : 0, entered2 ? 1 : 0, inD1 ? 1 : 0, inD2 ? 1 : 0,
                  exited ? 1 : 0, exited2 ? 1 : 0, outOk ? 1 : 0,
                  tagsBefore, tagsIn, tagsOut, h1, h2, residents,
@@ -2983,8 +2986,8 @@ bool run_dungeon_house_smoke(App& app) {
                  vermin, faunaBefore, faunaAfter, floorTile,
                  leaveRefused ? 1 : 0, chestProps, measuredChest ? 1 : 0,
                  storeBefore, storeAfter, bagBefore, bagAfter,
-                 repBefore, repAfter, wells, signs, drank ? 1 : 0,
-                 spBefore, spAfter, readSign ? 1 : 0);
+                 repBefore, repAfter, wells, signs, readSign ? 1 : 0,
+                 double(streetStepWeight), double(interiorStepWeight));
     std::fflush(stderr);
 
     // TWENTY-EIGHT facts about six unrelated systems — the door, the town's
@@ -3070,15 +3073,29 @@ bool run_dungeon_house_smoke(App& app) {
     }
 
     // ── THE WELL AND THE BOARD ───────────────────────────────────────────
-    // A settlement keeps both, and both answer E: the well in stamina, the
-    // board in words.
+    // A settlement keeps both. The board also ANSWERS E — the law here is «E
+    // reaches a prop and its row decides the verb», and the board is now its
+    // only witness in this scenario: the well's own draught was struck out as
+    // unsystematic (вердикт владельца 2026-09-28), so the well is asserted as
+    // what it still is — a thing the generator BUILDS.
     SMOKE_CHECK(app, wells >= 1, "a settlement keeps a well");
     SMOKE_CHECK(app, signs >= 1, "a settlement keeps a board");
-    SMOKE_CHECK(app, drank, "the well answers E");
-    if (drank) {
-        SMOKE_CHECK(app, spAfter > spBefore, "drinking returns stamina");
-    }
     SMOKE_CHECK(app, readSign, "the board answers E in words");
+
+    // ── AN INTERIOR IS NOT PRICED BY THE STREET (наряд M-152 R2) ─────────
+    // Two ends, and the first one IS the negative control: if the step-weight
+    // door were dead the street would answer 0 too, and the interior's 0 would
+    // prove nothing. So the street must answer a real cost, and the room must
+    // answer none — «пол модуля не канопея», and 0 there is an ANSWER, not a
+    // hole (ЗАКОН ДВУХ МИРОВ п.4). Before 2026-09-28 both ends read the same
+    // number, resolved from nine REAL macro cells while the player stood in a
+    // room that has no macro window at all.
+    SMOKE_CHECK(app, streetStepWeight > 0.0f,
+                "a street step is priced by its macro cell — the weight door "
+                "is alive (and this is the control for the zero below)");
+    SMOKE_CHECK(app, interiorStepWeight == 0.0f,
+                "an interior step is NOT priced by the street outside: a "
+                "dungeon has no macro window to ask, so the weight is 0");
     // The scenario RAN; the verdict is in the counter, not in this bool.
     return true;
 }
@@ -3475,6 +3492,36 @@ bool run_prologue_road_smoke(App& app) {
     }
     const bool torusSame = h1 == h2;
 
+    // ── THE POCKET OWES THE WORLD NOTHING (наряд M-152, 2026-09-28) ──────
+    // A doorless pocket has no macro cell: `enter_pocket_scene` anchors it at
+    // doorCx = doorCy = 0 as a VIRTUAL centre, so the window coordinates a
+    // felled prop reports (`-1…1` here) name no square on the map. Until this
+    // gate the axe still paid the ledger with them — and the bug was SILENT,
+    // because `cell_of` folds −1 by the mask: the trees came off a real cell on
+    // the OPPOSITE EDGE OF THE TORUS, a thousand cells from anything the player
+    // had seen. Nothing done in a pocket has a macro meaning at all («след в
+    // грязи для макромира не существует»), so the whole forest layer must be
+    // byte-identical across a felling. Asked of the WHOLE layer, not of one
+    // cell, precisely because the wrong cell is the one nobody would look at.
+    auto forest_sum = [&]() {
+        std::uint64_t s = 0;
+        for (const std::uint16_t v : app.treeLayer.data) s += v;
+        return s;
+    };
+    const std::uint64_t forestBefore = forest_sum();
+    const std::uint32_t forestRevBefore = app.treeLayer.revision;
+    const int bagWoodBefore = player_bag(app).count("wood");
+    // The prologue module grows its own wood by its own constant (every
+    // variant is scattered at kTreeCount, sub/dgn/prologue_road.cpp), so a
+    // tree in this window is the MODULE'S law and not this seed's luck — but
+    // the failure still says so out loud rather than passing quietly.
+    const sm::sub::Structure::Kind kTreeOnly = sm::sub::Structure::Tree;
+    const bool pocketFelled = app.subworld.harvest_prop_near_player(
+        float(sm::sub::kFullSize) * 2.0f, nullptr, nullptr, nullptr,
+        &kTreeOnly);
+    const std::uint64_t forestAfter = forest_sum();
+    const int bagWoodAfter = player_bag(app).count("wood");
+
     // THE RESCUE (owner 2026-09-09): any death in the prologue scene is a
     // story beat, not a game over. Kill the player's BODY through the one
     // damage door; the runtime intercept must tear the pocket down, stand
@@ -3541,13 +3588,18 @@ bool run_prologue_road_smoke(App& app) {
                  "[smoke] prologue_road entered=%d onRoad=%d tile=%d "
                  "ambush=%d/%.0fm->%.0fm hp=%d leaveRefused=%d noExitPoint=%d "
                  "bodies=%d->%d wrapped=%d hash=%08x/%08x rescued=%d "
-                 "anchored=%d witchOpen=%d mapHeld=%d mapOpened=%d\n",
+                 "anchored=%d witchOpen=%d mapHeld=%d mapOpened=%d "
+                 "pocketFelled=%d wood=%d->%d forest=%llu->%llu rev=%u->%u\n",
                  entered ? 1 : 0, onRoad ? 1 : 0, ftile,
                  ambushers, double(nearestAmbush), double(nearestAfter),
                  ambushMaxHp, leaveRefused ? 1 : 0, noExitPoint ? 1 : 0,
                  bodiesBefore, bodiesAfter, wrapped ? 1 : 0, h1, h2,
                  rescued ? 1 : 0, anchored ? 1 : 0, witchOpen ? 1 : 0,
-                 mapHeldAtWitch ? 1 : 0, mapOpened ? 1 : 0);
+                 mapHeldAtWitch ? 1 : 0, mapOpened ? 1 : 0,
+                 pocketFelled ? 1 : 0, bagWoodBefore, bagWoodAfter,
+                 static_cast<unsigned long long>(forestBefore),
+                 static_cast<unsigned long long>(forestAfter),
+                 forestRevBefore, app.treeLayer.revision);
     std::fflush(stderr);
 
     // Sixteen facts about four systems — the pocket's ground, the ambush's
@@ -3583,6 +3635,22 @@ bool run_prologue_road_smoke(App& app) {
     SMOKE_CHECK(app, mapOpened,
                 "the moment the prologue lets go, the same steps on the same "
                 "ground DO reveal it");
+
+    // ── THE POCKET PAYS THE PLAYER, NEVER THE MAP (наряд M-152) ──────────
+    // `pocketFelled` is the control, and it is MANDATORY: without a felling
+    // the equality below is vacuous, and a witness that may not fire is a
+    // dead detector. The wood proves the axe still works — only the macro
+    // half is gone, which is the whole point of the ruling.
+    SMOKE_CHECK(app, pocketFelled,
+                "the pocket's own wood is fellable — the module scatters it "
+                "by its own constant, so this is its law, not luck");
+    SMOKE_CHECK(app, bagWoodAfter > bagWoodBefore,
+                "felling in a pocket still pays the PLAYER his wood");
+    SMOKE_CHECK(app, forestAfter == forestBefore
+                     && app.treeLayer.revision == forestRevBefore,
+                "...and pays the MAP nothing: a doorless pocket owes no cell, "
+                "so not one count of the world's forest moves (it used to "
+                "debit the far side of the torus, silently)");
     return true;
 }
 
