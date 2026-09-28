@@ -353,7 +353,7 @@ namespace sm {
 // «теперь только есть благополучие и оно даёт рост») — настроение, реестр
 // его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
 // seasonWellbeing и needDebt.
-constexpr int kSaveVersion = 113;   // v113: M-116 — снесены ветки квестов без производителя контента, с ними колонки cellX/cellY, hours*, Reward::itemId/event
+constexpr int kSaveVersion = 114;   // v114: снята колонка-сирота Objective::zoneRadius — писалась и ездила в сейве, не читалась ничем
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

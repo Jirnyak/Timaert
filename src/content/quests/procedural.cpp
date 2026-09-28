@@ -239,7 +239,6 @@ bool gen_destroy(const QuestGenCtx& ctx, Quest& q) {
     o.count = count;
     o.ix = zoneX;
     o.iy = zoneY;
-    o.zoneRadius = 30.0f;
     q.objectives.push_back(o);
 
     add_gold_xp_rewards(q, gold, 0.6f);

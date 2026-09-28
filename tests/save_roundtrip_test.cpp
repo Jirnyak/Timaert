@@ -527,7 +527,6 @@ sm::Quest make_quest() {
     objective.npcType = 11;
     objective.count = 3;
     objective.killed = 1;
-    objective.zoneRadius = 2.5f;
     q.objectives.push_back(objective);
 
     sm::Reward reward{};
@@ -1067,7 +1066,7 @@ void run_roundtrip() {
         if (o.subX != 512 || o.subY != 640
             || o.itemId != "itm_bread" || o.quantity != 4
             || o.targetSettlementId != 9 || o.npcType != 11
-            || o.count != 3 || o.killed != 1 || o.zoneRadius != 2.5f) {
+            || o.count != 3 || o.killed != 1) {
             FAIL_BAIL("objective fields lost");
         }
     }

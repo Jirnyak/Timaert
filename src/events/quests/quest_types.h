@@ -48,7 +48,8 @@ namespace sm
         int targetSettlementId = 0;
         int npcType = 0;
         int count = 0, killed = 0;
-        float zoneRadius = 0;
+        // (`zoneRadius` снят 2026-09-28: писался генератором и ездил в сейве,
+        //  но не читался НИ ОДНОЙ строкой логики — колонка-сирота, DOD п.9.)
     };
 
     // ТРИ РОДА НАГРАДЫ, ПО ТОМУ ЖЕ ПРАВИЛУ. Снято 2026-09-28 (M-116):

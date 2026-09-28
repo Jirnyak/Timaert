@@ -917,7 +917,6 @@ void write_objective(Writer& w, const Objective& o) {
     w.pod(o.npcType);
     w.pod(o.count);
     w.pod(o.killed);
-    w.pod(o.zoneRadius);
 }
 
 void read_objective(Reader& r, Objective& o) {
@@ -934,7 +933,6 @@ void read_objective(Reader& r, Objective& o) {
     r.pod(o.npcType);
     r.pod(o.count);
     r.pod(o.killed);
-    r.pod(o.zoneRadius);
 }
 
 void write_reward(Writer& w, const Reward& reward) {
