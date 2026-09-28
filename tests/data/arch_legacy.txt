@@ -115,7 +115,6 @@ verdict	SKELETON.md	| два драйвера — один закон кадан
 verdict	SKELETON.md	| два потока заселения | в одной функции `spawn_cell_npcs`: население места (займ Populatio
 verdict	SKELETON.md	| знание игрока | `KnowledgeLayer::data`, байт 0/1/2 | **ПРАВДА** |
 verdict	SKELETON.md	| каждое действие смоука что-то утверждает | НЕТ: сюита 66 сценариев вычисляет 
-verdict	SKELETON.md	| канал узкий и названный | `src/sub` включает `macro/` **82 раза, 33 заголовка** (`tree_layer.h` 1
 verdict	SKELETON.md	| канвас пятен — состояние только на GPU, не сохраняемое | `stainCanvas_` 8192² RGBA8 = **256 М
 verdict	SKELETON.md	| кладбище по фенсу | `defer_destroy` (`:2464,:2497`), `collect_deferred` строго после фенса; `static_assert 
 verdict	SKELETON.md	| кросс-кадровое состояние боя пересобирается каждый тик | `crowd_`, сетки, поле, �
