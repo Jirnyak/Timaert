@@ -123,7 +123,7 @@ void test_scarcity_shape() {
         CHECK(anyGoods, "the sweep actually saw goods rows (negative control)");
         CHECK(foodFree,
               "no comfort good is spun from the hunger row — the world must "
-              "not be able to weave its bread into shirts");
+              "not be able to weave its food into shirts");
     }
     // СПРОС ЧИТАЕТ ДОЛГ: полупогашенный счёт хлеба — и спрос ровно он.
     {

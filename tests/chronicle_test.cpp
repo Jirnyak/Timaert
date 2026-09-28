@@ -327,7 +327,7 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
     CHECK(kRenownToBeNamed == most,
           "the bar IS the table: retune a row and it moves with it");
     CHECK(fact_kind_def(FactKind::Traded).baseRenown == 0,
-          "negative control: selling bread makes nobody anybody");
+          "negative control: selling food makes nobody anybody");
     // …and the partner's fame does not rub off either (owner, 2026-08-29:
     // «торговля — маленькое дело»): the victim's share is for deeds AGAINST
     // somebody, a mutual deal pays none — the kind row says so by column.
@@ -424,7 +424,7 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
     deal.amount = 999;
     chronicle_record(c, deal);
     CHECK(c.annals.size() == 2u,
-          "a famous city's grain deliveries are still deliveries: weather "
+          "a famous city's food deliveries are still deliveries: weather "
           "kinds never claim eternity");
     CHECK(fact_kind_def(FactKind::Traded).interestDays
               <= kChronicleWeatherDays,

@@ -423,7 +423,7 @@ int commodity_of_item(int itemIdx) {
 void seed_landmark_inventory(Inventory& inv, int population, bool isCity) {
     if (population <= 0) return;
     // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the
-    // first boundary (econ_debt_boundary) bills a whole season of bread and
+    // first boundary (econ_debt_boundary) bills a whole season of harch and
     // the larder pays it on the spot — a place seeded with less starts life
     // in debt and must out-produce it or bury the shortfall a season later.
     // The larder IS a season.

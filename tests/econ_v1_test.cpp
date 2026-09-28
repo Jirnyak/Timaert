@@ -72,7 +72,7 @@ void sink(void* user, const sm::EconFact& f) {
 // own composition (macro/items.h item_parts), which since 2026-09-11 IS the
 // recipe's matter (outputs are unique in v1, asserted below). The ledger
 // deliberately reads through the same door production does: a drift between
-// «что ест печь» and «из чего хлеб» is exactly what the merge killed.
+// «что ест станок» and «из чего ткань» is exactly what the merge killed.
 void inputs_for_output(int outputIdx, int madeUnits,
                        std::array<long, sm::kCommodityCount>& used) {
     const int outCatalog = sm::commodity_item_index(outputIdx);
@@ -175,12 +175,15 @@ int main() {
     }
 
     // ── 2+3. Self-play: village gathers, city crafts, both eat ──────────
-    const int grainIdx = commodity_index("food");
+    // ОДНА ПИЩЕВАЯ СТРОКА — ОДНО ИМЯ. Здесь стояли `grainIdx` и `breadIdx`,
+    // оба `commodity_index("food")`: два мёртвых существительных на один
+    // ординал, и именно они делали правдоподобной шапку «день производства
+    // печёт хлеб из зерна». Ни зерна, ни хлеба в словаре нет (M-148).
+    const int foodIdx = commodity_index("food");
     const int woodIdx = commodity_index("wood");
     const int clayIdx = commodity_index("clay");
     const int ironIdx = commodity_index("iron");
     const int stoneIdx = commodity_index("stone");
-    const int breadIdx = commodity_index("food");
 
     Ledger led{};
     // The store IS the inventory now (one dictionary, one container).
@@ -212,8 +215,8 @@ int main() {
     const int kDays = 96;
     int boundariesStarvedAfterWarmup = 0;
     for (int day = 1; day <= kDays; ++day) {
-        // Village: 7 workers on grain, 1 in the forest, 1 rotating the pits.
-        gather(village, grainIdx, 7, led);
+        // Village: 7 workers on food, 1 in the forest, 1 rotating the pits.
+        gather(village, foodIdx, 7, led);
         gather(village, woodIdx, 1, led);
         const int pitRotation[3] = {clayIdx, ironIdx, stoneIdx};
         gather(village, pitRotation[day % 3], 1, led);
@@ -233,9 +236,9 @@ int main() {
         // только ртами, но и станками — ткань прядётся из пищи, — поэтому
         // фиксированная доля «по ртам» его не кроет (измерено: долг 446).
         const int foodToCity = std::max(
-            0, village.count_of(commodity_item_index(grainIdx)) - villagePop);
-        village.remove_of(commodity_item_index(grainIdx), foodToCity);
-        city.add_of(commodity_item_index(grainIdx), foodToCity);
+            0, village.count_of(commodity_item_index(foodIdx)) - villagePop);
+        village.remove_of(commodity_item_index(foodIdx), foodToCity);
+        city.add_of(commodity_item_index(foodIdx), foodToCity);
 
         // Город работает НЕ НАД ЕДОЙ: двенадцать рук кроют лестницу благ
         // пары (ткань, кирпич, инструмент) — это и есть его вклад в обмен.
@@ -257,10 +260,10 @@ int main() {
             if (ov.starvedPop > 0 || oc.starvedPop > 0) {
                 std::fprintf(stderr,
                              "day=%d starvedV=%d starvedC=%d "
-                             "debtV=%d debtC=%d breadC=%d\n",
+                             "debtV=%d debtC=%d foodC=%d\n",
                              day, ov.starvedPop, oc.starvedPop,
-                             villageDebt[breadIdx], cityDebt[breadIdx],
-                             city.count_of(commodity_item_index(breadIdx)));
+                             villageDebt[foodIdx], cityDebt[foodIdx],
+                             city.count_of(commodity_item_index(foodIdx)));
                 ++boundariesStarvedAfterWarmup;
             }
         }
@@ -334,14 +337,14 @@ int main() {
         }
         poorPop -= o.starvedPop;   // как settle_landmark_day: умершие ушли
         // Привоз в полсчёта: гасится СРАЗУ той же дверью, что в мире.
-        poor.add_of(commodity_item_index(breadIdx),
-                    poorDebt[breadIdx] / 2);
+        poor.add_of(commodity_item_index(foodIdx),
+                    poorDebt[foodIdx] / 2);
         econ_pay_debt(poor, poorDebt, &sink, &fled);
     }
     if (fled.starvedEvents != 4) return fail("Starved must report per window");
     // Рельеф — привоз, кроющий счёт целиком: следующая граница не
     // взыскивает никого.
-    poor.add_of(commodity_item_index(breadIdx), poorDebt[breadIdx]);
+    poor.add_of(commodity_item_index(foodIdx), poorDebt[foodIdx]);
     econ_pay_debt(poor, poorDebt, &sink, &fled);
     const ConsumeOutcome relief = econ_debt_boundary(
         poor, poorDebt, poorPop, &sink, &fled);
@@ -350,10 +353,10 @@ int main() {
     }
 
     // ── 4. Boundary: EVERY shortfall lands somewhere (Session 18) ───────
-    // A season of bread in full, everything else absent. Под долгом (CANON
+    // A season of HARCH in full, everything else absent. Под долгом (CANON
     // S10) недоплата видна ВЗЫСКАНИЕМ — на границе, следующей за счётом:
-    // первая граница выставляет счёт и хлеб платит его на месте, вторая
-    // судит остаток — хлебный долг погашен (никто не умер), долг каждой
+    // первая граница выставляет счёт и ларь харча платит его на месте, вторая
+    // судит остаток — харчевой долг погашен (никто не умер), долг каждой
     // прочей строки обязан лечь в unmetComfort целиком, не в пустоту.
     {
         Inventory s{};
@@ -372,7 +375,7 @@ int main() {
         const ConsumeOutcome o =
             econ_debt_boundary(s, debt, pop, nullptr, nullptr);
         if (o.starvedPop != 0) {
-            return fail("bread-only pop must be fed in full");
+            return fail("harch-only pop must be fed in full");
         }
         // Еда покрыта целиком, комфорт — ни одной строкой: благополучие
         // ноль, и место СТОИТ (вердикт владельца 2026-09-19). Недостача
@@ -382,7 +385,7 @@ int main() {
         }
     }
 
-    // ── 5. Half a season of bread starves HALF the town — a season late ─
+    // ── 5. Half a season of HARCH starves HALF the town — a season late ─
     // ПРОПОРЦИЯ ЖИВЁТ ВО ВЗЫСКАНИИ (CANON S10 + вердикт 2026-09-19
     // «смерть — единственная кара»): полсезона хлеба гасят полсчёта,
     // непокрытая половина уходит населением на СЛЕДУЮЩЕЙ границе — по
@@ -424,8 +427,8 @@ int main() {
     }
 
     // ── 6. Produce: the first recipe may not hog the town ───────────────
-    // Mountains of grain beside a little clay: before the fix bread staffed
-    // ceil(grainStock/8) workers — the whole town — and bricks never saw a
+    // Mountains of food beside a little clay: before the fix the table's first
+    // row staffed ceil(stock/8) workers — the whole town — and bricks never saw a
     // single worker-day. Output DIVERSITY is the law: with inputs for both,
     // both are made.
     {
@@ -517,7 +520,7 @@ int main() {
     }
 
     // ── 8. ONE dictionary (owner's ruling): every commodity is an item ──
-    // The bread a city bakes and the bread in the player's bag are the same
+    // The cloth a city weaves and the cloth in the player's bag are the same
     // row — a commodity id must resolve in the item catalog. Сверки МАССЫ
     // здесь больше нет, и её отсутствие — не ослабление: она сверяла две
     // таблицы весов, а вторая (CommodityDef::weightKg) вырезана 2026-09-22.
@@ -640,7 +643,7 @@ int main() {
             return fail("a day of economy disturbed what is not a commodity");
         }
         if (inv.count("food") > 100) {
-            return fail("consumption cannot create grain");
+            return fail("consumption cannot create matter");
         }
     }
 
@@ -747,7 +750,8 @@ int main() {
     // закрыта деревне, и монетная — должна. Поднимется ранг украшений или
     // появится новое ремесло — тест скажет, что анкета отстала, вместо того
     // чтобы мир молча перестал что-то делать (ровно так и умерла деревенская
-    // выпечка: строку Cooking вырезали, а ранг остался).
+    // выпечка: рецепт вырезали, а ремесленный ранг остался — и стоял полгода,
+    // ничего не открывая, пока само ремесло не вырезали вслед, 2026-09-28).
     {
         int closedToVillage = 0, mintRows = 0, openToVillage = 0;
         for (int i = 0; i < kRecipeCount; ++i) {

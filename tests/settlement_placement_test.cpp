@@ -446,7 +446,7 @@ void test_villages_stand_next_to_something() {
         // Ploughable ground and timber count within the home-field box; a
         // DEPOSIT counts within the crews' working reach — a mining village
         // legally sits up to kGathererReach from its vein (owner
-        // 2026-08-31: it lives on bought bread).
+        // 2026-08-31: it lives on bought food).
         for (int dy = -kSettlementReach; dy <= kSettlementReach && !found; ++dy) {
             for (int dx = -kSettlementReach; dx <= kSettlementReach && !found;
                  ++dx) {

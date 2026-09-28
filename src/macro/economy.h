@@ -77,8 +77,8 @@ int stock_price(int baseValue, int supply, int demandSeason);
 // A settlement's SEASON demand for an item (CANON S10 «спрос читается из
 // ДОЛГА»): прямая часть = ОСТАТОК СЧЁТА места по этой строке лестницы —
 // непогашенная нужда и есть спрос, — PLUS the derived demand of every
-// recipe ITS HANDS can run (a city that bakes demands grain; a place whose
-// cooking rank is zero does not — owner track 2026-08-30, and since
+// recipe ITS HANDS can run (a city that weaves demands fibre; a place whose
+// tailoring rank is zero does not — owner track 2026-08-30, and since
 // 2026-09-18 the gate is the place's own ANKETA, not its kind).
 //
 // `needDebt` — счёт места (Landmark::needDebt). nullptr = читателя без

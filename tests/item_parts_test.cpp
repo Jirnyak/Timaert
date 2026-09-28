@@ -271,7 +271,7 @@ void test_auto_scrap() {
     Inventory inv;
     // Distinct rolled daggers past the half mark (each seed its own stack,
     // the exact non-fungible clog CANON describes), one dear rolled statue,
-    // and a plain bread pile that must survive untouched. The count derives
+    // and a plain food pile that must survive untouched. The count derives
     // from the same constant the law reads — the 256-slot era pinned 130.
     for (int i = 0; i < kAutoScrapSlots + 2; ++i) {
         ItemRef r{};

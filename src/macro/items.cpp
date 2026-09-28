@@ -76,7 +76,7 @@ constexpr ItemDef kCatalog[] = {
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
         /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
     // The economy's NOUNS live in THIS catalog too (owner's one-dictionary
-    // ruling): the bread a city bakes and the bread in the player's bag are
+    // ruling): the cloth a city weaves and the cloth in the player's bag are
     // one row. Ids and weights match tables/commodity.h verbatim — the link
     // law in econ_v1_test holds the two tables together.
     {"food_meat",   "Raw Meat",        ItemType::Food,       15, 0.50f, "\xF0\x9F\x8D\x96",
@@ -231,8 +231,9 @@ constexpr ItemDef kCatalog[] = {
 // ── The matter table (owner verdicts 2026-09-11, CANON «Крафт/Скрап») ──────
 // What each row is MADE OF, authored by id and resolved once into the flat
 // per-ordinal table below. Rows absent here are TERMINAL (raw matter). The
-// economy's numbers are LOAD-BEARING: bread..statue moved VERBATIM from the
-// retired kRecipes inputs — the self-play harness (econ_v1_test) balances
+// economy's numbers are LOAD-BEARING: the goods block (cloth..statue) moved
+// VERBATIM from the retired kRecipes inputs — the self-play harness
+// (econ_v1_test) balances
 // against exactly these, so a change here is a balance change, not a tweak.
 // Equipment numbers are new authoring under the same witnesses
 // (item_parts_test: no-arbitrage, terminal refs).
@@ -274,10 +275,10 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
     {"coin_barbar_copper",  {{"copper", 1}}, 128, 4},
     {"coin_barbar_silver",  {{"silver", 1}}, 128, 4},
     {"coin_barbar_gold",    {{"gold",   1}}, 128, 4},
-    // Consumables: alchemy is herb-matter; bread is the baking reaction
-    // (grain 1 → bread 1), the exact row the production day runs. Bread's
-    // labour IS the productivity anchor (econ_day.h kGatherPerWorkerDay,
-    // «1 добытчик кормит 32 душ» chain-wide) — pinned by econ_v1_test.
+    // Consumables: alchemy is herb-matter. ПИЩА СТРОКИ ЗДЕСЬ НЕ ИМЕЕТ — она
+    // ТЕРМИНАЛЬНА (CANON S10 «ЕДА НЕ ПРОИЗВОДИТСЯ — ЕДА ДОБЫВАЕТСЯ»), и её
+    // отсутствие И ЕСТЬ этот закон: без состава день производства не берёт
+    // строку в кандидаты вовсе (econ_day.cpp item_parts().empty()).
     {"potion_hp",   {{"mat_herb", 2}}, 1, 8},
     {"potion_mp",   {{"mat_herb", 2}}, 1, 8},
     // The economy's goods — former kRecipes inputs AND tempos, verbatim.

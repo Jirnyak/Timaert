@@ -521,7 +521,7 @@ sm::Quest make_quest() {
     objective.subX = 512;
     objective.subY = 640;
     objective.radius = 3.0f;
-    objective.itemId = "itm_bread";
+    objective.itemId = "food";
     objective.quantity = 4;
     objective.targetSettlementId = 9;
     objective.npcType = 11;
@@ -1064,7 +1064,7 @@ void run_roundtrip() {
     if (!loadedQuests[0].objectives.empty()) {
         const sm::Objective& o = loadedQuests[0].objectives[0];
         if (o.subX != 512 || o.subY != 640
-            || o.itemId != "itm_bread" || o.quantity != 4
+            || o.itemId != "food" || o.quantity != 4
             || o.targetSettlementId != 9 || o.npcType != 11
             || o.count != 3 || o.killed != 1) {
             FAIL_BAIL("objective fields lost");

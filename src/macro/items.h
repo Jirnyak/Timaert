@@ -5,14 +5,16 @@
 //   ItemType { Weapon=0, Armor=1, Potion=2, Food=3, Material=4, Misc=5 }
 // Stacking semantics: at most one entry per id (addItem stacks quantity).
 //
-// Catalog: the 4 faction coins, consumables (potion_hp/mp, bread, food_meat),
+// Catalog: the faction coin nominals, consumables (potion_hp/mp, food_meat),
 // monster materials (mat_bone/hide/herb), equipment (wpn_dagger/sword/spear/
-// axe/mace/staff, arm_leather), misc_gem — plus the economy's 14 commodity
-// nouns (tables/commodity.h, owner's one-dictionary ruling): wood, stone,
-// iron, silver, clay, grain, bricks, cloth, tools, furniture, wagon, jewelry,
-// carving, statue. The bread a city bakes and the bread in the player's bag
-// are ONE row; ids and weights match commodity.h verbatim (link law in
-// econ_v1_test). New rows APPEND — a saved ItemRef carries the ordinal.
+// axe/mace/staff, arm_leather), misc_gem — plus EVERY commodity noun of the
+// economy (tables/commodity.h, owner's one-dictionary ruling). Составы и счёт
+// НЕ ПЕРЕСКАЗЫВАЮТСЯ ЗДЕСЬ: списки в шапке — второй словарь, и этот уже
+// разъезжался (он звал `grain` и `bread`, которых в словаре нет, и насчитал
+// 14 товаров при выведенном `kCommodityCount`). Смотреть таблицы.
+// Товар, который делает город, и товар в сумке игрока — ОДНА строка; id и веса
+// сходятся с commodity.h дословно (закон связи в econ_v1_test).
+// New rows APPEND — a saved ItemRef carries the ordinal.
 
 #pragma once
 #include "macro/anketa.h"
@@ -195,8 +197,9 @@ struct ItemDef {
 //                  bumped once, not twice.
 //
 // STACKING is one sentence: two records merge only when everything except
-// `count` is equal. Bread merges with bread; two procedurally rolled swords
-// never merge, because their seeds differ. No second rule, no second table.
+// `count` is equal. Provisions merge with provisions; two procedurally rolled
+// swords never merge, because their seeds differ. No second rule, no second
+// table.
 // 32×32 — ёмкость ЕДИНОГО контейнера (вердикт владельца 2026-09-22, эпик
 // единой таблицы: «слияние и расширение до 32×32 единого контейнера у каждого
 // сквада, и мобы == предметы»). Предметы и существа лежат в ОДНИХ слотах;
@@ -540,7 +543,7 @@ int item_labour(int defIdx) noexcept;
 // Refuses terminal rows (nothing composes them), missing materials or a
 // full bag — NOTHING ELSE (owner verdict 2026-09-12, ЗАГЛАВНЫМИ: «У НАС
 // БАРТЕРНАЯ ЭКОНОМИКА... ПРОСТО ГОРОД ДЕЛАЕТ МОНЕТЫ ЧЕРЕЗ СИСТЕМУ КРАФТА
-// ПО СВОЕМУ АИ»): coin is a commodity like bread, the mint IS this door run
+// ПО СВОЕМУ АИ»): coin is a commodity like cloth, the mint IS this door run
 // by the town's own AI, and hand-striking coin is harmless by arithmetic —
 // the reaction is value-neutral (the static_assert beside the table), so a
 // forger earns nothing a smith doesn't. All-or-nothing on a copy: a refused

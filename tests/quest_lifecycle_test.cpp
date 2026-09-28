@@ -1423,7 +1423,7 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     city.y = 20;
     city.population = 500;
     // Steer gen_delivery through the honest surface: tools are the town's
-    // SCARCEST consumed good (bread plentiful, everything else stocked).
+    // SCARCEST consumed good (food plentiful, everything else stocked).
     city.inventory.add("food", 2048);
     city.inventory.add("cloth", 128);
     city.inventory.add("bricks", 128);

@@ -496,7 +496,7 @@ void test_spawn_squad_is_one_spec_one_door() {
 
 // ── Phase 6: the leader's TRAINING reads at the three new doors ──────────
 // Trade → the price law's bargaining argument (a literal 0 since the law
-// was written), Foraging → the daily bread draw, Scouting → the runtime's
+// was written), Foraging → the daily harch draw, Scouting → the runtime's
 // sight cache. Each with a negative control.
 void test_the_leaders_training_reads_at_the_new_doors() {
     // 1. The scouting rank rides the runtime cache through the ONE refresh
@@ -568,9 +568,9 @@ void test_the_leaders_training_reads_at_the_new_doors() {
               "the Guard control is honestly untrained");
         CHECK(npc_def(NPCType::Wolf).upkeepGoldPerDay == kNpcUpkeepNone,
               "негативный контроль строки: волк и правда не на жалованье");
-        // A season of bread and a season of wages in each bag: the window
+        // A season of harch and a season of wages in each bag: the window
         // judges BOTH needs whole, and an uncovered wage would bleed the
-        // roster before the bread law under test ever showed.
+        // roster before the harch law under test ever showed.
         const int stock = 8 * kDaysPerSeason * 2;
         for (const entt::entity e : {forager, untrained, beasts}) {
             auto& bag = (*sm::body_state<ecs::NpcInventory>(w.reg, e)).inv;
@@ -582,7 +582,7 @@ void test_the_leaders_training_reads_at_the_new_doors() {
               "no window off the boundary (negative control)");
         CHECK((*sm::body_state<ecs::NpcInventory>(w.reg, untrained)).inv.count("food")
                   == stock,
-              "an ordinary day draws no bread at all");
+              "an ordinary day draws no harch at all");
         squad_season_window(mw, 1);
         const int foragerLeft =
             (*sm::body_state<ecs::NpcInventory>(w.reg, forager)).inv.count("food");

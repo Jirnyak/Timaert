@@ -219,11 +219,11 @@ void test_the_farmer_works_the_field() {
                       .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
-    const int grain = gs.landmarks[0].inventory.count("food");
+    const int foodUnits = gs.landmarks[0].inventory.count("food");
     const int inBag = (*sm::body_state<ecs::NpcInventory>(w.reg, e)).inv.count("food");
-    CHECK(grain > 0, "the farmer's grain reached the village store");
+    CHECK(foodUnits > 0, "the farmer's haul reached the village store");
     // THE BATCH LAW THIS USED TO PIN IS GONE (owner, 2026-09-16). It read
-    // `grain % kGatherPerCycle == 0` — "the haul arrives in whole cycle
+    // `foodUnits % kGatherPerCycle == 0` — "the haul arrives in whole cycle
     // yields" — and it was true only while a take was a declared batch of
     // eight. A take is now ONE object per hand, at exactly the price the
     // player pays for one, and the TRIP emerges from the backs and the bar
@@ -231,15 +231,15 @@ void test_the_farmer_works_the_field() {
     // nothing quantised survives: the honest statement left is conservation,
     // below, and it is the one that was load-bearing all along.
     //
-    // CONSERVATION (Field Inc F4): every grain that reached anybody left the
+    // CONSERVATION (Field Inc F4): every unit that reached anybody left the
     // world — the field's scar is exactly as deep as store PLUS bag. The bag
     // half is new and it is not bookkeeping: the farmer can now be caught
-    // mid-trip with grain on his back, where the old single-take cycle always
+    // mid-trip with the haul on his back, where the old single-take cycle always
     // ended at the door.
     const sm::ResourceGrid& wheatScars =
         gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)];
-    CHECK(wheatScars.at(12, 10) == grain + inBag,
-          "grain gained by store AND bag == stands the field lost");
+    CHECK(wheatScars.at(12, 10) == foodUnits + inBag,
+          "food gained by store AND bag == stands the field lost");
     CHECK(wheatScars.liveCells == 1,
           "the farmer scars only the field he works");
 }
@@ -247,7 +247,7 @@ void test_the_farmer_works_the_field() {
 void test_farmer_without_terrain_conjures_nothing() {
     // The fail-closed half of the same law (mirrors no-layer-no-chop): an
     // unwired terrain means no ledger to settle against, so NOTHING is
-    // gathered — grain from thin air died with Field Inc F4.
+    // gathered — food from thin air died with Field Inc F4.
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
@@ -460,11 +460,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
     city.inventory.add("food", 2000);   // plenty: the export
     // The deal PAYS now (owner 2026-08-30): a coinless fixture is the
     // deadlock the payment law exists to refuse. The purse covers the
-    // grain lot at the SEASONAL famine price (corridor died 2026-09-18) —
-    // a thin purse would pay the vendor in its own bread by value density,
+    // food lot at the SEASONAL famine price (corridor died 2026-09-18) —
+    // a thin purse would pay the vendor in its own goods by value density,
     // and the return leg would waddle home under a tonne of payment.
     city.inventory.add("coin_timaert_copper", 40000);
-    gs.landmarks.push_back(city);      // grain: NONE — the import
+    gs.landmarks.push_back(city);      // food: NONE — the import
     Landmark vil{};
     vil.type = LandmarkType::Village;
     vil.id = 3;
@@ -474,7 +474,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     vil.population = 50;
     // A GENUINE surplus: the loading law keeps the seasonal larder home
     // (S19.2 + verdict 2026-09-18 «дома дешевле базы» decides the load),
-    // and 50 souls bake through 50 grain a day — 1600 a season. Only what
+    // and 50 souls EAT 50 food a day — 1600 a season. Only what
     // stands ABOVE that rides to market.
     vil.inventory.add("food", 4000);
     vil.inventory.add("coin_timaert_copper", 50 * 2);
@@ -537,16 +537,16 @@ void test_the_vendor_sells_at_the_nearest_city() {
     }
 
     const auto& bag = (*sm::body_state<ecs::NpcInventory>(reg, e)).inv;
-    const int cityGrain = gs.landmarks[0].inventory.count("food");
-    const int vilBread = gs.landmarks[1].inventory.count("food");
-    CHECK(cityGrain > 0,
+    const int cityFood = gs.landmarks[0].inventory.count("food");
+    const int vilFood = gs.landmarks[1].inventory.count("food");
+    CHECK(cityFood > 0,
           "the vendor sold the village surplus at the nearest city");
     // ПОД ДОЛГОМ (CANON S10) «купил домой хлеб» видно СЧЁТОМ: привезённое
     // гасит его в дверях прихода и съедается — полка держит только излишек.
-    const int vilBreadDebtPaid = 50 * kDaysPerSeason
+    const int vilFoodDebtPaid = 50 * kDaysPerSeason
         - gs.landmarks[1].needDebt[commodity_index("food")];
-    CHECK(vilBreadDebtPaid > 0,
-          "the earnings FED the home's lack — the bread bill fell");
+    CHECK(vilFoodDebtPaid > 0,
+          "the earnings FED the home's lack — the food bill fell");
     // КОНСЕРВАЦИЯ ОДНОЙ ПИЩЕЙ (2026-09-20, снос хлеба): до этого дня в мире
     // было ДВЕ съедобные строки — зерно и хлеб, — и сумма считалась по каждой
     // отдельно. Теперь поток один: всё, что не лежит на полках и не едет в
@@ -554,9 +554,9 @@ void test_the_vendor_sells_at_the_nearest_city() {
     const int foodOnShelves = gs.landmarks[0].inventory.count("food")
                               + gs.landmarks[1].inventory.count("food")
                               + bag.count("food");
-    CHECK(foodOnShelves + vilBreadDebtPaid == 2000 + 4000,
+    CHECK(foodOnShelves + vilFoodDebtPaid == 2000 + 4000,
           "CONSERVATION: cargo moves or pays the bill — never dropped");
-    (void)vilBread;
+    (void)vilFood;
     // ...and the deal's other half obeys the same law: coin travels between
     // the three purses (city, village, hold) and is never minted or burned.
     const int coinTotal = gs.landmarks[0].inventory.count("coin_timaert_copper")

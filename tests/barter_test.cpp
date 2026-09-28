@@ -6,7 +6,7 @@
 //     PRE-DEAL bags — a short shelf on either side moves nothing;
 //   · repeated lines of one SLOT sum for validation (no double-spend of one
 //     stack across two lines);
-//   · the same ware may travel both ways (bread for bread is a legal deal);
+//   · the same ware may travel both ways (food for food is a legal deal);
 //   · coin is not special: a currency row swaps like any ware, and item
 //     totals CONSERVE across every deal — nothing is minted;
 //   · a staged ROLLED stack travels AS ITSELF (seed + affixes), never as
@@ -98,7 +98,7 @@ void test_same_ware_both_ways() {
     b.add("food", 5);
 
     CHECK(barter_swap(a, b, {line(a, "food", 3)}, {line(b, "food", 5)}),
-          "bread for bread is a legal deal");
+          "food for food is a legal deal");
     CHECK(a.count("food") == 5 && b.count("food") == 3,
           "the two stacks crossed whole");
 }
@@ -152,7 +152,7 @@ void test_stale_slot_refuses() {
     a.add("food", 2);
     const BarterLine stale = line(a, "food", 1);
     a = Inventory{};
-    a.add("wood", 5);   // wood now sits where bread sat
+    a.add("wood", 5);   // wood now sits where the food sat
     CHECK(!barter_swap(a, b, {stale}, {}),
           "a re-filled slot refuses the stale line");
     CHECK(a.count("wood") == 5 && b.total() == 0, "and nothing moved");
