@@ -60,6 +60,14 @@ struct TerrainData {
     int width = 0, height = 0;
     // RGBA: R=height, G=moisture, B=temperature, A=mask (255=land,0=water).
     std::vector<std::uint8_t> rgba;
+    // СИД ЭТОЙ КАРТЫ. Кто читает и зачем: `MacroRendererVk::record` — узор
+    // карты обязан быть свойством МИРА, а не картинки (вердикт владельца
+    // 2026-09-28, CANON S18.2: «и сид и шейдеры от него»). До этого шейдеру
+    // ехала константа 1.0 со ссылкой на удалённый GL-рендерер, и позиции крон,
+    // места цветов и языки песка совпадали во всех мирах на одинаковых клетках.
+    // Форма — та же, что у `seaLevel8`: величина едет С КАРТОЙ, а не вторым
+    // параметром через полдерева (прецедент — `DepositLayer::birthSeaLevel`).
+    std::uint32_t seed = 0u;
     // R8 river mask generated from the terrain heightmap. 255 = river cell.
     std::vector<std::uint8_t> riverData;
     // Плоскость моря ЭТОЙ карты. Кто читает и зачем: `is_water` ниже, и через

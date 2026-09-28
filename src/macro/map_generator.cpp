@@ -755,6 +755,7 @@ TerrainData generate_terrain(int w, int h, const LayerParameters& params) {
     TerrainData td;
     td.width = w; td.height = h;
     td.seaLevel8 = sea_level_byte(params.seaLevel);
+    td.seed = params.seed;
     td.rgba.assign(std::size_t(w) * h * 4, 0);
     td.riverData.assign(std::size_t(w) * h, 0);
 
