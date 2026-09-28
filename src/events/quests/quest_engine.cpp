@@ -31,10 +31,7 @@ static bool objective_target_cell(const GameState& gs, const Objective& o,
                                   float& x, float& y) {
     switch (o.kind) {
         case ObjectiveKind::VisitCell:
-        case ObjectiveKind::WaitAt:
             x = float(o.ix);    y = float(o.iy);    return true;
-        case ObjectiveKind::FindLocation:
-            x = float(o.cellX); y = float(o.cellY); return true;
         case ObjectiveKind::DeliverItems:
             return settlement_position(gs, o.targetSettlementId, x, y);
         case ObjectiveKind::DestroyNpc:
@@ -115,15 +112,6 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                                             sheet->skills).expMultPct);
             }
             break;
-        case RewardKind::Item:
-            // A full bag refuses; the loss is said out loud instead of the
-            // reward silently never arriving.
-            if (!(*bag).add(r.itemId, r.amount)) {
-                session_feed_push(gs.sessionFeed,
-                                  "Your pack is full — the reward "
-                                  "could not be taken.");
-            }
-            break;
         case RewardKind::Reputation: {
             add_player_reputation(gs, r.faction.c_str(), r.delta);
             GameEvent ev{EventTag::ReputationChange};
@@ -134,9 +122,6 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
             bus.emit(ev);
             break;
         }
-        case RewardKind::Event:
-            bus.emit(r.event);
-            break;
     }
 }
 
@@ -147,12 +132,6 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
     switch (o.kind) {
         case ObjectiveKind::VisitCell:
             if (obj_in_radius(gs, px, py, float(o.ix), float(o.iy), o.radius)) o.completed = true;
-            break;
-        case ObjectiveKind::FindLocation:
-            for (auto& ev : events) {
-                if (ev.tag == EventTag::PlayerMove &&
-                    ev.ix == o.cellX && ev.iy == o.cellY) o.completed = true;
-            }
             break;
         case ObjectiveKind::DeliverItems:
             {
@@ -175,18 +154,6 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
             for (auto& ev : events)
                 if (ev.tag == EventTag::NpcDeath && ev.ix == o.npcType) o.killed++;
             if (o.killed >= o.count) o.completed = true;
-            break;
-        case ObjectiveKind::WaitAt:
-            if (obj_in_radius(gs, px, py, float(o.ix), float(o.iy), o.radius)) {
-                for (auto& ev : events) {
-                    if (ev.tag == EventTag::TimeAdvance) {
-                        ++o.hoursWaited;
-                    }
-                }
-                if (o.hoursWaited >= o.hoursRequired) {
-                    o.completed = true;
-                }
-            }
             break;
     }
     return o.completed;

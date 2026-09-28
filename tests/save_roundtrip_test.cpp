@@ -515,11 +515,9 @@ sm::Quest make_quest() {
 
     // Every Objective field non-default — a dropped field must redden.
     sm::Objective objective{};
-    objective.kind = sm::ObjectiveKind::WaitAt;
+    objective.kind = sm::ObjectiveKind::DestroyNpc;
     objective.ix = 40;
     objective.iy = 80;
-    objective.cellX = 5;
-    objective.cellY = 6;
     objective.subX = 512;
     objective.subY = 640;
     objective.radius = 3.0f;
@@ -530,8 +528,6 @@ sm::Quest make_quest() {
     objective.count = 3;
     objective.killed = 1;
     objective.zoneRadius = 2.5f;
-    objective.hoursRequired = 3;
-    objective.hoursWaited = 1;
     q.objectives.push_back(objective);
 
     sm::Reward reward{};
@@ -1068,7 +1064,7 @@ void run_roundtrip() {
     }
     if (!loadedQuests[0].objectives.empty()) {
         const sm::Objective& o = loadedQuests[0].objectives[0];
-        if (o.cellX != 5 || o.cellY != 6 || o.subX != 512 || o.subY != 640
+        if (o.subX != 512 || o.subY != 640
             || o.itemId != "itm_bread" || o.quantity != 4
             || o.targetSettlementId != 9 || o.npcType != 11
             || o.count != 3 || o.killed != 1 || o.zoneRadius != 2.5f) {
@@ -1076,7 +1072,7 @@ void run_roundtrip() {
         }
     }
     if (loadedQuests[0].objectives.empty()
-        || loadedQuests[0].objectives[0].hoursWaited != 1
+        || loadedQuests[0].objectives[0].kind != sm::ObjectiveKind::DestroyNpc
         || loadedQuests[0].rewards.empty()
         || loadedQuests[0].rewards[0].amount != 170
         || loadedQuests[0].onAccept.size() != 12

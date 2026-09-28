@@ -354,14 +354,10 @@ namespace sm::ui
             {
             case ObjectiveKind::VisitCell:
                 return "Visit";
-            case ObjectiveKind::FindLocation:
-                return "Find";
             case ObjectiveKind::DeliverItems:
                 return "Deliver";
             case ObjectiveKind::DestroyNpc:
                 return "Destroy";
-            case ObjectiveKind::WaitAt:
-                return "Wait";
             }
             return "?";
         }
@@ -623,10 +619,6 @@ namespace sm::ui
                 ImGui::BulletText("%s Visit (%d,%d) radius %.1f",
                                   done, o.ix, o.iy, o.radius);
                 break;
-            case ObjectiveKind::FindLocation:
-                ImGui::BulletText("%s Find location in cell (%d,%d)",
-                                  done, o.cellX, o.cellY);
-                break;
             case ObjectiveKind::DeliverItems:
                 ImGui::BulletText("%s Deliver %d x %s to settlement %d",
                                   done, o.quantity, o.itemId.c_str(), o.targetSettlementId);
@@ -634,10 +626,6 @@ namespace sm::ui
             case ObjectiveKind::DestroyNpc:
                 ImGui::BulletText("%s Defeat type %d: %d/%d",
                                   done, o.npcType, o.killed, o.count);
-                break;
-            case ObjectiveKind::WaitAt:
-                ImGui::BulletText("%s Wait at (%d,%d): %d/%d hours",
-                                  done, o.ix, o.iy, o.hoursWaited, o.hoursRequired);
                 break;
             }
         }
@@ -652,14 +640,8 @@ namespace sm::ui
             case RewardKind::Xp:
                 ImGui::BulletText("%d xp", r.amount);
                 break;
-            case RewardKind::Item:
-                ImGui::BulletText("%d x %s", r.amount, r.itemId.c_str());
-                break;
             case RewardKind::Reputation:
                 ImGui::BulletText("%+d reputation: %s", r.delta, r.faction.c_str());
-                break;
-            case RewardKind::Event:
-                ImGui::BulletText("Event reward");
                 break;
             }
         }

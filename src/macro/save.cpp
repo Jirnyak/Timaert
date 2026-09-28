@@ -908,8 +908,6 @@ void write_objective(Writer& w, const Objective& o) {
     write_bool(w, o.completed);
     w.pod(o.ix);
     w.pod(o.iy);
-    w.pod(o.cellX);
-    w.pod(o.cellY);
     w.pod(o.subX);
     w.pod(o.subY);
     w.pod(o.radius);
@@ -920,17 +918,13 @@ void write_objective(Writer& w, const Objective& o) {
     w.pod(o.count);
     w.pod(o.killed);
     w.pod(o.zoneRadius);
-    w.pod(o.hoursRequired);
-    w.pod(o.hoursWaited);
 }
 
 void read_objective(Reader& r, Objective& o) {
-    read_enum8(r, o.kind, static_cast<std::uint8_t>(ObjectiveKind::WaitAt));
+    read_enum8(r, o.kind, static_cast<std::uint8_t>(ObjectiveKind::DestroyNpc));
     read_bool(r, o.completed);
     r.pod(o.ix);
     r.pod(o.iy);
-    r.pod(o.cellX);
-    r.pod(o.cellY);
     r.pod(o.subX);
     r.pod(o.subY);
     r.pod(o.radius);
@@ -941,26 +935,20 @@ void read_objective(Reader& r, Objective& o) {
     r.pod(o.count);
     r.pod(o.killed);
     r.pod(o.zoneRadius);
-    r.pod(o.hoursRequired);
-    r.pod(o.hoursWaited);
 }
 
 void write_reward(Writer& w, const Reward& reward) {
     write_enum8(w, reward.kind);
     w.pod(reward.amount);
-    w.str(reward.itemId);
     w.str(reward.faction);
     w.pod(reward.delta);
-    write_event(w, reward.event);
 }
 
 void read_reward(Reader& r, Reward& reward) {
-    read_enum8(r, reward.kind, static_cast<std::uint8_t>(RewardKind::Event));
+    read_enum8(r, reward.kind, static_cast<std::uint8_t>(RewardKind::Reputation));
     r.pod(reward.amount);
-    r.str(reward.itemId);
     r.str(reward.faction);
     r.pod(reward.delta);
-    read_event(r, reward.event);
 }
 
 void write_quest(Writer& w, const Quest& q) {

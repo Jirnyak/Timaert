@@ -15,17 +15,23 @@ namespace sm
         Procedural
     };
 
+    // ТРИ РОДА ЦЕЛИ, И У КАЖДОГО ЕСТЬ ПРОИЗВОДИТЕЛЬ КОНТЕНТА. Список этот
+    // не «шесть универсальных глаголов» из старого замысла, а ровно то, что
+    // генератор поручений умеет выдать (`content/quests/procedural.cpp`);
+    // ветка, которую никто не производит, — это switch, ждущий контента,
+    // который никогда не придёт, и она обязана умереть первой (вердикт
+    // владельца 2026-09-28: «сносим всё что не системное»).
+    //
+    // Снято 2026-09-28 (M-116): `FindLocation` (ждал `EventTag::PlayerMove` с
+    // точным совпадением клетки — генератор такой цели не делал ни разу; с
+    // ним ушли колонки `cellX`/`cellY`) и `WaitAt` (ждал `TimeAdvance`,
+    // колонки `hoursRequired`/`hoursWaited`). Раньше (M-116 ч.1) так же ушёл
+    // `InteractCell` со своей колонкой `action`.
     enum class ObjectiveKind : std::uint8_t
     {
         VisitCell,
-        FindLocation,
         DeliverItems,
         DestroyNpc,
-        WaitAt,
-        // InteractCell жил на двух тегах без отправителя (WorldCellChange,
-        // LandmarkChangeOwner) и без производителя в контенте — снят вместе с
-        // ними (M-116, часть 1). Колонка `action` была его единственной и
-        // ушла туда же.
     };
 
     struct Objective
@@ -35,7 +41,6 @@ namespace sm
 
         // Generic fields — interpretation depends on kind.
         int ix = 0, iy = 0;
-        int cellX = 0, cellY = 0;
         int subX = 0, subY = 0;
         float radius = 0;
         std::string itemId{};
@@ -44,25 +49,27 @@ namespace sm
         int npcType = 0;
         int count = 0, killed = 0;
         float zoneRadius = 0;
-        int hoursRequired = 0, hoursWaited = 0;
     };
 
+    // ТРИ РОДА НАГРАДЫ, ПО ТОМУ ЖЕ ПРАВИЛУ. Снято 2026-09-28 (M-116):
+    // `Item` — печатала предмет В СУМКУ ИГРОКА из воздуха, дарителя в звонке
+    // не было ни одного; это предметная половина того же дефекта, чью денежную
+    // половину снёс M-139, и дыра остаётся ОТКРЫТОЙ до пула лута, без времянки
+    // (AGENTS §1). `Event` — награда, отправлявшая ПРОИЗВОЛЬНЫЙ `GameEvent`,
+    // то есть чёрный ход в шину мимо всякого рода; производителя в контенте у
+    // неё не было. С ними ушли колонки `Reward::itemId` и `Reward::event`.
     enum class RewardKind : std::uint8_t
     {
         Gold,
         Xp,
-        Item,
-        Reputation,
-        Event
+        Reputation
     };
     struct Reward
     {
         RewardKind kind = RewardKind::Gold;
         int amount = 0;
-        std::string itemId{};
         std::string faction{};
         int delta = 0;
-        GameEvent event{};
     };
 
     struct Quest

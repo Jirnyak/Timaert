@@ -1047,11 +1047,12 @@ void test_item_delivery_direct_path() {
     objective.quantity = 2;
     objective.targetSettlementId = settlement.id;
     q.objectives.push_back(objective);
-    sm::Reward reward{};
-    reward.kind = sm::RewardKind::Item;
-    reward.itemId = "misc_gem";
-    reward.amount = 2;
-    q.rewards.push_back(reward);
+    // Награды предметом здесь больше нет: `RewardKind::Item` печатала вещь в
+    // сумку ИЗ ВОЗДУХА, дарителя в звонке не было ни одного, и она снесена
+    // 2026-09-28 (M-116) вместе с денежной половиной того же дефекта (M-139).
+    // Дыра открыта и ждёт ПУЛА ЛУТА; времянки на её месте нет. Закон, который
+    // этот свидетель держит, от этого не пострадал — он про ДОСТАВКУ: вещи
+    // уходят из сумки на месте назначения, ровно в заказанном числе.
 
     sm::EventBus bus;
     sm::QuestEngine engine;
@@ -1063,13 +1064,10 @@ void test_item_delivery_direct_path() {
         "delivery quest did not complete from inventory condition");
     CHECK_OR_RETURN(!(bag.count("wood") != 1),
         "delivery did not remove delivered items");
-    CHECK_OR_RETURN(!(bag.count("misc_gem") != 2),
-        "item reward did not grant item reward");
 
     std::size_t applied = 0;
     apply_pending(bus, gs, applied);
-    CHECK_OR_RETURN(!(bag.count("wood") != 1
-        || bag.count("misc_gem") != 2),
+    CHECK_OR_RETURN(!(bag.count("wood") != 1),
         "event application duplicated direct inventory mutation");
     CHECK_OR_RETURN(!(gs.player.completedQuestCount != 1u),
         "delivery completion was not applied");
@@ -1123,23 +1121,17 @@ void test_quest_reward_dispatch_order_and_application() {
     xp.amount = 11;
     q.rewards.push_back(xp);
 
-    sm::Reward item{};
-    item.kind = sm::RewardKind::Item;
-    item.itemId = "misc_gem";
-    item.amount = 2;
-    q.rewards.push_back(item);
-
     sm::Reward rep{};
     rep.kind = sm::RewardKind::Reputation;
     rep.faction = "guild";
     rep.delta = 3;
     q.rewards.push_back(rep);
 
-    sm::Reward custom{};
-    custom.kind = sm::RewardKind::Event;
-    custom.event.tag = sm::EventTag::Custom;
-    custom.event.s1 = "reward_event";
-    q.rewards.push_back(custom);
+    // Здесь стояли ещё две награды — предметом и ПРОИЗВОЛЬНЫМ событием. Обе
+    // снесены 2026-09-28 (M-116): первая печатала вещь из воздуха, вторая была
+    // чёрным ходом в шину мимо всякого рода. Закон этого свидетеля — ПОРЯДОК
+    // рассылки (награды идут ДО события завершения, каждая уже применённой) —
+    // от их числа не зависит и проверяется на трёх оставшихся родах.
 
     sm::EventBus bus;
     int goldSeenByListener = -1;
@@ -1162,7 +1154,7 @@ void test_quest_reward_dispatch_order_and_application() {
     engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
 
     const auto& events = bus.tick_events();
-    CHECK_OR_RETURN(!(!active.empty() || events.size() != 4),
+    CHECK_OR_RETURN(!(!active.empty() || events.size() != 3),
         "quest reward dispatch did not emit expected event count");
     CHECK_OR_RETURN(!(events[0].tag != sm::EventTag::PlayerGoldChange
         || events[0].ix != 7
@@ -1173,11 +1165,9 @@ void test_quest_reward_dispatch_order_and_application() {
         || events[1].ix != 3
         || events[1].iy != 3
         || events[1].b != sm::kEventEffectAlreadyApplied
-        || events[2].tag != sm::EventTag::Custom
-        || events[2].s1 != "reward_event"
-        || events[3].tag != sm::EventTag::QuestComplete
-        || events[3].a != q.ordinal
-        || events[3].b != sm::kEventEffectAlreadyApplied),
+        || events[2].tag != sm::EventTag::QuestComplete
+        || events[2].a != q.ordinal
+        || events[2].b != sm::kEventEffectAlreadyApplied),
         "rewards are dispatched BEFORE the completion event, each already applied");
     CHECK_OR_RETURN(!(goldSeenByListener != 27
         || completedDuringGold != 1
@@ -1186,7 +1176,6 @@ void test_quest_reward_dispatch_order_and_application() {
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
-        || bag.count("misc_gem") != 2
         || gs.player.completedQuestCount != 1u),
         "quest rewards mutate gold, exp, reputation and bag directly");
 
@@ -1195,7 +1184,6 @@ void test_quest_reward_dispatch_order_and_application() {
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
-        || bag.count("misc_gem") != 2
         || gs.player.completedQuestCount != 1u),
         "replaying the reward events applies nothing twice - the already-applied flag is honoured");
 
@@ -1203,43 +1191,15 @@ void test_quest_reward_dispatch_order_and_application() {
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
-        || bag.count("misc_gem") != 2
         || gs.player.completedQuestCount != 1u),
         "quest reward events reapplied after pending cursor advanced");
 }
 
-void test_find_location_player_move_objective() {
-    bag.clear();
-    head = sm::AgentMemory{};
-    sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
-    gs.worldTime = sm::world_time_at(0, 6, 0);
-
-    sm::Quest q{};
-    q.title = "Find Location";
-    q.description = "Test PlayerMove objective payload";
-    q.category = sm::QuestCategory::Procedural;
-    sm::Objective objective{};
-    objective.kind = sm::ObjectiveKind::FindLocation;
-    objective.cellX = 22;
-    objective.cellY = 33;
-    q.objectives.push_back(objective);
-
-    sm::EventBus bus;
-    sm::QuestEngine engine;
-    std::vector<sm::Quest> active;
-    active.push_back(q);
-    sm::GameEvent move{sm::EventTag::PlayerMove};
-    move.ix = 22;
-    move.iy = 33;
-    bus.emit(move);
-    bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
-    CHECK_OR_RETURN(!(!active.empty()),
-        "PlayerMove did not complete FindLocation");
-}
+// (ЗДЕСЬ СТОЯЛ `test_find_location_player_move_objective` — свидетель рода
+// цели `ObjectiveKind::FindLocation`, снесённого 2026-09-28 (M-116): такой
+// цели не производил ни один генератор поручений, то есть ветка ждала
+// контента, которого нет. Вместе с родом ушёл последний прод-читатель тега
+// `EventTag::PlayerMove`.)
 
 void test_visit_cell_objective() {
     bag.clear();
@@ -1328,54 +1288,9 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
           "the two completions name the two quests that were accepted");
 }
 
-void test_wait_at_timeadvance_objective() {
-    bag.clear();
-    head = sm::AgentMemory{};
-    sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
-    gs.worldTime = sm::world_time_at(0, 6, 0);
-        g_playerCellX = 12;
-    g_playerCellY = 18;
-
-    sm::Quest q{};
-    q.title = "Wait At";
-    q.description = "Test WaitAt objective";
-    q.category = sm::QuestCategory::Procedural;
-    sm::Objective objective{};
-    objective.kind = sm::ObjectiveKind::WaitAt;
-    objective.ix = 12;
-    objective.iy = 18;
-    objective.radius = 1.5f;
-    objective.hoursRequired = 3;
-    q.objectives.push_back(objective);
-
-    sm::EventBus bus;
-    sm::QuestEngine engine;
-    std::vector<sm::Quest> active;
-    active.push_back(q);
-
-    sm::GameEvent compressedLegacy{sm::EventTag::TimeAdvance};
-    compressedLegacy.ix = 2;
-    bus.emit(compressedLegacy);
-    bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
-    CHECK_OR_RETURN(!(active.empty() || has_tag(bus, sm::EventTag::QuestComplete)
-        || active[0].objectives[0].hoursWaited != 1),
-        "WaitAt counts EVENTS, not the hours named inside them - one TimeAdvance is one step");
-
-    sm::GameEvent oneHour{sm::EventTag::TimeAdvance};
-    oneHour.ix = 1;
-    bus.emit(oneHour);
-    sm::GameEvent anotherHour{sm::EventTag::TimeAdvance};
-    anotherHour.ix = 1;
-    bus.emit(anotherHour);
-    bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
-    CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
-        "WaitAt did not complete after required TimeAdvance");
-}
+// (ЗДЕСЬ СТОЯЛ `test_wait_at_timeadvance_objective` — свидетель рода цели
+// `ObjectiveKind::WaitAt`, снесённого тем же проходом и по той же причине.
+// Вместе с ним ушёл последний прод-читатель тега `EventTag::TimeAdvance`.)
 
 void test_destroy_npc_objective() {
     bag.clear();
@@ -1733,10 +1648,8 @@ int main() {
     test_quest_failed_settles_its_offer();
     test_item_delivery_direct_path();
     test_quest_reward_dispatch_order_and_application();
-    test_find_location_player_move_objective();
     test_visit_cell_objective();
     test_quest_completion_order_matches_ts_reverse_scan();
-    test_wait_at_timeadvance_objective();
     test_destroy_npc_objective();
     test_abandon_emits_and_removes();
     test_offer_provenance_is_unique_per_slot_and_day();
