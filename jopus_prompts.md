@@ -1252,7 +1252,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 (`politik.h:62`), `PlayerState::name` (`state.h:678`). Генератор —
 `generate_name` (`language.cpp:164-177`, возвращает `std::string` —
 граница мира, законно); ввод игрока — `char name[25]` (`ui/screens.h:70`,
-24 + NUL). Сейв пишет строки `w.str`/`r.str` (`save.cpp:673,720,756,781`).
+24 + NUL). Сейв пишет строки `w.str`/`r.str` (`save.cpp:903,950,986,1011`).
 
 **1. Контекст.** Читать: `src/macro/state.h:462-475, 670-682`,
 `src/macro/politik.h:55-70`, `src/macro/language.cpp:136-180` и

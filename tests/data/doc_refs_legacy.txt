@@ -237,7 +237,6 @@ SKELETON.md	:779
 SKELETON.md	:79-88
 SKELETON.md	:8016
 SKELETON.md	:8070
-SKELETON.md	:849
 SKELETON.md	:88
 SKELETON.md	:92-95
 SKELETON.md	:94-104
@@ -611,7 +610,6 @@ SKELETON.md	ruins.cpp:73
 SKELETON.md	save.cpp:1031
 SKELETON.md	save.cpp:1031-1113
 SKELETON.md	save.cpp:1051
-SKELETON.md	save.cpp:30
 SKELETON.md	save.cpp:37
 SKELETON.md	save.cpp:47
 SKELETON.md	save_stream.h:36-40
@@ -1299,7 +1297,6 @@ macro-registry.md	resource_field.h:424
 macro-registry.md	roster_window.h:110
 macro-registry.md	roster_window.h:48
 macro-registry.md	roster_window.h:56
-macro-registry.md	save.cpp:30
 macro-registry.md	scent_field.cpp:21-32
 macro-registry.md	scent_field.h:88-104
 macro-registry.md	settlement_score.h:154
