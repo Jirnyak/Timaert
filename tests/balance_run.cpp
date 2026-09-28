@@ -36,6 +36,7 @@
 #include "macro/npc_ai.h"
 #include "macro/world_row.h"
 #include "macro/pathfinding.h"
+#include "macro/settlement_score.h"   // kSettlementReach — рука места
 #include "macro/spawners.h"
 #include "macro/state.h"
 #include "macro/store.h"
@@ -312,8 +313,16 @@ int main(int argc, char** argv) {
         // МЕРЯЕТСЯ нужда с 2026-09-19 (CANON S10, потребление = долг):
         // голодный счёт хранится в житель-днях (popPerUnitDay == 1), и
         // непогашенный остаток на границе И ЕСТЬ то, чем место умрёт.
+        // ЛЕС ПОД МЕСТОМ И ЛЕС ПОД РУКОЙ (M-111, шаг 1). Вето «клетка внутри
+        // лесного массива» сменилось ВЕСОМ, и вопрос «куда мир теперь ставит
+        // места» ДВУСТОРОННИЙ: «деревни у леса появились» читает лес В РУКЕ,
+        // «деревни В ЧАЩЕ — редкость, а не норма» читает лес ПОД СОБОЙ. Одной
+        // колонкой второй вопрос не задать — чаща всегда и «у леса» тоже, так
+        // что `treesNear` без `trees` их не различает. Обе — в единицах
+        // TreeLayer (0..kMaxTreesPerCell), порог класса — is_forest_cell.
         std::fprintf(fl, "day\tid\ttype\tpop\twellbeing\tstarved"
-                         "\tdebtFood\tdebtComfort\tfood\tcloth\tiron\tcoin\n");
+                         "\tdebtFood\tdebtComfort\tfood\tcloth\tiron\tcoin"
+                         "\ttrees\ttreesNear\n");
 
         // Голодная строка — ДВЕРЬ (econ_day.h hunger_item_*), не литерал:
         // ровно та причина, по которой дверь и заведена — переименуй строку
@@ -382,9 +391,27 @@ int main(int argc, char** argv) {
                     long long debtComfort = 0;
                     for (int k = 0; k < comfortOrdCount; ++k)
                         debtComfort += lm.needDebt[comfortOrd[k]];
+                    // Лес под местом и лес в его руке — бокс ±kSettlementReach
+                    // шагами ИНДЕКСА (ЗАКОН АДРЕСА), той же рукой, которой
+                    // мерит сам скор.
+                    const std::uint32_t lmCell =
+                        sm::cell_of(lm.x, lm.y, gs.mapW);
+                    const int treesHere = int(treeLayer.at(lm.x, lm.y));
+                    int treesNear = 0;
+                    for (int dy = -sm::kSettlementReach;
+                         dy <= sm::kSettlementReach; ++dy)
+                        for (int dx = -sm::kSettlementReach;
+                             dx <= sm::kSettlementReach; ++dx) {
+                            const std::uint32_t n =
+                                sm::cell_step(lmCell, dx, dy, gs.mapW);
+                            treesNear = std::max(
+                                treesNear,
+                                int(treeLayer.at(sm::cell_x(n, gs.mapW),
+                                                 sm::cell_y(n, gs.mapW))));
+                        }
                     std::fprintf(fl,
                                  "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%d\t%d"
-                                 "\t%d\t%lld\n",
+                                 "\t%d\t%lld\t%d\t%d\n",
                                  gs.worldTime.day(), lm.id, int(lm.type),
                                  lm.population, int(lm.seasonWellbeing),
                                  int(lm.starvedYesterday),
@@ -393,7 +420,8 @@ int main(int argc, char** argv) {
                                  lm.inventory.count_of(foodIdx),
                                  lm.inventory.count_of(clothIdx),
                                  lm.inventory.count_of(ironIdx),
-                                 coins_in(lm.inventory, coinIdx));
+                                 coins_in(lm.inventory, coinIdx),
+                                 treesHere, treesNear);
                 }
             }
             long long coinSquads = 0, foodHolds = 0;
