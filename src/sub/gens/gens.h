@@ -42,4 +42,27 @@ void gen_road    (const GenInput& in, SubworldMapData& out);
 void gen_spire   (const GenInput& in, SubworldMapData& out);
 void gen_field   (const GenInput& in, SubworldMapData& out);
 
+// ROADWAY SUPERSEDED BY A DECK IS NOT ROADWAY (owner, 2026-08-30, on the road
+// drawn beside its own bridge): «the DECK is the road over water», so where a
+// span carries the crossing the tiles carry it only as far as the ramp has
+// landed on dry ground. The submerged remainder of the carved line used to read
+// as a second road lying on the bed, visible through the water.
+//
+// It is the ROAD module's question — "did I replace this roadway with a span?"
+// — and not the water classifier's: a road that merely dips under the plane
+// with no deck over it is a road the world laid there, and drowning it would
+// CUT the road, because water is unpayable. Measured while this was briefly
+// generalised: whole roadways of 358-7862 tiles vanished on cells that had no
+// bridge at all.
+//
+// It runs AFTER `smooth_road_heights` (gens/dispatch.cpp), because whether a
+// tile is under water is a question about its FINAL height and the smoother is
+// the last thing that moves roadway. Standing before it — inside gen_road, as
+// it did — it judged heights that were still about to change, and four roadway
+// tiles of an honest two-bank crossing stayed up to 0.7 m below the plane.
+//
+// No-op on a scene with no span: the deck's own presence is the gate, so
+// nothing needs to be told which cells are crossings.
+void drown_superseded_roadway(SubworldMapData& out);
+
 } // namespace sm::sub

@@ -420,6 +420,25 @@ static void gen_bridge_crossing(const CellContext& ctx,
     }
 }
 
+void drown_superseded_roadway(SubworldMapData& out) {
+    if (out.heightmap.size() != out.tiles.size()) return;
+    // THE DECK'S OWN PRESENCE IS THE GATE. No biome test, no mode test, no
+    // caller told which cells are crossings: a scene that built no span has no
+    // superseded roadway by construction, and one that did knows it from its
+    // own structures.
+    bool spanned = false;
+    for (const Structure& s : out.structures) {
+        if (s.kind == Structure::Bridge) { spanned = true; break; }
+    }
+    if (!spanned) return;
+    for (std::size_t i = 0; i < out.tiles.size(); ++i) {
+        if (out.tiles[i] == TILE_ROAD && out.heightmap[i] < out.waterLevel) {
+            out.tiles[i] = TILE_WATER;
+        }
+    }
+    if (!spanned) return;
+}
+
 void gen_road(const GenInput& in, SubworldMapData& out) {
     const CellContext& ctx = in.ctx;
     const Biome* nbBiome = in.nbBiome;
@@ -453,14 +472,10 @@ void gen_road(const GenInput& in, SubworldMapData& out) {
     const bool spanning = ctx.biome == Biome::Water;
     if (spanning) {
         gen_bridge_crossing(ctx, nbFeature, out);
-        // (The drowned-roadway sweep that used to stand here now runs at the
-        // END of generation — `drown_road_tiles`, gens/dispatch.cpp. It judges
-        // whether a tile is under water, and the road SMOOTHER had not run yet
-        // at this point, so it was judging heights that were still about to
-        // change. Measured on an honest two-bank crossing: four roadway tiles
-        // ended up as much as 0.7 m below the plane and nothing drowned them,
-        // because the one pass that runs later — sync_water_tiles_from_heightmap
-        // — skips built ground by design.)
+        // (The drowned-roadway sweep that used to stand here is the same law,
+        // moved to run after the road smoother — `drown_superseded_roadway`
+        // below, called from gens/dispatch.cpp. The comment on its declaration
+        // in gens.h carries the reasoning and the measurements.)
         scatter_universal_trees(out, kCellSize,
             ctx.cx * kCellSize, ctx.cy * kCellSize,
             nbBiome, nbTreeCount, /*clearRadius*/ 0, ctx.seed);

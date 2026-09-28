@@ -174,6 +174,9 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     // its bumps. No-op when the cell has no roads. Mirrors `smoothRoadHeights`
     // applied at the end of `BaseGenerator.generateHeightmap` in TS.
     smooth_road_heights(out.heightmap, out.tiles, kCellSize, kCellSize);
+    // …and only now can the road module answer whether a span superseded its
+    // own roadway: the pass above was still moving the tiles it judges (gens.h).
+    drown_superseded_roadway(out);
     // …and only NOW does a lifted span know what it bridges: the pass above
     // was still cutting the roadway a gateway stands on (sub/height.h).
     seat_lifted_spans(out);
