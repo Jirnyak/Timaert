@@ -532,7 +532,6 @@ sm::Quest make_quest() {
     objective.zoneRadius = 2.5f;
     objective.hoursRequired = 3;
     objective.hoursWaited = 1;
-    objective.action = "chop";
     q.objectives.push_back(objective);
 
     sm::Reward reward{};
@@ -560,7 +559,10 @@ sm::Quest make_quest() {
     q.onAccept.push_back(leave);
     // The battery below covers every payload FIELD (a, ix, iy, fx/fy, s1, s2)
     // across distinct surviving tags — the original used the since-deleted
-    // dead tags; the field coverage is what matters to the serializer.
+    // dead tags; the field coverage is what matters to the serializer. Two
+    // slots were re-tagged again on 2026-09-28 (M-116 ч.1) when WorldCellChange
+    // and SettlementVisit died: SpireDepleted keeps the ix/iy/fx triple,
+    // ShowStory keeps s1/s2/ix/iy. Same coverage, live tags.
     sm::GameEvent rep{sm::EventTag::ReputationChange};
     rep.a = 42;
     rep.ix = -5;
@@ -581,17 +583,17 @@ sm::Quest make_quest() {
     codex.ix = 1;
     codex.a = 23;
     q.onAccept.push_back(codex);
-    sm::GameEvent cell{sm::EventTag::WorldCellChange};
-    cell.ix = 4;
-    cell.iy = 5;
-    cell.fx = 0.75f;
-    q.onAccept.push_back(cell);
-    sm::GameEvent visit{sm::EventTag::SettlementVisit};
-    visit.s1 = "realm_a";
-    visit.s2 = "realm_b";
-    visit.ix = -10;
-    visit.iy = 15;
-    q.onAccept.push_back(visit);
+    sm::GameEvent spire{sm::EventTag::SpireDepleted};
+    spire.ix = 4;
+    spire.iy = 5;
+    spire.fx = 0.75f;
+    q.onAccept.push_back(spire);
+    sm::GameEvent story{sm::EventTag::ShowStory};
+    story.s1 = "realm_a";
+    story.s2 = "realm_b";
+    story.ix = -10;
+    story.iy = 15;
+    q.onAccept.push_back(story);
     sm::GameEvent learned{sm::EventTag::SpellLearned};
     learned.s1 = "dlg_intro";
     learned.a = 42;
@@ -1066,8 +1068,7 @@ void run_roundtrip() {
         if (o.cellX != 5 || o.cellY != 6 || o.subX != 512 || o.subY != 640
             || o.itemId != "itm_bread" || o.quantity != 4
             || o.targetSettlementId != 9 || o.npcType != 11
-            || o.count != 3 || o.killed != 1 || o.zoneRadius != 2.5f
-            || o.action != "chop") {
+            || o.count != 3 || o.killed != 1 || o.zoneRadius != 2.5f) {
             FAIL_BAIL("objective fields lost");
         }
     }
@@ -1102,11 +1103,11 @@ void run_roundtrip() {
         || loadedQuests[0].onAccept[7].s1 != "Bandit"
         || loadedQuests[0].onAccept[7].ix != 1
         || loadedQuests[0].onAccept[7].a != 23u
-        || loadedQuests[0].onAccept[8].tag != sm::EventTag::WorldCellChange
+        || loadedQuests[0].onAccept[8].tag != sm::EventTag::SpireDepleted
         || loadedQuests[0].onAccept[8].ix != 4
         || loadedQuests[0].onAccept[8].iy != 5
         || loadedQuests[0].onAccept[8].fx != 0.75f
-        || loadedQuests[0].onAccept[9].tag != sm::EventTag::SettlementVisit
+        || loadedQuests[0].onAccept[9].tag != sm::EventTag::ShowStory
         || loadedQuests[0].onAccept[9].s1 != "realm_a"
         || loadedQuests[0].onAccept[9].s2 != "realm_b"
         || loadedQuests[0].onAccept[9].ix != -10

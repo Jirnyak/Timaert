@@ -32,7 +32,6 @@ static bool objective_target_cell(const GameState& gs, const Objective& o,
     switch (o.kind) {
         case ObjectiveKind::VisitCell:
         case ObjectiveKind::WaitAt:
-        case ObjectiveKind::InteractCell:
             x = float(o.ix);    y = float(o.iy);    return true;
         case ObjectiveKind::FindLocation:
             x = float(o.cellX); y = float(o.cellY); return true;
@@ -187,20 +186,6 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
                 if (o.hoursWaited >= o.hoursRequired) {
                     o.completed = true;
                 }
-            }
-            break;
-        case ObjectiveKind::InteractCell:
-            // ONE contract for both tags: the event names the CELL it happened
-            // on, in (ix,iy) — the same pair the objective stores. The
-            // LandmarkChangeOwner arm used to accept `a == o.ix` OR `ix == o.ix`
-            // alone, i.e. a settlement id, or an x with any y, satisfying an
-            // objective about a specific cell. It has no emitter anywhere yet, so
-            // this is the contract its future emitter must honour rather than a
-            // behaviour anyone can be relying on.
-            for (auto& ev : events) {
-                if ((ev.tag == EventTag::WorldCellChange
-                     || ev.tag == EventTag::LandmarkChangeOwner)
-                    && ev.ix == o.ix && ev.iy == o.iy) o.completed = true;
             }
             break;
     }

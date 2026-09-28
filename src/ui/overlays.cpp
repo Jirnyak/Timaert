@@ -362,8 +362,6 @@ namespace sm::ui
                 return "Destroy";
             case ObjectiveKind::WaitAt:
                 return "Wait";
-            case ObjectiveKind::InteractCell:
-                return "Interact";
             }
             return "?";
         }
@@ -640,10 +638,6 @@ namespace sm::ui
             case ObjectiveKind::WaitAt:
                 ImGui::BulletText("%s Wait at (%d,%d): %d/%d hours",
                                   done, o.ix, o.iy, o.hoursWaited, o.hoursRequired);
-                break;
-            case ObjectiveKind::InteractCell:
-                ImGui::BulletText("%s %s at (%d,%d)",
-                                  done, o.action.c_str(), o.ix, o.iy);
                 break;
             }
         }

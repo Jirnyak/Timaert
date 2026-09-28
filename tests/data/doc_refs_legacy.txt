@@ -514,9 +514,7 @@ SKELETON.md	engine.cpp:4710
 SKELETON.md	engine.cpp:4782
 SKELETON.md	engine.h:609
 SKELETON.md	event_bus.cpp:23
-SKELETON.md	event_bus.h:27-44
 SKELETON.md	event_bus.h:54-55
-SKELETON.md	event_types.h:15-16
 SKELETON.md	events/quests/quest_engine.cpp:98
 SKELETON.md	faction.h:320
 SKELETON.md	feature_layer_parity_test.cpp:128
@@ -736,7 +734,6 @@ SKELETON.md	politik.h:77
 SKELETON.md	politik.h:96-97
 SKELETON.md	politik.h:96-99
 SKELETON.md	quest_engine.cpp:114-116
-SKELETON.md	quest_engine.cpp:121-142
 SKELETON.md	quest_engine.cpp:165-166
 SKELETON.md	quest_engine.cpp:232
 SKELETON.md	quest_engine.cpp:234-235
@@ -1054,7 +1051,6 @@ jopus_prompts.md	econ_day.cpp:46-51
 jopus_prompts.md	econ_day.h:139
 jopus_prompts.md	engine.cpp:4710
 jopus_prompts.md	engine.h:619
-jopus_prompts.md	event_bus.cpp:62-65
 jopus_prompts.md	event_bus.cpp:70-74
 jopus_prompts.md	event_bus.h:27-40
 jopus_prompts.md	events/quests/quest_engine.cpp:179

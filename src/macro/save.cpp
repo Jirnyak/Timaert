@@ -922,11 +922,10 @@ void write_objective(Writer& w, const Objective& o) {
     w.pod(o.zoneRadius);
     w.pod(o.hoursRequired);
     w.pod(o.hoursWaited);
-    w.str(o.action);
 }
 
 void read_objective(Reader& r, Objective& o) {
-    read_enum8(r, o.kind, static_cast<std::uint8_t>(ObjectiveKind::InteractCell));
+    read_enum8(r, o.kind, static_cast<std::uint8_t>(ObjectiveKind::WaitAt));
     read_bool(r, o.completed);
     r.pod(o.ix);
     r.pod(o.iy);
@@ -944,7 +943,6 @@ void read_objective(Reader& r, Objective& o) {
     r.pod(o.zoneRadius);
     r.pod(o.hoursRequired);
     r.pod(o.hoursWaited);
-    r.str(o.action);
 }
 
 void write_reward(Writer& w, const Reward& reward) {

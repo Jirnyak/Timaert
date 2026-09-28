@@ -1644,10 +1644,6 @@ void boot_world(App& app, std::uint32_t seed,
     go.store        = app.macroStore.get();
     sm::generate_macro_world(go, gp);
     boot_trace("macro world generated");
-    // The bus is the DOOR into the world's memory; the memory itself is the
-    // world's. Attached after genesis so a fresh world and a loaded one both
-    // have one, pointing at the chronicle that lives the whole session.
-    app.bus.attach_chronicle(&app.gs.chronicle);
 
     if (!app.macro.init(app.device, app.renderer.renderPass)) {
         boot_trace("macro renderer init failed");

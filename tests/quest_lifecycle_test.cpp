@@ -708,7 +708,9 @@ void test_settlement_show_dialog_node() {
             "entering a settlement raises exactly one dialog naming that settlement");
     };
 
-    run_case(sm::EventTag::SettlementVisit, "Round City");
+    // ОДИН тег: `SettlementVisit` слушался здесь же, но отправителя не имел
+    // ни одного и снят вместе с двумя такими же (M-116 ч.1). Свойство узла от
+    // этого не изменилось — оно про ВХОД в поселение, а не про число тегов.
     run_case(sm::EventTag::PlayerEnterSettlement, "Greenhollow");
     {
         sm::PlayerState player{};
@@ -1532,50 +1534,15 @@ void test_destroy_npc_objective() {
         "DestroyNpc did not complete on kills of the wanted type");
 }
 
-void test_interact_cell_objective() {
-    bag.clear();
-    head = sm::AgentMemory{};
-    sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
-    gs.worldTime = sm::world_time_at(0, 6, 0);
-
-    sm::Quest q{};
-    q.title = "Interact Cell";
-    q.description = "Test InteractCell objective";
-    q.category = sm::QuestCategory::Procedural;
-    sm::Objective objective{};
-    objective.kind = sm::ObjectiveKind::InteractCell;
-    objective.ix = 9;
-    objective.iy = 11;
-    q.objectives.push_back(objective);
-
-    sm::EventBus bus;
-    sm::QuestEngine engine;
-    std::vector<sm::Quest> active;
-    active.push_back(q);
-
-    // Same x, different y: an event on ANOTHER cell must not satisfy an
-    // objective about this one (the LandmarkChangeOwner arm used to accept it).
-    sm::GameEvent elsewhere{sm::EventTag::WorldCellChange};
-    elsewhere.ix = 9;
-    elsewhere.iy = 12;
-    bus.emit(elsewhere);
-    bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
-    CHECK_OR_RETURN(!(active.size() != 1),
-        "InteractCell completed on an event from a different cell");
-
-    sm::GameEvent edit{sm::EventTag::WorldCellChange};
-    edit.ix = 9;
-    edit.iy = 11;
-    bus.emit(edit);
-    bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
-    CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
-        "InteractCell did not consume WorldCellChange payload");
-}
+// `test_interact_cell_objective` стоял здесь и умер вместе со своим носителем
+// (M-116 ч.1, 2026-09-28): объектив `ObjectiveKind::InteractCell` завершался
+// по тегам `WorldCellChange`/`LandmarkChangeOwner`, у которых во всём дереве не
+// было ни одного отправителя, а самого объектива не производил ни один
+// генератор контента. Тест поднимал событие СВОЕЙ рукой и этим доказывал
+// работу обработчика, никогда — что событие в игре кто-то поднимает (та же
+// ловушка, что описана выше про sys_level_up). Закона мира за ним не осталось:
+// сняты и теги, и объектив, и колонка `Objective::action`, которую читала
+// только его строка UI.
 
 void test_abandon_emits_and_removes() {
     bag.clear();
@@ -1869,7 +1836,6 @@ int main() {
     test_quest_completion_order_matches_ts_reverse_scan();
     test_wait_at_timeadvance_objective();
     test_destroy_npc_objective();
-    test_interact_cell_objective();
     test_abandon_emits_and_removes();
     test_offer_provenance_is_unique_per_slot_and_day();
     test_shuffled_order_guards_rng_upper_bound();

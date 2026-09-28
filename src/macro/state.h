@@ -353,7 +353,7 @@ namespace sm {
 // «теперь только есть благополучие и оно даёт рост») — настроение, реестр
 // его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
 // seasonWellbeing и needDebt.
-constexpr int kSaveVersion = 110;   // v110: слияние M-71 — существа в контейнере
+constexpr int kSaveVersion = 111;   // v111: M-116 ч.1 — ординалы EventTag и ObjectiveKind сдвинулись, Objective::action ушла с провода
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
