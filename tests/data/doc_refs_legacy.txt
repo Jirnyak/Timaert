@@ -360,7 +360,6 @@ SKELETON.md	:72
 SKELETON.md	:72-100
 SKELETON.md	:743
 SKELETON.md	:743-756
-SKELETON.md	:745-748
 SKELETON.md	:758-761
 SKELETON.md	:76
 SKELETON.md	:775
@@ -416,7 +415,6 @@ SKELETON.md	auto_battle.h:80
 SKELETON.md	auto_resolve_speaks_test.cpp:196
 SKELETON.md	base_generator.cpp:268
 SKELETON.md	bb_instance.h:22-23
-SKELETON.md	biomes.h:64
 SKELETON.md	body.frag:32
 SKELETON.md	body.frag:45-57
 SKELETON.md	body.h:106
