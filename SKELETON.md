@@ -190,7 +190,7 @@
 | «чья клетка» считается один раз | Вороной O(N·C) (`politik.cpp:422-434`) затирается целиком BFS по суше (`:551-553`); всегда вместе (`world_gen.cpp:96-99`) | **РАСХОЖДЕНИЕ** — мёртвый проход и второй ответ; наряда нет |
 | зоны генезиса = зоны после первой пересборки | `generate_zones` в генезисе (`world_gen.cpp:213`) идёт ДО грунтовок (`:299`) и пашен (`:356`); `FT_DirtRoad.civStrength` = 0.22 (`features.h:131`); `rebake_world` (`app/main.cpp:1476-1491`) пересобирает по полному слою при входе в сцену/субмир, смене сезона, загрузке; шпили и руины поставлены по ПЕРВОМУ полю | **РАСХОЖДЕНИЕ** — у одного сида два поля опасности (новая игра до пересборки и загруженная); наряда нет |
 | лес — поле, а не список | `spawn_trees` отдаёт `std::vector<TreePoint>` (`spawners.h:15`), живёт в `App::trees` (`app/main.cpp:1645`), кормит `TreeGrid` (`npc_ai.cpp:4731-4744`); лесоруб ищет рабочее место по нему (`npc_ai.cpp:946-949`); список рубкой НЕ обновляется, на загрузке рождается заново из сида | **РАСХОЖДЕНИЕ** — список рядом с полем, второй ответ «где лес» (ЗАКОН ПОЛЯ п.1); наряда нет |
-| города — один список | `Politik::cities` `std::vector<City>` (`politik.h:72`, City 80 Б со `std::string`) И `gs.landmarks` City (`state.cpp:153-192`); дороги, зоны, дальность, игрок читают `Politik::cities` (`spawners.cpp:390 «for (const City &c : P.cities)»`, `world_gen.cpp:186,210,298`, `player_entity.cpp:67-71`) | **РАСХОЖДЕНИЕ** — два списка на «где города»; M-90 |
+| города — один список | `Politik::cities` `std::vector<City>` (`politik.h:72`, City 72 Б на libc++, со `std::string`) И `gs.landmarks` City (`state.cpp:153-192`); дороги, зоны, дальность, игрок читают `Politik::cities` (`spawners.cpp:390 «for (const City &c : P.cities)»`, `world_gen.cpp:186,210,298`, `player_entity.cpp:67-71`) | **РАСХОЖДЕНИЕ** — два списка на «где города»; M-90 |
 | роды мест ставятся по колонке `worldPlaces` | `worldPlaces` (`landmark_registry.h:183`) читается только `tests/spire_generation_test.cpp:307-316`; размещение — отдельная функция на род | **РАСХОЖДЕНИЕ** — ЗАКОН СТРОКИ КАТАЛОГА п.4; наряда нет |
 | `minZone/maxZone` строк City/Village читаются | читатели — только `spires.cpp:67-72`, `ruins.cpp:72` | **РАСХОЖДЕНИЕ** — колонки без читателя (DOD п.9); наряда нет |
 | в генезисе строк в цикле нет | `publish_landmark_ledgers` (`econ_day.cpp:393-416`): `kCommodities[i].id`, `item_def(id)`, `lm.inventory.count(id)` на место × товар | **РАСХОЖДЕНИЕ** — M-103 |
@@ -632,14 +632,31 @@ frame(app, simSteps)                                       main.cpp:5561
 
 ## I.10 — ПАСПОРТ ПЛОСКОЙ ПАМЯТИ МАКРОМИРА
 
-Источник в коде — перепись штабелей `core/stacks.h` (`kStacks :147-189`,
-сторожа `sizeof` `:104-141`). **Перепись молчит в
-семи местах** (тип полей int32/4 Б вместо `FieldCell` u16/2 Б исправлен
-2026-09-25, коммит `6a53e46`); `MacroStore` (1.46 ГиБ) в переписи нет; `StackKind::Catalog`
-объявлен (`:62`), строк с ним 0; нет строк `ScentField` (76 МиБ), `rgba`,
-`riverData`, `ZoneLayer`, `KnowledgeLayer`, `PathCostData`, `NavWorld`,
-`LandmarkGrid`, `cellOwner`, `reach` жил (12 МиБ). — **РАСХОЖДЕНИЕ**, наряд
-M-91 частично; остальное — наряда нет.
+Источник в коде — перепись штабелей `kStacks@src/core/stacks.h` и её
+`sizeof`-сторожа там же. **ПЕРЕПИСЬ ПОЛНА (M-114, 2026-09-28):** 11 строк
+стало 63, и в них вошло всё, о чём она молчала — `MacroStore`, `rgba`, биом,
+реки, `reach` жил, `ZoneLayer`, `KnowledgeLayer`, `PathCostData`, `NavWorld`
+(шесть колонок по клетке, планы и шесть штабелей по округе), `ScentField`,
+`cellOwner`, `LandmarkGrid` (слот и список ссылок), летопись (кольцо, анналы,
+индекс), `Politik::cities`, `deserterPool`, плюс род `StackKind::Catalog`,
+который был объявлен и простоял с нулём строк. **Итог по капам — 16 259.8
+МиБ** (`ПО КЛЕТКЕ` 482.0, `ПО ОРДИНАЛУ` 15 777.7), в замеренном мире —
+**≈1 859 МиБ** без entt-компонент. Мера обоих названа: картину по капам
+печатает сам свидетель (`./build/stack_census_test`), живой мир снят
+`./build/balance_run 12345 1 <out>` на дереве `tim-p8` (сид 12345: 2 089 мест,
+2 089 округ, `planeCount` 44, 15 544 портала, 19 строк реестра фракций).
+Правило переписи записано вслух: **одна строка = одна аллокация**, а не одна
+система — групповая строка и есть тот способ, которым она молчала. —
+**ПРАВДА**.
+
+**ЧЕГО ПЕРЕПИСЬ НЕ ВИДИТ ПО ПОСТРОЕНИЮ.** `kResourceFields@src/macro/macro_stock.cpp`
+живёт в единице трансляции, а не в заголовке —
+каталожной строки у него быть не может, пока он там. И полноту самой переписи
+не стережёт ничто, кроме человека: `sizeof`-сторожа ловят рост УЖЕ
+переписанных структур (`NavWorld`, `LandmarkGrid`, `Chronicle`, `Politik`, а
+`MacroStore` сведена с переписью равенством в `store.h`), но новый штабель в
+новом файле встанет молча — ровно так встали эти десять. — **РАСХОЖДЕНИЕ**,
+наряд M-184.
 
 **⚠ `std::string` ДЕЛАЕТ РАЗМЕРЫ ЗАВИСИМЫМИ ОТ БИБЛИОТЕКИ.** На g++ 13.3 /
 libstdc++ (эта машина): `sizeof(std::string) = 32`, `sizeof(Landmark) = 42408`,
@@ -682,18 +699,18 @@ libstdc++ (эта машина): `sizeof(std::string) = 32`, `sizeof(Landmark) =
 | **`MacroStore`** — 18 колонок SoA: `spawnId 4, cell 4, kind 4, visual 12, character 12, level 2, traits 3, pools 36, runtime 92, spellBook 80, memory 136, roster 72, inventory 40960, sheet 144, orders 34, gear 5124, designTag 2, dead 1` = 46 722 Б/слот + служебные `generation u16, alive u8, freeSlots u16` | `std::array<T, 32768>` на колонку | **1 531 150 344 Б = 1460.2 МиБ** (`static_assert` `store.h:102`; inventory 1280 МиБ, gear 160 МиБ) | `App::macroStore` `unique_ptr` (`app_state.h:206`), `make_macro_store` (`app/main.cpp:6277`); `MacroWorld::store` (`macro_world.h:63`, проводка `main.cpp:327`) | `store_birth` / `store_death` (`store.h:121,140`); колонки — прямой `s.name[slot]` под `valid()` | `MacroHandle{slot u16, gen u16}`, «нет элемента» 0xFFFF (`:72`) | **ПРАВДА** (флип 1в, f8cb1759, слито 2026-09-25): состояние сквадов ЖИВЁТ колонками store, EnTT — временный мост `MacroSlot` (см. строку слоя 2, :359). Строка ниже про EnTT-сквады описывает ДОФЛИПОВУЮ форму — компоненты стали мостом, снос = шаг 1е. M-106 остаток: 1г ссылки → хэндл, 1е снос моста |
 | **EnTT-сквады** (сегодняшняя правда): 13 безусловных компонент = 41 417 Б (`static_assert npc_spawn.cpp:66`) + opt-in `CharacterSheet` (только `npc_named`), `SquadOrders`, `BodyEquipment` 5124, `DesignCharacterTag` | разрежённые пулы, капа нет | 647 МиБ при 16384; сейв отказывает при > `kMaxMacroNpcs = 16384` (`save.cpp:47`) | `App::ecs.reg` (`app_state.h:201`, `ecs/world.h:8`) — ОДИН registry на макро и тела субмира | `reg.get/try_get/emplace/view` — было **251 обращение в 11 файлах `src/macro`** (пред-флип); **переснято 2026-09-26: 59** (83 при любом написании `reg.`/`registry.`/`reg->`) в **9** файлах (`npc_ai.cpp` 16, `squad.h` 11, `store.h` 10, `player_entity.cpp` 9, `macro_snapshot.cpp` 7, `npc_spawn.cpp` 2…) — это и снял флип 1в, а прямые чтения заменились дверью `body_state` (409 её entt-вызовов, см. строку слоя 2) | `entt::entity` — 135 в `src/macro` | **РАСХОЖДЕНИЕ** — ЗАКОН ГЛАДКОЙ ПАМЯТИ п.2; M-106 шаг 1е |
 | **три капа одной популяции** | `kWorldSquads = 16384` (`stacks.h:79`; резерв скрэтчей `npc_ai.cpp:4753-4754`; сейв `save.cpp:47`), `kMacroEntityCap = 32768` (`stacks.h:92`; только `store.h`), `kWorldLandmarks = 32768` (`stacks.h:85`; `save.cpp:37`) | — | — | — | — | при рождении (`make_npc npc_spawn.cpp:107`) кап не проверяется ни один | **РАСХОЖДЕНИЕ** — вердикт владельца 2026-09-25: кап 32 768; сливаются M-106/M-90 |
-| **`Landmark`** — второй штабель сущностей | 42 400 Б (libc++) / 42 408 (libstdc++) × вектор | 1.29 ГиБ по капу 32768 (в коде написано «1.36 ГиБ» — `state.h:581`, `stacks.h:182` — не сходится); ~76 МиБ в замеренном мире (~1 880 мест) | `GameState::landmarks` `std::vector` (`state.h:864`), reserve только приростом | `landmark_by_id` (`state.h:1065`: O(1) по id−1 + скан-фолбэк; id=0 → скан всего ростера) / единой двери записи нет; `add_landmark` (`:1023`) `push_back` | индекс id−1 + **переписано 2026-09-26 с названной мерой: 29 range-for по списку в `src/macro`** (54 во всём дереве: `src` 41, `tests` 13) + 15 индексных доступов `landmarks[` в `src/macro`; `landmarks.size()` — 19 (прежнее «44 перебора» не воспроизвелось ни одной мерой); `landmark_by_id` — 55 вызовов (`src` 41, `tests` 14); дверь обхода `for_each_landmark` (`landmark_iter.h:40`) — 8×N за звонок при 7 звонящих, 5 из них UI каждый кадр | **РАСХОЖДЕНИЕ, самое крупное** — M-90, M-88 |
+| **`Landmark`** — второй штабель сущностей | 42 400 Б (libc++) / 42 408 (libstdc++) × вектор | 1.29 ГиБ = 1325.0 МиБ по капу 32768 (расхождение с прозой закрыто: «1.36 ГиБ» в коде больше нет — оба места, комментарий у `Landmark@src/macro/state.h` и строка переписи `kStacks@src/core/stacks.h`, говорят 1.29); 84.5 МиБ в замеренном мире (2 089 мест, мера `./build/balance_run 12345 1 <out>`, дерево `tim-p8`) | `GameState::landmarks` `std::vector` (`state.h:864`), reserve только приростом | `landmark_by_id` (`state.h:1065`: O(1) по id−1 + скан-фолбэк; id=0 → скан всего ростера) / единой двери записи нет; `add_landmark` (`:1023`) `push_back` | индекс id−1 + **переписано 2026-09-26 с названной мерой: 29 range-for по списку в `src/macro`** (54 во всём дереве: `src` 41, `tests` 13) + 15 индексных доступов `landmarks[` в `src/macro`; `landmarks.size()` — 19 (прежнее «44 перебора» не воспроизвелось ни одной мерой); `landmark_by_id` — 55 вызовов (`src` 41, `tests` 14); дверь обхода `for_each_landmark` (`landmark_iter.h:40`) — 8×N за звонок при 7 звонящих, 5 из них UI каждый кадр | **РАСХОЖДЕНИЕ, самое крупное** — M-90, M-88 |
 | `Landmark::inventory` (1024 × `ItemRef` 40 Б) | 40 960 Б на место | — | `Landmark` | `Inventory` двери (`items.h:301-449`), существа — `world_row.h` (28 inline) | индекс слота; предметы снизу, существа плотной областью сверху | сырые `.slots[` вне `items.h`/`world_row.h` — **34** (`world_row.h` 13, `currency.h` 5, `npc_ai.cpp` 7, `save.cpp` 3, `items.cpp` 3, `world_tick.cpp` 2, `squad.h` 1) + 9 range-for; обходов области существ мимо двери — 11 | **ПРАВДА** по форме (M-71); обходы мимо двери — наряда нет |
 | `Landmark::interests` | `Interest` 8 Б × 128 = 1024 Б на место | 32 МиБ по капу мест | `Landmark` (`state.h:506`) | `interest_find/set/clear`, `interests_tick_day`, `set_suzerain` | плотный префикс | 3 (`state.h:1090,1108`, `npc_ai.cpp:4355`) | **ПРАВДА** |
 | `Landmark::name` | `std::string` | 24/32 Б на место + куча | `Landmark` (`state.h:469`) | — | — | — | **РАСХОЖДЕНИЕ** — единственная строка на сущности; вердикт: `char[N]`; M-42 |
-| `Politik::cities` | `City` 80 Б (со `std::string name`) × вектор | без капа | `GameState::politik` (`politik.h:72`) | перебор | перебор | — | **РАСХОЖДЕНИЕ** — второй список городов; M-90 |
+| `Politik::cities` | `City` 72 Б на libc++ (со `std::string name` — число зависит от библиотеки; «80» была мера другой) × вектор | без капа | `GameState::politik` (`politik.h:72`) | перебор | перебор | — | **РАСХОЖДЕНИЕ** — второй список городов; M-90 |
 | `GameState::deserterPool` | `Inventory` 40 960 Б | 40 960 Б | `GameState` (`state.h:943`) | `creatures_push/_slot`, `creatures_move` / читателей вне сейва **0** | область существ | 0 | **ПРАВДА** — сток без выхода, M-13 |
 
 ### Каталоги (штабель CATALOG — известен на сборке)
 
 | каталог | строк × sizeof | счёт из списка? | сторож порядка | статус |
 |---|---|---|---|---|
-| `kNpcTypeDefs` (`npc.h:467`) | 46 × 416 Б | из `enum NPCType` (не `std::size`) | `rows_in_enum_order :1823` | строковые колонки `id/label/lootId/wildFaction`; 46 сырых индексаций вне файла (`fauna.cpp` 41) |
+| `kNpcTypeDefs@src/tables/npc.h` | 46 × 400 Б (переснято 2026-09-28 переписью: «416» не сходилось) | из `enum NPCType` (не `std::size`) | `rows_in_enum_order :1823` | строковые колонки `id/label/lootId/wildFaction`; 46 сырых индексаций вне файла (`fauna.cpp` 41) |
 | `kSpellDefs@src/tables/spells.h` | 10 × 224 Б | `sizeof/sizeof :576-577` | — (enum нет) | `statusEffect` читает только UI (`ui/overlays.cpp:1653-1660`) — колонка-сирота |
 | `kFactionDefs@src/tables/faction.h` | 19 × 56 Б; потолок 64 | `sizeof/sizeof :207-208`, `static_assert ≤64 :210` | — | `faction_index` — strcmp (`:230`), зовётся из тика (`npc_ai.cpp:2313`, `faction_or_freefolk :257`) — M-103 |
 | `kCommodities` (`commodity.h:56`) | 15 × 8 Б | `sizeof/sizeof :99-100`, пин `==15 :103` | — | `kRawCommodityCount = 6` — ручной литерал (`:101`); `commodity_index` — линейный strcmp (`:113`) |
@@ -1390,7 +1407,7 @@ CharacterCreation, Playing (HUD, панели, консоль), Menu, Dead) →
 | выход из мира | факт POD — ПРАВДА; четыре канала, второй тип записи со строками, два мутатора L3 (мёртвая дверь `record` снесена — M-116 ч.1) | M-50, M-103, M-116 (ПОЛОВИНА); форма шины — вердикт CANON S20 |
 | сейв | порядок, версия и ВЫВЕДЕННЫЙ потолок payload (`kMaxPayloadBytes@src/macro/save.cpp`, M-119 ч.1) — ПРАВДА; производные не пересобираются; кап 16384; PreBattle | M-106, M-119 (ПОЛОВИНА) |
 | стык | направление — ПРАВДА; вход конвертом, выход по ходу, один registry, лут трупа исчезает | M-98, M-105 |
-| память | `sizeof` под `static_assert` — ПРАВДА на libc++; на libstdc++/MSVC ассерты падают из-за `std::string`; перепись штабелей врёт на типе полей и молчит о 10 буферах | эпик строк (вердикт 2026-09-25), M-91 |
+| память | `sizeof` под `static_assert` — ПРАВДА на libc++; на libstdc++/MSVC ассерты падают из-за `std::string`; перепись штабелей ПОЛНА (M-114, 63 строки), но её полноту не стережёт машина | эпик строк (вердикт 2026-09-25), M-91, M-184 |
 
 ### Расхождения без наряда (перепись 2026-09-25) — к заведению в реестре
 
@@ -1399,7 +1416,7 @@ CharacterCreation, Playing (HUD, панели, консоль), Menu, Dead) →
 3. ~~Три каскада «какой биом»~~ — ЗАКРЫТО M-110 (2026-09-28): каскадов оказалось ЧЕТЫРЕ (плюс `generate_zones`), все сведены в один, и он свёрнут в ПОЛЕ над тором (`bake_biomes`); свидетель `tests/biome_cascade_test.cpp`. ~~Шесть спеллингов «вода ли»~~ — закрыто M-109. Номер пункта сохранён: на номера этого списка ссылаются наряды реестра.
 4. ~~`FeatureLayer::set` без вызовов; 9 сырых записей фич; пашни генезиса сырым индексом.~~ ЗАКРЫТО M-112 ч.1: дверь в двух формах (индекс/пара), девять сырых записей снесены, пашни генезиса идут `plough_field_cell`. Остаток наряда — одна сырая ПЕРЕПИСЬ байтов под трассой (`out.features->data[i]`, `generate_macro_world@src/macro/world_gen.cpp`; промт её не видел, потому что грепал `features\.data\[` без стрелки), `TreeLayer` (п.5), `builtFeatures` без писателя.
 5. `TreeLayer::at`/`set_tree_count` адресуют клетку по-разному.
-6. Перепись `core/stacks.h`: тип полей int32 вместо u16; нет `MacroStore`, `ScentField`, `rgba`, `NavWorld`, `PathCostData`, `KnowledgeLayer`, `ZoneLayer`, `LandmarkGrid`, `cellOwner`, `reach`; `StackKind::Catalog` без строк; «1.36 ГиБ» вместо 1.29.
+6. ~~Перепись `core/stacks.h` молчит о десяти буферах~~ — ЗАКРЫТО M-114 (2026-09-28): 63 строки, 16 259.8 МиБ по капам. Осталось: `kResourceFields` переписи недоступен (живёт в `macro_stock.cpp`), и полноту переписи не стережёт машина — M-184.
 7. `static_assert(sizeof(Landmark)==42400)`, `sizeof(GameState)==49456` — держатся только на libc++.
 8. `ScentField`: свой адрес, рукописная диффузия, аллокация 4 МиБ в день, 76 МиБ вне переписи.
 9. `builtFeatures` — список без рантайм-писателя; `plough_field_cell` его не пополняет.

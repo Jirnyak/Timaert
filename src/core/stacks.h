@@ -43,15 +43,32 @@
 #pragma once
 
 #include "ecs/components.h"
+#include "macro/agent_memory.h"
+#include "macro/character_sheet.h"
+#include "macro/chronicle.h"
 #include "macro/deposit_layer.h"
 #include "macro/features.h"
+#include "macro/knowledge.h"
+#include "macro/landmark_grid.h"
 #include "macro/macro_world.h"
+#include "macro/map_generator.h"
+#include "macro/nav_field.h"
+#include "macro/pathfinding.h"
+#include "macro/politik.h"
 #include "macro/resource_field.h"
+#include "macro/scent_field.h"
+#include "macro/spell_book_state.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
+#include "macro/zones.h"
+#include "tables/commodity.h"
+#include "tables/faction.h"
+#include "tables/npc.h"
+#include "tables/spells.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 
 namespace sm {
 
@@ -63,12 +80,22 @@ enum class StackKind : std::uint8_t {
     Scalars,     // единственный экземпляр: состояние мира
 };
 
+// ОДНА СТРОКА ПЕРЕПИСИ = ОДНА АЛЛОКАЦИЯ, а не одна система. Правило записано
+// вслух, потому что групповая строка и есть тот способ, которым перепись
+// однажды промолчала: «навигация» одним пунктом прячет шесть колонок по
+// клетке и четыре таблицы по округе, и ни одну из них нельзя ни сложить, ни
+// сверить. Три колонки `PathCostData` — три строки; два канала следа — две.
 struct StackRow {
     const char* name;        // как штабель зовут в мире
     const char* rowType;     // тип ОДНОЙ строки
     StackKind   kind;
     std::size_t rowBytes;    // sizeof одной строки
-    std::size_t cap;         // потолок строк (0 = каталог, размер = его длина)
+    // ПОТОЛОК СТРОК, И ОН ЕСТЬ У КАЖДОГО ШТАБЕЛЯ, включая каталог: у каталога
+    // потолок И ЕСТЬ его длина, выведенная `std::size` из самой таблицы.
+    // (Здесь стояло «0 = каталог» — ложь, которую держал только комментарий:
+    // свидетель `stack_census_test` запрещает нулевой потолок с первого дня,
+    // и ровно поэтому каталожных строк не было заведено ни одной.)
+    std::size_t cap;
 };
 
 // ── ПОТОЛКИ МИРА ─────────────────────────────────────────────────────────
@@ -90,6 +117,38 @@ inline constexpr std::size_t kWorldLandmarks = 32768u;
 // массивом; kWorldLandmarks выше и kWorldSquads сольются в него по мере
 // сноса (M-90, M-106).
 inline constexpr std::size_t kMacroEntityCap = 32768u;
+
+// ПОТОЛОК ОКРУГ НАВИГАЦИИ — ЗАИМСТВОВАННЫЙ, И ЭТО СКАЗАНО ВСЛУХ. Округа
+// рождается на КАЖДОЕ живое место (`nav_bake@src/macro/nav_field.cpp`:
+// `regionLandmarkId.push_back(lm.id)` на каждый не-None ландмарк), поэтому
+// своего числа у графа нет вовсе: единственный гейт в коде — отказ запекаться
+// при `R >= kNavNoRegion` (65534), то есть предел ТИПА, а не предел мира.
+// Перепись берёт `kWorldLandmarks` как меньший из двух названных и пишет
+// правду о цене: четыре таблицы графа КВАДРАТИЧНЫ по этому числу (12 ГиБ по
+// капу против ~40 МиБ на замеренном мире). Числом это стоит здесь затем,
+// чтобы было ВИДНО: сам граф — отдельный эпик после полировки систем
+// (вердикт владельца 2026-09-28: «там надо BFS и связные окрестности»), и
+// худеть его переписью ЗАПРЕЩЕНО.
+inline constexpr std::size_t kNavRegionCap = kWorldLandmarks;
+
+// СТРОКА ГЛАДКОЙ ПАМЯТИ МАКРО-СКВАДОВ — СУММА КОЛОНОК, А НЕ ЛИТЕРАЛ.
+// `MacroStore` (macro/store.h) сюда включить нельзя: он сам включает этот
+// файл ради `kMacroEntityCap`. Поэтому цена слота считается здесь из тех же
+// типов, из которых он сложен, а СХОДИМОСТЬ с настоящим `sizeof(MacroStore)`
+// закреплена `static_assert`-ом на той стороне (`store.h`) — перепись и
+// структура не могут разъехаться молча ни в одну сторону.
+inline constexpr std::size_t kMacroStoreRowBytes =
+    sizeof(ecs::MacroSpawnId) + sizeof(ecs::MacroCell) + sizeof(ecs::NPCKind)
+    + sizeof(ecs::MacroVisual) + sizeof(ecs::NpcCharacter)
+    + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)
+    + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook) + sizeof(AgentMemory)
+    + sizeof(ecs::SquadRoster) + sizeof(ecs::NpcInventory)
+    + sizeof(CharacterSheet) + sizeof(ecs::SquadOrders)
+    + sizeof(ecs::BodyEquipment) + sizeof(ecs::DesignCharacterTag)
+    + sizeof(std::uint8_t)            // dead — байт судьбы
+    + sizeof(std::uint16_t)           // generation — поколение слота
+    + sizeof(std::uint8_t)            // alive — занятость
+    + sizeof(std::uint16_t);          // freeSlots — стек свободных
 
 // СКОЛЬКО РЯДОВ РЕАЛЬНО ВЫДЕЛЯЮТ СВОЁ ПОЛЕ ШРАМОВ. Не десять: ряд-НОСИТЕЛЬ
 // (лес и шесть жил) держит живое состояние в своём контейнере, и
@@ -172,13 +231,107 @@ inline constexpr StackRow kStacks[] = {
      StackKind::ByCell, 2, kWorldCells * kScarRows},
     {"жилы (шесть родов)", "std::uint16_t", StackKind::ByCell, 2,
      kWorldCells * kDepositKindCount},
+    // ВТОРОЕ ПОЛЕ РЯДА, А НЕ СЛУЖЕБНЫЙ ХВОСТ ЖИЛ: `ResourceGrid::reach`
+    // (resource_field.h) — счёт живых клеток ряда в радиусе `reachCells`,
+    // его держит в согласии сама дверь записи. Живёт у тех рядов, что
+    // объявили радиус: сегодня это шесть жил (`kGathererReach` в
+    // `kResourceFields`), у пашни/зверя/табуна радиус 0 и вектор пуст.
+    {"досягаемость жил (диски)", "std::uint16_t", StackKind::ByCell, 2,
+     kWorldCells * kDepositKindCount},
     {"лес", "std::uint16_t", StackKind::ByCell, 2, kWorldCells},
     {"фичи", "std::uint8_t", StackKind::ByCell, 1, kWorldCells},
     {"числа фич (слой разработки)", "std::uint16_t", StackKind::ByCell, 2,
      kWorldCells},
 
+    // ── ОБРАЗ МИРА: то, чем мир РОДИЛСЯ (macro/map_generator.h) ──────────
+    // Четыре канала одним вектором, поэтому потолок = 4×N, а строка — байт.
+    {"терраин: образ RGBA", "std::uint8_t", StackKind::ByCell, 1,
+     kWorldCells * 4},
+    {"терраин: биом", "std::uint8_t", StackKind::ByCell, 1, kWorldCells},
+    {"терраин: реки", "std::uint8_t", StackKind::ByCell, 1, kWorldCells},
+    {"опасность (зоны)", "std::uint8_t", StackKind::ByCell, 1, kWorldCells},
+    {"владение клеткой (фракция)", "std::uint8_t", StackKind::ByCell, 1,
+     kWorldCells},
+    {"знание игрока", "std::uint8_t", StackKind::ByCell, 1, kWorldCells},
+    // Кто стоит на клетке: слот в плотный список ссылок (он ниже, по
+    // ординалу). 0xFFFF = «никто», поэтому потолок списка на единицу ниже.
+    {"сетка мест: слот клетки", "std::uint16_t", StackKind::ByCell, 2,
+     kWorldCells},
+
+    // ── ЦЕНА ПУТИ (macro/pathfinding.h) — ТРИ КОЛОНКИ, ТРИ СТРОКИ ───────
+    {"цена пути: вес клетки", "float", StackKind::ByCell, 4, kWorldCells},
+    {"цена пути: вода", "std::uint8_t", StackKind::ByCell, 1, kWorldCells},
+    {"цена пути: высота", "std::uint8_t", StackKind::ByCell, 1, kWorldCells},
+
+    // ── НАВИГАЦИЯ ПО КЛЕТКЕ (macro/nav_field.h) ─────────────────────────
+    {"навигация: округа клетки", "std::uint16_t", StackKind::ByCell, 2,
+     kWorldCells},
+    {"навигация: цена до своего места", "std::uint16_t", StackKind::ByCell,
+     2, kWorldCells},
+    {"навигация: шаг к своему месту", "std::uint8_t", StackKind::ByCell, 1,
+     kWorldCells},
+    {"навигация: чья вода", "std::uint16_t", StackKind::ByCell, 2,
+     kWorldCells},
+    {"навигация: цена до берега", "std::uint16_t", StackKind::ByCell, 2,
+     kWorldCells},
+    {"навигация: шаг к берегу", "std::uint8_t", StackKind::ByCell, 1,
+     kWorldCells},
+    // Плоскость на слот портала: потолок слотов и есть кап порталов округи.
+    {"навигация: планы порталов", "std::uint16_t", StackKind::ByCell, 2,
+     kWorldCells * std::size_t(kNavMaxPortalsPerRegion)},
+
+    // ── СЛЕД (macro/scent_field.h): план на фракцию, два канала ──────────
+    // Потолок — `kMaxFactions` (64 = ширина маски враждебности, ОДНО число
+    // игры), хотя сегодня `scent_reset` выделяет по `kFactionCount` = числу
+    // авторских строк реестра: мир растёт строками, а перепись обязана
+    // называть предел, а не сегодняшнее состояние таблицы.
+    {"след: сила", "std::uint16_t", StackKind::ByCell, 2,
+     kWorldCells * std::size_t(kMaxFactions)},
+    {"след: богатство", "std::uint16_t", StackKind::ByCell, 2,
+     kWorldCells * std::size_t(kMaxFactions)},
+
+    // ── ПРЕДСТАВЛЕНИЕ И СКРЭТЧ — НЕ МИР ─────────────────────────────────
+    // Они здесь по той же причине, что и всё остальное: это резидентная
+    // память, размеренная миром. Но мира они не несут — из них ничего не
+    // сохраняется и на них ничего не основано; вопрос «что в клетке» им не
+    // задают. Помечены прямо в имени, чтобы следующая перепись не приняла
+    // кэш за поле (ЗАКОН ТУПИКА РЕНДЕРА: что ушло в рендер, не идёт никуда).
+    {"оптический кэш: высоты (представление, не мир)", "float",
+     StackKind::ByCell, 4, kWorldCells},
+    {"оптический кэш: густота леса (представление, не мир)", "float",
+     StackKind::ByCell, 4, kWorldCells},
+    {"A* скрэтч: g (скрэтч, не мир)", "float", StackKind::ByCell, 4,
+     kWorldCells},
+    {"A* скрэтч: родитель X (скрэтч, не мир)", "std::int32_t",
+     StackKind::ByCell, 4, kWorldCells},
+    {"A* скрэтч: родитель Y (скрэтч, не мир)", "std::int32_t",
+     StackKind::ByCell, 4, kWorldCells},
+    {"A* скрэтч: метка закрытых (скрэтч, не мир)", "std::uint32_t",
+     StackKind::ByCell, 4, kWorldCells},
+    {"A* скрэтч: метка g (скрэтч, не мир)", "std::uint32_t",
+     StackKind::ByCell, 4, kWorldCells},
+    {"A* куча: слот клетки (скрэтч, не мир)", "std::int32_t",
+     StackKind::ByCell, 4, kWorldCells},
+    {"A* куча: метка поколения (скрэтч, не мир)", "std::uint32_t",
+     StackKind::ByCell, 4, kWorldCells},
+
     // ШТАБЕЛЯ ПО ОРДИНАЛУ — сущности. ОДИН ШТАБЕЛЬ НА КОЛОНКУ (вердикт
     // владельца 2026-09-22): обход одной колонки не тащит остальные в кэш.
+    //
+    // ГЛАДКАЯ ПАМЯТЬ МАКРОМИРА ОДНОЙ СТРОКОЙ. Восемнадцать колонок плюс
+    // служебные — по `std::array<T, kMacroEntityCap>` на каждую, то есть
+    // резидентно с рождения мира, пустота оплачена сознательно (вердикт
+    // 2026-09-25). Строкой ЗДЕСЬ, а не восемнадцатью: колонки перечислены
+    // X-макросом `SM_MACRO_STORE_COLUMNS` в `store.h`, и раскрыть его тут
+    // нельзя — он на другой стороне включения. Сходимость держит
+    // `static_assert` там же (`store.h`), а не доверие.
+    {"гладкая память макро-сквадов (MacroStore)",
+     "18 колонок SoA + служебные", StackKind::ByOrdinal, kMacroStoreRowBytes,
+     kMacroEntityCap},
+    // Ниже — ДОФЛИПОВАЯ форма тех же сквадов: компоненты entt, сегодня мост
+    // связей, а не состояние (M-106 шаг 1е — снос). Стоят отдельными
+    // строками потому, что память под них СЕГОДНЯ ЖИВАЯ, и перепись обязана
+    // показывать обе цены, пока мост не снят.
     {"марш сквада", "ecs::MacroNpcRuntime", StackKind::ByOrdinal,
      sizeof(ecs::MacroNpcRuntime), kWorldSquads},
     {"инвентарь сквада", "ecs::NpcInventory", StackKind::ByOrdinal,
@@ -193,6 +346,73 @@ inline constexpr StackRow kStacks[] = {
     // замеренном мире (~1 880 мест).
     {"место (Landmark, под снос M-90)", "Landmark", StackKind::ByOrdinal,
      sizeof(Landmark), kWorldLandmarks},
+    // Плотный список ссылок сетки мест: слот клетки (выше) индексирует его.
+    // Потолок — на единицу ниже сторожевого 0xFFFF, и это не оговорка: у
+    // узкого индекса «нет элемента» есть ПОСЛЕДНЕЕ значение типа, поэтому
+    // кап теряет ровно одну строку (ЗАКОН УЗКОГО ИНДЕКСА).
+    {"сетка мест: список ссылок", "LandmarkRef", StackKind::ByOrdinal,
+     sizeof(LandmarkRef), std::size_t(LandmarkGrid::kNoLandmark)},
+    // ВТОРОЙ СПИСОК ГОРОДОВ рядом с ростером мест, своего потолка не имеет
+    // вовсе (`std::vector` без резерва) — перепись берёт кап мест как
+    // единственное названное число. Под снос тем же M-90.
+    {"города политика (второй список, под снос M-90)", "City",
+     StackKind::ByOrdinal, sizeof(City), kWorldLandmarks},
+    {"пул дезертиров (сток без выхода, M-13)", "ecs::NpcInventory",
+     StackKind::ByOrdinal, sizeof(ecs::NpcInventory), 1},
+
+    // ── ЛЕТОПИСЬ (macro/chronicle.h): два яруса одной записи ────────────
+    {"летопись: кольцо (что мир помнит пока)", "WorldFact",
+     StackKind::ByOrdinal, sizeof(WorldFact), kChronicleFacts},
+    {"летопись: анналы (что мир помнит навсегда)", "WorldFact",
+     StackKind::ByOrdinal, sizeof(WorldFact), kChronicleAnnals},
+    // ИНДЕКС ГРУБЫЙ, И ПОТОМУ ОН НЕ ПОЛЕ НАД МИРОМ: строка адресуется
+    // ординалом индексной клетки 8×8, а не клеткой тора — «что случилось
+    // рядом» есть вопрос об ОКРЕСТНОСТИ (та же форма, что у индекса сквадов).
+    {"летопись: индекс клеток", "std::uint32_t", StackKind::ByOrdinal, 4,
+     kWorldCells / (std::size_t(kChronicleCellSize)
+                    * std::size_t(kChronicleCellSize))},
+
+    // ── НАВИГАЦИЯ ПО ОКРУГЕ (macro/nav_field.h) ─────────────────────────
+    // Потолок у всех один — `kNavRegionCap` (см. его вывод выше).
+    {"навигация: место округи", "std::int32_t", StackKind::ByOrdinal, 4,
+     kNavRegionCap},
+    {"навигация: клетка места округи", "std::int32_t", StackKind::ByOrdinal,
+     4, kNavRegionCap},
+    {"навигация: начало порталов округи", "std::uint32_t",
+     StackKind::ByOrdinal, 4, kNavRegionCap},
+    {"навигация: счёт порталов округи", "std::uint8_t", StackKind::ByOrdinal,
+     1, kNavRegionCap},
+    {"навигация: угроза округи (в деньгах)", "std::uint32_t",
+     StackKind::ByOrdinal, 4, kNavRegionCap},
+    {"навигация: порталы", "NavPortal", StackKind::ByOrdinal,
+     sizeof(NavPortal),
+     kNavRegionCap * std::size_t(kNavMaxPortalsPerRegion)},
+    // ЧЕТЫРЕ ТАБЛИЦЫ R×R — САМАЯ ДОРОГАЯ СТРОКА ПЕРЕПИСИ, И ЭТО НЕ ОШИБКА
+    // ЗАПИСИ. Граф округ квадратичен по числу мест; при капе мест это 12 ГиБ,
+    // на замеренном мире (~1.9 тыс. мест) — ~40 МиБ. Число стоит здесь
+    // затем, чтобы оно было ВИДНО целиком (AGENTS DOD п.10), а не затем,
+    // чтобы его лечили: сам граф — отдельный эпик после полировки систем.
+    {"навигация: цена маршрута (пеший)", "std::uint32_t",
+     StackKind::ByOrdinal, 4, kNavRegionCap * kNavRegionCap},
+    {"навигация: шаг маршрута (пеший)", "std::uint16_t",
+     StackKind::ByOrdinal, 2, kNavRegionCap * kNavRegionCap},
+    {"навигация: цена маршрута (морской)", "std::uint32_t",
+     StackKind::ByOrdinal, 4, kNavRegionCap * kNavRegionCap},
+    {"навигация: шаг маршрута (морской)", "std::uint16_t",
+     StackKind::ByOrdinal, 2, kNavRegionCap * kNavRegionCap},
+
+    // ── КАТАЛОГИ — строки законов, известные на сборке ──────────────────
+    // Род `Catalog` был объявлен 2026-09-22 и ни разу не заполнен. Потолок
+    // каталога ВЫВОДИТСЯ `std::size` из самой таблицы: ручное число рядом с
+    // таблицей есть второй словарь (ЗАКОН СЛОВАРЯ п.3).
+    {"строки существ", "NpcTypeDef", StackKind::Catalog, sizeof(NpcTypeDef),
+     std::size(kNpcTypeDefs)},
+    {"строки заклинаний", "SpellDef", StackKind::Catalog, sizeof(SpellDef),
+     std::size(kSpellDefs)},
+    {"строки фракций", "FactionDef", StackKind::Catalog, sizeof(FactionDef),
+     std::size(kFactionDefs)},
+    {"строки товаров", "CommodityDef", StackKind::Catalog,
+     sizeof(CommodityDef), std::size(kCommodities)},
 
     // СКАЛЯРЫ МИРА — единственный экземпляр, названное исключение.
     {"состояние мира", "GameState", StackKind::Scalars, sizeof(GameState), 1},
