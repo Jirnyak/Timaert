@@ -693,7 +693,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
 
     // A2: Sky pipeline (fullscreen.vert + sky.frag, no vertex input, depth
     // off) + the constellation-star UBO at set 0: authored star directions
-    // (macro/celestial.h) written ONCE here — static data, static buffer.
+    // (tables/celestial.h) written ONCE here — static data, static buffer.
     {
         VkDescriptorSetLayoutBinding b{};
         b.binding = 0;

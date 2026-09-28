@@ -35,7 +35,7 @@
 // through here.
 #pragma once
 
-#include "macro/seasons.h"
+#include "tables/seasons.h"
 #include "core/torus.h"   // cell_of — адрес клетки мира, одна дверь
 #include <cmath>
 #include <cstdint>

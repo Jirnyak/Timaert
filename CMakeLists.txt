@@ -135,7 +135,7 @@ find_package(Vulkan REQUIRED)
 
 file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
     src/app/*.cpp src/core/*.cpp src/gpu/*.cpp src/ecs/*.cpp
-    src/macro/*.cpp src/sub/*.cpp src/events/*.cpp
+    src/tables/*.cpp src/macro/*.cpp src/sub/*.cpp src/events/*.cpp
     src/content/*.cpp src/ui/*.cpp src/assets/*.cpp)
 
 # GPU (Vulkan) sources, also reused standalone by the gpu_smoke bring-up target.
@@ -1158,7 +1158,7 @@ timaert_test(targeting_test
 timaert_test(fauna_registry_test
     SOURCES
         src/macro/fauna.cpp)
-# THE sprite table (macro/sprite_rows.h): totality over the creature catalog and
+# THE sprite table (tables/sprite_rows.h): totality over the creature catalog and
 # the NPC kinds, every row drawable, the creature↔row name binding, and the
 # negative control that the binding check can actually fail. Pure data — it
 # links the fauna registry only to walk the catalog.
@@ -1234,7 +1234,7 @@ timaert_test(faction_relations_test
 # whole-day durations converting at zero residue.
 
 timaert_test(time_ladder_test)
-# Seasons data contract (macro/seasons.h). Header-only, pure derivation of the
+# Seasons data contract (tables/seasons.h). Header-only, pure derivation of the
 # world day — no macro/renderer sources needed. Proves the season cycle starts
 # at Spring on day 1, is periodic and total (wraps non-positive days), and that
 # the temperature offsets are ordered the way the foliage consumer relies on.

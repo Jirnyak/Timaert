@@ -436,7 +436,7 @@ struct BarCeilings {
 //
 // INTEGER, phase 4в (the discrete house): the adds are whole points and the
 // multipliers are whole PERCENT (100 = ×1) — the same currency the strike
-// assembly already multiplies by (multPct/100, macro/damage_types.h). The
+// assembly already multiplies by (multPct/100, tables/damage_types.h). The
 // floats they were forced every reader to floor at its own doorstep; the
 // floor now happens once, in calculate_derived, and a drifted rounding
 // cannot exist.

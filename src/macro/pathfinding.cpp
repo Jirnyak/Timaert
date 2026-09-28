@@ -8,7 +8,7 @@
 #include "core/torus.h"
 #include "macro/pathfinding.h"
 #include "macro/movement_cost.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/tree_layer.h"
 
 #include <algorithm>

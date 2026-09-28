@@ -17,7 +17,7 @@
 // each subworld cell match the species shown on the macro map.
 #pragma once
 #include <cstdint>
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 
 namespace sm::sub {
 

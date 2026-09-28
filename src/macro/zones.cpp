@@ -13,7 +13,7 @@
 // wrapped per octave (no seam at world edges).
 
 #include "macro/zones.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/optics.h"
 #include "macro/tree_layer.h"
 #include "core/rng.h"

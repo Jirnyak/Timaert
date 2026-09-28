@@ -20,7 +20,7 @@
 
 #include "check.h"
 #include "core/time.h"
-#include "macro/seasons.h"
+#include "tables/seasons.h"
 
 #include <cstdio>
 #include <initializer_list>

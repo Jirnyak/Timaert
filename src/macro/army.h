@@ -4,7 +4,7 @@
 // the NPC registry's CombatTemplate; there is no separate unit schema.
 #pragma once
 
-#include "macro/damage_types.h"
+#include "tables/damage_types.h"
 
 #include <algorithm>
 #include <cstddef>

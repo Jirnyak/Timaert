@@ -3,7 +3,7 @@
 #include "core/rng.h"
 #include "core/torus.h"
 #include "macro/agent_memory.h"
-#include "macro/commodity.h"
+#include "tables/commodity.h"
 #include "macro/items.h"
 #include "macro/npc.h"
 #include "macro/politik.h"

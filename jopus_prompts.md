@@ -924,14 +924,14 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 **Три каскада сегодня (SKELETON I.1, `SKELETON.md:151`):**
 1. МИР — `biome_at_cell@src/macro/map_generator.h`: вода по маске A (П-5
    меняет на `is_water`), `Mountain` при `h ≥ kMountainBiomeLevel = 0.75`
-   (`biomes.h:64`), иначе `biome_from_climate@src/macro/biomes.h`;
+   (`biomes.h:64`), иначе `biome_from_climate@src/tables/biomes.h`;
 2. ТРАССЕР РЕК — свой массив биомов (`map_generator.cpp:552-570`): вода по
    `h <= seaLevel8` (П-5 → `is_water`), `biome_from_climate` БЕЗ Mountain;
 3. ЛЕС — `spawners.cpp:258-280`: свой горный потолок `h > 0.80f` и
    `biome_from_climate` без Mountain.
 Порог горы — два числа одной величины: 0.75 и 0.80.
 
-**1. Контекст.** Читать: `src/macro/biomes.h:40-76`,
+**1. Контекст.** Читать: `src/tables/biomes.h:40-76`,
 `src/macro/map_generator.h:105-130`, `src/macro/map_generator.cpp:540-600`
 (трассер: как читается `biome[]` дальше — где «край биома» ведёт реку),
 `src/macro/spawners.cpp:240-300`. Тесты: `tests/river_generation_test.cpp`
@@ -1576,7 +1576,7 @@ return -1` — второй запрет мира рядом с водой. Го
 `r.needIdx`).
 
 **1. Контекст.** Читать: `src/macro/items.h:265-320, 370-440` (двери
-склада), `src/macro/commodity.h:30-60, 105-125`, `src/macro/econ_day.h:70-80,
+склада), `src/tables/commodity.h:30-60, 105-125`, `src/macro/econ_day.h:70-80,
 135-145` (строки рецептов/нужд — `const char*`), `src/macro/econ_day.cpp:40-55`
 (образец кэша), и по ±10 строк вокруг КАЖДОЙ точки списка. Откуда
 приходит `id` в каждую точку (аргумент функции? колонка строки каталога

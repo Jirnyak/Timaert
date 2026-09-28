@@ -23,7 +23,7 @@
 #pragma once
 #include <cstdint>
 
-#include "macro/commodity.h"
+#include "tables/commodity.h"
 #include "macro/items.h"
 
 namespace sm {

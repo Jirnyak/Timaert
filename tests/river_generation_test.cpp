@@ -25,7 +25,7 @@
 //   out of the height remap + bilinear blend, exactly as intended.
 #include "check.h"
 
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/map_generator.h"
 #include "sub/base_generator.h"
 #include "sub/map_data.h"

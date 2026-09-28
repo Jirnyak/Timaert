@@ -40,7 +40,7 @@
 
 #include "core/table_guard.h"
 #include "macro/attributes.h"
-#include "macro/damage_types.h"
+#include "tables/damage_types.h"
 
 #include <algorithm>
 #include <array>

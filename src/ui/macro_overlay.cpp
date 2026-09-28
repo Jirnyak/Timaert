@@ -24,7 +24,7 @@
 #include "macro/npc.h"
 #include "macro/faction.h"
 #include "macro/npc_spawn.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
 #include "macro/macro_night.h"   // ОДНА дверь «сколько сейчас ночи» (M-165)

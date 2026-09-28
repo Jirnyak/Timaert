@@ -23,7 +23,7 @@
 #pragma once
 
 #include "gpu/vk_sprite_array.h"
-#include "macro/sprite_rows.h"
+#include "tables/sprite_rows.h"
 
 #include <cstdint>
 

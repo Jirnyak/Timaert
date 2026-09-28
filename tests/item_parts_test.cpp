@@ -19,7 +19,7 @@
 //     non-fungible first, and never touches plain (fungible) stacks.
 #include "check.h"
 
-#include "macro/commodity.h"
+#include "tables/commodity.h"
 #include "macro/currency.h"
 #include "macro/items.h"
 

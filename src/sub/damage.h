@@ -29,7 +29,7 @@
 // the wound.
 #pragma once
 
-#include "macro/damage_types.h"
+#include "tables/damage_types.h"
 
 #include <cstdint>
 #include <entt/entt.hpp>
@@ -44,7 +44,7 @@ namespace sm::sub {
 inline constexpr float kHitFlashDuration = 0.15f;
 
 // The mitigation law itself (the 9-type symmetry, kArmorHalving,
-// mitigate_amount) lives in macro/damage_types.h — the auto-resolve reads it
+// mitigate_amount) lives in tables/damage_types.h — the auto-resolve reads it
 // there too, and the macro data layer cannot include this ECS-facing header.
 
 // A damage KIND is a row, and the row is the whole difference between weapons.

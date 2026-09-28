@@ -18,7 +18,7 @@
 #include "core/time.h"       // the ladder: kSubworldWalkTilesPerSecond derives from it
 #include "ecs/pools.h"       // the bars this law spends and bites — one home
 #include "macro/attributes.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/features.h"
 
 namespace sm {

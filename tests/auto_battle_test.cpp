@@ -79,7 +79,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
     struct Body {
         float x, y, vx, vy, hp, dmg, cd, cdMax, reach, speed, radius;
         // This body's armour against the physical blow the harness trades —
-        // fed to THE door's own law (mitigate_amount, macro/damage_types.h),
+        // fed to THE door's own law (mitigate_amount, tables/damage_types.h),
         // so the fought harness softens every strike exactly as the shipping
         // door does, hybrid threshold included.
         int armour;

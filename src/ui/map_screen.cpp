@@ -1,6 +1,6 @@
 #include "ui/map_screen.h"
 
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/landmark_iter.h"
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"

@@ -1,4 +1,4 @@
-// Locks the DATA CONTRACT of the seasons system (macro/seasons.h).
+// Locks the DATA CONTRACT of the seasons system (tables/seasons.h).
 //
 // Seasons are a pure derivation of the absolute world day — no serialized state.
 // This test proves the derivation is total and stable:
@@ -14,7 +14,7 @@
 // still compiles.
 
 #include "check.h"
-#include "macro/seasons.h"
+#include "tables/seasons.h"
 
 #include <initializer_list>
 

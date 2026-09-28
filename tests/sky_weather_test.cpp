@@ -7,7 +7,7 @@
 // honest ranges, seasonal kinds, day-window smoothness (no popping), variety
 // (both wet and dry days exist), and the lightning envelope's contract.
 //
-// Year layout (macro/seasons.h): 32 days a season — spring 1..32,
+// Year layout (tables/seasons.h): 32 days a season — spring 1..32,
 // summer 33..64, autumn 65..96, winter 97..128.
 #include "check.h"
 

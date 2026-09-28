@@ -11,7 +11,7 @@
 //     1 tick                                the world's quantum
 //     64 ticks    = 1 real second   (2^6)   the fixed simulation step
 //     8192 ticks  = 1 game day      (2^13)  = 128 real seconds
-//     32 days     = 1 season        (2^5)   macro/seasons.h
+//     32 days     = 1 season        (2^5)   tables/seasons.h
 //     128 days    = 1 year          (2^7)   = 2^20 ticks exactly
 //
 // REAL SECONDS APPEAR IN EXACTLY ONE CONSTANT ON THIS PAGE and nowhere else in
@@ -120,7 +120,7 @@ inline constexpr int tick_of_day(std::uint64_t tick) {
     return int(tick % kTicksPerDay);
 }
 // Day 0 is the first day the ladder can express. A new game seeds day 1 so
-// that macro/seasons.h reads day 1 as the first day of Spring.
+// that tables/seasons.h reads day 1 as the first day of Spring.
 inline constexpr int day_of(std::uint64_t tick) {
     return int(tick / kTicksPerDay);
 }

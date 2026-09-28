@@ -16,7 +16,7 @@
 //      MACRO_SHOT_RESW / MACRO_SHOT_RESH (pixels, default 1600x1000).
 
 #include "gpu/vk_device.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
 #include "macro/tree_layer.h"

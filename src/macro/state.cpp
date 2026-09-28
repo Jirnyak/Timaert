@@ -1,6 +1,6 @@
 // defaultPlayer / createGameState / createFactions.
 #include "macro/state.h"
-#include "macro/codex.h"
+#include "tables/codex.h"
 #include "macro/econ_day.h"
 #include "macro/currency.h"
 #include "macro/faction.h"

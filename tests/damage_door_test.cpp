@@ -14,7 +14,7 @@
 //     stay silent for it while every other weapon spoke;
 //   * the ONE already-dead guard: a corpse takes no second blow, no matter the
 //     weapon — the spell path used to have none;
-//   * MITIGATION by the hybrid law (macro/damage_types.h): a body in its own
+//   * MITIGATION by the hybrid law (tables/damage_types.h): a body in its own
 //     skin keeps the identity (armour 0 is the limiting case, not a branch),
 //     an armoured row cuts the larger of its column's threshold or the
 //     halving fraction — full block of a blow the plate outweighs is REAL
@@ -253,7 +253,7 @@ void test_players_worn_plate_stands_underground() {
           "negative control: the player's coat covers the player alone");
 }
 
-// THE hybrid law's own shape (macro/damage_types.h) — properties, not a
+// THE hybrid law's own shape (tables/damage_types.h) — properties, not a
 // recomputation of the formula (testing law #5): each claim can break alone.
 void test_mitigation_law_shape() {
     int probes = 0, wrong = 0;

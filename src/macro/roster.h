@@ -15,7 +15,7 @@
 // вопрос о мире запрещён S16/S26; это был он.
 #pragma once
 
-#include "macro/commodity.h"   // kCommodityCount — ширина счёта харча
+#include "tables/commodity.h"   // kCommodityCount — ширина счёта харча
 
 #include <cstdint>
 

@@ -294,7 +294,7 @@ private:
     // fullscreen pass (rain/snow/hail between the camera and the world).
     gpu::VulkanPipeline rainPipe_{}; // world-space precipitation (Inc D)
     // Constellation stars: a tiny STATIC UBO (sub/sky.h SkyStarsUbo) written
-    // once at create() from macro/celestial.h's authored tables; set 0 on the
+    // once at create() from tables/celestial.h's authored tables; set 0 on the
     // sky pipeline. Never touched per frame.
     gpu::VulkanBuffer     skyStarsBuf_{};
     VkDescriptorSetLayout skySetLayout_ = VK_NULL_HANDLE;

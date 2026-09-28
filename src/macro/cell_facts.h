@@ -16,7 +16,7 @@
 // invalidates on crossing. This function is for bake time, cell entry and
 // events — the places that can afford to ask everything at once.
 #pragma once
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/landmark_grid.h"
 #include "macro/macro_world.h"

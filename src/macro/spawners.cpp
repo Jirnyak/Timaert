@@ -1,5 +1,5 @@
 #include "macro/spawners.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/macro_stock.h"      // MacroWorld — the registry's context
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/pathfinding.h"

@@ -6,7 +6,7 @@
 
 #include "macro/items.h"
 #include "macro/anatomy.h"
-#include "macro/commodity.h"
+#include "tables/commodity.h"
 #include "macro/faction.h"   // mint columns — what the neutrality witness walks
 #include "macro/npc.h"
 
@@ -77,7 +77,7 @@ constexpr ItemDef kCatalog[] = {
         /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
     // The economy's NOUNS live in THIS catalog too (owner's one-dictionary
     // ruling): the bread a city bakes and the bread in the player's bag are
-    // one row. Ids and weights match macro/commodity.h verbatim — the link
+    // one row. Ids and weights match tables/commodity.h verbatim — the link
     // law in econ_v1_test holds the two tables together.
     {"food_meat",   "Raw Meat",        ItemType::Food,       15, 0.50f, "\xF0\x9F\x8D\x96",
         "Restores 15 HP", {{std::uint8_t(BonusId::HealHp), 15}}},

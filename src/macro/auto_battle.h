@@ -101,7 +101,7 @@ inline int auto_battle_armor(const ArmorProfile& a) {
 }
 
 // Armour enters as EFFECTIVE HP through the PERCENT branch of the hybrid
-// mitigation law (macro/damage_types.h): a big blow keeps
+// mitigation law (tables/damage_types.h): a big blow keeps
 // kArmorHalving / (kArmorHalving + armor) of itself, so a body of hp H
 // absorbs H * (kArmorHalving + armor) / kArmorHalving worth of raw blows —
 // the same law, read as a multiplier. The hybrid's THRESHOLD branch (small

@@ -30,7 +30,7 @@
 #include "ecs/world.h"
 #include "macro/landmark_registry.h"
 #include "macro/macro_world.h"
-#include "macro/map_actions.h"
+#include "tables/map_actions.h"
 #include "macro/state.h"
 #include "macro/store.h"
 
@@ -104,7 +104,7 @@ inline Inventory* roster_of(const MacroWorld& w, MapSubject s) {
 }
 
 // ── THE verbs door ───────────────────────────────────────────────────────
-// What this subject OFFERS (macro/map_actions.h bits) — the universal menu
+// What this subject OFFERS (tables/map_actions.h bits) — the universal menu
 // lists exactly these rows. Landmarks declare theirs in the registry column
 // (`actions`, plus `walkable` folded in as Enter — one mask out, no second
 // byte in). A squad's vocabulary is the macro NPC's constant set: talk,

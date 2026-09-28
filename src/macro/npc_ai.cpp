@@ -20,7 +20,7 @@
 #include "macro/player_entity.h"
 #include "macro/npc_spawn.h"
 #include "macro/recovery.h"  // recover_bar — ОДНА дверь отдыха на все тела
-#include "macro/seasons.h"   // season_boundary — окно сквадов (CANON S19.2)
+#include "tables/seasons.h"   // season_boundary — окно сквадов (CANON S19.2)
 #include "macro/politik.h"          // derive_city_spacing — времянка §34.1
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/spawners.h"

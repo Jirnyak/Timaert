@@ -21,8 +21,8 @@
 #include <array>
 #include <cstdint>
 #include "macro/attributes.h"   // SkillId/Skills — ремесло открывает рецепт
-#include "macro/commodity.h"
-#include "macro/seasons.h"
+#include "tables/commodity.h"
+#include "tables/seasons.h"
 #include "macro/items.h"
 
 namespace sm {

@@ -4,7 +4,7 @@
 // guards the Water / Mountain / climate cascade and its precedence.
 #include "check.h"
 
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 
 #include <algorithm>
 #include <cmath>

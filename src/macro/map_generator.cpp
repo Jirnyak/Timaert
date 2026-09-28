@@ -1,7 +1,7 @@
 #include "core/field_noise.h"
 #include "core/torus.h"
 #include "macro/map_generator.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include <algorithm>
 #include <array>
 #include <cmath>

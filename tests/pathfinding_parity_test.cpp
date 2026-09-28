@@ -1,6 +1,6 @@
 #include "check.h"
 
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/movement_cost.h"
 #include "macro/pathfinding.h"

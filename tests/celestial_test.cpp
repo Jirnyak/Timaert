@@ -1,4 +1,4 @@
-// Locks the DATA CONTRACT of the celestial system (macro/celestial.h).
+// Locks the DATA CONTRACT of the celestial system (tables/celestial.h).
 //
 // Moons and constellations are a pure derivation of world time / authored data
 // — no serialized state, no kSaveVersion bump. This test proves:
@@ -17,7 +17,7 @@
 // prove anything reaches the screen.
 #include "check.h"
 
-#include "macro/celestial.h"
+#include "tables/celestial.h"
 
 #include <cmath>
 #include <initializer_list>

@@ -8,7 +8,7 @@
 // Catalog: the 4 faction coins, consumables (potion_hp/mp, bread, food_meat),
 // monster materials (mat_bone/hide/herb), equipment (wpn_dagger/sword/spear/
 // axe/mace/staff, arm_leather), misc_gem — plus the economy's 14 commodity
-// nouns (macro/commodity.h, owner's one-dictionary ruling): wood, stone,
+// nouns (tables/commodity.h, owner's one-dictionary ruling): wood, stone,
 // iron, silver, clay, grain, bricks, cloth, tools, furniture, wagon, jewelry,
 // carving, statue. The bread a city bakes and the bread in the player's bag
 // are ONE row; ids and weights match commodity.h verbatim (link law in
@@ -16,7 +16,7 @@
 
 #pragma once
 #include "macro/bonus.h"
-#include "macro/damage_types.h"
+#include "tables/damage_types.h"
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -126,7 +126,7 @@ struct ItemDef {
     std::uint64_t blocksMask = 0;
     // What it stops — nine columns, one per DamageType, same units as damage
     // and as a creature row's own armour, because all three meet in ONE law
-    // (macro/damage_types.h mitigate_amount). Scalar-era rows convert with
+    // (tables/damage_types.h mitigate_amount). Scalar-era rows convert with
     // uniform_armor(x); per-column authoring (a fire-warding cloak) is what
     // the nine columns are FOR.
     ArmorProfile  armor{};
@@ -213,7 +213,7 @@ using ItemAffix = Bonus;
 
 struct ItemRef {
     std::uint16_t def = 0;         // catalog ordinal
-    // 1 + raw row of the commodity dictionary (macro/commodity.h); 0 = the
+    // 1 + raw row of the commodity dictionary (tables/commodity.h); 0 = the
     // row's own default. The +1 exists because raw row 0 (wood) is a real
     // material and 0 must keep meaning "unset". At SCRAP the byte substitutes
     // part 0 of the row's composition (owner verdict 2026-09-11): a steel

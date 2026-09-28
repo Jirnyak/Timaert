@@ -20,7 +20,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
-#include "macro/behaviour.h"
+#include "tables/behaviour.h"
 #include "macro/character_sheet.h"
 #include "macro/npc.h"
 #include "macro/state.h"

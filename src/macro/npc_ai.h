@@ -6,12 +6,12 @@
 #include "core/rng.h"
 #include "core/time.h"
 #include "ecs/world.h"
-#include "macro/behaviour.h"
+#include "tables/behaviour.h"
 #include "macro/macro_stock.h"
 #include "macro/pathfinding.h"
 #include "macro/state.h"
 #include "macro/spawners.h"
-#include "macro/squad_type.h"
+#include "tables/squad_type.h"
 #include "macro/squad_walk.h"
 #include "macro/tree_layer.h"
 
@@ -261,7 +261,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    EconFactSink sink = nullptr,
                                    void* user = nullptr);
 
-// ТИП СКВАДА живёт в macro/squad_type.h — его называют двое: сквад
+// ТИП СКВАДА живёт в tables/squad_type.h — его называют двое: сквад
 // (колонкой) и СТРОКА РЕЕСТРА МЕСТА (объявляя, кого поднимает).
 // Строка таблицы целей, добывающая ресурс `row` — объект поручения Gather;
 // -1 = такой ресурс артелями не добывается. Порядок таблицы — деталь

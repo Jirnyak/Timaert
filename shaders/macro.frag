@@ -26,7 +26,7 @@ layout(set = 0, binding = 2) uniform sampler2D u_zoneMap;    // R8: danger byte 
 layout(set = 0, binding = 3) uniform sampler2D u_lightField; // RGB night glow (macro_lighting bake)
 layout(set = 0, binding = 4) uniform sampler2D u_treeMap;    // R8: tree count / 16384 (macro/tree_layer.h)
 layout(set = 0, binding = 5) uniform sampler2D u_knowledgeMap; // R8: knowledge level / 2 (macro/knowledge.h)
-layout(set = 0, binding = 6) uniform sampler2D u_biomePal;     // RGBA32F Nx1: строка kBiomes (macro/biomes.h)
+layout(set = 0, binding = 6) uniform sampler2D u_biomePal;     // RGBA32F Nx1: строка kBiomes (tables/biomes.h)
 
 layout(push_constant) uniform Push {
     vec2 resolution; // кадровый буфер в пикселях — И ЕСТЬ вьюпорт (§ЗАКОН
@@ -305,7 +305,7 @@ vec3 bt_tex(int b, vec2 wp, float sd) {
     return bt_water(wp, sd);
 }
 // ЦВЕТ БИОМА — ИЗ АВТОРСКОЙ СТРОКИ, А НЕ ИЗ КОПИИ В ШЕЙДЕРЕ (M-158).
-// Здесь стояла рукописная копия `kBiomes` (macro/biomes.h): десять строк
+// Здесь стояла рукописная копия `kBiomes` (tables/biomes.h): десять строк
 // совпадали, а ВОДА расходилась — 0.12/0.22/0.42 здесь против 0.18/0.30/0.55
 // в таблице, — и игрок видел ОБА ответа, потому что превью мира при генерации
 // рисует из таблицы, а карта рисовала отсюда. Через границу GLSL/C++

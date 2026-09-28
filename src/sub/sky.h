@@ -8,7 +8,7 @@
 // SkyContext is everything the sky is allowed to know, gathered from the
 // world by build_sky_context and copied verbatim into the SkyPush push
 // constants by the renderer. All celestial truth (sun arc, procedural moon
-// orbits, phases, tints) comes from macro/celestial.h — the sky never invents
+// orbits, phases, tints) comes from tables/celestial.h — the sky never invents
 // a position, so the disc you SEE, the light on the terrain (sub/lighting.h
 // reads the same night_light) and the moon-path on the water agree by
 // construction, not by decree.
@@ -20,8 +20,8 @@
 #pragma once
 
 #include "core/time.h"
-#include "macro/celestial.h"
-#include "macro/seasons.h"
+#include "tables/celestial.h"
+#include "tables/seasons.h"
 
 namespace sm::sub {
 
@@ -38,7 +38,7 @@ static_assert(int(MoonId::Count) <= kSkyMaxMoons,
 // here — the shader derives the terminator from dir vs sunDir geometry, so
 // the drawn phase can never contradict the illuminated fraction.
 struct SkyMoonCtx {
-    float dir[3];   // unit, toward the moon (macro/celestial.h moon_dir)
+    float dir[3];   // unit, toward the moon (tables/celestial.h moon_dir)
     float size;     // baseSize — angular scale relative to the reference disc
     float rgb[3];   // authored tint, [0,1]
     float illum;    // illuminated fraction [0,1] (bloom strength)
@@ -65,7 +65,7 @@ struct SkyContext {
     float storm01;             // 0 = calm .. 1 = full thunderstorm (rain only)
 };
 
-// How far the authored season tint (macro/seasons.h tintRGB) pulls the day
+// How far the authored season tint (tables/seasons.h tintRGB) pulls the day
 // sky from neutral. Deliberately subtle — a mood, not a filter.
 inline constexpr float kSkySeasonTintStrength = 0.30f;
 
@@ -88,7 +88,7 @@ struct SeasonPrecipDef {
     std::uint8_t kindWeights[3]; // relative weights: Rain, Snow, Hail
 };
 
-// Indexed by macro/seasons.h Season. Adding a season there without a row
+// Indexed by tables/seasons.h Season. Adding a season there without a row
 // here is the static_assert below, not a silent out-of-bounds read.
 inline constexpr SeasonPrecipDef kSeasonPrecip[std::size_t(Season::Count)] = {
     // season           chance  storm   rain snow hail
@@ -187,7 +187,7 @@ inline float storm_flash01(float timeSec, float storm01) {
 }
 
 // ── Constellation stars — a tiny STATIC uniform buffer ─────────────────────
-// The authored star-graphs (macro/celestial.h kConstellations) do not fit in
+// The authored star-graphs (tables/celestial.h kConstellations) do not fit in
 // push constants and never change at runtime, so they are uploaded ONCE at
 // init into a small UBO the sky pipeline binds at set 0. std140: an array of
 // vec4 has 16-byte stride, so the CPU struct below maps byte-for-byte.

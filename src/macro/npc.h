@@ -10,17 +10,17 @@
 #pragma once
 #include <array>
 #include "core/table_guard.h"
-#include "macro/behaviour.h"
+#include "tables/behaviour.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include "macro/army.h"
-#include "macro/biomes.h"   // Biome — младшие биты ареала строки
-#include "macro/damage_types.h"
+#include "tables/biomes.h"   // Biome — младшие биты ареала строки
+#include "tables/damage_types.h"
 #include "macro/spells.h"   // spell_ordinal — a casting row names its spell
-#include "macro/sprite_rows.h"
+#include "tables/sprite_rows.h"
 
 namespace sm {
 
@@ -155,7 +155,7 @@ constexpr std::size_t kMaxNpcTalkLines = 6;
 constexpr int kNpcUpkeepNone = -1;
 
 // The armour scale, the 9-type symmetry and THE mitigation law all live in
-// macro/damage_types.h (kArmorHalving, ArmorProfile, mitigate_amount) — one
+// tables/damage_types.h (kArmorHalving, ArmorProfile, mitigate_amount) — one
 // home, because both laws of battle read them: the damage door
 // (sub/damage.cpp) and the auto-resolve (auto_battle.h).
 
@@ -181,7 +181,7 @@ struct NpcTypeDef {
     // display string is not an id.
     const char*     id;
     const char*     label;
-    // This kind's picture — a row of THE sprite table (macro/sprite_rows.h),
+    // This kind's picture — a row of THE sprite table (tables/sprite_rows.h),
     // which decides drawn art vs procedural body. Kinds share rows on purpose:
     // every unremarkable townsman is a peasant to the eye. It replaced a dead
     // `portrait` path string that no code ever read — a fourth asset vocabulary

@@ -2,7 +2,7 @@
 #include "macro/agent_memory.h"
 #include "macro/characters.h"
 #include "macro/faction.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/npc.h"
 #include "macro/deposit_layer.h"
 #include "macro/npc_ai.h"

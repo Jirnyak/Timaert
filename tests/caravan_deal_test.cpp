@@ -16,7 +16,7 @@
 #include "check.h"
 
 #include "macro/agent_memory.h"
-#include "macro/commodity.h"
+#include "tables/commodity.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
 #include "macro/economy.h"

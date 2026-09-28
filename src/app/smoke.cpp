@@ -30,7 +30,7 @@
 #include "sub/possess.h"   // current_player_body — «рука игрока» атрибуции
 #include "sub/spawn.h"
 #include "sub/record.h"    // macro_record_of / pools_of — дверь шва «чья это запись»
-#include "macro/codex.h"
+#include "tables/codex.h"
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
 #include "macro/items.h"
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness

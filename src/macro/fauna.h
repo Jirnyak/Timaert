@@ -10,13 +10,13 @@
 #include <span>
 #include <string_view>
 #include <vector>
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/army.h"
-#include "macro/behaviour.h"
+#include "tables/behaviour.h"
 #include "macro/landmark_registry.h"
 #include "macro/npc.h"
-#include "macro/sprite_rows.h"
+#include "tables/sprite_rows.h"
 
 namespace sm {
 
@@ -27,7 +27,7 @@ namespace sm {
 
 // AI hint for the spawned entity.
 // (`FaunaAi` lived here until 2026-08-20 — a second behaviour vocabulary for
-// beasts. It is `AIBehaviour` now, the one every row speaks: macro/behaviour.h.)
+// beasts. It is `AIBehaviour` now, the one every row speaks: tables/behaviour.h.)
 
 // Creature faction — the registry id string (macro/faction.h), the SAME key
 // every other faction consumer uses. The old FaunaFaction enum was a fourth

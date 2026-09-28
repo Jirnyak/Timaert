@@ -979,8 +979,8 @@ jopus_prompts.md	src/events/quests/quest_engine.cpp:170-190
 jopus_prompts.md	src/events/quests/quest_engine.cpp:195-210
 jopus_prompts.md	src/gpu/vk_buffer.h:13-50
 jopus_prompts.md	src/gpu/vk_renderer.cpp:236-250
-jopus_prompts.md	src/macro/biomes.h:40-76
-jopus_prompts.md	src/macro/commodity.h:30-60
+jopus_prompts.md	src/tables/biomes.h:40-76
+jopus_prompts.md	src/tables/commodity.h:30-60
 jopus_prompts.md	src/macro/econ_day.cpp:40-55
 jopus_prompts.md	src/macro/econ_day.h:70-80
 jopus_prompts.md	src/macro/features.h:165-295

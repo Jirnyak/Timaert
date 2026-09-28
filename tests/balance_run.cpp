@@ -23,7 +23,7 @@
 #include "core/time.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
-#include "macro/commodity.h"
+#include "tables/commodity.h"
 #include "macro/currency.h"
 #include "macro/deposit_layer.h"
 #include "macro/econ_day.h"

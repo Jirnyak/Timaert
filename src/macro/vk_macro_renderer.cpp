@@ -2,7 +2,7 @@
 
 #include "gpu/vk_device.h"
 #include "macro/features.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/knowledge.h"
 #include "macro/macro_night.h"
 #include "macro/map_generator.h"

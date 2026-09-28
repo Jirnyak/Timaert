@@ -10,7 +10,7 @@
 #include "sub/seamless_manager.h"
 #include "macro/fauna.h"
 #include "macro/character_sheet.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/army.h"
 #include "macro/npc.h"

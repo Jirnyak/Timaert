@@ -70,7 +70,7 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
 
 // Mitigation, second step inside the door.
 //
-// THE LAW is mitigate_amount (macro/damage_types.h): the hybrid — armour cuts
+// THE LAW is mitigate_amount (tables/damage_types.h): the hybrid — armour cuts
 // the larger of itself (a blow no bigger than the plate finds no flesh) and
 // the halving fraction (a big blow is softened, never zeroed). The armour
 // NUMBER is the column of the blow's own type: nine damage types against

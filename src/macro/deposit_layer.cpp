@@ -8,7 +8,7 @@
 
 #include "core/field_noise.h"   // the ONE noise stack of the world's fields
 #include "core/table_guard.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 // kGathererReach — the reach field's radius IS the profession's reach, read
 // from the resource rows rather than restated here.
 #include "macro/resource_field.h"

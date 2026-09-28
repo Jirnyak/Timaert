@@ -22,7 +22,7 @@
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
 #include "macro/resource_field.h"   // kGrowthEpochDays — the regrow epoch
-#include "macro/seasons.h"          // season_boundary — единое окно мира (S19.2)
+#include "tables/seasons.h"          // season_boundary — единое окно мира (S19.2)
 #include "macro/spells.h"           // the spire's tier (regrow context score)
 #include "macro/zones.h"            // the ruin's danger byte (same)
 #include "macro/scent_field.h"

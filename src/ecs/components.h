@@ -3,7 +3,7 @@
 #include "ecs/pools.h"
 #include "core/torus.h"        // cell_of — ОДИН адрес клетки мира
 #include "macro/army.h"
-#include "macro/commodity.h"   // kCommodityCount — счёт содержания ростера
+#include "tables/commodity.h"   // kCommodityCount — счёт содержания ростера
 #include "macro/roster.h"      // sm::Roster — ОДИН ростер на место и на сквад
 #include "macro/items.h"
 #include "macro/anatomy.h"
@@ -97,7 +97,7 @@ struct BodyRadius { float radius; };
 
 // Combat stats — universal stat block, the ECS face of CombatTemplate.
 struct Combat {
-    // The strike as DATA for the one assembly law (macro/damage_types.h
+    // The strike as DATA for the one assembly law (tables/damage_types.h
     // roll_strike): dice + attribute add + skill percent + LCK. dmgType is
     // the DamageType ORDINAL raw — the ecs layer stores ordinals, not macro
     // enums (the NPCKind.type idiom); the strike site casts it back.
@@ -353,7 +353,7 @@ struct NpcCharacter {
 };
 
 // Sprite (atlas index + tint). `spriteRow` is this body's row in THE sprite
-// table (macro/sprite_rows.h) held as a raw ordinal, because the ECS layer may
+// table (tables/sprite_rows.h) held as a raw ordinal, because the ECS layer may
 // not include macro/ — the same reason the procedural archetype it replaced was
 // a bare byte. The row decides everything about the look: drawn art if the
 // artist drew this kind, a procedural body plan if he did not, and the renderer

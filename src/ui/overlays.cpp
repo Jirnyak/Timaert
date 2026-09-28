@@ -1,6 +1,6 @@
 #include "macro/econ_day.h"
 #include "sub/ability.h"   // THE ability door — a sip pays the one gate   // sp_price — THE one price of an action
-#include "macro/seasons.h"    // kDaysPerSeason — the upkeep bill's horizon
+#include "tables/seasons.h"    // kDaysPerSeason — the upkeep bill's horizon
 #include "ui/overlays.h"
 #include "macro/cell_facts.h"   // the Map preview's REAL cell context
 #include "macro/player_entity.h"
@@ -8,14 +8,14 @@
 #include "ui/trade_widgets.h"
 #include "ui/screens.h"   // kTopStatusBarHeight — keep the minimap below the top bar
 #include "macro/map_generator.h"
-#include "macro/biomes.h"
-#include "macro/codex.h"
+#include "tables/biomes.h"
+#include "tables/codex.h"
 #include "macro/landmark_registry.h"
 #include "macro/landmark_iter.h"
 #include "ui/landmark_draw.h"
 #include "macro/npc.h"
 #include "macro/characters.h"   // landmark_sheet — что место умеет
-#include "macro/commodity.h"   // the raw rows the scrap variant byte names
+#include "tables/commodity.h"   // the raw rows the scrap variant byte names
 #include "macro/economy.h"
 #include "macro/faction.h"
 #include "macro/items.h"
@@ -128,7 +128,7 @@ namespace sm::ui
             state.story = nullptr;
         }
 
-        // The codex catalogue is a REGISTRY now (macro/codex.h): articles by
+        // The codex catalogue is a REGISTRY now (tables/codex.h): articles by
         // ordinal, categories a column, unlock state one bit per ordinal.
         // The tables that lived here moved there — the UI draws content, it
         // does not own it. `article` selection is the GLOBAL article index.

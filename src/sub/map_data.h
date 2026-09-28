@@ -8,7 +8,7 @@
 #include <array>
 #include <vector>
 #include "core/table_guard.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/landmark_registry.h"
 // THE step law: the subworld prices ground in the same units the macro march

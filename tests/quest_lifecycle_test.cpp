@@ -10,7 +10,7 @@
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
 #include "macro/agent_memory.h"
-#include "macro/codex.h"
+#include "tables/codex.h"
 #include "macro/currency.h"
 
 #include "core/rng.h"

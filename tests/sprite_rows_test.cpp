@@ -1,4 +1,4 @@
-// THE sprite table (macro/sprite_rows.h) — the binding, not the numbers.
+// THE sprite table (tables/sprite_rows.h) — the binding, not the numbers.
 //
 // The law it serves (СПРАЙТ-ЗАКОН (AGENTS §7, CANON S16)): every visible kind resolves to SOMETHING —
 // drawn art if the artist has drawn it, a procedural body plan if he has not.
@@ -25,7 +25,7 @@
 
 #include "macro/fauna.h"
 #include "macro/npc.h"
-#include "macro/sprite_rows.h"
+#include "tables/sprite_rows.h"
 
 #include <cstring>
 

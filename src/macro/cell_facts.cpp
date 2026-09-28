@@ -4,7 +4,7 @@
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
 #include "macro/resource_field.h"
-#include "macro/seasons.h"
+#include "tables/seasons.h"
 #include "macro/spells.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"

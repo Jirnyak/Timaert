@@ -25,7 +25,7 @@ int spell_strength(const SpellDef& spell,
 int spell_damage(const SpellDef& spell,
                  const Attributes& attributes,
                  const Skills& skills);
-// The strike itself, through THE assembly (macro/damage_types.h): dice +
+// The strike itself, through THE assembly (tables/damage_types.h): dice +
 // the sheet's add, the row's percent, the caster's LCK at the crit door.
 StrikeRoll spell_strike(Rng& rng, const SpellDef& spell,
                         const Attributes& attributes, const Skills& skills);

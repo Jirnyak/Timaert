@@ -1,7 +1,7 @@
 // THE ambient-fauna spawn tables. This file is the source of truth (the TS
 // original is dead — the migration is closed).
 //   - factionId is the registry id string (macro/faction.h) verbatim.
-//   - String AI       → the ONE `AIBehaviour` column (macro/behaviour.h).
+//   - String AI       → the ONE `AIBehaviour` column (tables/behaviour.h).
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
 //     they live in `.rodata` and never allocate.
 #include "macro/fauna.h"

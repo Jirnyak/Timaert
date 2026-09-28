@@ -52,7 +52,7 @@
 
 #include <cstdint>
 
-#include "macro/seasons.h"   // kDaysPerSeason — горизонт всякой памяти мира
+#include "tables/seasons.h"   // kDaysPerSeason — горизонт всякой памяти мира
 
 namespace sm {
 

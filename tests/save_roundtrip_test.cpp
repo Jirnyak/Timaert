@@ -4,7 +4,7 @@
 #include "macro/macro_snapshot.h"
 #include "macro/deposit_layer.h"
 #include "macro/agent_memory.h"
-#include "macro/codex.h"
+#include "tables/codex.h"
 #include "macro/currency.h"
 #include "macro/npc.h"
 #include "macro/entry_context.h"

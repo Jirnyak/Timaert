@@ -9,7 +9,7 @@
 #include "core/time.h"
 #include "macro/attributes.h"
 #include "macro/character_sheet.h"
-#include "macro/commodity.h"   // kCommodityCount — дань по позициям (v73)
+#include "tables/commodity.h"   // kCommodityCount — дань по позициям (v73)
 #include "macro/items.h"
 #include "macro/memory.h"   // WorldMemory — память мира с горизонтом сезона
 #include "macro/agent_memory.h"
@@ -240,7 +240,7 @@ namespace sm {
 // string and its FNV event key are dead. The eternal completedQuestIds /
 // failedQuestIds string vectors became settledQuestOffers (same-day dedup —
 // their only living semantic) + two lifetime counters. The codex unlock
-// state is a bit per article ordinal (macro/codex.h registry, was UI-owned
+// state is a bit per article ordinal (tables/codex.h registry, was UI-owned
 // string tables + a string vector).
 // v64: bridges (FT_Bridge, owner 2026-08-29) — the DERIVED world changed.
 // The road planner may now pay for a one-cell water crossing (square-on,
@@ -724,7 +724,7 @@ struct PlayerState {
     // macro/player_entity.h player_inventory(). It sat here as its own
     // roster until 2026-08-27, and every consumer of it was a
     // player-specific path CANON S4 forbids by name.)
-    // Codex unlock state: one bit per article ordinal (macro/codex.h
+    // Codex unlock state: one bit per article ordinal (tables/codex.h
     // CodexArticleId; the static_assert there is the loud cap). Replaced a
     // vector of id STRINGS (v63) — a string was doing an ordinal's job.
     std::uint64_t codexUnlockedBits = 0;

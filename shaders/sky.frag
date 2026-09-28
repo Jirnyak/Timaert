@@ -9,7 +9,7 @@
 //
 // Everything celestial arrives via the push constants (SkyContext →
 // SkyPush): the sun vector is the SAME one sub/lighting.h lights the world
-// with, and each moon's direction/phase comes from macro/celestial.h's
+// with, and each moon's direction/phase comes from tables/celestial.h's
 // procedural orbits — this shader never invents a position.
 layout(push_constant) uniform Push {
     vec4 forward;  // xyz = camera forward, w = moonCount
@@ -26,7 +26,7 @@ layout(push_constant) uniform Push {
 
 #include "clouds.glsl"
 
-// Authored constellation stars (macro/celestial.h → sub/sky.h SkyStarsUbo),
+// Authored constellation stars (tables/celestial.h → sub/sky.h SkyStarsUbo),
 // uploaded once at init: xyz = dome direction, w = brightness. Stars only —
 // the figures read through placement and brightness, no drawn edges.
 layout(set = 0, binding = 0) uniform SkyStars {
@@ -120,7 +120,7 @@ void main() {
         float el = asin(clamp(rd.y, -1.0, 1.0));
         vec3 mwN = normalize(vec3(0.3, 0.35, 0.9));
         float band = 1.0 - smoothstep(0.0, 0.30, abs(dot(rd, mwN)));
-        // Star disc radii scale by the CPU-side knob (macro/celestial.h
+        // Star disc radii scale by the CPU-side knob (tables/celestial.h
         // kSkyStarSizeScale via SkyPush) — the data layer owns the value.
         float starS = pc.right.w;
         vec3 s = vec3(0.0);
@@ -168,7 +168,7 @@ void main() {
     col += sunCol * (disc + glow + scatter) * sunVis;
 
     // 4. Moons — 1..3 procedural bodies from the context. Position, size,
-    // tint and illuminated fraction ride the push constants (macro/celestial.h
+    // tint and illuminated fraction ride the push constants (tables/celestial.h
     // orbits); nothing here is pinned to -sunDir. The crescent SHAPE is
     // geometry: the terminator is where the disc turns away from the sun, and
     // because a moon LAGS the sun by its phase, the lit fraction this draws

@@ -4,7 +4,7 @@
 // Pure graphics helper: computes light parameters from time-of-day.
 // No game state dependencies; consumed by the Vulkan renderer_3d.
 //
-// `sunDir` points FROM the origin TOWARD the sun (macro/celestial.h sun_dir);
+// `sunDir` points FROM the origin TOWARD the sun (tables/celestial.h sun_dir);
 // `sunDir.y` is the sun's elevation. The renderer uploads it AS-IS and the
 // shaders use it directly as L in N·L (see mesh.frag) — nothing negates it, so
 // do NOT re-invert. At night the sun's radiance folds to zero and the same
@@ -16,8 +16,8 @@
 // context: dark new-moon nights are a feature).
 #pragma once
 #include "core/math.h"
-#include "macro/biomes.h"   // kMountainBiomeLevel — the air's scale height
-#include "macro/celestial.h"
+#include "tables/biomes.h"   // kMountainBiomeLevel — the air's scale height
+#include "tables/celestial.h"
 #include "macro/state.h"
 #include "sub/height.h"     // kHeightScaleM / sea_level_m — the air's datum
 #include <algorithm>
@@ -218,7 +218,7 @@ inline LightParameters compute_light_parameters(int day, float tod) {
     using detail::smoothstep01;
     using detail::clamp01;
     LightParameters p;
-    // THE sun arc — macro/celestial.h owns the formula; sky.frag consumes the
+    // THE sun arc — tables/celestial.h owns the formula; sky.frag consumes the
     // same vector via its push constants, so "one celestial direction" is a
     // mechanism, not a comment kept in lockstep by hope.
     const SkyDir s = sun_dir(tod);
@@ -244,7 +244,7 @@ inline LightParameters compute_light_parameters(int day, float tod) {
     };
     // ── Moonlight ───────────────────────────────────────────────────────────
     // The dominant moon rides the SAME directional slot as the sun. WHICH moon
-    // that is — and how strong — is macro/celestial.h's night_light: the
+    // that is — and how strong — is tables/celestial.h's night_light: the
     // procedural orbits put a full moon opposite the sun (up exactly when the
     // sun is down) and a new moon beside it (down with it, and unlit anyway),
     // so sun and moon are never both bright and the handover flip below always

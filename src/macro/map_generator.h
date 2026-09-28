@@ -5,7 +5,7 @@
 #include <limits>
 #include <vector>
 #include "core/torus.h"
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 
 namespace sm {
 

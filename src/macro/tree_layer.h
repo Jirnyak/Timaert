@@ -30,7 +30,7 @@
 #include "macro/resource_field.h"   // FieldCell — общая ширина клетки поля
 #include <cstdint>
 #include <vector>
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
 

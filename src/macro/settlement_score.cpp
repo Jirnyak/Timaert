@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "macro/biomes.h"
+#include "tables/biomes.h"
 #include "macro/deposit_layer.h"
 #include "macro/features.h"        // FeatureLayer::cell_count_for — форма слоя
 #include "macro/map_generator.h"

@@ -14,9 +14,9 @@
 #include "core/table_guard.h"
 #include "macro/econ_day.h"     // kHeadsPerCityWorker — the bench quota the
                                 // city's labourShift is log2 of (guard below)
-#include "macro/map_actions.h"  // the verb bits the `actions` column declares
+#include "tables/map_actions.h"  // the verb bits the `actions` column declares
 #include "macro/npc.h"   // NPCType — the crew rows below name who a place raises
-#include "macro/squad_type.h"  // SquadType — строка объявляет, КОГО она поднимает
+#include "tables/squad_type.h"  // SquadType — строка объявляет, КОГО она поднимает
 #include <string_view>
 
 namespace sm {
@@ -213,7 +213,7 @@ struct LandmarkDef {
     LandmarkCrewRow  crews[8] = {};
     std::uint8_t     crewCount = 0;
     // ── The interaction verbs this KIND offers (меню-сессия, 2026-09-11) ──
-    // macro/map_actions.h bits: what the universal menu lists when the
+    // tables/map_actions.h bits: what the universal menu lists when the
     // player stands beside one of these. 0 = the walk-in minimum (info +
     // Enter — Enter is the `walkable` column above, actions_of() folds it
     // in, no second byte). Availability NOW is the menu row's predicate;
