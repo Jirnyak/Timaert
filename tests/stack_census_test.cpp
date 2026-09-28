@@ -12,23 +12,66 @@
 
 #include <cstdio>
 
+namespace {
+
+// ШИРИНА ПОЛЯ СЧИТАЕТСЯ В ЗНАКАХ, А НЕ В БАЙТАХ. `%-30s` меряет байты, и на
+// кириллице (2 байта на знак в UTF-8) картина памяти печаталась лесенкой —
+// то есть прибор, поставленный ради того, чтобы картину было ВИДНО, её
+// разваливал. Считаем кодовые точки: продолжение UTF-8 (10xxxxxx) не знак.
+std::size_t glyphs(const char* s) {
+    std::size_t n = 0;
+    for (const char* p = s; *p; ++p) {
+        if ((static_cast<unsigned char>(*p) & 0xC0u) != 0x80u) ++n;
+    }
+    return n;
+}
+
+void pad_to(const char* s, std::size_t width) {
+    std::printf("%s", s);
+    for (std::size_t g = glyphs(s); g < width; ++g) std::printf(" ");
+}
+
+const char* kind_name(sm::StackKind k) {
+    switch (k) {
+        case sm::StackKind::ByCell:    return "ПО КЛЕТКЕ";
+        case sm::StackKind::ByOrdinal: return "ПО ОРДИНАЛУ";
+        case sm::StackKind::Catalog:   return "КАТАЛОГ";
+        case sm::StackKind::Scalars:   return "СКАЛЯРЫ";
+    }
+    return "?";
+}
+
+} // namespace
+
 int main() {
     using namespace sm;
 
     std::printf("\n=== ШТАБЕЛЯ МИРА ===\n");
-    std::printf("%-30s %-24s %8s %12s %10s\n",
-                "штабель", "строка", "Б/стр", "строк", "МиБ");
+    pad_to("штабель", 48);
+    pad_to("строка", 28);
+    std::printf("%8s %12s %10s\n", "Б/стр", "строк", "МиБ");
     double totalMiB = 0.0;
+    // ПОДЫТОГ НА РОД — ЧАСТЬ КАРТИНЫ, А НЕ УКРАШЕНИЕ: без него итог говорит
+    // «шестнадцать гигабайт» и не говорит, ЧТО именно их держит.
+    double kindMiB[4] = {0.0, 0.0, 0.0, 0.0};
     for (std::size_t i = 0; i < kStackCount; ++i) {
         const StackRow& r = kStacks[i];
         const double miB = double(r.rowBytes) * double(r.cap)
                            / (1024.0 * 1024.0);
         totalMiB += miB;
-        std::printf("%-30s %-24s %8zu %12zu %10.1f\n",
-                    r.name, r.rowType, r.rowBytes, r.cap, miB);
+        kindMiB[std::size_t(r.kind)] += miB;
+        pad_to(r.name, 48);
+        pad_to(r.rowType, 28);
+        std::printf("%8zu %12zu %10.1f\n", r.rowBytes, r.cap, miB);
     }
-    std::printf("%-30s %-24s %8s %12s %10.1f\n\n",
-                "ИТОГО ПО КАПАМ", "", "", "", totalMiB);
+    std::printf("\n");
+    for (std::size_t k = 0; k < 4; ++k) {
+        pad_to("  из них ", 10);
+        pad_to(kind_name(StackKind(k)), 14);
+        std::printf("%10.1f МиБ\n", kindMiB[k]);
+    }
+    pad_to("ИТОГО ПО КАПАМ", 24);
+    std::printf("%10.1f МиБ\n\n", totalMiB);
 
     CHECK(kStackCount > 0, "перепись не бывает пустой");
 
@@ -62,6 +105,26 @@ int main() {
     }
     CHECK(cellStacksCoverWorld,
           "штабель ПО КЛЕТКЕ кратен миру: число есть в КАЖДОЙ клетке");
+
+    // ОБЪЯВЛЕННЫЙ РОД БЕЗ ЖИЛЬЦОВ — КОЛОНКА-СИРОТА (AGENTS DOD п.9). Род
+    // `Catalog` был объявлен 2026-09-22 и простоял с нулём строк: перепись
+    // умела назвать каталоги и молчала о них, а комментарий `StackRow::cap`
+    // это молчание ОБЪЯСНЯЛ («0 = каталог») — объяснял ровно то, что сам
+    // свидетель ниже запрещает. Проверка стоит здесь, чтобы род либо жил,
+    // либо был снесён, но не числился пустым.
+    int catalogRows = 0;
+    for (std::size_t i = 0; i < kStackCount; ++i) {
+        if (kStacks[i].kind == StackKind::Catalog) ++catalogRows;
+    }
+    CHECK(catalogRows > 0,
+          "род КАТАЛОГ объявлен — значит у него есть строки");
+
+    // У ГРАФА ОКРУГ НЕТ СВОЕГО ЧИСЛА, И ЭТО СКАЗАНО ВСЛУХ. Округа рождается
+    // на каждое живое место, поэтому потолок графа ЗАИМСТВОВАН у мест.
+    // Появится здесь отдельная константа — значит кто-то завёл второй ответ
+    // на вопрос «сколько в мире мест» (DOD п.6), и упадёт эта строка.
+    CHECK(kNavRegionCap == kWorldLandmarks,
+          "потолок округ навигации заимствован у мест, а не выдуман свой");
 
     // СКАЛЯРЫ — ИСКЛЮЧЕНИЕ, И ОНО РОВНО ОДНО. Два блока скаляров означали бы,
     // что «состояние мира» снова расползлось по коду.

@@ -363,6 +363,15 @@ struct Chronicle {
     }
 };
 
+// СТОРОЖ РАЗМЕРА (AGENTS DOD п.10). Строка факта уже под ассертом выше (32 Б),
+// а это — сторож САМОГО КОНТЕЙНЕРА: 96 Б есть три заголовка вектора по 24 плюс
+// семь чисел шапки по выравниванию. Он не сторожит вес летописи — её несут
+// кольцо (2 МиБ) и анналы (32 МиБ), и обе стоят своими строками в переписи
+// штабелей (`core/stacks.h`); он сторожит, что четвёртый ярус памяти мира не
+// вырастет здесь молча, без строки переписи.
+static_assert(sizeof(Chronicle) == 96,
+              "летопись: новый ярус = новая строка переписи штабелей");
+
 // Size it for a map. Safe to call again; a resize forgets, which is correct —
 // a chronicle of another world is not this world's past.
 void chronicle_init(Chronicle& c, int mapW, int mapH);

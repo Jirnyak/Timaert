@@ -78,6 +78,17 @@ struct Politik {
     int mapW = 0, mapH = 0;
 };
 
+// СТОРОЖ РАЗМЕРА (AGENTS DOD п.10): 56 Б = два заголовка вектора по 24 плюс
+// два `int`. Сторожит он не вес слоя — владение клеткой (1 МиБ) и второй
+// список городов стоят своими строками переписи штабелей (`core/stacks.h`), —
+// а то, что у ПОЛИТИКИ не заведётся третьего вектора мимо переписи. Сам
+// `City` числом здесь не закреплён сознательно: он несёт `std::string name`,
+// и его `sizeof` зависит от реализации библиотеки (24 на libc++, 32 на
+// libstdc++/MSVC) — закрепить его значило бы прибить сборку к одной из них.
+// Это и есть адрес долга: имя обязано стать `char[N]` (CANON S4, M-42).
+static_assert(sizeof(Politik) == 56,
+              "политика: новый вектор = новая строка переписи штабелей");
+
 // Who owns the cell at (cx,cy)? The politik layer's per-cell answer for the
 // whole map, so a body that appears with no owner of its own — a scripted
 // encounter, a console spawn, whatever system comes next — can still be
