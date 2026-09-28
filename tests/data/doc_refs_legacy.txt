@@ -426,7 +426,6 @@ SKELETON.md	macro/player_entity.h:95-104
 SKELETON.md	macro/save.cpp:10
 SKELETON.md	macro/squad.h:290
 SKELETON.md	macro/state.h:856
-SKELETON.md	macro/vk_macro_renderer.cpp:454
 SKELETON.md	macro/world_gen.cpp:37
 SKELETON.md	macro_stock.cpp:221
 SKELETON.md	macro_stock.cpp:225
