@@ -757,12 +757,16 @@ const PreBattleAction kPreBattleActions[] = {
                                app.gs.mapW, app.gs.mapH, ux, uy);
              if (ux == 0.0f && uy == 0.0f) ux = 1.0f;   // стоят вплотную
              for (float away = 2.0f; away >= 1.0f; away -= 1.0f) {
-                 // Заворот клетки мира — МАСКОЙ (`wrap_axis`), не `wrapi`:
-                 // свернуть клетку мира делением названо дефектом дословно.
-                 const int tx = sm::wrap_axis(
-                     int(std::floor(float(pcx) + ux * away)), app.gs.mapW);
-                 const int ty = sm::wrap_axis(
-                     int(std::floor(float(pcy) + uy * away)), app.gs.mapH);
+                 // АДРЕС — ОДНО ЧИСЛО, и дверей к нему ровно ЧЕТЫРЕ (AGENTS
+                 // ЗАКОН АДРЕСА п.2). Здесь стояла пятая — `wrap_axis`: та же
+                 // маска, но отдающая КООРДИНАТУ, а координату дальше
+                 // индексируют рукой. Адрес рукой не проиндексируешь, потому
+                 // дверь и одна.
+                 const std::uint32_t c = sm::cell_of(
+                     int(std::floor(float(pcx) + ux * away)),
+                     int(std::floor(float(pcy) + uy * away)), app.gs.mapW);
+                 const int tx = sm::cell_x(c, app.gs.mapW);
+                 const int ty = sm::cell_y(c, app.gs.mapW);
                  // «Вода ли клетка» — ОДИН ответ на всю игру: байт высоты
                  // против байта плоскости. Здесь спрашивали МАСКУ `A` мастера,
                  // а она лишь производное того же порога — третий спеллинг
@@ -2073,8 +2077,15 @@ std::vector<sm::PathPoint> build_flight_path(int sx, int sy, int gx, int gy,
     path.reserve(std::size_t(std::max(1, steps) + 1));
     for (int i = 0; i <= steps; ++i) {
         const float t = steps > 0 ? float(i) / float(steps) : 0.0f;
-        const int x = sm::wrapi(sx + int(std::lround(float(dx) * t)), mapW);
-        const int y = sm::wrapi(sy + int(std::lround(float(dy) * t)), mapH);
+        // Свернуть КЛЕТКУ МИРА через `wrapi` названо дефектом дословно: он
+        // заворачивает `std::int64_t %` по РАНТАЙМ-делителю, тогда как сторона
+        // мира есть степень двойки и заворот есть одна маска. Дверь адреса —
+        // `cell_of`; пара обратно нужна потому, что марш есть ГЕОМЕТРИЯ.
+        const std::uint32_t c = sm::cell_of(sx + int(std::lround(float(dx) * t)),
+                                            sy + int(std::lround(float(dy) * t)),
+                                            mapW);
+        const int x = sm::cell_x(c, mapW);
+        const int y = sm::cell_y(c, mapW);
         if (path.empty() || path.back().x != x || path.back().y != y) {
             path.push_back({x, y});
         }
@@ -4222,10 +4233,15 @@ void register_console_commands(App& app) {
                     || !sm::dev::arg_int(a, i + 1, y)) {
                     break;
                 }
+                // Консоль — ГРАНИЦА мира: человек вправе набрать «1200 -5» на
+                // мире 1024. Но заворачивает границу та же дверь, что и мир, —
+                // иначе у вопроса «где эта клетка» два ответа, и совпадают они
+                // только по счастью (ЗАКОН АДРЕСА; DOD п.6).
+                const std::uint32_t c = sm::cell_of(x, y, app.gs.mapW);
                 orders.waypoints[std::size_t(orders.waypointCount * 2)] =
-                    std::int16_t(sm::wrapi(x, app.gs.mapW));
+                    std::int16_t(sm::cell_x(c, app.gs.mapW));
                 orders.waypoints[std::size_t(orders.waypointCount * 2 + 1)] =
-                    std::int16_t(sm::wrapi(y, app.gs.mapH));
+                    std::int16_t(sm::cell_y(c, app.gs.mapW));
                 ++orders.waypointCount;
             }
             // ОДНА ДВЕРЬ НА ОБА ИСХОДА: пустой маршрут ЕСТЬ снятие приказа

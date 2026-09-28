@@ -721,10 +721,13 @@ bool run_subworld_time_smoke(App& app) {
     const int beforeMinutes = smoke_total_minutes(before);
     const float playerBeforeX = smoke_player_x(app);
     const float playerBeforeY = smoke_player_y(app);
-    const int expectedPlayerX =
-        sm::wrapi(int(std::floor(playerBeforeX)), app.gs.mapW);
-    const int expectedPlayerY =
-        sm::wrapi(int(std::floor(playerBeforeY)), app.gs.mapH);
+    // Клетка мира — дверью мира: свидетель, спрашивающий адрес НЕ ТАК, как
+    // его спрашивает игра, согласен с ней по счастью, а не по построению.
+    const std::uint32_t expectedPlayerCell = sm::cell_of(
+        int(std::floor(playerBeforeX)), int(std::floor(playerBeforeY)),
+        app.gs.mapW);
+    const int expectedPlayerX = sm::cell_x(expectedPlayerCell, app.gs.mapW);
+    const int expectedPlayerY = sm::cell_y(expectedPlayerCell, app.gs.mapW);
     const int dailyPendingStart = app.gs.worldTickRt.pendingDailyTicks;
     const int sweepsPendingStart = app.npcAi.pendingSweeps;
     const std::uint64_t subStepRemainderBefore =
@@ -1509,18 +1512,21 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
                 if (radius > 0 && std::max(std::abs(dx), std::abs(dy)) != radius) {
                     continue;
                 }
-                const int x = sm::wrapi(cx + dx, app.gs.mapW);
-                const int y = sm::wrapi(cy + dy, app.gs.mapH);
+                // Сосед клетки — ШАГ ПО ИНДЕКСУ, а не пара свёрнутых
+                // координат; высота — дверь карты, а не рукописный
+                // `y * width + x` в сыром RGBA (хранилище уже проверено на
+                // входе функции, поэтому второй охраны длины тут нет).
+                const std::uint32_t c =
+                    sm::cell_step(sm::cell_of(cx, cy, app.gs.mapW), dx, dy,
+                                  app.gs.mapW);
+                const int x = sm::cell_x(c, app.gs.mapW);
+                const int y = sm::cell_y(c, app.gs.mapW);
                 if (x < 64 || y < 64 || x >= app.gs.mapW - 64
                     || y >= app.gs.mapH - 64) {
                     continue;
                 }
                 if (hasLandmark(x, y)) continue;
-                const std::size_t idx =
-                    (std::size_t(y) * std::size_t(app.terrain.width)
-                     + std::size_t(x)) * 4u;
-                if (idx + 3u >= app.terrain.rgba.size()) continue;
-                const float h = float(app.terrain.rgba[idx + 0u]) / 255.0f;
+                const float h = float(app.terrain.height_at(x, y)) / 255.0f;
                 // The [minH, 0.72] band sits below kMountainBiomeLevel (0.75),
                 // so Mountain-biome cells are already excluded here.
                 if (h < minH || h > 0.72f) continue;
@@ -1547,18 +1553,19 @@ bool smoke_find_tree_subworld_cell(const App& app, int& outX, int& outY) {
                 if (radius > 0 && std::max(std::abs(dx), std::abs(dy)) != radius) {
                     continue;
                 }
-                const int x = sm::wrapi(cx + dx, app.gs.mapW);
-                const int y = sm::wrapi(cy + dy, app.gs.mapH);
+                // Как в `smoke_find_open_subworld_cell` выше: шаг индексом,
+                // высота — дверью карты.
+                const std::uint32_t c =
+                    sm::cell_step(sm::cell_of(cx, cy, app.gs.mapW), dx, dy,
+                                  app.gs.mapW);
+                const int x = sm::cell_x(c, app.gs.mapW);
+                const int y = sm::cell_y(c, app.gs.mapW);
                 if (x < 64 || y < 64 || x >= app.gs.mapW - 64
                     || y >= app.gs.mapH - 64) {
                     continue;
                 }
                 if (!sm::is_forest_cell(int(app.treeLayer.at(x, y)))) continue;
-                const std::size_t idx =
-                    (std::size_t(y) * std::size_t(app.terrain.width)
-                     + std::size_t(x)) * 4u;
-                if (idx + 3u >= app.terrain.rgba.size()) continue;
-                const float h = float(app.terrain.rgba[idx + 0u]) / 255.0f;
+                const float h = float(app.terrain.height_at(x, y)) / 255.0f;
                 if (h < minH) continue;
                 outX = x;
                 outY = y;
@@ -1575,8 +1582,11 @@ bool smoke_find_macro_travel_path(App& app, sm::PathResult& out) {
         return false;
     }
 
-    const int sx = sm::wrapi(int(std::floor(smoke_player_x(app))), app.gs.mapW);
-    const int sy = sm::wrapi(int(std::floor(smoke_player_y(app))), app.gs.mapH);
+    const std::uint32_t startCell = sm::cell_of(
+        int(std::floor(smoke_player_x(app))),
+        int(std::floor(smoke_player_y(app))), app.gs.mapW);
+    const int sx = sm::cell_x(startCell, app.gs.mapW);
+    const int sy = sm::cell_y(startCell, app.gs.mapW);
     for (int radius = kSmokeMacroTravelSteps; radius <= 48; ++radius) {
         for (int dy = -radius; dy <= radius; ++dy) {
             for (int dx = -radius; dx <= radius; ++dx) {
@@ -2058,10 +2068,11 @@ bool run_macro_npc_trace_smoke(App& app) {
     // of the torus from the player and take the first grid spot with no
     // other macro NPC within 16 cells (> 2× kSquadSightCells — perception
     // cannot reach the lane, and the 3-cell march stays inside the margin).
-    int baseX = sm::wrapi(int(smoke_player_x(app)) + app.gs.mapW / 2,
-                          app.gs.mapW);
-    int baseY = sm::wrapi(int(smoke_player_y(app)) + app.gs.mapH / 2,
-                          app.gs.mapH);
+    const std::uint32_t antipode = sm::cell_of(
+        int(smoke_player_x(app)) + app.gs.mapW / 2,
+        int(smoke_player_y(app)) + app.gs.mapW / 2, app.gs.mapW);
+    int baseX = sm::cell_x(antipode, app.gs.mapW);
+    int baseY = sm::cell_y(antipode, app.gs.mapW);
     {
         sm::MacroStore& sto = sm::store_of(app.ecs);
         auto others = app.ecs.reg.view<sm::ecs::MacroSlot>();
@@ -2081,9 +2092,14 @@ bool run_macro_npc_trace_smoke(App& app) {
         };
         for (int probe = 0; probe < 1024 && !lane_clear(baseX, baseY);
              ++probe) {
-            baseX = sm::wrapi(baseX + 37, app.gs.mapW);   // coprime strides
-            baseY = sm::wrapi(baseY + (probe % 31 == 30 ? 41 : 0),
-                              app.gs.mapH);
+            // Шаг по тору есть арифметика над ИНДЕКСОМ (`cell_step`), а не
+            // пара отдельно свёрнутых координат. Страйды взаимно просты со
+            // стороной, поэтому проба обходит мир, не зацикливаясь.
+            const std::uint32_t probeCell = sm::cell_step(
+                sm::cell_of(baseX, baseY, app.gs.mapW), 37,
+                probe % 31 == 30 ? 41 : 0, app.gs.mapW);
+            baseX = sm::cell_x(probeCell, app.gs.mapW);
+            baseY = sm::cell_y(probeCell, app.gs.mapW);
         }
     }
     cell.idx = sm::ecs::cell_index(baseX, baseY, app.gs.mapW);
@@ -2129,7 +2145,9 @@ bool run_macro_npc_trace_smoke(App& app) {
     visual.vy = float(baseY);
     visual.speed = 0.0f;
     kind.type = std::uint16_t(sm::NPCType::Merchant);
-    rt.targetX = float(sm::wrapi(baseX + 3, app.gs.mapW));
+    rt.targetX = float(sm::cell_x(
+        sm::cell_step(sm::cell_of(baseX, baseY, app.gs.mapW), 3, 0,
+                      app.gs.mapW), app.gs.mapW));
     rt.targetY = float(baseY);
     rt.targetSettlementId = -1;
     rt.state = std::uint8_t(sm::NPCState::Traveling);
@@ -8186,10 +8204,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // that files facts nobody can find is a chronicle in name only.
             struct Traces { int n = 0; int bodies = 0; };
             Traces traces;
+            const std::uint32_t playerChronicleCell = sm::cell_of(
+                int(smoke_player_x(app)), int(smoke_player_y(app)),
+                app.gs.mapW);
             sm::chronicle_near(
                 app.gs.chronicle,
-                sm::wrapi(int(smoke_player_x(app)), app.gs.mapW),
-                sm::wrapi(int(smoke_player_y(app)), app.gs.mapH),
+                sm::cell_x(playerChronicleCell, app.gs.mapW),
+                sm::cell_y(playerChronicleCell, app.gs.mapW),
                 /*radiusCells*/1, /*sinceDay*/0,
                 [](void* u, const sm::WorldFact& f) {
                     if (f.kind != std::uint16_t(sm::FactKind::Killed)) return;
@@ -9372,8 +9393,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             const int sx = int(std::floor(smoke_player_x(app)));
             const int sy = int(std::floor(smoke_player_y(app)));
-            const int gx = sm::wrapi(sx + 17, app.gs.mapW);
-            const int gy = sm::wrapi(sy + 9, app.gs.mapH);
+            const std::uint32_t goal =
+                sm::cell_step(sm::cell_of(sx, sy, app.gs.mapW), 17, 9,
+                              app.gs.mapW);
+            const int gx = sm::cell_x(goal, app.gs.mapW);
+            const int gy = sm::cell_y(goal, app.gs.mapW);
             const auto path = build_flight_path(sx, sy, gx, gy,
                                                 app.gs.mapW, app.gs.mapH);
             if (path.size() < 2 || path.front().x != sx || path.front().y != sy

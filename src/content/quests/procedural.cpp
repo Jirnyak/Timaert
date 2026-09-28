@@ -247,8 +247,13 @@ bool gen_destroy(const QuestGenCtx& ctx, Quest& q) {
 
     GameEvent spawn{EventTag::SpawnEntity};
     spawn.s1 = "bandit";
-    spawn.ix = wrapi(zoneX, ctx.gs->mapW);
-    spawn.iy = wrapi(zoneY, ctx.gs->mapH);
+    // Клетка мира сворачивается КАНОНИЧЕСКОЙ дверью (`cell_of`, core/torus.h):
+    // сторона есть степень двойки, значит заворот — одна маска, а `wrapi`,
+    // стоявший здесь, делил `std::int64_t %` по рантайм-делителю. Свернуть
+    // КЛЕТКУ МИРА так названо дефектом дословно (AGENTS §3 ЗАКОН АДРЕСА п.4).
+    const std::uint32_t zc = cell_of(zoneX, zoneY, ctx.gs->mapW);
+    spawn.ix = cell_x(zc, ctx.gs->mapW);
+    spawn.iy = cell_y(zc, ctx.gs->mapW);
     spawn.a = std::uint32_t(level);
     // One event = one body (the consumer's contract), so a kill-N contract
     // ships N spawn events. Copies, not fresh rolls: the spawner scatters
@@ -290,10 +295,12 @@ bool gen_scout(const QuestGenCtx& ctx, Quest& q) {
     constexpr float kTau = 6.2831853071795864769f;
     const float angle = ctx.rng->next_f01() * kTau;
     const float dist = 30.0f + ctx.rng->next_f01() * 50.0f;
-    const int tx = wrapi(int(std::round(float(ctx.x) + std::cos(angle) * dist)),
-                         ctx.gs->mapW);
-    const int ty = wrapi(int(std::round(float(ctx.y) + std::sin(angle) * dist)),
-                         ctx.gs->mapH);
+    // Заворот клетки мира — дверью адреса, см. `gen_bandit_camp` выше.
+    const std::uint32_t tc = cell_of(
+        int(std::round(float(ctx.x) + std::cos(angle) * dist)),
+        int(std::round(float(ctx.y) + std::sin(angle) * dist)), ctx.gs->mapW);
+    const int tx = cell_x(tc, ctx.gs->mapW);
+    const int ty = cell_y(tc, ctx.gs->mapW);
     const float distFactor = 1.0f + dist / 50.0f;
     const int gold = int(std::round(25.0f * distFactor
         + ctx.rng->next_f01() * 15.0f));
@@ -332,10 +339,12 @@ bool gen_sanctuary(const QuestGenCtx& ctx, Quest& q) {
     constexpr float kTau = 6.2831853071795864769f;
     const float angle = ctx.rng->next_f01() * kTau;
     const float dist = 40.0f + ctx.rng->next_f01() * 60.0f;
-    const int tx = wrapi(int(std::round(float(ctx.x) + std::cos(angle) * dist)),
-                         ctx.gs->mapW);
-    const int ty = wrapi(int(std::round(float(ctx.y) + std::sin(angle) * dist)),
-                         ctx.gs->mapH);
+    // Заворот клетки мира — дверью адреса, см. `gen_bandit_camp` выше.
+    const std::uint32_t tc = cell_of(
+        int(std::round(float(ctx.x) + std::cos(angle) * dist)),
+        int(std::round(float(ctx.y) + std::sin(angle) * dist)), ctx.gs->mapW);
+    const int tx = cell_x(tc, ctx.gs->mapW);
+    const int ty = cell_y(tc, ctx.gs->mapW);
     const float distFactor = 1.0f + dist / 50.0f;
     const int gold = int(std::round(60.0f * distFactor
         + ctx.rng->next_f01() * 40.0f));

@@ -1842,6 +1842,13 @@ timaert_test(doc_refs_test SOURCES tests/doc_refs.cpp)
 target_compile_definitions(doc_refs_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
+# Прибор на ЗАКОН АДРЕСА: клетка мира не сворачивается делением (M-124). До него
+# закон жил ТОЛЬКО в тексте AGENTS — и три из четырёх сайтов, снесённых M-124,
+# появились ПОСЛЕ его записи. Сканирует дерево, поэтому знает его корень.
+timaert_test(world_fold_law_test)
+target_compile_definitions(world_fold_law_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 add_executable(docs_sync_tool tests/docs_sync_main.cpp tests/doc_refs.cpp)
 set_target_properties(docs_sync_tool PROPERTIES
     CXX_STANDARD 23
