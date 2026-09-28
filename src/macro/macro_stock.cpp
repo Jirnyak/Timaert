@@ -478,20 +478,22 @@ int field_wheat_min() {
 // win, water refuses, no rock terraces): what differs between a field and
 // a pasture is only WHICH row's fertility bars the gate, never the ground.
 static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
-                              int x, int y, std::size_t& idxOut) {
+                              int x, int y) {
     std::size_t total = 0;
     if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
         || fl.data.size() < total || !world.terrain)
         return false;
+    // ЗАКОН АДРЕСА: адрес клетки — одно число, и считает его одна дверь.
+    // Здесь стоял ручной `wy*width+wx` с двумя пред-заворотами — тот же
+    // ответ на законном мире и МОЛЧА ДРУГОЙ на незаконном, где у слоя
+    // fail-closed, а у этого гейта его не было.
+    if (!world_shape_ok(fl.width, fl.height)) return false;
     const TerrainData& td = *world.terrain;
     if (td.width != fl.width || td.height != fl.height
         || td.rgba.size() < total * 4u)
         return false;
-    const int wx = FeatureLayer::wrap_coord(x, fl.width);
-    const int wy = FeatureLayer::wrap_coord(y, fl.height);
-    const std::size_t idx =
-        std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx);
-    if (fl.data[idx] != FT_None) return false;  // roads win
+    const std::uint32_t cell = cell_of(x, y, fl.width);
+    if (fl.at(cell) != FT_None) return false;  // roads win
     // ЕДИНСТВЕННЫЙ ЗАПРЕТ МИРА — ВОДА (владелец, 2026-09-23, дословно:
     // «никаких запретов в расселении у нас подход через веса проходимости
     // единая система (дорога дешевле всего горы и вода дороже всего) и НА
@@ -499,7 +501,7 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
     // ФЕРТИЛЬНОСТИ СМОТРИМ»).
     // Спрашивается он ОДНОЙ дверью карты: здесь стояло «маска ИЛИ float-
     // высота» — два спеллинга одного порога в одном условии (M-109).
-    if (td.is_water(std::uint32_t(idx))) return false;
+    if (td.is_water(cell)) return false;
     // ЗДЕСЬ СТОЯЛ ВТОРОЙ ЗАПРЕТ: `height01 >= kMountainBiomeLevel` — «no rock
     // terraces». Он снят вердиктом выше, и снят БЕЗ ЗАМЕНЫ: камень отсеивает
     // не запрет, а ГЕЙТ ФЕРТИЛЬНОСТИ у звонящего (`plough_cell_ok`:
@@ -508,15 +510,13 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
     // называет неправильной: мир решает ЦЕНОЙ, а не разрешением.
     // ЗАМЕРЕНО ПРИБОРОМ (колонка `parcels`, четыре сида, 2026-09-23):
     // 4842/4436/4346/4560 до правки — число после стоит в коммите.
-    idxOut = idx;
     return true;
 }
 
 bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
                     int x, int y, int& wheatOut)
 {
-    std::size_t idx = 0;
-    if (!parcel_ground_ok_(fl, world, x, y, idx)) return false;
+    if (!parcel_ground_ok_(fl, world, x, y)) return false;
     // The ONE fertility door: potential minus what play has taken.
     wheatOut = resource_field_read(world, ResourceFieldId::Wheat,
                                    FeatureLayer::wrap_coord(x, fl.width),
@@ -532,10 +532,7 @@ bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
     // вспашка одна, а вид парцеллы — её аргумент.
     int wheat = 0;
     if (!plough_cell_ok(fl, world, x, y, wheat)) return false;
-    const int wx = FeatureLayer::wrap_coord(x, fl.width);
-    const int wy = FeatureLayer::wrap_coord(y, fl.height);
-    fl.data[std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx)] =
-        std::uint8_t(parcel);
+    fl.set(x, y, parcel);   // дверь слоя заворачивает адрес сама (M-112)
     return true;
 }
 
@@ -544,8 +541,7 @@ bool pasture_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
 {
     // The plough's own ground gates; the bar is the HERD row's — one head
     // must actually graze here, or the fence would enclose dust.
-    std::size_t idx = 0;
-    if (!parcel_ground_ok_(fl, world, x, y, idx)) return false;
+    if (!parcel_ground_ok_(fl, world, x, y)) return false;
     herdOut = resource_field_read(world, ResourceFieldId::Horses,
                                   FeatureLayer::wrap_coord(x, fl.width),
                                   FeatureLayer::wrap_coord(y, fl.height));
@@ -557,10 +553,7 @@ bool fence_pasture_cell(FeatureLayer& fl, const MacroWorld& world,
 {
     int herd = 0;
     if (!pasture_cell_ok(fl, world, x, y, herd)) return false;
-    const int wx = FeatureLayer::wrap_coord(x, fl.width);
-    const int wy = FeatureLayer::wrap_coord(y, fl.height);
-    fl.data[std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx)] =
-        FT_Pasture;
+    fl.set(x, y, FT_Pasture);   // дверь слоя заворачивает адрес сама (M-112)
     return true;
 }
 

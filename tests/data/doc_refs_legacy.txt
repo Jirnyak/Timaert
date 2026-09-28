@@ -243,7 +243,6 @@ SKELETON.md	:267-275
 SKELETON.md	:278
 SKELETON.md	:279
 SKELETON.md	:287
-SKELETON.md	:287-292
 SKELETON.md	:288-291
 SKELETON.md	:291
 SKELETON.md	:295-296
@@ -388,7 +387,6 @@ SKELETON.md	app/main.cpp:1476-1491
 SKELETON.md	app/main.cpp:1583
 SKELETON.md	app/main.cpp:1645
 SKELETON.md	app/main.cpp:1897-1901
-SKELETON.md	app/main.cpp:1900
 SKELETON.md	app/main.cpp:277
 SKELETON.md	app/main.cpp:320-335
 SKELETON.md	app/main.cpp:325
@@ -578,8 +576,6 @@ SKELETON.md	macro_stock.cpp:360-363
 SKELETON.md	macro_stock.cpp:407-416
 SKELETON.md	macro_stock.cpp:440
 SKELETON.md	macro_stock.cpp:447
-SKELETON.md	macro_stock.cpp:523
-SKELETON.md	macro_stock.cpp:533
 SKELETON.md	macro_stock.cpp:559
 SKELETON.md	macro_stock.cpp:577
 SKELETON.md	macro_stock.cpp:607
@@ -806,7 +802,6 @@ SKELETON.md	spawners.cpp:372-386
 SKELETON.md	spawners.cpp:400-446
 SKELETON.md	spawners.cpp:484
 SKELETON.md	spawners.cpp:53-54
-SKELETON.md	spawners.cpp:533
 SKELETON.md	spawners.cpp:545
 SKELETON.md	spawners.cpp:585-589
 SKELETON.md	spawners.cpp:609
@@ -1400,7 +1395,6 @@ macro-registry.md	macro_stock.cpp:264
 macro-registry.md	macro_stock.cpp:407-416
 macro-registry.md	macro_stock.cpp:476
 macro-registry.md	macro_stock.cpp:610-680
-macro-registry.md	macro_stock.cpp:723
 macro-registry.md	main.cpp:130
 macro-registry.md	main.cpp:292-297
 macro-registry.md	main.cpp:297-298

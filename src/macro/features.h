@@ -278,17 +278,29 @@ struct FeatureLayer {
     // Адрес — ЕДИНСТВЕННАЯ дверь мира (`core/torus.h`). Гейт включает
     // ИНВАРИАНТ (ЗАКОН АДРЕСА): мир квадратен и степень двойки, иначе
     // fail-closed — потому что маска на незаконном мире врёт молча.
+    //
+    // ДВЕ ФОРМЫ ОДНОЙ ДВЕРИ, А НЕ ДВЕ ДВЕРИ (ЗАКОН АДРЕСА п.2, M-112): адрес
+    // клетки есть ОДНО ЧИСЛО, и форма по индексу — основная; пара `x,y`
+    // законна там, где у звонящего ГЕОМЕТРИЯ, и сворачивается в адрес ЗДЕСЬ,
+    // а не руками у каждого. Индекс уже свёрнут по построению (`cell_of`,
+    // `cell_step`), поэтому маска ему не нужна — нужна только граница памяти.
+    // До этого наряда записи фич не было вовсе: девять мест писали
+    // `data[y*w+x] = FT_…` мимо двери, то есть девять раз заворот и проверка
+    // рода держались на памяти автора, а не на типе.
+    FeatureType at(std::uint32_t cell) const {
+        return cell < data.size() ? decode(data[cell]) : FT_None;
+    }
+    void set(std::uint32_t cell, FeatureType t) {
+        if (cell >= data.size()) return;
+        data[cell] = std::uint8_t(decode(std::uint8_t(t)));
+    }
     FeatureType at(int x, int y) const {
         if (!world_shape_ok(width, height) || data.empty()) return FT_None;
-        const std::size_t i = cell_of(x, y, width);
-        if (i >= data.size()) return FT_None;
-        return decode(data[i]);
+        return at(cell_of(x, y, width));
     }
     void set(int x, int y, FeatureType t) {
         if (!world_shape_ok(width, height) || data.empty()) return;
-        const std::size_t i = cell_of(x, y, width);
-        if (i >= data.size()) return;
-        data[i] = std::uint8_t(decode(std::uint8_t(t)));
+        set(cell_of(x, y, width), t);
     }
 };
 
