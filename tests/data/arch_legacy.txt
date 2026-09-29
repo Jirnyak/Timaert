@@ -179,7 +179,6 @@ entt	src/ecs/components.h	entt
 entt	src/ecs/world.h	entt
 entt	src/macro/macro_stock.h	entt
 entt	src/macro/npc_ai.cpp	entt
-entt	src/macro/npc_ai.h	entt
 entt	src/macro/npc_spawn.cpp	entt
 entt	src/macro/npc_spawn.h	entt
 entt	src/macro/player_entity.cpp	entt

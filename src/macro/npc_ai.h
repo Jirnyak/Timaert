@@ -416,7 +416,7 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // закону упряжки (npc.h mount_allowance — по одному на душу) и столько,
 // сколько в стойле стоит. Возвращает, сколько голов вышло. Публично ради
 // свидетеля: он судит ЗАКОН выдачи, не расписание дня ротации.
-int outfit_crew_mounts(ecs::World& w, Landmark& home, entt::entity crew);
+int outfit_crew_mounts(MacroStore& st, Landmark& home, MacroHandle crew);
 
 int provision_squad(Inventory& store, Inventory& bag, int soldiers,
                     float roundtripCells, float freeCarryKg);

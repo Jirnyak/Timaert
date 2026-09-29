@@ -3442,10 +3442,10 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
 // Тяжёлым работам тягло достаётся САМО, без прогноза груза: обоз есть сумма
 // спин (squad.h refresh_squad_carry), поэтому выданный конь — это +8 спин
 // тому, кто сегодня идёт за рудой, и ни одного нового числа.
-int outfit_crew_mounts(ecs::World& w, Landmark& home, entt::entity crew) {
-    auto* bag = body_state<ecs::NpcInventory>(w.reg, crew);
-    if (!bag) return 0;
-    int want = mount_allowance(bag->inv) - count_mount_souls(bag->inv);
+int outfit_crew_mounts(MacroStore& st, Landmark& home, MacroHandle crew) {
+    if (!st.valid(crew)) return 0;
+    auto& bag = st.inventory[crew.slot];
+    int want = mount_allowance(bag.inv) - count_mount_souls(bag.inv);
     int given = 0;
     while (want > 0) {
         // Новейший ездовой слот стойла — наименьший индекс области (старый
@@ -3462,14 +3462,14 @@ int outfit_crew_mounts(ecs::World& w, Landmark& home, entt::entity crew) {
         if (si < 0) break;   // стойло пусто — артель идёт пешей
         SoldierRecord mount{};
         if (!creatures_take_at(home.inventory, si, mount)) break;
-        if (!creatures_push(bag->inv, mount)) {
+        if (!creatures_push(bag.inv, mount)) {
             creatures_push(home.inventory, mount);   // нет слота — конь дома
             break;
         }
         ++given;
         --want;
     }
-    if (given > 0) refresh_squad_carry(w, crew);
+    if (given > 0) refresh_squad_carry(st, crew);
     return given;
 }
 
@@ -3513,13 +3513,10 @@ int squad_season_window(MacroWorld& mw, int day) {
     // есть закон мира (squad_walk.h): по ординалу. Скрэтч локальный, как у
     // прочих дневных проходов.
     MacroStore& st = store_of(reg);
-    auto view = reg.view<ecs::MacroSlot>();
     std::vector<SquadWalkEntry> order;
-    collect_squads_by_ordinal(reg, st, view, order,
-                              [](std::uint16_t) { return true; });
+    collect_squads_by_ordinal(st, order, [](std::uint16_t) { return true; });
     for (const SquadWalkEntry& sw : order) {
-        const entt::entity e = sw.e;
-        const std::uint16_t slot = slot_of(reg, e);
+        const std::uint16_t slot = sw.slot;
         auto& rt     = st.runtime[slot];
         auto& bag    = st.inventory[slot];
         auto& roster = st.roster[slot];
@@ -3544,7 +3541,7 @@ int squad_season_window(MacroWorld& mw, int day) {
         }
         // Состав изменился — обоз заново (squad.h): ушедшая душа унесла и
         // свою спину.
-        refresh_squad_carry(*mw.world, e);
+        refresh_squad_carry(st, handle_at(st, slot));
     }
     return deserted;
 }
@@ -3652,18 +3649,15 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
     // Порядок по ординалу (squad_walk.h): авто-скрап и гашение счёта трогают
     // цену дня через факты — одна очередь фактов на всех.
     MacroStore& st = store_of(reg);
-    auto view = reg.view<ecs::MacroSlot>();
     std::vector<SquadWalkEntry> order;
-    collect_squads_by_ordinal(reg, st, view, order,
-                              [](std::uint16_t) { return true; });
+    collect_squads_by_ordinal(st, order, [](std::uint16_t) { return true; });
     // Мешок носителя флажка решает ввод, не ИИ — слот из битов GameState
     // (1е кластер 5), тег-чтение умерло.
     const MacroHandle flagH = player_flag_handle(*mw.gs);
     const std::uint16_t flagSlot =
         st.valid(flagH) ? flagH.slot : kMacroNoSlot;
     for (const SquadWalkEntry& sw : order) {
-        const entt::entity e = sw.e;
-        const std::uint16_t slot = slot_of(reg, e);
+        const std::uint16_t slot = sw.slot;
         auto& bag = st.inventory[slot];
         // Camp-life slot hygiene (CANON «Крафт/Скрап»: авто-скрап ИИ по
         // порогу >50% — «склад города ИЛИ МЕШОК СКВАДА»): the same daily
@@ -3679,10 +3673,8 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
         // писать закон пятый раз; вместо этого ростер ест то, что приехало,
         // тем же вечером. «Добыча привезла — часть съелась» (владелец,
         // 2026-09-21), и это ТОТ ЖЕ econ_pay_debt, которым платит ландмарк.
-        if (auto* ro = body_state<ecs::SquadRoster>(reg, e)) {
-            econ_pay_debt(bag.inv, ro->needDebt, mw.econFacts,
-                          mw.econFactsUser);
-        }
+        econ_pay_debt(bag.inv, st.roster[slot].needDebt, mw.econFacts,
+                      mw.econFactsUser);
     }
     return melted;
 }
@@ -3729,7 +3721,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     //    в dissolve_population_crew ниже, где и оказался единственной
     //    живой дверью распуска. До переезда живая дверь считала табун
     //    людьми, а правильный закон стоял в недостижимой ветке.)
-    std::vector<entt::entity> homeIdle;
+    std::vector<std::uint16_t> homeIdle;
     // exclude<Dead>: a dead crew at its home cell is NOT a crew coming home —
     // it is a corpse-row awaiting the drain (AI-2). Without the exclusion a
     // dead leader and his dead men dissolved into the landmark as living
@@ -3738,14 +3730,12 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // «первая подходящая» (claim_standing) и растворяется в том же порядке —
     // «кто первым встал» обязан быть законом мира, не кишкой EnTT.
     MacroStore& stq = store_of(reg);
-    auto idleView = reg.view<ecs::MacroSlot>();
     std::vector<SquadWalkEntry> idleOrder;
     collect_squads_by_ordinal(
-        reg, stq, idleView, idleOrder,
+        stq, idleOrder,
         [&](std::uint16_t slot) { return stq.dead[slot] == 0; });
     for (const SquadWalkEntry& sw : idleOrder) {
-        const entt::entity e = sw.e;
-        const std::uint16_t slot = slot_of(reg, e);
+        const std::uint16_t slot = sw.slot;
         const auto& kind = stq.kind[slot];
         const auto& rt   = stq.runtime[slot];
         const auto& cell = stq.cell[slot];
@@ -3763,7 +3753,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                           float(lm.x), float(lm.y),
                           float(gs.mapW), float(gs.mapH)) >= 4.0f)
             continue;
-        homeIdle.push_back(e);
+        homeIdle.push_back(slot);
     }
 
     // Which crew rows have a squad truly OUT (on the road, at the field):
@@ -3791,19 +3781,17 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // «армия крестьян»), — вторая половина склада для дросселя ловли;
     // овцы получат такой же счёт своей строкой.
     std::vector<int> horsesStanding(gs.landmarks.size(), 0);
-    std::vector<std::pair<int, entt::entity>> idleByRow;
+    std::vector<std::pair<int, std::uint16_t>> idleByRow;
     std::sort(homeIdle.begin(), homeIdle.end());
-    const auto is_home_idle = [&](entt::entity e) {
-        return std::binary_search(homeIdle.begin(), homeIdle.end(), e);
+    const auto is_home_idle = [&](std::uint16_t slot) {
+        return std::binary_search(homeIdle.begin(), homeIdle.end(), slot);
     };
     // Тот же закон порядка: этот проход заполняет idleByRow.
-    auto crewView = reg.view<ecs::MacroSlot>();
     std::vector<SquadWalkEntry> crewOrder;
-    collect_squads_by_ordinal(reg, stq, crewView, crewOrder,
+    collect_squads_by_ordinal(stq, crewOrder,
                               [](std::uint16_t) { return true; });
     for (const SquadWalkEntry& sw : crewOrder) {
-        const entt::entity e = sw.e;
-        const std::uint16_t slot = slot_of(reg, e);
+        const std::uint16_t slot = sw.slot;
         const auto& kind = stq.kind[slot];
         const auto& rt   = stq.runtime[slot];
         const int row = row_of(rt.homeSettlementId);
@@ -3813,17 +3801,18 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         bool standingHome = false;
         if (is_crew(kind.type)) {
             int souls = 1;
-            if (const auto* bag = body_state<ecs::NpcInventory>(reg, e)) {
+            {
                 // Труд-гроссбух считает ЛЮДЕЙ; табун отряда — в дроссель.
-                souls += count_human_souls(bag->inv);
+                const auto& bag = stq.inventory[slot];
+                souls += count_human_souls(bag.inv);
                 horsesStanding[std::size_t(row)] +=
-                    creature_heads_of(bag->inv, NPCType::Horse);
+                    creature_heads_of(bag.inv, NPCType::Horse);
             }
             afield[std::size_t(row)] += souls;
-            if (is_home_idle(e)) {
+            if (is_home_idle(slot)) {
                 standingHome = true;
                 standingSouls[std::size_t(row)] += souls;
-                idleByRow.push_back({row, e});
+                idleByRow.push_back({row, slot});
             }
         }
         if (standingHome) continue;   // its row stays OPEN for re-dispatch
@@ -3847,15 +3836,17 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // держит полевая, пул ужался) — «просто распускает» (S19.2). Оба рычага
     // живы (владелец 2026-09-18): строки правят ЧИСЛОМ сквадов, пул — их
     // РАЗМЕРОМ (добор/ссадка в ветке стоящих ниже).
-    const auto dissolve_population_crew = [&](entt::entity e, Landmark& lm) {
-        if (auto* bag = body_state<ecs::NpcInventory>(reg, e)) {
+    const auto dissolve_population_crew = [&](std::uint16_t slot,
+                                              Landmark& lm) {
+        {
             // Leftovers home: cargo by the haul door, coin by the wallet
             // door — a dissolved crew owns nothing (CANON S5, the loan law).
+            auto& bag = stq.inventory[slot];
             for (int c = 0; c < kCommodityCount; ++c)
-                haul_between(bag->inv, depot_(lm, mw), commodity_item_index(c),
+                haul_between(bag.inv, depot_(lm, mw), commodity_item_index(c),
                              1 << 30, 1e9f);
-            transfer_value_dense(bag->inv, depot_(lm, mw),
-                                 inventory_value(bag->inv));
+            transfer_value_dense(bag.inv, depot_(lm, mw),
+                                 inventory_value(bag.inv));
         }
         // ЗВЕРЬ — НЕ ДУША НАСЕЛЕНИЯ (вердикт владельца 2026-09-21: «популяция
         // считает только типа HUMAN из таблицы существ»). Лошади (и всякий
@@ -3878,12 +3869,13 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // ростер→ростер, и человек с лошадью поедут одной дверью. Сегодня
         // население и гарнизон — два разных склада, поэтому и переносов два.
         int souls = 1;
-        if (const auto* bag = body_state<ecs::NpcInventory>(reg, e)) {
+        {
+            const auto& bag = stq.inventory[slot];
             // Обход области существ 1023 → first = старый порядок слотов
-            // (старейший первым); источник не мутируется — энтити умирает.
+            // (старейший первым); источник не мутируется — слот умирает.
             for (int i = kMaxInventorySlots - 1;
-                 i >= bag->inv.creature_first(); --i) {
-                const ItemRef& sl = bag->inv.slots[std::size_t(i)];
+                 i >= bag.inv.creature_first(); --i) {
+                const ItemRef& sl = bag.inv.slots[std::size_t(i)];
                 if (is_folk_kind(
                         std::uint16_t(creature_of_world_row(sl.def)))) {
                     souls += sl.count;
@@ -3895,13 +3887,12 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             }
         }
         lm.population += souls;
-        // Смерть слота ПЕРЕД сносом моста — иначе слот утёк бы навсегда.
-        {
-            MacroStore& stx = store_of(reg);
-            const std::uint16_t slot = slot_of(reg, e);
-            store_death(stx, MacroHandle{slot, stx.generation[slot]});
-        }
-        reg.destroy(e);
+        // Мост жив до 6.3: тело энтити находится сканом ДО смерти слота
+        // (macro_entity_of спрашивает valid) — дневной проход, вне тика.
+        const entt::entity bridge =
+            macro_entity_of(reg, handle_at(stq, slot));
+        store_death(stq, handle_at(stq, slot));
+        if (bridge != entt::null) reg.destroy(bridge);
         return souls;
     };
     // ── Сезонная погрузка содержания (S19.2): та же арифметика нужд, что
@@ -3921,25 +3912,24 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // проверена: сезон харча души — 32 кг при спине 154 кг, пятая часть.
     // Берётся РОВНО НЕДОСТАЮЩЕЕ по счёту, поэтому повторный вызов в тот же
     // день ничего не грузит и склад не сосётся дважды.
-    const auto load_season_upkeep = [&](Landmark& lm, entt::entity e) {
-        auto* bag = body_state<ecs::NpcInventory>(reg, e);
-        auto* roster = body_state<ecs::SquadRoster>(reg, e);
-        if (!bag || !roster) return;
+    const auto load_season_upkeep = [&](Landmark& lm, std::uint16_t slot) {
+        auto& bag = stq.inventory[slot];
+        auto& roster = stq.roster[slot];
         const int boardOrd = hunger_commodity_ordinal();
-        const int owed = boardOrd >= 0 ? roster->needDebt[boardOrd] : 0;
-        const int haveBoard = bag->inv.count_of(hunger_item_index());
+        const int owed = boardOrd >= 0 ? roster.needDebt[boardOrd] : 0;
+        const int haveBoard = bag.inv.count_of(hunger_item_index());
         if (owed > haveBoard) {
-            haul_between(lm.inventory, bag->inv, hunger_item_index(),
+            haul_between(lm.inventory, bag.inv, hunger_item_index(),
                          owed - haveBoard, 1e9f);
         }
-        const std::int64_t haveCoin = inventory_value(bag->inv);
-        if (roster->wageDebt > haveCoin) {
-            transfer_value_dense(lm.inventory, bag->inv,
-                                 int(roster->wageDebt - haveCoin));
+        const std::int64_t haveCoin = inventory_value(bag.inv);
+        if (roster.wageDebt > haveCoin) {
+            transfer_value_dense(lm.inventory, bag.inv,
+                                 int(roster.wageDebt - haveCoin));
         }
         // Погасить тем, что только что легло в сумку: долг умирает в ту же
         // минуту, что и приход (одна дверь на весь мир).
-        econ_pay_debt(bag->inv, roster->needDebt, mw.econFacts,
+        econ_pay_debt(bag.inv, roster.needDebt, mw.econFacts,
                       mw.econFactsUser);
     };
 
@@ -4522,22 +4512,23 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // перенос, судья — окно; артель В ПОЛЕ на границе платит из того,
         // что несёт (локальность: чужих складов на расстоянии не бывает).
         if (boundary) {
-            for (auto& [r2, e2] : idleByRow)
-                if (r2 == int(row) && e2 != entt::null)
-                    load_season_upkeep(s, e2);
+            for (auto& [r2, s2] : idleByRow)
+                if (r2 == int(row) && s2 != kMacroNoSlot)
+                    load_season_upkeep(s, s2);
         }
         // Заявка строки закрывается СТОЯЩЕЙ артелью первой — это и есть
         // пере-аукцион дня живой артели (S19.2: «рейс → дом → пере-аукцион
         // → новый рейс, домой вернулась — не исчезла»).
-        const auto claim_standing = [&](std::uint16_t type) -> entt::entity {
-            for (auto& [r2, e2] : idleByRow) {
-                if (r2 != int(row) || e2 == entt::null) continue;
-                if ((*body_state<ecs::NPCKind>(reg, e2)).type != type) continue;
-                const entt::entity found = e2;
-                e2 = entt::null;
+        const auto claim_standing =
+            [&](std::uint16_t type) -> std::uint16_t {
+            for (auto& [r2, s2] : idleByRow) {
+                if (r2 != int(row) || s2 == kMacroNoSlot) continue;
+                if (stq.kind[s2].type != type) continue;
+                const std::uint16_t found = s2;
+                s2 = kMacroNoSlot;
                 return found;
             }
-            return entt::null;
+            return kMacroNoSlot;
         };
         // ДВА РЕГУЛЯТОРА, оба от состояния и контекста (владелец,
         // 2026-09-18): строки × гейты дня = СКОЛЬКО сквадов, пул труда =
@@ -4575,13 +4566,13 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             if (!myBid) continue;
             const std::uint8_t myType = myBid->type;
             const std::uint32_t myObject = myBid->object;
-            const entt::entity standing =
+            const std::uint16_t standing =
                 claim_standing(std::uint16_t(ld.crews[i].npc));
-            if (standing != entt::null) {
+            if (standing != kMacroNoSlot) {
                 // ПОРУЧЕНИЕ НА СПИНУ (аукцион, CANON S10): пара {глагол,
                 // объект} — рулетка этой строки уже решила; рефлекс
                 // прерывает не спрашивая.
-                auto& prt = (*body_state<ecs::MacroNpcRuntime>(reg, standing));
+                auto& prt = stq.runtime[standing];
                 prt.squadType = myType;
                 prt.errandObject = myObject;
                 prt.stateTimer = 0;   // новый рейс — этим же думом
@@ -4596,7 +4587,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // ТАКТ 2: дом снаряжает уходящую артель тяглом из стойла
                 // (по коню на душу, сколько стоит) — рядом с провиантом
                 // ниже, тот же акт над вторым контейнером.
-                outfit_crew_mounts(*mw.world, s, standing);
+                outfit_crew_mounts(stq, s, handle_at(stq, standing));
                 // ...И СЧЁТОМ (v105): тот же такт снаряжения, второй
                 // контейнер. Уходящая артель уносит непогашенный харч и
                 // плату, поэтому граница застаёт её не с пустой сумкой.
@@ -4607,9 +4598,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // с ПОЛНОГО состава), ссадка лишних обратно в население
                 // (перенос, не баланс). В поле состав не трогается.
                 if (boundary && perCrew > 0) {
-                    if (auto* bg = body_state<ecs::NpcInventory>(reg, standing)) {
+                    {
+                        auto& bg = stq.inventory[standing];
                         const int want = perCrew - 1;   // члены без лидера
-                        int have = count_human_souls(bg->inv);
+                        int have = count_human_souls(bg.inv);
                         const int canFeed =
                             s.inventory.count_of(hunger_item_index())
                                 / kDaysPerSeason;
@@ -4623,7 +4615,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                             SoldierRecord rec{};
                             rec.kind = std::uint16_t(ld.crews[i].npc);
                             rec.level = 1;
-                            if (!creatures_push(bg->inv, rec)) break;
+                            if (!creatures_push(bg.inv, rec)) break;
                             s.population -= 1;
                         }
                         // ССАДКА СУДИТ ЛЮДЕЙ: последняя человеческая
@@ -4632,27 +4624,27 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         // want не входит (дроссель ловли — в аукционе).
                         // Новейший людской слот = наименьший индекс области
                         // (старый обход slot_count-1 → 0 = first → 1023).
-                        for (have = count_human_souls(bg->inv);
+                        for (have = count_human_souls(bg.inv);
                              have > want; --have) {
                             int si = -1;
-                            for (int k = bg->inv.creature_first();
+                            for (int k = bg.inv.creature_first();
                                  k < kMaxInventorySlots; ++k) {
                                 if (is_folk_kind(std::uint16_t(
                                         creature_of_world_row(
-                                            bg->inv.slots[std::size_t(k)]
+                                            bg.inv.slots[std::size_t(k)]
                                                 .def)))) {
                                     si = k;
                                     break;
                                 }
                             }
                             SoldierRecord off{};
-                            if (si < 0 || !creatures_take_at(bg->inv, si, off))
+                            if (si < 0 || !creatures_take_at(bg.inv, si, off))
                                 break;
                             s.population += 1;
                         }
                         // Приведённый состав — приведённый обоз (squad.h):
                         // добранная душа несёт свою спину, ссаженная уносит.
-                        refresh_squad_carry(*mw.world, standing);
+                        refresh_squad_carry(stq, handle_at(stq, standing));
                     }
                 }
                 continue;
@@ -4706,26 +4698,27 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             const entt::entity ent = spawn_squad(
                 gs, *mw.world, store_of(*mw.world), *mw.terrain, spec);
             if (ent != entt::null) {
+                const std::uint16_t newSlot = slot_of(reg, ent);
                 s.population -= 1 + spec.members.size();
                 ++raised;
-                auto& prt = store_of(reg).runtime[slot_of(reg, ent)];
+                auto& prt = stq.runtime[newSlot];
                 prt.squadType = myType;
                 prt.errandObject = myObject;
                 // Сезонный груз содержания вместо провианта на рейс: еда —
                 // баланс окна теперь, рейсовый ломоть умер у артелей
                 // (остался у вылазок гарнизона — они не подсудны суду
                 // состава).
-                load_season_upkeep(s, ent);
+                load_season_upkeep(s, newSlot);
                 // ТАКТ 2 для новорождённой артели: то же стойло, тот же
                 // закон упряжки — дом снаряжает её тяглом, если оно есть.
-                outfit_crew_mounts(*mw.world, s, ent);
+                outfit_crew_mounts(stq, s, handle_at(stq, newSlot));
             }
         }
         for (int si = 0; si < soloCount; ++si) {
             // Живой одиночка (курьер дани) продолжает службу — его строка
             // закрыта им самим; новый — только на границе.
             if (claim_standing(std::uint16_t(ld.crews[solo[si]].npc))
-                != entt::null) {
+                != kMacroNoSlot) {
                 continue;
             }
             if (!boundary || souls_home(s) <= 0) continue;
@@ -4751,10 +4744,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // полевая, пул ужался до меньшего числа сквадов) — души и остатки
         // домой. Вне границы неприкаянная артель просто стоит до суда.
         if (boundary) {
-            for (auto& [r2, e2] : idleByRow) {
-                if (r2 != int(row) || e2 == entt::null) continue;
-                dissolve_population_crew(e2, s);
-                e2 = entt::null;
+            for (auto& [r2, s2] : idleByRow) {
+                if (r2 != int(row) || s2 == kMacroNoSlot) continue;
+                dissolve_population_crew(s2, s);
+                s2 = kMacroNoSlot;
             }
         }
     }

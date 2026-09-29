@@ -852,14 +852,16 @@ void test_the_catch_lands_in_the_roster() {
             creature_heads_of(home.inventory, NPCType::Horse);
         CHECK(stall >= 2, "фикстура: в стойле есть из чего снаряжать");
         // Лидер без членов — одна душа, значит ровно один конь.
-        const int given = outfit_crew_mounts(w, home, e);
+        const int given =
+            outfit_crew_mounts(sm::store_of(w), home, sm::handle_of(reg, e));
         CHECK(given == 1 && count_mount_souls(roMut) == 1,
               "ТАКТ 2: дом выдал по ездовому на душу — одному лидеру коня");
         CHECK(creature_heads_of(home.inventory, NPCType::Horse)
                   == stall - given,
               "CONSERVATION такта 2: сколько вышло из стойла, столько и "
               "встало в упряжку");
-        const int twice = outfit_crew_mounts(w, home, e);
+        const int twice =
+            outfit_crew_mounts(sm::store_of(w), home, sm::handle_of(reg, e));
         CHECK(twice == 0,
               "мера — потолок, а не запрос: снаряжённый отряд второго коня "
               "не берёт, даже когда стойло полно");

@@ -243,26 +243,25 @@ inline int destroy_dead_macro_squads(ecs::World& w, const GameState& gs,
     // (destroy под собственным view незаконен), закон порядка достался ему
     // бесплатно. Игрок исключается КОЛОНКАМИ (1е кластер 5): родной сквад —
     // зарезервированным ординалом, носитель флажка — битами GameState;
-    // тег-exclude умер вместе с резолвом тегом.
+    // тег-exclude умер вместе с резолвом тегом. Обход — слоты store (6.1);
+    // прежний exclude<SubworldTag> был рудиментом: тег носят только тела
+    // сцены, макро-сквад его не носил никогда (emplace один —
+    // sub/spawn.cpp, рождение тела).
     MacroStore& st = store_of(w);
     const MacroHandle flag = player_flag_handle(gs);
     const bool flagLive = st.valid(flag);
-    auto view = w.reg.view<ecs::MacroSlot>(entt::exclude<ecs::SubworldTag>);
     std::vector<SquadWalkEntry> snapshot;
     collect_squads_by_ordinal(
-        w.reg, st, view, snapshot,
+        st, snapshot,
         [&](std::uint16_t slot) {
             return st.dead[slot] != 0
                 && st.spawnId[slot].index != ecs::kPlayerSquadOrdinal
                 && !(flagLive && slot == flag.slot);
         });
-    std::vector<entt::entity> doomed;
+    int swept = 0;
     for (const SquadWalkEntry& sw : snapshot) {
-        if (!creatures_empty(st.inventory[slot_of(w.reg, sw.e)].inv))
-            continue;
-        doomed.push_back(sw.e);
-    }
-    for (entt::entity e : doomed) {
+        const std::uint16_t slot = sw.slot;
+        if (!creatures_empty(st.inventory[slot].inv)) continue;
         // THE loot pool (owner 2026-08-30, CANON S5): a squad that died
         // with no victor — exhaustion, drowning — FOLDS its belongings
         // into their catalog worth and pays the world's loot pool (one
@@ -271,16 +270,18 @@ inline int destroy_dead_macro_squads(ecs::World& w, const GameState& gs,
         // remainder). Ruins, dungeons and mob drops are the pool's future
         // contextual outflow: loot is ROLLED from tables with a budget
         // drawn off this value — variety by law, O(1) memory.
-        if (lootPoolValue) {
-            if (const auto* bag = body_state<ecs::NpcInventory>(w.reg, e)) {
-                *lootPoolValue += inventory_value(bag->inv);
-            }
-        }
-        const std::uint16_t slot = slot_of(w.reg, e);
-        store_death(st, MacroHandle{slot, st.generation[slot]});
-        w.reg.destroy(e);
+        if (lootPoolValue)
+            *lootPoolValue += inventory_value(st.inventory[slot].inv);
+        // Мост жив до 6.3: тело энтити находится сканом ДО смерти слота
+        // (macro_entity_of спрашивает valid) — конец тика, вне горячего
+        // пути.
+        const entt::entity bridge =
+            macro_entity_of(w.reg, handle_at(st, slot));
+        store_death(st, handle_at(st, slot));
+        if (bridge != entt::null) w.reg.destroy(bridge);
+        ++swept;
     }
-    return int(doomed.size());
+    return swept;
 }
 
 // THE lookup by save-stable ordinal (ecs::MacroSpawnId): the one identity a
