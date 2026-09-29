@@ -152,15 +152,27 @@ void resolve_player_handles_after_load(GameState& gs, const MacroStore& st,
 // absent squad means.
 entt::entity player_squad_entity(ecs::World& world);
 
+// ── БИТОВЫЕ ДВЕРИ (1е кластер 5): истина — два поля GameState ────────────
+// «Кем я на карте» и «кто оригинал» — распаковка полей, ноль сканов.
+// Валидность хэндла (поколение) спрашивается у store читателем, которому
+// она нужна; сентинель «никого» распаковывается в kMacroNoSlot.
+inline MacroHandle player_flag_handle(const GameState& gs) {
+    return macro_handle_from_bits(gs.playerFlagBits);
+}
+inline MacroHandle player_squad_handle(const GameState& gs) {
+    return macro_handle_from_bits(gs.playerSquadBits);
+}
+
 // «Я СЕЙЧАС НЕ В СЕБЕ» — the flag stands on somebody other than the original.
-// THE one honest way to ask «вселён ли я»: the fact IS the two entities being
+// THE one honest way to ask «вселён ли я»: the fact IS the two handles being
 // different, and nothing else. Before this door the chronicle asked it by
 // comparing a spawn ordinal to a magic number (macro/journal.h) — a second,
 // hand-written answer to a question the flag already answers.
-inline bool player_wears_another_body(ecs::World& world) {
-    const entt::entity flag = player_flag_entity(world);
-    const entt::entity home = player_squad_entity(world);
-    return flag != entt::null && home != entt::null && flag != home;
+inline bool player_wears_another_body(const GameState& gs) {
+    const MacroHandle flag = player_flag_handle(gs);
+    const MacroHandle home = player_squad_handle(gs);
+    return flag.slot != kMacroNoSlot && home.slot != kMacroNoSlot
+        && gs.playerFlagBits != gs.playerSquadBits;
 }
 
 // (player_roster умер слиянием M-71: армия игрока — область существ его же

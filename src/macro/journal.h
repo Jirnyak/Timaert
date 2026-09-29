@@ -56,11 +56,10 @@ inline void player_journal_capture(GameState& gs, ecs::World& world) {
     // question the flag already answers, and one that would have drifted the
     // day «кто оригинал» stopped being spelled as that constant.
     int possessed = -1;
-    if (player_wears_another_body(world)) {
-        if (const auto* sid =
-                body_state<ecs::MacroSpawnId>(world.reg, player_flag_entity(world))) {
-            possessed = int(sid->index);
-        }
+    if (player_wears_another_body(gs)) {
+        const MacroHandle flag = player_flag_handle(gs);
+        const MacroStore& st = store_of(world);
+        if (st.valid(flag)) possessed = int(st.spawnId[flag.slot].index);
     }
     const auto isHis = [possessed](std::uint8_t kind, std::uint32_t ordinal) {
         if (fact_subject_kind(kind) != std::uint8_t(FactSubject::Squad))

@@ -471,19 +471,25 @@ void spawn_player_squad(ecs::World& w,
 // scene_sea_level). Dry footing is a question about THIS world's water, so the
 // plane is an argument: projecting onto a seabed because the datum was a
 // remembered 0.40 is exactly the bug the plane's inheritance retires.
+// `playerFlagBits` — packed-хэндл «кем я на карте» (GameState, 1е кластер 5):
+// запись носителя флажка НЕ проецируется — его тело в сцене АВАТАР, не
+// проекция. Субмиру даётся число, не мир; сентинель (все единицы) у
+// фикстуры без игрока честно не пропускает никого.
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
-                                     const StructureIndex* solids = nullptr);
+                                     const StructureIndex* solids = nullptr,
+                                     std::uint32_t playerFlagBits = 0xFFFFFFFFu);
 
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
-                                     const StructureIndex* solids = nullptr);
+                                     const StructureIndex* solids = nullptr,
+                                     std::uint32_t playerFlagBits = 0xFFFFFFFFu);
 
 // (Вселение — перенос флажка — живёт в sub/possess.h: header-only дверь,
 // которую зовут эффект спелла possession и харнесс, без линковки слоя

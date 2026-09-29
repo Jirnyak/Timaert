@@ -3656,16 +3656,22 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
     std::vector<SquadWalkEntry> order;
     collect_squads_by_ordinal(reg, st, view, order,
                               [](std::uint16_t) { return true; });
+    // Мешок носителя флажка решает ввод, не ИИ — слот из битов GameState
+    // (1е кластер 5), тег-чтение умерло.
+    const MacroHandle flagH = player_flag_handle(*mw.gs);
+    const std::uint16_t flagSlot =
+        st.valid(flagH) ? flagH.slot : kMacroNoSlot;
     for (const SquadWalkEntry& sw : order) {
         const entt::entity e = sw.e;
-        auto& bag = st.inventory[slot_of(reg, e)];
+        const std::uint16_t slot = slot_of(reg, e);
+        auto& bag = st.inventory[slot];
         // Camp-life slot hygiene (CANON «Крафт/Скрап»: авто-скрап ИИ по
         // порогу >50% — «склад города ИЛИ МЕШОК СКВАДА»): the same daily
         // overflow law the settlement store runs. The gate is not a player
         // privilege but the seam of DECISION: this loop is the AI deciding
         // for its bag, and the PlayerTag bag's decisions come from input —
         // «автоматическое уничтожение вещей игрока строго запрещено».
-        if (!reg.any_of<ecs::PlayerTag>(e)) melted += auto_scrap_overflow(bag.inv);
+        if (slot != flagSlot) melted += auto_scrap_overflow(bag.inv);
         // ── ПРИХОД ГАСИТ СЧЁТ ВЕСЬ СЕЗОН (CANON S10, v105) ───────────────
         // Страховочный дневной такт гашения — ровно тот же, что у места
         // (world_tick settle_landmark_day). Двери прихода у сквада разные
@@ -4868,20 +4874,16 @@ static TickContext make_tick_context(MacroWorld& mw,
         // Store свипа — адресом в конверте: поведения читают колонки, не
         // спрашивая ctx реестра на каждом think (1е).
         if (!ctx.mw.store) ctx.mw.store = &store_of(*mw.world);
-        // Слоты игрока — резолв ОДИН раз на свип; до смерти тегов (шаг 2
-        // 1е) — из тегов, после источником станет GameState.
-        auto& reg = mw.world->reg;
-        for (auto e : reg.view<ecs::PlayerTag>()) {
-            if (const auto* ms = reg.try_get<ecs::MacroSlot>(e)) {
-                ctx.playerFlagSlot = ms->slot;
-            }
-            break;
-        }
-        for (auto e : reg.view<ecs::PlayerSquadTag>()) {
-            if (const auto* ms = reg.try_get<ecs::MacroSlot>(e)) {
-                ctx.playerSquadSlot = ms->slot;
-            }
-            break;
+        // Слоты игрока — резолв ОДИН раз на свип из битов GameState
+        // (1е кластер 5): распаковка двух полей, ноль сканов реестра.
+        // Валидность спрашивается у store — фикстура без игрока несёт
+        // сентинель, и оба слота честно остаются kMacroNoSlot.
+        if (mw.gs && ctx.mw.store) {
+            const MacroStore& st = *ctx.mw.store;
+            const MacroHandle flag = player_flag_handle(*mw.gs);
+            if (st.valid(flag)) ctx.playerFlagSlot = flag.slot;
+            const MacroHandle home = player_squad_handle(*mw.gs);
+            if (st.valid(home)) ctx.playerSquadSlot = home.slot;
         }
     }
     ctx.squads  = &runtime.squadIndex;
@@ -4919,7 +4921,7 @@ void settle_dead_squads(MacroWorld& mw) {
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
     drain_dead_leader_squads(w, gs.deserterPool);
-    destroy_dead_macro_squads(w, &gs.lootPoolValue);
+    destroy_dead_macro_squads(w, gs, &gs.lootPoolValue);
 }
 
 } // namespace

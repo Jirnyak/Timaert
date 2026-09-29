@@ -201,6 +201,11 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     for (auto ent : w.reg.view<ecs::PlayerTag>()) prev = ent;
     if (prev != entt::null) w.reg.remove<ecs::PlayerTag>(prev);
     w.reg.emplace<ecs::PlayerTag>(lord);
+    // Оба носителя, как настоящая дверь вселения (1е кластер 5): вопрос
+    // «ношу ли я чужое тело» журнал задаёт теперь битам GameState.
+    if (prev != entt::null)
+        gs.playerSquadBits = sm::macro_handle_bits(sm::handle_of(w.reg, prev));
+    gs.playerFlagBits = sm::macro_handle_bits(hL);
     chronicle_record(gs.chronicle,
                      fact(2, FactKind::Killed,
                           fact_subject(FactSubject::Squad, false),

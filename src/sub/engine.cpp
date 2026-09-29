@@ -798,7 +798,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     const int projected = project_macro_npcs_into_subworld(ecs, mgr_, cx, cy,
         gs.mapW, gs.mapH,
         cell_seed(gs.worldSeed, cx, cy) ^ kMacroProjectionSalt,
-        scene_sea_level(), &structIndex_);
+        scene_sea_level(), &structIndex_, gs.playerFlagBits);
     if (projected > 0) {
         char msg[80];
         std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
@@ -1516,7 +1516,7 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
         project_macro_npcs_into_subworld(*ecs_, mgr_, cx, cy,
             gs_->mapW, gs_->mapH,
             cell_seed(gs_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
-            scene_sea_level(), &structIndex_);
+            scene_sea_level(), &structIndex_, gs_->playerFlagBits);
     }
 }
 
@@ -4851,7 +4851,10 @@ void SubworldEngine::tick(float dt) {
                         return static_cast<SubworldEngine*>(user)
                             ->mgr_.height_field().sample(x, y);
                     },
-                    this);
+                    this,
+                    // Два хэндла игрока — числами из GameState (1е кл.5).
+                    gs_ ? gs_->playerFlagBits : 0xFFFFFFFFu,
+                    gs_ ? gs_->playerSquadBits : 0xFFFFFFFFu);
         tick_subworld_bodies(dt);
         // The player's swing AFTER the combat gather: it asks the battle pick
         // grid the same way the spell contact does, and the grid it asks must

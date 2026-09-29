@@ -30,11 +30,18 @@ using GroundHeightFn = float (*)(void* user, float x, float y);
 // A brain needs no collision gate: walls, bounds and the crowd are the
 // steering pass's business. The SolidCanStandFn parameter died with the
 // private integrator.
+//
+// `playerFlagBits`/`playerSquadBits` — два packed-хэндла GameState (1е
+// кластер 5): «без сознания» = флаг стоит НЕ на родном скваде. Субмиру
+// даются числа, не мир; сентинели (все единицы) у фикстуры без игрока
+// честно значат «сознание не терялось».
 void tick_npc_ai(ecs::World& w, float playerX, float playerY,
                  std::uint32_t playerEntityId, float dt,
                  PlayerThreatFn threatFn = nullptr,
                  void* threatUser = nullptr,
                  GroundHeightFn heightFn = nullptr,
-                 void* heightUser = nullptr);
+                 void* heightUser = nullptr,
+                 std::uint32_t playerFlagBits = 0xFFFFFFFFu,
+                 std::uint32_t playerSquadBits = 0xFFFFFFFFu);
 
 } // namespace sm::sub

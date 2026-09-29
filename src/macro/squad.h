@@ -237,18 +237,25 @@ inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
 // standing past a cap, CANON S26). The player's squad is never swept: his
 // death is a game-over screen, not a disappearance. Returns how many left
 // the map.
-inline int destroy_dead_macro_squads(ecs::World& w,
+inline int destroy_dead_macro_squads(ecs::World& w, const GameState& gs,
                                      std::int64_t* lootPoolValue = nullptr) {
     // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
     // (destroy под собственным view незаконен), закон порядка достался ему
-    // бесплатно.
+    // бесплатно. Игрок исключается КОЛОНКАМИ (1е кластер 5): родной сквад —
+    // зарезервированным ординалом, носитель флажка — битами GameState;
+    // тег-exclude умер вместе с резолвом тегом.
     MacroStore& st = store_of(w);
-    auto view = w.reg.view<ecs::MacroSlot>(
-        entt::exclude<ecs::PlayerTag, ecs::PlayerSquadTag, ecs::SubworldTag>);
+    const MacroHandle flag = player_flag_handle(gs);
+    const bool flagLive = st.valid(flag);
+    auto view = w.reg.view<ecs::MacroSlot>(entt::exclude<ecs::SubworldTag>);
     std::vector<SquadWalkEntry> snapshot;
     collect_squads_by_ordinal(
         w.reg, st, view, snapshot,
-        [&](std::uint16_t slot) { return st.dead[slot] != 0; });
+        [&](std::uint16_t slot) {
+            return st.dead[slot] != 0
+                && st.spawnId[slot].index != ecs::kPlayerSquadOrdinal
+                && !(flagLive && slot == flag.slot);
+        });
     std::vector<entt::entity> doomed;
     for (const SquadWalkEntry& sw : snapshot) {
         if (!creatures_empty(st.inventory[slot_of(w.reg, sw.e)].inv))

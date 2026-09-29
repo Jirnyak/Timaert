@@ -2421,9 +2421,8 @@ bool cast_active_spell(App& app) {
         &subworld_spell_rng01,
         &app.subworld,
         &app.subworld.spell_rng(),
-        // Второй носитель флажка для эффекта вселения (1е кластер 5) —
-        // адрес одного числа GameState, не мир.
-        &app.gs.playerFlagBits);
+        // Мир для законов о положении игрока (вселение, 1е кластер 5).
+        &app.gs);
     emit_spell_cast(app, id, ok, ok ? "" : "Cast failed");
     // ANY cast that happened sounds (one door, one voice — a stance flip
     // included); the deferred «звук каста» of 443f0f5, delivered 2026-09-09.
@@ -3680,7 +3679,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                 ? (home == entt::null
                    || sm::sub::macro_record_of(app.ecs.reg, avatarBody)
                           != sm::handle_of(app.ecs.reg, home))
-                : sm::player_wears_another_body(app.ecs);
+                : sm::player_wears_another_body(app.gs);
         if (app.subworld.in_dungeon() && storyNode != nullptr) {
             end_scene_by_death(app, storyNode);
         } else if (foreignBody) {

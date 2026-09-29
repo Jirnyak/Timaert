@@ -12,6 +12,7 @@
 
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "macro/state.h"   // GameState — поля игрока (вселение, 1е кл.5)
 #include "macro/store.h"
 #include "sub/body.h"      // body_radius — the caster shell the muzzle clears
 #include "sub/possess.h"   // possess_entity — THE flag-move door
@@ -229,10 +230,15 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     if (!reg.valid(caster) || !reg.all_of<ecs::AvatarTag>(caster)) return;
     // 1-hop ban: the hero husk mirrors his own squad's record; any other
     // record under the avatar means the caster is already wearing somebody.
-    entt::entity home = entt::null;
-    for (auto e : reg.view<ecs::PlayerSquadTag>()) { home = e; break; }
-    if (home != entt::null
-        && sub::macro_record_of(reg, caster) != handle_of(reg, home)) return;
+    // «Кто оригинал» — биты GameState (1е кластер 5): запись под аватаром
+    // пакуется той же дверью и сравнивается с `playerSquadBits`; derived-тело
+    // (записи нет) пакуется в сентинель и честно ловит тот же запрет.
+    if (c.gs) {
+        const MacroHandle home = macro_handle_from_bits(c.gs->playerSquadBits);
+        if (home.slot != kMacroNoSlot
+            && macro_handle_bits(sub::macro_record_of(reg, caster))
+                   != c.gs->playerSquadBits) return;
+    }
     // The body under the reticle, within THIS row's reach. The row is this
     // function's own binding (kSpellEffects), so reading it back is the
     // ordinal law, not a lookup of somebody else's numbers.
@@ -250,7 +256,8 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     const auto* lvl = body_state<ecs::NpcLevel>(reg, target);
     const int targetLevel = lvl ? int(lvl->value) : 0;
     if (targetLevel >= int(c.casterLevel) + int(c.schoolRank)) return;
-    sub::possess_entity(w, target, c.playerFlagBits);
+    sub::possess_entity(w, target,
+                        c.gs ? &c.gs->playerFlagBits : nullptr);
 }
 
 // ── The binding table ──────────────────────────────────────────────────────

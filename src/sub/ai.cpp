@@ -29,7 +29,9 @@ void tick_npc_ai(ecs::World& w, float px, float py,
                  PlayerThreatFn threatFn,
                  void* threatUser,
                  GroundHeightFn heightFn,
-                 void* heightUser) {
+                 void* heightUser,
+                 std::uint32_t playerFlagBits,
+                 std::uint32_t playerSquadBits) {
     auto& reg = w.reg;
 
     // БЕЗ СОЗНАНИЯ (вердикт владельца №6, 2026-09-17): у брошенного сквада
@@ -41,16 +43,15 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     // на следующем же тике, без единого компонента.
     std::int32_t unconsciousSubject = -1;
     MacroHandle unconsciousRec{};
-    for (auto sq : reg.view<ecs::PlayerSquadTag>()) {
-        if (!reg.all_of<ecs::PlayerTag>(sq)) {
-            // try_, не handle_of: это ТИК, и он не вправе требовать формы —
-            // сцена без store (фикстура) отвечает «никого», а не падает.
-            unconsciousRec = try_handle_of(reg, sq);
-            if (const auto* sid = body_state<ecs::MacroSpawnId>(reg, sq)) {
-                unconsciousSubject = std::int32_t(sid->index);
-            }
+    {
+        // Флаг НЕ на родном скваде = хозяин ходит в чужом теле, его сквад
+        // без чувств. Ответ — сравнение двух чисел GameState (1е кластер 5);
+        // ординал родного сквада — зарезервированная константа, скана нет.
+        const MacroHandle home = macro_handle_from_bits(playerSquadBits);
+        if (home.slot != kMacroNoSlot && playerFlagBits != playerSquadBits) {
+            unconsciousRec = home;
+            unconsciousSubject = std::int32_t(ecs::kPlayerSquadOrdinal);
         }
-        break;
     }
 
     // A body walking home is steered by the day's pump (engine tick_day_pump),

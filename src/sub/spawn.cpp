@@ -1401,9 +1401,11 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
-                                     const StructureIndex* solids) {
+                                     const StructureIndex* solids,
+                                     std::uint32_t playerFlagBits) {
     return project_macro_npcs_into_subworld(w, mgr.tiles(), centerCx, centerCy,
-                                            mapW, mapH, seed, seaLevel, solids);
+                                            mapW, mapH, seed, seaLevel, solids,
+                                            playerFlagBits);
 }
 
 int project_macro_npcs_into_subworld(ecs::World& w,
@@ -1411,7 +1413,8 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
-                                     const StructureIndex* solids) {
+                                     const StructureIndex* solids,
+                                     std::uint32_t playerFlagBits) {
     auto& reg = w.reg;
     const float seaM = sea_level_m(seaLevel);
     const bool tilesUsable =
@@ -1436,13 +1439,12 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     MacroStore& st = store_of(reg);
     {
         // Население — живые слоты store (1е, голый цикл); флаг игрока —
-        // его слот (его тело в сцене — аватар, не проекция). Резолв тегом
-        // до его смерти (шаг 2 1е), потом источником станет GameState.
+        // его слот (его тело в сцене — аватар, не проекция). Источник —
+        // биты GameState, пришедшие числом в параметре (1е кластер 5).
         std::uint16_t flagSlot = kMacroNoSlot;
-        for (auto fe : reg.view<ecs::PlayerTag>()) {
-            if (const auto* ms = reg.try_get<ecs::MacroSlot>(fe))
-                flagSlot = ms->slot;
-            break;
+        {
+            const MacroHandle fh = macro_handle_from_bits(playerFlagBits);
+            if (st.valid(fh)) flagSlot = fh.slot;
         }
         for (std::uint32_t s32 = 0; s32 < kMacroEntityCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);

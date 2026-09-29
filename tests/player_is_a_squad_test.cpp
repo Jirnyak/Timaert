@@ -145,7 +145,7 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
 
     // (a) В СЕБЕ. Возвращаться некуда, потому что незачем — умер ты сам, и
     //     дверь обязана сказать «нет» ровно этим же «нет».
-    CHECK(!player_wears_another_body(w), "by default he is himself");
+    CHECK(!player_wears_another_body(gs), "by default he is himself");
     CHECK(!wake_player_in_original_body(gs, w),
           "dying as yourself is the end — there is no return to make");
     CHECK(w.reg.all_of<ecs::PlayerTag>(mine), "and the flag did not wander");
@@ -154,7 +154,9 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
     const entt::entity lord = npc_squad(w, 30.0f, 30.0f, 7u, 2);
     w.reg.remove<ecs::PlayerTag>(mine);
     w.reg.emplace<ecs::PlayerTag>(lord);
-    CHECK(player_wears_another_body(w), "wearing a lord is asked of the flag");
+    // Оба носителя, как настоящая дверь вселения (1е кластер 5).
+    gs.playerFlagBits = sm::macro_handle_bits(sm::handle_of(w.reg, lord));
+    CHECK(player_wears_another_body(gs), "wearing a lord is asked of the flag");
     CHECK(wake_player_in_original_body(gs, w), "a living original is woken up in");
     CHECK(w.reg.all_of<ecs::PlayerTag>(mine) && !w.reg.all_of<ecs::PlayerTag>(lord),
           "exactly one flag, and it is home");

@@ -233,6 +233,9 @@ void test_aggressive_chases_visible_player() {
         const auto pe = world.reg.create();
         world.reg.emplace<sm::ecs::MacroSlot>(pe, hp2.slot);
         world.reg.emplace<sm::ecs::PlayerTag>(pe);
+        // Второй носитель флажка (1е кластер 5): make_tick_context читает
+        // биты GameState, не тег.
+        gs.playerFlagBits = sm::macro_handle_bits(hp2);
         stp.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }
@@ -251,6 +254,8 @@ void test_aggressive_chases_visible_player() {
     (*sm::body_state<sm::ecs::NPCKind>(world.reg, player)).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     world.reg.emplace<sm::ecs::PlayerSquadTag>(player);
+    gs.playerSquadBits =
+        sm::macro_handle_bits(sm::handle_of(world.reg, player));
     // And pursuit is the one STRENGTH law (squad_threat_step): a fighter
     // closes only fights it wins with margin. The player is wounded to 10%
     // so the chase is the law's own verdict, not a leftover reflex.
@@ -309,6 +314,9 @@ void test_aggressive_spares_a_friend() {
         const auto pe = world.reg.create();
         world.reg.emplace<sm::ecs::MacroSlot>(pe, hp2.slot);
         world.reg.emplace<sm::ecs::PlayerTag>(pe);
+        // Второй носитель флажка (1е кластер 5): make_tick_context читает
+        // биты GameState, не тег.
+        gs.playerFlagBits = sm::macro_handle_bits(hp2);
         stp.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }
@@ -323,6 +331,8 @@ void test_aggressive_spares_a_friend() {
     (*sm::body_state<sm::ecs::NPCKind>(world.reg, player)).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     world.reg.emplace<sm::ecs::PlayerSquadTag>(player);
+    gs.playerSquadBits =
+        sm::macro_handle_bits(sm::handle_of(world.reg, player));
     (*sm::body_state<sm::ecs::Pools>(world.reg, player)).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);

@@ -1251,7 +1251,6 @@ macro-registry.md	spell_book_state.h:35-44
 macro-registry.md	spire.cpp:128
 macro-registry.md	squad.h:189
 macro-registry.md	squad.h:199
-macro-registry.md	squad.h:821
 macro-registry.md	squad.h:829
 macro-registry.md	squad.h:836
 macro-registry.md	squad.h:916

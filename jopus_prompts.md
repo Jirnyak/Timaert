@@ -260,7 +260,7 @@
 
 **Как устроено сейчас (проверено 2026-09-25):** после авторезолва каждая
 смерть идёт ДВУМЯ путями и оба пишут факт `Killed` в летопись и платят славу:
-- путь А: `report_battle_deaths` (`squad.h:797-817`) → `report_death`
+- путь А: `report_battle_deaths@src/macro/squad.h` → `report_death`
   (`:636`) → синк конверта `mw.facts` → `raise_macro_fact`
   (`app/main.cpp:255-313`): на КАЖДУЮ смерть — `GameEvent NpcDeath` в шину
   (`:258-263`) **и** `WorldFact Killed` amount=1 через `record_deed` с

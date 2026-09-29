@@ -14,6 +14,8 @@ namespace sm::ecs { struct World; }
 
 namespace sm {
 
+struct GameState;   // конверт несёт адрес; полный тип нужен читателям (.cpp)
+
 using SpellRngFn = float (*)(void*);
 
 struct SpellSpawnContext {
@@ -46,12 +48,12 @@ struct SpellSpawnContext {
     // fixture with no sheet, which is an honest novice.
     std::int16_t casterLevel = 0;
     std::uint8_t schoolRank = 0;
-    // Адрес ОДНОГО числа `GameState::playerFlagBits` (1е кластер 5): второй
-    // носитель флажка «кем я на карте», который вселение обязано двигать тем
-    // же движением, что тег (sub/possess.h). Субмиру не даётся GameState —
-    // только это число; nullptr у конверта без мира (фикстуры) законен,
-    // пока теги живы (умирают в 5.3).
-    std::uint32_t* playerFlagBits = nullptr;
+    // Мир для эффектов, чей закон спорит с положением ИГРОКА (1е кластер 5):
+    // вселение читает `playerSquadBits` (однохоповый запрет) и двигает
+    // `playerFlagBits` — оба поля GameState. Контент — слой L4, макро ему
+    // виден; в СУБМИР (possess_entity) уходит адрес одного числа, не мир.
+    // nullptr у конверта без мира (фикстуры) законен.
+    GameState* gs = nullptr;
 };
 
 using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);
