@@ -8,6 +8,8 @@
 
 #include "tables/commodity.h"
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 #include <string>
 
@@ -150,6 +152,251 @@ std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlic
     head += def->name;
     if (msg.empty()) return head;
     return head + ": " + msg;
+}
+
+
+// ── Экипировка: тела дверей (M-183) ────────────────────────────────────────
+
+namespace {
+
+// Пересчёт блоков одной надетой строки: каждая ПУСТАЯ ячейка, чей тип назван
+// blocksMask и чей слот у тела есть, помечается производным маркером.
+void mark_blocks_of(Gear& g, int origin, std::uint64_t blocks) {
+    if (blocks == 0) return;
+    for (int j = 0; j < kEquipCells; ++j) {
+        if (j == origin) continue;
+        if (!g.has.has(j)) continue;
+        if (g.worn[std::size_t(j)] != kWornNothing) continue;
+        if ((blocks & part_bit(equip_cell_part(j))) == 0) continue;
+        g.worn[std::size_t(j)] = kWornBlocked;
+    }
+}
+
+// Одна штука из стака в СВОЙ предметный слот (истина — инвентарь; ячейка
+// держит ровно один экземпляр по построению). Возврат: слот этой штуки или
+// -1 — в предметной области нет пустого места, отказ громкий.
+int split_one(Inventory& inv, int slot) {
+    ItemRef& s = inv.slots[std::size_t(slot)];
+    if (s.count == 1) return slot;
+    const int first = inv.creature_first();
+    for (int i = 0; i < first; ++i) {
+        ItemRef& d = inv.slots[std::size_t(i)];
+        if (!d.empty()) continue;
+        d = s;
+        d.count = 1;
+        s.count -= 1;
+        return i;
+    }
+    return -1;
+}
+
+bool try_equip_cell(Gear& g, int invSlot, const ItemDef& def, int cell) {
+    if (!item_fits_cell(g, cell, def)) return false;
+    if (g.worn[std::size_t(cell)] != kWornNothing) return false;
+    // Двуручник хочет свои блокируемые ячейки ПУСТЫМИ, не просто наличными:
+    // он не смеет столкнуть щит с руки, которую носитель занял сам.
+    if (def.blocksMask != 0) {
+        for (int j = 0; j < kEquipCells; ++j) {
+            if (j == cell) continue;
+            if (!g.has.has(j)) continue;
+            if ((def.blocksMask & part_bit(equip_cell_part(j))) == 0) continue;
+            if (g.worn[std::size_t(j)] != kWornNothing) return false;
+        }
+    }
+    g.worn[std::size_t(cell)] = std::uint16_t(invSlot);
+    mark_blocks_of(g, cell, def.blocksMask);
+    return true;
+}
+
+// Общий пролог обеих дверей надевания: валидный слот, вещь, строка, не надета
+// ли уже. Возвращает def или nullptr-отказ.
+const ItemDef* equip_prologue(const Gear& g, const Inventory& inv, int invSlot) {
+    if (invSlot < 0 || invSlot >= kMaxInventorySlots) return nullptr;
+    const ItemRef& s = inv.slots[std::size_t(invSlot)];
+    if (s.empty()) return nullptr;
+    if (slot_is_worn(g, invSlot)) return nullptr;   // экземпляр уже на теле
+    const ItemDef* def = item_def_at(int(s.def));
+    return (def && def->slotMask != 0) ? def : nullptr;
+}
+
+} // namespace
+
+void gear_init(Gear& g, const SlotMask& bodySlots) {
+    g.has = bodySlots;
+    g.worn = worn_empty();
+}
+
+bool item_fits_cell(const Gear& g, int cell, const ItemDef& def) {
+    if (cell < 0 || cell >= kEquipCells) return false;
+    if (def.slotMask == 0) return false;
+    if (!g.has.has(cell)) return false;
+    return (def.slotMask & part_bit(equip_cell_part(cell))) != 0;
+}
+
+int equip(Gear& g, Inventory& inv, int invSlot) {
+    const ItemDef* def = equip_prologue(g, inv, invSlot);
+    if (!def) return -1;
+    const int use = split_one(inv, invSlot);
+    if (use < 0) return -1;
+    for (int i = 0; i < kEquipCells; ++i) {
+        if (try_equip_cell(g, use, *def, i)) return i;
+    }
+    // Тело отказало: расщеплённая штука сливается назад (консервация).
+    if (use != invSlot) {
+        inv.slots[std::size_t(invSlot)].count += 1;
+        inv.slots[std::size_t(use)] = ItemRef{};
+    }
+    return -1;
+}
+
+int equip_at(Gear& g, Inventory& inv, int invSlot, int cell) {
+    const ItemDef* def = equip_prologue(g, inv, invSlot);
+    if (!def) return -1;
+    const int use = split_one(inv, invSlot);
+    if (use < 0) return -1;
+    if (try_equip_cell(g, use, *def, cell)) return cell;
+    if (use != invSlot) {
+        inv.slots[std::size_t(invSlot)].count += 1;
+        inv.slots[std::size_t(use)] = ItemRef{};
+    }
+    return -1;
+}
+
+bool unequip(Gear& g, const Inventory& inv, int cell) {
+    if (cell < 0 || cell >= kEquipCells) return false;
+    const std::uint16_t v = g.worn[std::size_t(cell)];
+    if (v >= kWornBlocked) return false;   // пусто или блокер
+    g.worn[std::size_t(cell)] = kWornNothing;
+    remark_gear_blocks(g, inv);
+    return true;
+}
+
+bool slot_is_worn(const Gear& g, int invSlot) {
+    if (invSlot < 0 || invSlot >= kMaxInventorySlots) return false;
+    for (int i = 0; i < kEquipCells; ++i) {
+        if (g.worn[std::size_t(i)] == std::uint16_t(invSlot)) return true;
+    }
+    return false;
+}
+
+void remark_gear_blocks(Gear& g, const Inventory& inv) {
+    for (int i = 0; i < kEquipCells; ++i) {
+        if (g.worn[std::size_t(i)] == kWornBlocked)
+            g.worn[std::size_t(i)] = kWornNothing;
+    }
+    for (int i = 0; i < kEquipCells; ++i) {
+        const std::uint16_t v = g.worn[std::size_t(i)];
+        if (v >= kWornBlocked) continue;
+        // Индекс, чей слот опустел, протух: вещи нет — она не надета.
+        if (inv.slots[std::size_t(v)].empty()) {
+            g.worn[std::size_t(i)] = kWornNothing;
+            continue;
+        }
+        if (const ItemDef* def = item_def_at(int(inv.slots[std::size_t(v)].def))) {
+            mark_blocks_of(g, i, def->blocksMask);
+        }
+    }
+}
+
+int worn_cells(const Gear& g) {
+    int n = 0;
+    for (int i = 0; i < kEquipCells; ++i) {
+        if (g.worn[std::size_t(i)] < kWornBlocked) ++n;
+    }
+    return n;
+}
+
+BonusTotals worn_bonuses(const Gear& g, const Inventory& inv) {
+    BonusTotals t{};
+    for (int i = 0; i < kEquipCells; ++i) {
+        const std::uint16_t v = g.worn[std::size_t(i)];
+        if (v >= kWornBlocked) continue;
+        const ItemRef& r = inv.slots[std::size_t(v)];
+        if (r.empty()) continue;
+        if (const ItemDef* def = item_def_at(int(r.def))) {
+            accumulate(t, def->bonus, kMaxItemBonuses);
+        }
+        for (int a = 0; a < kMaxItemAffixes; ++a) {
+            accumulate(t, r.affix_at(a));
+        }
+    }
+    return t;
+}
+
+ArmorProfile worn_armor(const Gear& g, const Inventory& inv,
+                        const Skills& skills) {
+    ArmorProfile sum{};
+    for (int i = 0; i < kEquipCells; ++i) {
+        const std::uint16_t v = g.worn[std::size_t(i)];
+        if (v >= kWornBlocked) continue;
+        const ItemRef& r = inv.slots[std::size_t(v)];
+        if (r.empty()) continue;
+        const ItemDef* def = item_def_at(int(r.def));
+        if (!def) continue;
+        // ONE piece, ONE verdict: its row's columns and its own rolled
+        // affixes are summed HERE, per piece, and the rank of the skill this
+        // row names multiplies the pair.
+        BonusTotals mine{};
+        for (int a = 0; a < kMaxItemAffixes; ++a) accumulate(mine, r.affix_at(a));
+        const int pct = def->skill != SkillId::Count
+                            ? skill_mult_pct(skills, def->skill) : 100;
+        for (std::size_t t = 0; t < kDamageTypeCount; ++t) {
+            const int mine_t = int(def->armor.v[t]) + int(mine.armor[t]);
+            const int v2 = int(sum.v[t]) + mine_t * pct / 100;
+            sum.v[t] = std::uint8_t(v2 > 255 ? 255 : v2 < 0 ? 0 : v2);
+        }
+    }
+    return sum;
+}
+
+const ItemDef* weapon_in_hand(const Gear& g, const Inventory& inv) {
+    for (int i = 0; i < kEquipCells; ++i) {
+        const BodyPartId part = equip_cell_part(i);
+        if (part != BodyPartId::Grip && part != BodyPartId::OffGrip) continue;
+        const std::uint16_t v = g.worn[std::size_t(i)];
+        if (v >= kWornBlocked) continue;
+        const ItemRef& r = inv.slots[std::size_t(v)];
+        if (r.empty()) continue;
+        if (const ItemDef* def = item_def_at(int(r.def))) {
+            if (def->type == ItemType::Weapon) return def;
+        }
+    }
+    return nullptr;
+}
+
+StrikeFields hand_strike_fields(const Attributes& attributes,
+                                const Skills& skills, const Gear* g,
+                                const Inventory* inv) {
+    const ItemDef* w = (g && inv) ? weapon_in_hand(*g, *inv) : nullptr;
+    StrikeFields out{};
+    out.dice     = w ? w->dice : kFistDice;
+    out.dmgType  = w ? w->dmgType : DamageType::Blunt;
+    out.delivery = w ? w->delivery : Delivery::Melee;
+    out.range    = w ? w->range : 0.0f;
+    const SkillId skill =
+        (w && w->skill != SkillId::Count) ? w->skill : SkillId::Unarmed;
+    out.multPct = std::int16_t(skill_mult_pct(skills, skill));
+    const DerivedBonuses d = calculate_derived(attributes, skills);
+    const BonusTotals worn = (g && inv) ? worn_bonuses(*g, *inv) : BonusTotals{};
+    // A MISSILE row takes NO attribute add (owner verdict 2026-09-09): range
+    // is the compensation. What the GEAR says (worn DmgFlat affixes) still
+    // speaks: that is equipment's voice, not the body's.
+    const int flat = (out.delivery == Delivery::Missile
+                          ? 0 : int(std::floor(d.rawPhysDamage)))
+                   + worn.derived_of(DerivedModId::DmgFlat);
+    out.flatAdd = std::int16_t(flat < 0 ? 0 : flat);
+    out.luck    = std::uint8_t(attributes.of(AttributeId::Lck));
+    // The TEMPO half (CANON S14 «один рычаг»): the MASS law's base through
+    // the recovery door; the worn SwingPct rows speak LAST, clamped po2.
+    const int steps = recovery_steps(weapon_swing_seconds(w),
+                                     attributes, skills,
+                                     SkillId::Armsmaster);
+    const int swingPct = 100 + std::clamp(
+        worn.derived_of(DerivedModId::SwingPct),
+        kDerivedPctFloor, kDerivedPctCeil);
+    const int paced = steps * 100 / swingPct;
+    out.recoverySteps = paced < 1 ? 1 : paced;
+    return out;
 }
 
 } // namespace sm

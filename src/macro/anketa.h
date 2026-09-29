@@ -1351,6 +1351,111 @@ inline int body_max_sp(const CharacterSheet& sheet,
                                     int(base.hp), base.mp, base.sp).maxSp);
 }
 
+// ── ЭКИПИРОВКА АНКЕТЫ — Gear: слоты глобальной раскладки, надетое = ИНДЕКС
+// В ИНВЕНТАРЬ (M-183, вердикты владельца 2026-09-28) ───────────────────────
+//
+// Анатомия как СИСТЕМА умерла: плана тела (AnatomyDef) больше нет, слот
+// адресуется `тип×16+n` одинаково для всех (tables/body_parts.h), «есть ли у
+// тела слот» — БИТ экземплярной маски (редактор тел: отрастить конечность =
+// поставить бит, в рантайме, без новой строки контента).
+//
+// ИСТИНА ОДНА — ИНВЕНТАРЬ: надетая вещь ЛЕЖИТ в контейнере анкеты, ячейка
+// хранит лишь `uint16`-индекс её слота (вердикт: «надо ещё знать что одето
+// но это я думаю можно просто указатель на место в инвентаре»; «отлично
+// индекс идеально»). Двух копий вещи больше не существует (DOD п.6).
+// «Нет элемента» — ПОСЛЕДНЕЕ значение типа, не −1 (закон узкого индекса).
+inline constexpr std::uint16_t kWornNothing = 0xFFFFu;
+// Ячейка занята БЛОКОМ соседа (двуручник в Grip занимает OffGrip). Маркер
+// ПРОИЗВОДНЫЙ: блоки не хранятся истиной, а пересчитываются от надетых строк
+// (remark_gear_blocks) — вторая копия того, что каталог уже говорит
+// колонкой blocksMask, разъехалась бы с ним молча.
+inline constexpr std::uint16_t kWornBlocked = 0xFFFEu;
+static_assert(kMaxInventorySlots <= int(kWornBlocked),
+              "оба маркера обязаны лежать ВЫШЕ любого законного индекса слота");
+
+constexpr std::array<std::uint16_t, std::size_t(kEquipCells)> worn_empty() {
+    std::array<std::uint16_t, std::size_t(kEquipCells)> a{};
+    for (std::uint16_t& v : a) v = kWornNothing;
+    return a;
+}
+
+// РАЗМЕР ЗАКРЕПЛЁН: 64 (маска тела) + 480×2 (ячейки) = 1024 Б ровно — po2
+// даром; по капу 32768 сквадов это 32 МиБ против 160 МиБ прежней формы
+// (worn[128] × ItemRef 40 Б): система ушла, и 128 МиБ вместе с ней.
+struct Gear {
+    SlotMask has{};   // тело ЭКЗЕМПЛЯРА; рождается от колонки slots строки существа
+    std::array<std::uint16_t, std::size_t(kEquipCells)> worn = worn_empty();
+};
+static_assert(sizeof(Gear) == 1024, "экипировка анкеты = маска 64 + 480 ячеек по 2");
+
+// Рождение тела: маска — от строки существа (tables/npc.h `slots`), ячейки пусты.
+void gear_init(Gear& g, const SlotMask& bodySlots);
+
+// Подходит ли строка каталога этой ячейке: слот у тела есть, тип ячейки
+// назван маской строки. Пустота ячейки здесь НЕ проверяется — это вопрос
+// надевания, не совместимости.
+bool item_fits_cell(const Gear& g, int cell, const ItemDef& def);
+
+// Надеть вещь ИЗ СЛОТА ИНВЕНТАРЯ. Возвращает ячейку или -1 — ОТКАЗ, никогда
+// не молчаливая потеря: вещь остаётся в инвентаре в любом исходе (она и так
+// там — надевание лишь ставит указатель). Стак > 1 расщепляется: одна штука
+// уезжает в свободный предметный слот, ячейка указывает на неё (ячейка
+// держит РОВНО ОДИН экземпляр по построению).
+int equip(Gear& g, Inventory& inv, int invSlot);
+int equip_at(Gear& g, Inventory& inv, int invSlot, int cell);
+
+// Снять ячейку. Вещь никуда не движется — она уже в инвентаре; освобождаются
+// блоки. false = ячейка пуста или занята блокером.
+bool unequip(Gear& g, const Inventory& inv, int cell);
+
+// Надет ли этот слот инвентаря на теле — страж продажи/скрапа/выброса:
+// вещь, на которую смотрит ячейка, не смеет уйти из инвентаря молча.
+bool slot_is_worn(const Gear& g, int invSlot);
+
+// Пересчитать производные маркеры блоков от надетых строк (после загрузки и
+// после каждого надевания/снятия); индекс, чей слот инвентаря опустел,
+// снимается — вещи нет, значит она не надета.
+void remark_gear_blocks(Gear& g, const Inventory& inv);
+
+int worn_cells(const Gear& g);
+BonusTotals worn_bonuses(const Gear& g, const Inventory& inv);
+ArmorProfile worn_armor(const Gear& g, const Inventory& inv, const Skills& skills);
+const ItemDef* weapon_in_hand(const Gear& g, const Inventory& inv);
+
+// The percent a CREATURE ROW's own armour is multiplied by (npc_def().armor —
+// a troll's hide: bodies with no gear at all). Its род is in the WEARER's
+// training: the best-trained of the living armour skills. A beast trains
+// none of them and stays ×1, so the world's monsters do not silently thicken.
+inline int sheet_armor_mult_pct(const Skills& skills) {
+    int best = 100;
+    for (SkillId id : {SkillId::HeavyArmor, SkillId::LightArmor,
+                       SkillId::Shield}) {
+        const int pct = skill_mult_pct(skills, id);
+        if (pct > best) best = pct;
+    }
+    return best;
+}
+
+// What a sheet strikes with, given what its body holds — the ONE assembly of
+// the strike fields (dice + type + attribute add + skill percent + LCK) that
+// every carrier of ecs::Combat copies from.
+struct StrikeFields {
+    Dice          dice{};
+    DamageType    dmgType = DamageType::Blunt;
+    std::int16_t  flatAdd = 0;
+    std::int16_t  multPct = 100;
+    std::uint8_t  luck    = 0;
+    // Steps the arm needs between blows — the recovery door's verdict over
+    // the mass law's base. Default = the bare hand at a zero sheet
+    // (kHandSwingS × 64), so a fields{} harness literal swings honestly.
+    int           recoverySteps = 96;
+    Delivery      delivery = Delivery::Melee;
+    float         range    = 0.0f;
+};
+StrikeFields hand_strike_fields(const Attributes& attributes,
+                                const Skills& skills, const Gear* g,
+                                const Inventory* inv);
+
 } // namespace sm
 
 // Включение стоит ЗДЕСЬ, а не наверху файла, и это не небрежность:
@@ -1379,3 +1484,5 @@ TIMAERT_ROW(sm::Inventory);
 TIMAERT_ROW(sm::PlayerCombatSlice);
 TIMAERT_ROW(sm::CharacterSheet);
 TIMAERT_ROW(sm::csheet_detail::SheetRng);
+TIMAERT_ROW(sm::Gear);
+TIMAERT_ROW(sm::StrikeFields);

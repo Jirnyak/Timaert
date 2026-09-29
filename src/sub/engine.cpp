@@ -994,10 +994,14 @@ void SubworldEngine::spawn_player_entity() {
     const CharacterSheet* baseSheet = gs_ ? player_sheet(*ecs_) : nullptr;
     const CharacterSheet effBody = baseSheet
         ? effective_sheet(*baseSheet, standing) : CharacterSheet{};
+    const ecs::NpcInventory* flagBag =
+        (gs_ && flagRec != entt::null)
+            ? sub::state_of<ecs::NpcInventory>(ecs_->reg, flagRec) : nullptr;
     const StrikeFields hs = gs_
         ? hand_strike_fields(effBody.attributes,
                              effBody.skills,
-                             eqp ? &eqp->gear : nullptr)
+                             eqp ? &eqp->gear : nullptr,
+                             flagBag ? &flagBag->inv : nullptr)
         : StrikeFields{kFistDice, DamageType::Blunt, 0, 100, 0};
     // Speed: a walking man's, from the ONE scale every body is stated on
     // (macro/movement_cost.h). Refreshed each tick beside the damage, so a
@@ -1153,9 +1157,12 @@ void SubworldEngine::sync_player_entity_position() {
                     eff.attributes, eff.skills, st);
                 const ecs::BodyEquipment* eqp =
                     sub::state_of<ecs::BodyEquipment>(reg, e);
+                const ecs::NpcInventory* ebag =
+                    sub::state_of<ecs::NpcInventory>(reg, e);
                 const StrikeFields hs = hand_strike_fields(
                     eff.attributes, eff.skills,
-                    eqp ? &eqp->gear : nullptr);
+                    eqp ? &eqp->gear : nullptr,
+                    ebag ? &ebag->inv : nullptr);
                 c->dice    = hs.dice;
                 c->flatAdd = hs.flatAdd;
                 c->multPct = hs.multPct;

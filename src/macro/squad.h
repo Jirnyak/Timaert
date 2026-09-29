@@ -7,7 +7,6 @@
 #pragma once
 
 #include "ecs/world.h"
-#include "macro/anatomy.h"
 #include "macro/anketa.h"
 #include "macro/auto_battle.h"
 #include "core/rng.h"
@@ -402,10 +401,11 @@ inline CharacterSheet sheet_of(const MacroStore& st, MacroHandle h) {
 // Сам закон суммирования — ОДИН, от указателей: обе двери ниже (entt-тело
 // и слот store) зовут его, второй копии закона не существует (метод §5 п.1).
 inline BonusTotals standing_bonuses_sum(const ecs::BodyEquipment* eq,
+                                        const Inventory* inv,
                                         const SpellBook* book,
                                         const Skills& base) {
     BonusTotals t{};
-    if (eq) t += worn_bonuses(eq->gear);
+    if (eq && inv) t += worn_bonuses(eq->gear, *inv);
     if (book) {
         for (int ord = 0; ord < kSpellCount; ++ord) {
             if (!spellbook_has_sustained(*book, ord)) continue;
@@ -419,8 +419,9 @@ inline BonusTotals standing_bonuses_sum(const ecs::BodyEquipment* eq,
 }
 inline BonusTotals standing_bonuses_of(entt::registry& reg, entt::entity e) {
     const auto* eq   = body_state<ecs::BodyEquipment>(reg, e);
+    const auto* bag  = body_state<ecs::NpcInventory>(reg, e);
     const auto* book = body_state<SpellBook>(reg, e);
-    return standing_bonuses_sum(eq, book,
+    return standing_bonuses_sum(eq, bag ? &bag->inv : nullptr, book,
                                 book ? sheet_of(reg, e).skills : Skills{});
 }
 // Registry face of the same door (the sheet_of idiom): the subworld seam holds
@@ -432,7 +433,8 @@ inline BonusTotals standing_bonuses_of(ecs::World& w, entt::entity e) {
 // тела сцены «сами себе запись» несут гир и книгу своими компонентами.
 inline BonusTotals standing_bonuses_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h)) return BonusTotals{};
-    return standing_bonuses_sum(&st.gear[h.slot], &st.spellBook[h.slot],
+    return standing_bonuses_sum(&st.gear[h.slot], &st.inventory[h.slot].inv,
+                                &st.spellBook[h.slot],
                                 sheet_of(st, h).skills);
 }
 

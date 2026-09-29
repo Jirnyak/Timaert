@@ -65,11 +65,9 @@ struct MacroNpcRecord {
     // record of a save carries 1: the player's own squad, or a possessed lord.
     std::uint8_t         playerFlag = 0;
     Inventory            inventory;         // NpcInventory.inv
-    // What this body WEARS (ecs::BodyEquipment). Opt-in on the entity, so a
-    // record whose `anatomy` cells are all empty simply writes a zero count —
-    // the crowd costs four bytes each and the gear rides whole for the few
-    // bodies that have any.
-    Equipment            gear;
+    // What this body WEARS (ecs::BodyEquipment, M-183): маска тела + 480
+    // ячеек-индексов в `inventory` выше — истина вещи одна, инвентарь.
+    Gear                 gear;
     // (Слоты существ ростера уехали в `inventory` слиянием M-71 — область
     // существ единого контейнера едет вместе с предметами одной копией.)
     // СЧЁТ СОДЕРЖАНИЯ РОСТЕРА (v105, CANON S10 «у всякого, кто кормит, есть
@@ -78,6 +76,12 @@ struct MacroNpcRecord {
     // сохранённый в середине сезона, обязан проснуться должным ровно
     // столько же, иначе перезагрузка кормит его армию бесплатно.
     std::int32_t rosterNeedDebt[kCommodityCount] = {};
+    // ДЫРА ВЫРАВНИВАНИЯ, НАЗВАННАЯ ПОЛЕМ (M-183): needDebt (60 Б) кончается
+    // на ≡4 mod 8, а wageDebt хочет 8 — у записи с NSDMI паддинг
+    // НЕОПРЕДЕЛЁН, и байтовый свидетель снапшота читал бы мусор. Явное поле
+    // зануляется инициализатором и делает раскладку детерминированной; в
+    // сейв НЕ пишется (сейв ходит полями, не байтами).
+    std::int32_t rosterDebtPad = 0;
     std::int64_t rosterWageDebt = 0;
 };
 

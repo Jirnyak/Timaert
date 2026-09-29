@@ -351,7 +351,7 @@ namespace sm {
 // «теперь только есть благополучие и оно даёт рост») — настроение, реестр
 // его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
 // seasonWellbeing и needDebt.
-constexpr int kSaveVersion = 114;   // v114: снята колонка-сирота Objective::zoneRadius — писалась и ездила в сейве, не читалась ничем
+constexpr int kSaveVersion = 115;   // v115 (M-183): экипировка — маска тела + индексы в инвентарь; план тела умер
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

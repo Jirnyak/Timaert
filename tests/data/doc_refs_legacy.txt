@@ -80,7 +80,6 @@ SKELETON.md	:1606
 SKELETON.md	:164-167
 SKELETON.md	:165-166
 SKELETON.md	:17-18
-SKELETON.md	:173-176
 SKELETON.md	:1823
 SKELETON.md	:1835
 SKELETON.md	:184-185
@@ -90,7 +89,6 @@ SKELETON.md	:2027
 SKELETON.md	:2041
 SKELETON.md	:207-208
 SKELETON.md	:207-209
-SKELETON.md	:208-211
 SKELETON.md	:21
 SKELETON.md	:210
 SKELETON.md	:2161
@@ -226,7 +224,6 @@ SKELETON.md	:79-88
 SKELETON.md	:8016
 SKELETON.md	:8070
 SKELETON.md	:88
-SKELETON.md	:92-95
 SKELETON.md	:94-104
 SKELETON.md	:9512
 SKELETON.md	:96
@@ -236,7 +233,6 @@ SKELETON.md	:993
 SKELETON.md	CANON.md:987
 SKELETON.md	ai.cpp:109-118
 SKELETON.md	ai.cpp:93
-SKELETON.md	anatomy.h:60
 SKELETON.md	app/app_state.h:161
 SKELETON.md	app/main.cpp:1375
 SKELETON.md	app/main.cpp:1476-1491
@@ -1086,7 +1082,6 @@ macro-registry.md	:828
 macro-registry.md	:850-882
 macro-registry.md	CMakeLists.txt:249
 macro-registry.md	agent_memory.h:64-67
-macro-registry.md	anatomy.h:187
 macro-registry.md	app/main.cpp:277
 macro-registry.md	app/main.cpp:4970
 macro-registry.md	app/main.cpp:621

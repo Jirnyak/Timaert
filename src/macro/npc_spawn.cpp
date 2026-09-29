@@ -128,6 +128,8 @@ entt::entity make_npc(ecs::World& w, MacroStore& st, NPCType type,
     int lvl = def.baseLevel + int(rng.next_u32() % 4u);
     if (levelOverride > 0) lvl = levelOverride;
     const CharacterSheet sheet = make_character_sheet(type, lvl, sheetSeed);
+    // Тело экземпляра — от маски СТРОКИ (M-183): какие слоты экипировки есть.
+    gear_init(st.gear[h.slot].gear, def.slots);
     const int hp = body_max_hp(sheet, def.combat);
 
     // Stable identity for possession persistence (Inc 5e-2): the Nth macro NPC

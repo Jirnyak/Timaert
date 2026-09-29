@@ -466,11 +466,20 @@ void test_the_sheet_door_reads_what_is_standing() {
 
     const entt::entity squad = player_squad_entity(w);
     CHECK_OR_RETURN(squad != entt::null, "the player's squad exists");
-    auto& eq = sm::store_of(w).gear[sm::slot_of(w.reg, squad)];
+    const std::uint16_t pslot = sm::slot_of(w.reg, squad);
+    auto& eq = sm::store_of(w).gear[pslot];
+    auto& bag = sm::store_of(w).inventory[pslot].inv;
     ItemRef plate{};
     plate.count = 1;
     plate.set_affix(0, {std::uint8_t(BonusId::End), +2});
-    eq.gear.worn[0] = plate;
+    // M-183: вещь В ИНВЕНТАРЕ, ячейка — индекс (прямое авторство фикстуры).
+    int free = -1;
+    for (int i = 0; i < kMaxInventorySlots; ++i) {
+        if (bag.slots[std::size_t(i)].empty()) { free = i; break; }
+    }
+    CHECK_OR_RETURN(free >= 0, "the player's bag has room for the plate");
+    bag.slots[std::size_t(free)] = plate;
+    eq.gear.worn[0] = std::uint16_t(free);
 
     const CharacterSheet dressed = player_effective_sheet(w);
     CHECK(dressed.attributes.of(AttributeId::End) == 10,
@@ -484,7 +493,7 @@ void test_the_sheet_door_reads_what_is_standing() {
           "the BASE sheet never moved — reads walk the door, writes never do");
 
     // Take it off: the door simply stops summing it.
-    eq.gear.worn[0] = ItemRef{};
+    eq.gear.worn[0] = kWornNothing;
     CHECK(player_effective_sheet(w)
                   .attributes.of(AttributeId::End) == 8,
           "negative control: off the body, out of the answer — no residue");

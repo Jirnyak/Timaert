@@ -590,11 +590,15 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     // ONE assembly (hand_strike_fields) over the weapon actually in hand,
     // taken at its expectation like every auto-resolve number.
     const sm::ecs::BodyEquipment* eqp = nullptr;
+    const sm::ecs::NpcInventory* bagp = nullptr;
     if (const entt::entity sq = sm::player_flag_entity(app.ecs);
-        sq != entt::null)
-        eqp = body_state<sm::ecs::BodyEquipment>(app.ecs.reg, sq);
+        sq != entt::null) {
+        eqp  = body_state<sm::ecs::BodyEquipment>(app.ecs.reg, sq);
+        bagp = body_state<sm::ecs::NpcInventory>(app.ecs.reg, sq);
+    }
     const sm::StrikeFields hs = sm::hand_strike_fields(
-        eff.attributes, eff.skills, eqp ? &eqp->gear : nullptr);
+        eff.attributes, eff.skills, eqp ? &eqp->gear : nullptr,
+        bagp ? &bagp->inv : nullptr);
     const float swing = float(
         sm::strike_mean_x2(hs.dice, hs.flatAdd, hs.multPct)) * 0.5f;
     // ...over the same assembly's recovery (S14 door): the auto-resolve
@@ -4622,17 +4626,23 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>&) {
             sm::ecs::BodyEquipment* eqc = console_player_equipment(app);
             if (!eqc) { c.error("no body to dress (no world yet)"); return true; }
-            const sm::Equipment& gear = eqc->gear;
-            c.printfln(Lvl::Ok, "%s - %d of %d cells filled",
-                       gear.shape().label, sm::worn_cells(gear), gear.cells());
-            for (int cell = 0; cell < gear.cells(); ++cell) {
-                const sm::ItemRef& r = gear.worn[std::size_t(cell)];
-                const sm::ItemDef* def =
-                    r.empty() ? nullptr : sm::item_def_at(int(r.def));
-                c.printfln(Lvl::Info, "  %2d %-10s %s", cell,
-                           sm::body_part_def(gear.part_at(cell)).label,
-                           r.empty() ? "(empty)"
-                                     : (def ? def->id : "(blocked)"));
+            const sm::Gear& gear = eqc->gear;
+            const sm::Inventory& bag = player_bag(app);
+            c.printfln(Lvl::Ok, "body - %d of %d slots filled",
+                       sm::worn_cells(gear), gear.has.count());
+            for (int cell = 0; cell < sm::kEquipCells; ++cell) {
+                if (!gear.has.has(cell)) continue;
+                const std::uint16_t v = gear.worn[std::size_t(cell)];
+                const char* what = "(empty)";
+                if (v == sm::kWornBlocked) what = "(blocked)";
+                else if (v != sm::kWornNothing) {
+                    const sm::ItemDef* def =
+                        sm::item_def_at(int(bag.slots[std::size_t(v)].def));
+                    what = def ? def->id : "(stale)";
+                }
+                c.printfln(Lvl::Info, "  %3d %-10s %s", cell,
+                           sm::body_part_def(sm::equip_cell_part(cell)).label,
+                           what);
             }
             return true;
         });
@@ -4649,27 +4659,27 @@ void register_console_commands(App& app) {
                 c.error("unknown item '" + a[0] + "' - type 'items' for the list");
                 return true;
             }
-            // The bag's own stack, so a rolled instance keeps its affixes on
-            // the way to the body (the UI's Wear button does exactly this).
+            // The bag's own SLOT: надевание ставит указатель, вещь остаётся
+            // в инвентаре (истина одна — M-183).
             sm::Inventory& bag = player_bag(app);
-            const sm::ItemRef* stack = nullptr;
-            for (const sm::ItemRef& st : bag.slots) {
-                if (!st.empty() && int(st.def) == defIdx) { stack = &st; break; }
+            int invSlot = -1;
+            for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+                const sm::ItemRef& st = bag.slots[std::size_t(i)];
+                if (!st.empty() && int(st.def) == defIdx
+                    && !sm::slot_is_worn(eqc->gear, i)) { invSlot = i; break; }
             }
-            if (!stack) {
+            if (invSlot < 0) {
                 c.error("'" + a[0] + "' is not in the bag (try 'give')");
                 return true;
             }
-            sm::ItemRef one = *stack;
-            one.count = 1;
             int cell = -1;
             const bool hasCell = sm::dev::arg_int(a, 1, cell);
-            const int landed = hasCell ? sm::equip_at(eqc->gear, one, cell)
-                                       : sm::equip(eqc->gear, one);
+            const int landed = hasCell
+                ? sm::equip_at(eqc->gear, bag, invSlot, cell)
+                : sm::equip(eqc->gear, bag, invSlot);
             if (landed >= 0) {
-                bag.remove_of(defIdx, 1);
                 c.printfln(Lvl::Ok, "%s -> cell %d (%s)", a[0].c_str(), landed,
-                           sm::body_part_def(eqc->gear.part_at(landed)).label);
+                           sm::body_part_def(sm::equip_cell_part(landed)).label);
             } else {
                 // Refusal, never a drop: the item stays in the bag.
                 c.printfln(Lvl::Warn, "the body refuses %s%s", a[0].c_str(),
@@ -4685,19 +4695,18 @@ void register_console_commands(App& app) {
             if (!sm::dev::arg_int(a, 0, cell)) return false;
             sm::ecs::BodyEquipment* eqc = console_player_equipment(app);
             if (!eqc) { c.error("no body to dress (no world yet)"); return true; }
-            const sm::ItemRef taken = sm::unequip(eqc->gear, cell);
-            if (taken.empty()) {
+            sm::Inventory& bag = player_bag(app);
+            const std::uint16_t was =
+                (cell >= 0 && cell < sm::kEquipCells)
+                    ? eqc->gear.worn[std::size_t(cell)] : sm::kWornNothing;
+            if (!sm::unequip(eqc->gear, bag, cell)) {
                 c.printfln(Lvl::Warn, "nothing to take off in cell %d", cell);
                 return true;
             }
-            const sm::ItemDef* def = sm::item_def_at(int(taken.def));
-            if (!player_bag(app).add_ref(taken)) {
-                // Conservation: no room in the bag means it stays ON.
-                sm::equip(eqc->gear, taken);
-                c.printfln(Lvl::Warn, "bag full - %s stays on",
-                           def ? def->id : "?");
-                return true;
-            }
+            // Вещь никуда не двигалась — она в сумке; имя читается по слоту.
+            const sm::ItemDef* def = was < sm::kWornBlocked
+                ? sm::item_def_at(int(bag.slots[std::size_t(was)].def))
+                : nullptr;
             c.printfln(Lvl::Ok, "took off %s (cell %d)",
                        def ? def->id : "?", cell);
             return true;
@@ -4746,9 +4755,11 @@ void register_console_commands(App& app) {
             if (const entt::entity pe = sm::player_squad_entity(app.ecs);
                 pe != entt::null)
                 eqc = body_state<sm::ecs::BodyEquipment>(app.ecs.reg, pe);
-            const sm::ItemDef* w = eqc ? sm::weapon_in_hand(eqc->gear) : nullptr;
+            const sm::Inventory& bag = player_bag(app);
+            const sm::ItemDef* w =
+                eqc ? sm::weapon_in_hand(eqc->gear, bag) : nullptr;
             const sm::StrikeFields hf = sm::hand_strike_fields(
-                eff.attributes, eff.skills, eqc ? &eqc->gear : nullptr);
+                eff.attributes, eff.skills, eqc ? &eqc->gear : nullptr, &bag);
             const float handSec = sm::seconds_from_steps(
                 std::uint32_t(hf.recoverySteps));
             c.printfln(Lvl::Ok, "hand: %-16s %.2fs swing",

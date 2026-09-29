@@ -12,6 +12,7 @@
 #include "core/table_guard.h"
 #include "tables/army.h"        // CombatTemplate — боевой лист строки существа
 #include "tables/behaviour.h"
+#include "tables/body_parts.h"  // SlotMask — какие слоты экипировки у тела этой строки
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -235,6 +236,14 @@ struct NpcTypeDef {
     // because a rabbit is not a man-sized thing. The same number scales the
     // creature's sprite, so visual size and hit size cannot drift.
     float           radius     = 0.0f;
+
+    // КАКИЕ СЛОТЫ ЭКИПИРОВКИ У ЭТОГО ТЕЛА (M-183): маска глобальной
+    // раскладки `тип×16+n` (tables/body_parts.h). Дефолт — гуманоид: сегодня
+    // экипируются СКВАДЫ (вердикт владельца: «у нас экипируются сквады
+    // именно, а не существа»), а лидер сквада — гуманоид. Звериные строки
+    // держат тот же дефолт СОЗНАТЕЛЬНО, пока зверю нечего надеть: точная
+    // маска зверя — авторская правка данных, не системы.
+    SlotMask        slots      = kHumanoidSlots;
 
     // Pools — first `nameCount` / `talkCount` entries are valid.
     std::array<const char*, kMaxNpcNames>     names;

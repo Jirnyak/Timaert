@@ -3,7 +3,6 @@
 
 #include "ecs/components.h"
 #include "tables/npc.h"
-#include "macro/anatomy.h"
 #include <algorithm>
 #include <cmath>
 #include "events/event_bus.h"
@@ -56,13 +55,14 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
     // «his gear is macro state, read where it lives». That arm had the law
     // right and the shape wrong — under the mirror it is not his exception, it
     // is everyone's rule, so it collapses into the line above.
-    if (const auto* eq = state_of<ecs::BodyEquipment>(reg, target)) {
+    const auto* wornBag = state_of<ecs::NpcInventory>(reg, target);
+    if (const auto* eq = state_of<ecs::BodyEquipment>(reg, target); eq && wornBag) {
         // ONE term now, not two: `worn_armor` sums each piece's row columns
         // AND that piece's own rolled affixes, multiplied by the rank of the
         // skill the piece names (Heavy / Light / Shield). The second term
         // that used to stand here added the affixes UNTRAINED beside the
         // trained coat they were rolled on — two laws for one plate.
-        armour += worn_armor(eq->gear, skills).of(type);
+        armour += worn_armor(eq->gear, wornBag->inv, skills).of(type);
     }
     return std::max(0, armour);
 }

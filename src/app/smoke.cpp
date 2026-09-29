@@ -24,7 +24,6 @@
 #pragma clang diagnostic pop
 #endif
 
-#include "macro/anatomy.h"
 #include "sub/ai.h"        // kDetectionRadius — the ambush's own wait line
 #include "sub/city_layout.h"  // city_house_target — what the town ASKED for
 #include "sub/possess.h"   // current_player_body — «рука игрока» атрибуции
@@ -4842,11 +4841,25 @@ bool run_subworld_player_bow_smoke(App& app) {
         return false;
     }
     // ФЛИП 1в: гир — колонка store у каждого сквада; ленивый opt-in умер.
-    auto* eqc = &sm::store_of(app.ecs).gear[sm::slot_of(reg, sq)];
+    // M-183: истина одна — лук кладётся В ИНВЕНТАРЬ, надевание ставит индекс.
+    const std::uint16_t pslot = sm::slot_of(reg, sq);
+    auto* eqc = &sm::store_of(app.ecs).gear[pslot];
+    sm::Inventory& pbag = sm::store_of(app.ecs).inventory[pslot].inv;
+    const int bowDef = sm::item_index("wpn_bow");
     sm::ItemRef bow{};
-    bow.def = std::uint16_t(sm::item_index("wpn_bow"));
+    bow.def = std::uint16_t(bowDef);
     bow.count = 1;
-    if (sm::equip(eqc->gear, bow) < 0) {
+    if (!pbag.add_ref(bow)) {
+        smoke_fail(app, "subworld_player_bow bag full");
+        return false;
+    }
+    int bowSlot = -1;
+    for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+        const sm::ItemRef& st = pbag.slots[std::size_t(i)];
+        if (!st.empty() && int(st.def) == bowDef
+            && !sm::slot_is_worn(eqc->gear, i)) { bowSlot = i; break; }
+    }
+    if (bowSlot < 0 || sm::equip(eqc->gear, pbag, bowSlot) < 0) {
         smoke_fail(app, "subworld_player_bow equip refused");
         return false;
     }

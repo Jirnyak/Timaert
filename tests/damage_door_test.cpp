@@ -217,12 +217,25 @@ void test_players_worn_plate_stands_underground() {
     store->pools[squad.slot].maxHp = 100;
     reg.emplace<sm::ecs::MacroOrigin>(body, squad);
     auto& eq = store->gear[squad.slot];
+    auto& bag = store->inventory[squad.slot].inv;
     const int coatIdx = sm::item_index("arm_leather");
     CHECK_OR_RETURN(coatIdx >= 0, "the catalog knows the leather coat");
+    // M-183: плащ лежит В ИНВЕНТАРЕ сквада, ячейка тела указывает на слот.
+    sm::gear_init(eq.gear, sm::npc_def(sm::NPCType::Adventurer).slots);
     sm::ItemRef coat{};
     coat.def = std::uint16_t(coatIdx);
     coat.count = 1;
-    eq.gear.worn[0] = coat;
+    CHECK_OR_RETURN(bag.add_ref(coat), "the squad bag takes the coat");
+    int coatSlot = -1;
+    for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+        if (!bag.slots[std::size_t(i)].empty()
+            && int(bag.slots[std::size_t(i)].def) == coatIdx) {
+            coatSlot = i;
+            break;
+        }
+    }
+    CHECK_OR_RETURN(coatSlot >= 0 && sm::equip(eq.gear, bag, coatSlot) >= 0,
+                    "and the body wears it by index");
 
     const int armour = sm::item_def_at(coatIdx)->armor
                            .of(sm::DamageType::Blunt);

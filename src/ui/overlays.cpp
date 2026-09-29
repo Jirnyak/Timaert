@@ -1321,8 +1321,8 @@ namespace sm::ui
                     }
                     else
                     {
-                        Equipment &gear = eqc->gear;
-                        const BonusTotals worn = worn_bonuses(gear);
+                        Gear &gear = eqc->gear;
+                        const BonusTotals worn = worn_bonuses(gear, playerBag);
                         // Worn armour is nine columns now; the panel prints
                         // the physical face of it (worn rows are uniform
                         // until per-column authoring lands) — a full 9-column
@@ -1332,9 +1332,8 @@ namespace sm::ui
                         // skill's rank multiplies its own kind) — a readout
                         // computed without the sheet would quietly disagree
                         // with the law the moment a rank was spent.
-                        ImGui::Text("%s — armour %d",
-                                    gear.shape().label,
-                                    worn_armor(gear, effPanel.skills)
+                        ImGui::Text("Body — armour %d",
+                                    worn_armor(gear, playerBag, effPanel.skills)
                                         .of(sm::DamageType::Blunt));
                         if (ImGui::IsItemHovered())
                         {
@@ -1345,8 +1344,8 @@ namespace sm::ui
                                 sm::kArmorHalving);
                         }
                         ImGui::SameLine();
-                        ImGui::TextDisabled("(%d of %d cells filled)",
-                                            worn_cells(gear), gear.cells());
+                        ImGui::TextDisabled("(%d of %d slots filled)",
+                                            worn_cells(gear), gear.has.count());
 
                         // What it is worth, in the one currency: the same
                         // BonusTotals a perk and a spell speak.
@@ -1372,17 +1371,20 @@ namespace sm::ui
                             ImGui::TableSetupColumn("Effect");
                             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 80.0f);
                             ImGui::TableHeadersRow();
-                            for (int cell = 0; cell < gear.cells(); ++cell)
+                            for (int cell = 0; cell < kEquipCells; ++cell)
                             {
-                                const ItemRef &r = gear.worn[std::size_t(cell)];
-                                if (r.empty()) continue;
+                                const std::uint16_t v =
+                                    gear.worn[std::size_t(cell)];
+                                if (v >= kWornBlocked) continue;
+                                const ItemRef &r = playerBag.slots[std::size_t(v)];
+                                if (r.empty()) continue;   // протухший индекс
                                 const ItemDef *def = item_def_at(int(r.def));
-                                if (!def) continue;   // a blocked cell, not an item
+                                if (!def) continue;
                                 ++wornRows;
                                 ImGui::TableNextRow();
                                 ImGui::TableNextColumn();
                                 ImGui::TextDisabled("%s",
-                                                    body_part_def(gear.part_at(cell)).label);
+                                                    body_part_def(equip_cell_part(cell)).label);
                                 ImGui::TableNextColumn();
                                 draw_item_ref_name(r, *def);
                                 ImGui::TableNextColumn();
@@ -1391,12 +1393,10 @@ namespace sm::ui
                                 ImGui::PushID(cell);
                                 if (ImGui::SmallButton("Take off"))
                                 {
-                                    // Conservation: it goes back to the bag,
-                                    // and only leaves the body if the bag has
-                                    // room to receive it.
-                                    const ItemRef taken = unequip(gear, cell);
-                                    if (!taken.empty() && !playerBag.add_ref(taken))
-                                        equip(gear, taken);   // no room: put it back on
+                                    // Вещь никуда не движется — она и так в
+                                    // сумке; снятие лишь гасит указатель
+                                    // (истина одна — M-183).
+                                    unequip(gear, playerBag, cell);
                                 }
                                 ImGui::PopID();
                             }
@@ -1420,6 +1420,8 @@ namespace sm::ui
                             {
                                 const ItemRef &st = playerBag.slots[std::size_t(slot)];
                                 if (st.empty()) continue;
+                                if (slot_is_worn(gear, slot))
+                                    continue;   // уже на теле — строка выше
                                 const ItemDef *def = item_def_at(int(st.def));
                                 if (!def || def->slotMask == 0)
                                     continue;   // the row itself says it is not worn
@@ -1436,18 +1438,11 @@ namespace sm::ui
                                 ImGui::PushID(slot);
                                 if (ImGui::SmallButton("Wear"))
                                 {
-                                    ItemRef one = st;
-                                    one.count = 1;
-                                    // The body REFUSES when nothing fits, and
-                                    // the item stays where it was: an item
-                                    // that vanished on equip would be one the
-                                    // conservation law lost. Removal is BY
-                                    // SLOT: by-ordinal removal was blind to
-                                    // affixes and would strip a plain twin
-                                    // while the rolled one went on — the
-                                    // conservation law broken both ways.
-                                    if (equip(gear, one) >= 0)
-                                        playerBag.remove_at(slot, 1);
+                                    // Тело ОТКАЗЫВАЕТ, если некуда; вещь в
+                                    // любом исходе остаётся в сумке —
+                                    // надевание ставит ИНДЕКС (M-183), и
+                                    // консервация держится по построению.
+                                    equip(gear, playerBag, slot);
                                 }
                                 ImGui::PopID();
                             }

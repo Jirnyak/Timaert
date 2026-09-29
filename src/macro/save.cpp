@@ -89,8 +89,9 @@ constexpr std::uint64_t kInventoryBytes =            // write_inventory
     kCountBytes + std::uint64_t(kMaxInventoryStacks)
     * (sizeof(std::uint16_t) + kItemRefBytes);
 constexpr std::uint64_t kEquipmentBytes =            // write_equipment
-    sizeof(Equipment::anatomy) + kCountBytes
-    + std::uint64_t(kMaxBodyParts) * (sizeof(std::uint8_t) + kItemRefBytes);
+    sizeof(Gear::has) + kCountBytes
+    + std::uint64_t(kEquipCells)
+          * (sizeof(std::uint16_t) + sizeof(std::uint16_t));
 
 // Скаляры мира — один экземпляр, названное исключение переписи штабелей.
 constexpr std::uint64_t kPrefixBytes =
@@ -531,54 +532,43 @@ void write_inventory(Writer& w, const Inventory& inv) {
 }
 
 // The worn cells, by CELL INDEX — a flat array with holes, exactly like the
-// bag, so the file carries what is there and not 128 slots of nothing.
-void write_equipment(Writer& w, const Equipment& eq) {
-    w.pod(eq.anatomy);
-    if (!w.count(std::size_t(worn_cells(eq)), std::uint32_t(kMaxBodyParts))) {
+// bag, so the file carries what is there and not 480 cells of nothing.
+// M-183: ячейка везёт ИНДЕКС слота инвентаря (истина вещи — сам инвентарь,
+// он уже уехал своим блоком выше); маска тела едет целиком — она и есть
+// экземплярный «редактор тел».
+void write_equipment(Writer& w, const Gear& g) {
+    w.pod(g.has);
+    if (!w.count(std::size_t(worn_cells(g)), std::uint32_t(kEquipCells))) {
         return;
     }
-    for (int i = 0; i < eq.cells(); ++i) {
-        const ItemRef& s = eq.worn[std::size_t(i)];
-        if (s.empty()) continue;
-        if (item_def_at(int(s.def)) == nullptr) continue;   // a blocked cell
-        const std::uint8_t cell = std::uint8_t(i);
+    for (int i = 0; i < kEquipCells; ++i) {
+        const std::uint16_t v = g.worn[std::size_t(i)];
+        if (v >= kWornBlocked) continue;   // пусто/блокер: блоки производные
+        const std::uint16_t cell = std::uint16_t(i);
         w.pod(cell);
-        w.pod(s.def);
-        w.pod(s.material);
-        w.pod(s.level);
-        w.pod(s.count);
-        w.pod(s.seed);
-        w.pod(s.entityId);
-        w.pod(s.affixRow);
-        w.pod(s.affixValue);
+        w.pod(v);
     }
 }
 
-void read_equipment(Reader& r, Equipment& eq) {
-    eq = Equipment{};
-    r.pod(eq.anatomy);
-    if (eq.anatomy >= std::uint8_t(AnatomyId::Count)) { r.ok = false; return; }
+// Блоки двуручников НЕ читаются — их пересчитывает читатель записи
+// (remark_gear_blocks) от инвентаря, прочитанного тем же блоком записи.
+void read_equipment(Reader& r, Gear& g) {
+    g = Gear{};
+    r.pod(g.has);
     std::uint32_t n = 0;
-    if (!read_count(r, n, std::uint32_t(kMaxBodyParts))) return;
+    if (!read_count(r, n, std::uint32_t(kEquipCells))) return;
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        std::uint8_t cell = 0;
-        ItemRef s{};
+        std::uint16_t cell = 0;
+        std::uint16_t v = 0;
         r.pod(cell);
-        r.pod(s.def);
-        r.pod(s.material);
-        r.pod(s.level);
-        r.pod(s.count);
-        r.pod(s.seed);
-        r.pod(s.entityId);
-        r.pod(s.affixRow);
-        r.pod(s.affixValue);
-        if (cell >= std::uint8_t(eq.cells())) { r.ok = false; return; }
-        eq.worn[std::size_t(cell)] = s;
+        r.pod(v);
+        if (cell >= std::uint16_t(kEquipCells)
+            || v >= std::uint16_t(kMaxInventorySlots)) {
+            r.ok = false;
+            return;
+        }
+        g.worn[std::size_t(cell)] = v;
     }
-    // The blocks a two-hander occupies are DERIVED, not stored: re-marking
-    // them from the rows is one pass and cannot disagree with the rows the
-    // way a second stored copy could.
-    remark_equipment_blocks(eq);
 }
 
 void read_inventory(Reader& r, Inventory& inv) {
@@ -730,6 +720,7 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     // block inserted into one of them reads the next block's bytes.
     read_inventory(r, m.inventory);   // v110: существа едут здесь (M-71)
     read_equipment(r, m.gear);
+    remark_gear_blocks(m.gear, m.inventory);
     r.pod(m.rosterNeedDebt);   // v105
     r.pod(m.rosterWageDebt);
 }

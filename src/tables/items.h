@@ -153,7 +153,7 @@ struct ItemDef {
     // A second `armorKind` column beside this one would be two dictionaries
     // answering the same question, which S26 forbids.
     // There is deliberately NO tempo column: a weapon's swing time is
-    // DERIVED from its `weight` above (macro/anatomy.h weapon_swing_seconds
+    // DERIVED from its `weight` above (weapon_swing_seconds ниже
     // — owner verdict 2026-09-07: «скорость привязать к массе»), so every
     // future row gets its pace for free from the one kilogram figure the
     // carry law already prices, and the two can never disagree.
@@ -328,6 +328,31 @@ int item_yield(int defIdx) noexcept;
 //     (owner: «потом расширяемо») — appended, not designed now.
 // 0 = the row is not made by work (terminal raw matter).
 int item_labour(int defIdx) noexcept;
+
+// ── Закон МАССЫ удара и строка кулака (переехали из macro/anatomy.h, M-183:
+// это законы КАТАЛОГА оружия — темп выводится из веса СТРОКИ, никогда не
+// авторится второй колонкой) ───────────────────────────────────────────────
+// The bare fist's row (owner verdict 2026-09-05): 1d2 Blunt through the
+// Unarmed skill — a fist is useless against plate, and that is the hybrid
+// law's threshold branch doing its work, not a bug.
+inline constexpr Dice kFistDice{1, 2};
+
+// A weapon's base tempo is DERIVED from its weight, never authored twice:
+// «скорость привязать к массе — масса кулака бесконечно мала, он самый
+// быстрый» (owner verdict 2026-09-07).
+//   base = kHandSwingS + weight_kg × kSwingSecondsPerKg
+// kHandSwingS — the EMPTY hand at a zero sheet, the game's slowest striker.
+inline constexpr float kHandSwingS = 1.5f;
+// One kilogram of steel costs half a second of swing: pins the 1 kg dagger
+// at 2.0 s and the implied 2 kg one-hand sword at 2.5 s.
+inline constexpr float kSwingSecondsPerKg = 0.5f;
+
+// THE base swing of whatever the hand holds. nullptr = the bare, massless
+// hand. Weapons only — a spell's base tempo is its own row's cooldown, and a
+// creature's natural weapon carries an authored cooldown in ITS row.
+inline float weapon_swing_seconds(const ItemDef* w) {
+    return kHandSwingS + (w ? w->weight : 0.0f) * kSwingSecondsPerKg;
+}
 
 // Loot generation. `rng()` returns float in [0, 1).
 using RngFn = float (*)();

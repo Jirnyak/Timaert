@@ -90,7 +90,6 @@ constexpr std::string_view kRowHeaders[] = {
     "src/tables/items.h",          "src/tables/body_parts.h",
     "src/tables/role_weights.h",
     "src/tables/attributes.h",     "src/macro/anketa.h",
-    "src/macro/anatomy.h",
     "src/tables/army.h",           "src/tables/bonus.h",
     "src/tables/biomes.h",         "src/tables/damage_types.h",
     "src/tables/spells.h",         "src/tables/sprite_rows.h",

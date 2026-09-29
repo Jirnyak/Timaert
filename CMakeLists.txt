@@ -394,7 +394,6 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/scent_field.cpp
     src/macro/world_fields.cpp
     src/macro/player_entity.cpp
-    src/macro/anatomy.cpp
     src/sub/base_generator.cpp)
 set_target_properties(balance_run PROPERTIES
     CXX_STANDARD 23
@@ -484,7 +483,6 @@ timaert_test(world_tick_parity_test
         src/macro/chronicle.cpp
         # The player's upkeep reads his roster off his squad entity now.
         src/macro/player_entity.cpp
-        src/macro/anatomy.cpp
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
         src/macro/anketa.cpp
@@ -512,7 +510,6 @@ timaert_test(save_roundtrip_test
         # the save carries the world's own memory (macro/chronicle.h)
         src/macro/chronicle.cpp
         # the save carries what a body WEARS (macro/anatomy.h)
-        src/macro/anatomy.cpp
         src/macro/world_fields.cpp
         # wallet math reads the item catalog (currency.h).
         src/macro/anketa.cpp
@@ -537,7 +534,6 @@ timaert_test(macro_snapshot_test
         # the save carries the world's own memory (macro/chronicle.h)
         src/macro/chronicle.cpp
         # the save carries what a body WEARS (macro/anatomy.h)
-        src/macro/anatomy.cpp
         src/macro/world_fields.cpp
         src/macro/macro_snapshot.cpp
         # spawn_squad goes through make_npc — the one creation door — so the
@@ -561,7 +557,6 @@ timaert_test(damage_door_test
         src/sub/damage.cpp
         # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
         # that asks the catalog what each worn row is worth (tables/items.cpp)
-        src/macro/anatomy.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
         src/events/event_bus.cpp
@@ -586,7 +581,6 @@ timaert_test(spell_casting_effects_test
         src/sub/targeting.cpp
         # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
         # that asks the catalog what each worn row is worth (tables/items.cpp)
-        src/macro/anatomy.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
     LINK_ENTT)
@@ -674,7 +668,6 @@ timaert_test(macro_npc_ai_parity_test
         src/macro/npc_ai.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
-        src/macro/anatomy.cpp
         # The tick drivers now settle the dead THROUGH the pool's own
         # unloader (raise_deserter_bands, AI-2) and the rotation raises
         # crews — both live in npc_spawn.cpp.
@@ -752,7 +745,6 @@ timaert_test(squad_war_test
         src/macro/chronicle.cpp
         # The player's squad is an ordinary squad entity (2026-08-27).
         src/macro/player_entity.cpp
-        src/macro/anatomy.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
@@ -784,7 +776,6 @@ timaert_test(design_characters_test
         src/macro/economy.cpp
         src/macro/chronicle.cpp
         src/macro/player_entity.cpp
-        src/macro/anatomy.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
@@ -805,7 +796,6 @@ timaert_test(squad_travel_test
         src/macro/npc_ai.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
-        src/macro/anatomy.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1138,7 +1128,6 @@ timaert_test(subworld_spawn_parity_test
         # A tracked body is born WEARING its record's gear (mirror law,
         # 2026-09-12): spawn.cpp asks standing_bonuses_of, which asks the
         # anatomy what is worn and the catalog what each row is worth.
-        src/macro/anatomy.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
     LINK_ENTT)
@@ -1271,7 +1260,6 @@ timaert_test(trade_law_test
         src/macro/npc_ai.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
-        src/macro/anatomy.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1415,7 +1403,6 @@ timaert_test(spire_generation_test
 timaert_test(fauna_stock_test
     SOURCES
         src/macro/player_entity.cpp
-        src/macro/anatomy.cpp
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
@@ -1444,7 +1431,6 @@ timaert_test(woodcutter_gather_test
         src/macro/npc_ai.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
-        src/macro/anatomy.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1484,7 +1470,6 @@ timaert_test(goal_auction_test
         src/macro/econ_day.cpp
         # anatomy.cpp worn_bonuses — сезонные нужды артелей идут
         # эффективным листом лидера (squad_season_needs).
-        src/macro/anatomy.cpp
     LINK_SDL LINK_ENTT)
 
 # Поле угрозы (CANON S10 «хемотаксис по графу округ»): источник = Died-факты
@@ -1508,7 +1493,6 @@ timaert_test(scent_field_test
         src/macro/npc_ai.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
-        src/macro/anatomy.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1570,7 +1554,6 @@ timaert_test(settlement_faction_test
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
-        src/macro/anatomy.cpp
     LINK_ENTT)
 
 timaert_test(carried_light_spawn_test
@@ -1597,7 +1580,6 @@ timaert_test(carried_light_spawn_test
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
-        src/macro/anatomy.cpp
     LINK_ENTT)
 # A settlement's people live inside the settlement: the citizen spawner must
 # fill the generated town's built-up disk (sub/city_layout.h), not scatter the
@@ -1628,7 +1610,6 @@ timaert_test(city_population_inside_walls_test
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
-        src/macro/anatomy.cpp
     LINK_ENTT)
 # Particle-sim contract (FX Inc A): the transient-VFX pool is Vulkan-free by
 # design, so it links only particles.cpp + core and asserts every numeric
@@ -1660,7 +1641,6 @@ timaert_test(body_contract_test
         # anatomy what is worn and the catalog what each row is worth.
         src/macro/anketa.cpp
         src/tables/items.cpp
-        src/macro/anatomy.cpp
     LINK_ENTT)
 
 # The ledger between the layers (macro/macro_stock.{h,cpp}): what the subworld
@@ -1723,7 +1703,6 @@ timaert_test(spell_broadphase_parity_test
         src/sub/damage.cpp
         # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
         # that asks the catalog what each worn row is worth (tables/items.cpp)
-        src/macro/anatomy.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
         src/sub/movement.cpp
@@ -1751,7 +1730,6 @@ timaert_test(auto_resolve_speaks_test
         # The player's squad is an ordinary squad entity: the settle finds it
         # by ordinal (macro/player_entity.h).
         src/macro/player_entity.cpp
-        src/macro/anatomy.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
         src/macro/macro_stock.cpp
@@ -1768,7 +1746,6 @@ timaert_test(player_is_a_squad_test
         # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
         src/macro/npc_spawn.cpp
         src/macro/player_entity.cpp
-        src/macro/anatomy.cpp
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
@@ -1790,12 +1767,11 @@ timaert_test(player_is_a_squad_test
         src/macro/econ_day.cpp
     LINK_ENTT)
 
-# Anatomy is a ROW and equipment is a flat array over it: a slot mask names
-# part TYPES, so a body with twenty fingers wears twenty rings without the ring
-# row, the mask, or one line of code knowing such a body exists.
-timaert_test(anatomy_equipment_test
+# Gear (M-183): слот адресуется тип×16+n, «есть ли слот» — бит маски тела,
+# надетое — ИНДЕКС в инвентарь; маска предмета по-прежнему называет ТИПЫ, so a
+# body with twenty fingers wears twenty rings without the ring row knowing.
+timaert_test(gear_equipment_test
     SOURCES
-        src/macro/anatomy.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp)
 

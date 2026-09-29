@@ -234,11 +234,25 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     // back on a naked body is the same class of loss as a saved bag that comes
     // back empty.
     {
+        // M-183: истина одна — плащ кладётся В ИНВЕНТАРЬ, ячейка указывает.
+        sm::gear_init(player.gear, sm::npc_def(sm::NPCType::Adventurer).slots);
         sm::ItemRef coat{};
         coat.def = std::uint16_t(sm::item_index("arm_leather"));
         coat.count = 1;
         coat.set_affix(0, {std::uint8_t(sm::BonusId::End), 4});
-        if (sm::equip(player.gear, coat) < 0) {
+        if (!player.inventory.add_ref(coat)) {
+            std::fprintf(stderr, "fixture: the coat did not fit the bag\n");
+        }
+        int coatSlot = -1;
+        for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+            if (!player.inventory.slots[std::size_t(i)].empty()
+                && player.inventory.slots[std::size_t(i)].def == coat.def) {
+                coatSlot = i;
+                break;
+            }
+        }
+        if (coatSlot < 0
+            || sm::equip(player.gear, player.inventory, coatSlot) < 0) {
             std::fprintf(stderr, "fixture: the coat did not go on\n");
         }
     }
@@ -794,13 +808,15 @@ void run_roundtrip() {
         if (!worn) FAIL_BAIL("the player's own record did not come back");
         if (sm::worn_cells(worn->gear) != 1) FAIL_BAIL("worn gear lost");
         int cell = -1;
-        for (int i = 0; i < worn->gear.cells(); ++i) {
-            if (!worn->gear.worn[std::size_t(i)].empty()) cell = i;
+        for (int i = 0; i < sm::kEquipCells; ++i) {
+            if (worn->gear.worn[std::size_t(i)] < sm::kWornBlocked) cell = i;
         }
-        if (cell < 0 || worn->gear.part_at(cell) != sm::BodyPartId::Torso) {
+        if (cell < 0 || sm::equip_cell_part(cell) != sm::BodyPartId::Torso) {
             FAIL_BAIL("the coat came back on the wrong part of him");
         }
-        const sm::ItemRef& coat = worn->gear.worn[std::size_t(cell)];
+        // Ячейка — индекс; сама вещь едет инвентарём (истина одна, M-183).
+        const std::uint16_t coatSlot = worn->gear.worn[std::size_t(cell)];
+        const sm::ItemRef& coat = worn->inventory.slots[std::size_t(coatSlot)];
         if (coat.def != std::uint16_t(sm::item_index("arm_leather"))
             || coat.count != 1) {
             FAIL_BAIL("the coat came back as another item");
@@ -813,7 +829,8 @@ void run_roundtrip() {
         }
         // Untrained (a bare Skills{}) is the law's ×1 — what this witness
         // asks is that the ROW came back, not what a rank does to it.
-        if (sm::worn_armor(worn->gear, sm::Skills{}).of(sm::DamageType::Blunt)
+        if (sm::worn_armor(worn->gear, worn->inventory, sm::Skills{})
+                .of(sm::DamageType::Blunt)
             <= 0) {
             FAIL_BAIL("and it stops nothing, so the row did not come back");
         }

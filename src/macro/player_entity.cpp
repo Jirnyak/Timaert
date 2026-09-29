@@ -2,7 +2,6 @@
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
 #include "macro/agent_memory.h"
-#include "macro/anatomy.h"
 #include "macro/entry_context.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
@@ -100,6 +99,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         birth.skills     = default_skills();
         birth.levelData  = default_level_data();
         st.sheet[h.slot] = birth;
+        // Тело игрока — маска строки Adventurer (M-183).
+        gear_init(st.gear[h.slot].gear, npc_def(NPCType::Adventurer).slots);
         const CharacterSheet& sheet = st.sheet[h.slot];
         st.level[h.slot] = ecs::NpcLevel{
             std::int16_t(std::max(1, sheet.levelData.level))};

@@ -5,7 +5,6 @@
 #include "macro/anketa.h"
 #include "tables/commodity.h"   // kCommodityCount — счёт содержания ростера
 #include "macro/roster.h"      // sm::Roster — ОДИН ростер на место и на сквад
-#include "macro/anatomy.h"
 #include <array>
 #include <cstdint>
 #include <string>
@@ -233,7 +232,7 @@ struct NpcInventory { Inventory inv; };
 // IS; only a body that actually owns things — the player, a named lord —
 // carries this. So the sixteen thousand macro squads pay nothing for a system
 // they do not use, and the ones that do use it get the whole of it.
-struct BodyEquipment { Equipment gear; };
+struct BodyEquipment { Gear gear; };
 
 // Per-NPC personality traits. TS assigns 1-2 unique traits from the
 // `NPCTrait` registry; store raw enum ids here to keep ECS free of a

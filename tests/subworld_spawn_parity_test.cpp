@@ -1232,12 +1232,22 @@ int main() {
         // grant what today — the strength is authored right here.
         {
             auto& gear = (*sm::body_state<sm::ecs::BodyEquipment>(reg, lord)).gear;
+            auto& bag = (*sm::body_state<sm::ecs::NpcInventory>(reg, lord)).inv;
             sm::ItemRef ring{};
             ring.def = 0;
             ring.count = 1;
             ring.set_affix(0, sm::Bonus{std::uint8_t(sm::BonusId::Str),
                                         std::int16_t(6)});
-            gear.worn[0] = ring;
+            // Прямое авторство фикстуры (M-183): вещь В ИНВЕНТАРЕ, ячейка —
+            // индекс; дверь equip тут не годится — строка 0 не носима, а
+            // сила утверждения именно в аффиксе, не в строке каталога.
+            int free = -1;
+            for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+                if (bag.slots[std::size_t(i)].empty()) { free = i; break; }
+            }
+            CHECK(free >= 0, "the lord's bag has an empty slot for the ring");
+            bag.slots[std::size_t(free)] = ring;
+            gear.worn[0] = std::uint16_t(free);
         }
         CHECK(sm::sub::refresh_body_strike(reg, body),
               "what stands on the record changed: the gate opens");
