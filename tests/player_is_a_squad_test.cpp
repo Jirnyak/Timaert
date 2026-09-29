@@ -119,7 +119,7 @@ void test_the_mark_survives_losing_the_flag() {
     // hand it back — and must not un-mark the squad it left behind.
     const entt::entity lord = npc_squad(w, 30.0f, 30.0f, 7u, 2);
     const MacroHandle lordH = sm::handle_of(w.reg, lord);
-    gs.playerFlagBits = sm::macro_handle_bits(lordH);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lordH);
     ensure_macro_player_entity(gs, w);
 
     CHECK(player_flag_handle(gs) == lordH,
@@ -159,7 +159,7 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
     // (b) В ЧУЖОМ ТЕЛЕ, ОРИГИНАЛ ЖИВ. Флажок едет домой одним движением.
     const entt::entity lord = npc_squad(w, 30.0f, 30.0f, 7u, 2);
     const MacroHandle lordH = sm::handle_of(w.reg, lord);
-    gs.playerFlagBits = sm::macro_handle_bits(lordH);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lordH);
     CHECK(player_wears_another_body(gs), "wearing a lord is asked of the flag");
     CHECK(wake_player_in_original_body(gs, *wStore_),
           "a living original is woken up in");
@@ -168,7 +168,7 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
 
     // (c) В ЧУЖОМ ТЕЛЕ, ОРИГИНАЛ МЁРТВ. Просыпаться не в чем ⇒ конец игры.
     //     Негативный контроль к (b): та же расстановка, отличается ОДНО число.
-    gs.playerFlagBits = sm::macro_handle_bits(lordH);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lordH);
     wStore_->pools[mine.slot].hp = 0.0f;
     CHECK(!wake_player_in_original_body(gs, *wStore_),
           "a dead original is nothing to wake up in — that is the game over");
@@ -202,7 +202,8 @@ void test_ai_leaves_the_player_squad_standing() {
     // Possession, so the flag is NOT on his squad — the exact state in which
     // the old exclude-guard let the AI take the wheel.
     const entt::entity lord = npc_squad(w, 30.0f, 30.0f, 7u, 0);
-    gs.playerFlagBits = sm::macro_handle_bits(sm::handle_of(w.reg, lord));
+    sm::transfer_player_flag(sm::store_of(w), gs.playerFlagBits,
+                             sm::handle_of(w.reg, lord));
 
     // The negative control: an idle NPC standing where the player stands. If
     // the sweep is a no-op for everyone, this one's runtime never moves either

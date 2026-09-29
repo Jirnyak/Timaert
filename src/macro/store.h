@@ -21,8 +21,6 @@
 // артефактный меч, и авто-бой судит его тем же листом).
 //
 // ЧЕГО ЗДЕСЬ НЕТ, СОЗНАТЕЛЬНО:
-//  · PlayerTag/PlayerSquadTag — ноль-или-один на мир, это индекс слота в
-//    GameState (проводка — шаг 1в), не колонка на 32768;
 //  · эмитента ординалов — он у GameState (nextMacroSpawnOrdinal), store
 //    агностичен к тому, кто и зачем рождает (ЗАКОН АГНОСТИЧНОСТИ);
 //  · порядка обхода — закон порядка (squad_walk.h) живёт НАД хранилищем:
@@ -47,6 +45,20 @@ namespace sm {
 // каждая колонка — свой сплошной блок), список отсортирован по смыслу.
 // dead — БАЙТ СУДЬБЫ, не занятость слота: мёртвый сквад стоит трупом до
 // слива (AI-2), занятость держит служебный alive.
+// playerFlag — «этот сквад (с этой анкетой) — игрок» (вердикт владельца
+// 2026-09-29: «У НАС СИСТЕМА ИГРЫ ЧТО ЕСТЬ СКВАДЫ С АНКЕТАМИ И ЭТО ВСЁ и
+// поэтому смена сквада это просто смена флажка»). Ровно один слот с 1 —
+// инвариант держит дверь transfer_player_flag ниже; GameState несёт КЭШ
+// (playerFlagBits), будущий стратегический скролл сквадов — ещё один
+// звонящий той же двери.
+
+// Обёртка флажка шириной в байт, а не голый u8: селектор колонки store_col
+// ключуется ТИПОМ (одна колонка — один тип, список один), и второй голый
+// u8 рядом с dead был бы переопределением специализации.
+struct PlayerFlag {
+    std::uint8_t on;
+};
+
 #define SM_MACRO_STORE_COLUMNS(X)                                            \
     X(spawnId,   ecs::MacroSpawnId)                                          \
     X(cell,      ecs::MacroCell)                                             \
@@ -65,6 +77,7 @@ namespace sm {
     X(orders,    ecs::SquadOrders)                                           \
     X(gear,      ecs::BodyEquipment)                                         \
     X(designTag, ecs::DesignCharacterTag)                                    \
+    X(playerFlag, PlayerFlag)                                                \
     X(dead,      std::uint8_t)
 
 // Сам MacroHandle живёт в ecs/components.h (шаг 2 1е, вердикт Б с.19):
@@ -94,7 +107,7 @@ struct MacroStore {
 // 1460.2 МиБ по капу 32768 — резидентно с рождения мира, пустота оплачена
 // (вердикт 2026-09-25; в замеренном мире живых ~10.7k слотов = 65 %, пик
 // 78 %). Из них инвентарь 1280 МиБ, гир 160, интересы придут с M-90.
-static_assert(sizeof(MacroStore) == 1396801544ull,   // M-183: gear 5124 → 1024 Б/слот, −128.1 МиБ
+static_assert(sizeof(MacroStore) == 1396834312ull,   // 5б: +playerFlag u8 = +32 КиБ; M-183: gear 5124 → 1024 Б/слот
               "гладкая память макромира: новая колонка = новая цена, "
               "названная вслух (AGENTS п.10)");
 
@@ -255,6 +268,25 @@ inline constexpr MacroHandle macro_handle_from_bits(std::uint32_t bits) {
         ? MacroHandle{}
         : MacroHandle{std::uint16_t(bits & 0xFFFFu),
                       std::uint16_t(bits >> 16)};
+}
+
+// ── ДВЕРЬ ПЕРЕНОСА ФЛАЖКА ИГРОКА (вердикт владельца 2026-09-29) ──────────
+// «Смена сквада — это просто смена флажка, что этот сквад (с этой анкетой)
+// игрок». Истина — колонка playerFlag анкеты (род 2 фрейма); `flagBits` —
+// КЭШ GameState (state.h). Ровно-один держит сама дверь: старый носитель
+// известен из кэша, запись нового = срыв старого, O(1), скана нет. Все
+// перемещения флажка — вселение (sub/possess.h), пробуждение и починка
+// осиротевшего флага (macro/player_entity.cpp), резолв загрузки, фикстуры
+// свидетелей — ходят ЗДЕСЬ; будущий стратегический скролл сквадов — ещё
+// один звонящий. Невалидный `to` — no-op: флажок не сжигается о протухший
+// хэндл, мир не остаётся без игрока.
+inline void transfer_player_flag(MacroStore& st, std::uint32_t& flagBits,
+                                 MacroHandle to) {
+    if (!st.valid(to)) return;
+    const MacroHandle old = macro_handle_from_bits(flagBits);
+    if (st.valid(old)) st.playerFlag[old.slot].on = 0;
+    st.playerFlag[to.slot].on = 1;
+    flagBits = macro_handle_bits(to);
 }
 
 // ОБРАТНАЯ ДВЕРЬ МОСТА (шаг 1г; умирает в 1е вместе с MacroSlot): entt-тело

@@ -48,8 +48,9 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
         m.memory = st.memory[slot];
         m.gear = st.gear[slot].gear;
         m.dead = st.dead[slot] ? 1 : 0;
-        // (Байта playerFlag больше нет — v116: «кем я на карте» — поле
-        // GameState, на проводе — ординал носителя в скалярах мира.)
+        // «Кем я управляю» — колонка анкеты (5б): провод несёт флаг ДАРОМ
+        // вместе с записью; кэши GameState пересоберёт резолв загрузки.
+        m.playerFlag = st.playerFlag[slot].on ? 1 : 0;
         out.push_back(std::move(m));
     }
     // Registry iteration order is an implementation detail; the ordinal is
@@ -96,10 +97,12 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         st.memory[h.slot] = m.memory;
         st.gear[h.slot] = ecs::BodyEquipment{m.gear};
         if (m.dead) st.dead[h.slot] = 1;
-        // (Тег-рестампа больше нет: оба вопроса игрока — хэндлы
-        // GameState, их резолвит resolve_player_handles_after_load ПОСЛЕ
-        // этого восстановления; SAVE-5 закрыт тем же законом — генезис на
-        // загрузке не гоняется, второй сквад игрока не рождается.)
+        // Флажок игрока — колонкой записи (5б); кэши GameState (биты)
+        // пересобирает resolve_player_handles_after_load ПОСЛЕ этого
+        // восстановления — сканом колонок, один раз на загрузке (SAVE-5
+        // закрыт тем же законом: генезис на загрузке не гоняется, второй
+        // сквад игрока не рождается).
+        st.playerFlag[h.slot] = PlayerFlag{m.playerFlag};
         if (!any || m.spawnId.index > maxOrdinal) maxOrdinal = m.spawnId.index;
         any = true;
     }

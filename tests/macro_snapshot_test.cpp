@@ -97,11 +97,12 @@ void test_snapshot_round_trips_the_living_map() {
     (*sm::body_state<ecs::MacroCell>(w.reg, a)).idx = ecs::cell_index(25, 21, 64);
     (*sm::body_state<ecs::Pools>(w.reg, b)).hp = 0.0f;
     sm::macro_mark_dead(w.reg, b);
-    // …and the player POSSESSES lord A (v116): «кем я управляю» — биты
-    // GameState; провод несёт ОРДИНАЛ носителя (сейв — скалярами мира), и
-    // загрузка обязана вернуть флажок на ТОГО ЖЕ лорда (SAVE-5: второй склад
-    // «кем управляю» вне снимка мёртв).
-    gs.playerFlagBits = sm::macro_handle_bits(sm::handle_of(w.reg, a));
+    // …and the player POSSESSES lord A (5б): истина — колонка playerFlag
+    // анкеты, биты GameState — кэш, флажок двигает дверь переноса; загрузка
+    // обязана вернуть флажок на ТОГО ЖЕ лорда (SAVE-5: второй склад «кем
+    // управляю» вне снимка мёртв).
+    sm::transfer_player_flag(sm::store_of(w), gs.playerFlagBits,
+                             sm::handle_of(w.reg, a));
     // A bandit chief is a NAMED character (v90): born OWNING his sheet.
     // His campaign diverges it from the birth roll — the owner's ММОРПГ
     // point is that exactly this divergence survives the save.
@@ -120,9 +121,7 @@ void test_snapshot_round_trips_the_living_map() {
     const std::vector<std::uint16_t> noTrees;
     const DepositLayer noDeposits;
     CHECK_OR_RETURN(save_game(gs, noQuests, snapshot_macro_ecs(w), noTrees,
-                              noDeposits,
-                              player_flag_wire_ordinal(gs, sm::store_of(w)),
-                              path),
+                              noDeposits, path),
                     "the snapshot saved");
 
     GameState gs2{};
@@ -130,9 +129,8 @@ void test_snapshot_round_trips_the_living_map() {
     std::vector<MacroNpcRecord> records2;
     std::vector<std::uint16_t> trees2;
     DepositLayer deposits2;
-    std::uint32_t flagOrd2 = ecs::kPlayerSquadOrdinal;
     CHECK_OR_RETURN(load_game(gs2, quests2, records2, trees2, deposits2,
-                              flagOrd2, path),
+                              path),
                     "the snapshot loaded");
     CHECK(gs2.nextMacroSpawnOrdinal == gs.nextMacroSpawnOrdinal,
           "the identity issuer survives the save");
@@ -143,7 +141,7 @@ void test_snapshot_round_trips_the_living_map() {
 
     sm::store_attach(w2, w2Store_.get());
     restore_macro_ecs(records2, w2, gs2);
-    resolve_player_handles_after_load(gs2, *w2Store_, flagOrd2);
+    resolve_player_handles_after_load(gs2, *w2Store_);
 
     const entt::entity a2 = find_by_ordinal(w2, ordinalA);
     CHECK_OR_RETURN(a2 != entt::null, "leader A restored under his ordinal");

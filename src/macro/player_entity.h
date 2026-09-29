@@ -1,14 +1,17 @@
 // THE player's squad on the macro map — an ordinary squad record of the one
 // smooth store, told from every other squad by two things and two things
-// only: a reserved ordinal (`ecs::kPlayerSquadOrdinal`) and the world's own
-// field `GameState::playerSquadBits`.
+// only: a reserved ordinal (`ecs::kPlayerSquadOrdinal`) and the anketa's own
+// column `playerFlag`.
 //
 // «ИГРОК = НПЦ» (CANON S4). «Кем я управляю сейчас» — a DIFFERENT question,
 // and it MOVES: onto a possessed lord, onto a body underground. That is why
 // it cannot be the thing that identifies his party, and why the two answers
-// are two fields — `playerFlagBits` and `playerSquadBits`. С 1е (кластер 5)
-// оба ответа — packed-хэндлы store в GameState, а не компоненты-теги:
-// вопрос «где флажок» стал распаковкой поля мира, скана нет.
+// are two carriers. С 5б (вердикт владельца 2026-09-29) ИСТИНА обоих —
+// анкета: колонка playerFlag («кем я на карте») и spawnId ==
+// kPlayerSquadOrdinal («кто оригинал»); `GameState::playerFlagBits`/
+// `playerSquadBits` — КЭШИ-хэндлы этих колонок, и вопрос «где флажок»
+// остался распаковкой поля мира, скана нет. Перенос флажка — ОДНА дверь
+// transfer_player_flag (store.h): колонка + кэш одним движением.
 //
 // This entity used to be a HUSK: `Position` + a tag, recreated every macro
 // tick, deliberately invisible to render / proximity / AI, while the real
@@ -127,18 +130,13 @@ static_assert(macro_handle_from_bits(0xFFFFFFFFu).slot == kMacroNoSlot,
               "сентинель полей игрока GameState (все единицы) обязан "
               "распаковываться в «никого» (macro_handle_from_bits, store.h)");
 
-// Проводная форма флажка (v116, сейв): ОРДИНАЛ носителя — слоты store при
-// загрузке раздаются заново, packed-хэндл провод не переживает («the
-// ordinal is the identity», macro_snapshot.cpp). Невалидные биты честно
-// переводятся как «флаг дома» (kPlayerSquadOrdinal).
-std::uint32_t player_flag_wire_ordinal(const GameState& gs,
-                                       const MacroStore& st);
-
-// Обратный перевод — звать строго ПОСЛЕ restore_macro_ecs: оба поля
-// резолвятся заново по ординалам свежего store; носитель флажка, не
-// переживший загрузку, честно складывается на родной сквад.
-void resolve_player_handles_after_load(GameState& gs, const MacroStore& st,
-                                       std::uint32_t playerFlagOrdinal);
+// Пересборка кэшей игрока — звать строго ПОСЛЕ restore_macro_ecs: истина
+// «кто игрок» приехала колонкой playerFlag записей снапшота (5б), и оба
+// поля GameState пересобираются из колонок ОДНИМ сканом на границе
+// загрузки (home — spawnId == kPlayerSquadOrdinal, флаг — playerFlag == 1).
+// Порченый файл (ноль или несколько носителей) не рождает ни безфлажного
+// мира, ни двух игроков: колонка чистится, флаг честно складывается домой.
+void resolve_player_handles_after_load(GameState& gs, MacroStore& st);
 
 // «Я СЕЙЧАС НЕ В СЕБЕ» — the flag stands on somebody other than the original.
 // THE one honest way to ask «вселён ли я»: the fact IS the two handles being

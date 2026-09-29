@@ -102,10 +102,9 @@ constexpr std::uint64_t kPrefixBytes =
     + sizeof(GameState::nextMacroSpawnOrdinal)
     + sizeof(GameState::nextLandmarkOrdinal)
     + sizeof(GameState::nextQuestOrdinal)
-    + kStrBytes + kStrBytes + sizeof(GameState::lootPoolValue)
-    // v116: ординал носителя флажка «кем я на карте» — проводная форма
-    // GameState::playerFlagBits (packed-хэндл через загрузку не живёт).
-    + sizeof(std::uint32_t);
+    + kStrBytes + kStrBytes + sizeof(GameState::lootPoolValue);
+    // (Скаляр v116 «ординал носителя флажка» умер в v117 — флаг едет
+    // колонкой playerFlag записи снапшота, kMacroNpcBytes считает его там.)
 
 constexpr std::uint64_t kPlayerBytes =               // write_player
     kStrBytes + sizeof(PlayerState::sexIdx) + sizeof(PlayerState::ageDays)
@@ -174,6 +173,7 @@ constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     + sizeof(MacroNpcRecord::memory) + kSpellBookBytes
     + sizeof(MacroNpcRecord::hasSheet) + kSheetBytes
     + sizeof(MacroNpcRecord::hasOrders) + sizeof(MacroNpcRecord::dead)
+    + sizeof(MacroNpcRecord::playerFlag)   // 5б: флажок игрока — колонкой
     + sizeof(MacroNpcRecord::designOrdinal)
     + kInventoryBytes + kEquipmentBytes
     + sizeof(MacroNpcRecord::rosterNeedDebt)
@@ -675,6 +675,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     }
     w.pod(m.hasOrders);
     w.pod(m.dead);
+    w.pod(m.playerFlag);   // 5б: «этот сквад — игрок», колонка анкеты
     w.pod(m.designOrdinal);   // v92: строка стола анкет, −1 у обычных
     write_inventory(w, m.inventory);   // v110: существа едут здесь (M-71)
     write_equipment(w, m.gear);
@@ -705,10 +706,11 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     }
     r.pod(m.hasOrders);
     r.pod(m.dead);
+    r.pod(m.playerFlag);   // 5б
     r.pod(m.designOrdinal);   // v92
     if (!r.ok) return;
     if (m.kind.type >= std::uint16_t(NPCType::Count)
-        || m.hasOrders > 1 || m.dead > 1
+        || m.hasOrders > 1 || m.dead > 1 || m.playerFlag > 1
         // v92: ординал стола анкет обязан называть живую строку или −1 —
         // каталожный закон (только аппенд) делает иное порчей файла.
         || m.designOrdinal < -1 || m.designOrdinal >= kDesignCharacterCount) {
@@ -1238,8 +1240,7 @@ void write_payload(Writer& w, const GameState& s,
                    const std::vector<Quest>& activeQuests,
                    const std::vector<MacroNpcRecord>& macroNpcs,
                    const std::vector<std::uint16_t>& treeCounts,
-                   const DepositLayer& deposits,
-                   std::uint32_t playerFlagOrdinal) {
+                   const DepositLayer& deposits) {
     w.pod(s.worldSeed);
     w.pod(s.mapW);
     w.pod(s.mapH);
@@ -1255,10 +1256,8 @@ void write_payload(Writer& w, const GameState& s,
     // v67: the world's loot pool — the victorless dead's worth, ONE number
     // (CANON S5, the deserter pool's sibling for things).
     w.pod(s.lootPoolValue);
-    // v116: «кем я на карте» — ординал носителя флажка (GameState carries
-    // packed-хэндлы, но слоты store при загрузке раздаются заново, поэтому
-    // проводная форма — ординал; save.h у save_game объясняет перевод).
-    w.pod(playerFlagOrdinal);
+    // («Кем я на карте» с 5б едет КОЛОНКОЙ playerFlag записи снапшота —
+    // свой скаляр v116 в скалярах мира умер, провод получает флаг даром.)
     // (v74's own ship-counter block died in v96: hulls moored are the WORKED
     // layer's number under the harbour's feature, and that layer rides as a
     // world-field row — so the sort this block needed died with the hash it
@@ -1326,8 +1325,7 @@ void write_payload(Writer& w, const GameState& s,
 void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
                   std::vector<MacroNpcRecord>& macroNpcs,
                   std::vector<std::uint16_t>& treeCounts,
-                  DepositLayer& deposits,
-                  std::uint32_t& playerFlagOrdinal) {
+                  DepositLayer& deposits) {
     s.version = kSaveVersion;
     r.pod(s.worldSeed);
     r.pod(s.mapW);
@@ -1342,7 +1340,6 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.str(s.saveName);
     r.str(s.savedAt);
     r.pod(s.lootPoolValue);   // v67
-    r.pod(playerFlagOrdinal); // v116: резолв в биты — ПОСЛЕ restore_macro_ecs
     read_player(r, s.player);
 
     std::uint32_t n = 0;
@@ -1431,8 +1428,7 @@ bool load_payload_from_file(const std::string& path, GameState& s,
                             std::vector<Quest>& activeQuests,
                             std::vector<MacroNpcRecord>& macroNpcs,
                             std::vector<std::uint16_t>& treeCounts,
-                            DepositLayer& deposits,
-                            std::uint32_t& playerFlagOrdinal) {
+                            DepositLayer& deposits) {
     std::vector<std::uint8_t> file;
     if (!read_file(path, file)) return false;
 
@@ -1446,10 +1442,9 @@ bool load_payload_from_file(const std::string& path, GameState& s,
     std::vector<MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
     DepositLayer loadedDeposits;
-    std::uint32_t loadedFlagOrdinal = ecs::kPlayerSquadOrdinal;
     Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
     read_payload(r, loaded, loadedQuests, loadedMacro, loadedTrees,
-                 loadedDeposits, loadedFlagOrdinal);
+                 loadedDeposits);
     if (!r.ok || r.pos != r.size) return false;
 
     s = std::move(loaded);
@@ -1457,7 +1452,6 @@ bool load_payload_from_file(const std::string& path, GameState& s,
     macroNpcs = std::move(loadedMacro);
     treeCounts = std::move(loadedTrees);
     deposits = std::move(loadedDeposits);
-    playerFlagOrdinal = loadedFlagOrdinal;
     return true;
 }
 
@@ -1467,14 +1461,13 @@ bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
                const std::vector<std::uint16_t>& treeCounts,
                const DepositLayer& deposits,
-               std::uint32_t playerFlagOrdinal,
                const std::string& path) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     const std::string savedAt = save_timestamp_for(s);
     if (savedAt.empty()) return false;
     write_payload(payload, s, savedAt, activeQuests, macroNpcs, treeCounts,
-                  deposits, playerFlagOrdinal);
+                  deposits);
     if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
 
     SaveHeader h;
@@ -1492,15 +1485,14 @@ std::uint32_t save_payload_fingerprint(
     const GameState& s, const std::vector<Quest>& activeQuests,
     const std::vector<MacroNpcRecord>& macroNpcs,
     const std::vector<std::uint16_t>& treeCounts,
-    const DepositLayer& deposits,
-    std::uint32_t playerFlagOrdinal) {
+    const DepositLayer& deposits) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     // The stamp is held FIXED, and it is the only field that has to be: two
     // honest saves of one state differ in savedAt by construction (a fresh
     // UTC stamp per save, save.cpp:1272), and that is not state.
     write_payload(payload, s, std::string(), activeQuests, macroNpcs,
-                  treeCounts, deposits, playerFlagOrdinal);
+                  treeCounts, deposits);
     if (!payload.ok) return 0u;   // 0 = "no answer", never a real fingerprint
     return checksum32(payload.bytes.data(), payload.bytes.size());
 }
@@ -1509,10 +1501,9 @@ bool load_game(GameState& s, std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
                std::vector<std::uint16_t>& treeCounts,
                DepositLayer& deposits,
-               std::uint32_t& playerFlagOrdinal,
                const std::string& path) {
     return load_payload_from_file(path, s, activeQuests, macroNpcs,
-                                  treeCounts, deposits, playerFlagOrdinal);
+                                  treeCounts, deposits);
 }
 
 SaveSummary inspect_save(const std::string& path) {

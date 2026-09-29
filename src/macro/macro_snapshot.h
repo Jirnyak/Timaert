@@ -9,11 +9,13 @@
 //
 // A MacroNpcRecord is ONE macro entity flattened to rows: the POD components
 // verbatim, the roster as its SoldierRecord rows, the opt-ins (orders, death,
-// death) as explicit flags. «Кем я управляю» с v116 НЕ едет байтом записи:
-// это поле мира (GameState::playerFlagBits), на проводе — ординал носителя
-// в скалярах мира, резолв — resolve_player_handles_after_load строго после
-// restore (SAVE-5 закрыт тем же законом: второй склад «кем управляю» вне
-// снимка не существует, генезис на загрузке не гоняется).
+// death) as explicit flags. «Кем я управляю» едет БАЙТОМ ЗАПИСИ — колонкой
+// playerFlag анкеты (5б, вердикт владельца 2026-09-29: «смена сквада это
+// просто смена флажка»): провод получает флаг ДАРОМ вместе с анкетой, свой
+// скаляр в скалярах мира (v116) умер. Кэши GameState (playerFlagBits/
+// playerSquadBits) пересобирает resolve_player_handles_after_load строго
+// после restore (SAVE-5 закрыт тем же законом: второй склад «кем управляю»
+// вне снимка не существует, генезис на загрузке не гоняется).
 #pragma once
 #include <cstdint>
 #include <vector>
@@ -53,6 +55,11 @@ struct MacroNpcRecord {
     std::uint8_t         hasSheet = 0;
     std::uint8_t         hasOrders = 0;
     std::uint8_t         dead = 0;
+    // «Этот сквад — игрок» (5б): колонка playerFlag анкеты, вердикт
+    // владельца сознательно вернул байт записи — в новом роде (колонка
+    // анкеты, не спутник entt-тега). Ложится в дыру паддинга перед
+    // designOrdinal — sizeof записи не растёт.
+    std::uint8_t         playerFlag = 0;
     // Ординал строки стола анкет (v92, macro/characters.h) — −1 у всякого
     // обычного сквада. Едет байтами, восстанавливается тегом: смерть
     // навсегда держится именно этим — генезис на загрузке не гоняется, и

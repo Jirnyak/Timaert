@@ -354,7 +354,10 @@ namespace sm {
 // v116 (M-106 1е кластер 5): игрок в GameState двумя хэндлами; на проводе —
 // ординал носителя флажка (одно u32 в скалярах мира); байт playerFlag записи
 // снапшота умирает вместе с PlayerTag/PlayerSquadTag.
-constexpr int kSaveVersion = 116;   // v116 (M-106 1е): игрок — два хэндла GameState, ординал флажка в скалярах
+// v117 (кластер 5б): истина «кто игрок» — колонка playerFlag анкеты (род 2);
+// флаг снова едет байтом записи снапшота — в новом роде (колонка анкеты, не
+// спутник entt-тега); скаляр v116 в скалярах мира умер, биты GameState — кэши.
+constexpr int kSaveVersion = 117;   // v117 (5б): флажок игрока — колонка playerFlag анкеты, едет байтом записи снапшота
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -900,17 +903,20 @@ struct GameState {
 
     Politik politik;
     PlayerState player;
-    // ИГРОК — ДВА ХЭНДЛА В МИРЕ (вердикт владельца 2026-09-29, M-106 шаг 1е
-    // кластер 5): родной сквад (зарезервированный ординал kPlayerSquadOrdinal)
-    // и «кем я на карте» — носитель флажка, которого двигают вселение
-    // (possess_entity) и пробуждение (wake_player_in_original_body). Форма —
-    // packed-хэндл store {slot | gen<<16} (macro_handle_bits@src/macro/store.h);
-    // сентинель «никого» — все единицы (kMacroHandleNoneBits; литерал здесь,
-    // потому что state.h не включает store.h — согласие держит static_assert
-    // в player_entity.h). В сейв едет ОРДИНАЛ носителя флажка (слоты при
-    // загрузке раздаются заново — «the ordinal is the identity»,
-    // macro_snapshot.cpp); загрузка резолвит оба поля заново. Заменяют
-    // PlayerTag/PlayerSquadTag (ушли в 1е) и байт playerFlag записи снапшота.
+    // ИГРОК — ДВА КЭША ДВУХ КОЛОНОК АНКЕТ (вердикт владельца 2026-09-29,
+    // кластер 5б: «У НАС СИСТЕМА ИГРЫ ЧТО ЕСТЬ СКВАДЫ С АНКЕТАМИ И ЭТО ВСЁ
+    // и поэтому смена сквада это просто смена флажка что этот сквад (с этой
+    // анкетой) игрок»). ИСТИНА — анкета: playerFlagBits кэширует носителя
+    // колонки playerFlag == 1 («кем я на карте»; двигают вселение
+    // possess_entity и пробуждение wake_player_in_original_body — ОДНОЙ
+    // дверью transfer_player_flag, пишущей колонку и кэш вместе);
+    // playerSquadBits кэширует запись spawnId == kPlayerSquadOrdinal (родной
+    // сквад, «кто оригинал»). Форма — packed-хэндл store {slot | gen<<16}
+    // (macro_handle_bits@src/macro/store.h); сентинель «никого» — все
+    // единицы (kMacroHandleNoneBits; литерал здесь, потому что state.h не
+    // включает store.h — согласие держит static_assert в player_entity.h).
+    // В сейв НЕ едут: флаг едет колонкой записи снапшота, загрузка
+    // пересобирает оба кэша сканом колонок (resolve_player_handles_after_load).
     std::uint32_t playerSquadBits = 0xFFFFFFFFu;
     std::uint32_t playerFlagBits  = 0xFFFFFFFFu;
     WorldTime   worldTime = world_time_at(0, 6, 0);

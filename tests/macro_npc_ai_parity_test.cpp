@@ -232,9 +232,9 @@ void test_aggressive_chases_visible_player() {
         const sm::MacroHandle hp2 = sm::store_birth(stp);
         const auto pe = world.reg.create();
         world.reg.emplace<sm::ecs::MacroSlot>(pe, hp2.slot);
-        // Носитель флажка — биты GameState (1е кластер 5): make_tick_context
-        // читает их, тега больше нет.
-        gs.playerFlagBits = sm::macro_handle_bits(hp2);
+        // Носитель флажка — дверью переноса (5б): колонка анкеты — истина,
+        // биты GameState — кэш; make_tick_context читает кэш.
+        sm::transfer_player_flag(stp, gs.playerFlagBits, hp2);
         stp.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }
@@ -311,9 +311,9 @@ void test_aggressive_spares_a_friend() {
         const sm::MacroHandle hp2 = sm::store_birth(stp);
         const auto pe = world.reg.create();
         world.reg.emplace<sm::ecs::MacroSlot>(pe, hp2.slot);
-        // Носитель флажка — биты GameState (1е кластер 5): make_tick_context
-        // читает их, тега больше нет.
-        gs.playerFlagBits = sm::macro_handle_bits(hp2);
+        // Носитель флажка — дверью переноса (5б): колонка анкеты — истина,
+        // биты GameState — кэш; make_tick_context читает кэш.
+        sm::transfer_player_flag(stp, gs.playerFlagBits, hp2);
         stp.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }

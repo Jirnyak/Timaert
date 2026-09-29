@@ -123,11 +123,11 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // Exactly one flag holder exists at a time — «кем я на карте» — and it
     // is MACRO ONLY since the scale split (2026-09-10): his own squad by
     // default, a possessed lord while he wears one (the scene body carries
-    // AvatarTag, a different question). Носитель, не переживший мир
-    // (невалидные биты), честно складывается домой — мира без флага не
-    // бывает.
+    // AvatarTag, a different question). Истина — колонка playerFlag анкеты
+    // (5б); носитель, не переживший мир (невалидные биты), честно
+    // складывается домой ДВЕРЬЮ переноса — мира без флага не бывает.
     if (!st.valid(player_flag_handle(gs))) {
-        gs.playerFlagBits = gs.playerSquadBits;
+        transfer_player_flag(st, gs.playerFlagBits, home);
     }
 
     // The SAME door every lord's numbers go through (squad.h) — the sheet is
@@ -155,25 +155,32 @@ bool wake_player_in_original_body(GameState& gs, MacroStore& st) {
     // zero for a tick before anything marks it.
     if (st.dead[home.slot] != 0) return false;
     if (st.pools[home.slot].hp <= 0.0f) return false;
-    // One displacement of one flag — вселение, проигранное назад.
-    // Exactly-one holds by the move itself (sub/possess.h does the same).
-    gs.playerFlagBits = gs.playerSquadBits;
+    // One displacement of one flag — вселение, проигранное назад, той же
+    // дверью (колонка + кэш одним движением; sub/possess.h ходит ею же).
+    transfer_player_flag(st, gs.playerFlagBits, home);
     return true;
 }
 
-std::uint32_t player_flag_wire_ordinal(const GameState& gs,
-                                       const MacroStore& st) {
-    const MacroHandle h = player_flag_handle(gs);
-    if (!st.valid(h)) return ecs::kPlayerSquadOrdinal;   // флаг дома
-    return st.spawnId[h.slot].index;
-}
-
-void resolve_player_handles_after_load(GameState& gs, const MacroStore& st,
-                                       std::uint32_t playerFlagOrdinal) {
+void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
     const MacroHandle home =
         macro_handle_by_spawn_id(st, ecs::kPlayerSquadOrdinal);
-    MacroHandle flag = macro_handle_by_spawn_id(st, playerFlagOrdinal);
-    if (!st.valid(flag)) flag = home;
+    // Один скан колонок на границе загрузки (5б): истина приехала колонкой
+    // playerFlag записей снапшота, кэши GameState пересобираются из неё.
+    MacroHandle flag{};
+    std::uint32_t holders = 0;
+    for (std::size_t s = 0; s < kMacroEntityCap; ++s) {
+        if (!st.alive[s] || st.playerFlag[s].on == 0) continue;
+        ++holders;
+        flag = handle_at(st, std::uint16_t(s));
+    }
+    if (holders != 1) {
+        // Порченый файл не рождает ни безфлажного мира, ни двух игроков:
+        // колонку вычистить, флаг честно домой (мира без флага не бывает).
+        for (std::size_t s = 0; s < kMacroEntityCap; ++s)
+            st.playerFlag[s].on = 0;
+        flag = home;
+        if (st.valid(home)) st.playerFlag[home.slot].on = 1;
+    }
     gs.playerSquadBits = macro_handle_bits(home);
     gs.playerFlagBits  = macro_handle_bits(flag);
 }

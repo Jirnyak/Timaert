@@ -145,6 +145,7 @@ inline constexpr std::size_t kMacroStoreRowBytes =
     + sizeof(ecs::SquadRoster) + sizeof(ecs::NpcInventory)
     + sizeof(CharacterSheet) + sizeof(ecs::SquadOrders)
     + sizeof(ecs::BodyEquipment) + sizeof(ecs::DesignCharacterTag)
+    + sizeof(std::uint8_t)            // playerFlag — флажок игрока (5б)
     + sizeof(std::uint8_t)            // dead — байт судьбы
     + sizeof(std::uint16_t)           // generation — поколение слота
     + sizeof(std::uint8_t)            // alive — занятость
@@ -321,15 +322,15 @@ inline constexpr StackRow kStacks[] = {
     // ШТАБЕЛЯ ПО ОРДИНАЛУ — сущности. ОДИН ШТАБЕЛЬ НА КОЛОНКУ (вердикт
     // владельца 2026-09-22): обход одной колонки не тащит остальные в кэш.
     //
-    // ГЛАДКАЯ ПАМЯТЬ МАКРОМИРА ОДНОЙ СТРОКОЙ. Восемнадцать колонок плюс
+    // ГЛАДКАЯ ПАМЯТЬ МАКРОМИРА ОДНОЙ СТРОКОЙ. Девятнадцать колонок плюс
     // служебные — по `std::array<T, kMacroEntityCap>` на каждую, то есть
     // резидентно с рождения мира, пустота оплачена сознательно (вердикт
-    // 2026-09-25). Строкой ЗДЕСЬ, а не восемнадцатью: колонки перечислены
+    // 2026-09-25). Строкой ЗДЕСЬ, а не девятнадцатью: колонки перечислены
     // X-макросом `SM_MACRO_STORE_COLUMNS` в `store.h`, и раскрыть его тут
     // нельзя — он на другой стороне включения. Сходимость держит
     // `static_assert` там же (`store.h`), а не доверие.
     {"гладкая память макро-сквадов (MacroStore)",
-     "18 колонок SoA + служебные", StackKind::ByOrdinal, kMacroStoreRowBytes,
+     "19 колонок SoA + служебные", StackKind::ByOrdinal, kMacroStoreRowBytes,
      kMacroEntityCap},
     // Ниже — ДОФЛИПОВАЯ форма тех же сквадов: компоненты entt, сегодня мост
     // связей, а не состояние (M-106 шаг 1е — снос). Стоят отдельными

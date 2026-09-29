@@ -935,7 +935,8 @@ void SubworldEngine::spawn_player_entity() {
     if (gs_ && !pst.valid(flagRec)) {
         const MacroHandle psq = player_squad_handle(*gs_);
         if (pst.valid(psq)) {
-            gs_->playerFlagBits = macro_handle_bits(psq);
+            // Оба носителя одной дверью (5б): колонка анкеты + кэш битов.
+            transfer_player_flag(pst, gs_->playerFlagBits, psq);
             flagRec = psq;
         }
     }

@@ -57,10 +57,12 @@ inline entt::entity current_player_body(ecs::World& w) {
 // tick does it via pull_player_entity_to_scalars).
 //
 // `playerFlagBits` — адрес ОДНОГО числа `GameState::playerFlagBits` (1е
-// кластер 5): ЕДИНСТВЕННЫЙ макро-носитель флажка. Субмиру не даётся
-// GameState — только это число (закон двух миров: канал узкий и названный);
-// звонящий без мира (фикстура) законно передаёт nullptr — тогда двигается
-// только сценический флаг (AvatarTag), макро-мира у фикстуры нет.
+// кластер 5): КЭШ макро-флажка; истина — колонка playerFlag анкеты (5б),
+// оба носителя пишет одна дверь переноса (transfer_player_flag). Субмиру
+// не даётся GameState — только это число (закон двух миров: канал узкий и
+// названный); звонящий без мира (фикстура) законно передаёт nullptr —
+// тогда двигается только сценический флаг (AvatarTag), макро-мира у
+// фикстуры нет.
 inline bool possess_entity(ecs::World& w, entt::entity target,
                            std::uint32_t* playerFlagBits) {
     auto& reg = w.reg;
@@ -107,10 +109,12 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
     // moves nothing here: the macro flag stays on the caster's own record,
     // which IS the exit reset.
     //
-    // Exactly-one holds by the move itself: носитель — ОДНО число, запись
-    // нового значения и есть срыв со старого.
+    // Exactly-one holds by the door itself (5б): истина — колонка playerFlag
+    // анкеты, биты — кэш; дверь переноса пишет оба носителя одним движением
+    // (запись нового = срыв старого через кэш). Store у сцены уже есть —
+    // тот же ctx-мост, которым macro_record_of ответил хэндлом.
     if (recH.slot != kMacroNoSlot && playerFlagBits) {
-        *playerFlagBits = macro_handle_bits(recH);
+        transfer_player_flag(store_of(w), *playerFlagBits, recH);
     }
     return true;
 }

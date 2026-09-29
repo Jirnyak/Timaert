@@ -6432,10 +6432,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             if (!sm::save_game(app.gs, app.activeQuests,
                                stage_save_state(app), app.treeLayer.data,
-                               app.deposits,
-                               sm::player_flag_wire_ordinal(
-                                   app.gs, *app.macroStore),
-                               app.savePath)) {
+                               app.deposits, app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;
             }
@@ -7384,8 +7381,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
 
                 // Restore a clean single-husk macro state for a self-contained
                 // process: вернуть флажок домой (лорд снова автономный НПЦ) —
-                // одна запись битов, ensure подтверждает инварианты.
-                app.gs.playerFlagBits = app.gs.playerSquadBits;
+                // дверью переноса (колонка + кэш, 5б), ensure подтверждает
+                // инварианты.
+                sm::transfer_player_flag(*app.macroStore, app.gs.playerFlagBits,
+                                         sm::player_squad_handle(app.gs));
                 sm::ensure_macro_player_entity(app.gs, app.ecs);
             }
             ++app.smoke.cursor;
