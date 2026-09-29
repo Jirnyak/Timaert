@@ -453,7 +453,8 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
         if (row.authoredSheet) {
             st.sheet[slot] = row.sheet;
             refresh_body_from_sheet(st.pools[slot], &st.runtime[slot],
-                                    effective_sheet_of(w, e), row.body);
+                                    effective_sheet_of(st, handle_at(st, slot)),
+                                    row.body);
             // Рождение целым — как make_npc рождает всех.
             st.pools[slot].hp = st.pools[slot].maxHp;
             st.pools[slot].mp = st.pools[slot].maxMp;

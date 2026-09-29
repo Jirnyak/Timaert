@@ -1306,6 +1306,11 @@ void destroy_world(App& app) {
     app.activeQuests.clear();
     app.questMarkerSig = 0;   // invalidate derived quest-marker cache
     app.ecs.reg.clear();
+    // Store умирает вместе с миром (store_reset@src/macro/store.h): без
+    // этого каждая загрузка оставляла население прошлого мира живыми
+    // слотами-призраками, и restore рожал поверх (смоук SAVE-5 поймал два
+    // носителя ординала игрока честным store-сканом, 2026-09-29).
+    if (app.macroStore) sm::store_reset(*app.macroStore);
     app.worldLoaded = false;
 }
 

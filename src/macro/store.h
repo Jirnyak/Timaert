@@ -170,6 +170,23 @@ inline MacroHandle store_birth(MacroStore& s) {
     return MacroHandle{slot, s.generation[slot]};
 }
 
+// СМЕРТЬ МИРА: store — память мира, и умирает вместе с ним (destroy_world).
+// До этой двери store жил дольше мира: reg чистился, а слоты прошлого мира
+// оставались живыми призраками без моста, и каждая загрузка рожала restore
+// ПОВЕРХ них — счёт носителей ординала игрока честным store-сканом дал 2
+// (смоук SAVE-5, 2026-09-29; entt-счёт был зелёным по слепоте — призрак
+// моста не носил). Поколение выживших бампается, как в store_death: всякий
+// хэндл прошлого мира мертвеет, даже если слот переиспользует новый.
+inline void store_reset(MacroStore& s) {
+    for (std::size_t i = 0; i < kMacroEntityCap; ++i) {
+        if (s.alive[i] != 0) ++s.generation[i];
+        s.alive[i] = 0;
+        s.freeSlots[i] = std::uint16_t(kMacroEntityCap - 1u - i);
+    }
+    s.freeCount  = std::uint32_t(kMacroEntityCap);
+    s.aliveCount = 0;
+}
+
 // Смерть слота: поколение растёт — всякий старый хэндл мертвеет мгновенно;
 // колонки НЕ трутся здесь (их обнулит следующее рождение из списка) —
 // значит читать мёртвый слот нельзя ничем, кроме valid()-гарды.
