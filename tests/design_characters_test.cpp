@@ -134,7 +134,8 @@ void test_spawn_births_the_row() {
     // Лестница: приказ первым; без приказа — ступень анкеты, и она
     // ПРОВЕРЯЕМО не строка типа (Merchant.ai = Trader).
     const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, e));
-    CHECK(untyped_squad_behaviour(w.reg, e, kind) == AIBehaviour::Waypoints,
+    CHECK(untyped_squad_behaviour(sm::store_of(w), sm::handle_of(w.reg, e), kind)
+              == AIBehaviour::Waypoints,
           "with the route present, the order rung answers");
     // ПРИКАЗ СНИМАЕТСЯ ТОЙ ЖЕ ДВЕРЬЮ, ЧТО ЕГО СТАВИТ (M-136). Здесь стояло
     // `w.reg.remove<ecs::SquadOrders>(e)` — НО-ОП с флипа 1в: приказ лежит
@@ -151,7 +152,8 @@ void test_spawn_births_the_row() {
           "приказ снят дверью мира, а не компонентой мимо колонки");
     CHECK((*sm::body_state<ecs::SquadOrders>(w.reg, e)).waypointCount == 0,
           "и снятие видно читателю: маршрута в колонке больше нет");
-    CHECK(untyped_squad_behaviour(w.reg, e, kind) == row.behaviour,
+    CHECK(untyped_squad_behaviour(sm::store_of(w), sm::handle_of(w.reg, e), kind)
+              == row.behaviour,
           "without the route, the design-row rung answers");
     // ЧЕГО ЭТА СЕКЦИЯ НЕ ДОКАЗЫВАЕТ, СКАЗАНО ВСЛУХ (§8 п.7): у строки 0
     // `behaviour == Waypoints`, поэтому ступени 1 и 3 дают ОДИН ответ, и
@@ -247,7 +249,8 @@ void test_king_peasant_births_by_home_faction() {
     // Лестница: приказов нет — ступень анкеты, доказуемо не строка типа
     // (Peasant.ai = Gatherer).
     const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, king));
-    CHECK(untyped_squad_behaviour(w.reg, king, kind) == AIBehaviour::MageHunt,
+    CHECK(untyped_squad_behaviour(sm::store_of(w), sm::handle_of(w.reg, king), kind)
+              == AIBehaviour::MageHunt,
           "the design rung answers MageHunt for the king");
     CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Peasant)].ai
               != AIBehaviour::MageHunt,
@@ -309,7 +312,8 @@ void test_dragons_nest_on_mountain_peaks() {
     CHECK(owned_sheet(w, d1) != nullptr,
           "the dragon OWNS his sheet like every design character");
     const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, d1));
-    CHECK(untyped_squad_behaviour(w.reg, d1, kind) == AIBehaviour::LairSorties,
+    CHECK(untyped_squad_behaviour(sm::store_of(w), sm::handle_of(w.reg, d1), kind)
+              == AIBehaviour::LairSorties,
           "the design rung answers LairSorties");
     CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Dragon)].ai
               != AIBehaviour::LairSorties,

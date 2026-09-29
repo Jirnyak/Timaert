@@ -178,6 +178,13 @@ inline void store_death(MacroStore& s, MacroHandle h) {
     --s.aliveCount;
 }
 
+// Хэндл ЖИВОГО слота — для читателя, который уже держит слот (обход store,
+// записи закона порядка): пара {slot, gen} годна для долгоживущей ссылки и
+// для дверей squad.h. Слот обязан быть жив — это дверь обхода, не поиска.
+inline MacroHandle handle_at(const MacroStore& s, std::uint16_t slot) {
+    return MacroHandle{slot, s.generation[slot]};
+}
+
 // Слот макро-сквада по entt-мосту (шаг 1в; мост умирает в 1е вместе с этой
 // дверью). Сущность без MacroSlot здесь незаконна — get громко падает в
 // дебаге, как и всякий доступ мимо закона рождения.

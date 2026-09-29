@@ -171,6 +171,12 @@ struct TickContext {
     // projected bodies whose fight belongs to the ground, not to the resolver.
     const SquadIndex* squads = nullptr;
     bool              allowAutoBattle = true;
+    // СЛОТЫ ИГРОКА, резолв один раз на свип (1е): «кем я на карте» (флажок,
+    // вселение двигает) и родной сквад (зарезервированный ординал). Читатели
+    // — гейты встреч и исключение свипа; до смерти тегов заполняются из
+    // тегов (make_tick_context), после — из GameState. kMacroNoSlot = нет.
+    std::uint16_t playerFlagSlot  = kMacroNoSlot;
+    std::uint16_t playerSquadSlot = kMacroNoSlot;
     // Враждебность реестра, запечённая на свип (CANON S10 «хищник-жертва»):
     // бит g в [f] = фракция f враждебна фракции g — ОДИН порог над ОДНОЙ
     // матрицей (factions_hostile), прожёванный заранее, чтобы охота по следу
@@ -200,12 +206,12 @@ inline constexpr std::uint32_t kHuntScentFloor = 8u;
 // марша на int убьёт и этот скретч.)
 struct MacroPos { float x = 0.0f; float y = 0.0f; };
 
-void scent_squad_deposit(entt::entity e, const MacroPos& p,
+void scent_squad_deposit(MacroHandle self, const MacroPos& p,
                          const ecs::NPCKind& kind, const TickContext& ctx);
 // Рефлекс охоты: незанятый боем combatant идёт ВВЕРХ по градиенту чужой
 // ЦЕНЫ под фильтром СИЛЫ (след силы ≤ моя сила × 2^kHuntBoldShift); true =
 // think съеден охотой, макроцель в rt не тронута (пауза, не амнезия).
-bool scent_hunt_step(entt::entity self, MacroPos& p,
+bool scent_hunt_step(MacroHandle self, MacroPos& p,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                      ecs::Pools& pools, const TickContext& ctx);
 
@@ -333,7 +339,7 @@ int rotate_worker_squads(MacroWorld& mw, int day);
 // ПОСЛЕДНЯЯ СТУПЕНЬ — ТЕЧЬ ГРАНИЦЫ МИРОВ (CANON S2): каталог тел принадлежит
 // микромиру. Ступень умирает вместе с генезисными одиночками (порция Б-6),
 // и тогда вся функция уходит целиком.
-AIBehaviour untyped_squad_behaviour(entt::registry& reg, entt::entity e,
+AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
                                     const ecs::NPCKind& kind);
 
 // THE SQUAD SEASON WINDOW (owner 2026-08-30/31 + 2026-09-17; CANON S10,

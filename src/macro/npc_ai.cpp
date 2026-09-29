@@ -52,6 +52,13 @@ inline int rand_int(const TickContext& ctx, int range) {
 
 inline float rand_f01(const TickContext& ctx) { return ctx.rng->next_f01(); }
 
+// Store свипа — из конверта (make_tick_context кладёт адрес в ctx.mw.store);
+// фикстура, зовущая публичную дверь напрямую, несёт store в ctx мира —
+// фоллбек читает его оттуда. Звонящий обязан был проверить ctx.mw.world.
+inline MacroStore& store_ctx(const TickContext& ctx) {
+    return ctx.mw.store ? *ctx.mw.store : store_of(ctx.mw.world->reg);
+}
+
 // ── Helpers shared by all behaviours ──────────────────────────
 
 struct XY { float x, y; };
@@ -111,48 +118,47 @@ Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
 // сид 7 в стойлах мира стояла ОДНА голова против 11 964 в артелях, то есть
 // табун не принадлежал никому, кроме тех, кто его поймал. Выдача обратно —
 // такт 2 (outfit_crew_mounts ниже).
-void deliver_mounts_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
+void deliver_mounts_home(MacroHandle self, const ecs::MacroNpcRuntime& rt,
                          const TickContext& ctx) {
     if (!ctx.mw.world) return;
-    auto* bag = body_state<ecs::NpcInventory>(ctx.mw.world->reg, self);
-    if (!bag) return;
+    MacroStore& st = store_ctx(ctx);
+    Inventory& bag = st.inventory[self.slot].inv;
     Landmark* lm = home_landmark(rt, ctx);
     if (!lm) return;
     bool moved = false;
     // Область существ единого контейнера (M-71); обход first → 1023 =
     // старый порядок «новейший первым». Снятие слота приводит на его место
     // УЖЕ осмотренный новейший (ремонт плотности) — курсор шагает дальше.
-    for (int i = bag->inv.creature_first(); i < kMaxInventorySlots; ++i) {
-        const ItemRef stall = bag->inv.slots[std::size_t(i)];
+    for (int i = bag.creature_first(); i < kMaxInventorySlots; ++i) {
+        const ItemRef stall = bag.slots[std::size_t(i)];
         if (!is_mount_kind(std::uint16_t(creature_of_world_row(stall.def)))) {
             continue;
         }
         // Credit BEFORE debit (S5): a full garrison leaves the beasts IN
         // the roster rather than burning them.
         if (!creatures_push_slot(lm->inventory, stall)) continue;
-        bag->inv.remove_at(i, stall.count);
+        bag.remove_at(i, stall.count);
         moved = true;
     }
-    if (moved) refresh_squad_carry(*ctx.mw.world, self);
+    if (moved) refresh_squad_carry(st, self);
 }
 
 // Empty the gatherer's own bag of the catalog row `defIdx` into his home
 // store — the shared arrival half of every honest work-loop (woodcutter,
 // farmer). ОРДИНАЛ, А НЕ СТРОКА (ЗАКОН СЛОВАРЯ): строка цели переводится в
 // ординал один раз рядом со своей таблицей (gatherer_item_index).
-void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
+void deliver_bag_home(MacroHandle self, const ecs::MacroNpcRuntime& rt,
                       const TickContext& ctx, int defIdx) {
     if (!ctx.mw.world) return;
-    auto* bag = body_state<ecs::NpcInventory>(ctx.mw.world->reg, self);
-    if (!bag) return;
-    const int n = bag->inv.count_of(defIdx);
+    Inventory& bag = store_ctx(ctx).inventory[self.slot].inv;
+    const int n = bag.count_of(defIdx);
     Inventory* store = home_inventory(rt, ctx);
     // Credit BEFORE debit (CANON S10 (бывший economy.md)'s conservation law): the store accepts
     // first, the bag pays only what was accepted — a full store leaves the
     // haul ON THE GATHERER'S BACK instead of burning it. (Near-unreachable
     // with 1024 slots and stack-merging, but the law is the law.)
     if (n > 0 && store && store->add_of(defIdx, n)) {
-        bag->inv.remove_of(defIdx, n);
+        bag.remove_of(defIdx, n);
         // The arrival IS the gather flow: the pure econ steps announce their
         // own facts, but the agent work-loop lands its haul here — without
         // this fact every *_gathered column of the дубль-прогон reads zero
@@ -260,7 +266,7 @@ void settle_sp_carry(ecs::Pools& pools) {
 // was `continue`d past its own recovery.
 enum class ThinkGate : std::uint8_t { Dead, Rest, Think };
 
-void settle_exhaustion(entt::entity e, const MacroPos& p,
+void settle_exhaustion(MacroHandle e, const MacroPos& p,
                        ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                        bool canCamp, const TickContext& ctx);
 
@@ -341,7 +347,7 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // stamina and no squad ever ran out again. A body has stopped when it is where
 // it meant to be, or when it has DECIDED to stop — which is exactly the
 // player's own gate, «маршрут пуст», said in the squads' words.
-void settle_march_rhythm(entt::entity e, const MacroPos& p,
+void settle_march_rhythm(MacroHandle e, const MacroPos& p,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                          bool moved, const TickContext& ctx) {
     const int maxSp = std::max<int>(1, hp.maxSp);
@@ -1021,11 +1027,11 @@ inline Depot depot_(Landmark& lm, const MacroWorld& mw) {
 // The sell-run machine (defined with the trade behaviours below): the
 // peasant crew whose errand is Sell walks the SAME machine the vendor
 // walked — reuse, not a second copy (CANON S26).
-void ai_vendor(entt::entity self, MacroPos& p,
+void ai_vendor(MacroHandle self, MacroPos& p,
                ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                const TickContext& ctx);
 
-void ai_gatherer(entt::entity self, MacroPos& p,
+void ai_gatherer(MacroHandle self, MacroPos& p,
                  const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                  ecs::Pools& pools, const TickContext& ctx) {
     (void)kind;   // the errand, not the type, names the work (CANON S10)
@@ -1050,17 +1056,17 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             // слал её к жиле — даже с грузом, которому на жиле нечего взять.
             // Вечный челнок «шахта→привал→шахта» держал 536 серебра в одной
             // сумке 48 дней при пустом складе (измерено, сид 7).
-            if (auto* bagIdle = def->rosterYield == NPCType::Count
+            if (const Inventory* bagIdle = def->rosterYield == NPCType::Count
                     && ctx.mw.world
-                    ? body_state<ecs::NpcInventory>(ctx.mw.world->reg, self)
+                    ? &store_ctx(ctx).inventory[self.slot].inv
                     : nullptr) {
                 // (a CREATURE yield rides the roster, not the bag — there
                 // is no «full back» to send home early)
                 const ItemDef* idef = item_def_at(outIdx);
                 const float unitKg =
                     idef && idef->weight > 0.0f ? idef->weight : 1.0f;
-                if (bagIdle->inv.count_of(outIdx) > 0
-                    && rt.carryCap - inventory_weight(bagIdle->inv)
+                if (bagIdle->count_of(outIdx) > 0
+                    && rt.carryCap - inventory_weight(*bagIdle)
                            < unitKg) {
                     rt.targetX = home.x;
                     rt.targetY = home.y;
@@ -1169,12 +1175,12 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // Every soul in the squad works: headcount multiplies the
                 // cycle's yield at the squad's one fixed SP price (owner:
                 // «SP тратится столько же, добывают кратно больше»).
-                auto* bag = body_state<ecs::NpcInventory>(ctx.mw.world->reg, self);
+                Inventory* bag = &store_ctx(ctx).inventory[self.slot].inv;
                 // Руки — ЛЮДИ: лошадь в ростере — спина и рот, не рука
                 // (count_human_souls, world_row.h) — иначе пойманный табун
                 // сам становился бы добытчиком и контур шёл вразнос.
                 const int workers = production_hands(
-                    bag ? count_human_souls(bag->inv) : 0);
+                    bag ? count_human_souls(*bag) : 0);
                 // «Берёт ПО СВОЕЙ ГРУЗОПОДЪЁМНОСТИ» — CANON S10 дословно:
                 // спины сквада ограничивают тейк. Без этой скобы артель
                 // грузила цикл×души невзирая на вес и каменела перегрузом
@@ -1187,7 +1193,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                     const float unitKg =
                         idef && idef->weight > 0.0f ? idef->weight : 1.0f;
                     const float freeKg =
-                        rt.carryCap - inventory_weight(bag->inv);
+                        rt.carryCap - inventory_weight(*bag);
                     carryMax = std::max(0, int(freeKg / unitKg));
                 }
                 // ONE OBJECT PER HAND (owner, 2026-09-16). Each worker takes
@@ -1211,13 +1217,13 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                     // стойла (стоимость строки × та же кривая дефицита),
                     // и рулетка сама уводит руки в другую цель.
                     if (take > 0 && bag && creatures_push_stack(
-                            bag->inv, def->rosterYield,
+                            *bag, def->rosterYield,
                             npc_def(def->rosterYield).baseLevel,
                             take)) {
                         resource_field_apply(mw, def->row, tx, ty, -take);
                         pools.spCarry -= float(cycleCost);
                         settle_sp_carry(pools);
-                        refresh_squad_carry(*ctx.mw.world, self);
+                        refresh_squad_carry(store_ctx(ctx), self);
                     } else {
                         tookSomething = false;   // no slot — nothing conjured
                     }
@@ -1231,7 +1237,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // в пустоту. Строковая дверь на этом месте падала в UB
                 // (std::string из nullptr) — тот же дефект, только громче.
                 else if (take > 0 && bag && outIdx >= 0
-                         && bag->inv.add_of(outIdx, take)) {
+                         && bag->add_of(outIdx, take)) {
                     resource_field_apply(mw, def->row, tx, ty, -take);
                     // The cycle is PAID the moment it produced — through
                     // the same fractional carry the march charges
@@ -1268,8 +1274,8 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             // The day's yield is unchanged — a full bar still buys the same
             // number of objects — but no constant says how many trips that is.
             {
-                const auto* bagNow = ctx.mw.world
-                    ? body_state<ecs::NpcInventory>(ctx.mw.world->reg, self)
+                const Inventory* bagNow = ctx.mw.world
+                    ? &store_ctx(ctx).inventory[self.slot].inv
                     : nullptr;
                 bool backsFull = false;
                 if (bagNow && def->rosterYield == NPCType::Count) {
@@ -1277,7 +1283,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                     const float unitKg =
                         idef && idef->weight > 0.0f ? idef->weight : 1.0f;
                     backsFull =
-                        rt.carryCap - inventory_weight(bagNow->inv) < unitKg;
+                        rt.carryCap - inventory_weight(*bagNow) < unitKg;
                 }
                 const bool barSpent = int(pools.sp) < cycleCost;
                 // GROUND THAT GAVE NOTHING is the third reason to leave, and
@@ -1654,8 +1660,8 @@ long long trade_bid_value_(const MacroWorld& mw, int fromX, int fromY,
 // панель. Две половины — атрибут и скилл — больше не ходят по коду порознь:
 // они сложены там, где считается весь производный блок, и сделка спрашивает
 // ИТОГ. Отсюда спеллы, артефакты и перки входят в цену бесплатно.
-int leader_trade_power_(ecs::World& w, entt::entity self) {
-    const CharacterSheet& sh = sheet_of(w, self);
+int leader_trade_power_(const MacroStore& st, MacroHandle self) {
+    const CharacterSheet sh = sheet_of(st, self);
     return calculate_derived(sh.attributes, sh.skills).tradeDiscountPct;
 }
 
@@ -1779,7 +1785,7 @@ long long plan_home_load_(Inventory& store, const std::int32_t* needDebt,
 // закон цены, ни одного нового — просто рейс в правильную сторону.
 // Рейс: погрузить дешёвое дома, дойти до рынка поручения, продать, купить
 // домашние нехватки, вернуться. Ротация поднимает и судит крю как любую.
-void ai_vendor(entt::entity self, MacroPos& p,
+void ai_vendor(MacroHandle self, MacroPos& p,
                ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                const TickContext& ctx) {
     XY home;
@@ -1787,11 +1793,10 @@ void ai_vendor(entt::entity self, MacroPos& p,
         ai_nomad(p, rt, pools, ctx);
         return;
     }
-    auto& reg = ctx.mw.world->reg;
-    auto* bag = body_state<ecs::NpcInventory>(reg, self);
-    auto* mem = body_state<AgentMemory>(reg, self);
+    MacroStore& st = store_ctx(ctx);
+    Inventory* bag = &st.inventory[self.slot].inv;
     Landmark* homeLm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
-    if (!bag || !mem || !homeLm) {
+    if (!homeLm) {
         ai_home_wanderer(p, rt, pools, ctx);
         return;
     }
@@ -1848,9 +1853,9 @@ void ai_vendor(entt::entity self, MacroPos& p,
         const Skills& homeSite = landmark_sheet(homeLm->type).skills;
         plan_home_load_(homeLm->inventory, homeLm->needDebt,
                         souls_home(*homeLm), homeSite, rt.carryCap,
-                        &bag->inv);
-        if (inventory_weight(bag->inv) <= 0.0f
-            && inventory_value(bag->inv) <= 0) {
+                        bag);
+        if (inventory_weight(*bag) <= 0.0f
+            && inventory_value(*bag) <= 0) {
             // Nothing to sell and nothing owed: wait out the morning.
             rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
             return;
@@ -1886,8 +1891,8 @@ void ai_vendor(entt::entity self, MacroPos& p,
             // (CANON S10, ярус 2): дом сам выписал свои цены точным
             // складом и своим счётом.
             const CaravanDeal deal = trade_vendor_at_market(
-                bag->inv, rt.carryCap, *market, &homeLm->ledger,
-                leader_trade_power_(*ctx.mw.world, self),
+                *bag, rt.carryCap, *market, &homeLm->ledger,
+                leader_trade_power_(st, self),
                 landmark_trade_power_(*market),
                 ctx.mw.econFacts, ctx.mw.econFactsUser);
             if (deal.movedTableValue > 0) {
@@ -1926,7 +1931,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
                               - homeLm->inventory.count_of(id)
                         : 0;
                 homeLack[c] = lack > 0 ? lack : 0;
-                cargo[c] = bag->inv.count_of(id);
+                cargo[c] = bag->count_of(id);
                 // ЗАЯВКА «ДОМОЙ» — «что уже в трюме стоит ДЛЯ НУЖДЫ ДОМА»,
                 // а не вся стоимость груза: серебро, которого дому не надо,
                 // домой не торопится. Оттого числитель растёт ровно по мере
@@ -2004,11 +2009,11 @@ void ai_vendor(entt::entity self, MacroPos& p,
                 // Home: purchases and earnings land on the home store; the
                 // rotation dissolves the crew at dawn.
                 for (int i = 0; i < kCommodityCount; ++i) {
-                    haul_between(bag->inv, depot_(*homeLm, ctx.mw),
+                    haul_between(*bag, depot_(*homeLm, ctx.mw),
                                  commodity_item_index(i), 1 << 30, 1e9f);
                 }
-                transfer_value_dense(bag->inv, depot_(*homeLm, ctx.mw),
-                               inventory_value(bag->inv));
+                transfer_value_dense(*bag, depot_(*homeLm, ctx.mw),
+                               inventory_value(*bag));
             }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
@@ -2037,7 +2042,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
 // ДОЛГ БЕРЁТСЯ ПО ПЛОТНОСТИ СТОИМОСТИ (владелец 2026-09-22): первым уходит
 // самое ценное, что есть у вассала. Это строже прежнего «доля каждого
 // стака» — заплатить зерном, оставив серебро, невозможно.
-void ai_collector(entt::entity self, MacroPos& p,
+void ai_collector(MacroHandle self, MacroPos& p,
                   ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                   const TickContext& ctx) {
     XY home;
@@ -2045,10 +2050,9 @@ void ai_collector(entt::entity self, MacroPos& p,
         ai_nomad(p, rt, pools, ctx);
         return;
     }
-    auto& reg = ctx.mw.world->reg;
-    auto* bag = body_state<ecs::NpcInventory>(reg, self);
+    Inventory* bag = &store_ctx(ctx).inventory[self.slot].inv;
     Landmark* homeLm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
-    if (!bag || !homeLm) {
+    if (!homeLm) {
         ai_nomad(p, rt, pools, ctx);
         return;
     }
@@ -2147,8 +2151,8 @@ void ai_collector(entt::entity self, MacroPos& p,
                 if (affordable <= 0) continue;
                 const int want = int(std::min<long long>(lack, affordable));
                 const int moved = haul_between(
-                    vassal->inventory, bag->inv, id, want,
-                    rt.carryCap - inventory_weight(bag->inv));
+                    vassal->inventory, *bag, id, want,
+                    rt.carryCap - inventory_weight(*bag));
                 if (moved <= 0) continue;
                 owed -= (long long)moved * base;
                 took += (long long)moved * base;
@@ -2159,7 +2163,7 @@ void ai_collector(entt::entity self, MacroPos& p,
         // стороны — нужда дома уже взяла своё зерно выше.
         if (owed > 0) {
             const int dense = transfer_value_dense(
-                vassal->inventory, Depot(bag->inv),
+                vassal->inventory, Depot(*bag),
                 int(std::min<long long>(owed, 1 << 30)));
             if (dense > 0) {
                 owed -= dense;
@@ -2183,10 +2187,10 @@ void ai_collector(entt::entity self, MacroPos& p,
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
             for (int i = 0; i < kCommodityCount; ++i)
-                haul_between(bag->inv, depot_(*homeLm, ctx.mw),
+                haul_between(*bag, depot_(*homeLm, ctx.mw),
                              commodity_item_index(i), 1 << 30, 1e9f);
-            transfer_value_dense(bag->inv, depot_(*homeLm, ctx.mw),
-                                 inventory_value(bag->inv));
+            transfer_value_dense(*bag, depot_(*homeLm, ctx.mw),
+                                 inventory_value(*bag));
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
@@ -2344,18 +2348,17 @@ void ai_aggressive(MacroPos& p, ecs::MacroNpcRuntime& rt,
 // радиус целиком.
 constexpr float kMageHuntSightCells = 12.0f;
 
-entt::entity nearest_magika_mage(entt::entity self, const MacroPos& p,
-                                 const TickContext& ctx) {
+MacroHandle nearest_magika_mage(MacroHandle self, const MacroPos& p,
+                                const TickContext& ctx) {
     const SquadIndex& g = *ctx.squads;
     const CellBuckets& b = g.grid;
-    if (b.cols <= 0 || b.rows <= 0) return entt::null;
-    auto& reg = ctx.mw.world->reg;
-    const MacroStore& st = store_of(reg);
+    if (b.cols <= 0 || b.rows <= 0) return MacroHandle{};
+    const MacroStore& st = store_ctx(ctx);
     const int magika = faction_index("magika");
     const int cx0 = int(p.x) / b.cellSize;
     const int cy0 = int(p.y) / b.cellSize;
     float best = kMageHuntSightCells * kMageHuntSightCells + 1.0f;
-    entt::entity found = entt::null;
+    MacroHandle found{};
     for (int oy = -2; oy <= 2; ++oy) {
         for (int ox = -2; ox <= 2; ++ox) {
             const int gx = wrapi(cx0 + ox, b.cols);
@@ -2364,10 +2367,9 @@ entt::entity nearest_magika_mage(entt::entity self, const MacroPos& p,
                                     * end = b.cell_end(gx, gy);
                  it != end; ++it) {
                 // Бакет несёт индекс в порядке (шаг 3): слот — ключ к
-                // колонкам, энтити — для дверей, ещё стоящих на мосту.
+                // колонкам, хэндл — для дверей и долгой ссылки.
                 const SquadWalkEntry& sw = g.order[*it];
-                const entt::entity e = sw.e;
-                if (e == self) continue;
+                if (sw.slot == self.slot) continue;
                 if (st.dead[sw.slot] != 0) continue;
                 const auto& mcell = st.cell[sw.slot];
                 const auto* oc = &mcell;
@@ -2385,38 +2387,39 @@ entt::entity nearest_magika_mage(entt::entity self, const MacroPos& p,
                     float(ctx.mapW), float(ctx.mapH));
                 if (d >= best) continue;
                 best = d;
-                found = e;
+                found = handle_at(st, sw.slot);
             }
         }
     }
     return found;
 }
 
-void ai_mage_hunt(entt::entity self, MacroPos& p, ecs::MacroNpcRuntime& rt,
+void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                   ecs::Pools& pools, const TickContext& ctx) {
     if (ctx.squads && ctx.mw.world && ctx.mw.gs) {
-        const entt::entity prey = nearest_magika_mage(self, p, ctx);
-        if (prey != entt::null) {
-            auto& reg = ctx.mw.world->reg;
-            const auto& ecell = (*body_state<ecs::MacroCell>(reg, prey));
+        const MacroHandle prey = nearest_magika_mage(self, p, ctx);
+        MacroStore& st = store_ctx(ctx);
+        if (st.valid(prey)) {
+            const auto& ecell = st.cell[prey.slot];
             const MacroPos ep{float(ecs::cell_x(ecell, ctx.mapW)),
                               float(ecs::cell_y(ecell, ctx.mapW))};
             if (int(p.x) == int(ep.x) && int(p.y) == int(ep.y)) {
                 // Игрок в теле ведьмы: встреча принадлежит форс-двери
                 // игрока (main.cpp detect_forced_encounter), не тихому
                 // резолву — тот же гард, что у threat step.
-                if (reg.any_of<ecs::PlayerTag, ecs::PlayerSquadTag>(prey)) {
+                if (prey.slot == ctx.playerFlagSlot
+                    || prey.slot == ctx.playerSquadSlot) {
                     rt.visualSpeed = 0.0f;
                     return;
                 }
                 if (!ctx.allowAutoBattle) return;
                 const AutoBattleOutcome o = resolve_auto_battle(
-                    auto_battle_side_of(*ctx.mw.world, self),
-                    auto_battle_side_of(*ctx.mw.world, prey),
+                    auto_battle_side_of(st, self),
+                    auto_battle_side_of(st, prey),
                     Ambush::None, *ctx.rng);
                 settle_auto_battle(ctx.mw, self, prey, o);
                 rt.visualSpeed = 0.0f;
-                if (!macro_dead(reg, self)) {
+                if (!macro_dead(st, self)) {
                     rt.state = std::uint8_t(NS::Idle);
                     rt.stateTimer = std::int16_t(3 + rand_int(ctx, 5));
                 }
@@ -2460,19 +2463,17 @@ void ai_mage_hunt(entt::entity self, MacroPos& p, ecs::MacroNpcRuntime& rt,
 // строки анкеты. В вылете бьёт любой сквад СЛАБЕЕ себя (слово владельца) —
 // той же дверью встречи, что threat step; наевшись или улетев за радиус —
 // домой. Игрокова встреча — форс-двери игрока, как у всех.
-entt::entity nearest_weaker_squad(entt::entity self, const MacroPos& p,
-                                  float sightCells, const TickContext& ctx) {
+MacroHandle nearest_weaker_squad(MacroHandle self, const MacroPos& p,
+                                 float sightCells, const TickContext& ctx) {
     const SquadIndex& g = *ctx.squads;
     const CellBuckets& b = g.grid;
-    if (b.cols <= 0 || b.rows <= 0) return entt::null;
-    auto& reg = ctx.mw.world->reg;
-    const MacroStore& st = store_of(reg);
-    const float myPower =
-        squad_power(auto_battle_side_of(*ctx.mw.world, self));
+    if (b.cols <= 0 || b.rows <= 0) return MacroHandle{};
+    const MacroStore& st = store_ctx(ctx);
+    const float myPower = squad_power(auto_battle_side_of(st, self));
     const int cx0 = int(p.x) / b.cellSize;
     const int cy0 = int(p.y) / b.cellSize;
     float best = sightCells * sightCells + 1.0f;
-    entt::entity found = entt::null;
+    MacroHandle found{};
     for (int oy = -2; oy <= 2; ++oy) {
         for (int ox = -2; ox <= 2; ++ox) {
             const int gx = wrapi(cx0 + ox, b.cols);
@@ -2481,8 +2482,7 @@ entt::entity nearest_weaker_squad(entt::entity self, const MacroPos& p,
                                     * end = b.cell_end(gx, gy);
                  it != end; ++it) {
                 const SquadWalkEntry& sw = g.order[*it];
-                const entt::entity e = sw.e;
-                if (e == self) continue;
+                if (sw.slot == self.slot) continue;
                 if (st.dead[sw.slot] != 0) continue;
                 const auto& oc = st.cell[sw.slot];
                 const float d = torus_dist_sq(
@@ -2491,21 +2491,19 @@ entt::entity nearest_weaker_squad(entt::entity self, const MacroPos& p,
                     float(ecs::cell_y(oc, ctx.mapW)),
                     float(ctx.mapW), float(ctx.mapH));
                 if (d >= best) continue;
-                if (squad_power(auto_battle_side_of(st,
-                                                    MacroHandle{sw.slot,
-                                                        st.generation[sw.slot]}))
-                        >= myPower) {
+                if (squad_power(auto_battle_side_of(
+                        st, handle_at(st, sw.slot))) >= myPower) {
                     continue;   // добыча — только слабее
                 }
                 best = d;
-                found = e;
+                found = handle_at(st, sw.slot);
             }
         }
     }
     return found;
 }
 
-void ai_lair_sorties(entt::entity self, MacroPos& p,
+void ai_lair_sorties(MacroHandle self, MacroPos& p,
                      ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                      const TickContext& ctx) {
     // Логово самозалечивается: тело без дома объявляет домом место, где
@@ -2518,9 +2516,10 @@ void ai_lair_sorties(entt::entity self, MacroPos& p,
     // функции); тело без анкеты, если когда-то получит эту модель, кружит
     // дефолтной восьмёркой.
     float radius = 8.0f;
-    if (const auto* dc =
-            body_state<ecs::DesignCharacterTag>(ctx.mw.world->reg, self)) {
-        if (const DesignCharacterDef* row = design_character(dc->ordinal)) {
+    {
+        const ecs::DesignCharacterTag& dc =
+            store_ctx(ctx).designTag[self.slot];
+        if (const DesignCharacterDef* row = design_character(dc.ordinal)) {
             if (row->agenda.radiusCells > 0) {
                 radius = float(row->agenda.radiusCells);
             }
@@ -2531,26 +2530,27 @@ void ai_lair_sorties(entt::entity self, MacroPos& p,
         float(ctx.mapW), float(ctx.mapH)));
 
     if (ctx.squads && ctx.mw.world && ctx.mw.gs && fromLair < radius) {
-        const entt::entity prey =
+        const MacroHandle prey =
             nearest_weaker_squad(self, p, radius, ctx);
-        if (prey != entt::null) {
-            auto& reg = ctx.mw.world->reg;
-            const auto& ecell = (*body_state<ecs::MacroCell>(reg, prey));
+        MacroStore& st = store_ctx(ctx);
+        if (st.valid(prey)) {
+            const auto& ecell = st.cell[prey.slot];
             const MacroPos ep{float(ecs::cell_x(ecell, ctx.mapW)),
                               float(ecs::cell_y(ecell, ctx.mapW))};
             if (int(p.x) == int(ep.x) && int(p.y) == int(ep.y)) {
-                if (reg.any_of<ecs::PlayerTag, ecs::PlayerSquadTag>(prey)) {
+                if (prey.slot == ctx.playerFlagSlot
+                    || prey.slot == ctx.playerSquadSlot) {
                     rt.visualSpeed = 0.0f;
                     return;
                 }
                 if (!ctx.allowAutoBattle) return;
                 const AutoBattleOutcome o = resolve_auto_battle(
-                    auto_battle_side_of(*ctx.mw.world, self),
-                    auto_battle_side_of(*ctx.mw.world, prey),
+                    auto_battle_side_of(st, self),
+                    auto_battle_side_of(st, prey),
                     Ambush::SideA, *ctx.rng);
                 settle_auto_battle(ctx.mw, self, prey, o);
                 rt.visualSpeed = 0.0f;
-                if (!macro_dead(reg, self)) {
+                if (!macro_dead(st, self)) {
                     rt.state = std::uint8_t(NS::Idle);
                     rt.stateTimer = std::int16_t(5 + rand_int(ctx, 8));
                 }
@@ -2722,21 +2722,19 @@ float bravery_of(const ecs::NpcTraits* traits) {
     return b;
 }
 
-entt::entity nearest_hostile_squad(entt::entity self, const MacroPos& p,
-                                   const ecs::NPCKind& kind,
-                                   const TickContext& ctx) {
+MacroHandle nearest_hostile_squad(MacroHandle self, const MacroPos& p,
+                                  const ecs::NPCKind& kind,
+                                  const TickContext& ctx) {
     const SquadIndex& g = *ctx.squads;
     const CellBuckets& b = g.grid;
-    if (b.cols <= 0 || b.rows <= 0) return entt::null;
-    auto& reg = ctx.mw.world->reg;
-    const MacroStore& st = store_of(reg);
+    if (b.cols <= 0 || b.rows <= 0) return MacroHandle{};
+    const MacroStore& st = store_ctx(ctx);
     const char* myFaction = faction_id_for_index(kind.factionIdx);
     const int cx0 = int(p.x) / b.cellSize;
     const int cy0 = int(p.y) / b.cellSize;
-    const float sight =
-        squad_sight_cells(kind, body_state<ecs::MacroNpcRuntime>(reg, self));
+    const float sight = squad_sight_cells(kind, &st.runtime[self.slot]);
     float best = sight * sight + 1.0f;
-    entt::entity found = entt::null;
+    MacroHandle found{};
     for (int oy = -1; oy <= 1; ++oy) {
         for (int ox = -1; ox <= 1; ++ox) {
             const int gx = wrapi(cx0 + ox, b.cols);
@@ -2745,8 +2743,7 @@ entt::entity nearest_hostile_squad(entt::entity self, const MacroPos& p,
                                     * end = b.cell_end(gx, gy);
                  it != end; ++it) {
                 const SquadWalkEntry& sw = g.order[*it];
-                const entt::entity e = sw.e;
-                if (e == self) continue;
+                if (sw.slot == self.slot) continue;
                 const auto& oc = st.cell[sw.slot];
                 const auto& ok = st.kind[sw.slot];
                 const float d = torus_dist_sq(
@@ -2761,7 +2758,7 @@ entt::entity nearest_hostile_squad(entt::entity self, const MacroPos& p,
                     continue;
                 }
                 best = d;
-                found = e;
+                found = handle_at(st, sw.slot);
             }
         }
     }
@@ -2770,13 +2767,14 @@ entt::entity nearest_hostile_squad(entt::entity self, const MacroPos& p,
 
 // Returns true when the threat consumed this think (fled, pursued or
 // fought); the role behaviour then waits for a calmer half hour.
-bool squad_threat_step(entt::entity self, MacroPos& p,
+bool squad_threat_step(MacroHandle self, MacroPos& p,
                        const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                        ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.world || !ctx.squads || !ctx.mw.gs) return false;
 
-    const entt::entity enemy = nearest_hostile_squad(self, p, kind, ctx);
-    if (enemy == entt::null) {
+    const MacroHandle enemy = nearest_hostile_squad(self, p, kind, ctx);
+    MacroStore& st = store_ctx(ctx);
+    if (!st.valid(enemy)) {
         // Threat gone: a fleeing squad calms down and resumes its life.
         if (rt.state == std::uint8_t(NS::Fleeing)) {
             rt.state = std::uint8_t(NS::Idle);
@@ -2785,13 +2783,11 @@ bool squad_threat_step(entt::entity self, MacroPos& p,
         return false;
     }
 
-    auto& reg = ctx.mw.world->reg;
-    const auto& ecell = (*body_state<ecs::MacroCell>(reg, enemy));
+    const auto& ecell = st.cell[enemy.slot];
     const MacroPos ep{float(ecs::cell_x(ecell, ctx.mapW)),
                       float(ecs::cell_y(ecell, ctx.mapW))};
-    const float myPower = squad_power(auto_battle_side_of(*ctx.mw.world, self));
-    const float theirPower =
-        squad_power(auto_battle_side_of(*ctx.mw.world, enemy));
+    const float myPower = squad_power(auto_battle_side_of(st, self));
+    const float theirPower = squad_power(auto_battle_side_of(st, enemy));
 
     // The geometric meeting: same macro cell = the fight happens, resolved
     // by the ONE law and settled through the ONE ledger. An ambush is a
@@ -2802,36 +2798,36 @@ bool squad_threat_step(entt::entity self, MacroPos& p,
         // the meeting cell and the door opens the pre-battle screen — never
         // the silent auto-resolve. Both flags, because possession moves
         // PlayerTag while PlayerSquadTag stays home (components.h).
-        if (reg.any_of<ecs::PlayerTag, ecs::PlayerSquadTag>(enemy)) {
+        if (enemy.slot == ctx.playerFlagSlot
+            || enemy.slot == ctx.playerSquadSlot) {
             rt.visualSpeed = 0.0f;
             return true;
         }
         if (!ctx.allowAutoBattle) return false;
-        auto* ert = body_state<ecs::MacroNpcRuntime>(reg, enemy);
+        ecs::MacroNpcRuntime* ert = &st.runtime[enemy.slot];
         const bool ambush =
             rt.state == std::uint8_t(NS::Chasing) && ert
             && ert->state != std::uint8_t(NS::Chasing)
             && ert->state != std::uint8_t(NS::Fleeing);
         const AutoBattleOutcome o = resolve_auto_battle(
-            auto_battle_side_of(*ctx.mw.world, self),
-            auto_battle_side_of(*ctx.mw.world, enemy),
+            auto_battle_side_of(st, self),
+            auto_battle_side_of(st, enemy),
             ambush ? Ambush::SideA : Ambush::None, *ctx.rng);
         settle_auto_battle(ctx.mw, self, enemy, o);
         rt.visualSpeed = 0.0f;
-        if (!macro_dead(reg, self)) {
+        if (!macro_dead(st, self)) {
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(3 + rand_int(ctx, 5));
         }
         // A beaten-but-alive enemy runs; distance is what prevents an
         // immediate rematch, and the winner's next think re-evaluates.
-        if (ert && reg.valid(enemy) && !macro_dead(reg, enemy)) {
+        if (st.valid(enemy) && !macro_dead(st, enemy)) {
             ert->state = std::uint8_t(NS::Fleeing);
         }
         return true;
     }
 
-    const float bravery =
-        bravery_of(body_state<ecs::NpcTraits>(reg, self));
+    const float bravery = bravery_of(&st.traits[self.slot]);
     if (theirPower > myPower * bravery) {
         // Run directly away, torus-folded, a screen's worth of cells out.
         float dx = p.x - ep.x, dy = p.y - ep.y;
@@ -2879,34 +2875,32 @@ bool squad_threat_step(entt::entity self, MacroPos& p,
 
 // Цена душ сквада по строкам найма — та же таблица, что жалованье и threat
 // (лидер — субъект, как в законе хлеба: 0 бойцов = 0 запаха богатства).
-static std::uint32_t roster_worth(ecs::World& w, entt::entity e) {
+static std::uint32_t roster_worth(const MacroStore& st, MacroHandle e) {
     std::uint32_t worth = 0;
-    if (const auto* bag = body_state<ecs::NpcInventory>(w.reg, e)) {
-        for (int i = bag->inv.creature_first(); i < kMaxInventorySlots; ++i) {
-            const ItemRef& r = bag->inv.slots[std::size_t(i)];
-            const std::uint16_t kind =
-                std::uint16_t(creature_of_world_row(r.def));
-            if (!valid_npc_kind(kind)) continue;
-            worth += std::uint32_t(
-                std::max(0, npc_def(NPCType(kind)).hireGold))
-                * std::uint32_t(r.count);
-        }
+    const Inventory& bag = st.inventory[e.slot].inv;
+    for (int i = bag.creature_first(); i < kMaxInventorySlots; ++i) {
+        const ItemRef& r = bag.slots[std::size_t(i)];
+        const std::uint16_t kind =
+            std::uint16_t(creature_of_world_row(r.def));
+        if (!valid_npc_kind(kind)) continue;
+        worth += std::uint32_t(
+            std::max(0, npc_def(NPCType(kind)).hireGold))
+            * std::uint32_t(r.count);
     }
     return worth;
 }
 
-void scent_squad_deposit(entt::entity e, const MacroPos& p,
+void scent_squad_deposit(MacroHandle self, const MacroPos& p,
                          const ecs::NPCKind& kind, const TickContext& ctx) {
     if (!ctx.mw.gs || !ctx.mw.world) return;
     ScentField& sf = ctx.mw.gs->scent;
     const int f = int(kind.factionIdx);
     if (f < 0 || f >= sf.factions) return;   // kNoFaction не следит
-    const float power =
-        squad_power(auto_battle_side_of(*ctx.mw.world, e));
-    std::uint32_t worth = roster_worth(*ctx.mw.world, e);
-    if (const auto* bag = body_state<ecs::NpcInventory>(ctx.mw.world->reg, e)) {
-        worth += std::uint32_t(std::max(0, inventory_value(bag->inv)));
-    }
+    const MacroStore& st = store_ctx(ctx);
+    const float power = squad_power(auto_battle_side_of(st, self));
+    std::uint32_t worth = roster_worth(st, self);
+    worth += std::uint32_t(
+        std::max(0, inventory_value(st.inventory[self.slot].inv)));
     scent_deposit(sf, f, wrap_axis(int(p.x), sf.w), wrap_axis(int(p.y), sf.h),
                   power <= 0.0f ? 0u : std::uint32_t(power), worth);
 }
@@ -2920,26 +2914,23 @@ void scent_squad_deposit(entt::entity e, const MacroPos& p,
 // того, и другого. Петля демо «убегай от бандитов к страже».
 void scent_player_deposit(const TickContext& ctx) {
     if (!ctx.mw.world) return;
-    auto& reg = ctx.mw.world->reg;
-    const auto put = [&](entt::entity e) {
-        if (e == entt::null || !reg.valid(e)) return;
-        if (macro_dead(reg, e)) return;
-        if (!reg.all_of<ecs::MacroSlot>(e)) return;
-        const auto& c = (*body_state<ecs::MacroCell>(reg, e));
+    const MacroStore& st = store_ctx(ctx);
+    const auto put = [&](std::uint16_t slot) {
+        if (slot >= kMacroEntityCap || st.alive[slot] == 0) return;
+        const MacroHandle h = handle_at(st, slot);
+        if (macro_dead(st, h)) return;
+        const auto& c = st.cell[slot];
         const MacroPos p{float(ecs::cell_x(c, ctx.mapW)),
                          float(ecs::cell_y(c, ctx.mapW))};
-        scent_squad_deposit(e, p, (*body_state<ecs::NPCKind>(reg, e)), ctx);
+        scent_squad_deposit(h, p, st.kind[slot], ctx);
     };
-    const entt::entity flag = player_flag_entity(*ctx.mw.world);
-    put(flag);
-    for (auto e : reg.view<ecs::PlayerSquadTag>()) {
-        if (e != flag) put(e);
-    }
+    put(ctx.playerFlagSlot);
+    if (ctx.playerSquadSlot != ctx.playerFlagSlot) put(ctx.playerSquadSlot);
 }
 
 // (Крутилки охоты — kHuntBoldShift и kHuntScentFloor — в npc_ai.h: их
 // читает тест и вертит дубль-прогон.)
-bool scent_hunt_step(entt::entity self, MacroPos& p,
+bool scent_hunt_step(MacroHandle self, MacroPos& p,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                      ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.gs || !ctx.mw.world) return false;
@@ -2953,7 +2944,7 @@ bool scent_hunt_step(entt::entity self, MacroPos& p,
     if (hostile == 0ull) return false;
 
     const float myPower =
-        squad_power(auto_battle_side_of(*ctx.mw.world, self));
+        squad_power(auto_battle_side_of(store_ctx(ctx), self));
     if (myPower <= 0.0f) return false;
     const std::uint32_t fearCap =
         (std::uint32_t(myPower) >> kScentQuantShift) << kHuntBoldShift;
@@ -3011,10 +3002,10 @@ namespace {
 // to the current waypoint, arrive, take the next, loop. A squad ordered onto
 // a route with no route wanders — a degraded order is a visible NPC, not a
 // frozen one.
-void ai_waypoints(entt::entity e, MacroPos& p, ecs::MacroNpcRuntime& rt,
+void ai_waypoints(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
                   ecs::Pools& pools, const TickContext& ctx) {
     ecs::SquadOrders* orders = ctx.mw.world
-        ? body_state<ecs::SquadOrders>(ctx.mw.world->reg, e) : nullptr;
+        ? &store_ctx(ctx).orders[e.slot] : nullptr;
     if (!orders || orders->waypointCount == 0) {
         ai_wanderer(p, rt, pools, ctx);
         return;
@@ -3064,15 +3055,12 @@ void ai_waypoints(entt::entity e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 // и только потом мобная строка лидера — та самая течь.
 // С их сносом (порция Б-6, «всё через универсальную систему анкет») эта
 // функция умирает целиком, а не переезжает.
-AIBehaviour untyped_squad_behaviour(entt::registry& reg, entt::entity e,
+AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
                                      const ecs::NPCKind& kind) {
-    if (const auto* orders = body_state<ecs::SquadOrders>(reg, e)) {
-        if (orders->waypointCount > 0) return AIBehaviour::Waypoints;
-    }
-    if (const auto* dc = body_state<ecs::DesignCharacterTag>(reg, e)) {
-        if (const DesignCharacterDef* row = design_character(dc->ordinal)) {
-            return row->behaviour;
-        }
+    if (st.orders[h.slot].waypointCount > 0) return AIBehaviour::Waypoints;
+    if (const DesignCharacterDef* row =
+            design_character(st.designTag[h.slot].ordinal)) {
+        return row->behaviour;
     }
     return kNpcTypeDefs[kind.type].ai;
 }
@@ -3108,7 +3096,7 @@ bool can_stand_at(const TickContext& ctx, int x, int y) {
 }
 
 
-void settle_exhaustion(entt::entity e, const MacroPos& p,
+void settle_exhaustion(MacroHandle e, const MacroPos& p,
                        ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                        bool canCamp, const TickContext& ctx) {
     if (int(hp.sp) >= 0) return;
@@ -3130,8 +3118,9 @@ void settle_exhaustion(entt::entity e, const MacroPos& p,
     if (bite <= 0) return;
     hp.hp -= bite;
     if (hp.hp <= 0 && ctx.mw.world && ctx.mw.gs) {
-        settle_leader_fraction(*ctx.mw.world, e, 0.0f);
-        drain_dead_leader_squads(*ctx.mw.world, ctx.mw.gs->deserterPool);
+        MacroStore& st = store_ctx(ctx);
+        settle_leader_fraction(st, e, 0.0f);
+        drain_dead_leader_squads(st, ctx.mw.gs->deserterPool);
     }
 }
 
@@ -3142,7 +3131,7 @@ void settle_exhaustion(entt::entity e, const MacroPos& p,
 // разбирался ВЕТКОЙ ВНУТРИ ai_gatherer — пятой машиной внутри первой.
 // Теперь порядок обратный и единственный: сперва ТИП (макро-колонка), и лишь
 // нетипизированный сквад падает на каталог тел.
-void dispatch(entt::entity e, MacroPos& p,
+void dispatch(MacroHandle e, MacroPos& p,
               const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx) {
     // Каждый думающий сквад следит — писатель полей следов один (CANON S10).
@@ -3158,7 +3147,7 @@ void dispatch(entt::entity e, MacroPos& p,
         case SquadType::Collector: ai_collector(e, p, rt, pools, ctx);    return;
         case SquadType::ByKind:  break;   // ниже — течь, названная по имени
     }
-    switch (untyped_squad_behaviour(ctx.mw.world->reg, e, kind)) {
+    switch (untyped_squad_behaviour(store_ctx(ctx), e, kind)) {
         // ПОСЛЕДНИЕ ДВЕ МАКРО-РОЛИ, ЕЩЁ ЖИВУЩИЕ В КАТАЛОГЕ ТЕЛ (CANON S2):
         // `Gatherer` на строке Peasant и `Trader` на строке Merchant. Они
         // здесь не потому, что нетипизированный сквад должен добывать, а
@@ -4831,14 +4820,13 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
     // forced-encounter door (squad_threat_step stops short of auto-battling
     // a player-controlled squad). The Dead are no squads at all.
     MacroStore& st = store_of(w);
-    auto view = w.reg.view<ecs::MacroSlot>();
-    // ОДИН проход по view — в порядок закона (squad_walk.h), потом count и
-    // scatter идут по собранному: содержимое бакета отсортировано по
-    // ординалу, и читатели «первого подходящего» (threat step, охота)
-    // перестают зависеть от внутренностей EnTT. Скрэтч — член, пересборка
-    // на свип по-прежнему аллокаций не делает.
+    // Население — слоты store (1е): порядок закона (squad_walk.h), потом
+    // count и scatter идут по собранному — содержимое бакета отсортировано
+    // по ординалу, и читатели «первого подходящего» (threat step, охота)
+    // не зависят от кишки хранилища. Скрэтч — член, пересборка на свип
+    // по-прежнему аллокаций не делает.
     collect_squads_by_ordinal(
-        w.reg, st, view, g.order,
+        st, g.order,
         [&](std::uint16_t slot) { return st.dead[slot] == 0; });
     for (const SquadWalkEntry& s : g.order) {
         const auto& c = st.cell[s.slot];
@@ -4876,6 +4864,24 @@ static TickContext make_tick_context(MacroWorld& mw,
         if (const ecs::MacroCell* pc = player_flag_cell(*mw.world)) {
             ctx.playerX = float(ecs::cell_x(*pc, ctx.mapW));
             ctx.playerY = float(ecs::cell_y(*pc, ctx.mapW));
+        }
+        // Store свипа — адресом в конверте: поведения читают колонки, не
+        // спрашивая ctx реестра на каждом think (1е).
+        if (!ctx.mw.store) ctx.mw.store = &store_of(*mw.world);
+        // Слоты игрока — резолв ОДИН раз на свип; до смерти тегов (шаг 2
+        // 1е) — из тегов, после источником станет GameState.
+        auto& reg = mw.world->reg;
+        for (auto e : reg.view<ecs::PlayerTag>()) {
+            if (const auto* ms = reg.try_get<ecs::MacroSlot>(e)) {
+                ctx.playerFlagSlot = ms->slot;
+            }
+            break;
+        }
+        for (auto e : reg.view<ecs::PlayerSquadTag>()) {
+            if (const auto* ms = reg.try_get<ecs::MacroSlot>(e)) {
+                ctx.playerSquadSlot = ms->slot;
+            }
+            break;
         }
     }
     ctx.squads  = &runtime.squadIndex;
@@ -4924,10 +4930,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     if (!mw.gs || !mw.world) return;   // no world, no thinking (fail-closed)
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
-    auto& reg = w.reg;
     MacroStore& st = store_of(w);
-    auto view = reg.view<ecs::MacroSlot>(
-        entt::exclude<ecs::PlayerTag, ecs::PlayerSquadTag>);  // never AI-drive the player: the flag OR his own squad
 
     build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
 
@@ -4940,13 +4943,17 @@ void tick_macro_npc_ai(MacroWorld& mw,
     scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
     // Свип делит ОДИН RNG на всех — порядок обхода есть закон мира
-    // (squad_walk.h): по ординалу, не по кишке EnTT.
+    // (squad_walk.h): по ординалу, не по кишке хранилища. Игрока свип не
+    // водит НИКОГДА — ни флажок, ни его родной сквад (слоты из ctx).
     collect_squads_by_ordinal(
-        reg, st, view, runtime.sweepOrder,
-        [&](std::uint16_t slot) { return st.dead[slot] == 0; });
+        st, runtime.sweepOrder,
+        [&](std::uint16_t slot) {
+            return st.dead[slot] == 0 && slot != ctx.playerFlagSlot
+                && slot != ctx.playerSquadSlot;
+        });
     for (const SquadWalkEntry& sw : runtime.sweepOrder) {
-        const entt::entity e = sw.e;
-        const std::uint16_t slot = slot_of(reg, e);
+        const std::uint16_t slot = sw.slot;
+        const MacroHandle h = handle_at(st, slot);
         auto& cell = st.cell[slot];
         auto& kind = st.kind[slot];
         auto& rt   = st.runtime[slot];
@@ -4964,7 +4971,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
         if (st.dead[slot] != 0) continue;
         const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
         if (gate == ThinkGate::Dead) continue;
-        refresh_overload_cost(rt, body_state<ecs::NpcInventory>(reg, e));
+        refresh_overload_cost(rt, &st.inventory[slot]);
         // Decode → think in fractional scratch → encode (the scale split):
         // the STORE is one whole-cell number; the march's own float math
         // lives only on this think's stack.
@@ -4972,8 +4979,8 @@ void tick_macro_npc_ai(MacroWorld& mw,
                    float(ecs::cell_y(cell, gs.mapW))};
         const float x0 = p.x, y0 = p.y;
         if (gate == ThinkGate::Think)
-            dispatch(e, p, kind, rt, hp, ctx);
-        settle_march_rhythm(e, p, rt, hp, p.x != x0 || p.y != y0, ctx);
+            dispatch(h, p, kind, rt, hp, ctx);
+        settle_march_rhythm(h, p, rt, hp, p.x != x0 || p.y != y0, ctx);
         cell.idx = ecs::cell_index(int(p.x), int(p.y), gs.mapW);
     }
 
@@ -5077,17 +5084,14 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     }
     if (runtime.pendingSweeps <= 0) return result;
 
-    auto& reg = w.reg;
     MacroStore& st = store_of(w);
-    auto view = reg.view<ecs::MacroSlot>(
-        entt::exclude<ecs::PlayerTag, ecs::PlayerSquadTag>);  // never AI-drive the player: the flag OR his own squad
 
     build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
 
     // The same ONE assembly as the map-view driver. This used to be a paste
     // that had drifted (the deposits epitaph now lives on TickContext itself,
-    // npc_ai.h); the two drivers may differ in HOW they walk the entities —
-    // never in what world the entities think about (CANON.md S2).
+    // npc_ai.h); the two drivers may differ in HOW they walk the slots —
+    // never in what world the squads think about (CANON.md S2).
     if (mw.nav) nav_ensure(mw, *mw.nav);
     scent_ensure(gs.scent, gs.mapW, gs.mapH);
     TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
@@ -5095,10 +5099,14 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
 
     // Тот же закон порядка, что у карт-драйвера (squad_walk.h): курсор —
     // позиция В ЭТОМ порядке. Лист собран на вызов; умерший внутри свипа
-    // отсеивается проверкой Dead ниже, ровно как раньше.
+    // отсеивается проверкой Dead ниже, ровно как раньше. Игрока свип не
+    // водит никогда — ни флажок, ни родной сквад (слоты из ctx).
     collect_squads_by_ordinal(
-        reg, st, view, runtime.sweepOrder,
-        [&](std::uint16_t slot) { return st.dead[slot] == 0; });
+        st, runtime.sweepOrder,
+        [&](std::uint16_t slot) {
+            return st.dead[slot] == 0 && slot != ctx.playerFlagSlot
+                && slot != ctx.playerSquadSlot;
+        });
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {
@@ -5106,8 +5114,8 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
 
         for (std::size_t i = runtime.sweepCursor;
              i < runtime.sweepOrder.size(); ++i) {
-            const entt::entity e = runtime.sweepOrder[i].e;
-            const std::uint16_t slot = slot_of(reg, e);
+            const std::uint16_t slot = runtime.sweepOrder[i].slot;
+            const MacroHandle h = handle_at(st, slot);
 
             auto& cell = st.cell[slot];
             auto& kind = st.kind[slot];
@@ -5117,16 +5125,15 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                 && st.dead[slot] == 0) {   // may have died this sweep
                 const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
                 if (gate != ThinkGate::Dead) {
-                    refresh_overload_cost(rt,
-                                          body_state<ecs::NpcInventory>(reg, e));
+                    refresh_overload_cost(rt, &st.inventory[slot]);
                     // Decode → fractional scratch → encode (the scale split).
                     MacroPos p{float(ecs::cell_x(cell, gs.mapW)),
                                float(ecs::cell_y(cell, gs.mapW))};
                     const float x0 = p.x, y0 = p.y;
                     if (gate == ThinkGate::Think) {
-                        dispatch(e, p, kind, rt, hp, ctx);
+                        dispatch(h, p, kind, rt, hp, ctx);
                     }
-                    settle_march_rhythm(e, p, rt, hp,
+                    settle_march_rhythm(h, p, rt, hp,
                                         p.x != x0 || p.y != y0, ctx);
                     cell.idx = ecs::cell_index(int(p.x), int(p.y), gs.mapW);
                 }
