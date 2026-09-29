@@ -45,8 +45,8 @@ std::string temp_path(const char* name) {
     return p + name;
 }
 
-entt::entity find_by_ordinal(ecs::World& w, std::uint32_t ordinal) {
-    return macro_entity_by_spawn_id(w, ordinal);
+MacroHandle find_by_ordinal(ecs::World& w, std::uint32_t ordinal) {
+    return macro_handle_by_spawn_id(sm::store_of(w), ordinal);
 }
 
 void test_snapshot_round_trips_the_living_map() {
@@ -73,8 +73,8 @@ void test_snapshot_round_trips_the_living_map() {
     specA.waypointCount = 2;
     specA.waypoints[0] = 24; specA.waypoints[1] = 20;
     specA.waypoints[2] = 20; specA.waypoints[3] = 20;
-    const entt::entity a = spawn_squad(gs, w, sm::store_of(w), absent, specA);
-    CHECK_OR_RETURN(a != entt::null, "squad A spawned");
+    const MacroHandle a = spawn_squad(gs, w, sm::store_of(w), absent, specA);
+    CHECK_OR_RETURN(wStore_->valid(a), "squad A spawned");
 
     // Squad B: a lone peasant — a squad of one, its own leader.
     SquadSpec specB{};
@@ -83,35 +83,34 @@ void test_snapshot_round_trips_the_living_map() {
     specB.x = 40;
     specB.y = 40;
     specB.factionIndex = faction_index("timaert");
-    const entt::entity b = spawn_squad(gs, w, sm::store_of(w), absent, specB);
-    CHECK_OR_RETURN(b != entt::null, "squad B spawned");
+    const MacroHandle b = spawn_squad(gs, w, sm::store_of(w), absent, specB);
+    CHECK_OR_RETURN(wStore_->valid(b), "squad B spawned");
 
-    const std::uint32_t ordinalA = (*sm::body_state<ecs::MacroSpawnId>(w.reg, a)).index;
-    const std::uint32_t ordinalB = (*sm::body_state<ecs::MacroSpawnId>(w.reg, b)).index;
+    const std::uint32_t ordinalA = wStore_->spawnId[a.slot].index;
+    const std::uint32_t ordinalB = wStore_->spawnId[b.slot].index;
 
     // Life happened: A campaigned (xp, debt, a march), B was killed through
     // the tracked-death shape (hp=0 + Dead) the whole game uses.
-    auto& rtA = (*sm::body_state<ecs::MacroNpcRuntime>(w.reg, a));
+    auto& rtA = wStore_->runtime[a.slot];
     rtA.xp = 777;
-    (*sm::body_state<ecs::Pools>(w.reg, a)).sp = -15;
-    (*sm::body_state<ecs::MacroCell>(w.reg, a)).idx = ecs::cell_index(25, 21, 64);
-    (*sm::body_state<ecs::Pools>(w.reg, b)).hp = 0.0f;
-    sm::macro_mark_dead(w.reg, b);
+    wStore_->pools[a.slot].sp = -15;
+    wStore_->cell[a.slot].idx = ecs::cell_index(25, 21, 64);
+    wStore_->pools[b.slot].hp = 0.0f;
+    sm::macro_mark_dead(*wStore_, b);
     // …and the player POSSESSES lord A (5б): истина — колонка playerFlag
     // анкеты, биты GameState — кэш, флажок двигает дверь переноса; загрузка
     // обязана вернуть флажок на ТОГО ЖЕ лорда (SAVE-5: второй склад «кем
     // управляю» вне снимка мёртв).
-    sm::transfer_player_flag(sm::store_of(w), gs.playerFlagBits,
-                             sm::handle_of(w.reg, a));
+    sm::transfer_player_flag(sm::store_of(w), gs.playerFlagBits, a);
     // A bandit chief is a NAMED character (v90): born OWNING his sheet.
     // His campaign diverges it from the birth roll — the owner's ММОРПГ
     // point is that exactly this divergence survives the save.
-    CHECK_OR_RETURN(owned_sheet(w, a) != nullptr,
+    CHECK_OR_RETURN(owned_sheet(*wStore_, a) != nullptr,
                     "a named kind is born owning his sheet");
-    owned_sheet(w, a)->attributes[AttributeId::End] = 13;
+    owned_sheet(*wStore_, a)->attributes[AttributeId::End] = 13;
     // A peasant crew is TRANSIENT: no component, nothing stored — its
     // generic sheet derives from its row (the negative control).
-    CHECK(owned_sheet(w, b) == nullptr,
+    CHECK(owned_sheet(*wStore_, b) == nullptr,
           "a transient crew owns no sheet");
 
     // Snapshot -> save -> load -> restore, through the REAL save file.
@@ -143,52 +142,51 @@ void test_snapshot_round_trips_the_living_map() {
     restore_macro_ecs(records2, w2, gs2);
     resolve_player_handles_after_load(gs2, *w2Store_);
 
-    const entt::entity a2 = find_by_ordinal(w2, ordinalA);
-    CHECK_OR_RETURN(a2 != entt::null, "leader A restored under his ordinal");
-    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(w2.reg, a2)).xp == 777,
+    const MacroHandle a2 = find_by_ordinal(w2, ordinalA);
+    CHECK_OR_RETURN(w2Store_->valid(a2), "leader A restored under his ordinal");
+    CHECK(w2Store_->runtime[a2.slot].xp == 777,
           "the leader's campaigns (xp) survive the save");
-    CHECK((*sm::body_state<ecs::Pools>(w2.reg, a2)).sp == -15,
+    CHECK(w2Store_->pools[a2.slot].sp == -15,
           "the leader's exhaustion debt survives the save");
-    CHECK(ecs::cell_x((*sm::body_state<ecs::MacroCell>(w2.reg, a2)), 64) == 25
-              && ecs::cell_y((*sm::body_state<ecs::MacroCell>(w2.reg, a2)), 64) == 21,
+    CHECK(ecs::cell_x(w2Store_->cell[a2.slot], 64) == 25
+              && ecs::cell_y(w2Store_->cell[a2.slot], 64) == 21,
           "the march stands - the cell is the saved one, not the spawn one");
-    CHECK((*sm::body_state<ecs::NpcLevel>(w2.reg, a2)).value == 5, "the level survives");
-    CHECK(creature_heads((*sm::body_state<ecs::NpcInventory>(w2.reg, a2)).inv) == 2,
+    CHECK(w2Store_->level[a2.slot].value == 5, "the level survives");
+    CHECK(creature_heads(w2Store_->inventory[a2.slot].inv) == 2,
           "the roster rows survive");
-    const auto* orders2 = sm::body_state<ecs::SquadOrders>(w2.reg, a2);
-    CHECK(orders2 != nullptr && orders2->waypointCount == 2,
+    CHECK(w2Store_->orders[a2.slot].waypointCount == 2,
           "the squad's route survives");
-    CHECK(!sm::macro_dead(w2.reg, a2), "the living leader is not dead");
+    CHECK(!sm::macro_dead(*w2Store_, a2), "the living leader is not dead");
     // The flag rode the snapshot honestly and landed on the SAME lord — and
     // on nobody else (the negative control: B carried no flag and must not
     // grow one; a restore that stamps everyone would also pass a bare
     // "A has it" check).
-    CHECK(player_flag_handle(gs2) == sm::handle_of(w2.reg, a2),
+    CHECK(player_flag_handle(gs2) == a2,
           "the possessed lord keeps the player flag across the save");
-    CHECK_OR_RETURN(owned_sheet(w2, a2) != nullptr,
+    CHECK_OR_RETURN(owned_sheet(*w2Store_, a2) != nullptr,
                     "the named chief still OWNS his sheet after the save");
-    CHECK((*sm::body_state<CharacterSheet>(w2.reg, a2)).attributes.of(AttributeId::End)
-              == 13,
+    CHECK(w2Store_->sheet[a2.slot].attributes.of(AttributeId::End) == 13,
           "…and his campaign's divergence from the birth roll survived");
-    const entt::entity b2pre = find_by_ordinal(w2, ordinalB);
-    CHECK(b2pre != entt::null && owned_sheet(w2, b2pre) == nullptr,
+    const MacroHandle b2pre = find_by_ordinal(w2, ordinalB);
+    CHECK(w2Store_->valid(b2pre)
+              && owned_sheet(*w2Store_, b2pre) == nullptr,
           "the transient crew still stores nothing (owned_sheet law)");
     CHECK(w2Store_->valid(player_flag_handle(gs2)),
           "exactly one player flag restored — the handle is live");
 
-    const entt::entity b2 = find_by_ordinal(w2, ordinalB);
-    CHECK_OR_RETURN(b2 != entt::null, "the dead leader is still ON the map");
-    CHECK(sm::macro_dead(w2.reg, b2)
-              && (*sm::body_state<ecs::Pools>(w2.reg, b2)).hp == 0.0f,
+    const MacroHandle b2 = find_by_ordinal(w2, ordinalB);
+    CHECK_OR_RETURN(w2Store_->valid(b2), "the dead leader is still ON the map");
+    CHECK(sm::macro_dead(*w2Store_, b2)
+              && w2Store_->pools[b2.slot].hp == 0.0f,
           "the KILLED lord stays dead across the save");
 
     // ── Ordinals are for life (19.24). Remove the HIGHEST-ordinal squad
     // entirely — under the old max-over-living issuer the next spawn re-took
     // exactly that ordinal; the persistent counter must never.
     const std::uint32_t highest = ordinalA > ordinalB ? ordinalA : ordinalB;
-    const entt::entity doomed = find_by_ordinal(w2, highest);
-    CHECK_OR_RETURN(doomed != entt::null, "the highest-ordinal squad exists");
-    w2.reg.destroy(doomed);
+    const MacroHandle doomed = find_by_ordinal(w2, highest);
+    CHECK_OR_RETURN(w2Store_->valid(doomed), "the highest-ordinal squad exists");
+    sm::store_death(*w2Store_, doomed);
 
     SquadSpec specC{};
     specC.leaderType = NPCType::Bandit;
@@ -196,9 +194,9 @@ void test_snapshot_round_trips_the_living_map() {
     specC.x = 10;
     specC.y = 10;
     specC.factionIndex = faction_index("bandits");
-    const entt::entity c = spawn_squad(gs2, w2, sm::store_of(w2), absent, specC);
-    CHECK_OR_RETURN(c != entt::null, "a new squad spawned after the load");
-    CHECK((*sm::body_state<ecs::MacroSpawnId>(w2.reg, c)).index > highest,
+    const MacroHandle c = spawn_squad(gs2, w2, sm::store_of(w2), absent, specC);
+    CHECK_OR_RETURN(w2Store_->valid(c), "a new squad spawned after the load");
+    CHECK(w2Store_->spawnId[c.slot].index > highest,
           "a dead man's ordinal is NEVER reissued - identity is for life");
 
     std::remove(path.c_str());
@@ -236,11 +234,12 @@ void test_resnapshot_is_byte_identical() {
     specA.members.push(make_soldier(std::uint8_t(NPCType::Guard), 3, 1001u));
     specA.waypointCount = 1;
     specA.waypoints[0] = 24; specA.waypoints[1] = 20;
-    const entt::entity a = spawn_squad(gs, w, sm::store_of(w), absent, specA);
-    CHECK_OR_RETURN(a != entt::null, "squad A spawned");
-    (*sm::body_state<ecs::MacroNpcRuntime>(w.reg, a)).xp = 777;
-    CHECK_OR_RETURN(owned_sheet(w, a) != nullptr, "named lord owns his sheet");
-    owned_sheet(w, a)->attributes[AttributeId::End] = 13;
+    const MacroHandle a = spawn_squad(gs, w, sm::store_of(w), absent, specA);
+    CHECK_OR_RETURN(wStore_->valid(a), "squad A spawned");
+    wStore_->runtime[a.slot].xp = 777;
+    CHECK_OR_RETURN(owned_sheet(*wStore_, a) != nullptr,
+                    "named lord owns his sheet");
+    owned_sheet(*wStore_, a)->attributes[AttributeId::End] = 13;
 
     SquadSpec specB{};
     specB.leaderType = NPCType::Peasant;
@@ -248,10 +247,10 @@ void test_resnapshot_is_byte_identical() {
     specB.x = 40;
     specB.y = 40;
     specB.factionIndex = faction_index("timaert");
-    const entt::entity b = spawn_squad(gs, w, sm::store_of(w), absent, specB);
-    CHECK_OR_RETURN(b != entt::null, "squad B spawned");
-    (*sm::body_state<ecs::Pools>(w.reg, b)).hp = 0.0f;
-    sm::macro_mark_dead(w.reg, b);
+    const MacroHandle b = spawn_squad(gs, w, sm::store_of(w), absent, specB);
+    CHECK_OR_RETURN(wStore_->valid(b), "squad B spawned");
+    wStore_->pools[b.slot].hp = 0.0f;
+    sm::macro_mark_dead(*wStore_, b);
 
     const std::vector<MacroNpcRecord> snap1 = snapshot_macro_ecs(w);
     CHECK_OR_RETURN(snap1.size() == 2, "the snapshot names both squads");
@@ -275,10 +274,10 @@ void test_resnapshot_is_byte_identical() {
 
     // Негативный контроль, и он утверждается сам: детектор обязан ВИДЕТЬ
     // дельту — иначе зелёный memcmp выше не доказывает ничего.
-    const entt::entity a2 = find_by_ordinal(
-        w2, (*sm::body_state<ecs::MacroSpawnId>(w.reg, a)).index);
-    CHECK_OR_RETURN(a2 != entt::null, "lord A restored for the control");
-    (*sm::body_state<ecs::MacroNpcRuntime>(w2.reg, a2)).xp += 1;
+    const MacroHandle a2 = find_by_ordinal(
+        w2, wStore_->spawnId[a.slot].index);
+    CHECK_OR_RETURN(w2Store_->valid(a2), "lord A restored for the control");
+    w2Store_->runtime[a2.slot].xp += 1;
     const std::vector<MacroNpcRecord> snap3 = snapshot_macro_ecs(w2);
     int controlDiffs = 0;
     for (std::size_t i = 0; i < snap3.size(); ++i) {

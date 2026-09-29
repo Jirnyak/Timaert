@@ -51,14 +51,11 @@ void collect(void* user, const BattleFact& f) {
 
 // A macro squad: leader entity + roster records, the shape every macro body
 // has (squad == leader, CANON S4).
-entt::entity squad(ecs::World& w, NPCType leaderType, const char* factionId,
-                   int level, int members, std::uint32_t spawnIndex) {
-    auto& reg = w.reg;
+sm::MacroHandle squad(ecs::World& w, NPCType leaderType,
+                      const char* factionId,
+                      int level, int members, std::uint32_t spawnIndex) {
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const entt::entity e = reg.create();
-    reg.emplace<ecs::MacroSlot>(e, h.slot);
-    reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(leaderType),
                                    std::uint16_t(faction_index(factionId))};
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(level)};
@@ -70,17 +67,18 @@ entt::entity squad(ecs::World& w, NPCType leaderType, const char* factionId,
             make_soldier(std::uint16_t(NPCType::Merchant), level,
                          std::uint32_t(spawnIndex * 100u + std::uint32_t(i))));
     }
-    return e;
+    return h;
 }
 
 // An outcome that kills the whole enemy side: every roster row plus the
 // leader. Hand-built so the test states the law, not the resolver's dice.
-AutoBattleOutcome wipe_of(ecs::World& w, entt::entity loser, bool loserIsB) {
+AutoBattleOutcome wipe_of(ecs::World& w, sm::MacroHandle loser,
+                          bool loserIsB) {
     AutoBattleOutcome o{};
     o.winner = loserIsB ? 0 : 1;
     auto& cas = loserIsB ? o.casualtiesB : o.casualtiesA;
     for (const CreatureHead r :
-         creature_heads_range((*sm::body_state<ecs::NpcInventory>(w.reg, loser)).inv)) {
+         creature_heads_range(sm::store_of(w).inventory[loser.slot].inv)) {
         cas.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
     (loserIsB ? o.leaderFractionB : o.leaderFractionA) = 0.0f;
@@ -102,8 +100,10 @@ void test_every_death_is_reported_once() {
     mw.facts = &collect;
     mw.factsUser = &log;
 
-    const entt::entity a = squad(w, NPCType::Guard, "empire", 3, 0, 1u);
-    const entt::entity b = squad(w, NPCType::Bandit, "bandits", 2, 3, 2u);
+    const sm::MacroHandle a = 
+squad(w, NPCType::Guard, "empire", 3, 0, 1u);
+    const sm::MacroHandle b = 
+squad(w, NPCType::Bandit, "bandits", 2, 3, 2u);
     settle_auto_battle(mw, a, b, wipe_of(w, b, /*loserIsB*/true));
 
     CHECK(log.facts.size() == 4,
@@ -122,8 +122,8 @@ void test_every_death_is_reported_once() {
     // nothing. A settle that reported both sides regardless would double the
     // world's dead.
     for (const BattleFact& f : log.facts) {
-        CHECK(f.killer == std::uint32_t(entt::to_integral(a)),
-              "every fact names the victor as the killer");
+        CHECK(f.killer == sm::macro_handle_bits(a),
+              "every fact names the victor as the killer — хэндлом записи");
     }
 }
 
@@ -136,10 +136,12 @@ void test_no_facts_when_nobody_listens() {
     MacroWorld mw{};       // no sink: a headless fixture
     mw.gs = &gs;
     mw.world = &w;
-    const entt::entity a = squad(w, NPCType::Guard, "empire", 3, 0, 1u);
-    const entt::entity b = squad(w, NPCType::Bandit, "bandits", 2, 2, 2u);
+    const sm::MacroHandle a = 
+squad(w, NPCType::Guard, "empire", 3, 0, 1u);
+    const sm::MacroHandle b = 
+squad(w, NPCType::Bandit, "bandits", 2, 2, 2u);
     settle_auto_battle(mw, a, b, wipe_of(w, b, true));
-    CHECK(sm::macro_dead(w.reg, b),
+    CHECK(sm::macro_dead(sm::store_of(w), b),
           "the battle still settles with nobody listening — a null channel "
           "is the zero contribution, not a broken path");
 }
@@ -155,8 +157,9 @@ void test_kill_price_is_the_registry_column() {
         MacroWorld mw{};
         mw.gs = &gs;
         mw.world = &w;
-        const entt::entity enemy =
-            squad(w, NPCType::Guard, "empire", 2, 2, 5u);
+        const sm::MacroHandle enemy =
+            
+squad(w, NPCType::Guard, "empire", 2, 2, 5u);
         const int before = player_reputation(&gs, "empire");
         settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
         const int after = player_reputation(&gs, "empire");
@@ -173,8 +176,9 @@ void test_kill_price_is_the_registry_column() {
         MacroWorld mw{};
         mw.gs = &gs;
         mw.world = &w;
-        const entt::entity enemy =
-            squad(w, NPCType::Bandit, "bandits", 2, 2, 6u);
+        const sm::MacroHandle enemy =
+            
+squad(w, NPCType::Bandit, "bandits", 2, 2, 6u);
         const int before = player_reputation(&gs, "bandits");
         settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
         CHECK(player_reputation(&gs, "bandits") == before,
@@ -199,9 +203,10 @@ void test_spoils_are_rolled_not_scavenged() {
     // чего у неё нет»; вердикт владельца 2026-09-26 (M-139) снёс и профили,
     // и кошельки, поэтому закон теперь ОДИН и честный: победителю достаётся
     // РОВНО то, что павший нёс. Кладём купцу настоящий товар руками.
-    const entt::entity enemy = squad(w, NPCType::Merchant, "empire", 4, 3, 7u);
+    const sm::MacroHandle enemy = 
+squad(w, NPCType::Merchant, "empire", 4, 3, 7u);
     {
-        Inventory& einv = (*sm::body_state<ecs::NpcInventory>(w.reg, enemy)).inv;
+        Inventory& einv = sm::store_of(w).inventory[enemy.slot].inv;
         einv.add("misc_gem", 3);
         einv.add("coin_empire_silver", 5);
     }
@@ -238,8 +243,9 @@ void test_spoils_are_rolled_not_scavenged() {
     mw2.gs = &gs2;
     mw2.world = &w2;
     ensure_macro_player_entity(gs2, w2);
-    const entt::entity enemy2 =
-        squad(w2, NPCType::Merchant, "empire", 4, 3, 8u);
+    const sm::MacroHandle enemy2 =
+        
+squad(w2, NPCType::Merchant, "empire", 4, 3, 8u);
     AutoBattleOutcome loss{};
     loss.winner = 1;                    // the enemy (side B) won
     loss.leaderFractionA = 0.0f;        // the player fell
@@ -265,7 +271,8 @@ void test_empty_handed_fallen_pays_nothing() {
     mw.gs = &gs;
     mw.world = &w;
     ensure_macro_player_entity(gs, w);
-    const entt::entity pack = squad(w, NPCType::Wolf, "wildlife", 3, 0, 9u);
+    const sm::MacroHandle pack = 
+squad(w, NPCType::Wolf, "wildlife", 3, 0, 9u);
     settle_player_auto_battle(mw, pack, wipe_of(w, pack, true), true);
     CHECK(coin_census_value(player_bag_of(gs, w)) == 0,
           "стая, не нёсшая ничего, не платит ни монеты — ни кошелька строки, "

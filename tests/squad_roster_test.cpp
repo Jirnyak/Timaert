@@ -49,16 +49,14 @@ void test_every_macro_npc_is_a_squad_of_one() {
     sm::spawn_macro_npcs(gs, world, sm::store_of(world), terrain, 123u);
 
     int macroNpcs = 0;
-    for (auto e : world.reg.view<sm::ecs::MacroSlot>()) {
-        auto& rt = sm::store_of(world).runtime[sm::slot_of(world.reg, e)];
-        (void)rt;
-        ++macroNpcs;
-        CHECK(world.reg.all_of<sm::ecs::MacroSlot>(e),
-              "every macro NPC carries a store slot - the entity IS a squad");
-        if (const auto* bg = sm::body_state<sm::ecs::NpcInventory>(world.reg, e)) {
-            CHECK(sm::creatures_empty(bg->inv),
+    {
+        const sm::MacroStore& st = sm::store_of(world);
+        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+            if (st.alive[s32] == 0) continue;
+            ++macroNpcs;
+            CHECK(sm::creatures_empty(st.inventory[s32].inv),
                   "a freshly spawned wanderer is a squad of ONE: empty roster, "
-                  "the entity itself is the leader");
+                  "the slot itself is the leader");
         }
     }
     CHECK(macroNpcs > 0, "fixture must spawn macro NPCs to say anything");

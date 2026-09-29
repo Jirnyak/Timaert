@@ -4182,18 +4182,16 @@ void register_console_commands(App& app) {
                     std::uint8_t(memberKind), mlvl,
                     0x40000000u | (seq << 8) | std::uint32_t(i)));
             }
-            const entt::entity leader = sm::spawn_squad(
+            const sm::MacroHandle leader = sm::spawn_squad(
                 app.gs, app.ecs, *app.macroStore, app.terrain, spec);
-            if (leader == entt::null) {
+            if (!app.macroStore->valid(leader)) {
                 c.error("spawn_squad failed (bad map)");
                 return true;
             }
-            const auto* sid =
-                body_state<sm::ecs::MacroSpawnId>(app.ecs.reg, leader);
             c.printfln(Lvl::Ok, "squad #%u: %s (level %d) + %d x %s",
-                       sid ? sid->index : 0u,
+                       app.macroStore->spawnId[leader.slot].index,
                        sm::npc_def(spec.leaderType).label,
-                       (*body_state<sm::ecs::NpcLevel>(app.ecs.reg, leader)).value,
+                       int(app.macroStore->level[leader.slot].value),
                        members, sm::npc_def(memberKind).label);
             return true;
         });

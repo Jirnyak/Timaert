@@ -209,14 +209,13 @@ static sm::MacroHandle smoke_birth_squad_at_player(App& app,
     // Фикстурный id души: ни один из этих сценариев не спрашивает о личности
     // рядового, поэтому он один на все рождения.
     spec.members.push(sm::make_soldier(std::uint8_t(leader), 2, 0x50000001u));
-    const entt::entity born = sm::spawn_squad(
+    const sm::MacroHandle h = sm::spawn_squad(
         app.gs, app.ecs, *app.macroStore, app.terrain, spec);
-    if (born == entt::null) return {};
+    if (!app.macroStore->valid(h)) return {};
     // Pin the squad to the player's cell: spawn_squad scatters within a 4-cell
     // radius, and the enter-time projection only sees the 3x3 window. Arranging
     // the subject is the harness's job; the LAW under test is never placement.
     sm::MacroStore& st = *app.macroStore;
-    const sm::MacroHandle h = sm::handle_of(app.ecs.reg, born);
     const int pcx = int(smoke_player_x(app));
     const int pcy = int(smoke_player_y(app));
     st.cell[h.slot].idx = sm::ecs::cell_index(pcx, pcy, app.gs.mapW);
@@ -8161,10 +8160,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             smoke_clear_modal_overlays(app);
             sm::MacroStore& stv = sm::store_of(app.ecs);
-            auto view = app.ecs.reg.view<sm::ecs::MacroSlot>();
             bool found = false;
-            for (auto e : view) {
-                const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
+            for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+                const std::uint16_t slot = std::uint16_t(s32);
+                if (stv.alive[slot] == 0) continue;
                 if (stv.spawnId[slot].index
                     == sm::ecs::kPlayerSquadOrdinal) continue;
                 const auto& hp = stv.pools[slot];
@@ -8203,12 +8202,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.map = false;
             app.ui.quest = false;
             sm::MacroStore& stv = sm::store_of(app.ecs);
-            auto view = app.ecs.reg.view<sm::ecs::MacroSlot>();
-            entt::entity target = entt::null;
+            sm::MacroHandle target{};
             int stock = 0;
             int type = -1;
-            for (auto e : view) {
-                const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
+            for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+                const std::uint16_t slot = std::uint16_t(s32);
+                if (stv.alive[slot] == 0) continue;
                 if (stv.spawnId[slot].index
                     == sm::ecs::kPlayerSquadOrdinal) continue;
                 const auto& hp = stv.pools[slot];
@@ -8219,24 +8218,24 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                 smoke_teleport_player(app, int(float(sm::ecs::cell_x(pcell, app.gs.mapW))), int(float(sm::ecs::cell_y(pcell, app.gs.mapW))));
                 app.cursor.path.clear();
                 app.cursor.pathIdx = 0;
-                target = e;
+                target = sm::handle_at(stv, slot);
                 stock = bag.inv.total();
                 type = int(kind.type);
                 break;
             }
-            if (target == entt::null) {
+            if (!stv.valid(target)) {
                 smoke_fail(app, "open_npc_trade found no live NPC with inventory");
                 break;
             }
             // The ONE subject panel, opened on the squad's Trade tab —
             // the same door a row click opens (App state, no module hook).
-            app.subjectSquad = sm::handle_of(app.ecs.reg, target);
+            app.subjectSquad = target;
             app.ui.settlementId = -1;
             app.ui.settlementTab = sm::ui::SettlementPanelTab::Trade;
             app.ui.settlement = true;
             std::fprintf(stderr,
-                         "[smoke] npc_trade open entity=%u type=%d stock=%d playerItems=%d gold=%d\n",
-                         static_cast<unsigned>(entt::to_integral(target)),
+                         "[smoke] npc_trade open slot=%u type=%d stock=%d playerItems=%d gold=%d\n",
+                         unsigned(target.slot),
                          type,
                          stock,
                          player_bag(app).total(),
@@ -8254,25 +8253,24 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             smoke_clear_modal_overlays(app);
             sm::MacroStore& stv = sm::store_of(app.ecs);
-            auto view = app.ecs.reg.view<sm::ecs::MacroSlot>();
-            entt::entity target = entt::null;
-            for (auto e : view) {
-                const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
+            sm::MacroHandle target{};
+            for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+                const std::uint16_t slot = std::uint16_t(s32);
+                if (stv.alive[slot] == 0) continue;
                 if (stv.spawnId[slot].index
                     == sm::ecs::kPlayerSquadOrdinal) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& acell = stv.cell[slot];
                                 smoke_teleport_player(app, int(float(sm::ecs::cell_x(acell, app.gs.mapW))), int(float(sm::ecs::cell_y(acell, app.gs.mapW))));
-                target = e;
+                target = sm::handle_at(stv, slot);
                 break;
             }
-            if (target == entt::null) {
+            if (!stv.valid(target)) {
                 smoke_fail(app, "attack_first_npc found no live NPC");
                 break;
             }
-            if (!route_macro_npc_attack(app,
-                                        sm::handle_of(app.ecs.reg, target))) {
+            if (!route_macro_npc_attack(app, target)) {
                 smoke_fail(app, "attack_first_npc route failed");
                 break;
             }

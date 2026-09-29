@@ -113,11 +113,11 @@ struct SquadSpec {
     std::array<std::int16_t, 16> waypoints{};   // 8 × (x, y)
 };
 
-// Returns the leader entity (the squad IS its leader), entt::null on a bad
-// map. Runtime ordinals continue past the current maximum — the same rule
-// (and the same known reuse hole, problems.md 19.24) as spawn_npc_at.
-entt::entity spawn_squad(GameState& gs, ecs::World& w, MacroStore& store,
-                         const TerrainData& terrain, const SquadSpec& spec);
+// Returns the leader HANDLE (the squad IS its leader; 6.3 — рождение без
+// entt), invalid on a bad map. Runtime ordinals continue past the current
+// maximum — the same rule as spawn_npc_at.
+MacroHandle spawn_squad(GameState& gs, ecs::World& w, MacroStore& store,
+                        const TerrainData& terrain, const SquadSpec& spec);
 
 
 // ── ОТТОК ПУЛА ДЕЗЕРТИРОВ ВЫРЕЗАН 2026-09-21 ─────────────────────────────

@@ -9,13 +9,13 @@ namespace sm {
 
 std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
     std::vector<MacroNpcRecord> out;
-    auto& reg = w.reg;
-    // ФЛИП 1в (M-106): состояние лежит колонками store; entt даёт только
-    // мост MacroSlot и теги. Формат записи НЕ двигается — ординал был и
-    // остался идентичностью, сортировка ниже прежняя.
+    // 6.3 (M-106 1е): население — живые слоты store, голый цикл по alive.
+    // Формат записи НЕ двигается — ординал был и остался идентичностью,
+    // сортировка ниже прежняя.
     MacroStore& st = store_of(w);
-    for (auto e : reg.view<ecs::MacroSlot>()) {
-        const std::uint16_t slot = reg.get<ecs::MacroSlot>(e).slot;
+    for (std::size_t s32 = 0; s32 < kMacroEntityCap; ++s32) {
+        const std::uint16_t slot = std::uint16_t(s32);
+        if (st.alive[slot] == 0) continue;
         MacroNpcRecord m{};
         m.spawnId   = st.spawnId[slot];
         m.cell      = st.cell[slot];
@@ -64,15 +64,12 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
 
 void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
                        ecs::World& w, GameState& gs) {
-    auto& reg = w.reg;
     std::uint32_t maxOrdinal = 0;
     bool any = false;
     MacroStore& st = store_of(w);
     for (const MacroNpcRecord& m : records) {
         const MacroHandle h = store_birth(st);
         if (!st.valid(h)) break;   // отказ капа уже прозвучал вслух
-        auto e = reg.create();
-        reg.emplace<ecs::MacroSlot>(e, h.slot);
         st.spawnId[h.slot]   = m.spawnId;
         st.cell[h.slot]      = m.cell;
         st.visual[h.slot]    = m.visual;

@@ -70,13 +70,16 @@ GameState make_world() {
     return gs;
 }
 
-entt::entity find_design(ecs::World& w, std::int16_t ord) {
-    // Тег стола — колонка store: ordinal >= 0 и есть анкета (флип 1в).
+sm::MacroHandle find_design(ecs::World& w, std::int16_t ord) {
+    // Тег стола — колонка store (6.3: население — живые слоты, голый цикл).
     const sm::MacroStore& st = sm::store_of(w);
-    for (auto e : w.reg.view<ecs::MacroSlot>()) {
-        if (st.designTag[sm::slot_of(w.reg, e)].ordinal == ord) return e;
+    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+        const std::uint16_t slot = std::uint16_t(s32);
+        if (st.alive[slot] == 0) continue;
+        if (st.designTag[slot].ordinal == ord)
+            return sm::handle_at(st, slot);
     }
-    return entt::null;
+    return {};
 }
 
 void test_table_rows_resolve() {
@@ -105,26 +108,26 @@ void test_spawn_births_the_row() {
     gs.nextMacroSpawnOrdinal = 0;
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
-    const entt::entity e = find_design(w, 0);
-    CHECK_OR_RETURN(e != entt::null, "the preacher row became one body");
+    const sm::MacroHandle e = find_design(w, 0);
+    CHECK_OR_RETURN(wStore_->valid(e), "the preacher row became one body");
 
     const DesignCharacterDef& row = kDesignCharacterDefs[0];
     // Индивид владеет листом (посадки А/Б) — и уровень строки дошёл.
-    const CharacterSheet* own = owned_sheet(w, e);
+    const CharacterSheet* own = owned_sheet(*wStore_, e);
     CHECK_OR_RETURN(own != nullptr, "the design character OWNS his sheet");
     CHECK(own->levelData.level == int(row.level),
           "the row's level reached the owned sheet");
-    CHECK((*sm::body_state<ecs::NpcLevel>(w.reg, e)).value == row.level,
+    CHECK(wStore_->level[e.slot].value == row.level,
           "...and the map-side level column agrees");
-    CHECK(int((*sm::body_state<ecs::NPCKind>(w.reg, e)).factionIdx)
+    CHECK(int(wStore_->kind[e.slot].factionIdx)
               == faction_index(row.factionId),
           "the row's faction reached the body");
-    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(w.reg, e)).homeSettlementId == 1,
+    CHECK(wStore_->runtime[e.slot].homeSettlementId == 1,
           "home resolved to the world's city (row: City #0)");
 
     // Маршрут: дом ↔ БЛИЖАЙШАЯ деревня (20,10), не дальняя (40,40).
-    const auto* orders = sm::body_state<ecs::SquadOrders>(w.reg, e);
-    CHECK_OR_RETURN(orders != nullptr && orders->waypointCount == 2,
+    const auto* orders = &wStore_->orders[e.slot];
+    CHECK_OR_RETURN(orders->waypointCount == 2,
                     "the circuit order landed: two waypoints");
     CHECK(orders->waypoints[0] == 10 && orders->waypoints[1] == 10,
           "waypoint A is home (the city cell)");
@@ -133,8 +136,8 @@ void test_spawn_births_the_row() {
 
     // Лестница: приказ первым; без приказа — ступень анкеты, и она
     // ПРОВЕРЯЕМО не строка типа (Merchant.ai = Trader).
-    const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, e));
-    CHECK(untyped_squad_behaviour(sm::store_of(w), sm::handle_of(w.reg, e), kind)
+    const auto& kind = wStore_->kind[e.slot];
+    CHECK(untyped_squad_behaviour(*wStore_, e, kind)
               == AIBehaviour::Waypoints,
           "with the route present, the order rung answers");
     // ПРИКАЗ СНИМАЕТСЯ ТОЙ ЖЕ ДВЕРЬЮ, ЧТО ЕГО СТАВИТ (M-136). Здесь стояло
@@ -146,13 +149,12 @@ void test_spawn_births_the_row() {
     // Ординал СПРАШИВАЕТСЯ у сущности, а не угадывается порядком спавна:
     // допущение «проповедник родился нулевым» и есть тот род надежды, который
     // §8 п.11 запрещает свидетелю.
-    const std::uint32_t ord =
-        (*sm::body_state<ecs::MacroSpawnId>(w.reg, e)).index;
+    const std::uint32_t ord = wStore_->spawnId[e.slot].index;
     CHECK(sm::order_squad_route(w, ord, ecs::SquadOrders{}),
           "приказ снят дверью мира, а не компонентой мимо колонки");
-    CHECK((*sm::body_state<ecs::SquadOrders>(w.reg, e)).waypointCount == 0,
+    CHECK(wStore_->orders[e.slot].waypointCount == 0,
           "и снятие видно читателю: маршрута в колонке больше нет");
-    CHECK(untyped_squad_behaviour(sm::store_of(w), sm::handle_of(w.reg, e), kind)
+    CHECK(untyped_squad_behaviour(*wStore_, e, kind)
               == row.behaviour,
           "without the route, the design-row rung answers");
     // ЧЕГО ЭТА СЕКЦИЯ НЕ ДОКАЗЫВАЕТ, СКАЗАНО ВСЛУХ (§8 п.7): у строки 0
@@ -183,7 +185,8 @@ void test_snapshot_carries_the_ordinal() {
     plain.x = 30;
     plain.y = 30;
     plain.factionIndex = faction_index("bandits");
-    CHECK_OR_RETURN(spawn_squad(gs, w, sm::store_of(w), terrain, plain) != entt::null,
+    CHECK_OR_RETURN(sm::store_of(w).valid(
+                        spawn_squad(gs, w, sm::store_of(w), terrain, plain)),
                     "the plain control squad spawned");
 
     const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(w);
@@ -207,10 +210,10 @@ void test_snapshot_carries_the_ordinal() {
     sm::store_attach(w2, w2Store_.get());
     GameState gs2 = make_world();
     restore_macro_ecs(snap, w2, gs2);
-    const entt::entity back = find_design(w2, 0);
-    CHECK_OR_RETURN(back != entt::null,
+    const sm::MacroHandle back = find_design(w2, 0);
+    CHECK_OR_RETURN(w2Store_->valid(back),
                     "restore re-stamped the design tag from the record");
-    CHECK(owned_sheet(w2, back) != nullptr,
+    CHECK(owned_sheet(*w2Store_, back) != nullptr,
           "...and his owned sheet came back with it (hasSheet)");
 }
 
@@ -232,24 +235,25 @@ void test_king_peasant_births_by_home_faction() {
     gs.nextMacroSpawnOrdinal = 0;
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
-    const entt::entity king = find_design(w, 1);
-    CHECK_OR_RETURN(king != entt::null,
+    sm::MacroStore& stk = sm::store_of(w);
+    const sm::MacroHandle king = find_design(w, 1);
+    CHECK_OR_RETURN(stk.valid(king),
                     "the king row became one body near the barbarian city");
-    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(w.reg, king)).homeSettlementId == 9,
+    CHECK(stk.runtime[king.slot].homeSettlementId == 9,
           "his home is the BARBARIAN city, not the freefolk one — the "
           "faction-prefix filter picked the row's home");
     // Фракция — ОН САМ (вердикт владельца): своя строка одной матрицы,
     // как у игрока, а не знамя города, где он живёт.
-    CHECK(int((*sm::body_state<ecs::NPCKind>(w.reg, king)).factionIdx)
+    CHECK(int(stk.kind[king.slot].factionIdx)
               == faction_index("king_peasant"),
           "his faction is his OWN registry row");
-    const CharacterSheet* own = owned_sheet(w, king);
+    const CharacterSheet* own = owned_sheet(stk, king);
     CHECK_OR_RETURN(own != nullptr, "the king OWNS his sheet");
     CHECK(own->levelData.level == 70, "the level-70 roll reached the sheet");
     // Лестница: приказов нет — ступень анкеты, доказуемо не строка типа
     // (Peasant.ai = Gatherer).
-    const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, king));
-    CHECK(untyped_squad_behaviour(sm::store_of(w), sm::handle_of(w.reg, king), kind)
+    const auto& kind = stk.kind[king.slot];
+    CHECK(untyped_squad_behaviour(stk, king, kind)
               == AIBehaviour::MageHunt,
           "the design rung answers MageHunt for the king");
     CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Peasant)].ai
@@ -269,9 +273,9 @@ void test_king_needs_a_barbarian_city() {
     Rng rng(556u);
     gs.nextMacroSpawnOrdinal = 0;
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
-    CHECK(find_design(w, 0) != entt::null,
+    CHECK(sm::store_of(w).valid(find_design(w, 0)),
           "Varnava is born in a world without barbarians");
-    CHECK(find_design(w, 1) == entt::null,
+    CHECK(!sm::store_of(w).valid(find_design(w, 1)),
           "the king is honestly NOT born without a barbarian city");
 }
 
@@ -296,23 +300,24 @@ void test_dragons_nest_on_mountain_peaks() {
 
     // Один массив = одна вершина: Dragon1 рождается, №2/№3 (вершины с
     // разносом ≥ mapW/8) — честно нет.
-    const entt::entity d1 = find_design(w, 2);
-    CHECK_OR_RETURN(d1 != entt::null, "Dragon1 nests on the one massif");
-    CHECK(find_design(w, 3) == entt::null && find_design(w, 4) == entt::null,
+    const sm::MacroHandle d1 = find_design(w, 2);
+    sm::MacroStore& std_ = sm::store_of(w);
+    CHECK_OR_RETURN(std_.valid(d1), "Dragon1 nests on the one massif");
+    CHECK(!std_.valid(find_design(w, 3)) && !std_.valid(find_design(w, 4)),
           "one massif births one dragon — spacing is honest");
 
-    const auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(w.reg, d1));
+    const auto& rt = std_.runtime[d1.slot];
     CHECK(rt.lairX == 48 && rt.lairY == 48,
           "his LAIR is the massif's highest cell");
     CHECK(rt.flying == 1,
           "the row's cruiseM cached as the march-side flying byte (v93)");
-    CHECK(int((*sm::body_state<ecs::NPCKind>(w.reg, d1)).factionIdx)
+    CHECK(int(std_.kind[d1.slot].factionIdx)
               == faction_index("dragons"),
           "dragons share the ONE dragons faction row (owner verdict)");
-    CHECK(owned_sheet(w, d1) != nullptr,
+    CHECK(owned_sheet(std_, d1) != nullptr,
           "the dragon OWNS his sheet like every design character");
-    const auto& kind = (*sm::body_state<ecs::NPCKind>(w.reg, d1));
-    CHECK(untyped_squad_behaviour(sm::store_of(w), sm::handle_of(w.reg, d1), kind)
+    const auto& kind = std_.kind[d1.slot];
+    CHECK(untyped_squad_behaviour(std_, d1, kind)
               == AIBehaviour::LairSorties,
           "the design rung answers LairSorties");
     CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Dragon)].ai
@@ -332,8 +337,9 @@ void test_no_home_no_birth() {
     gs.nextMacroSpawnOrdinal = 0;
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     int tags = 0;
-    for (auto e : w.reg.view<ecs::MacroSlot>())
-        if (sm::store_of(w).designTag[sm::slot_of(w.reg, e)].ordinal >= 0)
+    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)
+        if (sm::store_of(w).alive[s32] != 0
+            && sm::store_of(w).designTag[s32].ordinal >= 0)
             ++tags;
     CHECK(tags == 0, "a world without the row's home births nobody");
 }

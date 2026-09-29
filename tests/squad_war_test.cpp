@@ -138,7 +138,10 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     // The loser fell (hp=0 + Dead inside the settle) — and by CANON S4
     // («убили всех — сквада на карте нет», 2026-08-29) the end-of-tick sweep
     // then destroyed the drained corpse-row: a dead squad LEAVES the map.
-    CHECK(!w.reg.valid(caravan),
+    // 6.3: сквад ЕСТЬ слот store — «ушёл с карты» = смерть слота.
+    CHECK(!sm::store_of(w).valid(
+              sm::handle_at(sm::store_of(w),
+                            sm::slot_of(w.reg, caravan))),
           "a loser whose whole roster fell falls with it and leaves the map");
     CHECK(!sm::macro_dead(w.reg, bandit),
           "the crushing winner survives");
@@ -420,44 +423,40 @@ void test_spawn_squad_is_one_spec_one_door() {
     spec.waypoints[0] = 24; spec.waypoints[1] = 20;   // 4 cells east
     spec.waypoints[2] = 20; spec.waypoints[3] = 20;   // and back
 
-    const entt::entity leader = spawn_squad(gs, w, sm::store_of(w), absent, spec);
-    CHECK_OR_RETURN(leader != entt::null && w.reg.valid(leader),
-                    "the spec became a squad");
-    CHECK(w.reg.all_of<ecs::MacroSlot>(leader),
-          "the leader came out of the ONE creation door, whole (слот store "
-          "несёт все колонки по построению)");
-    CHECK((*sm::body_state<ecs::NpcLevel>(w.reg, leader)).value == 4,
+    sm::MacroStore& st = sm::store_of(w);
+    const MacroHandle leader = spawn_squad(gs, w, st, absent, spec);
+    CHECK_OR_RETURN(st.valid(leader),
+                    "the spec became a squad (одна дверь рождения отвечает "
+                    "хэндлом — слот store несёт все колонки по построению)");
+    CHECK(st.level[leader.slot].value == 4,
           "the spec's level pinned the leader's level");
-    CHECK(creature_heads((*sm::body_state<ecs::NpcInventory>(w.reg, leader)).inv) == 2,
+    CHECK(creature_heads(st.inventory[leader.slot].inv) == 2,
           "the roster rows are the spec's rows");
-    const auto* orders = sm::body_state<ecs::SquadOrders>(w.reg, leader);
-    CHECK(orders != nullptr && orders->waypointCount == 2,
+    CHECK(st.orders[leader.slot].waypointCount == 2,
           "the route landed as data on the squad");
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
-    const float x0 = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(w.reg, leader)), kMap));
+    const float x0 = float(ecs::cell_x(st.cell[leader.slot], kMap));
     drive(gs, w, rt, 3);
-    const float p1x =
-        float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(w.reg, leader)), kMap));
+    const float p1x = float(ecs::cell_x(st.cell[leader.slot], kMap));
     CHECK(p1x > x0,
           "waypoint orders MARCH the squad east toward its route - the "
           "override, not the row, is steering");
 
     // Reaching a waypoint advances the route.
     for (int i = 0; i < 20; ++i) drive(gs, w, rt, 1);
-    CHECK((*sm::body_state<ecs::SquadOrders>(w.reg, leader)).currentWaypoint != 0
-              || float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(w.reg, leader)), kMap)) < 23.0f,
+    CHECK(st.orders[leader.slot].currentWaypoint != 0
+              || float(ecs::cell_x(st.cell[leader.slot], kMap)) < 23.0f,
           "the route advances at a reached waypoint (or is already homing "
           "back on the second leg)");
 
     // A second squad continues the ordinal line — two squads, two names.
     SquadSpec other = spec;
     other.x = 40;
-    const entt::entity second = spawn_squad(gs, w, sm::store_of(w), absent, other);
-    CHECK_OR_RETURN(second != entt::null, "the second squad spawned");
-    CHECK((*sm::body_state<ecs::MacroSpawnId>(w.reg, second)).index
-              != (*sm::body_state<ecs::MacroSpawnId>(w.reg, leader)).index,
+    const MacroHandle second = spawn_squad(gs, w, st, absent, other);
+    CHECK_OR_RETURN(st.valid(second), "the second squad spawned");
+    CHECK(st.spawnId[second.slot].index != st.spawnId[leader.slot].index,
           "each created squad gets its own save-stable ordinal");
 
     // ── ПРИКАЗ РУКОЙ ХОДИТ ТОЙ ЖЕ ДВЕРЬЮ, ЧТО ЧИТАЕТ МИР (M-136) ─────────
@@ -468,18 +467,17 @@ void test_spawn_squad_is_one_spec_one_door() {
     // выводе, — и спрашивает у ЧИТАТЕЛЯ МИРА, а не у писателя. Марш по
     // маршруту утверждён выше (маршрут из спеки), здесь он не переутверждается
     // сознательно: эта секция про ДОМ приказа, не про ноги.
-    const std::uint32_t ord =
-        (*sm::body_state<ecs::MacroSpawnId>(w.reg, leader)).index;
+    const std::uint32_t ord = st.spawnId[leader.slot].index;
     CHECK(sm::order_squad_route(w, ord, ecs::SquadOrders{}),
           "дверь нашла сквад по его ординалу");
-    CHECK((*sm::body_state<ecs::SquadOrders>(w.reg, leader)).waypointCount == 0,
+    CHECK(st.orders[leader.slot].waypointCount == 0,
           "«released to its own life» видно ЧИТАТЕЛЮ: колонка пуста");
     ecs::SquadOrders hand{};
     hand.waypointCount = 2;
     hand.waypoints[0] = 31; hand.waypoints[1] = 29;
     hand.waypoints[2] = 20; hand.waypoints[3] = 20;
     CHECK(sm::order_squad_route(w, ord, hand), "приказ рукой принят");
-    const auto& live = *sm::body_state<ecs::SquadOrders>(w.reg, leader);
+    const auto& live = st.orders[leader.slot];
     CHECK(live.waypointCount == 2 && live.waypoints[0] == 31
               && live.waypoints[1] == 29 && live.waypoints[2] == 20,
           "«now patrols 2 waypoint(s)» — те самые клетки в колонке мира");
@@ -488,7 +486,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     // не трогает ничей приказ, промахнувшись адресом.
     CHECK(!sm::order_squad_route(w, 0xFFFFFFFFu, ecs::SquadOrders{}),
           "негативный контроль: неизвестный ординал получает отказ");
-    CHECK((*sm::body_state<ecs::SquadOrders>(w.reg, leader)).waypointCount == 2,
+    CHECK(st.orders[leader.slot].waypointCount == 2,
           "...и отказ ничего не переписал");
 }
 

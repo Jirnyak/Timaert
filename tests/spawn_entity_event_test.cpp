@@ -28,10 +28,8 @@
 namespace {
 
 int count_npcs(sm::ecs::World& w) {
-    int n = 0;
-    for ([[maybe_unused]] auto e :
-         w.reg.view<sm::ecs::MacroSlot>()) ++n;
-    return n;
+    // 6.3: население — живые слоты store, моста нет.
+    return int(sm::store_of(w).aliveCount);
 }
 
 // The whole scenario lives in a VOID function so CHECK_OR_RETURN can bail
@@ -61,16 +59,19 @@ void run_spawn_contract() {
     CHECK(count_npcs(w) == 1, "exactly one body was raised, not two");
 
     std::uint32_t firstOrdinal = 0;
-    for (auto e : w.reg.view<sm::ecs::MacroSlot>()) {
-        const auto& kind = (*sm::body_state<sm::ecs::NPCKind>(w.reg, e));
+    sm::MacroStore& st = sm::store_of(w);
+    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+        const std::uint16_t slot = std::uint16_t(s32);
+        if (st.alive[slot] == 0) continue;
+        const auto& kind = st.kind[slot];
         CHECK(kind.type == std::uint16_t(sm::NPCType::Bandit),
               "the body wears the ROW the token named");
         CHECK(kind.factionIdx == std::uint16_t(sm::faction_index("bandits")),
               "and the faction comes from the ONE registry, resolved by name "
               "at the border and carried as an ordinal");
-        const auto& lvl = (*sm::body_state<sm::ecs::NpcLevel>(w.reg, e));
+        const auto& lvl = st.level[slot];
         CHECK(lvl.value == 3, "the level asked for is the level pinned");
-        const auto& pc = (*sm::body_state<sm::ecs::MacroCell>(w.reg, e));
+        const auto& pc = st.cell[slot];
         // find_valid_spawn scatters within +-6 cells of the wrapped target.
         const float d2 = sm::torus_dist_sq(
             float(sm::ecs::cell_x(pc, gs.mapW)),
@@ -79,7 +80,7 @@ void run_spawn_contract() {
         CHECK(d2 <= 2.0f * 6.0f * 6.0f,
               "the body landed within find_valid_spawn's scatter of the cell "
               "asked for — measured by TORUS distance, so the seam is near");
-        firstOrdinal = (*sm::body_state<sm::ecs::MacroSpawnId>(w.reg, e)).index;
+        firstOrdinal = st.spawnId[slot].index;
     }
 
     // Second spawn: ordinal strictly continues (possession identity unique).
@@ -89,8 +90,10 @@ void run_spawn_contract() {
     CHECK(count_npcs(w) == 2, "two bodies stand, not one and not three");
     bool sawSecond = false;
     int wentBackwards = 0;
-    for (auto e : w.reg.view<sm::ecs::MacroSlot>()) {
-        const std::uint32_t idx = (*sm::body_state<sm::ecs::MacroSpawnId>(w.reg, e)).index;
+    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+        const std::uint16_t slot = std::uint16_t(s32);
+        if (st.alive[slot] == 0) continue;
+        const std::uint32_t idx = st.spawnId[slot].index;
         if (idx == firstOrdinal) continue;
         if (idx <= firstOrdinal) ++wentBackwards;
         sawSecond = true;

@@ -272,13 +272,8 @@ inline int destroy_dead_macro_squads(ecs::World& w, const GameState& gs,
         // drawn off this value — variety by law, O(1) memory.
         if (lootPoolValue)
             *lootPoolValue += inventory_value(st.inventory[slot].inv);
-        // Мост жив до 6.3: тело энтити находится сканом ДО смерти слота
-        // (macro_entity_of спрашивает valid) — конец тика, вне горячего
-        // пути.
-        const entt::entity bridge =
-            macro_entity_of(w.reg, handle_at(st, slot));
+        // 6.3: сквад ЕСТЬ слот store — смерть слота и есть вся смерть.
         store_death(st, handle_at(st, slot));
-        if (bridge != entt::null) w.reg.destroy(bridge);
         ++swept;
     }
     return swept;
@@ -296,17 +291,6 @@ inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
             return MacroHandle{std::uint16_t(slot), st.generation[slot]};
     }
     return MacroHandle{};
-}
-// Entt-лицо того же поиска — шим моста (умирает в 1е): звонящим, которым
-// ещё нужно ТЕЛО моста (вселение, снапшот), отвечает entt-скан.
-inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
-                                             std::uint32_t index) {
-    const MacroStore& st = store_of(w);
-    for (auto e : w.reg.view<ecs::MacroSlot>()) {
-        if (st.spawnId[w.reg.get<ecs::MacroSlot>(e).slot].index == index)
-            return e;
-    }
-    return entt::null;
 }
 
 // ── ПРИКАЗ РУКОЙ — ОДНА ДВЕРЬ ДЛЯ ГРАНИЦЫ (консоль, будущая панель приказов) ─

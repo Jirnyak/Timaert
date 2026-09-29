@@ -119,8 +119,9 @@ struct Crew {
 std::vector<Crew> live_crews_of(ecs::World& w, int homeId) {
     std::vector<Crew> out;
     const sm::MacroStore& st = sm::store_of(w);
-    for (auto e : w.reg.view<ecs::MacroSlot>()) {
-        const std::uint16_t slot = sm::slot_of(w.reg, e);
+    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+        const std::uint16_t slot = std::uint16_t(s32);
+        if (st.alive[slot] == 0) continue;
         const auto& kind = st.kind[slot];
         const auto& rt = st.runtime[slot];
         if (kind.type != std::uint16_t(NPCType::Peasant)) continue;
@@ -255,9 +256,11 @@ void test_auction_raises_errand_bearing_peasants() {
 
     // Счёт по типу: артели в поле занимают строки — второй ротации нечего
     // поднимать (Idle дома растворился бы; в пути — держит строку).
-    for (auto e : w.reg.view<ecs::MacroSlot>()) {
-        sm::store_of(w).runtime[sm::slot_of(w.reg, e)].state =
-            std::uint8_t(NPCState::Traveling);
+    {
+        sm::MacroStore& stq = sm::store_of(w);
+        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)
+            if (stq.alive[s32] != 0)
+                stq.runtime[s32].state = std::uint8_t(NPCState::Traveling);
     }
     // Граница сезона (день 33): контроль честен только там, где подъём
     // вообще возможен — вне границы ноль тривиален.
@@ -347,28 +350,36 @@ void test_boundary_court_resizes_standing_crews() {
 
     const auto souls_total = [&] {
         int total = gs.landmarks[0].population;
-        for (auto e : w.reg.view<ecs::MacroSlot>()) {
-            total += 1;
-            if (const auto* bg = sm::body_state<ecs::NpcInventory>(w.reg, e))
-                total += creature_heads(bg->inv);
+        const sm::MacroStore& stq = sm::store_of(w);
+        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+            if (stq.alive[s32] == 0) continue;
+            total += 1 + creature_heads(stq.inventory[s32].inv);
         }
         return total;
     };
     const auto crew_sizes = [&] {
         std::vector<int> sizes;
-        for (auto e : w.reg.view<ecs::MacroSlot>()) {
-            if (const auto* bg = sm::body_state<ecs::NpcInventory>(w.reg, e))
-                sizes.push_back(creature_heads(bg->inv));
+        const sm::MacroStore& stq = sm::store_of(w);
+        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+            if (stq.alive[s32] == 0) continue;
+            sizes.push_back(creature_heads(stq.inventory[s32].inv));
         }
         return sizes;
     };
 
     // ПОТЕРЯ В ПОЛЕ: у первой артели гибнут трое (души честно исчезают из
     // мира — сумма падает ровно на троих).
-    entt::entity first = entt::null;
-    for (auto e : w.reg.view<ecs::MacroSlot>()) { first = e; break; }
-    CHECK(first != entt::null, "есть артель для среза (фикстура)");
-    auto& fbag = (*sm::body_state<ecs::NpcInventory>(w.reg, first));
+    sm::MacroHandle first{};
+    {
+        const sm::MacroStore& stq = sm::store_of(w);
+        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)
+            if (stq.alive[s32] != 0) {
+                first = sm::handle_at(stq, std::uint16_t(s32));
+                break;
+            }
+    }
+    CHECK(sm::store_of(w).valid(first), "есть артель для среза (фикстура)");
+    auto& fbag = sm::store_of(w).inventory[first.slot];
     CHECK(creature_heads(fbag.inv) > 3, "ростер больше среза (фикстура)");
     const int cutTo = creature_heads(fbag.inv) - 3;
     while (creature_heads(fbag.inv) > cutTo) {
@@ -396,13 +407,13 @@ void test_boundary_court_resizes_standing_crews() {
     // домой пришла распухшая) — граница ССАЖИВАЕТ лишних В население.
     const int popBeforeShed = gs.landmarks[0].population;
     const int sizeBeforeShed =
-        creature_heads((*sm::body_state<ecs::NpcInventory>(w.reg, first)).inv);
+        creature_heads(sm::store_of(w).inventory[first.slot].inv);
     for (int k = 0; k < 7; ++k) {
         SoldierRecord rec{};
         rec.entityId = 900000u + std::uint32_t(k);
         rec.kind = std::uint16_t(NPCType::Peasant);
         rec.level = 1;
-        creatures_push((*sm::body_state<ecs::NpcInventory>(w.reg, first)).inv, rec);
+        creatures_push(sm::store_of(w).inventory[first.slot].inv, rec);
     }
     const int soulsInflated = souls_total();
     rotate_worker_squads(mw, /*day*/65);
@@ -411,7 +422,7 @@ void test_boundary_court_resizes_standing_crews() {
     // Want дня 65 пересчитан от базы, потолстевшей на семь влитых душ, так
     // что он может встать на голову-другую выше прежнего — пин не «равно
     // старому», а «перебор срезан к пулу».
-    CHECK(creature_heads((*sm::body_state<ecs::NpcInventory>(w.reg, first)).inv)
+    CHECK(creature_heads(sm::store_of(w).inventory[first.slot].inv)
               < sizeBeforeShed + 7,
           "перебор ссажен: артель не жиреет мимо пула");
     CHECK(gs.landmarks[0].population > popBeforeShed,

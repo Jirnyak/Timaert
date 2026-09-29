@@ -627,16 +627,19 @@ void test_rotation_does_not_dissolve_the_dead() {
     }
     sm::rotate_worker_squads(mw, /*day=*/33);   // граница сезона
     int livingLeft = 0;
-    for (auto e2 : world.reg.view<sm::ecs::MacroSlot>()) {
-        const auto& k2 =
-            sm::store_of(world).kind[sm::slot_of(world.reg, e2)];
-        if (k2.type == std::uint16_t(sm::NPCType::Peasant)
-            && !world.reg.all_of<sm::ecs::Dead>(e2))
-            ++livingLeft;
+    {
+        const sm::MacroStore& stl = sm::store_of(world);
+        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+            if (stl.alive[s32] == 0 || stl.dead[s32] != 0) continue;
+            if (stl.kind[s32].type == std::uint16_t(sm::NPCType::Peasant))
+                ++livingLeft;
+        }
     }
     CHECK(livingLeft < 2,
           "negative control: лишняя ЖИВАЯ артель распущена тем же проходом");
-    CHECK(world.reg.valid(dead),
+    CHECK(sm::store_of(world).valid(
+              sm::handle_at(sm::store_of(world),
+                            sm::slot_of(world.reg, dead))),
           "и труп пережил границу — растворение его по-прежнему не трогает");
 }
 

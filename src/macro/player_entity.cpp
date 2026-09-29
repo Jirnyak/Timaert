@@ -20,7 +20,6 @@ namespace sm {
 // ниже, где биты ещё не назначены.)
 
 void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
-    auto& reg = world.reg;
     MacroStore& st = store_of(world);
 
     // ── The player's squad: an ORDINARY macro squad ────────────────────────
@@ -51,9 +50,6 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         }
         const MacroHandle h = store_birth(st);
         if (!st.valid(h)) return;   // отказ капа уже прозвучал вслух
-        // Энтити — мост связей (умирает в 1е кластере 6 вместе с MacroSlot).
-        const entt::entity squad = reg.create();
-        reg.emplace<ecs::MacroSlot>(squad, h.slot);
         st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};
         st.cell[h.slot]    = ecs::MacroCell{ecs::cell_index(sx, sy, gs.mapW)};
         st.visual[h.slot]  = ecs::MacroVisual{float(sx), float(sy), 0.0f};

@@ -266,9 +266,11 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
     {   // Far from shore: the crossing is unpayable by design and kills.
         auto e = make_walker(w, gs.mapW, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
                              /*hp*/30.0f);
-        sm::store_of(w).spawnId[sm::slot_of(w.reg, e)] =
-            ecs::MacroSpawnId{55u};
-        auto& bag = sm::store_of(w).inventory[sm::slot_of(w.reg, e)];
+        sm::MacroStore& std_ = sm::store_of(w);
+        const sm::MacroHandle eh =
+            sm::handle_at(std_, sm::slot_of(w.reg, e));
+        std_.spawnId[eh.slot] = ecs::MacroSpawnId{55u};
+        auto& bag = std_.inventory[eh.slot];
         creatures_push(bag.inv, make_soldier(
             std::uint8_t(NPCType::Peasant), 1, 101u));
         creatures_push(bag.inv, make_soldier(
@@ -276,13 +278,14 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 24u);
         int thinks = 0;
-        while (w.reg.valid(e) && !w.reg.all_of<ecs::Dead>(e)
-               && thinks < 400) {
+        // 6.3: смерть сквада — смерть СЛОТА store (свип конца тика), суд по
+        // хэндлу; entt-тела у макро-сквада больше нет.
+        while (std_.valid(eh) && std_.dead[eh.slot] == 0 && thinks < 400) {
             MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks, false);
             ++thinks;
         }
-        CHECK(!w.reg.valid(e),
+        CHECK(!std_.valid(eh),
               "an ocean the bar cannot pay kills, and the dead squad leaves "
               "the map: there is no Resting at sea and no corpse-row after");
         CHECK(creature_heads(gs.deserterPool) == 2,

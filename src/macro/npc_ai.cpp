@@ -3887,12 +3887,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             }
         }
         lm.population += souls;
-        // Мост жив до 6.3: тело энтити находится сканом ДО смерти слота
-        // (macro_entity_of спрашивает valid) — дневной проход, вне тика.
-        const entt::entity bridge =
-            macro_entity_of(reg, handle_at(stq, slot));
+        // 6.3: сквад ЕСТЬ слот store — смерть слота и есть вся смерть.
         store_death(stq, handle_at(stq, slot));
-        if (bridge != entt::null) reg.destroy(bridge);
         return souls;
     };
     // ── Сезонная погрузка содержания (S19.2): та же арифметика нужд, что
@@ -4695,10 +4691,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 rec.level = 1;
                 if (!spec.members.push(rec)) break;
             }
-            const entt::entity ent = spawn_squad(
+            const MacroHandle ent = spawn_squad(
                 gs, *mw.world, store_of(*mw.world), *mw.terrain, spec);
-            if (ent != entt::null) {
-                const std::uint16_t newSlot = slot_of(reg, ent);
+            if (stq.valid(ent)) {
+                const std::uint16_t newSlot = ent.slot;
                 s.population -= 1 + spec.members.size();
                 ++raised;
                 auto& prt = stq.runtime[newSlot];
@@ -4731,9 +4727,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             spec.x = s.x;
             spec.y = s.y;
             spec.homeSettlementId = s.id;
-            if (spawn_squad(gs, *mw.world, store_of(*mw.world),
-                            *mw.terrain, spec)
-                != entt::null) {
+            if (stq.valid(spawn_squad(gs, *mw.world, store_of(*mw.world),
+                                      *mw.terrain, spec))) {
                 s.population -= 1;
                 --soloBudget;
                 ++raised;
