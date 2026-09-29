@@ -370,8 +370,11 @@ inline CharacterSheet* owned_sheet(entt::registry& reg, entt::entity e) {
     const auto* ms = reg.try_get<ecs::MacroSlot>(e);
     if (!ms) return reg.try_get<CharacterSheet>(e);   // тело сцены — своё
     MacroStore& st = store_of(reg);
-    const bool owns = sheet_owned_at(st, ms->slot)
-        || reg.any_of<ecs::PlayerTag, ecs::PlayerSquadTag>(e);
+    // Тег-страховка умерла с тегами (1е кластер 5): сквад игрока владеет
+    // листом своей КОЛОНКОЙ — зарезервированный ординал входит в
+    // sheet_owned_at; носимое тело отвечает дверьми игрока (player_sheet),
+    // не этим предикатом.
+    const bool owns = sheet_owned_at(st, ms->slot);
     return owns ? &st.sheet[ms->slot] : nullptr;
 }
 inline CharacterSheet* owned_sheet(ecs::World& w, entt::entity e) {

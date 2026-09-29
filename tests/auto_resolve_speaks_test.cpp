@@ -33,9 +33,9 @@ namespace {
 
 // The player's bag is an ordinary NpcInventory on his squad entity now; a
 // fixture raises that entity and reads the spoils from it.
-sm::Inventory& player_bag_of(sm::ecs::World& w) {
+sm::Inventory& player_bag_of(const sm::GameState& gs, sm::ecs::World& w) {
     static sm::Inventory scratch{};
-    sm::Inventory* bag = sm::player_inventory(w);
+    sm::Inventory* bag = sm::player_inventory(gs, sm::store_of(w));
     return bag ? *bag : scratch;
 }
 
@@ -205,21 +205,21 @@ void test_spoils_are_rolled_not_scavenged() {
         einv.add("misc_gem", 3);
         einv.add("coin_empire_silver", 5);
     }
-    const int coinBefore = coin_census_value(player_bag_of(w));
+    const int coinBefore = coin_census_value(player_bag_of(gs, w));
     settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
 
     // ПЕРЕНОС, А НЕ ПЕЧАТЬ: самоцветы и серебро павшего лежат у победителя, и
     // ровно в том счёте, в каком были у павшего — сверх этого не появляется
     // ничего (негативный контроль сноса выдачи, §8 п.6: вернись бросок
     // профиля или кошелёк — счёт перестанет совпадать).
-    CHECK(player_bag_of(w).count("misc_gem") == 3,
+    CHECK(player_bag_of(gs, w).count("misc_gem") == 3,
           "добыча павшего ПЕРЕНОСИТСЯ победителю, ровно своим счётом");
-    CHECK(coin_census_value(player_bag_of(w)) == coinBefore + 5 * 10,
+    CHECK(coin_census_value(player_bag_of(gs, w)) == coinBefore + 5 * 10,
           "монеты павшего переходят как товар, и НИ ОДНОЙ сверх — выдача "
           "монет из воздуха снесена (M-139)");
     {
         int goods = 0;
-        for (const ItemRef& sl : player_bag_of(w).slots) {
+        for (const ItemRef& sl : player_bag_of(gs, w).slots) {
             if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
         }
         CHECK(goods == 2,
@@ -245,7 +245,7 @@ void test_spoils_are_rolled_not_scavenged() {
     loss.leaderFractionA = 0.0f;        // the player fell
     loss.leaderFractionB = 0.8f;
     settle_player_auto_battle(mw2, enemy2, loss, /*playerIsA*/true);
-    CHECK(coin_census_value(player_bag_of(w2)) == 0,
+    CHECK(coin_census_value(player_bag_of(gs, w2)) == 0,
           "a defeat pays the player nothing");
 }
 
@@ -267,11 +267,11 @@ void test_empty_handed_fallen_pays_nothing() {
     ensure_macro_player_entity(gs, w);
     const entt::entity pack = squad(w, NPCType::Wolf, "wildlife", 3, 0, 9u);
     settle_player_auto_battle(mw, pack, wipe_of(w, pack, true), true);
-    CHECK(coin_census_value(player_bag_of(w)) == 0,
+    CHECK(coin_census_value(player_bag_of(gs, w)) == 0,
           "стая, не нёсшая ничего, не платит ни монеты — ни кошелька строки, "
           "ни броска профиля больше нет (M-139)");
     int goods = 0;
-    for (const ItemRef& sl : player_bag_of(w).slots) {
+    for (const ItemRef& sl : player_bag_of(gs, w).slots) {
         if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
     }
     CHECK(goods == 0,

@@ -57,10 +57,10 @@ inline entt::entity current_player_body(ecs::World& w) {
 // tick does it via pull_player_entity_to_scalars).
 //
 // `playerFlagBits` — адрес ОДНОГО числа `GameState::playerFlagBits` (1е
-// кластер 5): второй носитель флажка, packed-хэндл записи. Субмиру не даётся
+// кластер 5): ЕДИНСТВЕННЫЙ макро-носитель флажка. Субмиру не даётся
 // GameState — только это число (закон двух миров: канал узкий и названный);
 // звонящий без мира (фикстура) законно передаёт nullptr — тогда двигается
-// только тег, как до кластера 5.
+// только сценический флаг (AvatarTag), макро-мира у фикстуры нет.
 inline bool possess_entity(ecs::World& w, entt::entity target,
                            std::uint32_t* playerFlagBits) {
     auto& reg = w.reg;
@@ -81,13 +81,9 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
     //     STAYS HOME. The scene flag alone rides it, and the exit reset
     //     («одержим генерик — при выходе сброс») is not written anywhere: the
     //     body dies with the scene while your macro flag never left you.
-    // Запись — хэндлом (шаг 2 1е); флажку игрока до 1е-шага 4 нужен ЕNTT-
-    // носитель записи, и обратная дверь моста (macro_entity_of, линейный
-    // скан) законна здесь — одержимость есть клик, не тик.
+    // Запись — хэндлом: с 1е кластера 5 макро-флаг ЕСТЬ биты GameState,
+    // entt-носитель записи флажку больше не нужен вовсе.
     const MacroHandle recH = macro_record_of(reg, target);
-    const entt::entity rec = recH.slot != kMacroNoSlot
-        ? macro_entity_of(reg, recH) : target;
-    if (rec == entt::null) return false;
 
     if (reg.valid(cur)) {
         reg.remove<ecs::AvatarTag>(cur);
@@ -103,24 +99,18 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
 
     // …AND THE MACRO FLAG RIDES THE SAME MOVEMENT — when it has a record to
     // ride to. It used to be deferred to leave() — AvatarTag moved here,
-    // PlayerTag followed on the way out — and for the whole span between them
-    // the question «кем я хожу» had two answers standing on two different
-    // records. That is the §45 shape exactly, and it is why a potion drunk in
-    // a lord's body healed the husk the player had left behind. A DERIVED
-    // take (rec == target) moves nothing here: the macro flag stays on the
-    // caster's own record, which IS the exit reset.
+    // the macro flag followed on the way out — and for the whole span
+    // between them the question «кем я хожу» had two answers standing on two
+    // different records. That is the §45 shape exactly, and it is why a
+    // potion drunk in a lord's body healed the husk the player had left
+    // behind. A DERIVED take (recH пуст — nothing above remembers the body)
+    // moves nothing here: the macro flag stays on the caster's own record,
+    // which IS the exit reset.
     //
-    // Exactly-one holds by the move itself: every other holder is stripped
-    // before the new one is stamped. (Removing the component of the entity a
-    // view is currently visiting is the permitted case; the emplace is after
-    // the loop.)
-    if (rec != target) {
-        for (auto e : reg.view<ecs::PlayerTag>()) {
-            if (e != rec) reg.remove<ecs::PlayerTag>(e);
-        }
-        if (!reg.all_of<ecs::PlayerTag>(rec)) reg.emplace<ecs::PlayerTag>(rec);
-        // Второй носитель — той же дверью, тем же движением (1е кластер 5).
-        if (playerFlagBits) *playerFlagBits = macro_handle_bits(recH);
+    // Exactly-one holds by the move itself: носитель — ОДНО число, запись
+    // нового значения и есть срыв со старого.
+    if (recH.slot != kMacroNoSlot && playerFlagBits) {
+        *playerFlagBits = macro_handle_bits(recH);
     }
     return true;
 }

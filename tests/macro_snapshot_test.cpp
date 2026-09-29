@@ -97,11 +97,11 @@ void test_snapshot_round_trips_the_living_map() {
     (*sm::body_state<ecs::MacroCell>(w.reg, a)).idx = ecs::cell_index(25, 21, 64);
     (*sm::body_state<ecs::Pools>(w.reg, b)).hp = 0.0f;
     sm::macro_mark_dead(w.reg, b);
-    // …and the player POSSESSES lord A (v87): «кем я управляю» is the flag on
-    // the entity itself, and the save must carry it as the record's own honest
-    // byte — the out-of-snapshot ordinal it used to be re-derived from is
-    // dead (SAVE-5: the re-derivation masked a load that ghosted the squad).
-    w.reg.emplace<ecs::PlayerTag>(a);
+    // …and the player POSSESSES lord A (v116): «кем я управляю» — биты
+    // GameState; провод несёт ОРДИНАЛ носителя (сейв — скалярами мира), и
+    // загрузка обязана вернуть флажок на ТОГО ЖЕ лорда (SAVE-5: второй склад
+    // «кем управляю» вне снимка мёртв).
+    gs.playerFlagBits = sm::macro_handle_bits(sm::handle_of(w.reg, a));
     // A bandit chief is a NAMED character (v90): born OWNING his sheet.
     // His campaign diverges it from the birth roll — the owner's ММОРПГ
     // point is that exactly this divergence survives the save.
@@ -120,7 +120,9 @@ void test_snapshot_round_trips_the_living_map() {
     const std::vector<std::uint16_t> noTrees;
     const DepositLayer noDeposits;
     CHECK_OR_RETURN(save_game(gs, noQuests, snapshot_macro_ecs(w), noTrees,
-                              noDeposits, ecs::kPlayerSquadOrdinal, path),
+                              noDeposits,
+                              player_flag_wire_ordinal(gs, sm::store_of(w)),
+                              path),
                     "the snapshot saved");
 
     GameState gs2{};
@@ -141,6 +143,7 @@ void test_snapshot_round_trips_the_living_map() {
 
     sm::store_attach(w2, w2Store_.get());
     restore_macro_ecs(records2, w2, gs2);
+    resolve_player_handles_after_load(gs2, *w2Store_, flagOrd2);
 
     const entt::entity a2 = find_by_ordinal(w2, ordinalA);
     CHECK_OR_RETURN(a2 != entt::null, "leader A restored under his ordinal");
@@ -162,7 +165,7 @@ void test_snapshot_round_trips_the_living_map() {
     // on nobody else (the negative control: B carried no flag and must not
     // grow one; a restore that stamps everyone would also pass a bare
     // "A has it" check).
-    CHECK(w2.reg.all_of<ecs::PlayerTag>(a2),
+    CHECK(player_flag_handle(gs2) == sm::handle_of(w2.reg, a2),
           "the possessed lord keeps the player flag across the save");
     CHECK_OR_RETURN(owned_sheet(w2, a2) != nullptr,
                     "the named chief still OWNS his sheet after the save");
@@ -172,11 +175,8 @@ void test_snapshot_round_trips_the_living_map() {
     const entt::entity b2pre = find_by_ordinal(w2, ordinalB);
     CHECK(b2pre != entt::null && owned_sheet(w2, b2pre) == nullptr,
           "the transient crew still stores nothing (owned_sheet law)");
-    {
-        int flags = 0;
-        for (auto e : w2.reg.view<ecs::PlayerTag>()) { (void)e; ++flags; }
-        CHECK(flags == 1, "exactly one player flag restored");
-    }
+    CHECK(w2Store_->valid(player_flag_handle(gs2)),
+          "exactly one player flag restored — the handle is live");
 
     const entt::entity b2 = find_by_ordinal(w2, ordinalB);
     CHECK_OR_RETURN(b2 != entt::null, "the dead leader is still ON the map");
@@ -241,7 +241,6 @@ void test_resnapshot_is_byte_identical() {
     const entt::entity a = spawn_squad(gs, w, sm::store_of(w), absent, specA);
     CHECK_OR_RETURN(a != entt::null, "squad A spawned");
     (*sm::body_state<ecs::MacroNpcRuntime>(w.reg, a)).xp = 777;
-    w.reg.emplace<ecs::PlayerTag>(a);
     CHECK_OR_RETURN(owned_sheet(w, a) != nullptr, "named lord owns his sheet");
     owned_sheet(w, a)->attributes[AttributeId::End] = 13;
 

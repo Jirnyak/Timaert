@@ -9,14 +9,11 @@
 //
 // A MacroNpcRecord is ONE macro entity flattened to rows: the POD components
 // verbatim, the roster as its SoldierRecord rows, the opt-ins (orders, death,
-// the player flag) as explicit flags. PlayerTag rides HONESTLY (owner verdict
-// 2026-09-10: «сейв честно хранит снимок всего мира… и потом честно просто
-// смотрится у кого флажок игрок»): it used to be re-derived after restore
-// from PlayerState::possessedMacroSpawnId — a second store of "who is
-// controlled" outside the snapshot — while the load-path genesis raised a
-// SECOND player squad the doors then pointed at, ghosting the restored one
-// (postdemoaudit SAVE-5). PlayerSquadTag is NOT stored: it is the reserved
-// ordinal spelled as a tag, so restore re-derives it from spawnId.
+// death) as explicit flags. «Кем я управляю» с v116 НЕ едет байтом записи:
+// это поле мира (GameState::playerFlagBits), на проводе — ординал носителя
+// в скалярах мира, резолв — resolve_player_handles_after_load строго после
+// restore (SAVE-5 закрыт тем же законом: второй склад «кем управляю» вне
+// снимка не существует, генезис на загрузке не гоняется).
 #pragma once
 #include <cstdint>
 #include <vector>
@@ -61,9 +58,6 @@ struct MacroNpcRecord {
     // навсегда держится именно этим — генезис на загрузке не гоняется, и
     // погибшая анкета в снапшоте просто отсутствует.
     std::int16_t         designOrdinal = -1;
-    // «Кем я управляю» — ecs::PlayerTag as one honest byte (v87). At most one
-    // record of a save carries 1: the player's own squad, or a possessed lord.
-    std::uint8_t         playerFlag = 0;
     Inventory            inventory;         // NpcInventory.inv
     // What this body WEARS (ecs::BodyEquipment, M-183): маска тела + 480
     // ячеек-индексов в `inventory` выше — истина вещи одна, инвентарь.

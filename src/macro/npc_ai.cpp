@@ -4867,15 +4867,14 @@ static TickContext make_tick_context(MacroWorld& mw,
     // The player is a squad: WHERE he is = his flag holder's cell, the same
     // one-number truth every squad keeps (подпосадка 4).
     if (mw.world) {
-        if (const ecs::MacroCell* pc = mw.gs && mw.store
-                ? player_flag_cell(*mw.gs, *mw.store)
-                : player_flag_cell(*mw.world)) {
+        if (!ctx.mw.store) ctx.mw.store = &store_of(*mw.world);
+        if (const ecs::MacroCell* pc =
+                player_flag_cell(*mw.gs, *ctx.mw.store)) {
             ctx.playerX = float(ecs::cell_x(*pc, ctx.mapW));
             ctx.playerY = float(ecs::cell_y(*pc, ctx.mapW));
         }
-        // Store свипа — адресом в конверте: поведения читают колонки, не
-        // спрашивая ctx реестра на каждом think (1е).
-        if (!ctx.mw.store) ctx.mw.store = &store_of(*mw.world);
+        // Store свипа — адресом в конверте (выставлен выше): поведения
+        // читают колонки, не спрашивая ctx реестра на каждом think (1е).
         // Слоты игрока — резолв ОДИН раз на свип из битов GameState
         // (1е кластер 5): распаковка двух полей, ноль сканов реестра.
         // Валидность спрашивается у store — фикстура без игрока несёт

@@ -77,13 +77,13 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
     sm::ensure_macro_player_entity(gs, world);
-    sm::player_inventory(world)->add("coin_empire_copper", 5);
+    sm::player_inventory(gs, *worldStore_)->add("coin_empire_copper", 5);
     gs.player.ageDays = 1000;
-    sm::player_sheet(world)->attributes[sm::AttributeId::Cha] = 0;
+    sm::player_sheet(gs, *worldStore_)->attributes[sm::AttributeId::Cha] = 0;
     // The player's men live on his SQUAD ENTITY now (owner, 2026-08-27), so
     // the fixture raises one — the same shape a lord's warband has — and the
     // daily tick reads his wages from it through the envelope.
-    sm::Inventory* army = sm::player_inventory(world);
+    sm::Inventory* army = sm::player_inventory(gs, *worldStore_);
     sm::creatures_push(*army, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 77u));
     // Вторая душа — не украшение фикстуры: закон v105 взыскивает ДОЛЮ
@@ -109,7 +109,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // The daily wage died 2026-09-17 («общее содержание — игрок == нпц»,
     // CANON S19.2): an ordinary day charges NOTHING — balances live on the
     // season boundary, through THE one squad window below.
-    CHECK(sm::inventory_value((*sm::player_inventory(world))) == 5,
+    CHECK(sm::inventory_value((*sm::player_inventory(gs, *worldStore_))) == 5,
           "an ordinary day charges no upkeep: balances are the boundary's");
     CHECK(gs.player.ageDays == 1001,
           "one daily tick ages the player exactly one day");
@@ -126,7 +126,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // A non-boundary day is a silent day — negative control.
     CHECK(sm::squad_season_window(mw, 12) == 0,
           "no window off the boundary: nobody deserts");
-    CHECK(sm::inventory_value((*sm::player_inventory(world))) == 5,
+    CHECK(sm::inventory_value((*sm::player_inventory(gs, *worldStore_))) == 5,
           "no window off the boundary: nothing debited");
 
     // ── СЧЁТ, А НЕ КРОМКА (v105, CANON S10 «у всякого, кто кормит, есть
@@ -149,7 +149,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
           "первая граница выставляет счёт, а не взыскивает: долга не было");
     CHECK(sm::creature_heads(gs.deserterPool) == poolBefore,
           "никто не ушёл — уходят за НЕОПЛАЧЕННОЕ, а счёт только что выписан");
-    CHECK(sm::inventory_value(*sm::player_inventory(world)) == 0,
+    CHECK(sm::inventory_value(*sm::player_inventory(gs, *worldStore_)) == 0,
           "частичная оплата ЗАКОННА: что было в кошельке, то и ушло в счёт");
     CHECK(gs.lootPoolValue == 5,
           "уплаченная часть платы сгорает в пул лута, как и полная");
@@ -170,7 +170,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // целиком, и следующая граница не уводит никого.
     sm::creatures_push(*army, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 78u));
-    sm::Inventory* purse = sm::player_inventory(world);
+    sm::Inventory* purse = sm::player_inventory(gs, *worldStore_);
     purse->add("food", sm::kDaysPerSeason);
     purse->add("coin_empire_copper", wageSeason);
     const std::int64_t burnedBefore = gs.lootPoolValue;

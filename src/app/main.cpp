@@ -1049,8 +1049,8 @@ float macro_cell_cost_weight(const App& app) {
         || pc.costGrid.size() != std::size_t(pc.width) * std::size_t(pc.height)) {
         return 1.0f;
     }
-    const sm::ecs::MacroCell* pcell = sm::player_flag_cell(
-        const_cast<App&>(app).ecs);
+    const sm::ecs::MacroCell* pcell = app.macroStore
+        ? sm::player_flag_cell(app.gs, *app.macroStore) : nullptr;
     if (!pcell) return 1.0f;
     return pc.cost_at(sm::ecs::cell_x(*pcell, app.gs.mapW),
                       sm::ecs::cell_y(*pcell, app.gs.mapW));
@@ -1067,8 +1067,8 @@ bool player_can_make_camp(const App& app) {
         || pc.water.size() != std::size_t(pc.width) * std::size_t(pc.height)) {
         return true;   // no grid yet: nothing says he cannot
     }
-    const sm::ecs::MacroCell* pcell = sm::player_flag_cell(
-        const_cast<App&>(app).ecs);
+    const sm::ecs::MacroCell* pcell = app.macroStore
+        ? sm::player_flag_cell(app.gs, *app.macroStore) : nullptr;
     if (!pcell) return true;
     return !pc.water_at(sm::ecs::cell_x(*pcell, app.gs.mapW),
                         sm::ecs::cell_y(*pcell, app.gs.mapW));
@@ -3688,7 +3688,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             // кто сюда пришёл ногами, — а твоё тело всё это время стояло там,
             // где ты его оставил, и приезжать ему сюда незачем.
             if (app.subworld.active()) app.subworld.leave(true);
-            sm::wake_player_in_original_body(app.gs, app.ecs);
+            sm::wake_player_in_original_body(app.gs, *app.macroStore);
             // Жив ⇔ флажок стоит ДОМА на живом оригинале: смерть лорда
             // разбудила (флажок переехал), смерть генерика не двигала флажок
             // вовсе — а мёртвый оригинал это «просыпаться не в чем», гейм

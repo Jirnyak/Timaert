@@ -536,6 +536,9 @@ timaert_test(macro_snapshot_test
         # the save carries what a body WEARS (macro/anatomy.h)
         src/macro/world_fields.cpp
         src/macro/macro_snapshot.cpp
+        # v116: хэндлы игрока резолвятся после restore пограничными дверьми
+        # (resolve_player_handles_after_load / player_flag_wire_ordinal).
+        src/macro/player_entity.cpp
         # spawn_squad goes through make_npc — the one creation door — so the
         # test links the spawner and the loot it rolls.
         src/macro/npc_spawn.cpp

@@ -633,14 +633,15 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     int cx = 0, cy = 0;
     std::uint8_t entryDir = kEntryDirNone;
     std::uint8_t entryTicks = 0;
-    if (const entt::entity fe = player_flag_entity(ecs); fe != entt::null) {
-        if (const auto* fc = body_state<ecs::MacroCell>(ecs.reg, fe)) {
-            cx = ecs::cell_x(*fc, gs.mapW);
-            cy = ecs::cell_y(*fc, gs.mapW);
-        }
-        if (const auto* frt = body_state<ecs::MacroNpcRuntime>(ecs.reg, fe)) {
-            entryDir = frt->entryDir;
-            entryTicks = frt->entryTicks;
+    {
+        MacroStore& st = store_of(ecs);
+        const MacroHandle fh = player_flag_handle(gs);
+        if (st.valid(fh)) {
+            const auto& fc = st.cell[fh.slot];
+            cx = ecs::cell_x(fc, gs.mapW);
+            cy = ecs::cell_y(fc, gs.mapW);
+            entryDir = st.runtime[fh.slot].entryDir;
+            entryTicks = st.runtime[fh.slot].entryTicks;
         }
     }
 
@@ -757,20 +758,18 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // sheet (phase 4), which already follows the flag by its door.
     const BonusTotals playerBonuses =
         squad_bonuses(player_effective_sheet(gs, store_of(ecs)));
-    const entt::entity flagRec = player_flag_entity(ecs);
+    const MacroHandle flagRec = player_flag_handle(gs);
     std::int32_t rosterSubject = std::int32_t(ecs::kPlayerSquadOrdinal);
     std::int16_t rosterCx = 0, rosterCy = 0;
     std::uint16_t squadFaction = std::uint16_t(faction_index(kPlayerFactionId));
-    if (flagRec != entt::null) {
-        if (const auto* sid = body_state<ecs::MacroSpawnId>(ecs.reg, flagRec)) {
-            rosterSubject = std::int32_t(sid->index);
-        }
-        if (const auto* mc = body_state<ecs::MacroCell>(ecs.reg, flagRec)) {
-            rosterCx = std::int16_t(ecs::cell_x(*mc, gs.mapW));
-            rosterCy = std::int16_t(ecs::cell_y(*mc, gs.mapW));
-        }
-        if (const auto* kind = body_state<ecs::NPCKind>(ecs.reg, flagRec)) {
-            squadFaction = kind->factionIdx;
+    {
+        MacroStore& st = store_of(ecs);
+        if (st.valid(flagRec)) {
+            rosterSubject = std::int32_t(st.spawnId[flagRec.slot].index);
+            const auto& mc = st.cell[flagRec.slot];
+            rosterCx = std::int16_t(ecs::cell_x(mc, gs.mapW));
+            rosterCy = std::int16_t(ecs::cell_y(mc, gs.mapW));
+            squadFaction = st.kind[flagRec.slot].factionIdx;
         }
     }
     spawn_player_squad(ecs,
@@ -855,7 +854,7 @@ void SubworldEngine::sync_macro_player_to_center() {
     // The remap is a jump, not a walk — the jump door erases the entry edge,
     // so the next enter() falls back to the centre until the player actually
     // crosses a macro cell boundary again.
-    if (ecs_) player_jump_to_cell(*gs_, *ecs_, nx, ny);
+    if (ecs_) player_jump_to_cell(*gs_, store_of(*ecs_), nx, ny);
 }
 
 // (follow_flag_to_its_record stood here until 2026-09-14. It moved the macro
@@ -931,15 +930,14 @@ void SubworldEngine::spawn_player_entity() {
     // его собственный сквад как собой, анкета лорда — пока он лорд. Един-
     // ственный дефенсив: мира без флага не бывает — потерянный флаг
     // возвращается на собственный сквад.
-    const entt::entity psq = player_squad_entity(*ecs_);
-    entt::entity flagRec = player_flag_entity(*ecs_);
-    if (flagRec == entt::null && psq != entt::null) {
-        reg.emplace<ecs::PlayerTag>(psq);
-        flagRec = psq;
-        // Второй носитель — той же дверью (1е кластер 5): дефенсив, вернувший
-        // тег домой, обязан вернуть и биты, иначе они держат мертвеца.
-        if (gs_) gs_->playerFlagBits =
-            macro_handle_bits(handle_of(reg, psq));
+    MacroStore& pst = store_of(*ecs_);
+    MacroHandle flagRec = gs_ ? player_flag_handle(*gs_) : MacroHandle{};
+    if (gs_ && !pst.valid(flagRec)) {
+        const MacroHandle psq = player_squad_handle(*gs_);
+        if (pst.valid(psq)) {
+            gs_->playerFlagBits = macro_handle_bits(psq);
+            flagRec = psq;
+        }
     }
     const entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, playerX_, playerY_, 0.0f);
@@ -953,8 +951,8 @@ void SubworldEngine::spawn_player_entity() {
     // things follow from this one emplace: the fold-up passes lose their
     // reason to exist, and no damage/spend path needs to know which kind of
     // body it is holding.
-    if (flagRec != entt::null)
-        reg.emplace<ecs::MacroOrigin>(e, handle_of(reg, flagRec));
+    if (flagRec.slot != kMacroNoSlot)
+        reg.emplace<ecs::MacroOrigin>(e, flagRec);
     // Inc 4b: the player is a full combat participant, not an inert anchor.
     //  - Pools MIRROR the record the flag stands in (sub/record.h);
     //    mirror_bodies_from_record re-pulls the block at each tick top, and
@@ -996,20 +994,19 @@ void SubworldEngine::spawn_player_entity() {
     // macro state, the body is its projection. Refreshed each tick beside the
     // pace, so drawing a dagger changes the next swing, not the next descent.
     const ecs::BodyEquipment* eqp = nullptr;
-    if (flagRec != entt::null) eqp = body_state<ecs::BodyEquipment>(reg, flagRec);
+    if (pst.valid(flagRec)) eqp = &pst.gear[flagRec.slot];
     // The EFFECTIVE sheet swings and paces (phase 4): the ring's +STR is in
     // the blow, the sustained haste's +SPD is in the step. The totals are
     // assembled ONCE — the sheet copy takes the attr/skill cells, and the
     // derived cells (a worn MovePct row) meet the pace law below.
-    const BonusTotals standing = (gs_ && flagRec != entt::null)
-        ? standing_bonuses_of(*ecs_, flagRec) : BonusTotals{};
+    const BonusTotals standing = (gs_ && pst.valid(flagRec))
+        ? standing_bonuses_of(pst, flagRec) : BonusTotals{};
     const CharacterSheet* baseSheet =
         gs_ ? player_sheet(*gs_, store_of(*ecs_)) : nullptr;
     const CharacterSheet effBody = baseSheet
         ? effective_sheet(*baseSheet, standing) : CharacterSheet{};
     const ecs::NpcInventory* flagBag =
-        (gs_ && flagRec != entt::null)
-            ? sub::state_of<ecs::NpcInventory>(ecs_->reg, flagRec) : nullptr;
+        (gs_ && pst.valid(flagRec)) ? &pst.inventory[flagRec.slot] : nullptr;
     const StrikeFields hs = gs_
         ? hand_strike_fields(effBody.attributes,
                              effBody.skills,
@@ -1031,10 +1028,9 @@ void SubworldEngine::spawn_player_entity() {
     // too (вердикт №7): the flag record's own attackRange — the Adventurer's
     // for himself, the worn record's for a possession.
     float armReach = kAdventurerCombat.attackRange;
-    if (flagRec != entt::null) {
-        if (const auto* k = body_state<ecs::NPCKind>(reg, flagRec)) {
-            armReach = npc_def(NPCType(k->type)).combat.attackRange;
-        }
+    if (pst.valid(flagRec)) {
+        armReach = npc_def(
+            NPCType(pst.kind[flagRec.slot].type)).combat.attackRange;
     }
     reg.emplace<ecs::Combat>(
         e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
@@ -3458,9 +3454,10 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                             std::uint32_t(debt->subject));
                     } else if (reg.any_of<ecs::AvatarTag,
                                           ecs::PlayerSoldierTag>(killerBody)) {
-                        const entt::entity ps = player_squad_entity(*ecs_);
-                        if (ps != entt::null)
-                            leader = handle_of(mw_.world->reg, ps);
+                        if (gs_) {
+                            const MacroHandle ps = player_squad_handle(*gs_);
+                            if (store_of(mw_.world->reg).valid(ps)) leader = ps;
+                        }
                     }
                     // «Рука игрока» — сценная правда для репутации: его
                     // аватар (включая одержимое тело) или его солдат.
@@ -4308,7 +4305,7 @@ bool SubworldEngine::try_exit_dungeon() {
     // at the very spot the door was opened from — or, through the hatch, ON
     // the tower's crown: the cylinder's centre, one tower height above the
     // ground the honest support physics already carries bodies on.
-    player_jump_to_cell(gs, *ecs_, ses.doorCx, ses.doorCy);
+    player_jump_to_cell(gs, store_of(*ecs_), ses.doorCx, ses.doorCy);
     // Out through the crown: you come up ON THE HATCH you climbed to, not on
     // the tower's axis — the axis is where the orb's plinth stands, and a body
     // put there materialised INSIDE the shrine, its eye in the burning head

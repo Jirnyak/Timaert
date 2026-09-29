@@ -136,23 +136,16 @@ struct MissileAttack {
 struct Dead {};
 // «Кем я на КАРТЕ» — the macro flag, and MACRO ONLY (scale split, owner
 // verdict 2026-09-10): it rides the player's own squad by default and a
-// possessed lord's macro entity while he wears one. It NEVER stands on a
-// SubworldTag body any more — that job belongs to AvatarTag below. Before
-// the split this one flag carried both meanings and MOVED between scales,
-// which put a cell-coordinate entity into 12 scene passes that thought they
-// had found a body in tiles.
-struct PlayerTag {};
+// possessed lord's while he wears one. С 1е (кластер 5) оба макро-вопроса —
+// «кем я на карте» и «чей это отряд» — НЕ компоненты: это два packed-хэндла
+// `GameState::playerFlagBits`/`playerSquadBits` (macro/player_entity.h,
+// битовые двери). Теги PlayerTag/PlayerSquadTag умерли вместе со сканами
+// view<...> — ответ стал распаковкой поля мира.
 // «Моё ТЕЛО в сцене» — the scene flag, and SCENE ONLY: the hero husk on
 // enter, or a possessed scene body. Dies with the scene. A view<AvatarTag>
 // physically cannot find a macro entity, so the scene's player passes need
 // no scale guards at all.
 struct AvatarTag {};
-// A third question — «чей это отряд» — and it never moves off the player's
-// own macro squad: a loop that means "another party" excludes THIS one,
-// because excluding PlayerTag stops working the moment the player possesses
-// someone, and his own squad becomes prey / a trade partner / an AI walker
-// to every scan on the map.
-struct PlayerSquadTag {};
 struct PlayerSoldierTag {};
 struct TempHostileToPlayer {};
 // Marks an entity that lives only in the current subworld scene; cleared
@@ -715,9 +708,7 @@ TIMAERT_ROW(sm::ecs::BodyRadius);
 TIMAERT_ROW(sm::ecs::Combat);
 TIMAERT_ROW(sm::ecs::MissileAttack);
 TIMAERT_ROW(sm::ecs::Dead);
-TIMAERT_ROW(sm::ecs::PlayerTag);
 TIMAERT_ROW(sm::ecs::AvatarTag);
-TIMAERT_ROW(sm::ecs::PlayerSquadTag);
 TIMAERT_ROW(sm::ecs::PlayerSoldierTag);
 TIMAERT_ROW(sm::ecs::TempHostileToPlayer);
 TIMAERT_ROW(sm::ecs::SubworldTag);

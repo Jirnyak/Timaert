@@ -46,22 +46,20 @@ WorldFact fact(int day, FactKind kind, std::uint8_t subjKind,
 // read. It is not enough now, and that is the fixture's debt, not the law's:
 // a world without an original is a world that cannot exist.
 void stand_at(sm::GameState& gs, ecs::World& w, int x, int y) {
-    entt::entity e = entt::null;
-    for (auto ent : w.reg.view<ecs::PlayerTag>()) e = ent;
-    if (e == entt::null) {
-        sm::MacroStore& st = sm::store_of(w);
+    sm::MacroStore& st = sm::store_of(w);
+    if (!st.valid(sm::player_squad_handle(gs))) {
         const sm::MacroHandle h = sm::store_birth(st);
-        e = w.reg.create();
+        const entt::entity e = w.reg.create();
         w.reg.emplace<ecs::MacroSlot>(e, h.slot);
-        w.reg.emplace<ecs::PlayerTag>(e);
         st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};
         // Оба носителя, как настоящая дверь (1е кластер 5): журнал читает
         // клетку и вселение из битов GameState.
         gs.playerSquadBits = sm::macro_handle_bits(h);
         gs.playerFlagBits  = gs.playerSquadBits;
     }
-    sm::store_of(w).cell[sm::slot_of(w.reg, e)] =
-        ecs::MacroCell{ecs::cell_index(x, y, 64)};
+    // Клетка пишется НОСИТЕЛЮ ФЛАЖКА — локальность журнал мерит по нему.
+    const sm::MacroHandle f = sm::player_flag_handle(gs);
+    st.cell[f.slot] = ecs::MacroCell{ecs::cell_index(x, y, 64)};
 }
 
 void test_participation_locality_and_silence() {
@@ -199,16 +197,8 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     const entt::entity lord = w.reg.create();
     w.reg.emplace<ecs::MacroSlot>(lord, hL.slot);
     stL.spawnId[hL.slot] = ecs::MacroSpawnId{42u};
-    // Possession MOVES the one flag (exactly-one invariant): find the
-    // stand-in holder FIRST, remove after — never mutate a pool mid-walk.
-    entt::entity prev = entt::null;
-    for (auto ent : w.reg.view<ecs::PlayerTag>()) prev = ent;
-    if (prev != entt::null) w.reg.remove<ecs::PlayerTag>(prev);
-    w.reg.emplace<ecs::PlayerTag>(lord);
-    // Оба носителя, как настоящая дверь вселения (1е кластер 5): вопрос
-    // «ношу ли я чужое тело» журнал задаёт теперь битам GameState.
-    if (prev != entt::null)
-        gs.playerSquadBits = sm::macro_handle_bits(sm::handle_of(w.reg, prev));
+    // Possession MOVES the one flag: носитель — ОДНО число GameState,
+    // запись нового значения и есть срыв со старого (1е кластер 5).
     gs.playerFlagBits = sm::macro_handle_bits(hL);
     chronicle_record(gs.chronicle,
                      fact(2, FactKind::Killed,

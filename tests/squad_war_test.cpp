@@ -312,13 +312,13 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     // The player's men are a roster on his own SQUAD ENTITY now — the same
     // shape the enemy lord below has, settled through the same doors.
     ensure_macro_player_entity(gs, w);
-    Inventory* army = player_inventory(w);
+    Inventory* army = player_inventory(gs, *wStore_);
     creatures_push(*army, make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
     creatures_push(*army, make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
-    player_pools(w)->maxHp = 100;
-    player_pools(w)->hp = 100;
-    const int level0 = sm::player_sheet(w)->levelData.level;
-    const int exp0 = sm::player_sheet(w)->levelData.exp;
+    player_pools(gs, *wStore_)->maxHp = 100;
+    player_pools(gs, *wStore_)->hp = 100;
+    const int level0 = sm::player_sheet(gs, *wStore_)->levelData.level;
+    const int exp0 = sm::player_sheet(gs, *wStore_)->levelData.exp;
     const auto enemy = make_squad_at(w, NPCType::Bandit, "bandits", 3,
                                      10.0f, 10.0f, 9u, {31u, 32u},
                                      NPCType::Bandit, 2);
@@ -344,15 +344,15 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
               && army->slots[std::size_t(army->creature_first())].entityId
                      == 502u,
           "the player's fallen soldier left the army by name");
-    CHECK(player_pools(w)->hp == 60,
+    CHECK(player_pools(gs, *wStore_)->hp == 60,
           "the player's wound landed as the fraction, in THE store — his squad's Pools");
     CHECK(roster_count(w, gs, 9u) == 0 && sm::macro_dead(w.reg, enemy),
           "the enemy died through the ledger and the tracked-death shape");
-    CHECK(player_inventory(w)->count("wood") == 4,
+    CHECK(player_inventory(gs, *wStore_)->count("wood") == 4,
           "the fallen owner's goods landed in the player's own bag");
     CHECK(xp > 0
-              && (sm::player_sheet(w)->levelData.exp > exp0
-                  || sm::player_sheet(w)->levelData.level > level0),
+              && (sm::player_sheet(gs, *wStore_)->levelData.exp > exp0
+                  || sm::player_sheet(gs, *wStore_)->levelData.level > level0),
           "victory paid the player experience through award_exp");
 
     // The player LOSES with a man still standing: wounded, never dead — the
@@ -362,13 +362,13 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     auto w2Store_ = sm::make_macro_store();
     sm::store_attach(w2, w2Store_.get());
     ensure_macro_player_entity(gs2, w2);
-    Inventory* army2 = player_inventory(w2);
+    Inventory* army2 = player_inventory(gs2, *w2Store_);
     creatures_push(*army2,
                    make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
     creatures_push(*army2,
                    make_soldier(std::uint8_t(NPCType::Guard), 3, 602u));
-    player_pools(w2)->maxHp = 100;
-    player_pools(w2)->hp = 100;
+    player_pools(gs2, *w2Store_)->maxHp = 100;
+    player_pools(gs2, *w2Store_)->hp = 100;
     const auto victor = make_squad_at(w2, NPCType::Bandit, "bandits", 6,
                                       10.0f, 10.0f, 9u, {41u},
                                       NPCType::Bandit, 5);
@@ -382,7 +382,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     settle_player_auto_battle(mw2, victor, loss, /*playerIsA*/true);
     CHECK(creature_heads(*army2) == 1,
           "defeat took the fallen and left the survivor");
-    CHECK(player_pools(w2)->hp >= 1,
+    CHECK(player_pools(gs2, *w2Store_)->hp >= 1,
           "while one of his men stands, defeat wounds the player - "
           "never kills him");
     CHECK(!sm::macro_dead(w2.reg, victor),

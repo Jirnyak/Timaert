@@ -93,9 +93,8 @@ static bool smoke_projects_foreign_record(App& app, entt::entity body) {
     if (!reg.valid(body)) return false;
     const auto* origin = reg.try_get<sm::ecs::MacroOrigin>(body);
     if (!origin || !sm::store_of(reg).valid(origin->macro)) return false;
-    const entt::entity psq = sm::player_squad_entity(app.ecs);
-    return psq == entt::null
-        || origin->macro != sm::handle_of(reg, psq);
+    const sm::MacroHandle psq = sm::player_squad_handle(app.gs);
+    return psq.slot == sm::kMacroNoSlot || !(origin->macro == psq);
 }
 
 // His book, through the one door (v89) — scratch like the main app's own
@@ -975,11 +974,12 @@ bool run_subworld_recovery_smoke(App& app) {
     entt::entity scaleWitness = entt::null;
     float wPx = 0.0f, wPy = 0.0f, wVx = 0.0f, wVy = 0.0f;
     std::uint32_t wCellIdx = 0;
-    for (auto e : app.ecs.reg.view<sm::ecs::MacroSlot>(
-             entt::exclude<sm::ecs::PlayerSquadTag>)) {
+    for (auto e : app.ecs.reg.view<sm::ecs::MacroSlot>()) {
         sm::MacroStore& stx = sm::store_of(app.ecs);
         const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
         if (stx.dead[slot] != 0) continue;
+        // Игрок — колонкой ординала (1е кластер 5), тег-exclude умер.
+        if (stx.spawnId[slot].index == sm::ecs::kPlayerSquadOrdinal) continue;
         auto& c = stx.cell[slot];
         auto& v = stx.visual[slot];
         auto& pools = stx.pools[slot];
@@ -2035,13 +2035,14 @@ entt::entity smoke_find_macro_npc_trace_target(App& app) {
     // lawfully overrides the type row the repaint writes. Exclude both —
     // the lab needs a body the type row actually drives.
     sm::MacroStore& stf = sm::store_of(app.ecs);
-    auto view = app.ecs.reg.view<sm::ecs::MacroSlot>(
-        entt::exclude<sm::ecs::PlayerSquadTag>);
+    auto view = app.ecs.reg.view<sm::ecs::MacroSlot>();
     for (auto e : view) {
         const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
         // Прежние exclude-по-наличию — теперь колоночные предикаты
-        // (маршрут = waypointCount > 0; анкета стола = ordinal >= 0).
+        // (маршрут = waypointCount > 0; анкета стола = ordinal >= 0;
+        // игрок = зарезервированный ординал, 1е кластер 5).
         if (stf.dead[slot] != 0) continue;
+        if (stf.spawnId[slot].index == sm::ecs::kPlayerSquadOrdinal) continue;
         if (stf.orders[slot].waypointCount > 0) continue;
         if (stf.designTag[slot].ordinal >= 0) continue;
         const auto& hp = stf.pools[slot];
@@ -4349,10 +4350,14 @@ bool run_subworld_self_fireball_smoke(App& app) {
     // no legitimate target and any HP loss can only be a self-hit at the muzzle.
     {
         std::vector<entt::entity> doomed;
+        const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
         for (auto e : reg.view<sm::ecs::Pools>()) {
-            if (!reg.any_of<sm::ecs::AvatarTag, sm::ecs::PlayerSquadTag>(e)) {
-                doomed.push_back(e);
-            }
+            if (reg.any_of<sm::ecs::AvatarTag>(e)) continue;
+            // Сквад игрока — слотом из битов (1е кластер 5).
+            if (const auto* ms = reg.try_get<sm::ecs::MacroSlot>(e);
+                ms && homeH.slot != sm::kMacroNoSlot
+                && ms->slot == homeH.slot) continue;
+            doomed.push_back(e);
         }
         for (const entt::entity e : doomed) {
             if (reg.valid(e)) reg.destroy(e);
@@ -4824,10 +4829,14 @@ bool run_subworld_player_bow_smoke(App& app) {
     // ray would make this a referendum on the seed's foot traffic.
     {
         std::vector<entt::entity> doomed;
+        const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
         for (auto e : reg.view<sm::ecs::Pools>()) {
-            if (!reg.any_of<sm::ecs::AvatarTag, sm::ecs::PlayerSquadTag>(e)) {
-                doomed.push_back(e);
-            }
+            if (reg.any_of<sm::ecs::AvatarTag>(e)) continue;
+            // Сквад игрока — слотом из битов (1е кластер 5).
+            if (const auto* ms = reg.try_get<sm::ecs::MacroSlot>(e);
+                ms && homeH.slot != sm::kMacroNoSlot
+                && ms->slot == homeH.slot) continue;
+            doomed.push_back(e);
         }
         for (const entt::entity e : doomed) {
             if (reg.valid(e)) reg.destroy(e);
@@ -4836,14 +4845,14 @@ bool run_subworld_player_bow_smoke(App& app) {
 
     // The bow into the hand through the door — the same gear cell the sheet
     // console edits, on the squad entity the per-tick refresh reads.
-    const entt::entity sq = sm::player_squad_entity(app.ecs);
-    if (sq == entt::null) {
-        smoke_fail(app, "subworld_player_bow no squad entity");
+    const sm::MacroHandle sq = sm::player_squad_handle(app.gs);
+    if (!app.macroStore->valid(sq)) {
+        smoke_fail(app, "subworld_player_bow no squad record");
         return false;
     }
     // ФЛИП 1в: гир — колонка store у каждого сквада; ленивый opt-in умер.
     // M-183: истина одна — лук кладётся В ИНВЕНТАРЬ, надевание ставит индекс.
-    const std::uint16_t pslot = sm::slot_of(reg, sq);
+    const std::uint16_t pslot = sq.slot;
     auto* eqc = &sm::store_of(app.ecs).gear[pslot];
     sm::Inventory& pbag = sm::store_of(app.ecs).inventory[pslot].inv;
     const int bowDef = sm::item_index("wpn_bow");
@@ -5471,13 +5480,15 @@ bool run_console_smoke(App& app) {
     }
 
     // ── macro-4a + scale split: TWO flags, TWO scales, never crossed ─────────
-    // Since 2026-09-10 the flags are split by scale: PlayerTag («кем я на
-    // карте») NEVER leaves the macro side — it rides the player's own squad
-    // through the whole macro→subworld→macro cycle — while AvatarTag («моё
-    // тело здесь») exists ONLY while a scene is live, on a SubworldTag body.
-    // Prove exactly that: one PlayerTag always, macro flavour always; zero
-    // AvatarTag on the map, exactly one inside the scene. Self-contained: it
-    // restores the macro anchor the enter/leave cycle moves.
+    // Since 2026-09-10 the flags are split by scale — and since 1е (cluster
+    // 5) the macro flag IS a GameState field: «кем я на карте» — packed-хэндл
+    // `playerFlagBits`, который по построению называет только запись store и
+    // НЕ может стоять на теле сцены; AvatarTag («моё тело здесь») exists ONLY
+    // while a scene is live, on a SubworldTag body. Prove exactly that: the
+    // flag handle valid and UNMOVED through the whole macro→subworld→macro
+    // cycle; zero AvatarTag on the map, exactly one inside the scene.
+    // Self-contained: it restores the macro anchor the enter/leave cycle
+    // moves.
     {
         auto& reg = app.ecs.reg;
         const float saveX = smoke_player_x(app);
@@ -5485,10 +5496,8 @@ bool run_console_smoke(App& app) {
         auto near_half = [](float a, float b) {
             float d = a - b; if (d < 0.0f) d = -d; return d <= 0.5f;
         };
-        auto count_player_tags = [&](entt::entity& out) {
-            int n = 0; out = entt::null;
-            for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++n; out = e; }
-            return n;
+        auto flag_live = [&]() {
+            return app.macroStore->valid(sm::player_flag_handle(app.gs));
         };
         auto count_avatar_tags = [&]() {
             int n = 0;
@@ -5496,24 +5505,18 @@ bool run_console_smoke(App& app) {
             return n;
         };
 
-        // (1) Macro map: one PlayerTag, macro flavour, no avatars anywhere.
-        entt::entity mpe = entt::null;
-        if (count_player_tags(mpe) != 1) {
-            smoke_fail(app, "macro_player_entity: expected one macro PlayerTag");
+        // (1) Macro map: a live flag handle, standing where the scalars say;
+        // no avatars anywhere.
+        if (!flag_live()) {
+            smoke_fail(app, "macro_player_entity: no live flag handle");
             return false;
         }
-        const auto* mcell = body_state<sm::ecs::MacroCell>(reg, mpe);
+        const std::uint32_t flagBefore = app.gs.playerFlagBits;
+        const auto* mcell = sm::player_flag_cell(app.gs, *app.macroStore);
         if (!mcell
             || !near_half(float(sm::ecs::cell_x(*mcell, app.gs.mapW)), saveX)
             || !near_half(float(sm::ecs::cell_y(*mcell, app.gs.mapW)), saveY)) {
             smoke_fail(app, "macro_player_entity: macro flag Position off scalar");
-            return false;
-        }
-        // The flag rides an ORDINARY SQUAD (owner, 2026-08-27) and must never
-        // carry SubworldTag — that would hand the squad to the scene reapers.
-        if (reg.any_of<sm::ecs::SubworldTag>(mpe)) {
-            smoke_fail(app,
-                "macro_player_entity: macro flag wrongly carries SubworldTag");
             return false;
         }
         if (count_avatar_tags() != 0) {
@@ -5521,19 +5524,18 @@ bool run_console_smoke(App& app) {
             return false;
         }
 
-        // (2) Enter a subworld: PlayerTag STAYS macro (on the squad, which
-        // survives the enter by the MacroNpcRuntime rule), and exactly one
-        // AvatarTag body appears, scene flavour.
+        // (2) Enter a subworld: the flag handle STAYS put (enter must not
+        // move «кем я на карте»), and exactly one AvatarTag body appears,
+        // scene flavour.
         enter_subworld(app);
         if (!app.subworld.active()) {
             smoke_fail(app, "macro_player_entity: subworld enter failed");
             return false;
         }
-        entt::entity spe = entt::null;
-        if (count_player_tags(spe) != 1 || reg.any_of<sm::ecs::SubworldTag>(spe)) {
+        if (!flag_live() || app.gs.playerFlagBits != flagBefore) {
             app.subworld.leave(true);
             smoke_fail(app,
-                "macro_player_entity: PlayerTag left the macro side on enter");
+                "macro_player_entity: the flag handle moved on enter");
             return false;
         }
         int avatarsInScene = 0;
@@ -5545,26 +5547,25 @@ bool run_console_smoke(App& app) {
             return false;
         }
 
-        // (3) Leave + one macro tick: avatar gone with its scene, PlayerTag
-        // still one and macro, Position re-synced to the scalar that leave()
-        // snapped to the subworld exit cell.
+        // (3) Leave + one macro tick: avatar gone with its scene, the flag
+        // handle still live and unmoved, the cell re-synced to the scalar
+        // that leave() snapped to the subworld exit cell.
         app.subworld.leave(true);
         if (app.subworld.active()) {
             smoke_fail(app, "macro_player_entity: subworld leave failed");
             return false;
         }
         tick_playing_runtime(app, false);
-        entt::entity rpe = entt::null;
-        if (count_player_tags(rpe) != 1 || reg.any_of<sm::ecs::SubworldTag>(rpe)) {
+        if (!flag_live() || app.gs.playerFlagBits != flagBefore) {
             smoke_fail(app,
-                "macro_player_entity: flag not restored to macro flavour on return");
+                "macro_player_entity: flag handle lost/moved on return");
             return false;
         }
         if (count_avatar_tags() != 0) {
             smoke_fail(app, "macro_player_entity: avatar outlived its scene");
             return false;
         }
-        const auto* rcell = body_state<sm::ecs::MacroCell>(reg, rpe);
+        const auto* rcell = sm::player_flag_cell(app.gs, *app.macroStore);
         if (!rcell
             || !near_half(float(sm::ecs::cell_x(*rcell, app.gs.mapW)),
                           smoke_player_x(app))
@@ -5575,8 +5576,9 @@ bool run_console_smoke(App& app) {
             return false;
         }
         std::fprintf(stderr,
-                     "[smoke] macro_player_entity cycle PlayerTag=1(macro) "
+                     "[smoke] macro_player_entity cycle flag_slot=%u(held) "
                      "avatar 0->1->0 pos=%d,%d\n",
+                     unsigned(sm::player_flag_handle(app.gs).slot),
                      sm::ecs::cell_x(*rcell, app.gs.mapW),
                      sm::ecs::cell_y(*rcell, app.gs.mapW));
         std::fflush(stderr);
@@ -6160,8 +6162,8 @@ bool run_console_smoke(App& app) {
         if (husk == entt::null || reg.all_of<sm::ecs::NPCKind>(husk)) {
             restore(); smoke_fail(app, "possess: hero husk missing or not a hero body"); return false;
         }
-        entt::entity macroFlagBefore = entt::null;
-        for (auto e : reg.view<sm::ecs::PlayerTag>()) { macroFlagBefore = e; break; }
+        // Макро-флаг «до» — биты GameState (1е кластер 5).
+        const std::uint32_t macroFlagBefore = app.gs.playerFlagBits;
 
         // ── ПОЛОВИНА 1: гейт уровня — ровня устояла, мана сгорела ────
         // Порог ТЕМИ ЖЕ дверями, какими его читает каст: уровень — лист
@@ -6187,20 +6189,19 @@ bool run_console_smoke(App& app) {
         // Устоявшая цель меняет НИЧЕГО: сценовый флажок на хаске, макро дома.
         int sceneTags = 0; entt::entity sceneHolder = entt::null;
         for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
-        int macroTags = 0; entt::entity macroHolder = entt::null;
-        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++macroTags; macroHolder = e; }
+        const bool macroFlagHeld = app.gs.playerFlagBits == macroFlagBefore;
         std::fprintf(stderr,
                      "[smoke] possess_gate level_refused=%d mana_burned=%d "
                      "scene_flag_held=%d macro_flag_held=%d threshold=%d\n",
                      reg.all_of<sm::ecs::AvatarTag>(target) ? 0 : 1,
                      manaBurned ? 1 : 0,
                      (sceneTags == 1 && sceneHolder == husk) ? 1 : 0,
-                     (macroTags == 1 && macroHolder == macroFlagBefore) ? 1 : 0,
+                     macroFlagHeld ? 1 : 0,
                      threshold);
         std::fflush(stderr);
         if (reg.all_of<sm::ecs::AvatarTag>(target)
             || sceneTags != 1 || sceneHolder != husk || !reg.valid(husk)
-            || macroTags != 1 || macroHolder != macroFlagBefore) {
+            || !macroFlagHeld) {
             restore();
             smoke_fail(app, "possess: an equal-leveled target was taken");
             return false;
@@ -6219,17 +6220,16 @@ bool run_console_smoke(App& app) {
         }
         sceneTags = 0; sceneHolder = entt::null;
         for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
-        macroTags = 0; macroHolder = entt::null;
-        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++macroTags; macroHolder = e; }
+        const bool macroFlagHome = app.gs.playerFlagBits == macroFlagBefore;
         std::fprintf(stderr,
                      "[smoke] possess_gate derived_taken=%d husk_gone=%d "
                      "macro_flag_home=%d\n",
                      (sceneTags == 1 && sceneHolder == target) ? 1 : 0,
                      reg.valid(husk) ? 0 : 1,
-                     (macroTags == 1 && macroHolder == macroFlagBefore) ? 1 : 0);
+                     macroFlagHome ? 1 : 0);
         std::fflush(stderr);
         if (sceneTags != 1 || sceneHolder != target || reg.valid(husk)
-            || macroTags != 1 || macroHolder != macroFlagBefore) {
+            || !macroFlagHome) {
             restore();
             smoke_fail(app, "possess: derived take moved the wrong flags");
             return false;
@@ -6500,26 +6500,21 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // ctest, nothing weighed the registry.
                 {
                     auto& reg = app.ecs.reg;
-                    int carriers = 0, flags = 0;
-                    entt::entity flagHolder = entt::null;
+                    int carriers = 0;
                     for (auto e : reg.view<sm::ecs::MacroSlot>()) {
                         if ((*body_state<sm::ecs::MacroSpawnId>(reg, e)).index
                             == sm::ecs::kPlayerSquadOrdinal) ++carriers;
                     }
-                    for (auto e : reg.view<sm::ecs::PlayerTag>()) {
-                        ++flags;
-                        flagHolder = e;
-                    }
-                    const entt::entity door = sm::player_squad_entity(app.ecs);
+                    // Флаг и родной сквад — биты GameState (1е кластер 5):
+                    // «ровно один флаг» = валидный хэндл в store.
+                    const int flags = app.macroStore->valid(
+                        sm::player_flag_handle(app.gs)) ? 1 : 0;
+                    const sm::MacroHandle door =
+                        sm::player_squad_handle(app.gs);
                     const bool doorHonest =
-                        door != entt::null
-                        && reg.valid(door)
-                        && (*body_state<sm::ecs::MacroSpawnId>(reg, door)).index
-                               == sm::ecs::kPlayerSquadOrdinal
-                        && (door == flagHolder
-                            || (flagHolder != entt::null && reg.valid(flagHolder)
-                                && reg.all_of<sm::ecs::MacroSlot>(
-                                       flagHolder)));
+                        app.macroStore->valid(door)
+                        && app.macroStore->spawnId[door.slot].index
+                               == sm::ecs::kPlayerSquadOrdinal;
                     std::fprintf(stderr,
                                  "[smoke] load_boot player carriers=%d flags=%d "
                                  "door_honest=%d\n",
@@ -6654,8 +6649,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const int pcy = int(smoke_player_y(app));
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
-                for (auto e : app.ecs.reg.view<sm::ecs::MacroSlot>(
-                         entt::exclude<sm::ecs::PlayerSquadTag>)) {
+                const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
+                for (auto e : app.ecs.reg.view<sm::ecs::MacroSlot>()) {
+                    if (const auto* ms =
+                            app.ecs.reg.try_get<sm::ecs::MacroSlot>(e);
+                        ms && homeH.slot != sm::kMacroNoSlot
+                        && ms->slot == homeH.slot) continue;
                     const auto& c = (*body_state<sm::ecs::MacroCell>(app.ecs.reg, e));
                     const int nx = sm::ecs::cell_x(c, app.gs.mapW);
                     const int ny = sm::ecs::cell_y(c, app.gs.mapW);
@@ -6684,9 +6683,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             int entrySdx = 0, entrySdy = 0;
             if (const char* ed = std::getenv("TIMAERT_SMOKE_ENTRYDIR")) {
                 int edx = 0, edy = 0, eticks = 0;
-                const entt::entity fe = sm::player_flag_entity(app.ecs);
-                sm::ecs::MacroNpcRuntime* frt = fe != entt::null
-                    ? body_state<sm::ecs::MacroNpcRuntime>(app.ecs.reg, fe)
+                const sm::MacroHandle fe = sm::player_flag_handle(app.gs);
+                sm::ecs::MacroNpcRuntime* frt = app.macroStore->valid(fe)
+                    ? &app.macroStore->runtime[fe.slot]
                     : nullptr;
                 if (!app.subworld.active() && frt
                     && std::sscanf(ed, "%d,%d,%d", &edx, &edy, &eticks) == 3) {
@@ -7029,24 +7028,25 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             SMOKE_CHECK(app, birth_a_neighbour_and_enter(),
                         "рождённый сосед даёт сцену, в которую можно войти");
             if (!app.subworld.active()) break;
-            const entt::entity home = sm::player_squad_entity(app.ecs);
+            const sm::MacroHandle home = sm::player_squad_handle(app.gs);
+            const bool homeLive = app.macroStore->valid(home);
             sm::MacroHandle worn = take_a_projected_body();
-            SMOKE_CHECK(app, worn.slot != sm::kMacroNoSlot && home != entt::null,
+            SMOKE_CHECK(app, worn.slot != sm::kMacroNoSlot && homeLive,
                         "в сцене есть живое чужое тело с записью — его и берут");
-            if (worn.slot == sm::kMacroNoSlot || home == entt::null) break;
+            if (worn.slot == sm::kMacroNoSlot || !homeLive) break;
             // Где стоит ТВОЁ тело — оно всё это время стоит без сознания там,
             // где ты его оставил, и проснуться ты обязан именно там.
             const int homeX = int(sm::ecs::cell_x(
-                (*body_state<sm::ecs::MacroCell>(app.ecs.reg, home)), app.gs.mapW));
+                app.macroStore->cell[home.slot], app.gs.mapW));
             const int homeY = int(sm::ecs::cell_y(
-                (*body_state<sm::ecs::MacroCell>(app.ecs.reg, home)), app.gs.mapW));
+                app.macroStore->cell[home.slot], app.gs.mapW));
 
             smoke_clear_modal_overlays(app);
             player_pools(app).hp = 0;      // ← убить ТОГО, КЕМ Я ЕСТЬ
             sm::app::advance_sim_seconds(app, 0.016f, false);
 
             const bool alive      = app.state == sm::ui::AppState::Playing;
-            const bool wokeHome   = sm::player_flag_entity(app.ecs) == home;
+            const bool wokeHome   = sm::player_flag_handle(app.gs) == home;
             const bool sceneEnded = !app.subworld.active();
             const bool atOwnCell  = int(smoke_player_x(app)) == homeX
                                  && int(smoke_player_y(app)) == homeY;
@@ -7075,7 +7075,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (worn.slot == sm::kMacroNoSlot) break;
             // Пока тебя нет, твоё тело убивают. Ты этого не замечаешь — дверь
             // смерти спрашивает про ТЕБЯ, а ты сейчас лорд.
-            (*body_state<sm::ecs::Pools>(app.ecs.reg, home)).hp = 0.0f;
+            app.macroStore->pools[home.slot].hp = 0.0f;
             smoke_clear_modal_overlays(app);
             sm::app::advance_sim_seconds(app, 0.016f, false);
             const bool survivedHomeDeath = app.state == sm::ui::AppState::Playing;
@@ -7191,16 +7191,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // with the man he used to be.
                 int sceneTags = 0; entt::entity sceneHolder = entt::null;
                 for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
-                int macroTags = 0; entt::entity macroHolder = entt::null;
-                for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++macroTags; macroHolder = e; }
+                // Макро-флаг — биты GameState (1е кластер 5): «на записи» =
+                // хэндл флажка равен хэндлу записи взятого тела.
+                const bool macroOnRecord =
+                    sm::player_flag_handle(app.gs) == sm::handle_of(reg, origin);
                 std::fprintf(stderr,
                              "[smoke] subworld_exit_remap take scene_tags=%d "
-                             "scene_on_body=%d macro_tags=%d macro_on_record=%d\n",
+                             "scene_on_body=%d macro_on_record=%d\n",
                              sceneTags, sceneHolder == body ? 1 : 0,
-                             macroTags, macroHolder == origin ? 1 : 0);
+                             macroOnRecord ? 1 : 0);
                 std::fflush(stderr);
                 if (sceneTags != 1 || sceneHolder != body
-                    || macroTags != 1 || macroHolder != origin) {
+                    || !macroOnRecord) {
                     smoke_fail(app, "exit_remap: the two flags did not move together");
                     break;
                 }
@@ -7219,24 +7221,24 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // Сначала доказываем, что вопрос вообще РАЗЛИЧАЕТ: оригинал и
                 // носимая запись — разные сущности с разными блоками. Без этой
                 // строки всё, что ниже, могло бы пройти на совпадении.
-                const entt::entity home = sm::player_squad_entity(app.ecs);
-                if (home == entt::null || home == origin) {
+                const sm::MacroHandle home = sm::player_squad_handle(app.gs);
+                if (!app.macroStore->valid(home)
+                    || sm::handle_of(reg, origin) == home) {
                     smoke_fail(app, "exit_remap: original and worn record do not differ");
                     break;
                 }
                 const bool poolsFollow =
                     sm::player_pools(app.gs, *app.macroStore) == body_state<sm::ecs::Pools>(reg, origin)
-                    && sm::player_pools(app.gs, *app.macroStore) != body_state<sm::ecs::Pools>(reg, home);
+                    && sm::player_pools(app.gs, *app.macroStore)
+                           != &app.macroStore->pools[home.slot];
                 const bool bagFollows =
                     sm::player_inventory(app.gs, *app.macroStore) != nullptr
-                    && sm::player_inventory(app.gs, *app.macroStore) != [&] {
-                           auto* b = body_state<sm::ecs::NpcInventory>(reg, home);
-                           return b ? &b->inv : nullptr;
-                       }();
+                    && sm::player_inventory(app.gs, *app.macroStore)
+                           != &app.macroStore->inventory[home.slot].inv;
                 const bool bookFollows =
                     sm::player_spellbook(app.gs, *app.macroStore) == body_state<sm::SpellBook>(reg, origin)
                     && sm::player_spellbook(app.gs, *app.macroStore)
-                           != body_state<sm::SpellBook>(reg, home);
+                           != &app.macroStore->spellBook[home.slot];
                 std::fprintf(stderr,
                              "[smoke] subworld_exit_remap family pools=%d bag=%d "
                              "book=%d\n",
@@ -7292,18 +7294,16 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // NPC, not a bare husk. The flag IS the whole record of control
                 // (v87): the macro snapshot writes it as the possessed record's
                 // own byte, so there is no scalar to check.
-                int tags = 0;
-                entt::entity flag = entt::null;
-                for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++tags; flag = e; }
-                const bool onMacroNpc =
-                    flag != entt::null && reg.all_of<sm::ecs::MacroSlot>(flag);
-                const bool ridesOrigin = (flag == origin);
+                const sm::MacroHandle flagH = sm::player_flag_handle(app.gs);
+                const bool onMacroNpc = app.macroStore->valid(flagH);
+                const bool ridesOrigin =
+                    flagH == sm::handle_of(reg, origin);
                 std::fprintf(stderr,
-                             "[smoke] subworld_exit_remap adopt tags=%d on_macro_npc=%d "
+                             "[smoke] subworld_exit_remap adopt on_macro_npc=%d "
                              "rides_origin=%d\n",
-                             tags, onMacroNpc ? 1 : 0, ridesOrigin ? 1 : 0);
+                             onMacroNpc ? 1 : 0, ridesOrigin ? 1 : 0);
                 std::fflush(stderr);
-                if (tags != 1 || !onMacroNpc || !ridesOrigin) {
+                if (!onMacroNpc || !ridesOrigin) {
                     smoke_fail(app, "exit_remap: possessed identity not kept on exit");
                     break;
                 }
@@ -7316,10 +7316,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // ФЛАГА: ты лорд и под землёй.
                 enter_subworld(app);
                 const bool reentered = app.subworld.active();
-                int tags2 = 0; entt::entity flag2 = entt::null;
-                for (auto e : reg.view<sm::ecs::PlayerTag>()) {
-                    ++tags2; flag2 = e;
-                }
+                const bool flagHeld2 =
+                    sm::player_flag_handle(app.gs) == sm::handle_of(reg, origin);
                 entt::entity av = entt::null;
                 for (auto e : reg.view<sm::ecs::AvatarTag>()) { av = e; break; }
                 // Двери говорят про ЛОРДА и под землёй: полосы — его блок
@@ -7341,13 +7339,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     && sm::sub::macro_record_of(reg, av)
                            == sm::handle_of(reg, origin);
                 std::fprintf(stderr,
-                             "[smoke] subworld_exit_remap reenter ok=%d tags=%d "
+                             "[smoke] subworld_exit_remap reenter ok=%d "
                              "rides_origin=%d doors_alive=%d body_is_his=%d\n",
-                             reentered ? 1 : 0, tags2,
-                             flag2 == origin ? 1 : 0,
+                             reentered ? 1 : 0,
+                             flagHeld2 ? 1 : 0,
                              doorsAlive ? 1 : 0, bodyIsHis ? 1 : 0);
                 std::fflush(stderr);
-                if (!reentered || tags2 != 1 || flag2 != origin
+                if (!reentered || !flagHeld2
                     || !doorsAlive || !bodyIsHis) {
                     smoke_fail(app, "exit_remap: entering while possessed dropped the flag");
                     break;
@@ -7360,7 +7358,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // отсутствие флажка, прочитанное дверью ИИ через зеркало.
                 sm::app::advance_sim_seconds(app, 0.016f, false);
                 entt::entity abandoned = entt::null;
-                const sm::MacroHandle homeH = sm::handle_of(reg, home);
+                const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
                 for (auto b : reg.view<sm::ecs::SubworldTag,
                                        sm::ecs::MacroOrigin>()) {
                     if (reg.get<sm::ecs::MacroOrigin>(b).macro == homeH
@@ -7385,12 +7383,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.subworld.leave(true);
 
                 // Restore a clean single-husk macro state for a self-contained
-                // process: strip the flag off the lord (it reverts to an autonomous
-                // NPC) and re-claim it onto the ordinary hero squad.
-                for (auto e : reg.view<sm::ecs::PlayerTag>()) {
-                    reg.remove<sm::ecs::PlayerTag>(e);
-                    break;
-                }
+                // process: вернуть флажок домой (лорд снова автономный НПЦ) —
+                // одна запись битов, ensure подтверждает инварианты.
+                app.gs.playerFlagBits = app.gs.playerSquadBits;
                 sm::ensure_macro_player_entity(app.gs, app.ecs);
             }
             ++app.smoke.cursor;
@@ -8159,11 +8154,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             smoke_clear_modal_overlays(app);
             sm::MacroStore& stv = sm::store_of(app.ecs);
-            auto view = app.ecs.reg.view<sm::ecs::MacroSlot>(
-                entt::exclude<sm::ecs::PlayerSquadTag>);
+            auto view = app.ecs.reg.view<sm::ecs::MacroSlot>();
             bool found = false;
             for (auto e : view) {
                 const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
+                if (stv.spawnId[slot].index
+                    == sm::ecs::kPlayerSquadOrdinal) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& pcell = stv.cell[slot];
@@ -8200,13 +8196,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.map = false;
             app.ui.quest = false;
             sm::MacroStore& stv = sm::store_of(app.ecs);
-            auto view = app.ecs.reg.view<sm::ecs::MacroSlot>(
-                entt::exclude<sm::ecs::PlayerSquadTag>);
+            auto view = app.ecs.reg.view<sm::ecs::MacroSlot>();
             entt::entity target = entt::null;
             int stock = 0;
             int type = -1;
             for (auto e : view) {
                 const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
+                if (stv.spawnId[slot].index
+                    == sm::ecs::kPlayerSquadOrdinal) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& pcell = stv.cell[slot];
@@ -8250,11 +8247,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             smoke_clear_modal_overlays(app);
             sm::MacroStore& stv = sm::store_of(app.ecs);
-            auto view = app.ecs.reg.view<sm::ecs::MacroSlot>(
-                entt::exclude<sm::ecs::PlayerSquadTag>);
+            auto view = app.ecs.reg.view<sm::ecs::MacroSlot>();
             entt::entity target = entt::null;
             for (auto e : view) {
                 const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
+                if (stv.spawnId[slot].index
+                    == sm::ecs::kPlayerSquadOrdinal) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& acell = stv.cell[slot];
@@ -9008,9 +9006,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // That is the fix working; the fixture was the thing at fault.
             {
                 std::vector<entt::entity> doomed;
+                const sm::MacroHandle homeH3 =
+                    sm::player_squad_handle(app.gs);
                 for (auto e : app.ecs.reg.view<sm::ecs::Pools>()) {
-                    if (!app.ecs.reg.any_of<sm::ecs::AvatarTag,
-                                            sm::ecs::PlayerSquadTag>(e)) {
+                    if (app.ecs.reg.any_of<sm::ecs::AvatarTag>(e)) continue;
+                    if (const auto* ms =
+                            app.ecs.reg.try_get<sm::ecs::MacroSlot>(e);
+                        ms && homeH3.slot != sm::kMacroNoSlot
+                        && ms->slot == homeH3.slot) continue;
+                    {
                         doomed.push_back(e);
                     }
                 }

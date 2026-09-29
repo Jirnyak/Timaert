@@ -174,7 +174,6 @@ constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     + sizeof(MacroNpcRecord::memory) + kSpellBookBytes
     + sizeof(MacroNpcRecord::hasSheet) + kSheetBytes
     + sizeof(MacroNpcRecord::hasOrders) + sizeof(MacroNpcRecord::dead)
-    + sizeof(MacroNpcRecord::playerFlag)
     + sizeof(MacroNpcRecord::designOrdinal)
     + kInventoryBytes + kEquipmentBytes
     + sizeof(MacroNpcRecord::rosterNeedDebt)
@@ -676,7 +675,6 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     }
     w.pod(m.hasOrders);
     w.pod(m.dead);
-    w.pod(m.playerFlag);   // v87: PlayerTag rides the snapshot honestly
     w.pod(m.designOrdinal);   // v92: строка стола анкет, −1 у обычных
     write_inventory(w, m.inventory);   // v110: существа едут здесь (M-71)
     write_equipment(w, m.gear);
@@ -707,11 +705,10 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     }
     r.pod(m.hasOrders);
     r.pod(m.dead);
-    r.pod(m.playerFlag);   // v87
     r.pod(m.designOrdinal);   // v92
     if (!r.ok) return;
     if (m.kind.type >= std::uint16_t(NPCType::Count)
-        || m.hasOrders > 1 || m.dead > 1 || m.playerFlag > 1
+        || m.hasOrders > 1 || m.dead > 1
         // v92: ординал стола анкет обязан называть живую строку или −1 —
         // каталожный закон (только аппенд) делает иное порчей файла.
         || m.designOrdinal < -1 || m.designOrdinal >= kDesignCharacterCount) {
