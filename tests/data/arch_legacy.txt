@@ -5,7 +5,10 @@
 #   channel — прямое `#include "macro/..."` из `src/sub/` (ЗАКОН ДВУХ МИРОВ,
 #             AGENTS §11: граница переходится ПАКЕТОМ, а не включением);
 #   verdict — утверждение ПРАВДА/РАСХОЖДЕНИЕ в `SKELETON.md` без адреса точки
-#             исполнения (AGENTS §0 п.2).
+#             исполнения (AGENTS §0 п.2);
+#   entt    — файл src с entt-КОДОМ (`entt::` или включение entt) — M-188
+#             ступень 1, вердикт владельца 2026-09-29: список только тает,
+#             ноль = момент выпила FetchContent (стена препроцессором).
 #
 # СПИСОК УМЕЕТ ТОЛЬКО ТАЯТЬ. Новый сайт вне списка красит `check` (рост долга);
 # строка списка, которой в дереве больше нет, красит его же. Дописывать сюда
@@ -167,3 +170,33 @@ verdict	SKELETON.md	| — цветовое смешение смотрит НЕ�
 verdict	SKELETON.md	| — чернильный берег смотрит только четыре кардинала | диагональный контакт 
 verdict	SKELETON.md	До 2026-09-23 эта таблица утверждала: «одна свёртка на весь проект: `wrapi`; шесть рук
 verdict	SKELETON.md	Число агностично, смысл ему задаёт фича, стоящая РОВНО на той клетке; второго
+entt	src/app/main.cpp	entt
+entt	src/app/smoke.cpp	entt
+entt	src/app/smoke.h	entt
+entt	src/content/spells/effects.cpp	entt
+entt	src/content/spells/spell_book.cpp	entt
+entt	src/ecs/components.h	entt
+entt	src/ecs/world.h	entt
+entt	src/macro/macro_stock.h	entt
+entt	src/macro/npc_ai.cpp	entt
+entt	src/macro/npc_ai.h	entt
+entt	src/macro/npc_spawn.cpp	entt
+entt	src/macro/npc_spawn.h	entt
+entt	src/macro/player_entity.cpp	entt
+entt	src/macro/squad.h	entt
+entt	src/macro/squad_walk.h	entt
+entt	src/macro/store.h	entt
+entt	src/sub/ai.cpp	entt
+entt	src/sub/body.h	entt
+entt	src/sub/damage.cpp	entt
+entt	src/sub/damage.h	entt
+entt	src/sub/engine.cpp	entt
+entt	src/sub/engine.h	entt
+entt	src/sub/possess.h	entt
+entt	src/sub/record.h	entt
+entt	src/sub/spawn.cpp	entt
+entt	src/sub/spawn.h	entt
+entt	src/sub/spell_effects.cpp	entt
+entt	src/sub/targeting.cpp	entt
+entt	src/sub/targeting.h	entt
+entt	src/sub/vk_renderer_3d.cpp	entt

@@ -28,13 +28,26 @@
 // Прибор НЕ берётся судить то, что уже судит компилятор: это был бы второй
 // ответ на один вопрос (DOD п.6).
 //
-// ТРИ ПРАВИЛА:
+// ПЯТЬ ПРАВИЛ:
 //   R1 КОНТУР НА МЕСТЕ — СТЕНА, без послаблений. В заголовке-строке у каждой
 //      структуры есть `TIMAERT_ROW`. Достигнуто 93 из 93 в день постройки.
 //   R2 УЗКИЙ КАНАЛ — ТАЮЩИЙ СПИСОК. `#include "macro/…"` из `src/sub/`
 //      перечислены поимённо; новая нитка красит гейт и печатает файл.
 //   R3 ВЕРДИКТ НЕСЁТ АДРЕС — ТАЮЩИЙ СПИСОК. Утверждение ПРАВДА/РАСХОЖДЕНИЕ в
 //      `SKELETON.md` без адреса точки исполнения.
+//   R4 ENTT ТОЛЬКО ТАЕТ — ТАЮЩИЙ СПИСОК ФАЙЛОВ (M-188 ступень 1, владелец
+//      2026-09-29: «не просто отказ от ENTT на словах а чтобы жёстко было
+//      запрещено»). Файл src с entt-КОДОМ (`entt::` или включение entt)
+//      перечислен поимённо; новый файл с entt — красная сюита. Мера — код,
+//      не слово в комментарии: комментарии чистит кластер 7, прибор судит
+//      исполняемое. Когда список дотает до нуля, контур сменяет СТЕНА —
+//      выпил FetchContent (включение entt перестаёт существовать
+//      препроцессором, финал M-188).
+//   R5 КАРКАС КАТАЛОГОВ ЗАКРЫТ — СТЕНА (M-188 ступень 1, владелец: «делать
+//      скелет архитектуры жёстким … добавляли новое в ограниченные
+//      рамки/граничные условия/каркас»). Перечень каталогов верхнего уровня
+//      `src/` закрыт генеральной схемой; новый каталог — красный до вердикта
+//      владельца, исчезнувший — тоже событие каркаса, и тоже красный.
 //
 // ПОЧЕМУ ДВА ИЗ ТРЁХ — СПИСКОМ, А НЕ СТЕНОЙ. Стена над непустым каналом — не
 // гейт, а блокировка чужой работы: она краснеет в первый же день и заставляет
@@ -99,7 +112,17 @@ constexpr std::string_view kRowHeaders[] = {
 };
 
 constexpr std::string_view kSubDir = "src/sub";
+constexpr std::string_view kSrcDir = "src";
 constexpr std::string_view kSkeleton = "SKELETON.md";
+
+// R5: ЗАКРЫТЫЙ ПЕРЕЧЕНЬ КАТАЛОГОВ ВЕРХНЕГО УРОВНЯ src/ — генеральная схема
+// (AGENTS, ГЕНЕРАЛЬНАЯ СХЕМА; вердикт владельца 2026-09-29, M-188).
+// Расширяется ТОЛЬКО вердиктом владельца — новая строка здесь и есть запись
+// его решения.
+constexpr std::string_view kTopDirs[] = {
+    "app", "assets", "content", "core", "ecs", "events",
+    "gpu",  "macro",  "sub",     "tables", "ui",
+};
 
 std::string read_file(const fs::path& p) {
     std::ifstream in(p, std::ios::binary);
@@ -260,6 +283,83 @@ void collect_channel(std::vector<Site>& out) {
     }
 }
 
+// ── R4: ENTT ТОЛЬКО ТАЕТ ──────────────────────────────────────────────────
+// Строка несёт entt-КОД, если в ней `entt::` или включение entt. Голое слово
+// «entt» в комментарии («entt-мост», «умирает в 1е») кодом не является:
+// такие следы чистятся кластером 7 руками, а прибор судит то, что видит
+// компилятор.
+bool line_carries_entt(const std::string& t) {
+    if (t.find("entt::") != std::string::npos) return true;
+    const std::size_t inc = t.find("#include");
+    return inc != std::string::npos
+        && t.find("entt", inc) != std::string::npos;
+}
+
+void collect_entt(std::vector<Site>& out) {
+    const fs::path dir = fs::path(kRoot) / fs::path(kSrcDir);
+    if (!fs::is_directory(dir)) return;
+    std::vector<fs::path> files;
+    for (const auto& e : fs::recursive_directory_iterator(dir)) {
+        if (!e.is_regular_file()) continue;
+        const std::string ext = e.path().extension().string();
+        if (ext == ".cpp" || ext == ".h") files.push_back(e.path());
+    }
+    std::sort(files.begin(), files.end());
+    for (const fs::path& p : files) {
+        const std::vector<std::string> lines = split_lines(read_file(p));
+        for (std::size_t n = 0; n < lines.size(); ++n) {
+            if (!line_carries_entt(lines[n])) continue;
+            // Ключ — ФАЙЛ, не строка: список тает файлами, и правка внутри
+            // уже больного файла долгом не считается (лечит его только ноль
+            // entt-строк).
+            out.push_back({"entt",
+                           fs::relative(p, fs::path(kRoot)).generic_string(),
+                           "entt", int(n) + 1});
+            break;
+        }
+    }
+}
+
+// ── R5: КАРКАС КАТАЛОГОВ ЗАКРЫТ ───────────────────────────────────────────
+// Чистая сверка двух множеств — на неё стоит негативный контроль ниже.
+struct DirDiff {
+    std::vector<std::string> extra;    // в дереве, но не в схеме
+    std::vector<std::string> missing;  // в схеме, но не в дереве
+};
+
+DirDiff compare_top_dirs(const std::set<std::string>& found) {
+    DirDiff d;
+    std::set<std::string> allowed;
+    for (std::string_view s : kTopDirs) allowed.insert(std::string(s));
+    for (const std::string& f : found)
+        if (allowed.count(f) == 0) d.extra.push_back(f);
+    for (const std::string& a : allowed)
+        if (found.count(a) == 0) d.missing.push_back(a);
+    return d;
+}
+
+void test_closed_top_dirs() {
+    std::set<std::string> found;
+    for (const auto& e :
+         fs::directory_iterator(fs::path(kRoot) / fs::path(kSrcDir)))
+        if (e.is_directory()) found.insert(e.path().filename().string());
+    const DirDiff d = compare_top_dirs(found);
+    for (const std::string& x : d.extra)
+        std::fprintf(stderr,
+                     "  НОВЫЙ КАТАЛОГ ВНЕ КАРКАСА: src/%s — каркас закрыт "
+                     "генеральной схемой, расширение только вердиктом "
+                     "владельца (M-188)\n",
+                     x.c_str());
+    for (const std::string& x : d.missing)
+        std::fprintf(stderr,
+                     "  КАТАЛОГ КАРКАСА ИСЧЕЗ: src/%s — снос слоя есть "
+                     "событие каркаса, и решает его владелец (M-188)\n",
+                     x.c_str());
+    CHECK(!found.empty(), "каталоги под src/ ЕСТЬ — иначе судить нечего");
+    CHECK(d.extra.empty() && d.missing.empty(),
+          "каркас каталогов src/ совпадает с генеральной схемой (M-188)");
+}
+
 // ── R3: ВЕРДИКТ НЕСЁТ АДРЕС ───────────────────────────────────────────────
 // Адрес имеет три законные формы (AGENTS §0 п.2): `symbol@path`,
 // `путь:N «отпечаток»` и старая `` `имя` (`путь:N`) ``. Все три опознаются по
@@ -378,12 +478,18 @@ void test_melting_rules() {
     const std::size_t channelCount = sites.size();
     collect_verdicts(sites);
     const std::size_t verdictCount = sites.size() - channelCount;
+    collect_entt(sites);
+    const std::size_t enttCount = sites.size() - channelCount - verdictCount;
 
     CHECK(channelCount > 0,
           "включения macro/ из src/sub ЕСТЬ — иначе судить нечего, и зелёный "
           "означал бы сломанный обход, а не пустой канал");
     CHECK(verdictCount > 0,
           "безадресные вердикты в SKELETON.md ЕСТЬ — см. выше, тот же довод");
+    // У R4 проверки `enttCount > 0` НЕТ сознательно: пока список непуст,
+    // сломанный обход краснит УСТАРЕВШИМИ строками списка; а ноль — цель
+    // наряда (M-188), и в тот день контур сменяет стена FetchContent, а не
+    // вечно красный счётчик.
 
     std::vector<std::string> legacy;
     {
@@ -401,14 +507,16 @@ void test_melting_rules() {
 
     const LegacyDiff diff = compare_legacy(sites, allowed, true);
     CHECK(diff.unlisted == 0,
-          "архитектурный долг не вырос: новых включений macro/ в src/sub и "
-          "новых безадресных вердиктов в SKELETON.md нет");
+          "архитектурный долг не вырос: новых включений macro/ в src/sub, "
+          "новых безадресных вердиктов в SKELETON.md и новых файлов с entt "
+          "(M-188) нет");
     CHECK(diff.stale == 0, "в белом списке нет строк, которых в дереве уже нет");
 
     std::printf(
-        "arch_guard: канал %zu включений · безадресных вердиктов %zu\n"
+        "arch_guard: канал %zu включений · безадресных вердиктов %zu · "
+        "файлов с entt %zu\n"
         "  строк списка %zu (может только таять)\n",
-        channelCount, verdictCount, allowed.size());
+        channelCount, verdictCount, enttCount, allowed.size());
 }
 
 // ── НЕГАТИВНЫЕ КОНТРОЛИ ───────────────────────────────────────────────────
@@ -460,6 +568,37 @@ void test_detectors_actually_see() {
     CHECK(carries_verdict("| что-то | ПРАВДА |"), "вердикт ПРАВДА виден");
     CHECK(!carries_verdict("| что-то | сделано |"),
           "строка без вердикта в счёт не идёт");
+
+    // R4: entt-КОД опознаётся, комментарий и похожие слова — нет.
+    CHECK(line_carries_entt("    entt::registry reg;"),
+          "тип entt:: опознан как код");
+    CHECK(line_carries_entt("#include <entt/entt.hpp>"),
+          "включение entt опознано как код");
+    CHECK(!line_carries_entt("// entt-мост умирает в 1е"),
+          "слово entt в комментарии кодом НЕ считается");
+    CHECK(!line_carries_entt("Inventory entity; // энтити"),
+          "слово entity кодом entt не считается");
+    CHECK(!line_carries_entt("#include \"sub/possess.h\""),
+          "включение без entt кодом не считается");
+
+    // R5: лишний и исчезнувший каталог ловятся, точный каркас молчит.
+    {
+        std::set<std::string> exact;
+        for (std::string_view s : kTopDirs) exact.insert(std::string(s));
+        const DirDiff clean = compare_top_dirs(exact);
+        CHECK(clean.extra.empty() && clean.missing.empty(),
+              "точный каркас даёт ноль расхождений — детектор не шумит");
+        std::set<std::string> plus = exact;
+        plus.insert("dungeon_v2");
+        const DirDiff grown = compare_top_dirs(plus);
+        CHECK(grown.extra.size() == 1 && grown.missing.empty(),
+              "каталог вне схемы ловится как рост");
+        std::set<std::string> minus = exact;
+        minus.erase("macro");
+        const DirDiff shrunk = compare_top_dirs(minus);
+        CHECK(shrunk.missing.size() == 1 && shrunk.extra.empty(),
+              "исчезнувший каталог каркаса ловится");
+    }
 
     // Заголовок — не утверждение, даже если несёт слово вердикта.
     std::vector<Site> heads;
@@ -518,6 +657,7 @@ int main() {
     std::printf("arch_guard: контуров проверено %d в %zu заголовках-строках\n",
                 structs, std::size(kRowHeaders));
     test_melting_rules();
+    test_closed_top_dirs();
     test_detectors_actually_see();
     test_legacy_list_mechanism();
     return sm::test::report("arch_guard_test");
