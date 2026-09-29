@@ -3,7 +3,7 @@
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/store.h"
-#include "macro/character_sheet.h"  // the record's sheet — casterLevel
+#include "macro/anketa.h"  // the record's sheet — casterLevel
 #include "sub/body.h"   // body_radius — the caster shell the muzzle clears
 #include "sub/record.h" // state_of — whose sheet the casting body mirrors
 

@@ -34,7 +34,6 @@
 #include "events/quests/quest_engine.h"
 #include "macro/state.h"
 #include "macro/store.h"     // гладкая память макро-сквадов (M-106)
-#include "macro/character_sheet.h"
 #include "macro/knowledge.h"
 #include "ui/map_screen.h"
 #include "macro/map_generator.h"

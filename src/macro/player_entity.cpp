@@ -4,7 +4,6 @@
 #include "macro/agent_memory.h"
 #include "macro/anatomy.h"
 #include "macro/entry_context.h"
-#include "macro/character_sheet.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
 #include "macro/spell_book_state.h"

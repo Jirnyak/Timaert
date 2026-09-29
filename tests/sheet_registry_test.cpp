@@ -21,7 +21,6 @@
 #include "check.h"
 
 #include "macro/anketa.h"
-#include "macro/character_sheet.h"
 #include "macro/movement_cost.h"
 
 #include <cstdio>

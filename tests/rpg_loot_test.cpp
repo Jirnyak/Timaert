@@ -14,7 +14,6 @@
 
 #include "macro/anketa.h"
 #include "macro/anketa.h"
-#include "macro/character_sheet.h"
 #include "tables/items.h"
 #include "tables/npc.h"
 

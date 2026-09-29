@@ -29,7 +29,7 @@
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/store.h"
-#include "macro/character_sheet.h"
+#include "macro/anketa.h"
 #include "macro/entry_context.h"
 #include "macro/spell_book_state.h"
 #include "macro/state.h"

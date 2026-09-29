@@ -8,7 +8,6 @@
 #include "ecs/npc_character.h"
 #include "core/rng.h"
 #include "tables/npc.h"
-#include "macro/character_sheet.h"
 #include "macro/macro_stock.h"
 #include "macro/tree_layer.h"
 #include "macro/spell_book_state.h"   // SpellBook — part of the record a body inherits

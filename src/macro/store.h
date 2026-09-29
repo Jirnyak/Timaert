@@ -38,7 +38,7 @@
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/agent_memory.h"
-#include "macro/character_sheet.h"
+#include "macro/anketa.h"
 #include "macro/spell_book_state.h"
 
 namespace sm {

@@ -32,7 +32,6 @@
 #include "tables/npc.h"
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP law
 #include "macro/anketa.h"
-#include "macro/character_sheet.h"
 #include "macro/map_generator.h"
 #include "macro/features.h"
 #include "tables/biomes.h"

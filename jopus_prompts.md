@@ -290,7 +290,7 @@ o.npcType`, на каждую смерть) и `damage_door_test`.
   Стало: функция кончается на `app.bus.emit(ev)`; всё от `:264` до конца
   тела удалить вместе с комментарием «...AND THE WORLD REMEMBERS IT» —
   летопись пишет `record_battle_facts`, и только она.
-- `macro_identity_of` и `squad_is_named` (`main.cpp:214-254`): если после
+- `macro_identity_of` и `squad_is_named` (`main.cpp:213-253`): если после
   правки читателей в `main.cpp` нет (`rg`) — удалить; если есть — оставить.
 - В шапке `raise_macro_fact` одна строка: «Событие — для квестов и логики
   (на каждую смерть); ФАКТ летописи пишет `record_battle_facts` один раз за

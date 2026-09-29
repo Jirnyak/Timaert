@@ -9,7 +9,6 @@
 #include "sub/height.h"
 #include "sub/seamless_manager.h"
 #include "macro/fauna.h"
-#include "macro/character_sheet.h"
 #include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/anketa.h"

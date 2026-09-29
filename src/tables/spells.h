@@ -550,6 +550,14 @@ inline constexpr SpellDef kSpellDefs[] = {
 inline constexpr int kSpellCount =
     int(sizeof(kSpellDefs) / sizeof(kSpellDefs[0]));
 
+// Валиден ли ординал спелла — вопрос КАТАЛОГА (гейт против kSpellCount).
+// Жил в macro/spell_book_state.h; переехал сюда слиянием анкеты (M-181),
+// потому что анкете он нужен, а анкета книгу состояния включать не смеет
+// (цикл: spell_book_state.h сам включает анкету).
+inline constexpr bool spell_ordinal_ok(int ord) noexcept {
+    return ord >= 0 && ord < kSpellCount;
+}
+
 constexpr const SpellDef* spell_find(std::string_view id) {
     for (const SpellDef& s : kSpellDefs)
         if (id == s.id) return &s;

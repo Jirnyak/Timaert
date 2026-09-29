@@ -13,7 +13,7 @@
 #include <cstdint>
 
 #include "ecs/pools.h"             // Pools (the HUD reads THE bar store)
-#include "macro/character_sheet.h" // CharacterSheet (the creation screen authors one)
+#include "macro/anketa.h" // CharacterSheet (the creation screen authors one)
 #include "macro/map_generator.h"   // LayerParameters
 #include "macro/save.h"            // SaveSummary
 

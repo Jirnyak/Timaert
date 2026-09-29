@@ -4,7 +4,6 @@
 #include "ecs/components.h"
 #include "tables/npc.h"
 #include "macro/anatomy.h"
-#include "macro/character_sheet.h"  // the sheet the armour law asks for training
 #include <algorithm>
 #include <cmath>
 #include "events/event_bus.h"

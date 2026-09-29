@@ -25,7 +25,9 @@
 #include "tables/npc.h"         // каталог: строка существа — цена найма, содержание, награда
 #include "tables/spells.h"      // каталог: строка спелла — что делает каст новичка
 #include "tables/items.h"       // каталог: строки предметов, ItemRef — что ХРАНИТ контейнер ниже
+#include "tables/role_weights.h" // каталог: веса ролей — куда строка тратит бюджет анкеты
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <string>
 #include <array>
@@ -946,6 +948,409 @@ int auto_scrap_overflow(Inventory& inv);
 // (empty string if item not found, not consumable, or out of stock).
 std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlice& pc);
 
+// ── ЕДИНАЯ АНКЕТА ПЕРСОНАЖА — CharacterSheet и производные боя ────────────
+// (сведено из macro/character_sheet.h нарядом M-181: «свести всю анкету в
+// один файл» — вердикт владельца 2026-09-28. Файл велик, и это названо вслух:
+// анкета есть естественно капсулированный модуль по §12.)
+
+// ── Universal character sheet ──────────────────────────────────────────────
+//
+// The SINGLE representation shared by the player and every humanoid NPC. It
+// bundles the persistent RPG facets — attributes, skills and the
+// level/XP economy — exactly as the player carries them today (see
+// `PlayerState` in macro/state.h). Combat numbers (HP/MP/SP, damage) are
+// DERIVED from this sheet, never stored inside it (every body keeps its bars
+// in ECS `Pools` beside its `Combat` — the player's on his squad entity).
+//
+// EVERY body carries one — humanoid, creature and player alike (CANON S14).
+// The one birth door (`emplace_body`, sub/spawn.cpp) builds the sheet from the
+// body's `kNpcTypeDefs` row, applies the leader's aura, then projects combat
+// numbers from it; "monsters are sheet-less" died with the second table
+// (2026-08-20).
+//
+// Field order mirrors the player's save layout so the same struct can later be
+// embedded in `PlayerState` without changing the on-disk save bytes.
+//
+// Header-only (like attributes.h) so it links into every consumer — the game
+// and each hand-curated test executable — with no CMake source-list edits.
+struct CharacterSheet {
+    Attributes attributes;
+    Skills     skills;
+    LevelData  levelData;
+    // The 256-bit learned-perk set (CANON S26 DOD architecture) — all zeroes
+    // until the constellation graph lands (stub, owner 2026-09-19). Saved
+    // with the sheet (v100) so the graph arrives without a save move.
+    PerkMask   perks;
+};
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10): анкета носится ИМЕНОВАННЫМИ телами
+// (npc_named), а не каждым сквадом, — потому 144 Б здесь стоят долю мира, а
+// не 2.25 МиБ. 4 Б из 144 — выравнивание перед маской перков.
+static_assert(sizeof(CharacterSheet) == 144,
+              "анкета = атрибуты 16 + скиллы 64 + уровень 28 + перки 32 + 4");
+
+// ── ТОРГОВАЯ СИЛА АНКЕТЫ — ОДНА ДВЕРЬ НА ВЕСЬ МИР (CANON S25) ─────────────
+// Сделка двусторонняя, и обе стороны называют ОДНО число — финальное
+// производное листа (attributes.h tradeDiscountPct: харизма × ранг торговли).
+// Кто эта сторона — сквад, место, игрок — двери безразлично: у всякого в
+// макромире есть анкета, и спрашивается только она. Отсюда спеллы, артефакты
+// и перки входят в цену бесплатно.
+//
+// ЗАЧЕМ ДВЕРЬ, А НЕ ПОВТОР ВЫРАЖЕНИЯ. Эта же строка была написана в трёх
+// местах, и ТРЕТЬЕ написание врало (поймано 2026-09-21): торговая панель
+// ИГРОКА звала цену как `trade_price(база, харизма, ранг торговли)`, тогда
+// как подпись двери — `trade_price(база, МОЯ сила, ЕГО сила)`. То есть
+// анкета контрагента не спрашивалась вовсе, а собственный ранг Торговли
+// игрока стоял на месте ЧУЖОЙ силы — и прокачка Торговли делала игрока ХУЖЕ
+// покупателем. Ровно тот дефект S26, о смерти которого написано в
+// attributes.h: пока сила считается выражением, а не дверью, третья копия
+// заводится молча и расходится с первыми двумя.
+inline int trade_power_of(const CharacterSheet& sh) {
+    return calculate_derived(sh.attributes, sh.skills).tradeDiscountPct;
+}
+
+namespace csheet_detail {
+
+// Tiny deterministic LCG (Numerical Recipes constants). Not for security — it
+// exists only to make per-seed stat allocation stable and reproducible.
+struct SheetRng {
+    std::uint32_t s;
+    std::uint32_t next() {
+        s = s * 1664525u + 1013904223u;
+        return s;
+    }
+};
+
+// Fold three inputs into one non-zero seed (boost::hash_combine style).
+inline std::uint32_t mix32(std::uint32_t a, std::uint32_t b, std::uint32_t c) {
+    std::uint32_t h = a * 2654435761u;
+    h ^= b + 0x9E3779B9u + (h << 6) + (h >> 2);
+    h ^= c + 0x9E3779B9u + (h << 6) + (h >> 2);
+    return h ? h : 0x1u;
+}
+
+// Pick an index in [0,N) with probability proportional to its weight.
+template <std::size_t N>
+int weighted_pick(const std::uint8_t (&w)[N], std::uint32_t roll) {
+    std::uint32_t total = 0;
+    for (std::size_t i = 0; i < N; ++i) total += w[i];
+    if (total == 0) return 0; // degenerate row — should be impossible
+    std::uint32_t r = roll % total;
+    for (std::size_t i = 0; i < N; ++i) {
+        if (r < w[i]) return int(i);
+        r -= w[i];
+    }
+    return int(N - 1);
+}
+
+} // namespace csheet_detail
+
+// THE seed of a macro leader's sheet, derived from his save-stable spawn
+// ordinal (ecs::MacroSpawnId — the one identity that survives save/load).
+// The macro layer never stored a leader's birth sheet seed, so every consumer
+// that needs the leader AS A SHEET — the auto-resolve, the level-up ceiling
+// recompute, the SP/travel caches — must derive it from the ordinal, and must
+// derive it IDENTICALLY. This function is that law's single home; it used to
+// be restated at each call site (squad.h twice, tests once), which is exactly
+// how twin formulas drift.
+inline std::uint32_t leader_sheet_seed(std::uint32_t spawnOrdinal) {
+    return spawnOrdinal * 2654435761u + 0x51ADu;
+}
+
+// Procedurally builds a sheet for a humanoid NPC `role` at a given `level`.
+//
+// Deterministic in `seed`: no global RNG and no external Rng object — the same
+// (role, level, seed) always yields the same sheet, matching the subworld's
+// "everything regenerates from the seed" contract. The generator spends the
+// EXACT player point economy for `level` (CANON S14, 2026-09-03): creation is
+// 5 attribute points, 5 LEARN PICKS and 5 perk points, every level adds
+// +1-+1-+1 (isotropy, 2026-09-14), and skill points spend ONLY into what the
+// creation picks taught — so a level-N NPC is budget-identical to a level-N
+// player, merely allocated toward its role. Attribute and skill pools are
+// fully consumed (end at 0); perk points ACCRUE unspent while the graph is a
+// stub (owner 2026-09-19) — when kPerkNodes lands, this is where the role's
+// constellation vector walks its N steps (CANON S26 §5). Plot NPCs supply an
+// authored sheet instead of calling this.
+inline CharacterSheet make_character_sheet(NPCType role, int level,
+                                           std::uint32_t seed) {
+    if (level < 1) level = 1;
+
+    CharacterSheet cs;
+    cs.levelData           = default_level_data();
+    cs.levelData.level     = level;
+    cs.levelData.exp       = 0;
+    cs.levelData.expToNext = exp_to_next_level(level);
+    cs.levelData.attributePoints = 5 + (level - 1);
+    cs.levelData.skillPoints     = (level - 1);
+    cs.levelData.perkPoints      = 5 + (level - 1);
+
+    const RoleWeights& w = role_weights(role);
+    // TWO streams, and LEVEL is in NEITHER seed — this is what makes a
+    // levelling leader's sheet MONOTONIC: the level-N sheet is the level-N-1
+    // sheet plus exactly one more attribute pick and one more skill pick
+    // (each loop below draws a prefix-stable sequence). The old generator
+    // mixed the level into one stream, so every level-up RE-ROLLED the whole
+    // sheet and a leader could visibly get WEAKER by growing — the perversity
+    // hid under the fat legacy +3/level and surfaced with the 1:1 economy.
+    // Растёт то, что мир хранит (S14) — a sheet only ever grows.
+    csheet_detail::SheetRng attrRng{
+        csheet_detail::mix32(seed, std::uint32_t(role), 0xA77Bu)};
+    csheet_detail::SheetRng skillRng{
+        csheet_detail::mix32(seed, std::uint32_t(role), 0x5C11u)};
+
+    while (cs.levelData.attributePoints > 0) {
+        const int pick = csheet_detail::weighted_pick(w.attr, attrRng.next());
+        if (!spend_attribute_point(cs.levelData, cs.attributes,
+                                   AttributeId(std::uint8_t(pick))))
+            break; // safety net; the loop guard already prevents this
+    }
+    // CREATION: learn 5 distinct skills by the role's weights — a weighted
+    // pick that lands on a known skill rerolls, and if the row runs out of
+    // distinct weighted skills (a narrow beast), the pick learns the first
+    // still-unknown weighted skill instead of spinning.
+    while (cs.levelData.learnPicks > 0) {
+        bool learned = false;
+        for (int attempt = 0; attempt < 16 && !learned; ++attempt) {
+            const int pick =
+                csheet_detail::weighted_pick(w.skill, skillRng.next());
+            learned = spend_learn_pick(cs.levelData, cs.skills,
+                                       SkillId(std::uint8_t(pick)));
+        }
+        if (learned) continue;
+        for (int i = 0; i < int(SkillId::Count) && !learned; ++i)
+            if (w.skill[std::size_t(i)] > 0)
+                learned = spend_learn_pick(cs.levelData, cs.skills,
+                                           SkillId(std::uint8_t(i)));
+        if (!learned) break;   // fewer than 5 weighted skills in the row
+    }
+    // LEVELS: points spend only into the learned set (THE learn law) — the
+    // weights are re-read through a mask so an unknown skill cannot draw.
+    while (cs.levelData.skillPoints > 0) {
+        std::uint8_t known[std::size_t(SkillId::Count)] = {};
+        for (int i = 0; i < int(SkillId::Count); ++i)
+            if (cs.skills.rank[std::size_t(i)] > 0
+                && cs.skills.rank[std::size_t(i)] < kMaxSkillRank)
+                known[std::size_t(i)] = w.skill[std::size_t(i)] > 0
+                                            ? w.skill[std::size_t(i)] : 1;
+        const int pick = csheet_detail::weighted_pick(known, skillRng.next());
+        if (!spend_skill_point(cs.levelData, cs.skills,
+                               SkillId(std::uint8_t(pick))))
+            break;   // every learned skill at mastery (or nothing learned)
+    }
+    return cs;
+}
+
+// THE application: the base sheet plus everything standing, as a COPY.
+//
+// Non-destructive on purpose, and it is the whole reason this file exists. The
+// old `apply_aura` wrote deltas into the member's stored sheet at birth — no
+// source, no removal, no recompute — so a buff outlived every reason for it.
+// Here the stored sheet stays the character the player built, and what fights
+// is the sum of that character and what he is currently wearing, standing in
+// and blessed by. Take the item off and the next call simply does not add it.
+inline CharacterSheet effective_sheet(const CharacterSheet& base,
+                                      const BonusTotals& t) {
+    CharacterSheet out = base;
+    for (int i = 0; i < kMaxAttributes; ++i) {
+        const int v = int(out.attributes.score[std::size_t(i)])
+                    + int(t.attr[std::size_t(i)]);
+        // A score floors at 1, never 0: the asymptotic formulas divide by
+        // (score + 50) and a character reduced to nothing is a design
+        // question, not an arithmetic one.
+        out.attributes.score[std::size_t(i)] =
+            std::uint8_t(std::clamp(v, 1, kMaxAttributeScore));
+    }
+    for (int i = 0; i < kMaxSkills; ++i) {
+        const int v = int(out.skills.rank[std::size_t(i)])
+                    + int(t.skill[std::size_t(i)]);
+        out.skills.rank[std::size_t(i)] =
+            std::uint8_t(std::clamp(v, 0, kMaxSkillRank));
+    }
+    return out;
+}
+
+// ── What a LEADER's sheet gives his squad ────────────────────────────────
+//
+// Owner, 2026-08-27: «хватит контекста макросквада (минимум систем) — при
+// загрузке отряда в субмире они всё равно берутся из сквада/ландмарка/зон/
+// таблиц, так что просто скиллы и перки СКВАДА (это и есть лидер) модифицируют
+// юнитов в бою, и всё универсально».
+//
+// So there is no aura SYSTEM. There was one — its own header, its own
+// `AuraMods` type, its own add/collect/apply verbs — and every bit of it said
+// the same thing this one function says: the leader's sheet contributes
+// bonuses, and bonuses are rows of the one registry. A second container for a
+// number that already had one is exactly what CANON S26 forbids; killing it
+// costs the game nothing because squad == leader (S4) and the leader's sheet
+// was always the only source.
+//
+// SOURCES are the extension axis: perk rows (returning with the perk
+// redesign, CANON S14), and the leader's skills, charisma and carried gear
+// when their turns come. Each is a few lines appending into the same totals,
+// and no consumer ever learns where a modifier came from.
+//
+// EMPTY since the 2026-09-03 perk purge: the one aura row (Leader → +1 vit)
+// died with the perk system it hung on. The DOOR stays — every body-birth
+// already walks through it — so the redesigned perks feed rows, not code.
+inline BonusTotals squad_bonuses(const CharacterSheet&) {
+    return BonusTotals{};
+}
+
+// Derive combat numbers for a humanoid from its CharacterSheet, layered on top
+// of an authored per-role `base` (the NPC registry's CombatTemplate). Returns a
+// CombatTemplate so spawn code stays a one-line swap (base → projected) before
+// it fills ECS Health/Combat.
+//
+// The projection reuses the EXACT player formulas from attributes.h, so player
+// and NPC sit on ONE combat curve:
+//   hp     = (base.hp + end·10) · (1 + bodybuilding·0.05)      // calculate_combat_stats
+//   damage = base.damage + (missile ? intl·(1+spellcraft·0.05)  // caster: spell stats
+//                                    : str ·(1+fighter   ·0.05)) // melee : physical stats
+// The authored template supplies the per-role HP/damage FLOOR plus the attack
+// identity (speed / range / cooldown / kind / missile params / label), all
+// preserved verbatim. Level is captured implicitly by the sheet's spent points
+// (a level-N sheet has more attributes/skills), so callers MUST NOT apply an
+// additional per-level multiplier on top of this — the sheet IS the scaling.
+//
+// Every body passes through here — a wolf exactly like a spearman (CANON S14):
+// its row supplies the floor and the attack identity, its sheet supplies the
+// scaling.
+// The NPC's typed damage percent (CANON S13/S14, session Е 2026-09-19). An
+// NPC row carries no item in a Grip, so the door the player walks through
+// (anatomy.cpp hand_strike_fields — the worn weapon's own skill column)
+// reads his TRAINING instead: the best-trained skill of the attack's domain.
+// Melee — the eight weapon skills (the fist included); a Missile row today
+// is always a CAST (Witch/Sorceress/Dragon/Cultist/Lich), so its domain is
+// the six schools (the Е4 расклейка will split cast from shot honestly).
+// Untrained = 100, exactly the player's bare fist. Same skill_mult_pct law,
+// same 100-scale currency the strike assembly multiplies by.
+inline int sheet_strike_mult_pct(const CharacterSheet& sheet,
+                                 const CombatTemplate& base) {
+    // A CAST reads the rank of the spell's OWN school — the very sentence the
+    // player's cast reads (spell_book.cpp spell_mult_pct). A sleeping tag
+    // (no school) multiplies by nothing, exactly as it does for the player.
+    if (spell_ordinal_ok(base.castSpell)) {
+        const SkillId school = spell_school(kSpellDefs[base.castSpell]);
+        return school == SkillId::Count
+                   ? 100 : skill_mult_pct(sheet.skills, school);
+    }
+    // A SHOT reads the SHOOTING skill, and only it: a row that looses a
+    // missile is drawing a bow, whatever else its hands know. «Best of all
+    // weapon skills» would have let a swordsman shoot better for his sword —
+    // a lever reaching a domain it was never about.
+    if (base.attackKind == CombatTemplate::Missile)
+        return skill_mult_pct(sheet.skills, SkillId::Bow);
+    // Otherwise it is a SWING, and the typed lever is the weapon skill. An
+    // NPC row carries no item in a Grip, so the door the player walks
+    // through (hand_strike_fields, the worn weapon's own skill column) reads
+    // his TRAINING instead: the best-trained weapon skill, the fist
+    // included. Untrained = 100, exactly the player's bare hand.
+    int best = 100;
+    for (int i = int(SkillId::Sword); i <= int(SkillId::Staff); ++i) {
+        const int pct = skill_mult_pct(sheet.skills, SkillId(std::uint8_t(i)));
+        if (pct > best) best = pct;
+    }
+    const int fist = skill_mult_pct(sheet.skills, SkillId::Unarmed);
+    return fist > best ? fist : best;
+}
+
+inline CombatTemplate project_combat(const CharacterSheet& sheet,
+                                     const CombatTemplate& base) {
+    CombatTemplate out = base; // keep attack identity + label + missile params
+    const BarCeilings cs =
+        bar_ceilings(sheet.attributes, sheet.skills,
+                     int(base.hp), base.mp, base.sp);
+    const DerivedBonuses d =
+        calculate_derived(sheet.attributes, sheet.skills);
+    // РАСКЛЕЙКА КАСТА И ВЫСТРЕЛА (owner verdict 2026-09-17, built
+    // 2026-09-19): three cases, and the ROW says which — no column has to
+    // mean something it never claimed.
+    //
+    //   CAST  — the row names a spell: the blow IS that spell. Its dice, its
+    //           damage type and the caster's INT, through the very doors the
+    //           player's hand casts through (owner: «кубы СПЕЛЛА»). A caster
+    //           has no dice of his own, exactly like the player.
+    //   SHOT  — Missile with no spell named: dice + typed skill + LCK and NO
+    //           attribute add (CANON S14 «урон стрелкового БЕЗ добавки
+    //           атрибута» — range is the compensation).
+    //   SWING — Melee: the row's dice plus STR, as always.
+    //
+    // Until the spell column existed, `Missile` MEANT "caster", so the first
+    // NPC archer would have drawn an INT bonus from a column about delivery.
+    const SpellDef* cast = spell_ordinal_ok(base.castSpell)
+                               ? &kSpellDefs[base.castSpell] : nullptr;
+    float atkBonus = 0.0f;
+    if (cast) {
+        out.dice    = cast->dice;
+        out.dmgType = spell_damage_type(*cast);
+        atkBonus    = float(d.rawSpellDamage);
+    } else if (base.attackKind != CombatTemplate::Missile) {
+        atkBonus    = float(d.rawPhysDamage);
+    }
+    out.hp      = float(cs.maxHp);
+    // Attributes ADD to the row's dice (CANON S14: «атрибуты складывают»),
+    // floored to the int house — the strike assembly (roll_strike) does the
+    // rest. The sheet's LCK rides along for the crit door.
+    out.flatAdd = std::int16_t(std::floor(atkBonus));
+    out.luck    = std::uint8_t(sheet.attributes.of(AttributeId::Lck));
+    // TEMPO through the same recovery door as the player's hand (CANON S14
+    // «один рычаг», 2026-09-07 — S4: спец-кода игрока нет, значит и спец-
+    // кривой НПЦ нет): the row's authored cooldown is the BASE, the sheet's
+    // Spd + the generic of the attack's domain divide it — a quick veteran
+    // bandit genuinely strikes faster than a peasant with the same club. One
+    // rounding, in the door; seconds again for the float carrier the strike
+    // pass converts per swing (steps_from_seconds).
+    // The GENERIC of the act's own domain: Spellcraft paces a CAST, and
+    // Armsmaster paces every physical act — a swing and a SHOT alike (a bow
+    // is drawn by arms, not by a casting hand; before the split, the row's
+    // delivery column decided this too).
+    out.cooldown = seconds_from_steps(std::uint32_t(recovery_steps(
+        base.cooldown, sheet.attributes, sheet.skills,
+        cast ? SkillId::Spellcraft : SkillId::Armsmaster)));
+    // The POWER half of the same split: the typed skill multiplies the dice
+    // (the door above already gave the generic pair to TEMPO — one handle,
+    // one lever). Both consumers read THIS field now: the fought body
+    // (spawn combat_from_sheet) and the auto-resolve (fighter_power) — the
+    // two ends of S13's one law of battle, moved in one commit on purpose.
+    out.multPct = std::int16_t(sheet_strike_mult_pct(sheet, base));
+    return out;
+}
+
+// THE whole-number bar a body of this sheet carries — one question, one
+// answer. It was written twice, once per birth (sub/spawn.cpp's derived body
+// and macro/npc_spawn.cpp's tracked one), and a wound crosses between those
+// two layers as a FRACTION of exactly this number: the day the two floors
+// disagreed by one point, the crossing would have leaked hp in one direction.
+inline int body_max_hp(const CharacterSheet& sheet, const CombatTemplate& base) {
+    return std::max(1, int(std::floor(project_combat(sheet, base).hp)));
+}
+
+// THE mana bar of a body of this sheet — the same question as body_max_hp,
+// asked of the other pool, and answered by the same derivation
+// (bar_ceilings: the WILL bar times Meditation over the row's `mp` floor).
+//
+// It had no door because it had no readers: `project_combat` computed maxMp
+// on every single birth in the game and dropped it on the floor, so mana was
+// the player's private property and every other body in the world was a
+// cripple with one bar (owner, 2026-09-09: «это РПГ, у всех должна быть HP SP
+// MP»). The row joins the derivation exactly the way `base.hp` joins above
+// (§41 root 2): its `mp` column IS the species' well — 100 for everyone
+// until a row says otherwise.
+inline int body_max_mp(const CharacterSheet& sheet,
+                       const CombatTemplate& base) {
+    return std::max(0, bar_ceilings(sheet.attributes, sheet.skills,
+                                    int(base.hp), base.mp, base.sp).maxMp);
+}
+
+// THE stamina bar — the third of the three, same door shape, same reason:
+// every caller that spelled `bar_ceilings(...).maxSp` inline was quietly
+// accepting the smuggled 100 for a row it never consulted. `std::max(1,…)`
+// belongs to the door: SP is the divisor of fatigue everywhere it is read.
+inline int body_max_sp(const CharacterSheet& sheet,
+                       const CombatTemplate& base) {
+    return std::max(1, bar_ceilings(sheet.attributes, sheet.skills,
+                                    int(base.hp), base.mp, base.sp).maxSp);
+}
+
 } // namespace sm
 
 // Включение стоит ЗДЕСЬ, а не наверху файла, и это не небрежность:
@@ -972,3 +1377,5 @@ TIMAERT_ROW(sm::PoolSlice);
 TIMAERT_ROW(sm::SoldierRecord);
 TIMAERT_ROW(sm::Inventory);
 TIMAERT_ROW(sm::PlayerCombatSlice);
+TIMAERT_ROW(sm::CharacterSheet);
+TIMAERT_ROW(sm::csheet_detail::SheetRng);

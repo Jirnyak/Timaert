@@ -14,7 +14,6 @@
 
 #include "check.h"
 #include "macro/anketa.h"
-#include "macro/character_sheet.h"   // body_max_hp — THE ceiling door
 #include "macro/economy.h"
 #include "tables/npc.h"               // npc_def — THE row the ceiling reads
 #include "macro/squad.h"

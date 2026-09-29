@@ -49,10 +49,6 @@ struct SpellBook {
 static_assert(sizeof(SpellBook) == 80,
               "книга: 2 плана по 32 Б + ординал + перенос = 80 Б");
 
-inline constexpr bool spell_ordinal_ok(int ord) noexcept {
-    return ord >= 0 && ord < kSpellCount;
-}
-
 // The two bit planes speak ONLY through these (no consumer indexes a raw
 // array): one bit-math site, and the planes cannot be confused.
 inline bool spellbook_bit(const std::uint64_t* plane, int ord) noexcept {
