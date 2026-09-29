@@ -45,7 +45,7 @@ WorldFact fact(int day, FactKind kind, std::uint8_t subjKind,
 // asked by comparing the FLAG's own ordinal to the constant — one entity, one
 // read. It is not enough now, and that is the fixture's debt, not the law's:
 // a world without an original is a world that cannot exist.
-void stand_at(ecs::World& w, int x, int y) {
+void stand_at(sm::GameState& gs, ecs::World& w, int x, int y) {
     entt::entity e = entt::null;
     for (auto ent : w.reg.view<ecs::PlayerTag>()) e = ent;
     if (e == entt::null) {
@@ -55,6 +55,10 @@ void stand_at(ecs::World& w, int x, int y) {
         w.reg.emplace<ecs::MacroSlot>(e, h.slot);
         w.reg.emplace<ecs::PlayerTag>(e);
         st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};
+        // Оба носителя, как настоящая дверь (1е кластер 5): журнал читает
+        // клетку и вселение из битов GameState.
+        gs.playerSquadBits = sm::macro_handle_bits(h);
+        gs.playerFlagBits  = gs.playerSquadBits;
     }
     sm::store_of(w).cell[sm::slot_of(w.reg, e)] =
         ecs::MacroCell{ecs::cell_index(x, y, 64)};
@@ -68,7 +72,7 @@ void test_participation_locality_and_silence() {
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());   // the flag holder is nobody's LORD → he wears nobody
-    stand_at(w, 10, 10);
+    stand_at(gs, w, 10, 10);
 
     // (a) The player's own deed, far away — learned by PARTICIPATION.
     chronicle_record(gs.chronicle,
@@ -112,7 +116,7 @@ void test_participation_locality_and_silence() {
 
     // Walking away changes what "here" means: the same foreign cell that was
     // silent above becomes his the tick he stands on it.
-    stand_at(w, 40, 40);
+    stand_at(gs, w, 40, 40);
     chronicle_record(gs.chronicle,
                      fact(3, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false),
@@ -130,7 +134,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
-    stand_at(w, 5, 5);
+    stand_at(gs, w, 5, 5);
 
     // Fill to the cap in slices small enough that the ring never evicts
     // between captures (the live game captures every tick, so eviction
@@ -176,7 +180,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
-    stand_at(w, 5, 5);
+    stand_at(gs, w, 5, 5);
 
     // Not possessing: the lord's far-away deed is somebody else's.
     chronicle_record(gs.chronicle,
@@ -228,7 +232,7 @@ void test_a_captured_copy_carries_no_ring_link() {
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
-    stand_at(w, 5, 5);
+    stand_at(gs, w, 5, 5);
 
     // Two facts on one cell: the second's ring slot LINKS to the first.
     chronicle_record(gs.chronicle,

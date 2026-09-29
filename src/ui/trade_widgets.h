@@ -54,11 +54,12 @@ struct PlayerHaggler {
     int tradePct = 0;
 };
 
-inline PlayerHaggler player_haggler(ecs::World& w) {
+inline PlayerHaggler player_haggler(const GameState& gs, ecs::World& w) {
     PlayerHaggler h;
-    const entt::entity squad = player_squad_entity(w);
-    if (squad != entt::null) h.standing = standing_bonuses_of(w, squad);
-    h.sheet = player_effective_sheet(w);
+    const MacroStore& st = store_of(w);
+    const MacroHandle squad = player_squad_handle(gs);
+    if (st.valid(squad)) h.standing = standing_bonuses_of(st, squad);
+    h.sheet = player_effective_sheet(gs, st);
     h.tradePct = trade_power_of(h.sheet);
     return h;
 }

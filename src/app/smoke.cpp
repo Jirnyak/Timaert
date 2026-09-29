@@ -44,15 +44,15 @@ namespace sm::app {
 // more); a scripted placement is a JUMP through the one macro jump door —
 // the same one the escape teleport and the subworld exit walk through.
 static float smoke_player_x(App& app) {
-    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.ecs);
+    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.gs, *app.macroStore);
     return c ? float(sm::ecs::cell_x(*c, app.gs.mapW)) : 0.0f;
 }
 static float smoke_player_y(App& app) {
-    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.ecs);
+    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.gs, *app.macroStore);
     return c ? float(sm::ecs::cell_y(*c, app.gs.mapW)) : 0.0f;
 }
 static void smoke_teleport_player(App& app, int x, int y) {
-    sm::player_jump_to_cell(app.gs, app.ecs, x, y);
+    sm::player_jump_to_cell(app.gs, *app.macroStore, x, y);
 }
 
 // A body projected from SOMEONE ELSE'S record — «an overworld figure you can
@@ -102,7 +102,8 @@ static bool smoke_projects_foreign_record(App& app, entt::entity body) {
 // wrapper: a harness line before the world exists reads zeros, not garbage.
 static sm::SpellBook& smoke_player_book(App& app) {
     static sm::SpellBook scratch{};
-    sm::SpellBook* book = sm::player_spellbook(app.ecs);
+    sm::SpellBook* book = app.macroStore
+        ? sm::player_spellbook(app.gs, *app.macroStore) : nullptr;
     return book ? *book : scratch;
 }
 
@@ -162,7 +163,7 @@ static bool smoke_possess_via_spell(App& app, entt::entity target) {
     if (!reg.valid(target) || !app.subworld.active()) return false;
     // Кастер заведомо выше порога: свидетели ПЕРЕНОСА меряют перенос, гейт
     // уровня меряет своя половина possess_gate.
-    if (auto* cs = sm::player_sheet(app.ecs)) {
+    if (auto* cs = sm::player_sheet(app.gs, *app.macroStore)) {
         cs->levelData.level = std::max(cs->levelData.level, 50);
     }
     if (auto* lvl = body_state<sm::ecs::NpcLevel>(reg, target)) {
@@ -1767,13 +1768,13 @@ bool run_macro_recovery_smoke(App& app) {
     }
     smoke_clear_modal_overlays(app);
 
-    sm::player_sheet(app.ecs)->attributes[sm::AttributeId::End] = 1;
-    sm::player_sheet(app.ecs)->attributes[sm::AttributeId::Wil] = 1;
+    sm::player_sheet(app.gs, *app.macroStore)->attributes[sm::AttributeId::End] = 1;
+    sm::player_sheet(app.gs, *app.macroStore)->attributes[sm::AttributeId::Wil] = 1;
     // The sheet changed: ceilings follow through THE door (the per-tick walk
     // would do it anyway; doing it here makes the numbers below honest NOW).
     // No pinned maxima — the ceiling is the sheet's business, and a pinned
     // 100 would be silently rescaled back by the very door being exercised.
-    sm::refresh_player_body(app.ecs);
+    sm::refresh_player_body(app.gs, *app.macroStore);
     // Never hold this reference across a simulated tick — spawning entities
     // reallocates the component storage under it (the rest_sp lesson).
     {
@@ -2451,7 +2452,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
         return false;
     }
 
-    const int expBefore = sm::player_sheet(app.ecs)->levelData.exp;
+    const int expBefore = sm::player_sheet(app.gs, *app.macroStore)->levelData.exp;
     const int gemBefore = player_bag(app).count("misc_gem");
     // Park the victim right next to the PLAYER, wherever they actually stand.
     // The old window-centre teleport assumed enter() always lands at the
@@ -2524,7 +2525,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
     }
     const float playerZAtInteract = app.subworld.player_z();
     const bool interacted = app.subworld.interact();
-    const int expAfter = sm::player_sheet(app.ecs)->levelData.exp;
+    const int expAfter = sm::player_sheet(app.gs, *app.macroStore)->levelData.exp;
     const int gemAfter = player_bag(app).count("misc_gem");
     restore();
 
@@ -5592,7 +5593,7 @@ bool run_console_smoke(App& app) {
     // ledger the gold commands move.
     const int    oldGold         = sm::inventory_value(player_bag(app));
     const auto   oldInv          = player_bag(app);
-    const auto   oldLevel        = sm::player_sheet(app.ecs)->levelData;
+    const auto   oldLevel        = sm::player_sheet(app.gs, *app.macroStore)->levelData;
     const sm::ecs::Pools oldPools = player_pools(app);
     const auto   oldSpellBook    = smoke_player_book(app);
     const auto   oldTime         = app.gs.worldTime;
@@ -5608,7 +5609,7 @@ bool run_console_smoke(App& app) {
             app.subworld.leave(true);
         }
         player_bag(app)   = oldInv;   // the whole bag IS the wallet (№1)
-        sm::player_sheet(app.ecs)->levelData   = oldLevel;
+        sm::player_sheet(app.gs, *app.macroStore)->levelData   = oldLevel;
         player_pools(app)         = oldPools;
         smoke_player_book(app)   = oldSpellBook;
         app.gs.worldTime          = oldTime;
@@ -5670,9 +5671,9 @@ bool run_console_smoke(App& app) {
     if (player_bag(app).count("potion_hp") != potBefore + 2) {
         restore(); smoke_fail(app, "console take item"); return false;
     }
-    const int lvlBefore = sm::player_sheet(app.ecs)->levelData.level;
+    const int lvlBefore = sm::player_sheet(app.gs, *app.macroStore)->levelData.level;
     con.execute("addexp 100000");
-    if (sm::player_sheet(app.ecs)->levelData.level <= lvlBefore) {
+    if (sm::player_sheet(app.gs, *app.macroStore)->levelData.level <= lvlBefore) {
         restore(); smoke_fail(app, "console addexp did not level up"); return false;
     }
 
@@ -6037,7 +6038,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "console spawn wolf: kind did not resolve to wolf row");
             return false;
         }
-        const int expBefore = sm::player_sheet(app.ecs)->levelData.exp;
+        const int expBefore = sm::player_sheet(app.gs, *app.macroStore)->levelData.exp;
         // Убийца — ТЕЛО аватара (§41 корень 5): жнец резолвит лидера по
         // телу, и «ничей» чит-кил (attackerId 0) честно не платит никому.
         sm::sub::apply_lethal_damage(
@@ -6047,7 +6048,7 @@ bool run_console_smoke(App& app) {
                     sm::sub::current_player_body(app.ecs))), true},
             sm::sub::DamageKind::Dev, &app.bus);
         app.subworld.tick(0.016f);
-        if (sm::player_sheet(app.ecs)->levelData.exp <= expBefore) {
+        if (sm::player_sheet(app.gs, *app.macroStore)->levelData.exp <= expBefore) {
             restore(); smoke_fail(app, "console wolf kill granted no XP"); return false;
         }
     }
@@ -6056,13 +6057,13 @@ bool run_console_smoke(App& app) {
     // разгадка: команда всегда звалась ADDEXP, «exp» наврала инструкция
     // плейтеста): команда обязана существовать и платить в лист сквада.
     {
-        const int expBefore = sm::player_sheet(app.ecs)->levelData.exp;
-        const int lvlBefore = sm::player_sheet(app.ecs)->levelData.level;
+        const int expBefore = sm::player_sheet(app.gs, *app.macroStore)->levelData.exp;
+        const int lvlBefore = sm::player_sheet(app.gs, *app.macroStore)->levelData.level;
         if (!con.execute("addexp 500")) {
             restore(); smoke_fail(app, "console addexp command rejected");
             return false;
         }
-        const auto& ldNow = sm::player_sheet(app.ecs)->levelData;
+        const auto& ldNow = sm::player_sheet(app.gs, *app.macroStore)->levelData;
         if (ldNow.exp <= expBefore && ldNow.level <= lvlBefore) {
             restore(); smoke_fail(app, "console addexp paid nothing");
             return false;
@@ -6167,8 +6168,8 @@ bool run_console_smoke(App& app) {
         // записи, ранг школы — эффективный лист.
         const int possessionOrd = sm::spell_ordinal("possession");
         const int casterLevel =
-            sm::player_sheet(app.ecs) ? sm::player_sheet(app.ecs)->levelData.level : 0;
-        const int voidRank = int(sm::player_effective_sheet(app.ecs)
+            sm::player_sheet(app.gs, *app.macroStore) ? sm::player_sheet(app.gs, *app.macroStore)->levelData.level : 0;
+        const int voidRank = int(sm::player_effective_sheet(app.gs, *app.macroStore)
                                      .skills.of(sm::SkillId::VoidMagic));
         const int threshold = casterLevel + voidRank;
         if (auto* lvl = body_state<sm::ecs::NpcLevel>(reg, target)) {
@@ -6305,7 +6306,7 @@ bool run_console_smoke(App& app) {
                     }
                     break;
                 }
-                return sm::player_pools(app.ecs);
+                return sm::player_pools(app.gs, *app.macroStore);
             };
             const sm::ecs::Pools* pay = authoritative_pools();
             if (!pay) {
@@ -6349,7 +6350,7 @@ bool run_console_smoke(App& app) {
 
     // Capture reporting values before restoring the world.
     const int         rGold   = sm::inventory_value(player_bag(app));
-    const int         rLevel  = sm::player_sheet(app.ecs)->levelData.level;
+    const int         rLevel  = sm::player_sheet(app.gs, *app.macroStore)->levelData.level;
     const std::size_t rSpells =
         std::size_t(sm::spellbook_learned_count(smoke_player_book(app)));
     restore();
@@ -7224,17 +7225,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     break;
                 }
                 const bool poolsFollow =
-                    sm::player_pools(app.ecs) == body_state<sm::ecs::Pools>(reg, origin)
-                    && sm::player_pools(app.ecs) != body_state<sm::ecs::Pools>(reg, home);
+                    sm::player_pools(app.gs, *app.macroStore) == body_state<sm::ecs::Pools>(reg, origin)
+                    && sm::player_pools(app.gs, *app.macroStore) != body_state<sm::ecs::Pools>(reg, home);
                 const bool bagFollows =
-                    sm::player_inventory(app.ecs) != nullptr
-                    && sm::player_inventory(app.ecs) != [&] {
+                    sm::player_inventory(app.gs, *app.macroStore) != nullptr
+                    && sm::player_inventory(app.gs, *app.macroStore) != [&] {
                            auto* b = body_state<sm::ecs::NpcInventory>(reg, home);
                            return b ? &b->inv : nullptr;
                        }();
                 const bool bookFollows =
-                    sm::player_spellbook(app.ecs) == body_state<sm::SpellBook>(reg, origin)
-                    && sm::player_spellbook(app.ecs)
+                    sm::player_spellbook(app.gs, *app.macroStore) == body_state<sm::SpellBook>(reg, origin)
+                    && sm::player_spellbook(app.gs, *app.macroStore)
                            != body_state<sm::SpellBook>(reg, home);
                 std::fprintf(stderr,
                              "[smoke] subworld_exit_remap family pools=%d bag=%d "
@@ -7330,10 +7331,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // колонкой носителя флажка — сравнение с наличием
                 // entt-компоненты умерло вместе с ней.
                 const bool doorsAlive =
-                    sm::player_pools(app.ecs) != nullptr
-                    && sm::player_pools(app.ecs)
+                    sm::player_pools(app.gs, *app.macroStore) != nullptr
+                    && sm::player_pools(app.gs, *app.macroStore)
                            == body_state<sm::ecs::Pools>(reg, origin)
-                    && sm::player_sheet(app.ecs)
+                    && sm::player_sheet(app.gs, *app.macroStore)
                            == body_state<sm::CharacterSheet>(reg, origin);
                 const bool bodyIsHis =
                     av != entt::null
@@ -7560,7 +7561,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          beforeHostiles, afterHostiles,
                          app.subworld.status_line());
             std::fflush(stderr);
-            const sm::LevelData beforeDeathXp = sm::player_sheet(app.ecs)->levelData;
+            const sm::LevelData beforeDeathXp = sm::player_sheet(app.gs, *app.macroStore)->levelData;
             const entt::entity smokeHostile = findSmokeHostile();
             if (smokeHostile == entt::null) {
                 smoke_fail(app, "battle_start hostile not found for death flush");
@@ -7584,7 +7585,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         sm::sub::current_player_body(app.ecs))), true},
                 sm::sub::DamageKind::Dev, &app.bus);
             app.subworld.leave(true);
-            const sm::LevelData afterDeathXp = sm::player_sheet(app.ecs)->levelData;
+            const sm::LevelData afterDeathXp = sm::player_sheet(app.gs, *app.macroStore)->levelData;
             if (afterDeathXp.level <= beforeDeathXp.level
                 && afterDeathXp.exp <= beforeDeathXp.exp) {
                 smoke_fail(app, "battle_start leave did not flush death XP");
@@ -8344,7 +8345,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "hostile squad did not force the encounter");
                 break;
             }
-            const sm::Inventory* pArmy = sm::player_inventory(app.ecs);
+            const sm::Inventory* pArmy = sm::player_inventory(app.gs, *app.macroStore);
             const int armyBefore = pArmy ? sm::creature_heads(*pArmy) : 0;
             const int hpBefore = player_pools(app).hp;
             perform_encounter_auto(app, sm::handle_of(app.ecs.reg, hostile),
@@ -8360,8 +8361,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 && (*body_state<sm::ecs::Pools>(reg, hostile)).hp
                        < (*body_state<sm::ecs::Pools>(reg, hostile)).maxHp;
             const bool playerPaid =
-                (sm::player_inventory(app.ecs)
-                     ? sm::creature_heads(*sm::player_inventory(app.ecs))
+                (sm::player_inventory(app.gs, *app.macroStore)
+                     ? sm::creature_heads(*sm::player_inventory(app.gs, *app.macroStore))
                      : 0) < armyBefore
                 || player_pools(app).hp < hpBefore;
             if (!enemyGone && !enemyHurt && !playerPaid) {
@@ -8705,10 +8706,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.codex = false;
             std::fprintf(stderr,
                          "[smoke] stats open attrPts=%d skillPts=%d end=%d bodybuilding=%d hpMax=%d\n",
-                         sm::player_sheet(app.ecs)->levelData.attributePoints,
-                         sm::player_sheet(app.ecs)->levelData.skillPoints,
-                         sm::player_sheet(app.ecs)->attributes.of(sm::AttributeId::End),
-                         sm::player_sheet(app.ecs)->skills.of(sm::SkillId::Bodybuilding),
+                         sm::player_sheet(app.gs, *app.macroStore)->levelData.attributePoints,
+                         sm::player_sheet(app.gs, *app.macroStore)->levelData.skillPoints,
+                         sm::player_sheet(app.gs, *app.macroStore)->attributes.of(sm::AttributeId::End),
+                         sm::player_sheet(app.gs, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding),
                          player_pools(app).maxHp);
             std::fflush(stderr);
             ++app.smoke.cursor;
@@ -8779,12 +8780,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // The default creation preset spends the whole budget, exactly as
             // a one-click player would. This scenario tests the SPEND DOOR,
             // not the creation budget — grant the point a level-up grants.
-            sm::player_sheet(app.ecs)->levelData.attributePoints += 1;
-            const int beforePoints = sm::player_sheet(app.ecs)->levelData.attributePoints;
-            const int beforeEnd = sm::player_sheet(app.ecs)->attributes.of(sm::AttributeId::End);
+            sm::player_sheet(app.gs, *app.macroStore)->levelData.attributePoints += 1;
+            const int beforePoints = sm::player_sheet(app.gs, *app.macroStore)->levelData.attributePoints;
+            const int beforeEnd = sm::player_sheet(app.gs, *app.macroStore)->attributes.of(sm::AttributeId::End);
             const int beforeHp = player_pools(app).maxHp;
-            if (!sm::spend_attribute_point(sm::player_sheet(app.ecs)->levelData,
-                                           sm::player_sheet(app.ecs)->attributes,
+            if (!sm::spend_attribute_point(sm::player_sheet(app.gs, *app.macroStore)->levelData,
+                                           sm::player_sheet(app.gs, *app.macroStore)->attributes,
                                            sm::AttributeId::End)) {
                 smoke_fail(app, "spend_attribute_end rejected");
                 break;
@@ -8796,13 +8797,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // would be indistinguishable from the free heal being denied.
             player_pools(app).hp = std::max(1, beforeHp / 2);
             const int curHpBefore = player_pools(app).hp;
-            sm::refresh_player_body(app.ecs);
+            sm::refresh_player_body(app.gs, *app.macroStore);
             const sm::ecs::Pools& afterSpend = player_pools(app);
             const float fracBefore = float(curHpBefore) / float(beforeHp);
             const float fracAfter =
                 float(afterSpend.hp) / float(std::max(1, afterSpend.maxHp));
-            if (sm::player_sheet(app.ecs)->levelData.attributePoints != beforePoints - 1
-                || sm::player_sheet(app.ecs)->attributes.of(sm::AttributeId::End) != beforeEnd + 1
+            if (sm::player_sheet(app.gs, *app.macroStore)->levelData.attributePoints != beforePoints - 1
+                || sm::player_sheet(app.gs, *app.macroStore)->attributes.of(sm::AttributeId::End) != beforeEnd + 1
                 || afterSpend.maxHp <= beforeHp
                 || afterSpend.hp >= afterSpend.maxHp
                 || std::fabs(fracAfter - fracBefore)
@@ -8813,9 +8814,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] spend_attr_end points=%d->%d end=%d->%d hpMax=%d->%d\n",
                          beforePoints,
-                         sm::player_sheet(app.ecs)->levelData.attributePoints,
+                         sm::player_sheet(app.gs, *app.macroStore)->levelData.attributePoints,
                          beforeEnd,
-                         sm::player_sheet(app.ecs)->attributes.of(sm::AttributeId::End),
+                         sm::player_sheet(app.gs, *app.macroStore)->attributes.of(sm::AttributeId::End),
                          beforeHp,
                          player_pools(app).maxHp);
             std::fflush(stderr);
@@ -8840,17 +8841,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // the "expected ignorance" gate below still holds. The male
             // nature bonus banks one skill POINT — drop it, because the last
             // assertion is precisely that the spend door refuses without one.
-            sm::player_sheet(app.ecs)->levelData.learnPicks += 1;
-            sm::player_sheet(app.ecs)->levelData.skillPoints = 0;
-            const int beforePicks = sm::player_sheet(app.ecs)->levelData.learnPicks;
-            const int beforeRank = sm::player_sheet(app.ecs)->skills.of(sm::SkillId::Bodybuilding);
+            sm::player_sheet(app.gs, *app.macroStore)->levelData.learnPicks += 1;
+            sm::player_sheet(app.gs, *app.macroStore)->levelData.skillPoints = 0;
+            const int beforePicks = sm::player_sheet(app.gs, *app.macroStore)->levelData.learnPicks;
+            const int beforeRank = sm::player_sheet(app.gs, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding);
             const int beforeHp = player_pools(app).maxHp;
             if (beforeRank != 0) {
                 smoke_fail(app, "spend_skill_bodybuilding expected ignorance");
                 break;
             }
-            if (!sm::spend_learn_pick(sm::player_sheet(app.ecs)->levelData,
-                                      sm::player_sheet(app.ecs)->skills,
+            if (!sm::spend_learn_pick(sm::player_sheet(app.gs, *app.macroStore)->levelData,
+                                      sm::player_sheet(app.gs, *app.macroStore)->skills,
                                       sm::SkillId::Bodybuilding)) {
                 smoke_fail(app, "spend_skill_bodybuilding learn rejected");
                 break;
@@ -8860,18 +8861,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // full heal happened.
             player_pools(app).hp = std::max(1, beforeHp / 2);
             const int curHpBefore = player_pools(app).hp;
-            sm::refresh_player_body(app.ecs);
+            sm::refresh_player_body(app.gs, *app.macroStore);
             const bool spendRefused =
-                sm::player_sheet(app.ecs)->levelData.skillPoints <= 0
-                && !sm::spend_skill_point(sm::player_sheet(app.ecs)->levelData,
-                                          sm::player_sheet(app.ecs)->skills,
+                sm::player_sheet(app.gs, *app.macroStore)->levelData.skillPoints <= 0
+                && !sm::spend_skill_point(sm::player_sheet(app.gs, *app.macroStore)->levelData,
+                                          sm::player_sheet(app.gs, *app.macroStore)->skills,
                                           sm::SkillId::Bodybuilding);
             const sm::ecs::Pools& afterLearn = player_pools(app);
             const float fracBefore = float(curHpBefore) / float(beforeHp);
             const float fracAfter =
                 float(afterLearn.hp) / float(std::max(1, afterLearn.maxHp));
-            if (sm::player_sheet(app.ecs)->levelData.learnPicks != beforePicks - 1
-                || sm::player_sheet(app.ecs)->skills.of(sm::SkillId::Bodybuilding) != 1
+            if (sm::player_sheet(app.gs, *app.macroStore)->levelData.learnPicks != beforePicks - 1
+                || sm::player_sheet(app.gs, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding) != 1
                 || afterLearn.maxHp <= beforeHp
                 || afterLearn.hp >= afterLearn.maxHp
                 || std::fabs(fracAfter - fracBefore)
@@ -8883,9 +8884,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] spend_skill_bodybuilding picks=%d->%d rank=%d->%d hpMax=%d->%d spend_refused=1\n",
                          beforePicks,
-                         sm::player_sheet(app.ecs)->levelData.learnPicks,
+                         sm::player_sheet(app.gs, *app.macroStore)->levelData.learnPicks,
                          beforeRank,
-                         sm::player_sheet(app.ecs)->skills.of(sm::SkillId::Bodybuilding),
+                         sm::player_sheet(app.gs, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding),
                          beforeHp,
                          player_pools(app).maxHp);
             std::fflush(stderr);
@@ -9506,8 +9507,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 float(sm::calculate_derived(hasted.attributes, hasted.skills)
                           .moveSpeedPct) / 100.0f;
             const float basePace =
-                float(sm::calculate_derived(sm::player_sheet(app.ecs)->attributes,
-                                            sm::player_sheet(app.ecs)->skills)
+                float(sm::calculate_derived(sm::player_sheet(app.gs, *app.macroStore)->attributes,
+                                            sm::player_sheet(app.gs, *app.macroStore)->skills)
                           .moveSpeedPct) / 100.0f;
             if (!active || afterMp >= beforeMp || !(hastePace > basePace)) {
                 smoke_fail(app, "haste sustained drain/speed invariant");

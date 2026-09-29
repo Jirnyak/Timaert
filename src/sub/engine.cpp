@@ -173,9 +173,10 @@ constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 // THE player's bag — his squad entity's ordinary NpcInventory. The engine
 // reaches it through the same door the macro layer does; a scene without a
 // macro world (a bare harness) gets a scratch pack rather than a null.
-Inventory& player_bag_of(ecs::World* ecs) {
+Inventory& player_bag_of(const GameState* gs, ecs::World* ecs) {
     static Inventory scratch{};
-    Inventory* bag = ecs ? player_inventory(*ecs) : nullptr;
+    Inventory* bag = (gs && ecs)
+        ? player_inventory(*gs, store_of(*ecs)) : nullptr;
     return bag ? *bag : scratch;
 }
 
@@ -755,7 +756,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // whoever leads this squad buffs every soldier born here — the EFFECTIVE
     // sheet (phase 4), which already follows the flag by its door.
     const BonusTotals playerBonuses =
-        squad_bonuses(player_effective_sheet(ecs));
+        squad_bonuses(player_effective_sheet(gs, store_of(ecs)));
     const entt::entity flagRec = player_flag_entity(ecs);
     std::int32_t rosterSubject = std::int32_t(ecs::kPlayerSquadOrdinal);
     std::int16_t rosterCx = 0, rosterCy = 0;
@@ -772,8 +773,10 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
             squadFaction = kind->factionIdx;
         }
     }
-    spawn_player_squad(ecs, player_inventory(ecs) ? *player_inventory(ecs)
-                                                  : Inventory{},
+    spawn_player_squad(ecs,
+                       player_inventory(gs, store_of(ecs))
+                           ? *player_inventory(gs, store_of(ecs))
+                           : Inventory{},
                        mgr_, playerX_, playerY_,
         cell_seed(gs.worldSeed, cx, cy) ^ kSquadSpawnSalt,
         squadFaction, &playerBonuses, rosterSubject, rosterCx, rosterCy);
@@ -811,7 +814,8 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     spawn_player_entity();
     if (gs_) {
         {
-        const SpellBook* book = ecs_ ? player_spellbook(*ecs_) : nullptr;
+        const SpellBook* book = (ecs_ && gs_)
+            ? player_spellbook(*gs_, store_of(*ecs_)) : nullptr;
         set_flying(book
                    && spellbook_rule_active(*book, SpellRuleId::Flight));
     }
@@ -975,7 +979,8 @@ void SubworldEngine::spawn_player_entity() {
         // the mirror of a subset is exactly how mana stayed private
         // property, and the seam pulls/pushes this same block each tick.
         ecs::Pools pools{};
-        if (const ecs::Pools* squadPools = player_pools(*ecs_)) {
+        if (const ecs::Pools* squadPools = gs_
+                ? player_pools(*gs_, store_of(*ecs_)) : nullptr) {
             pools = *squadPools;
         }
         pools.maxHp = std::max(1, pools.maxHp);
@@ -998,7 +1003,8 @@ void SubworldEngine::spawn_player_entity() {
     // derived cells (a worn MovePct row) meet the pace law below.
     const BonusTotals standing = (gs_ && flagRec != entt::null)
         ? standing_bonuses_of(*ecs_, flagRec) : BonusTotals{};
-    const CharacterSheet* baseSheet = gs_ ? player_sheet(*ecs_) : nullptr;
+    const CharacterSheet* baseSheet =
+        gs_ ? player_sheet(*gs_, store_of(*ecs_)) : nullptr;
     const CharacterSheet effBody = baseSheet
         ? effective_sheet(*baseSheet, standing) : CharacterSheet{};
     const ecs::NpcInventory* flagBag =
@@ -1157,7 +1163,8 @@ void SubworldEngine::sync_player_entity_position() {
                 const BonusTotals st = rec.slot != kMacroNoSlot
                     ? standing_bonuses_of(store_of(reg), rec)
                     : standing_bonuses_of(reg, e);
-                const CharacterSheet* base = player_sheet(*ecs_);
+                const CharacterSheet* base = gs_
+                    ? player_sheet(*gs_, store_of(*ecs_)) : nullptr;
                 const CharacterSheet eff = base
                     ? effective_sheet(*base, st) : CharacterSheet{};
                 const DerivedBonuses d = calculate_derived(
@@ -1264,7 +1271,8 @@ void SubworldEngine::report_player_damage() {
     //
     // THE STORE still matters for exactly one rule, stated below: dying inside
     // a body you wear is your own death.
-    ecs::Pools* squadPools = player_pools(*ecs_);
+    ecs::Pools* squadPools =
+        gs_ ? player_pools(*gs_, store_of(*ecs_)) : nullptr;
     if (!squadPools) return;
     auto pv = reg.view<ecs::AvatarTag, ecs::Pools>();
     for (auto e : pv) {
@@ -2007,7 +2015,8 @@ int SubworldEngine::player_display_hp() const {
         for (auto e : ecs_->reg.view<ecs::AvatarTag, ecs::Pools>()) {
             if (const ecs::Pools* p = pools_of(ecs_->reg, e)) return p->hp;
         }
-        if (const ecs::Pools* squadPools = player_pools(*ecs_)) {
+        if (const ecs::Pools* squadPools = gs_
+                ? player_pools(*gs_, store_of(*ecs_)) : nullptr) {
             return squadPools->hp;
         }
     }
@@ -2337,7 +2346,8 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
     // Affix power 0: a felled tree pays wood and a stand pays grain — the
     // world's props carry no worn things to load dice for, and 0 keeps the
     // deterministic-per-place contract above exactly as cheap as it reads.
-    const CharacterSheet* lootSheet = player_sheet(*ecs_);
+    const CharacterSheet* lootSheet =
+        gs_ ? player_sheet(*gs_, store_of(*ecs_)) : nullptr;
     auto stacks = roll_loot_profile(lootId,
                                     lootSheet ? lootSheet->levelData.level : 1,
                                     &loot_rng_f01, /*affixPower*/ 0);
@@ -2355,7 +2365,7 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
         const ItemDef* def = item_def_at(int(s.def));
         // A full bag REFUSES (owner's ruling): the harvest stays in the world
         // rather than evaporating into a container with no room for it.
-        if (!player_bag_of(ecs_).add_ref(s)) {
+        if (!player_bag_of(gs_, ecs_).add_ref(s)) {
             return picked.empty() ? std::string("Your pack is full.") : picked;
         }
         if (!picked.empty()) picked += ", ";
@@ -2703,7 +2713,7 @@ bool SubworldEngine::interact() {
     bool leftBehind = false;
     for (ItemRef& s : loot.inv.slots) {
         if (s.empty()) continue;
-        if (player_bag_of(ecs_).add_ref(s)) s = ItemRef{};
+        if (player_bag_of(gs_, ecs_).add_ref(s)) s = ItemRef{};
         else leftBehind = true;
     }
     if (leftBehind) {
@@ -3954,7 +3964,8 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     }
     if (gs_) {
         {
-        const SpellBook* book = ecs_ ? player_spellbook(*ecs_) : nullptr;
+        const SpellBook* book = (ecs_ && gs_)
+            ? player_spellbook(*gs_, store_of(*ecs_)) : nullptr;
         set_flying(book
                    && spellbook_rule_active(*book, SpellRuleId::Flight));
     }
@@ -5100,10 +5111,11 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
 void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                  std::uint32_t frameIndex) {
     if (!active_ || !gs_) return;
+    const SpellBook* hasteBook =
+        ecs_ ? player_spellbook(*gs_, store_of(*ecs_)) : nullptr;
     const bool hasteAura =
-        (ecs_ && player_spellbook(*ecs_)
-         && spellbook_has_sustained(*player_spellbook(*ecs_),
-                                    spell_ordinal("haste")));
+        (hasteBook
+         && spellbook_has_sustained(*hasteBook, spell_ordinal("haste")));
     const bool flightAura = flying();
     renderer3dVk_.record_main(cmd, ext, cam_, render_time(),
                               &mgr_, ecs_, hasteAura, flightAura,

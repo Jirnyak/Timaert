@@ -574,14 +574,14 @@ void draw_player_hud(const GameState& gs, ecs::World& world,
     ImGui::TextDisabled("|");
     ImGui::SameLine();
     {
-        const ecs::MacroCell* pc = player_flag_cell(world);
+        const ecs::MacroCell* pc = player_flag_cell(gs, store_of(world));
         ImGui::Text("Pos %4d, %4d", pc ? ecs::cell_x(*pc, gs.mapW) : 0,
                     pc ? ecs::cell_y(*pc, gs.mapW) : 0);
     }
 
     // Right-aligned: name + level. The base component through the one door
     // (посадка Б) — a world without a body reads as the blank build.
-    const CharacterSheet* hudSheet = player_sheet(world);
+    const CharacterSheet* hudSheet = player_sheet(gs, store_of(world));
     const LevelData hudLevel = hudSheet ? hudSheet->levelData : LevelData{};
     char nameBuf[64];
     std::snprintf(nameBuf, sizeof(nameBuf), "%s  Lv %d   %d / %d EXP",

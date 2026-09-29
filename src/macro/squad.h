@@ -1074,13 +1074,12 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     const float enemyFraction =
         playerIsA ? o.leaderFractionB : o.leaderFractionA;
     const bool playerWon = (o.winner == 0) == playerIsA;
-    // «Игрок» — запись ФЛАЖКА (A3): его хэндл резолвится один раз, мост —
-    // последний шаг резолва (умирает в 1е вместе с тегом → GameState).
-    const MacroHandle playerH = try_handle_of(w.reg, player_flag_entity(w));
+    // «Игрок» — запись ФЛАЖКА (A3): его хэндл — биты GameState (1е кл.5).
+    const MacroHandle playerH = player_flag_handle(gs);
     // The player's spoils land in HIS bag — the ordinary NpcInventory on his
     // squad record (macro/player_entity.h), the same container an enemy
     // lord's goods came out of.
-    Inventory* playerBag = player_inventory(w);
+    Inventory* playerBag = player_inventory(gs, store_of(w));
     Inventory scratch{};
     if (!playerBag) playerBag = &scratch;   // headless fixture: nowhere to put
 

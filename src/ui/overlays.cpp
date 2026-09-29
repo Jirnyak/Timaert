@@ -287,7 +287,7 @@ namespace sm::ui
             f.subject = ecs::kPlayerSquadOrdinal;
             f.objectKind = std::uint8_t(FactSubject::Squad);
             f.object = traderOrdinal;
-            const ecs::MacroCell* pc = player_flag_cell(w);
+            const ecs::MacroCell* pc = player_flag_cell(gs, store_of(w));
             f.x = std::int16_t(pc ? ecs::cell_x(*pc, gs.mapW) : 0);
             f.y = std::int16_t(pc ? ecs::cell_y(*pc, gs.mapW) : 0);
             f.amount = gave + took;
@@ -673,9 +673,11 @@ namespace sm::ui
         // healed him.)
 
         // The panel's derived block after a spend — same door as its header.
-        DerivedBonuses calculate_derived_effective(ecs::World &world)
+        DerivedBonuses calculate_derived_effective(const GameState &gs,
+                                                   ecs::World &world)
         {
-            const CharacterSheet eff = player_effective_sheet(world);
+            const CharacterSheet eff =
+                player_effective_sheet(gs, store_of(world));
             return calculate_derived(eff.attributes, eff.skills);
         }
 
@@ -727,12 +729,12 @@ namespace sm::ui
         PlayerState &p = gs.player;
         // His bag and his men both live on his squad entity now; a world that
         // has none yet reads as an empty pack rather than a crash.
-        Inventory *bagPtr = player_inventory(world);
+        Inventory *bagPtr = player_inventory(gs, store_of(world));
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
         // His bars, through the one door (landing 4) — same fallback shape
         // as the bag: a world that has none yet shows zeros, not a crash.
-        ecs::Pools *poolsPtr = player_pools(world);
+        ecs::Pools *poolsPtr = player_pools(gs, store_of(world));
         ecs::Pools poolsFallback{};
         ecs::Pools &pools = poolsPtr ? *poolsPtr : poolsFallback;
         const Inventory *army = bagPtr;   // армия = область существ (M-71)
@@ -740,7 +742,7 @@ namespace sm::ui
         // His BASE sheet, through the one door (посадка Б) — same fallback
         // shape as the bag and the bars: a world that has none yet shows a
         // blank build, not a crash. The spend buttons write THIS block.
-        CharacterSheet *sheetPtr = player_sheet(world);
+        CharacterSheet *sheetPtr = player_sheet(gs, store_of(world));
         CharacterSheet sheetFallback{};
         CharacterSheet &sheet = sheetPtr ? *sheetPtr : sheetFallback;
         // The panel SHOWS the EFFECTIVE sheet (phase 4, owner: «финальное
@@ -748,10 +750,11 @@ namespace sm::ui
         // still write the BASE one, which is the only thing they may touch.
         // Mutable: a spend refreshes it in place so the row shows the new
         // number this very frame, not the next.
-        const entt::entity panelSquad = player_squad_entity(world);
-        const BonusTotals panelStanding = panelSquad != entt::null
-            ? standing_bonuses_of(world, panelSquad) : BonusTotals{};
-        CharacterSheet effPanel = player_effective_sheet(world);
+        const MacroHandle panelSquadH = player_squad_handle(gs);
+        const BonusTotals panelStanding = store_of(world).valid(panelSquadH)
+            ? standing_bonuses_of(store_of(world), panelSquadH)
+            : BonusTotals{};
+        CharacterSheet effPanel = player_effective_sheet(gs, store_of(world));
         DerivedBonuses derived = calculate_derived(effPanel.attributes,
                                                    effPanel.skills,
                                                    panelStanding);
@@ -807,7 +810,7 @@ namespace sm::ui
                             if (ImGui::Button("Level Up"))
                             {
                                 if (try_level_up(sheet.levelData))
-                                    refresh_player_body(world);
+                                    refresh_player_body(gs, store_of(world));
                             }
                         }
                         ImGui::TableNextColumn();
@@ -835,9 +838,9 @@ namespace sm::ui
                             {
                                 if (spend_attribute_point(sheet.levelData, sheet.attributes, row.id))
                                 {
-                                    refresh_player_body(world);
-                                    effPanel = player_effective_sheet(world);
-                                    derived = calculate_derived_effective(world);
+                                    refresh_player_body(gs, store_of(world));
+                                    effPanel = player_effective_sheet(gs, store_of(world));
+                                    derived = calculate_derived_effective(gs, world);
                                 }
                             }
                             ImGui::EndDisabled();
@@ -901,9 +904,9 @@ namespace sm::ui
                                 {
                                     if (spend_learn_pick(sheet.levelData, sheet.skills, row.id))
                                     {
-                                        refresh_player_body(world);
-                                        effPanel = player_effective_sheet(world);
-                                        derived = calculate_derived_effective(world);
+                                        refresh_player_body(gs, store_of(world));
+                                        effPanel = player_effective_sheet(gs, store_of(world));
+                                        derived = calculate_derived_effective(gs, world);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -921,9 +924,9 @@ namespace sm::ui
                                 {
                                     if (spend_skill_point(sheet.levelData, sheet.skills, row.id))
                                     {
-                                        refresh_player_body(world);
-                                        effPanel = player_effective_sheet(world);
-                                        derived = calculate_derived_effective(world);
+                                        refresh_player_body(gs, store_of(world));
+                                        effPanel = player_effective_sheet(gs, store_of(world));
+                                        derived = calculate_derived_effective(gs, world);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -1308,11 +1311,11 @@ namespace sm::ui
                     // serialization" — all four exist (macro/anatomy.h), so
                     // what was missing was only the hands to use them.
                     ecs::BodyEquipment *eqc = nullptr;
-                    if (const entt::entity pe = player_squad_entity(world);
-                        pe != entt::null)
+                    if (const MacroHandle pe = player_squad_handle(gs);
+                        store_of(world).valid(pe))
                     {
                         // ФЛИП 1в: гир — колонка store у каждого сквада.
-                        eqc = &store_of(world).gear[slot_of(world.reg, pe)];
+                        eqc = &store_of(world).gear[pe.slot];
                     }
 
                     if (!eqc)
@@ -1463,7 +1466,7 @@ namespace sm::ui
                     // His book, through the one door (v89): the component on
                     // his squad — the panel is a reader like any other.
                     static SpellBook bookScratch{};
-                    SpellBook* bookPtr = player_spellbook(world);
+                    SpellBook* bookPtr = player_spellbook(gs, store_of(world));
                     SpellBook& book = bookPtr ? *bookPtr : bookScratch;
                     ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
                     if (spell_ordinal_ok(book.activeSpell))
@@ -1699,7 +1702,7 @@ namespace sm::ui
         if (!open || !*open)
             return;
         // The player's bag rides his squad entity (macro/player_entity.h).
-        Inventory *bagPtr = player_inventory(world);
+        Inventory *bagPtr = player_inventory(gs, store_of(world));
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
 
@@ -1840,7 +1843,7 @@ namespace sm::ui
                             *tab = SettlementPanelTab::Trade;
                         if (tradeOpen)
                         {
-                            const PlayerHaggler h = player_haggler(world);
+                            const PlayerHaggler h = player_haggler(gs, world);
                             ImGui::Text("Player value: %d",
                                         inventory_value(playerBag));
                             draw_trade_carry_line(h.sheet, playerBag,
@@ -2044,7 +2047,7 @@ namespace sm::ui
                     // body come from trade_widgets.h — this site keeps only
                     // its price laws (a town's demand = econSite +
                     // population, its trade sheet haggles) and its fact.
-                    const PlayerHaggler h = player_haggler(world);
+                    const PlayerHaggler h = player_haggler(gs, world);
                     ImGui::Text("Player value: %d",
                                 inventory_value(playerBag));
                     ImGui::SameLine();

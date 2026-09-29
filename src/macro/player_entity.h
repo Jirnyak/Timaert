@@ -64,6 +64,17 @@ inline entt::entity player_flag_entity(ecs::World& world) {
     return entt::null;
 }
 
+// ── БИТОВЫЕ ДВЕРИ (1е кластер 5): истина — два поля GameState ────────────
+// «Кем я на карте» и «кто оригинал» — распаковка полей, ноль сканов.
+// Валидность хэндла (поколение) спрашивается у store читателем, которому
+// она нужна; сентинель «никого» распаковывается в kMacroNoSlot.
+inline MacroHandle player_flag_handle(const GameState& gs) {
+    return macro_handle_from_bits(gs.playerFlagBits);
+}
+inline MacroHandle player_squad_handle(const GameState& gs) {
+    return macro_handle_from_bits(gs.playerSquadBits);
+}
+
 // The flag holder's cell and map-glide visual — the SAME components every
 // squad keeps (MacroCell = the one number that is his position's truth,
 // MacroVisual = what the eye sees between cells). nullptr before the world
@@ -80,6 +91,25 @@ inline ecs::MacroVisual* player_flag_visual(ecs::World& world) {
     const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
     return &store_of(world).visual[slot_of(world.reg, e)];
+}
+// Store-нативные формы (1е кластер 5): хэндл — из битов GameState, колонка —
+// из store, реестр не участвует. Entt-лица выше умирают в 1е вместе с тегами.
+inline ecs::MacroCell* player_flag_cell(const GameState& gs, MacroStore& st) {
+    const MacroHandle h = player_flag_handle(gs);
+    if (!st.valid(h)) return nullptr;
+    return &st.cell[h.slot];
+}
+inline const ecs::MacroCell* player_flag_cell(const GameState& gs,
+                                              const MacroStore& st) {
+    const MacroHandle h = player_flag_handle(gs);
+    if (!st.valid(h)) return nullptr;
+    return &st.cell[h.slot];
+}
+inline ecs::MacroVisual* player_flag_visual(const GameState& gs,
+                                            MacroStore& st) {
+    const MacroHandle h = player_flag_handle(gs);
+    if (!st.valid(h)) return nullptr;
+    return &st.visual[h.slot];
 }
 
 // THE macro jump (escape teleport, console goto, subworld exit door): set
@@ -99,6 +129,16 @@ inline void player_jump_to_cell(GameState& gs, ecs::World& world,
     // the think cadence restarts (the accumulator doubles as the player's
     // entry-tick clock — same kAiTicks law as every squad's think).
     auto& rt = st.runtime[slot];
+    rt.entryDir = kEntryDirNone;
+    rt.entryTicks = 0;
+    rt.tickAccum = 0;
+}
+// Store-нативная форма (1е кластер 5) — та же дверь без реестра.
+inline void player_jump_to_cell(GameState& gs, MacroStore& st, int x, int y) {
+    const MacroHandle h = player_flag_handle(gs);
+    if (!st.valid(h)) return;
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(x, y, gs.mapW)};
+    auto& rt = st.runtime[h.slot];
     rt.entryDir = kEntryDirNone;
     rt.entryTicks = 0;
     rt.tickAccum = 0;
@@ -152,17 +192,6 @@ void resolve_player_handles_after_load(GameState& gs, const MacroStore& st,
 // absent squad means.
 entt::entity player_squad_entity(ecs::World& world);
 
-// ── БИТОВЫЕ ДВЕРИ (1е кластер 5): истина — два поля GameState ────────────
-// «Кем я на карте» и «кто оригинал» — распаковка полей, ноль сканов.
-// Валидность хэндла (поколение) спрашивается у store читателем, которому
-// она нужна; сентинель «никого» распаковывается в kMacroNoSlot.
-inline MacroHandle player_flag_handle(const GameState& gs) {
-    return macro_handle_from_bits(gs.playerFlagBits);
-}
-inline MacroHandle player_squad_handle(const GameState& gs) {
-    return macro_handle_from_bits(gs.playerSquadBits);
-}
-
 // «Я СЕЙЧАС НЕ В СЕБЕ» — the flag stands on somebody other than the original.
 // THE one honest way to ask «вселён ли я»: the fact IS the two handles being
 // different, and nothing else. Before this door the chronicle asked it by
@@ -183,6 +212,8 @@ inline bool player_wears_another_body(const GameState& gs) {
 // player a different kind of thing from the squads around him.
 Inventory* player_inventory(ecs::World& world);
 const Inventory* player_inventory(const ecs::World& world);
+Inventory* player_inventory(const GameState& gs, MacroStore& st);
+const Inventory* player_inventory(const GameState& gs, const MacroStore& st);
 
 // What the player REMEMBERS: the ordinary AgentMemory on the same entity, the
 // same component every squad leader carries. It sat on PlayerState as a second
@@ -194,6 +225,7 @@ const Inventory* player_inventory(const ecs::World& world);
 // regen-only slot in PlayerRecoveryAccumulator), which between them could not
 // even express the state his own bar was in: a debt with a fraction owed.
 float* player_sp_carry(ecs::World& world);
+float* player_sp_carry(const GameState& gs, MacroStore& st);
 
 // THE player's three bars — the ordinary ecs::Pools on his squad entity, the
 // very block every lord and every scene body keeps (landing 4, owner
@@ -203,6 +235,8 @@ float* player_sp_carry(ecs::World& world);
 // nullptr before the world exists; there are no bars to read then.
 ecs::Pools* player_pools(ecs::World& world);
 const ecs::Pools* player_pools(const ecs::World& world);
+ecs::Pools* player_pools(const GameState& gs, MacroStore& st);
+const ecs::Pools* player_pools(const GameState& gs, const MacroStore& st);
 
 // THE player's spellbook — the ordinary SpellBook component on his squad
 // entity, the block every macro body is born with (§41 root 3, v89). It was
@@ -215,6 +249,8 @@ const ecs::Pools* player_pools(const ecs::World& world);
 // question. nullptr before the world exists.
 SpellBook* player_spellbook(ecs::World& world);
 const SpellBook* player_spellbook(const ecs::World& world);
+SpellBook* player_spellbook(const GameState& gs, MacroStore& st);
+const SpellBook* player_spellbook(const GameState& gs, const MacroStore& st);
 
 // «His sheet changed» — the ONE call every such moment makes (creation,
 // level-up, point spend, learning, gear on/off, console): ceilings and march
@@ -222,9 +258,11 @@ const SpellBook* player_spellbook(const ecs::World& world);
 // (squad.h refresh_body_from_sheet), each bar preserving its fraction
 // («доля у всех», owner 2026-09-10). No-op before the world exists.
 void refresh_player_body(ecs::World& world);
+void refresh_player_body(const GameState& gs, MacroStore& st);
 
 AgentMemory* player_head(ecs::World& world);
 const AgentMemory* player_head(const ecs::World& world);
+AgentMemory* player_head(const GameState& gs, MacroStore& st);
 
 // THE player's OWNED base sheet — the ordinary CharacterSheet component on
 // his squad entity (посадка Б, v91): the writable store creation, level-up,
@@ -235,6 +273,8 @@ const AgentMemory* player_head(const ecs::World& world);
 // across a simulated tick (ecs-ref grabla: a spawn reallocates storage).
 CharacterSheet* player_sheet(ecs::World& world);
 const CharacterSheet* player_sheet(const ecs::World& world);
+CharacterSheet* player_sheet(const GameState& gs, MacroStore& st);
+const CharacterSheet* player_sheet(const GameState& gs, const MacroStore& st);
 
 // The sheet the world should actually ask about him — THE door (phase 4,
 // owner 2026-09-06): «финальный лист после всех источников — прокачка,
@@ -246,5 +286,7 @@ const CharacterSheet* player_sheet(const ecs::World& world);
 // as player_standing_bonuses dissolved into standing_bonuses_of: the player
 // is that door's ordinary case.
 CharacterSheet player_effective_sheet(ecs::World& world);
+CharacterSheet player_effective_sheet(const GameState& gs,
+                                      const MacroStore& st);
 
 } // namespace sm

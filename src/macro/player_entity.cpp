@@ -339,4 +339,84 @@ const AgentMemory* player_head(const ecs::World& world) {
     return player_head(const_cast<ecs::World&>(world));
 }
 
+// ── STORE-НАТИВНЫЕ ФОРМЫ (1е кластер 5) ──────────────────────────────────
+// Хэндл — из битов GameState, колонка — из store; реестр не участвует.
+// Entt-лица выше умирают в 1е вместе с тегами и PlayerSquadCache.
+
+namespace {
+// Один резолв на все колоночные двери: валидный слот носителя флажка или
+// kMacroNoSlot — «мира нет», и дверь честно отвечает nullptr.
+inline std::uint16_t flag_slot_or_none(const GameState& gs,
+                                       const MacroStore& st) {
+    const MacroHandle h = player_flag_handle(gs);
+    return st.valid(h) ? h.slot : kMacroNoSlot;
+}
+} // namespace
+
+CharacterSheet* player_sheet(const GameState& gs, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.sheet[slot];
+}
+const CharacterSheet* player_sheet(const GameState& gs,
+                                   const MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.sheet[slot];
+}
+
+CharacterSheet player_effective_sheet(const GameState& gs,
+                                      const MacroStore& st) {
+    const MacroHandle h = player_flag_handle(gs);
+    if (!st.valid(h)) return CharacterSheet{};
+    return effective_sheet_of(st, h);
+}
+
+Inventory* player_inventory(const GameState& gs, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.inventory[slot].inv;
+}
+const Inventory* player_inventory(const GameState& gs,
+                                  const MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.inventory[slot].inv;
+}
+
+float* player_sp_carry(const GameState& gs, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.pools[slot].spCarry;
+}
+
+ecs::Pools* player_pools(const GameState& gs, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.pools[slot];
+}
+const ecs::Pools* player_pools(const GameState& gs, const MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.pools[slot];
+}
+
+void refresh_player_body(const GameState& gs, MacroStore& st) {
+    const MacroHandle h = player_flag_handle(gs);
+    if (!st.valid(h)) return;
+    const BonusTotals bt = standing_bonuses_of(st, h);
+    const auto& kind = st.kind[h.slot];
+    refresh_body_from_sheet(st.pools[h.slot], &st.runtime[h.slot],
+                            effective_sheet(st.sheet[h.slot], bt),
+                            NPCType(kind.type), &bt);
+}
+
+SpellBook* player_spellbook(const GameState& gs, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.spellBook[slot];
+}
+const SpellBook* player_spellbook(const GameState& gs,
+                                  const MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.spellBook[slot];
+}
+
+AgentMemory* player_head(const GameState& gs, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    return slot == kMacroNoSlot ? nullptr : &st.memory[slot];
+}
+
 } // namespace sm

@@ -310,7 +310,8 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
 // a container.
 sm::Inventory& player_bag(App& app) {
     static sm::Inventory scratch{};
-    sm::Inventory* bag = sm::player_inventory(app.ecs);
+    sm::Inventory* bag = app.macroStore
+        ? sm::player_inventory(app.gs, *app.macroStore) : nullptr;
     return bag ? *bag : scratch;
 }
 
@@ -417,9 +418,9 @@ const sm::Landmark* settlement_by_id(const sm::GameState& gs, int id) {
     return (lm && lm->type != sm::LandmarkType::None) ? lm : nullptr;
 }
 
-int settlement_at_player(const sm::GameState& gs, sm::ecs::World& world,
+int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
                          float radius = 3.0f) {
-    const sm::ecs::MacroCell* pc = sm::player_flag_cell(world);
+    const sm::ecs::MacroCell* pc = sm::player_flag_cell(gs, st);
     if (!pc) return -1;
     const float px = float(sm::ecs::cell_x(*pc, gs.mapW));
     const float py = float(sm::ecs::cell_y(*pc, gs.mapW));
@@ -436,7 +437,7 @@ int settlement_at_player(const sm::GameState& gs, sm::ecs::World& world,
 }
 
 void refresh_player_settlement(App& app) {
-    const int id = settlement_at_player(app.gs, app.ecs);
+    const int id = settlement_at_player(app.gs, *app.macroStore);
     const int previousId = app.gs.subState.settlementId;
     if (id == previousId) return;
     if (previousId >= 0) {
@@ -582,8 +583,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     // ходил. До этого ростер/полосы шли по ординалу оригинала — §45 «два
     // ответа» об одном бое.
     sm::MacroStore& st = sm::store_of(app.ecs);
-    const sm::MacroHandle flagH =
-        sm::try_handle_of(app.ecs.reg, sm::player_flag_entity(app.ecs));
+    const sm::MacroHandle flagH = sm::player_flag_handle(app.gs);
     sm::AutoBattleSide s = sm::auto_battle_side_of(st, flagH);
     // The player's swing, credited exactly as the fought path rolls it: the
     // ONE assembly (hand_strike_fields) over the weapon actually in hand,
@@ -745,7 +745,7 @@ const PreBattleAction kPreBattleActions[] = {
              // may catch you again.
              const auto& ec = sm::store_of(app.ecs).cell[npc.slot];
              const sm::ecs::MacroCell* pcell =
-                 sm::player_flag_cell(app.ecs);
+                 sm::player_flag_cell(app.gs, *app.macroStore);
              if (!pcell) return true;
              const int pcx = sm::ecs::cell_x(*pcell, app.gs.mapW);
              const int pcy = sm::ecs::cell_y(*pcell, app.gs.mapW);
@@ -776,7 +776,7 @@ const PreBattleAction kPreBattleActions[] = {
                  // а она лишь производное того же порога — третий спеллинг
                  // одного вопроса, и единственный её читатель во всём дереве.
                  if (app.terrain.is_water(tx, ty)) continue;
-                 sm::player_jump_to_cell(app.gs, app.ecs, tx, ty);
+                 sm::player_jump_to_cell(app.gs, *app.macroStore, tx, ty);
                  app.cursor.path.clear();
                  app.cursor.pathIdx = 0;
                  break;
@@ -822,8 +822,7 @@ void detect_forced_encounter(App& app) {
     if (!app.worldLoaded || app.subworld.active()) return;
     if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) return;
     if (modal_overlay_active(app)) return;
-    auto& reg = app.ecs.reg;
-    const sm::ecs::MacroCell* pcell = sm::player_flag_cell(app.ecs);
+    const sm::ecs::MacroCell* pcell = sm::player_flag_cell(app.gs, *app.macroStore);
     if (!pcell) return;
     const int px = sm::ecs::cell_x(*pcell, app.gs.mapW);
     const int py = sm::ecs::cell_y(*pcell, app.gs.mapW);
@@ -843,9 +842,8 @@ void detect_forced_encounter(App& app) {
     // Обход живых слотов store (1е, голый цикл — вердикт владельца);
     // игрок исключается своими слотами, как в свипе ИИ.
     const std::uint16_t flagSlot = [&]() -> std::uint16_t {
-        const sm::MacroHandle h =
-            sm::try_handle_of(reg, sm::player_flag_entity(app.ecs));
-        return h.slot;
+        const sm::MacroHandle h = sm::player_flag_handle(app.gs);
+        return app.macroStore->valid(h) ? h.slot : sm::kMacroNoSlot;
     }();
     for (std::uint32_t slot32 = 0; slot32 < sm::kMacroEntityCap; ++slot32) {
         const std::uint16_t slot = std::uint16_t(slot32);
@@ -973,7 +971,7 @@ void emit_player_move(App& app, float prevX, float prevY, float dist) {
     sm::GameEvent ev{sm::EventTag::PlayerMove};
     ev.fx = prevX;
     ev.fy = prevY;
-    const sm::ecs::MacroCell* evc = sm::player_flag_cell(app.ecs);
+    const sm::ecs::MacroCell* evc = sm::player_flag_cell(app.gs, *app.macroStore);
     ev.ix = evc ? sm::ecs::cell_x(*evc, app.gs.mapW) : 0;
     ev.iy = evc ? sm::ecs::cell_y(*evc, app.gs.mapW) : 0;
     ev.a = std::uint32_t(std::max(0.0f, dist) * 1000.0f);
@@ -1025,7 +1023,7 @@ void charge_macro_walk_cell(void* user, int x, int y) {
 MacroWalkChargeResult step_macro_walk_with_travel_cost(App& app,
                                                        float dt,
                                                        float cellsPerSec) {
-    const sm::ecs::MacroCell* before = sm::player_flag_cell(app.ecs);
+    const sm::ecs::MacroCell* before = sm::player_flag_cell(app.gs, *app.macroStore);
     const float prevX = before ? float(sm::ecs::cell_x(*before, app.gs.mapW))
                                : 0.0f;
     const float prevY = before ? float(sm::ecs::cell_y(*before, app.gs.mapW))
@@ -1081,7 +1079,8 @@ bool player_can_make_camp(const App& app) {
 // carry with nowhere to live is a carry nobody reads.
 float& player_sp_carry(App& app) {
     static float scratch = 0.0f;
-    float* carry = sm::player_sp_carry(app.ecs);
+    float* carry = app.macroStore
+        ? sm::player_sp_carry(app.gs, *app.macroStore) : nullptr;
     return carry ? *carry : scratch;
 }
 
@@ -1094,13 +1093,15 @@ float& player_sp_carry(App& app) {
 // to live is a book nobody reads.
 sm::SpellBook& player_book(App& app) {
     static sm::SpellBook scratch{};
-    sm::SpellBook* book = sm::player_spellbook(app.ecs);
+    sm::SpellBook* book = app.macroStore
+        ? sm::player_spellbook(app.gs, *app.macroStore) : nullptr;
     return book ? *book : scratch;
 }
 
 sm::ecs::Pools& player_pools(App& app) {
     static sm::ecs::Pools scratch{};
-    sm::ecs::Pools* pools = sm::player_pools(app.ecs);
+    sm::ecs::Pools* pools = app.macroStore
+        ? sm::player_pools(app.gs, *app.macroStore) : nullptr;
     return pools ? *pools : scratch;
 }
 
@@ -1109,14 +1110,16 @@ sm::ecs::Pools& player_pools(App& app) {
 // so the door could not stay up here where only the app can knock. These two
 // are the App-shaped handles the app/smoke call sites keep.
 sm::BonusTotals player_standing_bonuses(const App& app) {
-    auto& world = const_cast<sm::ecs::World&>(app.ecs);
-    const entt::entity e = sm::player_squad_entity(world);
-    if (e == entt::null) return sm::BonusTotals{};
-    return sm::standing_bonuses_of(world, e);
+    if (!app.macroStore) return sm::BonusTotals{};
+    const sm::MacroStore& st = *app.macroStore;
+    const sm::MacroHandle h = sm::player_squad_handle(app.gs);
+    if (!st.valid(h)) return sm::BonusTotals{};
+    return sm::standing_bonuses_of(st, h);
 }
 
 sm::CharacterSheet player_effective_sheet(const App& app) {
-    return sm::player_effective_sheet(const_cast<sm::ecs::World&>(app.ecs));
+    if (!app.macroStore) return sm::CharacterSheet{};
+    return sm::player_effective_sheet(app.gs, *app.macroStore);
 }
 
 // Is a RULE of the world switched on for him right now? A rule has no
@@ -1683,7 +1686,7 @@ void boot_world(App& app, std::uint32_t seed,
     // +0.5 in macro_overlay.cpp lines up with this so the player +
     // every NPC render at their cell centre, never at the cell
     // crossing. (The player himself is anchored by generate_macro_world.)
-    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.ecs)) {
+    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.gs, *app.macroStore)) {
         app.camX = app.camTargetX = pv->vx + 0.5f;
         app.camY = app.camTargetY = pv->vy + 0.5f;
     }
@@ -1697,7 +1700,7 @@ void boot_world(App& app, std::uint32_t seed,
     // имперских монет здесь печатались из воздуха, как и всё остальное
     // золото. Игрок начинает с ВЕЩЕЙ и добывает стоимость обменом; дыра
     // названа в M-139 и ждёт пула лута, времянки на её месте запрещены.
-    if (sm::Inventory* bag = sm::player_inventory(app.ecs)) {
+    if (sm::Inventory* bag = sm::player_inventory(app.gs, *app.macroStore)) {
         bag->add("potion_hp", 2);
         bag->add("food", 5);
     }
@@ -1705,7 +1708,7 @@ void boot_world(App& app, std::uint32_t seed,
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
         && app.gs.subState.settlementId < 0) {
         boot_trace("settlement lookup start");
-        app.gs.subState.settlementId = settlement_at_player(app.gs, app.ecs);
+        app.gs.subState.settlementId = settlement_at_player(app.gs, *app.macroStore);
         boot_trace("settlement lookup done");
     }
     app.ui.settlementId = app.gs.subState.settlementId;
@@ -1875,11 +1878,11 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // restored one — the very defect SAVE-5 named was this call finding a
     // load-path husk instead.
     sm::ensure_macro_player_entity(app.gs, app.ecs);
-    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.ecs)) {
+    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.gs, *app.macroStore)) {
         app.camX = app.camTargetX = pv->vx + 0.5f;
         app.camY = app.camTargetY = pv->vy + 0.5f;
     }
-    app.gs.subState.settlementId = settlement_at_player(app.gs, app.ecs);
+    app.gs.subState.settlementId = settlement_at_player(app.gs, *app.macroStore);
     app.ui.settlementId = app.gs.subState.settlementId;
 
     // boot_world() above derived every field from the SEED's virgin world; we
@@ -2121,7 +2124,7 @@ void emit_spell_cast(App& app, const std::string& id,
     if (app.subworld.active()) {
         ev.fx = app.subworld.player_x();
         ev.fy = app.subworld.player_y();
-    } else if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.ecs)) {
+    } else if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.gs, *app.macroStore)) {
         ev.fx = float(sm::ecs::cell_x(*pc, app.gs.mapW));
         ev.fy = float(sm::ecs::cell_y(*pc, app.gs.mapW));
     }
@@ -2845,7 +2848,7 @@ void poll_movement(App& app, float dt) {
         // sheet, not a multiplier bolted on beside the formula, so a swift
         // ring and a swiftness spell are the same kind of fast.
         const sm::BonusTotals standing = player_standing_bonuses(app);
-        const sm::CharacterSheet* base = sm::player_sheet(app.ecs);
+        const sm::CharacterSheet* base = sm::player_sheet(app.gs, *app.macroStore);
         const sm::CharacterSheet eff = base
             ? sm::effective_sheet(*base, standing) : sm::CharacterSheet{};
         const float pace =
@@ -2891,7 +2894,7 @@ void poll_movement(App& app, float dt) {
     // characters, not the same one twice.
     if (!app.cursor.path.empty() && !paused) {
         const sm::BonusTotals standing = player_standing_bonuses(app);
-        const sm::CharacterSheet* base = sm::player_sheet(app.ecs);
+        const sm::CharacterSheet* base = sm::player_sheet(app.gs, *app.macroStore);
         const sm::CharacterSheet effSheet = base
             ? sm::effective_sheet(*base, standing) : sm::CharacterSheet{};
         const float pace =
@@ -2951,7 +2954,7 @@ void update_camera(App& app, float dt) {
         app.camPanX *= decay;
         app.camPanY *= decay;
     }
-    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.ecs)) {
+    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.gs, *app.macroStore)) {
         app.camTargetX = pv->vx + 0.5f + app.camPanX;
         app.camTargetY = pv->vy + 0.5f + app.camPanY;
     }
@@ -2987,8 +2990,8 @@ void apply_pending_event_effects(App& app) {
         // are emitted AFTER the span walk (emit grows the very vector the
         // span points into) — the while loop picks them up as the next batch.
         std::vector<sm::GameEvent> followups;
-        sm::apply_events(pending, app.gs, sm::player_inventory(app.ecs),
-                         sm::player_spellbook(app.ecs), &followups);
+        sm::apply_events(pending, app.gs, sm::player_inventory(app.gs, *app.macroStore),
+                         sm::player_spellbook(app.gs, *app.macroStore), &followups);
         bool spireDied = false;
         for (const sm::GameEvent& ev : pending) {
             if (ev.tag == sm::EventTag::SpireDepleted) spireDied = true;
@@ -3030,7 +3033,7 @@ void apply_creation(App& app) {
     // The authored build lands in the OWNED component on his freshly-booted
     // squad (посадка Б): boot_world ran ensure_macro_player_entity a moment
     // ago, so the body — and the sheet slot on it — already exists.
-    sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+    sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
     if (!sheet) return;
     *sheet = cs.sheet;
 
@@ -3047,7 +3050,7 @@ void apply_creation(App& app) {
     {
         // The sheet changed wholesale: ceilings follow through THE door, and
         // — a moment that SAYS it heals — every bar fills to its new maximum.
-        sm::refresh_player_body(app.ecs);
+        sm::refresh_player_body(app.gs, *app.macroStore);
         sm::ecs::Pools& pools = player_pools(app);
         pools.hp = pools.maxHp;
         pools.mp = pools.maxMp;
@@ -3318,11 +3321,11 @@ void process_world_events(App& app) {
     app.appliedSpawnEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
     {
-        const sm::ecs::MacroCell* qc = sm::player_flag_cell(app.ecs);
+        const sm::ecs::MacroCell* qc = sm::player_flag_cell(app.gs, *app.macroStore);
         app.quests.tick(app.activeQuests, app.bus, app.gs,
-                        sm::player_inventory(app.ecs),
-                        sm::player_head(app.ecs),
-                        sm::player_sheet(app.ecs),
+                        sm::player_inventory(app.gs, *app.macroStore),
+                        sm::player_head(app.gs, *app.macroStore),
+                        sm::player_sheet(app.gs, *app.macroStore),
                         qc ? sm::ecs::cell_x(*qc, app.gs.mapW) : 0,
                         qc ? sm::ecs::cell_y(*qc, app.gs.mapW) : 0);
     }
@@ -3385,7 +3388,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // world the player has not arrived in yet, and a map filling itself in
     // behind that scene is the immersion leak the owner caught in playtest 2.
     if (!app.revealMapOn && !app.sceneHoldsMap) {
-        if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.ecs)) {
+        if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.gs, *app.macroStore)) {
             sm::update_player_sight(app.gs.knowledge, app.sightRt,
                                     optical_world(app),
                                     float(sm::ecs::cell_x(*pc, app.gs.mapW)),
@@ -3441,7 +3444,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         const sm::BonusTotals standing = player_standing_bonuses(app);
         if (standing != app.lastStandingBonuses) {
             app.lastStandingBonuses = standing;
-            sm::refresh_player_body(app.ecs);
+            sm::refresh_player_body(app.gs, *app.macroStore);
         }
     }
     if (app.subworld.active()) {
@@ -3568,17 +3571,13 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // frozen-spRegen idiom whose silent thaw was the seed-999 regression.
         if (resting && !app.restRegenSuppressed
             && stats.timeTick.minutesAdvanced > 0) {
-            const entt::entity squad = sm::player_squad_entity(app.ecs);
-            if (squad != entt::null) {
-                auto& reg = app.ecs.reg;
-                if (auto* pools = body_state<sm::ecs::Pools>(reg, squad)) {
-                    const auto* rt =
-                        body_state<sm::ecs::MacroNpcRuntime>(reg, squad);
-                    sm::rest_pools(
-                        *pools,
-                        float(stats.timeTick.minutesAdvanced) / 60.0f,
-                        rt ? int(rt->marathonRank) : 0);
-                }
+            const sm::MacroHandle squadH = sm::player_squad_handle(app.gs);
+            if (app.macroStore->valid(squadH)) {
+                sm::MacroStore& stq = *app.macroStore;
+                sm::rest_pools(
+                    stq.pools[squadH.slot],
+                    float(stats.timeTick.minutesAdvanced) / 60.0f,
+                    int(stq.runtime[squadH.slot].marathonRank));
             }
         }
         sm::tick_macro_npc_ai(macroTickWorld, app.npcAi,
@@ -3592,17 +3591,13 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // squad is excluded from the AI sweep, so its rt.tickAccum is this
         // driver's clock (подпосадка 4 — «тот же закон, ИИ тут это инпуты»).
         // A cell crossing resets it in step_macro_walk.
-        if (const entt::entity fe = sm::player_flag_entity(app.ecs);
-            fe != entt::null) {
-            if (auto* frt =
-                    body_state<sm::ecs::MacroNpcRuntime>(app.ecs.reg, fe)) {
-                frt->tickAccum +=
-                    std::uint32_t(stats.timeTick.ticksAdvanced);
-                while (frt->tickAccum >= sm::kAiTicks) {
-                    frt->tickAccum -= sm::kAiTicks;
-                    frt->entryTicks =
-                        sm::saturate_entry_ticks(frt->entryTicks);
-                }
+        if (const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+            app.macroStore->valid(fh)) {
+            auto& frt = app.macroStore->runtime[fh.slot];
+            frt.tickAccum += std::uint32_t(stats.timeTick.ticksAdvanced);
+            while (frt.tickAccum >= sm::kAiTicks) {
+                frt.tickAccum -= sm::kAiTicks;
+                frt.entryTicks = sm::saturate_entry_ticks(frt.entryTicks);
             }
         }
         app.npcAi.sweepAccum = 0;
@@ -3658,7 +3653,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             deathPools = sm::sub::pools_of(app.ecs.reg, avatarBody);
         }
     }
-    if (!deathPools) deathPools = sm::player_pools(app.ecs);
+    if (!deathPools) deathPools = sm::player_pools(app.gs, *app.macroStore);
     if (const sm::ecs::Pools* pools = deathPools;
         pools && pools->hp <= 0) {
         // Death is the end of the game — that is the law (CANON S17) — and a
@@ -3673,12 +3668,13 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // «Чужое» спрашивается у СЦЕНЫ, когда она есть: носимый лорд И
         // носимый генерик — оба «запись тела ≠ мой оригинал», хотя у генерика
         // макро-флаг никуда не переезжал и player_wears_another_body молчит.
-        const entt::entity home = sm::player_squad_entity(app.ecs);
+        const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
+        const bool homeLive = app.macroStore->valid(homeH);
         const bool foreignBody =
             avatarBody != entt::null
-                ? (home == entt::null
+                ? (!homeLive
                    || sm::sub::macro_record_of(app.ecs.reg, avatarBody)
-                          != sm::handle_of(app.ecs.reg, home))
+                          != homeH)
                 : sm::player_wears_another_body(app.gs);
         if (app.subworld.in_dungeon() && storyNode != nullptr) {
             end_scene_by_death(app, storyNode);
@@ -3697,13 +3693,12 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             // разбудила (флажок переехал), смерть генерика не двигала флажок
             // вовсе — а мёртвый оригинал это «просыпаться не в чем», гейм
             // овер (владелец 2026-09-14).
-            const entt::entity flag = sm::player_flag_entity(app.ecs);
-            const auto* homePools =
-                home != entt::null
-                    ? body_state<sm::ecs::Pools>(app.ecs.reg, home) : nullptr;
-            const bool homeAlive = homePools && homePools->hp > 0
-                && !sm::macro_dead(app.ecs.reg, home);
-            if (!(flag == home && homeAlive)) {
+            const bool homeAlive = homeLive
+                && app.macroStore->pools[homeH.slot].hp > 0
+                && app.macroStore->dead[homeH.slot] == 0;
+            const bool flagHome =
+                app.gs.playerFlagBits == app.gs.playerSquadBits;
+            if (!(flagHome && homeAlive)) {
                 app.state = sm::ui::AppState::Dead;
             }
         } else {
@@ -3885,18 +3880,18 @@ const sm::AttributeDef* console_attr_by_key(const std::string& key) {
 // (fractions preserved — «доля у всех» — so never a free heal and never a
 // theft).
 void console_recompute_maxima(App& app) {
-    sm::refresh_player_body(app.ecs);
+    sm::refresh_player_body(app.gs, *app.macroStore);
 }
 
 // THE player's wardrobe, the way the equipment tab gets it: an opt-in
 // container on his squad entity, created the moment something wants to wear.
 // nullptr before the world exists.
 sm::ecs::BodyEquipment* console_player_equipment(App& app) {
-    const entt::entity pe = sm::player_squad_entity(app.ecs);
-    if (pe == entt::null) return nullptr;
+    const sm::MacroHandle pe = sm::player_squad_handle(app.gs);
+    if (!app.macroStore || !app.macroStore->valid(pe)) return nullptr;
     // ФЛИП 1в: гир — колонка store у КАЖДОГО сквада (вердикт 2026-09-25),
     // opt-in умер вместе с «16384 не платят».
-    return &sm::store_of(app.ecs).gear[sm::slot_of(app.ecs.reg, pe)];
+    return &app.macroStore->gear[pe.slot];
 }
 
 // Console loot rolls: one stream per process with a fixed seed, so an `exec`
@@ -4004,7 +3999,7 @@ void register_console_commands(App& app) {
                            app.subworld.player_x(), app.subworld.player_y(),
                            app.subworld.player_muzzle_z());
             else if (const sm::ecs::MacroCell* pc =
-                         sm::player_flag_cell(app.ecs))
+                         sm::player_flag_cell(app.gs, *app.macroStore))
                 c.printfln(Lvl::Ok, "macro cell = %d, %d",
                            sm::ecs::cell_x(*pc, app.gs.mapW),
                            sm::ecs::cell_y(*pc, app.gs.mapW));
@@ -4067,7 +4062,7 @@ void register_console_commands(App& app) {
             } else {
                 if (x < 0) x = 0; if (x > float(app.gs.mapW - 1)) x = float(app.gs.mapW - 1);
                 if (y < 0) y = 0; if (y > float(app.gs.mapH - 1)) y = float(app.gs.mapH - 1);
-                sm::player_jump_to_cell(app.gs, app.ecs, int(x), int(y));
+                sm::player_jump_to_cell(app.gs, *app.macroStore, int(x), int(y));
                 c.printfln(Lvl::Ok, "teleported (macro) to cell %d, %d",
                            int(x), int(y));
             }
@@ -4091,7 +4086,7 @@ void register_console_commands(App& app) {
                         && console_icontains(s.name, q)) { found = &s; break; }
             }
             if (!found) { c.error("no settlement matching '" + a[0] + "'"); return true; }
-            sm::player_jump_to_cell(app.gs, app.ecs, found->x, found->y);
+            sm::player_jump_to_cell(app.gs, *app.macroStore, found->x, found->y);
             if (app.subworld.active())
                 c.warn("leave the subworld (Enter) for the macro teleport to take effect");
             c.printfln(Lvl::Ok, "teleported to %s (id %d) at %d, %d",
@@ -4174,7 +4169,7 @@ void register_console_commands(App& app) {
                 }
             }
             {
-                const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.ecs);
+                const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.gs, *app.macroStore);
                 spec.x = pc ? sm::ecs::cell_x(*pc, app.gs.mapW) : 0;
                 spec.y = pc ? sm::ecs::cell_y(*pc, app.gs.mapW) : 0;
             }
@@ -4421,7 +4416,7 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int amount = 0;
             if (!sm::dev::arg_int(a, 0, amount)) return false;
-            sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
             if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
             auto& ld = sheet->levelData;
             const int gained = sm::award_exp(ld, amount);
@@ -4435,7 +4430,7 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int n = 1; sm::dev::arg_int(a, 0, n);
             if (n < 1) n = 1;
-            sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
             if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
             auto& ld = sheet->levelData;
             const int before = ld.level;
@@ -4491,7 +4486,7 @@ void register_console_commands(App& app) {
     con.register_cmd("skills", "skills",
         "list every skill: key, base rank -> effective rank (source of truth)",
         [&app](Con& c, const std::vector<std::string>&) {
-            const sm::CharacterSheet* basePtr = sm::player_sheet(app.ecs);
+            const sm::CharacterSheet* basePtr = sm::player_sheet(app.gs, *app.macroStore);
             if (!basePtr) { c.printfln(Lvl::Error, "no world"); return false; }
             const sm::CharacterSheet& base = *basePtr;
             const sm::CharacterSheet eff = player_effective_sheet(app);
@@ -4511,7 +4506,7 @@ void register_console_commands(App& app) {
             const int want = std::clamp(rank, 0, sm::kMaxSkillRank);
             if (want != rank)
                 c.printfln(Lvl::Warn, "rank clamped to %d (the law's cap)", want);
-            sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
             if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
             auto& skills = sheet->skills;
             bool changed = false;
@@ -4541,7 +4536,7 @@ void register_console_commands(App& app) {
     con.register_cmd("attrs", "attrs",
         "list every attribute: key, base score -> effective score",
         [&app](Con& c, const std::vector<std::string>&) {
-            const sm::CharacterSheet* basePtr = sm::player_sheet(app.ecs);
+            const sm::CharacterSheet* basePtr = sm::player_sheet(app.gs, *app.macroStore);
             if (!basePtr) { c.printfln(Lvl::Error, "no world"); return false; }
             const sm::CharacterSheet& base = *basePtr;
             const sm::CharacterSheet eff = player_effective_sheet(app);
@@ -4565,7 +4560,7 @@ void register_console_commands(App& app) {
             const int want = std::clamp(score, 1, sm::kMaxAttributeScore);
             if (want != score)
                 c.printfln(Lvl::Warn, "score clamped to %d", want);
-            sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
             if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
             auto& attrs = sheet->attributes;
             bool changed = false;
@@ -4617,7 +4612,7 @@ void register_console_commands(App& app) {
                 c.error("unknown profile '" + a[0] + "' - type 'loots' for ids");
                 return true;
             }
-            const sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            const sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
             const int level = sheet ? sheet->levelData.level : 1;
             int power = int(sm::affix_power(level, 0, 1.0f));
             sm::dev::arg_int(a, 2, power);
@@ -4736,7 +4731,7 @@ void register_console_commands(App& app) {
         "print the base and effective sheet, with TEMPOS through the "
         "recovery door (hand swing, spell recoveries)",
         [&app](Con& c, const std::vector<std::string>&) {
-            const sm::CharacterSheet* basePtr = sm::player_sheet(app.ecs);
+            const sm::CharacterSheet* basePtr = sm::player_sheet(app.gs, *app.macroStore);
             if (!basePtr) { c.printfln(Lvl::Error, "no world"); return false; }
             const sm::CharacterSheet& base = *basePtr;
             const sm::BonusTotals standing = player_standing_bonuses(app);
@@ -4772,9 +4767,9 @@ void register_console_commands(App& app) {
             // worn SwingPct verdict), so what this prints and what the arm
             // does cannot be two spellings of the chain.
             const sm::ecs::BodyEquipment* eqc = nullptr;
-            if (const entt::entity pe = sm::player_squad_entity(app.ecs);
-                pe != entt::null)
-                eqc = body_state<sm::ecs::BodyEquipment>(app.ecs.reg, pe);
+            if (const sm::MacroHandle pe = sm::player_squad_handle(app.gs);
+                app.macroStore->valid(pe))
+                eqc = &app.macroStore->gear[pe.slot];
             const sm::Inventory& bag = player_bag(app);
             const sm::ItemDef* w =
                 eqc ? sm::weapon_in_hand(eqc->gear, bag) : nullptr;
@@ -5146,14 +5141,14 @@ void draw_debug_panels(App& app) {
         ImGui::SetNextWindowSize(ImVec2(340, 440), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Game state", &app.panels.gameState)) {
             ImGui::SeparatorText("Player");
-            if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.ecs)) {
+            if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.gs, *app.macroStore)) {
                 ImGui::Text("cell    %d, %d",
                             sm::ecs::cell_x(*pc, app.gs.mapW),
                             sm::ecs::cell_y(*pc, app.gs.mapW));
             }
             ImGui::Text("value   %d", inventory_value(player_bag(app)));
             {
-                const sm::CharacterSheet* ps = sm::player_sheet(app.ecs);
+                const sm::CharacterSheet* ps = sm::player_sheet(app.gs, *app.macroStore);
                 const sm::LevelData ld = ps ? ps->levelData : sm::LevelData{};
                 ImGui::Text("level   %d   (exp %d / %d)",
                             ld.level, ld.exp, ld.expToNext);
@@ -5542,8 +5537,10 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     sm::MacroStore& st = sm::store_of(app.ecs);
     // Обход живых слотов (1е, голый цикл); игрок — по слоту флага и
     // колонке ординала, как в свипе ИИ.
-    const std::uint16_t flagSlot =
-        sm::try_handle_of(app.ecs.reg, sm::player_flag_entity(app.ecs)).slot;
+    const std::uint16_t flagSlot = [&]() -> std::uint16_t {
+        const sm::MacroHandle h = sm::player_flag_handle(app.gs);
+        return st.valid(h) ? h.slot : sm::kMacroNoSlot;
+    }();
     for (std::uint32_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
@@ -5772,7 +5769,7 @@ void frame(App& app, int simSteps) {
                         * kMacroZoomMax);
                 }
                 if (const sm::ecs::MacroCell* pc =
-                        sm::player_flag_cell(app.ecs)) {
+                        sm::player_flag_cell(app.gs, *app.macroStore)) {
                     app.mapScreen.camX =
                         float(sm::ecs::cell_x(*pc, app.gs.mapW)) + 0.5f;
                     app.mapScreen.camY =
@@ -5844,7 +5841,7 @@ void frame(App& app, int simSteps) {
         // Resolve a click → pathfind here so the overlay stays purely visual.
         if (app.cursor.requestPath) {
             app.cursor.requestPath = false;
-            const sm::ecs::MacroCell* origin = sm::player_flag_cell(app.ecs);
+            const sm::ecs::MacroCell* origin = sm::player_flag_cell(app.gs, *app.macroStore);
             int sx = origin ? sm::ecs::cell_x(*origin, app.gs.mapW) : 0;
             int sy = origin ? sm::ecs::cell_y(*origin, app.gs.mapW) : 0;
             if (sm::spellbook_rule_active(player_book(app),
@@ -5996,7 +5993,7 @@ void frame(App& app, int simSteps) {
                             sm::body_state<sm::ecs::MacroCell>(ast,
                                                                attackReq)) {
                         sm::player_jump_to_cell(
-                            app.gs, app.ecs,
+                            app.gs, *app.macroStore,
                             sm::ecs::cell_x(*cell, app.gs.mapW),
                             sm::ecs::cell_y(*cell, app.gs.mapW));
                     }
@@ -6270,7 +6267,7 @@ void frame(App& app, int simSteps) {
                     app.ui.settlement = true;
                 }
             }
-            sm::ui::draw_show_dialog(app.gs, sm::player_inventory(app.ecs), app.showDialogEvent, app.bus,
+            sm::ui::draw_show_dialog(app.gs, sm::player_inventory(app.gs, *app.macroStore), app.showDialogEvent, app.bus,
                                      app.showDialogUi, &app.showDialogOpen);
             handle_dialog_node_activation(app);
             sm::ui::draw_story_overlay(app.storyOverlay, app.bus);

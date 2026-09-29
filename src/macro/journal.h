@@ -42,7 +42,7 @@ inline void player_journal_capture(GameState& gs, ecs::World& world) {
     }
     // WHERE he stands = the flag holder's cell (подпосадка 4) — locality is
     // asked of the world, like possession above.
-    const ecs::MacroCell* pcell = player_flag_cell(world);
+    const ecs::MacroCell* pcell = player_flag_cell(gs, store_of(world));
     const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : -1;
     const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : -1;
     // Participation is by the ordinal his deeds FILE UNDER — and while he wears

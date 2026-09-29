@@ -360,8 +360,10 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         MacroStore& st = store_of(w);
         // Обход живых слотов store (1е, голый цикл); игрок — свой маркер,
         // и под вселением тоже: слот флага + колонка ординала.
-        const std::uint16_t flagSlot =
-            try_handle_of(w.reg, player_flag_entity(w)).slot;
+        const std::uint16_t flagSlot = [&]() -> std::uint16_t {
+            const MacroHandle h = player_flag_handle(gs);
+            return st.valid(h) ? h.slot : kMacroNoSlot;
+        }();
         for (std::uint32_t s32 = 0; s32 < kMacroEntityCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
@@ -476,7 +478,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // (cell centre = X+0.5). Drawn at the flag holder's VISUAL — the same
     // glide every squad sprite rides (подпосадка 4); the cell is the truth,
     // the visual is what the eye may see between cells.
-    if (const ecs::MacroVisual* pv = player_flag_visual(w)) {
+    if (const ecs::MacroVisual* pv = player_flag_visual(gs, store_of(w))) {
         ImVec2 p = world_to_screen(pv->vx + 0.5f, pv->vy + 0.5f,
                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
         const float size = std::clamp(zoom * 1.1f, 14.0f, 64.0f);
@@ -493,11 +495,11 @@ std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
 
     // Input drives the FLAG HOLDER — «игрок это просто флажок для сквада,
     // что на него инпут» (owner, подпосадка 4). No flag standing = no legs.
-    const entt::entity e = player_flag_entity(w);
-    if (e == entt::null) return 0u;
-    ecs::MacroCell* cell = body_state<ecs::MacroCell>(w.reg, e);
-    ecs::MacroNpcRuntime* rt = body_state<ecs::MacroNpcRuntime>(w.reg, e);
-    if (!cell || !rt) return 0u;
+    MacroStore& stw = store_of(w);
+    const MacroHandle fh = player_flag_handle(gs);
+    if (!stw.valid(fh)) return 0u;
+    ecs::MacroCell* cell = &stw.cell[fh.slot];
+    ecs::MacroNpcRuntime* rt = &stw.runtime[fh.slot];
 
     const int W = gs.mapW;
     const int H = gs.mapH;
@@ -635,8 +637,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
         MacroStore& st = store_of(w);
         // Обход живых слотов store (1е): игрок не сосед самому себе —
         // слот флага + колонка ординала, как у маркеров выше.
-        const std::uint16_t flagSlot =
-            try_handle_of(w.reg, player_flag_entity(w)).slot;
+        const std::uint16_t flagSlot = [&]() -> std::uint16_t {
+            const MacroHandle h = player_flag_handle(gs);
+            return st.valid(h) ? h.slot : kMacroNoSlot;
+        }();
 
         // Fixed row buffer: this render hot path must not grow heap storage
         // when multiple objects share adjacent cells. A row names its
@@ -651,7 +655,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
         std::size_t rowCount = 0;
         std::size_t totalRows = 0;
 
-        const ecs::MacroCell* pcell = player_flag_cell(w);
+        const ecs::MacroCell* pcell = player_flag_cell(gs, st);
         const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : 0;
         const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : 0;
         const int W  = gs.mapW;

@@ -4867,7 +4867,9 @@ static TickContext make_tick_context(MacroWorld& mw,
     // The player is a squad: WHERE he is = his flag holder's cell, the same
     // one-number truth every squad keeps (подпосадка 4).
     if (mw.world) {
-        if (const ecs::MacroCell* pc = player_flag_cell(*mw.world)) {
+        if (const ecs::MacroCell* pc = mw.gs && mw.store
+                ? player_flag_cell(*mw.gs, *mw.store)
+                : player_flag_cell(*mw.world)) {
             ctx.playerX = float(ecs::cell_x(*pc, ctx.mapW));
             ctx.playerY = float(ecs::cell_y(*pc, ctx.mapW));
         }
