@@ -50,7 +50,7 @@ namespace sm {
 // squad's MacroCell — where he stands is the record's own truth
 // (подпосадка 4). Idempotent and cheap; never touches a live scene body
 // (that lifecycle is owned by SubworldEngine).
-void ensure_macro_player_entity(GameState& gs, ecs::World& world);
+void ensure_macro_player_entity(GameState& gs, MacroStore& st);
 
 // ── БИТОВЫЕ ДВЕРИ (1е кластер 5): истина — два поля GameState ────────────
 // «Кем я на карте» и «кто оригинал» — распаковка полей, ноль сканов.

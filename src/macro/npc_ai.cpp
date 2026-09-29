@@ -2796,8 +2796,8 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         // A player-controlled squad's meetings belong to the forced-encounter
         // door (Inc 6, main.cpp detect_forced_encounter): the squad stands ON
         // the meeting cell and the door opens the pre-battle screen — never
-        // the silent auto-resolve. Both flags, because possession moves
-        // PlayerTag while PlayerSquadTag stays home (components.h).
+        // the silent auto-resolve. Both slots, because possession moves
+        // the flag while the home squad stays home (player_entity.h).
         if (enemy.slot == ctx.playerFlagSlot
             || enemy.slot == ctx.playerSquadSlot) {
             rt.visualSpeed = 0.0f;
@@ -3663,7 +3663,7 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
         // порогу >50% — «склад города ИЛИ МЕШОК СКВАДА»): the same daily
         // overflow law the settlement store runs. The gate is not a player
         // privilege but the seam of DECISION: this loop is the AI deciding
-        // for its bag, and the PlayerTag bag's decisions come from input —
+        // for its bag, and the flag holder's bag decisions come from input —
         // «автоматическое уничтожение вещей игрока строго запрещено».
         if (slot != flagSlot) melted += auto_scrap_overflow(bag.inv);
         // ── ПРИХОД ГАСИТ СЧЁТ ВЕСЬ СЕЗОН (CANON S10, v105) ───────────────
@@ -4692,7 +4692,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 if (!spec.members.push(rec)) break;
             }
             const MacroHandle ent = spawn_squad(
-                gs, *mw.world, store_of(*mw.world), *mw.terrain, spec);
+                gs, store_of(*mw.world), *mw.terrain, spec);
             if (stq.valid(ent)) {
                 const std::uint16_t newSlot = ent.slot;
                 s.population -= 1 + spec.members.size();
@@ -4727,7 +4727,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             spec.x = s.x;
             spec.y = s.y;
             spec.homeSettlementId = s.id;
-            if (stq.valid(spawn_squad(gs, *mw.world, store_of(*mw.world),
+            if (stq.valid(spawn_squad(gs, store_of(*mw.world),
                                       *mw.terrain, spec))) {
                 s.population -= 1;
                 --soloBudget;
@@ -4909,8 +4909,8 @@ namespace {
 void settle_dead_squads(MacroWorld& mw) {
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
-    drain_dead_leader_squads(w, gs.deserterPool);
-    destroy_dead_macro_squads(w, gs, &gs.lootPoolValue);
+    drain_dead_leader_squads(store_of(w), gs.deserterPool);
+    destroy_dead_macro_squads(store_of(w), gs, &gs.lootPoolValue);
 }
 
 } // namespace

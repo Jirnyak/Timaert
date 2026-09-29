@@ -146,7 +146,7 @@ entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
 // Both halves are checked, because either alone is satisfiable for the wrong
 // reason: the body must hold none of it, AND the record must be where it lives.
 bool tracked_body_owns_nothing(const entt::registry& reg,
-                               entt::entity macro, entt::entity body);
+                               MacroHandle record, entt::entity body);
 
 // Re-derive a standing body's OUTGOING numbers from its record — but only if
 // what stands on that record actually changed (sub/record.h StandingMirror,

@@ -76,7 +76,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    sm::ensure_macro_player_entity(gs, world);
+    sm::ensure_macro_player_entity(gs, sm::store_of(world));
     sm::player_inventory(gs, *worldStore_)->add("coin_empire_copper", 5);
     gs.player.ageDays = 1000;
     sm::player_sheet(gs, *worldStore_)->attributes[sm::AttributeId::Cha] = 0;

@@ -525,7 +525,7 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, MacroStore& st,
                              rng, gs.nextMacroSpawnOrdinal, level));
 }
 
-MacroHandle spawn_squad(GameState& gs, ecs::World& w, MacroStore& store,
+MacroHandle spawn_squad(GameState& gs, MacroStore& store,
                         const TerrainData& terrain, const SquadSpec& spec) {
     if (gs.mapW <= 0 || gs.mapH <= 0) return {};
 
@@ -565,7 +565,6 @@ MacroHandle spawn_squad(GameState& gs, ecs::World& w, MacroStore& store,
                  spec.homeSettlementId, rng, gs.nextMacroSpawnOrdinal,
                  spec.leaderLevel);
     if (!store.valid(leader)) return {};
-    (void)w;   // умирает вместе с параметром при чистке сигнатур (кластер 7)
 
     // The roster rows — through the same append every other producer uses:
     // души встают в область существ ЕДИНОГО контейнера лидера (M-71),

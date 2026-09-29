@@ -73,7 +73,7 @@ void test_snapshot_round_trips_the_living_map() {
     specA.waypointCount = 2;
     specA.waypoints[0] = 24; specA.waypoints[1] = 20;
     specA.waypoints[2] = 20; specA.waypoints[3] = 20;
-    const MacroHandle a = spawn_squad(gs, w, sm::store_of(w), absent, specA);
+    const MacroHandle a = spawn_squad(gs, sm::store_of(w), absent, specA);
     CHECK_OR_RETURN(wStore_->valid(a), "squad A spawned");
 
     // Squad B: a lone peasant — a squad of one, its own leader.
@@ -83,7 +83,7 @@ void test_snapshot_round_trips_the_living_map() {
     specB.x = 40;
     specB.y = 40;
     specB.factionIndex = faction_index("timaert");
-    const MacroHandle b = spawn_squad(gs, w, sm::store_of(w), absent, specB);
+    const MacroHandle b = spawn_squad(gs, sm::store_of(w), absent, specB);
     CHECK_OR_RETURN(wStore_->valid(b), "squad B spawned");
 
     const std::uint32_t ordinalA = wStore_->spawnId[a.slot].index;
@@ -119,7 +119,7 @@ void test_snapshot_round_trips_the_living_map() {
     const std::vector<Quest> noQuests;
     const std::vector<std::uint16_t> noTrees;
     const DepositLayer noDeposits;
-    CHECK_OR_RETURN(save_game(gs, noQuests, snapshot_macro_ecs(w), noTrees,
+    CHECK_OR_RETURN(save_game(gs, noQuests, snapshot_macro_ecs(*wStore_), noTrees,
                               noDeposits, path),
                     "the snapshot saved");
 
@@ -139,7 +139,7 @@ void test_snapshot_round_trips_the_living_map() {
     auto w2Store_ = sm::make_macro_store();
 
     sm::store_attach(w2, w2Store_.get());
-    restore_macro_ecs(records2, w2, gs2);
+    restore_macro_ecs(records2, *w2Store_, gs2);
     resolve_player_handles_after_load(gs2, *w2Store_);
 
     const MacroHandle a2 = find_by_ordinal(w2, ordinalA);
@@ -194,7 +194,7 @@ void test_snapshot_round_trips_the_living_map() {
     specC.x = 10;
     specC.y = 10;
     specC.factionIndex = faction_index("bandits");
-    const MacroHandle c = spawn_squad(gs2, w2, sm::store_of(w2), absent, specC);
+    const MacroHandle c = spawn_squad(gs2, sm::store_of(w2), absent, specC);
     CHECK_OR_RETURN(w2Store_->valid(c), "a new squad spawned after the load");
     CHECK(w2Store_->spawnId[c.slot].index > highest,
           "a dead man's ordinal is NEVER reissued - identity is for life");
@@ -234,7 +234,7 @@ void test_resnapshot_is_byte_identical() {
     specA.members.push(make_soldier(std::uint8_t(NPCType::Guard), 3, 1001u));
     specA.waypointCount = 1;
     specA.waypoints[0] = 24; specA.waypoints[1] = 20;
-    const MacroHandle a = spawn_squad(gs, w, sm::store_of(w), absent, specA);
+    const MacroHandle a = spawn_squad(gs, sm::store_of(w), absent, specA);
     CHECK_OR_RETURN(wStore_->valid(a), "squad A spawned");
     wStore_->runtime[a.slot].xp = 777;
     CHECK_OR_RETURN(owned_sheet(*wStore_, a) != nullptr,
@@ -247,19 +247,19 @@ void test_resnapshot_is_byte_identical() {
     specB.x = 40;
     specB.y = 40;
     specB.factionIndex = faction_index("timaert");
-    const MacroHandle b = spawn_squad(gs, w, sm::store_of(w), absent, specB);
+    const MacroHandle b = spawn_squad(gs, sm::store_of(w), absent, specB);
     CHECK_OR_RETURN(wStore_->valid(b), "squad B spawned");
     wStore_->pools[b.slot].hp = 0.0f;
     sm::macro_mark_dead(*wStore_, b);
 
-    const std::vector<MacroNpcRecord> snap1 = snapshot_macro_ecs(w);
+    const std::vector<MacroNpcRecord> snap1 = snapshot_macro_ecs(*wStore_);
     CHECK_OR_RETURN(snap1.size() == 2, "the snapshot names both squads");
 
     ecs::World w2;
     auto w2Store_ = sm::make_macro_store();
     sm::store_attach(w2, w2Store_.get());
-    restore_macro_ecs(snap1, w2, gs);
-    std::vector<MacroNpcRecord> snap2 = snapshot_macro_ecs(w2);
+    restore_macro_ecs(snap1, *w2Store_, gs);
+    std::vector<MacroNpcRecord> snap2 = snapshot_macro_ecs(*w2Store_);
     CHECK_OR_RETURN(snap2.size() == snap1.size(),
                     "the re-snapshot names the same count");
 
@@ -278,7 +278,7 @@ void test_resnapshot_is_byte_identical() {
         w2, wStore_->spawnId[a.slot].index);
     CHECK_OR_RETURN(w2Store_->valid(a2), "lord A restored for the control");
     w2Store_->runtime[a2.slot].xp += 1;
-    const std::vector<MacroNpcRecord> snap3 = snapshot_macro_ecs(w2);
+    const std::vector<MacroNpcRecord> snap3 = snapshot_macro_ecs(*w2Store_);
     int controlDiffs = 0;
     for (std::size_t i = 0; i < snap3.size(); ++i) {
         if (std::memcmp(&snap2[i], &snap3[i], sizeof(MacroNpcRecord)) != 0)

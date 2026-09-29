@@ -75,8 +75,8 @@ void test_every_squad_body_is_a_whole_body() {
 
     for (auto e : view) {
         ++bodies;
-        const auto* kind   = sm::body_state<ecs::NPCKind>(reg, e);
-        const auto* health = sm::body_state<ecs::Pools>(reg, e);
+        const auto* kind   = reg.try_get<ecs::NPCKind>(e);
+        const auto* health = reg.try_get<ecs::Pools>(e);
         const auto* combat = reg.try_get<ecs::Combat>(e);
         const auto* sprite = reg.try_get<ecs::Sprite>(e);
         const auto* ai     = reg.try_get<ecs::SubworldAi>(e);
@@ -105,7 +105,7 @@ void test_every_squad_body_is_a_whole_body() {
         // hardcodes its own width shows up right here.
         if (kind && ai && kind->type < std::uint16_t(NPCType::Count)) {
             const NpcTypeDef& def = npc_def(NPCType(std::uint8_t(kind->type)));
-            const auto* sheet = sm::body_state<CharacterSheet>(reg, e);
+            const auto* sheet = reg.try_get<CharacterSheet>(e);
             if (sheet) {
                 if (ai->radius != npc_body_radius(def)) ++offTableRadius;
                 if (sprite && sprite->scale != npc_body_radius(def))
@@ -115,7 +115,7 @@ void test_every_squad_body_is_a_whole_body() {
             // flat 2 metres for everyone. Derived from the same row, varied by
             // the body's own shape byte — so this expectation moves when the
             // table moves and cannot be satisfied by a literal.
-            const auto* face = sm::body_state<ecs::NpcCharacter>(reg, e);
+            const auto* face = reg.try_get<ecs::NpcCharacter>(e);
             if (sprite && face) {
                 const float want = sub::body_height_m(def)
                     * sub::body_shape_height_scale(face->bodyShape);
@@ -159,14 +159,12 @@ void test_every_squad_body_is_a_whole_body() {
 // that keep a sixth one from inventing a third answer.
 
 // One macro entity, shaped the way the overworld shapes them.
-entt::entity make_macro_lord(entt::registry& reg, sm::NPCType type,
-                             std::uint16_t faction, int level,
-                             int hp, int maxHp,
-                             std::uint32_t visualSeed) {
+sm::MacroHandle make_macro_lord(entt::registry& reg, sm::NPCType type,
+                                std::uint16_t faction, int level,
+                                int hp, int maxHp,
+                                std::uint32_t visualSeed) {
     sm::MacroStore& st = sm::store_of(reg);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = reg.create();
-    reg.emplace<sm::ecs::MacroSlot>(e, h.slot);
     st.cell[h.slot] = sm::ecs::MacroCell{sm::ecs::cell_index(10, 12, 64)};
     st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), faction};
     st.pools[h.slot] = sm::ecs::Pools{hp, maxHp};
@@ -180,7 +178,7 @@ entt::entity make_macro_lord(entt::registry& reg, sm::NPCType type,
     traits.traits[0] = 2;
     st.traits[h.slot] = traits;
     st.inventory[h.slot].inv.add("wood", 3);
-    return e;
+    return h;
 }
 
 void test_a_tracked_body_is_the_entity_it_embodies() {
@@ -191,12 +189,12 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     auto& reg = world.reg;
 
     // Half dead on the map, with a face and belongings of his own.
-    const entt::entity macro = make_macro_lord(
+    const sm::MacroHandle macro = make_macro_lord(
         reg, NPCType::Guard, /*faction*/5, /*level*/4,
         /*hp*/15.0f, /*maxHp*/30.0f, /*visualSeed*/0xFEEDu);
 
     const entt::entity body =
-        sub::spawn_tracked_body(reg, sm::try_handle_of(reg, macro), 40.0f, 41.0f, 777u,
+        sub::spawn_tracked_body(reg, macro, 40.0f, 41.0f, 777u,
                                 /*combatant*/true);
     CHECK_OR_RETURN(body != entt::null && reg.valid(body),
                     "a body-shaped macro entity can be embodied");
@@ -205,17 +203,17 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
                       CharacterSheet, ecs::SubworldAi, ecs::NpcLevel,
                       ecs::Sprite, ecs::SubworldTag>(body)),
           "a tracked body is as whole a body as a derived one");
-    CHECK((*sm::body_state<ecs::NpcCharacter>(reg, body)).visualSeed == 0xFEEDu,
+    CHECK((*reg.try_get<ecs::NpcCharacter>(body)).visualSeed == 0xFEEDu,
           "the same lord wears the same face in both worlds");
-    CHECK((*sm::body_state<ecs::NPCKind>(reg, body)).factionIdx == 5,
+    CHECK((*reg.try_get<ecs::NPCKind>(body)).factionIdx == 5,
           "a tracked body wears its own allegiance, read from the entity itself");
-    CHECK((*sm::body_state<ecs::NpcLevel>(reg, body)).value == 4,
+    CHECK((*reg.try_get<ecs::NpcLevel>(body)).value == 4,
           "a tracked body holds its own rank");
 
     // The wound crosses as a fraction, not as points: half above, half below,
     // whatever either layer thinks a health bar is worth.
     {
-        const auto& h = (*sm::body_state<ecs::Pools>(reg, body));
+        const auto& h = (*reg.try_get<ecs::Pools>(body));
         const float frac =
             h.maxHp > 0 ? float(h.hp) / float(h.maxHp) : -1.0f;
         CHECK(frac > 0.4f && frac < 0.6f,
@@ -236,26 +234,26 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
           "...and the door still answers with what its entity carries — it "
           "moved, it did not vanish");
     CHECK(sm::sub::state_of<ecs::NpcInventory>(reg, body)
-              == &(*sm::body_state<ecs::NpcInventory>(reg, macro)),
-          "LITERALLY the entity's bag: pick a sword up down here and it is in "
+              == &sm::store_of(reg).inventory[macro.slot],
+          "LITERALLY the record's bag: pick a sword up down here and it is in "
           "his bag up there, with no trip to arrange");
     // The backlink is the ADDRESS of all of the above — and of his bars. Without
     // it the encounter is a stranger who happens to look like him.
     CHECK(reg.all_of<ecs::MacroOrigin>(body)
               && reg.get<ecs::MacroOrigin>(body).macro
-                     == sm::handle_of(reg, macro),
+                     == macro,
           "a tracked body knows which entity it is");
 
     // A whole entity arrives whole: the control that stops "arrives wounded"
     // from passing by wounding everyone.
-    const entt::entity whole = make_macro_lord(
+    const sm::MacroHandle whole = make_macro_lord(
         reg, NPCType::Bandit, /*faction*/2, /*level*/3,
         /*hp*/9.0f, /*maxHp*/9.0f, /*visualSeed*/0xB0B0u);
     const entt::entity wholeBody =
-        sub::spawn_tracked_body(reg, sm::try_handle_of(reg, whole), 60.0f, 61.0f, 778u, true);
+        sub::spawn_tracked_body(reg, whole, 60.0f, 61.0f, 778u, true);
     CHECK_OR_RETURN(wholeBody != entt::null, "the control body was embodied");
     {
-        const auto& h = (*sm::body_state<ecs::Pools>(reg, wholeBody));
+        const auto& h = (*reg.try_get<ecs::Pools>(wholeBody));
         CHECK(h.maxHp > 0.0f && h.hp == h.maxHp,
               "an untouched entity arrives untouched");
     }
@@ -271,10 +269,8 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     // Half-tracked is the failure mode the two forms exist to make impossible:
     // an entity missing what a body is made of yields NO body, never a body with
     // a hole in it.
-    const auto bare = reg.create();
-    reg.emplace<ecs::Position>(bare, 1.0f, 1.0f, 0.0f);
-    CHECK(sub::spawn_tracked_body(reg, sm::try_handle_of(reg, bare), 5.0f, 5.0f, 1u, false) == entt::null,
-          "an entity that is not body-shaped is refused, not half-embodied");
+    // (Кластер 7: «полу-запись» невыразима — записью адресует только
+    // хэндл, и не-запись есть невалидный хэндл; отказ ниже покрывает оба.)
     CHECK(sub::spawn_tracked_body(reg, sm::MacroHandle{}, 5.0f, 5.0f, 1u, false)
               == entt::null,
           "nothing embodies nothing");
@@ -283,12 +279,11 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     // one — the guard is on the WIDE type, before any narrowing. Рождается
     // ПОЛНОЦЕННОЙ записью (слот store), иначе отказ пришёл бы по ФОРМЕ и это
     // утверждение стало бы проверять не то, что написано в его тексте.
-    const auto monster = make_macro_lord(
+    const sm::MacroHandle monster = make_macro_lord(
         reg, NPCType::Peasant, /*faction*/1, /*level*/2,
         /*hp*/10, /*maxHp*/10, /*visualSeed*/0u);
-    sm::store_of(reg).kind[reg.get<ecs::MacroSlot>(monster).slot].type =
-        std::uint16_t(0x103);
-    CHECK(sub::spawn_tracked_body(reg, sm::try_handle_of(reg, monster), 5.0f, 5.0f, 1u, false)
+    sm::store_of(reg).kind[monster.slot].type = std::uint16_t(0x103);
+    CHECK(sub::spawn_tracked_body(reg, monster, 5.0f, 5.0f, 1u, false)
               == entt::null,
           "a monster id cannot pass for a humanoid row");
 }
@@ -349,8 +344,8 @@ void test_a_leaders_aura_reaches_his_men() {
                     != linkLed.entityId) {
                 continue;
             }
-            const float withAura = (*sm::body_state<ecs::Pools>(led.reg, eLed)).maxHp;
-            const float without  = (*sm::body_state<ecs::Pools>(alone.reg, eAlone)).maxHp;
+            const float withAura = (*led.reg.try_get<ecs::Pools>(eLed)).maxHp;
+            const float without  = (*alone.reg.try_get<ecs::Pools>(eAlone)).maxHp;
             const float delta = withAura - without;
             CHECK(delta >= 9.0f && delta <= 61.0f,
                   "a led soldier is tougher by his leader's vit point - "
@@ -373,14 +368,13 @@ void test_a_squad_on_the_map_projects_its_roster() {
     sm::store_attach(world, worldStore_.get());
     auto& reg = world.reg;
 
-    const entt::entity macro = make_macro_lord(
+    const sm::MacroHandle macro = make_macro_lord(
         reg, NPCType::Guard, /*faction*/5, /*level*/4,
         /*hp*/30.0f, /*maxHp*/30.0f, /*visualSeed*/0xCAFEu);
-    sm::store_of(reg).spawnId[sm::slot_of(reg, macro)] =
+    sm::store_of(reg).spawnId[macro.slot] =
         ecs::MacroSpawnId{std::uint32_t(9)};
     {
-        auto& mbag =
-            sm::store_of(reg).inventory[sm::slot_of(reg, macro)];
+        auto& mbag = sm::store_of(reg).inventory[macro.slot];
         creatures_push(mbag.inv, make_soldier(
             std::uint8_t(NPCType::Guard), 4, 77u));
         creatures_push(mbag.inv, make_soldier(
@@ -413,7 +407,7 @@ void test_a_squad_on_the_map_projects_its_roster() {
               "a member's receipt names the roster row and its own squad");
         saw77 = saw77 || debt->detail == 77;
         saw88 = saw88 || debt->detail == 88;
-        const auto* kind = sm::body_state<ecs::NPCKind>(reg, e);
+        const auto* kind = reg.try_get<ecs::NPCKind>(e);
         if (kind && kind->factionIdx != 5) ++wrongFaction;
         if (reg.all_of<ecs::NpcCharacter, CharacterSheet, ecs::Sprite,
                        ecs::Pools, ecs::Combat>(e)) {
@@ -435,9 +429,9 @@ void test_a_squad_on_the_map_projects_its_roster() {
     for (auto e : reg.view<ecs::MacroDebt, ecs::SubworldTag>()) {
         settle_macro_debt(w, reg.get<ecs::MacroDebt>(e), -1);
     }
-    CHECK(creatures_empty((*sm::body_state<ecs::NpcInventory>(reg, macro)).inv),
+    CHECK(creatures_empty(sm::store_of(reg).inventory[macro.slot].inv),
           "both deaths below emptied the roster above, by name");
-    CHECK(!reg.all_of<ecs::Dead>(macro),
+    CHECK(sm::store_of(reg).dead[macro.slot] == 0,
           "the leader outlives his men: an empty roster is a squad of one");
 }
 
@@ -485,8 +479,8 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     const entt::entity b = sub::spawn_derived_body(reg,
         sub::BodySpec{NPCType::Peasant, 2.0f, 2.0f, 1, 1, 5150u, false}, 2u);
     CHECK_OR_RETURN(a != entt::null && b != entt::null, "both crowd bodies born");
-    CHECK((*sm::body_state<ecs::NpcCharacter>(reg, a)).visualSeed
-              != (*sm::body_state<ecs::NpcCharacter>(reg, b)).visualSeed,
+    CHECK((*reg.try_get<ecs::NpcCharacter>(a)).visualSeed
+              != (*reg.try_get<ecs::NpcCharacter>(b)).visualSeed,
           "the salt makes a crowd out of one seed");
 }
 
@@ -512,7 +506,7 @@ void test_two_bodies_of_one_kind_can_differ_in_height() {
             /*faceSalt*/i * 7919u);
         if (e == entt::null) continue;
         const auto* spr = reg.try_get<ecs::Sprite>(e);
-        const auto* face = sm::body_state<ecs::NpcCharacter>(reg, e);
+        const auto* face = reg.try_get<ecs::NpcCharacter>(e);
         if (!spr || !face) continue;
         ++seen;
         shortest = std::min(shortest, spr->height);

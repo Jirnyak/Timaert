@@ -18,7 +18,7 @@
 //   3. subtract, judge lethality by the RESULT (no predictions);
 //   4. stamp the protocol: LastHit when the kind attributes a killer,
 //      HitFlash + DamageFx always and always together;
-//   5. on the killing blow: Dead once, and NpcDeath with the ONE PlayerTag
+//   5. on the killing blow: Dead once, and NpcDeath with the ONE AvatarTag
 //      guard — a dead player is a game-over, never an NPC kill, whatever
 //      weapon did it.
 //

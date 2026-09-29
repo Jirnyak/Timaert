@@ -156,14 +156,12 @@ verdict	SKELETON.md	| у стыка есть материал только у о
 verdict	SKELETON.md	| у шины нет второй двери в память мира | `EventBus` несёт только канал КАДРА: `emit`/`em
 verdict	SKELETON.md	| фичи | `FeatureLayer::data`, байт вида | **ПРАВДА** |
 verdict	SKELETON.md	| число клетки лежит в поле | `population` лежит записью списка рядом с `x`/`y`; «что в э
-verdict	SKELETON.md	| энтити | контейнер и строки мира — ПРАВДА (M-71/M-73); `MacroStore` ПОДКЛЮЧЁН и несёт с�
 verdict	SKELETON.md	| — ЧАРТ рисует 3 рода фич из 12: ПАШНЮ не рисует вовсе | ветви `fb > 0.5 && fb < 2.5` (доро
 verdict	SKELETON.md	| — блик по воде есть зеркальная геометрия, и его числа без вывода | виртуальн
 verdict	SKELETON.md	| — гнездо чисел без вывода | `MTN_AMBIENT = 0.44`, `MTN_RIDGE_FREQ = 0.16`, `octN = 3`, `eC = 2.0`, `MTN_TERRACES = 4
 verdict	SKELETON.md	| — комментарий над проходом врёт | «Squad NPCs draw a 3-figure cluster around the cell centre» — класт
 verdict	SKELETON.md	| — материал стыка есть только у пары «суша/вода» | вода вырезана из смешения 
 verdict	SKELETON.md	| — порог опасности выведен из прежней настройки | `smoothstep(166.0, 255.0, zone)` с обосно
-verdict	SKELETON.md	| — проход рисования перебирает ВСЕ живые сквады каждый кадр | `view<ecs::MacroSlot>` п�
 verdict	SKELETON.md	| — сквад рисуется ОДНИМ спрайтом | `draw_sprite` зовётся один раз на сквад; «how many sou
 verdict	SKELETON.md	| — фигуры гейтит ЗНАНИЕ, и гейт совпадает с законом шейдера | рисуются тольк�
 verdict	SKELETON.md	| — цветовое смешение смотрит НЕПОЛНЫЙ контекст | диагонали (`nbNE`…`nbSW`) вычисл
@@ -179,7 +177,6 @@ entt	src/ecs/components.h	entt
 entt	src/ecs/world.h	entt
 entt	src/macro/macro_stock.h	entt
 entt	src/macro/squad.h	entt
-entt	src/macro/squad_walk.h	entt
 entt	src/macro/store.h	entt
 entt	src/sub/ai.cpp	entt
 entt	src/sub/body.h	entt

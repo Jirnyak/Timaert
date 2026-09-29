@@ -794,7 +794,7 @@ struct PlayerState {
     std::uint32_t completedQuestCount = 0;
     std::uint32_t failedQuestCount = 0;
     // (No possessedMacroSpawnId since v87. "Whom do I control" has ONE store —
-    // ecs::PlayerTag on the macro entity itself, riding the snapshot as an
+    // колонка playerFlag анкеты (5б), riding the snapshot as an
     // honest byte (MacroNpcRecord.playerFlag). The field was the flag's
     // out-of-snapshot double, and the re-derivation it fed masked the load
     // raising a second player squad — SAVE-5.)

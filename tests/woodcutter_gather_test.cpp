@@ -50,13 +50,10 @@ FactTally tally_facts(const Chronicle& c, FactKind kind, int x, int y) {
     return ctx.out;
 }
 
-entt::entity make_woodcutter(ecs::World& w, float x, float y,
-                             int homeVillageId) {
-    auto& reg = w.reg;
+sm::MacroHandle make_woodcutter(ecs::World& w, float x, float y,
+                                int homeVillageId) {
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = reg.create();
-    reg.emplace<ecs::MacroSlot>(e, h.slot);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), kMap)};
     st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -82,7 +79,7 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
-    return e;
+    return h;
 }
 
 void test_the_chop_is_real_and_the_haul_comes_home() {
@@ -115,7 +112,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
-    const entt::entity wc = make_woodcutter(w, 10.0f, 10.0f, vil.id);
+    const sm::MacroHandle wc = make_woodcutter(w, 10.0f, 10.0f, vil.id);
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
@@ -130,7 +127,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     const int layerLost = 16 - int(layer.at(14, 10));
     const int storeGained = gs.landmarks[0].inventory.count("wood");
     const int inBag =
-        (*sm::body_state<ecs::NpcInventory>(w.reg, wc)).inv.count("wood");
+        (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), wc)).inv.count("wood");
 
     CHECK(layerLost > 0, "the chop really fell trees in the layer");
     CHECK(storeGained > 0, "the haul reached the village store");
@@ -183,11 +180,9 @@ void test_the_farmer_works_the_field() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
-    auto& reg = w.reg;
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = reg.create();
-    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    const sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -220,7 +215,7 @@ void test_the_farmer_works_the_field() {
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
     const int foodUnits = gs.landmarks[0].inventory.count("food");
-    const int inBag = (*sm::body_state<ecs::NpcInventory>(w.reg, e)).inv.count("food");
+    const int inBag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("food");
     CHECK(foodUnits > 0, "the farmer's haul reached the village store");
     // THE BATCH LAW THIS USED TO PIN IS GONE (owner, 2026-09-16). It read
     // `foodUnits % kGatherPerCycle == 0` — "the haul arrives in whole cycle
@@ -266,11 +261,8 @@ void test_farmer_without_terrain_conjures_nothing() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
-    auto& reg = w.reg;
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = reg.create();
-    reg.emplace<ecs::MacroSlot>(e, h.slot);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -370,11 +362,8 @@ void test_the_mine_runs_while_the_player_is_away() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
-    auto& reg = w.reg;
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = reg.create();
-    reg.emplace<ecs::MacroSlot>(e, h.slot);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -496,11 +485,9 @@ void test_the_vendor_sells_at_the_nearest_city() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
-    auto& reg = w.reg;
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = reg.create();
-    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    const sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(16, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{16.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -536,7 +523,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
-    const auto& bag = (*sm::body_state<ecs::NpcInventory>(reg, e)).inv;
+    const auto& bag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
     const int cityFood = gs.landmarks[0].inventory.count("food");
     const int vilFood = gs.landmarks[1].inventory.count("food");
     CHECK(cityFood > 0,
@@ -624,11 +611,9 @@ void test_the_miner_works_the_vein() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
-    auto& reg = w.reg;
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = reg.create();
-    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    const sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -664,7 +649,7 @@ void test_the_miner_works_the_vein() {
     const int veinLeft = int(ironCells.at_index(veinIdx));
     const int veinLost = 20 - veinLeft;
     const int storeGained = gs.landmarks[0].inventory.count("iron");
-    const int inBag = (*sm::body_state<ecs::NpcInventory>(w.reg, e)).inv.count("iron");
+    const int inBag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("iron");
 
     CHECK(veinLost > 0, "the dig really drained the vein");
     CHECK(storeGained > 0, "the haul reached the village store");
@@ -706,8 +691,6 @@ void test_the_miner_works_the_vein() {
     sm::store_attach(w2, w2Store_.get());
     sm::MacroStore& st2 = sm::store_of(w2);
     const sm::MacroHandle h2 = sm::store_birth(st2);
-    const auto e2 = w2.reg.create();
-    w2.reg.emplace<ecs::MacroSlot>(e2, h2.slot);
     st2.cell[h2.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st2.visual[h2.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st2.kind[h2.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -767,11 +750,9 @@ void test_the_catch_lands_in_the_roster() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
-    auto& reg = w.reg;
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = reg.create();
-    reg.emplace<ecs::MacroSlot>(e, h.slot);
+    const sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -807,7 +788,7 @@ void test_the_catch_lands_in_the_roster() {
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
 
-    const Inventory& roster = (*sm::body_state<ecs::NpcInventory>(reg, e)).inv;
+    const Inventory& roster = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
     const int caught = creature_heads_of(roster, NPCType::Horse);
     const ResourceGrid& herdScars =
         gs.resourceScarCells[std::size_t(ResourceFieldId::Horses)];
@@ -825,7 +806,7 @@ void test_the_catch_lands_in_the_roster() {
     CHECK(stabled > 0,
           "ТАКТ 1: отряд сдал табун ДОМОЙ — стойло места, не карман артели");
     CHECK(gs.landmarks[0].inventory.count("food") == 0
-              && (*sm::body_state<ecs::NpcInventory>(reg, e)).inv.count("food") == 0,
+              && (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("food") == 0,
           "a creature yield rides NO bag: nothing landed in the store");
     CHECK(is_mount_kind(std::uint16_t(NPCType::Horse)),
           "строка лошади несёт тег Mount — закон спрашивает ТЕГ, не род");
@@ -842,7 +823,7 @@ void test_the_catch_lands_in_the_roster() {
     // из суда ротации, здесь — прямо, чтобы свидетель судил ЗАКОН, а не
     // расписание дня: место выдаёт по коню на душу и ни одного сверх.
     {
-        auto& roMut = (*sm::body_state<ecs::NpcInventory>(reg, e)).inv;
+        auto& roMut = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
         while (!creatures_empty(roMut)) {         // пешая артель
             SoldierRecord off{};
             if (!creatures_pop_back(roMut, off)) break;
@@ -853,7 +834,7 @@ void test_the_catch_lands_in_the_roster() {
         CHECK(stall >= 2, "фикстура: в стойле есть из чего снаряжать");
         // Лидер без членов — одна душа, значит ровно один конь.
         const int given =
-            outfit_crew_mounts(sm::store_of(w), home, sm::handle_of(reg, e));
+            outfit_crew_mounts(sm::store_of(w), home, e);
         CHECK(given == 1 && count_mount_souls(roMut) == 1,
               "ТАКТ 2: дом выдал по ездовому на душу — одному лидеру коня");
         CHECK(creature_heads_of(home.inventory, NPCType::Horse)
@@ -861,12 +842,12 @@ void test_the_catch_lands_in_the_roster() {
               "CONSERVATION такта 2: сколько вышло из стойла, столько и "
               "встало в упряжку");
         const int twice =
-            outfit_crew_mounts(sm::store_of(w), home, sm::handle_of(reg, e));
+            outfit_crew_mounts(sm::store_of(w), home, e);
         CHECK(twice == 0,
               "мера — потолок, а не запрос: снаряжённый отряд второго коня "
               "не берёт, даже когда стойло полно");
         // И обоз вырос ровно на спину коня — та же дверь, что у добора.
-        const auto& rtNow = (*sm::body_state<ecs::MacroNpcRuntime>(reg, e));
+        const auto& rtNow = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), e));
         CHECK(rtNow.carryCap >= rtNow.carryPerSoul * (1.0f + 8.0f) - 0.5f,
               "выданный конь — восемь спин в обозе (haulMult)");
     }

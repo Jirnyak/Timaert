@@ -49,8 +49,6 @@ void stand_at(sm::GameState& gs, ecs::World& w, int x, int y) {
     sm::MacroStore& st = sm::store_of(w);
     if (!st.valid(sm::player_squad_handle(gs))) {
         const sm::MacroHandle h = sm::store_birth(st);
-        const entt::entity e = w.reg.create();
-        w.reg.emplace<ecs::MacroSlot>(e, h.slot);
         st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};
         // Оба носителя, как настоящая дверь (5б): колонка playerFlag —
         // истина, биты GameState — кэш; флажок ставит дверь переноса.
@@ -194,8 +192,6 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     // out-of-snapshot field.
     sm::MacroStore& stL = sm::store_of(w);
     const sm::MacroHandle hL = sm::store_birth(stL);
-    const entt::entity lord = w.reg.create();
-    w.reg.emplace<ecs::MacroSlot>(lord, hL.slot);
     stL.spawnId[hL.slot] = ecs::MacroSpawnId{42u};
     // Possession MOVES the one flag — дверью переноса (5б): колонка
     // анкеты + кэш битов, запись нового = срыв старого.
@@ -255,8 +251,6 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     // A band with a save-stable identity and a renown store…
     sm::MacroStore& stB = sm::store_of(w);
     const sm::MacroHandle hB = sm::store_birth(stB);
-    const entt::entity band = w.reg.create();
-    w.reg.emplace<ecs::MacroSlot>(band, hB.slot);
     stB.spawnId[hB.slot] = ecs::MacroSpawnId{7u};
     auto& rt = stB.runtime[hB.slot];
     rt.renown = 0u;
@@ -276,7 +270,7 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     f.x = 10;
     f.y = 10;
     f.amount = 5;
-    const std::uint32_t seq = record_deed(w, gs, f, band);
+    const std::uint32_t seq = record_deed(sm::store_of(w), gs, f, hB);
     const std::uint32_t worth = renown_for_deed(FactKind::Killed, 50u);
     CHECK(seq != 0u, "the door filed the fact");
     CHECK(rt.renown == worth,
@@ -293,7 +287,7 @@ void test_the_deed_door_files_and_pays_as_one_action() {
 
     // A figure's next deed wears the bit — still from PRE-deed renown.
     rt.renown = std::uint32_t(kRenownToBeNamed);
-    const std::uint32_t seq2 = record_deed(w, gs, f, band);
+    const std::uint32_t seq2 = record_deed(sm::store_of(w), gs, f, hB);
     const WorldFact& filed2 =
         gs.chronicle.ring[std::size_t((seq2 - 1u) % kChronicleFacts)];
     CHECK(fact_subject_marked_named(filed2.subjectKind),

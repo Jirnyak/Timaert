@@ -143,8 +143,6 @@ SKELETON.md	:3533
 SKELETON.md	:3541
 SKELETON.md	:355
 SKELETON.md	:356
-SKELETON.md	:359
-SKELETON.md	:3591-3603
 SKELETON.md	:3611
 SKELETON.md	:3617
 SKELETON.md	:3693
@@ -214,7 +212,6 @@ SKELETON.md	:688
 SKELETON.md	:689
 SKELETON.md	:699
 SKELETON.md	:719-735
-SKELETON.md	:72
 SKELETON.md	:72-100
 SKELETON.md	:743
 SKELETON.md	:743-756
@@ -246,7 +243,6 @@ SKELETON.md	app/main.cpp:3490-3497
 SKELETON.md	app/main.cpp:4064
 SKELETON.md	app/main.cpp:4608-4610
 SKELETON.md	app/main.cpp:4970
-SKELETON.md	app/main.cpp:6277
 SKELETON.md	app/main.cpp:6320-6322
 SKELETON.md	app/main.cpp:662
 SKELETON.md	app/main.cpp:700
@@ -254,7 +250,6 @@ SKELETON.md	app/main.cpp:770-771
 SKELETON.md	app_state.h:151
 SKELETON.md	app_state.h:201
 SKELETON.md	app_state.h:310
-SKELETON.md	app_state.h:339-340
 SKELETON.md	army.h:179
 SKELETON.md	auto_battle.h:168
 SKELETON.md	auto_battle.h:80
@@ -277,7 +272,6 @@ SKELETON.md	collide.h:53
 SKELETON.md	commodity.h:101
 SKELETON.md	commodity.h:111
 SKELETON.md	commodity.h:56-97
-SKELETON.md	components.h:544
 SKELETON.md	content/quests/procedural.cpp:250-251
 SKELETON.md	core/stacks.h:99
 SKELETON.md	core/time.h:30
@@ -420,7 +414,6 @@ SKELETON.md	main.cpp:1695
 SKELETON.md	main.cpp:1839-1854
 SKELETON.md	main.cpp:1862
 SKELETON.md	main.cpp:2963
-SKELETON.md	main.cpp:327
 SKELETON.md	main.cpp:3541
 SKELETON.md	main.cpp:3635-3637
 SKELETON.md	main.cpp:4064
@@ -684,11 +677,8 @@ SKELETON.md	state.h:884
 SKELETON.md	state.h:943
 SKELETON.md	state.h:977
 SKELETON.md	state.h:986
-SKELETON.md	store.h:102
-SKELETON.md	store.h:121
 SKELETON.md	store.h:256
 SKELETON.md	store.h:65
-SKELETON.md	store.h:81
 SKELETON.md	sub/ai.cpp:28
 SKELETON.md	sub/base_generator.cpp:373-374
 SKELETON.md	sub/damage.cpp:10-11
@@ -1297,3 +1287,5 @@ macro-registry.md	world_tick.cpp:381
 macro-registry.md	world_tick.cpp:540
 macro-registry.md	zones.h:30
 macro-registry.md	:4787
+
+SKELETON.md	:3591-3603

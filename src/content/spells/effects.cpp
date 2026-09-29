@@ -253,7 +253,7 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     // THE GATE: strictly weaker in level, each trained rank of the school
     // raising the threshold by one (owner formula, 2026-09-17). A body with
     // no level row is a nobody — level 0.
-    const auto* lvl = body_state<ecs::NpcLevel>(reg, target);
+    const auto* lvl = reg.try_get<ecs::NpcLevel>(target);
     const int targetLevel = lvl ? int(lvl->value) : 0;
     if (targetLevel >= int(c.casterLevel) + int(c.schoolRank)) return;
     sub::possess_entity(w, target,

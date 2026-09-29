@@ -37,8 +37,8 @@ namespace sm {
 
 void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // Store прицепляется к ctx мира ЗДЕСЬ — одна дверь на всех звонящих
-    // генезис (бут, balance_run, фикстуры): двери store_of дальше не
-    // спрашивают, кто их позвал (мост 1в, умирает в 1е).
+    // генезис (бут, balance_run, фикстуры). Ctx-мост живёт для СУБМИРА до
+    // M-171 (вердикт 4а); макро-двери принимают MacroStore& параметром.
     store_attach(*out.world, out.store);
     GameState& gs = *out.gs;
 
@@ -377,7 +377,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // there is no player position scalar to seed since подпосадка 4.
         // The macro tick re-heals the invariant thereafter; doing it here
         // makes it hold immediately after genesis, before the first tick.
-        ensure_macro_player_entity(gs, *out.world);
+        ensure_macro_player_entity(gs, store_of(*out.world));
     }
 
     // ПЕРВАЯ ВЕДОМОСТЬ — ПО ФАКТУ РОЖДЕНИЯ МИРА (CANON S9 «рождение и смерть

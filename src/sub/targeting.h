@@ -5,7 +5,7 @@
 // player-melee selection (SubworldEngine::tick_player_melee, engine.cpp): the
 // candidate set is the live subworld hostiles —
 //   view<Position, Health, NPCKind, SubworldTag> minus Dead
-// — excluding the player's own side (PlayerTag / PlayerSoldierTag, i.e. the
+// — excluding the player's own side (AvatarTag / PlayerSoldierTag, i.e. the
 // is_player_side predicate at engine.cpp) and the shooter entity itself. Among
 // those it returns the NEAREST candidate that is both within `maxRange` and
 // inside the aim cone (cos(angle to target) >= cosHalfAngle).

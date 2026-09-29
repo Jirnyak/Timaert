@@ -56,7 +56,7 @@ inline const NpcTypeDef* row_for(const ecs::NPCKind* kind) {
 // THE combat half-width of a body, in world units (≈ metres).
 inline float body_radius(const entt::registry& reg, entt::entity e) {
     if (const auto* br = reg.try_get<ecs::BodyRadius>(e)) return br->radius;
-    const auto* kind = body_state<ecs::NPCKind>(reg, e);
+    const auto* kind = reg.try_get<ecs::NPCKind>(e);
     if (const NpcTypeDef* row = row_for(kind)) {
         // The row's ONE width column, man-shaped default resolved (npc.h).
         // The template shadow copy this used to fall through to is dead

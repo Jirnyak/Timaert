@@ -240,19 +240,17 @@ void test_malformed_receipts_do_nothing() {
 
 // One squad the way the overworld shapes them: the entity IS the leader, the
 // ordinal is its save-stable name, the roster holds everyone else.
-entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal,
-                        std::initializer_list<std::uint32_t> memberIds) {
+sm::MacroHandle make_squad(sm::ecs::World& w, std::uint32_t ordinal,
+                           std::initializer_list<std::uint32_t> memberIds) {
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = w.reg.create();
-    w.reg.emplace<sm::ecs::MacroSlot>(e, h.slot);
     st.spawnId[h.slot] = sm::ecs::MacroSpawnId{ordinal};
     auto& bag = st.inventory[h.slot];
     for (std::uint32_t id : memberIds) {
         sm::creatures_push(bag.inv, sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard), 2, id));
     }
-    return e;
+    return h;
 }
 
 // A member's death removes the very soldier who fell — named by the receipt,
@@ -323,10 +321,10 @@ void test_dead_leader_squads_fall_into_the_pool() {
     sm::store_attach(world, worldStore_.get());
     const auto fallen = make_squad(world, 10, {1u, 2u});
     make_squad(world, 11, {3u});
-    sm::macro_mark_dead(world.reg, fallen);
+    sm::macro_mark_dead(sm::store_of(world), fallen);
 
     Inventory pool{};
-    CHECK(drain_dead_leader_squads(world, pool) == 2,
+    CHECK(drain_dead_leader_squads(sm::store_of(world), pool) == 2,
           "the dead leader's survivors walk away, all of them");
     CHECK(creature_heads(pool) == 2,
           "and they land in the deserter pool");
@@ -336,7 +334,7 @@ void test_dead_leader_squads_fall_into_the_pool() {
     CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{11, 0, 0}) == 1,
           "a live leader keeps his men");
 
-    CHECK(drain_dead_leader_squads(world, pool) == 0
+    CHECK(drain_dead_leader_squads(sm::store_of(world), pool) == 0
               && creature_heads(pool) == 2,
           "draining again pays nothing: the pool is never billed twice");
 }

@@ -96,7 +96,7 @@ void test_every_death_is_reported_once() {
     MacroWorld mw{};
     mw.gs = &gs;
     mw.world = &w;
-    ensure_macro_player_entity(gs, w);
+    ensure_macro_player_entity(gs, sm::store_of(w));
     mw.facts = &collect;
     mw.factsUser = &log;
 
@@ -196,7 +196,7 @@ void test_spoils_are_rolled_not_scavenged() {
     MacroWorld mw{};
     mw.gs = &gs;
     mw.world = &w;
-    ensure_macro_player_entity(gs, w);
+    ensure_macro_player_entity(gs, sm::store_of(w));
     // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): чтобы спросить «дошла ли
     // добыча», у павшего должна БЫТЬ добыча. Раньше её рождал бросок
     // хардкод-профиля роли — и вопрос стоял «роняет ли ростерная запись то,
@@ -242,7 +242,7 @@ squad(w, NPCType::Merchant, "empire", 4, 3, 7u);
     MacroWorld mw2{};
     mw2.gs = &gs2;
     mw2.world = &w2;
-    ensure_macro_player_entity(gs2, w2);
+    ensure_macro_player_entity(gs2, sm::store_of(w2));
     const sm::MacroHandle enemy2 =
         
 squad(w2, NPCType::Merchant, "empire", 4, 3, 8u);
@@ -270,7 +270,7 @@ void test_empty_handed_fallen_pays_nothing() {
     MacroWorld mw{};
     mw.gs = &gs;
     mw.world = &w;
-    ensure_macro_player_entity(gs, w);
+    ensure_macro_player_entity(gs, sm::store_of(w));
     const sm::MacroHandle pack = 
 squad(w, NPCType::Wolf, "wildlife", 3, 0, 9u);
     settle_player_auto_battle(mw, pack, wipe_of(w, pack, true), true);

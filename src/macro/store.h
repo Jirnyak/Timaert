@@ -215,19 +215,12 @@ inline MacroHandle handle_at(const MacroStore& s, std::uint16_t slot) {
     return MacroHandle{slot, s.generation[slot]};
 }
 
-// Слот макро-сквада по entt-мосту (шаг 1в; мост умирает в 1е вместе с этой
-// дверью). Сущность без MacroSlot здесь незаконна — get громко падает в
-// дебаге, как и всякий доступ мимо закона рождения.
-inline std::uint16_t slot_of(entt::registry& reg, entt::entity e) {
-    return reg.get<ecs::MacroSlot>(e).slot;
-}
-
-// Store из контекста реестра — МОСТ ПЕРЕЕЗДА, как PlayerSquadCache: живёт
-// в ctx мира (не глобальное состояние — умирает с миром), чтобы ~30 дверей
-// с сигнатурой (World&) не рябили параметром на время флипа. Ставится
-// одной точкой на рождении мира; умирает в 1е вместе с MacroSlot.
-// Колонка по ТИПУ компоненты — мост 1в: тип выбирает массив, ошибиться
-// колонкой невозможно (типы колонок уникальны, список один — X-macro).
+// СЕЛЕКТОР КОЛОНКИ ПО ТИПУ (жилец, не мост): тип выбирает массив, ошибиться
+// колонкой невозможно (типы колонок уникальны, список один — X-macro);
+// двери body_state(st, h) ниже ходят им.
+// store_attach/store_of — ctx-мост store для СУБМИРА (вердикт 4а):
+// живёт до M-171 (фрейм); макро-сторона ctx не читает — макро-двери
+// принимают MacroStore& параметром.
 template <typename C> inline auto& store_col(MacroStore& s) = delete;
 #define SM_X(name, T)                                                        \
     template <> inline auto& store_col<T>(MacroStore& s) { return s.name; }
@@ -245,28 +238,6 @@ inline const MacroStore& store_of(const ecs::World& w) {
 }
 inline MacroStore& store_of(entt::registry& reg) {
     return *reg.ctx().get<MacroStore*>();
-}
-
-// Хэндл из entt-моста (шаг 1г). slot_of отвечает голым слотом БЕЗ поколения —
-// долгоживущей ссылке этого мало: слот переиспользуется, и только пара
-// {slot,gen} мертвеет вместе с жильцом. Сущность без MacroSlot незаконна,
-// как и в slot_of.
-inline MacroHandle handle_of(entt::registry& reg, entt::entity e) {
-    const std::uint16_t slot = slot_of(reg, e);
-    return MacroHandle{slot, store_of(reg).generation[slot]};
-}
-
-// Та же дверь для звонящего, который НЕ ЗНАЕТ, макро-сквад ли перед ним:
-// сущность сцены (или реестр фикстуры без store) честно отвечает «никого»
-// вместо падения. handle_of выше остаётся ТРЕБОВАНИЕМ: где закон says «это
-// сквад», молчаливая деградация была бы хуже падения.
-inline MacroHandle try_handle_of(const entt::registry& reg, entt::entity e) {
-    if (e == entt::null || !reg.valid(e)) return MacroHandle{};
-    const auto* ms = reg.try_get<ecs::MacroSlot>(e);
-    if (!ms) return MacroHandle{};
-    MacroStore* const* st = reg.ctx().find<MacroStore*>();
-    if (!st) return MacroHandle{};
-    return MacroHandle{ms->slot, (*st)->generation[ms->slot]};
 }
 
 // Упаковка хэндла в 32 бита для POD-конвертов (BattleFact, GameEvent):
@@ -306,33 +277,9 @@ inline void transfer_player_flag(MacroStore& st, std::uint32_t& flagBits,
     flagBits = macro_handle_bits(to);
 }
 
-// ОБРАТНАЯ ДВЕРЬ МОСТА (шаг 1г; умирает в 1е вместе с MacroSlot): entt-тело
-// носителя слота. Линейный скан моста — законен только ВНЕ тика (клик UI,
-// вход в бой); в 1е двери принимают слот, и нужда в скане исчезает.
-inline entt::entity macro_entity_of(entt::registry& reg, MacroHandle h) {
-    if (!store_of(reg).valid(h)) return entt::null;
-    for (auto [e, ms] : reg.view<ecs::MacroSlot>().each())
-        if (ms.slot == h.slot) return e;
-    return entt::null;
-}
-
-// ── ДВОЙНАЯ ДВЕРЬ СОСТОЯНИЯ ТЕЛА (закон записи, sub/record.h) ─────────────
-// Макро-сквад (несёт MacroSlot) отвечает КОЛОНКОЙ store; тело сцены без
-// бэклинка — «само себе запись» — своей entt-компонентой. Одна дверь на оба
-// рода читателя: двери листа/полос/сумки зовутся с обоими.
-template <typename C>
-inline C* body_state(entt::registry& reg, entt::entity e) {
-    if (const auto* ms = reg.try_get<ecs::MacroSlot>(e))
-        return &store_col<C>(store_of(reg))[ms->slot];
-    return reg.try_get<C>(e);
-}
-template <typename C>
-inline const C* body_state(const entt::registry& reg, entt::entity e) {
-    return body_state<C>(const_cast<entt::registry&>(reg), e);
-}
-
-// Та же дверь по хэндлу — БЕЗ entt вовсе: колонка под valid()-гардой.
-// Это ЦЕЛЕВАЯ форма чтения макро-сквада; entt-перегрузки выше умирают в 1е.
+// ── ДВЕРЬ СОСТОЯНИЯ ТЕЛА МАКРО-СКВАДА (кластер 7: моста нет) ─────────────
+// Колонка под valid()-гардой — единственная форма чтения макро-сквада.
+// Тело сцены читается своим компонентом (reg.try_get) — закон кластера 4.
 template <typename C>
 inline C* body_state(MacroStore& s, MacroHandle h) {
     return s.valid(h) ? &store_col<C>(s)[h.slot] : nullptr;
@@ -342,30 +289,15 @@ inline const C* body_state(const MacroStore& s, MacroHandle h) {
     return body_state<C>(const_cast<MacroStore&>(s), h);
 }
 
-// Судьба — та же двойная дверь: у макро-сквада смерть лежит байтом колонки
-// (труп стоит до слива, AI-2), у тела сцены — прежним тегом ecs::Dead.
-inline bool macro_dead(entt::registry& reg, entt::entity e) {
-    if (const auto* ms = reg.try_get<ecs::MacroSlot>(e))
-        return store_of(reg).dead[ms->slot] != 0;
-    return reg.all_of<ecs::Dead>(e);
-}
-inline bool macro_dead(const entt::registry& reg, entt::entity e) {
-    return macro_dead(const_cast<entt::registry&>(reg), e);
-}
-// Судьба по хэндлу: протухший хэндл отвечает «мёртв» — fail-closed чтение,
-// жилец слота сменился, и спрашивать о нём больше нечего.
+// Судьба макро-сквада — байт колонки (труп стоит до слива, AI-2); тело
+// сцены отвечает тегом ecs::Dead своим путём (кластер 4). Протухший хэндл
+// отвечает «мёртв» — fail-closed чтение: жилец слота сменился, и
+// спрашивать о нём больше нечего.
 inline bool macro_dead(const MacroStore& s, MacroHandle h) {
     return !s.valid(h) || s.dead[h.slot] != 0;
 }
-inline void macro_mark_dead(entt::registry& reg, entt::entity e) {
-    if (const auto* ms = reg.try_get<ecs::MacroSlot>(e)) {
-        store_of(reg).dead[ms->slot] = 1;
-        return;
-    }
-    reg.emplace_or_replace<ecs::Dead>(e);
-}
 // Смерть по хэндлу: протухший хэндл — no-op (жилец уже сменился, мертвить
-// некого); это та же fail-closed пара к macro_dead(store, h) выше.
+// некого); та же fail-closed пара к macro_dead выше.
 inline void macro_mark_dead(MacroStore& s, MacroHandle h) {
     if (s.valid(h)) s.dead[h.slot] = 1;
 }

@@ -75,7 +75,8 @@ inline C* state_of(entt::registry& reg, entt::entity body) {
     if (rec.slot != kMacroNoSlot) {
         if (C* owned = body_state<C>(store_of(reg), rec)) return owned;
     }
-    return body_state<C>(reg, body);
+    // Тело без записи — «само себе запись»: своя компонента (кластер 7).
+    return reg.try_get<C>(body);
 }
 
 template <class C>

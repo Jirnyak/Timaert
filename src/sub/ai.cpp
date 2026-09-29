@@ -38,7 +38,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     // игрока нет флажка, и «без сознания» — не состояние, а ЕГО ОТСУТСТВИЕ,
     // прочитанное на единственной двери ИИ. Пока владелец ходит в чужом теле,
     // его собственный сквад стоит в сцене видимым и недвижимым: лидер — тело,
-    // чья запись (через зеркало) и есть сквад без PlayerTag; его люди — тела
+    // чья запись (через зеркало) и есть сквад без AvatarTag; его люди — тела
     // с ростерным займом на тот же сквад. Флажок вернулся — мозги проснулись
     // на следующем же тике, без единого компонента.
     std::int32_t unconsciousSubject = -1;
@@ -169,7 +169,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         // беглец предпочитает вдвое выше: высота — его дорога. Темп
         // подъёма = его же wanderSpeed: одно тело — один темп.
         if (heightFn && reg.any_of<ecs::Flying>(e)) {
-            const auto* kind = body_state<ecs::NPCKind>(reg, e);
+            const auto* kind = reg.try_get<ecs::NPCKind>(e);
             const float cruise =
                 kind && kind->type < std::uint16_t(NPCType::Count)
                     ? kNpcTypeDefs[kind->type].combat.cruiseM : 0.0f;

@@ -32,44 +32,15 @@
 namespace sm {
 
 // СЛОТ — ключ мира (эпик 2 шаг 3): всякий читатель порядка спрашивает
-// колонки store по нему напрямую, без диспетча body_state по компоненте.
-// Энтити остаётся ПОКА рядом — мост MacroSlot жив до шага 5, и старые
-// двери (авто-бой, факты, спавн) ещё говорят на нём; поле умрёт вместе с
-// мостом, и ни один читатель порядка от этого не изменится.
+// колонки store по нему напрямую. Поле энтити умерло с мостом (кластер 7).
 struct SquadWalkEntry {
     std::uint32_t  ordinal;
     std::uint16_t  slot;
-    entt::entity   e;
 };
 
-// Собрать view в порядок закона. `out` — скрэтч звонящего: у тиковых
-// драйверов он живёт членом рантайма (ноль аллокаций после прогрева), у
-// дневных проходов — локально, как их прочие дневные вектора.
-// С флипа 1в ординал живёт колонкой store (spawnId), а фильтр состава —
-// предикатом по слоту (байт dead и т.п.): view сужается до MacroSlot,
-// которого не носит ни одно тело сцены.
-template <typename View, typename Pred>
-inline void collect_squads_by_ordinal(entt::registry& reg,
-                                      const MacroStore& st, const View& view,
-                                      std::vector<SquadWalkEntry>& out,
-                                      Pred keep) {
-    out.clear();
-    for (auto e : view) {
-        const std::uint16_t slot = reg.get<ecs::MacroSlot>(e).slot;
-        if (!keep(slot)) continue;
-        out.push_back({st.spawnId[slot].index, slot, e});
-    }
-    std::sort(out.begin(), out.end(),
-              [](const SquadWalkEntry& a, const SquadWalkEntry& b) {
-                  return a.ordinal < b.ordinal;
-              });
-}
-
-// Тот же закон порядка БЕЗ моста (1е): население — сами слоты store, обход —
-// голый скан байта alive (32 КиБ на кап, цена видна в точке — вердикт
-// владельца 2026-09-29 «голый цикл»). Поле `e` записей НЕ заполняется
-// (entt::null): читатель этой формы держит слот, и только его; entt-форма
-// выше умирает вместе с мостом MacroSlot.
+// Закон порядка: население — сами слоты store, обход — голый скан байта
+// alive (32 КиБ на кап, цена видна в точке — вердикт владельца 2026-09-29
+// «голый цикл»).
 template <typename Pred>
 inline void collect_squads_by_ordinal(const MacroStore& st,
                                       std::vector<SquadWalkEntry>& out,
@@ -78,8 +49,7 @@ inline void collect_squads_by_ordinal(const MacroStore& st,
     for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
         if (st.alive[slot] == 0) continue;
         if (!keep(std::uint16_t(slot))) continue;
-        out.push_back({st.spawnId[slot].index, std::uint16_t(slot),
-                       entt::null});
+        out.push_back({st.spawnId[slot].index, std::uint16_t(slot)});
     }
     std::sort(out.begin(), out.end(),
               [](const SquadWalkEntry& a, const SquadWalkEntry& b) {

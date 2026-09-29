@@ -571,18 +571,14 @@ using TrackedInheritance =
                ecs::BodyEquipment, SpellBook>;
 
 bool tracked_body_owns_nothing(const entt::registry& reg,
-                               entt::entity macro, entt::entity body) {
-    if (!reg.valid(macro) || !reg.valid(body)) return false;
+                               MacroHandle record, entt::entity body) {
+    if (!reg.valid(body)) return false;
     // Two halves, and both must hold or the claim is empty: the body carries
-    // none of it, AND the record it points at is where it actually lives. A
-    // body beside a record that holds nothing either would pass the first half
-    // for the wrong reason.
-    // ФЛИП 1в: у записи-носителя слота владение живёт КОЛОНКАМИ store по
-    // построению — вторая половина утверждения истинна типом, спрашивать
-    // entt-компоненты у неё больше нечего. Шаг 2: и ДРУГОЙ записи не бывает —
-    // бэклинк несёт MacroHandle, а хэндлом адресуется только слот.
+    // none of it, AND the record it points at is where it actually lives.
+    // Кластер 7: запись ЕСТЬ слот store — «владение живёт на записи» истинно
+    // ровно тогда, когда хэндл жив (колонки у живого слота по построению).
     return TrackedInheritance::none_on(reg, body)
-        && reg.all_of<ecs::MacroSlot>(macro);
+        && store_of(const_cast<entt::registry&>(reg)).valid(record);
 }
 
 entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
@@ -1426,7 +1422,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // collect the persistent macro NPCs, then create their projections.
     // MacroNpcRuntime is the macro discriminator (subworld bodies never have it);
     // excluding SubworldTag/Dead keeps the source set to live overworld NPCs.
-    // PlayerTag skips the macro record the player is currently BEING — his
+    // AvatarTag skips the macro record the player is currently BEING — his
     // body in the scene is the tracked avatar, not a foreign projection.
     // The player's OWN squad is NOT excluded any more (вердикт владельца №6,
     // 2026-09-17): while he wears somebody else, his abandoned party stands
@@ -1434,7 +1430,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // party, visibly and senselessly (the ai door reads «флажка на мне нет»
     // through the mirror). The old writeback fear died with the mirror law:
     // a projected body owns nothing, it reads and writes THE record. While
-    // he is HIMSELF the squad carries PlayerTag, so nothing double-projects.
+    // he is HIMSELF the squad carries AvatarTag, so nothing double-projects.
     std::vector<MacroHandle> sources;
     MacroStore& st = store_of(reg);
     {

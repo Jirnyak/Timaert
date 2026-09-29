@@ -50,15 +50,14 @@ GameState make_world(int relation) {
     return gs;
 }
 
-entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
-                           int level, float x, float y, std::uint32_t ordinal,
-                           std::initializer_list<std::uint32_t> memberIds,
-                           NPCType memberKind, int memberLevel) {
-    auto& reg = w.reg;
+sm::MacroHandle make_squad_at(ecs::World& w, NPCType type,
+                              const char* faction,
+                              int level, float x, float y,
+                              std::uint32_t ordinal,
+                              std::initializer_list<std::uint32_t> memberIds,
+                              NPCType memberKind, int memberLevel) {
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
-    const auto e = reg.create();
-    reg.emplace<ecs::MacroSlot>(e, h.slot);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), kMap)};
     st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(type),
@@ -88,7 +87,7 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
         creatures_push(bag.inv,
                        make_soldier(std::uint8_t(memberKind), memberLevel, id));
     }
-    return e;
+    return h;
 }
 
 int roster_count(ecs::World& w, GameState& gs, std::uint32_t ordinal) {
@@ -97,9 +96,9 @@ int roster_count(ecs::World& w, GameState& gs, std::uint32_t ordinal) {
                             MacroStockKey{std::int32_t(ordinal), 0, 0});
 }
 
-float dist(ecs::World& w, entt::entity a, entt::entity b) {
-    const auto& ca = (*sm::body_state<ecs::MacroCell>(w.reg, a));
-    const auto& cb = (*sm::body_state<ecs::MacroCell>(w.reg, b));
+float dist(ecs::World& w, sm::MacroHandle a, sm::MacroHandle b) {
+    const auto& ca = (*sm::body_state<ecs::MacroCell>(sm::store_of(w), a));
+    const auto& cb = (*sm::body_state<ecs::MacroCell>(sm::store_of(w), b));
     return std::sqrt(torus_dist_sq(
         float(ecs::cell_x(ca, kMap)), float(ecs::cell_y(ca, kMap)),
         float(ecs::cell_x(cb, kMap)), float(ecs::cell_y(cb, kMap)),
@@ -127,7 +126,7 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     const auto caravan = make_squad_at(w, NPCType::Merchant, "timaert", 1,
                                        10.0f, 10.0f, 2u, {21u},
                                        NPCType::Peasant, 1);
-    (*sm::body_state<ecs::NpcInventory>(w.reg, caravan)).inv.add("wood", 5);
+    (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), caravan)).inv.add("wood", 5);
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 42u);
@@ -141,18 +140,18 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     // 6.3: сквад ЕСТЬ слот store — «ушёл с карты» = смерть слота.
     CHECK(!sm::store_of(w).valid(
               sm::handle_at(sm::store_of(w),
-                            sm::slot_of(w.reg, caravan))),
+                            caravan.slot)),
           "a loser whose whole roster fell falls with it and leaves the map");
-    CHECK(!sm::macro_dead(w.reg, bandit),
+    CHECK(!sm::macro_dead(sm::store_of(w), bandit),
           "the crushing winner survives");
-    CHECK((*sm::body_state<ecs::NpcInventory>(w.reg, bandit)).inv.count("wood") == 5,
+    CHECK((*sm::body_state<ecs::NpcInventory>(sm::store_of(w), bandit)).inv.count("wood") == 5,
           "the raid PAYS: the fallen owner's goods pass to the victor");
     // Именной лидер ВЛАДЕЕТ листом (Bandit — kNamedKinds): опыт идёт в
     // levelData листа, транзиентный счётчик rt.xp — путь безлистых.
     {
-        const CharacterSheet* own = owned_sheet(w, bandit);
+        const CharacterSheet* own = owned_sheet(sm::store_of(w), bandit);
         CHECK((own && (own->levelData.exp > 0 || own->levelData.level > 5))
-                  || (*sm::body_state<ecs::MacroNpcRuntime>(w.reg, bandit)).xp
+                  || (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), bandit)).xp
                          > 0,
               "victory pays experience through the one reward law");
     }
@@ -173,8 +172,8 @@ void test_the_weak_flee_and_fighters_pursue() {
     // Freeze the bandits: resting with empty stamina, so the caravan's
     // flight is measured against a fixed threat.
     {
-        (*sm::body_state<ecs::Pools>(w.reg, bandit)).sp = 0;
-        (*sm::body_state<ecs::MacroNpcRuntime>(w.reg, bandit)).state =
+        (*sm::body_state<ecs::Pools>(sm::store_of(w), bandit)).sp = 0;
+        (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), bandit)).state =
             std::uint8_t(NPCState::Resting);
     }
     MacroNpcAiRuntime rt{};
@@ -187,7 +186,7 @@ void test_the_weak_flee_and_fighters_pursue() {
     const int thinksPerCell = int(std::ceil(
         1.0f / (kMacroWalkCellsPerHour * kAiTickGameHours)));
     drive(gs, w, rt, thinksPerCell);
-    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(w.reg, caravan)).state
+    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), caravan)).state
               == std::uint8_t(NPCState::Fleeing),
           "a squad that cannot win runs - the strength law says so");
     CHECK(dist(w, bandit, caravan) > before,
@@ -206,8 +205,8 @@ void test_the_weak_flee_and_fighters_pursue() {
                                     15.0f, 10.0f, 2u, {},
                                     NPCType::Peasant, 1);
     {
-        (*sm::body_state<ecs::Pools>(w2.reg, prey)).sp = 0;
-        (*sm::body_state<ecs::MacroNpcRuntime>(w2.reg, prey)).state =
+        (*sm::body_state<ecs::Pools>(sm::store_of(w2), prey)).sp = 0;
+        (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w2), prey)).state =
             std::uint8_t(NPCState::Resting);
     }
     MacroNpcAiRuntime rt2{};
@@ -217,7 +216,7 @@ void test_the_weak_flee_and_fighters_pursue() {
     // few to close the whole gap and RESOLVE the battle, which is a
     // different law's test.
     drive(gs2, w2, rt2, thinksPerCell);
-    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(w2.reg, hunter)).state
+    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w2), hunter)).state
               == std::uint8_t(NPCState::Chasing),
           "a fighter row pursues prey the law says it beats");
     CHECK(dist(w2, hunter, prey) < before2,
@@ -239,7 +238,7 @@ void test_neutral_squads_ignore_each_other() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 45u);
     drive(gs, w, rt, 3);
-    CHECK(!sm::macro_dead(w.reg, a) && !sm::macro_dead(w.reg, b),
+    CHECK(!sm::macro_dead(sm::store_of(w), a) && !sm::macro_dead(sm::store_of(w), b),
           "no relation below the line, no war - hostility is data");
     CHECK(roster_count(w, gs, 1u) == 2 && roster_count(w, gs, 2u) == 1,
           "nobody's roster paid for a meeting of neutrals");
@@ -261,7 +260,7 @@ void test_no_auto_battle_when_the_ground_owns_the_fight() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 46u);
     drive(gs, w, rt, 3, /*allowAutoBattle*/false);
-    CHECK(!sm::macro_dead(w.reg, a) && !sm::macro_dead(w.reg, b)
+    CHECK(!sm::macro_dead(sm::store_of(w), a) && !sm::macro_dead(sm::store_of(w), b)
               && roster_count(w, gs, 2u) == 1,
           "with the resolver gated off, a meeting resolves nothing");
 }
@@ -278,18 +277,18 @@ void test_a_victorious_leader_levels() {
     sm::store_attach(w, wStore_.get());
     const auto tsar = make_squad_at(w, NPCType::Peasant, "timaert", 1,
                                     10.0f, 10.0f, 1u, {}, NPCType::Peasant, 1);
-    auto& hp = (*sm::body_state<ecs::Pools>(w.reg, tsar));
+    auto& hp = (*sm::body_state<ecs::Pools>(sm::store_of(w), tsar));
     const int maxHp0 = hp.maxHp;
     hp.hp = hp.maxHp / 2;   // walks in wounded
     const float frac0 = float(hp.hp) / float(hp.maxHp);
 
-    CHECK(award_leader_xp(w, tsar, exp_to_next_level(1) / 2) == 0,
+    CHECK(award_leader_xp(sm::store_of(w), tsar, exp_to_next_level(1) / 2) == 0,
           "half a bar is not a level");
-    CHECK(award_leader_xp(w, tsar, exp_to_next_level(1)) >= 1,
+    CHECK(award_leader_xp(sm::store_of(w), tsar, exp_to_next_level(1)) >= 1,
           "a full bar turns into a level by the player's own curve");
-    CHECK((*sm::body_state<ecs::NpcLevel>(w.reg, tsar)).value >= 2,
+    CHECK((*sm::body_state<ecs::NpcLevel>(sm::store_of(w), tsar)).value >= 2,
           "the level landed on the leader");
-    const auto& hp1 = (*sm::body_state<ecs::Pools>(w.reg, tsar));
+    const auto& hp1 = (*sm::body_state<ecs::Pools>(sm::store_of(w), tsar));
     // Under the 1:1 economy a single level pays ONE attribute point, and the
     // role's weighted roll may legally land it outside END/Bodybuilding — so
     // the honest claim is re-derivation (never stale, never smaller), not
@@ -314,7 +313,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     sm::store_attach(w, wStore_.get());
     // The player's men are a roster on his own SQUAD ENTITY now — the same
     // shape the enemy lord below has, settled through the same doors.
-    ensure_macro_player_entity(gs, w);
+    ensure_macro_player_entity(gs, sm::store_of(w));
     Inventory* army = player_inventory(gs, *wStore_);
     creatures_push(*army, make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
     creatures_push(*army, make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
@@ -325,7 +324,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     const auto enemy = make_squad_at(w, NPCType::Bandit, "bandits", 3,
                                      10.0f, 10.0f, 9u, {31u, 32u},
                                      NPCType::Bandit, 2);
-    (*sm::body_state<ecs::NpcInventory>(w.reg, enemy)).inv.add("wood", 4);
+    (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), enemy)).inv.add("wood", 4);
 
     // The player WINS: one of his men fell, he limps out at 60%; the enemy
     // is wiped — roster and leader both.
@@ -349,7 +348,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
           "the player's fallen soldier left the army by name");
     CHECK(player_pools(gs, *wStore_)->hp == 60,
           "the player's wound landed as the fraction, in THE store — his squad's Pools");
-    CHECK(roster_count(w, gs, 9u) == 0 && sm::macro_dead(w.reg, enemy),
+    CHECK(roster_count(w, gs, 9u) == 0 && sm::macro_dead(sm::store_of(w), enemy),
           "the enemy died through the ledger and the tracked-death shape");
     CHECK(player_inventory(gs, *wStore_)->count("wood") == 4,
           "the fallen owner's goods landed in the player's own bag");
@@ -364,7 +363,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     ecs::World w2;
     auto w2Store_ = sm::make_macro_store();
     sm::store_attach(w2, w2Store_.get());
-    ensure_macro_player_entity(gs2, w2);
+    ensure_macro_player_entity(gs2, sm::store_of(w2));
     Inventory* army2 = player_inventory(gs2, *w2Store_);
     creatures_push(*army2,
                    make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
@@ -388,7 +387,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     CHECK(player_pools(gs2, *w2Store_)->hp >= 1,
           "while one of his men stands, defeat wounds the player - "
           "never kills him");
-    CHECK(!sm::macro_dead(w2.reg, victor),
+    CHECK(!sm::macro_dead(sm::store_of(w2), victor),
           "the victor rides on");
 }
 
@@ -424,7 +423,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     spec.waypoints[2] = 20; spec.waypoints[3] = 20;   // and back
 
     sm::MacroStore& st = sm::store_of(w);
-    const MacroHandle leader = spawn_squad(gs, w, st, absent, spec);
+    const MacroHandle leader = spawn_squad(gs, st, absent, spec);
     CHECK_OR_RETURN(st.valid(leader),
                     "the spec became a squad (одна дверь рождения отвечает "
                     "хэндлом — слот store несёт все колонки по построению)");
@@ -454,7 +453,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     // A second squad continues the ordinal line — two squads, two names.
     SquadSpec other = spec;
     other.x = 40;
-    const MacroHandle second = spawn_squad(gs, w, st, absent, other);
+    const MacroHandle second = spawn_squad(gs, st, absent, other);
     CHECK_OR_RETURN(st.valid(second), "the second squad spawned");
     CHECK(st.spawnId[second.slot].index != st.spawnId[leader.slot].index,
           "each created squad gets its own save-stable ordinal");
@@ -468,7 +467,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     // маршруту утверждён выше (маршрут из спеки), здесь он не переутверждается
     // сознательно: эта секция про ДОМ приказа, не про ноги.
     const std::uint32_t ord = st.spawnId[leader.slot].index;
-    CHECK(sm::order_squad_route(w, ord, ecs::SquadOrders{}),
+    CHECK(sm::order_squad_route(sm::store_of(w), ord, ecs::SquadOrders{}),
           "дверь нашла сквад по его ординалу");
     CHECK(st.orders[leader.slot].waypointCount == 0,
           "«released to its own life» видно ЧИТАТЕЛЮ: колонка пуста");
@@ -476,7 +475,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     hand.waypointCount = 2;
     hand.waypoints[0] = 31; hand.waypoints[1] = 29;
     hand.waypoints[2] = 20; hand.waypoints[3] = 20;
-    CHECK(sm::order_squad_route(w, ord, hand), "приказ рукой принят");
+    CHECK(sm::order_squad_route(sm::store_of(w), ord, hand), "приказ рукой принят");
     const auto& live = st.orders[leader.slot];
     CHECK(live.waypointCount == 2 && live.waypoints[0] == 31
               && live.waypoints[1] == 29 && live.waypoints[2] == 20,
@@ -484,7 +483,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     // Негативный контроль: ординала 0xFFFFFFFF в мире нет (эмитент
     // монотонный и начинается с нуля), и отказ обязан быть ПОЛНЫМ — дверь
     // не трогает ничей приказ, промахнувшись адресом.
-    CHECK(!sm::order_squad_route(w, 0xFFFFFFFFu, ecs::SquadOrders{}),
+    CHECK(!sm::order_squad_route(sm::store_of(w), 0xFFFFFFFFu, ecs::SquadOrders{}),
           "негативный контроль: неизвестный ординал получает отказ");
     CHECK(st.orders[leader.slot].waypointCount == 2,
           "...и отказ ничего не переписал");
@@ -550,15 +549,15 @@ void test_the_leaders_training_reads_at_the_new_doors() {
             }
         }
         CHECK_OR_RETURN(trainedRank > 0, "the scan found a trained forager");
-        const entt::entity forager = make_squad_at(
+        const sm::MacroHandle forager = make_squad_at(
             w, NPCType::Peasant, "timaert", lvl, 10.0f, 10.0f, ord,
             {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u}, NPCType::Peasant, 1);
-        const entt::entity untrained = make_squad_at(
+        const sm::MacroHandle untrained = make_squad_at(
             w, NPCType::Guard, "timaert", 3, 20.0f, 20.0f, 999u,
             {11u, 12u, 13u, 14u, 15u, 16u, 17u, 18u}, NPCType::Guard, 1);
         // ЗВЕРЬ В РОСТЕРЕ — ТРЕТИЙ ЛАГЕРЬ: его строка несёт kNpcUpkeepNone,
         // то есть жалованья он не берёт, а рацион по своей строке — берёт.
-        const entt::entity beasts = make_squad_at(
+        const sm::MacroHandle beasts = make_squad_at(
             w, NPCType::Peasant, "timaert", 1, 30.0f, 30.0f, 777u,
             {21u, 22u, 23u, 24u, 25u, 26u, 27u, 28u}, NPCType::Wolf, 1);
         CHECK(make_character_sheet(NPCType::Guard, 3, leader_sheet_seed(999u))
@@ -570,24 +569,24 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         // judges BOTH needs whole, and an uncovered wage would bleed the
         // roster before the harch law under test ever showed.
         const int stock = 8 * kDaysPerSeason * 2;
-        for (const entt::entity e : {forager, untrained, beasts}) {
-            auto& bag = (*sm::body_state<ecs::NpcInventory>(w.reg, e)).inv;
+        for (const sm::MacroHandle e : {forager, untrained, beasts}) {
+            auto& bag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
             bag.add("food", stock);
             bag.add("coin_empire_copper", 8 * 3 * kDaysPerSeason * 4);
         }
         MacroWorld mw{.gs = &gs, .world = &w};
         CHECK(squad_season_window(mw, 2) == 0,
               "no window off the boundary (negative control)");
-        CHECK((*sm::body_state<ecs::NpcInventory>(w.reg, untrained)).inv.count("food")
+        CHECK((*sm::body_state<ecs::NpcInventory>(sm::store_of(w), untrained)).inv.count("food")
                   == stock,
               "an ordinary day draws no harch at all");
         squad_season_window(mw, 1);
         const int foragerLeft =
-            (*sm::body_state<ecs::NpcInventory>(w.reg, forager)).inv.count("food");
+            (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), forager)).inv.count("food");
         const int untrainedLeft =
-            (*sm::body_state<ecs::NpcInventory>(w.reg, untrained)).inv.count("food");
+            (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), untrained)).inv.count("food");
         const int beastsLeft =
-            (*sm::body_state<ecs::NpcInventory>(w.reg, beasts)).inv.count("food");
+            (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), beasts)).inv.count("food");
         // Восемь душ × рацион строки × сезон — счёт читается прямо из
         // таблицы существ, а не из литерала теста.
         const int draw = 8 * npc_board_per_day(NPCType::Peasant)

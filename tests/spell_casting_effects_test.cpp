@@ -98,7 +98,7 @@ std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
 }
 
 float hp_of(sm::ecs::World& w, entt::entity e) {
-    const auto* hp = sm::body_state<sm::ecs::Pools>(w.reg, e);
+    const auto* hp = w.reg.try_get<sm::ecs::Pools>(e);
     return hp ? hp->hp : -1.0f;
 }
 

@@ -19,8 +19,7 @@ namespace sm {
 // поля нечего, а скан по ординалу остался ровно один, на границе резолва
 // ниже, где биты ещё не назначены.)
 
-void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
-    MacroStore& st = store_of(world);
+void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
 
     // ── The player's squad: an ORDINARY macro squad ────────────────────────
     // Owner's ruling, 2026-08-27: «игрок = обычный сквад, просто с флажком

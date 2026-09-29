@@ -1,15 +1,14 @@
 // Свидетель ЗАКОНА ПОРЯДКА ОБХОДА (macro/squad_walk.h, эпик 2 шаг 1а/1в):
-// обход сквадов идёт по ординалу рождения, а не по внутренностям EnTT.
-// С флипа 1в ординал живёт колонкой store, фильтр — предикат по слоту.
+// обход сквадов идёт по ординалу рождения, а не по порядку слотов store
+// (кластер 7: моста нет, население — сами слоты).
 //
 // Негативный контроль обязан РЕАЛЬНО стрелять (тестовый закон §8 п.6):
-// смерть в середине пула перемешивает его swap-удалением, и сырой view
-// обязан выдать инверсию ординалов — иначе контроль ничего не детектирует
-// и сортировка недоказуема.
+// смерть в середине + дорождение переиспользуют слоты (freelist LIFO), и
+// сырой слот-порядок обязан выдать инверсию ординалов — иначе контроль
+// ничего не детектирует и сортировка недоказуема.
 #include "check.h"
 
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "macro/squad_walk.h"
 #include "macro/store.h"
 
@@ -18,51 +17,39 @@
 
 int main() {
     using namespace sm;
-    ecs::World w;
     auto store = make_macro_store();
-    store_attach(w, store.get());
     MacroStore& st = *store;
 
     // Рождения 0..7 в порядке ординала — как единственная дверь make_npc.
     auto born_one = [&](std::uint32_t ord) {
         const MacroHandle h = store_birth(st);
-        auto e = w.reg.create();
-        w.reg.emplace<ecs::MacroSlot>(e, h.slot);
         st.spawnId[h.slot] = ecs::MacroSpawnId{ord};
-        return e;
+        return h;
     };
-    std::vector<entt::entity> born;
+    std::vector<MacroHandle> born;
     for (std::uint32_t ord = 0; ord < 8; ++ord) born.push_back(born_one(ord));
-    // Смерти в середине и в голове — swap-удаление тащит хвост пула на их
-    // места, порядок вставки ломается. Слот умирает ВМЕСТЕ с мостом.
-    auto kill = [&](entt::entity e) {
-        const std::uint16_t slot = slot_of(w.reg, e);
-        store_death(st, MacroHandle{slot, st.generation[slot]});
-        w.reg.destroy(e);
-    };
-    kill(born[0]);
-    kill(born[3]);
+    // Смерти в середине и в голове — freelist переиспользует их слоты, и
+    // порядок рождения перестаёт совпадать с порядком слотов.
+    store_death(st, born[0]);
+    store_death(st, born[3]);
     // Дорождение после смертей (ординалы монотонны, слоты переиспользуются).
     for (std::uint32_t ord = 8; ord < 11; ++ord) born_one(ord);
 
-    auto view = w.reg.view<ecs::MacroSlot>();
-
-    // ── НЕГАТИВНЫЙ КОНТРОЛЬ: сырой порядок view НЕ ординальный ──────────
+    // ── НЕГАТИВНЫЙ КОНТРОЛЬ: сырой слот-порядок НЕ ординальный ──────────
     std::vector<std::uint32_t> raw;
-    for (auto e : view)
-        raw.push_back(st.spawnId[w.reg.get<ecs::MacroSlot>(e).slot].index);
+    for (std::size_t s32 = 0; s32 < kMacroEntityCap; ++s32)
+        if (st.alive[s32] != 0) raw.push_back(st.spawnId[s32].index);
     CHECK(raw.size() == 9, "в пуле 9 живых: 8 − 2 смерти + 3 дорождения");
     int rawInversions = 0;
     for (std::size_t i = 1; i < raw.size(); ++i)
         if (raw[i - 1] > raw[i]) ++rawInversions;
     CHECK(rawInversions > 0,
-          "контроль обязан стрелять: swap-удаление ломает порядок пула, "
-          "иначе сортировке нечего доказывать");
+          "контроль обязан стрелять: переиспользование слота ломает "
+          "слот-порядок, иначе сортировке нечего доказывать");
 
     // ── ЗАКОН: дверь выдаёт строго возрастающие ординалы ────────────────
     std::vector<SquadWalkEntry> order;
-    collect_squads_by_ordinal(w.reg, st, view, order,
-                              [](std::uint16_t) { return true; });
+    collect_squads_by_ordinal(st, order, [](std::uint16_t) { return true; });
     CHECK(order.size() == raw.size(), "дверь не теряет и не дублирует");
     int samples = 0, misordered = 0;
     for (std::size_t i = 1; i < order.size(); ++i) {
@@ -71,24 +58,22 @@ int main() {
     }
     CHECK(samples > 0 && misordered == 0,
           "обход по ординалу: строго возрастает, без равных");
-    // Сущности двери — те же, что в view (ординал ведёт к своей энтити).
+    // Слоты двери — те же, что в store (ординал ведёт к своему слоту).
     int matched = 0;
     for (const SquadWalkEntry& sw : order)
-        if (st.spawnId[slot_of(w.reg, sw.e)].index == sw.ordinal) ++matched;
-    CHECK(matched == int(order.size()), "пара ординал↔энтити не разъехалась");
+        if (st.spawnId[sw.slot].index == sw.ordinal) ++matched;
+    CHECK(matched == int(order.size()), "пара ординал↔слот не разъехалась");
 
     // ── Предикат фильтрует по слоту (замена exclude<Dead>) ──────────────
-    st.dead[slot_of(w.reg, order[0].e)] = 1;
+    st.dead[order[0].slot] = 1;
     std::vector<SquadWalkEntry> living;
     collect_squads_by_ordinal(
-        w.reg, st, view, living,
-        [&](std::uint16_t slot) { return st.dead[slot] == 0; });
+        st, living, [&](std::uint16_t slot) { return st.dead[slot] == 0; });
     CHECK(living.size() + 1 == order.size(),
           "предикат снял ровно одного мёртвого");
 
     // ── Повторный сбор в тот же скрэтч — идемпотентен (член рантайма) ───
-    collect_squads_by_ordinal(w.reg, st, view, order,
-                              [](std::uint16_t) { return true; });
+    collect_squads_by_ordinal(st, order, [](std::uint16_t) { return true; });
     CHECK(order.size() == raw.size(), "повторный сбор не накапливает");
 
     return sm::test::report("squad_walk_test");

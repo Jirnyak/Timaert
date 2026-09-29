@@ -545,9 +545,9 @@ static_assert(sizeof(MacroNpcRuntime) == 92,
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
 // in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one
-// identity that survives save/load. (Possession persists WITHOUT it since
-// v87: PlayerTag rides the macro snapshot as the possessed record's own
-// honest byte — no ordinal store, no re-derivation after load.)
+// identity that survives save/load. (Possession persists WITHOUT it: the
+// player flag rides the macro snapshot as the record's own playerFlag
+// column (5б) — no ordinal store, no re-derivation after load.)
 //
 // AND IT IS SAVE FORMAT. Since v23 the macro-ECS snapshot serializes every
 // persistent macro NPC whole (macro/macro_snapshot.h → save.cpp
@@ -556,13 +556,6 @@ static_assert(sizeof(MacroNpcRuntime) == 92,
 // LAYOUT is the format. A "runtime-only" field added to any of them is not
 // free: it changes the blob and pays a kSaveVersion bump like Skills does.
 struct MacroSpawnId { std::uint32_t index = 0; };
-
-// ── МОСТ ПЕРЕЕЗДА НА ГЛАДКУЮ ПАМЯТЬ (эпик 2 шаг 1в, M-106) ────────────────
-// Слот макро-сквада в MacroStore (macro/store.h): ключом связей пока
-// остаётся entt-энтити, а СОСТОЯНИЕ лежит колонками store по этому слоту.
-// ВРЕМЕННЫЙ ЖИЛЕЦ: умирает в шаге 1е вместе с макро-компонентами EnTT,
-// когда ссылки переедут на MacroHandle {slot, gen}.
-struct MacroSlot { std::uint16_t slot = 0xFFFFu; };
 
 // The PLAYER's squad ordinal — reserved at the top of the space so it can
 // never collide with the 0,1,2… the world spawner hands out. His squad is an
@@ -732,7 +725,6 @@ TIMAERT_ROW(sm::ecs::Sprite);
 TIMAERT_ROW(sm::ecs::LightEmitter);
 TIMAERT_ROW(sm::ecs::MacroNpcRuntime);
 TIMAERT_ROW(sm::ecs::MacroSpawnId);
-TIMAERT_ROW(sm::ecs::MacroSlot);
 TIMAERT_ROW(sm::ecs::SquadOrders);
 TIMAERT_ROW(sm::ecs::DesignCharacterTag);
 TIMAERT_ROW(sm::ecs::Structure);

@@ -29,6 +29,7 @@
 namespace sm {
 
 struct GameState;
+struct MacroStore;
 
 struct MacroNpcRecord {
     ecs::MacroSpawnId    spawnId{};
@@ -89,12 +90,12 @@ struct MacroNpcRecord {
 // Flatten every persistent macro NPC (the view is keyed by MacroSpawnId — the
 // component only make_npc emplaces) into records, sorted by ordinal so the
 // payload bytes are deterministic for one same world state.
-std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w);
+std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st);
 
 // Re-embody the records in an (already cleared of macro NPCs) registry.
 // Also self-heals gs.nextMacroSpawnOrdinal to stay ABOVE every restored
 // ordinal — the counter must never reissue a living identity.
 void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
-                       ecs::World& w, GameState& gs);
+                       MacroStore& st, GameState& gs);
 
 } // namespace sm

@@ -163,10 +163,6 @@ inline void refresh_squad_carry(MacroStore& st, MacroHandle leader) {
     }
     rt.carryCap = rt.carryPerSoul * souls;
 }
-// Entt-лицо — шим моста (умирает в 1е); звонящие — макро-лидеры.
-inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
-    refresh_squad_carry(store_of(w), handle_of(w.reg, leader));
-}
 
 // Owner ruling 3 (CANON S4/S13 (бывший macrosim.md)): kill the leader and the squad lives on,
 // FACELESS, until the fight ends — only then do the survivors stop being a
@@ -205,10 +201,6 @@ inline int drain_dead_leader_squads(MacroStore& st, Inventory& deserterPool) {
     }
     return moved;
 }
-// Entt-лицо — шим моста (умирает в 1е).
-inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
-    return drain_dead_leader_squads(store_of(w), deserterPool);
-}
 
 // (`dead_rosters_remain` вырезана 2026-09-22: её комментарий утверждал «тик-
 // драйверы спрашивают это», а вызовов не было НИ ОДНОГО — ни одного с тех
@@ -237,7 +229,7 @@ inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
 // standing past a cap, CANON S26). The player's squad is never swept: his
 // death is a game-over screen, not a disappearance. Returns how many left
 // the map.
-inline int destroy_dead_macro_squads(ecs::World& w, const GameState& gs,
+inline int destroy_dead_macro_squads(MacroStore& st, const GameState& gs,
                                      std::int64_t* lootPoolValue = nullptr) {
     // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
     // (destroy под собственным view незаконен), закон порядка достался ему
@@ -247,7 +239,6 @@ inline int destroy_dead_macro_squads(ecs::World& w, const GameState& gs,
     // прежний exclude<SubworldTag> был рудиментом: тег носят только тела
     // сцены, макро-сквад его не носил никогда (emplace один —
     // sub/spawn.cpp, рождение тела).
-    MacroStore& st = store_of(w);
     const MacroHandle flag = player_flag_handle(gs);
     const bool flagLive = st.valid(flag);
     std::vector<SquadWalkEntry> snapshot;
@@ -298,8 +289,8 @@ inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
 // У ПРИКАЗА ОДИН ДОМ. Маршрут живёт колонкой `orders` store, и читает его мир
 // той же дверью `body_state` (`npc_ai.cpp` лестница поведения). Граница НЕ
 // СМЕЕТ иметь своего дома для приказа: до 2026-09-26 консоль писала
-// entt-компоненту `ecs::SquadOrders`, недостижимую по построению (первая ветвь
-// `body_state` отвечает колонкой всякому носителю `MacroSlot`), поэтому команда
+// entt-компоненту `ecs::SquadOrders`, недостижимую по построению (дверь
+// `body_state` отвечала колонкой всякому носителю слота), поэтому команда
 // `squad_orders` печатала успех и не меняла мир с флипа 1в — второй ответ на
 // один вопрос мира (DOD п.6), проживший сутки ровно потому, что устаревший
 // путь не снесли в тот же день (AGENTS §6 «легаси не живёт»).
@@ -314,11 +305,6 @@ inline bool order_squad_route(MacroStore& st, std::uint32_t ordinal,
     if (!st.valid(h)) return false;
     st.orders[h.slot] = route;
     return true;
-}
-// Entt-лицо — шим моста (умирает в 1е).
-inline bool order_squad_route(ecs::World& w, std::uint32_t ordinal,
-                             const ecs::SquadOrders& route) {
-    return order_squad_route(store_of(w), ordinal, route);
 }
 
 // ── THE SHEET OF A MACRO BODY (owner verdict 2026-09-10, ММОРПГ-модель) ───
@@ -345,25 +331,10 @@ inline bool sheet_owned_at(const MacroStore& st, std::uint16_t slot) {
 // The OWNED sheet, when this body has one — the writable store a level-up
 // or a future teacher mutates. nullptr = transient (derive instead).
 inline CharacterSheet* owned_sheet(entt::registry& reg, entt::entity e) {
-    // ФЛИП 1в: колонка листа есть у ВСЕХ (гладкая память), но ЗАКОН
-    // ВЛАДЕНИЯ на структурном шаге — прежний: листом ЖИВУТ именной род,
-    // анкета стола и сквад игрока; транзиент деривирует по уровню (пути
-    // роста XP расходятся ровно этим предикатом — пойман паритетом с.18:
-    // третий раунд авто-боя бил другими числами). Снятие дуализма — «у
-    // каждого своя анкета качается» (ММОРПГ-вердикт 2026-09-25) — идёт
-    // ОТДЕЛЬНЫМ поведенческим шагом после паритетного флипа.
-    const auto* ms = reg.try_get<ecs::MacroSlot>(e);
-    if (!ms) return reg.try_get<CharacterSheet>(e);   // тело сцены — своё
-    MacroStore& st = store_of(reg);
-    // Тег-страховка умерла с тегами (1е кластер 5): сквад игрока владеет
-    // листом своей КОЛОНКОЙ — зарезервированный ординал входит в
-    // sheet_owned_at; носимое тело отвечает дверьми игрока (player_sheet),
-    // не этим предикатом.
-    const bool owns = sheet_owned_at(st, ms->slot);
-    return owns ? &st.sheet[ms->slot] : nullptr;
-}
-inline CharacterSheet* owned_sheet(ecs::World& w, entt::entity e) {
-    return owned_sheet(w.reg, e);
+    // СЦЕНИЧЕСКОЕ лицо (пережило 1е кластер 7): тело сцены «само себе
+    // запись» — владеемый лист есть его компонент; макро-сквад отвечает
+    // (st, h)-формой ниже, моста больше нет.
+    return reg.try_get<CharacterSheet>(e);
 }
 
 // Владеемый лист по хэндлу (1е, каскад слот-нативных дверей): тот же ОДИН
@@ -378,17 +349,15 @@ inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
 // birth roll a transient IS. By value — the derive path builds one anyway,
 // and no caller may hold a reference across a tick (ecs-ref grabla).
 inline CharacterSheet sheet_of(entt::registry& reg, entt::entity e) {
+    // Сценическое лицо (кластер 7): компоненты тела сцены напрямую.
     if (const CharacterSheet* own = owned_sheet(reg, e)) return *own;
-    const auto* kind = body_state<ecs::NPCKind>(reg, e);
-    const auto* lvl  = body_state<ecs::NpcLevel>(reg, e);
-    const auto* sid  = body_state<ecs::MacroSpawnId>(reg, e);
+    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    const auto* lvl  = reg.try_get<ecs::NpcLevel>(e);
+    const auto* sid  = reg.try_get<ecs::MacroSpawnId>(e);
     const NPCType type = kind && kind->type < std::uint16_t(NPCType::Count)
         ? NPCType(std::uint8_t(kind->type)) : NPCType::Peasant;
     return make_character_sheet(type, lvl ? int(lvl->value) : 1,
                                 leader_sheet_seed(sid ? sid->index : 0u));
-}
-inline CharacterSheet sheet_of(ecs::World& w, entt::entity e) {
-    return sheet_of(w.reg, e);
 }
 
 // Лист по хэндлу — та же онтология, целиком по колонкам (без entt; после 1е
@@ -433,19 +402,14 @@ inline BonusTotals standing_bonuses_sum(const ecs::BodyEquipment* eq,
     return t;
 }
 inline BonusTotals standing_bonuses_of(entt::registry& reg, entt::entity e) {
-    const auto* eq   = body_state<ecs::BodyEquipment>(reg, e);
-    const auto* bag  = body_state<ecs::NpcInventory>(reg, e);
-    const auto* book = body_state<SpellBook>(reg, e);
+    // Сценическое лицо (кластер 7): гир и книга — компоненты тела сцены.
+    const auto* eq   = reg.try_get<ecs::BodyEquipment>(e);
+    const auto* bag  = reg.try_get<ecs::NpcInventory>(e);
+    const auto* book = reg.try_get<SpellBook>(e);
     return standing_bonuses_sum(eq, bag ? &bag->inv : nullptr, book,
                                 book ? sheet_of(reg, e).skills : Skills{});
 }
-// Registry face of the same door (the sheet_of idiom): the subworld seam holds
-// a registry, not a World, and it must ask this question of a record.
-inline BonusTotals standing_bonuses_of(ecs::World& w, entt::entity e) {
-    return standing_bonuses_of(w.reg, e);
-}
-// Та же дверь по хэндлу — целиком по колонкам. Entt-лицо выше ПЕРЕЖИВЁТ 1е:
-// тела сцены «сами себе запись» несут гир и книгу своими компонентами.
+// Та же дверь по хэндлу — целиком по колонкам.
 inline BonusTotals standing_bonuses_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h)) return BonusTotals{};
     return standing_bonuses_sum(&st.gear[h.slot], &st.inventory[h.slot].inv,
@@ -459,9 +423,6 @@ inline BonusTotals standing_bonuses_of(const MacroStore& st, MacroHandle h) {
 // numbers (bars, damage, march, carry, prices, XP, the daily bread law)
 // walks through here; writes (level-up, learning) go to the OWNED base
 // sheet, never to this copy.
-inline CharacterSheet effective_sheet_of(ecs::World& w, entt::entity e) {
-    return effective_sheet(sheet_of(w, e), standing_bonuses_of(w, e));
-}
 // Эффективный лист по хэндлу — та же композиция, оба слагаемых по колонкам.
 inline CharacterSheet effective_sheet_of(const MacroStore& st, MacroHandle h) {
     return effective_sheet(sheet_of(st, h), standing_bonuses_of(st, h));
@@ -570,17 +531,6 @@ inline std::uint32_t record_deed(MacroStore& st, GameState& gs,
     return record_deed_filed(st, gs, fact);
 }
 
-// Entt-лица — шимы моста (умирают в 1е).
-inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
-                                 entt::entity subject = entt::null) {
-    return record_deed(store_of(w), gs, fact,
-                       subject != entt::null && w.reg.valid(subject)
-                           ? try_handle_of(w.reg, subject) : MacroHandle{});
-}
-inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
-                                 MacroHandle subject) {
-    return record_deed(store_of(w), gs, fact, subject);
-}
 
 // ── Auto-battle glue: entity ⇄ the pure resolver ──────────────────────────
 
@@ -642,11 +592,6 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     }
     return s;
 }
-// Entt-лицо — ШИМ моста (умирает в 1е): все звонящие держат макро-сквады
-// (перепись с.20: main.cpp ×7, npc_ai.cpp ×14 — тел сцены нет), закон один.
-inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
-    return auto_battle_side_of(store_of(w), handle_of(w.reg, e));
-}
 
 // Pay a leader's victory. XP flows through the ONE reward law
 // (npc_xp_reward) and is consumed by the SAME curve the player climbs
@@ -662,9 +607,7 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
 // КОПЯТСЯ нетраченными до контента трат (учителя/ИИ-траты — вердикт
 // «копить»); уровень на карте и потолки полос следуют за листом через ту
 // же одну дверь пересборки. Транзиент — прежний бросок (award_leader_xp
-// ниже): его лист деривируется, хранить нечего. Определена ПОСЛЕ
-// award_leader_xp — форвард здесь, тело ниже по файлу.
-inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp);
+// ниже): его лист деривируется, хранить нечего.
 
 inline int award_leader_xp(MacroStore& st, MacroHandle h, int xp) {
     if (xp <= 0 || !st.valid(h)) return 0;
@@ -706,10 +649,6 @@ inline int award_leader_xp(MacroStore& st, MacroHandle h, int xp) {
     }
     return gained;
 }
-// Entt-лицо — ШИМ моста (умирает в 1е); звонящие — макро-лидеры.
-inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
-    return award_leader_xp(store_of(w), handle_of(w.reg, e), xp);
-}
 
 inline void award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
     if (xp <= 0 || !st.valid(h)) return;
@@ -736,12 +675,6 @@ inline void award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
         refresh_body_from_sheet(st.pools[slot], &st.runtime[slot],
                                 effective_sheet_of(st, h), type);
     }
-}
-// Entt-лицо — ШИМ моста (умирает в 1е); гард нулевого лидера остаётся у
-// шима: звонящие (settle, жнец, игрок) законно приходят с entt::null.
-inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp) {
-    if (xp <= 0 || leader == entt::null || !w.reg.valid(leader)) return;
-    award_kill_xp(store_of(w), handle_of(w.reg, leader), xp);
 }
 
 // ── The settling halves — one set of doors for EVERY consumer ──────────────
@@ -787,10 +720,6 @@ static_assert(BattleFact{}.victim == kMacroHandleNoneBits
 // The faction a macro body wears — its INSTANCE colours (Inc 2), not its row.
 inline const char* squad_faction_id(const MacroStore& st, MacroHandle h) {
     return st.valid(h) ? faction_id_for_index(st.kind[h.slot].factionIdx) : "";
-}
-// Entt-лицо — шим моста (умирает в 1е).
-inline const char* squad_faction_id(ecs::World& w, entt::entity e) {
-    return squad_faction_id(store_of(w), try_handle_of(w.reg, e));
 }
 
 // СПОЙЛОВ ИЗ ВОЗДУХА БОЛЬШЕ НЕТ (M-139, вердикт владельца 2026-09-26).
@@ -866,11 +795,6 @@ inline void settle_leader_fraction(MacroStore& st, MacroHandle h,
         return;
     }
     hp.hp = std::clamp(int(float(hp.maxHp) * fraction), 1, hp.maxHp);
-}
-// Entt-лицо — шим моста (умирает в 1е).
-inline void settle_leader_fraction(ecs::World& w, entt::entity e,
-                                   float fraction) {
-    settle_leader_fraction(store_of(w), try_handle_of(w.reg, e), fraction);
 }
 
 // What the fallen of `loser` are worth, through the ONE reward law. Read
@@ -1027,13 +951,6 @@ inline void settle_auto_battle(const MacroWorld& mw,
                                     o.winner == 0 ? o.leaderFractionA
                                                   : o.leaderFractionB));
 }
-// Entt-лицо — шим моста (умирает в 1е); звонящие — макро-сквады.
-inline void settle_auto_battle(const MacroWorld& mw,
-                               entt::entity ea, entt::entity eb,
-                               const AutoBattleOutcome& o) {
-    auto& reg = mw.world->reg;
-    settle_auto_battle(mw, handle_of(reg, ea), handle_of(reg, eb), o);
-}
 
 // Settle the PLAYER's auto-resolve against a macro squad (Inc 6 — the M&B
 // button). The player is the same shape as any leader — and «the player» is
@@ -1140,14 +1057,6 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
         award_kill_xp(st, playerH, xp);
     }
     return xp;
-}
-// Entt-лицо — шим моста (умирает в 1е); враг — макро-сквад.
-inline int settle_player_auto_battle(const MacroWorld& mw,
-                                     entt::entity enemy,
-                                     const AutoBattleOutcome& o,
-                                     bool playerIsA) {
-    return settle_player_auto_battle(mw, handle_of(mw.world->reg, enemy),
-                                     o, playerIsA);
 }
 
 } // namespace sm

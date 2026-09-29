@@ -38,8 +38,8 @@ struct WorldGenParams {
     // The load path restores people from the macro snapshot (Session 17) —
     // only a NEW world gets a genesis of squads.
     bool spawnMacroNpcs = true;
-    // Place the player squad at the first city and materialise his PlayerTag
-    // entity. The starter kit is NOT dealt here — that is chargen, app-side.
+    // Place the player squad at the first city and raise the flagged
+    // record. The starter kit is NOT dealt here — that is chargen, app-side.
     bool anchorPlayer = true;
     // stderr [worldgen]/[roads] report cards (the TIMAERT_BOOT_TRACE channel).
     bool trace = false;

@@ -150,7 +150,7 @@ void test_spawn_births_the_row() {
     // допущение «проповедник родился нулевым» и есть тот род надежды, который
     // §8 п.11 запрещает свидетелю.
     const std::uint32_t ord = wStore_->spawnId[e.slot].index;
-    CHECK(sm::order_squad_route(w, ord, ecs::SquadOrders{}),
+    CHECK(sm::order_squad_route(sm::store_of(w), ord, ecs::SquadOrders{}),
           "приказ снят дверью мира, а не компонентой мимо колонки");
     CHECK(wStore_->orders[e.slot].waypointCount == 0,
           "и снятие видно читателю: маршрута в колонке больше нет");
@@ -186,10 +186,10 @@ void test_snapshot_carries_the_ordinal() {
     plain.y = 30;
     plain.factionIndex = faction_index("bandits");
     CHECK_OR_RETURN(sm::store_of(w).valid(
-                        spawn_squad(gs, w, sm::store_of(w), terrain, plain)),
+                        spawn_squad(gs, sm::store_of(w), terrain, plain)),
                     "the plain control squad spawned");
 
-    const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(w);
+    const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(*wStore_);
     int designRecords = 0, plainRecords = 0;
     for (const MacroNpcRecord& r : snap) {
         if (r.designOrdinal >= 0) {
@@ -209,7 +209,7 @@ void test_snapshot_carries_the_ordinal() {
 
     sm::store_attach(w2, w2Store_.get());
     GameState gs2 = make_world();
-    restore_macro_ecs(snap, w2, gs2);
+    restore_macro_ecs(snap, *w2Store_, gs2);
     const sm::MacroHandle back = find_design(w2, 0);
     CHECK_OR_RETURN(w2Store_->valid(back),
                     "restore re-stamped the design tag from the record");

@@ -291,7 +291,7 @@ namespace sm::ui
             f.x = std::int16_t(pc ? ecs::cell_x(*pc, gs.mapW) : 0);
             f.y = std::int16_t(pc ? ecs::cell_y(*pc, gs.mapW) : 0);
             f.amount = gave + took;
-            record_deed(w, gs, f);
+            record_deed(store_of(w), gs, f, MacroHandle{});
         }
 
 
@@ -319,7 +319,7 @@ namespace sm::ui
             f.x = std::int16_t(x);
             f.y = std::int16_t(y);
             f.amount = gave + took;
-            record_deed(world, gs, f);
+            record_deed(store_of(world), gs, f, MacroHandle{});
         }
 
         // (Колонка настроения в цене вырезана 2026-09-19 вместе с самим

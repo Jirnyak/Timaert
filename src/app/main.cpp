@@ -301,7 +301,7 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     // crosses the bar and becomes a figure, after which its deeds go into the
     // annals. Before that they are weather — which is exactly why sixteen
     // thousand bands do not drown the world's memory.
-    sm::record_deed(app.ecs, app.gs, wf, killerH);
+    sm::record_deed(sm::store_of(app.ecs), app.gs, wf, killerH);
 }
 
 // THE player's bag, from his squad entity (macro/player_entity.h). A world
@@ -1340,7 +1340,7 @@ std::vector<sm::MacroNpcRecord> stage_save_state(App& app) {
               app.gs.logicNodesRegistered.end());
     app.gs.logicNodesActive = app.logic.active_ids();
     std::sort(app.gs.logicNodesActive.begin(), app.gs.logicNodesActive.end());
-    return sm::snapshot_macro_ecs(app.ecs);
+    return sm::snapshot_macro_ecs(*app.macroStore);
 }
 
 bool save_game_checked(App& app, bool autosave = false) {
@@ -1859,7 +1859,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // (spawnMacroNpcs=false), so the registry holds no macro NPCs yet —
     // restore the saved world's people instead of the seed's. A killed lord
     // stays killed, a levelled leader keeps his campaigns.
-    sm::restore_macro_ecs(loadedMacro, app.ecs, app.gs);
+    sm::restore_macro_ecs(loadedMacro, *app.macroStore, app.gs);
     // Кэши игрока — из колонок СВЕЖЕГО store (5б): слоты при restore
     // раздались по порядку записей, биты из прошлой жизни мертвы; истина
     // «кто игрок» приехала колонкой playerFlag записей.
@@ -1869,12 +1869,12 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // Camera anchor moved BELOW ensure_: the restored flag holder is the
     // anchor, and it exists only after the restore has been healed over.
     // The restore above brought the player's squad AND the flag back verbatim
-    // (v87: PlayerTag is an honest byte of the possessed record — no
+    // (5б: колонка playerFlag — honest byte of the record — no
     // re-derivation, no second store). ensure_ is a heal pass here, not a
     // creator: genesis anchored nobody, so the squad the doors find is the
     // restored one — the very defect SAVE-5 named was this call finding a
     // load-path husk instead.
-    sm::ensure_macro_player_entity(app.gs, app.ecs);
+    sm::ensure_macro_player_entity(app.gs, *app.macroStore);
     if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.gs, *app.macroStore)) {
         app.camX = app.camTargetX = pv->vx + 0.5f;
         app.camY = app.camTargetY = pv->vy + 0.5f;
@@ -3520,11 +3520,11 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     } else {
         if (allowInput) poll_movement(app, dt);
         update_camera(app, dt);
-        // macro-4a: keep the player's PlayerTag flag alive + synced on the macro
+        // macro-4a: keep the player's flag record alive + synced on the macro
         // map. This recreates it after any subworld leave() (which tears down all
-        // PlayerTag entities, from any of the ~7 leave call sites) and projects
+        // flagged records, from any of the ~7 leave call sites) and projects
         // the just-finalised player scalar onto its Position each macro tick.
-        sm::ensure_macro_player_entity(app.gs, app.ecs);
+        sm::ensure_macro_player_entity(app.gs, *app.macroStore);
         sm::MacroWorld macroTickWorld = macro_world(app);
         stats.timeTick = sm::tick_world(app.gs, app.gs.worldTickRt, 1,
                                         /*max_daily_ticks=*/32,
@@ -4183,7 +4183,7 @@ void register_console_commands(App& app) {
                     0x40000000u | (seq << 8) | std::uint32_t(i)));
             }
             const sm::MacroHandle leader = sm::spawn_squad(
-                app.gs, app.ecs, *app.macroStore, app.terrain, spec);
+                app.gs, *app.macroStore, app.terrain, spec);
             if (!app.macroStore->valid(leader)) {
                 c.error("spawn_squad failed (bad map)");
                 return true;
@@ -4228,8 +4228,8 @@ void register_console_commands(App& app) {
             // ОДНА ДВЕРЬ НА ОБА ИСХОДА: пустой маршрут ЕСТЬ снятие приказа
             // (macro/squad.h order_squad_route) — граница не держит своего дома
             // для приказа и не знает, где он лежит.
-            if (!sm::order_squad_route(app.ecs, std::uint32_t(ordinal),
-                                       orders)) {
+            if (!sm::order_squad_route(sm::store_of(app.ecs),
+                                       std::uint32_t(ordinal), orders)) {
                 c.error("no squad with that ordinal");
                 return true;
             }
@@ -5041,7 +5041,7 @@ void draw_debug_panels(App& app) {
                     ImGui::TableNextColumn();
                     ImGui::Text("%u", unsigned(entt::to_integral(e)));
                     ImGui::TableNextColumn();
-                    if (const auto* k = body_state<sm::ecs::NPCKind>(reg, e)) {
+                    if (const auto* k = reg.try_get<sm::ecs::NPCKind>(e)) {
                         ImGui::TextUnformatted(
                             sm::valid_npc_kind(std::uint8_t(k->type))
                                 ? sm::npc_def(sm::NPCType(k->type)).label : "?");
@@ -5053,11 +5053,11 @@ void draw_debug_panels(App& app) {
                         ImGui::TextUnformatted("-");
                     }
                     ImGui::TableNextColumn();
-                    if (const auto* lv = body_state<sm::ecs::NpcLevel>(reg, e))
+                    if (const auto* lv = reg.try_get<sm::ecs::NpcLevel>(e))
                         ImGui::Text("%d", int(lv->value));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
-                    if (const auto* h = body_state<sm::ecs::Pools>(reg, e))
+                    if (const auto* h = reg.try_get<sm::ecs::Pools>(e))
                         ImGui::Text("%.0f/%.0f", double(h->hp), double(h->maxHp));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
@@ -5073,7 +5073,7 @@ void draw_debug_panels(App& app) {
                     ImGui::TableNextColumn();
                     char tags[8]; int ti = 0;
                     if (reg.any_of<sm::ecs::SubworldTag>(e))        tags[ti++] = 'S';
-                    if (sm::macro_dead(reg, e))               tags[ti++] = 'D';
+                    if (reg.any_of<sm::ecs::Dead>(e))         tags[ti++] = 'D';
                     if (reg.any_of<sm::ecs::PlayerSoldierTag>(e))   tags[ti++] = 'A';
                     if (reg.any_of<sm::ecs::TempHostileToPlayer>(e))tags[ti++] = 'H';
                     tags[ti] = '\0';

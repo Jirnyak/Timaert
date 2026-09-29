@@ -509,9 +509,9 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     entt::registry& reg = ecs_->reg;
     // Same candidate set as targeting/melee: live, current-scene NPCs/monsters.
     // The hero body carries no NPCKind, but a POSSESSED foreign body does (Inc
-    // 5c), so exclude PlayerTag explicitly — the player is the map centre / its
+    // 5c), so exclude AvatarTag explicitly — the player is the map centre / its
     // own heading triangle, never a blip. Projected player soldiers keep their
-    // NPCKind (and no PlayerTag) and read as fully allied (+1).
+    // NPCKind (and no AvatarTag) and read as fully allied (+1).
     auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
                          ecs::SubworldTag>(entt::exclude<ecs::Dead, ecs::AvatarTag>);
     for (auto e : view) {
@@ -807,7 +807,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
                       projected, projected == 1 ? "" : "s");
         set_status(msg);
     }
-    // Materialise the player as a real ECS entity (the movable PlayerTag flag /
+    // Materialise the player as a real ECS entity (the movable AvatarTag flag /
     // subworld sim-centre): a full combat actor (Health + BodyRadius + Combat +
     // SubworldTag) that hostiles target through the universal paths (Inc 4b).
     spawn_player_entity();
@@ -870,7 +870,7 @@ void SubworldEngine::sync_macro_player_to_center() {
 //
 // The player is a movable "flag" (`ecs::AvatarTag`) on a real ECS entity — the
 // owner's §8 model where any NPC can receive the flag and the flagged entity is
-// the subworld sim-centre. It is a FULL combat actor: Position + PlayerTag +
+// the subworld sim-centre. It is a FULL combat actor: Position + AvatarTag +
 // Health + BodyRadius + Combat + SubworldTag. Because its signature now matches
 // the combat/projectile views, hostiles melee it and spells strike it through
 // exactly the same universal paths as any NPC — no player special-case in the
@@ -885,9 +885,9 @@ void SubworldEngine::sync_macro_player_to_center() {
 // report_player_damage, and it is FEEDBACK plus the one rule that dying inside
 // a body you wear is your own death.)
 // Lifecycle is explicit and symmetric — spawn_player_entity() on enter,
-// clear_player_entity() on leave — so exactly one PlayerTag entity is live while
+// clear_player_entity() on leave — so exactly one AvatarTag entity is live while
 // a subworld is active and none survives into the macro world. (The player
-// carries SubworldTag, so the cell-crossing reapers that skip PlayerTag in
+// carries SubworldTag, so the cell-crossing reapers that skip AvatarTag in
 // spawn.cpp keep it across seams, while the leave-time clear_subworld_entities
 // would also catch it; clear_player_entity remains the authoritative teardown.)
 // Outgoing player damage is input-driven (tick_player_melee), and it reads
@@ -902,7 +902,7 @@ void SubworldEngine::clear_player_entity() {
     // defensive backstop against a hypothetical leak, never expected to fill.
     // AvatarTag is SCENE ONLY (scale split, 2026-09-10), so every holder here
     // is a scene body and dies whole — the old «strip only, if macro» branch
-    // fell away with the question it answered: the macro flag (PlayerTag)
+    // fell away with the question it answered: the macro flag (AvatarTag)
     // never enters this function's world any more.
     std::array<entt::entity, 8> doomed{};
     int n = 0;
@@ -924,7 +924,7 @@ void SubworldEngine::spawn_player_entity() {
     auto& reg = ecs_->reg;
     // ФЛАЖОК ПЕРЕЖИВАЕТ ШОВ (A2, закон шва 2026-09-17): вход в субмир больше
     // НЕ срывает макро-флаг с носимого лорда. Дыра была ровно здесь: срыв
-    // оставлял мир вовсе без PlayerTag до следующего макро-тика, и под землёй
+    // оставлял мир вовсе без AvatarTag до следующего макро-тика, и под землёй
     // все двери player_* отвечали nullptr — пустой лист, немой смерть-чек.
     // Теперь носимое тело сцены — проекция ЗАПИСИ ФЛАГА, кем бы она ни была:
     // его собственный сквад как собой, анкета лорда — пока он лорд. Един-
@@ -1044,7 +1044,7 @@ void SubworldEngine::spawn_player_entity() {
     reg.emplace<ecs::SubworldTag>(e);
     // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
     // by the renderer through the universal view<Position, LightEmitter,
-    // SubworldTag>, so possessing another body (which moves PlayerTag but leaves
+    // SubworldTag>, so possessing another body (which moves AvatarTag but leaves
     // this hero husk's components) simply stops lighting from here and starts
     // from whatever the possessed body carries — no special-case anywhere.
     reg.emplace<ecs::LightEmitter>(
@@ -1102,7 +1102,7 @@ void SubworldEngine::pull_player_entity_to_scalars() {
         const auto& p = pv.get<ecs::Position>(e);
         playerX_ = p.x;
         playerY_ = p.y;
-        break; // exactly one PlayerTag flag is live at a time
+        break; // exactly one AvatarTag flag is live at a time
     }
 }
 
@@ -1467,7 +1467,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
 }
 
 // Clean fill of all nine window cells — enter() / fresh scene. The player's
-// projected squad + player entity are preserved by the clear step's PlayerTag /
+// projected squad + player entity are preserved by the clear step's AvatarTag /
 // PlayerSoldierTag skip, so they are not wiped here.
 void SubworldEngine::spawn_all_cells() {
     if (!ecs_) return;
@@ -1814,7 +1814,7 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
         // the engine never learns where renown lives, and a drained orb or a
         // crossed circle now makes something of the one who did it, exactly
         // like a kill above ground. This writer used to file for free.
-        record_deed(*mw_.world, *gs_, f);
+        record_deed(store_of(*mw_.world), *gs_, f, MacroHandle{});
     } else {
         // No macro world under this session (a bare harness): there is
         // nobody to pay, and the fact alone is still the truth.
@@ -3312,7 +3312,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     for (int i = 0; i < crowd_->count; ++i) {
         const std::size_t si = std::size_t(i);
         if (!crowd_->inReach[si]) continue;
-        // The player body — including a possessed NPC wearing PlayerTag — is
+        // The player body — including a possessed NPC wearing AvatarTag — is
         // driven by input + tick_player_melee, never by auto-combat. Fleeing
         // bodies do not fight either. Both are PASSIVE, which is the flag that
         // says "no war claims this body", so one test still covers them
@@ -3408,7 +3408,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     // beheaded warband stayed a live squad on the map for as
                     // long as the player kept exploring — and the pool that
                     // raises bandit bands was paid late by exactly that long.
-                    drain_dead_leader_squads(*ecs_, gs_->deserterPool);
+                    drain_dead_leader_squads(store_of(*ecs_), gs_->deserterPool);
                 }
             }
             const auto* pos = reg.try_get<ecs::Position>(e);
@@ -3535,7 +3535,7 @@ void SubworldEngine::leave(bool force) {
         // deserter pool, out of which the macro sim later raises deserter and
         // bandit bands. First gameplay writer that pool has ever had.
         if (ecs_ && gs_) {
-            drain_dead_leader_squads(*ecs_, gs_->deserterPool);
+            drain_dead_leader_squads(store_of(*ecs_), gs_->deserterPool);
         }
         // A dungeon is a pure projection — nothing below the door is worth
         // caching (the overworld cache carries felled trees etc.; an interior
@@ -3580,7 +3580,7 @@ void SubworldEngine::leave(bool force) {
         // Authoritative player teardown (symmetric with spawn_player_entity on
         // enter). The player carries SubworldTag, so the reaper above already
         // destroyed it; this explicit clear owns the player lifecycle regardless
-        // of that incidental overlap and guarantees no PlayerTag entity leaks
+        // of that incidental overlap and guarantees no AvatarTag entity leaks
         // into the macro world.
         clear_player_entity();
     }
@@ -4765,7 +4765,7 @@ void SubworldEngine::tick(float dt) {
         // Pull the authoritative macro scalars onto the player entity (Position
         // + Health) before combat runs; the entity then participates like any
         // other actor. It survives seamless re-centres because the respawn clear
-        // now skips PlayerTag as well as PlayerSoldierTag.
+        // now skips AvatarTag as well as PlayerSoldierTag.
         // THE MIRROR, for every body that stands for a record — the player's
         // included. Runs BEFORE the position sync, which is where the hero's
         // own half of it used to be hand-written.
@@ -4781,7 +4781,7 @@ void SubworldEngine::tick(float dt) {
         // honest gravity, carrying its vertical velocity in a lazy
         // ecs::Airborne that exists only while off the ground. Street level
         // under a lintel keeps terrain support (a top far above the feet is
-        // never a support). PlayerTag is excluded — the player runs the same
+        // never a support). AvatarTag is excluded — the player runs the same
         // integrator through sync_player_vertical below.
         {
             auto gv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(

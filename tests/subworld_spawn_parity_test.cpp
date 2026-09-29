@@ -552,10 +552,10 @@ bool run_reentry_determinism_case(
 // reproduces the same view iteration — the property the re-entry determinism
 // check relies on. Macro Position is integer macro-cell coords on the torus.
 struct MacroSeeds {
-    entt::entity bandit = entt::null;   // centre cell (0,0)      → in-window
-    entt::entity peasant = entt::null;  // +1,0                   → in-window
-    entt::entity wrap = entt::null;     // (mapW-1,0) = offset -1 → in-window (torus)
-    entt::entity far = entt::null;      // (50,50)                → OUTSIDE window
+    sm::MacroHandle bandit{};   // centre cell (0,0)      → in-window
+    sm::MacroHandle peasant{};  // +1,0                   → in-window
+    sm::MacroHandle wrap{};     // (mapW-1,0) = offset -1 → in-window (torus)
+    sm::MacroHandle far{};      // (50,50)                → OUTSIDE window
 };
 
 MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
@@ -568,8 +568,6 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
                   std::uint32_t vseed) {
         sm::MacroStore& st = sm::store_of(reg);
         const sm::MacroHandle h = sm::store_birth(st);
-        auto e = reg.create();
-        reg.emplace<sm::ecs::MacroSlot>(e, h.slot);
         st.spawnId[h.slot] = sm::ecs::MacroSpawnId{spawnIndex++};
         st.cell[h.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(cx, cy, 1024)};
@@ -579,7 +577,7 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
         sm::ecs::NpcCharacter ch{};
         ch.visualSeed = vseed;
         st.character[h.slot] = ch;
-        return e;
+        return h;
     };
     MacroSeeds s;
     // The bandit is WOUNDED on the map (3 of 7 — the bar is integer since
@@ -614,8 +612,6 @@ bool run_beast_member_projection_case(
 
     sm::MacroStore& stl = sm::store_of(reg);
     const sm::MacroHandle hl = sm::store_birth(stl);
-    auto leader = reg.create();
-    reg.emplace<sm::ecs::MacroSlot>(leader, hl.slot);
     stl.spawnId[hl.slot] = sm::ecs::MacroSpawnId{std::uint32_t(0)};
     stl.cell[hl.slot] = sm::ecs::MacroCell{sm::ecs::cell_index(0, 0, 1024)};
     stl.kind[hl.slot] = sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
@@ -636,7 +632,7 @@ bool run_beast_member_projection_case(
 
     int beasts = 0, men = 0;
     for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>()) {
-        const std::uint16_t t = (*sm::body_state<sm::ecs::NPCKind>(reg, e)).type;
+        const std::uint16_t t = (*reg.try_get<sm::ecs::NPCKind>(e)).type;
         if (t == kBeast) {
             // Built from the WOLF's line: its picture is the wolf's sprite row
             // and its bulk is the wolf's authored radius, not a man's. (The old
@@ -742,10 +738,10 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
         sm::sub::WATER_LEVEL);
     if (projected != 3) return false;     // three in-window, the far one skipped
 
-    // Macro entities are UNTOUCHED: still MacroNpcRuntime, never tagged/linked.
-    for (entt::entity m : {s.bandit, s.peasant, s.wrap, s.far}) {
-        if (!reg.all_of<sm::ecs::MacroSlot>(m)) return false;
-        if (reg.any_of<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>(m)) return false;
+    // Macro records are UNTOUCHED: слоты живы, проекция их не трогает
+    // (кластер 7: макро-сквад в реестре не живёт, судить теги не у кого).
+    for (const sm::MacroHandle m : {s.bandit, s.peasant, s.wrap, s.far}) {
+        if (!sm::store_of(reg).valid(m)) return false;
     }
 
     // Index projections by their origin; every backlink must point at a live
@@ -758,9 +754,9 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
         if (!sm::store_of(reg).valid(origin)) {
             return false;
         }
-        if (origin == sm::handle_of(reg, s.bandit)) pBandit = e;
-        else if (origin == sm::handle_of(reg, s.peasant)) pPeasant = e;
-        else if (origin == sm::handle_of(reg, s.wrap)) pWrap = e;
+        if (origin == s.bandit) pBandit = e;
+        else if (origin == s.peasant) pPeasant = e;
+        else if (origin == s.wrap) pWrap = e;
         else return false;   // far NPC or a stranger — must not be projected
     }
     if (projCount != 3 || pBandit == entt::null || pPeasant == entt::null
@@ -782,7 +778,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // of whatever his sheet gives him down here — that is the invariant, and it
     // survives any rebalance of either side.
     {
-        const auto& h = (*sm::body_state<sm::ecs::Pools>(reg, pBandit));
+        const auto& h = (*reg.try_get<sm::ecs::Pools>(pBandit));
         if (!(h.maxHp > 0 && h.hp >= 1 && h.hp <= h.maxHp)) return false;
         const float frac = float(h.hp) / float(h.maxHp);
         if (!(frac > 0.4f && frac < 0.6f)) return false;
@@ -790,7 +786,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // The control: an untouched macro entity arrives untouched. Without this,
     // "wounded arrives wounded" would also pass if every body arrived at half.
     {
-        const auto& h = (*sm::body_state<sm::ecs::Pools>(reg, pWrap));
+        const auto& h = (*reg.try_get<sm::ecs::Pools>(pWrap));
         if (!(h.maxHp > 0.0f && h.hp == h.maxHp)) return false;
     }
     // Combat SYNTHESISED from the fresh sheet (capability): the row's dice
@@ -799,9 +795,9 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     if (!(reg.get<sm::ecs::Combat>(pBandit).flatAdd > 0)) return false;
 
     // Identity + faction copied verbatim from the macro NPC.
-    if ((*sm::body_state<sm::ecs::NpcCharacter>(reg, pBandit)).visualSeed != 0xB0B0u) return false;
-    if ((*sm::body_state<sm::ecs::NPCKind>(reg, pBandit)).factionIdx != 3) return false;
-    if ((*sm::body_state<sm::ecs::NPCKind>(reg, pWrap)).factionIdx != 2) return false;
+    if ((*reg.try_get<sm::ecs::NpcCharacter>(pBandit)).visualSeed != 0xB0B0u) return false;
+    if ((*reg.try_get<sm::ecs::NPCKind>(pBandit)).factionIdx != 3) return false;
+    if ((*reg.try_get<sm::ecs::NPCKind>(pWrap)).factionIdx != 2) return false;
 
     // Placement: each projection lands in ITS window cell's sub-region (never
     // outside the composite window). Centre → [kC,2kC); +1,0 → [2kC,3kC); the
@@ -1035,8 +1031,6 @@ int main() {
 
         sm::MacroStore& stq = sm::store_of(reg);
         const sm::MacroHandle hq = sm::store_birth(stq);
-        auto lord = reg.create();
-        reg.emplace<sm::ecs::MacroSlot>(lord, hq.slot);
         stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(11)};
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
@@ -1053,12 +1047,12 @@ int main() {
         stq.sheet[hq.slot] = own;
 
         const entt::entity body = sm::sub::spawn_tracked_body(
-            reg, sm::try_handle_of(reg, lord), 100.0f, 100.0f, /*seed*/0xD1FFu,
+            reg, hq, 100.0f, 100.0f, /*seed*/0xD1FFu,
             /*combatant*/true);
         CHECK(body != entt::null,
               "the fixture must actually project a body");
 
-        CHECK(sm::sub::tracked_body_owns_nothing(reg, lord, body),
+        CHECK(sm::sub::tracked_body_owns_nothing(reg, hq, body),
               "a projected body owns none of it — bag, gear, book and "
               "personality stay on the record it projects");
 
@@ -1067,20 +1061,20 @@ int main() {
         // Without it, «owns nothing» would also pass for a body the fixture
         // never built properly.
         reg.emplace<sm::ecs::NpcInventory>(body);
-        CHECK(!sm::sub::tracked_body_owns_nothing(reg, lord, body),
+        CHECK(!sm::sub::tracked_body_owns_nothing(reg, hq, body),
               "a body that owns a bag of its own is NOT a mirror — the guard "
               "can see the defect it exists to catch");
         reg.remove<sm::ecs::NpcInventory>(body);
 
         // ...and the other half: a record holding nothing must not satisfy it
         // either, or «owns nothing» would be true of two empty entities.
-        const entt::entity pauper = reg.create();
-        CHECK(!sm::sub::tracked_body_owns_nothing(reg, pauper, body),
+        CHECK(!sm::sub::tracked_body_owns_nothing(reg, sm::MacroHandle{},
+                                                  body),
               "the state must actually live on the record, not merely be "
-              "absent from the body");
+              "absent from the body — не-запись есть невалидный хэндл");
 
         const auto* carried = body != entt::null
-            ? sm::body_state<sm::CharacterSheet>(reg, body) : nullptr;
+            ? reg.try_get<sm::CharacterSheet>(body) : nullptr;
         CHECK(carried != nullptr, "a body always has a sheet");
         CHECK(carried && carried->attributes.of(sm::AttributeId::Str)
                   == own.attributes.of(sm::AttributeId::Str),
@@ -1096,7 +1090,7 @@ int main() {
         anon.seed = 0xD1FFu;
         const entt::entity stranger =
             sm::sub::spawn_derived_body(reg, anon, /*faceSalt*/0u);
-        const auto* strangerSheet = sm::body_state<sm::CharacterSheet>(reg, stranger);
+        const auto* strangerSheet = reg.try_get<sm::CharacterSheet>(stranger);
         CHECK(strangerSheet != nullptr, "a derived body has a sheet");
         CHECK(strangerSheet && strangerSheet->attributes.of(sm::AttributeId::Str)
                   != own.attributes.of(sm::AttributeId::Str),
@@ -1124,8 +1118,6 @@ int main() {
 
         sm::MacroStore& stq = sm::store_of(reg);
         const sm::MacroHandle hq = sm::store_birth(stq);
-        auto lord = reg.create();
-        reg.emplace<sm::ecs::MacroSlot>(lord, hq.slot);
         stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(12)};
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
@@ -1136,7 +1128,7 @@ int main() {
         // reallocates component storage, and a reference held across one is
         // the project's standing grabla (ecs-ref-not-across-tick).
         const entt::entity body = sm::sub::spawn_tracked_body(
-            reg, sm::try_handle_of(reg, lord), 64.0f, 64.0f, /*seed*/0x5EEDu,
+            reg, hq, 64.0f, 64.0f, /*seed*/0x5EEDu,
             /*combatant*/false);
         sm::sub::BodySpec anon{};
         anon.type = sm::NPCType::Bandit;
@@ -1158,7 +1150,7 @@ int main() {
               "the bars a projected body spends are LITERALLY the record's "
               "block — one memory, so there is nothing to fold back up");
         CHECK(sm::sub::pools_of(reg, citizen)
-                  == &(*sm::body_state<sm::ecs::Pools>(reg, citizen)),
+                  == &(*reg.try_get<sm::ecs::Pools>(citizen)),
               "a derived body spends its own bars");
 
         // NEGATIVE CONTROL, asserted: strip the backlink and the very same
@@ -1168,7 +1160,7 @@ int main() {
         reg.remove<sm::ecs::MacroOrigin>(body);
         CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
                   && sm::sub::pools_of(reg, body)
-                         == &(*sm::body_state<sm::ecs::Pools>(reg, body)),
+                         == &(*reg.try_get<sm::ecs::Pools>(body)),
               "without the backlink the door answers SELF — the detector "
               "above is reading a real difference");
 
@@ -1176,14 +1168,12 @@ int main() {
         // never to nothing: a body with no bars at all would be an
         // invulnerable ghost, which is worse than losing the write-back.
         // Протухание — механикой store (шаг 2 1е): store_death бампает
-        // поколение слота, и всякий старый хэндл мертвеет; entt-двойник
-        // умирает следом, как в жнеце мира.
+        // поколение слота, и всякий старый хэндл мертвеет.
         reg.emplace<sm::ecs::MacroOrigin>(body, hq);
         sm::store_death(stq, hq);
-        reg.destroy(lord);
         CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
                   && sm::sub::pools_of(reg, body)
-                         == &(*sm::body_state<sm::ecs::Pools>(reg, body)),
+                         == &(*reg.try_get<sm::ecs::Pools>(body)),
               "a stale backlink degrades to the body itself, not to null");
     }
 
@@ -1207,8 +1197,6 @@ int main() {
 
         sm::MacroStore& stq = sm::store_of(reg);
         const sm::MacroHandle hq = sm::store_birth(stq);
-        auto lord = reg.create();
-        reg.emplace<sm::ecs::MacroSlot>(lord, hq.slot);
         stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(13)};
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
@@ -1216,7 +1204,7 @@ int main() {
         stq.level[hq.slot] = sm::ecs::NpcLevel{std::int16_t(6)};
 
         const entt::entity body = sm::sub::spawn_tracked_body(
-            reg, sm::try_handle_of(reg, lord), 32.0f, 32.0f,
+            reg, hq, 32.0f, 32.0f,
             /*seed*/0xBEEFu, /*combatant*/true);
         CHECK(body != entt::null, "the fixture projects a body");
         if (body == entt::null) return sm::test::report(
@@ -1234,8 +1222,8 @@ int main() {
         // directly, so the claim does not rest on which catalog row happens to
         // grant what today — the strength is authored right here.
         {
-            auto& gear = (*sm::body_state<sm::ecs::BodyEquipment>(reg, lord)).gear;
-            auto& bag = (*sm::body_state<sm::ecs::NpcInventory>(reg, lord)).inv;
+            auto& gear = stq.gear[hq.slot].gear;
+            auto& bag = stq.inventory[hq.slot].inv;
             sm::ItemRef ring{};
             ring.def = 0;
             ring.count = 1;

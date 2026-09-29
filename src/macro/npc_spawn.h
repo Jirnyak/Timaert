@@ -116,7 +116,7 @@ struct SquadSpec {
 // Returns the leader HANDLE (the squad IS its leader; 6.3 — рождение без
 // entt), invalid on a bad map. Runtime ordinals continue past the current
 // maximum — the same rule as spawn_npc_at.
-MacroHandle spawn_squad(GameState& gs, ecs::World& w, MacroStore& store,
+MacroHandle spawn_squad(GameState& gs, MacroStore& store,
                         const TerrainData& terrain, const SquadSpec& spec);
 
 
