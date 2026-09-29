@@ -65,4 +65,26 @@ inline void collect_squads_by_ordinal(entt::registry& reg,
               });
 }
 
+// Тот же закон порядка БЕЗ моста (1е): население — сами слоты store, обход —
+// голый скан байта alive (32 КиБ на кап, цена видна в точке — вердикт
+// владельца 2026-09-29 «голый цикл»). Поле `e` записей НЕ заполняется
+// (entt::null): читатель этой формы держит слот, и только его; entt-форма
+// выше умирает вместе с мостом MacroSlot.
+template <typename Pred>
+inline void collect_squads_by_ordinal(const MacroStore& st,
+                                      std::vector<SquadWalkEntry>& out,
+                                      Pred keep) {
+    out.clear();
+    for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
+        if (st.alive[slot] == 0) continue;
+        if (!keep(std::uint16_t(slot))) continue;
+        out.push_back({st.spawnId[slot].index, std::uint16_t(slot),
+                       entt::null});
+    }
+    std::sort(out.begin(), out.end(),
+              [](const SquadWalkEntry& a, const SquadWalkEntry& b) {
+                  return a.ordinal < b.ordinal;
+              });
+}
+
 } // namespace sm

@@ -802,7 +802,6 @@ SKELETON.md	zones.cpp:70-73
 SKELETON.md	zones.cpp:92
 SKELETON.md	zones.h:30
 jopus_prompts.md	:1-60
-jopus_prompts.md	:1090
 jopus_prompts.md	:1317-1500
 jopus_prompts.md	:1325
 jopus_prompts.md	:1696

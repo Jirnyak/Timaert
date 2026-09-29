@@ -268,7 +268,7 @@
 - путь Б: `record_battle_facts` (`squad.h:922-976`): ОДИН `Killed`
   amount=`loserDead` через `record_deed(winner)` (`:850-857`) + `Died` домам
   обеих сторон (`:859-899`).
-Оба вызова `report_battle_deaths` (`squad.h:998-1000` ИИ↔ИИ, `:1090` игрок)
+Оба вызова `report_battle_deaths` (`settle_auto_battle@src/macro/squad.h` ИИ↔ИИ, `settle_player_auto_battle@src/macro/squad.h` игрок)
 спарены с `record_battle_facts` (`:932`, `:1058`). `report_death` других
 звонящих не имеет (`rg` 2026-09-25) — значит `WorldFact` в `raise_macro_fact`
 есть чистый дубль пути Б, а `GameEvent NpcDeath` — НЕ дубль: его читает

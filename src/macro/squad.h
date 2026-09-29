@@ -146,23 +146,26 @@ inline void refresh_body_from_sheet(ecs::Pools& pools,
 // рождении, после первого же добора врёт — и врёт молча, потому что вес
 // груза он всё равно как-то ограничивает. Каждое место, меняющее ростер,
 // обязано позвать эту дверь.
-inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
-    auto* rt = body_state<ecs::MacroNpcRuntime>(w.reg, leader);
-    const auto* kind = body_state<ecs::NPCKind>(w.reg, leader);
-    if (!rt || !kind) return;
-    if (rt->carryPerSoul <= 0.0f) rt->carryPerSoul = rt->carryCap;
-    const float leaderHaul = npc_def(NPCType(kind->type)).haulMult;
+inline void refresh_squad_carry(MacroStore& st, MacroHandle leader) {
+    if (!st.valid(leader)) return;
+    ecs::MacroNpcRuntime& rt = st.runtime[leader.slot];
+    if (rt.carryPerSoul <= 0.0f) rt.carryPerSoul = rt.carryCap;
+    const float leaderHaul =
+        npc_def(NPCType(st.kind[leader.slot].type)).haulMult;
     const float lh = leaderHaul > 0.0f ? leaderHaul : 1.0f;
     float souls = 1.0f;   // лидер — своя спина, она уже в carryPerSoul
-    if (const auto* bag = body_state<ecs::NpcInventory>(w.reg, leader)) {
-        for (int i = bag->inv.creature_first(); i < kMaxInventorySlots; ++i) {
-            const ItemRef& m = bag->inv.slots[std::size_t(i)];
-            const float h =
-                npc_def(creature_of_world_row(m.def)).haulMult;
-            souls += (h > 0.0f ? h : 1.0f) / lh * float(m.count);
-        }
+    const Inventory& bag = st.inventory[leader.slot].inv;
+    for (int i = bag.creature_first(); i < kMaxInventorySlots; ++i) {
+        const ItemRef& m = bag.slots[std::size_t(i)];
+        const float h =
+            npc_def(creature_of_world_row(m.def)).haulMult;
+        souls += (h > 0.0f ? h : 1.0f) / lh * float(m.count);
     }
-    rt->carryCap = rt->carryPerSoul * souls;
+    rt.carryCap = rt.carryPerSoul * souls;
+}
+// Entt-лицо — шим моста (умирает в 1е); звонящие — макро-лидеры.
+inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
+    refresh_squad_carry(store_of(w), handle_of(w.reg, leader));
 }
 
 // Owner ruling 3 (CANON S4/S13 (бывший macrosim.md)): kill the leader and the squad lives on,
@@ -174,25 +177,25 @@ inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
 // still holds members; a live leader's squad is never touched, and a swept
 // roster is emptied so the pool can never be paid twice for the same men.
 // Returns how many soldiers walked away.
-inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
+inline int drain_dead_leader_squads(MacroStore& st, Inventory& deserterPool) {
     int moved = 0;
     // The player's own squad never deserts wholesale: he is not a leader whose
     // men wander off when he falls, and losing his roster into the pool would
-    // be silent — the tag is the guard the ordinal check would be, for free.
-    // Существа живут в ЕДИНОМ контейнере сквада (M-71); SquadRoster в view —
-    // маркер «это сквад» и обвязка счетов.
+    // be silent — его ординал — колонка (kPlayerSquadOrdinal), тот же
+    // предикат, каким владение листом узнаёт сквад игрока (sheet_owned_at).
+    // Существа живут в ЕДИНОМ контейнере сквада (M-71).
     // Порядок слива — закон (squad_walk.h): пул принимает души слотами, и
-    // «чьи люди легли первыми» не должно зависеть от кишки EnTT. Вектор
+    // «чьи люди легли первыми» не должно зависеть от кишки хранилища. Вектор
     // пуст почти каждый тик (смерть — редкое событие), аллокации нет.
-    MacroStore& st = store_of(w);
-    auto view = w.reg.view<ecs::MacroSlot>(
-        entt::exclude<ecs::PlayerSquadTag>);
     std::vector<SquadWalkEntry> order;
     collect_squads_by_ordinal(
-        w.reg, st, view, order,
-        [&](std::uint16_t slot) { return st.dead[slot] != 0; });
+        st, order,
+        [&](std::uint16_t slot) {
+            return st.dead[slot] != 0
+                && st.spawnId[slot].index != ecs::kPlayerSquadOrdinal;
+        });
     for (const SquadWalkEntry& sw : order) {
-        auto& bag = st.inventory[slot_of(w.reg, sw.e)];
+        auto& bag = st.inventory[sw.slot];
         if (creatures_empty(bag.inv)) continue;
         // The pool CAN refuse (its own slot ceiling): only the men it
         // actually took leave the roster; the rest STAY as the dead lord's
@@ -201,6 +204,10 @@ inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
         moved += creatures_move(deserterPool, bag.inv);
     }
     return moved;
+}
+// Entt-лицо — шим моста (умирает в 1е).
+inline int drain_dead_leader_squads(ecs::World& w, Inventory& deserterPool) {
+    return drain_dead_leader_squads(store_of(w), deserterPool);
 }
 
 // (`dead_rosters_remain` вырезана 2026-09-22: её комментарий утверждал «тик-
@@ -272,8 +279,18 @@ inline int destroy_dead_macro_squads(ecs::World& w,
 // THE lookup by save-stable ordinal (ecs::MacroSpawnId): the one identity a
 // macro entity keeps across a regeneration, so it is what a receipt names
 // (ecs::MacroDebt.subject for a roster row) and what possession stores. The
-// registry is never serialized, so this is a scan — of thousands, not of a
-// hot loop: a death, a possession, a load.
+// store is never serialized by slot, so this is a scan — of thousands, not
+// of a hot loop: a death, a possession, a load.
+inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
+                                            std::uint32_t index) {
+    for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
+        if (st.alive[slot] != 0 && st.spawnId[slot].index == index)
+            return MacroHandle{std::uint16_t(slot), st.generation[slot]};
+    }
+    return MacroHandle{};
+}
+// Entt-лицо того же поиска — шим моста (умирает в 1е): звонящим, которым
+// ещё нужно ТЕЛО моста (вселение, снапшот), отвечает entt-скан.
 inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
                                              std::uint32_t index) {
     const MacroStore& st = store_of(w);
@@ -299,14 +316,17 @@ inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
 // маршрута И ЕСТЬ приказ (вердикт владельца 2026-09-10, «одна крутилка, не
 // две»), значит «отменить» есть запись маршрута нулевой длины. Отказ — вслух у
 // звонящего: дверь возвращает false на неизвестный ординал и не трогает мир.
+inline bool order_squad_route(MacroStore& st, std::uint32_t ordinal,
+                              const ecs::SquadOrders& route) {
+    const MacroHandle h = macro_handle_by_spawn_id(st, ordinal);
+    if (!st.valid(h)) return false;
+    st.orders[h.slot] = route;
+    return true;
+}
+// Entt-лицо — шим моста (умирает в 1е).
 inline bool order_squad_route(ecs::World& w, std::uint32_t ordinal,
                              const ecs::SquadOrders& route) {
-    const entt::entity e = macro_entity_by_spawn_id(w, ordinal);
-    if (e == entt::null) return false;
-    auto* col = body_state<ecs::SquadOrders>(w.reg, e);
-    if (col == nullptr) return false;
-    *col = route;
-    return true;
+    return order_squad_route(store_of(w), ordinal, route);
 }
 
 // ── THE SHEET OF A MACRO BODY (owner verdict 2026-09-10, ММОРПГ-модель) ───
@@ -463,15 +483,13 @@ inline CharacterSheet effective_sheet_of(const MacroStore& st, MacroHandle h) {
 // same door. `renown_of` is what makes a deed contextual — killing a legend
 // is worth a share of the legend — and `grant_renown` is what makes fame
 // spread.
-inline std::uint32_t* renown_slot(ecs::World& w, GameState& gs,
+inline std::uint32_t* renown_slot(MacroStore& st, GameState& gs,
                                   std::uint8_t participantKind,
                                   std::uint32_t ordinal) {
     switch (fact_subject_kind(participantKind)) {
         case std::uint8_t(FactSubject::Squad): {
-            const entt::entity e = macro_entity_by_spawn_id(w, ordinal);
-            if (e == entt::null) return nullptr;
-            auto* rt = body_state<ecs::MacroNpcRuntime>(w.reg, e);
-            return rt ? &rt->renown : nullptr;
+            const MacroHandle h = macro_handle_by_spawn_id(st, ordinal);
+            return st.valid(h) ? &st.runtime[h.slot].renown : nullptr;
         }
         case std::uint8_t(FactSubject::Landmark):
             return landmark_renown_slot(gs, int(ordinal));
@@ -480,10 +498,10 @@ inline std::uint32_t* renown_slot(ecs::World& w, GameState& gs,
     }
 }
 
-inline std::uint32_t renown_of(ecs::World& w, GameState& gs,
+inline std::uint32_t renown_of(MacroStore& st, GameState& gs,
                                std::uint8_t participantKind,
                                std::uint32_t ordinal) {
-    const std::uint32_t* slot = renown_slot(w, gs, participantKind, ordinal);
+    const std::uint32_t* slot = renown_slot(st, gs, participantKind, ordinal);
     return slot ? *slot : 0u;
 }
 
@@ -491,11 +509,11 @@ inline std::uint32_t renown_of(ecs::World& w, GameState& gs,
 // against a nobody is worth twenty, so reaching it takes two hundred million
 // of them. What the clamp really buys is that ADDITION can never be the thing
 // that wraps a legend into a nobody.
-inline void grant_renown(ecs::World& w, GameState& gs,
+inline void grant_renown(MacroStore& st, GameState& gs,
                          std::uint8_t participantKind, std::uint32_t ordinal,
                          std::uint32_t gain) {
     if (gain == 0u) return;
-    std::uint32_t* slot = renown_slot(w, gs, participantKind, ordinal);
+    std::uint32_t* slot = renown_slot(st, gs, participantKind, ordinal);
     if (!slot) return;
     const std::uint64_t sum = std::uint64_t(*slot) + gain;
     *slot = std::uint32_t(std::min<std::uint64_t>(sum, 0xFFFFFFFFull));
@@ -521,16 +539,16 @@ inline void grant_renown(ecs::World& w, GameState& gs,
 // not yet become.
 // Общий хвост обеих дверей записи дела: figure-ность из славы, летопись,
 // плата славой — субъект к этому моменту уже разрешён в ординал.
-inline std::uint32_t record_deed_filed(ecs::World& w, GameState& gs,
+inline std::uint32_t record_deed_filed(MacroStore& st, GameState& gs,
                                        WorldFact fact) {
     fact.subjectKind = fact_subject(
         FactSubject(fact_subject_kind(fact.subjectKind)),
-        renown_is_named(renown_of(w, gs, fact.subjectKind, fact.subject)));
+        renown_is_named(renown_of(st, gs, fact.subjectKind, fact.subject)));
     if (fact_subject_kind(fact.objectKind)
         != std::uint8_t(FactSubject::None)) {
         fact.objectKind = fact_subject(
             FactSubject(fact_subject_kind(fact.objectKind)),
-            renown_is_named(renown_of(w, gs, fact.objectKind, fact.object)));
+            renown_is_named(renown_of(st, gs, fact.objectKind, fact.object)));
     }
     const std::uint32_t seq = chronicle_record(gs.chronicle, fact);
     if (seq != 0u) {
@@ -541,33 +559,32 @@ inline std::uint32_t record_deed_filed(ecs::World& w, GameState& gs,
         // world keeps about them.
         const std::uint32_t gain = renown_for_deed(
             FactKind(fact.kind),
-            renown_of(w, gs, fact.objectKind, fact.object));
-        grant_renown(w, gs, fact.subjectKind, fact.subject, gain);
+            renown_of(st, gs, fact.objectKind, fact.object));
+        grant_renown(st, gs, fact.subjectKind, fact.subject, gain);
     }
     return seq;
 }
 
-inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
-                                 entt::entity subject = entt::null) {
-    if (subject != entt::null && w.reg.valid(subject)) {
-        const auto* id = body_state<ecs::MacroSpawnId>(w.reg, subject);
-        if (id && id->index != 0u) {
-            fact.subjectKind = std::uint8_t(FactSubject::Squad);
-            fact.subject = id->index;
-        }
-    }
-    return record_deed_filed(w, gs, fact);
-}
-
 // Субъект хэндлом (1г) — ординал из колонки, entt не участвует.
-inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
-                                 MacroHandle subject) {
-    const MacroStore& st = store_of(w);
+inline std::uint32_t record_deed(MacroStore& st, GameState& gs,
+                                 WorldFact fact, MacroHandle subject) {
     if (st.valid(subject) && st.spawnId[subject.slot].index != 0u) {
         fact.subjectKind = std::uint8_t(FactSubject::Squad);
         fact.subject = st.spawnId[subject.slot].index;
     }
-    return record_deed_filed(w, gs, fact);
+    return record_deed_filed(st, gs, fact);
+}
+
+// Entt-лица — шимы моста (умирают в 1е).
+inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
+                                 entt::entity subject = entt::null) {
+    return record_deed(store_of(w), gs, fact,
+                       subject != entt::null && w.reg.valid(subject)
+                           ? try_handle_of(w.reg, subject) : MacroHandle{});
+}
+inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
+                                 MacroHandle subject) {
+    return record_deed(store_of(w), gs, fact, subject);
 }
 
 // ── Auto-battle glue: entity ⇄ the pure resolver ──────────────────────────
@@ -750,23 +767,18 @@ inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp) {
 
 // Report one death through the envelope's channel (null = nobody listening).
 inline void report_death(const MacroWorld& mw, std::uint16_t npcType,
-                         entt::entity victim, entt::entity killer,
+                         MacroHandle victim, MacroHandle killer,
                          std::int32_t detail, int level,
                          const char* factionId) {
     if (!mw.facts) return;
     BattleFact f{};
     f.kind = BattleFact::Kind::Death;
     f.npcType = npcType;
-    // Пакуется ХЭНДЛ, не биты энтити (1г): сентинель «никого» — все единицы,
-    // потому что 0 — легальный слот store (шрам: сквад слота 0 умирал
-    // безымянным). Согласие сентинелей закреплено ассертом ниже.
-    const auto packed = [&](entt::entity e) {
-        return e == entt::null || !mw.world
-            ? kMacroHandleNoneBits
-            : macro_handle_bits(handle_of(mw.world->reg, e));
-    };
-    f.victim = packed(victim);
-    f.killer = packed(killer);
+    // Пакуется ХЭНДЛ (1г): сентинель «никого» — все единицы, потому что 0 —
+    // легальный слот store (шрам: сквад слота 0 умирал безымянным); пустой
+    // MacroHandle{} пакуется ровно в него. Согласие сентинелей — ассерт ниже.
+    f.victim = macro_handle_bits(victim);
+    f.killer = macro_handle_bits(killer);
     f.detail = detail;
     f.level = level;
     f.factionId = factionId ? factionId : "";
@@ -778,9 +790,12 @@ static_assert(BattleFact{}.victim == kMacroHandleNoneBits
               "сентинель BattleFact = kMacroHandleNoneBits (store.h)");
 
 // The faction a macro body wears — its INSTANCE colours (Inc 2), not its row.
+inline const char* squad_faction_id(const MacroStore& st, MacroHandle h) {
+    return st.valid(h) ? faction_id_for_index(st.kind[h.slot].factionIdx) : "";
+}
+// Entt-лицо — шим моста (умирает в 1е).
 inline const char* squad_faction_id(ecs::World& w, entt::entity e) {
-    const auto* kind = body_state<ecs::NPCKind>(w.reg, e);
-    return kind ? faction_id_for_index(kind->factionIdx) : "";
+    return squad_faction_id(store_of(w), try_handle_of(w.reg, e));
 }
 
 // СПОЙЛОВ ИЗ ВОЗДУХА БОЛЬШЕ НЕТ (M-139, вердикт владельца 2026-09-26).
@@ -796,24 +811,25 @@ inline const char* squad_faction_id(ecs::World& w, entt::entity e) {
 // records and the leader by his entity. The casualty coin carries its own
 // kind and level (CANON S4) — no roster scan; the resolver drew these FROM
 // the roster, and a generic record has no id a scan could match anyway.
-inline void report_battle_deaths(const MacroWorld& mw, entt::entity side,
+inline void report_battle_deaths(const MacroWorld& mw, const MacroStore& st,
+                                 MacroHandle side,
                                  const std::vector<SoldierRecord>& casualties,
-                                 bool leaderFell, entt::entity killer) {
-    if (!mw.facts || !mw.world) return;
-    ecs::World& w = *mw.world;
-    auto& reg = w.reg;
-    const char* factionId = squad_faction_id(w, side);
+                                 bool leaderFell, MacroHandle killer) {
+    if (!mw.facts) return;
+    const char* factionId = squad_faction_id(st, side);
     for (const SoldierRecord& r : casualties) {
         if (!valid_npc_kind(r.kind)) continue;
-        report_death(mw, r.kind, entt::null, killer,
+        report_death(mw, r.kind, MacroHandle{}, killer,
                      std::int32_t(r.entityId),
                      normalize_soldier_level(r.level), factionId);
     }
     if (leaderFell) {
-        const auto* kind = body_state<ecs::NPCKind>(reg, side);
-        const auto* lvl = body_state<ecs::NpcLevel>(reg, side);
-        report_death(mw, kind ? kind->type : std::uint16_t(0), side, killer,
-                     -1, normalize_soldier_level(lvl ? lvl->value : 1),
+        report_death(mw,
+                     st.valid(side) ? st.kind[side.slot].type
+                                    : std::uint16_t(0),
+                     side, killer, -1,
+                     normalize_soldier_level(
+                         st.valid(side) ? int(st.level[side.slot].value) : 1),
                      factionId);
     }
 }
@@ -821,20 +837,18 @@ inline void report_battle_deaths(const MacroWorld& mw, entt::entity side,
 // Roster deaths through the ledger row: a storied soul by its entityId, a
 // generic one by {kind, level} (the key's detailKind/detailLevel pair).
 inline void settle_squad_casualties(GameState& gs, ecs::World& w,
-                                    entt::entity e,
+                                    MacroStore& st, MacroHandle h,
                                     const std::vector<SoldierRecord>& ids) {
-    auto& reg = w.reg;
-    const auto* sid = body_state<ecs::MacroSpawnId>(reg, e);
-    const auto* cell = body_state<ecs::MacroCell>(reg, e);
-    if (!sid) return;
-    MacroWorld mw{.gs = &gs, .world = &w, .store = &store_of(w)};
+    if (!st.valid(h)) return;
+    const ecs::MacroCell cell = st.cell[h.slot];
+    MacroWorld mw{.gs = &gs, .world = &w, .store = &st};
     // named, not positional — the envelope grows, positions rot; store
     // ОБЯЗАН ехать в каждом локальном конверте (шрам с.18: без него
     // find_roster отказывал в no-op и потери авто-боя молча не списывались)
     MacroStockKey key{};
-    key.subject = std::int32_t(sid->index);
-    key.cellX = cell ? std::int16_t(ecs::cell_x(*cell, gs.mapW)) : std::int16_t(0);
-    key.cellY = cell ? std::int16_t(ecs::cell_y(*cell, gs.mapW)) : std::int16_t(0);
+    key.subject = std::int32_t(st.spawnId[h.slot].index);
+    key.cellX = std::int16_t(ecs::cell_x(cell, gs.mapW));
+    key.cellY = std::int16_t(ecs::cell_y(cell, gs.mapW));
     for (const SoldierRecord& r : ids) {
         key.detail = r.entityId != 0 ? std::int32_t(r.entityId) : -1;
         key.detailKind = r.kind;
@@ -847,49 +861,50 @@ inline void settle_squad_casualties(GameState& gs, ecs::World& w,
 // tracked-death shape (hp=0 + Dead), the same mark the subworld reaper
 // leaves — so an auto-battle death and a fought death are indistinguishable
 // to everything upstream.
-inline void settle_leader_fraction(ecs::World& w, entt::entity e,
+inline void settle_leader_fraction(MacroStore& st, MacroHandle h,
                                    float fraction) {
-    auto* hp = body_state<ecs::Pools>(w.reg, e);
-    if (!hp) return;
+    if (!st.valid(h)) return;
+    ecs::Pools& hp = st.pools[h.slot];
     if (fraction <= 0.0f) {
-        hp->hp = 0;
-        macro_mark_dead(w.reg, e);
+        hp.hp = 0;
+        macro_mark_dead(st, h);
         return;
     }
-    hp->hp = std::clamp(int(float(hp->maxHp) * fraction), 1, hp->maxHp);
+    hp.hp = std::clamp(int(float(hp.maxHp) * fraction), 1, hp.maxHp);
+}
+// Entt-лицо — шим моста (умирает в 1е).
+inline void settle_leader_fraction(ecs::World& w, entt::entity e,
+                                   float fraction) {
+    settle_leader_fraction(store_of(w), try_handle_of(w.reg, e), fraction);
 }
 
 // What the fallen of `loser` are worth, through the ONE reward law. Read
 // BEFORE the deaths settle — the reward needs the rows, settling removes
 // them. Includes the leader's own worth when the outcome killed him.
-inline int xp_for_fallen(ecs::World& w, entt::entity loser,
+inline int xp_for_fallen(const MacroStore& st, MacroHandle loser,
                          const std::vector<SoldierRecord>& casualties,
                          bool leaderFell) {
-    auto& reg = w.reg;
     int xp = 0;
     for (const SoldierRecord& r : casualties) {
         if (!valid_npc_kind(r.kind)) continue;
         xp += npc_xp_reward(NPCType(r.kind),
                             normalize_soldier_level(r.level));
     }
-    if (leaderFell) {
-        if (const auto* kind = body_state<ecs::NPCKind>(reg, loser);
-            kind && kind->type < std::uint16_t(NPCType::Count)) {
-            const auto* lvl = body_state<ecs::NpcLevel>(reg, loser);
-            xp += npc_xp_reward(NPCType(std::uint8_t(kind->type)),
-                                normalize_soldier_level(lvl ? lvl->value : 1));
-        }
+    if (leaderFell && st.valid(loser)
+        && st.kind[loser.slot].type < std::uint16_t(NPCType::Count)) {
+        xp += npc_xp_reward(
+            NPCType(std::uint8_t(st.kind[loser.slot].type)),
+            normalize_soldier_level(int(st.level[loser.slot].value)));
     }
     return xp;
 }
 
 // A fallen owner's bag, stack by stack, into any Inventory — the victor's
 // macro bag or the player's own.
-inline void loot_fallen_owner(ecs::World& w, entt::entity fallen,
+inline void loot_fallen_owner(MacroStore& st, MacroHandle fallen,
                               Inventory& into) {
-    auto* bag = body_state<ecs::NpcInventory>(w.reg, fallen);
-    if (!bag) return;
-    for (ItemRef& stack : bag->inv.slots) {
+    if (!st.valid(fallen)) return;
+    for (ItemRef& stack : st.inventory[fallen.slot].inv.slots) {
         if (stack.empty()) continue;
         // ЛУТ — ТОЛЬКО ПРЕДМЕТНАЯ ОБЛАСТЬ (M-71): выжившие люди павшего —
         // не добыча, их судьба — пул дезертиров (drain_dead_leader_squads).
@@ -921,57 +936,51 @@ inline std::int32_t battle_dead(const std::vector<SoldierRecord>& casualties,
            + (leaderFraction <= 0.0f ? 1 : 0);
 }
 
-inline void record_battle_facts(const MacroWorld& mw,
-                                entt::entity winner, entt::entity loser,
+inline void record_battle_facts(MacroStore& st, GameState& gs,
+                                MacroHandle winner, MacroHandle loser,
                                 std::int32_t loserDead,
                                 std::int32_t winnerDead) {
-    GameState& gs = *mw.gs;
-    ecs::World& w = *mw.world;
-    auto& reg = w.reg;
-    const auto* battleCell = body_state<ecs::MacroCell>(reg, winner);
     const std::int16_t bx = std::int16_t(
-        battleCell ? ecs::cell_x(*battleCell, gs.mapW) : 0);
+        st.valid(winner) ? ecs::cell_x(st.cell[winner.slot], gs.mapW) : 0);
     const std::int16_t by = std::int16_t(
-        battleCell ? ecs::cell_y(*battleCell, gs.mapW) : 0);
+        st.valid(winner) ? ecs::cell_y(st.cell[winner.slot], gs.mapW) : 0);
     if (loserDead > 0) {
         WorldFact f{};
         f.day = gs.worldTime.day();
         f.kind = std::uint16_t(FactKind::Killed);
         f.objectKind = std::uint8_t(FactSubject::Squad);
-        const auto* lid = body_state<ecs::MacroSpawnId>(reg, loser);
-        f.object = lid ? lid->index : 0u;
+        f.object = st.valid(loser) ? st.spawnId[loser.slot].index : 0u;
         f.x = bx;
         f.y = by;
         f.amount = loserDead;
-        record_deed(w, gs, f, winner);
+        record_deed(st, gs, f, winner);
     }
-    const auto bereave = [&](entt::entity side, entt::entity foe,
+    const auto bereave = [&](MacroHandle side, MacroHandle foe,
                              std::int32_t dead) {
-        if (dead <= 0) return;
-        const auto* srt = body_state<ecs::MacroNpcRuntime>(reg, side);
-        if (!srt || landmark_by_id(gs, srt->homeSettlementId) == nullptr)
+        if (dead <= 0 || !st.valid(side)) return;
+        const ecs::MacroNpcRuntime& srt = st.runtime[side.slot];
+        if (landmark_by_id(gs, srt.homeSettlementId) == nullptr)
             return;   // the homeless bereave nobody — Killed already spoke
         WorldFact f{};
         f.day = gs.worldTime.day();
         f.kind = std::uint16_t(FactKind::Died);
         f.subjectKind = std::uint8_t(FactSubject::Landmark);
-        f.subject = std::uint32_t(srt->homeSettlementId);
-        const auto* fid = body_state<ecs::MacroSpawnId>(reg, foe);
-        const std::uint32_t foeOrd = fid ? fid->index : 0u;
+        f.subject = std::uint32_t(srt.homeSettlementId);
+        const std::uint32_t foeOrd =
+            st.valid(foe) ? st.spawnId[foe.slot].index : 0u;
         if (foeOrd != 0u
             && renown_is_named(renown_of(
-                   w, gs, std::uint8_t(FactSubject::Squad), foeOrd))) {
+                   st, gs, std::uint8_t(FactSubject::Squad), foeOrd))) {
             f.objectKind = std::uint8_t(FactSubject::Squad);
             f.object = foeOrd;
         } else {
-            const auto* fkind = body_state<ecs::NPCKind>(reg, foe);
             f.objectKind = std::uint8_t(FactSubject::Faction);
-            f.object = fkind ? fkind->factionIdx : 0u;
+            f.object = st.valid(foe) ? st.kind[foe.slot].factionIdx : 0u;
         }
         f.x = bx;
         f.y = by;
         f.amount = dead;
-        record_deed(w, gs, f);
+        record_deed_filed(st, gs, f);
     };
     bereave(loser, winner, loserDead);
     bereave(winner, loser, winnerDead);
@@ -983,47 +992,52 @@ inline void record_battle_facts(const MacroWorld& mw,
 // deserter pool (the auto-battle IS the whole fight, so its end is here),
 // and the winner's leader paid XP through the one reward law.
 inline void settle_auto_battle(const MacroWorld& mw,
-                               entt::entity ea, entt::entity eb,
+                               MacroHandle ha, MacroHandle hb,
                                const AutoBattleOutcome& o) {
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
-    auto& reg = w.reg;
-    const entt::entity winner = o.winner == 0 ? ea : eb;
-    const entt::entity loser  = o.winner == 0 ? eb : ea;
+    MacroStore& st = store_of(w);
+    const MacroHandle winner = o.winner == 0 ? ha : hb;
+    const MacroHandle loser  = o.winner == 0 ? hb : ha;
     const auto& loserCasualties = o.winner == 0 ? o.casualtiesB
                                                 : o.casualtiesA;
     const float loserFraction = o.winner == 0 ? o.leaderFractionB
                                               : o.leaderFractionA;
 
-    int xp = xp_for_fallen(w, loser, loserCasualties, loserFraction <= 0.0f);
-    report_battle_deaths(mw, ea, o.casualtiesA,
-                         o.leaderFractionA <= 0.0f, eb);
-    report_battle_deaths(mw, eb, o.casualtiesB,
-                         o.leaderFractionB <= 0.0f, ea);
+    int xp = xp_for_fallen(st, loser, loserCasualties, loserFraction <= 0.0f);
+    report_battle_deaths(mw, st, ha, o.casualtiesA,
+                         o.leaderFractionA <= 0.0f, hb);
+    report_battle_deaths(mw, st, hb, o.casualtiesB,
+                         o.leaderFractionB <= 0.0f, ha);
 
-    settle_squad_casualties(gs, w, ea, o.casualtiesA);
-    settle_squad_casualties(gs, w, eb, o.casualtiesB);
-    settle_leader_fraction(w, ea, o.leaderFractionA);
-    settle_leader_fraction(w, eb, o.leaderFractionB);
+    settle_squad_casualties(gs, w, st, ha, o.casualtiesA);
+    settle_squad_casualties(gs, w, st, hb, o.casualtiesB);
+    settle_leader_fraction(st, ha, o.leaderFractionA);
+    settle_leader_fraction(st, hb, o.leaderFractionB);
 
-    if (macro_dead(reg, loser)) {
-        if (auto* winnerBag = body_state<ecs::NpcInventory>(reg, winner)) {
-            loot_fallen_owner(w, loser, winnerBag->inv);
-        }
+    if (macro_dead(st, loser) && st.valid(winner)) {
+        loot_fallen_owner(st, loser, st.inventory[winner.slot].inv);
     }
 
-    drain_dead_leader_squads(w, gs.deserterPool);
+    drain_dead_leader_squads(st, gs.deserterPool);
     // ОДНА дверь оплаты (корень 5): именованный победитель растёт как
     // игрок (лист владеем, WIS-дивиденд, очки копятся), транзиент —
     // прежний бросок.
-    award_kill_xp(w, winner, xp);
+    award_kill_xp(st, winner, xp);
 
-    record_battle_facts(mw, winner, loser,
+    record_battle_facts(st, gs, winner, loser,
                         battle_dead(loserCasualties, loserFraction),
                         battle_dead(o.winner == 0 ? o.casualtiesA
                                                   : o.casualtiesB,
                                     o.winner == 0 ? o.leaderFractionA
                                                   : o.leaderFractionB));
+}
+// Entt-лицо — шим моста (умирает в 1е); звонящие — макро-сквады.
+inline void settle_auto_battle(const MacroWorld& mw,
+                               entt::entity ea, entt::entity eb,
+                               const AutoBattleOutcome& o) {
+    auto& reg = mw.world->reg;
+    settle_auto_battle(mw, handle_of(reg, ea), handle_of(reg, eb), o);
 }
 
 // Settle the PLAYER's auto-resolve against a macro squad (Inc 6 — the M&B
@@ -1040,11 +1054,12 @@ inline void settle_auto_battle(const MacroWorld& mw,
 // zero hp in the store is the same game-over the fought version ends in.
 // Returns the XP awarded.
 inline int settle_player_auto_battle(const MacroWorld& mw,
-                                     entt::entity enemy,
+                                     MacroHandle enemy,
                                      const AutoBattleOutcome& o,
                                      bool playerIsA) {
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
+    MacroStore& st = store_of(w);
     const auto& playerCas = playerIsA ? o.casualtiesA : o.casualtiesB;
     const auto& enemyCas  = playerIsA ? o.casualtiesB : o.casualtiesA;
     const float playerFraction =
@@ -1052,45 +1067,42 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     const float enemyFraction =
         playerIsA ? o.leaderFractionB : o.leaderFractionA;
     const bool playerWon = (o.winner == 0) == playerIsA;
+    // «Игрок» — запись ФЛАЖКА (A3): его хэндл резолвится один раз, мост —
+    // последний шаг резолва (умирает в 1е вместе с тегом → GameState).
+    const MacroHandle playerH = try_handle_of(w.reg, player_flag_entity(w));
     // The player's spoils land in HIS bag — the ordinary NpcInventory on his
-    // squad entity (macro/player_entity.h), the same container an enemy
+    // squad record (macro/player_entity.h), the same container an enemy
     // lord's goods came out of.
     Inventory* playerBag = player_inventory(w);
     Inventory scratch{};
     if (!playerBag) playerBag = &scratch;   // headless fixture: nowhere to put
 
     int xp = playerWon
-        ? xp_for_fallen(w, enemy, enemyCas, enemyFraction <= 0.0f)
+        ? xp_for_fallen(st, enemy, enemyCas, enemyFraction <= 0.0f)
         : 0;
 
     // The player's fallen leave his roster by the SAME door every squad's do
-    // — his squad is an ordinary squad entity now, so this is
-    // settle_squad_casualties over his own entity, ledger and all. The
+    // — his squad is an ordinary squad record now, so this is
+    // settle_squad_casualties over his own record, ledger and all. The
     // hand-written removal that used to stand here was one of the four
     // player-specific paths.
-    if (const entt::entity playerSquad = player_flag_entity(w);
-        playerSquad != entt::null) {
-        settle_squad_casualties(gs, w, playerSquad, playerCas);
-    }
+    settle_squad_casualties(gs, w, st, playerH, playerCas);
     // His wound settles through THE door every leader's does
     // (settle_leader_fraction), not through a second copy of the same three
     // lines of arithmetic — and it lands in THE store (his squad's Pools),
     // because since landing 4 there is nowhere else for a bar to live. The
     // back-copy onto PlayerState that used to follow this call was the last
     // breath of the two-store era.
-    if (const entt::entity playerSquad = player_flag_entity(w);
-        playerSquad != entt::null) {
-        settle_leader_fraction(w, playerSquad,
-                               std::clamp(playerFraction, 0.0f, 1.0f));
-    }
+    settle_leader_fraction(st, playerH,
+                           std::clamp(playerFraction, 0.0f, 1.0f));
 
     // The enemy's dead are FACTS, and killing them has a PRICE — the same two
     // the fought version pays through the reaper (damage-door Inc 6). The
     // crime is the registry's column, so a bandit costs nothing and a
     // peasant costs the same here as underfoot.
-    report_battle_deaths(mw, enemy, enemyCas, enemyFraction <= 0.0f,
-                         entt::null);
-    const char* enemyFaction = squad_faction_id(w, enemy);
+    report_battle_deaths(mw, st, enemy, enemyCas, enemyFraction <= 0.0f,
+                         MacroHandle{});
+    const char* enemyFaction = squad_faction_id(st, enemy);
     if (!kill_is_no_crime(enemyFaction)) {
         const int fallen = int(enemyCas.size())
             + (enemyFraction <= 0.0f ? 1 : 0);
@@ -1105,22 +1117,21 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // мертвецы своих сумок не имеют (они записи, не энтити) и до ПУЛА ЛУТА
     // не роняют ничего.
 
-    settle_squad_casualties(gs, w, enemy, enemyCas);
-    settle_leader_fraction(w, enemy, enemyFraction);
-    if (playerWon && macro_dead(w.reg, enemy)) {
-        loot_fallen_owner(w, enemy, *playerBag);
+    settle_squad_casualties(gs, w, st, enemy, enemyCas);
+    settle_leader_fraction(st, enemy, enemyFraction);
+    if (playerWon && macro_dead(st, enemy)) {
+        loot_fallen_owner(st, enemy, *playerBag);
     }
-    drain_dead_leader_squads(w, gs.deserterPool);
+    drain_dead_leader_squads(st, gs.deserterPool);
 
     // Пара Killed+Died — ТА ЖЕ дверь, что у ИИ↔ИИ (хвост 2б, владелец
     // 2026-09-02): осиротевшие дома жертв игрока получают Died, и
     // ненависть/цена опасности/поле угрозы видят игрока-мясника так же,
     // как любого лорда.
-    if (const entt::entity playerSquad = player_flag_entity(w);
-        playerSquad != entt::null) {
-        const entt::entity pw = playerWon ? playerSquad : enemy;
-        const entt::entity pl = playerWon ? enemy : playerSquad;
-        record_battle_facts(mw, pw, pl,
+    if (st.valid(playerH)) {
+        const MacroHandle pw = playerWon ? playerH : enemy;
+        const MacroHandle pl = playerWon ? enemy : playerH;
+        record_battle_facts(st, gs, pw, pl,
                             battle_dead(playerWon ? enemyCas : playerCas,
                                         playerWon ? enemyFraction
                                                   : playerFraction),
@@ -1132,9 +1143,17 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     if (xp > 0) {
         // ОДНА дверь оплаты (корень 5): игрок — просто лидер своего
         // сквада, WIS-дивиденд и рост листа внутри award_kill_xp.
-        award_kill_xp(w, player_flag_entity(w), xp);
+        award_kill_xp(st, playerH, xp);
     }
     return xp;
+}
+// Entt-лицо — шим моста (умирает в 1е); враг — макро-сквад.
+inline int settle_player_auto_battle(const MacroWorld& mw,
+                                     entt::entity enemy,
+                                     const AutoBattleOutcome& o,
+                                     bool playerIsA) {
+    return settle_player_auto_battle(mw, handle_of(mw.world->reg, enemy),
+                                     o, playerIsA);
 }
 
 } // namespace sm
