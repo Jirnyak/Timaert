@@ -250,7 +250,7 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     const auto* lvl = body_state<ecs::NpcLevel>(reg, target);
     const int targetLevel = lvl ? int(lvl->value) : 0;
     if (targetLevel >= int(c.casterLevel) + int(c.schoolRank)) return;
-    sub::possess_entity(w, target);
+    sub::possess_entity(w, target, c.playerFlagBits);
 }
 
 // ── The binding table ──────────────────────────────────────────────────────

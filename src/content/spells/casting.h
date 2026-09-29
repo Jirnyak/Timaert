@@ -46,6 +46,12 @@ struct SpellSpawnContext {
     // fixture with no sheet, which is an honest novice.
     std::int16_t casterLevel = 0;
     std::uint8_t schoolRank = 0;
+    // Адрес ОДНОГО числа `GameState::playerFlagBits` (1е кластер 5): второй
+    // носитель флажка «кем я на карте», который вселение обязано двигать тем
+    // же движением, что тег (sub/possess.h). Субмиру не даётся GameState —
+    // только это число; nullptr у конверта без мира (фикстуры) законен,
+    // пока теги живы (умирают в 5.3).
+    std::uint32_t* playerFlagBits = nullptr;
 };
 
 using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);

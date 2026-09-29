@@ -179,14 +179,22 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     }
     if (flagHolder == entt::null) {
         reg.emplace<ecs::PlayerTag>(squad);
+        flagHolder = squad;
     }
+
+    // ── Зеркало в GameState (1е кластер 5, переходно) ─────────────────────
+    // Пока теги живы, ОНИ истина; поля GameState пишутся здесь же той же
+    // дверью, чтобы читатели флипались на биты позвонно при зелёной сборке.
+    // В 5.3 направление обращается: теги умирают, поля остаются одни.
+    gs.playerSquadBits = macro_handle_bits(handle_of(reg, squad));
+    gs.playerFlagBits  = macro_handle_bits(handle_of(reg, flagHolder));
 }
 
 entt::entity player_squad_entity(ecs::World& world) {
     return find_player_squad(world);
 }
 
-bool wake_player_in_original_body(ecs::World& world) {
+bool wake_player_in_original_body(GameState& gs, ecs::World& world) {
     auto& reg = world.reg;
     const entt::entity flag = player_flag_entity(world);
     const entt::entity home = find_player_squad(world);
@@ -206,7 +214,27 @@ bool wake_player_in_original_body(ecs::World& world) {
         if (e != home) reg.remove<ecs::PlayerTag>(e);
     }
     if (!reg.all_of<ecs::PlayerTag>(home)) reg.emplace<ecs::PlayerTag>(home);
+    // Оба носителя одной дверью (1е кластер 5): тег выше, биты здесь.
+    gs.playerSquadBits = macro_handle_bits(handle_of(reg, home));
+    gs.playerFlagBits  = gs.playerSquadBits;
     return true;
+}
+
+std::uint32_t player_flag_wire_ordinal(const GameState& gs,
+                                       const MacroStore& st) {
+    const MacroHandle h = macro_handle_from_bits(gs.playerFlagBits);
+    if (!st.valid(h)) return ecs::kPlayerSquadOrdinal;   // флаг дома
+    return st.spawnId[h.slot].index;
+}
+
+void resolve_player_handles_after_load(GameState& gs, const MacroStore& st,
+                                       std::uint32_t playerFlagOrdinal) {
+    const MacroHandle home =
+        macro_handle_by_spawn_id(st, ecs::kPlayerSquadOrdinal);
+    MacroHandle flag = macro_handle_by_spawn_id(st, playerFlagOrdinal);
+    if (!st.valid(flag)) flag = home;
+    gs.playerSquadBits = macro_handle_bits(home);
+    gs.playerFlagBits  = macro_handle_bits(flag);
 }
 
 // ── ВСЁ НИЖЕ СПРАШИВАЕТ ФЛАЖОК, А НЕ ОРДИНАЛ (2026-09-14) ────────────────

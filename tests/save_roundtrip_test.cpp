@@ -666,7 +666,7 @@ void run_roundtrip() {
 
     const std::vector<sm::MacroNpcRecord> macroFixture = make_macro_records();
     if (!sm::save_game(gs, quests, macroFixture, treeCounts, deposits,
-                       path)) {
+                       sm::ecs::kPlayerSquadOrdinal, path)) {
         FAIL_BAIL("save_game returned false");
     }
 
@@ -687,8 +687,9 @@ void run_roundtrip() {
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
     sm::DepositLayer loadedDeposits;
+    std::uint32_t loadedFlagOrdinal = sm::ecs::kPlayerSquadOrdinal;
     if (!sm::load_game(loaded, loadedQuests, loadedMacro, loadedTrees,
-                       loadedDeposits, path)) {
+                       loadedDeposits, loadedFlagOrdinal, path)) {
         FAIL_BAIL("load_game failed");
     }
     if (loaded.version != sm::kSaveVersion) FAIL_BAIL("loaded version mismatch");
@@ -1147,8 +1148,9 @@ void run_roundtrip() {
     sm::DepositLayer sentinelDeposits;
     sentinelQuests.push_back(make_quest());
     sentinelQuests[0].ordinal = 777u;
+    std::uint32_t sentinelFlagOrdinal = sm::ecs::kPlayerSquadOrdinal;
     if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
-                      sentinelDeposits, truncatedPath)) {
+                      sentinelDeposits, sentinelFlagOrdinal, truncatedPath)) {
         FAIL_BAIL("truncated payload accepted");
     }
     if (sentinel.mapW != 11 || sentinelQuests[0].ordinal != 777u
@@ -1165,7 +1167,7 @@ void run_roundtrip() {
     sentinel.mapW = 22;
     sentinelQuests[0].ordinal = 778u;
     if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
-                      sentinelDeposits, corruptPath)) {
+                      sentinelDeposits, sentinelFlagOrdinal, corruptPath)) {
         FAIL_BAIL("corrupt payload accepted");
     }
     if (sentinel.mapW != 22 || sentinelQuests[0].ordinal != 778u) {
@@ -1186,8 +1188,9 @@ void run_roundtrip() {
     std::vector<sm::MacroNpcRecord> badMacro;
     std::vector<std::uint16_t> badTrees;
     sm::DepositLayer badDeposits;
+    std::uint32_t badFlagOrdinal = sm::ecs::kPlayerSquadOrdinal;
     if (sm::load_game(badState, badQuests, badMacro, badTrees, badDeposits,
-                      badVersionPath)) {
+                      badFlagOrdinal, badVersionPath)) {
         FAIL_BAIL("bad version accepted");
     }
     const sm::SaveSummary badSummary = sm::inspect_save(badVersionPath);
@@ -1212,7 +1215,7 @@ void run_roundtrip() {
             .slots[std::size_t(sm::kMaxInventorySlots - 1)] = rot;
     }
     if (sm::save_game(invalidSquadState, quests, macroFixture, treeCounts,
-                      deposits,
+                      deposits, sm::ecs::kPlayerSquadOrdinal,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {
         FAIL_BAIL("invalid squad kind saved");
     }
@@ -1223,6 +1226,7 @@ void run_roundtrip() {
         std::vector<sm::MacroNpcRecord> invalidMacro = make_macro_records();
         invalidMacro[0].kind.type = std::uint16_t(sm::NPCType::Count);
         if (sm::save_game(gs, quests, invalidMacro, treeCounts, deposits,
+                          sm::ecs::kPlayerSquadOrdinal,
                           temp_save_path("timaert_invalid_macro_save.bin"))) {
             FAIL_BAIL("invalid macro npc kind saved");
         }
@@ -1307,7 +1311,8 @@ void run_every_sub_state_kind_survives() {
         const std::vector<sm::MacroNpcRecord> macro;
         const std::vector<std::uint16_t> trees(std::size_t(gs.mapW * gs.mapH), 0u);
         const sm::DepositLayer deposits{};
-        CHECK_OR_RETURN(sm::save_game(gs, quests, macro, trees, deposits, path),
+        CHECK_OR_RETURN(sm::save_game(gs, quests, macro, trees, deposits,
+                                      sm::ecs::kPlayerSquadOrdinal, path),
                         "a state in any live sub-state kind can be SAVED");
 
         sm::GameState loaded{};
@@ -1315,8 +1320,10 @@ void run_every_sub_state_kind_survives() {
         std::vector<sm::MacroNpcRecord> loadedMacro;
         std::vector<std::uint16_t> loadedTrees;
         sm::DepositLayer loadedDeposits;
+        std::uint32_t loadedFlagOrdinal = sm::ecs::kPlayerSquadOrdinal;
         CHECK_OR_RETURN(sm::load_game(loaded, loadedQuests, loadedMacro,
-                                      loadedTrees, loadedDeposits, path),
+                                      loadedTrees, loadedDeposits,
+                                      loadedFlagOrdinal, path),
                         "...and LOADED — the reader's refusal bound is not "
                         "below the enum's highest live kind");
         CHECK(loaded.subState.kind == kind,
@@ -1410,7 +1417,8 @@ void run_payload_cap_is_a_fact() {
     const std::vector<std::uint16_t> noTrees;
     const sm::DepositLayer noDeposits;
     const std::vector<sm::Quest> noQuests;
-    if (!sm::save_game(gs, noQuests, noMacro, noTrees, noDeposits, path)) {
+    if (!sm::save_game(gs, noQuests, noMacro, noTrees, noDeposits,
+                       sm::ecs::kPlayerSquadOrdinal, path)) {
         FAIL_BAIL("save_game refused a legal world at the census caps");
     }
 
@@ -1446,8 +1454,9 @@ void run_payload_cap_is_a_fact() {
     std::vector<sm::MacroNpcRecord> overMacro;
     std::vector<std::uint16_t> overTrees;
     sm::DepositLayer overDeposits;
+    std::uint32_t overFlagOrdinal = sm::ecs::kPlayerSquadOrdinal;
     CHECK(!sm::load_game(overState, overQuests, overMacro, overTrees,
-                         overDeposits, overPath),
+                         overDeposits, overFlagOrdinal, overPath),
           "заголовок с payloadSize выше потолка обязан быть отвергнут");
     CHECK(sm::inspect_save(overPath).status
               == sm::SaveInspectStatus::Unreadable,

@@ -44,15 +44,25 @@ struct SaveSummary {
 // `treeCounts` (the living tree grid, v36) and `deposits` (the living
 // deposit cells, v37) are required for the same reason: omit either and a
 // felled forest or a drained vein silently regrows on load.
+// `playerFlagOrdinal` (v116) — ОРДИНАЛ носителя флажка «кем я на карте»:
+// слоты store при загрузке раздаются заново, packed-хэндл
+// (GameState::playerFlagBits) через провод не переживает — на границе
+// живёт ординал («the ordinal is the identity», macro_snapshot.cpp), и
+// звонящий переводит его дверью player_flag_wire_ordinal. ОБЯЗАТЕЛЕН по
+// той же причине, что macroNpcs: параметр с дефолтом молча терял бы
+// вселение при каждом сейве. Загрузка отдаёт его наружу — резолвить в
+// свежие биты можно только ПОСЛЕ restore_macro_ecs.
 bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
                const std::vector<std::uint16_t>& treeCounts,
                const DepositLayer& deposits,
+               std::uint32_t playerFlagOrdinal,
                const std::string& path);
 bool load_game(GameState& s, std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
                std::vector<std::uint16_t>& treeCounts,
                DepositLayer& deposits,
+               std::uint32_t& playerFlagOrdinal,
                const std::string& path);
 SaveSummary inspect_save(const std::string& path);
 
@@ -90,6 +100,7 @@ std::uint32_t save_payload_fingerprint(
     const GameState& s, const std::vector<Quest>& activeQuests,
     const std::vector<MacroNpcRecord>& macroNpcs,
     const std::vector<std::uint16_t>& treeCounts,
-    const DepositLayer& deposits);
+    const DepositLayer& deposits,
+    std::uint32_t playerFlagOrdinal);
 
 } // namespace sm

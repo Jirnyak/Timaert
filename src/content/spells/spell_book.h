@@ -56,6 +56,8 @@ int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
 // diceRng — the stream the wound is ROLLED from at cast. nullptr = the
 // strike's exact expectation, no crit: what a harness with no stream gets,
 // deterministic by construction.
+// playerFlagBits — адрес числа `GameState::playerFlagBits` для эффекта
+// вселения (SpellSpawnContext; 1е кластер 5); nullptr у конвертов без мира.
 bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
                     const Attributes& attributes, const Skills& skills,
                     int spellOrd,
@@ -63,7 +65,8 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
                     float nx, float ny, float nz, bool inMicro,
                     SpellRngFn rng01 = nullptr,
                     void* rngUser = nullptr,
-                    Rng* diceRng = nullptr);
+                    Rng* diceRng = nullptr,
+                    std::uint32_t* playerFlagBits = nullptr);
 // Advance every timer the book owns by `steps` simulation steps (core/time.h).
 // It used to take a float dt of real seconds — the same wall-clock coupling the
 // tick ladder abolished everywhere else.

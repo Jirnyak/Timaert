@@ -118,8 +118,31 @@ inline void player_jump_to_cell(GameState& gs, ecs::World& world,
 // `ecs::PlayerSquadTag` exists to do.
 //
 // No-op returning false if he was never wearing anyone: then the man who died
-// is himself, and there is no return to make.
-bool wake_player_in_original_body(ecs::World& world);
+// is himself, and there is no return to make. Пишет ОБА носителя флажка:
+// тег (истина до 5.3) и `gs.playerFlagBits` (истина после).
+bool wake_player_in_original_body(GameState& gs, ecs::World& world);
+
+// ── ДВА ХЭНДЛА ИГРОКА В GameState (M-106 1е кластер 5) ───────────────────
+// `gs.playerSquadBits` (родной сквад, зарезервированный ординал) и
+// `gs.playerFlagBits` («кем я на карте») — packed-хэндлы store. Сентинель
+// полей — литерал «все единицы» в state.h (state.h не включает store.h);
+// ассерт держит согласие с законом распаковки:
+static_assert(macro_handle_from_bits(0xFFFFFFFFu).slot == kMacroNoSlot,
+              "сентинель полей игрока GameState (все единицы) обязан "
+              "распаковываться в «никого» (macro_handle_from_bits, store.h)");
+
+// Проводная форма флажка (v116, сейв): ОРДИНАЛ носителя — слоты store при
+// загрузке раздаются заново, packed-хэндл провод не переживает («the
+// ordinal is the identity», macro_snapshot.cpp). Невалидные биты честно
+// переводятся как «флаг дома» (kPlayerSquadOrdinal).
+std::uint32_t player_flag_wire_ordinal(const GameState& gs,
+                                       const MacroStore& st);
+
+// Обратный перевод — звать строго ПОСЛЕ restore_macro_ecs: оба поля
+// резолвятся заново по ординалам свежего store; носитель флажка, не
+// переживший загрузку, честно складывается на родной сквад.
+void resolve_player_handles_after_load(GameState& gs, const MacroStore& st,
+                                       std::uint32_t playerFlagOrdinal);
 
 // THE player's squad entity, by its reserved ordinal — and his ROSTER, which
 // is an ordinary ecs::SquadRoster on it (owner, 2026-08-27). It used to be

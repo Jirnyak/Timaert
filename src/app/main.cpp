@@ -1348,7 +1348,10 @@ bool save_game_checked(App& app, bool autosave = false) {
     const std::string& path = autosave ? app.autosavePath : app.savePath;
     const bool ok = sm::save_game(app.gs, app.activeQuests,
                                   stage_save_state(app), app.treeLayer.data,
-                                  app.deposits, path);
+                                  app.deposits,
+                                  sm::player_flag_wire_ordinal(
+                                      app.gs, *app.macroStore),
+                                  path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
@@ -1723,15 +1726,19 @@ bool boot_world_from_save(App& app, const std::string& path) {
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
     sm::DepositLayer loadedDeposits;
+    // Ординал носителя флажка (v116) — как side-векторы ниже: едет рядом с
+    // GameState и резолвится в биты только ПОСЛЕ restore_macro_ecs.
+    std::uint32_t loadedFlagOrdinal = sm::ecs::kPlayerSquadOrdinal;
     if (!sm::load_game(fresh, loadedQuests, loadedMacro, loadedTrees,
-                       loadedDeposits, path)) {
+                       loadedDeposits, loadedFlagOrdinal, path)) {
         return false;
     }
     // What the FILE says the world is, weighed before a single field of it is
     // applied. Compared against the living world at the bottom of this
     // function — see the fold witness there.
     const std::uint32_t fileFingerprint = sm::save_payload_fingerprint(
-        fresh, loadedQuests, loadedMacro, loadedTrees, loadedDeposits);
+        fresh, loadedQuests, loadedMacro, loadedTrees, loadedDeposits,
+        loadedFlagOrdinal);
     // registerIntroStory=TRUE even on load (v25): node definitions are code
     // and must all exist before the saved story progress is replayed below.
     // The old `false` here was the 3-nodes -> 1 bug: a loaded game lost the
@@ -1825,7 +1832,8 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // line legitimately re-derives a field, and a witness must compare the
     // fold, not the world's own thinking.
     const std::uint32_t liveFingerprint = sm::save_payload_fingerprint(
-        app.gs, app.activeQuests, loadedMacro, loadedTrees, loadedDeposits);
+        app.gs, app.activeQuests, loadedMacro, loadedTrees, loadedDeposits,
+        loadedFlagOrdinal);
     // A witness that answers "0" twice would agree with itself over a world it
     // never weighed: 0 is what the fingerprint returns when the writer FAILED.
     // Refuse that agreement out loud — a check that cannot fail is the defect
@@ -1852,6 +1860,10 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // restore the saved world's people instead of the seed's. A killed lord
     // stays killed, a levelled leader keeps his campaigns.
     sm::restore_macro_ecs(loadedMacro, app.ecs, app.gs);
+    // Хэндлы игрока — заново по ординалам СВЕЖЕГО store (v116): слоты при
+    // restore раздались по порядку записей, биты из прошлой жизни мертвы.
+    sm::resolve_player_handles_after_load(app.gs, *app.macroStore,
+                                          loadedFlagOrdinal);
 
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
     // Camera anchor moved BELOW ensure_: the restored flag holder is the
@@ -2408,7 +2420,10 @@ bool cast_active_spell(App& app) {
         true,
         &subworld_spell_rng01,
         &app.subworld,
-        &app.subworld.spell_rng());
+        &app.subworld.spell_rng(),
+        // Второй носитель флажка для эффекта вселения (1е кластер 5) —
+        // адрес одного числа GameState, не мир.
+        &app.gs.playerFlagBits);
     emit_spell_cast(app, id, ok, ok ? "" : "Cast failed");
     // ANY cast that happened sounds (one door, one voice — a stance flip
     // included); the deferred «звук каста» of 443f0f5, delivered 2026-09-09.
@@ -3678,7 +3693,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             // кто сюда пришёл ногами, — а твоё тело всё это время стояло там,
             // где ты его оставил, и приезжать ему сюда незачем.
             if (app.subworld.active()) app.subworld.leave(true);
-            sm::wake_player_in_original_body(app.ecs);
+            sm::wake_player_in_original_body(app.gs, app.ecs);
             // Жив ⇔ флажок стоит ДОМА на живом оригинале: смерть лорда
             // разбудила (флажок переехал), смерть генерика не двигала флажок
             // вовсе — а мёртвый оригинал это «просыпаться не в чем», гейм

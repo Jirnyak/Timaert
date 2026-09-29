@@ -351,7 +351,10 @@ namespace sm {
 // «теперь только есть благополучие и оно даёт рост») — настроение, реестр
 // его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
 // seasonWellbeing и needDebt.
-constexpr int kSaveVersion = 115;   // v115 (M-183): экипировка — маска тела + индексы в инвентарь; план тела умер
+// v116 (M-106 1е кластер 5): игрок в GameState двумя хэндлами; на проводе —
+// ординал носителя флажка (одно u32 в скалярах мира); байт playerFlag записи
+// снапшота умирает вместе с PlayerTag/PlayerSquadTag.
+constexpr int kSaveVersion = 116;   // v116 (M-106 1е): игрок — два хэндла GameState, ординал флажка в скалярах
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -897,6 +900,19 @@ struct GameState {
 
     Politik politik;
     PlayerState player;
+    // ИГРОК — ДВА ХЭНДЛА В МИРЕ (вердикт владельца 2026-09-29, M-106 шаг 1е
+    // кластер 5): родной сквад (зарезервированный ординал kPlayerSquadOrdinal)
+    // и «кем я на карте» — носитель флажка, которого двигают вселение
+    // (possess_entity) и пробуждение (wake_player_in_original_body). Форма —
+    // packed-хэндл store {slot | gen<<16} (macro_handle_bits@src/macro/store.h);
+    // сентинель «никого» — все единицы (kMacroHandleNoneBits; литерал здесь,
+    // потому что state.h не включает store.h — согласие держит static_assert
+    // в player_entity.h). В сейв едет ОРДИНАЛ носителя флажка (слоты при
+    // загрузке раздаются заново — «the ordinal is the identity»,
+    // macro_snapshot.cpp); загрузка резолвит оба поля заново. Заменяют
+    // PlayerTag/PlayerSquadTag (ушли в 1е) и байт playerFlag записи снапшота.
+    std::uint32_t playerSquadBits = 0xFFFFFFFFu;
+    std::uint32_t playerFlagBits  = 0xFFFFFFFFu;
     WorldTime   worldTime = world_time_at(0, 6, 0);
     // The day the slow world last re-baked (path-cost grid) and autosaved —
     // once a season, together (Session 21). Lives HERE, not on App, so a load

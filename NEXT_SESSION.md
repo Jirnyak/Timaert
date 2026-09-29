@@ -62,11 +62,12 @@ M-116/2,3), фаза 4 (фрейм M-171 + M-182). Генерация/эконо
 5. **`PlayerTag`/`PlayerSquadTag` → GameState.** Два поля `std::uint32_t`
    в `GameState` (`macro/state.h`) в форме `macro_handle_bits` (сентинель —
    все единицы): `playerSquadBits` (родной сквад, зарезервированный ординал)
-   и `playerFlagBits` («кем я на карте»; вселение `sub/possess.h:112-114` и
+   и `playerFlagBits` («кем я на карте»; вселение `possess_entity@src/sub/possess.h` и
    `wake_player_in_original_body@src/macro/player_entity.cpp` двигают его).
    Едут в сейв честными байтами; `playerFlag`-байт снапшота умирает; сейв
-   бампнуть МОЛЧА (формат не ограничение — никогда). `PlayerSquadCache`
-   (`player_entity.cpp:28`, ctx) умирает; девять дверей `player_entity.h`
+   бампнуть МОЛЧА (формат не ограничение — никогда).
+   `PlayerSquadCache@src/macro/player_entity.cpp` (ctx) умирает; девять дверей
+   `player_entity.h`
    (`player_flag_entity`, `find_player_squad`, `player_sheet`, `player_bag`…)
    отвечают хэндлом/колонками из GameState — сигнатурам понадобится `GameState&`
    (или пара (GameState&, MacroStore&)) вместо ctx-кэша: пересчитать звонящих
@@ -77,8 +78,10 @@ M-116/2,3), фаза 4 (фрейм M-171 + M-182). Генерация/эконо
 6. **Дневные проходы npc_ai + смерть рождения.** `rotate_worker_squads`,
    `squad_season_window`, `squad_bags_hygiene_daily`, `survey` (4 view) — на
    слоты; `dissolve_population_crew` и `destroy_dead_macro_squads` теряют
-   `reg.destroy`; `npc_spawn.cpp:110-113`, `player_entity.cpp:81-84`,
-   `macro_snapshot.cpp:72-75` перестают рожать entt-энтити и вешать MacroSlot;
+   `reg.destroy`; `make_npc@src/macro/npc_spawn.cpp`,
+   `ensure_macro_player_entity@src/macro/player_entity.cpp`,
+   `restore_macro_ecs@src/macro/macro_snapshot.cpp` перестают рожать
+   entt-энтити и вешать MacroSlot;
    `spawn_squad` возвращает `MacroHandle`. ВНИМАНИЕ: у entt-энтити макро-сквада
    к этому моменту не должно остаться ни одного читателя — пересчитать
    `view<MacroSlot>` перед сносом.

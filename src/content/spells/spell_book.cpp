@@ -153,7 +153,8 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
                     float nx, float ny, float nz, bool inMicro,
                     SpellRngFn rng01,
                     void* rngUser,
-                    Rng* diceRng) {
+                    Rng* diceRng,
+                    std::uint32_t* playerFlagBits) {
     // THE body gate (owner verdict 2026-09-09, «одно рекавери на всё»): the
     // caster's own ecs::Combat, found by the same id that will own the bolt —
     // the field a sword swing charges and tick_combat_recovery drains. A
@@ -218,6 +219,7 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     };
     ctx.dmgType = std::uint8_t(spell_damage_type(*d));
     ctx.critical = strike.critical;
+    ctx.playerFlagBits = playerFlagBits;   // второй носитель флажка (1е кл.5)
     // Who casts, for person-arguing effects (possession's level gate): the
     // trained rank in this spell's own school from the same effective skills
     // the damage law reads, and the level of the RECORD the casting body

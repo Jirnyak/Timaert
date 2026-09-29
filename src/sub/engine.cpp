@@ -932,6 +932,10 @@ void SubworldEngine::spawn_player_entity() {
     if (flagRec == entt::null && psq != entt::null) {
         reg.emplace<ecs::PlayerTag>(psq);
         flagRec = psq;
+        // Второй носитель — той же дверью (1е кластер 5): дефенсив, вернувший
+        // тег домой, обязан вернуть и биты, иначе они держат мертвеца.
+        if (gs_) gs_->playerFlagBits =
+            macro_handle_bits(handle_of(reg, psq));
     }
     const entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, playerX_, playerY_, 0.0f);

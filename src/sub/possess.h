@@ -55,7 +55,14 @@ inline entt::entity current_player_body(ecs::World& w) {
 // leaving the scene IS the reset, written nowhere. Pure ECS: the caller
 // re-mirrors the position scalars from the new body afterwards (the engine
 // tick does it via pull_player_entity_to_scalars).
-inline bool possess_entity(ecs::World& w, entt::entity target) {
+//
+// `playerFlagBits` — адрес ОДНОГО числа `GameState::playerFlagBits` (1е
+// кластер 5): второй носитель флажка, packed-хэндл записи. Субмиру не даётся
+// GameState — только это число (закон двух миров: канал узкий и названный);
+// звонящий без мира (фикстура) законно передаёт nullptr — тогда двигается
+// только тег, как до кластера 5.
+inline bool possess_entity(ecs::World& w, entt::entity target,
+                           std::uint32_t* playerFlagBits) {
     auto& reg = w.reg;
     if (target == entt::null || !reg.valid(target)) return false;
     if (!reg.all_of<ecs::Position>(target)) return false; // must be a real body
@@ -112,6 +119,8 @@ inline bool possess_entity(ecs::World& w, entt::entity target) {
             if (e != rec) reg.remove<ecs::PlayerTag>(e);
         }
         if (!reg.all_of<ecs::PlayerTag>(rec)) reg.emplace<ecs::PlayerTag>(rec);
+        // Второй носитель — той же дверью, тем же движением (1е кластер 5).
+        if (playerFlagBits) *playerFlagBits = macro_handle_bits(recH);
     }
     return true;
 }
