@@ -10,7 +10,6 @@
 #include "macro/anketa.h"
 #include "macro/character_sheet.h"
 #include "tables/commodity.h"   // kCommodityCount — дань по позициям (v73)
-#include "macro/items.h"
 #include "macro/memory.h"   // WorldMemory — память мира с горизонтом сезона
 #include "macro/agent_memory.h"
 #include "macro/anketa.h"

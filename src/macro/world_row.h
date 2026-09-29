@@ -23,7 +23,6 @@
 #include <cstdint>
 
 #include "macro/anketa.h"    // SoldierRecord — монета переноса души
-#include "macro/items.h"   // item_catalog() — предметная половина строк
 #include "tables/npc.h"     // NPCType — половина существ
 
 namespace sm {

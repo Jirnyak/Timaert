@@ -17,7 +17,7 @@
 #include "check.h"
 
 #include "macro/currency.h"    // inventory_value — цена контейнера одной дверью
-#include "macro/items.h"
+#include "macro/anketa.h"
 #include "macro/loot_pool.h"
 
 #include <cstdint>

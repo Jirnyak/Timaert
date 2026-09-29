@@ -15,7 +15,7 @@
 
 #include "macro/econ_day.h"   // Depot + econ_pay_debt — приход гасит долг (S10)
 #include "tables/faction.h"
-#include "macro/items.h"
+#include "macro/anketa.h"
 
 namespace sm {
 

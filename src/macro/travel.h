@@ -7,7 +7,7 @@
 #include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/movement_cost.h"
-#include "macro/items.h"
+#include "macro/anketa.h"
 #include <cmath>
 
 namespace sm {

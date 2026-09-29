@@ -14,7 +14,7 @@
 #include "check.h"
 
 #include "macro/anatomy.h"
-#include "macro/items.h"
+#include "tables/items.h"
 
 #include <cstdio>
 

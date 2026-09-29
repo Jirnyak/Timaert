@@ -569,7 +569,7 @@ inline float structure_surface_dist2(const Structure& s, float px, float py) {
 struct StructureKindRow {
     // MUST equal the row's index in kStructureKindRows (guard below the table).
     Structure::Kind kind;
-    // Key into the ONE loot registry (`roll_loot_profile`, macro/items.h) —
+    // Key into the ONE loot registry (`roll_loot_profile`, tables/items.h) —
     // the same resolver a kill goes through. Empty id = drops nothing (yet),
     // and the harvest door skips the kind entirely.
     const char* lootId;

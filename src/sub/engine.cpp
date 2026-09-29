@@ -30,7 +30,6 @@
 #include "macro/state.h"
 #include "macro/entry_context.h"
 #include "tables/npc.h"
-#include "macro/items.h"
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP law
 #include "macro/anketa.h"
 #include "macro/character_sheet.h"

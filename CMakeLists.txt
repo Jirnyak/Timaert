@@ -374,7 +374,8 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/fauna.cpp
     src/macro/map_generator.cpp
     src/macro/language.cpp
-    src/macro/items.cpp
+    src/macro/anketa.cpp
+    src/tables/items.cpp
     src/macro/economy.cpp
     src/macro/econ_day.cpp
     src/macro/spawners.cpp
@@ -463,7 +464,8 @@ timaert_test(quest_lifecycle_test
         src/content/plot/intro.cpp
         src/content/quests/procedural.cpp
         # gen_delivery reads the one item catalog now (W2b-4).
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_SDL)
 
 timaert_test(world_tick_parity_test
@@ -485,7 +487,8 @@ timaert_test(world_tick_parity_test
         src/macro/anatomy.cpp
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         # The daily tick regrows fauna through the stock row (Session 16).
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
@@ -512,7 +515,8 @@ timaert_test(save_roundtrip_test
         src/macro/anatomy.cpp
         src/macro/world_fields.cpp
         # wallet math reads the item catalog (currency.h).
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         # the fixture builds a real knowledge grid (v40) via knowledge_reset.
         src/macro/knowledge.cpp
         # npc.h now answers for BOTH halves of the kind id space.
@@ -539,7 +543,8 @@ timaert_test(macro_snapshot_test
         # spawn_squad goes through make_npc — the one creation door — so the
         # test links the spawner and the loot it rolls.
         src/macro/npc_spawn.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         # npc.h now answers for BOTH halves of the kind id space.
         src/macro/fauna.cpp
     LINK_SDL LINK_ENTT)
@@ -555,9 +560,10 @@ timaert_test(damage_door_test
     SOURCES
         src/sub/damage.cpp
         # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
-        # that asks the catalog what each worn row is worth (macro/items.cpp)
+        # that asks the catalog what each worn row is worth (tables/items.cpp)
         src/macro/anatomy.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/events/event_bus.cpp
     LINK_ENTT)
 
@@ -579,16 +585,18 @@ timaert_test(spell_casting_effects_test
         # possession's Targeted pick goes through the one aim primitive.
         src/sub/targeting.cpp
         # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
-        # that asks the catalog what each worn row is worth (macro/items.cpp)
+        # that asks the catalog what each worn row is worth (tables/items.cpp)
         src/macro/anatomy.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_ENTT)
 
 timaert_test(combat_squad_test
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —
         # world_row_is_item живёт у каталога (items.cpp)
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/sub/ai.cpp
         src/sub/spawn.cpp
         # The projection asks what would CARRY a body where it lands
@@ -620,13 +628,15 @@ timaert_test(audio_runtime_test
 timaert_test(spawn_entity_event_test
     SOURCES
         src/macro/npc_spawn.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_SDL LINK_ENTT)
 
 timaert_test(npc_spawn_contract_test
     SOURCES
         src/macro/npc_spawn.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_SDL LINK_ENTT)
 
 # THE macro entity is a squad (Session 15): every macro NPC carries a
@@ -635,7 +645,8 @@ timaert_test(npc_spawn_contract_test
 timaert_test(squad_roster_test
     SOURCES
         src/macro/npc_spawn.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_SDL LINK_ENTT)
 
 # The caravan↔village package deal (owner 2026-08-30): conservation, the
@@ -653,7 +664,8 @@ timaert_test(caravan_deal_test
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/econ_day.cpp
     LINK_ENTT)
 
@@ -679,7 +691,8 @@ timaert_test(macro_npc_ai_parity_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         # The caravan agent weighs its cargo hold (items.cpp).
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
         # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
         src/macro/econ_day.cpp
@@ -713,7 +726,8 @@ timaert_test(torus_wrap_test
 # каталог, поэтому линкует его TU; таблица существ — header-only.
 timaert_test(world_row_test
     SOURCES
-        src/macro/items.cpp)
+        src/macro/anketa.cpp
+        src/tables/items.cpp)
 
 # Закон порядка обхода сквадов (эпик 2 шаг 1а): дверь чисто заголовочная,
 # тест — реестр + сортировка, продакшен-TU не нужны.
@@ -746,7 +760,8 @@ timaert_test(squad_war_test
         # spawn_squad (Inc 7) is born through make_npc — the one creation
         # door — so the test links the spawner and the loot it rolls.
         src/macro/npc_spawn.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
         # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
         src/macro/econ_day.cpp
@@ -756,7 +771,8 @@ timaert_test(macro_travel_parity_test
     SOURCES
         src/macro/travel.cpp
         src/macro/recovery.cpp
-        src/macro/items.cpp)
+        src/macro/anketa.cpp
+        src/tables/items.cpp)
 
 # СТОЛ АНКЕТ (macro/characters.h): спавн строки, лестница поведения,
 # ординал в снапшоте — линк-набор squad_war_test + сам снапшот.
@@ -775,7 +791,8 @@ timaert_test(design_characters_test
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
         src/macro/macro_snapshot.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_SDL LINK_ENTT)
 
 # The macro march pays the map (Session 21): greedy steering on the baked
@@ -801,7 +818,8 @@ timaert_test(squad_travel_test
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
         # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
         src/macro/econ_day.cpp
@@ -809,7 +827,8 @@ timaert_test(squad_travel_test
 
 timaert_test(item_use_parity_test
     SOURCES
-        src/macro/items.cpp)
+        src/macro/anketa.cpp
+        src/tables/items.cpp)
 
 # Запечённая навигация (CANON S7): округи + порталы + граф на синтетическом
 # торе — стресс «телепорт в глушь», честная недостижимость, инвариантность
@@ -1120,7 +1139,8 @@ timaert_test(subworld_spawn_parity_test
         # 2026-09-12): spawn.cpp asks standing_bonuses_of, which asks the
         # anatomy what is worn and the catalog what each row is worth.
         src/macro/anatomy.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_ENTT)
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
@@ -1129,7 +1149,8 @@ timaert_test(subworld_spawn_parity_test
 
 timaert_test(rpg_loot_test
     SOURCES
-        src/macro/items.cpp)
+        src/macro/anketa.cpp
+        src/tables/items.cpp)
 # РЕЖИССЁР ЛУТА: стоимость на входе, вещи на выходе. Дверь агностична — она не
 # знает ни мира, ни сцены, ни чья это казна, — поэтому свидетелю хватает самой
 # двери и таблицы объектов, которую она читает. Ни SDL2, ни EnTT, ни состояния
@@ -1137,7 +1158,8 @@ timaert_test(rpg_loot_test
 
 timaert_test(loot_pool_test
     SOURCES
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/loot_pool.cpp
         # ...и реестр живности: дверь совпадения `danger_match_weight` живёт
         # ТАМ, потому что закон выбора строки контекстом в мире ОДИН — спавн
@@ -1224,7 +1246,8 @@ timaert_test(faction_relations_test
         src/macro/map_generator.cpp
         src/macro/language.cpp
         src/macro/politik.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/economy.cpp
     LINK_ENTT)
 # THE time ladder (core/time.h). Header-only, no world state — the clock is a
@@ -1258,7 +1281,8 @@ timaert_test(trade_law_test
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/econ_day.cpp
         src/macro/world_tick.cpp
         src/macro/threat_field.cpp
@@ -1279,13 +1303,15 @@ timaert_test(econ_v1_test LINK_ENTT
         # Ранжирование рук спрашивает ОДИН закон цены (stock_price).
         src/macro/economy.cpp
         # The one-dictionary link law: every commodity is an item-catalog row.
-        src/macro/items.cpp)
+        src/macro/anketa.cpp
+        src/tables/items.cpp)
 
 # THE matter law (CANON «Крафт/Скрап», owner verdicts 2026-09-11): composition
 # on the catalog row, the reversible reaction doors, no-arbitrage, auto-scrap.
 timaert_test(item_parts_test
     SOURCES
-        src/macro/items.cpp)
+        src/macro/anketa.cpp
+        src/tables/items.cpp)
 
 timaert_test(deposit_layer_test
     SOURCES
@@ -1329,7 +1355,8 @@ timaert_test(settlement_placement_test
         src/macro/fauna.cpp
         src/macro/map_generator.cpp
         src/macro/language.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/economy.cpp
         src/macro/econ_day.cpp
     LINK_ENTT)
@@ -1338,7 +1365,8 @@ timaert_test(price_law_test
     SOURCES
         src/macro/economy.cpp
         src/macro/econ_day.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_ENTT)
 
 # ПАМЯТЬ МИРА — header-only закон (macro/memory.h над seasons.h), поэтому у
@@ -1350,7 +1378,8 @@ timaert_test(world_memory_test)
 # authoring id to its ordinal, so the test links the catalog TU.
 timaert_test(barter_test
     SOURCES
-        src/macro/items.cpp)
+        src/macro/anketa.cpp
+        src/tables/items.cpp)
 
 timaert_test(crop_stock_test
     SOURCES
@@ -1371,7 +1400,8 @@ timaert_test(crop_stock_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_ENTT)
 
 # Spire placement is pure macro worldgen: the generator TU alone, fixtures
@@ -1403,7 +1433,8 @@ timaert_test(fauna_stock_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         # world_tick's daily step raises deserter bands (npc_spawn.h).
         src/macro/npc_spawn.cpp
     LINK_SDL LINK_ENTT)
@@ -1427,7 +1458,8 @@ timaert_test(woodcutter_gather_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/econ_day.cpp
     LINK_SDL LINK_ENTT)
 
@@ -1447,7 +1479,8 @@ timaert_test(goal_auction_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/econ_day.cpp
         # anatomy.cpp worn_bonuses — сезонные нужды артелей идут
         # эффективным листом лидера (squad_season_needs).
@@ -1462,7 +1495,8 @@ timaert_test(threat_field_test
         src/macro/threat_field.cpp
         src/macro/nav_field.cpp
         src/macro/chronicle.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_ENTT)
 
 # Поля следов и охота (CANON S10 «хищник-жертва»): физика клеточного яруса
@@ -1488,7 +1522,8 @@ timaert_test(scent_field_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/econ_day.cpp
     LINK_SDL LINK_ENTT)
 
@@ -1515,7 +1550,8 @@ timaert_test(settlement_faction_test
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —
         # world_row_is_item живёт у каталога (items.cpp)
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/sub/spawn.cpp
         # The projection asks what would CARRY a body where it lands
         # (sub/height.h is_dry_footing over the solidity index), so a
@@ -1541,7 +1577,8 @@ timaert_test(carried_light_spawn_test
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —
         # world_row_is_item живёт у каталога (items.cpp)
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/sub/spawn.cpp
         # The projection asks what would CARRY a body where it lands
         # (sub/height.h is_dry_footing over the solidity index), so a
@@ -1571,7 +1608,8 @@ timaert_test(city_population_inside_walls_test
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —
         # world_row_is_item живёт у каталога (items.cpp)
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/sub/spawn.cpp
         # The projection asks what would CARRY a body where it lands
         # (sub/height.h is_dry_footing over the solidity index), so a
@@ -1620,7 +1658,8 @@ timaert_test(body_contract_test
         # A tracked body is born WEARING its record's gear (mirror law,
         # 2026-09-12): spawn.cpp asks standing_bonuses_of, which asks the
         # anatomy what is worn and the catalog what each row is worth.
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/anatomy.cpp
     LINK_ENTT)
 
@@ -1645,7 +1684,8 @@ timaert_test(macro_stock_test
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —
         # world_row_is_item живёт у каталога (items.cpp)
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/macro_stock.cpp
         # a struck vein is a chronicle fact now (v58)
         src/macro/chronicle.cpp
@@ -1659,7 +1699,8 @@ timaert_test(macro_stock_test
 # Header-only doors; items.cpp is the catalog TU the Inventory fixture needs.
 timaert_test(map_subject_test
     SOURCES
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
     LINK_ENTT)
 
 # Mass-battle AI contract: the steering module is Vulkan-free and ECS-free by
@@ -1681,9 +1722,10 @@ timaert_test(spell_broadphase_parity_test
         # spell_effects strikes through THE damage door now.
         src/sub/damage.cpp
         # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
-        # that asks the catalog what each worn row is worth (macro/items.cpp)
+        # that asks the catalog what each worn row is worth (tables/items.cpp)
         src/macro/anatomy.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/sub/movement.cpp
         src/macro/fauna.cpp
         src/events/event_bus.cpp
@@ -1696,7 +1738,8 @@ timaert_test(auto_battle_test
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —
         # world_row_is_item живёт у каталога (items.cpp)
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/sub/movement.cpp
         # npc.h answers for both halves of the kind id space (monsters too).
         src/macro/fauna.cpp)
@@ -1709,7 +1752,8 @@ timaert_test(auto_resolve_speaks_test
         # by ordinal (macro/player_entity.h).
         src/macro/player_entity.cpp
         src/macro/anatomy.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         src/macro/macro_stock.cpp
         # a struck vein is a chronicle fact now (v58)
         src/macro/chronicle.cpp
@@ -1739,7 +1783,8 @@ timaert_test(player_is_a_squad_test
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
-        src/macro/items.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
         # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
         # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
         src/macro/econ_day.cpp
@@ -1751,7 +1796,8 @@ timaert_test(player_is_a_squad_test
 timaert_test(anatomy_equipment_test
     SOURCES
         src/macro/anatomy.cpp
-        src/macro/items.cpp)
+        src/macro/anketa.cpp
+        src/tables/items.cpp)
 
 # THE WORLD'S CHRONICLE: the owner's witcher must be able to ask what happened
 # near this village in the last thirty days, and get an answer.

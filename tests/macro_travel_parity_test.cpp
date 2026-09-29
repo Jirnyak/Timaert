@@ -1,7 +1,7 @@
 #include "check.h"
 
 #include "macro/features.h"
-#include "macro/items.h"
+#include "macro/anketa.h"
 #include "macro/map_generator.h"
 #include "macro/movement_cost.h"
 #include "macro/state.h"

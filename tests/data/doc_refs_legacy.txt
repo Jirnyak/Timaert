@@ -181,7 +181,6 @@ SKELETON.md	:469
 SKELETON.md	:47
 SKELETON.md	:470-471
 SKELETON.md	:4773
-SKELETON.md	:478
 SKELETON.md	:4784
 SKELETON.md	:481
 SKELETON.md	:488
@@ -216,7 +215,6 @@ SKELETON.md	:6805
 SKELETON.md	:688
 SKELETON.md	:689
 SKELETON.md	:699
-SKELETON.md	:705
 SKELETON.md	:719-735
 SKELETON.md	:72
 SKELETON.md	:72-100
@@ -350,7 +348,6 @@ SKELETON.md	engine.cpp:1223-1225
 SKELETON.md	engine.cpp:1388
 SKELETON.md	engine.cpp:1621-1638
 SKELETON.md	engine.cpp:1655-1660
-SKELETON.md	engine.cpp:222
 SKELETON.md	engine.cpp:2285
 SKELETON.md	engine.cpp:2301
 SKELETON.md	engine.cpp:232-234
@@ -375,15 +372,12 @@ SKELETON.md	height.h:91
 SKELETON.md	items.cpp:254-303
 SKELETON.md	items.cpp:28
 SKELETON.md	items.cpp:444-447
-SKELETON.md	items.cpp:455
 SKELETON.md	items.cpp:466-470
 SKELETON.md	items.cpp:478-485
 SKELETON.md	items.cpp:572
 SKELETON.md	items.cpp:688
 SKELETON.md	items.cpp:692
 SKELETON.md	items.cpp:762-777
-SKELETON.md	items.cpp:813-814
-SKELETON.md	items.cpp:925
 SKELETON.md	items.cpp:99
 SKELETON.md	items.h:104-174
 SKELETON.md	items.h:194
@@ -391,8 +385,6 @@ SKELETON.md	items.h:204
 SKELETON.md	items.h:217
 SKELETON.md	items.h:285
 SKELETON.md	items.h:301-449
-SKELETON.md	items.h:484
-SKELETON.md	items.h:662
 SKELETON.md	journal.h:39-41
 SKELETON.md	knowledge.cpp:22
 SKELETON.md	knowledge.cpp:36
@@ -863,9 +855,6 @@ jopus_prompts.md	event_bus.cpp:70-74
 jopus_prompts.md	event_bus.h:27-40
 jopus_prompts.md	events/quests/quest_engine.cpp:179
 jopus_prompts.md	gpu/vk_renderer.cpp:241
-jopus_prompts.md	items.h:301
-jopus_prompts.md	items.h:309
-jopus_prompts.md	items.h:95
 jopus_prompts.md	landmark_grid.h:41
 jopus_prompts.md	language.h:20-35
 jopus_prompts.md	lighting.h:324
@@ -952,7 +941,6 @@ jopus_prompts.md	src/tables/commodity.h:30-60
 jopus_prompts.md	src/macro/econ_day.cpp:40-55
 jopus_prompts.md	src/macro/econ_day.h:70-80
 jopus_prompts.md	src/macro/features.h:165-295
-jopus_prompts.md	src/macro/items.h:265-320
 jopus_prompts.md	src/macro/landmark_iter.h:45-55
 jopus_prompts.md	src/macro/language.cpp:136-180
 jopus_prompts.md	src/macro/macro_stock.cpp:340-460
@@ -1075,8 +1063,6 @@ macro-registry.md	:429
 macro-registry.md	:434-436
 macro-registry.md	:46-47
 macro-registry.md	:4761-4776
-macro-registry.md	:478
-macro-registry.md	:4787
 macro-registry.md	:490
 macro-registry.md	:507
 macro-registry.md	:513
@@ -1098,7 +1084,6 @@ macro-registry.md	:78
 macro-registry.md	:790-791
 macro-registry.md	:828
 macro-registry.md	:850-882
-macro-registry.md	:961
 macro-registry.md	CMakeLists.txt:249
 macro-registry.md	agent_memory.h:64-67
 macro-registry.md	anatomy.h:187
@@ -1165,7 +1150,6 @@ macro-registry.md	items.cpp:478-485
 macro-registry.md	items.cpp:572
 macro-registry.md	items.cpp:797
 macro-registry.md	items.cpp:99
-macro-registry.md	items.h:104-174
 macro-registry.md	items.h:189
 macro-registry.md	items.h:199
 macro-registry.md	labour.h:16
@@ -1321,3 +1305,4 @@ macro-registry.md	world_tick.cpp:380
 macro-registry.md	world_tick.cpp:381
 macro-registry.md	world_tick.cpp:540
 macro-registry.md	zones.h:30
+macro-registry.md	:4787

@@ -24,7 +24,6 @@
 #include "macro/anketa.h"   // SkillId/Skills — ремесло открывает рецепт
 #include "tables/commodity.h"
 #include "tables/seasons.h"
-#include "macro/items.h"
 
 namespace sm {
 
@@ -91,7 +90,7 @@ inline bool recipe_known(const Skills& sk, SkillId craft, int minRank) {
 // A recipe names only THE SCHEDULE — what this kind of place works on, and
 // where. Its MATTER became the catalog row's composition on 2026-09-11, and
 // its TEMPO followed on 2026-09-12 (owner: «единая SP-система труда»):
-// batches-per-person-day is the item's own labour column (macro/items.h
+// batches-per-person-day is the item's own labour column (tables/items.h
 // item_labour), the same number the hand's SP price divides by. Two tables
 // of «из чего ткань» — and then two of «сколько труда в ткани» — each
 // drifted apart exactly once before they were merged.

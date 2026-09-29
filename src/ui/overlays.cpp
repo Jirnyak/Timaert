@@ -18,7 +18,7 @@
 #include "tables/commodity.h"   // the raw rows the scrap variant byte names
 #include "macro/economy.h"
 #include "tables/faction.h"
-#include "macro/items.h"
+#include "macro/anketa.h"
 #include "macro/politik.h"
 #include "content/spells/spell_book.h"
 #include "content/plot/intro.h"

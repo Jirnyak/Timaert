@@ -24,7 +24,7 @@
 #include <cstdint>
 
 #include "tables/commodity.h"
-#include "macro/items.h"
+#include "tables/items.h"
 
 namespace sm {
 

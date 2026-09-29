@@ -13,7 +13,6 @@
 #include "core/rng.h"
 #include <cstdio>
 #include "macro/currency.h"
-#include "macro/items.h"
 #include "macro/landmark_grid.h"
 #include "macro/landmark_registry.h"
 #include "macro/macro_stock.h"

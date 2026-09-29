@@ -19,7 +19,7 @@
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
-#include "macro/items.h"
+#include "macro/anketa.h"
 
 #include <array>
 #include <cstdio>
@@ -69,7 +69,7 @@ void sink(void* user, const sm::EconFact& f) {
 }
 
 // Inputs drawn per unit of each produced commodity — from the output row's
-// own composition (macro/items.h item_parts), which since 2026-09-11 IS the
+// own composition (tables/items.h item_parts), which since 2026-09-11 IS the
 // recipe's matter (outputs are unique in v1, asserted below). The ledger
 // deliberately reads through the same door production does: a drift between
 // «что ест станок» and «из чего ткань» is exactly what the merge killed.

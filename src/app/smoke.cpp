@@ -32,7 +32,7 @@
 #include "sub/record.h"    // macro_record_of / pools_of — дверь шва «чья это запись»
 #include "tables/codex.h"
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
-#include "macro/items.h"
+#include "macro/anketa.h"
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
 #include "macro/store.h"
@@ -6264,7 +6264,7 @@ bool run_console_smoke(App& app) {
         }
         // The micro half of the same rule: the felled trunk pays out through
         // the shared loot registry. Asserting the INTENT ("the axe is paid"),
-        // not a magic count — the row in macro/items.cpp is free to change.
+        // not a magic count — the row in tables/items.cpp is free to change.
         const int woodGained =
             player_bag(app).count("wood") - woodBefore;
         if (woodGained <= 0) {

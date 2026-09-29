@@ -260,12 +260,12 @@
 
 **Как устроено сейчас (проверено 2026-09-25):** после авторезолва каждая
 смерть идёт ДВУМЯ путями и оба пишут факт `Killed` в летопись и платят славу:
-- путь А: `report_battle_deaths` (`squad.h:798-818`) → `report_death`
+- путь А: `report_battle_deaths` (`squad.h:797-817`) → `report_death`
   (`:636`) → синк конверта `mw.facts` → `raise_macro_fact`
   (`app/main.cpp:255-313`): на КАЖДУЮ смерть — `GameEvent NpcDeath` в шину
   (`:258-263`) **и** `WorldFact Killed` amount=1 через `record_deed` с
   начислением славы (`:275-313`);
-- путь Б: `record_battle_facts` (`squad.h:923-977`): ОДИН `Killed`
+- путь Б: `record_battle_facts` (`squad.h:922-976`): ОДИН `Killed`
   amount=`loserDead` через `record_deed(winner)` (`:850-857`) + `Died` домам
   обеих сторон (`:859-899`).
 Оба вызова `report_battle_deaths` (`squad.h:998-1000` ИИ↔ИИ, `:1090` игрок)
@@ -1567,7 +1567,7 @@ return -1` — второй запрет мира рядом с водой. Го
 симуляции.
 
 **Точки (проверено 2026-09-25; перепроверить):** строковые двери
-`Inventory::count(const std::string&)` / `add` / `remove` (`items.h:309,423,435`
+`Inventory::count(const std::string&)` / `add` / `remove` (`macro/anketa.h` — разрез M-181 увёз контейнер
 — каждый вызов строит `std::string` из `const char*` и ищет в хеше) в
 тике: доставка `deliver_bag_home` (`npc_ai.cpp:144,151`), перевозка
 `haul_between` (`:1341,:1346,:1347`), планировщик корована (`:1886,:1889,
@@ -1575,13 +1575,12 @@ return -1` — второй запрет мира рядом с водой. Го
 (`econ_day.cpp:413`); `commodity_index(id)` в тике: факт доставки
 (`npc_ai.cpp:159`), планировщик (`:1696` — на КАЖДЫЙ слот склада),
 аукцион (`:4113`), `econ_day.cpp:200,345`. Ординальные двери УЖЕ есть:
-`count_of(defIdx)`, `add_of`, `remove_of` (`items.h:301,376,409`),
-`item_index(const char*)` (`:272`), ординал товара — `commodity_index`
+`count_of(defIdx)`, `add_of`, `remove_of` (`macro/anketa.h`),
+`item_index(const char*)` (`tables/items.h`), ординал товара — `commodity_index`
 на проводке (`econ_day.cpp:46,51` — образец: кэш в `rr.output`,
 `r.needIdx`).
 
-**1. Контекст.** Читать: `src/macro/items.h:265-320, 370-440` (двери
-склада), `src/tables/commodity.h:30-60, 105-125`, `src/macro/econ_day.h:70-80,
+**1. Контекст.** Читать: двери склада `Inventory@src/macro/anketa.h` (разрез M-181), `src/tables/commodity.h:30-60, 105-125`, `src/macro/econ_day.h:70-80,
 135-145` (строки рецептов/нужд — `const char*`), `src/macro/econ_day.cpp:40-55`
 (образец кэша), и по ±10 строк вокруг КАЖДОЙ точки списка. Откуда
 приходит `id` в каждую точку (аргумент функции? колонка строки каталога
@@ -1600,7 +1599,7 @@ return -1` — второй запрет мира рядом с водой. Го
   держит строку, переводит её в ординал ОДИН раз на ПРОВОДКЕ: строка
   рецепта/нужды/цели → ординал при построении `TickContext`/при загрузке
   каталога (образец `econ_day.cpp:46-51`), а не на каждом вызове.
-- `ItemDef::id` (`items.h:95`) в тике не читается: слот склада уже несёт
+- `ItemDef::id` (`tables/items.h`) в тике не читается: слот склада уже несёт
   `sl.def` (ординал) — `:1690-1696` перевести на `sl.def` и
   `commodity_of_item(def)` (если такой таблицы-моста нет — завести ОДНУ
   `constexpr`-выведенную колонку «ординал товара по ординалу предмета» из

@@ -21,7 +21,7 @@
 
 #include "tables/commodity.h"
 #include "macro/currency.h"
-#include "macro/items.h"
+#include "macro/anketa.h"
 
 #include <cstring>
 

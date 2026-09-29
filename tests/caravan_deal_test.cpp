@@ -20,7 +20,7 @@
 #include "macro/currency.h"
 #include "macro/econ_day.h"
 #include "macro/economy.h"
-#include "macro/items.h"
+#include "macro/anketa.h"
 #include "macro/npc_ai.h"
 #include "macro/state.h"
 

@@ -295,7 +295,7 @@ public:
                         // Exactly what this body carries, when a scenario or a
                         // quest wants a specific thing looted off it. Absent, it
                         // carries nothing and its loot is rolled from its row at
-                        // the moment it dies (macro/items.h, one registry).
+                        // the moment it dies (tables/items.h, one registry).
                         const ecs::NpcInventory* inventoryOverride = nullptr,
                         // Explicit {x, y} spawn tile instead of the default
                         // ring around the player. Needed to DEPLOY a body:

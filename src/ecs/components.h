@@ -5,7 +5,6 @@
 #include "macro/anketa.h"
 #include "tables/commodity.h"   // kCommodityCount — счёт содержания ростера
 #include "macro/roster.h"      // sm::Roster — ОДИН ростер на место и на сквад
-#include "macro/items.h"
 #include "macro/anatomy.h"
 #include <array>
 #include <cstdint>
@@ -224,7 +223,7 @@ struct NpcLevel { std::int16_t value; };
 // are state has one — a macro entity and the tracked body that embodies it
 // (sub/spawn.h), or a body a quest handed a specific thing. A derived body has
 // none on purpose: its loot is rolled from its row through the one registry at
-// the moment it dies (macro/items.h roll_loot_profile), so a city of five
+// the moment it dies (tables/items.h roll_loot_profile), so a city of five
 // thousand people costs five thousand integers and no bags.
 struct NpcInventory { Inventory inv; };
 

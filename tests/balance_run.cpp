@@ -28,7 +28,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/econ_day.h"
 #include "tables/faction.h"
-#include "macro/items.h"
+#include "macro/anketa.h"
 #include "macro/landmark_grid.h"
 #include "macro/macro_world.h"
 #include "macro/map_generator.h"

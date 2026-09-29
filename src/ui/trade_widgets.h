@@ -22,7 +22,6 @@
 #include "macro/anketa.h"
 #include "macro/character_sheet.h"
 #include "macro/currency.h"
-#include "macro/items.h"
 #include "macro/player_entity.h"   // player_effective_sheet — the haggler door
 #include "macro/squad.h"           // standing_bonuses_of
 #include "macro/state.h"

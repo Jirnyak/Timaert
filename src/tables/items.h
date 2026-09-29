@@ -1,5 +1,13 @@
-// Items & inventory. This file is the source of truth (the TS original is
-// dead — the migration is closed).
+// КАТАЛОГ ПРЕДМЕТОВ — строки и форма ссылки на них (наряд M-181, разрез
+// items: каталожная половина здесь, анкетная — Inventory и двери над ним —
+// в macro/anketa.h). Контент, constexpr, одинаковый по обе стороны границы
+// миров; состояния мира этот файл не знает и не смеет знать.
+//
+// `ItemRef` ЛЕЖИТ ЗДЕСЬ, И ЭТО РЕШЕНИЕ С ПРИЧИНОЙ: он не состояние, а ФОРМА
+// ССЫЛКИ на строку каталога (ординал + материал + уровень + аффиксы), и его
+// ПРОИЗВОДЯТ каталожные двери (roll_loot_profile возвращает ItemRef'ы,
+// grant_affixes пишет в него). Каталог выдаёт ссылки на свои строки; анкета
+// их ХРАНИТ.
 //
 // ItemType order is save-relevant and fixed:
 //   ItemType { Weapon=0, Armor=1, Potion=2, Food=3, Material=4, Misc=5 }
@@ -17,11 +25,11 @@
 // New rows APPEND — a saved ItemRef carries the ordinal.
 
 #pragma once
-#include "macro/anketa.h"
+#include "core/dice.h"
+#include "tables/attributes.h"
+#include "tables/bonus.h"
 #include "tables/damage_types.h"
-#include <array>
 #include <cstdint>
-#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -90,7 +98,7 @@ enum class Delivery : std::uint8_t {
 // slot next to the pair-of-structs era (see the SoA note on ItemRef).
 inline constexpr int kMaxItemAffixes = 8;
 
-// What a row DOES, as rows of the one bonus registry (macro/bonus.h).
+// What a row DOES, as rows of the one bonus registry (tables/bonus.h).
 //
 // It was a struct of six named ints — `hp, mp, sp, str, end, agi` — and half
 // of it was fiction: nothing anywhere read `str`, `end` or `agi`, so the
@@ -116,11 +124,11 @@ struct ItemDef {
     Bonus       bonus[kMaxItemBonuses] = {};
 
     // ── Where it goes, and what it costs to wear ──────────────────────────
-    // `slotMask` is an OR of `part_bit(BodyPartId::X)` (macro/anatomy.h): the
-    // TYPES of body part this can sit on. A ring says "Finger" ONCE and fits
-    // an octopus with twenty of them; that is the whole reason the mask names
-    // types and not indices. 0 = cannot be worn at all, which is every potion
-    // and every sack of grain.
+    // `slotMask` is an OR of `part_bit(BodyPartId::X)` (tables/body_parts.h):
+    // the TYPES of body part this can sit on. A ring says "Finger" ONCE and
+    // fits an octopus with twenty of them; that is the whole reason the mask
+    // names types and not indices. 0 = cannot be worn at all, which is every
+    // potion and every sack of grain.
     std::uint64_t slotMask   = 0;
     // ...and what wearing it ALSO occupies. A two-hander is the case this
     // exists for: it sits in the main grip and takes the off hand with it.
@@ -175,38 +183,7 @@ struct ItemDef {
     float         useSeconds = 0.0f;
 };
 
-// ── THE item instance, and THE container ───────────────────────────────────
-//
-// One record shape for every container in the world (owner, 2026-08-27): the
-// player's bag, a landmark's stock, a chest, a corpse's spoils, a caravan's
-// load. It was `std::vector<ItemStack>` where a stack was `{std::string id;
-// int count;}` — 32 bytes and a heap block per entry, a linear scan by STRING
-// for every question, and a vector header on every entity that carries goods.
-//
-// The record is flat and carries what an instance IS:
-//   * `def`      — the catalog row, resolved ONCE (strings stay the AUTHORING
-//                  key in tables; the runtime carries the ordinal, the
-//                  faction_index idiom);
-//   * `count`    — signed on purpose (owner: «стака с нулём не бывает, так что
-//                  int можно») — a negative count is a visible accounting bug,
-//                  where an unsigned one would wrap into billions;
-//   * `seed`/`material`/`quality`/`affix[]` — what makes a PROCEDURAL item
-//                  itself (owner's Diablo-but-simpler design). No producer
-//                  fills them yet — the bonus registry is the RPG core's work
-//                  — but they ride the format from day one so the save is
-//                  bumped once, not twice.
-//
-// STACKING is one sentence: two records merge only when everything except
-// `count` is equal. Provisions merge with provisions; two procedurally rolled
-// swords never merge, because their seeds differ. No second rule, no second
-// table.
-// 32×32 — ёмкость ЕДИНОГО контейнера (вердикт владельца 2026-09-22, эпик
-// единой таблицы: «слияние и расширение до 32×32 единого контейнера у каждого
-// сквада, и мобы == предметы»). Предметы и существа лежат в ОДНИХ слотах;
-// пустота у деревни оплачена сознательно — «страх перед пустотой» отвергнут.
-inline constexpr int kMaxInventorySlots = 1024;  // 32×32, the one container
-
-// An affix IS a bonus (macro/bonus.h `Bonus`): a row of the one registry and
+// An affix IS a bonus (tables/bonus.h `Bonus`): a row of the one registry and
 // how much of it. The name stays because "affix" is what a rolled modifier on
 // an item is CALLED, but the type is the same one a perk and an aura carry.
 // Since the SoA move (v82) it is the CURRENCY of affix_at/set_affix rather
@@ -291,191 +268,10 @@ const ItemDef* item_def_at(int idx) noexcept;
 // ординалов). Строка мира ниже размера предметного каталога есть ПРЕДМЕТ,
 // всё выше — существо. Определение живёт рядом с каталогом (items.cpp);
 // все ОСТАЛЬНЫЕ двери пространства ординалов (macro/world_row.h) строятся
-// НА этой — второго вывода границы не существует. Контейнеру ниже она
-// нужна потому, что закон РАЗМЕЩЕНИЯ слота зависит от рода строки.
+// НА этой — второго вывода границы не существует. Контейнеру (macro/anketa.h
+// Inventory) она нужна потому, что закон РАЗМЕЩЕНИЯ слота зависит от рода
+// строки.
 bool world_row_is_item(std::uint16_t row) noexcept;
-
-// ── ЗАКОН ДВУХ ОБЛАСТЕЙ ЕДИНОГО КОНТЕЙНЕРА (M-71, слияние 2026-09-24) ─────
-// Предметы и существа лежат в ОДНИХ 1024 слотах, но селятся с разных концов:
-// предметы — СНИЗУ ВВЕРХ (первый пустой слот, как всегда), существа —
-// ПЛОТНОЙ ОБЛАСТЬЮ СВЕРХУ ВНИЗ, зеркалом старого плотного ростера. Зачем:
-// закон ходока «свежие уходят первыми» (дезертирство, roster_window) есть
-// закон ПОРЯДКА слотов, и порядок держится ЗАКОНОМ РАЗМЕЩЕНИЯ двери, а не
-// тегом в слоте — тега «существо» не бывает (CANON:5599). Отображение на
-// старый ростер точное: старый slots[0..n-1] = новые [1023..first],
-// новейший слот области — НАИМЕНЬШИЙ индекс; дыра от снятого слота
-// затыкается НОВЕЙШИМ (зеркало swap-with-last), поэтому дырок в области
-// существ не бывает по построению. Пустая середина между областями —
-// оплаченная пустота (вердикт владельца).
-struct Inventory {
-    std::array<ItemRef, kMaxInventorySlots> slots{};
-
-    // ── Reading ───────────────────────────────────────────────────────────
-    int count_of(int defIdx) const noexcept {
-        if (defIdx < 0) return 0;
-        int n = 0;
-        for (const ItemRef& s : slots) {
-            if (!s.empty() && s.def == std::uint16_t(defIdx)) n += s.count;
-        }
-        return n;
-    }
-    int count(const std::string& id) const noexcept {
-        return count_of(item_index(id));
-    }
-    bool has(const std::string& id) const noexcept { return count(id) > 0; }
-    int total() const noexcept {
-        int n = 0;
-        for (const ItemRef& s : slots) n += s.count;
-        return n;
-    }
-    int used_slots() const noexcept {
-        int n = 0;
-        for (const ItemRef& s : slots) if (!s.empty()) ++n;
-        return n;
-    }
-    bool full() const noexcept { return used_slots() >= kMaxInventorySlots; }
-
-    // Нижняя граница плотной области существ: [first, kMaxInventorySlots)
-    // заняты строками существ, всё ниже — мир предметов. Пустой области —
-    // kMaxInventorySlots. Цена — проход по области, не по контейнеру.
-    int creature_first() const noexcept {
-        int first = kMaxInventorySlots;
-        while (first > 0) {
-            const ItemRef& s = slots[std::size_t(first - 1)];
-            if (s.empty() || world_row_is_item(s.def)) break;
-            --first;
-        }
-        return first;
-    }
-
-    // ── Writing ───────────────────────────────────────────────────────────
-    // Returns FALSE when the container has no room (owner's ruling: the thing
-    // stays where it was — a refused pickup leaves the corpse holding it, a
-    // refused trade rolls back whole, a town whose store is full stops
-    // producing. Goods never evaporate; that is the economy's conservation
-    // law).
-    bool add_ref(const ItemRef& what) {
-        if (what.count <= 0) return true;          // nothing to add
-        for (ItemRef& s : slots) {
-            if (!s.empty() && s.same_kind_as(what)) {
-                // Отказ переполнения ГРОМКИЙ (закон старого ростера, теперь
-                // общий): int32-стак — единственный оставшийся кап.
-                if (s.count > std::numeric_limits<std::int32_t>::max()
-                                   - what.count) {
-                    return false;
-                }
-                s.count += what.count;
-                return true;
-            }
-        }
-        if (world_row_is_item(what.def)) {
-            for (ItemRef& s : slots) {
-                if (s.empty()) { s = what; return true; }
-            }
-            return false;
-        }
-        // Существо: новый слот — ровно ПОД областью (плотность = закон).
-        // Слот занят предметом — области столкнулись, отказ громкий.
-        const int first = creature_first();
-        if (first == 0) return false;
-        ItemRef& s = slots[std::size_t(first - 1)];
-        if (!s.empty()) return false;
-        s = what;
-        return true;
-    }
-    // By ORDINAL — what a system that already knows the row uses (the economy
-    // day, the loot roll). The string forms below are the authoring-facing
-    // convenience over exactly these.
-    bool add_of(int defIdx, int n) {
-        if (defIdx < 0 || n <= 0) return true;
-        ItemRef r{};
-        r.def = std::uint16_t(defIdx);
-        r.count = n;
-        return add_ref(r);
-    }
-    // By SLOT — what a panel that already stands on the exact stack uses.
-    // remove_of(def, n) is blind to affixes: with procedural instances in
-    // play, wearing a rolled sword and removing "a sword" by ordinal could
-    // strip the PLAIN stack and leave the rolled one duplicated — the
-    // conservation law broken in both directions at once.
-    bool remove_at(int slot, int n) {
-        if (slot < 0 || slot >= kMaxInventorySlots || n <= 0) return false;
-        ItemRef& s = slots[std::size_t(slot)];
-        if (s.empty() || s.count < n) return false;
-        const bool creature = !world_row_is_item(s.def);
-        const int first = creature ? creature_first() : 0;
-        s.count -= n;
-        if (s.empty()) {
-            s = ItemRef{};
-            // Дыра в плотной области существ затыкается НОВЕЙШИМ слотом
-            // (slots[first]) — зеркало swap-with-last старого ростера.
-            if (creature && first < slot) {
-                slots[std::size_t(slot)] = slots[std::size_t(first)];
-                slots[std::size_t(first)] = ItemRef{};
-            }
-        }
-        return true;
-    }
-    // ПРЕДМЕТНАЯ дверь: строка существа отказывается громко — её снятие
-    // обязано чинить плотность области и ходит типизированной дверью
-    // (macro/world_row.h), а не ординальной.
-    bool remove_of(int defIdx, int n) {
-        if (defIdx < 0 || n <= 0 || count_of(defIdx) < n) return false;
-        if (!world_row_is_item(std::uint16_t(defIdx))) return false;
-        int left = n;
-        for (ItemRef& s : slots) {
-            if (s.empty() || s.def != std::uint16_t(defIdx)) continue;
-            const int take = s.count < left ? s.count : left;
-            s.count -= take;
-            left -= take;
-            if (s.empty()) s = ItemRef{};
-            if (left == 0) return true;
-        }
-        return left == 0;
-    }
-    bool add(const std::string& id, int n) {
-        const int idx = item_index(id);
-        if (n <= 0) return true;
-        // An id the catalog does not know is a FAILURE, not a silent no-op:
-        // with string ids a fabricated name used to land in the bag and only
-        // reveal itself as "Unknown item" in the UI much later.
-        if (idx < 0) return false;
-        ItemRef r{};
-        r.def = std::uint16_t(idx);
-        r.count = n;
-        return add_ref(r);
-    }
-    bool remove(const std::string& id, int n = 1) {
-        const int idx = item_index(id);
-        if (idx < 0 || n <= 0 || count_of(idx) < n) return false;
-        int left = n;
-        for (ItemRef& s : slots) {
-            if (s.empty() || s.def != std::uint16_t(idx)) continue;
-            const int take = s.count < left ? s.count : left;
-            s.count -= take;
-            left -= take;
-            if (s.empty()) s = ItemRef{};
-            if (left == 0) return true;
-        }
-        return left == 0;
-    }
-    void clear() { slots.fill(ItemRef{}); }
-};
-// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). САМАЯ ТЯЖЁЛАЯ СТРУКТУРА МИРА: 40 960 Б
-// несёт КАЖДЫЙ сквад и КАЖДОЕ место. Форма НАМЕРЕННАЯ (AGENTS п.2, вердикт
-// владельца 2026-09-22: единый контейнер 32×32, пустота оплачена сознательно;
-// слот 40 Б — вердикт слота В, 2026-09-24); число записано здесь, чтобы
-// следующий читал его, а не догадывался.
-static_assert(sizeof(Inventory) == kMaxInventorySlots * sizeof(ItemRef),
-              "инвентарь = 1024 плоских слота, без счётчика и без дырок");
-static_assert(sizeof(Inventory) == 40960, "и это 40 960 Б ровно");
-
-// Player combat slice consumed by `useItem` (mirrors TS inline type).
-struct PlayerCombatSlice {
-    int currentHp, maxHp;
-    int currentMp, maxMp;
-    int currentSp, maxSp;
-};
 
 // Catalog accessor. Returns nullptr if id is unknown (TS returns a
 // dummy "Unknown item" — we expose the lookup so callers can decide).
@@ -486,17 +282,14 @@ const ItemDef* item_def(const std::string& id) noexcept;
 // re-listing ids, so a new catalog row is instantly available everywhere.
 std::span<const ItemDef> item_catalog() noexcept;
 
-// Total inventory weight in kg (sum of def.weight × count).
-float inventory_weight(const Inventory& inv) noexcept;
-
 // ── THE matter law: what a row is MADE OF (owner verdicts 2026-09-11) ──────
 // CANON «Крафт/Скрап»: the game is resource-oriented — every item is
 // materialised raw matter, and craft/scrap/production are ONE reversible
 // reaction over ONE table. That table is the catalog itself: a row's
 // composition lives HERE, as up to kMaxItemParts pairs {catalog ordinal,
-// count}, so the 36-byte instance grows by nothing and the one answer feeds
+// count}, so the 40-byte instance grows by nothing and the one answer feeds
 // four consumers — the city's production day (econ_day), the craft door, the
-// scrap door, and the AI's overflow scrap below.
+// scrap door, and the AI's overflow scrap (macro/anketa.h).
 //
 // A row with NO parts is TERMINAL — raw matter that "consists of itself"
 // (ore, hide, gems, meat, coins). Parts may reference ONLY terminal rows, so
@@ -535,39 +328,6 @@ int item_yield(int defIdx) noexcept;
 //     (owner: «потом расширяемо») — appended, not designed now.
 // 0 = the row is not made by work (terminal raw matter).
 int item_labour(int defIdx) noexcept;
-
-// ── The reversible reaction (CANON «Крафт/Скрап», owner 2026-09-11/12) ─────
-// FORWARD — craft: consume exactly n BATCHES of the composition (full
-// price), emit n × yield WHITE base items (seed 0, no affixes — «закон
-// нулевых аффиксов»: affixes are born in the world, never at a bench).
-// Refuses terminal rows (nothing composes them), missing materials or a
-// full bag — NOTHING ELSE (owner verdict 2026-09-12, ЗАГЛАВНЫМИ: «У НАС
-// БАРТЕРНАЯ ЭКОНОМИКА... ПРОСТО ГОРОД ДЕЛАЕТ МОНЕТЫ ЧЕРЕЗ СИСТЕМУ КРАФТА
-// ПО СВОЕМУ АИ»): coin is a commodity like cloth, the mint IS this door run
-// by the town's own AI, and hand-striking coin is harmless by arithmetic —
-// the reaction is value-neutral (the static_assert beside the table), so a
-// forger earns nothing a smith doesn't. All-or-nothing on a copy: a refused
-// craft leaves the bag untouched (CANON S5 — goods never evaporate).
-bool craft_item(Inventory& inv, int defIdx, int n);
-// REVERSE — scrap: n units of the SLOT (the instance is what is scrapped,
-// not the id — a rolled sword and its bare twin are different stacks) melt
-// back HALF THEIR TOTAL MATTER, floored per part: floor(n × count / (2 ×
-// yield)) («закон энтропии» pooled — owner verdict 2026-09-12: one sword
-// still returns 1 iron, one dagger's handle still burns whole, and 64 coins
-// melt to 1 silver through this same door — no coin special case exists).
-// The seed and every affix burn with no return («запрет вечного реролла» as
-// arithmetic). A non-zero material byte substitutes part 0 (see
-// ItemRef.material). Terminal rows refuse: raw matter has no reverse.
-// All-or-nothing on a copy.
-bool scrap_at(Inventory& inv, int slot, int n);
-// The AI's slot hygiene (CANON: «склад не забивается говном»). While MORE
-// than half the container is occupied, scrap the CHEAPEST non-fungible stacks
-// (rolled/affixed instances — plain rows stack into one slot and cannot clog)
-// whole, cheapest first by value_of × count, into raw matter. Returns stacks
-// scrapped. The player's own bag NEVER passes through here — his scrap is a
-// manual act (owner law, same CANON section).
-inline constexpr int kAutoScrapSlots = kMaxInventorySlots / 2;  // 512 = 50%
-int auto_scrap_overflow(Inventory& inv);
 
 // Loot generation. `rng()` returns float in [0, 1).
 using RngFn = float (*)();
@@ -671,10 +431,6 @@ std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng,
 std::size_t loot_profile_count() noexcept;
 const char* loot_profile_id(std::size_t i) noexcept;
 
-// Apply consumable effect to player. Returns the player-visible message
-// (empty string if item not found, not consumable, or out of stock).
-std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlice& pc);
-
 } // namespace sm
 
 // Включение стоит ЗДЕСЬ, а не наверху файла, и это не небрежность:
@@ -692,6 +448,4 @@ std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlic
 // списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
 TIMAERT_ROW(sm::ItemDef);
 TIMAERT_ROW(sm::ItemRef);
-TIMAERT_ROW(sm::Inventory);
-TIMAERT_ROW(sm::PlayerCombatSlice);
 TIMAERT_ROW(sm::ItemPart);
