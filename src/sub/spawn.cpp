@@ -585,25 +585,22 @@ bool tracked_body_owns_nothing(const entt::registry& reg,
         && reg.all_of<ecs::MacroSlot>(macro);
 }
 
-entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
+entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant) {
-    if (macro == entt::null || !reg.valid(macro)) return entt::null;
-    // ЗАПИСЬ ЕСТЬ СЛОТ STORE, и другой формы больше нет (шаг 2 1е). Прежде
-    // гард пускал и «сценическую» сущность с полным набором компонент — а
-    // строкой ниже бэклинк берётся ХЭНДЛОМ, которым такая сущность не
-    // адресуется вовсе: гард обещал форму, которую дверь не умеет исполнить
-    // (assert в дебаге, UB в релизе). Обещание снято, а не подпёрто.
-    if (!reg.all_of<ecs::MacroSlot>(macro)) return entt::null;
-    const auto& kind = (*body_state<ecs::NPCKind>(reg, macro));
+    // ЗАПИСЬ ЕСТЬ СЛОТ STORE, и другой формы больше нет (шаг 2 1е):
+    // идентичность — хэндл, протухший хэндл честно отказывает.
+    MacroStore& st = store_of(reg);
+    if (!st.valid(macro)) return entt::null;
+    const auto& kind = st.kind[macro.slot];
     // A kind that names no row at all is refused; a kind that names one is
     // trackable, whatever it is. The extra refusal that stood here — "not a
-    // creature" — died with the second birth: a pack leader is a macro entity
+    // creature" — died with the second birth: a pack leader is a macro record
     // like a lord, and his body copies his face and his wounds down the same
     // way (CANON.md S4).
     if (!valid_npc_kind(kind.type)) return entt::null;
 
-    const auto& health = (*body_state<ecs::Pools>(reg, macro));
+    const auto& health = st.pools[macro.slot];
     const float fraction = health.maxHp > 0
         ? std::clamp(float(health.hp) / float(health.maxHp), 0.0f, 1.0f)
         : 1.0f;
@@ -612,10 +609,10 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
     body.type      = static_cast<NPCType>(kind.type);
     body.x         = x;
     body.y         = y;
-    // What it is, whose it is and how senior it is are read from the entity
+    // What it is, whose it is and how senior it is are read from the record
     // itself — a tracked body has no second opinion about its own identity.
     body.faction   = kind.factionIdx;
-    body.level     = normalize_soldier_level((*body_state<ecs::NpcLevel>(reg, macro)).value);
+    body.level     = normalize_soldier_level(int(st.level[macro.slot].value));
     body.seed      = seed;
     body.combatant = combatant;
     // HIMSELF, not a namesake: the record the macro layer keeps (owned by a
@@ -625,13 +622,13 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
     // enchanted ring and his burning haste took no part in his subworld swing —
     // his gear protected him (the damage door read it) but never struck with
     // him. Through the one effective door, like every other read of a body.
-    const BonusTotals standing = standing_bonuses_of(reg, macro);
+    const BonusTotals standing = standing_bonuses_of(st, macro);
     const CharacterSheet macroSheet =
-        effective_sheet(sheet_of(reg, macro), standing);
+        effective_sheet(sheet_of(st, macro), standing);
     body.sheet = &macroSheet;
 
     const entt::entity e =
-        emplace_body(reg, body, (*body_state<ecs::NpcCharacter>(reg, macro)), fraction);
+        emplace_body(reg, body, st.character[macro.slot], fraction);
 
     // The belongings, the personality, the gear and the book are STATE up
     // there, and they STAY up there: nothing is copied down. The line that
@@ -647,7 +644,7 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
     // it is the ADDRESS — of the bars he spends, the bag he carries and the
     // plate he wears. It used to be described as «where the return trip writes»;
     // there is no return trip any more, because there is no copy to return.
-    reg.emplace<ecs::MacroOrigin>(e, handle_of(reg, macro));
+    reg.emplace<ecs::MacroOrigin>(e, macro);
     // What stood on him when the numbers above were derived — the comparison
     // the per-tick re-derive is gated on (sub/record.h StandingMirror).
     reg.emplace<StandingMirror>(e, standing);
@@ -667,7 +664,7 @@ bool refresh_body_strike(entt::registry& reg, entt::entity body) {
     // A body with no row has no creature template to project a swing from —
     // the hero husk is exactly that, and his hands are assembled elsewhere
     // (hand_strike_fields), from the same effective sheet.
-    const auto* kind = body_state<ecs::NPCKind>(reg, body);
+    const auto* kind = reg.try_get<ecs::NPCKind>(body);
     if (!kind || !valid_npc_kind(kind->type)) return false;
     auto* combat = reg.try_get<ecs::Combat>(body);
     if (!combat) return false;
@@ -1435,14 +1432,23 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // through the mirror). The old writeback fear died with the mirror law:
     // a projected body owns nothing, it reads and writes THE record. While
     // he is HIMSELF the squad carries PlayerTag, so nothing double-projects.
-    std::vector<entt::entity> sources;
+    std::vector<MacroHandle> sources;
+    MacroStore& st = store_of(reg);
     {
-        // ФЛИП 1в: макро-сквады = носители MacroSlot; судьба — байт store.
-        MacroStore& st = store_of(reg);
-        auto view = reg.view<ecs::MacroSlot>(entt::exclude<ecs::PlayerTag>);
-        for (auto macro : view) {
-            if (st.dead[slot_of(reg, macro)] != 0) continue;
-            sources.push_back(macro);
+        // Население — живые слоты store (1е, голый цикл); флаг игрока —
+        // его слот (его тело в сцене — аватар, не проекция). Резолв тегом
+        // до его смерти (шаг 2 1е), потом источником станет GameState.
+        std::uint16_t flagSlot = kMacroNoSlot;
+        for (auto fe : reg.view<ecs::PlayerTag>()) {
+            if (const auto* ms = reg.try_get<ecs::MacroSlot>(fe))
+                flagSlot = ms->slot;
+            break;
+        }
+        for (std::uint32_t s32 = 0; s32 < kMacroEntityCap; ++s32) {
+            const std::uint16_t slot = std::uint16_t(s32);
+            if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
+            if (slot == flagSlot) continue;
+            sources.push_back(handle_at(st, slot));
         }
     }
 
@@ -1464,8 +1470,8 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     }
 
     int projected = 0;
-    for (const entt::entity macro : sources) {
-        const auto& mcell = (*body_state<ecs::MacroCell>(reg, macro));
+    for (const MacroHandle macro : sources) {
+        const auto& mcell = st.cell[macro.slot];
         const int mcx = ecs::cell_x(mcell, mapW);
         const int mcy = ecs::cell_y(mcell, mapW);
         // Which of the 3×3 window cells does this macro NPC occupy (if any)?
@@ -1473,14 +1479,14 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         const int oy = toroidal_cell_offset(mcy, centerCy, mapH);
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
         if (std::find(alreadyProjected.begin(), alreadyProjected.end(),
-                      handle_of(reg, macro))
+                      macro)
             != alreadyProjected.end()) continue;
 
         // (The projection cap that stood here — kMaxProjectedMacroNpcs, 128
         // for the whole scene — died with §42 Инк 6, owner: «потолков нет».
         // Every macro body standing in the window walks in; the one physical
         // bound is the crowd grid, and it already shouts when it binds.)
-        const auto& kind = (*body_state<ecs::NPCKind>(reg, macro));
+        const auto& kind = st.kind[macro.slot];
 
         // Deterministic per-(cell, type, index) stream: the same overworld state
         // reprojects identically, yet two same-type NPCs in one cell still differ
@@ -1503,7 +1509,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // deck of a bridge is a perfectly good place to meet a caravan
         // (sub/height.h is_dry_footing). Falls back to the cell centre if 20
         // tries all land in water (never lose the NPC).
-        const auto& mrt = (*body_state<ecs::MacroNpcRuntime>(reg, macro));
+        const auto& mrt = st.runtime[macro.slot];
         int sdx = 0, sdy = 0;
         (void)unpack_entry_dir(mrt.entryDir, sdx, sdy);
         const int originX = (ox + 1) * kCellSize;
@@ -1548,7 +1554,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // hand-authored or persistent leader with a Leader-class perk buffs
         // its troops through this same line with no further change anywhere.
         BonusTotals leaderBonuses{};
-        if (const auto* leaderSheet = body_state<CharacterSheet>(reg, leaderBody)) {
+        if (const auto* leaderSheet = reg.try_get<CharacterSheet>(leaderBody)) {
             leaderBonuses = squad_bonuses(*leaderSheet);
         }
 
@@ -1562,8 +1568,9 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // other placement here; a member that finds no land stands ON the
         // leader's spot rather than being lost. The whole roster walks in —
         // no ceiling (§42 Инк 6): an army of hundreds meets you as hundreds.
-        if (const auto* mbag = body_state<ecs::NpcInventory>(reg, macro)) {
-            const auto* sid = body_state<ecs::MacroSpawnId>(reg, macro);
+        {
+            const auto* mbag = &st.inventory[macro.slot];
+            const auto* sid = &st.spawnId[macro.slot];
             constexpr float kTau = 6.2831853f;
             const int memberCount = int(creature_heads(mbag->inv));
             int m = -1;

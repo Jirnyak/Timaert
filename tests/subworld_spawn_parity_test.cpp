@@ -1053,7 +1053,8 @@ int main() {
         stq.sheet[hq.slot] = own;
 
         const entt::entity body = sm::sub::spawn_tracked_body(
-            reg, lord, 100.0f, 100.0f, /*seed*/0xD1FFu, /*combatant*/true);
+            reg, sm::try_handle_of(reg, lord), 100.0f, 100.0f, /*seed*/0xD1FFu,
+            /*combatant*/true);
         CHECK(body != entt::null,
               "the fixture must actually project a body");
 
@@ -1135,7 +1136,8 @@ int main() {
         // reallocates component storage, and a reference held across one is
         // the project's standing grabla (ecs-ref-not-across-tick).
         const entt::entity body = sm::sub::spawn_tracked_body(
-            reg, lord, 64.0f, 64.0f, /*seed*/0x5EEDu, /*combatant*/false);
+            reg, sm::try_handle_of(reg, lord), 64.0f, 64.0f, /*seed*/0x5EEDu,
+            /*combatant*/false);
         sm::sub::BodySpec anon{};
         anon.type = sm::NPCType::Bandit;
         anon.level = 5;
@@ -1214,7 +1216,8 @@ int main() {
         stq.level[hq.slot] = sm::ecs::NpcLevel{std::int16_t(6)};
 
         const entt::entity body = sm::sub::spawn_tracked_body(
-            reg, lord, 32.0f, 32.0f, /*seed*/0xBEEFu, /*combatant*/true);
+            reg, sm::try_handle_of(reg, lord), 32.0f, 32.0f,
+            /*seed*/0xBEEFu, /*combatant*/true);
         CHECK(body != entt::null, "the fixture projects a body");
         if (body == entt::null) return sm::test::report(
             "subworld_spawn_parity_test");

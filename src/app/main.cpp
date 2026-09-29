@@ -534,10 +534,7 @@ bool route_macro_npc_attack(App& app, sm::MacroHandle npc) {
     // like him: killing that stranger killed nobody on the map, so the same
     // encounter could be farmed until the player got bored. Now it is the
     // tracked form — one macro record, one body, one death.
-    // (Резолв хэндла в entt-тело — ГОРЛОВИНА шва: спавн-дверь субмира до
-    // фазы 2 принимает энтити; скан вне тика законен — клик игрока.)
-    const entt::entity npcE = sm::macro_entity_of(app.ecs.reg, npc);
-    if (npcE == entt::null || !app.subworld.spawn_tracked_npc_body(npcE)) {
+    if (!app.subworld.spawn_tracked_npc_body(npc)) {
         app.subworld.leave(true);
         return false;
     }

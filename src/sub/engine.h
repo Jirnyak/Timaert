@@ -315,7 +315,7 @@ public:
     // hand into a body that was a STRANGER to its original: killing it killed
     // nobody, and the encounter could be farmed for as long as the player had
     // patience. Returns false only if `macro` is not a body-shaped entity.
-    bool spawn_tracked_npc_body(entt::entity macro);
+    bool spawn_tracked_npc_body(MacroHandle macro);
 
     void tick(float dt);
     void prepare_frame(VkCommandBuffer cmd);

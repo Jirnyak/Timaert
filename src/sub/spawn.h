@@ -121,12 +121,11 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
                                 const BonusTotals* squadBonuses = nullptr);
 
 // Form 2 — TRACKED. Reads WHAT this body is (type, faction, rank), WHO it is
-// (face) and HOW HURT it is straight from the macro entity, and hands the body
+// (face) and HOW HURT it is straight from the macro record, and hands the body
 // back its `MacroOrigin` backlink so the return trip — wounds up, death up — has
-// somewhere to write. Returns entt::null if `macro` is not a body-shaped macro
-// entity (no kind / health / rank / face, or a kind outside the humanoid rows):
-// a caller cannot accidentally get a half-tracked body.
-entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
+// somewhere to write. Returns entt::null if `macro` is not a live record with a
+// body-shaped kind: a caller cannot accidentally get a half-tracked body.
+entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant);
 

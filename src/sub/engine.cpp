@@ -180,7 +180,7 @@ Inventory& player_bag_of(ecs::World* ecs) {
 }
 
 float body_sight(const entt::registry& reg, entt::entity e) {
-    const auto* kind = body_state<ecs::NPCKind>(reg, e);
+    const auto* kind = reg.try_get<ecs::NPCKind>(e);
     if (const NpcTypeDef* row = row_for(kind)) {
         if (row->combat.sight > 0.0f) return row->combat.sight;
     }
@@ -284,9 +284,9 @@ std::uint32_t string_hash(const char* s) {
 // could not carry a name. Faces are derived in ONE place now: sub/spawn.cpp.)
 
 bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
-    const auto* h = body_state<ecs::Pools>(reg, e);
+    const auto* h = reg.try_get<ecs::Pools>(e);
     return h && h->hp > 0.0f && reg.all_of<ecs::SubworldTag>(e)
-        && !macro_dead(reg, e);
+        && !reg.all_of<ecs::Dead>(e);
 }
 
 bool hostile_to_player_entity(entt::registry& reg,
@@ -296,7 +296,8 @@ bool hostile_to_player_entity(entt::registry& reg,
         return false;
     }
     if (reg.any_of<ecs::TempHostileToPlayer>(e)) return true;
-    const char* factionId = faction_id_for_kind(body_state<ecs::NPCKind>(reg, e));
+    const char* factionId =
+        faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
     return player_hostile_to(gs, factionId);
 }
 
@@ -311,7 +312,7 @@ bool hostile_to_player_entity(entt::registry& reg,
 // own mask — same semantics, integer cost.
 
 const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
-    const auto* kind = body_state<ecs::NPCKind>(reg, e);
+    const auto* kind = reg.try_get<ecs::NPCKind>(e);
     if (kind && kind->type < std::uint16_t(NPCType::Count)) {
         const NPCType type = static_cast<NPCType>(std::uint8_t(kind->type));
         return npc_def(type).label;
@@ -346,7 +347,8 @@ void apply_player_hit_reputation(entt::registry& reg,
     if (!gs || !reg.valid(target)) return;
     if (hostile_to_player_entity(reg, target, gs)) return;
 
-    const char* factionId = faction_id_for_kind(body_state<ecs::NPCKind>(reg, target));
+    const char* factionId =
+        faction_id_for_kind(reg.try_get<ecs::NPCKind>(target));
     if (!factionId || factionId[0] == '\0') return;
     add_player_reputation(*gs, factionId, kHitRepPenalty);
     maybe_flip_temp_hostile(reg, target, gs, factionId);
@@ -491,7 +493,8 @@ void clear_subworld_entities(ecs::World& w) {
 float player_stance(entt::registry& reg, entt::entity e, const GameState* gs) {
     if (is_player_side(reg, e)) return 1.0f;                    // own side
     if (reg.any_of<ecs::TempHostileToPlayer>(e)) return -1.0f;  // provoked
-    const char* factionId = faction_id_for_kind(body_state<ecs::NPCKind>(reg, e));
+    const char* factionId =
+        faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
     const int rep = player_reputation(gs, factionId);
     if (rep >= 0) {
         return std::min(1.0f, float(rep) / float(kAllyRepThreshold));
@@ -2815,21 +2818,22 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
     return true;
 }
 
-bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
+bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     if (!active_ || !ecs_) return false;
     auto& reg = ecs_->reg;
-    if (macro == entt::null || !reg.valid(macro)) return false;
+    MacroStore& st = store_of(reg);
+    if (!st.valid(macro)) return false;
 
     // Same placement rule as a spawned encounter — the shared ring, so the
     // two paths cannot disagree about where a body may stand.
-    const auto* mpos = reg.try_get<ecs::Position>(macro);
-    // Both coordinates, through the door. The hand-written mix here carried
-    // only X: every body on one column of the map drew the same stream.
+    // Both coordinates, through the door: the record's own cell salts the
+    // stream, and the packed handle diverges two lords on one cell.
+    const auto& mc = st.cell[macro.slot];
     const std::uint32_t seed =
-        (mpos ? cell_seed(gs_ ? gs_->worldSeed : 0u,
-                          int(mpos->x), int(mpos->y))
-              : (gs_ ? gs_->worldSeed : 0u))
-        ^ (std::uint32_t(entt::to_integral(macro)) * 16777619u);
+        (gs_ ? cell_seed(gs_->worldSeed, ecs::cell_x(mc, gs_->mapW),
+                         ecs::cell_y(mc, gs_->mapW))
+             : 0u)
+        ^ (macro_handle_bits(macro) * 16777619u);
     Rng rng(seed);
     float fx = playerX_;
     float fy = playerY_;
@@ -2841,9 +2845,8 @@ bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
     // в субмир»). Бой ОБЪЯВЛЕН — противник сошёлся: уже стоящее тело
     // встаёт в то же кольцо, куда встало бы рождённое, той же рукой
     // (place_body_ring выше) — а второго тела для одного лорда не бывает.
-    const MacroHandle macroH = handle_of(reg, macro);
     for (auto e : reg.view<ecs::MacroOrigin>()) {
-        if (reg.get<ecs::MacroOrigin>(e).macro != macroH) continue;
+        if (reg.get<ecs::MacroOrigin>(e).macro != macro) continue;
         if (auto* p = reg.try_get<ecs::Position>(e)) {
             p->x = fx;
             p->y = fy;
@@ -2860,7 +2863,7 @@ bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
     if (body == entt::null) return false;
 
     char msg[160]{};
-    const auto& kind = (*body_state<ecs::NPCKind>(reg, body));
+    const auto& kind = (*reg.try_get<ecs::NPCKind>(body));
     std::snprintf(msg, sizeof(msg), "Encounter: %s",
                   npc_def(static_cast<NPCType>(kind.type)).label);
     set_status(msg);
@@ -3112,7 +3115,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // keeps its own colours. «Ты полностью тот, в чьём теле стоишь» — в
         // том числе для чужих глаз; перекраска любого AvatarTag-тела в
         // «player» делала одержимого лорда предателем собственных стен.
-        const auto* bodyKind = body_state<ecs::NPCKind>(reg, e);
+        const auto* bodyKind = reg.try_get<ecs::NPCKind>(e);
         d.faction = std::int16_t(
             isPlayer && !bodyKind
                 ? crowdPlayerFaction_
@@ -3398,8 +3401,8 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 }
             }
             const auto* pos = reg.try_get<ecs::Position>(e);
-            const auto* kind = body_state<ecs::NPCKind>(reg, e);
-            const auto* level = body_state<ecs::NpcLevel>(reg, e);
+            const auto* kind = reg.try_get<ecs::NPCKind>(e);
+            const auto* level = reg.try_get<ecs::NpcLevel>(e);
             const auto* lastHit = reg.try_get<ecs::LastHit>(e);
             const int lvl = normalize_soldier_level(level ? level->value : 1);
 
@@ -3436,10 +3439,9 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                                    reg.try_get<ecs::MacroDebt>(killerBody);
                                debt && debt->stock
                                    == std::uint8_t(MacroStock::Roster)) {
-                        const entt::entity le = macro_entity_by_spawn_id(
-                            *mw_.world, std::uint32_t(debt->subject));
-                        if (le != entt::null)
-                            leader = handle_of(mw_.world->reg, le);
+                        leader = macro_handle_by_spawn_id(
+                            store_of(mw_.world->reg),
+                            std::uint32_t(debt->subject));
                     } else if (reg.any_of<ecs::AvatarTag,
                                           ecs::PlayerSoldierTag>(killerBody)) {
                         const entt::entity ps = player_squad_entity(*ecs_);

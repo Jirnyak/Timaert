@@ -196,7 +196,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         /*hp*/15.0f, /*maxHp*/30.0f, /*visualSeed*/0xFEEDu);
 
     const entt::entity body =
-        sub::spawn_tracked_body(reg, macro, 40.0f, 41.0f, 777u,
+        sub::spawn_tracked_body(reg, sm::try_handle_of(reg, macro), 40.0f, 41.0f, 777u,
                                 /*combatant*/true);
     CHECK_OR_RETURN(body != entt::null && reg.valid(body),
                     "a body-shaped macro entity can be embodied");
@@ -252,7 +252,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         reg, NPCType::Bandit, /*faction*/2, /*level*/3,
         /*hp*/9.0f, /*maxHp*/9.0f, /*visualSeed*/0xB0B0u);
     const entt::entity wholeBody =
-        sub::spawn_tracked_body(reg, whole, 60.0f, 61.0f, 778u, true);
+        sub::spawn_tracked_body(reg, sm::try_handle_of(reg, whole), 60.0f, 61.0f, 778u, true);
     CHECK_OR_RETURN(wholeBody != entt::null, "the control body was embodied");
     {
         const auto& h = (*sm::body_state<ecs::Pools>(reg, wholeBody));
@@ -273,9 +273,9 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     // a hole in it.
     const auto bare = reg.create();
     reg.emplace<ecs::Position>(bare, 1.0f, 1.0f, 0.0f);
-    CHECK(sub::spawn_tracked_body(reg, bare, 5.0f, 5.0f, 1u, false) == entt::null,
+    CHECK(sub::spawn_tracked_body(reg, sm::try_handle_of(reg, bare), 5.0f, 5.0f, 1u, false) == entt::null,
           "an entity that is not body-shaped is refused, not half-embodied");
-    CHECK(sub::spawn_tracked_body(reg, entt::null, 5.0f, 5.0f, 1u, false)
+    CHECK(sub::spawn_tracked_body(reg, sm::MacroHandle{}, 5.0f, 5.0f, 1u, false)
               == entt::null,
           "nothing embodies nothing");
 
@@ -288,7 +288,7 @@ void test_a_body_that_is_not_an_entity_is_refused() {
         /*hp*/10, /*maxHp*/10, /*visualSeed*/0u);
     sm::store_of(reg).kind[reg.get<ecs::MacroSlot>(monster).slot].type =
         std::uint16_t(0x103);
-    CHECK(sub::spawn_tracked_body(reg, monster, 5.0f, 5.0f, 1u, false)
+    CHECK(sub::spawn_tracked_body(reg, sm::try_handle_of(reg, monster), 5.0f, 5.0f, 1u, false)
               == entt::null,
           "a monster id cannot pass for a humanoid row");
 }
