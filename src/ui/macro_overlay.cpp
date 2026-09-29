@@ -358,12 +358,16 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // monochromatic blob that visually competes with the GLSL features.
     if (zoom >= 10.0f) {
         MacroStore& st = store_of(w);
-        auto view = w.reg.view<ecs::MacroSlot>(
-            entt::exclude<ecs::PlayerTag,
-                          ecs::PlayerSquadTag>);  // the player is his own marker, under possession too
-        for (auto e : view) {
-            const std::uint16_t slot = slot_of(w.reg, e);
-            if (st.dead[slot] != 0) continue;
+        // Обход живых слотов store (1е, голый цикл); игрок — свой маркер,
+        // и под вселением тоже: слот флага + колонка ординала.
+        const std::uint16_t flagSlot =
+            try_handle_of(w.reg, player_flag_entity(w)).slot;
+        for (std::uint32_t s32 = 0; s32 < kMacroEntityCap; ++s32) {
+            const std::uint16_t slot = std::uint16_t(s32);
+            if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
+            if (slot == flagSlot
+                || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal)
+                continue;
             const auto& cell = st.cell[slot];
             const auto& kind = st.kind[slot];
             const auto& hp   = st.pools[slot];
@@ -629,9 +633,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
     if (showRows) {
 
         MacroStore& st = store_of(w);
-        auto view = w.reg.view<ecs::MacroSlot>(
-            entt::exclude<ecs::PlayerTag,
-                          ecs::PlayerSquadTag>);  // never list the player as a party standing next to himself
+        // Обход живых слотов store (1е): игрок не сосед самому себе —
+        // слот флага + колонка ординала, как у маркеров выше.
+        const std::uint16_t flagSlot =
+            try_handle_of(w.reg, player_flag_entity(w)).slot;
 
         // Fixed row buffer: this render hot path must not grow heap storage
         // when multiple objects share adjacent cells. A row names its
@@ -675,8 +680,12 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
             }
         };
 
-        for (auto e : view) {
-            const std::uint16_t slot = slot_of(w.reg, e);
+        for (std::uint32_t s32 = 0; s32 < kMacroEntityCap; ++s32) {
+            const std::uint16_t slot = std::uint16_t(s32);
+            if (st.alive[slot] == 0) continue;
+            if (slot == flagSlot
+                || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal)
+                continue;
             const auto& cell = st.cell[slot];
             const auto& hp  = st.pools[slot];
             if (hp.hp <= 0) continue;

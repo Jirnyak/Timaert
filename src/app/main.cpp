@@ -516,15 +516,12 @@ void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
     app.ui.settlement = true;
 }
 
-bool route_macro_npc_attack(App& app, entt::entity npc) {
+bool route_macro_npc_attack(App& app, sm::MacroHandle npc) {
     if (!app.worldLoaded || app.subworld.active()) return false;
-    auto& reg = app.ecs.reg;
-    if (!reg.valid(npc)) return false;
-    // ФЛИП 1в: макро-сквад = носитель слота store, колонки есть у всех.
-    if (!reg.all_of<sm::ecs::MacroSlot>(npc)) return false;
+    sm::MacroStore& st = sm::store_of(app.ecs);
+    if (!st.valid(npc)) return false;
 
-    const auto& hp = (*body_state<sm::ecs::Pools>(reg, npc));
-    if (hp.hp <= 0) return false;
+    if (st.pools[npc.slot].hp <= 0) return false;
 
     app.cursor.path.clear();
     app.cursor.pathIdx = 0;
@@ -536,8 +533,11 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
     // face, his bag and his traits into a fresh stranger who happened to look
     // like him: killing that stranger killed nobody on the map, so the same
     // encounter could be farmed until the player got bored. Now it is the
-    // tracked form — one macro entity, one body, one death.
-    if (!app.subworld.spawn_tracked_npc_body(npc)) {
+    // tracked form — one macro record, one body, one death.
+    // (Резолв хэндла в entt-тело — ГОРЛОВИНА шва: спавн-дверь субмира до
+    // фазы 2 принимает энтити; скан вне тика законен — клик игрока.)
+    const entt::entity npcE = sm::macro_entity_of(app.ecs.reg, npc);
+    if (npcE == entt::null || !app.subworld.spawn_tracked_npc_body(npcE)) {
         app.subworld.leave(true);
         return false;
     }
@@ -584,17 +584,18 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     // по флажку, значит и сторона боя, и гир — запись ФЛАГА, кем бы он ни
     // ходил. До этого ростер/полосы шли по ординалу оригинала — §45 «два
     // ответа» об одном бое.
-    sm::AutoBattleSide s = sm::auto_battle_side_of(
-        app.ecs, sm::player_flag_entity(app.ecs));
+    sm::MacroStore& st = sm::store_of(app.ecs);
+    const sm::MacroHandle flagH =
+        sm::try_handle_of(app.ecs.reg, sm::player_flag_entity(app.ecs));
+    sm::AutoBattleSide s = sm::auto_battle_side_of(st, flagH);
     // The player's swing, credited exactly as the fought path rolls it: the
     // ONE assembly (hand_strike_fields) over the weapon actually in hand,
     // taken at its expectation like every auto-resolve number.
     const sm::ecs::BodyEquipment* eqp = nullptr;
     const sm::ecs::NpcInventory* bagp = nullptr;
-    if (const entt::entity sq = sm::player_flag_entity(app.ecs);
-        sq != entt::null) {
-        eqp  = body_state<sm::ecs::BodyEquipment>(app.ecs.reg, sq);
-        bagp = body_state<sm::ecs::NpcInventory>(app.ecs.reg, sq);
+    if (st.valid(flagH)) {
+        eqp  = &st.gear[flagH.slot];
+        bagp = &st.inventory[flagH.slot];
     }
     const sm::StrikeFields hs = sm::hand_strike_fields(
         eff.attributes, eff.skills, eqp ? &eqp->gear : nullptr,
@@ -611,13 +612,15 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
 // What the leader asks to let you pass: scaled by his squad's strength, and
 // a Greedy leader asks double — the trait is data on the entity. Balance
 // knob (owner: retune after playtests).
-int encounter_payoff_cost(App& app, entt::entity npc) {
+int encounter_payoff_cost(App& app, sm::MacroHandle npc) {
+    const sm::MacroStore& st = sm::store_of(app.ecs);
     const float their =
-        sm::squad_power(sm::auto_battle_side_of(app.ecs, npc));
+        sm::squad_power(sm::auto_battle_side_of(st, npc));
     int cost = std::max(10, int(their / 10.0f));
-    if (const auto* tr = body_state<sm::ecs::NpcTraits>(app.ecs.reg, npc)) {
-        for (std::uint8_t i = 0; i < tr->count; ++i) {
-            if (tr->traits[i] == std::uint8_t(sm::NPCTrait::Greedy)) cost *= 2;
+    if (st.valid(npc)) {
+        const auto& tr = st.traits[npc.slot];
+        for (std::uint8_t i = 0; i < tr.count; ++i) {
+            if (tr.traits[i] == std::uint8_t(sm::NPCTrait::Greedy)) cost *= 2;
         }
     }
     return cost;
@@ -625,10 +628,10 @@ int encounter_payoff_cost(App& app, entt::entity npc) {
 
 // The odds of slipping away: your share of the combined strength, banded so
 // there is always a chance and never a certainty.
-float encounter_flee_chance(App& app, entt::entity npc) {
+float encounter_flee_chance(App& app, sm::MacroHandle npc) {
     const float mine = sm::squad_power(player_auto_battle_side(app));
-    const float their =
-        sm::squad_power(sm::auto_battle_side_of(app.ecs, npc));
+    const float their = sm::squad_power(
+        sm::auto_battle_side_of(sm::store_of(app.ecs), npc));
     return std::clamp(0.25f + 0.5f * mine / std::max(1.0f, mine + their),
                       0.05f, 0.95f);
 }
@@ -653,10 +656,11 @@ void push_combat_log(App& app, std::string msg) {
 // loss drives currentHp to 0 and the ordinary death check ends the game —
 // by the resolver's own law that only happens when his whole army died
 // with him.
-void perform_encounter_auto(App& app, entt::entity npc, sm::Ambush ambush) {
+void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush) {
+    sm::MacroStore& st = sm::store_of(app.ecs);
     const sm::AutoBattleOutcome o = sm::resolve_auto_battle(
         player_auto_battle_side(app),
-        sm::auto_battle_side_of(app.ecs, npc),
+        sm::auto_battle_side_of(st, npc),
         ambush, app.npcAi.jitter);
     sm::MacroWorld mw = macro_world(app);
     const int xp = sm::settle_player_auto_battle(mw, npc, o, true);
@@ -668,29 +672,28 @@ void perform_encounter_auto(App& app, entt::entity npc, sm::Ambush ambush) {
                   won ? "victory" : "defeat",
                   int(o.casualtiesA.size()), int(o.casualtiesB.size()), xp);
     push_combat_log(app, line);
-    const bool enemyGone = !app.ecs.reg.valid(npc)
-        || sm::macro_dead(app.ecs.reg, npc);
+    const bool enemyGone = sm::macro_dead(st, npc);
     close_pre_battle(app, /*grace*/!enemyGone);
 }
 
 // One action row of the pre-battle screen.
 struct PreBattleAction {
-    void (*label)(App&, entt::entity, char*, std::size_t);
-    bool (*available)(App&, entt::entity);
+    void (*label)(App&, sm::MacroHandle, char*, std::size_t);
+    bool (*available)(App&, sm::MacroHandle);
     // Returns true when the encounter is consumed (the modal closes).
-    bool (*perform)(App&, entt::entity);
+    bool (*perform)(App&, sm::MacroHandle);
     const char* tooltip;
 };
 
 const PreBattleAction kPreBattleActions[] = {
     // Talk: hear the leader out — his row's own lines. The seed of the
     // negotiation/relations rows to come.
-    {[](App&, entt::entity, char* out, std::size_t n) {
+    {[](App&, sm::MacroHandle, char* out, std::size_t n) {
          std::snprintf(out, n, "Talk");
      },
-     [](App&, entt::entity) { return true; },
-     [](App& app, entt::entity npc) {
-         const auto& kind = (*body_state<sm::ecs::NPCKind>(app.ecs.reg, npc));
+     [](App&, sm::MacroHandle) { return true; },
+     [](App& app, sm::MacroHandle npc) {
+         const auto& kind = sm::store_of(app.ecs).kind[npc.slot];
          const sm::NpcTypeDef& def =
              sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
          if (def.talkCount > 0) {
@@ -701,24 +704,25 @@ const PreBattleAction kPreBattleActions[] = {
      },
      "Hear what they have to say."},
     // Pay off: gold buys the road. Grace lets you actually walk away.
-    {[](App& app, entt::entity npc, char* out, std::size_t n) {
+    {[](App& app, sm::MacroHandle npc, char* out, std::size_t n) {
          std::snprintf(out, n, "Pay off (%d gold)",
                        encounter_payoff_cost(app, npc));
      },
-     [](App& app, entt::entity npc) {
+     [](App& app, sm::MacroHandle npc) {
          return sm::inventory_value(player_bag(app))
                     >= encounter_payoff_cost(app, npc);
      },
-     [](App& app, entt::entity npc) {
+     [](App& app, sm::MacroHandle npc) {
          const int cost = encounter_payoff_cost(app, npc);
          // The toll is REAL goods by the one value law (coin first by
          // density, №1) into the bandit's own bag — rob him back later and
          // it is there. What his bag refuses stays yours, and the line
          // reports what actually changed hands.
+         sm::MacroStore& st = sm::store_of(app.ecs);
          int paid = cost;
-         if (auto* bag =
-                 body_state<sm::ecs::NpcInventory>(app.ecs.reg, npc)) {
-             paid = sm::transfer_value_dense(player_bag(app), bag->inv, cost);
+         if (st.valid(npc)) {
+             paid = sm::transfer_value_dense(
+                 player_bag(app), st.inventory[npc.slot].inv, cost);
          } else {
              paid = sm::pay_value_dense(player_bag(app), cost);
          }
@@ -732,17 +736,17 @@ const PreBattleAction kPreBattleActions[] = {
      "Buy your way past. A greedy leader asks double."},
     // Flee attempt: odds from the one strength law; failing means they are
     // on you — the fight happens on the ground.
-    {[](App& app, entt::entity npc, char* out, std::size_t n) {
+    {[](App& app, sm::MacroHandle npc, char* out, std::size_t n) {
          std::snprintf(out, n, "Try to flee (~%d%%)",
                        int(encounter_flee_chance(app, npc) * 100.0f));
      },
-     [](App&, entt::entity) { return true; },
-     [](App& app, entt::entity npc) {
+     [](App&, sm::MacroHandle) { return true; },
+     [](App& app, sm::MacroHandle npc) {
          if (app.npcAi.jitter.next_f01() < encounter_flee_chance(app, npc)) {
              // Slip two cells straight away from them, dodging water; a
              // failed search leaves you where you stand — graced, but they
              // may catch you again.
-             const auto& ec = (*body_state<sm::ecs::MacroCell>(app.ecs.reg, npc));
+             const auto& ec = sm::store_of(app.ecs).cell[npc.slot];
              const sm::ecs::MacroCell* pcell =
                  sm::player_flag_cell(app.ecs);
              if (!pcell) return true;
@@ -792,22 +796,22 @@ const PreBattleAction kPreBattleActions[] = {
      "Odds follow the strength law. Fail, and they are on you."},
     // Fight: the subworld battle against exactly the people the roster
     // names — the old attack path, now behind the forced stop.
-    {[](App&, entt::entity, char* out, std::size_t n) {
+    {[](App&, sm::MacroHandle, char* out, std::size_t n) {
          std::snprintf(out, n, "Fight!");
      },
-     [](App&, entt::entity) { return true; },
-     [](App& app, entt::entity npc) {
+     [](App&, sm::MacroHandle) { return true; },
+     [](App& app, sm::MacroHandle npc) {
          close_pre_battle(app, /*grace*/false);
          (void)route_macro_npc_attack(app, npc);
          return true;
      },
      "Meet them on the ground, blade in hand."},
     // Auto-resolve: same function, same inputs as the world's own wars.
-    {[](App&, entt::entity, char* out, std::size_t n) {
+    {[](App&, sm::MacroHandle, char* out, std::size_t n) {
          std::snprintf(out, n, "Auto-resolve");
      },
-     [](App&, entt::entity) { return true; },
-     [](App& app, entt::entity npc) {
+     [](App&, sm::MacroHandle) { return true; },
+     [](App& app, sm::MacroHandle npc) {
          perform_encounter_auto(app, npc, sm::Ambush::None);
          return true;
      },
@@ -839,11 +843,19 @@ void detect_forced_encounter(App& app) {
         }
         if (!together) app.encounterGraceNpc = {};
     }
-    auto view = reg.view<sm::ecs::MacroSlot>(
-        entt::exclude<sm::ecs::PlayerTag,
-                      sm::ecs::PlayerSquadTag>);
-    for (auto e : view) {
-        const std::uint16_t slot = sm::slot_of(reg, e);
+    // Обход живых слотов store (1е, голый цикл — вердикт владельца);
+    // игрок исключается своими слотами, как в свипе ИИ.
+    const std::uint16_t flagSlot = [&]() -> std::uint16_t {
+        const sm::MacroHandle h =
+            sm::try_handle_of(reg, sm::player_flag_entity(app.ecs));
+        return h.slot;
+    }();
+    for (std::uint32_t slot32 = 0; slot32 < sm::kMacroEntityCap; ++slot32) {
+        const std::uint16_t slot = std::uint16_t(slot32);
+        if (st.alive[slot] == 0) continue;
+        if (slot == flagSlot
+            || st.spawnId[slot].index == sm::ecs::kPlayerSquadOrdinal)
+            continue;
         if (sm::MacroHandle{slot, st.generation[slot]}
             == app.encounterGraceNpc) continue;
         if (st.dead[slot] != 0) continue;
@@ -875,14 +887,11 @@ void detect_forced_encounter(App& app) {
 // the roster summarised by kind, the odds read through squad_power.
 void draw_pre_battle_modal(App& app) {
     if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) return;
-    auto& reg = app.ecs.reg;
-    // Хэндл — носитель ссылки (1г); entt-тело резолвится мостом на кадр,
-    // потому что действия тракта (route/auto/flee) до 1е принимают энтити.
+    // Хэндл — носитель ссылки (1г); весь тракт (route/auto/flee) на нём же,
+    // entt-тело здесь больше не резолвится.
     const sm::MacroStore& st = sm::store_of(app.ecs);
-    const sm::MacroHandle h = app.preBattleNpc;
-    const entt::entity npc = sm::macro_entity_of(reg, h);
-    if (npc == entt::null || sm::macro_dead(st, h)
-        || st.pools[h.slot].hp <= 0) {
+    const sm::MacroHandle npc = app.preBattleNpc;
+    if (sm::macro_dead(st, npc) || st.pools[npc.slot].hp <= 0) {
         close_pre_battle(app, false);   // fail closed (stale save / dead foe)
         return;
     }
@@ -896,21 +905,21 @@ void draw_pre_battle_modal(App& app) {
         return;
     }
 
-    const auto& kind = (*body_state<sm::ecs::NPCKind>(reg, npc));
+    const auto& kind = st.kind[npc.slot];
     const sm::NpcTypeDef& def =
         sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
-    const auto& face = (*body_state<sm::ecs::NpcCharacter>(reg, npc));
+    const auto& face = st.character[npc.slot];
     const char* name = def.nameCount > 0
         ? def.names[face.nameIdx % def.nameCount] : def.label;
-    const int level = (*body_state<sm::ecs::NpcLevel>(reg, npc)).value;
+    const int level = st.level[npc.slot].value;
     ImGui::Text("%s the %s (level %d) blocks your way!",
                 name, def.label, level);
-    if (const auto* bag = body_state<sm::ecs::NpcInventory>(reg, npc);
-        bag && !sm::creatures_empty(bag->inv)) {
+    if (const sm::Inventory* bag = &st.inventory[npc.slot].inv;
+        !sm::creatures_empty(*bag)) {
         int byKind[int(sm::NPCType::Count)] = {};
-        for (int i = bag->inv.creature_first(); i < sm::kMaxInventorySlots;
+        for (int i = bag->creature_first(); i < sm::kMaxInventorySlots;
              ++i) {
-            const sm::ItemRef& r = bag->inv.slots[std::size_t(i)];
+            const sm::ItemRef& r = bag->slots[std::size_t(i)];
             const std::uint16_t kind =
                 std::uint16_t(sm::creature_of_world_row(r.def));
             if (sm::valid_npc_kind(kind)) byKind[kind] += r.count;
@@ -926,7 +935,7 @@ void draw_pre_battle_modal(App& app) {
     {
         const float mine = sm::squad_power(player_auto_battle_side(app));
         const float their =
-            sm::squad_power(sm::auto_battle_side_of(app.ecs, npc));
+            sm::squad_power(sm::auto_battle_side_of(st, npc));
         const float r = their / std::max(1.0f, mine);
         const char* read = r < 0.5f    ? "They look like easy prey."
                            : r < 0.8f  ? "They look weaker than you."
@@ -5518,13 +5527,18 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     int  nowCount = 0;
     int  npcs = 0, gliding = 0, moved = 0;
     float maxGap = 0.0f;
-    entt::entity sample = entt::null;
+    std::uint16_t sample = sm::kMacroNoSlot;
     sm::MacroStore& st = sm::store_of(app.ecs);
-    auto view = app.ecs.reg.view<sm::ecs::MacroSlot>(
-        entt::exclude<sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>);
-    for (auto e : view) {
-        const std::uint16_t slot = sm::slot_of(app.ecs.reg, e);
-        if (st.dead[slot] != 0) continue;
+    // Обход живых слотов (1е, голый цикл); игрок — по слоту флага и
+    // колонке ординала, как в свипе ИИ.
+    const std::uint16_t flagSlot =
+        sm::try_handle_of(app.ecs.reg, sm::player_flag_entity(app.ecs)).slot;
+    for (std::uint32_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+        const std::uint16_t slot = std::uint16_t(s32);
+        if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
+        if (slot == flagSlot
+            || st.spawnId[slot].index == sm::ecs::kPlayerSquadOrdinal)
+            continue;
         const auto& c = st.cell[slot];
         const float cx = float(sm::ecs::cell_x(c, app.gs.mapW));
         const float cy = float(sm::ecs::cell_y(c, app.gs.mapW));
@@ -5534,9 +5548,9 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
                                          float(app.gs.mapW),
                                          float(app.gs.mapH));
         if (gap > 0.01f) ++gliding;
-        if (gap > maxGap) { maxGap = gap; sample = e; }
+        if (gap > maxGap) { maxGap = gap; sample = slot; }
         if (nowCount < kWatched)
-            now[nowCount++] = Seen{entt::to_integral(e), cx, cy};
+            now[nowCount++] = Seen{std::uint32_t(slot), cx, cy};
     }
     for (int i = 0; i < nowCount; ++i)
         for (int j = 0; j < prevCount; ++j)
@@ -5549,10 +5563,10 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
 
     float px = 0.0f, py = 0.0f, vx = 0.0f, vy = 0.0f, vspeed = 0.0f;
     int   sstate = -1;
-    if (sample != entt::null) {
-        const auto& c = (*body_state<sm::ecs::MacroCell>(app.ecs.reg, sample));
-        const auto& v = (*body_state<sm::ecs::MacroVisual>(app.ecs.reg, sample));
-        const auto& rt = (*body_state<sm::ecs::MacroNpcRuntime>(app.ecs.reg, sample));
+    if (sample != sm::kMacroNoSlot) {
+        const auto& c = st.cell[sample];
+        const auto& v = st.visual[sample];
+        const auto& rt = st.runtime[sample];
         px = float(sm::ecs::cell_x(c, app.gs.mapW));
         py = float(sm::ecs::cell_y(c, app.gs.mapW));
         vx = v.vx; vy = v.vy;
@@ -5564,7 +5578,7 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
                  "maxGap=%.2f worst=%u pos=%.2f,%.2f vis=%.2f,%.2f "
                  "vspeed=%.2f state=%d\n",
                  ticks, npcs, moved, prevCount, gliding,
-                 maxGap, unsigned(entt::to_integral(sample)),
+                 maxGap, unsigned(sample),
                  px, py, vx, vy, vspeed, sstate);
     std::fflush(stderr);
 

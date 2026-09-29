@@ -235,7 +235,6 @@ SKELETON.md	ai.cpp:109-118
 SKELETON.md	ai.cpp:93
 SKELETON.md	app/app_state.h:161
 SKELETON.md	app/main.cpp:1375
-SKELETON.md	app/main.cpp:1476-1491
 SKELETON.md	app/main.cpp:1645
 SKELETON.md	app/main.cpp:1897-1901
 SKELETON.md	app/main.cpp:277

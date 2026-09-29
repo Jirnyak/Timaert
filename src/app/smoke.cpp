@@ -5398,7 +5398,8 @@ bool run_chronicle_rate_smoke(App& app) {
             smoke_fail(app, "chronicle_rate: встреча не форсировалась");
             return false;
         }
-        perform_encounter_auto(app, hostile, sm::Ambush::None);
+        perform_encounter_auto(app, sm::handle_of(app.ecs.reg, hostile),
+                               sm::Ambush::None);
         if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
             smoke_fail(app, "chronicle_rate: авторезолв не отдал карту");
             return false;
@@ -8261,7 +8262,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "attack_first_npc found no live NPC");
                 break;
             }
-            if (!route_macro_npc_attack(app, target)) {
+            if (!route_macro_npc_attack(app,
+                                        sm::handle_of(app.ecs.reg, target))) {
                 smoke_fail(app, "attack_first_npc route failed");
                 break;
             }
@@ -8342,7 +8344,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const sm::Inventory* pArmy = sm::player_inventory(app.ecs);
             const int armyBefore = pArmy ? sm::creature_heads(*pArmy) : 0;
             const int hpBefore = player_pools(app).hp;
-            perform_encounter_auto(app, hostile, sm::Ambush::None);
+            perform_encounter_auto(app, sm::handle_of(app.ecs.reg, hostile),
+                               sm::Ambush::None);
             if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
                 smoke_fail(app, "auto-resolve did not hand the map back");
                 break;
