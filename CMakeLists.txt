@@ -1935,6 +1935,15 @@ timaert_test(arch_guard_test)
 target_compile_definitions(arch_guard_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
+# ПЕРЕПИСЬ НОСИТЕЛЕЙ СОСТОЯНИЯ (M-189): каждое поле долгоживущего носителя
+# (GameState, PlayerState, MacroStore, App) названо строкой с РОДОМ фрейма —
+# шесть родов исчерпывающи, носитель вне родов = поимённое расхождение с
+# нарядом. Новое поле без строки = красный в тот же день. Сканирует
+# заголовки, поэтому знает корень.
+timaert_test(state_census_test)
+target_compile_definitions(state_census_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 # Прибор на ЗАКОН ТУПИКА РЕНДЕРА: вертикальная истина субмира больше не живёт в
 # рендерере и не читается из него. Утверждение об ОТСУТСТВИИ адреса в коде не
 # имеет — оно указывает сюда (§0 п.2). Сканирует дерево, поэтому знает корень.
