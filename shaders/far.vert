@@ -19,7 +19,19 @@ layout(push_constant) uniform Push {
 
 layout(location = 0) out vec3 vNormal;
 layout(location = 1) out vec3 vWorld;
-layout(location = 2) out float vMaterial;
+// FLAT, and it is the whole fix. A material id is an ORDINAL into a table, so
+// interpolating it manufactures rows nobody authored: between meadow(4) and
+// rock(11) lie desert(6) and steppe(7), both sandy-yellow, and between
+// meadow(4) and waterbed(13) lies shore(10) as well. That is the yellow thread
+// the owner photographed along every far biome border and every far coastline
+// — confirmed 2026-09-30 by painting fractional ordinals magenta in a live
+// run: the threads went magenta, all of them.
+//
+// The law was already written down one file away (far_mesh.h: «the average of
+// two ordinals is a third material nobody authored») and the vertex stage even
+// obeys it — it picks the NEAREST cell's id. It was the interpolator, which
+// nobody had told, that broke it. Prose is not a mechanism; `flat` is.
+layout(location = 2) flat out float vMaterial;
 
 void main() {
     gl_Position = pc.mvp * vec4(inPos, 1.0);

@@ -199,6 +199,32 @@ inline float far_point_height_m(const FarCellGrid& grid, int camCx, int camCy,
     return h01 * kHeightScaleM;
 }
 
+// ── THE FAR GROUND AS A FIELD, WHICH IS WHAT IT ACTUALLY IS ───────────────
+// A sheet of heights over a regular lattice, in METRES, centred on the
+// window's macro cell. Geometry is a CONSUMER of this, never its author: the
+// same field feeds a CPU mesh today and a GPU height texture tomorrow, and
+// there is exactly one place the law is evaluated either way.
+//
+// ONE RING OF MARGIN is part of the field, not of its user. A rim sample needs
+// neighbours on BOTH sides to own a real slope; without it the outermost row
+// is lit by a one-sided guess and draws a bright frame around the world.
+struct FarHeightSheet {
+    int                dim       = 0;      // lattice points per side (2n+1)
+    int                stepM     = 0;      // spacing in metres
+    float              halfSpanM = 0.0f;   // reach from the centre, metres
+    std::vector<float> m;                  // (dim+2)², row-major, WITH margin
+
+    bool live() const {
+        return dim > 0 && stepM > 0
+            && m.size() == std::size_t(dim + 2) * std::size_t(dim + 2);
+    }
+    // Lattice coordinates run 0..dim-1; −1 and dim address the margin.
+    float at(int ix, int iz) const {
+        return m[std::size_t(iz + 1) * std::size_t(dim + 2)
+                 + std::size_t(ix + 1)];
+    }
+};
+
 // `innerHeightM(wx, wz)` — the height of whatever ground lies INSIDE this
 // ring: the composite for the first ring, the previous ring for every one
 // after it. Negative where there is none. It is
@@ -214,23 +240,22 @@ inline float far_point_height_m(const FarCellGrid& grid, int camCx, int camCy,
 // the same reason (vk_renderer_3d.cpp): a raw step at a boundary reads as a
 // phantom cliff, and half a macro cell is the generator's own blend scale.
 template <class HeightSampler>
-inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
+inline void bake_far_sheet(FarHeightSheet& out, const FarCellGrid& grid,
                            int camCx, int camCy, int stepM, float halfSpanM,
                            int worldCellsX, float holeHalfM,
                            const HeightSampler& innerHeightM,
                            float blendBandM) {
-    out.vtx.clear();
-    out.idx.clear();
-    out.halfSpanM = 0.0f;
+    out.m.clear();
+    out.dim = 0;
     out.stepM = 0;
+    out.halfSpanM = 0.0f;
     if (!grid.live() || stepM <= 0 || halfSpanM <= 0.0f) return;
 
-    const int   n   = int(halfSpanM) / stepM;              // per side
-    const int   dim = 2 * n + 1;                           // vertices per row
-    const float cellSpanM = float(kCellSize) * 1.0f;       // a tile is a metre
-    out.halfSpanM = float(n * stepM);
+    const int n   = int(halfSpanM) / stepM;                // per side
+    const int dim = 2 * n + 1;                             // points per row
+    out.dim = dim;
     out.stepM = stepM;
-    out.vtx.reserve(std::size_t(dim) * std::size_t(dim));
+    out.halfSpanM = float(n * stepM);
 
     // Height of one point, in METRES, from the world's own generator — and
     // then STITCHED to whatever ground lies inside this ring.
@@ -253,30 +278,44 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
         return nearM * (1.0f - w) + farM * w;
     };
 
-    // HEIGHTS ONCE, NOT FIVE TIMES. A vertex needs its own height and its four
-    // neighbours' to get a normal, and asking the generator for each of them
-    // per vertex costs five evaluations where one will do: the neighbour a
-    // vertex wants is the vertex next door. Measured before this: 52 ms to
-    // build the sheet, on the crossing, against a seam of 2.2 ms — the kind of
+    // HEIGHTS ONCE, NOT FIVE TIMES. A point needs its own height and its four
+    // neighbours' to own a normal, and asking the generator for each of them
+    // per point costs five evaluations where one will do: the neighbour a
+    // point wants is the point next door. Measured before this: 52 ms to build
+    // the sheet, on the crossing, against a seam of 2.2 ms — the kind of
     // number that decides whether a probe is even allowed to exist.
-    //
-    // One ring of MARGIN so the rim's normals are real slopes rather than
-    // one-sided guesses (a rim lit differently from its neighbour draws a
-    // bright frame around the world).
     const int mDim = dim + 2;
-    std::vector<float> h(std::size_t(mDim) * std::size_t(mDim), 0.0f);
+    out.m.assign(std::size_t(mDim) * std::size_t(mDim), 0.0f);
     for (int iz = 0; iz < mDim; ++iz) {
         const float wz = float((iz - 1 - n) * stepM);
         for (int ix = 0; ix < mDim; ++ix) {
             const float wx = float((ix - 1 - n) * stepM);
-            h[std::size_t(iz) * std::size_t(mDim) + std::size_t(ix)] =
+            out.m[std::size_t(iz) * std::size_t(mDim) + std::size_t(ix)] =
                 height_m(wx, wz);
         }
     }
-    const auto hAt = [&](int ix, int iz) {
-        return h[std::size_t(iz + 1) * std::size_t(mDim)
-                 + std::size_t(ix + 1)];
-    };
+}
+
+// THE MESH IS A CONSUMER OF THE SHEET. It adds nothing to the ground's shape;
+// it decides how that shape is handed to a rasteriser. Keeping the two apart
+// is what lets the same field be handed to a GPU height texture instead,
+// without the law being evaluated a second time anywhere.
+inline void build_far_mesh(FarMesh& out, const FarHeightSheet& sheet,
+                           const FarCellGrid& grid, int stepM,
+                           float holeHalfM) {
+    out.vtx.clear();
+    out.idx.clear();
+    out.halfSpanM = 0.0f;
+    out.stepM = 0;
+    if (!grid.live() || !sheet.live()) return;
+
+    const int   dim = sheet.dim;
+    const int   n   = (dim - 1) / 2;
+    const float cellSpanM = float(kCellSize) * 1.0f;       // a tile is a metre
+    out.halfSpanM = sheet.halfSpanM;
+    out.stepM = sheet.stepM;
+    out.vtx.reserve(std::size_t(dim) * std::size_t(dim));
+    const auto hAt = [&](int ix, int iz) { return sheet.at(ix, iz); };
 
     for (int iz = 0; iz < dim; ++iz) {
         const float wz = float((iz - n) * stepM);
@@ -401,6 +440,22 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
             if (!emittedAt(ix + 1, iz)) hang(b, d);   // east edge
         }
     }
+}
+
+// Bake and build in one call — the shape the renderer and the witnesses have
+// always asked for. It exists so that splitting the field out of the geometry
+// changed no caller and no result; when the GPU sheet replaces the mesh, this
+// overload dies and `bake_far_sheet` stays.
+template <class HeightSampler>
+inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
+                           int camCx, int camCy, int stepM, float halfSpanM,
+                           int worldCellsX, float holeHalfM,
+                           const HeightSampler& innerHeightM,
+                           float blendBandM) {
+    FarHeightSheet sheet;
+    bake_far_sheet(sheet, grid, camCx, camCy, stepM, halfSpanM, worldCellsX,
+                   holeHalfM, innerHeightM, blendBandM);
+    build_far_mesh(out, sheet, grid, stepM, holeHalfM);
 }
 
 } // namespace sm::sub

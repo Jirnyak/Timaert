@@ -20,7 +20,7 @@
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec3 vWorld;
-layout(location = 2) in float vMaterial;
+layout(location = 2) flat in float vMaterial;
 
 layout(push_constant) uniform Push {
     mat4 mvp;

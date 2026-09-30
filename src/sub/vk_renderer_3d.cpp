@@ -1425,7 +1425,6 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
         }
     }
 
-    const auto tCells = std::chrono::steady_clock::now();   // TEMP Ш0 probe
     const int worldCellsX = mgr.resolve_cell(camCx, camCy).worldCellsX;
     // THE STITCH. The composite's own height, asked in window metres — this is
     // what makes the join a continuation instead of a cliff. Negative where
@@ -1444,7 +1443,6 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
                         kFarFineHalfM, worldCellsX,
                         /*holeHalfM=*/kWorldExtent,
                         compositeHeightM, kFarStitchBandM);
-    const auto tFine = std::chrono::steady_clock::now();     // TEMP Ш0 probe
     // THE COARSE RING STITCHES TO THE FINE RING'S OWN LAW, exactly as the
     // fine one stitches to the composite. I first assumed they would agree by
     // construction — they do not, and cannot: the fine ring carries the
@@ -1465,7 +1463,6 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
                         kFarWorldHalfSpanM, worldCellsX,
                         /*holeHalfM=*/kFarFineHalfM,
                         fineHeightM, kFarStitchBandM);
-    const auto tCoarse = std::chrono::steady_clock::now();   // TEMP Ш0 probe
     // The two rings ride ONE pair of buffers: they are the same sheet at two
     // resolutions and there is nothing to tell them apart at draw time.
     {
@@ -1502,18 +1499,13 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     farIndexCount_ = std::uint32_t(mesh.idx.size());
     farBuiltCx_ = camCx;
     farBuiltCy_ = camCy;
-    const auto tEnd = std::chrono::steady_clock::now();      // TEMP Ш0 probe
-    const auto ms = [](auto a, auto b) {
-        return std::chrono::duration<double, std::milli>(b - a).count();
-    };
     std::fprintf(stderr,
                  "[far] sheet cell=%d,%d verts=%zu tris=%u span=%.0fm step=%dm "
-                 "build=%.2fms | cells(2603 resolve)=%.2f fine=%.2f "
-                 "coarse=%.2f merge+copy=%.2f\n",
+                 "build=%.2fms\n",
                  camCx, camCy, mesh.vtx.size(), farIndexCount_ / 3u,
-                 double(mesh.halfSpanM), mesh.stepM, ms(t0, tEnd),
-                 ms(t0, tCells), ms(tCells, tFine), ms(tFine, tCoarse),
-                 ms(tCoarse, tEnd));
+                 double(mesh.halfSpanM), mesh.stepM,
+                 std::chrono::duration<double, std::milli>(
+                     std::chrono::steady_clock::now() - t0).count());
     std::fflush(stderr);
 }
 
