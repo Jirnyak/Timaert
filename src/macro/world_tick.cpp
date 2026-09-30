@@ -114,60 +114,35 @@ void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
 
 namespace {
 
-// The UNIVERSAL tribute assessment, BY POSITION (owner 2026-09-02: «дают
-// по 1/8 всего со склада, с округлением до меньшего»): on the place's own
-// seasonal pay-day (the ONE slow cycle wages already ride) an eighth of
-// EACH commodity stack — floor — and an eighth of the coin are charged
-// into the per-position debts the carriers deliver IN KIND (vendor to the
-// market city, courier to the capital). A slice of every stack carries the
-// vassal's silver to the mint, which the old value-debt's «fattest stack»
-// draw never did. Missed seasons accumulate honestly, per position. Only a
-// place WITH a suzerain owes; the top of a chain is charged nothing.
-void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
-    if (!hasSuzerain) return;
-    // The assessment BASE is the season's AVERAGE store (owner 2026-09-02:
-    // «лучше среднего склада за месяц, а то пустой склад случайно — и
-    // ничего не платит, или наоборот»): ПАМЯТЬ МИРА с горизонтом сезона,
-    // одна дверь на всех (macro/memory.h, CANON S19.2), кормится ежедневно,
-    // и день уплаты перестаёт быть лотереей «уехал ли вендор этим утром».
-    // Склад — это УРОВЕНЬ, поэтому глагол СЛЕЖЕНИЕ. Молодой склад растёт с
-    // нуля, так что молодой мир честно должен мало в свой первый сезон.
-    //
-    // ПОЧЕМУ ПРЕДМАСШТАБИРОВАНО (v104, исправление 2026-09-21). Здесь стоял
-    // разностный шаг по значению КАК ЕСТЬ, и прежняя запись объявляла его
-    // асимметрию вердиктом: знаковый >> округляет к минус бесконечности,
-    // поэтому шаг вниз был целой единицей при любой недостаче, а шаг вверх —
-    // нулём, пока склад не превысит среднее на ВЕСЬ горизонт. Следствия
-    // назывались «принятыми», и оба были дефектом, а не решением:
-    //   · среднее оседало на горизонт НИЖЕ настоящего склада;
-    //   · склад, ни разу не превысивший 31, держал среднее РОВНО НОЛЬ
-    //     вечно — то есть вся лестница комфорта (в мире 21 инструмент на
-    //     1860 мест) не облагалась данью НИКОГДА.
-    // Реальная ставка выходила 0 % у мелкого места и 12.1 % у крупного при
-    // законе «1/8 со всего» — закон в каноне был просто неправдой, и тем
-    // сильнее, чем место мельче. Прежняя запись отвергала предмасштабирование
-    // словами «разрешения, которого нет у представления, не выдумать
-    // округлением» — верно, и именно поэтому его выдумывает не округление, а
-    // ШИРИНА: память держит значение × горизонт.
-    // ОДНА ПАМЯТЬ — СТОИМОСТЬ СКЛАДА ЦЕЛИКОМ (владелец 2026-09-22: «всё в
-    // инвентаре это товар»). Здесь стояли пятнадцать слежений по строкам
-    // плюс шестнадцатое по монете, и они же были причиной оговорки «монету
-    // считаем отдельно, чтобы не обложить зерно дважды»: у стоимости склада
-    // этой оговорки нет — она одна и по определению не двоится.
-    memory_track(lm.titheAvgValue, inventory_value(lm.inventory));
-    // The CHARGE lands on the season boundary — the world's one window
-    // (CANON S19.2; the per-ordinal pay-day smear is history, owner
-    // 2026-09-17: «ДА, УМИРАЕТ»). The average above still feeds DAILY —
-    // memory is not a balance.
-    if (!season_boundary(day)) return;
+// ДАНЬ — ОДИН ПРОХОД ПУЛА ФЕОДАЛЬНЫХ РЁБЕР (v121; вердикт владельца: «дань
+// и феодальный граф — система фракций»). «Только место С СЮЗЕРЕНОМ должно»
+// стало построением: ребро и есть феод, у вершины цепи ребра нет.
+//
+// БАЗА НАЧИСЛЕНИЯ — СРЕДНЕЕ СКЛАДА ВАССАЛА ЗА СЕЗОН (владелец 2026-09-02:
+// «лучше среднего склада за месяц, а то пустой склад случайно — и ничего
+// не платит, или наоборот»): ПАМЯТЬ МИРА с горизонтом сезона на РЕБРЕ,
+// одна дверь на всех (macro/memory.h, CANON S19.2), кормится ежедневно —
+// день уплаты не лотерея «уехал ли вендор этим утром». Память
+// ПРЕДМАСШТАБИРОВАНА (v104: значение × горизонт — иначе склад ≤31 держал
+// среднее ровно ноль вечно и лестница комфорта не облагалась никогда) и
+// ОДНА — стоимость склада целиком (v108, владелец: «всё в инвентаре это
+// товар»). Начисление падает на границе сезона одним штампом МИРА:
+// 1/8 от того, чем вассал располагал весь сезон (владелец 2026-09-21:
+// дань — налог на ИМУЩЕСТВО, а не на приход); память читается своей
+// дверью — `>> 3` по сырому полю дал бы ставку в 32 раза больше закона.
+void tithe_daily_(GameState& gs, int day) {
+    FactionState& f = gs.factions;
     const int season = day / kDaysPerSeason;
-    if (lm.titheSeasonAssessed == season) return;
-    lm.titheSeasonAssessed = season;
-    // 1/8 ОТ ТОГО, ЧЕМ МЕСТО РАСПОЛАГАЛО ВЕСЬ СЕЗОН (владелец, 2026-09-21:
-    // дань — налог на ИМУЩЕСТВО, а не на приход). Память читается своей
-    // дверью: сырое поле — это значение × горизонт, и `>> 3` по нему дал бы
-    // ставку в 32 раза больше закона.
-    lm.titheOwedValue += memory_value(lm.titheAvgValue) >> 3;
+    const bool assess = season_boundary(day)
+                     && f.fiefSeasonAssessed != season;
+    if (assess) f.fiefSeasonAssessed = season;
+    for (int i = 0; i < f.fiefTotal; ++i) {
+        TitheEdge& e = f.fief[i];
+        const Landmark* v = landmark_by_id(gs, e.vassal);
+        if (!v) continue;   // вассал умер — ребро снимет смена феода
+        memory_track(e.avgValue, inventory_value(v->inventory));
+        if (assess) e.owedValue += memory_value(e.avgValue) >> 3;
+    }
 }
 
 // The pure econ steps are landmark-blind (they see one Inventory); this relay
@@ -230,10 +205,8 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
 
         garrison_upkeep_(gs, s, day, rs, ru);
 
-        // ONE suzerain edge (S24): a place owes whoever the column names;
-        // a capital (and any masterless place) names nobody.
-        assess_tithe_(s, day,
-                      landmark_by_id(gs, suzerain_of(s)) != nullptr);
+        // (Дань ушла из пер-местного дня: её ведёт один проход пула
+        // феодальных рёбер tithe_daily_ — v121, род 6.)
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, s.id, s.x, s.y,
                                  int(s.starvedYesterday));
@@ -430,8 +403,7 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
 
         garrison_upkeep_(gs, v, day, rs, ru);
 
-        // The village owes its market city — the same one edge (CANON S24).
-        assess_tithe_(v, day, landmark_by_id(gs, suzerain_of(v)) != nullptr);
+        // (Дань деревни — то же одно ребро, ведёт tithe_daily_ — v121.)
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, v.id, v.x, v.y,
                                  int(v.starvedYesterday));
@@ -551,6 +523,7 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         for (Landmark& lm : gs.landmarks) interests_tick_day(lm.interests);
         tick_settlements_(gs, day, runtime, esink, euser);
         tick_villages_   (gs, day, runtime, esink, euser);
+        tithe_daily_     (gs, day);   // дань — проход рёбер рода 6 (v121)
         tick_player_daily_(gs.player);
 
         // The ONE growth/diffusion law (R2 track): every resource field is

@@ -2073,7 +2073,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
             rt.state = std::uint8_t(NS::Traveling);
             return;
         }
-        if (!owes_tithe(*vassal)) {
+        if (!owes_tithe(*ctx.mw.gs, *vassal)) {
             // Должник рассчитался (собрали или простили) — ждать нечего,
             // ротация завтра переторгует эту строку заново.
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 8));
@@ -2103,7 +2103,9 @@ void ai_collector(MacroHandle self, MacroPos& p,
         if (rt.stateTimer > 0) return;
         // ВЗЫСКАНИЕ И ПОГАШЕНИЕ — В ОДНОЙ ТОЧКЕ: сколько увёз, столько и
         // списал, поэтому шва между «взято» и «зачтено» физически нет.
-        long long owed = vassal->titheOwedValue;
+        // Долг живёт на ФЕОДАЛЬНОМ РЕБРЕ строки фракции сюзерена (v121).
+        TitheEdge* edge = tithe_edge_of(*ctx.mw.gs, *vassal);
+        long long owed = edge ? edge->owedValue : 0;
         long long took = 0;
         // ── СНАЧАЛА ПО НУЖДЕ ДОМА, ОСТАТОК — ПО ПЛОТНОСТИ ───────────────
         // Вердикт владельца 2026-09-21, дословно: «грузит ПО НУЖДЕ ДОМА,
@@ -2170,9 +2172,9 @@ void ai_collector(MacroHandle self, MacroPos& p,
                 took += dense;
             }
         }
-        if (took > 0) {
-            vassal->titheOwedValue -= took;
-            if (vassal->titheOwedValue < 0) vassal->titheOwedValue = 0;
+        if (took > 0 && edge) {
+            edge->owedValue -= took;
+            if (edge->owedValue < 0) edge->owedValue = 0;
             record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
                                  vassal->id, int(p.x), int(p.y),
                                  int(std::min<long long>(took, 1 << 30)),
@@ -4401,13 +4403,14 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 if (it.stance == std::uint8_t(Stance::None)) break;
                 if (it.stance != std::uint8_t(Stance::Vassal)) continue;
                 const Landmark* v = landmark_by_id(gs, it.object);
-                if (!v || !owes_tithe(*v)) continue;
+                if (!v || !owes_tithe(gs, *v)) continue;
                 if (bidCount >= int(sizeof(bids) / sizeof(bids[0]))) break;
                 const XY site{float(v->x), float(v->y)};
                 const float tripDays = road_days_(site);
                 if (!(tripDays > 0.0f)) continue;
+                const TitheEdge* e = tithe_edge_of(gs, *v);
                 const float score =
-                    (float(v->titheOwedValue) - fear_of(site)) / tripDays;
+                    (float(e ? e->owedValue : 0) - fear_of(site)) / tripDays;
                 if (score <= 0.0f) continue;
                 bids[bidCount++] = GoalBid{std::uint8_t(SquadType::Collector),
                                            std::uint32_t(v->id), site, score};

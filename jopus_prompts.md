@@ -160,7 +160,7 @@
 **2. Закон.** ЗАКОН КЛАМПА (AGENTS §3, четыре инженерных закона, п.3); CANON блок «ОТВЕТЫ» → S4/S10 (цитата выше); ЗАКОН КОНСТАНТ — ни одной новой константы взамен.
 
 **3. Хирургическая правка — что снести (проверено по коду 2026-09-25; перепроверить `file:line`):**
-- `garrison_cap_(const Landmark&)` — `src/macro/world_tick.cpp:322-340`
+- `garrison_cap_@src/macro/world_tick.cpp`
   (потолок = цель набора + `inventory_value / perSoulSeason`);
 - `garrison_trim_(GameState&, Landmark&, EconFactSink, void*)` —
   `:347-399` (снимает излишек со слабейших строк: зверь → мясо на полку

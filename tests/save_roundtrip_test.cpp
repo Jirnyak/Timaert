@@ -18,6 +18,7 @@
 
 #include <cstdlib>
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -386,7 +387,7 @@ sm::GameState make_state() {
     // (The BOOK is authored on his squad's RECORD below since v89 — a body's
     // knowledge is a component and rides the snapshot like the pools do.)
     gs.player.factionPeaceUntilDay[
-        std::size_t(sm::ensure_faction_slot(gs, "guild"))] = 55;
+        std::size_t(sm::faction_index("magika"))] = 55;
     gs.player.settledQuestOffers.push_back(
         {/*giverSettlementId*/ 7, /*bornDay*/ 3, /*offerSlot*/ 2});
     gs.player.completedQuestCount = 5u;
@@ -429,7 +430,10 @@ sm::GameState make_state() {
     gs.landmarks.push_back(village);
     // Феод — запись реестра интересов (v107), и ставится он дверью на оба
     // конца: сейв обязан привезти обратно ИМЕННО пару, а не половину.
+    // v121: та же дверь ведёт ЛЕТОПИСЬ ДОЛГА — ребро в строке фракции
+    // сюзерена; долг пишем на ребро и ждём его назад из блока рода 6.
     sm::set_suzerain(gs, village.id, settlement.id, /*value*/80, /*term*/0);
+    sm::tithe_edge_of(gs, gs.landmarks.back())->owedValue = 123;
 
     sm::Landmark spire{};
     spire.type = sm::LandmarkType::Spire;
@@ -450,16 +454,15 @@ sm::GameState make_state() {
     marker.label = "Round Danger";
     gs.markers.push_back(marker);
 
-    // A faction the REGISTRY has never heard of — a guild that formed in play.
-    // It claims one of the matrix's reserved tail slots (macro/relations.h) and
-    // is an ordinary row from that moment: it can hold a relation with another
-    // runtime faction, and it survives the save because its claimed NAME does.
-    const sm::FactionSlot guild = sm::ensure_faction_slot(gs, "guild");
-    const sm::FactionSlot other = sm::ensure_faction_slot(gs, "other");
-    sm::set_relation(gs.relations, guild, other, -5);
-    // Standing is a pair in the same matrix, not a player-side map: this adds
-    // the player pair to the very row above, and must not disturb it.
-    sm::add_player_reputation(gs, "guild", 42);
+    // v121: рантайм-имена хвоста уничтожены вердиктом (род 6) — фикстура
+    // двигает отношение ДВУХ РЕЕСТРОВЫХ строк с нейтрального нуля и ждёт
+    // его назад из строк фракций.
+    const sm::FactionSlot tim = sm::faction_index("timaert");
+    const sm::FactionSlot lake = sm::faction_index("lake_duchy");
+    sm::set_relation(gs.factions, tim, lake, -5);
+    // Standing is a pair in the same rows, not a player-side map: this adds
+    // the player pair and must not disturb the one above.
+    sm::add_player_reputation(gs, "magika", 42);
 
     gs.subState.kind = sm::GameSubStateKind::Trading;
     gs.subState.settlementId = settlement.id;
@@ -650,7 +653,8 @@ void run_roundtrip() {
     remove_slot_files(corruptPath);
     remove_slot_files(badVersionPath);
 
-    sm::GameState gs = make_state();
+    auto gsOwn = std::make_unique<sm::GameState>(make_state());
+    sm::GameState& gs = *gsOwn;
     const std::vector<std::uint16_t> treeCounts = make_tree_counts();
     const sm::DepositLayer deposits = make_deposits();
     sm::EventBus bus;
@@ -688,7 +692,8 @@ void run_roundtrip() {
     if (summary.saveName != "roundtrip") FAIL_BAIL("summary save name mismatch");
     if (!valid_saved_at(summary.savedAt)) FAIL_BAIL("summary savedAt invalid");
 
-    sm::GameState loaded{};
+    auto loadedOwn = std::make_unique<sm::GameState>();
+    sm::GameState& loaded = *loadedOwn;
     std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
@@ -943,10 +948,10 @@ void run_roundtrip() {
             FAIL_BAIL("player level data lost");
         }
     }
-    if (sm::player_reputation(&loaded, "guild") != 42) {
-        FAIL_BAIL("player standing lost (his row in the faction matrix)");
+    if (sm::player_reputation(&loaded, "magika") != 42) {
+        FAIL_BAIL("player standing lost (his faction row's column)");
     }
-    if (sm::faction_relation(&loaded, "guild", sm::kPlayerFactionId) != 42) {
+    if (sm::faction_relation(&loaded, "magika", sm::kPlayerFactionId) != 42) {
         FAIL_BAIL("player standing is not symmetric after a save round-trip");
     }
     // (Entry-side context rides the macro records — asserted there.)
@@ -1005,6 +1010,14 @@ void run_roundtrip() {
         FAIL_BAIL("settlement honest-day readouts (v29) lost");
     }
     const sm::Landmark* vilLm = sm::landmark_by_id(loaded, 70);
+    if (vilLm) {
+        // v121: долг дани едет блоком рода 6 — ребро вассала обязано
+        // вернуться с тем же числом.
+        const sm::TitheEdge* fe = sm::tithe_edge_of(loaded, *vilLm);
+        if (!fe || fe->owedValue != 123) {
+            FAIL_BAIL("feudal tithe edge (род 6) lost");
+        }
+    }
     if (!vilLm || vilLm->type != sm::LandmarkType::Village
         || vilLm->starvedYesterday != 5
         || !nearf(vilLm->popGrowthCarry, -0.25f)) {
@@ -1022,17 +1035,18 @@ void run_roundtrip() {
         || loaded.markers[0].style != sm::MarkerStyle::Danger) {
         FAIL_BAIL("marker lost");
     }
-    const sm::FactionSlot loadedGuild =
-        sm::faction_slot(loaded.relations, "guild");
-    const sm::FactionSlot loadedOther =
-        sm::faction_slot(loaded.relations, "other");
-    if (loadedGuild == sm::kNoFactionSlot || loadedOther == sm::kNoFactionSlot) {
-        FAIL_BAIL("runtime faction lost its claimed slot");
+    const sm::FactionSlot loadedTim =
+        sm::faction_slot(loaded.factions, "timaert");
+    const sm::FactionSlot loadedLake =
+        sm::faction_slot(loaded.factions, "lake_duchy");
+    if (loadedTim == sm::kNoFactionSlot || loadedLake == sm::kNoFactionSlot) {
+        FAIL_BAIL("registry faction lost its row");
     }
-    if (sm::relation_of(loaded.relations, loadedGuild, loadedOther) != -5) {
+    if (sm::relation_of(loaded.factions, loadedTim, loadedLake) != -5) {
         FAIL_BAIL("faction relation lost");
     }
-    if (loaded.player.factionPeaceUntilDay[std::size_t(loadedGuild)] != 55) {
+    if (loaded.player.factionPeaceUntilDay[
+            std::size_t(sm::faction_index("magika"))] != 55) {
         FAIL_BAIL("truce clock lost");
     }
     if (loaded.subState.kind != sm::GameSubStateKind::Trading
@@ -1150,7 +1164,8 @@ void run_roundtrip() {
     if (!write_all(truncatedPath, bytes, bytes.size() / 2u)) {
         FAIL_BAIL("could not write truncated file");
     }
-    sm::GameState sentinel{};
+    auto sentinelOwn = std::make_unique<sm::GameState>();
+    sm::GameState& sentinel = *sentinelOwn;
     sentinel.mapW = 11;
     std::vector<sm::Quest> sentinelQuests;
     std::vector<sm::MacroNpcRecord> sentinelMacro;
@@ -1192,7 +1207,8 @@ void run_roundtrip() {
     if (!write_all(badVersionPath, badVersion, badVersion.size())) {
         FAIL_BAIL("could not write bad version file");
     }
-    sm::GameState badState{};
+    auto badStateOwn = std::make_unique<sm::GameState>();
+    sm::GameState& badState = *badStateOwn;
     std::vector<sm::Quest> badQuests;
     std::vector<sm::MacroNpcRecord> badMacro;
     std::vector<std::uint16_t> badTrees;
@@ -1210,7 +1226,8 @@ void run_roundtrip() {
     // Дверь существ такую порчу уже не пускает (creatures_push отказывает
     // невалидному роду — проверено ниже), поэтому порча сажается В СЛОТ
     // НАПРЯМУЮ: предмет свидетеля — fail-closed ПИСАТЕЛЯ.
-    sm::GameState invalidSquadState = gs;
+    auto invalidSquadStateOwn = std::make_unique<sm::GameState>(gs);
+    sm::GameState& invalidSquadState = *invalidSquadStateOwn;
     if (sm::creatures_push(invalidSquadState.deserterPool, sm::SoldierRecord{
             10001u, std::uint16_t(sm::NPCType::Count), 1})) {
         FAIL_BAIL("the creature door accepted a kind the tables do not know");
@@ -1266,7 +1283,8 @@ void run_roundtrip() {
     }
     {
         // И тот же закон на ПЛОТНОМ ростере — там, где адрес и есть ответ.
-        sm::GameState dense{};
+        auto denseOwn = std::make_unique<sm::GameState>();
+        sm::GameState& dense = *denseOwn;
         for (int i = 1; i <= 5; ++i) {
             sm::Landmark lm{};
             lm.type = sm::LandmarkType::Village;
@@ -1309,7 +1327,8 @@ void run_every_sub_state_kind_survives() {
     int survived = 0;
     for (const sm::GameSubStateKind kind : kinds) {
         remove_slot_files(path);
-        sm::GameState gs{};
+        auto gsOwn = std::make_unique<sm::GameState>();
+        sm::GameState& gs = *gsOwn;
         gs.mapW = 16;
         gs.mapH = 16;
         gs.saveName = "substate";
@@ -1322,7 +1341,8 @@ void run_every_sub_state_kind_survives() {
                                       path),
                         "a state in any live sub-state kind can be SAVED");
 
-        sm::GameState loaded{};
+        auto loadedOwn = std::make_unique<sm::GameState>();
+        sm::GameState& loaded = *loadedOwn;
         std::vector<sm::Quest> loadedQuests;
         std::vector<sm::MacroNpcRecord> loadedMacro;
         std::vector<std::uint16_t> loadedTrees;
@@ -1366,7 +1386,8 @@ void run_payload_cap_is_a_fact() {
     remove_slot_files(path);
     remove_slot_files(overPath);
 
-    sm::GameState gs = make_state();
+    auto gsOwn = std::make_unique<sm::GameState>(make_state());
+    sm::GameState& gs = *gsOwn;
 
     // Вечная память мира — на капе.
     gs.chronicle.annals.clear();
@@ -1453,7 +1474,8 @@ void run_payload_cap_is_a_fact() {
     if (!write_all(overPath, over, over.size())) {
         FAIL_BAIL("could not write over-cap header file");
     }
-    sm::GameState overState{};
+    auto overStateOwn = std::make_unique<sm::GameState>();
+    sm::GameState& overState = *overStateOwn;
     std::vector<sm::Quest> overQuests;
     std::vector<sm::MacroNpcRecord> overMacro;
     std::vector<std::uint16_t> overTrees;

@@ -1251,6 +1251,12 @@ timaert_test(faction_relations_test
         src/tables/items.cpp
         src/macro/economy.cpp
     LINK_ENTT)
+# Феодальный пул рёбер (macro/factions.h, v121). Header-only: инвариант
+# отрезков counting-sort формы, идемпотентность вставки, закон нуля-ординала,
+# громкий отказ капа; негативный контроль детектора — руками сломанный
+# порядок обязан быть виден.
+
+timaert_test(faction_fief_test)
 # THE time ladder (core/time.h). Header-only, no world state — the clock is a
 # pure function of one integer. Walks all 8192 ticks of a day to prove the
 # minute and the hour can be DERIVED instead of stored: in range, gap-free,

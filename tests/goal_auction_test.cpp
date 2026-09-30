@@ -49,6 +49,10 @@ GameState make_world(int villagePop) {
     vil.x = 10;
     vil.y = 10;
     vil.population = villagePop;
+    // v121: феодальное ребро живёт в строке ФРАКЦИИ сюзерена — безфракцион-
+    // ный феод рёбер не ведёт, поэтому фикстура рождает своё предусловие
+    // (§8 п.11): оба места несут реестровую фракцию, как всякое место мира.
+    vil.factionIdx = std::int16_t(faction_index("timaert"));
     gs.landmarks.push_back(vil);
     Landmark city{};
     city.type = LandmarkType::City;
@@ -56,6 +60,7 @@ GameState make_world(int villagePop) {
     city.x = 20;
     city.y = 10;
     city.population = 500;
+    city.factionIdx = std::int16_t(faction_index("timaert"));
     gs.landmarks.push_back(city);
     // Феод ставится ОДНОЙ дверью и только когда оба места в ростере: она
     // пишет ОБА конца (S24), и полуребра в мире не бывает.
@@ -144,7 +149,7 @@ void test_auction_raises_errand_bearing_peasants() {
     // его скор сопоставим с жилой и лесом, и диверсификация ВИДНА.
     gs.landmarks[0].inventory.add("food", 3200);
     stock_comforts(gs.landmarks[0]);
-    gs.landmarks[0].titheOwedValue = 200;            // долг дани — цель сбыта
+    tithe_edge_of(gs, gs.landmarks[0])->owedValue = 200;   // долг дани — на ребре (v121)
     // ГОРОДУ ЕСТЬ С ЧЕМ ЕХАТЬ: излишек своего ремесла (город ткёт) — это и
     // товар на продажу, и покупательная способность рейса. Пустому городу
     // аукцион честно откажет: менять нечего, и это правильный отказ.
@@ -231,7 +236,7 @@ void test_auction_raises_errand_bearing_peasants() {
         const int day = 1 + k * kDaysPerSeason;
         GameState gsd = make_world(/*pop*/100);
         stock_comforts(gsd.landmarks[0]);
-        gsd.landmarks[0].titheOwedValue = 200;
+        tithe_edge_of(gsd, gsd.landmarks[0])->owedValue = 200;
         // МИР ПОСЛЕ ГРАНИЦЫ (CANON S10): счёт выставлен и оплачен посевным
         // амбаром — склад держит излишек, не сезонный запас. Былой глут
         // хлеба 3200 при нулевом счёте давил бы рулетку в argmax сбыта:
@@ -293,7 +298,7 @@ void test_tithe_raises_the_collector_at_the_suzerain() {
     // должника», — и это был закон, который сборщик-идущий-вниз заменил:
     // дань больше не едет попутным грузом чужого рейса.
     GameState gs = make_world(/*pop*/100);
-    gs.landmarks[0].titheOwedValue = 300;          // долг лежит на вассале
+    tithe_edge_of(gs, gs.landmarks[0])->owedValue = 300;   // долг на ребре вассала
     // Хлеб обоим: условие создания крю — сезон содержания на складе ДОМА.
     gs.landmarks[0].inventory.add("food", 3200);
     gs.landmarks[1].inventory.add("food", 16000);
@@ -333,7 +338,7 @@ void test_boundary_court_resizes_standing_crews() {
     gs.landmarks[1].population = 0;
     gs.landmarks[0].inventory.add("food", 5000);
     gs.landmarks[0].inventory.add("food", 3200 * 4);   // сезоны впрок
-    gs.landmarks[0].titheOwedValue = 200;
+    tithe_edge_of(gs, gs.landmarks[0])->owedValue = 200;
     DepositLayer dep{};
     allocate_deposit_fields(dep, kMap, kMap);
     dep.grid(DepositKind::Iron).write(14, 10, 64);

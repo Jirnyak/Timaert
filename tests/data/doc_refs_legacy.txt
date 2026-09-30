@@ -764,8 +764,6 @@ SKELETON.md	world_gen.cpp:90-95
 SKELETON.md	world_gen.cpp:96-99
 SKELETON.md	world_row.h:342-343
 SKELETON.md	world_row.h:66
-SKELETON.md	world_tick.cpp:126
-SKELETON.md	world_tick.cpp:157
 SKELETON.md	world_tick.cpp:201
 SKELETON.md	world_tick.cpp:212-221
 SKELETON.md	world_tick.cpp:294
@@ -775,8 +773,6 @@ SKELETON.md	world_tick.cpp:477
 SKELETON.md	world_tick.cpp:495
 SKELETON.md	world_tick.cpp:552-556
 SKELETON.md	world_tick.cpp:616
-SKELETON.md	world_tick.cpp:633-642
-SKELETON.md	world_tick.cpp:639
 SKELETON.md	world_tick.cpp:74
 SKELETON.md	world_tick.cpp:87
 SKELETON.md	world_tick.h:97-114
@@ -1219,8 +1215,6 @@ macro-registry.md	npc_spawn.cpp:512
 macro-registry.md	player_entity.cpp:86
 macro-registry.md	pools.h:46-51
 macro-registry.md	quest_engine.cpp:81
-macro-registry.md	relations.h:111
-macro-registry.md	relations.h:47
 macro-registry.md	resource_field.h:137
 macro-registry.md	resource_field.h:16-19
 macro-registry.md	resource_field.h:238

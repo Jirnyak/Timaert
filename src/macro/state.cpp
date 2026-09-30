@@ -38,10 +38,10 @@ namespace sm {
 // игрока»: она отвечает на вопрос демо (кто рад ему, кто хочет убить), а не на
 // вопрос держав, и обоснована каноном отдельно.
 void create_factions(GameState& gs, std::uint32_t) {
-    gs.relations = RelationMatrix{};
-    claim_registry_slots(gs.relations);
+    gs.factions = FactionState{};
+    claim_registry_rows(gs.factions);
 
-    // МАТРИЦА ЗАПОЛНЯЕТСЯ АВТОРСКОЙ ТАБЛИЦЕЙ ПАР (faction.h
+    // СТРОКИ ЗАПОЛНЯЮТСЯ АВТОРСКОЙ ТАБЛИЦЕЙ ПАР (faction.h
     // kFactionRelations): одно число на пару, ноль броска, ноль темперамента.
     // Всё неупомянутое остаётся нулём — политики в мире нет. Игрок здесь
     // обычная строка и получает своё по тем же правилам, что всякий чужой.
@@ -49,7 +49,7 @@ void create_factions(GameState& gs, std::uint32_t) {
         for (int j = i + 1; j < kFactionCount; ++j) {
             const int v = authored_relation(kFactionDefs[i].id,
                                             kFactionDefs[j].id);
-            if (v != 0) set_relation(gs.relations, i, j, v);
+            if (v != 0) set_relation(gs.factions, i, j, v);
         }
     }
 }

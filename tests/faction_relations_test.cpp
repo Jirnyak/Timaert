@@ -32,13 +32,13 @@
 
 namespace {
 
-// The lookup under test, asked the way the game asks it: by SLOT over the flat
-// matrix (macro/relations.h). An id the world never placed answers neutral,
-// because its slot does not exist — the same fail-closed answer the map form
-// gave for a missing key.
+// The lookup under test, asked the way the game asks it: by SLOT over the
+// faction ROWS (macro/factions.h, v121). An id the world never placed answers
+// neutral, because its slot does not exist — the same fail-closed answer the
+// map form gave for a missing key.
 int relation(const sm::GameState& gs, const char* a, const char* b) {
-    return sm::relation_of(gs.relations, sm::faction_slot(gs.relations, a),
-                           sm::faction_slot(gs.relations, b));
+    return sm::relation_of(gs.factions, sm::faction_slot(gs.factions, a),
+                           sm::faction_slot(gs.factions, b));
 }
 
 bool hostile(const sm::GameState& gs, const char* a, const char* b) {
@@ -118,7 +118,7 @@ void check_one_seed(std::uint32_t seed) {
     int slots = 0, displaced = 0;
     for (int i = 0; i < kFactionCount; ++i) {
         ++slots;
-        if (faction_slot(gs.relations, kFactionDefs[i].id) != i) ++displaced;
+        if (faction_slot(gs.factions, kFactionDefs[i].id) != i) ++displaced;
     }
     CHECK(slots == kFactionCount, "every faction was looked up in the matrix");
     CHECK(displaced == 0,

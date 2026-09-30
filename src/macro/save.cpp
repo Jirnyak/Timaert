@@ -125,9 +125,7 @@ constexpr std::uint64_t kLandmarkBytes =             // write_landmark
     + sizeof(Landmark::factionIdx) + sizeof(Landmark::interests)
     + sizeof(Landmark::starvedYesterday) + sizeof(Landmark::seasonWellbeing)
     + sizeof(Landmark::popGrowthCarry) + sizeof(Landmark::renown)
-    + sizeof(Landmark::titheOwedValue)
-    + sizeof(Landmark::titheSeasonAssessed)
-    + sizeof(Landmark::titheAvgValue) + sizeof(Landmark::needDebt)
+    + sizeof(Landmark::needDebt)
     + sizeof(Landmark::garrison.needDebt)
     + sizeof(Landmark::garrison.wageDebt);
 constexpr std::uint64_t kLandmarksBlockBytes =
@@ -138,13 +136,10 @@ constexpr std::uint64_t kMarkersBlockBytes =         // write_marker
     * (kStrBytes + sizeof(std::uint8_t) + sizeof(Marker::x)
        + sizeof(Marker::y) + kStrBytes);
 
-// Матрица целиком плюс ИМЕНА хвостовых рантайм-слотов. Имя там `char[]`, а
-// не строка мира, поэтому его длина ЗНАЕТСЯ — и этот блок в сумме честен
-// целиком. (Хвостовые слоты подлежат сносу — ЗАКОН ПАКЕТНОЙ ШИНЫ, род 6.)
-constexpr std::uint64_t kRelationsBlockBytes =       // write_relations
-    sizeof(RelationMatrix::rel) + sizeof(RelationMatrix::used)
-    + std::uint64_t(kMaxWorldFactions - kFactionCount)
-      * (kStrBytes + std::uint64_t(RelationMatrix::kMaxIdLen - 1));
+// РОД 6 целиком одним pod: строки фракций + пул феодальных рёбер + счёт
+// (v121; рантайм-имена хвоста уничтожены вердиктом — строк в блоке ноль).
+constexpr std::uint64_t kFactionsBlockBytes =        // write_factions
+    sizeof(FactionState);
 
 constexpr std::uint64_t kSubStateBytes =             // write_sub_state
     sizeof(std::uint8_t) + sizeof(GameSubState::settlementId);
@@ -252,7 +247,7 @@ constexpr std::uint64_t kMaxPayloadBytes =
     + kPlayerBytes
     + kLandmarksBlockBytes
     + kMarkersBlockBytes
-    + kRelationsBlockBytes
+    + kFactionsBlockBytes
     + kSubStateBytes
     + kInventoryBytes            // пул дезертиров — тот же единый контейнер
     + kWorldFieldsMaxBytes       // macro/world_fields.h, столбец таблицы рядов
@@ -990,9 +985,7 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.popGrowthCarry);
     w.pod(lm.renown);            // v53: a place's standing is world memory
     // (spellId/depleted покинули формат в v120: спелл шпиля едет worked-слоем)
-    w.pod(lm.titheOwedValue);       // v108: долг дани — ОДНА стоимость
-    w.pod(lm.titheSeasonAssessed);
-    w.pod(lm.titheAvgValue);        // v108: одна память × горизонт
+    // (дань покинула запись места в v121 — она едет блоком рода 6)
     w.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
     w.pod(lm.garrison.needDebt);   // v105: счёт содержания ростера места
     w.pod(lm.garrison.wageDebt);   // порядок байт тот же — бампа нет
@@ -1012,9 +1005,6 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.seasonWellbeing);   // v95
     r.pod(lm.popGrowthCarry);
     r.pod(lm.renown);            // v53
-    r.pod(lm.titheOwedValue);       // v108
-    r.pod(lm.titheSeasonAssessed);
-    r.pod(lm.titheAvgValue);        // v108
     r.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
     r.pod(lm.garrison.needDebt);   // v105
     r.pod(lm.garrison.wageDebt);
@@ -1036,35 +1026,23 @@ void read_marker(Reader& r, Marker& m) {
     r.str(m.label);
 }
 
-// THE relation matrix, byte for byte (macro/relations.h). It used to be a
+// РОД 6 — строки фракций, byte for byte (macro/factions.h). It used to be a
 // string-keyed map of string-keyed maps: every faction wrote its id, name,
 // description and colour — four verbatim copies of the registry row that
 // already declares them — and each PAIR was written twice, once per direction.
-// Now the block is the flat matrix plus the names of whatever runtime slots
-// were claimed, which is the only part a registry cannot answer.
-void write_relations(Writer& w, const RelationMatrix& m) {
-    w.pod(m.rel);
-    w.pod(m.used);
-    for (int i = kFactionCount; i < kMaxWorldFactions; ++i) {
-        w.str(std::string(m.used[i] ? m.runtimeIds[i] : ""));
-    }
+// v121: РОД 6 едет ЦЕЛИКОМ одним pod — FactionState тривиально копируем и
+// знает свой sizeof (ЗАКОН ФРЕЙМА п.7): строки, пул феодальных рёбер, счёт.
+// Второго сериализатора у рода нет.
+void write_factions(Writer& w, const FactionState& f) {
+    w.pod(f);
 }
 
-void read_relations(Reader& r, RelationMatrix& m) {
-    m = RelationMatrix{};
-    r.pod(m.rel);
-    r.pod(m.used);
-    for (int i = kFactionCount; i < kMaxWorldFactions && r.ok; ++i) {
-        std::string id;
-        r.str(id);
-        std::snprintf(m.runtimeIds[i], RelationMatrix::kMaxIdLen, "%s",
-                      id.c_str());
-        // A tail slot with no name was never claimed, whatever the flag said.
-        if (id.empty()) m.used[i] = false;
-    }
-    // The registry's own slots are always claimed — a save cannot un-declare a
-    // faction the game is compiled with.
-    claim_registry_slots(m);
+void read_factions(Reader& r, FactionState& f) {
+    f = FactionState{};
+    r.pod(f);
+    // Скомпилированный реестр — истина id/цвета своих строк: сейв не может
+    // «разобъявить» фракцию, с которой игра собрана.
+    claim_registry_rows(f);
 }
 void write_sub_state(Writer& w, const GameSubState& s) {
     write_enum8(w, s.kind);
@@ -1268,7 +1246,7 @@ void write_payload(Writer& w, const GameState& s,
         for (const auto& marker : s.markers) write_marker(w, marker);
     }
 
-    write_relations(w, s.relations);
+    write_factions(w, s.factions);
 
     write_sub_state(w, s.subState);
     write_inventory(w, s.deserterPool);   // v110: пул = единый контейнер
@@ -1364,7 +1342,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
         s.markers.push_back(std::move(marker));
     }
 
-    read_relations(r, s.relations);
+    read_factions(r, s.factions);
 
     read_sub_state(r, s.subState);
     read_inventory(r, s.deserterPool);   // v110: пул = единый контейнер

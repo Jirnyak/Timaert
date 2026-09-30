@@ -295,7 +295,7 @@ Horses; `macro_stock.cpp:447`, `kScarRows = 3` `core/stacks.h:99`). —
 | округи и порталы навигации | `NavWorld` (u16 региона, u16 дистанции, u8 шага ×2 яруса + планы) | **ПРАВДА** |
 | следы фракций | `ScentField::strength/wealth`, u16 × 19 фракций × 2 канала = 76 МиБ (`state.h:884`) | **ПРАВДА по форме**; в переписи `stacks.h` строки НЕТ; аллокация 4 МиБ каждый день (`scent_field.cpp:15`) — DOD п.4 |
 | угроза | `NavWorld::threat` — u32 на ОКРУГУ, не на клетку (`nav_field.h:149`) | **ПРАВДА** (производное из летописи) |
-| числа фич | src/macro/state.h:1027 «ResourceGrid worked;», u16 | **ПРАВДА с 2026-09-30 (ход 2 ломтик B)** — первый жилец: СПЕЛЛ ШПИЛЯ под FT_Spire (ординал kSpellDefs + 1; 0 = выкачан — закон нуля-ординала, спелл забыт как истощённая жила). Пишут `generate_spires@src/macro/spires.cpp` и дверь выкачки `learn_from_spire_orb@src/sub/engine.cpp` (0); читают `cell_facts@src/macro/cell_facts.cpp`, `for_each_landmark@src/macro/landmark_iter.h` (производный `depleted` вью), `landmark_context_score@src/macro/world_tick.cpp`. Пашня и шахта ещё не переехали — M-78, M-88 |
+| числа фич | src/macro/state.h:995 «ResourceGrid worked;», u16 | **ПРАВДА с 2026-09-30 (ход 2 ломтик B)** — первый жилец: СПЕЛЛ ШПИЛЯ под FT_Spire (ординал kSpellDefs + 1; 0 = выкачан — закон нуля-ординала, спелл забыт как истощённая жила). Пишут `generate_spires@src/macro/spires.cpp` и дверь выкачки `learn_from_spire_orb@src/sub/engine.cpp` (0); читают `cell_facts@src/macro/cell_facts.cpp`, `for_each_landmark@src/macro/landmark_iter.h` (производный `depleted` вью), `landmark_context_score@src/macro/world_tick.cpp`. Пашня и шахта ещё не переехали — M-78, M-88 |
 | «построенные фичи» | `GameState::builtFeatures` — СПИСОК `{x,y,ft}` (`state.h:845-849,993`); писателей в рантайме 0, читает только загрузка (`app/main.cpp:1897-1901`, ручной индекс) | **РАСХОЖДЕНИЕ** — число клетки списком (ЗАКОН ПОЛЯ п.1); будущий `plough_field_cell` его не пополняет → вспашка потерялась бы при загрузке; наряда нет |
 
 ### Поле чисел фич — закон смысла
@@ -309,7 +309,7 @@ Horses; `macro_stock.cpp:447`, `kScarRows = 3` `core/stacks.h:99`). —
 НО И СКВАДЫ ГОРОДА В ПОЛЕ»). Сегодня носителя у паствы нет: `souls_home` и
 `souls_flock` (`labour.h:46-47`) возвращают одно поле `population` байт в байт;
 `population` лежит записью списка `Landmark` (`state.h:471`), а
-`regrow_dungeon_populations` (`world_tick.cpp:477-487`) растит его ВТОРЫМ
+`regrow_dungeon_populations@src/macro/world_tick.cpp` растит его ВТОРЫМ
 ходоком роста мимо закона полей. — **РАСХОЖДЕНИЕ**, наряды **M-8**, **M-9**,
 **M-88**, **M-90**.
 
@@ -384,7 +384,7 @@ Horses; `macro_stock.cpp:447`, `kScarRows = 3` `core/stacks.h:99`). —
 | `plough_field_cell` — образец ЗАКОНА АГНОСТИЧНОСТИ в AGENTS | определение `plough_field_cell@src/macro/macro_stock.cpp`, объявление `plough_field_cell@src/macro/spawners.h`; живой вызов ОДИН — генезис пашен `stamp_field_features@src/macro/spawners.cpp` (M-112 ч.1). У `fence_pasture_cell@src/macro/macro_stock.cpp` вызовов по-прежнему 0, и это не тот же дефект: worldgen-штампа пастбищ нет ПО ЗАМЫСЛУ (`fence_pasture_cell@src/macro/spawners.h` — «There is no worldgen stamp for pastures»), а рантайм-акт постройки не построен вовсе — у `builtFeatures@src/macro/state.h` нет писателя, кроме провода сейва | **ПОЛОВИНА** — цитата закона указывает на живую дверь; пастбище ждёт акта постройки сквадом (остаток M-112) |
 | темп труда живёт в ТРЁХ носителях при одном законе цены | `sp_price@src/macro/econ_day.h` зовут трижды: `kGatherPerWorkerDay=32` (`sub/engine.cpp:2220`), `def->perWorkerDay` (src/macro/npc_ai.cpp:1152 «sp_price(int(pools.maxSp), def->perWorkerDay);»), `item_labour(ci)` (`ui/overlays.cpp:1245`) | **РАСХОЖДЕНИЕ** — вердикт 2026-09-27: остаётся колонка предмета; M-141 |
 | гейта навыка у добычи НЕТ | единственный отказ рубки — «тело занято» (`body_is_free`, `sub/engine.cpp:2178`); единственный `SkillId::` во всём `engine.cpp` — `Armsmaster` в темпе рекавери (`:2161`) | **ПРАВДА, и это ЗАКОН с 2026-09-27** (вердикт владельца: гейта у добычи нет) |
-| `Foraging`/`Prospecting` — спящие колонки, ВИДИМЫЕ игроку | читателей механики 0 (посмертная записка у `Foraging` — src/macro/npc_ai.cpp:3497 «//   · ФУРАЖИР. Скидка ведущего по SkillId::Foraging была вторым ответом на»); лист рисует их процент общим циклом (`ui/overlays.cpp:887-899`) | **РАСХОЖДЕНИЕ** — под снос, M-144 |
+| `Foraging`/`Prospecting` — спящие колонки, ВИДИМЫЕ игроку | читателей механики 0 (посмертная записка у `Foraging` — src/macro/npc_ai.cpp:3499 «//   · ФУРАЖИР. Скидка ведущего по SkillId::Foraging была вторым ответом на»); лист рисует их процент общим циклом (`ui/overlays.cpp:887-899`) | **РАСХОЖДЕНИЕ** — под снос, M-144 |
 | гейт ремесла несимметричен: город спрашивает, рука нет | город — `recipe_known(hands, craft, minRank)` (`econ_day.cpp:132`, определение `econ_day.h:86`); рука зовёт `craft_item` мимо гейта (`ui/overlays.cpp:1253`) | **РАСХОЖДЕНИЕ** — игрок кует монету с нулевым кузнечным, город требует `Blacksmith 30`; M-146 |
 | город не кует оружие и броню НИКОГДА | состав есть у 30 строк (`items.cpp:254-303`), право названо у 11 (`kRecipes`, `econ_day.h:131-154`); 8 неназванных — `wpn_dagger/sword/spear/axe/mace/staff/bow`, `arm_leather` | **РАСХОЖДЕНИЕ** — вердикт 2026-09-27: право переезжает в строку, оружие становится товаром производства; M-141/M-146 |
 | пять строк каталога без источника в мире | `mat_hide`, `mat_bone`, `food_meat`, `misc_gem`, `mat_herb` — источников 0 после сноса таблиц лута (`f191badf`); в реестре лута осталось 2 профиля (`items.cpp:478-485`) | **РАСХОЖДЕНИЕ** — зелья и кожаная броня некрафтабельны структурно; вердикт: травы = поле от фертильности, шкуры/кости/мясо = ряд `Fauna`, `misc_gem` — вопрос ?38; M-145 |
@@ -416,11 +416,11 @@ Horses; `macro_stock.cpp:447`, `kScarRows = 3` `core/stacks.h:99`). —
 |---|---|---|
 | одна величина времени, остальное выводится | `WorldTime::tick` — ОДНО поле u64 (`core/time.h`); день, час, минута читаются с него (`:207-209`) | **ПРАВДА** |
 | сутки 8192 тика, сезон 32 дня, год 128 дней | `kTicksPerDay = 8192` (`core/time.h:30`) | **ПРАВДА** |
-| часы идут субтракцией, не шагами | `advance_world_clock` (`world_tick.cpp:495-523`): `tick += ticks`, дни = `day_of(after) - day_of(before)`; на каждый перешедший день — один отложенный дневной тик (`pendingDailyTicks`) | **ПРАВДА** |
+| часы идут субтракцией, не шагами | `advance_world_clock@src/macro/world_tick.cpp`: `tick += ticks`, дни = `day_of(after) - day_of(before)`; на каждый перешедший день — один отложенный дневной тик (`pendingDailyTicks`) | **ПРАВДА** |
 | ни один закон мира не читает реальных секунд | в файлах дневного такта «second/frame» — только комментарии; единственный жилец секунд в `src/macro` — `kAiPeriodSeconds` (`npc_ai.h:35`) с пометкой «Presentation only» | **ПРАВДА** |
 | микромир шагает квантом, а не кадром | `constexpr float dt = sm::kStepSeconds` (`app/main.cpp:3398`) | **ПРАВДА** |
-| один оборот цикла = один тик, и цикл ЖДЁТ дедлайн тика | главный цикл считает `countsPerTick = freq / kTicksPerRealSecond` и ждёт до дедлайна перед следующим ходом (`app/main.cpp:6320-6322`); ход стоит `promote_turn_ticks(app)` тиков — одна дверь для `>>`/`simspeed` и `rest` (`:6330`); на карте `tick_world(gs, rt, 1, 32, &mw)` (`:3611`); под землёй `tick_world_subworld_steps` — `kSubworldTickDivisor = 64` шагов на тик (`core/time.h:47`, `world_tick.cpp:633-642`) | **ПРАВДА** — мир НЕ бежит быстрее номинала на быстром мониторе: сутки 8192 тика = 128 с при 64 тиках/с на любом железе; медленнее — только когда кадр не успевает (FIFO на 60 Гц). Прежняя строка этого файла и пример AGENTS §3 («на 144 Гц — 57 секунд») — ЛОЖЬ; AGENTS правит владелец |
-| факты дня датируются днём, который обрабатывается | `record_landmark_fact` берёт `gs.worldTime.day()` (`state.h:1172`), а очередь обрабатывает `runtime.nextDailyTickDay` (world_tick.cpp:541 «const int day = runtime.nextDailyTickDay;»); при отставании очереди (32 дня за кадр на карте, 1 под землёй) даты расходятся; реплей угрозы считает возраст от `f.day` (`threat_field.cpp:52`) | **РАСХОЖДЕНИЕ** — наряда нет |
+| один оборот цикла = один тик, и цикл ЖДЁТ дедлайн тика | главный цикл считает `countsPerTick = freq / kTicksPerRealSecond` и ждёт до дедлайна перед следующим ходом (`app/main.cpp:6320-6322`); ход стоит `promote_turn_ticks(app)` тиков — одна дверь для `>>`/`simspeed` и `rest` (`:6330`); на карте `tick_world(gs, rt, 1, 32, &mw)` (`:3611`); под землёй `tick_world_subworld_steps` — `kSubworldTickDivisor = 64` шагов на тик (`core/time.h:47`, `tick_world_subworld_steps@src/macro/world_tick.cpp`) | **ПРАВДА** — мир НЕ бежит быстрее номинала на быстром мониторе: сутки 8192 тика = 128 с при 64 тиках/с на любом железе; медленнее — только когда кадр не успевает (FIFO на 60 Гц). Прежняя строка этого файла и пример AGENTS §3 («на 144 Гц — 57 секунд») — ЛОЖЬ; AGENTS правит владелец |
+| факты дня датируются днём, который обрабатывается | `record_landmark_fact` берёт `gs.worldTime.day()` (`state.h:1172`), а очередь обрабатывает `runtime.nextDailyTickDay` (world_tick.cpp:513 «const int day = runtime.nextDailyTickDay;»); при отставании очереди (32 дня за кадр на карте, 1 под землёй) даты расходятся; реплей угрозы считает возраст от `f.day` (`threat_field.cpp:52`) | **РАСХОЖДЕНИЕ** — наряда нет |
 
 ---
 
@@ -496,7 +496,7 @@ Horses; `macro_stock.cpp:447`, `kScarRows = 3` `core/stacks.h:99`). —
 | кэш ординалов на проводке | `resolved()` (`econ_day.cpp:41-56`), `commodity_item_index` (`:320-330`), `hunger_item_index` (`econ_day.h:228-240`) | **ПРАВДА** — образец |
 | нужда места есть ДОЛЯ БЮДЖЕТА ГОРОЖАНИНА, а не строка авторской лестницы | **M-137, 2026-09-26.** Таблица `kNeeds` (8 рядов `{commodity, popPerUnitDay}`) СНЕСЕНА. Формула на месте: доля строки = `kComfortValuePerPopDay / N` стоимости за житель-день (`econ_day.h`, `B = 4` — решение владельца об единице), нужда в единицах = доля/стоимость (`season_comfort_units`, `econ_day.cpp`); `N` = число строк словаря категории `Goods`, ВЫВЕДЕНО проходом (`comfort_row_count`), не константой. Голод — своя система: строка узнаётся КАТЕГОРИЕЙ `Food` (`hunger_commodity_ordinal`), счёт — житель-дни (`season_hunger_units`). Благополучие: доля комфорта считается В СТОИМОСТИ (`econ_day.cpp` `comfortValue/unmetValue`), не в штуках. Монеты выведены из товаров родом `ItemType::Currency` (`items.h`, M-138), иначе место нуждалось бы в деньгах. Оба закона прибиты КОМПИЛЯТОРОМ там, где каталог виден — `static_assert(commodity_rows_of_type(Food) == 1)` и `(Goods) >= 1` (`items.cpp`) | **ПРАВДА** — остаток: сведение рта места и рта отряда в один (M-140, внутри эпика «место = сквад») |
 | ЗАКОН ТРЁХ ДВЕРЕЙ (M-102) | голых `-=` над беззнаковыми складами в экономике 0: склады знаковые (`ItemRef::count` i32 `items.h:217`, `needDebt` i32, `wageDebt` i64, `population` int); поля u16 пишутся через `int` + кламп (`macro_stock.cpp:225,597`; `resource_field.h:336-341`); дверей `sub_sat/try_spend/drain` в коде НЕТ (3 совпадения — комментарии) | **ПРАВДА по факту, дверей нет** — M-102 |
-| ЗАКОН КЛАМПА: потолок гарнизона | `garrison_cap_` + `garrison_trim_` (`world_tick.cpp:322-399`) поверх обратной связи `roster_season_window` | **РАСХОЖДЕНИЕ** — закон клампа называет потолок гарнизона шрамом; CANON держит контекстный потолок законом — противоречие канона (К-16, M-10, M-11) |
+| ЗАКОН КЛАМПА: потолок гарнизона | `garrison_cap_` + `garrison_trim_@src/macro/world_tick.cpp` поверх обратной связи `roster_season_window` | **РАСХОЖДЕНИЕ** — закон клампа называет потолок гарнизона шрамом; CANON держит контекстный потолок законом — противоречие канона (К-16, M-10, M-11) |
 | ЗАКОН КЛАМПА: `kMaxCrewInstances = 64` «предохранитель» | `npc_ai.cpp:3929`; урезает корованы (`:4339-4341`) и экземпляры (`:4454`) | **РАСХОЖДЕНИЕ** — потолок численности без вывода; наряда нет |
 | ЗАКОН КОНСТАНТ: набор гарнизона | `s.population < 20` (`world_tick.cpp:297`); пакет `target >> 4` обоснован «desertion bleeds at 1/8» (`:288-291`), а 1/8 умерла (`roster_window.h:84-89`) | **РАСХОЖДЕНИЕ** — наряда нет |
 | ЗАКОН СЛОВАРЯ п.3: ручной счёт | `kRawCommodityCount = 6` литерал (`commodity.h:101`), сторож — рантайм-тест | **РАСХОЖДЕНИЕ** — наряда нет |
@@ -520,7 +520,7 @@ frame(app, simSteps)                                       main.cpp:5561
 │     │    econ_produce_day :215 → settle_landmark_day :229 (граница сезона:
 │     │    econ_debt_boundary; ежедневно: рост населения :87-100)
 │     │    → garrison_upkeep_ :231 (только граница: roster_season_window)
-│     │    → assess_tithe_ :235 → факты Starved/Died :238-242
+│     │    → факты Starved/Died (дань ушла в проход рёбер рода 6 ниже)
 │     │    → garrison_recruit_ :246 → garrison_trim_ :247
 │     ├─ tick_villages_ ∀ Village — та же цепочка без чеканки   :404
 │     ├─ tick_player_daily_ (ageDays++)                     :457
@@ -585,7 +585,7 @@ frame(app, simSteps)                                       main.cpp:5561
 | `allowAutoBattle=false` — один ответ гейта | рефлекс угрозы отдаёт думку роли (`:2761`), `ai_mage_hunt`/`ai_lair_sorties` её съедают (`:2368,:2499`) | **РАСХОЖДЕНИЕ** — два ответа одного гейта; наряда нет |
 | скрэтчи свипа прогреты до капа, свип zero-alloc (шапка `:4751-4752`) | `reserve(kWorldSquads=16384)` при капе 32768 (`:4753-4754`); `CellBuckets.items` без reserve — `resize` в тике (`:4722`); `settle_dead_squads` — локальные векторы (`squad.h:190,239,241`); `resolve_auto_battle` — вектор на каждую встречу (`auto_battle.h:80,234`) | **РАСХОЖДЕНИЕ** — DOD п.4; M-106 |
 | дневные проходы аллоцируют не в тике | `scent_field.cpp:15` (4 МиБ в день), `threat_field.cpp:65`, 11 векторов в дневных функциях `npc_ai.cpp:3479…3751` | **РАСХОЖДЕНИЕ** — DOD п.4; наряда нет |
-| память мира — один горизонт через `memory.h` | поля угрозы и следов распадаются `>>1 раз в N дней` (`threat_field.cpp:92-94`, `scent_field.cpp:59-62`) — форма, запрещённая `memory.h:16-22`; жильцы двери памяти — только дань (`world_tick.cpp:157,170`) | **РАСХОЖДЕНИЕ** — M-51 |
+| память мира — один горизонт через `memory.h` | поля угрозы и следов распадаются `>>1 раз в N дней` (`threat_field.cpp:92-94`, `scent_field.cpp:59-62`) — форма, запрещённая `memory.h:16-22`; жильцы двери памяти — только дань (`tithe_daily_@src/macro/world_tick.cpp`, память на ребре рода 6) | **РАСХОЖДЕНИЕ** — M-51 |
 | один бой макромира — одна запись Killed | `report_battle_deaths` → синк → `raise_macro_fact` (`app/main.cpp:277,305`: Killed на каждую смерть) И `record_battle_facts` (`squad.h:932→850/857`: Killed суммой); `record_deed` платит славу на каждый вызов | **РАСХОЖДЕНИЕ** — одни смерти поданы дважды, слава платится двумя путями; наряда нет |
 | опись округи читает только живые клетки (шапка `:3541-3544`) | `for_each_live` проходит ВСЕ cells (`resource_field.h:352-356`); статик-счётчики (`:3514-3515`) и `fprintf(stderr)` каждую границу сезона (`:3591-3603`) | **РАСХОЖДЕНИЕ** — глобальное состояние и прибор в продакшене; наряда нет |
 | ЗАКОН СТРОКИ КАТАЛОГА в дне | ветки по роду: `type != City/Village` (`world_tick.cpp:201,407`), `Spire ? tier : zones` (`:469`); имена строк: `Peasant` как цена души (`:330`, `threat_field.h:55`), набор всегда Peasant (`world_row.h:342-343`), `Horse` (`npc_ai.cpp:3768`), `Caravan ? … : mine` (`:4430`) | **РАСХОЖДЕНИЕ** — M-38, M-40; частично наряда нет |
@@ -614,7 +614,7 @@ frame(app, simSteps)                                       main.cpp:5561
 | **Гашение долга** `econ_pay_debt` | `needDebt`, склад | склад, `needDebt`, факт Consumed | eaten ≤ debt; дверь НЕ знает лестницы — платит по любой выставленной строке словаря | O(15 × 1024) | `econ_day.cpp:209` |
 | **Рост населения** `settle_landmark_day` | `seasonWellbeing`, `popGrowthCarry`, `population` | `population`, `popGrowthCarry`, факт SoulsBorn | dP = P × (1/8)/32 × wellbeing, без пола и потолка | O(1) на место | `world_tick.cpp:87` |
 | **Суд ростера** `roster_season_window` | область существ контейнера, `Roster.needDebt/wageDebt`, склад | ростер, `deserterPool`, `lootPoolValue`, счёт | доля ушедших = худшая доля неоплаты | O(область + k × 1024) | `roster_window.h:74` |
-| **Дань** `assess_tithe_` | `inventory_value`, `suzerain_of` | `titheAvgValue`, `titheOwedValue` | 1/8 среднего за сезон | O(1024) ЕЖЕДНЕВНО на место с сюзереном | `world_tick.cpp:126` |
+| **Дань** `tithe_daily_` (v121: проход пула феодальных рёбер рода 6, «место с сюзереном» = ребро по построению) | `inventory_value` вассала, пул `FactionState::fief` | `TitheEdge.avgValue/owedValue`, штамп `fiefSeasonAssessed` | 1/8 среднего за сезон на границе сезона | O(рёбер × log мест) ежедневно (~2000 рёбер в замере) | `tithe_daily_@src/macro/world_tick.cpp` |
 | **Набор/обрезка гарнизона** | `population`, `garrisonShift`, `creature_heads`, цены найма | область существ (строка Peasant), `population`, `deserterPool` | цель = pop >> garrisonShift; избыток сверх cap — с дешевейших | O(область) / O(1024) | `world_tick.cpp:294,347` |
 | **Рост полей** `resource_fields_daily_growth` | терраин, лес 3×3, жилы (virgin), шрамы, `LandmarkGrid` | шрамы, `TreeLayer`, `DepositLayer` | клетка ряда навещается раз в 32 дня; значение ≤ baseline | 327 680 визитов/день; stamp 797 клеток на переход жилы | `macro_stock.cpp:610` |
 | **Поле угрозы** `threat_field_daily` | летопись (Died), порталы | `nv->threat`, `threatSeenSeq` | производное; распад >>1 раз в 8 дней | O(новых фактов + R·deg) + аллокация | `threat_field.cpp:21` |
@@ -631,7 +631,7 @@ frame(app, simSteps)                                       main.cpp:5561
 | **Охота по следу** `scent_hunt_step` | `kNpcTypeDefs.ai`, маска враждебности, `scent` 9 клеток × F | `try_move` (цель не пишет) | только combatant; вверх по градиенту под фильтром силы | O(9F + души) | `npc_ai.cpp:2894` |
 | **`ai_gatherer`** | дом, `survey.rows`, поля/фичи (бокс 7×7 или 33×33), `TreeGrid`, сумка | `rt.state/target`, `resource_field_apply(-take)`, сумка (строковые двери), склад дома, факты | credit before debit | Idle O(49..1089) клеток; Working O(256) × строковые двери | `npc_ai.cpp:999` |
 | **`ai_vendor`** | дом/рынок, ведомости, nav (порталы, `nav_path_cost`, `threat_on_route`), сумка | сумка, склад и `needDebt` рынка/дома, факт Traded | — | `plan_home_load_` O(256²); Working O(15 × 256) строковые двери | `npc_ai.cpp:1742` |
-| **`ai_collector`** | дом/вассал, `titheOwedValue`, ведомость дома | склад вассала, сумка, `titheOwedValue`, факт Taxed, склад дома | хвост → Idle | O(15 × 256) | `npc_ai.cpp:2000` |
+| **`ai_collector`** | дом/вассал, ребро `tithe_edge_of` (род 6), ведомость дома | склад вассала, сумка, `TitheEdge.owedValue`, факт Taxed, склад дома | хвост → Idle | O(15 × 256) | `npc_ai.cpp:2000` |
 | **`try_move`** | `PathCostData`, `NavWorld`, фичи (мост), `Pools.sp/spCarry`, `rt.moveMult/overloadCost/…` | `p`, `rt.moveBudget/entryDir/entryTicks/visualSpeed`, `Pools.sp/spCarry` | шаг только на стоячую клетку; неоплатный шаг отказан; стоп на клетке игрока | O(шагов × (8 + nav_step)) | `npc_ai.cpp:427` |
 | **`settle_march_rhythm`** | `nav_can_stand`, `Pools`, `rt.state/target/moveBudget` | `rt.state=Resting`, `Pools` (rest), укус HP, `Dead` | двинулся — платит; стоит на стоячей — отдыхает | O(1) (+O(N) drain при смерти) | `npc_ai.cpp:340` |
 | **Авто-бой** `resolve_auto_battle` → `settle_auto_battle` | `auto_battle_side_of` (души обеих сторон), RNG | смерти по ростерам, `Dead`, лут, `deserterPool`, XP, факты | один закон боя на обоих масштабах | O(души) + вектор на встречу | `auto_battle.h:168`, `squad.h:896` |
@@ -695,7 +695,7 @@ libstdc++ (эта машина): `sizeof(std::string) = 32`, `sizeof(Landmark) =
 | шрамы (3 живых ряда из 10) | `FieldCell` u16 × N × 3 | 6 МиБ (+ 720 Б заголовков; перепись `stacks.h` исправлена 2026-09-25) | `GameState::resourceScarCells` (`state.h:977`) | `ResourceGrid::at` / `ResourceGrid::write` | `cell_of` | 1 (`macro_stock.cpp:607` внутри двери) | `resource_field.h:268,277` |
 | жилы ×6 + `reach` ×6 | u16 × N × 6 + u16 × N × 6 | 12 + 12 МиБ | `App::deposits` (`app_state.h:160`); `MacroWorld::deposits` | `remaining_at/kind_near/any_at` / `create_deposit`, `set_deposit_remaining` → `write` | `cell_of`; диск `cell_step` | 0 | `deposit_layer.h:101` |
 | фичи | u8 × N | 1 МиБ | `App::features` (`app_state.h:140`); `MacroWorld::features` | `at` / `set` (**0 вызовов**) | `cell_of` в дверях | 12 поэлементных (9 записей) + 2 указателя на массив | `features.h:173` |
-| числа фич `worked` | u16 × N | 2 МиБ | src/macro/state.h:1027 «ResourceGrid worked;» | `worked_read` / `worked_write/add` — жильцы: спелл шпиля (v120), корабли гавани | `cell_of` | 0 | `worked_read@src/macro/state.h` |
+| числа фич `worked` | u16 × N | 2 МиБ | src/macro/state.h:995 «ResourceGrid worked;» | `worked_read` / `worked_write/add` — жильцы: спелл шпиля (v120), корабли гавани | `cell_of` | 0 | `worked_read@src/macro/state.h` |
 | опасность | u8 × N | 1 МиБ | `App::zones` (`app_state.h:141`); `MacroWorld::zones` const* | `at` / генератор | `cell_of` / линейный | 2 чтения (`vk_macro_renderer.cpp:189,357`) | `zones.h:30` |
 | стоимость пути | f32 + u8 + u8 × N | 6 МиБ | `pathCost@src/app/app_state.h` | `cost_at/water_at/height_at` / `build_cost_grid` | `cell_of` в дверях; писатель `i%W,i/W`; A* `wrap_axis`+ручной | A* 4 строки, `nav_field.cpp:27`, `spawners.cpp` 12 (локальная копия) | `pathfinding.h:34` |
 | знание | u8 × N | 1 МиБ | `GameState::knowledge` (`state.h:872`) | `at` / `update_player_sight`, `reveal_area` (сырой `k.data[ci]`) | `cell_of` / индекс из оптического свипа | 3 (`main.cpp:4064`, `world_fields.cpp:79`, `map_screen.cpp:238`) | `knowledge.h:45` |
@@ -848,9 +848,10 @@ write_payload                                    save.cpp:1031
  2 lootPoolValue                                                :1051
  3 write_player (name, age, codex, peace, offers, journal 32 Б/факт) :1056 → :672-717
  4 landmarks ≤ 32768: write_landmark (id,type,name,x,y,population,inventory,
-   factionIdx, interests POD 1024 Б, счёты, дань, needDebt, garrison)  :1058 → :753-776
+   factionIdx, interests POD 1024 Б, счёты, needDebt, garrison; дань
+   уехала блоком рода 6 в v121)  :1058 → :753-776
  5 markers ≤ 16384 (строки)                                     :1061
- 6 relations (64×64 + used + runtimeIds)                        :1065
+ 6 factions — род 6 одним pod: строки + пул феодальных рёбер (v121)  :1065
  7 subState (kind любой, в т.ч. PreBattle=5)                     :1067
  8 deserterPool                                                 :1068
  9 write_world_fields: Trees плотно u16 · Knowledge (Visible→Explored) ·
@@ -970,7 +971,7 @@ write_payload                                    save.cpp:1031
 ```
 tick_playing_runtime: dt = kStepSeconds = 1/64 (constexpr)   app/main.cpp:3400, core/time.h:82
 ├─ poll_movement → set_move_intent (только НАМЕРЕНИЕ)          sub/engine.cpp:4501
-├─ tick_world_subworld_steps: 64 шага = 1 тик мира              world_tick.cpp:639
+├─ tick_world_subworld_steps: 64 шага = 1 тик мира              tick_world_subworld_steps@src/macro/world_tick.cpp
 └─ SubworldEngine::tick(dt)                                    sub/engine.cpp:4644
    ├─ pull_player_entity_to_scalars                           :4658
    ├─ tick_zones (пишет gs_->chronicle по ходу)               :4660 → :1712

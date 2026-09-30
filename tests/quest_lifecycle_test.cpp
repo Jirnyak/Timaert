@@ -348,7 +348,7 @@ void test_effect_applicator_ts_verbs() {
     events.push_back(ignoredSpell);
 
     sm::GameEvent reputation{sm::EventTag::ReputationChange};
-    reputation.s1 = "guild";
+    reputation.s1 = "magika";
     reputation.ix = 3;
     events.push_back(reputation);
 
@@ -386,7 +386,7 @@ void test_effect_applicator_ts_verbs() {
               "положительная дельта золота НЕ печатает монет — выдача из "
               "воздуха снесена (M-139)");
     }
-    CHECK_OR_RETURN(!(sm::player_reputation(&verbState, "guild") != 3),
+    CHECK_OR_RETURN(!(sm::player_reputation(&verbState, "magika") != 3),
         "ReputationChange did not move the player's row in the matrix");
     // Lifetime tallies: two external completions, two external failures —
     // the honest split (the old string ledgers filed a failure into BOTH).
@@ -1123,7 +1123,7 @@ void test_quest_reward_dispatch_order_and_application() {
 
     sm::Reward rep{};
     rep.kind = sm::RewardKind::Reputation;
-    rep.faction = "guild";
+    rep.faction = "magika";
     rep.delta = 3;
     q.rewards.push_back(rep);
 
@@ -1146,7 +1146,7 @@ void test_quest_reward_dispatch_order_and_application() {
         completedDuringGold = int(gs.player.completedQuestCount);
     });
     bus.on(sm::EventTag::ReputationChange, [&](const sm::GameEvent&) {
-        reputationSeenByListener = sm::player_reputation(&gs, "guild");
+        reputationSeenByListener = sm::player_reputation(&gs, "magika");
     });
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
@@ -1161,7 +1161,7 @@ void test_quest_reward_dispatch_order_and_application() {
         || events[0].iy != 27
         || events[0].b != sm::kEventEffectAlreadyApplied
         || events[1].tag != sm::EventTag::ReputationChange
-        || events[1].s1 != "guild"
+        || events[1].s1 != "magika"
         || events[1].ix != 3
         || events[1].iy != 3
         || events[1].b != sm::kEventEffectAlreadyApplied
@@ -1175,7 +1175,7 @@ void test_quest_reward_dispatch_order_and_application() {
         "a reward listener reads state that is ALREADY updated - the bus reports, it does not promise");
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
-        || sm::player_reputation(&gs, "guild") != 3
+        || sm::player_reputation(&gs, "magika") != 3
         || gs.player.completedQuestCount != 1u),
         "quest rewards mutate gold, exp, reputation and bag directly");
 
@@ -1183,14 +1183,14 @@ void test_quest_reward_dispatch_order_and_application() {
     apply_pending(bus, gs, applied);
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
-        || sm::player_reputation(&gs, "guild") != 3
+        || sm::player_reputation(&gs, "magika") != 3
         || gs.player.completedQuestCount != 1u),
         "replaying the reward events applies nothing twice - the already-applied flag is honoured");
 
     apply_pending(bus, gs, applied);
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
-        || sm::player_reputation(&gs, "guild") != 3
+        || sm::player_reputation(&gs, "magika") != 3
         || gs.player.completedQuestCount != 1u),
         "quest reward events reapplied after pending cursor advanced");
 }

@@ -394,9 +394,9 @@ constexpr Row kGameStateRows[] = {
     {"chronicle", Rod::Facts, "летопись: кольцо + анналы"},
     {"scent", Rod::Fields, "поля следов фракций"},
     {"sessionFeed", Rod::Session, "HUD-лента, умирает с моментом"},
-    {"relations", Rod::Factions,
-     "матрица отношений; перекладка в строки фракций — позже всего (ШИНА "
-     "род 6)"},
+    {"factions", Rod::Factions,
+     "строки фракций (macro/factions.h, v121): id, цвет, отношения колонкой "
+     "строки, феодальные рёбра дани отрезками общего пула"},
     {"politik", Rod::Divergence,
      "cities — второй список мест, умирает M-90; cellOwner — поле владения "
      "(род 3) в обёртке политики"},

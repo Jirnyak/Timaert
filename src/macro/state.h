@@ -19,7 +19,7 @@
 #include "tables/npc.h"
 #include "macro/economy.h"
 #include "macro/politik.h"
-#include "macro/relations.h"
+#include "macro/factions.h"
 #include "macro/knowledge.h"
 #include "macro/chronicle.h"
 #include "macro/scent_field.h"
@@ -368,7 +368,11 @@ namespace sm {
 // FT_Spire (ординал kSpellDefs + 1; 0 = выкачан — закон нуля-ординала);
 // колонки Landmark::spellId/depleted покидают формат. Выкачанный шпиль
 // забывает спелл, как истощённая жила (вердикт «выкачанность = 0»).
-constexpr int kSaveVersion = 120;   // v120: спелл шпиля в worked; spellId/depleted умерли
+// v121 (ход 2, ломтик C): РОД 6 — строки фракций (macro/factions.h): id
+// плоскими чарами, цвет, отношения колонкой строки, феодальные рёбра дани
+// отрезками общего пула; RelationMatrix и рантайм-имена хвоста уничтожены;
+// блок сейва — один pod FactionState.
+constexpr int kSaveVersion = 121;   // v121: строки фракций + феодальный пул рёбер
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -541,48 +545,12 @@ struct Landmark {
     // шахты залежи, у порта корабли — у шпиля спелл»: the spell rides the
     // ONE worked layer under FT_Spire as ordinal+1 (закон нуля-ординала),
     // 0 = drained. A drained spire forgets its spell like a worked-out vein.)
-    // ── The UNIVERSAL tribute, BY POSITION (owner 2026-09-02; v73) ───────
-    // «Дают по 1/8 всего со склада, с округлением до меньшего»: on the
-    // place's own seasonal pay-day an eighth of EACH commodity stack (floor)
-    // and an eighth of the coin are ASSESSED into these per-position debts;
-    // carriers (the vendor, the tax courier) deliver them IN KIND. The old
-    // value-debt paid «coin, then the fattest stacks» — and the fattest was
-    // grain, so the suzerain never saw a grain-rich vassal's silver and the
-    // mint starved (measured, seed 7: 4308 silver parked in a village for
-    // 100 days). A slice of every stack is a slice of everything the vassal
-    // is rich in — the mint metal included. Missed seasons accumulate
-    // honestly, per position.
-    // ── ДОЛГ ДАНИ — ОДНА СТОИМОСТЬ (владелец 2026-09-22) ──────────────
-    // Здесь лежали ДВА ответа на «сколько должен»: `titheOwedGoods[15]` по
-    // строкам плюс `titheOwedCoin` отдельно. Оба умерли вместе с вердиктом
-    // «всё в инвентаре — товар»: долг есть СТОИМОСТЬ, и платится он по
-    // ПЛОТНОСТИ (currency.h transfer_value_dense — первым уходит самое
-    // ценное). Это строже прежней защиты «доля каждого стака»: там вассал
-    // отдавал по щепотке отовсюду, здесь — самое дорогое, что у него есть,
-    // и «заплачу зерном, серебро оставлю» невозможно ни с какой стороны.
-    // Минус 60 Б у места и минус одна из четырёх «вторых колонок» §56.
-    std::int64_t titheOwedValue = 0;
-    std::int32_t titheSeasonAssessed = -1;   // last season charged (-1 never)
-    // v74: the assessment BASE is the season's AVERAGE store, not the
-    // pay-day snapshot (owner 2026-09-02: «лучше среднего склада за месяц,
-    // а то пустой склад случайно — и ничего не платит, или наоборот»).
-    // Память с горизонтом СЕЗОНА, одна дверь на весь мир (macro/memory.h,
-    // CANON S19.2) — день уплаты перестал быть лотереей «уехал ли вендор
-    // этим утром».
-    //
-    // v104: ПРЕДМАСШТАБИРОВАНА. Здесь лежал std::int32_t со значением КАК
-    // ЕСТЬ, и разностный шаг `(склад − avg) >> 5` обнулялся на всякой
-    // разнице меньше 32: склад, ни разу не превысивший 31, держал среднее
-    // РОВНО НОЛЬ вечно — то есть вся лестница комфорта не облагалась данью
-    // никогда, а «1/8 со всего» было неправдой тем сильнее, чем место
-    // мельче (0 % у мелкого, 12.1 % у крупного против обещанных 12.5 %).
-    // Теперь поле держит значение × горизонт и читается memory_value();
-    // ширина 64 бита не запас, а расчёт (см. ЗАКОН ТИПА в memory.h).
-    // v108: ОДНА ПАМЯТЬ ВМЕСТО ШЕСТНАДЦАТИ. База начисления — среднее за
-    // сезон СТОИМОСТИ СКЛАДА целиком (inventory_value), а не пятнадцать
-    // средних по строкам плюс шестнадцатое по монете: долг стоимостный,
-    // значит и база его стоимостная. Минус 120 Б у места.
-    WorldMemory titheAvgValue = 0;
+    // (Дань уехала из места ЦЕЛИКОМ 2026-09-30, v121 — вердикт владельца
+    // «дань и феодальный граф — система фракций»: долг-стоимость, память
+    // сезона и штамп начисления живут на ФЕОДАЛЬНОМ РЕБРЕ строки фракции
+    // сюзерена — TitheEdge@src/macro/factions.h. Законы v73/v104/v108
+    // переехали с колонками: долг ОДНОЙ стоимостью, база — среднее склада
+    // за сезон предмасштабированной памятью. Минус 20 Б у места.)
     // ── ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10, вердикт 2026-09-19; v99) ─────────
     // На границе сезона место получает СЧЁТ = сезонная нужда по каждой
     // строке лестницы (индекс — товарный ординал, зеркало titheOwedGoods;
@@ -609,12 +577,10 @@ struct Landmark {
 // ОСТАЛЬНОЕ РАСХОЖДЕНИЕ — СПИСОК НЕДОДЕЛОК, А НЕ ЗАМЫСЕЛ (problems §56):
 //   name 24 Б      — std::string на структуре ×32768: AGENTS п.1 и п.3 прямым
 //                    текстом; у сквада имя — ординал (NpcCharacter::nameIdx);
-//   titheAvgValue 8 — ВТОРАЯ ПАМЯТЬ: у сквада память это AgentMemory
-//                    (8 слотов). Было 128 Б — шестнадцать памятей по строкам;
-//                    сжато до одной 2026-09-22 вместе со стоимостным долгом;
 //   needDebt 60    — ВТОРОЙ ДОЛГ: рядом garrison.needDebt, оба в сейве;
 //   population 4   — станет производным от ростера (переворот населения).
-// Прочее честно своё: опись округи, прейскурант, дань, адрес, анкета.
+// (titheAvgValue из списка ВЫШЛА 2026-09-30: дань целиком на ребре рода 6.)
+// Прочее честно своё: опись округи, прейскурант, адрес, анкета.
 // (Феод из этого списка ВЫШЕЛ 2026-09-21: три колонки — 12 Б — заменены
 // записями реестра, и половина S24 закрыта.)
 // 2026-09-22: место похудело на 184 Б (528 → 344) — стоимостный долг дани
@@ -630,10 +596,13 @@ struct Landmark {
 // обвязкой счетов (72 Б) — ядро субъекта 44104 → 41032.
 // 2026-09-30, ход 2 ломтик B: спелл шпиля уехал в worked-слой — колонки
 // spellId (4) + depleted (1) с паддингом (3) умерли, 42400 → 42392.
-static_assert(sizeof(Landmark) == 42392,
-              "место = ядро субъекта (41032) + реестр (1024) + 336 Б своего");
+// 2026-09-30, ход 2 ломтик C: дань уехала на феодальное ребро рода 6 —
+// titheOwedValue (8) + titheSeasonAssessed (4) + titheAvgValue (8) с
+// паддингом (4) умерли, 42392 → 42368.
+static_assert(sizeof(Landmark) == 42368,
+              "место = ядро субъекта (41032) + реестр (1024) + 312 Б своего");
 static_assert(sizeof(Landmark) == sizeof(Inventory) + sizeof(Roster)
-                                      + sizeof(Interests) + 336,
+                                      + sizeof(Interests) + 312,
               "ядро субъекта у места и у сквада ОДНО (CANON S4)");
 
 enum class GameSubStateKind : std::uint8_t {
@@ -664,9 +633,8 @@ struct GameSubState {
 // (struct Faction is gone. Its four identity columns — id, name, description,
 // colour — were verbatim copies of the registry row that already declares them
 // (macro/faction.h kFactionDefs), duplicated into every save; its `relations`
-// map became the flat matrix in macro/relations.h. What a faction IS lives in
-// the registry; how factions REGARD each other lives in the matrix; there is
-// nothing a third structure could hold.)
+// map became the flat matrix, а матрица 2026-09-30 умерла в СТРОКИ фракций
+// (macro/factions.h, род 6): отношения — колонка строки, феод — рёбра пула.)
 
 // ── THE SESSION FEED: words that die with the moment ─────────────────────
 // (owner, 2026-08-28: «это вообще не нужно хранить даже в сессии — пишется
@@ -732,8 +700,8 @@ struct PlayerState {
     // player_inventory(). It was the last large field that made him a
     // different kind of thing from the squads around him.)
     // NOTE. There is no `reputation` map here any more. The player's standing
-    // with every faction IS his row in the one relation matrix
-    // (gs.factions["player"].relations) — see player_reputation /
+    // with every faction IS his faction's row column (macro/factions.h
+    // FactionRow::rel) — see player_reputation /
     // add_player_reputation below. Two stores for one number meant the battle
     // pass and the macro matrix could disagree about the same pair.
     // (No `army` field. The player's squad is an ORDINARY squad — his men
@@ -783,12 +751,12 @@ struct PlayerState {
     // the class combatStats was before landing 4, and it is why only the
     // player could cast, drain or be taught. His book rides his squad's
     // MacroNpcRecord like every lord's.)
-    // Truce clocks, one per faction SLOT (macro/relations.h): the day a
+    // Truce clocks, one per faction SLOT (macro/factions.h): the day a
     // cease-fire with that faction runs out. It was the last string-keyed
     // faction map in the game — and it has no gameplay reader yet, so the
     // concept is kept (S24 politics will want truces) in the shape everything
     // else about factions now has: a flat array indexed by ordinal.
-    std::array<std::int32_t, kMaxWorldFactions> factionPeaceUntilDay{};
+    std::array<std::int32_t, kMaxFactions> factionPeaceUntilDay{};
     // Quest OFFERS the player has settled (completed or failed) — the POD
     // provenance triples the quest engine's is_known compares against, so a
     // settlement does not re-offer what was already done TODAY. An offer's
@@ -908,11 +876,11 @@ struct GameState {
     ScentField scent;
     // The session feed (see SessionFeed above): presentation, NEVER saved.
     SessionFeed sessionFeed;
-    // THE relation matrix — flat, by ordinal (macro/relations.h). The
-    // string-keyed map of string-keyed maps it replaced cost two temporaries,
-    // two hashes and two strcmps per question, and the battle asks K² of them
-    // per tick.
-    RelationMatrix relations{};
+    // РОД 6 ФРЕЙМА — гладкий массив строк фракций (macro/factions.h): id
+    // плоскими чарами, цвет, отношения КОЛОНКОЙ строки, феодальные рёбра
+    // дани отрезками общего пула. Пришёл 2026-09-30 (ход 2 ломтик C) на
+    // место RelationMatrix; рантайм-имена хвоста уничтожены вердиктом.
+    FactionState factions{};
 
     Politik politik;
     PlayerState player;
@@ -1130,13 +1098,17 @@ inline void set_suzerain(GameState& gs, int vassalId, int suzerainId,
                          int value = 0, int term = 0) {
     Landmark* v = landmark_by_id(gs, vassalId);
     if (!v || vassalId == suzerainId) return;
-    // Прежний сюзерен теряет этого вассала — с обоих концов.
+    // Прежний сюзерен теряет этого вассала — с обоих концов; вместе со
+    // ЗНАНИЕМ роли умирает и ЛЕТОПИСЬ ДОЛГА (ребро рода 6): непогашенная
+    // дань прощается сменой феода, второго носителя долга не существует.
     for (int i = 0; i < kMaxInterests; ++i) {
         Interest& it = v->interests.slots[i];
         if (it.stance == std::uint8_t(Stance::None)) break;
         if (it.stance != std::uint8_t(Stance::Suzerain)) continue;
-        if (Landmark* old = landmark_by_id(gs, it.object))
+        if (Landmark* old = landmark_by_id(gs, it.object)) {
             interest_clear(old->interests, vassalId);
+            tithe_edge_remove(gs.factions, int(old->factionIdx), vassalId);
+        }
         interest_clear(v->interests, it.object);
         break;                     // сюзерен у места ровно один
     }
@@ -1145,6 +1117,9 @@ inline void set_suzerain(GameState& gs, int vassalId, int suzerainId,
     if (!s) return;                // висячего ребра не заводим
     interest_set(v->interests, suzerainId, Stance::Suzerain, value, term);
     interest_set(s->interests, vassalId, Stance::Vassal, value, term);
+    // ОДНА ДВЕРЬ ПИШЕТ ОБА НОСИТЕЛЯ: знание роли — в интересы (род 2),
+    // летопись долга — ребром в строку фракции СЮЗЕРЕНА (род 6).
+    tithe_edge_add(gs.factions, int(s->factionIdx), vassalId, suzerainId);
 }
 
 // Кому это место платит дань; 0 — никому (столица, бесхозное место).
@@ -1157,11 +1132,25 @@ inline int suzerain_of(const Landmark& lm) {
     return 0;
 }
 
-// ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг по позициям — он же ведомость
+// ФЕОДАЛЬНОЕ РЕБРО ЭТОГО ВАССАЛА (род 6, v121): долг живёт в строке фракции
+// СЮЗЕРЕНА — путь к нему идёт через знание роли (suzerain_of, род 2), сами
+// носители врозь и отвечают на разные вопросы.
+inline TitheEdge* tithe_edge_of(GameState& gs, const Landmark& vassal) {
+    const Landmark* s = landmark_by_id(gs, suzerain_of(vassal));
+    return s ? tithe_edge(gs.factions, int(s->factionIdx), vassal.id)
+             : nullptr;
+}
+inline const TitheEdge* tithe_edge_of(const GameState& gs,
+                                      const Landmark& vassal) {
+    return tithe_edge_of(const_cast<GameState&>(gs), vassal);
+}
+
+// ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг ребра — он же ведомость
 // «с кого собрано»: собранный вассал отвечает «нет» по построению, и второго
 // признака («посещён в этом сезоне») в мире не заводится (S26).
-inline bool owes_tithe(const Landmark& lm) {
-    return lm.titheOwedValue > 0;
+inline bool owes_tithe(const GameState& gs, const Landmark& lm) {
+    const TitheEdge* e = tithe_edge_of(gs, lm);
+    return e && e->owedValue > 0;
 }
 inline const Landmark* landmark_by_id(const GameState& gs, int id) {
     const std::ptrdiff_t i = landmark_index_by_id(gs, id);
@@ -1249,9 +1238,10 @@ inline std::uint32_t record_landmark_fact(GameState& gs, FactKind kind,
 // unknown ids, or an absent matrix entry. Same faction → 100.
 inline int faction_relation(const GameState* gs, const char* a, const char* b) {
     if (!gs || !a || !b || a[0] == '\0' || b[0] == '\0') return 0;
-    if (std::strcmp(a, b) == 0) return 100;
-    return relation_of(gs->relations, faction_slot(gs->relations, a),
-                       faction_slot(gs->relations, b));
+    // Сам себе — ВЕРХ ШКАЛЫ (тот же закон, что диагональ строк): здесь
+    // стояло круглое 100 — второй ответ на один вопрос рядом с relation_of.
+    if (std::strcmp(a, b) == 0) return kRelationMax;
+    return relation_of(gs->factions, faction_index(a), faction_index(b));
 }
 
 // The player's standing with `factionId` — a plain relation lookup on his row.
@@ -1285,29 +1275,20 @@ inline bool player_hostile_to(const GameState* gs, const char* factionId) {
     return factions_hostile(gs, kPlayerFactionId, factionId);
 }
 
-// Fetch a faction's row, creating it WITH ITS IDENTITY if this is the first
-// mention of it in this world. Never insert a bare row: save.cpp re-keys the
-// whole map by Faction::id on load, so a row written with an empty id comes back
-// under the empty key — and takes every other bare row down with it.
-// A faction's SLOT, claimed if this is the first the world hears of it. The
-// map form created a phantom row keyed by a bare id here, and save.cpp re-keyed
-// the whole map by Faction::id on load — so a row written with an empty id came
-// back under the empty key and took every other bare row with it. A slot cannot
-// be bare: it is a number, and an unknown id claims a reserved one.
-inline FactionSlot ensure_faction_slot(GameState& gs, const char* id) {
-    return claim_faction_slot(gs.relations, id);
-}
+// (ensure_faction_slot умерла 2026-09-30 вместе с рантайм-именами хвоста:
+// фракция мира — строка РЕЕСТРА, слот отвечает faction_index; будущей
+// рождённой в игре фракции строку выдаст её собственный закон.)
 
 // Move that standing by `delta`, writing both directions of the pair.
 inline void add_player_reputation(GameState& gs, const char* factionId,
                                   int delta) {
     if (!factionId || factionId[0] == '\0' || delta == 0) return;
     if (std::strcmp(factionId, kPlayerFactionId) == 0) return;  // no self-standing
-    const FactionSlot me = ensure_faction_slot(gs, kPlayerFactionId);
-    const FactionSlot them = ensure_faction_slot(gs, factionId);
-    if (me == kNoFactionSlot || them == kNoFactionSlot) return;
-    set_relation(gs.relations, me, them,
-                 relation_of(gs.relations, me, them) + delta);
+    const FactionSlot me = faction_index(kPlayerFactionId);
+    const FactionSlot them = faction_index(factionId);
+    if (me < 0 || them < 0) return;
+    set_relation(gs.factions, me, them,
+                 relation_of(gs.factions, me, them) + delta);
 }
 
 // ── Factories ────────────────────────────────────────────────
