@@ -7657,7 +7657,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             refresh_available_settlement_quests(app);
             std::fprintf(stderr,
                          "[smoke] settlement_build open id=%d name=\"%s\" tab=Build\n",
-                         s.id, s.name.c_str());
+                         s.id, s.name);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -7686,7 +7686,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] settlement_trade open id=%d name=\"%s\" wellbeing=%d stock=%d playerItems=%d gold=%d\n",
                          s.id,
-                         s.name.c_str(),
+                         s.name,
                          int(s.seasonWellbeing),
                          s.inventory.used_slots(),
                          player_bag(app).total(),
@@ -7721,7 +7721,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] settlement_map open id=%d name=\"%s\" seed=0x%08X pop=%d\n",
                          s.id,
-                         s.name.c_str(),
+                         s.name,
                          previewSeed,
                          sm::souls_flock(app.gs, s));
             std::fflush(stderr);

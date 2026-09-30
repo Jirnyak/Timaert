@@ -173,7 +173,6 @@
 19 build_cost_grid (итоговая стоимость пути)     pathfinding.cpp:45
 20 spawn_macro_npcs (первичные сквады, EnTT)     npc_spawn.cpp:275
 21 ensure_macro_player_entity                    player_entity.cpp:45
-22 publish_landmark_ledgers (первая ведомость)   econ_day.cpp:393
 23 [app] bake_macro_light_field + upload         main.cpp:1674   — представление
 24 навигация НЕ строится в генезисе: nav_bake лениво из первого AI-свипа
                                                 npc_ai.cpp:4867 → nav_field.cpp:122
@@ -206,7 +205,7 @@
 | города — один список | `Politik::cities` `std::vector<City>` (`politik.h:72`, City 72 Б на libc++, со `std::string`) И `gs.landmarks` City (`state.cpp:153-192`); дороги, зоны, дальность, игрок читают `Politik::cities` (`spawners.cpp:390 «for (const City &c : P.cities)»`, `world_gen.cpp:186,210,298`, `player_entity.cpp:67-71`) | **РАСХОЖДЕНИЕ** — два списка на «где города»; M-90 |
 | роды мест ставятся по колонке `worldPlaces` | `worldPlaces@src/macro/landmark_registry.h` читается только `tests/spire_generation_test.cpp:307-316`; размещение — отдельная функция на род | **РАСХОЖДЕНИЕ** — ЗАКОН СТРОКИ КАТАЛОГА п.4; наряда нет |
 | `minZone/maxZone` строк City/Village читаются | читатели — только `spires.cpp:67-72`, `ruins.cpp:72` | **РАСХОЖДЕНИЕ** — колонки без читателя (DOD п.9); наряда нет |
-| в генезисе строк в цикле нет | `publish_landmark_ledgers` (`econ_day.cpp:393-416`): `kCommodities[i].id`, `item_def(id)`, `lm.inventory.count(id)` на место × товар | **РАСХОЖДЕНИЕ** — M-103 |
+| в генезисе строк в цикле нет | **ЗАКРЫТО СНОСОМ 2026-09-30** (ломтик E шаг 2): цикл `место × товар` жил в `publish_landmark_ledgers`, а ведомость уничтожена вместе с колонкой места — публиковать в генезисе больше нечего. Строка в генезисе осталась ровно одна и не в цикле по местам — посев склада при рождении, `season_comfort_units@src/macro/econ_day.cpp` (остаток M-103, он же назван строкой M-103 выше) | **ПРАВДА** |
 | численность первичных сквадов выведена | купец при `rng > 0.4` (`npc_spawn.cpp:304`), ведьмы `max(1, nSet/10)` (`:331`), чародейки `max(1, nSet/20)` (`:345`), дистанции `25+rng%35`, `30+rng%40` (`:334,:348`) | **РАСХОЖДЕНИЕ** — ЗАКОН КОНСТАНТ; M-58 |
 | ветка `dirtMask` в `build_feature_layer` живёт | `spawners.cpp:651-662`; единственный продакшен-вызов передаёт `nullptr` (`world_gen.cpp:205-206`); держится тестом `feature_layer_parity_test.cpp:128,184,322…` | **РАСХОЖДЕНИЕ** — «легаси не живёт»; наряда нет |
 
@@ -295,7 +294,7 @@ Horses; `macro_stock.cpp:447`, `kScarRows = 3` `core/stacks.h:99`). —
 | округи и порталы навигации | `NavWorld` (u16 региона, u16 дистанции, u8 шага ×2 яруса + планы) | **ПРАВДА** |
 | следы фракций | `ScentField::strength/wealth`, u16 × 19 фракций × 2 канала = 76 МиБ (`state.h:884`) | **ПРАВДА по форме**; в переписи `stacks.h` строки НЕТ; аллокация 4 МиБ каждый день (`scent_field.cpp:15`) — DOD п.4 |
 | угроза | `NavWorld::threat` — u32 на ОКРУГУ, не на клетку (`nav_field.h:149`) | **ПРАВДА** (производное из летописи) |
-| числа фич | src/macro/state.h:1004 «ResourceGrid worked;», u16 | **ПРАВДА с 2026-09-30 (ход 2 ломтик B)** — первый жилец: СПЕЛЛ ШПИЛЯ под FT_Spire (ординал kSpellDefs + 1; 0 = выкачан — закон нуля-ординала, спелл забыт как истощённая жила). Пишут `generate_spires@src/macro/spires.cpp` и дверь выкачки `learn_from_spire_orb@src/sub/engine.cpp` (0); читают `cell_facts@src/macro/cell_facts.cpp`, `for_each_landmark@src/macro/landmark_iter.h` (производный `depleted` вью), `landmark_context_score@src/macro/world_tick.cpp`. Пашня и шахта ещё не переехали — M-78, M-88 |
+| числа фич | src/macro/state.h:947 «ResourceGrid worked;», u16 | **ПРАВДА с 2026-09-30 (ход 2 ломтик B)** — первый жилец: СПЕЛЛ ШПИЛЯ под FT_Spire (ординал kSpellDefs + 1; 0 = выкачан — закон нуля-ординала, спелл забыт как истощённая жила). Пишут `generate_spires@src/macro/spires.cpp` и дверь выкачки `learn_from_spire_orb@src/sub/engine.cpp` (0); читают `cell_facts@src/macro/cell_facts.cpp`, `for_each_landmark@src/macro/landmark_iter.h` (производный `depleted` вью), `landmark_context_score@src/macro/world_tick.cpp`. Пашня и шахта ещё не переехали — M-78, M-88 |
 | «построенные фичи» | `GameState::builtFeatures` — СПИСОК `{x,y,ft}` (`state.h:845-849,993`); писателей в рантайме 0, читает только загрузка (`app/main.cpp:1897-1901`, ручной индекс) | **РАСХОЖДЕНИЕ** — число клетки списком (ЗАКОН ПОЛЯ п.1); будущий `plough_field_cell` его не пополняет → вспашка потерялась бы при загрузке; наряда нет |
 
 ### Поле чисел фич — закон смысла
@@ -389,14 +388,14 @@ Horses; `macro_stock.cpp:447`, `kScarRows = 3` `core/stacks.h:99`). —
 | факт чеканки меди и золота уходит товаром −1 | `commodity_of_item@src/macro/econ_day.cpp` над словарём из 15 строк, где `copper`/`gold` нет (`commodity.h:56-97`); факт пишется `econ_day.cpp:194` | **РАСХОЖДЕНИЕ** — денежную массу прибор видит только по серебру; M-143 |
 | шесть фич-шахт — мёртвые байты | `FT_ClayPit`…`FT_GoldMine` (`features.h:26-27`); читателей 0, записей в `FeatureLayer` 0; `mineFeature` (`deposit_layer.h:60`) — 1 совпадение, само объявление | **РАСХОЖДЕНИЕ** — шапка `features.h:22-25` обещает «фичу шахты ставит МИР при генерации» (вердикт 2026-09-22), не исполнено; M-142 |
 | `plough_field_cell` — образец ЗАКОНА АГНОСТИЧНОСТИ в AGENTS | определение `plough_field_cell@src/macro/macro_stock.cpp`, объявление `plough_field_cell@src/macro/spawners.h`; живой вызов ОДИН — генезис пашен `stamp_field_features@src/macro/spawners.cpp` (M-112 ч.1). У `fence_pasture_cell@src/macro/macro_stock.cpp` вызовов по-прежнему 0, и это не тот же дефект: worldgen-штампа пастбищ нет ПО ЗАМЫСЛУ (`fence_pasture_cell@src/macro/spawners.h` — «There is no worldgen stamp for pastures»), а рантайм-акт постройки не построен вовсе — у `builtFeatures@src/macro/state.h` нет писателя, кроме провода сейва | **ПОЛОВИНА** — цитата закона указывает на живую дверь; пастбище ждёт акта постройки сквадом (остаток M-112) |
-| темп труда живёт в ТРЁХ носителях при одном законе цены | `sp_price@src/macro/econ_day.h` зовут трижды: `kGatherPerWorkerDay=32` (`sub/engine.cpp:2220`), `def->perWorkerDay` (src/macro/npc_ai.cpp:1152 «sp_price(int(pools.maxSp), def->perWorkerDay);»), `item_labour(ci)` (`ui/overlays.cpp:1245`) | **РАСХОЖДЕНИЕ** — вердикт 2026-09-27: остаётся колонка предмета; M-141 |
+| темп труда живёт в ТРЁХ носителях при одном законе цены | `sp_price@src/macro/econ_day.h` зовут трижды: `kGatherPerWorkerDay=32` (`sub/engine.cpp:2220`), `def->perWorkerDay` (src/macro/npc_ai.cpp:1142 «sp_price(int(pools.maxSp), def->perWorkerDay);»), `item_labour(ci)` (`ui/overlays.cpp:1245`) | **РАСХОЖДЕНИЕ** — вердикт 2026-09-27: остаётся колонка предмета; M-141 |
 | гейта навыка у добычи НЕТ | единственный отказ рубки — «тело занято» (`body_is_free`, `sub/engine.cpp:2178`); единственный `SkillId::` во всём `engine.cpp` — `Armsmaster` в темпе рекавери (`:2161`) | **ПРАВДА, и это ЗАКОН с 2026-09-27** (вердикт владельца: гейта у добычи нет) |
-| `Foraging`/`Prospecting` — спящие колонки, ВИДИМЫЕ игроку | читателей механики 0 (посмертная записка у `Foraging` — src/macro/npc_ai.cpp:3500 «//   · ФУРАЖИР. Скидка ведущего по SkillId::Foraging была вторым ответом на»); лист рисует их процент общим циклом (`ui/overlays.cpp:887-899`) | **РАСХОЖДЕНИЕ** — под снос, M-144 |
+| `Foraging`/`Prospecting` — спящие колонки, ВИДИМЫЕ игроку | читателей механики 0 (посмертная записка у `Foraging` — src/macro/npc_ai.cpp:3512 «//   · ФУРАЖИР. Скидка ведущего по SkillId::Foraging была вторым ответом на»); лист рисует их процент общим циклом (`ui/overlays.cpp:887-899`) | **РАСХОЖДЕНИЕ** — под снос, M-144 |
 | гейт ремесла несимметричен: город спрашивает, рука нет | город — `recipe_known(hands, craft, minRank)` (`econ_produce_day@src/macro/econ_day.cpp`, определение `econ_day.h:86`); рука зовёт `craft_item` мимо гейта (`ui/overlays.cpp:1253`) | **РАСХОЖДЕНИЕ** — игрок кует монету с нулевым кузнечным, город требует `Blacksmith 30`; M-146 |
 | город не кует оружие и броню НИКОГДА | состав есть у 30 строк (`items.cpp:254-303`), право названо у 11 (`kRecipes`, `econ_day.h:131-154`); 8 неназванных — `wpn_dagger/sword/spear/axe/mace/staff/bow`, `arm_leather` | **РАСХОЖДЕНИЕ** — вердикт 2026-09-27: право переезжает в строку, оружие становится товаром производства; M-141/M-146 |
 | пять строк каталога без источника в мире | `mat_hide`, `mat_bone`, `food_meat`, `misc_gem`, `mat_herb` — источников 0 после сноса таблиц лута (`f191badf`); в реестре лута осталось 2 профиля (`items.cpp:478-485`) | **РАСХОЖДЕНИЕ** — зелья и кожаная броня некрафтабельны структурно; вердикт: травы = поле от фертильности, шкуры/кости/мясо = ряд `Fauna`, `misc_gem` — вопрос ?38; M-145 |
 | закон `drain` не исполняет НИЧТО | `resource_field_apply` (`resource_field.h:204`) и `macro_stock_apply@src/macro/macro_stock.h` оба `void` — факт взятого не возвращают; `take = min(min(workers, have), carryMax)` написан руками (`npc_ai.cpp:1199`), между чтением поля (`:1168`) и записью (`:1235`) 67 строк; дверей `sub_sat/try_spend/drain` в коде 0 | **РАСХОЖДЕНИЕ** — M-102 |
-| шапка `macro_stock.h` объявляет себя единственной дверью — и это ЛОЖЬ | `macro_stock.h:114-116`: «This is the ONLY way to take from a macro stock»; вся макро-добыча идёт мимо, прямо в `resource_field_apply` (src/macro/npc_ai.cpp:1223 «resource_field_apply(mw, def->row, tx, ty, -take);», второй вызов ниже той же строкой) | **РАСХОЖДЕНИЕ** — шапка описывает закон субмира как закон мира; наряда нет |
+| шапка `macro_stock.h` объявляет себя единственной дверью — и это ЛОЖЬ | `macro_stock.h:114-116`: «This is the ONLY way to take from a macro stock»; вся макро-добыча идёт мимо, прямо в `resource_field_apply` (два вызова в `ai_gatherer@src/macro/npc_ai.cpp`) | **РАСХОЖДЕНИЕ** — шапка описывает закон субмира как закон мира; наряда нет |
 | население убавляется мимо своего ряда стока | ЗАКРЫТО 2026-09-30 (v122): колонки `population` нет, и убыль ходит дверьми — `bleed_flock`/`bleed_heads@src/macro/world_row.h`, `leave_home_flock@src/macro/squad.h`, ряд стока `write_population@src/macro/macro_stock.cpp` (он же поглотил именную адресацию умершего ряда `garrison`) | **ПРАВДА** — один диалект величины |
 | рубка может не заплатить наверх вовсе | списание дерева под условием `treeLayer_` (`sub/engine.cpp:2245`); при `nullptr` лут выдан, макро не убыло (ветка колоса не сработает — род `Tree`) | **РАСХОЖДЕНИЕ** — наряда нет |
 | добыча обходит оплату SP из живого кода | `harvest_prop_near_player` публичен (`sub/engine.h:252`) и зовётся мимо `harvest_action` из `app/main.cpp:4970` (и смоуков) — цена платится только в `harvest_action` (`sub/engine.cpp:2220`) | **РАСХОЖДЕНИЕ** — наряда нет |
@@ -536,7 +535,6 @@ frame(app, simSteps)                                       main.cpp:5561
 │     ├─ threat_field_daily                                :571 → threat_field.cpp:21
 │     ├─ scent_ensure · scent_field_daily                  :575-576 → scent_field.cpp:6
 │     ├─ regrow_dungeon_populations                        :579
-│     ├─ [граница сезона] survey_landmark_regions :586 → publish_landmark_ledgers :591
 │     ├─ rotate_worker_squads (аукцион артелей, рождение/роспуск сквадов)  :595 → npc_ai.cpp:3644
 │     ├─ squad_season_window (граница сезона: суд ростеров)  :603 → npc_ai.cpp:3468
 │     └─ squad_bags_hygiene_daily                          :605 → npc_ai.cpp:3608
@@ -595,7 +593,6 @@ frame(app, simSteps)                                       main.cpp:5561
 | дневные проходы аллоцируют не в тике | `scent_field.cpp:15` (4 МиБ в день), `threat_field.cpp:65`, 11 векторов в дневных функциях `npc_ai.cpp:3479…3751` | **РАСХОЖДЕНИЕ** — DOD п.4; наряда нет |
 | память мира — один горизонт через `memory.h` | поля угрозы и следов распадаются `>>1 раз в N дней` (`threat_field.cpp:92-94`, `scent_field.cpp:59-62`) — форма, запрещённая `memory.h:16-22`; жильцы двери памяти — только дань (`tithe_daily_@src/macro/world_tick.cpp`, память на ребре рода 6) | **РАСХОЖДЕНИЕ** — M-51 |
 | один бой макромира — одна запись Killed | `report_battle_deaths` → синк → `raise_macro_fact` (`app/main.cpp:277,305`: Killed на каждую смерть) И `record_battle_facts` (`squad.h:932→850/857`: Killed суммой); `record_deed` платит славу на каждый вызов | **РАСХОЖДЕНИЕ** — одни смерти поданы дважды, слава платится двумя путями; наряда нет |
-| опись округи читает только живые клетки (шапка `:3541-3544`) | `for_each_live` проходит ВСЕ cells (`resource_field.h:352-356`); статик-счётчики (`:3514-3515`) и `fprintf(stderr)` каждую границу сезона (`:3591-3603`) | **РАСХОЖДЕНИЕ** — глобальное состояние и прибор в продакшене; наряда нет |
 | ЗАКОН СТРОКИ КАТАЛОГА в дне | ветки по роду: `type != City/Village` (`world_tick.cpp:201,407`), `Spire ? tier : zones` (`:469`); имена строк: `Peasant` как цена души (`:330`, `threat_field.h:55`), набор всегда Peasant (`world_row.h:342-343`), `Horse` (`npc_ai.cpp:3768`), `Caravan ? … : mine` (`:4430`) | **РАСХОЖДЕНИЕ** — M-38, M-40; частично наряда нет |
 | ЗАКОН СТРОКИ КАТАЛОГА — где держится | `garrisonShift@src/macro/landmark_registry.h` (колонка жива, её ЧИТАТЕЛИ умерли с сословием — v122), `is_fauna_kind` (`:383`), `roster_bill` по колонкам рациона и платы (`roster_window.h:58-59`), `bornPopBase` (`:481`), `recipe_known` по анкете (`econ_produce_day@src/macro/econ_day.cpp`), `switch` без `default:` (`macro_stock.cpp:615`, `npc_ai.cpp:4410`) | **ПРАВДА** |
 | ЗАКОН КЛАМПА — стражи, не костыли | `wellbeing → байт` (`settle_landmark_day@src/macro/world_tick.cpp`), доля ≤ 1 (`roster_window.h:103`), ёмкость природы (`macro_stock.cpp:225,597`), сатурация упаковки (`threat_field.cpp:14-17`, `scent_field.h:118-119`) | **ПРАВДА** |
@@ -628,18 +625,16 @@ frame(app, simSteps)                                       main.cpp:5561
 | **Поле угрозы** `threat_field_daily` | летопись (Died), порталы | `nv->threat`, `threatSeenSeq` | производное; распад >>1 раз в 8 дней | O(новых фактов + R·deg) + аллокация | `threat_field.cpp:21` |
 | **Поле следов** `scent_field_daily` | `gs.scent` | `gs.scent` | диффузия 1/8 восьми соседям; распад >>1 раз в 4 дня | ≈ 39.8 млн клеток/день + 38 обнулений 4 МиБ + аллокация 4 МиБ | `scent_field.cpp:6` |
 | **Регров данжей** | `bornPopBase/PerScore`, `worked` (спелл шпиля)/`zones` | ГОЛОВА толпы данжа (`weakest_crowd_kind` — род выводится, не авторится: шпиль → Imp) | +1 раз в 32 дня; выбитый подчистую (`souls_flock` 0) не растёт | O(L) | `regrow_dungeon_populations@src/macro/world_tick.cpp` |
-| **Опись округи** `survey_landmark_regions` | поля жил, `regionOf/distHome` | `lm.survey` | чистый лист каждый сезон | 6 × 2^20 скан + O(живых × мест) раз в сезон | `npc_ai.cpp:3517` |
-| **Ведомость** `publish_landmark_ledgers` | склад, `needDebt`, анкета | `lm.ledger`, `gs.worldLedger` | цена = `stock_price` той же кривой, что сделка | O(L × 15 × (рекурсия спроса + 1024)) раз в сезон — **строк в ней больше нет** (M-103) | `econ_day.cpp:415` |
-| **Ротация артелей** `rotate_worker_squads` | EnTT-сквады, места, nav, угроза, ведомость сюзерена, интересы | поручение/состав/рождение/роспуск сквадов, `population`, склады | число сквадов = заявки с положительным скором, урезанные пулом рук | O(S log S × 2 + L × аукцион) | `npc_ai.cpp:3644` |
+| **Ротация артелей** `rotate_worker_squads` | EnTT-сквады, места, nav, угроза, абсолютная стоимость строки, интересы | поручение/состав/рождение/роспуск сквадов, `population`, склады | число сквадов = заявки с положительным скором, урезанные пулом рук | O(S log S × 2 + L × аукцион) | `npc_ai.cpp:3644` |
 | **Окно сквадов** / **гигиена сумок** | EnTT-сквады, `SquadRoster` | ростер, `deserterPool`, `bag.inv`, `needDebt` | тот же суд, что у мест; сумку игрока не скрапит | O(S log S + S × окно) | `npc_ai.cpp:3468,3608` |
 | **Карт-драйвер** `tick_macro_npc_ai` | view сквадов, `tickAccum`, `MacroCell`, `Pools`, `NpcInventory` | `tickAccum`, `MacroCell.idx`, `squadIndex`, `sweepOrder` | одна думка на сквад за вызов; порядок по ординалу | O(N log N) × 2 сортировки + думки ~N/32 на тик | `npc_ai.cpp:4852` |
 | **Бюджетный драйвер** `tick_macro_npc_ai_budgeted` | `sweepAccum`, `pendingSweeps`, `sweepCursor`, view | те же + `npcsProcessed/backlog` | ≤ 64 думок на вызов; очередь ≤ 4 свипов, излишек ТЕРЯЕТСЯ | O(N log N) пересборка на каждый шаг при pending>0 | `npc_ai.cpp:4981` |
 | **`make_tick_context`** | `MacroWorld`, клетка флажка, `gs.relations` через строки | `TickContext` (стек) | маска враждебности на свип | O(F²) = 361 строковых сравнений на свип | `npc_ai.cpp:4796` |
 | **Рефлекс угрозы** `squad_threat_step` | бакеты 3×3, `factions_hostile` (строки), `squad_power` ×2, `NpcTraits`, `kNpcTypeDefs.ai` | `rt.state/target`, чужой `state=Fleeing`; через `settle_auto_battle` — ростеры, `Pools`, `Dead`, лут, `deserterPool`, факты | встреча на одной клетке = бой одним законом | O(кандидатов × strcmp) + O(души обеих сторон) | `npc_ai.cpp:2725` |
 | **Охота по следу** `scent_hunt_step` | `kNpcTypeDefs.ai`, маска враждебности, `scent` 9 клеток × F | `try_move` (цель не пишет) | только combatant; вверх по градиенту под фильтром силы | O(9F + души) | `npc_ai.cpp:2894` |
-| **`ai_gatherer`** | дом, `survey.rows`, поля/фичи (бокс 7×7 или 33×33), `TreeGrid`, сумка | `rt.state/target`, `resource_field_apply(-take)`, сумка (строковые двери), склад дома, факты | credit before debit | Idle O(49..1089) клеток; Working O(256) × строковые двери | `npc_ai.cpp:999` |
-| **`ai_vendor`** | дом/рынок, ведомости, nav (порталы, `nav_path_cost`, `threat_on_route`), сумка | сумка, склад и `needDebt` рынка/дома, факт Traded | — | `plan_home_load_` O(256²); Working O(15 × 256) строковые двери | `npc_ai.cpp:1742` |
-| **`ai_collector`** | дом/вассал, ребро `tithe_edge_of` (род 6), ведомость дома | склад вассала, сумка, `TitheEdge.owedValue`, факт Taxed, склад дома | хвост → Idle | O(15 × 256) | `npc_ai.cpp:2000` |
+| **`ai_gatherer`** | дом, поля/фичи (бокс 7×7 или 33×33), `TreeGrid`, сумка | `rt.state/target`, `resource_field_apply(-take)`, сумка (строковые двери), склад дома, факты | credit before debit | Idle O(49..1089) клеток; Working O(256) × строковые двери | `npc_ai.cpp:999` |
+| **`ai_vendor`** | дом/рынок (живьём), абсолютная стоимость строки, nav (порталы, `nav_path_cost`, `threat_on_route`), сумка | сумка, склад и `needDebt` рынка/дома, факт Traded | — | `plan_home_load_` O(256²); Working O(15 × 256) строковые двери | `npc_ai.cpp:1742` |
+| **`ai_collector`** | дом/вассал, ребро `tithe_edge_of` (род 6), нужда дома живьём | склад вассала, сумка, `TitheEdge.owedValue`, факт Taxed, склад дома | хвост → Idle | O(15 × 256) | `npc_ai.cpp:2000` |
 | **`try_move`** | `PathCostData`, `NavWorld`, фичи (мост), `Pools.sp/spCarry`, `rt.moveMult/overloadCost/…` | `p`, `rt.moveBudget/entryDir/entryTicks/visualSpeed`, `Pools.sp/spCarry` | шаг только на стоячую клетку; неоплатный шаг отказан; стоп на клетке игрока | O(шагов × (8 + nav_step)) | `npc_ai.cpp:427` |
 | **`settle_march_rhythm`** | `nav_can_stand`, `Pools`, `rt.state/target/moveBudget` | `rt.state=Resting`, `Pools` (rest), укус HP, `Dead` | двинулся — платит; стоит на стоячей — отдыхает | O(1) (+O(N) drain при смерти) | `npc_ai.cpp:340` |
 | **Авто-бой** `resolve_auto_battle` → `settle_auto_battle` | `auto_battle_side_of` (души обеих сторон), RNG | смерти по ростерам, `Dead`, лут, `deserterPool`, XP, факты | один закон боя на обоих масштабах | O(души) + вектор на встречу | `auto_battle.h:168`, `squad.h:896` |
@@ -703,7 +698,7 @@ libstdc++ (эта машина): `sizeof(std::string) = 32`, `sizeof(Landmark) =
 | шрамы (3 живых ряда из 10) | `FieldCell` u16 × N × 3 | 6 МиБ (+ 720 Б заголовков; перепись `stacks.h` исправлена 2026-09-25) | `GameState::resourceScarCells` (`state.h:977`) | `ResourceGrid::at` / `ResourceGrid::write` | `cell_of` | 1 (`macro_stock.cpp:607` внутри двери) | `resource_field.h:268,277` |
 | жилы ×6 + `reach` ×6 | u16 × N × 6 + u16 × N × 6 | 12 + 12 МиБ | `App::deposits` (`app_state.h:160`); `MacroWorld::deposits` | `remaining_at/kind_near/any_at` / `create_deposit`, `set_deposit_remaining` → `write` | `cell_of`; диск `cell_step` | 0 | `deposit_layer.h:101` |
 | фичи | u8 × N | 1 МиБ | `App::features` (`app_state.h:140`); `MacroWorld::features` | `at` / `set` (**0 вызовов**) | `cell_of` в дверях | 12 поэлементных (9 записей) + 2 указателя на массив | `features.h:173` |
-| числа фич `worked` | u16 × N | 2 МиБ | src/macro/state.h:1004 «ResourceGrid worked;» | `worked_read` / `worked_write/add` — жильцы: спелл шпиля (v120), корабли гавани | `cell_of` | 0 | `worked_read@src/macro/state.h` |
+| числа фич `worked` | u16 × N | 2 МиБ | src/macro/state.h:947 «ResourceGrid worked;» | `worked_read` / `worked_write/add` — жильцы: спелл шпиля (v120), корабли гавани | `cell_of` | 0 | `worked_read@src/macro/state.h` |
 | опасность | u8 × N | 1 МиБ | `App::zones` (`app_state.h:141`); `MacroWorld::zones` const* | `at` / генератор | `cell_of` / линейный | 2 чтения (`vk_macro_renderer.cpp:189,357`) | `zones.h:30` |
 | стоимость пути | f32 + u8 + u8 × N | 6 МиБ | `pathCost@src/app/app_state.h` | `cost_at/water_at/height_at` / `build_cost_grid` | `cell_of` в дверях; писатель `i%W,i/W`; A* `wrap_axis`+ручной | A* 4 строки, `nav_field.cpp:27`, `spawners.cpp` 12 (локальная копия) | `pathfinding.h:34` |
 | знание | u8 × N | 1 МиБ | `GameState::knowledge` (`state.h:872`) | `at` / `update_player_sight`, `reveal_area` (сырой `k.data[ci]`) | `cell_of` / индекс из оптического свипа | 3 (`main.cpp:4064`, `world_fields.cpp:79`, `map_screen.cpp:238`) | `knowledge.h:45` |
@@ -756,12 +751,16 @@ libstdc++ (эта машина): `sizeof(std::string) = 32`, `sizeof(Landmark) =
 ### Скаляры мира — `GameState` (`state.h:851`), 34 члена, 49 456 / 49 496 Б
 
 Что НЕ едет в сейв и приходит после загрузки нулевым/из генезиса: `version`
-(перезаписывается), `worldLedger`, `sessionFeed`, `politik`, `navEpoch`,
-`Landmark::survey`, `Landmark::ledger` — обещание «пересобираются после
-загрузки» (`state.h:400-402,414-415`) кодом не выполняется:
-`boot_world_from_save` (`app/main.cpp:1726-1906`) и `rebake_world` не зовут ни
-`survey_landmark_regions`, ни `publish_landmark_ledgers`; загруженный мир до
-границы сезона торгует без ведомостей. — **РАСХОЖДЕНИЕ**, наряда нет.
+(перезаписывается), `sessionFeed`, `politik`, `navEpoch`.
+**РАСХОЖДЕНИЕ ЗАКРЫТО СНОСОМ 2026-09-30** (ломтик E шаг 2): `worldLedger`,
+`Landmark::survey` и `Landmark::ledger` были тремя производными, чьё
+обещание «пересобираются после загрузки» код не выполнял — загруженный мир
+до границы сезона торговал без ведомостей. Пересобирать больше нечего: оба
+кэша уничтожены, цена дома считается живьём в точке решения
+(`trade_vendor_at_market@src/macro/npc_ai.cpp`), цена чужого рынка есть
+абсолютная стоимость строки каталога (`market_price_seen@src/macro/npc_ai.cpp`).
+Что путь загрузки их не зовёт, теперь не дефект, а факт отсутствия предмета:
+`boot_world_from_save@src/app/main.cpp` звать больше нечего.
 
 **Куча в `GameState`** (сторож `sizeof` её не видит — вектор весит 24 Б при
 любом содержимом): `landmarks` (M-90), `markers` (`Marker` 80 Б с двумя
@@ -1511,9 +1510,8 @@ Splash, Title, CustomNewGame, Load, IntroSlides, CharacterCreation, Playing
 13. RNG свипа делится с UI (`app/main.cpp:662,700,743`).
 14. Курсор бюджетного драйвера — позиция; сброс ритма на макро-кадре; два ответа гейта `allowAutoBattle`.
 15. Killed за одну битву пишется дважды, слава платится двумя путями.
-16. `survey_landmark_regions`: `for_each_live` проходит все клетки; статик-счётчики и `fprintf` в продакшене.
 17. `starvedYesterday` — немой кламп u16; `kMaxCrewInstances = 64`; `population < 20`; `kRawCommodityCount = 6`.
-18. Строки: `Landmark::name`, `GameEvent::s1/s2`, `logicNodes*`, `Marker`, `Quest` — вердикт «эпик строк», очередность не назначена.
+18. Строки: `GameEvent::s1/s2`, `logicNodes*`, `Marker`, `Quest` — вердикт «эпик строк», очередность не назначена.
 19. Выход из мира: четыре канала; `EconFactSink` в игре не подключён; 4 тега без читателя (без отправителя — ноль, три снесены M-116 ч.1 вместе с мёртвой дверью `record`); квестовый движок — второй мутатор; L1/L2 включают L3; `ui/` мутирует мир; `QuestEngine::tick` аллоцирует каждый кадр.
 20. Сейв: производные не пересобираются после загрузки; PreBattle нечитаем; литералы границ enum; `// TODO: rebuild_landmarks`; свидетель свёртки не отказывает. (Подпункт «64 МиБ < капов» снят 2026-09-29 — потолок выведен, M-119 ч.1.)
 21. Стык: лут трупа лорда исчезает; зеркало клампит hp; `MacroDebt` раскладка; статик-кэш `map_factory.cpp`; аллокации при ре-центре и в `tick_day_pump`.

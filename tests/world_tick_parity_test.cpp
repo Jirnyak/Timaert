@@ -20,6 +20,7 @@
 #include "macro/store.h"
 
 #include <cstdint>
+#include <cstdio>
 
 namespace {
 
@@ -298,7 +299,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     sm::Landmark s{};
     s.type = sm::LandmarkType::City;
     s.id = 1;
-    s.name = "Hungry";
+    std::snprintf(s.name, sizeof s.name, "Hungry");
     s.x = 8; s.y = 8;
     gs.landmarks.push_back(s);
     // Души селятся ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число

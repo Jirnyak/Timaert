@@ -198,9 +198,10 @@ bool gen_visit(const QuestGenCtx& ctx, Quest& q) {
     if (expire < 14) expire = 14;
 
     add_common(q, ctx, QuestCategory::Procedural, difficulty, expire);
-    q.title = "Envoy to " + target.name;
+    const std::string targetName(target.name);
+    q.title = "Envoy to " + targetName;
     q.description = "Deliver a sealed letter to the magistrate of "
-        + target.name + ". " + describe_destination(ctx, target.x, target.y);
+        + targetName + ". " + describe_destination(ctx, target.x, target.y);
 
     Objective o{};
     o.kind = ObjectiveKind::VisitCell;

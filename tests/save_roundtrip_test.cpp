@@ -29,6 +29,7 @@ constexpr int kFixtureVillageSouls = 111;
 #include <memory>
 #include <string>
 #include <vector>
+#include <cstring>
 
 namespace {
 
@@ -411,7 +412,7 @@ sm::GameState make_state() {
     sm::Landmark settlement{};
     settlement.type = sm::LandmarkType::City;
     settlement.id = 7;
-    settlement.name = "Round City";
+    std::snprintf(settlement.name, sizeof settlement.name, "Round City");
     settlement.x = 40;
     settlement.y = 80;
     settlement.inventory.add("wood", 19);
@@ -429,7 +430,7 @@ sm::GameState make_state() {
     sm::Landmark village{};
     village.type = sm::LandmarkType::Village;
     village.id = 70;
-    village.name = "Round Hamlet";
+    std::snprintf(village.name, sizeof village.name, "Round Hamlet");
     village.x = 45;
     village.y = 85;
     village.inventory.add("food_meat", 4);
@@ -1015,7 +1016,7 @@ void run_roundtrip() {
         FAIL_BAIL("settlement lost");
     }
     const sm::Landmark& city = *cityLm;
-    if (city.name != "Round City"
+    if (std::strcmp(city.name, "Round City") != 0
         || city.inventory.count("wood") != 19
         || sm::creature_heads_of(city.inventory, sm::NPCType::Peasant)
                != kFixtureCitySouls + 1

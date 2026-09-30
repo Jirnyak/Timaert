@@ -1030,7 +1030,7 @@ void test_item_delivery_direct_path() {
     sm::Landmark settlement{};
     settlement.type = sm::LandmarkType::City;
     settlement.id = 7;
-    settlement.name = "Test Anchorage";
+    std::snprintf(settlement.name, sizeof settlement.name, "Test Anchorage");
     settlement.x = 12;
     settlement.y = 18;
     settlement.factionIdx = 0;
@@ -1098,7 +1098,7 @@ void test_quest_reward_dispatch_order_and_application() {
     sm::Landmark giver{};
     giver.id = 1;
     giver.type = sm::LandmarkType::Village;
-    giver.name = "Giver";
+    std::snprintf(giver.name, sizeof giver.name, "Giver");
     giver.inventory.add("coin_empire_copper", 40);
     gs.landmarks.push_back(giver);
     sm::settle_souls(gs, gs.landmarks.back(), 64);
@@ -1422,7 +1422,7 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     sm::Landmark city{};
     city.type = sm::LandmarkType::City;
     city.id = 7;
-    city.name = "Same Id City";
+    std::snprintf(city.name, sizeof city.name, "Same Id City");
     city.x = 20;
     city.y = 20;
     // Steer gen_delivery through the honest surface: tools are the town's
@@ -1440,7 +1440,7 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     sm::Landmark village{};
     village.type = sm::LandmarkType::Village;
     village.id = 7;
-    village.name = "Same Id Village";
+    std::snprintf(village.name, sizeof village.name, "Same Id Village");
     village.x = 24;
     village.y = 22;
     gs.landmarks.push_back(village);
@@ -1537,7 +1537,7 @@ void test_generated_delivery_quest_flow() {
     sm::Landmark settlement{};
     settlement.type = sm::LandmarkType::City;
     settlement.id = 7;
-    settlement.name = "Test Anchorage";
+    std::snprintf(settlement.name, sizeof settlement.name, "Test Anchorage");
     settlement.x = 12;
     settlement.y = 18;
     settlement.factionIdx = 0;

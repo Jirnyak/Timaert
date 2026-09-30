@@ -28,7 +28,7 @@ sm::Landmark settlement(int id, int x, int y) {
     sm::Landmark s{};
     s.type = sm::LandmarkType::City;
     s.id = id;
-    s.name = "Test";
+    std::snprintf(s.name, sizeof s.name, "Test");
     s.x = x;
     s.y = y;
     s.factionIdx = 0;

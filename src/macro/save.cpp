@@ -970,7 +970,7 @@ void read_player(Reader& r, PlayerState& p) {
 void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.id);
     write_enum8(w, lm.type);
-    w.str(lm.name);
+    w.pod(lm.name);   // v123: имя места — плоские чары (раскладка ecs::SquadName)
     w.pod(lm.x);
     w.pod(lm.y);
     // (population покинула формат в v122 — паства едет worked-слоем полей,
@@ -993,7 +993,7 @@ void write_landmark(Writer& w, const Landmark& lm) {
 void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.id);
     read_enum8(r, lm.type, static_cast<std::uint8_t>(LandmarkType::Tower));
-    r.str(lm.name);
+    r.pod(lm.name);   // v123
     r.pod(lm.x);
     r.pod(lm.y);
     read_inventory(r, lm.inventory);

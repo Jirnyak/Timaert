@@ -926,10 +926,10 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     bool haveDry = false, haveNear = false;
     XY nearAt{};
     // THE ERRAND IS A NEIGHBOURHOOD QUESTION, so it walks a neighbourhood: the
-    // hand's own box (kNavHandReach), which is all this door answers now —
-    // «где ближайшая жила моей округи» переехало в ОПИСЬ МЕСТА
-    // (survey_landmark_regions), и здесь остался ровно мостовой случай, жила
-    // за одним водным разрывом, которая по определению лежит вплотную. A field
+    // hand's own box (kNavHandReach). «Где ближайшая жила моей округи»
+    // уезжало отсюда в ОПИСЬ МЕСТА, а опись уничтожена 2026-09-30 (ломтик E
+    // шаг 2, наряд M-191) — значит эта дверь снова ЕДИНСТВЕННАЯ, и её бокс
+    // есть весь горизонт артели. Дыра названа в CANON S10 «КАРТА ОКРУГИ». A field
     // is indexed by the torus, so the box IS the loop: 33×33 reads, no
     // candidate discarded (problems.md §52 is the same lesson, one door over).
     const std::uint32_t homeIdx = cell_of(hx, hy, ctx.mapW);
@@ -1077,22 +1077,12 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
             XY site;
             bool found = false;
             if (def->worksite == Worksite::Deposit) {
-                // СНАЧАЛА ОПИСЬ СВОЕЙ ОКРУГИ: место уже нашло — артель
-                // читает. Поиск остаётся ровно на МОСТОВОЙ случай (жила за
-                // одним водным разрывом), который по определению лежит
-                // вплотную к своей округе, поэтому ему честно хватает бокса
-                // руки.
-                if (const Landmark* homeLm = home_landmark(rt, ctx)) {
-                    const SurveyRow& sr =
-                        homeLm->survey.rows[std::size_t(def->row)];
-                    if (!sr.none()) {
-                        site = XY{float(sr.x), float(sr.y)};
-                        found = true;
-                    }
-                }
-                if (!found) {
-                    found = find_home_deposit(ctx, def->row, home, site);
-                }
+                // ОПИСЬ ОКРУГИ УНИЧТОЖЕНА (ломтик E шаг 2): жила ищется
+                // боксом руки своей округи. Это ЗАВЕДОМО УЖЕ прежнего
+                // ответа — и дыра названа вслух в CANON S10 («КАРТА
+                // ОКРУГИ»), а не залатана здесь радиусом: закон, упершийся
+                // в цену поиска, лечится сносом поиска, не подпоркой.
+                found = find_home_deposit(ctx, def->row, home, site);
             } else {
                 found = find_worksite(*def, ctx, p, home, site);
             }
@@ -1327,9 +1317,10 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
 // ── The city's trading agent (W2b) ───────────────────────────────────────
 // An honest caravan: no TradeRoute abstraction settles anything — the goods
 // ride in the caravan's OWN bag between real inventories, so a robbery on
-// the road takes REAL cargo. What to haul is decided by the home's LEDGER —
-// the place's own running account of what it lacks (LandmarkLedger): it can
-// be stale by the time the crew returns, and that is a trader's life.
+// the road takes REAL cargo. What to haul is decided by the HOME ITSELF —
+// its own shelf and its own season's bill, read live at the moment of the
+// deal (the cached ledger died 2026-09-30, ломтик E шаг 2): by the time the
+// crew gets back the answer may be stale, and that is a trader's life.
 //
 // How much it hauls is its OWN carry law and nothing else: rt.carryCap =
 // get_carry_capacity(sheet) × the row's haulMult (squad.h
@@ -1554,25 +1545,24 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
     return pickId;   // -1 = тупик: рейс кончается, крю идёт домой
 }
 
-int market_price_seen(const MacroWorld& mw, int fromX, int fromY,
-                      const Landmark& at, int commodityIdx) {
-    if (!mw.gs) return 0;
+int market_price_seen(int commodityIdx) {
     if (commodityIdx < 0 || commodityIdx >= kCommodityCount) return 0;
-    const std::size_t ci = std::size_t(commodityIdx);
-    // ЯРУС 2, БЛИЖНЯЯ ПОЛОВИНА: место в горизонте — его СОБСТВЕННАЯ
-    // ведомость. Горизонт спрашивается из точки, где стоит спрашивающий.
-    if (at.ledger.published() && mw.nav && mw.nav->baked()) {
-        const std::uint16_t rFrom = nav_region_at(*mw.nav, fromX, fromY);
-        const std::uint16_t rAt = nav_region_at(*mw.nav, at.x, at.y);
-        if (nav_regions_adjacent(*mw.nav, rFrom, rAt))
-            return at.ledger.price[ci];
-    }
-    // ЯРУС 2, ДАЛЬНЯЯ ПОЛОВИНА: за горизонтом — мировое среднее, и оттого
-    // дальнее место выглядит «обычным рынком»: туда ездят, но без
-    // предпочтения (CANON S10). Ноль — цены нет ни на одном ярусе.
-    return mw.gs->worldLedger.published()
-               ? mw.gs->worldLedger.price[ci]
-               : 0;
+    // ЧУЖОЙ РЫНОК ОЦЕНИВАЕТСЯ АБСОЛЮТНОЙ СТОИМОСТЬЮ СТРОКИ (CANON S10,
+    // вердикт владельца 2026-09-30: «у нас есть абсолютная стоимость /
+    // локальная цена от спроса предложения контекста»). Ярус 2 знания о
+    // цене — ведомость места и мировое среднее из неё — УНИЧТОЖЕН вместе с
+    // колонками места (ломтик E шаг 2), и на его дальнюю половину встало то
+    // же по смыслу число: «дальнее место выглядит обычным рынком». Разница
+    // в том, что оно больше не считается сезонным проходом по всем местам,
+    // а лежит строкой каталога — то есть его неоткуда рассинхронизировать.
+    //
+    // ЛОКАЛЬНОЙ ПОЛОВИНЫ ЯРУСА 2 БОЛЬШЕ НЕТ, и это названная дыра, а не
+    // умолчание: пока эконом-эпик не построит цену от спроса/предложения,
+    // спрашивающий не видит ни дефицита, ни завала у соседа. СВОЙ дом при
+    // этом виден точно — его склад и счёт читаются живьём там, где решение
+    // принимается, и ярусом это никогда не было.
+    const ItemDef* d = item_def_at(commodity_item_index(commodityIdx));
+    return d ? d->value : 0;
 }
 
 namespace {
@@ -1636,7 +1626,7 @@ long long trade_bid_value_(const MacroWorld& mw, int fromX, int fromY,
     long long purse = 0;
     int therePrice[kCommodityCount];
     for (int c = 0; c < kCommodityCount; ++c) {
-        therePrice[c] = market_price_seen(mw, fromX, fromY, at, c);
+        therePrice[c] = market_price_seen(c);
         const long long units = mine ? (long long)mine[c] : 0;
         if (units <= 0 || therePrice[c] <= 0) continue;
         purse += units * therePrice[c];
@@ -1892,7 +1882,7 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             // (CANON S10, ярус 2): дом сам выписал свои цены точным
             // складом и своим счётом.
             const CaravanDeal deal = trade_vendor_at_market(
-                *bag, rt.carryCap, *market, &homeLm->ledger,
+                *bag, rt.carryCap, *market, homeLm,
                 leader_trade_power_(st, self),
                 landmark_trade_power_(*market),
                 ctx.mw.econFacts, ctx.mw.econFactsUser);
@@ -1912,25 +1902,29 @@ void ai_vendor(MacroHandle self, MacroPos& p,
         // Ни счётчика станций, ни таймера рейса: таймер живёт в знаменателе,
         // и потому у дальности рейса нет потолка (владелец 2026-09-22).
         {
-            // ЧТО ДОМУ НУЖНО И ПОЧЁМ — ВЕДОМОСТЬ ДОМА (ярус 2): крю в поле
-            // не видит домашний склад живьём и видеть не должно.
+            // ЧТО ДОМУ НУЖНО И ПОЧЁМ — СЧИТАЕТСЯ ЖИВЬЁМ ПО САМОМУ ДОМУ.
+            // Кэш-ведомость (ярус 2) уничтожена 2026-09-30; закон не
+            // изменился — те же season_demand_for и stock_price, которыми
+            // она и выписывалась. Оговорка «крю не видит склад дома живьём»
+            // была фикцией уже тогда: нехватка и здесь, и в сборщике
+            // считалась ВЫЧИТАНИЕМ живого `homeLm->inventory` из кэша.
             int homePrice[kCommodityCount] = {};
             int homeLack[kCommodityCount] = {};
             int cargo[kCommodityCount] = {};
-            const bool haveLedger = homeLm->ledger.published();
+            const Skills& homeHands = landmark_sheet(homeLm->type).skills;
             long long homeValue = 0;
             for (int c = 0; c < kCommodityCount; ++c) {
                 const int id = commodity_item_index(c);
                 const ItemDef* d = item_def_at(id);
                 const int base = d ? d->value : 0;
-                homePrice[c] = haveLedger
-                                   ? homeLm->ledger.price[std::size_t(c)]
-                                   : base;
-                const int lack =
-                    haveLedger
-                        ? homeLm->ledger.demand[std::size_t(c)]
-                              - homeLm->inventory.count_of(id)
-                        : 0;
+                const int have = homeLm->inventory.count_of(id);
+                const int demand =
+                    season_demand_for(id, homeLm->needDebt,
+                                      souls_home(*homeLm), homeHands,
+                                      &homeLm->inventory);
+                homePrice[c] = base > 0 ? stock_price(base, have, demand)
+                                        : 0;
+                const int lack = demand - have;
                 homeLack[c] = lack > 0 ? lack : 0;
                 cargo[c] = bag->count_of(id);
                 // ЗАЯВКА «ДОМОЙ» — «что уже в трюме стоит ДЛЯ НУЖДЫ ДОМА»,
@@ -2114,9 +2108,16 @@ void ai_collector(MacroHandle self, MacroPos& p,
         // серебро, а меряем мы еду». Это ровно то, что измерилось
         // 2026-09-22, когда порядок был только по плотности: город получал
         // казну и продолжал голодать (food_city −99.8 %).
-        // Чего дому не хватает — говорит ЕГО ВЕДОМОСТЬ (ярус 2): крю в поле
-        // домашний склад живьём не видит.
-        if (owed > 0 && homeLm->ledger.published()) {
+        // Чего дому не хватает — считается по самому дому той же дверью
+        // (ведомость-кэш уничтожена 2026-09-30, ломтик E шаг 2; закон и
+        // обе его функции — те же).
+        if (owed > 0) {
+            const Skills& homeHands = landmark_sheet(homeLm->type).skills;
+            const auto home_demand_of = [&](int cid) {
+                return season_demand_for(cid, homeLm->needDebt,
+                                         souls_home(*homeLm), homeHands,
+                                         &homeLm->inventory);
+            };
             // ПОРЯДОК НУЖДЫ — ПО ТОМУ, ЧЕГО ДОМУ НЕ ХВАТАЕТ БОЛЬШЕ ВСЕГО
             // В СТОИМОСТИ (нехватка × домашняя цена), а НЕ по плотности.
             // Измерено 2026-09-22: с плотностью еда стоит последней (она
@@ -2129,11 +2130,13 @@ void ai_collector(MacroHandle self, MacroPos& p,
             for (int c = 0; c < kCommodityCount; ++c) {
                 order[c] = c;
                 const int cid = commodity_item_index(c);
-                const int lk = homeLm->ledger.demand[std::size_t(c)]
-                               - homeLm->inventory.count_of(cid);
-                urgency[c] = lk > 0
-                    ? (long long)lk
-                          * homeLm->ledger.price[std::size_t(c)]
+                const ItemDef* cd = item_def_at(cid);
+                const int cbase = cd ? cd->value : 0;
+                const int chave = homeLm->inventory.count_of(cid);
+                const int cdemand = home_demand_of(cid);
+                const int lk = cdemand - chave;
+                urgency[c] = lk > 0 && cbase > 0
+                    ? (long long)lk * stock_price(cbase, chave, cdemand)
                     : 0;
             }
             for (int a = 1; a < kCommodityCount; ++a)
@@ -2147,8 +2150,8 @@ void ai_collector(MacroHandle self, MacroPos& p,
                 const ItemDef* d = item_def_at(id);
                 const int base = d ? d->value : 0;
                 if (base <= 0) continue;
-                const int lack = homeLm->ledger.demand[std::size_t(c)]
-                                 - homeLm->inventory.count_of(id);
+                const int lack =
+                    home_demand_of(id) - homeLm->inventory.count_of(id);
                 if (lack <= 0) continue;
                 const long long affordable = owed / base;
                 if (affordable <= 0) continue;
@@ -3301,7 +3304,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 // Ведомость принадлежит МЕСТУ, а не слуху: крю читает счёт своего дома.
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
-                                   const LandmarkLedger* homeLedger,
+                                   const Landmark* home,
                                    int myTradePct, int theirTradePct,
                                    EconFactSink sink, void* user) {
     CaravanDeal out{};
@@ -3363,7 +3366,17 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
     // дом = дефицит = высокая домашняя цена, до ×4), затоваренное отсеивается
     // САМО (×0.25), а серебро с горы становится товаром без единой строки
     // «металл — это нужда».
-    if (homeLedger && homeLedger->published()) {
+    // ЦЕНА ДОМА СЧИТАЕТСЯ ЖИВЬЁМ, ТОЙ ЖЕ ДВЕРЬЮ, ЧТО И ЦЕНА РЫНКА.
+    // Прежде здесь читался КЭШ — ведомость дома, выписанная на границе
+    // сезона (ярус 2). Кэш уничтожен 2026-09-30 (ломтик E шаг 2) вместе с
+    // колонками места, а закон остался тот же: `season_demand_for` +
+    // `stock_price`, ровно те же две функции, которыми ведомость и
+    // считалась. Второго диалекта цены не появилось — исчезла только копия.
+    // Свой дом крю знает точно и знало всегда: его склад читается строкой
+    // ниже, и горизонтом это никогда не было (горизонт — про ЧУЖИЕ рынки,
+    // market_price_seen).
+    if (home) {
+        const Skills& homeHands = landmark_sheet(home->type).skills;
         struct Lot { int i; float gainPerKg; int homeCap; };
         Lot lots[std::size_t(kCommodityCount)];
         int lotCount = 0;
@@ -3379,19 +3392,18 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                                  &ms);
             const int buyHere = trade_buy_price(
                 stock_price(base, have, demand), myTradePct, theirTradePct);
-            // Чего это стоит ДОМА — ВЕДОМОСТЬ ДОМА (CANON S10, ярус 2):
-            // цена, которую дом выписал сам, своим точным складом и своим
-            // счётом, с неттингом производного спроса. Ни огрубления, ни
-            // второго диалекта цены: ведомость посчитана той же кривой
-            // (stock_price), что и цена сделки здесь.
-            const int worthHome = homeLedger->price[std::size_t(i)];
+            // Чего это стоит ДОМА — тем же счётом и той же кривой.
+            const int homeDemand =
+                season_demand_for(id, home->needDebt, souls_home(*home),
+                                  homeHands, &home->inventory);
+            const int worthHome =
+                stock_price(base, home->inventory.count_of(id), homeDemand);
             if (worthHome <= 0) continue;         // дома этой строке нет цены
             if (worthHome <= buyHere) continue;   // рейс не окупает закупку
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
             // ПОТОЛОК СТРОКИ — сезон домашней нужды (спрос уже сезонный),
             // но он больше НЕ ворота: у товара, который дома никто не ест,
             // потолок — только трюм и кошелёк.
-            const int homeDemand = homeLedger->demand[std::size_t(i)];
             const int seasonCap = homeDemand > 0 ? homeDemand : (1 << 20);
             lots[std::size_t(lotCount++)] =
                 Lot{i, float(worthHome - buyHere) / kg, seasonCap};
@@ -3547,102 +3559,6 @@ int squad_season_window(MacroWorld& mw, int day) {
         refresh_squad_carry(st, handle_at(st, slot));
     }
     return deserted;
-}
-
-// ── ОПИСЬ ОКРУГИ (контракт в npc_ai.h) ───────────────────────────────────
-// Счётчики прибора: почему живая клетка рода не попала в опись.
-static long gSurveyDry = 0, gSurveyNoRegion = 0, gSurveyInRegion = 0,
-            gSurveyNoOwner = 0;
-
-int survey_landmark_regions(MacroWorld& mw, int day) {
-    gSurveyDry = gSurveyNoRegion = gSurveyInRegion = gSurveyNoOwner = 0;
-    if (!mw.gs || !mw.deposits) return 0;
-    GameState& gs = *mw.gs;
-    NavWorld* nv = mw.nav;
-    const bool navReady = nv && nav_ensure(mw, *nv);
-    // Чистый лист: карта — ОТВЕТ на состояние мира, а не его память. Жила,
-    // выработанная за сезон, обязана из описи уйти.
-    for (Landmark& lm : gs.landmarks) {
-        lm.survey = LandmarkSurvey{};
-        lm.survey.day = day;
-    }
-    if (!navReady) return 0;   // без запечённой навигации «своей земли» нет
-    // Кто владеет какой округой: у одной округи законно бывает несколько
-    // мест — они делят землю и честно за неё конкурируют (вердикт владельца).
-    std::vector<std::pair<std::uint16_t, int>> owners;   // (округа, индекс)
-    owners.reserve(gs.landmarks.size());
-    for (std::size_t i = 0; i < gs.landmarks.size(); ++i) {
-        const Landmark& lm = gs.landmarks[i];
-        const std::uint16_t r = nav_region_at(*nv, lm.x, lm.y);
-        if (r != kNavNoRegion) owners.push_back({r, int(i)});
-    }
-    if (owners.empty()) return 0;
-    std::sort(owners.begin(), owners.end());
-    // Каждая живая клетка рода относит себя к своей округе — и находит там
-    // хозяев. Обход идёт ПО ПОЛЮ рода (for_each_live), потому что поле
-    // индексировано тором и знает свои живые клетки: миллион пустых клеток
-    // мира никто не читает.
-    for (int f = 0; f < int(ResourceFieldId::Count); ++f) {
-        const ResourceFieldId row = ResourceFieldId(f);
-        if (!resource_row_is_vein(row)) continue;   // у леса своя дверь
-        const ResourceGrid& cells =
-            mw.deposits->grid(DepositKind(deposit_kind_ordinal(row)));
-        if (!cells.live()) continue;
-        cells.for_each_live([&](std::uint32_t idx, std::int32_t amount) {
-            if (amount <= 0) { ++gSurveyDry; return; }
-            const int x = cells.x_of(idx), y = cells.y_of(idx);
-            const std::uint16_t r = nav_region_at(*nv, x, y);
-            if (r == kNavNoRegion) { ++gSurveyNoRegion; return; }
-            ++gSurveyInRegion;
-            const std::uint32_t d = nv->distHome[nv->cell(x, y)];
-            const std::uint16_t dist =
-                d > 0xFFFEu ? 0xFFFEu : std::uint16_t(d);
-            bool anyOwner = false;
-            for (auto it = std::lower_bound(owners.begin(), owners.end(),
-                                            std::make_pair(r, 0));
-                 it != owners.end() && it->first == r; ++it) {
-                anyOwner = true;
-                SurveyRow& sr = gs.landmarks[std::size_t(it->second)]
-                                    .survey.rows[std::size_t(f)];
-                if (!sr.none() && sr.dist <= dist) continue;
-                sr.x = std::int16_t(x);
-                sr.y = std::int16_t(y);
-                sr.dist = dist;
-            }
-            if (!anyOwner) ++gSurveyNoOwner;
-        });
-    }
-    // ОТПЕЧАТОК ОПИСИ — прибор калибровки этого закона, как [deposits] у
-    // геологии: сколько мест ВИДИТ каждый род и на каком расстоянии лежит
-    // ближайшая жила. Без него «мир не добывает железо» остаётся догадкой.
-    {
-        int seen[std::size_t(ResourceFieldId::Count)] = {};
-        std::uint32_t nearest[std::size_t(ResourceFieldId::Count)];
-        for (auto& n : nearest) n = 0xFFFFu;
-        for (const Landmark& lm : gs.landmarks) {
-            for (int f = 0; f < int(ResourceFieldId::Count); ++f) {
-                const SurveyRow& sr = lm.survey.rows[std::size_t(f)];
-                if (sr.none()) continue;
-                ++seen[std::size_t(f)];
-                if (sr.dist < nearest[std::size_t(f)])
-                    nearest[std::size_t(f)] = sr.dist;
-            }
-        }
-        std::fprintf(stderr, "[survey] day=%d places=%zu", day,
-                     gs.landmarks.size());
-        for (int f = 0; f < int(ResourceFieldId::Count); ++f) {
-            if (!resource_row_is_vein(ResourceFieldId(f))) continue;
-            std::fprintf(stderr, " %s=%d/min%u",
-                         resource_field_def(ResourceFieldId(f)).id,
-                         seen[std::size_t(f)], nearest[std::size_t(f)]);
-        }
-        std::fprintf(stderr, "  | cells inRegion=%ld noRegion=%ld noOwner=%ld"
-                             " owners=%zu\n",
-                     gSurveyInRegion, gSurveyNoRegion, gSurveyNoOwner,
-                     owners.size());
-        std::fflush(stderr);
-    }
-    return int(gs.landmarks.size());
 }
 
 int squad_bags_hygiene_daily(MacroWorld& mw) {
@@ -4147,34 +4063,33 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // шахту именно потому, что видит цену хлеба на полу).
                     //
                     // ЧТО ЭТО НЕ ЕСТЬ: не всеведение и не «маршрут знает
-                    // цену». Вассал читает ПРЕЙСКУРАНТ СВОЕГО СЮЗЕРЕНА по
-                    // существующему феодальному ребру — один слой отношений
-                    // (CANON S7: «отношение знает КТО, путь знает КАК») и
-                    // ярус 2 знания о цене (ведомость, S10). Незнакомых мест
-                    // деревня по-прежнему не видит.
-                    if (const Landmark* suz =
-                            landmark_by_id(gs, suzerain_of(s));
-                        suz && suz->ledger.published()) {
-                        const int ci = gatherer_commodity_index(g);
-                        if (ci >= 0) {
-                            const int there = suz->ledger.price[std::size_t(ci)];
-                            if (there > unitPrice) unitPrice = there;
-                        }
+                    // цену». Деревня знает лишь то, что строка чего-то
+                    // СТОИТ САМА ПО СЕБЕ, — абсолютную стоимость каталога
+                    // (CANON S10, вердикт 2026-09-30). Незнакомых рынков
+                    // она по-прежнему не видит.
+                    //
+                    // ЗАМЕНА ПРЕЙСКУРАНТА СЮЗЕРЕНА, И ОНА ЖЕ УПРОЩЕНИЕ.
+                    // Прежде здесь читалась ведомость сюзерена по
+                    // феодальному ребру — единственное место экономики под
+                    // грифом «не уверены». Ведомость уничтожена (ломтик E
+                    // шаг 2), и на её место встало то же число без ребра,
+                    // без кэша и без сомнения: цена труда не падает ниже
+                    // АБСОЛЮТНОЙ СТОИМОСТИ строки. Дефект, ради которого
+                    // рычаг заводили, закрыт тем же: деревня не бросает
+                    // жилу оттого, что её собственная полка полна, — железо
+                    // стоит железо, даже когда дома его девать некуда.
+                    {
+                        const int there = market_price_seen(
+                            gatherer_commodity_index(g));
+                        if (there > unitPrice) unitPrice = there;
                     }
                 }
-                // МЕСТО УЖЕ ИСКАЛО — артель ЧИТАЕТ (владелец, 2026-09-18).
-                // Жилы приходят строкой описи своей округи (survey_landmark_
-                // regions на границе сезона); у леса и домашнего поля свои
-                // дешёвые двери, и они остаются ими.
+                // ОДНА ДВЕРЬ ПОИСКА РАБОЧЕГО МЕСТА на все роды: опись
+                // округи уничтожена (ломтик E шаг 2), и аукцион спрашивает
+                // ровно то же, что спросит поднятая им артель, — иначе он
+                // сулил бы работу, которой исполнитель не найдёт.
                 XY site;
-                if (gd.worksite == Worksite::Deposit) {
-                    const SurveyRow& sr =
-                        s.survey.rows[std::size_t(gd.row)];
-                    if (sr.none()) continue;   // в округе такого рода нет
-                    site = XY{float(sr.x), float(sr.y)};
-                } else if (!find_worksite(gd, ctx, homePos, home, site)) {
-                    continue;
-                }
+                if (!find_worksite(gd, ctx, homePos, home, site)) continue;
                 // СКОР = ВЫРАБОТКА В ДЕНЬ РЕЙСА. Одна величина на все
                 // заявки — стоимость в день, — поэтому добыча и сбыт
                 // наконец сравнимы в одной рулетке. Назначенного `1 +`
@@ -4284,9 +4199,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // мера ГОТОВНОСТИ СБРОСИТЬ, а не выручки рейса
                     // (problems §55-II). Спред против прейскуранта партнёра
                     // — это и есть выручка, и знание на него законно.
-                    const int therePrice =
-                        market_price_seen(ctx.mw, int(home.x), int(home.y),
-                                          *city, c);
+                    const int therePrice = market_price_seen(c);
                     if (have > demand && therePrice > homePrice
                         && freeKg > 0.0f) {
                         const long long fit = fits(have - demand);
@@ -4323,9 +4236,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // Тот же спред другим концом: везти домой стоит то, что
                     // ТАМ дешевле, чем дома. База заменена ценой партнёра по
                     // той же причине, что и в проходе продажи.
-                    const int therePrice =
-                        market_price_seen(ctx.mw, int(home.x), int(home.y),
-                                          *city, c);
+                    const int therePrice = market_price_seen(c);
                     if (have >= demand || therePrice <= 0
                         || homePrice <= therePrice)
                         continue;

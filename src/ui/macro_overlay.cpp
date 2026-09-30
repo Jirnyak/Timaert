@@ -768,8 +768,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         rowFaction = kind.factionIdx;
                     } else {
                         const LandmarkDef& ldef = landmark_def(lm->type);
-                        rowName = !lm->name.empty() ? lm->name.c_str()
-                                                    : ldef.label.data();
+                        rowName = lm->name[0] != '\0' ? lm->name
+                                                      : ldef.label.data();
                         rowRole = ldef.label.data();
                         rowFaction = faction_or_freefolk(lm->factionIdx);
                     }

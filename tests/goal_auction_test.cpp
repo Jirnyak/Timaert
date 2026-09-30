@@ -89,12 +89,13 @@ void stock_comforts(Landmark& lm) {
 }
 
 // ОДНА ОКРУГА НА ВСЮ КАРТУ, хозяин — деревня 3. Нав здесь не декорация:
-// опись округи (survey_landmark_regions) без запечённой навигации не
-// работает вовсе — «своей земли» у места нет, — а цель-ЖИЛА родится только
-// из строки описи. Без нава у деревни живёт ровно одна цель добычи (лес),
-// и «рулетка не диверсифицирует» читалось бы как дефект закона, тогда как
-// это немота фикстуры. Свежесть объявлена по событию (CANON S9), чтобы
-// боевой nav_ensure не перепёк рукоделие.
+// цель-ЖИЛА рождается дверью find_home_deposit, а она без запечённой
+// навигации не отличает свою землю от чужой. Без нава у деревни живёт
+// ровно одна цель добычи (лес), и «рулетка не диверсифицирует» читалось бы
+// как дефект закона, тогда как это немота фикстуры. Свежесть объявлена по
+// событию (CANON S9), чтобы боевой nav_ensure не перепёк рукоделие.
+// (Опись округи стояла здесь тем же тактом и уничтожена 2026-09-30,
+// ломтик E шаг 2 — CANON S10 «КАРТА ОКРУГИ».)
 NavWorld make_one_region_nav(const GameState& gs) {
     NavWorld nv{};
     nv.mapW = kMap;
@@ -177,11 +178,6 @@ void test_auction_raises_errand_bearing_peasants() {
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent,
                   .deposits = &dep, .treeGrid = &grid, .nav = &nav};
 
-    // ОПИСЬ ОКРУГИ — ТЕМ ЖЕ ТАКТОМ, ЧТО В МИРЕ (world_tick: опись и
-    // ротация стоят на одной границе сезона). Без неё цель-жила не
-    // рождается вовсе — аукциону нечего предъявить, кроме леса, — и
-    // «рулетка не диверсифицирует» читалось бы как дефект закона.
-    survey_landmark_regions(mw, /*day*/1);
     const int raised = rotate_worker_squads(mw, /*day*/1);
     const std::vector<Crew> crews = live_crews(w);
 
@@ -255,7 +251,6 @@ void test_auction_raises_errand_bearing_peasants() {
         NavWorld navd = make_one_region_nav(gsd);
         MacroWorld mwd{.gs = &gsd, .world = &wd, .terrain = &absent,
                        .deposits = &dep, .treeGrid = &grid, .nav = &navd};
-        survey_landmark_regions(mwd, day);
         rotate_worker_squads(mwd, day);
         for (const Crew& c : live_crews(wd))
             distinct.insert({int(c.verb), int(c.object)});
@@ -320,14 +315,24 @@ void test_tithe_raises_the_collector_at_the_suzerain() {
               "должник не снаряжает сборщика сам себе");
     }
     const std::vector<Crew> atSuzerain = live_crews_of(w, 9);
-    bool collectorGoesDown = !atSuzerain.empty();
+    // УТВЕРЖДАЕТСЯ НАЛИЧИЕ СБОРЩИКА, А НЕ ОТСУТСТВИЕ СОСЕДЕЙ ПО РУЛЕТКЕ.
+    // До 2026-09-30 здесь стояло «ВСЕ крю сюзерена — сборщики», и это было
+    // верно лишь потому, что фикстура была НЕМА: без опубликованной
+    // ведомости цена чужого рынка равнялась нулю, и рейс сбыта не набирал
+    // положительного скора ни разу. Со сносом яруса 2 (ломтик E шаг 2)
+    // цена «там» есть абсолютная стоимость строки и известна ВСЕГДА —
+    // сюзерен с 16 000 хлеба честно поднимает рядом и корованов (замер:
+    // 1 сборщик + 20 корованов). Закон, который этот свидетель охраняет,
+    // — «долг дани поднимает СБОРЩИКА У СЮЗЕРЕНА, и объект поручения —
+    // вассал-должник», — к числу соседей по рулетке не относится.
+    int collectorsDown = 0;
     for (const Crew& c : atSuzerain) {
-        if (c.verb != std::uint8_t(SquadType::Collector) || c.object != 3u) {
-            collectorGoesDown = false;
-        }
+        if (c.verb != std::uint8_t(SquadType::Collector)) continue;
+        CHECK(c.object == 3u,
+              "объект поручения сборщика — вассал-должник, и только он");
+        ++collectorsDown;
     }
-    CHECK(collectorGoesDown,
-          "сюзерен поднял СБОРЩИКА, и объект поручения — вассал-должник");
+    CHECK(collectorsDown > 0, "долг дани поднял СБОРЩИКА у сюзерена");
 }
 
 // ── ДВА РЕГУЛЯТОРА суда границы (S19.2, владелец 2026-09-18): строки —
@@ -457,7 +462,7 @@ void test_boundary_court_resizes_standing_crews() {
 // станции по ДНЯМ, иначе он подтверждает не закон, а свою фикстуру.
 void test_station_is_a_weighted_roulette() {
     constexpr int kWide = 2048;          // дни развести нечем на 64 клетках
-    const auto make_three_stations = [&](int day) {
+    const auto make_three_stations = [&]() {
         GameState gs{};
         gs.mapW = kWide;
         gs.mapH = kWide;
@@ -507,13 +512,10 @@ void test_station_is_a_weighted_roulette() {
             econ_debt_boundary(st.inventory, st.needDebt, souls_home(st),
                                nullptr, nullptr);
         }
-        // ВЕДОМОСТИ ПУБЛИКУЮТСЯ, КАК В МИРЕ (world_tick: публикация и
-        // ротация стоят на одной границе сезона). Без них яруса 2 знания
-        // нет вовсе и цена ТАМ равна нулю — рейс сбыта не рождается ни
-        // один. Прежняя редакция фикстуры этого не знала, потому что её
-        // рейс держала ДАНЬ полной стоимостью, а дань уехала в заявку
-        // сюзерена 2026-09-22.
-        publish_landmark_ledgers(gs, day);
+        // (ЗДЕСЬ ПУБЛИКОВАЛИСЬ ВЕДОМОСТИ — уничтожены 2026-09-30, ломтик
+        // E шаг 2. Публиковать больше нечего: цена ТАМ есть абсолютная
+        // стоимость строки и известна всегда, поэтому рейс сбыта больше не
+        // зависит от того, успел ли мир дожить до границы сезона.)
         return gs;
     };
     int hits[3] = {0, 0, 0};
@@ -521,7 +523,7 @@ void test_station_is_a_weighted_roulette() {
     constexpr int kDraws = 24;
     for (int k = 0; k < kDraws; ++k) {
         const int day = 1 + k * kDaysPerSeason;
-        GameState gs = make_three_stations(day);
+        GameState gs = make_three_stations();
         ecs::World w;
         auto wStore_ = sm::make_macro_store();
         sm::store_attach(w, wStore_.get());

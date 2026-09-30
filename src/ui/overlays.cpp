@@ -1918,7 +1918,7 @@ namespace sm::ui
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 620 * scale), ImGuiCond_FirstUseEver);
         char lmTitle[96];
         std::snprintf(lmTitle, sizeof(lmTitle), "%s###Settlement",
-                      s ? s->name.c_str() : "Settlement");
+                      s ? s->name : "Settlement");
         if (ImGui::Begin(lmTitle, open))
         {
             ImGui::SetWindowFontScale(scale);
@@ -1935,7 +1935,7 @@ namespace sm::ui
             const LandmarkDef &def = landmark_def(s->type);
             const std::uint16_t acts = def.actions;
             ImGui::PushFont(nullptr);
-            ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f), "%s", s->name.c_str());
+            ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f), "%s", s->name);
             ImGui::PopFont();
             ImGui::SameLine();
             ImGui::TextDisabled("(%.*s)", int(def.label.size()), def.label.data());
@@ -1956,7 +1956,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Info;
                 if (infoOpen)
                 {
-                    ImGui::TextWrapped("Welcome to %s.", s->name.c_str());
+                    ImGui::TextWrapped("Welcome to %s.", s->name);
                     ImGui::TextDisabled("A %.*s with population %d.",
                                         int(def.label.size()),
                                         def.label.data(),

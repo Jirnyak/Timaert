@@ -4074,7 +4074,7 @@ bool SubworldEngine::read_sign(const Structure& sign) {
     if (const Landmark* lm = landmark_by_id(*gs_, ctx.landmark.id);
         lm && (lm->type == LandmarkType::City
                || lm->type == LandmarkType::Village)) {
-        place = lm->name.c_str();
+        place = lm->name;
     }
     char msg[96];
     if (place) {

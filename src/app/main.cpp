@@ -240,7 +240,7 @@ sm::FactNaming app_fact_naming(App& app) {
     n.landmark = [](void* u, std::uint32_t id) -> const char* {
         auto& gs = *static_cast<sm::GameState*>(u);
         const sm::Landmark* lm = sm::landmark_by_id(gs, int(id));
-        if (lm && !lm->name.empty()) return lm->name.c_str();
+        if (lm && lm->name[0] != '\0') return lm->name;
         return nullptr;   // a spire has no name of its own — "a place"
     };
     n.faction = [](void* u, std::uint32_t index) -> const char* {
@@ -4090,7 +4090,7 @@ void register_console_commands(App& app) {
             if (app.subworld.active())
                 c.warn("leave the subworld (Enter) for the macro teleport to take effect");
             c.printfln(Lvl::Ok, "teleported to %s (id %d) at %d, %d",
-                       found->name.c_str(), found->id, found->x, found->y);
+                       found->name, found->id, found->x, found->y);
             return true;
         });
 

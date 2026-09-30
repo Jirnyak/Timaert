@@ -53,8 +53,8 @@ void for_each_landmark(const GameState& gs, F&& fn) {
             // по ВИДУ с именем «Spire» литералом: тот же текст, что в
             // колонке рядом, только недоступный ни руине, ни логову, ни
             // шахте — они показывали пустую строку, хотя их label ждал.
-            const char* name = lm.name.c_str();
-            if (lm.name.empty()) name = landmark_def(t).label.data();
+            const char* name = lm.name;
+            if (lm.name[0] == '\0') name = landmark_def(t).label.data();
             const bool depleted = lm.type == LandmarkType::Spire
                 && worked_read(gs, lm.x, lm.y) == 0;
             fn(LandmarkView{lm.type, lm.id, lm.x, lm.y, name,

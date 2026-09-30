@@ -26,6 +26,7 @@
 #include "macro/store.h"
 
 #include <entt/entt.hpp>
+#include <cstdio>
 
 namespace {
 
@@ -36,7 +37,7 @@ sm::GameState make_world() {
     sm::Landmark city{};
     city.type = sm::LandmarkType::City;
     city.id = 7;
-    city.name = "Testholm";
+    std::snprintf(city.name, sizeof city.name, "Testholm");
     city.x = 10;
     city.y = 10;
     gs.landmarks.push_back(city);
@@ -46,7 +47,7 @@ sm::GameState make_world() {
     sm::Landmark other{};
     other.type = sm::LandmarkType::City;
     other.id = 8;
-    other.name = "Neighbour";
+    std::snprintf(other.name, sizeof other.name, "Neighbour");
     other.x = 30;
     other.y = 30;
     gs.landmarks.push_back(other);
@@ -59,7 +60,7 @@ sm::GameState make_world() {
     sm::Landmark twin{};
     twin.type = sm::LandmarkType::Village;
     twin.id = 9;
-    twin.name = "Twinvale";
+    std::snprintf(twin.name, sizeof twin.name, "Twinvale");
     twin.x = 40;
     twin.y = 40;
     gs.landmarks.push_back(twin);
@@ -67,7 +68,7 @@ sm::GameState make_world() {
     sm::Landmark hamlet{};
     hamlet.type = sm::LandmarkType::Village;
     hamlet.id = 42;
-    hamlet.name = "Hamlet";
+    std::snprintf(hamlet.name, sizeof hamlet.name, "Hamlet");
     hamlet.x = 20;
     hamlet.y = 20;
     gs.landmarks.push_back(hamlet);

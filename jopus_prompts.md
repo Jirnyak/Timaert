@@ -1429,7 +1429,7 @@ src/sub`); `src/sub/dgn/dispatch.h` — колонки рода интерьер
 3. на макро-кадре очередь и курсор обнуляются (`main.cpp:3635-3637`) —
    недоплаченный свип забывается при выходе наверх.
 
-**1. Контекст.** Читать: `src/macro/npc_ai.cpp:4975-5090`,
+**1. Контекст.** Читать: `tick_macro_npc_ai_budgeted@src/macro/npc_ai.cpp`,
 `src/macro/squad_walk.h` целиком, `src/macro/npc_ai.h` — поля
 `MacroNpcAiRuntime` (`rg -n "sweepAccum|pendingSweeps|sweepCursor|sweepOrder"
 src/macro/npc_ai.h`), `src/app/main.cpp:3486-3496, 3538-3545, 3630-3640`,

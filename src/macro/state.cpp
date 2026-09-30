@@ -174,12 +174,11 @@ void populate_landmarks_from_politik(GameState& gs,
         seed_landmark_inventory(
             s.inventory, souls, s.type == LandmarkType::City);
         // Naming via the owning faction's procedural language.
-        if (c.factionIdx >= 0) {
-            s.name = !c.name.empty() ? c.name
-                                     : generate_name(lang_of(c.factionIdx), rng);
-        } else {
-            s.name = !c.name.empty() ? c.name : "Outpost";
-        }
+        const std::string cityName =
+            !c.name.empty() ? c.name
+            : c.factionIdx >= 0 ? generate_name(lang_of(c.factionIdx), rng)
+                                : std::string("Outpost");
+        std::snprintf(s.name, sizeof s.name, "%s", cityName.c_str());
         add_landmark(gs, std::move(s));
     }
 
@@ -346,9 +345,10 @@ void populate_landmarks_from_politik(GameState& gs,
             seed_landmark_inventory(
                 vil.inventory, vilSouls,
                 vil.type == LandmarkType::City);
-            vil.name = s.factionIdx >= 0
-                ? generate_name(lang_of(s.factionIdx), rng)
-                : "Hamlet";
+            const std::string vilName =
+                s.factionIdx >= 0 ? generate_name(lang_of(s.factionIdx), rng)
+                                  : std::string("Hamlet");
+            std::snprintf(vil.name, sizeof vil.name, "%s", vilName.c_str());
             const int vilId = vil.id;
             add_landmark(gs, std::move(vil));
             set_suzerain(gs, vilId, suzerainId);

@@ -147,9 +147,9 @@ int main() {
     // which is the affordability law working, not the vendor failing.
     CHECK(town.inventory.add("coin_empire_copper", 20000), "fixture: town purse");
 
-    // ДОМ — МЕСТО СО СВОЕЙ ВЕДОМОСТЬЮ (CANON S10, ярус 2): зерна навалом,
-    // инструментов нет. Прейскурант выписывает тот же публикатор, что и
-    // сезонная граница мира, — не рукописная табличка в тесте.
+    // ДОМ — САМО МЕСТО: зерна навалом, инструментов нет. Ведомость-кэш
+    // уничтожена 2026-09-30 (ломтик E шаг 2), и сделка читает дом теми же
+    // двумя дверьми, которыми ведомость и выписывалась.
     sm::GameState hgs{};
     hgs.landmarks.push_back(sm::Landmark{});
     sm::Landmark& home = hgs.landmarks.back();
@@ -157,8 +157,6 @@ int main() {
     home.id = 1;
     sm::raise_flock_into_roster(home.inventory, 50);
     CHECK(home.inventory.add("food", 5000), "fixture: home food");
-    CHECK(sm::publish_landmark_ledgers(hgs, /*day=*/1) == 1,
-          "fixture: the home published its ledger");
 
     sm::Inventory bag;
     CHECK(bag.add("food", 300), "fixture: vendor food");
@@ -166,7 +164,7 @@ int main() {
     const long long vCoinBefore =
         sm::coin_census_value(bag) + sm::coin_census_value(town.inventory);
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
-        bag, 1e6f, town, &home.ledger,
+        bag, 1e6f, town, &home,
         /*myTradePct=*/0, /*theirTradePct=*/0);
 
     CHECK(sm::coin_census_value(bag) + sm::coin_census_value(town.inventory)
@@ -191,50 +189,60 @@ int main() {
           "vendor: purchases are funded by the sale alone");
 
     // ── НАСОС ВЫКЛЮЧЕН: дом, тонущий в хлебе, хлеба НЕ покупает ─────────
-    // Закон, ради которого ведомость и построена (CANON S10, 2026-09-20).
-    // Пока запас дома читался 4-битным КЛАССОМ памяти крю с потолком
-    // «много = 4096», город с 45 млн хлеба при сезонной нужде 80 640
-    // выглядел голодным (цена дома ≈ база × 19.7), и крю честно скупало
-    // хлеб, чтобы привезти ДОМОЙ, — мир качал хлеб ВВЕРХ. Ведомость знает
-    // точный склад: та же самая закупка обязана не состояться.
+    // Закон, ради которого ярус 2 и строился (CANON S10, 2026-09-20). Пока
+    // запас дома читался 4-битным КЛАССОМ памяти крю с потолком «много =
+    // 4096», город с 45 млн хлеба при сезонной нужде 80 640 выглядел
+    // голодным (цена дома ≈ база × 19.7), и крю честно скупало хлеб, чтобы
+    // везти ДОМОЙ, — мир качал хлеб ВВЕРХ. Закон пережил снос ведомости:
+    // точный склад дома теперь читается живьём в точке сделки.
+    //
+    // СВИДЕТЕЛЬ — ПАРА, А НЕ ОДИНОЧНАЯ ПРОВЕРКА, и это принципиально: «крю
+    // не купило хлеба» верно и у немой фикстуры (дома нет, рынок пуст,
+    // кошелёк пуст), то есть одиночная проверка зеленела бы по любой из
+    // трёх посторонних причин. Поэтому тот же крю на ТОМ ЖЕ рынке с ТЕМ ЖЕ
+    // грузом сводится с двумя домами, и утверждается РАЗНИЦА.
     {
-        sm::GameState ggs{};
-        ggs.landmarks.push_back(sm::Landmark{});
-        sm::Landmark& glut = ggs.landmarks.back();
-        glut.type = sm::LandmarkType::City;
-        glut.id = 1;
-        sm::raise_flock_into_roster(glut.inventory, 2520);
-        // Счёт сезона ВЫСТАВЛЕН целиком — довод «у него же есть нужда» снят
-        // заранее: нужда есть, и гора всё равно делает хлеб дешёвым дома.
-        glut.needDebt[sm::commodity_index("food")] =
-            sm::roster_bill(glut.inventory).board;
-        CHECK(glut.inventory.add("food", 45000000),
-              "fixture: the food mountain");
-        CHECK(sm::publish_landmark_ledgers(ggs, /*day=*/1) == 1,
-              "fixture: the glutted city published its ledger");
-        CHECK(glut.ledger.price[sm::commodity_index("food")]
-                  < sm::stock_price(foodBase, 0, 1),
-              "the ledger prices a mountain far under an empty shelf");
+        const auto buy_home_food = [&](int homeFood) {
+            sm::Landmark hm{};
+            hm.type = sm::LandmarkType::City;
+            hm.id = 1;
+            sm::raise_flock_into_roster(hm.inventory, 2520);
+            // Счёт сезона ВЫСТАВЛЕН целиком у ОБОИХ — довод «у него же есть
+            // нужда» снят заранее: нужда есть, и гора всё равно делает хлеб
+            // дешёвым дома.
+            hm.needDebt[sm::commodity_index("food")] =
+                sm::roster_bill(hm.inventory).board;
+            if (homeFood > 0)
+                CHECK(hm.inventory.add("food", homeFood),
+                      "fixture: the home's shelf");
 
-        sm::Landmark mkt{};
-        mkt.type = sm::LandmarkType::City;
-        sm::raise_flock_into_roster(mkt.inventory, 64);
-        CHECK(mkt.inventory.add("food", 4000), "fixture: market food");
-        CHECK(mkt.inventory.add("coin_empire_copper", 20000),
-              "fixture: market purse");
+            sm::Landmark mkt{};
+            mkt.type = sm::LandmarkType::City;
+            sm::raise_flock_into_roster(mkt.inventory, 64);
+            CHECK(mkt.inventory.add("food", 4000), "fixture: market food");
+            CHECK(mkt.inventory.add("coin_empire_copper", 20000),
+                  "fixture: market purse");
 
-        sm::Inventory bag3;
-        CHECK(bag3.add("food", 300), "fixture: crew load");
-        sm::trade_vendor_at_market(bag3, 1e6f, mkt, &glut.ledger,
-                                   /*myTradePct=*/0, /*theirTradePct=*/0);
-        CHECK(bag3.count("food") == 0,
+            sm::Inventory crew;
+            CHECK(crew.add("food", 300), "fixture: crew load");
+            sm::trade_vendor_at_market(crew, 1e6f, mkt, &hm,
+                                       /*myTradePct=*/0,
+                                       /*theirTradePct=*/0);
+            return crew.count("food");
+        };
+        const int boughtStarving = buy_home_food(0);
+        const int boughtGlutted  = buy_home_food(45000000);
+        CHECK(boughtStarving > 0,
+              "негативный контроль: голодный дом хлеб ПОКУПАЕТ — значит "
+              "рынок, кошелёк и сделка в этой фикстуре живы");
+        CHECK(boughtGlutted == 0,
               "the food mountain buys no food: the pump is off");
     }
 
-    // ── БЕЗ ВЕДОМОСТИ КРЮ НЕ ГАДАЕТ ──────────────────────────────────────
-    // Мир до первой границы сезона: прейскуранта дома нет. Крю обязано
-    // продать и уехать с выручкой, а не покупать вслепую (ярус 1 — торговля
-    // стоит и без знания).
+    // ── БЕЗ ДОМА КРЮ НЕ ГАДАЕТ ───────────────────────────────────────────
+    // У крю нет дома — значит нет и того, чьи нужды оно бы закрывало. Оно
+    // обязано продать и уехать с выручкой, а не покупать вслепую (CANON
+    // S10, ярус 1 — торговля стоит и без знания).
     {
         sm::Landmark mkt{};
         mkt.type = sm::LandmarkType::City;
@@ -244,12 +252,11 @@ int main() {
               "fixture: unlit market purse");
         sm::Inventory bag4;
         CHECK(bag4.add("food", 300), "fixture: unlit crew load");
-        const sm::LandmarkLedger blank{};
         const sm::CaravanDeal d = sm::trade_vendor_at_market(
-            bag4, 1e6f, mkt, &blank, /*myTradePct=*/0, /*theirTradePct=*/0);
+            bag4, 1e6f, mkt, nullptr, /*myTradePct=*/0, /*theirTradePct=*/0);
         CHECK(d.soldValue > 0 && d.boughtValue == 0
                   && bag4.count("tools") == 0,
-              "no ledger, no guessing: the crew sells and rides home");
+              "no home, no guessing: the crew sells and rides home");
     }
 
     // ── Negative control: a coinless market buys nothing, loses nothing ──

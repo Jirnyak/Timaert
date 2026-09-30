@@ -12,7 +12,7 @@ sm::Landmark make_settlement(int id, int x, int y) {
     sm::Landmark s{};
     s.type = sm::LandmarkType::City;
     s.id = id;
-    s.name = "Test Settlement";
+    std::snprintf(s.name, sizeof s.name, "Test Settlement");
     s.x = x;
     s.y = y;
     // Души — ГОЛОВАМИ в инвентарь записи (v122): фабрика мира не
