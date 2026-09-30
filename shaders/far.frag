@@ -40,11 +40,26 @@ void main() {
     // THE limit of the near ground's mixture: half of each constituent.
     vec3 base = (kGroundFresh[m] + kGroundWorn[m]) * 0.5;
 
-    // One law of light for everything below (CANON S18): the same directional
-    // term the near ground is lit by, on the surface's own normal.
+    // ONE LAW OF LIGHT, AND IT IS THE SAME CALL THE NEAR GROUND MAKES.
+    // This used to be a hand-written `base * (ambient + sunColor * ndl)`, and
+    // that was not a simplification — it was a SECOND law: it missed the
+    // cloud field (peak dimming 0.62, so the far world came out up to 2.6×
+    // brighter than the near one under the same cloud) and the relief march
+    // (a massif's own shadow, which the near ground has and the far one did
+    // not). Both differences land exactly on the composite's rim, which is
+    // the one join this shader's header promises is invisible.
+    //
+    // `shadow = 1.0` is the honest argument, not a shortcut: the object
+    // shadow map reaches 1024 m (kShadowFarRadiusM) and the far sheet's hole
+    // is 1536 m, so the sheet begins precisely where that map ends and there
+    // is nothing out there casting into it. The other two members of the
+    // visibility law limit themselves: `terrain_visibility` marches only
+    // inside the height field's own domain and returns 1 beyond it, so the
+    // coarse ring needs no branch of its own.
     vec3 n = normalize(vNormal);
     float ndl = max(dot(n, normalize(pc.sunDir.xyz)), 0.0);
-    vec3 col = base * (pc.ambient.rgb + pc.sunColor.rgb * ndl);
+    vec3 col = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, ndl,
+                           /*shadow=*/1.0, vWorld);
 
     outColor = vec4(aerial_perspective(col, vWorld), 1.0);
 }
