@@ -1,19 +1,27 @@
-// THE FAR GROUND IS THE NEAR GROUND, FURTHER AWAY — the geometry half.
+// THE FAR GROUND IS THE NEAR GROUND, FURTHER AWAY — the FIELD half.
 //
 // `far_terrain_test` pins the HEIGHT LAW (one crest law, coarse octaves remove
-// detail without moving shape). This pins the SHEET built out of it: that its
-// vertices really carry that law's answer, that its normals agree with its own
-// surface, that its material ids stay ordinals, and that it covers what it
-// says it covers.
+// detail without moving shape). This pins what is BAKED out of it — the two
+// fields the far world actually is (height in metres, material ordinal) and
+// the lattice they are read on.
 //
-// Why each of those is worth a test rather than a glance:
-//   · a mesh that samples something OTHER than far_height01 would look like a
+// Why each is worth a test rather than a glance:
+//   · a field that samples something OTHER than far_height01 would look like a
 //     world and be a different one — the exact failure CANON S18.1 forbids,
 //     and the one no screenshot reveals;
-//   · a normal that disagrees with its surface lights a mountain that is not
-//     there, and it is invisible until the sun moves;
 //   · a material id is an ORDINAL: the average of two is a third material
-//     nobody authored, so the blend must not happen here.
+//     nobody authored, so the blend must not happen here;
+//   · the lattice's triangles are shared by every ring of the ladder, so a
+//     boundary moved by one quad is a crack you can see the world through.
+//
+// WHAT IS NO LONGER HERE, said out loud rather than quietly dropped: the
+// NORMAL. It was a vertex attribute baked beside the height and this file held
+// it against its own surface; it is now derived in the vertex stage from the
+// same field (far.vert, central differences over the margin), which is what
+// the header of far_mesh.h always said it should be — «not a stored field». A
+// C++ copy of that arithmetic kept only for a test to check would be a second
+// implementation of one law, so there is none, and this witness set does not
+// cover it. The height field it is derived FROM is covered exactly (§1).
 #include "check.h"
 
 #include "sub/far_mesh.h"
@@ -118,51 +126,43 @@ int main() {
     const FarCellGrid grid = make_grid(/*radius*/6, worldSeed);
     CHECK(grid.live(), "the fixture grid is a grid");
 
-    FarMesh mesh;
+    // THE FIXTURE IS THE FIELD, because the field is what the far ground IS.
+    // Geometry used to be baked beside it and carried the same numbers on
+    // vertices; it is gone (far.vert derives a vertex from gl_VertexIndex and
+    // these two sheets), so what has to be pinned is the field itself.
+    //
     // No composite in this fixture: the sampler says so by answering negative,
     // which is how a far sheet with nothing to stitch to behaves.
+    constexpr int   kFixStepM = 64;
+    constexpr float kFixHalfM = 3072.0f;
     const auto noComposite = [](float, float) { return -1.0f; };
-    build_far_mesh(mesh, grid, kCamCx, kCamCy, /*stepM*/64,
-                   /*halfSpanM*/3072.0f, kWorldCells, /*holeHalfM*/0.0f,
-                   noComposite, /*blendBandM*/0.0f);
+    FarHeightSheet sheet;
+    bake_far_sheet(sheet, grid, kCamCx, kCamCy, kFixStepM, kFixHalfM,
+                   kWorldCells, /*holeHalfM*/0.0f, noComposite,
+                   /*blendBandM*/0.0f);
+    FarMaterialSheet mat;
+    bake_far_material_sheet(mat, grid, kFixStepM, kFixHalfM);
+    const int kFixN   = int(kFixHalfM) / kFixStepM;
+    const int kFixDim = 2 * kFixN + 1;
+    CHECK(sheet.live() && sheet.dim == kFixDim && sheet.stepM == kFixStepM,
+          "the height field is a field, and says the lattice it is on");
+    CHECK(mat.live() && mat.dim == kFixDim,
+          "and the material field is the SAME lattice — one convention, not "
+          "two");
 
-    // ── 1. IT BUILT SOMETHING, AND SAYS WHAT ──────────────────────────────
-    {
-        const int n = int(mesh.halfSpanM) / mesh.stepM;
-        const std::size_t dim = std::size_t(2 * n + 1);
-        CHECK(mesh.stepM == 64 && mesh.halfSpanM > 0.0f,
-              "the build reports the spacing and reach it actually used");
-        CHECK(mesh.vtx.size() >= dim * dim,
-              "one vertex per grid point, plus whatever the skirts hang");
-        // Two triangles per quad, PLUS the skirts that close the sheet's
-        // edges. The old form pinned the count exactly and was right only
-        // while the sheet had open edges — which is the defect the skirts
-        // exist to close (the owner saw it as a vertical wall at the join).
-        CHECK(mesh.idx.size() >= (dim - 1) * (dim - 1) * 6u,
-              "every quad has its two triangles");
-        CHECK(mesh.idx.size() > (dim - 1) * (dim - 1) * 6u,
-              "...and the rim carries MORE than that: its edges are closed");
-        std::uint32_t worst = 0;
-        for (std::uint32_t i : mesh.idx) worst = std::max(worst, i);
-        CHECK(worst + 1u == std::uint32_t(mesh.vtx.size()),
-              "every index addresses a vertex, and every vertex is addressed");
-    }
-
-    // ── 2. THE HEIGHTS ARE THE LAW'S OWN ANSWER ───────────────────────────
-    // Not "close to" — the mesh must carry what far_height01 returns for that
+    // ── 1. THE HEIGHTS ARE THE LAW'S OWN ANSWER ───────────────────────────
+    // Not "close to" — the field must carry what far_height01 returns for that
     // tile, or it is a different world that happens to look similar. Re-asked
-    // through the same doors the builder used, which is the specification,
-    // not a copy of the builder.
+    // through the same doors the bake used, which is the specification, not a
+    // copy of the bake.
     {
-        const int n = int(mesh.halfSpanM) / mesh.stepM;
-        const int dim = 2 * n + 1;
         const float worldTiles = float(kWorldCells) * float(kCellSize);
         int samples = 0, mismatches = 0;
-        for (int iz = 0; iz < dim; iz += 5) {
-            for (int ix = 0; ix < dim; ix += 5) {
-                const float wx = float((ix - n) * mesh.stepM);
-                const float wz = float((iz - n) * mesh.stepM);
-                // The cell columns at this point, blended as the builder does.
+        for (int iz = 0; iz < kFixDim; iz += 5) {
+            for (int ix = 0; ix < kFixDim; ix += 5) {
+                const float wx = float((ix - kFixN) * kFixStepM);
+                const float wz = float((iz - kFixN) * kFixStepM);
+                // The cell columns at this point, blended as the bake does.
                 const float fx = wx / float(kCellSize) + float(grid.radiusCells);
                 const float fy = wz / float(kCellSize) + float(grid.radiusCells);
                 int x0 = 0, y0 = 0; float tx = 0.0f, ty = 0.0f;
@@ -187,126 +187,128 @@ int main() {
                     far_height01(gx, gz, skel, peak, ridge, worldTiles,
                                  grid.seaLevel)
                     * kHeightScaleM;
-                const float got = mesh.vtx[std::size_t(iz) * std::size_t(dim)
-                                           + std::size_t(ix)].py;
-                if (std::fabs(got - expect) > 1e-3f) ++mismatches;
+                if (std::fabs(sheet.at(ix, iz) - expect) > 1e-3f) ++mismatches;
                 ++samples;
             }
         }
         CHECK(samples > 100 && mismatches == 0,
-              "every vertex stands exactly where the height law puts it");
+              "every point of the field stands exactly where the height law "
+              "puts it");
     }
 
-    // ── 2b. THE SKIRTS HANG, AND THEY HANG FROM THE EDGE ──────────────────
-    // A curtain that is not below its own edge closes nothing. Asserted as a
-    // relation to the SURFACE's own lowest point, so a retune of the terrain
-    // cannot make it lie: the mesh must reach below the ground it is made of.
+    // ── 2. THE MARGIN IS PART OF THE FIELD, NOT A BORDER OF ZEROES ────────
+    // One ring of margin is why the vertex stage can own a real slope at the
+    // rim: it has neighbours on BOTH sides there. Filled with the law like
+    // everything else — a zeroed margin would light the outermost row off a
+    // cliff and draw a bright frame around the world, which is what the field
+    // was split out of the geometry to make impossible.
     {
-        const int n = int(mesh.halfSpanM) / mesh.stepM;
-        const std::size_t surface = std::size_t(2 * n + 1)
-                                  * std::size_t(2 * n + 1);
-        float surfaceLow = 1e30f, meshLow = 1e30f;
-        for (std::size_t i = 0; i < mesh.vtx.size(); ++i) {
-            meshLow = std::min(meshLow, mesh.vtx[i].py);
-            if (i < surface) surfaceLow = std::min(surfaceLow, mesh.vtx[i].py);
+        int rim = 0, atZero = 0;
+        for (int i = -1; i <= kFixDim; ++i) {
+            const float edge[4] = {sheet.at(i, -1), sheet.at(i, kFixDim),
+                                   sheet.at(-1, i), sheet.at(kFixDim, i)};
+            for (float h : edge) {
+                if (h <= 0.0f) ++atZero;
+                ++rim;
+            }
         }
-        CHECK(mesh.vtx.size() > surface,
-              "the sheet grew vertices beyond its grid — the skirts exist");
-        CHECK(meshLow < surfaceLow,
-              "and they hang BELOW the ground they close the edge of");
+        CHECK(rim > 0 && atZero == 0,
+              "the margin ring carries real ground, so the rim has two "
+              "neighbours and no phantom slope");
     }
 
     // ── 3. THE SHEET HAS A MASSIF IN IT ───────────────────────────────────
     // Without this the file could pass on a flat plane by agreeing that
     // nothing is anywhere (AGENTS testing law 3).
     {
-        const int n = int(mesh.halfSpanM) / mesh.stepM;
-        const std::size_t surface = std::size_t(2 * n + 1)
-                                  * std::size_t(2 * n + 1);
         float lo = 1e30f, hi = -1e30f;
-        for (std::size_t i = 0; i < surface; ++i) {   // the GROUND, not its skirts
-            lo = std::min(lo, mesh.vtx[i].py);
-            hi = std::max(hi, mesh.vtx[i].py);
-        }
-        CHECK(hi - lo > 200.0f,
-              "the far ground has a mountain's worth of relief in it — the "
-              "probe measured something, not a plane");
-        CHECK(lo > 0.0f && hi < 2.0f * kHeightScaleM,
-              "and it stands inside the world's own vertical range");
-    }
-
-    // ── 4. NORMALS AGREE WITH THE SURFACE THEY STAND ON ───────────────────
-    // A normal is not decoration: light reads it. One that disagrees with the
-    // height field paints a slope that is not there, and the error only shows
-    // when the sun moves — which is to say, never in a screenshot.
-    {
-        int samples = 0, bad = 0, unnormalised = 0;
-        const int n = int(mesh.halfSpanM) / mesh.stepM;
-        const int dim = 2 * n + 1;
-        for (int iz = 1; iz + 1 < dim; iz += 7) {
-            for (int ix = 1; ix + 1 < dim; ix += 7) {
-                const auto at = [&](int x, int z) {
-                    return mesh.vtx[std::size_t(z) * std::size_t(dim)
-                                    + std::size_t(x)];
-                };
-                const FarVertex& v = at(ix, iz);
-                const float len = std::sqrt(v.nx * v.nx + v.ny * v.ny
-                                            + v.nz * v.nz);
-                if (std::fabs(len - 1.0f) > 1e-3f) ++unnormalised;
-                // The surface's own slope between this vertex's neighbours,
-                // measured off the MESH — so the check is "your normal matches
-                // YOUR ground", not "your normal matches my formula".
-                const float dx = (at(ix + 1, iz).py - at(ix - 1, iz).py)
-                               / (2.0f * float(mesh.stepM));
-                const float dz = (at(ix, iz + 1).py - at(ix, iz - 1).py)
-                               / (2.0f * float(mesh.stepM));
-                const float inv = 1.0f / std::sqrt(dx * dx + dz * dz + 1.0f);
-                if (std::fabs(v.nx - (-dx * inv)) > 1e-3f
-                    || std::fabs(v.ny - inv) > 1e-3f
-                    || std::fabs(v.nz - (-dz * inv)) > 1e-3f) ++bad;
-                ++samples;
+        for (int iz = 0; iz < kFixDim; ++iz) {
+            for (int ix = 0; ix < kFixDim; ++ix) {
+                lo = std::min(lo, sheet.at(ix, iz));
+                hi = std::max(hi, sheet.at(ix, iz));
             }
         }
-        CHECK(samples > 30 && unnormalised == 0,
-              "every normal is a unit vector");
-        CHECK(bad == 0,
-              "every normal is the slope of the ground it stands on");
+        CHECK(hi - lo > 200.0f,
+              "the far ground has a mountain\'s worth of relief in it — the "
+              "field measured something, not a plane");
+        CHECK(lo > 0.0f && hi < 2.0f * kHeightScaleM,
+              "and it stands inside the world\'s own vertical range");
     }
 
-    // ── 5. A MATERIAL ID STAYS AN ORDINAL ─────────────────────────────────
+    // ── 4. A MATERIAL ID STAYS AN ORDINAL ─────────────────────────────────
     // The average of two ordinals is a third material nobody authored. What
     // blends is the COLOUR, in the shader, over the fragment.
+    //
+    // THE FIELD IS BYTES NOW, and that is stronger than it looks: while the
+    // ordinal rode a vertex it was a FLOAT, and "off by a fraction" was a
+    // statement one could make. A byte cannot hold a material nobody wrote.
     {
         const std::uint8_t* biomeMat = biome_ground_materials();
-        const float mtnMat = float(biomeMat[std::size_t(Biome::Mountain)]);
-        const float lowMat = float(biomeMat[std::size_t(Biome::Meadow)]);
+        const std::uint8_t mtnMat = biomeMat[std::size_t(Biome::Mountain)];
+        const std::uint8_t lowMat = biomeMat[std::size_t(Biome::Meadow)];
         int foreign = 0, sawMtn = 0, sawLow = 0;
-        for (const FarVertex& v : mesh.vtx) {   // skirts carry their edge's own
-            if (v.material == mtnMat) ++sawMtn;
-            else if (v.material == lowMat) ++sawLow;
-            else ++foreign;
+        for (int iz = -1; iz <= kFixDim; ++iz) {      // margin included
+            for (int ix = -1; ix <= kFixDim; ++ix) {
+                const std::uint8_t m = mat.at(ix, iz);
+                if (m == mtnMat) ++sawMtn;
+                else if (m == lowMat) ++sawLow;
+                else ++foreign;
+            }
         }
         CHECK(foreign == 0,
-              "no vertex carries a material the world never authored");
+              "no point of the field carries a material the world never "
+              "authored, margin included");
         CHECK(sawMtn > 0 && sawLow > 0,
-              "and both of the fixture's materials actually reached vertices "
+              "and both of the fixture\'s materials actually reached the field "
               "(the negative control for the line above)");
     }
 
-    // ── 6. A DEAD GRID BUILDS NOTHING ─────────────────────────────────────
-    // Fail closed: an unwired caller gets an empty sheet, never a flat plane
+    // ── 5. THE TWO FIELDS STAND ON THE SAME POINTS ────────────────────────
+    // They are addressed by ONE pair of lattice coordinates in far.vert
+    // (`texelFetch(uFarHeight, base)` and `texelFetch(uFarMaterial, base)`),
+    // so a disagreement about what a lattice point IS would paint one cell\'s
+    // material onto another cell\'s ground — visible as a smear along every
+    // biome border, and visible nowhere else.
+    {
+        CHECK(sheet.dim == mat.dim,
+              "one lattice, two fields — the height and the material are "
+              "indexed by the same point");
+        // The material of the CELL the point stands in, re-derived here rather
+        // than copied from the bake.
+        int samples = 0, wrong = 0;
+        for (int iz = 0; iz < kFixDim; iz += 3) {
+            for (int ix = 0; ix < kFixDim; ix += 3) {
+                const float wx = float((ix - kFixN) * kFixStepM);
+                const float wz = float((iz - kFixN) * kFixStepM);
+                const int cx = int(std::floor(wx / float(kCellSize)
+                                              + float(grid.radiusCells)));
+                const int cy = int(std::floor(wz / float(kCellSize)
+                                              + float(grid.radiusCells)));
+                if (mat.at(ix, iz) != grid.at(cx, cy).material) ++wrong;
+                ++samples;
+            }
+        }
+        CHECK(samples > 100 && wrong == 0,
+              "and each point carries the material of the cell it actually "
+              "stands in — NEAREST, never a blend of two");
+    }
+
+    // ── 6. A DEAD GRID BAKES NOTHING ──────────────────────────────────────
+    // Fail closed: an unwired caller gets an empty field, never a flat plane
     // at height zero, which would draw a lake over the whole world.
     {
-        FarMesh empty;
+        FarHeightSheet empty;
+        FarMaterialSheet emptyMat;
         FarCellGrid none;
-        build_far_mesh(empty, none, kCamCx, kCamCy, 64, 3072.0f, kWorldCells,
+        bake_far_sheet(empty, none, kCamCx, kCamCy, 64, 3072.0f, kWorldCells,
                        0.0f, noComposite, 0.0f);
-        CHECK(empty.vtx.empty() && empty.idx.empty(),
+        bake_far_material_sheet(emptyMat, none, 64, 3072.0f);
+        CHECK(empty.m.empty() && !empty.live() && emptyMat.id.empty(),
               "no cells, no ground — the far world is not invented");
-        FarMesh zeroStep;
-        build_far_mesh(zeroStep, grid, kCamCx, kCamCy, 0, 3072.0f, kWorldCells,
+        FarHeightSheet zeroStep;
+        bake_far_sheet(zeroStep, grid, kCamCx, kCamCy, 0, 3072.0f, kWorldCells,
                        0.0f, noComposite, 0.0f);
-        CHECK(zeroStep.vtx.empty(), "a spacing of nothing builds nothing");
+        CHECK(!zeroStep.live(), "a spacing of nothing bakes nothing");
     }
 
     // ── 7. A SEABED IS GROUND, NOT GLASS ──────────────────────────────────
@@ -548,54 +550,6 @@ int main() {
         build_far_lattice_indices(none, 0, kFarHoleQuadHalf);
         CHECK(none.empty(), "no lattice, no triangles — and the old contents "
                             "of the buffer do not survive as a ghost");
-    }
-
-    // ── 9. THE MATERIAL FIELD IS THE VERTEX ATTRIBUTE IT REPLACES ─────────
-    // Migration witness, and a temporary one on purpose: it holds the new door
-    // against the old one over the SAME fixture, so the vertex attribute can
-    // be deleted with proof rather than with confidence. It dies with the
-    // mesh it compares against.
-    //
-    // The identity has to be exact, not close: a material id is an ordinal, so
-    // "off by one" is not an error of degree — it is a different material.
-    {
-        FarMaterialSheet mat;
-        bake_far_material_sheet(mat, grid, /*stepM*/64, /*halfSpanM*/3072.0f);
-        CHECK(mat.live(), "the material field is a field");
-        const int n = int(mesh.halfSpanM) / mesh.stepM;
-        const int dim = 2 * n + 1;
-        CHECK(mat.dim == dim,
-              "and it is the same lattice the height sheet is");
-        int samples = 0, mismatches = 0;
-        for (int iz = 0; iz < dim; ++iz) {
-            for (int ix = 0; ix < dim; ++ix) {
-                const float was = mesh.vtx[std::size_t(iz) * std::size_t(dim)
-                                           + std::size_t(ix)].material;
-                if (float(mat.at(ix, iz)) != was) ++mismatches;
-                ++samples;
-            }
-        }
-        CHECK(samples == dim * dim && mismatches == 0,
-              "every point of the material field carries exactly the ordinal "
-              "its vertex carried");
-        // THE MARGIN IS ADDRESSED, NOT LEFT BLANK. It exists only so the two
-        // sheets share one convention; a zeroed rim would read as material 0
-        // on the outermost row if anything ever gathered across it.
-        const std::uint8_t* biomeMat = biome_ground_materials();
-        const std::uint8_t mtn = biomeMat[std::size_t(Biome::Mountain)];
-        const std::uint8_t low = biomeMat[std::size_t(Biome::Meadow)];
-        int rim = 0, foreign = 0;
-        for (int i = -1; i <= dim; ++i) {
-            const std::uint8_t edge[4] = {mat.at(i, -1), mat.at(i, dim),
-                                          mat.at(-1, i), mat.at(dim, i)};
-            for (std::uint8_t m : edge) {
-                if (m != mtn && m != low) ++foreign;
-                ++rim;
-            }
-        }
-        CHECK(rim > 0 && foreign == 0,
-              "the margin ring carries the world's own materials too, not a "
-              "row of zeroes");
     }
 
     return report("far_mesh_test");

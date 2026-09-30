@@ -1,4 +1,4 @@
-// THE FAR WORLD'S GROUND, as geometry — CANON S18.1.
+// THE FAR WORLD'S GROUND, as a FIELD — CANON S18.1.
 //
 // The player stands in a 3×3 window of 3072 m and the world is a torus 1049 km
 // across. Beyond the window the composite simply ends, and until this exists
@@ -10,14 +10,21 @@
 //     ridge function, stopped at the coarse octaves (base_generator.h). Not
 //     similar noise: the same function, truncated. «Гора, которую видно с
 //     тридцати километров, обязана быть той горой, к которой придёшь.»
-//   · COLOUR is not computed here at all. A vertex carries its MATERIAL ID and
-//     the shader takes the midpoint of that row's two authored constituents —
-//     the very pair the near ground's mixture converges to (ground_surface.glsl
+//   · COLOUR is not computed here at all. A lattice point carries its MATERIAL
+//     ORDINAL and the shader takes the midpoint of that row's two authored
+//     constituents — the pair the near ground's mixture converges to
+//     (ground_surface.glsl
 //     kGroundFresh/kGroundWorn). So the join at the composite's edge is
 //     invisible BY CONSTRUCTION rather than by tuning, and no second copy of
 //     the ground table is ever made. That table lives in GLSL and only there;
-//     mirroring it in C++ to colour a vertex would have created exactly the
+//     mirroring it in C++ to colour the ground would have created exactly the
 //     "two answers to one question" the canon forbids.
+//   · GEOMETRY IS NOT HERE, and that is the shape of the thing: this file
+//     evaluates the law into two FIELDS over a lattice, and the vertex stage
+//     derives a vertex from `gl_VertexIndex` and those fields (far.vert).
+//     Nothing about a triangle depends on the place, so the triangles are
+//     built once for the whole ladder (`build_far_lattice_indices`) and never
+//     again.
 //   · The air does the rest. There is no draw-distance constant here and there
 //     must not be one (S18.1): the mesh covers what it covers, and what the
 //     eye actually sees is decided by `aerial_perspective` — the plain
@@ -214,17 +221,6 @@ inline void build_far_lattice_indices(std::vector<std::uint32_t>& out,
     }
 }
 
-// One vertex of the far ground. Position in the same WINDOW space the
-// composite uses (metres, Y absolute — sub/height.h layer 2), so the far mesh
-// and the near mesh live in one coordinate system and the camera needs no
-// second basis. The material id rides as a float because that is what a vertex
-// attribute is; the shader reads the ground table with it.
-struct FarVertex {
-    float px, py, pz;
-    float nx, ny, nz;
-    float material;
-};
-
 // What the builder needs to know about one macro cell. All of it comes from
 // doors that already exist — the caller resolves the cell once and fills this,
 // because a far grid reads many tiles out of every cell and asking per tile
@@ -247,16 +243,6 @@ struct FarCellColumn {
     // only door that carries it honestly: the cell's own remapped manifold,
     // which `skeleton_cell_height01` already put under the plane.)
     std::uint8_t material = 0;      // biome_ground_materials()[biome]
-};
-
-struct FarMesh {
-    std::vector<FarVertex>     vtx;
-    std::vector<std::uint32_t> idx;
-    // What the build covered, in metres from the camera — reported rather than
-    // assumed, so a caller (or a test) can state the truth about coverage
-    // instead of restating the argument it passed in.
-    float halfSpanM = 0.0f;
-    int   stepM     = 0;
 };
 
 // The cell grid the builder reads: (2R+1)² columns, row-major, centred on the
@@ -529,168 +515,6 @@ inline void bake_far_material_sheet(FarMaterialSheet& out,
                 grid.at(int(std::floor(fx)), int(std::floor(fy))).material;
         }
     }
-}
-
-// THE MESH IS A CONSUMER OF THE SHEET. It adds nothing to the ground's shape;
-// it decides how that shape is handed to a rasteriser. Keeping the two apart
-// is what lets the same field be handed to a GPU height texture instead,
-// without the law being evaluated a second time anywhere.
-inline void build_far_mesh(FarMesh& out, const FarHeightSheet& sheet,
-                           const FarCellGrid& grid, int stepM,
-                           float holeHalfM) {
-    out.vtx.clear();
-    out.idx.clear();
-    out.halfSpanM = 0.0f;
-    out.stepM = 0;
-    if (!grid.live() || !sheet.live()) return;
-
-    const int   dim = sheet.dim;
-    const int   n   = (dim - 1) / 2;
-    const float cellSpanM = float(kCellSize) * 1.0f;       // a tile is a metre
-    out.halfSpanM = sheet.halfSpanM;
-    out.stepM = sheet.stepM;
-    out.vtx.reserve(std::size_t(dim) * std::size_t(dim));
-    const auto hAt = [&](int ix, int iz) { return sheet.at(ix, iz); };
-
-    for (int iz = 0; iz < dim; ++iz) {
-        const float wz = float((iz - n) * stepM);
-        for (int ix = 0; ix < dim; ++ix) {
-            const float wx = float((ix - n) * stepM);
-            FarVertex v{};
-            v.px = wx;
-            v.pz = wz;
-            v.py = hAt(ix, iz);
-            // The NORMAL from the surface itself — central differences over
-            // the neighbours already computed. Not a stored field: a normal
-            // that disagreed with the height it stands on would light a
-            // mountain that is not there, and only a moving sun would show it.
-            const float dx = (hAt(ix + 1, iz) - hAt(ix - 1, iz))
-                           / (2.0f * float(stepM));
-            const float dz = (hAt(ix, iz + 1) - hAt(ix, iz - 1))
-                           / (2.0f * float(stepM));
-            const float inv = 1.0f / std::sqrt(dx * dx + dz * dz + 1.0f);
-            v.nx = -dx * inv;
-            v.ny = inv;
-            v.nz = -dz * inv;
-            // The material of the cell this vertex stands in — NEAREST, not
-            // blended: a material id is an ordinal into a table, and the
-            // average of two ordinals is a third material nobody authored.
-            // What blends is the COLOUR, in the shader, over the fragment,
-            // where blending is legal.
-            const float fx = wx / cellSpanM + float(grid.radiusCells);
-            const float fy = wz / cellSpanM + float(grid.radiusCells);
-            v.material = float(grid.at(int(std::floor(fx)),
-                                       int(std::floor(fy))).material);
-            out.vtx.push_back(v);
-        }
-    }
-
-    // ── THE QUADS, AND THE SKIRTS THAT CLOSE THEIR EDGES ──────────────────
-    // A ring's edge is a CLIFF unless something closes it: two grounds that
-    // carry different octaves meet at different heights however honestly both
-    // are derived, and the gap between them is a hole you can see the world
-    // through. The owner saw exactly that — a vertical brown wall standing at
-    // the join with water on both sides of it.
-    //
-    // The canon's own remedy (S18.1): «трещины между кольцами лечатся ЮБКАМИ —
-    // вертикальная занавеска на пару метров вниз по краю каждого кольца». A
-    // skirt hangs straight down from the edge and fills the crack with itself;
-    // at the distances a far ring is drawn it is already under a pixel.
-    //
-    // ONE RULE FOR ALL THREE EDGES, and that is the point of doing it this
-    // way: any quad edge with no emitted quad on the other side gets a skirt —
-    // the sheet's outer rim, the hole around the composite, and the border
-    // between this ring and the next one. Three seams, no special cases.
-    std::vector<bool> emitted(std::size_t(dim - 1) * std::size_t(dim - 1),
-                              false);
-    out.idx.reserve(std::size_t(dim - 1) * std::size_t(dim - 1) * 6u);
-    for (int iz = 0; iz + 1 < dim; ++iz) {
-        for (int ix = 0; ix + 1 < dim; ++ix) {
-            // Inside the composite the near ground answers, so no quad is
-            // emitted there. Tested on the quad's FAR corner: a quad that
-            // straddles the edge stays, so the sheet always reaches under the
-            // composite's rim rather than leaving a gap at it.
-            if (holeHalfM > 0.0f) {
-                const float qx = float((ix + 1 - n) * stepM);
-                const float qz = float((iz + 1 - n) * stepM);
-                const float qx0 = float((ix - n) * stepM);
-                const float qz0 = float((iz - n) * stepM);
-                const float maxAbsX = std::max(std::fabs(qx0), std::fabs(qx));
-                const float maxAbsZ = std::max(std::fabs(qz0), std::fabs(qz));
-                if (maxAbsX <= holeHalfM && maxAbsZ <= holeHalfM) continue;
-            }
-            emitted[std::size_t(iz) * std::size_t(dim - 1)
-                    + std::size_t(ix)] = true;
-            const std::uint32_t a = std::uint32_t(iz * dim + ix);
-            const std::uint32_t b = a + 1;
-            const std::uint32_t c = a + std::uint32_t(dim);
-            const std::uint32_t d = c + 1;
-            out.idx.push_back(a); out.idx.push_back(c); out.idx.push_back(b);
-            out.idx.push_back(b); out.idx.push_back(c); out.idx.push_back(d);
-        }
-    }
-
-    // HOW FAR THE CURTAIN HANGS — and the answer is METRES, because every
-    // edge it closes is STITCHED first. A skirt is not a way to hide a
-    // disagreement; it is a way to hide the numerical slop left after the
-    // disagreement has been resolved. Sized as a disagreement it becomes
-    // visible ITSELF: at four steps it hung 128 m on the fine ring and 512 m
-    // on the coarse, lit by its edge's upward normal, and the owner
-    // photographed it as yellow bands along every boundary.
-    //
-    // A quarter of a step is past enough for a seam whose two sides already
-    // agree, and at the ranges these rings are drawn it is under a pixel —
-    // which is what the canon meant by «на пару метров вниз».
-    const float skirtM = 0.25f * float(stepM);
-    const auto emittedAt = [&](int ix, int iz) {
-        if (ix < 0 || iz < 0 || ix + 1 >= dim || iz + 1 >= dim) return false;
-        return bool(emitted[std::size_t(iz) * std::size_t(dim - 1)
-                            + std::size_t(ix)]);
-    };
-    // A skirt quad hangs from two neighbouring TOP vertices; its two bottom
-    // vertices are new, and they carry the same normal and material so the
-    // curtain is lit as the ground it hangs from rather than as a wall.
-    const auto hang = [&](std::uint32_t t0, std::uint32_t t1) {
-        const FarVertex& v0 = out.vtx[t0];
-        const FarVertex& v1 = out.vtx[t1];
-        FarVertex b0 = v0; b0.py -= skirtM;
-        FarVertex b1 = v1; b1.py -= skirtM;
-        const std::uint32_t i0 = std::uint32_t(out.vtx.size());
-        out.vtx.push_back(b0);
-        out.vtx.push_back(b1);
-        const std::uint32_t i1 = i0 + 1;
-        out.idx.push_back(t0); out.idx.push_back(i0); out.idx.push_back(t1);
-        out.idx.push_back(t1); out.idx.push_back(i0); out.idx.push_back(i1);
-    };
-    for (int iz = 0; iz + 1 < dim; ++iz) {
-        for (int ix = 0; ix + 1 < dim; ++ix) {
-            if (!emittedAt(ix, iz)) continue;
-            const std::uint32_t a = std::uint32_t(iz * dim + ix);
-            const std::uint32_t b = a + 1;
-            const std::uint32_t c = a + std::uint32_t(dim);
-            const std::uint32_t d = c + 1;
-            if (!emittedAt(ix, iz - 1)) hang(a, b);   // north edge
-            if (!emittedAt(ix, iz + 1)) hang(c, d);   // south edge
-            if (!emittedAt(ix - 1, iz)) hang(a, c);   // west edge
-            if (!emittedAt(ix + 1, iz)) hang(b, d);   // east edge
-        }
-    }
-}
-
-// Bake and build in one call — the shape the renderer and the witnesses have
-// always asked for. It exists so that splitting the field out of the geometry
-// changed no caller and no result; when the GPU sheet replaces the mesh, this
-// overload dies and `bake_far_sheet` stays.
-template <class HeightSampler>
-inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
-                           int camCx, int camCy, int stepM, float halfSpanM,
-                           int worldCellsX, float holeHalfM,
-                           const HeightSampler& innerHeightM,
-                           float blendBandM) {
-    FarHeightSheet sheet;
-    bake_far_sheet(sheet, grid, camCx, camCy, stepM, halfSpanM, worldCellsX,
-                   holeHalfM, innerHeightM, blendBandM);
-    build_far_mesh(out, sheet, grid, stepM, holeHalfM);
 }
 
 } // namespace sm::sub

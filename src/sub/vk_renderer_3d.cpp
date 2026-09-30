@@ -47,18 +47,13 @@ namespace {
 constexpr float kTileMeters  = 1.0f;
 constexpr float kWorldExtent = float(kFullSize) * kTileMeters * 0.5f; // 1536 m
 
-// HOW MUCH FAR GROUND IS BUILT — not how far one can see (S18.1 forbids such a
-// constant). Twenty-four macro cells: a little past the lowland's own reach
-// through this air (its e-fold is ~28 km), which is enough to show whether the
-// law reads before any ring geometry is invested in. The camera's far plane is
-// DERIVED from it below, so building more can never be silently clipped away.
-constexpr float kFarWorldHalfSpanM = 24.0f * 1024.0f;
-// AND IT IS THE LADDER'S OWN REACH, not a number that happens to agree with
-// it. The rings' six loose constants below turn out to be one lattice read at
-// two scales (far_mesh.h), so their total span is derived there — this line is
-// what refuses a ladder and a far plane that have drifted apart.
-static_assert(kFarWorldHalfSpanM == far_ladder_half_span_m(),
-              "the camera's far plane must be derived from the ring ladder");
+// HOW MUCH FAR GROUND IS BUILT — not how far one can see (S18.1 forbids such
+// a constant). It is THE LADDER'S OWN REACH and nothing else: how many rings
+// there are is the single knob (`kFarRings`), and how far they carry follows.
+// The camera's far plane and the water's reach are both derived from this
+// below, so building more can never be silently clipped away, and adding a
+// ring needs no edit anywhere here.
+constexpr float kFarWorldHalfSpanM = far_ladder_half_span_m();
 
 
 // Per-vertex layout: position (3) + normal (3) + grid UV (2). The material id
@@ -108,6 +103,28 @@ struct MeshPush {
 // same ceiling SkyPush's 224 B is measured against.
 static_assert(sizeof(MeshPush) == 208,
               "MeshPush must stay inside the 256 B push-constant floor");
+
+// Push block for the far world's sheet — the terrain's block plus the ONE
+// vec4 that says WHICH RING is being drawn. It is its own struct rather than
+// four more lanes in MeshPush, because a ring is not a thing the near ground
+// has: a shared block with a far-only member in it would be the far module's
+// name sitting in everyone else's push constants.
+//
+// Three numbers is all a ring is, and that is the measure of this whole slice:
+// x = its spacing in metres (the lattice's stride and, at a quarter, its skirt
+// drop), y = the lattice half-width (which decodes gl_VertexIndex), z = the
+// ring's first row in the atlas. w is unused and stays unused; there is no
+// fourth thing to say.
+struct FarPush {
+    MeshPush mesh;
+    float    ring[4];
+};
+// 224 bytes (14 × vec4), inside MoltenVK's ≥256 B push-constant floor — the
+// same ceiling MeshPush's 208 B and SkyPush's 224 B are measured against.
+static_assert(sizeof(FarPush) == 224,
+              "FarPush must stay inside the 256 B push-constant floor");
+static_assert(offsetof(FarPush, ring) == sizeof(MeshPush),
+              "far.vert reads the ring lane straight after the shared block");
 
 // Push-constant block for the procedural sky — matches sky.frag.
 // 224 bytes (= 14 × vec4), within MoltenVK's ≥256 B limit. Filled verbatim
@@ -667,33 +684,92 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         std::fprintf(stderr, "[Renderer3DVk] terrain pipeline FAILED\n");
     }
 
-    // A0: THE FAR WORLD's sheet (far.vert + far.frag). Same push block and the
-    // same set 0 as the terrain — it is the same world, lit by the same light
-    // and hazed by the same air; what it does NOT take is set 1, because out
-    // there no tile material grid exists and the cell's material id rides the
-    // vertex instead.
+    // A0: THE FAR WORLD's sheet (far.vert + far.frag). Same set 0 as the
+    // terrain — it is the same world, lit by the same light and hazed by the
+    // same air. What it does NOT take is the terrain's set 1, because out there
+    // no tile material grid exists; it takes its OWN set 1 instead, the two
+    // fields the lattice is read out of.
+    //
+    // NO VERTEX INPUT AT ALL — `vertexStride = 0`, which switches the binding
+    // off entirely. The lattice is `gl_VertexIndex`, the shape is the height
+    // field, and there is nothing left for a vertex attribute to carry.
+    {
+        // binding 0 = the height atlas, in METRES; binding 1 = the material
+        // atlas. Both are read in the VERTEX stage: the first is the shape, the
+        // second is an ordinal that must not be interpolated, so it is fetched
+        // once per vertex and passed `flat`.
+        VkDescriptorSetLayoutBinding fb[2]{};
+        fb[0].binding = 0;
+        fb[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        fb[0].descriptorCount = 1;
+        fb[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        fb[1] = fb[0];
+        fb[1].binding = 1;
+        VkDescriptorSetLayoutCreateInfo fdlci{};
+        fdlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        fdlci.bindingCount = 2;
+        fdlci.pBindings = fb;
+        vkCreateDescriptorSetLayout(dev.device, &fdlci, nullptr,
+                                    &farSetLayout_);
+        VkDescriptorPoolSize fps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
+        VkDescriptorPoolCreateInfo fdpci{};
+        fdpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        fdpci.maxSets = 1;
+        fdpci.poolSizeCount = 1;
+        fdpci.pPoolSizes = &fps;
+        vkCreateDescriptorPool(dev.device, &fdpci, nullptr, &farPool_);
+        VkDescriptorSetAllocateInfo fdsai{};
+        fdsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        fdsai.descriptorPool = farPool_;
+        fdsai.descriptorSetCount = 1;
+        fdsai.pSetLayouts = &farSetLayout_;
+        vkAllocateDescriptorSets(dev.device, &fdsai, &farSet_);
+
+        // THE ATLASES ARE BORN HERE, not on the first crossing, and that is
+        // what keeps the descriptor honest: their size is a function of the
+        // LADDER's compile-time constants, never of the world, so there is
+        // exactly one creation and exactly one descriptor write in the process
+        // — no set is ever rewritten while a frame reads it (audit III.14).
+        // They enter UNDEFINED and stay so until the first discarding recorded
+        // update fills them; nothing draws before `farIndexCount_ > 0`.
+        const std::uint32_t fw = std::uint32_t(sub::kFarSheetDim);
+        const std::uint32_t fh = fw * std::uint32_t(sub::kFarRings);
+        if (!farHeightTex_.create_r32f_empty(dev, fw, fh,
+                                             /*linearFilter=*/false,
+                                             /*repeat=*/false)
+            || !farMatTex_.create_r8_empty(dev, fw, fh,
+                                           /*linearFilter=*/false,
+                                           /*repeat=*/false)) {
+            std::fprintf(stderr, "[Renderer3DVk] far sheet atlases FAILED\n");
+        } else {
+            VkDescriptorImageInfo fdii[2]{};
+            VkWriteDescriptorSet fw2[2]{};
+            const gpu::VulkanTexture* ftex[2] = {&farHeightTex_, &farMatTex_};
+            for (int i = 0; i < 2; ++i) {
+                fdii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                fdii[i].imageView = ftex[i]->view;
+                fdii[i].sampler = ftex[i]->sampler;
+                fw2[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                fw2[i].dstSet = farSet_;
+                fw2[i].dstBinding = std::uint32_t(i);
+                fw2[i].descriptorCount = 1;
+                fw2[i].descriptorType =
+                    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                fw2[i].pImageInfo = &fdii[i];
+            }
+            vkUpdateDescriptorSets(dev.device, 2, fw2, 0, nullptr);
+        }
+    }
     spv_path(vpath, sizeof vpath, "far.vert");
     spv_path(fpath, sizeof fpath, "far.frag");
-    VkVertexInputAttributeDescription farAttrs[3]{};
-    farAttrs[0].location = 0;
-    farAttrs[0].binding  = 0;
-    farAttrs[0].format   = VK_FORMAT_R32G32B32_SFLOAT;
-    farAttrs[0].offset   = 0;
-    farAttrs[1].location = 1;
-    farAttrs[1].binding  = 0;
-    farAttrs[1].format   = VK_FORMAT_R32G32B32_SFLOAT;
-    farAttrs[1].offset   = sizeof(float) * 3;
-    farAttrs[2].location = 2;
-    farAttrs[2].binding  = 0;
-    farAttrs[2].format   = VK_FORMAT_R32_SFLOAT;
-    farAttrs[2].offset   = sizeof(float) * 6;
-    const VkDescriptorSetLayout farSets[1] = { shadowSetLayout_ };
+    const VkDescriptorSetLayout farSets[2] = { shadowSetLayout_,
+                                               farSetLayout_ };
     if (!farPipe_.create_mesh(dev, mainPass, vpath, fpath,
-                              sizeof(MeshPush), sizeof(sub::FarVertex),
-                              farAttrs, 3,
+                              sizeof(FarPush), /*vertexStride=*/0,
+                              nullptr, 0,
                               /*instanced=*/false, /*depthTest=*/true,
                               /*depthWrite=*/true, /*blend=*/false,
-                              /*cullBack=*/false, farSets, 1)) {
+                              /*cullBack=*/false, farSets, 2)) {
         std::fprintf(stderr, "[Renderer3DVk] far-world pipeline FAILED\n");
     }
 
@@ -1007,7 +1083,6 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
 // ──────────────────────────────────────────────────────────────────────
 void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     farIdx_.destroy(dev);
-    farVtx_.destroy(dev);
     terrainIdx_.destroy(dev);
     terrainVtx_.destroy(dev);
     terrainPipe_.destroy(dev);
@@ -1073,6 +1148,17 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     }
     materialTex_.destroy(dev);
     materialTexAlt_.destroy(dev);
+    farHeightTex_.destroy(dev);
+    farMatTex_.destroy(dev);
+    if (farPool_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(dev.device, farPool_, nullptr);
+        farPool_ = VK_NULL_HANDLE;
+        farSet_ = VK_NULL_HANDLE;
+    }
+    if (farSetLayout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(dev.device, farSetLayout_, nullptr);
+        farSetLayout_ = VK_NULL_HANDLE;
+    }
     if (materialPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, materialPool_, nullptr);
         materialPool_ = VK_NULL_HANDLE;
@@ -1350,38 +1436,23 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     // — the lowland dissolves over ~28 km on its own and a summit outlives it.
     // 24 cells of the map is a bit more than the lowland's own reach, which is
     // exactly enough to show whether the law reads.
-    constexpr int kFarCellRadius = 25;                   // +1 for the bilinear
-    // TWO RINGS, and the second is not a refinement of the first — it is the
-    // NYQUIST law made geometry. A mesh may carry any octave whose wavelength
-    // is at least twice its spacing, so a 32 m ring carries the ground's 125 m
-    // octave and a 128 m ring cannot. Near the composite's rim, where that
-    // octave still spans degrees of screen, the fine ring is what makes the
-    // far ground continue the near one instead of flattening into a table.
-    // Further out the same octave is under a pixel and the coarse ring is the
-    // honest answer — which is the canon's «деталь убирается» with a measure
-    // on it, and the reason the finished thing is a ladder of rings.
-    constexpr int kFarFineStepM  = 32;
-    constexpr float kFarFineHalfM = 6.0f * 1024.0f;      // 6 macro cells
-    constexpr int kFarCoarseStepM = 128;
-    // THESE SIX NUMBERS ARE THE LADDER, and the ladder is one lattice read at
-    // two scales (far_mesh.h). Pinned rather than replaced here so the
-    // derivation is proved against the shape the owner has already looked at,
-    // byte for byte, before anything is built out of it.
-    static_assert(kFarRings == 2, "two rings today; the pins below name them");
-    static_assert(kFarFineStepM == far_ring_step_m(0)
-                      && kFarFineHalfM == far_ring_half_span_m(0)
-                      && kWorldExtent == far_ring_hole_half_m(0),
-                  "the fine ring must be the ladder's ring 0");
-    static_assert(kFarCoarseStepM == far_ring_step_m(1)
-                      && kFarWorldHalfSpanM == far_ring_half_span_m(1)
-                      && kFarFineHalfM == far_ring_hole_half_m(1),
-                  "the coarse ring must be the ladder's ring 1");
-    // The grid has to hold the outermost ring plus the bilinear's own extra
-    // cell — the radius is a CONSEQUENCE of how far the ladder reaches.
-    static_assert(kFarCellRadius
-                      == int(far_ladder_half_span_m()) / kCellSize + 1,
-                  "the cell grid must cover the ladder, plus one for the "
-                  "bilinear's outer neighbour");
+    // THE GRID HAS TO HOLD THE OUTERMOST RING, plus the one extra cell the
+    // bilinear's outer neighbour needs — so the radius is a CONSEQUENCE of how
+    // far the ladder reaches, never a number beside it. Add a ring and this
+    // follows on its own.
+    //
+    // The rings themselves used to be six literals here (32 m over 6144 with a
+    // 1536 hole; 128 over 24576 with a 6144 hole). They are gone into the
+    // ladder, and what they encoded survives as its ratio: a mesh may carry any
+    // octave whose wavelength is at least twice its spacing, so a 32 m ring
+    // carries the ground's 125 m octave and a 128 m ring cannot. Near the
+    // composite's rim, where that octave still spans degrees of screen, the
+    // fine ring is what makes the far ground CONTINUE the near one instead of
+    // flattening into a table; further out the same octave is under a pixel and
+    // the coarse ring is the honest answer. That is the canon's «деталь
+    // убирается» with a measure on it — and the reason the thing is a ladder.
+    constexpr int kFarCellRadius =
+        int(far_ladder_half_span_m()) / kCellSize + 1;
 
     sub::FarCellGrid grid;
     grid.radiusCells = kFarCellRadius;
@@ -1460,72 +1531,97 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     // number the march apron feathers over for the same reason.
     constexpr float kFarStitchBandM = 0.5f * float(kCellSize) * kTileMeters;
 
-    sub::FarMesh mesh;
-    sub::build_far_mesh(mesh, grid, camCx, camCy, kFarFineStepM,
-                        kFarFineHalfM, worldCellsX,
-                        /*holeHalfM=*/kWorldExtent,
-                        compositeHeightM, kFarStitchBandM);
-    // THE COARSE RING STITCHES TO THE FINE RING'S OWN LAW, exactly as the
-    // fine one stitches to the composite. I first assumed they would agree by
-    // construction — they do not, and cannot: the fine ring carries the
-    // ground's 125 m octave and the coarse one cannot, so they differ by that
-    // octave's amplitude, tens of metres. Leaving that to a SKIRT is what made
-    // the skirts enormous and visible; resolving it here is what lets them go
-    // back to being metres.
-    //
-    // The sampler answers with the FINE ring's height at a point — the same
-    // law, asked with the fine ring's own Nyquist — so the coarse ring leaves
-    // that answer and arrives at its own over the band.
-    const auto fineHeightM = [&](float wx, float wz) {
-        return sub::far_point_height_m(grid, camCx, camCy, wx, wz,
-                                       worldCellsX, kFarFineStepM);
-    };
-    sub::FarMesh coarse;
-    sub::build_far_mesh(coarse, grid, camCx, camCy, kFarCoarseStepM,
-                        kFarWorldHalfSpanM, worldCellsX,
-                        /*holeHalfM=*/kFarFineHalfM,
-                        fineHeightM, kFarStitchBandM);
-    // The two rings ride ONE pair of buffers: they are the same sheet at two
-    // resolutions and there is nothing to tell them apart at draw time.
-    {
-        const std::uint32_t base = std::uint32_t(mesh.vtx.size());
-        mesh.vtx.insert(mesh.vtx.end(), coarse.vtx.begin(), coarse.vtx.end());
-        mesh.idx.reserve(mesh.idx.size() + coarse.idx.size());
-        for (std::uint32_t i : coarse.idx) mesh.idx.push_back(base + i);
+    // ── THE LATTICE'S TRIANGLES, ONCE FOR THE WHOLE PROCESS ───────────────
+    // Every ring is the same lattice at its own spacing (far_mesh.h), so this
+    // buffer is a function of two integers and of nothing else — not of the
+    // place, not of the ring, not of the world. It is written before
+    // `farIndexCount_` is anything but zero, which is the whole of its
+    // safety: no recorded command buffer can be reading a buffer no draw has
+    // ever been allowed to bind.
+    if (farIdx_.buffer == VK_NULL_HANDLE) {
+        std::vector<std::uint32_t> latticeIdx;
+        sub::build_far_lattice_indices(latticeIdx, sub::kFarLatticeHalf,
+                                       sub::kFarHoleQuadHalf);
+        if (latticeIdx.empty()) return;
+        const VkDeviceSize iBytes =
+            VkDeviceSize(latticeIdx.size() * sizeof(std::uint32_t));
+        if (!farIdx_.create_host_mapped(dev, iBytes,
+                                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT)) {
+            std::fprintf(stderr, "[Renderer3DVk] far index buffer FAILED\n");
+            return;
+        }
+        std::memcpy(farIdx_.mapped, latticeIdx.data(), std::size_t(iBytes));
+        farIndexCount_ = std::uint32_t(latticeIdx.size());
     }
-    if (mesh.idx.empty()) return;
 
-    const VkDeviceSize vBytes =
-        VkDeviceSize(mesh.vtx.size() * sizeof(sub::FarVertex));
-    const VkDeviceSize iBytes =
-        VkDeviceSize(mesh.idx.size() * sizeof(std::uint32_t));
-    // Host-mapped, and said out loud: unified memory on this machine, a sheet
-    // that changes only when the player crosses a macro cell, and a probe
-    // whose job is to be looked at before geometry is invested in.
-    // The two rings' vertex count is a function of the SPANS, not of the
-    // world, so it never changes between builds — create once, overwrite.
-    if (farVtx_.buffer == VK_NULL_HANDLE
-        && !farVtx_.create_host_mapped(dev, vBytes,
-                                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
-        std::fprintf(stderr, "[Renderer3DVk] far vertex buffer FAILED\n");
-        return;
+    // ── THE TWO FIELDS, RING BY RING, INTO ONE BLOCK EACH ─────────────────
+    // A ring is three numbers (spacing, span, hole) and one question: what
+    // ground lies INSIDE it. For the finest ring that is the composite; for
+    // every ring after it, the previous ring's own law — and that has to be
+    // asked rather than assumed, because two rings carry different octaves by
+    // construction (that is what a LOD ladder IS) and disagree by tens of
+    // metres at the rim. Leaving that to a skirt is what once made the skirts
+    // enormous and visible.
+    const std::size_t mDim = std::size_t(sub::kFarSheetDim);
+    const std::size_t plane = mDim * mDim;
+    farHeightScratch_.assign(plane * std::size_t(sub::kFarRings), 0.0f);
+    farMatScratch_.assign(plane * std::size_t(sub::kFarRings),
+                          std::uint8_t(0));
+    sub::FarHeightSheet sheet;
+    sub::FarMaterialSheet matSheet;
+    int ring = 0;
+    int innerStepM = 0;
+    const auto innerHeightM = [&](float wx, float wz) {
+        if (ring == 0) return compositeHeightM(wx, wz);
+        return sub::far_point_height_m(grid, camCx, camCy, wx, wz,
+                                       worldCellsX, innerStepM);
+    };
+    for (ring = 0; ring < sub::kFarRings; ++ring) {
+        const int   stepM    = sub::far_ring_step_m(ring);
+        const float halfSpan = sub::far_ring_half_span_m(ring);
+        const float holeHalf = sub::far_ring_hole_half_m(ring);
+        innerStepM = ring > 0 ? sub::far_ring_step_m(ring - 1) : 0;
+        sub::bake_far_sheet(sheet, grid, camCx, camCy, stepM, halfSpan,
+                            worldCellsX, holeHalf, innerHeightM,
+                            kFarStitchBandM);
+        sub::bake_far_material_sheet(matSheet, grid, stepM, halfSpan);
+        // Fail closed at the point of BIRTH, not on read: a sheet that is not
+        // the ladder's lattice cannot be addressed by the shared triangles,
+        // and a half-filled atlas would draw a world that is not there.
+        if (!sheet.live() || sheet.dim != sub::kFarLatticeDim
+            || !matSheet.live() || matSheet.dim != sub::kFarLatticeDim) {
+            std::fprintf(stderr,
+                         "[Renderer3DVk] far ring %d is not the lattice\n",
+                         ring);
+            return;
+        }
+        // Rings are ROW BANDS of one atlas and a sheet is already row-major
+        // with its margin, so a ring is one contiguous copy — there is no
+        // per-row loop here and there must not be one.
+        std::memcpy(farHeightScratch_.data() + std::size_t(ring) * plane,
+                    sheet.m.data(), plane * sizeof(float));
+        std::memcpy(farMatScratch_.data() + std::size_t(ring) * plane,
+                    matSheet.id.data(), plane);
     }
-    if (farIdx_.buffer == VK_NULL_HANDLE
-        && !farIdx_.create_host_mapped(dev, iBytes,
-                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT)) {
-        std::fprintf(stderr, "[Renderer3DVk] far index buffer FAILED\n");
-        return;
-    }
-    std::memcpy(farVtx_.mapped, mesh.vtx.data(), std::size_t(vBytes));
-    std::memcpy(farIdx_.mapped, mesh.idx.data(), std::size_t(iBytes));
-    farIndexCount_ = std::uint32_t(mesh.idx.size());
+    // The atlases cross on the frame's own command buffer, through the staging
+    // arena, with the recorded update's queue-scope barrier ordering them after
+    // the in-flight frame's sampling. That ordering — not a fence, and not a
+    // second copy of the image — is what makes the overwrite legal.
+    pend_.farSheet = true;
     farBuiltCx_ = camCx;
     farBuiltCy_ = camCy;
+    // Triangles are reported for the WHOLE ladder, not for one ring: the index
+    // buffer is shared and drawn once per ring, so `farIndexCount_ / 3` alone
+    // would under-report by a factor of kFarRings — an instrument that lies
+    // low is worse than none.
     std::fprintf(stderr,
-                 "[far] sheet cell=%d,%d verts=%zu tris=%u span=%.0fm step=%dm "
-                 "build=%.2fms\n",
-                 camCx, camCy, mesh.vtx.size(), farIndexCount_ / 3u,
-                 double(mesh.halfSpanM), mesh.stepM,
+                 "[far] sheet cell=%d,%d rings=%d tris=%u reach=%.0fm "
+                 "field=%.2fMB build=%.2fms\n",
+                 camCx, camCy, sub::kFarRings,
+                 (farIndexCount_ / 3u) * std::uint32_t(sub::kFarRings),
+                 double(sub::far_ladder_half_span_m()),
+                 double(farHeightScratch_.size() * sizeof(float)
+                        + farMatScratch_.size()) / (1024.0 * 1024.0),
                  std::chrono::duration<double, std::milli>(
                      std::chrono::steady_clock::now() - t0).count());
     std::fflush(stderr);
@@ -2512,6 +2608,25 @@ void Renderer3DVk::flush_uploads(VkCommandBuffer cmd) {
                                               /*discard=*/true);
     }
 
+    // ── The far ladder's two fields (images; one whole-atlas overwrite each,
+    //    so both enter as a discard and neither needs a partial transition) ──
+    if (p.farSheet && farHeightTex_.image != VK_NULL_HANDLE) {
+        const VkDeviceSize hBytes =
+            VkDeviceSize(farHeightScratch_.size()) * sizeof(float);
+        const VkDeviceSize hOff = arena_push(farHeightScratch_.data(), hBytes);
+        if (hOff != VK_WHOLE_SIZE)
+            farHeightTex_.update_region_recorded(
+                cmd, stageArena_[arenaSlot_].buffer, hOff, 0, 0,
+                farHeightTex_.width, farHeightTex_.height, /*discard=*/true);
+        const VkDeviceSize mOff =
+            arena_push(farMatScratch_.data(),
+                       VkDeviceSize(farMatScratch_.size()));
+        if (mOff != VK_WHOLE_SIZE)
+            farMatTex_.update_region_recorded(
+                cmd, stageArena_[arenaSlot_].buffer, mOff, 0, 0,
+                farMatTex_.width, farMatTex_.height, /*discard=*/true);
+    }
+
     // ── Material image ──
     // Per-cell write, shared by every base op below. The cell scratch holds
     // the NEWEST content for its rect, so cells are always applied AFTER the
@@ -3149,23 +3264,32 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // answer rather than a trick: the composite IS this ground with its
     // octaves back. Same push block, same light, same air — the only thing it
     // does not bind is the tile material set, which does not exist out there.
+    // ONE DRAW PER RING, ONE BUFFER FOR ALL OF THEM: the rings differ only by
+    // three numbers in the push block (spacing, lattice half, atlas row), so
+    // the ladder is a LOOP here and a ring added to it costs a draw call.
     if (farIndexCount_ > 0 && farPipe_.pipeline != VK_NULL_HANDLE
-        && farVtx_.buffer != VK_NULL_HANDLE) {
+        && farSet_ != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           farPipe_.pipeline);
         if (litSet != VK_NULL_HANDLE) {
+            const VkDescriptorSet farBind[2] = {litSet, farSet_};
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    farPipe_.layout, 0, 1, &litSet, 0,
+                                    farPipe_.layout, 0, 2, farBind, 0,
                                     nullptr);
         }
-        VkDeviceSize farOff = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &farVtx_.buffer, &farOff);
         vkCmdBindIndexBuffer(cmd, farIdx_.buffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdPushConstants(cmd, farPipe_.layout,
-                           VK_SHADER_STAGE_VERTEX_BIT
-                               | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(push), &push);
-        vkCmdDrawIndexed(cmd, farIndexCount_, 1, 0, 0, 0);
+        FarPush fp{};
+        fp.mesh = push;
+        for (int ring = 0; ring < sub::kFarRings; ++ring) {
+            fp.ring[0] = float(sub::far_ring_step_m(ring));
+            fp.ring[1] = float(sub::kFarLatticeHalf);
+            fp.ring[2] = float(ring * sub::kFarSheetDim);
+            vkCmdPushConstants(cmd, farPipe_.layout,
+                               VK_SHADER_STAGE_VERTEX_BIT
+                                   | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(fp), &fp);
+            vkCmdDrawIndexed(cmd, farIndexCount_, 1, 0, 0, 0);
+        }
     }
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,

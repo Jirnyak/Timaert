@@ -312,11 +312,20 @@ namespace gpu
         if (discard && (x != 0 || y != 0 || w != width || h != height))
             return false; // discarding a partial rect would lose the rest
 
-        // Whole-image SHADER_READ→TRANSFER_DST. srcStage FRAGMENT_SHADER is
-        // queue-scope: it orders this write after the in-flight frame's
-        // sampling — that ordering, not a fence, is what makes the in-place
-        // overwrite legal. A discard enters as UNDEFINED (first fill of an
-        // empty-created image / full overwrite).
+        // Whole-image SHADER_READ→TRANSFER_DST. The source stage is queue-scope:
+        // it orders this write after the in-flight frame's sampling — that
+        // ordering, not a fence, is what makes the in-place overwrite legal. A
+        // discard enters as UNDEFINED (first fill of an empty-created image /
+        // full overwrite).
+        //
+        // BOTH SHADER STAGES THAT CAN SAMPLE, and the vertex one is not
+        // decoration. It said FRAGMENT alone for as long as every image here
+        // was read per fragment; the far world's height sheet is read per
+        // VERTEX (far.vert builds its position out of it), so a fragment-only
+        // barrier would order the copy after the wrong reads and leave a
+        // genuine hazard with nothing to see. Naming a stage nobody uses costs
+        // the fragment-only images nothing — the barrier waits on a stage that
+        // has no outstanding reads.
         VkImageMemoryBarrier b{};
         b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -328,7 +337,9 @@ namespace gpu
         b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         b.srcAccessMask = discard ? 0 : VK_ACCESS_SHADER_READ_BIT;
         b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        vkCmdPipelineBarrier(cmd,
+                             VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
+                                 | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
                              nullptr, 1, &b);
 
@@ -346,19 +357,29 @@ namespace gpu
         b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                             VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
+                                 | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             0, 0, nullptr,
                              0, nullptr, 1, &b);
         return true;
     }
 
-    bool VulkanTexture::create_r8_empty(const VulkanDevice& d,
-                                        std::uint32_t w, std::uint32_t h,
-                                        bool linearFilter, bool repeat)
+    // The empty-image path, once, with the FORMAT as an argument. Two callers
+    // name two formats (create_r8_empty / create_r32f_empty) exactly as the
+    // uploading twins above do; the eighty lines they used to each own were the
+    // same eighty lines.
+    static bool create_empty_fmt(const VulkanDevice& d, VkFormat fmt,
+                                 std::uint32_t texelBytes, std::uint32_t w,
+                                 std::uint32_t h, bool linearFilter,
+                                 bool repeat, VkImage& image,
+                                 VkDeviceMemory& memory, VkImageView& view,
+                                 VkSampler& sampler, std::uint32_t& width,
+                                 std::uint32_t& height, std::uint32_t& bpp)
     {
         VkImageCreateInfo ici{};
         ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         ici.imageType = VK_IMAGE_TYPE_2D;
-        ici.format = VK_FORMAT_R8_UNORM;
+        ici.format = fmt;
         ici.extent = {w, h, 1};
         ici.mipLevels = 1;
         ici.arrayLayers = 1;
@@ -389,7 +410,7 @@ namespace gpu
         vci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         vci.image = image;
         vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vci.format = VK_FORMAT_R8_UNORM;
+        vci.format = fmt;
         vci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         if (vkCreateImageView(d.device, &vci, nullptr, &view) != VK_SUCCESS)
             return false;
@@ -412,8 +433,26 @@ namespace gpu
             return false;
         width = w;
         height = h;
-        bpp = 1;
+        bpp = texelBytes;
         return true;
+    }
+
+    bool VulkanTexture::create_r8_empty(const VulkanDevice& d,
+                                        std::uint32_t w, std::uint32_t h,
+                                        bool linearFilter, bool repeat)
+    {
+        return create_empty_fmt(d, VK_FORMAT_R8_UNORM, 1, w, h, linearFilter,
+                                repeat, image, memory, view, sampler, width,
+                                height, bpp);
+    }
+
+    bool VulkanTexture::create_r32f_empty(const VulkanDevice& d,
+                                          std::uint32_t w, std::uint32_t h,
+                                          bool linearFilter, bool repeat)
+    {
+        return create_empty_fmt(d, VK_FORMAT_R32_SFLOAT, 4, w, h, linearFilter,
+                                repeat, image, memory, view, sampler, width,
+                                height, bpp);
     }
 
     bool VulkanTexture::read_back(const VulkanDevice& d,

@@ -205,15 +205,36 @@ private:
     // where they overlap the composite simply wins, which is the right
     // answer: the near ground is the same ground with its octaves back.
     //
-    // PROBE-GRADE and deliberately so. It is one sheet, not the nine rings of
-    // the finished thing; it has no skirts and no hole under the composite,
-    // because those exist to hide cracks BETWEEN rings and there is one ring.
-    // Its buffers are host-mapped rather than staged: this machine has unified
-    // memory, the sheet is rebuilt only when the camera changes macro cell,
-    // and the whole point of the probe is to be LOOKED at before anything is
-    // invested in geometry (S18.1: «если дали не проявятся — ход 2 не нужен»).
-    gpu::VulkanPipeline farPipe_{};
-    gpu::VulkanBuffer   farVtx_{};
+    // THE GROUND IS A FIELD, AND THE GEOMETRY IS NOT DATA. What crosses into
+    // the GPU on a macro-cell crossing is two FIELDS over the lattice — height
+    // in metres and material ordinal — and nothing else. The triangles are a
+    // function of the lattice alone (far_mesh.h: every ring is the SAME lattice
+    // at its own spacing), so they are built ONCE for the whole ladder and the
+    // vertex stage derives its position, its normal and its material from
+    // `gl_VertexIndex` plus these two images.
+    //
+    // There is NO VERTEX BUFFER. That is the point of the shape: the sheet used
+    // to ride 296 450 vertices of 28 bytes and an index buffer rewritten beside
+    // them — 15.2 MB memcpy'd on every crossing, into a single host-mapped
+    // allocation that frame N−1 could still be reading as vertex input (M-122's
+    // first half). Now 1.43 MB of field crosses through the staging arena, the
+    // recorded update's queue-scope barrier orders it after the in-flight
+    // frame's sampling, and the hazard is gone by construction rather than by
+    // a fence.
+    //
+    // RINGS ARE ROWS OF ONE ATLAS (387 × 387·kFarRings). One image, one
+    // descriptor, one copy for the whole ladder — and a ring added later is a
+    // row added here, which is what makes the ladder's reach a one-line
+    // decision (Ш8) instead of a rebuild.
+    gpu::VulkanPipeline   farPipe_{};
+    gpu::VulkanTexture    farHeightTex_{};   // R32_SFLOAT, metres
+    gpu::VulkanTexture    farMatTex_{};      // R8_UNORM, material ordinal/255
+    VkDescriptorSetLayout farSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool      farPool_      = VK_NULL_HANDLE;
+    VkDescriptorSet       farSet_       = VK_NULL_HANDLE;
+    // The lattice's triangles. Written ONCE, before `farIndexCount_` is
+    // anything but zero — so no frame can be in flight reading it, and no ring
+    // or crossing ever touches it again.
     gpu::VulkanBuffer   farIdx_{};
     std::uint32_t       farIndexCount_ = 0;
     // Which macro cell the sheet was built around; INT_MIN = never built.
@@ -374,6 +395,7 @@ private:
     // rebuild, mirroring CompositeDirty::merge's fallback.
     struct PendingGpu {
         bool heightTex = false;   // heightExtM_ → heightTex_ (full image)
+        bool farSheet = false;    // far atlases → farHeightTex_ / farMatTex_
         bool terrainVtx = false;  // vtxScratch_ → terrainVtx_
         bool terrainIdx = false;  // idxScratch_ → terrainIdx_ (first build)
         enum class Mat : std::uint8_t {
@@ -391,8 +413,8 @@ private:
         bool any() const {
             bool cells = false;
             for (bool c : matCells) cells |= c;
-            return heightTex || terrainVtx || terrainIdx || mat != Mat::None
-                || cells || trees || boxes || cyls;
+            return heightTex || farSheet || terrainVtx || terrainIdx
+                || mat != Mat::None || cells || trees || boxes || cyls;
         }
     };
     PendingGpu pend_{};
@@ -401,6 +423,11 @@ private:
     std::vector<std::uint8_t>  vtxScratch_;
     std::vector<std::uint32_t> idxScratch_;
     std::vector<std::uint8_t>  matScratch_;
+    // The far ladder's two fields, all rings in one block, rings as row bands:
+    // one arena push and one recorded copy each. Sized once from the lattice
+    // constants, so there is nothing for a crossing to reallocate.
+    std::vector<float>         farHeightScratch_;
+    std::vector<std::uint8_t>  farMatScratch_;
     std::vector<std::uint8_t>  matCellScratch_[9];
     std::vector<std::uint8_t>  matSelfRef_; // selfcheck reference (env only)
     std::vector<gpu::BbInstance> treeScratch_;

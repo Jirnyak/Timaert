@@ -70,7 +70,6 @@ SKELETON.md	:1416
 SKELETON.md	:1423
 SKELETON.md	:1425
 SKELETON.md	:143
-SKELETON.md	:1475
 SKELETON.md	:156-158
 SKELETON.md	:1602
 SKELETON.md	:1606
@@ -118,7 +117,6 @@ SKELETON.md	:309
 SKELETON.md	:3113-3146
 SKELETON.md	:320-330
 SKELETON.md	:3208
-SKELETON.md	:3244
 SKELETON.md	:3250
 SKELETON.md	:327
 SKELETON.md	:3291
@@ -176,11 +174,9 @@ SKELETON.md	:481
 SKELETON.md	:488
 SKELETON.md	:4985
 SKELETON.md	:499
-SKELETON.md	:5007
 SKELETON.md	:5022
 SKELETON.md	:5025
 SKELETON.md	:5031
-SKELETON.md	:5057
 SKELETON.md	:5058
 SKELETON.md	:5081
 SKELETON.md	:5084-5087
@@ -326,7 +322,6 @@ SKELETON.md	engine.cpp:2301
 SKELETON.md	engine.cpp:232-234
 SKELETON.md	engine.cpp:2622
 SKELETON.md	engine.cpp:3359
-SKELETON.md	engine.cpp:4710
 SKELETON.md	engine.cpp:4782
 SKELETON.md	engine.h:609
 SKELETON.md	event_bus.cpp:23
@@ -720,7 +715,6 @@ SKELETON.md	ui/screens.cpp:387-392
 SKELETON.md	vk_macro_renderer.cpp:189
 SKELETON.md	vk_macro_renderer.cpp:31
 SKELETON.md	vk_macro_renderer.cpp:89
-SKELETON.md	vk_renderer.cpp:241
 SKELETON.md	vk_renderer_3d.cpp:1964
 SKELETON.md	vk_renderer_3d.cpp:2305-2321
 SKELETON.md	vk_renderer_3d.cpp:2742
@@ -753,7 +747,6 @@ SKELETON.md	zones.cpp:70-73
 SKELETON.md	zones.cpp:92
 SKELETON.md	zones.h:30
 jopus_prompts.md	:1-60
-jopus_prompts.md	:1317-1500
 jopus_prompts.md	:1325
 jopus_prompts.md	:1696
 jopus_prompts.md	:2076-2098
@@ -795,12 +788,10 @@ jopus_prompts.md	econ_day.cpp:413
 jopus_prompts.md	econ_day.cpp:46
 jopus_prompts.md	econ_day.cpp:46-51
 jopus_prompts.md	econ_day.h:139
-jopus_prompts.md	engine.cpp:4710
 jopus_prompts.md	engine.h:619
 jopus_prompts.md	event_bus.cpp:70-74
 jopus_prompts.md	event_bus.h:27-40
 jopus_prompts.md	events/quests/quest_engine.cpp:179
-jopus_prompts.md	gpu/vk_renderer.cpp:241
 jopus_prompts.md	landmark_grid.h:41
 jopus_prompts.md	language.h:20-35
 jopus_prompts.md	lighting.h:324
@@ -880,8 +871,6 @@ jopus_prompts.md	src/events/logic_nodes.h:20-26
 jopus_prompts.md	src/events/node_registry.cpp:15-25
 jopus_prompts.md	src/events/quests/quest_engine.cpp:170-190
 jopus_prompts.md	src/events/quests/quest_engine.cpp:195-210
-jopus_prompts.md	src/gpu/vk_buffer.h:13-50
-jopus_prompts.md	src/gpu/vk_renderer.cpp:236-250
 jopus_prompts.md	src/tables/biomes.h:40-76
 jopus_prompts.md	src/tables/commodity.h:30-60
 jopus_prompts.md	src/macro/econ_day.cpp:40-55
@@ -910,13 +899,10 @@ jopus_prompts.md	src/macro/state.h:810-830
 jopus_prompts.md	src/macro/vk_macro_renderer.cpp:153-165
 jopus_prompts.md	src/macro/world_tick.cpp:190-450
 jopus_prompts.md	src/sub/engine.cpp:3685-3720
-jopus_prompts.md	src/sub/engine.cpp:4700-4715
 jopus_prompts.md	src/sub/movement.h:60-90
 jopus_prompts.md	src/sub/spell_effects.cpp:75-90
 jopus_prompts.md	src/sub/targeting.h:40-55
 jopus_prompts.md	src/sub/vk_renderer_3d.cpp:160-175
-jopus_prompts.md	src/sub/vk_renderer_3d.cpp:30-45
-jopus_prompts.md	src/sub/vk_renderer_3d.h:45-56
 jopus_prompts.md	src/ui/macro_overlay.cpp:255-260
 jopus_prompts.md	src/ui/map_screen.cpp:148-200
 jopus_prompts.md	stacks.h:125
@@ -948,7 +934,6 @@ jopus_prompts.md	tests/trade_law_test.cpp:1-30
 jopus_prompts.md	tree_layer.cpp:23-24
 jopus_prompts.md	tree_layer.h:104
 jopus_prompts.md	ui/screens.h:70
-jopus_prompts.md	vk_renderer_3d.cpp:1463-1473
 jopus_prompts.md	world_gen.cpp:310
 jopus_prompts.md	world_tick.cpp:190-193
 jopus_prompts.md	world_tick.h:38-42

@@ -28,6 +28,9 @@ layout(push_constant) uniform Push {
     vec4 sunColor;
     vec4 ambient;
     mat4 lightMvp;
+    vec4 camPos;
+    vec4 shore;
+    vec4 ring;      // the vertex stage's business; declared so the block matches
 } pc;
 
 layout(location = 0) out vec4 outColor;

@@ -75,6 +75,13 @@ namespace gpu
         bool create_r8_empty(const VulkanDevice& dev, std::uint32_t width,
                              std::uint32_t height, bool linearFilter,
                              bool repeat);
+        // R32_SFLOAT twin of create_r8_empty — for a float FIELD whose content
+        // is born mid-frame (the far world's height sheet, rebaked when the
+        // window crosses a macro cell). Same layout contract: UNDEFINED until
+        // the first discarding recorded update.
+        bool create_r32f_empty(const VulkanDevice& dev, std::uint32_t width,
+                               std::uint32_t height, bool linearFilter,
+                               bool repeat);
         // Read the whole image back into `out` (resized to width*height*bpp) via
         // an image→buffer copy. Transitions SHADER_READ→TRANSFER_SRC→SHADER_READ
         // and blocks on a fence. Diagnostics/verification only (never per frame);
