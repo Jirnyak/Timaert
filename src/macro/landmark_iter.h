@@ -10,6 +10,7 @@
 // GameState definition, and the registry table is included by far lighter
 // headers (map_data.h, seasons.h).
 #pragma once
+#include "macro/features.h"
 #include "macro/landmark_registry.h"
 #include "macro/state.h"
 
@@ -53,6 +54,34 @@ void for_each_landmark(const GameState& gs, F&& fn) {
             fn(LandmarkView{lm.type, lm.id, lm.x, lm.y, name,
                             lm.population, lm.depleted});
         }
+    }
+}
+
+// ── ШТАМП ФИЧ ПОСЕЛЕНИЙ (вердикт владельца 2026-09-30; ЗАКОН ГЕНЕРАЦИИ
+// п.6: фичи поселений — байты слоя фич, генерация ставит их ДО сквадов).
+// «Что стоит на клетке» отвечает байт фичи; «кто здесь живёт» — сквад.
+// Один проход ПОСЛЕ дорог: клетка поселения — мощёный (город) или
+// грунтовый (деревня) узел сети, штамп её перекрывает (прецедент моста).
+// Свежесть — тот же закон, что у LandmarkGrid: генезис и загрузка зовут
+// этот проход рядом с build_landmark_grid; смерть места — смена ВИДА
+// (set_landmark_type), за ней тот же перепёк.
+inline void stamp_settlement_features(const GameState& gs, FeatureLayer& f) {
+    for (const auto& lm : gs.landmarks) {
+        FeatureType ft = FT_None;
+        switch (lm.type) {
+            case LandmarkType::City:    ft = FT_City; break;
+            case LandmarkType::Village: ft = FT_Village; break;
+            case LandmarkType::Spire:   ft = FT_Spire; break;
+            case LandmarkType::Ruin:    ft = FT_Ruin; break;
+            case LandmarkType::None:
+            case LandmarkType::Lair:
+            case LandmarkType::Shrine:
+            case LandmarkType::Mine:
+            case LandmarkType::Tower:
+            case LandmarkType::Count:   break;   // мир их пока не ставит
+        }
+        if (ft == FT_None) continue;
+        f.set(lm.x, lm.y, ft);
     }
 }
 

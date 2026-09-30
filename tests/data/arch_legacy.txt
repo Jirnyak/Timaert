@@ -132,7 +132,6 @@ verdict	SKELETON.md	| охотник на магов выбирает по ко�
 verdict	SKELETON.md	| охотничий шаг пишет цель | `scent_hunt_step` зовёт `try_move` без записи `rt.targetX/Y` (`:2956`); `set
 verdict	SKELETON.md	| память | `sizeof` под `static_assert` — ПРАВДА на libc++; на libstdc++/MSVC ассерты падают из-за `st
 verdict	SKELETON.md	| перемещение спроецированного лорда в субмире → его `MacroCell` | записи нет (`rg 'Ma
-verdict	SKELETON.md	| поля | форма и дверь записи — ПРАВДА; три контейнера, две двери; запись фич —
 verdict	SKELETON.md	| производство/экономика | крафт одной дверью — ПРАВДА; скор без стоимости вх
 verdict	SKELETON.md	| промоушн только на живой карте, сброс, а не игнор | `fast_forward_allowed` (`:2505`), `:2519-2523` 
 verdict	SKELETON.md	| путь полёта | `build_flight_path` (`:2076-2098`) — второй закон пути (прямая по тору) рядом с

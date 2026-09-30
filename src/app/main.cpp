@@ -1490,6 +1490,10 @@ void rebake_world(App& app, bool uploadNow) {
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
                                    zsCities, zsVills, app.features,
                                    &app.terrain, &app.treeLayer);
+    // Фичи поселений — тот же закон свежести, что у сетки ландмарков
+    // (загрузка и всякий перепёк состава); ДО build_cost_grid — ложе марша
+    // читает слой фич.
+    sm::stamp_settlement_features(app.gs, app.features);
     app.landmarkGrid = sm::build_landmark_grid(app.gs);
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
                                        &app.treeLayer);

@@ -17,6 +17,7 @@
 #include "macro/econ_day.h"   // publish_landmark_ledgers — первая ведомость
 #include "macro/knowledge.h"
 #include "macro/landmark_grid.h"
+#include "macro/landmark_iter.h"
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
@@ -233,8 +234,11 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // this call is the ONE missing genesis pass that kept the kind
         // stillborn. After the settlement passes, whose cells it avoids.
         generate_ruins(gs, *out.zones, *out.terrain);
-        // The landmark set is complete — bake the cell → landmark index the
+        // The landmark set is complete — stamp the settlement FEATURES
+        // (вердикт 2026-09-30: город/деревня/шпиль/руина — байты слоя фич,
+        // ставятся ПОСЛЕ дорог) and bake the cell → landmark index the
         // whole game asks (macro/landmark_grid.h).
+        stamp_settlement_features(gs, *out.features);
         *out.landmarkGrid = build_landmark_grid(gs);
         if (p.trace) {
             // The placement report card: every spell offered, every spire in
