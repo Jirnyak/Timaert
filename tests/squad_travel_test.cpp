@@ -74,8 +74,8 @@ sm::MacroHandle make_walker(ecs::World& w, int mapW, float x, float y,
                                    std::uint16_t{0}};
     ecs::MacroNpcRuntime rt{};
     rt.squadType = std::uint8_t(SquadType::Caravan);
-    rt.homeSettlementId = -1;
-    rt.targetSettlementId = -1;
+    rt.homeSettlementId = 0;
+    rt.targetSettlementId = 0;
     rt.targetX = tx;
     rt.targetY = ty;
     rt.state = std::uint8_t(NPCState::Traveling);

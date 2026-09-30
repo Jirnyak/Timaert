@@ -219,7 +219,7 @@ void test_malformed_receipts_do_nothing() {
 
     ecs::MacroDebt zeroAmount{std::uint8_t(MacroStock::Population), 7, 10, 10, 0};
     ecs::MacroDebt unknownStock{std::uint8_t(MacroStock::Count), 7, 10, 10, 5};
-    ecs::MacroDebt noSubject{std::uint8_t(MacroStock::Population), -1, 10, 10, 5};
+    ecs::MacroDebt noSubject{std::uint8_t(MacroStock::Population), 0, 10, 10, 5};
     ecs::MacroDebt strangerId{std::uint8_t(MacroStock::Population), 9999, 0, 0, 5};
 
     settle_macro_debt(w, zeroAmount,   -1);

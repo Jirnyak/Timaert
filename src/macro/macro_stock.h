@@ -76,7 +76,7 @@ enum class MacroStock : std::uint8_t {
 // Where a stock lives. Everything in the world sits in a macro cell; a stock
 // belonging to a NAMED thing standing in that cell also carries its id.
 struct MacroStockKey {
-    std::int32_t subject = -1;   // settlement / village id; -1 = the cell itself
+    std::int32_t subject = 0;   // settlement / village id; -1 = the cell itself
                                  //   (the roster row: the squad's MacroSpawnId)
     std::int16_t cellX = 0;
     std::int16_t cellY = 0;
@@ -91,8 +91,8 @@ struct MacroStockKey {
     // too; the strike door prefers the entityId when one exists.
     std::uint16_t detailKind = 0;
     std::int16_t  detailLevel = 0;
-    // (v54) The register bit is gone: every landmark draws its id from the ONE
-    // issuer (GameState::nextLandmarkOrdinal), so the id alone names the place.
+    // (v54/M-37) The register bit is gone: every landmark draws its id from
+    // the ONE subject issuer (nextMacroSpawnOrdinal), so the id names the place.
     // The bit existed because cities and villages were numbered from zero
     // independently — killing ten peasants in village 3 took ten souls off
     // CITY 3 on the other side of the map.

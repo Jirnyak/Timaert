@@ -500,6 +500,15 @@ timaert_test(recovery_law_test
     SOURCES
         src/macro/recovery.cpp)
 
+# ОДИН ЭМИТЕНТ ОРДИНАЛОВ СУБЪЕКТОВ (M-37): место и сквад тянут один счётчик,
+# выдача с 1 (0 = «никто»), поиск места по ординалу бинарный со скан-фолбэком.
+timaert_test(ordinal_space_test
+    SOURCES
+        src/macro/npc_spawn.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+    LINK_ENTT)
+
 timaert_test(save_roundtrip_test
     SOURCES
         # the deposit fixture sizes its vein FIELDS through the layer's door

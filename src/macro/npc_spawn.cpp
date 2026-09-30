@@ -137,11 +137,11 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     const std::uint32_t ordinal = spawnIndex++;
 
     ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId   = homeId;   // ONE landmark id space (v54)
+    rt.homeSettlementId   = homeId;   // ONE subject-ordinal space (M-37); 0 = без дома
     // ЛЕТУН (v93): кэш колонки строки по образцу travelRank — try_move
     // читает per-think, лукап строки там не нужен.
     rt.flying             = def.combat.cruiseM > 0.0f ? 1 : 0;
-    rt.targetSettlementId = -1;
+    rt.targetSettlementId = 0;
     rt.targetX            = float(x);
     rt.targetY            = float(y);
     rt.state              = std::uint8_t(NPCState::Idle);
@@ -393,7 +393,7 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
         // сужен префиксом фракции ландмарка («случайный варварский город»).
         // Мир без такого дома — без этой анкеты.
         int hx = row.cellX, hy = row.cellY;
-        int homeId = -1;
+        int homeId = 0;
         const Landmark* home = nullptr;
         if (row.homePeak) {
             // Дом — вершина горного массива (драконья строка): homeIndex-я
@@ -521,7 +521,7 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, MacroStore& st,
         ? std::uint16_t(faction_index("bandits"))
         : faction_index_for_cell(gs.politik, p.x, p.y);
 
-    return st.valid(make_npc(st, type, f, p.x, p.y, gs.mapW, /*homeId*/ -1,
+    return st.valid(make_npc(st, type, f, p.x, p.y, gs.mapW, /*homeId*/ 0,
                              rng, gs.nextMacroSpawnOrdinal, level));
 }
 

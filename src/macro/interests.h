@@ -80,7 +80,7 @@ enum class Stance : std::uint8_t {
 struct Interest {
     // КТО. Ординал субъекта; см. отвергнутую колонку `kind` в шапке —
     // пространство сегодня одно, потому что в реестре одни места.
-    std::int32_t  object = -1;
+    std::int32_t  object = 0;   // 0 = пусто (закон нуля-ординала, M-37)
     // СРОК В ДНЯХ — счётчик, а не дата (владелец: «СРОК, типа в днях, очень
     // чисто, как counter, просто число дней, и оно меняется со временем,
     // может например подниматься — то есть дни как РЕСУРС; это сразу и
@@ -147,7 +147,7 @@ inline const Interest* interest_find(const Interests& r, int object) {
 // а не тихая потеря связи.
 inline bool interest_set(Interests& r, int object, Stance stance,
                          int value, int term) {
-    if (object < 0 || stance == Stance::None) return false;
+    if (object <= 0 || stance == Stance::None) return false;
     const std::int8_t v = std::int8_t(
         value < kRelationMin ? kRelationMin
                              : (value > kRelationMax ? kRelationMax : value));

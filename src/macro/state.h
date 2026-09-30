@@ -357,7 +357,11 @@ namespace sm {
 // v117 (кластер 5б): истина «кто игрок» — колонка playerFlag анкеты (род 2);
 // флаг снова едет байтом записи снапшота — в новом роде (колонка анкеты, не
 // спутник entt-тега); скаляр v116 в скалярах мира умер, биты GameState — кэши.
-constexpr int kSaveVersion = 117;   // v117 (5б): флажок игрока — колонка playerFlag анкеты, едет байтом записи снапшота
+// v118 (M-37): ЕДИНОЕ ПРОСТРАНСТВО ОРДИНАЛОВ — места тянут id из
+// nextMacroSpawnOrdinal (выдача с 1, 0 навсегда «никто» — закон нуля-ординала,
+// AGENTS ЗАКОН СЛОВАРЯ И ОРДИНАЛА п.6); nextLandmarkOrdinal покидает формат;
+// сентинели «нет места» у носителей сводятся с -1 к 0.
+constexpr int kSaveVersion = 118;   // v118 (M-37): один эмитент ординалов субъектов, 0 = «никто»
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -468,7 +472,9 @@ struct WorldLedger {
 };
 
 struct Landmark {
-    int id = -1;             // world-unique ordinal (nextLandmarkOrdinal, v54)
+    int id = 0;              // world-unique ordinal из ЕДИНОГО эмитента
+                             // субъектов (nextMacroSpawnOrdinal, M-37);
+                             // 0 = «никто» (закон нуля-ординала)
     LandmarkType type = LandmarkType::None;  // THE kind column (registry row)
     std::string name;        // "" where the kind carries none (spires derive)
     int x = 0, y = 0;
@@ -636,7 +642,7 @@ enum class GameSubStateKind : std::uint8_t {
 };
 struct GameSubState {
     GameSubStateKind kind = GameSubStateKind::Exploring;
-    int settlementId = -1;
+    int settlementId = 0;   // 0 = без места (закон нуля-ординала)
 };
 // (Four columns are gone with the random-encounter table: the `Event` sub-state
 // kind, `eventId`, `enemyId` and `pendingEncounterIdx`. NOTHING in the project
@@ -680,7 +686,7 @@ struct SessionFeed {
 // order runs macro → events: player state stores it, the quest engine reads
 // it through this door.
 struct SettledQuestOffer {
-    std::int32_t giverSettlementId = -1;
+    std::int32_t giverSettlementId = 0;
     std::int32_t bornDay = -1;
     std::uint8_t offerSlot = 0;
 };
@@ -924,19 +930,18 @@ struct GameState {
     // once a season, together (Session 21). Lives HERE, not on App, so a load
     // keeps the phase instead of pushing the next autosave a season away (v22).
     int lastWorldRebakeDay = 0;
-    // The ONE issuer of MacroSpawnId ordinals (v23): monotonic, never reused,
-    // survives the save. Every creation path (boot spawn, quest spawn, console
-    // squads) draws from here — the old max-over-living scan reissued a dead
-    // NPC's ordinal, and a load could wake the player in a stranger's body
-    // (problems.md 19.24).
-    std::uint32_t nextMacroSpawnOrdinal = 0;
-    // The ONE issuer of LANDMARK ids (v54): cities, villages, spires — every
-    // named place draws from this counter at generation, so an id names ONE
-    // place across all landmark kinds. 0 is reserved for "no landmark" (the
-    // chronicle already files unknown subjects as 0), so issuance starts at 1.
-    // Same monotonic-ordinal law as nextMacroSpawnOrdinal above: a hash or a
-    // per-kind register is not an identity (CANON S20.1).
-    std::uint32_t nextLandmarkOrdinal = 1;
+    // ЕДИНЫЙ эмитент ординалов МАКРО-СУБЪЕКТОВ — сквадов И мест (M-37,
+    // вердикт владельца 2026-09-30): монотонный, никогда не переиспользуется,
+    // едет в сейве. Всякий путь рождения — генезис, ротация, квест, консоль,
+    // рождение места — тянет отсюда; max-over-living скан однажды пере-выдал
+    // ординал мертвеца, и загрузка будила игрока в чужом теле (19.24).
+    // ВЫДАЧА С ЕДИНИЦЫ: 0 навсегда значит «никто» — закон нуля-ординала
+    // (AGENTS, ЗАКОН СЛОВАРЯ И ОРДИНАЛА п.6; летопись писала неизвестного
+    // субъекта нулём с v54, теперь это правило всех ординалов-идентичностей).
+    // nextLandmarkOrdinal умер здесь же: два счётчика были двумя
+    // пространствами имён, и сквад не мог войти в реестр интересов места
+    // без молчаливой коллизии (M-37).
+    std::uint32_t nextMacroSpawnOrdinal = 1;
     // СМЕНА СОСТАВА МЕСТ — СОБЫТИЕ, А НЕ СОСТОЯНИЕ (CANON S9, владелец
     // 2026-09-20: «рождение-смерть ландмарка это конкретные события, и
     // должна быть единая система-дверь, никаких проверщиков»). Счётчик
@@ -1024,19 +1029,42 @@ struct GameState {
     // обходом builtFeatures вместо скана хеша.)
 };
 
+// ── ПОИСК МЕСТА ПО ОРДИНАЛУ: БИНАРНЫЙ, ПОТОМУ ЧТО ЭМИТЕНТ МОНОТОНЕН ─────
+//
+// Ординалы мест идут из ЕДИНОГО эмитента субъектов (M-37) вперемешку со
+// сквадами, поэтому «ординал и есть адрес» (`landmarks[id-1]`, v54) умер:
+// плотности больше нет. Но ростер мест APPEND-ONLY (место умирает сменой
+// вида, никогда не строкой), а эмитент монотонный — значит id в векторе
+// СТРОГО ВОЗРАСТАЮТ ПО ПОСТРОЕНИЮ, путь загрузки включительно (save.cpp
+// восстанавливает в порядке файла под тем же эмитентом). Бинарный поиск —
+// ~11 строк кэша против 1880 у скана (sizeof(Landmark) 42 КБ, торговый путь
+// платил до девяти обходов за решение). Скан-фолбэк оставлен той же
+// честностью, что и раньше: корректность не смеет висеть на инварианте,
+// который не держит ни один static_assert, — цена платится только на
+// промахе.
+inline std::ptrdiff_t landmark_index_by_id(const GameState& gs, int id) {
+    if (id <= 0) return -1;   // 0 = «никто» (закон нуля-ординала, AGENTS п.6)
+    std::size_t lo = 0, hi = gs.landmarks.size();
+    while (lo < hi) {
+        const std::size_t mid = lo + (hi - lo) / 2;
+        if (gs.landmarks[mid].id < id) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo < gs.landmarks.size() && gs.landmarks[lo].id == id)
+        return std::ptrdiff_t(lo);
+    for (std::size_t i = 0; i < gs.landmarks.size(); ++i)
+        if (gs.landmarks[i].id == id) return std::ptrdiff_t(i);
+    return -1;
+}
+
 // ── The landmark-fact door: file the deed AND pay the fame ───────────────
 //
-// Where a place's standing lives, by the ONE landmark id space (v54). A
+// Where a place's standing lives, by the ONE subject-ordinal space (M-37). A
 // spire has no standing (yet) and answers nullptr — its deeds are recorded,
 // nothing is paid.
 inline std::uint32_t* landmark_renown_slot(GameState& gs, int id) {
-    if (id <= 0) return nullptr;
-    // Same law as landmark_by_id below: the ordinal IS the address.
-    const std::size_t i = std::size_t(id - 1);
-    if (i < gs.landmarks.size() && gs.landmarks[i].id == id)
-        return &gs.landmarks[i].renown;
-    for (auto& lm : gs.landmarks) if (lm.id == id) return &lm.renown;
-    return nullptr;
+    const std::ptrdiff_t i = landmark_index_by_id(gs, id);
+    return i < 0 ? nullptr : &gs.landmarks[std::size_t(i)].renown;
 }
 
 // ── ДВЕРЬ РОЖДЕНИЯ МЕСТА (CANON S9, владелец 2026-09-20) ────────────────
@@ -1071,31 +1099,12 @@ inline void set_landmark_type(GameState& gs, Landmark& lm, LandmarkType t) {
     ++gs.navEpoch;
 }
 
-// THE by-id find over the one landmark roster. Ids are world-unique (v54's
-// single ordinal issuer), so no kind is needed to resolve one.
-//
-// ОРДИНАЛ И ЕСТЬ АДРЕС (2026-09-20). The issuer is monotone
-// (GameState::nextLandmarkOrdinal, first id = 1) and the roster is
-// APPEND-ONLY — a place dies by turning LandmarkType::None, never by leaving
-// the vector — so `landmarks[id - 1].id == id` holds by construction, the
-// load path included (save.cpp restores in file order under the same
-// issuer). The arithmetic hit IS the law; the scan under it is the honest
-// fallback, kept because correctness must not rest on an invariant no
-// static_assert can hold. It is not a second table: nothing is stored and
-// nothing can drift out of sync.
-//
-// WHY IT MATTERS (numbers, AGENTS 8): sizeof(Landmark) is ~12.5 KB — the
-// 256-slot inventory alone is 9 KiB and the garrison 3 KiB — so the roster
-// is ~23 MB. One linear scan touched up to 1882 cache lines scattered across
-// it with no locality, and a single trade decision paid up to NINE of them:
-// the by-id find, not the route table, was the hot loop of that path.
+// THE by-id find over the one landmark roster. Ids are world-unique (M-37's
+// single subject-ordinal issuer), so no kind is needed to resolve one.
+// Механика и её закон — у landmark_index_by_id выше.
 inline Landmark* landmark_by_id(GameState& gs, int id) {
-    if (id < 0) return nullptr;
-    const std::size_t i = std::size_t(id - 1);
-    if (i < gs.landmarks.size() && gs.landmarks[i].id == id)
-        return &gs.landmarks[i];
-    for (auto& lm : gs.landmarks) if (lm.id == id) return &lm;
-    return nullptr;
+    const std::ptrdiff_t i = landmark_index_by_id(gs, id);
+    return i < 0 ? nullptr : &gs.landmarks[std::size_t(i)];
 }
 
 // ── ФЕОДАЛЬНОЕ РЕБРО — ОДНА ДВЕРЬ НА ОБА КОНЦА (владелец, 2026-09-21) ─────
@@ -1122,21 +1131,21 @@ inline void set_suzerain(GameState& gs, int vassalId, int suzerainId,
         interest_clear(v->interests, it.object);
         break;                     // сюзерен у места ровно один
     }
-    if (suzerainId < 0) return;    // «стал ничьим» — это и есть весь вызов
+    if (suzerainId <= 0) return;   // «стал ничьим» — это и есть весь вызов
     Landmark* s = landmark_by_id(gs, suzerainId);
     if (!s) return;                // висячего ребра не заводим
     interest_set(v->interests, suzerainId, Stance::Suzerain, value, term);
     interest_set(s->interests, vassalId, Stance::Vassal, value, term);
 }
 
-// Кому это место платит дань; -1 — никому (столица, бесхозное место).
+// Кому это место платит дань; 0 — никому (столица, бесхозное место).
 inline int suzerain_of(const Landmark& lm) {
     for (int i = 0; i < kMaxInterests; ++i) {
         const Interest& it = lm.interests.slots[i];
         if (it.stance == std::uint8_t(Stance::None)) break;
         if (it.stance == std::uint8_t(Stance::Suzerain)) return it.object;
     }
-    return -1;
+    return 0;
 }
 
 // ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг по позициям — он же ведомость
@@ -1146,12 +1155,8 @@ inline bool owes_tithe(const Landmark& lm) {
     return lm.titheOwedValue > 0;
 }
 inline const Landmark* landmark_by_id(const GameState& gs, int id) {
-    if (id < 0) return nullptr;
-    const std::size_t i = std::size_t(id - 1);
-    if (i < gs.landmarks.size() && gs.landmarks[i].id == id)
-        return &gs.landmarks[i];
-    for (const auto& lm : gs.landmarks) if (lm.id == id) return &lm;
-    return nullptr;
+    const std::ptrdiff_t i = landmark_index_by_id(gs, id);
+    return i < 0 ? nullptr : &gs.landmarks[std::size_t(i)];
 }
 
 // ── THE WORKED LAYER'S DOOR (CANON S5, v96) ──────────────────────────────

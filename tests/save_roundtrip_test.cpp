@@ -332,7 +332,11 @@ sm::GameState make_state() {
     // Autosave/re-bake phase (v22) — non-default so a dropped field reddens.
     gs.lastWorldRebakeDay = 9;
     // Identity issuer (v23): must sit above every fixture ordinal.
-    gs.nextMacroSpawnOrdinal = 41;
+    // Эмитент обязан стоять ВЫШЕ всякого выданного ординала (fixture ids
+    // 7/70/3 ниже): загрузка самолечит отставший счётчик (M-37, тот же закон,
+    // что у macro_snapshot), и фикстура-лжец с эмитентом 41 при живом месте 70
+    // проваливала не закон, а собственную несогласованность (§8 п.11).
+    gs.nextMacroSpawnOrdinal = 341;
     // World rhythms (v24) — every field non-default.
     gs.worldTickRt.pendingDailyTicks = 3;
     gs.worldTickRt.nextDailyTickDay = 13;
@@ -716,7 +720,7 @@ void run_roundtrip() {
     if (loaded.lastWorldRebakeDay != 9) {
         FAIL_BAIL("lastWorldRebakeDay (autosave phase) lost");
     }
-    if (loaded.nextMacroSpawnOrdinal != 41) {
+    if (loaded.nextMacroSpawnOrdinal != 341) {
         FAIL_BAIL("nextMacroSpawnOrdinal (identity issuer) lost");
     }
     if (loaded.worldTickRt.pendingDailyTicks != 3
@@ -1392,7 +1396,7 @@ void run_payload_cap_is_a_fact() {
     if (woodDef < 0) FAIL_BAIL("fixture item row 'wood' missing from catalog");
     for (int i = 0; i < kCensusLandmarks; ++i) {
         sm::Landmark lm{};
-        lm.id = i;
+        lm.id = i + 1;   // 0 = «никто» (закон нуля-ординала, M-37)
         lm.type = sm::LandmarkType::Village;
         lm.x = i % gs.mapW;
         lm.y = (i / gs.mapW) % gs.mapH;

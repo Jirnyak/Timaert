@@ -82,7 +82,7 @@ struct DungeonSession {
     // door and HOW MANY of them. The interior populates through the SAME
     // spawner the street uses (one context, one law), and like the street it
     // reads no strength from the place: a body is its row (CANON.md S12).
-    int settlementId = -1;        // landmark id; -1 = a wilderness building
+    int settlementId = 0;         // subject ordinal; 0 = a wilderness building (M-37)
     int landmarkPop = 0;          // settlement population (household-size term)
     // How many doors the STREET had, counted the moment this one was opened.
     // The hearth is sized from the town's people over the town's doors

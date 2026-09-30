@@ -497,7 +497,7 @@ void toggle_settlement_panel(App& app) {
     refresh_player_settlement(app);
     if (app.cursor.hoverSettlementId >= 0) {
         app.ui.settlementId = app.cursor.hoverSettlementId;
-    } else if (app.gs.subState.settlementId >= 0) {
+    } else if (app.gs.subState.settlementId > 0) {
         app.ui.settlementId = app.gs.subState.settlementId;
     }
     refresh_available_settlement_quests(app);
@@ -509,7 +509,7 @@ void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
     refresh_player_settlement(app);
     if (app.cursor.hoverSettlementId >= 0) {
         app.ui.settlementId = app.cursor.hoverSettlementId;
-    } else if (app.gs.subState.settlementId >= 0) {
+    } else if (app.gs.subState.settlementId > 0) {
         app.ui.settlementId = app.gs.subState.settlementId;
     }
     app.ui.settlementTab = tab;
@@ -1613,7 +1613,7 @@ void boot_world(App& app, std::uint32_t seed,
     }
     sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
     app.appliedEventCount = 0;
-    app.ui.settlementId = -1;
+    app.ui.settlementId = 0;
     app.availableSettlementQuests.clear();
     app.availableQuestSettlementId = -1;
     app.availableQuestDay = -1;
@@ -1708,7 +1708,7 @@ void boot_world(App& app, std::uint32_t seed,
     }
     boot_trace("starter kit dealt");
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
-        && app.gs.subState.settlementId < 0) {
+        && app.gs.subState.settlementId <= 0) {
         boot_trace("settlement lookup start");
         app.gs.subState.settlementId = settlement_at_player(app.gs, *app.macroStore);
         boot_trace("settlement lookup done");
@@ -6250,7 +6250,7 @@ void frame(App& app, int simSteps) {
                 // единая»): одна и та же панель, у сквада своя ветка.
                 if (npcResult.openSquad.slot != sm::kMacroNoSlot) {
                     app.subjectSquad = npcResult.openSquad;
-                    app.ui.settlementId = -1;
+                    app.ui.settlementId = 0;
                     app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
                     app.ui.settlement = true;
                 }

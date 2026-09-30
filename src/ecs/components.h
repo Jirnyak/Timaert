@@ -260,7 +260,7 @@ struct SoldierLink {
 // not learn the enum. The row it indexes lives in macro/macro_stock.h.
 struct MacroDebt {
     std::uint8_t  stock;          // MacroStock row index
-    std::int32_t  subject;        // landmark id (ONE space, v54), -1 = the cell
+    std::int32_t  subject;        // subject ordinal (ONE space, M-37), 0 = the cell
     std::int16_t  cellX;
     std::int16_t  cellY;
     std::uint16_t amount;         // how much of the stock this one thing is
@@ -381,9 +381,9 @@ struct LightEmitter {
 
 // Macroworld NPC runtime — per-NPC mutable state for the AI tick
 // (mirrors fields on TS `NPC` not already covered by Position / NPCKind).
-// Pure POD, 96 bytes (assert below). The home/target landmark ids draw on the ONE landmark
-// id space (GameState::nextLandmarkOrdinal, v54) — a home may be a city or a
-// village, and the id alone says which place it is (-1 = none). The v27
+// Pure POD, 96 bytes (assert below). The home/target landmark ids draw on the ONE
+// subject-ordinal space (nextMacroSpawnOrdinal, M-37) — a home may be a city or
+// a village, and the id alone says which place it is (0 = none). The v27
 // homeIsVillage register bit died with the second id space it existed to
 // disambiguate.
 struct MacroNpcRuntime {
@@ -555,18 +555,18 @@ static_assert(sizeof(MacroNpcRuntime) == 92,
 // around it — MacroNpcRuntime included — are written verbatim, so their
 // LAYOUT is the format. A "runtime-only" field added to any of them is not
 // free: it changes the blob and pays a kSaveVersion bump like Skills does.
-struct MacroSpawnId { std::uint32_t index = 0; };
+struct MacroSpawnId { std::uint32_t index = 0; };   // 0 = «никто»: эмитент
+                                    // выдаёт с 1 (закон нуля-ординала, M-37)
 
 // The PLAYER's squad ordinal — reserved at the top of the space so it can
 // never collide with the 0,1,2… the world spawner hands out. His squad is an
 // ordinary macro squad (owner, 2026-08-27) and therefore needs an ordinal like
 // any other: it is what the roster ledger keys casualties by, and what finds
 // him again after a load regenerates the world.
-// NOT 0xFFFFFFFF: the stock ledger carries a subject as a SIGNED int32, where
-// -1 already means "the cell itself" (MacroDebt above) — the all-ones ordinal
-// would have collided with that meaning and silently lost the player's
-// casualties. INT32_MAX is as far from the spawner's 0,1,2… as an ordinal can
-// be while staying a positive number.
+// NOT 0xFFFFFFFF: the stock ledger carries a subject as a SIGNED int32 —
+// the all-ones ordinal would read as a negative there and be dropped by the
+// subject-validity gates. INT32_MAX is as far from the spawner's 1,2,3… as
+// an ordinal can be while staying a positive number (0 = «никто», M-37).
 inline constexpr std::uint32_t kPlayerSquadOrdinal = 0x7FFFFFFFu;
 
 // THE macro entity is a SQUAD, not a person (owner's design, CANON S4/S13 (бывший macrosim.md)

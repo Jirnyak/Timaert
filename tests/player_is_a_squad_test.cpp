@@ -46,8 +46,8 @@ sm::MacroHandle npc_squad(ecs::World& w, float x, float y,
     st.pools[h.slot] = ecs::Pools{50, 50};
     st.spawnId[h.slot] = ecs::MacroSpawnId{ordinal};
     ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId = -1;
-    rt.targetSettlementId = -1;
+    rt.homeSettlementId = 0;
+    rt.targetSettlementId = 0;
     rt.targetX = x;
     rt.targetY = y;
     rt.state = std::uint8_t(NPCState::Idle);

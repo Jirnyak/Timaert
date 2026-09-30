@@ -105,7 +105,7 @@ void test_spawn_births_the_row() {
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
     Rng rng(1234u);
-    gs.nextMacroSpawnOrdinal = 0;
+    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     const sm::MacroHandle e = find_design(w, 0);
@@ -176,7 +176,7 @@ void test_snapshot_carries_the_ordinal() {
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
     Rng rng(777u);
-    gs.nextMacroSpawnOrdinal = 0;
+    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     // Обычный сквад рядом — негативный контроль на −1. Через ту же одну
     // дверь создания (spawn_squad → make_npc).
@@ -232,7 +232,7 @@ void test_king_peasant_births_by_home_faction() {
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
     Rng rng(555u);
-    gs.nextMacroSpawnOrdinal = 0;
+    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     sm::MacroStore& stk = sm::store_of(w);
@@ -271,7 +271,7 @@ void test_king_needs_a_barbarian_city() {
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
     Rng rng(556u);
-    gs.nextMacroSpawnOrdinal = 0;
+    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     CHECK(sm::store_of(w).valid(find_design(w, 0)),
           "Varnava is born in a world without barbarians");
@@ -295,7 +295,7 @@ void test_dragons_nest_on_mountain_peaks() {
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
     Rng rng(999u);
-    gs.nextMacroSpawnOrdinal = 0;
+    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     // Один массив = одна вершина: Dragon1 рождается, №2/№3 (вершины с
@@ -334,7 +334,7 @@ void test_no_home_no_birth() {
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
     Rng rng(42u);
-    gs.nextMacroSpawnOrdinal = 0;
+    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     int tags = 0;
     for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)

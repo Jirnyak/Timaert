@@ -47,7 +47,7 @@ enum class FactSubject : std::uint8_t {
     Squad,      // ecs::MacroSpawnId — the macro world's actors, and the main
                 // authors of its history
     Landmark,   // landmark id — settlements, villages, spires share the ONE
-                // ordinal space (GameState::nextLandmarkOrdinal, v54)
+                // subject-ordinal space (nextMacroSpawnOrdinal, M-37)
     Cell,       // the place itself did or suffered it
     Faction,    // faction_index()
     Count

@@ -3717,7 +3717,7 @@ void SubworldEngine::enter_pocket_scene(const MacroWorld& mw, EventBus& bus,
     dungeon_.doorCx = 0;   // virtual anchor: a doorless pocket owes no cell
     dungeon_.doorCy = 0;
     dungeon_.floorHeight = floorHeight;
-    dungeon_.settlementId = -1;
+    dungeon_.settlementId = 0;
     sceneKind_ = SceneKind::Dungeon;
     enter_dungeon_scene(mw, bus);
 }
@@ -3863,7 +3863,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // is the vermin below). WHICH kinds keep a household is a column of the
     // kind table (dgn/dispatch.h) — the row read at the top of this scene.
     if (kindRow.householdAbove && ses.ref.level >= 0
-        && ses.settlementId >= 0 && ecs_) {
+        && ses.settlementId > 0 && ecs_) {
         MacroWorld mw = mw_;
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
@@ -3902,7 +3902,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // (interior_garrison_share), the same shares the street subtracts as
     // its reserve: outside picket + Σ storeys == population, always.
     const bool placeGarrison = kindRow.placeGarrison
-        && ses.settlementId >= 0
+        && ses.settlementId > 0
         && landmark_def(ses.landmarkKind).crowdHabitat != 0;
     if (placeGarrison && ecs_) {
         MacroWorld mw = mw_;

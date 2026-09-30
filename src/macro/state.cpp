@@ -153,8 +153,9 @@ void populate_landmarks_from_politik(GameState& gs,
         const City& c = cities[i];
         Landmark s{};
         s.type        = LandmarkType::City;
-        // v54: ONE landmark id space — the ordinal issuer, never the loop index.
-        s.id          = int(gs.nextLandmarkOrdinal++);
+        // M-37: ОДИН эмитент ординалов субъектов — место тянет id оттуда
+        // же, откуда сквад (никогда не индекс цикла; 0 = «никто»).
+        s.id          = int(gs.nextMacroSpawnOrdinal++);
         s.x           = c.x;
         s.y           = c.y;
         s.factionIdx  = c.factionIdx;
@@ -208,7 +209,7 @@ void populate_landmarks_from_politik(GameState& gs,
             // ОДНА ДВЕРЬ НА ОБА КОНЦА (S24): столица тем же вызовом получает
             // свою запись Vassal, поэтому «кто мои вассалы» не требует ни
             // второго индекса, ни его пересборки.
-            set_suzerain(gs, lm.id, (cap == lm.id) ? -1 : cap);
+            set_suzerain(gs, lm.id, (cap == lm.id) ? 0 : cap);
         }
     }
 
@@ -331,7 +332,7 @@ void populate_landmarks_from_politik(GameState& gs,
             ++placedHere;
             Landmark vil{};
             vil.type          = LandmarkType::Village;
-            vil.id            = int(gs.nextLandmarkOrdinal++);   // v54: same issuer
+            vil.id            = int(gs.nextMacroSpawnOrdinal++); // M-37: тот же эмитент
             vil.x             = c.x;
             vil.y             = c.y;
             vil.factionIdx    = s.factionIdx;

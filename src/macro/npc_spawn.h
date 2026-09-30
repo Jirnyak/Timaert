@@ -107,7 +107,7 @@ struct SquadSpec {
     int     leaderLevel = -1;          // -1 = the row's default + roll
     int     x = 0, y = 0;              // macro cell (wrapped, nudged to land)
     int     factionIndex = -1;         // -1 = the land decides (politik)
-    int     homeSettlementId = -1;
+    int     homeSettlementId = 0;  // 0 = без дома (закон нуля-ординала, M-37)
     SquadSpecMembers members;          // заявка ростера, caller-authored
     std::uint8_t waypointCount = 0;
     std::array<std::int16_t, 16> waypoints{};   // 8 × (x, y)

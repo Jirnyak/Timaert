@@ -390,7 +390,7 @@ namespace sm::ui
             ImTextureID tex = 0;
             std::uint32_t worldSeed = 0;
             std::uint32_t previewSeed = 0;
-            int settlementId = -1;
+            int settlementId = 0;
             int population = -1;
             int houses = 0;
             int walls = 0;
@@ -2215,7 +2215,7 @@ namespace sm::ui
                     if (ImGui::Button("Refresh"))
                     {
                         preview.ready = false;
-                        preview.settlementId = -1;
+                        preview.settlementId = 0;
                     }
                     ImGui::Spacing();
 

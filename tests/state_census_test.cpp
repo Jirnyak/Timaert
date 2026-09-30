@@ -405,9 +405,9 @@ constexpr Row kGameStateRows[] = {
     {"playerFlagBits", Rod::Cache, "кэш носителя колонки playerFlag"},
     {"worldTime", Rod::WorldVars, "время — частный случай мировой переменной"},
     {"lastWorldRebakeDay", Rod::WorldVars, "фаза перепёка/автосейва"},
-    {"nextMacroSpawnOrdinal", Rod::WorldVars, "эмитент ординалов сквадов"},
-    {"nextLandmarkOrdinal", Rod::WorldVars,
-     "эмитент ординалов мест; умирает с Landmark (M-90)"},
+    {"nextMacroSpawnOrdinal", Rod::WorldVars,
+     "ЕДИНЫЙ эмитент ординалов субъектов — сквады и места (M-37); выдача с "
+     "1, 0 = «никто» (закон нуля-ординала)"},
     {"navEpoch", Rod::Cache, "счётчик события состава; в сейв не едет"},
     {"nextQuestOrdinal", Rod::WorldVars, "эмитент ординалов квестов"},
     {"worldTickRt", Rod::WorldVars, "очередь дневного тика + RNG"},

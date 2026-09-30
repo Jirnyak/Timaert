@@ -102,7 +102,7 @@ void generate_ruins(GameState& gs, const ZoneLayer& zones,
         }
         Landmark ruin{};
         ruin.type       = LandmarkType::Ruin;
-        ruin.id         = int(gs.nextLandmarkOrdinal++);
+        ruin.id         = int(gs.nextMacroSpawnOrdinal++);   // M-37: один эмитент
         ruin.x          = bestX;
         ruin.y          = bestY;
         ruin.factionIdx = haunted;

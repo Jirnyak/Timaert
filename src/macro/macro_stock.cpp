@@ -44,11 +44,11 @@ void write_tree_count(MacroWorld& w, MacroStockKey k, int delta) {
 // ── population: the people of a named place ────────────────────────────────
 // A settlement and a village are the same kind of subject here — a named place
 // with people in it — and since v54 the id ALONE names it: every landmark
-// draws on the one issuer (GameState::nextLandmarkOrdinal), so this walks both
+// draws on the one subject issuer (nextMacroSpawnOrdinal, M-37), so this walks both
 // lists knowing at most one can answer. The register bit that used to
 // disambiguate two zero-based numberings is dead.
 int* find_population(const MacroWorld& w, std::int32_t subject) {
-    if (!w.gs || subject < 0) return nullptr;
+    if (!w.gs || subject <= 0) return nullptr;
     if (Landmark* lm = landmark_by_id(*w.gs, subject)) return &lm->population;
     return nullptr;
 }
@@ -82,7 +82,7 @@ Inventory* find_roster(const MacroWorld& w, std::int32_t subject) {
     // без entt вовсе (за O(1) по ординалу придёт таблица слота, 1е/M-37).
     // Store берём из ctx мира: конверт может его не нести (тестовые
     // фикстуры), а мир без store — это мир без сквадов, честный nullptr.
-    if (!w.world || subject < 0) return nullptr;
+    if (!w.world || subject <= 0) return nullptr;
     MacroStore& st = store_of(*w.world);
     for (std::uint16_t slot = 0; slot < std::uint16_t(kMacroEntityCap);
          ++slot) {
@@ -130,7 +130,7 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
 // v54 issuer), and `detail` names the member. A street guard's death pays
 // here: killed on the wall = struck from the roll.
 Inventory* find_garrison(const MacroWorld& w, std::int32_t subject) {
-    if (!w.gs || subject < 0) return nullptr;
+    if (!w.gs || subject <= 0) return nullptr;
     Landmark* lm = landmark_by_id(*w.gs, subject);
     return lm ? &lm->inventory : nullptr;
 }

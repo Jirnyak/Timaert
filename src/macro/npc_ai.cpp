@@ -2248,7 +2248,7 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             rt.targetX = home.x; rt.targetY = home.y;
-            rt.targetSettlementId = -1;
+            rt.targetSettlementId = 0;
             rt.state = std::uint8_t(NS::Returning);
         }
         return;
@@ -4483,7 +4483,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // hardcode raised a courier in EVERY city, and the
                     // capital's one walked to its own gate. The edge is
                     // the landmark's own column now (S24).
-                    open = suzerain_of(s) >= 0 && suzerain_of(s) != s.id;
+                    open = suzerain_of(s) > 0 && suzerain_of(s) != s.id;
                     break;
                 }
             }

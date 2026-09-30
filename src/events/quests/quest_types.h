@@ -80,8 +80,8 @@ namespace sm
         // being a projection (offer lists regenerate from the seed per
         // settlement per day, exactly like the subworld regenerates from the
         // macro) and becomes an object the world stores, saves and names in
-        // events (ev.a). Same law as nextMacroSpawnOrdinal / nextLandmark-
-        // Ordinal (CANON S20.1): a hash of a string is not an identity — the
+        // events (ev.a). Same law as nextMacroSpawnOrdinal (CANON S20.1,
+        // M-37): a hash of a string is not an identity — the
         // FNV `quest_id_key` that lived here collided silently and forever.
         // 0 = an OFFER not yet accepted (the reserved "no quest", like
         // landmark id 0). Width: uint32 — a count, never negative; even 100
@@ -102,7 +102,7 @@ namespace sm
         std::int32_t bornDay = -1;
         std::string title{}, description{};
         QuestCategory category = QuestCategory::Procedural;
-        int giverSettlementId = -1;
+        int giverSettlementId = 0;
         std::vector<Objective> objectives{};
         std::vector<Reward> rewards{};
         std::vector<GameEvent> onAccept{};

@@ -80,7 +80,7 @@ void test_harvest_thins_and_return_does_not_resurrect() {
 
     // Two stands cut, each through the SAME receipt path a kill settles.
     const ecs::MacroDebt receipt{
-        std::uint8_t(MacroStock::CropCount), -1, 2, 2, 1, -1};
+        std::uint8_t(MacroStock::CropCount), 0, 2, 2, 1, -1};
     settle_macro_debt(w, receipt, -1);
     settle_macro_debt(w, receipt, -1);
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(2, 2)) == est - 2,

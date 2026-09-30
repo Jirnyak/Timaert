@@ -100,7 +100,6 @@ constexpr std::uint64_t kPrefixBytes =
     + sizeof(GameState::cityCountTarget) + sizeof(GameState::worldTime)
     + sizeof(GameState::lastWorldRebakeDay)
     + sizeof(GameState::nextMacroSpawnOrdinal)
-    + sizeof(GameState::nextLandmarkOrdinal)
     + sizeof(GameState::nextQuestOrdinal)
     + kStrBytes + kStrBytes + sizeof(GameState::lootPoolValue);
     // (Скаляр v116 «ординал носителя флажка» умер в v117 — флаг едет
@@ -1248,8 +1247,7 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.cityCountTarget);
     w.pod(s.worldTime);
     w.pod(s.lastWorldRebakeDay);   // v22: autosave/re-bake phase survives a load
-    w.pod(s.nextMacroSpawnOrdinal); // v23: the ONE MacroSpawnId issuer
-    w.pod(s.nextLandmarkOrdinal);   // v54: the ONE landmark-id issuer
+    w.pod(s.nextMacroSpawnOrdinal); // v118: ЕДИНЫЙ эмитент ординалов субъектов
     w.pod(s.nextQuestOrdinal);      // v63: the ONE quest-identity issuer
     w.str(s.saveName);
     w.str(savedAt);
@@ -1334,8 +1332,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.pod(s.cityCountTarget);
     r.pod(s.worldTime);
     r.pod(s.lastWorldRebakeDay);   // v22
-    r.pod(s.nextMacroSpawnOrdinal); // v23
-    r.pod(s.nextLandmarkOrdinal);   // v54
+    r.pod(s.nextMacroSpawnOrdinal); // v118: единый эмитент (сквады и места)
     r.pod(s.nextQuestOrdinal);      // v63
     r.str(s.saveName);
     r.str(s.savedAt);
@@ -1353,9 +1350,9 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
         // the quests below and macro_snapshot's spawn ordinal already apply.
         // An issuer behind a living ordinal hands the next founded place an
         // identity that is already standing on the map.
-        if (lm.id >= 0
-            && std::uint32_t(lm.id) >= s.nextLandmarkOrdinal)
-            s.nextLandmarkOrdinal = std::uint32_t(lm.id) + 1u;
+        if (lm.id > 0
+            && std::uint32_t(lm.id) >= s.nextMacroSpawnOrdinal)
+            s.nextMacroSpawnOrdinal = std::uint32_t(lm.id) + 1u;
         add_landmark(s, std::move(lm));
     }
 
@@ -1555,10 +1552,8 @@ SaveSummary inspect_save(const std::string& path) {
     r.pod(time);
     int lastWorldRebakeDay = 0;   // v22 — present in the prefix, not summarised
     r.pod(lastWorldRebakeDay);
-    std::uint32_t nextMacroSpawnOrdinal = 0;   // v23 — same
+    std::uint32_t nextMacroSpawnOrdinal = 0;   // v118 — same
     r.pod(nextMacroSpawnOrdinal);
-    std::uint32_t nextLandmarkOrdinal = 0;     // v54 — same
-    r.pod(nextLandmarkOrdinal);
     std::uint32_t nextQuestOrdinal = 0;        // v63 — same
     r.pod(nextQuestOrdinal);
     r.str(out.saveName);

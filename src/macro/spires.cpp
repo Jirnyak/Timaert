@@ -112,9 +112,9 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         }
         Landmark sp{};
         sp.type     = LandmarkType::Spire;
-        // v54: a spire is a landmark like any other — its id comes from THE
-        // one issuer, not from its position in this vector.
-        sp.id       = int(gs.nextLandmarkOrdinal++);
+        // M-37: a spire is a macro subject like any other — its id comes
+        // from THE one subject-ordinal issuer, squads included.
+        sp.id       = int(gs.nextMacroSpawnOrdinal++);
         sp.x        = bestX;
         sp.y        = bestY;
         sp.factionIdx = infernal;

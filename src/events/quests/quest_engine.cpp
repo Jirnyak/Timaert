@@ -64,7 +64,7 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                 // Значит награда без дарителя не выдаётся ВООБЩЕ; дыра
                 // названа в M-139 и ждёт ПУЛА ЛУТА, который и раздаст
                 // процедурную награду по контексту. Времянки здесь нет.
-                Landmark* giver = giverSettlementId >= 0
+                Landmark* giver = giverSettlementId > 0
                     ? landmark_by_id(gs, giverSettlementId)
                     : nullptr;
                 if (giver) {
@@ -88,7 +88,7 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                 const int paid = pay_value_dense((*bag), -r.amount);
                 delta = -paid;
                 const int short_ = -r.amount - paid;
-                if (short_ > 0 && giverSettlementId >= 0 && head) {
+                if (short_ > 0 && giverSettlementId > 0 && head) {
                     remember(*head,
                              make_debt_fact(kDebtToSettlement,
                                             std::uint16_t(giverSettlementId),

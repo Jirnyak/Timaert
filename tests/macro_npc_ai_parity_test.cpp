@@ -56,7 +56,7 @@ sm::MacroHandle spawn_ai(sm::ecs::World& world,
 
     sm::ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = homeId;
-    rt.targetSettlementId = -1;
+    rt.targetSettlementId = 0;
     rt.targetX = x;
     rt.targetY = y;
     rt.stateTimer = std::int16_t(timer);
