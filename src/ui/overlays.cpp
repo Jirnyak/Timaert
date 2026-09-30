@@ -474,7 +474,11 @@ namespace sm::ui
             ctx.landmark.size = s.population;
             ctx.landmark.kind = s.type;
             ctx.landmark.factionIdx = int(s.factionIdx);
-            ctx.landmark.depleted = s.depleted;
+            // Spire's drained state = worked 0 at its cell (v120); a preview
+            // without the world degrades to "not drained" like the rest of
+            // the missing envelope.
+            ctx.landmark.depleted = s.type == LandmarkType::Spire && mw
+                && mw->gs && worked_read(*mw->gs, s.x, s.y) == 0;
             ctx.seed = previewSeed;
             ctx.worldSeed = worldSeed;
 

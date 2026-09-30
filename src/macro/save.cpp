@@ -125,7 +125,6 @@ constexpr std::uint64_t kLandmarkBytes =             // write_landmark
     + sizeof(Landmark::factionIdx) + sizeof(Landmark::interests)
     + sizeof(Landmark::starvedYesterday) + sizeof(Landmark::seasonWellbeing)
     + sizeof(Landmark::popGrowthCarry) + sizeof(Landmark::renown)
-    + sizeof(Landmark::spellId) + sizeof(std::uint8_t)
     + sizeof(Landmark::titheOwedValue)
     + sizeof(Landmark::titheSeasonAssessed)
     + sizeof(Landmark::titheAvgValue) + sizeof(Landmark::needDebt)
@@ -990,8 +989,7 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.seasonWellbeing);   // v95: the season window's verdict (S19.2)
     w.pod(lm.popGrowthCarry);
     w.pod(lm.renown);            // v53: a place's standing is world memory
-    w.pod(lm.spellId);
-    write_bool(w, lm.depleted);
+    // (spellId/depleted покинули формат в v120: спелл шпиля едет worked-слоем)
     w.pod(lm.titheOwedValue);       // v108: долг дани — ОДНА стоимость
     w.pod(lm.titheSeasonAssessed);
     w.pod(lm.titheAvgValue);        // v108: одна память × горизонт
@@ -1014,8 +1012,6 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.seasonWellbeing);   // v95
     r.pod(lm.popGrowthCarry);
     r.pod(lm.renown);            // v53
-    r.pod(lm.spellId);
-    read_bool(r, lm.depleted);
     r.pod(lm.titheOwedValue);       // v108
     r.pod(lm.titheSeasonAssessed);
     r.pod(lm.titheAvgValue);        // v108

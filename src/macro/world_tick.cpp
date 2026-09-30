@@ -467,10 +467,13 @@ void tick_player_daily_(PlayerState& p) {
 // context, and it is recomputed rather than stored so the save never
 // carries a second copy of what the world already knows.
 static int landmark_context_score(const MacroWorld& w, const Landmark& lm) {
-    if (lm.type == LandmarkType::Spire) {
-        return lm.spellId < std::uint32_t(kSpellCount)
-                   ? kSpellDefs[lm.spellId].tier
-                   : 1;
+    if (lm.type == LandmarkType::Spire && w.gs) {
+        // The spell is the cell's worked number (ordinal+1; 0 = drained).
+        // A drained spire forgot its spell (вердикт «выкачанность = 0»), so
+        // it falls to the zone byte below — the placement gate made the
+        // zone track the tier anyway.
+        const int orb = worked_read(*w.gs, lm.x, lm.y);
+        if (orb > 0) return orb <= kSpellCount ? kSpellDefs[orb - 1].tier : 1;
     }
     return w.zones ? int(w.zones->at(lm.x, lm.y)) : 0;
 }

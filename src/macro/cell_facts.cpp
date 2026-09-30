@@ -69,12 +69,15 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
         // which was harmless only while the population door was locked.
         if (const Landmark* rec = landmark_by_id(*w.gs, lm.id)) {
             const bool spire = rec->type == LandmarkType::Spire;
-            const int tier = spire
-                ? (rec->spellId < std::uint32_t(kSpellCount)
-                       ? kSpellDefs[rec->spellId].tier : 1)
+            // The spell is the cell's WORKED number (ordinal+1, 0 = drained;
+            // закон нуля-ординала). A drained spire forgets its spell like a
+            // worked-out vein, so its tier honestly reads 0.
+            const int orb = spire ? worked_read(*w.gs, f.x, f.y) : 0;
+            const int tier = orb > 0
+                ? (orb <= kSpellCount ? kSpellDefs[orb - 1].tier : 1)
                 : 0;
             f.landmark = {rec->type, rec->id, rec->population, tier,
-                          int(rec->factionIdx), rec->depleted};
+                          int(rec->factionIdx), spire && orb == 0};
         }
     }
     return f;

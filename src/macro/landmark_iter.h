@@ -24,7 +24,9 @@ struct LandmarkView {
     int  x, y;
     const char* name; // display name; never null, may be ""
     int  population;  // 0 where the kind has none
-    bool depleted = false;                        // meaningful for Spire
+    bool depleted = false; // Spire only — DERIVED from the worked layer at
+                           // the spire's cell (0 = orb drained); never a
+                           // Landmark column since v120
 };
 
 // Cell-ownership priority (CANON S9): the order kinds are yielded IS the one
@@ -51,8 +53,10 @@ void for_each_landmark(const GameState& gs, F&& fn) {
             // шахте — они показывали пустую строку, хотя их label ждал.
             const char* name = lm.name.c_str();
             if (lm.name.empty()) name = landmark_def(t).label.data();
+            const bool depleted = lm.type == LandmarkType::Spire
+                && worked_read(gs, lm.x, lm.y) == 0;
             fn(LandmarkView{lm.type, lm.id, lm.x, lm.y, name,
-                            lm.population, lm.depleted});
+                            lm.population, depleted});
         }
     }
 }

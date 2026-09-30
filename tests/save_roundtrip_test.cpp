@@ -436,9 +436,11 @@ sm::GameState make_state() {
     spire.id = 3;
     spire.x = 12;
     spire.y = 34;
-    spire.spellId = 99;
-    spire.depleted = true;
     gs.landmarks.push_back(spire);
+    // v120: the spire's spell rides the worked layer (ordinal + 1), which
+    // the save carries as a world-field block — the roundtrip must bring
+    // back the NUMBER at the cell, not columns.
+    sm::worked_write(gs, 12, 34, 7);
 
     sm::Marker marker{};
     marker.id = "marker.round";
@@ -1009,9 +1011,12 @@ void run_roundtrip() {
         FAIL_BAIL("village honest-day readouts (v29) lost");
     }
     const sm::Landmark* spireLm = sm::landmark_by_id(loaded, 3);
-    if (!spireLm || spireLm->type != sm::LandmarkType::Spire
-        || !spireLm->depleted || spireLm->spellId != 99) {
+    if (!spireLm || spireLm->type != sm::LandmarkType::Spire) {
         FAIL_BAIL("spire lost");
+    }
+    // v120: the spell survives as the worked number at the spire's cell.
+    if (sm::worked_read(loaded, 12, 34) != 7) {
+        FAIL_BAIL("spire spell (worked layer) lost");
     }
     if (loaded.markers.empty() || loaded.markers[0].id != "marker.round"
         || loaded.markers[0].style != sm::MarkerStyle::Danger) {
@@ -1071,8 +1076,10 @@ void run_roundtrip() {
                 .live()) {
             FAIL_BAIL("a carrier row grew a scar field it must not have");
         }
+        // liveCells = 2: the harbour's hulls at (9,4) + the spire's spell
+        // at (12,34) — v120 made the spell a worked tenant too.
         if (sm::worked_read(loaded, 9, 4) != 2
-            || loaded.worked.liveCells != 1) {
+            || loaded.worked.liveCells != 2) {
             FAIL_BAIL("the worked layer's number did not round-trip");
         }
     }

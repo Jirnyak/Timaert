@@ -16,7 +16,8 @@ struct TerrainData;
 struct ZoneLayer;
 
 // Fill gs.spires (assumed cleared by populate_landmarks_from_politik) — one
-// spire per kSpellDefs row, Spire.spellId = the row's append-only ordinal.
+// spire per kSpellDefs row; the spell is the spire cell's WORKED number
+// (state.h gs.worked: row ordinal + 1, 0 = drained — закон нуля-ординала).
 // Deterministic from gs.worldSeed. Requires zones — call AFTER
 // generate_zones. A spell whose zone band does not exist on this world gets
 // its gate relaxed down to the table minimum; a world with no admissible land

@@ -118,8 +118,10 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         sp.x        = bestX;
         sp.y        = bestY;
         sp.factionIdx = infernal;
-        sp.spellId  = std::uint32_t(ord);
-        sp.depleted = false;
+        // The spell is the spire's WORKED number («у поля урожай, у шахты
+        // залежи, у порта корабли — у шпиля спелл»): kSpellDefs ordinal + 1
+        // under FT_Spire, 0 = drained (закон нуля-ординала).
+        worked_write(gs, bestX, bestY, ord + 1);
         // Born with its garrison (§42 Инк 5): the registry row's own born
         // columns × the spell's tier, a discrete bell around the mean. Its
         // OWN stream (world salt × spell ordinal) so the placement draws

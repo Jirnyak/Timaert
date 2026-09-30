@@ -364,7 +364,11 @@ namespace sm {
 // v119 (ход 2, вердикт 3): имя анкеты — колонка char[32] КАЖДОГО сквада
 // (ecs::SquadName в MacroStore и в записи снапшота); nameIdx остался только
 // дефолтом генерации.
-constexpr int kSaveVersion = 119;   // v119: имя анкеты — колонка char[32] каждого сквада
+// v120 (ход 2, ломтик B): спелл шпиля — число фичи в worked-слое под
+// FT_Spire (ординал kSpellDefs + 1; 0 = выкачан — закон нуля-ординала);
+// колонки Landmark::spellId/depleted покидают формат. Выкачанный шпиль
+// забывает спелл, как истощённая жила (вердикт «выкачанность = 0»).
+constexpr int kSaveVersion = 120;   // v120: спелл шпиля в worked; spellId/depleted умерли
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -533,12 +537,10 @@ struct Landmark {
     // a harder prize and a louder loss, and beating it is worth more precisely
     // because it was famous. The microworld has none of this.
     std::uint32_t renown = 0;
-    // Spire columns: kSpellDefs row ordinal (macro/spells.h, append-only) —
-    // the spire's whole difficulty context (placement gate, tower storeys,
-    // guard site) is the spell's tier, derived at the moment of reading —
-    // and whether its orb has been drained.
-    std::uint32_t spellId = 0;
-    bool depleted = false;
+    // (Spire's spellId/depleted died 2026-09-30 — вердикт «у поля урожай, у
+    // шахты залежи, у порта корабли — у шпиля спелл»: the spell rides the
+    // ONE worked layer under FT_Spire as ordinal+1 (закон нуля-ординала),
+    // 0 = drained. A drained spire forgets its spell like a worked-out vein.)
     // ── The UNIVERSAL tribute, BY POSITION (owner 2026-09-02; v73) ───────
     // «Дают по 1/8 всего со склада, с округлением до меньшего»: on the
     // place's own seasonal pay-day an eighth of EACH commodity stack (floor)
@@ -626,10 +628,12 @@ struct Landmark {
 // субъекта 13384 → 44104.
 // 2026-09-24, шаг Б слияния: существа уехали В КОНТЕЙНЕР, ростер стал
 // обвязкой счетов (72 Б) — ядро субъекта 44104 → 41032.
-static_assert(sizeof(Landmark) == 42400,
-              "место = ядро субъекта (41032) + реестр (1024) + 344 Б своего");
+// 2026-09-30, ход 2 ломтик B: спелл шпиля уехал в worked-слой — колонки
+// spellId (4) + depleted (1) с паддингом (3) умерли, 42400 → 42392.
+static_assert(sizeof(Landmark) == 42392,
+              "место = ядро субъекта (41032) + реестр (1024) + 336 Б своего");
 static_assert(sizeof(Landmark) == sizeof(Inventory) + sizeof(Roster)
-                                      + sizeof(Interests) + 344,
+                                      + sizeof(Interests) + 336,
               "ядро субъекта у места и у сквада ОДНО (CANON S4)");
 
 enum class GameSubStateKind : std::uint8_t {
@@ -1017,7 +1021,9 @@ struct GameState {
     // the ships counter of a harbour or a beached hull («у поля урожай, у
     // шахты залежи, у порта корабли — элегантно»); the standing crop of a
     // parcel and the consolidated seam under a mine move here as their laws
-    // are rebuilt (CANON S5 «постройка — это перенос»).
+    // are rebuilt (CANON S5 «постройка — это перенос»). Tenants today: the
+    // harbour's ships counter and — v120 — the SPIRE'S SPELL under FT_Spire
+    // (kSpellDefs ordinal + 1; 0 = orb drained, закон нуля-ординала).
     ResourceGrid worked;
 
     // Features BUILT BY SQUADS (v71; owner 2026-08-31, CANON S10 «фичи

@@ -676,7 +676,6 @@ SKELETON.md	state.h:872
 SKELETON.md	state.h:884
 SKELETON.md	state.h:943
 SKELETON.md	state.h:977
-SKELETON.md	state.h:986
 SKELETON.md	store.h:256
 SKELETON.md	store.h:65
 SKELETON.md	sub/ai.cpp:28

@@ -836,9 +836,12 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     for (const auto& sp : gs.landmarks) {
         if (sp.type != LandmarkType::Spire) continue;
         if (sp.x != cx || sp.y != cy) continue;
+        // The amount IS the cell's worked number — already spell ordinal + 1
+        // (0 = drained spire: the spell is forgotten, the fact files unknown,
+        // exactly the chronicle's «unknown subjects as 0»).
         add_sub_zone(sp.x, sp.y, kSpireTowerLocalCenter, kSpireTowerLocalCenter,
                      float(kCellSize) * 0.5f, FactKind::Explored,
-                     int(sp.spellId) + 1);
+                     worked_read(gs, sp.x, sp.y));
         break;
     }
 }
@@ -3994,7 +3997,10 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
             break;
         }
     }
-    if (!spire || spire->depleted) {
+    // The spell is the cell's worked number (spires.h: ordinal + 1, 0 =
+    // drained). A drained spire forgot its spell — the orb has nothing left.
+    const int charge = spire ? worked_read(*gs_, cx, cy) : 0;
+    if (!spire || charge == 0) {
         // A stale scene can outlive the fact (the world remembers, the
         // composite does not, yet): the prop answers, the spire does not.
         set_status("The orb is dark and silent.");
@@ -4002,9 +4008,9 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     }
     // The macro fact, paid in the same keypress — the search_chest pattern:
     // a subworld act with lasting meaning writes UP immediately. Only the
-    // player can stand here (interactions are his alone), so this flag is
+    // player can stand here (interactions are his alone), so this write is
     // player-earned by construction, not by a special case.
-    spire->depleted = true;
+    worked_write(*gs_, cx, cy, 0);
     // The orb burns out of the scene like a felled tree (owning cell data +
     // composite + dirty signals in one call), so its glow dies now — not on
     // the next visit.
@@ -4016,7 +4022,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // knows the registry, and this engine never will.
     GameEvent ev{EventTag::SpireDepleted};
     ev.a = spire->id;
-    ev.b = int(spire->spellId);
+    ev.b = charge - 1;   // the spell ordinal the orb held (worked = ordinal+1)
     ev.ix = cx;
     ev.iy = cy;
     bus_->emit(ev);

@@ -1,7 +1,8 @@
 // Spire placement (macro/spires.cpp). Pinned promises:
 //   · one spire per kSpellDefs row (the generator asks the spell registry
-//     itself — Rule 13), id drawn from the ONE landmark issuer (v54),
-//     spellId = the row's append-only ordinal, born un-depleted;
+//     itself — Rule 13), id drawn from the ONE landmark issuer (v54); the
+//     spell is the spire cell's WORKED number (v120: ordinal + 1, 0 =
+//     drained), born charged;
 //   · a spire stands on land, inside the landmark table's own zone band
 //     (landmark_def(Spire).minZone), and the top-tier spell's spire stands at
 //     the band's CAP — the doom spell lives where the world is at its worst;
@@ -126,9 +127,10 @@ void test_one_spire_per_spell_in_the_band() {
             CHECK(sp.id > spires[i - 1]->id,
                   "the issuer is monotonic: later spire, later ordinal");
         }
-        CHECK(sp.spellId == std::uint32_t(i),
-              "the spire carries its spell's registry ordinal");
-        CHECK(!sp.depleted, "a fresh spire holds its spell");
+        // v120: the spell is the cell's WORKED number (ordinal + 1; 0 =
+        // drained — закон нуля-ординала), never a Landmark column.
+        CHECK(worked_read(gs, sp.x, sp.y) == int(i) + 1,
+              "the spire's cell works its spell: registry ordinal + 1");
         CHECK(!terrain.is_water(sp.x, sp.y), "a spire stands on land");
         CHECK(int(zones.at(sp.x, sp.y)) >= int(def.minZone),
               "a spire stands inside the landmark table's zone band");

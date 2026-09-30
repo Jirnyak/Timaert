@@ -824,7 +824,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         } else {
                             const LandmarkDrawRow& drow =
                                 kLandmarkDraw[std::size_t(lm->type)];
-                            const SpriteId sid = lm->depleted
+                            const bool drained =
+                                lm->type == LandmarkType::Spire
+                                && worked_read(gs, lm->x, lm->y) == 0;
+                            const SpriteId sid = drained
                                 ? drow.spriteDepleted : drow.sprite;
                             if (sid != SpriteId::None) sp = sprite_get(sid);
                         }

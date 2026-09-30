@@ -152,12 +152,15 @@ int main() {
         v.id = 3; v.x = 30; v.y = 30; v.population = 100;
         gs.landmarks.push_back(v);
 
+        // v120: a spire's charge is its cell's worked number (ordinal + 1);
+        // drained = 0 — the spent spire's cell simply stays unwritten.
         Landmark active{};
         active.type = LandmarkType::Spire;
-        active.id = 4; active.x = 40; active.y = 40; active.depleted = false;
+        active.id = 4; active.x = 40; active.y = 40;
+        worked_write(gs, 40, 40, 1);
         Landmark spent{};
         spent.type = LandmarkType::Spire;
-        spent.id = 5; spent.x = 50; spent.y = 50; spent.depleted = true;
+        spent.id = 5; spent.x = 50; spent.y = 50;
         gs.landmarks.push_back(active);
         gs.landmarks.push_back(spent);
 

@@ -3757,25 +3757,28 @@ bool run_spire_climb_smoke(App& app) {
     // The TALLEST spire whose spell is still unlearned (the starter spell
     // owns one too — skip it, its orb would be a no-gain touch): the top
     // tier exercises the whole shaft ladder, not just one climb.
+    // The spell is the spire cell's worked number (spires.h: ordinal + 1,
+    // 0 = drained) — the selection reads the layer, not columns.
     const sm::Landmark* target = nullptr;
+    int targetSpell = -1;
     for (const auto& sp : app.gs.landmarks) {
         if (sp.type != sm::LandmarkType::Spire) continue;
-        if (sp.depleted || sp.spellId >= std::uint32_t(sm::kSpellCount))
+        const int orb = sm::worked_read(app.gs, sp.x, sp.y);
+        if (orb <= 0 || orb > sm::kSpellCount) continue;
+        const int spell = orb - 1;
+        if (sm::spellbook_has_learned(smoke_player_book(app), spell))
             continue;
-        if (sm::spellbook_has_learned(smoke_player_book(app),
-                                      int(sp.spellId))) {
-            continue;
-        }
-        if (!target || sm::kSpellDefs[sp.spellId].tier
-                           > sm::kSpellDefs[target->spellId].tier) {
+        if (!target
+            || sm::kSpellDefs[spell].tier > sm::kSpellDefs[targetSpell].tier) {
             target = &sp;
+            targetSpell = spell;
         }
     }
     if (!target) {
         smoke_fail(app, "spire_climb found no unlearned spire");
         return false;
     }
-    const sm::SpellDef& def = sm::kSpellDefs[target->spellId];
+    const sm::SpellDef& def = sm::kSpellDefs[targetSpell];
     const int tier = def.tier;
     const int spireId = target->id;
 
@@ -3947,7 +3950,7 @@ bool run_spire_climb_smoke(App& app) {
         learned = sm::spellbook_has_learned(smoke_player_book(app),
                                             sm::spell_ordinal(def.id));
         if (const sm::Landmark* sp = sm::landmark_by_id(app.gs, spireId))
-            depletedFlag = sp->depleted;
+            depletedFlag = sm::worked_read(app.gs, sp->x, sp->y) == 0;
         orbsAfter = 0;
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::SpireOrb) ++orbsAfter;
