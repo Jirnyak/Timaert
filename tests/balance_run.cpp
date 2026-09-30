@@ -366,15 +366,18 @@ int main(int argc, char** argv) {
             long long stockCity[sm::kCommodityCount] = {};
             long long stockVil[sm::kCommodityCount] = {};
             for (const auto& lm : gs.landmarks) {
-                popTotal += lm.population;
+                // ПАСТВА — дверью мира (labour.h souls_flock): у поселения
+                // worked-число фичи, у данжа головы его толпы (v122).
+                const long long flock = sm::souls_flock(gs, lm);
+                popTotal += flock;
                 switch (lm.type) {
-                    case sm::LandmarkType::City: popCity += lm.population;
+                    case sm::LandmarkType::City: popCity += flock;
                         break;
-                    case sm::LandmarkType::Village: popVil += lm.population;
+                    case sm::LandmarkType::Village: popVil += flock;
                         break;
-                    case sm::LandmarkType::Lair: popLair += lm.population;
+                    case sm::LandmarkType::Lair: popLair += flock;
                         break;
-                    default: popElse += lm.population; break;
+                    default: popElse += flock; break;
                 }
                 coinLm += coins_in(lm.inventory, coinIdx);
                 for (int c = 0; c < sm::kCommodityCount; ++c) {
@@ -413,7 +416,8 @@ int main(int argc, char** argv) {
                                  "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%d\t%d"
                                  "\t%d\t%lld\t%d\t%d\n",
                                  gs.worldTime.day(), lm.id, int(lm.type),
-                                 lm.population, int(lm.seasonWellbeing),
+                                 sm::souls_flock(gs, lm),
+                                 int(lm.seasonWellbeing),
                                  int(lm.starvedYesterday),
                                  hungerOrd >= 0 ? lm.needDebt[hungerOrd] : 0,
                                  debtComfort,
@@ -593,8 +597,9 @@ int main(int argc, char** argv) {
         for (const auto& lm : gs.landmarks) {
             if (lm.type != sm::LandmarkType::City
                 && lm.type != sm::LandmarkType::Village) continue;
-            popEnd += lm.population;
-            alive += lm.population > 0 ? 1 : 0;
+            const int flock = sm::souls_flock(gs, lm);
+            popEnd += flock;
+            alive += flock > 0 ? 1 : 0;
         }
         const bool populated = popEnd > 0 && alive > 0;
         lawsHold = lawsHold && populated;

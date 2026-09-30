@@ -16,6 +16,7 @@
 // стола катается броском; колонка получит свидетеля с первой авторской
 // анкетой. Testing law 7 — говорим это вслух.)
 #include "check.h"
+#include "macro/world_row.h"   // raise_flock_into_roster — души головами
 
 #include "core/rng.h"
 #include "macro/characters.h"
@@ -54,7 +55,10 @@ Landmark make_landmark(int id, LandmarkType type, int x, int y) {
     lm.type = type;
     lm.x = x;
     lm.y = y;
-    lm.population = 100;
+    // Души — ГОЛОВАМИ в инвентарь записи (v122): фабрика мира не
+    // видит, поэтому пасту (worked-число фичи) ставит звонящий,
+    // если она ему нужна; домашние души живут в самой записи.
+    raise_flock_into_roster(lm.inventory, 100);
     return lm;
 }
 

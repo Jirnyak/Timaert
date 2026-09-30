@@ -17,6 +17,7 @@
 // real village and moves real stacks.)
 
 #include "check.h"
+#include "macro/labour.h"   // settle_souls — двери душ
 #include "macro/agent_memory.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
@@ -48,25 +49,26 @@ int main() {
         city.id = 0;
         city.x = 60;                     // near the east seam
         city.y = 32;
-        city.population = 100;
         city.inventory.add("food", 2048);
         gs.landmarks.push_back(city);
+        // Души — дверью мира (v122): паства в worked, головы в инвентарь.
+        settle_souls(gs, gs.landmarks.back(), 100);
 
         Landmark sameSide{};             // 30 cells west, same side — far
         sameSide.type = LandmarkType::City;   // enough that the comparable-
         sameSide.id = 1;                      // distance coin flip stays out
         sameSide.x = 30;
         sameSide.y = 32;
-        sameSide.population = 50;
         gs.landmarks.push_back(sameSide);
+        settle_souls(gs, gs.landmarks.back(), 50);
 
         Landmark acrossSeam{};           // 6 cells east THROUGH the seam
         acrossSeam.type = LandmarkType::City;
         acrossSeam.id = 2;
         acrossSeam.x = 2;                // 60 -> 63|0 -> 2 = 6 cells by torus
         acrossSeam.y = 32;
-        acrossSeam.population = 50;
         gs.landmarks.push_back(acrossSeam);
+        settle_souls(gs, gs.landmarks.back(), 50);
 
         // ЗАКОН ПИНАЕТСЯ ПРЯМО В СВОЮ ДВЕРЬ (2026-09-21): прежде его
         // водил ИИ каравана, а род каравана снесён — караван оказался
@@ -93,27 +95,12 @@ int main() {
               "torus, so flat dx²+dy² is the wrong metric for it");
     }
 
-    // ── 2. Garrison target (§42 Инк 7: population >> the registry shift;
-    // the flat 64-cap died with the tavern-pool law) ─────────────────────
-    {
-        const int pop = 1200;
-        const int target =
-            garrison_target_strength(LandmarkType::City, pop);   // 1200>>3
-        // The expectation is DERIVED from the same law the code reads
-        // (population >> the registry shift), never a remembered number.
-        CHECK(target == pop >> 3,
-              "the garrison target IS the registry law applied to population");
-        CHECK(garrison_wants_recruits(LandmarkType::City, pop, target - 1),
-              "one below the target, the place still recruits");
-        CHECK(!garrison_wants_recruits(LandmarkType::City, pop, target),
-              "AT the target recruiting stops — the cap binds, and it binds "
-              "through the row, not through a clamp somewhere downstream");
-        // NEGATIVE CONTROL of the row itself: a kind whose column says NONE
-        // keeps no garrison at any population. Without it the three checks
-        // above would also pass for a rule that just multiplies population.
-        CHECK(garrison_target_strength(LandmarkType::Spire, 1000) == 0,
-              "a kind whose column says none keeps no garrison at all");
-    }
+    // (БЛОК «ЦЕЛЬ ГАРНИЗОНА» УМЕР 2026-09-30 вместе со своей подсистемой,
+    // v122: `garrison_target_strength` / `garrison_wants_recruits` снесены
+    // вердиктом владельца «раздел гарнизон/мирные умирает; оборона места =
+    // вся толпа». Свидетель проверял закон «цель = население >> сдвиг
+    // реестра» — закона больше нет, и держать его свидетеля значило бы
+    // охранять память о механике, а не механику (§8 п.5).)
 
     return sm::test::report("trade_law_test");
 }

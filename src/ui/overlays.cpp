@@ -409,6 +409,16 @@ namespace sm::ui
             return sub::cell_seed(worldSeed, s.x, s.y);
         }
 
+        // ПАСТВА МЕСТА ДЛЯ ПРЕВЬЮ (переворот v122): её носитель — worked-слой
+        // МИРА, а превью рисуется и без конверта (`mw == nullptr` — та же
+        // деградация, что у биома и высоты рядом). Без мира отвечают
+        // ДОМАШНИЕ головы: они лежат в самой записи места, то есть это
+        // честное «сколько видно отсюда», а не выдуманный ноль.
+        int preview_flock_(const Landmark &s, const MacroWorld *mw)
+        {
+            return mw && mw->gs ? souls_flock(*mw->gs, s) : souls_home(s);
+        }
+
         // THE tile → colour dictionary of every 2D subworld rendering in this
         // file (the settlement preview AND the subworld minimap — it lived as
         // two identical copies until 2026-08-29).
@@ -456,7 +466,7 @@ namespace sm::ui
                 cache.worldSeed == worldSeed &&
                 cache.previewSeed == previewSeed &&
                 cache.settlementId == s.id &&
-                cache.population == s.population)
+                cache.population == preview_flock_(s, mw))
             {
                 return true;
             }
@@ -471,7 +481,7 @@ namespace sm::ui
             ctx.biome = Meadow;
             ctx.feature = FT_None;
             ctx.landmark.id = s.id;
-            ctx.landmark.size = s.population;
+            ctx.landmark.size = preview_flock_(s, mw);
             ctx.landmark.kind = s.type;
             ctx.landmark.factionIdx = int(s.factionIdx);
             // Spire's drained state = worked 0 at its cell (v120); a preview
@@ -588,7 +598,7 @@ namespace sm::ui
             cache.worldSeed = worldSeed;
             cache.previewSeed = previewSeed;
             cache.settlementId = s.id;
-            cache.population = s.population;
+            cache.population = preview_flock_(s, mw);
             cache.houses = houses;
             cache.walls = walls;
             cache.ready = cache.tex != 0;
@@ -1930,7 +1940,7 @@ namespace sm::ui
             ImGui::SameLine();
             ImGui::TextDisabled("(%.*s)", int(def.label.size()), def.label.data());
             ImGui::Text("Faction: %s", fd ? fd->name : "Unaligned");
-            ImGui::Text("Population: %d", s->population);
+            ImGui::Text("Population: %d", souls_flock(gs, *s));
             ImGui::Text("Wellbeing: %d%%", wellbeing_pct(*s));
             ImGui::Text("Starved last boundary: %d",
                         int(s->starvedYesterday));
@@ -1949,7 +1959,8 @@ namespace sm::ui
                     ImGui::TextWrapped("Welcome to %s.", s->name.c_str());
                     ImGui::TextDisabled("A %.*s with population %d.",
                                         int(def.label.size()),
-                                        def.label.data(), s->population);
+                                        def.label.data(),
+                                        souls_flock(gs, *s));
                     ImGui::Spacing();
 
                     if (ImGui::BeginTable("settlement_info", 2,
@@ -1958,7 +1969,8 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Field", ImGuiTableColumnFlags_WidthFixed, 150.0f);
                         ImGui::TableSetupColumn("Value");
                         ImGui::TableHeadersRow();
-                        draw_info_overview_row("Population", s->population);
+                        draw_info_overview_row("Population",
+                                               souls_flock(gs, *s));
                         draw_info_overview_row("Wellbeing %",
                                                wellbeing_pct(*s));
                         draw_info_overview_row("Faction index", int(s->factionIdx));
@@ -2062,7 +2074,7 @@ namespace sm::ui
                                         s->inventory.count_of(int(ref.def)) - n,
                                         season_demand_for(
                                             int(ref.def), s->needDebt,
-                                            s->population,
+                                            souls_home(*s),
                                             landmark_sheet(
                                                 s->type).skills,
                                             &s->inventory)),
@@ -2077,7 +2089,7 @@ namespace sm::ui
                                         s->inventory.count_of(int(ref.def)) + n,
                                         season_demand_for(
                                             int(ref.def), s->needDebt,
-                                            s->population,
+                                            souls_home(*s),
                                             landmark_sheet(
                                                 s->type).skills,
                                             &s->inventory)),
@@ -2228,7 +2240,7 @@ namespace sm::ui
                                      ImVec2(side, side));
                         ImGui::TextDisabled("Seed: 0x%08X   Population: %d   Houses: %d   Walls: %d",
                                             previewSeed,
-                                            s->population,
+                                            souls_flock(gs, *s),
                                             preview.houses,
                                             preview.walls);
                     }
@@ -2238,7 +2250,7 @@ namespace sm::ui
                         ImGui::TextDisabled("Preview unavailable.");
                         ImGui::TextDisabled("Seed: 0x%08X   Population: %d",
                                             previewSeed,
-                                            s->population);
+                                            souls_flock(gs, *s));
                     }
                     ImGui::EndTabItem();
                 }

@@ -26,24 +26,11 @@ struct WorldTickResult {
     bool dailyBudgetExhausted = false;
 };
 
-// The garrison's TARGET strength (§42 Инк 7, owner: «гарнизон = армия
-// ландмарка», «у городов должны быть сотни»): population >> the registry
-// row's own garrisonShift; a kind whose column is 0xFF keeps none. The
-// old ceiling — kMaxGarrisonPerSettlement = 64, and the √pop×0.3-cap-10
-// packet under it — sized a tavern recruit pool, not a defense force. The
-// target is population-bound by construction (a shift of a bounded
-// number), so the runaway that once crossed the save guard (audit II.4)
-// cannot recur; the container's own slot ceiling is the one physical wall
-// left, and the creature door refuses out loud at it.
-inline int garrison_target_strength(LandmarkType type, int population) {
-    const std::uint8_t shift = landmark_def(type).garrisonShift;
-    if (shift == 0xFFu || population <= 0) return 0;
-    return population >> shift;
-}
-inline bool garrison_wants_recruits(LandmarkType type, int population,
-                                    int currentSoldiers) {
-    return currentSoldiers < garrison_target_strength(type, population);
-}
+// (garrison_target_strength / garrison_wants_recruits умерли 2026-09-30,
+// v122 — M-8: раздел «гарнизон/мирные» умер вместе с контейнером
+// Landmark::garrison. ВСЕ домашние души — головы в инвентаре места, оборона
+// места — вся толпа (вердикт владельца: «ЭТО НОРМАЛЬНО»); цель набора,
+// потолок и обрезка не нужны — набор и есть рождение душ.)
 
 
 // The economy's fact channel (econ_day.h owns the record; the envelope of
@@ -64,7 +51,11 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // into the population law. Второй меры «как живётся» в мире нет: настроение
 // и восстания вырезаны вердиктом владельца 2026-09-19. Daily slot hygiene
 // rides along unchanged.
-void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
+// `gs` появился с переворотом населения (v122): паства поселения — worked-
+// число фичи, и рост/голод пишут ЕГО (плюс головы в инвентаре — bleed/raise
+// парой); у данжа (bornPopBase != 0) обе двери идут по головам его толпы.
+void settle_landmark_day(GameState& gs, Landmark& lm, int day, bool& starved,
+                         bool& diedOut,
                          EconFactSink sink = nullptr, void* user = nullptr);
 
 // The dungeon garrisons' regrowth (§42, owner: «как фауна — медленно,

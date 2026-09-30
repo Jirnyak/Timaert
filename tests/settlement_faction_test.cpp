@@ -135,6 +135,11 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122), поэтому предусловие свидетеля — не число,
+    // а контейнер душ места: он рождает его САМ (§8 п.11), тем же законом,
+    // которым его наполняет генезис.
+    sm::Inventory homeSouls{};
+    sm::raise_flock_into_roster(homeSouls, 2000);
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
@@ -149,7 +154,7 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
                              /*landmarkPop*/2000,
 /*landmarkSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
-                             /*faunaCount*/-1, /*garrison*/nullptr,
+                             /*faunaCount*/-1, &homeSouls,
                              sm::world_time_at(1, 12, 0));
 
     int citizens = 0;
@@ -186,6 +191,8 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    sm::Inventory homeSouls{};
+    sm::raise_flock_into_roster(homeSouls, 400);
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
@@ -200,7 +207,7 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
                              /*landmarkPop*/400,
                              /*landmarkSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
-                             /*faunaCount*/-1, /*garrison*/nullptr,
+                             /*faunaCount*/-1, &homeSouls,
                              sm::world_time_at(1, 12, 0));
 
     int citizens = 0;

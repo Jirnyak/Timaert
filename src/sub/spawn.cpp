@@ -394,13 +394,13 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
 }
 
 void spawn_landmark_population(ecs::World& w,
-                               const SpawnContext& townCtx,
                                LandmarkType landmark,
                                const SeamlessSubworldManager& mgr,
                                std::uint32_t seed,
                                std::uint32_t worldSeed,
                                std::uint16_t settlementFaction,
                                int landmarkPop,
+                               const Inventory* homeSouls,
                                int originX,
                                int originY,
                                MacroStockKey populationKey,
@@ -411,17 +411,29 @@ void spawn_landmark_population(ecs::World& w,
     // universalised the record underneath it, and no test reddened because
     // zero bodies is a legal count.
     const LandmarkDef& def = landmark_def(landmark);
+    // ДВА ЧИСЛА, ДВА СМЫСЛА (переворот v122).
+    //   `pop`   — ПАСТВА места (worked-число фичи: дома + ушедшие в поле). Она
+    //             отвечает за ГЕОМЕТРИЮ: стены строились на всех, и город с
+    //             полпаствой в артелях не сжимается до хутора.
+    //   `heads` — ДОМАШНИЕ ДУШИ, головы инвентаря места. Только они
+    //             ВОПЛОЩАЮТСЯ: ушедшие в поле стоят на карте своими сквадами,
+    //             и воплотить их здесь значило бы поставить одну душу дважды.
     const int pop = std::max(0, landmarkPop);
-    if (pop == 0 || def.crowdHabitat == 0) return;
+    if (pop == 0 || def.crowdHabitat == 0 || homeSouls == nullptr) return;
+    const int heads = creature_heads(*homeSouls);
+    if (heads == 0) return;
 
     // Partition (CANON S28: one soul embodies once): the interiors' own
     // households come OFF the street — a door's residents are a SHARE of
-    // this number, never a second helping on top of it.
+    // the place's souls, never a second helping on top of them. Считается от
+    // ГОЛОВ, а не от паствы: за дверями сидят те же души, что стояли бы на
+    // улице, и клампить их числом, включающим ушедших в поле, значило бы
+    // запирать в домах людей, которых в месте нет.
     const int reserve = interior_reserve_for_cell(
         mgr.structures(), landmark, worldSeed,
         int(populationKey.cellX), int(populationKey.cellY),
-        float(originX), float(originY), pop, now);
-    const int target = std::max(0, pop - reserve);
+        float(originX), float(originY), heads, now);
+    const int target = std::max(0, heads - reserve);
     if (target == 0) return;
 
     // One street salt for every kind — the old city/village pair encoded
@@ -456,43 +468,108 @@ void spawn_landmark_population(ecs::World& w,
     // реестра: она стояла пустой у всех родов мест, и эта ветка была
     // недостижима по данным. Толпу целиком катает полоса места.)
 
+    // ПОЛОВИНА ТОЛПЫ СТОИТ В ВЕРХНЕМ КВАРТАЛЕ (владелец, 2026-09-13: «стража
+    // везде, просто в верхнем квартале её больше, например половина»). Квартал
+    // НАХОДИТСЯ, а не передаётся: его донжон — самая высокая крыша, поднятая
+    // генератором, а размер — чистая функция паствы (city_layout.h
+    // city_upper_radius). Закон переехал сюда из гарнизонной половины спавна,
+    // уничтоженной вместе с разделом «гарнизон/мирные»: толпа теперь ОДНА, и
+    // квартал — свойство города, а не сословия.
+    float keepX = centerX, keepY = centerY;
+    bool haveKeep = false;
+    if (landmark == LandmarkType::City) {
+        const Structure* keep = nullptr;
+        for (const Structure& st : mgr.structures()) {
+            if (st.kind != Structure::House) continue;
+            if (st.x < float(originX)
+                || st.x >= float(originX + kCellSize)) continue;
+            if (st.y < float(originY)
+                || st.y >= float(originY + kCellSize)) continue;
+            if (keep == nullptr || st.height > keep->height) keep = &st;
+        }
+        if (keep != nullptr) {
+            keepX = keep->x;
+            keepY = keep->y;
+            haveKeep = true;
+        }
+    }
+    const float quarterR = city_upper_radius(pop);
+
+    // ВОПЛОЩАЕТСЯ ИНВЕНТАРЬ СУЩЕСТВ, АГНОСТИЧНО (вердикт владельца
+    // 2026-09-30, дословно: «если ты пришёл в субмире в клетку 3х3 со
+    // сквадами, то весь их инвентарь существ воплощается АГНОСТИЧНО — что
+    // есть в сквадe города в инвентаре, то чел и увидит в городе»).
+    //
+    // РОД, УРОВЕНЬ И ЛИЦО — ФАКТ ГОЛОВЫ, НИКОГДА РОЛЛ СЦЕНЫ. Здесь стоял
+    // `pick_crowd_row` — ролл рода по весам полосы места, — и он был ПОБОЧНОЙ
+    // СИСТЕМОЙ: душа была бестелесным числом, поэтому её род приходилось
+    // выдумывать заново на каждом входе в город. Теперь душа лежит головой в
+    // инвентаре и несёт свой род сама; выдумывать нечего, и ролл уничтожен
+    // («все побочные системы если есть уничтожить, всё универсально и
+    // просто»).
+    //
+    // ПЕРВЫЕ `reserve` ГОЛОВ СИДЯТ ЗА ДВЕРЯМИ — обход детерминирован
+    // (старейший слот первым, M-71), поэтому партиция есть ОТРЕЗОК одной
+    // последовательности: улица + дома == головы, ровно, без второго счёта.
     int refused = 0;
-    for (int i = 0; i < target; ++i) {
+    int seen = 0;
+    int placed = 0;
+    for (const CreatureHead head : creature_heads_range(*homeSouls)) {
+        if (seen++ < reserve) continue;   // эта душа дома, за дверью
+        if (placed >= target) break;
+        ++placed;
+        if (!valid_npc_kind(head.kind)) continue;
+        // Лицо: у именной души — её entityId (лицо переживает пере-вход), у
+        // генерика ВЫВОДИТСЯ из АДРЕСА (слот, номер в стаке) — CANON S4:
+        // «лицо генерика выводится, а не хранится». Слот — старый ростерный
+        // ординал (0 = старейший), как до слияния M-71.
+        const std::uint32_t rosterSlot =
+            std::uint32_t(kMaxInventorySlots - 1 - head.slot);
+        const std::uint32_t soulId = head.entityId != 0
+            ? head.entityId
+            : ((rosterSlot << 16) | (std::uint32_t(head.index) + 1u));
         float fx = 0.0f;
         float fy = 0.0f;
-        if (!find_city_spawn_spot(tiles, rng, centerX, centerY,
-                                  populationRadius, townShape, fx, fy)) {
+        // Каждая вторая душа берёт квартал, поэтому деление точно при любом
+        // размере толпы и не требует второго броска. Кто не встал в тесном
+        // квартале, встаёт на улицах ниже — квартал БЫВАЕТ ПОЛОН, и это
+        // замерено (104 из 392 на городе 5 488), а не случайность.
+        const bool inQuarter = haveKeep && (placed % 2) == 0;
+        const bool stood = inQuarter
+            && find_city_spawn_spot(tiles, rng, keepX, keepY,
+                                    quarterR, townShape, fx, fy);
+        if (!stood
+            && !find_city_spawn_spot(tiles, rng, centerX, centerY,
+                                     populationRadius, townShape, fx, fy)) {
             // A soul that found no ground is COUNTED and said below — never
             // dropped silently (CANON S28: no silent truncation anywhere).
             ++refused;
             continue;
         }
-        NPCType type = NPCType::Peasant;
-        {
-            std::uint32_t ts = rng.state;
-            type = pick_crowd_row(townCtx, ts);
-            rng.state = ts;
-        }
-        // A citizen is DERIVED — he is one unit of this place's population made
-        // visible, and nothing about him is remembered above. What is CONTEXT
-        // here: which town's faction he wears, and that he lives his errands
-        // rather than fighting. His STRENGTH is not context — it is his row.
-        // A capital's guard and a hamlet's guard are the same guard; the capital
-        // simply fields more of them (CANON.md S12).
+        const NPCType type = NPCType(head.kind);
+        // ОБОРОНА МЕСТА — ВСЯ ТОЛПА (вердикт владельца: «оборона места = вся
+        // толпа (~5000 голов) — ЭТО НОРМАЛЬНО»): раздела «мирные бегут,
+        // стража стоит» больше нет, потому что нет и сословий — есть один
+        // инвентарь душ.
         //
         // The loan says which stock he was drawn from, so his death pays the
-        // settlement back without anyone asking what kind of body it was: a town
-        // cannot be emptied in the subworld while the map still counts everyone
-        // as alive. Borrowing and returning are the same row of one table.
+        // settlement back without anyone asking what kind of body it was: a
+        // town cannot be emptied in the subworld while the map still counts
+        // everyone as alive. Borrowing and returning are the same row of one
+        // table — и `detail` называет ИМЕННО ЭТУ голову, поэтому смерть
+        // списывает её, а не первую подвернувшуюся.
+        MacroStockKey key = populationKey;
+        key.detail = head.entityId != 0 ? std::int32_t(head.entityId) : -1;
+        key.detailKind = head.kind;
+        key.detailLevel = head.level;
         spawn_derived_body(reg,
             BodySpec{
                 type, fx, fy, settlementFaction,
-                normalize_soldier_level(npc_def(type).baseLevel
-                                        + int(rng.next_u32() % 3u)),
-                seed ^ (std::uint32_t(i) * 7919u),
-                /*combatant*/false},
-            /*faceSalt*/std::uint32_t(i) * 7919u,
-            BodyLoan::from(MacroStock::Population, populationKey));
+                normalize_soldier_level(head.level),
+                seed ^ (soulId * 2654435761u),
+                /*combatant*/true},
+            /*faceSalt*/soulId * 7919u,
+            BodyLoan::from(MacroStock::Population, key));
     }
     if (refused > 0) {
         const std::string_view id = landmark_def(landmark).id;
@@ -1029,7 +1106,7 @@ void spawn_cell_npcs(ecs::World& w,
                      int macroCellX,
                      int macroCellY,
                      int faunaCount,
-                     const Inventory* garrison,
+                     const Inventory* homeSouls,
                      const WorldTime& now) {
     auto& reg = w.reg;
     const int originX = (ox + 1) * kCellSize;
@@ -1051,124 +1128,21 @@ void spawn_cell_npcs(ecs::World& w,
     townCtx.landmark = landmark;
     townCtx.danger = danger;
     townCtx.depositsNear = depositsNear;
-    spawn_landmark_population(w, townCtx, landmark, mgr, cellSeed, worldSeed,
+    // ОДИН ПУТЬ ВОПЛОЩЕНИЯ: инвентарь существ места (вердикт владельца
+    // 2026-09-30). Гарнизонная половина спавна, стоявшая здесь второй
+    // дверью, УНИЧТОЖЕНА вместе с разделом «гарнизон/мирные»: она
+    // воплощала ТЕ ЖЕ головы второй раз — замер входа в город дал 11 774
+    // тела на паству 6 272 (1.88×, 72 % капа тел одним городом), и ни один
+    // свидетель этого не видел, потому что «citizens > 0» верно и при
+    // двойном счёте.
+    spawn_landmark_population(w, landmark, mgr, cellSeed, worldSeed,
                               settlementFaction,
-                              landmarkPop, originX, originY,
+                              landmarkPop, homeSouls, originX, originY,
                               MacroStockKey{landmarkSubjectId,
                                             std::int16_t(macroCellX),
                                             std::int16_t(macroCellY)},
                               now);
 
-    // THE PLACE'S STANDING ARMY on its streets (§42 Инк 7): every garrison
-    // record at home embodies as a FIGHTING body of its own row and level,
-    // under the place's banner, with the Garrison loan — killed on the wall
-    // = struck from the roll through THE one settle door; out on patrol or
-    // hired away = not in this roster = not on this street. Garrison souls
-    // were paid out of the population at recruitment, so they stand BESIDE
-    // the crowd's partition, never inside it.
-    if (garrison && creature_heads(*garrison) > 0 && landmarkSubjectId >= 0) {
-        Rng grng(cellSeed ^ 0x6A121501u);
-        const float centerX = float(originX) + float(kCellSize) * 0.5f;
-        const float centerY = float(originY) + float(kCellSize) * 0.5f;
-        const float radius = settlement_population_radius(
-            landmark == LandmarkType::City, landmarkPop);
-        const auto& tiles = mgr.tiles();
-        // The garrison stands in the same town its citizens do — same shape,
-        // measured the same way, so the wall's defenders are not confined to
-        // a disk inside a town that is not one.
-        const TownShape townShape = measure_town(
-            tiles, centerX, centerY,
-            std::max(radius * 2.0f, float(kCellSize) * 0.45f), radius);
-        // HALF THE WATCH STANDS IN THE UPPER QUARTER (owner, 2026-09-13:
-        // «стража везде, просто в верхнем квартале её больше, например
-        // половина»). The quarter is about a tenth of the town's ground, so
-        // half the garrison on it is a watch several times as thick as the
-        // streets below — which is what a lord's own quarter looks like, and
-        // it falls out of one number rather than a density dial.
-        //
-        // The quarter is FOUND, not handed over: its keep is the tallest roof
-        // the generator raised, and its size is a pure function of the
-        // population the generator used (city_layout.h city_upper_radius). So
-        // the spawner needs no channel to the generator to know where the
-        // lord's district is — the same way it measures the town's shape off
-        // the ground rather than trusting a scalar.
-        float keepX = centerX, keepY = centerY;
-        bool haveKeep = false;
-        if (landmark == LandmarkType::City) {
-            const Structure* keep = nullptr;
-            for (const Structure& st : mgr.structures()) {
-                if (st.kind != Structure::House) continue;
-                if (st.x < float(originX) || st.x >= float(originX + kCellSize)) continue;
-                if (st.y < float(originY) || st.y >= float(originY + kCellSize)) continue;
-                if (keep == nullptr || st.height > keep->height) keep = &st;
-            }
-            if (keep != nullptr) {
-                keepX = keep->x;
-                keepY = keep->y;
-                haveKeep = true;
-            }
-        }
-        const float quarterR = city_upper_radius(landmarkPop);
-        int refused = 0;
-        int i = -1;
-        for (const CreatureHead rec : creature_heads_range(*garrison)) {
-            ++i;
-            if (!valid_npc_kind(rec.kind)) continue;
-            // The face and the seed: a storied soul keeps its entityId (the
-            // face survives re-entry for the same man); a generic one derives
-            // from its ADDRESS (slot, index) — CANON S4: «лицо генерика
-            // выводится, а не хранится». Слот — СТАРЫЙ ростерный ординал
-            // (0 = старейший), вычисленный из слота контейнера (M-71): та
-            // же композиция даёт то же лицо, что до слияния.
-            const std::uint32_t rosterSlot =
-                std::uint32_t(kMaxInventorySlots - 1 - rec.slot);
-            const std::uint32_t soulId = rec.entityId != 0
-                ? rec.entityId
-                : ((rosterSlot << 16) | (std::uint32_t(rec.index) + 1u));
-            // Every other man of the roll takes the quarter, so the split is
-            // exact for any roster size and needs no second roll to decide it.
-            const bool inQuarter = haveKeep && (i % 2) == 0;
-            float fx = 0.0f, fy = 0.0f;
-            // A man who cannot stand in the quarter still stands somewhere:
-            // the district is small and dense, and when it is full the rest of
-            // the watch takes the streets below. Measured on a city of 5 488:
-            // 104 of a wanted 392 fit, and eight further tries each moved the
-            // number by nothing — the quarter is FULL, not unlucky.
-            const bool stood = inQuarter
-                && find_city_spawn_spot(tiles, grng, keepX, keepY,
-                                        quarterR, townShape, fx, fy);
-            if (stood) {
-                // stood in the quarter
-            } else if (!find_city_spawn_spot(tiles, grng, centerX, centerY,
-                                             radius, townShape, fx, fy)) {
-                ++refused;
-                continue;
-            }
-            spawn_derived_body(reg,
-                BodySpec{
-                    static_cast<NPCType>(rec.kind), fx, fy,
-                    settlementFaction,
-                    normalize_soldier_level(rec.level),
-                    cellSeed ^ (soulId * 2654435761u),
-                    /*combatant*/true},
-                /*faceSalt*/soulId * 7919u,
-                BodyLoan::from(MacroStock::Garrison,
-                               MacroStockKey{landmarkSubjectId,
-                                             std::int16_t(macroCellX),
-                                             std::int16_t(macroCellY),
-                                             rec.entityId != 0
-                                                 ? std::int32_t(rec.entityId)
-                                                 : -1,
-                                             rec.kind, rec.level}));
-        }
-        if (refused > 0) {
-            std::fprintf(stderr,
-                         "[spawn] WARN garrison of landmark %d: %d of %d "
-                         "soldiers found no ground\n",
-                         landmarkSubjectId, refused,
-                         creature_heads(*garrison));
-        }
-    }
 
     // THE spawn law (fauna.h): the danger byte weights the TABLE — who is
     // rolled — never the body after the pick (S12; the negative control in

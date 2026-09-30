@@ -19,6 +19,7 @@
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
+#include "macro/world_row.h"   // raise_flock_into_roster / count_human_souls
 #include "macro/anketa.h"
 
 #include <array>
@@ -310,8 +311,15 @@ int main() {
     Ledger fled{};
     Inventory poor{};
     std::int32_t poorDebt[kCommodityCount] = {};
-    int poorPop = 32;
+    // СЧЁТ ЕДЫ ЧИТАЕТСЯ С ГОЛОВ (v122: рацион — колонка строки, а не литерал
+    // «юнит на душу»), поэтому души кладутся В КОНТЕЙНЕР — фикстура рождает
+    // своё предусловие тем же законом, что мир. Взыскание снимает головы
+    // сама дверь, значит население читается у контейнера, а не ведётся
+    // рядом вторым счётом.
+    raise_flock_into_roster(poor, 32);
+    int poorPop = count_human_souls(poor);
     for (int window = 0; window < 5; ++window) {
+        poorPop = count_human_souls(poor);
         const ConsumeOutcome o = econ_debt_boundary(
             poor, poorDebt, poorPop, &sink, &fled);
         if (window == 0 && o.starvedPop != 0) {
@@ -335,7 +343,8 @@ int main() {
                 return fail("a comfortless place does not grow — wellbeing 0");
             }
         }
-        poorPop -= o.starvedPop;   // как settle_landmark_day: умершие ушли
+        // Умерших сняла дверь (их головы ушли из контейнера) — «как
+        // settle_landmark_day», где наверху остаётся только паства.
         // Привоз в полсчёта: гасится СРАЗУ той же дверью, что в мире.
         poor.add_of(commodity_item_index(foodIdx),
                     poorDebt[foodIdx] / 2);
@@ -362,6 +371,11 @@ int main() {
         Inventory s{};
         std::int32_t debt[kCommodityCount] = {};
         const int pop = 256;
+        // Души — В КОНТЕЙНЕР: счёт еды читается с голов по таблице
+        // (v122), а не с переданного числа. У крестьянина рацион 1/день,
+        // поэтому счёт совпадает с прежним «pop × сезон» — закон тот же,
+        // спрошен у строки.
+        raise_flock_into_roster(s, pop);
         s.add_of(commodity_item_index(commodity_index("food")),
                  pop * kDaysPerSeason);
         const ConsumeOutcome first =
@@ -395,6 +409,11 @@ int main() {
         Inventory s{};
         std::int32_t debt[kCommodityCount] = {};
         const int pop = 128;
+        // Души — В КОНТЕЙНЕР: счёт еды читается с голов по таблице
+        // (v122), а не с переданного числа. У крестьянина рацион 1/день,
+        // поэтому счёт совпадает с прежним «pop × сезон» — закон тот же,
+        // спрошен у строки.
+        raise_flock_into_roster(s, pop);
         const int half = pop * kDaysPerSeason / 2;
         s.add_of(commodity_item_index(commodity_index("food")), half);
         econ_debt_boundary(s, debt, pop, nullptr, nullptr);
@@ -415,6 +434,7 @@ int main() {
         // старого «кусок меньше сезона не кормит никого»): 31 хлеба гасят
         // 31 единицу счёта и снимают со смертей ровно одну душу.
         Inventory tail{};
+        raise_flock_into_roster(tail, pop);
         std::int32_t tailDebt[kCommodityCount] = {};
         tail.add_of(commodity_item_index(commodity_index("food")),
                     kDaysPerSeason - 1);

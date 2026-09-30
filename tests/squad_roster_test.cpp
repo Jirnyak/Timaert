@@ -23,7 +23,10 @@ sm::Landmark make_settlement(int id, int x, int y) {
     s.name = "Test Settlement";
     s.x = x;
     s.y = y;
-    s.population = 1000;
+    // Души — ГОЛОВАМИ в инвентарь записи (v122): фабрика мира не
+    // видит, поэтому пасту (worked-число фичи) ставит звонящий,
+    // если она ему нужна; домашние души живут в самой записи.
+    sm::raise_flock_into_roster(s.inventory, 1000);
     s.factionIdx = 0;
     return s;
 }

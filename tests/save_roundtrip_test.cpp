@@ -15,6 +15,14 @@
 #include <cstdint>
 #include <cstdio>
 #include "check.h"
+#include "macro/labour.h"   // settle_souls / souls_flock — двери душ
+
+// ДУШИ ФИКСТУРЫ — ОДНО ЧИСЛО НА ПОСЕВ И НА ПРОВЕРКУ (иначе ожидание станет
+// пересказанным литералом, §8 п.4). Души селятся крестьянами, поэтому
+// счёт крестьян после круга сейва = они плюс тот один, что фикстура
+// досыпала отрядом.
+constexpr int kFixtureCitySouls = 777;
+constexpr int kFixtureVillageSouls = 111;
 
 #include <cstdlib>
 #include <cmath>
@@ -406,7 +414,6 @@ sm::GameState make_state() {
     settlement.name = "Round City";
     settlement.x = 40;
     settlement.y = 80;
-    settlement.population = 777;
     settlement.inventory.add("wood", 19);
     add_soldiers(settlement.inventory, sm::NPCType::Guard, 5, 2000u);
     add_soldiers(settlement.inventory, sm::NPCType::Peasant, 1, 2100u);
@@ -415,6 +422,9 @@ sm::GameState make_state() {
     settlement.starvedYesterday = 12;
     settlement.popGrowthCarry = 0.375f;
     gs.landmarks.push_back(settlement);
+    // Паства едет в сейв worked-СЛОЕМ полей (v122), а не колонкой записи:
+    // фикстура селит души дверью мира, и круг сейва обязан вернуть ИХ.
+    sm::settle_souls(gs, gs.landmarks.back(), kFixtureCitySouls);
 
     sm::Landmark village{};
     village.type = sm::LandmarkType::Village;
@@ -422,12 +432,12 @@ sm::GameState make_state() {
     village.name = "Round Hamlet";
     village.x = 45;
     village.y = 85;
-    village.population = 111;
     village.inventory.add("food_meat", 4);
     village.factionIdx = 2;
     village.starvedYesterday = 5;
     village.popGrowthCarry = -0.25f;
     gs.landmarks.push_back(village);
+    sm::settle_souls(gs, gs.landmarks.back(), kFixtureVillageSouls);
     // Феод — запись реестра интересов (v107), и ставится он дверью на оба
     // конца: сейв обязан привезти обратно ИМЕННО пару, а не половину.
     // v121: та же дверь ведёт ЛЕТОПИСЬ ДОЛГА — ребро в строке фракции
@@ -995,15 +1005,21 @@ void run_roundtrip() {
         FAIL_BAIL("settled quest offers lost");
     }
     const sm::Landmark* cityLm = sm::landmark_by_id(loaded, 7);
+    // ПАСТВА — worked-слой полей (v122), и круг сейва обязан вернуть её
+    // ровно. Домашние головы здесь НЕ равны пастве: фикстура досыпала в тот
+    // же контейнер отряд (add_soldiers), и это законно — «в поле» и «дома»
+    // считаются врозь.
     if (!cityLm || cityLm->type != sm::LandmarkType::City
-        || cityLm->population != 777) {
+        || sm::souls_flock(loaded, *cityLm) != kFixtureCitySouls
+        || sm::souls_home(*cityLm) < kFixtureCitySouls) {
         FAIL_BAIL("settlement lost");
     }
     const sm::Landmark& city = *cityLm;
     if (city.name != "Round City"
         || city.inventory.count("wood") != 19
         || sm::creature_heads_of(city.inventory, sm::NPCType::Peasant)
-               != 1) {
+               != kFixtureCitySouls + 1
+        || sm::creature_heads_of(city.inventory, sm::NPCType::Guard) != 5) {
         FAIL_BAIL("settlement details lost");
     }
     if (city.starvedYesterday != 12 || !nearf(city.popGrowthCarry, 0.375f)) {
@@ -1090,10 +1106,14 @@ void run_roundtrip() {
                 .live()) {
             FAIL_BAIL("a carrier row grew a scar field it must not have");
         }
-        // liveCells = 2: the harbour's hulls at (9,4) + the spire's spell
-        // at (12,34) — v120 made the spell a worked tenant too.
+        // liveCells = 4, и перепись жильцов слоя — ЕГО польза: корпуса
+        // гавани (9,4), спелл шпиля (12,34) — v120 сделал его квартирантом —
+        // и ПАСТВА двух поселений фикстуры (40,80) и (45,85), третий род
+        // жильца, пришедший с v122. Число фичи у каждого своё, а слой один.
         if (sm::worked_read(loaded, 9, 4) != 2
-            || loaded.worked.liveCells != 2) {
+            || sm::worked_read(loaded, 40, 80) != kFixtureCitySouls
+            || sm::worked_read(loaded, 45, 85) != kFixtureVillageSouls
+            || loaded.worked.liveCells != 4) {
             FAIL_BAIL("the worked layer's number did not round-trip");
         }
     }
@@ -1428,7 +1448,9 @@ void run_payload_cap_is_a_fact() {
         lm.type = sm::LandmarkType::Village;
         lm.x = i % gs.mapW;
         lm.y = (i / gs.mapW) % gs.mapH;
-        lm.population = 100;
+        // Душ здесь нет намеренно: предмет этой фикстуры — ХУДШИЙ ВЕС
+        // мест, и все слоты забиты неслипающимися стаками. Паства живёт в
+        // worked-слое (v122), её вес считает блок полей, а не запись места.
         for (int s = 0; s < sm::kMaxInventorySlots; ++s) {
             sm::ItemRef ref{};
             ref.def = std::uint16_t(woodDef);

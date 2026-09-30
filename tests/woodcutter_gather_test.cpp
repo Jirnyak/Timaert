@@ -9,6 +9,8 @@
 //   · CONSERVATION — wood gained by the store == wood lost by the layer,
 //     and the bag is empty after delivery: nothing minted, nothing dropped.
 #include "check.h"
+#include "macro/labour.h"   // settle_souls — двери душ
+#include "macro/roster_window.h"   // roster_bill — счёт по таблице
 
 #include "macro/npc_ai.h"
 #include "macro/world_row.h"
@@ -92,8 +94,10 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    vil.population = 40;
     gs.landmarks.push_back(vil);
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+    // фичи, головы в инвентарь — тем же законом, что генезис.
+    sm::settle_souls(gs, gs.landmarks.back(), 40);
 
     // A little forest cell four cells east of the village — small enough to
     // be felled to BARE within the run, so the chronicle negative control
@@ -445,7 +449,6 @@ void test_the_vendor_sells_at_the_nearest_city() {
     city.id = 1;   // landmark ids are ordinals from 1 (v54): 0 = "no place"
     city.x = 10;
     city.y = 10;
-    city.population = 100;
     city.inventory.add("food", 2000);   // plenty: the export
     // The deal PAYS now (owner 2026-08-30): a coinless fixture is the
     // deadlock the payment law exists to refuse. The purse covers the
@@ -460,7 +463,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     vil.x = 16;
     vil.y = 10;
 
-    vil.population = 50;
+
     // A GENUINE surplus: the loading law keeps the seasonal larder home
     // (S19.2 + verdict 2026-09-18 «дома дешевле базы» decides the load),
     // and 50 souls EAT 50 food a day — 1600 a season. Only what
@@ -470,9 +473,15 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // ДОМ ГОЛОДЕН СЧЁТОМ (CANON S10): «дома нет хлеба» = непогашенный
     // сезонный счёт — из него и читается нужда, которую вендор едет
     // закрывать покупкой.
-    vil.needDebt[commodity_index("food")] =
-        vil.population * kDaysPerSeason;
+    // СЧЁТ ЕДЫ — ПО ТАБЛИЦЕ (v122): сезонная нужда есть `roster_bill` по
+    // головам этого места, а не «душа × сезон» литералом. Души селятся
+    // ниже, и счёт читается с них же.
     gs.landmarks.push_back(vil);
+    sm::settle_souls(gs, gs.landmarks.back(), 50);
+    {
+        sm::Landmark& v = gs.landmarks.back();
+        v.needDebt[commodity_index("food")] = sm::roster_bill(v.inventory).board;
+    }
     // МИР ПУБЛИКУЕТ ВЕДОМОСТЬ (CANON S10, ярус 2), и только потом крю
     // торгует: что везти домой, судит прейскурант дома, а не память крю.
     // В живом мире это делает генезис и каждая граница сезона; фикстура
@@ -729,8 +738,8 @@ void test_the_catch_lands_in_the_roster() {
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    vil.population = 40;
     gs.landmarks.push_back(vil);
+    sm::settle_souls(gs, gs.landmarks.back(), 40);
 
     FeatureLayer features;
     features.resize(kMap, kMap);

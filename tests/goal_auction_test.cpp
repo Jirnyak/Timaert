@@ -15,6 +15,7 @@
 //     что долг поднимает рейс сбыта у самого должника, — и утверждал по
 //     снесённому закону.
 #include "check.h"
+#include "macro/labour.h"   // settle_souls / souls_home — двери душ
 
 #include "ecs/components.h"
 #include "macro/deposit_layer.h"
@@ -48,20 +49,23 @@ GameState make_world(int villagePop) {
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    vil.population = villagePop;
+
     // v121: феодальное ребро живёт в строке ФРАКЦИИ сюзерена — безфракцион-
     // ный феод рёбер не ведёт, поэтому фикстура рождает своё предусловие
     // (§8 п.11): оба места несут реестровую фракцию, как всякое место мира.
     vil.factionIdx = std::int16_t(faction_index("timaert"));
     gs.landmarks.push_back(vil);
+    // Души — ДВЕРЬЮ МИРА (v122): паства в worked-число фичи, головы в
+    // инвентарь. Гейт подъёма артелей спрашивает ИМЕННО паству.
+    settle_souls(gs, gs.landmarks.back(), villagePop);
     Landmark city{};
     city.type = LandmarkType::City;
     city.id = 9;
     city.x = 20;
     city.y = 10;
-    city.population = 500;
     city.factionIdx = std::int16_t(faction_index("timaert"));
     gs.landmarks.push_back(city);
+    settle_souls(gs, gs.landmarks.back(), 500);
     // Феод ставится ОДНОЙ дверью и только когда оба места в ростере: она
     // пишет ОБА конца (S24), и полуребра в мире не бывает.
     set_suzerain(gs, 3, 9);
@@ -77,7 +81,7 @@ void stock_comforts(Landmark& lm) {
     // Нужда считается ОДНОЙ дверью мира (M-137: доля бюджета горожанина), а не
     // второй копией её арифметики в фикстуре (§8 п.5).
     for (int c = 0; c < kCommodityCount; ++c) {
-        const int seasonNeed = season_comfort_units(lm.population, c);
+        const int seasonNeed = season_comfort_units(souls_home(lm), c);
         if (seasonNeed > 0) {
             lm.inventory.add_of(commodity_item_index(c), seasonNeed);
         }
@@ -244,7 +248,7 @@ void test_auction_raises_errand_bearing_peasants() {
         // любой жилы — это сломанная под долгом фикстура, не закон.
         econ_debt_boundary(gsd.landmarks[0].inventory,
                            gsd.landmarks[0].needDebt,
-                           gsd.landmarks[0].population, nullptr, nullptr);
+                           souls_home(gsd.landmarks[0]), nullptr, nullptr);
         ecs::World wd;
         auto wdStore_ = sm::make_macro_store();
         sm::store_attach(wd, wdStore_.get());
@@ -288,7 +292,7 @@ void test_refusal_is_the_auctions_verdict() {
     CHECK(raised == 0, "ноль целей с положительным скором = ноль артелей");
     CHECK(live_crews(w).empty(),
           "отказ аукциона не колдует ни одного крестьянина");
-    CHECK(gs.landmarks[0].population == 100,
+    CHECK(souls_flock(gs, gs.landmarks[0]) == 100,
           "невзятая работа не трогает души деревни");
 }
 
@@ -335,7 +339,14 @@ void test_boundary_court_resizes_standing_crews() {
     // Город-сюзерен остаётся РЕБРОМ, но без душ: с 2026-09-19 он поднимает
     // свою артель горожан, а этот тест судит ПУЛ ДЕРЕВНИ — чужие крю с
     // другим пулом сделали бы «все составы равны» ложью о двух законах.
-    gs.landmarks[1].population = 0;
+    {
+        // Город-сюзерен обезлюжен ЦЕЛИКОМ — оба носителя: паства (worked) и
+        // головы. Обнулить один значило бы оставить место, которое по
+        // одной двери живо, а по другой мертво.
+        Landmark& suz = gs.landmarks[1];
+        bleed_heads(suz.inventory, creature_heads(suz.inventory));
+        worked_write(gs, suz.x, suz.y, 0);
+    }
     gs.landmarks[0].inventory.add("food", 5000);
     gs.landmarks[0].inventory.add("food", 3200 * 4);   // сезоны впрок
     tithe_edge_of(gs, gs.landmarks[0])->owedValue = 200;
@@ -354,7 +365,7 @@ void test_boundary_court_resizes_standing_crews() {
     CHECK(rotate_worker_squads(mw, /*day*/1) > 0, "граница поднимает артели");
 
     const auto souls_total = [&] {
-        int total = gs.landmarks[0].population;
+        int total = souls_home(gs.landmarks[0]);
         const sm::MacroStore& stq = sm::store_of(w);
         for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
             if (stq.alive[s32] == 0) continue;
@@ -410,7 +421,7 @@ void test_boundary_court_resizes_standing_crews() {
 
     // ПЕРЕБОР: той же артели вручную вливают семь лишних душ (модель:
     // домой пришла распухшая) — граница ССАЖИВАЕТ лишних В население.
-    const int popBeforeShed = gs.landmarks[0].population;
+    const int popBeforeShed = souls_home(gs.landmarks[0]);
     const int sizeBeforeShed =
         creature_heads(sm::store_of(w).inventory[first.slot].inv);
     for (int k = 0; k < 7; ++k) {
@@ -430,7 +441,7 @@ void test_boundary_court_resizes_standing_crews() {
     CHECK(creature_heads(sm::store_of(w).inventory[first.slot].inv)
               < sizeBeforeShed + 7,
           "перебор ссажен: артель не жиреет мимо пула");
-    CHECK(gs.landmarks[0].population > popBeforeShed,
+    CHECK(souls_home(gs.landmarks[0]) > popBeforeShed,
           "ссаженные души вернулись в население");
 }
 
@@ -462,13 +473,14 @@ void test_station_is_a_weighted_roulette() {
         home.id = 3;
         home.x = 100;
         home.y = 100;
-        home.population = 100;
+
         // Живая цель одна — СБЫТ ИЗЛИШКА: ни жил, ни леса, ни вассалов,
         // поэтому объект всякого поручения есть станция.
         home.inventory.add("food", 8000);           // сезон содержания крю
         home.inventory.add("cloth", 4000);          // излишек на вывоз
         home.inventory.add("tools", 4000);
         gs.landmarks.push_back(home);
+        settle_souls(gs, gs.landmarks.back(), 100);
         // ТРИ СТАНЦИИ, РАЗВЕДЁННЫЕ ПО ДНЯМ ПУТИ: 32 / 600 / 960 клеток.
         const int xs[3] = {132, 700, 1060};
         for (int k = 0; k < 3; ++k) {
@@ -480,8 +492,8 @@ void test_station_is_a_weighted_roulette() {
             // Души станции нужны: гейт кандидата смотрит паству. Своих крю
             // станция не поднимет — ей нечего вывозить, и это честный
             // отказ аукциона, а не немота фикстуры.
-            st.population = 50;
             gs.landmarks.push_back(st);
+            settle_souls(gs, gs.landmarks.back(), 50);
         }
         // Вассалов у дома нет намеренно: заявка сборщика увела бы крю с
         // рейса, и рулетка станции судилась бы по чужому поручению.
@@ -492,7 +504,7 @@ void test_station_is_a_weighted_roulette() {
         // которому ничего не надо, не рынок.
         for (int k = 0; k < 3; ++k) {
             Landmark& st = gs.landmarks[std::size_t(1 + k)];
-            econ_debt_boundary(st.inventory, st.needDebt, st.population,
+            econ_debt_boundary(st.inventory, st.needDebt, souls_home(st),
                                nullptr, nullptr);
         }
         // ВЕДОМОСТИ ПУБЛИКУЮТСЯ, КАК В МИРЕ (world_tick: публикация и

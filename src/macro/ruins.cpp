@@ -1,4 +1,5 @@
 #include "macro/ruins.h"
+#include "macro/labour.h"      // settle_souls — одна дверь поселения душ
 #include "macro/landmark_registry.h"
 #include "tables/faction.h"
 #include "macro/state.h"
@@ -110,12 +111,15 @@ void generate_ruins(GameState& gs, const ZoneLayer& zones,
         // danger byte, a discrete bell around the mean — redder land, harder
         // haunt. Its own stream per ruin ordinal, so placement draws above
         // stay untangled from the roll.
+        //
+        // ПЕРЕВОРОТ v122 (вердикт 3): души данжа — ГОЛОВАМИ, вид стака
+        // ВЫВОДИТСЯ из полосы толпы (kHabRuin, слабейшая строка → CaveBat).
         {
             Rng popRng(gs.worldSeed ^ 0xB0125EEDu
                        ^ (std::uint32_t(ruin.id) * 2654435761u));
-            ruin.population = landmark_born_population(
+            settle_souls(gs, ruin, landmark_born_population(
                 int(def.bornPopBase), int(def.bornPopPerScore),
-                int(zones.at(bestX, bestY)), popRng);
+                int(zones.at(bestX, bestY)), popRng));
         }
         add_landmark(gs, std::move(ruin));
         ++placed;

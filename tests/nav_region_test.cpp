@@ -10,6 +10,7 @@
 // мир, сдвинутый по тору, обязан водить теми же длинами (тор-закон
 // gigahrush2: никакого дерева, только циклический граф).
 #include "check.h"
+#include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/nav_field.h"
 #include "macro/pathfinding.h"
@@ -71,8 +72,10 @@ struct Fixture {
                             : sm::LandmarkType::Village;
             lm.x = sm::wrapi(lmx[i] + shiftX, W);
             lm.y = sm::wrapi(lmy[i] + shiftY, H);
-            lm.population = 100;
-            gs.landmarks.push_back(std::move(lm));
+            // Души — дверью мира (v122): паства в worked, головы
+            // в инвентарь; жилое место гейтится именно пастой.
+            sm::settle_souls(gs, gs.landmarks.emplace_back(std::move(lm)),
+                             100);
         }
         mw.gs = &gs;
         mw.pathCost = &pc;
@@ -106,15 +109,13 @@ struct Fixture {
         main.type = sm::LandmarkType::City;
         main.x = 5;
         main.y = 32;
-        main.population = 100;
-        sm::add_landmark(gs, std::move(main));
+        sm::settle_souls(gs, sm::add_landmark(gs, std::move(main)), 100);
         sm::Landmark isle{};
         isle.id = 2;
         isle.type = sm::LandmarkType::Village;
         isle.x = 40;
         isle.y = 32;
-        isle.population = 100;
-        sm::add_landmark(gs, std::move(isle));
+        sm::settle_souls(gs, sm::add_landmark(gs, std::move(isle)), 100);
         mw.gs = &gs;
         mw.pathCost = &pc;
         sm::nav_bake(mw, nav);
@@ -342,8 +343,8 @@ int main() {
         born.type = sm::LandmarkType::Village;
         born.x = 40;
         born.y = 32;
-        born.population = 100;
-        sm::add_landmark(f.gs, std::move(born));
+        sm::settle_souls(f.gs, sm::add_landmark(f.gs, std::move(born)),
+                         100);
         CHECK(sm::nav_ensure(f.mw, f.nav),
               "ensure still answers after the swap");
         CHECK(f.nav.regionOf[0] != mark,

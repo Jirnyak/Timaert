@@ -14,6 +14,7 @@
 //   · a world with no admissible ground places NOTHING (negative control for
 //     the zone gate and the occupancy veto both).
 #include "check.h"
+#include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"
@@ -263,9 +264,12 @@ void test_genesis_births_souls_and_ruins() {
     std::set<int> seenPop;
     for (const auto& lm : gs.landmarks) {
         if (lm.type != LandmarkType::Spire) continue;
-        CHECK(lm.population > 0, "a spire is born with its garrison");
+        // Души данжа — ГОЛОВЫ его толпы (v122): паства шпиля и есть они,
+        // а worked его клетки занят СПЕЛЛОМ (ломтик B).
+        const int flock = souls_flock(gs, lm);
+        CHECK(flock > 0, "a spire is born with its garrison");
         ++spirePops;
-        if (seenPop.insert(lm.population).second) ++distinctPops;
+        if (seenPop.insert(flock).second) ++distinctPops;
     }
     CHECK(spirePops > 0, "the sweep saw spires at all");
     CHECK(distinctPops > 1,
@@ -282,7 +286,7 @@ void test_genesis_births_souls_and_ruins() {
         const int z = int(zones.at(lm.x, lm.y));
         CHECK(z >= int(ruinDef.minZone) && z <= int(ruinDef.maxZone),
               "a ruin stands inside its registry zone band");
-        CHECK(lm.population > 0, "a ruin is born haunted");
+        CHECK(souls_flock(gs, lm) > 0, "a ruin is born haunted");
     }
     CHECK(ruins > 0, "the world places ruins");
 
@@ -297,7 +301,7 @@ void test_genesis_births_souls_and_ruins() {
         const Landmark& p = gs.landmarks[i];
         const Landmark& q = b.landmarks[i];
         if (p.type != q.type || p.x != q.x || p.y != q.y
-            || p.population != q.population) {
+            || souls_flock(gs, p) != souls_flock(b, q)) {
             same = false;
         }
     }

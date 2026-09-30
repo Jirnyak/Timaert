@@ -905,7 +905,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         ImGui::PopStyleColor();
                     } else {
                         ImGui::TextDisabled("Pop");
-                        ImGui::Text("%d", lm->population);
+                        ImGui::Text("%d", souls_flock(gs, *lm));
                     }
                     ImGui::EndGroup();
 

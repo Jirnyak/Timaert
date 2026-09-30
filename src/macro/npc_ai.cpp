@@ -1522,7 +1522,7 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
         // ростер, потому что другого понятия соседства здесь нет.
         for (const Landmark& c : ctx.mw.gs->landmarks) {
             if (c.id == currentId || c.id == prevId) continue;
-            if (!landmark_is_settlement(c.type) || souls_flock(c) <= 0)
+            if (!landmark_is_settlement(c.type) || souls_flock(*ctx.mw.gs, c) <= 0)
                 continue;
             offer_(c);
         }
@@ -1546,7 +1546,8 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
         const int lmId = int(nv->regionLandmarkId[to]);
         if (lmId < 0 || lmId == currentId || lmId == prevId) continue;
         const Landmark* lm = landmark_by_id(*ctx.mw.gs, lmId);
-        if (!lm || !landmark_is_settlement(lm->type) || souls_flock(*lm) <= 0)
+        if (!lm || !landmark_is_settlement(lm->type)
+            || souls_flock(*ctx.mw.gs, *lm) <= 0)
             continue;
         offer_(*lm);
     }
@@ -3122,7 +3123,7 @@ void settle_exhaustion(MacroHandle e, const MacroPos& p,
     if (hp.hp <= 0 && ctx.mw.world && ctx.mw.gs) {
         MacroStore& st = store_ctx(ctx);
         settle_leader_fraction(st, e, 0.0f);
-        drain_dead_leader_squads(st, ctx.mw.gs->deserterPool);
+        drain_dead_leader_squads(st, *ctx.mw.gs);
     }
 }
 
@@ -3850,26 +3851,14 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             transfer_value_dense(bag.inv, depot_(lm, mw),
                                  inventory_value(bag.inv));
         }
-        // ЗВЕРЬ — НЕ ДУША НАСЕЛЕНИЯ (вердикт владельца 2026-09-21: «популяция
-        // считает только типа HUMAN из таблицы существ»). Лошади (и всякий
-        // не-людской род) растворяющейся артели встают в ГАРНИЗОН места —
-        // «гарнизон = армия ландмарка», табун города живёт в его армии, виден,
-        // продаётся и грабится (вердикт 2026-09-19).
-        //
-        // ЗДЕСЬ БЫЛО `souls += roster->squad.size()`, а size() суммирует count
-        // ВСЕХ слотов (army.h) — то есть каждая граница сезона превращала
-        // табун распущенной артели в горожан: кони выходили из мира людьми.
-        // Правильный закон существовал всё это время в ветке растворения
-        // вылазок гарнизона — В НЕДОСТИЖИМОЙ, — и снос патрулей сделал его
-        // ЕДИНСТВЕННЫМ, вместо того чтобы унести с собой. Двух дверей
-        // «артель пришла домой» больше нет.
-        //
-        // ФОРМА, КОТОРАЯ ПРИДЁТ С ПЕРЕВОРОТОМ НАСЕЛЕНИЯ (владелец, тот же
-        // день: «буквально перенос между гарнизоном — весь гарнизон артели
-        // отдаётся в город, и артель пустая удаляется»): когда души дома
-        // станут РОСТЕРОМ места, обе половины ниже сольются в один перенос
-        // ростер→ростер, и человек с лошадью поедут одной дверью. Сегодня
-        // население и гарнизон — два разных склада, поэтому и переносов два.
+        // ПЕРЕВОРОТ v122 — форма, которую владелец обещал этому месту
+        // («буквально перенос между гарнизоном — весь гарнизон артели
+        // отдаётся в город, и артель пустая удаляется»): души дома СТАЛИ
+        // головами инвентаря места, и человек с лошадью едут ОДНОЙ дверью
+        // creatures_push_slot. Паства (worked) НЕ меняется: вернувшаяся
+        // душа и так была её частью — «в поле» лишь стало «дома». Лидер —
+        // своя душа: он встаёт домой генерик-головой своего рода (его слот
+        // store умирает, а душа из мира не испаряется).
         int souls = 1;
         {
             const auto& bag = stq.inventory[slot];
@@ -3881,14 +3870,23 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 if (is_folk_kind(
                         std::uint16_t(creature_of_world_row(sl.def)))) {
                     souls += sl.count;
-                } else if (!creatures_push_slot(lm.inventory, sl)) {
-                    // Гарнизону тесно (кап контейнера) — лишние честно
-                    // уходят в пул, никто не испаряется.
+                }
+                if (!creatures_push_slot(lm.inventory, sl)) {
+                    // Дому тесно (кап контейнера) — лишние честно уходят
+                    // в пул, никто не испаряется.
                     creatures_push_slot(gs.deserterPool, sl);
                 }
             }
         }
-        lm.population += souls;
+        {
+            const NPCType leaderKind = NPCType(stq.kind[slot].type);
+            if (is_folk_kind(std::uint16_t(leaderKind))
+                && !creatures_push_stack(lm.inventory, leaderKind,
+                                         npc_def(leaderKind).baseLevel, 1)) {
+                creatures_push_stack(gs.deserterPool, leaderKind,
+                                     npc_def(leaderKind).baseLevel, 1);
+            }
+        }
         // 6.3: сквад ЕСТЬ слот store — смерть слота и есть вся смерть.
         store_death(stq, handle_at(stq, slot));
         return souls;
@@ -3940,7 +3938,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     for (std::size_t row = 0; row < gs.landmarks.size(); ++row) {
         Landmark& s = gs.landmarks[row];
         const LandmarkDef& ld = landmark_def(s.type);
-        if (ld.crewCount == 0 || souls_flock(s) <= 0) continue;
+        if (ld.crewCount == 0 || souls_flock(gs, s) <= 0) continue;
         static_assert(sizeof(LandmarkDef::crews) / sizeof(LandmarkCrewRow)
                           <= 8,
                       "outCount — восемь счётчиков на место: по строке");
@@ -4121,7 +4119,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // прочтение `pop >> labourShift`, и теперь оно то же
                     // самое число, что судит рождения ниже.
                     const int wanted = std::max(
-                        1, field_pool(s, afield[row], standingSouls[row]));
+                        1, field_pool(gs, s, afield[row], standingSouls[row]));
                     unitPrice = stock_price(base, herd, wanted);
                 } else {
                     const int goalItem = gatherer_item_index(g);
@@ -4539,7 +4537,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // счёта ушла: она была числом с потолка, и она же отвечала на второй
         // вопрос — сколько душ стоит у станков города (там и осталась).
         const int pool =
-            field_pool(s, afield[row], standingSouls[row]);
+            field_pool(gs, s, afield[row], standingSouls[row]);
         // Соло-строка стоит РОВНО ОДНУ душу и берётся из того же пула первой:
         // курьер дешевле артели, но не бесплатен — прежде соло-рождения шли
         // мимо всякого счёта рук (одна из девяти половин, §55).
@@ -4610,12 +4608,19 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         while (take-- > 0) {
                             // ГЕНЕРИК (CANON S4): массовый добор — стак,
                             // без ординала; имя душа зарабатывает историей
-                            // (лидерство, найм в сюжет, вселение).
+                            // (лидерство, найм в сюжет, вселение). Душа
+                            // ПЕРЕЕЗЖАЕТ из дома (bleed_flock — v122: дома
+                            // души головами) и надевает род строки крю;
+                            // паства (worked) не меняется — «дома» стало
+                            // «в поле».
                             SoldierRecord rec{};
                             rec.kind = std::uint16_t(ld.crews[i].npc);
                             rec.level = 1;
-                            if (!creatures_push(bg.inv, rec)) break;
-                            s.population -= 1;
+                            if (bleed_flock(s.inventory, 1) != 1) break;
+                            if (!creatures_push(bg.inv, rec)) {
+                                raise_flock_into_roster(s.inventory, 1);
+                                break;
+                            }
                         }
                         // ССАДКА СУДИТ ЛЮДЕЙ: последняя человеческая
                         // душа сходит в население; табун артели суду
@@ -4639,7 +4644,13 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                             SoldierRecord off{};
                             if (si < 0 || !creatures_take_at(bg.inv, si, off))
                                 break;
-                            s.population += 1;
+                            // Домой — головой (v122); отказ контейнера
+                            // честно возвращает душу в артель.
+                            if (raise_flock_into_roster(s.inventory, 1)
+                                != 1) {
+                                creatures_push(bg.inv, off);
+                                break;
+                            }
                         }
                         // Приведённый состав — приведённый обоз (squad.h):
                         // добранная душа несёт свою спину, ссаженная уносит.
@@ -4698,7 +4709,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 gs, store_of(*mw.world), *mw.terrain, spec);
             if (stq.valid(ent)) {
                 const std::uint16_t newSlot = ent.slot;
-                s.population -= 1 + spec.members.size();
+                // Души артели ВЗЯТЫ из дома (v122): лидер + члены сходят
+                // головами (гейт souls_home >= perCrew выше гарантирует
+                // достаточность); паства не меняется — они ушли В ПОЛЕ.
+                bleed_flock(s.inventory, 1 + int(spec.members.size()));
                 ++raised;
                 auto& prt = stq.runtime[newSlot];
                 prt.squadType = myType;
@@ -4732,7 +4746,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             spec.homeSettlementId = s.id;
             if (stq.valid(spawn_squad(gs, store_of(*mw.world),
                                       *mw.terrain, spec))) {
-                s.population -= 1;
+                bleed_flock(s.inventory, 1);   // душа курьера — из дома (v122)
                 --soloBudget;
                 ++raised;
             }
@@ -4912,7 +4926,7 @@ namespace {
 void settle_dead_squads(MacroWorld& mw) {
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
-    drain_dead_leader_squads(store_of(w), gs.deserterPool);
+    drain_dead_leader_squads(store_of(w), gs);
     destroy_dead_macro_squads(store_of(w), gs, &gs.lootPoolValue);
 }
 

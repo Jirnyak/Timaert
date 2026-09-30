@@ -8,6 +8,7 @@
 // were split: one promise per check, so a red line names the promise it broke
 // instead of the seven it was bundled with.
 #include "check.h"
+#include "macro/labour.h"   // souls_flock — паства места
 
 #include "macro/npc_ai.h"
 #include "macro/world_row.h"
@@ -30,9 +31,18 @@ sm::Landmark settlement(int id, int x, int y) {
     s.name = "Test";
     s.x = x;
     s.y = y;
-    s.population = 1000;
     s.factionIdx = 0;
     return s;
+}
+
+// ДУШИ СЕЛЯТСЯ ДВЕРЬЮ МИРА, И ТОЛЬКО ПОСЛЕ ВСТАВКИ В МИР (v122): у паствы
+// носитель — worked-слой полей, значит запись вне мира её нести не может.
+// Гейт подъёма артелей спрашивает ИМЕННО паству, поэтому место без неё
+// молча пропускается целиком — так и покраснел негативный контроль ниже.
+sm::Landmark& push_settlement(sm::GameState& gs, int id, int x, int y) {
+    gs.landmarks.push_back(settlement(id, x, y));
+    sm::settle_souls(gs, gs.landmarks.back(), 1000);
+    return gs.landmarks.back();
 }
 
 sm::MacroHandle spawn_ai(sm::ecs::World& world,
@@ -99,7 +109,7 @@ void test_home_wanderer_returns_when_far() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.landmarks.push_back(settlement(1, 50, 50));
+    push_settlement(gs, 1, 50, 50);
 
     sm::ecs::World world;
 
@@ -122,7 +132,7 @@ void test_woodcutter_targets_nearest_tree() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.landmarks.push_back(settlement(1, 20, 20));
+    push_settlement(gs, 1, 20, 20);
     // Two trees: one within reach, one across the map. The near one must win —
     // "nearest", not "first in the grid".
     std::vector<sm::TreePoint> trees{{23, 20}, {80, 80}};
@@ -158,8 +168,8 @@ void test_trader_targets_other_settlement() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.landmarks.push_back(settlement(1, 10, 10));
-    gs.landmarks.push_back(settlement(2, 40, 10));
+    push_settlement(gs, 1, 10, 10);
+    push_settlement(gs, 2, 40, 10);
 
     sm::ecs::World world;
 
@@ -184,8 +194,8 @@ void test_nomad_excludes_current_target() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.landmarks.push_back(settlement(1, 10, 10));
-    gs.landmarks.push_back(settlement(2, 40, 10));
+    push_settlement(gs, 1, 10, 10);
+    push_settlement(gs, 2, 40, 10);
 
     sm::ecs::World world;
 
@@ -519,7 +529,7 @@ void test_a_marching_body_does_not_mend() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.landmarks.push_back(settlement(1, 50, 50));
+    push_settlement(gs, 1, 50, 50);
 
     sm::ecs::World world;
 
@@ -561,7 +571,7 @@ void test_rotation_does_not_dissolve_the_dead() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.landmarks.push_back(settlement(1, 50, 50));
+    push_settlement(gs, 1, 50, 50);
     sm::TerrainData terrain;
     terrain.width = 8;
     terrain.height = 8;
@@ -589,13 +599,13 @@ void test_rotation_does_not_dissolve_the_dead() {
         std_.dead[ds] = 1;
     }
 
-    const int popBefore = gs.landmarks[0].population;
+    const int popBefore = sm::souls_flock(gs, gs.landmarks[0]);
     const int garrisonBefore =
         sm::creature_heads(gs.landmarks[0].inventory);
     sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
     sm::rotate_worker_squads(mw, /*day=*/3);
 
-    CHECK(gs.landmarks[0].population == popBefore,
+    CHECK(sm::souls_flock(gs, gs.landmarks[0]) == popBefore,
           "a dead crew's souls never return to the population");
     CHECK(sm::creature_heads(gs.landmarks[0].inventory) == garrisonBefore,
           "and dead records never march into the garrison");

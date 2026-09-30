@@ -7,6 +7,8 @@
 // where a verdict is not something a function can return, and a test that runs
 // zero checks fails by counting.
 #include "check.h"
+#include <cmath>
+#include <memory>
 
 #include "tables/npc.h"
 #include "macro/world_row.h"
@@ -192,64 +194,21 @@ void test_daily_processing_applies_player_upkeep_and_age() {
 // of up to ten was drawn, so a garrison at 63 stood at 73 by nightfall: its
 // own cap overshot by nine, by the placement of the question. A town that
 // cannot take a recruit must also not pay a head for him.
-void test_garrison_never_exceeds_its_cap() {
-    // §42 Инк 7: the ceiling is the registry TARGET (population >>
-    // garrisonShift) and a day's packet is at most target >> 4 — a hole in
-    // the defense heals over days, never in one morning.
-    sm::GameState gs{};
-    sm::Landmark s{};
-    s.type = sm::LandmarkType::City;
-    s.id = 1;
-    s.population = 5000;
-    const int target =
-        sm::garrison_target_strength(s.type, s.population);   // 5000>>3 = 625
-    CHECK(target == 5000 >> 3,
-          "the garrison target is the registry law: population >> shift");
-    // The maintenance law bleeds a SHORTED garrison at once (2026-08-31),
-    // and this test is about recruiting — keep the men fed and paid.
-    s.inventory.add("coin_empire_copper", 1 << 16);
-    s.inventory.add("food", 1 << 13);
-    // Место СТОИТ на месте, иначе оно вырастет под тестом и уведёт цель
-    // гарнизона из-под проверки. Благополучие 0 — это «стоим» (владелец
-    // 2026-09-19: ватерлинии нет, мера И ЕСТЬ ход роста); прежние 128 были
-    // половиной хода, а не покоем, и город прибавлял по девять душ в день.
-    s.seasonWellbeing = 0;
-    // One below the target: exactly one recruit wanted. A standing army is
-    // a GENERIC stack (CANON S4) — 624 souls is one slot, not a wall.
-    sm::creatures_push_stack(s.inventory, sm::NPCType::Guard, 1,
-                             std::int32_t(target - 1));
-    gs.landmarks.push_back(s);
-
-    sm::WorldTickRuntime runtime{};
-    sm::reset_world_tick_runtime(runtime, 4242u);
-    runtime.pendingDailyTicks = 1;
-    runtime.nextDailyTickDay = 3;
-    sm::process_world_daily_ticks(gs, runtime, 1);
-
-    const int after = sm::creature_heads(gs.landmarks[0].inventory);
-    CHECK(after <= sm::garrison_target_strength(
-                       gs.landmarks[0].type, gs.landmarks[0].population + 1),
-          "a day of recruiting never carries a garrison past its target");
-    CHECK(after == target,
-          "…and it does fill the last free slot — the target is a ceiling, "
-          "not a veto on recruiting at all");
-    // The gradualness arm: an EMPTY garrison refills by at most target>>4 a
-    // day — the same slow heal desertion bleeds at (1/8), never instantly.
-    sm::GameState slow{};
-    sm::Landmark hollow = s;
-    hollow.inventory = sm::Inventory{};   // пусто: и склад, и область существ
-    hollow.inventory.add("coin_empire_copper", 1 << 16);
-    hollow.inventory.add("food", 1 << 13);
-    slow.landmarks.push_back(hollow);
-    sm::WorldTickRuntime slowRuntime{};
-    sm::reset_world_tick_runtime(slowRuntime, 4242u);
-    slowRuntime.pendingDailyTicks = 1;
-    slowRuntime.nextDailyTickDay = 3;
-    sm::process_world_daily_ticks(slow, slowRuntime, 1);
-    const int refilled = sm::creature_heads(slow.landmarks[0].inventory);
-    CHECK(refilled > 0 && refilled <= std::max(1, target >> 4),
-          "a hollowed garrison heals by a day-packet, never in one morning");
-}
+// (`test_garrison_never_exceeds_its_cap` и
+// `test_garrison_ceiling_trims_the_surplus` УМЕРЛИ 2026-09-30 вместе со своей
+// подсистемой, v122: цель набора `garrison_target_strength`, потолок
+// `garrison_cap_`, пакет `garrison_recruit_` и нож `garrison_trim_` снесены
+// вердиктом владельца «раздел гарнизон/мирные умирает; оборона места = вся
+// толпа». Свидетель без предмета не охраняет закон — он охраняет память о
+// нём (§8 п.5), поэтому оба сняты, а не подогнаны.
+//
+// ЧТО УШЛО ВМЕСТЕ С НИМИ И НАЗВАНО ВСЛУХ: предел ТАБУНА места. Нож резал
+// излишек скота в мясо, и без него лошади копятся без предела (замер до
+// ножа: 4 230 голов за 128 дней, монотонно). Возвращать потолок НЕЛЬЗЯ —
+// ЗАКОН КЛАМПА прямо запрещает «потолок численности» как костыль; предел
+// обязан наступать обратной связью, то есть скот должен ЕСТЬ (`souls_home`
+// считает только людей, лошадь сегодня не ест вовсе). Это экономика —
+// наряд, а не хвост этого ломтика.)
 
 void test_many_small_advances_equal_one_big_one() {
     constexpr std::uint64_t kTotal = 10000;   // ~2.5 hours of world time
@@ -340,9 +299,11 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     s.type = sm::LandmarkType::City;
     s.id = 1;
     s.name = "Hungry";
-    s.population = 100;
     s.x = 8; s.y = 8;
     gs.landmarks.push_back(s);
+    // Души селятся ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+    // фичи, головы в инвентарь — тем же законом, что генезис.
+    sm::settle_souls(gs, gs.landmarks.back(), 100);
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 7u);
@@ -363,8 +324,30 @@ void test_a_famine_is_recorded_once_when_it_begins() {
 
     CHECK(gs.landmarks[0].starvedYesterday > 0,
           "the fixture is honest: this town's bill took souls");
-    CHECK(gs.landmarks[0].seasonWellbeing == 0,
-          "an unpaid bill reads as zero wellbeing — the ONE measure of life");
+    CHECK(sm::souls_flock(gs, gs.landmarks[0]) < 100,
+          "паства упала на съеденных: число фичи и головы идут ПАРОЙ");
+    // БЛАГОПОЛУЧИЕ ЕСТЬ ДОЛЯ ОПЛАЧЕННОГО, и здесь утверждается ИМЕННО это,
+    // а не круглый ноль. Прежде тут стояло `== 0`, и ноль держался на
+    // ПОБОЧНОМ ЭФФЕКТЕ снесённой подсистемы: `garrison_recruit_` уводил
+    // души из населения, поэтому к взысканию их было не больше выставленного
+    // счёта и умирали ВСЕ. Сегодня место успевает вырасти за первый сезон,
+    // горстка выживает — и мир честно докладывает эту горстку долей, а не
+    // нулём. Число выводится из тех же данных, что его породили (§8 п.4).
+    {
+        const sm::Landmark& l = gs.landmarks[0];
+        // Утверждаются СВОЙСТВА, а не число: благополучие есть произведение
+        // доли еды на долю комфорта, и пересчитать его здесь значило бы
+        // написать вторую копию продакшен-формулы как «ожидаемое» (§8 п.5 —
+        // ровно этот дубль сюита и поймала на первой попытке).
+        CHECK(l.seasonWellbeing < 255 / 8,
+              "неоплаченный сезон рушит благополучие почти в ноль");
+        CHECK(int(l.starvedYesterday) > sm::souls_home(l),
+              "взыскание забрало БОЛЬШЕ душ, чем осталось: место обезлюдело, "
+              "а не поголодало");
+        CHECK(sm::souls_flock(gs, l) == sm::souls_home(l),
+              "паства упала вместе с головами: два носителя не расходятся "
+              "(в поле этот город никого не держит)");
+    }
     CHECK(c.famines == 1,
           "the boundary that took the souls is ONE fact, not thirty-two");
     CHECK(c.total >= 1, "the world remembered something about this place");
@@ -387,9 +370,20 @@ void test_a_famine_is_recorded_once_when_it_begins() {
 // population < 5 was unreachable, so the sawBelowOldFloor gate reddens the
 // moment any floor returns.
 void test_population_dies_honestly_to_zero() {
+    // GameState НА КУЧЕ: он ~0.84 МиБ, и больше двух стековых локалов в одной
+    // функции рвут стек (грабля ломтика C).
+    auto gsp = std::make_unique<sm::GameState>();
+    sm::GameState& gs = *gsp;
+    gs.mapW = 64;
+    gs.mapH = 64;
     sm::Landmark lm{};
     lm.type = sm::LandmarkType::Village;
-    lm.population = 3;      // a cut-down hamlet with an empty larder
+    lm.id = 1;
+    lm.x = 4; lm.y = 4;
+    gs.landmarks.push_back(lm);
+    sm::Landmark& v = gs.landmarks.back();
+    // Хутор с пустым амбаром: три души ДВЕРЬЮ МИРА (паства + головы).
+    sm::settle_souls(gs, v, 3);
     int deaths = 0;
     int dayOfDeath = -1;
     bool sawBelowOldFloor = false;
@@ -397,20 +391,22 @@ void test_population_dies_honestly_to_zero() {
     // where the empty larder fails the window and the season turns hungry.
     for (int day = 1; day <= 2048 && dayOfDeath < 0; ++day) {
         bool famine = false, died = false;
-        sm::settle_landmark_day(lm, day, famine, died);
-        if (lm.population < 5) sawBelowOldFloor = true;
+        sm::settle_landmark_day(gs, v, day, famine, died);
+        if (sm::souls_flock(gs, v) < 5) sawBelowOldFloor = true;
         if (died) { ++deaths; dayOfDeath = day; }
     }
-    CHECK(dayOfDeath >= 0 && lm.population == 0,
+    CHECK(dayOfDeath >= 0 && sm::souls_flock(gs, v) == 0,
           "a starving settlement dies honestly to zero");
+    CHECK(sm::souls_home(v) == 0,
+          "…и головы ушли вместе с числом: пара носителей не расходится");
     CHECK(sawBelowOldFloor,
           "population passed the old floor: no crutch is back");
     for (int day = 1; day <= 100; ++day) {
         bool famine = false, died = false;
-        sm::settle_landmark_day(lm, day, famine, died);
+        sm::settle_landmark_day(gs, v, day, famine, died);
         if (died) ++deaths;
     }
-    CHECK(lm.population == 0,
+    CHECK(sm::souls_flock(gs, v) == 0,
           "zero population is absorbing: nobody is minted from air");
     CHECK(deaths == 1,
           "the death transition fires exactly once");
@@ -429,29 +425,32 @@ void test_dungeon_population_regrows_like_fauna() {
     ruin.id = 5;
     ruin.x = 1;
     ruin.y = 1;
-    ruin.population = 10;
     gs.landmarks.push_back(ruin);
+    // Души данжа — ГОЛОВЫ его толпы (v122, вердикт 3): род НЕ выдумывается,
+    // его даёт полоса crowdHabitat этого рода мест (руина → слабейшая строка).
+    sm::settle_souls(gs, gs.landmarks.back(), 10);
     sm::Landmark dead = ruin;
     dead.id = 6;
-    dead.population = 0;   // cleared to the last soul
-    gs.landmarks.push_back(dead);
+    dead.x = 2;
+    dead.y = 2;
+    gs.landmarks.push_back(dead);   // выбита до последней души: ноль голов
     sm::MacroWorld w{};
     w.gs = &gs;   // no zones layer: the ruin's score is the honest zero,
                   // so its mean is the born base alone (64)
 
     const int dueDay = 5 % sm::kGrowthEpochDays;
     sm::regrow_dungeon_populations(w, dueDay + 1);
-    CHECK(gs.landmarks[0].population == 10,
+    CHECK(sm::souls_flock(gs, gs.landmarks[0]) == 10,
           "a landmark regrows only on its own day of the epoch");
     sm::regrow_dungeon_populations(w, dueDay);
-    CHECK(gs.landmarks[0].population == 11,
+    CHECK(sm::souls_flock(gs, gs.landmarks[0]) == 11,
           "on its due day a living garrison regrows one soul");
     sm::regrow_dungeon_populations(w, 6 % sm::kGrowthEpochDays);
-    CHECK(gs.landmarks[1].population == 0,
+    CHECK(sm::souls_flock(gs, gs.landmarks[1]) == 0,
           "wiped clean stays dead — resurrection is the S9 transition's");
-    gs.landmarks[0].population = 64;   // at the born mean already
+    sm::settle_souls(gs, gs.landmarks[0], 53);   // 11 + 53 = born mean 64
     sm::regrow_dungeon_populations(w, dueDay);
-    CHECK(gs.landmarks[0].population == 64,
+    CHECK(sm::souls_flock(gs, gs.landmarks[0]) == 64,
           "the born mean is the regrow ceiling");
 }
 
@@ -462,58 +461,7 @@ void test_dungeon_population_regrows_like_fauna() {
 // сезон содержания стража). Излишек снимается со СЛАБЕЙШИХ; куда — решает
 // СТРОКА: человек в пул дезертиров, зверь по тегу Mount под нож — мясо
 // гасит долг места той же дверью гашения (S10).
-void test_garrison_ceiling_trims_the_surplus() {
-    sm::GameState gs{};
-    gs.mapW = 64;
-    gs.mapH = 64;
-    sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    sm::Landmark v{};
-    v.type = sm::LandmarkType::Village;
-    v.id = 1;
-    v.name = "Stable";
-    v.population = 30;   // паства 30 + 4 человека гарнизона ⇒ потолок 4
-    v.x = 8; v.y = 8;
-    // Богатства нет — потолок только населенческий. Стойло переполнено:
-    // 4 стража (найм 30) + 8 лошадей (найм 240) при потолке 3.
-    sm::creatures_push_stack(v.inventory, sm::NPCType::Guard, 3, 4);
-    sm::creatures_push_stack(v.inventory, sm::NPCType::Horse, 1, 8);
-    gs.landmarks.push_back(v);
-
-    sm::WorldTickRuntime runtime{};
-    sm::reset_world_tick_runtime(runtime, 7u);
-    runtime.pendingDailyTicks = 1;   // день 1 = граница: счёт выставлен
-    runtime.nextDailyTickDay = 1;
-    sm::process_world_daily_ticks(gs, runtime, 64);
-
-    sm::Landmark& out = gs.landmarks[0];
-    CHECK(sm::creature_heads(out.inventory) == 4,
-          "the surplus above the context ceiling is gone");
-    // Слабейшие первыми: вся стража (30) ушла раньше первой лошади (240).
-    CHECK(sm::creature_heads_of(out.inventory, sm::NPCType::Guard) == 0,
-          "the cheapest rows are cut first — no guard outlived a horse");
-    CHECK(sm::creature_heads_of(out.inventory, sm::NPCType::Horse) == 4,
-          "the ceiling keeps exactly what the place is worth");
-    // Люди — в пул дезертиров (плюс один харчевой ходок окна содержания —
-    // голодный гарнизон терял 1/8 и до потолка, тот закон не тронут).
-    CHECK(sm::creature_heads_of(gs.deserterPool, sm::NPCType::Guard) == 4,
-          "the cut men swell the deserter pool, they do not evaporate");
-    // Зверь — под нож по своей стоимости, и мясо платит по счёту В ТУ ЖЕ
-    // МИНУТУ (S10): на полке ноль, долг упал ровно на стоимость туш.
-    const int hungerValue = sm::item_def("food")->value;
-    const int meatPerHorse =
-        sm::hire_price_for(std::uint16_t(sm::NPCType::Horse), 1) / hungerValue;
-    const int bill = 30 * sm::kDaysPerSeason;
-    const int debtNow =
-        out.needDebt[sm::commodity_index("food")];
-    CHECK(debtNow < bill, "the knife fed the bill");
-    CHECK((bill - debtNow) % meatPerHorse == 0,
-          "the bill fell by whole carcasses, valued by the one price law");
-    CHECK(out.inventory.count("food") == 0,
-          "meat above nothing: the hungry bill ate every unit on the spot");
-}
-
 int main() {
-    test_garrison_never_exceeds_its_cap();
     test_dungeon_population_regrows_like_fauna();
     test_hour_rollover();
     test_many_small_advances_equal_one_big_one();
@@ -521,7 +469,6 @@ int main() {
     test_day_rollover_queues_budgeted_daily_tick();
     test_daily_processing_applies_player_upkeep_and_age();
     test_a_famine_is_recorded_once_when_it_begins();
-    test_garrison_ceiling_trims_the_surplus();
     test_population_dies_honestly_to_zero();
     return sm::test::report("world_tick_parity_test");
 }

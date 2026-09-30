@@ -246,8 +246,10 @@ void test_the_players_men_never_desert() {
     const MacroHandle fallen = npc_squad(w, 30.0f, 30.0f, 7u, 3);
     sm::macro_mark_dead(*wStore_, fallen);
 
-    Inventory pool{};
-    const int moved = drain_dead_leader_squads(*wStore_, pool);
+    // Пул — в МИРЕ (v122): дверь смерти списывает ушедшую душу с паствы её
+    // дома, поэтому мир ей нужен по закону, а не для удобства.
+    Inventory& pool = gs.deserterPool;
+    const int moved = drain_dead_leader_squads(*wStore_, gs);
 
     CHECK(moved == 3, "only the fallen NPC leader's three men walked away");
     CHECK(creature_heads(pool) == 3, "and only they landed in the pool");

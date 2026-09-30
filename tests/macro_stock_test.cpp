@@ -14,6 +14,8 @@
 //   * a debt names its subject, so one town's dead never bill its neighbour;
 //   * a malformed receipt changes nothing (fail closed).
 #include "check.h"
+#include <memory>
+#include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"
@@ -37,16 +39,18 @@ sm::GameState make_world() {
     city.name = "Testholm";
     city.x = 10;
     city.y = 10;
-    city.population = 300;
     gs.landmarks.push_back(city);
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число фичи,
+    // головы в инвентарь. Сток `population` читает и пишет ровно эту пару.
+    sm::settle_souls(gs, gs.landmarks.back(), 300);
     sm::Landmark other{};
     other.type = sm::LandmarkType::City;
     other.id = 8;
     other.name = "Neighbour";
     other.x = 30;
     other.y = 30;
-    other.population = 300;
     gs.landmarks.push_back(other);
+    sm::settle_souls(gs, gs.landmarks.back(), 300);
     // ONE landmark id space (v54): every place draws on the one issuer, so a
     // fixture with two places wearing one number would no longer be a world
     // this game can generate. The collision fixture (village 7 beside city 7)
@@ -58,16 +62,16 @@ sm::GameState make_world() {
     twin.name = "Twinvale";
     twin.x = 40;
     twin.y = 40;
-    twin.population = 80;
     gs.landmarks.push_back(twin);
+    sm::settle_souls(gs, gs.landmarks.back(), 80);
     sm::Landmark hamlet{};
     hamlet.type = sm::LandmarkType::Village;
     hamlet.id = 42;
     hamlet.name = "Hamlet";
     hamlet.x = 20;
     hamlet.y = 20;
-    hamlet.population = 40;
     gs.landmarks.push_back(hamlet);
+    sm::settle_souls(gs, gs.landmarks.back(), 40);
     return gs;
 }
 
@@ -76,13 +80,13 @@ sm::GameState make_world() {
 int city_population_of(const sm::GameState& gs, int id) {
     for (const auto& s : gs.landmarks)
         if (s.type == sm::LandmarkType::City && s.id == id)
-            return s.population;
+            return sm::souls_flock(gs, s);
     return -1;
 }
 int village_population_of(const sm::GameState& gs, int id) {
     for (const auto& v : gs.landmarks)
         if (v.type == sm::LandmarkType::Village && v.id == id)
-            return v.population;
+            return sm::souls_flock(gs, v);
     return -1;
 }
 int population_of(const sm::GameState& gs, int id) {
@@ -323,8 +327,14 @@ void test_dead_leader_squads_fall_into_the_pool() {
     make_squad(world, 11, {3u});
     sm::macro_mark_dead(sm::store_of(world), fallen);
 
-    Inventory pool{};
-    CHECK(drain_dead_leader_squads(sm::store_of(world), pool) == 2,
+    // ДВЕРЬ ТЕПЕРЬ ТРЕБУЕТ МИР (v122), и это не удобство, а закон: душа,
+    // ушедшая в пул, ПОКИНУЛА паству своего дома, и число фичи обязано
+    // упасть (leave_home_flock). Пул живёт в мире, а не рядом с ним.
+    // GameState на КУЧЕ: он ~0.84 МиБ (грабля ломтика C).
+    auto gsp = std::make_unique<sm::GameState>();
+    sm::GameState& gs = *gsp;
+    Inventory& pool = gs.deserterPool;
+    CHECK(drain_dead_leader_squads(sm::store_of(world), gs) == 2,
           "the dead leader's survivors walk away, all of them");
     CHECK(creature_heads(pool) == 2,
           "and they land in the deserter pool");
@@ -334,7 +344,7 @@ void test_dead_leader_squads_fall_into_the_pool() {
     CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{11, 0, 0}) == 1,
           "a live leader keeps his men");
 
-    CHECK(drain_dead_leader_squads(sm::store_of(world), pool) == 0
+    CHECK(drain_dead_leader_squads(sm::store_of(world), gs) == 0
               && creature_heads(pool) == 2,
           "draining again pays nothing: the pool is never billed twice");
 }

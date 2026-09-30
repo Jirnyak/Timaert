@@ -24,6 +24,7 @@
 //     score exists to buy;
 //   · determinism — one seed, one settled world.
 #include "check.h"
+#include "macro/labour.h"   // souls_flock / souls_home — двери душ
 
 #include "core/rng.h"
 #include "core/torus.h"
@@ -420,17 +421,24 @@ void test_count_derives_from_capacity() {
                       "steppe");
     // Souls are the OWNER'S SCALE (CANON S25, 2026-08-31): a hundred-odd
     // per village, base + a seed roll of the spread — never the score and
-    // never the old 30+rng%90 dice. Since §42 Инк 7 a share of the born
-    // souls stands in the village's own GARRISON at birth — moved, not
-    // vanished: the bijection witness sums both sides.
+    // never the old 30+rng%90 dice.
+    //
+    // ПЕРЕВОРОТ v122: раздела «часть душ в гарнизон» больше нет — ВСЕ души
+    // рождаются ГОЛОВАМИ в инвентаре места, а паства (worked-число фичи)
+    // считает их же. Свидетель поэтому судит ОБА носителя и требует их
+    // СОГЛАСИЯ: разойдись они — и место стало бы живым по одной двери и
+    // мёртвым по другой.
     for (const auto* vp : villages) {
         const auto& v = *vp;
-        const int born = v.population + creature_heads(v.inventory);
-        CHECK(born >= kVillageBornBase
-                  && born < kVillageBornBase + kVillageBornSpread,
-              "a village is born at the owner's scale, army included");
+        const int flock = souls_flock(w.gs, v);
+        CHECK(flock >= kVillageBornBase
+                  && flock < kVillageBornBase + kVillageBornSpread,
+              "a village is born at the owner's scale");
+        CHECK(souls_home(v) == flock,
+              "паства и головы согласны: в поле новорождённая деревня "
+              "никого не держит");
         CHECK(creature_heads(v.inventory) > 0,
-              "a village is born with its own small army (§42 Инк 7)");
+              "a village is born with its souls in its own container");
     }
 }
 
@@ -547,7 +555,7 @@ void test_determinism() {
         const auto& va = *villagesA[i];
         const auto& vb = *villagesB[i];
         same = same && va.x == vb.x && va.y == vb.y
-                    && va.population == vb.population;
+                    && souls_home(va) == souls_home(vb);
     }
     CHECK(same, "one seed, one settled world");
 }

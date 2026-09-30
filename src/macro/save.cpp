@@ -121,13 +121,11 @@ constexpr std::uint64_t kPlayerBytes =               // write_player
 constexpr std::uint64_t kLandmarkBytes =             // write_landmark
     sizeof(Landmark::id) + sizeof(std::uint8_t) + kStrBytes
     + sizeof(Landmark::x) + sizeof(Landmark::y)
-    + sizeof(Landmark::population) + kInventoryBytes
+    + kInventoryBytes
     + sizeof(Landmark::factionIdx) + sizeof(Landmark::interests)
     + sizeof(Landmark::starvedYesterday) + sizeof(Landmark::seasonWellbeing)
     + sizeof(Landmark::popGrowthCarry) + sizeof(Landmark::renown)
-    + sizeof(Landmark::needDebt)
-    + sizeof(Landmark::garrison.needDebt)
-    + sizeof(Landmark::garrison.wageDebt);
+    + sizeof(Landmark::needDebt);
 constexpr std::uint64_t kLandmarksBlockBytes =
     kCountBytes + std::uint64_t(kMaxLandmarks) * kLandmarkBytes;
 
@@ -968,14 +966,15 @@ void read_player(Reader& r, PlayerState& p) {
 
 // v62: ONE landmark serializer for the one roster (CANON S9) — the kind is
 // the record's `type` column, so every kind writes every column; unused ones
-// ride at their zero defaults (an empty garrison is a zero count).
+// ride at their zero defaults (the zero contribution, CANON S6).
 void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.id);
     write_enum8(w, lm.type);
     w.str(lm.name);
     w.pod(lm.x);
     w.pod(lm.y);
-    w.pod(lm.population);
+    // (population покинула формат в v122 — паства едет worked-слоем полей,
+    // домашние души — головами инвентаря ниже)
     write_inventory(w, lm.inventory);
     w.pod(lm.factionIdx);          // v94: faction registry index (kingdoms cut)
     w.pod(lm.interests);           // v107: ВСЕ связи места одной таблицей
@@ -987,8 +986,8 @@ void write_landmark(Writer& w, const Landmark& lm) {
     // (spellId/depleted покинули формат в v120: спелл шпиля едет worked-слоем)
     // (дань покинула запись места в v121 — она едет блоком рода 6)
     w.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
-    w.pod(lm.garrison.needDebt);   // v105: счёт содержания ростера места
-    w.pod(lm.garrison.wageDebt);   // порядок байт тот же — бампа нет
+    // (garrison.needDebt/wageDebt покинули формат в v122 — контейнер
+    // гарнизона умер, M-8)
 }
 
 void read_landmark(Reader& r, Landmark& lm) {
@@ -997,7 +996,6 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.str(lm.name);
     r.pod(lm.x);
     r.pod(lm.y);
-    r.pod(lm.population);
     read_inventory(r, lm.inventory);
     r.pod(lm.factionIdx);          // v94
     r.pod(lm.interests);           // v107
@@ -1006,8 +1004,6 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.popGrowthCarry);
     r.pod(lm.renown);            // v53
     r.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
-    r.pod(lm.garrison.needDebt);   // v105
-    r.pod(lm.garrison.wageDebt);
 }
 
 void write_marker(Writer& w, const Marker& m) {

@@ -229,13 +229,15 @@ void spawn_cell_npcs(ecs::World& w,
                      // debt, so a kill thins the cell for good; -1 = no macro
                      // context wired (tests/harness) = the old unbounded roll.
                      int faunaCount,
-                     // The place's STANDING ARMY at home (§42 Инк 7:
-                     // Landmark::garrison — the roster whose owner is a
-                     // landmark). Every record embodies as a fighting body
-                     // with the Garrison loan: killed on the wall = struck
-                     // from the roll; out on patrol / hired away = not in
-                     // this roster = not on the street. nullptr = none.
-                     const Inventory* garrison,
+                     // ДУШИ МЕСТА, СТОЯЩИЕ ДОМА — инвентарь существ его
+                     // записи (переворот v122; вердикт владельца: «весь их
+                     // инвентарь существ воплощается АГНОСТИЧНО — что есть
+                     // в сквадe города в инвентаре, то чел и увидит в
+                     // городе»). Каждая голова встаёт телом СВОЕГО рода и
+                     // уровня; ушедшие в поле стоят на карте сквадами и
+                     // здесь не воплощаются. Сословия «гарнизон/мирные»
+                     // больше нет — толпа одна. nullptr = душ нет.
+                     const Inventory* homeSouls,
                      // WHAT HOUR IT IS, and it is not optional. How many of a
                      // place's people stand on its streets is a question about
                      // the sun (city_layout.h crowd_outdoor_share01); the rest

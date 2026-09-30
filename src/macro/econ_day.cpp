@@ -1,5 +1,6 @@
 #include "macro/econ_day.h"
 #include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
+#include "macro/roster_window.h"   // roster_bill — ОДИН счёт содержания (M-140)
 
 #include "macro/economy.h"    // stock_price — ranking asks THE price law
 #include "tables/faction.h"    // монетная семья фракции — ординалы номиналов
@@ -245,6 +246,28 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
     // от нехватки ткани не умирают, она гасит РОСТ. Шкала комфорта — по
     // СЕГОДНЯШНЕМУ населению: с выставления счёта оно дрейфует ростом, но
     // доля читается на той же границе, где выставится новый счёт.
+    // РАЦИОН СПРАШИВАЕТСЯ У СТРОКИ, А НЕ У ЧИСЛА ДУШ (вердикт владельца
+    // 2026-09-30, дословно: «с чего это лошади не едят если в таблице
+    // объектов они ещё как едят! убрать все хардкоды — агностичный сквад,
+    // все кто в нём едят по таблице по системе; никаких особенностей
+    // лошадей»). Счёт голода места есть ТОТ ЖЕ `roster_bill`, которым
+    // судится отряд в поле, — этим закрыт наряд M-140 «свести рот места и
+    // рот отряда в один»: раньше здесь стоял `population × kDaysPerSeason`,
+    // то есть «один юнит на душу в день» ЛИТЕРАЛОМ, и колонка `boardPerDay`
+    // всей таблицы существ молча не читалась.
+    //
+    // СЛЕДСТВИЕ, КОТОРОЕ ЭТИМ ПОКУПАЕТСЯ: предел ТАБУНА места стал
+    // эмерджентным. Прежде его держал потолок `garrison_cap_` — ровно тот
+    // костыль, что запрещён ЗАКОНОМ КЛАМПА («потолок численности МАСКИРУЕТ
+    // отсутствие обратной связи»); теперь лишняя лошадь просто ЕСТ, счёт
+    // растёт, и недоимка забирает головы. Предел наступает через мир.
+    const int headsBefore = creature_heads(store);
+    const std::int64_t boardSeason = roster_bill(store).board;
+    // Сезонный рацион ОДНОЙ головы этого места — среднее по её же составу:
+    // оба числа из одних данных, ни одной назначенной константы.
+    const int perHeadSeason = headsBefore > 0
+        ? std::max<int>(1, int(boardSeason / headsBefore))
+        : kDaysPerSeason;
     int deaths = 0;
     // ДОЛЯ КОМФОРТА МЕРЯЕТСЯ СТОИМОСТЬЮ, А НЕ ШТУКАМИ (вердикт владельца
     // 2026-09-26, подтверждён прямо). Бюджет горожанина задан в стоимости,
@@ -256,8 +279,11 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
     for (int c = 0; c < kCommodityCount; ++c) {
         const std::int32_t remaining = needDebt[c];
         if (c == hungerOrd) {
-            // Душевой сезон голодной строки = kDaysPerSeason юнитов.
-            deaths = std::min(population, int(remaining / kDaysPerSeason));
+            // Сколько РТОВ не прокормлено: недоимка, делённая на сезонный
+            // рацион рта. Смерть снимает ЛЮБУЮ голову — «никаких
+            // особенностей лошадей» (вердикт): голодный двор теряет и
+            // человека, и скотину, по своей же таблице.
+            deaths = std::min(headsBefore, int(remaining / perHeadSeason));
             continue;
         }
         const int demand = season_comfort_units(population, c);
@@ -279,17 +305,28 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
     // второго хранимого числа. Голодавший сезон гасит рост сам, и это не
     // вторая кара: мёртвых уже не вернуть, а живые просто не плодятся,
     // пока не прокормятся.
-    const float foodShare = float(population - deaths) / float(population);
+    // Доля прокормленных — по РТАМ этого места: счёт выставлен ртам, и
+    // судить его людьми значило бы мерить оплату не тем, что оплачивалось.
+    const float foodShare = headsBefore > 0
+        ? float(headsBefore - deaths) / float(headsBefore)
+        : 0.0f;
     const float comfortShare = comfortValue > 0
         ? 1.0f - float(unmetValue) / float(comfortValue)
         : 1.0f;
     out.wellbeing = foodShare * comfortShare;
-    // 2. НОВЫЙ СЧЁТ — по населению ПОСЛЕ смертей, перезаписью: старый долг
-    // не переносится (взыскали — выставили новый).
-    const int popAfter = population - deaths;
+    // 2. ВЗЫСКАНИЕ ИСПОЛНЯЕТСЯ ЗДЕСЬ — головы снимает та же дверь, что их
+    // судила. Иначе новый счёт ниже пришлось бы выставлять по составу,
+    // которого уже нет, — и он врал бы ровно на съеденных.
+    if (deaths > 0) bleed_heads(store, deaths);
+    // 3. НОВЫЙ СЧЁТ — по ФАКТИЧЕСКОМУ составу, перезаписью: старый долг не
+    // переносится (взыскали — выставили новый). Голод спрашивает таблицу
+    // (`roster_bill` по живым головам), комфорт — людей: бюджет горожанина
+    // есть свойство человека, и лошадь его не тратит.
+    const int popAfter = std::max(0, count_human_souls(store));
+    const std::int64_t boardAfter = roster_bill(store).board;
     for (int c = 0; c < kCommodityCount; ++c) {
         needDebt[c] = std::int32_t(c == hungerOrd
-            ? season_hunger_units(popAfter)
+            ? boardAfter
             : season_comfort_units(popAfter, c));
     }
     // 3. НЕМЕДЛЕННОЕ ГАШЕНИЕ: посевной амбар и прошлый излишек платят по

@@ -9,6 +9,7 @@
 // And the landmark side must answer for ANY kind: the City filter of the old
 // settlement panel (PLAY-2) is exactly what this door exists to end.
 #include "check.h"
+#include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "ecs/world.h"
 #include "macro/map_subject.h"
@@ -31,10 +32,12 @@ sm::GameState make_world() {
     city.name = "Testholm";
     city.x = 10;
     city.y = 10;
-    city.population = 300;
     sm::creatures_push(city.inventory,
         sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 11u));
     gs.landmarks.push_back(city);
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число фичи,
+    // головы в инвентарь — тем же законом, что генезис.
+    sm::settle_souls(gs, gs.landmarks.back(), 300);
     // A VILLAGE and a SPIRE on the same one id space (v54): the door must
     // answer for them exactly as it does for the city — kind-blind.
     sm::Landmark village{};
@@ -43,8 +46,10 @@ sm::GameState make_world() {
     village.name = "Hamlet";
     village.x = 20;
     village.y = 20;
-    village.population = 40;
     gs.landmarks.push_back(village);
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+    // фичи, головы в инвентарь — тем же законом, что генезис.
+    sm::settle_souls(gs, gs.landmarks.back(), 40);
     sm::Landmark spire{};
     spire.type = sm::LandmarkType::Spire;
     spire.id = 13;

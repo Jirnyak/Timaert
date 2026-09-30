@@ -173,7 +173,31 @@ inline void refresh_squad_carry(MacroStore& st, MacroHandle leader) {
 // still holds members; a live leader's squad is never touched, and a swept
 // roster is emptied so the pool can never be paid twice for the same men.
 // Returns how many soldiers walked away.
-inline int drain_dead_leader_squads(MacroStore& st, Inventory& deserterPool) {
+// ── ДУША ПОКИНУЛА ПАСТВУ СВОЕГО ДОМА (переворот населения, v122) ──────────
+// Паства поселения — worked-ЧИСЛО его фичи, и она считает ВСЕХ своих: и тех,
+// кто стоит дома головой в инвентаре, и тех, кто ушёл в поле сквадом. Отсюда
+// закон: пока душа жива и числится за домом, worked её держит; как только она
+// ВЫШЛА из мира этого дома — умерла в бою, ушла в пул дезертиров, — число
+// обязано упасть. Без этой двери паства завышалась бы НАВСЕГДА: место
+// кормило бы, растило и облагало данью людей, которых у него нет.
+//
+// Сюда НЕ входит возвращение домой (dissolve_population_crew): там душа
+// переходит из поля в дом, оставаясь той же паствой, и число не меняется.
+//
+// У ДАНЖА ДВЕРИ НЕТ ПО ПОСТРОЕНИЮ: его паства и есть головы инвентаря
+// (souls_flock), а worked под FT_Spire занят спеллом — списывать там значило
+// бы гасить чужое число.
+inline void leave_home_flock(GameState& gs, std::int32_t homeId, int souls) {
+    if (homeId <= 0 || souls <= 0) return;
+    Landmark* home = landmark_by_id(gs, homeId);
+    if (home == nullptr) return;
+    if (landmark_def(home->type).bornPopBase != 0) return;
+    worked_write(gs, home->x, home->y,
+                 std::max(0, worked_read(gs, home->x, home->y) - souls));
+}
+
+inline int drain_dead_leader_squads(MacroStore& st, GameState& gs) {
+    Inventory& deserterPool = gs.deserterPool;
     int moved = 0;
     // The player's own squad never deserts wholesale: he is not a leader whose
     // men wander off when he falls, and losing his roster into the pool would
@@ -193,11 +217,17 @@ inline int drain_dead_leader_squads(MacroStore& st, Inventory& deserterPool) {
     for (const SquadWalkEntry& sw : order) {
         auto& bag = st.inventory[sw.slot];
         if (creatures_empty(bag.inv)) continue;
+        const int humansBefore = count_human_souls(bag.inv);
         // The pool CAN refuse (its own slot ceiling): only the men it
         // actually took leave the roster; the rest STAY as the dead lord's
         // band and the next sweep tries again — nobody is destroyed for
         // standing past a cap (CANON S26).
         moved += creatures_move(deserterPool, bag.inv);
+        // СПИСЫВАЕТСЯ ФАКТ, а не намерение: пул мог отказать, и тогда душа
+        // осталась в ростере — она всё ещё паства своего дома. Повторный
+        // проход следующего тика спишет ровно то, что уедет тогда.
+        leave_home_flock(gs, st.runtime[sw.slot].homeSettlementId,
+                         humansBefore - count_human_souls(bag.inv));
     }
     return moved;
 }
@@ -229,7 +259,7 @@ inline int drain_dead_leader_squads(MacroStore& st, Inventory& deserterPool) {
 // standing past a cap, CANON S26). The player's squad is never swept: his
 // death is a game-over screen, not a disappearance. Returns how many left
 // the map.
-inline int destroy_dead_macro_squads(MacroStore& st, const GameState& gs,
+inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
                                      std::int64_t* lootPoolValue = nullptr) {
     // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
     // (destroy под собственным view незаконен), закон порядка достался ему
@@ -263,6 +293,14 @@ inline int destroy_dead_macro_squads(MacroStore& st, const GameState& gs,
         // drawn off this value — variety by law, O(1) memory.
         if (lootPoolValue)
             *lootPoolValue += inventory_value(st.inventory[slot].inv);
+        // ЛИДЕР — СВОЯ ДУША, И ОН ТОЖЕ БЫЛ ВЗЯТ ИЗ ДОМА (v122: рождение
+        // артели списывает `1 + members` голов, npc_ai rotate_worker_squads).
+        // Ростер здесь уже пуст — членов увёл пул, и их дом списал сам, —
+        // поэтому остаётся ровно одна душа, и списывается она ровно раз: слот
+        // умирает в этой строке и второй раз сюда не придёт.
+        if (is_folk_kind(st.kind[slot].type)) {
+            leave_home_flock(gs, st.runtime[slot].homeSettlementId, 1);
+        }
         // 6.3: сквад ЕСТЬ слот store — смерть слота и есть вся смерть.
         store_death(st, handle_at(st, slot));
         ++swept;
@@ -953,7 +991,7 @@ inline void settle_auto_battle(const MacroWorld& mw,
         loot_fallen_owner(st, loser, st.inventory[winner.slot].inv);
     }
 
-    drain_dead_leader_squads(st, gs.deserterPool);
+    drain_dead_leader_squads(st, gs);
     // ОДНА дверь оплаты (корень 5): именованный победитель растёт как
     // игрок (лист владеем, WIS-дивиденд, очки копятся), транзиент —
     // прежний бросок.
@@ -1048,7 +1086,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     if (playerWon && macro_dead(st, enemy)) {
         loot_fallen_owner(st, enemy, *playerBag);
     }
-    drain_dead_leader_squads(st, gs.deserterPool);
+    drain_dead_leader_squads(st, gs);
 
     // Пара Killed+Died — ТА ЖЕ дверь, что у ИИ↔ИИ (хвост 2б, владелец
     // 2026-09-02): осиротевшие дома жертв игрока получают Died, и

@@ -47,8 +47,6 @@ CANON.md	state.h:855
 CANON.md	state.h:984
 CANON.md	sub/map_data.h:141
 CANON.md	ui/overlays.cpp:887-899
-CANON.md	world_tick.cpp:308
-CANON.md	world_tick.h:39
 CANON.md	zones.h:30
 README.md	src/app/main.cpp:155-162
 README.md	src/app/main.cpp:3840-3843
@@ -109,7 +107,6 @@ SKELETON.md	:265-276
 SKELETON.md	:267-275
 SKELETON.md	:278
 SKELETON.md	:287
-SKELETON.md	:288-291
 SKELETON.md	:291
 SKELETON.md	:295-296
 SKELETON.md	:2967
@@ -175,7 +172,6 @@ SKELETON.md	:466
 SKELETON.md	:468
 SKELETON.md	:469
 SKELETON.md	:47
-SKELETON.md	:470-471
 SKELETON.md	:4773
 SKELETON.md	:4784
 SKELETON.md	:481
@@ -217,7 +213,6 @@ SKELETON.md	:743
 SKELETON.md	:743-756
 SKELETON.md	:76
 SKELETON.md	:779
-SKELETON.md	:79-88
 SKELETON.md	:8016
 SKELETON.md	:8070
 SKELETON.md	:88
@@ -227,7 +222,6 @@ SKELETON.md	:96
 SKELETON.md	:99-100
 SKELETON.md	:990
 SKELETON.md	:993
-SKELETON.md	CANON.md:987
 SKELETON.md	ai.cpp:109-118
 SKELETON.md	ai.cpp:93
 SKELETON.md	app/app_state.h:161
@@ -291,20 +285,15 @@ SKELETON.md	deposit_layer.h:101
 SKELETON.md	deposit_layer.h:12-21
 SKELETON.md	deposit_layer.h:18-21
 SKELETON.md	deposit_layer.h:38-46
-SKELETON.md	econ_day.cpp:136
 SKELETON.md	econ_day.cpp:148-189
 SKELETON.md	econ_day.cpp:176
 SKELETON.md	econ_day.cpp:194
 SKELETON.md	econ_day.cpp:209
-SKELETON.md	econ_day.cpp:230
 SKELETON.md	econ_day.cpp:320
 SKELETON.md	econ_day.cpp:393
 SKELETON.md	econ_day.cpp:393-416
 SKELETON.md	econ_day.cpp:394-401
 SKELETON.md	econ_day.cpp:415
-SKELETON.md	econ_day.cpp:42
-SKELETON.md	econ_day.cpp:422-433
-SKELETON.md	econ_day.cpp:459
 SKELETON.md	econ_day.cpp:461
 SKELETON.md	econ_day.cpp:70
 SKELETON.md	econ_day.cpp:95-99
@@ -403,7 +392,6 @@ SKELETON.md	macro_stock.cpp:577
 SKELETON.md	macro_stock.cpp:607
 SKELETON.md	macro_stock.cpp:610
 SKELETON.md	macro_stock.cpp:615
-SKELETON.md	macro_stock.cpp:703
 SKELETON.md	macro_stock.h:114-116
 SKELETON.md	macro_stock.h:60-74
 SKELETON.md	macro_world.h:63
@@ -561,7 +549,6 @@ SKELETON.md	roster_window.h:108
 SKELETON.md	roster_window.h:139
 SKELETON.md	roster_window.h:58-59
 SKELETON.md	roster_window.h:74
-SKELETON.md	roster_window.h:84-89
 SKELETON.md	ruins.cpp:25-31
 SKELETON.md	ruins.cpp:44
 SKELETON.md	ruins.cpp:72
@@ -660,8 +647,6 @@ SKELETON.md	state.h:1261-1270
 SKELETON.md	state.h:356
 SKELETON.md	state.h:400-402
 SKELETON.md	state.h:469
-SKELETON.md	state.h:471
-SKELETON.md	state.h:485
 SKELETON.md	state.h:506
 SKELETON.md	state.h:510
 SKELETON.md	state.h:616
@@ -669,7 +654,6 @@ SKELETON.md	state.h:617
 SKELETON.md	state.h:623-626
 SKELETON.md	state.h:845-849
 SKELETON.md	state.h:851
-SKELETON.md	state.h:855
 SKELETON.md	state.h:864
 SKELETON.md	state.h:868
 SKELETON.md	state.h:872
@@ -766,16 +750,8 @@ SKELETON.md	world_row.h:342-343
 SKELETON.md	world_row.h:66
 SKELETON.md	world_tick.cpp:201
 SKELETON.md	world_tick.cpp:212-221
-SKELETON.md	world_tick.cpp:294
-SKELETON.md	world_tick.cpp:297
 SKELETON.md	world_tick.cpp:387
-SKELETON.md	world_tick.cpp:477
-SKELETON.md	world_tick.cpp:495
-SKELETON.md	world_tick.cpp:552-556
-SKELETON.md	world_tick.cpp:616
 SKELETON.md	world_tick.cpp:74
-SKELETON.md	world_tick.cpp:87
-SKELETON.md	world_tick.h:97-114
 SKELETON.md	zones.cpp:139-166
 SKELETON.md	zones.cpp:159-160
 SKELETON.md	zones.cpp:185
@@ -978,9 +954,6 @@ jopus_prompts.md	tests/city_wall_integrity_test.cpp:238
 jopus_prompts.md	tests/movement_steering_test.cpp:666-677
 jopus_prompts.md	tests/structure_collide_test.cpp:214-217
 jopus_prompts.md	tests/trade_law_test.cpp:1-30
-jopus_prompts.md	tests/trade_law_test.cpp:103-119
-jopus_prompts.md	trade_law_test.cpp:103-109
-jopus_prompts.md	trade_law_test.cpp:110-117
 jopus_prompts.md	tree_layer.cpp:23-24
 jopus_prompts.md	tree_layer.h:104
 jopus_prompts.md	ui/screens.h:70
@@ -1277,7 +1250,6 @@ macro-registry.md	vk_renderer_3d.cpp:1475
 macro-registry.md	world_gen.cpp:345
 macro-registry.md	world_tick.cpp:380
 macro-registry.md	world_tick.cpp:381
-macro-registry.md	world_tick.cpp:540
 macro-registry.md	zones.h:30
 macro-registry.md	:4787
 

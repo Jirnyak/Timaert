@@ -26,6 +26,7 @@
 //      literals gen_city / gen_village carried before they were hoisted out —
 //      the refactor must not have moved a single wall.
 #include "check.h"
+#include "macro/world_row.h"   // raise_flock_into_roster — души головами
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "tables/faction.h"
@@ -171,6 +172,11 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
     sm::ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122): предусловие свидетеля — контейнер душ
+    // места, и он рождает его САМ (§8 п.11). Паства (число `pop` ниже)
+    // осталась мерой ГЕОМЕТРИИ: стены строились на всех, включая ушедших.
+    sm::Inventory homeSouls{};
+    sm::raise_flock_into_roster(homeSouls, pop);
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
@@ -186,7 +192,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              /*landmarkSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
                              /*faunaCount*/-1,
-                             /*garrison*/nullptr,
+                             &homeSouls,
                              now);
 
     const bool city = landmark == sm::LandmarkType::City;

@@ -128,6 +128,46 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
 // RNG-only pick_civilian_type (canon-audit F4) and stands bit-for-bit.
 NPCType pick_crowd_row(const SpawnContext& ctx, std::uint32_t& rngState);
 
+// МОЩЬ СТРОКИ — ОДИН РАСЧЁТ, ДВА ПОТРЕБИТЕЛЯ. hp × dps той же строки, что
+// и дерётся: `spawn_strength` нормализует ЭТО в байт для сравнения с
+// опасностью клетки, а `weakest_crowd_kind` ниже берёт по ЭТОМУ минимум.
+// Второго счёта силы в игре нет — нормализация порядка не меняет, поэтому
+// «кто слабее» и «насколько он силён» отвечаются одним числом (DOD п.6).
+inline double row_power(NPCType t) {
+    const CombatTemplate& c = npc_def(t).combat;
+    const double dps = double(dice_mean_x2(c.dice)) * 0.5
+                     / std::max(0.25, double(c.cooldown));
+    return std::max(1.0, double(c.hp) * dps);
+}
+
+// СЛАБЕЙШАЯ СТРОКА ТОЛПЫ ЭТОГО РОДА МЕСТ — «душа» данжа (переворот
+// населения, вердикт владельца 2026-09-30: «души данжей — тоже головами;
+// вид стака НЕ выдумывать»). Выводится из той же полосы crowdHabitat и той
+// же силы, что и ролл толпы: среди строк полосы с ненулевым весом —
+// минимальная мощь (шпиль отвечает Imp, руина и логово — CaveBat; ничья
+// достаётся первой строке таблицы). NPCType::Count = полоса пуста: у рода
+// нет толпы, значит нет и душ.
+//
+// В ЗАГОЛОВКЕ ОНА ПОТОМУ, ЧТО ЕЁ ЗОВЁТ ДВЕРЬ ЗАСЕЛЕНИЯ (labour.h
+// settle_souls), а та живёт в заголовке рядом с прочими дверями душ; цена
+// тела — O(строк каталога), то есть константа, а не кап мира (§5 п.13).
+inline NPCType weakest_crowd_kind(LandmarkType landmark) {
+    const std::uint16_t stripe = landmark_def(landmark).crowdHabitat;
+    NPCType out = NPCType::Count;
+    double best = 0.0;
+    for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
+        const NpcTypeDef& row = npc_def(NPCType(i));
+        if (!(row.habitat & stripe)) continue;
+        if (row.weight == 0) continue;   // ролл её не берёт — не берём и мы
+        const double p = row_power(NPCType(i));
+        if (out == NPCType::Count || p < best) {
+            best = p;
+            out = NPCType(i);
+        }
+    }
+    return out;
+}
+
 // ── The honest headcount (Session 16) ────────────────────────────────
 // A cell's fauna CAPACITY — how many heads its own spawn table carries
 // (the winning table's maxCount). This is the derived baseline of the

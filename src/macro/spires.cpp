@@ -1,4 +1,5 @@
 #include "macro/spires.h"
+#include "macro/labour.h"      // settle_souls — одна дверь поселения душ
 #include "macro/landmark_registry.h"
 #include "tables/faction.h"
 #include "macro/map_generator.h"
@@ -122,15 +123,20 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         // залежи, у порта корабли — у шпиля спелл»): kSpellDefs ordinal + 1
         // under FT_Spire, 0 = drained (закон нуля-ординала).
         worked_write(gs, bestX, bestY, ord + 1);
-        // Born with its garrison (§42 Инк 5): the registry row's own born
+        // Born with its haunt (§42 Инк 5): the registry row's own born
         // columns × the spell's tier, a discrete bell around the mean. Its
         // OWN stream (world salt × spell ordinal) so the placement draws
         // above stay bit-for-bit what they were.
+        //
+        // ПЕРЕВОРОТ v122 (вердикт 3): души данжа — ГОЛОВАМИ, вид стака
+        // ВЫВОДИТСЯ — слабейшая строка полосы толпы (шпиль → Imp); worked
+        // клетки не трогается — под FT_Spire там живёт СПЕЛЛ (ломтик B).
         {
             Rng popRng(gs.worldSeed ^ 0xB0125EEDu
                        ^ (std::uint32_t(ord) * 2654435761u));
-            sp.population = landmark_born_population(
-                int(def.bornPopBase), int(def.bornPopPerScore), tier, popRng);
+            settle_souls(gs, sp, landmark_born_population(
+                int(def.bornPopBase), int(def.bornPopPerScore), tier,
+                popRng));
         }
         add_landmark(gs, std::move(sp));
     }

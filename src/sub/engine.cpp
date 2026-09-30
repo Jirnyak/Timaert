@@ -3411,7 +3411,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     // beheaded warband stayed a live squad on the map for as
                     // long as the player kept exploring — and the pool that
                     // raises bandit bands was paid late by exactly that long.
-                    drain_dead_leader_squads(store_of(*ecs_), gs_->deserterPool);
+                    drain_dead_leader_squads(store_of(*ecs_), *gs_);
                 }
             }
             const auto* pos = reg.try_get<ecs::Position>(e);
@@ -3538,7 +3538,7 @@ void SubworldEngine::leave(bool force) {
         // deserter pool, out of which the macro sim later raises deserter and
         // bandit bands. First gameplay writer that pool has ever had.
         if (ecs_ && gs_) {
-            drain_dead_leader_squads(store_of(*ecs_), gs_->deserterPool);
+            drain_dead_leader_squads(store_of(*ecs_), *gs_);
         }
         // A dungeon is a pure projection — nothing below the door is worth
         // caching (the overworld cache carries felled trees etc.; an interior

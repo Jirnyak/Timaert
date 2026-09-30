@@ -321,6 +321,48 @@ inline int count_human_souls(const Inventory& inv) {
     return n;
 }
 
+// УБЫЛЬ ДУШ — ДВЕРЬ drain (ЗАКОН ТРЁХ ДВЕРЕЙ): снять до n человеческих душ
+// с фолк-стаков и ВЕРНУТЬ ФАКТ — голод, гибель и подъём в сквад берут
+// сколько есть, скот остаётся имуществом (лошадь — не душа). Новейший
+// людской слот первым (наименьший индекс области — зеркало ссадки состава
+// в rotate_worker_squads).
+inline int bleed_flock(Inventory& inv, int n) {
+    int taken = 0;
+    while (taken < n) {
+        int si = -1;
+        for (int k = inv.creature_first(); k < kMaxInventorySlots; ++k) {
+            if (is_folk_kind(std::uint16_t(
+                    creature_of_world_row(inv.slots[std::size_t(k)].def)))) {
+                si = k;
+                break;
+            }
+        }
+        if (si < 0) break;
+        const int take = std::min(n - taken,
+                                  int(inv.slots[std::size_t(si)].count));
+        if (take <= 0 || !inv.remove_at(si, take)) break;
+        taken += take;
+    }
+    return taken;
+}
+
+// Та же дверь для ТОЛПЫ ДАНЖА (переворот населения, вердикт 3: души данжей
+// — головами, и голова его толпы — Imp, не человек): снять до n голов
+// ЛЮБОГО рода из области существ, вернуть факт. У поселения этой дверью не
+// ходят — там душа человеческая (bleed_flock выше), а зверь — имущество.
+inline int bleed_heads(Inventory& inv, int n) {
+    int taken = 0;
+    while (taken < n) {
+        const int si = inv.creature_first();
+        if (si >= kMaxInventorySlots) break;
+        const int take = std::min(n - taken,
+                                  int(inv.slots[std::size_t(si)].count));
+        if (take <= 0 || !inv.remove_at(si, take)) break;
+        taken += take;
+    }
+    return taken;
+}
+
 // Upkeep is MAINTENANCE, not a deal: один закон, одно число, чей бы
 // контейнер ни был.
 inline int calculate_squad_upkeep(const Inventory& inv) {

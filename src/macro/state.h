@@ -372,7 +372,13 @@ namespace sm {
 // плоскими чарами, цвет, отношения колонкой строки, феодальные рёбра дани
 // отрезками общего пула; RelationMatrix и рантайм-имена хвоста уничтожены;
 // блок сейва — один pod FactionState.
-constexpr int kSaveVersion = 121;   // v121: строки фракций + феодальный пул рёбер
+// v122 (ход 2, ломтик D — ПЕРЕВОРОТ НАСЕЛЕНИЯ, M-8/M-93): паства поселения
+// — ЧИСЛО ФИЧИ (worked под FT_City/FT_Village), домашние души — ГОЛОВЫ в
+// инвентаре места (один вид — один стак), души данжа — головы его толпы
+// (слабейшая строка полосы crowdHabitat: шпиль → Imp). Колонки
+// Landmark::population и Landmark::garrison (гарнизон как отдельный
+// контейнер, M-8) покидают формат.
+constexpr int kSaveVersion = 122;   // v122: переворот населения
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -489,7 +495,9 @@ struct Landmark {
     LandmarkType type = LandmarkType::None;  // THE kind column (registry row)
     std::string name;        // "" where the kind carries none (spires derive)
     int x = 0, y = 0;
-    int population = 0;
+    // (population умерла 2026-09-30, v122 — переворот населения: паства =
+    // worked-число фичи, souls_flock@src/macro/labour.h; домашние души —
+    // головы инвентаря, souls_home@src/macro/labour.h.)
     // THE store (owner's ruling, W2): the landmark's universal Inventory is
     // its market, its granary and its warehouse in one — agents deliver into
     // it, the day-loop eats from it, the trade panel sells out of it.
@@ -497,13 +505,10 @@ struct Landmark {
     // ОПИСЬ СВОЕЙ ОКРУГИ — производная, в сейв не едет (см. LandmarkSurvey).
     LandmarkSurvey survey;
     LandmarkLedger ledger;       // ЧТО ПОЧЁМ здесь — тот же сезонный такт
-    // РОСТЕР МЕСТА — ТОТ ЖЕ ТИП, ЧТО У СКВАДА (macro/roster.h, CANON S4:
-    // «гарнизон = ростер ландмарка»). Инвентарь существ плюс его счёт
-    // содержания одной записью; пуст, если строка реестра гарнизона не
-    // держит. Слово «гарнизон» осталось ИМЕНЕМ РОЛИ, а не вторым видом
-    // контейнера: судит его та же дверь, что артель и армию игрока
-    // (macro/roster_window.h).
-    Roster garrison;
+    // (garrison умер 2026-09-30, v122 — M-8 «гарнизон умирает как отдельный
+    // контейнер»: раздела гарнизон/мирные больше нет, оборона места — вся
+    // толпа домашних голов в едином инвентаре; жители едят ОДНОЙ лестницей
+    // потребностей места — второй счёт needDebt/wageDebt ел бы их дважды.)
     // WHOSE place this is — a faction registry index (owner 2026-09-11:
     // «королевств нет, только фракции — одна система»). -1 = nobody's,
     // which resolves to the free folk through faction_or_freefolk. It
@@ -599,10 +604,14 @@ struct Landmark {
 // 2026-09-30, ход 2 ломтик C: дань уехала на феодальное ребро рода 6 —
 // titheOwedValue (8) + titheSeasonAssessed (4) + titheAvgValue (8) с
 // паддингом (4) умерли, 42392 → 42368.
-static_assert(sizeof(Landmark) == 42368,
-              "место = ядро субъекта (41032) + реестр (1024) + 312 Б своего");
-static_assert(sizeof(Landmark) == sizeof(Inventory) + sizeof(Roster)
-                                      + sizeof(Interests) + 312,
+// 2026-09-30, ход 2 ломтик D (переворот населения): population (4) и
+// garrison (Roster, 72) умерли — паства в worked-слое, души дома головами
+// в inventory; 42368 → 42288 (−80: 76 Б полей + 4 Б паддинга, ЗАМЕР
+// компилятором, как велит AGENTS п.10).
+static_assert(sizeof(Landmark) == 42288,
+              "место = ядро субъекта (40960) + реестр (1024) + 304 Б своего");
+static_assert(sizeof(Landmark) == sizeof(Inventory)
+                                      + sizeof(Interests) + 304,
               "ядро субъекта у места и у сквада ОДНО (CANON S4)");
 
 enum class GameSubStateKind : std::uint8_t {

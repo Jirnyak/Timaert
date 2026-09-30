@@ -8,8 +8,7 @@
 #include "macro/language.h"
 #include "macro/npc_ai.h"          // kGathererReach — the field's press radius
 #include "macro/settlement_score.h"
-#include "macro/world_tick.h"      // garrison_target_strength (§42 Инк 7)
-#include "macro/world_row.h"       // raise_flock_into_roster (M-71)
+#include "macro/labour.h"           // settle_souls — одна дверь душ
 #include "core/rng.h"
 // ПЕРЕПИСЬ ШТАБЕЛЕЙ висит на сборке ядра, а не на отдельном тесте:
 // сторожа размеров обязаны срабатывать при ЛЮБОЙ сборке мира, иначе
@@ -113,7 +112,7 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 // rest of the macro tick + UI consume. This helper closes that loop:
 //
 //   1. Each politik city becomes a `Settlement` (id = index, naming
-//      from its faction's language, garrison empty,
+//      from its faction's language,
 //      economy state with one local resource roll based on biome).
 //   2. Each settlement spawns 1–3 satellite villages on land cells in
 //      a small ring (4–14 cells away) — same faction, smaller pop.
@@ -161,24 +160,19 @@ void populate_landmarks_from_politik(GameState& gs,
         s.factionIdx  = c.factionIdx;
         // Politik prices every city's souls from its ground (R2); the old
         // 200+rng%800 fallback was the last population dice standing.
-        s.population  = std::max(1, c.population);
-        // Born WITH its roster (§42 Инк 7): the registry target
-        // (pop >> garrisonShift), souls honestly paid out of the population.
-        // СОСТАВ БОЛЬШЕ НЕ ЖРЕБИЙ (2026-09-22): здесь бросалась монетка на
-        // КАЖДУЮ душу — 60 % Guard / 40 % Peasant, — и вместе со стражей
-        // умер поток `Rng grng`, заведённый только под этот бросок.
-        {
-            const int taken = raise_flock_into_roster(
-                s.inventory,
-                garrison_target_strength(s.type, s.population));
-            s.population = std::max(1, s.population - taken);
-        }
+        //
+        // ПЕРЕВОРОТ НАСЕЛЕНИЯ (v122): паства = worked-ЧИСЛО фичи города,
+        // ВСЕ души — ГОЛОВАМИ в инвентарь места одним стаком (раздачи в
+        // гарнизон больше нет — M-8: раздел «гарнизон/мирные» умер, оборона
+        // места вся толпа).
+        const int souls = std::max(1, c.population);
+        settle_souls(gs, s, souls);
         // Born mid-life (owner): the market has wares on day one, and the
         // town has stocks to live on while the first caravans find their legs.
         // (The old EconomyState "archetype" strings died with it, W2b-4 —
         // what a town actually HAS now lives in this one inventory.)
         seed_landmark_inventory(
-            s.inventory, s.population, s.type == LandmarkType::City);
+            s.inventory, souls, s.type == LandmarkType::City);
         // Naming via the owning faction's procedural language.
         if (c.factionIdx >= 0) {
             s.name = !c.name.empty() ? c.name
@@ -338,22 +332,19 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.factionIdx    = s.factionIdx;
             // Souls = the owner's scale, never the score (CANON S25):
             // a hundred-odd, the ~200 tail included.
-            vil.population    = kVillageBornBase
-                              + int(rng.next_u32()
-                                    % std::uint32_t(kVillageBornSpread));
+            //
+            // ПЕРЕВОРОТ v122: паства деревни — worked-число её фичи, все
+            // души головами в инвентарь (тот же один закон, что у города).
+            const int vilSouls = kVillageBornBase
+                               + int(rng.next_u32()
+                                     % std::uint32_t(kVillageBornSpread));
+            settle_souls(gs, vil, vilSouls);
             // The village's suzerain IS its market city (one edge, S24) —
             // ставится НИЖЕ, после add_landmark: дверь пишет ОБА конца, а
             // значит вассал уже должен стоять в ростере мест.
             const int suzerainId = s.id;
-            // The village's own roster, by the SAME one law (§42 Инк 7).
-            {
-                const int taken = raise_flock_into_roster(
-                    vil.inventory,
-                    garrison_target_strength(vil.type, vil.population));
-                vil.population = std::max(1, vil.population - taken);
-            }
             seed_landmark_inventory(
-                vil.inventory, vil.population,
+                vil.inventory, vilSouls,
                 vil.type == LandmarkType::City);
             vil.name = s.factionIdx >= 0
                 ? generate_name(lang_of(s.factionIdx), rng)

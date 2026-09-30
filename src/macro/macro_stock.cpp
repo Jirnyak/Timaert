@@ -9,6 +9,7 @@
 #include "macro/anketa.h"
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"  // двери существ единого контейнера (M-71)
+#include "macro/labour.h"     // settle_souls / souls_flock — души места
 #include "macro/fauna.h"
 #include "macro/map_generator.h"
 #include "macro/squad.h"     // record_deed — THE chronicle door (вердикт №9)
@@ -44,26 +45,66 @@ void write_tree_count(MacroWorld& w, MacroStockKey k, int delta) {
 // ── population: the people of a named place ────────────────────────────────
 // A settlement and a village are the same kind of subject here — a named place
 // with people in it — and since v54 the id ALONE names it: every landmark
-// draws on the one subject issuer (nextMacroSpawnOrdinal, M-37), so this walks both
-// lists knowing at most one can answer. The register bit that used to
-// disambiguate two zero-based numberings is dead.
-int* find_population(const MacroWorld& w, std::int32_t subject) {
+// draws on the one subject issuer (nextMacroSpawnOrdinal, M-37).
+//
+// ПЕРЕВОРОТ v122: колонки population больше нет — чтение отвечает ПАСТВОЙ
+// (souls_flock: worked-число у поселения, головы толпы у данжа), запись-
+// назад субмира «убил людей» идёт ПАРОЙ дверей: умирают ДОМАШНИЕ головы
+// (bleed), и у поселения то же число сходит с worked-паствы. Прибыль
+// (delta > 0 — вернувшееся тело) — той же парой в обратную сторону.
+Landmark* find_population_subject(const MacroWorld& w, std::int32_t subject) {
     if (!w.gs || subject <= 0) return nullptr;
-    if (Landmark* lm = landmark_by_id(*w.gs, subject)) return &lm->population;
-    return nullptr;
+    return landmark_by_id(*w.gs, subject);
 }
 
 int read_population(const MacroWorld& w, MacroStockKey k) {
-    const int* p = find_population(w, k.subject);
-    return p ? *p : 0;
+    const Landmark* lm = find_population_subject(w, k.subject);
+    return lm ? souls_flock(*w.gs, *lm) : 0;
 }
 
 void write_population(MacroWorld& w, MacroStockKey k, int delta) {
     if (delta == 0) return;
-    int* p = find_population(w, k.subject);
-    if (!p) return;
-    // A place can be emptied but never owe people.
-    *p = std::max(0, *p + delta);
+    Landmark* lm = find_population_subject(w, k.subject);
+    if (!lm) return;
+    const bool dungeon = landmark_def(lm->type).bornPopBase != 0;
+    if (delta < 0) {
+        // A place can be emptied but never owe people: списывается ФАКТ.
+        //
+        // КВИТАНЦИЯ НАЗЫВАЕТ СВОЮ ДУШУ — и тогда снимается РОВНО она:
+        // именная по entityId, генерик по {роду, уровню} (detailLevel > 0 —
+        // живость пары, потому что kind один не может ею быть: Peasant есть
+        // строка 0). Так сюда влился сток `Garrison`, уничтоженный вместе с
+        // сословием: «душа места умерла» есть ОДИН вопрос мира, и два ответа
+        // на него были вторым словарём (DOD п.6).
+        //
+        // Безымянная квитанция берёт ЛЮБУЮ душу — это законный случай, а не
+        // недосмотр: голод места и запись-назад «убил людей» без адреса
+        // называют ЧИСЛО, а не человека.
+        SoldierRecord who{};
+        who.entityId = k.detail == -1 ? 0u : std::uint32_t(k.detail);
+        who.kind = k.detailKind;
+        who.level = k.detailLevel;
+        int died = 0;
+        if (who.entityId != 0 || who.level > 0) {
+            for (int i = 0; i < -delta; ++i) {
+                if (!creatures_remove_one(lm->inventory, who)) break;
+                ++died;
+            }
+        } else {
+            died = dungeon ? bleed_heads(lm->inventory, -delta)
+                           : bleed_flock(lm->inventory, -delta);
+        }
+        if (!dungeon && died > 0) {
+            worked_write(*w.gs, lm->x, lm->y,
+                         std::max(0, worked_read(*w.gs, lm->x, lm->y)
+                                         - died));
+        }
+    } else {
+        // Вернувшееся тело — то же событие «место получило душу», одной
+        // дверью (labour.h settle_souls): второй писатель пары
+        // «число + голова» был бы вторым законом появления души.
+        settle_souls(*w.gs, *lm, delta);
+    }
 }
 
 // ── roster: the members of a squad standing on the map ─────────────────────
@@ -123,37 +164,11 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
     }
 }
 
-// ── garrison: the standing army of a NAMED place (§42 Инк 7) ──────────────
-// The roster whose OWNER is a landmark rather than a squad — те же слоты
-// существ ЕДИНОГО контейнера места (M-71), та же by-name strike, a
-// different address book: `subject` = the landmark's world-unique id (the
-// v54 issuer), and `detail` names the member. A street guard's death pays
-// here: killed on the wall = struck from the roll.
-Inventory* find_garrison(const MacroWorld& w, std::int32_t subject) {
-    if (!w.gs || subject <= 0) return nullptr;
-    Landmark* lm = landmark_by_id(*w.gs, subject);
-    return lm ? &lm->inventory : nullptr;
-}
-
-int read_garrison(const MacroWorld& w, MacroStockKey k) {
-    const Inventory* g = find_garrison(w, k.subject);
-    return g ? creature_heads(*g) : 0;
-}
-
-void write_garrison(MacroWorld& w, MacroStockKey k, int delta) {
-    if (delta >= 0) {
-        // The creation direction is recruiting (world_tick's garrison law)
-        // — a bare positive delta names nobody, so it moves nothing.
-        return;
-    }
-    Inventory* g = find_garrison(w, k.subject);
-    if (!g || k.detail == -1) return;
-    for (int i = 0; i < -delta; ++i) {
-        if (!creatures_remove_one_by_entity_id(*g, std::uint32_t(k.detail))) {
-            break;
-        }
-    }
-}
+// (Сток `garrison` УНИЧТОЖЕН 2026-09-30, v122 — вместе с сословием: он
+// адресовал ТОТ ЖЕ инвентарь места, что строка `population` рядом, то есть
+// был вторым ответом на вопрос «душа места умерла». Именная адресация
+// квитанции не потеряна — она переехала в `write_population` выше, где и
+// стала единственной.)
 
 // ── The ONE resource-field container (macro/resource_field.h) ─────────────
 // Baseline = pure terrain/climate (resources come BEFORE settlement — the
@@ -679,7 +694,6 @@ constexpr MacroStockRow kRows[] = {
     {"roster",      &read_roster,      &write_roster},
     {"fauna_count", &read_fauna_count, &write_fauna_count},
     {"crop_count",  &read_crop_count,  &write_crop_count},
-    {"garrison",    &read_garrison,    &write_garrison},
 };
 static_assert(sizeof(kRows) / sizeof(kRows[0])
                   == std::size_t(MacroStock::Count),

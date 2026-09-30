@@ -11,6 +11,7 @@
 // headers (map_data.h, seasons.h).
 #pragma once
 #include "macro/features.h"
+#include "macro/labour.h"   // souls_flock — паства места (переворот v122)
 #include "macro/landmark_registry.h"
 #include "macro/state.h"
 
@@ -23,7 +24,8 @@ struct LandmarkView {
                       // within its kind» died with the three-vector storage)
     int  x, y;
     const char* name; // display name; never null, may be ""
-    int  population;  // 0 where the kind has none
+    int  population;  // ПАСТВА места (souls_flock: worked-число у поселения,
+                      // головы толпы у данжа) — производное, не колонка
     bool depleted = false; // Spire only — DERIVED from the worked layer at
                            // the spire's cell (0 = orb drained); never a
                            // Landmark column since v120
@@ -56,7 +58,7 @@ void for_each_landmark(const GameState& gs, F&& fn) {
             const bool depleted = lm.type == LandmarkType::Spire
                 && worked_read(gs, lm.x, lm.y) == 0;
             fn(LandmarkView{lm.type, lm.id, lm.x, lm.y, name,
-                            lm.population, depleted});
+                            souls_flock(gs, lm), depleted});
         }
     }
 }

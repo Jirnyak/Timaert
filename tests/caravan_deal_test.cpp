@@ -14,6 +14,8 @@
 //      confiscated from it either.
 #include "macro/characters.h"   // landmark_sheet — руки места
 #include "check.h"
+#include "macro/labour.h"           // souls_home — рты места
+#include "macro/roster_window.h"   // roster_bill — счёт по таблице
 
 #include "macro/agent_memory.h"
 #include "tables/commodity.h"
@@ -42,9 +44,12 @@ int main() {
     // на полку ложится только излишек сверх счёта.
     sm::Landmark city{};
     city.type = sm::LandmarkType::City;
-    city.population = 64;
+    // Души — ГОЛОВАМИ в инвентарь записи (v122; запись живёт вне мира, так
+    // что паства-worked ей не нужна: торговля спрашивает РТЫ). Счёт еды —
+    // `roster_bill` по таблице, а не «душа × сезон» литералом.
+    sm::raise_flock_into_roster(city.inventory, 64);
     city.needDebt[sm::commodity_index("food")] =
-        city.population * sm::kDaysPerSeason;
+        sm::roster_bill(city.inventory).board;
     CHECK(city.inventory.add("wood", 2000), "fixture: city wood glut");
     // КОШЕЛЁК ФИКСТУРЫ ПОДНЯТ ДО НОВЫХ ЦЕН (S25, тот же переезд, что у
     // вендора и лесоруба на снятии коридора): без «домашней маржи» ×0.7
@@ -73,10 +78,10 @@ int main() {
     const int foodDebtBefore =
         city.needDebt[sm::commodity_index("food")];
     const int foodDemand = sm::season_demand_for(
-        sm::item_index("food"), city.needDebt, city.population,
+        sm::item_index("food"), city.needDebt, sm::souls_home(city),
         sm::landmark_sheet(sm::LandmarkType::City).skills, &city.inventory);
     const int woodDemand = sm::season_demand_for(
-        sm::item_index("wood"), city.needDebt, city.population,
+        sm::item_index("wood"), city.needDebt, sm::souls_home(city),
         sm::landmark_sheet(sm::LandmarkType::City).skills, &city.inventory);
 
     // РАВНЫЕ АНКЕТЫ (S25): обе стороны называют одну торговую силу, значит
@@ -130,11 +135,11 @@ int main() {
     // (snapshot class 0), the town holds them.
     sm::Landmark town{};
     town.type = sm::LandmarkType::City;
-    town.population = 64;
+    sm::raise_flock_into_roster(town.inventory, 64);
     // Хлебный счёт не погашен — из него производный спрос на зерно (город
     // печёт); счёт по инструментам оплачен, полка с ними — ИЗЛИШЕК.
     town.needDebt[sm::commodity_index("food")] =
-        town.population * sm::kDaysPerSeason;
+        sm::roster_bill(town.inventory).board;
     CHECK(town.inventory.add("tools", 50), "fixture: town tools");
     // The purse covers the load at the SEASONAL famine price (the corridor
     // died 2026-09-18): a starving shelf prices near base × seasonal need,
@@ -150,7 +155,7 @@ int main() {
     sm::Landmark& home = hgs.landmarks.back();
     home.type = sm::LandmarkType::Village;
     home.id = 1;
-    home.population = 50;
+    sm::raise_flock_into_roster(home.inventory, 50);
     CHECK(home.inventory.add("food", 5000), "fixture: home food");
     CHECK(sm::publish_landmark_ledgers(hgs, /*day=*/1) == 1,
           "fixture: the home published its ledger");
@@ -171,7 +176,9 @@ int main() {
     // прихода (CANON S10), поэтому «весь груз продан» читается суммой полки
     // и оплаченного счёта — с 2026-09-20 голодная строка и есть пища, и
     // привезённое зерно ложится ровно в тот счёт, который город не покрыл.
-    const int townDebtPaid = town.population * sm::kDaysPerSeason
+    // Счёт, который город НЕ покрыл, читается той же дверью, что его
+    // выставила (roster_bill по головам) — ни одного пересказанного числа.
+    const int townDebtPaid = sm::roster_bill(town.inventory).board
         - town.needDebt[sm::commodity_index("food")];
     CHECK(bag.count("food") == 0
               && town.inventory.count("food") + townDebtPaid == 300,
@@ -196,11 +203,11 @@ int main() {
         sm::Landmark& glut = ggs.landmarks.back();
         glut.type = sm::LandmarkType::City;
         glut.id = 1;
-        glut.population = 2520;
+        sm::raise_flock_into_roster(glut.inventory, 2520);
         // Счёт сезона ВЫСТАВЛЕН целиком — довод «у него же есть нужда» снят
         // заранее: нужда есть, и гора всё равно делает хлеб дешёвым дома.
         glut.needDebt[sm::commodity_index("food")] =
-            glut.population * sm::kDaysPerSeason;
+            sm::roster_bill(glut.inventory).board;
         CHECK(glut.inventory.add("food", 45000000),
               "fixture: the food mountain");
         CHECK(sm::publish_landmark_ledgers(ggs, /*day=*/1) == 1,
@@ -211,7 +218,7 @@ int main() {
 
         sm::Landmark mkt{};
         mkt.type = sm::LandmarkType::City;
-        mkt.population = 64;
+        sm::raise_flock_into_roster(mkt.inventory, 64);
         CHECK(mkt.inventory.add("food", 4000), "fixture: market food");
         CHECK(mkt.inventory.add("coin_empire_copper", 20000),
               "fixture: market purse");
@@ -231,7 +238,7 @@ int main() {
     {
         sm::Landmark mkt{};
         mkt.type = sm::LandmarkType::City;
-        mkt.population = 64;
+        sm::raise_flock_into_roster(mkt.inventory, 64);
         CHECK(mkt.inventory.add("tools", 50), "fixture: unlit market tools");
         CHECK(mkt.inventory.add("coin_empire_copper", 20000),
               "fixture: unlit market purse");
@@ -248,7 +255,7 @@ int main() {
     // ── Negative control: a coinless market buys nothing, loses nothing ──
     sm::Landmark broke{};
     broke.type = sm::LandmarkType::City;
-    broke.population = 64;
+    sm::raise_flock_into_roster(broke.inventory, 64);
     sm::Inventory bag2;
     CHECK(bag2.add("food", 50), "fixture: control food");
     const sm::CaravanDeal none = sm::trade_caravan_at_station(
@@ -268,9 +275,9 @@ int main() {
     const auto run_fixture = [](int edge) {
         sm::Landmark m{};
         m.type = sm::LandmarkType::City;
-        m.population = 64;
+        sm::raise_flock_into_roster(m.inventory, 64);
         m.needDebt[sm::commodity_index("food")] =
-            m.population * sm::kDaysPerSeason;
+            sm::roster_bill(m.inventory).board;
         // Казна с запасом НАД честной ценой лота (полный лот 200 хлеба в
         // голодный счёт ≈ 20 400): упрись оба варианта в одну и ту же
         // казну — эдж стал бы невидим (оба заплатили бы всё, что есть).

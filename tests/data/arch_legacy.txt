@@ -154,7 +154,6 @@ verdict	SKELETON.md	| у самой широкой авторской строк
 verdict	SKELETON.md	| у стыка есть материал только у одной пары | вода вырезана из цветового смеше
 verdict	SKELETON.md	| у шины нет второй двери в память мира | `EventBus` несёт только канал КАДРА: `emit`/`em
 verdict	SKELETON.md	| фичи | `FeatureLayer::data`, байт вида | **ПРАВДА** |
-verdict	SKELETON.md	| число клетки лежит в поле | `population` лежит записью списка рядом с `x`/`y`; «что в э
 verdict	SKELETON.md	| — ЧАРТ рисует 3 рода фич из 12: ПАШНЮ не рисует вовсе | ветви `fb > 0.5 && fb < 2.5` (доро
 verdict	SKELETON.md	| — блик по воде есть зеркальная геометрия, и его числа без вывода | виртуальн
 verdict	SKELETON.md	| — гнездо чисел без вывода | `MTN_AMBIENT = 0.44`, `MTN_RIDGE_FREQ = 0.16`, `octN = 3`, `eC = 2.0`, `MTN_TERRACES = 4

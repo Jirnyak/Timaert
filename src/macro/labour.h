@@ -25,26 +25,64 @@
 #include <algorithm>
 
 #include "tables/npc.h"     // природа строки: кто есть народ (kNpcNature)
-#include "macro/state.h"   // Landmark — чьи это души
+#include "macro/state.h"   // Landmark — чьи это души; worked_read — паства
+#include "macro/world_row.h"          // count_human_souls / creature_heads
+#include "macro/landmark_registry.h"  // bornPopBase — признак данжа
+#include "macro/fauna.h"              // weakest_crowd_kind — душа данжа
 
 namespace sm {
 
-// ── ДУШИ МЕСТА: ДВА ВОПРОСА, КОТОРЫЕ МИР ЗАДАВАЛ ОДНИМ ЧИСЛОМ ────────────
-// `Landmark::population` отвечает сегодня обоим, и половине читателей поэтому
-// врёт. Вопросы разные:
-//   souls_home  — кто стоит ДОМА: они едят со склада места, стоят у станков,
-//                 из них набираются сквады, их считает спрос рынка;
-//   souls_flock — ВСЯ паства места, включая ушедших в поле: ею меряется рост,
-//                 размер города в субмире, потолок табуна и пул рук.
-// Город, у которого полпаствы в артелях, сегодня РАСТЁТ как маленький и
-// РИСУЕТСЯ маленьким — это и есть цена склейки.
+// ── ДУШИ МЕСТА: ДВА ВОПРОСА, ДВА НОСИТЕЛЯ (переворот населения, вердикты
+// владельца 2026-09-30) ──────────────────────────────────────────────────
+//   souls_home  — кто стоит ДОМА: ГОЛОВЫ в инвентаре места (стаками; один
+//                 вид — один стак). Они едят со склада, стоят у станков, из
+//                 них поднимаются сквады, ими место обороняется («оборона
+//                 места = вся толпа — ЭТО НОРМАЛЬНО»). Человеческие души,
+//                 не головы вообще: лошадь в стойле — имущество.
+//   souls_flock — ВСЯ паства места (дома + ушедшие в поле): у поселения —
+//                 ЧИСЛО ФИЧИ, worked-слой под FT_City/FT_Village («паства =
+//                 число worked»); у данжа (признак — колонка bornPopBase)
+//                 — головы его инвентаря: душа шпиля — Imp, и человеческой
+//                 меркой она не считается по природе.
+// «В поле» = разность двух дверей. Колонка Landmark::population умерла с
+// этим переворотом у всех родов.
+inline int souls_home(const Landmark& lm) {
+    return count_human_souls(lm.inventory);
+}
+inline int souls_flock(const GameState& gs, const Landmark& lm) {
+    return landmark_def(lm.type).bornPopBase == 0
+        ? worked_read(gs, lm.x, lm.y)
+        : creature_heads(lm.inventory);
+}
+
+// ── ПОСЕЛИТЬ ДУШИ — ОДНА ДВЕРЬ НА ВСЯКОЕ ИХ ПОЯВЛЕНИЕ (v122) ─────────────
+// «Место получило души» есть ОДНО событие мира, а носителей у него ДВА:
+// паства (worked-число фичи) и домашние головы (инвентарь). Писать их
+// порознь значит завести двух писателей одной величины — и оно уже было
+// написано порознь в пяти местах (генезис города, генезис деревни, шпиль,
+// руина, рост дня, запись-назад субмира). Здесь они сходятся в одну строку.
 //
-// СЕЙЧАС ОБЕ ДВЕРИ ВОЗВРАЩАЮТ ОДНО И ТО ЖЕ ЧИСЛО, байт в байт: этот шаг
-// только РАЗВОДИТ ЧИТАТЕЛЕЙ ПО СМЫСЛУ под зелёной сюитой, поведения не
-// меняя. Смысл им даст переворот (население = паства, души дома = ростер
-// места), и тогда правка будет ровно в этих двух телах, а не в 85 местах.
-inline int souls_home(const Landmark& lm) { return lm.population; }
-inline int souls_flock(const Landmark& lm) { return lm.population; }
+// ВОЗВРАЩАЕТ ФАКТ: сколько душ реально ВСТАЛО. Контейнер вправе отказать
+// (кап областей), и паства растёт ровно на вставших — иначе число копило бы
+// призраков, которых ни одна дверь не найдёт.
+//
+// У ДАНЖА ПАСТВА И ЕСТЬ ГОЛОВЫ (bornPopBase != 0), поэтому worked не
+// трогается: под FT_Spire там живёт СПЕЛЛ, и приписать ему души значило бы
+// гасить чужое число. Род головы данжа НЕ ВЫДУМЫВАЕТСЯ — он слабейшая строка
+// полосы толпы этого рода мест (weakest_crowd_kind: шпиль → Imp).
+inline int settle_souls(GameState& gs, Landmark& lm, int souls) {
+    if (souls <= 0) return 0;
+    if (landmark_def(lm.type).bornPopBase != 0) {
+        const NPCType kind = weakest_crowd_kind(lm.type);
+        if (kind == NPCType::Count) return 0;   // у рода нет толпы — нет и душ
+        return creatures_push_stack(lm.inventory, kind,
+                                    npc_def(kind).baseLevel, souls)
+                   ? souls : 0;
+    }
+    const int stood = raise_flock_into_roster(lm.inventory, souls);
+    if (stood > 0) worked_add(gs, lm.x, lm.y, stood);
+    return stood;
+}
 
 // СКОЛЬКО ДУШ МЕСТО МОЖЕТ ДЕРЖАТЬ В ПОЛЕ — половина всех своих.
 //
@@ -61,17 +99,17 @@ static_assert(kFieldShareShift == 1,
 // `afield` — души ВСЕХ сквадов этого места (и стоящих дома, и ушедших),
 // `standingSouls` — из них те, что стоят дома Idle: ими место распоряжается
 // сегодня заново, поэтому они возвращаются в пул как свободные руки.
-inline int field_pool(const Landmark& lm, int afield, int standingSouls) {
-    // Паства СПРАШИВАЕТСЯ ДВЕРЬЮ: после переворота `souls_flock` уже будет
-    // знать про ушедших, и слагаемое `afield` здесь честно умрёт — вместе с
-    // ежедневным сканом всех сущностей мира, который его считает.
-    const int population = souls_flock(lm);
-    const int flock = population + afield;
+inline int field_pool(const GameState& gs, const Landmark& lm, int afield,
+                      int standingSouls) {
+    // Паства СПРАШИВАЕТСЯ ДВЕРЬЮ, и после переворота она УЖЕ знает про
+    // ушедших (worked = дома + в поле): слагаемое `afield` умерло, как и
+    // обещал его комментарий; параметр остался мерой «уже в дороге».
+    const int flock = souls_flock(gs, lm);
     const int cap = flock >> kFieldShareShift;
     const int marched = afield - standingSouls;      // уже в дороге
     const int free = cap - marched;
     // Больше, чем есть свободных тел, не поднять ни при каком потолке.
-    return std::clamp(free, 0, population + standingSouls);
+    return std::clamp(free, 0, souls_home(lm) + standingSouls);
 }
 
 }   // namespace sm

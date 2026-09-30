@@ -7723,7 +7723,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          s.id,
                          s.name.c_str(),
                          previewSeed,
-                         s.population);
+                         sm::souls_flock(app.gs, s));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -7793,7 +7793,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // stays bare, which is the "empty lots" the owner sees from the
             // street. Counted over the centre cell only, so neighbours'
             // meadows do not dilute it.
-            const int wantHouses = sm::sub::city_house_target(s.population);
+            const int wantHouses =
+                sm::sub::city_house_target(sm::souls_flock(app.gs, s));
             int bare = 0, built = 0;
             {
                 // Bounded to the ground INSIDE THE WALL — the town's own
@@ -7803,7 +7804,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const auto& tiles = app.subworld.mgr().tiles();
                 const int o = sm::sub::kCellSize;
                 const float c = float(o) + float(o) * 0.5f;
-                const float r = float(sm::sub::city_wall_radius(s.population));
+                const float r = float(
+                    sm::sub::city_wall_radius(sm::souls_flock(app.gs, s)));
                 for (int y = o; y < o * 2; ++y) {
                     for (int x = o; x < o * 2; ++x) {
                         const float dx = float(x) + 0.5f - c;
@@ -7819,7 +7821,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] settlement_subworld id=%d pop=%d houses=%d/%d "
                          "walls=%d citizens=%d built=%d bare=%d center=%d,%d\n",
-                         s.id, s.population, houses, wantHouses, walls, citizens,
+                         s.id, sm::souls_flock(app.gs, s), houses,
+                         wantHouses, walls, citizens,
                          built, bare,
                          app.subworld.mgr().center_cx(),
                          app.subworld.mgr().center_cy());
@@ -7897,21 +7900,29 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // looks at one gate. The run prints the whole table; the frame
             // then goes to the one named by TIMAERT_GATE_INDEX (default: the
             // nearest to the keep, i.e. the upper quarter's own way out).
-            // THE WATCH, and where it stands. The garrison embodies on the
-            // town's streets; half of it belongs to the upper quarter, which
-            // is a tenth of the ground — so the count inside the quarter's
-            // radius of the keep is the whole claim, measured rather than
-            // asserted.
+            // THE CROWD, and where it stands. Половина толпы принадлежит
+            // верхнему квартале, а он — десятая часть земли, поэтому счёт
+            // внутри радиуса квартала от донжона и есть вся претензия,
+            // ЗАМЕРЕННАЯ, а не объявленная.
+            //
+            // НОСИТЕЛЬ СМЕНИЛСЯ, ЗАКОН ОСТАЛСЯ (v122): свидетель фильтровал
+            // тела по стоку `Garrison`, а сословие умерло вместе с разделом
+            // «гарнизон/мирные» — теперь все души места несут ОДИН сток
+            // `Population`. Закон «половина в квартале» (владелец
+            // 2026-09-13) переехал в единый путь воплощения и охраняется
+            // здесь же: снеси этот счёт — и квартал перестанет быть
+            // кварталом молча.
             {
                 const sm::Landmark* lm = smoke_first_city(app);
-                const int lmPop = lm ? lm->population : 0;
+                const int lmPop = lm ? sm::souls_flock(app.gs, *lm) : 0;
                 const float qr = sm::sub::city_upper_radius(lmPop);
                 int watch = 0, inQuarter = 0;
                 auto gv = app.ecs.reg.view<sm::ecs::Position,
                                            sm::ecs::MacroDebt>();
                 for (auto e : gv) {
                     const auto& d = gv.get<sm::ecs::MacroDebt>(e);
-                    if (d.stock != std::uint8_t(sm::MacroStock::Garrison)) continue;
+                    if (d.stock != std::uint8_t(sm::MacroStock::Population))
+                        continue;
                     ++watch;
                     const auto& p = gv.get<sm::ecs::Position>(e);
                     const float dx = p.x - keep->x, dy = p.y - keep->y;

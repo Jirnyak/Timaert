@@ -8,6 +8,7 @@
 //   · РЕПЛЕЙ: поле derived — свежий NavWorld доигрывает кольцо с поправкой
 //     на возраст и сходится с полем, жившим все эти дни вживую.
 #include "check.h"
+#include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/chronicle.h"
 #include "macro/nav_field.h"
@@ -32,15 +33,17 @@ GameState make_world() {
     city.id = 9;
     city.x = 10;
     city.y = 10;
-    city.population = 500;
     gs.landmarks.push_back(city);
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+    // фичи, головы в инвентарь — тем же законом, что генезис.
+    sm::settle_souls(gs, gs.landmarks.back(), 500);
     Landmark vil{};
     vil.type = LandmarkType::Village;
     vil.id = 3;
     vil.x = 40;
     vil.y = 10;
-    vil.population = 100;
     gs.landmarks.push_back(vil);
+    sm::settle_souls(gs, gs.landmarks.back(), 100);
     chronicle_init(gs.chronicle, kMap, kMap);
     return gs;
 }

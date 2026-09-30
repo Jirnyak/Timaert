@@ -11,6 +11,7 @@
 // (terrain-occluded propagation: open land carries light far, forest attenuates,
 // mountain blocks) this file gains the occlusion cases.
 #include "check.h"
+#include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/macro_lighting.h"
 #include "macro/features.h"
@@ -140,17 +141,22 @@ int main() {
 
         Landmark big{};
         big.type = LandmarkType::City;
-        big.id = 1; big.x = 10; big.y = 10; big.population = 5000;
+        big.id = 1; big.x = 10; big.y = 10;
         Landmark small{};
         small.type = LandmarkType::City;
-        small.id = 2; small.x = 20; small.y = 20; small.population = 20;
+        small.id = 2; small.x = 20; small.y = 20;
         gs.landmarks.push_back(big);
+        // Паства решает, как ярко горит место (macro_lighting читает
+        // souls_flock): души селятся дверью мира, а не колонкой записи.
+        sm::settle_souls(gs, gs.landmarks.back(), 5000);
         gs.landmarks.push_back(small);
+        sm::settle_souls(gs, gs.landmarks.back(), 20);
 
         Landmark v{};
         v.type = LandmarkType::Village;
-        v.id = 3; v.x = 30; v.y = 30; v.population = 100;
+        v.id = 3; v.x = 30; v.y = 30;
         gs.landmarks.push_back(v);
+        sm::settle_souls(gs, gs.landmarks.back(), 100);
 
         // v120: a spire's charge is its cell's worked number (ordinal + 1);
         // drained = 0 — the spent spire's cell simply stays unwritten.

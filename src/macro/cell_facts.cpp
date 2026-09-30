@@ -76,7 +76,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
             const int tier = orb > 0
                 ? (orb <= kSpellCount ? kSpellDefs[orb - 1].tier : 1)
                 : 0;
-            f.landmark = {rec->type, rec->id, rec->population, tier,
+            f.landmark = {rec->type, rec->id, souls_flock(*w.gs, *rec), tier,
                           int(rec->factionIdx), spire && orb == 0};
         }
     }

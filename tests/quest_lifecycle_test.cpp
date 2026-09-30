@@ -10,6 +10,7 @@
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
 #include "macro/agent_memory.h"
+#include "macro/labour.h"   // settle_souls — фикстура селит души дверью мира
 #include "tables/codex.h"
 #include "macro/currency.h"
 
@@ -1032,9 +1033,12 @@ void test_item_delivery_direct_path() {
     settlement.name = "Test Anchorage";
     settlement.x = 12;
     settlement.y = 18;
-    settlement.population = 1000;
     settlement.factionIdx = 0;
     gs.landmarks.push_back(settlement);
+    // Души селятся ОДНОЙ дверью мира (labour.h settle_souls): фикстура
+    // обязана ставить их тем же законом, что генезис, — паства в worked,
+    // головы в инвентаре.
+    sm::settle_souls(gs, gs.landmarks.back(), 1000);
 
     sm::Quest q{};
     q.ordinal = 7u;
@@ -1095,9 +1099,9 @@ void test_quest_reward_dispatch_order_and_application() {
     giver.id = 1;
     giver.type = sm::LandmarkType::Village;
     giver.name = "Giver";
-    giver.population = 64;
     giver.inventory.add("coin_empire_copper", 40);
     gs.landmarks.push_back(giver);
+    sm::settle_souls(gs, gs.landmarks.back(), 64);
 
     sm::Quest q{};
     q.ordinal = 9u;
@@ -1421,7 +1425,6 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     city.name = "Same Id City";
     city.x = 20;
     city.y = 20;
-    city.population = 500;
     // Steer gen_delivery through the honest surface: tools are the town's
     // SCARCEST consumed good (food plentiful, everything else stocked).
     city.inventory.add("food", 2048);
@@ -1432,6 +1435,7 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     city.inventory.add("carving", 128);
     city.inventory.add("statue", 128);
     gs.landmarks.push_back(city);
+    sm::settle_souls(gs, gs.landmarks.back(), 500);
 
     sm::Landmark village{};
     village.type = sm::LandmarkType::Village;
@@ -1439,8 +1443,8 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     village.name = "Same Id Village";
     village.x = 24;
     village.y = 22;
-    village.population = 80;
     gs.landmarks.push_back(village);
+    sm::settle_souls(gs, gs.landmarks.back(), 80);
     sm::set_suzerain(gs, village.id, city.id);
 
     const auto cityQuests =
@@ -1536,7 +1540,6 @@ void test_generated_delivery_quest_flow() {
     settlement.name = "Test Anchorage";
     settlement.x = 12;
     settlement.y = 18;
-    settlement.population = 1000;
     settlement.factionIdx = 0;
     settlement.inventory.add("food", 2048);
     settlement.inventory.add("cloth", 128);
@@ -1546,6 +1549,7 @@ void test_generated_delivery_quest_flow() {
     settlement.inventory.add("carving", 128);
     settlement.inventory.add("statue", 128);
     gs.landmarks.push_back(settlement);
+    sm::settle_souls(gs, gs.landmarks.back(), 1000);
 
     sm::Quest selected{};
     bool found = false;

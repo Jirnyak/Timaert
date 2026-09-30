@@ -11,7 +11,6 @@
 // world by exactly that many.
 
 #include "macro/world_tick.h"
-#include "macro/roster_window.h"   // ОДИН суд границы на всякий ростер
 #include "macro/characters.h"   // landmark_sheet — анкета места (что оно умеет)
 #include "macro/econ_day.h"
 #include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
@@ -51,10 +50,15 @@ namespace {
 // population law (owner's ruling — no flat heads per day). At namespace
 // scope (external linkage, the shuffled_order pattern) so econ_v1_test can
 // drive a landmark to its honest death directly.
-void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
-                         EconFactSink sink, void* user) {
+void settle_landmark_day(GameState& gs, Landmark& lm, int day, bool& starved,
+                         bool& diedOut, EconFactSink sink, void* user) {
     starved = false;
     diedOut = false;
+    // Переворот населения (v122): у поселения паства — worked-ЧИСЛО фичи, и
+    // всякая её убыль/прибыль идёт ПАРОЙ — число И головы в инвентаре; у
+    // данжа (bornPopBase != 0) паства и есть головы, worked не трогается
+    // (под FT_Spire там живёт спелл).
+    const bool dungeon = landmark_def(lm.type).bornPopBase != 0;
     // THE SEASON WINDOW (CANON S19.2, единое окно мира) — теперь граница
     // ДОЛГА (CANON S10, вердикт 2026-09-19): взыскание прошлого счёта,
     // новый счёт, немедленное гашение из склада. Её вердикт — ОДНО число,
@@ -66,10 +70,21 @@ void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
         const ConsumeOutcome o = econ_debt_boundary(
             lm.inventory, lm.needDebt, souls_home(lm), sink, user);
         // СМЕРТЬ — единственная кара голода: доля непогашенного хлеба
-        // уходит населением здесь, в единственной двери.
+        // уходит населением здесь, в единственной двери. Умирают ДОМАШНИЕ
+        // головы; у поселения то же число сходит с worked-паствы (drain:
+        // списывается ФАКТ — сколько голов реально стояло).
         if (o.starvedPop > 0) {
-            lm.population = std::max(lm.population - o.starvedPop, 0);
-            diedOut = lm.population == 0;
+            // ГОЛОВЫ УЖЕ СНЯТЫ ГРАНИЦЕЙ (econ_debt_boundary исполняет
+            // взыскание там же, где судит его: иначе новый счёт выставлялся
+            // бы по составу, которого уже нет). Здесь остаётся ВТОРОЙ
+            // носитель — паства: число фичи падает на съеденных, у данжа
+            // паства и есть головы, и падать ей уже не надо.
+            if (!dungeon) {
+                worked_write(gs, lm.x, lm.y,
+                             std::max(0, worked_read(gs, lm.x, lm.y)
+                                             - o.starvedPop));
+            }
+            diedOut = souls_flock(gs, lm) == 0;
         }
         lm.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
         starved = o.starvedPop > 0;
@@ -85,9 +100,9 @@ void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
     econ_store_hygiene(lm.inventory, sink, user);
 
     lm.popGrowthCarry += population_delta_per_day(
-        souls_flock(lm), float(lm.seasonWellbeing) / 255.0f);
+        souls_flock(gs, lm), float(lm.seasonWellbeing) / 255.0f);
     const int whole = int(lm.popGrowthCarry);
-    if (whole != 0) {
+    if (whole > 0) {
         lm.popGrowthCarry -= float(whole);
         // No ceiling (CANON S25): supply is the only cap — a place that
         // outgrows its fields pays less of its bill, its wellbeing falls and
@@ -95,18 +110,20 @@ void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
         // minPop = 10/5 minted people from air and made every settlement
         // immortal (canon-audit B6). Убыль делает ТОЛЬКО смерть на границе;
         // ноль поглощающий по самому закону (рост от нуля = 0).
-        const int before = lm.population;
-        lm.population = std::max(lm.population + whole, 0);
-        diedOut = before > 0 && lm.population == 0;
+        //
+        // Родившаяся душа — ГОЛОВА в инвентаре дома (у данжа — голова его
+        // толпы); worked-паства поселения растёт на ФАКТ вставших: отказ
+        // контейнера не рождает счётных призраков.
+        const int born = settle_souls(gs, lm, whole);
         // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h SoulsBorn): единственный приход
         // на склад душ во всём мире. Убыль у склада своя — голод здесь же
         // (Starved выше), дезертирство в окне артели, бой. Доклад идёт
         // только о приходе: закон сохранения собирается из прихода, убыли
         // и уровней, а не из трёх копий одной величины.
-        if (whole > 0 && sink) {
+        if (born > 0 && sink) {
             EconFact f{};
             f.kind = EconFact::Kind::SoulsBorn;
-            f.amount = whole;
+            f.amount = born;
             sink(user, f);
         }
     }
@@ -162,13 +179,12 @@ void relay_econ_fact_(void* user, const EconFact& fact) {
 }
 
 // ── Settlement daily tick ─────────────────────────────────────
-// The garrison's day (§42 Инк 7) — ONE law for every kind that keeps one;
-// bodies below tick_settlements_, shared by both loops.
-void garrison_upkeep_(GameState& gs, Landmark& s, int day,
-                      EconFactSink sink, void* user);
-void garrison_recruit_(GameState& gs, Landmark& s, WorldTickRuntime& runtime);
-void garrison_trim_(GameState& gs, Landmark& s,
-                    EconFactSink sink, void* user);
+// (Гарнизонная подсистема — garrison_upkeep_/recruit_/trim_/cap_ — умерла
+// 2026-09-30 с контейнером Landmark::garrison, M-8: домашние души ЖИВУТ в
+// инвентаре места и едят ОДНОЙ лестницей потребностей (econ_debt_boundary
+// от souls_home); второе окно содержания кормило бы их дважды. Набор =
+// рождение душ (settle_landmark_day), обрезки нет — оборона места вся
+// толпа, излишка не существует.)
 
 void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                        EconFactSink sink, void* user) {
@@ -195,15 +211,11 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                          souls_home(s), rs, ru,
                          faction_or_freefolk(s.factionIdx));
 
-        // Порядок дня границы: НАСЕЛЕНИЕ ЕСТ ПЕРВЫМ (settle), потом гарнизон
-        // ест и ПЛАТИТ — жалованье теперь стоимостью (натурой при пустой
-        // казне), и платёж раньше окна еды мог бы сжечь городской хлеб в
-        // пул лута перед собственным столом.
+        // День границы: население ест ОДНОЙ лестницей потребностей места
+        // (второго стола гарнизона больше нет — M-8, v122).
         bool famine = false, died = false;
         const int headsBefore = souls_home(s);
-        settle_landmark_day(s, day, famine, died, rs, ru);
-
-        garrison_upkeep_(gs, s, day, rs, ru);
+        settle_landmark_day(gs, s, day, famine, died, rs, ru);
 
         // (Дань ушла из пер-местного дня: её ведёт один проход пула
         // феодальных рёбер tithe_daily_ — v121, род 6.)
@@ -215,162 +227,9 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
             record_landmark_fact(gs, FactKind::Died, s.id, s.x, s.y,
                                  headsBefore);
         }
-
-        garrison_recruit_(gs, s, runtime);
-        garrison_trim_(gs, s, rs, ru);
     }
 }
 
-// ── The garrison's day — ONE law for every kind that keeps one (§42) ─────
-// (Defined below tick_settlements_, used by both loops — see the block.)
-// Gated by the registry row's garrisonShift, never by the landmark's name:
-// the City-only branches this replaces were the same class of gate the
-// population door wore for two refactors.
-//
-// UPKEEP (owner 2026-08-30/31 + 2026-09-17 + 2026-09-21; CANON S10, S19.2):
-// an army wants BOARD and PAY, and both are judged ONCE at the season
-// boundary. ЗАКОН СУДА ЗДЕСЬ БОЛЬШЕ НЕ ЖИВЁТ: он один на всякий ростер мира
-// (macro/roster_window.h) — место, армия игрока, артель на дороге судятся
-// ОДНОЙ дверью. С 2026-09-22 там же живёт и СЧЁТ: здесь стояла половинная
-// ставка «гарнизон платит пол цены содержания, как в Mount & Blade»
-// (`>> 1`), и вердикт владельца снял её вместе со скидкой фуражира у
-// артели — «один закон без исключений». Полцены было хардкодом без вывода:
-// ни одно число не объясняло, почему половина, а не треть.
-void garrison_upkeep_(GameState& gs, Landmark& s, int day,
-                      EconFactSink sink, void* user) {
-    if (!season_boundary(day)) return;
-    if (landmark_def(s.type).garrisonShift == 0xFFu) return;
-    const RosterWindowOutcome out =
-        roster_season_window(s.garrison, s.inventory,
-                             gs.deserterPool, gs.lootPoolValue,
-                             sink, user);
-    // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h). До 2026-09-21 армия места уходила
-    // МОЛЧА: у этих двух колонок прибора не было отправителя со стороны
-    // мест, и убыль гарнизонов читалась как «безымянная». Адрес факта —
-    // само место: по S9 это его ресурс ушёл.
-    if (out.walked > 0 && sink) {
-        EconFact f{};
-        f.kind = out.byWage ? EconFact::Kind::SoulsDesertedUnpaid
-                            : EconFact::Kind::SoulsDesertedUnfed;
-        f.amount = out.walked;
-        f.landmarkId = s.id;
-        sink(user, f);
-    }
-}
-
-// RECRUITING toward the registry target (population >> garrisonShift, §42
-// Инк 7): a day's packet is at most target >> 4 — a hole cut into the
-// defense heals over DAYS, the same gradualness desertion bleeds at (1/8),
-// never in one morning. Souls move population → garrison as GENERIC stacks
-// (CANON S4): a mass recruit has no entityId — a name is what a soul earns
-// by leading, being hired into a story, or being possessed.
-void garrison_recruit_(GameState& gs, Landmark& s,
-                       WorldTickRuntime& runtime) {
-    (void)runtime;   // НАБОР БОЛЬШЕ НЕ ЖРЕБИЙ: состав — факт, а не бросок
-    if (s.population < 20) return;
-    const int target = garrison_target_strength(s.type, s.population);
-    const int current = creature_heads(s.inventory);
-    if (current >= target) return;
-    const int packet =
-        std::min(target - current, std::max(1, target >> 4));
-    const int taken = raise_flock_into_roster(s.inventory, packet);
-    s.population = std::max(0, s.population - taken);
-}
-
-// ── ПОТОЛОК ГАРНИЗОНА — ФУНКЦИЯ КОНТЕКСТА МЕСТА (CANON S4, 2026-09-19) ──
-//
-// Население даёт цель набора (population >> garrisonShift — прежний закон,
-// теперь он же нижняя половина потолка), богатство держит охрану СВЕРХ неё:
-// «место кормит тех, кто его стоит» — столько душ, скольким склад оплатит
-// сезон содержания базового стража, той же арифметикой, что окно
-// garrison_upkeep_ (харч полцены + жалование полцены). Ни одной новой
-// константы: обе половины выведены из уже живущих чисел (S26).
-//
-// БАЗА — ВСЯ ПАСТВА МЕСТА: население ПЛЮС люди его гарнизона. Рекрут
-// уходит ИЗ населения в гарнизон, поэтому потолок, считанный по одному
-// населению, падал ровно на только что набранных — набор и обрезка
-// воевали, качая людей в пул дезертиров каждый день (поймано свидетелем
-// 2026-09-19). Скот в базу не входит: лошадь — имущество, не паства, иначе
-// табун поднимал бы себе потолок сам.
-int garrison_cap_(const Landmark& s) {
-    const ItemDef* hungerDef = item_def_at(hunger_item_index());
-    // ЦЕНА ДУШИ ЗА СЕЗОН — ПО СТРОКЕ ТОГО, КОГО МЕСТО ДЕРЖИТ, и это теперь
-    // крестьянин. Слагаемое жалованья ушло вместе со стражей: у крестьянина
-    // `upkeepGoldPerDay` = 0, и «+0» в формуле было бы половиной, которая
-    // врёт читателю. Половинная ставка `>> 1` ушла раньше, с вердиктом
-    // «один закон без исключений» (garrison_upkeep_ выше).
-    const int perSoulSeason = std::max(
-        1, npc_board_per_day(NPCType::Peasant) * kDaysPerSeason
-               * (hungerDef && hungerDef->value > 0 ? hungerDef->value : 1));
-    const int flock = souls_flock(s) + count_human_souls(s.inventory);
-    return garrison_target_strength(s.type, flock)
-         + inventory_value(s.inventory) / perSoulSeason;
-}
-
-// ИЗЛИШЕК СНИМАЕТСЯ СО СЛАБЕЙШИХ (CANON S4, вердикт 2026-09-19):
-// прежний garrison_target_strength был только целью НАБОРА — гарнизон,
-// выросший иначе (двухтактный обоз ставит в стойло табун), не резался
-// вовсе, и лошади копились без предела (замер: 4 230 голов за 128 дней,
-// монотонно). Куда девается снятый — решает его СТРОКА, а не ветка:
-// зверь по тегу Mount идёт ПОД НОЖ — прямая конвертация в товар-еду по
-// своей стоимости, и мясо гасит долг места той же дверью гашения (S10);
-// человек уходит в ПУЛ ДЕЗЕРТИРОВ — опасность мира и есть переработанный
-// излишек. Слабейший = дешевейшая строка найма: место кормит тех, кто
-// его стоит, буквально.
-void garrison_trim_(GameState& gs, Landmark& s,
-                    EconFactSink sink, void* user) {
-    int excess = creature_heads(s.inventory) - garrison_cap_(s);
-    if (excess <= 0) return;
-    const int hungerIdx = hunger_item_index();
-    const ItemDef* hungerDef = item_def_at(hungerIdx);
-    const int hungerValue =
-        hungerDef && hungerDef->value > 0 ? hungerDef->value : 1;
-    int meat = 0;
-    while (excess > 0) {
-        // Область существ единого контейнера (M-71); обход 1023 → first =
-        // старый порядок слотов, ничья по цене достаётся старейшему.
-        int weak = -1;
-        int weakPrice = 0;
-        std::uint16_t weakKind = 0;
-        for (int i = kMaxInventorySlots - 1;
-             i >= s.inventory.creature_first(); --i) {
-            const ItemRef& sl = s.inventory.slots[std::size_t(i)];
-            if (sl.count <= 0) continue;
-            const std::uint16_t kind =
-                std::uint16_t(creature_of_world_row(sl.def));
-            const int p = hire_price_for(kind, sl.level);
-            if (weak < 0 || p < weakPrice) {
-                weak = i;
-                weakPrice = p;
-                weakKind = kind;
-            }
-        }
-        if (weak < 0) break;
-        ItemRef cut = s.inventory.slots[std::size_t(weak)];
-        const int take = std::min(excess, int(cut.count));
-        if (!s.inventory.remove_at(weak, take)) break;
-        excess -= take;
-        // ПОД НОЖ ИДЁТ ЖИВНОСТЬ — вся, а не только вьючная (природа строки,
-        // kNpcNature, владелец 2026-09-21): прежде нож спрашивал тег Mount,
-        // и пойманный олень в армии места ножа не знал — он уходил в пул
-        // дезертиров человеком.
-        if (is_fauna_kind(weakKind)) {
-            meat += take * (weakPrice / hungerValue);
-        } else {
-            cut.count = take;
-            if (!creatures_push_slot(gs.deserterPool, cut)) {
-                creatures_push_slot(s.inventory, cut);  // pool full: men stay
-                break;
-            }
-        }
-    }
-    if (meat > 0) {
-        s.inventory.add_of(hungerIdx, meat);
-        // Мясо платит по счёту В ТУ ЖЕ МИНУТУ — дверь гашения (S10):
-        // голодное место режет лошадь и ест, на полку ложится излишек.
-        econ_pay_debt(s.inventory, s.needDebt, sink, user);
-    }
-}
 
 // ── Village daily tick ────────────────────────────────────────
 // No gather here any more: gathering is AGENTS now — woodcutters and
@@ -394,14 +253,11 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
                              : 0,
                          souls_home(v), rs, ru);
 
-        // Порядок дня границы — как у города: население ест первым, потом
-        // гарнизон (жалованье стоимостью не выедает стол деревни), потом
-        // дань (§42 Инк 7, the ONE garrison law by column).
+        // Порядок дня границы — как у города: население ест первым (одной
+        // лестницей потребностей — второго стола гарнизона больше нет, M-8).
         bool famine = false, died = false;
         const int headsBefore = souls_home(v);
-        settle_landmark_day(v, day, famine, died, rs, ru);
-
-        garrison_upkeep_(gs, v, day, rs, ru);
+        settle_landmark_day(gs, v, day, famine, died, rs, ru);
 
         // (Дань деревни — то же одно ребро, ведёт tithe_daily_ — v121.)
         if (famine) {
@@ -412,8 +268,6 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
             record_landmark_fact(gs, FactKind::Died, v.id, v.x, v.y,
                                  headsBefore);
         }
-        garrison_recruit_(gs, v, runtime);
-        garrison_trim_(gs, v, rs, ru);
     }
 }
 
@@ -455,11 +309,20 @@ void regrow_dungeon_populations(const MacroWorld& w, int day) {
     for (auto& lm : w.gs->landmarks) {
         const LandmarkDef& def = landmark_def(lm.type);
         if (def.bornPopBase == 0) continue;   // settlements keep their own law
-        if (souls_flock(lm) <= 0) continue;   // wiped clean stays dead
+        if (souls_flock(*w.gs, lm) <= 0) continue;   // wiped clean stays dead
         if ((lm.id % kGrowthEpochDays) != (day % kGrowthEpochDays)) continue;
         const int mean = int(def.bornPopBase)
                        + int(def.bornPopPerScore) * landmark_context_score(w, lm);
-        if (souls_flock(lm) < mean) ++lm.population;
+        if (souls_flock(*w.gs, lm) < mean) {
+            // Отросшая душа данжа — ГОЛОВА его толпы (переворот v122,
+            // вердикт 3): слабейшая строка полосы crowdHabitat, тем же
+            // выводом, что и генезис (шпиль → Imp, руина → CaveBat).
+            const NPCType kind = weakest_crowd_kind(lm.type);
+            if (kind != NPCType::Count) {
+                creatures_push_stack(lm.inventory, kind,
+                                     npc_def(kind).baseLevel, 1);
+            }
+        }
     }
 }
 

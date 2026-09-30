@@ -346,13 +346,18 @@ bool run_city_population_projection_case(
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
     // City in the CENTRE window cell (ox=oy=0) — off-centre cities are covered
-    // by the carry-across case; here we lock the citizen role mix. The
-    // GUARDS are the place's own GARRISON records now (§42 Инк 7): the
-    // street shows exactly who is on the wall, so the fixture brings a
-    // five-man wall and expects five fighting guards.
-    sm::Inventory wall{};
+    // by the carry-across case; here we lock the citizen role mix.
+    //
+    // СОСТАВ УЛИЦЫ ЕСТЬ СОСТАВ КОНТЕЙНЕРА (v122, вердикт владельца: «что
+    // есть в сквадe города в инвентаре, то чел и увидит в городе»). Прежде
+    // фикстура давала пять стражей «гарнизоном», а крестьян доролливала
+    // сцена по числу паствы — ролл УНИЧТОЖЕН, поэтому толпу кладёт сюда
+    // фикстура, целиком и сама (§8 п.11). Пять стражей ИМЕННЫЕ: их лица
+    // обязаны переживать пере-вход, и свидетель ниже ждёт ровно пятерых.
+    sm::Inventory homeSouls{};
+    sm::raise_flock_into_roster(homeSouls, 4000);
     for (int i = 0; i < 5; ++i) {
-        sm::creatures_push(wall, sm::make_soldier(
+        sm::creatures_push(homeSouls, sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard),
             sm::npc_def(sm::NPCType::Guard).baseLevel,
             4000u + std::uint32_t(i)));
@@ -371,7 +376,7 @@ bool run_city_population_projection_case(
                              4000,
                              0,
                              /*macroCellX*/0, /*macroCellY*/0,
-                             /*faunaCount*/-1, &wall,
+                             /*faunaCount*/-1, &homeSouls,
                              sm::world_time_at(1, 12, 0));
 
     // The street is Peasant + Guard and NOBODY else since 2026-09-18 (verdict
@@ -433,6 +438,13 @@ bool run_population_does_not_scale_bodies_case(
         sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
         sm::store_attach(world, worldStore_.get());
+        // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122), и предмет этого контроля от того лишь
+        // ЖЁСТЧЕ: уровень тела теперь ФАКТ его головы, а головы обоих
+        // городов рождены одной дверью — значит размер города не может
+        // сдвинуть уровень даже случайно. Предусловие свидетель рождает
+        // сам (§8 п.11).
+        sm::Inventory homeSouls{};
+        sm::raise_flock_into_roster(homeSouls, t.pop);
         sm::sub::spawn_cell_npcs(world,
                                  sm::Biome::Meadow, sm::FT_None,
                                  sm::LandmarkType::City, /*danger*/0, /*depositsNear*/0, mgr,
@@ -443,7 +455,7 @@ bool run_population_does_not_scale_bodies_case(
                                  t.pop,
                                  /*landmarkSubjectId*/-1,
                                  /*macroCellX*/0, /*macroCellY*/0,
-                                 /*faunaCount*/-1, /*garrison*/nullptr,
+                                 /*faunaCount*/-1, &homeSouls,
                                  sm::world_time_at(1, 12, 0));
         auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
                                    sm::ecs::NpcLevel, sm::ecs::NpcCharacter>();

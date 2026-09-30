@@ -836,7 +836,10 @@ timaert_test(item_use_parity_test
 # торе — стресс «телепорт в глушь», честная недостижимость, инвариантность
 # длин маршрутов к трансляции тора (никакого дерева над тором).
 timaert_test(nav_region_test SOURCES
-    src/macro/nav_field.cpp)
+    src/macro/nav_field.cpp
+    # Души места — СТРОКИ КАТАЛОГА (v122, головы в его инвентаре):
+    # фикстура, селящая их дверью мира, обязана знать каталог.
+    src/tables/items.cpp)
 
 timaert_test(pathfinding_parity_test
     SOURCES
@@ -1235,6 +1238,10 @@ timaert_test(keymap_test
 timaert_test(macro_lighting_test
     SOURCES
         src/macro/macro_lighting.cpp
+        # Души места — СТРОКИ КАТАЛОГА (v122: они лежат головами в его
+        # инвентаре), поэтому фикстура, селящая их дверью мира, обязана
+        # знать каталог: свидетель рождает своё предусловие сам (§8 п.11).
+        src/tables/items.cpp
     LINK_SDL LINK_ENTT)
 # Faction-relations data contract behind the universal subworld hostility
 # relation (sub/engine.cpp entities_hostile). Links macro/state.cpp + its
@@ -1416,7 +1423,10 @@ timaert_test(crop_stock_test
 timaert_test(spire_generation_test
     SOURCES
         src/macro/spires.cpp
-        src/macro/ruins.cpp)
+        src/macro/ruins.cpp
+    # Души места — СТРОКИ КАТАЛОГА (v122, головы в его инвентаре):
+    # фикстура, селящая их дверью мира, обязана знать каталог.
+    src/tables/items.cpp)
 
 timaert_test(fauna_stock_test
     SOURCES
