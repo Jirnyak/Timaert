@@ -118,9 +118,7 @@ void gen_dungeon_prologue_road(const CellContext& ctx, SubworldMapData& out) {
     // lift from, and `WATER_LEVEL` is exactly that: the default world's plane,
     // for the callers that have no world.
     const float base = skeleton_cell_height01(ctx.macroHeight,
-                                              /*isWater=*/false,
-                                              /*isMountain=*/false,
-                                              WATER_LEVEL);
+                                              /*isMountain=*/false);
     const float period = float(block_cells() * W);
     const std::uint32_t s = ctx.worldSeed * 2654435761u;
     const float p1 = float(s & 0xFFu) * (kTau / 256.0f);

@@ -1388,7 +1388,6 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             const std::size_t i = std::size_t(y) * std::size_t(n) + std::size_t(x);
             const Biome b = biomes[i];
             const bool mtn = b == Biome::Mountain;
-            const bool water = b == Biome::Water;
             // A cell counts its OWN four neighbours — the same law the near
             // generator follows since the 5×5 ring (base_generator.h), and for
             // the same reason: a crest that depends on who is asking makes the
@@ -1412,10 +1411,9 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             if (y > 0)     maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i - std::size_t(n)]));
             if (y + 1 < n) maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i + std::size_t(n)]));
             col.gradient01 = maxDiff;
-            col.skel01 = sub::skeleton_cell_height01(heights[i], water, mtn,
-                                                     seaLevel01_);
+            col.skel01 = sub::skeleton_cell_height01(heights[i], mtn);
             col.peak01 = sub::skeleton_cell_peak01(
-                heights[i], water, mtn, adj,
+                heights[i], mtn, adj,
                 camCx + x - kFarCellRadius, camCy + y - kFarCellRadius,
                 worldSeed, seaLevel01_);
             col.ridgeW = mtn ? 1.0f : 0.0f;
@@ -1627,8 +1625,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     // Mountain crest clamp mirrors the generator's peak law
                     // bounds (base_generator.cpp peakHeight[]).
                     float h01 = skeleton_cell_height01(
-                        c.macroHeight, c.biome == Biome::Water,
-                        c.biome == Biome::Mountain, c.seaLevel);
+                        c.macroHeight, c.biome == Biome::Mountain);
                     if (c.biome == Biome::Mountain)
                         h01 = std::clamp(h01, 0.80f, 1.04f);
                     cellM[gy * kGridW + gx] = h01 * kHeightScaleM;

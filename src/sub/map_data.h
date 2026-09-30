@@ -37,15 +37,17 @@ constexpr int kFullSize = kCellSize * 3; // 3×3 grid
 // scene reads its own plane.
 constexpr float WATER_LEVEL = 0.40f;
 
-// `kLandMargin` — minimum elevation of a land cell's shoreline ABOVE the
-// plane in the height remap. Without it, just-above-sea land maps to exactly
-// the plane, and the bilinear blend with adjacent water cells (whose remap can
-// reach 0) drags the corner below it → submerged shores and submerged pure-land
-// cells. TS hid this with a single-cell render; the C++ port renders the full
-// 3×3 grid (12 internal seams) so the margin is required. Kept small (0.02) for
-// a gentle, natural beach lift, not a dramatic cliff. A WIDTH, not a plane: it
-// does not move when the plane moves.
-constexpr float kLandMargin = 0.02f;
+// (`kLandMargin` stood here — 0.02 of minimum lift for a land cell's
+// shoreline in the height REMAP. Its own charter named its cause: «the
+// bilinear blend with adjacent water cells, WHOSE REMAP CAN REACH 0, drags the
+// corner below the plane». That zero came from the water remap, and both
+// remaps are gone — the subworld's ground is the macroworld's height field
+// itself now (base_generator.h skeleton_cell_height01, owner 2026-09-30:
+// «уровень моря это буквально где будет вода начинаться в макромире биом и
+// где плоскость воды в микромире и всё»). A land cell is one whose field
+// value is above the plane, so there is no corner to drag and no lift to
+// apply. The patch died with its cause, which is the only honest way for a
+// patch to die.)
 
 // `kWetEdgeWidth` — height of the WET EDGE above the waterline: ground below
 // the plane plus this is soaked — shore tiles get painted, fields refuse the

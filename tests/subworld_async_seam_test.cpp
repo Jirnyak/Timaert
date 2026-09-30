@@ -66,11 +66,8 @@ sm::sub::CellContext resolve_water_plane_cell(int cx, int cy) {
 // have caught the drift it was standing next to — the copy clamped the water
 // curve's `t` and the generator did not.
 float expected_placeholder_height(const sm::sub::CellContext& c) {
-    const float h = sm::sub::skeleton_cell_height01(
-        c.macroHeight, c.biome == sm::Biome::Water,
-        /*isMountain=*/false, c.seaLevel);
-    if (c.biome == sm::Biome::Water) return h;
-    return std::clamp(h, c.seaLevel + sm::sub::kLandMargin, 2.0f);
+    return sm::sub::skeleton_cell_height01(
+        c.macroHeight, c.biome == sm::Biome::Mountain);
 }
 
 std::uint8_t expected_placeholder_tile(const sm::sub::CellContext& c, float height) {
@@ -379,9 +376,13 @@ void run_water_plane_invariant_case() {
     // ЗАКОН НУЛЕВОЙ п.7). What water actually OWES is asserted below, against
     // the symbols rather than their values: no water tile sits above the
     // plane, no land or shore tile below it.
-    CHECK_OR_RETURN(sm::sub::kLandMargin > 0.0f,
-                    "the shore is a BAND above the water plane, not a line — "
-                    "a zero margin would leave no tile that is neither");
+    // A third assertion stood here too — that `kLandMargin` was positive —
+    // and it died with the constant. The margin lifted a LAND CELL'S REMAP so
+    // the bilinear blend with a water neighbour could not sink its corner;
+    // with the remap gone (the ground is the macro field now, and a land cell
+    // is one whose field value is above the plane) there is no corner to sink
+    // and nothing to lift. The shore is still a band, but it is a band the
+    // FIELD draws by crossing the plane, not one a constant reserves.
 
     sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;

@@ -335,8 +335,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         // sits well below the plane. Land: lifted from kLandFloor (shoreline)
         // to 1.0 (peak). THE law lives in skeleton_cell_height01
         // (base_generator.h) — the shadow apron reads the same door.
-        remapped[i] = skeleton_cell_height01(mh, nbBiome[i] == Biome::Water,
-                                             /*isMountain=*/false, seaLevel);
+        remapped[i] = skeleton_cell_height01(mh, /*isMountain=*/false);
 
         // Universal flattening (terrain_mod_for): a cell that carries a road
         // or a settlement calms its OWN ridge/noise/gradient columns. Applied
@@ -375,8 +374,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         // THE crest law, through its one door (base_generator.h) — the same
         // one the far world builds its massifs with, so the ridge seen from
         // thirty kilometres is the ridge you walk up to (CANON S18.1).
-        peakHeight[i] = skeleton_cell_peak01(mh, nbBiome[i] == Biome::Water,
-                                             isMtn, adjMtn,
+        peakHeight[i] = skeleton_cell_peak01(mh, isMtn, adjMtn,
                                              cellGX, cellGY, worldSeed,
                                              seaLevel);
     }

@@ -64,10 +64,10 @@ int main() {
                 const float macroH = 0.62f + 0.03f * float((cx + cy) % 5);
                 for (int adj = 0; adj <= 4; ++adj) {
                     const float a = skeleton_cell_peak01(
-                        macroH, false, true, adj, cx, cy, worldSeed,
+                        macroH, true, adj, cx, cy, worldSeed,
                         WATER_LEVEL);
                     const float b = skeleton_cell_peak01(
-                        macroH, false, true, adj, cx, cy, worldSeed,
+                        macroH, true, adj, cx, cy, worldSeed,
                         WATER_LEVEL);
                     if (a != b) ++disagreements;
                     ++samples;
@@ -81,11 +81,11 @@ int main() {
         // ...and the place is a TORUS place: the cell reached by walking off
         // the last column is the same cell, so it has the same crest.
         const std::uint32_t worldSeed = 0x593F45BAu;
-        const float onMap = skeleton_cell_peak01(0.88f, false, true, 3,
+        const float onMap = skeleton_cell_peak01(0.88f, true, 3,
                                                  0, 300, worldSeed,
                                                  WATER_LEVEL);
         const float onFoot = skeleton_cell_peak01(
-            0.88f, false, true, 3,
+            0.88f, true, 3,
             ((kWorldCells % kWorldCells) + kWorldCells) % kWorldCells, 300,
             worldSeed, WATER_LEVEL);
         CHECK(onMap == onFoot,

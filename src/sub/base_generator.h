@@ -2,6 +2,7 @@
 // Mirrors subworld/base-generator.ts.
 #pragma once
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 #include "sub/map_data.h"
 
@@ -45,31 +46,37 @@ namespace sm::sub
     // the macroworld's own — the law has no plane of its own to fall back on,
     // deliberately: a default here is how the two worlds drifted apart in the
     // first place.
-    inline float skeleton_cell_height01(float macroH, bool isWater,
-                                        bool isMountain, float seaLevel) {
-        if (isWater) {
-            // t = 1 at the shoreline, 0 in the deep; squared, so deep water
-            // sits well below the plane. A REAL water cell's macroH runs
-            // [0, seaLevel) — that is what makes it water (macro/map_generator.h
-            // is_water) — so t stays inside [0,1) and the bed stays under the
-            // surface without being told to.
-            //
-            // NO UPPER CLAMP, deliberately. A caller CAN hand this a height the
-            // plane calls land while asserting the cell is water — a hand-built
-            // fixture does exactly that — and then t exceeds 1 and the bed
-            // climbs above the water. Clamping would hide that at the point of
-            // READING instead of at the point of birth (AGENTS §5 п.3), and it
-            // is not what the owner's 0.60 report needed: with the plane
-            // INHERITED the case cannot arise from a real world at all. The
-            // streaming placeholder used to clamp here and the generator did
-            // not; they are one door now, and the door does not clamp.
-            const float t = std::max(0.0f, macroH / seaLevel);
-            return t * t * seaLevel;
-        }
+    // РЕЛЬЕФ — ЭТО ПОЛЕ, И ОНО АГНОСТИЧНО (вердикт владельца 2026-09-30,
+    // дословно): «уровень моря это буквально где будет вода начинаться в
+    // макромире биом и где плоскость воды в микромире и всё»; «всё остальное
+    // рельеф не волнует, вода там не вода, он агностичен»; «рельеф под ними
+    // остаётся»; «у нас единая система рельефа от макромира».
+    //
+    // Макромир так и живёт: `is_water(cell) = rgba[cell*4] < seaLevel8`
+    // (macro/map_generator.h) — ОДНО поле, ОДИН порог над ним, и `biome_at`
+    // строит на нём весь каскад. Субмир был единственным местом, где то же
+    // поле переписывалось тремя кривыми по флагу биома клетки: водяная жала
+    // рельеф квадратично, сухопутная поднимала его на kLandMargin и
+    // растягивала, горная сплющивала. Одно макро-число давало три разные
+    // высоты в зависимости от того, как клетку назвали.
+    //
+    // ТЕПЕРЬ ОСТАЛАСЬ ОДНА ВЕТКА, И ОНА НЕ ПОДДЕЛКА ПОЛЯ, А БЮДЖЕТ ГРЕБНЯ.
+    // Массив получает амплитуду хребтов сверху (mountain_ridges01), и сумма
+    // обязана остаться под потолком меш-алиасинга, который охраняет
+    // mountain_mesh_smoothness_test. Число пережило два круга ревью владельца
+    // с замерами углов: 80-градусные стены (p50 43° / p90 70° / p99 78°,
+    // e7bb958a) → перелёт в однородные купола (31/49/61, отвергнуто) →
+    // компромисс 40/56/66 (2aa0c52f). Такое не сносят заодно — но оно и не
+    // бесплатно: kMountainBiomeLevel = 0.75, значит все горы мира стоят в
+    // полосе 0.9125..0.95, то есть в 56 метрах друг от друга, и на дальности,
+    // где Найквист съедает хребты, массив читается плоским столом. Это
+    // названо владельцем и решается отдельно.
+    //
+    // `isWater` и `seaLevel` ушли из сигнатуры вместе с кривыми: закон о
+    // высоте больше не знает, что такое вода, и не может узнать.
+    inline float skeleton_cell_height01(float macroH, bool isMountain) {
         if (isMountain) return 0.80f + macroH * 0.15f;
-        const float landFloor = seaLevel + kLandMargin;
-        const float landScale = (1.0f - landFloor) / (1.0f - seaLevel);
-        return landFloor + (macroH - seaLevel) * landScale;
+        return macroH;
     }
 
     // The crest's per-cell jitter — hash noise of the cell's own PLACE and the
@@ -89,24 +96,23 @@ namespace sm::sub
     // index — so two windows containing the same cell compute the same crest.
     // (They did not always: the jitter used to be seeded from whichever cell
     // was the window CENTRE, and massif borders stepped 8 m for it.)
-    inline float skeleton_cell_peak01(float macroH, bool isWater,
-                                      bool isMountain, int adjMountain,
-                                      int cellGX, int cellGY,
+    inline float skeleton_cell_peak01(float macroH, bool isMountain,
+                                      int adjMountain, int cellGX, int cellGY,
                                       std::uint32_t worldSeed, float seaLevel) {
         const float jitter = crest_jitter01(cellGX, cellGY, worldSeed) - 0.5f;
         if (isMountain) {
             // Crest base from the skeleton law; jitter and the neighbour-massif
             // lift are the crest's own on top.
-            return std::clamp(skeleton_cell_height01(macroH, false, true,
-                                                    seaLevel)
+            return std::clamp(skeleton_cell_height01(macroH, true)
                                   + float(adjMountain) * 0.02f
                                   + jitter * 0.045f,
                               0.80f, 1.04f);
         }
         // The crest floor is the plane plus a WIDTH: a non-mountain cell's
         // ridges aim at least this far above the water, whatever the water is.
-        return std::clamp(skeleton_cell_height01(macroH, isWater, false,
-                                                 seaLevel)
+        // `seaLevel` survives HERE and only here, because this is the one place
+        // that genuinely asks about the plane — not about the ground's shape.
+        return std::clamp(skeleton_cell_height01(macroH, false)
                               + 0.07f + float(adjMountain) * 0.015f
                               + jitter * 0.03f,
                           seaLevel + 0.10f, 1.05f);

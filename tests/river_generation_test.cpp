@@ -293,7 +293,7 @@ struct DescentSample
     float riverCentre; // river cell, at its centre (the bed)
     float landCentre;  // adjacent land cell, at its centre
     float maxStep;     // largest adjacent-tile height jump across the river scanline
-    int   violations;  // monotonicity violations edge->centre (low-passed)
+    float maxRise;     // largest UPWARD excursion edge->centre (low-passed)
 };
 
 DescentSample sample_river_descent(float landMH, sm::Biome landBiome)
@@ -351,10 +351,19 @@ DescentSample sample_river_descent(float landMH, sm::Biome landBiome)
         for (int x = x0; x < x1; ++x) { sum += river[std::size_t(y) * CS + x]; ++cnt; }
         bucket[b] = cnt ? float(sum / cnt) : 0.0f;
     }
-    s.violations = 0;
+    // НЕ СЧЁТЧИК НАРУШЕНИЙ, А ВЕЛИЧИНА. Считать, сколько раз спуск дрогнул
+    // вверх, и позволять «не больше двух» — значит охранять форму старого
+    // ремапа, который делал берег синтетически монотонным пандусом. Рельеф
+    // теперь есть поле макромира (base_generator.h skeleton_cell_height01),
+    // и берег несёт его собственную мелкую рябь, как несёт её всякий
+    // настоящий берег. Закон здесь один и он о ВЫСОТЕ: рябь обязана быть
+    // мельче того же обрыва, который запрещает соседняя проверка — тем же
+    // числом, а не новым.
+    s.maxRise = 0.0f;
     for (int b = 1; b < B; ++b)
     {
-        if (bucket[b] > bucket[b - 1] + 1e-4f) ++s.violations;
+        const float rise = bucket[b] - bucket[b - 1];
+        if (rise > s.maxRise) s.maxRise = rise;
     }
     return s;
 }
@@ -382,13 +391,14 @@ void test_subworld_river_is_honest_submerged_water()
               "adjacent land cell must stay dry (no submerged-land defect)");
         CHECK(s.maxStep < 0.03f,
               "land->water descent must be cliff-free (no coastline step)");
-        CHECK(s.violations <= 2,
-              "land->water descent must be smoothly monotone");
+        CHECK(s.maxRise < 0.03f && s.riverEdge > s.riverCentre,
+              "the bank DESCENDS to the river, and its ripple is smaller "
+              "than the very cliff the line above forbids");
         if (sm::test::failures() != failsBefore)
         {
             std::fprintf(stderr,
-                "  case %s: bed=%.3f land=%.3f maxStep=%.4f viol=%d (WATER_LEVEL=%.2f)\n",
-                c.name, s.riverCentre, s.landCentre, s.maxStep, s.violations, WATER_LEVEL);
+                "  case %s: bed=%.3f land=%.3f maxStep=%.4f maxRise=%.4f (WATER_LEVEL=%.2f)\n",
+                c.name, s.riverCentre, s.landCentre, s.maxStep, double(s.maxRise), WATER_LEVEL);
             break;
         }
     }

@@ -54,12 +54,13 @@ void collect_road_indices(const std::vector<std::uint8_t>& tiles,
 // not. One door now, so a streaming tile and the cell that replaces it cannot
 // disagree about where the ground is.
 float placeholder_height_for(const CellContext& ctx) {
-    const float h = skeleton_cell_height01(ctx.macroHeight,
-                                           ctx.biome == Biome::Water,
-                                           /*isMountain=*/false,
-                                           ctx.seaLevel);
-    if (ctx.biome == Biome::Water) return h;
-    return std::clamp(h, ctx.seaLevel + kLandMargin, 2.0f);
+    // Nothing to clamp any more, and nothing to branch on: the law answers
+    // with the macro field itself, and a cell that the plane calls land is a
+    // cell whose height is above the plane BY DEFINITION of how the macroworld
+    // calls it land (macro/map_generator.h is_water). The floor that used to
+    // stand here existed only to undo the old land remap's own damage.
+    return skeleton_cell_height01(ctx.macroHeight,
+                                  ctx.biome == Biome::Mountain);
 }
 
 std::uint8_t placeholder_tile_for(const CellContext& ctx, float height) {
