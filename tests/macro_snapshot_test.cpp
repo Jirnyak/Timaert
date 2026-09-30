@@ -102,6 +102,14 @@ void test_snapshot_round_trips_the_living_map() {
     // обязана вернуть флажок на ТОГО ЖЕ лорда (SAVE-5: второй склад «кем
     // управляю» вне снимка мёртв).
     sm::transfer_player_flag(sm::store_of(w), gs.playerFlagBits, a);
+    // Имя анкеты — колонка (вердикт 3, ход 2): рождение кладёт непустой
+    // дефолт генерации, МУТАЦИЯ колонки обязана пережить сейв (в этом весь
+    // смысл колонки против перевывода из nameIdx).
+    CHECK(sm::store_of(w).name[a.slot].text[0] != '\0',
+          "рождённый сквад несёт непустое имя-дефолт");
+    std::snprintf(sm::store_of(w).name[a.slot].text,
+                  sizeof(sm::store_of(w).name[a.slot].text), "%s",
+                  "Chornyy Voron");
     // A bandit chief is a NAMED character (v90): born OWNING his sheet.
     // His campaign diverges it from the birth roll — the owner's ММОРПГ
     // point is that exactly this divergence survives the save.
@@ -152,6 +160,8 @@ void test_snapshot_round_trips_the_living_map() {
               && ecs::cell_y(w2Store_->cell[a2.slot], 64) == 21,
           "the march stands - the cell is the saved one, not the spawn one");
     CHECK(w2Store_->level[a2.slot].value == 5, "the level survives");
+    CHECK(std::strcmp(w2Store_->name[a2.slot].text, "Chornyy Voron") == 0,
+          "мутированное имя анкеты пережило сейв колонкой (v119)");
     CHECK(creature_heads(w2Store_->inventory[a2.slot].inv) == 2,
           "the roster rows survive");
     CHECK(w2Store_->orders[a2.slot].waypointCount == 2,

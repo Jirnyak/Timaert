@@ -604,10 +604,6 @@ inline int wrap_chebyshev(int d, int period) {
     return d;
 }
 
-const char* npc_display_name(const NpcTypeDef& def, const ecs::NpcCharacter& ch) {
-    if (def.nameCount > 0) return def.names[ch.nameIdx % def.nameCount];
-    return def.label;
-}
 
 // (The talk/trade popups, the squad window and their price/fact helpers
 // moved into the ONE subject panel — ui/overlays.cpp draw_settlement:
@@ -765,10 +761,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     if (isSquad) {
                         const std::uint16_t rslot = r.subject.squad.slot;
                         const auto& kind = st.kind[rslot];
-                        const auto& ch   = st.character[rslot];
                         t = npc_type_or_default(kind.type);
                         const auto& def = npc_def(t);
-                        rowName = npc_display_name(def, ch);
+                        rowName = squad_name(st, rslot);   // колонка анкеты (ход 2)
                         rowRole = def.label;
                         rowFaction = kind.factionIdx;
                     } else {

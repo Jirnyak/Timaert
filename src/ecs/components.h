@@ -336,12 +336,27 @@ struct DamageFx { bool lethal; bool blocked; };
 struct NpcCharacter {
     std::uint32_t visualSeed;   // drives procedural sprite variation
     std::uint8_t  bodyShape;    // 0..3 (small / med / large / huge)
-    std::uint8_t  nameIdx;      // index into NpcTypeDef::names[16]
+    std::uint8_t  nameIdx;      // ДЕФОЛТ ГЕНЕРАЦИИ имени (вердикт 3, M-90):
+                                // рождение рендерит names[nameIdx] в колонку
+                                // SquadName ниже; живёт дальше только как
+                                // вход генератора, читателей у него нет
     std::uint8_t  tintR;
     std::uint8_t  tintG;
     std::uint8_t  tintB;
     std::uint8_t  pad0, pad1, pad2;
 };
+
+// ── ИМЯ АНКЕТЫ — КОЛОНКА КАЖДОГО СКВАДА (вердикт владельца 2026-09-30,
+// эпик ЖЁСТКИЙ КАРКАС ход 2: «имя — char name[32] колонкой анкеты КАЖДОГО
+// сквада, мутируемо; Landmark::name умирает в неё, nameIdx — дефолт
+// генерации»). Плоские чары, никаких строк (ЗАКОН СЛОВАРЯ; прецедент —
+// вердикт о фракциях «плоский ЧАРЫ! никаких стрингов и говна»). NUL-строка
+// внутри 32 байт; рождение заполняет дефолтом из names[nameIdx], переезд
+// места (M-90) привезёт сюда Landmark::name. 32 — число вердикта.
+struct SquadName {
+    char text[32];
+};
+static_assert(sizeof(SquadName) == 32, "имя анкеты: 32 Б × 32768 = 1 МиБ");
 
 // Sprite (atlas index + tint). `spriteRow` is this body's row in THE sprite
 // table (tables/sprite_rows.h) held as a raw ordinal, because the ECS layer may
@@ -721,6 +736,7 @@ TIMAERT_ROW(sm::ecs::LastHit);
 TIMAERT_ROW(sm::ecs::HitFlash);
 TIMAERT_ROW(sm::ecs::DamageFx);
 TIMAERT_ROW(sm::ecs::NpcCharacter);
+TIMAERT_ROW(sm::ecs::SquadName);
 TIMAERT_ROW(sm::ecs::Sprite);
 TIMAERT_ROW(sm::ecs::LightEmitter);
 TIMAERT_ROW(sm::ecs::MacroNpcRuntime);

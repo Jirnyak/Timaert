@@ -168,7 +168,8 @@ constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     + sizeof(MacroNpcRecord::visual) + sizeof(MacroNpcRecord::kind)
     + sizeof(MacroNpcRecord::pools) + sizeof(MacroNpcRecord::level)
     + sizeof(MacroNpcRecord::runtime) + sizeof(MacroNpcRecord::traits)
-    + sizeof(MacroNpcRecord::character) + sizeof(MacroNpcRecord::orders)
+    + sizeof(MacroNpcRecord::character) + sizeof(MacroNpcRecord::name)
+    + sizeof(MacroNpcRecord::orders)
     + sizeof(MacroNpcRecord::memory) + kSpellBookBytes
     + sizeof(MacroNpcRecord::hasSheet) + kSheetBytes
     + sizeof(MacroNpcRecord::hasOrders) + sizeof(MacroNpcRecord::dead)
@@ -660,6 +661,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.runtime);
     w.pod(m.traits);
     w.pod(m.character);
+    w.pod(m.name);   // v119: имя анкеты — колонка (вердикт 3)
     w.pod(m.orders);
     w.pod(m.memory);   // v28: the leader's memory — padding-free by static_assert
     write_spell_book(w, m.book);   // v89: knowledge is the body's (§41 root 3)
@@ -692,6 +694,7 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.runtime);
     r.pod(m.traits);
     r.pod(m.character);
+    r.pod(m.name);   // v119
     r.pod(m.orders);
     r.pod(m.memory);   // v28
     read_spell_book(r, m.book);    // v89

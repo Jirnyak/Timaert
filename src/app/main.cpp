@@ -903,9 +903,8 @@ void draw_pre_battle_modal(App& app) {
     const auto& kind = st.kind[npc.slot];
     const sm::NpcTypeDef& def =
         sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
-    const auto& face = st.character[npc.slot];
-    const char* name = def.nameCount > 0
-        ? def.names[face.nameIdx % def.nameCount] : def.label;
+    // Имя — колонка анкеты, одна дверь чтения (вердикт 3, ход 2).
+    const char* name = sm::squad_name(st, npc.slot);
     const int level = st.level[npc.slot].value;
     ImGui::Text("%s the %s (level %d) blocks your way!",
                 name, def.label, level);

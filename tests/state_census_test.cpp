@@ -458,6 +458,9 @@ constexpr Row kMacroStoreRows[] = {
     {"kind", Rod::Squads, ""},
     {"visual", Rod::Squads, ""},
     {"character", Rod::Squads, ""},
+    {"name", Rod::Squads,
+     "имя анкеты char[32], мутируемо (вердикт 3, 2026-09-30); Landmark::name "
+     "умирает в неё при M-90; nameIdx — дефолт генерации"},
     {"level", Rod::Squads, ""},
     {"traits", Rod::Squads, ""},
     {"pools", Rod::Squads, "HP/MP/SP — ресурсы обоих миров"},

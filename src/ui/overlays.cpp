@@ -246,12 +246,6 @@ namespace sm::ui
         MacroHandle  g_squadTalkFor{};
         const char*  g_squadTalkLine = nullptr;
 
-        const char* npc_display_name(const NpcTypeDef& def,
-                                     const ecs::NpcCharacter& ch)
-        {
-            if (def.nameCount > 0) return def.names[ch.nameIdx % def.nameCount];
-            return def.label;
-        }
 
         const char* npc_trait_label(std::uint8_t raw)
         {
@@ -1736,7 +1730,9 @@ namespace sm::ui
             const auto *lvl = &st.level[squadSubject.slot];
             const auto *traits = &st.traits[squadSubject.slot];
             auto *bag = &st.inventory[squadSubject.slot];
-            const char *npcName = npc_display_name(def, ch);
+            // Имя — колонка анкеты (вердикт 3, ход 2), не перевывод
+            // из nameIdx.
+            const char *npcName = squad_name(st, squadSubject.slot);
             const FactionDef *fd = faction_def_by_index(kind.factionIdx);
             g_squadTrade.sync_to(int(squadSubject.slot)
                                  | (int(squadSubject.gen) << 16));

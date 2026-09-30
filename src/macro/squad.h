@@ -275,6 +275,21 @@ inline int destroy_dead_macro_squads(MacroStore& st, const GameState& gs,
 // (ecs::MacroDebt.subject for a roster row) and what possession stores. The
 // store is never serialized by slot, so this is a scan — of thousands, not
 // of a hot loop: a death, a possession, a load.
+// ── ИМЯ СКВАДА — ОДНА ДВЕРЬ ЧТЕНИЯ КОЛОНКИ (вердикт 3, ход 2) ───────────
+// Имя анкеты живёт колонкой store (ecs::SquadName, рождение рендерит дефолт
+// из names[nameIdx]); всякий показ имени читает ЕЁ, а не перевыводит из
+// nameIdx — перевывод был бы вторым ответом на «как его зовут» (DOD п.6) и
+// сломался бы первым же переименованием. Пустая колонка (порченые данные) —
+// честный fail-soft в ярлык строки каталога.
+inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
+    const char* t = st.name[slot].text;
+    if (t[0] != '\0') return t;
+    const std::uint16_t raw = st.kind[slot].type;
+    const NPCType kind = raw < std::uint16_t(NPCType::Count)
+        ? NPCType(std::uint8_t(raw)) : NPCType::Peasant;
+    return npc_def(kind).label;
+}
+
 inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
                                             std::uint32_t index) {
     for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {

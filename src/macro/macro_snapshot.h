@@ -41,6 +41,9 @@ struct MacroNpcRecord {
     ecs::MacroNpcRuntime runtime{};
     ecs::NpcTraits       traits{};
     ecs::NpcCharacter    character{};
+    // Имя анкеты (вердикт 3, ход 2): колонка каждого сквада, 32 плоских
+    // чара — едет как есть, раскладка = формат.
+    ecs::SquadName       name{};
     // The body's KNOWLEDGE of the spell registry (§41 root 3, v89): two
     // 256-bit planes + the active ordinal — a component like the pools,
     // born all-zero with every squad and ridden verbatim.

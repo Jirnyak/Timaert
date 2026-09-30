@@ -25,6 +25,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
         m.runtime   = st.runtime[slot];
         m.traits    = st.traits[slot];
         m.character = st.character[slot];
+        m.name      = st.name[slot];
         m.book      = st.spellBook[slot];
         m.inventory = st.inventory[slot].inv;
         {
@@ -77,6 +78,7 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         st.runtime[h.slot]   = m.runtime;
         st.traits[h.slot]    = m.traits;
         st.character[h.slot] = m.character;
+        st.name[h.slot]      = m.name;
         st.spellBook[h.slot] = m.book;
         st.inventory[h.slot] = ecs::NpcInventory{m.inventory};
         {

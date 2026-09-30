@@ -223,6 +223,16 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     // Per-NPC visual identity (TS `generateNpcCharacter(type)` -
     // redesigned as a compact POD seed per relaxed translation policy).
     st.character[h.slot] = ecs::roll_npc_character(rng, 160);
+    // ИМЯ АНКЕТЫ — колонка каждого сквада (вердикт 3, ход 2): рождение
+    // рендерит дефолт генерации из names[nameIdx] один раз; дальше колонка
+    // мутируема и читается ТОЛЬКО она (nameIdx — вход генератора, не имя).
+    {
+        const ecs::NpcCharacter& face = st.character[h.slot];
+        const char* born = def.nameCount > 0
+            ? def.names[face.nameIdx % def.nameCount] : def.label;
+        std::snprintf(st.name[h.slot].text, sizeof st.name[h.slot].text,
+                      "%s", born);
+    }
     return h;
 }
 

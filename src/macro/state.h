@@ -361,7 +361,10 @@ namespace sm {
 // nextMacroSpawnOrdinal (выдача с 1, 0 навсегда «никто» — закон нуля-ординала,
 // AGENTS ЗАКОН СЛОВАРЯ И ОРДИНАЛА п.6); nextLandmarkOrdinal покидает формат;
 // сентинели «нет места» у носителей сводятся с -1 к 0.
-constexpr int kSaveVersion = 118;   // v118 (M-37): один эмитент ординалов субъектов, 0 = «никто»
+// v119 (ход 2, вердикт 3): имя анкеты — колонка char[32] КАЖДОГО сквада
+// (ecs::SquadName в MacroStore и в записи снапшота); nameIdx остался только
+// дефолтом генерации.
+constexpr int kSaveVersion = 119;   // v119: имя анкеты — колонка char[32] каждого сквада
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

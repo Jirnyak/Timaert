@@ -140,6 +140,7 @@ inline constexpr std::size_t kNavRegionCap = kWorldLandmarks;
 inline constexpr std::size_t kMacroStoreRowBytes =
     sizeof(ecs::MacroSpawnId) + sizeof(ecs::MacroCell) + sizeof(ecs::NPCKind)
     + sizeof(ecs::MacroVisual) + sizeof(ecs::NpcCharacter)
+    + sizeof(ecs::SquadName)          // имя анкеты (ход 2, вердикт 3)
     + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)
     + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook) + sizeof(AgentMemory)
     + sizeof(ecs::SquadRoster) + sizeof(ecs::NpcInventory)
@@ -334,7 +335,7 @@ inline constexpr StackRow kStacks[] = {
     // нельзя — он на другой стороне включения. Сходимость держит
     // `static_assert` там же (`store.h`), а не доверие.
     {"гладкая память макро-сквадов (MacroStore)",
-     "19 колонок SoA + служебные", StackKind::ByOrdinal, kMacroStoreRowBytes,
+     "20 колонок SoA + служебные", StackKind::ByOrdinal, kMacroStoreRowBytes,
      kMacroEntityCap},
     // Ниже — ДОФЛИПОВАЯ форма тех же сквадов: компоненты entt, сегодня мост
     // связей, а не состояние (M-106 шаг 1е — снос). Стоят отдельными
