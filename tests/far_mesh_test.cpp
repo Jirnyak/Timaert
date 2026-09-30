@@ -423,5 +423,180 @@ int main() {
               "nothing bends it for being wet");
     }
 
+    // ── 8. THE LATTICE'S TRIANGLES ARE THE SAME TRIANGLES FOR EVERY RING ──
+    // The rings were six loose numbers until the arithmetic on them was done:
+    // divide each ring's span and hole by its OWN spacing and every ring gives
+    // the same pair. That is what licenses ONE index buffer for the whole
+    // ladder — and it is also exactly the kind of claim that is true today and
+    // quietly false after a ring is added, so it is pinned by the compiler in
+    // far_mesh.h and its CONSEQUENCE is measured here.
+    //
+    // WHY THE FIRST CHECK IS AN IDENTITY BETWEEN TWO SPELLINGS. The builder
+    // being replaced decided the hole in METRES, on a quad's corners; the
+    // lattice form decides it in QUADS. They are the same rule divided through
+    // by the spacing — and "the same rule, restated" is precisely where a
+    // boundary slips by one quad, which is a crack you can see the world
+    // through. So the two forms are held against each other, per ring, over
+    // every quad of the real lattice, rather than argued about.
+    {
+        const int dim = kFarLatticeDim;
+        int rings = 0, spellings = 0, disagreed = 0;
+        for (int r = 0; r < kFarRings; ++r) {
+            const int   step = far_ring_step_m(r);
+            const float hole = far_ring_hole_half_m(r);
+            const int   n    = int(far_ring_half_span_m(r)) / step;
+            ++rings;
+            for (int iz = 0; iz + 1 < dim; ++iz) {
+                for (int ix = 0; ix + 1 < dim; ++ix) {
+                    // The metre rule of build_far_mesh, verbatim.
+                    const float qx0 = float((ix - n) * step);
+                    const float qx1 = float((ix + 1 - n) * step);
+                    const float qz0 = float((iz - n) * step);
+                    const float qz1 = float((iz + 1 - n) * step);
+                    const bool inHoleM =
+                        std::max(std::fabs(qx0), std::fabs(qx1)) <= hole
+                        && std::max(std::fabs(qz0), std::fabs(qz1)) <= hole;
+                    const bool emitM = !inHoleM;
+                    const bool emitL = far_quad_emitted(ix, iz,
+                                                        kFarLatticeHalf,
+                                                        kFarHoleQuadHalf);
+                    ++spellings;
+                    if (emitM != emitL) ++disagreed;
+                }
+            }
+        }
+        CHECK(rings == kFarRings && spellings > 100000,
+              "the sweep covered every quad of every ring (the control for "
+              "the line below)");
+        CHECK(disagreed == 0,
+              "the hole in QUADS is the same hole the old builder measured in "
+              "METRES — the same rule, not a second one");
+    }
+
+    // ── 8b. THE INDEX BUFFER COVERS THE RING AND CLOSES ITS EDGES ─────────
+    // Counts stated as the lattice's own arithmetic, never as literals: a
+    // pinned number would have to be re-typed on every ring added, which is
+    // how a witness stops witnessing.
+    {
+        std::vector<std::uint32_t> idx;
+        build_far_lattice_indices(idx, kFarLatticeHalf, kFarHoleQuadHalf);
+        const std::uint32_t dim  = std::uint32_t(kFarLatticeDim);
+        const std::uint32_t quads = std::uint32_t((kFarLatticeDim - 1)
+                                                 * (kFarLatticeDim - 1)
+                                        - (2 * kFarHoleQuadHalf)
+                                              * (2 * kFarHoleQuadHalf));
+        // Every open edge of the emitted region: its outer rim, and the hole's
+        // border. One rule for both, which is what the builder claims.
+        const std::uint32_t edges =
+            4u * std::uint32_t(kFarLatticeDim - 1 + 2 * kFarHoleQuadHalf);
+        const std::uint32_t surface = quads * 6u;
+        CHECK(idx.size() == std::size_t(surface + edges * 6u),
+              "the ring emits two triangles per quad outside its hole, plus "
+              "one skirt quad per open edge, and nothing else");
+        const std::uint32_t top = dim * dim;
+        // ── the surface half: every index a lattice point, every quad legal
+        std::uint32_t worstTop = 0;
+        int strayTop = 0, holeTouch = 0;
+        for (std::uint32_t i = 0; i < surface; ++i) {
+            const std::uint32_t v = idx[i];
+            if (v >= top) { ++strayTop; continue; }
+            worstTop = std::max(worstTop, v);
+            const int ix = int(v % dim), iz = int(v / dim);
+            // A corner of an emitted quad is a corner of the quad at or one
+            // before it on each axis; if NEITHER is emitted the surface has
+            // reached into the hole.
+            const bool near = far_quad_emitted(ix, iz, kFarLatticeHalf,
+                                               kFarHoleQuadHalf)
+                           || far_quad_emitted(ix - 1, iz, kFarLatticeHalf,
+                                               kFarHoleQuadHalf)
+                           || far_quad_emitted(ix, iz - 1, kFarLatticeHalf,
+                                               kFarHoleQuadHalf)
+                           || far_quad_emitted(ix - 1, iz - 1, kFarLatticeHalf,
+                                               kFarHoleQuadHalf);
+            if (!near) ++holeTouch;
+        }
+        CHECK(strayTop == 0 && holeTouch == 0,
+              "the surface stays on the lattice and never reaches inside the "
+              "hole the composite fills");
+        CHECK(worstTop + 1u == top,
+              "and it reaches the lattice's last point — the sheet is whole");
+        // ── the skirt half: a curtain hangs from ONE lattice edge
+        // A skirt quad is (t0, b0, t1) + (t1, b0, b1) with b = t + dim²: two
+        // adjacent TOP points and their own bottom twins. That structure is
+        // the whole of "it hangs from the edge"; the drop itself is the
+        // vertex stage lowering a bottom twin, and it is two lines there.
+        int malformed = 0, sideways = 0;
+        for (std::uint32_t q = 0; q < edges; ++q) {
+            const std::uint32_t* s = idx.data() + surface + q * 6u;
+            const std::uint32_t t0 = s[0], t1 = s[2];
+            if (t0 >= top || t1 >= top) { ++malformed; continue; }
+            if (s[1] != t0 + top || s[3] != t1 || s[4] != t0 + top
+                || s[5] != t1 + top) {
+                ++malformed;
+                continue;
+            }
+            const std::uint32_t d = t1 > t0 ? t1 - t0 : t0 - t1;
+            if (d != 1u && d != dim) ++sideways;
+        }
+        CHECK(malformed == 0,
+              "every skirt quad is two top points and their own bottom twins");
+        CHECK(sideways == 0,
+              "and the two top points are NEIGHBOURS — a curtain hangs from an "
+              "edge of the sheet, never across it");
+        // Fail closed, like every other door here.
+        std::vector<std::uint32_t> none{1u, 2u, 3u};
+        build_far_lattice_indices(none, 0, kFarHoleQuadHalf);
+        CHECK(none.empty(), "no lattice, no triangles — and the old contents "
+                            "of the buffer do not survive as a ghost");
+    }
+
+    // ── 9. THE MATERIAL FIELD IS THE VERTEX ATTRIBUTE IT REPLACES ─────────
+    // Migration witness, and a temporary one on purpose: it holds the new door
+    // against the old one over the SAME fixture, so the vertex attribute can
+    // be deleted with proof rather than with confidence. It dies with the
+    // mesh it compares against.
+    //
+    // The identity has to be exact, not close: a material id is an ordinal, so
+    // "off by one" is not an error of degree — it is a different material.
+    {
+        FarMaterialSheet mat;
+        bake_far_material_sheet(mat, grid, /*stepM*/64, /*halfSpanM*/3072.0f);
+        CHECK(mat.live(), "the material field is a field");
+        const int n = int(mesh.halfSpanM) / mesh.stepM;
+        const int dim = 2 * n + 1;
+        CHECK(mat.dim == dim,
+              "and it is the same lattice the height sheet is");
+        int samples = 0, mismatches = 0;
+        for (int iz = 0; iz < dim; ++iz) {
+            for (int ix = 0; ix < dim; ++ix) {
+                const float was = mesh.vtx[std::size_t(iz) * std::size_t(dim)
+                                           + std::size_t(ix)].material;
+                if (float(mat.at(ix, iz)) != was) ++mismatches;
+                ++samples;
+            }
+        }
+        CHECK(samples == dim * dim && mismatches == 0,
+              "every point of the material field carries exactly the ordinal "
+              "its vertex carried");
+        // THE MARGIN IS ADDRESSED, NOT LEFT BLANK. It exists only so the two
+        // sheets share one convention; a zeroed rim would read as material 0
+        // on the outermost row if anything ever gathered across it.
+        const std::uint8_t* biomeMat = biome_ground_materials();
+        const std::uint8_t mtn = biomeMat[std::size_t(Biome::Mountain)];
+        const std::uint8_t low = biomeMat[std::size_t(Biome::Meadow)];
+        int rim = 0, foreign = 0;
+        for (int i = -1; i <= dim; ++i) {
+            const std::uint8_t edge[4] = {mat.at(i, -1), mat.at(i, dim),
+                                          mat.at(-1, i), mat.at(dim, i)};
+            for (std::uint8_t m : edge) {
+                if (m != mtn && m != low) ++foreign;
+                ++rim;
+            }
+        }
+        CHECK(rim > 0 && foreign == 0,
+              "the margin ring carries the world's own materials too, not a "
+              "row of zeroes");
+    }
+
     return report("far_mesh_test");
 }

@@ -39,6 +39,181 @@
 
 namespace sm::sub {
 
+// ── THE LADDER OF RINGS, AND WHY IT IS ONE LATTICE ────────────────────────
+// A ring is the far ground at one spacing, and the finished thing is several
+// of them. They were born as six loose numbers in the renderer (32 m over
+// 6144 m with a 1536 m hole; 128 m over 24576 m with a 6144 m hole), and the
+// arithmetic on them says something the numbers did not: divide each ring's
+// span and hole by its OWN spacing and every ring gives the SAME pair, 192
+// and 48. Which is to say the rings are not three grids — they are ONE
+// lattice, read at three scales.
+//
+// That is not a tidy coincidence to admire, it is the licence for the whole
+// of this slice: if the lattice is one, its triangles are one, and the index
+// buffer is built ONCE for every ring that will ever exist instead of being
+// rewritten per ring per crossing. The geometry stops being data.
+//
+// The nesting is what makes the ladder seamless: ring r's HOLE is exactly
+// ring r−1's SPAN, so each ring begins where the finer one ends and the
+// innermost hole is the composite itself. All four facts below are pinned by
+// the compiler rather than by prose, because prose is what let the six loose
+// numbers look independent for as long as they did.
+constexpr int kFarLatticeHalf  = 192;  // lattice points per side from centre
+constexpr int kFarHoleQuadHalf = 48;   // the hole's half-width, in QUADS
+constexpr int kFarRing0StepM   = 32;   // the innermost spacing, metres
+constexpr int kFarRingRatio    = 4;    // step, span AND hole all ×4 per ring
+// HOW MANY RINGS — and it is the only knob of the ladder. Two is what the
+// probe drew and what the air already dissolves; the third is a measured
+// decision (Ш8), not a slot left open.
+constexpr int kFarRings        = 2;
+
+constexpr int kFarLatticeDim = 2 * kFarLatticeHalf + 1;   // points per row
+// ONE RING OF MARGIN, which is the field's own (see FarHeightSheet): a rim
+// point needs neighbours on both sides to own a real slope.
+constexpr int kFarSheetDim   = kFarLatticeDim + 2;
+
+// A ring's own three numbers, from its index alone.
+constexpr int far_ring_step_m(int ring) {
+    int s = kFarRing0StepM;
+    for (int r = 0; r < ring; ++r) s *= kFarRingRatio;
+    return s;
+}
+constexpr float far_ring_half_span_m(int ring) {
+    return float(kFarLatticeHalf * far_ring_step_m(ring));
+}
+constexpr float far_ring_hole_half_m(int ring) {
+    return float(kFarHoleQuadHalf * far_ring_step_m(ring));
+}
+// How much ground the ladder covers in total — REPORTED by the ladder, never
+// authored beside it. A draw distance is forbidden outright (S18.1) and this
+// is not one: it is how much sheet exists, and what is SEEN is the air's
+// business. It moves only when a ring is added.
+constexpr float far_ladder_half_span_m() {
+    return far_ring_half_span_m(kFarRings - 1);
+}
+
+// EVERY RING IS THE SAME LATTICE, stated so the compiler can refuse a ring
+// that is not. A ring whose span or hole is not its own spacing times these
+// two integers would need its own triangles, and the one index buffer below
+// would silently draw it wrong.
+constexpr bool far_ladder_is_one_lattice() {
+    for (int r = 0; r < kFarRings; ++r) {
+        const int step = far_ring_step_m(r);
+        if (far_ring_half_span_m(r) != float(kFarLatticeHalf * step))
+            return false;
+        if (far_ring_hole_half_m(r) != float(kFarHoleQuadHalf * step))
+            return false;
+    }
+    return true;
+}
+// AND THE RINGS NEST: each one begins where the finer one ends.
+constexpr bool far_ladder_nests() {
+    for (int r = 1; r < kFarRings; ++r) {
+        if (far_ring_hole_half_m(r) != far_ring_half_span_m(r - 1))
+            return false;
+    }
+    return true;
+}
+static_assert(kFarRings >= 1, "a ladder with no rings is not a ladder");
+static_assert(far_ladder_is_one_lattice(),
+              "every far ring must be the SAME lattice at its own spacing — "
+              "otherwise its triangles are not the shared ones");
+static_assert(far_ladder_nests(),
+              "each far ring's hole must be the previous ring's span — "
+              "otherwise the ladder has a gap or an overlap in it");
+// THE INNERMOST HOLE IS THE COMPOSITE, and that is why 48 is 48: the near
+// ground reaches half of the 3×3 window, so the finest ring's hole is that
+// same distance measured in its own steps. Change the window and this fails
+// here rather than as a brown wall at the join.
+static_assert(kFarHoleQuadHalf * kFarRing0StepM == kFullSize / 2,
+              "the finest ring's hole must be exactly the composite's reach");
+
+// ── WHICH QUADS A RING EMITS, AS A FORMULA ────────────────────────────────
+// The hole is a square block of quads in the middle of the lattice, and
+// membership in it is arithmetic — there is no computed set of emitted quads
+// and there must not be one, because the whole point is that every ring's
+// pattern is the same pattern and therefore never stored.
+//
+// This is the METRE rule of the old builder, divided through by the spacing:
+// a quad was skipped when both of its X corners and both of its Z corners
+// lay within `holeHalfM`, and with holeHalfM = holeQuadHalf·stepM that is
+// exactly the two integer windows below. `far_mesh_test` holds the two forms
+// against each other, because a boundary moved by one quad is a crack.
+constexpr bool far_axis_in_hole(int i, int latticeHalf, int holeQuadHalf) {
+    const int a = i - latticeHalf;
+    const int b = i + 1 - latticeHalf;
+    const int absA = a < 0 ? -a : a;
+    const int absB = b < 0 ? -b : b;
+    return absA <= holeQuadHalf && absB <= holeQuadHalf;
+}
+constexpr bool far_quad_emitted(int ix, int iz, int latticeHalf,
+                                int holeQuadHalf) {
+    if (holeQuadHalf <= 0) return true;
+    return !(far_axis_in_hole(ix, latticeHalf, holeQuadHalf)
+             && far_axis_in_hole(iz, latticeHalf, holeQuadHalf));
+}
+
+// THE TRIANGLES OF THE LATTICE — the ring's quads and the skirts that close
+// their open edges. Built ONCE for the whole ladder and never again: nothing
+// in here knows a spacing, a span or a place, so there is nothing for a
+// crossing to invalidate.
+//
+// VERTEX NUMBERING IS AN ADDRESS, NOT A TABLE. A lattice point (ix, iz) is
+// vertex `iz·dim + ix`; its SKIRT TWIN — the same point lowered by the
+// curtain's drop — is that number plus dim². So a skirt needs no list of
+// which points it hangs from and no duplicated data: the index itself says
+// "the bottom of that point". A vertex stage given nothing but its index can
+// answer both halves with arithmetic, which is what lets the vertex buffer
+// stop existing.
+//
+// ONE RULE FOR EVERY EDGE, exactly as before: any quad edge with no emitted
+// quad on the other side gets a skirt — the lattice's outer rim and the
+// border of the hole alike. Two seams, no special cases.
+inline void build_far_lattice_indices(std::vector<std::uint32_t>& out,
+                                      int latticeHalf, int holeQuadHalf) {
+    out.clear();
+    if (latticeHalf <= 0) return;                  // no lattice, no triangles
+    const int dim = 2 * latticeHalf + 1;
+    const std::uint32_t skirtBase = std::uint32_t(dim) * std::uint32_t(dim);
+    const auto emitted = [&](int ix, int iz) {
+        if (ix < 0 || iz < 0 || ix + 1 >= dim || iz + 1 >= dim) return false;
+        return far_quad_emitted(ix, iz, latticeHalf, holeQuadHalf);
+    };
+    // The surface first, then the curtains — two passes so the skirt run is
+    // contiguous at the tail and a later slice can drop it by shortening the
+    // draw rather than by rebuilding the buffer (Ш3).
+    for (int iz = 0; iz + 1 < dim; ++iz) {
+        for (int ix = 0; ix + 1 < dim; ++ix) {
+            if (!emitted(ix, iz)) continue;
+            const std::uint32_t a = std::uint32_t(iz * dim + ix);
+            const std::uint32_t b = a + 1;
+            const std::uint32_t c = a + std::uint32_t(dim);
+            const std::uint32_t d = c + 1;
+            out.push_back(a); out.push_back(c); out.push_back(b);
+            out.push_back(b); out.push_back(c); out.push_back(d);
+        }
+    }
+    const auto hang = [&](std::uint32_t t0, std::uint32_t t1) {
+        const std::uint32_t b0 = t0 + skirtBase;
+        const std::uint32_t b1 = t1 + skirtBase;
+        out.push_back(t0); out.push_back(b0); out.push_back(t1);
+        out.push_back(t1); out.push_back(b0); out.push_back(b1);
+    };
+    for (int iz = 0; iz + 1 < dim; ++iz) {
+        for (int ix = 0; ix + 1 < dim; ++ix) {
+            if (!emitted(ix, iz)) continue;
+            const std::uint32_t a = std::uint32_t(iz * dim + ix);
+            const std::uint32_t b = a + 1;
+            const std::uint32_t c = a + std::uint32_t(dim);
+            const std::uint32_t d = c + 1;
+            if (!emitted(ix, iz - 1)) hang(a, b);   // north edge
+            if (!emitted(ix, iz + 1)) hang(c, d);   // south edge
+            if (!emitted(ix - 1, iz)) hang(a, c);   // west edge
+            if (!emitted(ix + 1, iz)) hang(b, d);   // east edge
+        }
+    }
+}
+
 // One vertex of the far ground. Position in the same WINDOW space the
 // composite uses (metres, Y absolute — sub/height.h layer 2), so the far mesh
 // and the near mesh live in one coordinate system and the camera needs no
@@ -299,6 +474,59 @@ inline void bake_far_sheet(FarHeightSheet& out, const FarCellGrid& grid,
             const float wx = float((ix - 1 - n) * stepM);
             out.m[std::size_t(iz) * std::size_t(mDim) + std::size_t(ix)] =
                 height_m(wx, wz);
+        }
+    }
+}
+
+// ── THE MATERIAL IS A FIELD TOO, AND THAT IS THE WHOLE OF THIS DOOR ───────
+// It rode as a vertex attribute for as long as there were vertices. It is not
+// an attribute of a vertex though — it is a property of the PLACE, sampled at
+// the lattice's points exactly as the height is, and giving it the same shape
+// as the height sheet means one addressing convention for both instead of two.
+//
+// NEAREST, NOT BLENDED, and that has not changed: a material id is an ORDINAL
+// into a table, so the average of two is a third material nobody authored —
+// the yellow thread the owner photographed along every far biome border. What
+// blends is the COLOUR, over the fragment, where blending is legal.
+//
+// The margin ring exists only so the two sheets are addressed alike; nothing
+// reads a material's neighbours today. It costs 2·(dim+1) bytes and buys the
+// absence of a second convention.
+struct FarMaterialSheet {
+    int                       dim = 0;   // lattice points per side (2n+1)
+    std::vector<std::uint8_t> id;        // (dim+2)², row-major, WITH margin
+
+    bool live() const {
+        return dim > 0
+            && id.size() == std::size_t(dim + 2) * std::size_t(dim + 2);
+    }
+    std::uint8_t at(int ix, int iz) const {
+        return id[std::size_t(iz + 1) * std::size_t(dim + 2)
+                  + std::size_t(ix + 1)];
+    }
+};
+
+inline void bake_far_material_sheet(FarMaterialSheet& out,
+                                    const FarCellGrid& grid, int stepM,
+                                    float halfSpanM) {
+    out.id.clear();
+    out.dim = 0;
+    if (!grid.live() || stepM <= 0 || halfSpanM <= 0.0f) return;
+
+    const int n   = int(halfSpanM) / stepM;
+    const int dim = 2 * n + 1;
+    out.dim = dim;
+    const float cellSpanM = float(kCellSize) * 1.0f;       // a tile is a metre
+    const int mDim = dim + 2;
+    out.id.assign(std::size_t(mDim) * std::size_t(mDim), std::uint8_t(0));
+    for (int iz = 0; iz < mDim; ++iz) {
+        const float wz = float((iz - 1 - n) * stepM);
+        const float fy = wz / cellSpanM + float(grid.radiusCells);
+        for (int ix = 0; ix < mDim; ++ix) {
+            const float wx = float((ix - 1 - n) * stepM);
+            const float fx = wx / cellSpanM + float(grid.radiusCells);
+            out.id[std::size_t(iz) * std::size_t(mDim) + std::size_t(ix)] =
+                grid.at(int(std::floor(fx)), int(std::floor(fy))).material;
         }
     }
 }

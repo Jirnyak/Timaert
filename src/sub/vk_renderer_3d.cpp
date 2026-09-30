@@ -53,6 +53,12 @@ constexpr float kWorldExtent = float(kFullSize) * kTileMeters * 0.5f; // 1536 m
 // law reads before any ring geometry is invested in. The camera's far plane is
 // DERIVED from it below, so building more can never be silently clipped away.
 constexpr float kFarWorldHalfSpanM = 24.0f * 1024.0f;
+// AND IT IS THE LADDER'S OWN REACH, not a number that happens to agree with
+// it. The rings' six loose constants below turn out to be one lattice read at
+// two scales (far_mesh.h), so their total span is derived there — this line is
+// what refuses a ladder and a far plane that have drifted apart.
+static_assert(kFarWorldHalfSpanM == far_ladder_half_span_m(),
+              "the camera's far plane must be derived from the ring ladder");
 
 
 // Per-vertex layout: position (3) + normal (3) + grid UV (2). The material id
@@ -1357,6 +1363,25 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     constexpr int kFarFineStepM  = 32;
     constexpr float kFarFineHalfM = 6.0f * 1024.0f;      // 6 macro cells
     constexpr int kFarCoarseStepM = 128;
+    // THESE SIX NUMBERS ARE THE LADDER, and the ladder is one lattice read at
+    // two scales (far_mesh.h). Pinned rather than replaced here so the
+    // derivation is proved against the shape the owner has already looked at,
+    // byte for byte, before anything is built out of it.
+    static_assert(kFarRings == 2, "two rings today; the pins below name them");
+    static_assert(kFarFineStepM == far_ring_step_m(0)
+                      && kFarFineHalfM == far_ring_half_span_m(0)
+                      && kWorldExtent == far_ring_hole_half_m(0),
+                  "the fine ring must be the ladder's ring 0");
+    static_assert(kFarCoarseStepM == far_ring_step_m(1)
+                      && kFarWorldHalfSpanM == far_ring_half_span_m(1)
+                      && kFarFineHalfM == far_ring_hole_half_m(1),
+                  "the coarse ring must be the ladder's ring 1");
+    // The grid has to hold the outermost ring plus the bilinear's own extra
+    // cell — the radius is a CONSEQUENCE of how far the ladder reaches.
+    static_assert(kFarCellRadius
+                      == int(far_ladder_half_span_m()) / kCellSize + 1,
+                  "the cell grid must cover the ladder, plus one for the "
+                  "bilinear's outer neighbour");
 
     sub::FarCellGrid grid;
     grid.radiusCells = kFarCellRadius;
