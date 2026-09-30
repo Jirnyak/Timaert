@@ -182,9 +182,13 @@
   `outfit_crew_mounts`, `depot_`, `landmark_trade_power_`,
   `settlement_faction_index`, `generate_quests_for_settlement/_village`,
   `wellbeing_pct`, `preview_flock_` и семь лямбд/перегрузок в `npc_ai`).
-  **МУТИРУЮЩИХ МЕСТ В `src/` ВСЕГО 8 СТРОК** (`state.h:1065,1067`,
-  `state.cpp:127,149`, `save.cpp:1317,1318`, `spires.cpp:64`, `ruins.cpp:68`) —
-  это узкое горло, и флип проходит через него.
+  **МУТИРУЮЩИХ МЕСТ В `src/` ВСЕГО ВОСЕМЬ** — и они названы символами, а не
+  номерами (номер гниёт): `add_landmark@src/macro/state.h` (единственный
+  `push_back` мира, он же `.back()`), `populate_landmarks_from_politik@src/macro/state.cpp`
+  (`clear` + генезис города и деревни), `load_game@src/macro/save.cpp` (перепёк
+  загрузки), `generate_spires@src/macro/spires.cpp` и
+  `generate_ruins@src/macro/ruins.cpp` (`reserve` + рождение). Это узкое горло,
+  и флип проходит через него.
 
   **ПОРЯДОК ШАГОВ, каждый кончается зелёным `check` (аддитивно рядом со старым
   путём до финального переключения, §2 п.4):**
