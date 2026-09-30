@@ -65,12 +65,12 @@ struct FarCellColumn {
     float        gradient01  = 0.0f;
     float        heightScale = 0.0f;
     float        mtnScale    = 0.0f;
-    // 1 on a water cell. A far SEABED has to lie BELOW the water plane, not on
-    // it: the skeleton's water curve reaches exactly the sea plane at the
-    // shoreline, so without this the far ground and the sea surface occupy the
-    // same height and the result reads as "water, then land at sea level, then
-    // water again" — which is what the owner photographed.
-    float        waterW      = 0.0f;
+    // (A `waterW` column stood here and fed the seabed ceiling. Both are gone:
+    // the ceiling was a second answer to «where is the water», the near world
+    // answers it by HEIGHT alone, and a column with no reader is a column that
+    // must not exist — DOD 9. Wetness still reaches the far sheet, through the
+    // only door that carries it honestly: the cell's own remapped manifold,
+    // which `skeleton_cell_height01` already put under the plane.)
     std::uint8_t material = 0;      // biome_ground_materials()[biome]
 };
 
@@ -178,25 +178,32 @@ inline float far_point_height_m(const FarCellGrid& grid, int camCx, int camCy,
                    + c01.heightScale * w01 + c11.heightScale * w11;
     const float ms = c00.mtnScale * w00 + c10.mtnScale * w10
                    + c01.mtnScale * w01 + c11.mtnScale * w11;
-    const float wet = c00.waterW * w00 + c10.waterW * w10
-                    + c01.waterW * w01 + c11.waterW * w11;
     const int rawX = camCx * kCellSize + int(std::floor(wx));
     const int rawZ = camCy * kCellSize + int(std::floor(wz));
     const int gx = worldTiles > 0.0f ? wrapi(rawX, int(worldTiles)) : rawX;
     const int gz = worldTiles > 0.0f ? wrapi(rawZ, int(worldTiles)) : rawZ;
-    float h01 = far_height01(gx, gz, skel, peak, ridge, worldTiles,
-                             grid.seaLevel, grad, hs, ms,
-                             2.0f * float(stepM));
-    // A SEABED IS UNDER THE SEA. The ceiling comes down as the ground becomes
-    // water and stops one kLandMargin below the plane — the very margin the
-    // LAND is lifted by on the other side of the same line, so the two rules
-    // are one rule read from both banks.
-    if (wet > 0.0f) {
-        const float ceil01 = 2.0f * (1.0f - wet)
-                           + (grid.seaLevel - kLandMargin) * wet;
-        h01 = std::min(h01, ceil01);
-    }
-    return h01 * kHeightScaleM;
+    // WHERE THE WATER IS, IS A QUESTION ABOUT HEIGHT, and the far world does
+    // not get to answer it a second way. The near generator decides it per
+    // TILE and only by height — `water[i] = heightmap[i] < waterLevel`
+    // (gens/kit/tiles.cpp sync_water_tiles_from_heightmap) — so a shoreline is
+    // wherever the ground crosses the one plane the world has, on both banks
+    // and at both scales. The water cell's own manifold already sits under
+    // that plane by construction (skeleton_cell_height01 remaps a wet cell
+    // through t²·seaLevel), which is the whole of what the far sheet owes.
+    //
+    // A CEILING KEYED ON THE CELL'S FLAG used to stand here, and it did not
+    // fail by not engaging — it engaged and FLATTENED. Inside a water cell the
+    // weight below is a constant, so every clamped point landed on the same
+    // number and the seabed became a level shelf of dry land standing on the
+    // sea; the owner photographed it as a grey-tan plateau along every far
+    // shore. Measured at its removal: 62 168 of 589 760 neighbouring pairs
+    // over water came out BIT-IDENTICAL, against 0 of 595 968 over land.
+    // ЗАКОН КЛАМПА, exactly — the clamp was hiding the absence of a rule
+    // rather than enforcing one, and the rule it hid was already written next
+    // door. `far_mesh_test` section 7 holds the line now.
+    return far_height01(gx, gz, skel, peak, ridge, worldTiles,
+                        grid.seaLevel, grad, hs, ms,
+                        2.0f * float(stepM)) * kHeightScaleM;
 }
 
 // ── THE FAR GROUND AS A FIELD, WHICH IS WHAT IT ACTUALLY IS ───────────────
