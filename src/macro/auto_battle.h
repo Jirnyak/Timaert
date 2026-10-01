@@ -104,10 +104,11 @@ inline int auto_battle_armor(const Defense& d, const Skills& skills) {
 
 // Armour enters as EFFECTIVE HP through the PERCENT column of the defence law
 // (tables/damage_types.h armor_hp_mult_num/den): a blow keeps
-// kArmorHalving / (kArmorHalving + armor) of itself, so a body of hp H absorbs
-// H * (kArmorHalving + armor) / kArmorHalving worth of raw blows — the same
-// law, read as a multiplier, and it now falls BELOW 1 for negative armour the
-// way the fought path does. The FLAT BLOCK column is deliberately uncredited
+// (kArmorFull - armor) / kArmorFull of itself, so a body of hp H absorbs
+// H * kArmorFull / (kArmorFull - armor) worth of raw blows — the same law, read
+// as a multiplier, and it falls BELOW 1 for negative armour the way the fought
+// path does. У сотни процентов знаменатель упирается в единицу: иммунного
+// бойца скаляр выразить не может и потому НЕДООЦЕНИВАЕТ — смещение названо. The FLAT BLOCK column is deliberately uncredited
 // here, and it cannot be credited: its worth depends on the size of the
 // incoming blow, which a per-fighter scalar does not know. Heavy gear is
 // therefore worth slightly MORE in a fought battle than the auto-resolve

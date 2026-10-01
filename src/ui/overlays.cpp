@@ -1352,9 +1352,10 @@ namespace sm::ui
                         {
                             ImGui::SetTooltip(
                                 "Block comes off the blow flat and is always "
-                                "up; what is left keeps %d/(%d+armour) of "
-                                "itself. Negative armour doubles instead.",
-                                sm::kArmorHalving, sm::kArmorHalving);
+                                "up; armour is the PERCENT taken off what is "
+                                "left (%d%% = nothing gets through). Negative "
+                                "armour adds damage instead.",
+                                sm::kArmorFull);
                         }
                         ImGui::SameLine();
                         ImGui::TextDisabled("(%d of %d slots filled)",

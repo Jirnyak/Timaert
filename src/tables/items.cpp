@@ -163,12 +163,13 @@ constexpr ItemDef kCatalog[] = {
     {"arm_leather", "Leather Armor",   ItemType::Armor,      60, 5.00f, "\xF0\x9F\x9B\xA1",
         "A boiled-leather coat over the torso", {},
         /*slot*/part_bit(BodyPartId::Torso), /*blocks*/0,
-        // A leather coat is worth a third of a plain blow (kArmorHalving);
+        // ПЕРЕКАЛИБРОВАНО с 3 на 10 (M-197): броня стала ПРОЦЕНТОМ, и
+        // кожаная куртка честно читается как «снимает десятую часть»;
         // uniform across the nine types — the mechanical scalar-era
         // translation, until armour rows author their columns.
         // Boiled leather is LIGHT armour: the row states which skill governs
         // it in the same column a weapon states its own (2026-09-19).
-        /*def*/uniform_defense(3, 1), /*dice*/{}, /*dmgType*/DamageType::Blunt,
+        /*def*/uniform_defense(10, 1), /*dice*/{}, /*dmgType*/DamageType::Blunt,
         /*skill*/SkillId::LightArmor},
 
     // Valuables

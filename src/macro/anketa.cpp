@@ -424,7 +424,10 @@ DefenseSum body_defense(const Defense& row, const Skills& skills,
     // голого тела нет ничего — множить нечего, поэтому строка ПЛЮСУЕТ. Кто
     // «унифицирует» два глагола в один, вернёт строку в ноль, которым она и
     // простояла до 2026-09-30.
-    const int bare = skills.of(SkillId::Unarmored);
+    // ПОЛОВИНА РАНГА в процентных пунктах (вывод — на строке скилла,
+    // `kSkillDefs@src/tables/attributes.h`): голая ветка садится на 50 против
+    // 80 у доспешной, но платит одним скиллом вместо двух и нулевым простоем.
+    const int bare = skills.of(SkillId::Unarmored) / 2;
     out.armor += bare;
     out.block += bare;
     return out;

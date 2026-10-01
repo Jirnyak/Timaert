@@ -141,7 +141,7 @@ struct ItemDef {
     // uniform_defense(armour, block); per-column authoring (a fire-warding
     // cloak) is what the columns are FOR. The ARMOUR half is a percent and
     // takes a rank multiplier happily; the BLOCK half is flat, so its authored
-    // ceiling is 2·kArmorHalving = 20 and not the type's 255 (CANON S13).
+    // ceiling is 2·kPlainBlow = 20 and not the type's 255 (CANON S13).
     Defense       defense{};
 
     // ── What a WEAPON row deals (CANON S13: урон = NdM строкой предмета) ──

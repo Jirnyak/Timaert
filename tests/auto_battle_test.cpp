@@ -415,7 +415,7 @@ void test_auto_and_fought_agree() {
 
     // ARMOUR decides: the bandit mob out-numbers the guards past their raw
     // hp × dps — only the guards' plate (npc_def armor 10, worth ×2
-    // effective HP at kArmorHalving) turns the fight. A resolver that does
+    // effective HP at kPlainBlow) turns the fight. A resolver that does
     // not read armour names the mob here; the door-mitigated fought battle
     // names the guards.
     const auto mobR   = roster_of(NPCType::Bandit, 3, 8, 500u);

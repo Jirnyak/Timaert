@@ -43,7 +43,7 @@ namespace sm::sub {
 // the stamp now, so it owns the number.
 inline constexpr float kHitFlashDuration = 0.15f;
 
-// The mitigation law itself (the 9-type symmetry, kArmorHalving,
+// The mitigation law itself (the 9-type symmetry, kPlainBlow,
 // mitigate_amount) lives in tables/damage_types.h — the auto-resolve reads it
 // there too, and the macro data layer cannot include this ECS-facing header.
 

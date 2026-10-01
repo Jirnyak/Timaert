@@ -156,7 +156,7 @@ constexpr std::size_t kMaxNpcTalkLines = 6;
 constexpr int kNpcUpkeepNone = -1;
 
 // The defence scale, the 8-type symmetry and THE defence law all live in
-// tables/damage_types.h (kArmorHalving, Defense, mitigate_amount) — one
+// tables/damage_types.h (kPlainBlow, kArmorFull, Defense, mitigate_amount) — one
 // home, because both laws of battle read them: the damage door
 // (sub/damage.cpp) and the auto-resolve (auto_battle.h).
 
@@ -601,13 +601,18 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .lightHeight = 1.1f,
         // The disciplined tank of the table wears what his row already
         // describes. `haulMult` is spelled out only because the plate after it
-        // is not the default; kArmorHalving is what makes 10 legible — it
-        // HALVES a plain blow. И БЛОК У НЕГО ЕСТЬ, потому что выданные латы и
-        // есть тот жёсткий панцирь, для которого колонка блока существует:
-        // 5 — ПОЛОВИНА плоского удара (kArmorHalving), при авторской верхушке
-        // каталога 2·kArmorHalving = 20 у лучшей плиты (CANON S13). Шкура же
-        // блока не несёт — она гнётся, а не отводит.
-        .defense = uniform_defense(10, 5),
+        // is not the default. БРОНЯ ТЕПЕРЬ ПРОЦЕНТ (M-197), поэтому число
+        // ПЕРЕКАЛИБРОВАНО с 10 на 40: прежняя десятка означала «срезает
+        // половину плоского удара» по старой гиперболе, а на процентной шкале
+        // то же намерение читается как «срезает 40 % — дисциплинированный танк
+        // в выданных латах, но до полосы иммунитета ему далеко» (игрок живёт в
+        // 0…60, CANON S13). Это калибровка, а не структура, и менять её можно
+        // молча (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ).
+        // И БЛОК У НЕГО ЕСТЬ, потому что выданные латы и есть тот жёсткий
+        // панцирь, для которого колонка блока существует: 5 — половина плоского
+        // удара (kPlainBlow), при балансной верхушке 2·kPlainBlow = 20 у лучшей
+        // плиты. Шкура же блока не несёт — она гнётся, а не отводит.
+        .defense = uniform_defense(40, 5),
         // The price column: upkeep 3 × 30 days.
         .hireGold = 90,
         .nature = NpcNature::Human,

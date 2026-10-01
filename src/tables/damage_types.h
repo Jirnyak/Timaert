@@ -78,13 +78,23 @@ inline constexpr DamageTypeDef kDamageTypeDefs[kDamageTypeCount] = {
 static_assert(rows_in_enum_order(kDamageTypeDefs, &DamageTypeDef::type),
               "kDamageTypeDefs must mirror DamageType ordinals");
 
-// THE SCALE EVERY DEFENCE NUMBER IN THE GAME READS ON. 10 is the historical
-// plain blow (the pre-dice player's bare-handed 10, the anchor every creature
-// and armour row was tuned against), so "armour 10" says «this body halves the
-// historical plain blow», and "block 10" says «this plate eats one plain blow
-// whole». A bare FIST is the honest 1d2 of the fist's own row: useless against
-// plate, which is what the block column is for.
-inline constexpr int kArmorHalving = 10;
+// ПЛОСКИЙ УДАР — единица, в которой мерится БЛОК. 10 это исторический простой
+// удар (безоружная десятка до-кубиковой эпохи, анкер, по которому выверялись
+// строки), поэтому «блок 10» читается как «эта плита съедает один плоский удар
+// целиком». Голый КУЛАК — честные 1d2 своей строки: против плиты бесполезен,
+// ровно для этого колонка блока и есть.
+//
+// ИМЯ ИСПРАВЛЕНО 2026-10-01 (M-197): константа звалась `kArmorHalving` и ВРАЛА
+// именем — «про половину» она не была никогда, она была РАЗМЕРОМ УДАРА. Колонке
+// брони она больше не нужна вовсе: та стала процентом и мерится в процентах.
+inline constexpr int kPlainBlow = 10;
+
+// ПОЛНАЯ ЗАЩИТА — СТО ПРОЦЕНТОВ, и это не калибровка, а ОПРЕДЕЛЕНИЕ процента
+// (вердикт владельца 2026-10-01, дословно: «давай процентами просто 100% это и
+// есть 100 а всё что выше это сверх»). Единственное число в законе защиты, и
+// менять его нельзя не потому, что так решил автор, а потому, что процентов
+// больше ста не бывает.
+inline constexpr int kArmorFull = 100;
 
 // ── A BODY'S DEFENCE: TWO COLUMNS, AND THE PAIR IS THE WHOLE ANSWER ────────
 // CANON S13 «ЗАКОН ЗАЩИТЫ — ДВЕ КОЛОНКИ, ОДНО ВЫРАЖЕНИЕ» (вердикт владельца
@@ -105,28 +115,28 @@ inline constexpr int kArmorHalving = 10;
 // hit its ceiling on accumulated junk, which is exactly what the old
 // `uniform_armor` clamp at 255 did.
 struct Defense {
-    // БРОНЯ — ПРОЦЕНТ. Signed by ЗАКОН ТИПА, and the sign is a MECHANIC, not a
-    // guard: negative armour is VULNERABILITY (owner: «-127 это иммунитет
-    // наоборот ну то есть удвоение урона формула остаётся гладкой»). Range is
-    // −127…127 and deliberately SYMMETRIC: −128 is not used, because «нет
-    // брони» is 0 and a value carrying a second meaning would be a sentinel
-    // nobody asked for. The authored range IS the type's range; a second
-    // «authored ceiling» number would have no derivation (CANON S13, уточнение
-    // владельца 2026-10-01).
+    // БРОНЯ — ЭТО СРАЗУ ПРОЦЕНТ СНЯТОГО УРОНА, И ЧИСЛО ЕСТЬ МЕХАНИКА (вердикт
+    // владельца 2026-10-01: «давай процентами просто 100% это и есть 100 а всё
+    // что выше это сверх»). 40 читается как «сорок процентов срезано», без
+    // формулы в голове у читателя и у балансировщика.
     //
-    // И ЗДЕСЬ НЕТ ИММУНИТЕТА: колонка чисто процентная и удар не обнуляет
-    // НИКОГДА (127 пропускает 10/137 = 7.3%). Блок его тоже не даёт — он
-    // плоский с капом типа 255 при лейт-уроне в тысячи. Абсолютного иммунитета
-    // в этом законе НЕТ НИГДЕ, и это ОТКРЫТЫЙ ВОПРОС владельцу (CANON S13,
-    // поправка 2026-10-01), а не свойство, которое кто-то здесь заложил.
+    // ОТСЮДА ИММУНИТЕТ ВЫПАДАЕТ САМ: `kArmorFull` = 100 и есть «не берёт
+    // вовсе», и ему не нужны ни сентинел, ни битовая маска, ни ветка. А ВСЁ,
+    // ЧТО ВЫШЕ СТА, — ЗАПАС: диспел, снимающий 30 у элементаля на 130,
+    // оставляет его иммунным, а на 120 — уже нет. Запас бесплатен (тип и так
+    // его несёт) и читателя ждёт в будущей магии снятия иммунитетов.
+    //
+    // ЗНАК — МЕХАНИКА, А НЕ СТРАЖ: −100 это РОВНО удвоение урона (владелец:
+    // «-127 это иммунитет наоборот»), и теперь это точное равенство, а не
+    // асимптота. Диапазон симметричен, −128 не используется: «нет брони» есть
+    // 0, и значение со вторым смыслом здесь никому не нужно.
     std::array<std::int8_t, kDamageTypeCount> armor{};
-    // БЛОК — ПЛОСКО, и он НИКОГДА не уходит в простой (M-194). Unsigned: a
-    // negative flat column would mean «+127 to every poke», which would drown
-    // the dice — the vulnerability axis lives in `armor` alone, one axis per
-    // question. 255 is the TYPE's ceiling; the AUTHORED ceiling is
-    // 2·kArmorHalving = 20 («лучшая плита каталога глушит два плоских удара»),
-    // because a flat column is multiplied LINEARLY by rank and would otherwise
-    // become a wall under the whole late-game damage band (CANON S13).
+    // БЛОК — ПЛОСКО, в единицах `kPlainBlow`, и он НИКОГДА не уходит в простой
+    // (M-194). Unsigned: отрицательная плоская колонка значила бы «+127 к каждой
+    // тычке» и утопила бы кубы — ось уязвимости живёт в `armor` одна. 255 это
+    // предел ТИПА; балансная верхушка — 2·kPlainBlow = 20 («лучшая плита
+    // каталога глушит два плоских удара»), потому что плоскую колонку ранг
+    // разгоняет ЛИНЕЙНО (CANON S13).
     std::array<std::uint8_t, kDamageTypeCount> block{};
 
     constexpr int armor_of(DamageType t) const {
@@ -148,9 +158,10 @@ struct DefenseSum {
     int block = 0;
 };
 
-// The mechanical translation for a row authored as one number: the same value
-// in every armour column, block left to the row's own authoring (a hide has
-// armour and no block; rigid plate and a golem's shell are what block is for).
+// The mechanical translation for a row authored as one number: the same PERCENT
+// in every armour column, block left to the row's own authoring (a hide absorbs
+// a share and blocks nothing; rigid plate and a golem's shell are what the block
+// column is for).
 constexpr Defense uniform_armor(int x) {
     Defense d{};
     const std::int8_t c = std::int8_t(x < -127 ? -127 : x > 127 ? 127 : x);
@@ -167,50 +178,51 @@ constexpr Defense uniform_defense(int armour, int block) {
     return d;
 }
 
-// ── THE DEFENCE LAW — ONE EXPRESSION, NO BRANCH ON THE SIGN ────────────────
-// Sequential by owner's verdict («да давай последовательно»): the flat block
-// comes off first, and what is left argues with the percent.
+// ── THE DEFENCE LAW — ОДНО ВЫРАЖЕНИЕ, И ВЕТКИ ПО ЗНАКУ БОЛЬШЕ НЕТ ─────────
+// Sequential by owner's verdict («да давай последовательно»): плоский блок
+// снимается ПЕРВЫМ и в простой не уходит, остаток спорит с процентом.
 //
-//     out = (dmg − B) · (d − 2·min(A,0)) / (d + |A|),    d = kArmorHalving
+//     out = (dmg − B) · (kArmorFull − A) / kArmorFull
 //
-//   · A ≥ 0 → dmg·d/(d+A): percent armour, self-limiting — twice the armour
-//     never gives half the damage again;
-//   · A < 0 → dmg·(d−2A)/(d−A): VULNERABILITY, asymptote ×2 (at −127 it is
-//     ×1.927). Only the percent half is mirrored, never the flat one: a flat
-//     mirror would add |A| to every poke and drown the dice;
-//   · A = 0 → dmg. Ноль — ЗНАЧЕНИЕ, а не отсутствие закона.
+//   · A = 0   → dmg. Ноль — ЗНАЧЕНИЕ, а не отсутствие закона;
+//   · A = 50  → ровно половина;
+//   · A ≥ 100 → НОЛЬ. Иммунитет, выпавший из шкалы, без сентинела и без маски;
+//               и всё, что выше ста, есть ЗАПАС под снятие иммунитета;
+//   · A = −100 → РОВНО удвоение; A = −127 → ×2.27. Точные равенства вместо
+//               прежней асимптоты, и ОТДЕЛЬНОЙ ВЕТКИ ДЛЯ МИНУСА НЕ НУЖНО:
+//               (100 − (−100))/100 = 2 выпадает из того же выражения.
 //
-// SMOOTH IS LITERAL, not a figure of speech: at A = 0 both halves give ×1 AND
-// the same derivative (−0.1 per point of armour), so the curve has no kink
-// where protection turns into vulnerability.
+// ЭТО ЗАМЕНИЛО ГИПЕРБОЛУ `d/(d+A)` 2026-10-01 (M-197, вердикт владельца «давай
+// процентами просто»). Что потеряно и названо вслух: у линейного процента НЕТ
+// ЗАТУХАНИЯ, поэтому эффективное HP = 100/(100−A) растёт к бесконечности у
+// сотни (×2 при 50, ×10 при 90, ×100 при 99). Это не дефект закона, а его
+// природа, и лечится он ДИСЦИПЛИНОЙ КОНТЕНТА, записанной в CANON S13: игрок
+// живёт в полосе 0…60, а 100+ отдан строкам, которые ОБЯЗАНЫ быть иммунны.
 //
-// RANGE: the worst multiplier is 264/137 at A = −127, so the product is honest
-// up to dmg ≈ 8.1 million — three orders above this world's damage band (late
-// game is thousands by CANON S13), and `int` is never at risk.
-//
-// ONE HOME, TWO READERS: the damage door subtracts this, and the auto-resolve
-// credits the SAME law inverted as effective HP (auto_battle.h) — two answers
-// to «сколько держит тело» would be two laws of battle (S13).
+// Кламп в ноль — страж ФОРМУЛЫ (урон не бывает отрицательным), а не костыль в
+// динамике: за сотней процентов нет «ещё больше защиты», там нет урона вовсе.
 constexpr int mitigate_amount(int dmg, int armour, int block) {
     if (dmg <= 0) return 0;
     const int afterBlock = dmg - block;
     if (afterBlock <= 0) return 0;
-    const int lo  = armour < 0 ? armour : 0;        // min(A, 0)
-    const int mag = armour < 0 ? -armour : armour;  // |A|
-    return afterBlock * (kArmorHalving - 2 * lo) / (kArmorHalving + mag);
+    const int pct = kArmorFull - armour;
+    if (pct <= 0) return 0;          // 100 % и выше: не берёт вовсе
+    return afterBlock * pct / kArmorFull;
 }
 
-// The same law as a MULTIPLIER on effective HP — what a per-fighter scalar
-// needs (auto_battle.h). It is `1/M` of the percent half exactly: at A ≥ 0 this
-// is the historical (d+A)/d, and at A < 0 it honestly falls below 1. The flat
-// block is NOT credited here and cannot be: its worth depends on the size of
-// the incoming blow, which a scalar does not know — the same blindness the old
-// threshold branch had, named out loud rather than papered over.
-constexpr int armor_hp_mult_num(int armour) {
-    return kArmorHalving + (armour < 0 ? -armour : armour);
-}
+// Тот же закон как МНОЖИТЕЛЬ эффективного HP — то, что нужно скалярному
+// резолверу (auto_battle.h): hp · kArmorFull / (kArmorFull − A).
+//
+// СТРАЖ У СОТНИ НАЗВАН ВСЛУХ: при A ≥ 100 тело не берёт этот тип вовсе, то есть
+// эффективное HP БЕСКОНЕЧНО, а скаляр бесконечности не выражает — поэтому
+// знаменатель упирается в единицу (A = 99). Смещение названо, как названы блок и
+// крит: скалярный резолвер недооценивает иммунного бойца. Умрёт вместе с ним —
+// владелец назвал будущую форму прямо: «авторезолв мы будем честно симулить так
+// что не будет такого там будет 2д плоскость виртуальная и прям сим сражения».
+constexpr int armor_hp_mult_num(int /*armour*/) { return kArmorFull; }
 constexpr int armor_hp_mult_den(int armour) {
-    return kArmorHalving - 2 * (armour < 0 ? armour : 0);
+    const int den = kArmorFull - armour;
+    return den < 1 ? 1 : den;
 }
 
 // ── THE strike assembly (CANON S13/S14) ────────────────────────────────────
