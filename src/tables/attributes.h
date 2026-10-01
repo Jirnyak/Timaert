@@ -163,9 +163,9 @@ struct SkillDef {
 
 // Percent verdicts (owner, 2026-09-03 evening): TYPED skills (weapons, armor,
 // schools) = 10 %/rank — capstone ×11 on your own type; the GENERIC pair =
-// 5 %/rank ON TOP — Armsmaster multiplies the FINAL physical damage whatever
-// the weapon, Spellcraft the final spell power whatever the school (the M&M
-// shape; "меньший процент ПОВЕРХ типовых", CANON S14). World-skill rows whose
+// 5 %/rank, and what it buys is TEMPO, not power (вердикт 2026-09-07 «один рычаг
+// на ручку» снял прежнюю роль «процент поверх итогового урона»; шапка обещала её
+// до 2026-10-01 и врала — M-195). World-skill rows whose
 // reader is a later phase (weapons → the damage door, schools → S15 wiring,
 // Acrobatics/Scouting/Prospecting/Trade/… → the world readers) still state
 // their law here: the row IS the design, the reader arrives once.
@@ -197,6 +197,11 @@ inline constexpr SkillDef kSkillDefs[] = {
     // с pctPerRank = 0, как ждут ремёсла, а не лжёт процентом в тултипе.
     {SkillId::Unarmored,   "unarmored",   "Unarmored",
      "sleeps until the world has the mechanic it reads", 0},
+    // ЩИТОВ В КАТАЛОГЕ ПРЕДМЕТОВ НЕТ НИ ОДНОГО (замер 2026-10-01, M-195:
+    // офф-грип строки `items.cpp` — это оружие с пустой защитой). Строка живёт и
+    // закон её читает (`sheet_armor_mult_pct@src/macro/anketa.h` и ранг рода
+    // надетой вещи), но управлять ей сегодня нечем: это ожидание КОНТЕНТА, а не
+    // спящая механика, и сказано вслух, чтобы ноль не был молчаливым.
     {SkillId::Shield,      "shield",      "Shield",
      "shield block per rank",                 10},
     {SkillId::FireMagic,   "fire_magic",  "Fire Magic",
@@ -211,12 +216,24 @@ inline constexpr SkillDef kSkillDefs[] = {
      "arcane spell power per rank",           10},
     {SkillId::VoidMagic,   "void_magic",  "Void Magic",
      "void spell power per rank",             10},
-    // The generic pair multiplies the FINAL number on top of the typed skill
-    // (owner, 2026-09-03: «процент поверх итогового — усиляет весь урон»).
+    // ГЕНЕРИК-ПАРА — ТЕМП, А НЕ УРОН, и строки это говорят с 2026-10-01 (M-195).
+    // Прежний текст обещал «ALL physical damage per rank», и это была ЛОЖЬ: роль
+    // «процент поверх итогового урона» (вердикт 2026-09-03) ОТМЕНЕНА вердиктом
+    // 2026-09-07 «один рычаг на ручку» — одна ручка, посчитанная и в силу, и в
+    // темп, есть скрытый квадрат, и причина записана на месте
+    // (`calculate_derived@src/macro/anketa.h`). Единственные читатели сегодня —
+    // дверь восстановления: Армсмастер ускоряет ЛЮБОЕ физическое действие
+    // (замах, выстрел, глоток) и сокращает ПРОСТОЙ НАДЕТОЙ БРОНИ (M-194),
+    // Спеллкрафт ускоряет любой каст.
+    //
+    // ОГОВОРКА, БЕЗ КОТОРОЙ ПРАВКА БЫЛА БЫ НЕВЕРНОЙ: у зверя, чья ОРУЖЕЙНАЯ
+    // колонка и есть `Armsmaster` (`kRoleWeights@src/tables/role_weights.h` —
+    // «its body IS the weapon»), он множит урон ЗАКОННО, как типовой скилл того
+    // тела, а не как генерик.
     {SkillId::Armsmaster,  "armsmaster",  "Armsmaster",
-     "ALL physical damage per rank",           5},
+     "speed of ALL physical acts, and armour's downtime, per rank", 5},
     {SkillId::Spellcraft,  "spellcraft",  "Spellcraft",
-     "ALL spell power per rank",               5},
+     "speed of ALL casting per rank",          5},
     {SkillId::Bodybuilding, "bodybuilding", "Bodybuilding",
      "max HP per rank",                        5},
     {SkillId::Meditation,  "meditation",  "Meditation",
