@@ -739,7 +739,7 @@ libstdc++ (эта машина): `sizeof(std::string) = 32`, `sizeof(Landmark) =
 | `kRecipes` (`econ_day.h:108`) | 11 × 16 Б | `sizeof/sizeof :132` | — | выход — строка товара |
 | `kSpriteRows` (`sprite_rows.h:139`) | 47 × 32 Б | — | `:244` | — |
 | `kAttributeDefs@src/tables/attributes.h` / `kSkillDefs@src/tables/attributes.h` | 8 × 32 / 38 × 40 Б; конверты `kMaxAttributes@src/macro/anketa.h` 16 / `kMaxSkills@src/macro/anketa.h` 64 | сторожа `rows_in_enum_order` при обеих таблицах | есть | КАТАЛОГ в `tables/`, КОНВЕРТ в анкете — M-181 |
-| `kBonusDefs` (`bonus.h:132`) | 58 × 32 Б; потолок 256 | сторожа `:267-275` | есть | `Bonus` — «три байта» по шапке `:52`, `sizeof` = 4 |
+| `kBonusDefs@src/tables/bonus.h` | 57 × 32 Б; потолок 256 | сторожа `rows_in_enum_order@src/tables/bonus.h` + `std::size_t(BonusId::Count) <= 256` | есть | `Bonus@src/tables/bonus.h` — «три байта» по шапке, `sizeof` = 4; строк стало 57: `ArmorSlash` умер со свёрткой 9→8 (M-193, 2026-10-01) |
 | `kBodyPartDefs@src/tables/body_parts.h` + планы-маски `kHumanoidSlots@src/tables/body_parts.h` (и три звериные) | 30 × 24 Б / 4 × 64 Б | сторожа `rows_in_enum_order` и `static_assert(kHumanoidSlots.count() == 42)` | есть | `kAnatomyDefs` МЁРТВ (M-183, 2026-09-29): план тела стал constexpr-маской, «пятой строки» больше не бывает — маска не таблица по AnatomyId |
 | **спутники по тому же ключу** — `kRoleWeights@src/tables/role_weights.h` (46 × 47 Б по `NPCType`; слияние анкеты 2026-09-29 увезло таблицу в tables/), `kNamedKinds` (`npc.h:378`, 5) | | | | **РАСХОЖДЕНИЕ** — «одна строка на род, спутников не бывает» (DOD п.9); наряда нет |
 

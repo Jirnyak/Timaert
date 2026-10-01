@@ -111,10 +111,13 @@ enum class BonusId : std::uint8_t {
     Trade, Quartermaster, Foraging, Learning,
     // Appended v79 with SkillId::Unarmed — ordinals are forever.
     Unarmed,
-    // ── affix-track tail (2026-09-07) — APPENDED, ordinals are forever. One
-    // row per armour column (the 9×9 symmetry: a fire ward IS fire armour,
-    // one vocabulary) and one per derived law output.
-    ArmorSlash, ArmorPierce, ArmorBlunt, ArmorFire, ArmorWater,
+    // ── affix-track tail (2026-09-07). One row per armour column (the 8×8
+    // symmetry: a fire ward IS fire armour, one vocabulary) and one per
+    // derived law output. «Ordinals are forever» held until M-193 (2026-10-01):
+    // `ArmorSlash` DIED with the ninth damage type, and everything after it
+    // shifted by one. That is legal and it is not a cost to weigh — формат
+    // сейва ограничением не является, и версия бампнута молча.
+    ArmorPierce, ArmorBlunt, ArmorFire, ArmorWater,
     ArmorAir, ArmorEarth, ArmorArcane, ArmorVoid,
     DmgFlat, SwingPct, MovePct, CarryKg,
     Count
@@ -234,8 +237,6 @@ inline constexpr BonusDef kBonusDefs[] = {
     // ── affix-track tail: the armour columns. Labels match the damage-type
     // labels (kDamageTypeDefs) so "+3 Fire Armor" and "deals Fire" are one
     // word to the player's eye.
-    {BonusId::ArmorSlash,  "armor_slash",  "Slashing Armor",
-     BonusTarget::Armor, std::uint8_t(DamageType::Slash)},
     {BonusId::ArmorPierce, "armor_pierce", "Piercing Armor",
      BonusTarget::Armor, std::uint8_t(DamageType::Pierce)},
     {BonusId::ArmorBlunt,  "armor_blunt",  "Bludgeoning Armor",

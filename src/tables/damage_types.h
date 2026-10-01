@@ -1,4 +1,4 @@
-// THE 9×9 symmetry of damage and armour (CANON S13, owner verdicts
+// THE 8×8 symmetry of damage and armour (CANON S13, owner verdicts
 // 2026-09-03/05): as many armour types as damage types, ONE enum for both —
 // a second vocabulary here would be the faction-registry mistake all over
 // again. A blow carries a DamageType; a body's defence is an ArmorProfile —
@@ -11,14 +11,16 @@
 // Integer arithmetic — combat laws are integer by law (CANON S13); the float
 // halving formula died here 2026-09-05.
 //
-// «9×9» ABOVE IS THE STATE OF THE CODE, NOT THE TARGET. Owner's verdict,
+// EIGHT, AND THE DEBT IS PAID (наряд M-193, 2026-10-01). Owner's verdict,
 // verbatim: «НЕТ! 8 типов уронов и 8 типов брони это на всю игру! ни больше
-// не меньше» (CANON S15/S26) — the aim is 8 (2³), reached by folding the
-// second sharp-physical type away. The ninth column standing here today is a
-// TRANSITIONAL state with a known save mine in it (ArmorSlash, bonus.h), and
-// it is an acknowledged debt, not the design. The symmetry «as many armour
-// types as damage types, one enum for both» is what is permanent; the number
-// on both sides of the × is not.
+// не меньше» (CANON S15/S26), and on finally doing it: «да это большой долг
+// надо раз и навсегда избавиться от него». Slash is GONE — folded into Pierce,
+// which is now the one SHARP PHYSICAL type (arrows, daggers, spears, sword
+// edges, fangs: point pressure that cuts flesh and binds in plate). What
+// bought the fold is a power of two: 8 columns is one SIMD register for the
+// whole defence of a body, and 8 types is a one-byte mask. The symmetry «as
+// many armour types as damage types, one enum for both» is what is permanent;
+// the number is now settled at 8 for the life of the game.
 #pragma once
 
 #include "core/dice.h"
@@ -29,12 +31,14 @@
 
 namespace sm {
 
-// Three physical + six elemental. The elemental six ARE the magic schools of
+// Two physical + six elemental. The elemental six ARE the magic schools of
 // S15 (Fire/Water/Air/Earth/Arcane/Void) — a fire spell deals Fire, a fire
 // ward armours Fire, one vocabulary end to end.
 enum class DamageType : std::uint8_t {
-    Slash = 0,
-    Pierce,
+    // SHARP PHYSICAL — the one cutting/stabbing type. Slash died into it
+    // 2026-10-01 (M-193): a sword edge and an arrow head argue with armour
+    // the same way, and two columns for one argument was the ninth column.
+    Pierce = 0,
     Blunt,
     Fire,
     Water,
@@ -45,6 +49,15 @@ enum class DamageType : std::uint8_t {
     Count,
 };
 inline constexpr std::size_t kDamageTypeCount = std::size_t(DamageType::Count);
+// EIGHT IS THE NUMBER, AND THE COMPILER HOLDS IT (owner, CANON S13/S15/S26:
+// «8 типов уронов и 8 типов брони это на всю игру! ни больше не меньше»). It
+// is not taste: 8 columns of a byte each is ONE 128-bit SIMD register for the
+// whole defence of a body (armour + block, tables above), and 8 types is a
+// one-byte mask. A ninth row added here stops COMPILING rather than quietly
+// costing a second register in the hottest loop of the game.
+static_assert(kDamageTypeCount == 8,
+              "CANON S13: ровно 8 типов урона на всю игру — и это по-двойка, "
+              "покупающая один SIMD-регистр на всю защиту тела");
 
 struct DamageTypeDef {
     DamageType  type;
@@ -53,7 +66,6 @@ struct DamageTypeDef {
 };
 
 inline constexpr DamageTypeDef kDamageTypeDefs[kDamageTypeCount] = {
-    {DamageType::Slash,  "slash",  "Slashing"},
     {DamageType::Pierce, "pierce", "Piercing"},
     {DamageType::Blunt,  "blunt",  "Bludgeoning"},
     {DamageType::Fire,   "fire",   "Fire"},

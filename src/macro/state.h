@@ -382,7 +382,7 @@ namespace sm {
 // колонки анкеты ecs::SquadName; std::string покинул структуру ×32768 (ЗАКОН
 // СЛОВАРЯ, DOD п.1), а с ним и переменная длина на проводе: имя едет pod'ом,
 // как у сквада.
-constexpr int kSaveVersion = 123;   // v123: имя места — плоские чары
+constexpr int kSaveVersion = 124;   // v124: 8 типов урона — Рубящий умер (M-193)
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

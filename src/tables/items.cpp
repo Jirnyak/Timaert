@@ -188,7 +188,7 @@ constexpr ItemDef kCatalog[] = {
         "A soldier's blade, past its best years", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
         /*blocks*/0, /*armor*/{}, /*dice*/{1, 6},
-        /*dmgType*/DamageType::Slash, /*skill*/SkillId::Sword},
+        /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Sword},
     // The two-handers say so through the mask, not through code: they sit in
     // the main grip and take the off hand with them — the case blocksMask
     // exists for.
@@ -201,7 +201,7 @@ constexpr ItemDef kCatalog[] = {
         "Made for timber, willing to argue", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
         /*blocks*/0, /*armor*/{}, /*dice*/{1, 10},
-        /*dmgType*/DamageType::Slash, /*skill*/SkillId::Axe},
+        /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Axe},
     {"wpn_mace",    "Iron Mace",       ItemType::Weapon,     80, 3.50f, "\xE2\x9A\x92",
         "A blunt argument no armour fully wins", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
@@ -535,8 +535,8 @@ constexpr AffixDef kAffixDefs[] = {
     {"of_speed",     "of Speed",     std::uint8_t(BonusId::Spd),  1, 25, {6, 6, 1, 1, 1, 8, 8, 0}},
     // ── the class row: the item's own skill ───────────────────────────────
     {"of_mastery",   "of Mastery",   0,                           1, 15, {8, 1, 1, 1, 1, 1, 1, 0}},
-    // ── armour columns: the physical three at home on armour ──────────────
-    {"of_slash_warding",  "of Slash Warding",  std::uint8_t(BonusId::ArmorSlash),  1, 10, {1, 6, 1, 1, 1, 2, 2, 0}},
+    // ── armour columns: the physical TWO at home on armour (Slash folded
+    // into Pierce 2026-10-01, M-193 — «of Slash Warding» died with it) ────
     {"of_pierce_warding", "of Pierce Warding", std::uint8_t(BonusId::ArmorPierce), 1, 10, {1, 6, 1, 1, 1, 2, 2, 0}},
     {"of_blunt_warding",  "of Blunt Warding",  std::uint8_t(BonusId::ArmorBlunt),  1, 10, {1, 6, 1, 1, 1, 2, 2, 0}},
     // ...and the elemental six, rarer everywhere (the schools' wards)

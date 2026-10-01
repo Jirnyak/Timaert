@@ -90,12 +90,12 @@ namespace auto_battle_detail {
 // The floor() mirrors emplace_body — both layers fight with integers.
 // The armour a fighter brings to a macro battle, as ONE number: physical
 // blows are what macro armies trade today, so the credit is the mean of the
-// three physical columns. When auto-resolve learns attack types, the pairing
+// TWO physical columns (Pierce and Blunt — Slash folded into Pierce
+// 2026-10-01, M-193). When auto-resolve learns attack types, the pairing
 // reads the column the OPPONENT's blow names — this helper is the
 // approximation, not a second law.
 inline int auto_battle_armor(const ArmorProfile& a) {
-    return (a.of(DamageType::Slash) + a.of(DamageType::Pierce) +
-            a.of(DamageType::Blunt)) / 3;
+    return (a.of(DamageType::Pierce) + a.of(DamageType::Blunt)) / 2;
 }
 
 // Armour enters as EFFECTIVE HP through the PERCENT branch of the hybrid
