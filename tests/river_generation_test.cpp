@@ -40,20 +40,18 @@
 namespace
 {
 
-// The sea-level byte exactly as map_generator.cpp derives it internally
-// (floor(clamp(seaLevel) * 255)); seaLevel 0.40 -> 102.
-std::uint8_t sea_byte(float seaLevel)
-{
-    const int v = int(std::floor(std::clamp(seaLevel, 0.0f, 1.0f) * 255.0f));
-    return std::uint8_t(std::clamp(v, 0, 255));
-}
+// ЗДЕСЬ СТОЯЛА ВТОРАЯ КОПИЯ ПРОДАКШЕН-ЛОГИКИ: локальный `sea_byte`
+// переписывал `floor(clamp(seaLevel) * 255)` своими руками (ЗАКОН НУЛЕВОЙ п.5
+// — свидетель не вправе перевычислять то, что вычисляет код). Копия умерла
+// вместе с байтом: карта хранит СЛОВО, и перевод уровня в слово делает ровно
+// одна дверь мира — `sm::field_word_of`, которую и зовут ниже.
 
-inline std::uint8_t height_byte(const sm::TerrainData& td, std::size_t cell)
+inline std::uint16_t height_word(const sm::TerrainData& td, std::size_t cell)
 {
     return td.rgba[cell * 4u + 0u];
 }
 
-inline std::uint8_t mask_byte(const sm::TerrainData& td, std::size_t cell)
+inline std::uint16_t mask_word(const sm::TerrainData& td, std::size_t cell)
 {
     return td.rgba[cell * 4u + 3u];
 }
@@ -107,16 +105,16 @@ long max_axis_run(const sm::TerrainData& td)
 // (kRiverDirs is 4-connected, so river paths are 4-connected) starts from the
 // open sea and spreads through the whole water network; any river cell it fails
 // to reach is a river that does not connect to the sea. "Water" uses the
-// generator's own terminal sea test (height < seaLevel8 — the river trace's
+// generator's own terminal sea test (height < seaLevel16 — the river trace's
 // `done` condition; строго НИЖЕ плоскости, один закон на весь мир, M-109), so
 // the boundary sea cells rivers drain into count as reachable water. Carved
-// river cells (byte 94) are well under that.
-long count_non_draining_rivers(const sm::TerrainData& td, std::uint8_t seaB)
+// river cells (уровень плоскости − 8/255) are well under that.
+long count_non_draining_rivers(const sm::TerrainData& td, std::uint16_t seaW)
 {
     const int w = td.width;
     const int h = td.height;
     const std::size_t n = std::size_t(w) * std::size_t(h);
-    auto is_water = [&](std::size_t i) { return height_byte(td, i) < seaB; };
+    auto is_water = [&](std::size_t i) { return height_word(td, i) < seaW; };
     auto is_river = [&](std::size_t i) { return td.riverData[i] > 0; };
 
     std::vector<std::uint8_t> seen(n, 0u);
@@ -202,7 +200,7 @@ void check_map_invariants(std::uint32_t seed)
     sm::LayerParameters params;
     params.seed = seed;
     const sm::TerrainData td = sm::generate_terrain(kMapSize, kMapSize, params);
-    const std::uint8_t seaB = sea_byte(params.seaLevel);
+    const std::uint16_t seaW = sm::field_word_of(params.seaLevel);
 
     // Honest-water carve — the user's core requirement: a river IS a water
     // cell. After the carve pass every river cell must sit below sea level and
@@ -214,12 +212,12 @@ void check_map_invariants(std::uint32_t seed)
     for (std::size_t i = 0; i < td.riverData.size(); ++i)
     {
         if (td.riverData[i] == 0) continue;
-        if (height_byte(td, i) >= seaB) ++aboveSea;
-        if (mask_byte(td, i) != 0) ++notMasked;
+        if (height_word(td, i) >= seaW) ++aboveSea;
+        if (mask_word(td, i) != 0) ++notMasked;
     }
 
     // Drains-to-sea, DFS-anomaly bound, coverage sanity.
-    const long unreached = count_non_draining_rivers(td, seaB);
+    const long unreached = count_non_draining_rivers(td, seaW);
     const long run = max_axis_run(td);
     const long rivers = river_cell_count(td);
     const long cells = long(td.riverData.size());
@@ -301,7 +299,11 @@ DescentSample sample_river_descent(float landMH, sm::Biome landBiome)
     using namespace sm;
     using namespace sm::sub;
     const int CS = kCellSize;
-    const float riverMH = 94.0f / 255.0f; // carved river height (carveH = 94)
+    // Врез русла: плоскость моря минус 8/255 поля (map_generator.cpp,
+    // kRiverBedBelowSea01). ЭТО УРОВЕНЬ 0..1 — вход субмира, а не канал карты,
+    // поэтому перевод карты на слово его не касается; байтовым был лишь старый
+    // КОММЕНТАРИЙ («carveH = 94»), и он врал бы уже сегодня.
+    const float riverMH = 94.0f / 255.0f;
 
     // River cell: centre = Water, all 8 neighbours = land.
     float rNbH[9];

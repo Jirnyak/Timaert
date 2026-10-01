@@ -36,18 +36,19 @@ using namespace sm;
 constexpr int kW = 64, kH = 64;
 
 // Сухая равнина целиком — find_valid_spawn нужна честная суша.
-// САМЫЙ ВЫСОКИЙ БАЙТ, КОТОРЫЙ ЕЩЁ НЕ ГОРА — вывод из `kMountainBiomeLevel`,
+// САМЫЙ ВЫСОКИЙ УРОВЕНЬ, КОТОРЫЙ ЕЩЁ НЕ ГОРА — вывод из `kMountainBiomeLevel`,
 // а не литерал. Здесь стояло 180 (0.706): под линией 0.75 это была высокая
 // суша, а когда линия переехала на 0.625 (бескламповый синтез, 2026-10-01),
 // та же фикстура молча стала ГОРОЙ целиком и унесла с собой то, что тест
-// проверяет. Выведенный байт не может разойтись с линией по построению.
+// проверяет. Выведенный уровень не может разойтись с линией по построению.
 // Середина между плоскостью моря и горной линией: суша БЕЗ ДВУСМЫСЛЕННОСТИ —
-// и выше воды, и заведомо не массив. Байт у самой линии фикстуре не годится:
+// и выше воды, и заведомо не массив. Уровень у самой линии фикстуре не годится:
 // он делает утверждение «мир без дома строки никого не рождает» заложником
-// одного байта.
+// одного шага словаря карты.
+// В канал едет СЛОВО (`field_word_of`), а не байт: карта перешла на unorm16, и
+// байтовый литерал означал бы в ней 1/257 своей прежней высоты, молча.
 constexpr float kFlatLand01 =
     0.5f * (sm::kDefaultSeaLevel + sm::kMountainBiomeLevel);
-constexpr std::uint8_t kTallLandByte = std::uint8_t(kFlatLand01 * 255.0f);
 
 TerrainData make_terrain() {
     TerrainData t;
@@ -56,8 +57,9 @@ TerrainData make_terrain() {
     t.rgba.assign(std::size_t(kW) * kH * 4u, 0);
     t.riverData.assign(std::size_t(kW) * kH, 0);
     for (std::size_t i = 0; i < std::size_t(kW) * kH; ++i) {
-        t.rgba[i * 4u + 0] = kTallLandByte;  // суша выше моря, но НЕ гора
-        t.rgba[i * 4u + 3] = 255;   // маска суши
+        t.rgba[i * 4u + 0] = sm::field_word_of(kFlatLand01);
+                                    // суша выше моря, но НЕ гора
+        t.rgba[i * 4u + 3] = std::uint16_t(sm::kFieldWordMax);   // маска суши
     }
     return t;
 }
@@ -297,15 +299,18 @@ void test_king_needs_a_barbarian_city() {
 }
 
 void test_dragons_nest_on_mountain_peaks() {
-    // Мир с ГОРНЫМ МАССИВОМ: пятно высоты 250 (выше kMountainBiomeLevel)
-    // с вершиной в (48,48) — и плоская равнина вокруг. Плоские фикстуры
+    // Мир с ГОРНЫМ МАССИВОМ: пятно высоты 0.902 (выше kMountainBiomeLevel)
+    // с вершиной 0.980 в (48,48) — и плоская равнина вокруг. Плоские фикстуры
     // остальных тестов драконов честно НЕ рождают (порог биома).
+    // Уровни, а не байты: прежние 250/230 канала означали ровно эти доли.
+    constexpr float kPeak01 = 250.0f / 255.0f;
+    constexpr float kMassif01 = 230.0f / 255.0f;
     GameState gs = make_world();
     TerrainData terrain = make_terrain();
     for (int y = 44; y <= 52; ++y) {
         for (int x = 44; x <= 52; ++x) {
             terrain.rgba[(std::size_t(y) * kW + x) * 4u + 0] =
-                std::uint8_t(x == 48 && y == 48 ? 250 : 230);
+                sm::field_word_of(x == 48 && y == 48 ? kPeak01 : kMassif01);
         }
     }
     ecs::World w;

@@ -174,9 +174,12 @@ void test_the_farmer_works_the_field() {
     TerrainData terrain;
     terrain.width = kMap;
     terrain.height = kMap;
-    terrain.rgba.assign(std::size_t(kMap) * kMap * 4u, 128);
+    // УРОВНИ, а не байты: карта хранит слово (`kFieldWordMax`), и байтовый
+    // литерал 160 означал бы фертильность 0.002 — то есть пустошь, молча.
+    terrain.rgba.assign(std::size_t(kMap) * kMap * 4u,
+                        sm::field_word_of(128.0f / 255.0f));
     for (std::size_t i = 1; i < terrain.rgba.size(); i += 4) {
-        terrain.rgba[i] = 160;   // G = fertility
+        terrain.rgba[i] = sm::field_word_of(160.0f / 255.0f);   // G = fertility
     }
 
     ecs::World w;
@@ -747,9 +750,13 @@ void test_the_catch_lands_in_the_roster() {
     TerrainData terrain;
     terrain.width = kMap;
     terrain.height = kMap;
-    terrain.rgba.assign(std::size_t(kMap) * kMap * 4u, 128);
+    // УРОВНИ, а не байты (карта на слове, `kFieldWordMax`): полная
+    // фертильность — это ВЕРХ словаря, а не байт 255, который в слове значил
+    // бы 0.004.
+    terrain.rgba.assign(std::size_t(kMap) * kMap * 4u,
+                        sm::field_word_of(128.0f / 255.0f));
     for (std::size_t i = 1; i < terrain.rgba.size(); i += 4) {
-        terrain.rgba[i] = 255;   // G = fertility
+        terrain.rgba[i] = std::uint16_t(sm::kFieldWordMax);   // G = fertility
     }
 
     ecs::World w;

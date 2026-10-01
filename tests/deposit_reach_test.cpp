@@ -80,17 +80,22 @@ TerrainData make_world() {
     td.height = h;
     td.rgba.assign(std::size_t(w) * h * 4u, 0);
     td.riverData.assign(std::size_t(w) * h, 0);
-    td.seaLevel8 = sm::sea_level_byte(0.40f);   // плоскость моря — у карты
+    // плоскость моря — у карты
+    td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const std::size_t s = std::size_t(y * w + x) * 4u;
-            std::uint8_t height = 140;
-            if (x < 4) height = 40;
-            if (y >= 48) height = 250;
-            td.rgba[s + 0] = height;
-            td.rgba[s + 1] = 200;
-            td.rgba[s + 2] = 128;
-            td.rgba[s + 3] = height < 102 ? 0 : 255;
+            // Фикстура авторит УРОВЕНЬ поля, в карту он ложится словом
+            // (канал unorm16): байтовый литерал значил бы здесь другую высоту.
+            float level01 = 140.0f / 255.0f;
+            if (x < 4) level01 = 40.0f / 255.0f;
+            if (y >= 48) level01 = 250.0f / 255.0f;
+            td.rgba[s + 0] = sm::field_word_of(level01);
+            td.rgba[s + 1] = sm::field_word_of(200.0f / 255.0f);
+            td.rgba[s + 2] = sm::field_word_of(128.0f / 255.0f);
+            td.rgba[s + 3] = level01 < sm::kDefaultSeaLevel
+                                 ? std::uint16_t(0)
+                                 : std::uint16_t(sm::kFieldWordMax);
             if (x == 8 && y < 48) td.riverData[y * w + x] = 255;
         }
     }

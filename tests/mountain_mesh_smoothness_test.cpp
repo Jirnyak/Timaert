@@ -96,7 +96,7 @@ std::vector<float> mesh_vertices(const std::vector<float>& hm) {
 }
 
 struct MeshStat {
-    float medianCurv = 0.0f;  // p50 |Laplacian| at interior mesh vertices, world-u
+    float medianCurv = 0.0f;  // p50 |Laplacian| at interior mesh vertices, м
     float meanCurv   = 0.0f;
     float range      = 0.0f;  // hi-lo of mesh vertices (normalised 0..1)
 };
@@ -129,13 +129,13 @@ MeshStat measure(const std::vector<float>& hm) {
 } // namespace
 
 int main() {
-    // Thresholds in world-units of the 1500 m height scale (metres of kink over
+    // Thresholds in мnits of the 1500 m height scale (metres of kink over
     // one 16 m mesh quad). Measured across the seed set below:
     //   * smooth crest (shipped): median 3.2-6.5, mean 6.8-13.4
     //   * classic ridged fold   : median 11.9-21.4, mean 16.5-30.5
     // The ceiling 9.0 sits with wide margin between the two — the fix passes
     // comfortably, the aliasing fold fails clearly.
-    constexpr float kMaxMedianCurv = 9.0f;
+    constexpr float kMaxMedianCurvM = 9.0f * sm::sub::kShoreGainM;
 
     // Lower bounds — mountains must still be mountains, not pancaked to plains.
     // Re-pinned 2026-07-30 for the owner-approved slope rebalance: ridge
@@ -144,8 +144,17 @@ int main() {
     // carry the SAME relief with less mesh-vertex curvature, so the curvature
     // floor drops (measured 0.9-1.0 across the seed set); range and the
     // mountains-vs-plains parity ratios below still lock the character.
-    constexpr float kMinMountainRange   = 0.15f;  // real vertical relief remains
-    constexpr float kMinMountainMedian  = 0.6f;   // real curvature remains (not flat)
+    // ── ПОРОГИ ПЕРЕВЕДЕНЫ В МЕТРЫ, И ЭТО НЕ НОВАЯ КАЛИБРОВКА ──────────────
+    // Все числа ниже подбирали, когда единица поля стоила 1500 м ВЕЗДЕ. Кривая
+    // переноса (M-192) это сломала: единица поля на высоте 0.9 стоит 48 000 м,
+    // на равнине 4 243, — и сравнение горы с равниной В ПОЛЕ стало сравнением
+    // несравнимого. Свидетель краснел на ПРАВИЛЬНОМ мире: в поле отношение
+    // читалось 0.3–1.2×, в метрах — 22–25×.
+    // Перевод буквальный: порог_в_метрах = порог_в_поле × kShoreGainM, то есть
+    // ровно та единица, в которой их и подбирали. Мера берётся у `height_gain_m`
+    // — двери «сколько метров стоит ГРАДИЕНТ здесь», заведённой ровно для этого.
+    constexpr float kMinMountainRangeM  = 0.15f * sm::sub::kShoreGainM;  // 225 м
+    constexpr float kMinMountainMedianM = 0.6f * sm::sub::kShoreGainM;
     constexpr float kMinRangeRatio      = 8.0f;   // mtn range >> plains range (~36x seen)
     // Curvature parity relaxed 3.0 -> 1.5 with the same rebalance: long-wave
     // ridges put mountain character into RANGE (still ~36x plains) rather than
@@ -167,19 +176,27 @@ int main() {
     float worstRangeRatio = 1e9f, worstCurvRatio = 1e9f;
     int measured = 0;
     for (const Case& c : cases) {
-        const MeshStat mtn = measure(composite(Mountain, c.seed, c.macroH));
+        MeshStat mtn = measure(composite(Mountain, c.seed, c.macroH));
         // Plains reference at a lowland height with the SAME seed.
-        const MeshStat pln = measure(composite(Meadow, c.seed, 0.30f));
+        MeshStat pln = measure(composite(Meadow, c.seed, 0.30f));
+        // В МЕТРЫ, КАЖДЫЙ СВОЕЙ МЕРОЙ: наклон кривой на СВОЕЙ высоте. Гора и
+        // равнина живут на разных участках кривой, поэтому общего множителя у
+        // них нет и быть не может — это и есть причина, по которой поле их не
+        // сравнивает.
+        const float mtnGain = sm::sub::height_gain_m(c.macroH);
+        const float plnGain = sm::sub::height_gain_m(0.30f);
+        mtn.range *= mtnGain; mtn.medianCurv *= mtnGain; mtn.meanCurv *= mtnGain;
+        pln.range *= plnGain; pln.medianCurv *= plnGain; pln.meanCurv *= plnGain;
 
-        if (mtn.medianCurv > kMaxMedianCurv) {
+        if (mtn.medianCurv > kMaxMedianCurvM) {
             std::fprintf(stderr,
-                "  seed=0x%08X macroH=%.2f mountain median curvature %.2f world-u "
+                "  seed=0x%08X macroH=%.2f mountain median curvature %.2f м "
                 "(> %.2f): ridge crest is aliasing on the 16-tile mesh "
                 "(spiky peaks). Did the C1 smooth crest 4*s*(1-s) regress to the "
                 "ridged fold (1-|2s-1|)^2?\n",
-                c.seed, c.macroH, mtn.medianCurv, kMaxMedianCurv);
+                c.seed, c.macroH, mtn.medianCurv, kMaxMedianCurvM);
         }
-        if (mtn.range < kMinMountainRange || mtn.medianCurv < kMinMountainMedian) {
+        if (mtn.range < kMinMountainRangeM || mtn.medianCurv < kMinMountainMedianM) {
             std::fprintf(stderr,
                 "  seed=0x%08X range=%.4f median=%.2f\n",
                 c.seed, mtn.range, mtn.medianCurv);
@@ -203,11 +220,11 @@ int main() {
     }
 
     std::printf("OK mountain_mesh_smoothness_test: %zu mountain massifs — worst "
-                "mesh-vertex median curvature %.2f world-u (<= %.1f, no crest "
+                "mesh-vertex median curvature %.2f м (<= %.1f, no crest "
                 "aliasing), while keeping relief (range >= %.3f), curvature "
                 "(median >= %.2f) and parity (range %.0fx / curvature %.1fx "
                 "plains)\n",
-                sizeof(cases) / sizeof(cases[0]), worstMedian, kMaxMedianCurv,
+                sizeof(cases) / sizeof(cases[0]), worstMedian, kMaxMedianCurvM,
                 worstRange, worstMedianMtn, worstRangeRatio, worstCurvRatio);
     // The count is asserted first and GATES the rest: the worst-value
     // accumulators start at sentinels that would sail past every threshold
@@ -216,12 +233,12 @@ int main() {
     CHECK(measured == expected,
           "every massif in the table was actually measured");
     if (measured != expected) return sm::test::report("mountain_mesh_smoothness_test");
-    CHECK(worstMedian <= kMaxMedianCurv,
+    CHECK(worstMedian <= kMaxMedianCurvM,
           "no massif's crest is ALIASING on the 16-tile mesh — the C1 smooth "
           "crest 4*s*(1-s) has not regressed to the ridged fold (1-|2s-1|)^2");
-    CHECK(worstRange >= kMinMountainRange,
+    CHECK(worstRange >= kMinMountainRangeM,
           "no massif was pancaked into plains — relief survives the smoothing");
-    CHECK(worstMedianMtn >= kMinMountainMedian,
+    CHECK(worstMedianMtn >= kMinMountainMedianM,
           "...and so does curvature: a smooth mountain is still a mountain");
     CHECK(worstRangeRatio >= kMinRangeRatio,
           "a mountain still DOMINATES the plains it is measured against");

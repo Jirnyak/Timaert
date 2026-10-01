@@ -32,7 +32,7 @@ inline float edge_cost_of(const PathCostData* pc, std::size_t from,
     const float stepLen =
         (kNavDX[d] != 0 && kNavDY[d] != 0) ? 1.4142136f : 1.0f;
     float w = cell_weight_of(pc, to) * stepLen;
-    if (pc && pc->height8.size() == pc->costGrid.size()) w += pc->climb(from, to);
+    if (pc && pc->height16.size() == pc->costGrid.size()) w += pc->climb(from, to);
     return w;
 }
 

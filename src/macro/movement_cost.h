@@ -271,7 +271,7 @@ static_assert(kRoadStaminaPerHour > kFreshBarSp * kRestRegenPctPerHour,
 // interior actually carries.
 inline constexpr float kCanopySpWeight = 2.5f;
 
-// Climbing surcharge per full normalized height (h01 = height byte / 255):
+// Climbing surcharge per full normalized height (h01 = field01_of the R word):
 // an ascent over the WHOLE world relief costs as much again as ten cells of
 // open meadow (20 = 10 × meadow 2.0) — spread over however many cells the
 // approach takes, and refunded by nothing on the way down.

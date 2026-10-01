@@ -29,8 +29,11 @@ namespace {
 // core/field_noise.h (v72): the geology field law reads the same door, and
 // a private copy here would be the second implementation S26 forbids.
 
-inline std::uint8_t to_unorm8(float v) {
-    return std::uint8_t(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f));
+// Синтез → слово карты. ОКРУГЛЕНИЕ, в отличие от `field_word_of` (там
+// floor по закону порога): здесь величина не сравнивается, а записывается, и
+// ближайшее слово честнее усечённого.
+inline std::uint16_t to_unorm16(float v) {
+    return std::uint16_t(std::lround(std::clamp(v, 0.0f, 1.0f) * kFieldWordMax));
 }
 
 // ── ГРЕБНЕВАЯ ОКТАВА: ДЛИНА ВОЛНЫ МАСШТАБА ХРЕБТА ───────────────────────────
@@ -84,7 +87,7 @@ void synth_master(TerrainData& td, const LayerParameters& p) {
     // (`TerrainData::is_water`): здесь стоял float-компаратор
     // `noiseHeight < p.seaLevel` ДО квантования, то есть девятый спеллинг
     // одного вопроса — он мог не совпасть с байтовым на округлении.
-    const std::uint8_t sea8 = sea_level_byte(p.seaLevel);
+    const std::uint16_t sea16 = field_word_of(p.seaLevel);
     for (int y = 0; y < h; ++y) {
         const float uy = (float(y) + 0.5f) / float(h);
         for (int x = 0; x < w; ++x) {
@@ -179,10 +182,12 @@ void synth_master(TerrainData& td, const LayerParameters& p) {
             temp01 = std::clamp(temp01, 0.0f, 1.0f);
 
             const std::size_t s = (std::size_t(y) * w + x) * 4;
-            td.rgba[s + 0] = to_unorm8(noiseHeight);
-            td.rgba[s + 1] = to_unorm8(noiseMoist);
-            td.rgba[s + 2] = to_unorm8(temp01);
-            td.rgba[s + 3] = td.rgba[s + 0] < sea8 ? std::uint8_t(0) : std::uint8_t(255);
+            td.rgba[s + 0] = to_unorm16(noiseHeight);
+            td.rgba[s + 1] = to_unorm16(noiseMoist);
+            td.rgba[s + 2] = to_unorm16(temp01);
+            td.rgba[s + 3] = td.rgba[s + 0] < sea16
+                               ? std::uint16_t(0)
+                               : std::uint16_t(kFieldWordMax);
         }
     }
 }
@@ -235,6 +240,14 @@ static_assert(kRiverMeanderCoarse > 0
 // across highland plateaus. Deliberately small next to the ed*ed biome-edge
 // term so the Voronoi-edge routing rivers follow still dominates the path.
 constexpr int kRiverClimbShift = 1;
+
+// СТУПЕНЬ, В КОТОРОЙ НАПИСАН ЗАКОН СТОИМОСТИ ТРАССЕРА. Карта хранит высоту
+// словом unorm16 (B3, M-192), а веса выше — `kRiverMeanderAmp` 7, `ed*ed` до
+// 225 и сдвиг высоты `>> 5` — соразмерны байтовой ступени, в которой их
+// подбирали. Сдвиг приводит слово к ней. Это НЕ потеря: трассер выбирает
+// КЛЕТКУ, а не метр, и 0.63-метровое различение высот ему нечего решать —
+// а вот перекос весов в 257 раз он решал, и решал прямыми линиями.
+constexpr int kFieldWordToByteShift = 8;
 
 inline std::uint32_t river_hash(int x, int y, std::uint32_t seed) {
     std::uint32_t hsh = seed * 374761393u
@@ -389,9 +402,9 @@ std::vector<std::pair<int, int>> trace_river_to_water(
     int source,
     const std::vector<std::uint16_t>& edgeDist,
     const std::vector<std::uint16_t>& waterDist,
-    const std::vector<std::uint8_t>& height,
+    const std::vector<std::uint16_t>& height,
     const std::vector<std::uint8_t>& riverMask,
-    std::uint8_t seaLevel8,
+    std::uint16_t seaLevel16,
     int w,
     int h,
     const std::vector<std::uint8_t>& meander,
@@ -412,18 +425,27 @@ std::vector<std::pair<int, int>> trace_river_to_water(
         }
         ++explored;
 
-        const bool done = height[std::size_t(cur)] < seaLevel8
+        const bool done = height[std::size_t(cur)] < seaLevel16
             || (cur != source && riverMask[std::size_t(cur)] > 0);
         if (done) {
             return build_river_path(source, cur, scratch, w);
         }
 
-        const int curH = int(height[std::size_t(cur)]);
+        // ── СТОИМОСТЬ ТРАССЕРА ОТКАЛИБРОВАНА В БАЙТОВЫХ СТУПЕНЯХ ПОЛЯ ──
+        // Четыре члена ниже — `ed*ed` (0..225), `meander` (0..7), высота и
+        // подъём — соразмерны ТОЛЬКО пока высота приходит байтом. Карта стала
+        // словом (B3), и сырое `nH >> 5` дало бы 0..2047 вместо 0..7, то есть
+        // затоптало бы и край биома, и меандр: трассер перестал бы огибать и
+        // побежал строго вниз. ЗАМЕРЕНО: прямой осевой пробег реки на 12 сидах
+        // медиана 49 → 107, max 70 → 159. Поэтому слово приводится к той
+        // ступени, в которой закон стоимости написан, и приводится ЯВНО —
+        // спрятать это в новую величину сдвига значило бы спрятать и калибровку.
+        const int curH = int(height[std::size_t(cur)]) >> kFieldWordToByteShift;
         for (const auto& d : kRiverDirs) {
             const int ni =
                 int(cell_step(std::uint32_t(cur), d[0], d[1], w));
             const int ed = std::min<int>(edgeDist[std::size_t(ni)], 15);
-            const int nH = int(height[std::size_t(ni)]);
+            const int nH = int(height[std::size_t(ni)]) >> kFieldWordToByteShift;
             const int climb = nH > curH ? ((nH - curH) >> kRiverClimbShift) : 0;
             const int cost = 1 + ed * ed + (nH >> 5)
                 + int(meander[std::size_t(ni)]) + climb;
@@ -441,8 +463,8 @@ std::vector<std::pair<int, int>> trace_river_to_water(
 }
 
 void stamp_river_path(const std::vector<std::pair<int, int>>& path,
-                      const std::vector<std::uint8_t>& height,
-                      std::uint8_t seaLevel8,
+                      const std::vector<std::uint16_t>& height,
+                      std::uint16_t seaLevel16,
                       std::vector<std::uint8_t>& riverMask,
                       int w,
                       int h,
@@ -458,7 +480,7 @@ void stamp_river_path(const std::vector<std::pair<int, int>>& path,
                     continue;
                 }
                 const int ni = int(cell_step(at, dx, dy, w));
-                if (height[std::size_t(ni)] >= seaLevel8) {
+                if (height[std::size_t(ni)] >= seaLevel16) {
                     riverMask[std::size_t(ni)] = 255;
                 }
             }
@@ -482,15 +504,15 @@ int count_river_neighbours(const std::vector<std::uint8_t>& riverMask,
 }
 
 std::vector<int> find_river_tips(const std::vector<std::uint8_t>& riverMask,
-                                 const std::vector<std::uint8_t>& height,
-                                 std::uint8_t seaLevel8,
+                                 const std::vector<std::uint16_t>& height,
+                                 std::uint16_t seaLevel16,
                                  int w,
                                  int h) {
     std::vector<int> tips;
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const int idx = int(cell_of(x, y, w));
-            if (riverMask[std::size_t(idx)] == 0 || height[std::size_t(idx)] < seaLevel8) {
+            if (riverMask[std::size_t(idx)] == 0 || height[std::size_t(idx)] < seaLevel16) {
                 continue;
             }
 
@@ -502,7 +524,7 @@ std::vector<int> find_river_tips(const std::vector<std::uint8_t>& riverMask,
                 if (riverMask[ni] > 0) {
                     ++riverNbrs;
                 }
-                if (height[ni] < seaLevel8) {
+                if (height[ni] < seaLevel16) {
                     hasSea = true;
                 }
             }
@@ -519,8 +541,8 @@ bool continue_river_from_tip(int tipIdx,
                              std::vector<std::uint8_t>& riverMask,
                              const std::vector<std::uint16_t>& edgeDist,
                              const std::vector<std::uint16_t>& waterDist,
-                             const std::vector<std::uint8_t>& height,
-                             std::uint8_t seaLevel8,
+                             const std::vector<std::uint16_t>& height,
+                             std::uint16_t seaLevel16,
                              int w,
                              int h,
                              const std::vector<std::uint8_t>& meander,
@@ -553,14 +575,14 @@ bool continue_river_from_tip(int tipIdx,
 
     const std::vector<std::pair<int, int>> path =
         trace_river_to_water(tipIdx, edgeDist, waterDist, height,
-                             riverMask, seaLevel8, w, h, meander, scratch);
+                             riverMask, seaLevel16, w, h, meander, scratch);
 
     for (int idx : masked) {
         riverMask[std::size_t(idx)] = 255;
     }
 
     if (path.size() >= 3) {
-        stamp_river_path(path, height, seaLevel8, riverMask, w, h, waterDist);
+        stamp_river_path(path, height, seaLevel16, riverMask, w, h, waterDist);
         return true;
     }
     return false;
@@ -569,18 +591,18 @@ bool continue_river_from_tip(int tipIdx,
 void continue_dead_end_rivers(std::vector<std::uint8_t>& riverMask,
                               const std::vector<std::uint16_t>& edgeDist,
                               const std::vector<std::uint16_t>& waterDist,
-                              const std::vector<std::uint8_t>& height,
-                              std::uint8_t seaLevel8,
+                              const std::vector<std::uint16_t>& height,
+                              std::uint16_t seaLevel16,
                               int w,
                               int h,
                               const std::vector<std::uint8_t>& meander,
                               RiverTraceScratch& scratch) {
     for (int pass = 0; pass < 5; ++pass) {
-        const std::vector<int> tips = find_river_tips(riverMask, height, seaLevel8, w, h);
+        const std::vector<int> tips = find_river_tips(riverMask, height, seaLevel16, w, h);
         int resolved = 0;
         for (int tipIdx : tips) {
             if (continue_river_from_tip(tipIdx, riverMask, edgeDist, waterDist,
-                                        height, seaLevel8, w, h, meander, scratch)) {
+                                        height, seaLevel16, w, h, meander, scratch)) {
                 ++resolved;
             }
         }
@@ -606,13 +628,13 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     // собой — дальше её никто не переспрашивает (§5 п.3: отказ и запись — в
     // точке рождения, не на чтении). Это же вход для свидетелей, которые
     // гоняют врез рек на синтетической карте напрямую.
-    td.seaLevel8 = sea_level_byte(params.seaLevel);
+    td.seaLevel16 = field_word_of(params.seaLevel);
     // ОДИН ЗАКОН ПОРОГА НА ВЕСЬ ТРАССЕР (M-109): вода — строго НИЖЕ плоскости
-    // (`R < seaLevel8`), земля — `R >= seaLevel8`. Восемь сравнений ниже
+    // (`R < seaLevel16`), земля — `R >= seaLevel16`. Восемь сравнений ниже
     // стояли через `<=` и `>`, то есть клетку РОВНО на плоскости трассер
     // считал водой, а вся остальная игра — сушей: река могла «дойти до моря»
     // на клетке, по которой ходят пешком, и не дотечь до настоящей воды.
-    const std::uint8_t seaLevel8 = td.seaLevel8;
+    const std::uint16_t seaLevel16 = td.seaLevel16;
 
     td.riverData.assign(std::size_t(n), 0);
     if (n <= 0 || td.rgba.size() < std::size_t(n) * 4) {
@@ -623,9 +645,9 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     // резать он обязан свою копию, а не мастер — врез в `td.rgba` идёт один раз
     // и в конце. Влага и температура своих копий больше не имеют: каскад биома
     // читает их сам, у карты.
-    std::vector<std::uint8_t> heightBytes(static_cast<std::size_t>(n));
+    std::vector<std::uint16_t> heightWords(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
-        heightBytes[std::size_t(i)] = td.rgba[std::size_t(i) * 4];
+        heightWords[std::size_t(i)] = td.rgba[std::size_t(i) * 4];
     }
 
     std::vector<std::uint8_t> biome(std::size_t(n), 255);
@@ -698,7 +720,7 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     std::vector<int> waterQueue;
     waterQueue.reserve(std::size_t(n) / 4);
     for (int i = 0; i < n; ++i) {
-        if (heightBytes[std::size_t(i)] < seaLevel8) {
+        if (heightWords[std::size_t(i)] < seaLevel16) {
             waterDist[std::size_t(i)] = 0;
             waterQueue.push_back(i);
         }
@@ -724,7 +746,7 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     std::vector<RiverCandidate> candidates;
     candidates.reserve(std::size_t(n) / 32);
     for (int i = 0; i < n; ++i) {
-        if (heightBytes[std::size_t(i)] >= seaLevel8
+        if (heightWords[std::size_t(i)] >= seaLevel16
             && edgeDist[std::size_t(i)] <= 2u
             && waterDist[std::size_t(i)] > 4u) {
             candidates.push_back({i, waterDist[std::size_t(i)]});
@@ -782,28 +804,40 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     scratch.init(std::size_t(n));
     for (int src : sources) {
         const std::vector<std::pair<int, int>> raw =
-            trace_river_to_water(src, edgeDist, waterDist, heightBytes,
-                                 td.riverData, seaLevel8, w, h, meander, scratch);
+            trace_river_to_water(src, edgeDist, waterDist, heightWords,
+                                 td.riverData, seaLevel16, w, h, meander, scratch);
         if (raw.size() < 15) {
             continue;
         }
-        stamp_river_path(raw, heightBytes, seaLevel8, td.riverData, w, h, waterDist);
+        stamp_river_path(raw, heightWords, seaLevel16, td.riverData, w, h, waterDist);
     }
 
-    continue_dead_end_rivers(td.riverData, edgeDist, waterDist, heightBytes,
-                             seaLevel8, w, h, meander, scratch);
+    continue_dead_end_rivers(td.riverData, edgeDist, waterDist, heightWords,
+                             seaLevel16, w, h, meander, scratch);
 
-    const std::uint8_t carveH = std::uint8_t(std::max(1, int(seaLevel8) - 8));
+    // ГЛУБИНА ВРЕЗА — ДОЛЯ ПОЛЯ, А НЕ ЧИСЛО СЛОВ СЛОВАРЯ. Здесь стояло
+    // `seaLevel16 - 8`, то есть восемь шагов БАЙТА = 3.1 % поля. Перенести
+    // «восемь» в uint16 дословно значило бы 0.012 % поля — русло осталось бы
+    // стоять на самой плоскости, и реки исчезли бы молча на всей карте.
+    // Доля сохранена дословно; её вывод В МЕТРАХ владельцем не продиктован и
+    // стоит нарядом M-197 (у русла сегодня нет профиля вовсе — оно держит
+    // плоскость моря и на хребте, замер: 72 % пар суша-вода речные, p50 715 м).
+    constexpr float kRiverBedBelowSea01 = 8.0f / 255.0f;
+    const int carveDrop = int(kRiverBedBelowSea01 * kFieldWordMax);
+    const std::uint16_t carveH =
+        std::uint16_t(std::max(1, int(seaLevel16) - carveDrop));
     for (int i = 0; i < n; ++i) {
         const std::size_t s = std::size_t(i) * 4;
-        if (td.riverData[std::size_t(i)] > 0 && td.rgba[s + 0] >= seaLevel8) {
+        if (td.riverData[std::size_t(i)] > 0 && td.rgba[s + 0] >= seaLevel16) {
             td.rgba[s + 0] = std::min(td.rgba[s + 0], carveH);
         }
     }
 
     for (int i = 0; i < n; ++i) {
         const std::size_t s = std::size_t(i) * 4;
-        td.rgba[s + 3] = td.rgba[s + 0] < seaLevel8 ? 0 : 255;
+        td.rgba[s + 3] = td.rgba[s + 0] < seaLevel16
+                           ? std::uint16_t(0)
+                           : std::uint16_t(kFieldWordMax);
     }
 
     // ЗДЕСЬ КОНЧАЕТСЯ РОЖДЕНИЕ И НАЧИНАЕТСЯ МИР. Врез только что опустил русла
@@ -835,7 +869,7 @@ TerrainData generate_terrain(int w, int h, const LayerParameters& params) {
     }
     TerrainData td;
     td.width = w; td.height = h;
-    td.seaLevel8 = sea_level_byte(params.seaLevel);
+    td.seaLevel16 = field_word_of(params.seaLevel);
     td.seed = params.seed;
     td.rgba.assign(std::size_t(w) * h * 4, 0);
     td.riverData.assign(std::size_t(w) * h, 0);

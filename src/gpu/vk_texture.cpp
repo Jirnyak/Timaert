@@ -792,6 +792,17 @@ namespace gpu
                                  repeat, *this);
     }
 
+    bool VulkanTexture::create_rgba16(const VulkanDevice& d, std::uint32_t width,
+                                      std::uint32_t height,
+                                      const std::uint16_t* texels,
+                                      bool linearFilter, bool repeat)
+    {
+        return upload_sampled_2d(d, width, height,
+                                 reinterpret_cast<const std::uint8_t*>(texels),
+                                 VK_FORMAT_R16G16B16A16_UNORM, 8, linearFilter,
+                                 repeat, *this);
+    }
+
     bool VulkanTexture::create_r8(const VulkanDevice& d, std::uint32_t width,
                                   std::uint32_t height,
                                   const std::uint8_t* pixels,

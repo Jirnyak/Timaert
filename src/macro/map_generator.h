@@ -21,18 +21,39 @@ namespace sm {
 // тут действительно есть, другой — порог ОДИН, и живёт он в одном месте.
 inline constexpr float kDefaultSeaLevel = 0.40f;
 
-// Порог в том же словаре, в котором лежит высота: unorm8 (`to_unorm8`,
-// map_generator.cpp). `floor`, а не округление: клетка ровно на плоскости —
-// суша (вода строго НИЖЕ уровня, вердикт владельца 2026-09-25 «есть уровнеь
-// рельефа ниже котрого вода»). Единственный переводчик float→байт в проекте:
-// четыре рукописных `uint8_t(seaLevel * 255.0f)` звали эту же величину,
-// усекая её по-своему.
-inline constexpr std::uint8_t sea_level_byte(float seaLevel) {
+// ── СЛОВО КАРТЫ — unorm16, И ЭТО ВЫВЕДЕНО ЗАМЕРОМ, А НЕ ВКУСОМ ────────────
+// Высота хранится СЛОВОМ на канал, а не байтом, потому что с кривой переноса
+// (`height_m@src/sub/height.h`) цена одного шага словаря зависит от высоты, и
+// байт переставал быть измерительным полом ровно там, где стоят горы.
+// Замерено `height_census` на пяти сидах: шаг БАЙТА стоит 5.9 м у воды, 28.0 м
+// на горной линии и **162.7 м у p99 суши** — то есть на построенных горах
+// вылезала бы терраса в полтораста метров. Шаг СЛОВА стоит там 0.63 м.
+// Цена — 4 МиБ → 8 МиБ на карту 1024² (DOD п.2: «десятки и даже сотни
+// мегабайт бесплатны»), и ни одного ответа карта при этом не теряет.
+inline constexpr float kFieldWordMax = 65535.0f;
+
+// ЧТЕНИЕ: слово карты → нормированное поле. ОДНА дверь на весь проект, и
+// существует она затем, чтобы ширина хранения не стояла сорока литералами по
+// дереву: до этой правки по `src/` и `tests/` было рассыпано `/ 255.0f`, то
+// есть сорок копий словаря, разъехаться с которым он мог молча.
+inline constexpr float field01_of(std::uint16_t word) {
+    return float(word) * (1.0f / kFieldWordMax);
+}
+
+// ЗАПИСЬ: авторский уровень → слово карты, обратная к `field01_of`. `floor`,
+// а не округление: клетка ровно на плоскости — суша (вода строго НИЖЕ уровня,
+// вердикт владельца 2026-09-25 «есть уровнеь рельефа ниже котрого вода»).
+// Единственный переводчик уровня в слово: четыре рукописных
+// `uint8_t(seaLevel * 255.0f)` звали эту же величину, усекая её по-своему.
+// Звали дверь `sea_level_byte` — по ЕДИНСТВЕННОМУ тогда звонящему; теперь
+// через неё авторят уровень и фикстуры свидетелей, и имя от одного звонящего
+// стало ложью о её работе.
+inline constexpr std::uint16_t field_word_of(float level01) {
     // Усечение неотрицательного И ЕСТЬ floor, поэтому дверь обходится без
     // <cmath> и остаётся constexpr: свидетелям порог нужен под компилятором
     // (ЗАКОН НУЛЕВОЙ п.6), а заголовок не платит за тело (§5 п.13).
-    const float c = seaLevel < 0.0f ? 0.0f : (seaLevel > 1.0f ? 1.0f : seaLevel);
-    return std::uint8_t(int(c * 255.0f));
+    const float c = level01 < 0.0f ? 0.0f : (level01 > 1.0f ? 1.0f : level01);
+    return std::uint16_t(int(c * kFieldWordMax));
 }
 
 struct LayerParameters {
@@ -66,14 +87,16 @@ struct LayerParameters {
 
 struct TerrainData {
     int width = 0, height = 0;
-    // RGBA: R=height, G=moisture, B=temperature, A=mask (255=land,0=water).
-    std::vector<std::uint8_t> rgba;
+    // RGBA: R=height, G=moisture, B=temperature, A=mask (word max=land, 0=water).
+    // СЛОВО, А НЕ БАЙТ — вывод у `kFieldWordMax` выше: байт стоил 162.7 м у p99
+    // суши, то есть терраса ровно на горах. Четыре канала по 16 бит.
+    std::vector<std::uint16_t> rgba;
     // СИД ЭТОЙ КАРТЫ. Кто читает и зачем: `MacroRendererVk::record` — узор
     // карты обязан быть свойством МИРА, а не картинки (вердикт владельца
     // 2026-09-28, CANON S18.2: «и сид и шейдеры от него»). До этого шейдеру
     // ехала константа 1.0 со ссылкой на удалённый GL-рендерер, и позиции крон,
     // места цветов и языки песка совпадали во всех мирах на одинаковых клетках.
-    // Форма — та же, что у `seaLevel8`: величина едет С КАРТОЙ, а не вторым
+    // Форма — та же, что у `seaLevel16`: величина едет С КАРТОЙ, а не вторым
     // параметром через полдерева (прецедент — `DepositLayer::birthSeaLevel`).
     std::uint32_t seed = 0u;
     // R8 river mask generated from the terrain heightmap. 255 = river cell.
@@ -88,7 +111,7 @@ struct TerrainData {
     // Ставится в РОЖДЕНИИ карты (`generate_terrain`/`generate_river_data`);
     // дефолт — плоскость дефолтного мира, чтобы карта, собранная руками в
     // харнессе, отвечала как мир, а не как «всё суша».
-    std::uint8_t seaLevel8 = sea_level_byte(kDefaultSeaLevel);
+    std::uint16_t seaLevel16 = field_word_of(kDefaultSeaLevel);
     // ── ПОЛЕ БИОМА НАД ТОРОМ (ЗАКОН ПОЛЯ; вердикт владельца 2026-09-28) ──
     // Дословно: «при генерации мира можно функции там ргб и тд, но когда мир
     // уже сгенерился… там должно всё уже быть структурно системно». Это и есть
@@ -146,15 +169,15 @@ struct TerrainData {
     // Fail-closed при незаконной форме мира отдаёт НОЛЬ, а ноль высоты ниже
     // любого уровня моря — то есть незаконный мир целиком вода и на нём
     // ничего не ставится. Это отказ, а не выдуманная суша.
-    inline std::uint8_t height_at(int x, int y) const {
+    inline std::uint16_t height_at(int x, int y) const {
         if (!world_shape_ok(width, height)) return 0u;
         return rgba[std::size_t(cell_of(x, y, width)) * 4 + 0];
     }
-    inline std::uint8_t moisture_at(int x, int y) const {
+    inline std::uint16_t moisture_at(int x, int y) const {
         if (!world_shape_ok(width, height)) return 0u;
         return rgba[std::size_t(cell_of(x, y, width)) * 4 + 1];
     }
-    inline std::uint8_t temperature_at(int x, int y) const {
+    inline std::uint16_t temperature_at(int x, int y) const {
         if (!world_shape_ok(width, height)) return 0u;
         return rgba[std::size_t(cell_of(x, y, width)) * 4 + 2];
     }
@@ -162,7 +185,7 @@ struct TerrainData {
     // Вердикт владельца (2026-09-25, дословно): «НИКАКИХ МАСОК строго единый
     // порог высоты УРОВЕНЬ моря это кстати и для макро и для микро верно».
     // До него вопрос отвечали ВОСЕМЬЮ способами (перепись 2026-09-27): маска
-    // A==0 — 10 чтений, маска <128, float `h/255 < seaLevel` — 4, рукописный
+    // A==0 — 10 чтений, маска <полслова, float `h/слово < seaLevel` — 4, рукописный
     // байт мимо двери — 5 в `politik.cpp`, трассер рек через `<=` — 7 (клетка
     // ровно на плоскости была ему водой, а маске сушей), плюс харнесс смоуков
     // и шейдер. Маска при этом не была вторым ЗНАНИЕМ — она была вторым
@@ -175,7 +198,7 @@ struct TerrainData {
     // земля и не падение).
     inline bool is_water(std::uint32_t cell) const {
         if (!has_rgba_storage()) return true;
-        return rgba[std::size_t(cell) * 4u + 0u] < seaLevel8;
+        return rgba[std::size_t(cell) * 4u + 0u] < seaLevel16;
     }
     inline bool is_water(int x, int y) const {
         if (!world_shape_ok(width, height)) return true;
@@ -210,10 +233,10 @@ inline Biome biome_classify(const TerrainData& td, std::uint32_t cell) {
     if (!td.has_rgba_storage()) return Biome::Water;
     if (td.is_water(cell)) return Biome::Water;
     const std::size_t s = std::size_t(cell) * 4u;
-    const float h = float(td.rgba[s + 0u]) / 255.0f;
+    const float h = field01_of(td.rgba[s + 0u]);
     if (h >= kMountainBiomeLevel) return Biome::Mountain;
-    return biome_from_climate(float(td.rgba[s + 2u]) / 255.0f,
-                              float(td.rgba[s + 1u]) / 255.0f);
+    return biome_from_climate(field01_of(td.rgba[s + 2u]),
+                              field01_of(td.rgba[s + 1u]));
 }
 
 // `biome_at_cell` — ЧТЕНИЕ ПОЛЯ, и это единственный ответ живого мира на

@@ -27,6 +27,14 @@ namespace gpu
         bool create_rgba8(const VulkanDevice& dev, std::uint32_t width,
                           std::uint32_t height, const std::uint8_t* pixels,
                           bool linearFilter, bool repeat);
+        // Четырёхканальный unorm16 — для КАРТЫ МИРА. Сэмплер нормализует сам,
+        // поэтому шейдер не меняется ни строкой: `u_master.r` как был 0..1, так
+        // и остался, а шаг словаря под ним стал 0.63 м вместо 162.7 м на p99
+        // суши (замер `height_census`, довод B3 наряда M-192). Восемь байт на
+        // тексель против четырёх: 4 МиБ → 8 МиБ на карту 1024².
+        bool create_rgba16(const VulkanDevice& dev, std::uint32_t width,
+                           std::uint32_t height, const std::uint16_t* texels,
+                           bool linearFilter, bool repeat);
         // Single-channel R8_UNORM variant — one byte per texel (e.g. a
         // full-resolution tile/material id grid sampled per-fragment). 4× less
         // memory/bandwidth than packing a scalar into create_rgba8's red channel.

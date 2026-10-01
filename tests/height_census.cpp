@@ -21,10 +21,11 @@
 //      границ не достигает, и кривая, посаженная на 1.0, молча выдала бы мир на
 //      3.7 км там, где одобрено 9.9.
 //
-// ИЗМЕРИТЕЛЬНЫЙ ПОЛ, НАЗВАННЫЙ ВСЛУХ: поле хранится БАЙТОМ, и с кривой
-// переноса (M-192) цена байта зависит от высоты — у воды 5.9 м, на горной
-// линии 27 м, у p99 уже 140 м. Это и есть довод за `uint16`-карту высот, и
-// печатается он ниже отдельной строкой, а не выводится из одной константы.
+// ИЗМЕРИТЕЛЬНЫЙ ПОЛ, НАЗВАННЫЙ ВСЛУХ: поле хранится СЛОВОМ (`kFieldWordMax`,
+// наряд B3), и с кривой переноса (M-192) цена одного шага словаря зависит от
+// высоты. Числа здесь НЕ ПРИБИТЫ: прибор печатает цену слова у воды, на горной
+// линии и у p99 отдельной строкой — именно замером байт и был признан
+// негодным полом, и тем же замером проверяется слово.
 //
 // Река здесь не мешает и не прячется: `generate_terrain` врезает русла НИЖЕ
 // уровня моря, поэтому карбованные клетки выпадают из маски суши сами, а их
@@ -68,9 +69,13 @@ namespace {
 // `kCellSize` тайлов при условности движка «тайл = метр» (см. шапку).
 constexpr float kCellSpanM = float(sm::sub::kCellSize);
 
-// Шаг байтовой карты В МЕТРАХ НА ДАННОЙ ВЫСОТЕ — измерительный пол прибора.
-// Не константа: кривая переноса делает его функцией высоты.
-float byte_step_m(float h01) { return sm::sub::height_gain_m(h01) / 255.0f; }
+// Шаг карты В МЕТРАХ НА ДАННОЙ ВЫСОТЕ — измерительный пол прибора. Не
+// константа: кривая переноса делает его функцией высоты. Делитель — ширина
+// СЛОВАРЯ КАРТЫ (`kFieldWordMax`), а не 255: карта хранит слово, и прибор
+// обязан мерить тот шаг, который у неё есть, а не тот, который был.
+float word_step_m(float h01) {
+    return sm::sub::height_gain_m(h01) / sm::kFieldWordMax;
+}
 
 // Полная шкала карты уклонов: 1024 м подъёма на клетку = 45°. Кодируется
 // ЛОГАРИФМОМ, потому что кривая переноса меняет уклоны в десятки раз, а
@@ -162,7 +167,12 @@ void write_pngs(const sm::TerrainData& td, std::uint32_t seed) {
     // подмешанной воды: вопрос владельца был про КАРТУ ВЫСОТ, а не про карту
     // мира, и любая подкраска сделала бы её вторым ответом на другой вопрос.
     std::vector<std::uint8_t> grey(std::size_t(w) * std::size_t(h));
-    for (std::size_t i = 0; i < grey.size(); ++i) grey[i] = td.rgba[i * 4u];
+    // PNG здесь 8-битный, а поле хранится СЛОВОМ: в картинку едет СТАРШИЙ БАЙТ
+    // слова (`>> 8`), то есть то же изображение с точностью экрана. Прямое
+    // присваивание слова в байт срезало бы старшие биты и дало бы вместо карты
+    // высот восемь вложенных пил — молча, картинкой без жалоб.
+    for (std::size_t i = 0; i < grey.size(); ++i)
+        grey[i] = std::uint8_t(td.rgba[i * 4u] >> 8);
     std::snprintf(path, sizeof(path), "%s/timaert_height_%u.png",
                   dir ? dir : "/tmp", seed);
     std::printf("  png  %s %s\n",
@@ -176,11 +186,11 @@ void write_pngs(const sm::TerrainData& td, std::uint32_t seed) {
     const float logFull = std::log2(1.0f + kSlopeFullScaleM);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            const float c = float(td.height_at(x, y)) / 255.0f;
+            const float c = sm::field01_of(td.height_at(x, y));
             float worst = 0.0f;
             const int dx[4] = {1, -1, 0, 0}, dy[4] = {0, 0, 1, -1};
             for (int k = 0; k < 4; ++k) {
-                const float n = float(td.height_at(x + dx[k], y + dy[k])) / 255.0f;
+                const float n = sm::field01_of(td.height_at(x + dx[k], y + dy[k]));
                 worst = std::max(worst, std::fabs(n - c));
             }
             const float m = worst * sm::sub::height_gain_m(c);
@@ -226,22 +236,24 @@ SeedResult census_seed(std::uint32_t seed) {
     const std::size_t n = std::size_t(w) * std::size_t(h);
 
     // Поле как единый плоский массив нормированных высот — то же, что читает
-    // игра (байт/255), включая врезанные русла.
+    // игра (`field01_of`, ОДНА дверь чтения слова), включая врезанные русла.
     std::vector<float> field(n);
-    for (std::size_t i = 0; i < n; ++i) field[i] = float(td.rgba[i * 4u]) / 255.0f;
+    for (std::size_t i = 0; i < n; ++i) field[i] = sm::field01_of(td.rgba[i * 4u]);
 
     // ── 3. ПЕРЦЕНТИЛИ ПО СУШЕ ────────────────────────────────────────────
     std::vector<float> land;
     land.reserve(n);
     std::size_t mtn = 0, river = 0, sat = 0, near1 = 0, bed = 0;
     for (std::size_t i = 0; i < n; ++i) {
-        const std::uint8_t b = td.rgba[i * 4u];
+        // СЛОВО, а не байт: `std::uint8_t` здесь срезал бы старшие восемь бит,
+        // и «насыщение сверху» мерило бы младший байт шума.
+        const std::uint16_t b = td.rgba[i * 4u];
         if (td.riverData.size() == n && td.riverData[i] > 0) ++river;
         if (b == 0u) ++bed;
         if (td.is_water(std::uint32_t(i))) continue;        // ОДИН ответ про воду
         land.push_back(field[i]);
-        if (b == 255u) ++sat;
-        if (b >= 250u) ++near1;
+        if (b == std::uint16_t(sm::kFieldWordMax)) ++sat;   // ровно верх словаря
+        if (b >= sm::field_word_of(250.0f / 255.0f)) ++near1;   // уровень >= 0.98
         if (sm::biome_at_cell(td, std::uint32_t(i)) == sm::Biome::Mountain) ++mtn;
     }
     std::sort(land.begin(), land.end());
@@ -291,13 +303,13 @@ SeedResult census_seed(std::uint32_t seed) {
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             if (td.is_water(x, y)) continue;
-            const float c = float(td.height_at(x, y)) / 255.0f;
+            const float c = sm::field01_of(td.height_at(x, y));
             const bool cMtn = sm::biome_at_cell(td, x, y) == sm::Biome::Mountain;
             const int dx[2] = {1, 0}, dy[2] = {0, 1};
             for (int k = 0; k < 2; ++k) {
                 const int nx = x + dx[k], ny = y + dy[k];
                 if (td.is_water(nx, ny)) continue;
-                const float nb = float(td.height_at(nx, ny)) / 255.0f;
+                const float nb = sm::field01_of(td.height_at(nx, ny));
                 const float riseM = std::fabs(nb - c)
                                   * sm::sub::height_gain_m(std::max(nb, c));
                 slopes.push_back(riseM);
@@ -383,14 +395,16 @@ int main(int argc, char** argv) {
                 "потолок %.0f м).\n",
                 kCellSpanM, double(sm::sub::kHeightDoublings),
                 double(sm::sub::kHeightScaleM));
-    std::printf("Цена БАЙТА карты высот зависит от высоты: у воды %.1f м, на "
-                "горной линии %.1f м, у p99 (0.879) %.1f м — довод за uint16 "
-                "(тот же uint16 даёт %.2f м / %.2f м / %.2f м).\n",
-                byte_step_m(sm::kDefaultSeaLevel), byte_step_m(sm::kMountainBiomeLevel),
-                byte_step_m(0.879f),
-                byte_step_m(sm::kDefaultSeaLevel) * 255.0f / 65535.0f,
-                byte_step_m(sm::kMountainBiomeLevel) * 255.0f / 65535.0f,
-                byte_step_m(0.879f) * 255.0f / 65535.0f);
+    // Цена одного шага СЛОВАРЯ КАРТЫ — измерительный пол. Печатается, а не
+    // прибивается: именно этим замером байт был признан негодным полом, и тем
+    // же замером судится слово.
+    std::printf("Цена СЛОВА карты высот (%.0f уровней) зависит от высоты: у "
+                "воды %.2f м, на горной линии %.2f м, у p99 (0.879) %.2f м — "
+                "это и есть измерительный пол поля.\n",
+                double(sm::kFieldWordMax),
+                word_step_m(sm::kDefaultSeaLevel),
+                word_step_m(sm::kMountainBiomeLevel),
+                word_step_m(0.879f));
     {
         const sm::LayerParameters d{};
         std::printf("Синтез: континент %.2f · хребты %.2f · гамма %.2f "

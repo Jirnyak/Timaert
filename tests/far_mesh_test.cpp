@@ -61,7 +61,7 @@ FarCellGrid make_grid(int radius, std::uint32_t worldSeed) {
                           && std::abs(cx - kCamCx) <= radius / 2;
             const float macroH = mtn ? 0.88f : 0.55f;
             FarCellColumn c{};
-            c.skel01 = skeleton_cell_height01(macroH, mtn);
+            c.skel01 = macroH;   // высота ЕСТЬ макровысота (дверь снесена)
             c.peak01 = skeleton_cell_peak01(macroH, mtn, mtn ? 2 : 0,
                                             cx, cy, worldSeed, WATER_LEVEL);
             c.ridgeW = mtn ? 1.0f : 0.0f;
@@ -106,7 +106,7 @@ FarCellGrid make_coast_grid(int radius, std::uint32_t worldSeed,
             const float wobble = 0.04f * float((cx * 7 + cy * 13) % 5) / 4.0f;
             const float macroH = water ? (waterH - wobble) : (landH + wobble);
             FarCellColumn c{};
-            c.skel01 = skeleton_cell_height01(macroH, false);
+            c.skel01 = macroH;   // высота ЕСТЬ макровысота (дверь снесена)
             c.peak01 = skeleton_cell_peak01(macroH, false, 0, cx, cy,
                                             worldSeed, WATER_LEVEL);
             c.ridgeW = 0.0f;

@@ -4426,12 +4426,12 @@ float SubworldEngine::scene_sea_level() const {
     return world_sea_level();
 }
 
-// The macro map's own plane, as a number: `TerrainData::seaLevel8` is the byte
+// The macro map's own plane, as a number: `TerrainData::seaLevel16` is the word
 // `is_water` judges by, so normalising it here — and nowhere else — is what makes
 // the two worlds agree on the shore by construction. Defined in the .cpp because
 // the header only forward-declares TerrainData.
 float SubworldEngine::world_sea_level() const {
-    return terrain_ ? float(terrain_->seaLevel8) / 255.0f : WATER_LEVEL;
+    return terrain_ ? field01_of(terrain_->seaLevel16) : WATER_LEVEL;
 }
 
 float SubworldEngine::scene_sea_level_m() const {

@@ -1393,7 +1393,7 @@ sm::OpticalWorld optical_world(App& app) {
             && app.terrain.rgba.size() >= cells * 4u) {
             oc.heights.resize(cells);
             for (std::size_t i = 0; i < cells; ++i)
-                oc.heights[i] = float(app.terrain.rgba[i * 4u]) / 255.0f;
+                oc.heights[i] = sm::field01_of(app.terrain.rgba[i * 4u]);
         }
         oc.treeDensity.clear();
         if (app.treeLayer.has_complete_storage()
@@ -1663,6 +1663,62 @@ void boot_world(App& app, std::uint32_t seed,
     go.store        = app.macroStore.get();
     sm::generate_macro_world(go, gp);
     boot_trace("macro world generated");
+
+    // ── ВРЕМЕННЫЙ ПРИБОР M-197 (TIMAERT_RIVER_PROBE=1), СНОСИТСЯ ПОСЛЕ ОТВЕТА ──
+    // Вопрос владельца: «что за фьёрды? везде в мире? горные реки — норм?».
+    // Он сам находит места В ТОМ МИРЕ, который запущен, потому что сид обычной
+    // игры переменной не задаётся: печатает ГОТОВЫЕ команды `tp`, отдельно для
+    // речных врезов и отдельно для самого крутого берега океана — разделение
+    // по природе воды и есть весь смысл прибора, прошлая перепись мерила их
+    // одним мешком и назвала речную траншею урезом моря.
+    if (const char* rp = std::getenv("TIMAERT_RIVER_PROBE"); rp && rp[0] == '1') {
+        const sm::TerrainData& td = app.terrain;
+        struct Spot { float dropM; int x, y; float landM, bedM; };
+        std::vector<Spot> riv, oce;
+        const int dxs[4] = {1, -1, 0, 0}, dys[4] = {0, 0, 1, -1};
+        for (int y = 0; y < td.height; ++y)
+            for (int x = 0; x < td.width; ++x) {
+                const std::uint32_t c = sm::cell_of(x, y, td.width);
+                if (td.is_water(c)) continue;
+                const float hl = sm::field01_of(td.rgba[std::size_t(c) * 4u]);
+                for (int k = 0; k < 4; ++k) {
+                    const std::uint32_t nb = sm::cell_step(c, dxs[k], dys[k], td.width);
+                    if (!td.is_water(nb)) continue;
+                    const float hw = sm::field01_of(td.rgba[std::size_t(nb) * 4u]);
+                    const Spot s{sm::sub::height_m(hl) - sm::sub::height_m(hw), x, y,
+                                 sm::sub::height_m(hl), sm::sub::height_m(hw)};
+                    (nb < td.riverData.size() && td.riverData[nb] > 0u ? riv : oce)
+                        .push_back(s);
+                }
+            }
+        const auto deeper = [](const Spot& a, const Spot& b) { return a.dropM > b.dropM; };
+        std::sort(riv.begin(), riv.end(), deeper);
+        std::sort(oce.begin(), oce.end(), deeper);
+        std::printf("\n[riverprobe] МИР сид %u, %dx%d — куда идти СМОТРЕТЬ ГЛАЗАМИ\n",
+                    unsigned(app.gs.worldSeed), td.width, td.height);
+        std::printf("[riverprobe] пар суша-вода: речных %zu, океанских %zu\n",
+                    riv.size(), oce.size());
+        const auto dump = [](const char* title, const std::vector<Spot>& v,
+                             std::size_t i) {
+            if (i >= v.size()) return;
+            std::printf("[riverprobe]   tp %4d %4d   земля %6.0f м -> вода %5.0f м"
+                        "   ПЕРЕПАД %6.0f м   (%s)\n",
+                        v[i].x, v[i].y, double(v[i].landM), double(v[i].bedM),
+                        double(v[i].dropM), title);
+        };
+        std::printf("[riverprobe] -- ХУДШИЕ РЕЧНЫЕ ВРЕЗЫ --\n");
+        for (std::size_t i = 0; i < 4; ++i) dump("худший", riv, i);
+        std::printf("[riverprobe] -- ТИПИЧНЫЕ РЕЧНЫЕ ВРЕЗЫ (медиана и четверти) --\n");
+        if (!riv.empty()) {
+            dump("p75", riv, riv.size() / 4);
+            dump("p50", riv, riv.size() / 2);
+            dump("p25", riv, riv.size() * 3 / 4);
+        }
+        std::printf("[riverprobe] -- САМЫЙ КРУТОЙ БЕРЕГ ОКЕАНА В ЭТОМ МИРЕ --\n");
+        for (std::size_t i = 0; i < 2; ++i) dump("океан", oce, i);
+        std::printf("[riverprobe] (войди в субмир на каждой — лог окна печатается там же)\n\n");
+        std::fflush(stdout);
+    }
 
     if (!app.macro.init(app.device, app.renderer.renderPass)) {
         boot_trace("macro renderer init failed");
@@ -5234,31 +5290,32 @@ void draw_debug_panels(App& app) {
 void build_world_preview(App& app, int side = 384) {
     if (!app.worldLoaded || app.terrain.rgba.empty()) return;
     const auto& td = app.terrain;
-    // Пятый рукописный перевод float→байт стоял здесь; порог у карты уже есть,
+    // Пятый рукописный перевод float→слово стоял здесь; порог у карты уже есть,
     // и предпросмотр обязан рисовать ТУ ЖЕ плоскость, что симулирует мир.
-    const std::uint8_t sea8 = td.seaLevel8;
+    const std::uint16_t sea16 = td.seaLevel16;
     std::vector<std::uint8_t> img(std::size_t(side) * side * 4);
     for (int y = 0; y < side; ++y) {
         const int sy = y * td.height / side;
         for (int x = 0; x < side; ++x) {
             const int sx = x * td.width / side;
             const std::size_t s = std::size_t(sy * td.width + sx) * 4;
-            const std::uint8_t h = td.rgba[s + 0];
-            const std::uint8_t m = td.rgba[s + 1];
-            const std::uint8_t t = td.rgba[s + 2];
+            const std::uint16_t h = td.rgba[s + 0];
+            const std::uint16_t m = td.rgba[s + 1];
+            const std::uint16_t t = td.rgba[s + 2];
             // ПОЛНЫЙ каскад биома, а не климатическая матрица: гипотезой
             // здесь является только ПЛОСКОСТЬ МОРЯ (ползунок), и ровно под
             // это у двери есть параметр. Горный порог гипотезой не был
             // никогда — а ветви Mountain тут не стояло вовсе, и превью
             // показывало гору климатическим биомом (M-158).
-            sm::Biome b = sm::biome_at(float(t) / 255.0f, float(m) / 255.0f,
-                                       float(h) / 255.0f,
-                                       float(sea8) / 255.0f,
+            sm::Biome b = sm::biome_at(sm::field01_of(t), sm::field01_of(m),
+                                       sm::field01_of(h),
+                                       sm::field01_of(sea16),
                                        sm::kMountainBiomeLevel);
             const auto& bd = sm::kBiomes[b];
             // Soft height shading so land has some relief.
-            const float lift = (h < sea8) ? 0.0f
-                                          : 0.85f + 0.30f * (float(h - sea8) / 255.0f);
+            const float lift = (h < sea16)
+                ? 0.0f
+                : 0.85f + 0.30f * sm::field01_of(std::uint16_t(h - sea16));
             const std::size_t o = std::size_t(y * side + x) * 4;
             auto clamp8 = [](float v) -> std::uint8_t {
                 if (v <   0.0f) v =   0.0f;
@@ -5789,11 +5846,11 @@ void frame(App& app, int simSteps) {
                              rCamX, rCamY, rZoom,
                              // ПОРОГ В БАЙТОВОМ СЛОВАРЕ, нормированный: карта
                              // обязана судить воду ровно тем числом, которым
-                             // судит мир (`TerrainData::seaLevel8` — тот самый
-                             // байт, по которому `is_water` отвечает). Сырое
+                             // судит мир (`TerrainData::seaLevel16` — то самое
+                             // слово, по которому `is_water` отвечает). Сырое
                              // `mapParams.seaLevel` расходилось с ним на
                              // усечение, то есть на клетку высоты.
-                             float(app.terrain.seaLevel8) / 255.0f, tod,
+                             sm::field01_of(app.terrain.seaLevel16), tod,
                              float(SDL_GetTicks()) * 0.001f,
                              /*mapStyle=*/mapOpen);
         }

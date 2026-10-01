@@ -52,7 +52,9 @@ struct Fixture {
         pc.height = H;
         pc.costGrid.assign(std::size_t(W) * H, 1.0f);
         pc.water.assign(std::size_t(W) * H, 0);
-        pc.height8.assign(std::size_t(W) * H, 0);
+        // Рельеф плоский: карта высот — СЛОВО, и нулевое слово значит нулевой
+        // уровень поля, то есть ни одного подъёма в цене шага.
+        pc.height16.assign(std::size_t(W) * H, 0);
         for (int y = 0; y < H; ++y) {
             for (int x = 0; x < W; ++x) {
                 const int ox = sm::wrapi(x - shiftX, W);
@@ -93,7 +95,7 @@ struct Fixture {
         pc.height = H;
         pc.costGrid.assign(std::size_t(W) * H, 1.0f);
         pc.water.assign(std::size_t(W) * H, 1);
-        pc.height8.assign(std::size_t(W) * H, 0);
+        pc.height16.assign(std::size_t(W) * H, 0);   // плоский рельеф, см. build
         for (int y = 0; y < H; ++y) {
             for (int x = 0; x < W; ++x) {
                 const bool mainland = x < 20;

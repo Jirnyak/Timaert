@@ -52,7 +52,7 @@ namespace sm::sub
     // рельеф не волнует, вода там не вода, он агностичен»; «рельеф под ними
     // остаётся»; «у нас единая система рельефа от макромира».
     //
-    // Макромир так и живёт: `is_water(cell) = rgba[cell*4] < seaLevel8`
+    // Макромир так и живёт: `is_water(cell) = rgba[cell*4] < seaLevel16`
     // (macro/map_generator.h) — ОДНО поле, ОДИН порог над ним, и `biome_at`
     // строит на нём весь каскад. Субмир был единственным местом, где то же
     // поле переписывалось тремя кривыми по флагу биома клетки: водяная жала
@@ -74,11 +74,28 @@ namespace sm::sub
     //
     // `isWater` и `seaLevel` ушли из сигнатуры вместе с кривыми: закон о
     // высоте больше не знает, что такое вода, и не может узнать.
-    inline float skeleton_cell_height01(float macroH, bool isMountain) {
-        if (isMountain) return 0.80f + macroH * 0.15f;
-        return macroH;
-    }
-
+    // ── ЗДЕСЬ ЖИЛА `skeleton_cell_height01`, И ОНА СНЕСЕНА ЦЕЛИКОМ ──
+    // (вердикт владельца 2026-10-01: «сносить обе ветки», «приводи к
+    // системности»). Она подменяла высоту горной клетке: поле гор лежит в
+    // [kMountainBiomeLevel, 1.0], а ветка сплющивала его в полосу шириной
+    // 0.056. Три следствия, все найдены владельцем на кадрах:
+    //   • ВЕРХ МАССИВА — ПЛОСКИЙ СТОЛ, а на границе биома сосед 0.62 оставался
+    //     0.62, сосед 0.63 прыгал на 0.894: обрыв 0.27 единицы поля за ОДНУ
+    //     клетку. Гора была не горой, а месой, и «стена» — её борт;
+    //   • NEAR И FAR РАСХОДИЛИСЬ НА ЭТОТ ЖЕ ПРЫЖОК (ближний путь размазывал
+    //     его билинейным блендом, дальний ставил ступенью): дальняя гора
+    //     вставала выше ближней земли на сотни метров. Замер: 467 м → 17 м;
+    //   • её КЛАМП `[0.80, 1.04]` пережил первый снос в дальнем пути и, уже
+    //     без ветки, перестал ограничивать и начал ПОДНИМАТЬ: медиана горных
+    //     клеток 0.70, то есть весь дальний массив прибивался к одной полке
+    //     3.4 км — плоская полоса на горизонте вместо гряды.
+    //
+    // ПОСЛЕ СНОСА ЗАКОН ОДИН И ОН НЕВЫРАЗИМО ПРОСТ: ВЫСОТА КЛЕТКИ ЕСТЬ ЕЁ
+    // МАКРОВЫСОТА. Второго ответа нет не потому, что его согласовали, а
+    // потому, что его негде написать — функции больше не существует, и оба
+    // пути читают одно число. Распределение гор при этом то, которое владелец
+    // принял замером: p25 1274 м, p50 1965 м, выше 10 км 0.005 % карты,
+    // десятки в центре гряд с подъёмом 53 км; пик мира 10 623 м не упал.
     // The crest's per-cell jitter — hash noise of the cell's own PLACE and the
     // world seed. Declared here because the crest law above is inline and the
     // far world needs both; defined in base_generator.cpp beside the rest of
@@ -101,18 +118,19 @@ namespace sm::sub
                                       std::uint32_t worldSeed, float seaLevel) {
         const float jitter = crest_jitter01(cellGX, cellGY, worldSeed) - 0.5f;
         if (isMountain) {
-            // Crest base from the skeleton law; jitter and the neighbour-massif
-            // lift are the crest's own on top.
-            return std::clamp(skeleton_cell_height01(macroH, true)
-                                  + float(adjMountain) * 0.02f
+            // ПОЛ 0.80 БЫЛ ВТОРОЙ ПОЛОВИНОЙ ТОЙ ЖЕ ВЕТКИ: он поднимал гребень
+            // низкой горы в верхнюю полосу независимо от её земли, то есть
+            // возвращал иглы ровно там, где ветка высоты их уже сгладила.
+            // Гребень целится ВЫШЕ СВОЕЙ СОБСТВЕННОЙ ЗЕМЛИ, как и у равнины.
+            return std::clamp(macroH + float(adjMountain) * 0.02f
                                   + jitter * 0.045f,
-                              0.80f, 1.04f);
+                              seaLevel + 0.10f, 1.05f);
         }
         // The crest floor is the plane plus a WIDTH: a non-mountain cell's
         // ridges aim at least this far above the water, whatever the water is.
         // `seaLevel` survives HERE and only here, because this is the one place
         // that genuinely asks about the plane — not about the ground's shape.
-        return std::clamp(skeleton_cell_height01(macroH, false)
+        return std::clamp(macroH
                               + 0.07f + float(adjMountain) * 0.015f
                               + jitter * 0.03f,
                           seaLevel + 0.10f, 1.05f);

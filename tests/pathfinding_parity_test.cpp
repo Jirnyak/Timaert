@@ -29,6 +29,16 @@ namespace
         return data;
     }
 
+    // ── ФИКСТУРА АВТОРИТ УРОВНЕМ ПОЛЯ, А НЕ БАЙТОМ КАРТЫ ─────────────────
+    // Карта хранит СЛОВО (`kFieldWordMax`): байт 140, уложенный в канал как
+    // есть, значит не «суша 0.549», а 0.002 — воду, и компилятор об этом
+    // молчит. Поэтому каждый уровень едет единственной дверью записи
+    // `field_word_of`, обратной к `field01_of`, которой его читает мир.
+    constexpr float kLandLevel01 = 140.0f / 255.0f;   // суша, но НЕ гора
+    constexpr std::uint16_t kClimateMid =
+        sm::field_word_of(128.0f / 255.0f);           // середина матрицы
+    constexpr std::uint16_t kLandMask = std::uint16_t(sm::kFieldWordMax);
+
     sm::TerrainData make_terrain(int w, int h)
     {
         sm::TerrainData td;
@@ -38,10 +48,10 @@ namespace
         for (int i = 0; i < w * h; ++i)
         {
             const std::size_t s = std::size_t(i) * 4u;
-            td.rgba[s + 0] = 140u;
-            td.rgba[s + 1] = 128u;
-            td.rgba[s + 2] = 128u;
-            td.rgba[s + 3] = 255u;
+            td.rgba[s + 0] = sm::field_word_of(kLandLevel01);
+            td.rgba[s + 1] = kClimateMid;
+            td.rgba[s + 2] = kClimateMid;
+            td.rgba[s + 3] = kLandMask;
         }
         // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
         // читает поле, а не каскад, поэтому карта без выпечки — карта
@@ -115,7 +125,9 @@ int main()
     // height above the mountain level so build_cost_grid classifies it Mountain
     // and pulls the 5.0 weight from the biome table.
     sm::TerrainData mtnTerrain = make_terrain(2, 2);
-    mtnTerrain.rgba[4] = 220u; // height 0.863 >= kMountainBiomeLevel (0.75)
+    // Уровень 0.863 >= kMountainBiomeLevel (0.625 — шапка здесь годами звала
+    // его 0.75, и это была ложь свидетеля о пороге, а не о клетке).
+    mtnTerrain.rgba[4] = sm::field_word_of(220.0f / 255.0f);
     // ВЫСОТА ИЗМЕНЕНА — ПОЛЕ БИОМА ПЕРЕПЕКАЕТСЯ (ЗАКОН ПОЛЯ): мастер и поле
     // не имеют права разойтись, иначе у карты снова два ответа.
     sm::bake_biomes(mtnTerrain);
@@ -144,10 +156,14 @@ int main()
     // свидетеля — «плоскость решает, а маска не авторитет» — сохранён целиком:
     // под вопросом те же две клетки 0 и 1, остальные две просто суша.
     sm::TerrainData maskTerrain = make_terrain(2, 2);
+    // Климат берётся ИЗ КАРТЫ её же дверью чтения (`field01_of`), а не вторым
+    // правописанием словаря: иначе ожидание и мир делили бы литерал `/255`.
     const float defaultLandWeight = sm::cell_sp_weight(
-        sm::biome_from_climate(128.0f / 255.0f, 128.0f / 255.0f),
+        sm::biome_from_climate(sm::field01_of(maskTerrain.rgba[2]),
+                               sm::field01_of(maskTerrain.rgba[1])),
         sm::FT_None);
-    maskTerrain.rgba[0] = 40u;   // cell 0: высота НИЖЕ плоскости — вот и вода
+    // cell 0: высота НИЖЕ плоскости — вот и вода
+    maskTerrain.rgba[0] = sm::field_word_of(40.0f / 255.0f);
     // ВЫСОТА ИЗМЕНЕНА — ПОЛЕ БИОМА ПЕРЕПЕКАЕТСЯ (ЗАКОН ПОЛЯ): мастер и поле
     // не имеют права разойтись, иначе у карты снова два ответа.
     sm::bake_biomes(maskTerrain);
@@ -167,8 +183,8 @@ int main()
     // НЕГАТИВНЫЙ КОНТРОЛЬ ЗАКОНА: поднять высоту выше плоскости и СОЛГАТЬ
     // маской (A = 0, «вода») — цена воды обязана исчезнуть вместе с высотой.
     // Пока маска была авторитетом, этот же случай красил бы наоборот.
-    maskTerrain.rgba[0] = 128u;
-    maskTerrain.rgba[3] = 0u;
+    maskTerrain.rgba[0] = sm::field_word_of(128.0f / 255.0f);
+    maskTerrain.rgba[3] = 0u;   // маска «вода» — сентинель канала, не уровень
     // ВЫСОТА ИЗМЕНЕНА — ПОЛЕ БИОМА ПЕРЕПЕКАЕТСЯ (ЗАКОН ПОЛЯ): мастер и поле
     // не имеют права разойтись, иначе у карты снова два ответа.
     sm::bake_biomes(maskTerrain);
@@ -264,11 +280,16 @@ int main()
     sm::TerrainData waterTd;
     waterTd.width = 4;
     waterTd.height = 4;
-    waterTd.rgba.assign(std::size_t(4 * 4 * 4), 255u);
-    waterTd.seaLevel8 = sm::sea_level_byte(0.40f);
+    // Заливка ПОЛНЫМ уровнем (байт 255 = 1.0): климат и маска на максимуме,
+    // высота ниже переписывается серединой — ровно как было.
+    waterTd.rgba.assign(std::size_t(4 * 4 * 4),
+                        std::uint16_t(sm::kFieldWordMax));
+    waterTd.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
     for (int i = 0; i < 4 * 4; ++i)
-        waterTd.rgba[std::size_t(i) * 4u + 0u] = 128u;
-    waterTd.rgba[0] = 40u;  // cell 0 below the plane -> water
+        waterTd.rgba[std::size_t(i) * 4u + 0u] =
+            sm::field_word_of(128.0f / 255.0f);
+    // cell 0 below the plane -> water
+    waterTd.rgba[0] = sm::field_word_of(40.0f / 255.0f);
     std::vector<float> waterCont;
     const sm::ZoneLayer waterZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures,

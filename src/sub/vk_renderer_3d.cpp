@@ -1479,6 +1479,48 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
         }
     }
     const std::uint32_t worldSeed = mgr.resolve_cell(camCx, camCy).worldSeed;
+    // ── ВРЕМЕННЫЙ ПРИБОР M-199 (TIMAERT_RIVER_PROBE=1), СНОСИТСЯ ПОСЛЕ ОТВЕТА ──
+    // Вопрос владельца: «город на берегу, гряда в десяти клетках — на макрокарте
+    // она есть, а вдалеке её не видно». Прибор печатает, что дальний мир ОБЯЗАН
+    // нарисовать: радиус кольца, высоту под ногами, самую высокую клетку кольца
+    // и её расстояние. Если число есть, а на экране нет — дефект ниже по
+    // конвейеру (меш/дальность/дымка); если числа нет — дефект в поле.
+    {
+        static const bool probeOn = [] {
+            const char* v = std::getenv("TIMAERT_RIVER_PROBE");
+            return v && v[0] == '1';
+        }();
+        if (probeOn) {
+            float hiM = -1e30f, loM = 1e30f; int hx = 0, hy = 0;
+            for (int y = 0; y < n; ++y)
+                for (int x = 0; x < n; ++x) {
+                    const float m = sub::height_m(
+                        heights[std::size_t(y) * std::size_t(n) + std::size_t(x)]);
+                    loM = std::min(loM, m);
+                    if (m > hiM) { hiM = m; hx = x; hy = y; }
+                }
+            const int dx = hx - kFarCellRadius, dy = hy - kFarCellRadius;
+            const float footM = sub::height_m(
+                heights[std::size_t(kFarCellRadius) * std::size_t(n)
+                        + std::size_t(kFarCellRadius)]);
+            const float distCells = std::sqrt(float(dx * dx + dy * dy));
+            const float distM = distCells * float(kCellSize) * kTileMeters;
+            std::printf("[farprobe] клетка %d,%d | кольцо R=%d клеток (%.0f км) | "
+                        "под ногами %.0f м | низшая %.0f м | ВЫСШАЯ %.0f м на "
+                        "%.1f клетках (%.1f км, смещение %+d,%+d) | подъём над "
+                        "ногами %.0f м, угол над горизонтом %.1f°\n",
+                        camCx, camCy, kFarCellRadius,
+                        double(float(kFarCellRadius) * float(kCellSize)
+                               * kTileMeters / 1000.0f),
+                        double(footM), double(loM), double(hiM),
+                        double(distCells), double(distM / 1000.0f), dx, dy,
+                        double(hiM - footM),
+                        double(distM > 1.0f
+                               ? std::atan((hiM - footM) / distM) * 57.2957795f
+                               : 0.0f));
+            std::fflush(stdout);
+        }
+    }
     for (int y = 0; y < n; ++y) {
         for (int x = 0; x < n; ++x) {
             const std::size_t i = std::size_t(y) * std::size_t(n) + std::size_t(x);
@@ -1507,7 +1549,7 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             if (y > 0)     maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i - std::size_t(n)]));
             if (y + 1 < n) maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i + std::size_t(n)]));
             col.gradient01 = maxDiff;
-            col.skel01 = sub::skeleton_cell_height01(heights[i], mtn);
+            col.skel01 = heights[i];   // рельеф ЕСТЬ макровысота (ветка мертва)
             col.peak01 = sub::skeleton_cell_peak01(
                 heights[i], mtn, adj,
                 camCx + x - kFarCellRadius, camCy + y - kFarCellRadius,
@@ -1743,13 +1785,15 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     const CellContext c = mgr.resolve_cell(
                         mgr.center_cx() + gx - kGridR,
                         mgr.center_cy() + gy - kGridR);
-                    // Mountain crest clamp mirrors the generator's peak law
-                    // bounds (base_generator.cpp peakHeight[]).
-                    float h01 = skeleton_cell_height01(
-                        c.macroHeight, c.biome == Biome::Mountain);
-                    if (c.biome == Biome::Mountain)
-                        h01 = std::clamp(h01, 0.80f, 1.04f);
-                    cellM[gy * kGridW + gx] = height_m(h01);
+                    // ЗДЕСЬ СТОЯЛ ПОСЛЕДНИЙ КЛАМП МЁРТВОЙ ГОРНОЙ ВЕТКИ
+                    // (`clamp(h01, 0.80f, 1.04f)`), и после её сноса он
+                    // перестал ограничивать и начал ПОДНИМАТЬ: медиана горных
+                    // клеток 0.70, то есть КАЖДАЯ гора ниже 0.80 прибивалась к
+                    // 0.80 = 3.4 км. Весь дальний массив вставал одной плоской
+                    // полкой — ровно то, что владелец видел на горизонте
+                    // 2026-10-01 («плоская фиолетовая полоса, гряды не видно»).
+                    // Высота клетки ЕСТЬ её макровысота, и второго ответа нет.
+                    cellM[gy * kGridW + gx] = height_m(c.macroHeight);
                 }
             const int off = (kHeightExtFactor / 2) * kHeightQuads; // interior at 192
             const float extHalfM = float(kHeightExtFactor) * kWorldExtent;

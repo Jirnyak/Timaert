@@ -43,18 +43,23 @@ TerrainData make_world() {
     td.rgba.assign(std::size_t(w) * h * 4u, 0);
     td.riverData.assign(std::size_t(w) * h, 0);
     // Плоскость моря — колонка КАРТЫ (M-109): свидетель ставит её сам, ровно
-    // тем же порогом, которым ниже пишет байт маски.
-    td.seaLevel8 = sm::sea_level_byte(0.40f);
+    // тем же порогом, которым ниже пишет канал маски.
+    td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const std::size_t s = std::size_t(y * w + x) * 4u;
-            std::uint8_t height = 140;                   // land
-            if (x < 4) height = 40;                      // sea
-            if (y >= 48) height = 250;                   // peaks (0.98)
-            td.rgba[s + 0] = height;
-            td.rgba[s + 1] = 200;                        // wet enough for clay
-            td.rgba[s + 2] = 128;
-            td.rgba[s + 3] = height < 102 ? 0 : 255;
+            // Фикстура авторит УРОВЕНЬ поля (0..1), а в карту он ложится
+            // словом через единственную дверь записи: канал — unorm16, и
+            // литерал прежней байтовой эпохи значил бы здесь другую высоту.
+            float level01 = 140.0f / 255.0f;             // land (0.549)
+            if (x < 4) level01 = 40.0f / 255.0f;         // sea (0.157)
+            if (y >= 48) level01 = 250.0f / 255.0f;      // peaks (0.98)
+            td.rgba[s + 0] = sm::field_word_of(level01);
+            td.rgba[s + 1] = sm::field_word_of(200.0f / 255.0f);  // wet: clay
+            td.rgba[s + 2] = sm::field_word_of(128.0f / 255.0f);
+            td.rgba[s + 3] = level01 < sm::kDefaultSeaLevel
+                                 ? std::uint16_t(0)
+                                 : std::uint16_t(sm::kFieldWordMax);
             if (x == 8 && y < 48) td.riverData[y * w + x] = 255;
         }
     }

@@ -90,11 +90,11 @@ BlockStat block_stat(const sm::TerrainData& td,
             const std::size_t i = row + std::size_t(x);
             // Плоскость спрашивается у карты, не у маски `A` (M-161/M-164).
             if (td.is_water(std::uint32_t(i))
-                || float(td.rgba[i * 4 + 0]) / 255.0f
+                || sm::field01_of(td.rgba[i * 4 + 0])
                        < sm::kMountainBiomeLevel) continue;
             ++s.count;
-            h += double(td.rgba[i * 4 + 0]) / 255.0;
-            t += double(td.rgba[i * 4 + 2]) / 255.0;
+            h += double(sm::field01_of(td.rgba[i * 4 + 0]));
+            t += double(sm::field01_of(td.rgba[i * 4 + 2]));
         }
     }
     if (s.count > 0) {
@@ -475,7 +475,7 @@ int main(int argc, char** argv) {
             // генерации: прибор обязан видеть ту же воду, что игрок. И маска
             // `A` здесь больше не звучит — она производное того же порога.
             if (!td.is_water(std::uint32_t(i))
-                && float(td.rgba[i * 4 + 0]) / 255.0f
+                && sm::field01_of(td.rgba[i * 4 + 0])
                        >= sm::kMountainBiomeLevel) {
                 ++mtn;
             }
@@ -545,11 +545,11 @@ int main(int argc, char** argv) {
                 const std::size_t i = std::size_t(y) * td.width + x;
                 if (features.data[i] != sm::FT_None) continue; // skip assigned cells
                 if (td.is_water(std::uint32_t(i))) continue;
-                const float h = float(td.rgba[i * 4 + 0]) / 255.0f;
+                const float h = sm::field01_of(td.rgba[i * 4 + 0]);
                 // Keep forests below the mountain foot -> clean iso-height border
                 // where the Mountain biome takes over from the forested lowland.
                 if (h >= sm::kMountainBiomeLevel) continue;
-                const float moist = float(td.rgba[i * 4 + 1]) / 255.0f;
+                const float moist = sm::field01_of(td.rgba[i * 4 + 1]);
                 const float clump = vnoise(float(x) / 24.f, float(y) / 24.f,
                                            std::max(1, td.width / 24), 11u);
                 const float detail = vnoise(float(x) / 6.f, float(y) / 6.f,
@@ -632,7 +632,7 @@ int main(int argc, char** argv) {
         // клетку высоты, и клетка ровно на пороге печаталась в снимке водой,
         // тогда как в игре она суша — прибор врал ровно тем, что M-109
         // починил в игре.
-        const float seaLevel01 = float(td.seaLevel8) / 255.0f;
+        const float seaLevel01 = sm::field01_of(td.seaLevel16);
         if (!off.shoot(dev, mr, td, camX, camY, zoom, seaLevel01, s.tod, pixels)) {
             std::fprintf(stderr, "[macro_shot] render FAILED (%s)\n", s.name);
             ++failures;

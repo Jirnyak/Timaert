@@ -673,7 +673,7 @@ namespace sm
         return fl;
     }
 
-    // field_wheat_min / plough_cell_ok / plough_field_cell are declared in
+    // plough_cell_ok / plough_field_cell are declared in
     // spawners.h beside the worldgen stamp below, but DEFINED in
     // macro_stock.cpp: the daily labour rotation (npc_ai.cpp) calls them,
     // and its test targets link the land's doors, not the worldgen — the

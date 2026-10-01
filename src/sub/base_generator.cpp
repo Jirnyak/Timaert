@@ -242,8 +242,29 @@ float mountain_ridges01(float h, int gx, int gy, float macroH,
     // AND ravines cut — the расселины the flat 0.90 floor erased.
     const float valleyFloor = std::max(seaLevel + 0.08f, macroH * 0.88f);
     const float peak        = std::max(valleyFloor + 0.05f, peakTarget);
-    const float mtnH        = soft_compress_peak(valleyFloor + ridge * (peak - valleyFloor)
-                                                 + (crag - 0.5f) * cragAmp * 2.0f);
+    // ── ГРЕБЕНЬ — ДЕТАЛЬ СУБМИРА, А НЕ МАКРОГОРА (M-199) ─────────────────
+    // Здесь стояло абсолютное поле `valleyFloor + ridge*(peak − valleyFloor)`,
+    // и оно уходило на кривую переноса ЦЕЛИКОМ, как будто это макрорельеф.
+    // Макрогора — `macroH`, число КЛЕТКИ 1024 м; а всё, что лепит эта функция,
+    // живёт на длинах волн 118–385 ТАЙЛОВ, то есть ВНУТРИ клетки. Значит это
+    // деталь, и она обязана нести `detail_field_scale` ровно как шум, дюны и
+    // болото двадцатью строками ниже по вызову.
+    //
+    // ЗАМЕРЕНО (кадры владельца 2026-10-01 + счёт): на высоте поля 0.9 наклон
+    // кривой 48 000 м/ед., поэтому рельеф гребня весил 6 518 м при длине волны
+    // 250 м, а краг — 288 м при 118 м. Гора превращалась в ежа из вертикальных
+    // игл, под которыми собственно горы видно не было: макромассив на том же
+    // месте поднимается всего на 52–108 м НА КЛЕТКУ.
+    //
+    // ФОРМА: функция по-прежнему строит ту же поверхность, но результат берётся
+    // как ОТКЛОНЕНИЕ от макровысоты и кладётся на кривую. У воды множитель
+    // ровно 1 — берег и равнинные гряды не двигаются ни на метр; наверху он
+    // 1/32, и местный рельеф возвращается к тем сотням метров, в которых его
+    // и подбирали (приёмка 2aa0c52f: p50 40° / p90 56° / p99 66°).
+    const float detail      = detail_field_scale(macroH);
+    const float rawMtn      = valleyFloor + ridge * (peak - valleyFloor)
+                            + (crag - 0.5f) * cragAmp * 2.0f;
+    const float mtnH        = soft_compress_peak(macroH + (rawMtn - macroH) * detail);
     // NOISY massif edge (owner: like the coastline, never a solid straight
     // ramp): a low-frequency warp shifts the ridge-weight threshold so the
     // massif FINGERS into the plain — foothill spurs and bays instead of a
@@ -333,9 +354,9 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
 
         // Water: t=1 at shoreline, t=0 at deep ocean, squared so deep water
         // sits well below the plane. Land: lifted from kLandFloor (shoreline)
-        // to 1.0 (peak). THE law lives in skeleton_cell_height01
+        // to 1.0 (peak). Высота клетки ЕСТЬ её макровысота (ветка мертва)
         // (base_generator.h) — the shadow apron reads the same door.
-        remapped[i] = skeleton_cell_height01(mh, /*isMountain=*/false);
+        remapped[i] = mh;   // рельеф ЕСТЬ макровысота (горная ветка мертва)
 
         // Universal flattening (terrain_mod_for): a cell that carries a road
         // or a settlement calms its OWN ridge/noise/gradient columns. Applied

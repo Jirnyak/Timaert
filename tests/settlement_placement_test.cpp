@@ -60,9 +60,20 @@ constexpr int   kSeaCols = 4;             // было 6 из 96
 constexpr int   kMountainRow = 53;        // было 80 из 96 (16.7 % рядов)
 constexpr int   kRiverCol = 27;           // было 40 из 96
 constexpr float kSeaLevel = 0.4f;
-// Порог в байтах — ТОЙ ЖЕ дверью, что у мира (M-109): рукописное
-// `uint8_t(kSeaLevel * 255.0f)` было пятой копией перевода float→байт.
-constexpr std::uint8_t kSeaLevel8 = sea_level_byte(kSeaLevel);
+// Порог в словах карты — ТОЙ ЖЕ дверью, что у мира (M-109): рукописное
+// `uint8_t(kSeaLevel * 255.0f)` было пятой копией перевода уровня в слово.
+constexpr std::uint16_t kSeaLevelWord = field_word_of(kSeaLevel);
+// Фикстура авторит УРОВНИ поля, а не слова хранения (B3): байтовый литерал на
+// uint16-карте означал бы воду. Прежние значения сохранены дословно — это те
+// же 140/40/220 из 255, только названные тем, чем они всегда были.
+constexpr float kPlainLand01 = 140.0f / 255.0f;   // 0.549 — равнина
+constexpr float kSeaFloor01  =  40.0f / 255.0f;   // 0.157 — дно
+constexpr float kMountain01  = 220.0f / 255.0f;   // 0.863 — выше горной линии
+static_assert(kMountain01 >= kMountainBiomeLevel,
+              "горный ряд фикстуры обязан быть горой по ЗАКОНУ ПОЛЯ, а не по "
+              "числу: горная линия двигалась (0.75 -> 0.625) и ещё подвинется");
+static_assert(kPlainLand01 > kSeaLevel && kPlainLand01 < kMountainBiomeLevel,
+              "равнина фикстуры — суша, но НЕ гора");
 
 // A little world with an honest gradient of worth: sea on the left, a river
 // column at x=40 wrapped in a moisture bloom (the lush belt), mountains at
@@ -74,23 +85,26 @@ TerrainData make_world() {
     td.height = kH;
     td.rgba.assign(std::size_t(kW) * kH * 4u, 0);
     td.riverData.assign(std::size_t(kW) * kH, 0);
-    td.seaLevel8 = kSeaLevel8;   // плоскость моря — колонка карты
+    td.seaLevel16 = kSeaLevelWord;   // плоскость моря — колонка карты
     for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < kW; ++x) {
             const std::size_t s = std::size_t(y * kW + x) * 4u;
-            std::uint8_t height = 140;                    // plain land
-            if (x < kSeaCols) height = 40;                // sea
-            if (y >= kMountainRow) height = 220;          // mountains (≥0.75)
+            float level = kPlainLand01;                   // plain land
+            if (x < kSeaCols) level = kSeaFloor01;        // sea
+            if (y >= kMountainRow) level = kMountain01;   // mountains
             if (x == kRiverCol && y < kMountainRow) {     // the river: honest
-                height = 40;                              //   water cells
+                level = kSeaFloor01;                      //   water cells
                 td.riverData[std::size_t(y * kW + x)] = 255;
             }
             const int dist = std::abs(x - kRiverCol);
             const int moisture = std::max(20, 200 - 4 * dist);
+            const std::uint16_t height = field_word_of(level);
             td.rgba[s + 0] = height;
-            td.rgba[s + 1] = std::uint8_t(moisture);      // G = fertility
-            td.rgba[s + 2] = 128;
-            td.rgba[s + 3] = height < kSeaLevel8 ? 0 : 255;
+            td.rgba[s + 1] = field_word_of(float(moisture) / 255.0f); // G = fertility
+            td.rgba[s + 2] = field_word_of(128.0f / 255.0f);
+            td.rgba[s + 3] = height < kSeaLevelWord
+                               ? std::uint16_t(0)
+                               : std::uint16_t(kFieldWordMax);
         }
     }
     // ПОСЛЕДНИЙ АКТ РОЖДЕНИЯ (M-110): биом клетки — ПОЛЕ над тором, и
@@ -221,7 +235,12 @@ void test_vetoes_hold() {
         // Мир этого свидетеля уменьшен до 64×64 (ближайшая законная сторона,
         // где свойство ещё держится), и цена названа: проверок стало 129
         // вместо 249. Наряд на настоящее вето — в macro-registry.md.
-        CHECK(float(w.td.height_at(v.x, v.y)) / 255.0f < 0.75f,
+        // ЧИТАЕТСЯ ДВЕРЬЮ СЛОВАРЯ (B3): сырое `/255.0f` над СЛОВОМ карты врёт
+        // в 257 раз и роняло это утверждение на КАЖДОЙ деревне, включая
+        // равнинные. Порог 0.75 оставлен как был — он СТАРАЯ горная линия
+        // (сегодня `kMountainBiomeLevel` = 0.625), и подтягивать его здесь
+        // значило бы менять строгость свидетеля в дифе про словарь карты.
+        CHECK(field01_of(w.td.height_at(v.x, v.y)) < 0.75f,
               "no village on mountain rock");
         // ЗДЕСЬ СТОЯЛО `CHECK(!is_forest_cell(trees.at(v.x,v.y)))` — свидетель
         // СНЕСЁННОГО вето (владелец 2026-09-25: «вето лесного массива при
@@ -466,9 +485,11 @@ void test_villages_stand_next_to_something() {
                 if (dx == 0 && dy == 0) continue;
                 const int x = wrapi(v.x + dx, kW);
                 const int y = wrapi(v.y + dy, kH);
-                if (!w.td.is_water(x, y)
-                    && int(w.td.moisture_at(x, y)) >= int(kFieldMoistureMin))
-                    found = true;
+                // ПЛАНКА ПАХОТЫ СНЕСЕНА (2026-10-01, spawners.h): пахотной
+                // стала всякая не-водная клетка, и «нашлась ли пашня рядом»
+                // спрашивается теперь без порога. Утверждение не ослаблено —
+                // у него сменился предмет вместе с миром.
+                if (!w.td.is_water(x, y)) found = true;
                 if (int(w.trees.at(x, y)) >= 4096) found = true;
             }
         }

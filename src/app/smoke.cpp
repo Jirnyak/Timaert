@@ -1550,7 +1550,7 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
                     continue;
                 }
                 if (hasLandmark(x, y)) continue;
-                const float h = float(app.terrain.height_at(x, y)) / 255.0f;
+                const float h = sm::field01_of(app.terrain.height_at(x, y));
                 // The [minH, 0.72] band sits below kMountainBiomeLevel (0.75),
                 // so Mountain-biome cells are already excluded here.
                 if (h < minH || h > 0.72f) continue;
@@ -1589,7 +1589,7 @@ bool smoke_find_tree_subworld_cell(const App& app, int& outX, int& outY) {
                     continue;
                 }
                 if (!sm::is_forest_cell(int(app.treeLayer.at(x, y)))) continue;
-                const float h = float(app.terrain.height_at(x, y)) / 255.0f;
+                const float h = sm::field01_of(app.terrain.height_at(x, y));
                 if (h < minH) continue;
                 outX = x;
                 outY = y;
@@ -3217,7 +3217,7 @@ bool run_dungeon_cave_smoke(App& app) {
     for (int cy = 0; cy < app.gs.mapH && mouths == 0; cy += 7) {
         for (int cx = 0; cx < app.gs.mapW && mouths == 0; cx += 7) {
             if (app.terrain.is_water(cx, cy)) continue;        // sea
-            if (float(app.terrain.height_at(cx, cy)) / 255.0f
+            if (sm::field01_of(app.terrain.height_at(cx, cy))
                 < sm::kMountainBiomeLevel) continue;
             ++tried;
             if (tried > 24) break;                             // bounded hunt
@@ -6601,7 +6601,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     for (int x = 0; x < app.gs.mapW; ++x) {
                         // Mountain biome = land cell at elevation ≥ level.
                         if (app.terrain.is_water(x, y)) continue;
-                        if (float(app.terrain.height_at(x, y)) / 255.0f
+                        if (sm::field01_of(app.terrain.height_at(x, y))
                             < sm::kMountainBiomeLevel) continue;
                         const long dx = x - pcx, dy = y - pcy;
                         const long d = dx * dx + dy * dy;

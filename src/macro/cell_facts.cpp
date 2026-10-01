@@ -23,9 +23,9 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     const std::size_t idx =
         std::size_t(f.y) * std::size_t(td.width) + std::size_t(f.x);
 
-    f.height01      = float(td.rgba[idx * 4u + 0u]) / 255.0f;
-    f.fertility01   = float(td.rgba[idx * 4u + 1u]) / 255.0f;
-    f.temperature01 = float(td.rgba[idx * 4u + 2u]) / 255.0f;
+    f.height01      = field01_of(td.rgba[idx * 4u + 0u]);
+    f.fertility01   = field01_of(td.rgba[idx * 4u + 1u]);
+    f.temperature01 = field01_of(td.rgba[idx * 4u + 2u]);
     f.biome = biome_at_cell(td, f.x, f.y);
     f.water = f.biome == Biome::Water;
 

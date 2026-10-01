@@ -69,10 +69,24 @@ constexpr int kFarLatticeHalf  = 192;  // lattice points per side from centre
 constexpr int kFarHoleQuadHalf = 48;   // the hole's half-width, in QUADS
 constexpr int kFarRing0StepM   = 32;   // the innermost spacing, metres
 constexpr int kFarRingRatio    = 4;    // step, span AND hole all ×4 per ring
-// HOW MANY RINGS — and it is the only knob of the ladder. Two is what the
-// probe drew and what the air already dissolves; the third is a measured
-// decision (Ш8), not a slot left open.
-constexpr int kFarRings        = 2;
+// HOW MANY RINGS — and it is the only knob of the ladder.
+//
+// ТРЕТЬЕ КОЛЬЦО ВЗЯТО 2026-10-01 ПО ЗАПРОСУ ВЛАДЕЛЬЦА И ПО ЗАМЕРУ ГЕОМЕТРИИ,
+// а не «на всякий случай». Довод назван им так: город на берегу, гряда в
+// десяти клетках — на макрокарте она есть, а вдалеке не читается. Прибор
+// `[farprobe]` объяснил почему, и это оказалась ГЕОМЕТРИЯ, а не дефект:
+// высшая точка кольца стояла на +2114 м при 32.6 км, то есть 3.7° над
+// горизонтом, тогда как ближний холм 600 м в трёх километрах занимает 11°.
+// Передний план втрое выше дальней гряды на экране — значит видеть надо
+// ДАЛЬШЕ, туда, где стоит настоящий хребет, а не соседний холм.
+//
+// Два кольца доставали 24.6 км по оси; три достают 98.3 км. Ladder'у это
+// ничего не стоит доказывать — `far_ladder_nests` ниже проверяет под
+// компилятором, что дыра третьего (48 × 512 = 24 576 м) есть в точности
+// размах второго (192 × 128 = 24 576 м), то есть щели и нахлёста нет по
+// построению. Цена — в макро-снимке: радиус кольца клеток 25 → 97, то есть
+// 2601 → 38 025 вызовов `resolve_cell` на пересборку.
+constexpr int kFarRings        = 3;
 
 constexpr int kFarLatticeDim = 2 * kFarLatticeHalf + 1;   // points per row
 // ONE RING OF MARGIN, which is the field's own (see FarHeightSheet): a rim

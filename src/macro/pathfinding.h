@@ -34,18 +34,21 @@ namespace sm
         int height = 0;
         std::vector<float> costGrid;       // the CELL half: bed + canopy
         std::vector<std::uint8_t> water;   // 1 = open water cell
-        // The height byte per cell (terrain R), baked beside the weights so
+        // The height WORD per cell (terrain R), baked beside the weights so
         // every walker prices the EDGE half of the law — the uphill climb —
-        // without reaching back into the terrain (movement_cost.h).
-        std::vector<std::uint8_t> height8;
+        // without reaching back into the terrain (movement_cost.h). Слово, а не
+        // байт: байт нёс бы ту же террасу 162.7 м у p99 суши внутрь ЗАКОНА
+        // ДВИЖЕНИЯ — то есть картинку вылечили бы, а проходимость нет.
+        std::vector<std::uint16_t> height16;
 
         // The edge-climb term between two cells of this grid, by index:
         // kClimbSpWeight × max(0, Δh01), downhill free. Zero when heights
         // are not baked (the silent legal contribution).
         float climb(std::size_t fromIdx, std::size_t toIdx) const {
-            if (height8.size() != costGrid.size()) return 0.0f;
-            const int dh = int(height8[toIdx]) - int(height8[fromIdx]);
-            return dh > 0 ? kClimbSpWeight * (float(dh) / 255.0f) : 0.0f;
+            if (height16.size() != costGrid.size()) return 0.0f;
+            const float dh01 = field01_of(height16[toIdx])
+                             - field01_of(height16[fromIdx]);
+            return dh01 > 0.0f ? kClimbSpWeight * dh01 : 0.0f;
         }
 
         // ── ДВЕРИ К КЛЕТКЕ (ЗАКОН АДРЕСА, 2026-09-23) ────────────────────
@@ -70,9 +73,9 @@ namespace sm
             if (!live() || water.size() != costGrid.size()) return false;
             return water[cell_of(x, y, width)] != 0u;
         }
-        std::uint8_t height_at(int x, int y) const {
-            if (!live() || height8.size() != costGrid.size()) return 0u;
-            return height8[cell_of(x, y, width)];
+        std::uint16_t height_at(int x, int y) const {
+            if (!live() || height16.size() != costGrid.size()) return 0u;
+            return height16[cell_of(x, y, width)];
         }
     };
 

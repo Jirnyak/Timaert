@@ -22,8 +22,8 @@
 //   · мир РОВНОГО климата с массивом: у климатического каскада краёв биома на
 //     суше нет вовсе, у полного край есть — рим массива. Реки у рима обязаны
 //     родиться, а на той же карте БЕЗ массива — нет;
-//   · зоны: байт рядом с горной линией обязан дрогнуть на 192 и не дрогнуть на
-//     191 — иначе прибор не видит, где стоит порог.
+//   · зоны: слово высоты рядом с горной линией обязано дрогнуть НА линии и не
+//     дрогнуть под ней — иначе прибор не видит, где стоит порог.
 #include <algorithm>
 #include <cstdio>
 #include <vector>
@@ -43,28 +43,31 @@ namespace {
 // ЗАКОН АДРЕСА: сторона — степень двойки, мир квадратен.
 constexpr int kSide = 128;
 
-// Горная линия в байтовом словаре высоты: первый байт, который уже гора, и
-// предыдущий, который ещё нет. Шапка обещала «выведено из
-// `kMountainBiomeLevel`», а стояло ЧИСЛО 192, посчитанное руками под линию
-// 0.75; когда линия переехала (2026-10-01, бескламповый синтез), числа разошлись
-// с источником и `static_assert` поймал это сборкой — ровно как и должен.
-// Теперь вывод настоящий: байт считается ИЗ линии, и свидетель верен при любой.
-constexpr float kMountainLineByteF = kMountainBiomeLevel * 255.0f;
-constexpr int   kMountainByte =
-    int(kMountainLineByteF)
-    + (float(int(kMountainLineByteF)) < kMountainLineByteF ? 1 : 0);
-static_assert(float(kMountainByte) / 255.0f >= kMountainBiomeLevel,
-              "192 обязан быть горой");
-static_assert(float(kMountainByte - 1) / 255.0f < kMountainBiomeLevel,
-              "191 обязан горой не быть");
+// Горная линия в СЛОВАРЕ СЛОВА (канал высоты — unorm16, наряд B3): первое
+// слово, которое уже гора, и предыдущее, которое ещё нет. Шапка обещала
+// «выведено из `kMountainBiomeLevel`», а стояло ЧИСЛО 192, посчитанное руками
+// под линию 0.75; когда линия переехала (2026-10-01, бескламповый синтез),
+// числа разошлись с источником и `static_assert` поймал это сборкой — ровно как
+// и должен. Вывод остался настоящим и ширину хранения теперь тоже читает из
+// источника (`kFieldWordMax`), а не из литерала: свидетель верен при любой линии
+// и при любой ширине канала.
+constexpr float kMountainLineWordF = kMountainBiomeLevel * kFieldWordMax;
+constexpr int   kMountainWord =
+    int(kMountainLineWordF)
+    + (float(int(kMountainLineWordF)) < kMountainLineWordF ? 1 : 0);
+static_assert(field01_of(std::uint16_t(kMountainWord)) >= kMountainBiomeLevel,
+              "слово на горной линии обязано быть горой");
+static_assert(field01_of(std::uint16_t(kMountainWord - 1)) < kMountainBiomeLevel,
+              "слово под горной линией обязано горой не быть");
 
 // Полоса, в которой два порога расходились: гора для карты (0.75), не гора для
-// прежнего леса (0.80). Байт 196 = 0.769 — внутри полосы.
-constexpr int kDisputedByte = 196;
-static_assert(float(kDisputedByte) / 255.0f >= kMountainBiomeLevel,
-              "спорный байт обязан быть горой по единственному порогу");
-static_assert(float(kDisputedByte) / 255.0f <= 0.80f,
-              "спорный байт обязан лежать НИЖЕ снесённого второго порога 0.80");
+// прежнего леса (0.80). Уровень 196/255 = 0.769 — внутри полосы.
+constexpr float          kDisputedLevel = 196.0f / 255.0f;
+constexpr std::uint16_t  kDisputedWord  = field_word_of(kDisputedLevel);
+static_assert(field01_of(kDisputedWord) >= kMountainBiomeLevel,
+              "спорный уровень обязан быть горой по единственному порогу");
+static_assert(field01_of(kDisputedWord) <= 0.80f,
+              "спорный уровень обязан лежать НИЖЕ снесённого второго порога 0.80");
 
 LayerParameters world_params() {
     LayerParameters p{};
@@ -74,18 +77,23 @@ LayerParameters world_params() {
 
 // Ровная карта: одна высота, один климат — и климат выбран лесной (умеренный,
 // средняя влага → Meadow), чтобы отказ леса нельзя было списать на климат.
-TerrainData flat_world(int side, std::uint8_t heightByte) {
+// Высота принимается СЛОВОМ, а не уровнем: ниже стоят пробы ровно у горной
+// линии (`kMountainWord ± 1`), и круг «уровень → слово» съел бы их точность.
+TerrainData flat_world(int side, std::uint16_t heightWord) {
     TerrainData td;
     td.width = side;
     td.height = side;
-    td.seaLevel8 = sea_level_byte(kDefaultSeaLevel);
+    td.seaLevel16 = field_word_of(kDefaultSeaLevel);
     td.rgba.assign(std::size_t(side) * std::size_t(side) * 4u, 0u);
     td.riverData.assign(std::size_t(side) * std::size_t(side), 0u);
     for (std::size_t c = 0; c < std::size_t(side) * std::size_t(side); ++c) {
-        td.rgba[c * 4u + 0u] = heightByte;
-        td.rgba[c * 4u + 1u] = 128u;   // влага середины матрицы
-        td.rgba[c * 4u + 2u] = 128u;   // температура середины матрицы
-        td.rgba[c * 4u + 3u] = heightByte < td.seaLevel8 ? 0u : 255u;
+        td.rgba[c * 4u + 0u] = heightWord;
+        // влага и температура середины матрицы
+        td.rgba[c * 4u + 1u] = field_word_of(128.0f / 255.0f);
+        td.rgba[c * 4u + 2u] = field_word_of(128.0f / 255.0f);
+        td.rgba[c * 4u + 3u] = heightWord < td.seaLevel16
+                                   ? std::uint16_t(0)
+                                   : std::uint16_t(kFieldWordMax);
     }
     bake_biomes(td);
     return td;
@@ -95,12 +103,14 @@ TerrainData flat_world(int side, std::uint8_t heightByte) {
 // правка кончается перепечкой поля: карта, у которой мастер и поле разошлись,
 // есть карта с двумя ответами — ровно то, против чего поле и заведено.
 void stamp_plateau(TerrainData& td, int x0, int y0, int w, int h,
-                   std::uint8_t heightByte) {
+                   std::uint16_t heightWord) {
     for (int y = y0; y < y0 + h; ++y)
         for (int x = x0; x < x0 + w; ++x) {
             const std::size_t c = std::size_t(cell_of(x, y, td.width));
-            td.rgba[c * 4u + 0u] = heightByte;
-            td.rgba[c * 4u + 3u] = heightByte < td.seaLevel8 ? 0u : 255u;
+            td.rgba[c * 4u + 0u] = heightWord;
+            td.rgba[c * 4u + 3u] = heightWord < td.seaLevel16
+                                       ? std::uint16_t(0)
+                                       : std::uint16_t(kFieldWordMax);
         }
     bake_biomes(td);
 }
@@ -155,11 +165,11 @@ void test_forest_asks_the_one_cascade() {
 
 // ── 2. Спорная полоса 0.75…0.80: ПИН ОДНОГО ПОРОГА ───────────────────────
 void test_forest_refuses_the_disputed_band() {
-    // Ровная лесная равнина, безопасно выше моря и ниже горной линии.
-    TerrainData td = flat_world(kSide, 150u);
+    // Ровная лесная равнина, безопасно выше моря и ниже горной линии (0.588).
+    TerrainData td = flat_world(kSide, field_word_of(150.0f / 255.0f));
     // Плато РОВНО в полосе, где два порога расходились.
     constexpr int kPlateau = 32;
-    stamp_plateau(td, 48, 48, kPlateau, kPlateau, std::uint8_t(kDisputedByte));
+    stamp_plateau(td, 48, 48, kPlateau, kPlateau, kDisputedWord);
 
     const std::vector<TreePoint> trees = spawn_trees(td, 12345u);
 
@@ -176,8 +186,9 @@ void test_forest_refuses_the_disputed_band() {
     CHECK(onPlateau == 0,
           "плато 0.769 — гора по ЕДИНСТВЕННОМУ порогу, лес на ней не стоит");
     std::fprintf(stderr,
-                 "[biome] плато %d (0.769): лес на плато %ld, вне %ld\n",
-                 kDisputedByte, onPlateau, offPlateau);
+                 "[biome] плато слово %u (%.3f): лес на плато %ld, вне %ld\n",
+                 unsigned(kDisputedWord), double(field01_of(kDisputedWord)),
+                 onPlateau, offPlateau);
 }
 
 // ── 3. Трассер рек видит Mountain — иначе краёв на суше нет ──────────────
@@ -192,15 +203,16 @@ void test_river_tracer_sees_the_massif_rim() {
     // воды, а стока без воды не бывает вовсе — трассер на мире без моря выходит
     // первой же дверью. Полоса океана у края даёт сток и не даёт истоков: все
     // её берега ближе четырёх шагов к воде.
-    TerrainData flat = flat_world(kSide, 150u);
+    TerrainData flat = flat_world(kSide, field_word_of(150.0f / 255.0f));
     constexpr int kOceanW = 16;
-    for (int y = 0; y < kSide; ++y)
-        stamp_plateau(flat, 0, y, kOceanW, 1, 50u);
+    for (int y = 0; y < kSide; ++y)                        // 0.196 — под морем
+        stamp_plateau(flat, 0, y, kOceanW, 1, field_word_of(50.0f / 255.0f));
     TerrainData massif = flat;
     // Массив стоит вглубь суши — дальше пятнадцати шагов от воды, иначе русло
     // короче минимальной длины и не ставится.
     constexpr int kMassif = 48;
-    stamp_plateau(massif, 56, 40, kMassif, kMassif, 230u);
+    stamp_plateau(massif, 56, 40, kMassif, kMassif,        // 0.902 — гора
+                  field_word_of(230.0f / 255.0f));
 
     generate_river_data(flat, params);
     generate_river_data(massif, params);
@@ -248,9 +260,9 @@ void test_zones_ask_the_one_cascade() {
     const std::vector<ZoneSeed> none;
     FeatureLayer features;
 
-    auto danger_at = [&](std::uint8_t heightByte) {
-        TerrainData td = flat_world(kSide, 150u);
-        stamp_plateau(td, 64, 64, 1, 1, heightByte);
+    auto danger_at = [&](std::uint16_t heightWord) {
+        TerrainData td = flat_world(kSide, field_word_of(150.0f / 255.0f));
+        stamp_plateau(td, 64, 64, 1, 1, heightWord);
         std::vector<float> cont;
         const ZoneLayer zl = generate_zones(kSide, kSide, 777u, none, none,
                                             features, &td, nullptr, &cont);
@@ -258,17 +270,17 @@ void test_zones_ask_the_one_cascade() {
         return (zl.has_complete_storage() && c < cont.size()) ? cont[c] : 0.0f;
     };
 
-    const float below = danger_at(std::uint8_t(kMountainByte - 1));
-    const float at    = danger_at(std::uint8_t(kMountainByte));
-    const float far   = danger_at(std::uint8_t(kMountainByte - 2));
+    const float below = danger_at(std::uint16_t(kMountainWord - 1));
+    const float at    = danger_at(std::uint16_t(kMountainWord));
+    const float far   = danger_at(std::uint16_t(kMountainWord - 2));
 
     CHECK(at > below,
           "клетка на горной линии несёт горную надбавку зон — тот же порог, что у каскада");
     CHECK(far == below,
           "контроль: ниже линии высота опасности не двигает (прибор мерит порог, не высоту)");
     std::fprintf(stderr,
-                 "[biome] зоны у линии: 190=%.4f 191=%.4f 192=%.4f\n",
-                 double(far), double(below), double(at));
+                 "[biome] зоны у линии (слово %d): −2=%.4f −1=%.4f линия=%.4f\n",
+                 kMountainWord, double(far), double(below), double(at));
 }
 
 // ── 5. ПОЛЕ ЕСТЬ ОТВЕТ, А КАСКАД — ЕГО ПРОШЛОЕ ───────────────────────────

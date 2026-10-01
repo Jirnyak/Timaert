@@ -24,14 +24,17 @@ namespace {
 using namespace sm;
 
 // One 4x4 world, land everywhere, per-cell moisture set by the tests.
-TerrainData flat_terrain(std::uint8_t moisture) {
+// Фикстура говорит УРОВНЯМИ поля, а не байтами: карта хранит слово
+// (`kFieldWordMax`), и байтовый литерал означал бы в ней 1/257 своей величины
+// — то есть сухую пустошь вместо пашни, молча.
+TerrainData flat_terrain(float moisture01) {
     TerrainData t;
     t.width = 4;
     t.height = 4;
-    t.rgba.assign(std::size_t(4 * 4) * 4u, 128);
+    t.rgba.assign(std::size_t(4 * 4) * 4u, sm::field_word_of(128.0f / 255.0f));
     for (std::size_t i = 0; i < t.rgba.size(); i += 4) {
-        t.rgba[i + 1] = moisture;   // G = the fertility channel
-        t.rgba[i + 3] = 255;        // A = land
+        t.rgba[i + 1] = sm::field_word_of(moisture01);  // G = fertility channel
+        t.rgba[i + 3] = std::uint16_t(sm::kFieldWordMax);   // A = land
     }
     return t;
 }
@@ -42,7 +45,7 @@ MacroStockKey cell_key(int x, int y) {
 
 void test_untouched_cell_reads_fertility_estimate() {
     GameState gs;
-    const TerrainData terrain = flat_terrain(160);
+    const TerrainData terrain = flat_terrain(160.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
 
     const int est = macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1));
@@ -56,10 +59,12 @@ void test_untouched_cell_reads_fertility_estimate() {
 
 void test_estimate_follows_fertility() {
     GameState gs;
-    TerrainData terrain = flat_terrain(128);
+    TerrainData terrain = flat_terrain(128.0f / 255.0f);
     // Cell (1,1) is wetter than cell (2,2) — the wetter one must read more.
-    terrain.rgba[(std::size_t(1) * 4 + 1) * 4 + 1] = 220;
-    terrain.rgba[(std::size_t(2) * 4 + 2) * 4 + 1] = 100;
+    terrain.rgba[(std::size_t(1) * 4 + 1) * 4 + 1] =
+        sm::field_word_of(220.0f / 255.0f);
+    terrain.rgba[(std::size_t(2) * 4 + 2) * 4 + 1] =
+        sm::field_word_of(100.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
 
     const int wet = macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1));
@@ -71,7 +76,7 @@ void test_estimate_follows_fertility() {
 
 void test_harvest_thins_and_return_does_not_resurrect() {
     GameState gs;
-    const TerrainData terrain = flat_terrain(160);
+    const TerrainData terrain = flat_terrain(160.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
     const int est = macro_stock_read(w, MacroStock::CropCount, cell_key(2, 2));
     CHECK(est >= 2, "the fixture needs at least two stands to cut");
@@ -105,7 +110,7 @@ void test_harvest_thins_and_return_does_not_resurrect() {
 
 void test_regrow_self_cleans_when_whole() {
     GameState gs;
-    const TerrainData terrain = flat_terrain(160);
+    const TerrainData terrain = flat_terrain(160.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
 
     // Reap the parcel BARE, so the regrowth law is measured against the

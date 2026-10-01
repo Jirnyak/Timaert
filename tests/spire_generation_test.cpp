@@ -35,9 +35,11 @@ namespace {
 using namespace sm;
 
 constexpr int kW = 64, kH = 64;
-// Heights: land 128, sea floor 0; the gate between them mirrors the default
-// map's 0.4 sea level (102/255).
-constexpr std::uint8_t kSea8 = 102;
+// Heights: land level 0.502, sea floor 0; the gate between them IS the default
+// map's sea plane — имя, а не литерал 102 (прежний байт того же уровня).
+// Карта хранит СЛОВО (`kFieldWordMax`), поэтому и плоскость едет словом.
+constexpr float kLand01 = 128.0f / 255.0f;
+constexpr std::uint16_t kSeaWord = sm::field_word_of(sm::kDefaultSeaLevel);
 
 // Land everywhere except a water strip at x < 8 (so "on land" is a real
 // constraint, not a tautology of the fixture).
@@ -45,8 +47,8 @@ TerrainData banded_terrain() {
     TerrainData t;
     t.width = kW;
     t.height = kH;
-    t.rgba.assign(std::size_t(kW * kH) * 4u, 128);
-    t.seaLevel8 = kSea8;   // плоскость моря — колонка карты (M-109)
+    t.rgba.assign(std::size_t(kW * kH) * 4u, sm::field_word_of(kLand01));
+    t.seaLevel16 = kSeaWord;   // плоскость моря — колонка карты (M-109)
     for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < 8; ++x) {
             const std::size_t i = (std::size_t(y) * kW + std::size_t(x)) * 4u;

@@ -9,6 +9,12 @@
 namespace
 {
 
+// ── ФИКСТУРА АВТОРИТ УРОВНЕМ ПОЛЯ, А НЕ БАЙТОМ КАРТЫ ─────────────────────
+// Карта хранит СЛОВО (`kFieldWordMax`), и байтовый литерал в ней компилируется
+// молча: `140` раньше значило «суша 0.549», а словом значит 0.002, то есть
+// воду. Поэтому двери свидетеля берут АВТОРСКИЙ УРОВЕНЬ 0..1 и переводят его
+// единственной дверью записи `field_word_of` — ровно как мир.
+
 // ОБЫЧНАЯ СУША фикстур — середина между плоскостью моря и горной линией,
 // выведенная, а не списанная. Здесь стоял байт 160 (0.627): под линией 0.75 это
 // была равнина, а когда линия переехала на 0.625 (бескламповый синтез,
@@ -16,9 +22,30 @@ namespace
 // горы дороже, пошла другим путём и штемпелевала отвергнутую воду.
 constexpr float kPlainLand01 =
     0.5f * (sm::kDefaultSeaLevel + sm::kMountainBiomeLevel);
-constexpr std::uint8_t kPlainLandByte = std::uint8_t(kPlainLand01 * 255.0f);
 
-sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
+// НИЗКАЯ ПЛОСКОСТЬ МОРЯ свидетеля и уровень МЕЖДУ двумя плоскостями: при 0.30
+// это берег, при дефолтной 0.40 — дно. Ровно этим одним числом и различаются
+// парные прогоны ниже (M-109). Здесь стоял байт 90.
+constexpr float kLowSeaLevel = 0.30f;
+constexpr float kBetweenSeaPlanes01 = 90.0f / 255.0f;
+static_assert(kBetweenSeaPlanes01 > kLowSeaLevel
+                  && kBetweenSeaPlanes01 < sm::kDefaultSeaLevel,
+              "уровень обязан лежать МЕЖДУ плоскостями, иначе пара не спорит");
+
+// Середина матрицы климата (ЗАКОН СЛОВАРЯ: биом берётся из каналов, и середина
+// даёт Meadow). Здесь стоял байт 128.
+constexpr std::uint16_t kClimateMid = sm::field_word_of(128.0f / 255.0f);
+
+// Маска A — уже только канал ТЕКСТУРЫ для шейдера; мир воду спрашивает у
+// плоскости. Свидетель всё равно пишет её согласованно, чтобы карта не несла
+// двух правописаний одного порога.
+constexpr std::uint16_t land_mask(float level01)
+{
+    return level01 < sm::kDefaultSeaLevel ? std::uint16_t(0)
+                                          : std::uint16_t(sm::kFieldWordMax);
+}
+
+sm::TerrainData make_terrain(int w, int h, float level01)
 {
     sm::TerrainData td;
     td.width = w;
@@ -26,14 +53,16 @@ sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
     td.rgba.assign(std::size_t(w) * std::size_t(h) * 4, 0);
     td.riverData.assign(std::size_t(w) * std::size_t(h), 0);
     // Плоскость моря живёт на карте (M-109) — свидетель ставит её сам.
-    td.seaLevel8 = sm::sea_level_byte(0.40f);
+    td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
+    const std::uint16_t word = sm::field_word_of(level01);
+    const std::uint16_t mask = land_mask(level01);
     for (int i = 0; i < w * h; ++i)
     {
         const std::size_t s = std::size_t(i) * 4;
-        td.rgba[s + 0] = height;
-        td.rgba[s + 1] = 128;
-        td.rgba[s + 2] = 128;
-        td.rgba[s + 3] = height < 102 ? 0 : 255;
+        td.rgba[s + 0] = word;
+        td.rgba[s + 1] = kClimateMid;
+        td.rgba[s + 2] = kClimateMid;
+        td.rgba[s + 3] = mask;
     }
     // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
     // читает поле, а не каскад, поэтому карта без выпечки — карта НЕДОРОЖДЁННАЯ,
@@ -46,11 +75,11 @@ sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
 // (ЗАКОН ПОЛЯ): карта, у которой мастер и поле разошлись, есть карта с двумя
 // ответами — ровно то, против чего поле и заведено. Свидетелю это дёшево, а
 // закон он охраняет тот же, что мир.
-void set_cell(sm::TerrainData& td, int x, int y, std::uint8_t height)
+void set_cell(sm::TerrainData& td, int x, int y, float level01)
 {
     const std::size_t s = (std::size_t(y) * td.width + x) * 4;
-    td.rgba[s + 0] = height;
-    td.rgba[s + 3] = height < 102 ? 0 : 255;
+    td.rgba[s + 0] = sm::field_word_of(level01);
+    td.rgba[s + 3] = land_mask(level01);
     sm::bake_biomes(td);
 }
 
@@ -83,9 +112,9 @@ bool has_connection(const sm::City& c, int target)
 
 void test_road_prunes_water_only_connection()
 {
-    sm::TerrainData td = make_terrain(8, 8, 0);   // ЗАКОН АДРЕСА: квадрат, po2
-    set_cell(td, 1, 1, 160);
-    set_cell(td, 3, 3, 160);
+    sm::TerrainData td = make_terrain(8, 8, 0.0f);   // ЗАКОН АДРЕСА: квадрат, po2
+    set_cell(td, 1, 1, kPlainLand01);
+    set_cell(td, 3, 3, kPlainLand01);
 
     std::vector<sm::City> cityPlan;
     cityPlan.push_back(make_city(1, 1, 1));
@@ -116,10 +145,10 @@ void test_road_survives_land_detour_without_water_cells()
 {
     // ЗАКОН АДРЕСА: квадрат, po2 (была 5×3 — незаконная форма мира; носитель
     // теста — обход водяного столба ЧЕРЕЗ ЗАВОРОТ ТОРА — сохранён).
-    sm::TerrainData td = make_terrain(8, 8, kPlainLandByte);
+    sm::TerrainData td = make_terrain(8, 8, kPlainLand01);
     for (int y = 0; y < td.height; ++y)
     {
-        set_cell(td, 2, y, 0);
+        set_cell(td, 2, y, 0.0f);
     }
 
     std::vector<sm::City> cityPlan;
@@ -151,7 +180,7 @@ void test_road_survives_land_detour_without_water_cells()
 
 void test_road_uses_a_star_on_open_land_connection()
 {
-    sm::TerrainData td = make_terrain(8, 8, kPlainLandByte);
+    sm::TerrainData td = make_terrain(8, 8, kPlainLand01);
 
     std::vector<sm::City> cityPlan;
     cityPlan.push_back(make_city(1, 1, 1));
@@ -172,19 +201,19 @@ void test_road_tracing_uses_map_sea_level()
 {
     // ЗАКОН АДРЕСА: квадрат, po2 (была 5×1 — незаконная форма мира; носитель
     // теста — активный уровень моря решает связность — сохранён).
-    sm::TerrainData td = make_terrain(8, 8, 90);
+    sm::TerrainData td = make_terrain(8, 8, kBetweenSeaPlanes01);
     for (std::size_t i = 0; i < td.cell_count(); ++i)
     {
-        td.rgba[i * 4u + 3] = 255u;
+        td.rgba[i * 4u + 3] = std::uint16_t(sm::kFieldWordMax);
     }
 
     // ОДНО ЧИСЛО ДВИЖЕТ МИР: уровень моря — колонка карты, поэтому два
     // сравниваемых мира различаются ровно им, а не аргументом двери (M-109).
     sm::TerrainData lowSeaTd = td;
-    lowSeaTd.seaLevel8 = sm::sea_level_byte(0.30f);
+    lowSeaTd.seaLevel16 = sm::field_word_of(kLowSeaLevel);
     sm::bake_biomes(lowSeaTd);   // плоскость сдвинута — поле биома за ней
     sm::TerrainData defaultSeaTd = td;
-    defaultSeaTd.seaLevel8 = sm::sea_level_byte(0.40f);
+    defaultSeaTd.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
     sm::bake_biomes(defaultSeaTd);   // плоскость сдвинута — поле биома за ней
 
     std::vector<sm::City> lowSeaPlan;
@@ -216,19 +245,19 @@ void test_road_tracing_uses_map_sea_level()
 
 void test_large_road_search_restores_same_land_detour()
 {
-    sm::TerrainData td = make_terrain(256, 256, kPlainLandByte);   // ЗАКОН АДРЕСА: po2
+    sm::TerrainData td = make_terrain(256, 256, kPlainLand01);   // ЗАКОН АДРЕСА: po2
     // TWO water columns: a one-cell wall would be bridgeable now (every wall
     // cell has land on both E/W sides), and this test is about the search
     // BUDGET — the wall must force the long detour, not invite a span.
     for (int y = 0; y < td.height; ++y)
     {
-        set_cell(td, 150, y, 0);
-        set_cell(td, 151, y, 0);
+        set_cell(td, 150, y, 0.0f);
+        set_cell(td, 151, y, 0.0f);
     }
-    set_cell(td, 150, 0, 160);
-    set_cell(td, 151, 0, 160);
-    set_cell(td, 150, td.height - 1, 160);
-    set_cell(td, 151, td.height - 1, 160);
+    set_cell(td, 150, 0, kPlainLand01);
+    set_cell(td, 151, 0, kPlainLand01);
+    set_cell(td, 150, td.height - 1, kPlainLand01);
+    set_cell(td, 151, td.height - 1, kPlainLand01);
 
     std::vector<sm::City> cityPlan;
     cityPlan.push_back(make_city(120, 150, 1));
@@ -273,12 +302,13 @@ sm::TerrainData make_two_barrier_terrain()
     // двойки — здесь стояло 20×9. Ширина ВЫРОСЛА, а не упала: оба барьера
     // (река x=5, пролив x=13..14) и полоса суши между проливом и швом
     // обязаны уцелеть, иначе фикстура проверяла бы другую геометрию.
-    sm::TerrainData td = make_terrain(32, 32, kPlainLandByte);
+    sm::TerrainData td = make_terrain(32, 32, kPlainLand01);
     for (int y = 0; y < td.height; ++y)
     {
-        set_cell(td, 5, y, 90);   // one-cell river (water: 90 < 102)
-        set_cell(td, 13, y, 90);  // two-cell strait
-        set_cell(td, 14, y, 90);
+        // one-cell river (вода: уровень 0.353 ниже плоскости 0.40)
+        set_cell(td, 5, y, kBetweenSeaPlanes01);
+        set_cell(td, 13, y, kBetweenSeaPlanes01);  // two-cell strait
+        set_cell(td, 14, y, kBetweenSeaPlanes01);
     }
     return td;
 }
@@ -351,13 +381,13 @@ void test_two_separating_straits_stay_unbridged()
     // двойки — здесь стояло 20×9. Ширина ВЫРОСЛА, а не упала: оба барьера
     // (река x=5, пролив x=13..14) и полоса суши между проливом и швом
     // обязаны уцелеть, иначе фикстура проверяла бы другую геометрию.
-    sm::TerrainData td = make_terrain(32, 32, kPlainLandByte);
+    sm::TerrainData td = make_terrain(32, 32, kPlainLand01);
     for (int y = 0; y < td.height; ++y)
     {
-        set_cell(td, 5, y, 90);
-        set_cell(td, 6, y, 90);
-        set_cell(td, 13, y, 90);
-        set_cell(td, 14, y, 90);
+        set_cell(td, 5, y, kBetweenSeaPlanes01);
+        set_cell(td, 6, y, kBetweenSeaPlanes01);
+        set_cell(td, 13, y, kBetweenSeaPlanes01);
+        set_cell(td, 14, y, kBetweenSeaPlanes01);
     }
 
     std::vector<sm::City> cityPlan;
@@ -425,7 +455,7 @@ void test_dirt_lane_lays_a_stone_bridge()
 
 void test_tree_spawner_respects_river_buffer()
 {
-    sm::TerrainData dry = make_terrain(64, 64, 150);
+    sm::TerrainData dry = make_terrain(64, 64, 150.0f / 255.0f);
     sm::TerrainData river = dry;
     for (int y = 0; y < river.height; ++y)
     {
@@ -463,14 +493,14 @@ void test_tree_spawner_respects_river_buffer()
 
 void test_tree_spawner_uses_map_sea_level()
 {
-    // Та же карта, одно различие — ПЛОСКОСТЬ МОРЯ (M-109): при 0.30 высота 90
-    // это берег, при 0.40 — дно. Байт маски здесь больше ни при чём, поэтому
-    // ручная простановка A=255 снята: она и была той самой второй правдой.
-    sm::TerrainData lowSeaTd = make_terrain(64, 64, 90);
-    lowSeaTd.seaLevel8 = sm::sea_level_byte(0.30f);
+    // Та же карта, одно различие — ПЛОСКОСТЬ МОРЯ (M-109): при 0.30 уровень
+    // 0.353 это берег, при 0.40 — дно. Маска здесь больше ни при чём, поэтому
+    // ручная простановка A=суша снята: она и была той самой второй правдой.
+    sm::TerrainData lowSeaTd = make_terrain(64, 64, kBetweenSeaPlanes01);
+    lowSeaTd.seaLevel16 = sm::field_word_of(kLowSeaLevel);
     sm::bake_biomes(lowSeaTd);   // плоскость сдвинута — поле биома за ней
-    sm::TerrainData defaultSeaTd = make_terrain(64, 64, 90);
-    defaultSeaTd.seaLevel8 = sm::sea_level_byte(0.40f);
+    sm::TerrainData defaultSeaTd = make_terrain(64, 64, kBetweenSeaPlanes01);
+    defaultSeaTd.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
     sm::bake_biomes(defaultSeaTd);   // плоскость сдвинута — поле биома за ней
 
     const std::vector<sm::TreePoint> lowSeaTrees =
@@ -545,7 +575,7 @@ void test_politik_malformed_terrain_fails_closed()
     CHECK(owned == 0u,
           "битый терраин обязан оставить мир НИЧЕЙНЫМ, а не прошлой жизнью");
 
-    sm::TerrainData whole = make_terrain(8, 8, kPlainLandByte);
+    sm::TerrainData whole = make_terrain(8, 8, kPlainLand01);
     std::vector<sm::City> onePlan;
     onePlan.push_back(make_city(1, 1, -1));
     std::vector<std::uint8_t> wholeOwner;
@@ -571,7 +601,7 @@ void test_politik_malformed_terrain_fails_closed()
 // stamped one across anything that was not water).
 void test_dirt_roads_lay_a_star_lanes()
 {
-    sm::TerrainData td = make_terrain(16, 16, 160);   // ЗАКОН АДРЕСА: квадрат, po2
+    sm::TerrainData td = make_terrain(16, 16, kPlainLand01);   // ЗАКОН АДРЕСА: квадрат, po2
     sm::FeatureLayer features;
     features.resize(td.width, td.height);
     features.set(12, 4, sm::FT_Road); // the city stands on stone already
@@ -599,11 +629,11 @@ void test_dirt_roads_refuse_unreachable_targets()
 {
     // Two islands: land x in [0..5] and [10..13], ocean elsewhere. The old
     // lerp would have stamped a causeway; the law says no road at all.
-    sm::TerrainData td = make_terrain(16, 16, 0);     // ЗАКОН АДРЕСА: квадрат, po2
+    sm::TerrainData td = make_terrain(16, 16, 0.0f);  // ЗАКОН АДРЕСА: квадрат, po2
     for (int y = 0; y < td.height; ++y)
     {
-        for (int x = 0; x <= 5; ++x) set_cell(td, x, y, 160);
-        for (int x = 10; x <= 13; ++x) set_cell(td, x, y, 160);
+        for (int x = 0; x <= 5; ++x) set_cell(td, x, y, kPlainLand01);
+        for (int x = 10; x <= 13; ++x) set_cell(td, x, y, kPlainLand01);
     }
     sm::FeatureLayer features;
     features.resize(td.width, td.height);
@@ -633,7 +663,7 @@ void test_dirt_roads_refuse_unreachable_targets()
 
 void test_dirt_roads_reach_gates_landmark_lane()
 {
-    sm::TerrainData td = make_terrain(16, 16, 160);
+    sm::TerrainData td = make_terrain(16, 16, kPlainLand01);
 
     std::vector<sm::VillageRoadSite> villages(1);
     villages[0].x = 2;
@@ -677,7 +707,7 @@ void test_dirt_roads_fail_closed_on_malformed_inputs()
 
     // Feature layer that does not cover the terrain. (8×8 против 4×4 —
     // ЗАКОН АДРЕСА: мир po2; носитель теста — НЕСОВПАДЕНИЕ размеров.)
-    sm::TerrainData td = make_terrain(8, 8, kPlainLandByte);
+    sm::TerrainData td = make_terrain(8, 8, kPlainLand01);
     sm::FeatureLayer mismatched;
     mismatched.resize(4, 4);
     CHECK(sm::trace_dirt_roads(mismatched, td, villages, {}, 4) == 0,

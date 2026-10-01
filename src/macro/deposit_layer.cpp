@@ -147,12 +147,12 @@ std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
     float weight = 0.0f;
     switch (g.affinity) {
         case OreAffinity::MountainHeight: {
-            const float h01 = float(terrain.height_at(wx, wy)) / 255.0f;
+            const float h01 = field01_of(terrain.height_at(wx, wy));
             weight = h01 * h01 * h01 * h01;
             break;
         }
         case OreAffinity::RiverMoisture: {
-            const float m01 = float(terrain.moisture_at(wx, wy)) / 255.0f;
+            const float m01 = field01_of(terrain.moisture_at(wx, wy));
             weight = river_adjacent(terrain, wx, wy) ? m01 : m01 / 8.0f;
             break;
         }

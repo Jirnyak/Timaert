@@ -32,25 +32,35 @@ sm::TerrainData make_terrain() {
     sm::TerrainData terrain;
     terrain.width = 2;
     terrain.height = 2;
-    terrain.rgba.assign(2u * 2u * 4u, 255u);
+    terrain.rgba.assign(2u * 2u * 4u, std::uint16_t(sm::kFieldWordMax));
 
+    // Фикстура говорит УРОВНЯМИ поля, а не байтами: карта хранит слово
+    // (`kFieldWordMax`), и байтовый литерал означал бы в ней 1/257 своей
+    // величины — то есть воду вместо суши, молча. Уровни те же, что несли
+    // прежние байты канала.
     const auto set_cell = [&](int x,
                               int y,
-                              std::uint8_t height,
-                              std::uint8_t moisture,
-                              std::uint8_t temperature) {
+                              float height01,
+                              float moisture01,
+                              float temperature01) {
         const std::size_t base =
             (std::size_t(y) * std::size_t(terrain.width) + std::size_t(x)) * 4u;
-        terrain.rgba[base + 0u] = height;
-        terrain.rgba[base + 1u] = moisture;
-        terrain.rgba[base + 2u] = temperature;
-        terrain.rgba[base + 3u] = height < 102u ? 0u : 255u;
+        terrain.rgba[base + 0u] = sm::field_word_of(height01);
+        terrain.rgba[base + 1u] = sm::field_word_of(moisture01);
+        terrain.rgba[base + 2u] = sm::field_word_of(temperature01);
+        terrain.rgba[base + 3u] = height01 < sm::kDefaultSeaLevel
+                                      ? std::uint16_t(0)
+                                      : std::uint16_t(sm::kFieldWordMax);
     };
 
-    set_cell(0, 0, 64u, 128u, 128u);  // water at seaLevel 0.40
-    set_cell(1, 0, 180u, 128u, 128u); // Meadow
-    set_cell(0, 1, 220u, 250u, 250u); // Mountain (height >= 0.75 mountain level)
-    set_cell(1, 1, 180u, 10u, 250u);  // Desert, dirt-road wrap target below
+    // water at seaLevel 0.40
+    set_cell(0, 0, 64.0f / 255.0f, 128.0f / 255.0f, 128.0f / 255.0f);
+    // 0.706 — выше `kMountainBiomeLevel`; биом этой клетки тесты не утверждают
+    set_cell(1, 0, 180.0f / 255.0f, 128.0f / 255.0f, 128.0f / 255.0f);
+    // Mountain (height >= `kMountainBiomeLevel`)
+    set_cell(0, 1, 220.0f / 255.0f, 250.0f / 255.0f, 250.0f / 255.0f);
+    // dirt-road wrap target below; биом этой клетки тесты не утверждают
+    set_cell(1, 1, 180.0f / 255.0f, 10.0f / 255.0f, 250.0f / 255.0f);
     // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
     // читает поле, а не каскад, поэтому карта без выпечки — карта НЕДОРОЖДЁННАЯ,
     // и её биом честно отвечает водой.

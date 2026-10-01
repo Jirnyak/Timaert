@@ -114,7 +114,10 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // The R2 report card: how many villages actually stand next to the
         // resources the score placed them by. The old roulette scored ~25%
         // on water; the causality law should hold most of the world.
-        int nearWater = 0, nearPlough = 0, nearDeposit = 0;
+        // `nearPlough` СНЯТ вместе с планкой пахоты (spawners.h): без неё
+        // «пахотный сосед» тождественен «не вода», то есть колонка перестала
+        // нести информацию и показывала бы ровно 100 % всегда.
+        int nearWater = 0, nearDeposit = 0;
         std::vector<const Landmark*> cityRows, villageRows;
         for (const auto& lm : gs.landmarks) {
             if (lm.type == LandmarkType::City) cityRows.push_back(&lm);
@@ -123,7 +126,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         }
         for (const Landmark* vp : villageRows) {
             const auto& v = *vp;
-            bool water = false, plough = false, deposit = false;
+            bool water = false, deposit = false;
             const std::uint32_t vIdx = cell_of(v.x, v.y, gs.mapW);
             for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy)
                 for (int dx = -kSettlementReach; dx <= kSettlementReach;
@@ -132,12 +135,9 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                     const int x = cell_x(n, gs.mapW);
                     const int y = cell_y(n, gs.mapW);
                     if (out.terrain->is_water(n)) water = true;
-                    else if (out.terrain->moisture_at(x, y)
-                             >= kFieldMoistureMin) plough = true;
                     if (out.deposits->any_at(x, y)) deposit = true;
                 }
             nearWater   += water   ? 1 : 0;
-            nearPlough  += plough  ? 1 : 0;
             nearDeposit += deposit ? 1 : 0;
         }
         const int n = std::max(1, int(villageRows.size()));
@@ -170,12 +170,10 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         }
         std::fprintf(stderr,
                      "[worldgen] cities=%zu villages=%zu villageless=%d "
-                     "vilSpacing=%lld nearWater=%d%% nearPlough=%d%% "
-                     "nearDeposit=%d%%\n",
+                     "vilSpacing=%lld nearWater=%d%% nearDeposit=%d%%\n",
                      cityRows.size(), villageRows.size(),
                      villageless, nnCount ? nnSum / nnCount : 0,
-                     100 * nearWater / n, 100 * nearPlough / n,
-                     100 * nearDeposit / n);
+                     100 * nearWater / n, 100 * nearDeposit / n);
         std::fflush(stderr);
     }
 

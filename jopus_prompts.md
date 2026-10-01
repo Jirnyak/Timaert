@@ -570,7 +570,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 с берегом плавно по суще спускаешься к воде».
 
 **ЧТО УЖЕ ГОТОВО МАКРО-СТОРОНОЙ (не переделывать, только читать):** плоскость —
-колонка карты `seaLevel8@src/macro/map_generator.h`, ставится в рождении карты;
+колонка карты `seaLevel16@src/macro/map_generator.h`, ставится в рождении карты;
 ответ один — `is_water@src/macro/map_generator.h`; перевод float→байт один —
 `sea_level_byte@src/macro/map_generator.h`; авторское число одно —
 `kDefaultSeaLevel@src/macro/map_generator.h`. Свидетель макро-стороны —

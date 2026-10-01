@@ -21,14 +21,18 @@ namespace {
 
 using namespace sm;
 
-// One 4x4 all-Meadow world: height 128 (above the 0.40 sea, below the 0.75
-// mountain line), temperature/moisture 128 -> the climate matrix centre.
+// One 4x4 all-Meadow world: height level 0.502 (above `kDefaultSeaLevel`,
+// below `kMountainBiomeLevel`), temperature/moisture 0.502 -> the climate
+// matrix centre. Величины — УРОВНИ, а не байты: карта хранит слово
+// (`kFieldWordMax`), и прежний байтовый литерал 128 означал бы в ней 0.002,
+// то есть ВОДУ, молча.
 TerrainData meadow_terrain() {
     TerrainData t;
     t.width = 4;
     t.height = 4;
-    t.rgba.assign(std::size_t(4 * 4) * 4u, 128);
-    for (std::size_t i = 3; i < t.rgba.size(); i += 4) t.rgba[i] = 255;
+    t.rgba.assign(std::size_t(4 * 4) * 4u, sm::field_word_of(128.0f / 255.0f));
+    for (std::size_t i = 3; i < t.rgba.size(); i += 4)
+        t.rgba[i] = std::uint16_t(sm::kFieldWordMax);   // A = land mask
     // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
     // читает поле, а не каскад, поэтому карта без выпечки — карта НЕДОРОЖДЁННАЯ,
     // и её биом честно отвечает водой.

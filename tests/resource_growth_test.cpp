@@ -33,31 +33,36 @@ constexpr int kW = 64, kH = 64;
 
 // Dry meadow land everywhere; a mountain band at y>=40 for geology (wide
 // enough that the 1/256 iron roll reliably seeds a few veins).
-// САМЫЙ ВЫСОКИЙ БАЙТ, КОТОРЫЙ ЕЩЁ НЕ ГОРА — вывод из `kMountainBiomeLevel`,
+// САМЫЙ ВЫСОКИЙ УРОВЕНЬ, КОТОРЫЙ ЕЩЁ НЕ ГОРА — вывод из `kMountainBiomeLevel`,
 // а не литерал. Здесь стояло 180 (0.706): под линией 0.75 это была высокая
 // суша, а когда линия переехала на 0.625 (бескламповый синтез, 2026-10-01),
 // та же фикстура молча стала ГОРОЙ целиком и унесла с собой то, что тест
-// проверяет. Выведенный байт не может разойтись с линией по построению.
-constexpr float kMtnLineByteF = sm::kMountainBiomeLevel * 255.0f;
-constexpr std::uint8_t kTallLandByte = std::uint8_t(
-    int(kMtnLineByteF) + (float(int(kMtnLineByteF)) < kMtnLineByteF ? 1 : 0) - 1);
+// проверяет. Выведенный уровень не может разойтись с линией по построению.
+// Величина — УРОВЕНЬ, а не байт: карта перешла на слово (`kFieldWordMax`), и
+// байтовый литерал означал бы в ней 1/257 своей прежней высоты, молча.
+// Шаг вниз — ровно одно СЛОВО карты: горой `biome_classify` зовёт всё `>=`
+// линии, значит ближайший незанятый уровень лежит на `1/kFieldWordMax` ниже.
+constexpr float kTallLand01 = sm::kMountainBiomeLevel - 1.0f / sm::kFieldWordMax;
+// ПИК — заведомо выше горной линии; высота, с которой геология ещё и считает
+// металл (вес ~height⁴). Прежний байт 250 означал этот же уровень.
+constexpr float kPeak01 = 250.0f / 255.0f;
 
 TerrainData make_terrain() {
     TerrainData t;
     t.width = kW;
     t.height = kH;
-    t.rgba.assign(std::size_t(kW) * kH * 4u, 128);
+    t.rgba.assign(std::size_t(kW) * kH * 4u, sm::field_word_of(128.0f / 255.0f));
     t.riverData.assign(std::size_t(kW) * kH, 0);
-    t.seaLevel8 = sm::sea_level_byte(0.40f);   // плоскость моря — у карты
+    t.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);  // плоскость — у карты
     for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < kW; ++x) {
             const std::size_t s = std::size_t(y * kW + x) * 4u;
             // Peaks, not foothills (v72): the field law of geology weights
             // metal by height⁴, so the fixture band must be honestly TALL
             // for its veins to crest.
-            t.rgba[s + 0] = y >= 40 ? std::uint8_t(250) : kTallLandByte;
+            t.rgba[s + 0] = sm::field_word_of(y >= 40 ? kPeak01 : kTallLand01);
                                                    // пики / высокая суша
-            t.rgba[s + 3] = 255;                   // land mask
+            t.rgba[s + 3] = std::uint16_t(sm::kFieldWordMax);   // land mask
         }
     }
     // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
@@ -72,8 +77,8 @@ void paint_desert_stripe(TerrainData& t) {
     for (int y = 0; y < 40; ++y) {
         for (int x = 0; x < 8; ++x) {
             const std::size_t s = std::size_t(y * kW + x) * 4u;
-            t.rgba[s + 1] = 10;    // bone dry
-            t.rgba[s + 2] = 240;   // scorching
+            t.rgba[s + 1] = sm::field_word_of(10.0f / 255.0f);    // bone dry
+            t.rgba[s + 2] = sm::field_word_of(240.0f / 255.0f);   // scorching
         }
     }
     // КЛИМАТ — ИСТОЧНИК БИОМА, значит правка мастера кончается перепечкой поля

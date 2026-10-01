@@ -160,9 +160,12 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
 
     const std::uint8_t blank = 0;
 
-    // Master: already RGBA8 (R=height, G=moisture, B=temperature, A=mask).
-    master_.create_rgba8(dev, std::uint32_t(td.width), std::uint32_t(td.height),
-                         td.rgba.data(), true, true);
+    // Master: RGBA16 (R=height, G=moisture, B=temperature, A=mask). Шейдер
+    // НЕ ПРАВИТСЯ ни строкой — сэмплер нормализует unorm16 так же, как unorm8,
+    // поэтому `u_master.r`, `pc.seaLevel` и `MTN_LEVEL` остаются в тех же
+    // единицах 0..1; изменился только шаг словаря под ними (B3, M-192).
+    master_.create_rgba16(dev, std::uint32_t(td.width), std::uint32_t(td.height),
+                          td.rgba.data(), true, true);
 
     // Feature: sanitized byte grid, R8, nearest.
     const std::uint8_t* fd = features.complete_cells_or_sanitized(scratch_);

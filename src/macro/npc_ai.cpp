@@ -424,7 +424,7 @@ float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
     const PathCostData* pc = ctx.mw.pathCost;
     float w = cell_weight(ctx, tx, ty);
     if (pc && pc->width > 0 && pc->height > 0
-        && pc->height8.size() == pc->costGrid.size()) {
+        && pc->height16.size() == pc->costGrid.size()) {
         // Адрес клетки — одна дверь cell_of (здесь стояли две рукописные
         // композиции wrapi·w + wrapi, деление на пути каждого шага марша).
         const std::size_t fi = cell_of(fx, fy, pc->width);
@@ -4730,8 +4730,8 @@ void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
     runtime.squadIndex.order.reserve(kWorldSquads);
 }
 
-void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
-                       int cellSize) {
+void build_squad_index(SquadIndex& g, const MacroStore& st, int mapW,
+                       int mapH, int cellSize) {
     CellBuckets& b = g.grid;
     bucket_reset(b, mapW, mapH, cellSize);
 
@@ -4741,7 +4741,6 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
     // what stays special is only the MEETING, which belongs to Inc 6's
     // forced-encounter door (squad_threat_step stops short of auto-battling
     // a player-controlled squad). The Dead are no squads at all.
-    MacroStore& st = store_of(w);
     // Население — слоты store (1е): порядок закона (squad_walk.h), потом
     // count и scatter идут по собранному — содержимое бакета отсортировано
     // по ординалу, и читатели «первого подходящего» (threat step, охота)
@@ -4851,7 +4850,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     ecs::World& w = *mw.world;
     MacroStore& st = store_of(w);
 
-    build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
+    build_squad_index(runtime.squadIndex, store_of(w), gs.mapW, gs.mapH);
 
     // Свежесть запечённой навигации — раз на свип, не в шаге (тор-закон
     // gigahrush2 «never re-bake per tick»: перепёк только на границах).
@@ -5005,7 +5004,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
 
     MacroStore& st = store_of(w);
 
-    build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
+    build_squad_index(runtime.squadIndex, store_of(w), gs.mapW, gs.mapH);
 
     // The same ONE assembly as the map-view driver. This used to be a paste
     // that had drifted (the deposits epitaph now lives on TickContext itself,

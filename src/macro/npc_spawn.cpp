@@ -360,7 +360,7 @@ static void resolve_mountain_peaks(const TerrainData& terrain,
     // Вершина обязана быть ГОРОЙ — порог из одной власти биома
     // (biomes.h kMountainBiomeLevel): мир без гор вершин не имеет, и
     // драконья строка честно не рождается.
-    const int mountainFloor = int(kMountainBiomeLevel * 255.0f);
+    const int mountainFloor = int(kMountainBiomeLevel * kFieldWordMax);
     for (int slot = 0; slot < peakCount; ++slot) {
         int bestH = mountainFloor - 1, bx = -1, by = -1;
         for (int y = 0; y < mapH; ++y) {

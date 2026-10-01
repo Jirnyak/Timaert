@@ -117,8 +117,7 @@ void gen_dungeon_prologue_road(const CellContext& ctx, SubworldMapData& out) {
     // (out.waterLevel = 0 above). The land branch still needs a reference to
     // lift from, and `WATER_LEVEL` is exactly that: the default world's plane,
     // for the callers that have no world.
-    const float base = skeleton_cell_height01(ctx.macroHeight,
-                                              /*isMountain=*/false);
+    const float base = ctx.macroHeight;   // рельеф ЕСТЬ макровысота
     const float period = float(block_cells() * W);
     const std::uint32_t s = ctx.worldSeed * 2654435761u;
     const float p1 = float(s & 0xFFu) * (kTau / 256.0f);

@@ -49,9 +49,11 @@ bool macro_travel_cost_for_cell(const CharacterSheet& sheet,
     if (fromX >= 0 && fromY >= 0) {
         const int fx = FeatureLayer::wrap_coord(fromX, terrain.width);
         const int fy = FeatureLayer::wrap_coord(fromY, terrain.height);
-        const int dh = int(terrain.height_at(wx, wy))
-                     - int(terrain.height_at(fx, fy));
-        if (dh > 0) out.weight += kClimbSpWeight * (float(dh) / 255.0f);
+        // ТОТ ЖЕ СПЕЛЛИНГ, что у `PathCostData::climb` — побитовый паритет
+        // двух половин одного закона (macro_travel_parity_test).
+        const float dh01 = field01_of(terrain.height_at(wx, wy))
+                         - field01_of(terrain.height_at(fx, fy));
+        if (dh01 > 0.0f) out.weight += kClimbSpWeight * dh01;
     }
     // A trained traveller spends less on the same ground (the `travel` skill's
     // documented -2%/rank, applied here for the first time).

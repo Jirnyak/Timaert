@@ -369,10 +369,14 @@ void test_trees_are_a_carrier_row() {
     sm::TerrainData td;
     td.width = gs.mapW;
     td.height = gs.mapH;
-    td.rgba.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH) * 4u, 128);
+    // УРОВНИ, а не байты: карта хранит слово (`kFieldWordMax`), и байтовый
+    // литерал 180 означал бы в ней 0.003 — то есть ВОДУ, молча. Уровни те же,
+    // что несли прежние байты: 128→0.502 климат, 180→0.706 высота.
+    td.rgba.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH) * 4u,
+                   sm::field_word_of(128.0f / 255.0f));
     for (std::size_t i = 0; i < td.rgba.size(); i += 4) {
-        td.rgba[i + 0] = 180;   // height: land, below the mountain line
-        td.rgba[i + 3] = 255;   // mask: land
+        td.rgba[i + 0] = sm::field_word_of(180.0f / 255.0f);   // height: land
+        td.rgba[i + 3] = std::uint16_t(sm::kFieldWordMax);     // mask: land
     }
     // РОЖДЕНИЕ КАРТЫ КОНЧАЕТСЯ ВЫПЕЧКОЙ ПОЛЯ БИОМА (ЗАКОН ПОЛЯ): живой мир
     // читает поле, а не каскад, поэтому карта без выпечки — карта

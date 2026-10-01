@@ -66,8 +66,11 @@ sm::sub::CellContext resolve_water_plane_cell(int cx, int cy) {
 // have caught the drift it was standing next to — the copy clamped the water
 // curve's `t` and the generator did not.
 float expected_placeholder_height(const sm::sub::CellContext& c) {
-    return sm::sub::skeleton_cell_height01(
-        c.macroHeight, c.biome == sm::Biome::Mountain);
+    // Дверь `skeleton_cell_height01` СНЕСЕНА 2026-10-01 вместе с горной
+    // веткой: высота клетки ЕСТЬ её макровысота, и копировать больше нечего —
+    // ожидание совпало с законом не потому, что его переписали верно, а
+    // потому, что закона-преобразования больше не существует.
+    return c.macroHeight;
 }
 
 std::uint8_t expected_placeholder_tile(const sm::sub::CellContext& c, float height) {

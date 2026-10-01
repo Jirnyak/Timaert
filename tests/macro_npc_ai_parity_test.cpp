@@ -575,8 +575,11 @@ void test_rotation_does_not_dissolve_the_dead() {
     sm::TerrainData terrain;
     terrain.width = 8;
     terrain.height = 8;
-    terrain.rgba.assign(8u * 8u * 4u, 255u);
-    for (std::size_t i = 0; i < 8u * 8u; ++i) terrain.rgba[i * 4u] = 180u;
+    // УРОВНИ, а не байты: карта хранит слово (`kFieldWordMax`), и байтовый
+    // литерал 180 означал бы высоту 0.003 — то есть ВОДУ, молча.
+    terrain.rgba.assign(8u * 8u * 4u, std::uint16_t(sm::kFieldWordMax));
+    for (std::size_t i = 0; i < 8u * 8u; ++i)
+        terrain.rgba[i * 4u] = sm::field_word_of(180.0f / 255.0f);
 
     sm::ecs::World world;
 

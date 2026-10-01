@@ -192,7 +192,7 @@ int wheat_baseline(const MacroWorld& w, int x, int y) {
         (std::size_t(wy) * std::size_t(w.terrain->width) + std::size_t(wx))
         * 4u + 1u;   // G = moisture, "the fertility" (macro/spawners.h)
     if (idx >= w.terrain->rgba.size()) return 0;
-    return int(w.terrain->rgba[idx]) * kMaxWheatStandsPerCell / 255;
+    return int(field01_of(w.terrain->rgba[idx]) * float(kMaxWheatStandsPerCell));
 }
 
 int fauna_baseline(const MacroWorld& w, int x, int y) {
@@ -482,13 +482,6 @@ void allocate_world_fields(GameState& gs, int width, int height) {
 // the labour rotation (npc_ai.cpp) calls them and its test targets link
 // the land's doors, not the worldgen.
 
-int field_wheat_min() {
-    // The ploughable bar, carried into the registry's units by the
-    // wheat baseline's own scale — ONE fertility door, so raising the
-    // bar or rescaling the field can never leave the two disagreeing.
-    return int(kFieldMoistureMin) * kMaxWheatStandsPerCell / 255;
-}
-
 // The parcel GROUND gates, one truth for plough and fence alike (roads
 // win, water refuses, no rock terraces): what differs between a field and
 // a pasture is only WHICH row's fertility bars the gate, never the ground.
@@ -519,8 +512,9 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
     if (td.is_water(cell)) return false;
     // ЗДЕСЬ СТОЯЛ ВТОРОЙ ЗАПРЕТ: `height01 >= kMountainBiomeLevel` — «no rock
     // terraces». Он снят вердиктом выше, и снят БЕЗ ЗАМЕНЫ: камень отсеивает
-    // не запрет, а ГЕЙТ ФЕРТИЛЬНОСТИ у звонящего (`plough_cell_ok`:
-    // `wheatOut >= field_wheat_min()`), потому что на скале её и так нет.
+    // не запрет, а САМА ФЕРТИЛЬНОСТЬ, потому что на скале её и так нет.
+    // (Гейт `wheatOut >= field_wheat_min()` у звонящего тоже снесён
+    // 2026-10-01 — он был той же планкой этажом выше, spawners.h.)
     // Запрет был лишним слоем поверх веса — ровно та форма, которую вердикт
     // называет неправильной: мир решает ЦЕНОЙ, а не разрешением.
     // ЗАМЕРЕНО ПРИБОРОМ (колонка `parcels`, четыре сида, 2026-09-23):
@@ -532,11 +526,15 @@ bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
                     int x, int y, int& wheatOut)
 {
     if (!parcel_ground_ok_(fl, world, x, y)) return false;
-    // The ONE fertility door: potential minus what play has taken.
+    // The ONE fertility door: potential minus what play has taken. ВОЗВРАЩАЕТСЯ
+    // ЧИСЛО, А НЕ ВЕРДИКТ: планка `wheatOut >= field_wheat_min()` снесена
+    // вердиктом владельца 2026-10-01 (spawners.h — там же её эпитафия и вывод).
+    // Пахать можно всюду, где земля не вода и не занята; СКОЛЬКО уродится,
+    // говорит само поле, и на камне оно говорит «ноль» без всякого запрета.
     wheatOut = resource_field_read(world, ResourceFieldId::Wheat,
                                    FeatureLayer::wrap_coord(x, fl.width),
                                    FeatureLayer::wrap_coord(y, fl.height));
-    return wheatOut >= field_wheat_min();
+    return true;
 }
 
 bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,

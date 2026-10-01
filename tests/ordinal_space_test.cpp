@@ -47,8 +47,11 @@ TerrainData make_terrain(int w, int h) {
     t.rgba.assign(std::size_t(w) * std::size_t(h) * 4u, 0);
     t.riverData.assign(std::size_t(w) * std::size_t(h), 0);
     for (std::size_t i = 0; i < std::size_t(w) * std::size_t(h); ++i) {
-        t.rgba[i * 4u + 0] = 180;   // суша выше уровня моря
-        t.rgba[i * 4u + 3] = 255;   // маска суши
+        // УРОВЕНЬ, а не байт: карта хранит слово (`kFieldWordMax`), и байтовый
+        // литерал 180 означал бы в ней 0.003 — то есть ВОДУ, молча.
+        t.rgba[i * 4u + 0] = sm::field_word_of(180.0f / 255.0f);
+                                    // суша выше уровня моря
+        t.rgba[i * 4u + 3] = std::uint16_t(sm::kFieldWordMax);   // маска суши
     }
     return t;
 }

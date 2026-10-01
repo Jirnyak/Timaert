@@ -55,7 +55,7 @@ namespace sm
         out.height = td.height;
         out.costGrid.resize(total);
         out.water.assign(total, 0u);
-        out.height8.assign(total, 0u);
+        out.height16.assign(total, 0u);
         const std::uint8_t *featureData =
             features && features->covers(td.width, td.height) ? features->data.data() : nullptr;
 
@@ -77,7 +77,7 @@ namespace sm
                 : 0.0f;
             out.costGrid[i] = cell_sp_weight(b, f, density);
             out.water[i] = (b == Water) ? 1u : 0u;
-            out.height8[i] = td.rgba[i * 4u + 0u];
+            out.height16[i] = td.rgba[i * 4u + 0u];
         }
         return out;
     }

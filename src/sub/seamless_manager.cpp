@@ -1,6 +1,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/gens/dispatch.h"
 #include "sub/base_generator.h"
+#include "sub/height.h"   // ВРЕМЕННО (прибор M-197): height_m для лога в метрах
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -17,6 +18,36 @@ using Clock = std::chrono::steady_clock;
 
 double elapsed_ms(Clock::time_point a, Clock::time_point b) {
     return std::chrono::duration<double, std::milli>(b - a).count();
+}
+
+// ── ВРЕМЕННЫЙ ПРИБОР M-197 (TIMAERT_RIVER_PROBE=1), СНОСИТСЯ ПОСЛЕ ОТВЕТА ──
+// Печатает окно 3×3 той клетки, которую субмир СЕЙЧАС строит, в МЕТРАХ, с
+// пометкой воды и с перепадом окна. Это то же самое число, что видят ноги
+// игрока, — чтобы «обрыв» перестал быть словом и стал метрами.
+void river_probe_window(int acx, int acy, const float nbHeights[9],
+                        const Biome nbBiome[9]) {
+    static const bool on = [] {
+        const char* v = std::getenv("TIMAERT_RIVER_PROBE");
+        return v && v[0] == '1';
+    }();
+    if (!on) return;
+    float lo = 1e30f, hi = -1e30f;
+    char row[3][64];
+    for (int yy = 0; yy < 3; ++yy) {
+        int n = 0;
+        for (int xx = 0; xx < 3; ++xx) {
+            const int i = yy * 3 + xx;
+            const float m = height_m(nbHeights[i]);
+            lo = std::min(lo, m);
+            hi = std::max(hi, m);
+            n += std::snprintf(row[yy] + n, sizeof(row[yy]) - std::size_t(n),
+                               "%s%.0f ", nbBiome[i] == Biome::Water ? "~" : "",
+                               double(m));
+        }
+    }
+    std::printf("[riverprobe] клетка %d,%d | 3x3 м: %s/ %s/ %s| ПЕРЕПАД ОКНА %.0f м\n",
+                acx, acy, row[0], row[1], row[2], double(hi - lo));
+    std::fflush(stdout);
 }
 
 void clear_placeholder_data(SubworldMapData& out) {
@@ -49,7 +80,7 @@ void collect_road_indices(const std::vector<std::uint8_t>& tiles,
 }
 
 // THE PLACEHOLDER IS THE SKELETON LAW, NOT A COPY OF IT. It used to be a
-// hand-written second spelling of `skeleton_cell_height01` — and the two had
+// hand-written second spelling of the (now dead) skeleton law — and the two had
 // already drifted: this one clamped the water curve's `t`, the generator did
 // not. One door now, so a streaming tile and the cell that replaces it cannot
 // disagree about where the ground is.
@@ -59,8 +90,7 @@ float placeholder_height_for(const CellContext& ctx) {
     // cell whose height is above the plane BY DEFINITION of how the macroworld
     // calls it land (macro/map_generator.h is_water). The floor that used to
     // stand here existed only to undo the old land remap's own damage.
-    return skeleton_cell_height01(ctx.macroHeight,
-                                  ctx.biome == Biome::Mountain);
+    return ctx.macroHeight;   // высота клетки ЕСТЬ её макровысота
 }
 
 std::uint8_t placeholder_tile_for(const CellContext& ctx, float height) {
@@ -332,6 +362,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
             nbFertility[yy * 3 + xx] = nctx.fertility01;
         }
     }
+    river_probe_window(acx, acy, nb, nbBiome);   // ВРЕМЕННО (прибор M-197)
     // THE WIDER RING. Sixteen extra macro lookups per generated cell — measured
     // at 0.7-2.3 µs, against a crossing of ~2.2 ms — and they buy every cell of
     // the window the right to count its own neighbours. (The same sixteen cost
@@ -601,6 +632,7 @@ void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
             job.nbFertility[ni] = nctx.fertility01;
         }
     }
+    river_probe_window(ctx.cx, ctx.cy, job.nbHeights, job.nbBiome); // ВРЕМЕННО (M-197)
     // The wider ring, gathered once beside the 3×3 it widens (see generate_one).
     for (int yy = 0; yy < 5; ++yy) {
         for (int xx = 0; xx < 5; ++xx) {

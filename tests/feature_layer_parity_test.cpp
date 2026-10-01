@@ -12,34 +12,55 @@
 namespace
 {
 
-sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
+// ── ФИКСТУРА АВТОРИТ УРОВНЕМ ПОЛЯ, А НЕ БАЙТОМ КАРТЫ ─────────────────────
+// Карта хранит СЛОВО (`kFieldWordMax`), и байтовый литерал в ней компилируется
+// молча: `140` раньше значило «суша 0.549», а словом значит 0.002 — воду.
+// Поэтому двери свидетеля берут АВТОРСКИЙ УРОВЕНЬ 0..1 и переводят его
+// единственной дверью записи `field_word_of` — ровно как мир.
+
+// Середина матрицы климата (здесь стоял байт 128).
+constexpr std::uint16_t kClimateMid = sm::field_word_of(128.0f / 255.0f);
+
+// Маска A — канал ТЕКСТУРЫ шейдера; вопрос «вода ли» решает плоскость. Но
+// писать её согласованно с высотой свидетель обязан, иначе карта несёт два
+// правописания одного порога.
+constexpr std::uint16_t land_mask(float level01)
+{
+    return level01 < sm::kDefaultSeaLevel ? std::uint16_t(0)
+                                          : std::uint16_t(sm::kFieldWordMax);
+}
+
+sm::TerrainData make_terrain(int w, int h, float level01)
 {
     sm::TerrainData td;
     td.width = w;
     td.height = h;
     td.rgba.assign(std::size_t(w) * std::size_t(h) * 4u, 0);
     td.riverData.assign(std::size_t(w) * std::size_t(h), 0);
-    td.seaLevel8 = sm::sea_level_byte(0.40f);   // плоскость моря — у карты
+    // плоскость моря — у карты
+    td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
+    const std::uint16_t word = sm::field_word_of(level01);
+    const std::uint16_t mask = land_mask(level01);
     for (int i = 0; i < w * h; ++i)
     {
         const std::size_t s = std::size_t(i) * 4u;
-        td.rgba[s + 0] = height;
-        td.rgba[s + 1] = 128;
-        td.rgba[s + 2] = 128;
-        td.rgba[s + 3] = height < 102 ? 0 : 255;
+        td.rgba[s + 0] = word;
+        td.rgba[s + 1] = kClimateMid;
+        td.rgba[s + 2] = kClimateMid;
+        td.rgba[s + 3] = mask;
     }
     return td;
 }
 
-void set_height(sm::TerrainData &td, int x, int y, std::uint8_t height)
+void set_height(sm::TerrainData &td, int x, int y, float level01)
 {
     const std::size_t s = (std::size_t(y) * std::size_t(td.width)
                            + std::size_t(x)) * 4u;
-    td.rgba[s + 0] = height;
-    td.rgba[s + 3] = height < 102 ? 0 : 255;
+    td.rgba[s + 0] = sm::field_word_of(level01);
+    td.rgba[s + 3] = land_mask(level01);
 }
 
-void set_alpha(sm::TerrainData &td, int x, int y, std::uint8_t alpha)
+void set_alpha(sm::TerrainData &td, int x, int y, std::uint16_t alpha)
 {
     const std::size_t s = (std::size_t(y) * std::size_t(td.width)
                            + std::size_t(x)) * 4u;
@@ -76,7 +97,7 @@ sm::FeatureLayer build_reference_feature_layer(
     // (FT_Bridge, всегда камень), сухая — полотно своего класса.
     auto is_water = [&](std::size_t i)
     {
-        return td.rgba[i * 4u + 0] < td.seaLevel8;
+        return td.rgba[i * 4u + 0] < td.seaLevel16;
     };
 
     if (dirtMask)
@@ -107,8 +128,8 @@ sm::FeatureLayer build_reference_feature_layer(
 
 void test_feature_priority_and_water_filter()
 {
-    sm::TerrainData td = make_terrain(4, 4, 140);
-    set_height(td, 2, 2, 0);   // below sea level -> water-filter divergence
+    sm::TerrainData td = make_terrain(4, 4, 140.0f / 255.0f);
+    set_height(td, 2, 2, 0.0f);   // below sea level -> water-filter divergence
 
     // (0,1): dirt only. (1,0): road only. (1,1): dirt -> road (road wins).
     // (2,2): dirt+road but water -> must stay empty. (3,0): dirt (wrap test).
@@ -175,7 +196,7 @@ void test_empty_and_malformed_inputs_are_safe()
 
     std::vector<std::uint8_t> sanitized;
 
-    sm::TerrainData td = make_terrain(2, 2, 200);
+    sm::TerrainData td = make_terrain(2, 2, 200.0f / 255.0f);
     std::vector<std::uint8_t> shortRoad{255};
     std::vector<std::uint8_t> shortDirt{0, 255};
     const sm::FeatureLayer fl =
@@ -298,13 +319,22 @@ void test_feature_layer_reference_matrix()
     {
         for (int h = 1; h <= 4; ++h)
         {
-            sm::TerrainData td = make_terrain(w, h, 140);
+            sm::TerrainData td = make_terrain(w, h, 140.0f / 255.0f);
             const std::size_t total = std::size_t(w) * std::size_t(h);
             for (std::size_t i = 0; i < total; ++i)
             {
-                const std::uint8_t height = next_u8();
-                td.rgba[i * 4u + 0] = height;
-                td.rgba[i * 4u + 3] = height < 42 || (next_u8() & 7u) == 0u ? 0 : 255;
+                // Случайный БАЙТ ГЕНЕРАТОРА есть случайный УРОВЕНЬ ПОЛЯ: поток
+                // LCG не тронут (порядок вызовов и короткое замыкание `||`
+                // сохранены дословно), а в канал он едет дверью записи.
+                // Порог 42 здесь НАМЕРЕННО не плоскость моря: маска обязана
+                // расходиться с высотой, иначе негативный контроль пуст.
+                const std::uint8_t heightByte = next_u8();
+                td.rgba[i * 4u + 0] =
+                    sm::field_word_of(float(heightByte) / 255.0f);
+                td.rgba[i * 4u + 3] =
+                    heightByte < 42u || (next_u8() & 7u) == 0u
+                        ? std::uint16_t(0)
+                        : std::uint16_t(sm::kFieldWordMax);
             }
 
             const std::size_t roadSize = total > 1 ? total - 1 : 0;
@@ -338,12 +368,12 @@ void test_feature_water_is_the_plane_not_the_mask()
     // закон мира, а второй спеллинг одного вопроса (ЗАКОН НУЛЕВОЙ п.5), и
     // ровно этим спеллингом мир расходился с собой на берегу.
     // ЗАКОН АДРЕСА: мир ВСЕГДА квадрат и степень двойки — здесь стояло 3×1.
-    sm::TerrainData td = make_terrain(4, 4, 240);
-    set_height(td, 2, 0, 40);   // ниже плоскости — вода, и только поэтому
+    sm::TerrainData td = make_terrain(4, 4, 240.0f / 255.0f);
+    set_height(td, 2, 0, 40.0f / 255.0f);   // ниже плоскости — вода, и только поэтому
     // НЕГАТИВНЫЙ КОНТРОЛЬ ЗАКОНА: маска лжёт про воду на клетке, чья высота
     // выше плоскости. Мир обязан ответить ЗЕМЛЯ — иначе авторитет вернулся к
     // маске, и вердикт нарушен.
-    set_alpha(td, 3, 0, 0);
+    set_alpha(td, 3, 0, 0u);
 
     std::vector<std::uint8_t> dirt(std::size_t(td.width) * td.height, 0);
     dirt[idx(td, 0, 0)] = 255;
@@ -364,14 +394,14 @@ void test_feature_water_is_the_plane_not_the_mask()
 void test_feature_water_filter_uses_map_sea_level()
 {
     // ЗАКОН АДРЕСА: квадрат, степень двойки — здесь стояло 3×1.
-    // ОДНО ЧИСЛО ДВИЖЕТ МИР (M-109): высоты 80 и 100 — берег при плоскости
+    // ОДНО ЧИСЛО ДВИЖЕТ МИР (M-109): уровни 0.314 и 0.392 — берег при плоскости
     // 0.30 и дно при 0.40, и различаются два прогона ровно этим числом.
-    // Рукописная простановка A=255 отсюда снята: она делала «несогласие
+    // Рукописная простановка A=суша отсюда снята: она делала «несогласие
     // маски и высоты», то есть ровно тот второй спеллинг, которого больше нет.
-    sm::TerrainData td = make_terrain(4, 4, 120);
-    set_height(td, 0, 0, 80);
-    set_height(td, 1, 0, 100);
-    set_height(td, 2, 0, 120);
+    sm::TerrainData td = make_terrain(4, 4, 120.0f / 255.0f);
+    set_height(td, 0, 0, 80.0f / 255.0f);
+    set_height(td, 1, 0, 100.0f / 255.0f);
+    set_height(td, 2, 0, 120.0f / 255.0f);
 
     std::vector<std::uint8_t> road(std::size_t(td.width) * td.height, 0);
     std::vector<std::uint8_t> dirt(std::size_t(td.width) * td.height, 0);
@@ -379,9 +409,9 @@ void test_feature_water_filter_uses_map_sea_level()
     dirt[idx(td, 1, 0)] = 255;
 
     sm::TerrainData lowSeaTd = td;
-    lowSeaTd.seaLevel8 = sm::sea_level_byte(0.30f);
+    lowSeaTd.seaLevel16 = sm::field_word_of(0.30f);
     sm::TerrainData defaultSeaTd = td;
-    defaultSeaTd.seaLevel8 = sm::sea_level_byte(0.40f);
+    defaultSeaTd.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
     const sm::FeatureLayer lowSea =
         sm::build_feature_layer(lowSeaTd, road, &dirt);
     const sm::FeatureLayer defaultSea =

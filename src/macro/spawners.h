@@ -129,11 +129,22 @@ FeatureLayer build_feature_layer(const TerrainData& td,
 struct MacroWorld;
 struct FieldSite { int x = 0; int y = 0; };
 inline constexpr int kFieldsPerVillage = 4;
-inline constexpr std::uint8_t kFieldMoistureMin = 96;  // of 255
-// The same bar in the registry's units (stands per cell): the wheat
-// baseline scales the fertility channel by kMaxWheatStandsPerCell/255, so
-// the ploughable threshold travels with it instead of being re-derived.
-int field_wheat_min();
+// ── ЗДЕСЬ СТОЯЛА ПЛАНКА ПАХОТЫ, И ОНА СНЕСЕНА (вердикт владельца 2026-10-01)
+// Дословно: «снести планку, потому что у нас будет потом сделана новая
+// экономика через поля ресурсов и агностичные веса и стоимости и потребности
+// — там такая будет система, что никакие больше не понадобятся условности».
+//
+// Умерли `kFieldMoistureMin01` (байт 96 из 255) и `field_wheat_min()`. Планка
+// была ступенью над ГЛАДКИМ полем: клетка с фертильностью 95 не родила бы
+// ничего, с 96 — полный надел; а вывода у числа не было вовсе (ЗАКОН
+// КОНСТАНТ), оно пришло из байтовой эпохи. По ЗАКОНУ КЛАМПА предел обязан
+// наступать обратной связью мира, а не планкой: сколько уродится, решает сама
+// фертильность, и на камне её и так нет — ровно тем доводом был снят горный
+// запрет 2026-09-23 («поля тоже не запрет а ПО ФЕРТИЛЬНОСТИ СМОТРИМ»).
+//
+// ДЫРА ОСТАЁТСЯ ОТКРЫТОЙ И НАЗВАННОЙ (§1 «временные костыли не нужны»):
+// пахотной стала всякая не-водная клетка, и различать богатую землю от тощей
+// будет новая экономика, наряд M-191. Заглушки на место планки НЕ ставить.
 void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
                           const std::vector<FieldSite>& villages);
 
