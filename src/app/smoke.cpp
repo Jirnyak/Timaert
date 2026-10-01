@@ -4123,7 +4123,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     reg.emplace<sm::ecs::Combat>(hostile,
         sm::Dice{7, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
         std::uint8_t(sm::DamageType::Blunt),
-        0.0f, 8.0f, 0.30f, 0u, sm::ecs::Combat::Melee);
+        0.0f, 8.0f, 0.30f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0});
     reg.emplace<sm::ecs::SubworldTag>(hostile);
     reg.emplace<sm::ecs::SubworldAi>(hostile,
         sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f);
@@ -4253,7 +4253,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         45.0f,
         0.30f,
         0u,
-        sm::ecs::Combat::Missile);
+        sm::ecs::Combat::Missile, /*armorSteps*/std::uint16_t{0});
     reg.emplace<sm::ecs::MissileAttack>(
         hostile, 160.0f, 0.0f, std::uint32_t{0xFFA070D0u});
     reg.emplace<sm::ecs::SubworldTag>(hostile);
@@ -5032,7 +5032,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         sm::Dice{3, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
         std::uint8_t(sm::DamageType::Blunt),
         20.0f, 2.0f, 1.5f, 0u,
-        sm::ecs::Combat::Melee);
+        sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0});
     reg.emplace<sm::ecs::SubworldAi>(
         target,
         sm::ecs::SubworldAi::Flee,

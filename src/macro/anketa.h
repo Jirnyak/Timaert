@@ -1437,6 +1437,17 @@ DefenseSum worn_defense(const Gear& g, const Inventory& inv,
                         const Skills& skills, DamageType type);
 // Гейт строки «Без брони»: надето ли хоть что-то рода `ItemType::Armor`.
 bool wears_armor(const Gear& g, const Inventory& inv);
+
+// ── ПРОСТОЙ БРОНИ — ВТОРОЙ СУБЪЕКТ ЗАКОНА ВОССТАНОВЛЕНИЯ (M-194) ──────────
+// Суммарный вес НАДЕТОЙ брони (кг) — база простоя по закону массы, тому же,
+// которым вес оружия задаёт темп замаха.
+float worn_armor_weight(const Gear& g, const Inventory& inv);
+// ...и сама база, пропущенная через дверь темпа: шаги простоя, которые ставит
+// удар, дошедший сквозь блок. НОЛЬ, если брони не надето — и это не ветка, а
+// предельный случай: у голого тела и у вросшей шкуры сбивать нечего, поэтому
+// «рековери у строки существа нет вовсе» выпадает из закона САМО.
+int armor_recovery_steps(const Gear& g, const Inventory& inv,
+                         const Attributes& a, const Skills& s);
 const ItemDef* weapon_in_hand(const Gear& g, const Inventory& inv);
 
 // The percent a CREATURE ROW's own defence is multiplied by (npc_def().defense —

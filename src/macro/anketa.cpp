@@ -375,6 +375,34 @@ DefenseSum worn_defense(const Gear& g, const Inventory& inv,
     return sum;
 }
 
+float worn_armor_weight(const Gear& g, const Inventory& inv) {
+    float kg = 0.0f;
+    for (int i = 0; i < kEquipCells; ++i) {
+        const std::uint16_t v = g.worn[std::size_t(i)];
+        if (v >= kWornBlocked) continue;
+        const ItemRef& r = inv.slots[std::size_t(v)];
+        if (r.empty()) continue;
+        const ItemDef* def = item_def_at(int(r.def));
+        if (def == nullptr || def->type != ItemType::Armor) continue;
+        kg += def->weight;
+    }
+    return kg;
+}
+
+int armor_recovery_steps(const Gear& g, const Inventory& inv,
+                         const Attributes& a, const Skills& s) {
+    const float kg = worn_armor_weight(g, inv);
+    if (kg <= 0.0f) return 0;
+    // ТА ЖЕ ДВЕРЬ ТЕМПА, что у замаха и каста (`recovery_steps`), и тот же
+    // ГЕНЕРИК-скилл: `Armsmaster`. Типовому доспешному роду вход сюда ЗАПРЕЩЁН
+    // — он рычаг СИЛЫ (множит обе колонки защиты), и посчитанный ещё и в темп
+    // дал бы скрытый квадрат, ровно тот, из-за которого генерик-пару убрали из
+    // урона 2026-09-07. Итог: типовой множит защиту, Армсмастер сокращает
+    // простой, у каждой ручки ровно одна работа.
+    return recovery_steps(kg * kArmorRecoverySecondsPerKg, a, s,
+                          SkillId::Armsmaster);
+}
+
 DefenseSum body_defense(const Defense& row, const Skills& skills,
                         const Gear* g, const Inventory* inv, DamageType type) {
     // Строка существа (шкура, выданные латы) множится обучением НОСИТЕЛЯ:

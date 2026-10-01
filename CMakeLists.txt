@@ -567,11 +567,14 @@ timaert_test(spell_registry_test)
 timaert_test(damage_door_test
     SOURCES
         src/sub/damage.cpp
-        # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
-        # that asks the catalog what each worn row is worth (tables/items.cpp)
+        # дверь спрашивает, что тело НОСИТ (macro/anketa.h body_defense), а та —
+        # сколько стоит каждая надетая строка (tables/items.cpp)
         src/macro/anketa.cpp
         src/tables/items.cpp
         src/events/event_bus.cpp
+        # ...и ту же дверь слива, которой мир сливает ОБА субъекта закона
+        # восстановления (M-194): свидетель живёт там, где линкуется его предмет
+        src/ecs/systems.cpp
     LINK_ENTT)
 
 timaert_test(spell_casting_effects_test

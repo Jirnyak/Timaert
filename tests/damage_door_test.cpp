@@ -23,6 +23,8 @@
 
 #include "check.h"
 #include "sub/damage.h"
+#include "sub/record.h"    // pools_of — удар ложится на ЗАПИСЬ
+#include "ecs/systems.h"   // tick_combat_recovery — та же дверь слива
 #include "tables/npc.h"
 #include "ecs/components.h"
 #include "events/event_bus.h"
@@ -279,6 +281,114 @@ void test_players_worn_plate_stands_underground() {
 // Rewritten 2026-10-01 (M-193) because the law it guarded CHANGED: the hybrid's
 // threshold branch became the BLOCK column, so «armour 10 eats a blow of 10»
 // is no longer true and asserting it would be guarding a case, not a law.
+// ПРОСТОЙ БРОНИ — ВТОРОЙ СУБЪЕКТ ЗАКОНА ВОССТАНОВЛЕНИЯ (CANON S13, M-194).
+// Свидетель рождает своё предусловие сам (§8 п.11): надевает телу вещь, у
+// которой ЕСТЬ вес и ЕСТЬ обе колонки защиты, и только потом спрашивает.
+void test_armor_downtime() {
+    entt::registry reg;
+    const entt::entity body = make_body(reg, 10000.0f, /*withKind*/false);
+    reg.emplace<sm::ecs::AvatarTag>(body);
+    reg.emplace<sm::ecs::Combat>(body, sm::ecs::Combat{});
+
+    auto store = sm::make_macro_store();
+    reg.ctx().insert_or_assign(store.get());
+    const sm::MacroHandle squad = sm::store_birth(*store);
+    store->pools[squad.slot].hp = 10000;
+    store->pools[squad.slot].maxHp = 10000;
+    reg.emplace<sm::ecs::MacroOrigin>(body, squad);
+    auto& eq = store->gear[squad.slot];
+    auto& bag = store->inventory[squad.slot].inv;
+    const int coatIdx = sm::item_index("arm_leather");
+    CHECK_OR_RETURN(coatIdx >= 0, "каталог знает кожаную куртку");
+    sm::gear_init(eq.gear, sm::npc_def(sm::NPCType::Adventurer).slots);
+    sm::ItemRef coat{};
+    coat.def = std::uint16_t(coatIdx);
+    coat.count = 1;
+    CHECK_OR_RETURN(bag.add_ref(coat), "сумка сквада приняла её");
+    int coatSlot = -1;
+    for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+        if (!bag.slots[std::size_t(i)].empty()
+            && int(bag.slots[std::size_t(i)].def) == coatIdx) {
+            coatSlot = i;
+            break;
+        }
+    }
+    CHECK_OR_RETURN(coatSlot >= 0 && sm::equip(eq.gear, bag, coatSlot) >= 0,
+                    "и тело её надело");
+
+    const sm::Defense& coatDef = sm::item_def_at(coatIdx)->defense;
+    const int block = coatDef.block_of(sm::DamageType::Blunt);
+    CHECK_OR_RETURN(block > 0 && sm::item_def_at(coatIdx)->weight > 0.0f,
+                    "предусловие своё: у куртки есть и колонка блока, и ВЕС — "
+                    "без веса простою не из чего взяться");
+
+    auto& clock = reg.get<sm::ecs::Combat>(body);
+    CHECK(clock.armorSteps == 0u, "броня рождается В СТРОЮ: простой есть факт "
+                                  "удара, а не свойство рождения");
+
+    // 1. ТЫЧКА, КОТОРУЮ СЪЕЛ БЛОК, НЕ СБИВАЕТ НИЧЕГО — ровно смысл второй
+    //    колонки, названный владельцем: «чтобы слабые тычки не сбивали
+    //    рековери». Это НЕГАТИВНЫЙ КОНТРОЛЬ всей механики: если бы простой
+    //    ставил любой удар, он покраснел бы здесь.
+    const DamageResult poke =
+        apply_damage(reg, body, DamageSource{}, float(block),
+                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+    CHECK(poke.applied == 0.0f && poke.blocked,
+          "тычку в размер блока съел блок");
+    CHECK(clock.armorSteps == 0u,
+          "и броня осталась В СТРОЮ — блок простоя не вызывает НИКОГДА");
+
+    // 2. УДАР СКВОЗЬ БЛОК ВЫБИВАЕТ БРОНЮ, и часы берутся от ВЕСА надетого.
+    apply_damage(reg, body, DamageSource{}, 200.0f, DamageKind::Melee,
+                 sm::DamageType::Blunt, nullptr);
+    const std::uint16_t charged = clock.armorSteps;
+    CHECK(charged > 0u, "удар сквозь блок выбил броню из строя");
+
+    // 3. ПОКА ПРОСТОЙ ИДЁТ — ПРОЦЕНТ ВЫКЛЮЧЕН, А БЛОК В СТРОЮ. Мера: тот же
+    //    удар проходит БОЛЬШЕ, но ровно на величину блока меньше сырого.
+    const int hp0 = int(sm::sub::pools_of(reg, body)->hp);
+    const DamageResult naked =
+        apply_damage(reg, body, DamageSource{}, 200.0f, DamageKind::Melee,
+                     sm::DamageType::Blunt, nullptr);
+    CHECK(naked.applied == float(200 - block),
+          "в простое проходит удар МИНУС блок: процентная колонка выключена, "
+          "плоская осталась");
+    CHECK(int(sm::sub::pools_of(reg, body)->hp) == hp0 - (200 - block),
+          "и это легло на запись, а не на копию");
+
+    // 4. УДАР ВО ВРЕМЯ ПРОСТОЯ ЕГО НЕ ПРОДЛЕВАЕТ (владелец: «НЕ перезаводить
+    //    НО СТАВИТЬ ЕСЛИ БРОНЯ В СТРОЮ»). Иначе рой крыс держал бы рыцаря
+    //    голым вечно.
+    CHECK(clock.armorSteps == charged,
+          "простой не перезаводится ударом по уже выбитой броне");
+
+    // 5. ЧАСЫ СЛИВАЕТ ТА ЖЕ ДВЕРЬ, что гейт занятости тела — одна система
+    //    восстановления, а не две.
+    sm::ecs::World w{};
+    w.reg.ctx().insert_or_assign(store.get());
+    const entt::entity drained = w.reg.create();
+    w.reg.emplace<sm::ecs::Pools>(drained, 100, 100);
+    sm::ecs::Combat c{};
+    c.armorSteps = 64;
+    c.recoverySteps = 64u;
+    w.reg.emplace<sm::ecs::Combat>(drained, c);
+    sm::ecs::sys::tick_combat_recovery(w, 64u);
+    const auto& after = w.reg.get<sm::ecs::Combat>(drained);
+    CHECK(after.armorSteps == 0u && after.recoverySteps == 0u,
+          "один tick_combat_recovery сливает ОБА субъекта закона");
+
+    // 6. У ТЕЛА БЕЗ НАДЕТОЙ БРОНИ ПРОСТОЯ НЕТ ВОВСЕ — вросшую шкуру строки
+    //    существа не сбивают (владелец: «0 для строки существа»). Это не
+    //    ветка в коде, а предельный случай: вес надетого нулевой, значит и
+    //    база нулевая.
+    const entt::entity hide = make_body(reg, 1000.0f, /*withKind*/true);
+    reg.emplace<sm::ecs::Combat>(hide, sm::ecs::Combat{});
+    apply_damage(reg, hide, DamageSource{}, 200.0f, DamageKind::Melee,
+                 sm::DamageType::Blunt, nullptr);
+    CHECK(reg.get<sm::ecs::Combat>(hide).armorSteps == 0u,
+          "шкура строки существа простоя не знает: надетого веса ноль");
+}
+
 void test_mitigation_law_shape() {
     int probes = 0, wrong = 0;
     // 1. БЛОК — плоский и полный: всё до B включительно не доходит до плоти,
@@ -564,6 +674,7 @@ int main() {
     test_armour_softens_by_the_row_and_the_kind();
     test_players_worn_plate_stands_underground();
     test_mitigation_law_shape();
+    test_armor_downtime();
     test_survivor_protocol();
     test_player_death_is_not_an_npc_kill();
     test_kindless_body_still_reports();
