@@ -3,7 +3,6 @@
 #include "content/spells/casting.h"   // kSpellCasterRadius — the player body radius's one home
 #include "macro/macro_stock.h"
 #include "macro/cell_facts.h"
-#include "macro/landmark_grid.h"
 #include "tables/faction.h"
 #include "macro/politik.h"
 #include "macro/squad.h"

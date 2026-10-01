@@ -56,18 +56,23 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
                                               std::uint32_t(idx));
     }
 
-    // WHO stands here — the baked index (one lookup, one priority order);
-    // the named thing's LIVE fields — population, tier, faction, depleted —
-    // resolved from GameState now, because they drift daily. The by-id find
-    // runs only on the rare cell the grid says is owned.
-    const LandmarkRef lm = w.landmarks ? w.landmarks->at(f.x, f.y)
-                                       : LandmarkRef{};
-    if (w.gs && lm.type != LandmarkType::None) {
+    // КТО ЗДЕСЬ ЖИВЁТ — ординал личности из запечённой сетки (один взгляд,
+    // один порядок приоритета); живые поля названного — паства, тир, фракция,
+    // выкачанность — достаются из `GameState` СЕЙЧАС, потому что плывут
+    // ежедневно. Поиск по ординалу идёт только на той редкой клетке, которую
+    // сетка объявила занятой.
+    //
+    // Гейт был `lm.type != None` по КОПИИ РОДА в строке сетки — и копия была
+    // колонкой-сиротой: род, который сюда ложится, всё равно берётся из
+    // колонки самой записи (`rec->type` ниже), а «есть ли тут кто-то» говорит
+    // сам ординал (0 = никто, ЗАКОН НУЛЯ-ОРДИНАЛА). Копия умерла (M-90 шаг 4).
+    const std::int32_t lmId = w.landmarks ? w.landmarks->at(f.x, f.y) : 0;
+    if (w.gs && lmId != 0) {
         // One roster, one find (CANON S9, 2026-08-29): the by-kind switch
         // over three vectors died with the vectors. Population and tier are
         // SEPARATE fields (§42): `size` used to carry the spire's tier,
         // which was harmless only while the population door was locked.
-        if (const Landmark* rec = landmark_by_id(*w.gs, lm.id)) {
+        if (const Landmark* rec = landmark_by_id(*w.gs, lmId)) {
             const bool spire = rec->type == LandmarkType::Spire;
             // The spell is the cell's WORKED number (ordinal+1, 0 = drained;
             // закон нуля-ординала). A drained spire forgets its spell like a

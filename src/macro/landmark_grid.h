@@ -1,23 +1,35 @@
-// THE baked "cell → landmark" index (CANON S6/S9, 2026-08-24).
+// THE baked "cell → WHO LIVES HERE" index (CANON S6/S9, 2026-08-24).
 //
-// Before this grid, "what stands on this cell" was answered by linear scans
-// over settlements / villages / spires — written at least three times
+// Before this grid, the question was answered by linear scans over
+// settlements / villages / spires — written at least three times
 // (resolve_context, fauna's landmark_kind_at, the spire placer), each with its
 // own priority order, one of them already drifted (canon-audit C2). The scan
 // order IS a world fact — who owns a cell two landmarks would share — so it
 // must exist once. It exists in for_each_landmark (landmark_iter.h); this grid
 // is that order, baked: first landmark yielded at a cell wins it.
 //
-// The grid answers position → {type, id} and NOTHING else. Live facts —
-// population, spell tier, kingdom, depleted — drift daily and are resolved
-// from GameState by the {type, id} the grid returns, at the moment of asking.
-// A stale grid can therefore mis-answer only "who stands here", which changes
-// exactly when a landmark is born, dies or transmutes (CANON S9) — the rebake
-// points. Today that is world-gen and load; the living-landmarks track adds
-// its transitions here and nowhere else.
+// THE GRID ANSWERS ОДНО: «КТО ЗДЕСЬ ЖИВЁТ» — ординал личности клетки, и
+// больше ничего (M-90, ломтик E шаг 4). Прежде оно отвечало парой
+// `{type, id}`, и РОД в этой паре был колонкой-сиротой по DOD п.9: её
+// единственный читатель (`cell_facts@src/macro/cell_facts.cpp`) сравнивал её
+// с `None`, чтобы узнать «есть ли тут что-то», — вопрос, на который сам слот
+// уже отвечает, — а РОД, который он кладёт в факты, брал из колонки САМОЙ
+// ЗАПИСИ (`rec->type`), и правильно брал: байт сетки был КОПИЕЙ, которая
+// обновляется только перепёком.
 //
-// u16 slot per cell into a compact ref list: 2 MiB per 1024² world, and the
-// cap of 65534 landmarks speaks loudly instead of truncating (S26).
+// «ЧТО СТОИТ НА КЛЕТКЕ» ОТВЕЧАЕТ БАЙТ ФИЧИ (владелец 2026-09-30:
+// `FT_City/FT_Village/FT_Spire/FT_Ruin@src/macro/features.h`), «КТО ЗДЕСЬ
+// ЖИВЁТ» — ЭТОТ ординал, а после шага 5 — неподвижный сквад, и тогда сетка
+// умирает целиком вместе со списком мест.
+//
+// Живые факты — паства, тир спелла, фракция, выкачанность — плывут ежедневно
+// и достаются из `GameState` по ординалу в момент спроса. Поэтому устаревшая
+// сетка может соврать РОВНО об одном: кто стоит здесь, — а это меняется
+// только когда место рождается, умирает или перерождается (CANON S9), то есть
+// в точках перепёка: генезис и загрузка.
+//
+// u16 слот на клетку в плотный список ординалов: 2 МиБ на мир 1024², и кап
+// 65534 мест говорит ВСЛУХ вместо молчаливого обрезания (S26).
 #pragma once
 #include "core/torus.h"
 #include "macro/landmark_iter.h"
@@ -28,43 +40,43 @@
 
 namespace sm {
 
-struct LandmarkRef {
-    LandmarkType type = LandmarkType::None;
-    std::int32_t id = 0;   // WORLD-unique landmark ordinal (v54); -1 = none
-};
-
 struct LandmarkGrid {
     static constexpr std::uint16_t kNoLandmark = 0xFFFF;
 
     int width = 0;
     int height = 0;
     std::vector<std::uint16_t> slot;   // per cell: index into refs, or kNoLandmark
-    std::vector<LandmarkRef>   refs;
+    // ОРДИНАЛЫ ЛИЧНОСТЕЙ (род 2), плотным списком. 0 здесь не встречается
+    // вовсе: эмитент выдаёт с 1, а «никто» говорит СЛОТ, не строка списка
+    // (ЗАКОН НУЛЯ-ОРДИНАЛА против ЗАКОНА УЗКОГО ИНДЕКСА — у них разные нули,
+    // и здесь живут оба: `kNoLandmark` — предел типа ИНДЕКСА, 0 — «никто» у
+    // ОРДИНАЛА, который возвращает дверь ниже).
+    std::vector<std::int32_t>  refs;
 
     // Torus-wrapped, fail-closed: an unbuilt grid answers "nothing stands
-    // here" — the zero contribution, never a crash.
-    LandmarkRef at(int x, int y) const {
+    // here" — ординал 0, «никто», never a crash.
+    std::int32_t at(int x, int y) const {
         if (width <= 0 || height <= 0
             || slot.size() != std::size_t(width) * std::size_t(height)) {
-            return {};
+            return 0;
         }
-        if (!world_shape_ok(width, height)) return {};
+        if (!world_shape_ok(width, height)) return 0;
         const std::uint16_t s = slot[cell_of(x, y, width)];
-        return s == kNoLandmark ? LandmarkRef{} : refs[s];
+        return s == kNoLandmark ? 0 : refs[s];
     }
 };
 
-// СТОРОЖА РАЗМЕРА (AGENTS DOD п.10). Шапка выше называет цену — «2 MiB per
-// 1024² world», — а названный размер обязан стоять под компилятором, иначе он
-// проза (шрам: `MacroNpcRuntime` обещал «~36 bytes» при 96). Чисел два:
-//   • `LandmarkRef` = 8 Б — байт рода плюс `int32` ординала по выравниванию;
-//     это ЦЕНА СТРОКИ списка ссылок в переписи штабелей;
-//   • `LandmarkGrid` = 56 Б — два `int` и два заголовка вектора, ни одного
-//     поля сверх. Третий вектор сдвинет число и потребует своей строки
-//     переписи (`core/stacks.h`), а не молчаливого роста.
-// Сами 2 МиБ — это `slot` (u16 на клетку), и они стоят строкой там же.
-static_assert(sizeof(LandmarkRef) == 8,
-              "строка списка ссылок сетки мест");
+// СТОРОЖ РАЗМЕРА (AGENTS DOD п.10). Шапка выше называет цену — «2 МиБ на мир
+// 1024²», — а названный размер обязан стоять под компилятором, иначе он проза
+// (шрам: `MacroNpcRuntime` обещал «~36 bytes» при 96). `LandmarkGrid` = 56 Б:
+// два `int` и два заголовка вектора, ни одного поля сверх. Третий вектор
+// сдвинет число и потребует своей строки переписи (`core/stacks.h`), а не
+// молчаливого роста. Сами 2 МиБ — это `slot` (u16 на клетку), и они стоят
+// строкой там же.
+//
+// `sizeof(LandmarkRef) == 8` стоял здесь вторым сторожем и умер вместе со
+// структурой: строка списка стала ОДНИМ ординалом, 8 Б → 4 Б, то есть список
+// ссылок подешевел ВДВОЕ ровно потому, что из него ушёл дубль рода.
 static_assert(sizeof(LandmarkGrid) == 56,
               "сетка мест: новый вектор = новая строка переписи штабелей");
 
@@ -97,7 +109,7 @@ inline LandmarkGrid build_landmark_grid(const GameState& gs) {
             return;
         }
         s = std::uint16_t(g.refs.size());
-        g.refs.push_back(LandmarkRef{lv.type, lv.id});
+        g.refs.push_back(lv.id);
     });
     return g;
 }

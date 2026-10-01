@@ -326,8 +326,19 @@ int fauna_cell_capacity_at(const MacroWorld& w, int x, int y) {
     const Biome biome = biome_at_cell(*terrain, wx, wy);
     const int treeCount = (w.trees && w.trees->has_complete_storage())
         ? int(w.trees->at(wx, wy)) : 0;
-    const LandmarkType landmark =
-        w.landmarks ? w.landmarks->at(wx, wy).type : LandmarkType::None;
+    // РОД МЕСТА — КОЛОНКА САМОЙ ЗАПИСИ, А НЕ КОПИЯ В ИНДЕКСЕ (M-90 шаг 4).
+    // Сетка отвечает ОДНО — ординал личности клетки; род достаётся оттуда же,
+    // откуда его берёт второй читатель сетки (`cell_facts`), то есть из
+    // колонки записи. Прежде он лежал ВТОРЫМ носителем в строке индекса и
+    // обновлялся только перепёком. Поиск по ординалу идёт лишь на той редкой
+    // клетке, которую сетка объявила занятой (0 = никто).
+    LandmarkType landmark = LandmarkType::None;
+    if (w.gs && w.landmarks) {
+        if (const std::int32_t id = w.landmarks->at(wx, wy); id != 0) {
+            if (const Landmark* rec = landmark_by_id(*w.gs, id))
+                landmark = rec->type;
+        }
+    }
     return fauna_cell_capacity(biome, treeCount, landmark);
 }
 

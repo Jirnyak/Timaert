@@ -32,6 +32,8 @@
 #include "macro/world_row.h"
 #include "macro/npc_ai.h"          // kGathererReach — the crews' working box
 #include "macro/politik.h"
+#include "macro/landmark_grid.h"   // запечённое «кто здесь живёт»
+#include "macro/landmark_iter.h"   // штамп фич поселений
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
 #include "macro/state.h"
@@ -546,6 +548,112 @@ void test_cities_read_the_ground() {
     CHECK(same, "one seed, one crowned world");
 }
 
+// ── У РОДА КЛЕТКИ ПОСЕЛЕНИЯ ОДИН ОТВЕТ (M-90 шаг 4) ───────────────────────
+//
+// Закон владельца (2026-09-30): «что стоит на клетке» отвечает БАЙТ ФИЧИ,
+// «кто здесь живёт» — сквад. Значит у мира ДВА носителя рода поселения —
+// `FT_City/FT_Village/FT_Spire/FT_Ruin` в слое фич и колонка `type` записи,
+// которую находит запечённая сетка, — и они обязаны говорить ОДНО.
+//
+// Согласие это НЕ дано по построению, и шаг 4 нашёл причину: спорную клетку
+// два носителя разрешают РАЗНЫМИ правилами. Сетка отдаёт её ПЕРВОМУ по
+// приоритету `kLandmarkYieldOrder` (город → деревня → шпиль → руина), а штамп
+// фич идёт по ростеру в порядке РОЖДЕНИЯ и перекрывает, то есть отдаёт
+// ПОСЛЕДНЕМУ. Пока спорных клеток нет, расхождение латентно; свидетель
+// называет их ЧИСЛО вслух, поэтому день, когда они появятся, виден сразу.
+//
+// Третий носитель рода — копия в строке индекса (`LandmarkRef::type`) — умер
+// этим шагом: её единственный читатель спрашивал у неё «есть ли тут кто-то»,
+// а род всё равно брал из колонки записи.
+FeatureType settlement_feature_of(LandmarkType t) {
+    switch (t) {
+        case LandmarkType::City:    return FT_City;
+        case LandmarkType::Village: return FT_Village;
+        case LandmarkType::Spire:   return FT_Spire;
+        case LandmarkType::Ruin:    return FT_Ruin;
+        // Рода, которые мир сегодня НЕ ставит: байта у них нет вовсе, и это
+        // значение, а не пробел (`features.h`: строка добавится в день, когда
+        // их начнёт ставить генерация).
+        case LandmarkType::None:
+        case LandmarkType::Lair:
+        case LandmarkType::Shrine:
+        case LandmarkType::Mine:
+        case LandmarkType::Tower:
+        case LandmarkType::Count:   return FT_None;
+    }
+    return FT_None;
+}
+
+// Сколько клеток мира два носителя назвали ПО-РАЗНОМУ. Отдельная функция,
+// потому что её зовут дважды: на честном мире и на мире, где спорная клетка
+// создана НАМЕРЕННО (негативный контроль).
+int settlement_kind_disagreements(const GameState& gs, const FeatureLayer& fl,
+                                  const LandmarkGrid& grid, int* stamped) {
+    int bad = 0, seen = 0;
+    for (int y = 0; y < gs.mapH; ++y) {
+        for (int x = 0; x < gs.mapW; ++x) {
+            const FeatureType ft = fl.at(x, y);
+            if (settlement_feature_of(LandmarkType::City) != ft
+                && settlement_feature_of(LandmarkType::Village) != ft
+                && settlement_feature_of(LandmarkType::Spire) != ft
+                && settlement_feature_of(LandmarkType::Ruin) != ft) {
+                continue;                       // не клетка поселения вовсе
+            }
+            ++seen;
+            const std::int32_t id = grid.at(x, y);
+            const Landmark* rec = id != 0 ? landmark_by_id(gs, id) : nullptr;
+            if (!rec || settlement_feature_of(rec->type) != ft) ++bad;
+        }
+    }
+    if (stamped) *stamped = seen;
+    return bad;
+}
+
+void test_settlement_kind_has_one_answer() {
+    World w;
+    make_settled_world(w);
+    FeatureLayer fl;
+    fl.resize(kW, kH);
+    stamp_settlement_features(w.gs, fl);
+    const LandmarkGrid grid = build_landmark_grid(w.gs);
+
+    int stamped = 0;
+    const int bad = settlement_kind_disagreements(w.gs, fl, grid, &stamped);
+    // ЧИСЛО ВСЛУХ: сколько клеток поселений мир вообще поставил — иначе
+    // «расхождений ноль» зеленеет на пустом штампе (§8 п.3).
+    std::fprintf(stderr, "[settlement-kind] клеток поселений %d, "
+                         "расхождений рода %d\n", stamped, bad);
+    CHECK(stamped > 0, "мир обязан был поставить клетки поселений — иначе "
+                       "свидетель не померил ничего");
+    CHECK(bad == 0, "байт фичи и колонка записи называют род ОДИНАКОВО на "
+                    "каждой клетке поселения");
+
+    // НЕГАТИВНЫЙ КОНТРОЛЬ, И ОН ОБЯЗАН КРАСНЕТЬ. Две записи на ОДНОЙ клетке:
+    // сетка отдаёт её городу (приоритет), штамп — последней по ростеру, то
+    // есть руине. Детектор обязан увидеть ровно одну спорную клетку; если он
+    // её не видит, зелень выше ничего не значила.
+    GameState& gs = w.gs;
+    const Landmark* firstCity = nullptr;
+    for (const auto& lm : gs.landmarks)
+        if (lm.type == LandmarkType::City) { firstCity = &lm; break; }
+    CHECK_OR_RETURN(firstCity != nullptr, "фикстура обязана родить город");
+    Landmark squatter{};
+    squatter.type = LandmarkType::Ruin;
+    squatter.id   = int(gs.nextMacroSpawnOrdinal++);
+    squatter.x    = firstCity->x;
+    squatter.y    = firstCity->y;
+    add_landmark(gs, std::move(squatter));
+
+    FeatureLayer fl2;
+    fl2.resize(kW, kH);
+    stamp_settlement_features(gs, fl2);
+    const LandmarkGrid grid2 = build_landmark_grid(gs);
+    int stamped2 = 0;
+    const int bad2 = settlement_kind_disagreements(gs, fl2, grid2, &stamped2);
+    CHECK(bad2 == 1, "детектор видит спорную клетку: сетка отдаёт её ПЕРВОМУ "
+                     "по приоритету, штамп — ПОСЛЕДНЕМУ по ростеру");
+}
+
 void test_determinism() {
     World a, b;
     make_settled_world(a);
@@ -575,6 +683,7 @@ int main() {
     test_count_derives_from_capacity();
     test_villages_stand_next_to_something();
     test_cities_read_the_ground();
+    test_settlement_kind_has_one_answer();
     test_determinism();
     return sm::test::report("settlement_placement_test");
 }

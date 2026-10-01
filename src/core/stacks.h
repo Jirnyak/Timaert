@@ -382,8 +382,12 @@ inline constexpr StackRow kStacks[] = {
     // Потолок — на единицу ниже сторожевого 0xFFFF, и это не оговорка: у
     // узкого индекса «нет элемента» есть ПОСЛЕДНЕЕ значение типа, поэтому
     // кап теряет ровно одну строку (ЗАКОН УЗКОГО ИНДЕКСА).
-    {"сетка мест: список ссылок", "LandmarkRef", StackKind::ByOrdinal,
-     sizeof(LandmarkRef), std::size_t(LandmarkGrid::kNoLandmark)},
+    // СТРОКА ПОДЕШЕВЕЛА ВДВОЕ 2026-10-01 (M-90 шаг 4): была `LandmarkRef`
+    // 8 Б = байт рода + `int32` ординала по выравниванию, стала ОДИН ординал
+    // 4 Б — дубль рода из списка ушёл (его единственный читатель спрашивал у
+    // него «есть ли тут кто-то», а род брал из колонки самой записи).
+    {"сетка мест: список ссылок", "std::int32_t", StackKind::ByOrdinal,
+     sizeof(std::int32_t), std::size_t(LandmarkGrid::kNoLandmark)},
     {"пул дезертиров (сток без выхода, M-13)", "ecs::NpcInventory",
      StackKind::ByOrdinal, sizeof(ecs::NpcInventory), 1},
 
