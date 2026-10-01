@@ -45,12 +45,11 @@ src/macro/pathfinding.cpp	index	std::size_t k = std::size_t(cy) * W + cx;
 src/macro/pathfinding.cpp	index	std::size_t nidx = std::size_t(ny) * W + nx;
 src/macro/pathfinding.cpp	mod	const int cx = int(i % std::size_t(td.width));
 src/macro/pathfinding.h	index	return std::size_t(y) * width + x;
-src/macro/politik.cpp	index	P.cellOwner[std::size_t(y) * mapW + x] =
 src/macro/politik.cpp	index	std::size_t idx = std::size_t(y) * W + x;
 src/macro/politik.cpp	index	std::size_t ni = std::size_t(nb[1]) * W + nb[0];
 src/macro/politik.cpp	mod	{(x + 1) % W, y}, {(x + W - 1) % W, y},
 src/macro/politik.cpp	mod	{x, (y + 1) % H}, {x, (y + H - 1) % H},
-src/macro/politik.h	index	politik.cellOwner[std::size_t(wy) * std::size_t(w) + std::size_t(wx)];
+src/macro/politik.h	index	cellOwner[std::size_t(wy) * std::size_t(mapW) + std::size_t(wx)];
 src/macro/ruins.cpp	mod	const int x = int(rng.next_u32() % std::uint32_t(gs.mapW));
 src/macro/ruins.cpp	mod	const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
 src/macro/scent_field.h	index	* std::size_t(sf.w)

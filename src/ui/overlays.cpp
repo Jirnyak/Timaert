@@ -19,7 +19,6 @@
 #include "macro/economy.h"
 #include "tables/faction.h"
 #include "macro/anketa.h"
-#include "macro/politik.h"
 #include "content/spells/spell_book.h"
 #include "content/plot/intro.h"
 #include "events/event_bus.h"

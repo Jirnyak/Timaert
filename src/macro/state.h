@@ -834,7 +834,18 @@ struct GameState {
     // место RelationMatrix; рантайм-имена хвоста уничтожены вердиктом.
     FactionState factions{};
 
-    Politik politik;
+    // ПОЛЕ ВЛАДЕНИЯ ЗЕМЛЁЙ (род 3, M-90): байт на клетку тора — индекс строки
+    // фракции, которой земля принадлежит, 0xff = дикие земли. Одна дверь
+    // чтения (`faction_index_for_cell@src/macro/politik.h`), один писатель
+    // (`finalize_politik` на генезисе), размер — сторона мира.
+    //
+    // Поле жило внутри `struct Politik` вместе со списком городов и со своей
+    // копией размера карты; обёртка и была тем, что перепись родов фрейма
+    // звала РАСХОЖДЕНИЕМ. Список городов оказался планом ГЕНЕРАТОРА и уехал
+    // локальным буфером генезиса, копия размера умерла как второй ответ на
+    // «какого размера мир» (DOD п.9), а поле встало здесь, где у поля мира
+    // единая форма — рядом со `knowledge` и `scent`.
+    std::vector<std::uint8_t> cellOwner;
     PlayerState player;
     // ИГРОК — ДВА КЭША ДВУХ КОЛОНОК АНКЕТ (вердикт владельца 2026-09-29,
     // кластер 5б: «У НАС СИСТЕМА ИГРЫ ЧТО ЕСТЬ СКВАДЫ С АНКЕТАМИ И ЭТО ВСЁ
@@ -1253,18 +1264,22 @@ GameState  default_game_state(std::uint32_t seed, int mapW, int mapH,
                               const LayerParameters& mapParams = LayerParameters{},
                               int cityCountTarget = 0);
 
-// Bridge politik → landmark lists. After `generate_politik` (and the
-// `snap_cities_to_land` post-pass) the `gs.politik.cities` array holds
-// the world's capitals and major cities. This populates the gameplay-
-// facing `gs.settlements` (one per politik city) and settles villages
-// on the best-scoring cells of each city's hinterland (R2: resources
-// are primary, settlement is derived — macro/settlement_score.h), so
-// the tree and deposit layers must exist BEFORE this runs. Idempotent —
-// clears prior landmarks before populating.
+// Bridge the politik PLAN → the landmark roster. After `generate_politik`
+// (and the `snap_cities_to_land` post-pass) the `cities` plan holds the
+// world's capitals and major cities. This turns each plan row into a landmark
+// of the one roster and settles villages on the best-scoring cells of each
+// city's hinterland (R2: resources are primary, settlement is derived —
+// macro/settlement_score.h), so the tree and deposit layers must exist BEFORE
+// this runs. Idempotent — clears prior landmarks before populating.
+//
+// The plan arrives as a PARAMETER and not off `gs` (M-90): it is the
+// generator's scratch, the caller owns it for the length of genesis, and the
+// living world has no city list of its own to disagree with the roster.
 struct TerrainData;  // fwd
 struct TreeLayer;
 struct DepositLayer;
 void populate_landmarks_from_politik(GameState& gs,
+                                     const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,
                                      DepositLayer& deposits);

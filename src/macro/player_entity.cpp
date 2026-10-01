@@ -43,10 +43,12 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         // map centre when the world has none. A LOADED world never reaches
         // this branch — the snapshot restores his squad whole.
         int sx = gs.mapW / 2, sy = gs.mapH / 2;
-        if (!gs.politik.cities.empty()) {
-            sx = gs.politik.cities[0].x;
-            sy = gs.politik.cities[0].y;
-        }
+        // Первый ГОРОД РОСТЕРА МЕСТ (M-90): места рождаются в порядке плана
+        // генератора, поэтому первый City-ряд и есть тот город, который
+        // здесь стоял списком `politik.cities[0]`. Второго списка городов у
+        // мира больше нет — план умер вместе с генезисом.
+        for (const auto& lm : gs.landmarks)
+            if (lm.type == LandmarkType::City) { sx = lm.x; sy = lm.y; break; }
         const MacroHandle h = store_birth(st);
         if (!st.valid(h)) return;   // отказ капа уже прозвучал вслух
         st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};

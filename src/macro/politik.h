@@ -1,5 +1,12 @@
-// Politik — the settled world's geometry: where realms seed, which cities
-// they grow, which roads join them, whose land every cell is.
+// Politik — THE GENERATOR of the settled world's geometry: where realms seed,
+// which cities they grow, which roads join them, whose land every cell is.
+//
+// IT IS A GENERATOR AND NOT A LAYER (AGENTS ЗАКОН ГЕНЕРАЦИИ). Everything here
+// runs ONCE, at genesis, and what leaves it is either a plan the caller drops
+// (`std::vector<City>`) or a field of the world it writes into
+// (`GameState::cellOwner`). The `struct Politik` that used to hold both — and
+// lived on in `GameState` after genesis, where it was the one named
+// divergence of the frame census — died with M-90; see the note below it.
 //
 // KINGDOMS ARE GONE (owner 2026-09-11: «королевств теперь нет, у нас только
 // фракции — одна система»). The Kingdom struct was already a shell by then:
@@ -68,46 +75,39 @@ struct City {
     int population = 0;
 };
 
-struct Politik {
-    std::vector<City>         cities;
-    // Whose land each cell is: a FACTION REGISTRY INDEX per cell (it fits —
-    // kMaxFactions is 64), 0xff = unowned wilds. It used to store a kingdom
-    // index that then chased kingdoms[i].id through the registry; now the
-    // byte IS the answer.
-    std::vector<std::uint8_t> cellOwner; // size = mapW * mapH ; 0xff = unowned
-    int mapW = 0, mapH = 0;
-};
+// СТРУКТУРЫ `Politik` БОЛЬШЕ НЕТ (M-90, ход 2 ломтик E шаг 3). Она держала
+// два носителя разной природы под одним именем, и обёртка была единственной
+// причиной, по которой перепись родов фрейма звала её РАСХОЖДЕНИЕМ:
+//   · `cities` — ПЛАН ГЕНЕРАТОРА, а не состояние мира. Он живёт ровно от
+//     `generate_politik` до последнего дорожного прохода генезиса и в сейв не
+//     едет никогда (`save.cpp` не знает слова «политика»), поэтому он теперь
+//     ЛОКАЛЬНЫЙ БУФЕР `generate_macro_world` — ровно та форма, которую ЗАКОН
+//     ГЕНЕРАЦИИ разрешает прямо. Мест он больше не дублирует: живой мир
+//     спрашивает о городе СКВАД-МЕСТО (`gs.landmarks`, род 2);
+//   · `cellOwner` — ПОЛЕ НАД ТОРОМ (род 3), и оно уехало в `GameState`
+//     колонкой мира рядом со `knowledge`/`scent`, где у поля единая форма;
+//   · `mapW`/`mapH` — второй ответ на «какого размера мир» рядом с
+//     `gs.mapW`/`gs.mapH` (DOD п.9). Умерли с обёрткой; размер поля теперь
+//     передаётся дверям параметром и судится одной стороной мира.
 
-// СТОРОЖ РАЗМЕРА (AGENTS DOD п.10): 56 Б = два заголовка вектора по 24 плюс
-// два `int`. Сторожит он не вес слоя — владение клеткой (1 МиБ) и второй
-// список городов стоят своими строками переписи штабелей (`core/stacks.h`), —
-// а то, что у ПОЛИТИКИ не заведётся третьего вектора мимо переписи. Сам
-// `City` числом здесь не закреплён сознательно: он несёт `std::string name`,
-// и его `sizeof` зависит от реализации библиотеки (24 на libc++, 32 на
-// libstdc++/MSVC) — закрепить его значило бы прибить сборку к одной из них.
-// Это и есть адрес долга: имя обязано стать `char[N]` (CANON S4, M-42).
-static_assert(sizeof(Politik) == 56,
-              "политика: новый вектор = новая строка переписи штабелей");
-
-// Who owns the cell at (cx,cy)? The politik layer's per-cell answer for the
-// whole map, so a body that appears with no owner of its own — a scripted
-// encounter, a console spawn, whatever system comes next — can still be
-// placed honestly: it belongs to the faction whose land it is standing on,
-// and to the FREE FOLK out in the unclaimed wilds. Coordinates wrap (the map
-// is a torus); a politik with no ownership map yet degrades to the free folk
-// like any unowned ground.
-inline std::uint16_t faction_index_for_cell(const Politik& politik,
-                                            int cx, int cy) {
-    const int w = politik.mapW;
-    const int h = politik.mapH;
-    if (w <= 0 || h <= 0
-        || politik.cellOwner.size() != std::size_t(w) * std::size_t(h)) {
+// Who owns the cell at (cx,cy)? The world's per-cell ownership FIELD (род 3)
+// answers for the whole map, so a body that appears with no owner of its own —
+// a scripted encounter, a console spawn, whatever system comes next — can
+// still be placed honestly: it belongs to the faction whose land it is
+// standing on, and to the FREE FOLK out in the unclaimed wilds. Coordinates
+// wrap (the map is a torus); a world with no ownership map yet degrades to the
+// free folk like any unowned ground.
+inline std::uint16_t faction_index_for_cell(
+        const std::vector<std::uint8_t>& cellOwner,
+        int mapW, int mapH, int cx, int cy) {
+    if (mapW <= 0 || mapH <= 0
+        || cellOwner.size() != std::size_t(mapW) * std::size_t(mapH)) {
         return faction_or_freefolk(-1);
     }
-    const int wx = wrap_axis(cx, w);
-    const int wy = wrap_axis(cy, h);
+    const int wx = wrap_axis(cx, mapW);
+    const int wy = wrap_axis(cy, mapH);
     const std::uint8_t owner =
-        politik.cellOwner[std::size_t(wy) * std::size_t(w) + std::size_t(wx)];
+        cellOwner[std::size_t(wy) * std::size_t(mapW) + std::size_t(wx)];
     return faction_or_freefolk(owner == 0xffu ? -1 : int(owner));
 }
 
@@ -138,8 +138,12 @@ int derive_city_spacing(const TerrainData* terrain,
 // and HOW LARGE (population derives from the site's capacity). A null
 // site prices every cell equally (tests, resource-less callers), which
 // degrades to the old first-valid placement.
+//
+// THE RETURN IS THE GENERATOR'S PLAN, NOT A LAYER OF THE WORLD: the caller
+// holds it for the length of genesis (settlement, roads, zone seeds) and
+// drops it. Nothing living reads a `City` — the world's city is a landmark.
 struct SettlementSiteContext;
-Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
+std::vector<City> generate_politik(std::uint32_t seed, int mapW, int mapH,
                         const TerrainData* terrain = nullptr,
                         int targetTotalCities = 0,
                         const SettlementSiteContext* site = nullptr);
@@ -147,13 +151,23 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
 // Belt-and-suspenders: nudge any city left on water onto the nearest land
 // cell. Becomes mostly a no-op when `generate_politik` is called with a
 // terrain pointer (cities are then placed on land directly).
-void snap_cities_to_land(Politik& p, const TerrainData& td, int radius = 80);
+void snap_cities_to_land(std::vector<City>& cities, const TerrainData& td,
+                         int radius = 80);
 
-// Phase-2: rebuild `cellOwner` via multi-source 4-neighbour BFS over land
-// cells. Each city is a seed; the first wave to reach a cell claims it.
-// Waves cannot cross water — territories are bounded by coastlines.
+// Phase-2: write the world's ownership FIELD via multi-source 4-neighbour BFS
+// over land cells. Each city is a seed; the first wave to reach a cell claims
+// it. Waves cannot cross water — territories are bounded by coastlines.
 // Mirrors politik.ts buildCellOwnership(). Optionally also lake-snaps any
 // realm whose seed def has `capital_requires_lake` (currently Lake Duchy).
-void finalize_politik(Politik& p, const TerrainData& td);
+//
+// THE FIELD IS SIZED HERE AND ONLY HERE (one writer, one size): `mapW×mapH`
+// bytes of 0xff before anything else, so a malformed or mismatched terrain
+// leaves an HONEST unowned world rather than a stale one. It used to be
+// allocated twice — once at the top of `generate_politik`, once at the bottom
+// of this pass — and the naive Voronoi flood that filled it in between was
+// dead work: this BFS overwrote every byte of it, always.
+void finalize_politik(std::vector<City>& cities,
+                      std::vector<std::uint8_t>& cellOwner,
+                      int mapW, int mapH, const TerrainData& td);
 
 } // namespace sm

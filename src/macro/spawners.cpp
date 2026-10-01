@@ -319,13 +319,14 @@ namespace sm
     // join — a span can cross it). Same-island pairs use generation-tagged
     // whole-map A* that refuses wide water and PAYS for one-cell crossings,
     // which land as FT_Bridge (build_feature_layer).
-    std::vector<std::uint8_t> trace_roads(const TerrainData &td, Politik &P,
+    std::vector<std::uint8_t> trace_roads(const TerrainData &td,
+                                          std::vector<City> &cities,
                                           RoadTraceStats *stats,
                                           const TreeLayer *treeLayer)
     {
         const int W = td.width, H = td.height;
         RoadTraceStats localStats;
-        localStats.cityCount = int(P.cities.size());
+        localStats.cityCount = int(cities.size());
         const std::size_t totalCells = td.cell_count();
         if (totalCells == 0u || totalCells > std::size_t(std::numeric_limits<int>::max())
             || !td.has_rgba_storage())
@@ -336,7 +337,7 @@ namespace sm
         }
 
         std::vector<std::uint8_t> mask(totalCells, 0);
-        if (P.cities.empty())
+        if (cities.empty())
         {
             if (stats)
                 *stats = localStats;
@@ -387,7 +388,7 @@ namespace sm
         const std::vector<int> landComponent =
             build_land_components(td, &waterAxes);
 
-        for (const City &c : P.cities)
+        for (const City &c : cities)
             cg.costGrid[cell_of(c.x, c.y, W)] = kRoadShare;
 
         std::vector<std::pair<int, int>> dropPairs;
@@ -405,14 +406,14 @@ namespace sm
             }
             return false;
         };
-        for (std::size_t i = 0; i < P.cities.size(); ++i)
+        for (std::size_t i = 0; i < cities.size(); ++i)
         {
-            for (int b : P.cities[i].connections)
+            for (int b : cities[i].connections)
             {
-                if (b < 0 || std::size_t(b) <= i || std::size_t(b) >= P.cities.size())
+                if (b < 0 || std::size_t(b) <= i || std::size_t(b) >= cities.size())
                     continue;
-                const City &a = P.cities[i];
-                const City &B = P.cities[std::size_t(b)];
+                const City &a = cities[i];
+                const City &B = cities[std::size_t(b)];
                 ++localStats.attemptedEdges;
 
                 const int ax = wrap_axis(a.x, W);
@@ -455,14 +456,14 @@ namespace sm
 
         auto strip = [&](int from, int to)
         {
-            for (int &c : P.cities[std::size_t(from)].connections)
+            for (int &c : cities[std::size_t(from)].connections)
                 if (c == to)
                 {
                     c = -1;
                     break;
                 }
-            int *arr = P.cities[std::size_t(from)].connections;
-            constexpr int N = sizeof(P.cities[std::size_t(from)].connections) / sizeof(P.cities[std::size_t(from)].connections[0]);
+            int *arr = cities[std::size_t(from)].connections;
+            constexpr int N = sizeof(cities[std::size_t(from)].connections) / sizeof(cities[std::size_t(from)].connections[0]);
             int w = 0;
             for (int r = 0; r < N; ++r)
                 if (arr[r] != -1)

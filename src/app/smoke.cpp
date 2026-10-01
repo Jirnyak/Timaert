@@ -2568,7 +2568,12 @@ bool run_dungeon_house_smoke(App& app) {
         smoke_fail(app, "dungeon_house already active");
         return false;
     }
-    if (app.gs.politik.cities.empty()) {
+    // Город спрашивается у РОСТЕРА МЕСТ (M-90): второго списка городов у
+    // мира больше нет, план генератора умер вместе с генезисом.
+    const sm::Landmark* firstCity = nullptr;
+    for (const auto& lm : app.gs.landmarks)
+        if (lm.type == sm::LandmarkType::City) { firstCity = &lm; break; }
+    if (!firstCity) {
         smoke_fail(app, "dungeon_house no cities");
         return false;
     }
@@ -2585,7 +2590,7 @@ bool run_dungeon_house_smoke(App& app) {
     };
 
     // Land on the first city: its centre cell is guaranteed houses.
-        smoke_teleport_player(app, int(float(app.gs.politik.cities[0].x)), int(float(app.gs.politik.cities[0].y)));
+        smoke_teleport_player(app, firstCity->x, firstCity->y);
     app.gs.subState.settlementId = 0;
     app.ui.settlementId = 0;
     enter_subworld(app);

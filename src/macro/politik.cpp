@@ -19,12 +19,12 @@ static inline int torus_dist2(int ax, int ay, int bx, int by, int W, int H) {
     return dx * dx + dy * dy;
 }
 
-static int find_close_city(const Politik& p, int x, int y, int minDist,
-                          int W, int H) {
+static int find_close_city(const std::vector<City>& cities, int x, int y,
+                          int minDist, int W, int H) {
     int md2 = minDist * minDist;
-    for (int i = 0; i < int(p.cities.size()); ++i) {
-        if (torus_dist2(p.cities[std::size_t(i)].x,
-                        p.cities[std::size_t(i)].y, x, y, W, H) < md2)
+    for (int i = 0; i < int(cities.size()); ++i) {
+        if (torus_dist2(cities[std::size_t(i)].x,
+                        cities[std::size_t(i)].y, x, y, W, H) < md2)
             return i;
     }
     return -1;
@@ -73,16 +73,14 @@ int derive_city_spacing(const TerrainData* terrain,
         int(0.60f * std::sqrt(float(areaCells) / float(totalCities))));
 }
 
-Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
+std::vector<City> generate_politik(std::uint32_t seed, int mapW, int mapH,
                         const TerrainData* terrain,
                         int targetTotalCities,
                         const SettlementSiteContext* site) {
-    Politik P;
+    std::vector<City> cities;
     std::size_t totalCells = 0;
     if (!TerrainData::cell_count_for(mapW, mapH, totalCells))
-        return P;
-    P.mapW = mapW; P.mapH = mapH;
-    P.cellOwner.assign(totalCells, 0xff);
+        return cities;
     const bool useTerrain = terrain_matches_map(terrain, mapW, mapH);
 
     Rng r(seed ^ 0xC001CAFE);
@@ -91,7 +89,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     // Per-realm working state (was struct Kingdom): the faction each realm
     // IS, its naming tongue (derived, language.h faction_language), and its
     // city list for the MST/bridge passes below. All local to generation —
-    // the Politik that leaves this function carries cities and ground only.
+    // the plan that leaves this function carries cities and their edges only.
     std::vector<std::int16_t>       realmFaction(defs.size(), -1);
     std::vector<Language>           realmLang(defs.size());
     std::vector<std::vector<int>>   realmCities(defs.size());
@@ -166,7 +164,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                         const int tx = cell_x(n, mapW);
                         const int ty = cell_y(n, mapW);
                         if (!is_land(tx, ty)) continue;
-                        if (find_close_city(P, tx, ty, minDist, mapW, mapH) >= 0)
+                        if (find_close_city(cities, tx, ty, minDist, mapW, mapH) >= 0)
                             continue;
                         if (rad > minDist) {
                             // Fallback land: first valid cell wins as-is.
@@ -186,15 +184,15 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
             }
             cx = bestX; cy = bestY;
         }
-        const int capIdx = int(P.cities.size());
+        const int capIdx = int(cities.size());
         City cap; cap.x = cx; cap.y = cy;
-        cap.name = generate_name(lang, std::uint32_t(P.cities.size()) * 2654435761u);
+        cap.name = generate_name(lang, std::uint32_t(cities.size()) * 2654435761u);
         cap.factionIdx = fIdx;
         cap.isCapital = true;
         for (int& c : cap.connections) c = -1;
         // Souls derive from the ground the crown chose (settlement_score.h).
         cap.population = capital_population(city_site_score(site, cx, cy));
-        P.cities.push_back(std::move(cap));
+        cities.push_back(std::move(cap));
         realmCities[std::size_t(k)].push_back(capIdx);
 
         // Scatter remaining cities with **organic growth** clustering:
@@ -214,8 +212,8 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
             for (int tries = 0; tries < kCityCandidateDraws; ++tries) {
                 const int anchorIdx = mine[std::size_t(
                     r.next_u32() % std::uint32_t(mine.size()))];
-                const int ax = P.cities[std::size_t(anchorIdx)].x;
-                const int ay = P.cities[std::size_t(anchorIdx)].y;
+                const int ax = cities[std::size_t(anchorIdx)].x;
+                const int ay = cities[std::size_t(anchorIdx)].y;
                 const int rx = wrap_axis(ax + int(r.next_u32()
                                               % std::uint32_t(2 * jitter + 1))
                                         - jitter, mapW);
@@ -223,19 +221,19 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                                               % std::uint32_t(2 * jitter + 1))
                                         - jitter, mapH);
                 if (!is_land(rx, ry)) continue;
-                if (find_close_city(P, rx, ry, minDist, mapW, mapH) >= 0) continue;
+                if (find_close_city(cities, rx, ry, minDist, mapW, mapH) >= 0) continue;
                 const int score = city_site_score(site, rx, ry);
                 if (score < 0) continue;   // vetoed ground
                 if (score > bestScore) { bestScore = score; bestX = rx; bestY = ry; }
             }
             if (bestScore < 0) continue;
-            int idx = int(P.cities.size());
+            int idx = int(cities.size());
             City c; c.x = bestX; c.y = bestY;
             c.name = generate_name(lang, std::uint32_t(idx) * 2654435761u);
             c.factionIdx = fIdx;
             for (int& cc : c.connections) cc = -1;
             c.population = city_population(bestScore);
-            P.cities.push_back(std::move(c));
+            cities.push_back(std::move(c));
             mine.push_back(idx);
         }
     }
@@ -246,14 +244,14 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     // dart-throw assigning each new city to its anchor's realm. Cap
     // attempts so we never spin forever on saturated maps.
     if (targetTotalCities > 0
-        && int(P.cities.size()) < targetTotalCities
+        && int(cities.size()) < targetTotalCities
         && useTerrain
-        && !P.cities.empty()) {
-        const int deficit = targetTotalCities - int(P.cities.size());
+        && !cities.empty()) {
+        const int deficit = targetTotalCities - int(cities.size());
         const int maxGlobalTries = std::max(512, deficit * 32);
         const int topupJitter = 2 * minDist;   // the same distance law
         int t = 0;
-        while (int(P.cities.size()) < targetTotalCities) {
+        while (int(cities.size()) < targetTotalCities) {
             // One city = the best of kCityCandidateDraws anchor-jitter
             // draws, same as kingdom scatter; the draw budget below is
             // only the never-spin-forever valve for saturated maps.
@@ -263,9 +261,9 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                 if (t++ >= maxGlobalTries) { budgetLeft = false; break; }
                 // Anchor on a random existing city → clustering stays natural.
                 const int anchor =
-                    int(r.next_u32() % std::uint32_t(P.cities.size()));
-                const int ax = P.cities[std::size_t(anchor)].x;
-                const int ay = P.cities[std::size_t(anchor)].y;
+                    int(r.next_u32() % std::uint32_t(cities.size()));
+                const int ax = cities[std::size_t(anchor)].x;
+                const int ay = cities[std::size_t(anchor)].y;
                 const int rx = wrap_axis(ax + int(r.next_u32()
                                               % std::uint32_t(2 * topupJitter + 1))
                                         - topupJitter, mapW);
@@ -273,7 +271,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                                               % std::uint32_t(2 * topupJitter + 1))
                                         - topupJitter, mapH);
                 if (!is_land(rx, ry)) continue;
-                if (find_close_city(P, rx, ry, minDist, mapW, mapH) >= 0) continue;
+                if (find_close_city(cities, rx, ry, minDist, mapW, mapH) >= 0) continue;
                 const int score = city_site_score(site, rx, ry);
                 if (score < 0) continue;
                 if (score > bestScore) {
@@ -286,17 +284,17 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                 continue;
             }
             // Inherit anchor's faction — clusters stay politically coherent.
-            const std::int16_t f = P.cities[std::size_t(bestAnchor)].factionIdx;
+            const std::int16_t f = cities[std::size_t(bestAnchor)].factionIdx;
             const int bestK = realm_of_faction(f);
             if (bestK < 0) continue;   // an anchor no realm owns: skip it
-            const int idx = int(P.cities.size());
+            const int idx = int(cities.size());
             City c; c.x = bestX; c.y = bestY;
             c.name = generate_name(realmLang[std::size_t(bestK)],
                                    std::uint32_t(idx) * 2654435761u);
             c.factionIdx = f;
             for (int& cc : c.connections) cc = -1;
             c.population = city_population(bestScore);
-            P.cities.push_back(std::move(c));
+            cities.push_back(std::move(c));
             realmCities[std::size_t(bestK)].push_back(idx);
         }
     }
@@ -304,23 +302,23 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     // ── Per-realm MST (Prim's) rooted at the capital, plus 1 extra ──
     // nearest unconnected edge per city for redundancy (max 8 conns).
     auto add_conn = [&](int a, int b) {
-        for (int& c : P.cities[std::size_t(a)].connections)
+        for (int& c : cities[std::size_t(a)].connections)
             if (c == b) return;          // already connected
-        for (int& c : P.cities[std::size_t(a)].connections)
+        for (int& c : cities[std::size_t(a)].connections)
             if (c == -1) { c = b; return; }
     };
     auto has_conn = [&](int a, int b) {
-        for (int c : P.cities[std::size_t(a)].connections) if (c == b) return true;
+        for (int c : cities[std::size_t(a)].connections) if (c == b) return true;
         return false;
     };
     auto conn_count = [&](int a) {
         int n = 0;
-        for (int c : P.cities[std::size_t(a)].connections) if (c != -1) ++n;
+        for (int c : cities[std::size_t(a)].connections) if (c != -1) ++n;
         return n;
     };
     auto torus_d2 = [&](int ai, int bi) {
-        return torus_dist2(P.cities[std::size_t(ai)].x, P.cities[std::size_t(ai)].y,
-                           P.cities[std::size_t(bi)].x, P.cities[std::size_t(bi)].y,
+        return torus_dist2(cities[std::size_t(ai)].x, cities[std::size_t(ai)].y,
+                           cities[std::size_t(bi)].x, cities[std::size_t(bi)].y,
                            mapW, mapH);
     };
 
@@ -366,12 +364,12 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         // mirrored edge (add_conn(nearest,self)) would double a diagonal at the
         // far city just as visibly as at the near one.
         auto shadows_existing = [&](int from, int to) {
-            for (int ex : P.cities[std::size_t(from)].connections) {
+            for (int ex : cities[std::size_t(from)].connections) {
                 if (ex < 0 || ex == to) continue;
                 if (torus_bearings_parallel(
-                        P.cities[std::size_t(from)].x, P.cities[std::size_t(from)].y,
-                        P.cities[std::size_t(ex)].x,   P.cities[std::size_t(ex)].y,
-                        P.cities[std::size_t(to)].x,   P.cities[std::size_t(to)].y,
+                        cities[std::size_t(from)].x, cities[std::size_t(from)].y,
+                        cities[std::size_t(ex)].x,   cities[std::size_t(ex)].y,
+                        cities[std::size_t(to)].x,   cities[std::size_t(to)].y,
                         mapW, mapH, kRoadFanCosThreshold))
                     return true;
             }
@@ -415,30 +413,15 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         }
     }
 
-    // Voronoi cellOwner — flood toroidal nearest-city. The byte stored is
-    // the owning FACTION's registry index (kMaxFactions = 64 fits), 0xff
-    // for ground no city claims.
-    for (int y = 0; y < mapH; ++y) {
-        for (int x = 0; x < mapW; ++x) {
-            int best = -1; float bd = 1e30f;
-            for (std::size_t i = 0; i < P.cities.size(); ++i) {
-                float d = torus_dist_sq(float(x), float(y),
-                                        float(P.cities[i].x), float(P.cities[i].y),
-                                        float(mapW), float(mapH));
-                if (d < bd) { bd = d; best = P.cities[i].factionIdx; }
-            }
-            P.cellOwner[std::size_t(y) * mapW + x] =
-                best < 0 ? std::uint8_t(0xff) : std::uint8_t(best & 0xff);
-        }
-    }
-    return P;
+    return cities;
 }
 
-void snap_cities_to_land(Politik& p, const TerrainData& td, int radius) {
+void snap_cities_to_land(std::vector<City>& cities, const TerrainData& td,
+                         int radius) {
     if (!td.has_rgba_storage()) return;
     const int W = td.width;
     auto is_land = [&](int x, int y) { return !td.is_water(x, y); };
-    for (auto& c : p.cities) {
+    for (auto& c : cities) {
         if (is_land(c.x, c.y)) continue;
         // Spiral outward in concentric square rings — шаги ИНДЕКСА (cell_step).
         int found = 0, fx = c.x, fy = c.y;
@@ -459,8 +442,23 @@ void snap_cities_to_land(Politik& p, const TerrainData& td, int radius) {
 
 // ── Multi-source BFS Voronoi over land cells (TS buildCellOwnership). ──
 // Plus lake-snap for any realm whose seed def has capital_requires_lake.
-void finalize_politik(Politik& p, const TerrainData& td) {
-    if (!td.has_rgba_storage()) return;
+void finalize_politik(std::vector<City>& cities,
+                      std::vector<std::uint8_t>& cellOwner,
+                      int mapW, int mapH, const TerrainData& td) {
+    // ОДИН ПИСАТЕЛЬ, ОДИН РАЗМЕР: поле владения встаёт ровно стороной мира и
+    // ровно здесь, ДО любого отказа. Отказ оставляет мир честно НИЧЕЙНЫМ
+    // (0xff — дикая земля), а не чужого размера и не с прошлой жизнью в нём:
+    // `faction_index_for_cell` судит размер и на несовпадении отвечает вольным
+    // народом, поэтому размер обязан быть правдой, а не надеждой.
+    std::size_t cells = 0;
+    if (!TerrainData::cell_count_for(mapW, mapH, cells)) cells = 0;
+    cellOwner.assign(cells, 0xff);
+    if (cells == 0u || !td.has_rgba_storage()) return;
+    // Терраин обязан быть ТОЙ ЖЕ карты: BFS ниже ходит по клеткам `td` и
+    // пишет по индексу в поле мира, так что разные стороны означали бы запись
+    // мимо клетки. Прежде эта дверь просто брала размер у терраина и молча
+    // переразмеряла слой политики под него.
+    if (td.width != mapW || td.height != mapH) return;
     const int W = td.width, H = td.height;
     // Пять рукописных сравнений `rgba[..*4+0] >= seaLevel8` стояли здесь и
     // выше — шестой спеллинг «вода ли клетка», мимо двери карты (M-109).
@@ -487,7 +485,7 @@ void finalize_politik(Politik& p, const TerrainData& td) {
         const int fi = faction_index(def.factionId);
         if (fi < 0) continue;
         City* cap = nullptr;
-        for (auto& c : p.cities)
+        for (auto& c : cities)
             if (c.isCapital && int(c.factionIdx) == fi) { cap = &c; break; }
         if (!cap) continue;
         if (count_local_water(cap->x, cap->y, kLakeScanRadius) >= 4) continue;
@@ -514,7 +512,7 @@ void finalize_politik(Politik& p, const TerrainData& td) {
     std::vector<std::uint8_t> owner(n, 0);
     std::vector<int> queue;
     queue.reserve(n);
-    for (const City& c : p.cities) {
+    for (const City& c : cities) {
         if (c.factionIdx < 0) continue;
         int x = wrap_axis(c.x, W), y = wrap_axis(c.y, H);
         if (!is_land(x, y)) continue;
@@ -541,9 +539,8 @@ void finalize_politik(Politik& p, const TerrainData& td) {
     }
 
     // Translate owner (1-based, 0=unowned) → cellOwner (0-based, 0xff=unowned).
-    p.cellOwner.assign(n, 0xff);
     for (std::size_t i = 0; i < n; ++i)
-        if (owner[i]) p.cellOwner[i] = std::uint8_t(owner[i] - 1);
+        if (owner[i]) cellOwner[i] = std::uint8_t(owner[i] - 1);
 }
 
 } // namespace sm

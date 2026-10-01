@@ -45,7 +45,6 @@
 #include "macro/deposit_layer.h"
 #include "macro/spires.h"
 #include "macro/zones.h"
-#include "macro/politik.h"
 #include "macro/vk_macro_renderer.h"
 #include "macro/macro_lighting.h"
 #include "tables/biomes.h"

@@ -2892,7 +2892,7 @@ std::uint16_t SubworldEngine::ground_faction_at(float fx, float fy) const {
     if (!gs_) return kNoFaction;
     const int ox = std::clamp(int(fx) / kCellSize, 0, 2) - 1;
     const int oy = std::clamp(int(fy) / kCellSize, 0, 2) - 1;
-    return faction_index_for_cell(gs_->politik,
+    return faction_index_for_cell(gs_->cellOwner, gs_->mapW, gs_->mapH,
                                   mgr_.center_cx() + ox,
                                   mgr_.center_cy() + oy);
 }

@@ -19,7 +19,7 @@
 //      world served the empire.
 //
 // Pure ECS + data assertions: no Vulkan, no window, no GameState needed beyond a
-// hand-built Politik. Manager construction mirrors subworld_spawn_parity_test.
+// hand-built ownership field. Manager construction mirrors subworld_spawn_parity_test.
 #include "check.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
@@ -83,42 +83,43 @@ void run_ground_owner_contract() {
     const std::uint16_t freefolk = std::uint16_t(sm::faction_index("freefolk"));
 
     // The byte IS the faction registry index now (kingdoms cut 2026-09-11).
-    sm::Politik politik{};
-    politik.mapW = 4;
-    politik.mapH = 2;
-    politik.cellOwner.assign(8, 0xffu);
-    politik.cellOwner[0] =
-        std::uint8_t(sm::faction_index("old_magica"));   // (0,0)
-    politik.cellOwner[5] =
-        std::uint8_t(sm::faction_index("timaert"));      // (1,1)
+    // ПОЛЕ, А НЕ ОБЁРТКА (M-90): дверь берёт сам массив и сторону мира —
+    // своей копии размера у поля нет, её держит мир.
+    std::vector<std::uint8_t> cellOwner(8, 0xffu);
+    cellOwner[0] = std::uint8_t(sm::faction_index("old_magica"));   // (0,0)
+    cellOwner[5] = std::uint8_t(sm::faction_index("timaert"));      // (1,1)
 
-    CHECK(sm::faction_index_for_cell(politik, 0, 0)
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, 0, 0)
               == std::uint16_t(sm::faction_index("old_magica")),
           "a claimed cell answers with the realm that holds it");
-    CHECK(sm::faction_index_for_cell(politik, 1, 1)
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, 1, 1)
               == std::uint16_t(sm::faction_index("timaert")),
           "a second claimed cell answers with ITS realm, not the first's");
-    CHECK(sm::faction_index_for_cell(politik, 2, 0) == freefolk,
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, 2, 0) == freefolk,
           "the unclaimed wilds belong to the free folk");
     // ЗАКОН АДРЕСА: the map is a torus — coordinates WRAP, they never read
     // out of bounds, and the far side of the seam is the same cell.
-    CHECK(sm::faction_index_for_cell(politik, 4, 2)
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, 4, 2)
               == std::uint16_t(sm::faction_index("old_magica")),
           "a coordinate past the far edge wraps to the same cell");
-    CHECK(sm::faction_index_for_cell(politik, -4, -2)
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, -4, -2)
               == std::uint16_t(sm::faction_index("old_magica")),
           "a negative coordinate wraps the same way — the torus has no edge");
 
     // No ownership map at all (a world mid-generation, a bare test fixture):
     // unclaimed, not a garbage index off the end of the vector.
-    sm::Politik empty{};
-    CHECK(sm::faction_index_for_cell(empty, 0, 0) == freefolk,
+    const std::vector<std::uint8_t> empty;
+    CHECK(sm::faction_index_for_cell(empty, 4, 2, 0, 0) == freefolk,
           "a world with no ownership map yet answers UNCLAIMED, not garbage");
     // A truncated map is rejected the same way rather than indexed into.
-    sm::Politik torn = politik;
-    torn.cellOwner.resize(3);
-    CHECK(sm::faction_index_for_cell(torn, 0, 0) == freefolk,
+    std::vector<std::uint8_t> torn = cellOwner;
+    torn.resize(3);
+    CHECK(sm::faction_index_for_cell(torn, 4, 2, 0, 0) == freefolk,
           "a truncated map degrades to unclaimed instead of being indexed into");
+    // И НАОБОРОТ — сторона, которой поле не соответствует, тоже отказ: это
+    // ровно тот дубль размера, что умер с обёрткой, и теперь он проверяем.
+    CHECK(sm::faction_index_for_cell(cellOwner, 8, 2, 0, 0) == freefolk,
+          "поле, не совпавшее со стороной мира, отвечает НИЧЕЙНЫМ");
 }
 
 // ── 2. The shipping spawn path, with the negative control ───────────────────

@@ -6,7 +6,6 @@
 #include "tables/commodity.h"
 #include "macro/anketa.h"
 #include "tables/npc.h"
-#include "macro/politik.h"
 
 #include <algorithm>
 #include <cmath>

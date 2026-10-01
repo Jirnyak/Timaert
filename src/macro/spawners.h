@@ -64,7 +64,12 @@ inline constexpr RoadClassDef kRoadClasses[] = {
 // pairs use THE find_path (pathfinding.h) with the last-known-good large-map
 // budget and treat rejected water cells as blocked road terrain.
 std::vector<std::uint8_t> trace_roads(const TerrainData& td,
-                                      Politik& politik,
+                                      // ПЛАН ГЕНЕРАТОРА, не слой мира
+                                      // (M-90): трассер ходит по рёбрам
+                                      // `connections` и ВЫЧЁРКИВАЕТ из них
+                                      // те, что не легли, — поэтому план
+                                      // приходит по неконстантной ссылке.
+                                      std::vector<City>& cities,
                                       RoadTraceStats* stats = nullptr,
                                       // The living forest: the planner walks
                                       // THE step law, and the law's canopy

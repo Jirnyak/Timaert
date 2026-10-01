@@ -9,6 +9,15 @@
 namespace
 {
 
+// ОБЫЧНАЯ СУША фикстур — середина между плоскостью моря и горной линией,
+// выведенная, а не списанная. Здесь стоял байт 160 (0.627): под линией 0.75 это
+// была равнина, а когда линия переехала на 0.625 (бескламповый синтез,
+// 2026-10-01), ВСЕ эти миры молча стали горными целиком — и дорога, которой
+// горы дороже, пошла другим путём и штемпелевала отвергнутую воду.
+constexpr float kPlainLand01 =
+    0.5f * (sm::kDefaultSeaLevel + sm::kMountainBiomeLevel);
+constexpr std::uint8_t kPlainLandByte = std::uint8_t(kPlainLand01 * 255.0f);
+
 sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
 {
     sm::TerrainData td;
@@ -78,14 +87,12 @@ void test_road_prunes_water_only_connection()
     set_cell(td, 1, 1, 160);
     set_cell(td, 3, 3, 160);
 
-    sm::Politik p;
-    p.mapW = td.width;
-    p.mapH = td.height;
-    p.cities.push_back(make_city(1, 1, 1));
-    p.cities.push_back(make_city(3, 3, 0));
+    std::vector<sm::City> cityPlan;
+    cityPlan.push_back(make_city(1, 1, 1));
+    cityPlan.push_back(make_city(3, 3, 0));
 
     sm::RoadTraceStats stats;
-    const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
+    const std::vector<std::uint8_t> roads = sm::trace_roads(td, cityPlan, &stats);
 
     const int failsBefore = sm::test::failures();
     CHECK(stats.attemptedEdges == 1, "water-only edge should be attempted once");
@@ -93,7 +100,7 @@ void test_road_prunes_water_only_connection()
     CHECK(stats.prunedEdges == 1, "water-only edge must be pruned");
     CHECK(stats.componentPrunedEdges == 1,
           "water-only edge should be rejected before expensive A*");
-    CHECK(!has_connection(p.cities[0], 1) && !has_connection(p.cities[1], 0),
+    CHECK(!has_connection(cityPlan[0], 1) && !has_connection(cityPlan[1], 0),
           "pruned Politik edge must be removed from both cities");
     for (std::size_t i = 0; i < roads.size(); ++i)
     {
@@ -109,20 +116,18 @@ void test_road_survives_land_detour_without_water_cells()
 {
     // ЗАКОН АДРЕСА: квадрат, po2 (была 5×3 — незаконная форма мира; носитель
     // теста — обход водяного столба ЧЕРЕЗ ЗАВОРОТ ТОРА — сохранён).
-    sm::TerrainData td = make_terrain(8, 8, 160);
+    sm::TerrainData td = make_terrain(8, 8, kPlainLandByte);
     for (int y = 0; y < td.height; ++y)
     {
         set_cell(td, 2, y, 0);
     }
 
-    sm::Politik p;
-    p.mapW = td.width;
-    p.mapH = td.height;
-    p.cities.push_back(make_city(1, 1, 1));
-    p.cities.push_back(make_city(3, 1, 0));
+    std::vector<sm::City> cityPlan;
+    cityPlan.push_back(make_city(1, 1, 1));
+    cityPlan.push_back(make_city(3, 1, 0));
 
     sm::RoadTraceStats stats;
-    const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
+    const std::vector<std::uint8_t> roads = sm::trace_roads(td, cityPlan, &stats);
 
     const int failsBefore = sm::test::failures();
     CHECK(stats.attemptedEdges == 1, "detour edge should be attempted once");
@@ -130,7 +135,7 @@ void test_road_survives_land_detour_without_water_cells()
     CHECK(stats.prunedEdges == 0, "land detour edge should not be pruned");
     CHECK(stats.componentPrunedEdges == 0,
           "land detour edge must still run through road A*");
-    CHECK(has_connection(p.cities[0], 1) && has_connection(p.cities[1], 0),
+    CHECK(has_connection(cityPlan[0], 1) && has_connection(cityPlan[1], 0),
           "surviving Politik edge must remain connected");
     for (int y = 0; y < td.height; ++y)
     {
@@ -146,16 +151,14 @@ void test_road_survives_land_detour_without_water_cells()
 
 void test_road_uses_a_star_on_open_land_connection()
 {
-    sm::TerrainData td = make_terrain(8, 8, 160);
+    sm::TerrainData td = make_terrain(8, 8, kPlainLandByte);
 
-    sm::Politik p;
-    p.mapW = td.width;
-    p.mapH = td.height;
-    p.cities.push_back(make_city(1, 1, 1));
-    p.cities.push_back(make_city(6, 6, 0));
+    std::vector<sm::City> cityPlan;
+    cityPlan.push_back(make_city(1, 1, 1));
+    cityPlan.push_back(make_city(6, 6, 0));
 
     sm::RoadTraceStats stats;
-    const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
+    const std::vector<std::uint8_t> roads = sm::trace_roads(td, cityPlan, &stats);
 
     CHECK(stats.attemptedEdges == 1, "open-land edge should be attempted once");
     CHECK(stats.keptEdges == 1, "open-land edge should survive");
@@ -184,23 +187,19 @@ void test_road_tracing_uses_map_sea_level()
     defaultSeaTd.seaLevel8 = sm::sea_level_byte(0.40f);
     sm::bake_biomes(defaultSeaTd);   // плоскость сдвинута — поле биома за ней
 
-    sm::Politik lowSeaPolitik;
-    lowSeaPolitik.mapW = td.width;
-    lowSeaPolitik.mapH = td.height;
-    lowSeaPolitik.cities.push_back(make_city(0, 0, 1));
-    lowSeaPolitik.cities.push_back(make_city(4, 0, 0));
+    std::vector<sm::City> lowSeaPlan;
+    lowSeaPlan.push_back(make_city(0, 0, 1));
+    lowSeaPlan.push_back(make_city(4, 0, 0));
     sm::RoadTraceStats lowSeaStats;
     const std::vector<std::uint8_t> lowSeaRoads =
-        sm::trace_roads(lowSeaTd, lowSeaPolitik, &lowSeaStats);
+        sm::trace_roads(lowSeaTd, lowSeaPlan, &lowSeaStats);
 
-    sm::Politik defaultSeaPolitik;
-    defaultSeaPolitik.mapW = td.width;
-    defaultSeaPolitik.mapH = td.height;
-    defaultSeaPolitik.cities.push_back(make_city(0, 0, 1));
-    defaultSeaPolitik.cities.push_back(make_city(4, 0, 0));
+    std::vector<sm::City> defaultSeaPlan;
+    defaultSeaPlan.push_back(make_city(0, 0, 1));
+    defaultSeaPlan.push_back(make_city(4, 0, 0));
     sm::RoadTraceStats defaultSeaStats;
     const std::vector<std::uint8_t> defaultSeaRoads =
-        sm::trace_roads(defaultSeaTd, defaultSeaPolitik, &defaultSeaStats);
+        sm::trace_roads(defaultSeaTd, defaultSeaPlan, &defaultSeaStats);
 
     CHECK(lowSeaStats.keptEdges == 1 && lowSeaStats.prunedEdges == 0,
           "road tracing must use active low sea level for land connectivity");
@@ -208,8 +207,8 @@ void test_road_tracing_uses_map_sea_level()
           "active low sea road trace must stamp reachable land");
     CHECK(defaultSeaStats.keptEdges == 0 && defaultSeaStats.componentPrunedEdges == 1,
           "road tracing must reject the same cells below active default sea level");
-    CHECK(!has_connection(defaultSeaPolitik.cities[0], 1)
-              && !has_connection(defaultSeaPolitik.cities[1], 0),
+    CHECK(!has_connection(defaultSeaPlan[0], 1)
+              && !has_connection(defaultSeaPlan[1], 0),
           "default-sea rejected road must prune Politik edges");
     CHECK(!defaultSeaRoads.empty() && defaultSeaRoads[0] == 0u,
           "default-sea rejected road must not stamp water cells");
@@ -217,7 +216,7 @@ void test_road_tracing_uses_map_sea_level()
 
 void test_large_road_search_restores_same_land_detour()
 {
-    sm::TerrainData td = make_terrain(256, 256, 160);   // ЗАКОН АДРЕСА: po2
+    sm::TerrainData td = make_terrain(256, 256, kPlainLandByte);   // ЗАКОН АДРЕСА: po2
     // TWO water columns: a one-cell wall would be bridgeable now (every wall
     // cell has land on both E/W sides), and this test is about the search
     // BUDGET — the wall must force the long detour, not invite a span.
@@ -231,14 +230,12 @@ void test_large_road_search_restores_same_land_detour()
     set_cell(td, 150, td.height - 1, 160);
     set_cell(td, 151, td.height - 1, 160);
 
-    sm::Politik p;
-    p.mapW = td.width;
-    p.mapH = td.height;
-    p.cities.push_back(make_city(120, 150, 1));
-    p.cities.push_back(make_city(180, 150, 0));
+    std::vector<sm::City> cityPlan;
+    cityPlan.push_back(make_city(120, 150, 1));
+    cityPlan.push_back(make_city(180, 150, 0));
 
     sm::RoadTraceStats stats;
-    const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
+    const std::vector<std::uint8_t> roads = sm::trace_roads(td, cityPlan, &stats);
 
     const int failsBefore = sm::test::failures();
     CHECK(stats.attemptedEdges == 1, "over-budget detour edge should be attempted once");
@@ -276,7 +273,7 @@ sm::TerrainData make_two_barrier_terrain()
     // двойки — здесь стояло 20×9. Ширина ВЫРОСЛА, а не упала: оба барьера
     // (река x=5, пролив x=13..14) и полоса суши между проливом и швом
     // обязаны уцелеть, иначе фикстура проверяла бы другую геометрию.
-    sm::TerrainData td = make_terrain(32, 32, 160);
+    sm::TerrainData td = make_terrain(32, 32, kPlainLandByte);
     for (int y = 0; y < td.height; ++y)
     {
         set_cell(td, 5, y, 90);   // one-cell river (water: 90 < 102)
@@ -290,20 +287,18 @@ void test_road_bridges_one_cell_river()
 {
     sm::TerrainData td = make_two_barrier_terrain();
 
-    sm::Politik p;
-    p.mapW = td.width;
-    p.mapH = td.height;
-    p.cities.push_back(make_city(2, 4, 1));
-    p.cities.push_back(make_city(8, 4, 0));
+    std::vector<sm::City> cityPlan;
+    cityPlan.push_back(make_city(2, 4, 1));
+    cityPlan.push_back(make_city(8, 4, 0));
 
     sm::RoadTraceStats stats;
-    const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
+    const std::vector<std::uint8_t> roads = sm::trace_roads(td, cityPlan, &stats);
 
     CHECK(stats.componentPrunedEdges == 0,
           "one-cell water joins its shores into ONE road component");
     CHECK(stats.keptEdges == 1 && stats.prunedEdges == 0,
           "the cross-river edge must survive over a bridge");
-    CHECK(has_connection(p.cities[0], 1) && has_connection(p.cities[1], 0),
+    CHECK(has_connection(cityPlan[0], 1) && has_connection(cityPlan[1], 0),
           "the bridged edge must keep its Politik connection");
 
     int wet = 0, wetY = -1;
@@ -356,7 +351,7 @@ void test_two_separating_straits_stay_unbridged()
     // двойки — здесь стояло 20×9. Ширина ВЫРОСЛА, а не упала: оба барьера
     // (река x=5, пролив x=13..14) и полоса суши между проливом и швом
     // обязаны уцелеть, иначе фикстура проверяла бы другую геометрию.
-    sm::TerrainData td = make_terrain(32, 32, 160);
+    sm::TerrainData td = make_terrain(32, 32, kPlainLandByte);
     for (int y = 0; y < td.height; ++y)
     {
         set_cell(td, 5, y, 90);
@@ -365,18 +360,16 @@ void test_two_separating_straits_stay_unbridged()
         set_cell(td, 14, y, 90);
     }
 
-    sm::Politik p;
-    p.mapW = td.width;
-    p.mapH = td.height;
-    p.cities.push_back(make_city(2, 4, 1));
-    p.cities.push_back(make_city(9, 4, 0));
+    std::vector<sm::City> cityPlan;
+    cityPlan.push_back(make_city(2, 4, 1));
+    cityPlan.push_back(make_city(9, 4, 0));
 
     sm::RoadTraceStats stats;
-    const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
+    const std::vector<std::uint8_t> roads = sm::trace_roads(td, cityPlan, &stats);
 
     CHECK(stats.keptEdges == 0 && stats.componentPrunedEdges == 1,
           "two-cell water has no one-cell crossing — the edge is pruned");
-    CHECK(!has_connection(p.cities[0], 1) && !has_connection(p.cities[1], 0),
+    CHECK(!has_connection(cityPlan[0], 1) && !has_connection(cityPlan[1], 0),
           "the unbridgeable edge must lose its Politik connection");
     int wetRoads = 0;
     for (std::size_t i = 0; i < roads.size(); ++i)
@@ -498,14 +491,12 @@ void test_malformed_terrain_fails_closed()
     td.height = 4;
     td.rgba.assign(3u, 255u);
 
-    sm::Politik p;
-    p.mapW = td.width;
-    p.mapH = td.height;
-    p.cities.push_back(make_city(0, 0, 1));
-    p.cities.push_back(make_city(3, 3, 0));
+    std::vector<sm::City> cityPlan;
+    cityPlan.push_back(make_city(0, 0, 1));
+    cityPlan.push_back(make_city(3, 3, 0));
 
     sm::RoadTraceStats stats;
-    const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
+    const std::vector<std::uint8_t> roads = sm::trace_roads(td, cityPlan, &stats);
     const std::vector<sm::TreePoint> trees = sm::spawn_trees(td, std::uint32_t{7});
 
     CHECK(!td.has_rgba_storage(),
@@ -526,30 +517,50 @@ void test_politik_malformed_terrain_fails_closed()
     td.height = 4;
     td.rgba.assign(3u, 255u);
 
-    sm::Politik p = sm::generate_politik(123u, 8, 8, &td, 12);
+    std::vector<sm::City> cityPlan = sm::generate_politik(123u, 8, 8, &td, 12);
 
     CHECK(!td.has_rgba_storage(),
           "malformed Politik input must be rejected by terrain helper");
-    CHECK(p.mapW == 8 && p.mapH == 8,
-          "Politik generation should keep requested valid map dimensions");
-    CHECK(p.cellOwner.size() == 64u,
-          "Politik generation should allocate ownership for valid map dimensions");
-    CHECK(!p.cities.empty(),
+    CHECK(!cityPlan.empty(),
           "Politik generation should fall back to no-terrain placement instead of failing open");
-    for (const sm::City& c : p.cities)
+    for (const sm::City& c : cityPlan)
     {
-        CHECK(c.x >= 0 && c.x < p.mapW && c.y >= 0 && c.y < p.mapH,
-              "Politik fallback cities must stay inside map bounds");
+        CHECK(c.x >= 0 && c.x < 8 && c.y >= 0 && c.y < 8,
+              "Politik fallback cities must stay inside the REQUESTED map");
     }
 
-    sm::snap_cities_to_land(p, td, 8);
-    sm::finalize_politik(p, td);
-    CHECK(p.cellOwner.size() == 64u,
-          "malformed terrain finalization must not corrupt ownership storage");
+    // ПОЛЕ ВЛАДЕНИЯ: ОДИН ПИСАТЕЛЬ, СТОРОНА МИРА, ОТКАЗ В НИЧЕЙНОЕ (M-90).
+    // Прежде поле размерялось ДВАЖДЫ — вверху генератора и внизу этой двери,
+    // — и сторону брало у терраина, поэтому несовпадение карты и мира молча
+    // переразмеряло слой. Утверждается ПАРА: на несовпадении дверь отдаёт
+    // сторону МИРА и НИ ОДНОГО владельца, на совпадении — владельца отдаёт.
+    // Одиночная половина зеленела бы на двери, которая не работает вовсе.
+    std::vector<std::uint8_t> owner(7u, 0u);   // мусор прошлой жизни в поле
+    sm::snap_cities_to_land(cityPlan, td, 8);
+    sm::finalize_politik(cityPlan, owner, 8, 8, td);
+    CHECK(owner.size() == 64u,
+          "поле владения размеряется стороной МИРА, а не битого терраина");
+    std::size_t owned = 0;
+    for (std::uint8_t b : owner) owned += (b != 0xffu) ? 1u : 0u;
+    CHECK(owned == 0u,
+          "битый терраин обязан оставить мир НИЧЕЙНЫМ, а не прошлой жизнью");
 
-    const sm::Politik invalidMap = sm::generate_politik(123u, 0, 8, &td, 12);
-    CHECK(invalidMap.mapW == 0 && invalidMap.mapH == 0
-              && invalidMap.cellOwner.empty() && invalidMap.cities.empty(),
+    sm::TerrainData whole = make_terrain(8, 8, kPlainLandByte);
+    std::vector<sm::City> onePlan;
+    onePlan.push_back(make_city(1, 1, -1));
+    std::vector<std::uint8_t> wholeOwner;
+    sm::finalize_politik(onePlan, wholeOwner, 8, 8, whole);
+    CHECK(wholeOwner.size() == 64u, "целый мир получает поле своей стороны");
+    std::size_t claimed = 0;
+    for (std::uint8_t b : wholeOwner) claimed += (b == 0u) ? 1u : 0u;
+    CHECK(claimed == 64u,
+          "единственный город целого сухого мира обязан занять его весь");
+
+    // Сторона мира не степень двойки/не задана — план пуст, поле пусто.
+    std::vector<sm::City> invalidMap = sm::generate_politik(123u, 0, 8, &td, 12);
+    std::vector<std::uint8_t> invalidOwner(9u, 0u);
+    sm::finalize_politik(invalidMap, invalidOwner, 0, 8, td);
+    CHECK(invalidMap.empty() && invalidOwner.empty(),
           "invalid Politik map dimensions must fail closed");
 }
 
@@ -666,7 +677,7 @@ void test_dirt_roads_fail_closed_on_malformed_inputs()
 
     // Feature layer that does not cover the terrain. (8×8 против 4×4 —
     // ЗАКОН АДРЕСА: мир po2; носитель теста — НЕСОВПАДЕНИЕ размеров.)
-    sm::TerrainData td = make_terrain(8, 8, 160);
+    sm::TerrainData td = make_terrain(8, 8, kPlainLandByte);
     sm::FeatureLayer mismatched;
     mismatched.resize(4, 4);
     CHECK(sm::trace_dirt_roads(mismatched, td, villages, {}, 4) == 0,

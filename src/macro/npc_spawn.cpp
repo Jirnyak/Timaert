@@ -529,7 +529,7 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, MacroStore& st,
     // subworld spawner uses.
     const std::uint16_t f = npc_def(type).ai == AIBehaviour::Aggressive
         ? std::uint16_t(faction_index("bandits"))
-        : faction_index_for_cell(gs.politik, p.x, p.y);
+        : faction_index_for_cell(gs.cellOwner, gs.mapW, gs.mapH, p.x, p.y);
 
     return st.valid(make_npc(st, type, f, p.x, p.y, gs.mapW, /*homeId*/ 0,
                              rng, gs.nextMacroSpawnOrdinal, level));
@@ -568,7 +568,7 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
     const std::uint16_t f = spec.factionIndex >= 0
         ? std::uint16_t(spec.factionIndex)
         : home ? settlement_faction_index(*home)
-               : faction_index_for_cell(gs.politik, p.x, p.y);
+               : faction_index_for_cell(gs.cellOwner, gs.mapW, gs.mapH, p.x, p.y);
 
     const MacroHandle leader =
         make_npc(store, spec.leaderType, f, p.x, p.y, gs.mapW,

@@ -184,7 +184,6 @@ SKELETON.md	:510
 SKELETON.md	:52
 SKELETON.md	:541-573
 SKELETON.md	:55-59
-SKELETON.md	:551-553
 SKELETON.md	:566-605
 SKELETON.md	:573-605
 SKELETON.md	:576-577
@@ -504,20 +503,15 @@ SKELETON.md	pathfinding.h:207
 SKELETON.md	pathfinding.h:208
 SKELETON.md	pathfinding.h:34
 SKELETON.md	player_entity.cpp:45
-SKELETON.md	player_entity.cpp:67-71
 SKELETON.md	politik.cpp:128
 SKELETON.md	politik.cpp:170
-SKELETON.md	politik.cpp:422-434
 SKELETON.md	politik.cpp:491-516
 SKELETON.md	politik.cpp:535
 SKELETON.md	politik.cpp:535-539
 SKELETON.md	politik.cpp:537-540
 SKELETON.md	politik.cpp:76
 SKELETON.md	politik.h:49
-SKELETON.md	politik.h:72
-SKELETON.md	politik.h:77
 SKELETON.md	politik.h:96-97
-SKELETON.md	politik.h:96-99
 SKELETON.md	quest_engine.cpp:114-116
 SKELETON.md	quest_engine.cpp:232
 SKELETON.md	quest_engine.cpp:234-235
@@ -618,7 +612,6 @@ SKELETON.md	stacks.h:79
 SKELETON.md	stacks.h:85
 SKELETON.md	stacks.h:92
 SKELETON.md	state.cpp:124
-SKELETON.md	state.cpp:153-192
 SKELETON.md	state.cpp:214
 SKELETON.md	state.cpp:266-272
 SKELETON.md	state.cpp:277-307
@@ -723,7 +716,6 @@ SKELETON.md	vk_renderer_3d.cpp:2986-2990
 SKELETON.md	world_fields.cpp:268
 SKELETON.md	world_fields.cpp:79
 SKELETON.md	world_gen.cpp:152-156
-SKELETON.md	world_gen.cpp:186
 SKELETON.md	world_gen.cpp:193-199
 SKELETON.md	world_gen.cpp:205-206
 SKELETON.md	world_gen.cpp:207
@@ -731,7 +723,6 @@ SKELETON.md	world_gen.cpp:213
 SKELETON.md	world_gen.cpp:51-55
 SKELETON.md	world_gen.cpp:64
 SKELETON.md	world_gen.cpp:90-95
-SKELETON.md	world_gen.cpp:96-99
 SKELETON.md	world_row.h:342-343
 SKELETON.md	world_row.h:66
 SKELETON.md	world_tick.cpp:201

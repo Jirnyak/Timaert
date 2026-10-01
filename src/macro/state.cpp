@@ -121,6 +121,7 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 //
 // All deterministic via `gs.worldSeed`. Idempotent: clears prior lists.
 void populate_landmarks_from_politik(GameState& gs,
+                                     const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,
                                      DepositLayer& deposits) {
@@ -145,7 +146,6 @@ void populate_landmarks_from_politik(GameState& gs,
         return langCache[k];
     };
 
-    const auto& cities = gs.politik.cities;
     gs.landmarks.reserve(cities.size());
 
     for (std::size_t i = 0; i < cities.size(); ++i) {

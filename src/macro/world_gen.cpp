@@ -98,11 +98,17 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     siteCtx.w.trees    = out.treeLayer;
     siteCtx.w.terrain  = out.terrain;
     siteCtx.w.deposits = out.deposits;
-    gs.politik = generate_politik(gs.worldSeed, gs.mapW, gs.mapH, out.terrain,
-                                  p.targetTotalCities, &siteCtx);
-    snap_cities_to_land(gs.politik, *out.terrain);
-    finalize_politik(gs.politik, *out.terrain);
-    populate_landmarks_from_politik(gs, *out.terrain, *out.treeLayer,
+    // ПЛАН ГОРОДОВ — ЛОКАЛЬНЫЙ БУФЕР ГЕНЕЗИСА (M-90, ЗАКОН ГЕНЕРАЦИИ). Он
+    // живёт ровно до конца этой функции: расселение делает из него места,
+    // трассер дорог ходит по его рёбрам, сиды зон берут его точки — и он
+    // умирает вместе с генерацией. В `GameState` он не едет, в сейв не едет,
+    // живой мир о городе спрашивает МЕСТО, а не этот список.
+    std::vector<City> cityPlan =
+        generate_politik(gs.worldSeed, gs.mapW, gs.mapH, out.terrain,
+                         p.targetTotalCities, &siteCtx);
+    snap_cities_to_land(cityPlan, *out.terrain);
+    finalize_politik(cityPlan, gs.cellOwner, gs.mapW, gs.mapH, *out.terrain);
+    populate_landmarks_from_politik(gs, cityPlan, *out.terrain, *out.treeLayer,
                                     *out.deposits);
     if (p.trace) {
         // The R2 report card: how many villages actually stand next to the
@@ -174,7 +180,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     }
 
     RoadTraceStats roadStats;
-    auto roads = trace_roads(*out.terrain, gs.politik, &roadStats,
+    auto roads = trace_roads(*out.terrain, cityPlan, &roadStats,
                              out.treeLayer);
     if (p.trace) {
         std::fprintf(stderr,
@@ -188,7 +194,6 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                      roadStats.expansions);
         std::fflush(stderr);
     }
-    const auto& citiesFlat = gs.politik.cities;
     // Macro invariant, city half: every city sits on a main road. Neighbour
     // road-stitching in the seamless subworld is feature-driven, so stamping
     // the road cell is what makes roads reach every settlement and adjacent
@@ -197,7 +202,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // now lives in trace_dirt_roads, which runs AFTER spires exist below.)
     {
         const int mw = gs.mapW, mh = gs.mapH;
-        for (const auto& c : citiesFlat) {
+        for (const auto& c : cityPlan) {
             if (c.x < 0 || c.y < 0 || c.x >= mw || c.y >= mh) continue;
             const std::size_t idx =
                 std::size_t(c.y) * std::size_t(mw) + std::size_t(c.x);
@@ -211,7 +216,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     build_tree_grid(*out.treeGrid, *out.trees, gs.mapW, gs.mapH);
 
     std::vector<ZoneSeed> zsCities, zsVills;
-    for (auto& c : citiesFlat) zsCities.push_back({c.x, c.y});
+    for (auto& c : cityPlan) zsCities.push_back({c.x, c.y});
     for (auto& v : gs.landmarks)
         if (v.type == LandmarkType::Village) zsVills.push_back({v.x, v.y});
     *out.zones = generate_zones(gs.mapW, gs.mapH, gs.worldSeed,
@@ -300,7 +305,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // (politik.h derive_city_spacing) — one city spacing, not a magic
         // radius: a village's world ends about where the next town's begins.
         const int landmarkReach = derive_city_spacing(
-            out.terrain, gs.mapW, gs.mapH, int(citiesFlat.size()));
+            out.terrain, gs.mapW, gs.mapH, int(cityPlan.size()));
         const int dirtStamped = trace_dirt_roads(
             *out.features, *out.terrain, villageSites, landmarkSites,
             landmarkReach, out.treeLayer);

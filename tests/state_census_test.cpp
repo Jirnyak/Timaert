@@ -396,9 +396,11 @@ constexpr Row kGameStateRows[] = {
     {"factions", Rod::Factions,
      "строки фракций (macro/factions.h, v121): id, цвет, отношения колонкой "
      "строки, феодальные рёбра дани отрезками общего пула"},
-    {"politik", Rod::Divergence,
-     "cities — второй список мест, умирает M-90; cellOwner — поле владения "
-     "(род 3) в обёртке политики"},
+    {"cellOwner", Rod::Fields,
+     "поле владения землёй: байт строки фракции на клетку тора, 0xff = дикие "
+     "земли. Обёртка `Politik` снесена (M-90): список городов оказался планом "
+     "ГЕНЕРАТОРА и уехал локальным буфером генезиса, копия размера карты умерла "
+     "как второй ответ на сторону мира"},
     {"player", Rod::Nested, "переписан своей таблицей ниже"},
     {"playerSquadBits", Rod::Cache, "кэш записи spawnId == kPlayerSquadOrdinal"},
     {"playerFlagBits", Rod::Cache, "кэш носителя колонки playerFlag"},

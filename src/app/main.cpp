@@ -1768,15 +1768,17 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // that can still be forgotten is a new field genesis owns, and that list
     // is short, closed, and written out right here:
     //
-    //   politik     â cities, capitals, the map’s ownership. Derived from
-    //                 worldSeed by generate_macro_world and NOT in the file
-    //                 (save.h's opening line says so: the terrain/politik
-    //                 layers are regenerated). boot_world just built it for
-    //                 this exact seed, so it is the same politik the save was
-    //                 written under.
+    //   cellOwner   — whose land every cell is: the ownership FIELD politics
+    //                 floods at genesis. Derived from worldSeed by
+    //                 generate_macro_world and NOT in the file (save.h's
+    //                 opening line says so: the terrain/politik layers are
+    //                 regenerated). boot_world just flooded it for this exact
+    //                 seed, so it is the same ownership the save was written
+    //                 under. (The city PLAN that seeded the flood is genesis
+    //                 scratch and no longer outlives it — M-90.)
     //   sessionFeed — presentation, never saved by design (state.h:684). The
     //                 live one (just cleared by destroy_world) stays.
-    fresh.politik     = std::move(app.gs.politik);
+    fresh.cellOwner   = std::move(app.gs.cellOwner);
     fresh.sessionFeed = std::move(app.gs.sessionFeed);
     app.gs = std::move(fresh);
     // `fresh` is a husk from here on — every read below goes to app.gs.
@@ -3816,12 +3818,12 @@ void draw_debug_ui(App& app) {
                         : "fifo (display paces the world)");
     }
     ImGui::Text("Zoom %.2f  Cam %.1f,%.1f", app.zoom, app.camX, app.camY);
-    std::size_t dbgVillages = 0;
-    for (const auto& lm : app.gs.landmarks)
-        if (lm.type == sm::LandmarkType::Village) ++dbgVillages;
-    ImGui::Text("Cities %zu  Villages %zu",
-                app.gs.politik.cities.size(),
-                dbgVillages);
+    std::size_t dbgCities = 0, dbgVillages = 0;
+    for (const auto& lm : app.gs.landmarks) {
+        if (lm.type == sm::LandmarkType::City) ++dbgCities;
+        else if (lm.type == sm::LandmarkType::Village) ++dbgVillages;
+    }
+    ImGui::Text("Cities %zu  Villages %zu", dbgCities, dbgVillages);
     ImGui::Text("Subworld: %s", app.subworld.active() ? "ACTIVE" : "off");
     ImGui::End();
 }
@@ -5226,8 +5228,8 @@ void draw_debug_panels(App& app) {
 // ── Frame ─────────────────────────────────────────────────────
 
 // Build a small biome-coloured RGBA preview of the currently-loaded
-// terrain + politik and upload it to `app.customPreviewTex`. Cheap CPU
-// loop — same biome rule as the macro shader (`Water` if h<sea, else
+// terrain + landmark roster and upload it to `app.customPreviewTex`. Cheap
+// CPU loop — same biome rule as the macro shader (`Water` if h<sea, else
 // 3×3 climate matrix). Cities drawn as 3×3 yellow stamps.
 void build_world_preview(App& app, int side = 384) {
     if (!app.worldLoaded || app.terrain.rgba.empty()) return;
@@ -5280,16 +5282,21 @@ void build_world_preview(App& app, int side = 384) {
                 img[o + 0] = cr; img[o + 1] = cg; img[o + 2] = cb; img[o + 3] = 255;
             }
     };
-    for (int i = 0; i < int(app.gs.politik.cities.size()); ++i) {
-        const auto& c = app.gs.politik.cities[std::size_t(i)];
-        const int px = c.x * side / td.width;
-        const int py = c.y * side / td.height;
+    for (const auto& lm : app.gs.landmarks) {
+        if (lm.type != sm::LandmarkType::City) continue;
+        const int px = lm.x * side / td.width;
+        const int py = lm.y * side / td.height;
         stamp(px, py, 1, 240, 200, 60);
     }
-    for (const auto& c : app.gs.politik.cities) {
-        if (!c.isCapital) continue;
-        const int px = c.x * side / td.width;
-        const int py = c.y * side / td.height;
+    for (const auto& lm : app.gs.landmarks) {
+        // Столица есть город, не обязанный данью никому (S24: своему
+        // сюзерену она сама себе, и одна дверь ставит ей 0). Прежде здесь
+        // стояла колонка `City::isCapital` плана генератора — второй
+        // ответ на тот же вопрос, и он умер вместе с планом (M-90).
+        if (lm.type != sm::LandmarkType::City || sm::suzerain_of(lm) != 0)
+            continue;
+        const int px = lm.x * side / td.width;
+        const int py = lm.y * side / td.height;
         stamp(px, py, 2, 255, 240, 120);
     }
 

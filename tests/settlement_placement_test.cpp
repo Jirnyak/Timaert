@@ -110,6 +110,10 @@ struct World {
     TreeLayer    trees;
     DepositLayer deposits;
     GameState    gs;
+    // ПЛАН ГОРОДОВ — буфер генезиса (M-90), а не слой мира: он больше не
+    // живёт в `GameState`, поэтому фикстура держит его сама, ровно как это
+    // делает `generate_macro_world` своим локалом.
+    std::vector<City> cityPlan;
     // The deposit-reach field (v71): the score sees what the crews mine.
     // Owned here so site_ctx can hand out a stable pointer.
     std::vector<std::uint16_t> depositReach;
@@ -131,19 +135,18 @@ void make_settled_world(World& w) {
     w.gs.worldSeed = 777u;
     w.gs.mapW = kW;
     w.gs.mapH = kH;
-    w.gs.politik.mapW = kW;
-    w.gs.politik.mapH = kH;
-    w.gs.politik.cities.clear();
+    w.cityPlan.clear();
     City a{};
     a.x = 34; a.y = 20; a.factionIdx = -1; a.population = 1000;
     for (int& c : a.connections) c = -1;
     City b{};
     b.x = 84; b.y = 40; b.factionIdx = -1; b.population = 1000;
     for (int& c : b.connections) c = -1;
-    w.gs.politik.cities.push_back(a);
-    w.gs.politik.cities.push_back(b);
+    w.cityPlan.push_back(a);
+    w.cityPlan.push_back(b);
 
-    populate_landmarks_from_politik(w.gs, w.td, w.trees, w.deposits);
+    populate_landmarks_from_politik(w.gs, w.cityPlan, w.td, w.trees,
+                                    w.deposits);
 }
 
 // The village/city rows of the ONE roster, in creation order (v62).
@@ -179,7 +182,7 @@ SettlementSiteContext site_ctx(World& w) {
 std::vector<int> hinterland_scores(World& w, const City& c) {
     SettlementSiteContext ctx = site_ctx(w);
     const int spacing = derive_city_spacing(&w.td, kW, kH,
-                                            int(w.gs.politik.cities.size()));
+                                            int(w.cityPlan.size()));
     const int reach = std::max(4, spacing / 2);
     std::vector<int> scores;
     for (int dy = -reach; dy <= reach; ++dy) {
@@ -305,7 +308,7 @@ void test_villages_feed_themselves() {
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     SettlementSiteContext ctx = site_ctx(w);
     // Per city, at most ONE village may fail the gate (the forced hamlet).
-    std::vector<int> failedOf(w.gs.politik.cities.size(), 0);
+    std::vector<int> failedOf(w.cityPlan.size(), 0);
     for (const auto* vp : villages) {
         const auto& v = *vp;
         const SettlementSiteTerms t = settlement_site_terms(ctx, v.x, v.y);
@@ -329,7 +332,7 @@ void test_villages_feed_themselves() {
 void test_roulette_is_red() {
     World w;
     make_settled_world(w);
-    const City& c = w.gs.politik.cities[0];
+    const City& c = w.cityPlan[0];
     SettlementSiteContext ctx = site_ctx(w);
     Rng rng(w.gs.worldSeed ^ 0xC1A05E1Du);
     struct Dart { int x, y; };
@@ -389,12 +392,12 @@ void test_villages_scatter_around_their_town() {
     }
 
     // Every city whose hinterland holds ANY admissible ground keeps at
-    // least one village. Settlements are built from politik.cities in order,
+    // least one village. Settlements are built from the city PLAN in order,
     // so POSITION pairs them; the id is an ordinal, not an index (v54).
     const auto cities = cities_of(w.gs);
     for (std::size_t si = 0; si < cities.size(); ++si) {
         const auto& s = *cities[si];
-        const City& c = w.gs.politik.cities[si];
+        const City& c = w.cityPlan[si];
         if (hinterland_scores(w, c).empty()) continue;
         int mine = 0;
         for (const auto* vp : villages)
@@ -487,14 +490,15 @@ void test_villages_stand_next_to_something() {
 // capacity, floored — never dice), and the control that scored placement
 // actually lifts the ground under the cities against the first-valid old
 // law (site = nullptr degrades to exactly that).
-long long mean_city_score_x100(World& w, const Politik& p) {
+long long mean_city_score_x100(World& w, const std::vector<City>& cities) {
     SettlementSiteContext ctx = site_ctx(w);
     long long sum = 0;
-    for (const auto& c : p.cities)
+    for (const auto& c : cities)
         sum += std::max(0, settlement_site_score(
             ctx, SettlementScoreRow::City, c.x, c.y));
-    return p.cities.empty() ? 0
-                            : sum * 100 / static_cast<long long>(p.cities.size());
+    return cities.empty()
+        ? 0
+        : sum * 100 / static_cast<long long>(cities.size());
 }
 
 void test_cities_read_the_ground() {
@@ -508,10 +512,10 @@ void test_cities_read_the_ground() {
     w.gs.mapH = kH;
     SettlementSiteContext ctx = site_ctx(w);
 
-    const Politik scored = generate_politik(777u, kW, kH, &w.td,
-                                            12, &ctx);
-    CHECK_OR_RETURN(!scored.cities.empty(), "the world holds cities");
-    for (const auto& c : scored.cities) {
+    const std::vector<City> scored = generate_politik(777u, kW, kH, &w.td,
+                                                     12, &ctx);
+    CHECK_OR_RETURN(!scored.empty(), "the world holds cities");
+    for (const auto& c : scored) {
         CHECK(!w.td.is_water(c.x, c.y), "no city on water");
         const int score = settlement_site_score(
             ctx, SettlementScoreRow::City, c.x, c.y);
@@ -523,22 +527,22 @@ void test_cities_read_the_ground() {
 
     // The control: the same politics WITHOUT the score (the old first-valid
     // law) settles on measurably poorer ground.
-    const Politik blind = generate_politik(777u, kW, kH, &w.td,
-                                           12, nullptr);
+    const std::vector<City> blind = generate_politik(777u, kW, kH, &w.td,
+                                                    12, nullptr);
     CHECK(mean_city_score_x100(w, scored) > mean_city_score_x100(w, blind),
           "scored placement stands cities on better ground than the blind "
           "first-valid law");
 
     // One seed, one politics.
-    const Politik again = generate_politik(777u, kW, kH, &w.td,
-                                           12, &ctx);
-    CHECK_OR_RETURN(again.cities.size() == scored.cities.size(),
+    const std::vector<City> again = generate_politik(777u, kW, kH, &w.td,
+                                                    12, &ctx);
+    CHECK_OR_RETURN(again.size() == scored.size(),
                     "two runs raise the same number of cities");
     bool same = true;
-    for (std::size_t i = 0; i < scored.cities.size(); ++i)
-        same = same && again.cities[i].x == scored.cities[i].x
-                    && again.cities[i].y == scored.cities[i].y
-                    && again.cities[i].population == scored.cities[i].population;
+    for (std::size_t i = 0; i < scored.size(); ++i)
+        same = same && again[i].x == scored[i].x
+                    && again[i].y == scored[i].y
+                    && again[i].population == scored[i].population;
     CHECK(same, "one seed, one crowned world");
 }
 
