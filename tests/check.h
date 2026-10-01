@@ -50,9 +50,34 @@ inline void check(bool ok, const char* what, const char* file, int line) {
 inline int checks()   { return g_checks; }
 inline int failures() { return g_failures; }
 
+// THE THIRD RULE, И ОНО ПРО СТРОКУ ВЕРДИКТА, А НЕ ПРО КОД ВОЗВРАТА.
+// `add_test()` потребляет ОДИН БИТ — код возврата, — а покрытие убывает МОЛЧА:
+// удали `CHECK` из тела, сузи границу цикла, выпиши вызов из `main` — ни одно
+// утверждение не упало, прогон вышел нулём, ctest ЗЕЛЁНЫЙ, и в дифе рядом с
+// тестом ничего не видно. Напечатанный счёт читал НИКТО.
+//
+// Лечение — не второй счётчик, а ПИН НА НАПЕЧАТАННУЮ СТРОКУ:
+// `PASS_REGULAR_EXPRESSION` в `CMakeLists.txt` матчит ровно эту строку, поэтому
+// тест зелен только когда прогон ДОШЁЛ ДО КОНЦА И сел на ожидаемый счёт. Три
+// свойства в одном регексе: регресс двигает число и регекс промахивается; креш
+// до печати строки не печатает её вовсе; устаревший бинарник печатает старый
+// счёт. Код возврата не умеет ни одного из трёх.
+//
+// ЧУЖОЙ ШРАМ, КУПИВШИЙ ЭТО. В соседнем проекте ту же задачу решали
+// `WILL_FAIL`, который ИНВЕРТИРУЕТ код возврата. Это один бит «что-то упало»,
+// никогда счёт: шесть из семи растяжек там были ЗАКРЫТЫМИ пинами, поэтому
+// регресс любой из них двигал счёт провалов 2 → 3 — всё ещё не ноль, всё ещё
+// инвертировано, ctest ЗЕЛЁНЫЙ. Шесть «гейтов», которые гейтами не были. Та же
+// дыра глотала и креш: умри до печати — код возврата всё равно не ноль.
+//
+// ПОЧЕМУ СЧЁТ И ГРАНИЦА ПЕЧАТАЮТСЯ ОДНОЙ СТРОКОЙ. CTest ИЛИ-ит список
+// `PASS_REGULAR_EXPRESSION`: два элемента означают «любой из двух», то есть
+// строго СЛАБЕЕ одного. Потребовать оба числа можно только тогда, когда они
+// стоят рядом — отсюда перегрузка с `scope` ниже, а не вторая строка печати.
+//
 // The verdict, and the only one. Print a summary and hand ctest its exit code.
 // Zero checks is a failure — loudly, by name, so it cannot be read as "passed".
-[[nodiscard]] inline int report(const char* testName) {
+[[nodiscard]] inline int report(const char* testName, const char* scope) {
     if (g_checks == 0) {
         std::fprintf(stderr,
                      "FAIL %s: the test ran ZERO checks - it cannot pass.\n",
@@ -64,8 +89,22 @@ inline int failures() { return g_failures; }
                      testName, g_failures, g_checks);
         return 1;
     }
-    std::printf("OK %s (%d checks)\n", testName, g_checks);
+    // ГРАНИЦА ПРИБОРА ЕДЕТ В ЕГО ЖЕ ВЕРДИКТЕ, и это не украшение. Зелёный гейт
+    // читается как «проверено всё» — а он проверил то, что умеет. Пока число
+    // непроверенного стоит в PASS и запинено, PASS невозможно прочесть шире,
+    // чем он есть, и расширение охвата становится видимым решением в дифе.
+    if (scope && scope[0] != '\0') {
+        std::printf("OK %s (%d checks) [%s]\n", testName, g_checks, scope);
+    } else {
+        std::printf("OK %s (%d checks)\n", testName, g_checks);
+    }
     return 0;
+}
+
+// Свидетель без границы: у поведенческого теста её нет — он судит ПОВЕДЕНИЕ,
+// а не охват дерева, и приписывать ему «границу» значило бы выдумывать число.
+[[nodiscard]] inline int report(const char* testName) {
+    return report(testName, nullptr);
 }
 
 } // namespace sm::test

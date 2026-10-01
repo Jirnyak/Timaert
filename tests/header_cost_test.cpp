@@ -371,7 +371,12 @@ Probe run_one(const Toolchain& tc, const std::string& label, const std::string& 
     return one[0];
 }
 
-void run_wall() {
+// Счёт замеренных заголовков уходит ВЫХОДНЫМ параметром, а не возвратом:
+// `CHECK_OR_RETURN` законен только в void-функции (см. `check.h`), и менять его
+// на возврат значило бы снимать страховку с фикстуры ради строки печати. При
+// раннем выходе счёт остаётся нулём — и это правда о прогоне, который не
+// состоялся, а провал уже записан самим `CHECK_OR_RETURN`.
+void run_wall(int& probesMeasured) {
     const std::string buildDir = TIMAERT_BUILD_DIR;
     const std::string probeDir = buildDir + "/header_probe";
     mkdir(probeDir.c_str(), 0755);
@@ -433,6 +438,7 @@ void run_wall() {
           "сетка машины выше стены: иначе оборванный сеткой заголовок судился "
           "бы железом, а не стеной");
 
+    probesMeasured = int(probes.size());
     std::printf("  свод: %d заголовков за %.1f с (%d процесса, сетка %.0f МиБ%s)\n",
                 int(probes.size()), sweepSec, jobs, mib(netBytes),
                 integrated ? "" : ", БЕЗ -fintegrated-cc1: сетка видит только "
@@ -531,6 +537,18 @@ void run_wall() {
 } // namespace
 
 int main() {
-    run_wall();
-    return sm::test::report("header_cost_test");
+    int probes = 0;
+    run_wall(probes);
+
+    // ГРАНИЦА: прибор судит ПАМЯТЬ фронтенда относительной стеной, и ровно
+    // её. Второй прибор того же закона — `tu_time_jump` (ВРЕМЯ TU по
+    // `build/.ninja_log`) — в ctest не входит сознательно: вердикт по стенному
+    // времени помнит `-j` и свап, то есть соврал бы. Пока это сказано только в
+    // комментарии CMakeLists, зелёный `header_cost` читается как «цена сборки
+    // под гейтом»; верно — «половина цены под гейтом».
+    char scope[200];
+    std::snprintf(scope, sizeof(scope),
+                  "заголовков %d · стена %.0f× медианы по ПАМЯТИ · время TU НЕ "
+                  "судит (tu_time_jump вне ctest)", probes, kWallRatio);
+    return sm::test::report("header_cost_test", scope);
 }

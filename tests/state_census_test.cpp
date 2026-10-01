@@ -691,7 +691,18 @@ struct Carrier {
     std::size_t rowCount;
 };
 
-void census() {
+// ГРАНИЦА ПРИБОРА, ЧИСЛАМИ. Перепись судит ЧЕТЫРЕ названных носителя, а не
+// дерево: закон «ничего вне шести родов» целиком поставит только сам фрейм
+// (фаза 4, M-171/M-172 — разные пути включения). Пока стены нет, эти числа
+// обязаны ехать в вердикте, иначе зелёный читается как «седьмого рода в игре
+// нет», тогда как верно «у четырёх носителей седьмого рода нет».
+struct Boundary {
+    int carriers = 0;    // носителей под переписью
+    int fields = 0;      // их полей названо
+    int divergence = 0;  // поимённых расхождений
+};
+
+Boundary census() {
     const std::string stateSrc =
         read_file(fs::path(kRoot) / "src/macro/state.h");
     const std::string storeSrc =
@@ -702,8 +713,12 @@ void census() {
           "заголовки носителей читаются");
 
     int totalFields = 0, totalMissing = 0, totalDead = 0, totalDivergence = 0;
+    // Носители СЧИТАЮТСЯ, а не набираются литералом: число в вердикте обязано
+    // двигаться само, когда носителя добавят или снимут.
+    int carriers = 0;
     int byRod[16] = {};
     auto add = [&](const Tally& t) {
+        ++carriers;
         totalFields += t.fields;
         totalMissing += t.missingRod;
         totalDead += t.deadRow;
@@ -764,6 +779,8 @@ void census() {
         std::printf("%s=%d · ", rod_name(Rod(r)), byRod[r]);
     }
     std::printf("\n");
+
+    return Boundary{carriers, totalFields, totalDivergence};
 }
 
 }  // namespace
@@ -771,6 +788,11 @@ void census() {
 int main() {
     test_parser_on_fixture();
     test_xmacro_parser();
-    census();
-    return sm::test::report("state_census_test");
+    const Boundary b = census();
+
+    char scope[200];
+    std::snprintf(scope, sizeof(scope),
+                  "носителей %d · полей %d · расхождений %d · стены шести "
+                  "родов ещё нет", b.carriers, b.fields, b.divergence);
+    return sm::test::report("state_census_test", scope);
 }

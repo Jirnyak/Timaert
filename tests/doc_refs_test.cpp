@@ -91,7 +91,17 @@ LegacyDiff compare_legacy(const std::vector<Ref>& refs,
     return d;
 }
 
-void test_real_docs() {
+// ГРАНИЦА ПРИБОРА, ЧИСЛАМИ. Она не выводится из зелени и обязана ехать в
+// вердикте: почти половина разобранных ссылок — «не отслеживается» (проза,
+// внешние имена, пути вне дерева), а ЧИСЛА внутри документов не судит никто и
+// не может (`doc_refs.h`: у числа обязана стоять МЕРА, а мере свидетеля нет).
+struct Boundary {
+    std::size_t docs = 0;       // документов корня прочитано
+    std::size_t refs = 0;       // ссылок разобрано
+    int untracked = 0;          // из них вне слежения
+};
+
+Boundary test_real_docs() {
     const sm::docrefs::Scan scan = sm::docrefs::scan_tree(kRoot, {});
 
     CHECK(scan.notes.empty(), "прибор прочитал все документы корня");
@@ -151,6 +161,8 @@ void test_real_docs() {
         tally[Kind::NameElsewhere], tally[Kind::NeedleGone],
         tally[Kind::PastEof], tally[Kind::NoFile], tally[Kind::Ambiguous],
         tally[Kind::Untracked], allowed.size());
+
+    return Boundary{scan.docs.size(), scan.refs.size(), tally[Kind::Untracked]};
 }
 
 // ── НЕГАТИВНЫЙ КОНТРОЛЬ ───────────────────────────────────────────────────
@@ -226,8 +238,13 @@ void test_legacy_list_mechanism() {
 }  // namespace
 
 int main() {
-    test_real_docs();
+    const Boundary b = test_real_docs();
     test_fixture_detects_every_rot();
     test_legacy_list_mechanism();
-    return sm::test::report("doc_refs_test");
+
+    char scope[200];
+    std::snprintf(scope, sizeof(scope),
+                  "доков %zu · ссылок %zu · вне слежения %d · числа в доках НЕ "
+                  "судит", b.docs, b.refs, b.untracked);
+    return sm::test::report("doc_refs_test", scope);
 }

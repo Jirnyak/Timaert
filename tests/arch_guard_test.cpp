@@ -472,7 +472,17 @@ LegacyDiff compare_legacy(const std::vector<Site>& sites,
     return d;
 }
 
-void test_melting_rules() {
+// ГРАНИЦА ПРИБОРА — ЭТО ЕГО ЖИВОЙ ДОЛГ. Три тающих списка не утверждают, что
+// архитектура чиста; они утверждают, что долг НЕ ВЫРОС. Разница принципиальна,
+// и без этих чисел в вердикте зелёный `arch_guard` читается как первое, тогда
+// как верно второе (см. шапку: стена канала ещё не стоит).
+struct Boundary {
+    std::size_t channel = 0;   // включений macro/ из src/sub
+    std::size_t verdicts = 0;  // безадресных вердиктов в SKELETON.md
+    std::size_t entt = 0;      // файлов src с entt-кодом
+};
+
+Boundary test_melting_rules() {
     std::vector<Site> sites;
     collect_channel(sites);
     const std::size_t channelCount = sites.size();
@@ -517,6 +527,8 @@ void test_melting_rules() {
         "файлов с entt %zu\n"
         "  строк списка %zu (может только таять)\n",
         channelCount, verdictCount, enttCount, allowed.size());
+
+    return Boundary{channelCount, verdictCount, enttCount};
 }
 
 // ── НЕГАТИВНЫЕ КОНТРОЛИ ───────────────────────────────────────────────────
@@ -656,9 +668,18 @@ int main() {
     const int structs = test_contour_is_everywhere();
     std::printf("arch_guard: контуров проверено %d в %zu заголовках-строках\n",
                 structs, std::size(kRowHeaders));
-    test_melting_rules();
+    const Boundary b = test_melting_rules();
     test_closed_top_dirs();
     test_detectors_actually_see();
     test_legacy_list_mechanism();
-    return sm::test::report("arch_guard_test");
+
+    // ГРАНИЦА В ВЕРДИКТЕ: зелёный этого гейта означает «долг не вырос», а НЕ
+    // «архитектура чиста», и числа живого долга стоят рядом с вердиктом ровно
+    // затем, чтобы вторую фразу нельзя было прочесть из первой.
+    char scope[200];
+    std::snprintf(scope, sizeof(scope),
+                  "долг канала %zu · безадресных вердиктов %zu · файлов entt "
+                  "%zu — рост запрещён, чистота НЕ утверждается",
+                  b.channel, b.verdicts, b.entt);
+    return sm::test::report("arch_guard_test", scope);
 }

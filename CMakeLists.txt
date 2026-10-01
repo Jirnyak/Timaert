@@ -437,10 +437,61 @@ target_link_libraries(height_census PRIVATE timaert_build_flags)
 # source lists (and the comments explaining WHY each test links what it links)
 # are the only thing that varies, so they are the only thing spelled out.
 #
-#   timaert_test(<name> [SOURCES ...] [LINK_SDL] [LINK_MIXER] [LINK_IMGUI])
+# ── PIN: ВЕРДИКТ ЕСТЬ НАПЕЧАТАННАЯ СТРОКА, А НЕ КОД ВОЗВРАТА ────────────────
+# `add_test()` потребляет ОДИН БИТ. Этого бита хватает, чтобы сказать «что-то
+# упало», и не хватает ни на что больше: покрытие убывает МОЛЧА. Удали `CHECK`
+# из тела, сузи границу цикла, выпиши вызов из `main` — ни одно утверждение не
+# провалилось, прогон вышел нулём, ctest ЗЕЛЁНЫЙ, и в дифе рядом с тестом
+# ничего не видно. Напечатанный `check.h` счёт до 2026-10-01 читал НИКТО.
+#
+# `PASS_REGULAR_EXPRESSION` закрывает это целиком, и покупает ТРИ вещи одним
+# регексом: регресс двигает число — промах; креш до печати строки — строки нет,
+# промах; устаревший бинарник печатает старый счёт — промах (структурная
+# подпорка под §8 п.8, где «голый ctest отчитался 49/49 на бинарниках прошлой
+# сборки» поймано вживую дважды). Код возврата не умеет ни одного из трёх.
+#
+# ЧУЖОЙ ШРАМ, ВЗЯТЫЙ ВМЕСТЕ С МЕХАНИЗМОМ (аудит gigahrush2, 2026-10-01). Ту же
+# задачу там сперва решали `WILL_FAIL`, который ИНВЕРТИРУЕТ код возврата. Это
+# снова один бит: шесть из семи растяжек были ЗАКРЫТЫМИ пинами, поэтому
+# регресс любой из них двигал счёт провалов 2 → 3 — не ноль, инвертировано,
+# ctest ЗЕЛЁНЫЙ. Шесть «гейтов», гейтами не являвшихся. `WILL_FAIL` в этом
+# дереве не заводится ни на одной цели.
+#
+# ГДЕ ПИН СТАВИТСЯ, А ГДЕ НЕТ — ЭТО РЕШЕНИЕ, А НЕ ОХВАТ. Пин стоит там, где
+# СЧЁТ И ЕСТЬ ПРЕДМЕТ: переписи и гейты (`stack_census`, `state_census`,
+# `arch_guard`, `doc_refs`, `header_cost`). На поведенческие тесты он НЕ
+# ставится: там предмет — поведение, а трение на каждый добавленный `CHECK`
+# воспитывает единственный рефлекс «перенабрать литерал до зелени», то есть
+# ровно подгонку, запрещённую §8 ЗАКОНОМ НУЛЕВЫМ п.4. Сто с лишним мест такого
+# трения купили бы не покрытие, а привычку его подделывать.
+#
+# ТОЧНОЕ ЧИСЛО ПРОТИВ КЛАССА ЦИФР — тоже вывод, а не вкус:
+#   · ТОЧНО пинится то, что меняется только РЕШЕНИЕМ и больше ничем не
+#     обязано быть предъявлено (счёт проверок прибора; итог переписи по капам);
+#   · КЛАССОМ ЦИФР (`[0-9]+`) — то, что меняется по ходу обычной работы ИЛИ
+#     уже предъявляется другим механизмом. Долг `arch_guard` тает через правку
+#     белого списка тем же коммитом (`diff.stale == 0` краснеет иначе), значит
+#     точный пин добавил бы второе место правки и ни одной новой видимости.
+#     Числа `doc_refs` растут от каждого нового документа — то же.
+# Класс цифр при этом не «ничего не проверяет»: он требует, чтобы ЧИСЛО вообще
+# стояло в строке, то есть PASS невозможно напечатать без границы прибора.
+#
+# И ПОЧЕМУ ГРАНИЦА ЕДЕТ В ТОЙ ЖЕ СТРОКЕ, ЧТО СЧЁТ. CTest ИЛИ-ит список
+# `PASS_REGULAR_EXPRESSION`: два элемента значат «любой из двух», то есть
+# строго СЛАБЕЕ одного. Потребовать и счёт, и границу можно только пока они
+# рядом — отсюда `report(name, scope)` в `check.h`, а не вторая строка печати.
+#
+# ЛОВУШКА, КОТОРУЮ НАДО ЗНАТЬ ЗАРАНЕЕ: `set_tests_properties` запекается в
+# `build/CTestTestfile.cmake` на КОНФИГУРАЦИИ. Правка пина здесь плюс голый
+# `ctest` всё ещё матчит СТАРЫЙ регекс — «исправленный пин падает дважды»
+# объясняется только этим. Вердикт цитируется из таргета `check` (§8 п.8),
+# который конфигурацию и сборку делает сам.
+#
+#   timaert_test(<name> [PIN <regex>] [SOURCES ...] [LINK_SDL] [LINK_MIXER]
+#                [LINK_IMGUI] [LINK_ENTT])
 enable_testing()
 function(timaert_test _name)
-    cmake_parse_arguments(_t "LINK_SDL;LINK_MIXER;LINK_IMGUI;LINK_ENTT" "" "SOURCES" ${ARGN})
+    cmake_parse_arguments(_t "LINK_SDL;LINK_MIXER;LINK_IMGUI;LINK_ENTT" "PIN" "SOURCES" ${ARGN})
     add_executable(${_name} tests/${_name}.cpp ${_t_SOURCES})
     set_target_properties(${_name} PROPERTIES
         CXX_STANDARD 23
@@ -464,6 +515,9 @@ function(timaert_test _name)
     endif()
     # Declared here, so a BUILT test is a RUN test. No second list to forget.
     add_test(NAME ${_name} COMMAND ${_name})
+    if(NOT _t_PIN STREQUAL "")
+        set_tests_properties(${_name} PROPERTIES PASS_REGULAR_EXPRESSION "${_t_PIN}")
+    endif()
     # ...and remembered here, so `check` below can depend on every one of them
     # without a third list to forget.
     set_property(GLOBAL APPEND PROPERTY TIMAERT_TEST_TARGETS ${_name})
@@ -1858,7 +1912,15 @@ timaert_test(sheet_registry_test)
 timaert_test(air_law_test)
 
 # ПЕРЕПИСЬ ШТАБЕЛЕЙ — свидетель структурного инварианта (2026-09-22).
-timaert_test(stack_census_test LINK_ENTT)
+# ПИН: 13 проверок = 10 инвариантов переписи + 3 бюджета (`tests/budget.h`,
+# 2026-10-01). Счёт двинулся по названной причине, и так и должно читаться в
+# дифе. Содержимое переписи (штабелей, итог по капам) стоит КЛАССОМ ЦИФР:
+# снос `Landmark` (M-90) и работы по рельефу двигают эти числа по делу, а
+# решение уже видно в дифе `core/stacks.h` — точный пин добавил бы второе место
+# правки и ни одной новой видимости. Класс цифр при этом требует, чтобы граница
+# в строке СТОЯЛА: PASS без неё не напечатать.
+timaert_test(stack_census_test LINK_ENTT
+    PIN "OK stack_census_test .13 checks. .штабелей [0-9]+ · по капам [0-9]+ МиБ · резидентное НЕ судит")
 
 timaert_test(ground_table_test
     SOURCES
@@ -1931,7 +1993,11 @@ $<$<BOOL:$<TARGET_PROPERTY:Vulkan::Vulkan,INTERFACE_INCLUDE_DIRECTORIES>>:-I$<JO
 # кроссплатформенной эта дверь быть не обязана; зато и молчать о своём
 # отсутствии она не умеет — на не-POSIX её просто нет в списке ctest.
 if(UNIX)
-    timaert_test(header_cost_test)
+    # ПИН: счёт заголовков — класс цифр (растёт от каждого нового `src/**.h`),
+    # а вот СТЕНА 12× пинится ТОЧНО: это порог закона, и его смягчение обязано
+    # быть решением, а не правкой литерала в `header_cost_test.cpp`.
+    timaert_test(header_cost_test
+        PIN "OK header_cost_test .14 checks. .заголовков [0-9]+ · стена 12× медианы по ПАМЯТИ")
     target_compile_definitions(header_cost_test PRIVATE
         TIMAERT_BUILD_DIR="${CMAKE_BINARY_DIR}"
         TIMAERT_CXX="${CMAKE_CXX_COMPILER}")
@@ -1957,7 +2023,11 @@ endif()
 # которая СУДИТ, входит в `check`; дверь, которая ПРАВИТ номера, стоит
 # отдельным таргетом — сборка, молча меняющая файлы дерева, отобрала бы смысл у
 # `git status --short` (§5 п.12).
-timaert_test(doc_refs_test SOURCES tests/doc_refs.cpp)
+# ПИН: 25 проверок при 17 статических сайтах — разница в циклах фикстуры, и
+# именно поэтому число СНЯТО ПРОГОНОМ, а не посчитано глазами по тексту.
+# Границы классом цифр: ссылки и документы растут от обычной работы.
+timaert_test(doc_refs_test SOURCES tests/doc_refs.cpp
+    PIN "OK doc_refs_test .25 checks. .доков [0-9]+ · ссылок [0-9]+ · вне слежения [0-9]+ · числа в доках НЕ судит")
 target_compile_definitions(doc_refs_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
@@ -1972,7 +2042,13 @@ target_compile_definitions(world_fold_law_test
 # `core/row_law.h` (строка мира с вектором не собирается), а ПОЛНОТУ его
 # применения — этот прибор, плюс два тающих списка (канал macro→sub, адрес у
 # вердикта скелета). Сканирует дерево, поэтому знает его корень.
-timaert_test(arch_guard_test)
+# ПИН: долг трёх тающих списков — КЛАССОМ ЦИФР, и это не послабление. Долг
+# тает через правку белого списка ТЕМ ЖЕ коммитом (`diff.stale == 0` краснеет
+# иначе), то есть решение уже предъявлено; точный пин был бы вторым местом
+# правки. Пинится то, чего не предъявляет никто: счёт проверок и само наличие
+# границы в вердикте.
+timaert_test(arch_guard_test
+    PIN "OK arch_guard_test .38 checks. .долг канала [0-9]+ · безадресных вердиктов [0-9]+ · файлов entt [0-9]+ — рост запрещён, чистота НЕ утверждается")
 target_compile_definitions(arch_guard_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
@@ -1981,7 +2057,12 @@ target_compile_definitions(arch_guard_test
 # шесть родов исчерпывающи, носитель вне родов = поимённое расхождение с
 # нарядом. Новое поле без строки = красный в тот же день. Сканирует
 # заголовки, поэтому знает корень.
-timaert_test(state_census_test)
+# ПИН: 9 проверок при 10 статических сайтах — один сайт прогоном НЕ достигается
+# (`CHECK_OR_RETURN` на фикстуре), и это ровно та разница, из-за которой пин
+# снимается ПРОГОНОМ. Полей и носителей — классом цифр: снос `Landmark` (M-90)
+# и работы по рельефу двигают их по делу.
+timaert_test(state_census_test
+    PIN "OK state_census_test .9 checks. .носителей [0-9]+ · полей [0-9]+ · расхождений [0-9]+ · стены шести родов ещё нет")
 target_compile_definitions(state_census_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
