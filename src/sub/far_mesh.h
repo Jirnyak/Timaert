@@ -362,9 +362,9 @@ inline float far_point_height_m(const FarCellGrid& grid, int camCx, int camCy,
     // ЗАКОН КЛАМПА, exactly — the clamp was hiding the absence of a rule
     // rather than enforcing one, and the rule it hid was already written next
     // door. `far_mesh_test` section 7 holds the line now.
-    return far_height01(gx, gz, skel, peak, ridge, worldTiles,
+    return height_m(far_height01(gx, gz, skel, peak, ridge, worldTiles,
                         grid.seaLevel, grad, hs, ms,
-                        2.0f * float(stepM)) * kHeightScaleM;
+                        2.0f * float(stepM)));
 }
 
 // ── THE FAR GROUND AS A FIELD, WHICH IS WHAT IT ACTUALLY IS ───────────────

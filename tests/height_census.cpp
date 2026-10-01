@@ -21,10 +21,10 @@
 //      границ не достигает, и кривая, посаженная на 1.0, молча выдала бы мир на
 //      3.7 км там, где одобрено 9.9.
 //
-// ИЗМЕРИТЕЛЬНЫЙ ПОЛ, НАЗВАННЫЙ ВСЛУХ: поле хранится БАЙТОМ, поэтому мельчайший
-// выразимый шаг — 1/255 = 5.88 м, то есть 0.33° на клетку. Все числа ниже
-// квантованы этим, и сам пол есть довод за `uint16`-карту высот: с кривой
-// переноса тот же байт стоит ~52 м на горной линии.
+// ИЗМЕРИТЕЛЬНЫЙ ПОЛ, НАЗВАННЫЙ ВСЛУХ: поле хранится БАЙТОМ, и с кривой
+// переноса (M-192) цена байта зависит от высоты — у воды 5.9 м, на горной
+// линии 27 м, у p99 уже 140 м. Это и есть довод за `uint16`-карту высот, и
+// печатается он ниже отдельной строкой, а не выводится из одной константы.
 //
 // Река здесь не мешает и не прячется: `generate_terrain` врезает русла НИЖЕ
 // уровня моря, поэтому карбованные клетки выпадают из маски суши сами, а их
@@ -35,7 +35,7 @@
 // Запуск: ./build/height_census [сид …]   (по умолчанию пять сидов ниже)
 // Картинки: $TIMAERT_CENSUS_DIR или /tmp.
 #include "macro/map_generator.h"
-#include "sub/height.h"     // kHeightScaleM — ЕДИНСТВЕННАЯ дверь метров
+#include "sub/height.h"     // height_m / height_gain_m — ЕДИНСТВЕННЫЕ двери метров
 #include "sub/map_data.h"   // kCellSize — ширина клетки в тайлах
 #include "tables/biomes.h"
 
@@ -68,8 +68,9 @@ namespace {
 // `kCellSize` тайлов при условности движка «тайл = метр» (см. шапку).
 constexpr float kCellSpanM = float(sm::sub::kCellSize);
 
-// Шаг байтовой карты в метрах — измерительный пол этого прибора.
-constexpr float kByteStepM = sm::sub::kHeightScaleM / 255.0f;
+// Шаг байтовой карты В МЕТРАХ НА ДАННОЙ ВЫСОТЕ — измерительный пол прибора.
+// Не константа: кривая переноса делает его функцией высоты.
+float byte_step_m(float h01) { return sm::sub::height_gain_m(h01) / 255.0f; }
 
 // Полная шкала карты уклонов: 1024 м подъёма на клетку = 45°. Кодируется
 // ЛОГАРИФМОМ, потому что кривая переноса меняет уклоны в десятки раз, а
@@ -182,7 +183,7 @@ void write_pngs(const sm::TerrainData& td, std::uint32_t seed) {
                 const float n = float(td.height_at(x + dx[k], y + dy[k])) / 255.0f;
                 worst = std::max(worst, std::fabs(n - c));
             }
-            const float m = worst * sm::sub::kHeightScaleM;
+            const float m = worst * sm::sub::height_gain_m(c);
             const float t = std::log2(1.0f + m) / logFull;
             slope[std::size_t(y) * std::size_t(w) + std::size_t(x)] =
                 std::uint8_t(std::clamp(t, 0.0f, 1.0f) * 255.0f + 0.5f);
@@ -273,10 +274,14 @@ SeedResult census_seed(std::uint32_t seed) {
     for (int k = 0; k < 8; ++k) {
         const double bandVar = std::max(0.0, varAt[k] - varAt[k + 1]);
         r.bandShare[k]  = varTotal > 0.0 ? float(bandVar / varTotal * 100.0) : 0.0f;
-        r.bandSigmaM[k] = float(std::sqrt(bandVar)) * sm::sub::kHeightScaleM;
+        // Сигма полосы — величина В ПОЛЕ; в метры она переводится наклоном
+    // кривой НА МЕДИАНЕ СУШИ, и это сказано вслух, потому что на вершине тот
+    // же разброс стоит в двадцать раз дороже.
+    r.bandSigmaM[k] = float(std::sqrt(bandVar)) * sm::sub::height_gain_m(r.p50);
     }
     r.bandShare[8]  = varTotal > 0.0 ? float(varAt[8] / varTotal * 100.0) : 0.0f;
-    r.bandSigmaM[8] = float(std::sqrt(std::max(0.0, varAt[8]))) * sm::sub::kHeightScaleM;
+    r.bandSigmaM[8] = float(std::sqrt(std::max(0.0, varAt[8])))
+                    * sm::sub::height_gain_m(r.p50);
 
     // ── 2. УКЛОНЫ МЕЖДУ СОСЕДЯМИ ─────────────────────────────────────────
     // Только пары СУША–СУША: пара с водой мерила бы глубину врезки русла или
@@ -293,7 +298,8 @@ SeedResult census_seed(std::uint32_t seed) {
                 const int nx = x + dx[k], ny = y + dy[k];
                 if (td.is_water(nx, ny)) continue;
                 const float nb = float(td.height_at(nx, ny)) / 255.0f;
-                const float riseM = std::fabs(nb - c) * sm::sub::kHeightScaleM;
+                const float riseM = std::fabs(nb - c)
+                                  * sm::sub::height_gain_m(std::max(nb, c));
                 slopes.push_back(riseM);
                 if (cMtn || sm::biome_at_cell(td, nx, ny) == sm::Biome::Mountain)
                     mtnSlopes.push_back(riseM);
@@ -320,13 +326,15 @@ void print_seed(const SeedResult& r) {
     std::printf("\n=== СИД %u ===\n", r.seed);
     std::printf("  суша %.1f %% карты · биом Mountain %.2f %% · клеток рек %.2f %%\n",
                 r.landFrac * 100.0f, r.mtnFrac * 100.0f, r.riverFrac * 100.0f);
-    std::printf("  ВЫСОТА ПО СУШЕ (нормир. / метров при линейных %.0f м):\n",
-                sm::sub::kHeightScaleM);
-    const float sc = sm::sub::kHeightScaleM;
-    std::printf("    p50 %.4f (%6.1f м)  p90 %.4f (%6.1f м)  p99 %.4f (%6.1f м)"
-                "  p99.9 %.4f (%6.1f м)  max %.4f (%6.1f м)\n",
-                r.p50, r.p50 * sc, r.p90, r.p90 * sc, r.p99, r.p99 * sc,
-                r.p999, r.p999 * sc, r.maxH, r.maxH * sc);
+    // Метры — ЧЕРЕЗ КРИВУЮ (sub/height.h height_m), и отсчитаны ОТ МОРЯ:
+    // «пик 10 км» есть высота над водой, а не над дном океана.
+    const float seaM = sm::sub::height_m(sm::kDefaultSeaLevel);
+    const auto  mm   = [seaM](float h01) { return sm::sub::height_m(h01) - seaM; };
+    std::printf("  ВЫСОТА ПО СУШЕ (нормир. / метров НАД МОРЕМ по кривой):\n");
+    std::printf("    p50 %.4f (%7.1f м)  p90 %.4f (%7.1f м)  p99 %.4f (%7.1f м)"
+                "  p99.9 %.4f (%7.1f м)  max %.4f (%7.1f м)\n",
+                r.p50, mm(r.p50), r.p90, mm(r.p90), r.p99, mm(r.p99),
+                r.p999, mm(r.p999), r.maxH, mm(r.maxH));
     // Квантили суши целиком — ими ПЕРЕПРИВЯЗЫВАЕТСЯ горная линия, когда форма
     // синтеза меняет распределение поля. Порог биома есть ДОЛЯ мира, а не
     // магическое число: «столько же гор, сколько было» проверяется здесь.
@@ -370,10 +378,19 @@ int main(int argc, char** argv) {
 
     std::printf("HEIGHT CENSUS — поле высот макромира, 1024x1024, дефолты "
                 "LayerParameters (то есть мир игры).\n");
-    std::printf("Клетка %.0f м по горизонтали; вертикаль %.0f м на единицу; "
-                "байтовый пол %.2f м (%.2f° на клетку).\n",
-                kCellSpanM, sm::sub::kHeightScaleM, kByteStepM,
-                degrees_per_cell(kByteStepM));
+    std::printf("Клетка %.0f м по горизонтали; вертикаль — КРИВАЯ "
+                "(sub/height.h, %.0f удвоений наклона на шкалу поля, "
+                "потолок %.0f м).\n",
+                kCellSpanM, double(sm::sub::kHeightDoublings),
+                double(sm::sub::kHeightScaleM));
+    std::printf("Цена БАЙТА карты высот зависит от высоты: у воды %.1f м, на "
+                "горной линии %.1f м, у p99 (0.879) %.1f м — довод за uint16 "
+                "(тот же uint16 даёт %.2f м / %.2f м / %.2f м).\n",
+                byte_step_m(sm::kDefaultSeaLevel), byte_step_m(sm::kMountainBiomeLevel),
+                byte_step_m(0.879f),
+                byte_step_m(sm::kDefaultSeaLevel) * 255.0f / 65535.0f,
+                byte_step_m(sm::kMountainBiomeLevel) * 255.0f / 65535.0f,
+                byte_step_m(0.879f) * 255.0f / 65535.0f);
     {
         const sm::LayerParameters d{};
         std::printf("Синтез: континент %.2f · хребты %.2f · гамма %.2f "
@@ -416,8 +433,15 @@ int main(int argc, char** argv) {
                 all.size());
     std::printf("  суша %.1f %% · горный биом %.2f %%\n",
                 m.landFrac * 100.0f, m.mtnFrac * 100.0f);
-    std::printf("  высота по суше: p50 %.4f  p90 %.4f  p99 %.4f  p99.9 %.4f  max %.4f\n",
-                m.p50, m.p90, m.p99, m.p999, m.maxH);
+    {
+        const float seaM = sm::sub::height_m(sm::kDefaultSeaLevel);
+        const auto  mm   = [seaM](float h){ return sm::sub::height_m(h) - seaM; };
+        std::printf("  высота по суше: p50 %.4f (%.0f м)  p90 %.4f (%.0f м)  "
+                    "p99 %.4f (%.0f м)  p99.9 %.4f (%.0f м)  ПИК %.4f (%.0f м "
+                    "над морем)\n",
+                    m.p50, mm(m.p50), m.p90, mm(m.p90), m.p99, mm(m.p99),
+                    m.p999, mm(m.p999), m.maxH, mm(m.maxH));
+    }
     std::printf("  квантили суши: q60 %.4f  q65 %.4f  q70 %.4f  q75 %.4f  q80 %.4f\n",
                 m.quant[1], m.quant[2], m.quant[3], m.quant[4], m.quant[5]);
     std::printf("  насыщение сверху: %.2f %% суши на 1.0, %.2f %% на >=0.98\n",

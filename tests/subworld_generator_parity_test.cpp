@@ -198,7 +198,7 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
         const int tx = std::clamp(int(s.x), 0, kCellSize - 1);
         const int ty = std::clamp(int(s.y), 0, kCellSize - 1);
         const float seatM =
-            map.heightmap[std::size_t(ty) * kCellSize + tx] * kHeightScaleM;
+            height_m(map.heightmap[std::size_t(ty) * kCellSize + tx]);
         // THE span, from the shared contract — the same call the renderer and
         // the collision index make, so the test cannot pin a fourth opinion.
         float z0, z1;
@@ -285,7 +285,7 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
         const int tx = std::clamp(int(ax + sx * t), 0, kCellSize - 1);
         const int ty = std::clamp(int(ay + sy * t), 0, kCellSize - 1);
         const float g =
-            map.heightmap[std::size_t(ty) * kCellSize + tx] * kHeightScaleM;
+            height_m(map.heightmap[std::size_t(ty) * kCellSize + tx]);
         if (g >= seaM - 0.5f) continue;
         ++wetSamples;
         bool covered = false;

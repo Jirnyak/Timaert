@@ -77,7 +77,7 @@ SubworldMapData make_town(std::uint32_t seed, int population,
 float ground_at(const SubworldMapData& m, float fx, float fy) {
     const int x = std::clamp(int(std::floor(fx)), 0, kCellSize - 1);
     const int y = std::clamp(int(std::floor(fy)), 0, kCellSize - 1);
-    return m.heightmap[std::size_t(y) * kCellSize + x] * kHeightScaleM;
+    return height_m(m.heightmap[std::size_t(y) * kCellSize + x]);
 }
 
 // The clear a gateway actually offers: from the WORST ground anywhere under
@@ -245,10 +245,30 @@ int main() {
     // so the cell carries a real gradient across its whole width and the ring
     // — which stands far outside the flattened plateau a settlement gets
     // (base_generator.cpp terrain_mod_for) — meets it at every bearing.
+    //
+    // IT IS STATED IN METRES, and that is the whole repair. The literal ring
+    // 0.58…0.90 WAS a 6.7° hillside while a field unit was worth 1500 m
+    // everywhere; on the transfer curve (sub/height.h height_m) the very same
+    // literals fall 2946 m from one cell to the next — a 70° cliff, i.e. a
+    // different fixture asking a different question, and the gate audit
+    // rightly went red on it. The LAW guarded here never changed; only the
+    // unit its precondition was written in did, so the precondition is
+    // restated through the one door instead of the numbers being loosened.
     {
-        const float slope[9] = {0.90f, 0.82f, 0.74f,
-                                0.82f, 0.74f, 0.66f,
-                                0.74f, 0.66f, 0.58f};
+        // An ordinary farmland altitude (q67 of this world's land) and the
+        // fall the fixture always meant: 120 m per macro cell of 1024 m.
+        constexpr float kHillCentreM = 990.0f;
+        constexpr float kHillFallM   = 120.0f;
+        const auto at = [](float metres) {
+            return sm::sub::height01_of_m(metres);
+        };
+        const float slope[9] = {
+            at(kHillCentreM + 2 * kHillFallM), at(kHillCentreM + kHillFallM),
+            at(kHillCentreM),
+            at(kHillCentreM + kHillFallM),     at(kHillCentreM),
+            at(kHillCentreM - kHillFallM),
+            at(kHillCentreM),                  at(kHillCentreM - kHillFallM),
+            at(kHillCentreM - 2 * kHillFallM)};
         check_slope("hillside city", 12345u, 6000, slope);
         check_slope("hillside city (seed 2)", 777u, 6000, slope);
         check_slope("hillside town", 9001u, 1500, slope);

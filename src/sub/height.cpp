@@ -42,8 +42,12 @@ void SubworldHeightField::resample_block(const float* hm,
                     ++count;
                 }
             }
+            // The box average is taken in FIELD space and curved once, not
+            // curved per tile and then averaged: `height_m` is convex, so the
+            // two differ, and the first is the one the mesh is built from.
+            // One surface, one answer (see the header's note on `noinline`).
             m_[std::size_t(y) * kHeightVerts + std::size_t(x)] =
-                (count > 0 ? sum / float(count) : 0.0f) * kHeightScaleM;
+                height_m(count > 0 ? sum / float(count) : 0.0f);
         }
     }
 }

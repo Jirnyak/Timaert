@@ -89,7 +89,7 @@ void gen_spire(const GenInput& in, SubworldMapData& out) {
     // it is, which also keeps the road smoother (which touches road/square
     // paint only) off the pad.
     const float padR = kSpireTowerRadiusTiles + 2.0f;
-    float groundM = ctx.macroHeight * kHeightScaleM;
+    float groundM = height_m(ctx.macroHeight);
     if (out.heightmap.size() == std::size_t(kCellSize) * kCellSize) {
         const int p = int(padR);
         double sum = 0.0;
@@ -104,7 +104,7 @@ void gen_spire(const GenInput& in, SubworldMapData& out) {
         }
         if (cnt > 0) {
             const float level = float(sum / double(cnt));
-            groundM = level * kHeightScaleM;
+            groundM = height_m(level);
             for (int y = std::max(0, cy - p); y <= std::min(kCellSize - 1, cy + p); ++y) {
                 for (int x = std::max(0, cx - p); x <= std::min(kCellSize - 1, cx + p); ++x) {
                     const int dx = x - cx, dy = y - cy;

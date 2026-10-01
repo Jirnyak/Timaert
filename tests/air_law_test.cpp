@@ -24,24 +24,34 @@
 
 using namespace sm;
 using sm::sub::air_optical_depth;
+using sm::sub::air_scale_height_m;
 using sm::sub::air_transmittance;
+using sm::sub::height_m;
 using sm::sub::kAirEFoldM;
-using sm::sub::kAirScaleHeightM;
-using sm::sub::kHeightScaleM;
+using sm::sub::kLandP90Field;
 // The air law is stated against the DEFAULT world's datum — this witness is
 // about the SHAPE of the integral (thin air over a summit, thick air in a
 // valley), which is a property of the law, not of any one world's sea.
-using sm::sub::kDefaultSeaLevelM;
-constexpr float kSeaLevelM = kDefaultSeaLevelM;
+using sm::sub::default_sea_level_m;
 
 namespace {
 
+const float kAirScaleHeightM = air_scale_height_m();
+const float kSeaLevelM       = default_sea_level_m();
+
+// THE WORLD'S ROOF, measured and not nominal. `height_census` over five seeds
+// puts the top of the land field at 0.9490/0.9490/0.9608/0.9686/0.9961; the
+// mean is the summit the air is judged against. fBm never reaches its own 1.0,
+// so reading the roof off the nominal ceiling would overstate this world by
+// three kilometres — and the transfer curve was fitted to the same measurement
+// (sub/height.h kHeightDoublings), so the two cannot drift apart.
+constexpr float kFieldRoof01 = 0.9647f;
+
 // The world's own altitudes, every one of them derived from a named constant
-// rather than typed in. These ARE the ladder the air is scaled against.
-const float kMountainLineM = kMountainBiomeLevel * kHeightScaleM;   // 1125 m
-const float kSummitM       = 1.04f * kHeightScaleM;                 // the
-    // generator's hard crest clamp (sub/base_generator.cpp peakHeight) — the
-    // tallest ground this world will ever make, 1560 m.
+// or a measurement rather than typed in. These ARE the ladder the air is
+// scaled against — and all three go through the ONE metres door.
+const float kMountainLineM = height_m(kMountainBiomeLevel);   // 1016 m
+const float kSummitM       = height_m(kFieldRoof01);          // 10830 m
 const float kPlainM        = kSeaLevelM + 200.0f;  // a typical lowland stance
 
 } // namespace
@@ -50,15 +60,34 @@ int main() {
     using namespace sm::test;
 
     // ── 1. THE AIR IS A LAYER THE LOWLAND LIVES INSIDE ────────────────────
-    // H is the mountain band by construction; the consequence that has to be
-    // true for "the ridge floats over a sea of haze" is that the lowland sits
-    // inside the first scale height while a mountain does not.
-    CHECK(kPlainM - kSeaLevelM < kAirScaleHeightM,
+    // H is the altitude nine tenths of the land lives under; the consequences
+    // that have to be true for "the ridge floats over a sea of haze" are that
+    // the lowland sits well inside the first scale height and that the summit
+    // stands clear of several.
+    //
+    // THE OLD THIRD CHECK — "the mountain LINE is above the dense layer" — was
+    // deleted here, not weakened, and its subject is why. It was true while
+    // height was a MULTIPLIER and the line stood 56 % of the way to the
+    // summit; under the transfer curve the line stands 8 % of the way up
+    // (813 m against 10.6 km), so a layer thin enough to clear it would be
+    // 780 m, and the measurements in sections 3 and 4 below both break at that
+    // value — the summit lands at 12 scale heights, never fades at any range,
+    // and climbing it buys nothing. The band in its place says exactly that.
+    CHECK(kAirScaleHeightM > 0.0f && kPlainM - kSeaLevelM < kAirScaleHeightM,
           "a lowland stance is inside one scale height — it breathes dense air");
-    CHECK(kMountainLineM - kSeaLevelM > kAirScaleHeightM,
-          "the line where land becomes mountain is ABOVE the dense layer");
-    CHECK(kSummitM - kSeaLevelM > 2.0f * kAirScaleHeightM,
-          "a summit stands above two scale heights — it is out of the haze");
+    CHECK(std::fabs(kAirScaleHeightM
+                    - (height_m(kLandP90Field) - height_m(sm::sub::WATER_LEVEL)))
+              < 1.0f,
+          "the scale height IS its stated derivation: the altitude nine tenths "
+          "of the land lives under, read off the same curve the world is built "
+          "with");
+    {
+        const float summitInH = (kSummitM - kSeaLevelM) / kAirScaleHeightM;
+        CHECK(summitInH > 2.0f && summitInH < 5.0f,
+              "the summit stands between two and five scale heights — the air "
+              "is scaled TO this relief, neither drowning its peaks nor "
+              "leaving them in a vacuum that never fades");
+    }
 
     // ── 2. THE INTEGRAL IS AN INTEGRAL ────────────────────────────────────
     // Properties no correct implementation can miss, and that the old uniform

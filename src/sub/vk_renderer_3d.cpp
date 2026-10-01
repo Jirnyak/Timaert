@@ -1749,7 +1749,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                         c.macroHeight, c.biome == Biome::Mountain);
                     if (c.biome == Biome::Mountain)
                         h01 = std::clamp(h01, 0.80f, 1.04f);
-                    cellM[gy * kGridW + gx] = h01 * kHeightScaleM;
+                    cellM[gy * kGridW + gx] = height_m(h01);
                 }
             const int off = (kHeightExtFactor / 2) * kHeightQuads; // interior at 192
             const float extHalfM = float(kHeightExtFactor) * kWorldExtent;
@@ -3483,7 +3483,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         wp.sunColor[2] = sun.sunColor.z;
         wp.params[0] = elapsed;                   // animated wave time
         wp.params[1] = sun.ambientColor.y;         // ambient intensity
-        wp.params[2] = waterLevel * kHeightScaleM;  // world-space water Y
+        wp.params[2] = sea_level_m(waterLevel);     // world-space water Y
         // THE WATER REACHES AS FAR AS THE GROUND DOES (CANON S18.1: «вода —
         // та же вода, та же плоскость»). It used to stop at the composite's
         // own half-span, which was invisible while nothing was drawn beyond
@@ -3528,7 +3528,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         rp.p0[1] = skyCtx.windX;
         rp.p0[2] = skyCtx.windZ;
         rp.p0[3] = stormFlash;
-        rp.p1[0] = waterLevel * kHeightScaleM;
+        rp.p1[0] = sea_level_m(waterLevel);
         // Sky-light luminance lanes: night rain is dark, a flash silvers it.
         rp.p1[1] = (sun.sunColor.x + sun.sunColor.y + sun.sunColor.z) / 3.0f;
         rp.p1[2] = (sun.ambientColor.x + sun.ambientColor.y
@@ -3720,7 +3720,7 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     // The air's VERTICAL half: the scale height its density falls by 1/e over,
     // and the datum it is measured from. The shader gets the datum rather than
     // echoing it as a literal so sub/height.h stays the one vertical authority.
-    buf->airParams[0] = 1.0f / kAirScaleHeightM;
+    buf->airParams[0] = 1.0f / air_scale_height_m();
     buf->airParams[1] = sea_level_m(seaLevel01_);
     buf->airParams[2] = 0.0f;
     buf->airParams[3] = 0.0f;

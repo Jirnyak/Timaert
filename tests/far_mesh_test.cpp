@@ -37,6 +37,13 @@ using namespace sm::sub;
 
 constexpr int kWorldCells = 1024;                       // CANON.md S1
 constexpr int kCamCx = 500, kCamCy = 300;
+// Agreement between the field and its law is BIT-identity up to -ffast-math
+// reassociation, so the bound is relative and stated in float ULPs. An
+// absolute millimetre used to do this job; on the transfer curve (sub/height.h
+// height_m) a far vertex stands at 11.6 km, where one ULP is already 0.9 mm —
+// the old bound had quietly dropped below what a float can express. Measured
+// worst over the walk: 6 ULP.
+constexpr float kFieldUlpTol = 32.0f * 1.1920929e-7f;
 
 // A grid with a MASSIF in it: mountain cells in the middle band, lowland
 // around. Built through the real crest/skeleton doors, never by hand.
@@ -183,11 +190,17 @@ int main() {
                                      int(worldTiles));
                 const int gz = wrapi(kCamCy * kCellSize + int(std::floor(wz)),
                                      int(worldTiles));
-                const float expect =
+                const float expect = height_m(
                     far_height01(gx, gz, skel, peak, ridge, worldTiles,
-                                 grid.seaLevel)
-                    * kHeightScaleM;
-                if (std::fabs(sheet.at(ix, iz) - expect) > 1e-3f) ++mismatches;
+                                 grid.seaLevel));
+                // THE TOLERANCE IS RELATIVE, and it has to be: a 1 mm
+                // absolute bound stood here while the world was 1.5 km
+                // tall, and on the transfer curve the same vertex sits at
+                // 11.6 km, where one float ULP is already 0.9 mm. The law
+                // asserted is bit-identity up to -ffast-math reassociation;
+                // 32 ULP says that and nothing looser (measured worst: 6).
+                if (std::fabs(sheet.at(ix, iz) - expect)
+                        > kFieldUlpTol * std::fabs(expect)) ++mismatches;
                 ++samples;
             }
         }
@@ -231,8 +244,9 @@ int main() {
         CHECK(hi - lo > 200.0f,
               "the far ground has a mountain\'s worth of relief in it — the "
               "field measured something, not a plane");
-        CHECK(lo > 0.0f && hi < 2.0f * kHeightScaleM,
-              "and it stands inside the world\'s own vertical range");
+        CHECK(lo > 0.0f && hi < kHeightScaleM,
+              "and it stands inside the world\'s own vertical range — the "
+              "curve is allowed to use the sky, not to leave it");
     }
 
     // ── 4. A MATERIAL ID STAYS AN ORDINAL ─────────────────────────────────
@@ -385,7 +399,7 @@ int main() {
                         const int gz = wrapi(kCamCy * kCellSize
                                              + int(std::floor(wz)),
                                              int(worldTiles));
-                        const float expect =
+                        const float expect = height_m(
                             far_height01(gx, gz, mix(&FarCellColumn::skel01),
                                          mix(&FarCellColumn::peak01),
                                          mix(&FarCellColumn::ridgeW),
@@ -393,7 +407,7 @@ int main() {
                                          mix(&FarCellColumn::gradient01),
                                          mix(&FarCellColumn::heightScale),
                                          mix(&FarCellColumn::mtnScale),
-                                         2.0f * 32.0f) * kHeightScaleM;
+                                         2.0f * 32.0f));
                         const float got = far_point_height_m(
                             coast, kCamCx, kCamCy, wx, wz, kWorldCells,
                             /*stepM*/32);
@@ -402,7 +416,8 @@ int main() {
                                               [std::size_t(Biome::Water)]) {
                             ++wetSamples;
                         }
-                        if (std::fabs(got - expect) > 1e-3f) {
+                        if (std::fabs(got - expect)
+                                > kFieldUlpTol * std::fabs(expect)) {
                             ++mismatches;
                             worstM = std::max(worstM, std::fabs(got - expect));
                         }

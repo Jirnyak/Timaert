@@ -329,7 +329,7 @@ void part_b_generated_city() {
             const auto* m = static_cast<const H*>(user)->map;
             const int tx = std::min(kCellSize - 1, std::max(0, int(x)));
             const int ty = std::min(kCellSize - 1, std::max(0, int(y)));
-            return m->heightmap[std::size_t(ty) * kCellSize + tx] * kHeightScaleM;
+            return height_m(m->heightmap[std::size_t(ty) * kCellSize + tx]);
         }
     } h{&out};
     StructureIndex idx;

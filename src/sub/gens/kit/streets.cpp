@@ -212,8 +212,12 @@ void road_centreline(const SubworldMapData& out,
             const int ngx = cgx + kNX[k], ngy = cgy + kNY[k];
             if (ngx < 0 || ngy < 0 || ngx >= W || ngy >= H) continue;
             const float lenM = kNL[k] * float(S);
+            // A GRADIENT between two lattice nodes — priced by the curve's
+            // gain at the node we stand on (sub/height.h height_gain_m), so a
+            // street climbing a massif is charged mountain metres and not
+            // shoreline ones.
             const float grade = std::fabs(nodeH(ngx, ngy) - ch)
-                              * kHeightScaleM / lenM;
+                              * height_gain_m(ch) / lenM;
             const float nd = cd + lenM * (1.0f + kGradePenalty * grade * grade);
             const std::size_t ni = std::size_t(nodeIdx(ngx, ngy));
             if (nd < dist[ni]) {

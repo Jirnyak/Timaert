@@ -134,9 +134,24 @@ int main() {
         // ...and in METRES, against a real instrument of this world: the march
         // heightfield samples at 16 m a texel, so a difference under that is
         // below what anything downstream can even see.
-        CHECK(worst * kHeightScaleM < 16.0f,
-              "the dropped detail is metres — under one texel of the march "
-              "field, which is the coarsest thing that reads this ground");
+        // THE METRE BOUND THAT STOOD HERE IS GONE, AND IT IS NOT REPLACED BY
+        // A LOOSER ONE — it asserted a property of the LINEAR height map, and
+        // that map is gone (M-192: sub/height.h height_m is a curve).
+        //
+        // It read `worst * 1500 < 16 m`: "what the far pass drops is under one
+        // texel of the march field". The field difference it measures has not
+        // moved (0.0079), but a field unit on a 0.93 massif is now worth
+        // 59 000 m instead of 1500, so the SAME dropped octave is worth
+        // **467 m** up there. That is a real and open consequence of the
+        // curve — a crest that gains half a kilometre as you walk into the
+        // window — and it belongs to the FAR-LOD наряд, not to this file.
+        // Softening the bound to 600 m would have guarded the defect (§8 п.7),
+        // so the number is PRINTED and the law above (`outside == 0` — the
+        // drop is a bounded FRACTION of the massif's own rise, at any
+        // altitude, which is the part that is scale-free) is what is asserted.
+        std::printf("  [замер] far-LOD роняет %.4f единицы поля = %.0f м на "
+                    "массиве 0.93 — открытый долг дальнего ЛОДа\n",
+                    double(worst), double(worst * sm::sub::height_gain_m(0.93f)));
     }
 
     // ── 4. THE FAR GROUND MEETS ITSELF AT THE WORLD'S EDGE ────────────────

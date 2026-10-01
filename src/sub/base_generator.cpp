@@ -494,7 +494,14 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             // calm; gradient lifts noise at biome edges so transitions
             // look natural.
             const float relief = macroH * macroH + localGrd;
-            float h = macroH + (noise - 0.5f) * relief * localHS * localMtn;
+            // DETAIL, placed on the curve rather than stretched by it — every
+            // local term below carries this factor (sub/height.h
+            // detail_field_scale). The macro relief and the ridges do NOT:
+            // those ARE the mountain, and making them steep with altitude is
+            // the whole point of the curve.
+            const float detail = detail_field_scale(macroH);
+            float h = macroH
+                    + (noise - 0.5f) * relief * localHS * localMtn * detail;
 
             if (rw > 0.0f) {
                 h = mountain_ridges01(h, gxi, gyi, macroH, localPeak, rw,
@@ -508,7 +515,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                     h += (smooth_noise_ts(float(gxi) * 0.012f,
                                           float(gyi) * 0.018f, kDetailSeed,
                                           per(0.012f)) - 0.5f)
-                       * 0.15f * duneF;
+                       * 0.15f * duneF * detail;
                 }
             }
 
@@ -521,7 +528,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                     per(0.025f));
                 const float dip = (1.0f - lowland) * 0.05f
                                 + (1.0f - bog) * 0.04f;
-                h -= dip * sf * (1.0f - plateauW);
+                h -= dip * sf * (1.0f - plateauW) * detail;
             }
 
             // Clamp broad for safety; mountain ridge output itself is kept
@@ -694,8 +701,14 @@ void scatter_universal_trees(SubworldMapData& out,
                 const float gys = (out.heightmap[std::size_t(yp) * cellSize + x]
                                  - out.heightmap[std::size_t(ym) * cellSize + x])
                                 / float(std::max(1, yp - ym));
+                // A GRADIENT, so it is priced by the curve's gain HERE
+                // (sub/height.h height_gain_m) and not by the shoreline's:
+                // the same field gradient is worth 1.5 km per unit at the
+                // water and 1.5 Mm per unit at the roof, and trees care about
+                // the metres, not the field.
                 const float slope = std::sqrt(gxs * gxs + gys * gys)
-                                  * kHeightScaleM;
+                                  * height_gain_m(
+                                        out.heightmap[std::size_t(y) * cellSize + x]);
                 if (slope > 0.70f) continue;
             }
 

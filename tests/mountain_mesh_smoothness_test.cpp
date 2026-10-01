@@ -87,7 +87,10 @@ std::vector<float> mesh_vertices(const std::vector<float>& hm) {
     field.rebuild_from(hm.data());
     std::vector<float> v(std::size_t(kMeshVtx) * kMeshVtx, 0.0f);
     for (std::size_t i = 0; i < v.size(); ++i) {
-        v[i] = field.vertices()[i] / sm::sub::kHeightScaleM;
+        // The field is METRES now (sub/height.h height_m is a curve), and
+        // curvature here is stated in FIELD units — so the way back is the
+        // curve's own inverse, never a division by the vertical full scale.
+        v[i] = sm::sub::height01_of_m(field.vertices()[i]);
     }
     return v;
 }

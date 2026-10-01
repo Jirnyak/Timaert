@@ -222,8 +222,11 @@ void gen_field(const GenInput& in, SubworldMapData& out) {
                 (out.heightmap[std::size_t(yp) * kCellSize + x]
                - out.heightmap[std::size_t(ym) * kCellSize + x])
                 / float(std::max(1, yp - ym));
+            // A GRADIENT — priced by the curve's gain at this altitude
+            // (sub/height.h height_gain_m), never by the shoreline's.
             const float slope = std::sqrt(gxs * gxs + gys * gys)
-                              * kHeightScaleM;
+                              * height_gain_m(
+                                    out.heightmap[std::size_t(y) * kCellSize + x]);
             if (slope > kFieldMaxSlope) continue;
             if (!balk) out.tiles[idx] = TILE_FIELD;
         }

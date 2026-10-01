@@ -9,7 +9,8 @@
 //      world to inherit from); land occupies [plane + kLandMargin, ~1.2]
 //      (soft-compressed
 //      ridge peaks may exceed 1.0; hard safety clamp at 2.0).
-//   2. WORLD METRES — normalised × `kHeightScaleM`. This is the space of
+//   2. WORLD METRES — normalised through `height_m` below, which is a CURVE
+//      and not a multiplier (owner, 2026-10-01). This is the space of
 //      `ecs::Position.z`, the 3D camera Y, point lights, particles and all
 //      combat distance checks. `SubworldHeightField::sample(x, y)` below
 //      returns the terrain surface in this space, and it is THE answer: the
@@ -42,6 +43,7 @@
 #include "sub/base_generator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 namespace sm::sub
@@ -53,9 +55,126 @@ namespace sm::sub
     class SeamlessSubworldManager;
     struct CompositeDirty;
 
-    // Metres per 1.0 of normalised heightmap. THE vertical scale — the only
-    // place the number 1500 may appear.
-    constexpr float kHeightScaleM = 1500.0f;
+    // ── THE TRANSFER CURVE: FIELD → METRES ───────────────────────────────
+    //
+    // This used to be one multiplier (`× 1500`), and the multiplier was the
+    // reason the world was flat: a linear map gives the shore and the summit
+    // the SAME metres per unit of field, so a range that occupies the top
+    // third of the field can only ever be a third of the world's height.
+    // Owner's verdict 2026-10-01, verbatim: «тогда может кривую высот сделать
+    // не ступенями а гладко? типа для берегов будет как ща примерно плавно а
+    // чем ввше высота теперь обрывистей без конкнетнных границ». A PIECEWISE
+    // curve was rejected by him and by measurement — it put a ×24.8 break of
+    // slope on one contour, i.e. a visible kerb ringing every massif exactly
+    // where the biome border runs.
+    //
+    // So the gain GROWS EXPONENTIALLY with the field, and the curve is its
+    // integral:
+    //
+    //     g(n)        = kShoreGainM · 2^((n − WATER_LEVEL)·kHeightDoublings)
+    //     height_m(n) = ∫ g  = kHeightCurveM · (2^(…) − 2^(−0.4·10))
+    //
+    // There is no kink anywhere, INCLUDING at the water: a kink there would
+    // be the one remaining "border", and it would stand on the single contour
+    // the player looks at most.
+
+    // THE ONE SHAPE KNOB: how many times the gain DOUBLES across the whole
+    // field [0,1]. Ten means the roof of the field is exactly 1024× steeper
+    // than the shoreline — and it is a whole number on purpose, so the sea
+    // plane (0.40) lands exactly FOUR doublings above the field's floor and
+    // the constant below is exact arithmetic rather than a rounded fit.
+    //
+    // MEASURED, not chosen: `height_census` over five seeds puts the roof of
+    // the land field at 0.9490/0.9490/0.9608/0.9686/0.9961 (mean 0.9647) —
+    // fBm never reaches its nominal 1.0, and a curve fitted to 1.0 would have
+    // shipped a world a third as tall as the one approved. Ten doublings put
+    // the summit of those five worlds at 9.5/9.5/10.3/10.9/13.3 km above the
+    // sea, against the owner's target of 9–10 km («над пиком тоже хочется
+    // полетать… как дракон самолёт»). Nine point six doublings hit the band's
+    // middle exactly but dropped two seeds of five below 9 km; a whole number
+    // that never underdelivers beats a fractional one that sometimes does.
+    constexpr float kHeightDoublings = 10.0f;
+
+    // Metres per unit of field AT THE WATER. This is TODAY'S number, kept
+    // deliberately: the curve is anchored to the existing shoreline, so no
+    // beach, no river mouth and no harbour moves by a metre — the whole
+    // change happens above, where it was asked for.
+    constexpr float kShoreGainM = 1500.0f;
+
+    // The curve's own metre scale, g0/(N·ln2) — a consequence, not a knob.
+    constexpr float kHeightCurveM = kShoreGainM / (kHeightDoublings * 0.6931472f);
+
+    // Where the field's floor sits on the curve, in curve units: the sea plane
+    // is kHeightDoublings·WATER_LEVEL = 4 doublings up, so the floor is 2^−4 =
+    // 1/16. Subtracting it seats the OCEAN BED at exactly zero metres, which
+    // keeps every altitude in this world positive (`z`, the camera, the flight
+    // envelope) — the sea surface simply stops being 600 m up and becomes 203,
+    // i.e. the ocean gets shallower. That is a consequence of anchoring the
+    // gain at the shore, and it was accepted as one.
+    constexpr float kFieldFloorGain = 0.0625f;
+    static_assert(kHeightDoublings * WATER_LEVEL == 4.0f,
+                  "the sea plane must sit a WHOLE number of doublings above "
+                  "the field floor - otherwise kFieldFloorGain is a rounding");
+
+    // THE ONE DOOR from normalised field to world metres. Every consumer —
+    // generation, simulation, renderer, witnesses — comes through here; there
+    // is no multiplier left to copy.
+    inline float height_m(float h01) {
+        return kHeightCurveM
+             * (std::exp2((h01 - WATER_LEVEL) * kHeightDoublings)
+                - kFieldFloorGain);
+    }
+
+    // METRES PER UNIT OF FIELD *HERE* — the curve's slope at an altitude, and
+    // the second door the перепись of the old multiplier turned up.
+    //
+    // Under a linear map "× 1500" answered two different questions with one
+    // spelling: "how high is this cell" and "how many metres is this gradient
+    // worth". A curve separates them, and silently keeping the old spelling
+    // for the second would have been the real defect — a gradient measured
+    // with the shoreline's gain reads a 700 m mountain face as 30 m. Every
+    // caller that multiplies a DIFFERENCE of field values comes here and says
+    // where it is; every caller that converts a LEVEL goes to `height_m`.
+    inline float height_gain_m(float h01) {
+        return kShoreGainM * std::exp2((h01 - WATER_LEVEL) * kHeightDoublings);
+    }
+
+    // FIELD UNITS PER SHORE-METRE AT THIS ALTITUDE — how a detail authored in
+    // the field is kept worth the same METRES wherever it lands.
+    //
+    // THE SUBWORLD'S OWN DETAIL IS NOT PART OF THE MACRO RELIEF, and the
+    // curve must not treat it as if it were. A hummock, a dune, a bog dip —
+    // `generate_heightmap` adds them to the field in amplitudes tuned when a
+    // field unit was 1500 m everywhere. Put the sum on the curve unchanged
+    // and a 2 m hummock on a 990 m meadow becomes a 9 m one, a 24 m one on a
+    // massif: measured consequence, `subworld_generator_parity_test` — an
+    // ordinary Field cell at 0.62 (q67 of the world's land) grew NO
+    // ploughland at all, because every tile read steeper than the plough
+    // gate. The macro relief is what the owner asked to make steep; the
+    // hummocks on top of it were never the subject.
+    //
+    // So detail is authored in metres and divided onto the curve here. At the
+    // water this is exactly 1 — the shore is untouched, as promised.
+    inline float detail_field_scale(float h01) {
+        return kShoreGainM / height_gain_m(h01);
+    }
+
+    // The inverse, for the two callers that state a LEVEL in metres and need
+    // the field value that carries it (a bridge deck's freeboard). Exact
+    // inverse of the above, not an approximation of it.
+    inline float height01_of_m(float metres) {
+        return WATER_LEVEL
+             + std::log2(std::max(metres / kHeightCurveM + kFieldFloorGain,
+                                  1e-9f)) / kHeightDoublings;
+    }
+
+    // THE VERTICAL FULL SCALE, metres — owner's choice, 2^14. It stopped being
+    // a multiplier and became a CEILING with two jobs: shaders normalise a
+    // world Y by it (an exact division, which is what the power of two buys),
+    // and it states how much sky the curve is allowed to use. The field's
+    // nominal roof reaches 13.6 km against it, so the headroom is real and the
+    // assertion below is not decorative.
+    constexpr float kHeightScaleM = 16384.0f;
 
     // ── THE WATER PLANE IN METRES ────────────────────────────────────────
     // Owner's verdict, 2026-09-27: the datum FOLLOWS THE SCENE. It used to be
@@ -67,13 +186,16 @@ namespace sm::sub
     // drowning. The plane is an editor value the player moves; a datum derived
     // from it cannot be a constant.
     inline float sea_level_m(float seaLevel01) {
-        return seaLevel01 * kHeightScaleM;
+        return height_m(seaLevel01);
     }
 
     // The DEFAULT world's datum — what a harness with no world behind it
-    // answers with, and the value the air's compile-time sanity below is stated
-    // against. Never read by a real scene: a real scene knows its own plane.
-    constexpr float kDefaultSeaLevelM = WATER_LEVEL * kHeightScaleM;
+    // answers with, and the altitude the air law below is stated against.
+    // Never read by a real scene: a real scene knows its own plane. A function
+    // rather than a constant because the curve is transcendental and
+    // `std::exp2` is not constexpr; the relations that used to be
+    // static_asserts against it now live in `air_law_test`.
+    inline float default_sea_level_m() { return height_m(WATER_LEVEL); }
 
     // Flight ceiling margin above the loaded window's highest terrain vertex
     // (`SubworldHeightField::max_m()`).
@@ -343,7 +465,7 @@ namespace sm::sub
         auto ground_m = [&out](float fx, float fy) {
             const int x = std::clamp(int(std::floor(fx)), 0, kCellSize - 1);
             const int y = std::clamp(int(std::floor(fy)), 0, kCellSize - 1);
-            return out.heightmap[std::size_t(y) * kCellSize + x] * kHeightScaleM;
+            return height_m(out.heightmap[std::size_t(y) * kCellSize + x]);
         };
         for (Structure& s : out.structures) {
             if (s.zWorld || s.zBase <= 0.0f) continue;
@@ -373,7 +495,10 @@ namespace sm::sub
     }
 
     // GLSL echoes (shaders can't include this header): mesh.vert normalises
-    // vertex Y with the literal 1500.0 (= kHeightScaleM). Everything ABOUT THE
+    // vertex Y with the literal 16384.0 (= kHeightScaleM). THE CURVE ITSELF
+    // never crosses into GLSL — vertices arrive in metres already, so there is
+    // nothing for a shader to echo and no second curve to keep in step.
+    // Everything ABOUT THE
     // WATER now travels as a uniform instead of being echoed as a literal —
     // mesh.frag's shore band takes the plane and the band's width in
     // `pc.shore`, water.vert takes the plane Y via push constant — because the

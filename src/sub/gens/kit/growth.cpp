@@ -86,7 +86,10 @@ Outline grow_outline(const SubworldMapData& out, float cx, float cy,
                             - hm[std::size_t(ty) * kCellSize + tx - 1]);
             const float dv = (hm[std::size_t(ty + 1) * kCellSize + tx]
                             - hm[std::size_t(ty - 1) * kCellSize + tx]);
-            const float grade = std::sqrt(dh * dh + dv * dv) * kHeightScaleM * 0.5f;
+            // A GRADIENT (half-difference over two tiles), so it is priced by
+            // the curve's gain at this spot — sub/height.h height_gain_m.
+            const float grade = std::sqrt(dh * dh + dv * dv) * 0.5f
+                              * height_gain_m(hm[std::size_t(ty) * kCellSize + tx]);
             price[i] = 1.0f + kGradePenalty * grade * grade;
 
             if (tile_is(out.tiles[t], kTilePaved)) roadDist[i] = 0.0f;

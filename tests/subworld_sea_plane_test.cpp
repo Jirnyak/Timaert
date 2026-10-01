@@ -139,10 +139,11 @@ int main() {
               && wet_edge_top(kPlane) > wet_edge_top(WATER_LEVEL),
           "мокрая кромка есть плоскость плюс ШИРИНА: ширина своя, основание "
           "наследуется");
-    CHECK(sea_level_m(kPlane) == kPlane * kHeightScaleM
-              && sea_level_m(kPlane) > kDefaultSeaLevelM,
+    CHECK(sea_level_m(kPlane) == height_m(kPlane)
+              && sea_level_m(kPlane) > default_sea_level_m(),
           "датум метров следует сцене (вердикт владельца 2026-09-27), иначе "
-          "мост лёг бы на 300 м под своей рекой");
+          "мост лёг бы на 300 м под своей рекой; и он идёт ОДНОЙ дверью "
+          "height_m, а не вторым умножением");
     CHECK(!is_dry_footing(sea_level_m(kPlane) - 1.0f, sea_level_m(kPlane))
               && is_dry_footing(sea_level_m(kPlane) + 1.0f,
                                 sea_level_m(kPlane)),

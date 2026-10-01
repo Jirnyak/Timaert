@@ -23,7 +23,10 @@ layout(location = 3) out vec2 vUv;
 void main() {
     gl_Position = pc.mvp * vec4(inPos, 1.0);
     vNormal = inNormal;
-    vHeight = clamp(inPos.y / 1500.0, 0.0, 1.0);
+    // 16384 == sm::sub::kHeightScaleM, the world's vertical full scale (a
+    // power of two, so this division is exact). NOT the transfer curve: the
+    // vertex arrives in METRES already, so no shader owns a second curve.
+    vHeight = clamp(inPos.y / 16384.0, 0.0, 1.0);
     vWorld = inPos;
     vUv = inUv;
 }

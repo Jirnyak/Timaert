@@ -16,10 +16,9 @@
 // context: dark new-moon nights are a feature).
 #pragma once
 #include "core/math.h"
-#include "tables/biomes.h"   // kMountainBiomeLevel — the air's scale height
 #include "tables/celestial.h"
 #include "macro/state.h"
-#include "sub/height.h"     // kHeightScaleM / sea_level_m — the air's datum
+#include "sub/height.h"     // height_m — the curve the air is scaled against
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -114,7 +113,7 @@ struct GpuLightBuffer {
                                     // w = composite origin Z (cloud anchor;
                                     //     origin X rides sunDirW.w)
     // The air between the eye and the surface (haze_color / kAirEFoldM /
-    // kAirScaleHeightM above), and the eye itself. They ride this buffer for
+    // air_scale_height_m above), and the eye itself. They ride this buffer for
     // the same reason everything else here does: it is the one set-0 descriptor
     // EVERY lit pass already binds, so aerial perspective reaches the ground,
     // the walls, the trees, the bodies and the water through one law and zero
@@ -323,30 +322,41 @@ inline LightParameters compute_light_parameters(int day, float tod) {
 // ridge shows is a consequence of H, not a second knob.
 constexpr float kAirEFoldM = 16384.0f;
 
+// WHERE NINE TENTHS OF THE LAND LIVES — the field value, measured, not chosen.
+// `height_census` over five seeds: p90 of the land field = 0.7663. It is the
+// SOURCE of the air's scale height below, and it is a measurement rather than
+// a knob, so the air follows the relief for free when the generator changes.
+constexpr float kLandP90Field = 0.7663f;
+
 // THE AIR'S SCALE HEIGHT, in metres: the altitude over which density falls by
-// 1/e. It is THE MOUNTAIN BAND OF THIS WORLD — the normalised height between
-// the line where land becomes mountain (kMountainBiomeLevel, 0.75) and the top
-// of the range (1.0), in metres. The air thins over exactly the vertical
-// distance a massif rises, which states the canon's law as an identity rather
-// than fitting it: the mountain line at 525 m above the sea sits at 1.4 scale
-// heights (25 % of sea-level air), a 960 m summit at 2.6 (7.7 %), while the
-// whole lowland lives inside the first one. No physics is claimed — this world
-// has no g and no lapse rate; the air is scaled to the relief it stands over.
-constexpr float kAirScaleHeightM =
-    (1.0f - kMountainBiomeLevel) * kHeightScaleM;
-// The dense air must be a LAYER, so the scale height has to be positive — that
-// half is a domain guard on the division below and holds for every world.
-static_assert(kAirScaleHeightM > 0.0f,
-              "the dense air must be a layer: taller than nothing");
-// The other half — that the layer is shorter than the datum it is measured from
-// — is a statement about the DEFAULT world, and can only be one now that the
-// datum follows the scene (owner, 2026-09-27). At the slider's low end (plane
-// 0.10 → datum 150 m) the lowland genuinely lives in thicker air than it does
-// at 0.40, and that is the world being different, not the maths breaking: the
-// integral is finite and signed for any altitude either side of the datum.
-static_assert(kAirScaleHeightM < kDefaultSeaLevelM,
-              "in the DEFAULT world the dense air is a layer inside the relief, "
-              "shorter than the sea-level datum itself");
+// 1/e. It is THE ALTITUDE NINE TENTHS OF THE LAND LIVES UNDER — the top tenth
+// of the world sticks out of the dense layer, everything else breathes it.
+// 2525 m for today's relief. No physics is claimed — this world has no g and
+// no lapse rate; the air is scaled to the relief it stands over, and the
+// canon's law («равнина растворяется сама, вершина сама доживает дальше») then
+// falls out instead of being fitted: the lowland sits at 0.08 scale heights
+// (92 % of sea-level air), the summit at 4.2 (1.5 %).
+//
+// IT USED TO BE THE MOUNTAIN BAND, `(1 − kMountainBiomeLevel) × 1500` = 375 m,
+// and that derivation DIED WITH THE LINEAR HEIGHT (M-192, owner 2026-10-01).
+// Under a multiplier the mountain line stood 56 % of the way to the summit, so
+// "the band a massif rises through" was an honest scale for the relief. Under
+// the transfer curve the same line stands 8 % of the way up (813 m against a
+// 10.6 km summit) and the same band measures 11 km — taller than the world.
+// Keeping the spelling would have put the WHOLE world inside one scale height,
+// i.e. a uniform wash, which is the exact defect the altitude-aware integral
+// was built to kill.
+//
+// A function and not a constant because the curve is transcendental and
+// `std::exp2` is not constexpr. The two relations that used to be
+// static_asserts here are now `air_law_test` — measured, and stronger: the
+// summit must stand between TWO and FIVE scale heights. The lower bound is the
+// canon's («вершина выше дымки»); the upper one is what rules out the naive
+// repair of pinning H back under the mountain line, which would leave the
+// summit at 12 scale heights, in a vacuum, never fading at any range.
+inline float air_scale_height_m() {
+    return sub::height_m(kLandP90Field) - sub::height_m(WATER_LEVEL);
+}
 
 // THE OPTICAL DEPTH of a ray, and the CPU mirror of what lighting.glsl's
 // `aerial_perspective` computes — the same relationship `biome_at` has to the
@@ -360,8 +370,9 @@ static_assert(kAirScaleHeightM < kDefaultSeaLevelM,
 // camera Y and vWorld.y already live in).
 inline float air_optical_depth(float distanceM, float eyeM, float surfaceM,
                                float seaLevelM) {
-    const float a0 = (eyeM     - seaLevelM) / kAirScaleHeightM;
-    const float a1 = (surfaceM - seaLevelM) / kAirScaleHeightM;
+    const float invH = 1.0f / air_scale_height_m();
+    const float a0 = (eyeM     - seaLevelM) * invH;
+    const float a1 = (surfaceM - seaLevelM) * invH;
     const float da = a1 - a0;
     // The mean of exp(-a) along the segment. The guard is a FLOAT guard, not a
     // maths one — see the same lines in lighting.glsl for why 1e-3 and not 0.

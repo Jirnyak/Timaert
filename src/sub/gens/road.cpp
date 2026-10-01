@@ -76,7 +76,7 @@ static void add_bridge_segment(SubworldMapData& out, int ax, int ay, int bx, int
         const float t = std::clamp(d / length, 0.0f, 1.0f);
         const int tx = std::clamp(int(float(ax) + dx * t), 0, kCellSize - 1);
         const int ty = std::clamp(int(float(ay) + dy * t), 0, kCellSize - 1);
-        return hm[std::size_t(ty) * kCellSize + tx] * kHeightScaleM;
+        return height_m(hm[std::size_t(ty) * kCellSize + tx]);
     };
     // THE deck level: the water plane plus a freeboard, one world height for
     // every span of every cell — because the water it clears is one height
@@ -315,7 +315,7 @@ static void gen_bridge_crossing(const CellContext& ctx,
     // the two meet by construction: the span begins exactly where the ground
     // has risen to it, which is why no ramp or step is needed at the joint.
     const float bankTop01 =
-        (sea_level_m(out.waterLevel) + kBridgeFreeboardM) / kHeightScaleM;
+        height01_of_m(sea_level_m(out.waterLevel) + kBridgeFreeboardM);
     if (out.heightmap.size() != std::size_t(kCellSize) * kCellSize) return;
     const auto height01 = [&](int px, int py) {
         return out.heightmap[std::size_t(py) * kCellSize + px];
