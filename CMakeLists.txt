@@ -403,6 +403,22 @@ target_include_directories(balance_run PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(balance_run PRIVATE ENTT_NOEXCEPTION)
 target_link_libraries(balance_run PRIVATE timaert_build_flags EnTT::EnTT)
 
+# Height census (наряд M-192, ход 0, 2026-10-01): измерить ПОЛЕ высот
+# макромира — долю дисперсии по масштабам, уклоны между соседями, перцентили
+# высоты по суше — и сохранить само поле и карту его уклонов картинками, чтобы
+# владелец смотрел глазами. Числа этого прогона становятся приёмочной базой
+# ридж-октав и кривой вертикального переноса.
+# Сознательно НЕ ctest, по причине balance_run: это ЗАМЕР, а не вердикт.
+add_executable(height_census tests/height_census.cpp
+    src/macro/map_generator.cpp)
+set_target_properties(height_census PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(height_census PRIVATE
+    ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
+target_link_libraries(height_census PRIVATE timaert_build_flags)
+
 # ── ONE way to declare a test ──────────────────────────────────────────────
 # Every logic test used to be the same 20-24 lines with a different name: 1160
 # of this file's lines were that block, copied 49 times. Two things follow from
