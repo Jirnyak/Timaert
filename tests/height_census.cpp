@@ -139,6 +139,7 @@ struct SeedResult {
     // упирается в единицу, вершины мира — плоские столы по построению, и
     // никакая вертикальная шкала этого не лечит. Поэтому доля насыщения
     // печатается наравне с перцентилями: это вопрос «есть ли куда расти».
+    float quant[7] = {};      // q50/60/65/70/75/80/90 суши — для перепривязки порогов
     float satFrac = 0.0f;     // суши ровно на 255
     float near1Frac = 0.0f;   // суши на >= 250 (0.98)
     float bedFrac = 0.0f;     // всей карты ровно на 0 — то же снизу
@@ -254,6 +255,10 @@ SeedResult census_seed(std::uint32_t seed) {
     r.p99  = percentile(land, 0.99f);
     r.p999 = percentile(land, 0.999f);
     r.maxH = land.empty() ? 0.0f : land.back();
+    {
+        const float q[7] = {0.50f, 0.60f, 0.65f, 0.70f, 0.75f, 0.80f, 0.90f};
+        for (int k = 0; k < 7; ++k) r.quant[k] = percentile(land, q[k]);
+    }
 
     // ── 1. ДИСПЕРСИЯ ПО МАСШТАБАМ ────────────────────────────────────────
     // Полоса [s, 2s) = var(сглаженное на s) − var(сглаженное на 2s): скользящее
@@ -322,6 +327,15 @@ void print_seed(const SeedResult& r) {
                 "  p99.9 %.4f (%6.1f м)  max %.4f (%6.1f м)\n",
                 r.p50, r.p50 * sc, r.p90, r.p90 * sc, r.p99, r.p99 * sc,
                 r.p999, r.p999 * sc, r.maxH, r.maxH * sc);
+    // Квантили суши целиком — ими ПЕРЕПРИВЯЗЫВАЕТСЯ горная линия, когда форма
+    // синтеза меняет распределение поля. Порог биома есть ДОЛЯ мира, а не
+    // магическое число: «столько же гор, сколько было» проверяется здесь.
+    std::printf("    квантили суши:");
+    for (int k = 0; k < 7; ++k) {
+        const float q[7] = {0.50f, 0.60f, 0.65f, 0.70f, 0.75f, 0.80f, 0.90f};
+        std::printf("  q%.0f %.4f", q[k] * 100.0f, r.quant[k]);
+    }
+    std::printf("\n");
     std::printf("    ЗАПАС СВЕРХУ: суши ровно на 1.0 — %.2f %%, на >=0.98 — %.2f %%"
                 "  (дна ровно на 0.0: %.2f %% карты)\n",
                 r.satFrac * 100.0f, r.near1Frac * 100.0f, r.bedFrac * 100.0f);
@@ -391,6 +405,7 @@ int main(int argc, char** argv) {
         m.slopeP99 += r.slopeP99 * inv; m.slopeMax += r.slopeMax * inv;
         m.mtnP50 += r.mtnP50 * inv; m.mtnP90 += r.mtnP90 * inv;
         m.mtnP99 += r.mtnP99 * inv; m.mtnMax += r.mtnMax * inv;
+        for (int k = 0; k < 7; ++k) m.quant[k] += r.quant[k] * inv;
         for (int k = 0; k < 9; ++k) {
             m.bandShare[k] += r.bandShare[k] * inv;
             m.bandSigmaM[k] += r.bandSigmaM[k] * inv;
@@ -403,6 +418,8 @@ int main(int argc, char** argv) {
                 m.landFrac * 100.0f, m.mtnFrac * 100.0f);
     std::printf("  высота по суше: p50 %.4f  p90 %.4f  p99 %.4f  p99.9 %.4f  max %.4f\n",
                 m.p50, m.p90, m.p99, m.p999, m.maxH);
+    std::printf("  квантили суши: q60 %.4f  q65 %.4f  q70 %.4f  q75 %.4f  q80 %.4f\n",
+                m.quant[1], m.quant[2], m.quant[3], m.quant[4], m.quant[5]);
     std::printf("  насыщение сверху: %.2f %% суши на 1.0, %.2f %% на >=0.98\n",
                 m.satFrac * 100.0f, m.near1Frac * 100.0f);
     std::printf("  энергия 2-4 клетки: %.2f %% (сигма %.1f м) | 4-8: %.2f %% (%.1f м)"

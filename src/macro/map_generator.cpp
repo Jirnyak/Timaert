@@ -1,4 +1,5 @@
 #include "core/field_noise.h"
+#include "core/math.h"
 #include "core/torus.h"
 #include "macro/map_generator.h"
 #include "tables/biomes.h"
@@ -32,6 +33,42 @@ inline std::uint8_t to_unorm8(float v) {
     return std::uint8_t(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f));
 }
 
+// ── ГРЕБНЕВАЯ ОКТАВА: ДЛИНА ВОЛНЫ МАСШТАБА ХРЕБТА ───────────────────────────
+// Замер 2026-10-01 (`height_census`) назвал корень числом: 87 % дисперсии поля
+// лежит на масштабах ≥32 клеток, ниже 8 клеток — 4.3 %, и самый крутой переход
+// между клетками во всём мире 4.92°. Прежний член хребтов шёл по домену ×0.75,
+// то есть его мельчайшая деталь была 43 КЛЕТКИ: приём `1-|n|` верен, но был
+// применён на континентальном масштабе — заострять внизу было нечего.
+//
+// Домен ×4 растягивает те же 8 единиц карты на 32, то есть одна единица решётки
+// = 32 клетки; при четырёх октавах длины волн выходят 32, 16, 8 и 4 клетки.
+// Длинная октава нужна не ради неё самой: она ОРГАНИЗУЕТ цепь, вдоль которой
+// короткие ставят кресты, — без неё выходят отдельные зубья, а не хребет.
+// Почему не 2 клетки, хотя владелец назвал «2–8»: поле СЭМПЛИРУЕТСЯ раз в
+// клетку, значит волна в 2 клетки стоит ровно на Найквисте и рисует не гребень,
+// а шахматную рябь. 4 клетки — честный пол.
+//
+// Период обязан быть ЦЕЛЫМ числом клеток решётки (шрам: пара 0.7/5.6 ставила по
+// три обрыва в каждом мире). 8 × 4 = 32 целое, и октавы 32/64/128/256 тоже — а
+// верхняя из них не переваливает за 256, то есть таблица градиентов Перлина
+// (`& 255` в `periodic_noise`) ни на одной октаве не сворачивается дважды
+// внутри одного мира.
+constexpr float kRidgeDomainScale = 4.0f;
+constexpr float kRidgeBasePeriod  = 8.0f * kRidgeDomainScale;  // = 32, целое
+constexpr int   kRidgeOctaves     = 4;                    // 32 / 16 / 8 / 4 клетки
+static_assert(kRidgeBasePeriod * 8.0f <= 256.0f,
+              "верхняя октава гребней обязана уместиться в 256 — иначе таблица "
+              "градиентов повторится дважды внутри мира");
+
+// ── ГДЕ ГРЕБНЯМ ЖИТЬ ────────────────────────────────────────────────────────
+// Гребни включает ПОЛЕ ПОДНЯТИЯ, и это та самая модуляция, которой равнины
+// остаются гладкими: ниже `kMassifLow` деталь чисто гладкая, выше `kMassifHigh`
+// чисто гребневая, между — smoothstep, то есть переход без контура. Числа
+// посажены на распределение поднятия (оно симметрично вокруг 0.5): гребни
+// занимают верхнюю треть континента — ту же долю карты, что и горный биом.
+constexpr float kMassifLow  = 0.50f;
+constexpr float kMassifHigh = 0.80f;
+
 // Fill td.rgba with the climate master: height (R), moisture (G),
 // temperature (B) and land mask (A). Faithful CPU port of the former GL synth.
 void synth_master(TerrainData& td, const LayerParameters& p) {
@@ -61,32 +98,61 @@ void synth_master(TerrainData& td, const LayerParameters& p) {
             const float qx = warpX * p.domainWarp;
             const float qy = warpY * p.domainWarp;
 
-            // Base height.
-            float noiseHeight = terrain_fbm(posX + qx, posY + qy, heightOct, 0.5f, 8.0f, seed) * 0.5f + 0.5f;
-
-            // Continental structure (low frequency).
-            const float continentBias = terrain_fbm(posX * cScale, posY * cScale, 2, 0.5f, 8.0f * cScale, seed + 700.0f);
-            noiseHeight += continentBias * p.continentIntensity;
-
-            // Mountain ridges: 1-abs(noise) makes connected chains.
+            // ── ПОДНЯТИЕ — ПОЛЕ УРОВНЯ, А НЕ СЛАГАЕМОЕ ──────────────────
+            // Здесь стоял `noiseHeight += continentBias * 0.40` поверх поля,
+            // уже занимавшего [0,1], и следом `clamp(0,1)`. Замер назвал цену
+            // числом: 5.64 % суши (сид 1 — 7.80 %) стояло РОВНО на 1.0, то есть
+            // вершины мира были ПЛОСКИМИ СТОЛАМИ по построению, и независимый
+            // прибор это подтверждал — в горном биоме уклоны выходили МЕНЬШЕ,
+            // чем на остальной суше (p90 17.6 м против 23.5 м). Растянуть
+            // плоский стол никакая вертикальная шкала не может, поэтому кламп
+            // снимается не настройкой, а формой: поднятие задаёт УРОВЕНЬ, а
+            // деталь живёт вокруг него, и каждый шаг — lerp, то есть выйти за
+            // [0,1] поле больше НЕ УМЕЕТ.
             //
-            // The period must be a WHOLE number of lattice cells, or the noise
-            // has a cut where its modulo wraps — and that cut lands INSIDE the
-            // map, at a column the seed picks. The old pair (scale 0.7, period
-            // 5.6) put three vertical and three horizontal cliffs through every
-            // world ever generated: measured on the shipped byte heightmap, the
-            // worst of them averaged 13.7 of gradient against a map-wide median
-            // of 1 (8.3×), reached 38 at default ridge intensity and 140 at the
-            // slider's maximum, and flipped 123 biomes along one column against
-            // a median of 22. Seeds 1 / 7 / 999 put the cliffs at 986/566/319,
-            // 913/17/45 and 767/456/776 — exactly where 5.6·2^k folds.
+            // Вес выводится из авторской ручки, а не назначается заново:
+            // старое `d + c·(2u−1)` жило в [−c, 1+c], и сжатие этого отрезка в
+            // [0,1] есть ровно `lerp(d, u, 2c/(1+2c))`. При дефолтном c = 0.40
+            // вес 0.444, то есть поле СТРУКТУРНО то же, что шипуется сегодня,
+            // только больше не срезано сверху.
+            const float uplift =
+                terrain_fbm(posX * cScale, posY * cScale, 2, 0.5f,
+                            8.0f * cScale, seed + 700.0f) * 0.5f + 0.5f;
+            const float upliftWeight =
+                2.0f * p.continentIntensity / (1.0f + 2.0f * p.continentIntensity);
+
+            // Гладкая деталь — та же, что была базовой высотой.
+            const float smoothDetail =
+                terrain_fbm(posX + qx, posY + qy, heightOct, 0.5f, 8.0f, seed)
+                * 0.5f + 0.5f;
+
+            // Гребневая деталь — своя дверь (`ridged_fbm`): ридж берётся на
+            // КАЖДОЙ октаве, иначе выходит мятая фольга, а не хребты, и это
+            // поймано числом (p99/p50 уклона в горах падало 6.0 → 4.1). Домен не
+            // искривляется warp'ом сознательно: смещение в 0.3 единицы здесь
+            // равно 38 клеткам и размололо бы четырёхклеточный гребень в кашу.
+            const float ridged =
+                ridged_fbm(posX * kRidgeDomainScale, posY * kRidgeDomainScale,
+                           kRidgeOctaves, 0.55f, kRidgeBasePeriod, seed + 800.0f);
+
+            // ── ГРЕБЕНЬ ПОДНИМАЕТ, А НЕ ПОДМЕНЯЕТ ───────────────────────
+            // Первая редакция лерпила деталь В СТОРОНУ гребневого поля и
+            // сделала хуже, чем было: у мультифрактала основная масса лежит у
+            // нуля (он почти везде низкий и редко кресты), поэтому `lerp` к
+            // нему ТЯНУЛ рельеф ВНИЗ — замер назвал цену сразу, уклон гор p90
+            // 36.5 м → 17.6 м.
             //
-            // 0.75 is the nearest scale whose period (8 × scale = 6) is whole;
-            // its octaves 6/12/24 are whole too, so every one of them closes.
-            const float ridgeBase = terrain_fbm(posX * 0.75f, posY * 0.75f, 3, 0.55f, 6.0f, seed + 800.0f);
-            const float ridge = std::pow(1.0f - std::fabs(ridgeBase), 3.0f) * p.ridgeIntensity;
-            noiseHeight += ridge;
-            noiseHeight = std::clamp(noiseHeight, 0.0f, 1.0f);
+            // Гребень обязан ДОБАВЛЯТЬ, и добавлять в ЗАПАС ДО ПОТОЛКА:
+            // `h += (1−h)·ridge·…` не умеет вынести поле за единицу ни при
+            // каком весе (h ≤ 1 ⇒ прибавка ≤ 1−h), то есть бескламповость
+            // держится по построению, а не по настройке. Заодно это честная
+            // геология: гребень растёт туда, где ещё есть небо.
+            const float massif = smoothstep01((uplift - kMassifLow)
+                                              / (kMassifHigh - kMassifLow));
+
+            float noiseHeight = lerp(smoothDetail, uplift, upliftWeight);
+            noiseHeight += (1.0f - noiseHeight)
+                         * ridged * massif * p.ridgeIntensity;
             noiseHeight = std::pow(noiseHeight, p.heightScale);
 
             // Moisture (period 4 -> tiles twice).

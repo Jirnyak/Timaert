@@ -36,6 +36,19 @@ using namespace sm;
 constexpr int kW = 64, kH = 64;
 
 // Сухая равнина целиком — find_valid_spawn нужна честная суша.
+// САМЫЙ ВЫСОКИЙ БАЙТ, КОТОРЫЙ ЕЩЁ НЕ ГОРА — вывод из `kMountainBiomeLevel`,
+// а не литерал. Здесь стояло 180 (0.706): под линией 0.75 это была высокая
+// суша, а когда линия переехала на 0.625 (бескламповый синтез, 2026-10-01),
+// та же фикстура молча стала ГОРОЙ целиком и унесла с собой то, что тест
+// проверяет. Выведенный байт не может разойтись с линией по построению.
+// Середина между плоскостью моря и горной линией: суша БЕЗ ДВУСМЫСЛЕННОСТИ —
+// и выше воды, и заведомо не массив. Байт у самой линии фикстуре не годится:
+// он делает утверждение «мир без дома строки никого не рождает» заложником
+// одного байта.
+constexpr float kFlatLand01 =
+    0.5f * (sm::kDefaultSeaLevel + sm::kMountainBiomeLevel);
+constexpr std::uint8_t kTallLandByte = std::uint8_t(kFlatLand01 * 255.0f);
+
 TerrainData make_terrain() {
     TerrainData t;
     t.width = kW;
@@ -43,7 +56,7 @@ TerrainData make_terrain() {
     t.rgba.assign(std::size_t(kW) * kH * 4u, 0);
     t.riverData.assign(std::size_t(kW) * kH, 0);
     for (std::size_t i = 0; i < std::size_t(kW) * kH; ++i) {
-        t.rgba[i * 4u + 0] = 180;   // суша выше уровня моря
+        t.rgba[i * 4u + 0] = kTallLandByte;  // суша выше моря, но НЕ гора
         t.rgba[i * 4u + 3] = 255;   // маска суши
     }
     return t;

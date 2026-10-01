@@ -259,7 +259,7 @@ vec3 bt_mountain(vec2 wp, float sd) {
 // water is classified by being below sea level (see biomes.h biome_at). Keeping
 // it here (a biome, before the feature overlays) is what dissolves the old hard
 // mountain border: neighbour-blended biome ground grades cleanly into the foot.
-const float MTN_LEVEL = 0.75;   // == sm::kMountainBiomeLevel
+const float MTN_LEVEL = 0.625;  // == sm::kMountainBiomeLevel
 
 // ── ШИРИНА СТЫКА — ОДНА НА ВСЕ ПЕРЕХОДЫ МЕЖДУ КЛЕТКАМИ ───────────────────
 // Макро-карта рисует РЕШЁТКУ, и её работа на границе двух клеток одна и та же,

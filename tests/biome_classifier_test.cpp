@@ -13,7 +13,11 @@
 namespace {
 
 constexpr float kSea = 0.40f;
-constexpr float kMtn = sm::kMountainBiomeLevel; // 0.75f
+constexpr float kMtn = sm::kMountainBiomeLevel;
+// «Чуть ниже линии» — ВЫВОД, а не литерал: стояло 0.74f под линию 0.75,
+// и когда линия переехала на 0.625, свидетель объявил горой то, что горой
+// быть обязано. Шаг взят байтовый (1/255) — мельче карта высот не умеет.
+constexpr float kJustBelowMtn = kMtn - 1.0f / 255.0f;
 
 // Below sea level is always Water, regardless of climate or how far below.
 void test_water_is_classified_by_sea_level() {
@@ -28,14 +32,14 @@ void test_water_is_classified_by_sea_level() {
 
 // At or above the massif line is always Mountain, overriding the climate matrix.
 void test_mountain_is_classified_by_elevation() {
-    CHECK(sm::biome_at(0.0f, 0.0f, 0.75f, kSea, kMtn) == sm::Mountain,
+    CHECK(sm::biome_at(0.0f, 0.0f, kMtn, kSea, kMtn) == sm::Mountain,
            "exactly at mountain level is Mountain");
     CHECK(sm::biome_at(1.0f, 1.0f, 0.90f, kSea, kMtn) == sm::Mountain,
            "high elevation is Mountain regardless of hot/wet climate");
     CHECK(sm::biome_at(0.0f, 1.0f, 1.00f, kSea, kMtn) == sm::Mountain,
            "peak elevation is Mountain regardless of cold/wet climate");
     // Just below the line falls back to the climate matrix, not Mountain.
-    CHECK(sm::biome_at(0.5f, 0.5f, 0.74f, kSea, kMtn) != sm::Mountain,
+    CHECK(sm::biome_at(0.5f, 0.5f, kJustBelowMtn, kSea, kMtn) != sm::Mountain,
            "just below mountain level is a climate biome, not Mountain");
 }
 

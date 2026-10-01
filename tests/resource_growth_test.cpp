@@ -33,6 +33,15 @@ constexpr int kW = 64, kH = 64;
 
 // Dry meadow land everywhere; a mountain band at y>=40 for geology (wide
 // enough that the 1/256 iron roll reliably seeds a few veins).
+// САМЫЙ ВЫСОКИЙ БАЙТ, КОТОРЫЙ ЕЩЁ НЕ ГОРА — вывод из `kMountainBiomeLevel`,
+// а не литерал. Здесь стояло 180 (0.706): под линией 0.75 это была высокая
+// суша, а когда линия переехала на 0.625 (бескламповый синтез, 2026-10-01),
+// та же фикстура молча стала ГОРОЙ целиком и унесла с собой то, что тест
+// проверяет. Выведенный байт не может разойтись с линией по построению.
+constexpr float kMtnLineByteF = sm::kMountainBiomeLevel * 255.0f;
+constexpr std::uint8_t kTallLandByte = std::uint8_t(
+    int(kMtnLineByteF) + (float(int(kMtnLineByteF)) < kMtnLineByteF ? 1 : 0) - 1);
+
 TerrainData make_terrain() {
     TerrainData t;
     t.width = kW;
@@ -46,7 +55,8 @@ TerrainData make_terrain() {
             // Peaks, not foothills (v72): the field law of geology weights
             // metal by height⁴, so the fixture band must be honestly TALL
             // for its veins to crest.
-            t.rgba[s + 0] = y >= 40 ? 250 : 180;   // land / mountain peaks
+            t.rgba[s + 0] = y >= 40 ? std::uint8_t(250) : kTallLandByte;
+                                                   // пики / высокая суша
             t.rgba[s + 3] = 255;                   // land mask
         }
     }

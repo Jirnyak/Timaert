@@ -61,7 +61,17 @@ inline Biome biome_from_climate(float temperature01, float moisture01) {
 // Cells at or above this normalized elevation are the Mountain biome (the
 // procedural massif), overriding the climate matrix — the elevation parallel to
 // how cells below sea level are Water. Trees/roads remain features on top.
-inline constexpr float kMountainBiomeLevel = 0.75f;
+//
+// ЭТО ДОЛЯ МИРА, А НЕ МАГИЧЕСКОЕ ЧИСЛО, и переставлено оно замером. 0.75 стояло
+// при поле, которое ПРИБАВЛЯЛО континентальный сдвиг и кламмилось: 5.64 % суши
+// лежало ровно на единице (плоские столы), а порог отрезал 23 % карты. Синтез
+// 2026-10-01 стал бескламповым, поле сузилось в тот же отрезок, в который
+// старое срезалось, и 0.75 оставляло горам 2 % мира. 0.625 возвращает ИМЕННО
+// прежнюю долю: замер `height_census` на пяти сидах даёт квантиль суши ≈q68.5,
+// то есть снова ~23 % карты. Число дробится надвое (5/8), и воздух, который из
+// него выведен (`kAirScaleHeightM@src/sub/lighting.h`), остаётся слоем внутри
+// рельефа — свой static_assert держит.
+inline constexpr float kMountainBiomeLevel = 0.625f;
 
 // The single elevation-aware biome classifier: Water below sea level, Mountain
 // at/above the massif line, otherwise the climate matrix. This is the CPU

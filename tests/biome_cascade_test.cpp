@@ -43,10 +43,16 @@ namespace {
 // ЗАКОН АДРЕСА: сторона — степень двойки, мир квадратен.
 constexpr int kSide = 128;
 
-// Горная линия в байтовом словаре высоты: h/255 >= 0.75 ⇒ байт >= 191.25, то
-// есть 192 — гора, 191 — ещё нет. Выведено из `kMountainBiomeLevel`, не
-// списано с наблюдения.
-constexpr int kMountainByte = 192;
+// Горная линия в байтовом словаре высоты: первый байт, который уже гора, и
+// предыдущий, который ещё нет. Шапка обещала «выведено из
+// `kMountainBiomeLevel`», а стояло ЧИСЛО 192, посчитанное руками под линию
+// 0.75; когда линия переехала (2026-10-01, бескламповый синтез), числа разошлись
+// с источником и `static_assert` поймал это сборкой — ровно как и должен.
+// Теперь вывод настоящий: байт считается ИЗ линии, и свидетель верен при любой.
+constexpr float kMountainLineByteF = kMountainBiomeLevel * 255.0f;
+constexpr int   kMountainByte =
+    int(kMountainLineByteF)
+    + (float(int(kMountainLineByteF)) < kMountainLineByteF ? 1 : 0);
 static_assert(float(kMountainByte) / 255.0f >= kMountainBiomeLevel,
               "192 обязан быть горой");
 static_assert(float(kMountainByte - 1) / 255.0f < kMountainBiomeLevel,

@@ -50,7 +50,15 @@ struct LayerParameters {
     float temperatureVariation = 0.30f;
     float continentScale = 0.50f;
     float continentIntensity = 0.40f;
-    float ridgeIntensity = 0.15f;
+    // Насколько гребень поднимается в ЗАПАС ДО ПОТОЛКА там, где поле поднятия
+    // объявило массив (`map_generator.cpp`, kMassif*). Было 0.15, когда член
+    // хребтов ПРИБАВЛЯЛСЯ к полю на масштабе 43 клетки; теперь это доля неба
+    // над гладкой базой, и 0.15 оставляла горы площе равнин. Замер на пяти
+    // сидах (`height_census`): 0.15 → уклон гор p90 17.6 м, 0.40 → 17.6,
+    // 0.70 → 35.3, 1.00 → 47.1. Взято 0.70: при 1.00 крест упирается в
+    // потолок, и форму гребня начинает лепить сам потолок (прибавка гаснет
+    // как 1−h) — то есть старый дефект в новом платье.
+    float ridgeIntensity = 0.70f;
     float domainWarp = 0.30f;
     float heightOctaves = 6.0f;
     float moistureOctaves = 4.0f;
