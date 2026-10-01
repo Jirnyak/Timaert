@@ -1419,10 +1419,27 @@ void remark_gear_blocks(Gear& g, const Inventory& inv);
 
 int worn_cells(const Gear& g);
 BonusTotals worn_bonuses(const Gear& g, const Inventory& inv);
-ArmorProfile worn_armor(const Gear& g, const Inventory& inv, const Skills& skills);
+// ── ЗАЩИТА ТЕЛА — ОДНА ДВЕРЬ НА ОБА КОНЦА БОЯ (CANON S13, наряд M-193) ────
+// Эффективная защита по ОДНОЙ колонке урона: строка существа × обучение
+// носителя + надетое × ранги своих родов + «Без брони», если не надето ничего.
+// `row` передаётся ЗНАЧЕНИЕМ, а не как `NpcTypeDef`, сознательно: этот
+// заголовок остаётся листом над attributes.h, чтобы каталог предметов включал
+// анкету без реестра существ за ней.
+//
+// ОДНА ДВЕРЬ, ДВА ЧИТАТЕЛЯ: сцена (`defense_of@src/sub/damage.cpp`) и
+// авторезолв (`fighter_power@src/macro/auto_battle.h`). Два ответа на «сколько
+// держит тело» были бы двумя законами боя (S13), поэтому сборка живёт здесь, а
+// не по разу на каждой стороне.
+DefenseSum body_defense(const Defense& row, const Skills& skills,
+                        const Gear* g, const Inventory* inv, DamageType type);
+// Половина этой сборки, нужная панели и свидетелям поимённо: что даёт НАДЕТОЕ.
+DefenseSum worn_defense(const Gear& g, const Inventory& inv,
+                        const Skills& skills, DamageType type);
+// Гейт строки «Без брони»: надето ли хоть что-то рода `ItemType::Armor`.
+bool wears_armor(const Gear& g, const Inventory& inv);
 const ItemDef* weapon_in_hand(const Gear& g, const Inventory& inv);
 
-// The percent a CREATURE ROW's own armour is multiplied by (npc_def().armor —
+// The percent a CREATURE ROW's own defence is multiplied by (npc_def().defense —
 // a troll's hide: bodies with no gear at all). Its род is in the WEARER's
 // training: the best-trained of the living armour skills. A beast trains
 // none of them and stays ×1, so the world's monsters do not silently thicken.

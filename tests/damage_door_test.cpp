@@ -136,14 +136,16 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // The door routes through THE law: expectation is mitigate_amount over
     // the row's own column, not a pinned number (testing law #4). The law's
     // own shape is asserted separately below.
-    const int armour = sm::npc_def(sm::NPCType::Guard).armor
-                           .of(sm::DamageType::Blunt);
-    const float expect = float(sm::mitigate_amount(int(blow), armour));
+    const sm::Defense& guard = sm::npc_def(sm::NPCType::Guard).defense;
+    const float expect = float(sm::mitigate_amount(
+        int(blow), guard.armor_of(sm::DamageType::Blunt),
+        guard.block_of(sm::DamageType::Blunt)));
     CHECK(onPlate.applied == expect,
-          "the door applies exactly the hybrid law of the blow's own column");
+          "the door applies exactly the defence law of the blow's own columns");
 
-    // The hybrid's THRESHOLD branch (owner verdict 2026-09-05): a blow no
-    // bigger than the plate finds no flesh at all — full block is real. And
+    // The BLOCK column (owner verdict 2026-09-30, M-193 — the hybrid's old
+    // threshold branch, promoted to a column of its own): a blow no bigger than
+    // the plate's block finds no flesh at all — full block is real. And
     // since 2026-09-06 (owner: «пусть пишет всё равно») a block is NOT a
     // silent no-op: the flesh is untouched, but the world SHOWS the blow —
     // HitFlash + DamageFx{blocked} so the drain sparks off the plate instead
@@ -155,10 +157,13 @@ void test_armour_softens_by_the_row_and_the_kind() {
     reg.emplace<sm::ecs::NPCKind>(
         turtle, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
     const DamageResult tink =
-        apply_damage(reg, turtle, DamageSource{}, float(armour),
+        apply_damage(reg, turtle, DamageSource{},
+                     float(guard.block_of(sm::DamageType::Blunt)),
                      DamageKind::Melee, sm::DamageType::Blunt, &bus);
+    CHECK(guard.block_of(sm::DamageType::Blunt) > 0,
+          "предусловие своё: у выданных лат строки стража колонка блока есть");
     CHECK(tink.applied == 0.0f,
-          "a blow the plate outweighs never lands — 100% reduction is real");
+          "a blow the plate's block eats never lands — 100% reduction is real");
     CHECK(tink.blocked && !tink.lethal,
           "and the result names it BLOCKED, distinct from a dead-target no-op");
     CHECK((*reg.try_get<sm::ecs::Pools>(turtle)).hp == 100,
@@ -237,23 +242,26 @@ void test_players_worn_plate_stands_underground() {
     CHECK_OR_RETURN(coatSlot >= 0 && sm::equip(eq.gear, bag, coatSlot) >= 0,
                     "and the body wears it by index");
 
-    const int armour = sm::item_def_at(coatIdx)->armor
-                           .of(sm::DamageType::Blunt);
-    CHECK_OR_RETURN(armour > 0, "and the coat is worth something");
+    const sm::Defense& coatDef = sm::item_def_at(coatIdx)->defense;
+    const int armour = coatDef.armor_of(sm::DamageType::Blunt);
+    const int block  = coatDef.block_of(sm::DamageType::Blunt);
+    CHECK_OR_RETURN(armour > 0 && block > 0, "and the coat is worth something");
 
-    // A blow the coat outweighs never reaches the flesh — three cells of
-    // separation between the body hit and the entity wearing the armour.
+    // A poke the coat's BLOCK column eats never reaches the flesh — three
+    // cells of separation between the body hit and the entity wearing it. The
+    // full block is the BLOCK column's job now: the percent armour column
+    // alone never zeroes a blow (M-193 split the two jobs apart).
     const DamageResult tink =
-        apply_damage(reg, body, DamageSource{}, armour,
+        apply_damage(reg, body, DamageSource{}, float(block),
                      DamageKind::Melee, sm::DamageType::Blunt, nullptr);
     CHECK(tink.applied == 0,
-          "the map-side coat blocks the dungeon-side blow in full");
-    // ...and a big blow is softened by exactly THE law over the coat's column.
+          "the map-side coat blocks the dungeon-side poke in full");
+    // ...and a big blow is softened by exactly THE law over the coat's columns.
     const DamageResult big =
         apply_damage(reg, body, DamageSource{}, 20,
                      DamageKind::Melee, sm::DamageType::Blunt, nullptr);
-    CHECK(big.applied == sm::mitigate_amount(20, armour),
-          "the worn column meets the hybrid law like any other armour");
+    CHECK(big.applied == sm::mitigate_amount(20, armour, block),
+          "the worn columns meet the defence law like any other defence");
 
     // Negative control: an ordinary body beside the same squad wears nothing
     // of it — the read is keyed to the ADDRESS this body carries, not to
@@ -266,36 +274,83 @@ void test_players_worn_plate_stands_underground() {
           "negative control: the player's coat covers the player alone");
 }
 
-// THE hybrid law's own shape (tables/damage_types.h) — properties, not a
+// THE defence law's own shape (tables/damage_types.h) — properties, not a
 // recomputation of the formula (testing law #5): each claim can break alone.
+// Rewritten 2026-10-01 (M-193) because the law it guarded CHANGED: the hybrid's
+// threshold branch became the BLOCK column, so «armour 10 eats a blow of 10»
+// is no longer true and asserting it would be guarding a case, not a law.
 void test_mitigation_law_shape() {
     int probes = 0, wrong = 0;
-    // Threshold regime: everything up to the armour itself is a full block.
+    // 1. БЛОК — плоский и полный: всё до B включительно не доходит до плоти,
+    //    при любой броне. Это бывшая пороговая ветвь, ставшая колонкой.
     for (int dmg = 0; dmg <= 10; ++dmg) {
         ++probes;
-        if (sm::mitigate_amount(dmg, 10) != 0) ++wrong;
+        if (sm::mitigate_amount(dmg, 40, 10) != 0) ++wrong;
     }
-    // Percent regime: past the crossover (dmg > A + kArmorHalving) the flat
-    // cut is UNDER the percent cut, so more damage must get through than the
-    // flat branch alone would allow, and the kept share must shrink below
-    // the raw blow — both branches visibly at work.
-    for (int dmg = 21; dmg <= 200; dmg += 20) {
+    // 2. БРОНЯ — ТОЛЬКО ПРОЦЕНТ, и она НИКОГДА не обнуляет удар. Ровно это
+    //    отличает новый закон от прежнего: без блока даже тяжёлая плита
+    //    пропускает долю. (От 2: при dmg = 1 ноль даёт целочисленное
+    //    усечение, а не закон.)
+    for (int dmg = 2; dmg <= 200; dmg += 9) {
         ++probes;
-        const int kept = sm::mitigate_amount(dmg, 10);
-        if (!(kept > 0 && kept < dmg - 10 + 1 && kept <= dmg)) ++wrong;
+        if (sm::mitigate_amount(dmg, 10, 0) <= 0) ++wrong;
     }
-    // Monotone in armour: more plate never lets MORE through.
+    // 3. ПОСЛЕДОВАТЕЛЬНОСТЬ (вердикт владельца «да давай последовательно»):
+    //    блок вычитается ПЕРВЫМ, остаток идёт в процент — значит закон с
+    //    блоком тождественно равен закону без блока от уменьшенного удара.
+    for (int dmg = 11; dmg <= 120; dmg += 7) {
+        ++probes;
+        if (sm::mitigate_amount(dmg, 25, 10)
+            != sm::mitigate_amount(dmg - 10, 25, 0)) ++wrong;
+    }
+    // 4. Монотонность по броне: больше плиты никогда не пропускает БОЛЬШЕ.
     for (int a = 0; a < 40; ++a) {
         ++probes;
-        if (sm::mitigate_amount(50, a + 1) > sm::mitigate_amount(50, a))
+        if (sm::mitigate_amount(50, a + 1, 0) > sm::mitigate_amount(50, a, 0))
             ++wrong;
     }
-    // Armour 0 is the identity — the limiting case, not a branch.
+    // 5. Ноль — ЗНАЧЕНИЕ, а не ветка: защита 0/0 есть тождество.
     ++probes;
-    if (sm::mitigate_amount(37, 0) != 37) ++wrong;
-    CHECK(probes == 61 && wrong == 0,
-          "the hybrid law: full block under the threshold, softening past "
-          "the crossover, monotone in armour, identity at zero");
+    if (sm::mitigate_amount(37, 0, 0) != 37) ++wrong;
+    // 6. УЯЗВИМОСТЬ: отрицательная броня УСИЛИВАЕТ удар, монотонно, и кап
+    //    ровно ×2 — асимптота, которую владелец назвал «удвоение урона».
+    ++probes;
+    if (!(sm::mitigate_amount(100, -1, 0) > 100)) ++wrong;
+    for (int a = -126; a < 0; ++a) {
+        ++probes;
+        if (sm::mitigate_amount(100, a, 0) < sm::mitigate_amount(100, a + 1, 0))
+            ++wrong;
+    }
+    ++probes;
+    const int worst = sm::mitigate_amount(100, -127, 0);
+    if (!(worst == 192 && worst < 200)) ++wrong;
+    // 7. ГЛАДКОСТЬ В НУЛЕ — не фигура речи: обе половины сходятся в ×1 и в
+    //    одной производной (−0.1 на пункт брони), поэтому шага на переходе
+    //    защиты в уязвимость нет. Мера на крупном ударе, где целочисленное
+    //    усечение не глушит разницу: шаг вверх и шаг вниз от нуля обязаны
+    //    быть ОДНОЙ величины.
+    //    ДОПУСК РОВНО ОДНА ЕДИНИЦА, И ЭТО НЕ ПОСЛАБЛЕНИЕ, А АРИФМЕТИКА:
+    //    математически оба шага равны dmg/(d+1) = 1000/11 = 90.909, но закон
+    //    целочислен и УСЕКАЕТ — вверх получается floor(1090.9) − 1000 = 90, вниз
+    //    1000 − floor(909.09) = 91. Требовать здесь точного равенства значит
+    //    требовать от целой арифметики того, чего она не умеет; гладкость
+    //    закона этим не нарушена, а шаг в ДВЕ единицы её бы уже нарушил.
+    ++probes;
+    const int at0 = sm::mitigate_amount(1000, 0, 0);
+    const int up  = sm::mitigate_amount(1000, -1, 0) - at0;
+    const int dn  = at0 - sm::mitigate_amount(1000, 1, 0);
+    if (!(up > 0 && dn > 0 && (up - dn <= 1) && (dn - up <= 1))) ++wrong;
+    CHECK(probes == 220 && wrong == 0,
+          "закон защиты: блок плоский и полный, броня только процентная и "
+          "никогда не обнуляет, порядок последователен, монотонность по "
+          "броне, тождество в нуле, уязвимость с капом ×2, гладкость в нуле");
+
+    // НЕГАТИВНЫЙ КОНТРОЛЬ, который обязан падать, если вернуть старый закон:
+    // гибрид срезал max(A, процент), то есть удар РОВНО в броню уходил в ноль
+    // при пустом блоке. Новый закон обязан пропускать долю.
+    CHECK(sm::mitigate_amount(10, 10, 0) > 0,
+          "негативный контроль: возврат пороговой ветви в колонку брони "
+          "(max(A, процент)) обнулил бы этот удар");
 }
 
 void test_survivor_protocol() {

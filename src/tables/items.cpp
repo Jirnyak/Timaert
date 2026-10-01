@@ -67,12 +67,12 @@ constexpr ItemDef kCatalog[] = {
         "Restores 30 HP", {{std::uint8_t(BonusId::HealHp), 30}},
         // Глоток в бою — ДЕЙСТВИЕ (CANON S13): секунда базы, делимая
         // дверью восстановления. До 2026-09-19 зелья пились даром.
-        /*slot*/0, /*blocks*/0, /*armor*/{}, /*dice*/{},
+        /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
         /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
     {"potion_mp",   "Mana Potion",     ItemType::Potion,     75, 0.30f, "\xE2\x9C\xA8",
         "Restores 15 MP", {{std::uint8_t(BonusId::HealMp), 15}},
-        /*slot*/0, /*blocks*/0, /*armor*/{}, /*dice*/{},
+        /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
         /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
     // The economy's NOUNS live in THIS catalog too (owner's one-dictionary
@@ -158,7 +158,7 @@ constexpr ItemDef kCatalog[] = {
         // against the fist's 1.5, and the point slips where a club cannot.
         // Its pace needs no column: the 1 kg above prices the swing through
         // the mass law (anatomy.h weapon_swing_seconds).
-        /*blocks*/0, /*armor*/{}, /*dice*/{1, 4},
+        /*blocks*/0, /*def*/{}, /*dice*/{1, 4},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Dagger},
     {"arm_leather", "Leather Armor",   ItemType::Armor,      60, 5.00f, "\xF0\x9F\x9B\xA1",
         "A boiled-leather coat over the torso", {},
@@ -168,7 +168,7 @@ constexpr ItemDef kCatalog[] = {
         // translation, until armour rows author their columns.
         // Boiled leather is LIGHT armour: the row states which skill governs
         // it in the same column a weapon states its own (2026-09-19).
-        /*armor*/uniform_armor(3), /*dice*/{}, /*dmgType*/DamageType::Blunt,
+        /*def*/uniform_defense(3, 1), /*dice*/{}, /*dmgType*/DamageType::Blunt,
         /*skill*/SkillId::LightArmor},
 
     // Valuables
@@ -187,7 +187,7 @@ constexpr ItemDef kCatalog[] = {
     {"wpn_sword",   "Worn Sword",      ItemType::Weapon,     60, 2.00f, "\xE2\x9A\x94",
         "A soldier's blade, past its best years", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
-        /*blocks*/0, /*armor*/{}, /*dice*/{1, 6},
+        /*blocks*/0, /*def*/{}, /*dice*/{1, 6},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Sword},
     // The two-handers say so through the mask, not through code: they sit in
     // the main grip and take the off hand with them — the case blocksMask
@@ -195,22 +195,22 @@ constexpr ItemDef kCatalog[] = {
     {"wpn_spear",   "Crude Spear",     ItemType::Weapon,     50, 2.50f, "\xF0\x9F\x94\xB1",
         "A sharpened head on a long shaft; needs both hands", {},
         /*slot*/part_bit(BodyPartId::Grip),
-        /*blocks*/part_bit(BodyPartId::OffGrip), /*armor*/{}, /*dice*/{1, 8},
+        /*blocks*/part_bit(BodyPartId::OffGrip), /*def*/{}, /*dice*/{1, 8},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Spear},
     {"wpn_axe",     "Woodsman's Axe",  ItemType::Weapon,     70, 3.00f, "\xF0\x9F\xAA\x93",
         "Made for timber, willing to argue", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
-        /*blocks*/0, /*armor*/{}, /*dice*/{1, 10},
+        /*blocks*/0, /*def*/{}, /*dice*/{1, 10},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Axe},
     {"wpn_mace",    "Iron Mace",       ItemType::Weapon,     80, 3.50f, "\xE2\x9A\x92",
         "A blunt argument no armour fully wins", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
-        /*blocks*/0, /*armor*/{}, /*dice*/{1, 12},
+        /*blocks*/0, /*def*/{}, /*dice*/{1, 12},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Mace},
     {"wpn_staff",   "Quarterstaff",    ItemType::Weapon,     40, 2.00f, "\xF0\x9F\xAA\x84",
         "A traveller's stick and a caster's habit; both hands", {},
         /*slot*/part_bit(BodyPartId::Grip),
-        /*blocks*/part_bit(BodyPartId::OffGrip), /*armor*/{}, /*dice*/{1, 6},
+        /*blocks*/part_bit(BodyPartId::OffGrip), /*def*/{}, /*dice*/{1, 6},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Staff},
 
     // ── The bow (shooting law, 2026-09-09) — APPENDED, ordinals are forever.
@@ -223,7 +223,7 @@ constexpr ItemDef kCatalog[] = {
     {"wpn_bow",     "Hunting Bow",     ItemType::Weapon,     70, 1.00f, "\xF0\x9F\x8F\xB9",
         "A self bow of yew; kills at a distance it never has to close", {},
         /*slot*/part_bit(BodyPartId::Grip),
-        /*blocks*/part_bit(BodyPartId::OffGrip), /*armor*/{}, /*dice*/{1, 8},
+        /*blocks*/part_bit(BodyPartId::OffGrip), /*def*/{}, /*dice*/{1, 8},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Bow,
         /*delivery*/Delivery::Missile, /*range*/80.0f},
 };

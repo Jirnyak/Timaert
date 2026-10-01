@@ -83,6 +83,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         // so the fought harness softens every strike exactly as the shipping
         // door does, hybrid threshold included.
         int armour;
+        int block;
         int side;
         bool alive;
         bool missile;
@@ -109,7 +110,8 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         f.reach = pc.attackRange;
         f.speed = sm::march_speed(pc.speedMarchMult);
         f.radius = npc_body_radius(def);
-        f.armour = def.armor.of(DamageType::Blunt);
+        f.armour = def.defense.armor_of(DamageType::Blunt);
+        f.block  = def.defense.block_of(DamageType::Blunt);
         f.side = side;
         f.alive = true;
         f.missile = pc.attackKind == CombatTemplate::Missile;
@@ -199,7 +201,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
                 && f.cd <= 0.0f) {
                 Body& v = bodies[std::size_t(
                     slot[std::size_t(u.target[std::size_t(i)])])];
-                v.hp -= float(mitigate_amount(int(f.dmg), v.armour));
+                v.hp -= float(mitigate_amount(int(f.dmg), v.armour, v.block));
                 if (v.hp <= 0.0f) v.alive = false;
                 f.cd = f.cdMax;
             }

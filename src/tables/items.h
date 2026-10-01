@@ -134,12 +134,15 @@ struct ItemDef {
     // exists for: it sits in the main grip and takes the off hand with it.
     // 0 = takes only its own cell.
     std::uint64_t blocksMask = 0;
-    // What it stops — nine columns, one per DamageType, same units as damage
-    // and as a creature row's own armour, because all three meet in ONE law
-    // (tables/damage_types.h mitigate_amount). Scalar-era rows convert with
-    // uniform_armor(x); per-column authoring (a fire-warding cloak) is what
-    // the nine columns are FOR.
-    ArmorProfile  armor{};
+    // WHAT IT STOPS — the two-column `Defense` (tables/damage_types.h): eight
+    // columns of percent armour and eight of flat block, same units as damage
+    // and as a creature row's own defence, because all three meet in ONE law
+    // (mitigate_amount). Rows authored as one number use uniform_armor(x) /
+    // uniform_defense(armour, block); per-column authoring (a fire-warding
+    // cloak) is what the columns are FOR. The ARMOUR half is a percent and
+    // takes a rank multiplier happily; the BLOCK half is flat, so its authored
+    // ceiling is 2·kArmorHalving = 20 and not the type's 255 (CANON S13).
+    Defense       defense{};
 
     // ── What a WEAPON row deals (CANON S13: урон = NdM строкой предмета) ──
     // dice{0,1} (every non-weapon) rolls nothing; dmgType names the armour

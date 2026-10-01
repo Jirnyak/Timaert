@@ -1334,25 +1334,27 @@ namespace sm::ui
                     {
                         Gear &gear = eqc->gear;
                         const BonusTotals worn = worn_bonuses(gear, playerBag);
-                        // Worn armour is nine columns now; the panel prints
-                        // the physical face of it (worn rows are uniform
-                        // until per-column authoring lands) — a full 9-column
-                        // readout is the phase-4 sheet door's business.
+                        // Worn defence is eight pairs of columns now; the
+                        // panel prints the physical face of it (worn rows are
+                        // uniform until per-column authoring lands) — a full
+                        // 8-column readout is the sheet door's business.
                         // His EFFECTIVE training, so the panel prints the very
                         // number the blow will meet (CANON S14: the armour
                         // skill's rank multiplies its own kind) — a readout
                         // computed without the sheet would quietly disagree
                         // with the law the moment a rank was spent.
-                        ImGui::Text("Body — armour %d",
-                                    worn_armor(gear, playerBag, effPanel.skills)
-                                        .of(sm::DamageType::Blunt));
+                        const sm::DefenseSum wornDef = sm::worn_defense(
+                            gear, playerBag, effPanel.skills,
+                            sm::DamageType::Blunt);
+                        ImGui::Text("Body — armour %d, block %d",
+                                    wornDef.armor, wornDef.block);
                         if (ImGui::IsItemHovered())
                         {
                             ImGui::SetTooltip(
-                                "Armour of the blow's own type stops the "
-                                "larger of itself (blows it outweighs never "
-                                "land) or armour/(armour+%d) of the blow.",
-                                sm::kArmorHalving);
+                                "Block comes off the blow flat and is always "
+                                "up; what is left keeps %d/(%d+armour) of "
+                                "itself. Negative armour doubles instead.",
+                                sm::kArmorHalving, sm::kArmorHalving);
                         }
                         ImGui::SameLine();
                         ImGui::TextDisabled("(%d of %d slots filled)",

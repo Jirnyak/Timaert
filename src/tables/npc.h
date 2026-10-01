@@ -155,8 +155,8 @@ constexpr std::size_t kMaxNpcNames     = 16;
 constexpr std::size_t kMaxNpcTalkLines = 6;
 constexpr int kNpcUpkeepNone = -1;
 
-// The armour scale, the 9-type symmetry and THE mitigation law all live in
-// tables/damage_types.h (kArmorHalving, ArmorProfile, mitigate_amount) — one
+// The defence scale, the 8-type symmetry and THE defence law all live in
+// tables/damage_types.h (kArmorHalving, Defense, mitigate_amount) — one
 // home, because both laws of battle read them: the damage door
 // (sub/damage.cpp) and the auto-resolve (auto_battle.h).
 
@@ -297,11 +297,17 @@ struct NpcTypeDef {
     // radius has, where a creature's own number and the default meet at one
     // reader. All-zero (every row that omits it) is a body in its own skin.
     //
-    // Nine columns since the 9×9 symmetry (CANON S13) — one per DamageType,
-    // units the damage's own, because the two meet in mitigate_amount().
-    // Scalar-era rows convert with uniform_armor(x) (mechanical translation,
-    // owner verdict 2026-09-05); per-column authoring is content-stage work.
-    ArmorProfile armor{};
+    // TWO columns of eight since the 8×8 symmetry (CANON S13) — percent
+    // armour and flat block, units the damage's own, because all of them meet
+    // in mitigate_amount(). Rows authored as one number use uniform_armor(x);
+    // a row with rigid shell authors block too (uniform_defense) — a HIDE has
+    // armour and no block, a GOLEM is what the block column is for (owner,
+    // 2026-09-30). Per-column authoring is content-stage work.
+    //
+    // РЕКОВЕРИ У СТРОКИ СУЩЕСТВА НЕТ ВОВСЕ (owner, 2026-09-30: «0 для строки
+    // существа — у неё вообще нет рековери брони НО ЕСТЬ колонка блока»):
+    // вросшую шкуру не сбивают, и простой (M-194) живёт только у НАДЕТОГО.
+    Defense defense{};
 
     // WHAT A BODY OF THIS ROW COSTS to take into a roster, in gold at its
     // level-1 worth (CANON S25: a creature's price is a column of its row,
@@ -596,8 +602,12 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // The disciplined tank of the table wears what his row already
         // describes. `haulMult` is spelled out only because the plate after it
         // is not the default; kArmorHalving is what makes 10 legible — it
-        // HALVES a plain blow.
-        .armor = uniform_armor(10),
+        // HALVES a plain blow. И БЛОК У НЕГО ЕСТЬ, потому что выданные латы и
+        // есть тот жёсткий панцирь, для которого колонка блока существует:
+        // 5 — ПОЛОВИНА плоского удара (kArmorHalving), при авторской верхушке
+        // каталога 2·kArmorHalving = 20 у лучшей плиты (CANON S13). Шкура же
+        // блока не несёт — она гнётся, а не отводит.
+        .defense = uniform_defense(10, 5),
         // The price column: upkeep 3 × 30 days.
         .hireGold = 90,
         .nature = NpcNature::Human,

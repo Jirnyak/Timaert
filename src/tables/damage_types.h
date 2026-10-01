@@ -78,55 +78,139 @@ inline constexpr DamageTypeDef kDamageTypeDefs[kDamageTypeCount] = {
 static_assert(rows_in_enum_order(kDamageTypeDefs, &DamageTypeDef::type),
               "kDamageTypeDefs must mirror DamageType ordinals");
 
-// The armour at which a blow is HALVED by the percent branch — and therefore
-// the whole scale on which every armour number in the game reads. 10 is the
-// historical plain blow (the pre-dice player's bare-handed 10, the anchor
-// every creature and armour row was tuned against), so "armour 10" says
-// «this body halves the historical plain blow» — and, since the hybrid law
-// below took over, «...and shrugs anything up to that off entirely». A bare
-// FIST is now the honest 1d2 of the fist's own row: useless against plate,
-// which is what the threshold branch is for.
+// THE SCALE EVERY DEFENCE NUMBER IN THE GAME READS ON. 10 is the historical
+// plain blow (the pre-dice player's bare-handed 10, the anchor every creature
+// and armour row was tuned against), so "armour 10" says «this body halves the
+// historical plain blow», and "block 10" says «this plate eats one plain blow
+// whole». A bare FIST is the honest 1d2 of the fist's own row: useless against
+// plate, which is what the block column is for.
 inline constexpr int kArmorHalving = 10;
 
-// A body's defence: one column per DamageType, same units as damage because
-// the two meet in mitigate_amount(). uint8 by ЗАКОН ТИПА: armour is a count
-// that is never negative, and at the 255 ceiling the percent branch already
-// keeps a blow to kArmorHalving/265 ≈ 4% while the threshold branch blocks
-// anything up to 255 outright — a wider column would buy no design room.
-struct ArmorProfile {
-    std::array<std::uint8_t, kDamageTypeCount> v{};
+// ── A BODY'S DEFENCE: TWO COLUMNS, AND THE PAIR IS THE WHOLE ANSWER ────────
+// CANON S13 «ЗАКОН ЗАЩИТЫ — ДВЕ КОЛОНКИ, ОДНО ВЫРАЖЕНИЕ» (вердикт владельца
+// 2026-09-30, дословно: «НИКАКИХ ГАВЕН! В ЖОПУ У НАС ПРОЦЕНТНАЯ БРОНЯ + БЛОК»).
+//
+// WHY TWO. The old single column carried TWO jobs through a max(): a threshold
+// («a blow no bigger than the plate finds no flesh») and a percent («a big blow
+// is softened, never zeroed»). Two jobs is two columns, and the max() died with
+// its reason. They are not interchangeable: the percent column is
+// self-limiting by construction, the flat one is linear — which is why only
+// one of them ever goes offline (M-194) and why their authored scales differ.
+//
+// WHY THESE WIDTHS. 8 + 8 = exactly 16 bytes = ONE 128-bit SIMD register, so a
+// body's whole defence is one load with no padding holes — that is what the
+// po2 count of damage types buys (static_assert above). The STORED width is
+// the AUTHORING width; the effective sum (row + worn × ranks) is `int` and
+// never comes back to a byte — a sum squeezed into the authoring type would
+// hit its ceiling on accumulated junk, which is exactly what the old
+// `uniform_armor` clamp at 255 did.
+struct Defense {
+    // БРОНЯ — ПРОЦЕНТ. Signed by ЗАКОН ТИПА, and the sign is a MECHANIC, not a
+    // guard: negative armour is VULNERABILITY (owner: «-127 это иммунитет
+    // наоборот ну то есть удвоение урона формула остаётся гладкой»). Range is
+    // −127…127 and deliberately SYMMETRIC: −128 is not used, because «нет
+    // брони» is 0 and a value carrying a second meaning would be a sentinel
+    // nobody asked for. The authored range IS the type's range; a second
+    // «authored ceiling» number would have no derivation (CANON S13, уточнение
+    // владельца 2026-10-01).
+    //
+    // И ЗДЕСЬ НЕТ ИММУНИТЕТА: колонка чисто процентная и удар не обнуляет
+    // НИКОГДА (127 пропускает 10/137 = 7.3%). Блок его тоже не даёт — он
+    // плоский с капом типа 255 при лейт-уроне в тысячи. Абсолютного иммунитета
+    // в этом законе НЕТ НИГДЕ, и это ОТКРЫТЫЙ ВОПРОС владельцу (CANON S13,
+    // поправка 2026-10-01), а не свойство, которое кто-то здесь заложил.
+    std::array<std::int8_t, kDamageTypeCount> armor{};
+    // БЛОК — ПЛОСКО, и он НИКОГДА не уходит в простой (M-194). Unsigned: a
+    // negative flat column would mean «+127 to every poke», which would drown
+    // the dice — the vulnerability axis lives in `armor` alone, one axis per
+    // question. 255 is the TYPE's ceiling; the AUTHORED ceiling is
+    // 2·kArmorHalving = 20 («лучшая плита каталога глушит два плоских удара»),
+    // because a flat column is multiplied LINEARLY by rank and would otherwise
+    // become a wall under the whole late-game damage band (CANON S13).
+    std::array<std::uint8_t, kDamageTypeCount> block{};
 
-    constexpr int of(DamageType t) const { return int(v[std::size_t(t)]); }
+    constexpr int armor_of(DamageType t) const {
+        return int(armor[std::size_t(t)]);
+    }
+    constexpr int block_of(DamageType t) const {
+        return int(block[std::size_t(t)]);
+    }
+};
+static_assert(sizeof(Defense) == 16,
+              "защита тела обязана лечь в ОДИН 128-битный регистр: 8 колонок "
+              "брони по байту + 8 колонок блока по байту, без дыр паддинга");
+
+// What the EFFECTIVE defence of a body is, for ONE damage type: the row, the
+// worn pieces and the ranks, already summed. Deliberately `int` and
+// deliberately NOT `Defense` — see the width note above.
+struct DefenseSum {
+    int armor = 0;
+    int block = 0;
 };
 
-// The mechanical translation for a scalar-era row (owner verdict 2026-09-05:
-// existing content converts mechanically, authored per-column layouts are
-// content-stage work): one number becomes all nine columns, preserving the
-// old "armour mitigates every kind the door lets it" behaviour exactly.
-constexpr ArmorProfile uniform_armor(int x) {
-    ArmorProfile p{};
-    const std::uint8_t c = std::uint8_t(x < 0 ? 0 : x > 255 ? 255 : x);
-    for (std::size_t i = 0; i < kDamageTypeCount; ++i) p.v[i] = c;
-    return p;
+// The mechanical translation for a row authored as one number: the same value
+// in every armour column, block left to the row's own authoring (a hide has
+// armour and no block; rigid plate and a golem's shell are what block is for).
+constexpr Defense uniform_armor(int x) {
+    Defense d{};
+    const std::int8_t c = std::int8_t(x < -127 ? -127 : x > 127 ? 127 : x);
+    for (std::size_t i = 0; i < kDamageTypeCount; ++i) d.armor[i] = c;
+    return d;
 }
 
-// THE mitigation law — the HYBRID (owner verdict 2026-09-05): armour A cuts
-// the LARGER of
-//   · A itself       (the threshold: a blow no bigger than the plate cannot
-//                     find flesh at all — 100% reduction is real, rare, and
-//                     countered by crits, big dice and the right type), and
-//   · dmg·A/(A+10)   (the percent: a big blow is softened by the old halving
-//                     fraction — armour never zeroes what overwhelms it).
-// The two branches cross at dmg = A + kArmorHalving, so each regime owns the
-// side of the scale where it reads naturally. One home, two readers: the
-// damage door subtracts this, the auto-resolve credits the identical
-// protection as effective HP.
-constexpr int mitigate_amount(int dmg, int armour) {
+// ...and the same for a row that also has a flat block (uniform in both).
+constexpr Defense uniform_defense(int armour, int block) {
+    Defense d = uniform_armor(armour);
+    const std::uint8_t b =
+        std::uint8_t(block < 0 ? 0 : block > 255 ? 255 : block);
+    for (std::size_t i = 0; i < kDamageTypeCount; ++i) d.block[i] = b;
+    return d;
+}
+
+// ── THE DEFENCE LAW — ONE EXPRESSION, NO BRANCH ON THE SIGN ────────────────
+// Sequential by owner's verdict («да давай последовательно»): the flat block
+// comes off first, and what is left argues with the percent.
+//
+//     out = (dmg − B) · (d − 2·min(A,0)) / (d + |A|),    d = kArmorHalving
+//
+//   · A ≥ 0 → dmg·d/(d+A): percent armour, self-limiting — twice the armour
+//     never gives half the damage again;
+//   · A < 0 → dmg·(d−2A)/(d−A): VULNERABILITY, asymptote ×2 (at −127 it is
+//     ×1.927). Only the percent half is mirrored, never the flat one: a flat
+//     mirror would add |A| to every poke and drown the dice;
+//   · A = 0 → dmg. Ноль — ЗНАЧЕНИЕ, а не отсутствие закона.
+//
+// SMOOTH IS LITERAL, not a figure of speech: at A = 0 both halves give ×1 AND
+// the same derivative (−0.1 per point of armour), so the curve has no kink
+// where protection turns into vulnerability.
+//
+// RANGE: the worst multiplier is 264/137 at A = −127, so the product is honest
+// up to dmg ≈ 8.1 million — three orders above this world's damage band (late
+// game is thousands by CANON S13), and `int` is never at risk.
+//
+// ONE HOME, TWO READERS: the damage door subtracts this, and the auto-resolve
+// credits the SAME law inverted as effective HP (auto_battle.h) — two answers
+// to «сколько держит тело» would be two laws of battle (S13).
+constexpr int mitigate_amount(int dmg, int armour, int block) {
     if (dmg <= 0) return 0;
-    if (armour <= 0) return dmg;
-    const int pctCut = dmg * armour / (armour + kArmorHalving);
-    const int cut = armour > pctCut ? armour : pctCut;
-    return dmg > cut ? dmg - cut : 0;
+    const int afterBlock = dmg - block;
+    if (afterBlock <= 0) return 0;
+    const int lo  = armour < 0 ? armour : 0;        // min(A, 0)
+    const int mag = armour < 0 ? -armour : armour;  // |A|
+    return afterBlock * (kArmorHalving - 2 * lo) / (kArmorHalving + mag);
+}
+
+// The same law as a MULTIPLIER on effective HP — what a per-fighter scalar
+// needs (auto_battle.h). It is `1/M` of the percent half exactly: at A ≥ 0 this
+// is the historical (d+A)/d, and at A < 0 it honestly falls below 1. The flat
+// block is NOT credited here and cannot be: its worth depends on the size of
+// the incoming blow, which a scalar does not know — the same blindness the old
+// threshold branch had, named out loud rather than papered over.
+constexpr int armor_hp_mult_num(int armour) {
+    return kArmorHalving + (armour < 0 ? -armour : armour);
+}
+constexpr int armor_hp_mult_den(int armour) {
+    return kArmorHalving - 2 * (armour < 0 ? armour : 0);
 }
 
 // ── THE strike assembly (CANON S13/S14) ────────────────────────────────────
@@ -177,5 +261,6 @@ constexpr int strike_mean_x2(Dice dice, int flatAdd, int multPct) {
 // Новая структура в этом файле обязана появиться и в этом списке — за полнотой
 // списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
 TIMAERT_ROW(sm::DamageTypeDef);
-TIMAERT_ROW(sm::ArmorProfile);
+TIMAERT_ROW(sm::Defense);
+TIMAERT_ROW(sm::DefenseSum);
 TIMAERT_ROW(sm::StrikeRoll);
