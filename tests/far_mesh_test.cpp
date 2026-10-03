@@ -169,11 +169,15 @@ int main() {
             for (int ix = 0; ix < kFixDim; ix += 5) {
                 const float wx = float((ix - kFixN) * kFixStepM);
                 const float wz = float((iz - kFixN) * kFixStepM);
-                // The cell columns at this point, blended as the bake does.
-                const float fx = wx / float(kCellSize) + float(grid.radiusCells);
-                const float fy = wz / float(kCellSize) + float(grid.radiusCells);
+                // The cell columns at this point, blended as the bake does —
+                // through the ONE door that knows where a cell stands in
+                // window metres (map_data.h), never through a second spelling
+                // of it here. This witness used to carry its own copy of that
+                // arithmetic, which is exactly why it could not see the law
+                // break: a copy agrees with the original by construction
+                // (AGENTS §8 п.5). §8 below pins the convention itself.
                 int x0 = 0, y0 = 0; float tx = 0.0f, ty = 0.0f;
-                detail::far_cell_weights(fx, fy, x0, y0, tx, ty);
+                window_cell_weights(wx, wz, grid.radiusCells, x0, y0, tx, ty);
                 const auto& c00 = grid.at(x0, y0);
                 const auto& c10 = grid.at(x0 + 1, y0);
                 const auto& c01 = grid.at(x0, y0 + 1);
@@ -186,9 +190,9 @@ int main() {
                                  + c01.peak01 * w01 + c11.peak01 * w11;
                 const float ridge = c00.ridgeW * w00 + c10.ridgeW * w10
                                   + c01.ridgeW * w01 + c11.ridgeW * w11;
-                const int gx = wrapi(kCamCx * kCellSize + int(std::floor(wx)),
+                const int gx = wrapi(window_macro_tile(kCamCx, wx),
                                      int(worldTiles));
-                const int gz = wrapi(kCamCy * kCellSize + int(std::floor(wz)),
+                const int gz = wrapi(window_macro_tile(kCamCy, wz),
                                      int(worldTiles));
                 const float expect = height_m(
                     far_height01(gx, gz, skel, peak, ridge, worldTiles,
@@ -294,10 +298,13 @@ int main() {
             for (int ix = 0; ix < kFixDim; ix += 3) {
                 const float wx = float((ix - kFixN) * kFixStepM);
                 const float wz = float((iz - kFixN) * kFixStepM);
-                const int cx = int(std::floor(wx / float(kCellSize)
-                                              + float(grid.radiusCells)));
-                const int cy = int(std::floor(wz / float(kCellSize)
-                                              + float(grid.radiusCells)));
+                // «Клетка, в которой точка стоит» = БЛИЖАЙШИЙ центр, и
+                // спрашивается он той же дверью, что высота: два листа не
+                // имеют права разойтись в том, где стоит клетка.
+                int x0 = 0, y0 = 0; float tx = 0.0f, ty = 0.0f;
+                window_cell_weights(wx, wz, grid.radiusCells, x0, y0, tx, ty);
+                const int cx = tx < 0.5f ? x0 : x0 + 1;
+                const int cy = ty < 0.5f ? y0 : y0 + 1;
                 if (mat.at(ix, iz) != grid.at(cx, cy).material) ++wrong;
                 ++samples;
             }
@@ -375,12 +382,9 @@ int main() {
                         const float wz = float(iz) * 32.0f;
                         // The law, re-asked through the same public doors the
                         // sheet uses — never a copy of the sheet's arithmetic.
-                        const float fx = wx / float(kCellSize)
-                                       + float(coast.radiusCells);
-                        const float fy = wz / float(kCellSize)
-                                       + float(coast.radiusCells);
                         int x0 = 0, y0 = 0; float tx = 0.0f, ty = 0.0f;
-                        detail::far_cell_weights(fx, fy, x0, y0, tx, ty);
+                        window_cell_weights(wx, wz, coast.radiusCells,
+                                            x0, y0, tx, ty);
                         const FarCellColumn& a = coast.at(x0,     y0);
                         const FarCellColumn& b = coast.at(x0 + 1, y0);
                         const FarCellColumn& c = coast.at(x0,     y0 + 1);
@@ -393,11 +397,9 @@ int main() {
                             return a.*f * w00 + b.*f * w10
                                  + c.*f * w01 + d.*f * w11;
                         };
-                        const int gx = wrapi(kCamCx * kCellSize
-                                             + int(std::floor(wx)),
+                        const int gx = wrapi(window_macro_tile(kCamCx, wx),
                                              int(worldTiles));
-                        const int gz = wrapi(kCamCy * kCellSize
-                                             + int(std::floor(wz)),
+                        const int gz = wrapi(window_macro_tile(kCamCy, wz),
                                              int(worldTiles));
                         const float expect = height_m(
                             far_height01(gx, gz, mix(&FarCellColumn::skel01),
@@ -565,6 +567,102 @@ int main() {
         build_far_lattice_indices(none, 0, kFarHoleQuadHalf);
         CHECK(none.empty(), "no lattice, no triangles — and the old contents "
                             "of the buffer do not survive as a ghost");
+    }
+
+    // ── 8. ДАЛЬНИЙ МИР СТОИТ ТАМ, ГДЕ СТОИТ КОМПОЗИТ ──────────────────────
+    // Соглашение «где в оконных метрах стоит клетка» НЕ БЫЛО ЗАКРЫТО НИКЕМ, и
+    // это куплено дорого: оно стояло ЧЕТЫРЬМЯ написаниями (высота дальнего
+    // листа, его материал, тайл шума, апрон теневой/водной карты), все четыре
+    // съезжали на ПОЛКЛЕТКИ в одну сторону, и ни один свидетель этого не
+    // видел — §1 и §5 выше переписывали ту же арифметику своим «ожидаемым»,
+    // то есть сверяли копию с оригиналом (AGENTS §8 п.5). Цена дефекта: весь
+    // дальний мир на 512 м мимо композита, а полоса воды одноклеточной реки
+    // при этом ±177 м — УЖЕ сдвига, то есть река композита и река дали не
+    // перекрывались вовсе, и полоса сшивки усредняла мокрое дно с сухой далью
+    // (доклад владельца: «рельеф чуть выше в дальномире и из-за этого реки
+    // нет»).
+    //
+    // ЗДЕСЬ ПРОВЕРЯЕТСЯ САМ ЗАКОН, А НЕ БЛЕНД: у клетки камеры своя высота, и
+    // в нуле окна дальняя дверь ОБЯЗАНА вернуть ровно её. Деталь выключена
+    // колонками (`heightScale`/`mtnScale`/`ridgeW` = 0), поэтому
+    // `far_height01` отдаёт ровно смешанную макровысоту — вопрос остаётся
+    // ОДИН, про выравнивание.
+    //
+    // МУТАЦИЯ → ИСХОД, ПРОГНАНО 2026-10-03 (числа печатаются ниже):
+    //   база: в нуле окна «клетка 3.00», в +512 м «клетка 3.50», 27 из 27;
+    //   `window_cell_weights` со сдвигом −0.5 (дефект, как он и стоял) →
+    //       в нуле окна «клетка 2.50», в +512 м «3.00»; 2 из 27 КРАСНЫХ —
+    //       оба высотных вердикта, то есть полуклеточный контроль ловит сдвиг
+    //       с ОБЕИХ сторон;
+    //   та же мутация, а вердикт о МАТЕРИАЛЕ при ней МОЛЧИТ, и это записано
+    //       нарочно: в нуле окна сдвинутый бленд даёт ровно `tx = 0.5`, то
+    //       есть «ближайшая» уходит на x0+1 и снова попадает в клетку камеры.
+    //       Материал ловит сдвиг ПОЛОВИННЫЙ только в других точках, поэтому
+    //       он здесь не детектор выравнивания, а пин единой двери;
+    //   `window_macro_tile` без `kCellSize/2` → 1 из 27 КРАСНЫЙ, вердикт о
+    //       тайле; два высотных МОЛЧАТ (деталь выключена, шум не читается
+    //       вовсе) — поэтому у тайла свой вердикт, а не доверие чужому.
+    {
+        constexpr int kR = 3;
+        FarCellGrid g;
+        g.radiusCells = kR;
+        const int n = g.span();
+        g.cells.assign(std::size_t(n) * std::size_t(n), FarCellColumn{});
+        g.seaLevel = WATER_LEVEL;
+        const std::uint8_t* biomeMat = biome_ground_materials();
+        // Высота УНИКАЛЬНА НА КЛЕТКУ по оси X: только так ответ двери читается
+        // как номер клетки, а не как «похоже на правду».
+        const auto cell_h = [](int x) { return 0.40f + 0.01f * float(x); };
+        for (int y = 0; y < n; ++y)
+            for (int x = 0; x < n; ++x) {
+                FarCellColumn c{};
+                c.skel01 = cell_h(x);
+                c.heightScale = 0.0f;   // деталь выключена — вопрос один
+                c.mtnScale    = 0.0f;
+                c.ridgeW      = 0.0f;
+                c.material = biomeMat[std::size_t(x == kR ? Biome::Meadow
+                                                          : Biome::Desert)];
+                g.cells[std::size_t(y) * std::size_t(n) + std::size_t(x)] = c;
+            }
+        // Обратно из метров в поле — чтобы вердикт говорил НОМЕРОМ КЛЕТКИ, а
+        // не метрами: метры здесь производное, а спор идёт про адрес.
+        const auto cell_at = [&](float wx) {
+            const float m = far_point_height_m(g, kCamCx, kCamCy, wx, 0.0f,
+                                               /*worldCellsX*/0, kFixStepM);
+            const float h01 = WATER_LEVEL
+                + std::log2((m / kHeightCurveM) + kFieldFloorGain)
+                      / kHeightDoublings;
+            return (h01 - 0.40f) / 0.01f;
+        };
+        const float atZero = cell_at(0.0f);
+        const float atHalf = cell_at(0.5f * float(kCellSize));
+        CHECK(std::fabs(atZero - float(kR)) < 0.01f,
+              "ноль оконных метров есть ЦЕНТР клетки камеры: дальняя дверь "
+              "отдаёт её собственную высоту, а не бленд с соседом");
+        // НЕГАТИВНЫЙ КОНТРОЛЬ, живой: в ПОЛКЛЕТКИ дверь обязана отдать ровно
+        // середину между клеткой камеры и восточным соседом. Это и доказывает,
+        // что проверка выше различает сдвиг на полклетки, а не «любое число».
+        CHECK(std::fabs(atHalf - (float(kR) + 0.5f)) < 0.01f,
+              "а в полклетки — ровно половина пути к восточному соседу: "
+              "детектор ВИДИТ сдвиг на полклетки, с любой стороны");
+        // Материал — тот же закон и та же дверь: лист материала и лист высот
+        // не имеют права разойтись в том, где стоит клетка.
+        FarMaterialSheet m8;
+        bake_far_material_sheet(m8, g, kFixStepM, 1024.0f);
+        const int n8 = int(1024.0f) / kFixStepM;
+        CHECK(m8.live()
+              && m8.at(n8, n8) == biomeMat[std::size_t(Biome::Meadow)],
+              "и материал в нуле окна — материал клетки камеры, не соседней");
+        // Тайл шума: ближний генератор в центре клетки стоит на
+        // `globalOffsetX + kCellSize/2`, и дальняя земля обязана читать ТОТ ЖЕ
+        // тайл, иначе один узор лежит в двух мирах в разных местах.
+        CHECK(window_macro_tile(kCamCx, 0.0f)
+                  == kCamCx * kCellSize + kCellSize / 2,
+              "узор дальней земли читает ТОТ ЖЕ макро-тайл, на котором стоит "
+              "ближний генератор в центре клетки");
+        std::printf("  [замер] выравнивание: в нуле окна клетка %.2f "
+                    "(обязана %d), в полклетки %.2f (обязана %.1f)\n",
+                    double(atZero), kR, double(atHalf), double(kR) + 0.5);
     }
 
     return report("far_mesh_test");

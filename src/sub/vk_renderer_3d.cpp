@@ -1874,14 +1874,29 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     }
                     const float wx = -extHalfM + float(x) * texelM;
                     const float wz = -extHalfM + float(y) * texelM;
-                    // Bilinear between the four nearest cell CENTRES.
-                    const float cellSpanM = float(kCellSize) * kTileMeters;
-                    const float fx = wx / cellSpanM + float(kGridR) - 0.5f;
-                    const float fy = wz / cellSpanM + float(kGridR) - 0.5f;
-                    const int gx0 = std::clamp(int(std::floor(fx)), 0, kGridW - 2);
-                    const int gy0 = std::clamp(int(std::floor(fy)), 0, kGridW - 2);
-                    const float tx = std::clamp(fx - float(gx0), 0.0f, 1.0f);
-                    const float ty = std::clamp(fy - float(gy0), 0.0f, 1.0f);
+                    // Bilinear between the four nearest cell CENTRES, through
+                    // THE door (`window_cell_weights`, map_data.h). This spot
+                    // was the fourth hand-written copy of that law and it
+                    // carried the same half-cell slip as the far sheet: at the
+                    // window's own zero it blended the camera cell 50/50 with
+                    // its western neighbour. It is not a cosmetic slip here —
+                    // this apron IS what the water samples its depth from
+                    // (water.frag `u_heightM`) and what the march shadows
+                    // beyond the window are cast against, so a river 512 m off
+                    // reads as depth zero, i.e. transparent foam.
+                    int gx0 = 0, gy0 = 0; float tx = 0.0f, ty = 0.0f;
+                    sub::window_cell_weights(wx, wz, kGridR, gx0, gy0, tx, ty);
+                    // Страж индекса (не кламп динамики): скелет-сетка 11×11
+                    // покрывает ±4.6 км, то есть точку за её краем эта ветка
+                    // сегодня не видит ни разу. Если увидит, ВЕС обязан уехать
+                    // на ту же сторону, что и индекс, — иначе кламп подменит
+                    // клетку вместо того, чтобы удержать её.
+                    const auto hold = [](int& i, float& t, int last) {
+                        if (i < 0)     { i = 0;    t = 0.0f; }
+                        if (i > last)  { i = last; t = 1.0f; }
+                    };
+                    hold(gx0, tx, kGridW - 2);
+                    hold(gy0, ty, kGridW - 2);
                     const float h00 = cellM[gy0 * kGridW + gx0];
                     const float h10 = cellM[gy0 * kGridW + gx0 + 1];
                     const float h01v = cellM[(gy0 + 1) * kGridW + gx0];

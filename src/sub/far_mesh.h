@@ -289,22 +289,14 @@ struct FarCellGrid {
     }
 };
 
-namespace detail {
-
-// Bilinear over the four nearest cell CENTRES — the same convention the near
-// generator blends its 3×3 columns by (base_generator.cpp: centres sit at the
-// half-cell). `fx, fy` are in CELL units measured from the grid's origin cell.
-inline void far_cell_weights(float fx, float fy, int& x0, int& y0,
-                             float& tx, float& ty) {
-    const float gx = fx - 0.5f;
-    const float gy = fy - 0.5f;
-    x0 = int(std::floor(gx));
-    y0 = int(std::floor(gy));
-    tx = gx - float(x0);
-    ty = gy - float(y0);
-}
-
-} // namespace detail
+// (`detail::far_cell_weights` stood here and was the second of FOUR spellings
+// of one law — «где в оконных метрах стоит клетка». It took a cell-unit
+// coordinate and subtracted half a cell from it, so the camera cell's own
+// ground came out a 50/50 blend with its WESTERN neighbour and the whole far
+// world stood 512 m off the composite. The law is one line in map_data.h now
+// (`window_cell_weights`), and the metres go in rather than a coordinate
+// somebody else computed — a door that takes a half-converted number is a door
+// that cannot own the convention.)
 
 // Build the far ground around a camera standing at macro cell (camCx, camCy).
 //
@@ -328,13 +320,10 @@ inline void far_cell_weights(float fx, float fy, int& x0, int& y0,
 inline float far_point_height_m(const FarCellGrid& grid, int camCx, int camCy,
                                 float wx, float wz, int worldCellsX,
                                 int stepM) {
-    const float cellSpanM = float(kCellSize) * 1.0f;   // a tile is a metre
     const float worldTiles =
         float(worldCellsX > 0 ? worldCellsX : 0) * float(kCellSize);
-    const float fx = wx / cellSpanM + float(grid.radiusCells);
-    const float fy = wz / cellSpanM + float(grid.radiusCells);
     int x0 = 0, y0 = 0; float tx = 0.0f, ty = 0.0f;
-    detail::far_cell_weights(fx, fy, x0, y0, tx, ty);
+    window_cell_weights(wx, wz, grid.radiusCells, x0, y0, tx, ty);
     const FarCellColumn& c00 = grid.at(x0,     y0);
     const FarCellColumn& c10 = grid.at(x0 + 1, y0);
     const FarCellColumn& c01 = grid.at(x0,     y0 + 1);
@@ -353,8 +342,8 @@ inline float far_point_height_m(const FarCellGrid& grid, int camCx, int camCy,
                    + c01.heightScale * w01 + c11.heightScale * w11;
     const float ms = c00.mtnScale * w00 + c10.mtnScale * w10
                    + c01.mtnScale * w01 + c11.mtnScale * w11;
-    const int rawX = camCx * kCellSize + int(std::floor(wx));
-    const int rawZ = camCy * kCellSize + int(std::floor(wz));
+    const int rawX = window_macro_tile(camCx, wx);
+    const int rawZ = window_macro_tile(camCy, wz);
     const int gx = worldTiles > 0.0f ? wrapi(rawX, int(worldTiles)) : rawX;
     const int gz = worldTiles > 0.0f ? wrapi(rawZ, int(worldTiles)) : rawZ;
     // WHERE THE WATER IS, IS A QUESTION ABOUT HEIGHT, and the far world does
@@ -516,17 +505,21 @@ inline void bake_far_material_sheet(FarMaterialSheet& out,
     const int n   = int(halfSpanM) / stepM;
     const int dim = 2 * n + 1;
     out.dim = dim;
-    const float cellSpanM = float(kCellSize) * 1.0f;       // a tile is a metre
     const int mDim = dim + 2;
     out.id.assign(std::size_t(mDim) * std::size_t(mDim), std::uint8_t(0));
     for (int iz = 0; iz < mDim; ++iz) {
         const float wz = float((iz - 1 - n) * stepM);
-        const float fy = wz / cellSpanM + float(grid.radiusCells);
         for (int ix = 0; ix < mDim; ++ix) {
             const float wx = float((ix - 1 - n) * stepM);
-            const float fx = wx / cellSpanM + float(grid.radiusCells);
+            // THE CELL THE POINT STANDS IN — the NEAREST centre, through the
+            // one door the height field uses, so the two sheets cannot
+            // disagree about where a cell is. In centre units that is simply
+            // the heavier side of the blend.
+            int x0 = 0, y0 = 0; float tx = 0.0f, ty = 0.0f;
+            window_cell_weights(wx, wz, grid.radiusCells, x0, y0, tx, ty);
             out.id[std::size_t(iz) * std::size_t(mDim) + std::size_t(ix)] =
-                grid.at(int(std::floor(fx)), int(std::floor(fy))).material;
+                grid.at(tx < 0.5f ? x0 : x0 + 1,
+                        ty < 0.5f ? y0 : y0 + 1).material;
         }
     }
 }
