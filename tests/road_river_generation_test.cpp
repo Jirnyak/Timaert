@@ -452,6 +452,79 @@ void test_dirt_lane_lays_a_stone_bridge()
     }
 }
 
+// ── ОДНА ДВЕРЬ ШТАМПА, ОДНА КОЛОНКА, ТРИ ЕЁ ЗНАЧЕНИЯ (M-212) ───────────────
+//
+// Владелец, 2026-10-03: «ну дорога на воде превращается в фичу мост да? надо
+// без костылей, а системно». Системно — это когда «нельзя», «всё равно» и
+// «превращаюсь» перестают быть тремя механизмами и становятся тремя
+// ЗНАЧЕНИЯМИ одной колонки `FeatureDef::onWater`. Здесь судятся ровно эти три.
+//
+// ТАБЛИЦА МУТАЦИЙ, ПРОГНАНА 2026-10-03 (§8 п.6):
+//   · `FT_Road.onWater` = `FT_None` (дорога перестала быть мостом)
+//         → КРАСНЫЙ, 3 из 493;
+//   · `FT_City.onWater` = `FT_City` (город стал терпеть воду)
+//         → КРАСНЫЙ, 2 из 493, отказов 7 → 6 из 7;
+//   · дверь перестала спрашивать воду (`got = want`)
+//         → КРАСНЫЙ, 7 из 493, отказов 7 → 0;
+//   · `FT_Bridge.buildsPerDay` 4 → 0 (ПЕРЕКАЛИБРОВКА чужой колонки)
+//         → ЗЕЛЁНЫЙ, 493 — и обязан: этот свидетель судит воду, а не цену.
+void test_water_rule_lives_in_the_feature_row()
+{
+    // Мир из двух клеток: левая мокрая, правая сухая. Свидетель строит себе
+    // предусловие сам (§8 п.11) — на везение генератора он не надеется.
+    sm::TerrainData td;
+    td.width = 2;
+    td.height = 1;
+    td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
+    td.rgba.assign(8u, 0u);
+    td.rgba[0] = std::uint16_t(td.seaLevel16 / 2u);        // вода
+    td.rgba[4] = std::uint16_t(td.seaLevel16 + 1000u);     // суша
+    CHECK(td.is_water(0u) && !td.is_water(1u),
+          "фикстура: одна клетка мокрая, одна сухая");
+
+    sm::FeatureLayer fl;
+    fl.resize(2, 1);
+
+    // (1) ПРЕВРАЩАЕТСЯ: дорога на воде есть мост — и это ДАННЫЕ строки, а не
+    // ветка у звонящего. Обе дорожные строки дают ОДИН пролёт: «every bridge
+    // is stone» теперь сказано таблицей, а не комментарием в двух местах.
+    CHECK(sm::stamp_feature(fl, td, 0u, sm::FT_Road) == sm::FT_Bridge,
+          "дорога на воде становится мостом");
+    CHECK(sm::stamp_feature(fl, td, 0u, sm::FT_DirtRoad) == sm::FT_Bridge,
+          "грунтовка на воде кладёт тот же пролёт, что шоссе");
+    CHECK(fl.at(0u) == sm::FT_Bridge, "и в слое лежит именно мост");
+
+    // (2) ВСЁ РАВНО: мост на воде остаётся мостом — вода ему дом.
+    CHECK(sm::stamp_feature(fl, td, 0u, sm::FT_Bridge) == sm::FT_Bridge,
+          "мост на воде остаётся мостом");
+
+    // (3) НЕ ВСТАЁТ: пашня, шахта и ПОСЕЛЕНИЕ. Поселение здесь не случайно —
+    // оно есть ФИЧА СО СКВАДОМ ПОВЕРХ (владелец), и до этой двери штамп мест
+    // воду не проверял ВООБЩЕ.
+    const sm::FeatureType dry[] = {sm::FT_Field, sm::FT_IronMine, sm::FT_Pasture,
+                                   sm::FT_City, sm::FT_Village, sm::FT_Spire,
+                                   sm::FT_Ruin};
+    int refused = 0;
+    for (sm::FeatureType ft : dry)
+        if (sm::stamp_feature(fl, td, 0u, ft) == sm::FT_None) ++refused;
+    CHECK(refused == int(std::size(dry)),
+          "пашня, шахта и поселение на воде не встают вовсе");
+    CHECK(fl.at(0u) == sm::FT_Bridge,
+          "отказ НИЧЕГО не пишет в слой — мост остался на месте");
+
+    // (4) НА СУШЕ КОЛОНКА МОЛЧИТ: что просили, то и встало.
+    int asAsked = 0;
+    for (sm::FeatureType ft : dry) {
+        if (sm::stamp_feature(fl, td, 1u, ft) == ft) ++asAsked;
+    }
+    CHECK(asAsked == int(std::size(dry)),
+          "на суше встаёт ровно то, что просили — колонка в дело не лезет");
+    CHECK(sm::stamp_feature(fl, td, 1u, sm::FT_Road) == sm::FT_Road,
+          "дорога на суше остаётся дорогой");
+    std::printf("  [колонка воды] отказов %d из %zu, на суше как просили %d\n",
+                refused, std::size(dry), asAsked);
+}
+
 void test_tree_spawner_never_plants_on_water()
 {
     // ЗАКОН, КОТОРЫЙ ОСТАЛСЯ, И ЕДИНСТВЕННЫЙ (M-211, вердикт владельца:
@@ -731,6 +804,7 @@ int main()
     test_road_bridges_one_cell_river();
     test_two_separating_straits_stay_unbridged();
     test_dirt_lane_lays_a_stone_bridge();
+    test_water_rule_lives_in_the_feature_row();
     test_tree_spawner_never_plants_on_water();
     test_tree_spawner_uses_map_sea_level();
     test_malformed_terrain_fails_closed();

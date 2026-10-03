@@ -71,7 +71,13 @@ void for_each_landmark(const GameState& gs, F&& fn) {
 // Свежесть — тот же закон, что у LandmarkGrid: генезис и загрузка зовут
 // этот проход рядом с build_landmark_grid; смерть места — смена ВИДА
 // (set_landmark_type), за ней тот же перепёк.
-inline void stamp_settlement_features(const GameState& gs, FeatureLayer& f) {
+// ТЕРРАИН В СИГНАТУРЕ — ПО ЗАКОНУ, А НЕ ДЛЯ УДОБСТВА (M-212). Поселение есть
+// ФИЧА СО СКВАДОМ ПОВЕРХ (владелец 2026-10-03), значит и воду оно проходит той
+// же единственной дверью штампа, что дорога и пашня. До этого штамп мест воду
+// не проверял ВООБЩЕ и держался на том, что размещатель ставит их на сушу, —
+// неявная зависимость, живущая до первого размещателя, который решит иначе.
+inline void stamp_settlement_features(const GameState& gs, const TerrainData& td,
+                                      FeatureLayer& f) {
     for (const auto& lm : gs.landmarks) {
         FeatureType ft = FT_None;
         switch (lm.type) {
@@ -95,7 +101,7 @@ inline void stamp_settlement_features(const GameState& gs, FeatureLayer& f) {
             case LandmarkType::Count:   break;   // мир их пока не ставит
         }
         if (ft == FT_None) continue;
-        f.set(lm.x, lm.y, ft);
+        stamp_feature(f, td, lm.x, lm.y, ft);
     }
 }
 

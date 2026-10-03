@@ -51,10 +51,9 @@ inline std::uint16_t height_word(const sm::TerrainData& td, std::size_t cell)
     return td.rgba[cell * 4u + 0u];
 }
 
-inline std::uint16_t mask_word(const sm::TerrainData& td, std::size_t cell)
-{
-    return td.rgba[cell * 4u + 3u];
-}
+// (`mask_word` снесена 2026-10-03: свидетель больше не спрашивает канал A —
+// после M-211 единственный ответ про воду даёт порог, а канал A остался
+// текстурой шейдера и живых читателей в игре не имеет.)
 
 // Longest axis-aligned run of contiguous river cells (horizontal or vertical).
 // This is the DFS-anomaly detector: the old saturating Dial-bucket queue popped

@@ -240,7 +240,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // (вердикт 2026-09-30: город/деревня/шпиль/руина — байты слоя фич,
         // ставятся ПОСЛЕ дорог) and bake the cell → landmark index the
         // whole game asks (macro/landmark_grid.h).
-        stamp_settlement_features(gs, *out.features);
+        stamp_settlement_features(gs, *out.terrain, *out.features);
         *out.landmarkGrid = build_landmark_grid(gs);
         if (p.trace) {
             // The placement report card: every spell offered, every spire in

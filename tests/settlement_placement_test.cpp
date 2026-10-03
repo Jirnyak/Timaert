@@ -640,7 +640,7 @@ void test_settlement_kind_has_one_answer() {
     make_settled_world(w);
     FeatureLayer fl;
     fl.resize(kW, kH);
-    stamp_settlement_features(w.gs, fl);
+    stamp_settlement_features(w.gs, w.td, fl);
     const LandmarkGrid grid = build_landmark_grid(w.gs);
 
     int stamped = 0;
@@ -672,7 +672,7 @@ void test_settlement_kind_has_one_answer() {
 
     FeatureLayer fl2;
     fl2.resize(kW, kH);
-    stamp_settlement_features(gs, fl2);
+    stamp_settlement_features(gs, w.td, fl2);
     const LandmarkGrid grid2 = build_landmark_grid(gs);
     int stamped2 = 0;
     const int bad2 = settlement_kind_disagreements(gs, fl2, grid2, &stamped2);

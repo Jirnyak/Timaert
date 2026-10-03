@@ -511,10 +511,12 @@ namespace sm
             const std::uint32_t idx = cell_of(x, y, W);
             if (features.at(idx) == FT_None)
             {
-                // Every bridge is stone (owner, 2026-08-29): a dirt lane that
-                // crosses water lays the same span the highway does — a dirt
-                // bridge would be a second bridge kind for no world reason.
-                features.set(idx, cg.water[idx] ? FT_Bridge : FT_DirtRoad);
+                // «Дорога на воде есть мост» — теперь КОЛОНКА строки фичи, а
+                // не ветка здесь (M-212): одно правило мира было написано в
+                // двух местах. Every bridge is stone (owner, 2026-08-29) —
+                // грунтовка и шоссе дают один и тот же пролёт, и это тоже
+                // сказано таблицей: у обеих строк `onWater` = `FT_Bridge`.
+                stamp_feature(features, td, idx, FT_DirtRoad);
                 ++laid;
             }
             const float share = cg.water[idx] ? kBridgeShare : kDirtShare;
@@ -614,14 +616,10 @@ namespace sm
         // ЗДЕСЬ БЫЛО ДВА ПРЕДИКАТА ВОДЫ — «маска ИЛИ float-высота» и
         // «только маска», — и шапка второго объясняла разницу «полосой
         // несогласия берега». Полоса была не миром, а РАЗНИЦЕЙ ДВУХ
-        // СПЕЛЛИНГОВ одного порога (округление float против байта): маску
-        // генератор пишет тем же порогом, что и `is_water`. Один вопрос —
-        // одна дверь: мокрая клетка под дорогой ЕСТЬ пролёт (FT_Bridge),
-        // сухая — полотно.
-        auto is_water = [&](std::size_t idx)
-        {
-            return td.is_water(std::uint32_t(idx));
-        };
+        // СПЕЛЛИНГОВ одного порога (округление float против байта).
+        // С M-212 этот вопрос звонящий не задаёт вовсе: воду спрашивает
+        // ОДНА дверь штампа, и «мокрая клетка под дорогой есть пролёт»
+        // стало КОЛОНКОЙ строки (`FeatureDef::onWater`), а не веткой здесь.
         // The feature layer carries only MAN-MADE structures: dirt roads,
         // then roads (last-writer-wins), bridges where either crossed water.
         // Mountains are the Mountain biome (elevation-classified) and
@@ -635,16 +633,14 @@ namespace sm
                     continue;
                 // `i` ЕСТЬ адрес клетки (маски идут тем же плоским порядком),
                 // поэтому дверь зовётся индексной формой — сворачивать нечего.
-                fl.set(std::uint32_t(i),
-                       is_water(i) ? FT_Bridge   // every bridge is stone (owner)
-                                   : FT_DirtRoad);
+                stamp_feature(fl, td, std::uint32_t(i), FT_DirtRoad);
             }
         }
         for (std::size_t i = 0; i < roadMaskLimit; ++i)
         {
             if (!roadMask[i])
                 continue;
-            fl.set(std::uint32_t(i), is_water(i) ? FT_Bridge : FT_Road);
+            stamp_feature(fl, td, std::uint32_t(i), FT_Road);
         }
         return fl;
     }

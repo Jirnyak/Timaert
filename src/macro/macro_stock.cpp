@@ -545,8 +545,11 @@ bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
     // вспашка одна, а вид парцеллы — её аргумент.
     int wheat = 0;
     if (!plough_cell_ok(fl, world, x, y, wheat)) return false;
-    fl.set(x, y, parcel);   // дверь слоя заворачивает адрес сама (M-112)
-    return true;
+    // ОДНА ДВЕРЬ ШТАМПА (M-212): воду она спрашивает сама, колонкой строки.
+    // Гейт воды в `plough_cell_ok` остаётся — он отвечает на ДРУГОЙ вопрос
+    // («стоит ли вообще тратить день»), и без него работа была бы оплачена
+    // прежде, чем выяснилось, что ставить нечего.
+    return stamp_feature(fl, *world.terrain, x, y, parcel) != FT_None;
 }
 
 bool pasture_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
@@ -566,8 +569,7 @@ bool fence_pasture_cell(FeatureLayer& fl, const MacroWorld& world,
 {
     int herd = 0;
     if (!pasture_cell_ok(fl, world, x, y, herd)) return false;
-    fl.set(x, y, FT_Pasture);   // дверь слоя заворачивает адрес сама (M-112)
-    return true;
+    return stamp_feature(fl, *world.terrain, x, y, FT_Pasture) != FT_None;
 }
 
 const ResourceFieldDef& resource_field_def(ResourceFieldId f) {

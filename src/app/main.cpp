@@ -1493,7 +1493,7 @@ void rebake_world(App& app, bool uploadNow) {
     // Фичи поселений — тот же закон свежести, что у сетки ландмарков
     // (загрузка и всякий перепёк состава); ДО build_cost_grid — ложе марша
     // читает слой фич.
-    sm::stamp_settlement_features(app.gs, app.features);
+    sm::stamp_settlement_features(app.gs, app.terrain, app.features);
     app.landmarkGrid = sm::build_landmark_grid(app.gs);
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
                                        &app.treeLayer);

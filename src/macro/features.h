@@ -9,6 +9,10 @@
 #pragma once
 #include "core/table_guard.h"
 #include "core/torus.h"
+// Дверь штампа ниже спрашивает воду САМА, поэтому ей нужен порог карты.
+// Цикла нет и быть не может: `map_generator.h` слой фич не включает —
+// терраин о фичах не знает, фичи о терраине знают.
+#include "macro/map_generator.h"
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -125,6 +129,27 @@ struct FeatureDef {
     // nothing to make ten of. Hands multiply a QUANTITY — ore, grain, timber
     // — and a building is not one.
     int buildsPerDay;
+
+    // ── ВО ЧТО ЭТА ФИЧА ПРЕВРАЩАЕТСЯ НА ВОДЕ ─────────────────────────────
+    // Владелец, 2026-10-03: «ну дорога на воде превращается в фичу мост да?
+    // надо без костылей, а системно». Системно это значит, что три случая
+    // перестают быть тремя механизмами и становятся тремя ЗНАЧЕНИЯМИ ОДНОЙ
+    // колонки:
+    //   · `FT_None`   — на воде не встаёт вовсе (пашня, шахта, поселение);
+    //   · САМА СЕБЯ   — вода безразлична (мост на воде остаётся мостом);
+    //   · другой род  — ПРЕВРАЩАЕТСЯ (дорога на воде ЕСТЬ мост).
+    //
+    // До этой колонки правило «дорога на воде — мост» стояло ВЕТКОЙ у двух
+    // звонящих (`spawners.cpp`, трассер дорог и сборка слоя), то есть одно
+    // правило мира было написано дважды и могло разойтись молча. А поселения
+    // воду не проверяли ВООБЩЕ и держались на том, что размещатель ставит их
+    // на сушу, — неявная зависимость, которая живёт до первого размещателя,
+    // который решит иначе.
+    //
+    // Поселение есть ФИЧА СО СКВАДОМ ПОВЕРХ (владелец, тот же день), поэтому
+    // `FT_City`/`FT_Village`/`FT_Spire`/`FT_Ruin` несут эту колонку наравне со
+    // всеми: отдельного «водного правила для мест» не существует.
+    FeatureType onWater;
 };
 
 // A DAY'S WORK RAISES FOUR. The number the three build sites used to spell as
@@ -136,31 +161,31 @@ struct FeatureDef {
 inline constexpr int kBuildsPerDay = 4;
 
 inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
-    //                     bed   optics  civ
-    {FT_None,     0.0f, 1.00f, 0.0f,  0},
-    {FT_Road,     1.0f, 0.65f, 0.35f, 0},
-    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, 0},
+    //                     bed   optics  civ   строит/день  на воде
+    {FT_None,     0.0f, 1.00f, 0.0f,  0,             FT_None},
+    {FT_Road,     1.0f, 0.65f, 0.35f, 0,             FT_Bridge},
+    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, 0,             FT_Bridge},
     // Вспаханная парцелла. Какой культурой засеяна — вопрос ТИПА фичи, а не
     // второго ресурсного ряда: картофельное и маковое поля будут новыми
     // строками ЭТОЙ таблицы, работающими то же число.
-    {FT_Field,    1.8f, 1.00f, 0.0f,  kBuildsPerDay},
+    {FT_Field,    1.8f, 1.00f, 0.0f,  kBuildsPerDay, FT_None},
     // Мост несёт колонки каменной дороги: его настил И ЕСТЬ мощёное ложе
     // (марш не замечает реки под ним), тот же коридор свету и взгляду, та же
     // тяга цивилизации. Кладёт его планировщик дорог при генерации мира.
-    {FT_Bridge,   1.0f, 0.65f, 0.35f, kBuildsPerDay},
+    {FT_Bridge,   1.0f, 0.65f, 0.35f, kBuildsPerDay, FT_Bridge},
     // Шахты делят колонки пашни: разработанная земля, не инженерное ложе
     // (0 = своё основание биома), прятаться не за чем, и рабочее место,
     // которое возделывают, а не держат гарнизоном.
-    {FT_ClayPit,    0.0f, 1.00f, 0.0f, kBuildsPerDay},
-    {FT_IronMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay},
-    {FT_Quarry,     0.0f, 1.00f, 0.0f, kBuildsPerDay},
-    {FT_SilverMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay},
-    {FT_CopperMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay},
-    {FT_GoldMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay},
+    {FT_ClayPit,    0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
+    {FT_IronMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
+    {FT_Quarry,     0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
+    {FT_SilverMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
+    {FT_CopperMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
+    {FT_GoldMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
     // Пастбище и льняное поле несут колонки пашни: та же возделанная земля,
     // та же трава по пояс, которая ничего не прячет, та же цена работы.
-    {FT_Pasture,  1.8f, 1.00f, 0.0f,  kBuildsPerDay},
-    {FT_FlaxField, 1.8f, 1.00f, 0.0f, kBuildsPerDay},
+    {FT_Pasture,  1.8f, 1.00f, 0.0f,  kBuildsPerDay, FT_None},
+    {FT_FlaxField, 1.8f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
     // ── Поселения. Ложе — по прецеденту моста («мост несёт колонки
     // каменной дороги»): город есть МОЩЁНЫЙ узел дорожной сети — его клетка
     // несёт ложе камня (1.0); деревня — грунтовый двор (ложе грунтовки,
@@ -169,14 +194,28 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // опасности продолжают читать свои прежние источники; собственные числа
     // этим колонкам выдаст тот, кто первым начнёт их читать (ЗАКОН КОНСТАНТ
     // — не выдумывать). Руки поселений не строят (0): их ставит генерация.
-    {FT_City,    1.0f, 1.00f, 0.0f, 0},
-    {FT_Village, 1.5f, 1.00f, 0.0f, 0},
-    {FT_Spire,   0.0f, 1.00f, 0.0f, 0},
-    {FT_Ruin,    0.0f, 1.00f, 0.0f, 0},
+    {FT_City,    1.0f, 1.00f, 0.0f, 0, FT_None},
+    {FT_Village, 1.5f, 1.00f, 0.0f, 0, FT_None},
+    {FT_Spire,   0.0f, 1.00f, 0.0f, 0, FT_None},
+    {FT_Ruin,    0.0f, 1.00f, 0.0f, 0, FT_None},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
               "feature IS its row here");
+
+// ── ЕДИНСТВЕННАЯ ДВЕРЬ ШТАМПА ФИЧИ ─────────────────────────────────────────
+//
+// Она и задаёт воде ОДИН вопрос на весь слой фич, и отвечает на него ОДНИМ
+// способом — колонкой строки. Звонящему не нужно помнить ни про воду, ни про
+// мост: он говорит, ЧТО хочет поставить, а что реально встанет, решает таблица.
+//
+// Возвращает фактически поставленный род (`FT_None` — не встало ничего), чтобы
+// звонящий, которому это важно (счётчик дорог, цена работы), читал ФАКТ, а не
+// своё намерение.
+inline FeatureType feature_on_water(FeatureType want) {
+    return kFeatureDefs[std::size_t(want) < std::size_t(FT_Count)
+                            ? std::size_t(want) : 0u].onWater;
+}
 
 // How many of this a body raises in a day — the rate its SP price is the bar
 // divided by (CANON S14.1). 0 = hands do not raise it.
@@ -326,5 +365,21 @@ struct FeatureLayer {
         set(cell_of(x, y, width), t);
     }
 };
+
+inline FeatureType stamp_feature(FeatureLayer& fl, const TerrainData& td,
+                                 std::uint32_t cell, FeatureType want) {
+    // ВОДА СПРАШИВАЕТСЯ У ПОРОГА РЕЛЬЕФА, И ТОЛЬКО У НЕГО (M-212).
+    const FeatureType got = td.is_water(cell) ? feature_on_water(want) : want;
+    if (got == FT_None) return FT_None;
+    fl.set(cell, got);
+    return got;
+}
+
+// Та же дверь парой координат — для звонящих, у которых на руках геометрия
+// (ЗАКОН АДРЕСА: индекс первичен, пара законна там, где она уже есть).
+inline FeatureType stamp_feature(FeatureLayer& fl, const TerrainData& td,
+                                 int x, int y, FeatureType want) {
+    return stamp_feature(fl, td, cell_of(x, y, fl.width), want);
+}
 
 } // namespace sm
