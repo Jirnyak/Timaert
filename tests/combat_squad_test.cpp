@@ -214,7 +214,7 @@ int main() {
     world.reg.emplace<sm::ecs::Combat>(
         hostile, sm::Dice{5, 1}, std::int16_t(0), std::int16_t(100),
         std::uint8_t(0), std::uint8_t(sm::DamageType::Blunt),
-        20.0f, 3.0f, 1.0f, 0u, sm::ecs::Combat::Melee);
+        20.0f, 3.0f, 1.0f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0});
     world.reg.emplace<sm::ecs::SubworldAi>(hostile, sm::ecs::SubworldAi::Combat,
                                            0.0f, 4.0f, 4.0f, 8.0f, 1.0f);
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);

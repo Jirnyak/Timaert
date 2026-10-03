@@ -116,7 +116,7 @@ struct CombatLogEntry {
 // Armsmaster), refreshed each tick like the dice.
 // kPlayerBaseMeleeDamage is DEAD (phase 3): the bare hand is the fist's own
 // dice row now (macro/anatomy.h kFistDice) and a weapon brings its own. The
-// historical 10 survives only as the armour scale's anchor (kArmorHalving).
+// historical 10 survives only as the armour scale's anchor (kPlainBlow).
 
 // Universal player-relationship on ONE continuous, signed axis — the single
 // source of truth shared by the HUD (and any future threat UI), so a marker's

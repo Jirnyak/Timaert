@@ -90,25 +90,31 @@ namespace auto_battle_detail {
 // The floor() mirrors emplace_body — both layers fight with integers.
 // The armour a fighter brings to a macro battle, as ONE number: physical
 // blows are what macro armies trade today, so the credit is the mean of the
-// three physical columns. When auto-resolve learns attack types, the pairing
+// TWO physical columns (Pierce and Blunt — Slash folded into Pierce
+// 2026-10-01, M-193). When auto-resolve learns attack types, the pairing
 // reads the column the OPPONENT's blow names — this helper is the
 // approximation, not a second law.
-inline int auto_battle_armor(const ArmorProfile& a) {
-    return (a.of(DamageType::Slash) + a.of(DamageType::Pierce) +
-            a.of(DamageType::Blunt)) / 3;
+inline int auto_battle_armor(const Defense& d, const Skills& skills) {
+    const DefenseSum p = body_defense(d, skills, nullptr, nullptr,
+                                      DamageType::Pierce);
+    const DefenseSum b = body_defense(d, skills, nullptr, nullptr,
+                                      DamageType::Blunt);
+    return (p.armor + b.armor) / 2;
 }
 
-// Armour enters as EFFECTIVE HP through the PERCENT branch of the hybrid
-// mitigation law (tables/damage_types.h): a big blow keeps
-// kArmorHalving / (kArmorHalving + armor) of itself, so a body of hp H
-// absorbs H * (kArmorHalving + armor) / kArmorHalving worth of raw blows —
-// the same law, read as a multiplier. The hybrid's THRESHOLD branch (small
-// blows fully blocked) is deliberately uncredited here: it depends on the
-// opponent's blow size, which a per-fighter power scalar does not know, so
-// heavy armour is worth slightly MORE in a fought battle than the
-// auto-resolve credits — a bias, not a disagreement of laws. The armour
-// source is the door's own for this row: npc_def().armor (macro fighters
-// wear no equipment today).
+// Armour enters as EFFECTIVE HP through the PERCENT column of the defence law
+// (tables/damage_types.h armor_hp_mult_num/den): a blow keeps
+// (kArmorFull - armor) / kArmorFull of itself, so a body of hp H absorbs
+// H * kArmorFull / (kArmorFull - armor) worth of raw blows — the same law, read
+// as a multiplier, and it falls BELOW 1 for negative armour the way the fought
+// path does. У сотни процентов знаменатель упирается в единицу: иммунного
+// бойца скаляр выразить не может и потому НЕДООЦЕНИВАЕТ — смещение названо. The FLAT BLOCK column is deliberately uncredited
+// here, and it cannot be credited: its worth depends on the size of the
+// incoming blow, which a per-fighter scalar does not know. Heavy gear is
+// therefore worth slightly MORE in a fought battle than the auto-resolve
+// credits — a named bias, not a disagreement of laws. The defence source is
+// the door's own for this row: npc_def().defense (macro fighters wear no
+// equipment today), assembled by the SAME body_defense the scene calls.
 inline float fighter_power(NPCType type, int level, std::uint32_t seed,
                            const BonusTotals* squadBonuses, float healthFraction) {
     CharacterSheet sheet = make_character_sheet(type, level, seed);
@@ -119,11 +125,22 @@ inline float fighter_power(NPCType type, int level, std::uint32_t seed,
     // body reads (sub/damage.cpp defense_of), moved in the same commit for
     // the same reason the strike was: two answers to «сколько держит НПЦ»
     // would be two laws of battle (S13).
-    const int armour = auto_battle_armor(def.armor)
-                       * sheet_armor_mult_pct(sheet.skills) / 100;
+    const int armour = auto_battle_armor(def.defense, sheet.skills);
+    // ДОЛИ ПРОСТОЯ ЗДЕСЬ НЕТ, И ЭТО НЕ ЗАБЫТО (M-194). Вердикт владельца был
+    // «фиксированная доля числом» — но доля применяется к той защите, которая
+    // МОЖЕТ уйти в простой, а простой берётся от веса НАДЕТОЙ брони. У
+    // макро-бойца надетого нет вовсе: его защита — колонки СТРОКИ, а вросшую
+    // шкуру не сбивают (вердикт того же дня: «0 для строки существа»). Значит
+    // сегодня дисконтировать нечего, и множитель 1/2 здесь ВРАЛ БЫ: очный бой
+    // этой же строке простоя тоже не ставит, и два конца боя разошлись бы в
+    // числах — ровно второй закон боя, который S13 запрещает.
+    // Доля входит В ТОТ ДЕНЬ, когда макро-боец начнёт носить снаряжение, и
+    // входит одной строкой здесь; вывод её записан в CANON S13 (доля в строю =
+    // 1/(1 + рековери ÷ период удара), нейтральный случай = 1/2).
     const float hp  = std::max(1.0f, std::floor(pc.hp)) *
                       std::clamp(healthFraction, 0.0f, 1.0f) *
-                      (float(kArmorHalving + armour) / float(kArmorHalving));
+                      (float(armor_hp_mult_num(armour))
+                       / float(armor_hp_mult_den(armour)));
     // The swing is the strike's expectation (strike_mean_x2, the same
     // assembly the fought path rolls) — INCLUDING the sheet's typed skill
     // percent (project_combat.multPct, session Е 2026-09-19): the fought

@@ -134,12 +134,15 @@ struct ItemDef {
     // exists for: it sits in the main grip and takes the off hand with it.
     // 0 = takes only its own cell.
     std::uint64_t blocksMask = 0;
-    // What it stops — nine columns, one per DamageType, same units as damage
-    // and as a creature row's own armour, because all three meet in ONE law
-    // (tables/damage_types.h mitigate_amount). Scalar-era rows convert with
-    // uniform_armor(x); per-column authoring (a fire-warding cloak) is what
-    // the nine columns are FOR.
-    ArmorProfile  armor{};
+    // WHAT IT STOPS — the two-column `Defense` (tables/damage_types.h): eight
+    // columns of percent armour and eight of flat block, same units as damage
+    // and as a creature row's own defence, because all three meet in ONE law
+    // (mitigate_amount). Rows authored as one number use uniform_armor(x) /
+    // uniform_defense(armour, block); per-column authoring (a fire-warding
+    // cloak) is what the columns are FOR. The ARMOUR half is a percent and
+    // takes a rank multiplier happily; the BLOCK half is flat, so its authored
+    // ceiling is 2·kPlainBlow = 20 and not the type's 255 (CANON S13).
+    Defense       defense{};
 
     // ── What a WEAPON row deals (CANON S13: урон = NdM строкой предмета) ──
     // dice{0,1} (every non-weapon) rolls nothing; dmgType names the armour
@@ -346,6 +349,26 @@ inline constexpr float kHandSwingS = 1.5f;
 // One kilogram of steel costs half a second of swing: pins the 1 kg dagger
 // at 2.0 s and the implied 2 kg one-hand sword at 2.5 s.
 inline constexpr float kSwingSecondsPerKg = 0.5f;
+
+// ОДИН КИЛОГРАММ ЖЕЛЕЗА СТОИТ ПОЛСЕКУНДЫ ПРОСТОЯ БРОНИ — тем же законом массы
+// (owner verdict 2026-09-07 «скорость привязать к массе», распространён на
+// броню 2026-09-30: «да сумма веса надетого норм»). База простоя = суммарный
+// вес НАДЕТОЙ брони × это число, дальше дверь восстановления делит её на
+// быстроту и Армсмастера (M-194).
+//
+// ВТОРАЯ КОНСТАНТА, А НЕ ПЕРЕИСПОЛЬЗОВАНИЕ `kSwingSecondsPerKg`, И ЭТО НЕ
+// дубль: величины РАЗНЫЕ (темп замаха против простоя защиты), а равное
+// значение — лишь стартовая калибровка. Сведи их в одну, и развести темп
+// оружия с простоем брони станет невозможно без правки структуры — ровно та
+// связка двух ручек, которой этот проект уже платил (ЗАКОН ПРИОРИТЕТА
+// СТРУКТУРЫ: числа это баланс, и балансу нужна свобода).
+//
+// ЧТО ОНО ДАЁТ, ЧИСЛАМИ: кожаная куртка 5 кг → 2.5 с базы (ровно один замах
+// одноручным мечом, то есть доля в строю ≈ 1/2 — та самая, которую кредитует
+// авторезолв); полная латная сбруя ≈ 25 кг → 12.5 с, и при ранге Армсмастера
+// 100 это ≈ 2 с. Латы простаивают дольше — это и есть выгода лёгких колец,
+// названная владельцем желаемой.
+inline constexpr float kArmorRecoverySecondsPerKg = 0.5f;
 
 // THE base swing of whatever the hand holds. nullptr = the bare, massless
 // hand. Weapons only — a spell's base tempo is its own row's cooldown, and a

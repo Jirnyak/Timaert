@@ -851,8 +851,9 @@ void run_roundtrip() {
         }
         // Untrained (a bare Skills{}) is the law's ×1 — what this witness
         // asks is that the ROW came back, not what a rank does to it.
-        if (sm::worn_armor(worn->gear, worn->inventory, sm::Skills{})
-                .of(sm::DamageType::Blunt)
+        if (sm::worn_defense(worn->gear, worn->inventory, sm::Skills{},
+                             sm::DamageType::Blunt)
+                .armor
             <= 0) {
             FAIL_BAIL("and it stops nothing, so the row did not come back");
         }

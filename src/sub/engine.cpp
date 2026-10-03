@@ -1042,7 +1042,8 @@ void SubworldEngine::spawn_player_entity() {
                            ? hs.range : armReach,
                        seconds_from_steps(std::uint32_t(hs.recoverySteps)), 0u,
                        hs.delivery == Delivery::Missile
-                           ? ecs::Combat::Missile : ecs::Combat::Melee});
+                           ? ecs::Combat::Missile : ecs::Combat::Melee,
+                       /*armorSteps*/std::uint16_t{0}});
     reg.emplace<ecs::SubworldTag>(e);
     // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
     // by the renderer through the universal view<Position, LightEmitter,

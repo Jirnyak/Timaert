@@ -163,9 +163,9 @@ struct SkillDef {
 
 // Percent verdicts (owner, 2026-09-03 evening): TYPED skills (weapons, armor,
 // schools) = 10 %/rank — capstone ×11 on your own type; the GENERIC pair =
-// 5 %/rank ON TOP — Armsmaster multiplies the FINAL physical damage whatever
-// the weapon, Spellcraft the final spell power whatever the school (the M&M
-// shape; "меньший процент ПОВЕРХ типовых", CANON S14). World-skill rows whose
+// 5 %/rank, and what it buys is TEMPO, not power (вердикт 2026-09-07 «один рычаг
+// на ручку» снял прежнюю роль «процент поверх итогового урона»; шапка обещала её
+// до 2026-10-01 и врала — M-195). World-skill rows whose
 // reader is a later phase (weapons → the damage door, schools → S15 wiring,
 // Acrobatics/Scouting/Prospecting/Trade/… → the world readers) still state
 // their law here: the row IS the design, the reader arrives once.
@@ -184,10 +184,18 @@ inline constexpr SkillDef kSkillDefs[] = {
      "bow damage per rank",                   10},
     {SkillId::Staff,       "staff",       "Staff",
      "staff damage per rank",                 10},
+    // ДОСПЕШНЫЕ РОДА МНОЖАТ СЛАБЕЕ ОСТАЛЬНЫХ ТИПОВЫХ — 1 %/ранг вместо 10, то
+    // есть ×2 на сотом (вердикт владельца 2026-10-01: «а навык множит просто
+    // слабее броню и всё»). Это НЕ вкус и не выравнивание ради красоты: с
+    // 2026-10-01 броня есть ПРОЦЕНТ, у которого сто означает иммунитет, и при
+    // ×11 авторские 12 давали бы 132 — случайную неуязвимость на ровном месте.
+    // При ×2 лучшая плита каталога (40) выходит на 80 у игрока ранга 100, то
+    // есть у верхней кромки его полосы и не за ней (CANON S13: игрок живёт в
+    // 0…60, 100+ отдан строкам, которые ОБЯЗАНЫ быть иммунны).
     {SkillId::HeavyArmor,  "heavy_armor", "Heavy Armor",
-     "heavy armor protection per rank",       10},
+     "heavy armor percent per rank",           1},
     {SkillId::LightArmor,  "light_armor", "Light Armor",
-     "light armor protection per rank",       10},
+     "light armor percent per rank",           1},
     // СПИТ (вердикт владельца 2026-09-19, сессия Е): три брата множат ВКЛАД
     // носимого рода, а у голого тела вклад НОЛЬ — множить нечего, и «ранг
     // множит защиту своего типа» на этой строке не читается ни одним телом.
@@ -195,8 +203,22 @@ inline constexpr SkillDef kSkillDefs[] = {
     // закона) или читать уклонение — механики, которой мир ещё не сделал.
     // Закон рамки скилла (S14) это прямо разрешает: строка ждёт свою систему
     // с pctPerRank = 0, как ждут ремёсла, а не лжёт процентом в тултипе.
+    // «БЕЗ БРОНИ» ПЛЮСУЕТ, А НЕ МНОЖИТ, и это предельный случай того же закона:
+    // множитель усиливает ТО, ЧТО ЕСТЬ, а у голого тела нет ничего (вердикт
+    // владельца 2026-09-30). Прибавка — ПОЛОВИНА ранга в процентных пунктах
+    // (50 на сотом), и делитель выведен из развилки, которую владелец назвал
+    // желаемой: доспешная ветка выходит на 80 и платит весом, простоем и ВТОРЫМ
+    // скиллом (Армсмастер), голая садится чуть ниже — на 50 — но платит одним
+    // скиллом и нулевым простоем. Читает это `body_defense@src/macro/anketa.cpp`,
+    // поэтому `pctPerRank` здесь стоит 0: эта строка НЕ множитель, и ставить ей
+    // процент значило бы завести второго читателя той же ручки.
     {SkillId::Unarmored,   "unarmored",   "Unarmored",
-     "sleeps until the world has the mechanic it reads", 0},
+     "+rank/2 percent to armour and block, unarmoured only", 0},
+    // ЩИТОВ В КАТАЛОГЕ ПРЕДМЕТОВ НЕТ НИ ОДНОГО (замер 2026-10-01, M-195:
+    // офф-грип строки `items.cpp` — это оружие с пустой защитой). Строка живёт и
+    // закон её читает (`sheet_armor_mult_pct@src/macro/anketa.h` и ранг рода
+    // надетой вещи), но управлять ей сегодня нечем: это ожидание КОНТЕНТА, а не
+    // спящая механика, и сказано вслух, чтобы ноль не был молчаливым.
     {SkillId::Shield,      "shield",      "Shield",
      "shield block per rank",                 10},
     {SkillId::FireMagic,   "fire_magic",  "Fire Magic",
@@ -211,12 +233,24 @@ inline constexpr SkillDef kSkillDefs[] = {
      "arcane spell power per rank",           10},
     {SkillId::VoidMagic,   "void_magic",  "Void Magic",
      "void spell power per rank",             10},
-    // The generic pair multiplies the FINAL number on top of the typed skill
-    // (owner, 2026-09-03: «процент поверх итогового — усиляет весь урон»).
+    // ГЕНЕРИК-ПАРА — ТЕМП, А НЕ УРОН, и строки это говорят с 2026-10-01 (M-195).
+    // Прежний текст обещал «ALL physical damage per rank», и это была ЛОЖЬ: роль
+    // «процент поверх итогового урона» (вердикт 2026-09-03) ОТМЕНЕНА вердиктом
+    // 2026-09-07 «один рычаг на ручку» — одна ручка, посчитанная и в силу, и в
+    // темп, есть скрытый квадрат, и причина записана на месте
+    // (`calculate_derived@src/macro/anketa.h`). Единственные читатели сегодня —
+    // дверь восстановления: Армсмастер ускоряет ЛЮБОЕ физическое действие
+    // (замах, выстрел, глоток) и сокращает ПРОСТОЙ НАДЕТОЙ БРОНИ (M-194),
+    // Спеллкрафт ускоряет любой каст.
+    //
+    // ОГОВОРКА, БЕЗ КОТОРОЙ ПРАВКА БЫЛА БЫ НЕВЕРНОЙ: у зверя, чья ОРУЖЕЙНАЯ
+    // колонка и есть `Armsmaster` (`kRoleWeights@src/tables/role_weights.h` —
+    // «its body IS the weapon»), он множит урон ЗАКОННО, как типовой скилл того
+    // тела, а не как генерик.
     {SkillId::Armsmaster,  "armsmaster",  "Armsmaster",
-     "ALL physical damage per rank",           5},
+     "speed of ALL physical acts, and armour's downtime, per rank", 5},
     {SkillId::Spellcraft,  "spellcraft",  "Spellcraft",
-     "ALL spell power per rank",               5},
+     "speed of ALL casting per rank",          5},
     {SkillId::Bodybuilding, "bodybuilding", "Bodybuilding",
      "max HP per rank",                        5},
     {SkillId::Meditation,  "meditation",  "Meditation",

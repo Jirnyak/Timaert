@@ -323,9 +323,28 @@ BonusTotals worn_bonuses(const Gear& g, const Inventory& inv) {
     return t;
 }
 
-ArmorProfile worn_armor(const Gear& g, const Inventory& inv,
-                        const Skills& skills) {
-    ArmorProfile sum{};
+// Надето ли на теле ХОТЬ ЧТО-ТО из доспеха — гейт строки «Без брони»
+// (CANON S14, вердикт владельца 2026-09-30: «но если качаешь то броню не
+// носишь иначе он неработает»). ОРУЖИЕ доспехом не считается — владелец
+// сказал это прямо («даже с учётом надетого оружия норм»), поэтому монах с
+// посохом остаётся без брони, а монах в кольчуге нет. Вопрос задаётся
+// КОЛОНКЕ строки (`ItemType::Armor`), а не имени вещи.
+bool wears_armor(const Gear& g, const Inventory& inv) {
+    for (int i = 0; i < kEquipCells; ++i) {
+        const std::uint16_t v = g.worn[std::size_t(i)];
+        if (v >= kWornBlocked) continue;
+        const ItemRef& r = inv.slots[std::size_t(v)];
+        if (r.empty()) continue;
+        if (const ItemDef* def = item_def_at(int(r.def))) {
+            if (def->type == ItemType::Armor) return true;
+        }
+    }
+    return false;
+}
+
+DefenseSum worn_defense(const Gear& g, const Inventory& inv,
+                        const Skills& skills, DamageType type) {
+    DefenseSum sum{};
     for (int i = 0; i < kEquipCells; ++i) {
         const std::uint16_t v = g.worn[std::size_t(i)];
         if (v >= kWornBlocked) continue;
@@ -335,18 +354,83 @@ ArmorProfile worn_armor(const Gear& g, const Inventory& inv,
         if (!def) continue;
         // ONE piece, ONE verdict: its row's columns and its own rolled
         // affixes are summed HERE, per piece, and the rank of the skill this
-        // row names multiplies the pair.
+        // row names multiplies the pair. МНОЖИТЕЛЬ ВЫБРАН ЗА СВОЙСТВО
+        // (вердикт владельца 2026-09-30): он усиливает ровно то, что в строке
+        // УЖЕ СТОИТ, поэтому ранг Тяжёлой брони не рождает огнестойкости в
+        // стальной плите, и ветка «складывай только там, где не ноль» не нужна.
+        // Накрывает ОБЕ колонки — и процентную броню, и плоский блок.
         BonusTotals mine{};
         for (int a = 0; a < kMaxItemAffixes; ++a) accumulate(mine, r.affix_at(a));
         const int pct = def->skill != SkillId::Count
                             ? skill_mult_pct(skills, def->skill) : 100;
-        for (std::size_t t = 0; t < kDamageTypeCount; ++t) {
-            const int mine_t = int(def->armor.v[t]) + int(mine.armor[t]);
-            const int v2 = int(sum.v[t]) + mine_t * pct / 100;
-            sum.v[t] = std::uint8_t(v2 > 255 ? 255 : v2 < 0 ? 0 : v2);
-        }
+        // Аффиксы адресуют только КОЛОНКИ БРОНИ (вардов блока в реестре
+        // бонусов нет — блок пока чистая колонка строки), поэтому слагаемое
+        // аффикса стоит у брони и отсутствует у блока. Это не дыра, а
+        // отсутствие строк: появятся — встанут той же суммой.
+        const int mineArmor = def->defense.armor_of(type)
+                            + int(mine.armor[std::size_t(type)]);
+        sum.armor += mineArmor * pct / 100;
+        sum.block += def->defense.block_of(type) * pct / 100;
     }
     return sum;
+}
+
+float worn_armor_weight(const Gear& g, const Inventory& inv) {
+    float kg = 0.0f;
+    for (int i = 0; i < kEquipCells; ++i) {
+        const std::uint16_t v = g.worn[std::size_t(i)];
+        if (v >= kWornBlocked) continue;
+        const ItemRef& r = inv.slots[std::size_t(v)];
+        if (r.empty()) continue;
+        const ItemDef* def = item_def_at(int(r.def));
+        if (def == nullptr || def->type != ItemType::Armor) continue;
+        kg += def->weight;
+    }
+    return kg;
+}
+
+int armor_recovery_steps(const Gear& g, const Inventory& inv,
+                         const Attributes& a, const Skills& s) {
+    const float kg = worn_armor_weight(g, inv);
+    if (kg <= 0.0f) return 0;
+    // ТА ЖЕ ДВЕРЬ ТЕМПА, что у замаха и каста (`recovery_steps`), и тот же
+    // ГЕНЕРИК-скилл: `Armsmaster`. Типовому доспешному роду вход сюда ЗАПРЕЩЁН
+    // — он рычаг СИЛЫ (множит обе колонки защиты), и посчитанный ещё и в темп
+    // дал бы скрытый квадрат, ровно тот, из-за которого генерик-пару убрали из
+    // урона 2026-09-07. Итог: типовой множит защиту, Армсмастер сокращает
+    // простой, у каждой ручки ровно одна работа.
+    return recovery_steps(kg * kArmorRecoverySecondsPerKg, a, s,
+                          SkillId::Armsmaster);
+}
+
+DefenseSum body_defense(const Defense& row, const Skills& skills,
+                        const Gear* g, const Inventory* inv, DamageType type) {
+    // Строка существа (шкура, выданные латы) множится обучением НОСИТЕЛЯ:
+    // род живёт в выучке тела, а не на шкуре. Обе колонки, симметрично.
+    const int rowPct = sheet_armor_mult_pct(skills);
+    DefenseSum out{};
+    out.armor = row.armor_of(type) * rowPct / 100;
+    out.block = row.block_of(type) * rowPct / 100;
+    if (g != nullptr && inv != nullptr) {
+        const DefenseSum worn = worn_defense(*g, *inv, skills, type);
+        out.armor += worn.armor;
+        out.block += worn.block;
+        if (wears_armor(*g, *inv)) return out;
+    }
+    // ГОЛОЕ ТЕЛО: «Без брони» СОЗДАЁТ защиту, а не множит её (вердикт
+    // владельца 2026-09-30: «процентный точно не вариант для анармореда …
+    // блок и процент доабвляет скил по единичке»). Это не второй закон, а
+    // честный предельный случай первого: множитель усиливает ТО, ЧТО ЕСТЬ, а у
+    // голого тела нет ничего — множить нечего, поэтому строка ПЛЮСУЕТ. Кто
+    // «унифицирует» два глагола в один, вернёт строку в ноль, которым она и
+    // простояла до 2026-09-30.
+    // ПОЛОВИНА РАНГА в процентных пунктах (вывод — на строке скилла,
+    // `kSkillDefs@src/tables/attributes.h`): голая ветка садится на 50 против
+    // 80 у доспешной, но платит одним скиллом вместо двух и нулевым простоем.
+    const int bare = skills.of(SkillId::Unarmored) / 2;
+    out.armor += bare;
+    out.block += bare;
+    return out;
 }
 
 const ItemDef* weapon_in_hand(const Gear& g, const Inventory& inv) {

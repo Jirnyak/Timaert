@@ -152,10 +152,13 @@ void test_worn_sums_read_the_bag() {
     CHECK(int(t.attr[std::size_t(AttributeId::End)]) == 4,
           "аффикс надетого читается из ИНВЕНТАРЯ по индексу");
     const ItemDef* def = item_def_at(item_index("arm_leather"));
+    const DefenseSum worn =
+        def != nullptr ? worn_defense(g, bag, Skills{}, DamageType::Blunt)
+                       : DefenseSum{};
     CHECK(def != nullptr
-              && worn_armor(g, bag, Skills{}).of(DamageType::Blunt)
-                     == int(def->armor.of(DamageType::Blunt)),
-          "броня надетого — колонка строки, прочитанная той же дорогой");
+              && worn.armor == def->defense.armor_of(DamageType::Blunt)
+              && worn.block == def->defense.block_of(DamageType::Blunt),
+          "ОБЕ колонки надетого — колонки строки, прочитанные той же дорогой");
     CHECK(weapon_in_hand(g, bag) == nullptr, "плащ — не оружие в руке");
 
     // Негативный контроль протухшего индекса: вещь исчезла из инвентаря —

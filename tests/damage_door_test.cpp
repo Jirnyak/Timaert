@@ -23,6 +23,8 @@
 
 #include "check.h"
 #include "sub/damage.h"
+#include "sub/record.h"    // pools_of — удар ложится на ЗАПИСЬ
+#include "ecs/systems.h"   // tick_combat_recovery — та же дверь слива
 #include "tables/npc.h"
 #include "ecs/components.h"
 #include "events/event_bus.h"
@@ -136,14 +138,16 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // The door routes through THE law: expectation is mitigate_amount over
     // the row's own column, not a pinned number (testing law #4). The law's
     // own shape is asserted separately below.
-    const int armour = sm::npc_def(sm::NPCType::Guard).armor
-                           .of(sm::DamageType::Blunt);
-    const float expect = float(sm::mitigate_amount(int(blow), armour));
+    const sm::Defense& guard = sm::npc_def(sm::NPCType::Guard).defense;
+    const float expect = float(sm::mitigate_amount(
+        int(blow), guard.armor_of(sm::DamageType::Blunt),
+        guard.block_of(sm::DamageType::Blunt)));
     CHECK(onPlate.applied == expect,
-          "the door applies exactly the hybrid law of the blow's own column");
+          "the door applies exactly the defence law of the blow's own columns");
 
-    // The hybrid's THRESHOLD branch (owner verdict 2026-09-05): a blow no
-    // bigger than the plate finds no flesh at all — full block is real. And
+    // The BLOCK column (owner verdict 2026-09-30, M-193 — the hybrid's old
+    // threshold branch, promoted to a column of its own): a blow no bigger than
+    // the plate's block finds no flesh at all — full block is real. And
     // since 2026-09-06 (owner: «пусть пишет всё равно») a block is NOT a
     // silent no-op: the flesh is untouched, but the world SHOWS the blow —
     // HitFlash + DamageFx{blocked} so the drain sparks off the plate instead
@@ -155,10 +159,13 @@ void test_armour_softens_by_the_row_and_the_kind() {
     reg.emplace<sm::ecs::NPCKind>(
         turtle, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
     const DamageResult tink =
-        apply_damage(reg, turtle, DamageSource{}, float(armour),
+        apply_damage(reg, turtle, DamageSource{},
+                     float(guard.block_of(sm::DamageType::Blunt)),
                      DamageKind::Melee, sm::DamageType::Blunt, &bus);
+    CHECK(guard.block_of(sm::DamageType::Blunt) > 0,
+          "предусловие своё: у выданных лат строки стража колонка блока есть");
     CHECK(tink.applied == 0.0f,
-          "a blow the plate outweighs never lands — 100% reduction is real");
+          "a blow the plate's block eats never lands — 100% reduction is real");
     CHECK(tink.blocked && !tink.lethal,
           "and the result names it BLOCKED, distinct from a dead-target no-op");
     CHECK((*reg.try_get<sm::ecs::Pools>(turtle)).hp == 100,
@@ -237,23 +244,26 @@ void test_players_worn_plate_stands_underground() {
     CHECK_OR_RETURN(coatSlot >= 0 && sm::equip(eq.gear, bag, coatSlot) >= 0,
                     "and the body wears it by index");
 
-    const int armour = sm::item_def_at(coatIdx)->armor
-                           .of(sm::DamageType::Blunt);
-    CHECK_OR_RETURN(armour > 0, "and the coat is worth something");
+    const sm::Defense& coatDef = sm::item_def_at(coatIdx)->defense;
+    const int armour = coatDef.armor_of(sm::DamageType::Blunt);
+    const int block  = coatDef.block_of(sm::DamageType::Blunt);
+    CHECK_OR_RETURN(armour > 0 && block > 0, "and the coat is worth something");
 
-    // A blow the coat outweighs never reaches the flesh — three cells of
-    // separation between the body hit and the entity wearing the armour.
+    // A poke the coat's BLOCK column eats never reaches the flesh — three
+    // cells of separation between the body hit and the entity wearing it. The
+    // full block is the BLOCK column's job now: the percent armour column
+    // alone never zeroes a blow (M-193 split the two jobs apart).
     const DamageResult tink =
-        apply_damage(reg, body, DamageSource{}, armour,
+        apply_damage(reg, body, DamageSource{}, float(block),
                      DamageKind::Melee, sm::DamageType::Blunt, nullptr);
     CHECK(tink.applied == 0,
-          "the map-side coat blocks the dungeon-side blow in full");
-    // ...and a big blow is softened by exactly THE law over the coat's column.
+          "the map-side coat blocks the dungeon-side poke in full");
+    // ...and a big blow is softened by exactly THE law over the coat's columns.
     const DamageResult big =
         apply_damage(reg, body, DamageSource{}, 20,
                      DamageKind::Melee, sm::DamageType::Blunt, nullptr);
-    CHECK(big.applied == sm::mitigate_amount(20, armour),
-          "the worn column meets the hybrid law like any other armour");
+    CHECK(big.applied == sm::mitigate_amount(20, armour, block),
+          "the worn columns meet the defence law like any other defence");
 
     // Negative control: an ordinary body beside the same squad wears nothing
     // of it — the read is keyed to the ADDRESS this body carries, not to
@@ -266,36 +276,184 @@ void test_players_worn_plate_stands_underground() {
           "negative control: the player's coat covers the player alone");
 }
 
-// THE hybrid law's own shape (tables/damage_types.h) — properties, not a
-// recomputation of the formula (testing law #5): each claim can break alone.
+// ПРОСТОЙ БРОНИ — ВТОРОЙ СУБЪЕКТ ЗАКОНА ВОССТАНОВЛЕНИЯ (CANON S13, M-194).
+// Свидетель рождает своё предусловие сам (§8 п.11): надевает телу вещь, у
+// которой ЕСТЬ вес и ЕСТЬ обе колонки защиты, и только потом спрашивает.
+void test_armor_downtime() {
+    entt::registry reg;
+    const entt::entity body = make_body(reg, 10000.0f, /*withKind*/false);
+    reg.emplace<sm::ecs::AvatarTag>(body);
+    reg.emplace<sm::ecs::Combat>(body, sm::ecs::Combat{});
+
+    auto store = sm::make_macro_store();
+    reg.ctx().insert_or_assign(store.get());
+    const sm::MacroHandle squad = sm::store_birth(*store);
+    store->pools[squad.slot].hp = 10000;
+    store->pools[squad.slot].maxHp = 10000;
+    reg.emplace<sm::ecs::MacroOrigin>(body, squad);
+    auto& eq = store->gear[squad.slot];
+    auto& bag = store->inventory[squad.slot].inv;
+    const int coatIdx = sm::item_index("arm_leather");
+    CHECK_OR_RETURN(coatIdx >= 0, "каталог знает кожаную куртку");
+    sm::gear_init(eq.gear, sm::npc_def(sm::NPCType::Adventurer).slots);
+    sm::ItemRef coat{};
+    coat.def = std::uint16_t(coatIdx);
+    coat.count = 1;
+    CHECK_OR_RETURN(bag.add_ref(coat), "сумка сквада приняла её");
+    int coatSlot = -1;
+    for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+        if (!bag.slots[std::size_t(i)].empty()
+            && int(bag.slots[std::size_t(i)].def) == coatIdx) {
+            coatSlot = i;
+            break;
+        }
+    }
+    CHECK_OR_RETURN(coatSlot >= 0 && sm::equip(eq.gear, bag, coatSlot) >= 0,
+                    "и тело её надело");
+
+    const sm::Defense& coatDef = sm::item_def_at(coatIdx)->defense;
+    const int block = coatDef.block_of(sm::DamageType::Blunt);
+    CHECK_OR_RETURN(block > 0 && sm::item_def_at(coatIdx)->weight > 0.0f,
+                    "предусловие своё: у куртки есть и колонка блока, и ВЕС — "
+                    "без веса простою не из чего взяться");
+
+    auto& clock = reg.get<sm::ecs::Combat>(body);
+    CHECK(clock.armorSteps == 0u, "броня рождается В СТРОЮ: простой есть факт "
+                                  "удара, а не свойство рождения");
+
+    // 1. ТЫЧКА, КОТОРУЮ СЪЕЛ БЛОК, НЕ СБИВАЕТ НИЧЕГО — ровно смысл второй
+    //    колонки, названный владельцем: «чтобы слабые тычки не сбивали
+    //    рековери». Это НЕГАТИВНЫЙ КОНТРОЛЬ всей механики: если бы простой
+    //    ставил любой удар, он покраснел бы здесь.
+    const DamageResult poke =
+        apply_damage(reg, body, DamageSource{}, float(block),
+                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+    CHECK(poke.applied == 0.0f && poke.blocked,
+          "тычку в размер блока съел блок");
+    CHECK(clock.armorSteps == 0u,
+          "и броня осталась В СТРОЮ — блок простоя не вызывает НИКОГДА");
+
+    // 2. УДАР СКВОЗЬ БЛОК ВЫБИВАЕТ БРОНЮ, и часы берутся от ВЕСА надетого.
+    apply_damage(reg, body, DamageSource{}, 200.0f, DamageKind::Melee,
+                 sm::DamageType::Blunt, nullptr);
+    const std::uint16_t charged = clock.armorSteps;
+    CHECK(charged > 0u, "удар сквозь блок выбил броню из строя");
+
+    // 3. ПОКА ПРОСТОЙ ИДЁТ — ПРОЦЕНТ ВЫКЛЮЧЕН, А БЛОК В СТРОЮ. Мера: тот же
+    //    удар проходит БОЛЬШЕ, но ровно на величину блока меньше сырого.
+    const int hp0 = int(sm::sub::pools_of(reg, body)->hp);
+    const DamageResult naked =
+        apply_damage(reg, body, DamageSource{}, 200.0f, DamageKind::Melee,
+                     sm::DamageType::Blunt, nullptr);
+    CHECK(naked.applied == float(200 - block),
+          "в простое проходит удар МИНУС блок: процентная колонка выключена, "
+          "плоская осталась");
+    CHECK(int(sm::sub::pools_of(reg, body)->hp) == hp0 - (200 - block),
+          "и это легло на запись, а не на копию");
+
+    // 4. УДАР ВО ВРЕМЯ ПРОСТОЯ ЕГО НЕ ПРОДЛЕВАЕТ (владелец: «НЕ перезаводить
+    //    НО СТАВИТЬ ЕСЛИ БРОНЯ В СТРОЮ»). Иначе рой крыс держал бы рыцаря
+    //    голым вечно.
+    CHECK(clock.armorSteps == charged,
+          "простой не перезаводится ударом по уже выбитой броне");
+
+    // 5. ЧАСЫ СЛИВАЕТ ТА ЖЕ ДВЕРЬ, что гейт занятости тела — одна система
+    //    восстановления, а не две.
+    sm::ecs::World w{};
+    w.reg.ctx().insert_or_assign(store.get());
+    const entt::entity drained = w.reg.create();
+    w.reg.emplace<sm::ecs::Pools>(drained, 100, 100);
+    sm::ecs::Combat c{};
+    c.armorSteps = 64;
+    c.recoverySteps = 64u;
+    w.reg.emplace<sm::ecs::Combat>(drained, c);
+    sm::ecs::sys::tick_combat_recovery(w, 64u);
+    const auto& after = w.reg.get<sm::ecs::Combat>(drained);
+    CHECK(after.armorSteps == 0u && after.recoverySteps == 0u,
+          "один tick_combat_recovery сливает ОБА субъекта закона");
+
+    // 6. У ТЕЛА БЕЗ НАДЕТОЙ БРОНИ ПРОСТОЯ НЕТ ВОВСЕ — вросшую шкуру строки
+    //    существа не сбивают (владелец: «0 для строки существа»). Это не
+    //    ветка в коде, а предельный случай: вес надетого нулевой, значит и
+    //    база нулевая.
+    const entt::entity hide = make_body(reg, 1000.0f, /*withKind*/true);
+    reg.emplace<sm::ecs::Combat>(hide, sm::ecs::Combat{});
+    apply_damage(reg, hide, DamageSource{}, 200.0f, DamageKind::Melee,
+                 sm::DamageType::Blunt, nullptr);
+    CHECK(reg.get<sm::ecs::Combat>(hide).armorSteps == 0u,
+          "шкура строки существа простоя не знает: надетого веса ноль");
+}
+
+// THE defence law's own shape (tables/damage_types.h) — свойства, а не
+// перевычисление формулы (§8 п.4-5): каждое утверждение падает отдельно.
+// ПЕРЕПИСАН 2026-10-01 (M-197) ВТОРОЙ РАЗ ЗА ДЕНЬ, и оба раза потому, что менялся
+// ЗАКОН, а не потому, что свидетель был неудобен: сперва порог стал колонкой
+// блока, теперь гипербола стала процентом. Утверждения прежней редакции
+// («иммунитета нет нигде») охраняли СЛУЧАЙ той формулы, и держать их значило бы
+// держать мир на старом законе.
 void test_mitigation_law_shape() {
     int probes = 0, wrong = 0;
-    // Threshold regime: everything up to the armour itself is a full block.
+    // 1. БЛОК — плоский и полный: всё до B включительно не доходит до плоти,
+    //    при любой броне. Это бывшая пороговая ветвь, ставшая колонкой.
     for (int dmg = 0; dmg <= 10; ++dmg) {
         ++probes;
-        if (sm::mitigate_amount(dmg, 10) != 0) ++wrong;
+        if (sm::mitigate_amount(dmg, 40, 10) != 0) ++wrong;
     }
-    // Percent regime: past the crossover (dmg > A + kArmorHalving) the flat
-    // cut is UNDER the percent cut, so more damage must get through than the
-    // flat branch alone would allow, and the kept share must shrink below
-    // the raw blow — both branches visibly at work.
-    for (int dmg = 21; dmg <= 200; dmg += 20) {
+    // 2. ПОСЛЕДОВАТЕЛЬНОСТЬ (вердикт владельца «да давай последовательно»):
+    //    блок вычитается ПЕРВЫМ, остаток идёт в процент — значит закон с блоком
+    //    тождественен закону без блока от уменьшенного удара.
+    for (int dmg = 11; dmg <= 1200; dmg += 7) {
         ++probes;
-        const int kept = sm::mitigate_amount(dmg, 10);
-        if (!(kept > 0 && kept < dmg - 10 + 1 && kept <= dmg)) ++wrong;
+        if (sm::mitigate_amount(dmg, 25, 10)
+            != sm::mitigate_amount(dmg - 10, 25, 0)) ++wrong;
     }
-    // Monotone in armour: more plate never lets MORE through.
-    for (int a = 0; a < 40; ++a) {
+    // 3. МОНОТОННОСТЬ по броне на всём диапазоне типа, включая минус.
+    for (int a = -127; a < 127; ++a) {
         ++probes;
-        if (sm::mitigate_amount(50, a + 1) > sm::mitigate_amount(50, a))
-            ++wrong;
+        if (sm::mitigate_amount(1000, a + 1, 0)
+            > sm::mitigate_amount(1000, a, 0)) ++wrong;
     }
-    // Armour 0 is the identity — the limiting case, not a branch.
-    ++probes;
-    if (sm::mitigate_amount(37, 0) != 37) ++wrong;
-    CHECK(probes == 61 && wrong == 0,
-          "the hybrid law: full block under the threshold, softening past "
-          "the crossover, monotone in armour, identity at zero");
+    // 4. ВЕТКИ ПО ЗНАКУ НЕТ, и это проверяется ТОЧНЫМ равенством: проценты
+    //    симметричных значений складываются в двести, значит и урон — в два
+    //    удара. Дефект, завёвший для минуса отдельную формулу, покраснеет здесь.
+    for (int a = 0; a <= 99; ++a) {
+        ++probes;
+        if (sm::mitigate_amount(1000, a, 0) + sm::mitigate_amount(1000, -a, 0)
+            != 2000) ++wrong;
+    }
+    CHECK(probes > 0 && wrong == 0,
+          "закон защиты: блок плоский и полный, порядок последователен, "
+          "монотонность по всей оси, и ветки по знаку нет");
+
+    // ТОЧНЫЕ ЗНАЧЕНИЯ ШКАЛЫ — то, за что процентная форма и выбрана: число ЕСТЬ
+    // механика, поэтому каждое из этих утверждений читается без формулы.
+    CHECK(sm::mitigate_amount(1000, 0, 0) == 1000,
+          "ноль — ЗНАЧЕНИЕ: защита 0 есть тождество");
+    CHECK(sm::mitigate_amount(1000, 50, 0) == 500,
+          "броня 50 снимает ровно половину — число есть процент");
+    CHECK(sm::mitigate_amount(1000, -100, 0) == 2000,
+          "броня −100 ровно УДВАИВАЕТ урон: точное равенство, не асимптота");
+
+    // ИММУНИТЕТ НАЧИНАЕТСЯ РОВНО НА `kArmorFull` И НИ ПУНКТОМ РАНЬШЕ — он
+    // выпадает из шкалы, а не из сентинела и не из маски (вердикт владельца
+    // 2026-10-01: «100% это и есть 100 а всё что выше это сверх»).
+    CHECK(sm::mitigate_amount(100000, sm::kArmorFull, 0) == 0,
+          "сто процентов есть «не берёт вовсе» — при любом размере удара");
+    CHECK(sm::mitigate_amount(100000, 127, 0) == 0,
+          "и ЗАПАС сверх ста остаётся иммунитетом: ему ещё предстоит служить "
+          "магии снятия иммунитетов, вычитающей из этого запаса");
+    // НЕГАТИВНЫЙ КОНТРОЛЬ, без которого утверждение выше ничего не значит: на
+    // 99 процентах удар ОБЯЗАН проходить, иначе «ровно на сотне» не проверено.
+    CHECK(sm::mitigate_amount(1000, sm::kArmorFull - 1, 0) == 10,
+          "негативный контроль: 99 процентов пропускают ровно сотую — "
+          "иммунитет не наступает раньше ста");
+
+    // И СТРАЖ СКАЛЯРА: множитель эффективного HP у сотни упирается в единицу,
+    // потому что бесконечность скаляр не выражает (auto_battle.h). Смещение
+    // названо вслух там же; здесь — что деления на ноль не случится.
+    CHECK(sm::armor_hp_mult_den(sm::kArmorFull) == 1
+              && sm::armor_hp_mult_den(127) == 1,
+          "знаменатель эффективного HP не обнуляется ни на сотне, ни за ней");
 }
 
 void test_survivor_protocol() {
@@ -491,6 +649,7 @@ int main() {
     test_armour_softens_by_the_row_and_the_kind();
     test_players_worn_plate_stands_underground();
     test_mitigation_law_shape();
+    test_armor_downtime();
     test_survivor_protocol();
     test_player_death_is_not_an_npc_kill();
     test_kindless_body_still_reports();
