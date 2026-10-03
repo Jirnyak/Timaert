@@ -30,76 +30,26 @@
 #include "macro/resource_field.h"   // FieldCell — общая ширина клетки поля
 #include <cstdint>
 #include <vector>
+// THE TABLE HALF OF THE FOREST LIVES IN THE NEUTRAL LAYER (§11, 2026-10-03).
+// The ceiling, the class line, the biome ambient and the derivation formula
+// have no world in them, and a census found NINE files under src/sub/ holding
+// an include of THIS header while taking nothing from it, plus three taking
+// only those constants. A table both worlds may read is a shared constant,
+// not a channel — so it moved, and what stays here is the living GRID.
+#include "tables/forest.h"
 #include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
 
 namespace sm {
 
-// 2^14 — the densest forest cell (a massif cell with 8 massif neighbours).
-constexpr int kMaxTreesPerCell = 16384;
 // Лес уже живёт в uint16 своим носителем, но потолок закрепляется ТЕМ ЖЕ
 // числом, что и у ресурсных полей: в день, когда лес переедет в общий штабель
-// (наряд M-91), ширина не должна оказаться сюрпризом.
+// (наряд M-91), ширина не должна оказаться сюрпризом. Сторож остаётся ЗДЕСЬ,
+// а не уезжает с константой: `kMaxFieldUnitsPerCell` — число макро-слоя, и
+// tables/ его не видит по построению.
 static_assert(kMaxTreesPerCell <= kMaxFieldUnitsPerCell,
               "потолок леса переросл клетку поля");
-
-// Half the golden max (2^13): the forest-CLASS threshold — THE one binary
-// "is forest" line. A cell at or above it behaves as forest everywhere:
-// subworld Forest mode, the forest fauna table, the map tooltip, and the
-// map sprite (macro.frag forestSpriteAt draws the full crisp crown at
-// u_treeMap >= 0.5 and nothing below — pixel style, no fades). Massif
-// interiors (frac ≥ 5/9) qualify; edges and biome ambience do not.
-constexpr int kForestClassTreeCount = 8192;
-inline bool is_forest_cell(int treeCount) {
-    return treeCount >= kForestClassTreeCount;
-}
-
-// Ambient trees a biome carries OUTSIDE any forest massif — scattered lone
-// trees, not woodland. Deliberately far below kForestClassTreeCount so biome
-// ambience NEVER reads as forest (map sprite, Forest mode, fauna): the map
-// shows the organic massifs, the ambience only thickens the subworld ground
-// scatter. Relative order preserves biome character (taiga > swamp >
-// meadow > … > desert).
-// One row per biome, each carrying its own enum as a COLUMN so the guard can
-// prove the order. A bare parallel array is the kNpcPurse scar waiting to
-// happen: the day the enum grows, it silently zero-fills the tail or reads a
-// neighbour's number, and nothing fails to compile.
-struct BiomeTreeCountRow { Biome biome; std::uint16_t count; };
-inline constexpr BiomeTreeCountRow kBiomeBaseTreeCount[std::size_t(Mountain) + 1] = {
-    {Tundra,    200},
-    {Taiga,    1400},
-    {Snow,      300},
-    {Valley,    800},
-    {Meadow,    600},
-    {Swamp,    1300},
-    {Desert,     40},
-    {Steppe,    250},
-    {Tropics,  1450},
-    {Water,       0},
-    {Mountain,  250},
-};
-static_assert(rows_in_enum_order(kBiomeBaseTreeCount, &BiomeTreeCountRow::biome),
-              "kBiomeBaseTreeCount row order must mirror Biome");
-
-// THE ambience of a biome, fail-closed for a biome the table has not met.
-inline constexpr int biome_base_tree_count(int b) {
-    return (b >= 0 && b < int(std::size(kBiomeBaseTreeCount)))
-        ? int(kBiomeBaseTreeCount[std::size_t(b)].count) : 0;
-}
-
-// The derivation formula: biome ambient base + the massif term,
-// 16384 × (massif cells in the 3×3 / 9), clamped to the golden max.
-// `forestFrac9` ∈ [0,1]. Water carries nothing.
-inline std::uint16_t derived_tree_count(Biome biome, float forestFrac9) {
-    if (biome == Biome::Water) return 0;
-    const int b = int(biome);
-    const int base = biome_base_tree_count(b);
-    int c = base + int(float(kMaxTreesPerCell) * forestFrac9 + 0.5f);
-    if (c > kMaxTreesPerCell) c = kMaxTreesPerCell;
-    if (c < 0) c = 0;
-    return std::uint16_t(c);
-}
 
 struct TreeLayer {
     int width = 0, height = 0;

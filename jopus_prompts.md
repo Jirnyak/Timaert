@@ -1604,7 +1604,7 @@ trees, horses, stone, silver, copper, …) описывает все ряды О
 законом, а данные лежат в ТРЁХ контейнерах: шрамы — `GameState::resourceScarCells`
 (`ResourceGrid` u16×N, живых рядов 3 из 10: `kScarRows`), жилы —
 `DepositLayer::cells` (u16×N×6 + `reach` ×6, `deposit_layer.h:81`), лес —
-`TreeLayer::data` (u16×N, `tree_layer.h:104`) — и реестр ходит между ними
+`TreeLayer::data` (u16×N, `TreeLayer@src/macro/tree_layer.h`) — и реестр ходит между ними
 указателями `carrierRead`/`carrierApply` (`resource_field.h:153-154`,
 `macro_stock.cpp:454,:578,:588`). Семь из десяти заголовков массива шрамов
 стоят ПУСТЫМИ — цена тройного хранилища, названная числом (`kScarRows`).

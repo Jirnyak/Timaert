@@ -1,5 +1,5 @@
 #include "sub/base_generator.h"
-#include "macro/tree_layer.h"
+#include "tables/forest.h"
 #include "sub/height.h"
 #include "sub/material.h"   // kMtnGrassTopH / kMtnRockBaseH — THE treeline band
 #include "sub/tree_atlas.h"

@@ -301,6 +301,14 @@ def main():
     o.append("const uint kGroundCount = %du;" % len(mats))
     o.append("const uint kCoverCount = %du;" % len(covers))
     o.append("")
+    o.append("// NAMED COVER ORDINALS. A shader that needs ONE row by name (the")
+    o.append("// far sheet asks for the canopy's two colours) says the name")
+    o.append("// instead of carrying its number, so inserting a row above it")
+    o.append("// cannot silently repaint somebody else's ground.")
+    for i, row in enumerate(covers):
+        o.append("const uint kCover%s = %du;"
+                 % (row["name"].capitalize(), i))
+    o.append("")
     for i, n in enumerate(names):
         o.append(heads[i])
         o.extend(wrap(notes[i], 76, "//    "))

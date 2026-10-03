@@ -257,7 +257,26 @@ struct FarCellColumn {
     // only door that carries it honestly: the cell's own remapped manifold,
     // which `skeleton_cell_height01` already put under the plane.)
     std::uint8_t material = 0;      // biome_ground_materials()[biome]
+    // ── WHAT GROWS ON THE CELL, AS A FRACTION ─────────────────────────────
+    // The macro forest field (macro/tree_layer.h), normalised to a byte: 0 is
+    // bare, 255 is the cell's own ceiling of trees. A FRACTION and not a
+    // count, because out here nothing is a tree — the far world draws forest
+    // as a MASS, and a mass is "how much of this place is under canopy".
+    //
+    // IT COSTS NOTHING TO CARRY. The six floats above leave three bytes of
+    // tail padding in this struct, `material` takes one of them and this
+    // takes the second, so `sizeof(FarCellColumn)` is the same 28 bytes it
+    // was — the grid of 38 025 columns stays at 1.02 MB. The third byte is
+    // where the next field goes (snow over temperature, M-167), which is the
+    // whole shape of the thing: a field arrives as a BYTE in this column and
+    // a LAYER in the sheet below, never as a channel of its own.
+    std::uint8_t forest = 0;
 };
+// The byte above is free only while the struct's tail padding lasts. Pinned
+// so that the next field to arrive is told the truth by the compiler rather
+// than growing the grid by a third in silence.
+static_assert(sizeof(FarCellColumn) == 28,
+              "a far column is six floats and its bytes ride their padding");
 
 // The cell grid the builder reads: (2R+1)² columns, row-major, centred on the
 // camera's macro cell. The caller owns the gather — it is the only part that
@@ -520,6 +539,79 @@ inline void bake_far_material_sheet(FarMaterialSheet& out,
             out.id[std::size_t(iz) * std::size_t(mDim) + std::size_t(ix)] =
                 grid.at(tx < 0.5f ? x0 : x0 + 1,
                         ty < 0.5f ? y0 : y0 + 1).material;
+        }
+    }
+}
+
+// ── A COVER IS A FIELD OVER THE SAME LATTICE, AND THERE IS AN AXIS OF THEM ─
+// A cover sheet answers "how much of this place is under <that> layer", for
+// one layer, over the ring's lattice. Same dimensions and same margin as the
+// other two sheets, so all three share one addressing convention — the thing
+// that made the material sheet carry a margin nothing reads.
+//
+// WHY AN AXIS AND NOT A SHEET PER LAYER: the owner's shape for the whole
+// slice — «надеваем на костяк единообразно доп системы итеративно». The
+// skeleton is the relief; a field is a LAYER put over it; and the second
+// field must cost a layer, not a mechanism. So the layers are row bands of
+// ONE image exactly as the rings are (vk_renderer_3d.cpp), and the next field
+// is `kFarCoverLayers + 1` plus a byte in the column above — no descriptor,
+// no binding, no shader branch.
+//
+// BILINEAR, WHERE THE MATERIAL IS NEAREST, and the difference is a law rather
+// than a preference: a material id is an ORDINAL and the average of two is a
+// third material nobody authored, while a cover fraction is a QUANTITY and
+// the average of two is the honest amount in between. Nearest here would draw
+// the coarse ring's forest as kilometre-wide squares of the cell grid — the
+// very checkerboard the ordinal is protected from becoming.
+constexpr int kFarCoverForest = 0;   // the first layer: the macro tree field
+constexpr int kFarCoverLayers = 1;   // grows by one when the next field lands
+
+struct FarCoverSheet {
+    int                       dim = 0;   // lattice points per side (2n+1)
+    std::vector<std::uint8_t> v;         // (dim+2)², row-major, WITH margin
+
+    bool live() const {
+        return dim > 0
+            && v.size() == std::size_t(dim + 2) * std::size_t(dim + 2);
+    }
+    std::uint8_t at(int ix, int iz) const {
+        return v[std::size_t(iz + 1) * std::size_t(dim + 2)
+                 + std::size_t(ix + 1)];
+    }
+};
+
+// `pick` takes a column and returns that layer's byte, so this door does not
+// know which field it is baking and cannot grow a branch per field (ЗАКОН
+// АГНОСТИЧНОСТИ: the fundamental system is not told how many of it there will
+// be). The forest passes `col.forest`; the next field passes its own byte.
+template <class Pick>
+inline void bake_far_cover_sheet(FarCoverSheet& out, const FarCellGrid& grid,
+                                 int stepM, float halfSpanM,
+                                 const Pick& pick) {
+    out.v.clear();
+    out.dim = 0;
+    if (!grid.live() || stepM <= 0 || halfSpanM <= 0.0f) return;
+
+    const int n   = int(halfSpanM) / stepM;
+    const int dim = 2 * n + 1;
+    out.dim = dim;
+    const int mDim = dim + 2;
+    out.v.assign(std::size_t(mDim) * std::size_t(mDim), std::uint8_t(0));
+    for (int iz = 0; iz < mDim; ++iz) {
+        const float wz = float((iz - 1 - n) * stepM);
+        for (int ix = 0; ix < mDim; ++ix) {
+            const float wx = float((ix - 1 - n) * stepM);
+            // THE SAME FOUR CENTRES THE HEIGHT BLENDS, through the same door
+            // — so the forest's edge lands where the ground's own shape says
+            // a cell is, and the two cannot disagree about where that is.
+            int x0 = 0, y0 = 0; float tx = 0.0f, ty = 0.0f;
+            window_cell_weights(wx, wz, grid.radiusCells, x0, y0, tx, ty);
+            const float f = float(pick(grid.at(x0,     y0)))     * (1 - tx) * (1 - ty)
+                          + float(pick(grid.at(x0 + 1, y0)))     * tx       * (1 - ty)
+                          + float(pick(grid.at(x0,     y0 + 1))) * (1 - tx) * ty
+                          + float(pick(grid.at(x0 + 1, y0 + 1))) * tx       * ty;
+            out.v[std::size_t(iz) * std::size_t(mDim) + std::size_t(ix)] =
+                std::uint8_t(f < 0.0f ? 0.0f : (f > 255.0f ? 255.0f : f + 0.5f));
         }
     }
 }

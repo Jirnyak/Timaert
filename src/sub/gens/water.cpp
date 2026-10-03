@@ -10,7 +10,6 @@
 #include "sub/city_layout.h"
 #include "core/rng.h"
 #include "sub/height.h"
-#include "macro/tree_layer.h"
 #include <algorithm>
 #include <array>
 #include <cmath>

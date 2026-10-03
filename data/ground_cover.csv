@@ -8,6 +8,16 @@
 # leaves or a film of water is a ROW here plus a name in the ground CSV — it
 # is never a new branch in the shader.
 #
+# DENSITY HAS TWO SOURCES, AND THAT IS THE WHOLE OF THE FOREST SLICE. The
+# column in data/ground_materials.csv is the first: a property of the GROUND,
+# so snow on the snow row is wherever that ground is. The second is a FIELD of
+# the macro world, sampled per place — the forest field is the first to use it
+# (sub/far_mesh.h bakes the cell's tree count into a cover sheet). Nothing
+# about a row changes between the two: a cover does not know which source
+# filled its density, which is what makes the next field — snow over
+# temperature, M-167 — a change of SOURCE on a row that already exists rather
+# than any new code at all.
+#
 # fresh_*,worn_* — THE SAME TWO-CONSTITUENT LAW the ground rows carry, one
 #                layer up: a sward is green blades AND the straw among them,
 #                and which you see is the same "how worn is this spot" the
@@ -38,3 +48,4 @@ id,name,fresh_r,fresh_g,fresh_b,worn_r,worn_g,worn_b,strand_per_m,height_m,wind,
 1,grass,0.27,0.40,0.16,0.45,0.42,0.22,7.0,0.28,1.0,0.26,"the first instance: upright blades that bend with the same wind the clouds ride — green where it thrives, straw where it has dried"
 2,snow,0.92,0.95,1.00,0.86,0.89,0.94,2.5,0.10,0.0,0.08,"a blanket rather than blades — same function, strands wide and flat, wind zero; fresh fall against wind-scoured crust"
 3,moss,0.22,0.38,0.16,0.28,0.34,0.22,14.0,0.03,0.0,0.18,fine felt in the cracks of stone; too low to sway
+4,canopy,0.09,0.17,0.08,0.19,0.17,0.10,0.0,0.00,0.0,0.00,"forest seen as a MASS — the first cover whose density is a macro FIELD rather than a ground column. Four zeroes and they are honest ones: up close a forest is GEOMETRY (one mesh prop per tree), so mesh.frag never draws this row with strands, and inventing a strand count or a layer height here would be four numbers no reader ever asks for. What IS read is the pair of colours, by the far sheet (far.frag): fresh is the closed canopy from above, worn is the thinned stand — bare crowns, trunks and the litter between them. The same pair colours the near crown when the mesh arrives, so the forest a pilot sees and the tree underfoot cannot drift apart"

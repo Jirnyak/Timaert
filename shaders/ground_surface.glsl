@@ -24,7 +24,17 @@ const uint kGfMud = 6u;
 // this: an out-of-range const-array read is undefined in GLSL,
 // and the id arrives from a texture byte.
 const uint kGroundCount = 15u;
-const uint kCoverCount = 4u;
+const uint kCoverCount = 5u;
+
+// NAMED COVER ORDINALS. A shader that needs ONE row by name (the
+// far sheet asks for the canopy's two colours) says the name
+// instead of carrying its number, so inserting a row above it
+// cannot silently repaint somebody else's ground.
+const uint kCoverNone = 0u;
+const uint kCoverGrass = 1u;
+const uint kCoverSnow = 2u;
+const uint kCoverMoss = 3u;
+const uint kCoverCanopy = 4u;
 
 //  0 tundra    turf    sd 0.16/0.20  meso 1.20 m  grain 0.05 m  relief 0.090 m  cover grass 0.35  ladder 32.4 m..44 mm  mean 0.50/0.52/0.45
 //    lichen mat over frozen ground — low tussocks and sparse cover; fresh
@@ -291,24 +301,37 @@ const vec2 kGroundCover[15] = vec2[15](
 //    wind zero; fresh fall against wind-scoured crust
 // cover 3 moss
 //    fine felt in the cracks of stone; too low to sway
+// cover 4 canopy
+//    forest seen as a MASS — the first cover whose density is a macro FIELD
+//    rather than a ground column. Four zeroes and they are honest ones: up
+//    close a forest is GEOMETRY (one mesh prop per tree), so mesh.frag
+//    never draws this row with strands, and inventing a strand count or a
+//    layer height here would be four numbers no reader ever asks for. What
+//    IS read is the pair of colours, by the far sheet (far.frag): fresh is
+//    the closed canopy from above, worn is the thinned stand — bare crowns,
+//    trunks and the litter between them. The same pair colours the near
+//    crown when the mesh arrives, so the forest a pilot sees and the tree
+//    underfoot cannot drift apart
 
 // The SAME two-constituent law one layer up: a sward is green
 // blades and the straw among them. Looked up with the GROUND's
 // mix fraction, not one of its own — that is what makes a drier
 // hollow carry paler soil and paler grass at once, structurally,
 // with no multiply and no second field.
-const vec3 kCoverFresh[4] = vec3[4](
+const vec3 kCoverFresh[5] = vec3[5](
     vec3(1.00000, 1.00000, 1.00000),  //  0 none
     vec3(0.27000, 0.40000, 0.16000),  //  1 grass
     vec3(0.92000, 0.95000, 1.00000),  //  2 snow
-    vec3(0.22000, 0.38000, 0.16000)   //  3 moss
+    vec3(0.22000, 0.38000, 0.16000),  //  3 moss
+    vec3(0.09000, 0.17000, 0.08000)   //  4 canopy
 );
 
-const vec3 kCoverWorn[4] = vec3[4](
+const vec3 kCoverWorn[5] = vec3[5](
     vec3(1.00000, 1.00000, 1.00000),  //  0 none
     vec3(0.45000, 0.42000, 0.22000),  //  1 grass
     vec3(0.86000, 0.89000, 0.94000),  //  2 snow
-    vec3(0.28000, 0.34000, 0.22000)   //  3 moss
+    vec3(0.28000, 0.34000, 0.22000),  //  3 moss
+    vec3(0.19000, 0.17000, 0.10000)   //  4 canopy
 );
 
 // x = strands per metre, y = layer height in metres,
@@ -317,11 +340,12 @@ const vec3 kCoverWorn[4] = vec3[4](
 // them, never what colour the blades are. The strand SLOPE —
 // what tilts the normal — is the product y*x, never a fourth
 // number to keep in step.
-const vec4 kCoverParams[4] = vec4[4](
+const vec4 kCoverParams[5] = vec4[5](
     vec4(0.00000, 0.00000, 0.00000, 0.00000),  //  0 none
     vec4(7.00000, 0.28000, 1.00000, 0.26000),  //  1 grass
     vec4(2.50000, 0.10000, 0.00000, 0.08000),  //  2 snow
-    vec4(14.00000, 0.03000, 0.00000, 0.18000)   //  3 moss
+    vec4(14.00000, 0.03000, 0.00000, 0.18000),  //  3 moss
+    vec4(0.00000, 0.00000, 0.00000, 0.00000)   //  4 canopy
 );
 
 #endif // TIMAERT_GROUND_SURFACE

@@ -694,7 +694,6 @@ SKELETON.md	tree_layer.cpp:34
 SKELETON.md	tree_layer.cpp:43-54
 SKELETON.md	tree_layer.cpp:45-47
 SKELETON.md	tree_layer.cpp:5
-SKELETON.md	tree_layer.h:106
 SKELETON.md	ui/macro_overlay.h:87
 SKELETON.md	ui/map_screen.cpp:335
 SKELETON.md	ui/overlays.cpp:1245
@@ -921,7 +920,6 @@ jopus_prompts.md	tests/movement_steering_test.cpp:666-677
 jopus_prompts.md	tests/structure_collide_test.cpp:214-217
 jopus_prompts.md	tests/trade_law_test.cpp:1-30
 jopus_prompts.md	tree_layer.cpp:23-24
-jopus_prompts.md	tree_layer.h:104
 jopus_prompts.md	ui/screens.h:70
 jopus_prompts.md	world_gen.cpp:310
 jopus_prompts.md	world_tick.cpp:190-193

@@ -33,6 +33,7 @@ layout(push_constant) uniform Push {
     // distinguishes one ring from another — which is exactly why they share
     // everything else, down to the triangles.
     vec4 ring;
+    vec4 origin;    // xz = window origin in ABSOLUTE metres, w = world seed
 } pc;
 
 layout(location = 0) out vec3 vNormal;
@@ -51,6 +52,14 @@ layout(location = 1) out vec3 vWorld;
 // where blending is legal. Prose is not a mechanism; `flat` and `texelFetch`
 // are.
 layout(location = 2) flat out float vMaterial;
+// THE COVER'S TEXEL, and it is NOT flat — that is the whole difference between
+// the two fields. A material is an ordinal (the average of two is a material
+// nobody authored, hence `flat` above); a cover is a FRACTION, whose average
+// is simply the honest amount in between. Handed over as a texel address
+// rather than as a sampled value so the FRAGMENT does the fetch: on the coarse
+// ring a vertex stands every 512 m, and a per-vertex forest would step in
+// half-kilometre facets instead of reading as a mass.
+layout(location = 3) out vec2 vCoverTexel;
 
 void main() {
     float stepM = pc.ring.x;
@@ -103,5 +112,10 @@ void main() {
 
     vWorld = p;
     vMaterial = texelFetch(uFarMaterial, base, 0).r * 255.0;
+    // The cover atlas is addressed exactly like the other two — the forest is
+    // layer 0, whose row band IS the ring's own (far_mesh.h kFarCoverForest),
+    // so the same `base` names it. A second layer will offset this row by its
+    // own band, and that offset belongs to whoever adds it.
+    vCoverTexel = vec2(base);
     gl_Position = pc.mvp * vec4(p, 1.0);
 }

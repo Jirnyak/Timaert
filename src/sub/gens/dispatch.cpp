@@ -13,7 +13,7 @@
 #include "sub/height.h"
 #include "sub/dgn/dispatch.h"
 #include "sub/base_generator.h"
-#include "macro/tree_layer.h"
+#include "tables/forest.h"
 
 #include <algorithm>
 #include <cstdint>

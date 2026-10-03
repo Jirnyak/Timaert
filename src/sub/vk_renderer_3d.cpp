@@ -12,6 +12,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/sky.h"
 #include "sub/tree_atlas.h"
+#include "tables/forest.h"   // forest_fraction_byte — ONE spelling of the division
 #include "gpu/bb_instance.h"
 #include "gpu/vk_device.h"
 #include "gpu/vk_renderer.h"
@@ -115,13 +116,25 @@ static_assert(sizeof(MeshPush) == 208,
 // drop), y = the lattice half-width (which decodes gl_VertexIndex), z = the
 // ring's first row in the atlas. w is unused and stays unused; there is no
 // fourth thing to say.
+//
+// `origin` IS THE WORLD'S ADDRESS, and it is a lane rather than a convenience.
+// Every vertex out here is in WINDOW metres, measured from the camera's own
+// macro cell — which is the right basis for geometry and the wrong one for a
+// FIELD drawn from a hash: a pattern keyed on window metres slides across the
+// ground every time the player crosses a cell, so the forest's own blotches
+// would swim over the land as you walk. x,z are therefore the window's origin
+// in ABSOLUTE world metres and y... w carries the world seed, so that two
+// worlds do not wear the same mottle. Same law the near instancing follows
+// (`absX/absY` in the tree pass), stated once more because the far sheet has
+// no instance to carry it.
 struct FarPush {
     MeshPush mesh;
     float    ring[4];
+    float    origin[4];   // x, z = window origin in absolute metres; w = seed
 };
-// 224 bytes (14 × vec4), inside MoltenVK's ≥256 B push-constant floor — the
+// 240 bytes (15 × vec4), inside MoltenVK's ≥256 B push-constant floor — the
 // same ceiling MeshPush's 208 B and SkyPush's 224 B are measured against.
-static_assert(sizeof(FarPush) == 224,
+static_assert(sizeof(FarPush) == 240,
               "FarPush must stay inside the 256 B push-constant floor");
 static_assert(offsetof(FarPush, ring) == sizeof(MeshPush),
               "far.vert reads the ring lane straight after the shared block");
@@ -698,20 +711,30 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         // atlas. Both are read in the VERTEX stage: the first is the shape, the
         // second is an ordinal that must not be interpolated, so it is fetched
         // once per vertex and passed `flat`.
-        VkDescriptorSetLayoutBinding fb[2]{};
+        // binding 2 = the COVER atlas, and it is the one read in the FRAGMENT
+        // stage rather than the vertex one. The reason is the same law that
+        // makes it linear: a cover fraction is a QUANTITY, so it is allowed —
+        // and needs — to vary across a triangle. On the coarse ring a vertex
+        // stands every 512 m, so a per-vertex forest would step in half-
+        // kilometre facets; sampled per fragment it is the smooth mass the
+        // eye expects from the air.
+        VkDescriptorSetLayoutBinding fb[3]{};
         fb[0].binding = 0;
         fb[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         fb[0].descriptorCount = 1;
         fb[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         fb[1] = fb[0];
         fb[1].binding = 1;
+        fb[2] = fb[0];
+        fb[2].binding = 2;
+        fb[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo fdlci{};
         fdlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        fdlci.bindingCount = 2;
+        fdlci.bindingCount = 3;
         fdlci.pBindings = fb;
         vkCreateDescriptorSetLayout(dev.device, &fdlci, nullptr,
                                     &farSetLayout_);
-        VkDescriptorPoolSize fps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
+        VkDescriptorPoolSize fps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3};
         VkDescriptorPoolCreateInfo fdpci{};
         fdpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         fdpci.maxSets = 1;
@@ -734,18 +757,29 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         // update fills them; nothing draws before `farIndexCount_ > 0`.
         const std::uint32_t fw = std::uint32_t(sub::kFarSheetDim);
         const std::uint32_t fh = fw * std::uint32_t(sub::kFarRings);
+        // The cover atlas is taller by its layer axis — rings within a layer,
+        // layers after one another — and it is the only one of the three with
+        // a LINEAR filter (see the field's comment: a fraction averages, an
+        // ordinal and an exact height do not).
+        const std::uint32_t fch =
+            fw * std::uint32_t(sub::kFarRings)
+               * std::uint32_t(sub::kFarCoverLayers);
         if (!farHeightTex_.create_r32f_empty(dev, fw, fh,
                                              /*linearFilter=*/false,
                                              /*repeat=*/false)
             || !farMatTex_.create_r8_empty(dev, fw, fh,
                                            /*linearFilter=*/false,
-                                           /*repeat=*/false)) {
+                                           /*repeat=*/false)
+            || !farCoverTex_.create_r8_empty(dev, fw, fch,
+                                             /*linearFilter=*/true,
+                                             /*repeat=*/false)) {
             std::fprintf(stderr, "[Renderer3DVk] far sheet atlases FAILED\n");
         } else {
-            VkDescriptorImageInfo fdii[2]{};
-            VkWriteDescriptorSet fw2[2]{};
-            const gpu::VulkanTexture* ftex[2] = {&farHeightTex_, &farMatTex_};
-            for (int i = 0; i < 2; ++i) {
+            VkDescriptorImageInfo fdii[3]{};
+            VkWriteDescriptorSet fw2[3]{};
+            const gpu::VulkanTexture* ftex[3] = {&farHeightTex_, &farMatTex_,
+                                                 &farCoverTex_};
+            for (int i = 0; i < 3; ++i) {
                 fdii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 fdii[i].imageView = ftex[i]->view;
                 fdii[i].sampler = ftex[i]->sampler;
@@ -757,7 +791,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
                     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 fw2[i].pImageInfo = &fdii[i];
             }
-            vkUpdateDescriptorSets(dev.device, 2, fw2, 0, nullptr);
+            vkUpdateDescriptorSets(dev.device, 3, fw2, 0, nullptr);
         }
     }
     spv_path(vpath, sizeof vpath, "far.vert");
@@ -1499,6 +1533,13 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     // below runs a second time over the ring and the context is only live in
     // this one. One float a cell, the same shape as the two above.
     std::vector<float> damps(std::size_t(n) * std::size_t(n), 0.0f);
+    // HOW MUCH FOREST THE CELL CARRIES, as the fraction of its own ceiling.
+    // The number was ALREADY HERE: `resolve_cell` returns the whole packet and
+    // this loop was simply not reading one of its columns, so the horizon's
+    // forest costs no new channel out of the macro world — which is the one
+    // thing the slice was not allowed to spend (ЗАКОН ДВУХ МИРОВ).
+    std::vector<std::uint8_t> forests(std::size_t(n) * std::size_t(n),
+                                      std::uint8_t(0));
     for (int y = 0; y < n; ++y) {
         for (int x = 0; x < n; ++x) {
             const CellContext c = mgr.resolve_cell(camCx + x - kFarCellRadius,
@@ -1508,6 +1549,10 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             heights[i] = c.macroHeight;
             damps[i] = sub::terrain_mod_for(c.landmark.kind,
                                             FeatureType(c.feature)).damp;
+            // ONE SPELLING OF THE DIVISION (tables/forest.h). A resolver that
+            // never met the macro world answers −1 for "unknown", and the door
+            // reads that as bare rather than as a wrap-around of the byte.
+            forests[i] = forest_fraction_byte(c.treeCount);
         }
     }
     const std::uint32_t worldSeed = home.worldSeed;
@@ -1566,6 +1611,7 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             sub::apply_cell_damp(damps[i], col.mtnScale, col.ridgeW,
                                  col.gradient01);
             col.material = biomeMat[std::size_t(b)];
+            col.forest = forests[i];
             grid.cells[i] = col;
         }
     }
@@ -1629,8 +1675,16 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     farHeightScratch_.assign(plane * std::size_t(sub::kFarRings), 0.0f);
     farMatScratch_.assign(plane * std::size_t(sub::kFarRings),
                           std::uint8_t(0));
+    // LAYERS AFTER RINGS, one block: layer L's ring R is row band
+    // (L·kFarRings + R). The forest is layer kFarCoverForest and today it is
+    // the only one, so this is the same size as the material atlas — and the
+    // next field widens it by one layer with no other edit here.
+    farCoverScratch_.assign(plane * std::size_t(sub::kFarRings)
+                                  * std::size_t(sub::kFarCoverLayers),
+                            std::uint8_t(0));
     sub::FarHeightSheet sheet;
     sub::FarMaterialSheet matSheet;
+    sub::FarCoverSheet coverSheet;
     int ring = 0;
     int innerStepM = 0;
     const auto innerHeightM = [&](float wx, float wz) {
@@ -1647,11 +1701,19 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
                             worldCellsX, holeHalf, innerHeightM,
                             kFarStitchBandM);
         sub::bake_far_material_sheet(matSheet, grid, stepM, halfSpan);
+        // The cover layer, through the agnostic door: the lambda is the only
+        // thing that knows WHICH field this is, so the baker never grows a
+        // branch per field (ЗАКОН АГНОСТИЧНОСТИ).
+        sub::bake_far_cover_sheet(coverSheet, grid, stepM, halfSpan,
+                                  [](const sub::FarCellColumn& c) {
+                                      return c.forest;
+                                  });
         // Fail closed at the point of BIRTH, not on read: a sheet that is not
         // the ladder's lattice cannot be addressed by the shared triangles,
         // and a half-filled atlas would draw a world that is not there.
         if (!sheet.live() || sheet.dim != sub::kFarLatticeDim
-            || !matSheet.live() || matSheet.dim != sub::kFarLatticeDim) {
+            || !matSheet.live() || matSheet.dim != sub::kFarLatticeDim
+            || !coverSheet.live() || coverSheet.dim != sub::kFarLatticeDim) {
             std::fprintf(stderr,
                          "[Renderer3DVk] far ring %d is not the lattice\n",
                          ring);
@@ -1664,6 +1726,11 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
                     sheet.m.data(), plane * sizeof(float));
         std::memcpy(farMatScratch_.data() + std::size_t(ring) * plane,
                     matSheet.id.data(), plane);
+        std::memcpy(farCoverScratch_.data()
+                        + (std::size_t(sub::kFarCoverForest)
+                               * std::size_t(sub::kFarRings)
+                           + std::size_t(ring)) * plane,
+                    coverSheet.v.data(), plane);
     }
     // The atlases cross on the frame's own command buffer, through the staging
     // arena, with the recorded update's queue-scope barrier ordering them after
@@ -1672,18 +1739,41 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     pend_.farSheet = true;
     farBuiltCx_ = camCx;
     farBuiltCy_ = camCy;
+    farWorldSeed_ = worldSeed;
     // Triangles are reported for the WHOLE ladder, not for one ring: the index
     // buffer is shared and drawn once per ring, so `farIndexCount_ / 3` alone
     // would under-report by a factor of kFarRings — an instrument that lies
     // low is worse than none.
+    // WHAT THE HORIZON IS CARRYING, in the same line as what it cost. The
+    // picture out here is judged by eye (a mass of forest either reads or it
+    // does not), and an eye cannot tell "the layer is empty" from "the layer
+    // is drawn too faintly" — so the number says which, from the CELLS rather
+    // than from the sheet: avg is how wooded this stretch of world is, max
+    // whether anything reaches a full canopy at all, and `class` the share
+    // over the forest line, the same threshold the map sprite and the
+    // subworld's Forest mode use.
+    double forestSum = 0.0;
+    int forestMax = 0, forestClass = 0;
+    constexpr std::uint8_t kClassByte = forest_fraction_byte(kForestClassTreeCount);
+    for (const std::uint8_t f : forests) {
+        forestSum += double(f);
+        if (int(f) > forestMax) forestMax = int(f);
+        if (f >= kClassByte) ++forestClass;
+    }
+    const double forestCells = forests.empty() ? 1.0 : double(forests.size());
     std::fprintf(stderr,
                  "[far] sheet cell=%d,%d rings=%d tris=%u reach=%.0fm "
+                 "forest avg=%.2f max=%.2f class=%.0f%% "
                  "field=%.2fMB build=%.2fms\n",
                  camCx, camCy, sub::kFarRings,
                  (farIndexCount_ / 3u) * std::uint32_t(sub::kFarRings),
                  double(sub::far_ladder_half_span_m()),
+                 forestSum / forestCells / 255.0,
+                 double(forestMax) / 255.0,
+                 100.0 * double(forestClass) / forestCells,
                  double(farHeightScratch_.size() * sizeof(float)
-                        + farMatScratch_.size()) / (1024.0 * 1024.0),
+                        + farMatScratch_.size() + farCoverScratch_.size())
+                     / (1024.0 * 1024.0),
                  std::chrono::duration<double, std::milli>(
                      std::chrono::steady_clock::now() - t0).count());
     std::fflush(stderr);
@@ -2687,8 +2777,9 @@ void Renderer3DVk::flush_uploads(VkCommandBuffer cmd) {
                                               /*discard=*/true);
     }
 
-    // ── The far ladder's two fields (images; one whole-atlas overwrite each,
-    //    so both enter as a discard and neither needs a partial transition) ──
+    // ── The far ladder's THREE fields (images; one whole-atlas overwrite
+    //    each, so all enter as a discard and none needs a partial
+    //    transition) ──
     if (p.farSheet && farHeightTex_.image != VK_NULL_HANDLE) {
         const VkDeviceSize hBytes =
             VkDeviceSize(farHeightScratch_.size()) * sizeof(float);
@@ -2704,6 +2795,13 @@ void Renderer3DVk::flush_uploads(VkCommandBuffer cmd) {
             farMatTex_.update_region_recorded(
                 cmd, stageArena_[arenaSlot_].buffer, mOff, 0, 0,
                 farMatTex_.width, farMatTex_.height, /*discard=*/true);
+        const VkDeviceSize cOff =
+            arena_push(farCoverScratch_.data(),
+                       VkDeviceSize(farCoverScratch_.size()));
+        if (cOff != VK_WHOLE_SIZE)
+            farCoverTex_.update_region_recorded(
+                cmd, stageArena_[arenaSlot_].buffer, cOff, 0, 0,
+                farCoverTex_.width, farCoverTex_.height, /*discard=*/true);
     }
 
     // ── Material image ──
@@ -3360,6 +3458,13 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         vkCmdBindIndexBuffer(cmd, farIdx_.buffer, 0, VK_INDEX_TYPE_UINT32);
         FarPush fp{};
         fp.mesh = push;
+        // THE WINDOW'S ADDRESS IN THE WORLD, in metres — so a field drawn from
+        // a hash is keyed on the GROUND and not on the camera (see FarPush).
+        fp.origin[0] = float(farBuiltCx_) * float(kCellSize) * kTileMeters;
+        fp.origin[1] = float(farBuiltCy_) * float(kCellSize) * kTileMeters;
+        // Low bits only: the mottle wants a world's identity, not its whole
+        // seed, and a float carries 24 bits of integer exactly.
+        fp.origin[3] = float(farWorldSeed_ & 0xFFFFu);
         for (int ring = 0; ring < sub::kFarRings; ++ring) {
             fp.ring[0] = float(sub::far_ring_step_m(ring));
             fp.ring[1] = float(sub::kFarLatticeHalf);

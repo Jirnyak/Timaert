@@ -25,6 +25,7 @@
 #include "check.h"
 
 #include "sub/far_mesh.h"
+#include "tables/forest.h"
 
 #include <algorithm>
 #include <cmath>
@@ -67,6 +68,12 @@ FarCellGrid make_grid(int radius, std::uint32_t worldSeed) {
             c.ridgeW = mtn ? 1.0f : 0.0f;
             c.material = biomeMat[std::size_t(mtn ? Biome::Mountain
                                                   : Biome::Meadow)];
+            // A STEP OF FOREST, deliberately sharp: cells from two east of
+            // the camera carry a full canopy and everything west of them
+            // carries none. A gradient fixture could not tell a bilinear
+            // bake from a nearest one — the whole question §9 asks.
+            c.forest = (cx >= kCamCx + 2) ? std::uint8_t(255)
+                                          : std::uint8_t(0);
             g.cells[std::size_t(y) * std::size_t(n) + std::size_t(x)] = c;
         }
     }
@@ -663,6 +670,81 @@ int main() {
         std::printf("  [замер] выравнивание: в нуле окна клетка %.2f "
                     "(обязана %d), в полклетки %.2f (обязана %.1f)\n",
                     double(atZero), kR, double(atHalf), double(kR) + 0.5);
+    }
+
+    // ── 9. A FIELD REACHES THE HORIZON AS A COVER LAYER ───────────────────
+    // The forest is the first macro field to come out here, and what this
+    // section pins is not "forest" but the SHAPE every field after it will
+    // use: a byte in the column, a layer in the sheet, one agnostic baker.
+    //
+    // The law it guards is the one difference from the material sheet next
+    // door — BILINEAR against NEAREST — and that difference is not a taste:
+    // an ordinal must not be averaged (the average of two materials is a row
+    // nobody authored), a FRACTION must be, or the coarse ring draws the
+    // cell grid's own kilometre squares.
+    {
+        FarCoverSheet cov;
+        bake_far_cover_sheet(cov, grid, kFixStepM, kFixHalfM,
+                             [](const FarCellColumn& c) { return c.forest; });
+        CHECK(cov.live() && cov.dim == kFixDim,
+              "лист покрова — ТА ЖЕ решётка, что высота и материал: одна "
+              "адресация на три поля, а не три");
+
+        // Centres of the two cells either side of the step, in window metres.
+        const auto texelAt = [&](float wx) {
+            return int(wx) / kFixStepM + kFixN;
+        };
+        const int bare   = texelAt(1024.0f);   // cell +1: no canopy
+        const int full   = texelAt(2048.0f);   // cell +2: full canopy
+        const int middle = texelAt(1536.0f);   // exactly between the centres
+        const int row    = kFixN;              // the camera's own row
+        CHECK(cov.at(bare, row) == 0,
+              "в центре клетки без леса лист несёт ноль");
+        CHECK(cov.at(full, row) == 255,
+              "в центре клетки с полным пологом — потолок байта");
+        // THE QUESTION ITSELF: half way between the two centres the honest
+        // answer is half the canopy. A nearest bake — the material's law —
+        // could only answer 0 or 255 here, so this single number separates
+        // the two laws.
+        const int mid = int(cov.at(middle, row));
+        CHECK(mid > 100 && mid < 155,
+              "ровно между центрами — половина полога: доля ИНТЕРПОЛИРУЕТСЯ, "
+              "в отличие от ординала материала рядом");
+        CHECK(mid != 0 && mid != 255,
+              "негативный контроль БИЛИНЕЙНОСТИ: ближайшая выборка (закон "
+              "материала) обязана была бы дать здесь 0 или 255");
+
+        // AND THE DOOR DOES NOT KNOW WHICH FIELD IT BAKES. Same baker, a
+        // different getter, and out comes the material — which is what makes
+        // the next field (snow over temperature, M-167) a layer rather than
+        // a mechanism. If this ever needs a branch per field, the agnostic
+        // law has been broken somewhere above.
+        FarCoverSheet asMat;
+        bake_far_cover_sheet(asMat, grid, kFixStepM, kFixHalfM,
+                             [](const FarCellColumn& c) { return c.material; });
+        const std::uint8_t* biomeMat = biome_ground_materials();
+        CHECK(asMat.live()
+              && asMat.at(kFixN, kFixN)
+                     == biomeMat[std::size_t(Biome::Mountain)],
+              "тот же пекарь с другим геттером печёт другое поле — дверь "
+              "агностична к роду покрова (ЗАКОН АГНОСТИЧНОСТИ)");
+
+        // THE ONE SPELLING OF THE DIVISION (tables/forest.h). The fraction a
+        // cell's count becomes is asked in exactly one place, and these are
+        // its boundaries — including the "unknown" a bare resolver answers,
+        // which must read as bare rather than wrap the byte around.
+        CHECK(forest_fraction_byte(0) == 0
+              && forest_fraction_byte(kMaxTreesPerCell) == 255,
+              "дверь доли: пусто — ноль, потолок клетки — потолок байта");
+        CHECK(forest_fraction_byte(-1) == 0,
+              "«неизвестно» (−1 у голого резолвера) читается как ПУСТО, а не "
+              "как заворот байта");
+        CHECK(forest_fraction_byte(kForestClassTreeCount) == 128,
+              "порог класса леса стоит ровно в середине шкалы — то же число, "
+              "которым судят спрайт карты и режим Forest субмира");
+        std::printf("  [замер] покров: центр без леса %d, центр с лесом %d, "
+                    "между центрами %d (ближайшая дала бы 0 или 255)\n",
+                    int(cov.at(bare, row)), int(cov.at(full, row)), mid);
     }
 
     return report("far_mesh_test");

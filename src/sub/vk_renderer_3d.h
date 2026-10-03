@@ -226,9 +226,24 @@ private:
     // descriptor, one copy for the whole ladder — and a ring added later is a
     // row added here, which is what makes the ladder's reach a one-line
     // decision (Ш8) instead of a rebuild.
+    //
+    // AND THE THIRD IMAGE IS AN AXIS, NOT A THIRD THING. A macro FIELD that
+    // reaches the horizon arrives as a LAYER of one cover atlas — the forest
+    // is layer 0 (far_mesh.h kFarCoverForest) — so the next field to come out
+    // here (snow over temperature, M-167) costs a row band and a byte in the
+    // column, never a binding, a descriptor or a branch. Rings are rows and
+    // layers are rows of rows: 387 × 387·kFarRings·kFarCoverLayers.
+    //
+    // LINEAR, where the other two are nearest, and the difference is the
+    // nature of the number: height and a material ORDINAL are fetched exactly
+    // (the average of two ordinals is a material nobody authored), while a
+    // cover FRACTION is a quantity whose average is the honest amount in
+    // between. Nearest here would draw the coarse ring's forest as the cell
+    // grid's own kilometre squares.
     gpu::VulkanPipeline   farPipe_{};
     gpu::VulkanTexture    farHeightTex_{};   // R32_SFLOAT, metres
     gpu::VulkanTexture    farMatTex_{};      // R8_UNORM, material ordinal/255
+    gpu::VulkanTexture    farCoverTex_{};    // R8_UNORM, cover fraction, linear
     VkDescriptorSetLayout farSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool      farPool_      = VK_NULL_HANDLE;
     VkDescriptorSet       farSet_       = VK_NULL_HANDLE;
@@ -247,6 +262,10 @@ private:
     // Which macro cell the sheet was built around; INT_MIN = never built.
     int                 farBuiltCx_ = INT_MIN;
     int                 farBuiltCy_ = INT_MIN;
+    // The world's own seed, kept from the build so the draw can hand it to
+    // the cover's mottle. Two worlds with the same forest field must not wear
+    // the same blotches, and the field itself cannot say which world it is.
+    std::uint32_t       farWorldSeed_ = 0;
 
     // ── A1: Terrain mesh ──
     gpu::VulkanPipeline terrainPipe_{};
@@ -435,6 +454,9 @@ private:
     // constants, so there is nothing for a crossing to reallocate.
     std::vector<float>         farHeightScratch_;
     std::vector<std::uint8_t>  farMatScratch_;
+    // The cover atlas, layers after rings in the same block and by the same
+    // rule — one push, one copy, sized from the lattice constants.
+    std::vector<std::uint8_t>  farCoverScratch_;
     std::vector<std::uint8_t>  matCellScratch_[9];
     std::vector<std::uint8_t>  matSelfRef_; // selfcheck reference (env only)
     std::vector<gpu::BbInstance> treeScratch_;

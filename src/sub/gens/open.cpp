@@ -11,7 +11,6 @@
 #include "core/rng.h"
 #include "sub/height.h"
 #include "sub/collide.h"   // kBodyHeightM — рост, за которым прячутся
-#include "macro/tree_layer.h"
 #include <algorithm>
 #include <array>
 #include <cmath>

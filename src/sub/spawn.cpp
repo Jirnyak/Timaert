@@ -9,7 +9,7 @@
 #include "core/rng.h"
 #include "tables/npc.h"
 #include "macro/macro_stock.h"
-#include "macro/tree_layer.h"
+#include "tables/forest.h"
 #include "macro/spell_book_state.h"   // SpellBook — part of the record a body inherits
 #include "macro/squad.h"              // sheet_of — THE door to "who is this"
 #include "macro/player_entity.h"      // player_squad_entity — «чья это запись»

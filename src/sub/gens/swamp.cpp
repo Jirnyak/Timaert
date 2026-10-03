@@ -11,7 +11,6 @@
 #include "core/rng.h"
 #include "sub/height.h"
 #include "sub/collide.h"   // kStepUpM — рост, через который переступают
-#include "macro/tree_layer.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
