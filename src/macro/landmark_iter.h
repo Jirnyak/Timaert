@@ -84,6 +84,14 @@ inline void stamp_settlement_features(const GameState& gs, FeatureLayer& f) {
             case LandmarkType::Shrine:
             case LandmarkType::Mine:
             case LandmarkType::Tower:
+            // Подвижные роды оси (M-90 шаг 3а): у сквада, который ХОДИТ,
+            // байта фичи нет и быть не может — фича говорит «что СТОИТ на
+            // клетке», а он на ней не стоит, он через неё идёт. Ветки
+            // выписаны, чтобы `-Wswitch` и дальше называл забытое: `default`
+            // здесь проглотил бы следующий НЕПОДВИЖНЫЙ род молча.
+            case LandmarkType::Artel:
+            case LandmarkType::Caravan:
+            case LandmarkType::Collector:
             case LandmarkType::Count:   break;   // мир их пока не ставит
         }
         if (ft == FT_None) continue;

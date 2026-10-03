@@ -95,7 +95,6 @@ verdict	SKELETON.md	| `allowAutoBattle=false` — один ответ гейта
 verdict	SKELETON.md	| `cells_[9]` (тайлы, trav, высоты, структуры на клетку) | ≈6 МиБ × 9 | 54 МиБ | менеджер (`:24
 verdict	SKELETON.md	| app — редактор: прямой доступ законен | матрица выше; вердикт 2026-09-25 | **ПРАВДА**
 verdict	SKELETON.md	| staging светового поля кольцуется | slot = `lightFieldFrame_ % 2` при гейте `% 8 == 0` ⇒ всегда 0; 
-verdict	SKELETON.md	| «кто стоит на клетке игрока» | `detect_forced_encounter` (`:850-882`): view по ВСЕМ сквадам кажд�
 verdict	SKELETON.md	| ЗАКОН КОНСТАНТ | `kRestTicksPerTurn = 128 // po2` (`:2479`) — вывода нет; литерал `max_daily_ticks=32` в �
 verdict	SKELETON.md	| ШЕСТЬ рядов жил | `DepositLayer::cells[6]`, u16 (+ `reach` u16 на каждый) | **ПРАВДА сегодня, подле
 verdict	SKELETON.md	| адрес клетки | ПРАВДА в `src/macro` для `cell_of/cell_step`; остатки делений (8 строк), рукоп

@@ -600,6 +600,12 @@ FeatureType settlement_feature_of(LandmarkType t) {
         case LandmarkType::Shrine:
         case LandmarkType::Mine:
         case LandmarkType::Tower:
+        // Подвижные роды оси (M-90 шаг 3а): байт фичи отвечает «что СТОИТ на
+        // клетке», а артель и корован через неё ИДУТ — у них его нет по
+        // природе, а не по недостройке.
+        case LandmarkType::Artel:
+        case LandmarkType::Caravan:
+        case LandmarkType::Collector:
         case LandmarkType::Count:   return FT_None;
     }
     return FT_None;

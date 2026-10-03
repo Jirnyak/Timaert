@@ -3054,7 +3054,7 @@ void ai_waypoints(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 // ПОВЕДЕНИЕ НЕТИПИЗИРОВАННОГО СКВАДА — и это ЕДИНСТВЕННАЯ ТОЧКА, ГДЕ
 // МАКРОМИР ЕЩЁ ЧИТАЕТ КАТАЛОГ ТЕЛ (CANON S2 «Протокол двух миров»; до
 // 2026-09-21 таких точек было четыре, и ни одна не была названа).
-// Зовётся ТОЛЬКО из ветки SquadType::ByKind — то есть для сквадов, у которых
+// Зовётся ТОЛЬКО из ветки SquadType::None — то есть для сквадов, у которых
 // нет макро-источника поведения вовсе: генезисных одиночек и квестовой цели.
 // Лестница честная и по убыванию authority: маршрут в приказе (он и есть
 // приказ — вердикт владельца), строка стола анкет (МАКРО-таблица, законно),
@@ -3151,7 +3151,23 @@ void dispatch(MacroHandle e, MacroPos& p,
         case SquadType::Artel:   ai_gatherer(e, p, kind, rt, pools, ctx); return;
         case SquadType::Caravan: ai_vendor  (e, p, rt, pools, ctx);       return;
         case SquadType::Collector: ai_collector(e, p, rt, pools, ctx);    return;
-        case SquadType::ByKind:  break;   // ниже — течь, названная по имени
+        // НЕПОДВИЖНЫЕ РОДЫ ОСИ НЕ ДУМАЮТ, И ЭТО НЕ ЗАГЛУШКА (M-90 шаг 3а).
+        // После слияния `LandmarkType` в эту ось сюда стало ВЫРАЗИМО
+        // приехать городом: место есть неподвижный сквад, и лестница
+        // поведения у него кончается на первом же вопросе — он не ходит.
+        // Его день идёт своим проходом (`settle_landmark_day`), а не думкой
+        // марша. Ветки выписаны поимённо, а не прикрыты `default`, ровно
+        // чтобы следующий ПОДВИЖНЫЙ род компилятор назвал вслух.
+        case SquadType::City:
+        case SquadType::Village:
+        case SquadType::Spire:
+        case SquadType::Ruin:
+        case SquadType::Lair:
+        case SquadType::Shrine:
+        case SquadType::Mine:
+        case SquadType::Tower:
+        case SquadType::Count: return;
+        case SquadType::None:  break;   // ниже — течь, названная по имени
     }
     switch (untyped_squad_behaviour(store_ctx(ctx), e, kind)) {
         // ПОСЛЕДНИЕ ДВЕ МАКРО-РОЛИ, ЕЩЁ ЖИВУЩИЕ В КАТАЛОГЕ ТЕЛ (CANON S2):
@@ -3740,7 +3756,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // Экземпляр приписывается строке СВОЕГО ТИПА: у места строки
             // теперь различаются типом сквада, а не позицией в списке.
             const SquadType rowType = ld.crews[i].type;
-            if (rowType != SquadType::ByKind
+            if (rowType != SquadType::None
                 && std::uint8_t(rowType) != rt.squadType)
                 continue;
             if (outCount[std::size_t(row)][std::size_t(i)] < 255)
@@ -4333,10 +4349,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // своей механикой — и тогда его заявка встанет в ОБЩУЮ урну выше
         // одной размерностью со всеми, а не отдельным аукционом.)
 
-        // Строка берёт только заявки своего типа; ByKind = вся урна.
+        // Строка берёт только заявки своего типа; None = вся урна.
         const auto row_takes_ = [](const LandmarkCrewRow& cr,
                                    const GoalBid& b) -> bool {
-            return cr.type == SquadType::ByKind
+            return cr.type == SquadType::None
                    || b.type == std::uint8_t(cr.type);
         };
         // БРОСОК НА КАЖДЫЙ ЭКЗЕМПЛЯР, А НЕ НА СТРОКУ: два корована одного
@@ -4372,7 +4388,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     //    «ЗАНЯТИЕ — ЭТО СТРОКА РОСТЕРА») ──────────────────
                     // Деревенская строка объявлена `Artel`, городская —
                     // `Caravan`, и разделение живёт ДАННЫМИ: ни одной ветки
-                    // по роду места. `ByKind` = тип не объявлен, урна вся.
+                    // по роду места. `None` = тип не объявлен, урна вся.
                     int mine = 0;
                     for (int b = 0; b < bidCount; ++b)
                         if (row_takes_(cr, bids[b])) ++mine;

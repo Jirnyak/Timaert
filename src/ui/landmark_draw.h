@@ -56,10 +56,24 @@ inline constexpr LandmarkDrawRow
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
     {LandmarkType::Tower,   SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
+    // ── ПОДВИЖНЫЕ РОДЫ ОСИ: НЕ РИСУЮТСЯ ЭТОЙ ТАБЛИЦЕЙ (M-90 шаг 3а) ──────
+    // Артель, корован и сборщик приехали на одну ось с местами (`SquadType`,
+    // слияние шага 3а), и у таблицы ОТМЕТОК НА КАРТЕ строк для них нет: сквад
+    // рисуется своим спрайтом по СПРАЙТ-ЗАКОНУ (§7, `tables/sprite_rows.h`),
+    // а здесь живут метки неподвижного — кольцо города, ромб шпиля. Нули
+    // выписаны ЯВНО, потому что `rows_in_enum_order` ниже сверяет колонку с
+    // индексом: неявная доинициализация приехала бы с `None` на месте
+    // `Artel` и таблица молча разошлась бы со своим ключом.
+    {LandmarkType::Artel,     SpriteId::None, SpriteId::None,
+     0.0f, 0.0f, 0.0f, 0.0f, MiniShape::Dot, 0.0f},
+    {LandmarkType::Caravan,   SpriteId::None, SpriteId::None,
+     0.0f, 0.0f, 0.0f, 0.0f, MiniShape::Dot, 0.0f},
+    {LandmarkType::Collector, SpriteId::None, SpriteId::None,
+     0.0f, 0.0f, 0.0f, 0.0f, MiniShape::Dot, 0.0f},
 };
 
 static_assert(rows_in_enum_order(kLandmarkDraw, &LandmarkDrawRow::type),
-              "kLandmarkDraw row order must mirror LandmarkType — the enum "
+              "kLandmarkDraw row order must mirror SquadType — the enum "
               "index IS the binding");
 
 inline constexpr const LandmarkDrawRow& landmark_draw(LandmarkType t) {
