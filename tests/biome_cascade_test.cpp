@@ -33,6 +33,7 @@
 #include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
+#include "macro/pathfinding.h"
 #include "macro/spawners.h"
 #include "macro/zones.h"
 
@@ -337,7 +338,77 @@ void test_field_is_the_answer() {
 
 } // namespace
 
+// ── ВОДА СПРАШИВАЕТСЯ У ПОРОГА РЕЛЬЕФА, А НЕ У ПОЛЯ БИОМА (M-212) ──────────
+//
+// ЗАКОН: «вода ли эта клетка» имеет ОДИН ответ на весь мир — порог высоты
+// против плоскости карты (владелец 2026-10-03: «как раз через единую — вода
+// тоже через неё, потому что это порог рельефа, то есть через него всё и
+// будет»). Поле биома есть ПРОИЗВОДНОЕ того же порога, испечённое позже, и
+// спрашивать воду у него значит заводить второй спеллинг.
+//
+// ПОЧЕМУ ЭТО ЛОВИТСЯ ИМЕННО НА НЕДОПЕЧЁННОМ МИРЕ. Пока `bake_biomes` отработал,
+// два спеллинга СОВПАДАЮТ, и никакой тест их не различит. Но `biome_at_cell`
+// fail-closes в `Water`, когда поля нет: на мире, где рельеф уже есть, а поле
+// ещё нет, он объявляет водой ВЕСЬ мир. Это не выдуманный случай — именно так
+// рельеф и стоит между синтезом и выпечкой, и именно эта щель вчера дала
+// 39 деревьев на воде (M-211).
+// ТАБЛИЦА МУТАЦИЙ, ПРОГНАНА 2026-10-03 (§8 п.6):
+//   · навигация возвращена на `b == Water` → КРАСНЫЙ, 1 из 25, расхождений
+//     навигации 0 → **512** из 1024;
+//   · фикстура допечена `bake_biomes` (ПЕРЕКАЛИБРОВКА) → ЗЕЛЁНЫЙ и обязан:
+//     на дорождённом мире спеллинги совпадают, и ловить тут нечего.
+void test_water_is_asked_of_the_threshold_only()
+{
+    // Мир с рельефом, но БЕЗ выпечки: половина суши, половина воды.
+    TerrainData raw;
+    constexpr int side = 32;
+    raw.width = side;
+    raw.height = side;
+    raw.seaLevel16 = field_word_of(kDefaultSeaLevel);
+    raw.rgba.assign(std::size_t(side) * std::size_t(side) * 4u, 0u);
+    for (int y = 0; y < side; ++y)
+        for (int x = 0; x < side; ++x) {
+            const std::size_t c = std::size_t(y) * std::size_t(side) + std::size_t(x);
+            const bool wet = x < side / 2;
+            raw.rgba[c * 4u + 0u] = wet ? std::uint16_t(raw.seaLevel16 / 2u)
+                                        : std::uint16_t(raw.seaLevel16 + 1000u);
+            raw.rgba[c * 4u + 1u] = field_word_of(128.0f / 255.0f);
+            raw.rgba[c * 4u + 2u] = field_word_of(128.0f / 255.0f);
+        }
+    CHECK(raw.biome.empty(), "фикстура намеренно НЕ печёт поле биома");
+
+    // КОНТРОЛЬ РАЗНИЦЫ: два спеллинга здесь обязаны РАЗОЙТИСЬ, иначе проверка
+    // ниже пуста и зеленела бы на чём угодно.
+    long thresholdWet = 0, biomeWet = 0;
+    const std::size_t n = std::size_t(side) * std::size_t(side);
+    for (std::size_t c = 0; c < n; ++c) {
+        if (raw.is_water(std::uint32_t(c))) ++thresholdWet;
+        if (biome_at_cell(raw, std::uint32_t(c)) == Biome::Water) ++biomeWet;
+    }
+    CHECK(thresholdWet == long(n) / 2,
+          "порог видит ровно половину мира водой — фикстура такая");
+    CHECK(biomeWet == long(n),
+          "поле биома без выпечки зовёт водой ВЕСЬ мир — вот она, щель");
+
+    // ЗАПЕЧЁННАЯ НАВИГАЦИОННАЯ КОЛОНКА — она расходится дальше всех: по ней
+    // трассер дорог решает «мост или грунтовка».
+    const PathCostData grid = build_cost_grid(raw, nullptr, nullptr);
+    long navMismatch = 0, navSamples = 0;
+    for (std::size_t c = 0; c < n && c < grid.water.size(); ++c) {
+        const bool nav = grid.water[c] != 0u;
+        if (nav != raw.is_water(std::uint32_t(c))) ++navMismatch;
+        ++navSamples;
+    }
+    CHECK(navSamples == long(n), "навигационная колонка промерена целиком");
+    CHECK(navMismatch == 0,
+          "навигация зовёт водой ровно то, что водой зовёт порог");
+    std::printf("  [вода] порог %ld из %ld, поле биома без выпечки %ld, "
+                "расхождений навигации %ld\n",
+                thresholdWet, long(n), biomeWet, navMismatch);
+}
+
 int main() {
+    test_water_is_asked_of_the_threshold_only();
     test_field_is_the_answer();
     test_forest_asks_the_one_cascade();
     test_forest_refuses_the_disputed_band();

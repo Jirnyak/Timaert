@@ -76,7 +76,11 @@ namespace sm
                 ? float(treeLayer->data[i]) / float(kMaxTreesPerCell)
                 : 0.0f;
             out.costGrid[i] = cell_sp_weight(b, f, density);
-            out.water[i] = (b == Water) ? 1u : 0u;
+            // ВОДА — ОТ ПОРОГА, А НЕ ОТ БИОМА (M-212). Эта колонка ЗАПЕКАЕТСЯ
+            // и расходится дальше: по ней трассер дорог решает «мост или
+            // грунтовка» (`spawners.cpp`), то есть ошибка спеллинга здесь
+            // становится мостом посреди суши.
+            out.water[i] = td.is_water(std::uint32_t(i)) ? 1u : 0u;
             out.height16[i] = td.rgba[i * 4u + 0u];
         }
         return out;

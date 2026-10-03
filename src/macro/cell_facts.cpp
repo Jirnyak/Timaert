@@ -27,7 +27,10 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     f.fertility01   = field01_of(td.rgba[idx * 4u + 1u]);
     f.temperature01 = field01_of(td.rgba[idx * 4u + 2u]);
     f.biome = biome_at_cell(td, f.x, f.y);
-    f.water = f.biome == Biome::Water;
+    // ВОДА — ОТ ПОРОГА (M-212). Здесь факт выводился из СОСЕДНЕГО факта того
+    // же набора, и оба были производными одного порога: лишнее звено, которое
+    // умеет разойтись и не умеет ничего добавить.
+    f.water = td.is_water(std::uint32_t(idx));
 
     f.feature = w.features ? w.features->at(f.x, f.y) : FT_None;
     f.treeCount = (w.trees && w.trees->has_complete_storage())
