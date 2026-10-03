@@ -136,6 +136,26 @@ namespace sm::sub
                           seaLevel + 0.10f, 1.05f);
     }
 
+    // HOW LOUD A CELL'S OWN GROUND IS — one door, because it was two answers.
+    //
+    // This number scales the ground's detail octaves: a massif's flank is
+    // rougher than a meadow, and a cell touching a massif is rougher than one
+    // that does not. It was written out twice — once in the near generator's
+    // per-cell loop and once in the far renderer's column gather — and the two
+    // spellings agreeing was luck, not construction. It is also the column a
+    // witness has to feed BOTH sides to compare them, and a witness carrying a
+    // third copy would be testing that the copy was made (AGENTS testing law
+    // 5), not that the worlds agree.
+    //
+    // 0.15 on a mountain cell against 0.1 + 0.1 per mountain NEIGHBOUR: the
+    // massif itself keeps its detail modest because its shape is the ridge
+    // law's business, while the apron around it — the foothills — is where the
+    // ground's own noise does the most work. Four mountain neighbours reach
+    // 0.5, the loudest ground in the world.
+    constexpr float cell_mtn_scale01(bool isMountain, int adjMountain) {
+        return isMountain ? 0.15f : (0.1f + float(adjMountain) * 0.1f);
+    }
+
     // THE MOUNTAIN SILHOUETTE — and THE far world's, because it is the same
     // function (CANON S18.1: «дальний рельеф не имеет права быть похожим шумом,
     // он обязан быть той же функцией, усечённой»).
@@ -172,6 +192,16 @@ namespace sm::sub
     // measure attached, and it is also why the finished far world is RINGS:
     // halving the step doubles the octaves it may carry, so the detail comes
     // back as you approach instead of being switched on.
+    //
+    // AND «УБИРАЕТСЯ» IS A STATEMENT ABOUT THE SURVIVORS TOO. A dropped octave
+    // hands over its OWN MEAN, and the sum is divided by the FULL weight of the
+    // stack — never by the weight of whoever is left. Dividing by the survivors
+    // rescales them: with λ=50 gone, the λ=125 octave came out at 0.5/0.5 = 1.0
+    // instead of its authored 0.5/0.75, i.e. 1.5× the amplitude the near ground
+    // gives it, and the far world drew a LOUDER version of the same shape.
+    // Measured contribution to the near↔far gap at the foothills: 7.2 → 5.6 m
+    // of median disagreement (M-201). Substituting detail is what the law
+    // forbids, and amplifying what remains is substitution.
     float terrain_detail01(int gx, int gy, float worldTiles,
                            float minWavelengthTiles);
 
@@ -190,31 +220,29 @@ namespace sm::sub
     // does), because a far mesh samples a coarse cell grid once and reads many
     // tiles out of it — asking per tile would re-derive the same nine cells
     // for every vertex.
-    inline float far_height01(int gx, int gy, float macroH01, float peak01,
-                              float ridgeWeight, float worldTiles,
-                              float seaLevel,
-                              float gradient01 = 0.0f,
-                              float heightScale = 0.0f,
-                              float mtnScale = 0.0f,
-                              float minWavelengthTiles = 0.0f) {
-        // The manifold, plus every octave of ground the mesh can carry. The
-        // relief term is the near generator's own: macroH² concentrates the
-        // ground's own variation on high land and keeps lowlands calm, and the
-        // biome-edge gradient lifts it where two kinds of land meet.
-        float h = macroH01;
-        if (minWavelengthTiles > 0.0f && heightScale > 0.0f
-            && mtnScale > 0.0f) {
-            const float noise = terrain_detail01(gx, gy, worldTiles,
-                                                 minWavelengthTiles);
-            const float relief = macroH01 * macroH01 + gradient01;
-            h += (noise - 0.5f) * relief * heightScale * mtnScale;
-        }
-        if (ridgeWeight <= 0.01f) return std::clamp(h, 0.0f, 2.0f);
-        return std::clamp(mountain_ridges01(h, gx, gy, macroH01, peak01,
-                                            ridgeWeight, worldTiles,
-                                            /*coarseOnly=*/true, seaLevel),
-                          0.0f, 2.0f);
-    }
+    //
+    // DEFINED BESIDE THE NEAR LAW, IN base_generator.cpp — so that the two
+    // grounds read ONE curve out of one translation unit, and «the far ground
+    // is the near ground with detail removed» is a property of where the code
+    // lives rather than a promise.
+    //
+    // It used to be an inline body here, and that is how it went a fortnight
+    // without `detail_field_scale` (M-201): the curve arrived in a4f3b0b6,
+    // the near generator picked it up in its own .cpp, and a header body had
+    // no obvious way to reach it — `sub/height.h` appeared to sit ABOVE this
+    // file. It did not: height.h asked for this header and used nothing from
+    // it (every name it wants — WATER_LEVEL, kCellSize, kFullSize,
+    // SubworldMapData — is map_data.h's), so the wall was an accident of one
+    // #include line, not a layer. The line is corrected; the curve now sits
+    // where it belongs, BELOW the generator, and this law stays here because
+    // the near law is here.
+    float far_height01(int gx, int gy, float macroH01, float peak01,
+                       float ridgeWeight, float worldTiles,
+                       float seaLevel,
+                       float gradient01 = 0.0f,
+                       float heightScale = 0.0f,
+                       float mtnScale = 0.0f,
+                       float minWavelengthTiles = 0.0f);
 
     struct BiomeConfig
     {

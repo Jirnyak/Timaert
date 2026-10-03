@@ -26,12 +26,16 @@
 #include "check.h"
 
 #include "sub/base_generator.h"
+#include "sub/far_mesh.h"   // kFarRing0StepM — ШАГ кольца, что встречает композит
 #include "sub/height.h"
 #include "sub/map_data.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -205,6 +209,169 @@ int main() {
         CHECK(mtn != 0.88f,
               "a massif far away still HAS a silhouette (the negative control "
               "for the line above)");
+    }
+
+    // ── 5. NO FRAME ROUND THE WINDOW — THE TWO GROUNDS AGREE IN METRES ────
+    //
+    // Everything above compares the far door to ITSELF (coarse against full).
+    // That is why the defect this section exists for lived: the far ground
+    // was internally consistent and still stood up to 250 m above the ground
+    // the player walks on, because the NEAR generator divides its own detail
+    // onto the transfer curve (`detail_field_scale`) and the far door did not.
+    // The owner saw it as a frame round the 3×3 window at the foot of every
+    // massif; three seeds measured it at a median 57.9 m of disagreement on
+    // foothill cells, against 5.6 m once the factor was in place (M-201).
+    //
+    // So this asks the question no witness asked: AT THE SAME POINT OF THE
+    // WORLD, how far apart are the two grounds, in metres?
+    //
+    // THE FIXTURE IS UNIFORM ON PURPOSE. All nine cells carry one height and
+    // one biome, so the near generator's bilinear blend is that constant by
+    // construction and the witness does not have to re-derive it — the one
+    // thing it must not do (AGENTS testing law 5). With no massif in the ring
+    // the ridge law stays out of it too, which leaves exactly the term that
+    // broke: the ground's own detail octaves.
+    {
+        constexpr float kMacroH = 0.61f;     // a foothill: q65 of the world's land
+        constexpr std::uint32_t kSeed = 0x5EED1234u;
+        constexpr int kCellGX = 300, kCellGY = 412;
+
+        float nbHeights[9];
+        Biome nbBiome[9];
+        Biome nbBiome5[25];
+        for (float& h : nbHeights) h = kMacroH;
+        for (Biome& b : nbBiome)   b = Biome::Meadow;
+        for (Biome& b : nbBiome5)  b = Biome::Meadow;
+
+        std::vector<float> hm;
+        generate_heightmap(hm, kCellSize, nbHeights, nbBiome, nbBiome5,
+                           Biome::Meadow, kSeed,
+                           kCellGX * kCellSize, kCellGY * kCellSize,
+                           WATER_LEVEL, /*nbMods=*/nullptr, kWorldCells, kSeed);
+
+        // The columns, from the LIVE doors — never spelled out here. A ring of
+        // meadow has no mountain in it, so the scale door answers the apron's
+        // floor and the gradient is zero because every neighbour is level.
+        const float hs = biome_config(Biome::Meadow).heightScale;
+        const float ms = cell_mtn_scale01(/*isMountain=*/false,
+                                          /*adjMountain=*/0);
+        // The finest far ring is the one that meets the composite — the join
+        // the frame is seen at — so it is the one that has to agree.
+        const float minWave = 2.0f * float(kFarRing0StepM);
+
+        float gap = 0.0f;
+        double sumGap = 0.0;
+        float nearLo = 1e30f, nearHi = -1e30f;
+        float farLo = 1e30f, farHi = -1e30f;
+        int samples = 0;
+        for (int y = 0; y < kCellSize; y += 16) {
+            for (int x = 0; x < kCellSize; x += 16) {
+                const int gx = kCellGX * kCellSize + x;
+                const int gy = kCellGY * kCellSize + y;
+                const float nearM =
+                    height_m(hm[std::size_t(y) * kCellSize + std::size_t(x)]);
+                const float farM = height_m(
+                    far_height01(gx, gy, kMacroH, /*peak01=*/0.0f,
+                                 /*ridgeWeight=*/0.0f, kWorldTiles,
+                                 WATER_LEVEL, /*gradient01=*/0.0f, hs, ms,
+                                 minWave));
+                gap = std::max(gap, std::fabs(farM - nearM));
+                sumGap += double(farM - nearM);
+                nearLo = std::min(nearLo, nearM);
+                nearHi = std::max(nearHi, nearM);
+                farLo = std::min(farLo, farM);
+                farHi = std::max(farHi, farM);
+                ++samples;
+            }
+        }
+        const float nearAmp = nearHi - nearLo;   // the near ground's OWN relief
+        const float frame = float(sumGap / double(samples));  // systematic offset
+
+        CHECK(samples > 1000 && nearAmp > 1.0f,
+              "the fixture measured: the near ground HAS detail to disagree "
+              "about (a flat cell would make the two checks below vacuous)");
+        // THE LAW, as a relation and not as a pinned metre: what the far ring
+        // drops is ONE of the two detail octaves, so it cannot disagree by
+        // more than the detail itself. A far world that scales its detail
+        // differently from the near one breaks this at any altitude, which is
+        // the point — the bound is scale-free.
+        CHECK(gap < nearAmp,
+              "the far ground never leaves the near ground's own detail band — "
+              "what it drops is detail, not level (M-201 frame)");
+        // ...and the FRAME proper: a systematic offset is what the eye reads
+        // as a step round the window, so it is held an order tighter than the
+        // worst single sample.
+        CHECK(std::fabs(frame) < nearAmp * 0.1f,
+              "there is no systematic step between the two grounds — the "
+              "window has no frame round it");
+        // REMOVAL CAN ONLY REMOVE. The far ring carries a SUBSET of the near
+        // ground's octaves, so its relief cannot be LOUDER than the ground it
+        // is a coarsening of — at any altitude, with no number to retune. This
+        // is the check that catches a detail stack which renormalises onto its
+        // survivors instead of letting the dropped octave hand over its mean:
+        // measured 0.78× of the near relief as written, 1.16× with the
+        // renormalisation back (see the mutation table below).
+        CHECK(farHi - farLo <= nearAmp,
+              "the far ground is QUIETER than the near one — dropping an "
+              "octave removes relief, it never amplifies what is left");
+
+        // NEGATIVE CONTROL, AND IT IS NOT A COPY OF THE OLD CODE. The defect
+        // was "the far ground sits at a different level here"; so shift the
+        // far ground by a known number of metres through its own input and
+        // require the detector to fire — and, at the other polarity, to stay
+        // silent for a shift too small to matter. A detector that reddens at
+        // everything is not a detector.
+        //
+        // МУТАЦИЯ → ИСХОД, ПРОГНАНО 2026-10-01 (база: ближний рельеф 43.7 м,
+        // дальний 33.9 м = 0.78×, расхождение 9.1 м, рамка +0.59 м):
+        //   снят `detail_field_scale` у far_height01 (НАСТОЯЩИЙ дефект M-201)
+        //       → расхождение 9.1 → 61.6 м, 2 из 14 КРАСНЫХ, код выхода 1;
+        //         «рамка» при этом −0.88 м и МОЛЧИТ — дефект амплитудный, с
+        //         нулевым средним, и ловит его только полоса детали;
+        //   `terrain_detail01` снова делит на вес ВЫЖИВШИХ октав
+        //       → дальний рельеф 33.9 → 50.9 м = 1.16× ближнего, КРАСНЕЕТ
+        //         «removal can only remove»; полоса детали при этом МОЛЧИТ
+        //         (16.1 м из 43.7), и подгонять её порог под 16 м запрещено —
+        //         поэтому у этой мутации СВОЙ вердикт, а не ослабленный чужой;
+        //   сдвиг дальней земли на +100 м → оба вердикта ниже КРАСНЫЕ;
+        //   сдвиг на +1 м                 → оба ЗЕЛЁНЫЕ (это не дефект).
+        const auto shifted_gap = [&](float metres) {
+            const float dH = metres / height_gain_m(kMacroH);
+            float g = 0.0f;
+            double s = 0.0;
+            int n = 0;
+            for (int y = 0; y < kCellSize; y += 16) {
+                for (int x = 0; x < kCellSize; x += 16) {
+                    const int gx = kCellGX * kCellSize + x;
+                    const int gy = kCellGY * kCellSize + y;
+                    const float nearM = height_m(
+                        hm[std::size_t(y) * kCellSize + std::size_t(x)]);
+                    const float farM = height_m(
+                        far_height01(gx, gy, kMacroH + dH, 0.0f, 0.0f,
+                                     kWorldTiles, WATER_LEVEL, 0.0f, hs, ms,
+                                     minWave));
+                    g = std::max(g, std::fabs(farM - nearM));
+                    s += double(farM - nearM);
+                    ++n;
+                }
+            }
+            return std::pair<float, float>{g, float(s / double(n))};
+        };
+        const auto loud = shifted_gap(100.0f);
+        const auto quiet = shifted_gap(1.0f);
+        CHECK(loud.first >= nearAmp && std::fabs(loud.second) >= nearAmp * 0.1f,
+              "the detector FIRES on a 100 m shift of the far ground — both "
+              "verdicts above would be red");
+        CHECK(quiet.first < nearAmp && std::fabs(quiet.second) < nearAmp * 0.1f,
+              "...and stays SILENT on a 1 m shift — it detects the frame, not "
+              "every float");
+
+        std::printf("  [замер] подножие %.2f: рельеф ближней земли %.1f м, "
+                    "дальней %.1f м (%.2f×), расхождение near↔far max %.1f м, "
+                    "рамка %+.2f м\n",
+                    double(kMacroH), double(nearAmp), double(farHi - farLo),
+                    double((farHi - farLo) / nearAmp), double(gap),
+                    double(frame));
     }
 
     return report("far_terrain_test");

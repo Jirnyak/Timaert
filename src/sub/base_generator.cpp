@@ -100,20 +100,62 @@ float terrain_detail01(int gx, int gy, float worldTiles,
     constexpr std::uint32_t kDetailSeed = 0xD37A115u;
     constexpr float kFreqs[2]   = {0.008f, 0.02f};
     constexpr float kWeights[2] = {0.5f,   0.25f};
+    // THE FULL weight of the stack, always — see the header. An octave the
+    // mesh cannot draw hands over its own mean (0.5) and keeps its seat, so
+    // removing it neither MOVES the ground (the mean is unchanged) nor
+    // AMPLIFIES what is left (the survivors keep their authored share). The
+    // old spelling divided by the survivors' weight and did the second: the
+    // λ=125 octave came out 1.5× louder on the far world than the near
+    // generator gives it. It also needed a special case for "no octave
+    // survives" — with the full normaliser that case is the same arithmetic,
+    // 0.5·ΣW / ΣW, and the branch is gone.
+    constexpr float kNorm = kWeights[0] + kWeights[1];
     const auto per = [worldTiles](float freq) { return worldTiles * freq; };
-    float sum = 0.0f, norm = 0.0f;
+    float sum = 0.0f;
     for (int o = 0; o < 2; ++o) {
         // λ = 1/freq tiles. An octave shorter than the mesh can resolve is not
         // removed for taste: sampling it would only alias.
-        if (1.0f / kFreqs[o] < minWavelengthTiles) continue;
-        sum += smooth_noise_ts(float(gx) * kFreqs[o], float(gy) * kFreqs[o],
-                               kDetailSeed, per(kFreqs[o])) * kWeights[o];
-        norm += kWeights[o];
+        const bool drawable = 1.0f / kFreqs[o] >= minWavelengthTiles;
+        sum += (drawable ? smooth_noise_ts(float(gx) * kFreqs[o],
+                                           float(gy) * kFreqs[o],
+                                           kDetailSeed, per(kFreqs[o]))
+                         : 0.5f) * kWeights[o];
     }
-    // No octave survives: the honest answer is the field's own mean, so the
-    // ground neither rises nor falls for what it cannot show.
-    if (norm <= 0.0f) return 0.5f;
-    return std::clamp(sum / norm, 0.0f, 1.0f);
+    return std::clamp(sum / kNorm, 0.0f, 1.0f);
+}
+
+// THE FAR WORLD'S GROUND (base_generator.h). It lives here, next to the near
+// generator's own loop, so both reach the ONE transfer curve — which is the
+// whole of what M-201 was.
+float far_height01(int gx, int gy, float macroH01, float peak01,
+                   float ridgeWeight, float worldTiles, float seaLevel,
+                   float gradient01, float heightScale, float mtnScale,
+                   float minWavelengthTiles) {
+    // The manifold, plus every octave of ground the mesh can carry. The
+    // relief term is the near generator's own: macroH² concentrates the
+    // ground's own variation on high land and keeps lowlands calm, and the
+    // biome-edge gradient lifts it where two kinds of land meet.
+    float h = macroH01;
+    if (minWavelengthTiles > 0.0f && heightScale > 0.0f && mtnScale > 0.0f) {
+        const float noise = terrain_detail01(gx, gy, worldTiles,
+                                             minWavelengthTiles);
+        const float relief = macroH01 * macroH01 + gradient01;
+        // DETAIL ON THE CURVE, not stretched by it — the same factor, from the
+        // same door, that `generate_heightmap` puts on this very term. Without
+        // it the far ground's own noise was worth 2^((h−0.4)·10) times more
+        // metres than the near ground's: ×4.6 at a foothill's 0.61, ×16 on a
+        // massif's shoulder. That is not a rounding — it is the FRAME the owner
+        // photographed round the 3×3 window, measured at a median 57.9 m of
+        // near↔far disagreement on foothill cells against 5.6 m with the factor
+        // in place (M-201, three seeds).
+        h += (noise - 0.5f) * relief * heightScale * mtnScale
+           * detail_field_scale(macroH01);
+    }
+    if (ridgeWeight <= 0.01f) return std::clamp(h, 0.0f, 2.0f);
+    return std::clamp(mountain_ridges01(h, gx, gy, macroH01, peak01,
+                                        ridgeWeight, worldTiles,
+                                        /*coarseOnly=*/true, seaLevel),
+                      0.0f, 2.0f);
 }
 
 float crest_jitter01(int cellGX, int cellGY, std::uint32_t worldSeed) {
@@ -334,7 +376,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             if (cy > 0 && nbBiome[i - 3] == Biome::Mountain) ++adjMtn;
             if (cy < 2 && nbBiome[i + 3] == Biome::Mountain) ++adjMtn;
         }
-        mountainScale[i] = isMtn ? 0.15f : (0.1f + adjMtn * 0.1f);
+        mountainScale[i] = cell_mtn_scale01(isMtn, adjMtn);
         ridgeWeight  [i] = isMtn ? 1.0f : 0.0f;
 
         float maxDiff = 0.0f;

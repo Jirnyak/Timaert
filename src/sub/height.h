@@ -40,7 +40,7 @@
 // The ONLY 2D in the subworld is generation (heightmap/tiles) and the 3×3
 // composite assembly; the simulation itself is full 3D.
 #pragma once
-#include "sub/base_generator.h"
+#include "sub/map_data.h"
 
 #include <algorithm>
 #include <cmath>

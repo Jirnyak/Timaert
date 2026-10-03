@@ -1431,6 +1431,31 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
         return;   // the sheet already belongs to this place
     }
 
+    // ── A SCENE WITH NO WORLD HAS NO HORIZON ─────────────────────────────
+    // A dungeon is OUTSIDE the world technically (AGENTS, ЗАКОН ДВУХ МИРОВ
+    // п.4: «данжи не берут клетки 3х3 ... это буквально собственные карманные
+    // субмиры»), and so is the main menu. Neither has a macro cell for a far
+    // sheet to be a function of, and building one for them is 38 025
+    // `resolve_cell` calls and ~36 ms of hitch spent on ground no camera can
+    // ever see — the owner reads it as the prologue's stutter.
+    //
+    // THE GATE IS NOT A SCENE KIND AND NOT A MODULE NAME (ФРЕЙМ п.6 forbids
+    // both): it is the question this function already asked thirty lines
+    // lower to close its noise on the torus — how many cells the world has.
+    // A pocket's synthetic resolver leaves it at zero because a pocket HAS no
+    // world, so the honest answer was here all along, merely asked too late.
+    // Asked once now, and the two separate resolves of the centre cell that
+    // stood below (one for the span, one for the seed) become this one.
+    const CellContext home = mgr.resolve_cell(camCx, camCy);
+    if (home.worldCellsX <= 0) {
+        // No sheet here — and SAY so, because the atlases still hold the last
+        // world's horizon and drawing that behind a dungeon wall would be the
+        // overworld leaking into a pocket.
+        farSheetLive_ = false;
+        farBuiltCx_ = INT_MIN;   // the next real world rebuilds, wherever it is
+        return;
+    }
+
     // HOW FAR THE PROBE REACHES, and it is NOT a draw distance (S18.1 forbids
     // one): it is how much sheet is built. What is SEEN is decided by the air
     // — the lowland dissolves over ~28 km on its own and a summit outlives it.
@@ -1478,7 +1503,7 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             heights[i] = c.macroHeight;
         }
     }
-    const std::uint32_t worldSeed = mgr.resolve_cell(camCx, camCy).worldSeed;
+    const std::uint32_t worldSeed = home.worldSeed;
     // ── ВРЕМЕННЫЙ ПРИБОР M-199 (TIMAERT_RIVER_PROBE=1), СНОСИТСЯ ПОСЛЕ ОТВЕТА ──
     // Вопрос владельца: «город на берегу, гряда в десяти клетках — на макрокарте
     // она есть, а вдалеке её не видно». Прибор печатает, что дальний мир ОБЯЗАН
@@ -1542,7 +1567,7 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             // roughens a biome edge.
             const sub::BiomeConfig& bc = sub::biome_config(b);
             col.heightScale = bc.heightScale;
-            col.mtnScale = mtn ? 0.15f : (0.1f + float(adj) * 0.1f);
+            col.mtnScale = sub::cell_mtn_scale01(mtn, adj);
             float maxDiff = 0.0f;
             if (x > 0)     maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i - 1]));
             if (x + 1 < n) maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i + 1]));
@@ -1560,7 +1585,7 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
         }
     }
 
-    const int worldCellsX = mgr.resolve_cell(camCx, camCy).worldCellsX;
+    const int worldCellsX = home.worldCellsX;
     // THE STITCH. The composite's own height, asked in window metres — this is
     // what makes the join a continuation instead of a cliff. Negative where
     // there is no composite to agree with (a harness with no window built).
@@ -1595,6 +1620,16 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
         std::memcpy(farIdx_.mapped, latticeIdx.data(), std::size_t(iBytes));
         farIndexCount_ = std::uint32_t(latticeIdx.size());
     }
+    // THE SHEET NOW EXISTS FOR THIS PLACE. Said separately from the index
+    // count on purpose: the count answers «how long is the lattice» and is a
+    // function of two constants, while this answers «is there a far world
+    // here at all» and is a function of the SCENE. They were one number for
+    // a while and the overload had a trap in it — the count is written only
+    // when the index buffer is born, so clearing it to hide a pocket's
+    // horizon would have hidden the real one too, for the rest of the
+    // session, from the first dungeon exit onward (DOD п.9: a column answers
+    // ONE question).
+    farSheetLive_ = true;
 
     // ── THE TWO FIELDS, RING BY RING, INTO ONE BLOCK EACH ─────────────────
     // A ring is three numbers (spacing, span, hole) and one question: what
@@ -3311,7 +3346,8 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // ONE DRAW PER RING, ONE BUFFER FOR ALL OF THEM: the rings differ only by
     // three numbers in the push block (spacing, lattice half, atlas row), so
     // the ladder is a LOOP here and a ring added to it costs a draw call.
-    if (farIndexCount_ > 0 && farPipe_.pipeline != VK_NULL_HANDLE
+    if (farSheetLive_ && farIndexCount_ > 0
+        && farPipe_.pipeline != VK_NULL_HANDLE
         && farSet_ != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           farPipe_.pipeline);
