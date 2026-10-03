@@ -336,7 +336,7 @@ static constexpr ParamSpec kCustomParamSpec[] = {
      "Larger = fewer, bigger landmasses"},
     {"Continent intensity",  &LayerParameters::continentIntensity,   0.00f, 1.00f, "%.2f",
      "How strongly the continent bias dominates noise"},
-    {"Ridge intensity",      &LayerParameters::ridgeIntensity,       0.00f, 0.60f, "%.2f",
+    {"Ridge intensity",      &LayerParameters::ridgeIntensity,       0.00f, 1.00f, "%.2f",
      "Mountain-ridge sharpness"},
     {"Domain warp",          &LayerParameters::domainWarp,           0.00f, 1.00f, "%.2f",
      "Coastline irregularity / non-circular continents"},

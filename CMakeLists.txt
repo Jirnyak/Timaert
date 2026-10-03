@@ -342,6 +342,7 @@ endif()
 add_executable(macro_shot tests/macro_shot.cpp ${TIMAERT_GPU_SOURCES}
     src/macro/vk_macro_renderer.cpp
     src/macro/map_generator.cpp
+    src/macro/plates.cpp
     src/macro/tree_layer.cpp)
 add_dependencies(macro_shot timaert_shaders)
 set_target_properties(macro_shot PROPERTIES
@@ -373,6 +374,7 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/deposit_layer.cpp
     src/macro/fauna.cpp
     src/macro/map_generator.cpp
+    src/macro/plates.cpp
     src/macro/language.cpp
     src/macro/anketa.cpp
     src/tables/items.cpp
@@ -410,7 +412,8 @@ target_link_libraries(balance_run PRIVATE timaert_build_flags EnTT::EnTT)
 # ридж-октав и кривой вертикального переноса.
 # Сознательно НЕ ctest, по причине balance_run: это ЗАМЕР, а не вердикт.
 add_executable(height_census tests/height_census.cpp
-    src/macro/map_generator.cpp)
+    src/macro/map_generator.cpp
+    src/macro/plates.cpp)
 set_target_properties(height_census PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
@@ -427,6 +430,7 @@ target_link_libraries(height_census PRIVATE timaert_build_flags)
 # концами ОДНОГО спектра. Сознательно НЕ ctest: это ЗАМЕР, а не вердикт.
 add_executable(relief_census tests/relief_census.cpp
     src/macro/map_generator.cpp
+    src/macro/plates.cpp
     src/sub/base_generator.cpp
     src/sub/material.cpp
     # ПРИБОР ЗОВЁТ ТУ ЖЕ ДВЕРЬ, ЧТО МИР. База — только половина земли: фактуру
@@ -970,6 +974,7 @@ timaert_test(road_river_generation_test
 timaert_test(river_generation_test
     SOURCES
         src/macro/map_generator.cpp
+        src/macro/plates.cpp
         src/sub/base_generator.cpp)
 
 # ОДНА ПЛОСКОСТЬ МОРЯ (M-109): свидетель гоняет генератор и спрашивает трёх
@@ -978,9 +983,18 @@ timaert_test(river_generation_test
 timaert_test(water_answer_test
     SOURCES
         src/macro/map_generator.cpp
+        src/macro/plates.cpp
         src/macro/pathfinding.cpp
         src/macro/tree_layer.cpp
         src/sub/base_generator.cpp)
+
+# КАРКАС ПЛИТ (M-210): модуль ни от чего не зависит, кроме `core/rng.h` —
+# поэтому у свидетеля ровно один исходник сверх своего. Если этот список
+# однажды вырастет, значит каркас перестал быть каркасом и оброс миром.
+timaert_test(plate_map_test
+    PIN "OK plate_map_test .21 checks. .плит [0-9]+ · глубина плиты [0-9.]+ % · отбор гряд сжатием НЕ судится"
+    SOURCES
+        src/macro/plates.cpp)
 
 # ОДИН КАСКАД БИОМА (M-110): свидетель спрашивает трёх потребителей каскада
 # разом — трассер рек, лес и зоны опасности, — поэтому линкует терраин,
@@ -988,6 +1002,7 @@ timaert_test(water_answer_test
 timaert_test(biome_cascade_test
     SOURCES
         src/macro/map_generator.cpp
+        src/macro/plates.cpp
         src/macro/spawners.cpp
         src/macro/zones.cpp
         src/macro/pathfinding.cpp
@@ -1351,6 +1366,7 @@ timaert_test(faction_relations_test
     SOURCES
         src/macro/state.cpp
         src/macro/map_generator.cpp
+        src/macro/plates.cpp
         src/macro/language.cpp
         src/macro/politik.cpp
         src/macro/anketa.cpp
@@ -1466,6 +1482,7 @@ timaert_test(settlement_placement_test
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/map_generator.cpp
+        src/macro/plates.cpp
         src/macro/language.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp

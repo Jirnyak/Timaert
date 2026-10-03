@@ -204,6 +204,40 @@ void write_pngs(const sm::TerrainData& td, std::uint32_t seed) {
     std::printf("  png  %s %s (log2, 45° = белый)\n",
                 stbi_write_png(path, w, h, 1, slope.data(), w) ? "wrote" : "FAILED",
                 path);
+
+    // (3) КАРКАС ПЛИТ — ГРУБАЯ МАКРОЗАТРАВКА, КАК ЕЁ ВИДИТ МИР. Это и есть
+    // холст, на котором однажды будет рисовать дизайнер: один пиксель = одна
+    // плита. Клетка красится СЕРЫМ СВОЕЙ ПЛИТЫ, а шов между соседями —
+    // чёрной линией, поэтому на картинке сразу видно и пятна зон, и сетку,
+    // по которой встают гряды.
+    // Этот проход — сегодняшний ЧИТАТЕЛЬ поля `plates.cell`: без него поле
+    // было бы колонкой без единого читателя (DOD п.9).
+    if (!td.plates.cell.empty()) {
+        std::vector<std::uint8_t> plate(std::size_t(w) * std::size_t(h));
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+                const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
+                const sm::PlateOrdinal me = td.plates.cell[i];
+                bool edge = false;
+                const int dx[4] = {1, -1, 0, 0}, dy[4] = {0, 0, 1, -1};
+                for (int k = 0; k < 4 && !edge; ++k) {
+                    const std::size_t j =
+                        std::size_t(sm::cell_of(x + dx[k], y + dy[k], w));
+                    edge = td.plates.cell[j] != me;
+                }
+                // Серый плиты — её ординал, прокрученный простым смешением:
+                // соседние ординалы обязаны выглядеть РАЗНО, иначе решётка
+                // читается полосами и картинка врёт о форме зон.
+                const unsigned v = (unsigned(me) * 2654435761u) >> 24;
+                plate[i] = edge ? 0u : std::uint8_t(64u + (v % 192u));
+            }
+        }
+        std::snprintf(path, sizeof(path), "%s/timaert_plates_%u.png",
+                      dir ? dir : "/tmp", seed);
+        std::printf("  png  %s %s (карта плит: пятно = зона, чёрное = шов; серый — ОРДИНАЛ зоны, не уровень: сдвиг сегодня ноль у всех)\n",
+                    stbi_write_png(path, w, h, 1, plate.data(), w) ? "wrote" : "FAILED",
+                    path);
+    }
 }
 
 // Разъём для РАЗДЕЛЬНОГО замера слагаемых синтеза. Поле складывается из трёх
