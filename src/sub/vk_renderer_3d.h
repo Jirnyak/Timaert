@@ -237,6 +237,13 @@ private:
     // or crossing ever touches it again.
     gpu::VulkanBuffer   farIdx_{};
     std::uint32_t       farIndexCount_ = 0;
+    // IS THERE A FAR WORLD IN THIS SCENE AT ALL. A dungeon and the main menu
+    // have no macro cell for a sheet to be a function of (ЗАКОН ДВУХ МИРОВ
+    // п.4), so they build none and this stays false — the atlases still hold
+    // whatever world was loaded last, and this is what keeps that horizon
+    // from being drawn behind a pocket's walls. Distinct from the count above,
+    // which is the lattice's length and a function of two constants.
+    bool                farSheetLive_ = false;
     // Which macro cell the sheet was built around; INT_MIN = never built.
     int                 farBuiltCx_ = INT_MIN;
     int                 farBuiltCy_ = INT_MIN;
