@@ -7,6 +7,8 @@
 #include "core/math.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>    // ВРЕМЕННО: ручка TIMAERT_RELIEF_GAIN говорит о себе вслух
+#include <cstdlib>   // ВРЕМЕННО: та же ручка
 
 namespace sm::sub {
 
@@ -129,34 +131,87 @@ constexpr std::uint32_t kDetailSeed = 0xD37A115u;
 // холмистость, вдали стол (M-207 и bugs.md Б1 — один спектр, два симптома).
 constexpr int   kDetailTopTiles    = kCellSize;                // 1024
 constexpr int   kDetailBottomTiles = 2 * kHeightQuadTiles;     // 32
-constexpr int   kDetailOctaves     = 6;
 constexpr float kDetailGain        = 0.35f;
-static_assert(kDetailTopTiles >> (kDetailOctaves - 1) == kDetailBottomTiles,
-              "число октав есть log2(верх/низ)+1 — лестница обязана ровно "
-              "дойти от клетки до найквиста меша, без остатка и без нахлёста");
+// Сколько ступеней вмещает лестница от клетки до найквиста меша — СЧИТАЕТСЯ,
+// а не объявляется: это log2(верх/низ)+1, записанное циклом, потому что
+// `std::log2` не constexpr. Больше этого числа октав не бывает ни у какой
+// лестницы этого мира, поэтому оно же и длина массивов ниже.
+constexpr int detail_octave_cap() {
+    int n = 0;
+    for (int lam = kDetailTopTiles; lam >= kDetailBottomTiles; lam /= 2) ++n;
+    return n;
+}
+constexpr int kDetailOctaveCap = detail_octave_cap();
 static_assert(kDetailGain > 0.0f && kDetailGain < 0.5f,
               "затухание ниже 0.5 — иначе уклон не убывает с октавой и земля "
               "снова станет мелкокомковатой (вердикт владельца 2026-10-03)");
 
 struct DetailStack {
-    float freq[kDetailOctaves]{};     // циклов на тайл
-    float weight[kDetailOctaves]{};
-    float norm = 0.0f;
+    float freq[kDetailOctaveCap]{};     // циклов на тайл
+    float weight[kDetailOctaveCap]{};
+    float norm  = 0.0f;
+    int   count = 0;                    // сколько ступеней реально построено
 };
-constexpr DetailStack make_detail_stack() {
+// Лестница строится ОТ ВЕРХА ВНИЗ до найквиста меша: число ступеней есть
+// следствие двух концов, а не третий параметр.
+constexpr DetailStack make_detail_stack(int topTiles, float gain) {
     DetailStack s{};
     float w = 1.0f;
-    float lam = float(kDetailTopTiles);
-    for (int i = 0; i < kDetailOctaves; ++i) {
-        s.freq[i] = 1.0f / lam;
-        s.weight[i] = w;
+    for (int lam = topTiles;
+         lam >= kDetailBottomTiles && s.count < kDetailOctaveCap; lam /= 2) {
+        s.freq[s.count]   = 1.0f / float(lam);
+        s.weight[s.count] = w;
         s.norm += w;
-        w *= kDetailGain;
-        lam *= 0.5f;
+        ++s.count;
+        w *= gain;
     }
     return s;
 }
-constexpr DetailStack kDetail = make_detail_stack();
+constexpr DetailStack kDetail = make_detail_stack(kDetailTopTiles, kDetailGain);
+static_assert(kDetail.count == kDetailOctaveCap,
+              "авторская лестница обязана дойти от клетки до найквиста меша "
+              "целиком — иначе её верх или низ не то, чем назван");
+
+// ── ВРЕМЕННЫЕ РУЧКИ, СНОСЯТСЯ ПОСЛЕ ОТВЕТА ВЛАДЕЛЬЦА ─────────────────────
+//   TIMAERT_RELIEF_TOP   — верх лестницы В ТАЙЛАХ (авторский 1024)
+//   TIMAERT_RELIEF_GAIN  — затухание на октаву (авторское 0.35)
+//
+// Обе — ВОПРОС, а не настройка: форма земли решается глазами, и решать её по
+// одному кадру за сборку дорого. Ручка затухания при этом ЗАМЕРЕНА СЛАБОЙ
+// (0.35/0.42/0.5 дают уклон холма 0.64/0.67/0.74°), потому что весом стопки
+// правит её ВЕРХ: при верхе в целую клетку первая октава забирает 65 % веса,
+// и что бы ни делало затухание с остатком, видно это слабо. Поэтому вторая
+// ручка здесь не для симметрии — без неё заход был бы пустым.
+//
+// Читаются ОДИН раз на старте процесса: в горячий путь генерации ветка по
+// переменной окружения не кладётся. Без переменных отдают ровно `kDetail`.
+static const DetailStack kLiveDetail = [] {
+    const char* t = std::getenv("TIMAERT_RELIEF_TOP");
+    const char* g = std::getenv("TIMAERT_RELIEF_GAIN");
+    if (t == nullptr && g == nullptr) return kDetail;
+    int   top  = kDetailTopTiles;
+    float gain = kDetailGain;
+    if (t != nullptr) {
+        const int v = std::atoi(t);
+        if (v >= kDetailBottomTiles && v <= kDetailTopTiles) top = v;
+        else std::fprintf(stderr, "[ВРЕМЕННО] TIMAERT_RELIEF_TOP=%s вне "
+                                  "[%d..%d] — верх остался авторским\n",
+                          t, kDetailBottomTiles, kDetailTopTiles);
+    }
+    if (g != nullptr) {
+        const float v = float(std::atof(g));
+        if (v > 0.0f && v < 1.0f) gain = v;
+        else std::fprintf(stderr, "[ВРЕМЕННО] TIMAERT_RELIEF_GAIN=%s вне "
+                                  "(0,1) — затухание осталось авторским\n", g);
+    }
+    const DetailStack s = make_detail_stack(top, gain);
+    std::fprintf(stderr,
+                 "[ВРЕМЕННО] лестница рельефа: верх %d тайлов, затухание "
+                 "%.3f, ступеней %d (авторская — %d / %.2f / %d)\n",
+                 top, double(gain), s.count, kDetailTopTiles,
+                 double(kDetailGain), kDetail.count);
+    return s;
+}();
 
 // The near generator's detail stack, with the octaves a mesh cannot draw left
 // out (base_generator.h). The frequencies, weights and normalisation are the
@@ -175,16 +230,16 @@ float terrain_detail01(int gx, int gy, float worldTiles,
     // 0.5·ΣW / ΣW, and the branch is gone.
     const auto per = [worldTiles](float freq) { return worldTiles * freq; };
     float sum = 0.0f;
-    for (int o = 0; o < kDetailOctaves; ++o) {
+    for (int o = 0; o < kLiveDetail.count; ++o) {
         // λ = 1/freq tiles. An octave shorter than the mesh can resolve is not
         // removed for taste: sampling it would only alias.
-        const bool drawable = 1.0f / kDetail.freq[o] >= minWavelengthTiles;
-        sum += (drawable ? smooth_noise_ts(float(gx) * kDetail.freq[o],
-                                           float(gy) * kDetail.freq[o],
-                                           kDetailSeed, per(kDetail.freq[o]))
-                         : 0.5f) * kDetail.weight[o];
+        const bool drawable = 1.0f / kLiveDetail.freq[o] >= minWavelengthTiles;
+        sum += (drawable ? smooth_noise_ts(float(gx) * kLiveDetail.freq[o],
+                                           float(gy) * kLiveDetail.freq[o],
+                                           kDetailSeed, per(kLiveDetail.freq[o]))
+                         : 0.5f) * kLiveDetail.weight[o];
     }
-    return std::clamp(sum / kDetail.norm, 0.0f, 1.0f);
+    return std::clamp(sum / kLiveDetail.norm, 0.0f, 1.0f);
 }
 
 // THE FAR WORLD'S GROUND (base_generator.h). It lives here, next to the near
