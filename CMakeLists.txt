@@ -419,6 +419,23 @@ target_include_directories(height_census PRIVATE
     ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
 target_link_libraries(height_census PRIVATE timaert_build_flags)
 
+# Relief census (наряды M-207 и доклад владельца о шуме в 3х3, 2026-10-03):
+# измерить рельеф СУБМИРА по длинам волн, в метрах, у равнины / холма /
+# подножия / горы. `height_census` мерит поле МАКРОМИРА (клетка и крупнее);
+# под ним лежит всё, что игрок видит ногами, и его не мерил никто — из-за чего
+# «вдали стол» и «вблизи слишком шумно» спорили без чисел, будучи двумя
+# концами ОДНОГО спектра. Сознательно НЕ ctest: это ЗАМЕР, а не вердикт.
+add_executable(relief_census tests/relief_census.cpp
+    src/macro/map_generator.cpp
+    src/sub/base_generator.cpp
+    src/sub/material.cpp)
+set_target_properties(relief_census PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(relief_census PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(relief_census PRIVATE timaert_build_flags)
+
 # ── ONE way to declare a test ──────────────────────────────────────────────
 # Every logic test used to be the same 20-24 lines with a different name: 1160
 # of this file's lines were that block, copied 49 times. Two things follow from
