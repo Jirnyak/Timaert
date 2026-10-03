@@ -285,8 +285,6 @@ namespace sm::sub
         // readers — the scene's plane comes from `SubworldMapData::waterLevel`,
         // a dungeon's from its own kind row. A biome does not get to decide
         // where the sea is; the world does.
-        bool swampPools;
-        bool duneNoise;
     };
 
     const BiomeConfig &biome_config(Biome b);
@@ -333,6 +331,28 @@ namespace sm::sub
     // inherited from the macroworld (CellContext::seaLevel), never a constant of
     // this layer (water cells get a squared deep-ocean curve, land cells get a
     // linear lift) and
+    // ── ВЕС ТАЙЛА ПО 3×3 — ОДНО СОГЛАШЕНИЕ НА БАЗУ И НА ВСЕ МОДУЛИ ────────
+    // Центры девяти клеток стоят на 0.5/1.5/2.5 в сетке окна, и ЛЮБАЯ
+    // величина, которую надо сшить через границу клетки, блендится по ним
+    // билинейно. База делает это со своими колонками; модулю, который кладёт
+    // СВОЮ фактуру поверх базы (`gens/gens.h`: модуль опирается на слой НИЖЕ,
+    // никогда на соседа), нужен тот же вес — иначе его фактура оборвётся на
+    // шве ровно там, где база сшита.
+    //
+    // Дверь отдаёт ВЕСА, а не готовое число: четыре индекса и четыре доли
+    // считаются раз на тайл, а блендить ими можно сколько угодно колонок. Так
+    // соглашение написано ОДИН раз и при этом не стоит базе ни одного лишнего
+    // умножения в её горячем цикле.
+    struct NbWeights {
+        int   i00 = 0, i10 = 0, i01 = 0, i11 = 0;   // индексы в кольце [9]
+        float w00 = 1.0f, w10 = 0.0f, w01 = 0.0f, w11 = 0.0f;
+    };
+    NbWeights nb_weights(int x, int y, int cellSize);
+    inline float blend9(const float tbl[9], const NbWeights& w) {
+        return tbl[w.i00] * w.w00 + tbl[w.i10] * w.w10
+             + tbl[w.i01] * w.w01 + tbl[w.i11] * w.w11;
+    }
+
     // then bilinearly blended into a smooth manifold — this single pass
     // produces natural shorelines, river banks for single-cell water, and
     // gradients from plains to foothills to peaks. No post-clamping.

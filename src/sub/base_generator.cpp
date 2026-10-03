@@ -7,25 +7,23 @@
 #include "core/math.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdio>    // ВРЕМЕННО: ручка TIMAERT_RELIEF_GAIN говорит о себе вслух
-#include <cstdlib>   // ВРЕМЕННО: та же ручка
 
 namespace sm::sub {
 
 // Tree height bands are METRES (see BiomeConfig): a mature stand runs roughly
 // 10-20 m, with the cold/dry margins stunted and the tropics overtopping it.
 static const BiomeConfig kConfigs[11] = {
-    /* Tundra   */ {0.018f, 6,  6.0f, 10.0f, 0.8f, false, false},
-    /* Taiga    */ {0.20f,  3, 12.0f, 19.0f, 1.0f, false, false},
-    /* Snow     */ {0.025f, 5,  7.0f, 11.0f, 0.9f, false, false},
-    /* Valley   */ {0.050f, 4, 11.0f, 18.0f, 1.0f, false, false},
-    /* Meadow   */ {0.035f, 4, 11.0f, 18.0f, 1.0f, false, false},
-    /* Swamp    */ {0.080f, 3,  9.0f, 15.0f, 0.3f, true,  false},
-    /* Desert   */ {0.004f, 8,  6.0f, 10.0f, 0.6f, false, true},
-    /* Steppe   */ {0.018f, 5,  9.0f, 14.0f, 0.8f, false, false},
-    /* Tropics  */ {0.25f,  2, 13.0f, 20.0f, 1.0f, false, false},
-    /* Water    */ {0.0f,   16,11.0f, 18.0f, 0.5f, false, false},
-    /* Mountain */ {0.02f,  6,  8.0f, 14.0f, 1.0f, false, false},
+    /* Tundra   */ {0.018f, 6,  6.0f, 10.0f, 0.8f},
+    /* Taiga    */ {0.20f,  3, 12.0f, 19.0f, 1.0f},
+    /* Snow     */ {0.025f, 5,  7.0f, 11.0f, 0.9f},
+    /* Valley   */ {0.050f, 4, 11.0f, 18.0f, 1.0f},
+    /* Meadow   */ {0.035f, 4, 11.0f, 18.0f, 1.0f},
+    /* Swamp    */ {0.080f, 3,  9.0f, 15.0f, 0.3f},
+    /* Desert   */ {0.004f, 8,  6.0f, 10.0f, 0.6f},
+    /* Steppe   */ {0.018f, 5,  9.0f, 14.0f, 0.8f},
+    /* Tropics  */ {0.25f,  2, 13.0f, 20.0f, 1.0f},
+    /* Water    */ {0.0f,   16,11.0f, 18.0f, 0.5f},
+    /* Mountain */ {0.02f,  6,  8.0f, 14.0f, 1.0f},
 };
 const BiomeConfig& biome_config(Biome b) {
     const int i = int(b);
@@ -129,9 +127,21 @@ constexpr std::uint32_t kDetailSeed = 0xD37A115u;
 // падала с 2.11 до 2.04 м, то есть уклон на следующей октаве УДВАИВАЛСЯ, а
 // между 125 м и клеткой не было ничего вовсе — отсюда вблизи мелкая
 // холмистость, вдали стол (M-207 и bugs.md Б1 — один спектр, два симптома).
-constexpr int   kDetailTopTiles    = kCellSize;                // 1024
+// ВЕРХ — ЧИСЛО АВТОРСКОЕ, И ЭТО СКАЗАНО ВСЛУХ. Выводить его не из чего:
+// длиннее клетки форму даёт макрополе, короче 32 м меш не рисует, а ГДЕ между
+// ними стоит самая крупная собственная форма земли — вопрос вида, не
+// инварианта. Провенанс у числа есть: на этой ступени лежала авторская октава
+// λ=125 тайлов, и землю с ней владелец принимал глазами. Попытка увести верх к
+// целой клетке (2026-10-03, затухание 0.35) прошла проверку глазами и была
+// ОТВЕРГНУТА: «сглаживание было ошибкой» — уклон холма падал 3.94° → 0.64°.
+constexpr int   kDetailTopTiles    = 128;
 constexpr int   kDetailBottomTiles = 2 * kHeightQuadTiles;     // 32
-constexpr float kDetailGain        = 0.35f;
+// ЗАТУХАНИЕ — ЕДИНСТВЕННАЯ НЕЙТРАЛЬНАЯ ТОЧКА ШКАЛЫ. При 0.5 вклад каждой
+// октавы в УКЛОН одинаков, то есть ни один масштаб не привилегирован; выше —
+// мелкое начинает править крутизной (та самая «мелкая холмистость»), ниже —
+// земля гладится до блина. Это не вкус, это единственное значение, при котором
+// лестница самоподобна.
+constexpr float kDetailGain        = 0.5f;
 // Сколько ступеней вмещает лестница от клетки до найквиста меша — СЧИТАЕТСЯ,
 // а не объявляется: это log2(верх/низ)+1, записанное циклом, потому что
 // `std::log2` не constexpr. Больше этого числа октав не бывает ни у какой
@@ -142,9 +152,9 @@ constexpr int detail_octave_cap() {
     return n;
 }
 constexpr int kDetailOctaveCap = detail_octave_cap();
-static_assert(kDetailGain > 0.0f && kDetailGain < 0.5f,
-              "затухание ниже 0.5 — иначе уклон не убывает с октавой и земля "
-              "снова станет мелкокомковатой (вердикт владельца 2026-10-03)");
+static_assert(kDetailGain > 0.0f && kDetailGain <= 0.5f,
+              "затухание выше 0.5 отдало бы крутизну мелким октавам — это и "
+              "есть «много маленьких холмов», которое владелец забраковал");
 
 struct DetailStack {
     float freq[kDetailOctaveCap]{};     // циклов на тайл
@@ -172,47 +182,6 @@ static_assert(kDetail.count == kDetailOctaveCap,
               "авторская лестница обязана дойти от клетки до найквиста меша "
               "целиком — иначе её верх или низ не то, чем назван");
 
-// ── ВРЕМЕННЫЕ РУЧКИ, СНОСЯТСЯ ПОСЛЕ ОТВЕТА ВЛАДЕЛЬЦА ─────────────────────
-//   TIMAERT_RELIEF_TOP   — верх лестницы В ТАЙЛАХ (авторский 1024)
-//   TIMAERT_RELIEF_GAIN  — затухание на октаву (авторское 0.35)
-//
-// Обе — ВОПРОС, а не настройка: форма земли решается глазами, и решать её по
-// одному кадру за сборку дорого. Ручка затухания при этом ЗАМЕРЕНА СЛАБОЙ
-// (0.35/0.42/0.5 дают уклон холма 0.64/0.67/0.74°), потому что весом стопки
-// правит её ВЕРХ: при верхе в целую клетку первая октава забирает 65 % веса,
-// и что бы ни делало затухание с остатком, видно это слабо. Поэтому вторая
-// ручка здесь не для симметрии — без неё заход был бы пустым.
-//
-// Читаются ОДИН раз на старте процесса: в горячий путь генерации ветка по
-// переменной окружения не кладётся. Без переменных отдают ровно `kDetail`.
-static const DetailStack kLiveDetail = [] {
-    const char* t = std::getenv("TIMAERT_RELIEF_TOP");
-    const char* g = std::getenv("TIMAERT_RELIEF_GAIN");
-    if (t == nullptr && g == nullptr) return kDetail;
-    int   top  = kDetailTopTiles;
-    float gain = kDetailGain;
-    if (t != nullptr) {
-        const int v = std::atoi(t);
-        if (v >= kDetailBottomTiles && v <= kDetailTopTiles) top = v;
-        else std::fprintf(stderr, "[ВРЕМЕННО] TIMAERT_RELIEF_TOP=%s вне "
-                                  "[%d..%d] — верх остался авторским\n",
-                          t, kDetailBottomTiles, kDetailTopTiles);
-    }
-    if (g != nullptr) {
-        const float v = float(std::atof(g));
-        if (v > 0.0f && v < 1.0f) gain = v;
-        else std::fprintf(stderr, "[ВРЕМЕННО] TIMAERT_RELIEF_GAIN=%s вне "
-                                  "(0,1) — затухание осталось авторским\n", g);
-    }
-    const DetailStack s = make_detail_stack(top, gain);
-    std::fprintf(stderr,
-                 "[ВРЕМЕННО] лестница рельефа: верх %d тайлов, затухание "
-                 "%.3f, ступеней %d (авторская — %d / %.2f / %d)\n",
-                 top, double(gain), s.count, kDetailTopTiles,
-                 double(kDetailGain), kDetail.count);
-    return s;
-}();
-
 // The near generator's detail stack, with the octaves a mesh cannot draw left
 // out (base_generator.h). The frequencies, weights and normalisation are the
 // ones the ground itself is made of — this is the same noise, sampled by
@@ -230,16 +199,16 @@ float terrain_detail01(int gx, int gy, float worldTiles,
     // 0.5·ΣW / ΣW, and the branch is gone.
     const auto per = [worldTiles](float freq) { return worldTiles * freq; };
     float sum = 0.0f;
-    for (int o = 0; o < kLiveDetail.count; ++o) {
+    for (int o = 0; o < kDetail.count; ++o) {
         // λ = 1/freq tiles. An octave shorter than the mesh can resolve is not
         // removed for taste: sampling it would only alias.
-        const bool drawable = 1.0f / kLiveDetail.freq[o] >= minWavelengthTiles;
-        sum += (drawable ? smooth_noise_ts(float(gx) * kLiveDetail.freq[o],
-                                           float(gy) * kLiveDetail.freq[o],
-                                           kDetailSeed, per(kLiveDetail.freq[o]))
-                         : 0.5f) * kLiveDetail.weight[o];
+        const bool drawable = 1.0f / kDetail.freq[o] >= minWavelengthTiles;
+        sum += (drawable ? smooth_noise_ts(float(gx) * kDetail.freq[o],
+                                           float(gy) * kDetail.freq[o],
+                                           kDetailSeed, per(kDetail.freq[o]))
+                         : 0.5f) * kDetail.weight[o];
     }
-    return std::clamp(sum / kLiveDetail.norm, 0.0f, 1.0f);
+    return std::clamp(sum / kDetail.norm, 0.0f, 1.0f);
 }
 
 // THE FAR WORLD'S GROUND (base_generator.h). It lives here, next to the near
@@ -437,6 +406,26 @@ float mountain_ridges01(float h, int gx, int gy, float macroH,
     return h * (1.0f - blend) + mtnH * blend;
 }
 
+NbWeights nb_weights(int x, int y, int cellSize) {
+    // Центры клеток стоят на 0.5/1.5/2.5 сетки окна; тайл (x,y) центральной
+    // клетки лежит на 1 + x/cellSize, отсюда −0.5 и зажим в [0,2].
+    const float invCS = 1.0f / float(cellSize);
+    const float gx = float(x) * invCS + 1.0f;
+    const float gy = float(y) * invCS + 1.0f;
+    const int   x0 = std::clamp(int(std::floor(gx - 0.5f)), 0, 2);
+    const int   y0 = std::clamp(int(std::floor(gy - 0.5f)), 0, 2);
+    const int   x1 = std::min(2, x0 + 1);
+    const int   y1 = std::min(2, y0 + 1);
+    const float fx = std::clamp((gx - 0.5f) - float(x0), 0.0f, 1.0f);
+    const float fy = std::clamp((gy - 0.5f) - float(y0), 0.0f, 1.0f);
+    NbWeights w{};
+    w.i00 = y0 * 3 + x0; w.i10 = y0 * 3 + x1;
+    w.i01 = y1 * 3 + x0; w.i11 = y1 * 3 + x1;
+    w.w00 = (1 - fx) * (1 - fy); w.w10 = fx * (1 - fy);
+    w.w01 = (1 - fx) * fy;       w.w11 = fx * fy;
+    return w;
+}
+
 void generate_heightmap(std::vector<float>& out, int cellSize,
                         const float nbHeights[9],
                         const Biome nbBiome[9],
@@ -449,9 +438,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
     // on. 0 (a bare fixture with no world around it) means "do not wrap", which
     // is what the tests that generate a lone cell want.
     const float worldTiles = float(std::max(0, worldCellsX)) * float(cellSize);
-    const auto per = [worldTiles](float freq) { return worldTiles * freq; };
     out.assign(std::size_t(cellSize) * cellSize, 0.0f);
-    const float invCS = 1.0f / float(cellSize);
 
     // ── Per-cell traits (TS parity) ──
     // Mountain influence: 0.15 in mountain cells, 0.1 + 0.1·adjMtn elsewhere.
@@ -467,11 +454,8 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
     float ridgeWeight[9];
     float macroGradient[9];
     float heightScale[9];
-    float duneFactor[9];
-    float swampFactor[9];
     float remapped[9];
     float peakHeight[9];
-    bool needsDune = false, needsSwamp = false;
     for (int i = 0; i < 9; ++i) {
         // Mountains are a biome now (elevation-classified), so ridge/peak
         // amplification keys off the neighbour biome, not a feature byte.
@@ -506,10 +490,6 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
 
         const auto& bc = biome_config(nbBiome[i]);
         heightScale[i] = bc.heightScale;
-        duneFactor [i] = bc.duneNoise  ? 1.0f : 0.0f;
-        swampFactor[i] = bc.swampPools ? 1.0f : 0.0f;
-        if (bc.duneNoise)  needsDune  = true;
-        if (bc.swampPools) needsSwamp = true;
 
         // Water: t=1 at shoreline, t=0 at deep ocean, squared so deep water
         // sits well below the plane. Land: lifted from kLandFloor (shoreline)
@@ -565,26 +545,12 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         // Bilinear sample weights: u,v ∈ [0,1] over the centre cell map
         // to gx,gy ∈ [0.5..1.5] in 3×3 grid space (cell centres at 0.5,
         // 1.5, 2.5). Same convention as TS.
-        const float v   = float(y) * invCS;
-        const float gy  = v + 1.0f;
-        const int   y0  = std::clamp(int(std::floor(gy - 0.5f)), 0, 2);
-        const int   y1  = std::min(2, y0 + 1);
-        const float fy  = std::clamp((gy - 0.5f) - float(y0), 0.0f, 1.0f);
         for (int x = 0; x < cellSize; ++x) {
-            const float u  = float(x) * invCS;
-            const float gx = u + 1.0f;
-            const int   x0 = std::clamp(int(std::floor(gx - 0.5f)), 0, 2);
-            const int   x1 = std::min(2, x0 + 1);
-            const float fx = std::clamp((gx - 0.5f) - float(x0), 0.0f, 1.0f);
-
-            const float w00 = (1 - fx) * (1 - fy);
-            const float w10 = fx       * (1 - fy);
-            const float w01 = (1 - fx) * fy;
-            const float w11 = fx       * fy;
-
-            auto blend = [&](const float* tbl) {
-                return tbl[y0 * 3 + x0] * w00 + tbl[y0 * 3 + x1] * w10
-                     + tbl[y1 * 3 + x0] * w01 + tbl[y1 * 3 + x1] * w11;
+            // ОДНА дверь соглашения — ею же пользуются модули, кладущие свою
+            // фактуру поверх этой базы (base_generator.h nb_weights).
+            const NbWeights nbw = nb_weights(x, y, cellSize);
+            const auto blend = [&](const float* tbl) {
+                return blend9(tbl, nbw);
             };
 
             float macroH = blend(remapped);
@@ -628,21 +594,28 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                 }
             }
 
-            // ── БОЛОТО БОЛЬШЕ НЕ НИЗИНА, И ЭТО ВЕРДИКТ ВЛАДЕЛЬЦА ──────────
-            // Здесь стояла просадка `macroH` к `seaLevel + 0.06` на 85 %: род
-            // биома тянул АБСОЛЮТНЫЙ уровень земли к воде. Замерено на трёх
-            // сидах — болотная клетка стояла на 61…210 м ниже своей
-            // макровысоты, и дальний мир об этой яме не знал ВОВСЕ, потому
-            // что у него биомных просадок нет.
+            // ── ФАКТУРЫ БИОМА ЗДЕСЬ БОЛЬШЕ НЕТ, И ЭТО ЗАКОН ВЛАДЕЛЬЦА ────
+            // Дословно (2026-10-03): «у каждого должен быть свой модуль
+            // генератор (которые инкапсулированы DOD и могут дублировать и тд
+            // и не пересекаются друг с другом ЭТО ГЛАВНОЕ) но сам рельеф
+            // основа должен быть единым … ГЕНЕРАТОР МОДУЛЯ МОЖЕТ ДОП ПОВЕРХ
+            // МЕНЯТЬ КАК ЕМУ УГОДНО»; и тогда же: «уничтожаем все перемешки,
+            // приводим основу к контексту единому из макромира».
             //
-            // Вердикт владельца 2026-10-03: «болото перестаёт быть низиной
-            // вовсе» — мокрое место на ЛЮБОЙ высоте, горное болото законно;
-            // и шире того: «уровень рельефа может быть только один из
-            // макромира». Низину, если она нужна, обязано дать ПОЛЕ ВЫСОТ,
-            // как оно даёт её руслу реки, — а не род клетки в субмире.
+            // Здесь стояли ДВЕ чужие фактуры — болотные мочажины и барханы, —
+            // вперемешку с общей стопкой, со своими частотами и АБСОЛЮТНЫМИ
+            // амплитудами в единицах поля: 0.05 и 0.04 у болота, 0.15 у
+            // пустыни, то есть 75, 60 и 225 МЕТРОВ по кривой против 2.7 м,
+            // которые на той же клетке даёт общая стопка. Замер назвал цену:
+            // уклон тайл-тайл p50 у болота 17.4°, у пустыни 29.8° против 0.8°
+            // у холма и 21.3° у ГОРЫ — болото и пустыня были круче гор.
             //
-            // Биому осталась ФАКТУРА, и ниже по вызову она симметрична.
-            const float sf = needsSwamp ? blend(swampFactor) : 0.0f;
+            // Теперь база есть РОВНО макроконтекст: макровысота девяти клеток,
+            // их колонки, содержание клетки (дамп и плато) и одна стопка
+            // детали. Фактура биома живёт в его собственном модуле
+            // (`gens/swamp.cpp`, `gens/open.cpp`) и кладётся ПОВЕРХ готовой
+            // базы — через `nb_weights` (base_generator.h), чтобы её вес был
+            // сшит по 3×3 тем же соглашением, которым сшита база.
 
             // Multi-octave terrain noise in global tile coords with a fixed
             // world seed → continuous across cell boundaries.
@@ -690,43 +663,6 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                 h = mountain_ridges01(h, gxi, gyi, macroH, localPeak, rw,
                                       worldTiles, /*coarseOnly=*/false,
                                       seaLevel);
-            }
-
-            if (needsDune) {
-                const float duneF = blend(duneFactor) * (1.0f - plateauW);
-                if (duneF > 0.01f) {
-                    h += (smooth_noise_ts(float(gxi) * 0.012f,
-                                          float(gyi) * 0.018f, kDetailSeed,
-                                          per(0.012f)) - 0.5f)
-                       * 0.15f * duneF * detail;
-                }
-            }
-
-            if (sf > 0.01f) {
-                // БОЛОТНАЯ ФАКТУРА: мочажины и кочки между ними. Её среднее
-                // РОВНО НОЛЬ, поэтому уровень земли она не трогает ПО
-                // ПОСТРОЕНИЮ, а не по договорённости — ровно то, что вердикт
-                // владельца оставляет биому («биомы будут только локальные
-                // вещи типа мелкие структуры рельеф типа барханов и впадин и
-                // тд но без изменения абсолютного рельефа»).
-                //
-                // Прежде здесь стояло `h -= dip`, где `dip` ∈ [0, 0.09] — то
-                // есть просадка, которая НИКОГДА не поднимает: её среднее
-                // 0.045 единицы поля (= 67 м по кривой) и было вторым,
-                // тихим способом утопить болото. Вычитается теперь ОТКЛОНЕНИЕ
-                // от среднего, и тот же рисунок мочажин остаётся на месте.
-                const float lowland = smooth_noise_ts(
-                    float(gxi) * 0.006f + 200.0f,
-                    float(gyi) * 0.006f + 200.0f, kDetailSeed, per(0.006f));
-                const float bog = smooth_noise_ts(
-                    float(gxi) * 0.025f, float(gyi) * 0.025f, kDetailSeed,
-                    per(0.025f));
-                const float dip = (1.0f - lowland) * 0.05f
-                                + (1.0f - bog) * 0.04f;
-                // Среднее обеих октав — 0.5 (`smooth_noise_ts` равномерен),
-                // поэтому среднее `dip` есть ровно половина суммы амплитуд.
-                constexpr float kBogMean = 0.5f * 0.05f + 0.5f * 0.04f;
-                h -= (dip - kBogMean) * sf * (1.0f - plateauW) * detail;
             }
 
             // Clamp broad for safety; mountain ridge output itself is kept

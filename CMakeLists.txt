@@ -428,7 +428,16 @@ target_link_libraries(height_census PRIVATE timaert_build_flags)
 add_executable(relief_census tests/relief_census.cpp
     src/macro/map_generator.cpp
     src/sub/base_generator.cpp
-    src/sub/material.cpp)
+    src/sub/material.cpp
+    # ПРИБОР ЗОВЁТ ТУ ЖЕ ДВЕРЬ, ЧТО МИР. База — только половина земли: фактуру
+    # своего биома кладёт МОДУЛЬ поверх неё, и прибор, меряющий одну базу, не
+    # увидел бы ни мочажин, ни барханов.
+    ${TIMAERT_GENS_SOURCES}
+    src/sub/dgn/dispatch.cpp
+    src/sub/dgn/house.cpp
+    src/sub/dgn/cave.cpp
+    src/sub/dgn/spire_tower.cpp
+    src/sub/dgn/prologue_road.cpp)
 set_target_properties(relief_census PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON

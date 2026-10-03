@@ -34,6 +34,7 @@
 #include "sub/base_generator.h"
 #include "sub/height.h"
 #include "sub/map_data.h"
+#include "sub/gens/dispatch.h"
 #include "tables/biomes.h"
 
 #include <algorithm>
@@ -101,12 +102,26 @@ Sample measure_cell(const TerrainData& td, int cx, int cy, std::uint32_t seed) {
                 biome_at_cell(td, cell_of(cx + dx, cy + dy, td.width));
     s.macroH = double(nbH[4]);
 
-    std::vector<float> h01;
-    sub::generate_heightmap(h01, kCS, nbH, nbB, nb5, nbB[4],
-                            sub::cell_seed(seed, cx, cy),
-                            cx * kCS, cy * kCS,
-                            field01_of(td.seaLevel16),
-                            /*nbMods*/nullptr, kW, seed);
+    // ЧЕРЕЗ ТУ ЖЕ ДВЕРЬ, ЧТО ЗОВЁТ МИР. База — только половина земли: фактуру
+    // своего биома кладёт МОДУЛЬ, поверх готовой базы (`gens/gens.h`), и
+    // прибор, меряющий одну базу, не увидел бы ни мочажин, ни барханов —
+    // ровно то, на что владелец и жаловался. Содержания при этом нет: у
+    // синтетического контекста ни места, ни фичи, то есть мерится чистая
+    // земля, как и обещает шапка.
+    sub::CellContext ctx{};
+    ctx.cx = cx; ctx.cy = cy;
+    ctx.worldCellsX = td.width; ctx.worldCellsY = td.height;
+    ctx.macroHeight = nbH[4];
+    ctx.seaLevel = field01_of(td.seaLevel16);
+    ctx.biome = nbB[4];
+    ctx.groundBiome = nbB[4];
+    ctx.treeCount = 0;          // деревья прибору не нужны, и они не рельеф
+    ctx.seed = sub::cell_seed(seed, cx, cy);
+    ctx.worldSeed = seed;
+    std::uint8_t nbFeature[9]{};
+    sub::SubworldMapData md;
+    sub::dispatch_generate(ctx, nbH, nbB, nb5, nbFeature, md);
+    const std::vector<float>& h01 = md.heightmap;
     // В МЕТРЫ ДО РАЗЛОЖЕНИЯ: кривая переноса нелинейна, и раскладывать поле, а
     // потом умножать на наклон, значит мерить не ту величину.
     std::vector<float> m(h01.size());
@@ -170,9 +185,10 @@ int main(int argc, char** argv) {
     // на ЛЮБОЙ высоте (наряд M-197), то есть вносит в окно перепад, которого у
     // соседних клеток того же рода нет. Без этой строки его вклад размазался бы
     // по четырём верхним и стал бы «шумом рельефа вообще».
-    Klass classes[5] = {{"РАВНИНА  ", {}}, {"ХОЛМ     ", {}},
+    Klass classes[7] = {{"РАВНИНА  ", {}}, {"ХОЛМ     ", {}},
                         {"ПОДНОЖИЕ ", {}}, {"ГОРА     ", {}},
-                        {"С РЕКОЙ  ", {}}};
+                        {"С РЕКОЙ  ", {}}, {"БОЛОТО   ", {}},
+                        {"ПУСТЫНЯ  ", {}}};
 
     for (std::uint32_t seed : seeds) {
         LayerParameters p{};
@@ -182,7 +198,7 @@ int main(int argc, char** argv) {
         // Три клетки каждого рода на сид, набираются сканом с шагом — число
         // клеток класса не выводится, поэтому берётся первое, что встретилось,
         // и это честно названо: прибор мерит ФОРМУ, а не распределение.
-        int want[5] = {3, 3, 3, 3, 3};
+        int want[7] = {3, 3, 3, 3, 3, 3, 3};
         const auto river_in_window = [&](int cx, int cy) {
             for (int dy = -1; dy <= 1; ++dy)
                 for (int dx = -1; dx <= 1; ++dx)
@@ -199,7 +215,13 @@ int main(int argc, char** argv) {
                 const float h = field01_of(td.height_at(cx, cy));
                 const Biome b = biome_at_cell(td, idx);
                 int k = -1;
-                if (river_in_window(cx, cy))         k = 4;
+                // Биомы со СВОЕЙ фактурой идут первыми: у болота и пустыни
+                // сегодня собственные генераторы шума рядом с общей стопкой, и
+                // смешивать их с равниной значит прятать ровно тот вопрос,
+                // ради которого прибор и зовут.
+                if (b == Biome::Swamp)               k = 5;
+                else if (b == Biome::Desert)         k = 6;
+                else if (river_in_window(cx, cy))    k = 4;
                 else if (b == Biome::Mountain)       k = 3;
                 else if (h < sea + 0.06f)            k = 0;
                 else if (h < sea + 0.18f)            k = 1;

@@ -235,16 +235,27 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     // (2026-09-13): a house standing in the mouth, with the garrison's road
     // running into its back wall.
     //
-    // The reach is the GATEWAY'S OWN WIDTH (kit/outline.h WallGate::span), so
-    // no distance is invented here. And it is the CITY that states it, not the
-    // placer that infers it: the wall and the plots are the same module's
-    // work, which is the whole reason this is data and not a special case
-    // somewhere else (owner's ruling on module encapsulation, 2026-09-13).
+    // The reach is the GATEWAY'S OWN WIDTH (kit/outline.h WallGate::span) plus
+    // the arch's overhang onto its jambs, so no distance is invented here — it
+    // is exactly the bar the module itself lays over the opening. And it is the
+    // CITY that states it, not the placer that infers it: the wall and the
+    // plots are the same module's work, which is the whole reason this is data
+    // and not a special case somewhere else (owner's ruling on module
+    // encapsulation, 2026-09-13).
+    //
+    // ВЫЛЕТ АРКИ ПРИБАВЛЕН 2026-10-03, И ЭТО БЫЛО ДВА НАПИСАНИЯ ОДНОЙ ШИРИНЫ:
+    // перемычка строится шириной `span + 2·вылет` (city_wall.cpp), а земля под
+    // ней резервировалась шириной `span`. Полоса в два с лишним тайла под
+    // самим брусом оставалась свободной, и дом вставал в устье ворот законно —
+    // `city_gate_lintel_test` поймал это на первом же мире, где рельеф
+    // перекатал планировку (три других сида детали проходили, то есть дефект
+    // был ЛАТЕНТНЫМ и ждал неудачного броска).
     std::array<KeepOut, 24> mouths{};
     int mouthCount = 0;
     auto claim_mouth = [&](const WallGate& g) {
         if (mouthCount >= int(mouths.size())) return;
-        mouths[std::size_t(mouthCount++)] = {g.x, g.y, g.span};
+        mouths[std::size_t(mouthCount++)] =
+            {g.x, g.y, g.span + 2.0f * kGateArchOverhangTiles};
     };
     for (int g = 0; g < gateCount; ++g)      claim_mouth(gates[std::size_t(g)]);
     for (int g = 0; g < upperGateCount; ++g) claim_mouth(upperGates[std::size_t(g)]);

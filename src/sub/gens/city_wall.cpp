@@ -198,7 +198,7 @@ int stamp_city_wall(SubworldMapData& out, const Outline& outline,
                 l.x = mx;
                 l.y = my;
                 l.yaw = std::atan2(ddy, ddx);
-                l.hx = span * 0.5f + 1.2f;
+                l.hx = span * 0.5f + kGateArchOverhangTiles;
                 l.hy = kWallHalfThick;
                 l.radius = l.hx;
                 // The PROMISE, plainly stated: this much air over the way

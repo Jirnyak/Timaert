@@ -159,6 +159,19 @@ namespace sm::sub
         return kShoreGainM / height_gain_m(h01);
     }
 
+    // СКОЛЬКО ПОЛЯ СТОИТ ЭТОТ МЕТР ЗДЕСЬ — дверь для фактуры, которая
+    // авторится В МЕТРАХ и обязана остаться этими метрами на любой высоте.
+    //
+    // Заведена потому, что фактуры биомов авторились В ЕДИНИЦАХ ПОЛЯ, и
+    // прочесть такое число как метры не мог никто: `0.05` у болотной мочажины
+    // оказалось **75 метрами**, `0.15` у бархана — **225**. Число, которое
+    // нельзя прочесть в единицах мира, и есть число с потолка, даже когда у
+    // него есть история. Через эту дверь модуль пишет «кочка в полшага» и это
+    // видно: `kStepUpM` стоит в сигнатуре вызова, а не в комментарии.
+    inline float field_delta_of_m(float metres, float h01) {
+        return metres / height_gain_m(h01);
+    }
+
     // The inverse, for the two callers that state a LEVEL in metres and need
     // the field value that carries it (a bridge deck's freeboard). Exact
     // inverse of the above, not an approximation of it.
