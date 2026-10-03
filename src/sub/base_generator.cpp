@@ -98,14 +98,72 @@ static float smooth_noise_ts(float x, float y, std::uint32_t seed,
 // это собственный шум ОДНОЙ земли, а не два независимых поля.
 constexpr std::uint32_t kDetailSeed = 0xD37A115u;
 
+// ── ЛЕСТНИЦА ОКТАВ ЗЕМЛИ — ВЫВЕДЕНА ИЗ ДВУХ ЧИСЕЛ МИРА, А НЕ НАЗНАЧЕНА ────
+//
+// ВЕРХ — КЛЕТКА. Длиннее клетки форму земли даёт МАКРОПОЛЕ (ЗАКОН ПОЛЯ), и
+// собственная октава субмира на тех длинах спорила бы с ним за один и тот же
+// силуэт.
+//
+// НИЗ — НАЙКВИСТ МЕША. Композит рисуется вершинной сеткой с шагом
+// `kHeightQuadTiles`, значит волна короче двух шагов не рисуется ВОВСЕ —
+// сэмплировать её значит алиасить. Это то же правило, которым дальние кольца
+// роняют деталь, просто записанное для самого мелкого меша в игре.
+//
+// МЕЖДУ НИМИ — ДИАДНО, и шесть октав здесь не выбраны, а посчитаны:
+// log2(1024/32) + 1. Лестница ложится ровно на кольца дальнего мира (кольцо 0
+// шагом 32 м несёт λ ≥ 64, кольцо 1 — λ ≥ 256, кольцо 2 — λ ≥ 1024), поэтому
+// «деталь УБИРАЕТСЯ, а не подменяется» перестаёт быть прозой.
+//
+// ЗАТУХАНИЕ — ЕДИНСТВЕННОЕ, ЧТО НЕ ВЫВОДИТСЯ, И ЭТО ВЕРДИКТ ВЛАДЕЛЬЦА
+// (2026-10-03, дословно о симптоме: «стало слишком холмисто и холмы не крпыне
+// плавные а много маленньких эт некрасиво»; выбор из трёх — «сразу 0.35,
+// максимально гладко»). Амплитуда падает в g раз на октаву вниз, значит УКЛОН
+// падает в 2g = 0.70 раза: крупная форма главная, мелкая читается фактурой.
+// При g = 0.5 вклад каждой октавы в уклон был бы равным — это классический
+// фрактал, и именно он даёт «много мелких холмов».
+//
+// ЧТО ЗДЕСЬ СТОЯЛО: две октавы, λ 125 и 50 тайлов, веса 0.5 и 0.25. Замер
+// `relief_census` на мире владельца показал их цену прямо: от 128 м к 64 м σ
+// падала с 2.11 до 2.04 м, то есть уклон на следующей октаве УДВАИВАЛСЯ, а
+// между 125 м и клеткой не было ничего вовсе — отсюда вблизи мелкая
+// холмистость, вдали стол (M-207 и bugs.md Б1 — один спектр, два симптома).
+constexpr int   kDetailTopTiles    = kCellSize;                // 1024
+constexpr int   kDetailBottomTiles = 2 * kHeightQuadTiles;     // 32
+constexpr int   kDetailOctaves     = 6;
+constexpr float kDetailGain        = 0.35f;
+static_assert(kDetailTopTiles >> (kDetailOctaves - 1) == kDetailBottomTiles,
+              "число октав есть log2(верх/низ)+1 — лестница обязана ровно "
+              "дойти от клетки до найквиста меша, без остатка и без нахлёста");
+static_assert(kDetailGain > 0.0f && kDetailGain < 0.5f,
+              "затухание ниже 0.5 — иначе уклон не убывает с октавой и земля "
+              "снова станет мелкокомковатой (вердикт владельца 2026-10-03)");
+
+struct DetailStack {
+    float freq[kDetailOctaves]{};     // циклов на тайл
+    float weight[kDetailOctaves]{};
+    float norm = 0.0f;
+};
+constexpr DetailStack make_detail_stack() {
+    DetailStack s{};
+    float w = 1.0f;
+    float lam = float(kDetailTopTiles);
+    for (int i = 0; i < kDetailOctaves; ++i) {
+        s.freq[i] = 1.0f / lam;
+        s.weight[i] = w;
+        s.norm += w;
+        w *= kDetailGain;
+        lam *= 0.5f;
+    }
+    return s;
+}
+constexpr DetailStack kDetail = make_detail_stack();
+
 // The near generator's detail stack, with the octaves a mesh cannot draw left
 // out (base_generator.h). The frequencies, weights and normalisation are the
 // ones the ground itself is made of — this is the same noise, sampled by
 // somebody who can only afford some of it.
 float terrain_detail01(int gx, int gy, float worldTiles,
                        float minWavelengthTiles) {
-    constexpr float kFreqs[2]   = {0.008f, 0.02f};
-    constexpr float kWeights[2] = {0.5f,   0.25f};
     // THE FULL weight of the stack, always — see the header. An octave the
     // mesh cannot draw hands over its own mean (0.5) and keeps its seat, so
     // removing it neither MOVES the ground (the mean is unchanged) nor
@@ -115,19 +173,18 @@ float terrain_detail01(int gx, int gy, float worldTiles,
     // generator gives it. It also needed a special case for "no octave
     // survives" — with the full normaliser that case is the same arithmetic,
     // 0.5·ΣW / ΣW, and the branch is gone.
-    constexpr float kNorm = kWeights[0] + kWeights[1];
     const auto per = [worldTiles](float freq) { return worldTiles * freq; };
     float sum = 0.0f;
-    for (int o = 0; o < 2; ++o) {
+    for (int o = 0; o < kDetailOctaves; ++o) {
         // λ = 1/freq tiles. An octave shorter than the mesh can resolve is not
         // removed for taste: sampling it would only alias.
-        const bool drawable = 1.0f / kFreqs[o] >= minWavelengthTiles;
-        sum += (drawable ? smooth_noise_ts(float(gx) * kFreqs[o],
-                                           float(gy) * kFreqs[o],
-                                           kDetailSeed, per(kFreqs[o]))
-                         : 0.5f) * kWeights[o];
+        const bool drawable = 1.0f / kDetail.freq[o] >= minWavelengthTiles;
+        sum += (drawable ? smooth_noise_ts(float(gx) * kDetail.freq[o],
+                                           float(gy) * kDetail.freq[o],
+                                           kDetailSeed, per(kDetail.freq[o]))
+                         : 0.5f) * kDetail.weight[o];
     }
-    return std::clamp(sum / kNorm, 0.0f, 1.0f);
+    return std::clamp(sum / kDetail.norm, 0.0f, 1.0f);
 }
 
 // THE FAR WORLD'S GROUND (base_generator.h). It lives here, next to the near

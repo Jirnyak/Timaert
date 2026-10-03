@@ -287,6 +287,68 @@ int main() {
         const float nearAmp = nearHi - nearLo;   // the near ground's OWN relief
         const float frame = float(sumGap / double(samples));  // systematic offset
 
+        // ── СКОЛЬКО МЕТРОВ НЕСУТ РОВНО ТЕ ОКТАВЫ, КОТОРЫЕ КОЛЬЦО СБРОСИЛО ──
+        // Спрошено у ТОЙ ЖЕ двери дважды — с пределом кольца и с пределом ниже
+        // самой мелкой октавы, — а не выведено здесь: вывод был бы копией
+        // продакшен-арифметики (§8 п.5).
+        //
+        // ЗАЧЕМ ЭТО ЧИСЛО ПОЯВИЛОСЬ. Закон «снятие может только убавить» верен
+        // в дисперсии, но НЕ в размахе одной выборки: выпавшая октава отдаёт
+        // своё среднее, и в конкретном окне это может на волос расширить
+        // размах оставшихся. Пока стопка была из двух октав, КОЛЬЦО 0 роняло
+        // треть её веса, и строгое `<=` ловило всё. С лестницей 1024…32 м
+        // кольцо 0 роняет 0.2 % веса — эффект закона ушёл под собственный шум
+        // замера (22.1 против 22.2 м), и строгое `<=` стало монетой.
+        //
+        // ОТСЮДА ДВЕ ПРАВКИ, И ОБЕ УЖЕСТОЧАЮТ, А НЕ ОСЛАБЛЯЮТ. Первая: у
+        // закона появилась СВОЯ мера — превышение не имеет права быть больше
+        // того, что кольцо выбросило, и это спрошено у ТОЙ ЖЕ двери двумя
+        // пределами, а не выведено здесь (§8 п.5). Вторая: закон проверяется
+        // на САМОМ ГРУБОМ кольце лестницы, а не только на самом тонком —
+        // раньше свидетель стоял на той ступени, где не выбрасывается почти
+        // ничего, то есть судил закон там, где закону нечего делать.
+        constexpr float kEveryOctave = 1.0f;   // предел ниже самой мелкой λ
+        const float coarseWave =
+            2.0f * float(far_ring_step_m(kFarRings - 1));
+        //
+        // И СТАТИСТИКА У ЗАКОНА ТОЖЕ СВОЯ, А НЕ РАЗМАХ. «Снятие может только
+        // убавить» есть утверждение об ЭНЕРГИИ: выброшенная октава уносит свою
+        // дисперсию, и дисперсия оставшегося не может вырасти. Размах же —
+        // статистика одной выборки: он шумит на процент и в обе стороны, и
+        // именно поэтому прежний вердикт перевернулся от правки, которая
+        // энергию не трогала вовсе. Сигма — та величина, в которой закон
+        // ТОЧЕН.
+        const auto far_band = [&](float wave) {
+            float lo = 1e30f, hi = -1e30f, dLo = 1e30f, dHi = -1e30f;
+            double s = 0.0, s2 = 0.0;
+            int n = 0;
+            for (int y = 0; y < kCellSize; y += 16) {
+                for (int x = 0; x < kCellSize; x += 16) {
+                    const int gx = kCellGX * kCellSize + x;
+                    const int gy = kCellGY * kCellSize + y;
+                    const float cut = height_m(
+                        far_height01(gx, gy, kMacroH, 0.0f, 0.0f, kWorldTiles,
+                                     WATER_LEVEL, 0.0f, hs, ms, wave));
+                    const float full = height_m(
+                        far_height01(gx, gy, kMacroH, 0.0f, 0.0f, kWorldTiles,
+                                     WATER_LEVEL, 0.0f, hs, ms, kEveryOctave));
+                    lo = std::min(lo, cut);  hi = std::max(hi, cut);
+                    dLo = std::min(dLo, full - cut);
+                    dHi = std::max(dHi, full - cut);
+                    s += double(cut); s2 += double(cut) * double(cut);
+                    ++n;
+                }
+            }
+            const double mean = s / double(n);
+            struct B { float amp, dropped, sigma; };
+            return B{hi - lo, dHi - dLo,
+                     float(std::sqrt(std::max(0.0, s2 / double(n) - mean * mean)))};
+        };
+        const auto fine   = far_band(minWave);
+        const auto coarse = far_band(coarseWave);
+        const auto whole  = far_band(kEveryOctave);   // стопка целиком
+        const float droppedBand = fine.dropped;
+
         CHECK(samples > 1000 && nearAmp > 1.0f,
               "the fixture measured: the near ground HAS detail to disagree "
               "about (a flat cell would make the two checks below vacuous)");
@@ -311,9 +373,24 @@ int main() {
         // survivors instead of letting the dropped octave hand over its mean:
         // measured 0.78× of the near relief as written, 1.16× with the
         // renormalisation back (see the mutation table below).
-        CHECK(farHi - farLo <= nearAmp,
+        CHECK(farHi - farLo <= nearAmp + droppedBand,
               "the far ground is QUIETER than the near one — dropping an "
-              "octave removes relief, it never amplifies what is left");
+              "octave removes relief, it never amplifies what is left (and "
+              "«не громче» is measured against what the ring actually dropped, "
+              "never against a looser number)");
+        // И ТО ЖЕ САМОЕ В ЭНЕРГИИ, НА КАЖДОЙ СТУПЕНИ ЛЕСТНИЦЫ. Выброшенная
+        // октава уносит свою дисперсию, значит сигма усечённой стопки не имеет
+        // права превысить сигму полной — ни на тонком кольце, ни на грубом.
+        // Допуск 1 % есть выборочная ковариация: октавы независимы в среднем,
+        // но на 4096 точках их выборочная ковариация имеет порядок 1/√N ≈ 1.6
+        // %, и именно она, а не закон, даёт последние доли процента.
+        CHECK(fine.sigma <= whole.sigma * 1.01f
+              && coarse.sigma <= whole.sigma * 1.01f,
+              "снятие октав только УБАВЛЯЕТ энергию — сигма усечённой стопки "
+              "не выше сигмы полной ни на одной ступени лестницы");
+        CHECK(coarse.dropped > fine.dropped * 10.0f,
+              "грубое кольцо и правда выбрасывает НА ПОРЯДОК больше тонкого — "
+              "иначе вердикт выше судил бы ту же пустоту, что и прежний");
 
         // NEGATIVE CONTROL, AND IT IS NOT A COPY OF THE OLD CODE. The defect
         // was "the far ground sits at a different level here"; so shift the
@@ -322,18 +399,22 @@ int main() {
         // silent for a shift too small to matter. A detector that reddens at
         // everything is not a detector.
         //
-        // МУТАЦИЯ → ИСХОД, ПРОГНАНО 2026-10-01 (база: ближний рельеф 43.7 м,
-        // дальний 33.9 м = 0.78×, расхождение 9.1 м, рамка +0.59 м):
-        //   снят `detail_field_scale` у far_height01 (НАСТОЯЩИЙ дефект M-201)
-        //       → расхождение 9.1 → 61.6 м, 2 из 14 КРАСНЫХ, код выхода 1;
-        //         «рамка» при этом −0.88 м и МОЛЧИТ — дефект амплитудный, с
-        //         нулевым средним, и ловит его только полоса детали;
-        //   `terrain_detail01` снова делит на вес ВЫЖИВШИХ октав
-        //       → дальний рельеф 33.9 → 50.9 м = 1.16× ближнего, КРАСНЕЕТ
-        //         «removal can only remove»; полоса детали при этом МОЛЧИТ
-        //         (16.1 м из 43.7), и подгонять её порог под 16 м запрещено —
-        //         поэтому у этой мутации СВОЙ вердикт, а не ослабленный чужой;
-        //   сдвиг дальней земли на +100 м → оба вердикта ниже КРАСНЫЕ;
+        // МУТАЦИЯ → ИСХОД, ПРОГНАНО 2026-10-03 заново, потому что обе прежние
+        // записи были сняты на стопке из ДВУХ октав и после лестницы 1024…32 м
+        // стали ложью (база: сигма стопки 5.59 м, тонкое кольцо 5.59 = 1.00×,
+        // грубое 5.40 = 0.97×; выброшено тонким 0.19 м, грубым 11.71 м;
+        // ближний рельеф 22.1 м, дальний 22.2 м, рамка −0.00 м, 22 из 22):
+        //   `far_height01` без `detail_field_scale` → сигма 5.59 → 24.22 м,
+        //       рамка +2.33 м, 6 из 22 КРАСНЫХ, в том числе оба вердикта о
+        //       рамке и оба «не громче»;
+        //   `terrain_detail01` снова делит на вес ВЫЖИВШИХ октав → сигма
+        //       ГРУБОГО кольца 5.40 → 8.29 м = 1.48× полной стопки, 1 из 22
+        //       КРАСНЫЙ («снятие только убавляет энергию»), а тонкое кольцо
+        //       при этом МОЛЧИТ (1.00×) — и это главное, что показала
+        //       перепроверка: на тонкой ступени выбрасывается 0.2 % веса, то
+        //       есть прежний свидетель стоял там, где закону нечего делать,
+        //       и ту же мутацию пропускал ЗЕЛЁНОЙ;
+        //   сдвиг дальней земли на +100 м → оба вердикта о рамке КРАСНЫЕ;
         //   сдвиг на +1 м                 → оба ЗЕЛЁНЫЕ (это не дефект).
         const auto shifted_gap = [&](float metres) {
             const float dH = metres / height_gain_m(kMacroH);
@@ -366,6 +447,13 @@ int main() {
               "...and stays SILENT on a 1 m shift — it detects the frame, not "
               "every float");
 
+        std::printf("  [замер] сигма стопки: целиком %.2f м, тонкое кольцо "
+                    "%.2f (%.2f×), грубое %.2f (%.2f×); выброшено тонким "
+                    "%.2f м, грубым %.2f м\n",
+                    double(whole.sigma), double(fine.sigma),
+                    double(fine.sigma / whole.sigma), double(coarse.sigma),
+                    double(coarse.sigma / whole.sigma),
+                    double(fine.dropped), double(coarse.dropped));
         std::printf("  [замер] подножие %.2f: рельеф ближней земли %.1f м, "
                     "дальней %.1f м (%.2f×), расхождение near↔far max %.1f м, "
                     "рамка %+.2f м\n",
@@ -445,7 +533,27 @@ int main() {
             // disagrees by at most 0.385/0.615 of the band, i.e. never leaves
             // it. What it DOES do is make the far ground louder than the near
             // one, and «removal can only remove» already forbids that.
-            CHECK(calm.farAmp <= calm.nearAmp,
+            // Та же собственная мера закона, что и в §5 выше: «не громче»
+            // считается против того, что кольцо ВЫБРОСИЛО, и это спрошено у
+            // той же двери двумя пределами — на КАЛМЕННЫХ колонках, потому что
+            // именно их амплитуду судит вердикт ниже.
+            float rLo = 1e30f, rHi = -1e30f;
+            for (int y = 0; y < kCellSize; y += 16) {
+                for (int x = 0; x < kCellSize; x += 16) {
+                    const int gx = kCellGX * kCellSize + x;
+                    const int gy = kCellGY * kCellSize + y;
+                    const float full = height_m(
+                        far_height01(gx, gy, kMacroH, 0.0f, dRidge, kWorldTiles,
+                                     WATER_LEVEL, dGrad, dHs, dMs, kEveryOctave));
+                    const float cut = height_m(
+                        far_height01(gx, gy, kMacroH, 0.0f, dRidge, kWorldTiles,
+                                     WATER_LEVEL, dGrad, dHs, dMs, minWave));
+                    rLo = std::min(rLo, full - cut);
+                    rHi = std::max(rHi, full - cut);
+                }
+            }
+            const float roadDropped = rHi - rLo;
+            CHECK(calm.farAmp <= calm.nearAmp + roadDropped,
                   "a road's cell is calmed on BOTH sides of the join — the far "
                   "ground of a damped cell is no louder than its near ground "
                   "(M-201 content seam)");

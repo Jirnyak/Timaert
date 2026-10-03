@@ -199,7 +199,16 @@ void check_slope(const char* what, std::uint32_t seed, int population,
                   "(worst %.2f m of %.2f at %.0f,%.0f; cell relief %.1f m)",
                   what, double(r.worstClear), double(kGateClearM),
                   double(r.worstX), double(r.worstY), double(r.relief));
-    CHECK(r.worstClear >= kGateClearM, msg);
+    // ДОПУСК — ULP, А НЕ ПОСЛАБЛЕНИЕ. Обещание перемычки есть величина в
+    // МЕТРАХ: закон охраняет сантиметры, а не младший бит float. Когда земля
+    // стала площе (лестница октав 2026-10-03), зазор лёг РОВНО на обещанные
+    // 5.10 м, и строгое `>=` перевернулось на недоборе **0.0000019 м = 4 ULP**
+    // — замерено, а не предположено. Тридцать два ULP есть домашняя единица
+    // этого дерева (`kFieldUlpTol@tests/far_mesh_test.cpp`) и даёт восьмикратный
+    // запас против измеренного; сантиметровый дефект, ради которого свидетель
+    // и стоит, крупнее этого в десять тысяч раз.
+    constexpr float kUlpTol = 32.0f * 1.1920929e-7f;
+    CHECK(r.worstClear >= kGateClearM * (1.0f - kUlpTol), msg);
 
     std::snprintf(msg, sizeof msg,
                   "%s: no house stands in a gateway's mouth (%d of %d gates)",
