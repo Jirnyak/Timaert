@@ -51,7 +51,6 @@ sm::TerrainData make_terrain(int w, int h, float level01)
     td.width = w;
     td.height = h;
     td.rgba.assign(std::size_t(w) * std::size_t(h) * 4, 0);
-    td.riverData.assign(std::size_t(w) * std::size_t(h), 0);
     // Плоскость моря живёт на карте (M-109) — свидетель ставит её сам.
     td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
     const std::uint16_t word = sm::field_word_of(level01);
@@ -453,42 +452,44 @@ void test_dirt_lane_lays_a_stone_bridge()
     }
 }
 
-void test_tree_spawner_respects_river_buffer()
+void test_tree_spawner_never_plants_on_water()
 {
+    // ЗАКОН, КОТОРЫЙ ОСТАЛСЯ, И ЕДИНСТВЕННЫЙ (M-211, вердикт владельца:
+    // «пусть не отступа ни на сколько, просто минимальное простое бинарное
+    // правило — на воде леса нет»). Прежняя редакция этого свидетеля охраняла
+    // БУФЕР в две клетки вокруг реки и ставила маску русла руками; маска
+    // снесена вместе с буфером, и охранять там больше нечего — но закон «не на
+    // воде» жив, и теперь его носитель виден прямо: прокоп в поле высот.
+    //
+    // Свидетель СТРОИТ СЕБЕ ПРЕДУСЛОВИЕ (§8 п.11): режет русло сам, врезая
+    // полосу ниже плоскости моря, а не надеется, что трассер её проложит.
     sm::TerrainData dry = make_terrain(64, 64, 150.0f / 255.0f);
-    sm::TerrainData river = dry;
-    for (int y = 0; y < river.height; ++y)
-    {
-        river.riverData[std::size_t(y) * river.width + 32] = 255;
-    }
+    sm::TerrainData cut = dry;
+    const std::uint16_t bed = std::uint16_t(cut.seaLevel16 / 2u);
+    for (int y = 0; y < cut.height; ++y)
+        cut.rgba[(std::size_t(y) * std::size_t(cut.width) + 32u) * 4u] = bed;
 
     const std::vector<sm::TreePoint> dryTrees = sm::spawn_trees(dry, std::uint32_t{42});
-    const std::vector<sm::TreePoint> riverTrees = sm::spawn_trees(river, std::uint32_t{42});
+    const std::vector<sm::TreePoint> cutTrees = sm::spawn_trees(cut, std::uint32_t{42});
 
-    const int failsBefore = sm::test::failures();
-    CHECK(!dryTrees.empty(), "control terrain should spawn at least one tree");
-    CHECK(!riverTrees.empty(), "river terrain should still spawn trees away from rivers");
-    CHECK(riverTrees.size() < dryTrees.size(),
-          "river exclusion should remove some otherwise valid tree cells");
+    CHECK(!dryTrees.empty(), "контрольный мир обязан вырастить хоть одно дерево");
+    CHECK(!cutTrees.empty(), "мир с руслом растит лес везде, кроме самой воды");
 
-    for (const sm::TreePoint& t : riverTrees)
-    {
-        int dx = t.x - 32;
-        if (dx > river.width / 2)
-        {
-            dx -= river.width;
-        }
-        if (dx < -river.width / 2)
-        {
-            dx += river.width;
-        }
-        CHECK(dx < -2 || dx > 2,
-              "no tree grows within the river exclusion buffer - not in the channel, not on its bank");
-        if (sm::test::failures() != failsBefore)
-        {
-            break;
-        }
-    }
+    int onWater = 0;
+    for (const sm::TreePoint& t : cutTrees)
+        if (cut.is_water(sm::cell_of(t.x, t.y, cut.width))) ++onWater;
+    CHECK(onWater == 0, "на воде леса нет — единственное правило, и оно бинарное");
+
+    // НЕГАТИВНЫЙ КОНТРОЛЬ СВОЕГО ЖЕ ДЕТЕКТОРА: в сухом мире русла нет, значит
+    // те же клетки водой не являются и запрет не срабатывает ни разу. Без этой
+    // строки «ноль деревьев на воде» был бы верен и на пустом множестве.
+    int dryOnSameColumn = 0;
+    for (const sm::TreePoint& t : dryTrees)
+        if (t.x == 32) ++dryOnSameColumn;
+    CHECK(dryOnSameColumn > 0,
+          "без вреза та же колонка лес держит — иначе проверка пуста");
+    std::printf("  [лес и вода] деревьев %zu, на воде %d, в сухой колонке 32: %d\n",
+                cutTrees.size(), onWater, dryOnSameColumn);
 }
 
 void test_tree_spawner_uses_map_sea_level()
@@ -730,7 +731,7 @@ int main()
     test_road_bridges_one_cell_river();
     test_two_separating_straits_stay_unbridged();
     test_dirt_lane_lays_a_stone_bridge();
-    test_tree_spawner_respects_river_buffer();
+    test_tree_spawner_never_plants_on_water();
     test_tree_spawner_uses_map_sea_level();
     test_malformed_terrain_fails_closed();
     test_politik_malformed_terrain_fails_closed();

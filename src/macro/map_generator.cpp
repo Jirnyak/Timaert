@@ -712,7 +712,7 @@ void continue_dead_end_rivers(std::vector<std::uint8_t>& riverMask,
 
 // Second CPU synth pass. Reads td.rgba (height/moisture/temperature), traces
 // least-cost rivers hugging climate-biome edges toward the nearest sea, stamps
-// them into td.riverData, and carves river cells below sea level so they
+// carves river cells below sea level so they
 // classify as Biome::Water. Moved OUT of the anonymous namespace so the river
 // generation test suite can drive it on a controlled synthetic TerrainData; the
 // helpers above keep internal linkage and stay visible for the rest of this TU.
@@ -732,7 +732,14 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     // на клетке, по которой ходят пешком, и не дотечь до настоящей воды.
     const std::uint16_t seaLevel16 = td.seaLevel16;
 
-    td.riverData.assign(std::size_t(n), 0);
+    // МАСКА РУСЛА — ЛОКАЛЬНЫЙ БУФЕР ГЕНЕРАЦИИ, А НЕ СЛОЙ МИРА (M-211,
+    // вердикт владельца 2026-10-03: «никакая ривер дата не нужна… рек нет
+    // как структуры, от них остаются только прокопы в рельефе, и агностично
+    // эмерджентно там вода, потому что эти прокопы ниже уровня моря»).
+    // Трассеру она нужна, пока он трассирует — продолжить тупик, не
+    // перетрассировать уже пройденное, — и умирает вместе с проходом.
+    // Генератору буферы разрешены прямо (ЗАКОН ГЕНЕРАЦИИ п.3).
+    std::vector<std::uint8_t> riverMask(std::size_t(n), 0u);
     if (n <= 0 || td.rgba.size() < std::size_t(n) * 4) {
         return;
     }
@@ -901,14 +908,14 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     for (int src : sources) {
         const std::vector<std::pair<int, int>> raw =
             trace_river_to_water(src, edgeDist, waterDist, heightWords,
-                                 td.riverData, seaLevel16, w, h, meander, scratch);
+                                 riverMask, seaLevel16, w, h, meander, scratch);
         if (raw.size() < 15) {
             continue;
         }
-        stamp_river_path(raw, heightWords, seaLevel16, td.riverData, w, h, waterDist);
+        stamp_river_path(raw, heightWords, seaLevel16, riverMask, w, h, waterDist);
     }
 
-    continue_dead_end_rivers(td.riverData, edgeDist, waterDist, heightWords,
+    continue_dead_end_rivers(riverMask, edgeDist, waterDist, heightWords,
                              seaLevel16, w, h, meander, scratch);
 
     // ГЛУБИНА ВРЕЗА — ДОЛЯ ПОЛЯ, А НЕ ЧИСЛО СЛОВ СЛОВАРЯ. Здесь стояло
@@ -918,13 +925,14 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     // Доля сохранена дословно; её вывод В МЕТРАХ владельцем не продиктован и
     // стоит нарядом M-197 (у русла сегодня нет профиля вовсе — оно держит
     // плоскость моря и на хребте, замер: 72 % пар суша-вода речные, p50 715 м).
-    constexpr float kRiverBedBelowSea01 = 8.0f / 255.0f;
-    const int carveDrop = int(kRiverBedBelowSea01 * kFieldWordMax);
-    const std::uint16_t carveH =
-        std::uint16_t(std::max(1, int(seaLevel16) - carveDrop));
+    // Сама глубина и её перевод в слово карты живут в заголовке
+    // (`kRiverBedBelowSea01` / `river_bed_word`): после сноса маски русла дно
+    // прокопа стало ЕДИНСТВЕННЫМ признаком реки, то есть свойством мира, а не
+    // деталью этого прохода.
+    const std::uint16_t carveH = river_bed_word(seaLevel16);
     for (int i = 0; i < n; ++i) {
         const std::size_t s = std::size_t(i) * 4;
-        if (td.riverData[std::size_t(i)] > 0 && td.rgba[s + 0] >= seaLevel16) {
+        if (riverMask[std::size_t(i)] > 0 && td.rgba[s + 0] >= seaLevel16) {
             td.rgba[s + 0] = std::min(td.rgba[s + 0], carveH);
         }
     }
@@ -968,7 +976,6 @@ TerrainData generate_terrain(int w, int h, const LayerParameters& params) {
     td.seaLevel16 = field_word_of(params.seaLevel);
     td.seed = params.seed;
     td.rgba.assign(std::size_t(w) * h * 4, 0);
-    td.riverData.assign(std::size_t(w) * h, 0);
 
     // КАРКАС ПЛИТ РОЖДАЕТСЯ ПЕРВЫМ — синтез высоты его ЧИТАТЕЛЬ. Поле
     // ординала заводится здесь, а заполняет его тот же поклеточный проход:
@@ -988,7 +995,6 @@ TerrainData generate_terrain(int w, int h, const LayerParameters& params) {
 
 void destroy_terrain(TerrainData& t) {
     t.rgba.clear();
-    t.riverData.clear();
     t.biome.clear();
     t.plates = PlateMap{};
     t.width = t.height = 0;

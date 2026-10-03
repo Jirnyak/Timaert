@@ -115,8 +115,6 @@ int main()
     sm::TerrainData td = make_terrain(2, 2);
     CHECK(td.cell_count() == 4u && td.has_rgba_storage(),
                  "terrain storage helpers must accept valid RGBA backing data");
-    CHECK(!td.has_river_storage(),
-                 "terrain river helper must reject missing river backing data");
     sm::FeatureLayer fullFeatures;
     fullFeatures.resize(2, 2);
     fullFeatures.set(0, 0, sm::FT_Road);

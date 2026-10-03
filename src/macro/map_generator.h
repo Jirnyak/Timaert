@@ -57,6 +57,30 @@ inline constexpr std::uint16_t field_word_of(float level01) {
     return std::uint16_t(int(c * kFieldWordMax));
 }
 
+// ── ДНО ПРОКОПА — ОДНА ГЛУБИНА НА ВЕСЬ МИР ─────────────────────────────────
+// Трассер не «помечает» русло, он РЕЖЕТ его: клетка опускается ровно на эту
+// глубину под плоскость моря, и вода в ней появляется сама, тем же
+// единственным порогом, каким она есть в океане (M-211, вердикт владельца:
+// «рек нет как структуры, от них остаются только прокопы в рельефе»).
+//
+// ПОЧЕМУ ЭТО ВЫШЛО ИЗ ПРИВАТНОЙ КОНСТАНТЫ В ЗАКОН: пока существовала маска
+// русла, «где река» отвечала она, и глубина была деталью реза. Маска снесена —
+// и теперь ЕДИНСТВЕННЫЙ способ узнать прокоп есть его дно. Величина перестала
+// быть деталью и стала свойством мира, о котором говорят свидетели.
+//
+// 8/255 поля — наследие байтовой карты, и это БАЛАНС: у воды шаг поля стоит
+// 1500 м, то есть дно лежит примерно на 47 м ниже плоскости.
+inline constexpr float kRiverBedBelowSea01 = 8.0f / 255.0f;
+
+// Слово карты, на котором лежит дно прокопа при данной плоскости. Не меньше
+// единицы: ноль есть дно океана, и русло, севшее на него, перестало бы
+// отличаться от бездны.
+inline constexpr std::uint16_t river_bed_word(std::uint16_t seaLevel16) {
+    const int drop = int(kRiverBedBelowSea01 * kFieldWordMax);
+    const int bed = int(seaLevel16) - drop;
+    return std::uint16_t(bed < 1 ? 1 : bed);
+}
+
 struct LayerParameters {
     // The world's seed IS an integer (CANON S26 «всё дискретно»); it was a
     // float here, so every consumer round-tripped through casts and any seed
@@ -99,8 +123,12 @@ struct TerrainData {
     // Форма — та же, что у `seaLevel16`: величина едет С КАРТОЙ, а не вторым
     // параметром через полдерева (прецедент — `DepositLayer::birthSeaLevel`).
     std::uint32_t seed = 0u;
-    // R8 river mask generated from the terrain heightmap. 255 = river cell.
-    std::vector<std::uint8_t> riverData;
+    // (Слой маски русла СНЕСЁН 2026-10-03, M-211. Река перестала быть
+    // структурой мира: трассер режет русло в поле высот, прокоп оказывается
+    // ниже плоскости моря — и вода в нём эмерджентна, тем же единственным
+    // ответом `is_water`, каким вода есть везде. Маска жила вторым спеллингом
+    // того же факта и имела троих читателей, которые на самом деле спрашивали
+    // про ВОДУ, а не про реку.)
     // Плоскость моря ЭТОЙ карты. Кто читает и зачем: `is_water` ниже, и через
     // неё весь макромир — это единственный ответ на «вода ли клетка»; больше
     // её не читает никто. Почему колонкой карты, а не параметром у каждой
@@ -160,11 +188,6 @@ struct TerrainData {
         return n > 0u
             && n <= std::numeric_limits<std::size_t>::max() / 4u
             && rgba.size() >= n * 4u;
-    }
-
-    bool has_river_storage() const {
-        const std::size_t n = cell_count();
-        return n > 0u && riverData.size() >= n;
     }
 
     // ── ДВЕРИ К КЛЕТКЕ (ЗАКОН АДРЕСА, 2026-09-23) ────────────────────────
@@ -285,7 +308,7 @@ TerrainData generate_terrain(int w, int h, const LayerParameters& params);
 
 // Second CPU synth pass (also called by generate_terrain): trace least-cost
 // rivers hugging climate-biome edges toward the nearest sea, stamp them into
-// td.riverData, and carve those cells below sea level so they classify as
+// carve those cells below sea level so they classify as
 // Biome::Water. Exposed for the river generation test suite; call it on a
 // TerrainData whose rgba height/moisture/temperature channels are populated.
 void generate_river_data(TerrainData& td, const LayerParameters& params);

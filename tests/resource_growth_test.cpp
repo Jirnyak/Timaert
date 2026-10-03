@@ -52,7 +52,6 @@ TerrainData make_terrain() {
     t.width = kW;
     t.height = kH;
     t.rgba.assign(std::size_t(kW) * kH * 4u, sm::field_word_of(128.0f / 255.0f));
-    t.riverData.assign(std::size_t(kW) * kH, 0);
     t.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);  // плоскость — у карты
     for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < kW; ++x) {

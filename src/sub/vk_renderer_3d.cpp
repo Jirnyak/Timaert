@@ -1511,48 +1511,6 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
         }
     }
     const std::uint32_t worldSeed = home.worldSeed;
-    // ── ВРЕМЕННЫЙ ПРИБОР M-199 (TIMAERT_RIVER_PROBE=1), СНОСИТСЯ ПОСЛЕ ОТВЕТА ──
-    // Вопрос владельца: «город на берегу, гряда в десяти клетках — на макрокарте
-    // она есть, а вдалеке её не видно». Прибор печатает, что дальний мир ОБЯЗАН
-    // нарисовать: радиус кольца, высоту под ногами, самую высокую клетку кольца
-    // и её расстояние. Если число есть, а на экране нет — дефект ниже по
-    // конвейеру (меш/дальность/дымка); если числа нет — дефект в поле.
-    {
-        static const bool probeOn = [] {
-            const char* v = std::getenv("TIMAERT_RIVER_PROBE");
-            return v && v[0] == '1';
-        }();
-        if (probeOn) {
-            float hiM = -1e30f, loM = 1e30f; int hx = 0, hy = 0;
-            for (int y = 0; y < n; ++y)
-                for (int x = 0; x < n; ++x) {
-                    const float m = sub::height_m(
-                        heights[std::size_t(y) * std::size_t(n) + std::size_t(x)]);
-                    loM = std::min(loM, m);
-                    if (m > hiM) { hiM = m; hx = x; hy = y; }
-                }
-            const int dx = hx - kFarCellRadius, dy = hy - kFarCellRadius;
-            const float footM = sub::height_m(
-                heights[std::size_t(kFarCellRadius) * std::size_t(n)
-                        + std::size_t(kFarCellRadius)]);
-            const float distCells = std::sqrt(float(dx * dx + dy * dy));
-            const float distM = distCells * float(kCellSize) * kTileMeters;
-            std::printf("[farprobe] клетка %d,%d | кольцо R=%d клеток (%.0f км) | "
-                        "под ногами %.0f м | низшая %.0f м | ВЫСШАЯ %.0f м на "
-                        "%.1f клетках (%.1f км, смещение %+d,%+d) | подъём над "
-                        "ногами %.0f м, угол над горизонтом %.1f°\n",
-                        camCx, camCy, kFarCellRadius,
-                        double(float(kFarCellRadius) * float(kCellSize)
-                               * kTileMeters / 1000.0f),
-                        double(footM), double(loM), double(hiM),
-                        double(distCells), double(distM / 1000.0f), dx, dy,
-                        double(hiM - footM),
-                        double(distM > 1.0f
-                               ? std::atan((hiM - footM) / distM) * 57.2957795f
-                               : 0.0f));
-            std::fflush(stdout);
-        }
-    }
     for (int y = 0; y < n; ++y) {
         for (int x = 0; x < n; ++x) {
             const std::size_t i = std::size_t(y) * std::size_t(n) + std::size_t(x);

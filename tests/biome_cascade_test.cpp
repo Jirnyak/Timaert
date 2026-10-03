@@ -85,7 +85,6 @@ TerrainData flat_world(int side, std::uint16_t heightWord) {
     td.height = side;
     td.seaLevel16 = field_word_of(kDefaultSeaLevel);
     td.rgba.assign(std::size_t(side) * std::size_t(side) * 4u, 0u);
-    td.riverData.assign(std::size_t(side) * std::size_t(side), 0u);
     for (std::size_t c = 0; c < std::size_t(side) * std::size_t(side); ++c) {
         td.rgba[c * 4u + 0u] = heightWord;
         // влага и температура середины матрицы
@@ -151,13 +150,19 @@ void test_forest_asks_the_one_cascade() {
           "лес не стоит на клетке, которую каскад зовёт горой — один порог");
     CHECK(onBarrenClimate == 0,
           "лес не стоит на мерзлоте и песке того же каскада");
-    CHECK(onShore == 0, "лес не стоит на клетке, касающейся воды");
+    // (ПРОВЕРКА БЕРЕГА СНЯТА 2026-10-03, M-211: отступ от уреза в одну клетку
+    // снесён вердиктом владельца — «пусть не отступа ни на сколько, просто
+    // минимальное простое бинарное правило: на воде леса нет». Предмета нет,
+    // охранять нечего; само число печатается ниже переписью, чтобы сдвиг
+    // берегового леса был виден, а не предполагался.)
+    std::printf("  [берег] деревьев в клетке, касающейся воды: %ld\n", onShore);
     // ПЕРЕПИСЬ, а не утверждение: оба числа двигает свод каскадов (лес теряет
     // спорную полосу и берег, реки получают рим массива краем биома), и здесь
     // они печатаются, чтобы сдвиг был виден числом, а не догадкой.
     long riverCells = 0;
     for (std::size_t c = 0; c < td.cell_count(); ++c)
-        if (td.riverData[c]) ++riverCells;
+        if (td.rgba[std::size_t(c) * 4u] == sm::river_bed_word(td.seaLevel16))
+            ++riverCells;
     std::fprintf(stderr,
                  "[biome] мир %d² сид 12345: лесных клеток %zu, речных %ld\n",
                  kSide, trees.size(), riverCells);
@@ -221,8 +226,9 @@ void test_river_tracer_sees_the_massif_rim() {
     for (int y = 0; y < kSide; ++y)
         for (int x = 0; x < kSide; ++x) {
             const std::size_t c = std::size_t(cell_of(x, y, kSide));
-            if (flat.riverData[c]) ++flatRivers;
-            if (massif.riverData[c]) {
+            if (flat.rgba[std::size_t(c) * 4u] == sm::river_bed_word(flat.seaLevel16))
+                ++flatRivers;
+            if (massif.rgba[std::size_t(c) * 4u] == sm::river_bed_word(massif.seaLevel16)) {
                 ++massifRivers;
                 // «У рима» — не дальше речного края от границы плато
                 // (исток берётся при edgeDist <= 2), то есть кольцо в две
@@ -299,7 +305,7 @@ void test_field_is_the_answer() {
     for (std::uint32_t c = 0; c < std::uint32_t(td.cell_count()); ++c) {
         ++samples;
         if (biome_at_cell(td, c) != biome_classify(td, c)) ++disagree;
-        if (td.riverData[c]) {
+        if (td.rgba[std::size_t(c) * 4u] == sm::river_bed_word(td.seaLevel16)) {
             ++riverCells;
             if (biome_at_cell(td, c) != Biome::Water) ++riverNotWater;
         }

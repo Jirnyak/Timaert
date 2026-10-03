@@ -80,13 +80,18 @@ static_assert(rows_in_enum_order(kDepositGen, &DepositGenRow::kind),
 // ПЕРВЫЙ ЖИЛЕЦ `cell_step` — и ровно тот случай, ради которого дверь
 // заводилась: обход 3×3 по тору. Здесь стояли ДВЕ рукописные свёртки
 // `((v % n) + n) % n`, последние в макромире (перепись 2026-09-23).
-bool river_adjacent(const TerrainData& t, int x, int y) {
-    if (!t.has_river_storage() || !world_shape_ok(t.width, t.height))
+// ВОПРОС БЫЛ ПРО ВОДУ, А СПРАШИВАЛОСЬ ПРО РЕКУ (M-211). Маска русла снесена:
+// река перестала быть структурой мира, от неё остался прокоп в рельефе, и вода
+// в нём — та же вода, что в море, по тому же единственному порогу. Россыпь
+// ложится у воды, а не у «реки»: сорта воды в этом мире нет и заводить его
+// значило бы вернуть снесённый второй спеллинг.
+bool water_adjacent(const TerrainData& t, int x, int y) {
+    if (!t.has_rgba_storage() || !world_shape_ok(t.width, t.height))
         return false;
     const std::uint32_t at = cell_of(x, y, t.width);
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
-            if (t.riverData[cell_step(at, dx, dy, t.width)] == 255) return true;
+            if (t.is_water(cell_step(at, dx, dy, t.width))) return true;
         }
     }
     return false;
@@ -153,7 +158,7 @@ std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
         }
         case OreAffinity::RiverMoisture: {
             const float m01 = field01_of(terrain.moisture_at(wx, wy));
-            weight = river_adjacent(terrain, wx, wy) ? m01 : m01 / 8.0f;
+            weight = water_adjacent(terrain, wx, wy) ? m01 : m01 / 8.0f;
             break;
         }
     }

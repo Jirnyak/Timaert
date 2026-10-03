@@ -133,7 +133,6 @@ verdict	SKELETON.md	| перемещение спроецированного л
 verdict	SKELETON.md	| производство/экономика | крафт одной дверью — ПРАВДА; скор без стоимости вх
 verdict	SKELETON.md	| промоушн только на живой карте, сброс, а не игнор | `fast_forward_allowed` (`:2505`), `:2519-2523` 
 verdict	SKELETON.md	| путь полёта | `build_flight_path` (`:2076-2098`) — второй закон пути (прямая по тору) рядом с
-verdict	SKELETON.md	| река | `TerrainData::riverData`, 255 = русло | **ПРАВДА**; двери чтения нет |
 verdict	SKELETON.md	| рендерер — не член симуляции | **нарушено:** `Renderer3DVk renderer3dVk_` — ЧЛЕН класса `Subw
 verdict	SKELETON.md	| род сквада — колонка, а не класс | `SquadType` (`squad_type.h`) | **ПРАВДА** |
 verdict	SKELETON.md	| рождение мира | порядок рельеф→вода→биомы→реки→залежи — ПРАВДА; дороги �

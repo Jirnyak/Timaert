@@ -55,7 +55,6 @@ TerrainData make_terrain() {
     t.width = kW;
     t.height = kH;
     t.rgba.assign(std::size_t(kW) * kH * 4u, 0);
-    t.riverData.assign(std::size_t(kW) * kH, 0);
     for (std::size_t i = 0; i < std::size_t(kW) * kH; ++i) {
         t.rgba[i * 4u + 0] = sm::field_word_of(kFlatLand01);
                                     // суша выше моря, но НЕ гора

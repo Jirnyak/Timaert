@@ -1664,62 +1664,6 @@ void boot_world(App& app, std::uint32_t seed,
     sm::generate_macro_world(go, gp);
     boot_trace("macro world generated");
 
-    // ── ВРЕМЕННЫЙ ПРИБОР M-197 (TIMAERT_RIVER_PROBE=1), СНОСИТСЯ ПОСЛЕ ОТВЕТА ──
-    // Вопрос владельца: «что за фьёрды? везде в мире? горные реки — норм?».
-    // Он сам находит места В ТОМ МИРЕ, который запущен, потому что сид обычной
-    // игры переменной не задаётся: печатает ГОТОВЫЕ команды `tp`, отдельно для
-    // речных врезов и отдельно для самого крутого берега океана — разделение
-    // по природе воды и есть весь смысл прибора, прошлая перепись мерила их
-    // одним мешком и назвала речную траншею урезом моря.
-    if (const char* rp = std::getenv("TIMAERT_RIVER_PROBE"); rp && rp[0] == '1') {
-        const sm::TerrainData& td = app.terrain;
-        struct Spot { float dropM; int x, y; float landM, bedM; };
-        std::vector<Spot> riv, oce;
-        const int dxs[4] = {1, -1, 0, 0}, dys[4] = {0, 0, 1, -1};
-        for (int y = 0; y < td.height; ++y)
-            for (int x = 0; x < td.width; ++x) {
-                const std::uint32_t c = sm::cell_of(x, y, td.width);
-                if (td.is_water(c)) continue;
-                const float hl = sm::field01_of(td.rgba[std::size_t(c) * 4u]);
-                for (int k = 0; k < 4; ++k) {
-                    const std::uint32_t nb = sm::cell_step(c, dxs[k], dys[k], td.width);
-                    if (!td.is_water(nb)) continue;
-                    const float hw = sm::field01_of(td.rgba[std::size_t(nb) * 4u]);
-                    const Spot s{sm::sub::height_m(hl) - sm::sub::height_m(hw), x, y,
-                                 sm::sub::height_m(hl), sm::sub::height_m(hw)};
-                    (nb < td.riverData.size() && td.riverData[nb] > 0u ? riv : oce)
-                        .push_back(s);
-                }
-            }
-        const auto deeper = [](const Spot& a, const Spot& b) { return a.dropM > b.dropM; };
-        std::sort(riv.begin(), riv.end(), deeper);
-        std::sort(oce.begin(), oce.end(), deeper);
-        std::printf("\n[riverprobe] МИР сид %u, %dx%d — куда идти СМОТРЕТЬ ГЛАЗАМИ\n",
-                    unsigned(app.gs.worldSeed), td.width, td.height);
-        std::printf("[riverprobe] пар суша-вода: речных %zu, океанских %zu\n",
-                    riv.size(), oce.size());
-        const auto dump = [](const char* title, const std::vector<Spot>& v,
-                             std::size_t i) {
-            if (i >= v.size()) return;
-            std::printf("[riverprobe]   tp %4d %4d   земля %6.0f м -> вода %5.0f м"
-                        "   ПЕРЕПАД %6.0f м   (%s)\n",
-                        v[i].x, v[i].y, double(v[i].landM), double(v[i].bedM),
-                        double(v[i].dropM), title);
-        };
-        std::printf("[riverprobe] -- ХУДШИЕ РЕЧНЫЕ ВРЕЗЫ --\n");
-        for (std::size_t i = 0; i < 4; ++i) dump("худший", riv, i);
-        std::printf("[riverprobe] -- ТИПИЧНЫЕ РЕЧНЫЕ ВРЕЗЫ (медиана и четверти) --\n");
-        if (!riv.empty()) {
-            dump("p75", riv, riv.size() / 4);
-            dump("p50", riv, riv.size() / 2);
-            dump("p25", riv, riv.size() * 3 / 4);
-        }
-        std::printf("[riverprobe] -- САМЫЙ КРУТОЙ БЕРЕГ ОКЕАНА В ЭТОМ МИРЕ --\n");
-        for (std::size_t i = 0; i < 2; ++i) dump("океан", oce, i);
-        std::printf("[riverprobe] (войди в субмир на каждой — лог окна печатается там же)\n\n");
-        std::fflush(stdout);
-    }
-
     if (!app.macro.init(app.device, app.renderer.renderPass)) {
         boot_trace("macro renderer init failed");
     } else {

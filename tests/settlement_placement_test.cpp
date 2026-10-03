@@ -84,7 +84,6 @@ TerrainData make_world() {
     td.width = kW;
     td.height = kH;
     td.rgba.assign(std::size_t(kW) * kH * 4u, 0);
-    td.riverData.assign(std::size_t(kW) * kH, 0);
     td.seaLevel16 = kSeaLevelWord;   // плоскость моря — колонка карты
     for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < kW; ++x) {
@@ -92,10 +91,10 @@ TerrainData make_world() {
             float level = kPlainLand01;                   // plain land
             if (x < kSeaCols) level = kSeaFloor01;        // sea
             if (y >= kMountainRow) level = kMountain01;   // mountains
-            if (x == kRiverCol && y < kMountainRow) {     // the river: honest
-                level = kSeaFloor01;                      //   water cells
-                td.riverData[std::size_t(y * kW + x)] = 255;
-            }
+            // Русло — ЧЕСТНАЯ ВОДА, и этого довольно: маска русла снесена
+            // (M-211), рекой клетку делает сам рельеф.
+            if (x == kRiverCol && y < kMountainRow)
+                level = kSeaFloor01;
             const int dist = std::abs(x - kRiverCol);
             const int moisture = std::max(20, 200 - 4 * dist);
             const std::uint16_t height = field_word_of(level);

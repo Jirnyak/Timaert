@@ -63,6 +63,20 @@ inline std::uint16_t mask_word(const sm::TerrainData& td, std::size_t cell)
 // (measured 239-494 on 1024^2 maps). The binary-heap A* has no ceiling and caps
 // natural runs near ~60, so a bound well below the anomaly regime catches any
 // regression to the depth-first behaviour.
+// ── ЧЕМ ОПОЗНАЁТСЯ РЕЧНАЯ КЛЕТКА ПОСЛЕ СНОСА МАСКИ (M-211) ─────────────────
+// Маска русла была вторым спеллингом того, что и так стоит в рельефе: трассер
+// РЕЖЕТ русло на фиксированную глубину под плоскость (`river_bed_word`), и
+// клетка, севшая ровно на это дно, и есть прокоп. Признак точен для всякой
+// клетки, которая до реза была сушей, — а речь только о них: клетка, и прежде
+// лежавшая ниже дна, есть океан, и рекой её никто не звал.
+//
+// Это НЕ копия продакшен-логики (§8 п.5): свидетель не повторяет трассировку,
+// он спрашивает у мира ОДНО число — на какой высоте стоит клетка.
+bool is_carved_river(const sm::TerrainData& td, std::size_t i)
+{
+    return height_word(td, i) == sm::river_bed_word(td.seaLevel16);
+}
+
 long max_axis_run(const sm::TerrainData& td)
 {
     const int w = td.width;
@@ -73,7 +87,7 @@ long max_axis_run(const sm::TerrainData& td)
         long run = 0;
         for (int x = 0; x < w; ++x)
         {
-            if (td.riverData[std::size_t(y) * w + x] > 0)
+            if (is_carved_river(td, std::size_t(y) * std::size_t(w) + std::size_t(x)))
             {
                 if (++run > best) best = run;
             }
@@ -88,7 +102,7 @@ long max_axis_run(const sm::TerrainData& td)
         long run = 0;
         for (int y = 0; y < h; ++y)
         {
-            if (td.riverData[std::size_t(y) * w + x] > 0)
+            if (is_carved_river(td, std::size_t(y) * std::size_t(w) + std::size_t(x)))
             {
                 if (++run > best) best = run;
             }
@@ -115,7 +129,7 @@ long count_non_draining_rivers(const sm::TerrainData& td, std::uint16_t seaW)
     const int h = td.height;
     const std::size_t n = std::size_t(w) * std::size_t(h);
     auto is_water = [&](std::size_t i) { return height_word(td, i) < seaW; };
-    auto is_river = [&](std::size_t i) { return td.riverData[i] > 0; };
+    auto is_river = [&](std::size_t i) { return is_carved_river(td, i); };
 
     std::vector<std::uint8_t> seen(n, 0u);
     std::vector<int> stack;
@@ -160,9 +174,10 @@ long count_non_draining_rivers(const sm::TerrainData& td, std::uint16_t seaW)
 long river_cell_count(const sm::TerrainData& td)
 {
     long c = 0;
-    for (std::uint8_t v : td.riverData)
+    const std::size_t n = td.cell_count();
+    for (std::size_t i = 0; i < n; ++i)
     {
-        if (v > 0) ++c;
+        if (is_carved_river(td, i)) ++c;
     }
     return c;
 }
@@ -183,13 +198,16 @@ void test_river_generation_is_deterministic()
     const sm::TerrainData a = sm::generate_terrain(kMapSize, kMapSize, params);
     const sm::TerrainData b = sm::generate_terrain(kMapSize, kMapSize, params);
 
-    CHECK_OR_RETURN(a.riverData.size() == b.riverData.size()
-                        && a.rgba.size() == b.rgba.size(),
+    CHECK_OR_RETURN(a.rgba.size() == b.rgba.size(),
                     "repeated generation must produce identically sized buffers");
-    CHECK(a.riverData == b.riverData,
-          "river mask must be bit-identical across runs (determinism)");
+    // ОДНА ПРОВЕРКА ВМЕСТО ДВУХ, И ЭТО НЕ ПОТЕРЯ ПОКРЫТИЯ: после сноса маски
+    // русло живёт В ПОЛЕ ВЫСОТ, значит бит-в-бит совпавший рельеф и есть
+    // бит-в-бит совпавшие реки. Прежде их было две, потому что носителей было
+    // два — ровно тот второй спеллинг, который снесли.
     CHECK(a.rgba == b.rgba,
           "carved terrain must be bit-identical across runs (determinism)");
+    CHECK(river_cell_count(a) == river_cell_count(b) && river_cell_count(a) > 0,
+          "the carved river network must repeat, and it must exist at all");
 }
 
 // Every macro-generation invariant runs against ONE generated map per seed
@@ -202,30 +220,30 @@ void check_map_invariants(std::uint32_t seed)
     const sm::TerrainData td = sm::generate_terrain(kMapSize, kMapSize, params);
     const std::uint16_t seaW = sm::field_word_of(params.seaLevel);
 
-    // Honest-water carve — the user's core requirement: a river IS a water
-    // cell. After the carve pass every river cell must sit below sea level and
-    // be masked as water, so it classifies as Biome::Water exactly like the
-    // sea. No river cell may be left standing above sea (the old "river on dry
-    // land" artefact).
-    long aboveSea = 0;
-    long notMasked = 0;
-    for (std::size_t i = 0; i < td.riverData.size(); ++i)
+    // ПРОКОП ЕСТЬ ВОДА — И ТЕПЕРЬ ЭТО ПРОВЕРЯЕТСЯ ЧЕРЕЗ ТУ ЖЕ ДВЕРЬ, ЧТО У
+    // ОКЕАНА. Прежние две проверки («ниже плоскости», «помечена водой») читали
+    // МАСКУ и спрашивали, совпала ли она с рельефом; маски нет, носитель один,
+    // и вопрос теперь честнее: клетка, севшая на дно прокопа, обязана быть
+    // водой по единственному порогу мира — `is_water`, тому же, которым вода
+    // есть в океане.
+    long notWater = 0;
+    const std::size_t cellsN = td.cell_count();
+    for (std::size_t i = 0; i < cellsN; ++i)
     {
-        if (td.riverData[i] == 0) continue;
-        if (height_word(td, i) >= seaW) ++aboveSea;
-        if (mask_word(td, i) != 0) ++notMasked;
+        if (!is_carved_river(td, i)) continue;
+        if (!td.is_water(std::uint32_t(i))) ++notWater;
     }
 
     // Drains-to-sea, DFS-anomaly bound, coverage sanity.
     const long unreached = count_non_draining_rivers(td, seaW);
     const long run = max_axis_run(td);
     const long rivers = river_cell_count(td);
-    const long cells = long(td.riverData.size());
+    const long cells = long(td.cell_count());
     constexpr long kMaxRunBound = 120; // heap A* measures 47-62; DFS gave 239-494
 
     const int failsBefore = sm::test::failures();
-    CHECK(aboveSea == 0, "every river cell must be carved below sea level");
-    CHECK(notMasked == 0, "every river cell must be masked as water (Biome::Water)");
+    CHECK(notWater == 0,
+          "прокоп есть вода по тому же единственному порогу, что и океан");
     CHECK(unreached == 0,
           "every river cell must drain to the sea through the water network");
     CHECK(run < kMaxRunBound,
@@ -237,8 +255,8 @@ void check_map_invariants(std::uint32_t seed)
     if (sm::test::failures() != failsBefore)
     {
         std::fprintf(stderr,
-            "  seed %u: rivers=%ld/%ld aboveSea=%ld notMasked=%ld unreached=%ld maxrun=%ld\n",
-            seed, rivers, cells, aboveSea, notMasked, unreached, run);
+            "  seed %u: rivers=%ld/%ld notWater=%ld unreached=%ld maxrun=%ld\n",
+            seed, rivers, cells, notWater, unreached, run);
     }
 }
 
@@ -256,12 +274,15 @@ void test_river_generation_fails_closed()
 {
     sm::LayerParameters params;
 
-    // Short RGBA storage for the declared dimensions -> must not read past the
-    // buffer, must leave an all-zero river mask sized to the grid.
+    // ОТКАЗ ТЕПЕРЬ ВИДЕН В РЕЛЬЕФЕ, А НЕ В МАСКЕ (M-211). Прежде свидетель
+    // проверял, что маска размечена и пуста; маски нет, и честный вопрос
+    // другой: на калечном входе проход обязан НЕ РЕЗАТЬ НИЧЕГО и не читать за
+    // буфером. Поле до и после сравнивается байт в байт.
     sm::TerrainData shortStore;
     shortStore.width = 16;
     shortStore.height = 16;
     shortStore.rgba.assign(16u, 0u); // far short of 16*16*4
+    const std::vector<std::uint16_t> shortBefore = shortStore.rgba;
     sm::generate_river_data(shortStore, params);
 
     // Non-positive dimensions -> empty river mask, no work.
@@ -269,15 +290,15 @@ void test_river_generation_fails_closed()
     zeroDims.width = 0;
     zeroDims.height = 4;
     zeroDims.rgba.assign(64u, 0u);
+    const std::vector<std::uint16_t> zeroBefore = zeroDims.rgba;
     sm::generate_river_data(zeroDims, params);
 
-    CHECK(shortStore.riverData.size() == 256u,
-          "malformed river gen must still size the mask to the grid");
-    CHECK(std::all_of(shortStore.riverData.begin(), shortStore.riverData.end(),
-                      [](std::uint8_t v) { return v == 0u; }),
-          "malformed river gen must stamp no rivers (fail closed)");
-    CHECK(zeroDims.riverData.empty(),
-          "non-positive dimensions must yield an empty river mask");
+    CHECK(shortStore.rgba == shortBefore,
+          "калечный вход не режет ни одной клетки (отказ закрытым)");
+    CHECK(zeroDims.rgba == zeroBefore,
+          "незаконная форма мира не режет ни одной клетки");
+    CHECK(shortStore.rgba.size() == 16u && zeroDims.rgba.size() == 64u,
+          "и за буфер проход не вышел — длины целы");
 }
 
 // ── Stage 2: subworld realization of a river cell ────────────────────────

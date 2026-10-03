@@ -836,7 +836,7 @@ jopus_prompts.md	spawners.cpp:263
 jopus_prompts.md	spawners.cpp:528
 jopus_prompts.md	spawners.cpp:533
 jopus_prompts.md	spawners.cpp:631-635
-jopus_prompts.md	spawners.cpp:732
+jopus_prompts.md	spawners.cpp:715
 jopus_prompts.md	squad.h:453-460
 jopus_prompts.md	squad.h:549-559
 jopus_prompts.md	squad.h:953-957

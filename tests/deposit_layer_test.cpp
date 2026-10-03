@@ -41,7 +41,6 @@ TerrainData make_world() {
     td.width = w;
     td.height = h;
     td.rgba.assign(std::size_t(w) * h * 4u, 0);
-    td.riverData.assign(std::size_t(w) * h, 0);
     // Плоскость моря — колонка КАРТЫ (M-109): свидетель ставит её сам, ровно
     // тем же порогом, которым ниже пишет канал маски.
     td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
@@ -60,7 +59,14 @@ TerrainData make_world() {
             td.rgba[s + 3] = level01 < sm::kDefaultSeaLevel
                                  ? std::uint16_t(0)
                                  : std::uint16_t(sm::kFieldWordMax);
-            if (x == 8 && y < 48) td.riverData[y * w + x] = 255;
+            // РУСЛО ЕСТЬ РЕЛЬЕФ (M-211): колонка режется ниже плоскости, и
+            // вода в ней появляется тем же единственным порогом, что в море.
+            // Прежде фикстура ставила МАСКУ рядом с высотой — два носителя
+            // одного факта, и они могли разъехаться молча.
+            if (x == 8 && y < 48) {
+                td.rgba[s + 0] = sm::river_bed_word(td.seaLevel16);
+                td.rgba[s + 3] = std::uint16_t(0);
+            }
         }
     }
     return td;
@@ -100,7 +106,7 @@ void test_deposits_obey_the_world() {
                         const int xi = (x + dx + td.width) % td.width;
                         const int yi = (y + dy + td.height) % td.height;
                         nearRiver = nearRiver
-                            || td.riverData[yi * td.width + xi] == 255;
+                            || td.is_water(sm::cell_of(xi, yi, td.width));
                     }
                 affinityHolds = affinityHolds && nearRiver;
             } else {

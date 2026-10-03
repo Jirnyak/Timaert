@@ -36,7 +36,6 @@ sm::TerrainData make_terrain(int w, int h, float level01)
     td.width = w;
     td.height = h;
     td.rgba.assign(std::size_t(w) * std::size_t(h) * 4u, 0);
-    td.riverData.assign(std::size_t(w) * std::size_t(h), 0);
     // плоскость моря — у карты
     td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
     const std::uint16_t word = sm::field_word_of(level01);
