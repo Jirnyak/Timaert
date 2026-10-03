@@ -91,13 +91,19 @@ static float smooth_noise_ts(float x, float y, std::uint32_t seed,
 // measured from somebody else's water. The plane arrives as `seaLevel` now,
 // from CellContext (map_data.h).
 
+// СИД СОБСТВЕННОГО ШУМА ЗЕМЛИ — ОДИН НА ВЕСЬ ФАЙЛ. Он стоял двумя копиями
+// одного литерала под ДВУМЯ именами — `kDetailSeed` у стопки детали и
+// `kRidgeSeed` у хребтов, — а два имени у одного числа есть приглашение
+// развести их правкой одного. Деталь и хребет сидят на одном сиде нарочно:
+// это собственный шум ОДНОЙ земли, а не два независимых поля.
+constexpr std::uint32_t kDetailSeed = 0xD37A115u;
+
 // The near generator's detail stack, with the octaves a mesh cannot draw left
 // out (base_generator.h). The frequencies, weights and normalisation are the
 // ones the ground itself is made of — this is the same noise, sampled by
 // somebody who can only afford some of it.
 float terrain_detail01(int gx, int gy, float worldTiles,
                        float minWavelengthTiles) {
-    constexpr std::uint32_t kDetailSeed = 0xD37A115u;
     constexpr float kFreqs[2]   = {0.008f, 0.02f};
     constexpr float kWeights[2] = {0.5f,   0.25f};
     // THE FULL weight of the stack, always — see the header. An octave the
@@ -225,20 +231,19 @@ float mountain_ridges01(float h, int gx, int gy, float macroH,
                         float peakTarget, float rw,
                         float worldTiles, bool coarseOnly, float seaLevel) {
     if (rw <= 0.01f) return h;
-    constexpr std::uint32_t kRidgeSeed = 0xD37A115u;
     // Every octave below closes on the world: the period handed to the noise is
     // the world's tile span at that frequency.
     const auto per = [worldTiles](float freq) { return worldTiles * freq; };
     const float wx = float(gx)
         + (smooth_noise_ts(float(gx) * 0.002f + 71.7f,
-                           float(gy) * 0.002f, kRidgeSeed, per(0.002f)) - 0.5f) * 90.0f;
+                           float(gy) * 0.002f, kDetailSeed, per(0.002f)) - 0.5f) * 90.0f;
     const float wy = float(gy)
         + (smooth_noise_ts(float(gx) * 0.002f,
-                           float(gy) * 0.002f + 31.1f, kRidgeSeed, per(0.002f)) - 0.5f) * 90.0f;
+                           float(gy) * 0.002f + 31.1f, kDetailSeed, per(0.002f)) - 0.5f) * 90.0f;
     constexpr float kFreqs[2] = {0.0026f, 0.006f};
     float ridge = 0.0f, amp = 1.0f, wt = 1.0f;
     for (int o = 0; o < 2; ++o) {
-        float sig = smooth_noise_ts(wx * kFreqs[o], wy * kFreqs[o], kRidgeSeed,
+        float sig = smooth_noise_ts(wx * kFreqs[o], wy * kFreqs[o], kDetailSeed,
                                     per(kFreqs[o]));
         // COMPROMISE crest (owner round 3): the C1 parabola 4s(1−s) alone
         // made homogeneous hills — no crests, no gullies, no character; the
@@ -271,7 +276,7 @@ float mountain_ridges01(float h, int gx, int gy, float macroH,
         ? 0.5f   // the octave's own mean — removing detail must not MOVE the
                  // ground, only stop varying it
         : smooth_noise_ts(wx * 0.0085f, wy * 0.0085f,
-                          kRidgeSeed ^ 0x9E3779B9u, per(0.0085f));
+                          kDetailSeed ^ 0x9E3779B9u, per(0.0085f));
     const float cragAmp = 0.004f + 0.004f * ridge; // crags live on the ridges
     // Valley floor must track the surrounding macro altitude, not collapse
     // to half of it. The original `macroH * 0.5f` produced a 400+ m trench
@@ -312,7 +317,7 @@ float mountain_ridges01(float h, int gx, int gy, float macroH,
     // massif FINGERS into the plain — foothill spurs and bays instead of a
     // clean contour. Smoothstep keeps both ends C1.
     const float edgeN = smooth_noise_ts(wx * 0.0035f + 211.0f,
-                                        wy * 0.0035f + 97.0f, kRidgeSeed,
+                                        wy * 0.0035f + 97.0f, kDetailSeed,
                                         per(0.0035f));
     const float t     = std::clamp(rw * 1.2f + (edgeN - 0.5f) * 0.55f,
                                    0.0f, 1.0f);
@@ -540,20 +545,20 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                 ? wrapi(globalOffsetX + x, int(worldTiles)) : globalOffsetX + x;
             const int gyi = worldTiles > 0.0f
                 ? wrapi(globalOffsetY + y, int(worldTiles)) : globalOffsetY + y;
-            constexpr std::uint32_t kDetailSeed = 0xD37A115u;
-            // Detail octaves must stay above the 3D mesh Nyquist (~32-tile
-            // wavelength on the 16-tile-spaced terrain mesh). The old 0.06
-            // octave (~16-tile wavelength) sat *at* Nyquist and aliased into
-            // the "chaotic spiky peaks" in 3D that the low-passing minimap
-            // never showed — worst on mountain foothills where mountainScale
-            // amplifies it. Dropping it makes the 3D relief match the smooth
-            // shaded relief on the map.
-            float noise = 0.0f;
-            noise += smooth_noise_ts(float(gxi) * 0.008f, float(gyi) * 0.008f,
-                                     kDetailSeed, per(0.008f)) * 0.5f;
-            noise += smooth_noise_ts(float(gxi) * 0.02f,  float(gyi) * 0.02f,
-                                     kDetailSeed, per(0.02f)) * 0.25f;
-            noise = std::clamp(noise / 0.75f, 0.0f, 1.0f);
+            // ── СТОПКА ДЕТАЛИ ОДНА, И ЗВОНЯТ В НЕЁ ОБА МИРА ──────────────
+            // Здесь стояли те же частоты и те же веса, написанные от руки
+            // второй раз: 0.008/0.5 и 0.02/0.25 с делением на 0.75 — ровно
+            // `terrain_detail01` и ничего больше. Два написания одной стопки
+            // расходятся молча: правка спектра в одном из них развела бы
+            // ближнюю землю с дальней, не уронив ни теста, ни сборки (DOD п.6
+            // — два ответа на один вопрос о мире).
+            //
+            // Предел длины волны у БЛИЖНЕГО пути — НОЛЬ, и это не «выключено»,
+            // а значение: композит рисует мешем с вершиной на
+            // `kHeightQuadTiles` тайлов, то есть несёт всё, что стопка даёт.
+            // Дальний путь передаёт сюда 2×шаг своего кольца, и этим вся
+            // разница между мирами исчерпывается.
+            const float noise = terrain_detail01(gxi, gyi, worldTiles, 0.0f);
 
             // Smooth manifold: relief = macroH² + gradient. Macro height
             // squared concentrates noise on hills/peaks and keeps lowlands
