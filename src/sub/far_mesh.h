@@ -190,9 +190,15 @@ constexpr bool far_quad_emitted(int ix, int iz, int latticeHalf,
 // ONE RULE FOR EVERY EDGE, exactly as before: any quad edge with no emitted
 // quad on the other side gets a skirt — the lattice's outer rim and the
 // border of the hole alike. Two seams, no special cases.
+// `surfaceOut`, when given, reports how many indices the SURFACE pass uses —
+// everything before the curtains. The canopy draws with that count: a cover
+// hanging over the ground needs the ground's shape, never its skirts, and a
+// skirt painted as canopy would be a green wall dropped down every rim.
 inline void build_far_lattice_indices(std::vector<std::uint32_t>& out,
-                                      int latticeHalf, int holeQuadHalf) {
+                                      int latticeHalf, int holeQuadHalf,
+                                      std::uint32_t* surfaceOut = nullptr) {
     out.clear();
+    if (surfaceOut) *surfaceOut = 0;
     if (latticeHalf <= 0) return;                  // no lattice, no triangles
     const int dim = 2 * latticeHalf + 1;
     const std::uint32_t skirtBase = std::uint32_t(dim) * std::uint32_t(dim);
@@ -214,6 +220,7 @@ inline void build_far_lattice_indices(std::vector<std::uint32_t>& out,
             out.push_back(b); out.push_back(c); out.push_back(d);
         }
     }
+    if (surfaceOut) *surfaceOut = std::uint32_t(out.size());
     const auto hang = [&](std::uint32_t t0, std::uint32_t t1) {
         const std::uint32_t b0 = t0 + skirtBase;
         const std::uint32_t b1 = t1 + skirtBase;

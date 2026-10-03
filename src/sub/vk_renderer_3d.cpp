@@ -727,7 +727,11 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         fb[1].binding = 1;
         fb[2] = fb[0];
         fb[2].binding = 2;
-        fb[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        // ОБЕ стадии: фрагмент земли подмешивает тон, а вершина полога
+        // (far_canopy.vert) поднимает на доле саму подушку — одно поле, два
+        // потребителя, но по-прежнему ОДИН дескриптор.
+        fb[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT
+                         | VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo fdlci{};
         fdlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         fdlci.bindingCount = 3;
@@ -805,6 +809,21 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
                               /*depthWrite=*/true, /*blend=*/false,
                               /*cullBack=*/false, farSets, 2)) {
         std::fprintf(stderr, "[Renderer3DVk] far-world pipeline FAILED\n");
+    }
+
+    // THE CANOPY OVER IT — a second surface on the SAME lattice, the same
+    // indices and the same two atlases, so the whole cost of a forest that
+    // stands up is one pipeline and one draw per ring. No vertex input here
+    // either: the cushion is the ground's field read again and lifted.
+    spv_path(vpath, sizeof vpath, "far_canopy.vert");
+    spv_path(fpath, sizeof fpath, "far_canopy.frag");
+    if (!farCanopyPipe_.create_mesh(dev, mainPass, vpath, fpath,
+                                    sizeof(FarPush), /*vertexStride=*/0,
+                                    nullptr, 0,
+                                    /*instanced=*/false, /*depthTest=*/true,
+                                    /*depthWrite=*/true, /*blend=*/false,
+                                    /*cullBack=*/false, farSets, 2)) {
+        std::fprintf(stderr, "[Renderer3DVk] far canopy pipeline FAILED\n");
     }
 
     // A2: Sky pipeline (fullscreen.vert + sky.frag, no vertex input, depth
@@ -1184,6 +1203,12 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     materialTexAlt_.destroy(dev);
     farHeightTex_.destroy(dev);
     farMatTex_.destroy(dev);
+    farCoverTex_.destroy(dev);
+    // Обе дальние трубы: `farPipe_` не сносилась здесь НИКОГДА — утечка была
+    // тихой, потому что рендерер живёт до конца процесса и никто её не искал.
+    // Нашлась, когда рядом появилась вторая, и чинится той же строкой.
+    farPipe_.destroy(dev);
+    farCanopyPipe_.destroy(dev);
     if (farPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, farPool_, nullptr);
         farPool_ = VK_NULL_HANDLE;
@@ -1639,7 +1664,8 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     if (farIdx_.buffer == VK_NULL_HANDLE) {
         std::vector<std::uint32_t> latticeIdx;
         sub::build_far_lattice_indices(latticeIdx, sub::kFarLatticeHalf,
-                                       sub::kFarHoleQuadHalf);
+                                       sub::kFarHoleQuadHalf,
+                                       &farSurfaceIndexCount_);
         if (latticeIdx.empty()) return;
         const VkDeviceSize iBytes =
             VkDeviceSize(latticeIdx.size() * sizeof(std::uint32_t));
@@ -3474,6 +3500,33 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                    | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0, sizeof(fp), &fp);
             vkCmdDrawIndexed(cmd, farIndexCount_, 1, 0, 0, 0);
+        }
+
+        // ── THE FOREST STANDING ON IT ────────────────────────────────────
+        // Same buffer, same push, same rings — and a SHORTENED count: the
+        // surface run only. A cushion of canopy belongs over the ground's
+        // shape, never down its skirts, where it would paint a green wall
+        // around every rim of the ladder.
+        if (farCanopyPipe_.pipeline != VK_NULL_HANDLE
+            && farSurfaceIndexCount_ > 0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              farCanopyPipe_.pipeline);
+            if (litSet != VK_NULL_HANDLE) {
+                const VkDescriptorSet canopyBind[2] = {litSet, farSet_};
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        farCanopyPipe_.layout, 0, 2,
+                                        canopyBind, 0, nullptr);
+            }
+            for (int ring = 0; ring < sub::kFarRings; ++ring) {
+                fp.ring[0] = float(sub::far_ring_step_m(ring));
+                fp.ring[1] = float(sub::kFarLatticeHalf);
+                fp.ring[2] = float(ring * sub::kFarSheetDim);
+                vkCmdPushConstants(cmd, farCanopyPipe_.layout,
+                                   VK_SHADER_STAGE_VERTEX_BIT
+                                       | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(fp), &fp);
+                vkCmdDrawIndexed(cmd, farSurfaceIndexCount_, 1, 0, 0, 0);
+            }
         }
     }
 

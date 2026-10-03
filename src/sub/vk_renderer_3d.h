@@ -252,6 +252,13 @@ private:
     // or crossing ever touches it again.
     gpu::VulkanBuffer   farIdx_{};
     std::uint32_t       farIndexCount_ = 0;
+    // How much of that buffer is SURFACE — the run before the curtains. The
+    // canopy draws with this count: a cover hangs over the ground's shape and
+    // has no business on its skirts, where it would paint a green wall down
+    // every rim. The two-pass build in build_far_lattice_indices exists for
+    // exactly this shortening.
+    std::uint32_t       farSurfaceIndexCount_ = 0;
+    gpu::VulkanPipeline farCanopyPipe_{};
     // IS THERE A FAR WORLD IN THIS SCENE AT ALL. A dungeon and the main menu
     // have no macro cell for a sheet to be a function of (ЗАКОН ДВУХ МИРОВ
     // п.4), so they build none and this stays false — the atlases still hold
