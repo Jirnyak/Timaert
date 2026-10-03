@@ -511,13 +511,21 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                 }
             }
 
+            // ── БОЛОТО БОЛЬШЕ НЕ НИЗИНА, И ЭТО ВЕРДИКТ ВЛАДЕЛЬЦА ──────────
+            // Здесь стояла просадка `macroH` к `seaLevel + 0.06` на 85 %: род
+            // биома тянул АБСОЛЮТНЫЙ уровень земли к воде. Замерено на трёх
+            // сидах — болотная клетка стояла на 61…210 м ниже своей
+            // макровысоты, и дальний мир об этой яме не знал ВОВСЕ, потому
+            // что у него биомных просадок нет.
+            //
+            // Вердикт владельца 2026-10-03: «болото перестаёт быть низиной
+            // вовсе» — мокрое место на ЛЮБОЙ высоте, горное болото законно;
+            // и шире того: «уровень рельефа может быть только один из
+            // макромира». Низину, если она нужна, обязано дать ПОЛЕ ВЫСОТ,
+            // как оно даёт её руслу реки, — а не род клетки в субмире.
+            //
+            // Биому осталась ФАКТУРА, и ниже по вызову она симметрична.
             const float sf = needsSwamp ? blend(swampFactor) : 0.0f;
-            if (sf > 0.01f) {
-                // Per-pixel swamp flatten BEFORE noise so neighbour heights
-                // don't lift swamp rims into a crater wall.
-                const float swampTarget = seaLevel + 0.06f;
-                macroH += (swampTarget - macroH) * sf * 0.85f;
-            }
 
             // Multi-octave terrain noise in global tile coords with a fixed
             // world seed → continuous across cell boundaries.
@@ -578,6 +586,18 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             }
 
             if (sf > 0.01f) {
+                // БОЛОТНАЯ ФАКТУРА: мочажины и кочки между ними. Её среднее
+                // РОВНО НОЛЬ, поэтому уровень земли она не трогает ПО
+                // ПОСТРОЕНИЮ, а не по договорённости — ровно то, что вердикт
+                // владельца оставляет биому («биомы будут только локальные
+                // вещи типа мелкие структуры рельеф типа барханов и впадин и
+                // тд но без изменения абсолютного рельефа»).
+                //
+                // Прежде здесь стояло `h -= dip`, где `dip` ∈ [0, 0.09] — то
+                // есть просадка, которая НИКОГДА не поднимает: её среднее
+                // 0.045 единицы поля (= 67 м по кривой) и было вторым,
+                // тихим способом утопить болото. Вычитается теперь ОТКЛОНЕНИЕ
+                // от среднего, и тот же рисунок мочажин остаётся на месте.
                 const float lowland = smooth_noise_ts(
                     float(gxi) * 0.006f + 200.0f,
                     float(gyi) * 0.006f + 200.0f, kDetailSeed, per(0.006f));
@@ -586,7 +606,10 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                     per(0.025f));
                 const float dip = (1.0f - lowland) * 0.05f
                                 + (1.0f - bog) * 0.04f;
-                h -= dip * sf * (1.0f - plateauW) * detail;
+                // Среднее обеих октав — 0.5 (`smooth_noise_ts` равномерен),
+                // поэтому среднее `dip` есть ровно половина суммы амплитуд.
+                constexpr float kBogMean = 0.5f * 0.05f + 0.5f * 0.04f;
+                h -= (dip - kBogMean) * sf * (1.0f - plateauW) * detail;
             }
 
             // Clamp broad for safety; mountain ridge output itself is kept
