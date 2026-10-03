@@ -372,6 +372,111 @@ int main() {
                     double(kMacroH), double(nearAmp), double(farHi - farLo),
                     double((farHi - farLo) / nearAmp), double(gap),
                     double(frame));
+
+        // ── 5b. A ROAD'S CELL IS CALMED ON BOTH SIDES OF THE JOIN ────────
+        // `damp` is a property of the WHOLE cell, and roads run in networks
+        // across the map, so a damped cell lands on the window's rim as a
+        // matter of course. The near generator has always calmed it; the far
+        // world did not, and the gap was a seam measured at p90 27–52 m and
+        // up to 126 m on three seeds.
+        //
+        // Both sides reach the law through ONE door (`apply_cell_damp`), so
+        // this witness feeds that door too rather than spelling the three
+        // multipliers a third time — a test that re-derives what the code
+        // derives tests that you can copy.
+        {
+            const TerrainMod road = terrain_mod_for(LandmarkType::None, FT_Road);
+            CHECK(road.damp > 0.0f && road.plateauR == 0.0f,
+                  "the fixture measures DAMP alone: a road calms its cell and "
+                  "raises no plateau (if this ever changes, the rows below are "
+                  "measuring something else)");
+
+            TerrainMod mods[9]{};
+            for (TerrainMod& m : mods) m = road;
+            std::vector<float> hmRoad;
+            generate_heightmap(hmRoad, kCellSize, nbHeights, nbBiome, nbBiome5,
+                               Biome::Meadow, kSeed,
+                               kCellGX * kCellSize, kCellGY * kCellSize,
+                               WATER_LEVEL, mods, kWorldCells, kSeed);
+
+            // The far columns of a damped cell — the same door, the same order
+            // (applied to the cell's own columns BEFORE any blending).
+            float dHs = hs, dMs = ms, dRidge = 0.0f, dGrad = 0.0f;
+            apply_cell_damp(road.damp, dMs, dRidge, dGrad);
+
+            // Walk the cell once per far spelling: columns calmed (as the far
+            // gather now does) and columns left wild (the defect). Both are
+            // measured against the SAME near ground.
+            const auto walk = [&](float rw, float grad, float hsc, float msc) {
+                float worst = 0.0f, flo = 1e30f, fhi = -1e30f;
+                float nlo = 1e30f, nhi = -1e30f;
+                double sum = 0.0;
+                int seen = 0;
+                for (int y = 0; y < kCellSize; y += 16) {
+                    for (int x = 0; x < kCellSize; x += 16) {
+                        const int gx = kCellGX * kCellSize + x;
+                        const int gy = kCellGY * kCellSize + y;
+                        const float nearM = height_m(
+                            hmRoad[std::size_t(y) * kCellSize + std::size_t(x)]);
+                        const float farM = height_m(
+                            far_height01(gx, gy, kMacroH, 0.0f, rw, kWorldTiles,
+                                         WATER_LEVEL, grad, hsc, msc, minWave));
+                        worst = std::max(worst, std::fabs(farM - nearM));
+                        sum += double(farM - nearM);
+                        flo = std::min(flo, farM); fhi = std::max(fhi, farM);
+                        nlo = std::min(nlo, nearM); nhi = std::max(nhi, nearM);
+                        ++seen;
+                    }
+                }
+                struct R { float gap, farAmp, nearAmp, frame; int n; };
+                return R{worst, fhi - flo, nhi - nlo,
+                         float(sum / double(seen)), seen};
+            };
+            const auto calm = walk(dRidge, dGrad, dHs, dMs);
+            const auto wild = walk(0.0f, 0.0f, hs, ms);
+
+            CHECK(calm.n > 1000 && calm.nearAmp > 0.5f,
+                  "the damped fixture measured: a calmed cell still HAS ground "
+                  "to disagree about");
+            // THE LAW IS THE SAME ONE §5 USES, and it has to be: a cell's
+            // content calming only ONE of the two grounds is an AMPLITUDE
+            // disagreement with a near-zero mean, so a bound on the worst
+            // sample cannot catch it — arithmetically, an undamped far column
+            // disagrees by at most 0.385/0.615 of the band, i.e. never leaves
+            // it. What it DOES do is make the far ground louder than the near
+            // one, and «removal can only remove» already forbids that.
+            CHECK(calm.farAmp <= calm.nearAmp,
+                  "a road's cell is calmed on BOTH sides of the join — the far "
+                  "ground of a damped cell is no louder than its near ground "
+                  "(M-201 content seam)");
+            CHECK(std::fabs(calm.frame) < calm.nearAmp * 0.1f,
+                  "...and no systematic step comes with the calming");
+            // NEGATIVE CONTROL — the defect itself, reproduced through the
+            // door's own input rather than by copying the old code: far
+            // columns left WILD while the near ground is calmed.
+            //
+            // МУТАЦИЯ → ИСХОД, ПРОГНАНО 2026-10-03 (числа печатаются ниже):
+            //   база: ближняя полоса 26.9 м, дальняя 20.9 м (0.78×),
+            //         расхождение 5.6 м, рамка +0.37 м;
+            //   дальние колонки без `apply_cell_damp` → дальний рельеф
+            //         20.9 → 33.9 м, то есть 1.26× ближней полосы, и вердикт
+            //         «calmed on BOTH sides» КРАСНЕЕТ;
+            //   расхождение при этом 5.6 → 11.0 м и в полосе 26.9 ОСТАЁТСЯ —
+            //         то есть порог на худший сэмпл этот дефект не ловит и
+            //         ловить не может (арифметика выше), и подгонять его под
+            //         11 м было бы подгонкой.
+            CHECK(wild.farAmp > calm.nearAmp,
+                  "the detector fires: an UNDAMPED far column is LOUDER than "
+                  "the calmed near ground, which is exactly the verdict above");
+            std::printf("  [замер] клетка дороги: ближняя полоса %.1f м, "
+                        "дальняя %.1f м (%.2f×), расхождение %.1f м, рамка "
+                        "%+.2f м; БЕЗ гашения дали — %.1f м (%.2f×), "
+                        "расхождение %.1f м\n",
+                        double(calm.nearAmp), double(calm.farAmp),
+                        double(calm.farAmp / calm.nearAmp), double(calm.gap),
+                        double(calm.frame), double(wild.farAmp),
+                        double(wild.farAmp / calm.nearAmp), double(wild.gap));
+        }
     }
 
     return report("far_terrain_test");

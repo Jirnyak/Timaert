@@ -405,13 +405,8 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         // per-cell before the bilinear blend, so a damped city cell next to a
         // wild mountain cell still blends smoothly — the massif fades into
         // the town's table instead of stopping at a seam.
-        const float damp = nbMods ? std::clamp(nbMods[i].damp, 0.0f, 1.0f)
-                                  : 0.0f;
-        if (damp > 0.0f) {
-            mountainScale[i] *= 1.0f - 0.7f * damp;
-            ridgeWeight  [i] *= 1.0f - damp;
-            macroGradient[i] *= 1.0f - 0.6f * damp;
-        }
+        apply_cell_damp(nbMods ? nbMods[i].damp : 0.0f,
+                        mountainScale[i], ridgeWeight[i], macroGradient[i]);
 
         // THE CELL'S OWN PLACE, AND THE CELL'S OWN SEED.
         //

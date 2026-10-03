@@ -1494,6 +1494,11 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     // the macro world five times for what it can be asked once.
     std::vector<Biome> biomes(std::size_t(n) * std::size_t(n), Biome::Meadow);
     std::vector<float> heights(std::size_t(n) * std::size_t(n), 0.0f);
+    // HOW MUCH THIS CELL'S CONTENT CALMS ITS OWN GROUND — the near generator's
+    // own column (`terrain_mod_for`), resolved here because the column pass
+    // below runs a second time over the ring and the context is only live in
+    // this one. One float a cell, the same shape as the two above.
+    std::vector<float> damps(std::size_t(n) * std::size_t(n), 0.0f);
     for (int y = 0; y < n; ++y) {
         for (int x = 0; x < n; ++x) {
             const CellContext c = mgr.resolve_cell(camCx + x - kFarCellRadius,
@@ -1501,6 +1506,8 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             const std::size_t i = std::size_t(y) * std::size_t(n) + std::size_t(x);
             biomes[i] = c.biome;
             heights[i] = c.macroHeight;
+            damps[i] = sub::terrain_mod_for(c.landmark.kind,
+                                            FeatureType(c.feature)).damp;
         }
     }
     const std::uint32_t worldSeed = home.worldSeed;
@@ -1580,6 +1587,26 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
                 camCx + x - kFarCellRadius, camCy + y - kFarCellRadius,
                 worldSeed, seaLevel01_);
             col.ridgeW = mtn ? 1.0f : 0.0f;
+            // ── WHAT THE CELL'S CONTENT DOES TO ITS GROUND ───────────────
+            // A road bed, a town, a ploughed field CALM the land they stand
+            // on, and the near generator has always known it (`terrain_mod_for`
+            // → the per-cell damp it applies BEFORE the bilinear blend). The
+            // far world did not, and the gap is a seam: `damp` is a property
+            // of the WHOLE cell, roads run in networks across the map, so a
+            // damped cell lands on the window's rim as a matter of course.
+            // Measured on three seeds, with a control row that has no content
+            // at all (frame −0.0 m): a road cell disagreed with the far ground
+            // by p90 27–52 m and up to 126 m, a city cell by p90 41–68 m.
+            //
+            // IT COSTS NO NEW COLUMN, and that is the point: the near path
+            // applies damp to a cell's own columns before blending, so doing
+            // the same here is not a parallel mechanism — it is the same step
+            // in the same order, which is what makes the two grounds agree.
+            // The content arrives through the cell's OWN FIELDS: the feature
+            // byte (settlements are rows of it since FT_City) and the place
+            // the cell carries.
+            sub::apply_cell_damp(damps[i], col.mtnScale, col.ridgeW,
+                                 col.gradient01);
             col.material = biomeMat[std::size_t(b)];
             grid.cells[i] = col;
         }

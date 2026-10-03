@@ -156,6 +156,32 @@ namespace sm::sub
         return isMountain ? 0.15f : (0.1f + float(adjMountain) * 0.1f);
     }
 
+    // WHAT A CELL'S CONTENT DOES TO ITS OWN GROUND — the second one-door
+    // column, and for the same reason as the first.
+    //
+    // A road bed, a town, a ploughed field CALM the land they stand on
+    // (`terrain_mod_for` below states how much). The calming is applied to the
+    // cell's OWN columns BEFORE any blending, so that a damped cell beside a
+    // wild one still blends smoothly instead of stopping at a seam — and
+    // because it happens before the blend, it is not a correction anyone can
+    // apply afterwards.
+    //
+    // BOTH GROUNDS CALL THIS, and that is the whole point. The near generator
+    // knew the law and the far world did not, which made a damped cell a seam
+    // wherever it met the window's rim — and roads run in networks, so it met
+    // it constantly. Measured on three seeds against a control row with no
+    // content (frame −0.0 m): a road cell disagreed with the far ground by
+    // p90 27–52 m and up to 126 m; through this door, p90 5.1 m and max
+    // 14.9 m, i.e. the control row itself.
+    constexpr void apply_cell_damp(float damp, float& mtnScale, float& ridgeW,
+                                   float& gradient01) {
+        if (!(damp > 0.0f)) return;
+        const float d = damp < 1.0f ? damp : 1.0f;
+        mtnScale   *= 1.0f - 0.7f * d;
+        ridgeW     *= 1.0f - d;
+        gradient01 *= 1.0f - 0.6f * d;
+    }
+
     // THE MOUNTAIN SILHOUETTE — and THE far world's, because it is the same
     // function (CANON S18.1: «дальний рельеф не имеет права быть похожим шумом,
     // он обязан быть той же функцией, усечённой»).
