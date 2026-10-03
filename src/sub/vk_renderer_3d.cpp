@@ -13,6 +13,7 @@
 #include "sub/sky.h"
 #include "sub/tree_atlas.h"
 #include "tables/forest.h"   // forest_fraction_byte — ONE spelling of the division
+#include "tables/prop_profiles.h"  // PropProfile — shape as a ROW
 #include "gpu/bb_instance.h"
 #include "gpu/vk_device.h"
 #include "gpu/vk_renderer.h"
@@ -1006,6 +1007,28 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
+    // A4b: PROFILED PROPS — a body of revolution built from a ROW of
+    // data/prop_profiles.csv. Same instance record and the SAME attribute
+    // table as the billboards above (the `kind` lane carries a profile
+    // ordinal instead of a sprite row), so a prop that stands up costs one
+    // pipeline and no data migration. `cullBack` stays off for now: a
+    // profile may legally have a ring wider than the one above it, and a
+    // back face seen through a crown is cheaper than a tree with holes.
+    spv_path(vpath, sizeof vpath, "prop_profile.vert");
+    spv_path(fpath, sizeof fpath, "prop_profile.frag");
+    {
+        if (!propPipe_.create_mesh(dev, mainPass, vpath, fpath,
+                                   sizeof(MeshPush), sizeof(gpu::BbInstance),
+                                   gpu::kBbInstanceAttrs,
+                                   gpu::kBbInstanceAttrCount,
+                                   /*instanced=*/true,
+                                   /*depthTest=*/true, /*depthWrite=*/true,
+                                   /*blend=*/false, /*cullBack=*/false,
+                                   shadowSetLayout_)) {
+            std::fprintf(stderr, "[Renderer3DVk] prop profile pipeline FAILED\n");
+        }
+    }
+
     // A5: Structure pipelines. Boxes (struct.vert) and round prisms
     // (struct_cyl.vert — towers, gate jambs, the spire) share the instance
     // layout and the struct.frag material; the shape picks the buffer + draw.
@@ -1086,6 +1109,23 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
                                             gpu::kBbInstanceAttrCount,
                                             /*instanced=*/true)) {
             std::fprintf(stderr, "[Renderer3DVk] shadow tree pipeline FAILED\n");
+        }
+    }
+
+    // And the same body through the light's matrix — ONE geometry, shared
+    // with the lit stage by include (shaders/prop_body.glsl), so a tree's
+    // shadow cannot stop being that tree's outline.
+    spv_path(vpath, sizeof vpath, "shadow_prop_profile.vert");
+    spv_path(fpath, sizeof fpath, "shadow_struct.frag");
+    {
+        if (!shadowPropPipe_.create_shadow(dev, shadow_.renderPass, vpath,
+                                           fpath, sizeof(ShadowPush),
+                                           sizeof(gpu::BbInstance),
+                                           gpu::kBbInstanceAttrs,
+                                           gpu::kBbInstanceAttrCount,
+                                           /*instanced=*/true)) {
+            std::fprintf(stderr,
+                         "[Renderer3DVk] shadow prop pipeline FAILED\n");
         }
     }
 
@@ -2463,15 +2503,23 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
         {
             const auto& structs = mgr.structures();
             std::vector<gpu::BbInstance>& trees = treeScratch_;
+            std::vector<gpu::BbInstance>& props = propScratch_;
             trees.clear();
+            props.clear();
             trees.reserve(structs.size());
+            props.reserve(structs.size());
             for (const auto& s : structs) {
-                // Crops ride the tree billboard pass — same quad, same
-                // shadow caster, their own sprite row picked by KIND. Which
-                // props belong to this pass is the table's column.
+                // ONE GATHER, TWO PASSES, AND THE COLUMN DECIDES WHICH. Crops
+                // stay flat quads (a wheat ear is a sprite and nothing is
+                // gained by turning it), trees are now BODIES out of the
+                // profile table. Both come out of this loop because
+                // everything above the push_back is about the PLACE — the
+                // ground under it, the hash of its absolute position — and
+                // that is the same question whichever way the thing is drawn.
                 const bool isCrop = s.kind == Structure::Crop;
-                if (structure_draw(s.kind)
-                    != StructureKindRow::Draw::Billboard) {
+                const auto drawAs = structure_draw(s.kind);
+                if (drawAs != StructureKindRow::Draw::Billboard
+                    && drawAs != StructureKindRow::Draw::Profile) {
                     continue;
                 }
                 float wx, wz;
@@ -2518,15 +2566,29 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 // less than one sprite row so the trunk stays in daylight.
                 const TreeBillboard tb =
                     tree_billboard(s.height, s.radius, typeIdx);
-                trees.push_back({wx, baseM - tb.sinkM, wz,
-                                 tb.halfWidthM, tb.heightM,
-                                 std::uint32_t(typeIdx),
-                                 gpu::bb_seed_bits(float(h & 0xffffu) * 0.01f
-                                                   + hash01 * 5.0f),
-                                 0xFFFFFFFFu});
+                const std::uint32_t seedBits =
+                    gpu::bb_seed_bits(float(h & 0xffffu) * 0.01f
+                                      + hash01 * 5.0f);
+                if (drawAs == StructureKindRow::Draw::Profile) {
+                    // A BODY SITS ON THE GROUND, not sunk into it. The sink
+                    // existed so a flat card's bottom row — a painted contact
+                    // shadow — stayed under the soil; a trunk has no painted
+                    // row and burying it would just shorten the tree.
+                    props.push_back({wx, baseM, wz,
+                                     tb.halfWidthM, tb.heightM,
+                                     std::uint32_t(PropProfile::TreeNear),
+                                     h, 0xFFFFFFFFu});
+                } else {
+                    trees.push_back({wx, baseM - tb.sinkM, wz,
+                                     tb.halfWidthM, tb.heightM,
+                                     std::uint32_t(typeIdx),
+                                     seedBits, 0xFFFFFFFFu});
+                }
             }
             treeCount_ = static_cast<std::uint32_t>(trees.size());
+            propCount_ = static_cast<std::uint32_t>(props.size());
             pend_.trees = true;
+            pend_.props = true;
         }
         if (kProf) msTree = profMs(st, profNow());
 
@@ -2761,6 +2823,11 @@ void Renderer3DVk::flush_uploads(VkCommandBuffer cmd) {
                             treeScratch_.data(), treeScratch_.size(),
                             sizeof(gpu::BbInstance), "tree"))
         treeCount_ = 0;
+    if (p.props
+        && !flush_instances(cmd, propInstBuf_, propInstCap_,
+                            propScratch_.data(), propScratch_.size(),
+                            sizeof(gpu::BbInstance), "prop"))
+        propCount_ = 0;
     if (p.boxes
         && !flush_instances(cmd, structInstBuf_, structInstCap_,
                             boxScratch_.data(),
@@ -2773,7 +2840,7 @@ void Renderer3DVk::flush_uploads(VkCommandBuffer cmd) {
                             cylScratch_.size() / sizeof(StructInstance),
                             sizeof(StructInstance), "cylinder"))
         cylCount_ = 0;
-    anyBufferCopy |= p.trees || p.boxes || p.cyls;
+    anyBufferCopy |= p.trees || p.boxes || p.cyls || p.props;
 
     // ── RAW guard for every buffer written above: this frame's vertex/index
     //    reads wait for this frame's transfer writes. (The WAR guard against
@@ -3153,6 +3220,22 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
         vkCmdDraw(cmd, 6, treeCount_, 0, 0);
     }
 
+    // The same bodies into the depth map, through the shared geometry.
+    if (propCount_ > 0 && shadowPropPipe_.pipeline != VK_NULL_HANDLE) {
+        ShadowPush sp{};
+        std::memcpy(sp.lightMvp, lightMvp_.m, sizeof(sp.lightMvp));
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          shadowPropPipe_.pipeline);
+        VkDeviceSize pio = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &propInstBuf_.buffer, &pio);
+        vkCmdPushConstants(cmd, shadowPropPipe_.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT
+                               | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(sp), &sp);
+        vkCmdDraw(cmd, kPropProfileVertices[int(PropProfile::TreeNear)],
+                  propCount_, 0, 0);
+    }
+
     // Structures (instanced boxes + cylinders).
     if (structCount_ > 0 || cylCount_ > 0) {
         ShadowPush ssp{};
@@ -3236,6 +3319,22 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(sbb), &sbb);
         vkCmdDraw(cmd, 6, treeCount_, 0, 0);
+    }
+
+    // The same bodies into the depth map, through the shared geometry.
+    if (propCount_ > 0 && shadowPropPipe_.pipeline != VK_NULL_HANDLE) {
+        ShadowPush sp{};
+        std::memcpy(sp.lightMvp, lightMvp_.m, sizeof(sp.lightMvp));
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          shadowPropPipe_.pipeline);
+        VkDeviceSize pio = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &propInstBuf_.buffer, &pio);
+        vkCmdPushConstants(cmd, shadowPropPipe_.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT
+                               | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(sp), &sp);
+        vkCmdDraw(cmd, kPropProfileVertices[int(PropProfile::TreeNear)],
+                  propCount_, 0, 0);
     }
 
     if (structCount_ > 0 || cylCount_ > 0) {
@@ -3573,6 +3672,28 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(bb), &bb);
         vkCmdDraw(cmd, 6, treeCount_, 0, 0);
+    }
+
+    // ── A4b: PROFILED PROPS — trees as BODIES. One draw per profile, the
+    // vertex count taken from the generated table (tables/prop_profiles.h),
+    // so a new silhouette is a CSV line and a loop iteration rather than a
+    // pass. Today every tree is the near profile; the far rung becomes a
+    // second bucket here the day the LOD splits them.
+    if (propCount_ > 0 && propPipe_.pipeline != VK_NULL_HANDLE) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          propPipe_.pipeline);
+        if (litSet != VK_NULL_HANDLE)
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    propPipe_.layout, 0, 1, &litSet,
+                                    0, nullptr);
+        VkDeviceSize pio = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &propInstBuf_.buffer, &pio);
+        vkCmdPushConstants(cmd, propPipe_.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT
+                               | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(push), &push);
+        vkCmdDraw(cmd, kPropProfileVertices[int(PropProfile::TreeNear)],
+                  propCount_, 0, 0);
     }
 
     // ── A5: Structures (instanced boxes + cylinders, after trees, before

@@ -360,6 +360,10 @@ private:
     // ── A4: Tree billboards ──
     gpu::VulkanPipeline treePipe_{};
     gpu::VulkanBuffer   treeInstBuf_{};
+    gpu::VulkanBuffer   propInstBuf_{};
+    gpu::VulkanPipeline propPipe_{};
+    gpu::VulkanPipeline shadowPropPipe_{};
+    std::uint32_t       propCount_ = 0;
     std::uint32_t       treeCount_ = 0;
     // Instances the CURRENT allocation can hold. The set changes on every
     // crossing and every async drain, and re-creating a device-local buffer
@@ -368,6 +372,7 @@ private:
     // only when the set outgrows it; `*Count_` is what the draw uses, so spare
     // capacity beyond it is simply never read.
     std::size_t         treeInstCap_ = 0;
+    std::size_t         propInstCap_ = 0;
     // ── A5: Structures (walls/houses = boxes; towers/jambs/spire = cylinders,
     // same instance layout + material, separate procedural geometry) ──
     gpu::VulkanPipeline structPipe_{};
@@ -442,6 +447,7 @@ private:
         std::int32_t shiftW = 0, shiftH = 0;
         bool matCells[9] = {};
         bool trees = false, boxes = false, cyls = false;
+        bool props = false;
         bool selfCheck = false; // TIMAERT_SEAM_SELFCHECK: blocking twins + readback
         bool any() const {
             bool cells = false;
@@ -467,6 +473,12 @@ private:
     std::vector<std::uint8_t>  matCellScratch_[9];
     std::vector<std::uint8_t>  matSelfRef_; // selfcheck reference (env only)
     std::vector<gpu::BbInstance> treeScratch_;
+    // PROFILED PROPS — the same 32 B record, whose `kind` lane carries a
+    // PROFILE ORDINAL instead of a sprite row. Separate list rather than a
+    // flag inside one, because the two are different DRAWS (a quad of six
+    // vertices against a body of the row's own count), and a pass is the one
+    // thing an instance cannot carry.
+    std::vector<gpu::BbInstance> propScratch_;
     std::vector<std::uint8_t>  boxScratch_;
     std::vector<std::uint8_t>  cylScratch_;
     // Staging arena ring (host-mapped, one per frame in flight): flush_uploads

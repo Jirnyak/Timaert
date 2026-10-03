@@ -1,0 +1,38 @@
+# THE SHAPE VOCABULARY of props — one row per PROFILE, and a profile is a body
+# of revolution given by RINGS.
+#
+# WHY THIS EXISTS. Shape used to be a per-instance enum of two values (Box,
+# Cylinder, sub/map_data.h), and each value cost a vertex shader, a lit
+# pipeline, a shadow pipeline, its own instance buffer and three draw blocks.
+# A third shape therefore cost all of that again — which is why a tree could
+# not simply BE one. Here a shape is a ROW: segments around, rings up, and the
+# radius each ring stands at. Adding a shape is a line of this file; nothing in
+# the engine learns a new name (ЗАКОН СТРОКИ КАТАЛОГА).
+#
+# HOW A ROW BECOMES GEOMETRY. `segments` quads around the axis between every
+# pair of neighbouring rings, plus one fan cap on top:
+#     vertices = segments * 6 * (rings - 1) + segments * 3
+# A ring of radius 0 collapses its quads into triangles by itself — a cone
+# needs no special case and gets none.
+#
+# rings — "r@y;r@y;…", r = radius as a fraction of the prop's half-width,
+#         y = height as a fraction of its height. Bottom first, top last.
+#         Both are FRACTIONS so one profile serves a sapling and a redwood:
+#         the instance carries the metres (Structure radius/height), the row
+#         carries only the silhouette.
+# bark_top — below this height fraction the surface is TRUNK, above it is
+#         CROWN. One number instead of two materials, exactly as a house
+#         splits wall from roof by vLocalY (struct.frag) — the idiom is already
+#         in the tree.
+# segments — how many sides around. This IS the retro budget knob: 5 and 6 read
+#         as faceted-but-round at playing distance, and the cost of a shape is
+#         linear in it.
+# bark_*  — the trunk's colour. It lives HERE and the crown's does NOT, and the
+#         split is by question rather than by convenience: a crown is read at
+#         both scales (the near tree and the far canopy are the same wood seen
+#         from two distances), so its colour is the cover row `canopy` that
+#         both read; bark exists only within arm's reach, so it belongs to the
+#         thing that has arms — the prop's own row.
+id,name,segments,bark_top,bark_r,bark_g,bark_b,rings,note
+0,tree_near,6,0.38,0.19,0.13,0.09,0.11@0.00;0.075@0.36;0.52@0.42;0.46@0.72;0.00@1.00,"THE tree of the 3×3 window: a tapering trunk, a crown that flares off it and closes to a point. Five rings is the fewest that still reads as a tree rather than as a lollipop — the flare at 0.42 is what makes a silhouette a crown, and the 0.46 waist above it keeps the top from looking like a cone on a stick. 6 segments × 4 ring gaps + cap = 162 vertices, 54 triangles"
+1,tree_far,4,0.34,0.19,0.13,0.09,0.10@0.00;0.09@0.34;0.50@0.40;0.00@1.00,"THE same tree seen from far enough that facets and waist are below a pixel: one flare, one point, four sides. 4 × 3 + cap = 84 vertices, 28 triangles — the LOD rung of the near row, and it is a ROW rather than a branch precisely so the switch is a choice of profile, never a second law of what a tree is"

@@ -644,6 +644,12 @@ struct StructureKindRow {
         None = 0,   // not drawn yet (Rock)
         Billboard,  // camera-facing quad from the tree atlas
         Solid,      // the oriented box / cylinder structure pass
+        // A BODY FROM THE PROFILE TABLE (data/prop_profiles.csv): segments
+        // around an axis, rings up it. The third value costs no third
+        // machinery — that is the whole point of a profile being a ROW: one
+        // pipeline draws every shape the table will ever hold, and a new
+        // silhouette is a line of CSV rather than a pass.
+        Profile,
     };
     Draw draw;
     // Solid-pass material — WHAT IT LOOKS LIKE, resolved once per kind and
@@ -713,7 +719,7 @@ struct StructureKindRow {
 inline constexpr std::uint8_t kWalkTileTransparent = std::uint8_t(TILE_COUNT);
 inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Tree, "tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree",
-                  StructureKindRow::Draw::Billboard,
+                  StructureKindRow::Draw::Profile,
                   StructureKindRow::Material::Wood,
                   InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},

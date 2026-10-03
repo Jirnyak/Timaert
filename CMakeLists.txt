@@ -280,11 +280,16 @@ set(_timaert_shader_incs
     ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl
     ${CMAKE_SOURCE_DIR}/shaders/clouds.glsl
     ${CMAKE_SOURCE_DIR}/shaders/surface_lib.glsl
+    ${CMAKE_SOURCE_DIR}/shaders/prop_body.glsl
+    # GENERATED from data/prop_profiles.csv by
+    # tools/gen_prop_profiles.py; committed, so the build needs no
+    # Python. `prop_profile_test` fails if it drifts from the CSV.
+    ${CMAKE_SOURCE_DIR}/shaders/prop_profiles.glsl
     # GENERATED from data/ground_materials.csv + data/ground_cover.csv by
     # tools/gen_ground_table.py; committed, so the build needs no Python.
     # `ground_table_test` fails if it drifts from the CSVs.
     ${CMAKE_SOURCE_DIR}/shaders/ground_surface.glsl)
-foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag body.frag shadow_body.frag particle.vert particle.frag particle_matter.vert particle_matter.frag stamp.vert stamp.frag rain.vert rain.frag far.vert far.frag far_canopy.vert far_canopy.frag)
+foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag body.frag shadow_body.frag particle.vert particle.frag particle_matter.vert particle_matter.frag stamp.vert stamp.frag rain.vert rain.frag far.vert far.frag far_canopy.vert far_canopy.frag prop_profile.vert prop_profile.frag shadow_prop_profile.vert)
     add_custom_command(
         OUTPUT ${_timaert_spv_dir}/${_sh}.spv
         COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O
@@ -1967,6 +1972,14 @@ timaert_test(air_law_test)
 # в строке СТОЯЛА: PASS без неё не напечатать.
 timaert_test(stack_census_test LINK_ENTT
     PIN "OK stack_census_test .13 checks. .штабелей [0-9]+ · по капам [0-9]+ МиБ · резидентное НЕ судит")
+
+# THE PROFILE TABLE is the same arrangement one layer up: one CSV generated
+# into a shader table AND a C++ header, where the vertex count is DERIVED from
+# the rings. A drift between the two draws every prop with the wrong number of
+# vertices and nothing fails to build — see the test's own header.
+timaert_test(prop_profile_test)
+target_compile_definitions(prop_profile_test
+    PRIVATE TIMAERT_REPO_DIR="${CMAKE_SOURCE_DIR}")
 
 timaert_test(ground_table_test
     SOURCES
