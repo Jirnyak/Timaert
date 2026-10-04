@@ -1161,9 +1161,13 @@ void SubworldEngine::sync_player_entity_position() {
                 // FLAG record, not the ordinal — a worn lord swings by HIS
                 // gear and his standing effects (A2, §45 «два ответа»).
                 const MacroHandle rec = sub::macro_record_of(reg, e);
+                // Гол без макро-записи стоит ГОЛЫМ по построению: на тело
+                // сцены никто не пишет ни BodyEquipment, ни SpellBook
+                // (перепись M-150 шаг 0), и снесённая entt-дверь
+                // standing_bonuses_of(reg, e) возвращала {} всегда.
                 const BonusTotals st = rec.slot != kMacroNoSlot
                     ? standing_bonuses_of(store_of(reg), rec)
-                    : standing_bonuses_of(reg, e);
+                    : BonusTotals{};
                 const CharacterSheet* base = gs_
                     ? player_sheet(*gs_, store_of(*ecs_)) : nullptr;
                 const CharacterSheet eff = base

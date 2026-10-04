@@ -574,7 +574,8 @@ timaert_test(quest_lifecycle_test
         # gen_delivery reads the one item catalog now (W2b-4).
         src/macro/anketa.cpp
         src/tables/items.cpp
-    # M-90 флип: place_body.h тянет store.h → entt (умрёт с M-150)
+    # M-150 шаг 0: quest_engine.cpp → squad.h → macro_stock.h — печать займа
+    # на ТЕЛО сцены (stamp_macro_debt, entt); умрёт с переездом тел
     LINK_SDL LINK_ENTT)
 
 timaert_test(world_tick_parity_test
@@ -960,7 +961,8 @@ timaert_test(nav_region_test SOURCES
     # Души места — СТРОКИ КАТАЛОГА (v122, головы в его инвентаре):
     # фикстура, селящая их дверью мира, обязана знать каталог.
     src/tables/items.cpp
-    # M-90 флип: place_body.h тянет store.h → entt (умрёт с M-150)
+    # M-150 шаг 0: сам тест включает squad.h → macro_stock.h — печать займа
+    # на ТЕЛО сцены (stamp_macro_debt, entt); умрёт с переездом тел
     LINK_ENTT)
 
 timaert_test(pathfinding_parity_test
@@ -1294,7 +1296,6 @@ timaert_test(rpg_loot_test
 # мира: ровно тот набор, что и у rpg_loot_test, плюс сам режиссёр.
 
 timaert_test(loot_pool_test
-    LINK_ENTT   # ломтик F: fauna.cpp читает ось рода тела (store.h → entt; умрёт с M-150)
     SOURCES
         src/macro/anketa.cpp
         src/tables/items.cpp
@@ -1316,7 +1317,6 @@ timaert_test(targeting_test
 # no SDL2/EnTT, same as rpg_loot_test.
 
 timaert_test(fauna_registry_test
-    LINK_ENTT   # ломтик F: fauna.cpp читает ось рода тела (store.h → entt; умрёт с M-150)
     SOURCES
         src/macro/fauna.cpp)
 # THE sprite table (tables/sprite_rows.h): totality over the creature catalog and
@@ -1324,7 +1324,6 @@ timaert_test(fauna_registry_test
 # negative control that the binding check can actually fail. Pure data — it
 # links the fauna registry only to walk the catalog.
 timaert_test(sprite_rows_test
-    LINK_ENTT   # ломтик F: fauna.cpp читает ось рода тела (store.h → entt; умрёт с M-150)
     SOURCES
         src/macro/fauna.cpp)
 # Every homeland the intro offers must lead to a real country: totality over the
@@ -1566,9 +1565,7 @@ timaert_test(spire_generation_test
         src/macro/ruins.cpp
     # Души места — СТРОКИ КАТАЛОГА (v122, головы в его инвентаре):
     # фикстура, селящая их дверью мира, обязана знать каталог.
-    src/tables/items.cpp
-    # M-90 флип: place_body.h тянет store.h → entt (умрёт с M-150)
-    LINK_ENTT)
+    src/tables/items.cpp)
 
 timaert_test(fauna_stock_test
     SOURCES
@@ -1868,7 +1865,6 @@ timaert_test(spell_broadphase_parity_test
 # resolver is header-only sheet math; movement.cpp is linked so the fought
 # version can be simulated headless with the shipping steering.
 timaert_test(auto_battle_test
-    LINK_ENTT   # ломтик F: fauna.cpp читает ось рода тела (store.h → entt; умрёт с M-150)
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —
         # world_row_is_item живёт у каталога (items.cpp)

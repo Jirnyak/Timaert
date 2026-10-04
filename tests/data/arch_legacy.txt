@@ -133,7 +133,6 @@ verdict	SKELETON.md	| стык | направление — ПРАВДА; вхо
 verdict	SKELETON.md	| стык клеток на карте — ОДНА ширина на все переходы | `BT_SEAM = BT_CELL / 3` (`shaders/macro.fra
 verdict	SKELETON.md	| субмир-рендер не читает `GameState`/`MacroWorld` | 0 упоминаний в `vk_renderer_3d.cpp`; но включен
 verdict	SKELETON.md	| терраин (высота, влажность, температура, маска моря) | `TerrainData::rgba`, 4 байта | **П�
-verdict	SKELETON.md	| у всех сквадов одинаковый набор компонент | `kMacroSquadBytes` (`npc_spawn.cpp`) перечисляе�
 verdict	SKELETON.md	| у каждой машины есть хвостовой `else` | без хвоста 9 из 12 машин ролей: `ai_home_wanderer :
 verdict	SKELETON.md	| у самой широкой авторской строки нет `static_assert` на размер | `sizeof(ItemDef)` = 120 Б, пос
 verdict	SKELETON.md	| у стыка есть материал только у одной пары | вода вырезана из цветового смеше
@@ -156,11 +155,8 @@ entt	src/app/smoke.cpp	entt
 entt	src/app/smoke.h	entt
 entt	src/content/spells/effects.cpp	entt
 entt	src/content/spells/spell_book.cpp	entt
-entt	src/ecs/components.h	entt
 entt	src/ecs/world.h	entt
 entt	src/macro/macro_stock.h	entt
-entt	src/macro/squad.h	entt
-entt	src/macro/store.h	entt
 entt	src/sub/ai.cpp	entt
 entt	src/sub/body.h	entt
 entt	src/sub/damage.cpp	entt

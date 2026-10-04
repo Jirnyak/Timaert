@@ -6,7 +6,6 @@
 // tests) settles squads through the same functions.
 #pragma once
 
-#include "ecs/world.h"
 #include "macro/anketa.h"
 #include "macro/auto_battle.h"
 #include "core/rng.h"
@@ -420,10 +419,9 @@ inline bool order_squad_route(MacroStore& st, std::uint32_t ordinal,
 // the spot — «они уничтожаются своим ландмарком», there is nothing of
 // theirs to store. One door, an honest ontology split — never «игрок/НПЦ».
 
-// Владение листом по колонкам слота — ОДИН предикат на обе двери (entt-мост
-// и хэндл): именной род, анкета стола, сквад игрока (его ординал — колонка,
-// и это тот же признак, каким PlayerSquadCache ревалидируется). До 1е
-// entt-дверь добавляет к нему теги игрока — страховка моста, не второй закон.
+// Владение листом по колонкам слота — ОДИН предикат на обе двери: именной
+// род, анкета стола, сквад игрока (его ординал — колонка, и это тот же
+// признак, каким PlayerSquadCache ревалидируется).
 inline bool sheet_owned_at(const MacroStore& st, std::uint16_t slot) {
     const auto& kind = st.kind[slot];
     return (kind.type < std::uint16_t(NPCType::Count)
@@ -432,36 +430,18 @@ inline bool sheet_owned_at(const MacroStore& st, std::uint16_t slot) {
         || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal;
 }
 
-// The OWNED sheet, when this body has one — the writable store a level-up
-// or a future teacher mutates. nullptr = transient (derive instead).
-inline CharacterSheet* owned_sheet(entt::registry& reg, entt::entity e) {
-    // СЦЕНИЧЕСКОЕ лицо (пережило 1е кластер 7): тело сцены «само себе
-    // запись» — владеемый лист есть его компонент; макро-сквад отвечает
-    // (st, h)-формой ниже, моста больше нет.
-    return reg.try_get<CharacterSheet>(e);
-}
+// entt-двери листа (owned_sheet/sheet_of/standing_bonuses_of от registry)
+// СНЕСЕНЫ (M-150 шаг 0): перепись показала, что на телах сцены никто не
+// пишет ни BodyEquipment, ни SpellBook, ни MacroSpawnId — entt-ветки
+// отвечали константой, а их include тащил entt всем читателям squad.h.
+// Лист тела сцены спрашивается слот-дверью через его макро-запись
+// (sub/record.h macro_record_of); тело без записи стоит голым по построению.
 
-// Владеемый лист по хэндлу (1е, каскад слот-нативных дверей): тот же ОДИН
-// предикат sheet_owned_at, БЕЗ тег-страховки — она свойство моста и умирает
-// с ним; ординал сквада игрока — колонка, предикат читает её.
+// Владеемый лист по хэндлу (1е, каскад слот-нативных дверей): ОДИН предикат
+// sheet_owned_at; ординал сквада игрока — колонка, предикат читает её.
 inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
     return st.valid(h) && sheet_owned_at(st, h.slot)
         ? &st.sheet[h.slot] : nullptr;
-}
-
-// THE sheet, whoever asks: the owned component verbatim, or the generic
-// birth roll a transient IS. By value — the derive path builds one anyway,
-// and no caller may hold a reference across a tick (ecs-ref grabla).
-inline CharacterSheet sheet_of(entt::registry& reg, entt::entity e) {
-    // Сценическое лицо (кластер 7): компоненты тела сцены напрямую.
-    if (const CharacterSheet* own = owned_sheet(reg, e)) return *own;
-    const auto* kind = reg.try_get<ecs::NPCKind>(e);
-    const auto* lvl  = reg.try_get<ecs::NpcLevel>(e);
-    const auto* sid  = reg.try_get<ecs::MacroSpawnId>(e);
-    const NPCType type = kind && kind->type < std::uint16_t(NPCType::Count)
-        ? NPCType(std::uint8_t(kind->type)) : NPCType::Peasant;
-    return make_character_sheet(type, lvl ? int(lvl->value) : 1,
-                                leader_sheet_seed(sid ? sid->index : 0u));
 }
 
 // Лист по хэндлу — та же онтология, целиком по колонкам (без entt; после 1е
@@ -486,8 +466,8 @@ inline CharacterSheet sheet_of(const MacroStore& st, MacroHandle h) {
 // his squad entity like on any lord's. Sustained magnitudes are scaled by
 // the BASE training on purpose: the standing sum cannot read the sheet it
 // is itself a term of.
-// Сам закон суммирования — ОДИН, от указателей: обе двери ниже (entt-тело
-// и слот store) зовут его, второй копии закона не существует (метод §5 п.1).
+// Сам закон суммирования — ОДИН, от указателей: слот-дверь ниже зовёт его,
+// второй копии закона не существует (метод §5 п.1).
 inline BonusTotals standing_bonuses_sum(const ecs::BodyEquipment* eq,
                                         const Inventory* inv,
                                         const SpellBook* book,
@@ -505,15 +485,7 @@ inline BonusTotals standing_bonuses_sum(const ecs::BodyEquipment* eq,
     }
     return t;
 }
-inline BonusTotals standing_bonuses_of(entt::registry& reg, entt::entity e) {
-    // Сценическое лицо (кластер 7): гир и книга — компоненты тела сцены.
-    const auto* eq   = reg.try_get<ecs::BodyEquipment>(e);
-    const auto* bag  = reg.try_get<ecs::NpcInventory>(e);
-    const auto* book = reg.try_get<SpellBook>(e);
-    return standing_bonuses_sum(eq, bag ? &bag->inv : nullptr, book,
-                                book ? sheet_of(reg, e).skills : Skills{});
-}
-// Та же дверь по хэндлу — целиком по колонкам.
+// Дверь по хэндлу — целиком по колонкам.
 inline BonusTotals standing_bonuses_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h)) return BonusTotals{};
     return standing_bonuses_sum(&st.gear[h.slot], &st.inventory[h.slot].inv,

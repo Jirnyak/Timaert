@@ -18,8 +18,10 @@
 //
 // THE ORDER, most specific first. Each step answers "who has the best claim to
 // know this body's width":
-//   1. `ecs::BodyRadius` — an explicit per-entity override. The player carries
-//      one; so does anything a spawner sized deliberately.
+//   1. `ecs::BodyRadius` — an explicit per-entity override. NO production
+//      spawner writes it any more (census M-150 step 0: zero emplace sites in
+//      src/) — only test fixtures size bodies with it; the rung dies with the
+//      flat-crowd move, where radius is a column.
 //   2. The body's `kNpcTypeDefs` row (macro/npc.h) — ONE table for wolf and
 //      spearman alike (CANON S16): its authored `radius` first, then what its
 //      combat line implies for a man-shaped thing (`combat.bodyRadius`).
@@ -35,6 +37,8 @@
 #include "macro/fauna.h"
 #include "macro/store.h"
 #include "sub/height.h"   // kBodyEyeM — the number body_eye_m() hands out
+
+#include <entt/entt.hpp>  // registry-читатели ниже; транзит store.h умер (M-150 шаг 0)
 
 namespace sm::sub {
 

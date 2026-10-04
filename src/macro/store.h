@@ -34,7 +34,6 @@
 
 #include "core/stacks.h"
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "macro/agent_memory.h"
 #include "macro/anketa.h"
 #include "macro/interests.h"
@@ -256,27 +255,13 @@ inline MacroHandle handle_at(const MacroStore& s, std::uint16_t slot) {
 // СЕЛЕКТОР КОЛОНКИ ПО ТИПУ (жилец, не мост): тип выбирает массив, ошибиться
 // колонкой невозможно (типы колонок уникальны, список один — X-macro);
 // двери body_state(st, h) ниже ходят им.
-// store_attach/store_of — ctx-мост store для СУБМИРА (вердикт 4а):
-// живёт до M-171 (фрейм); макро-сторона ctx не читает — макро-двери
-// принимают MacroStore& параметром.
+// ctx-мост store_attach/store_of переехал в ecs/world.h (M-150 шаг 0):
+// он был единственным, ради чего store.h тянул entt всем 71 включившим.
 template <typename C> inline auto& store_col(MacroStore& s) = delete;
 #define SM_X(name, T)                                                        \
     template <> inline auto& store_col<T>(MacroStore& s) { return s.name; }
 SM_MACRO_STORE_COLUMNS(SM_X)
 #undef SM_X
-
-inline void store_attach(ecs::World& w, MacroStore* st) {
-    w.reg.ctx().insert_or_assign(std::move(st));
-}
-inline MacroStore& store_of(ecs::World& w) {
-    return *w.reg.ctx().get<MacroStore*>();
-}
-inline const MacroStore& store_of(const ecs::World& w) {
-    return *w.reg.ctx().get<MacroStore*>();
-}
-inline MacroStore& store_of(entt::registry& reg) {
-    return *reg.ctx().get<MacroStore*>();
-}
 
 // Упаковка хэндла в 32 бита для POD-конвертов (BattleFact, GameEvent):
 // слот в нижних 16, поколение в верхних. «Никого» — ВСЕ ЕДИНИЦЫ, и это

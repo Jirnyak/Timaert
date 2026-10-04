@@ -26,7 +26,6 @@
 #include <vector>
 
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "macro/store.h"
 
 namespace sm {

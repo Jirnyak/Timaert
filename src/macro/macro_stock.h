@@ -42,6 +42,11 @@
 #include "macro/macro_world.h"
 #include "macro/resource_field.h"
 
+// stamp_macro_debt ниже пишет компонент на ТЕЛО сцены (entt) — последнее
+// entt-касание этого модуля; умирает вместе с переездом тел (M-150). Include
+// явный, а не транзитом через store.h: store.h entt больше не раздаёт.
+#include <entt/entt.hpp>
+
 #include <cstdint>
 
 namespace sm {

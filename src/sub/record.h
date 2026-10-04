@@ -31,6 +31,7 @@
 #pragma once
 
 #include "ecs/components.h"
+#include "ecs/world.h"      // store_of(reg) — ctx-мост (переехал из store.h, M-150 шаг 0)
 #include "macro/store.h"
 #include "macro/anketa.h"   // BonusTotals — «что на нём стоит», and its ==
 

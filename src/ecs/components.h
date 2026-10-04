@@ -8,7 +8,6 @@
 #include <array>
 #include <cstdint>
 #include <string>
-#include <entt/entt.hpp>
 
 namespace sm {
 
