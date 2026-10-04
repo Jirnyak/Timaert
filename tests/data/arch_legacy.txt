@@ -93,7 +93,6 @@ verdict	SKELETON.md	| все пайплайны используются | `shad
 verdict	SKELETON.md	| выбор цели без перебора мест | `ai_trader`/`ai_nomad` — полный скан `gs.landmarks` с фильтром
 verdict	SKELETON.md	| выход из мира | факт POD — ПРАВДА; четыре канала, второй тип записи со строкам�
 verdict	SKELETON.md	| генерация из 2D высот макромира и контекста 3×3 | `nbHeights[9]`, `nbBiome[9]`, `nbBiome5` (5×5 би�
-verdict	SKELETON.md	| границы ординалов при чтении выведены из списка | литералы последнего знач�
 verdict	SKELETON.md	| два драйвера — один закон каданса | карта: пер-сквадный `rt.tickAccum` (`:4885-4887`); суб
 verdict	SKELETON.md	| два потока заселения | в одной функции `spawn_cell_npcs`: население места (займ Populatio
 verdict	SKELETON.md	| знание игрока | `KnowledgeLayer::data`, байт 0/1/2 | **ПРАВДА** |
