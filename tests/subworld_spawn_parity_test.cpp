@@ -1262,6 +1262,79 @@ int main() {
               "the numbers a sheet decides");
     }
 
+    // ── D-ХВОСТ (2026-10-04): ЖИЛЕЦ ИНТЕРЬЕРА — ГОЛОВА СВОЕГО ОТРЕЗКА ──
+    //
+    // Вердикт владельца («что есть в инвентаре, то чел и увидит»): род,
+    // уровень и займ жильца — ФАКТ ГОЛОВЫ [segmentStart, segmentStart+count)
+    // той же последовательности, которую улица пропускает резервом; ролл
+    // рода мёртв. Фикстура кладёт четыре РАЗЛИЧИМЫХ ПО ПОЗИЦИИ рода —
+    // экзотику, которой полоса толпы города не роллила бы никогда, — и
+    // спрашивает тела отрезка [1, 3). Ожидание читается ИЗ ВХОДА
+    // (creature_heads_range — это определение последовательности, не копия
+    // логики под судом: судятся прогулка отрезка, род и займ).
+    {
+        sm::ecs::World world{};
+        auto segStore = sm::make_macro_store();
+        sm::store_attach(world, segStore.get());
+        sm::Inventory inv{};
+        CHECK(sm::creatures_push_stack(inv, sm::NPCType::Wolf,  2, 1)
+                  && sm::creatures_push_stack(inv, sm::NPCType::Witch, 5, 1)
+                  && sm::creatures_push_stack(inv, sm::NPCType::Bear,  3, 1)
+                  && sm::creatures_push_stack(inv, sm::NPCType::Deer,  1, 1),
+              "фикстура: четыре головы легли");
+        std::vector<sm::CreatureHead> heads;
+        for (const sm::CreatureHead h : sm::creature_heads_range(inv)) {
+            heads.push_back(h);
+        }
+        CHECK(heads.size() == 4, "последовательность видит все четыре головы");
+        CHECK(heads.size() == 4
+                  && heads[0].kind != heads[1].kind
+                  && heads[1].kind != heads[2].kind
+                  && heads[2].kind != heads[3].kind
+                  && heads[0].kind != heads[2].kind
+                  && heads[1].kind != heads[3].kind,
+              "роды различимы по позиции — иначе съехавший отрезок невидим");
+        std::vector<sm::sub::StandPoint> floorCat;
+        for (int i = 0; i < 4; ++i) {
+            floorCat.push_back({std::uint16_t(4 + i), std::uint16_t(4), 0u});
+        }
+        sm::MacroStockKey segKey{};
+        segKey.subject = 77;
+        const int placed = sm::sub::spawn_dungeon_residents(
+            world, 0xD00Au, /*faction*/0, /*count*/2, /*segmentStart*/1,
+            &inv, floorCat, 0.0f, 0.0f, segKey, /*combatant*/false);
+        CHECK(placed == 2, "отрезок [1, 3) дал ровно два тела");
+        int bodies = 0;
+        bool sawSecond = false, sawThird = false;
+        bool sawStreetHead = false, sawForeignHead = false;
+        bool loansNameHeads = true;
+        bool levelsAreHeadFacts = true;
+        auto segView =
+            world.reg.view<sm::ecs::NPCKind, sm::ecs::MacroDebt>();
+        for (auto e : segView) {
+            ++bodies;
+            const auto& kind = segView.get<sm::ecs::NPCKind>(e);
+            const auto& debt = segView.get<sm::ecs::MacroDebt>(e);
+            sawSecond |= kind.type == std::uint16_t(heads[1].kind);
+            sawThird |= kind.type == std::uint16_t(heads[2].kind);
+            sawStreetHead |= kind.type == std::uint16_t(heads[0].kind);
+            sawForeignHead |= kind.type == std::uint16_t(heads[3].kind);
+            loansNameHeads &= debt.detailKind == std::uint8_t(kind.type);
+            const auto* lvl = world.reg.try_get<sm::ecs::NpcLevel>(e);
+            const int wantLevel = kind.type == std::uint16_t(heads[1].kind)
+                ? int(heads[1].level) : int(heads[2].level);
+            levelsAreHeadFacts &= lvl != nullptr && int(lvl->value) == wantLevel;
+        }
+        CHECK(bodies == 2, "в сцене ровно тела отрезка");
+        CHECK(sawSecond && sawThird,
+              "род жильца — факт головы своего отрезка, не ролл полосы");
+        CHECK(!sawStreetHead && !sawForeignHead,
+              "уличная голова и голова чужой двери за этой дверью не стоят");
+        CHECK(loansNameHeads, "займ называет род ИМЕННО этой головы — "
+              "смерть спишет её, а не первую подвернувшуюся");
+        CHECK(levelsAreHeadFacts, "уровень жильца — факт головы");
+    }
+
     CHECK(true, "every gate above held");
     return sm::test::report("subworld_spawn_parity_test");
 }

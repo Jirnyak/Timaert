@@ -102,15 +102,20 @@ int main() {
 
     // ── THE BESTIARY IS REACHABLE (content witness, 2026-09-11) ────────────
     //
-    // A species row is content only if THE LAW can actually raise it. Both
+    // A species row is content only if SOMETHING can actually raise it. Both
     // ways of being dead content are silent: a zero `weight` and a habitat
     // mask that no place asks for read exactly like a species that is simply
-    // rare. So the witness stands on the two public doors — the crowd of a
-    // place (pick_crowd_row over its crowdHabitat stripe) and the wild /
-    // den roll (roll_spawns) — and asserts that sampling the grounds the
-    // world actually has raises EVERY row of the catalog that claims to be
-    // rollable. A dropped habitat bit fails here instead of shipping as an
-    // empty tower.
+    // rare. Доска сменилась 2026-10-04 (D-хвост): РОЛЛ ТОЛПЫ МЁРТВ —
+    // pick_crowd_row уничтожена, житель есть ГОЛОВА инвентаря места на всех
+    // путях. У строки осталось ДВЕ земли, и они разной природы:
+    //   · дикая/логовная — прогонная: roll_spawns обязан реально поднять
+    //     строку с земель, которые у мира есть;
+    //   · толпа места — СТРУКТУРНАЯ: строка достижима, если её habitat
+    //     пересекает полосу crowdHabitat хоть одного рода мест — такую
+    //     строку селят двери поселения душ (settle_souls / авторский посев),
+    //     роллом её больше не рожает никто.
+    // Потерянный бит habitat по-прежнему падает здесь: строка, которую не
+    // поднимает ни ролл, ни одна полоса толпы, — мёртвый контент.
     {
         bool seen[std::size_t(sm::NPCType::Count)] = {};
         auto sweep = [&](sm::SquadType place, sm::Biome biome, bool forest,
@@ -125,7 +130,6 @@ int main() {
             ctx.depositsNear = 0xFFu;
             std::uint32_t rng = 0x5EED0000u ^ salt;
             for (int i = 0; i < 4096; ++i) {
-                seen[std::size_t(sm::pick_crowd_row(ctx, rng))] = true;
                 for (const auto& p : sm::roll_spawns(ctx, rng)) {
                     if (p.entry) seen[std::size_t(p.entry->type)] = true;
                 }
@@ -133,7 +137,7 @@ int main() {
         };
         // The grounds the world has: the two den families across their whole
         // danger bands (a ruin at the safe edge holds different things from
-        // one in hell), the crowd of a town, and the open biomes.
+        // one in hell) and the open biomes.
         for (int d = 0; d <= 255; d += 15) {
             const auto danger = std::uint8_t(d);
             sweep(sm::SquadType::Spire,   sm::Meadow,   false, danger, 1u);
@@ -149,38 +153,35 @@ int main() {
             sweep(sm::SquadType::None,    sm::Snow,     false, danger, 11u);
             sweep(sm::SquadType::None,    sm::Tropics,  false, danger, 12u);
         }
+        // Союз полос толпы ВСЕХ родов мест — вторая земля, структурная.
+        std::uint16_t crowdUnion = 0;
+        for (std::size_t k = 0; k < std::size_t(sm::SquadType::Count); ++k) {
+            crowdUnion |= sm::landmark_def(sm::SquadType(k)).crowdHabitat;
+        }
+        CHECK(crowdUnion != 0, "хоть один род мест держит толпу");
         int reachable = 0;
+        int viaCrowd = 0;
         for (int i = 0; i < n; ++i) {
             const FaunaEntry* e = catalog[i];
             if (e == nullptr || e->weight == 0) continue;   // named-only rows
             ++reachable;
-            CHECK(seen[std::size_t(e->type)],
-                   "a rollable catalog row has ground the law can raise it from");
-            if (!seen[std::size_t(e->type)]) {
+            const bool crowdGround =
+                (sm::npc_def(e->type).habitat & crowdUnion) != 0;
+            viaCrowd += crowdGround && !seen[std::size_t(e->type)] ? 1 : 0;
+            CHECK(seen[std::size_t(e->type)] || crowdGround,
+                   "a rollable catalog row has ground SOMETHING can raise it "
+                   "from: roll_spawns or a settlement crowd stripe");
+            if (!seen[std::size_t(e->type)] && !crowdGround) {
                 std::printf("  unreachable: %s\n", e->id);
             }
         }
         CHECK(reachable > 0, "the catalog has rollable rows at all");
-
-        // And the crowd of a populated place is a CROWD: a spire in the band
-        // it actually stands in (128..255) must field many species, not one
-        // silhouette repeated three hundred times. Eight is the floor the
-        // bestiary was authored against — well under what the table offers,
-        // so ordinary rebalancing does not trip it, but a stripe collapsing
-        // back to a handful does.
-        sm::SpawnContext spire{};
-        spire.landmark = sm::SquadType::Spire;
-        spire.biome = sm::Mountain;
-        spire.danger = 200;
-        bool inThrong[std::size_t(sm::NPCType::Count)] = {};
-        std::uint32_t rng = 0xC0FFEEu;
-        for (int i = 0; i < 8192; ++i) {
-            inThrong[std::size_t(sm::pick_crowd_row(spire, rng))] = true;
-        }
-        int species = 0;
-        for (bool b : inThrong) species += b ? 1 : 0;
-        CHECK(species >= 8, "a spire's throng is many species, not a texture");
-        std::printf("fauna_registry_test: spire throng species=%d\n", species);
+        std::printf("fauna_registry_test: rollable=%d, crowd-stripe-only=%d\n",
+                    reachable, viaCrowd);
+        // (Свидетель «толпа шпиля — много видов» умер вместе с роллом,
+        // которого он был носителем: состав толпы теперь ФАКТ ИНВЕНТАРЯ —
+        // что поселили двери душ, то и стоит, — и прибором каталога он
+        // больше не является. §5 п.6: механика снята, носитель назван.)
     }
 
     // ── M-39: ДИЧЬ ПРИНАДЛЕЖИТ ЗЕМЛЕ, А НЕ ВИДУ МЕСТА ───────────────────

@@ -83,13 +83,18 @@ struct DungeonSession {
     // spawner the street uses (one context, one law), and like the street it
     // reads no strength from the place: a body is its row (CANON.md S12).
     int settlementId = 0;         // subject ordinal; 0 = a wilderness building (M-37)
-    int landmarkPop = 0;          // settlement population (household-size term)
-    // How many doors the STREET had, counted the moment this one was opened.
-    // The hearth is sized from the town's people over the town's doors
-    // (sub/spawn.h doors_in_cell), and by the time the interior is built the
-    // window holds the interior — the street's doors are gone. So the count
-    // travels in with the session, like every other fact about the place.
-    int doorsInCell = 0;
+    // ОТРЕЗКИ ГОЛОВ ЭТОГО ИНТЕРЬЕРА ПО ЯРУСАМ, СНЯТЫ НА ПОРОГЕ (D-хвост):
+    // жилец — голова [offset, offset+share) инвентаря места, та часть
+    // последовательности, которую улица пропускает резервом. К моменту
+    // постройки интерьера окно держит ИНТЕРЬЕР — список дверей города (а с
+    // ним префикс чужих долей) уже недоступен, поэтому партиция визита
+    // замирает снимком на пороге и едет в сессии, как прежде ехал счёт
+    // дверей. offset −1 = отрезка нет (дикое здание, город без голов).
+    // Потолок ярусов — домен тиров шпиля (spire_tower.cpp: clamp(ordinal,
+    // 1, 5)); у очага ярусов два (пол + верх), в тот же массив.
+    static constexpr int kMaxInteriorStoreys = 5;
+    std::int32_t segOffset[kMaxInteriorStoreys] = {-1, -1, -1, -1, -1};
+    std::int32_t segShare[kMaxInteriorStoreys] = {0, 0, 0, 0, 0};
     // The door cell's landmark KIND — whose crowd stripe the household rolls
     // (§42: the interior's people are the PLACE's people, not always a town's).
     SquadType landmarkKind = SquadType::None;

@@ -119,14 +119,12 @@ struct FaunaPick { const FaunaEntry* entry; const char* factionId; };
 std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
                                    std::uint32_t& rngState);
 
-// One head of a place's CROWD, by the SAME law over the place's OWN stripe —
-// the landmark registry's crowdHabitat column (§42: the town stripe used to
-// be baked into the picker's name, which is why only a town could have a
-// crowd). For the kHabTown stripe the row weights carry the old 55/21/21/3
-// mix as data, a profession row joins the crowd only where its deposit gate
-// is open, and the danger match rides on top — that law replaced the
-// RNG-only pick_civilian_type (canon-audit F4) and stands bit-for-bit.
-NPCType pick_crowd_row(const SpawnContext& ctx, std::uint32_t& rngState);
+// (pick_crowd_row — ролл рода толпы по полосе crowdHabitat — УНИЧТОЖЕН
+// 2026-10-04, D-хвост: род, уровень и лицо жителя — ФАКТ ГОЛОВЫ инвентаря
+// на всех трёх путях (улица, интерьер, дверь рассвета), и выдумывать род
+// заново на каждом входе было побочной системой. Колонку crowdHabitat
+// по-прежнему читают гейты «держит ли род толпу» и weakest_crowd_kind —
+// род ДУШИ решается при поселении, не при воплощении.)
 
 // МОЩЬ СТРОКИ — ОДИН РАСЧЁТ, ДВА ПОТРЕБИТЕЛЯ. hp × dps той же строки, что
 // и дерётся: `spawn_strength` нормализует ЭТО в байт для сравнения с

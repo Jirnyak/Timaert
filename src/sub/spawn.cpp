@@ -238,8 +238,9 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
 }
 
 // (pick_civilian_type lived here until 2026-08-24 — an RNG-only crowd that
-// could not tell an iron town from a swamp one, canon-audit F4. The crowd
-// rolls by THE spawn law now: fauna.h pick_crowd_row.)
+// could not tell an iron town from a swamp one, canon-audit F4. Its heir
+// pick_crowd_row died too, 2026-10-04: a resident is a HEAD of the place's
+// inventory on every path now, never a roll.)
 
 // ── THE birth of a subworld humanoid ───────────────────────────────────────
 //
@@ -397,6 +398,26 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     return e;
 }
 
+// ── ГОЛОВА → ТЕЛО: один закон на улицу, интерьер и дверь рассвета ────────
+// Лицо: у именной души — её entityId (лицо переживает пере-вход), у
+// генерика ВЫВОДИТСЯ из АДРЕСА (старый ростерный ординал слота, номер в
+// стаке) — CANON S4: «лицо генерика выводится, а не хранится».
+std::uint32_t head_soul_id(const CreatureHead& head) {
+    const std::uint32_t rosterSlot =
+        std::uint32_t(kMaxInventorySlots - 1 - head.slot);
+    return head.entityId != 0
+        ? head.entityId
+        : ((rosterSlot << 16) | (std::uint32_t(head.index) + 1u));
+}
+
+// Займ называет ИМЕННО ЭТУ голову, поэтому смерть списывает её, а не первую
+// подвернувшуюся: именную — по entityId, генерика — по роду и уровню.
+void name_head_in_loan(MacroStockKey& key, const CreatureHead& head) {
+    key.detail = head.entityId != 0 ? std::int32_t(head.entityId) : -1;
+    key.detailKind = head.kind;
+    key.detailLevel = head.level;
+}
+
 void spawn_landmark_population(ecs::World& w,
                                SquadType landmark,
                                const SeamlessSubworldManager& mgr,
@@ -523,15 +544,9 @@ void spawn_landmark_population(ecs::World& w,
         if (placed >= target) break;
         ++placed;
         if (!valid_npc_kind(head.kind)) continue;
-        // Лицо: у именной души — её entityId (лицо переживает пере-вход), у
-        // генерика ВЫВОДИТСЯ из АДРЕСА (слот, номер в стаке) — CANON S4:
-        // «лицо генерика выводится, а не хранится». Слот — старый ростерный
-        // ординал (0 = старейший), как до слияния M-71.
-        const std::uint32_t rosterSlot =
-            std::uint32_t(kMaxInventorySlots - 1 - head.slot);
-        const std::uint32_t soulId = head.entityId != 0
-            ? head.entityId
-            : ((rosterSlot << 16) | (std::uint32_t(head.index) + 1u));
+        // Лицо и адрес головы — ОДИН закон на улицу, интерьер и рассвет
+        // (head_soul_id/name_head_in_loan выше).
+        const std::uint32_t soulId = head_soul_id(head);
         float fx = 0.0f;
         float fy = 0.0f;
         // Каждая вторая душа берёт квартал, поэтому деление точно при любом
@@ -563,9 +578,7 @@ void spawn_landmark_population(ecs::World& w,
         // table — и `detail` называет ИМЕННО ЭТУ голову, поэтому смерть
         // списывает её, а не первую подвернувшуюся.
         MacroStockKey key = populationKey;
-        key.detail = head.entityId != 0 ? std::int32_t(head.entityId) : -1;
-        key.detailKind = head.kind;
-        key.detailLevel = head.level;
+        name_head_in_loan(key, head);
         spawn_derived_body(reg,
             BodySpec{
                 type, fx, fy, settlementFaction,
@@ -876,14 +889,21 @@ int interior_garrison_share(SquadType landmark, int landmarkPop,
 // is actually opened, over the same inputs (ordinal = the door prop's tag,
 // footprint = the prop's own half-extents). WHICH law a door speaks is the
 // dungeon kind row's own columns, never a branch here on the kind's name.
-int interior_reserve_for_cell(const std::vector<Structure>& structures,
-                              SquadType landmark,
-                              std::uint32_t worldSeed,
-                              int cellX, int cellY,
-                              float originX, float originY,
-                              int landmarkPop, const WorldTime& now) {
+//
+// ПРОГУЛКА ОДНА НА ОБА ВОПРОСА (D-хвост): «сколько всего за дверями»
+// (резерв) и «где отрезок ЭТОЙ двери» (смещение) — одна и та же сумма,
+// остановленная в разных местах. Вторая прогулка была бы вторым законом
+// партиции и разъехалась бы с первой молча.
+namespace {
+template <typename Visit>   // Visit(ordinal, level, share) -> true = стоп
+void walk_interior_shares(const std::vector<Structure>& structures,
+                          SquadType landmark,
+                          std::uint32_t worldSeed,
+                          int cellX, int cellY,
+                          float originX, float originY,
+                          int landmarkPop, const WorldTime& now,
+                          Visit&& visit) {
     const int doors = doors_in_cell(structures, originX, originY);
-    int reserve = 0;
     const float x1 = originX + float(kCellSize);
     const float y1 = originY + float(kCellSize);
     for (const Structure& s : structures) {
@@ -900,23 +920,42 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
         ref.footHx = structure_half_x(s);
         ref.footHy = structure_half_y(s);
         if (row.householdAbove) {
-            reserve += interior_household_share(worldSeed, cellX, cellY,
-                                                s.tag, 0, landmarkPop,
-                                                doors, now);
+            if (visit(s.tag, 0,
+                      interior_household_share(worldSeed, cellX, cellY,
+                                               s.tag, 0, landmarkPop,
+                                               doors, now))) return;
             if (dungeon_has_upper(ref)) {
-                reserve += interior_household_share(worldSeed, cellX, cellY,
-                                                    s.tag, 1, landmarkPop,
-                                                    doors, now);
+                if (visit(s.tag, 1,
+                          interior_household_share(worldSeed, cellX, cellY,
+                                                   s.tag, 1, landmarkPop,
+                                                   doors, now))) return;
             }
         } else if (row.placeGarrison
                    && landmark_def(landmark).crowdHabitat != 0) {
             const int storeys = dungeon_storey_count(ref);
             for (int level = 0; level < storeys; ++level) {
-                reserve += interior_garrison_share(landmark, landmarkPop,
-                                                   storeys, level);
+                if (visit(s.tag, level,
+                          interior_garrison_share(landmark, landmarkPop,
+                                                  storeys, level))) return;
             }
         }
     }
+}
+} // namespace
+
+int interior_reserve_for_cell(const std::vector<Structure>& structures,
+                              SquadType landmark,
+                              std::uint32_t worldSeed,
+                              int cellX, int cellY,
+                              float originX, float originY,
+                              int landmarkPop, const WorldTime& now) {
+    int reserve = 0;
+    walk_interior_shares(structures, landmark, worldSeed, cellX, cellY,
+                         originX, originY, landmarkPop, now,
+                         [&](std::uint16_t, int, int share) {
+                             reserve += share;
+                             return false;
+                         });
     // A TOWN CANNOT KEEP MORE PEOPLE THAN IT HAS. Household sizes are a roll
     // centred on the mean the house count was derived from (city_layout.h), so
     // their sum tracks the population but scatters about it by a soul or two —
@@ -928,6 +967,40 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
     // The door-open path pays the same respect from its own side, clamping its
     // household by the LIVE stock — so an emptied town opens on empty houses.
     return std::min(reserve, std::max(0, landmarkPop));
+}
+
+InteriorSegment interior_segment_for_door(
+    const std::vector<Structure>& structures,
+    SquadType landmark,
+    std::uint32_t worldSeed,
+    int cellX, int cellY,
+    float originX, float originY,
+    int headsTotal, const WorldTime& now,
+    std::uint16_t ordinal, int level) {
+    InteriorSegment seg{};
+    int prefix = 0;
+    walk_interior_shares(structures, landmark, worldSeed, cellX, cellY,
+                         originX, originY, headsTotal, now,
+                         [&](std::uint16_t ord, int lvl, int share) {
+                             if (ord == ordinal && lvl == level) {
+                                 seg.offset = prefix;
+                                 seg.share = share;
+                                 return true;
+                             }
+                             prefix += share;
+                             return false;
+                         });
+    if (seg.offset < 0) return seg;
+    // Тот же кламп, которым резерв режет себя (min(sum, heads)), с ЭТОЙ
+    // стороны выглядит так: головы кончились раньше отрезка — дверь сидит
+    // пустой; кончились внутри — берёт остаток.
+    const int avail = std::max(0, std::max(0, headsTotal) - seg.offset);
+    seg.share = std::min(seg.share, avail);
+    return seg;
+}
+
+int home_heads(const Inventory& homeSouls) {
+    return creature_heads(homeSouls);
 }
 
 namespace {
@@ -962,15 +1035,16 @@ struct FloorDraw {
 int spawn_dungeon_residents(ecs::World& w,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
-                            SquadType landmark,
-                            std::uint8_t danger,
-                            std::uint8_t depositsNear,
                             int count,
+                            int segmentStart,
+                            const Inventory* homeSouls,
                             const std::vector<StandPoint>& floorCatalog,
                             float originX, float originY,
                             MacroStockKey populationKey,
                             bool combatant) {
-    if (count <= 0) return 0;
+    if (count <= 0 || segmentStart < 0) return 0;
+    // Пустой инвентарь — пустой дом: это честное чтение запаса, не отказ.
+    if (homeSouls == nullptr) return 0;
     if (floorCatalog.empty()) {
         std::fprintf(stderr,
                      "[spawn] WARN interior of landmark %d: empty floor "
@@ -980,35 +1054,86 @@ int spawn_dungeon_residents(ecs::World& w,
     }
     Rng rng(seed ^ 0xD0E51DE7u);
     FloorDraw draw(floorCatalog.size());
+    // ЖИЛЕЦ — ГОЛОВА СВОЕГО ОТРЕЗКА [segmentStart, segmentStart + count)
+    // той же детерминированной последовательности, которую улица ПРОПУСКАЕТ
+    // (`seen < reserve` в spawn_landmark_population): род, уровень и лицо —
+    // ФАКТ ГОЛОВЫ, как на площади; займ называет ИМЕННО эту голову. Ролл
+    // рода (pick_crowd_row) здесь уничтожен — душа лежит в мире записью, и
+    // выдумывать её род на каждом входе было побочной системой (вердикт
+    // D-хвоста). Квоту расходует КАЖДАЯ голова отрезка, воплотилась или нет
+    // (зеркало улицы) — иначе отрезки дверей съезжали бы на невалидных.
+    int consumed = 0;
     int placed = 0;
-    for (int i = 0; i < count; ++i) {
+    int seen = 0;
+    for (const CreatureHead head : creature_heads_range(*homeSouls)) {
+        if (seen++ < segmentStart) continue;   // улица или чужая дверь
+        if (consumed >= count) break;
+        ++consumed;
+        if (!valid_npc_kind(head.kind)) continue;
+        const std::uint32_t soulId = head_soul_id(head);
         const StandPoint& pt = draw.next(floorCatalog, rng);
         const float fx = originX + float(pt.x) + 0.5f;
         const float fy = originY + float(pt.y) + 0.5f;
-        SpawnContext townCtx{};
-        // The household rolls its OWN place's crowd stripe — the landmark
-        // kind travels in from the door (§42: the hardcoded City that stood
-        // here dressed every interior in the world as a town house).
-        townCtx.landmark = landmark;
-        townCtx.danger = danger;
-        townCtx.depositsNear = depositsNear;
-        std::uint32_t ts = rng.state;
-        const NPCType type = pick_crowd_row(townCtx, ts);
-        rng.state = ts;
         // The same derived-citizen birth as the street (one row of one law):
-        // level from his own row, loan from the SAME population stock — a death
-        // in here pays the town back exactly like a death on the square.
-        // Whether it fights is CONTEXT: a hearth's family flees, a garrisoned
-        // storey stands its ground.
+        // a death in here pays the town back exactly like a death on the
+        // square. Whether it fights is CONTEXT: a hearth's family flees, a
+        // garrisoned storey stands its ground.
+        MacroStockKey key = populationKey;
+        name_head_in_loan(key, head);
         spawn_derived_body(w.reg,
             BodySpec{
-                type, fx, fy, settlementFaction,
-                normalize_soldier_level(npc_def(type).baseLevel
-                                        + int(rng.next_u32() % 3u)),
-                seed ^ (std::uint32_t(i) * 7919u),
+                NPCType(head.kind), fx, fy, settlementFaction,
+                normalize_soldier_level(head.level),
+                seed ^ (soulId * 2654435761u),
                 combatant},
-            /*faceSalt*/std::uint32_t(i) * 7919u,
-            BodyLoan::from(MacroStock::Population, populationKey));
+            /*faceSalt*/soulId * 7919u,
+            BodyLoan::from(MacroStock::Population, key));
+        ++placed;
+    }
+    return placed;
+}
+
+int spawn_street_arrivals(ecs::World& w,
+                          std::uint32_t seed,
+                          std::uint16_t faction,
+                          const Inventory& homeSouls,
+                          int reserve,
+                          int deficit,
+                          std::array<int, std::size_t(NPCType::Count)>& liveByKind,
+                          const std::vector<std::uint32_t>& liveNamed,
+                          const std::vector<const Structure*>& doors,
+                          MacroStockKey populationKey) {
+    if (deficit <= 0 || doors.empty() || reserve < 0) return 0;
+    Rng rng(seed ^ 0xDA47B00Du);
+    int placed = 0;
+    int seen = 0;
+    for (const CreatureHead head : creature_heads_range(homeSouls)) {
+        if (seen++ < reserve) continue;        // эта душа дома, за дверью
+        if (placed >= deficit) break;
+        if (!valid_npc_kind(head.kind)) continue;
+        if (head.entityId != 0) {
+            // Именная душа уже ходит по улице: её тело носит её entityId в
+            // займе, и второго её рассвет не рождает никогда.
+            if (std::find(liveNamed.begin(), liveNamed.end(),
+                          head.entityId) != liveNamed.end()) continue;
+        } else if (liveByKind[std::size_t(head.kind)] > 0) {
+            // Генерик взаимозаменяем ВНУТРИ рода: стоящее тело этого рода
+            // гасит одну голову того же рода, и состав улицы сходится с
+            // составом отрезка по-родно, а не только счётом.
+            --liveByKind[std::size_t(head.kind)];
+            continue;
+        }
+        const std::uint32_t soulId = head_soul_id(head);
+        const Structure* d = doors[std::size_t(rng.next_u32() % doors.size())];
+        MacroStockKey key = populationKey;
+        name_head_in_loan(key, head);
+        spawn_derived_body(w.reg,
+            BodySpec{NPCType(head.kind), d->x, d->y, faction,
+                     normalize_soldier_level(head.level),
+                     seed ^ (soulId * 2654435761u),
+                     /*combatant*/false},
+            /*faceSalt*/soulId * 7919u,
+            BodyLoan::from(MacroStock::Population, key));
         ++placed;
     }
     return placed;

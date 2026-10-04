@@ -2,6 +2,7 @@
 // fauna table. Mirrors `subworld/spawn.ts` populator: each visible cell
 // rolls its own table once per cell entry, scaled by the world tile area.
 #pragma once
+#include <array>
 #include <cstdint>
 #include <vector>
 #include "ecs/world.h"
@@ -299,6 +300,33 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
                               float originX, float originY,
                               int landmarkPop, const WorldTime& now);
 
+// ОТРЕЗОК ГОЛОВ ОДНОЙ ДВЕРИ внутри резервного префикса [0, reserve) — ТЕМ ЖЕ
+// обходом, которым резерв считает себя (один закон партиции, вторая прогулка
+// невыразима: обе — одна функция в spawn.cpp). `offset` — сумма долей всех
+// дверей, идущих РАНЬШЕ (ordinal, level) каноническим порядком обхода
+// структур; `share` — доля самой двери, уже обрезанная головами: дверь, чья
+// доля легла за клампом резерва, сидит пустой («город не может держать
+// больше людей, чем имеет»). Дверь вне клетки или без доли: {-1, 0}.
+struct InteriorSegment {
+    int offset = -1;
+    int share = 0;
+};
+InteriorSegment interior_segment_for_door(
+    const std::vector<Structure>& structures,
+    SquadType landmark,
+    std::uint32_t worldSeed,
+    int cellX, int cellY,
+    float originX, float originY,
+    int headsTotal, const WorldTime& now,
+    std::uint16_t ordinal, int level);
+
+// Сколько ГОЛОВ лежит в инвентаре дома — единица всей партиции улицы,
+// интерьеров и двери рассвета (воплощаются ТОЛЬКО домашние души; паства
+// worked сюда не годится — она считает и ушедших в поле, и мерить ею улицу
+// значило бы рождать тела без голов, второй счёт класса «6272 паствы →
+// 11774 тела»). Тонкая дверь: субмиру не нужен noситель голов целиком.
+int home_heads(const Inventory& homeSouls);
+
 // stock system, никакой второй копии). Placement is the scene's OWN floor
 // catalog (map_data.h StandPoint, CANON S28) — a uniform draw without
 // replacement over every standable tile the generator emitted, so a body
@@ -310,19 +338,18 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
 int spawn_dungeon_residents(ecs::World& w,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
-                            // WHOSE household this is: the door cell's own
-                            // landmark kind. The residents roll the crowd
-                            // stripe of THAT place's registry row (fauna.h
-                            // pick_crowd_row) — a hall in a spire is manned
-                            // by the spire's crowd, not by townsfolk (§42:
-                            // the old hardcoded City here dressed every
-                            // interior in the world as a town house).
-                            SquadType landmark,
-                            // The door cell's danger byte and deposit gates
-                            // complete the same context the street rolls.
-                            std::uint8_t danger,
-                            std::uint8_t depositsNear,
+                            // СВОЙ ОТРЕЗОК ГОЛОВ того же инвентаря (вердикт
+                            // владельца, D-хвост): жилец — ГОЛОВА [segmentStart,
+                            // segmentStart + count) той же детерминированной
+                            // последовательности, которую улица ПРОПУСКАЕТ
+                            // (`seen < reserve`). Род, уровень и лицо — ФАКТ
+                            // ГОЛОВЫ, ролл рода уничтожен (pick_crowd_row
+                            // умер вместе с ним): душа лежит в мире записью,
+                            // и выдумывать её род на каждом входе было
+                            // ПОБОЧНОЙ СИСТЕМОЙ.
                             int count,
+                            int segmentStart,
+                            const Inventory* homeSouls,
                             const std::vector<StandPoint>& floorCatalog,
                             float originX, float originY,
                             MacroStockKey populationKey,
@@ -330,6 +357,24 @@ int spawn_dungeon_residents(ecs::World& w,
                             // hearth's family lives its errands (false), a
                             // garrisoned storey FIGHTS for its place (true).
                             bool combatant = false);
+
+// РАССВЕТ ДОБИРАЕТ УЛИЦУ ГОЛОВАМИ, НЕ РОЛЛОМ: обход уличного отрезка
+// [reserve, heads) того же инвентаря, мимо голов, чьи тела УЖЕ стоят на
+// улице — генерики по счёту живых СВОЕГО РОДА (`liveByKind`, генерик
+// взаимозаменяем внутри рода), именные по entityId живого займа
+// (`liveNamed`). Рождение — та же дверь тела с тем же займом, что у улицы;
+// лицо выводится из головы, поэтому житель больше не меняет лицо каждый
+// рассвет. Возвращает число вставших.
+int spawn_street_arrivals(ecs::World& w,
+                          std::uint32_t seed,
+                          std::uint16_t faction,
+                          const Inventory& homeSouls,
+                          int reserve,
+                          int deficit,
+                          std::array<int, std::size_t(NPCType::Count)>& liveByKind,
+                          const std::vector<std::uint32_t>& liveNamed,
+                          const std::vector<const Structure*>& doors,
+                          MacroStockKey populationKey);
 
 // The vermin of ONE interior (a cellar, a cave floor): creatures rolled from
 // the SAME global monster table the open world uses — `tableKind` picks the

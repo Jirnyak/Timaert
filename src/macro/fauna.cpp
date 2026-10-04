@@ -200,42 +200,9 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
     return out;
 }
 
-NPCType pick_crowd_row(const SpawnContext& ctx, std::uint32_t& rngState) {
-    // The place's own crowd stripe — a registry COLUMN, never a name baked
-    // into the picker (§42). A kind whose column is 0 keeps no crowd and
-    // falls closed below like an empty stripe.
-    const std::uint16_t stripe = landmark_def(ctx.landmark).crowdHabitat;
-    Rng r(rngState);
-    std::uint64_t total = 0;
-    std::uint32_t w[std::size_t(NPCType::Count)] = {};
-    for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
-        const NpcTypeDef& habRow = npc_def(NPCType(i));
-        if (!(habRow.habitat & stripe)) continue;
-        const NpcTypeDef& row = kNpcTypeDefs[i];
-        if (row.weight == 0) continue;
-        if (habRow.depositGate >= 0
-            && !(ctx.depositsNear & (1u << habRow.depositGate))) {
-            continue;   // no vein in reach — this trade has no ground here
-        }
-        w[i] = std::uint32_t(row.weight)
-             * danger_match_weight(spawn_strength(row.type), ctx.danger);
-        total += w[i];
-    }
-    // Fail-closed default, kept verbatim from the town law. When the slot
-    // fill lands (§42), an empty stripe will leave the slot honestly empty
-    // instead of dressing a peasant in a demon hall.
-    NPCType out = NPCType::Peasant;
-    if (total > 0) {
-        double roll = double(r.next_f01()) * double(total);
-        for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
-            if (w[i] == 0) continue;
-            roll -= double(w[i]);
-            if (roll <= 0.0) { out = NPCType(i); break; }
-        }
-    }
-    rngState = r.state;
-    return out;
-}
+// (pick_crowd_row stood here until 2026-10-04 — the D-tail verdict killed
+// the last two callers: an interior resident and the dawn door both read
+// HEADS of the place's inventory now, so there is nothing left to roll.)
 
 // ── Creature catalog — a VIEW over the one body table ────────────────
 //

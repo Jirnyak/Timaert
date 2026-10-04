@@ -1650,17 +1650,28 @@ void SubworldEngine::tick_day_pump(float dt) {
     pumpTick_ = nowTick;
 
     const CellContext ctx = resolve_context(mgr_.center_cx(), mgr_.center_cy());
-    const int pop = ctx.landmark.size;
-    if (pop <= 0 || ctx.landmark.id < 0) return;
+    if (ctx.landmark.id < 0) return;
     if (landmark_def(ctx.landmark.kind).crowdHabitat == 0) return;
+
+    // ЕДИНИЦА УЛИЦЫ — ГОЛОВЫ инвентаря места, не паства (D-хвост): паства
+    // (worked) считает и ушедших в поле, и помпа, меренная ею, рождала бы на
+    // улицу тела БЕЗ голов — тот же класс двойного счёта, что «6272 паствы →
+    // 11774 тела». Воплощаются только домашние души; улица = головы − резерв.
+    const MacroStore& st = store_of(*ecs_);
+    const MacroHandle ph = place_handle_by_ordinal(
+        st, std::uint32_t(ctx.landmark.id));
+    const Inventory* souls =
+        st.valid(ph) ? &st.inventory[ph.slot].inv : nullptr;
+    const int heads = souls ? home_heads(*souls) : 0;
+    if (heads <= 0) return;
 
     const float originX = float(kCellSize);
     const float originY = float(kCellSize);
     const int reserve = interior_reserve_for_cell(
         mgr_.structures(), ctx.landmark.kind, ctx.worldSeed,
-        mgr_.center_cx(), mgr_.center_cy(), originX, originY, pop,
+        mgr_.center_cx(), mgr_.center_cy(), originX, originY, heads,
         gs_->worldTime);
-    const int target = std::max(0, pop - reserve);
+    const int target = std::max(0, heads - reserve);
 
     // The doors this town keeps — where a man goes home to, and where one
     // steps out of at first light.
@@ -1718,40 +1729,41 @@ void SubworldEngine::tick_day_pump(float dt) {
     while (deficit > 0 && !leaving.empty()) {
         const entt::entity e = leaving.back();
         leaving.pop_back();
-        if (reg.valid(e)) reg.remove<ecs::GoingHome>(e);
+        if (reg.valid(e)) {
+            reg.remove<ecs::GoingHome>(e);
+            onStreet.push_back(e);   // развёрнутый стоит на улице — счёту ниже
+        }
         --deficit;
     }
     if (deficit <= 0) return;
 
-    // …and the rest step out of their doors, born by the one birth the street
-    // crowd has always used, with the same loan on the same stock.
-    SpawnContext townCtx{};
-    townCtx.biome = ctx.biome;
-    townCtx.forest = is_forest_cell(ctx.treeCount);
-    townCtx.landmark = ctx.landmark.kind;
-    townCtx.danger = ctx.zone;
-    townCtx.depositsNear = ctx.depositsNear;
+    // …and the rest step out of their doors — ГОЛОВАМИ уличного отрезка
+    // инвентаря, мимо тех, чьи тела уже стоят (ролл рода мёртв, D-хвост):
+    // генерики гасятся по-родным счётом живых, именные — по entityId займа.
+    // Именное тело в по-родный счёт НЕ входит — его голову гасит entityId,
+    // и генерик того же рода не был бы погашен дважды.
+    std::array<int, std::size_t(NPCType::Count)> liveByKind{};
+    std::vector<std::uint32_t> liveNamed;
+    liveNamed.reserve(32);
+    for (const entt::entity e : onStreet) {
+        if (!reg.valid(e)) continue;
+        const auto& d = reg.get<ecs::MacroDebt>(e);
+        if (d.detail > 0) {
+            liveNamed.push_back(std::uint32_t(d.detail));
+            continue;
+        }
+        const auto* kind = reg.try_get<ecs::NPCKind>(e);
+        if (kind != nullptr && kind->type < std::uint16_t(NPCType::Count)) {
+            ++liveByKind[std::size_t(kind->type)];
+        }
+    }
     const std::uint16_t faction = faction_or_freefolk(ctx.landmark.factionIdx);
     const MacroStockKey popKey{ctx.landmark.id,
                                std::int16_t(mgr_.center_cx()),
                                std::int16_t(mgr_.center_cy())};
-    Rng rng(ctx.seed ^ 0xDA47B00Du);
-    for (int i = 0; i < deficit; ++i) {
-        const Structure* d = doors[std::size_t(rng.next_u32() % doors.size())];
-        std::uint32_t ts = rng.state;
-        const NPCType type = pick_crowd_row(townCtx, ts);
-        rng.state = ts;
-        spawn_derived_body(reg,
-            BodySpec{type, d->x, d->y, faction,
-                     normalize_soldier_level(npc_def(type).baseLevel
-                                             + int(rng.next_u32() % 3u)),
-                     ctx.seed ^ (std::uint32_t(nowTick) * 7919u
-                                 + std::uint32_t(i)),
-                     /*combatant*/false},
-            /*faceSalt*/std::uint32_t(nowTick) * 2654435761u
-                        + std::uint32_t(i),
-            BodyLoan::from(MacroStock::Population, popKey));
-    }
+    spawn_street_arrivals(*ecs_, ctx.seed ^ std::uint32_t(nowTick),
+                          faction, *souls, reserve, deficit,
+                          liveByKind, liveNamed, doors, popKey);
 }
 
 void SubworldEngine::tick_zones() {
@@ -3689,11 +3701,27 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // Settlement context for the interior's own population — the same
     // numbers the street spawner reads (spawn_cell), captured once here.
     ses.settlementId = doorCtx.landmark.id;   // ONE landmark id space (v54)
-    ses.landmarkPop = doorCtx.landmark.size;
-    ses.doorsInCell = doors_in_cell(mgr_.structures(),
-                                    float(winCellX * kCellSize),
-                                    float(winCellY * kCellSize));
     ses.landmarkKind = doorCtx.landmark.kind;
+    // Отрезки голов интерьера — ПО ЯРУСАМ, пока город ещё в окне (см.
+    // DungeonSession): единица партиции — головы инвентаря места, прогулка
+    // долей — та же, которой улица считает свой резерв.
+    if (ses.settlementId > 0 && ecs_) {
+        const MacroStore& st = store_of(*ecs_);
+        const MacroHandle ph = place_handle_by_ordinal(
+            st, std::uint32_t(ses.settlementId));
+        const int heads = st.valid(ph)
+            ? home_heads(st.inventory[ph.slot].inv) : 0;
+        for (int l = 0; l < DungeonSession::kMaxInteriorStoreys; ++l) {
+            const InteriorSegment seg = interior_segment_for_door(
+                mgr_.structures(), ses.landmarkKind, doorCtx.worldSeed,
+                doorCx, doorCy,
+                float(winCellX * kCellSize), float(winCellY * kCellSize),
+                heads, gs_ ? gs_->worldTime : WorldTime{},
+                ses.ref.ordinal, l);
+            ses.segOffset[l] = seg.offset;
+            ses.segShare[l] = seg.share;
+        }
+    }
     ses.faction = faction_or_freefolk(doorCtx.landmark.factionIdx);
     // In off the street — or down through the crown, which lands on the roof
     // pad instead of the south threshold (a storey above the ground has no
@@ -3879,27 +3907,35 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
                                    std::int16_t(ses.doorCx),
                                    std::int16_t(ses.doorCy)};
         const int popNow = macro_stock_read(mw, MacroStock::Population, popKey);
-        // THE household law lives in ONE place (spawn.h
-        // interior_household_share, CANON S28): the street spawner subtracts
+        // THE household law lives in ONE place (spawn.cpp
+        // walk_interior_shares, CANON S28): the street spawner subtracts
         // the same shares as its reserve, so a soul at a hearth is a soul
-        // NOT on the square. Clamped by the live stock: a door in an
-        // emptied town opens on an empty house.
+        // NOT on the square. ЕДИНИЦА ПАРТИЦИИ — ГОЛОВЫ инвентаря места
+        // (воплощаются только домашние души; паства считает и ушедших в
+        // поле — мерить ею дом значило бы селить за дверь людей, которых в
+        // месте нет). Жильцы — СВОЙ ОТРЕЗОК тех же голов, которые улица
+        // пропускает; род/уровень/лицо — факт головы (D-хвост).
         const std::uint32_t dSeed = dungeon_scene_seed(
             worldSeed, ses.doorCx, ses.doorCy, ses.ref.ordinal, ses.ref.level);
-        const int household = std::min(popNow,
-            interior_household_share(worldSeed, ses.doorCx, ses.doorCy,
-                                     ses.ref.ordinal, ses.ref.level,
-                                     ses.landmarkPop,
-                                     ses.doorsInCell,
-                                     gs_ ? gs_->worldTime : WorldTime{}));
+        const MacroStore& st = store_of(*ecs_);
+        const MacroHandle ph = place_handle_by_ordinal(
+            st, std::uint32_t(ses.settlementId));
+        const Inventory* souls =
+            st.valid(ph) ? &st.inventory[ph.slot].inv : nullptr;
+        // Отрезок яруса снят на пороге (DungeonSession) — к этому моменту
+        // окно держит интерьер, и дверей города в нём уже нет.
+        const int lvl = std::clamp(int(ses.ref.level), 0,
+                                   DungeonSession::kMaxInteriorStoreys - 1);
+        // Кламп живым запасом остаётся: опустевший город открывается
+        // пустым домом, какой бы отрезок дверь ни держала.
+        const int household = std::min(popNow, int(ses.segShare[lvl]));
         // Placement is the scene's OWN floor catalog (CANON S28): every
         // standable tile the generator emitted, not a rectangle guessed
         // from the door's footprint. The interior lives in the window's
         // centre cell; the catalog is cell-local, hence the kCellSize map.
         spawn_dungeon_residents(*ecs_,
             dSeed ^ 0x5EEDD00Du,
-            ses.faction, ses.landmarkKind,
-            doorFacts.zone, doorFacts.depositsNear, household,
+            ses.faction, household, int(ses.segOffset[lvl]), souls,
             mgr_.cell_stand_points(4),
             float(kCellSize), float(kCellSize), popKey);
     }
@@ -3920,15 +3956,21 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
                                    std::int16_t(ses.doorCx),
                                    std::int16_t(ses.doorCy)};
         const int popNow = macro_stock_read(mw, MacroStock::Population, popKey);
-        const int share = std::min(popNow,
-            interior_garrison_share(ses.landmarkKind, popNow,
-                                    dungeon_storey_count(ses.ref),
-                                    int(ses.ref.level)));
+        // Ярус мансуется СВОИМ ОТРЕЗКОМ голов места — та же партиция, что у
+        // очага: пикет снаружи + Σ ярусов == головы, всегда (D-хвост).
+        // Отрезок снят на пороге (DungeonSession).
+        const MacroStore& st = store_of(*ecs_);
+        const MacroHandle ph = place_handle_by_ordinal(
+            st, std::uint32_t(ses.settlementId));
+        const Inventory* souls =
+            st.valid(ph) ? &st.inventory[ph.slot].inv : nullptr;
+        const int lvl = std::clamp(int(ses.ref.level), 0,
+                                   DungeonSession::kMaxInteriorStoreys - 1);
+        const int share = std::min(popNow, int(ses.segShare[lvl]));
         spawn_dungeon_residents(*ecs_,
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level) ^ 0x6A441501u,
-            ses.faction, ses.landmarkKind,
-            doorFacts.zone, doorFacts.depositsNear, share,
+            ses.faction, share, int(ses.segOffset[lvl]), souls,
             mgr_.cell_stand_points(4),
             float(kCellSize), float(kCellSize), popKey,
             /*combatant*/true);
