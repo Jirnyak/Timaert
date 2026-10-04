@@ -11,6 +11,9 @@
 #include "events/quests/quest_engine.h"
 #include "macro/agent_memory.h"
 #include "macro/labour.h"   // settle_souls — фикстура селит души дверью мира
+#include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/squad.h"        // set_suzerain — знание роли в interests ТЕЛА
+#include "macro/store.h"
 #include "tables/codex.h"
 #include "macro/currency.h"
 
@@ -19,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <span>
 #include <string>
 #include <utility>
@@ -36,6 +40,25 @@ namespace {
 // does not reach into the ECS, and PlayerState no longer carries x/y.
 int g_playerCellX = 0;
 int g_playerCellY = 0;
+
+// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад (M-90 шаг 5):
+// склад, счёт нужд и знание роли — колонки его ТЕЛА, значит и фикстуре, и
+// движку квестов нужен store. Миры свидетеля делят его: их тела друг друга
+// не видят (строка носит СВОЙ bodyBits), а профиль памяти store от населения
+// не зависит (ЗАКОН СТАБИЛЬНОСТИ).
+sm::MacroStore& places() {
+    static std::unique_ptr<sm::MacroStore> st = sm::make_macro_store();
+    return *st;
+}
+
+// Место приходит в мир ОДНОЙ дверью, и строка держится ИНДЕКСОМ: следующее
+// рождение двигает вектор строк, и ссылка протухла бы молча.
+std::size_t settle_place(sm::GameState& gs, sm::Landmark&& lm, int souls) {
+    const std::size_t idx = gs.landmarks.size();
+    sm::birth_landmark(gs, places(), std::move(lm));
+    if (souls > 0) sm::settle_souls(gs, places(), gs.landmarks[idx], souls);
+    return idx;
+}
 
 
 // THE fixture's container. The quest engine and the effect applicator are
@@ -462,7 +485,7 @@ void test_grant_xp_pays_the_wis_dividend() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, wisState, &bag, &head, &sheet,
+    engine.tick(active, places(), bus, wisState, &bag, &head, &sheet,
                 g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(active.empty(), "the wis-dividend quest did not complete");
@@ -512,7 +535,7 @@ void test_quest_xp_reward_levels_the_player() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(active.empty(), "the reward quest did not complete");
     CHECK_OR_RETURN(!(sheet.levelData.level != 4),
@@ -977,7 +1000,7 @@ void test_quest_failed_settles_its_offer() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "expired quest was not removed");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestFail)),
@@ -1010,7 +1033,7 @@ void test_quest_failed_settles_its_offer() {
     // The day turns: this offer can never be generated again (its bornDay is
     // part of its identity), so the settled memory prunes itself.
     gs.worldTime = sm::world_time_at(11, 6, 0);
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!gs.player.settledQuestOffers.empty()),
         "yesterday's settled offer was not pruned with its day");
 }
@@ -1034,11 +1057,11 @@ void test_item_delivery_direct_path() {
     settlement.x = 12;
     settlement.y = 18;
     settlement.factionIdx = 0;
-    gs.landmarks.push_back(settlement);
     // Души селятся ОДНОЙ дверью мира (labour.h settle_souls): фикстура
     // обязана ставить их тем же законом, что генезис, — паства в worked,
-    // головы в инвентаре.
-    sm::settle_souls(gs, gs.landmarks.back(), 1000);
+    // головы в инвентаре ТЕЛА места (M-90 шаг 5).
+    const int settlementId = settlement.id;
+    settle_place(gs, std::move(settlement), 1000);
 
     sm::Quest q{};
     q.ordinal = 7u;
@@ -1049,7 +1072,7 @@ void test_item_delivery_direct_path() {
     objective.kind = sm::ObjectiveKind::DeliverItems;
     objective.itemId = "wood";
     objective.quantity = 2;
-    objective.targetSettlementId = settlement.id;
+    objective.targetSettlementId = settlementId;
     q.objectives.push_back(objective);
     // Награды предметом здесь больше нет: `RewardKind::Item` печатала вещь в
     // сумку ИЗ ВОЗДУХА, дарителя в звонке не было ни одного, и она снесена
@@ -1062,7 +1085,7 @@ void test_item_delivery_direct_path() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery quest did not complete from inventory condition");
@@ -1099,13 +1122,14 @@ void test_quest_reward_dispatch_order_and_application() {
     giver.id = 1;
     giver.type = sm::LandmarkType::Village;
     std::snprintf(giver.name, sizeof giver.name, "Giver");
-    giver.inventory.add("coin_empire_copper", 40);
-    gs.landmarks.push_back(giver);
-    sm::settle_souls(gs, gs.landmarks.back(), 64);
+    const int giverId = giver.id;
+    const std::size_t giverIdx = settle_place(gs, std::move(giver), 64);
+    sm::place_store(places(), gs.landmarks[giverIdx])
+        .add("coin_empire_copper", 40);
 
     sm::Quest q{};
     q.ordinal = 9u;
-    q.giverSettlementId = giver.id;
+    q.giverSettlementId = giverId;
     q.title = "Reward Order";
     q.description = "Reward parity test";
     sm::Objective objective{};
@@ -1155,7 +1179,7 @@ void test_quest_reward_dispatch_order_and_application() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
 
     const auto& events = bus.tick_events();
     CHECK_OR_RETURN(!(!active.empty() || events.size() != 3),
@@ -1232,7 +1256,7 @@ void test_visit_cell_objective() {
     std::vector<sm::Quest> active;
     active.push_back(q);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "VisitCell did not complete from player radius");
 }
@@ -1270,7 +1294,7 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
     active.push_back(make_visit(2u, "q_high"));
 
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
 
     std::vector<std::uint32_t> completed;
     for (const auto& ev : bus.tick_events()) {
@@ -1339,7 +1363,7 @@ void test_destroy_npc_objective() {
     bus.emit(impostor);
     bus.emit(kindless);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.size() != 1),
         "DestroyNpc counted an entity handle / a kindless body as a kill");
     CHECK_OR_RETURN(!(active[0].objectives[0].killed != 1),
@@ -1351,7 +1375,7 @@ void test_destroy_npc_objective() {
     secondReal.ix = 2;
     bus.emit(secondReal);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "DestroyNpc did not complete on kills of the wanted type");
 }
@@ -1425,17 +1449,21 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     std::snprintf(city.name, sizeof city.name, "Same Id City");
     city.x = 20;
     city.y = 20;
+    const int cityId = city.id;
+    const std::size_t cityIdx = settle_place(gs, std::move(city), 500);
     // Steer gen_delivery through the honest surface: tools are the town's
     // SCARCEST consumed good (food plentiful, everything else stocked).
-    city.inventory.add("food", 2048);
-    city.inventory.add("cloth", 128);
-    city.inventory.add("bricks", 128);
-    city.inventory.add("furniture", 128);
-    city.inventory.add("jewelry", 128);
-    city.inventory.add("carving", 128);
-    city.inventory.add("statue", 128);
-    gs.landmarks.push_back(city);
-    sm::settle_souls(gs, gs.landmarks.back(), 500);
+    // Склад — колонка ТЕЛА места (M-90 шаг 5).
+    {
+        sm::Inventory& shelf = sm::place_store(places(), gs.landmarks[cityIdx]);
+        shelf.add("food", 2048);
+        shelf.add("cloth", 128);
+        shelf.add("bricks", 128);
+        shelf.add("furniture", 128);
+        shelf.add("jewelry", 128);
+        shelf.add("carving", 128);
+        shelf.add("statue", 128);
+    }
 
     sm::Landmark village{};
     village.type = sm::LandmarkType::Village;
@@ -1443,12 +1471,12 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     std::snprintf(village.name, sizeof village.name, "Same Id Village");
     village.x = 24;
     village.y = 22;
-    gs.landmarks.push_back(village);
-    sm::settle_souls(gs, gs.landmarks.back(), 80);
-    sm::set_suzerain(gs, village.id, city.id);
+    const std::size_t villageIdx = settle_place(gs, std::move(village), 80);
+    sm::set_suzerain(gs, places(), gs.landmarks[villageIdx].id, cityId);
 
     const auto cityQuests =
-        sm::generate_quests_for_settlement(city, gs, gs.worldSeed);
+        sm::generate_quests_for_settlement(gs.landmarks[cityIdx], places(),
+                                           gs, gs.worldSeed);
     CHECK_OR_RETURN(!(cityQuests.empty()),
         "offer provenance test did not generate quests");
     // The dedup triple {giver, slot, bornDay} names an offer uniquely: every
@@ -1456,7 +1484,7 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     // of one day share a slot, and all carry the giver and the day.
     for (std::size_t i = 0; i < cityQuests.size(); ++i) {
         const sm::Quest& a = cityQuests[i];
-        CHECK_OR_RETURN(!(a.giverSettlementId != city.id
+        CHECK_OR_RETURN(!(a.giverSettlementId != cityId
             || a.bornDay != gs.worldTime.day()
             || a.ordinal != 0u),
             "an offer's provenance is not {giver, slot, TODAY} + no ordinal");
@@ -1468,7 +1496,8 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     // Tomorrow's offers are new identities by construction.
     gs.worldTime = sm::world_time_at(6, 0, 0);
     const auto tomorrow =
-        sm::generate_quests_for_settlement(city, gs, gs.worldSeed);
+        sm::generate_quests_for_settlement(gs.landmarks[cityIdx], places(),
+                                           gs, gs.worldSeed);
     CHECK_OR_RETURN(!(tomorrow.empty()),
         "offer provenance test did not generate tomorrow's quests");
     for (const auto& tq : tomorrow) {
@@ -1541,22 +1570,29 @@ void test_generated_delivery_quest_flow() {
     settlement.x = 12;
     settlement.y = 18;
     settlement.factionIdx = 0;
-    settlement.inventory.add("food", 2048);
-    settlement.inventory.add("cloth", 128);
-    settlement.inventory.add("bricks", 128);
-    settlement.inventory.add("furniture", 128);
-    settlement.inventory.add("jewelry", 128);
-    settlement.inventory.add("carving", 128);
-    settlement.inventory.add("statue", 128);
-    gs.landmarks.push_back(settlement);
-    sm::settle_souls(gs, gs.landmarks.back(), 1000);
+    const int settlementId = settlement.id;
+    const std::size_t settlementIdx =
+        settle_place(gs, std::move(settlement), 1000);
+    // Склад — колонка ТЕЛА места (M-90 шаг 5).
+    {
+        sm::Inventory& shelf =
+            sm::place_store(places(), gs.landmarks[settlementIdx]);
+        shelf.add("food", 2048);
+        shelf.add("cloth", 128);
+        shelf.add("bricks", 128);
+        shelf.add("furniture", 128);
+        shelf.add("jewelry", 128);
+        shelf.add("carving", 128);
+        shelf.add("statue", 128);
+    }
 
     sm::Quest selected{};
     bool found = false;
     for (int day = 0; day < 256 && !found; ++day) {
         gs.worldTime = sm::world_time_at(day, 0, 0);
         const auto generated =
-            sm::generate_quests_for_settlement(settlement, gs, gs.worldSeed);
+            sm::generate_quests_for_settlement(gs.landmarks[settlementIdx],
+                                               places(), gs, gs.worldSeed);
         if (const sm::Quest* q = find_delivery_quest(generated, "tools")) {
             selected = *q;
             found = true;
@@ -1568,7 +1604,7 @@ void test_generated_delivery_quest_flow() {
         || selected.objectives.front().kind != sm::ObjectiveKind::DeliverItems
         || selected.objectives.front().itemId != "tools"
         || selected.objectives.front().quantity <= 0
-        || selected.objectives.front().targetSettlementId != settlement.id),
+        || selected.objectives.front().targetSettlementId != settlementId),
         "selected delivery quest does not follow economy resource demand");
 
     const int rewardGold = gold_reward(selected);
@@ -1578,9 +1614,10 @@ void test_generated_delivery_quest_flow() {
     // canon-audit B3 closed) — fund the treasury, or the town honestly
     // pays nothing and this test would measure a thin purse, not the law.
     {
-        sm::Landmark* giver = sm::landmark_by_id(gs, settlement.id);
+        sm::Landmark* giver = sm::landmark_by_id(gs, settlementId);
         CHECK_OR_RETURN(!(giver == nullptr), "fixture: giver landmark");
-        giver->inventory.add("coin_empire_copper", rewardGold * 4);
+        sm::place_store(places(), *giver)
+            .add("coin_empire_copper", rewardGold * 4);
     }
     const int deliverN = selected.objectives.front().quantity;
     bag.add("tools", deliverN);
@@ -1605,7 +1642,7 @@ void test_generated_delivery_quest_flow() {
         "accept applied reward before completion");
 
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery items did not complete generated quest");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestComplete)),

@@ -32,6 +32,8 @@
 #include "tables/codex.h"
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
 #include "macro/anketa.h"
+#include "macro/labour.h"   // souls_flock — паства через ТЕЛО (M-90)
+#include "macro/place_body.h"
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
 #include "macro/store.h"
@@ -2960,14 +2962,15 @@ bool run_dungeon_house_smoke(App& app) {
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::Chest) { chest = &s; break; }
         }
-        if (town != nullptr && chest != nullptr && town->inventory.used_slots() != 0) {
+        if (town != nullptr && chest != nullptr
+            && sm::place_store(*app.macroStore, *town).used_slots() != 0) {
             const char* fid = sm::faction_id_for_index(
                 sm::faction_or_freefolk(town->factionIdx));
-            storeBefore = town->inventory.total();
+            storeBefore = sm::place_store(*app.macroStore, *town).total();
             bagBefore = player_bag(app).total();
             repBefore = sm::player_reputation(&app.gs, fid);
             app.subworld.search_chest(*chest);
-            storeAfter = town->inventory.total();
+            storeAfter = sm::place_store(*app.macroStore, *town).total();
             bagAfter = player_bag(app).total();
             repAfter = sm::player_reputation(&app.gs, fid);
             measuredChest = true;
@@ -7692,8 +7695,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          "[smoke] settlement_trade open id=%d name=\"%s\" wellbeing=%d stock=%d playerItems=%d gold=%d\n",
                          s.id,
                          s.name,
-                         int(s.seasonWellbeing),
-                         s.inventory.used_slots(),
+                         int(app.macroStore->wellbeing[sm::place_slot(*app.macroStore,
+                                                                      s)]
+                                 .seasonWellbeing),
+                         sm::place_store(*app.macroStore, s).used_slots(),
                          player_bag(app).total(),
                          sm::inventory_value(player_bag(app)));
             std::fflush(stderr);
@@ -7728,7 +7733,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          s.id,
                          s.name,
                          previewSeed,
-                         sm::souls_flock(app.gs, s));
+                         sm::souls_flock(app.gs, *app.macroStore, s));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -7799,7 +7804,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // street. Counted over the centre cell only, so neighbours'
             // meadows do not dilute it.
             const int wantHouses =
-                sm::sub::city_house_target(sm::souls_flock(app.gs, s));
+                sm::sub::city_house_target(sm::souls_flock(app.gs, *app.macroStore, s));
             int bare = 0, built = 0;
             {
                 // Bounded to the ground INSIDE THE WALL — the town's own
@@ -7810,7 +7815,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const int o = sm::sub::kCellSize;
                 const float c = float(o) + float(o) * 0.5f;
                 const float r = float(
-                    sm::sub::city_wall_radius(sm::souls_flock(app.gs, s)));
+                    sm::sub::city_wall_radius(sm::souls_flock(app.gs, *app.macroStore, s)));
                 for (int y = o; y < o * 2; ++y) {
                     for (int x = o; x < o * 2; ++x) {
                         const float dx = float(x) + 0.5f - c;
@@ -7826,7 +7831,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] settlement_subworld id=%d pop=%d houses=%d/%d "
                          "walls=%d citizens=%d built=%d bare=%d center=%d,%d\n",
-                         s.id, sm::souls_flock(app.gs, s), houses,
+                         s.id, sm::souls_flock(app.gs, *app.macroStore, s), houses,
                          wantHouses, walls, citizens,
                          built, bare,
                          app.subworld.mgr().center_cx(),
@@ -7919,7 +7924,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // кварталом молча.
             {
                 const sm::Landmark* lm = smoke_first_city(app);
-                const int lmPop = lm ? sm::souls_flock(app.gs, *lm) : 0;
+                const int lmPop = lm ? sm::souls_flock(app.gs, *app.macroStore, *lm) : 0;
                 const float qr = sm::sub::city_upper_radius(lmPop);
                 int watch = 0, inQuarter = 0;
                 auto gv = app.ecs.reg.view<sm::ecs::Position,

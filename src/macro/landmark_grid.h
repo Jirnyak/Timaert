@@ -32,7 +32,8 @@
 // 65534 мест говорит ВСЛУХ вместо молчаливого обрезания (S26).
 #pragma once
 #include "core/torus.h"
-#include "macro/landmark_iter.h"
+#include "macro/landmark_registry.h"   // kLandmarkYieldOrder — закон клетки
+#include "macro/state.h"
 
 #include <cstdio>
 #include <cstdint>
@@ -88,29 +89,33 @@ inline LandmarkGrid build_landmark_grid(const GameState& gs) {
     g.slot.assign(std::size_t(g.width) * std::size_t(g.height),
                   LandmarkGrid::kNoLandmark);
     g.refs.clear();
-    for_each_landmark(gs, [&](const LandmarkView& lv) {
-        auto& s = g.slot[cell_of(lv.x, lv.y, g.width)];
-        // First landmark yielded at a cell owns it — the iterator's order is
-        // the ONE priority (it is the same order resolve_context used to scan).
-        if (s != LandmarkGrid::kNoLandmark) return;
-        // THE CAP SPEAKS OUT LOUD (CANON S26). This used to be an `assert`,
-        // which is nothing at all in the build the player runs: past 65 534
-        // landmarks the u16 slot would have taken kNoLandmark's own value and
-        // every cell of that place would have answered «nothing stands here»
-        // — a world silently missing a town, in release only. The refusal is
-        // said and the cell is honestly left empty instead.
-        if (g.refs.size() >= LandmarkGrid::kNoLandmark) {
-            std::fprintf(stderr,
-                         "[landmark-grid] slot space exhausted at %zu "
-                         "landmarks — cell %d,%d left unowned\n",
-                         g.refs.size(), cell_x(cell_of(lv.x, lv.y, g.width),
-                                               g.width),
-                         cell_y(cell_of(lv.x, lv.y, g.width), g.width));
-            return;
+    // Проход по строкам В ПОРЯДКЕ ВЫДАЧИ (kLandmarkYieldOrder — ОДИН закон
+    // приоритета спорной клетки). Прежде сетка шла через for_each_landmark,
+    // но флип M-90 увёл паству в ТЕЛО места, и итератор стал тянуть store —
+    // сетке же из всей выдачи нужны были только id и адрес строки.
+    for (LandmarkType t : kLandmarkYieldOrder)
+        for (const auto& lm : gs.landmarks) {
+            if (lm.type != t) continue;
+            auto& s = g.slot[cell_of(lm.x, lm.y, g.width)];
+            // First landmark yielded at a cell owns it.
+            if (s != LandmarkGrid::kNoLandmark) continue;
+            // THE CAP SPEAKS OUT LOUD (CANON S26). This used to be an
+            // `assert`, which is nothing at all in the build the player
+            // runs: past 65 534 landmarks the u16 slot would have taken
+            // kNoLandmark's own value and every cell of that place would
+            // have answered «nothing stands here» — a world silently
+            // missing a town, in release only. The refusal is said and the
+            // cell is honestly left empty instead.
+            if (g.refs.size() >= LandmarkGrid::kNoLandmark) {
+                std::fprintf(stderr,
+                             "[landmark-grid] slot space exhausted at %zu "
+                             "landmarks — cell %d,%d left unowned\n",
+                             g.refs.size(), lm.x, lm.y);
+                continue;
+            }
+            s = std::uint16_t(g.refs.size());
+            g.refs.push_back(lm.id);
         }
-        s = std::uint16_t(g.refs.size());
-        g.refs.push_back(lv.id);
-    });
     return g;
 }
 

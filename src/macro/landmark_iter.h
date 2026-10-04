@@ -12,7 +12,7 @@
 #pragma once
 #include "macro/features.h"
 #include "macro/labour.h"   // souls_flock — паства места (переворот v122)
-#include "macro/landmark_registry.h"
+#include "macro/landmark_registry.h"   // kLandmarkYieldOrder — закон клетки
 #include "macro/state.h"
 
 namespace sm {
@@ -31,18 +31,13 @@ struct LandmarkView {
                            // Landmark column since v120
 };
 
-// Cell-ownership priority (CANON S9): the order kinds are yielded IS the one
-// law of who owns a contested cell — the same order the old three-vector walk
-// had (cities first, then villages, then spires). Storage is one vector in
-// creation order (state.h gs.landmarks); the priority lives here, once.
-inline constexpr LandmarkType kLandmarkYieldOrder[] = {
-    LandmarkType::City, LandmarkType::Village, LandmarkType::Spire,
-    LandmarkType::Ruin, LandmarkType::Lair, LandmarkType::Shrine,
-    LandmarkType::Mine, LandmarkType::Tower,
-};
+// (kLandmarkYieldOrder живёт в landmark_registry.h: сетке мест нужен тот же
+// закон приоритета клетки, а итератора она тянуть не должна — флип M-90
+// отправил паству в ТЕЛО места, и этот файл теперь тащит store.)
 
+// `st` — тела мест (M-90 шаг 5): паства данжа — головы склада ТЕЛА.
 template <class F>
-void for_each_landmark(const GameState& gs, F&& fn) {
+void for_each_landmark(const GameState& gs, const MacroStore& st, F&& fn) {
     for (LandmarkType t : kLandmarkYieldOrder) {
         for (const auto& lm : gs.landmarks) {
             if (lm.type != t) continue;
@@ -58,7 +53,7 @@ void for_each_landmark(const GameState& gs, F&& fn) {
             const bool depleted = lm.type == LandmarkType::Spire
                 && worked_read(gs, lm.x, lm.y) == 0;
             fn(LandmarkView{lm.type, lm.id, lm.x, lm.y, name,
-                            souls_flock(gs, lm), depleted});
+                            souls_flock(gs, st, lm), depleted});
         }
     }
 }

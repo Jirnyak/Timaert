@@ -142,7 +142,10 @@ inline constexpr std::size_t kMacroStoreRowBytes =
     + sizeof(ecs::SquadName)          // имя анкеты (ход 2, вердикт 3)
     + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)
     + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook) + sizeof(AgentMemory)
-    + sizeof(ecs::SquadRoster) + sizeof(ecs::NpcInventory)
+    + sizeof(ecs::SquadRoster)
+    + sizeof(Wellbeing)               // благополучие анкеты (M-90 флип)
+    + sizeof(Interests)               // связи любых сквадов (M-90 флип)
+    + sizeof(ecs::NpcInventory)
     + sizeof(CharacterSheet) + sizeof(ecs::SquadOrders)
     + sizeof(ecs::BodyEquipment) + sizeof(ecs::DesignCharacterTag)
     + sizeof(std::uint8_t)            // playerFlag — флажок игрока (5б)
@@ -239,8 +242,12 @@ static_assert(sizeof(ResourceFields) == 720,
 // души дома — головы инвентаря; −80 Б: 76 полей + 4 паддинга. Имя стало
 // плоскими чарами 2026-09-30, ломтик E шаг 1: std::string умер, +8 Б —
 // раскладка колонки ecs::SquadName пришла в место до флипа.)
-static_assert(sizeof(Landmark) == 42108,
-              "ПОДЛЕЖИТ СНОСУ (M-90): второй штабель сущностей");
+// (Флип M-90 шаг 5, 2026-10-04: плечо места — inventory 40960, interests
+// 1024, needDebt 60, благополучие 8, renown 4 — уехало КОЛОНКАМИ ТЕЛА в
+// MacroStore; строка стала тонким индексом идентичности и умрёт целиком в
+// ломтике F.)
+static_assert(sizeof(Landmark) == 56,
+              "ПОДЛЕЖИТ СНОСУ (M-90, ломтик F): индекс мест при гладкой памяти");
 
 // ── ПЕРЕПИСЬ ─────────────────────────────────────────────────────────────
 // Ряд данных, а не ряд слов: по нему печатается картина памяти, и по нему же
@@ -358,7 +365,7 @@ inline constexpr StackRow kStacks[] = {
     // нельзя — он на другой стороне включения. Сходимость держит
     // `static_assert` там же (`store.h`), а не доверие.
     {"гладкая память макро-сквадов (MacroStore)",
-     "20 колонок SoA + служебные", StackKind::ByOrdinal, kMacroStoreRowBytes,
+     "22 колонки SoA + служебные", StackKind::ByOrdinal, kMacroStoreRowBytes,
      kMacroEntityCap},
     // Ниже — ДОФЛИПОВАЯ форма тех же сквадов: компоненты entt, сегодня мост
     // связей, а не состояние (M-106 шаг 1е — снос). Стоят отдельными

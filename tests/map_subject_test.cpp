@@ -13,6 +13,7 @@
 
 #include "ecs/world.h"
 #include "macro/map_subject.h"
+#include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/world_row.h"
 #include "macro/squad.h"
 #include "macro/state.h"
@@ -23,7 +24,9 @@
 
 namespace {
 
-sm::GameState make_world() {
+// Место есть неподвижный сквад (M-90 шаг 5): склад его — колонка ТЕЛА, и
+// потому фикстура рождает место дверью рождения, а не строкой в вектор.
+sm::GameState make_world(sm::MacroStore& st) {
     sm::GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
@@ -33,12 +36,12 @@ sm::GameState make_world() {
     std::snprintf(city.name, sizeof city.name, "Testholm");
     city.x = 10;
     city.y = 10;
-    sm::creatures_push(city.inventory,
+    sm::Landmark& cityRow = sm::birth_landmark(gs, st, std::move(city));
+    sm::creatures_push(sm::place_store(st, cityRow),
         sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 11u));
-    gs.landmarks.push_back(city);
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число фичи,
-    // головы в инвентарь — тем же законом, что генезис.
-    sm::settle_souls(gs, gs.landmarks.back(), 300);
+    // головы в инвентарь ТЕЛА — тем же законом, что генезис.
+    sm::settle_souls(gs, st, cityRow, 300);
     // A VILLAGE and a SPIRE on the same one id space (v54): the door must
     // answer for them exactly as it does for the city — kind-blind.
     sm::Landmark village{};
@@ -47,16 +50,16 @@ sm::GameState make_world() {
     std::snprintf(village.name, sizeof village.name, "Hamlet");
     village.x = 20;
     village.y = 20;
-    gs.landmarks.push_back(village);
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
-    // фичи, головы в инвентарь — тем же законом, что генезис.
-    sm::settle_souls(gs, gs.landmarks.back(), 40);
+    // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
+    sm::settle_souls(gs, st, sm::birth_landmark(gs, st, std::move(village)),
+                     40);
     sm::Landmark spire{};
     spire.type = sm::LandmarkType::Spire;
     spire.id = 13;
     spire.x = 40;
     spire.y = 40;
-    gs.landmarks.push_back(spire);
+    sm::birth_landmark(gs, st, std::move(spire));
     return gs;
 }
 
@@ -74,9 +77,9 @@ sm::MacroHandle make_squad(sm::MacroStore& st, std::uint32_t ordinal) {
 // so "one store" is a fact of memory, not a convention of copies.
 void test_the_door_opens_the_old_addresses() {
     using namespace sm;
-    GameState gs = make_world();
     auto worldStore_ = sm::make_macro_store();
     MacroStore& st = *worldStore_;
+    GameState gs = make_world(st);
     const MacroHandle squad = make_squad(st, 5);
     MacroWorld w{.gs = &gs, .store = &st};
 
@@ -88,10 +91,10 @@ void test_the_door_opens_the_old_addresses() {
           "a squad's roster IS its one container (M-71), the very object");
 
     CHECK(store_of(w, subject_of_landmark(7))
-              == &landmark_by_id(gs, 7)->inventory,
-          "a landmark's store IS the record's inventory field, the very object");
+              == &place_store(st, *landmark_by_id(gs, 7)),
+          "a landmark's store IS its BODY's inventory column, the very object");
     CHECK(roster_of(w, subject_of_landmark(7))
-              == &landmark_by_id(gs, 7)->inventory,
+              == &place_store(st, *landmark_by_id(gs, 7)),
           "a landmark's roster IS its one container (M-71), the very object");
 
     // PLAY-2's law: the door is KIND-BLIND. A village and a spire answer
@@ -114,17 +117,17 @@ void test_the_door_opens_the_old_addresses() {
 // the old path, and the two sides really do speak ONE pair of types.
 void test_a_write_through_the_door_lands_in_the_world() {
     using namespace sm;
-    GameState gs = make_world();
     auto worldStore_ = sm::make_macro_store();
     MacroStore& st = *worldStore_;
+    GameState gs = make_world(st);
     const MacroHandle squad = make_squad(st, 5);
     MacroWorld w{.gs = &gs, .store = &st};
 
     Inventory* store = store_of(w, subject_of_landmark(42));
     CHECK_OR_RETURN(store != nullptr, "the village store opens");
     store->add("food", 3);
-    CHECK(landmark_by_id(gs, 42)->inventory.count("food") == 3,
-          "food added through the door sits in the village record itself");
+    CHECK(place_store(st, *landmark_by_id(gs, 42)).count("food") == 3,
+          "food added through the door sits in the village's own body");
 
     // The symmetry the menu will trade on: hire_npc already takes two
     // Inventory& — the door's returns feed it directly, both ways (M-71).
@@ -148,9 +151,9 @@ void test_a_write_through_the_door_lands_in_the_world() {
 // house style), so a drifting column trips here, not in a playtest.
 void test_actions_are_declared_by_data() {
     using namespace sm;
-    GameState gs = make_world();
     auto worldStore_ = sm::make_macro_store();
     MacroStore& st = *worldStore_;
+    GameState gs = make_world(st);
     const MacroHandle squad = make_squad(st, 5);
     MacroWorld w{.gs = &gs, .store = &st};
 
@@ -179,9 +182,9 @@ void test_actions_are_declared_by_data() {
 // touches nothing — the exact discipline of every macro door.
 void test_the_door_fails_closed() {
     using namespace sm;
-    GameState gs = make_world();
     auto worldStore_ = sm::make_macro_store();
     MacroStore& st = *worldStore_;
+    GameState gs = make_world(st);
     const MacroHandle squad = make_squad(st, 5);
     MacroWorld w{.gs = &gs, .store = &st};
 

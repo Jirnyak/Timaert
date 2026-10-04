@@ -226,9 +226,10 @@ namespace sm::ui
         // БЛАГОПОЛУЧИЕ — ЕДИНСТВЕННАЯ МЕРА ЖИЗНИ МЕСТА (владелец
         // 2026-09-19): реестр полос настроения вырезан, глаз читает то же
         // число, что и закон роста — долю оплаченных нужд, в процентах.
-        int wellbeing_pct(const sm::Landmark &lm)
+        int wellbeing_pct(const sm::MacroStore &st, const sm::Landmark &lm)
         {
-            return int(lm.seasonWellbeing) * 100 / 255;
+            return int(st.wellbeing[sm::place_slot(st, lm)].seasonWellbeing)
+                 * 100 / 255;
         }
 
         // The ONE wrapper state of this counter (trade_widgets.h, Инк 5):
@@ -415,7 +416,10 @@ namespace sm::ui
         // честное «сколько видно отсюда», а не выдуманный ноль.
         int preview_flock_(const Landmark &s, const MacroWorld *mw)
         {
-            return mw && mw->gs ? souls_flock(*mw->gs, s) : souls_home(s);
+            // Без конверта (или store) паства не видна ВООБЩЕ: головы дома тоже
+            // живут в ТЕЛЕ места (M-90 шаг 5) — честный ответ 0, не выдумка.
+            return mw && mw->gs && mw->store
+                ? souls_flock(*mw->gs, *mw->store, s) : 0;
         }
 
         // THE tile → colour dictionary of every 2D subworld rendering in this
@@ -1942,10 +1946,11 @@ namespace sm::ui
             ImGui::SameLine();
             ImGui::TextDisabled("(%.*s)", int(def.label.size()), def.label.data());
             ImGui::Text("Faction: %s", fd ? fd->name : "Unaligned");
-            ImGui::Text("Population: %d", souls_flock(gs, *s));
-            ImGui::Text("Wellbeing: %d%%", wellbeing_pct(*s));
+            ImGui::Text("Population: %d", souls_flock(gs, *mw->store, *s));
+            ImGui::Text("Wellbeing: %d%%", wellbeing_pct(*mw->store, *s));
             ImGui::Text("Starved last boundary: %d",
-                        int(s->starvedYesterday));
+                        int(mw->store->wellbeing[sm::place_slot(*mw->store, *s)]
+                                    .starvedYesterday));
             ImGui::Separator();
 
             // ── Tabs ──
@@ -1962,7 +1967,7 @@ namespace sm::ui
                     ImGui::TextDisabled("A %.*s with population %d.",
                                         int(def.label.size()),
                                         def.label.data(),
-                                        souls_flock(gs, *s));
+                                        souls_flock(gs, *mw->store, *s));
                     ImGui::Spacing();
 
                     if (ImGui::BeginTable("settlement_info", 2,
@@ -1972,16 +1977,17 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Value");
                         ImGui::TableHeadersRow();
                         draw_info_overview_row("Population",
-                                               souls_flock(gs, *s));
+                                               souls_flock(gs, *mw->store, *s));
                         draw_info_overview_row("Wellbeing %",
-                                               wellbeing_pct(*s));
+                                               wellbeing_pct(*mw->store, *s));
                         draw_info_overview_row("Faction index", int(s->factionIdx));
                         draw_info_overview_row("Starved last boundary",
-                                               int(s->starvedYesterday));
+                                               int(mw->store->wellbeing[sm::place_slot(*mw->store, *s)]
+                                    .starvedYesterday));
                         draw_info_overview_row(
-                            "Garrison units", creature_heads(s->inventory));
-                        draw_info_overview_row("Inventory stacks", s->inventory.used_slots());
-                        draw_info_overview_row("Inventory items", s->inventory.total());
+                            "Garrison units", creature_heads(place_store(*mw->store, *s)));
+                        draw_info_overview_row("Inventory stacks", place_store(*mw->store, *s).used_slots());
+                        draw_info_overview_row("Inventory items", place_store(*mw->store, *s).total());
                         ImGui::EndTable();
                     }
 
@@ -2065,21 +2071,21 @@ namespace sm::ui
                     ImGui::Text("Player value: %d",
                                 inventory_value(playerBag));
                     ImGui::SameLine();
-                    ImGui::TextDisabled("Wellbeing: %d%%", wellbeing_pct(*s));
+                    ImGui::TextDisabled("Wellbeing: %d%%", wellbeing_pct(*mw->store, *s));
                     draw_trade_carry_line(h.sheet, playerBag, h.standing);
-                    draw_counterparty_gold(s->inventory);
+                    draw_counterparty_gold(place_store(*mw->store, *s));
                     draw_trade_amount_input(&g_settlementTrade.amount);
                     const auto buyUnit = [&](const ItemRef &ref,
                                              const ItemDef &def, int n) {
                         return trade_overlay_buy_price(
                             stock_price(value_of(ref),
-                                        s->inventory.count_of(int(ref.def)) - n,
+                                        place_store(*mw->store, *s).count_of(int(ref.def)) - n,
                                         season_demand_for(
-                                            int(ref.def), s->needDebt,
-                                            souls_home(*s),
+                                            int(ref.def), mw->store->roster[sm::place_slot(*mw->store, *s)].needDebt,
+                                            souls_home(*mw->store, *s),
                                             landmark_sheet(
                                                 s->type).skills,
-                                            &s->inventory)),
+                                            &place_store(*mw->store, *s))),
                             h.tradePct,
                             trade_power_of(
                                 landmark_sheet(s->type)));
@@ -2088,20 +2094,20 @@ namespace sm::ui
                                               const ItemDef &def, int n) {
                         return trade_overlay_sell_price(
                             stock_price(value_of(ref),
-                                        s->inventory.count_of(int(ref.def)) + n,
+                                        place_store(*mw->store, *s).count_of(int(ref.def)) + n,
                                         season_demand_for(
-                                            int(ref.def), s->needDebt,
-                                            souls_home(*s),
+                                            int(ref.def), mw->store->roster[sm::place_slot(*mw->store, *s)].needDebt,
+                                            souls_home(*mw->store, *s),
                                             landmark_sheet(
                                                 s->type).skills,
-                                            &s->inventory)),
+                                            &place_store(*mw->store, *s))),
                             h.tradePct,
                             trade_power_of(
                                 landmark_sheet(s->type)));
                     };
                     draw_barter_body(
                         "Settlement stock", g_settlementTrade,
-                        playerBag, s->inventory,
+                        playerBag, place_store(*mw->store, *s),
                         buyUnit, sellUnit, [&](int gave, int took) {
                             record_settlement_deal_fact(gs, world, s->id,
                                                         s->x, s->y,
@@ -2119,7 +2125,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Garrison;
                 if (garrisonOpen)
                 {
-                    int total = creature_heads(s->inventory);
+                    int total = creature_heads(place_store(*mw->store, *s));
                     ImGui::Text("Total: %d units", total);
                     ImGui::Spacing();
                     if (ImGui::BeginTable("garrison", 2,
@@ -2129,7 +2135,7 @@ namespace sm::ui
                         {
                             const NPCType t = npc_type_at(ti);
                             const int count =
-                                creature_heads_of(s->inventory, t);
+                                creature_heads_of(place_store(*mw->store, *s), t);
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
                             ImGui::TableNextRow();
@@ -2161,12 +2167,12 @@ namespace sm::ui
                         if (!npc_hireable(t))
                             continue;
                         const ItemRef* offer =
-                            first_soldier_of_kind(s->inventory, t);
+                            first_soldier_of_kind(place_store(*mw->store, *s), t);
                         int cost = offer
                             ? hire_price_for(
                                   std::uint16_t(t), offer->level)
                             : npc_hire_price_base(t);
-                        int avail = creature_heads_of(s->inventory, t);
+                        int avail = creature_heads_of(place_store(*mw->store, *s), t);
                         Inventory* playerArmy = &playerBag;
                         int owned = creature_heads_of(playerBag, t);
                         ImGui::PushID(static_cast<int>(t));
@@ -2178,7 +2184,7 @@ namespace sm::ui
                         {
                             int purse = inventory_value(playerBag);
                             const int paid = playerArmy
-                                ? hire_npc(*playerArmy, s->inventory, t, purse)
+                                ? hire_npc(*playerArmy, place_store(*mw->store, *s), t, purse)
                                 : 0;
                             if (paid > 0)
                             {
@@ -2188,15 +2194,15 @@ namespace sm::ui
                                 // that cannot take the whole fee refuses the
                                 // deal: coin back, recruit back.
                                 const int moved = transfer_value_dense(
-                                    playerBag, s->inventory, paid);
+                                    playerBag, place_store(*mw->store, *s), paid);
                                 if (moved != paid)
                                 {
                                     if (moved > 0)
-                                        transfer_value_dense(s->inventory,
+                                        transfer_value_dense(place_store(*mw->store, *s),
                                                              playerBag, moved);
                                     SoldierRecord back{};
                                     if (creatures_pop_back(*playerArmy, back))
-                                        creatures_push(s->inventory, back);
+                                        creatures_push(place_store(*mw->store, *s), back);
                                 }
                             }
                         }
@@ -2242,7 +2248,7 @@ namespace sm::ui
                                      ImVec2(side, side));
                         ImGui::TextDisabled("Seed: 0x%08X   Population: %d   Houses: %d   Walls: %d",
                                             previewSeed,
-                                            souls_flock(gs, *s),
+                                            souls_flock(gs, *mw->store, *s),
                                             preview.houses,
                                             preview.walls);
                     }
@@ -2252,7 +2258,7 @@ namespace sm::ui
                         ImGui::TextDisabled("Preview unavailable.");
                         ImGui::TextDisabled("Seed: 0x%08X   Population: %d",
                                             previewSeed,
-                                            souls_flock(gs, *s));
+                                            souls_flock(gs, *mw->store, *s));
                     }
                     ImGui::EndTabItem();
                 }
@@ -2263,7 +2269,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Inventory;
                 if (inventoryOpen)
                 {
-                    if (s->inventory.used_slots() == 0)
+                    if (place_store(*mw->store, *s).used_slots() == 0)
                     {
                         ImGui::TextDisabled("(empty)");
                     }
@@ -2272,7 +2278,7 @@ namespace sm::ui
                         if (ImGui::BeginTable("inv", 2,
                                               ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                         {
-                            for (const ItemRef &st : s->inventory.slots)
+                            for (const ItemRef &st : place_store(*mw->store, *s).slots)
                             {
                                 if (st.empty()) continue;
                                 const ItemDef *row = item_def_at(int(st.def));

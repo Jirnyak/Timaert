@@ -18,6 +18,7 @@
 #pragma once
 
 namespace sm {
+struct MacroStore;   // паства мест — склад ТЕЛА (M-90 шаг 5)
 struct GameState;
 struct TerrainData;
 namespace ecs { struct World; }
@@ -52,7 +53,8 @@ float map_fit_zoom(int viewHPx, int mapH);
 // `gs` is mutable for exactly one reason: pins edit gs.markers. `viewW/viewH`
 // and `zoomLogical` in logical points (the page camera's zoom / dpr), like
 // every ImGui surface.
-void draw_map_screen(MapScreenState& st, GameState& gs, ecs::World& world,
+void draw_map_screen(MapScreenState& st, GameState& gs,
+                     const MacroStore& store, ecs::World& world,
                      const TerrainData& terrain, bool* open,
                      int viewW, int viewH, float zoomLogical, float scale);
 

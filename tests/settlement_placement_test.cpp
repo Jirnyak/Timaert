@@ -34,19 +34,33 @@
 #include "macro/politik.h"
 #include "macro/landmark_grid.h"   // запечённое «кто здесь живёт»
 #include "macro/landmark_iter.h"   // штамп фич поселений
+#include "macro/place_birth.h"     // место рождается СО СВОИМ ТЕЛОМ (M-90)
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
+#include "macro/squad.h"       // suzerain_of — знание роли в interests ТЕЛА
 #include "macro/state.h"
+#include "macro/store.h"
 #include "macro/tree_layer.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace {
 
 using namespace sm;
+
+// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад (M-90 шаг 5):
+// склад, интересы и благополучие — колонки его ТЕЛА, значит расселению нужен
+// store. Миры свидетеля делят его: их тела друг друга не видят (строка носит
+// СВОЙ bodyBits), а профиль памяти store от населения не зависит (ЗАКОН
+// СТАБИЛЬНОСТИ), так что store на каждый мир был бы гигабайтами за ничто.
+MacroStore& places() {
+    static std::unique_ptr<MacroStore> st = make_macro_store();
+    return *st;
+}
 
 // ЗАКОН АДРЕСА (владелец, 2026-09-23): мир ВСЕГДА степень двойки. Было
 // 96x96 — квадрат, но не степень двойки, то есть мир, которого не бывает.
@@ -160,7 +174,7 @@ void make_settled_world(World& w) {
     w.cityPlan.push_back(a);
     w.cityPlan.push_back(b);
 
-    populate_landmarks_from_politik(w.gs, w.cityPlan, w.td, w.trees,
+    populate_landmarks_from_politik(w.gs, places(), w.cityPlan, w.td, w.trees,
                                     w.deposits);
 }
 
@@ -334,7 +348,7 @@ void test_villages_feed_themselves() {
         const SettlementSiteTerms t = settlement_site_terms(ctx, v.x, v.y);
         const bool feeds = t.arable >= kVillageArableGate
                         || t.deposit >= kVillageDepositGate;
-        const int suz = sm::suzerain_of(v);
+        const int suz = sm::suzerain_of(places(), v);
         if (!feeds && suz >= 0 && std::size_t(suz) < failedOf.size())
             ++failedOf[std::size_t(suz)];
     }
@@ -421,7 +435,7 @@ void test_villages_scatter_around_their_town() {
         if (hinterland_scores(w, c).empty()) continue;
         int mine = 0;
         for (const auto* vp : villages)
-            if (sm::suzerain_of(*vp) == s.id) ++mine;
+            if (sm::suzerain_of(places(), *vp) == s.id) ++mine;
         CHECK(mine >= 1, "a city with admissible ground is never hamlet-less");
     }
 }
@@ -436,7 +450,7 @@ void test_count_derives_from_capacity() {
     const auto villages = villages_of(w.gs);
     const int lushCityId = cities.empty() ? -1 : cities[0]->id;
     for (const auto* vp : villages) {
-        if (sm::suzerain_of(*vp) == lushCityId) ++lush;
+        if (sm::suzerain_of(places(), *vp) == lushCityId) ++lush;
         else ++dry;
     }
     CHECK(lush >= 1, "the river belt hinterland feeds at least one village");
@@ -453,14 +467,14 @@ void test_count_derives_from_capacity() {
     // мёртвым по другой.
     for (const auto* vp : villages) {
         const auto& v = *vp;
-        const int flock = souls_flock(w.gs, v);
+        const int flock = souls_flock(w.gs, places(), v);
         CHECK(flock >= kVillageBornBase
                   && flock < kVillageBornBase + kVillageBornSpread,
               "a village is born at the owner's scale");
-        CHECK(souls_home(v) == flock,
+        CHECK(souls_home(places(), v) == flock,
               "паства и головы согласны: в поле новорождённая деревня "
               "никого не держит");
-        CHECK(creature_heads(v.inventory) > 0,
+        CHECK(creature_heads(place_store(places(), v)) > 0,
               "a village is born with its souls in its own container");
     }
 }
@@ -668,7 +682,7 @@ void test_settlement_kind_has_one_answer() {
     squatter.id   = int(gs.nextMacroSpawnOrdinal++);
     squatter.x    = firstCity->x;
     squatter.y    = firstCity->y;
-    add_landmark(gs, std::move(squatter));
+    birth_landmark(gs, places(), std::move(squatter));
 
     FeatureLayer fl2;
     fl2.resize(kW, kH);
@@ -693,7 +707,7 @@ void test_determinism() {
         const auto& va = *villagesA[i];
         const auto& vb = *villagesB[i];
         same = same && va.x == vb.x && va.y == vb.y
-                    && souls_home(va) == souls_home(vb);
+                    && souls_home(places(), va) == souls_home(places(), vb);
     }
     CHECK(same, "one seed, one settled world");
 }

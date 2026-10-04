@@ -24,11 +24,15 @@
 #include "tables/npc.h"
 #include "macro/nav_field.h"
 #include "macro/npc_ai.h"
+#include "macro/place_birth.h"   // birth_landmark — место рождается с ТЕЛОМ
+#include "macro/place_body.h"    // place_store / place_slot — плечо места
 #include "macro/resource_field.h"
+#include "macro/squad.h"         // set_suzerain / tithe_edge_of — роль местом
 #include "macro/tree_layer.h"
 #include "macro/store.h"
 
 #include <cstdint>
+#include <memory>
 #include <set>
 #include <vector>
 
@@ -38,38 +42,52 @@ using namespace sm;
 
 constexpr int kMap = 64;
 
+// Мир фикстуры — СТРОКИ ПЛЮС ТЕЛА (M-90 шаг 5): плечо места (склад, счёт
+// нужд, интересы с феодальным ребром) живёт колонками MacroStore, и ТОТ ЖЕ
+// store носит поднятые аукционом артели — он один на макромир.
+struct World {
+    std::unique_ptr<MacroStore> store;
+    GameState gs;
+};
+
 // Деревня с рынком: дом аукциона всех проверок ниже.
-GameState make_world(int villagePop) {
-    GameState gs{};
+World make_world(int villagePop) {
+    World wld{make_macro_store(), GameState{}};
+    GameState& gs = wld.gs;
+    MacroStore& st = *wld.store;
     gs.mapW = kMap;
     gs.mapH = kMap;
     gs.worldSeed = 7u;
-    Landmark vil{};
-    vil.type = LandmarkType::Village;
-    vil.id = 3;
-    vil.x = 10;
-    vil.y = 10;
+    {
+        Landmark vil{};
+        vil.type = LandmarkType::Village;
+        vil.id = 3;
+        vil.x = 10;
+        vil.y = 10;
 
-    // v121: феодальное ребро живёт в строке ФРАКЦИИ сюзерена — безфракцион-
-    // ный феод рёбер не ведёт, поэтому фикстура рождает своё предусловие
-    // (§8 п.11): оба места несут реестровую фракцию, как всякое место мира.
-    vil.factionIdx = std::int16_t(faction_index("timaert"));
-    gs.landmarks.push_back(vil);
-    // Души — ДВЕРЬЮ МИРА (v122): паства в worked-число фичи, головы в
-    // инвентарь. Гейт подъёма артелей спрашивает ИМЕННО паству.
-    settle_souls(gs, gs.landmarks.back(), villagePop);
-    Landmark city{};
-    city.type = LandmarkType::City;
-    city.id = 9;
-    city.x = 20;
-    city.y = 10;
-    city.factionIdx = std::int16_t(faction_index("timaert"));
-    gs.landmarks.push_back(city);
-    settle_souls(gs, gs.landmarks.back(), 500);
+        // v121: феодальное ребро живёт в строке ФРАКЦИИ сюзерена — безфракцион-
+        // ный феод рёбер не ведёт, поэтому фикстура рождает своё предусловие
+        // (§8 п.11): оба места несут реестровую фракцию, как всякое место мира.
+        vil.factionIdx = std::int16_t(faction_index("timaert"));
+        Landmark& row = birth_landmark(gs, st, std::move(vil));
+        // Души — ДВЕРЬЮ МИРА (v122): паства в worked-число фичи, головы в
+        // инвентарь. Гейт подъёма артелей спрашивает ИМЕННО паству.
+        settle_souls(gs, st, row, villagePop);
+    }
+    {
+        Landmark city{};
+        city.type = LandmarkType::City;
+        city.id = 9;
+        city.x = 20;
+        city.y = 10;
+        city.factionIdx = std::int16_t(faction_index("timaert"));
+        Landmark& row = birth_landmark(gs, st, std::move(city));
+        settle_souls(gs, st, row, 500);
+    }
     // Феод ставится ОДНОЙ дверью и только когда оба места в ростере: она
     // пишет ОБА конца (S24), и полуребра в мире не бывает.
-    set_suzerain(gs, 3, 9);
-    return gs;
+    set_suzerain(gs, st, 3, 9);
+    return wld;
 }
 
 // Полки комфорта закрыты на сезон вперёд (pop 100): рейс сбыта-закупки
@@ -77,13 +95,13 @@ GameState make_world(int villagePop) {
 // и голая полка cloth/tools задрала бы его скор на порядки — рулетку было
 // бы не разглядеть. Закрытая полка глушит покупной конец, оставляя целям
 // дня сопоставимые скоры — ровно как до вердикта.
-void stock_comforts(Landmark& lm) {
+void stock_comforts(MacroStore& st, Landmark& lm) {
     // Нужда считается ОДНОЙ дверью мира (M-137: доля бюджета горожанина), а не
     // второй копией её арифметики в фикстуре (§8 п.5).
     for (int c = 0; c < kCommodityCount; ++c) {
-        const int seasonNeed = season_comfort_units(souls_home(lm), c);
+        const int seasonNeed = season_comfort_units(souls_home(st, lm), c);
         if (seasonNeed > 0) {
-            lm.inventory.add_of(commodity_item_index(c), seasonNeed);
+            place_store(st, lm).add_of(commodity_item_index(c), seasonNeed);
         }
     }
 }
@@ -126,12 +144,24 @@ struct Crew {
 // горожан за покупками — рейс к рынку тем же ИИ, ребро вниз), поэтому счёт
 // «чьи это артели» обязан спрашивать дом, иначе инварианты деревни судят
 // чужие крю.
-std::vector<Crew> live_crews_of(ecs::World& w, int homeId) {
+// МЕСТО ТОЖЕ ТЕЛО (M-90 шаг 5), и его слот стоит в том же store: оно живёт
+// нулевой строкой существа (`kind.type = 0`, то есть Peasant) и числит домом
+// САМО СЕБЯ, поэтому наивный фильтр «Peasant, чей дом 3» зачислил бы деревню
+// в собственные артели. Тела мест называются по ИМЕНИ — хэндлом своей строки,
+// а не угадываются по колонкам.
+bool slot_is_place(const World& wld, std::uint16_t slot) {
+    for (const Landmark& lm : wld.gs.landmarks)
+        if (place_slot(*wld.store, lm) == slot) return true;
+    return false;
+}
+
+std::vector<Crew> live_crews_of(const World& wld, ecs::World& w, int homeId) {
     std::vector<Crew> out;
     const sm::MacroStore& st = sm::store_of(w);
     for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0) continue;
+        if (slot_is_place(wld, slot)) continue;
         const auto& kind = st.kind[slot];
         const auto& rt = st.runtime[slot];
         if (kind.type != std::uint16_t(NPCType::Peasant)) continue;
@@ -141,10 +171,14 @@ std::vector<Crew> live_crews_of(ecs::World& w, int homeId) {
     return out;
 }
 
-std::vector<Crew> live_crews(ecs::World& w) { return live_crews_of(w, 3); }
+std::vector<Crew> live_crews(const World& wld, ecs::World& w) {
+    return live_crews_of(wld, w, 3);
+}
 
 void test_auction_raises_errand_bearing_peasants() {
-    GameState gs = make_world(/*pop*/100);
+    World wld = make_world(/*pop*/100);
+    GameState& gs = wld.gs;
+    MacroStore& st = *wld.store;
     // УСЛОВИЕ СОЗДАНИЯ (S19.2): при подъёме списывается СЕЗОН содержания —
     // склад обязан держать хлеб на 32 дня каждого рта, иначе артель не
     // поднимается. Сезонный амбар, не «провиант на рейс».
@@ -152,13 +186,13 @@ void test_auction_raises_errand_bearing_peasants() {
     // спроса (полный амбар ⇒ зерно не нужно) любой запас зерна — излишек,
     // и его стоимость глушила бы рулетку; рейс сбыта здесь живёт данью —
     // его скор сопоставим с жилой и лесом, и диверсификация ВИДНА.
-    gs.landmarks[0].inventory.add("food", 3200);
-    stock_comforts(gs.landmarks[0]);
-    tithe_edge_of(gs, gs.landmarks[0])->owedValue = 200;   // долг дани — на ребре (v121)
+    place_store(st, gs.landmarks[0]).add("food", 3200);
+    stock_comforts(st, gs.landmarks[0]);
+    tithe_edge_of(gs, st, gs.landmarks[0])->owedValue = 200;   // долг дани — на ребре (v121)
     // ГОРОДУ ЕСТЬ С ЧЕМ ЕХАТЬ: излишек своего ремесла (город ткёт) — это и
     // товар на продажу, и покупательная способность рейса. Пустому городу
     // аукцион честно откажет: менять нечего, и это правильный отказ.
-    gs.landmarks[1].inventory.add(
+    place_store(st, gs.landmarks[1]).add(
         "cloth", (500 / 32) * kDaysPerSeason * 2);
 
     DepositLayer dep{};
@@ -169,19 +203,17 @@ void test_auction_raises_errand_bearing_peasants() {
     build_tree_grid(grid, trees, kMap, kMap, 32);
 
     ecs::World w;
-
-    auto wStore_ = sm::make_macro_store();
-
-    sm::store_attach(w, wStore_.get());
+    // ОДИН store на макромир: тела мест и поднятые артели — его же слоты.
+    sm::store_attach(w, wld.store.get());
     TerrainData absent{};
     NavWorld nav = make_one_region_nav(gs);
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent,
                   .deposits = &dep, .treeGrid = &grid, .nav = &nav};
 
     const int raised = rotate_worker_squads(mw, /*day*/1);
-    const std::vector<Crew> crews = live_crews(w);
+    const std::vector<Crew> crews = live_crews(wld, w);
 
-    const std::vector<Crew> townsfolk = live_crews_of(w, 9);
+    const std::vector<Crew> townsfolk = live_crews_of(wld, w, 9);
     CHECK(raised > 0, "мир с целями поднимает артели");
     CHECK(int(crews.size()) + int(townsfolk.size()) == raised,
           "каждый подъём — крестьянская артель (профессии не поднимаются)");
@@ -234,25 +266,28 @@ void test_auction_raises_errand_bearing_peasants() {
     // бросков рулетки — восемь ГРАНИЦ (день 1+32k), не восемь суток.
     for (int k = 0; k < 8; ++k) {
         const int day = 1 + k * kDaysPerSeason;
-        GameState gsd = make_world(/*pop*/100);
-        stock_comforts(gsd.landmarks[0]);
-        tithe_edge_of(gsd, gsd.landmarks[0])->owedValue = 200;
+        World wldd = make_world(/*pop*/100);
+        GameState& gsd = wldd.gs;
+        MacroStore& std_ = *wldd.store;
+        stock_comforts(std_, gsd.landmarks[0]);
+        tithe_edge_of(gsd, std_, gsd.landmarks[0])->owedValue = 200;
         // МИР ПОСЛЕ ГРАНИЦЫ (CANON S10): счёт выставлен и оплачен посевным
         // амбаром — склад держит излишек, не сезонный запас. Былой глут
         // хлеба 3200 при нулевом счёте давил бы рулетку в argmax сбыта:
         // цена глута падает на пол, и сбыт весил бы в сотню раз больше
         // любой жилы — это сломанная под долгом фикстура, не закон.
-        econ_debt_boundary(gsd.landmarks[0].inventory,
-                           gsd.landmarks[0].needDebt,
-                           souls_home(gsd.landmarks[0]), nullptr, nullptr);
+        econ_debt_boundary(place_store(std_, gsd.landmarks[0]),
+                           std_.roster[place_slot(std_, gsd.landmarks[0])]
+                               .needDebt,
+                           souls_home(std_, gsd.landmarks[0]), nullptr,
+                           nullptr);
         ecs::World wd;
-        auto wdStore_ = sm::make_macro_store();
-        sm::store_attach(wd, wdStore_.get());
+        sm::store_attach(wd, wldd.store.get());
         NavWorld navd = make_one_region_nav(gsd);
         MacroWorld mwd{.gs = &gsd, .world = &wd, .terrain = &absent,
                        .deposits = &dep, .treeGrid = &grid, .nav = &navd};
         rotate_worker_squads(mwd, day);
-        for (const Crew& c : live_crews(wd))
+        for (const Crew& c : live_crews(wldd, wd))
             distinct.insert({int(c.verb), int(c.object)});
     }
     CHECK(distinct.size() >= 2,
@@ -263,7 +298,8 @@ void test_auction_raises_errand_bearing_peasants() {
     {
         sm::MacroStore& stq = sm::store_of(w);
         for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)
-            if (stq.alive[s32] != 0)
+            if (stq.alive[s32] != 0
+                && !slot_is_place(wld, std::uint16_t(s32)))
                 stq.runtime[s32].state = std::uint8_t(NPCState::Traveling);
     }
     // Граница сезона (день 33): контроль честен только там, где подъём
@@ -275,19 +311,20 @@ void test_auction_raises_errand_bearing_peasants() {
 
 void test_refusal_is_the_auctions_verdict() {
     // Миру нечего предъявить: ни жил, ни леса, ни рынка, пустой склад.
-    GameState gs = make_world(/*pop*/100);
-    set_suzerain(gs, gs.landmarks[0].id, -1);
+    World wld = make_world(/*pop*/100);
+    GameState& gs = wld.gs;
+    MacroStore& st = *wld.store;
+    set_suzerain(gs, st, gs.landmarks[0].id, -1);
     ecs::World w;
-    auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::store_attach(w, wld.store.get());
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
 
     const int raised = rotate_worker_squads(mw, /*day*/1);
     CHECK(raised == 0, "ноль целей с положительным скором = ноль артелей");
-    CHECK(live_crews(w).empty(),
+    CHECK(live_crews(wld, w).empty(),
           "отказ аукциона не колдует ни одного крестьянина");
-    CHECK(souls_flock(gs, gs.landmarks[0]) == 100,
+    CHECK(souls_flock(gs, st, gs.landmarks[0]) == 100,
           "невзятая работа не трогает души деревни");
 }
 
@@ -296,25 +333,26 @@ void test_tithe_raises_the_collector_at_the_suzerain() {
     // дня файл утверждал обратное — «один долг дани поднимает рейс сбыта у
     // должника», — и это был закон, который сборщик-идущий-вниз заменил:
     // дань больше не едет попутным грузом чужого рейса.
-    GameState gs = make_world(/*pop*/100);
-    tithe_edge_of(gs, gs.landmarks[0])->owedValue = 300;   // долг на ребре вассала
+    World wld = make_world(/*pop*/100);
+    GameState& gs = wld.gs;
+    MacroStore& st = *wld.store;
+    tithe_edge_of(gs, st, gs.landmarks[0])->owedValue = 300;   // долг на ребре вассала
     // Хлеб обоим: условие создания крю — сезон содержания на складе ДОМА.
-    gs.landmarks[0].inventory.add("food", 3200);
-    gs.landmarks[1].inventory.add("food", 16000);
+    place_store(st, gs.landmarks[0]).add("food", 3200);
+    place_store(st, gs.landmarks[1]).add("food", 16000);
     ecs::World w;
-    auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::store_attach(w, wld.store.get());
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
 
     const int raised = rotate_worker_squads(mw, /*day*/1);
     CHECK(raised > 0, "долг дани — цель с положительным скором");
-    const std::vector<Crew> atDebtor = live_crews_of(w, 3);
+    const std::vector<Crew> atDebtor = live_crews_of(wld, w, 3);
     for (const Crew& c : atDebtor) {
         CHECK(c.verb != std::uint8_t(SquadType::Collector),
               "должник не снаряжает сборщика сам себе");
     }
-    const std::vector<Crew> atSuzerain = live_crews_of(w, 9);
+    const std::vector<Crew> atSuzerain = live_crews_of(wld, w, 9);
     // УТВЕРЖДАЕТСЯ НАЛИЧИЕ СБОРЩИКА, А НЕ ОТСУТСТВИЕ СОСЕДЕЙ ПО РУЛЕТКЕ.
     // До 2026-09-30 здесь стояло «ВСЕ крю сюзерена — сборщики», и это было
     // верно лишь потому, что фикстура была НЕМА: без опубликованной
@@ -340,7 +378,9 @@ void test_tithe_raises_the_collector_at_the_suzerain() {
 // составом (добор из населения / ссадка в население), души не рождаются и
 // не испаряются — консервация проверяется суммой.
 void test_boundary_court_resizes_standing_crews() {
-    GameState gs = make_world(/*pop*/100);
+    World wld = make_world(/*pop*/100);
+    GameState& gs = wld.gs;
+    MacroStore& st = *wld.store;
     // Город-сюзерен остаётся РЕБРОМ, но без душ: с 2026-09-19 он поднимает
     // свою артель горожан, а этот тест судит ПУЛ ДЕРЕВНИ — чужие крю с
     // другим пулом сделали бы «все составы равны» ложью о двух законах.
@@ -349,12 +389,13 @@ void test_boundary_court_resizes_standing_crews() {
         // головы. Обнулить один значило бы оставить место, которое по
         // одной двери живо, а по другой мертво.
         Landmark& suz = gs.landmarks[1];
-        bleed_heads(suz.inventory, creature_heads(suz.inventory));
+        Inventory& suzStore = place_store(st, suz);
+        bleed_heads(suzStore, creature_heads(suzStore));
         worked_write(gs, suz.x, suz.y, 0);
     }
-    gs.landmarks[0].inventory.add("food", 5000);
-    gs.landmarks[0].inventory.add("food", 3200 * 4);   // сезоны впрок
-    tithe_edge_of(gs, gs.landmarks[0])->owedValue = 200;
+    place_store(st, gs.landmarks[0]).add("food", 5000);
+    place_store(st, gs.landmarks[0]).add("food", 3200 * 4);   // сезоны впрок
+    tithe_edge_of(gs, st, gs.landmarks[0])->owedValue = 200;
     DepositLayer dep{};
     allocate_deposit_fields(dep, kMap, kMap);
     dep.grid(DepositKind::Iron).write(14, 10, 64);
@@ -362,18 +403,22 @@ void test_boundary_court_resizes_standing_crews() {
     TreeGrid grid;
     build_tree_grid(grid, trees, kMap, kMap, 32);
     ecs::World w;
-    auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::store_attach(w, wld.store.get());
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent,
                   .deposits = &dep, .treeGrid = &grid};
     CHECK(rotate_worker_squads(mw, /*day*/1) > 0, "граница поднимает артели");
 
+    // СЧЁТ ДУШ: дома у места (его склад) плюс каждая АРТЕЛЬ — лидер и
+    // ростер. Тела мест из обхода исключены по имени: их склад и ЕСТЬ
+    // «дома», и сложить его дважды значило бы объявить перенос души в
+    // ростер её исчезновением.
     const auto souls_total = [&] {
-        int total = souls_home(gs.landmarks[0]);
+        int total = souls_home(st, gs.landmarks[0]);
         const sm::MacroStore& stq = sm::store_of(w);
         for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
             if (stq.alive[s32] == 0) continue;
+            if (slot_is_place(wld, std::uint16_t(s32))) continue;
             total += 1 + creature_heads(stq.inventory[s32].inv);
         }
         return total;
@@ -383,6 +428,7 @@ void test_boundary_court_resizes_standing_crews() {
         const sm::MacroStore& stq = sm::store_of(w);
         for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
             if (stq.alive[s32] == 0) continue;
+            if (slot_is_place(wld, std::uint16_t(s32))) continue;
             sizes.push_back(creature_heads(stq.inventory[s32].inv));
         }
         return sizes;
@@ -394,7 +440,8 @@ void test_boundary_court_resizes_standing_crews() {
     {
         const sm::MacroStore& stq = sm::store_of(w);
         for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)
-            if (stq.alive[s32] != 0) {
+            if (stq.alive[s32] != 0
+                && !slot_is_place(wld, std::uint16_t(s32))) {
                 first = sm::handle_at(stq, std::uint16_t(s32));
                 break;
             }
@@ -426,7 +473,7 @@ void test_boundary_court_resizes_standing_crews() {
 
     // ПЕРЕБОР: той же артели вручную вливают семь лишних душ (модель:
     // домой пришла распухшая) — граница ССАЖИВАЕТ лишних В население.
-    const int popBeforeShed = souls_home(gs.landmarks[0]);
+    const int popBeforeShed = souls_home(st, gs.landmarks[0]);
     const int sizeBeforeShed =
         creature_heads(sm::store_of(w).inventory[first.slot].inv);
     for (int k = 0; k < 7; ++k) {
@@ -446,7 +493,7 @@ void test_boundary_court_resizes_standing_crews() {
     CHECK(creature_heads(sm::store_of(w).inventory[first.slot].inv)
               < sizeBeforeShed + 7,
           "перебор ссажен: артель не жиреет мимо пула");
-    CHECK(souls_home(gs.landmarks[0]) > popBeforeShed,
+    CHECK(souls_home(st, gs.landmarks[0]) > popBeforeShed,
           "ссаженные души вернулись в население");
 }
 
@@ -463,7 +510,9 @@ void test_boundary_court_resizes_standing_crews() {
 void test_station_is_a_weighted_roulette() {
     constexpr int kWide = 2048;          // дни развести нечем на 64 клетках
     const auto make_three_stations = [&]() {
-        GameState gs{};
+        World wld{make_macro_store(), GameState{}};
+        GameState& gs = wld.gs;
+        MacroStore& st = *wld.store;
         gs.mapW = kWide;
         gs.mapH = kWide;
         gs.worldSeed = 7u;
@@ -478,27 +527,28 @@ void test_station_is_a_weighted_roulette() {
         home.id = 3;
         home.x = 100;
         home.y = 100;
+        Landmark& homeRow = birth_landmark(gs, st, std::move(home));
 
         // Живая цель одна — СБЫТ ИЗЛИШКА: ни жил, ни леса, ни вассалов,
         // поэтому объект всякого поручения есть станция.
-        home.inventory.add("food", 8000);           // сезон содержания крю
-        home.inventory.add("cloth", 4000);          // излишек на вывоз
-        home.inventory.add("tools", 4000);
-        gs.landmarks.push_back(home);
-        settle_souls(gs, gs.landmarks.back(), 100);
+        Inventory& homeStore = place_store(st, homeRow);
+        homeStore.add("food", 8000);                // сезон содержания крю
+        homeStore.add("cloth", 4000);               // излишек на вывоз
+        homeStore.add("tools", 4000);
+        settle_souls(gs, st, homeRow, 100);
         // ТРИ СТАНЦИИ, РАЗВЕДЁННЫЕ ПО ДНЯМ ПУТИ: 32 / 600 / 960 клеток.
         const int xs[3] = {132, 700, 1060};
         for (int k = 0; k < 3; ++k) {
-            Landmark st{};
-            st.type = LandmarkType::City;
-            st.id = 9 + k;
-            st.x = xs[k];
-            st.y = 100;
+            Landmark station{};
+            station.type = LandmarkType::City;
+            station.id = 9 + k;
+            station.x = xs[k];
+            station.y = 100;
             // Души станции нужны: гейт кандидата смотрит паству. Своих крю
             // станция не поднимет — ей нечего вывозить, и это честный
             // отказ аукциона, а не немота фикстуры.
-            gs.landmarks.push_back(st);
-            settle_souls(gs, gs.landmarks.back(), 50);
+            Landmark& row = birth_landmark(gs, st, std::move(station));
+            settle_souls(gs, st, row, 50);
         }
         // Вассалов у дома нет намеренно: заявка сборщика увела бы крю с
         // рейса, и рулетка станции судилась бы по чужому поручению.
@@ -508,29 +558,30 @@ void test_station_is_a_weighted_roulette() {
         // единице — и спред рейса равен нулю по построению. Рынок,
         // которому ничего не надо, не рынок.
         for (int k = 0; k < 3; ++k) {
-            Landmark& st = gs.landmarks[std::size_t(1 + k)];
-            econ_debt_boundary(st.inventory, st.needDebt, souls_home(st),
-                               nullptr, nullptr);
+            Landmark& station = gs.landmarks[std::size_t(1 + k)];
+            econ_debt_boundary(place_store(st, station),
+                               st.roster[place_slot(st, station)].needDebt,
+                               souls_home(st, station), nullptr, nullptr);
         }
         // (ЗДЕСЬ ПУБЛИКОВАЛИСЬ ВЕДОМОСТИ — уничтожены 2026-09-30, ломтик
         // E шаг 2. Публиковать больше нечего: цена ТАМ есть абсолютная
         // стоимость строки и известна всегда, поэтому рейс сбыта больше не
         // зависит от того, успел ли мир дожить до границы сезона.)
-        return gs;
+        return wld;
     };
     int hits[3] = {0, 0, 0};
     // Подъём случается на границе сезона, поэтому броски — ГРАНИЦЫ.
     constexpr int kDraws = 24;
     for (int k = 0; k < kDraws; ++k) {
         const int day = 1 + k * kDaysPerSeason;
-        GameState gs = make_three_stations();
+        World wld = make_three_stations();
+        GameState& gs = wld.gs;
         ecs::World w;
-        auto wStore_ = sm::make_macro_store();
-        sm::store_attach(w, wStore_.get());
+        sm::store_attach(w, wld.store.get());
         TerrainData absent{};
         MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};
         rotate_worker_squads(mw, day);
-        for (const Crew& c : live_crews_of(w, 3)) {
+        for (const Crew& c : live_crews_of(wld, w, 3)) {
             if (c.verb != std::uint8_t(SquadType::Caravan)) continue;
             const int idx = int(c.object) - 9;
             if (idx >= 0 && idx < 3) ++hits[idx];

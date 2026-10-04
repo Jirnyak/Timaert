@@ -11,6 +11,7 @@
 #include <vector>
 
 namespace sm {
+struct MacroStore;   // паства мест — склад ТЕЛА (M-90 шаг 5)
 struct GameState;
 struct TerrainData;
 struct TreeLayer;
@@ -68,7 +69,8 @@ using MacroWalkReachedFn = void (*)(void* user, int x, int y);
 // The LIVE world's overlay only — the map page (ui/map_screen.h) draws its
 // own primitives and never calls this. The marker pass filters styles by
 // kMarkerSurface: a waypoint is map ink and does not float here.
-void draw_macro_overlay(GameState& gs, ecs::World& w,
+void draw_macro_overlay(GameState& gs, const MacroStore& store,
+                        ecs::World& w,
                         const TerrainData& terrain,
                         const FeatureLayer& features,
                         MacroCursor& cursor,
@@ -98,7 +100,9 @@ std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
 // Squad window (Info/Trade tabs + Talk/Attack buttons), a landmark the
 // settlement panel. The old per-row button scatter (PLAY-1) and the interim
 // generic verb window are both dead.
-NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
+NpcProximityResult draw_npc_proximity_panel(GameState& gs,
+                                            const MacroStore& store,
+                                            ecs::World& w,
                                             int viewW, int viewH,
                                             bool showRows = true,
                                             float scale = 1.0f);

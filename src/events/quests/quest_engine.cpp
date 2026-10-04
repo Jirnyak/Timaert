@@ -1,6 +1,7 @@
 #include "events/quests/quest_engine.h"
 #include "macro/agent_memory.h"
 #include "macro/currency.h"
+#include "macro/place_body.h"   // place_store — склад места в ТЕЛЕ (M-90)
 #include "core/torus.h"
 #include "macro/markers.h"
 #include <algorithm>
@@ -45,7 +46,8 @@ static bool objective_target_cell(const GameState& gs, const Objective& o,
 // ONE relation matrix — his standing is not a map of his own any more.
 // `sheet` — his OWNED component (посадка Б), handed in like `bag`/`head`:
 // an XP reward lands in the body that owns the build.
-static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
+static void emit_reward(const Reward& r, GameState& gs, MacroStore& st,
+                        Inventory* bag,
                         AgentMemory* head, CharacterSheet* sheet,
                         EventBus& bus, int giverSettlementId) {
     if (!bag) return;   // no world, nowhere to pay
@@ -68,7 +70,7 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                     ? landmark_by_id(gs, giverSettlementId)
                     : nullptr;
                 if (giver) {
-                    delta = transfer_value_dense(giver->inventory, *bag,
+                    delta = transfer_value_dense(place_store(st, *giver), *bag,
                                                  r.amount);
                     if (delta < r.amount) {
                         session_feed_push(gs.sessionFeed,
@@ -176,7 +178,8 @@ static void prune_settled_offers(PlayerState& p, int today) {
 
 } // namespace
 
-void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
+void QuestEngine::tick(std::vector<Quest>& active, MacroStore& st,
+                       EventBus& bus,
                        GameState& gs, Inventory* bag, AgentMemory* head,
                        CharacterSheet* sheet, int px, int py) {
     auto& events = bus.last_tick_events();
@@ -222,7 +225,7 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
         settle_offer(gs.player, q);
         ++gs.player.completedQuestCount;
         for (auto& r : q.rewards)
-            emit_reward(r, gs, bag, head, sheet, bus, q.giverSettlementId);
+            emit_reward(r, gs, st, bag, head, sheet, bus, q.giverSettlementId);
         GameEvent ev; ev.tag = EventTag::QuestComplete;
         ev.a = q.ordinal;
         ev.b = kEventEffectAlreadyApplied;

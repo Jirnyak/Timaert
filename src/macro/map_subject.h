@@ -31,6 +31,7 @@
 #include "macro/landmark_registry.h"
 #include "macro/macro_world.h"
 #include "tables/map_actions.h"
+#include "macro/place_body.h"
 #include "macro/state.h"
 #include "macro/store.h"
 
@@ -75,7 +76,7 @@ inline Inventory* store_of(const MacroWorld& w, MapSubject s) {
     case MapSubjectKind::Landmark: {
         if (!w.gs) return nullptr;
         Landmark* lm = landmark_by_id(*w.gs, int(s.landmark));
-        return lm ? &lm->inventory : nullptr;
+        return w.store && lm ? &place_store(*w.store, *lm) : nullptr;
     }
     case MapSubjectKind::None: break;
     }
@@ -96,7 +97,7 @@ inline Inventory* roster_of(const MacroWorld& w, MapSubject s) {
     case MapSubjectKind::Landmark: {
         if (!w.gs) return nullptr;
         Landmark* lm = landmark_by_id(*w.gs, int(s.landmark));
-        return lm ? &lm->inventory : nullptr;
+        return w.store && lm ? &place_store(*w.store, *lm) : nullptr;
     }
     case MapSubjectKind::None: break;
     }

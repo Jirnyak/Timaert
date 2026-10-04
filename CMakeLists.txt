@@ -571,7 +571,8 @@ timaert_test(quest_lifecycle_test
         # gen_delivery reads the one item catalog now (W2b-4).
         src/macro/anketa.cpp
         src/tables/items.cpp
-    LINK_SDL)
+    # M-90 флип: place_body.h тянет store.h → entt (умрёт с M-150)
+    LINK_SDL LINK_ENTT)
 
 timaert_test(world_tick_parity_test
     SOURCES
@@ -633,6 +634,10 @@ timaert_test(save_roundtrip_test
         src/macro/knowledge.cpp
         # npc.h now answers for BOTH halves of the kind id space.
         src/macro/fauna.cpp
+        # M-90 флип (v127): плечо места едет ЗАПИСЬЮ ЕГО ТЕЛА в блоке
+        # макро-сквадов, поэтому круг сейва снимает тела (snapshot_macro_ecs)
+        # и возвращает их (restore_macro_ecs + relink_place_bodies).
+        src/macro/macro_snapshot.cpp
     LINK_SDL LINK_ENTT)
 
 # Sight-as-light: the knowledge layer's law (Unknown/Explored/Visible, decay,
@@ -948,7 +953,9 @@ timaert_test(nav_region_test SOURCES
     src/macro/nav_field.cpp
     # Души места — СТРОКИ КАТАЛОГА (v122, головы в его инвентаре):
     # фикстура, селящая их дверью мира, обязана знать каталог.
-    src/tables/items.cpp)
+    src/tables/items.cpp
+    # M-90 флип: place_body.h тянет store.h → entt (умрёт с M-150)
+    LINK_ENTT)
 
 timaert_test(pathfinding_parity_test
     SOURCES
@@ -1548,7 +1555,9 @@ timaert_test(spire_generation_test
         src/macro/ruins.cpp
     # Души места — СТРОКИ КАТАЛОГА (v122, головы в его инвентаре):
     # фикстура, селящая их дверью мира, обязана знать каталог.
-    src/tables/items.cpp)
+    src/tables/items.cpp
+    # M-90 флип: place_body.h тянет store.h → entt (умрёт с M-150)
+    LINK_ENTT)
 
 timaert_test(fauna_stock_test
     SOURCES

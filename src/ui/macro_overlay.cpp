@@ -170,7 +170,8 @@ inline ImU32 marker_imcol(std::uint32_t argb) {
 
 } // namespace
 
-void draw_macro_overlay(GameState& gs, ecs::World& w,
+void draw_macro_overlay(GameState& gs, const MacroStore& store,
+                        ecs::World& w,
                         const TerrainData& terrain,
                         const FeatureLayer& features,
                         MacroCursor& cursor,
@@ -248,7 +249,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         // the click when the hit is a city.
         const char* landmark = "";
         int hoverSettlementId = -1;
-        for_each_landmark(gs, [&](const LandmarkView& lm) {
+        for_each_landmark(gs, store, [&](const LandmarkView& lm) {
             if (lm.x != cursor.hoverX || lm.y != cursor.hoverY) return;
             if (!landmark[0]) landmark = lm.name;
             // Any landmark is pickable — the City hardcode died with
@@ -319,7 +320,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // variant IS the state (a consumed spire draws its dark tower — same
     // rule as the night glow, macro_lighting.cpp), and the glyph-circle
     // fallback takes its colour from the ONE authority, the registry row.
-    for_each_landmark(gs, [&](const LandmarkView& lm) {
+    for_each_landmark(gs, store, [&](const LandmarkView& lm) {
         // The knowledge law (macro/knowledge.h): terra incognita hides even
         // the glyph; an Explored landmark is MEMORY and draws faded — same
         // sprite, same ONE registry colour, alpha alone says "remembered".
@@ -612,7 +613,9 @@ inline int wrap_chebyshev(int d, int period) {
 
 } // namespace
 
-NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
+NpcProximityResult draw_npc_proximity_panel(GameState& gs,
+                                            const MacroStore& store,
+                                            ecs::World& w,
                                             int viewW, int viewH,
                                             bool showRows, float scale) {
     NpcProximityResult result{};
@@ -905,7 +908,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         ImGui::PopStyleColor();
                     } else {
                         ImGui::TextDisabled("Pop");
-                        ImGui::Text("%d", souls_flock(gs, *lm));
+                        ImGui::Text("%d", souls_flock(gs, store, *lm));
                     }
                     ImGui::EndGroup();
 

@@ -7,6 +7,12 @@
 
 namespace sm {
 
+// Плечо места живёт колонками его ТЕЛА в гладкой памяти макро-сквадов
+// (M-90 шаг 5), поэтому всякий проход дня, трогающий склад, счёт, славу
+// или благополучие места, несёт store параметром. Объявления хватает
+// ссылки — тело store.h сюда не тянется (AGENTS §5 п.13).
+struct MacroStore;
+
 // How long a day is, how a tick relates to a real second, how much slower the
 // clock runs underground — all of that lives in core/time.h now. This file
 // only moves the clock forward and bills the world for the days that passed.
@@ -54,8 +60,8 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // `gs` появился с переворотом населения (v122): паства поселения — worked-
 // число фичи, и рост/голод пишут ЕГО (плюс головы в инвентаре — bleed/raise
 // парой); у данжа (bornPopBase != 0) обе двери идут по головам его толпы.
-void settle_landmark_day(GameState& gs, Landmark& lm, int day, bool& starved,
-                         bool& diedOut,
+void settle_landmark_day(GameState& gs, MacroStore& st, Landmark& lm, int day,
+                         bool& starved, bool& diedOut,
                          EconFactSink sink = nullptr, void* user = nullptr);
 
 // The dungeon garrisons' regrowth (§42, owner: «как фауна — медленно,
@@ -67,7 +73,7 @@ void settle_landmark_day(GameState& gs, Landmark& lm, int day, bool& starved,
 // transition. Each landmark regrows on its own day of the epoch
 // (id-staggered, the growth_cell_due pattern), so the world never pulses
 // in lockstep. Public so the genesis test can witness the law directly.
-void regrow_dungeon_populations(const MacroWorld& w, int day);
+void regrow_dungeon_populations(const MacroWorld& w, MacroStore& st, int day);
 
 void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed);
 
@@ -85,12 +91,14 @@ WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
 // fauna breeding, wheat healing, iron discovery); nullptr = the world's
 // fields sleep (tests, headless drivers).
 struct MacroWorld;
-int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
+int process_world_daily_ticks(GameState& gs, MacroStore& st,
+                              WorldTickRuntime& runtime,
                               int max_daily_ticks,
                               MacroWorld* macro = nullptr);
 
 // Macro-view path: advance time and process queued daily ticks immediately.
-WorldTickResult tick_world(GameState& gs, WorldTickRuntime& runtime,
+WorldTickResult tick_world(GameState& gs, MacroStore& st,
+                           WorldTickRuntime& runtime,
                            std::uint64_t ticks, int max_daily_ticks = 32,
                            MacroWorld* macro = nullptr);
 

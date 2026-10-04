@@ -268,7 +268,8 @@ struct CaravanDeal {
 // `sink`/`user` — канал фактов мира (Consumed при гашении долга рынка,
 // CANON S10): проданное в место по счёту съедается СРАЗУ. Тесты водят
 // сделку без канала — гашение то же, факты молчат.
-CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
+CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
+                                     float capacityKg,
                                      Landmark& market,
                                      int myTradePct, int theirTradePct,
                                      EconFactSink sink = nullptr,
@@ -297,7 +298,8 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 // голодным и мир качал хлеб ВВЕРХ) вместе с `homeDebt`, `homePopulation` и
 // `homeSite`, которые существовали только чтобы пересчитать домашний спрос
 // по этому огрублённому снимку. Память сквада (ярус 3) веса не несёт нигде.
-CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
+CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
+                                   float capacityKg,
                                    Landmark& market,
                                    const Landmark* home,
                                    int myTradePct, int theirTradePct,

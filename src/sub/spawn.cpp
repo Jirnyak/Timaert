@@ -13,7 +13,8 @@
 #include "macro/spell_book_state.h"   // SpellBook — part of the record a body inherits
 #include "macro/squad.h"              // sheet_of — THE door to "who is this"
 #include "macro/player_entity.h"      // player_squad_entity — «чья это запись»
-#include "sub/record.h"              // macro_record_of / StandingMirror — дверь шва
+#include "sub/record.h"
+#include "tables/squad_type.h"   // is_settlement_kind — ось рода (M-90)              // macro_record_of / StandingMirror — дверь шва
 #include "sub/body.h"
 #include "macro/store.h"
 #include <algorithm>
@@ -1423,6 +1424,13 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             const std::uint16_t slot = std::uint16_t(s32);
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
             if (slot == flagSlot) continue;
+            // ТЕЛО МЕСТА НЕ ПРОЕЦИРУЕТСЯ (M-90 шаг 5, ось рода): место —
+            // неподвижный сквад store, но в сцене оно стоит ЗДАНИЯМИ и
+            // ГОЛОВАМИ своего контейнера, а не телом-лидером. Без гейта
+            // шпиль воплощал самого себя враждебным телом, и смоук
+            // spire_climb вис навечно в dev_kill_all_hostiles.
+            if (is_settlement_kind(SquadType(st.runtime[slot].squadType)))
+                continue;
             sources.push_back(handle_at(st, slot));
         }
     }

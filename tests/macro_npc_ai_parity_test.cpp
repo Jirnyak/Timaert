@@ -11,6 +11,8 @@
 #include "macro/labour.h"   // souls_flock — паства места
 
 #include "macro/npc_ai.h"
+#include "macro/place_birth.h"   // birth_landmark — место рождается с ТЕЛОМ
+#include "macro/place_body.h"    // place_store / place_slot — плечо места
 #include "macro/world_row.h"
 #include "macro/map_generator.h"
 #include "macro/recovery.h"
@@ -39,10 +41,14 @@ sm::Landmark settlement(int id, int x, int y) {
 // носитель — worked-слой полей, значит запись вне мира её нести не может.
 // Гейт подъёма артелей спрашивает ИМЕННО паству, поэтому место без неё
 // молча пропускается целиком — так и покраснел негативный контроль ниже.
-sm::Landmark& push_settlement(sm::GameState& gs, int id, int x, int y) {
-    gs.landmarks.push_back(settlement(id, x, y));
-    sm::settle_souls(gs, gs.landmarks.back(), 1000);
-    return gs.landmarks.back();
+sm::Landmark& push_settlement(sm::GameState& gs, sm::MacroStore& st,
+                              int id, int x, int y) {
+    // Место рождается ОДНОЙ дверью — строка плюс ТЕЛО (M-90 шаг 5): склад,
+    // в который и садятся домашние головы, есть колонка его слота.
+    sm::Landmark& row =
+        sm::birth_landmark(gs, st, sm::Landmark{settlement(id, x, y)});
+    sm::settle_souls(gs, st, row, 1000);
+    return row;
 }
 
 sm::MacroHandle spawn_ai(sm::ecs::World& world,
@@ -109,13 +115,12 @@ void test_home_wanderer_returns_when_far() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    push_settlement(gs, 1, 50, 50);
 
+    // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
     sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
-
     sm::store_attach(world, worldStore_.get());
+    push_settlement(gs, *worldStore_, 1, 50, 50);
     auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, 1);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 10u);
@@ -132,18 +137,17 @@ void test_woodcutter_targets_nearest_tree() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    push_settlement(gs, 1, 20, 20);
+    // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
+    sm::ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
+    push_settlement(gs, *worldStore_, 1, 20, 20);
     // Two trees: one within reach, one across the map. The near one must win —
     // "nearest", not "first in the grid".
     std::vector<sm::TreePoint> trees{{23, 20}, {80, 80}};
     sm::TreeGrid grid;
     sm::build_tree_grid(grid, trees, gs.mapW, gs.mapH, 32);
 
-    sm::ecs::World world;
-
-    auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
     auto e = spawn_ai(world, sm::NPCType::Peasant, 21.0f, 20.0f, 1);
     {
         // Работа именуется поручением (аукцион, CANON S10): рубка = Gather
@@ -168,14 +172,13 @@ void test_trader_targets_other_settlement() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    push_settlement(gs, 1, 10, 10);
-    push_settlement(gs, 2, 40, 10);
 
+    // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
     sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
-
     sm::store_attach(world, worldStore_.get());
+    push_settlement(gs, *worldStore_, 1, 10, 10);
+    push_settlement(gs, *worldStore_, 2, 40, 10);
     auto e = spawn_ai(world, sm::NPCType::Merchant, 10.0f, 10.0f, 1);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 30u);
@@ -194,14 +197,13 @@ void test_nomad_excludes_current_target() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    push_settlement(gs, 1, 10, 10);
-    push_settlement(gs, 2, 40, 10);
 
+    // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
     sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
-
     sm::store_attach(world, worldStore_.get());
+    push_settlement(gs, *worldStore_, 1, 10, 10);
+    push_settlement(gs, *worldStore_, 2, 40, 10);
     // Бродяга — ТИП СКВАДА без дома: диспетчер спрашивает тип первым, а
     // корован без дома честно сваливается в ai_nomad. На роли тела этот
     // тест стоять больше не может — роль TaxCollector осталась без машины
@@ -529,13 +531,12 @@ void test_a_marching_body_does_not_mend() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    push_settlement(gs, 1, 50, 50);
 
+    // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
     sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
-
     sm::store_attach(world, worldStore_.get());
+    push_settlement(gs, *worldStore_, 1, 50, 50);
     auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, 1);
     auto& hp = (*sm::body_state<sm::ecs::Pools>(sm::store_of(world), e));
     hp.maxHp = 50;
@@ -571,7 +572,11 @@ void test_rotation_does_not_dissolve_the_dead() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    push_settlement(gs, 1, 50, 50);
+    // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
+    sm::ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
+    push_settlement(gs, *worldStore_, 1, 50, 50);
     sm::TerrainData terrain;
     terrain.width = 8;
     terrain.height = 8;
@@ -581,11 +586,6 @@ void test_rotation_does_not_dissolve_the_dead() {
     for (std::size_t i = 0; i < 8u * 8u; ++i)
         terrain.rgba[i * 4u] = sm::field_word_of(180.0f / 255.0f);
 
-    sm::ecs::World world;
-
-    auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
     // A DEAD crew standing at its home city, Idle — the exact state the
     // dissolve used to swallow. Род взят ЖИВОЙ строкой ростера города
     // (Peasant, артель горожан): патрульная строка Guard вырезана
@@ -602,15 +602,17 @@ void test_rotation_does_not_dissolve_the_dead() {
         std_.dead[ds] = 1;
     }
 
-    const int popBefore = sm::souls_flock(gs, gs.landmarks[0]);
+    const int popBefore =
+        sm::souls_flock(gs, *worldStore_, gs.landmarks[0]);
     const int garrisonBefore =
-        sm::creature_heads(gs.landmarks[0].inventory);
+        sm::creature_heads(sm::place_store(*worldStore_, gs.landmarks[0]));
     sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
     sm::rotate_worker_squads(mw, /*day=*/3);
 
-    CHECK(sm::souls_flock(gs, gs.landmarks[0]) == popBefore,
+    CHECK(sm::souls_flock(gs, *worldStore_, gs.landmarks[0]) == popBefore,
           "a dead crew's souls never return to the population");
-    CHECK(sm::creature_heads(gs.landmarks[0].inventory) == garrisonBefore,
+    CHECK(sm::creature_heads(sm::place_store(*worldStore_, gs.landmarks[0]))
+              == garrisonBefore,
           "and dead records never march into the garrison");
     CHECK(sm::store_of(world).valid(dead),
           "the corpse-row is the drain's business, not the rotation's");
@@ -636,8 +638,14 @@ void test_rotation_does_not_dissolve_the_dead() {
     int livingLeft = 0;
     {
         const sm::MacroStore& stl = sm::store_of(world);
+        // ТЕЛО МЕСТА — ТОТ ЖЕ STORE и нулевая строка существа (Peasant),
+        // поэтому счёт артелей исключает его ПО ИМЕНИ: место в своих
+        // крестьянах не числится.
+        const std::uint16_t placeSlot =
+            sm::place_slot(*worldStore_, gs.landmarks[0]);
         for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
             if (stl.alive[s32] == 0 || stl.dead[s32] != 0) continue;
+            if (std::uint16_t(s32) == placeSlot) continue;
             if (stl.kind[s32].type == std::uint16_t(sm::NPCType::Peasant))
                 ++livingLeft;
         }

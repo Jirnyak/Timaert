@@ -109,7 +109,8 @@ float map_fit_zoom(int viewHPx, int mapH) {
     return float(viewHPx) / float(mapH);
 }
 
-void draw_map_screen(MapScreenState& st, GameState& gs, ecs::World& world,
+void draw_map_screen(MapScreenState& st, GameState& gs,
+                     const MacroStore& store, ecs::World& world,
                      const TerrainData& terrain, bool* open,
                      int viewW, int viewH, float zoomLogical, float scale) {
     if (!open || !*open) return;
@@ -147,7 +148,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs, ecs::World& world,
                 const Biome b = biome_at_cell(terrain, cx, cy);
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[std::size_t(b)].name);
-                for_each_landmark(gs, [&](const LandmarkView& lm) {
+                for_each_landmark(gs, store, [&](const LandmarkView& lm) {
                     if (lm.x == cx && lm.y == cy && lm.name[0])
                         ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1), "%s",
                                            lm.name);
@@ -171,7 +172,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs, ecs::World& world,
     // the registry's ONE colour; ashen when depleted, faded when merely
     // remembered. The mark grows to half its cell when zoomed in, floored
     // at the row's legend radius so it never dissolves at world-fit.
-    for_each_landmark(gs, [&](const LandmarkView& lm) {
+    for_each_landmark(gs, store, [&](const LandmarkView& lm) {
         const std::uint8_t know = gs.knowledge.at(lm.x, lm.y);
         if (know == kKnowledgeUnknown) return;
         const bool faded = know < kKnowledgeVisible;
@@ -245,7 +246,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs, ecs::World& world,
         cells > 0.0 ? 100.0 * double(st.exploredCells) / cells : 0.0;
 
     int discovered[std::size_t(LandmarkType::Count)] = {};
-    for_each_landmark(gs, [&](const LandmarkView& lm) {
+    for_each_landmark(gs, store, [&](const LandmarkView& lm) {
         if (gs.knowledge.at(lm.x, lm.y) != kKnowledgeUnknown)
             ++discovered[std::size_t(lm.type)];
     });

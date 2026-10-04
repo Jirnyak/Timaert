@@ -22,7 +22,8 @@ struct ZoneLayer;
 // generate_zones. A spell whose zone band does not exist on this world gets
 // its gate relaxed down to the table minimum; a world with no admissible land
 // at all simply lacks that spire (logged).
-void generate_spires(GameState& gs, const ZoneLayer& zones,
+struct MacroStore;   // fwd — тело места рождается в store (M-90 шаг 5)
+void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                      const TerrainData& terrain);
 
 } // namespace sm

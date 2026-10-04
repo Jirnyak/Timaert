@@ -254,7 +254,6 @@ std::uint16_t settlement_faction_index(const Landmark& lm) {
 
 } // namespace
 
-
 void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
                       const TerrainData& terrain, std::uint32_t seed,
                       const DepositLayer* deposits) {

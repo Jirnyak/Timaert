@@ -16,7 +16,9 @@
 #include "macro/macro_lighting.h"
 #include "macro/features.h"
 #include "macro/landmark_registry.h"
+#include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/state.h"
+#include "macro/store.h"
 
 #include <cmath>
 #include <cstdint>
@@ -138,6 +140,11 @@ int main() {
         GameState gs;
         gs.mapW = 256;
         gs.mapH = 256;
+        // Место есть неподвижный сквад (M-90 шаг 5): его склад и его паства —
+        // колонки ТЕЛА в store, поэтому свидетель держит store и рождает
+        // каждое место одной дверью.
+        auto storePtr = sm::make_macro_store();
+        sm::MacroStore& st = *storePtr;
 
         Landmark big{};
         big.type = LandmarkType::City;
@@ -145,18 +152,18 @@ int main() {
         Landmark small{};
         small.type = LandmarkType::City;
         small.id = 2; small.x = 20; small.y = 20;
-        gs.landmarks.push_back(big);
         // Паства решает, как ярко горит место (macro_lighting читает
         // souls_flock): души селятся дверью мира, а не колонкой записи.
-        sm::settle_souls(gs, gs.landmarks.back(), 5000);
-        gs.landmarks.push_back(small);
-        sm::settle_souls(gs, gs.landmarks.back(), 20);
+        sm::settle_souls(gs, st, sm::birth_landmark(gs, st, std::move(big)),
+                         5000);
+        sm::settle_souls(gs, st, sm::birth_landmark(gs, st, std::move(small)),
+                         20);
 
         Landmark v{};
         v.type = LandmarkType::Village;
         v.id = 3; v.x = 30; v.y = 30;
-        gs.landmarks.push_back(v);
-        sm::settle_souls(gs, gs.landmarks.back(), 100);
+        sm::settle_souls(gs, st, sm::birth_landmark(gs, st, std::move(v)),
+                         100);
 
         // v120: a spire's charge is its cell's worked number (ordinal + 1);
         // drained = 0 — the spent spire's cell simply stays unwritten.
@@ -167,10 +174,10 @@ int main() {
         Landmark spent{};
         spent.type = LandmarkType::Spire;
         spent.id = 5; spent.x = 50; spent.y = 50;
-        gs.landmarks.push_back(active);
-        gs.landmarks.push_back(spent);
+        sm::birth_landmark(gs, st, std::move(active));
+        sm::birth_landmark(gs, st, std::move(spent));
 
-        std::vector<MacroLight> lights = collect_macro_lights(gs);
+        std::vector<MacroLight> lights = collect_macro_lights(gs, st);
         // 2 settlements + 1 village + 1 active spire; the depleted spire emits none.
         CHECK(lights.size() == 4u, "census: 4 emitters (depleted spire excluded)");
 

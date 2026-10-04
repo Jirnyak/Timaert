@@ -18,6 +18,8 @@
 
 #include "check.h"
 #include "macro/labour.h"   // settle_souls — двери душ
+#include "macro/place_birth.h"   // birth_landmark — место рождается с ТЕЛОМ
+#include "macro/place_body.h"    // place_store — склад места колонкой тела
 #include "macro/agent_memory.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
@@ -44,39 +46,52 @@ int main() {
         GameState gs{};
         gs.mapW = 64;
         gs.mapH = 64;
-        Landmark city{};
-        city.type = LandmarkType::City;
-        city.id = 0;
-        city.x = 60;                     // near the east seam
-        city.y = 32;
-        city.inventory.add("food", 2048);
-        gs.landmarks.push_back(city);
-        // Души — дверью мира (v122): паства в worked, головы в инвентарь.
-        settle_souls(gs, gs.landmarks.back(), 100);
+        // МЕСТО ЕСТЬ НЕПОДВИЖНЫЙ СКВАД (M-90 шаг 5): строка рождается ТОЛЬКО
+        // вместе с телом, а плечо (склад, души) живёт колонками этого тела —
+        // значит store стоит ДО первого места, а не после.
+        ecs::World w;
+        auto wStore_ = sm::make_macro_store();
+        MacroStore& st = *wStore_;
+        sm::store_attach(w, wStore_.get());
 
-        Landmark sameSide{};             // 30 cells west, same side — far
-        sameSide.type = LandmarkType::City;   // enough that the comparable-
-        sameSide.id = 1;                      // distance coin flip stays out
-        sameSide.x = 30;
-        sameSide.y = 32;
-        gs.landmarks.push_back(sameSide);
-        settle_souls(gs, gs.landmarks.back(), 50);
+        constexpr int kAcrossSeamId = 2;   // ответ, который ждёт закон ниже
 
-        Landmark acrossSeam{};           // 6 cells east THROUGH the seam
-        acrossSeam.type = LandmarkType::City;
-        acrossSeam.id = 2;
-        acrossSeam.x = 2;                // 60 -> 63|0 -> 2 = 6 cells by torus
-        acrossSeam.y = 32;
-        gs.landmarks.push_back(acrossSeam);
-        settle_souls(gs, gs.landmarks.back(), 50);
+        {
+            Landmark city{};
+            city.type = LandmarkType::City;
+            city.id = 0;
+            city.x = 60;                     // near the east seam
+            city.y = 32;
+            Landmark& row = birth_landmark(gs, st, std::move(city));
+            place_store(st, row).add("food", 2048);
+            // Души — дверью мира (v122): паства в worked, головы в инвентарь.
+            settle_souls(gs, st, row, 100);
+        }
+
+        {
+            Landmark sameSide{};             // 30 cells west, same side — far
+            sameSide.type = LandmarkType::City;   // enough that the comparable-
+            sameSide.id = 1;                      // distance coin flip stays out
+            sameSide.x = 30;
+            sameSide.y = 32;
+            Landmark& row = birth_landmark(gs, st, std::move(sameSide));
+            settle_souls(gs, st, row, 50);
+        }
+
+        {
+            Landmark acrossSeam{};           // 6 cells east THROUGH the seam
+            acrossSeam.type = LandmarkType::City;
+            acrossSeam.id = kAcrossSeamId;
+            acrossSeam.x = 2;            // 60 -> 63|0 -> 2 = 6 cells by torus
+            acrossSeam.y = 32;
+            Landmark& row = birth_landmark(gs, st, std::move(acrossSeam));
+            settle_souls(gs, st, row, 50);
+        }
 
         // ЗАКОН ПИНАЕТСЯ ПРЯМО В СВОЮ ДВЕРЬ (2026-09-21): прежде его
         // водил ИИ каравана, а род каравана снесён — караван оказался
         // сквадом, притворившимся видом существа. Дверь та же, что ведёт
         // рейсы сбыта артелей сегодня.
-        ecs::World w;
-        auto wStore_ = sm::make_macro_store();
-        sm::store_attach(w, wStore_.get());
         MacroWorld mw{.gs = &gs, .world = &w};
         TickContext ctx{};
         ctx.mw = mw;
@@ -89,7 +104,7 @@ int main() {
                                             /*currentId*/0, /*prevId*/-1,
                                             sx, sy);
         CHECK(pick >= 0, "the trade door named a station at all");
-        CHECK(pick == acrossSeam.id,
+        CHECK(pick == kAcrossSeamId,
               "ЗАКОН АДРЕСА: the city 6 cells away THROUGH the seam beats the "
               "one 30 cells away on the same side — the world is a connected "
               "torus, so flat dx²+dy² is the wrong metric for it");

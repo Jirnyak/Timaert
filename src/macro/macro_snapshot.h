@@ -24,6 +24,7 @@
 #include "ecs/world.h"
 #include "macro/agent_memory.h"
 #include "macro/anketa.h"
+#include "macro/interests.h"
 #include "macro/spell_book_state.h"
 
 namespace sm {
@@ -88,6 +89,12 @@ struct MacroNpcRecord {
     // сейв НЕ пишется (сейв ходит полями, не байтами).
     std::int32_t rosterDebtPad = 0;
     std::int64_t rosterWageDebt = 0;
+    // Благополучие анкеты и реестр связей — колонки КАЖДОГО сквада с флипа
+    // места в сквад (M-90 шаг 5, вердикты 2026-09-30: «благополучие — общая
+    // колонка анкеты», «интересы — связи любых сквадов»). Едут целиком:
+    // оба POD, пустота подвижного сквада оплачена (DOD п.2).
+    Wellbeing wellbeing{};
+    Interests interests{};
 };
 
 // Flatten every persistent macro NPC (the view is keyed by MacroSpawnId — the

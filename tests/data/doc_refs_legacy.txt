@@ -619,10 +619,6 @@ SKELETON.md	state.h:1065
 SKELETON.md	state.h:1066
 SKELETON.md	state.h:1085
 SKELETON.md	state.h:1090
-SKELETON.md	state.h:1172
-SKELETON.md	state.h:1194-1198
-SKELETON.md	state.h:1209-1213
-SKELETON.md	state.h:1261-1270
 SKELETON.md	state.h:356
 SKELETON.md	state.h:469
 SKELETON.md	state.h:506
@@ -797,7 +793,6 @@ jopus_prompts.md	main.cpp:263
 jopus_prompts.md	main.cpp:3015
 jopus_prompts.md	main.cpp:3490
 jopus_prompts.md	main.cpp:3635-3637
-jopus_prompts.md	main.cpp:447
 jopus_prompts.md	main.cpp:5612
 jopus_prompts.md	main.cpp:662
 jopus_prompts.md	main.cpp:753-757
@@ -1076,7 +1071,6 @@ macro-registry.md	landmark_registry.h:248-249
 macro-registry.md	landmark_registry.h:253
 macro-registry.md	landmark_registry.h:303
 macro-registry.md	landmark_registry.h:358
-macro-registry.md	macro/squad.h:290
 macro-registry.md	macro_overlay.cpp:257
 macro-registry.md	macro_snapshot.cpp:75
 macro-registry.md	macro_stock.cpp:164-172
@@ -1089,7 +1083,6 @@ macro-registry.md	macro_stock.cpp:610-680
 macro-registry.md	main.cpp:130
 macro-registry.md	main.cpp:292-297
 macro-registry.md	main.cpp:4238-4270
-macro-registry.md	main.cpp:4268
 macro-registry.md	main.cpp:758-761
 macro-registry.md	map_generator.cpp:683
 macro-registry.md	map_generator.cpp:736
@@ -1181,7 +1174,6 @@ macro-registry.md	state.h:966
 macro-registry.md	store.h:100
 macro-registry.md	store.h:230
 macro-registry.md	store.h:24
-macro-registry.md	store.h:256
 macro-registry.md	store.h:57
 macro-registry.md	store.h:65
 macro-registry.md	store.h:84-85

@@ -56,7 +56,9 @@ inline constexpr float kMacroGlowGain = 0.45f;
 // their table tint + synthetic strength (LandmarkDef.lightPop). Adding a new
 // emitting landmark type is one table row plus, once it has world instances,
 // one loop here — never an engine branch in the renderer or shader.
-std::vector<MacroLight> collect_macro_lights(const GameState& gs);
+struct MacroStore;   // паства мест — склад ТЕЛА (M-90 шаг 5)
+std::vector<MacroLight> collect_macro_lights(const GameState& gs,
+                                             const MacroStore& st);
 
 // Bake the per-cell RGB night-light field. Writes width*height*4 RGBA8 bytes
 // into `out` (RGB = glow encoded in [0, kMacroGlowCeil], A = 255).

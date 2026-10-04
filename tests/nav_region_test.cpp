@@ -14,15 +14,28 @@
 
 #include "macro/nav_field.h"
 #include "macro/pathfinding.h"
+#include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/state.h"
+#include "macro/store.h"
 #include "core/torus.h"
 
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 
 namespace {
 
 constexpr int W = 64, H = 64;
+
+// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад: его склад —
+// колонка ТЕЛА (M-90 шаг 5), значит душам нужен store. Фикстуры делят его,
+// потому что их тела друг друга не видят (строка носит СВОЙ bodyBits), а
+// профиль памяти store не зависит от населения (ЗАКОН СТАБИЛЬНОСТИ) — по
+// store на фикстуру было бы гигабайтами за ничто.
+sm::MacroStore& places() {
+    static std::unique_ptr<sm::MacroStore> st = sm::make_macro_store();
+    return *st;
+}
 
 // Транслируемая пёстрая цена: функция ОТНОСИТЕЛЬНОЙ координаты, сдвиг мира
 // сдвигает и её — иначе инвариантность нечего проверять.
@@ -75,8 +88,9 @@ struct Fixture {
             lm.x = sm::wrapi(lmx[i] + shiftX, W);
             lm.y = sm::wrapi(lmy[i] + shiftY, H);
             // Души — дверью мира (v122): паства в worked, головы
-            // в инвентарь; жилое место гейтится именно пастой.
-            sm::settle_souls(gs, gs.landmarks.emplace_back(std::move(lm)),
+            // в инвентарь ТЕЛА; жилое место гейтится именно пастой.
+            sm::settle_souls(gs, places(),
+                             sm::birth_landmark(gs, places(), std::move(lm)),
                              100);
         }
         mw.gs = &gs;
@@ -111,13 +125,17 @@ struct Fixture {
         main.type = sm::LandmarkType::City;
         main.x = 5;
         main.y = 32;
-        sm::settle_souls(gs, sm::add_landmark(gs, std::move(main)), 100);
+        sm::settle_souls(gs, places(),
+                         sm::birth_landmark(gs, places(), std::move(main)),
+                         100);
         sm::Landmark isle{};
         isle.id = 2;
         isle.type = sm::LandmarkType::Village;
         isle.x = 40;
         isle.y = 32;
-        sm::settle_souls(gs, sm::add_landmark(gs, std::move(isle)), 100);
+        sm::settle_souls(gs, places(),
+                         sm::birth_landmark(gs, places(), std::move(isle)),
+                         100);
         mw.gs = &gs;
         mw.pathCost = &pc;
         sm::nav_bake(mw, nav);
@@ -345,7 +363,8 @@ int main() {
         born.type = sm::LandmarkType::Village;
         born.x = 40;
         born.y = 32;
-        sm::settle_souls(f.gs, sm::add_landmark(f.gs, std::move(born)),
+        sm::settle_souls(f.gs, places(),
+                         sm::birth_landmark(f.gs, places(), std::move(born)),
                          100);
         CHECK(sm::nav_ensure(f.mw, f.nav),
               "ensure still answers after the swap");

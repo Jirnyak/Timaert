@@ -7,6 +7,8 @@
 
 namespace sm {
 
+struct MacroStore;   // склад места — колонка ТЕЛА (M-90 шаг 5)
+
 class QuestEngine {
 public:
     // Evaluate every active quest objective against last-tick events + player.
@@ -28,7 +30,7 @@ public:
     // handed in exactly like `bag` and `head`: an XP reward lands in the
     // body that owns the build, and there is no PlayerState field to write
     // to any more. Null = no world yet; an XP reward simply does not land.
-    void tick(std::vector<Quest>& active,
+    void tick(std::vector<Quest>& active, MacroStore& st,
               EventBus& bus,
               GameState& gs,
               Inventory* bag,

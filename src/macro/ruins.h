@@ -23,7 +23,8 @@ struct ZoneLayer;
 // Deterministic from gs.worldSeed. Requires zones — call AFTER
 // generate_zones (and after the settlement passes, whose cells it avoids).
 // A world with no admissible land simply gets fewer ruins (logged).
-void generate_ruins(GameState& gs, const ZoneLayer& zones,
+struct MacroStore;   // fwd — тело места рождается в store (M-90 шаг 5)
+void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                     const TerrainData& terrain);
 
 } // namespace sm

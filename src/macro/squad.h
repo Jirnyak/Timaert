@@ -17,6 +17,7 @@
 #include "macro/player_entity.h"
 #include "macro/spell_book_state.h"
 #include "macro/anketa.h"
+#include "macro/place_body.h"
 #include "macro/squad_walk.h"
 #include "macro/state.h"
 #include "macro/zones.h"
@@ -480,6 +481,76 @@ inline CharacterSheet effective_sheet_of(const MacroStore& st, MacroHandle h) {
     return effective_sheet(sheet_of(st, h), standing_bonuses_of(st, h));
 }
 
+// ── ФЕОДАЛЬНОЕ РЕБРО — ОДНА ДВЕРЬ НА ОБА КОНЦА (владелец, 2026-09-21;
+// переехало из state.h флипом M-90: знание роли живёт в interests ТЕЛА) ───
+// CANON S24 требует, чтобы узел знал И сюзерена, И прямых подчинённых.
+// Концы ставятся ОДНИМ вызовом и снимаются одним; старого сюзерена дверь
+// снимает САМА: у места ровно один сюзерен, и смена его без снятия прежнего
+// оставила бы вассала, платящего двоим.
+inline int suzerain_of(const MacroStore& st, const Landmark& lm) {
+    const Interests& in = st.interests[place_slot(st, lm)];
+    for (int i = 0; i < kMaxInterests; ++i) {
+        const Interest& it = in.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance == std::uint8_t(Stance::Suzerain)) return it.object;
+    }
+    return 0;
+}
+
+inline void set_suzerain(GameState& gs, MacroStore& st, int vassalId,
+                         int suzerainId, int value = 0, int term = 0) {
+    Landmark* v = landmark_by_id(gs, vassalId);
+    if (!v || vassalId == suzerainId) return;
+    Interests& vin = st.interests[place_slot(st, *v)];
+    // Прежний сюзерен теряет этого вассала — с обоих концов; вместе со
+    // ЗНАНИЕМ роли умирает и ЛЕТОПИСЬ ДОЛГА (ребро рода 6): непогашенная
+    // дань прощается сменой феода, второго носителя долга не существует.
+    for (int i = 0; i < kMaxInterests; ++i) {
+        Interest& it = vin.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance != std::uint8_t(Stance::Suzerain)) continue;
+        if (Landmark* old = landmark_by_id(gs, it.object)) {
+            interest_clear(st.interests[place_slot(st, *old)], vassalId);
+            tithe_edge_remove(gs.factions, int(old->factionIdx), vassalId);
+        }
+        interest_clear(vin, it.object);
+        break;                     // сюзерен у места ровно один
+    }
+    if (suzerainId <= 0) return;   // «стал ничьим» — это и есть весь вызов
+    Landmark* s = landmark_by_id(gs, suzerainId);
+    if (!s) return;                // висячего ребра не заводим
+    interest_set(vin, suzerainId, Stance::Suzerain, value, term);
+    interest_set(st.interests[place_slot(st, *s)], vassalId, Stance::Vassal,
+                 value, term);
+    // ОДНА ДВЕРЬ ПИШЕТ ОБА НОСИТЕЛЯ: знание роли — в интересы (род 2),
+    // летопись долга — ребром в строку фракции СЮЗЕРЕНА (род 6).
+    tithe_edge_add(gs.factions, int(s->factionIdx), vassalId, suzerainId);
+}
+
+// ФЕОДАЛЬНОЕ РЕБРО ЭТОГО ВАССАЛА (род 6, v121): долг живёт в строке фракции
+// СЮЗЕРЕНА — путь к нему идёт через знание роли (suzerain_of, род 2), сами
+// носители врозь и отвечают на разные вопросы.
+inline TitheEdge* tithe_edge_of(GameState& gs, const MacroStore& st,
+                                const Landmark& vassal) {
+    const Landmark* s = landmark_by_id(gs, suzerain_of(st, vassal));
+    return s ? tithe_edge(gs.factions, int(s->factionIdx), vassal.id)
+             : nullptr;
+}
+inline const TitheEdge* tithe_edge_of(const GameState& gs,
+                                      const MacroStore& st,
+                                      const Landmark& vassal) {
+    return tithe_edge_of(const_cast<GameState&>(gs), st, vassal);
+}
+
+// ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг ребра — он же ведомость
+// «с кого собрано»: собранный вассал отвечает «нет» по построению, и второго
+// признака («посещён в этом сезоне») в мире не заводится (S26).
+inline bool owes_tithe(const GameState& gs, const MacroStore& st,
+                       const Landmark& lm) {
+    const TitheEdge* e = tithe_edge_of(gs, st, lm);
+    return e && e->owedValue > 0;
+}
+
 // ── STANDING, FOR ANY MACRO PARTICIPANT (CANON S20.1) ─────────────────────
 //
 // Owner's ruling, 2026-08-27: renown is not a squad's private counter — every
@@ -499,8 +570,13 @@ inline std::uint32_t* renown_slot(MacroStore& st, GameState& gs,
             const MacroHandle h = macro_handle_by_spawn_id(st, ordinal);
             return st.valid(h) ? &st.runtime[h.slot].renown : nullptr;
         }
-        case std::uint8_t(FactSubject::Landmark):
-            return landmark_renown_slot(gs, int(ordinal));
+        case std::uint8_t(FactSubject::Landmark): {
+            // Слава места — колонка runtime.renown его ТЕЛА (M-90 шаг 5).
+            Landmark* lm = landmark_by_id(gs, int(ordinal));
+            if (!lm) return nullptr;
+            const MacroHandle h = place_body(*lm);
+            return st.valid(h) ? &st.runtime[h.slot].renown : nullptr;
+        }
         default:
             return nullptr;
     }
@@ -581,6 +657,29 @@ inline std::uint32_t record_deed(MacroStore& st, GameState& gs,
         fact.subject = st.spawnId[subject.slot].index;
     }
     return record_deed_filed(st, gs, fact);
+}
+
+// Близнец для МЕСТА (переехал из state.h флипом M-90: слава места — колонка
+// его ТЕЛА). Та же одна дверь S20.1: figure-ность из ДО-дельной славы, файл,
+// плата — всё внутри record_deed_filed, вторая копия закона умерла с
+// переездом.
+inline std::uint32_t record_landmark_fact(MacroStore& st, GameState& gs,
+                                          FactKind kind, int landmarkId,
+                                          int x, int y, int amount,
+                                          int objectLandmarkId = 0) {
+    WorldFact f{};
+    f.day = gs.worldTime.day();
+    f.kind = std::uint16_t(kind);
+    f.subjectKind = std::uint8_t(FactSubject::Landmark);
+    f.subject = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
+    if (objectLandmarkId > 0) {
+        f.objectKind = std::uint8_t(FactSubject::Landmark);
+        f.object = std::uint32_t(objectLandmarkId);
+    }
+    f.x = std::int16_t(x);
+    f.y = std::int16_t(y);
+    f.amount = amount;
+    return record_deed_filed(st, gs, f);
 }
 
 

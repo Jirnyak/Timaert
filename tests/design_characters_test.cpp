@@ -24,6 +24,7 @@
 #include "macro/macro_snapshot.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
+#include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/squad.h"
 #include "macro/store.h"
 
@@ -69,22 +70,55 @@ Landmark make_landmark(int id, LandmarkType type, int x, int y) {
     lm.type = type;
     lm.x = x;
     lm.y = y;
-    // Души — ГОЛОВАМИ в инвентарь записи (v122): фабрика мира не
-    // видит, поэтому пасту (worked-число фичи) ставит звонящий,
-    // если она ему нужна; домашние души живут в самой записи.
-    raise_flock_into_roster(lm.inventory, 100);
     return lm;
+}
+
+// ЭМИТЕНТ ОРДИНАЛОВ ОДИН НА МЕСТА И СКВАДЫ (M-37), и с флипа M-90 это уже
+// не бухгалтерия, а ПАМЯТЬ: тело места стоит в том же store со спавн-ординалом
+// своего id, поэтому выдача, начатая заново с 1, отдала бы сквадам чужие
+// ординалы — и поиск по ординалу находил бы ГОРОД вместо сквада. Фикстура
+// держит выдачу выше всякого выданного id ровно так же, как это делает
+// загрузка (save.cpp: «lm.id >= nextMacroSpawnOrdinal → подвинуть»).
+void issue_above(GameState& gs, int id) {
+    if (std::uint32_t(id) >= gs.nextMacroSpawnOrdinal)
+        gs.nextMacroSpawnOrdinal = std::uint32_t(id) + 1u;
+}
+
+// ОСНОВАНИЕ МЕСТА — ОДНА ДВЕРЬ: строка плюс ТЕЛО в store (M-90 шаг 5).
+// Души — ГОЛОВАМИ в инвентарь ТЕЛА (v122): фабрика мира их не видит,
+// поэтому пасту (worked-число фичи) ставит звонящий, если она ему нужна.
+Landmark& settle(GameState& gs, sm::MacroStore& st, Landmark&& lm) {
+    const int id = lm.id;
+    Landmark& row = birth_landmark(gs, st, std::move(lm));
+    raise_flock_into_roster(place_store(st, row), 100);
+    issue_above(gs, id);
+    return row;
 }
 
 // Мир пробы: город и ДВЕ деревни — ближняя и дальняя, чтобы «ближайшая»
 // была утверждением, а не совпадением единственности.
-GameState make_world() {
+GameState make_world(sm::MacroStore& st) {
     GameState gs{};
     gs.mapW = kW;
     gs.mapH = kH;
-    gs.landmarks.push_back(make_landmark(1, LandmarkType::City, 10, 10));
-    gs.landmarks.push_back(make_landmark(2, LandmarkType::Village, 20, 10));
-    gs.landmarks.push_back(make_landmark(3, LandmarkType::Village, 40, 40));
+    settle(gs, st, make_landmark(1, LandmarkType::City, 10, 10));
+    settle(gs, st, make_landmark(2, LandmarkType::Village, 20, 10));
+    settle(gs, st, make_landmark(3, LandmarkType::Village, 40, 40));
+    return gs;
+}
+
+// ПУТЬ ЗАГРУЗКИ — единственный, где строка места законно приходит БЕЗ тела:
+// строки читаются из файла, тела едут записями блока макро-сквадов, и сшивает
+// их relink_place_bodies (place_birth.h). Фикстура снапшота обязана ходить
+// именно этой дверью, иначе она родила бы телам дубли.
+GameState make_loaded_world() {
+    GameState gs{};
+    gs.mapW = kW;
+    gs.mapH = kH;
+    add_landmark(gs, make_landmark(1, LandmarkType::City, 10, 10));
+    add_landmark(gs, make_landmark(2, LandmarkType::Village, 20, 10));
+    add_landmark(gs, make_landmark(3, LandmarkType::Village, 40, 40));
+    for (const Landmark& lm : gs.landmarks) issue_above(gs, lm.id);
     return gs;
 }
 
@@ -117,13 +151,12 @@ void test_table_rows_resolve() {
 }
 
 void test_spawn_births_the_row() {
-    GameState gs = make_world();
-    const TerrainData terrain = make_terrain();
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
+    GameState gs = make_world(*wStore_);
+    const TerrainData terrain = make_terrain();
     Rng rng(1234u);
-    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     const sm::MacroHandle e = find_design(w, 0);
@@ -188,13 +221,12 @@ void test_spawn_births_the_row() {
 }
 
 void test_snapshot_carries_the_ordinal() {
-    GameState gs = make_world();
-    const TerrainData terrain = make_terrain();
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
+    GameState gs = make_world(*wStore_);
+    const TerrainData terrain = make_terrain();
     Rng rng(777u);
-    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     // Обычный сквад рядом — негативный контроль на −1. Через ту же одну
     // дверь создания (spawn_squad → make_npc).
@@ -226,8 +258,11 @@ void test_snapshot_carries_the_ordinal() {
     auto w2Store_ = sm::make_macro_store();
 
     sm::store_attach(w2, w2Store_.get());
-    GameState gs2 = make_world();
+    GameState gs2 = make_loaded_world();
     restore_macro_ecs(snap, *w2Store_, gs2);
+    // Тела мест приехали теми же записями блока — строки сшиваются с ними
+    // ровно так же, как на загрузке игры (main.cpp после restore).
+    relink_place_bodies(gs2, *w2Store_);
     const sm::MacroHandle back = find_design(w2, 0);
     CHECK_OR_RETURN(w2Store_->valid(back),
                     "restore re-stamped the design tag from the record");
@@ -240,17 +275,15 @@ void test_king_peasant_births_by_home_faction() {
     // колонкой (королевства вырезаны 2026-09-11) — и фикстурные
     // freefolk-города рядом, чтобы фильтр префикса был утверждением, а не
     // единственностью.
-    GameState gs = make_world();   // города 1 (freefolk) хватает для Варнавы
-    Landmark barbCity = make_landmark(9, LandmarkType::City, 50, 20);
-    barbCity.factionIdx = std::int16_t(faction_index("barbarian_north"));
-    gs.landmarks.push_back(barbCity);
-
     const TerrainData terrain = make_terrain();
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
+    GameState gs = make_world(*wStore_);  // города 1 (freefolk) хватает Варнаве
+    Landmark barbCity = make_landmark(9, LandmarkType::City, 50, 20);
+    barbCity.factionIdx = std::int16_t(faction_index("barbarian_north"));
+    settle(gs, *wStore_, std::move(barbCity));
     Rng rng(555u);
-    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     sm::MacroStore& stk = sm::store_of(w);
@@ -283,13 +316,12 @@ void test_king_needs_a_barbarian_city() {
     // Мир Варнавы (freefolk-город + деревни), варварского города НЕТ: царь
     // честно не рождается, проповедник рождается — фильтр режет ровно
     // одну строку, не весь стол.
-    GameState gs = make_world();
-    const TerrainData terrain = make_terrain();
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
+    GameState gs = make_world(*wStore_);
+    const TerrainData terrain = make_terrain();
     Rng rng(556u);
-    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     CHECK(sm::store_of(w).valid(find_design(w, 0)),
           "Varnava is born in a world without barbarians");
@@ -304,7 +336,10 @@ void test_dragons_nest_on_mountain_peaks() {
     // Уровни, а не байты: прежние 250/230 канала означали ровно эти доли.
     constexpr float kPeak01 = 250.0f / 255.0f;
     constexpr float kMassif01 = 230.0f / 255.0f;
-    GameState gs = make_world();
+    ecs::World w;
+    auto wStore_ = sm::make_macro_store();
+    sm::store_attach(w, wStore_.get());
+    GameState gs = make_world(*wStore_);
     TerrainData terrain = make_terrain();
     for (int y = 44; y <= 52; ++y) {
         for (int x = 44; x <= 52; ++x) {
@@ -312,11 +347,7 @@ void test_dragons_nest_on_mountain_peaks() {
                 sm::field_word_of(x == 48 && y == 48 ? kPeak01 : kMassif01);
         }
     }
-    ecs::World w;
-    auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     Rng rng(999u);
-    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     // Один массив = одна вершина: Dragon1 рождается, №2/№3 (вершины с
@@ -355,7 +386,6 @@ void test_no_home_no_birth() {
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
     Rng rng(42u);
-    gs.nextMacroSpawnOrdinal = 1;   // выдача с 1: 0 = «никто» (M-37)
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     int tags = 0;
     for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)

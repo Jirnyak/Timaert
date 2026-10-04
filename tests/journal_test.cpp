@@ -12,6 +12,7 @@
 #include "check.h"
 
 #include "macro/journal.h"
+#include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/squad.h"
 #include "macro/store.h"
 
@@ -259,8 +260,10 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     Landmark town{};
     town.type = LandmarkType::City;
     town.id = 3;
-    town.renown = 50u;
-    gs.landmarks.push_back(town);
+    // Слава места — колонка runtime.renown ЕГО ТЕЛА (M-90 шаг 5), поэтому
+    // жертва приходит в мир дверью рождения со слотом, а не одной строкой.
+    Landmark& townRow = birth_landmark(gs, stB, std::move(town));
+    stB.runtime[place_slot(stB, townRow)].renown = 50u;
 
     WorldFact f{};
     f.day = 1;

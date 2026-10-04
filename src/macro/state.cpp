@@ -9,6 +9,8 @@
 #include "macro/npc_ai.h"          // kGathererReach — the field's press radius
 #include "macro/settlement_score.h"
 #include "macro/labour.h"           // settle_souls — одна дверь душ
+#include "macro/place_birth.h"      // birth_landmark — строка+тело (M-90)
+#include "macro/squad.h"            // set_suzerain — знание роли в ТЕЛЕ
 #include "core/rng.h"
 // ПЕРЕПИСЬ ШТАБЕЛЕЙ висит на сборке ядра, а не на отдельном тесте:
 // сторожа размеров обязаны срабатывать при ЛЮБОЙ сборке мира, иначе
@@ -120,7 +122,7 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 //      see the new POIs.
 //
 // All deterministic via `gs.worldSeed`. Idempotent: clears prior lists.
-void populate_landmarks_from_politik(GameState& gs,
+void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,
@@ -166,20 +168,22 @@ void populate_landmarks_from_politik(GameState& gs,
         // гарнизон больше нет — M-8: раздел «гарнизон/мирные» умер, оборона
         // места вся толпа).
         const int souls = std::max(1, c.population);
-        settle_souls(gs, s, souls);
-        // Born mid-life (owner): the market has wares on day one, and the
-        // town has stocks to live on while the first caravans find their legs.
-        // (The old EconomyState "archetype" strings died with it, W2b-4 —
-        // what a town actually HAS now lives in this one inventory.)
-        seed_landmark_inventory(
-            s.inventory, souls, s.type == LandmarkType::City);
         // Naming via the owning faction's procedural language.
         const std::string cityName =
             !c.name.empty() ? c.name
             : c.factionIdx >= 0 ? generate_name(lang_of(c.factionIdx), rng)
                                 : std::string("Outpost");
         std::snprintf(s.name, sizeof s.name, "%s", cityName.c_str());
-        add_landmark(gs, std::move(s));
+        // ФЛИП (M-90 шаг 5): сперва СТРОКА+ТЕЛО одной дверью, потом души и
+        // товар — склад места живёт колонкой тела, не полем строки.
+        Landmark& row = birth_landmark(gs, st, std::move(s));
+        settle_souls(gs, st, row, souls);
+        // Born mid-life (owner): the market has wares on day one, and the
+        // town has stocks to live on while the first caravans find their legs.
+        // (The old EconomyState "archetype" strings died with it, W2b-4 —
+        // what a town actually HAS now lives in this one inventory.)
+        seed_landmark_inventory(
+            place_store(st, row), souls, row.type == LandmarkType::City);
     }
 
     // THE suzerain edges (CANON S24), stamped here — the one place that
@@ -202,7 +206,7 @@ void populate_landmarks_from_politik(GameState& gs,
             // ОДНА ДВЕРЬ НА ОБА КОНЦА (S24): столица тем же вызовом получает
             // свою запись Vassal, поэтому «кто мои вассалы» не требует ни
             // второго индекса, ни его пересборки.
-            set_suzerain(gs, lm.id, (cap == lm.id) ? 0 : cap);
+            set_suzerain(gs, st, lm.id, (cap == lm.id) ? 0 : cap);
         }
     }
 
@@ -337,21 +341,23 @@ void populate_landmarks_from_politik(GameState& gs,
             const int vilSouls = kVillageBornBase
                                + int(rng.next_u32()
                                      % std::uint32_t(kVillageBornSpread));
-            settle_souls(gs, vil, vilSouls);
             // The village's suzerain IS its market city (one edge, S24) —
-            // ставится НИЖЕ, после add_landmark: дверь пишет ОБА конца, а
+            // ставится НИЖЕ, после рождения: дверь пишет ОБА конца, а
             // значит вассал уже должен стоять в ростере мест.
             const int suzerainId = s.id;
-            seed_landmark_inventory(
-                vil.inventory, vilSouls,
-                vil.type == LandmarkType::City);
             const std::string vilName =
                 s.factionIdx >= 0 ? generate_name(lang_of(s.factionIdx), rng)
                                   : std::string("Hamlet");
             std::snprintf(vil.name, sizeof vil.name, "%s", vilName.c_str());
             const int vilId = vil.id;
-            add_landmark(gs, std::move(vil));
-            set_suzerain(gs, vilId, suzerainId);
+            // ФЛИП (M-90 шаг 5): строка+тело одной дверью, души и товар —
+            // в склад ТЕЛА.
+            Landmark& vrow = birth_landmark(gs, st, std::move(vil));
+            settle_souls(gs, st, vrow, vilSouls);
+            seed_landmark_inventory(
+                place_store(st, vrow), vilSouls,
+                vrow.type == LandmarkType::City);
+            set_suzerain(gs, st, vilId, suzerainId);
         }
     }
 }

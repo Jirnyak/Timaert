@@ -25,6 +25,7 @@
 #include "ecs/world.h"
 #include "tables/faction.h"
 #include "macro/politik.h"
+#include "macro/world_row.h"   // raise_flock_into_roster — души головами
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
 #include "macro/store.h"

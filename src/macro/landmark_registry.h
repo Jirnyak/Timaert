@@ -36,6 +36,18 @@ namespace sm {
 // бы заплатить широкой правкой за то, что через шаг удаляется целиком.
 using LandmarkType = SquadType;
 
+// Cell-ownership priority (CANON S9): the order kinds are yielded IS the one
+// law of who owns a contested cell — the same order the old three-vector walk
+// had (cities first, then villages, then spires). Storage is one vector in
+// creation order (state.h gs.landmarks); the priority lives here, once —
+// рядом с осью рода, а не в итераторе: сетка мест (landmark_grid.h) ходит
+// по строкам сама и закона приоритета не переписывает (флип M-90).
+inline constexpr LandmarkType kLandmarkYieldOrder[] = {
+    LandmarkType::City, LandmarkType::Village, LandmarkType::Spire,
+    LandmarkType::Ruin, LandmarkType::Lair, LandmarkType::Shrine,
+    LandmarkType::Mine, LandmarkType::Tower,
+};
+
 // Sentinels of the fauna columns below: "the GROUND answers" — the cell's own
 // forest/biome row decides, the place states no override of its own.
 inline constexpr std::uint16_t kLandmarkFaunaGround    = 0xFFFFu;

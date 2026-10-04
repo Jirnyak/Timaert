@@ -20,6 +20,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"
 #include "macro/macro_stock.h"
+#include "macro/place_birth.h"   // birth_landmark — место рождается с ТЕЛОМ
 #include "macro/squad.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
@@ -30,69 +31,88 @@
 
 namespace {
 
-sm::GameState make_world() {
-    sm::GameState gs{};
+// Мир фикстуры — СТРОКИ ПЛЮС ТЕЛА (M-90 шаг 5): склад места (а в нём —
+// домашние головы, которыми сток Population и платит) живёт колонкой
+// MacroStore, поэтому store приезжает вместе с GameState.
+struct World {
+    std::unique_ptr<sm::MacroStore> store;
+    sm::GameState gs;
+};
+
+World make_world() {
+    World wld{sm::make_macro_store(), sm::GameState{}};
+    sm::GameState& gs = wld.gs;
+    sm::MacroStore& st = *wld.store;
     gs.mapW = 64;
     gs.mapH = 64;
-    sm::Landmark city{};
-    city.type = sm::LandmarkType::City;
-    city.id = 7;
-    std::snprintf(city.name, sizeof city.name, "Testholm");
-    city.x = 10;
-    city.y = 10;
-    gs.landmarks.push_back(city);
-    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число фичи,
-    // головы в инвентарь. Сток `population` читает и пишет ровно эту пару.
-    sm::settle_souls(gs, gs.landmarks.back(), 300);
-    sm::Landmark other{};
-    other.type = sm::LandmarkType::City;
-    other.id = 8;
-    std::snprintf(other.name, sizeof other.name, "Neighbour");
-    other.x = 30;
-    other.y = 30;
-    gs.landmarks.push_back(other);
-    sm::settle_souls(gs, gs.landmarks.back(), 300);
+    {
+        sm::Landmark city{};
+        city.type = sm::LandmarkType::City;
+        city.id = 7;
+        std::snprintf(city.name, sizeof city.name, "Testholm");
+        city.x = 10;
+        city.y = 10;
+        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(city));
+        // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+        // фичи, головы в инвентарь. Сток `population` читает и пишет ровно
+        // эту пару.
+        sm::settle_souls(gs, st, row, 300);
+    }
+    {
+        sm::Landmark other{};
+        other.type = sm::LandmarkType::City;
+        other.id = 8;
+        std::snprintf(other.name, sizeof other.name, "Neighbour");
+        other.x = 30;
+        other.y = 30;
+        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(other));
+        sm::settle_souls(gs, st, row, 300);
+    }
     // ONE landmark id space (v54): every place draws on the one issuer, so a
     // fixture with two places wearing one number would no longer be a world
     // this game can generate. The collision fixture (village 7 beside city 7)
     // guarded the register-bit crutch; the invariant now is that the id ALONE
     // bills the right place.
-    sm::Landmark twin{};
-    twin.type = sm::LandmarkType::Village;
-    twin.id = 9;
-    std::snprintf(twin.name, sizeof twin.name, "Twinvale");
-    twin.x = 40;
-    twin.y = 40;
-    gs.landmarks.push_back(twin);
-    sm::settle_souls(gs, gs.landmarks.back(), 80);
-    sm::Landmark hamlet{};
-    hamlet.type = sm::LandmarkType::Village;
-    hamlet.id = 42;
-    std::snprintf(hamlet.name, sizeof hamlet.name, "Hamlet");
-    hamlet.x = 20;
-    hamlet.y = 20;
-    gs.landmarks.push_back(hamlet);
-    sm::settle_souls(gs, gs.landmarks.back(), 40);
-    return gs;
+    {
+        sm::Landmark twin{};
+        twin.type = sm::LandmarkType::Village;
+        twin.id = 9;
+        std::snprintf(twin.name, sizeof twin.name, "Twinvale");
+        twin.x = 40;
+        twin.y = 40;
+        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(twin));
+        sm::settle_souls(gs, st, row, 80);
+    }
+    {
+        sm::Landmark hamlet{};
+        hamlet.type = sm::LandmarkType::Village;
+        hamlet.id = 42;
+        std::snprintf(hamlet.name, sizeof hamlet.name, "Hamlet");
+        hamlet.x = 20;
+        hamlet.y = 20;
+        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(hamlet));
+        sm::settle_souls(gs, st, row, 40);
+    }
+    return wld;
 }
 
 // Read each kind on its own so an assertion can say WHICH kind of place paid —
 // the ids are unique (v54), but the bill must still land on the right row.
-int city_population_of(const sm::GameState& gs, int id) {
-    for (const auto& s : gs.landmarks)
+int city_population_of(const World& wld, int id) {
+    for (const auto& s : wld.gs.landmarks)
         if (s.type == sm::LandmarkType::City && s.id == id)
-            return sm::souls_flock(gs, s);
+            return sm::souls_flock(wld.gs, *wld.store, s);
     return -1;
 }
-int village_population_of(const sm::GameState& gs, int id) {
-    for (const auto& v : gs.landmarks)
+int village_population_of(const World& wld, int id) {
+    for (const auto& v : wld.gs.landmarks)
         if (v.type == sm::LandmarkType::Village && v.id == id)
-            return sm::souls_flock(gs, v);
+            return sm::souls_flock(wld.gs, *wld.store, v);
     return -1;
 }
-int population_of(const sm::GameState& gs, int id) {
-    const int c = city_population_of(gs, id);
-    return c >= 0 ? c : village_population_of(gs, id);
+int population_of(const World& wld, int id) {
+    const int c = city_population_of(wld, id);
+    return c >= 0 ? c : village_population_of(wld, id);
 }
 
 // The table must answer for EVERY stock the enum declares. A row that goes
@@ -114,12 +134,13 @@ void test_the_table_is_total() {
 // world lends it can take back, exactly.
 void test_borrow_and_return_are_symmetric() {
     using namespace sm;
-    sm::GameState gs = make_world();
+    World wld = make_world();
+    sm::GameState& gs = wld.gs;
     sm::TreeLayer trees;
     trees.width = gs.mapW;
     trees.height = gs.mapH;
     trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 500);
-    MacroWorld w{.gs = &gs, .trees = &trees};
+    MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
 
     const MacroStockKey town{7, 10, 10};
     const MacroStockKey cell{-1, 3, 4};
@@ -146,12 +167,13 @@ void test_borrow_and_return_are_symmetric() {
 // more forest than a cell is allowed to hold.
 void test_stocks_are_bounded() {
     using namespace sm;
-    sm::GameState gs = make_world();
+    World wld = make_world();
+    sm::GameState& gs = wld.gs;
     sm::TreeLayer trees;
     trees.width = gs.mapW;
     trees.height = gs.mapH;
     trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 10);
-    MacroWorld w{.gs = &gs, .trees = &trees};
+    MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
 
     macro_stock_apply(w, MacroStock::Population, MacroStockKey{7, 10, 10}, -100000);
     CHECK(macro_stock_read(w, MacroStock::Population, MacroStockKey{7, 10, 10}) == 0,
@@ -172,8 +194,9 @@ void test_stocks_are_bounded() {
 // town next door — the failure mode of every "nearest settlement" shortcut.
 void test_debts_bill_their_own_subject() {
     using namespace sm;
-    sm::GameState gs = make_world();
-    MacroWorld w{.gs = &gs};
+    World wld = make_world();
+    sm::GameState& gs = wld.gs;
+    MacroWorld w{.gs = &gs, .store = wld.store.get()};
 
     entt::registry reg;
     const auto citizen = reg.create();
@@ -183,9 +206,9 @@ void test_debts_bill_their_own_subject() {
     CHECK_OR_RETURN(debt != nullptr, "stamping leaves a receipt on the body");
 
     settle_macro_debt(w, *debt, -1);
-    CHECK(population_of(gs, 7) == 299, "the dead citizen's own town shrinks by one");
-    CHECK(population_of(gs, 8) == 300, "the town next door is untouched");
-    CHECK(population_of(gs, 42) == 40, "and so is the village");
+    CHECK(population_of(wld, 7) == 299, "the dead citizen's own town shrinks by one");
+    CHECK(population_of(wld, 8) == 300, "the town next door is untouched");
+    CHECK(population_of(wld, 42) == 40, "and so is the village");
 
     // A village is a named place with people too, on the SAME id space (v54):
     // the id alone names it, no register bit rides the receipt.
@@ -193,7 +216,7 @@ void test_debts_bill_their_own_subject() {
     stamp_macro_debt(reg, villager, MacroStock::Population,
                      MacroStockKey{42, 20, 20}, 3);
     settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(villager), -1);
-    CHECK(population_of(gs, 42) == 37,
+    CHECK(population_of(wld, 42) == 37,
           "a village pays from its own people, by the amount the receipt says");
 
     // THE NEGATIVE CONTROL for the one-space law: killing two villagers of
@@ -203,14 +226,14 @@ void test_debts_bill_their_own_subject() {
     stamp_macro_debt(reg, twinVillager, MacroStock::Population,
                      MacroStockKey{9, 40, 40}, 2);
     settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(twinVillager), -1);
-    CHECK(village_population_of(gs, 9) == 78,
+    CHECK(village_population_of(wld, 9) == 78,
           "a village pays its own dead through the one id space");
-    CHECK(city_population_of(gs, 7) == 299 && city_population_of(gs, 8) == 300,
+    CHECK(city_population_of(wld, 7) == 299 && city_population_of(wld, 8) == 300,
           "and no city is billed for them");
 
     // Signed both ways (owner's ruling): the same row settles creation.
     settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(villager), +1);
-    CHECK(population_of(gs, 42) == 40,
+    CHECK(population_of(wld, 42) == 40,
           "handing the borrowed thing back credits the same place");
 }
 
@@ -218,9 +241,10 @@ void test_debts_bill_their_own_subject() {
 // so a spawner that half-stamps cannot quietly drain a random town.
 void test_malformed_receipts_do_nothing() {
     using namespace sm;
-    sm::GameState gs = make_world();
-    MacroWorld w{.gs = &gs};
-    const int before = population_of(gs, 7);
+    World wld = make_world();
+    sm::GameState& gs = wld.gs;
+    MacroWorld w{.gs = &gs, .store = wld.store.get()};
+    const int before = population_of(wld, 7);
 
     ecs::MacroDebt zeroAmount{std::uint8_t(MacroStock::Population), 7, 10, 10, 0};
     ecs::MacroDebt unknownStock{std::uint8_t(MacroStock::Count), 7, 10, 10, 5};
@@ -231,11 +255,11 @@ void test_malformed_receipts_do_nothing() {
     settle_macro_debt(w, unknownStock, -1);
     settle_macro_debt(w, noSubject,    -1);
     settle_macro_debt(w, strangerId,   -1);
-    CHECK(population_of(gs, 7) == before,
+    CHECK(population_of(wld, 7) == before,
           "a receipt for nothing, for an unknown stock or for nobody moves no stock");
 
     // And a world with no tree layer at all must not pretend it wrote one.
-    MacroWorld headless{.gs = &gs};
+    MacroWorld headless{.gs = &gs, .store = wld.store.get()};
     macro_stock_apply(headless, MacroStock::TreeCount, MacroStockKey{-1, 0, 0}, -5);
     CHECK(macro_stock_read(headless, MacroStock::TreeCount, MacroStockKey{-1, 0, 0}) == 0,
           "a missing tree layer reads zero and swallows writes instead of crashing");
@@ -358,7 +382,8 @@ void test_dead_leader_squads_fall_into_the_pool() {
 // diverging copy of the forest.
 void test_trees_are_a_carrier_row() {
     using namespace sm;
-    sm::GameState gs = make_world();
+    World wld = make_world();
+    sm::GameState& gs = wld.gs;
     sm::TreeLayer trees;
     trees.width = gs.mapW;
     trees.height = gs.mapH;
@@ -382,7 +407,8 @@ void test_trees_are_a_carrier_row() {
     // читает поле, а не каскад, поэтому карта без выпечки — карта
     // НЕДОРОЖДЁННАЯ, и её биом честно отвечает водой.
     sm::bake_biomes(td);
-    MacroWorld w{.gs = &gs, .trees = &trees, .terrain = &td};
+    MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get(),
+                 .terrain = &td};
 
     const std::uint32_t rev0 = trees.revision;
     resource_field_apply(w, ResourceFieldId::Trees, 5, 6, -123);
@@ -417,12 +443,13 @@ void test_trees_are_a_carrier_row() {
 // geology), and the scar slots stay empty.
 void test_deposits_are_carrier_rows() {
     using namespace sm;
-    sm::GameState gs = make_world();
+    World wld = make_world();
+    sm::GameState& gs = wld.gs;
     sm::DepositLayer deposits;
     allocate_deposit_fields(deposits, gs.mapW, gs.mapH);
     deposits.grid(DepositKind::Stone).write(9, 9, 1000);
     deposits.grid(DepositKind::Iron).write(9, 9, 64);   // a vein IN the quarry
-    MacroWorld w{.gs = &gs, .deposits = &deposits};
+    MacroWorld w{.gs = &gs, .store = wld.store.get(), .deposits = &deposits};
 
     CHECK(resource_field_read(w, ResourceFieldId::Stone, 9, 9) == 1000
               && resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 64,

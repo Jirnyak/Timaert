@@ -1,5 +1,6 @@
 #include "macro/ruins.h"
 #include "macro/labour.h"      // settle_souls — одна дверь поселения душ
+#include "macro/place_birth.h" // birth_landmark — строка+тело (M-90 шаг 5)
 #include "macro/landmark_registry.h"
 #include "tables/faction.h"
 #include "macro/state.h"
@@ -43,7 +44,7 @@ bool cell_occupied_(const GameState& gs, int x, int y) {
 
 } // namespace
 
-void generate_ruins(GameState& gs, const ZoneLayer& zones,
+void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                     const TerrainData& terrain) {
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
         || !zones.has_complete_storage()) {
@@ -114,14 +115,15 @@ void generate_ruins(GameState& gs, const ZoneLayer& zones,
         //
         // ПЕРЕВОРОТ v122 (вердикт 3): души данжа — ГОЛОВАМИ, вид стака
         // ВЫВОДИТСЯ из полосы толпы (kHabRuin, слабейшая строка → CaveBat).
+        // ФЛИП (M-90 шаг 5): строка+тело одной дверью, души — в склад ТЕЛА.
+        Landmark& row = birth_landmark(gs, st, std::move(ruin));
         {
             Rng popRng(gs.worldSeed ^ 0xB0125EEDu
-                       ^ (std::uint32_t(ruin.id) * 2654435761u));
-            settle_souls(gs, ruin, landmark_born_population(
+                       ^ (std::uint32_t(row.id) * 2654435761u));
+            settle_souls(gs, st, row, landmark_born_population(
                 int(def.bornPopBase), int(def.bornPopPerScore),
                 int(zones.at(bestX, bestY)), popRng));
         }
-        add_landmark(gs, std::move(ruin));
         ++placed;
     }
     std::printf("[worldgen] ruins: %d of %d placed (%d cities)\n",

@@ -396,7 +396,7 @@ namespace sm {
 //    бонуса есть байт в каждом сохранённом аффиксе.
 // Обе ветки подняли версию до 124 независимо; 125 — то число, которое честно
 // называет, что в файле лежит И то, И другое.
-constexpr int kSaveVersion = 126;
+constexpr int kSaveVersion = 127;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -443,132 +443,43 @@ struct Landmark {
     // Пустая строка = вид имени не несёт (шпиль выводит своё).
     char name[32] = {};
     int x = 0, y = 0;
-    // (population умерла 2026-09-30, v122 — переворот населения: паства =
-    // worked-число фичи, souls_flock@src/macro/labour.h; домашние души —
-    // головы инвентаря, souls_home@src/macro/labour.h.)
-    // THE store (owner's ruling, W2): the landmark's universal Inventory is
-    // its market, its granary and its warehouse in one — agents deliver into
-    // it, the day-loop eats from it, the trade panel sells out of it.
-    Inventory inventory;
-    // (garrison умер 2026-09-30, v122 — M-8 «гарнизон умирает как отдельный
-    // контейнер»: раздела гарнизон/мирные больше нет, оборона места — вся
-    // толпа домашних голов в едином инвентаре; жители едят ОДНОЙ лестницей
-    // потребностей места — второй счёт needDebt/wageDebt ел бы их дважды.)
     // WHOSE place this is — a faction registry index (owner 2026-09-11:
     // «королевств нет, только фракции — одна система»). -1 = nobody's,
     // which resolves to the free folk through faction_or_freefolk. It
     // replaced kingdomIdx, which named a row of a Kingdom vector that was
     // itself just a materialized copy of the registry.
     std::int16_t factionIdx = -1;
-    // ── ИНТЕРЕСЫ МЕСТА — ВСЕ ЕГО СВЯЗИ В ОДНОЙ ТАБЛИЦЕ (владелец, 2026-09-21).
-    // Феодальное ребро здесь — ЧАСТНЫЙ СЛУЧАЙ отношения, а не своя система
-    // (вердикт: «тогда отдельная феодальная система не нужна, она будет
-    // частным случаем отношений»). Форма и отвергнутые колонки — в
-    // macro/interests.h.
-    //
-    // ЧТО ЭТО ПОЛЕ ЗАМЕНИЛО, ПОИМЁННО:
-    //   `suzerainLandmarkId` — «кому я плачу», одна колонка на весь феодальный
-    //      граф. Теперь это запись Stance::Suzerain;
-    //   `vassalHead` / `vassalNext` — односвязный производный индекс «кто мои
-    //      вассалы», построенный 2026-09-21 и НЕ ПОЛУЧИВШИЙ НИ ОДНОГО
-    //      ЧИТАТЕЛЯ (его строитель ensure_vassal_edges не звался ниоткуда —
-    //      problems §55). Теперь это записи Stance::Vassal, которые ставит
-    //      та же дверь, что и обратную им: половин у S24 больше нет.
-    Interests interests{};
-    // The honest economy's daily readouts (v29): yesterday's hunger and
-    // comfort shortfall (for the eye and the mood), the famine edge flag,
-    // and the fractional carry of the LOGISTIC population law.
-    std::uint16_t starvedYesterday = 0;
-    // THE SEASON WINDOW'S VERDICT (v95, CANON S19.2): wellbeing quantized to
-    // a byte, written on the boundary day by econ_debt_boundary's outcome
-    // and read by the mood band + population law every day until the next
-    // boundary. Born 255: a landmark seeded mid-life starts its life fed.
-    std::uint8_t  seasonWellbeing = 255;
-    float         popGrowthCarry = 0.0f;
-    // WHAT THE WORLD THINKS OF THIS PLACE (macro/chronicle.h). Renown is not
-    // a squad's private counter — it belongs to every MACRO entity that has an
-    // identity (owner, 2026-08-27): a band, a city, a people. A famous city is
-    // a harder prize and a louder loss, and beating it is worth more precisely
-    // because it was famous. The microworld has none of this.
-    std::uint32_t renown = 0;
-    // (Spire's spellId/depleted died 2026-09-30 — вердикт «у поля урожай, у
-    // шахты залежи, у порта корабли — у шпиля спелл»: the spell rides the
-    // ONE worked layer under FT_Spire as ordinal+1 (закон нуля-ординала),
-    // 0 = drained. A drained spire forgets its spell like a worked-out vein.)
-    // (Дань уехала из места ЦЕЛИКОМ 2026-09-30, v121 — вердикт владельца
-    // «дань и феодальный граф — система фракций»: долг-стоимость, память
-    // сезона и штамп начисления живут на ФЕОДАЛЬНОМ РЕБРЕ строки фракции
-    // сюзерена — TitheEdge@src/macro/factions.h. Законы v73/v104/v108
-    // переехали с колонками: долг ОДНОЙ стоимостью, база — среднее склада
-    // за сезон предмасштабированной памятью. Минус 20 Б у места.)
-    // ── ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10, вердикт 2026-09-19; v99) ─────────
-    // На границе сезона место получает СЧЁТ = сезонная нужда по каждой
-    // строке лестницы (индекс — товарный ординал, зеркало titheOwedGoods;
-    // не-лестничные ординалы всегда нули). Приход гасит долг СРАЗУ и
-    // съедается — на складе лежит только ИЗЛИШЕК, всё видимое свободно.
-    // Непогашенный хлеб на следующей границе уходит населением НАСМЕРТЬ
-    // (доля = остаток / душевой сезон), прочие строки гасят рост.
-    std::int32_t needDebt[kCommodityCount] = {};
+    // ── ТЕЛО МЕСТА — СЛОТ STORE (M-90 шаг 5, вердикт владельца 2026-09-30:
+    // «про место мы забываем, сносим всё или сливаем — теперь у нас только
+    // сквады»). ВСЁ ПЛЕЧО прежней строки места уехало в колонки его тела:
+    //   inventory        → store.inventory  (склад = единый контейнер)
+    //   interests        → store.interests  (связи любых сквадов)
+    //   needDebt         → store.roster.needDebt (счёт содержания — одна
+    //                      лестница на место и отряд, байт в байт)
+    //   starvedYesterday / seasonWellbeing / popGrowthCarry
+    //                    → store.wellbeing  (благополучие — колонка анкеты)
+    //   renown           → store.runtime.renown (слава субъекта, род 2)
+    // Здесь — упакованный хэндл {slot | gen<<16} тем же литеральным
+    // контрактом, что playerSquadBits (state.h не видит store.h — согласие
+    // держит static_assert на стороне store). Все единицы = тела нет ещё:
+    // законно только между read_landmark и relink на загрузке.
+    // Строка места целиком — тонкий индекс до ломтика F, где умирает вектор.
+    std::uint32_t bodyBits = 0xFFFFFFFFu;
+    // (population умерла v122 — паства = worked-число фичи; garrison умер
+    // v122 — оборона места = толпа домашних голов единого контейнера; спелл
+    // шпиля — worked-слоем с v120; дань — ребро рода 6 с v121.)
 };
-// ── РАЗМЕР МЕСТА ЗАКРЕПЛЁН (AGENTS п.10; числа пересняты 2026-09-30) ──────
-// 42 296 Б × 32 768 мест (кап kWorldLandmarks, core/stacks.h) = 1.29 ГиБ по
-// капу; в замеренном мире (~2 090 мест) — 84 МиБ. (Прежняя редакция этого
-// комментария держала 13 912 Б / 435 МиБ / 25 МиБ — числа ТРЁХ ведомостей
-// назад; ассерт ниже был прав, проза врала.) Из них 40 960 Б (96.8 %) —
-// ОБЩЕЕ ЯДРО СУБЪЕКТА: inventory. Ровно то же ядро несёт макро-сквад — это
-// и есть «ландмарк есть неподвижный сквад» (CANON S4), уже выполненное в
-// памяти.
-//
-// РАСХОДЯТСЯ ОНИ НА 1 336 Б. Три четверти — РЕЕСТР ИНТЕРЕСОВ (1 024 Б,
-// 128 связей): он пришёл 2026-09-21 на место феодального ребра, и сквад
-// получит ТОТ ЖЕ реестр, когда у отношений сквадов появится первый читатель
-// (условие в interests.h: только после слияния пространств ординалов).
-//
-// ОСТАЛЬНОЕ РАСХОЖДЕНИЕ — СПИСОК НЕДОДЕЛОК, А НЕ ЗАМЫСЕЛ (problems §56):
-//   survey 64 + ledger 124 — производные, режутся вердиктом «ща режем всё»;
-//   needDebt 60    — сезонный счёт лестницы нужд, едет в анкету слотом.
-// (name из списка ВЫШЛО 2026-09-30: плоские чары, и они уже РАСКЛАДКА
-// колонки ecs::SquadName — при флипе переезд без смены формы.)
-// (titheAvgValue из списка ВЫШЛА 2026-09-30: дань целиком на ребре рода 6.)
-// Прочее честно своё: опись округи, прейскурант, адрес, анкета.
-// (Феод из этого списка ВЫШЕЛ 2026-09-21: три колонки — 12 Б — заменены
-// записями реестра, и половина S24 закрыта.)
-// 2026-09-22: место похудело на 184 Б (528 → 344) — стоимостный долг дани
-// вместо пятнадцати колонок плюс монеты и ОДНА память вместо шестнадцати.
-// Свидетель поймал обе правки компилятором, как и обещает AGENTS п.10:
-// число живёт в коде, а не в прозе. (Моя прикидка «−180» была на 4 Б
-// неверна — выравнивание; ЗАМЕР поправил, и это ровно то, зачем он тут.)
-// 2026-09-24: слот вырос 36 → 40 Б (слот В эпика: level + entityId), ядро
-// субъекта 12360 → 13384; замер поймал компилятором, как положено.
-// 2026-09-24, шаг А слияния: ёмкость контейнера 256 → 1024 (32×32), ядро
-// субъекта 13384 → 44104.
-// 2026-09-24, шаг Б слияния: существа уехали В КОНТЕЙНЕР, ростер стал
-// обвязкой счетов (72 Б) — ядро субъекта 44104 → 41032.
-// 2026-09-30, ход 2 ломтик B: спелл шпиля уехал в worked-слой — колонки
-// spellId (4) + depleted (1) с паддингом (3) умерли, 42400 → 42392.
-// 2026-09-30, ход 2 ломтик C: дань уехала на феодальное ребро рода 6 —
-// titheOwedValue (8) + titheSeasonAssessed (4) + titheAvgValue (8) с
-// паддингом (4) умерли, 42392 → 42368.
-// 2026-09-30, ход 2 ломтик D (переворот населения): population (4) и
-// garrison (Roster, 72) умерли — паства в worked-слое, души дома головами
-// в inventory; 42368 → 42288 (−80: 76 Б полей + 4 Б паддинга, ЗАМЕР
-// компилятором, как велит AGENTS п.10).
-// 2026-09-30, ход 2 ломтик E шаг 1: имя стало ПЛОСКИМИ ЧАРАМИ — std::string
-// (24 Б, куча на структуре ×32768) умер в char[32], раскладку которого
-// диктует колонка анкеты ecs::SquadName; 42288 → 42296 (+8, ЗАМЕР
-// компилятором). Восемь байт куплены сносом кучи с горячей структуры и
-// тем, что при флипе M-90 поле ложится в слот БЕЗ смены формы.
-// 2026-09-30, ход 2 ломтик E шаг 2: ДВА КЭША В КОЛОНКАХ МЕСТА УНИЧТОЖЕНЫ —
-// опись округи (LandmarkSurvey, 64 Б) и ведомость цен (LandmarkLedger,
-// 124 Б) вместе со своими сезонными проходами; 42296 → 42108 (−188, ЗАМЕР
-// компилятором). Оба были ОТВЕТАМИ, выводимыми из состояния мира, то есть
-// кэшами в строке сущности, — а строка эта становится анкетой сквада, где
-// «колонка места» запрещена.
-static_assert(sizeof(Landmark) == 42108,
-              "место = ядро субъекта (40960) + реестр (1024) + 124 Б своего");
-static_assert(sizeof(Landmark) == sizeof(Inventory)
-                                      + sizeof(Interests) + 124,
-              "ядро субъекта у места и у сквада ОДНО (CANON S4)");
+// ── РАЗМЕР МЕСТА ЗАКРЕПЛЁН (AGENTS п.10; флип M-90 шаг 5, 2026-10-04) ─────
+// 42 108 → 56 Б: всё плечо (inventory 40960, interests 1024, needDebt 60,
+// благополучие 8, renown 4) уехало КОЛОНКАМИ ТЕЛА в MacroStore — место есть
+// неподвижный сквад, и его память теперь гладкая, преаллоцированная и
+// одинаковая у пустого и забитого мира (ЗАКОН СТАБИЛЬНОСТИ; вектор мест был
+// последним штабелём, росшим от населения). Остаток — тонкий индекс
+// идентичности до ломтика F: id 4 + type 1 + name 32 + пад 3 + x 4 + y 4 +
+// factionIdx 2 + пад 2 + bodyBits 4.
+static_assert(sizeof(Landmark) == 56,
+              "место = тонкий индекс идентичности; плечо живёт колонками "
+              "тела в MacroStore (M-90 шаг 5)");
 // Имя места и имя анкеты — ОДНА раскладка (ecs::SquadName{char[32]}); число
 // здесь стоит литералом, потому что state.h не видит components.h (entt).
 static_assert(sizeof(Landmark::name) == 32,
@@ -1011,17 +922,10 @@ inline std::ptrdiff_t landmark_index_by_id(const GameState& gs, int id) {
     return -1;
 }
 
-// ── The landmark-fact door: file the deed AND pay the fame ───────────────
-//
-// Where a place's standing lives, by the ONE subject-ordinal space (M-37). A
-// spire has no standing (yet) and answers nullptr — its deeds are recorded,
-// nothing is paid.
-inline std::uint32_t* landmark_renown_slot(GameState& gs, int id) {
-    const std::ptrdiff_t i = landmark_index_by_id(gs, id);
-    return i < 0 ? nullptr : &gs.landmarks[std::size_t(i)].renown;
-}
+// (landmark_renown_slot умерла с флипом M-90 шаг 5: слава места — колонка
+// runtime.renown ЕГО ТЕЛА; единственный читатель — renown_slot@squad.h.)
 
-// ── ДВЕРЬ РОЖДЕНИЯ МЕСТА (CANON S9, владелец 2026-09-20) ────────────────
+// ── ДВЕРЬ РОЖДЕНИЯ СТРОКИ МЕСТА (CANON S9, владелец 2026-09-20) ──────────
 // Единственный способ, которым место попадает в ростер: и генезис, и
 // загрузка, и всякая будущая основа деревни идут сюда. Дверь делает ДВЕ
 // вещи — кладёт место и объявляет СОБЫТИЕ (navEpoch), по которому
@@ -1061,74 +965,10 @@ inline Landmark* landmark_by_id(GameState& gs, int id) {
     return i < 0 ? nullptr : &gs.landmarks[std::size_t(i)];
 }
 
-// ── ФЕОДАЛЬНОЕ РЕБРО — ОДНА ДВЕРЬ НА ОБА КОНЦА (владелец, 2026-09-21) ─────
-// CANON S24 требует, чтобы узел знал И сюзерена, И прямых подчинённых. Год
-// эта пара жила как ДВЕ ПОЛОВИНЫ: колонка `suzerainLandmarkId` у вассала и
-// производный индекс `vassalHead`/`vassalNext`, который никто не собирал и
-// никто не читал (problems §55). Половины разъезжаются молча — поэтому концы
-// ставятся ОДНИМ вызовом и снимаются одним, ровно как RelationMatrix держит
-// свою симметрию одним set_relation.
-//
-// Старого сюзерена дверь снимает САМА: у места ровно один сюзерен, и смена
-// его без снятия прежнего оставила бы вассала, платящего двоим.
-inline void set_suzerain(GameState& gs, int vassalId, int suzerainId,
-                         int value = 0, int term = 0) {
-    Landmark* v = landmark_by_id(gs, vassalId);
-    if (!v || vassalId == suzerainId) return;
-    // Прежний сюзерен теряет этого вассала — с обоих концов; вместе со
-    // ЗНАНИЕМ роли умирает и ЛЕТОПИСЬ ДОЛГА (ребро рода 6): непогашенная
-    // дань прощается сменой феода, второго носителя долга не существует.
-    for (int i = 0; i < kMaxInterests; ++i) {
-        Interest& it = v->interests.slots[i];
-        if (it.stance == std::uint8_t(Stance::None)) break;
-        if (it.stance != std::uint8_t(Stance::Suzerain)) continue;
-        if (Landmark* old = landmark_by_id(gs, it.object)) {
-            interest_clear(old->interests, vassalId);
-            tithe_edge_remove(gs.factions, int(old->factionIdx), vassalId);
-        }
-        interest_clear(v->interests, it.object);
-        break;                     // сюзерен у места ровно один
-    }
-    if (suzerainId <= 0) return;   // «стал ничьим» — это и есть весь вызов
-    Landmark* s = landmark_by_id(gs, suzerainId);
-    if (!s) return;                // висячего ребра не заводим
-    interest_set(v->interests, suzerainId, Stance::Suzerain, value, term);
-    interest_set(s->interests, vassalId, Stance::Vassal, value, term);
-    // ОДНА ДВЕРЬ ПИШЕТ ОБА НОСИТЕЛЯ: знание роли — в интересы (род 2),
-    // летопись долга — ребром в строку фракции СЮЗЕРЕНА (род 6).
-    tithe_edge_add(gs.factions, int(s->factionIdx), vassalId, suzerainId);
-}
-
-// Кому это место платит дань; 0 — никому (столица, бесхозное место).
-inline int suzerain_of(const Landmark& lm) {
-    for (int i = 0; i < kMaxInterests; ++i) {
-        const Interest& it = lm.interests.slots[i];
-        if (it.stance == std::uint8_t(Stance::None)) break;
-        if (it.stance == std::uint8_t(Stance::Suzerain)) return it.object;
-    }
-    return 0;
-}
-
-// ФЕОДАЛЬНОЕ РЕБРО ЭТОГО ВАССАЛА (род 6, v121): долг живёт в строке фракции
-// СЮЗЕРЕНА — путь к нему идёт через знание роли (suzerain_of, род 2), сами
-// носители врозь и отвечают на разные вопросы.
-inline TitheEdge* tithe_edge_of(GameState& gs, const Landmark& vassal) {
-    const Landmark* s = landmark_by_id(gs, suzerain_of(vassal));
-    return s ? tithe_edge(gs.factions, int(s->factionIdx), vassal.id)
-             : nullptr;
-}
-inline const TitheEdge* tithe_edge_of(const GameState& gs,
-                                      const Landmark& vassal) {
-    return tithe_edge_of(const_cast<GameState&>(gs), vassal);
-}
-
-// ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг ребра — он же ведомость
-// «с кого собрано»: собранный вассал отвечает «нет» по построению, и второго
-// признака («посещён в этом сезоне») в мире не заводится (S26).
-inline bool owes_tithe(const GameState& gs, const Landmark& lm) {
-    const TitheEdge* e = tithe_edge_of(gs, lm);
-    return e && e->owedValue > 0;
-}
+// (ФЕОДАЛЬНЫЕ ДВЕРИ — set_suzerain / suzerain_of / tithe_edge_of /
+// owes_tithe — УЕХАЛИ в macro/squad.h с флипом M-90 шаг 5: знание роли
+// живёт в колонке interests ТЕЛА места, то есть дверям нужен MacroStore,
+// которого state.h не видит и видеть не должен.)
 inline const Landmark* landmark_by_id(const GameState& gs, int id) {
     const std::ptrdiff_t i = landmark_index_by_id(gs, id);
     return i < 0 ? nullptr : &gs.landmarks[std::size_t(i)];
@@ -1160,42 +1000,9 @@ inline void worked_add(GameState& gs, int x, int y, int delta) {
     worked_write(gs, x, y, worked_read(gs, x, y) + delta);
 }
 
-// ONE action (S20.1: a writer that filed without paying would give a world
-// where no place ever becomes somewhere; paying without filing, a legend
-// nobody can read). The landmark twin of the app-side `record_deed`, and the
-// same order: figure-ness is marked from the PRE-deed renown — «с этого дня
-// её дела идут в анналы» — then the fact is filed, then the deed is paid
-// (base + a tenth of what the OBJECT was worth: fame is made of fame for
-// places exactly as for bands). Figure-ness itself is DERIVED, never stored
-// (owner, 2026-08-28): a name is a word; historical weight is renown.
-inline std::uint32_t record_landmark_fact(GameState& gs, FactKind kind,
-                                          int landmarkId, int x, int y,
-                                          int amount,
-                                          int objectLandmarkId = 0) {
-    std::uint32_t* subjSlot = landmark_renown_slot(gs, landmarkId);
-    const std::uint32_t* objSlot =
-        landmark_renown_slot(gs, objectLandmarkId);
-    const std::uint32_t bar = std::uint32_t(renown_to_be_named());
-    WorldFact f{};
-    f.day = gs.worldTime.day();
-    f.kind = std::uint16_t(kind);
-    f.subjectKind = fact_subject(FactSubject::Landmark,
-                                 subjSlot && *subjSlot >= bar);
-    f.subject = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
-    if (objectLandmarkId > 0) {
-        f.objectKind = fact_subject(FactSubject::Landmark,
-                                    objSlot && *objSlot >= bar);
-        f.object = std::uint32_t(objectLandmarkId);
-    }
-    f.x = std::int16_t(x);
-    f.y = std::int16_t(y);
-    f.amount = amount;
-    const std::uint32_t seq = chronicle_record(gs.chronicle, f);
-    if (seq != 0u && subjSlot) {
-        *subjSlot += renown_for_deed(kind, objSlot ? *objSlot : 0u);
-    }
-    return seq;
-}
+// (record_landmark_fact УЕХАЛА в macro/squad.h флипом M-90 шаг 5: слава
+// места — колонка runtime.renown его ТЕЛА, то есть двери нужен MacroStore,
+// которого state.h не видит и видеть не должен.)
 
 // ── Relations, including the player's ────────────────────────
 //
@@ -1292,7 +1099,8 @@ GameState  default_game_state(std::uint32_t seed, int mapW, int mapH,
 struct TerrainData;  // fwd
 struct TreeLayer;
 struct DepositLayer;
-void populate_landmarks_from_politik(GameState& gs,
+struct MacroStore;   // fwd — тела мест рождаются в store (M-90 шаг 5)
+void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,

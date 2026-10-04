@@ -59,7 +59,7 @@ Landmark* find_population_subject(const MacroWorld& w, std::int32_t subject) {
 
 int read_population(const MacroWorld& w, MacroStockKey k) {
     const Landmark* lm = find_population_subject(w, k.subject);
-    return lm ? souls_flock(*w.gs, *lm) : 0;
+    return lm ? souls_flock(*w.gs, *w.store, *lm) : 0;
 }
 
 void write_population(MacroWorld& w, MacroStockKey k, int delta) {
@@ -87,12 +87,12 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
         int died = 0;
         if (who.entityId != 0 || who.level > 0) {
             for (int i = 0; i < -delta; ++i) {
-                if (!creatures_remove_one(lm->inventory, who)) break;
+                if (!creatures_remove_one(place_store(*w.store, *lm), who)) break;
                 ++died;
             }
         } else {
-            died = dungeon ? bleed_heads(lm->inventory, -delta)
-                           : bleed_flock(lm->inventory, -delta);
+            died = dungeon ? bleed_heads(place_store(*w.store, *lm), -delta)
+                           : bleed_flock(place_store(*w.store, *lm), -delta);
         }
         if (!dungeon && died > 0) {
             worked_write(*w.gs, lm->x, lm->y,
@@ -103,7 +103,7 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
         // Вернувшееся тело — то же событие «место получило душу», одной
         // дверью (labour.h settle_souls): второй писатель пары
         // «число + голова» был бы вторым законом появления души.
-        settle_souls(*w.gs, *lm, delta);
+        settle_souls(*w.gs, *w.store, *lm, delta);
     }
 }
 

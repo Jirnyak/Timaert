@@ -5,6 +5,7 @@
 #include "macro/agent_memory.h"
 #include "tables/commodity.h"
 #include "macro/anketa.h"
+#include "macro/place_body.h"   // place_store — склад места в ТЕЛЕ (M-90)
 #include "tables/npc.h"
 
 #include <algorithm>
@@ -426,6 +427,7 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
 } // namespace
 
 std::vector<Quest> generate_quests_for_settlement(const Landmark& s,
+                                                  const MacroStore& st,
                                                   const GameState& gs,
                                                   std::uint32_t worldSeed) {
     Rng rng(worldSeed ^ std::uint32_t(s.id) ^ std::uint32_t(gs.worldTime.day()));
@@ -436,13 +438,14 @@ std::vector<Quest> generate_quests_for_settlement(const Landmark& s,
     ctx.y = s.y;
     ctx.isCity = true;
     ctx.factionIdx = s.factionIdx;
-    ctx.store = &s.inventory;
+    ctx.store = &place_store(st, s);
     ctx.gs = &gs;
     ctx.rng = &rng;
     return generate_for_context(ctx);
 }
 
 std::vector<Quest> generate_quests_for_village(const Landmark& v,
+                                                const MacroStore& st,
                                                const GameState& gs,
                                                std::uint32_t worldSeed) {
     Rng rng(worldSeed ^ std::uint32_t(v.id + 0x6000) ^ std::uint32_t(gs.worldTime.day()));
@@ -453,7 +456,7 @@ std::vector<Quest> generate_quests_for_village(const Landmark& v,
     ctx.y = v.y;
     ctx.isCity = false;
     ctx.factionIdx = v.factionIdx;
-    ctx.store = &v.inventory;
+    ctx.store = &place_store(st, v);
     ctx.gs = &gs;
     ctx.rng = &rng;
     return generate_for_context(ctx);

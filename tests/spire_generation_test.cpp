@@ -18,21 +18,34 @@
 
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"
+#include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/ruins.h"
 #include "macro/anketa.h"
 #include "macro/spires.h"
 #include "macro/state.h"
+#include "macro/store.h"
 #include "macro/zones.h"
 #include "tables/faction.h"    // faction_index / faction_or_freefolk (M-39)
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <set>
 #include <cstdlib>
 
 namespace {
 
 using namespace sm;
+
+// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад (M-90 шаг 5):
+// генераторы рождают строку И ТЕЛО, значит store им нужен. Миры свидетеля
+// делят его — их тела друг друга не видят (строка носит СВОЙ bodyBits), а
+// профиль памяти store от населения не зависит (ЗАКОН СТАБИЛЬНОСТИ), так что
+// store на каждый мир был бы гигабайтами за ничто.
+MacroStore& places() {
+    static std::unique_ptr<MacroStore> st = make_macro_store();
+    return *st;
+}
 
 constexpr int kW = 64, kH = 64;
 // Heights: land level 0.502, sea floor 0; the gate between them IS the default
@@ -111,7 +124,7 @@ void test_one_spire_per_spell_in_the_band() {
     GameState gs = world(12345u);
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
-    generate_spires(gs, zones, terrain);
+    generate_spires(gs, places(), zones, terrain);
 
     const LandmarkDef& def = landmark_def(LandmarkType::Spire);
     const std::vector<const Landmark*> spires = spires_of(gs);
@@ -158,9 +171,9 @@ void test_placement_is_a_fact_of_the_seed() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     GameState a = world(12345u), b = world(12345u), c = world(777u);
-    generate_spires(a, zones, terrain);
-    generate_spires(b, zones, terrain);
-    generate_spires(c, zones, terrain);
+    generate_spires(a, places(), zones, terrain);
+    generate_spires(b, places(), zones, terrain);
+    generate_spires(c, places(), zones, terrain);
 
     const std::vector<const Landmark*> sa = spires_of(a);
     const std::vector<const Landmark*> sb = spires_of(b);
@@ -190,7 +203,7 @@ void test_no_admissible_ground_places_nothing() {
         tame.width = kW;
         tame.height = kH;
         tame.data.assign(std::size_t(kW * kH), 0);
-        generate_spires(gs, tame, terrain);
+        generate_spires(gs, places(), tame, terrain);
         CHECK(spires_of(gs).empty(), "no wild land = no spires");
     }
     // Negative control 2: an all-ocean world offers no site either.
@@ -200,7 +213,7 @@ void test_no_admissible_ground_places_nothing() {
         ocean.width = kW;
         ocean.height = kH;
         ocean.rgba.assign(std::size_t(kW * kH) * 4u, 0);
-        generate_spires(gs, banded_zones(), ocean);
+        generate_spires(gs, places(), banded_zones(), ocean);
         CHECK(spires_of(gs).empty(), "no land = no spires");
     }
 }
@@ -223,7 +236,7 @@ void test_named_places_veto_their_cells() {
 
     {
         GameState gs = world(12345u);
-        generate_spires(gs, pin, terrain);
+        generate_spires(gs, places(), pin, terrain);
         const std::vector<const Landmark*> spires = spires_of(gs);
         CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                         "the wild block hosts every spire");
@@ -242,9 +255,9 @@ void test_named_places_veto_their_cells() {
                 v.type = LandmarkType::Village;
                 v.x = x;
                 v.y = y;
-                gs.landmarks.push_back(v);
+                birth_landmark(gs, places(), std::move(v));
             }
-        generate_spires(gs, pin, terrain);
+        generate_spires(gs, places(), pin, terrain);
         CHECK(spires_of(gs).empty(),
               "named places on every admissible cell veto the spire");
     }
@@ -257,8 +270,8 @@ void test_genesis_births_souls_and_ruins() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     GameState gs = world(12345u);
-    generate_spires(gs, zones, terrain);
-    generate_ruins(gs, zones, terrain);
+    generate_spires(gs, places(), zones, terrain);
+    generate_ruins(gs, places(), zones, terrain);
 
     // Spires are born garrisoned: the registry's born columns × the spell's
     // tier, a bell — never zero, never one fixed number for all.
@@ -268,7 +281,7 @@ void test_genesis_births_souls_and_ruins() {
         if (lm.type != LandmarkType::Spire) continue;
         // Души данжа — ГОЛОВЫ его толпы (v122): паства шпиля и есть они,
         // а worked его клетки занят СПЕЛЛОМ (ломтик B).
-        const int flock = souls_flock(gs, lm);
+        const int flock = souls_flock(gs, places(), lm);
         CHECK(flock > 0, "a spire is born with its garrison");
         ++spirePops;
         if (seenPop.insert(flock).second) ++distinctPops;
@@ -288,14 +301,14 @@ void test_genesis_births_souls_and_ruins() {
         const int z = int(zones.at(lm.x, lm.y));
         CHECK(z >= int(ruinDef.minZone) && z <= int(ruinDef.maxZone),
               "a ruin stands inside its registry zone band");
-        CHECK(souls_flock(gs, lm) > 0, "a ruin is born haunted");
+        CHECK(souls_flock(gs, places(), lm) > 0, "a ruin is born haunted");
     }
     CHECK(ruins > 0, "the world places ruins");
 
     // Determinism: the same seed births the same ruins, souls included.
     GameState b = world(12345u);
-    generate_spires(b, zones, terrain);
-    generate_ruins(b, zones, terrain);
+    generate_spires(b, places(), zones, terrain);
+    generate_ruins(b, places(), zones, terrain);
     CHECK_OR_RETURN(b.landmarks.size() == gs.landmarks.size(),
                     "same seed, same landmark census");
     bool same = true;
@@ -303,7 +316,7 @@ void test_genesis_births_souls_and_ruins() {
         const Landmark& p = gs.landmarks[i];
         const Landmark& q = b.landmarks[i];
         if (p.type != q.type || p.x != q.x || p.y != q.y
-            || souls_flock(gs, p) != souls_flock(b, q)) {
+            || souls_flock(gs, places(), p) != souls_flock(b, places(), q)) {
             same = false;
         }
     }
@@ -360,8 +373,8 @@ void test_place_faction_is_the_instance_only() {
     int ruins = 0, spires = 0, wrong = 0;
     for (std::uint32_t seed : {12345u, 777u, 2026u}) {
         GameState gs = world(seed);
-        generate_spires(gs, zones, terrain);
-        generate_ruins(gs, zones, terrain);
+        generate_spires(gs, places(), zones, terrain);
+        generate_ruins(gs, places(), zones, terrain);
         for (const auto& lm : gs.landmarks) {
             if (lm.type != LandmarkType::Ruin
                 && lm.type != LandmarkType::Spire) {

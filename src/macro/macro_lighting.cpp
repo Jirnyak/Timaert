@@ -109,7 +109,8 @@ void accumulate_occluded(const MacroLight& L, int width, int height,
 
 } // namespace
 
-std::vector<MacroLight> collect_macro_lights(const GameState& gs) {
+std::vector<MacroLight> collect_macro_lights(const GameState& gs,
+                                             const MacroStore& st) {
     std::vector<MacroLight> out;
     const int w = gs.mapW;
     const int h = gs.mapH;
@@ -120,7 +121,7 @@ std::vector<MacroLight> collect_macro_lights(const GameState& gs) {
     // lost its light with it). This used to be three hand-written loops, one
     // per kind (canon-audit C2) — a new landmark kind now glows by its row
     // alone, with no line here.
-    for_each_landmark(gs, [&](const LandmarkView& lv) {
+    for_each_landmark(gs, st, [&](const LandmarkView& lv) {
         if (lv.depleted) return;
         const LandmarkDef& def = landmark_def(lv.type);
         const float strength =

@@ -36,6 +36,8 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
                 m.rosterNeedDebt[c] = ro.needDebt[c];
             m.rosterWageDebt = ro.wageDebt;
         }
+        m.wellbeing = st.wellbeing[slot];
+        m.interests = st.interests[slot];
         // Колонки у всех (закон гладкой памяти): предикаты формата прежние —
         // «есть приказ» = waypointCount > 0, «есть лист» = у всех с флипа.
         if (st.orders[slot].waypointCount > 0) {
@@ -88,6 +90,8 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
             ro.wageDebt = m.rosterWageDebt;
             st.roster[h.slot] = ro;
         }
+        st.wellbeing[h.slot] = m.wellbeing;
+        st.interests[h.slot] = m.interests;
         if (m.hasOrders) st.orders[h.slot] = m.orders;
         if (m.hasSheet) st.sheet[h.slot] = m.sheet;
         st.designTag[h.slot] = ecs::DesignCharacterTag{m.designOrdinal};

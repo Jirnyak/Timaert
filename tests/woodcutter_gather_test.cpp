@@ -13,6 +13,7 @@
 #include "macro/roster_window.h"   // roster_bill — счёт по таблице
 
 #include "macro/npc_ai.h"
+#include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90)
 #include "macro/world_row.h"
 #include "macro/agent_memory.h"
 #include "macro/chronicle.h"
@@ -89,15 +90,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     gs.mapW = kMap;
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
-    Landmark vil{};
-    vil.type = LandmarkType::Village;
-    vil.id = 3;
-    vil.x = 10;
-    vil.y = 10;
-    gs.landmarks.push_back(vil);
-    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
-    // фичи, головы в инвентарь — тем же законом, что генезис.
-    sm::settle_souls(gs, gs.landmarks.back(), 40);
+    constexpr int kVilId = 3;
 
     // A little forest cell four cells east of the village — small enough to
     // be felled to BARE within the run, so the chronicle negative control
@@ -116,7 +109,19 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
-    const sm::MacroHandle wc = make_woodcutter(w, 10.0f, 10.0f, vil.id);
+    // Место есть неподвижный сквад (M-90 шаг 5): его склад — колонка ТЕЛА,
+    // поэтому деревня приходит в мир ОДНОЙ дверью, уже после store.
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
+    vil.id = kVilId;
+    vil.x = 10;
+    vil.y = 10;
+    sm::Landmark& vilRow =
+        sm::birth_landmark(gs, sm::store_of(w), std::move(vil));
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+    // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
+    sm::settle_souls(gs, sm::store_of(w), vilRow, 40);
+    const sm::MacroHandle wc = make_woodcutter(w, 10.0f, 10.0f, kVilId);
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
@@ -129,7 +134,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     }
 
     const int layerLost = 16 - int(layer.at(14, 10));
-    const int storeGained = gs.landmarks[0].inventory.count("wood");
+    const int storeGained = sm::place_store(sm::store_of(w), gs.landmarks[0]).count("wood");
     const int inBag =
         (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), wc)).inv.count("wood");
 
@@ -140,7 +145,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     CHECK(layer.revision > 0,
           "the chop moved the grid revision - the map sprite and the save "
           "(which carries the grid whole) both see the stump");
-    CHECK(gs.landmarks[0].inventory.count("wood") > 0
+    CHECK(sm::place_store(sm::store_of(w), gs.landmarks[0]).count("wood") > 0
               && gs.landmarks.size() == 1,
           "the village man hauls for the VILLAGE (no city even exists here)");
 
@@ -162,7 +167,6 @@ void test_the_farmer_works_the_field() {
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.landmarks.push_back(vil);
 
     // A field two cells east — where stamp_field_features would put one.
     FeatureLayer features;
@@ -187,6 +191,9 @@ void test_the_farmer_works_the_field() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
+    // Место есть неподвижный сквад (M-90 шаг 5): его склад — колонка
+    // ТЕЛА, поэтому деревня приходит в мир ОДНОЙ дверью, уже после store.
+    sm::birth_landmark(gs, sm::store_of(w), Landmark(vil));
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     const sm::MacroHandle e = h;
@@ -221,7 +228,7 @@ void test_the_farmer_works_the_field() {
                       .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
-    const int foodUnits = gs.landmarks[0].inventory.count("food");
+    const int foodUnits = sm::place_store(sm::store_of(w), gs.landmarks[0]).count("food");
     const int inBag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("food");
     CHECK(foodUnits > 0, "the farmer's haul reached the village store");
     // THE BATCH LAW THIS USED TO PIN IS GONE (owner, 2026-09-16). It read
@@ -258,7 +265,6 @@ void test_farmer_without_terrain_conjures_nothing() {
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.landmarks.push_back(vil);
     FeatureLayer features;
     features.resize(kMap, kMap);
     features.set(12, 10, FT_Field);
@@ -268,6 +274,9 @@ void test_farmer_without_terrain_conjures_nothing() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
+    // Место есть неподвижный сквад (M-90 шаг 5): его склад — колонка
+    // ТЕЛА, поэтому деревня приходит в мир ОДНОЙ дверью, уже после store.
+    sm::birth_landmark(gs, sm::store_of(w), Landmark(vil));
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
@@ -300,7 +309,7 @@ void test_farmer_without_terrain_conjures_nothing() {
         MacroWorld mw{.gs = &gs, .world = &w, .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
-    CHECK(gs.landmarks[0].inventory.count("food") == 0,
+    CHECK(sm::place_store(sm::store_of(w), gs.landmarks[0]).count("food") == 0,
           "no terrain wired: nothing to reap against, nothing conjured");
     CHECK(gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)].liveCells == 0,
           "no terrain wired: no scar appears either");
@@ -317,13 +326,15 @@ void test_no_layer_no_chop() {
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.landmarks.push_back(vil);
     const std::vector<TreePoint> trees{{14, 10}};
     TreeGrid grid;
     build_tree_grid(grid, trees, kMap, kMap);
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
+    // Место есть неподвижный сквад (M-90 шаг 5): его склад — колонка
+    // ТЕЛА, поэтому деревня приходит в мир ОДНОЙ дверью, уже после store.
+    sm::birth_landmark(gs, sm::store_of(w), Landmark(vil));
     make_woodcutter(w, 10.0f, 10.0f, vil.id);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
@@ -331,7 +342,7 @@ void test_no_layer_no_chop() {
         MacroWorld mw{.gs = &gs, .world = &w, .treeGrid = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
-    CHECK(gs.landmarks[0].inventory.count("wood") == 0,
+    CHECK(sm::place_store(sm::store_of(w), gs.landmarks[0]).count("wood") == 0,
           "no layer => no honest wood, and none minted from nothing");
 }
 
@@ -357,7 +368,6 @@ void test_the_mine_runs_while_the_player_is_away() {
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.landmarks.push_back(vil);
 
     DepositLayer deposits;
     allocate_deposit_fields(deposits, kMap, kMap);
@@ -369,6 +379,9 @@ void test_the_mine_runs_while_the_player_is_away() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
+    // Место есть неподвижный сквад (M-90 шаг 5): его склад — колонка
+    // ТЕЛА, поэтому деревня приходит в мир ОДНОЙ дверью, уже после store.
+    sm::birth_landmark(gs, sm::store_of(w), Landmark(vil));
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
@@ -447,48 +460,6 @@ void test_the_vendor_sells_at_the_nearest_city() {
     gs.mapW = kMap;
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
-    Landmark city{};
-    city.type = LandmarkType::City;
-    city.id = 1;   // landmark ids are ordinals from 1 (v54): 0 = "no place"
-    city.x = 10;
-    city.y = 10;
-    city.inventory.add("food", 2000);   // plenty: the export
-    // The deal PAYS now (owner 2026-08-30): a coinless fixture is the
-    // deadlock the payment law exists to refuse. The purse covers the
-    // food lot at the SEASONAL famine price (corridor died 2026-09-18) —
-    // a thin purse would pay the vendor in its own goods by value density,
-    // and the return leg would waddle home under a tonne of payment.
-    city.inventory.add("coin_timaert_copper", 40000);
-    gs.landmarks.push_back(city);      // food: NONE — the import
-    Landmark vil{};
-    vil.type = LandmarkType::Village;
-    vil.id = 3;
-    vil.x = 16;
-    vil.y = 10;
-
-
-    // A GENUINE surplus: the loading law keeps the seasonal larder home
-    // (S19.2 + verdict 2026-09-18 «дома дешевле базы» decides the load),
-    // and 50 souls EAT 50 food a day — 1600 a season. Only what
-    // stands ABOVE that rides to market.
-    vil.inventory.add("food", 4000);
-    vil.inventory.add("coin_timaert_copper", 50 * 2);
-    // ДОМ ГОЛОДЕН СЧЁТОМ (CANON S10): «дома нет хлеба» = непогашенный
-    // сезонный счёт — из него и читается нужда, которую вендор едет
-    // закрывать покупкой.
-    // СЧЁТ ЕДЫ — ПО ТАБЛИЦЕ (v122): сезонная нужда есть `roster_bill` по
-    // головам этого места, а не «душа × сезон» литералом. Души селятся
-    // ниже, и счёт читается с них же.
-    gs.landmarks.push_back(vil);
-    sm::settle_souls(gs, gs.landmarks.back(), 50);
-    {
-        sm::Landmark& v = gs.landmarks.back();
-        v.needDebt[commodity_index("food")] = sm::roster_bill(v.inventory).board;
-    }
-    // (ЗДЕСЬ ФИКСТУРА ПУБЛИКОВАЛА ВЕДОМОСТИ — уничтожены 2026-09-30,
-    // ломтик E шаг 2: что везти домой, судит сам дом, читаемый живьём в
-    // точке сделки, а цена чужого рынка есть абсолютная стоимость строки.
-    // Руками поднимать больше нечего.)
 
     ecs::World w;
 
@@ -496,6 +467,54 @@ void test_the_vendor_sells_at_the_nearest_city() {
 
     sm::store_attach(w, wStore_.get());
     sm::MacroStore& st = sm::store_of(w);
+
+    // Место есть неподвижный сквад (M-90 шаг 5): склад И счёт нужд — колонки
+    // его ТЕЛА, поэтому оба места приходят в мир одной дверью, со store.
+    // Строка держится по индексу, а не ссылкой: второе рождение двигает
+    // вектор строк, и ссылка на первое протухла бы молча.
+    Landmark city{};
+    city.type = LandmarkType::City;
+    city.id = 1;   // landmark ids are ordinals from 1 (v54): 0 = "no place"
+    city.x = 10;
+    city.y = 10;
+    {
+        Landmark& row = sm::birth_landmark(gs, st, std::move(city));
+        sm::place_store(st, row).add("food", 2000);   // plenty: the export
+        // The deal PAYS now (owner 2026-08-30): a coinless fixture is the
+        // deadlock the payment law exists to refuse. The purse covers the
+        // food lot at the SEASONAL famine price (corridor died 2026-09-18) —
+        // a thin purse would pay the vendor in its own goods by value
+        // density, and the return leg would waddle home under a tonne of
+        // payment.
+        sm::place_store(st, row).add("coin_timaert_copper", 40000);
+    }
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
+    vil.id = 3;
+    vil.x = 16;
+    vil.y = 10;
+    {
+        Landmark& row = sm::birth_landmark(gs, st, std::move(vil));
+        // A GENUINE surplus: the loading law keeps the seasonal larder home
+        // (S19.2 + verdict 2026-09-18 «дома дешевле базы» decides the load),
+        // and 50 souls EAT 50 food a day — 1600 a season. Only what
+        // stands ABOVE that rides to market.
+        sm::place_store(st, row).add("food", 4000);
+        sm::place_store(st, row).add("coin_timaert_copper", 50 * 2);
+        // ДОМ ГОЛОДЕН СЧЁТОМ (CANON S10): «дома нет хлеба» = непогашенный
+        // сезонный счёт — из него и читается нужда, которую вендор едет
+        // закрывать покупкой.
+        // СЧЁТ ЕДЫ — ПО ТАБЛИЦЕ (v122): сезонная нужда есть `roster_bill` по
+        // головам этого места, а не «душа × сезон» литералом.
+        sm::settle_souls(gs, st, row, 50);
+        st.roster[sm::place_slot(st, row)].needDebt[commodity_index("food")] =
+            sm::roster_bill(sm::place_store(st, row)).board;
+    }
+    // (ЗДЕСЬ ФИКСТУРА ПУБЛИКОВАЛА ВЕДОМОСТИ — уничтожены 2026-09-30,
+    // ломтик E шаг 2: что везти домой, судит сам дом, читаемый живьём в
+    // точке сделки, а цена чужого рынка есть абсолютная стоимость строки.
+    // Руками поднимать больше нечего.)
+
     const sm::MacroHandle h = sm::store_birth(st);
     const sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(16, 10, kMap)};
@@ -534,30 +553,31 @@ void test_the_vendor_sells_at_the_nearest_city() {
     }
 
     const auto& bag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
-    const int cityFood = gs.landmarks[0].inventory.count("food");
-    const int vilFood = gs.landmarks[1].inventory.count("food");
+    const int cityFood = sm::place_store(sm::store_of(w), gs.landmarks[0]).count("food");
+    const int vilFood = sm::place_store(sm::store_of(w), gs.landmarks[1]).count("food");
     CHECK(cityFood > 0,
           "the vendor sold the village surplus at the nearest city");
     // ПОД ДОЛГОМ (CANON S10) «купил домой хлеб» видно СЧЁТОМ: привезённое
     // гасит его в дверях прихода и съедается — полка держит только излишек.
     const int vilFoodDebtPaid = 50 * kDaysPerSeason
-        - gs.landmarks[1].needDebt[commodity_index("food")];
+        - sm::store_of(w).roster[sm::place_slot(sm::store_of(w), gs.landmarks[1])]
+              .needDebt[commodity_index("food")];
     CHECK(vilFoodDebtPaid > 0,
           "the earnings FED the home's lack — the food bill fell");
     // КОНСЕРВАЦИЯ ОДНОЙ ПИЩЕЙ (2026-09-20, снос хлеба): до этого дня в мире
     // было ДВЕ съедобные строки — зерно и хлеб, — и сумма считалась по каждой
     // отдельно. Теперь поток один: всё, что не лежит на полках и не едет в
     // спине, ОПЛАТИЛО СЧЁТ и съедено в дверях прихода (CANON S10).
-    const int foodOnShelves = gs.landmarks[0].inventory.count("food")
-                              + gs.landmarks[1].inventory.count("food")
+    const int foodOnShelves = sm::place_store(sm::store_of(w), gs.landmarks[0]).count("food")
+                              + sm::place_store(sm::store_of(w), gs.landmarks[1]).count("food")
                               + bag.count("food");
     CHECK(foodOnShelves + vilFoodDebtPaid == 2000 + 4000,
           "CONSERVATION: cargo moves or pays the bill — never dropped");
     (void)vilFood;
     // ...and the deal's other half obeys the same law: coin travels between
     // the three purses (city, village, hold) and is never minted or burned.
-    const int coinTotal = gs.landmarks[0].inventory.count("coin_timaert_copper")
-                          + gs.landmarks[1].inventory.count("coin_timaert_copper")
+    const int coinTotal = sm::place_store(sm::store_of(w), gs.landmarks[0]).count("coin_timaert_copper")
+                          + sm::place_store(sm::store_of(w), gs.landmarks[1]).count("coin_timaert_copper")
                           + bag.count("coin_timaert_copper");
     CHECK(coinTotal == 40000 + 50 * 2,
           "CONSERVATION: coin moves through the deal, never minted");
@@ -568,7 +588,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // произвольный тик читает ФАЗУ РЕЙСА, а не заработок: на 600-м думе
     // вся казна деревни законно едет в обозе, и прежняя редакция этой
     // проверки падала на мире, который работает правильно.
-    const int vilPurse = gs.landmarks[1].inventory.count("coin_timaert_copper")
+    const int vilPurse = sm::place_store(sm::store_of(w), gs.landmarks[1]).count("coin_timaert_copper")
                          + bag.count("coin_timaert_copper");
     CHECK(vilPurse > 50 * 2,
           "the village EARNED coin for its raw — the payment is real "
@@ -609,7 +629,6 @@ void test_the_miner_works_the_vein() {
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.landmarks.push_back(vil);
 
     DepositLayer deposits;
     allocate_deposit_fields(deposits, kMap, kMap);
@@ -621,6 +640,9 @@ void test_the_miner_works_the_vein() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
+    // Место есть неподвижный сквад (M-90 шаг 5): его склад — колонка
+    // ТЕЛА, поэтому деревня приходит в мир ОДНОЙ дверью, уже после store.
+    sm::birth_landmark(gs, sm::store_of(w), Landmark(vil));
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     const sm::MacroHandle e = h;
@@ -658,7 +680,7 @@ void test_the_miner_works_the_vein() {
     const auto& ironCells = deposits.grid(DepositKind::Iron);
     const int veinLeft = int(ironCells.at_index(veinIdx));
     const int veinLost = 20 - veinLeft;
-    const int storeGained = gs.landmarks[0].inventory.count("iron");
+    const int storeGained = sm::place_store(sm::store_of(w), gs.landmarks[0]).count("iron");
     const int inBag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("iron");
 
     CHECK(veinLost > 0, "the dig really drained the vein");
@@ -695,11 +717,14 @@ void test_the_miner_works_the_vein() {
     GameState gs2{};
     gs2.mapW = kMap;
     gs2.mapH = kMap;
-    gs2.landmarks.push_back(vil);
     ecs::World w2;
     auto w2Store_ = sm::make_macro_store();
     sm::store_attach(w2, w2Store_.get());
     sm::MacroStore& st2 = sm::store_of(w2);
+    // У ВТОРОГО МИРА — СВОЁ ТЕЛО МЕСТА: строка носит хэндл В СВОЙ store
+    // (M-90 шаг 5), и та же строка, положенная в два мира, целила бы в
+    // чужой слот. Поэтому деревня рождается здесь заново.
+    sm::birth_landmark(gs2, st2, Landmark(vil));
     const sm::MacroHandle h2 = sm::store_birth(st2);
     st2.cell[h2.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st2.visual[h2.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
@@ -720,7 +745,7 @@ void test_the_miner_works_the_vein() {
         MacroWorld mw2{.gs = &gs2, .world = &w2};
         tick_macro_npc_ai(mw2, art2, kAiTicks);
     }
-    CHECK(gs2.landmarks[0].inventory.count("iron") == 0,
+    CHECK(sm::place_store(st2, gs2.landmarks[0]).count("iron") == 0,
           "no deposit layer => no honest ore, and none minted from nothing");
 }
 
@@ -739,8 +764,6 @@ void test_the_catch_lands_in_the_roster() {
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.landmarks.push_back(vil);
-    sm::settle_souls(gs, gs.landmarks.back(), 40);
 
     FeatureLayer features;
     features.resize(kMap, kMap);
@@ -764,6 +787,12 @@ void test_the_catch_lands_in_the_roster() {
     auto wStore_ = sm::make_macro_store();
 
     sm::store_attach(w, wStore_.get());
+    // Место есть неподвижный сквад (M-90 шаг 5): его склад — колонка
+    // ТЕЛА, поэтому деревня приходит в мир ОДНОЙ дверью, уже после store.
+    sm::birth_landmark(gs, sm::store_of(w), Landmark(vil));
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+    // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
+    sm::settle_souls(gs, sm::store_of(w), gs.landmarks.back(), 40);
     sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     const sm::MacroHandle e = h;
@@ -812,14 +841,14 @@ void test_the_catch_lands_in_the_roster() {
     });
 
     const int stabled =
-        creature_heads_of(gs.landmarks[0].inventory, NPCType::Horse);
+        creature_heads_of(sm::place_store(sm::store_of(w), gs.landmarks[0]), NPCType::Horse);
     CHECK(caught + stabled > 0, "the catch landed as SOULS, not as cargo");
     CHECK(lost == caught + stabled,
           "CONSERVATION через два контейнера: упряжка + стойло == голов, "
           "которых лишилось поле");
     CHECK(stabled > 0,
           "ТАКТ 1: отряд сдал табун ДОМОЙ — стойло места, не карман артели");
-    CHECK(gs.landmarks[0].inventory.count("food") == 0
+    CHECK(sm::place_store(sm::store_of(w), gs.landmarks[0]).count("food") == 0
               && (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("food") == 0,
           "a creature yield rides NO bag: nothing landed in the store");
     CHECK(is_mount_kind(std::uint16_t(NPCType::Horse)),
@@ -844,14 +873,14 @@ void test_the_catch_lands_in_the_roster() {
         }
         Landmark& home = gs.landmarks[0];
         const int stall =
-            creature_heads_of(home.inventory, NPCType::Horse);
+            creature_heads_of(sm::place_store(sm::store_of(w), home), NPCType::Horse);
         CHECK(stall >= 2, "фикстура: в стойле есть из чего снаряжать");
         // Лидер без членов — одна душа, значит ровно один конь.
         const int given =
             outfit_crew_mounts(sm::store_of(w), home, e);
         CHECK(given == 1 && count_mount_souls(roMut) == 1,
               "ТАКТ 2: дом выдал по ездовому на душу — одному лидеру коня");
-        CHECK(creature_heads_of(home.inventory, NPCType::Horse)
+        CHECK(creature_heads_of(sm::place_store(sm::store_of(w), home), NPCType::Horse)
                   == stall - given,
               "CONSERVATION такта 2: сколько вышло из стойла, столько и "
               "встало в упряжку");

@@ -11,6 +11,9 @@
 #include <memory>
 
 #include "tables/npc.h"
+#include "macro/labour.h"       // settle_souls / souls_home / souls_flock
+#include "macro/place_birth.h"  // birth_landmark — место рождается с ТЕЛОМ
+#include "macro/place_body.h"   // place_slot — колонки плеча места
 #include "macro/world_row.h"
 #include "macro/npc_ai.h"   // squad_season_window — THE boundary window
 #include "macro/world_tick.h"
@@ -104,7 +107,8 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     runtime.pendingDailyTicks = 1;
     runtime.nextDailyTickDay = 12;   // NOT a season boundary
 
-    const int processed = sm::process_world_daily_ticks(gs, runtime, 1, &mw);
+    const int processed =
+        sm::process_world_daily_ticks(gs, *worldStore_, runtime, 1, &mw);
 
     CHECK(processed == 1 && runtime.pendingDailyTicks == 0
               && runtime.nextDailyTickDay == 0,
@@ -288,6 +292,9 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     sm::GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
+    // Плечо места — колонки ТЕЛА (M-90 шаг 5): store стоит до первого места.
+    auto storePtr = sm::make_macro_store();
+    sm::MacroStore& st = *storePtr;
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
 
     // A town with mouths and no food. Под долгом (CANON S10) голод — это
@@ -301,17 +308,17 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     s.id = 1;
     std::snprintf(s.name, sizeof s.name, "Hungry");
     s.x = 8; s.y = 8;
-    gs.landmarks.push_back(s);
+    sm::Landmark& row = sm::birth_landmark(gs, st, std::move(s));
     // Души селятся ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
     // фичи, головы в инвентарь — тем же законом, что генезис.
-    sm::settle_souls(gs, gs.landmarks.back(), 100);
+    sm::settle_souls(gs, st, row, 100);
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 7u);
     constexpr int kDays = 40;
     runtime.pendingDailyTicks = kDays;
     runtime.nextDailyTickDay = 1;
-    sm::process_world_daily_ticks(gs, runtime, 64);
+    sm::process_world_daily_ticks(gs, st, runtime, 64);
 
     struct Count { int famines = 0; int total = 0; };
     Count c;
@@ -323,9 +330,10 @@ void test_a_famine_is_recorded_once_when_it_begins() {
                                ++n.famines;
                        }, &c);
 
-    CHECK(gs.landmarks[0].starvedYesterday > 0,
+    CHECK(st.wellbeing[sm::place_slot(st, gs.landmarks[0])].starvedYesterday
+              > 0,
           "the fixture is honest: this town's bill took souls");
-    CHECK(sm::souls_flock(gs, gs.landmarks[0]) < 100,
+    CHECK(sm::souls_flock(gs, st, gs.landmarks[0]) < 100,
           "паства упала на съеденных: число фичи и головы идут ПАРОЙ");
     // БЛАГОПОЛУЧИЕ ЕСТЬ ДОЛЯ ОПЛАЧЕННОГО, и здесь утверждается ИМЕННО это,
     // а не круглый ноль. Прежде тут стояло `== 0`, и ноль держался на
@@ -336,16 +344,17 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     // нулём. Число выводится из тех же данных, что его породили (§8 п.4).
     {
         const sm::Landmark& l = gs.landmarks[0];
+        const sm::Wellbeing& wb = st.wellbeing[sm::place_slot(st, l)];
         // Утверждаются СВОЙСТВА, а не число: благополучие есть произведение
         // доли еды на долю комфорта, и пересчитать его здесь значило бы
         // написать вторую копию продакшен-формулы как «ожидаемое» (§8 п.5 —
         // ровно этот дубль сюита и поймала на первой попытке).
-        CHECK(l.seasonWellbeing < 255 / 8,
+        CHECK(wb.seasonWellbeing < 255 / 8,
               "неоплаченный сезон рушит благополучие почти в ноль");
-        CHECK(int(l.starvedYesterday) > sm::souls_home(l),
+        CHECK(int(wb.starvedYesterday) > sm::souls_home(st, l),
               "взыскание забрало БОЛЬШЕ душ, чем осталось: место обезлюдело, "
               "а не поголодало");
-        CHECK(sm::souls_flock(gs, l) == sm::souls_home(l),
+        CHECK(sm::souls_flock(gs, st, l) == sm::souls_home(st, l),
               "паства упала вместе с головами: два носителя не расходятся "
               "(в поле этот город никого не держит)");
     }
@@ -375,16 +384,17 @@ void test_population_dies_honestly_to_zero() {
     // функции рвут стек (грабля ломтика C).
     auto gsp = std::make_unique<sm::GameState>();
     sm::GameState& gs = *gsp;
+    auto storePtr = sm::make_macro_store();
+    sm::MacroStore& st = *storePtr;
     gs.mapW = 64;
     gs.mapH = 64;
     sm::Landmark lm{};
     lm.type = sm::LandmarkType::Village;
     lm.id = 1;
     lm.x = 4; lm.y = 4;
-    gs.landmarks.push_back(lm);
-    sm::Landmark& v = gs.landmarks.back();
+    sm::Landmark& v = sm::birth_landmark(gs, st, std::move(lm));
     // Хутор с пустым амбаром: три души ДВЕРЬЮ МИРА (паства + головы).
-    sm::settle_souls(gs, v, 3);
+    sm::settle_souls(gs, st, v, 3);
     int deaths = 0;
     int dayOfDeath = -1;
     bool sawBelowOldFloor = false;
@@ -392,22 +402,22 @@ void test_population_dies_honestly_to_zero() {
     // where the empty larder fails the window and the season turns hungry.
     for (int day = 1; day <= 2048 && dayOfDeath < 0; ++day) {
         bool famine = false, died = false;
-        sm::settle_landmark_day(gs, v, day, famine, died);
-        if (sm::souls_flock(gs, v) < 5) sawBelowOldFloor = true;
+        sm::settle_landmark_day(gs, st, v, day, famine, died);
+        if (sm::souls_flock(gs, st, v) < 5) sawBelowOldFloor = true;
         if (died) { ++deaths; dayOfDeath = day; }
     }
-    CHECK(dayOfDeath >= 0 && sm::souls_flock(gs, v) == 0,
+    CHECK(dayOfDeath >= 0 && sm::souls_flock(gs, st, v) == 0,
           "a starving settlement dies honestly to zero");
-    CHECK(sm::souls_home(v) == 0,
+    CHECK(sm::souls_home(st, v) == 0,
           "…и головы ушли вместе с числом: пара носителей не расходится");
     CHECK(sawBelowOldFloor,
           "population passed the old floor: no crutch is back");
     for (int day = 1; day <= 100; ++day) {
         bool famine = false, died = false;
-        sm::settle_landmark_day(gs, v, day, famine, died);
+        sm::settle_landmark_day(gs, st, v, day, famine, died);
         if (died) ++deaths;
     }
-    CHECK(sm::souls_flock(gs, v) == 0,
+    CHECK(sm::souls_flock(gs, st, v) == 0,
           "zero population is absorbing: nobody is minted from air");
     CHECK(deaths == 1,
           "the death transition fires exactly once");
@@ -419,6 +429,8 @@ void test_population_dies_honestly_to_zero() {
 // while ALIVE and under the born mean; wiped clean stays dead forever.
 void test_dungeon_population_regrows_like_fauna() {
     sm::GameState gs{};
+    auto storePtr = sm::make_macro_store();
+    sm::MacroStore& st = *storePtr;
     gs.mapW = 8;
     gs.mapH = 8;
     sm::Landmark ruin{};
@@ -426,32 +438,36 @@ void test_dungeon_population_regrows_like_fauna() {
     ruin.id = 5;
     ruin.x = 1;
     ruin.y = 1;
-    gs.landmarks.push_back(ruin);
-    // Души данжа — ГОЛОВЫ его толпы (v122, вердикт 3): род НЕ выдумывается,
-    // его даёт полоса crowdHabitat этого рода мест (руина → слабейшая строка).
-    sm::settle_souls(gs, gs.landmarks.back(), 10);
+    {
+        sm::Landmark& row = sm::birth_landmark(gs, st, sm::Landmark{ruin});
+        // Души данжа — ГОЛОВЫ его толпы (v122, вердикт 3): род НЕ
+        // выдумывается, его даёт полоса crowdHabitat этого рода мест
+        // (руина → слабейшая строка).
+        sm::settle_souls(gs, st, row, 10);
+    }
     sm::Landmark dead = ruin;
     dead.id = 6;
     dead.x = 2;
     dead.y = 2;
-    gs.landmarks.push_back(dead);   // выбита до последней души: ноль голов
+    // выбита до последней души: ноль голов
+    sm::birth_landmark(gs, st, std::move(dead));
     sm::MacroWorld w{};
     w.gs = &gs;   // no zones layer: the ruin's score is the honest zero,
                   // so its mean is the born base alone (64)
 
     const int dueDay = 5 % sm::kGrowthEpochDays;
-    sm::regrow_dungeon_populations(w, dueDay + 1);
-    CHECK(sm::souls_flock(gs, gs.landmarks[0]) == 10,
+    sm::regrow_dungeon_populations(w, st, dueDay + 1);
+    CHECK(sm::souls_flock(gs, st, gs.landmarks[0]) == 10,
           "a landmark regrows only on its own day of the epoch");
-    sm::regrow_dungeon_populations(w, dueDay);
-    CHECK(sm::souls_flock(gs, gs.landmarks[0]) == 11,
+    sm::regrow_dungeon_populations(w, st, dueDay);
+    CHECK(sm::souls_flock(gs, st, gs.landmarks[0]) == 11,
           "on its due day a living garrison regrows one soul");
-    sm::regrow_dungeon_populations(w, 6 % sm::kGrowthEpochDays);
-    CHECK(sm::souls_flock(gs, gs.landmarks[1]) == 0,
+    sm::regrow_dungeon_populations(w, st, 6 % sm::kGrowthEpochDays);
+    CHECK(sm::souls_flock(gs, st, gs.landmarks[1]) == 0,
           "wiped clean stays dead — resurrection is the S9 transition's");
-    sm::settle_souls(gs, gs.landmarks[0], 53);   // 11 + 53 = born mean 64
-    sm::regrow_dungeon_populations(w, dueDay);
-    CHECK(sm::souls_flock(gs, gs.landmarks[0]) == 64,
+    sm::settle_souls(gs, st, gs.landmarks[0], 53);   // 11 + 53 = born mean 64
+    sm::regrow_dungeon_populations(w, st, dueDay);
+    CHECK(sm::souls_flock(gs, st, gs.landmarks[0]) == 64,
           "the born mean is the regrow ceiling");
 }
 

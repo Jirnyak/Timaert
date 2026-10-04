@@ -1,5 +1,6 @@
 #include "macro/spires.h"
 #include "macro/labour.h"      // settle_souls — одна дверь поселения душ
+#include "macro/place_birth.h" // birth_landmark — строка+тело (M-90 шаг 5)
 #include "macro/landmark_registry.h"
 #include "tables/faction.h"
 #include "macro/map_generator.h"
@@ -44,7 +45,7 @@ bool cell_occupied(const GameState& gs, int x, int y) {
 
 } // namespace
 
-void generate_spires(GameState& gs, const ZoneLayer& zones,
+void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                      const TerrainData& terrain) {
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
         || !zones.has_complete_storage()) {
@@ -131,14 +132,15 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         // ПЕРЕВОРОТ v122 (вердикт 3): души данжа — ГОЛОВАМИ, вид стака
         // ВЫВОДИТСЯ — слабейшая строка полосы толпы (шпиль → Imp); worked
         // клетки не трогается — под FT_Spire там живёт СПЕЛЛ (ломтик B).
+        // ФЛИП (M-90 шаг 5): строка+тело одной дверью, души — в склад ТЕЛА.
+        Landmark& row = birth_landmark(gs, st, std::move(sp));
         {
             Rng popRng(gs.worldSeed ^ 0xB0125EEDu
                        ^ (std::uint32_t(ord) * 2654435761u));
-            settle_souls(gs, sp, landmark_born_population(
+            settle_souls(gs, st, row, landmark_born_population(
                 int(def.bornPopBase), int(def.bornPopPerScore), tier,
                 popRng));
         }
-        add_landmark(gs, std::move(sp));
     }
 }
 

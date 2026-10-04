@@ -119,6 +119,10 @@ struct SquadSpec {
 MacroHandle spawn_squad(GameState& gs, MacroStore& store,
                         const TerrainData& terrain, const SquadSpec& spec);
 
+// (birth_landmark / relink_place_bodies живут в macro/place_birth.h —
+//  рождению тела места хватает header-only дверей, и тесты генезиса не
+//  обязаны линковать цепь npc_spawn.cpp.)
+
 
 // ── ОТТОК ПУЛА ДЕЗЕРТИРОВ ВЫРЕЗАН 2026-09-21 ─────────────────────────────
 // `raise_deserter_bands` поднимала из пула банду в день по закону √(пул).

@@ -39,6 +39,8 @@
 #include "macro/settlement_score.h"   // kSettlementReach — рука места
 #include "macro/spawners.h"
 #include "macro/state.h"
+#include "macro/labour.h"
+#include "macro/place_body.h"
 #include "macro/store.h"
 #include "macro/tree_layer.h"
 #include "macro/world_gen.h"
@@ -349,7 +351,7 @@ int main(int argc, char** argv) {
         for (int d = 0; d < days; ++d) {
             accum.reset();
             for (int s = 0; s < kSweepsPerDay; ++s) {
-                sm::tick_world(gs, gs.worldTickRt, sm::kAiTicks,
+                sm::tick_world(gs, *macroStore, gs.worldTickRt, sm::kAiTicks,
                                /*max_daily_ticks=*/32, &mw);
                 sm::tick_macro_npc_ai(mw, ai, sm::kAiTicks,
                                       /*allowAutoBattle=*/true);
@@ -368,7 +370,7 @@ int main(int argc, char** argv) {
             for (const auto& lm : gs.landmarks) {
                 // ПАСТВА — дверью мира (labour.h souls_flock): у поселения
                 // worked-число фичи, у данжа головы его толпы (v122).
-                const long long flock = sm::souls_flock(gs, lm);
+                const long long flock = sm::souls_flock(gs, *macroStore, lm);
                 popTotal += flock;
                 switch (lm.type) {
                     case sm::LandmarkType::City: popCity += flock;
@@ -379,9 +381,9 @@ int main(int argc, char** argv) {
                         break;
                     default: popElse += flock; break;
                 }
-                coinLm += coins_in(lm.inventory, coinIdx);
+                coinLm += coins_in(sm::place_store(*macroStore, lm), coinIdx);
                 for (int c = 0; c < sm::kCommodityCount; ++c) {
-                    const long long n = lm.inventory.count_of(
+                    const long long n = sm::place_store(*macroStore, lm).count_of(
                         sm::commodity_item_index(c));
                     stock[c] += n;
                     if (lm.type == sm::LandmarkType::City) stockCity[c] += n;
@@ -393,7 +395,8 @@ int main(int argc, char** argv) {
                 if (settled) {
                     long long debtComfort = 0;
                     for (int k = 0; k < comfortOrdCount; ++k)
-                        debtComfort += lm.needDebt[comfortOrd[k]];
+                        debtComfort += macroStore->roster[sm::place_slot(*macroStore, lm)]
+                                           .needDebt[comfortOrd[k]];
                     // Лес под местом и лес в его руке — бокс ±kSettlementReach
                     // шагами ИНДЕКСА (ЗАКОН АДРЕСА), той же рукой, которой
                     // мерит сам скор.
@@ -416,15 +419,21 @@ int main(int argc, char** argv) {
                                  "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%d\t%d"
                                  "\t%d\t%lld\t%d\t%d\n",
                                  gs.worldTime.day(), lm.id, int(lm.type),
-                                 sm::souls_flock(gs, lm),
-                                 int(lm.seasonWellbeing),
-                                 int(lm.starvedYesterday),
-                                 hungerOrd >= 0 ? lm.needDebt[hungerOrd] : 0,
+                                 sm::souls_flock(gs, *macroStore, lm),
+                                 int(macroStore->wellbeing[sm::place_slot(*macroStore, lm)]
+                                         .seasonWellbeing),
+                                 int(macroStore->wellbeing[sm::place_slot(*macroStore, lm)]
+                                         .starvedYesterday),
+                                 hungerOrd >= 0
+                                     ? macroStore->roster[sm::place_slot(
+                                           *macroStore, lm)]
+                                           .needDebt[hungerOrd]
+                                     : 0,
                                  debtComfort,
-                                 lm.inventory.count_of(foodIdx),
-                                 lm.inventory.count_of(clothIdx),
-                                 lm.inventory.count_of(ironIdx),
-                                 coins_in(lm.inventory, coinIdx),
+                                 sm::place_store(*macroStore, lm).count_of(foodIdx),
+                                 sm::place_store(*macroStore, lm).count_of(clothIdx),
+                                 sm::place_store(*macroStore, lm).count_of(ironIdx),
+                                 coins_in(sm::place_store(*macroStore, lm), coinIdx),
                                  treesHere, treesNear);
                 }
             }
@@ -439,11 +448,11 @@ int main(int argc, char** argv) {
             long long horsesGarr = 0, soulsGarr = 0;
             for (const sm::Landmark& lm : gs.landmarks) {
                 horsesGarr += sm::creature_heads_of(
-                    lm.inventory, sm::NPCType::Horse);
+                    sm::place_store(*macroStore, lm), sm::NPCType::Horse);
                 // Гарнизон — область существ ЕДИНОГО контейнера места
                 // (M-71). Считаются ЛЮДИ: табун у места свой столбец, и
                 // душой населения лошадь не была никогда.
-                soulsGarr += sm::count_human_souls(lm.inventory);
+                soulsGarr += sm::count_human_souls(sm::place_store(*macroStore, lm));
             }
             long long horsesSquads = 0;
             for (std::uint16_t slot = 0;
@@ -597,7 +606,7 @@ int main(int argc, char** argv) {
         for (const auto& lm : gs.landmarks) {
             if (lm.type != sm::LandmarkType::City
                 && lm.type != sm::LandmarkType::Village) continue;
-            const int flock = sm::souls_flock(gs, lm);
+            const int flock = sm::souls_flock(gs, *macroStore, lm);
             popEnd += flock;
             alive += flock > 0 ? 1 : 0;
         }

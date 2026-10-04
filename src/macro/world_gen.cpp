@@ -26,6 +26,7 @@
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
 #include "macro/anketa.h"
+#include "macro/squad.h"            // suzerain_of — знание роли в ТЕЛЕ (M-90)
 #include "macro/spires.h"
 #include "macro/ruins.h"
 #include "macro/state.h"
@@ -108,8 +109,8 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                          p.targetTotalCities, &siteCtx);
     snap_cities_to_land(cityPlan, *out.terrain);
     finalize_politik(cityPlan, gs.cellOwner, gs.mapW, gs.mapH, *out.terrain);
-    populate_landmarks_from_politik(gs, cityPlan, *out.terrain, *out.treeLayer,
-                                    *out.deposits);
+    populate_landmarks_from_politik(gs, *out.store, cityPlan, *out.terrain,
+                                    *out.treeLayer, *out.deposits);
     if (p.trace) {
         // The R2 report card: how many villages actually stand next to the
         // resources the score placed them by. The old roulette scored ~25%
@@ -146,7 +147,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         for (const Landmark* cp : cityRows) {
             bool has = false;
             for (const Landmark* vp : villageRows)
-                if (suzerain_of(*vp) == cp->id) { has = true; break; }
+                if (suzerain_of(*out.store, *vp) == cp->id) { has = true; break; }
             if (!has) ++villageless;
         }
         // And how far apart they actually stand: the mean nearest-neighbour
@@ -159,7 +160,8 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             int nearest = 1 << 20;
             for (const Landmark* op : villageRows) {
                 const auto& o = *op;
-                if (op == vp || suzerain_of(o) != suzerain_of(v)) continue;
+                if (op == vp || suzerain_of(*out.store, o) != suzerain_of(*out.store, v))
+                    continue;
                 const int ddx = std::min(std::abs(v.x - o.x),
                                          gs.mapW - std::abs(v.x - o.x));
                 const int ddy = std::min(std::abs(v.y - o.y),
@@ -230,12 +232,12 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // vectors became ONE roster in v54, CANON S9 — this comment named them
     // for a month after they stopped existing.)
     {
-        generate_spires(gs, *out.zones, *out.terrain);
+        generate_spires(gs, *out.store, *out.zones, *out.terrain);
         // Ruins follow the same zone-field law (§42 Инк 5): the row, the
         // subworld route and the surface generator stood ready for months —
         // this call is the ONE missing genesis pass that kept the kind
         // stillborn. After the settlement passes, whose cells it avoids.
-        generate_ruins(gs, *out.zones, *out.terrain);
+        generate_ruins(gs, *out.store, *out.zones, *out.terrain);
         // The landmark set is complete — stamp the settlement FEATURES
         // (вердикт 2026-09-30: город/деревня/шпиль/руина — байты слоя фич,
         // ставятся ПОСЛЕ дорог) and bake the cell → landmark index the
@@ -287,7 +289,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             VillageRoadSite site{};
             site.x = v.x;
             site.y = v.y;
-            if (const Landmark* s = landmark_by_id(gs, suzerain_of(v));
+            if (const Landmark* s = landmark_by_id(gs, suzerain_of(*out.store, v));
                 s && s->type == LandmarkType::City) {
                 site.cityX = s->x;
                 site.cityY = s->y;

@@ -12,8 +12,13 @@
 
 #include "macro/chronicle.h"
 #include "macro/nav_field.h"
+#include "macro/place_birth.h"   // birth_landmark — место рождается с ТЕЛОМ
+#include "macro/squad.h"         // record_landmark_fact — дверь дела места
 #include "macro/state.h"
+#include "macro/store.h"
 #include "macro/threat_field.h"
+
+#include <memory>
 
 #include <cstdint>
 
@@ -23,29 +28,43 @@ using namespace sm;
 
 constexpr int kMap = 64;
 
-GameState make_world() {
-    GameState gs{};
+// Мир фикстуры — СТРОКИ ПЛЮС ТЕЛА (M-90 шаг 5): плечо места (склад, души,
+// слава) живёт колонками MacroStore, поэтому store приезжает вместе с
+// GameState и переживает его ровно столько же.
+struct World {
+    std::unique_ptr<MacroStore> store;
+    GameState gs;
+};
+
+World make_world() {
+    World w{make_macro_store(), GameState{}};
+    GameState& gs = w.gs;
+    MacroStore& st = *w.store;
     gs.mapW = kMap;
     gs.mapH = kMap;
     gs.worldSeed = 7u;
-    Landmark city{};
-    city.type = LandmarkType::City;
-    city.id = 9;
-    city.x = 10;
-    city.y = 10;
-    gs.landmarks.push_back(city);
-    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
-    // фичи, головы в инвентарь — тем же законом, что генезис.
-    sm::settle_souls(gs, gs.landmarks.back(), 500);
-    Landmark vil{};
-    vil.type = LandmarkType::Village;
-    vil.id = 3;
-    vil.x = 40;
-    vil.y = 10;
-    gs.landmarks.push_back(vil);
-    sm::settle_souls(gs, gs.landmarks.back(), 100);
+    {
+        Landmark city{};
+        city.type = LandmarkType::City;
+        city.id = 9;
+        city.x = 10;
+        city.y = 10;
+        Landmark& row = birth_landmark(gs, st, std::move(city));
+        // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+        // фичи, головы в инвентарь — тем же законом, что генезис.
+        sm::settle_souls(gs, st, row, 500);
+    }
+    {
+        Landmark vil{};
+        vil.type = LandmarkType::Village;
+        vil.id = 3;
+        vil.x = 40;
+        vil.y = 10;
+        Landmark& row = birth_landmark(gs, st, std::move(vil));
+        sm::settle_souls(gs, st, row, 100);
+    }
     chronicle_init(gs.chronicle, kMap, kMap);
-    return gs;
+    return w;
 }
 
 // Рукотворный граф: округа 0 (запад, город 9) ↔ округа 1 (восток, деревня
@@ -93,13 +112,14 @@ NavWorld make_nav(const GameState& gs, bool withPortal) {
 }
 
 void test_source_and_diffusion() {
-    GameState gs = make_world();
+    World w = make_world();
+    GameState& gs = w.gs;
     NavWorld nv = make_nav(gs, /*withPortal*/true);
     MacroWorld mw{.gs = &gs};
     mw.nav = &nv;
 
     // Осиротевший дом хоронит двоих — та дверь, что пишет Died всегда.
-    record_landmark_fact(gs, FactKind::Died, 3, 40, 12, /*amount*/2);
+    record_landmark_fact(*w.store, gs, FactKind::Died, 3, 40, 12, /*amount*/2);
     threat_field_daily(mw, /*day*/1);
 
     const std::uint32_t price = std::uint32_t(threat_soul_price());
@@ -118,12 +138,13 @@ void test_source_and_diffusion() {
 }
 
 void test_no_edge_no_flow_and_decay() {
-    GameState gs = make_world();
+    World w = make_world();
+    GameState& gs = w.gs;
     NavWorld nv = make_nav(gs, /*withPortal*/false);
     MacroWorld mw{.gs = &gs};
     mw.nav = &nv;
 
-    record_landmark_fact(gs, FactKind::Died, 3, 40, 12, /*amount*/2);
+    record_landmark_fact(*w.store, gs, FactKind::Died, 3, 40, 12, /*amount*/2);
     threat_field_daily(mw, /*day*/1);
     const std::uint32_t raised = 2u * std::uint32_t(threat_soul_price());
     CHECK(threat_of(nv, 1) == raised && threat_of(nv, 0) == 0u,
@@ -141,12 +162,13 @@ void test_no_edge_no_flow_and_decay() {
 }
 
 void test_replay_converges() {
-    GameState gs = make_world();
+    World w = make_world();
+    GameState& gs = w.gs;
     NavWorld live = make_nav(gs, /*withPortal*/false);
     MacroWorld mw{.gs = &gs};
     mw.nav = &live;
 
-    record_landmark_fact(gs, FactKind::Died, 3, 40, 12, /*amount*/2);
+    record_landmark_fact(*w.store, gs, FactKind::Died, 3, 40, 12, /*amount*/2);
     // Живое поле переживает 17 дней (два распада)…
     for (int day = 1; day <= 17; ++day) threat_field_daily(mw, day);
     const std::uint32_t lived = threat_of(live, 1);

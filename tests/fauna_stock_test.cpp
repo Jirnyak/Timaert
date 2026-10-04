@@ -15,6 +15,7 @@
 #include "macro/macro_stock.h"
 #include "macro/map_generator.h"
 #include "macro/state.h"
+#include "macro/store.h"       // тела сквадов и мест — вход дневного тика
 #include "macro/world_tick.h"
 
 namespace {
@@ -118,10 +119,15 @@ void test_regrow_runs_on_game_days() {
     // grants one head per visit.
     const int period = kGrowthEpochDays;
     WorldTickRuntime rt{};
+    // Дневной тик ведёт ТЕЛА (M-90 шаг 5): места и сквады — слоты store.
+    // В этой фикстуре мест нет вовсе — store стоит пустой, и ровно это
+    // доказывает, что рост фауны есть закон ПОЛЯ, а не плечо места.
+    auto storePtr = make_macro_store();
+    MacroStore& st = *storePtr;
     rt.pendingDailyTicks = 2 * period;
     rt.nextDailyTickDay = 1;
     const int processed = process_world_daily_ticks(
-        gs, rt, /*max_daily_ticks*/ 2 * period, &w);
+        gs, st, rt, /*max_daily_ticks*/ 2 * period, &w);
     CHECK(processed == 2 * period, "every queued day was simulated");
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1))
               == cap - 3 + 2,
@@ -132,7 +138,7 @@ void test_regrow_runs_on_game_days() {
     const int before = macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1));
     rt.pendingDailyTicks = 2 * period;
     rt.nextDailyTickDay = 1;
-    process_world_daily_ticks(gs, rt, 2 * period, nullptr);
+    process_world_daily_ticks(gs, st, rt, 2 * period, nullptr);
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1)) == before,
           "no macro context wired = no growth (fail closed)");
 }

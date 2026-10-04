@@ -40,10 +40,12 @@ constexpr std::uint32_t kMaxQuests = 4096u;
 constexpr std::uint32_t kMaxQuestParts = 4096u;
 // (kMaxSoldiers 8192 died with v97; с v110 существа едут внутри инвентаря —
 // один кап слотов, один дом: kMaxInventoryStacks.)
-// The macro-ECS snapshot (v23): one record per living macro NPC. The cap is
-// the owner's macro-squad ceiling — the same golden 2^14 the subworld uses;
-// с 2026-09-25 число берётся из переписи (kWorldSquads), не дублем.
-constexpr std::uint32_t kMaxMacroNpcs = std::uint32_t(kWorldSquads);
+// The macro-ECS snapshot (v23): one record per living macro NPC. v127: кап
+// записей = КАП ХРАНИЛИЩА (kMacroEntityCap, 2^15) — прежний kWorldSquads
+// (16384) отказывал файлу на мире, который store законно держит (названное
+// расхождение «сейв 16384 против хранилища 32768»), а с флипом M-90 в записи
+// едут и ТЕЛА МЕСТ (~2.1k), то есть отказ стал бы достижим в живой партии.
+constexpr std::uint32_t kMaxMacroNpcs = std::uint32_t(kMacroEntityCap);
 constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
 
 // ── ПОТОЛОК PAYLOAD — ФАКТ О РАСКЛАДКЕ, А НЕ ЧИСЛО ───────────────────────
@@ -121,11 +123,7 @@ constexpr std::uint64_t kPlayerBytes =               // write_player
 constexpr std::uint64_t kLandmarkBytes =             // write_landmark
     sizeof(Landmark::id) + sizeof(std::uint8_t) + kStrBytes
     + sizeof(Landmark::x) + sizeof(Landmark::y)
-    + kInventoryBytes
-    + sizeof(Landmark::factionIdx) + sizeof(Landmark::interests)
-    + sizeof(Landmark::starvedYesterday) + sizeof(Landmark::seasonWellbeing)
-    + sizeof(Landmark::popGrowthCarry) + sizeof(Landmark::renown)
-    + sizeof(Landmark::needDebt);
+    + sizeof(Landmark::factionIdx);   // v127: плечо места едет записью тела
 constexpr std::uint64_t kLandmarksBlockBytes =
     kCountBytes + std::uint64_t(kMaxLandmarks) * kLandmarkBytes;
 
@@ -169,7 +167,9 @@ constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     + sizeof(MacroNpcRecord::designOrdinal)
     + kInventoryBytes + kEquipmentBytes
     + sizeof(MacroNpcRecord::rosterNeedDebt)
-    + sizeof(MacroNpcRecord::rosterWageDebt);
+    + sizeof(MacroNpcRecord::rosterWageDebt)
+    + sizeof(MacroNpcRecord::wellbeing)    // v127: колонка анкеты (M-90)
+    + sizeof(MacroNpcRecord::interests);   // v127: связи любых сквадов
 constexpr std::uint64_t kMacroNpcsBlockBytes =
     kCountBytes + std::uint64_t(kMaxMacroNpcs) * kMacroNpcBytes;
 
@@ -674,6 +674,8 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     write_equipment(w, m.gear);
     w.pod(m.rosterNeedDebt);   // v105: счёт содержания ростера
     w.pod(m.rosterWageDebt);
+    w.pod(m.wellbeing);   // v127: благополучие — колонка анкеты (M-90 флип)
+    w.pod(m.interests);   // v127: связи любых сквадов (M-90 флип)
 }
 
 void read_macro_npc(Reader& r, MacroNpcRecord& m) {
@@ -719,6 +721,8 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     remark_gear_blocks(m.gear, m.inventory);
     r.pod(m.rosterNeedDebt);   // v105
     r.pod(m.rosterWageDebt);
+    r.pod(m.wellbeing);   // v127
+    r.pod(m.interests);   // v127
 }
 
 // Written OLDEST FIRST, so the file carries a past and not a ring's seam: a
@@ -967,27 +971,17 @@ void read_player(Reader& r, PlayerState& p) {
 // v62: ONE landmark serializer for the one roster (CANON S9) — the kind is
 // the record's `type` column, so every kind writes every column; unused ones
 // ride at their zero defaults (the zero contribution, CANON S6).
+// v127 (M-90 флип): ВСЁ ПЛЕЧО МЕСТА — инвентарь, интересы, благополучие,
+// слава, счёт нужд — едет ЗАПИСЬЮ ЕГО ТЕЛА в блоке макро-сквадов (место есть
+// неподвижный сквад, тело = слот store). Строка места здесь — тонкий индекс:
+// идентичность, род, имя, адрес, фракция. Умрёт целиком в ломтике F.
 void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.id);
     write_enum8(w, lm.type);
     w.pod(lm.name);   // v123: имя места — плоские чары (раскладка ecs::SquadName)
     w.pod(lm.x);
     w.pod(lm.y);
-    // (population покинула формат в v122 — паства едет worked-слоем полей,
-    // домашние души — головами инвентаря ниже)
-    write_inventory(w, lm.inventory);
     w.pod(lm.factionIdx);          // v94: faction registry index (kingdoms cut)
-    w.pod(lm.interests);           // v107: ВСЕ связи места одной таблицей
-                                   // (феод — частный случай, S24 целиком)
-    w.pod(lm.starvedYesterday);  // v29: the honest day's readouts
-    w.pod(lm.seasonWellbeing);   // v95: the season window's verdict (S19.2)
-    w.pod(lm.popGrowthCarry);
-    w.pod(lm.renown);            // v53: a place's standing is world memory
-    // (spellId/depleted покинули формат в v120: спелл шпиля едет worked-слоем)
-    // (дань покинула запись места в v121 — она едет блоком рода 6)
-    w.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
-    // (garrison.needDebt/wageDebt покинули формат в v122 — контейнер
-    // гарнизона умер, M-8)
 }
 
 void read_landmark(Reader& r, Landmark& lm) {
@@ -996,14 +990,7 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.name);   // v123
     r.pod(lm.x);
     r.pod(lm.y);
-    read_inventory(r, lm.inventory);
     r.pod(lm.factionIdx);          // v94
-    r.pod(lm.interests);           // v107
-    r.pod(lm.starvedYesterday);  // v29
-    r.pod(lm.seasonWellbeing);   // v95
-    r.pod(lm.popGrowthCarry);
-    r.pod(lm.renown);            // v53
-    r.pod(lm.needDebt);             // v99: потребление — долг (CANON S10)
 }
 
 void write_marker(Writer& w, const Marker& m) {

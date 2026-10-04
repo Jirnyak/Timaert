@@ -15,7 +15,11 @@
 #include <cstdint>
 #include <cstdio>
 #include "check.h"
-#include "macro/labour.h"   // settle_souls / souls_flock — двери душ
+#include "macro/labour.h"        // settle_souls / souls_flock — двери душ
+#include "macro/place_birth.h"   // birth_landmark / relink_place_bodies
+#include "macro/place_body.h"    // place_store / place_slot — плечо места
+#include "macro/squad.h"         // set_suzerain / tithe_edge_of
+#include "macro/store.h"
 
 // ДУШИ ФИКСТУРЫ — ОДНО ЧИСЛО НА ПОСЕВ И НА ПРОВЕРКУ (иначе ожидание станет
 // пересказанным литералом, §8 п.4). Души селятся крестьянами, поэтому
@@ -129,7 +133,12 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     std::vector<sm::MacroNpcRecord> out;
 
     sm::MacroNpcRecord a{};
-    a.spawnId.index = 7;
+    // ОДНО ПРОСТРАНСТВО ОРДИНАЛОВ (M-37), и с флипа M-90 шаг 5 это видно:
+    // тела мест едут записями ЭТОГО ЖЕ блока, а место фикстуры носит
+    // ординал 7. Прежний `a.spawnId.index = 7` был столкновением, которое
+    // раньше нечему было заметить, — запись переехала на свободный 200
+    // (ниже эмитента 341, как и все остальные).
+    a.spawnId.index = 200;
     a.cell = {sm::ecs::cell_index(33, 44, 512)};
     a.visual = {33.0f, 44.0f, 1.5f};
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
@@ -282,7 +291,11 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     return out;
 }
 
-sm::GameState make_state() {
+// Место есть неподвижный сквад (M-90 шаг 5): его плечо — колонки тела в
+// MacroStore, и в сейв оно едет ЗАПИСЬЮ ТЕЛА, а не строкой места. Фикстура
+// поэтому принимает store: без него у места нет ни склада, ни благополучия,
+// ни интересов, то есть нечего и сохранять.
+sm::GameState make_state(sm::MacroStore& st) {
     sm::GameState gs{};
     gs.version = sm::kSaveVersion;
     gs.saveName = "roundtrip";
@@ -415,17 +428,24 @@ sm::GameState make_state() {
     std::snprintf(settlement.name, sizeof settlement.name, "Round City");
     settlement.x = 40;
     settlement.y = 80;
-    settlement.inventory.add("wood", 19);
-    add_soldiers(settlement.inventory, sm::NPCType::Guard, 5, 2000u);
-    add_soldiers(settlement.inventory, sm::NPCType::Peasant, 1, 2100u);
     settlement.factionIdx = 2;
-    // Honest-day readouts (v29) — every field non-default.
-    settlement.starvedYesterday = 12;
-    settlement.popGrowthCarry = 0.375f;
-    gs.landmarks.push_back(settlement);
-    // Паства едет в сейв worked-СЛОЕМ полей (v122), а не колонкой записи:
-    // фикстура селит души дверью мира, и круг сейва обязан вернуть ИХ.
-    sm::settle_souls(gs, gs.landmarks.back(), kFixtureCitySouls);
+    {
+        sm::Landmark& row =
+            sm::birth_landmark(gs, st, std::move(settlement));
+        sm::Inventory& store = sm::place_store(st, row);
+        store.add("wood", 19);
+        add_soldiers(store, sm::NPCType::Guard, 5, 2000u);
+        add_soldiers(store, sm::NPCType::Peasant, 1, 2100u);
+        // Honest-day readouts (v29) — every field non-default; носитель с
+        // v127 — колонка wellbeing ТЕЛА.
+        sm::Wellbeing& wb = st.wellbeing[sm::place_slot(st, row)];
+        wb.starvedYesterday = 12;
+        wb.popGrowthCarry = 0.375f;
+        // Паства едет в сейв worked-СЛОЕМ полей (v122), а не колонкой
+        // записи: фикстура селит души дверью мира, и круг сейва обязан
+        // вернуть ИХ.
+        sm::settle_souls(gs, st, row, kFixtureCitySouls);
+    }
 
     sm::Landmark village{};
     village.type = sm::LandmarkType::Village;
@@ -433,25 +453,30 @@ sm::GameState make_state() {
     std::snprintf(village.name, sizeof village.name, "Round Hamlet");
     village.x = 45;
     village.y = 85;
-    village.inventory.add("food_meat", 4);
     village.factionIdx = 2;
-    village.starvedYesterday = 5;
-    village.popGrowthCarry = -0.25f;
-    gs.landmarks.push_back(village);
-    sm::settle_souls(gs, gs.landmarks.back(), kFixtureVillageSouls);
-    // Феод — запись реестра интересов (v107), и ставится он дверью на оба
-    // конца: сейв обязан привезти обратно ИМЕННО пару, а не половину.
-    // v121: та же дверь ведёт ЛЕТОПИСЬ ДОЛГА — ребро в строке фракции
-    // сюзерена; долг пишем на ребро и ждём его назад из блока рода 6.
-    sm::set_suzerain(gs, village.id, settlement.id, /*value*/80, /*term*/0);
-    sm::tithe_edge_of(gs, gs.landmarks.back())->owedValue = 123;
+    {
+        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(village));
+        sm::place_store(st, row).add("food_meat", 4);
+        sm::Wellbeing& wb = st.wellbeing[sm::place_slot(st, row)];
+        wb.starvedYesterday = 5;
+        wb.popGrowthCarry = -0.25f;
+        sm::settle_souls(gs, st, row, kFixtureVillageSouls);
+        // Феод — запись реестра интересов (v107), и ставится он дверью на
+        // оба конца: сейв обязан привезти обратно ИМЕННО пару, а не
+        // половину. v121: та же дверь ведёт ЛЕТОПИСЬ ДОЛГА — ребро в строке
+        // фракции сюзерена; долг пишем на ребро и ждём его назад из блока
+        // рода 6. Интересы с v127 — колонка ТЕЛА, и едут его записью.
+        sm::set_suzerain(gs, st, /*vassalId*/70, /*suzerainId*/7,
+                         /*value*/80, /*term*/0);
+        sm::tithe_edge_of(gs, st, row)->owedValue = 123;
+    }
 
     sm::Landmark spire{};
     spire.type = sm::LandmarkType::Spire;
     spire.id = 3;
     spire.x = 12;
     spire.y = 34;
-    gs.landmarks.push_back(spire);
+    sm::birth_landmark(gs, st, std::move(spire));
     // v120: the spire's spell rides the worked layer (ordinal + 1), which
     // the save carries as a world-field block — the roundtrip must bring
     // back the NUMBER at the cell, not columns.
@@ -664,7 +689,9 @@ void run_roundtrip() {
     remove_slot_files(corruptPath);
     remove_slot_files(badVersionPath);
 
-    auto gsOwn = std::make_unique<sm::GameState>(make_state());
+    auto storeOwn = sm::make_macro_store();
+    sm::MacroStore& store = *storeOwn;
+    auto gsOwn = std::make_unique<sm::GameState>(make_state(store));
     sm::GameState& gs = *gsOwn;
     const std::vector<std::uint16_t> treeCounts = make_tree_counts();
     const sm::DepositLayer deposits = make_deposits();
@@ -685,7 +712,18 @@ void run_roundtrip() {
     sm::scent_ensure(gs.scent, gs.mapW, gs.mapH);
     sm::scent_deposit(gs.scent, 1, 100, 100, 400u, 4000u);
 
-    const std::vector<sm::MacroNpcRecord> macroFixture = make_macro_records();
+    // СНИМОК = РУЧНЫЕ ЗАПИСИ ПЛЮС ТЕЛА МЕСТ (v127, флип M-90 шаг 5): плечо
+    // места больше не едет строкой места, оно едет записью его тела в этом
+    // самом блоке. Снимок store даёт ровно три тела фикстуры.
+    std::vector<sm::MacroNpcRecord> macroFixture = make_macro_records();
+    {
+        const std::vector<sm::MacroNpcRecord> places =
+            sm::snapshot_macro_ecs(store);
+        if (places.size() != 3u) {
+            FAIL_BAIL("фикстура: у трёх мест обязано быть три тела");
+        }
+        macroFixture.insert(macroFixture.end(), places.begin(), places.end());
+    }
     if (!sm::save_game(gs, quests, macroFixture, treeCounts, deposits,
                        path)) {
         FAIL_BAIL("save_game returned false");
@@ -1006,40 +1044,67 @@ void run_roundtrip() {
         || p.settledQuestOffers[0].offerSlot != 2) {
         FAIL_BAIL("settled quest offers lost");
     }
+    // ТЕЛА МЕСТ ПРИЕХАЛИ ЗАПИСЯМИ — их возвращает restore, а строки с ними
+    // сшивает relink по ОРДИНАЛУ (M-90 шаг 5). Без этих двух шагов у
+    // загруженного места нет ни склада, ни благополучия, ни интересов.
+    // СТОИТ ПОСЛЕ скалярных проверок: restore САМОЛЕЧИТ эмитент ординалов
+    // (M-37), а свидетель выше спрашивает ровно то число, что лежит в файле.
+    auto loadedStoreOwn = sm::make_macro_store();
+    sm::MacroStore& loadedStore = *loadedStoreOwn;
+    sm::restore_macro_ecs(loadedMacro, loadedStore, loaded);
+    sm::relink_place_bodies(loaded, loadedStore);
+
     const sm::Landmark* cityLm = sm::landmark_by_id(loaded, 7);
     // ПАСТВА — worked-слой полей (v122), и круг сейва обязан вернуть её
     // ровно. Домашние головы здесь НЕ равны пастве: фикстура досыпала в тот
     // же контейнер отряд (add_soldiers), и это законно — «в поле» и «дома»
     // считаются врозь.
     if (!cityLm || cityLm->type != sm::LandmarkType::City
-        || sm::souls_flock(loaded, *cityLm) != kFixtureCitySouls
-        || sm::souls_home(*cityLm) < kFixtureCitySouls) {
+        || sm::souls_flock(loaded, loadedStore, *cityLm) != kFixtureCitySouls
+        || sm::souls_home(loadedStore, *cityLm) < kFixtureCitySouls) {
         FAIL_BAIL("settlement lost");
     }
     const sm::Landmark& city = *cityLm;
+    const sm::Inventory& cityStore = sm::place_store(loadedStore, city);
     if (std::strcmp(city.name, "Round City") != 0
-        || city.inventory.count("wood") != 19
-        || sm::creature_heads_of(city.inventory, sm::NPCType::Peasant)
+        || cityStore.count("wood") != 19
+        || sm::creature_heads_of(cityStore, sm::NPCType::Peasant)
                != kFixtureCitySouls + 1
-        || sm::creature_heads_of(city.inventory, sm::NPCType::Guard) != 5) {
+        || sm::creature_heads_of(cityStore, sm::NPCType::Guard) != 5) {
         FAIL_BAIL("settlement details lost");
     }
-    if (city.starvedYesterday != 12 || !nearf(city.popGrowthCarry, 0.375f)) {
-        FAIL_BAIL("settlement honest-day readouts (v29) lost");
+    {
+        const sm::Wellbeing& wb =
+            loadedStore.wellbeing[sm::place_slot(loadedStore, city)];
+        if (wb.starvedYesterday != 12 || !nearf(wb.popGrowthCarry, 0.375f)) {
+            FAIL_BAIL("settlement honest-day readouts (v29) lost");
+        }
     }
     const sm::Landmark* vilLm = sm::landmark_by_id(loaded, 70);
     if (vilLm) {
         // v121: долг дани едет блоком рода 6 — ребро вассала обязано
         // вернуться с тем же числом.
-        const sm::TitheEdge* fe = sm::tithe_edge_of(loaded, *vilLm);
+        // Знание роли (интересы) приехало колонкой ТЕЛА — без него путь к
+        // ребру рода 6 не находится вовсе, так что эта проверка стережёт
+        // теперь ОБА носителя сразу.
+        const sm::TitheEdge* fe =
+            sm::tithe_edge_of(loaded, loadedStore, *vilLm);
         if (!fe || fe->owedValue != 123) {
             FAIL_BAIL("feudal tithe edge (род 6) lost");
         }
+        if (sm::suzerain_of(loadedStore, *vilLm) != 7) {
+            FAIL_BAIL("феодальное ребро (интересы тела) lost");
+        }
     }
-    if (!vilLm || vilLm->type != sm::LandmarkType::Village
-        || vilLm->starvedYesterday != 5
-        || !nearf(vilLm->popGrowthCarry, -0.25f)) {
-        FAIL_BAIL("village honest-day readouts (v29) lost");
+    if (!vilLm || vilLm->type != sm::LandmarkType::Village) {
+        FAIL_BAIL("village lost");
+    }
+    {
+        const sm::Wellbeing& wb =
+            loadedStore.wellbeing[sm::place_slot(loadedStore, *vilLm)];
+        if (wb.starvedYesterday != 5 || !nearf(wb.popGrowthCarry, -0.25f)) {
+            FAIL_BAIL("village honest-day readouts (v29) lost");
+        }
     }
     const sm::Landmark* spireLm = sm::landmark_by_id(loaded, 3);
     if (!spireLm || spireLm->type != sm::LandmarkType::Spire) {
@@ -1408,7 +1473,9 @@ void run_payload_cap_is_a_fact() {
     remove_slot_files(path);
     remove_slot_files(overPath);
 
-    auto gsOwn = std::make_unique<sm::GameState>(make_state());
+    auto storeOwn = sm::make_macro_store();
+    sm::MacroStore& store = *storeOwn;
+    auto gsOwn = std::make_unique<sm::GameState>(make_state(store));
     sm::GameState& gs = *gsOwn;
 
     // Вечная память мира — на капе.
@@ -1444,30 +1511,39 @@ void run_payload_cap_is_a_fact() {
     // неслипающихся экземпляров мир рождает сам (аффиксный лут не стакается).
     const int woodDef = sm::item_index("wood");
     if (woodDef < 0) FAIL_BAIL("fixture item row 'wood' missing from catalog");
+    // ХУДШИЙ ВЕС МЕСТ ПЕРЕЕХАЛ ВМЕСТЕ С ПЛЕЧОМ (v127, флип M-90 шаг 5):
+    // единый контейнер 32×32 входит в кап места целиком (DOD п.2), но
+    // лежит он теперь колонкой ТЕЛА, значит и в файл едет записью тела —
+    // блоком макро-сквадов, а не блоком мест. Предмет свидетеля не
+    // изменился: это по-прежнему худший легальный вес ЭТИХ мест.
+    // Ординалы фикстуры начинаются ВЫШЕ мест make_state (7/70/3) — одно
+    // пространство ординалов (M-37), столкновений в нём не бывает.
     for (int i = 0; i < kCensusLandmarks; ++i) {
         sm::Landmark lm{};
-        lm.id = i + 1;   // 0 = «никто» (закон нуля-ординала, M-37)
+        lm.id = 1000 + i;   // 0 = «никто» (закон нуля-ординала, M-37)
         lm.type = sm::LandmarkType::Village;
         lm.x = i % gs.mapW;
         lm.y = (i / gs.mapW) % gs.mapH;
         // Душ здесь нет намеренно: предмет этой фикстуры — ХУДШИЙ ВЕС
         // мест, и все слоты забиты неслипающимися стаками. Паства живёт в
         // worked-слое (v122), её вес считает блок полей, а не запись места.
+        sm::Landmark& row = sm::birth_landmark(gs, store, std::move(lm));
+        sm::Inventory& bag = sm::place_store(store, row);
         for (int s = 0; s < sm::kMaxInventorySlots; ++s) {
             sm::ItemRef ref{};
             ref.def = std::uint16_t(woodDef);
             ref.count = 1;
             ref.seed = std::uint32_t(i * sm::kMaxInventorySlots + s) + 1u;
-            lm.inventory.slots[std::size_t(s)] = ref;
+            bag.slots[std::size_t(s)] = ref;
         }
-        sm::add_landmark(gs, std::move(lm));
     }
 
-    const std::vector<sm::MacroNpcRecord> noMacro;
+    const std::vector<sm::MacroNpcRecord> placeBodies =
+        sm::snapshot_macro_ecs(store);
     const std::vector<std::uint16_t> noTrees;
     const sm::DepositLayer noDeposits;
     const std::vector<sm::Quest> noQuests;
-    if (!sm::save_game(gs, noQuests, noMacro, noTrees, noDeposits, path)) {
+    if (!sm::save_game(gs, noQuests, placeBodies, noTrees, noDeposits, path)) {
         FAIL_BAIL("save_game refused a legal world at the census caps");
     }
 

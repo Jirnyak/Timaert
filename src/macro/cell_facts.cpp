@@ -1,4 +1,5 @@
 #include "macro/cell_facts.h"
+#include "macro/labour.h"   // souls_flock — паства через ТЕЛО (M-90)
 
 #include "macro/deposit_layer.h"
 #include "macro/map_generator.h"
@@ -84,7 +85,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
             const int tier = orb > 0
                 ? (orb <= kSpellCount ? kSpellDefs[orb - 1].tier : 1)
                 : 0;
-            f.landmark = {rec->type, rec->id, souls_flock(*w.gs, *rec), tier,
+            f.landmark = {rec->type, rec->id, souls_flock(*w.gs, *w.store, *rec), tier,
                           int(rec->factionIdx), spire && orb == 0};
         }
     }

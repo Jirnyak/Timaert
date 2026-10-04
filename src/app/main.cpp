@@ -40,6 +40,8 @@
 #include "macro/spawners.h"
 #include "macro/tree_layer.h"
 #include "macro/landmark_grid.h"
+#include "macro/landmark_iter.h"
+#include "macro/place_birth.h"
 #include "macro/deposit_layer.h"
 #include "macro/spires.h"
 #include "macro/zones.h"
@@ -485,8 +487,10 @@ void refresh_available_settlement_quests(App& app) {
         app.availableSettlementQuests.clear();
     } else {
         app.availableSettlementQuests = s->type == sm::LandmarkType::Village
-            ? sm::generate_quests_for_village(*s, app.gs, app.gs.worldSeed)
-            : sm::generate_quests_for_settlement(*s, app.gs, app.gs.worldSeed);
+            ? sm::generate_quests_for_village(*s, *app.macroStore, app.gs,
+                                              app.gs.worldSeed)
+            : sm::generate_quests_for_settlement(*s, *app.macroStore, app.gs,
+                                                 app.gs.worldSeed);
     }
     app.availableQuestSettlementId = id;
     app.availableQuestDay = app.gs.worldTime.day();
@@ -854,6 +858,10 @@ void detect_forced_encounter(App& app) {
         if (sm::MacroHandle{slot, st.generation[slot]}
             == app.encounterGraceNpc) continue;
         if (st.dead[slot] != 0) continue;
+        // ТЕЛО МЕСТА — НЕ ВСТРЕЧНЫЙ СКВАД (ось рода, M-90 шаг 5): шаг на
+        // клетку шпиля не есть бой с его телом; осаду построит свой закон.
+        if (sm::is_settlement_kind(sm::SquadType(st.runtime[slot].squadType)))
+            continue;
         const auto& hp = st.pools[slot];
         if (hp.hp <= 0) continue;
         const auto& cell = st.cell[slot];
@@ -1434,7 +1442,7 @@ float player_sight_budget_cells() {
 // world is passed so glow propagates through terrain (open land carries it
 // far, forest dims it, mountains wall it off — increments B/C).
 void bake_macro_light_field(App& app, std::vector<std::uint8_t>& out) {
-    std::vector<sm::MacroLight> lights = sm::collect_macro_lights(app.gs);
+    std::vector<sm::MacroLight> lights = sm::collect_macro_lights(app.gs, *app.macroStore);
     const sm::OpticalWorld world = optical_world(app);
     sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, world.features,
                          world.heights, world.treeDensity);
@@ -1860,11 +1868,17 @@ bool boot_world_from_save(App& app, const std::string& path) {
         if (app.smoke.enabled) sm::app::smoke_fail(app, "load fold lost state");
     }
 
-    // The macro snapshot (Session 17): boot_world above spawned NOTHING
-    // (spawnMacroNpcs=false), so the registry holds no macro NPCs yet —
-    // restore the saved world's people instead of the seed's. A killed lord
-    // stays killed, a levelled leader keeps his campaigns.
+    // The macro snapshot (Session 17): boot_world above spawned no SQUADS
+    // (spawnMacroNpcs=false) — but с флипа M-90 генезис рожает ТЕЛА МЕСТ в
+    // store, а их строки файл только что заменил своими. Store умирает
+    // ЗДЕСЬ, по построению, а не по совпадению флага: записи файла несут
+    // ВСЕХ (сквады и тела мест), и restore вселяет их в пустой store. A
+    // killed lord stays killed, a levelled leader keeps his campaigns.
+    sm::store_reset(*app.macroStore);
     sm::restore_macro_ecs(loadedMacro, *app.macroStore, app.gs);
+    // Сшивка строк мест с их телами — по ординалу (M-37: пространство одно);
+    // строка без тела печатается ВСЛУХ внутри двери.
+    sm::relink_place_bodies(app.gs, *app.macroStore);
     // Кэши игрока — из колонок СВЕЖЕГО store (5б): слоты при restore
     // раздались по порядку записей, биты из прошлой жизни мертвы; истина
     // «кто игрок» приехала колонкой playerFlag записей.
@@ -3324,7 +3338,7 @@ void process_world_events(App& app) {
     app.logic.tick(app.bus, app.gs.player);
     {
         const sm::ecs::MacroCell* qc = sm::player_flag_cell(app.gs, *app.macroStore);
-        app.quests.tick(app.activeQuests, app.bus, app.gs,
+        app.quests.tick(app.activeQuests, *app.macroStore, app.bus, app.gs,
                         sm::player_inventory(app.gs, *app.macroStore),
                         sm::player_head(app.gs, *app.macroStore),
                         sm::player_sheet(app.gs, *app.macroStore),
@@ -3468,7 +3482,8 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             sm::tick_world_subworld_steps(app.gs, app.gs.worldTickRt, 1);
         sm::MacroWorld subMacroWorld = macro_world(app);
         stats.timeTick.dailyTicksProcessed =
-            sm::process_world_daily_ticks(app.gs, app.gs.worldTickRt,
+            sm::process_world_daily_ticks(app.gs, *app.macroStore,
+                                      app.gs.worldTickRt,
                                           kSubworldDailyTicksPerStep,
                                           &subMacroWorld);
         stats.timeTick.dailyBudgetExhausted =
@@ -3531,7 +3546,8 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // the just-finalised player scalar onto its Position each macro tick.
         sm::ensure_macro_player_entity(app.gs, *app.macroStore);
         sm::MacroWorld macroTickWorld = macro_world(app);
-        stats.timeTick = sm::tick_world(app.gs, app.gs.worldTickRt, 1,
+        stats.timeTick = sm::tick_world(app.gs, *app.macroStore,
+                                        app.gs.worldTickRt, 1,
                                         /*max_daily_ticks=*/32,
                                         &macroTickWorld);
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
@@ -4851,7 +4867,7 @@ void register_console_commands(App& app) {
             if (hours <= 0.0f) { c.error("hours must be positive (clock only moves forward)"); return true; }
             sm::MacroWorld mw = macro_world(app);
             const sm::WorldTickResult r = sm::tick_world(
-                app.gs, app.gs.worldTickRt,
+                app.gs, *app.macroStore, app.gs.worldTickRt,
                 sm::ticks_to_advance_minutes(app.gs.worldTime.tick,
                                              std::int64_t(hours * 60.0f + 0.5f)),
                 /*max_daily_ticks=*/32, &mw);
@@ -5294,7 +5310,7 @@ void build_world_preview(App& app, int side = 384) {
         // сюзерену она сама себе, и одна дверь ставит ей 0). Прежде здесь
         // стояла колонка `City::isCapital` плана генератора — второй
         // ответ на тот же вопрос, и он умер вместе с планом (M-90).
-        if (lm.type != sm::LandmarkType::City || sm::suzerain_of(lm) != 0)
+        if (lm.type != sm::LandmarkType::City || sm::suzerain_of(*app.macroStore, lm) != 0)
             continue;
         const int px = lm.x * side / td.width;
         const int py = lm.y * side / td.height;
@@ -5552,6 +5568,10 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
         if (slot == flagSlot
             || st.spawnId[slot].index == sm::ecs::kPlayerSquadOrdinal)
+            continue;
+        // ТЕЛО МЕСТА НЕ РИСУЕТСЯ СКВАД-СПРАЙТОМ (ось рода, M-90 шаг 5):
+        // место на карте — глиф своей строки реестра, не ходячая фигурка.
+        if (sm::is_settlement_kind(sm::SquadType(st.runtime[slot].squadType)))
             continue;
         const auto& c = st.cell[slot];
         const float cx = float(sm::ecs::cell_x(c, app.gs.mapW));
@@ -5821,13 +5841,14 @@ void frame(App& app, int simSteps) {
         // click is the pin toggle.
         const bool mapOpen = macro_map_open(app);
         if (mapOpen) {
-            sm::ui::draw_map_screen(app.mapScreen, app.gs, app.ecs, app.terrain,
+            sm::ui::draw_map_screen(app.mapScreen, app.gs, *app.macroStore,
+                                    app.ecs, app.terrain,
                                     &app.ui.map, logicalW, logicalH,
                                     app.mapScreen.zoom / dpr,
                                     app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
         } else {
         const float zoomLogical = app.zoom / dpr;
-        sm::ui::draw_macro_overlay(app.gs, app.ecs,
+        sm::ui::draw_macro_overlay(app.gs, *app.macroStore, app.ecs,
                                    app.terrain, app.features,
                                    app.cursor,
                                    app.camX, app.camY, zoomLogical,
@@ -6253,7 +6274,7 @@ void frame(App& app, int simSteps) {
                 int logicalW = app.width, logicalH = app.height;
                 SDL_GetWindowSize(app.window, &logicalW, &logicalH);
                 const sm::ui::NpcProximityResult npcResult =
-                    sm::ui::draw_npc_proximity_panel(app.gs, app.ecs,
+                    sm::ui::draw_npc_proximity_panel(app.gs, *app.macroStore, app.ecs,
                                                      logicalW, logicalH,
                                                      showNpcRows,
                                                      app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));
