@@ -12,49 +12,74 @@
 #ifndef TIMAERT_PROP_PROFILES
 #define TIMAERT_PROP_PROFILES
 
-const uint kProfileCount = 2u;
+const uint kProfileCount = 5u;
 const uint kProfileMaxRings = 6u;
 
-// 0 tree_near — 4 segments, 3 rings, 114 vertices
+// 0 tree_conifer — 3 segments, 2 rings, 99 vertices
 //    THE tree of the 3×3 window, old-school: a FOUR-SIDED tapering trunk
 //    running the whole height, and three tiers of crossed cards for the
 //    foliage. Four sides and not six on purpose — the sixth made it
 //    smooth, and smooth is the toy look. Bark runs to 0.98 because the
 //    trunk IS bark all the way; the leaves are not on it, they are the
 //    cards. 3 tiers × 3 cards and a trunk of 3 rings
-// 1 tree_far — 3 segments, 2 rings, 51 vertices
-//    THE same tree far enough that a facet is under a pixel: a
-//    three-sided stick and two tiers of two cards. The LOD rung of the
-//    near row, and it is a ROW rather than a branch precisely so the
-//    switch is a choice of profile and never a second law of what a tree
-//    is
+// 1 tree_broadleaf — 4 segments, 3 rings, 108 vertices
+//    A ROUND-HEADED TREE for valleys and meadows: a thicker trunk that
+//    forks higher, and two broad tiers instead of a conifer's narrow
+//    ladder. The bark line sits at 0.62 because a broadleaf shows trunk
+//    for well over half its height before the head starts
+// 2 tree_palm — 3 segments, 2 rings, 57 vertices
+//    TROPICS AND SWAMP: one crown of long boughs at the very top of a
+//    bare stem. Five cards in a single tier is what a palm IS — the
+//    silhouette is the fan, not the stack, and giving it tiers would make
+//    it a conifer with the wrong colours
+// 3 tree_scrub — 3 segments, 2 rings, 63 vertices
+//    DESERT, STEPPE AND TUNDRA: low, sparse, wind-cut. Same machinery,
+//    smaller numbers — which is the whole point of shape being a row: a
+//    scrub is not a special case of a tree, it is a tree with its own
+//    line
+// 4 tree_far — 3 segments, 2 rings, 51 vertices
+//    THE LOD RUNG: far enough that a facet and a tier are under a pixel.
+//    A ROW rather than a branch precisely so the switch is a choice of
+//    profile and never a second law of what a tree is
 
 // Sides around the axis.
-const uint kProfileSegments[2] = uint[2](
-    4u,  // 0 tree_near
-    3u   // 1 tree_far
+const uint kProfileSegments[5] = uint[5](
+    3u,  // 0 tree_conifer
+    4u,  // 1 tree_broadleaf
+    3u,  // 2 tree_palm
+    3u,  // 3 tree_scrub
+    3u   // 4 tree_far
 );
 
 // How many rings each profile actually uses.
-const uint kProfileRingCount[2] = uint[2](
-    3u,  // 0 tree_near
-    2u   // 1 tree_far
+const uint kProfileRingCount[5] = uint[5](
+    2u,  // 0 tree_conifer
+    3u,  // 1 tree_broadleaf
+    2u,  // 2 tree_palm
+    2u,  // 3 tree_scrub
+    2u   // 4 tree_far
 );
 
 // Where the trunk ends and the crown begins, as a height
 // fraction — one number instead of a second material, the same
 // way a house splits wall from roof by vLocalY.
-const float kProfileBarkTop[2] = float[2](
-    0.98000,  // 0 tree_near
-    0.98000   // 1 tree_far
+const float kProfileBarkTop[5] = float[5](
+    0.98000,  // 0 tree_conifer
+    0.62000,  // 1 tree_broadleaf
+    0.86000,  // 2 tree_palm
+    0.70000,  // 3 tree_scrub
+    0.98000   // 4 tree_far
 );
 
 // The trunk's own colour. The CROWN's is not here: it is the
 // cover row `canopy` (ground_surface.glsl), which the far sheet
 // reads too — one wood seen at two distances, one colour.
-const vec3 kProfileBark[2] = vec3[2](
-    vec3(0.19000, 0.13000, 0.09000),  // 0 tree_near
-    vec3(0.19000, 0.13000, 0.09000)   // 1 tree_far
+const vec3 kProfileBark[5] = vec3[5](
+    vec3(0.26000, 0.19000, 0.13000),  // 0 tree_conifer
+    vec3(0.30000, 0.22000, 0.15000),  // 1 tree_broadleaf
+    vec3(0.33000, 0.26000, 0.17000),  // 2 tree_palm
+    vec3(0.24000, 0.20000, 0.14000),  // 3 tree_scrub
+    vec3(0.26000, 0.19000, 0.13000)   // 4 tree_far
 );
 
 // FOLIAGE: how many crossed cards stand at each tier, and
@@ -62,28 +87,46 @@ const vec3 kProfileBark[2] = vec3[2](
 // revolution because foliage is not a surface — a cone of
 // revolution reads as a toy, which is exactly the look this
 // table replaced.
-const uint kProfileLeafPlanes[2] = uint[2](
-    3u,  // 0 tree_near
-    2u   // 1 tree_far
+const uint kProfileLeafPlanes[5] = uint[5](
+    4u,  // 0 tree_conifer
+    4u,  // 1 tree_broadleaf
+    5u,  // 2 tree_palm
+    3u,  // 3 tree_scrub
+    2u   // 4 tree_far
 );
 
-const uint kProfileLeafTiers[2] = uint[2](
-    3u,  // 0 tree_near
-    2u   // 1 tree_far
+const uint kProfileLeafTiers[5] = uint[5](
+    3u,  // 0 tree_conifer
+    2u,  // 1 tree_broadleaf
+    1u,  // 2 tree_palm
+    2u,  // 3 tree_scrub
+    2u   // 4 tree_far
 );
 
 const uint kProfileMaxTiers = 4u;
 // x = height fraction of the tier, y = its half-width as a
 // fraction of the prop's. Padded to the stride, last repeated.
-const vec2 kProfileLeaves[8] = vec2[8](
-    vec2(0.34000, 0.62000),  // 0 tree_near tier 0
-    vec2(0.62000, 0.46000),  // 0 tree_near tier 1
-    vec2(0.86000, 0.28000),  // 0 tree_near tier 2
-    vec2(0.86000, 0.28000),  // 0 tree_near tier 3
-    vec2(0.42000, 0.60000),  // 1 tree_far tier 0
-    vec2(0.78000, 0.34000),  // 1 tree_far tier 1
-    vec2(0.78000, 0.34000),  // 1 tree_far tier 2
-    vec2(0.78000, 0.34000)   // 1 tree_far tier 3
+const vec2 kProfileLeaves[20] = vec2[20](
+    vec2(0.26000, 0.92000),  // 0 tree_conifer tier 0
+    vec2(0.50000, 0.74000),  // 0 tree_conifer tier 1
+    vec2(0.74000, 0.50000),  // 0 tree_conifer tier 2
+    vec2(0.74000, 0.50000),  // 0 tree_conifer tier 3
+    vec2(0.52000, 0.95000),  // 1 tree_broadleaf tier 0
+    vec2(0.76000, 0.78000),  // 1 tree_broadleaf tier 1
+    vec2(0.76000, 0.78000),  // 1 tree_broadleaf tier 2
+    vec2(0.76000, 0.78000),  // 1 tree_broadleaf tier 3
+    vec2(0.88000, 1.05000),  // 2 tree_palm tier 0
+    vec2(0.88000, 1.05000),  // 2 tree_palm tier 1
+    vec2(0.88000, 1.05000),  // 2 tree_palm tier 2
+    vec2(0.88000, 1.05000),  // 2 tree_palm tier 3
+    vec2(0.42000, 0.70000),  // 3 tree_scrub tier 0
+    vec2(0.72000, 0.44000),  // 3 tree_scrub tier 1
+    vec2(0.72000, 0.44000),  // 3 tree_scrub tier 2
+    vec2(0.72000, 0.44000),  // 3 tree_scrub tier 3
+    vec2(0.46000, 0.80000),  // 4 tree_far tier 0
+    vec2(0.78000, 0.48000),  // 4 tree_far tier 1
+    vec2(0.78000, 0.48000),  // 4 tree_far tier 2
+    vec2(0.78000, 0.48000)   // 4 tree_far tier 3
 );
 
 // The rings themselves, PADDED to the cap so the stride is a
@@ -91,19 +134,37 @@ const vec2 kProfileLeaves[8] = vec2[8](
 // p * kProfileMaxRings + k. x = radius fraction, y = height
 // fraction. Padding repeats the last ring, so an over-read
 // degenerates instead of reaching into the next profile.
-const vec2 kProfileRings[12] = vec2[12](
-    vec2(0.11000, 0.00000),  // 0 tree_near ring 0
-    vec2(0.07000, 0.55000),  // 0 tree_near ring 1
-    vec2(0.03500, 1.00000),  // 0 tree_near ring 2
-    vec2(0.03500, 1.00000),  // 0 tree_near ring 3
-    vec2(0.03500, 1.00000),  // 0 tree_near ring 4
-    vec2(0.03500, 1.00000),  // 0 tree_near ring 5
-    vec2(0.10000, 0.00000),  // 1 tree_far ring 0
-    vec2(0.05000, 1.00000),  // 1 tree_far ring 1
-    vec2(0.05000, 1.00000),  // 1 tree_far ring 2
-    vec2(0.05000, 1.00000),  // 1 tree_far ring 3
-    vec2(0.05000, 1.00000),  // 1 tree_far ring 4
-    vec2(0.05000, 1.00000)   // 1 tree_far ring 5
+const vec2 kProfileRings[30] = vec2[30](
+    vec2(0.10000, 0.00000),  // 0 tree_conifer ring 0
+    vec2(0.04000, 1.00000),  // 0 tree_conifer ring 1
+    vec2(0.04000, 1.00000),  // 0 tree_conifer ring 2
+    vec2(0.04000, 1.00000),  // 0 tree_conifer ring 3
+    vec2(0.04000, 1.00000),  // 0 tree_conifer ring 4
+    vec2(0.04000, 1.00000),  // 0 tree_conifer ring 5
+    vec2(0.12000, 0.00000),  // 1 tree_broadleaf ring 0
+    vec2(0.09000, 0.40000),  // 1 tree_broadleaf ring 1
+    vec2(0.05000, 1.00000),  // 1 tree_broadleaf ring 2
+    vec2(0.05000, 1.00000),  // 1 tree_broadleaf ring 3
+    vec2(0.05000, 1.00000),  // 1 tree_broadleaf ring 4
+    vec2(0.05000, 1.00000),  // 1 tree_broadleaf ring 5
+    vec2(0.09000, 0.00000),  // 2 tree_palm ring 0
+    vec2(0.05000, 1.00000),  // 2 tree_palm ring 1
+    vec2(0.05000, 1.00000),  // 2 tree_palm ring 2
+    vec2(0.05000, 1.00000),  // 2 tree_palm ring 3
+    vec2(0.05000, 1.00000),  // 2 tree_palm ring 4
+    vec2(0.05000, 1.00000),  // 2 tree_palm ring 5
+    vec2(0.10000, 0.00000),  // 3 tree_scrub ring 0
+    vec2(0.06000, 1.00000),  // 3 tree_scrub ring 1
+    vec2(0.06000, 1.00000),  // 3 tree_scrub ring 2
+    vec2(0.06000, 1.00000),  // 3 tree_scrub ring 3
+    vec2(0.06000, 1.00000),  // 3 tree_scrub ring 4
+    vec2(0.06000, 1.00000),  // 3 tree_scrub ring 5
+    vec2(0.10000, 0.00000),  // 4 tree_far ring 0
+    vec2(0.05000, 1.00000),  // 4 tree_far ring 1
+    vec2(0.05000, 1.00000),  // 4 tree_far ring 2
+    vec2(0.05000, 1.00000),  // 4 tree_far ring 3
+    vec2(0.05000, 1.00000),  // 4 tree_far ring 4
+    vec2(0.05000, 1.00000)   // 4 tree_far ring 5
 );
 
 #endif // TIMAERT_PROP_PROFILES

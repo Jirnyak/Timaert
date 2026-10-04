@@ -2569,6 +2569,15 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 const std::uint32_t seedBits =
                     gpu::bb_seed_bits(float(h & 0xffffu) * 0.01f
                                       + hash01 * 5.0f);
+                // WHICH TREE THIS IS, is a question for the PLACE. The cell
+                // hands over its biome and the table hands back a shape
+                // (`biome_tree_profile@src/tables/forest.h`) — no branch here
+                // and none in the shader, so a module that wants its own wood
+                // adds a row rather than a case.
+                const int cxi = std::min(2, std::max(0, int(s.x) / kCellSize));
+                const int cyi = std::min(2, std::max(0, int(s.y) / kCellSize));
+                const PropProfile prof =
+                    biome_tree_profile(int(mgr.cell_biome(cyi * 3 + cxi)));
                 if (drawAs == StructureKindRow::Draw::Profile) {
                     // A BODY SITS ON THE GROUND, not sunk into it. The sink
                     // existed so a flat card's bottom row — a painted contact
@@ -2576,7 +2585,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     // row and burying it would just shorten the tree.
                     props.push_back({wx, baseM, wz,
                                      tb.halfWidthM, tb.heightM,
-                                     std::uint32_t(PropProfile::TreeNear),
+                                     std::uint32_t(prof),
                                      h, 0xFFFFFFFFu});
                 } else {
                     trees.push_back({wx, baseM - tb.sinkM, wz,
@@ -2586,6 +2595,24 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 }
             }
             treeCount_ = static_cast<std::uint32_t>(trees.size());
+            // SORT ONCE, HERE, NOT PER FRAME: the gather already runs only on
+            // a rebuild, and a profile is a property of the place, so the
+            // buckets are as stable as the window itself.
+            std::stable_sort(props.begin(), props.end(),
+                             [](const gpu::BbInstance& a,
+                                const gpu::BbInstance& b) {
+                                 return a.kind < b.kind;
+                             });
+            for (int pi = 0; pi < kPropProfileCount; ++pi) {
+                propFirst_[pi] = 0;
+                propPer_[pi] = 0;
+            }
+            for (std::size_t i = 0; i < props.size(); ++i) {
+                const std::uint32_t k = props[i].kind;
+                if (k >= std::uint32_t(kPropProfileCount)) continue;
+                if (propPer_[k] == 0) propFirst_[k] = std::uint32_t(i);
+                ++propPer_[k];
+            }
             propCount_ = static_cast<std::uint32_t>(props.size());
             pend_.trees = true;
             pend_.props = true;
@@ -3232,8 +3259,11 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
                            VK_SHADER_STAGE_VERTEX_BIT
                                | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(sp), &sp);
-        vkCmdDraw(cmd, kPropProfileVertices[int(PropProfile::TreeNear)],
-                  propCount_, 0, 0);
+        for (int pi = 0; pi < kPropProfileCount; ++pi) {
+            if (propPer_[pi] == 0) continue;
+            vkCmdDraw(cmd, kPropProfileVertices[pi], propPer_[pi], 0,
+                      propFirst_[pi]);
+        }
     }
 
     // Structures (instanced boxes + cylinders).
@@ -3321,21 +3351,12 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
         vkCmdDraw(cmd, 6, treeCount_, 0, 0);
     }
 
-    // The same bodies into the depth map, through the shared geometry.
-    if (propCount_ > 0 && shadowPropPipe_.pipeline != VK_NULL_HANDLE) {
-        ShadowPush sp{};
-        std::memcpy(sp.lightMvp, lightMvp_.m, sizeof(sp.lightMvp));
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          shadowPropPipe_.pipeline);
-        VkDeviceSize pio = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &propInstBuf_.buffer, &pio);
-        vkCmdPushConstants(cmd, shadowPropPipe_.layout,
-                           VK_SHADER_STAGE_VERTEX_BIT
-                               | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(sp), &sp);
-        vkCmdDraw(cmd, kPropProfileVertices[int(PropProfile::TreeNear)],
-                  propCount_, 0, 0);
-    }
+    // PROFILED PROPS CAST INTO THE NEAR CASCADE ONLY, and the bodies next
+    // door set that precedent for the same reason: the wide level is 1024 m
+    // of 4096 texels, where a tree's crown is about one texel across, so its
+    // shadow out there is a smudge nobody can tell from the terrain's own.
+    // Dropping it is a THIRD of this pass's vertex work and half of the
+    // foliage cut-out's fragment work, for a difference the eye cannot name.
 
     if (structCount_ > 0 || cylCount_ > 0) {
         ShadowPush ssp{};
@@ -3692,8 +3713,11 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                            VK_SHADER_STAGE_VERTEX_BIT
                                | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
-        vkCmdDraw(cmd, kPropProfileVertices[int(PropProfile::TreeNear)],
-                  propCount_, 0, 0);
+        for (int pi = 0; pi < kPropProfileCount; ++pi) {
+            if (propPer_[pi] == 0) continue;
+            vkCmdDraw(cmd, kPropProfileVertices[pi], propPer_[pi], 0,
+                      propFirst_[pi]);
+        }
     }
 
     // ── A5: Structures (instanced boxes + cylinders, after trees, before

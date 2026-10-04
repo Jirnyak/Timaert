@@ -323,7 +323,7 @@ const vec3 kCoverFresh[5] = vec3[5](
     vec3(0.27000, 0.40000, 0.16000),  //  1 grass
     vec3(0.92000, 0.95000, 1.00000),  //  2 snow
     vec3(0.22000, 0.38000, 0.16000),  //  3 moss
-    vec3(0.09000, 0.17000, 0.08000)   //  4 canopy
+    vec3(0.17000, 0.29000, 0.14000)   //  4 canopy
 );
 
 const vec3 kCoverWorn[5] = vec3[5](
@@ -331,7 +331,7 @@ const vec3 kCoverWorn[5] = vec3[5](
     vec3(0.45000, 0.42000, 0.22000),  //  1 grass
     vec3(0.86000, 0.89000, 0.94000),  //  2 snow
     vec3(0.28000, 0.34000, 0.22000),  //  3 moss
-    vec3(0.19000, 0.17000, 0.10000)   //  4 canopy
+    vec3(0.30000, 0.27000, 0.16000)   //  4 canopy
 );
 
 // x = strands per metre, y = layer height in metres,

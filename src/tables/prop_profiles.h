@@ -19,17 +19,23 @@
 namespace sm {
 
 enum class PropProfile : std::uint8_t {
-    TreeNear = 0,
-    TreeFar = 1,
+    TreeConifer = 0,
+    TreeBroadleaf = 1,
+    TreePalm = 2,
+    TreeScrub = 3,
+    TreeFar = 4,
 };
 
-inline constexpr int kPropProfileCount = 2;
+inline constexpr int kPropProfileCount = 5;
 
 // Vertices one draw of this profile takes: `segments` quads
 // between every pair of rings, plus a fan cap on top.
 inline constexpr std::uint32_t kPropProfileVertices[kPropProfileCount] = {
-    114u,  // 0 tree_near — 4 segments × 2 ring gaps + cap
-    51u,  // 1 tree_far — 3 segments × 1 ring gaps + cap
+    99u,  // 0 tree_conifer — 3 segments × 1 ring gaps + cap
+    108u,  // 1 tree_broadleaf — 4 segments × 2 ring gaps + cap
+    57u,  // 2 tree_palm — 3 segments × 1 ring gaps + cap
+    63u,  // 3 tree_scrub — 3 segments × 1 ring gaps + cap
+    51u,  // 4 tree_far — 3 segments × 1 ring gaps + cap
 };
 
 } // namespace sm

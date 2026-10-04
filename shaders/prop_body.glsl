@@ -48,21 +48,38 @@ void prop_body_vertex(uint vi, uint prof, float halfW, float heightM,
         uint plane  = (lv / 6u) % planes;
         vec2 q      = kQuad[lv % 6u];
         vec2 tr     = kProfileLeaves[prof * kProfileMaxTiers + tier];
-        float cardHalf = tr.y * halfW;
-        // Cards stand at even angles THROUGH the axis, so two make a cross
-        // and three a star; from any side at least one faces the eye.
-        float pa = float(plane) * 3.14159265 / float(planes);
-        vec2  dir = vec2(cos(pa), sin(pa));
-        float sx  = (q.x * 2.0 - 1.0) * cardHalf;
-        float sy  = (q.y * 2.0 - 1.0) * cardHalf;
-        localPos  = vec3(dir.x * sx, tr.x * heightM + sy, dir.y * sx);
-        // THE NORMAL POINTS OUT OF THE CROWN, not out of the card. A card is
-        // a stand-in for a mass of leaves, and lighting it as a flat plate
-        // makes a tree flicker between bright and black as the eye moves
-        // around it. Outward-from-the-axis shades the tier as the round thing
-        // it represents.
-        localNormal = normalize(vec3(localPos.x, cardHalf * 0.65, localPos.z)
-                                + vec3(0.0, 0.001, 0.0));
+        float reach = tr.y * halfW;
+        // ── A BOUGH LIES ALONG ITS BRANCH, IT DOES NOT HANG FROM IT ──────
+        // The cards used to stand UPRIGHT through the axis, and that was
+        // wrong twice over: real foliage spreads along the branch, and an
+        // upright card lights as a wall while a bough lights as a roof. So
+        // the card lies MOSTLY FLAT, running outward from the trunk, with
+        // its outer edge dropped — the droop every conifer has.
+        //
+        // Its normal is the normal OF THAT SURFACE (owner, 2026-10-04: «она
+        // же идёт как нормаль к продольной поверхности ветки — как реальная
+        // листва от веток»), which is what makes a tier catch the sun on top
+        // and fall into shadow underneath instead of flickering edge-on.
+        float pa  = float(plane) * 6.28318530718 / float(planes)
+                  + float(tier) * 0.7;      // tiers do not stack in a line
+        vec2  out2 = vec2(cos(pa), sin(pa));            // along the branch
+        vec2  side = vec2(-out2.y, out2.x);             // across it
+        float u = q.x;                 // 0 at the trunk, 1 at the tip
+        float v = q.y * 2.0 - 1.0;     // across the bough
+        // HOW FAR THE TIP HANGS. Flat was wrong in the other direction:
+        // seen from a man's eye a horizontal bough is edge-on and the tree
+        // becomes a stick. Just over half a reach of drop puts the surface
+        // at about 30° — it still lights as a roof, and it still has a
+        // silhouette from the side, which is the view the game is played in.
+        float droop = 0.62;
+        vec3 alongV = vec3(out2.x, -droop, out2.y);
+        vec3 sideV  = vec3(side.x, 0.0, side.y);
+        localPos = vec3(0.0, tr.x * heightM, 0.0)
+                 + alongV * (u * reach)
+                 + sideV  * (v * reach * 0.55);
+        // Normal of the bough's own plane: across × along, pointing up.
+        localNormal = normalize(cross(sideV, alongV));
+        if (localNormal.y < 0.0) localNormal = -localNormal;
         localY = tr.x;
         uv     = q;
         isLeaf = 1.0;

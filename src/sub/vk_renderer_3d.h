@@ -21,6 +21,7 @@
                             // vertical truth, which this renderer only READS
 #include "sub/map_data.h"   // WATER_LEVEL — the default sea plane (seaLevel01_)
 #include "gpu/bb_instance.h"
+#include "tables/prop_profiles.h"
 #include "gpu/vk_buffer.h"
 #include "gpu/vk_canvas.h"
 #include "gpu/vk_pipeline.h"
@@ -363,7 +364,13 @@ private:
     gpu::VulkanBuffer   propInstBuf_{};
     gpu::VulkanPipeline propPipe_{};
     gpu::VulkanPipeline shadowPropPipe_{};
-    std::uint32_t       propCount_ = 0;
+    // ONE DRAW PER PROFILE, so the instances are SORTED by profile and each
+    // row draws its own slice with `firstInstance`. A single count could not
+    // work: the vertex count is a property of the shape, and two shapes in
+    // one draw would make the longer one eat the shorter one's instances.
+    std::uint32_t       propCount_ = 0;                        // total
+    std::uint32_t       propFirst_[kPropProfileCount] = {};
+    std::uint32_t       propPer_[kPropProfileCount] = {};
     std::uint32_t       treeCount_ = 0;
     // Instances the CURRENT allocation can hold. The set changes on every
     // crossing and every async drain, and re-creating a device-local buffer

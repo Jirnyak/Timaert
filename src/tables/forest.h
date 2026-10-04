@@ -20,6 +20,7 @@
 #pragma once
 
 #include "tables/biomes.h"
+#include "tables/prop_profiles.h"
 
 #include <cstdint>
 #include <iterator>
@@ -103,6 +104,40 @@ inline std::uint16_t derived_tree_count(Biome biome, float forestFrac9) {
     if (c > kMaxTreesPerCell) c = kMaxTreesPerCell;
     if (c < 0) c = 0;
     return std::uint16_t(c);
+}
+
+// WHICH TREE GROWS HERE — one row per biome, and the answer is a PROFILE,
+// never a branch in the renderer. This is the whole of «деревья от биома»
+// (owner, 2026-10-04: «нужно деревья таблицу от биомов субмодули иначе только
+// сосны … просто от биома клетки контекст и генерятся эти деревья системно»):
+// the cell hands over its biome, the table hands back a shape, and a module
+// that wants its own wood adds a row rather than a case.
+//
+// Water carries a profile too, and that is not an oversight: the column must
+// answer for every biome or the lookup needs a guard, and a water cell has no
+// trees to put it on anyway (`derived_tree_count` returns 0 there).
+struct BiomeTreeProfileRow { Biome biome; PropProfile profile; };
+inline constexpr BiomeTreeProfileRow kBiomeTreeProfile[std::size_t(Mountain) + 1] = {
+    {Tundra,   PropProfile::TreeScrub},      // wind-cut, low
+    {Taiga,    PropProfile::TreeConifer},    // the spruce ladder
+    {Snow,     PropProfile::TreeConifer},
+    {Valley,   PropProfile::TreeBroadleaf},  // round heads along the water
+    {Meadow,   PropProfile::TreeBroadleaf},
+    {Swamp,    PropProfile::TreePalm},       // bare stems, crown on top
+    {Desert,   PropProfile::TreeScrub},
+    {Steppe,   PropProfile::TreeScrub},      // sparse, hard-leaved
+    {Tropics,  PropProfile::TreePalm},
+    {Water,    PropProfile::TreeScrub},      // no trees stand here at all
+    {Mountain, PropProfile::TreeConifer},
+};
+static_assert(rows_in_enum_order(kBiomeTreeProfile,
+                                 &BiomeTreeProfileRow::biome),
+              "kBiomeTreeProfile row order must mirror Biome");
+
+inline constexpr PropProfile biome_tree_profile(int b) {
+    return (b >= 0 && b < int(std::size(kBiomeTreeProfile)))
+        ? kBiomeTreeProfile[std::size_t(b)].profile
+        : PropProfile::TreeConifer;
 }
 
 } // namespace sm
