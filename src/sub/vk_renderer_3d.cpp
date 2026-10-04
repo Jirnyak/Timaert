@@ -2576,9 +2576,33 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 // adds a row rather than a case.
                 const int cxi = std::min(2, std::max(0, int(s.x) / kCellSize));
                 const int cyi = std::min(2, std::max(0, int(s.y) / kCellSize));
-                const PropProfile prof =
+                PropProfile prof =
                     biome_tree_profile(int(mgr.cell_biome(cyi * 3 + cxi)));
+                // ── THE LADDER INSIDE THE WINDOW ─────────────────────────
+                // Three rungs, and each one is a REPRESENTATION, never a
+                // behaviour (§6 forbids the other kind): the tree is the same
+                // tree, drawn with as much geometry as its screen size can
+                // show. Measured from the WINDOW'S CENTRE, not from the
+                // camera, because the gather runs on rebuild and a per-frame
+                // re-sort of 56 000 instances would cost more than it saves;
+                // the player never stands further than half a cell from that
+                // centre, so the error is bounded by construction.
+                const float dxM = (s.x - float(kFullSize) * 0.5f) * kTileMeters;
+                const float dzM = (s.y - float(kFullSize) * 0.5f) * kTileMeters;
+                const float distM = std::sqrt(dxM * dxM + dzM * dzM);
+                // 384 m — about where a 15 m tree stops filling more than a
+                // couple of degrees of screen, so facets and tiers are still
+                // worth their vertices. 1280 m — where its whole crown is a
+                // handful of pixels and a flat card says the same thing for
+                // six vertices instead of fifty-one.
+                constexpr float kTreeDetailM = 384.0f;
+                constexpr float kTreeCardM   = 1280.0f;
+                bool asCard = false;
                 if (drawAs == StructureKindRow::Draw::Profile) {
+                    if (distM >= kTreeCardM)      asCard = true;
+                    else if (distM >= kTreeDetailM) prof = PropProfile::TreeFar;
+                }
+                if (drawAs == StructureKindRow::Draw::Profile && !asCard) {
                     // A BODY SITS ON THE GROUND, not sunk into it. The sink
                     // existed so a flat card's bottom row — a painted contact
                     // shadow — stayed under the soil; a trunk has no painted
@@ -2616,6 +2640,31 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             propCount_ = static_cast<std::uint32_t>(props.size());
             pend_.trees = true;
             pend_.props = true;
+            // ── WHAT THE WINDOW IS CARRYING, AND WHAT IT COSTS ───────────
+            // Printed on every rebuild, not per frame: the gather is what
+            // decides the cost, so this is the line that answers «почему
+            // просел FPS» with a number instead of a guess. Vertices are the
+            // honest unit here — the lit pass and the near shadow pass each
+            // walk every one of them.
+            {
+                std::uint64_t verts = 0;
+                for (int pi = 0; pi < kPropProfileCount; ++pi)
+                    verts += std::uint64_t(propPer_[pi])
+                           * std::uint64_t(kPropProfileVertices[pi]);
+                verts += std::uint64_t(treeCount_) * 6u;
+                std::fprintf(stderr,
+                             "[trees] bodies=%u cards=%u | conifer=%u "
+                             "broadleaf=%u palm=%u scrub=%u far=%u | "
+                             "%.2fM verts/pass, %.2fM/frame (2 passes)\n",
+                             propCount_, treeCount_,
+                             propPer_[int(PropProfile::TreeConifer)],
+                             propPer_[int(PropProfile::TreeBroadleaf)],
+                             propPer_[int(PropProfile::TreePalm)],
+                             propPer_[int(PropProfile::TreeScrub)],
+                             propPer_[int(PropProfile::TreeFar)],
+                             double(verts) / 1e6, double(verts) * 2.0 / 1e6);
+                std::fflush(stderr);
+            }
         }
         if (kProf) msTree = profMs(st, profNow());
 

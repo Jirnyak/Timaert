@@ -37,7 +37,7 @@ const uint kProfileMaxRings = 6u;
 //    smaller numbers — which is the whole point of shape being a row: a
 //    scrub is not a special case of a tree, it is a tree with its own
 //    line
-// 4 tree_far — 3 segments, 2 rings, 51 vertices
+// 4 tree_far — 3 segments, 2 rings, 63 vertices
 //    THE LOD RUNG: far enough that a facet and a tier are under a pixel.
 //    A ROW rather than a branch precisely so the switch is a choice of
 //    profile and never a second law of what a tree is
@@ -92,7 +92,7 @@ const uint kProfileLeafPlanes[5] = uint[5](
     4u,  // 1 tree_broadleaf
     5u,  // 2 tree_palm
     3u,  // 3 tree_scrub
-    2u   // 4 tree_far
+    3u   // 4 tree_far
 );
 
 const uint kProfileLeafTiers[5] = uint[5](
@@ -123,10 +123,10 @@ const vec2 kProfileLeaves[20] = vec2[20](
     vec2(0.72000, 0.44000),  // 3 tree_scrub tier 1
     vec2(0.72000, 0.44000),  // 3 tree_scrub tier 2
     vec2(0.72000, 0.44000),  // 3 tree_scrub tier 3
-    vec2(0.46000, 0.80000),  // 4 tree_far tier 0
-    vec2(0.78000, 0.48000),  // 4 tree_far tier 1
-    vec2(0.78000, 0.48000),  // 4 tree_far tier 2
-    vec2(0.78000, 0.48000)   // 4 tree_far tier 3
+    vec2(0.40000, 0.88000),  // 4 tree_far tier 0
+    vec2(0.72000, 0.58000),  // 4 tree_far tier 1
+    vec2(0.72000, 0.58000),  // 4 tree_far tier 2
+    vec2(0.72000, 0.58000)   // 4 tree_far tier 3
 );
 
 // The rings themselves, PADDED to the cap so the stride is a

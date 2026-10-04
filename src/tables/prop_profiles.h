@@ -35,7 +35,7 @@ inline constexpr std::uint32_t kPropProfileVertices[kPropProfileCount] = {
     108u,  // 1 tree_broadleaf — 4 segments × 2 ring gaps + cap
     57u,  // 2 tree_palm — 3 segments × 1 ring gaps + cap
     63u,  // 3 tree_scrub — 3 segments × 1 ring gaps + cap
-    51u,  // 4 tree_far — 3 segments × 1 ring gaps + cap
+    63u,  // 4 tree_far — 3 segments × 1 ring gaps + cap
 };
 
 } // namespace sm
