@@ -40,8 +40,10 @@ namespace {
 struct Row {
     std::string name;
     int segments = 0;
+    int leafPlanes = 0;
     float barkTop = 0.0f;
     std::vector<std::pair<float, float>> rings;   // radius, height
+    std::vector<std::pair<float, float>> tiers;   // height, half-width
 };
 
 std::string slurp(const std::string& path) {
@@ -83,6 +85,21 @@ std::vector<Row> read_csv(const std::string& path, int& headerCols) {
         // cell — it aborts the process, which is how this witness first died.
         r.segments = int(std::strtol(col("segments").c_str(), nullptr, 10));
         r.barkTop = std::strtof(col("bark_top").c_str(), nullptr);
+        r.leafPlanes = int(std::strtol(col("leaf_planes").c_str(), nullptr, 10));
+        const std::string leaves = col("leaves");
+        std::size_t lp = 0;
+        while (lp < leaves.size()) {
+            const std::size_t semi = leaves.find(';', lp);
+            const std::string part = leaves.substr(
+                lp, semi == std::string::npos ? std::string::npos : semi - lp);
+            const std::size_t at = part.find('@');
+            if (at != std::string::npos)
+                r.tiers.emplace_back(
+                    std::strtof(part.substr(0, at).c_str(), nullptr),
+                    std::strtof(part.substr(at + 1).c_str(), nullptr));
+            if (semi == std::string::npos) break;
+            lp = semi + 1;
+        }
         const std::string rings = col("rings");
         std::size_t pos = 0;
         while (pos < rings.size()) {
@@ -244,18 +261,44 @@ int main() {
     CHECK(ringChecks >= int(rows.size() * 2),
           "ярусы сверялись, а не пропускались молча");
 
-    // ── 4. THE VERTEX COUNT IS THE GEOMETRY'S OWN ─────────────────────────
-    // Re-derived here rather than copied: quads between every pair of rings,
-    // plus one fan cap. This is the number the draw uses, and it is the one
-    // that fails silently.
+    // ── 4. FOLIAGE IS CARDS, AND ITS TIERS CLIMB TOO ──────────────────────
+    // Leaves are flat cards crossed through the axis rather than a body of
+    // revolution, because a cone of revolution reads as a toy — the owner
+    // rejected exactly that look. The tiers obey the same ordering law the
+    // rings do, for the same reason: the builder walks the list.
+    int tierClimbs = 0;
+    for (const Row& r : rows) {
+        CHECK(r.leafPlanes >= 0 && r.leafPlanes <= 8,
+              "карточек в ярусе листвы 0..8 (0 = пропу листва не положена)");
+        CHECK(!(r.leafPlanes == 0 && !r.tiers.empty()),
+              "ярусов без карточек, на которых им стоять, не бывает");
+        for (std::size_t k = 1; k < r.tiers.size(); ++k) {
+            CHECK(r.tiers[k].first > r.tiers[k - 1].first,
+                  "каждый ярус листвы стоит ВЫШЕ предыдущего");
+            ++tierClimbs;
+        }
+        for (const auto& t : r.tiers)
+            CHECK(t.first >= 0.0f && t.first <= 1.0f && t.second > 0.0f,
+                  "ярус листвы стоит внутри высоты пропа и имеет размер");
+    }
+    CHECK(tierClimbs > 0, "ярусы листвы вообще проверялись");
+
+    // ── 5. THE VERTEX COUNT IS THE GEOMETRY'S OWN ─────────────────────────
+    // Re-derived here rather than copied: trunk quads between every pair of
+    // rings, one fan cap, then six vertices per foliage card. This is the
+    // number the draw uses, and it is the one that fails silently — a drift
+    // here drops the top tier of every tree in the world and builds clean.
     for (std::size_t i = 0; i < rows.size() && i < std::size_t(kPropProfileCount); ++i) {
         const std::uint32_t want =
             std::uint32_t(rows[i].segments) * 6u
                 * std::uint32_t(rows[i].rings.size() - 1)
-            + std::uint32_t(rows[i].segments) * 3u;
+            + std::uint32_t(rows[i].segments) * 3u
+            + std::uint32_t(rows[i].leafPlanes)
+                * std::uint32_t(rows[i].tiers.size()) * 6u;
         CHECK(kPropProfileVertices[i] == want,
-              "счёт вершин профиля ВЫВЕДЕН из его же строки: сегменты × 6 × "
-              "(ярусов − 1) + шапка");
+              "счёт вершин профиля ВЫВЕДЕН из его же строки: ствол "
+              "(сегменты × 6 × (ярусов − 1) + шапка) плюс по шесть вершин на "
+              "каждую карточку листвы");
     }
 
     std::printf("  [замер] профилей %d, ярусов в самом богатом %zu, "

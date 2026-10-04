@@ -37,6 +37,10 @@ OUT_HPP = os.path.join(REPO, "src", "tables", "prop_profiles.h")
 # follow.
 MAX_RINGS = 6
 
+# Same reasoning for the foliage tiers: a flat const array needs a constant
+# stride, and four tiers is one more than the richest row today.
+MAX_TIERS = 4
+
 
 def die(msg):
     sys.stderr.write("gen_prop_profiles: %s\n" % msg)
@@ -76,19 +80,44 @@ def read_rows():
         bark = float(row["bark_top"])
         if not 0.0 <= bark <= 1.0:
             die("row %d: bark_top %.3f outside 0..1" % (i, bark))
+        planes = int(row["leaf_planes"])
+        if planes < 0 or planes > 8:
+            die("row %d: %d leaf planes — 0..8" % (i, planes))
+        tiers = []
+        cell = row["leaves"].strip()
+        if cell:
+            for part in cell.split(";"):
+                y, _, size = part.strip().partition("@")
+                tiers.append((float(y), float(size)))
+        if len(tiers) > MAX_TIERS:
+            die("row %d: %d leaf tiers over the cap of %d" % (i, len(tiers),
+                                                              MAX_TIERS))
+        for k in range(1, len(tiers)):
+            if tiers[k][0] <= tiers[k - 1][0]:
+                die("row %d: leaf tier %d does not stand above the one below"
+                    % (i, k))
+        if planes == 0 and tiers:
+            die("row %d: tiers with no planes to stand on" % i)
         bark_rgb = tuple(float(row["bark_" + c]) for c in "rgb")
         for v in bark_rgb:
             if not 0.0 <= v <= 1.0:
                 die("row %d: bark colour %.3f outside 0..1" % (i, v))
         out.append({"name": row["name"], "segments": segments,
                     "rings": rings, "bark": bark, "barkRgb": bark_rgb,
-                    "note": row["note"]})
+                    "planes": planes, "tiers": tiers, "note": row["note"]})
     return out
 
 
 def vertex_count(row):
-    """Quads between neighbouring rings, plus one fan cap on top."""
-    return row["segments"] * 6 * (len(row["rings"]) - 1) + row["segments"] * 3
+    """Trunk quads + cap, then six vertices per foliage card.
+
+    One draw covers the whole prop — trunk AND leaves — because a tree is one
+    thing and splitting it into two passes would make every tree two draws and
+    two chances to disagree about where it stands.
+    """
+    trunk = row["segments"] * 6 * (len(row["rings"]) - 1) + row["segments"] * 3
+    leaves = row["planes"] * len(row["tiers"]) * 6
+    return trunk + leaves
 
 
 def wrap(text, width, indent):
@@ -164,6 +193,44 @@ def emit_glsl(rows):
         o.append("    vec3(%.5f, %.5f, %.5f)%s  // %d %s"
                  % (r["barkRgb"][0], r["barkRgb"][1], r["barkRgb"][2],
                     "," if i + 1 < len(rows) else " ", i, r["name"]))
+    o.append(");")
+    o.append("")
+    o.append("// FOLIAGE: how many crossed cards stand at each tier, and")
+    o.append("// where the tiers are. Leaves are CARDS rather than a body of")
+    o.append("// revolution because foliage is not a surface — a cone of")
+    o.append("// revolution reads as a toy, which is exactly the look this")
+    o.append("// table replaced.")
+    o.append("const uint kProfileLeafPlanes[%d] = uint[%d]("
+             % (len(rows), len(rows)))
+    for i, r in enumerate(rows):
+        o.append("    %du%s  // %d %s" % (r["planes"],
+                                          "," if i + 1 < len(rows) else " ",
+                                          i, r["name"]))
+    o.append(");")
+    o.append("")
+    o.append("const uint kProfileLeafTiers[%d] = uint[%d]("
+             % (len(rows), len(rows)))
+    for i, r in enumerate(rows):
+        o.append("    %du%s  // %d %s" % (len(r["tiers"]),
+                                          "," if i + 1 < len(rows) else " ",
+                                          i, r["name"]))
+    o.append(");")
+    o.append("")
+    o.append("const uint kProfileMaxTiers = %du;" % MAX_TIERS)
+    o.append("// x = height fraction of the tier, y = its half-width as a")
+    o.append("// fraction of the prop's. Padded to the stride, last repeated.")
+    o.append("const vec2 kProfileLeaves[%d] = vec2[%d]("
+             % (len(rows) * MAX_TIERS, len(rows) * MAX_TIERS))
+    lcells = []
+    for i, r in enumerate(rows):
+        pad = r["tiers"] + [r["tiers"][-1] if r["tiers"] else (0.0, 0.0)] \
+            * (MAX_TIERS - len(r["tiers"]))
+        for k, (y, size) in enumerate(pad):
+            lcells.append(("    vec2(%.5f, %.5f)" % (y, size),
+                           "%d %s tier %d" % (i, r["name"], k)))
+    for n, (text, label) in enumerate(lcells):
+        o.append("%s%s  // %s" % (text, "," if n + 1 < len(lcells) else " ",
+                                  label))
     o.append(");")
     o.append("")
     o.append("// The rings themselves, PADDED to the cap so the stride is a")

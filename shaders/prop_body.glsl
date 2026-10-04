@@ -25,12 +25,49 @@ float hash_u(uint h) {
 // splits bark from crown by.
 void prop_body_vertex(uint vi, uint prof, float halfW, float heightM,
                       out vec3 localPos, out vec3 localNormal,
-                      out float localY) {
+                      out float localY, out vec2 uv, out float isLeaf) {
     uint segs  = kProfileSegments[prof];
     uint rings = kProfileRingCount[prof];
     uint sideVerts = segs * 6u * (rings - 1u);
+    uint trunkVerts = sideVerts + segs * 3u;
     vec2  rg;
     float ang;
+    uv = vec2(0.0);
+    isLeaf = 0.0;
+    if (vi >= trunkVerts) {
+        // ── FOLIAGE: FLAT CARDS, CROSSED THROUGH THE AXIS ────────────────
+        // Leaves are not a surface — they are a great many small things, and
+        // a card with a cut-out silhouette says that in two triangles where a
+        // body of revolution lies about it with fifty and reads as a toy.
+        // This is the old-school answer and it is deliberate (owner,
+        // 2026-10-04: «ствол и ветки 3д а листва кроны плоские плоскости …
+        // по олдскулу»).
+        uint lv     = vi - trunkVerts;
+        uint planes = max(kProfileLeafPlanes[prof], 1u);
+        uint tier   = lv / (planes * 6u);
+        uint plane  = (lv / 6u) % planes;
+        vec2 q      = kQuad[lv % 6u];
+        vec2 tr     = kProfileLeaves[prof * kProfileMaxTiers + tier];
+        float cardHalf = tr.y * halfW;
+        // Cards stand at even angles THROUGH the axis, so two make a cross
+        // and three a star; from any side at least one faces the eye.
+        float pa = float(plane) * 3.14159265 / float(planes);
+        vec2  dir = vec2(cos(pa), sin(pa));
+        float sx  = (q.x * 2.0 - 1.0) * cardHalf;
+        float sy  = (q.y * 2.0 - 1.0) * cardHalf;
+        localPos  = vec3(dir.x * sx, tr.x * heightM + sy, dir.y * sx);
+        // THE NORMAL POINTS OUT OF THE CROWN, not out of the card. A card is
+        // a stand-in for a mass of leaves, and lighting it as a flat plate
+        // makes a tree flicker between bright and black as the eye moves
+        // around it. Outward-from-the-axis shades the tier as the round thing
+        // it represents.
+        localNormal = normalize(vec3(localPos.x, cardHalf * 0.65, localPos.z)
+                                + vec3(0.0, 0.001, 0.0));
+        localY = tr.x;
+        uv     = q;
+        isLeaf = 1.0;
+        return;
+    }
     if (vi < sideVerts) {
         uint quad = vi / 6u;
         vec2 q    = kQuad[vi % 6u];

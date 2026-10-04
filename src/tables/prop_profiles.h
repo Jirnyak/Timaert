@@ -28,8 +28,8 @@ inline constexpr int kPropProfileCount = 2;
 // Vertices one draw of this profile takes: `segments` quads
 // between every pair of rings, plus a fan cap on top.
 inline constexpr std::uint32_t kPropProfileVertices[kPropProfileCount] = {
-    162u,  // 0 tree_near — 6 segments × 4 ring gaps + cap
-    84u,  // 1 tree_far — 4 segments × 3 ring gaps + cap
+    114u,  // 0 tree_near — 4 segments × 2 ring gaps + cap
+    51u,  // 1 tree_far — 3 segments × 1 ring gaps + cap
 };
 
 } // namespace sm

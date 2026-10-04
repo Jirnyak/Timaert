@@ -1116,7 +1116,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     // with the lit stage by include (shaders/prop_body.glsl), so a tree's
     // shadow cannot stop being that tree's outline.
     spv_path(vpath, sizeof vpath, "shadow_prop_profile.vert");
-    spv_path(fpath, sizeof fpath, "shadow_struct.frag");
+    spv_path(fpath, sizeof fpath, "shadow_prop_profile.frag");
     {
         if (!shadowPropPipe_.create_shadow(dev, shadow_.renderPass, vpath,
                                            fpath, sizeof(ShadowPush),

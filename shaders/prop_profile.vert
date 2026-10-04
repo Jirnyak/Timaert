@@ -40,11 +40,14 @@ layout(location = 2) out float vLocalY;
 layout(location = 3) flat out uint vProfile;
 layout(location = 4) flat out uint vSeed;
 layout(location = 5) out vec4  vLightClip;
+layout(location = 6) out vec2  vLeafUv;
+layout(location = 7) out float vIsLeaf;
 
 void main() {
     uint prof = min(iKind, kProfileCount - 1u);
-    vec3 lp, ln; float ly;
-    prop_body_vertex(uint(gl_VertexIndex), prof, iHalfW, iHeight, lp, ln, ly);
+    vec3 lp, ln; float ly; vec2 luv; float leaf;
+    prop_body_vertex(uint(gl_VertexIndex), prof, iHalfW, iHeight, lp, ln, ly,
+                     luv, leaf);
     mat2 rot = prop_body_yaw(iSeed);
     vec3 world = iPos + vec3(rot * lp.xz, lp.y).xzy;
     vec3 nrm   = normalize(vec3(rot * ln.xz, ln.y).xzy);
@@ -54,6 +57,8 @@ void main() {
     vLocalY  = ly;
     vProfile = prof;
     vSeed    = iSeed;
+    vLeafUv  = luv;
+    vIsLeaf  = leaf;
     vLightClip  = pc.lightMvp * vec4(world, 1.0);
     gl_Position = pc.mvp * vec4(world, 1.0);
 }

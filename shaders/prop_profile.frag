@@ -15,6 +15,7 @@
 // with. Neither can drift from the other, because there is one of each.
 #include "prop_profiles.glsl"
 #include "ground_surface.glsl"
+#include "leaf_sprite.glsl"
 #include "shadow_common.glsl"
 #include "lighting.glsl"
 
@@ -27,6 +28,8 @@ layout(location = 2) in float vLocalY;
 layout(location = 3) flat in uint vProfile;
 layout(location = 4) flat in uint vSeed;
 layout(location = 5) in vec4  vLightClip;
+layout(location = 6) in vec2  vLeafUv;
+layout(location = 7) in float vIsLeaf;
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -49,6 +52,15 @@ float hash_u(uint h) {
 void main() {
     uint prof = min(vProfile, kProfileCount - 1u);
 
+    // A LEAF CARD IS MOSTLY HOLES, and that is the whole of why foliage is
+    // cards: the silhouette is cut per fragment instead of being modelled.
+    // The clump's seed mixes the instance with the card's own height, so two
+    // tiers of one tree are not the same stencil twice.
+    if (vIsLeaf > 0.5) {
+        uint clumpSeed = vSeed ^ (uint(vLocalY * 255.0) * 2654435761u);
+        if (leaf_patch(vLeafUv, clumpSeed) < 0.5) discard;
+    }
+
     // THE CROWN'S OWN PAIR, mixed per instance rather than per fragment: one
     // wood is not one green, and the seed is what the owner asked a tree to
     // vary by. Bounded by construction — every colour a crown can show lies
@@ -61,7 +73,14 @@ void main() {
     // crown does not begin on one ring, and the step would read as a painted
     // band at exactly the distance the tree is biggest on screen.
     float top  = kProfileBarkTop[prof];
-    vec3 base  = mix(bark, crown, smoothstep(top - 0.04, top + 0.04, vLocalY));
+    // WHICH OF THE TWO THIS FRAGMENT IS is a fact of the GEOMETRY now, not a
+    // guess from height: a card is foliage wherever it stands, and the trunk
+    // is bark all the way up. `bark_top` stays for props whose body itself
+    // changes material partway (a post with a painted cap), which is the same
+    // idiom a house uses for its roof.
+    vec3 base  = vIsLeaf > 0.5
+               ? crown
+               : mix(bark, crown, smoothstep(top - 0.04, top + 0.04, vLocalY));
 
     vec3  n   = normalize(vNormal);
     float ndl = max(dot(n, normalize(pc.sunDir.xyz)), 0.0);

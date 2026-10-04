@@ -15,11 +15,21 @@ layout(location = 5) in uint  iTint;
 
 layout(push_constant) uniform Push { mat4 lightMvp; } pc;
 
+// The silhouette the depth pass must cut: a leaf card is mostly holes, and a
+// shadow of its full quad would be a square blot under every tree.
+layout(location = 0) out vec2  vLeafUv;
+layout(location = 1) out float vIsLeaf;
+layout(location = 2) flat out uint vSeed;
+
 void main() {
     uint prof = min(iKind, kProfileCount - 1u);
-    vec3 lp, ln; float ly;
-    prop_body_vertex(uint(gl_VertexIndex), prof, iHalfW, iHeight, lp, ln, ly);
+    vec3 lp, ln; float ly; vec2 luv; float leaf;
+    prop_body_vertex(uint(gl_VertexIndex), prof, iHalfW, iHeight, lp, ln, ly,
+                     luv, leaf);
     mat2 rot = prop_body_yaw(iSeed);
     vec3 world = iPos + vec3(rot * lp.xz, lp.y).xzy;
+    vLeafUv  = luv;
+    vIsLeaf  = leaf;
+    vSeed    = iSeed;
     gl_Position = pc.lightMvp * vec4(world, 1.0);
 }
