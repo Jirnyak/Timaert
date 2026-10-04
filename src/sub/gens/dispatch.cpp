@@ -65,9 +65,18 @@ SubworldMode resolve_mode(const CellContext& ctx) {
         // line below, which meant the day a castle was placed on the map it
         // would raise a city — walls, keep and four hundred houses (GEN-5).
         // A kind with no module is a kind with no buildings, and that is the
-        // honest answer until its TU exists.
-        default:                    break;
-        case SquadType::None:    break;
+        // honest answer until its TU exists. `default:` здесь ЗАПРЕЩЁН
+        // (ЗАКОН СЛОВАРЯ п.4): он глушил -Wswitch, и новый род сквада падал
+        // бы в землю МОЛЧА — теперь забытый род называет компилятор.
+        case SquadType::None:
+        case SquadType::Lair:
+        case SquadType::Shrine:
+        case SquadType::Mine:
+        case SquadType::Tower:
+        case SquadType::Artel:
+        case SquadType::Caravan:
+        case SquadType::Collector:
+        case SquadType::Count:   break;
     }
     // Features come before the biome base: what men built on the cell decides
     // what the cell IS underfoot, then the biome fills in the terrain, then

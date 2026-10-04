@@ -91,8 +91,12 @@ namespace {
 namespace fs = std::filesystem;
 
 // Каталоги, где живёт МАКРОМИР и всё, что адресует его клетки. `src/sub/`
-// отсутствует намеренно — см. шапку.
+// отсутствует намеренно — см. шапку. `src/core` добавлен 2026-10-04: свёртка
+// стороны мира через `wrapi` ВЫЖИЛА в самой канонической двери
+// (`torus_step_toward@src/core/torus.h`, звалась маршем на каждом шаге), и
+// прибор молчал ровно потому, что домашний каталог дверей не сканировался.
 constexpr std::string_view kScanDirs[] = {
+    "src/core",
     "src/macro", "src/app", "src/content", "src/ecs", "src/ui", "src/events",
 };
 
