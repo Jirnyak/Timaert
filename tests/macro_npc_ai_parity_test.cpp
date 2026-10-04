@@ -11,8 +11,8 @@
 #include "macro/labour.h"   // souls_flock — паства места
 
 #include "macro/npc_ai.h"
-#include "macro/place_birth.h"   // birth_landmark — место рождается с ТЕЛОМ
-#include "macro/place_body.h"    // place_store / place_slot — плечо места
+#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/squad.h"         // place_handle_by_ordinal — резолв места
 #include "macro/world_row.h"
 #include "macro/map_generator.h"
 #include "macro/recovery.h"
@@ -26,29 +26,19 @@
 
 namespace {
 
-sm::Landmark settlement(int id, int x, int y) {
-    sm::Landmark s{};
-    s.type = sm::LandmarkType::City;
-    s.id = id;
-    std::snprintf(s.name, sizeof s.name, "Test");
-    s.x = x;
-    s.y = y;
-    s.factionIdx = 0;
-    return s;
-}
-
 // ДУШИ СЕЛЯТСЯ ДВЕРЬЮ МИРА, И ТОЛЬКО ПОСЛЕ ВСТАВКИ В МИР (v122): у паствы
 // носитель — worked-слой полей, значит запись вне мира её нести не может.
 // Гейт подъёма артелей спрашивает ИМЕННО паству, поэтому место без неё
 // молча пропускается целиком — так и покраснел негативный контроль ниже.
-sm::Landmark& push_settlement(sm::GameState& gs, sm::MacroStore& st,
-                              int id, int x, int y) {
-    // Место рождается ОДНОЙ дверью — строка плюс ТЕЛО (M-90 шаг 5): склад,
-    // в который и садятся домашние головы, есть колонка его слота.
-    sm::Landmark& row =
-        sm::birth_landmark(gs, st, sm::Landmark{settlement(id, x, y)});
-    sm::settle_souls(gs, st, row, 1000);
-    return row;
+//
+// Место рождается ОДНОЙ дверью — ТЕЛОМ в store (ломтик F): склад, в который
+// садятся домашние головы, адрес и ординал суть колонки его слота. Возвращён
+// ОРДИНАЛ, потому что дом сквада называется именно им.
+int push_settlement(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
+    const sm::MacroHandle h =
+        sm::birth_place(gs, st, sm::SquadType::City, x, y, 0, "Test");
+    sm::settle_souls(gs, st, h.slot, 1000);
+    return int(st.spawnId[h.slot].index);
 }
 
 sm::MacroHandle spawn_ai(sm::ecs::World& world,
@@ -63,7 +53,13 @@ sm::MacroHandle spawn_ai(sm::ecs::World& world,
     // 6.3: фикстура рождает слот store — тем же законом, что make_npc.
     sm::MacroStore& st = sm::store_of(world);
     const sm::MacroHandle h = sm::store_birth(st);
-    static std::uint32_t nextOrdinal = 0;
+    // ОРДИНАЛЫ ФИКСТУРЫ — СВОЙ ДИАПАЗОН, И ОН НЕ С НУЛЯ. Ломтиком F тело
+    // места стоит в ТОМ ЖЕ store с ординалом от эмитента (1, 2, …), поэтому
+    // выдача «с нуля» давала бы, во-первых, ординал «никто» (ЗАКОН СЛОВАРЯ
+    // п.6), во-вторых — коллизию со вторым местом мира: резолв по ординалу
+    // находил бы ГОРОД вместо сквада. База стоит заведомо выше всякого
+    // места этой фикстуры (их тут не больше двух).
+    static std::uint32_t nextOrdinal = 1000u;
     st.spawnId[h.slot] = sm::ecs::MacroSpawnId{nextOrdinal++};
     st.cell[h.slot] = sm::ecs::MacroCell{
         sm::ecs::cell_index(int(x), int(y), mapW)};
@@ -120,8 +116,8 @@ void test_home_wanderer_returns_when_far() {
     sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    push_settlement(gs, *worldStore_, 1, 50, 50);
-    auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, 1);
+    const int homeId = push_settlement(gs, *worldStore_, 50, 50);
+    auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, homeId);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 10u);
     tick_once(gs, world, runtime);
@@ -141,14 +137,14 @@ void test_woodcutter_targets_nearest_tree() {
     sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    push_settlement(gs, *worldStore_, 1, 20, 20);
+    const int homeId = push_settlement(gs, *worldStore_, 20, 20);
     // Two trees: one within reach, one across the map. The near one must win —
     // "nearest", not "first in the grid".
     std::vector<sm::TreePoint> trees{{23, 20}, {80, 80}};
     sm::TreeGrid grid;
     sm::build_tree_grid(grid, trees, gs.mapW, gs.mapH, 32);
 
-    auto e = spawn_ai(world, sm::NPCType::Peasant, 21.0f, 20.0f, 1);
+    auto e = spawn_ai(world, sm::NPCType::Peasant, 21.0f, 20.0f, homeId);
     {
         // Работа именуется поручением (аукцион, CANON S10): рубка = Gather
         // над строкой целей Trees; тип — лишь лист и спина.
@@ -177,9 +173,9 @@ void test_trader_targets_other_settlement() {
     sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    push_settlement(gs, *worldStore_, 1, 10, 10);
-    push_settlement(gs, *worldStore_, 2, 40, 10);
-    auto e = spawn_ai(world, sm::NPCType::Merchant, 10.0f, 10.0f, 1);
+    const int homeId = push_settlement(gs, *worldStore_, 10, 10);
+    const int awayId = push_settlement(gs, *worldStore_, 40, 10);
+    auto e = spawn_ai(world, sm::NPCType::Merchant, 10.0f, 10.0f, homeId);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 30u);
     tick_once(gs, world, runtime);
@@ -187,7 +183,7 @@ void test_trader_targets_other_settlement() {
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Trader standing at home sets out");
-    CHECK(rt.targetSettlementId == 2,
+    CHECK(rt.targetSettlementId == awayId,
           "a Trader trades AWAY from home: never its own settlement");
     CHECK(targets(rt, 40.0f, 10.0f),
           "the Trader's target cell is the chosen settlement's cell");
@@ -202,8 +198,8 @@ void test_nomad_excludes_current_target() {
     sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    push_settlement(gs, *worldStore_, 1, 10, 10);
-    push_settlement(gs, *worldStore_, 2, 40, 10);
+    const int firstId = push_settlement(gs, *worldStore_, 10, 10);
+    const int standingId = push_settlement(gs, *worldStore_, 40, 10);
     // Бродяга — ТИП СКВАДА без дома: диспетчер спрашивает тип первым, а
     // корован без дома честно сваливается в ai_nomad. На роли тела этот
     // тест стоять больше не может — роль TaxCollector осталась без машины
@@ -211,7 +207,7 @@ void test_nomad_excludes_current_target() {
     auto e = spawn_ai(world, sm::NPCType::Peasant, 40.0f, 10.0f, -1);
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
     rt.squadType = std::uint8_t(sm::SquadType::Caravan);
-    rt.targetSettlementId = 2;
+    rt.targetSettlementId = standingId;
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 40u);
@@ -219,7 +215,7 @@ void test_nomad_excludes_current_target() {
 
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Nomad that arrived picks a new leg immediately");
-    CHECK(rt.targetSettlementId == 1,
+    CHECK(rt.targetSettlementId == firstId,
           "a Nomad never re-picks the settlement it is already standing at");
     CHECK(targets(rt, 10.0f, 10.0f),
           "the Nomad's target cell follows the settlement it chose");
@@ -536,8 +532,8 @@ void test_a_marching_body_does_not_mend() {
     sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    push_settlement(gs, *worldStore_, 1, 50, 50);
-    auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, 1);
+    const int homeId = push_settlement(gs, *worldStore_, 50, 50);
+    auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, homeId);
     auto& hp = (*sm::body_state<sm::ecs::Pools>(sm::store_of(world), e));
     hp.maxHp = 50;
     hp.hp = 10;
@@ -576,7 +572,9 @@ void test_rotation_does_not_dissolve_the_dead() {
     sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    push_settlement(gs, *worldStore_, 1, 50, 50);
+    const int cityId = push_settlement(gs, *worldStore_, 50, 50);
+    const sm::MacroHandle cityBody =
+        sm::place_handle_by_ordinal(*worldStore_, std::uint32_t(cityId));
     sm::TerrainData terrain;
     terrain.width = 8;
     terrain.height = 8;
@@ -591,7 +589,8 @@ void test_rotation_does_not_dissolve_the_dead() {
     // (Peasant, артель горожан): патрульная строка Guard вырезана
     // 2026-09-21, и свидетель на ней проверял бы уже не закон, а пустоту —
     // rotate_worker_squads не считает крю то, чего место не поднимает.
-    const auto dead = spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, 1);
+    const auto dead =
+        spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
     {
         sm::MacroStore& std_ = sm::store_of(world);
         const std::uint16_t ds = dead.slot;
@@ -603,15 +602,15 @@ void test_rotation_does_not_dissolve_the_dead() {
     }
 
     const int popBefore =
-        sm::souls_flock(gs, *worldStore_, gs.landmarks[0]);
+        sm::souls_flock(gs, *worldStore_, cityBody.slot);
     const int garrisonBefore =
-        sm::creature_heads(sm::place_store(*worldStore_, gs.landmarks[0]));
+        sm::creature_heads(worldStore_->inventory[cityBody.slot].inv);
     sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
     sm::rotate_worker_squads(mw, /*day=*/3);
 
-    CHECK(sm::souls_flock(gs, *worldStore_, gs.landmarks[0]) == popBefore,
+    CHECK(sm::souls_flock(gs, *worldStore_, cityBody.slot) == popBefore,
           "a dead crew's souls never return to the population");
-    CHECK(sm::creature_heads(sm::place_store(*worldStore_, gs.landmarks[0]))
+    CHECK(sm::creature_heads(worldStore_->inventory[cityBody.slot].inv)
               == garrisonBefore,
           "and dead records never march into the garrison");
     CHECK(sm::store_of(world).valid(dead),
@@ -625,7 +624,7 @@ void test_rotation_does_not_dissolve_the_dead() {
     // которую та же граница двигает ещё и набором.
     for (std::uint32_t i = 0; i < 2u; ++i) {
         const auto alive =
-            spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, 1);
+            spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
         sm::MacroStore& sta = sm::store_of(world);
         const std::uint16_t as = alive.slot;
         sta.spawnId[as] = sm::ecs::MacroSpawnId{78u + i};
@@ -641,8 +640,7 @@ void test_rotation_does_not_dissolve_the_dead() {
         // ТЕЛО МЕСТА — ТОТ ЖЕ STORE и нулевая строка существа (Peasant),
         // поэтому счёт артелей исключает его ПО ИМЕНИ: место в своих
         // крестьянах не числится.
-        const std::uint16_t placeSlot =
-            sm::place_slot(*worldStore_, gs.landmarks[0]);
+        const std::uint16_t placeSlot = cityBody.slot;
         for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
             if (stl.alive[s32] == 0 || stl.dead[s32] != 0) continue;
             if (std::uint16_t(s32) == placeSlot) continue;

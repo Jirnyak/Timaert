@@ -13,7 +13,7 @@
 #include "macro/entry_context.h"
 #include "tables/faction.h"
 #include "macro/labour.h"           // ОДИН пул рук места (CANON S4)
-#include "macro/place_body.h"       // place_slot / place_store — тело места
+#include "macro/landmark_iter.h"    // for_each_place — обход мест по оси рода
 #include "macro/landmark_registry.h"
 #include "macro/movement_cost.h"
 #include "tables/npc.h"
@@ -63,6 +63,35 @@ inline MacroStore& store_ctx(const TickContext& ctx) {
     return store_mw(ctx.mw);
 }
 
+// ── РЕЗОЛВ МЕСТА В ДУМКЕ: ОРДИНАЛ → СЛОТ (ломтик F) ─────────────────────
+// Думка зовёт этот резолв по нескольку раз за think, поэтому он обязан идти
+// БИНАРНЫМ поиском по порядку закона, который драйв уже собрал
+// (SquadIndex.order, ординально отсортирован) — скан капа здесь был бы
+// O(кап) на каждый think, то есть ровно та граница, которую §6 запрещает.
+// Фикстура, водящая одну думку без каркаса, падает в скан — у неё порядка
+// нет, и это её цена, не цена мира.
+// Ось рода гейтится здесь: пространство ординалов ОДНО (M-37), и «это
+// место» отвечает только ось тела.
+inline std::uint16_t place_slot_by_id(const TickContext& ctx, int id) {
+    if (id <= 0) return kMacroNoSlot;   // 0 = «никого» (ЗАКОН НУЛЯ-ОРДИНАЛА)
+    const MacroStore& st = store_ctx(ctx);
+    const MacroHandle h = ctx.squads
+        ? macro_handle_by_spawn_id(st, ctx.squads->order, std::uint32_t(id))
+        : macro_handle_by_spawn_id(st, std::uint32_t(id));
+    if (!st.valid(h)) return kMacroNoSlot;
+    return is_settlement_kind(SquadType(st.runtime[h.slot].squadType))
+        ? h.slot : kMacroNoSlot;
+}
+
+// Клетка слота парой координат — геометрия марша и округи (ЗАКОН АДРЕСА:
+// пара законна там, где идёт ГЕОМЕТРИЯ, а не доступ к полю).
+inline int slot_x(const MacroStore& st, std::uint16_t slot, int mapW) {
+    return ecs::cell_x(st.cell[slot], mapW);
+}
+inline int slot_y(const MacroStore& st, std::uint16_t slot, int mapW) {
+    return ecs::cell_y(st.cell[slot], mapW);
+}
+
 // ── Helpers shared by all behaviours ──────────────────────────
 
 struct XY { float x, y; };
@@ -87,28 +116,29 @@ XY pick_random_nearby(float cx, float cy, int range, const TickContext& ctx) {
 }
 
 bool home_pos(const ecs::MacroNpcRuntime& rt, const TickContext& ctx, XY& out) {
-    // ONE landmark roster (v62): the id alone names the place.
-    const Landmark* lm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
-    if (!lm) return false;
-    out = {float(lm->x), float(lm->y)};
+    // ОДИН эмитент ординалов (M-37): ординал и есть имя места.
+    const std::uint16_t slot = place_slot_by_id(ctx, rt.homeSettlementId);
+    if (slot == kMacroNoSlot) return false;
+    const MacroStore& st = store_ctx(ctx);
+    out = {float(slot_x(st, slot, ctx.mapW)),
+           float(slot_y(st, slot, ctx.mapW))};
     return true;
 }
 
-// The agent's HOME STORE — where a gatherer's haul lands. The same universal
-// Inventory the market sells from, resolved by the honest id.
-// THE home place of a crew — one resolver, because two readers now ask for
-// different parts of it (the store it delivers into, the ОПИСЬ ОКРУГИ it
-// reads its worksite from).
-Landmark* home_landmark(const ecs::MacroNpcRuntime& rt,
-                        const TickContext& ctx) {
-    return ctx.mw.gs ? landmark_by_id(*ctx.mw.gs, rt.homeSettlementId)
-                     : nullptr;
+// ДОМ АРТЕЛИ — ОДИН РЕЗОЛВ НА ДВУХ ЧИТАТЕЛЕЙ: склад, куда ложится груз
+// (home_inventory), и стойло, куда сдаётся тягло (deliver_mounts_home).
+// Отдаёт СЛОТ тела места; kMacroNoSlot = дома нет.
+std::uint16_t home_place_slot(const ecs::MacroNpcRuntime& rt,
+                              const TickContext& ctx) {
+    return ctx.mw.gs ? place_slot_by_id(ctx, rt.homeSettlementId)
+                     : kMacroNoSlot;
 }
 
 Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
                           const TickContext& ctx) {
-    Landmark* lm = home_landmark(rt, ctx);
-    return lm ? &place_store(store_ctx(ctx), *lm) : nullptr;
+    const std::uint16_t slot = home_place_slot(rt, ctx);
+    return slot == kMacroNoSlot ? nullptr
+                                : &store_ctx(ctx).inventory[slot].inv;
 }
 
 // ТАКТ 1 — СДАЧА (двухтактный обоз, вердикт владельца 2026-09-19):
@@ -127,21 +157,22 @@ void deliver_mounts_home(MacroHandle self, const ecs::MacroNpcRuntime& rt,
     if (!ctx.mw.world) return;
     MacroStore& st = store_ctx(ctx);
     Inventory& bag = st.inventory[self.slot].inv;
-    Landmark* lm = home_landmark(rt, ctx);
-    if (!lm) return;
+    const std::uint16_t homeSlot = home_place_slot(rt, ctx);
+    if (homeSlot == kMacroNoSlot) return;
+    Inventory& stall = st.inventory[homeSlot].inv;   // стойло — склад места
     bool moved = false;
     // Область существ единого контейнера (M-71); обход first → 1023 =
     // старый порядок «новейший первым». Снятие слота приводит на его место
     // УЖЕ осмотренный новейший (ремонт плотности) — курсор шагает дальше.
     for (int i = bag.creature_first(); i < kMaxInventorySlots; ++i) {
-        const ItemRef stall = bag.slots[std::size_t(i)];
-        if (!is_mount_kind(std::uint16_t(creature_of_world_row(stall.def)))) {
+        const ItemRef head = bag.slots[std::size_t(i)];
+        if (!is_mount_kind(std::uint16_t(creature_of_world_row(head.def)))) {
             continue;
         }
         // Credit BEFORE debit (S5): a full garrison leaves the beasts IN
         // the roster rather than burning them.
-        if (!creatures_push_slot(place_store(st, *lm), stall)) continue;
-        bag.remove_at(i, stall.count);
+        if (!creatures_push_slot(stall, head)) continue;
+        bag.remove_at(i, head.count);
         moved = true;
     }
     if (moved) refresh_squad_carry(st, self);
@@ -1024,9 +1055,8 @@ int haul_between(Inventory& from, Depot to, int defIdx,
 // Приёмник-МЕСТО (CANON S10): склад + счёт + канал фактов мира — дверь
 // прихода гасит долг СРАЗУ тем, что упало. Сумки в Depot не заворачиваются
 // (неявная конверсия из Inventory&, долга нет).
-inline Depot depot_(Landmark& lm, const MacroWorld& mw) {
+inline Depot depot_(std::uint16_t slot, const MacroWorld& mw) {
     MacroStore& st = store_mw(mw);
-    const std::uint16_t slot = place_slot(st, lm);
     return Depot(st.inventory[slot].inv, st.roster[slot].needDebt,
                  mw.econFacts, mw.econFactsUser);
 }
@@ -1498,8 +1528,11 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
     // округи отсортированы по цене.
     float total = 0.0f;
     int pickId = -1;
-    const auto offer_ = [&](const Landmark& c) {
-        const float days = days_to_(c.x, c.y);
+    const MacroStore& stp = store_ctx(ctx);
+    const auto offer_ = [&](std::uint16_t slot) {
+        const int cx = slot_x(stp, slot, ctx.mapW);
+        const int cy = slot_y(stp, slot, ctx.mapW);
+        const float days = days_to_(cx, cy);
         if (days < 0.0f) return;              // пути нет — не кандидат
         const float w = 1.0f / (1.0f + days);
         total += w;
@@ -1510,22 +1543,23 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
             take = roll * total < w;
         }
         if (take) {
-            pickId = c.id;
-            outX = float(c.x);
-            outY = float(c.y);
+            pickId = int(stp.spawnId[slot].index);
+            outX = float(cx);
+            outY = float(cy);
         }
     };
     if (!baked || std::size_t(here) >= R) {
         // МИР БЕЗ ДОРОГ (граф округ не запечён — синтетическая фикстура,
-        // молодой мир): соседство спрашивается у ГЕОМЕТРИИ. Урна — весь
-        // ростер, потому что другого понятия соседства здесь нет.
-        for (const Landmark& c : ctx.mw.gs->landmarks) {
-            if (c.id == currentId || c.id == prevId) continue;
-            if (!landmark_is_settlement(c.type)
-                || souls_flock(*ctx.mw.gs, store_ctx(ctx), c) <= 0)
-                continue;
-            offer_(c);
-        }
+        // молодой мир): соседство спрашивается у ГЕОМЕТРИИ. Урна — все
+        // места мира, потому что другого понятия соседства здесь нет.
+        for_each_place(stp, [&](std::uint16_t slot) {
+            const int id = int(stp.spawnId[slot].index);
+            if (id == currentId || id == prevId) return;
+            if (!landmark_is_settlement(SquadType(stp.runtime[slot].squadType))
+                || souls_flock(*ctx.mw.gs, stp, slot) <= 0)
+                return;
+            offer_(slot);
+        });
         return pickId;
     }
     // Кандидаты — жилые места ВСЕХ соседних округ (кап мембран снят: его
@@ -1545,11 +1579,12 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
         if (seenCount < kNavMaxPortalsPerRegion) seen[seenCount++] = to;
         const int lmId = int(nv->regionLandmarkId[to]);
         if (lmId < 0 || lmId == currentId || lmId == prevId) continue;
-        const Landmark* lm = landmark_by_id(*ctx.mw.gs, lmId);
-        if (!lm || !landmark_is_settlement(lm->type)
-            || souls_flock(*ctx.mw.gs, store_ctx(ctx), *lm) <= 0)
+        const std::uint16_t slot = place_slot_by_id(ctx, lmId);
+        if (slot == kMacroNoSlot
+            || !landmark_is_settlement(SquadType(stp.runtime[slot].squadType))
+            || souls_flock(*ctx.mw.gs, stp, slot) <= 0)
             continue;
-        offer_(*lm);
+        offer_(slot);
     }
     return pickId;   // -1 = тупик: рейс кончается, крю идёт домой
 }
@@ -1628,8 +1663,11 @@ float route_fear_(const TickContext& ctx, int ax, int ay, int bx, int by) {
     return float(threat_on_route(*nv, ra, rb) >> kThreatFearShift);
 }
 
+// (Параметр `const Landmark& at` снят вместе со строкой места, ломтик F:
+// у него не было ни одного читателя в теле — цену «там» даёт прейскурант
+// каталога, а не адрес рынка.)
 long long trade_bid_value_(const MacroWorld& mw, int fromX, int fromY,
-                           const Landmark& at, const int* mine,
+                           const int* mine,
                            const int* homePrice, const int* homeLack) {
     long long value = 0;
     long long purse = 0;
@@ -1667,8 +1705,8 @@ int leader_trade_power_(const MacroStore& st, MacroHandle self) {
 
 // ...и ТОРГОВАЯ СИЛА МЕСТА — та же дверь над анкетой ландмарка (S25: у
 // сделки две макросущности, и место — полноправная сторона, а не «лавка»).
-int landmark_trade_power_(const Landmark& lm) {
-    const CharacterSheet& sh = landmark_sheet(lm.type);
+int landmark_trade_power_(const MacroStore& st, std::uint16_t slot) {
+    const CharacterSheet& sh = st.sheet[slot];
     return calculate_derived(sh.attributes, sh.skills).tradeDiscountPct;
 }
 
@@ -1795,13 +1833,12 @@ void ai_vendor(MacroHandle self, MacroPos& p,
     }
     MacroStore& st = store_ctx(ctx);
     Inventory* bag = &st.inventory[self.slot].inv;
-    Landmark* homeLm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
-    if (!homeLm) {
+    // Плечо дома — колонки его ТЕЛА (M-90 шаг 5): один резолв слота на такт.
+    const std::uint16_t homeSlot = place_slot_by_id(ctx, rt.homeSettlementId);
+    if (homeSlot == kMacroNoSlot) {
         ai_home_wanderer(p, rt, pools, ctx);
         return;
     }
-    // Плечо дома — колонки его ТЕЛА (M-90 шаг 5): один декод слота на такт.
-    const std::uint16_t homeSlot = place_slot(st, *homeLm);
     Inventory& homeInv = st.inventory[homeSlot].inv;
 
     if (rt.state == std::uint8_t(NS::Idle)) {
@@ -1819,11 +1856,13 @@ void ai_vendor(MacroHandle self, MacroPos& p,
         // (измерено: артели 1299 заперты в поле 30 дней).
         if (torus_dist_sq(p.x, p.y, home.x, home.y,
                           float(ctx.mapW), float(ctx.mapH)) >= 4.0f) {
-            if (Landmark* m2 = landmark_by_id(*ctx.mw.gs,
-                                              rt.targetSettlementId);
-                m2 && landmark_is_settlement(m2->type)) {
-                rt.targetX = float(m2->x);
-                rt.targetY = float(m2->y);
+            if (const std::uint16_t m2 =
+                    place_slot_by_id(ctx, rt.targetSettlementId);
+                m2 != kMacroNoSlot
+                && landmark_is_settlement(
+                       SquadType(st.runtime[m2].squadType))) {
+                rt.targetX = float(slot_x(st, m2, ctx.mapW));
+                rt.targetY = float(slot_y(st, m2, ctx.mapW));
                 rt.state = std::uint8_t(NS::Traveling);
             } else {
                 rt.targetX = home.x;
@@ -1835,9 +1874,11 @@ void ai_vendor(MacroHandle self, MacroPos& p,
         // РЫНОК — ИЗ ПОРУЧЕНИЯ (аукцион его и выбрал: деревне — сюзерен,
         // городу — деревня домена). Прежний жёсткий сюзерен был хардкодом
         // «рынок бывает только городом»: с ним горожанам было некуда ехать.
-        Landmark* market = landmark_by_id(*ctx.mw.gs, int(rt.errandObject));
-        if (!market || !landmark_is_settlement(market->type)
-            || market->id == homeLm->id) {
+        const std::uint16_t market =
+            place_slot_by_id(ctx, int(rt.errandObject));
+        if (market == kMacroNoSlot
+            || !landmark_is_settlement(SquadType(st.runtime[market].squadType))
+            || market == homeSlot) {
             ai_home_wanderer(p, rt, pools, ctx);
             return;
         }
@@ -1853,9 +1894,9 @@ void ai_vendor(MacroHandle self, MacroPos& p,
         // Load what is cheap at home — the one loading law
         // (load_cheap_at_home_): never a row the home itself is short of
         // (склад держит только излишек — долг съел нужду приходом).
-        const Skills& homeSite = landmark_sheet(homeLm->type).skills;
+        const Skills& homeSite = st.sheet[homeSlot].skills;
         plan_home_load_(homeInv, st.roster[homeSlot].needDebt,
-                        souls_home(st, *homeLm), homeSite, rt.carryCap,
+                        souls_home(st, homeSlot), homeSite, rt.carryCap,
                         bag);
         if (inventory_weight(*bag) <= 0.0f
             && inventory_value(*bag) <= 0) {
@@ -1863,9 +1904,9 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
             return;
         }
-        rt.targetSettlementId = market->id;
-        rt.targetX = float(market->x);
-        rt.targetY = float(market->y);
+        rt.targetSettlementId = int(st.spawnId[market].index);
+        rt.targetX = float(slot_x(st, market, ctx.mapW));
+        rt.targetY = float(slot_y(st, market, ctx.mapW));
         rt.state = std::uint8_t(NS::Traveling);
         return;
     }
@@ -1887,16 +1928,18 @@ void ai_vendor(MacroHandle self, MacroPos& p,
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer > 0) return;
-        if (Landmark* market = landmark_by_id(*ctx.mw.gs,
-                                              rt.targetSettlementId);
-            market && landmark_is_settlement(market->type)) {
+        if (const std::uint16_t market =
+                place_slot_by_id(ctx, rt.targetSettlementId);
+            market != kMacroNoSlot
+            && landmark_is_settlement(
+                   SquadType(st.runtime[market].squadType))) {
             // ЧТО ВЕЗТИ ДОМОЙ судит ВЕДОМОСТЬ ДОМА, а не память крю
             // (CANON S10, ярус 2): дом сам выписал свои цены точным
             // складом и своим счётом.
             const CaravanDeal deal = trade_vendor_at_market(
-                st, *bag, rt.carryCap, *market, homeLm,
+                st, *bag, rt.carryCap, market, handle_at(st, homeSlot),
                 leader_trade_power_(st, self),
-                landmark_trade_power_(*market),
+                landmark_trade_power_(st, market),
                 ctx.mw.econFacts, ctx.mw.econFactsUser);
             if (deal.movedTableValue > 0) {
                 record_landmark_fact(st, *ctx.mw.gs, FactKind::Traded,
@@ -1923,7 +1966,7 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             int homePrice[kCommodityCount] = {};
             int homeLack[kCommodityCount] = {};
             int cargo[kCommodityCount] = {};
-            const Skills& homeHands = landmark_sheet(homeLm->type).skills;
+            const Skills& homeHands = st.sheet[homeSlot].skills;
             long long homeValue = 0;
             for (int c = 0; c < kCommodityCount; ++c) {
                 const int id = commodity_item_index(c);
@@ -1932,7 +1975,7 @@ void ai_vendor(MacroHandle self, MacroPos& p,
                 const int have = homeInv.count_of(id);
                 const int demand =
                     season_demand_for(id, st.roster[homeSlot].needDebt,
-                                      souls_home(st, *homeLm), homeHands,
+                                      souls_home(st, homeSlot), homeHands,
                                       &homeInv);
                 homePrice[c] = base > 0 ? stock_price(base, have, demand)
                                         : 0;
@@ -1957,27 +2000,28 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             // диффузия), и НЕ тот, откуда пришли: рынок, который только что
             // обслужили, шанса не получает.
             float nextX = 0.0f, nextY = 0.0f;
-            const int nextId = pick_next_station_(ctx, p, market->id,
-                                                  rt.prevStationId,
-                                                  nextX, nextY);
+            const int nextId =
+                pick_next_station_(ctx, p, int(st.spawnId[market].index),
+                                   rt.prevStationId, nextX, nextY);
             float bidGo = 0.0f;
-            const Landmark* next =
-                nextId >= 0 ? landmark_by_id(*ctx.mw.gs, nextId) : nullptr;
-            if (next && next->id != homeLm->id) {
+            const std::uint16_t next = place_slot_by_id(ctx, nextId);
+            if (next != kMacroNoSlot && next != homeSlot) {
+                const int nextX_ = slot_x(st, next, ctx.mapW);
+                const int nextY_ = slot_y(st, next, ctx.mapW);
                 const long long gain =
-                    trade_bid_value_(ctx.mw, int(p.x), int(p.y), *next,
+                    trade_bid_value_(ctx.mw, int(p.x), int(p.y),
                                      cargo, homePrice, homeLack);
                 // ДЛИТЕЛЬНОСТЬ — ВЕСЬ ОСТАТОК РЕЙСА: туда И оттуда домой.
                 // Иначе «дальше» дешевело бы по построению, и крю уходило бы
                 // от дома бесконечно — знаменатель обязан расти с отъездом.
                 const float daysGo =
-                    march_days_(ctx, int(p.x), int(p.y), next->x, next->y)
-                    + march_days_(ctx, next->x, next->y, int(home.x),
+                    march_days_(ctx, int(p.x), int(p.y), nextX_, nextY_)
+                    + march_days_(ctx, nextX_, nextY_, int(home.x),
                                   int(home.y));
                 if (daysGo > 0.0f)
                     bidGo = (float(gain)
                              - route_fear_(ctx, int(p.x), int(p.y),
-                                           next->x, next->y))
+                                           nextX_, nextY_))
                             / daysGo;
             }
             // РУЛЕТКА, А НЕ ARGMAX — закон аукциона целей. Ни одной
@@ -1992,10 +2036,10 @@ void ai_vendor(MacroHandle self, MacroPos& p,
                             : 1.0f;
                 goOn = roll * total < bidGo;
             }
-            if (goOn && next) {
-                rt.prevStationId = market->id;
-                rt.errandObject = std::uint32_t(next->id);
-                rt.targetSettlementId = next->id;
+            if (goOn && next != kMacroNoSlot) {
+                rt.prevStationId = int(st.spawnId[market].index);
+                rt.errandObject = st.spawnId[next].index;
+                rt.targetSettlementId = int(st.spawnId[next].index);
                 rt.targetX = nextX;
                 rt.targetY = nextY;
                 rt.state = std::uint8_t(NS::Traveling);
@@ -2016,10 +2060,10 @@ void ai_vendor(MacroHandle self, MacroPos& p,
                 // Home: purchases and earnings land on the home store; the
                 // rotation dissolves the crew at dawn.
                 for (int i = 0; i < kCommodityCount; ++i) {
-                    haul_between(*bag, depot_(*homeLm, ctx.mw),
+                    haul_between(*bag, depot_(homeSlot, ctx.mw),
                                  commodity_item_index(i), 1 << 30, 1e9f);
                 }
-                transfer_value_dense(*bag, depot_(*homeLm, ctx.mw),
+                transfer_value_dense(*bag, depot_(homeSlot, ctx.mw),
                                inventory_value(*bag));
             }
             rt.state = std::uint8_t(NS::Idle);
@@ -2059,20 +2103,21 @@ void ai_collector(MacroHandle self, MacroPos& p,
     }
     MacroStore& st = store_ctx(ctx);
     Inventory* bag = &st.inventory[self.slot].inv;
-    Landmark* homeLm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
-    if (!homeLm) {
+    // Плечо дома и вассала — колонки их ТЕЛ (M-90 шаг 5).
+    const std::uint16_t homeSlot = place_slot_by_id(ctx, rt.homeSettlementId);
+    if (homeSlot == kMacroNoSlot) {
         ai_nomad(p, rt, pools, ctx);
         return;
     }
-    Landmark* vassal = landmark_by_id(*ctx.mw.gs, int(rt.errandObject));
-    if (!vassal || vassal->id == homeLm->id) {
+    const std::uint16_t vassal = place_slot_by_id(ctx, int(rt.errandObject));
+    if (vassal == kMacroNoSlot || vassal == homeSlot) {
         ai_home_wanderer(p, rt, pools, ctx);
         return;
     }
-    // Плечо дома и вассала — колонки их ТЕЛ (M-90 шаг 5).
-    const std::uint16_t homeSlot = place_slot(st, *homeLm);
+    const int vassalX = slot_x(st, vassal, ctx.mapW);
+    const int vassalY = slot_y(st, vassal, ctx.mapW);
     Inventory& homeInv = st.inventory[homeSlot].inv;
-    Inventory& vassalInv = place_store(st, *vassal);
+    Inventory& vassalInv = st.inventory[vassal].inv;
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -2080,20 +2125,20 @@ void ai_collector(MacroHandle self, MacroPos& p,
         // Дома и с пустыми руками — идём за долгом; дома с грузом — сдаём.
         if (torus_dist_sq(p.x, p.y, home.x, home.y,
                           float(ctx.mapW), float(ctx.mapH)) >= 4.0f) {
-            rt.targetX = float(vassal->x);
-            rt.targetY = float(vassal->y);
+            rt.targetX = float(vassalX);
+            rt.targetY = float(vassalY);
             rt.state = std::uint8_t(NS::Traveling);
             return;
         }
-        if (!owes_tithe(*ctx.mw.gs, st, *vassal)) {
+        if (!owes_tithe(*ctx.mw.gs, st, vassal)) {
             // Должник рассчитался (собрали или простили) — ждать нечего,
             // ротация завтра переторгует эту строку заново.
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 8));
             return;
         }
-        rt.targetSettlementId = vassal->id;
-        rt.targetX = float(vassal->x);
-        rt.targetY = float(vassal->y);
+        rt.targetSettlementId = int(st.spawnId[vassal].index);
+        rt.targetX = float(vassalX);
+        rt.targetY = float(vassalY);
         rt.state = std::uint8_t(NS::Traveling);
         return;
     }
@@ -2116,7 +2161,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
         // ВЗЫСКАНИЕ И ПОГАШЕНИЕ — В ОДНОЙ ТОЧКЕ: сколько увёз, столько и
         // списал, поэтому шва между «взято» и «зачтено» физически нет.
         // Долг живёт на ФЕОДАЛЬНОМ РЕБРЕ строки фракции сюзерена (v121).
-        TitheEdge* edge = tithe_edge_of(*ctx.mw.gs, st, *vassal);
+        TitheEdge* edge = tithe_edge_of(*ctx.mw.gs, st, vassal);
         long long owed = edge ? edge->owedValue : 0;
         long long took = 0;
         // ── СНАЧАЛА ПО НУЖДЕ ДОМА, ОСТАТОК — ПО ПЛОТНОСТИ ───────────────
@@ -2129,10 +2174,10 @@ void ai_collector(MacroHandle self, MacroPos& p,
         // (ведомость-кэш уничтожена 2026-09-30, ломтик E шаг 2; закон и
         // обе его функции — те же).
         if (owed > 0) {
-            const Skills& homeHands = landmark_sheet(homeLm->type).skills;
+            const Skills& homeHands = st.sheet[homeSlot].skills;
             const auto home_demand_of = [&](int cid) {
                 return season_demand_for(cid, st.roster[homeSlot].needDebt,
-                                         souls_home(st, *homeLm), homeHands,
+                                         souls_home(st, homeSlot), homeHands,
                                          &homeInv);
             };
             // ПОРЯДОК НУЖДЫ — ПО ТОМУ, ЧЕГО ДОМУ НЕ ХВАТАЕТ БОЛЬШЕ ВСЕГО
@@ -2197,7 +2242,8 @@ void ai_collector(MacroHandle self, MacroPos& p,
             edge->owedValue -= took;
             if (edge->owedValue < 0) edge->owedValue = 0;
             record_landmark_fact(st, *ctx.mw.gs, FactKind::Taxed,
-                                 vassal->id, int(p.x), int(p.y),
+                                 int(st.spawnId[vassal].index),
+                                 int(p.x), int(p.y),
                                  int(std::min<long long>(took, 1 << 30)),
                                  rt.homeSettlementId);
         }
@@ -2210,9 +2256,9 @@ void ai_collector(MacroHandle self, MacroPos& p,
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
             for (int i = 0; i < kCommodityCount; ++i)
-                haul_between(*bag, depot_(*homeLm, ctx.mw),
+                haul_between(*bag, depot_(homeSlot, ctx.mw),
                              commodity_item_index(i), 1 << 30, 1e9f);
-            transfer_value_dense(*bag, depot_(*homeLm, ctx.mw),
+            transfer_value_dense(*bag, depot_(homeSlot, ctx.mw),
                                  inventory_value(*bag));
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
@@ -2229,29 +2275,38 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
                ecs::Pools& pools, const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
-    auto& settles = ctx.mw.gs->landmarks;
+    const MacroStore& st = store_ctx(ctx);
+    // Урна городов — ОДНА дверь обхода мест (landmark_iter.h): ось рода
+    // тела отвечает «город ли это», и второго списка мест в мире нет.
+    const auto is_other_city = [&](std::uint16_t slot, int notId) {
+        return SquadType(st.runtime[slot].squadType) == SquadType::City
+               && int(st.spawnId[slot].index) != notId;
+    };
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             // Pick another city (id != home).
             int candidates = 0;
-            for (auto& s : settles) {
-                if (s.type != LandmarkType::City) continue;
-                if (s.id != rt.homeSettlementId) ++candidates;
-            }
+            for_each_place(st, [&](std::uint16_t slot) {
+                if (is_other_city(slot, rt.homeSettlementId)) ++candidates;
+            });
             if (candidates > 0) {
                 int pick = rand_int(ctx, candidates);
-                for (auto& s : settles) {
-                    if (s.type != LandmarkType::City) continue;
-                    if (s.id == rt.homeSettlementId) continue;
-                    if (pick-- == 0) {
-                        rt.targetSettlementId = s.id;
-                        rt.targetX = float(s.x); rt.targetY = float(s.y);
-                        rt.state  = std::uint8_t(NS::Traveling);
-                        break;
-                    }
-                }
+                // Обход без досрочного выхода: взявший урну гасит флаг, и
+                // остаток прохода молчит (у двери мест нет break — её
+                // порядок есть закон приоритета клетки).
+                bool taken = false;
+                for_each_place(st, [&](std::uint16_t slot) {
+                    if (taken || !is_other_city(slot, rt.homeSettlementId))
+                        return;
+                    if (pick-- != 0) return;
+                    rt.targetSettlementId = int(st.spawnId[slot].index);
+                    rt.targetX = float(slot_x(st, slot, ctx.mapW));
+                    rt.targetY = float(slot_y(st, slot, ctx.mapW));
+                    rt.state  = std::uint8_t(NS::Traveling);
+                    taken = true;
+                });
             } else {
                 rt.stateTimer = 20;
             }
@@ -2288,27 +2343,31 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
 
 void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx) {
-    auto& settles = ctx.mw.gs->landmarks;
+    const MacroStore& st = store_ctx(ctx);
+    const auto is_other_city = [&](std::uint16_t slot, int notId) {
+        return SquadType(st.runtime[slot].squadType) == SquadType::City
+               && int(st.spawnId[slot].index) != notId;
+    };
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             int candidates = 0;
-            for (auto& s : settles) {
-                if (s.type != LandmarkType::City) continue;
-                if (s.id != rt.targetSettlementId) ++candidates;
-            }
+            for_each_place(st, [&](std::uint16_t slot) {
+                if (is_other_city(slot, rt.targetSettlementId)) ++candidates;
+            });
             if (candidates > 0) {
                 int pick = rand_int(ctx, candidates);
-                for (auto& s : settles) {
-                    if (s.type != LandmarkType::City) continue;
-                    if (s.id == rt.targetSettlementId) continue;
-                    if (pick-- == 0) {
-                        rt.targetSettlementId = s.id;
-                        rt.targetX = float(s.x); rt.targetY = float(s.y);
-                        rt.state  = std::uint8_t(NS::Traveling);
-                        break;
-                    }
-                }
+                bool taken = false;
+                for_each_place(st, [&](std::uint16_t slot) {
+                    if (taken || !is_other_city(slot, rt.targetSettlementId))
+                        return;
+                    if (pick-- != 0) return;
+                    rt.targetSettlementId = int(st.spawnId[slot].index);
+                    rt.targetX = float(slot_x(st, slot, ctx.mapW));
+                    rt.targetY = float(slot_y(st, slot, ctx.mapW));
+                    rt.state  = std::uint8_t(NS::Traveling);
+                    taken = true;
+                });
             } else {
                 rt.stateTimer = 10;
             }
@@ -3173,7 +3232,7 @@ void dispatch(MacroHandle e, MacroPos& p,
         case SquadType::Caravan: ai_vendor  (e, p, rt, pools, ctx);       return;
         case SquadType::Collector: ai_collector(e, p, rt, pools, ctx);    return;
         // НЕПОДВИЖНЫЕ РОДЫ ОСИ НЕ ДУМАЮТ, И ЭТО НЕ ЗАГЛУШКА (M-90 шаг 3а).
-        // После слияния `LandmarkType` в эту ось сюда стало ВЫРАЗИМО
+        // После слияния `SquadType` в эту ось сюда стало ВЫРАЗИМО
         // приехать городом: место есть неподвижный сквад, и лестница
         // поведения у него кончается на первом же вопросе — он не ходит.
         // Его день идёт своим проходом (`settle_landmark_day`), а не думкой
@@ -3269,24 +3328,24 @@ int max_affordable_lot_(int base, int have, int demand, bool selling,
 // cheap here is exactly what the next hungry station pays above base for.
 CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
                                      float capacityKg,
-                                     Landmark& market,
+                                     std::uint16_t marketSlot,
                                      int myTradePct, int theirTradePct,
                                      EconFactSink sink, void* user) {
     CaravanDeal out{};
     // Склад и счёт рынка — колонки его ТЕЛА (M-90 шаг 5).
-    const std::uint16_t mkSlot = place_slot(st, market);
-    Inventory& ms = st.inventory[mkSlot].inv;
+    Inventory& ms = st.inventory[marketSlot].inv;
     // Рынок — МЕСТО (CANON S10): проданное ему падает в Depot и гасит его
     // долг СРАЗУ — город, купивший хлеб, хлеб уже проел.
-    const Depot msd(ms, st.roster[mkSlot].needDebt, sink, user);
-    const Skills& site = landmark_sheet(market.type).skills;
+    const Depot msd(ms, st.roster[marketSlot].needDebt, sink, user);
+    // Анкета рынка — КОЛОНКА его тела (рождение места её и заполнило).
+    const Skills& site = st.sheet[marketSlot].skills;
     for (int i = 0; i < kCommodityCount; ++i) {
         const int id = commodity_item_index(i);
         const ItemDef* def = item_def_at(id);
         const int base = def ? def->value : 0;
         if (base <= 0) continue;
-        const int demand = season_demand_for(id, st.roster[mkSlot].needDebt,
-                                             souls_home(st, market), site,
+        const int demand = season_demand_for(id, st.roster[marketSlot].needDebt,
+                                             souls_home(st, marketSlot), site,
                                              &ms);
         // Спрос уже СЕЗОННЫЙ (остаток счёта + производный) — прежний
         // множитель горизонта умер вместе с календарём кривой.
@@ -3345,17 +3404,16 @@ CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
 // Ведомость принадлежит МЕСТУ, а не слуху: крю читает счёт своего дома.
 CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
                                    float capacityKg,
-                                   Landmark& market,
-                                   const Landmark* home,
+                                   std::uint16_t marketSlot,
+                                   MacroHandle home,
                                    int myTradePct, int theirTradePct,
                                    EconFactSink sink, void* user) {
     CaravanDeal out{};
     // Склад и счёт рынка — колонки его ТЕЛА (M-90 шаг 5).
-    const std::uint16_t mkSlot = place_slot(st, market);
-    Inventory& ms = st.inventory[mkSlot].inv;
+    Inventory& ms = st.inventory[marketSlot].inv;
     // Рынок — МЕСТО (CANON S10): проданное гасит его долг сразу.
-    const Depot msd(ms, st.roster[mkSlot].needDebt, sink, user);
-    const Skills& site = landmark_sheet(market.type).skills;
+    const Depot msd(ms, st.roster[marketSlot].needDebt, sink, user);
+    const Skills& site = st.sheet[marketSlot].skills;
     const auto base_value = [](int defIdx) {
         const ItemDef* d = item_def_at(defIdx);
         return d ? d->value : 0;
@@ -3367,8 +3425,8 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
         if (base <= 0) continue;
         int n = bag.count_of(id);
         if (n <= 0) continue;
-        const int demand = season_demand_for(id, st.roster[mkSlot].needDebt,
-                                             souls_home(st, market), site,
+        const int demand = season_demand_for(id, st.roster[marketSlot].needDebt,
+                                             souls_home(st, marketSlot), site,
                                              &ms);
         const int have = ms.count_of(id);
         // Affordability by the exact door (max_affordable_lot_), as at the
@@ -3420,10 +3478,10 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
     // Свой дом крю знает точно и знало всегда: его склад читается строкой
     // ниже, и горизонтом это никогда не было (горизонт — про ЧУЖИЕ рынки,
     // market_price_seen).
-    if (home) {
-        const Skills& homeHands = landmark_sheet(home->type).skills;
+    if (st.valid(home)) {
         // Плечо дома — колонки его ТЕЛА (M-90 шаг 5).
-        const std::uint16_t hSlot = place_slot(st, *home);
+        const std::uint16_t hSlot = home.slot;
+        const Skills& homeHands = st.sheet[hSlot].skills;
         const Inventory& homeInv = st.inventory[hSlot].inv;
         struct Lot { int i; float gainPerKg; int homeCap; };
         Lot lots[std::size_t(kCommodityCount)];
@@ -3435,16 +3493,15 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
             if (base <= 0) continue;
             const int have = ms.count_of(id);
             if (have <= 0) continue;
-            const int demand = season_demand_for(id,
-                                                 st.roster[mkSlot].needDebt,
-                                                 souls_home(st, market), site,
-                                                 &ms);
+            const int demand =
+                season_demand_for(id, st.roster[marketSlot].needDebt,
+                                  souls_home(st, marketSlot), site, &ms);
             const int buyHere = trade_buy_price(
                 stock_price(base, have, demand), myTradePct, theirTradePct);
             // Чего это стоит ДОМА — тем же счётом и той же кривой.
             const int homeDemand =
                 season_demand_for(id, st.roster[hSlot].needDebt,
-                                  souls_home(st, *home),
+                                  souls_home(st, hSlot),
                                   homeHands, &homeInv);
             const int worthHome =
                 stock_price(base, homeInv.count_of(id), homeDemand);
@@ -3468,10 +3525,9 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
             const int id = commodity_item_index(i);
             const ItemDef* def = item_def_at(id);
             const int base = def->value;
-            const int demand = season_demand_for(id,
-                                                 st.roster[mkSlot].needDebt,
-                                                 souls_home(st, market), site,
-                                                 &ms);
+            const int demand =
+                season_demand_for(id, st.roster[marketSlot].needDebt,
+                                  souls_home(st, marketSlot), site, &ms);
             const int have = ms.count_of(id);
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
             int n = std::min({have, lots[li].homeCap,
@@ -3508,10 +3564,11 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
 // Тяжёлым работам тягло достаётся САМО, без прогноза груза: обоз есть сумма
 // спин (squad.h refresh_squad_carry), поэтому выданный конь — это +8 спин
 // тому, кто сегодня идёт за рудой, и ни одного нового числа.
-int outfit_crew_mounts(MacroStore& st, Landmark& home, MacroHandle crew) {
+int outfit_crew_mounts(MacroStore& st, std::uint16_t homeSlot,
+                       MacroHandle crew) {
     if (!st.valid(crew)) return 0;
     auto& bag = st.inventory[crew.slot];
-    Inventory& stall = place_store(st, home);   // стойло — склад ТЕЛА места
+    Inventory& stall = st.inventory[homeSlot].inv;   // стойло — склад места
     int want = mount_allowance(bag.inv) - count_mount_souls(bag.inv);
     int given = 0;
     while (want > 0) {
@@ -3661,13 +3718,30 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     ctx.mapH = gs.mapH;
     if (mw.nav) nav_ensure(mw, *mw.nav);   // гейты читают округи
 
-    const auto row_of = [&](int id) -> int {
-        // O(1) дверью «ординал и есть адрес» (landmark_by_id) вместо чистого
-        // линейного скана, звавшегося на КАЖДУЮ сущность дважды в день
-        // (O(сущности × N) — худшая точка переписи M-90). Результат тот же:
-        // ординал уникален, а дверь несёт тот же скан-фоллбек.
-        const Landmark* lm = landmark_by_id(gs, id);
-        return lm ? int(lm - gs.landmarks.data()) : -1;
+    MacroStore& stq = store_of(reg);
+    // ПОРЯДОК ЗАКОНА (squad_walk.h) — он же ключ резолва ниже: ординально
+    // отсортированные живые слоты. Собирается ОДИН раз на день, читают его
+    // оба прохода переписи и `slot_of`; рождения и смерти идут ПОСЛЕ них.
+    std::vector<SquadWalkEntry> crewOrder;
+    collect_squads_by_ordinal(stq, crewOrder,
+                              [](std::uint16_t) { return true; });
+    // СЛОТ ТЕЛА ДОМА ПО ОРДИНАЛУ — ключ всех боковых таблиц дня (ломтик F:
+    // строки места больше нет, а с ней и индекса в её векторе). Бинарный
+    // поиск по порядку выше: дверь зовётся на КАЖДУЮ сущность дважды в день,
+    // и скан капа сделал бы это O(сущности × кап) — та же худшая точка
+    // переписи M-90, только дороже. Ось рода гейтится здесь: пространство
+    // ординалов ОДНО (M-37).
+    // «Дома нет» = kMacroNoSlot — ПОСЛЕДНЕЕ значение типа индекса (ЗАКОН
+    // УЗКОГО ИНДЕКСА: слот 0 законен, нулём тут сказать нечего), и тот же
+    // сентинел, каким этот проход уже называет «нет артели» (idleByHome,
+    // claim_standing). Второго имени для «нет слота» здесь не заводится.
+    const auto slot_of = [&](int id) -> std::uint16_t {
+        if (id <= 0) return kMacroNoSlot;
+        const MacroHandle h =
+            macro_handle_by_spawn_id(stq, crewOrder, std::uint32_t(id));
+        if (!stq.valid(h)) return kMacroNoSlot;
+        return is_settlement_kind(SquadType(stq.runtime[h.slot].squadType))
+            ? h.slot : kMacroNoSlot;
     };
     // A type is a CREW exactly when some landmark's registry row raises it —
     // the old hand-kept list (professions + Vendor + TaxCollector) is now a
@@ -3697,10 +3771,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // it is a corpse-row awaiting the drain (AI-2). Without the exclusion a
     // dead leader and his dead men dissolved into the landmark as living
     // souls.
-    // Порядок по ординалу (squad_walk.h): idleByRow ниже раздаётся законом
+    // Порядок по ординалу (squad_walk.h): idleByHome ниже раздаётся законом
     // «первая подходящая» (claim_standing) и растворяется в том же порядке —
     // «кто первым встал» обязан быть законом мира, не кишкой EnTT.
-    MacroStore& stq = store_of(reg);
     std::vector<SquadWalkEntry> idleOrder;
     collect_squads_by_ordinal(
         stq, idleOrder,
@@ -3716,16 +3789,16 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         if (is_settlement_kind(SquadType(rt.squadType))) continue;
         if (!is_crew(kind.type)) continue;
         if (rt.state != std::uint8_t(NS::Idle)) continue;
-        const int row = row_of(rt.homeSettlementId);
-        if (row < 0) continue;
-        const Landmark& lm = gs.landmarks[std::size_t(row)];
+        const std::uint16_t homeSlot = slot_of(rt.homeSettlementId);
+        if (homeSlot == kMacroNoSlot) continue;
         // «Дома» = радиус прибытия марша (at_target, ±2 клетки) — ОДИН
         // предикат с вендорской погрузкой: точное равенство клетке
         // оставляло финишировавшую у крыльца артель нерастворённой
         // навсегда (души не возвращались, пере-аукцион не наступал).
         if (torus_dist_sq(float(ecs::cell_x(cell, gs.mapW)),
                           float(ecs::cell_y(cell, gs.mapW)),
-                          float(lm.x), float(lm.y),
+                          float(slot_x(stq, homeSlot, gs.mapW)),
+                          float(slot_y(stq, homeSlot, gs.mapW)),
                           float(gs.mapW), float(gs.mapH)) >= 4.0f)
             continue;
         homeIdle.push_back(slot);
@@ -3746,36 +3819,39 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // строку» и заодно потолок 8 на всё место. Он и был тем, что делало
     // строку СЛОТОМ: город с одной торговой строкой физически не мог
     // поднять двух корованов, сколько бы излишка ни лежало на складе.
-    std::vector<std::array<std::uint8_t, 8>> outCount(gs.landmarks.size());
-    std::vector<int> afield(gs.landmarks.size(), 0);
+    // КЛЮЧ БОКОВЫХ ТАБЛИЦ ДНЯ — СЛОТ ТЕЛА ДОМА, поэтому их длина есть КАП
+    // популяции (ломтик F: вектора мест, по размеру которого они жили,
+    // больше нет). Дневной скрэтч, ~640 КиБ на все четыре; аллокация одна
+    // на день и вне тика.
+    std::vector<std::array<std::uint8_t, 8>> outCount(kMacroEntityCap);
+    std::vector<int> afield(kMacroEntityCap, 0);
     // Души артелей, СТОЯЩИХ ДОМА, — часть базы пула труда: суд границы,
     // меривший пул одним населением, ужимал составы каждый сезон (души
     // стоящих выпадали из базы — поймано свидетелем resize).
-    std::vector<int> standingSouls(gs.landmarks.size(), 0);
+    std::vector<int> standingSouls(kMacroEntityCap, 0);
     // Табун, УЖЕ стоящий в артелях этого дома (лошади живут в отрядах —
     // «армия крестьян»), — вторая половина склада для дросселя ловли;
     // овцы получат такой же счёт своей строкой.
-    std::vector<int> horsesStanding(gs.landmarks.size(), 0);
-    std::vector<std::pair<int, std::uint16_t>> idleByRow;
+    std::vector<int> horsesStanding(kMacroEntityCap, 0);
+    // Пара {слот дома, слот стоящей артели}; kMacroNoSlot во второй =
+    // заявка уже разобрана (claim_standing).
+    std::vector<std::pair<std::uint16_t, std::uint16_t>> idleByHome;
     std::sort(homeIdle.begin(), homeIdle.end());
     const auto is_home_idle = [&](std::uint16_t slot) {
         return std::binary_search(homeIdle.begin(), homeIdle.end(), slot);
     };
-    // Тот же закон порядка: этот проход заполняет idleByRow.
-    std::vector<SquadWalkEntry> crewOrder;
-    collect_squads_by_ordinal(stq, crewOrder,
-                              [](std::uint16_t) { return true; });
+    // Тот же закон порядка (crewOrder выше): этот проход заполняет idleByHome.
     for (const SquadWalkEntry& sw : crewOrder) {
         const std::uint16_t slot = sw.slot;
         const auto& kind = stq.kind[slot];
         const auto& rt   = stq.runtime[slot];
-        const int row = row_of(rt.homeSettlementId);
-        if (row < 0) continue;
+        const std::uint16_t homeSlot = slot_of(rt.homeSettlementId);
+        if (homeSlot == kMacroNoSlot) continue;
         // ТЕЛО МЕСТА — НЕ АРТЕЛЬ: без гейта весь инвентарь города шёл в
         // труд-гроссбух как «души в поле» его же строки.
         if (is_settlement_kind(SquadType(rt.squadType))) continue;
         const LandmarkDef& ld =
-            landmark_def(gs.landmarks[std::size_t(row)].type);
+            landmark_def(SquadType(stq.runtime[homeSlot].squadType));
         bool standingHome = false;
         if (is_crew(kind.type)) {
             int souls = 1;
@@ -3783,14 +3859,14 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // Труд-гроссбух считает ЛЮДЕЙ; табун отряда — в дроссель.
                 const auto& bag = stq.inventory[slot];
                 souls += count_human_souls(bag.inv);
-                horsesStanding[std::size_t(row)] +=
+                horsesStanding[homeSlot] +=
                     creature_heads_of(bag.inv, NPCType::Horse);
             }
-            afield[std::size_t(row)] += souls;
+            afield[homeSlot] += souls;
             if (is_home_idle(slot)) {
                 standingHome = true;
-                standingSouls[std::size_t(row)] += souls;
-                idleByRow.push_back({row, slot});
+                standingSouls[homeSlot] += souls;
+                idleByHome.push_back({homeSlot, slot});
             }
         }
         if (standingHome) continue;   // its row stays OPEN for re-dispatch
@@ -3802,8 +3878,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             if (rowType != SquadType::None
                 && std::uint8_t(rowType) != rt.squadType)
                 continue;
-            if (outCount[std::size_t(row)][std::size_t(i)] < 255)
-                ++outCount[std::size_t(row)][std::size_t(i)];
+            if (outCount[homeSlot][std::size_t(i)] < 255)
+                ++outCount[homeSlot][std::size_t(i)];
             break;
         }
     }
@@ -3815,15 +3891,15 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // живы (владелец 2026-09-18): строки правят ЧИСЛОМ сквадов, пул — их
     // РАЗМЕРОМ (добор/ссадка в ветке стоящих ниже).
     const auto dissolve_population_crew = [&](std::uint16_t slot,
-                                              Landmark& lm) {
+                                              std::uint16_t homeSlot) {
         {
             // Leftovers home: cargo by the haul door, coin by the wallet
             // door — a dissolved crew owns nothing (CANON S5, the loan law).
             auto& bag = stq.inventory[slot];
             for (int c = 0; c < kCommodityCount; ++c)
-                haul_between(bag.inv, depot_(lm, mw), commodity_item_index(c),
-                             1 << 30, 1e9f);
-            transfer_value_dense(bag.inv, depot_(lm, mw),
+                haul_between(bag.inv, depot_(homeSlot, mw),
+                             commodity_item_index(c), 1 << 30, 1e9f);
+            transfer_value_dense(bag.inv, depot_(homeSlot, mw),
                                  inventory_value(bag.inv));
         }
         // ПЕРЕВОРОТ v122 — форма, которую владелец обещал этому месту
@@ -3846,7 +3922,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         std::uint16_t(creature_of_world_row(sl.def)))) {
                     souls += sl.count;
                 }
-                if (!creatures_push_slot(place_store(stq, lm), sl)) {
+                if (!creatures_push_slot(stq.inventory[homeSlot].inv, sl)) {
                     // Дому тесно (кап контейнера) — лишние честно уходят
                     // в пул, никто не испаряется.
                     creatures_push_slot(gs.deserterPool, sl);
@@ -3856,7 +3932,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         {
             const NPCType leaderKind = NPCType(stq.kind[slot].type);
             if (is_folk_kind(std::uint16_t(leaderKind))
-                && !creatures_push_stack(place_store(stq, lm), leaderKind,
+                && !creatures_push_stack(stq.inventory[homeSlot].inv,
+                                         leaderKind,
                                          npc_def(leaderKind).baseLevel, 1)) {
                 creatures_push_stack(gs.deserterPool, leaderKind,
                                      npc_def(leaderKind).baseLevel, 1);
@@ -3883,19 +3960,20 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // проверена: сезон харча души — 32 кг при спине 154 кг, пятая часть.
     // Берётся РОВНО НЕДОСТАЮЩЕЕ по счёту, поэтому повторный вызов в тот же
     // день ничего не грузит и склад не сосётся дважды.
-    const auto load_season_upkeep = [&](Landmark& lm, std::uint16_t slot) {
+    const auto load_season_upkeep = [&](std::uint16_t homeSlot,
+                                        std::uint16_t slot) {
         auto& bag = stq.inventory[slot];
         auto& roster = stq.roster[slot];
         const int boardOrd = hunger_commodity_ordinal();
         const int owed = boardOrd >= 0 ? roster.needDebt[boardOrd] : 0;
         const int haveBoard = bag.inv.count_of(hunger_item_index());
         if (owed > haveBoard) {
-            haul_between(place_store(stq, lm), bag.inv, hunger_item_index(),
-                         owed - haveBoard, 1e9f);
+            haul_between(stq.inventory[homeSlot].inv, bag.inv,
+                         hunger_item_index(), owed - haveBoard, 1e9f);
         }
         const std::int64_t haveCoin = inventory_value(bag.inv);
         if (roster.wageDebt > haveCoin) {
-            transfer_value_dense(place_store(stq, lm), bag.inv,
+            transfer_value_dense(stq.inventory[homeSlot].inv, bag.inv,
                                  int(roster.wageDebt - haveCoin));
         }
         // Погасить тем, что только что легло в сумку: долг умирает в ту же
@@ -3910,18 +3988,17 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     //    walks the same find_worksite the working AI walks by (ore near home
     //    IS the presence of miners); solo rows ride alone (the tax courier).
     int raised = 0;
-    for (std::size_t row = 0; row < gs.landmarks.size(); ++row) {
-        Landmark& s = gs.landmarks[row];
-        const LandmarkDef& ld = landmark_def(s.type);
-        if (ld.crewCount == 0 || souls_flock(gs, stq, s) <= 0) continue;
-        // Плечо места — колонки его ТЕЛА (M-90 шаг 5): один декод слота на
-        // место за день, все читатели ниже идут через него.
-        const std::uint16_t sSlot = place_slot(stq, s);
+    for_each_place(stq, [&](const std::uint16_t sSlot) {
+        const SquadType sKind = SquadType(stq.runtime[sSlot].squadType);
+        const int sId = int(stq.spawnId[sSlot].index);
+        const LandmarkDef& ld = landmark_def(sKind);
+        if (ld.crewCount == 0 || souls_flock(gs, stq, sSlot) <= 0) return;
         Inventory& sInv = stq.inventory[sSlot].inv;
         static_assert(sizeof(LandmarkDef::crews) / sizeof(LandmarkCrewRow)
                           <= 8,
                       "outCount — восемь счётчиков на место: по строке");
-        const XY home{float(s.x), float(s.y)};
+        const XY home{float(slot_x(stq, sSlot, gs.mapW)),
+                      float(slot_y(stq, sSlot, gs.mapW))};
         const MacroPos homePos{home.x, home.y};
         // БРОСОК СТАНЦИИ ЭТОГО ДОМА — тот же детерминизм, что у рулетки
         // заявок ниже: (сид, день, дом). Ротация не трогает мировые
@@ -3941,7 +4018,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // выше), и поток станции по построению не может столкнуться ни с
         // одной из них.
         Rng stationRoll(hash3(gs.worldSeed ^ std::uint32_t(day),
-                              std::uint32_t(s.id),
+                              std::uint32_t(sId),
                               sizeof(LandmarkDef::crews)
                                   / sizeof(LandmarkCrewRow)));
         ctx.rng = &stationRoll;
@@ -3978,7 +4055,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         int bidCount = -1;   // -1 = аукцион ещё не считан
         // СПРОС НА КОРОВАНЫ — число трюмов излишка (см. run_auction ниже).
         int caravanHolds = 0;
-        const Skills& homeSite = landmark_sheet(s.type).skills;
+        const Skills& homeSite = stq.sheet[sSlot].skills;
         const auto run_auction = [&] {
             if (bidCount >= 0) return;
             bidCount = 0;
@@ -4056,7 +4133,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // спиной не ограничена — её мера по закону упряжки одна голова
             // на душу, то есть ровно одна за рейс на душу.
             const NPCType crewKind = [&]() -> NPCType {
-                const LandmarkDef& ldc = landmark_def(s.type);
+                const LandmarkDef& ldc = landmark_def(sKind);
                 for (int i = 0; i < int(ldc.crewCount); ++i)
                     if (!ldc.crews[i].solo) return ldc.crews[i].npc;
                 return NPCType::Peasant;
@@ -4087,7 +4164,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     if (base <= 0) continue;
                     const int herd =
                         creature_heads_of(sInv, gd.rosterYield)
-                        + horsesStanding[row];
+                        + horsesStanding[sSlot];
                     // НУЖДА — ТОТ ЖЕ ЗАКОН УПРЯЖКИ (владелец 2026-09-19:
                     // «по лошадке на душу»): месту нужно столько ездовых,
                     // сколько душ оно выводит в поле — пул труда. Прежнее
@@ -4098,8 +4175,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // прочтение `pop >> labourShift`, и теперь оно то же
                     // самое число, что судит рождения ниже.
                     const int wanted = std::max(
-                        1, field_pool(gs, stq, s, afield[row],
-                                      standingSouls[row]));
+                        1, field_pool(gs, stq, sSlot, afield[sSlot],
+                                      standingSouls[sSlot]));
                     unitPrice = stock_price(base, herd, wanted);
                 } else {
                     const int goalItem = gatherer_item_index(g);
@@ -4109,7 +4186,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const int have = sInv.count_of(goalItem);
                     const int demand = season_demand_for(
                         goalItem, stq.roster[sSlot].needDebt,
-                        souls_home(stq, s), homeSite, &sInv);
+                        souls_home(stq, sSlot), homeSite, &sInv);
                     unitPrice = stock_price(base, have, demand);
                     // ЛУЧШАЯ ИЗВЕСТНАЯ ЦЕНА, А НЕ ТОЛЬКО СВОЯ (владелец,
                     // 2026-09-20, ПОД ГРИФОМ «НЕ УВЕРЕНЫ» — единственное
@@ -4197,13 +4274,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // товар, решает цена на месте, а не выбор маршрута.
             const MacroPos homePos{home.x, home.y};
             float stX = 0.0f, stY = 0.0f;
-            const int firstId = pick_next_station_(ctx, homePos, s.id, -1,
+            const int firstId = pick_next_station_(ctx, homePos, sId, -1,
                                                    stX, stY);
-            const Landmark* partner =
-                firstId >= 0 ? landmark_by_id(gs, firstId) : nullptr;
-            if (partner && landmark_is_settlement(partner->type)
-                && partner->id != s.id) {
-                const Landmark* city = partner;
+            const std::uint16_t station = slot_of(firstId);
+            if (station != kMacroNoSlot && station != sSlot) {
                 // (ДАНЬ ОТСЮДА УШЛА 2026-09-22: она больше не едет
                 // попутным грузом рейса сбыта — у неё своя заявка и своя
                 // машина, CANON S4 «Сборщик идёт вниз».)
@@ -4220,7 +4294,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // скор «поехать КУПИТЬ»: покупательная способность больше
                 // не равна нулю от того, что продавать ему нечего.
                 long long purse = plan_home_load_(
-                    sInv, stq.roster[sSlot].needDebt, souls_home(stq, s),
+                    sInv, stq.roster[sSlot].needDebt, souls_home(stq, sSlot),
                     homeSite, carryPerSoul, nullptr);
                 const long long purseAtHome = purse;   // трюм ОДНОЙ спины
                 // СКОЛЬКО ТРЮМОВ ИЗЛИШКА ЛЕЖИТ ДОМА — это и есть СПРОС на
@@ -4253,7 +4327,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // Спрос уже СЕЗОННЫЙ (остаток счёта + производный).
                     const int demand =
                         season_demand_for(id, stq.roster[sSlot].needDebt,
-                                          souls_home(stq, s), homeSite, &sInv);
+                                          souls_home(stq, sSlot), homeSite,
+                                          &sInv);
                     const int homePrice =
                         stock_price(base, have, demand);
                     // ЦЕНА ТАМ — ЯРУС 2, ИЗ ТОЧКИ ДОМА (CANON S10). До
@@ -4292,7 +4367,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const int have = sInv.count_of(id);
                     const int demand =
                         season_demand_for(id, stq.roster[sSlot].needDebt,
-                                          souls_home(stq, s), homeSite, &sInv);
+                                          souls_home(stq, sSlot), homeSite,
+                                          &sInv);
                     const int homePrice =
                         stock_price(base, have, demand);
                     // Тот же спред другим концом: везти домой стоит то, что
@@ -4321,13 +4397,16 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const int have = sInv.count_of(id);
                     const int demand =
                         season_demand_for(id, stq.roster[sSlot].needDebt,
-                                          souls_home(stq, s), homeSite, &sInv);
+                                          souls_home(stq, sSlot), homeSite,
+                                          &sInv);
                     if (demand <= have) continue;
                     needValue += (long long)(demand - have)
                                  * stock_price(base, have, demand);
                 }
                 if (value > 0) {
-                    const XY citySite{float(city->x), float(city->y)};
+                    const XY citySite{
+                        float(slot_x(stq, station, gs.mapW)),
+                        float(slot_y(stq, station, gs.mapW))};
                     // Та же величина: стоимость сделки, размазанная по
                     // длине рейса. Торг не занимает дней — сделка
                     // заключается в момент прибытия, — поэтому вся
@@ -4340,7 +4419,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     if (score > 0.0f) {
                         bids[bidCount++] = GoalBid{
                             std::uint8_t(SquadType::Caravan),
-                            std::uint32_t(city->id), citySite, score};
+                            stq.spawnId[station].index, citySite, score};
                         // Излишка на N спин — значит и обозов до N. Пул рук
                         // ниже это число только УРЕЗАЕТ, но не назначает
                         // (та же форма, что у числа сборщиков, CANON S4).
@@ -4373,18 +4452,21 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     stq.interests[sSlot].slots[std::size_t(k)];
                 if (it.stance == std::uint8_t(Stance::None)) break;
                 if (it.stance != std::uint8_t(Stance::Vassal)) continue;
-                const Landmark* v = landmark_by_id(gs, it.object);
-                if (!v || !owes_tithe(gs, stq, *v)) continue;
+                const std::uint16_t vSlot = slot_of(it.object);
+                if (vSlot == kMacroNoSlot || !owes_tithe(gs, stq, vSlot))
+                    continue;
                 if (bidCount >= int(sizeof(bids) / sizeof(bids[0]))) break;
-                const XY site{float(v->x), float(v->y)};
+                const XY site{float(slot_x(stq, vSlot, gs.mapW)),
+                              float(slot_y(stq, vSlot, gs.mapW))};
                 const float tripDays = road_days_(site);
                 if (!(tripDays > 0.0f)) continue;
-                const TitheEdge* e = tithe_edge_of(gs, stq, *v);
+                const TitheEdge* e = tithe_edge_of(gs, stq, vSlot);
                 const float score =
                     (float(e ? e->owedValue : 0) - fear_of(site)) / tripDays;
                 if (score <= 0.0f) continue;
                 bids[bidCount++] = GoalBid{std::uint8_t(SquadType::Collector),
-                                           std::uint32_t(v->id), site, score};
+                                           stq.spawnId[vSlot].index, site,
+                                           score};
             }
         };
 
@@ -4411,7 +4493,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 if (row_takes_(cr, bids[b])) total += bids[b].score;
             if (!(total > 0.0f)) return nullptr;
             Rng roll(hash3(gs.worldSeed ^ std::uint32_t(day),
-                           std::uint32_t(s.id), std::uint32_t(nonce)));
+                           std::uint32_t(sId), std::uint32_t(nonce)));
             float draw = roll.next_f01() * total;
             const GoalBid* pick = nullptr;
             for (int b = 0; b < bidCount; ++b) {
@@ -4457,20 +4539,20 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // hardcode raised a courier in EVERY city, and the
                     // capital's one walked to its own gate. The edge is
                     // the landmark's own column now (S24).
-                    open = suzerain_of(stq, s) > 0
-                           && suzerain_of(stq, s) != s.id;
+                    open = suzerain_of(stq, sSlot) > 0
+                           && suzerain_of(stq, sSlot) != sId;
                     break;
                 }
             }
             if (!open) continue;
             if (cr.solo) {
-                if (outCount[row][std::size_t(i)] == 0 && soloCount < 8)
+                if (outCount[sSlot][std::size_t(i)] == 0 && soloCount < 8)
                     solo[soloCount++] = i;
                 continue;
             }
             // Уже в поле — не поднимаем заново: строка хочет `want`, в поле
             // стоит `outCount`, разница и есть сегодняшний наряд.
-            int need = want[i] - int(outCount[row][std::size_t(i)]);
+            int need = want[i] - int(outCount[sSlot][std::size_t(i)]);
             while (need-- > 0 && liveCount < kMaxCrewInstances)
                 live[liveCount++] = i;
         }
@@ -4483,17 +4565,17 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // перенос, судья — окно; артель В ПОЛЕ на границе платит из того,
         // что несёт (локальность: чужих складов на расстоянии не бывает).
         if (boundary) {
-            for (auto& [r2, s2] : idleByRow)
-                if (r2 == int(row) && s2 != kMacroNoSlot)
-                    load_season_upkeep(s, s2);
+            for (auto& [r2, s2] : idleByHome)
+                if (r2 == sSlot && s2 != kMacroNoSlot)
+                    load_season_upkeep(sSlot, s2);
         }
         // Заявка строки закрывается СТОЯЩЕЙ артелью первой — это и есть
         // пере-аукцион дня живой артели (S19.2: «рейс → дом → пере-аукцион
         // → новый рейс, домой вернулась — не исчезла»).
         const auto claim_standing =
             [&](std::uint16_t type) -> std::uint16_t {
-            for (auto& [r2, s2] : idleByRow) {
-                if (r2 != int(row) || s2 == kMacroNoSlot) continue;
+            for (auto& [r2, s2] : idleByHome) {
+                if (r2 != sSlot || s2 == kMacroNoSlot) continue;
                 if (stq.kind[s2].type != type) continue;
                 const std::uint16_t found = s2;
                 s2 = kMacroNoSlot;
@@ -4511,7 +4593,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // счёта ушла: она была числом с потолка, и она же отвечала на второй
         // вопрос — сколько душ стоит у станков города (там и осталась).
         const int pool =
-            field_pool(gs, stq, s, afield[row], standingSouls[row]);
+            field_pool(gs, stq, sSlot, afield[sSlot], standingSouls[sSlot]);
         // Соло-строка стоит РОВНО ОДНУ душу и берётся из того же пула первой:
         // курьер дешевле артели, но не бесплатен — прежде соло-рождения шли
         // мимо всякого счёта рук (одна из девяти половин, §55).
@@ -4558,11 +4640,11 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // ТАКТ 2: дом снаряжает уходящую артель тяглом из стойла
                 // (по коню на душу, сколько стоит) — рядом с провиантом
                 // ниже, тот же акт над вторым контейнером.
-                outfit_crew_mounts(stq, s, handle_at(stq, standing));
+                outfit_crew_mounts(stq, sSlot, handle_at(stq, standing));
                 // ...И СЧЁТОМ (v105): тот же такт снаряжения, второй
                 // контейнер. Уходящая артель уносит непогашенный харч и
                 // плату, поэтому граница застаёт её не с пустой сумкой.
-                load_season_upkeep(s, standing);
+                load_season_upkeep(sSlot, standing);
                 // ПРИВЕДЕНИЕ СОСТАВА (S19.2, 2026-09-18): на границе
                 // стоящая артель дышит к пулу — добор из населения (дома,
                 // сколько прокормит склад: окно этого же дня спишет сезон
@@ -4578,7 +4660,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                                 / kDaysPerSeason;
                         int take = std::min(want - have,
                                             std::max(0, canFeed - have));
-                        take = std::min(take, souls_home(stq, s) - 1);
+                        take = std::min(take, souls_home(stq, sSlot) - 1);
                         while (take-- > 0) {
                             // ГЕНЕРИК (CANON S4): массовый добор — стак,
                             // без ординала; имя душа зарабатывает историей
@@ -4642,7 +4724,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // (labour.h field_pool — потолок считается от паствы, то есть
             // «в поле не больше, чем дома» выполняется по построению).
             // Минус одна из девяти половин §55, без единого нового правила.
-            if (perCrew <= 0 || souls_home(stq, s) < perCrew) continue;
+            if (perCrew <= 0 || souls_home(stq, sSlot) < perCrew) continue;
             // СОЗДАНИЕ БЕЗ ПРЕДОПЛАТЫ СЕЗОНА (владелец 2026-09-19,
             // отменяет гейт 2026-09-17 «сезон содержания или не
             // поднимается»): «условие поднятия артели — это сколько ей
@@ -4666,9 +4748,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // начать пахать.
             SquadSpec spec{};
             spec.leaderType = ld.crews[i].npc;
-            spec.x = s.x;
-            spec.y = s.y;
-            spec.homeSettlementId = s.id;
+            spec.x = slot_x(stq, sSlot, gs.mapW);
+            spec.y = slot_y(stq, sSlot, gs.mapW);
+            spec.homeSettlementId = sId;
             for (int m = 1; m < perCrew; ++m) {
                 // ГЕНЕРИК (CANON S4): члены артели — один стак, не
                 // per-душевые ординалы (тот поток остаётся ИМЕНАМ:
@@ -4694,10 +4776,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // баланс окна теперь, рейсовый ломоть умер у артелей
                 // (остался у вылазок гарнизона — они не подсудны суду
                 // состава).
-                load_season_upkeep(s, newSlot);
+                load_season_upkeep(sSlot, newSlot);
                 // ТАКТ 2 для новорождённой артели: то же стойло, тот же
                 // закон упряжки — дом снаряжает её тяглом, если оно есть.
-                outfit_crew_mounts(stq, s, handle_at(stq, newSlot));
+                outfit_crew_mounts(stq, sSlot, handle_at(stq, newSlot));
             }
         }
         for (int si = 0; si < soloCount; ++si) {
@@ -4707,16 +4789,16 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 != kMacroNoSlot) {
                 continue;
             }
-            if (!boundary || souls_home(stq, s) <= 0) continue;
+            if (!boundary || souls_home(stq, sSlot) <= 0) continue;
             // ДУША КУРЬЕРА — ИЗ ТОГО ЖЕ ПУЛА (labour.h): соло-рождение
             // прежде шло мимо всякого счёта рук вовсе (npc_ai.cpp:5124 в
             // переписи девяти половин, §55) — «население <= 0» и всё.
             if (soloBudget <= 0) continue;
             SquadSpec spec{};
             spec.leaderType = ld.crews[solo[si]].npc;
-            spec.x = s.x;
-            spec.y = s.y;
-            spec.homeSettlementId = s.id;
+            spec.x = slot_x(stq, sSlot, gs.mapW);
+            spec.y = slot_y(stq, sSlot, gs.mapW);
+            spec.homeSettlementId = sId;
             if (stq.valid(spawn_squad(gs, store_of(*mw.world),
                                       *mw.terrain, spec))) {
                 bleed_flock(sInv, 1);   // душа курьера — из дома (v122)
@@ -4729,41 +4811,14 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // полевая, пул ужался до меньшего числа сквадов) — души и остатки
         // домой. Вне границы неприкаянная артель просто стоит до суда.
         if (boundary) {
-            for (auto& [r2, s2] : idleByRow) {
-                if (r2 != int(row) || s2 == kMacroNoSlot) continue;
-                dissolve_population_crew(s2, s);
+            for (auto& [r2, s2] : idleByHome) {
+                if (r2 != sSlot || s2 == kMacroNoSlot) continue;
+                dissolve_population_crew(s2, sSlot);
                 s2 = kMacroNoSlot;
             }
         }
-    }
+    });
     return raised;
-}
-
-void bucket_reset(CellBuckets& g, int mapW, int mapH, int cellSize) {
-    g.cellSize = std::max(1, cellSize);
-    g.cols = std::max(1, (mapW + g.cellSize - 1) / g.cellSize);
-    g.rows = std::max(1, (mapH + g.cellSize - 1) / g.cellSize);
-    const std::size_t n = std::size_t(g.cols) * std::size_t(g.rows);
-    // assign() over the SAME size keeps the capacity, so a grid that is not
-    // resized never allocates again after its first build.
-    g.begin.assign(n + 1, 0u);
-    g.cursor.assign(n, 0u);
-}
-
-void bucket_count(CellBuckets& g, int gx, int gy) {
-    // Counts land at begin[cell + 1] so the prefix pass can sum in place.
-    ++g.begin[g.cell_of(gx, gy) + 1];
-}
-
-void bucket_prefix(CellBuckets& g, std::size_t itemCount) {
-    for (std::size_t i = 1; i < g.begin.size(); ++i) g.begin[i] += g.begin[i - 1];
-    g.items.resize(itemCount);
-    for (std::size_t i = 0; i < g.cursor.size(); ++i) g.cursor[i] = g.begin[i];
-}
-
-void bucket_scatter(CellBuckets& g, int gx, int gy, std::uint32_t item) {
-    const std::size_t c = g.cell_of(gx, gy);
-    g.items[g.cursor[c]++] = item;
 }
 
 void build_tree_grid(TreeGrid& g, const std::vector<TreePoint>& trees,
@@ -4790,42 +4845,6 @@ void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
     // (squad_walk.h) греются до капа один раз, свипы дальше zero-alloc.
     runtime.sweepOrder.reserve(kWorldSquads);
     runtime.squadIndex.order.reserve(kWorldSquads);
-}
-
-void build_squad_index(SquadIndex& g, const MacroStore& st, int mapW,
-                       int mapH, int cellSize) {
-    CellBuckets& b = g.grid;
-    bucket_reset(b, mapW, mapH, cellSize);
-
-    // Every live macro squad — INCLUDING the player's (owner, 2026-08-29:
-    // «игрок ничем не особенен», one law of sight for all). His squad is
-    // perceived through this index at the same kSquadSightCells as anyone;
-    // what stays special is only the MEETING, which belongs to Inc 6's
-    // forced-encounter door (squad_threat_step stops short of auto-battling
-    // a player-controlled squad). The Dead are no squads at all.
-    // Население — слоты store (1е): порядок закона (squad_walk.h), потом
-    // count и scatter идут по собранному — содержимое бакета отсортировано
-    // по ординалу, и читатели «первого подходящего» (threat step, охота)
-    // не зависят от кишки хранилища. Скрэтч — член, пересборка на свип
-    // по-прежнему аллокаций не делает.
-    collect_squads_by_ordinal(
-        st, g.order,
-        [&](std::uint16_t slot) { return st.dead[slot] == 0; });
-    for (const SquadWalkEntry& s : g.order) {
-        const auto& c = st.cell[s.slot];
-        bucket_count(b, wrapi(ecs::cell_x(c, mapW) / b.cellSize, b.cols),
-                     wrapi(ecs::cell_y(c, mapW) / b.cellSize, b.rows));
-    }
-    bucket_prefix(b, g.order.size());
-    // Бакет несёт ИНДЕКС В ПОРЯДКЕ, а не биты энтити (шаг 3): читатель по
-    // нему получает СРАЗУ и слот (колонки store читаются прямо, без
-    // диспетча body_state), и энтити для дверей, которые ещё на мосту.
-    // Порядок внутри бакета остаётся ординальным — скаттер идёт по g.order.
-    for (std::uint32_t i = 0; i < std::uint32_t(g.order.size()); ++i) {
-        const auto& c = st.cell[g.order[i].slot];
-        bucket_scatter(b, wrapi(ecs::cell_x(c, mapW) / b.cellSize, b.cols),
-                       wrapi(ecs::cell_y(c, mapW) / b.cellSize, b.rows), i);
-    }
 }
 
 // ONE assembly of the AI think's view (canon-audit H2: this block used to

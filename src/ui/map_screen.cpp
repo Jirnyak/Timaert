@@ -245,7 +245,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs,
     const double exploredPct =
         cells > 0.0 ? 100.0 * double(st.exploredCells) / cells : 0.0;
 
-    int discovered[std::size_t(LandmarkType::Count)] = {};
+    int discovered[std::size_t(SquadType::Count)] = {};
     for_each_landmark(gs, store, [&](const LandmarkView& lm) {
         if (gs.knowledge.at(lm.x, lm.y) != kKnowledgeUnknown)
             ++discovered[std::size_t(lm.type)];
@@ -279,7 +279,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs,
         ImDrawList* wdl = ImGui::GetWindowDrawList();
         const float rowH = ImGui::GetTextLineHeightWithSpacing();
         const float sw = rowH * 0.45f;
-        for (std::size_t t = 0; t < std::size_t(LandmarkType::Count); ++t) {
+        for (std::size_t t = 0; t < std::size_t(SquadType::Count); ++t) {
             if (discovered[t] == 0) continue;
             const LandmarkDef& def = kLandmarks[t];
             const LandmarkDrawRow& row = kLandmarkDraw[t];

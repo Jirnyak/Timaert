@@ -43,7 +43,6 @@ CANON.md	resource_field.h:12-14
 CANON.md	resource_field.h:22-24
 CANON.md	state.h:470-471
 CANON.md	state.h:855
-CANON.md	state.h:984
 CANON.md	sub/map_data.h:141
 CANON.md	ui/overlays.cpp:887-899
 CANON.md	zones.h:30
@@ -51,9 +50,7 @@ README.md	src/app/main.cpp:155-162
 README.md	src/app/main.cpp:3840-3843
 README.md	src/app/main.cpp:3930
 README.md	tests/balance_run.cpp:1-13
-SKELETON.md	:1006
 SKELETON.md	:101
-SKELETON.md	:1023
 SKELETON.md	:1025-1046
 SKELETON.md	:103
 SKELETON.md	:113
@@ -221,7 +218,6 @@ SKELETON.md	app/main.cpp:1645
 SKELETON.md	app/main.cpp:1897-1901
 SKELETON.md	app/main.cpp:277
 SKELETON.md	app/main.cpp:320-335
-SKELETON.md	app/main.cpp:325
 SKELETON.md	app/main.cpp:3398
 SKELETON.md	app/main.cpp:3400
 SKELETON.md	app/main.cpp:3490-3497
@@ -354,8 +350,6 @@ SKELETON.md	journal.h:39-41
 SKELETON.md	knowledge.cpp:22
 SKELETON.md	knowledge.cpp:36
 SKELETON.md	knowledge.h:45
-SKELETON.md	landmark_grid.h:41
-SKELETON.md	landmark_grid.h:57
 SKELETON.md	lighting.h:56-67
 SKELETON.md	logic_nodes.cpp:52
 SKELETON.md	macro/cell_facts.cpp:15-81
@@ -458,10 +452,8 @@ SKELETON.md	npc_ai.cpp:383
 SKELETON.md	npc_ai.cpp:3841
 SKELETON.md	npc_ai.cpp:3929
 SKELETON.md	npc_ai.cpp:427
-SKELETON.md	npc_ai.cpp:4355
 SKELETON.md	npc_ai.cpp:4410
 SKELETON.md	npc_ai.cpp:4731
-SKELETON.md	npc_ai.cpp:4731-4744
 SKELETON.md	npc_ai.cpp:4753-4754
 SKELETON.md	npc_ai.cpp:4796
 SKELETON.md	npc_ai.cpp:4843
@@ -558,7 +550,6 @@ SKELETON.md	settlement_score.h:115-116
 SKELETON.md	settlement_score.h:52
 SKELETON.md	settlement_score.h:53
 SKELETON.md	smoke.cpp:1827
-SKELETON.md	smoke.cpp:2466-2478
 SKELETON.md	smoke.cpp:346-360
 SKELETON.md	smoke.cpp:5450
 SKELETON.md	smoke.cpp:6046
@@ -615,20 +606,14 @@ SKELETON.md	state.cpp:266-272
 SKELETON.md	state.cpp:277-307
 SKELETON.md	state.cpp:282
 SKELETON.md	state.cpp:88
-SKELETON.md	state.h:1065
-SKELETON.md	state.h:1066
-SKELETON.md	state.h:1085
-SKELETON.md	state.h:1090
 SKELETON.md	state.h:356
 SKELETON.md	state.h:469
-SKELETON.md	state.h:506
 SKELETON.md	state.h:510
 SKELETON.md	state.h:616
 SKELETON.md	state.h:617
 SKELETON.md	state.h:623-626
 SKELETON.md	state.h:845-849
 SKELETON.md	state.h:851
-SKELETON.md	state.h:864
 SKELETON.md	state.h:868
 SKELETON.md	state.h:872
 SKELETON.md	state.h:884
@@ -776,7 +761,6 @@ jopus_prompts.md	engine.h:619
 jopus_prompts.md	event_bus.cpp:70-74
 jopus_prompts.md	event_bus.h:27-40
 jopus_prompts.md	events/quests/quest_engine.cpp:179
-jopus_prompts.md	landmark_grid.h:41
 jopus_prompts.md	language.h:20-35
 jopus_prompts.md	lighting.h:324
 jopus_prompts.md	logic_nodes.h:23
@@ -1063,7 +1047,6 @@ macro-registry.md	items.h:199
 macro-registry.md	labour.h:16
 macro-registry.md	labour.h:36-45
 macro-registry.md	labour.h:44-45
-macro-registry.md	landmark_grid.h:33
 macro-registry.md	landmark_registry.h:220-221
 macro-registry.md	landmark_registry.h:242
 macro-registry.md	landmark_registry.h:244-247
@@ -1165,8 +1148,6 @@ macro-registry.md	squad.h:836
 macro-registry.md	squad.h:916
 macro-registry.md	squad.h:932
 macro-registry.md	state.cpp:209
-macro-registry.md	state.h:1077
-macro-registry.md	state.h:1090-1091
 macro-registry.md	state.h:466
 macro-registry.md	state.h:470-471
 macro-registry.md	state.h:855

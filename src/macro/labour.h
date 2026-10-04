@@ -25,8 +25,8 @@
 #include <algorithm>
 
 #include "tables/npc.h"     // природа строки: кто есть народ (kNpcNature)
-#include "macro/state.h"   // Landmark — чьи это души; worked_read — паства
-#include "macro/place_body.h"         // склад места — колонка его ТЕЛА (M-90)
+#include "macro/state.h"   // worked_read — паства
+#include "macro/store.h"   // склад места — колонка его ТЕЛА (слот)
 #include "macro/world_row.h"          // count_human_souls / creature_heads
 #include "macro/landmark_registry.h"  // bornPopBase — признак данжа
 #include "macro/fauna.h"              // weakest_crowd_kind — душа данжа
@@ -47,14 +47,16 @@ namespace sm {
 //                 меркой она не считается по природе.
 // «В поле» = разность двух дверей. Колонка Landmark::population умерла с
 // этим переворотом у всех родов.
-inline int souls_home(const MacroStore& st, const Landmark& lm) {
-    return count_human_souls(place_store(st, lm));
+inline int souls_home(const MacroStore& st, std::uint16_t slot) {
+    return count_human_souls(st.inventory[slot].inv);
 }
 inline int souls_flock(const GameState& gs, const MacroStore& st,
-                       const Landmark& lm) {
-    return landmark_def(lm.type).bornPopBase == 0
-        ? worked_read(gs, lm.x, lm.y)
-        : creature_heads(place_store(st, lm));
+                       std::uint16_t slot) {
+    const SquadType kind = SquadType(st.runtime[slot].squadType);
+    const auto& c = st.cell[slot];
+    return landmark_def(kind).bornPopBase == 0
+        ? worked_read(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW))
+        : creature_heads(st.inventory[slot].inv);
 }
 
 // ── ПОСЕЛИТЬ ДУШИ — ОДНА ДВЕРЬ НА ВСЯКОЕ ИХ ПОЯВЛЕНИЕ (v122) ─────────────
@@ -72,19 +74,24 @@ inline int souls_flock(const GameState& gs, const MacroStore& st,
 // трогается: под FT_Spire там живёт СПЕЛЛ, и приписать ему души значило бы
 // гасить чужое число. Род головы данжа НЕ ВЫДУМЫВАЕТСЯ — он слабейшая строка
 // полосы толпы этого рода мест (weakest_crowd_kind: шпиль → Imp).
-inline int settle_souls(GameState& gs, MacroStore& st, Landmark& lm,
+inline int settle_souls(GameState& gs, MacroStore& st, std::uint16_t slot,
                         int souls) {
     if (souls <= 0) return 0;
-    Inventory& store = place_store(st, lm);
-    if (landmark_def(lm.type).bornPopBase != 0) {
-        const NPCType kind = weakest_crowd_kind(lm.type);
+    Inventory& store = st.inventory[slot].inv;
+    const SquadType placeKind = SquadType(st.runtime[slot].squadType);
+    if (landmark_def(placeKind).bornPopBase != 0) {
+        const NPCType kind = weakest_crowd_kind(placeKind);
         if (kind == NPCType::Count) return 0;   // у рода нет толпы — нет и душ
         return creatures_push_stack(store, kind,
                                     npc_def(kind).baseLevel, souls)
                    ? souls : 0;
     }
     const int stood = raise_flock_into_roster(store, souls);
-    if (stood > 0) worked_add(gs, lm.x, lm.y, stood);
+    if (stood > 0) {
+        const auto& c = st.cell[slot];
+        worked_add(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW),
+                   stood);
+    }
     return stood;
 }
 
@@ -104,16 +111,16 @@ static_assert(kFieldShareShift == 1,
 // `standingSouls` — из них те, что стоят дома Idle: ими место распоряжается
 // сегодня заново, поэтому они возвращаются в пул как свободные руки.
 inline int field_pool(const GameState& gs, const MacroStore& st,
-                      const Landmark& lm, int afield, int standingSouls) {
+                      std::uint16_t slot, int afield, int standingSouls) {
     // Паства СПРАШИВАЕТСЯ ДВЕРЬЮ, и после переворота она УЖЕ знает про
     // ушедших (worked = дома + в поле): слагаемое `afield` умерло, как и
     // обещал его комментарий; параметр остался мерой «уже в дороге».
-    const int flock = souls_flock(gs, st, lm);
+    const int flock = souls_flock(gs, st, slot);
     const int cap = flock >> kFieldShareShift;
     const int marched = afield - standingSouls;      // уже в дороге
     const int free = cap - marched;
     // Больше, чем есть свободных тел, не поднять ни при каком потолке.
-    return std::clamp(free, 0, souls_home(st, lm) + standingSouls);
+    return std::clamp(free, 0, souls_home(st, slot) + standingSouls);
 }
 
 }   // namespace sm

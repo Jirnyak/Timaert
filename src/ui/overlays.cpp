@@ -226,10 +226,9 @@ namespace sm::ui
         // БЛАГОПОЛУЧИЕ — ЕДИНСТВЕННАЯ МЕРА ЖИЗНИ МЕСТА (владелец
         // 2026-09-19): реестр полос настроения вырезан, глаз читает то же
         // число, что и закон роста — долю оплаченных нужд, в процентах.
-        int wellbeing_pct(const sm::MacroStore &st, const sm::Landmark &lm)
+        int wellbeing_pct(const sm::MacroStore &st, std::uint16_t slot)
         {
-            return int(st.wellbeing[sm::place_slot(st, lm)].seasonWellbeing)
-                 * 100 / 255;
+            return int(st.wellbeing[slot].seasonWellbeing) * 100 / 255;
         }
 
         // The ONE wrapper state of this counter (trade_widgets.h, Инк 5):
@@ -404,9 +403,9 @@ namespace sm::ui
         // вообще другая»). The old formula (worldSeed + id*123) was a
         // parallel seed law with exactly that disease.
         std::uint32_t settlement_preview_seed(std::uint32_t worldSeed,
-                                              const Landmark &s)
+                                              int x, int y)
         {
-            return sub::cell_seed(worldSeed, s.x, s.y);
+            return sub::cell_seed(worldSeed, x, y);
         }
 
         // ПАСТВА МЕСТА ДЛЯ ПРЕВЬЮ (переворот v122): её носитель — worked-слой
@@ -414,12 +413,12 @@ namespace sm::ui
         // деградация, что у биома и высоты рядом). Без мира отвечают
         // ДОМАШНИЕ головы: они лежат в самой записи места, то есть это
         // честное «сколько видно отсюда», а не выдуманный ноль.
-        int preview_flock_(const Landmark &s, const MacroWorld *mw)
+        int preview_flock_(const MacroWorld *mw, std::uint16_t slot)
         {
             // Без конверта (или store) паства не видна ВООБЩЕ: головы дома тоже
             // живут в ТЕЛЕ места (M-90 шаг 5) — честный ответ 0, не выдумка.
             return mw && mw->gs && mw->store
-                ? souls_flock(*mw->gs, *mw->store, s) : 0;
+                ? souls_flock(*mw->gs, *mw->store, slot) : 0;
         }
 
         // THE tile → colour dictionary of every 2D subworld rendering in this
@@ -457,19 +456,28 @@ namespace sm::ui
             }
         }
 
+        // Место — СЛОТ store (ломтик F): адрес, род, ординал и фракция
+        // читаются колонками его тела, а mapW/сид — мировыми переменными.
         bool ensure_settlement_preview(SettlementPreviewCache &cache,
-                                       const Landmark &s,
-                                       std::uint32_t worldSeed,
+                                       const GameState &gs,
+                                       const MacroStore &store,
+                                       std::uint16_t slot,
                                        const MacroWorld *mw)
         {
+            const std::uint32_t worldSeed = gs.worldSeed;
+            const int cellX = ecs::cell_x(store.cell[slot], gs.mapW);
+            const int cellY = ecs::cell_y(store.cell[slot], gs.mapW);
+            const SquadType kind =
+                SquadType(store.runtime[slot].squadType);
+            const int ordinal = int(store.spawnId[slot].index);
             const std::uint32_t previewSeed =
-                settlement_preview_seed(worldSeed, s);
+                settlement_preview_seed(worldSeed, cellX, cellY);
             if (cache.ready &&
                 cache.tex != 0 &&
                 cache.worldSeed == worldSeed &&
                 cache.previewSeed == previewSeed &&
-                cache.settlementId == s.id &&
-                cache.population == preview_flock_(s, mw))
+                cache.settlementId == ordinal &&
+                cache.population == preview_flock_(mw, slot))
             {
                 return true;
             }
@@ -478,20 +486,20 @@ namespace sm::ui
             // engine resolves when you actually walk in (macro/cell_facts.h;
             // a missing envelope degrades to the old meadow stand-in).
             sub::CellContext ctx{};
-            ctx.cx = s.x;
-            ctx.cy = s.y;
+            ctx.cx = cellX;
+            ctx.cy = cellY;
             ctx.macroHeight = 0.55f;
             ctx.biome = Meadow;
             ctx.feature = FT_None;
-            ctx.landmark.id = s.id;
-            ctx.landmark.size = preview_flock_(s, mw);
-            ctx.landmark.kind = s.type;
-            ctx.landmark.factionIdx = int(s.factionIdx);
+            ctx.landmark.id = ordinal;
+            ctx.landmark.size = preview_flock_(mw, slot);
+            ctx.landmark.kind = kind;
+            ctx.landmark.factionIdx = int(std::int16_t(store.kind[slot].factionIdx));
             // Spire's drained state = worked 0 at its cell (v120); a preview
             // without the world degrades to "not drained" like the rest of
             // the missing envelope.
-            ctx.landmark.depleted = s.type == LandmarkType::Spire && mw
-                && mw->gs && worked_read(*mw->gs, s.x, s.y) == 0;
+            ctx.landmark.depleted = kind == SquadType::Spire && mw
+                && mw->gs && worked_read(*mw->gs, cellX, cellY) == 0;
             ctx.seed = previewSeed;
             ctx.worldSeed = worldSeed;
 
@@ -506,7 +514,7 @@ namespace sm::ui
             }
             if (mw)
             {
-                const CellFacts cf = cell_facts(*mw, s.x, s.y);
+                const CellFacts cf = cell_facts(*mw, cellX, cellY);
                 ctx.macroHeight = cf.height01;
                 ctx.biome = cf.biome;
                 ctx.feature = cf.feature;
@@ -517,7 +525,7 @@ namespace sm::ui
                     for (int xx = 0; xx < 3; ++xx)
                     {
                         const CellFacts nf =
-                            cell_facts(*mw, s.x + xx - 1, s.y + yy - 1);
+                            cell_facts(*mw, cellX + xx - 1, cellY + yy - 1);
                         const int ni = yy * 3 + xx;
                         nbHeights[ni] = nf.height01;
                         nbBiome[ni] = nf.biome;
@@ -537,7 +545,7 @@ namespace sm::ui
                 for (int yy = 0; yy < 5; ++yy)
                     for (int xx = 0; xx < 5; ++xx) {
                         nbBiome5[yy * 5 + xx] =
-                            cell_facts(*mw, s.x + xx - 2, s.y + yy - 2).biome;
+                            cell_facts(*mw, cellX + xx - 2, cellY + yy - 2).biome;
                     }
             }
             sub::SubworldMapData map{};
@@ -600,8 +608,8 @@ namespace sm::ui
                                           /*linear=*/false);
             cache.worldSeed = worldSeed;
             cache.previewSeed = previewSeed;
-            cache.settlementId = s.id;
-            cache.population = preview_flock_(s, mw);
+            cache.settlementId = ordinal;
+            cache.population = preview_flock_(mw, slot);
             cache.houses = houses;
             cache.walls = walls;
             cache.ready = cache.tex != 0;
@@ -1916,41 +1924,60 @@ namespace sm::ui
         // The panel opens for ANY landmark («меню города — хороший пример,
         // его обобщить») — the City hardcode is dead; which TABS a kind
         // shows is the actions column's business below.
-        Landmark *s = landmark_by_id(gs, settlementId);
-        if (s && s->type == LandmarkType::None)
-            s = nullptr;
+        // Место — СЛОТ store, резолв по ординалу (ломтик F): дверь сама
+        // гейтит ось рода, поэтому отдельной проверки «это не None» нет.
+        const sm::MacroHandle sh =
+            sm::place_handle_by_ordinal(*mw->store, std::uint32_t(settlementId));
+        const bool haveS = mw->store->valid(sh);
+        const std::uint16_t sslot = sh.slot;
+        const SquadType sKind =
+            haveS ? SquadType(mw->store->runtime[sslot].squadType)
+                  : SquadType::None;
+        // Безымянное место показывает label своей строки реестра — один
+        // закон показа на все роды (как у for_each_landmark).
+        const char *sName = "Settlement";
+        if (haveS)
+        {
+            sName = mw->store->name[sslot].text;
+            if (sName[0] == '\0')
+                sName = landmark_def(sKind).label.data();
+        }
         const SettlementPanelTab current = tab ? *tab : SettlementPanelTab::Info;
 
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 620 * scale), ImGuiCond_FirstUseEver);
         char lmTitle[96];
-        std::snprintf(lmTitle, sizeof(lmTitle), "%s###Settlement",
-                      s ? s->name : "Settlement");
+        std::snprintf(lmTitle, sizeof(lmTitle), "%s###Settlement", sName);
         if (ImGui::Begin(lmTitle, open))
         {
             ImGui::SetWindowFontScale(scale);
-            if (!s)
+            if (!haveS)
             {
                 ImGui::Text("No settlement selected (id=%d).", settlementId);
                 ImGui::End();
                 return;
             }
 
+            Inventory &sInv = mw->store->inventory[sslot].inv;
+            const int sx = ecs::cell_x(mw->store->cell[sslot], gs.mapW);
+            const int sy = ecs::cell_y(mw->store->cell[sslot], gs.mapW);
+            const std::int16_t sFaction =
+                std::int16_t(mw->store->kind[sslot].factionIdx);
+
             // ── Banner ── (one system: the place's faction registry row)
             const sm::FactionDef *fd =
-                sm::faction_def_by_index(sm::faction_or_freefolk(s->factionIdx));
-            const LandmarkDef &def = landmark_def(s->type);
+                sm::faction_def_by_index(sm::faction_or_freefolk(sFaction));
+            const LandmarkDef &def = landmark_def(sKind);
             const std::uint16_t acts = def.actions;
             ImGui::PushFont(nullptr);
-            ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f), "%s", s->name);
+            ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f), "%s", sName);
             ImGui::PopFont();
             ImGui::SameLine();
             ImGui::TextDisabled("(%.*s)", int(def.label.size()), def.label.data());
             ImGui::Text("Faction: %s", fd ? fd->name : "Unaligned");
-            ImGui::Text("Population: %d", souls_flock(gs, *mw->store, *s));
-            ImGui::Text("Wellbeing: %d%%", wellbeing_pct(*mw->store, *s));
+            ImGui::Text("Population: %d", souls_flock(gs, *mw->store, sslot));
+            ImGui::Text("Wellbeing: %d%%", wellbeing_pct(*mw->store, sslot));
             ImGui::Text("Starved last boundary: %d",
-                        int(mw->store->wellbeing[sm::place_slot(*mw->store, *s)]
-                                    .starvedYesterday));
+                        int(mw->store->wellbeing[sslot].starvedYesterday));
             ImGui::Separator();
 
             // ── Tabs ──
@@ -1963,11 +1990,11 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Info;
                 if (infoOpen)
                 {
-                    ImGui::TextWrapped("Welcome to %s.", s->name);
+                    ImGui::TextWrapped("Welcome to %s.", sName);
                     ImGui::TextDisabled("A %.*s with population %d.",
                                         int(def.label.size()),
                                         def.label.data(),
-                                        souls_flock(gs, *mw->store, *s));
+                                        souls_flock(gs, *mw->store, sslot));
                     ImGui::Spacing();
 
                     if (ImGui::BeginTable("settlement_info", 2,
@@ -1977,17 +2004,17 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Value");
                         ImGui::TableHeadersRow();
                         draw_info_overview_row("Population",
-                                               souls_flock(gs, *mw->store, *s));
+                                               souls_flock(gs, *mw->store, sslot));
                         draw_info_overview_row("Wellbeing %",
-                                               wellbeing_pct(*mw->store, *s));
-                        draw_info_overview_row("Faction index", int(s->factionIdx));
+                                               wellbeing_pct(*mw->store, sslot));
+                        draw_info_overview_row("Faction index", int(sFaction));
                         draw_info_overview_row("Starved last boundary",
-                                               int(mw->store->wellbeing[sm::place_slot(*mw->store, *s)]
+                                               int(mw->store->wellbeing[sslot]
                                     .starvedYesterday));
                         draw_info_overview_row(
-                            "Garrison units", creature_heads(place_store(*mw->store, *s)));
-                        draw_info_overview_row("Inventory stacks", place_store(*mw->store, *s).used_slots());
-                        draw_info_overview_row("Inventory items", place_store(*mw->store, *s).total());
+                            "Garrison units", creature_heads(sInv));
+                        draw_info_overview_row("Inventory stacks", sInv.used_slots());
+                        draw_info_overview_row("Inventory items", sInv.total());
                         ImGui::EndTable();
                     }
 
@@ -2062,7 +2089,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Trade;
                 if (tradeOpen)
                 {
-                    g_settlementTrade.sync_to(s->id);
+                    g_settlementTrade.sync_to(settlementId);
                     // ONE wrapper (Инк 5): the haggler, the state and the
                     // body come from trade_widgets.h — this site keeps only
                     // its price laws (a town's demand = econSite +
@@ -2071,46 +2098,46 @@ namespace sm::ui
                     ImGui::Text("Player value: %d",
                                 inventory_value(playerBag));
                     ImGui::SameLine();
-                    ImGui::TextDisabled("Wellbeing: %d%%", wellbeing_pct(*mw->store, *s));
+                    ImGui::TextDisabled("Wellbeing: %d%%", wellbeing_pct(*mw->store, sslot));
                     draw_trade_carry_line(h.sheet, playerBag, h.standing);
-                    draw_counterparty_gold(place_store(*mw->store, *s));
+                    draw_counterparty_gold(sInv);
                     draw_trade_amount_input(&g_settlementTrade.amount);
                     const auto buyUnit = [&](const ItemRef &ref,
                                              const ItemDef &def, int n) {
                         return trade_overlay_buy_price(
                             stock_price(value_of(ref),
-                                        place_store(*mw->store, *s).count_of(int(ref.def)) - n,
+                                        sInv.count_of(int(ref.def)) - n,
                                         season_demand_for(
-                                            int(ref.def), mw->store->roster[sm::place_slot(*mw->store, *s)].needDebt,
-                                            souls_home(*mw->store, *s),
+                                            int(ref.def), mw->store->roster[sslot].needDebt,
+                                            souls_home(*mw->store, sslot),
                                             landmark_sheet(
-                                                s->type).skills,
-                                            &place_store(*mw->store, *s))),
+                                                sKind).skills,
+                                            &sInv)),
                             h.tradePct,
                             trade_power_of(
-                                landmark_sheet(s->type)));
+                                landmark_sheet(sKind)));
                     };
                     const auto sellUnit = [&](const ItemRef &ref,
                                               const ItemDef &def, int n) {
                         return trade_overlay_sell_price(
                             stock_price(value_of(ref),
-                                        place_store(*mw->store, *s).count_of(int(ref.def)) + n,
+                                        sInv.count_of(int(ref.def)) + n,
                                         season_demand_for(
-                                            int(ref.def), mw->store->roster[sm::place_slot(*mw->store, *s)].needDebt,
-                                            souls_home(*mw->store, *s),
+                                            int(ref.def), mw->store->roster[sslot].needDebt,
+                                            souls_home(*mw->store, sslot),
                                             landmark_sheet(
-                                                s->type).skills,
-                                            &place_store(*mw->store, *s))),
+                                                sKind).skills,
+                                            &sInv)),
                             h.tradePct,
                             trade_power_of(
-                                landmark_sheet(s->type)));
+                                landmark_sheet(sKind)));
                     };
                     draw_barter_body(
                         "Settlement stock", g_settlementTrade,
-                        playerBag, place_store(*mw->store, *s),
+                        playerBag, sInv,
                         buyUnit, sellUnit, [&](int gave, int took) {
-                            record_settlement_deal_fact(gs, world, s->id,
-                                                        s->x, s->y,
+                            record_settlement_deal_fact(gs, world, settlementId,
+                                                        sx, sy,
                                                         gave, took);
                         });
 
@@ -2125,7 +2152,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Garrison;
                 if (garrisonOpen)
                 {
-                    int total = creature_heads(place_store(*mw->store, *s));
+                    int total = creature_heads(sInv);
                     ImGui::Text("Total: %d units", total);
                     ImGui::Spacing();
                     if (ImGui::BeginTable("garrison", 2,
@@ -2135,7 +2162,7 @@ namespace sm::ui
                         {
                             const NPCType t = npc_type_at(ti);
                             const int count =
-                                creature_heads_of(place_store(*mw->store, *s), t);
+                                creature_heads_of(sInv, t);
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
                             ImGui::TableNextRow();
@@ -2167,12 +2194,12 @@ namespace sm::ui
                         if (!npc_hireable(t))
                             continue;
                         const ItemRef* offer =
-                            first_soldier_of_kind(place_store(*mw->store, *s), t);
+                            first_soldier_of_kind(sInv, t);
                         int cost = offer
                             ? hire_price_for(
                                   std::uint16_t(t), offer->level)
                             : npc_hire_price_base(t);
-                        int avail = creature_heads_of(place_store(*mw->store, *s), t);
+                        int avail = creature_heads_of(sInv, t);
                         Inventory* playerArmy = &playerBag;
                         int owned = creature_heads_of(playerBag, t);
                         ImGui::PushID(static_cast<int>(t));
@@ -2184,7 +2211,7 @@ namespace sm::ui
                         {
                             int purse = inventory_value(playerBag);
                             const int paid = playerArmy
-                                ? hire_npc(*playerArmy, place_store(*mw->store, *s), t, purse)
+                                ? hire_npc(*playerArmy, sInv, t, purse)
                                 : 0;
                             if (paid > 0)
                             {
@@ -2194,15 +2221,15 @@ namespace sm::ui
                                 // that cannot take the whole fee refuses the
                                 // deal: coin back, recruit back.
                                 const int moved = transfer_value_dense(
-                                    playerBag, place_store(*mw->store, *s), paid);
+                                    playerBag, sInv, paid);
                                 if (moved != paid)
                                 {
                                     if (moved > 0)
-                                        transfer_value_dense(place_store(*mw->store, *s),
+                                        transfer_value_dense(sInv,
                                                              playerBag, moved);
                                     SoldierRecord back{};
                                     if (creatures_pop_back(*playerArmy, back))
-                                        creatures_push(place_store(*mw->store, *s), back);
+                                        creatures_push(sInv, back);
                                 }
                             }
                         }
@@ -2229,7 +2256,7 @@ namespace sm::ui
                 {
                     SettlementPreviewCache &preview = settlement_preview_cache();
                     const std::uint32_t previewSeed =
-                        settlement_preview_seed(gs.worldSeed, *s);
+                        settlement_preview_seed(gs.worldSeed, sx, sy);
                     ImGui::TextDisabled("Settlement preview");
                     ImGui::SameLine();
                     if (ImGui::Button("Refresh"))
@@ -2239,8 +2266,8 @@ namespace sm::ui
                     }
                     ImGui::Spacing();
 
-                    if (ensure_settlement_preview(preview, *s, gs.worldSeed,
-                                                  mw))
+                    if (ensure_settlement_preview(preview, gs, *mw->store,
+                                                  sslot, mw))
                     {
                         const float avail = ImGui::GetContentRegionAvail().x;
                         const float side = std::min(360.0f, std::max(180.0f, avail));
@@ -2248,7 +2275,7 @@ namespace sm::ui
                                      ImVec2(side, side));
                         ImGui::TextDisabled("Seed: 0x%08X   Population: %d   Houses: %d   Walls: %d",
                                             previewSeed,
-                                            souls_flock(gs, *mw->store, *s),
+                                            souls_flock(gs, *mw->store, sslot),
                                             preview.houses,
                                             preview.walls);
                     }
@@ -2258,7 +2285,7 @@ namespace sm::ui
                         ImGui::TextDisabled("Preview unavailable.");
                         ImGui::TextDisabled("Seed: 0x%08X   Population: %d",
                                             previewSeed,
-                                            souls_flock(gs, *mw->store, *s));
+                                            souls_flock(gs, *mw->store, sslot));
                     }
                     ImGui::EndTabItem();
                 }
@@ -2269,7 +2296,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Inventory;
                 if (inventoryOpen)
                 {
-                    if (place_store(*mw->store, *s).used_slots() == 0)
+                    if (sInv.used_slots() == 0)
                     {
                         ImGui::TextDisabled("(empty)");
                     }
@@ -2278,7 +2305,7 @@ namespace sm::ui
                         if (ImGui::BeginTable("inv", 2,
                                               ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                         {
-                            for (const ItemRef &st : place_store(*mw->store, *s).slots)
+                            for (const ItemRef &st : sInv.slots)
                             {
                                 if (st.empty()) continue;
                                 const ItemDef *row = item_def_at(int(st.def));

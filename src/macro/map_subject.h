@@ -4,21 +4,20 @@
 // THE FACT THESE DOORS REST ON (verified 2026-09-11; слияние M-71): a squad
 // and a landmark hold the SAME type — ONE Inventory (bag, market, granary,
 // treasury AND roster in one: существа лежат областью того же контейнера;
-// population.md, снесён (CANON S28): «гарнизон = армия ландмарка»). What differed was
-// only the ADDRESS: the squad carries them as ECS components on its leader
-// entity (ecs::NpcInventory / ecs::SquadRoster), the landmark as bare fields
-// of its record in gs.landmarks. Every consumer that wanted "this object's
-// store" had to know which book of addresses to open — which is exactly how
-// the trade panel grew two wrappers around one barter and the settlement
-// menu hardcoded LandmarkType::City (PLAY-1 / PLAY-2).
+// population.md, снесён (CANON S28): «гарнизон = армия ландмарка»). What
+// differed was only the ADDRESS, and since ломтик F even that is gone: место
+// есть НЕПОДВИЖНЫЙ СКВАД того же гладкого массива, so both kinds hold their
+// container in the SAME store column (`st.inventory[slot].inv`). Every
+// consumer that wanted "this object's store" once had to know which book of
+// addresses to open — which is exactly how the trade panel grew two wrappers
+// around one barter and the settlement menu hardcoded SquadType::City
+// (PLAY-1 / PLAY-2).
 //
-// So: storage stays where DOD wants it (a dense landmark vector, ECS squads —
-// neither moves, the save format does not change), and the ADDRESSING becomes
-// one door, the same law as apply_damage or effective_behaviour: data declares,
-// one door answers. The universal interaction menu, the one trade wrapper and
-// the popup rows are all written against MapSubject and never learn which
-// book the address came from. If the military layer one day makes landmarks
-// entities, only the bodies of these two functions change.
+// So the two kinds differ by ONE thing only: how the subject names its slot —
+// a squad carries the handle itself, a place names its ORDINAL and the store
+// resolves it (place_handle_by_ordinal). The universal interaction menu, the
+// one trade wrapper and the popup rows are all written against MapSubject and
+// never learn which of the two it was.
 //
 // A MapSubject is TRANSIENT UI/runtime state (a store handle is not save
 // material — same ruling as the PreBattle target): name things by it inside
@@ -31,7 +30,7 @@
 #include "macro/landmark_registry.h"
 #include "macro/macro_world.h"
 #include "tables/map_actions.h"
-#include "macro/place_body.h"
+#include "macro/squad.h"     // place_handle_by_ordinal — резолв места
 #include "macro/state.h"
 #include "macro/store.h"
 
@@ -49,10 +48,11 @@ struct MapSubject {
                                          //   S14; шаг 1г — {slot,gen}, не
                                          //   entt-энтити)
     std::int32_t   landmark = -1;        // valid when kind == Landmark: the
-                                         //   world-unique Landmark::id (v54,
-                                         //   ONE id space, ANY kind — a
-                                         //   village names itself here as
-                                         //   honestly as a city)
+                                         //   place's subject ORDINAL (M-37,
+                                         //   ONE id space over squads and
+                                         //   places alike — a village names
+                                         //   itself here as honestly as a
+                                         //   city)
 };
 
 inline MapSubject subject_of_squad(MacroHandle h) {
@@ -74,9 +74,10 @@ inline Inventory* store_of(const MacroWorld& w, MapSubject s) {
         return c ? &c->inv : nullptr;
     }
     case MapSubjectKind::Landmark: {
-        if (!w.gs) return nullptr;
-        Landmark* lm = landmark_by_id(*w.gs, int(s.landmark));
-        return w.store && lm ? &place_store(*w.store, *lm) : nullptr;
+        if (!w.store) return nullptr;
+        const MacroHandle h = place_handle_by_ordinal(
+            *w.store, std::uint32_t(s.landmark));
+        return w.store->valid(h) ? &w.store->inventory[h.slot].inv : nullptr;
     }
     case MapSubjectKind::None: break;
     }
@@ -95,9 +96,10 @@ inline Inventory* roster_of(const MacroWorld& w, MapSubject s) {
         return r ? &r->inv : nullptr;
     }
     case MapSubjectKind::Landmark: {
-        if (!w.gs) return nullptr;
-        Landmark* lm = landmark_by_id(*w.gs, int(s.landmark));
-        return w.store && lm ? &place_store(*w.store, *lm) : nullptr;
+        if (!w.store) return nullptr;
+        const MacroHandle h = place_handle_by_ordinal(
+            *w.store, std::uint32_t(s.landmark));
+        return w.store->valid(h) ? &w.store->inventory[h.slot].inv : nullptr;
     }
     case MapSubjectKind::None: break;
     }
@@ -118,10 +120,12 @@ inline std::uint16_t actions_of(const MacroWorld& w, MapSubject s) {
         return kMapActTalk | kMapActTrade | kMapActAttack;
     }
     case MapSubjectKind::Landmark: {
-        if (!w.gs) return 0;
-        const Landmark* lm = landmark_by_id(*w.gs, int(s.landmark));
-        if (!lm) return 0;
-        const LandmarkDef& def = landmark_def(lm->type);
+        if (!w.store) return 0;
+        const MacroHandle h = place_handle_by_ordinal(
+            *w.store, std::uint32_t(s.landmark));
+        if (!w.store->valid(h)) return 0;
+        const LandmarkDef& def = landmark_def(
+            SquadType(w.store->runtime[h.slot].squadType));
         return std::uint16_t(def.actions
                              | (def.walkable ? kMapActEnter : 0));
     }

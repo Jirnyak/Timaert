@@ -22,7 +22,7 @@ struct DepositLayer;
 struct FeatureLayer;
 struct ZoneLayer;
 struct TreeGrid;
-struct LandmarkGrid;
+struct SquadIndex;
 struct PathCostData;
 struct LayerParameters;
 namespace ecs { struct World; }
@@ -57,7 +57,7 @@ struct WorldGenOut {
     FeatureLayer*           features = nullptr;
     ZoneLayer*              zones = nullptr;
     TreeGrid*               treeGrid = nullptr;
-    LandmarkGrid*           landmarkGrid = nullptr;
+    SquadIndex*             squadIndex = nullptr;  // каркас клеток по сквадам
     PathCostData*           pathCost = nullptr;
     ecs::World*             world = nullptr;
     MacroStore*             store = nullptr;   // гладкая память сквадов (M-106)

@@ -15,7 +15,7 @@
 #include "macro/chronicle.h"
 #include "macro/deposit_layer.h"
 #include "macro/knowledge.h"
-#include "macro/landmark_grid.h"
+#include "macro/squad_index.h"
 #include "macro/landmark_iter.h"
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
@@ -42,6 +42,18 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // M-171 (вердикт 4а); макро-двери принимают MacroStore& параметром.
     store_attach(*out.world, out.store);
     GameState& gs = *out.gs;
+    // Места генезиса — слоты ЭТОГО массива (ломтик F): всякий вопрос «где
+    // стоят города/деревни/шпили» задаётся ему, а не отдельному списку.
+    MacroStore& st = *out.store;
+    const auto place_x = [&](std::uint16_t s) {
+        return ecs::cell_x(st.cell[s], gs.mapW);
+    };
+    const auto place_y = [&](std::uint16_t s) {
+        return ecs::cell_y(st.cell[s], gs.mapW);
+    };
+    const auto place_kind = [&](std::uint16_t s) {
+        return SquadType(st.runtime[s].squadType);
+    };
 
     LayerParameters lp = p.lpOverride ? *p.lpOverride : LayerParameters{};
     // The % 100000 decimation is UI heritage: the seed box and the boot log
@@ -119,16 +131,17 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // «пахотный сосед» тождественен «не вода», то есть колонка перестала
         // нести информацию и показывала бы ровно 100 % всегда.
         int nearWater = 0, nearDeposit = 0;
-        std::vector<const Landmark*> cityRows, villageRows;
-        for (const auto& lm : gs.landmarks) {
-            if (lm.type == LandmarkType::City) cityRows.push_back(&lm);
-            else if (lm.type == LandmarkType::Village)
-                villageRows.push_back(&lm);
-        }
-        for (const Landmark* vp : villageRows) {
-            const auto& v = *vp;
+        std::vector<std::uint16_t> cityRows, villageRows;
+        for_each_place(st, [&](std::uint16_t slot) {
+            if (place_kind(slot) == SquadType::City)
+                cityRows.push_back(slot);
+            else if (place_kind(slot) == SquadType::Village)
+                villageRows.push_back(slot);
+        });
+        for (std::uint16_t vs : villageRows) {
             bool water = false, deposit = false;
-            const std::uint32_t vIdx = cell_of(v.x, v.y, gs.mapW);
+            const std::uint32_t vIdx = cell_of(place_x(vs), place_y(vs),
+                                               gs.mapW);
             for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy)
                 for (int dx = -kSettlementReach; dx <= kSettlementReach;
                      ++dx) {
@@ -144,10 +157,11 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         const int n = std::max(1, int(villageRows.size()));
         // A town with no hamlet at all reads as a bug; count them out loud.
         int villageless = 0;
-        for (const Landmark* cp : cityRows) {
+        for (std::uint16_t cs : cityRows) {
+            const int cityId = int(st.spawnId[cs].index);
             bool has = false;
-            for (const Landmark* vp : villageRows)
-                if (suzerain_of(*out.store, *vp) == cp->id) { has = true; break; }
+            for (std::uint16_t vs : villageRows)
+                if (suzerain_of(st, vs) == cityId) { has = true; break; }
             if (!has) ++villageless;
         }
         // And how far apart they actually stand: the mean nearest-neighbour
@@ -155,17 +169,15 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // "scattered around the town" versus "clumped a block apart".
         long long nnSum = 0;
         int nnCount = 0;
-        for (const Landmark* vp : villageRows) {
-            const auto& v = *vp;
+        for (std::uint16_t vs : villageRows) {
             int nearest = 1 << 20;
-            for (const Landmark* op : villageRows) {
-                const auto& o = *op;
-                if (op == vp || suzerain_of(*out.store, o) != suzerain_of(*out.store, v))
+            for (std::uint16_t os : villageRows) {
+                if (os == vs || suzerain_of(st, os) != suzerain_of(st, vs))
                     continue;
-                const int ddx = std::min(std::abs(v.x - o.x),
-                                         gs.mapW - std::abs(v.x - o.x));
-                const int ddy = std::min(std::abs(v.y - o.y),
-                                         gs.mapH - std::abs(v.y - o.y));
+                const int dx = std::abs(place_x(vs) - place_x(os));
+                const int dy = std::abs(place_y(vs) - place_y(os));
+                const int ddx = std::min(dx, gs.mapW - dx);
+                const int ddy = std::min(dy, gs.mapH - dy);
                 nearest = std::min(nearest, std::max(ddx, ddy));
             }
             if (nearest < (1 << 20)) { nnSum += nearest; ++nnCount; }
@@ -217,20 +229,20 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
 
     std::vector<ZoneSeed> zsCities, zsVills;
     for (auto& c : cityPlan) zsCities.push_back({c.x, c.y});
-    for (auto& v : gs.landmarks)
-        if (v.type == LandmarkType::Village) zsVills.push_back({v.x, v.y});
+    for_each_place(st, [&](std::uint16_t slot) {
+        if (place_kind(slot) == SquadType::Village)
+            zsVills.push_back({place_x(slot), place_y(slot)});
+    });
     *out.zones = generate_zones(gs.mapW, gs.mapH, gs.worldSeed,
                                 zsCities, zsVills, *out.features,
                                 out.terrain, out.treeLayer);
 
     // Spires need the zone field (their placement law), so they are the one
-    // landmark placed after generate_zones rather than in
-    // populate_landmarks_from_politik (which cleared the list). One spire per
-    // registered spell; a load replaces the whole roster (gs.landmarks) from
-    // the save afterwards (boot_world_from_save), spires with everything
-    // else. (There is no gs.spires and no gs.settlements: the three parallel
-    // vectors became ONE roster in v54, CANON S9 — this comment named them
-    // for a month after they stopped existing.)
+    // place born after generate_zones rather than in
+    // populate_landmarks_from_politik. One spire per registered spell; a load
+    // restores every place as a record of the macro-squad block
+    // (boot_world_from_save), spires with everything else — one population,
+    // one block, no roster of its own (ломтик F).
     {
         generate_spires(gs, *out.store, *out.zones, *out.terrain);
         // Ruins follow the same zone-field law (§42 Инк 5): the row, the
@@ -240,30 +252,30 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         generate_ruins(gs, *out.store, *out.zones, *out.terrain);
         // The landmark set is complete — stamp the settlement FEATURES
         // (вердикт 2026-09-30: город/деревня/шпиль/руина — байты слоя фич,
-        // ставятся ПОСЛЕ дорог) and bake the cell → landmark index the
-        // whole game asks (macro/landmark_grid.h).
-        stamp_settlement_features(gs, *out.terrain, *out.features);
-        *out.landmarkGrid = build_landmark_grid(gs);
+        // ставятся ПОСЛЕ дорог) and build the cell frame over squads —
+        // «кто на клетке» мира (macro/squad_index.h; сетка мест умерла
+        // ломтиком F, тот же закон свежести: генезис, перепёк, драйв).
+        stamp_settlement_features(st, gs.mapW, *out.terrain, *out.features);
+        build_squad_index(*out.squadIndex, st, gs.mapW, gs.mapH);
         if (p.trace) {
             // The placement report card: every spell offered, every spire in
             // the wild band, and a spread that reads "scattered", not "heap".
             int zoneMin = 9, zoneMax = 0, minPair = gs.mapW + gs.mapH;
-            std::vector<const Landmark*> spireRows;
-            for (const auto& lm : gs.landmarks)
-                if (lm.type == LandmarkType::Spire)
-                    spireRows.push_back(&lm);
-            for (const Landmark* spp : spireRows) {
-                const auto& sp = *spp;
-                const int z = int(out.zones->at(sp.x, sp.y));
+            std::vector<std::uint16_t> spireRows;
+            for_each_place(st, [&](std::uint16_t slot) {
+                if (place_kind(slot) == SquadType::Spire)
+                    spireRows.push_back(slot);
+            });
+            for (std::uint16_t ss : spireRows) {
+                const int z = int(out.zones->at(place_x(ss), place_y(ss)));
                 zoneMin = std::min(zoneMin, z);
                 zoneMax = std::max(zoneMax, z);
-                for (const Landmark* op : spireRows) {
-                    const auto& o = *op;
-                    if (op == spp) continue;
-                    const int ddx = std::min(std::abs(sp.x - o.x),
-                                             gs.mapW - std::abs(sp.x - o.x));
-                    const int ddy = std::min(std::abs(sp.y - o.y),
-                                             gs.mapH - std::abs(sp.y - o.y));
+                for (std::uint16_t os : spireRows) {
+                    if (os == ss) continue;
+                    const int dx = std::abs(place_x(ss) - place_x(os));
+                    const int dy = std::abs(place_y(ss) - place_y(os));
+                    const int ddx = std::min(dx, gs.mapW - dx);
+                    const int ddy = std::min(dy, gs.mapH - dy);
                     minPair = std::min(minPair, std::max(ddx, ddy));
                 }
             }
@@ -284,23 +296,25 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // highways; a village with no reachable target honestly gets no lane.
     {
         std::vector<VillageRoadSite> villageSites;
-        for (const auto& v : gs.landmarks) {
-            if (v.type != LandmarkType::Village) continue;
+        for_each_place(st, [&](std::uint16_t slot) {
+            if (place_kind(slot) != SquadType::Village) return;
             VillageRoadSite site{};
-            site.x = v.x;
-            site.y = v.y;
-            if (const Landmark* s = landmark_by_id(gs, suzerain_of(*out.store, v));
-                s && s->type == LandmarkType::City) {
-                site.cityX = s->x;
-                site.cityY = s->y;
+            site.x = place_x(slot);
+            site.y = place_y(slot);
+            const MacroHandle s = place_handle_by_ordinal(
+                st, std::uint32_t(suzerain_of(st, slot)));
+            if (st.valid(s) && place_kind(s.slot) == SquadType::City) {
+                site.cityX = place_x(s.slot);
+                site.cityY = place_y(s.slot);
                 site.hasCity = true;
             }
             villageSites.push_back(site);
-        }
+        });
         std::vector<RoadSite> landmarkSites;
-        for (const auto& sp : gs.landmarks)
-            if (sp.type == LandmarkType::Spire)
-                landmarkSites.push_back({sp.x, sp.y});
+        for_each_place(st, [&](std::uint16_t slot) {
+            if (place_kind(slot) == SquadType::Spire)
+                landmarkSites.push_back({place_x(slot), place_y(slot)});
+        });
         // Reach comes from THE distance law of the settled world
         // (politik.h derive_city_spacing) — one city spacing, not a magic
         // radius: a village's world ends about where the next town's begins.
@@ -360,9 +374,11 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // villages' grain deposit for the economy loop.
     {
         std::vector<FieldSite> fieldSites;
-        for (const auto& v : gs.landmarks)
-            if (v.type == LandmarkType::Village)
-                fieldSites.push_back(FieldSite{v.x, v.y});
+        for_each_place(st, [&](std::uint16_t slot) {
+            if (place_kind(slot) == SquadType::Village)
+                fieldSites.push_back(FieldSite{place_x(slot),
+                                               place_y(slot)});
+        });
         stamp_field_features(*out.features, siteCtx.w, fieldSites);
     }
 

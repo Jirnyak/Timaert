@@ -3,6 +3,7 @@
 #include "ecs/npc_character.h"
 #include "macro/agent_memory.h"
 #include "macro/entry_context.h"
+#include "macro/landmark_iter.h"   // for_each_place — места по слотам
 #include "tables/faction.h"
 #include "tables/npc.h"
 #include "macro/spell_book_state.h"
@@ -43,12 +44,20 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         // map centre when the world has none. A LOADED world never reaches
         // this branch — the snapshot restores his squad whole.
         int sx = gs.mapW / 2, sy = gs.mapH / 2;
-        // Первый ГОРОД РОСТЕРА МЕСТ (M-90): места рождаются в порядке плана
-        // генератора, поэтому первый City-ряд и есть тот город, который
-        // здесь стоял списком `politik.cities[0]`. Второго списка городов у
-        // мира больше нет — план умер вместе с генезисом.
-        for (const auto& lm : gs.landmarks)
-            if (lm.type == LandmarkType::City) { sx = lm.x; sy = lm.y; break; }
+        // ПЕРВЫЙ ГОРОД ПОПУЛЯЦИИ (ломтик F): места рождаются в порядке плана
+        // генератора, и слоты выдаются по возрастанию, поэтому первый
+        // City-слот и есть тот город, который здесь стоял списком
+        // `politik.cities[0]`. Второго списка городов у мира больше нет —
+        // план умер вместе с генезисом.
+        bool cityFound = false;
+        for_each_place(st, [&](std::uint16_t slot) {
+            if (cityFound) return;
+            if (SquadType(st.runtime[slot].squadType) != SquadType::City)
+                return;
+            sx = ecs::cell_x(st.cell[slot], gs.mapW);
+            sy = ecs::cell_y(st.cell[slot], gs.mapW);
+            cityFound = true;
+        });
         const MacroHandle h = store_birth(st);
         if (!st.valid(h)) return;   // отказ капа уже прозвучал вслух
         st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};

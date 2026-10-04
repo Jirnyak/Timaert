@@ -5,7 +5,7 @@
 #include "macro/agent_memory.h"
 #include "tables/commodity.h"
 #include "macro/anketa.h"
-#include "macro/place_body.h"   // place_store — склад места в ТЕЛЕ (M-90)
+#include "macro/landmark_iter.h"   // for_each_place — места по слотам
 #include "tables/npc.h"
 
 #include <algorithm>
@@ -45,17 +45,29 @@ struct QuestGenCtx {
     int y = 0;
     bool isCity = false;
     int factionIdx = -1;
-    const Inventory* store = nullptr;   // the landmark's universal inventory
+    const Inventory* store = nullptr;   // the place's universal inventory
+    const MacroStore* st = nullptr;     // «какие ещё места есть в мире»
     const GameState* gs = nullptr;
     Rng* rng = nullptr;
 };
 
+// ИМЯ МЕСТА ДЛЯ ПОКАЗА — колонка `name` его тела, а пустая отвечает ярлыком
+// строки реестра: безымянный есть честный случай именованного рода (тот же
+// один закон, что у обхода мест), и шпиль с руиной не показывают пустоту.
+std::string place_label(const MacroStore& st, std::uint16_t slot) {
+    const char* t = st.name[slot].text;
+    if (t[0] != '\0') return std::string(t);
+    return std::string(
+        landmark_def(SquadType(st.runtime[slot].squadType)).label.data());
+}
+
 using GeneratorFn = bool (*)(const QuestGenCtx&, Quest&);
 
 // Whose standing does this quest move? The giver's own faction column — the
-// same rule the spawners use (Landmark::factionIdx, kingdoms cut 2026-09-11),
-// so doing a job for Old Magica raises Old Magica, not the empire. An unowned
-// settlement resolves to the free folk like everywhere else.
+// same rule the spawners use (`kind.factionIdx` of its body, kingdoms cut
+// 2026-09-11), so doing a job for Old Magica raises Old Magica, not the
+// empire. An unowned settlement resolves to the free folk like everywhere
+// else.
 std::string faction_of(const QuestGenCtx& ctx) {
     if (!ctx.gs) return "empire";
     return faction_id_for_index(faction_or_freefolk(ctx.factionIdx));
@@ -165,29 +177,39 @@ bool gen_delivery(const QuestGenCtx& ctx, Quest& q) {
 
 bool gen_visit(const QuestGenCtx& ctx, Quest& q) {
     const GameState& gs = *ctx.gs;
-    std::vector<const Landmark*> candidates;
-    candidates.reserve(gs.landmarks.size());
-    for (const auto& settlement : gs.landmarks) {
-        if (settlement.type != LandmarkType::City) continue;
-        if (settlement.id != ctx.id) candidates.push_back(&settlement);
-    }
+    if (!ctx.st) return false;
+    const MacroStore& st = *ctx.st;
+    const auto tx_of = [&](std::uint16_t s) {
+        return ecs::cell_x(st.cell[s], gs.mapW);
+    };
+    const auto ty_of = [&](std::uint16_t s) {
+        return ecs::cell_y(st.cell[s], gs.mapW);
+    };
+    std::vector<std::uint16_t> candidates;
+    for_each_place(st, [&](std::uint16_t slot) {
+        if (SquadType(st.runtime[slot].squadType) != SquadType::City)
+            return;
+        if (int(st.spawnId[slot].index) != ctx.id) candidates.push_back(slot);
+    });
     if (candidates.empty()) return false;
 
     std::sort(candidates.begin(), candidates.end(),
-        [&](const Landmark* a, const Landmark* b) {
+        [&](std::uint16_t a, std::uint16_t b) {
             const float da = torus_dist(float(ctx.x), float(ctx.y),
-                                        float(a->x), float(a->y),
+                                        float(tx_of(a)), float(ty_of(a)),
                                         float(gs.mapW), float(gs.mapH));
             const float db = torus_dist(float(ctx.x), float(ctx.y),
-                                        float(b->x), float(b->y),
+                                        float(tx_of(b)), float(ty_of(b)),
                                         float(gs.mapW), float(gs.mapH));
             return db < da;
         });
 
     const int pickCount = int((candidates.size() + 1u) / 2u);
-    const Landmark& target = *candidates[std::size_t(ctx.rng->next_int(0, pickCount))];
+    const std::uint16_t target =
+        candidates[std::size_t(ctx.rng->next_int(0, pickCount))];
+    const int targetX = tx_of(target), targetY = ty_of(target);
     const float dist = torus_dist(float(ctx.x), float(ctx.y),
-                                  float(target.x), float(target.y),
+                                  float(targetX), float(targetY),
                                   float(gs.mapW), float(gs.mapH));
     const float distFactor = 1.0f + dist / (float(gs.mapW) * 0.25f);
     const int gold = int(std::round(30.0f * distFactor
@@ -198,15 +220,15 @@ bool gen_visit(const QuestGenCtx& ctx, Quest& q) {
     if (expire < 14) expire = 14;
 
     add_common(q, ctx, QuestCategory::Procedural, difficulty, expire);
-    const std::string targetName(target.name);
+    const std::string targetName = place_label(st, target);
     q.title = "Envoy to " + targetName;
     q.description = "Deliver a sealed letter to the magistrate of "
-        + targetName + ". " + describe_destination(ctx, target.x, target.y);
+        + targetName + ". " + describe_destination(ctx, targetX, targetY);
 
     Objective o{};
     o.kind = ObjectiveKind::VisitCell;
-    o.ix = target.x;
-    o.iy = target.y;
+    o.ix = targetX;
+    o.iy = targetY;
     o.radius = 5.0f;
     q.objectives.push_back(o);
     add_gold_xp_rewards(q, gold, 0.5f);
@@ -426,37 +448,42 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
 
 } // namespace
 
-std::vector<Quest> generate_quests_for_settlement(const Landmark& s,
+std::vector<Quest> generate_quests_for_settlement(std::uint16_t slot,
                                                   const MacroStore& st,
                                                   const GameState& gs,
                                                   std::uint32_t worldSeed) {
-    Rng rng(worldSeed ^ std::uint32_t(s.id) ^ std::uint32_t(gs.worldTime.day()));
+    const int id = int(st.spawnId[slot].index);
+    Rng rng(worldSeed ^ std::uint32_t(id) ^ std::uint32_t(gs.worldTime.day()));
     QuestGenCtx ctx{};
-    ctx.id = s.id;
-    ctx.name = s.name;
-    ctx.x = s.x;
-    ctx.y = s.y;
+    ctx.id = id;
+    ctx.name = place_label(st, slot);
+    ctx.x = ecs::cell_x(st.cell[slot], gs.mapW);
+    ctx.y = ecs::cell_y(st.cell[slot], gs.mapW);
     ctx.isCity = true;
-    ctx.factionIdx = s.factionIdx;
-    ctx.store = &place_store(st, s);
+    ctx.factionIdx = int(std::int16_t(st.kind[slot].factionIdx));
+    ctx.store = &st.inventory[slot].inv;
+    ctx.st = &st;
     ctx.gs = &gs;
     ctx.rng = &rng;
     return generate_for_context(ctx);
 }
 
-std::vector<Quest> generate_quests_for_village(const Landmark& v,
-                                                const MacroStore& st,
+std::vector<Quest> generate_quests_for_village(std::uint16_t slot,
+                                               const MacroStore& st,
                                                const GameState& gs,
                                                std::uint32_t worldSeed) {
-    Rng rng(worldSeed ^ std::uint32_t(v.id + 0x6000) ^ std::uint32_t(gs.worldTime.day()));
+    const int id = int(st.spawnId[slot].index);
+    Rng rng(worldSeed ^ std::uint32_t(id + 0x6000)
+            ^ std::uint32_t(gs.worldTime.day()));
     QuestGenCtx ctx{};
-    ctx.id = v.id;
-    ctx.name = v.name;
-    ctx.x = v.x;
-    ctx.y = v.y;
+    ctx.id = id;
+    ctx.name = place_label(st, slot);
+    ctx.x = ecs::cell_x(st.cell[slot], gs.mapW);
+    ctx.y = ecs::cell_y(st.cell[slot], gs.mapW);
     ctx.isCity = false;
-    ctx.factionIdx = v.factionIdx;
-    ctx.store = &place_store(st, v);
+    ctx.factionIdx = int(std::int16_t(st.kind[slot].factionIdx));
+    ctx.store = &st.inventory[slot].inv;
+    ctx.st = &st;
     ctx.gs = &gs;
     ctx.rng = &rng;
     return generate_for_context(ctx);

@@ -146,36 +146,24 @@ int main() {
         auto storePtr = sm::make_macro_store();
         sm::MacroStore& st = *storePtr;
 
-        Landmark big{};
-        big.type = LandmarkType::City;
-        big.id = 1; big.x = 10; big.y = 10;
-        Landmark small{};
-        small.type = LandmarkType::City;
-        small.id = 2; small.x = 20; small.y = 20;
         // Паства решает, как ярко горит место (macro_lighting читает
         // souls_flock): души селятся дверью мира, а не колонкой записи.
-        sm::settle_souls(gs, st, sm::birth_landmark(gs, st, std::move(big)),
-                         5000);
-        sm::settle_souls(gs, st, sm::birth_landmark(gs, st, std::move(small)),
-                         20);
+        sm::settle_souls(
+            gs, st,
+            sm::birth_place(gs, st, SquadType::City, 10, 10).slot, 5000);
+        sm::settle_souls(
+            gs, st,
+            sm::birth_place(gs, st, SquadType::City, 20, 20).slot, 20);
 
-        Landmark v{};
-        v.type = LandmarkType::Village;
-        v.id = 3; v.x = 30; v.y = 30;
-        sm::settle_souls(gs, st, sm::birth_landmark(gs, st, std::move(v)),
-                         100);
+        sm::settle_souls(
+            gs, st,
+            sm::birth_place(gs, st, SquadType::Village, 30, 30).slot, 100);
 
         // v120: a spire's charge is its cell's worked number (ordinal + 1);
         // drained = 0 — the spent spire's cell simply stays unwritten.
-        Landmark active{};
-        active.type = LandmarkType::Spire;
-        active.id = 4; active.x = 40; active.y = 40;
         worked_write(gs, 40, 40, 1);
-        Landmark spent{};
-        spent.type = LandmarkType::Spire;
-        spent.id = 5; spent.x = 50; spent.y = 50;
-        sm::birth_landmark(gs, st, std::move(active));
-        sm::birth_landmark(gs, st, std::move(spent));
+        sm::birth_place(gs, st, SquadType::Spire, 40, 40);
+        sm::birth_place(gs, st, SquadType::Spire, 50, 50);
 
         std::vector<MacroLight> lights = collect_macro_lights(gs, st);
         // 2 settlements + 1 village + 1 active spire; the depleted spire emits none.

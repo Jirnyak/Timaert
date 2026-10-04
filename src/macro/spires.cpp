@@ -1,6 +1,7 @@
 #include "macro/spires.h"
 #include "macro/labour.h"      // settle_souls — одна дверь поселения душ
-#include "macro/place_birth.h" // birth_landmark — строка+тело (M-90 шаг 5)
+#include "macro/place_birth.h" // birth_place — место родится ТЕЛОМ
+#include "macro/landmark_iter.h"   // for_each_place — места по слотам
 #include "macro/landmark_registry.h"
 #include "tables/faction.h"
 #include "macro/map_generator.h"
@@ -32,15 +33,18 @@ int torus_chebyshev(int ax, int ay, int bx, int by, int w, int h) {
 }
 
 // A spire may not share a cell with any named place: the baked cell→landmark
-// index (macro/landmark_grid.h) awards a shared cell to the FIRST landmark
+// frame (settlement_at, macro/squad_index.h) awards a shared cell to the FIRST landmark
 // its builder yields (settlements → villages → spires), so a co-located spire
 // would be silently shadowed by the town on top of it. This scan stays
 // hand-written because it runs DURING world-gen, before the grid exists —
 // the one legitimate pre-grid reader.
-bool cell_occupied(const GameState& gs, int x, int y) {
-    for (const auto& lm : gs.landmarks)
-        if (lm.x == x && lm.y == y) return true;
-    return false;
+bool cell_occupied(const GameState& gs, const MacroStore& st, int x, int y) {
+    const std::uint32_t idx = ecs::cell_index(x, y, gs.mapW);
+    bool taken = false;
+    for_each_place(st, [&](std::uint16_t slot) {
+        if (st.cell[slot].idx == idx) taken = true;
+    });
+    return taken;
 }
 
 } // namespace
@@ -51,7 +55,7 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         || !zones.has_complete_storage()) {
         return;
     }
-    const LandmarkDef& def = landmark_def(LandmarkType::Spire);
+    const LandmarkDef& def = landmark_def(SquadType::Spire);
     // WHOSE the tower is, answered ONCE and stored on the instance (owner
     // 2026-09-21). The generator is the EDITOR: it names the banner, the
     // registry row carries no faction column, and the string never leaves
@@ -62,7 +66,6 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
     // Own deterministic stream, distinct from the landmark-naming salt in
     // populate_landmarks_from_politik (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x59B12E50u);
-    gs.landmarks.reserve(gs.landmarks.size() + std::size_t(kSpellCount));
 
     for (int ord = 0; ord < kSpellCount; ++ord) {
         // The tier walks the gate through the table's own band: tier 1 opens
@@ -88,13 +91,18 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                 const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
                 if (terrain.is_water(x, y)) continue;
                 if (int(zones.at(x, y)) < gate) continue;
-                if (cell_occupied(gs, x, y)) continue;
+                if (cell_occupied(gs, st, x, y)) continue;
                 int score = gs.mapW + gs.mapH;   // no spires yet: any site wins
-                for (const auto& sp : gs.landmarks) {
-                    if (sp.type != LandmarkType::Spire) continue;
-                    score = std::min(score, torus_chebyshev(x, y, sp.x, sp.y,
-                                                            gs.mapW, gs.mapH));
-                }
+                for_each_place(st, [&](std::uint16_t slot) {
+                    if (SquadType(st.runtime[slot].squadType)
+                            != SquadType::Spire)
+                        return;
+                    score = std::min(score, torus_chebyshev(
+                        x, y,
+                        ecs::cell_x(st.cell[slot], gs.mapW),
+                        ecs::cell_y(st.cell[slot], gs.mapW),
+                        gs.mapW, gs.mapH));
+                });
                 if (score > bestScore) {
                     bestScore = score;
                     bestX = x;
@@ -112,18 +120,16 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                          ord, int(def.minZone));
             continue;
         }
-        Landmark sp{};
-        sp.type     = LandmarkType::Spire;
-        // M-37: a spire is a macro subject like any other — its id comes
-        // from THE one subject-ordinal issuer, squads included.
-        sp.id       = int(gs.nextMacroSpawnOrdinal++);
-        sp.x        = bestX;
-        sp.y        = bestY;
-        sp.factionIdx = infernal;
         // The spell is the spire's WORKED number («у поля урожай, у шахты
         // залежи, у порта корабли — у шпиля спелл»): kSpellDefs ordinal + 1
         // under FT_Spire, 0 = drained (закон нуля-ординала).
         worked_write(gs, bestX, bestY, ord + 1);
+        // Место родится ТЕЛОМ одной дверью (ломтик F); ординал эмитит она —
+        // шпиль есть макро-субъект как всякий другой, и берёт его из того же
+        // единого эмитента, что сквады (M-37).
+        const MacroHandle h = birth_place(gs, st, SquadType::Spire,
+                                          bestX, bestY, infernal);
+        if (!st.valid(h)) continue;   // отказ капа уже прозвучал вслух
         // Born with its haunt (§42 Инк 5): the registry row's own born
         // columns × the spell's tier, a discrete bell around the mean. Its
         // OWN stream (world salt × spell ordinal) so the placement draws
@@ -132,12 +138,10 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         // ПЕРЕВОРОТ v122 (вердикт 3): души данжа — ГОЛОВАМИ, вид стака
         // ВЫВОДИТСЯ — слабейшая строка полосы толпы (шпиль → Imp); worked
         // клетки не трогается — под FT_Spire там живёт СПЕЛЛ (ломтик B).
-        // ФЛИП (M-90 шаг 5): строка+тело одной дверью, души — в склад ТЕЛА.
-        Landmark& row = birth_landmark(gs, st, std::move(sp));
         {
             Rng popRng(gs.worldSeed ^ 0xB0125EEDu
                        ^ (std::uint32_t(ord) * 2654435761u));
-            settle_souls(gs, st, row, landmark_born_population(
+            settle_souls(gs, st, h.slot, landmark_born_population(
                 int(def.bornPopBase), int(def.bornPopPerScore), tier,
                 popRng));
         }

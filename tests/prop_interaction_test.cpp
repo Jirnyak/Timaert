@@ -96,7 +96,7 @@ CellContext make_city_ctx(std::uint32_t seed) {
     ctx.feature = FT_None;
     ctx.landmark.id = 101;
     ctx.landmark.size = 2000;
-    ctx.landmark.kind = LandmarkType::City;
+    ctx.landmark.kind = SquadType::City;
     ctx.seed = seed;
     return ctx;
 }

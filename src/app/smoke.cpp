@@ -33,7 +33,9 @@
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
 #include "macro/anketa.h"
 #include "macro/labour.h"   // souls_flock — паства через ТЕЛО (M-90)
-#include "macro/place_body.h"
+#include "macro/landmark_iter.h"   // for_each_place — обход мест по слотам
+#include "macro/squad.h"           // place_handle_by_ordinal — резолв места
+#include "macro/squad_index.h"     // settlement_at — «кто живёт на клетке»
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
 #include "macro/store.h"
@@ -1500,21 +1502,27 @@ bool smoke_find_danger_land_cell(const App& app, int& outX, int& outY) {
     return false;
 }
 
-// First city of the ONE roster — the "front of gs.settlements" the smoke
-// scripts used to pin before the landmark merge (v62).
-const sm::Landmark* smoke_first_city(const App& app) {
+// Первое место своего рода в населении store — тот самый пин, который
+// смоуки держали «фронтом gs.settlements» (v62); с ломтика F место есть
+// слот, поэтому ответ — ХЭНДЛ, а пустой хэндл значит «такого места нет».
+sm::MacroHandle smoke_first_city(const App& app) {
     // Which KIND of settlement a scenario wants (TIMAERT_SMOKE_SETTLEMENT).
     // A city by default, because that is what every scenario here has always
     // meant; a village on request, so the village's own generator can be
     // photographed by the same scripts rather than by a second harness.
-    sm::LandmarkType want = sm::LandmarkType::City;
+    sm::SquadType want = sm::SquadType::City;
     if (const char* k = std::getenv("TIMAERT_SMOKE_SETTLEMENT")) {
-        if (std::string_view(k) == "village") want = sm::LandmarkType::Village;
+        if (std::string_view(k) == "village") want = sm::SquadType::Village;
     }
-    for (const auto& lm : app.gs.landmarks) {
-        if (lm.type == want) return &lm;
-    }
-    return nullptr;
+    if (!app.macroStore) return sm::MacroHandle{};
+    const sm::MacroStore& st = *app.macroStore;
+    sm::MacroHandle first{};
+    sm::for_each_place(st, [&](std::uint16_t slot) {
+        if (st.valid(first)) return;   // первый по слоту — он и есть ответ
+        if (sm::SquadType(st.runtime[slot].squadType) != want) return;
+        first = sm::handle_at(st, slot);
+    });
+    return first;
 }
 
 bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
@@ -1523,10 +1531,14 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
         return false;
     }
     auto hasLandmark = [&](int x, int y) {
-        for (const auto& lm : app.gs.landmarks) {
-            if (lm.x == x && lm.y == y) return true;
-        }
-        return false;
+        bool here = false;
+        sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+            const auto& c = app.macroStore->cell[slot];
+            if (sm::ecs::cell_x(c, app.gs.mapW) == x
+                && sm::ecs::cell_y(c, app.gs.mapW) == y)
+                here = true;
+        });
+        return here;
     };
 
     const int cx = app.gs.mapW / 2;
@@ -2570,15 +2582,23 @@ bool run_dungeon_house_smoke(App& app) {
         smoke_fail(app, "dungeon_house already active");
         return false;
     }
-    // Город спрашивается у РОСТЕРА МЕСТ (M-90): второго списка городов у
-    // мира больше нет, план генератора умер вместе с генезисом.
-    const sm::Landmark* firstCity = nullptr;
-    for (const auto& lm : app.gs.landmarks)
-        if (lm.type == sm::LandmarkType::City) { firstCity = &lm; break; }
-    if (!firstCity) {
+    // Город спрашивается у НАСЕЛЕНИЯ STORE (ломтик F): второго списка
+    // городов у мира больше нет, план генератора умер вместе с генезисом.
+    sm::MacroHandle firstCity{};
+    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+        if (app.macroStore->valid(firstCity)) return;
+        if (sm::SquadType(app.macroStore->runtime[slot].squadType)
+            == sm::SquadType::City)
+            firstCity = sm::handle_at(*app.macroStore, slot);
+    });
+    if (!app.macroStore->valid(firstCity)) {
         smoke_fail(app, "dungeon_house no cities");
         return false;
     }
+    const int firstCityX =
+        sm::ecs::cell_x(app.macroStore->cell[firstCity.slot], app.gs.mapW);
+    const int firstCityY =
+        sm::ecs::cell_y(app.macroStore->cell[firstCity.slot], app.gs.mapW);
 
     const float oldX = smoke_player_x(app);
     const float oldY = smoke_player_y(app);
@@ -2592,7 +2612,15 @@ bool run_dungeon_house_smoke(App& app) {
     };
 
     // Land on the first city: its centre cell is guaranteed houses.
-        smoke_teleport_player(app, firstCity->x, firstCity->y);
+        smoke_teleport_player(app, firstCityX, firstCityY);
+    // СВИДЕТЕЛЬ РОЖДАЕТ ПРЕДУСЛОВИЕ (§8 п.11): дом обязан держать семью, и
+    // предусловие этому — ЧАС, а не везение ролла. Закон очага partition'ит
+    // души по солнцу (hearth_indoors_now): в полночь share≈0 и ВСЕ души
+    // хозяйства дома, при любом ролле souls ≥ 1. До этого пина смоук был
+    // монеткой 1-к-7: однодушный очаг в 08:00 ЧЕСТНО пуст (три четверти
+    // города на улице), и красил его любой сдвиг рельефа, переселявший
+    // первый город (Л3: ce8d57ca пересеял dungeon_scene_seed клеткой двери).
+    app.gs.worldTime = sm::world_time_at(app.gs.worldTime.day(), 0, 0);
     app.gs.subState.settlementId = 0;
     app.ui.settlementId = 0;
     enter_subworld(app);
@@ -2680,6 +2708,11 @@ bool run_dungeon_house_smoke(App& app) {
         }
         if (sign != nullptr) {
             app.subworld.set_player_pos(sign->x, sign->y - 2.0f);
+            // НА НОГИ (§8 п.11): XY-телепорт оставляет z прежней точки, и на
+            // склоне табличка оказывается на метры выше висящего тела —
+            // изотропная рука (M-178) честно отказывает. Дверная половина
+            // уже встаёт на ноги; таблице тот же закон.
+            smoke_settle_on_foot(app);
             app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
             readSign = app.subworld.interact();
         }
@@ -2950,27 +2983,30 @@ bool run_dungeon_house_smoke(App& app) {
     int repBefore = 0, repAfter = 0;
     bool measuredChest = false;
     {
-        sm::Landmark* town = nullptr;
-        for (auto& s : app.gs.landmarks) {
-            if (s.type != sm::LandmarkType::City) continue;
-            if (s.x == int(smoke_player_x(app)) && s.y == int(smoke_player_y(app))) {
-                town = &s;
-                break;
-            }
-        }
+        // «Кто живёт на этой клетке» отвечает КАРКАС КЛЕТОК, а не скан
+        // населения (ЗАКОН КЛЕТОЧНОГО КАРКАСА п.1).
+        const sm::MacroHandle townH =
+            sm::settlement_at(app.npcAi.squadIndex, *app.macroStore,
+                              int(smoke_player_x(app)),
+                              int(smoke_player_y(app)));
+        const bool town = app.macroStore->valid(townH)
+            && sm::SquadType(app.macroStore->runtime[townH.slot].squadType)
+                   == sm::SquadType::City;
+        sm::Inventory* townInv = town
+            ? &app.macroStore->inventory[townH.slot].inv : nullptr;
         const sm::sub::Structure* chest = nullptr;
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::Chest) { chest = &s; break; }
         }
-        if (town != nullptr && chest != nullptr
-            && sm::place_store(*app.macroStore, *town).used_slots() != 0) {
+        if (town && chest != nullptr && townInv->used_slots() != 0) {
             const char* fid = sm::faction_id_for_index(
-                sm::faction_or_freefolk(town->factionIdx));
-            storeBefore = sm::place_store(*app.macroStore, *town).total();
+                sm::faction_or_freefolk(std::int16_t(
+                    app.macroStore->kind[townH.slot].factionIdx)));
+            storeBefore = townInv->total();
             bagBefore = player_bag(app).total();
             repBefore = sm::player_reputation(&app.gs, fid);
             app.subworld.search_chest(*chest);
-            storeAfter = sm::place_store(*app.macroStore, *town).total();
+            storeAfter = townInv->total();
             bagAfter = player_bag(app).total();
             repAfter = sm::player_reputation(&app.gs, fid);
             measuredChest = true;
@@ -3767,31 +3803,39 @@ bool run_spire_climb_smoke(App& app) {
     // tier exercises the whole shaft ladder, not just one climb.
     // The spell is the spire cell's worked number (spires.h: ordinal + 1,
     // 0 = drained) — the selection reads the layer, not columns.
-    const sm::Landmark* target = nullptr;
+    sm::MacroHandle target{};
     int targetSpell = -1;
-    for (const auto& sp : app.gs.landmarks) {
-        if (sp.type != sm::LandmarkType::Spire) continue;
-        const int orb = sm::worked_read(app.gs, sp.x, sp.y);
-        if (orb <= 0 || orb > sm::kSpellCount) continue;
+    int targetX = 0, targetY = 0;
+    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+        if (sm::SquadType(app.macroStore->runtime[slot].squadType)
+            != sm::SquadType::Spire)
+            return;
+        const auto& c = app.macroStore->cell[slot];
+        const int sx = sm::ecs::cell_x(c, app.gs.mapW);
+        const int sy = sm::ecs::cell_y(c, app.gs.mapW);
+        const int orb = sm::worked_read(app.gs, sx, sy);
+        if (orb <= 0 || orb > sm::kSpellCount) return;
         const int spell = orb - 1;
         if (sm::spellbook_has_learned(smoke_player_book(app), spell))
-            continue;
-        if (!target
+            return;
+        if (!app.macroStore->valid(target)
             || sm::kSpellDefs[spell].tier > sm::kSpellDefs[targetSpell].tier) {
-            target = &sp;
+            target = sm::handle_at(*app.macroStore, slot);
             targetSpell = spell;
+            targetX = sx;
+            targetY = sy;
         }
-    }
-    if (!target) {
+    });
+    if (!app.macroStore->valid(target)) {
         smoke_fail(app, "spire_climb found no unlearned spire");
         return false;
     }
     const sm::SpellDef& def = sm::kSpellDefs[targetSpell];
     const int tier = def.tier;
-    const int spireId = target->id;
+    const int spireId = int(app.macroStore->spawnId[target.slot].index);
 
     // Stand on the spire's cell and enter its open-air scene.
-        smoke_teleport_player(app, int(float(target->x)), int(float(target->y)));
+        smoke_teleport_player(app, targetX, targetY);
     app.gs.subState.settlementId = 0;
     enter_subworld(app);
     if (!app.subworld.active()) {
@@ -3957,8 +4001,15 @@ bool run_spire_climb_smoke(App& app) {
         apply_pending_event_effects(app);
         learned = sm::spellbook_has_learned(smoke_player_book(app),
                                             sm::spell_ordinal(def.id));
-        if (const sm::Landmark* sp = sm::landmark_by_id(app.gs, spireId))
-            depletedFlag = sm::worked_read(app.gs, sp->x, sp->y) == 0;
+        if (const sm::MacroHandle sph = sm::place_handle_by_ordinal(
+                *app.macroStore, std::uint32_t(spireId));
+            app.macroStore->valid(sph)) {
+            const auto& c = app.macroStore->cell[sph.slot];
+            depletedFlag = sm::worked_read(app.gs,
+                                           sm::ecs::cell_x(c, app.gs.mapW),
+                                           sm::ecs::cell_y(c, app.gs.mapW))
+                == 0;
+        }
         orbsAfter = 0;
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::SpireOrb) ++orbsAfter;
@@ -5744,7 +5795,7 @@ bool run_console_smoke(App& app) {
         };
 
         app.activeQuests.clear();
-        sm::rebuild_quest_markers(app.gs, app.activeQuests);   // clean quest_* slate
+        sm::rebuild_quest_markers(app.gs, *app.macroStore, app.activeQuests);   // clean quest_* slate
         const std::size_t base = app.gs.markers.size();
 
         sm::Quest q;
@@ -5760,7 +5811,7 @@ bool run_console_smoke(App& app) {
         q.objectives.push_back(kill);
         app.activeQuests.push_back(q);
 
-        sm::rebuild_quest_markers(app.gs, app.activeQuests);
+        sm::rebuild_quest_markers(app.gs, *app.macroStore, app.activeQuests);
         if (app.gs.markers.size() != base + 1) {
             bail("quest_markers: expected exactly one pin for one located objective");
             return false;
@@ -5778,7 +5829,7 @@ bool run_console_smoke(App& app) {
         if (quest_marker_signature(app.activeQuests) == sigOpen) {
             bail("quest_markers: signature ignored objective completion"); return false;
         }
-        sm::rebuild_quest_markers(app.gs, app.activeQuests);
+        sm::rebuild_quest_markers(app.gs, *app.macroStore, app.activeQuests);
         if (app.gs.markers.size() != base) {
             bail("quest_markers: completed objective pin not removed"); return false;
         }
@@ -7652,20 +7703,21 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "open_settlement_build without world");
                 break;
             }
-            const sm::Landmark* firstCity = smoke_first_city(app);
-            if (!firstCity) {
+            const sm::MacroHandle firstCity = smoke_first_city(app);
+            if (!app.macroStore->valid(firstCity)) {
                 smoke_fail(app, "open_settlement_build without settlements");
                 break;
             }
             smoke_clear_modal_overlays(app);
-            const sm::Landmark& s = *firstCity;
-            app.ui.settlementId = s.id;
+            const std::uint16_t s = firstCity.slot;
+            app.ui.settlementId = int(app.macroStore->spawnId[s].index);
             app.ui.settlementTab = sm::ui::SettlementPanelTab::Build;
             app.ui.settlement = true;
             refresh_available_settlement_quests(app);
             std::fprintf(stderr,
                          "[smoke] settlement_build open id=%d name=\"%s\" tab=Build\n",
-                         s.id, s.name);
+                         int(app.macroStore->spawnId[s].index),
+                         app.macroStore->name[s].text);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -7677,14 +7729,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "open_settlement_trade without world");
                 break;
             }
-            const sm::Landmark* firstCity = smoke_first_city(app);
-            if (!firstCity) {
+            const sm::MacroHandle firstCity = smoke_first_city(app);
+            if (!app.macroStore->valid(firstCity)) {
                 smoke_fail(app, "open_settlement_trade without settlements");
                 break;
             }
             smoke_clear_modal_overlays(app);
-            const sm::Landmark& s = *firstCity;
-            app.ui.settlementId = s.id;
+            const std::uint16_t s = firstCity.slot;
+            app.ui.settlementId = int(app.macroStore->spawnId[s].index);
             app.ui.settlementTab = sm::ui::SettlementPanelTab::Trade;
             app.ui.settlement = true;
             app.ui.codex = false;
@@ -7693,12 +7745,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             refresh_available_settlement_quests(app);
             std::fprintf(stderr,
                          "[smoke] settlement_trade open id=%d name=\"%s\" wellbeing=%d stock=%d playerItems=%d gold=%d\n",
-                         s.id,
-                         s.name,
-                         int(app.macroStore->wellbeing[sm::place_slot(*app.macroStore,
-                                                                      s)]
-                                 .seasonWellbeing),
-                         sm::place_store(*app.macroStore, s).used_slots(),
+                         int(app.macroStore->spawnId[s].index),
+                         app.macroStore->name[s].text,
+                         int(app.macroStore->wellbeing[s].seasonWellbeing),
+                         app.macroStore->inventory[s].inv.used_slots(),
                          player_bag(app).total(),
                          sm::inventory_value(player_bag(app)));
             std::fflush(stderr);
@@ -7712,14 +7762,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "open_settlement_map without world");
                 break;
             }
-            const sm::Landmark* firstCity = smoke_first_city(app);
-            if (!firstCity) {
+            const sm::MacroHandle firstCity = smoke_first_city(app);
+            if (!app.macroStore->valid(firstCity)) {
                 smoke_fail(app, "open_settlement_map without settlements");
                 break;
             }
             smoke_clear_modal_overlays(app);
-            const sm::Landmark& s = *firstCity;
-            app.ui.settlementId = s.id;
+            const std::uint16_t s = firstCity.slot;
+            const int sOrdinal = int(app.macroStore->spawnId[s].index);
+            app.ui.settlementId = sOrdinal;
             app.ui.settlementTab = sm::ui::SettlementPanelTab::Map;
             app.ui.settlement = true;
             app.ui.codex = false;
@@ -7727,11 +7778,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.quest = false;
             refresh_available_settlement_quests(app);
             const std::uint32_t previewSeed =
-                app.gs.worldSeed + std::uint32_t(s.id > 0 ? s.id : 0) * 123u;
+                app.gs.worldSeed
+                + std::uint32_t(sOrdinal > 0 ? sOrdinal : 0) * 123u;
             std::fprintf(stderr,
                          "[smoke] settlement_map open id=%d name=\"%s\" seed=0x%08X pop=%d\n",
-                         s.id,
-                         s.name,
+                         sOrdinal,
+                         app.macroStore->name[s].text,
                          previewSeed,
                          sm::souls_flock(app.gs, *app.macroStore, s));
             std::fflush(stderr);
@@ -7745,8 +7797,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "enter_first_settlement without world");
                 break;
             }
-            const sm::Landmark* firstCity = smoke_first_city(app);
-            if (!firstCity) {
+            const sm::MacroHandle firstCity = smoke_first_city(app);
+            if (!app.macroStore->valid(firstCity)) {
                 smoke_fail(app, "enter_first_settlement without settlements");
                 break;
             }
@@ -7754,12 +7806,16 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.subworld.leave(true);
             }
             smoke_clear_modal_overlays(app);
-            const sm::Landmark& s = *firstCity;
-                        smoke_teleport_player(app, int(float(s.x)), int(float(s.y)));
+            const std::uint16_t s = firstCity.slot;
+            const int sOrdinal = int(app.macroStore->spawnId[s].index);
+                        smoke_teleport_player(
+                            app,
+                            sm::ecs::cell_x(app.macroStore->cell[s], app.gs.mapW),
+                            sm::ecs::cell_y(app.macroStore->cell[s], app.gs.mapW));
             app.cursor.path.clear();
             app.cursor.pathIdx = 0;
-            app.gs.subState.settlementId = s.id;
-            app.ui.settlementId = s.id;
+            app.gs.subState.settlementId = sOrdinal;
+            app.ui.settlementId = sOrdinal;
             app.ui.settlement = false;
             enter_subworld(app);
             if (!app.subworld.active()) {
@@ -7831,7 +7887,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] settlement_subworld id=%d pop=%d houses=%d/%d "
                          "walls=%d citizens=%d built=%d bare=%d center=%d,%d\n",
-                         s.id, sm::souls_flock(app.gs, *app.macroStore, s), houses,
+                         sOrdinal,
+                         sm::souls_flock(app.gs, *app.macroStore, s), houses,
                          wantHouses, walls, citizens,
                          built, bare,
                          app.subworld.mgr().center_cx(),
@@ -7923,8 +7980,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // здесь же: снеси этот счёт — и квартал перестанет быть
             // кварталом молча.
             {
-                const sm::Landmark* lm = smoke_first_city(app);
-                const int lmPop = lm ? sm::souls_flock(app.gs, *app.macroStore, *lm) : 0;
+                const sm::MacroHandle lm = smoke_first_city(app);
+                const int lmPop = app.macroStore->valid(lm)
+                    ? sm::souls_flock(app.gs, *app.macroStore, lm.slot) : 0;
                 const float qr = sm::sub::city_upper_radius(lmPop);
                 int watch = 0, inQuarter = 0;
                 auto gv = app.ecs.reg.view<sm::ecs::Position,

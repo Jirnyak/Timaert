@@ -203,7 +203,7 @@ bool refresh_body_strike(entt::registry& reg, entt::entity body);
 void spawn_cell_npcs(ecs::World& w,
                      Biome biome,
                      int treeCount,
-                     LandmarkType landmark,
+                     SquadType landmark,
                      std::uint8_t danger,
                      std::uint8_t depositsNear,
                      const SeamlessSubworldManager& mgr,
@@ -283,7 +283,7 @@ int doors_in_cell(const std::vector<Structure>& structures,
 // crowdOutsideShift)`, split evenly over the storeys with the remainder to
 // the lower floors. Pure arithmetic of the LIVE population — clearing a
 // floor thins the place, and every re-derived share thins with it.
-int interior_garrison_share(LandmarkType landmark, int landmarkPop,
+int interior_garrison_share(SquadType landmark, int landmarkPop,
                             int storeys, int level);
 
 // The interior reserve of ONE CELL: the sum of every soul its doors keep
@@ -293,7 +293,7 @@ int interior_garrison_share(LandmarkType landmark, int landmarkPop,
 // columns: householdAbove / placeGarrison). Street crowd = population −
 // this (the §42 partition witness asserts the sum exactly).
 int interior_reserve_for_cell(const std::vector<Structure>& structures,
-                              LandmarkType landmark,
+                              SquadType landmark,
                               std::uint32_t worldSeed,
                               int cellX, int cellY,
                               float originX, float originY,
@@ -317,7 +317,7 @@ int spawn_dungeon_residents(ecs::World& w,
                             // by the spire's crowd, not by townsfolk (§42:
                             // the old hardcoded City here dressed every
                             // interior in the world as a town house).
-                            LandmarkType landmark,
+                            SquadType landmark,
                             // The door cell's danger byte and deposit gates
                             // complete the same context the street rolls.
                             std::uint8_t danger,
@@ -342,7 +342,7 @@ int spawn_dungeon_residents(ecs::World& w,
 // as for residents above. Deterministic from `seed`; returns how many stood up.
 int spawn_dungeon_vermin(ecs::World& w,
                          std::uint32_t seed,
-                         LandmarkType tableKind,
+                         SquadType tableKind,
                          std::uint8_t danger,
                          Biome biome,
                          int treeCount,

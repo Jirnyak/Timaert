@@ -1,7 +1,7 @@
 #include "events/quests/quest_engine.h"
 #include "macro/agent_memory.h"
 #include "macro/currency.h"
-#include "macro/place_body.h"   // place_store — склад места в ТЕЛЕ (M-90)
+#include "macro/squad.h"   // place_handle_by_ordinal — резолв места в store
 #include "core/torus.h"
 #include "macro/markers.h"
 #include <algorithm>
@@ -16,11 +16,14 @@ static bool obj_in_radius(const GameState& gs, float px, float py, float cx, flo
     return torus_dist_sq(px, py, cx, cy, float(gs.mapW), float(gs.mapH)) <= r * r;
 }
 
-static bool settlement_position(const GameState& gs, int id, float& x, float& y) {
-    const Landmark* lm = landmark_by_id(gs, id);
-    if (!lm) return false;
-    x = float(lm->x);
-    y = float(lm->y);
+// Где стоит место — КОЛОНКА АДРЕСА его тела (ломтик F): резолв по ординалу
+// одной дверью store, мёртвый или чужой ординал честно отвечает «нет места».
+static bool settlement_position(const GameState& gs, const MacroStore& st,
+                                int id, float& x, float& y) {
+    const MacroHandle h = place_handle_by_ordinal(st, std::uint32_t(id));
+    if (!st.valid(h)) return false;
+    x = float(ecs::cell_x(st.cell[h.slot], gs.mapW));
+    y = float(ecs::cell_y(st.cell[h.slot], gs.mapW));
     return true;
 }
 
@@ -28,13 +31,13 @@ static bool settlement_position(const GameState& gs, int id, float& x, float& y)
 // eval_objective() checks for spatial completion. Returns false for objectives
 // with no fixed map cell — a DestroyNpc kill-count, or a delivery whose target
 // settlement no longer exists — so those never get a pin.
-static bool objective_target_cell(const GameState& gs, const Objective& o,
-                                  float& x, float& y) {
+static bool objective_target_cell(const GameState& gs, const MacroStore& st,
+                                  const Objective& o, float& x, float& y) {
     switch (o.kind) {
         case ObjectiveKind::VisitCell:
             x = float(o.ix);    y = float(o.iy);    return true;
         case ObjectiveKind::DeliverItems:
-            return settlement_position(gs, o.targetSettlementId, x, y);
+            return settlement_position(gs, st, o.targetSettlementId, x, y);
         case ObjectiveKind::DestroyNpc:
             return false;
     }
@@ -66,12 +69,13 @@ static void emit_reward(const Reward& r, GameState& gs, MacroStore& st,
                 // Значит награда без дарителя не выдаётся ВООБЩЕ; дыра
                 // названа в M-139 и ждёт ПУЛА ЛУТА, который и раздаст
                 // процедурную награду по контексту. Времянки здесь нет.
-                Landmark* giver = giverSettlementId > 0
-                    ? landmark_by_id(gs, giverSettlementId)
-                    : nullptr;
-                if (giver) {
-                    delta = transfer_value_dense(place_store(st, *giver), *bag,
-                                                 r.amount);
+                const MacroHandle giver = giverSettlementId > 0
+                    ? place_handle_by_ordinal(st,
+                                              std::uint32_t(giverSettlementId))
+                    : MacroHandle{};
+                if (st.valid(giver)) {
+                    delta = transfer_value_dense(st.inventory[giver.slot].inv,
+                                                 *bag, r.amount);
                     if (delta < r.amount) {
                         session_feed_push(gs.sessionFeed,
                                           "The treasury runs thin — you are "
@@ -128,7 +132,7 @@ static void emit_reward(const Reward& r, GameState& gs, MacroStore& st,
 }
 
 static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
-                           GameState& gs, Inventory* bag,
+                           GameState& gs, const MacroStore& st, Inventory* bag,
                            float px, float py) {
     if (o.completed) return true;
     switch (o.kind) {
@@ -138,7 +142,7 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
         case ObjectiveKind::DeliverItems:
             {
                 float sx = 0.0f, sy = 0.0f;
-                if (settlement_position(gs, o.targetSettlementId, sx, sy)
+                if (settlement_position(gs, st, o.targetSettlementId, sx, sy)
                     && obj_in_radius(gs, px, py, sx, sy, 3.0f)
                     && bag && bag->count(o.itemId) >= o.quantity) {
                     o.completed = bag->remove(o.itemId, o.quantity);
@@ -206,7 +210,7 @@ void QuestEngine::tick(std::vector<Quest>& active, MacroStore& st,
         bool anyUpdated = false;
         for (auto& o : q.objectives) {
             const bool wasDone = o.completed;
-            if (!eval_objective(o, events, gs, bag, float(px), float(py)))
+            if (!eval_objective(o, events, gs, st, bag, float(px), float(py)))
                 allDone = false;
             if (!wasDone && o.completed) anyUpdated = true;
         }
@@ -280,14 +284,15 @@ bool QuestEngine::is_known(const std::vector<Quest>& active,
     return false;
 }
 
-void rebuild_quest_markers(GameState& gs, const std::vector<Quest>& active) {
+void rebuild_quest_markers(GameState& gs, const MacroStore& st,
+                           const std::vector<Quest>& active) {
     remove_markers_by_prefix(gs.markers, "quest_");
     for (const Quest& q : active) {
         for (std::size_t oi = 0; oi < q.objectives.size(); ++oi) {
             const Objective& o = q.objectives[oi];
             if (o.completed) continue;
             float x = 0.0f, y = 0.0f;
-            if (!objective_target_cell(gs, o, x, y)) continue;
+            if (!objective_target_cell(gs, st, o, x, y)) continue;
             std::string id = "quest_" + std::to_string(q.ordinal) + "_"
                 + std::to_string(oi);
             add_marker(gs.markers, std::move(id), MarkerStyle::Quest, x, y, q.title);

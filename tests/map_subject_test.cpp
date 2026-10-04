@@ -24,43 +24,55 @@
 
 namespace {
 
-// Место есть неподвижный сквад (M-90 шаг 5): склад его — колонка ТЕЛА, и
-// потому фикстура рождает место дверью рождения, а не строкой в вектор.
-sm::GameState make_world(sm::MacroStore& st) {
-    sm::GameState gs{};
+// Место есть неподвижный сквад (ломтик F): склад его — колонка ТЕЛА, род —
+// колонка оси, ординал ВЫДАЁТ ЭМИТЕНТ. Рукописных `id` у фикстуры больше
+// нет, поэтому она запоминает, кем родились её трое, и спрашивает дверь
+// ровно этими ординалами.
+struct Fixture {
+    sm::GameState gs;
+    int cityId = 0;
+    int vilId = 0;
+    int spireId = 0;
+};
+
+// Склад места — колонка инвентаря ЕГО ТЕЛА; резолв идёт той же дверью, что
+// у самого меню (place_handle_by_ordinal), чтобы «тот же объект» значило
+// тот же путь, а не второй спеллинг резолва.
+sm::Inventory& place_store_of(sm::MacroStore& st, int ordinal) {
+    const sm::MacroHandle h =
+        sm::place_handle_by_ordinal(st, std::uint32_t(ordinal));
+    return st.inventory[h.slot].inv;
+}
+
+Fixture make_world(sm::MacroStore& st) {
+    Fixture fx{};
+    sm::GameState& gs = fx.gs;
     gs.mapW = 64;
     gs.mapH = 64;
-    sm::Landmark city{};
-    city.type = sm::LandmarkType::City;
-    city.id = 7;
-    std::snprintf(city.name, sizeof city.name, "Testholm");
-    city.x = 10;
-    city.y = 10;
-    sm::Landmark& cityRow = sm::birth_landmark(gs, st, std::move(city));
-    sm::creatures_push(sm::place_store(st, cityRow),
+    // Эмитент поднят ВЫШЕ рукописных ординалов сквадов этой фикстуры (5, 6):
+    // выдача с единицы столкнула бы место и сквад в одном ординале, и дверь
+    // отвечала бы «тем же объектом» по совпадению.
+    gs.nextMacroSpawnOrdinal = 7u;
+    const sm::MacroHandle city = sm::birth_place(
+        gs, st, sm::SquadType::City, 10, 10, -1, "Testholm");
+    fx.cityId = int(st.spawnId[city.slot].index);
+    sm::creatures_push(st.inventory[city.slot].inv,
         sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 11u));
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число фичи,
     // головы в инвентарь ТЕЛА — тем же законом, что генезис.
-    sm::settle_souls(gs, st, cityRow, 300);
+    sm::settle_souls(gs, st, city.slot, 300);
     // A VILLAGE and a SPIRE on the same one id space (v54): the door must
     // answer for them exactly as it does for the city — kind-blind.
-    sm::Landmark village{};
-    village.type = sm::LandmarkType::Village;
-    village.id = 42;
-    std::snprintf(village.name, sizeof village.name, "Hamlet");
-    village.x = 20;
-    village.y = 20;
+    const sm::MacroHandle village = sm::birth_place(
+        gs, st, sm::SquadType::Village, 20, 20, -1, "Hamlet");
+    fx.vilId = int(st.spawnId[village.slot].index);
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
-    sm::settle_souls(gs, st, sm::birth_landmark(gs, st, std::move(village)),
-                     40);
-    sm::Landmark spire{};
-    spire.type = sm::LandmarkType::Spire;
-    spire.id = 13;
-    spire.x = 40;
-    spire.y = 40;
-    sm::birth_landmark(gs, st, std::move(spire));
-    return gs;
+    sm::settle_souls(gs, st, village.slot, 40);
+    const sm::MacroHandle spire =
+        sm::birth_place(gs, st, sm::SquadType::Spire, 40, 40);
+    fx.spireId = int(st.spawnId[spire.slot].index);
+    return fx;
 }
 
 // Шаг 1г: субъект несёт хэндл {slot,gen}, и двери отвечают колонками store
@@ -79,7 +91,8 @@ void test_the_door_opens_the_old_addresses() {
     using namespace sm;
     auto worldStore_ = sm::make_macro_store();
     MacroStore& st = *worldStore_;
-    GameState gs = make_world(st);
+    Fixture fx = make_world(st);
+    GameState& gs = fx.gs;
     const MacroHandle squad = make_squad(st, 5);
     MacroWorld w{.gs = &gs, .store = &st};
 
@@ -90,20 +103,20 @@ void test_the_door_opens_the_old_addresses() {
               == &st.inventory[squad.slot].inv,
           "a squad's roster IS its one container (M-71), the very object");
 
-    CHECK(store_of(w, subject_of_landmark(7))
-              == &place_store(st, *landmark_by_id(gs, 7)),
+    CHECK(store_of(w, subject_of_landmark(fx.cityId))
+              == &place_store_of(st, fx.cityId),
           "a landmark's store IS its BODY's inventory column, the very object");
-    CHECK(roster_of(w, subject_of_landmark(7))
-              == &place_store(st, *landmark_by_id(gs, 7)),
+    CHECK(roster_of(w, subject_of_landmark(fx.cityId))
+              == &place_store_of(st, fx.cityId),
           "a landmark's roster IS its one container (M-71), the very object");
 
     // PLAY-2's law: the door is KIND-BLIND. A village and a spire answer
-    // through the same door a city does — no LandmarkType filter anywhere.
-    CHECK(store_of(w, subject_of_landmark(42)) != nullptr
-              && roster_of(w, subject_of_landmark(42)) != nullptr,
+    // through the same door a city does — no SquadType filter anywhere.
+    CHECK(store_of(w, subject_of_landmark(fx.vilId)) != nullptr
+              && roster_of(w, subject_of_landmark(fx.vilId)) != nullptr,
           "a village answers the door like any place");
-    CHECK(store_of(w, subject_of_landmark(13)) != nullptr
-              && roster_of(w, subject_of_landmark(13)) != nullptr,
+    CHECK(store_of(w, subject_of_landmark(fx.spireId)) != nullptr
+              && roster_of(w, subject_of_landmark(fx.spireId)) != nullptr,
           "a spire answers the door like any place");
 
     // Хэндл, который никогда не рождался, — честное «ничего», не чужой
@@ -119,19 +132,20 @@ void test_a_write_through_the_door_lands_in_the_world() {
     using namespace sm;
     auto worldStore_ = sm::make_macro_store();
     MacroStore& st = *worldStore_;
-    GameState gs = make_world(st);
+    Fixture fx = make_world(st);
+    GameState& gs = fx.gs;
     const MacroHandle squad = make_squad(st, 5);
     MacroWorld w{.gs = &gs, .store = &st};
 
-    Inventory* store = store_of(w, subject_of_landmark(42));
+    Inventory* store = store_of(w, subject_of_landmark(fx.vilId));
     CHECK_OR_RETURN(store != nullptr, "the village store opens");
     store->add("food", 3);
-    CHECK(place_store(st, *landmark_by_id(gs, 42)).count("food") == 3,
+    CHECK(place_store_of(st, fx.vilId).count("food") == 3,
           "food added through the door sits in the village's own body");
 
     // The symmetry the menu will trade on: hire_npc already takes two
     // Inventory& — the door's returns feed it directly, both ways (M-71).
-    Inventory* garrison = roster_of(w, subject_of_landmark(7));
+    Inventory* garrison = roster_of(w, subject_of_landmark(fx.cityId));
     Inventory* men = roster_of(w, subject_of_squad(squad));
     CHECK_OR_RETURN(garrison != nullptr && men != nullptr,
                     "both rosters open through the one door");
@@ -153,22 +167,23 @@ void test_actions_are_declared_by_data() {
     using namespace sm;
     auto worldStore_ = sm::make_macro_store();
     MacroStore& st = *worldStore_;
-    GameState gs = make_world(st);
+    Fixture fx = make_world(st);
+    GameState& gs = fx.gs;
     const MacroHandle squad = make_squad(st, 5);
     MacroWorld w{.gs = &gs, .store = &st};
 
     CHECK(actions_of(w, subject_of_squad(squad))
               == (kMapActTalk | kMapActTrade | kMapActAttack),
           "a squad speaks talk/trade/attack — the macro NPC vocabulary");
-    CHECK(actions_of(w, subject_of_landmark(7))
+    CHECK(actions_of(w, subject_of_landmark(fx.cityId))
               == (kMapActTrade | kMapActHire | kMapActQuests | kMapActEnter),
           "a city offers trade, hire, its contract board and the walk in");
-    CHECK(actions_of(w, subject_of_landmark(42))
+    CHECK(actions_of(w, subject_of_landmark(fx.vilId))
               == (kMapActTrade | kMapActHire | kMapActQuests | kMapActEnter),
           "the village verdict: прилавок + найм + доска (and the walk in)");
-    CHECK(actions_of(w, subject_of_landmark(13)) == kMapActEnter,
+    CHECK(actions_of(w, subject_of_landmark(fx.spireId)) == kMapActEnter,
           "a spire declares no verbs of its own: the walk-in minimum");
-    CHECK((actions_of(w, subject_of_landmark(7)) & (kMapActTalk | kMapActAttack))
+    CHECK((actions_of(w, subject_of_landmark(fx.cityId)) & (kMapActTalk | kMapActAttack))
               == 0,
           "no place talks or is attacked through this menu (war is a track)");
 
@@ -184,7 +199,8 @@ void test_the_door_fails_closed() {
     using namespace sm;
     auto worldStore_ = sm::make_macro_store();
     MacroStore& st = *worldStore_;
-    GameState gs = make_world(st);
+    Fixture fx = make_world(st);
+    GameState& gs = fx.gs;
     const MacroHandle squad = make_squad(st, 5);
     MacroWorld w{.gs = &gs, .store = &st};
 
@@ -206,7 +222,7 @@ void test_the_door_fails_closed() {
           "a handle outliving its slot's death names nobody");
 
     MacroWorld headless{};
-    CHECK(store_of(headless, subject_of_landmark(7)) == nullptr
+    CHECK(store_of(headless, subject_of_landmark(fx.cityId)) == nullptr
               && roster_of(headless, subject_of_squad(squad)) == nullptr,
           "an absent layer answers nullptr, never a crash (S6 zero contribution)");
 }

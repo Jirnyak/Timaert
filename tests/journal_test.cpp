@@ -257,19 +257,20 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     rt.renown = 0u;
     // …robs a town of some standing: the deed is worth its row's base plus a
     // tenth of what the VICTIM was worth (fame is made of fame).
-    Landmark town{};
-    town.type = LandmarkType::City;
-    town.id = 3;
     // Слава места — колонка runtime.renown ЕГО ТЕЛА (M-90 шаг 5), поэтому
-    // жертва приходит в мир дверью рождения со слотом, а не одной строкой.
-    Landmark& townRow = birth_landmark(gs, stB, std::move(town));
-    stB.runtime[place_slot(stB, townRow)].renown = 50u;
+    // жертва приходит в мир дверью рождения со слотом (ломтик F: строки
+    // места больше нет). Эмитент поднимается ВЫШЕ рукописного ординала
+    // банды (7): выдача с него столкнула бы два субъекта в одном ординале.
+    gs.nextMacroSpawnOrdinal = 8u;
+    const MacroHandle hTown =
+        birth_place(gs, stB, SquadType::City, 10, 10);
+    stB.runtime[hTown.slot].renown = 50u;
 
     WorldFact f{};
     f.day = 1;
     f.kind = std::uint16_t(FactKind::Killed);
     f.objectKind = std::uint8_t(FactSubject::Landmark);
-    f.object = 3u;
+    f.object = stB.spawnId[hTown.slot].index;
     f.x = 10;
     f.y = 10;
     f.amount = 5;

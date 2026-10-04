@@ -368,6 +368,9 @@ endif()
 # Deliberately NOT a ctest: a balance run is a measurement, not a verdict —
 # the regression-guard law test lands separately once the laws are earned.
 add_executable(balance_run tests/balance_run.cpp
+    # каркас клеток «кто здесь живёт» + бакеты counting-sort (ломтик F):
+    # генезис зовёт build_squad_index, а build_tree_grid — bucket_*
+    src/macro/squad_index.cpp
     src/macro/world_gen.cpp
     src/macro/ruins.cpp
     src/macro/state.cpp
@@ -791,6 +794,7 @@ timaert_test(caravan_deal_test
 
 timaert_test(macro_npc_ai_parity_test
     SOURCES
+        src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         src/macro/npc_ai.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
@@ -860,6 +864,7 @@ timaert_test(macro_store_test
 
 timaert_test(squad_war_test
     SOURCES
+        src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
@@ -917,6 +922,7 @@ timaert_test(design_characters_test
 # anchor for squads. Drives the same AI as the war test, same links.
 timaert_test(squad_travel_test
     SOURCES
+        src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
@@ -1288,6 +1294,7 @@ timaert_test(rpg_loot_test
 # мира: ровно тот набор, что и у rpg_loot_test, плюс сам режиссёр.
 
 timaert_test(loot_pool_test
+    LINK_ENTT   # ломтик F: fauna.cpp читает ось рода тела (store.h → entt; умрёт с M-150)
     SOURCES
         src/macro/anketa.cpp
         src/tables/items.cpp
@@ -1309,6 +1316,7 @@ timaert_test(targeting_test
 # no SDL2/EnTT, same as rpg_loot_test.
 
 timaert_test(fauna_registry_test
+    LINK_ENTT   # ломтик F: fauna.cpp читает ось рода тела (store.h → entt; умрёт с M-150)
     SOURCES
         src/macro/fauna.cpp)
 # THE sprite table (tables/sprite_rows.h): totality over the creature catalog and
@@ -1316,6 +1324,7 @@ timaert_test(fauna_registry_test
 # negative control that the binding check can actually fail. Pure data — it
 # links the fauna registry only to walk the catalog.
 timaert_test(sprite_rows_test
+    LINK_ENTT   # ломтик F: fauna.cpp читает ось рода тела (store.h → entt; умрёт с M-150)
     SOURCES
         src/macro/fauna.cpp)
 # Every homeland the intro offers must lead to a real country: totality over the
@@ -1485,6 +1494,8 @@ timaert_test(deposit_reach_test
 
 timaert_test(settlement_placement_test
     SOURCES
+        # каркас клеток «кто здесь живёт» — свидетель рода клетки (ломтик F)
+        src/macro/squad_index.cpp
         src/macro/state.cpp
         src/macro/politik.cpp
         src/macro/settlement_score.cpp
@@ -1587,6 +1598,7 @@ timaert_test(fauna_stock_test
 
 timaert_test(woodcutter_gather_test
     SOURCES
+        src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         src/macro/npc_ai.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
@@ -1608,28 +1620,11 @@ timaert_test(woodcutter_gather_test
         src/macro/econ_day.cpp
     LINK_SDL LINK_ENTT)
 
-# Аукцион целей ротации (CANON S10 «универсальный ИИ сквадов»): поручения
-# {глагол, объект}, рулетка по скору-деньгам, отказ = вывод аукциона.
-timaert_test(goal_auction_test
-    SOURCES
-        src/macro/npc_ai.cpp
-        # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (recovery.h recover_bar), never a copy.
-        src/macro/recovery.cpp
-        src/macro/nav_field.cpp
-        src/macro/economy.cpp
-        src/macro/chronicle.cpp
-        src/macro/macro_stock.cpp
-        src/macro/deposit_layer.cpp
-        src/macro/fauna.cpp
-        src/macro/tree_layer.cpp
-        src/macro/npc_spawn.cpp
-        src/macro/anketa.cpp
-        src/tables/items.cpp
-        src/macro/econ_day.cpp
-        # anatomy.cpp worn_bonuses — сезонные нужды артелей идут
-        # эффективным листом лидера (squad_season_needs).
-    LINK_SDL LINK_ENTT)
+# (goal_auction_test СНЕСЁН вердиктом владельца 2026-10-04: «глупо гонять
+# 100 дней экономику, которой ещё нет». Свидетель охранял аукцион поручений
+# ротации — модель, уже записанную РАСХОЖДЕНИЕМ под снос («поручений дня не
+# существует», тип сквада постоянен от рождения; rotate_worker_squads умирает
+# В МОДУЛИ эпиком АИ, M-72). Новые свидетели придут со своими модулями.)
 
 # Поле угрозы (CANON S10 «хемотаксис по графу округ»): источник = Died-факты
 # летописи, диффузия по мембранам порталов, распад по календарю, реплей на
@@ -1873,6 +1868,7 @@ timaert_test(spell_broadphase_parity_test
 # resolver is header-only sheet math; movement.cpp is linked so the fought
 # version can be simulated headless with the shipping steering.
 timaert_test(auto_battle_test
+    LINK_ENTT   # ломтик F: fauna.cpp читает ось рода тела (store.h → entt; умрёт с M-150)
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —
         # world_row_is_item живёт у каталога (items.cpp)
@@ -1902,6 +1898,7 @@ timaert_test(auto_resolve_speaks_test
 # may ever choose. PlayerSquadTag vs PlayerTag, each guard with its control.
 timaert_test(player_is_a_squad_test
     SOURCES
+        src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
         src/macro/npc_spawn.cpp
         src/macro/player_entity.cpp

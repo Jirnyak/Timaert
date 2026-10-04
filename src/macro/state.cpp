@@ -9,7 +9,7 @@
 #include "macro/npc_ai.h"          // kGathererReach — the field's press radius
 #include "macro/settlement_score.h"
 #include "macro/labour.h"           // settle_souls — одна дверь душ
-#include "macro/place_birth.h"      // birth_landmark — строка+тело (M-90)
+#include "macro/place_birth.h"      // birth_place — место родится ТЕЛОМ
 #include "macro/squad.h"            // set_suzerain — знание роли в ТЕЛЕ
 #include "core/rng.h"
 // ПЕРЕПИСЬ ШТАБЕЛЕЙ висит на сборке ядра, а не на отдельном тесте:
@@ -113,21 +113,23 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 // they relate to the player-facing `Settlement` / `Village` records the
 // rest of the macro tick + UI consume. This helper closes that loop:
 //
-//   1. Each politik city becomes a `Settlement` (id = index, naming
-//      from its faction's language,
-//      economy state with one local resource roll based on biome).
-//   2. Each settlement spawns 1–3 satellite villages on land cells in
+//   1. Each politik city becomes a city PLACE (a motionless squad: its
+//      ordinal, kind, name and address are the columns of its body),
+//      named from its faction's language.
+//   2. Each settlement spawns satellite villages on land cells in
 //      a small ring (4–14 cells away) — same faction, smaller pop.
 //   3. Markers refreshed so the codex / overlay tooltip / quest engine
 //      see the new POIs.
 //
-// All deterministic via `gs.worldSeed`. Idempotent: clears prior lists.
+// All deterministic via `gs.worldSeed`. NOT idempotent since the places
+// became bodies (ломтик F): there is no list of its own to clear — a second
+// call births a second world on top of the first, and the one caller
+// (genesis) runs it on a freshly born store.
 void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,
                                      DepositLayer& deposits) {
-    gs.landmarks.clear();
     if (!terrain.has_rgba_storage()) {
         return;
     }
@@ -148,18 +150,19 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
         return langCache[k];
     };
 
-    gs.landmarks.reserve(cities.size());
+    // Города, рождённые этим проходом: ординал и адрес каждого. Обойти
+    // живые слоты вместо этого нельзя — деревни рождаются в ТУ ЖЕ
+    // популяцию ниже, и обход увидел бы их как кандидатов на хинтерланд
+    // (прежде ту же роль играл снимок растущего вектора).
+    struct CityRef { int id, x, y; std::int16_t factionIdx; };
+    std::vector<CityRef> cityRefs;
+    cityRefs.reserve(cities.size());
+    // Столица своей фракции — её ординал; всё неназванное остаётся «ничьим».
+    std::array<int, std::size_t(kMaxFactions)> capitalOf{};
+    capitalOf.fill(-1);
 
     for (std::size_t i = 0; i < cities.size(); ++i) {
         const City& c = cities[i];
-        Landmark s{};
-        s.type        = LandmarkType::City;
-        // M-37: ОДИН эмитент ординалов субъектов — место тянет id оттуда
-        // же, откуда сквад (никогда не индекс цикла; 0 = «никто»).
-        s.id          = int(gs.nextMacroSpawnOrdinal++);
-        s.x           = c.x;
-        s.y           = c.y;
-        s.factionIdx  = c.factionIdx;
         // Politik prices every city's souls from its ground (R2); the old
         // 200+rng%800 fallback was the last population dice standing.
         //
@@ -173,41 +176,37 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
             !c.name.empty() ? c.name
             : c.factionIdx >= 0 ? generate_name(lang_of(c.factionIdx), rng)
                                 : std::string("Outpost");
-        std::snprintf(s.name, sizeof s.name, "%s", cityName.c_str());
-        // ФЛИП (M-90 шаг 5): сперва СТРОКА+ТЕЛО одной дверью, потом души и
-        // товар — склад места живёт колонкой тела, не полем строки.
-        Landmark& row = birth_landmark(gs, st, std::move(s));
-        settle_souls(gs, st, row, souls);
+        // Место родится ТЕЛОМ одной дверью (ломтик F): ординал эмитит она
+        // же, из того же единого эмитента, что сквадам (M-37).
+        const MacroHandle h = birth_place(gs, st, SquadType::City,
+                                          c.x, c.y, c.factionIdx,
+                                          cityName.c_str());
+        if (!st.valid(h)) continue;      // отказ капа уже прозвучал вслух
+        const std::uint16_t slot = h.slot;
+        settle_souls(gs, st, slot, souls);
         // Born mid-life (owner): the market has wares on day one, and the
         // town has stocks to live on while the first caravans find their legs.
         // (The old EconomyState "archetype" strings died with it, W2b-4 —
         // what a town actually HAS now lives in this one inventory.)
         seed_landmark_inventory(
-            place_store(st, row), souls, row.type == LandmarkType::City);
+            st.inventory[slot].inv, souls,
+            SquadType(st.runtime[slot].squadType) == SquadType::City);
+        const int id = int(st.spawnId[slot].index);
+        cityRefs.push_back(CityRef{id, c.x, c.y, c.factionIdx});
+        if (c.isCapital && c.factionIdx >= 0)
+            capitalOf[std::size_t(c.factionIdx)] = id;
     }
 
     // THE suzerain edges (CANON S24), stamped here — the one place that
-    // knows which landmark each politik city became. City landmarks sit at
-    // gs.landmarks[i] for politik city i (the loop above, in order): every
-    // city owes its faction's capital; the capital itself owes nobody.
-    {
-        std::array<int, std::size_t(kMaxFactions)> capitalOf{};
-        capitalOf.fill(-1);
-        for (std::size_t i = 0; i < cities.size(); ++i) {
-            if (cities[i].isCapital && cities[i].factionIdx >= 0) {
-                capitalOf[std::size_t(cities[i].factionIdx)] =
-                    gs.landmarks[i].id;
-            }
-        }
-        for (std::size_t i = 0; i < cities.size(); ++i) {
-            Landmark& lm = gs.landmarks[i];
-            const int cap = lm.factionIdx >= 0
-                ? capitalOf[std::size_t(lm.factionIdx)] : -1;
-            // ОДНА ДВЕРЬ НА ОБА КОНЦА (S24): столица тем же вызовом получает
-            // свою запись Vassal, поэтому «кто мои вассалы» не требует ни
-            // второго индекса, ни его пересборки.
-            set_suzerain(gs, st, lm.id, (cap == lm.id) ? 0 : cap);
-        }
+    // knows which place each politik city became: every city owes its
+    // faction's capital; the capital itself owes nobody.
+    for (const CityRef& cr : cityRefs) {
+        const int cap = cr.factionIdx >= 0
+            ? capitalOf[std::size_t(cr.factionIdx)] : -1;
+        // ОДНА ДВЕРЬ НА ОБА КОНЦА (S24): столица тем же вызовом получает
+        // свою запись Vassal, поэтому «кто мои вассалы» не требует ни
+        // второго индекса, ни его пересборки.
+        set_suzerain(gs, st, cr.id, (cap == cr.id) ? 0 : cap);
     }
 
     // ── Villages: the settlement FIELD decides (owner 2026-08-31,
@@ -243,18 +242,6 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
     // hinterland rims and city borders alike (one world, one field).
     struct PlacedVillage { int x, y, score; };
     std::vector<PlacedVillage> pressed;
-
-    // Snapshot the cities before appending villages: the loop below pushes
-    // into the SAME gs.landmarks vector, and a live iterator would not
-    // survive the growth.
-    struct CityRef { int id, x, y; std::int16_t factionIdx; };
-    std::vector<CityRef> cityRefs;
-    cityRefs.reserve(cities.size());
-    for (const auto& lm : gs.landmarks) {
-        if (lm.type == LandmarkType::City) {
-            cityRefs.push_back(CityRef{lm.id, lm.x, lm.y, lm.factionIdx});
-        }
-    }
 
     const auto torus_cheb = [&](int ax, int ay, int bx, int by) {
         const int ddx = std::min(std::abs(ax - bx),
@@ -327,12 +314,6 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
             }
             pressed.push_back(PlacedVillage{c.x, c.y, c.raw});
             ++placedHere;
-            Landmark vil{};
-            vil.type          = LandmarkType::Village;
-            vil.id            = int(gs.nextMacroSpawnOrdinal++); // M-37: тот же эмитент
-            vil.x             = c.x;
-            vil.y             = c.y;
-            vil.factionIdx    = s.factionIdx;
             // Souls = the owner's scale, never the score (CANON S25):
             // a hundred-odd, the ~200 tail included.
             //
@@ -348,16 +329,16 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
             const std::string vilName =
                 s.factionIdx >= 0 ? generate_name(lang_of(s.factionIdx), rng)
                                   : std::string("Hamlet");
-            std::snprintf(vil.name, sizeof vil.name, "%s", vilName.c_str());
-            const int vilId = vil.id;
-            // ФЛИП (M-90 шаг 5): строка+тело одной дверью, души и товар —
-            // в склад ТЕЛА.
-            Landmark& vrow = birth_landmark(gs, st, std::move(vil));
-            settle_souls(gs, st, vrow, vilSouls);
+            const MacroHandle vh = birth_place(gs, st, SquadType::Village,
+                                               c.x, c.y, s.factionIdx,
+                                               vilName.c_str());
+            if (!st.valid(vh)) continue;   // отказ капа уже прозвучал вслух
+            const std::uint16_t vslot = vh.slot;
+            settle_souls(gs, st, vslot, vilSouls);
             seed_landmark_inventory(
-                place_store(st, vrow), vilSouls,
-                vrow.type == LandmarkType::City);
-            set_suzerain(gs, st, vilId, suzerainId);
+                st.inventory[vslot].inv, vilSouls,
+                SquadType(st.runtime[vslot].squadType) == SquadType::City);
+            set_suzerain(gs, st, int(st.spawnId[vslot].index), suzerainId);
         }
     }
 }

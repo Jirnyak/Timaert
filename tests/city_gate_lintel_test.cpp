@@ -47,7 +47,7 @@ SubworldMapData make_town(std::uint32_t seed, int population,
     c.feature = FT_None;
     c.landmark.id = 101;
     c.landmark.size = population;
-    c.landmark.kind = LandmarkType::City;
+    c.landmark.kind = SquadType::City;
     c.seed = seed;
 
     Biome nbB[9];

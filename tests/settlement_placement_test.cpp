@@ -32,7 +32,7 @@
 #include "macro/world_row.h"
 #include "macro/npc_ai.h"          // kGathererReach — the crews' working box
 #include "macro/politik.h"
-#include "macro/landmark_grid.h"   // запечённое «кто здесь живёт»
+#include "macro/squad_index.h"     // каркас клеток: «кто здесь живёт»
 #include "macro/landmark_iter.h"   // штамп фич поселений
 #include "macro/place_birth.h"     // место рождается СО СВОИМ ТЕЛОМ (M-90)
 #include "macro/settlement_score.h"
@@ -52,11 +52,12 @@ namespace {
 
 using namespace sm;
 
-// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад (M-90 шаг 5):
-// склад, интересы и благополучие — колонки его ТЕЛА, значит расселению нужен
-// store. Миры свидетеля делят его: их тела друг друга не видят (строка носит
-// СВОЙ bodyBits), а профиль памяти store от населения не зависит (ЗАКОН
-// СТАБИЛЬНОСТИ), так что store на каждый мир был бы гигабайтами за ничто.
+// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад, и ломтиком F
+// оно ЕСТЬ слот этого store целиком: склад, интересы, благополучие, адрес,
+// род и ординал — его колонки. Миры свидетеля делят один блок, потому что
+// профиль памяти store от населения не зависит (ЗАКОН СТАБИЛЬНОСТИ) и store
+// на каждый мир был бы гигабайтами за ничто; разделяет их `store_reset`
+// в начале каждого расселения — мир начинается ПУСТЫМ.
 MacroStore& places() {
     static std::unique_ptr<MacroStore> st = make_macro_store();
     return *st;
@@ -152,6 +153,7 @@ struct World {
 // (kingdomIdx -1) so naming needs no kingdoms and allegiance falls to the
 // free folk — this test is about the GROUND, not the crown.
 void make_settled_world(World& w) {
+    store_reset(places());   // мир фикстуры начинается пустым (ломтик F)
     w.td = make_world();
     // A forest massif north-east of the river belt: a 6×6 mask blob.
     std::vector<std::uint8_t> mask(std::size_t(kW) * kH, 0);
@@ -178,18 +180,42 @@ void make_settled_world(World& w) {
                                     w.deposits);
 }
 
-// The village/city rows of the ONE roster, in creation order (v62).
-std::vector<const Landmark*> villages_of(const GameState& gs) {
-    std::vector<const Landmark*> out;
-    for (const auto& lm : gs.landmarks)
-        if (lm.type == LandmarkType::Village) out.push_back(&lm);
+// ПЕРЕПИСЬ МЕСТ РОДА — КОЛОНКИ ТЕЛ (ломтик F: строки места больше нет), и
+// СНИМОК, а не ссылки: мир следующей фикстуры обнуляет store, а свидетель
+// детерминизма сравнивает два расселения между собой. Порядок обхода слотов
+// на свежем store И ЕСТЬ порядок рождения.
+struct PlaceRow {
+    int x = 0, y = 0;
+    int id = 0;
+    std::uint16_t slot = 0;
+    int flock = 0;    // паства — worked-число фичи (souls_flock)
+    int home = 0;     // домашние души — головы инвентаря (souls_home)
+    int heads = 0;    // ВСЕ головы контейнера, людские и нет
+    int suzerain = 0; // знание роли — колонка interests ТЕЛА
+};
+
+std::vector<PlaceRow> places_of(const GameState& gs, SquadType kind) {
+    std::vector<PlaceRow> out;
+    for_each_place(places(), [&](std::uint16_t slot) {
+        if (SquadType(places().runtime[slot].squadType) != kind) return;
+        const Inventory& bag = places().inventory[slot].inv;
+        out.push_back(PlaceRow{
+            ecs::cell_x(places().cell[slot], gs.mapW),
+            ecs::cell_y(places().cell[slot], gs.mapW),
+            int(places().spawnId[slot].index), slot,
+            souls_flock(gs, places(), slot),
+            souls_home(places(), slot),
+            creature_heads(bag),
+            suzerain_of(places(), slot)});
+    });
     return out;
 }
-std::vector<const Landmark*> cities_of(const GameState& gs) {
-    std::vector<const Landmark*> out;
-    for (const auto& lm : gs.landmarks)
-        if (lm.type == LandmarkType::City) out.push_back(&lm);
-    return out;
+
+std::vector<PlaceRow> villages_of(const GameState& gs) {
+    return places_of(gs, SquadType::Village);
+}
+std::vector<PlaceRow> cities_of(const GameState& gs) {
+    return places_of(gs, SquadType::City);
 }
 
 SettlementSiteContext site_ctx(World& w) {
@@ -234,8 +260,7 @@ void test_vetoes_hold() {
     make_settled_world(w);
     const auto villages = villages_of(w.gs);
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
-    for (const auto* vp : villages) {
-        const auto& v = *vp;
+    for (const PlaceRow& v : villages) {
         CHECK(!w.td.is_water(v.x, v.y), "no village on water");
         // НАХОДКА 2026-09-23, И ОНА НЕ ПРО ЭТОТ ТЕСТ. Свойство «деревня не
         // на скале» мир НЕ ГАРАНТИРУЕТ: вето на гору в расселении нет, камень
@@ -343,12 +368,11 @@ void test_villages_feed_themselves() {
     SettlementSiteContext ctx = site_ctx(w);
     // Per city, at most ONE village may fail the gate (the forced hamlet).
     std::vector<int> failedOf(w.cityPlan.size(), 0);
-    for (const auto* vp : villages) {
-        const auto& v = *vp;
+    for (const PlaceRow& v : villages) {
         const SettlementSiteTerms t = settlement_site_terms(ctx, v.x, v.y);
         const bool feeds = t.arable >= kVillageArableGate
                         || t.deposit >= kVillageDepositGate;
-        const int suz = sm::suzerain_of(places(), v);
+        const int suz = v.suzerain;
         if (!feeds && suz >= 0 && std::size_t(suz) < failedOf.size())
             ++failedOf[std::size_t(suz)];
     }
@@ -409,11 +433,9 @@ void test_villages_scatter_around_their_town() {
     const auto villages = villages_of(w.gs);
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     int closest = 1 << 20;
-    for (const auto* ap : villages) {
-        const auto& a = *ap;
-        for (const auto* bp : villages) {
-            const auto& b = *bp;
-            if (ap == bp) continue;
+    for (const PlaceRow& a : villages) {
+        for (const PlaceRow& b : villages) {
+            if (a.slot == b.slot) continue;
             const int ddx = std::min(std::abs(a.x - b.x), kW - std::abs(a.x - b.x));
             const int ddy = std::min(std::abs(a.y - b.y), kH - std::abs(a.y - b.y));
             closest = std::min(closest, std::max(ddx, ddy));
@@ -430,12 +452,12 @@ void test_villages_scatter_around_their_town() {
     // so POSITION pairs them; the id is an ordinal, not an index (v54).
     const auto cities = cities_of(w.gs);
     for (std::size_t si = 0; si < cities.size(); ++si) {
-        const auto& s = *cities[si];
+        const PlaceRow& s = cities[si];
         const City& c = w.cityPlan[si];
         if (hinterland_scores(w, c).empty()) continue;
         int mine = 0;
-        for (const auto* vp : villages)
-            if (sm::suzerain_of(places(), *vp) == s.id) ++mine;
+        for (const PlaceRow& v : villages)
+            if (v.suzerain == s.id) ++mine;
         CHECK(mine >= 1, "a city with admissible ground is never hamlet-less");
     }
 }
@@ -448,9 +470,9 @@ void test_count_derives_from_capacity() {
     // ONE issuer handed it (v54), so ask the settlement, not the number 0.
     const auto cities = cities_of(w.gs);
     const auto villages = villages_of(w.gs);
-    const int lushCityId = cities.empty() ? -1 : cities[0]->id;
-    for (const auto* vp : villages) {
-        if (sm::suzerain_of(places(), *vp) == lushCityId) ++lush;
+    const int lushCityId = cities.empty() ? -1 : cities[0].id;
+    for (const PlaceRow& v : villages) {
+        if (v.suzerain == lushCityId) ++lush;
         else ++dry;
     }
     CHECK(lush >= 1, "the river belt hinterland feeds at least one village");
@@ -465,16 +487,14 @@ void test_count_derives_from_capacity() {
     // считает их же. Свидетель поэтому судит ОБА носителя и требует их
     // СОГЛАСИЯ: разойдись они — и место стало бы живым по одной двери и
     // мёртвым по другой.
-    for (const auto* vp : villages) {
-        const auto& v = *vp;
-        const int flock = souls_flock(w.gs, places(), v);
-        CHECK(flock >= kVillageBornBase
-                  && flock < kVillageBornBase + kVillageBornSpread,
+    for (const PlaceRow& v : villages) {
+        CHECK(v.flock >= kVillageBornBase
+                  && v.flock < kVillageBornBase + kVillageBornSpread,
               "a village is born at the owner's scale");
-        CHECK(souls_home(places(), v) == flock,
+        CHECK(v.home == v.flock,
               "паства и головы согласны: в поле новорождённая деревня "
               "никого не держит");
-        CHECK(creature_heads(place_store(places(), v)) > 0,
+        CHECK(v.heads > 0,
               "a village is born with its souls in its own container");
     }
 }
@@ -485,8 +505,7 @@ void test_villages_stand_next_to_something() {
     const auto villages = villages_of(w.gs);
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     int withContext = 0;
-    for (const auto* vp : villages) {
-        const auto& v = *vp;
+    for (const PlaceRow& v : villages) {
         bool found = false;
         // Ploughable ground and timber count within the home-field box; a
         // DEPOSIT counts within the crews' working reach — a mining village
@@ -599,27 +618,27 @@ void test_cities_read_the_ground() {
 // Третий носитель рода — копия в строке индекса (`LandmarkRef::type`) — умер
 // этим шагом: её единственный читатель спрашивал у неё «есть ли тут кто-то»,
 // а род всё равно брал из колонки записи.
-FeatureType settlement_feature_of(LandmarkType t) {
+FeatureType settlement_feature_of(SquadType t) {
     switch (t) {
-        case LandmarkType::City:    return FT_City;
-        case LandmarkType::Village: return FT_Village;
-        case LandmarkType::Spire:   return FT_Spire;
-        case LandmarkType::Ruin:    return FT_Ruin;
+        case SquadType::City:    return FT_City;
+        case SquadType::Village: return FT_Village;
+        case SquadType::Spire:   return FT_Spire;
+        case SquadType::Ruin:    return FT_Ruin;
         // Рода, которые мир сегодня НЕ ставит: байта у них нет вовсе, и это
         // значение, а не пробел (`features.h`: строка добавится в день, когда
         // их начнёт ставить генерация).
-        case LandmarkType::None:
-        case LandmarkType::Lair:
-        case LandmarkType::Shrine:
-        case LandmarkType::Mine:
-        case LandmarkType::Tower:
+        case SquadType::None:
+        case SquadType::Lair:
+        case SquadType::Shrine:
+        case SquadType::Mine:
+        case SquadType::Tower:
         // Подвижные роды оси (M-90 шаг 3а): байт фичи отвечает «что СТОИТ на
         // клетке», а артель и корован через неё ИДУТ — у них его нет по
         // природе, а не по недостройке.
-        case LandmarkType::Artel:
-        case LandmarkType::Caravan:
-        case LandmarkType::Collector:
-        case LandmarkType::Count:   return FT_None;
+        case SquadType::Artel:
+        case SquadType::Caravan:
+        case SquadType::Collector:
+        case SquadType::Count:   return FT_None;
     }
     return FT_None;
 }
@@ -628,21 +647,24 @@ FeatureType settlement_feature_of(LandmarkType t) {
 // потому что её зовут дважды: на честном мире и на мире, где спорная клетка
 // создана НАМЕРЕННО (негативный контроль).
 int settlement_kind_disagreements(const GameState& gs, const FeatureLayer& fl,
-                                  const LandmarkGrid& grid, int* stamped) {
+                                  const SquadIndex& frame, const MacroStore& st,
+                                  int* stamped) {
     int bad = 0, seen = 0;
     for (int y = 0; y < gs.mapH; ++y) {
         for (int x = 0; x < gs.mapW; ++x) {
             const FeatureType ft = fl.at(x, y);
-            if (settlement_feature_of(LandmarkType::City) != ft
-                && settlement_feature_of(LandmarkType::Village) != ft
-                && settlement_feature_of(LandmarkType::Spire) != ft
-                && settlement_feature_of(LandmarkType::Ruin) != ft) {
+            if (settlement_feature_of(SquadType::City) != ft
+                && settlement_feature_of(SquadType::Village) != ft
+                && settlement_feature_of(SquadType::Spire) != ft
+                && settlement_feature_of(SquadType::Ruin) != ft) {
                 continue;                       // не клетка поселения вовсе
             }
             ++seen;
-            const std::int32_t id = grid.at(x, y);
-            const Landmark* rec = id != 0 ? landmark_by_id(gs, id) : nullptr;
-            if (!rec || settlement_feature_of(rec->type) != ft) ++bad;
+            const MacroHandle who = settlement_at(frame, st, x, y);
+            const SquadType t = st.valid(who)
+                ? SquadType(st.runtime[who.slot].squadType)
+                : SquadType::None;
+            if (settlement_feature_of(t) != ft) ++bad;
         }
     }
     if (stamped) *stamped = seen;
@@ -654,11 +676,13 @@ void test_settlement_kind_has_one_answer() {
     make_settled_world(w);
     FeatureLayer fl;
     fl.resize(kW, kH);
-    stamp_settlement_features(w.gs, w.td, fl);
-    const LandmarkGrid grid = build_landmark_grid(w.gs);
+    stamp_settlement_features(places(), w.gs.mapW, w.td, fl);
+    SquadIndex frame;
+    build_squad_index(frame, places(), kW, kH);
 
     int stamped = 0;
-    const int bad = settlement_kind_disagreements(w.gs, fl, grid, &stamped);
+    const int bad = settlement_kind_disagreements(w.gs, fl, frame, places(),
+                                                  &stamped);
     // ЧИСЛО ВСЛУХ: сколько клеток поселений мир вообще поставил — иначе
     // «расхождений ноль» зеленеет на пустом штампе (§8 п.3).
     std::fprintf(stderr, "[settlement-kind] клеток поселений %d, "
@@ -673,41 +697,39 @@ void test_settlement_kind_has_one_answer() {
     // есть руине. Детектор обязан увидеть ровно одну спорную клетку; если он
     // её не видит, зелень выше ничего не значила.
     GameState& gs = w.gs;
-    const Landmark* firstCity = nullptr;
-    for (const auto& lm : gs.landmarks)
-        if (lm.type == LandmarkType::City) { firstCity = &lm; break; }
-    CHECK_OR_RETURN(firstCity != nullptr, "фикстура обязана родить город");
-    Landmark squatter{};
-    squatter.type = LandmarkType::Ruin;
-    squatter.id   = int(gs.nextMacroSpawnOrdinal++);
-    squatter.x    = firstCity->x;
-    squatter.y    = firstCity->y;
-    birth_landmark(gs, places(), std::move(squatter));
+    const std::vector<PlaceRow> cityRows = cities_of(gs);
+    CHECK_OR_RETURN(!cityRows.empty(), "фикстура обязана родить город");
+    birth_place(gs, places(), SquadType::Ruin,
+                cityRows[0].x, cityRows[0].y);
 
     FeatureLayer fl2;
     fl2.resize(kW, kH);
-    stamp_settlement_features(gs, w.td, fl2);
-    const LandmarkGrid grid2 = build_landmark_grid(gs);
+    stamp_settlement_features(places(), gs.mapW, w.td, fl2);
+    SquadIndex frame2;
+    build_squad_index(frame2, places(), kW, kH);
     int stamped2 = 0;
-    const int bad2 = settlement_kind_disagreements(gs, fl2, grid2, &stamped2);
-    CHECK(bad2 == 1, "детектор видит спорную клетку: сетка отдаёт её ПЕРВОМУ "
-                     "по приоритету, штамп — ПОСЛЕДНЕМУ по ростеру");
+    const int bad2 = settlement_kind_disagreements(gs, fl2, frame2, places(),
+                                                   &stamped2);
+    CHECK(bad2 == 1, "детектор видит спорную клетку: каркас отдаёт её ПЕРВОМУ "
+                     "по приоритету выдачи, штамп — ПОСЛЕДНЕМУ по ростеру");
 }
 
 void test_determinism() {
+    // ПЕРЕПИСЬ СНИМАЕТСЯ СРАЗУ: второе расселение обнуляет store, и ссылки
+    // на тела первого мира протухли бы молча (ломтик F).
     World a, b;
     make_settled_world(a);
-    make_settled_world(b);
     const auto villagesA = villages_of(a.gs);
+    make_settled_world(b);
     const auto villagesB = villages_of(b.gs);
     CHECK_OR_RETURN(villagesA.size() == villagesB.size(),
                     "two runs settle the same number of villages");
     bool same = true;
     for (std::size_t i = 0; i < villagesA.size(); ++i) {
-        const auto& va = *villagesA[i];
-        const auto& vb = *villagesB[i];
+        const PlaceRow& va = villagesA[i];
+        const PlaceRow& vb = villagesB[i];
         same = same && va.x == vb.x && va.y == vb.y
-                    && souls_home(places(), va) == souls_home(places(), vb);
+                    && va.home == vb.home;
     }
     CHECK(same, "one seed, one settled world");
 }

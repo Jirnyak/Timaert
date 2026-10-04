@@ -254,7 +254,7 @@ void draw_macro_overlay(GameState& gs, const MacroStore& store,
             if (!landmark[0]) landmark = lm.name;
             // Any landmark is pickable — the City hardcode died with
             // PLAY-2; the panel itself decides which tabs the kind shows.
-            if (lm.type != LandmarkType::None && hoverSettlementId < 0)
+            if (lm.type != SquadType::None && hoverSettlementId < 0)
                 hoverSettlementId = lm.id;
         });
 
@@ -370,6 +370,11 @@ void draw_macro_overlay(GameState& gs, const MacroStore& store,
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
             if (slot == flagSlot
                 || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal)
+                continue;
+            // ТЕЛО МЕСТА — НЕ ФИГУРКА (ось рода, грабля флипа M-90):
+            // место рисует СВОЙ проход (for_each_landmark), и однажды
+            // освежённые pools сделали бы город второй фигуркой здесь.
+            if (is_settlement_kind(SquadType(st.runtime[slot].squadType)))
                 continue;
             const auto& cell = st.cell[slot];
             const auto& kind = st.kind[slot];
@@ -689,6 +694,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs,
             if (slot == flagSlot
                 || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal)
                 continue;
+            // ТЕЛО МЕСТА — НЕ СОСЕД-СКВАД (тот же гейт, что у спрайтов).
+            if (is_settlement_kind(SquadType(st.runtime[slot].squadType)))
+                continue;
             const auto& cell = st.cell[slot];
             const auto& hp  = st.pools[slot];
             if (hp.hp <= 0) continue;
@@ -705,13 +713,13 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs,
         // Landmarks pop the same panel (owner's verdict: «деревни, города,
         // ландмарки тоже — если маркер игрока рядом, выскакивают их
         // попапы»). Same neighbourhood law as the squads above.
-        for (const auto& lm : gs.landmarks) {
-            if (lm.type == LandmarkType::None) continue;
-            int dx = wrap_chebyshev(lm.x - px, W);
-            int dy = wrap_chebyshev(lm.y - py, H);
-            if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;
-            push_row(subject_of_landmark(lm.id), dx, dy);
-        }
+        for_each_place(st, [&](std::uint16_t slot) {
+            const auto& lcell = st.cell[slot];
+            int dx = wrap_chebyshev(ecs::cell_x(lcell, W) - px, W);
+            int dy = wrap_chebyshev(ecs::cell_y(lcell, W) - py, H);
+            if (std::abs(dx) > 1 || std::abs(dy) > 1) return;
+            push_row(subject_of_landmark(int(st.spawnId[slot].index)), dx, dy);
+        });
 
         if (totalRows > 0) {
 
@@ -752,10 +760,17 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs,
                     // shape for a squad and a place, different columns in.
                     const bool isSquad =
                         r.subject.kind == MapSubjectKind::Squad;
-                    const Landmark* lm = isSquad
-                        ? nullptr
-                        : landmark_by_id(gs, int(r.subject.landmark));
-                    if (!isSquad && !lm) continue;
+                    // Место — слот store (ломтик F): резолв по ординалу уже
+                    // гейтит ось рода, пустой хэндл = «места нет».
+                    const MacroHandle lmh = isSquad
+                        ? MacroHandle{}
+                        : place_handle_by_ordinal(
+                              st, std::uint32_t(r.subject.landmark));
+                    if (!isSquad && !st.valid(lmh)) continue;
+                    const std::uint16_t lslot = lmh.slot;
+                    const SquadType lmKind = isSquad
+                        ? SquadType::None
+                        : SquadType(st.runtime[lslot].squadType);
 
                     const char* rowName = "";
                     const char* rowRole = "";
@@ -770,11 +785,12 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs,
                         rowRole = def.label;
                         rowFaction = kind.factionIdx;
                     } else {
-                        const LandmarkDef& ldef = landmark_def(lm->type);
-                        rowName = lm->name[0] != '\0' ? lm->name
-                                                      : ldef.label.data();
+                        const LandmarkDef& ldef = landmark_def(lmKind);
+                        rowName = st.name[lslot].text[0] != '\0'
+                            ? st.name[lslot].text : ldef.label.data();
                         rowRole = ldef.label.data();
-                        rowFaction = faction_or_freefolk(lm->factionIdx);
+                        rowFaction = faction_or_freefolk(
+                            std::int16_t(st.kind[lslot].factionIdx));
                     }
 
                     // Resolve faction colour through the macro registry. Falls
@@ -826,10 +842,14 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs,
                             sp = sprite_get(npc_sprite(t));
                         } else {
                             const LandmarkDrawRow& drow =
-                                kLandmarkDraw[std::size_t(lm->type)];
+                                kLandmarkDraw[std::size_t(lmKind)];
+                            const auto& lcell = st.cell[lslot];
                             const bool drained =
-                                lm->type == LandmarkType::Spire
-                                && worked_read(gs, lm->x, lm->y) == 0;
+                                lmKind == SquadType::Spire
+                                && worked_read(gs,
+                                               ecs::cell_x(lcell, gs.mapW),
+                                               ecs::cell_y(lcell, gs.mapW))
+                                       == 0;
                             const SpriteId sid = drained
                                 ? drow.spriteDepleted : drow.sprite;
                             if (sid != SpriteId::None) sp = sprite_get(sid);
@@ -839,7 +859,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs,
                         } else if (isSquad) {
                             ImGui::Dummy(side);
                         } else {
-                            const LandmarkDef& ldef = landmark_def(lm->type);
+                            const LandmarkDef& ldef = landmark_def(lmKind);
                             const ImVec2 p = ImGui::GetCursorScreenPos();
                             ImGui::Dummy(side);
                             ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -908,7 +928,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs,
                         ImGui::PopStyleColor();
                     } else {
                         ImGui::TextDisabled("Pop");
-                        ImGui::Text("%d", souls_flock(gs, store, *lm));
+                        ImGui::Text("%d", souls_flock(gs, store, lslot));
                     }
                     ImGui::EndGroup();
 

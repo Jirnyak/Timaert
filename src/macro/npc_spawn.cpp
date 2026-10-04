@@ -5,6 +5,7 @@
 #include "tables/biomes.h"
 #include "tables/npc.h"
 #include "macro/deposit_layer.h"
+#include "macro/landmark_iter.h"   // for_each_place — обход мест по слотам
 #include "macro/npc_ai.h"
 #include "macro/politik.h"
 #include "macro/squad.h"
@@ -47,9 +48,10 @@ namespace {
 //   + CharacterSheet       144  — только именным (npc_named)
 //   + SquadOrders           34  — только маршрутным
 //
-// ЯДРО СУБЪЕКТА — inventory + roster, 41 032 Б — то же самое, что у места
-// (state.h, Landmark): «ландмарк есть неподвижный сквад» (CANON S4) в памяти
-// УЖЕ выполнено, расходятся они только на своей обвязке.
+// ЯДРО СУБЪЕКТА — inventory + roster, 41 032 Б — ОДНО на место и на отряд:
+// «ландмарк есть неподвижный сквад» (CANON S4) с ломтика F исполнено
+// буквально — место живёт слотом этого же массива, своей структуры у него
+// больше нет.
 inline constexpr int kMacroSquadBytes =
     sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) + sizeof(AgentMemory)
     + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook) + sizeof(ecs::Pools)
@@ -66,7 +68,7 @@ inline constexpr int kMacroSquadBytes =
 static_assert(kMacroSquadBytes == 41417,
               "макро-сквад весит 41 417 Б; 16384 таких = 647 МиБ (AGENTS п.10)");
 static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 41032,
-              "ядро субъекта — то же, что у Landmark (CANON S4)");
+              "ядро субъекта — одно на место и на отряд (CANON S4)");
 
 // Переходник `RngFn` для реестра лута стоял здесь (`tl_rng`/`tl_rng_f01`) и
 // умер вместе с броском профиля при спавне (M-139): рождению больше нечего
@@ -242,14 +244,15 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     return h;
 }
 
-// A settlement's faction is its OWN column now (Landmark::factionIdx — owner
-// 2026-09-11: «королевств нет, только фракции»); this helper is just the
-// ownerless-ground fallback applied to it, so every consumer keeps one
-// spelling of «whose place». It replaced the kingdomIdx indirection, which
-// itself replaced two legacy hacks (a latitude-band heuristic and a
+// A settlement's faction is its OWN column now (`kind.factionIdx` of its
+// body — owner 2026-09-11: «королевств нет, только фракции»); this helper is
+// just the ownerless-ground fallback applied to it, so every consumer keeps
+// one spelling of «whose place». It replaced the kingdomIdx indirection,
+// which itself replaced two legacy hacks (a latitude-band heuristic and a
 // first-letter matcher that dressed north-eastern towns in bandit colours).
-std::uint16_t settlement_faction_index(const Landmark& lm) {
-    return faction_or_freefolk(lm.factionIdx);
+std::uint16_t settlement_faction_index(const MacroStore& st,
+                                       std::uint16_t slot) {
+    return faction_or_freefolk(std::int16_t(st.kind[slot].factionIdx));
 }
 
 } // namespace
@@ -270,13 +273,17 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
     if (mw <= 0 || mh <= 0)
         return;
 
-    // Per-settlement spawns.
-    std::vector<Landmark*> cities;
-    for (auto& lm : gs.landmarks)
-        if (lm.type == LandmarkType::City) cities.push_back(&lm);
-    for (Landmark* cp : cities) {
-        auto& s = *cp;
-        const std::uint16_t fIdx = settlement_faction_index(s);
+    // Per-settlement spawns. Снимок СЛОТОВ городов берётся до рождений:
+    // жители встают в ТУ ЖЕ популяцию, и живой обход увидел бы их тоже.
+    std::vector<std::uint16_t> cities;
+    for_each_place(st, [&](std::uint16_t slot) {
+        if (SquadType(st.runtime[slot].squadType) == SquadType::City)
+            cities.push_back(slot);
+    });
+    for (std::uint16_t cslot : cities) {
+        const std::uint16_t fIdx = settlement_faction_index(st, cslot);
+        const int sx = ecs::cell_x(st.cell[cslot], gs.mapW);
+        const int sy = ecs::cell_y(st.cell[cslot], gs.mapW);
 
         // No eternal gatherers here any more (owner 2026-08-30, CANON S10):
         // working crews are TRANSIENT — raised from the population by the
@@ -285,8 +292,8 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
         // own hands.
         if (rng.next_f01() > 0.4f) {
             // Residents are born ON the town cell (owner 2026-08-31).
-            make_npc(st, NPCType::Merchant, fIdx, s.x, s.y, gs.mapW, s.id,
-                     rng, spawnIndex);
+            make_npc(st, NPCType::Merchant, fIdx, sx, sy, gs.mapW,
+                     int(st.spawnId[cslot].index), rng, spawnIndex);
         }
         // ГЕНЕЗИСНЫЕ ОДИНОЧКИ-СТРАЖНИКИ (1-2 на город) ВЫРЕЗАНЫ 2026-09-22
         // по вердикту владельца («пока никаких стражников, это усложняет
@@ -312,11 +319,13 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
     // Witches: max(1, 0.1 * settlements)
     int witchCount = int(nSet / 10); if (witchCount < 1) witchCount = 1;
     for (int i = 0; i < witchCount; ++i) {
-        auto& ref = *cities[rng.next_u32() % nSet];
+        const std::uint16_t ref = cities[rng.next_u32() % nSet];
+        const int rx = ecs::cell_x(st.cell[ref], gs.mapW);
+        const int ry = ecs::cell_y(st.cell[ref], gs.mapW);
         float angle = rng.next_f01() * 6.2831853f;
         int dist  = 25 + int(rng.next_u32() % 35u);
-        int cx = wrap_axis(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
-        int cy = wrap_axis(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
+        int cx = wrap_axis(rx + int(std::lround(std::cos(angle) * dist)), mw);
+        int cy = wrap_axis(ry + int(std::lround(std::sin(angle) * dist)), mh);
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.3f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
@@ -326,11 +335,13 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
     // Sorceresses: max(1, 0.05 * settlements)
     int sorcCount = int(nSet / 20); if (sorcCount < 1) sorcCount = 1;
     for (int i = 0; i < sorcCount; ++i) {
-        auto& ref = *cities[rng.next_u32() % nSet];
+        const std::uint16_t ref = cities[rng.next_u32() % nSet];
+        const int rx = ecs::cell_x(st.cell[ref], gs.mapW);
+        const int ry = ecs::cell_y(st.cell[ref], gs.mapW);
         float angle = rng.next_f01() * 6.2831853f;
         int dist  = 30 + int(rng.next_u32() % 40u);
-        int cx = wrap_axis(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
-        int cy = wrap_axis(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
+        int cx = wrap_axis(rx + int(std::lround(std::cos(angle) * dist)), mw);
+        int cy = wrap_axis(ry + int(std::lround(std::sin(angle) * dist)), mh);
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.5f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
@@ -409,7 +420,8 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
         // Мир без такого дома — без этой анкеты.
         int hx = row.cellX, hy = row.cellY;
         int homeId = 0;
-        const Landmark* home = nullptr;
+        // Дом — СЛОТ тела места (ломтик F); kMacroEntityCap = «дома нет».
+        std::uint32_t homeSlot = kMacroEntityCap;
         if (row.homePeak) {
             // Дом — вершина горного массива (драконья строка): homeIndex-я
             // из высочайших с разносом. Мир без гор анкету не рождает —
@@ -424,26 +436,29 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
             if (peaks[slot].x < 0) continue;
             hx = peaks[slot].x;
             hy = peaks[slot].y;
-        } else if (row.homeType != LandmarkType::None) {
-            std::vector<const Landmark*> ofKind;
-            for (const auto& lm : gs.landmarks) {
-                if (lm.type != row.homeType) continue;
+        } else if (row.homeType != SquadType::None) {
+            std::vector<std::uint16_t> ofKind;
+            for_each_place(st, [&](std::uint16_t ps) {
+                if (SquadType(st.runtime[ps].squadType) != row.homeType)
+                    return;
                 if (row.homeFactionPrefix != nullptr) {
                     const char* fid = faction_id_for_index(
-                        settlement_faction_index(lm));
+                        settlement_faction_index(st, ps));
                     if (std::strncmp(fid, row.homeFactionPrefix,
                                      std::strlen(row.homeFactionPrefix))
                         != 0) {
-                        continue;
+                        return;
                     }
                 }
-                ofKind.push_back(&lm);
-            }
+                ofKind.push_back(ps);
+            });
             if (ofKind.empty()) continue;
-            home = row.homeIndex >= 0
+            homeSlot = row.homeIndex >= 0
                 ? ofKind[std::size_t(row.homeIndex) % ofKind.size()]
                 : ofKind[rng.next_u32() % std::uint32_t(ofKind.size())];
-            hx = home->x; hy = home->y; homeId = home->id;
+            hx = ecs::cell_x(st.cell[homeSlot], gs.mapW);
+            hy = ecs::cell_y(st.cell[homeSlot], gs.mapW);
+            homeId = int(st.spawnId[homeSlot].index);
         }
         const XY p = find_valid_spawn(hx, hy, 10, rng, mw, mh, terrain);
 
@@ -451,8 +466,8 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
         // города был бы вторым ответом на «чей это человек».
         const std::uint16_t factionIdx = row.factionId != nullptr
             ? std::uint16_t(faction_index(row.factionId))
-            : (home != nullptr
-                   ? settlement_faction_index(*home)
+            : (homeSlot < kMacroEntityCap
+                   ? settlement_faction_index(st, std::uint16_t(homeSlot))
                    : std::uint16_t(faction_index("freefolk")));
         const MacroHandle h = make_npc(
             st, row.body, factionIdx,
@@ -485,24 +500,30 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
         // контекста, как find_valid_spawn: строка называет РОД цели, мир
         // называет клетки. Наличие маршрута И ЕСТЬ приказ (лестница
         // effective_behaviour, ступень 1).
-        if (row.agenda.routeToNearest >= 0 && home != nullptr) {
-            const Landmark* best = nullptr;
+        if (row.agenda.routeToNearest >= 0 && homeSlot < kMacroEntityCap) {
+            std::uint16_t best = 0;
+            bool found = false;
             float bestD = 0.0f;
-            for (const auto& lm : gs.landmarks) {
-                if (std::int8_t(lm.type) != row.agenda.routeToNearest)
-                    continue;
-                const float d = torus_dist_sq(float(home->x), float(home->y),
-                                              float(lm.x), float(lm.y),
-                                              float(mw), float(mh));
-                if (!best || d < bestD) { best = &lm; bestD = d; }
-            }
-            if (best) {
+            for_each_place(st, [&](std::uint16_t ps) {
+                if (std::int8_t(st.runtime[ps].squadType)
+                        != row.agenda.routeToNearest)
+                    return;
+                const float d = torus_dist_sq(
+                    float(hx), float(hy),
+                    float(ecs::cell_x(st.cell[ps], gs.mapW)),
+                    float(ecs::cell_y(st.cell[ps], gs.mapW)),
+                    float(mw), float(mh));
+                if (!found || d < bestD) { best = ps; bestD = d; found = true; }
+            });
+            if (found) {
                 ecs::SquadOrders orders{};
                 orders.waypointCount = 2;
-                orders.waypoints[0] = std::int16_t(home->x);
-                orders.waypoints[1] = std::int16_t(home->y);
-                orders.waypoints[2] = std::int16_t(best->x);
-                orders.waypoints[3] = std::int16_t(best->y);
+                orders.waypoints[0] = std::int16_t(hx);
+                orders.waypoints[1] = std::int16_t(hy);
+                orders.waypoints[2] =
+                    std::int16_t(ecs::cell_x(st.cell[best], gs.mapW));
+                orders.waypoints[3] =
+                    std::int16_t(ecs::cell_y(st.cell[best], gs.mapW));
                 st.orders[slot] = orders;
             }
         }
@@ -561,19 +582,20 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
     // Ordinals from the ONE persistent counter (v23) — the max-over-living
     // scan and its 19.24 reuse hole are gone.
     //
-    // ФРАКЦИЯ ЖИТЕЛЯ — СОБСТВЕННИК ЕГО ЛАНДМАРКА (CANON S24, владелец
+    // ФРАКЦИЯ ЖИТЕЛЯ — СОБСТВЕННИК ЕГО МЕСТА (CANON S24, владелец
     // 2026-09-02: «у каждого ландмарка уже есть собственник»): артель носит
-    // фракцию ДОМА — теперь это собственная колонка ландмарка
-    // (Landmark::factionIdx, королевства вырезаны 2026-09-11). Клеточный
-    // резолвер на границах одевал деревню и её же город в воюющие фракции —
-    // крестьяне резали крестьян на общей дороге (измерено, [death-1299]
-    // сид 7). «Земля решает» остаётся правилом БЕЗДОМНЫХ и контекстных
-    // спавнов.
-    const Landmark* home = landmark_by_id(gs, spec.homeSettlementId);
+    // фракцию ДОМА — колонку `kind.factionIdx` его тела (королевства
+    // вырезаны 2026-09-11). Клеточный резолвер на границах одевал деревню и
+    // её же город в воюющие фракции — крестьяне резали крестьян на общей
+    // дороге (измерено, [death-1299] сид 7). «Земля решает» остаётся
+    // правилом БЕЗДОМНЫХ и контекстных спавнов.
+    const MacroHandle home = place_handle_by_ordinal(
+        store, std::uint32_t(spec.homeSettlementId));
     const std::uint16_t f = spec.factionIndex >= 0
         ? std::uint16_t(spec.factionIndex)
-        : home ? settlement_faction_index(*home)
-               : faction_index_for_cell(gs.cellOwner, gs.mapW, gs.mapH, p.x, p.y);
+        : store.valid(home)
+            ? settlement_faction_index(store, home.slot)
+            : faction_index_for_cell(gs.cellOwner, gs.mapW, gs.mapH, p.x, p.y);
 
     const MacroHandle leader =
         make_npc(store, spec.leaderType, f, p.x, p.y, gs.mapW,

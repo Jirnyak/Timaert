@@ -385,7 +385,7 @@ namespace sm {
 // v125: ДВЕ независимые ломки формата сошлись в одном слиянии, и обе названы,
 // потому что версия обязана остаться САМОСОГЛАСОВАННОЙ (§ФОРМАТ СЕЙВА: ломать
 // молча, но не врать):
-//  · ось типа ОДНА — `LandmarkType` слился в `SquadType`, подвижные роды
+//  · ось типа ОДНА — `SquadType` слился в `SquadType`, подвижные роды
 //    перенумерованы (Artel 1 → 9, Caravan 2 → 10, Collector 3 → 11), чтобы
 //    места сохранили значения 1..8 и три таблицы по этому ключу не
 //    переразложились. Раскладка байт не изменилась НИ НА ЕДИНИЦУ — изменился
@@ -396,7 +396,7 @@ namespace sm {
 //    бонуса есть байт в каждом сохранённом аффиксе.
 // Обе ветки подняли версию до 124 независимо; 125 — то число, которое честно
 // называет, что в файле лежит И то, И другое.
-constexpr int kSaveVersion = 127;
+constexpr int kSaveVersion = 128;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -428,62 +428,11 @@ constexpr int kSaveVersion = 127;
 //  Ярусы 1 и 3 живы. Замысел и цена сноса — CANON S10, «ЗНАНИЕ О ЦЕНЕ —
 //  ТРИ ЯРУСА».)
 
-struct Landmark {
-    int id = 0;              // world-unique ordinal из ЕДИНОГО эмитента
-                             // субъектов (nextMacroSpawnOrdinal, M-37);
-                             // 0 = «никто» (закон нуля-ординала)
-    LandmarkType type = LandmarkType::None;  // THE kind column (registry row)
-    // ИМЯ — ПЛОСКИЕ ЧАРЫ, НИКАКИХ СТРОК (ЗАКОН СЛОВАРЯ; std::string на
-    // структуре ×32768 запрещён DOD п.1 и п.3 прямым текстом). Тридцать два
-    // байта — ЧИСЛО ВЕРДИКТА хода 2, то же, что у колонки анкеты
-    // ecs::SquadName@src/ecs/components.h: место есть неподвижный сквад, и
-    // при флипе (M-90) поле ляжет в ту колонку БЕЗ смены раскладки. Тип
-    // взят чарами, а не самой SquadName, потому что components.h тянет
-    // entt (легаси под снос, R4), а state.h его не видит и видеть не должен.
-    // Пустая строка = вид имени не несёт (шпиль выводит своё).
-    char name[32] = {};
-    int x = 0, y = 0;
-    // WHOSE place this is — a faction registry index (owner 2026-09-11:
-    // «королевств нет, только фракции — одна система»). -1 = nobody's,
-    // which resolves to the free folk through faction_or_freefolk. It
-    // replaced kingdomIdx, which named a row of a Kingdom vector that was
-    // itself just a materialized copy of the registry.
-    std::int16_t factionIdx = -1;
-    // ── ТЕЛО МЕСТА — СЛОТ STORE (M-90 шаг 5, вердикт владельца 2026-09-30:
-    // «про место мы забываем, сносим всё или сливаем — теперь у нас только
-    // сквады»). ВСЁ ПЛЕЧО прежней строки места уехало в колонки его тела:
-    //   inventory        → store.inventory  (склад = единый контейнер)
-    //   interests        → store.interests  (связи любых сквадов)
-    //   needDebt         → store.roster.needDebt (счёт содержания — одна
-    //                      лестница на место и отряд, байт в байт)
-    //   starvedYesterday / seasonWellbeing / popGrowthCarry
-    //                    → store.wellbeing  (благополучие — колонка анкеты)
-    //   renown           → store.runtime.renown (слава субъекта, род 2)
-    // Здесь — упакованный хэндл {slot | gen<<16} тем же литеральным
-    // контрактом, что playerSquadBits (state.h не видит store.h — согласие
-    // держит static_assert на стороне store). Все единицы = тела нет ещё:
-    // законно только между read_landmark и relink на загрузке.
-    // Строка места целиком — тонкий индекс до ломтика F, где умирает вектор.
-    std::uint32_t bodyBits = 0xFFFFFFFFu;
-    // (population умерла v122 — паства = worked-число фичи; garrison умер
-    // v122 — оборона места = толпа домашних голов единого контейнера; спелл
-    // шпиля — worked-слоем с v120; дань — ребро рода 6 с v121.)
-};
-// ── РАЗМЕР МЕСТА ЗАКРЕПЛЁН (AGENTS п.10; флип M-90 шаг 5, 2026-10-04) ─────
-// 42 108 → 56 Б: всё плечо (inventory 40960, interests 1024, needDebt 60,
-// благополучие 8, renown 4) уехало КОЛОНКАМИ ТЕЛА в MacroStore — место есть
-// неподвижный сквад, и его память теперь гладкая, преаллоцированная и
-// одинаковая у пустого и забитого мира (ЗАКОН СТАБИЛЬНОСТИ; вектор мест был
-// последним штабелём, росшим от населения). Остаток — тонкий индекс
-// идентичности до ломтика F: id 4 + type 1 + name 32 + пад 3 + x 4 + y 4 +
-// factionIdx 2 + пад 2 + bodyBits 4.
-static_assert(sizeof(Landmark) == 56,
-              "место = тонкий индекс идентичности; плечо живёт колонками "
-              "тела в MacroStore (M-90 шаг 5)");
-// Имя места и имя анкеты — ОДНА раскладка (ecs::SquadName{char[32]}); число
-// здесь стоит литералом, потому что state.h не видит components.h (entt).
-static_assert(sizeof(Landmark::name) == 32,
-              "имя места = раскладка колонки ecs::SquadName (32 Б)");
+// (struct Landmark УНИЧТОЖЕНА ломтиком F: место есть неподвижный сквад, вся
+// его идентичность — колонки ТЕЛА в MacroStore: spawnId, runtime.squadType,
+// name, cell, kind.factionIdx. Рождение — birth_place@src/macro/place_birth.h,
+// резолв по ординалу — macro_handle_by_spawn_id@src/macro/squad.h, обход —
+// for_each_place@src/macro/landmark_iter.h.)
 
 enum class GameSubStateKind : std::uint8_t {
     Exploring, Paused, Trading, ViewingMap,
@@ -733,7 +682,6 @@ struct GameState {
     // every kind, one vector, kind = the record's `type` column. Ownership
     // priority for a contested cell is for_each_landmark's yield order
     // (landmark_iter.h), not storage order.
-    std::vector<Landmark>   landmarks;
     std::vector<Marker>     markers;
     // The player's map knowledge (v40): Unknown / Explored / Visible per cell.
     // Explored persists; Visible is re-derived from the player's position
@@ -894,85 +842,11 @@ struct GameState {
     // обходом builtFeatures вместо скана хеша.)
 };
 
-// ── ПОИСК МЕСТА ПО ОРДИНАЛУ: БИНАРНЫЙ, ПОТОМУ ЧТО ЭМИТЕНТ МОНОТОНЕН ─────
-//
-// Ординалы мест идут из ЕДИНОГО эмитента субъектов (M-37) вперемешку со
-// сквадами, поэтому «ординал и есть адрес» (`landmarks[id-1]`, v54) умер:
-// плотности больше нет. Но ростер мест APPEND-ONLY (место умирает сменой
-// вида, никогда не строкой), а эмитент монотонный — значит id в векторе
-// СТРОГО ВОЗРАСТАЮТ ПО ПОСТРОЕНИЮ, путь загрузки включительно (save.cpp
-// восстанавливает в порядке файла под тем же эмитентом). Бинарный поиск —
-// ~11 строк кэша против 1880 у скана (sizeof(Landmark) 42 КБ, торговый путь
-// платил до девяти обходов за решение). Скан-фолбэк оставлен той же
-// честностью, что и раньше: корректность не смеет висеть на инварианте,
-// который не держит ни один static_assert, — цена платится только на
-// промахе.
-inline std::ptrdiff_t landmark_index_by_id(const GameState& gs, int id) {
-    if (id <= 0) return -1;   // 0 = «никто» (закон нуля-ординала, AGENTS п.6)
-    std::size_t lo = 0, hi = gs.landmarks.size();
-    while (lo < hi) {
-        const std::size_t mid = lo + (hi - lo) / 2;
-        if (gs.landmarks[mid].id < id) lo = mid + 1;
-        else hi = mid;
-    }
-    if (lo < gs.landmarks.size() && gs.landmarks[lo].id == id)
-        return std::ptrdiff_t(lo);
-    for (std::size_t i = 0; i < gs.landmarks.size(); ++i)
-        if (gs.landmarks[i].id == id) return std::ptrdiff_t(i);
-    return -1;
-}
-
-// (landmark_renown_slot умерла с флипом M-90 шаг 5: слава места — колонка
-// runtime.renown ЕГО ТЕЛА; единственный читатель — renown_slot@squad.h.)
-
-// ── ДВЕРЬ РОЖДЕНИЯ СТРОКИ МЕСТА (CANON S9, владелец 2026-09-20) ──────────
-// Единственный способ, которым место попадает в ростер: и генезис, и
-// загрузка, и всякая будущая основа деревни идут сюда. Дверь делает ДВЕ
-// вещи — кладёт место и объявляет СОБЫТИЕ (navEpoch), по которому
-// поднимается всё запечённое от состава. Опросов («пройти по всем и
-// посмотреть, не изменилось ли») больше не существует: событие редкое,
-// проверка была ежедневной, и она вдобавок сравнивала ЧИСЛО живых мест —
-// смерть одного и рождение другого в одном окне гасили друг друга молча.
-inline Landmark& add_landmark(GameState& gs, Landmark&& lm) {
-    gs.landmarks.push_back(std::move(lm));
-    ++gs.navEpoch;
-    return gs.landmarks.back();
-}
-
-// ДВЕРЬ ПЕРЕХОДА — второе событие места, и оно же его СМЕРТЬ (владелец
-// 2026-09-20: «уничтожение ландмарка и рождение будет как механика; сейчас
-// можно менять ландмарк деревня на руины / мёртвую деревню»). Смерть места
-// в этом мире не вычёркивает строку из ростера, а МЕНЯЕТ ВИД: деревня
-// становится руиной и остаётся стоять следом (CANON S9 «уничтожен — и это
-// оставляет след, а не пустое место»). Тем же ходом идут и рост
-// (деревня → город), и любой будущий контекстный переход: переходы — данные.
-//
-// Вид места — строка реестра, от которой зависит всё запечённое от состава
-// (кто сеет округу, кто держит рынок), поэтому дверь объявляет событие.
-// Вызывателей пока нет: механика перехода не построена, дверь названа, чтобы
-// у неё было ОДНО место и никто не завёл второй способ сменить вид.
-inline void set_landmark_type(GameState& gs, Landmark& lm, LandmarkType t) {
-    if (lm.type == t) return;
-    lm.type = t;
-    ++gs.navEpoch;
-}
-
-// THE by-id find over the one landmark roster. Ids are world-unique (M-37's
-// single subject-ordinal issuer), so no kind is needed to resolve one.
-// Механика и её закон — у landmark_index_by_id выше.
-inline Landmark* landmark_by_id(GameState& gs, int id) {
-    const std::ptrdiff_t i = landmark_index_by_id(gs, id);
-    return i < 0 ? nullptr : &gs.landmarks[std::size_t(i)];
-}
-
-// (ФЕОДАЛЬНЫЕ ДВЕРИ — set_suzerain / suzerain_of / tithe_edge_of /
-// owes_tithe — УЕХАЛИ в macro/squad.h с флипом M-90 шаг 5: знание роли
-// живёт в колонке interests ТЕЛА места, то есть дверям нужен MacroStore,
-// которого state.h не видит и видеть не должен.)
-inline const Landmark* landmark_by_id(const GameState& gs, int id) {
-    const std::ptrdiff_t i = landmark_index_by_id(gs, id);
-    return i < 0 ? nullptr : &gs.landmarks[std::size_t(i)];
-}
+// (landmark_index_by_id / landmark_by_id / add_landmark / set_landmark_type
+// УНИЧТОЖЕНЫ ломтиком F вместе со строкой и штабелем мест: резолв ординала —
+// macro_handle_by_spawn_id@src/macro/squad.h, рождение — birth_place,
+// смена вида — set_place_kind@src/macro/squad.h, та же дверь событий
+// navEpoch.)
 
 // ── THE WORKED LAYER'S DOOR (CANON S5, v96) ──────────────────────────────
 // The number under the feature standing on this cell: hulls moored at a

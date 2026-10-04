@@ -9,6 +9,7 @@
 
 #include "core/torus.h"
 #include "macro/features.h"
+#include "macro/landmark_iter.h"   // for_each_place — места по слотам
 #include "macro/pathfinding.h"
 #include "macro/state.h"
 
@@ -120,22 +121,26 @@ bool nav_regions_adjacent(const NavWorld& nv, std::uint16_t a,
 }
 
 void nav_bake(const MacroWorld& mw, NavWorld& nv) {
-    if (!mw.gs) return;
+    if (!mw.gs || !mw.store) return;
     const GameState& gs = *mw.gs;
+    const MacroStore& st = *mw.store;
     const PathCostData* pc = mw.pathCost;
     nv.mapW = gs.mapW;
     nv.mapH = gs.mapH;
     const int W = nv.mapW, H = nv.mapH;
     const std::size_t cells = std::size_t(W) * std::size_t(H);
 
-    // ── Сиды: каждый ландмарк — своя округа ──────────────────────────────
+    // ── Сиды: каждое МЕСТО — своя округа ─────────────────────────────────
+    // Гейт «род не None» больше не нужен: обход мест и есть ответ оси рода
+    // (is_settlement_kind), а бестиповых мест в популяции не бывает.
     nv.regionLandmarkId.clear();
     nv.regionCell.clear();
-    for (const Landmark& lm : gs.landmarks) {
-        if (lm.type == LandmarkType::None) continue;
-        nv.regionLandmarkId.push_back(lm.id);
-        nv.regionCell.push_back(int(nv.cell(lm.x, lm.y)));
-    }
+    for_each_place(st, [&](std::uint16_t slot) {
+        nv.regionLandmarkId.push_back(int(st.spawnId[slot].index));
+        nv.regionCell.push_back(
+            int(nv.cell(ecs::cell_x(st.cell[slot], gs.mapW),
+                        ecs::cell_y(st.cell[slot], gs.mapW))));
+    });
     const int R = int(nv.regionLandmarkId.size());
     if (R == 0 || R >= int(kNavNoRegion)) {
         nv.regionOf.clear();

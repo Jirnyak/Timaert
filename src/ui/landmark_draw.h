@@ -24,7 +24,7 @@ namespace sm::ui {
 enum class MiniShape : std::uint8_t { Ring, Dot, Diamond };
 
 struct LandmarkDrawRow {
-    LandmarkType type;        // MUST equal its index — asserted below
+    SquadType type;        // MUST equal its index — asserted below
     SpriteId sprite;          // None = no art, glyph-circle fallback
     SpriteId spriteDepleted;  // variant for a consumed landmark (== sprite
                               // when the kind cannot deplete)
@@ -37,24 +37,24 @@ struct LandmarkDrawRow {
 };
 
 inline constexpr LandmarkDrawRow
-    kLandmarkDraw[std::size_t(LandmarkType::Count)] = {
-    {LandmarkType::None,    SpriteId::None, SpriteId::None,
+    kLandmarkDraw[std::size_t(SquadType::Count)] = {
+    {SquadType::None,    SpriteId::None, SpriteId::None,
      0.0f, 0.0f, 0.0f, 0.0f, MiniShape::Dot, 0.0f},
-    {LandmarkType::City,    SpriteId::City, SpriteId::City,
+    {SquadType::City,    SpriteId::City, SpriteId::City,
      28.0f, 192.0f, 0.0f, 6.0f, MiniShape::Ring, 3.0f},
-    {LandmarkType::Village, SpriteId::Village, SpriteId::Village,
+    {SquadType::Village, SpriteId::Village, SpriteId::Village,
      22.0f, 144.0f, 3.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Spire,   SpriteId::SpireActive, SpriteId::SpireSpent,
+    {SquadType::Spire,   SpriteId::SpireActive, SpriteId::SpireSpent,
      26.0f, 160.0f, 0.0f, 0.0f, MiniShape::Diamond, 4.0f},
-    {LandmarkType::Ruin,    SpriteId::None, SpriteId::None,
+    {SquadType::Ruin,    SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Lair,    SpriteId::None, SpriteId::None,
+    {SquadType::Lair,    SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Shrine,  SpriteId::None, SpriteId::None,
+    {SquadType::Shrine,  SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Mine,    SpriteId::None, SpriteId::None,
+    {SquadType::Mine,    SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Tower,   SpriteId::None, SpriteId::None,
+    {SquadType::Tower,   SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
     // ── ПОДВИЖНЫЕ РОДЫ ОСИ: НЕ РИСУЮТСЯ ЭТОЙ ТАБЛИЦЕЙ (M-90 шаг 3а) ──────
     // Артель, корован и сборщик приехали на одну ось с местами (`SquadType`,
@@ -64,11 +64,11 @@ inline constexpr LandmarkDrawRow
     // выписаны ЯВНО, потому что `rows_in_enum_order` ниже сверяет колонку с
     // индексом: неявная доинициализация приехала бы с `None` на месте
     // `Artel` и таблица молча разошлась бы со своим ключом.
-    {LandmarkType::Artel,     SpriteId::None, SpriteId::None,
+    {SquadType::Artel,     SpriteId::None, SpriteId::None,
      0.0f, 0.0f, 0.0f, 0.0f, MiniShape::Dot, 0.0f},
-    {LandmarkType::Caravan,   SpriteId::None, SpriteId::None,
+    {SquadType::Caravan,   SpriteId::None, SpriteId::None,
      0.0f, 0.0f, 0.0f, 0.0f, MiniShape::Dot, 0.0f},
-    {LandmarkType::Collector, SpriteId::None, SpriteId::None,
+    {SquadType::Collector, SpriteId::None, SpriteId::None,
      0.0f, 0.0f, 0.0f, 0.0f, MiniShape::Dot, 0.0f},
 };
 
@@ -76,7 +76,7 @@ static_assert(rows_in_enum_order(kLandmarkDraw, &LandmarkDrawRow::type),
               "kLandmarkDraw row order must mirror SquadType — the enum "
               "index IS the binding");
 
-inline constexpr const LandmarkDrawRow& landmark_draw(LandmarkType t) {
+inline constexpr const LandmarkDrawRow& landmark_draw(SquadType t) {
     return kLandmarkDraw[std::size_t(t)];
 }
 

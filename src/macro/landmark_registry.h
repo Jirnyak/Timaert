@@ -21,32 +21,12 @@
 
 namespace sm {
 
-// ── РОД МЕСТА УМЕР КАК ОТДЕЛЬНАЯ ОСЬ (M-90 ломтик E шаг 3а) ──────────────
-// Здесь стоял `enum class LandmarkType`, и он был ВТОРОЙ осью типа у той же
-// популяции: вердикт владельца 2026-09-30 — «теперь за всё отвечает squad
-// type», 2026-10-01 — «мы верзаем вообще всё про ландмарки, у нас теперь
-// сквады только». Значения слились в `SquadType@src/tables/squad_type.h`
-// ПЕРВЫМИ, поэтому ни одна строка таблицы ниже не сдвинулась и сейв не
-// переразложился.
-//
-// ИМЯ ОСТАВЛЕНО АЛИАСОМ, И ЭТО НЕ ВТОРОЙ СЛОВАРЬ: `using` — одно имя типа,
-// а не вторая таблица значений; компилятор видит ровно один enum. Имя
-// доживает до ломтика F, где умирает вместе со `std::vector<Landmark>` и
-// словом «место» вообще — переименовывать 408 его вхождений СЕЙЧАС значило
-// бы заплатить широкой правкой за то, что через шаг удаляется целиком.
-using LandmarkType = SquadType;
+// (Алиас `using SquadType = SquadType` УМЕР ломтиком F вместе со
+// `std::vector<Landmark>` — ось рода одна и зовётся своим именем.)
 
-// Cell-ownership priority (CANON S9): the order kinds are yielded IS the one
-// law of who owns a contested cell — the same order the old three-vector walk
-// had (cities first, then villages, then spires). Storage is one vector in
-// creation order (state.h gs.landmarks); the priority lives here, once —
-// рядом с осью рода, а не в итераторе: сетка мест (landmark_grid.h) ходит
-// по строкам сама и закона приоритета не переписывает (флип M-90).
-inline constexpr LandmarkType kLandmarkYieldOrder[] = {
-    LandmarkType::City, LandmarkType::Village, LandmarkType::Spire,
-    LandmarkType::Ruin, LandmarkType::Lair, LandmarkType::Shrine,
-    LandmarkType::Mine, LandmarkType::Tower,
-};
+// (kLandmarkYieldOrder — приоритет владения спорной клеткой — УЕХАЛ к оси
+// рода, tables/squad_type.h: его читает и обход мест, и ответ каркаса
+// «кто здесь живёт», а ось — их единственный общий нижний слой.)
 
 // Sentinels of the fauna columns below: "the GROUND answers" — the cell's own
 // forest/biome row decides, the place states no override of its own.
@@ -119,7 +99,7 @@ struct LandmarkCrewRow {
 // хозяин, а не заготовкой в реестре.
 struct LandmarkDef {
     // MUST equal the row's index in kLandmarks (guard below the table).
-    LandmarkType     type;
+    SquadType     type;
     std::string_view id;
     std::string_view label;
     std::uint8_t     minZone;     // minimum difficulty zone to spawn
@@ -156,7 +136,7 @@ struct LandmarkDef {
 
     // ── Fauna spawn columns (read by THE spawn law, macro/fauna.cpp) ──────
     // What this place's ground rolls, as data — the three switch ladders over
-    // LandmarkType that answered these questions in the spawn code are dead
+    // SquadType that answered these questions in the spawn code are dead
     // (CANON S16, 2026-08-29).
     //
     // faunaHabitat — the habitat bit the place asks the body table for.
@@ -253,13 +233,13 @@ struct LandmarkDef {
 // 2026-08-24). The old 0..9 rows translate as band edges: min = band*256/10,
 // max = (band+1)*256/10 - 1 — City "0..2" became 0..76, Spire "5..9" became
 // 128..255, unchanged in meaning, finer in resolution.
-inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
-    {LandmarkType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
+inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
+    {SquadType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
     // Стража города — строка ростера {Guard, Auction} с душами ИЗ ГАРНИЗОНА
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/3, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false,
+    {SquadType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/3, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false,
                      SquadType::Collector},
                    // ПАТРУЛЬНАЯ СТРОКА ВЫРЕЗАНА 2026-09-21 (владелец:
                    // «вырезаем бандитов, патрули — даже не временно; потом
@@ -313,7 +293,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // таблице. Теперь число артелей говорит СПРОС — сколько целей добычи
     // получили положительный скор, — а пул рук его урезает; строка же
     // объявляет только КОГО поднимать и КАКОГО ТИПА.
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false, SquadType::Artel}}, 1,
+    {SquadType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false, SquadType::Artel}}, 1,
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and
@@ -321,12 +301,12 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // game. The Ruin row keeps kHabRuin: that bit is ALSO the den
     // dictionary (what creeps into cellars and caves), and a ruin's ground
     // honestly crawls.
-    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, /*wealth*/1.25f, /*hab*/kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 13, /*inside*/2, /*born*/128, 64, /*places*/true },
-    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12, /*inside*/0, /*born*/64, 1, /*places*/true },
-    {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, /*wealth*/1.25f, kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
-    {LandmarkType::Shrine,  "shrine",  "Shrine",   25, 178, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
-    {LandmarkType::Mine,    "mine",    "Mine",     51, 203, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f, /*wealth*/1.25f },
-    {LandmarkType::Tower,   "tower",   "Tower",    76, 203, 'T', 0xFF6E6E89u, true, 0xFF6E6E89u,  80.0f },
+    {SquadType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, /*wealth*/1.25f, /*hab*/kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 13, /*inside*/2, /*born*/128, 64, /*places*/true },
+    {SquadType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12, /*inside*/0, /*born*/64, 1, /*places*/true },
+    {SquadType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, /*wealth*/1.25f, kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
+    {SquadType::Shrine,  "shrine",  "Shrine",   25, 178, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
+    {SquadType::Mine,    "mine",    "Mine",     51, 203, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f, /*wealth*/1.25f },
+    {SquadType::Tower,   "tower",   "Tower",    76, 203, 'T', 0xFF6E6E89u, true, 0xFF6E6E89u,  80.0f },
 
     // ── ПОДВИЖНЫЕ РОДЫ ОСИ: СТРОКИ ЧЕСТНО ПУСТЫЕ (M-90 шаг 3а) ───────────
     // Артель, корован и сборщик стоят на ТОЙ ЖЕ оси, что места (одна ось у
@@ -339,9 +319,9 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // (2) пустая строка обязана быть ВИДНА как решение, а не как пропуск.
     // Это цена, названная в шапке `squad_type.h`: платим пустотой за то,
     // что `landmark_def` остаётся ПОЛНОЙ функцией без гейта по роду.
-    {LandmarkType::Artel,     "artel",     "", 0, 255, ' ', 0x00000000u, false, 0x00000000u, 0.0f },
-    {LandmarkType::Caravan,   "caravan",   "", 0, 255, ' ', 0x00000000u, false, 0x00000000u, 0.0f },
-    {LandmarkType::Collector, "collector", "", 0, 255, ' ', 0x00000000u, false, 0x00000000u, 0.0f },
+    {SquadType::Artel,     "artel",     "", 0, 255, ' ', 0x00000000u, false, 0x00000000u, 0.0f },
+    {SquadType::Caravan,   "caravan",   "", 0, 255, ' ', 0x00000000u, false, 0x00000000u, 0.0f },
+    {SquadType::Collector, "collector", "", 0, 255, ' ', 0x00000000u, false, 0x00000000u, 0.0f },
 };
 static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
               "kLandmarks row order must mirror SquadType");
@@ -394,21 +374,21 @@ static_assert(sizeof(LandmarkDef) == 120,
 // them. Retune either alone and a city raises crews on one eighth while its
 // benches staff another — silently, because both numbers stay plausible.
 static_assert(
-    (1 << kLandmarks[std::size_t(LandmarkType::City)].labourShift)
+    (1 << kLandmarks[std::size_t(SquadType::City)].labourShift)
         == kHeadsPerCityWorker,
     "city labourShift must be log2(kHeadsPerCityWorker)");
 
-inline constexpr const LandmarkDef& landmark_def(LandmarkType t) {
+inline constexpr const LandmarkDef& landmark_def(SquadType t) {
     return kLandmarks[std::size_t(t)];
 }
 
 // Is this KIND a SETTLEMENT — a place the player «прибывает в», with enter/
 // leave events and the T-key panel default? The data answers: a kind that
 // declares at least one settlement verb (trade / hire / contract board).
-// This predicate killed the LandmarkType::City hardcode (PLAY-2): a village
+// This predicate killed the SquadType::City hardcode (PLAY-2): a village
 // answers the same door a city does. The subject PANEL itself opens for ANY
 // landmark by click — which tabs it shows is the actions column's business.
-inline constexpr bool landmark_is_settlement(LandmarkType t) {
+inline constexpr bool landmark_is_settlement(SquadType t) {
     return landmark_def(t).actions != 0;
 }
 

@@ -398,7 +398,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
 }
 
 void spawn_landmark_population(ecs::World& w,
-                               LandmarkType landmark,
+                               SquadType landmark,
                                const SeamlessSubworldManager& mgr,
                                std::uint32_t seed,
                                std::uint32_t worldSeed,
@@ -458,7 +458,7 @@ void spawn_landmark_population(ecs::World& w,
     // population (the walls were built for everyone), never of the street
     // remainder: souls at their hearths do not shrink the town.
     const float populationRadius =
-        settlement_population_radius(landmark == LandmarkType::City, pop);
+        settlement_population_radius(landmark == SquadType::City, pop);
     // …and the shape the generator actually built, measured once off the
     // ground. The scalar above stays the FLOOR (an unwalled hamlet has no
     // masonry to measure, and a place whose walls did not reach still holds
@@ -481,7 +481,7 @@ void spawn_landmark_population(ecs::World& w,
     // квартал — свойство города, а не сословия.
     float keepX = centerX, keepY = centerY;
     bool haveKeep = false;
-    if (landmark == LandmarkType::City) {
+    if (landmark == SquadType::City) {
         const Structure* keep = nullptr;
         for (const Structure& st : mgr.structures()) {
             if (st.kind != Structure::House) continue;
@@ -860,7 +860,7 @@ int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
 // the THRONG is outside — Σ over storeys + street == pop, and every term
 // re-derives from the LIVE number, so a cleared floor thins the whole
 // place the way one organism thins.
-int interior_garrison_share(LandmarkType landmark, int landmarkPop,
+int interior_garrison_share(SquadType landmark, int landmarkPop,
                             int storeys, int level) {
     if (landmarkPop <= 0 || storeys <= 0 || level < 0 || level >= storeys) {
         return 0;
@@ -877,7 +877,7 @@ int interior_garrison_share(LandmarkType landmark, int landmarkPop,
 // footprint = the prop's own half-extents). WHICH law a door speaks is the
 // dungeon kind row's own columns, never a branch here on the kind's name.
 int interior_reserve_for_cell(const std::vector<Structure>& structures,
-                              LandmarkType landmark,
+                              SquadType landmark,
                               std::uint32_t worldSeed,
                               int cellX, int cellY,
                               float originX, float originY,
@@ -962,7 +962,7 @@ struct FloorDraw {
 int spawn_dungeon_residents(ecs::World& w,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
-                            LandmarkType landmark,
+                            SquadType landmark,
                             std::uint8_t danger,
                             std::uint8_t depositsNear,
                             int count,
@@ -1016,7 +1016,7 @@ int spawn_dungeon_residents(ecs::World& w,
 
 int spawn_dungeon_vermin(ecs::World& w,
                          std::uint32_t seed,
-                         LandmarkType tableKind,
+                         SquadType tableKind,
                          std::uint8_t danger,
                          Biome biome,
                          int treeCount,
@@ -1096,7 +1096,7 @@ void clear_subworld_world_entities(ecs::World& w) {
 void spawn_cell_npcs(ecs::World& w,
                      Biome biome,
                      int treeCount,
-                     LandmarkType landmark,
+                     SquadType landmark,
                      std::uint8_t danger,
                      std::uint8_t depositsNear,
                      const SeamlessSubworldManager& mgr,

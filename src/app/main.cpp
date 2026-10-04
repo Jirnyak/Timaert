@@ -39,7 +39,6 @@
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
 #include "macro/tree_layer.h"
-#include "macro/landmark_grid.h"
 #include "macro/landmark_iter.h"
 #include "macro/place_birth.h"
 #include "macro/deposit_layer.h"
@@ -228,11 +227,11 @@ bool squad_is_named(const App& app, std::uint32_t handleBits) {
 // The app-side lending of NAMES to the chronicle (sm::FactNaming): the
 // chronicle speaks ordinals and must not learn how the world names things,
 // so the app lends it three resolvers (chronicle.h, "SAYING IT IN WORDS").
-// Returned pointers are c_str() of live GameState strings — valid for the
+// Returned pointers point into LIVE store name columns — valid for the
 // frame the sentence is rendered in, which is the only life a sentence has.
 sm::FactNaming app_fact_naming(App& app) {
     sm::FactNaming n{};
-    n.user = &app.gs;
+    n.user = app.macroStore.get();
     n.squad = [](void* u, std::uint32_t ordinal) -> const char* {
         (void)u;
         // Squads have no display names yet (a lord's name is a future
@@ -240,9 +239,12 @@ sm::FactNaming app_fact_naming(App& app) {
         return ordinal == sm::ecs::kPlayerSquadOrdinal ? "You" : nullptr;
     };
     n.landmark = [](void* u, std::uint32_t id) -> const char* {
-        auto& gs = *static_cast<sm::GameState*>(u);
-        const sm::Landmark* lm = sm::landmark_by_id(gs, int(id));
-        if (lm && lm->name[0] != '\0') return lm->name;
+        // Имя места — колонка его ТЕЛА (ломтик F); конверт летописи несёт
+        // store, потому что строки мест больше нет.
+        auto& st = *static_cast<sm::MacroStore*>(u);
+        const sm::MacroHandle h = sm::place_handle_by_ordinal(st, id);
+        if (st.valid(h) && st.name[h.slot].text[0] != '\0')
+            return st.name[h.slot].text;
         return nullptr;   // a spire has no name of its own — "a place"
     };
     n.faction = [](void* u, std::uint32_t index) -> const char* {
@@ -331,7 +333,7 @@ sm::MacroWorld macro_world(App& app) {
     mw.zones    = &app.zones;
     mw.pathCost = &app.pathCost;
     mw.treeGrid = &app.treeGrid;
-    mw.landmarks = &app.landmarkGrid;
+    mw.squads   = &app.npcAi.squadIndex;
     mw.nav      = &app.navWorld;
     return mw;
 }
@@ -415,9 +417,11 @@ long file_size_bytes(const std::string& path) {
 // пример, его обобщить»): у шпиля/руины это шапка + Info, поселенческие
 // вкладки гейтятся колонкой действий внутри. События же входа/выхода и
 // клавиша T остаются за поселениями (settlement_at_player ниже).
-const sm::Landmark* settlement_by_id(const sm::GameState& gs, int id) {
-    const sm::Landmark* lm = sm::landmark_by_id(gs, id);
-    return (lm && lm->type != sm::LandmarkType::None) ? lm : nullptr;
+// Ответ — СЛОТ места (ломтик F); пустой хэндл значит «такого места нет»,
+// и дверь резолва сама гейтит ось рода (None не пройдёт).
+sm::MacroHandle settlement_by_id(const sm::MacroStore& st, int id) {
+    return id >= 0 ? sm::place_handle_by_ordinal(st, std::uint32_t(id))
+                   : sm::MacroHandle{};
 }
 
 int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
@@ -427,15 +431,20 @@ int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
     const float px = float(sm::ecs::cell_x(*pc, gs.mapW));
     const float py = float(sm::ecs::cell_y(*pc, gs.mapW));
     const float r2 = radius * radius;
-    for (const auto& s : gs.landmarks) {
-        if (!sm::landmark_is_settlement(s.type)) continue;
-        if (sm::torus_dist_sq(px, py,
-                              float(s.x), float(s.y),
-                              float(gs.mapW), float(gs.mapH)) <= r2) {
-            return s.id;
-        }
-    }
-    return -1;
+    int found = -1;
+    sm::for_each_place(st, [&](std::uint16_t slot) {
+        if (found >= 0) return;
+        const sm::SquadType kind =
+            sm::SquadType(st.runtime[slot].squadType);
+        if (!sm::landmark_is_settlement(kind)) return;
+        const auto& c = st.cell[slot];
+        const float sx = float(sm::ecs::cell_x(c, gs.mapW));
+        const float sy = float(sm::ecs::cell_y(c, gs.mapW));
+        if (sm::torus_dist_sq(px, py, sx, sy,
+                              float(gs.mapW), float(gs.mapH)) <= r2)
+            found = int(st.spawnId[slot].index);
+    });
+    return found;
 }
 
 void refresh_player_settlement(App& app) {
@@ -443,21 +452,24 @@ void refresh_player_settlement(App& app) {
     const int previousId = app.gs.subState.settlementId;
     if (id == previousId) return;
     if (previousId >= 0) {
-        const sm::Landmark* previous = settlement_by_id(app.gs, previousId);
+        const sm::MacroHandle previous =
+            settlement_by_id(*app.macroStore, previousId);
         sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};
         leave.a = std::uint32_t(previousId);
         leave.ix = previousId;
-        if (previous) leave.s1 = previous->name;
+        if (app.macroStore->valid(previous))
+            leave.s1 = app.macroStore->name[previous.slot].text;
         app.bus.emit(leave);
     }
     app.gs.subState.settlementId = id;
     if (app.ui.settlement) app.ui.settlementId = id;
     if (id < 0) return;
-    const sm::Landmark* s = settlement_by_id(app.gs, id);
+    const sm::MacroHandle s = settlement_by_id(*app.macroStore, id);
     sm::GameEvent ev{sm::EventTag::PlayerEnterSettlement};
     ev.a = std::uint32_t(id);
     ev.ix = id;
-    if (s) ev.s1 = s->name;
+    if (app.macroStore->valid(s))
+        ev.s1 = app.macroStore->name[s.slot].text;
     app.bus.emit(ev);
 }
 
@@ -474,23 +486,25 @@ void refresh_available_settlement_quests(App& app) {
         && app.availableQuestDay == app.gs.worldTime.day()) {
         return;
     }
-    const sm::Landmark* s = settlement_by_id(app.gs, id);
-    if (!s) {
+    const sm::MacroHandle s = settlement_by_id(*app.macroStore, id);
+    if (!app.macroStore->valid(s)) {
         app.availableSettlementQuests.clear();
         app.availableQuestSettlementId = -1;
         app.availableQuestDay = -1;
         return;
     }
+    const sm::SquadType sKind =
+        sm::SquadType(app.macroStore->runtime[s.slot].squadType);
     // The board follows the actions column: a place that declares no Quests
     // verb posts nothing; a village posts through its own generator.
-    if ((sm::landmark_def(s->type).actions & sm::kMapActQuests) == 0) {
+    if ((sm::landmark_def(sKind).actions & sm::kMapActQuests) == 0) {
         app.availableSettlementQuests.clear();
     } else {
-        app.availableSettlementQuests = s->type == sm::LandmarkType::Village
-            ? sm::generate_quests_for_village(*s, *app.macroStore, app.gs,
+        app.availableSettlementQuests = sKind == sm::SquadType::Village
+            ? sm::generate_quests_for_village(s.slot, *app.macroStore, app.gs,
                                               app.gs.worldSeed)
-            : sm::generate_quests_for_settlement(*s, *app.macroStore, app.gs,
-                                                 app.gs.worldSeed);
+            : sm::generate_quests_for_settlement(s.slot, *app.macroStore,
+                                                 app.gs, app.gs.worldSeed);
     }
     app.availableQuestSettlementId = id;
     app.availableQuestDay = app.gs.worldTime.day();
@@ -1489,20 +1503,28 @@ void rebake_macro_lights(App& app) {
 // flush, where the map is next drawn anyway.
 void rebake_world(App& app, bool uploadNow) {
     std::vector<sm::ZoneSeed> zsCities, zsVills;
-    for (const auto& lm : app.gs.landmarks) {
-        if (lm.type == sm::LandmarkType::City)
-            zsCities.push_back({lm.x, lm.y});
-        else if (lm.type == sm::LandmarkType::Village)
-            zsVills.push_back({lm.x, lm.y});
-    }
+    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+        const sm::SquadType kind =
+            sm::SquadType(app.macroStore->runtime[slot].squadType);
+        if (kind != sm::SquadType::City
+            && kind != sm::SquadType::Village)
+            return;
+        const auto& c = app.macroStore->cell[slot];
+        const int lx = sm::ecs::cell_x(c, app.gs.mapW);
+        const int ly = sm::ecs::cell_y(c, app.gs.mapW);
+        if (kind == sm::SquadType::City) zsCities.push_back({lx, ly});
+        else                                zsVills.push_back({lx, ly});
+    });
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
                                    zsCities, zsVills, app.features,
                                    &app.terrain, &app.treeLayer);
-    // Фичи поселений — тот же закон свежести, что у сетки ландмарков
+    // Фичи поселений — тот же закон свежести, что у каркаса клеток
     // (загрузка и всякий перепёк состава); ДО build_cost_grid — ложе марша
     // читает слой фич.
-    sm::stamp_settlement_features(app.gs, app.terrain, app.features);
-    app.landmarkGrid = sm::build_landmark_grid(app.gs);
+    sm::stamp_settlement_features(*app.macroStore, app.gs.mapW, app.terrain,
+                                  app.features);
+    sm::build_squad_index(app.npcAi.squadIndex, *app.macroStore,
+                          app.gs.mapW, app.gs.mapH);
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
                                        &app.treeLayer);
     app.gs.lastWorldRebakeDay = app.gs.worldTime.day();
@@ -1665,7 +1687,7 @@ void boot_world(App& app, std::uint32_t seed,
     go.features     = &app.features;
     go.zones        = &app.zones;
     go.treeGrid     = &app.treeGrid;
-    go.landmarkGrid = &app.landmarkGrid;
+    go.squadIndex   = &app.npcAi.squadIndex;
     go.pathCost     = &app.pathCost;
     go.world        = &app.ecs;
     go.store        = app.macroStore.get();
@@ -1878,7 +1900,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
     sm::restore_macro_ecs(loadedMacro, *app.macroStore, app.gs);
     // Сшивка строк мест с их телами — по ординалу (M-37: пространство одно);
     // строка без тела печатается ВСЛУХ внутри двери.
-    sm::relink_place_bodies(app.gs, *app.macroStore);
     // Кэши игрока — из колонок СВЕЖЕГО store (5б): слоты при restore
     // раздались по порядку записей, биты из прошлой жизни мертвы; истина
     // «кто игрок» приехала колонкой playerFlag записей.
@@ -3350,7 +3371,7 @@ void process_world_events(App& app) {
     // so the signature guard keeps steady-state frames allocation-free.
     if (const std::uint64_t sig = quest_marker_signature(app.activeQuests);
         sig != app.questMarkerSig) {
-        sm::rebuild_quest_markers(app.gs, app.activeQuests);
+        sm::rebuild_quest_markers(app.gs, *app.macroStore, app.activeQuests);
         app.questMarkerSig = sig;
         // A quest that points at the world OPENS it (Inc 4): every quest
         // pin's surroundings join the map as MEMORY — the giver described
@@ -3835,10 +3856,12 @@ void draw_debug_ui(App& app) {
     }
     ImGui::Text("Zoom %.2f  Cam %.1f,%.1f", app.zoom, app.camX, app.camY);
     std::size_t dbgCities = 0, dbgVillages = 0;
-    for (const auto& lm : app.gs.landmarks) {
-        if (lm.type == sm::LandmarkType::City) ++dbgCities;
-        else if (lm.type == sm::LandmarkType::Village) ++dbgVillages;
-    }
+    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+        const sm::SquadType kind =
+            sm::SquadType(app.macroStore->runtime[slot].squadType);
+        if (kind == sm::SquadType::City) ++dbgCities;
+        else if (kind == sm::SquadType::Village) ++dbgVillages;
+    });
     ImGui::Text("Cities %zu  Villages %zu", dbgCities, dbgVillages);
     ImGui::Text("Subworld: %s", app.subworld.active() ? "ACTIVE" : "off");
     ImGui::End();
@@ -4091,24 +4114,37 @@ void register_console_commands(App& app) {
         "teleport to a settlement by id or name (macro position)",
         [&app](Con& c, const std::vector<std::string>& a) {
             if (a.empty()) return false;
-            const sm::Landmark* found = nullptr;
+            sm::MacroStore& st = *app.macroStore;
+            sm::MacroHandle found{};
             int id = 0;
             if (sm::dev::arg_int(a, 0, id))
-                if (const sm::Landmark* lm = sm::landmark_by_id(app.gs, id);
-                    lm && lm->type == sm::LandmarkType::City) found = lm;
-            if (!found) {
+                if (const sm::MacroHandle h = sm::place_handle_by_ordinal(
+                        st, std::uint32_t(id));
+                    st.valid(h)
+                    && sm::SquadType(st.runtime[h.slot].squadType)
+                           == sm::SquadType::City)
+                    found = h;
+            if (!st.valid(found)) {
                 std::string q;
                 for (std::size_t i = 0; i < a.size(); ++i) { if (i) q += ' '; q += a[i]; }
-                for (const auto& s : app.gs.landmarks)
-                    if (s.type == sm::LandmarkType::City
-                        && console_icontains(s.name, q)) { found = &s; break; }
+                sm::for_each_place(st, [&](std::uint16_t slot) {
+                    if (st.valid(found)) return;
+                    if (sm::SquadType(st.runtime[slot].squadType)
+                        != sm::SquadType::City)
+                        return;
+                    if (console_icontains(st.name[slot].text, q))
+                        found = sm::handle_at(st, slot);
+                });
             }
-            if (!found) { c.error("no settlement matching '" + a[0] + "'"); return true; }
-            sm::player_jump_to_cell(app.gs, *app.macroStore, found->x, found->y);
+            if (!st.valid(found)) { c.error("no settlement matching '" + a[0] + "'"); return true; }
+            const int fx = sm::ecs::cell_x(st.cell[found.slot], app.gs.mapW);
+            const int fy = sm::ecs::cell_y(st.cell[found.slot], app.gs.mapW);
+            sm::player_jump_to_cell(app.gs, st, fx, fy);
             if (app.subworld.active())
                 c.warn("leave the subworld (Enter) for the macro teleport to take effect");
             c.printfln(Lvl::Ok, "teleported to %s (id %d) at %d, %d",
-                       found->name, found->id, found->x, found->y);
+                       st.name[found.slot].text,
+                       int(st.spawnId[found.slot].index), fx, fy);
             return true;
         });
 
@@ -5184,11 +5220,13 @@ void draw_debug_panels(App& app) {
             ImGui::Text("seed    %u", app.gs.worldSeed);
             ImGui::Text("map     %d x %d", app.gs.mapW, app.gs.mapH);
             std::size_t nCities = 0, nVillages = 0, nSpires = 0;
-            for (const auto& lm : app.gs.landmarks) {
-                if (lm.type == sm::LandmarkType::City) ++nCities;
-                else if (lm.type == sm::LandmarkType::Village) ++nVillages;
-                else if (lm.type == sm::LandmarkType::Spire) ++nSpires;
-            }
+            sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+                const sm::SquadType kind =
+                    sm::SquadType(app.macroStore->runtime[slot].squadType);
+                if (kind == sm::SquadType::City) ++nCities;
+                else if (kind == sm::SquadType::Village) ++nVillages;
+                else if (kind == sm::SquadType::Spire) ++nSpires;
+            });
             ImGui::Text("world   %zu settlements  %zu villages  %zu spires",
                         nCities, nVillages, nSpires);
             ImGui::SeparatorText("Dev");
@@ -5299,23 +5337,29 @@ void build_world_preview(App& app, int side = 384) {
                 img[o + 0] = cr; img[o + 1] = cg; img[o + 2] = cb; img[o + 3] = 255;
             }
     };
-    for (const auto& lm : app.gs.landmarks) {
-        if (lm.type != sm::LandmarkType::City) continue;
-        const int px = lm.x * side / td.width;
-        const int py = lm.y * side / td.height;
+    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+        if (sm::SquadType(app.macroStore->runtime[slot].squadType)
+            != sm::SquadType::City)
+            return;
+        const auto& c = app.macroStore->cell[slot];
+        const int px = sm::ecs::cell_x(c, app.gs.mapW) * side / td.width;
+        const int py = sm::ecs::cell_y(c, app.gs.mapW) * side / td.height;
         stamp(px, py, 1, 240, 200, 60);
-    }
-    for (const auto& lm : app.gs.landmarks) {
+    });
+    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
         // Столица есть город, не обязанный данью никому (S24: своему
         // сюзерену она сама себе, и одна дверь ставит ей 0). Прежде здесь
         // стояла колонка `City::isCapital` плана генератора — второй
         // ответ на тот же вопрос, и он умер вместе с планом (M-90).
-        if (lm.type != sm::LandmarkType::City || sm::suzerain_of(*app.macroStore, lm) != 0)
-            continue;
-        const int px = lm.x * side / td.width;
-        const int py = lm.y * side / td.height;
+        if (sm::SquadType(app.macroStore->runtime[slot].squadType)
+                != sm::SquadType::City
+            || sm::suzerain_of(*app.macroStore, slot) != 0)
+            return;
+        const auto& c = app.macroStore->cell[slot];
+        const int px = sm::ecs::cell_x(c, app.gs.mapW) * side / td.width;
+        const int py = sm::ecs::cell_y(c, app.gs.mapW) * side / td.height;
         stamp(px, py, 2, 255, 240, 120);
-    }
+    });
 
     app.customPreviewTex = sm::ui::recreate_ui_texture(
         app.customPreviewTex, side, side, img.data(), /*linear=*/true);

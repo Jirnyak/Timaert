@@ -1,6 +1,7 @@
 #include "macro/ruins.h"
 #include "macro/labour.h"      // settle_souls — одна дверь поселения душ
-#include "macro/place_birth.h" // birth_landmark — строка+тело (M-90 шаг 5)
+#include "macro/place_birth.h" // birth_place — место родится ТЕЛОМ
+#include "macro/landmark_iter.h"   // for_each_place — места по слотам
 #include "macro/landmark_registry.h"
 #include "tables/faction.h"
 #include "macro/state.h"
@@ -36,10 +37,13 @@ int torus_chebyshev_(int ax, int ay, int bx, int by, int w, int h) {
 // Pre-grid occupancy scan, exactly like the spire pass (spires.cpp): the
 // baked cell→landmark index does not exist yet during worldgen, and a
 // co-located ruin would be silently shadowed by whatever stands on top.
-bool cell_occupied_(const GameState& gs, int x, int y) {
-    for (const auto& lm : gs.landmarks)
-        if (lm.x == x && lm.y == y) return true;
-    return false;
+bool cell_occupied_(const GameState& gs, const MacroStore& st, int x, int y) {
+    const std::uint32_t idx = ecs::cell_index(x, y, gs.mapW);
+    bool taken = false;
+    for_each_place(st, [&](std::uint16_t slot) {
+        if (st.cell[slot].idx == idx) taken = true;
+    });
+    return taken;
 }
 
 } // namespace
@@ -50,11 +54,12 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         || !zones.has_complete_storage()) {
         return;
     }
-    const LandmarkDef& def = landmark_def(LandmarkType::Ruin);
+    const LandmarkDef& def = landmark_def(SquadType::Ruin);
     int cities = 0;
-    for (const auto& lm : gs.landmarks) {
-        if (lm.type == LandmarkType::City) ++cities;
-    }
+    for_each_place(st, [&](std::uint16_t slot) {
+        if (SquadType(st.runtime[slot].squadType) == SquadType::City)
+            ++cities;
+    });
     const int target = kRuinBaseCount + cities;
     // WHOSE the dead city is, answered ONCE and stored on the instance
     // (owner 2026-09-21: «руине надо дать фракцию»). The generator is the
@@ -66,7 +71,6 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
     // Own deterministic stream, distinct from the spire pass (0x59B12E50)
     // and the landmark-naming salt (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x2A15DEADu);
-    gs.landmarks.reserve(gs.landmarks.size() + std::size_t(target));
 
     int placed = 0;
     for (int n = 0; n < target; ++n) {
@@ -80,13 +84,18 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
             if (terrain.is_water(x, y)) continue;
             const int z = int(zones.at(x, y));
             if (z < int(def.minZone) || z > int(def.maxZone)) continue;
-            if (cell_occupied_(gs, x, y)) continue;
+            if (cell_occupied_(gs, st, x, y)) continue;
             int score = gs.mapW + gs.mapH;   // no ruins yet: any site wins
-            for (const auto& lm : gs.landmarks) {
-                if (lm.type != LandmarkType::Ruin) continue;
-                score = std::min(score, torus_chebyshev_(x, y, lm.x, lm.y,
-                                                         gs.mapW, gs.mapH));
-            }
+            for_each_place(st, [&](std::uint16_t slot) {
+                if (SquadType(st.runtime[slot].squadType)
+                        != SquadType::Ruin)
+                    return;
+                score = std::min(score, torus_chebyshev_(
+                    x, y,
+                    ecs::cell_x(st.cell[slot], gs.mapW),
+                    ecs::cell_y(st.cell[slot], gs.mapW),
+                    gs.mapW, gs.mapH));
+            });
             if (score > bestScore) {
                 bestScore = score;
                 bestX = x;
@@ -102,12 +111,11 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                          n + 1, target, int(def.minZone), int(def.maxZone));
             continue;
         }
-        Landmark ruin{};
-        ruin.type       = LandmarkType::Ruin;
-        ruin.id         = int(gs.nextMacroSpawnOrdinal++);   // M-37: один эмитент
-        ruin.x          = bestX;
-        ruin.y          = bestY;
-        ruin.factionIdx = haunted;
+        // Место родится ТЕЛОМ одной дверью (ломтик F); ординал эмитит она —
+        // из того же единого эмитента, что сквады (M-37).
+        const MacroHandle h = birth_place(gs, st, SquadType::Ruin,
+                                          bestX, bestY, haunted);
+        if (!st.valid(h)) continue;   // отказ капа уже прозвучал вслух
         // Born with its haunt: the row's born columns × the site's own
         // danger byte, a discrete bell around the mean — redder land, harder
         // haunt. Its own stream per ruin ordinal, so placement draws above
@@ -115,12 +123,10 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         //
         // ПЕРЕВОРОТ v122 (вердикт 3): души данжа — ГОЛОВАМИ, вид стака
         // ВЫВОДИТСЯ из полосы толпы (kHabRuin, слабейшая строка → CaveBat).
-        // ФЛИП (M-90 шаг 5): строка+тело одной дверью, души — в склад ТЕЛА.
-        Landmark& row = birth_landmark(gs, st, std::move(ruin));
         {
             Rng popRng(gs.worldSeed ^ 0xB0125EEDu
-                       ^ (std::uint32_t(row.id) * 2654435761u));
-            settle_souls(gs, st, row, landmark_born_population(
+                       ^ (st.spawnId[h.slot].index * 2654435761u));
+            settle_souls(gs, st, h.slot, landmark_born_population(
                 int(def.bornPopBase), int(def.bornPopPerScore),
                 int(zones.at(bestX, bestY)), popRng));
         }

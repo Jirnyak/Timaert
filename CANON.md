@@ -4682,7 +4682,7 @@ plough_cell_ok) и день пашет её: цикл SP → штамп FT_Field
 и это следствие, а не цель: экономия пришла из того, что шесть геологий стали
 одним потенциалом, а шрам перестал быть хранимой величиной.
 
-**ЧТО УМИРАЕТ АДРЕСАМИ:** `GameState::resourceScarCells` целиком (`state.h:984`);
+**ЧТО УМИРАЕТ АДРЕСАМИ:** `GameState::resourceScarCells` целиком (`resourceScarCells@src/macro/state.h`);
 хранение остатка и диска досягаемости в `DepositLayer` (шесть `ResourceGrid`);
 диалект `GrowthDomain::CarrierSpread` как исключение для леса (заросль теперь
 выражается потенциалом); шрам урожая в снимке клетки (`CellFacts::cropHarvested`)

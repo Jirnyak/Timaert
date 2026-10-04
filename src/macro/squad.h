@@ -17,7 +17,6 @@
 #include "macro/player_entity.h"
 #include "macro/spell_book_state.h"
 #include "macro/anketa.h"
-#include "macro/place_body.h"
 #include "macro/squad_walk.h"
 #include "macro/state.h"
 #include "macro/zones.h"
@@ -164,6 +163,84 @@ inline void refresh_squad_carry(MacroStore& st, MacroHandle leader) {
     rt.carryCap = rt.carryPerSoul * souls;
 }
 
+// THE lookup by save-stable ordinal (ecs::MacroSpawnId): the one identity a
+// macro entity keeps across a regeneration, so it is what a receipt names
+// (ecs::MacroDebt.subject for a roster row) and what possession stores. The
+// store is never serialized by slot, so this is a scan — of thousands, not
+// of a hot loop: a death, a possession, a load.
+// ── ИМЯ СКВАДА — ОДНА ДВЕРЬ ЧТЕНИЯ КОЛОНКИ (вердикт 3, ход 2) ───────────
+// Имя анкеты живёт колонкой store (ecs::SquadName, рождение рендерит дефолт
+// из names[nameIdx]); всякий показ имени читает ЕЁ, а не перевыводит из
+// nameIdx — перевывод был бы вторым ответом на «как его зовут» (DOD п.6) и
+// сломался бы первым же переименованием. Пустая колонка (порченые данные) —
+// честный fail-soft в ярлык строки каталога.
+inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
+    const char* t = st.name[slot].text;
+    if (t[0] != '\0') return t;
+    const std::uint16_t raw = st.kind[slot].type;
+    const NPCType kind = raw < std::uint16_t(NPCType::Count)
+        ? NPCType(std::uint8_t(raw)) : NPCType::Peasant;
+    return npc_def(kind).label;
+}
+
+inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
+                                            std::uint32_t index) {
+    for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
+        if (st.alive[slot] != 0 && st.spawnId[slot].index == index)
+            return MacroHandle{std::uint16_t(slot), st.generation[slot]};
+    }
+    return MacroHandle{};
+}
+
+// ГОРЯЧАЯ ДВЕРЬ ТОГО ЖЕ РЕЗОЛВА: бинарный поиск по ПОРЯДКУ ЗАКОНА
+// (ординально отсортированные живые слоты — SquadIndex.order, выводимый из
+// store каждый драйв). Это та же механика, что у умершего landmark_index_by_id
+// (монотонный эмитент ⇒ порядок строг), с той же честностью: промах по
+// индексу (сквад родился после пересборки) падает в скан, а попадание
+// ВЕРИФИЦИРУЕТСЯ колонкой spawnId — устаревший порядок соврать не может.
+inline MacroHandle macro_handle_by_spawn_id(
+        const MacroStore& st, const std::vector<SquadWalkEntry>& order,
+        std::uint32_t index) {
+    std::size_t lo = 0, hi = order.size();
+    while (lo < hi) {
+        const std::size_t mid = (lo + hi) / 2;
+        if (order[mid].ordinal < index) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo < order.size() && order[lo].ordinal == index) {
+        const std::uint16_t slot = order[lo].slot;
+        if (st.alive[slot] != 0 && st.spawnId[slot].index == index)
+            return MacroHandle{slot, st.generation[slot]};
+    }
+    return macro_handle_by_spawn_id(st, index);
+}
+
+// РЕЗОЛВ МЕСТА: тот же резолв субъекта + гейт оси рода. Пространство
+// ординалов ОДНО (M-37), и после смерти строки мест «это место?» отвечает
+// только ось тела — звонящий, которому нужен именно НЕПОДВИЖНЫЙ сквад,
+// обязан спрашивать этой дверью, а не голым резолвом.
+inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
+                                           std::uint32_t index) {
+    const MacroHandle h = macro_handle_by_spawn_id(st, index);
+    return st.valid(h)
+            && is_settlement_kind(SquadType(st.runtime[h.slot].squadType))
+        ? h : MacroHandle{};
+}
+
+// ДВЕРЬ ПЕРЕХОДА ВИДА — второе событие места, и оно же его СМЕРТЬ (владелец
+// 2026-09-20: «уничтожение ландмарка и рождение будет как механика»). Смерть
+// места не освобождает слот, а МЕНЯЕТ ВИД: деревня становится руиной и
+// остаётся стоять следом (CANON S9). Дверь объявляет событие (navEpoch), по
+// которому поднимается всё запечённое от состава. Вызывателей пока нет:
+// механика перехода не построена, дверь названа, чтобы второго способа
+// сменить вид не завели.
+inline void set_place_kind(GameState& gs, MacroStore& st, std::uint16_t slot,
+                           SquadType t) {
+    if (SquadType(st.runtime[slot].squadType) == t) return;
+    st.runtime[slot].squadType = std::uint8_t(t);
+    ++gs.navEpoch;
+}
+
 // Owner ruling 3 (CANON S4/S13 (бывший macrosim.md)): kill the leader and the squad lives on,
 // FACELESS, until the fight ends — only then do the survivors stop being a
 // squad and fall into the deserter pool, out of which the macro sim later
@@ -187,13 +264,16 @@ inline void refresh_squad_carry(MacroStore& st, MacroHandle leader) {
 // У ДАНЖА ДВЕРИ НЕТ ПО ПОСТРОЕНИЮ: его паства и есть головы инвентаря
 // (souls_flock), а worked под FT_Spire занят спеллом — списывать там значило
 // бы гасить чужое число.
-inline void leave_home_flock(GameState& gs, std::int32_t homeId, int souls) {
+inline void leave_home_flock(GameState& gs, const MacroStore& st,
+                             std::int32_t homeId, int souls) {
     if (homeId <= 0 || souls <= 0) return;
-    Landmark* home = landmark_by_id(gs, homeId);
-    if (home == nullptr) return;
-    if (landmark_def(home->type).bornPopBase != 0) return;
-    worked_write(gs, home->x, home->y,
-                 std::max(0, worked_read(gs, home->x, home->y) - souls));
+    const MacroHandle home = place_handle_by_ordinal(st, std::uint32_t(homeId));
+    if (!st.valid(home)) return;
+    const SquadType kind = SquadType(st.runtime[home.slot].squadType);
+    if (landmark_def(kind).bornPopBase != 0) return;
+    const auto& c = st.cell[home.slot];
+    const int x = ecs::cell_x(c, gs.mapW), y = ecs::cell_y(c, gs.mapW);
+    worked_write(gs, x, y, std::max(0, worked_read(gs, x, y) - souls));
 }
 
 inline int drain_dead_leader_squads(MacroStore& st, GameState& gs) {
@@ -226,7 +306,7 @@ inline int drain_dead_leader_squads(MacroStore& st, GameState& gs) {
         // СПИСЫВАЕТСЯ ФАКТ, а не намерение: пул мог отказать, и тогда душа
         // осталась в ростере — она всё ещё паства своего дома. Повторный
         // проход следующего тика спишет ровно то, что уедет тогда.
-        leave_home_flock(gs, st.runtime[sw.slot].homeSettlementId,
+        leave_home_flock(gs, st, st.runtime[sw.slot].homeSettlementId,
                          humansBefore - count_human_souls(bag.inv));
     }
     return moved;
@@ -299,42 +379,13 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
         // поэтому остаётся ровно одна душа, и списывается она ровно раз: слот
         // умирает в этой строке и второй раз сюда не придёт.
         if (is_folk_kind(st.kind[slot].type)) {
-            leave_home_flock(gs, st.runtime[slot].homeSettlementId, 1);
+            leave_home_flock(gs, st, st.runtime[slot].homeSettlementId, 1);
         }
         // 6.3: сквад ЕСТЬ слот store — смерть слота и есть вся смерть.
         store_death(st, handle_at(st, slot));
         ++swept;
     }
     return swept;
-}
-
-// THE lookup by save-stable ordinal (ecs::MacroSpawnId): the one identity a
-// macro entity keeps across a regeneration, so it is what a receipt names
-// (ecs::MacroDebt.subject for a roster row) and what possession stores. The
-// store is never serialized by slot, so this is a scan — of thousands, not
-// of a hot loop: a death, a possession, a load.
-// ── ИМЯ СКВАДА — ОДНА ДВЕРЬ ЧТЕНИЯ КОЛОНКИ (вердикт 3, ход 2) ───────────
-// Имя анкеты живёт колонкой store (ecs::SquadName, рождение рендерит дефолт
-// из names[nameIdx]); всякий показ имени читает ЕЁ, а не перевыводит из
-// nameIdx — перевывод был бы вторым ответом на «как его зовут» (DOD п.6) и
-// сломался бы первым же переименованием. Пустая колонка (порченые данные) —
-// честный fail-soft в ярлык строки каталога.
-inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
-    const char* t = st.name[slot].text;
-    if (t[0] != '\0') return t;
-    const std::uint16_t raw = st.kind[slot].type;
-    const NPCType kind = raw < std::uint16_t(NPCType::Count)
-        ? NPCType(std::uint8_t(raw)) : NPCType::Peasant;
-    return npc_def(kind).label;
-}
-
-inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
-                                            std::uint32_t index) {
-    for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
-        if (st.alive[slot] != 0 && st.spawnId[slot].index == index)
-            return MacroHandle{std::uint16_t(slot), st.generation[slot]};
-    }
-    return MacroHandle{};
 }
 
 // ── ПРИКАЗ РУКОЙ — ОДНА ДВЕРЬ ДЛЯ ГРАНИЦЫ (консоль, будущая панель приказов) ─
@@ -487,8 +538,8 @@ inline CharacterSheet effective_sheet_of(const MacroStore& st, MacroHandle h) {
 // Концы ставятся ОДНИМ вызовом и снимаются одним; старого сюзерена дверь
 // снимает САМА: у места ровно один сюзерен, и смена его без снятия прежнего
 // оставила бы вассала, платящего двоим.
-inline int suzerain_of(const MacroStore& st, const Landmark& lm) {
-    const Interests& in = st.interests[place_slot(st, lm)];
+inline int suzerain_of(const MacroStore& st, std::uint16_t slot) {
+    const Interests& in = st.interests[slot];
     for (int i = 0; i < kMaxInterests; ++i) {
         const Interest& it = in.slots[i];
         if (it.stance == std::uint8_t(Stance::None)) break;
@@ -499,9 +550,9 @@ inline int suzerain_of(const MacroStore& st, const Landmark& lm) {
 
 inline void set_suzerain(GameState& gs, MacroStore& st, int vassalId,
                          int suzerainId, int value = 0, int term = 0) {
-    Landmark* v = landmark_by_id(gs, vassalId);
-    if (!v || vassalId == suzerainId) return;
-    Interests& vin = st.interests[place_slot(st, *v)];
+    const MacroHandle vh = place_handle_by_ordinal(st, std::uint32_t(vassalId));
+    if (!st.valid(vh) || vassalId == suzerainId) return;
+    Interests& vin = st.interests[vh.slot];
     // Прежний сюзерен теряет этого вассала — с обоих концов; вместе со
     // ЗНАНИЕМ роли умирает и ЛЕТОПИСЬ ДОЛГА (ребро рода 6): непогашенная
     // дань прощается сменой феода, второго носителя долга не существует.
@@ -509,45 +560,56 @@ inline void set_suzerain(GameState& gs, MacroStore& st, int vassalId,
         Interest& it = vin.slots[i];
         if (it.stance == std::uint8_t(Stance::None)) break;
         if (it.stance != std::uint8_t(Stance::Suzerain)) continue;
-        if (Landmark* old = landmark_by_id(gs, it.object)) {
-            interest_clear(st.interests[place_slot(st, *old)], vassalId);
-            tithe_edge_remove(gs.factions, int(old->factionIdx), vassalId);
+        const MacroHandle oh = place_handle_by_ordinal(st,
+                                                       std::uint32_t(it.object));
+        if (st.valid(oh)) {
+            interest_clear(st.interests[oh.slot], vassalId);
+            tithe_edge_remove(gs.factions,
+                              std::int16_t(st.kind[oh.slot].factionIdx),
+                              vassalId);
         }
         interest_clear(vin, it.object);
         break;                     // сюзерен у места ровно один
     }
     if (suzerainId <= 0) return;   // «стал ничьим» — это и есть весь вызов
-    Landmark* s = landmark_by_id(gs, suzerainId);
-    if (!s) return;                // висячего ребра не заводим
+    const MacroHandle sh = place_handle_by_ordinal(st,
+                                                   std::uint32_t(suzerainId));
+    if (!st.valid(sh)) return;     // висячего ребра не заводим
     interest_set(vin, suzerainId, Stance::Suzerain, value, term);
-    interest_set(st.interests[place_slot(st, *s)], vassalId, Stance::Vassal,
+    interest_set(st.interests[sh.slot], vassalId, Stance::Vassal,
                  value, term);
     // ОДНА ДВЕРЬ ПИШЕТ ОБА НОСИТЕЛЯ: знание роли — в интересы (род 2),
     // летопись долга — ребром в строку фракции СЮЗЕРЕНА (род 6).
-    tithe_edge_add(gs.factions, int(s->factionIdx), vassalId, suzerainId);
+    tithe_edge_add(gs.factions,
+                   std::int16_t(st.kind[sh.slot].factionIdx), vassalId,
+                   suzerainId);
 }
 
 // ФЕОДАЛЬНОЕ РЕБРО ЭТОГО ВАССАЛА (род 6, v121): долг живёт в строке фракции
 // СЮЗЕРЕНА — путь к нему идёт через знание роли (suzerain_of, род 2), сами
 // носители врозь и отвечают на разные вопросы.
 inline TitheEdge* tithe_edge_of(GameState& gs, const MacroStore& st,
-                                const Landmark& vassal) {
-    const Landmark* s = landmark_by_id(gs, suzerain_of(st, vassal));
-    return s ? tithe_edge(gs.factions, int(s->factionIdx), vassal.id)
-             : nullptr;
+                                std::uint16_t vassalSlot) {
+    const MacroHandle sh = place_handle_by_ordinal(
+        st, std::uint32_t(suzerain_of(st, vassalSlot)));
+    return st.valid(sh)
+        ? tithe_edge(gs.factions,
+                     std::int16_t(st.kind[sh.slot].factionIdx),
+                     int(st.spawnId[vassalSlot].index))
+        : nullptr;
 }
 inline const TitheEdge* tithe_edge_of(const GameState& gs,
                                       const MacroStore& st,
-                                      const Landmark& vassal) {
-    return tithe_edge_of(const_cast<GameState&>(gs), st, vassal);
+                                      std::uint16_t vassalSlot) {
+    return tithe_edge_of(const_cast<GameState&>(gs), st, vassalSlot);
 }
 
 // ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг ребра — он же ведомость
 // «с кого собрано»: собранный вассал отвечает «нет» по построению, и второго
 // признака («посещён в этом сезоне») в мире не заводится (S26).
 inline bool owes_tithe(const GameState& gs, const MacroStore& st,
-                       const Landmark& lm) {
-    const TitheEdge* e = tithe_edge_of(gs, st, lm);
+                       std::uint16_t vassalSlot) {
+    const TitheEdge* e = tithe_edge_of(gs, st, vassalSlot);
     return e && e->owedValue > 0;
 }
 
@@ -571,10 +633,10 @@ inline std::uint32_t* renown_slot(MacroStore& st, GameState& gs,
             return st.valid(h) ? &st.runtime[h.slot].renown : nullptr;
         }
         case std::uint8_t(FactSubject::Landmark): {
-            // Слава места — колонка runtime.renown его ТЕЛА (M-90 шаг 5).
-            Landmark* lm = landmark_by_id(gs, int(ordinal));
-            if (!lm) return nullptr;
-            const MacroHandle h = place_body(*lm);
+            // Слава места — колонка runtime.renown его ТЕЛА; строки нет,
+            // резолв тот же, что у сквада (одно пространство ординалов,
+            // M-37), род субъекта остаётся словом ЛЕТОПИСИ.
+            const MacroHandle h = macro_handle_by_spawn_id(st, ordinal);
             return st.valid(h) ? &st.runtime[h.slot].renown : nullptr;
         }
         default:
@@ -1029,7 +1091,8 @@ inline void record_battle_facts(MacroStore& st, GameState& gs,
                              std::int32_t dead) {
         if (dead <= 0 || !st.valid(side)) return;
         const ecs::MacroNpcRuntime& srt = st.runtime[side.slot];
-        if (landmark_by_id(gs, srt.homeSettlementId) == nullptr)
+        if (!st.valid(place_handle_by_ordinal(
+                st, std::uint32_t(srt.homeSettlementId))))
             return;   // the homeless bereave nobody — Killed already spoke
         WorldFact f{};
         f.day = gs.worldTime.day();

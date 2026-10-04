@@ -60,8 +60,10 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // `gs` появился с переворотом населения (v122): паства поселения — worked-
 // число фичи, и рост/голод пишут ЕГО (плюс головы в инвентаре — bleed/raise
 // парой); у данжа (bornPopBase != 0) обе двери идут по головам его толпы.
-void settle_landmark_day(GameState& gs, MacroStore& st, Landmark& lm, int day,
-                         bool& starved, bool& diedOut,
+// `slot` — ТЕЛО места в гладкой памяти макро-сквадов (ломтик F): род, адрес,
+// склад, счёт нужд и благополучие — его колонки, строки-индекса больше нет.
+void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
+                         int day, bool& starved, bool& diedOut,
                          EconFactSink sink = nullptr, void* user = nullptr);
 
 // The dungeon garrisons' regrowth (§42, owner: «как фауна — медленно,

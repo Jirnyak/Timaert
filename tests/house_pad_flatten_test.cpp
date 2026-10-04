@@ -61,7 +61,7 @@ struct PadStat {
 // and measure its internal height range. (A bounding-box scan would bleed into
 // an adjacent pad flattened to a different level and report a false spread.)
 PadStat measure(int cx, int cy, std::uint32_t seed, int population,
-                LandmarkType kind) {
+                SquadType kind) {
     CellContext ctx{};
     ctx.cx = cx;
     ctx.cy = cy;
@@ -165,12 +165,12 @@ void test_every_house_sits_on_a_flattened_pad() {
     constexpr float kMinRelief     = 5.0f;
     constexpr float kMaxMeanOfRelief = 0.1f;
 
-    struct Case { int cx, cy; std::uint32_t seed; int pop; LandmarkType kind; };
+    struct Case { int cx, cy; std::uint32_t seed; int pop; SquadType kind; };
     const Case cases[] = {
-        { 7, -4, 0xF00DBEEFu, 6000, LandmarkType::City },
-        { -11, 6, 0x0BADF00Du, 2500, LandmarkType::City },
-        { 13, -3, 0x00C0FFEEu, 120,  LandmarkType::Village },
-        { 20, 14, 0x51A7E110u, 9000, LandmarkType::City },
+        { 7, -4, 0xF00DBEEFu, 6000, SquadType::City },
+        { -11, 6, 0x0BADF00Du, 2500, SquadType::City },
+        { 13, -3, 0x00C0FFEEu, 120,  SquadType::Village },
+        { 20, 14, 0x51A7E110u, 9000, SquadType::City },
     };
     constexpr int kCases = int(sizeof(cases) / sizeof(cases[0]));
 

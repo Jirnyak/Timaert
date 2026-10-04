@@ -17,8 +17,8 @@
 // events — the places that can afford to ask everything at once.
 #pragma once
 #include "tables/biomes.h"
+#include "tables/squad_type.h"
 #include "macro/features.h"
-#include "macro/landmark_grid.h"
 #include "macro/macro_world.h"
 
 #include <cstdint>
@@ -27,9 +27,9 @@ namespace sm {
 
 // The landmark standing on the cell, with its LIVE fields resolved from
 // GameState at the moment of asking (population and ownership drift daily;
-// the grid only answers WHO — macro/landmark_grid.h).
+// the frame only answers WHO — settlement_at, macro/squad_index.h).
 struct LandmarkFacts {
-    LandmarkType type = LandmarkType::None;
+    SquadType type = SquadType::None;   // ось рода (алиас SquadType умирает ломтиком F)
     int  id = -1;          // WORLD-unique landmark ordinal (v54); -1 = none
     // POPULATION, for every kind (§42: this field used to carry a spire's
     // spell TIER instead — an overload that would have handed a tier-3

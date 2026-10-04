@@ -435,7 +435,7 @@ inline float wall_inner_bound(float radius, float roughness) {
 // quarter is a fraction of the city only as a CONSEQUENCE — never as a chosen
 // share.
 inline int city_upper_population(int population) {
-    const LandmarkDef& def = landmark_def(LandmarkType::City);
+    const LandmarkDef& def = landmark_def(SquadType::City);
     if (def.garrisonShift == 0xFF) return 0;          // a kind with no garrison
     const int p = population > 0 ? population : 0;
     return p >> def.garrisonShift;

@@ -22,7 +22,7 @@
 namespace {
 // Руки города и деревни — анкета их рода (characters.h), а не вид места.
 static const sm::Skills& CITY =
-    sm::landmark_sheet(sm::LandmarkType::City).skills;
+    sm::landmark_sheet(sm::SquadType::City).skills;
 
 using namespace sm;
 

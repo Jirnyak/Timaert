@@ -40,7 +40,6 @@
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
 #include "macro/tree_layer.h"
-#include "macro/landmark_grid.h"
 #include "macro/nav_field.h"
 #include "macro/deposit_layer.h"
 #include "macro/spires.h"
@@ -138,10 +137,6 @@ struct App {
     sm::TerrainData      terrain{};
     sm::FeatureLayer     features;
     sm::ZoneLayer        zones;
-    // Baked cell → landmark index (macro/landmark_grid.h): the one answer to
-    // "who stands on this cell". Rebaked wherever the landmark set changes —
-    // today world-gen and load; living landmarks (CANON S9) add theirs here.
-    sm::LandmarkGrid     landmarkGrid;
     // Derived per-cell tree counts (macro/tree_layer.h) — the LIVING grid of
     // the registry's Trees row; the save carries it whole (v36).
     // uploadedTreeRev mirrors treeLayer.revision so the u_treeMap texture

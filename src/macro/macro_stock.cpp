@@ -44,29 +44,38 @@ void write_tree_count(MacroWorld& w, MacroStockKey k, int delta) {
 
 // ── population: the people of a named place ────────────────────────────────
 // A settlement and a village are the same kind of subject here — a named place
-// with people in it — and since v54 the id ALONE names it: every landmark
-// draws on the one subject issuer (nextMacroSpawnOrdinal, M-37).
+// with people in it — and the ORDINAL alone names it: every place draws on the
+// one subject issuer (nextMacroSpawnOrdinal, M-37), so the resolve is the one
+// store door (place_handle_by_ordinal).
 //
 // ПЕРЕВОРОТ v122: колонки population больше нет — чтение отвечает ПАСТВОЙ
 // (souls_flock: worked-число у поселения, головы толпы у данжа), запись-
 // назад субмира «убил людей» идёт ПАРОЙ дверей: умирают ДОМАШНИЕ головы
 // (bleed), и у поселения то же число сходит с worked-паствы. Прибыль
 // (delta > 0 — вернувшееся тело) — той же парой в обратную сторону.
-Landmark* find_population_subject(const MacroWorld& w, std::int32_t subject) {
-    if (!w.gs || subject <= 0) return nullptr;
-    return landmark_by_id(*w.gs, subject);
+MacroHandle find_population_subject(const MacroWorld& w,
+                                    std::int32_t subject) {
+    if (!w.gs || !w.store || subject <= 0) return MacroHandle{};
+    return place_handle_by_ordinal(*w.store, std::uint32_t(subject));
 }
 
 int read_population(const MacroWorld& w, MacroStockKey k) {
-    const Landmark* lm = find_population_subject(w, k.subject);
-    return lm ? souls_flock(*w.gs, *w.store, *lm) : 0;
+    const MacroHandle h = find_population_subject(w, k.subject);
+    return w.store && w.store->valid(h)
+        ? souls_flock(*w.gs, *w.store, h.slot) : 0;
 }
 
 void write_population(MacroWorld& w, MacroStockKey k, int delta) {
     if (delta == 0) return;
-    Landmark* lm = find_population_subject(w, k.subject);
-    if (!lm) return;
-    const bool dungeon = landmark_def(lm->type).bornPopBase != 0;
+    const MacroHandle h = find_population_subject(w, k.subject);
+    if (!w.store || !w.store->valid(h)) return;
+    const std::uint16_t slot = h.slot;
+    Inventory& store = w.store->inventory[slot].inv;
+    const int px = ecs::cell_x(w.store->cell[slot], w.gs->mapW);
+    const int py = ecs::cell_y(w.store->cell[slot], w.gs->mapW);
+    const bool dungeon =
+        landmark_def(SquadType(w.store->runtime[slot].squadType))
+            .bornPopBase != 0;
     if (delta < 0) {
         // A place can be emptied but never owe people: списывается ФАКТ.
         //
@@ -87,23 +96,22 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
         int died = 0;
         if (who.entityId != 0 || who.level > 0) {
             for (int i = 0; i < -delta; ++i) {
-                if (!creatures_remove_one(place_store(*w.store, *lm), who)) break;
+                if (!creatures_remove_one(store, who)) break;
                 ++died;
             }
         } else {
-            died = dungeon ? bleed_heads(place_store(*w.store, *lm), -delta)
-                           : bleed_flock(place_store(*w.store, *lm), -delta);
+            died = dungeon ? bleed_heads(store, -delta)
+                           : bleed_flock(store, -delta);
         }
         if (!dungeon && died > 0) {
-            worked_write(*w.gs, lm->x, lm->y,
-                         std::max(0, worked_read(*w.gs, lm->x, lm->y)
-                                         - died));
+            worked_write(*w.gs, px, py,
+                         std::max(0, worked_read(*w.gs, px, py) - died));
         }
     } else {
         // Вернувшееся тело — то же событие «место получило душу», одной
         // дверью (labour.h settle_souls): второй писатель пары
         // «число + голова» был бы вторым законом появления души.
-        settle_souls(*w.gs, *w.store, *lm, delta);
+        settle_souls(*w.gs, *w.store, slot, delta);
     }
 }
 

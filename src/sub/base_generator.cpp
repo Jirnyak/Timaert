@@ -250,7 +250,7 @@ float crest_jitter01(int cellGX, int cellGY, std::uint32_t worldSeed) {
                             cell_seed(worldSeed, cellGX, cellGY) ^ 0x5A17u);
 }
 
-TerrainMod terrain_mod_for(LandmarkType landmark, FeatureType feature) {
+TerrainMod terrain_mod_for(SquadType landmark, FeatureType feature) {
     // ONE data table: how strongly each macro content class calms the terrain
     // it stands on. damp scales down ridge/noise for the whole cell; plateauR
     // is the radius (tiles) of the radial pull toward the cell-centre height.
@@ -266,15 +266,15 @@ TerrainMod terrain_mod_for(LandmarkType landmark, FeatureType feature) {
     // its character instead of erasing it.
     TerrainMod m{};
     switch (landmark) {
-        case LandmarkType::City:    m = {0.6f,  96.0f}; break;
-        case LandmarkType::Village: m = {0.5f,  64.0f}; break;
-        case LandmarkType::Ruin:    m = {0.6f, 120.0f}; break;
-        case LandmarkType::Spire:   m = {0.6f, 120.0f}; break;
+        case SquadType::City:    m = {0.6f,  96.0f}; break;
+        case SquadType::Village: m = {0.5f,  64.0f}; break;
+        case SquadType::Ruin:    m = {0.6f, 120.0f}; break;
+        case SquadType::Spire:   m = {0.6f, 120.0f}; break;
         // Registry kinds no world places yet (Lair/Shrine/Mine/Tower): bare
         // ground until each kind's generator module lands — a landmark calms
         // the terrain only once something actually stands on it.
         default:                    break;
-        case LandmarkType::None:    break;
+        case SquadType::None:    break;
     }
     if (feature == FT_Road || feature == FT_DirtRoad) {
         m.damp = std::max(m.damp, 0.55f);

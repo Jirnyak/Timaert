@@ -20,7 +20,8 @@
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"
 #include "macro/macro_stock.h"
-#include "macro/place_birth.h"   // birth_landmark — место рождается с ТЕЛОМ
+#include "macro/landmark_iter.h"  // for_each_place — места по слотам
+#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/squad.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
@@ -37,6 +38,13 @@ namespace {
 struct World {
     std::unique_ptr<sm::MacroStore> store;
     sm::GameState gs;
+    // ОРДИНАЛ НАЗЫВАЕТ ЭМИТЕНТ, А НЕ ФИКСТУРА (ломтик F): рукописный
+    // `Landmark::id` умер со строкой места, поэтому мир держит у себя
+    // ординалы своих четырёх — расписка (MacroStockKey) приходит с ними.
+    int cityId = 0;
+    int otherId = 0;
+    int twinId = 0;
+    int hamletId = 0;
 };
 
 World make_world() {
@@ -46,27 +54,19 @@ World make_world() {
     gs.mapW = 64;
     gs.mapH = 64;
     {
-        sm::Landmark city{};
-        city.type = sm::LandmarkType::City;
-        city.id = 7;
-        std::snprintf(city.name, sizeof city.name, "Testholm");
-        city.x = 10;
-        city.y = 10;
-        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(city));
+        const sm::MacroHandle h = sm::birth_place(
+            gs, st, sm::SquadType::City, 10, 10, -1, "Testholm");
+        wld.cityId = int(st.spawnId[h.slot].index);
         // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
         // фичи, головы в инвентарь. Сток `population` читает и пишет ровно
         // эту пару.
-        sm::settle_souls(gs, st, row, 300);
+        sm::settle_souls(gs, st, h.slot, 300);
     }
     {
-        sm::Landmark other{};
-        other.type = sm::LandmarkType::City;
-        other.id = 8;
-        std::snprintf(other.name, sizeof other.name, "Neighbour");
-        other.x = 30;
-        other.y = 30;
-        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(other));
-        sm::settle_souls(gs, st, row, 300);
+        const sm::MacroHandle h = sm::birth_place(
+            gs, st, sm::SquadType::City, 30, 30, -1, "Neighbour");
+        wld.otherId = int(st.spawnId[h.slot].index);
+        sm::settle_souls(gs, st, h.slot, 300);
     }
     // ONE landmark id space (v54): every place draws on the one issuer, so a
     // fixture with two places wearing one number would no longer be a world
@@ -74,41 +74,38 @@ World make_world() {
     // guarded the register-bit crutch; the invariant now is that the id ALONE
     // bills the right place.
     {
-        sm::Landmark twin{};
-        twin.type = sm::LandmarkType::Village;
-        twin.id = 9;
-        std::snprintf(twin.name, sizeof twin.name, "Twinvale");
-        twin.x = 40;
-        twin.y = 40;
-        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(twin));
-        sm::settle_souls(gs, st, row, 80);
+        const sm::MacroHandle h = sm::birth_place(
+            gs, st, sm::SquadType::Village, 40, 40, -1, "Twinvale");
+        wld.twinId = int(st.spawnId[h.slot].index);
+        sm::settle_souls(gs, st, h.slot, 80);
     }
     {
-        sm::Landmark hamlet{};
-        hamlet.type = sm::LandmarkType::Village;
-        hamlet.id = 42;
-        std::snprintf(hamlet.name, sizeof hamlet.name, "Hamlet");
-        hamlet.x = 20;
-        hamlet.y = 20;
-        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(hamlet));
-        sm::settle_souls(gs, st, row, 40);
+        const sm::MacroHandle h = sm::birth_place(
+            gs, st, sm::SquadType::Village, 20, 20, -1, "Hamlet");
+        wld.hamletId = int(st.spawnId[h.slot].index);
+        sm::settle_souls(gs, st, h.slot, 40);
     }
     return wld;
 }
 
 // Read each kind on its own so an assertion can say WHICH kind of place paid —
 // the ids are unique (v54), but the bill must still land on the right row.
+// Род и ординал — КОЛОНКИ ТЕЛА (ломтик F), поэтому оба вопроса задаются
+// одному обходу мест.
+int population_of_kind(const World& wld, sm::SquadType kind, int id) {
+    int found = -1;
+    sm::for_each_place(*wld.store, [&](std::uint16_t slot) {
+        if (sm::SquadType(wld.store->runtime[slot].squadType) != kind) return;
+        if (int(wld.store->spawnId[slot].index) != id) return;
+        found = sm::souls_flock(wld.gs, *wld.store, slot);
+    });
+    return found;
+}
 int city_population_of(const World& wld, int id) {
-    for (const auto& s : wld.gs.landmarks)
-        if (s.type == sm::LandmarkType::City && s.id == id)
-            return sm::souls_flock(wld.gs, *wld.store, s);
-    return -1;
+    return population_of_kind(wld, sm::SquadType::City, id);
 }
 int village_population_of(const World& wld, int id) {
-    for (const auto& v : wld.gs.landmarks)
-        if (v.type == sm::LandmarkType::Village && v.id == id)
-            return sm::souls_flock(wld.gs, *wld.store, v);
-    return -1;
+    return population_of_kind(wld, sm::SquadType::Village, id);
 }
 int population_of(const World& wld, int id) {
     const int c = city_population_of(wld, id);
@@ -142,7 +139,7 @@ void test_borrow_and_return_are_symmetric() {
     trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 500);
     MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
 
-    const MacroStockKey town{7, 10, 10};
+    const MacroStockKey town{wld.cityId, 10, 10};
     const MacroStockKey cell{-1, 3, 4};
 
     const int pop0  = macro_stock_read(w, MacroStock::Population, town);
@@ -175,8 +172,10 @@ void test_stocks_are_bounded() {
     trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 10);
     MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
 
-    macro_stock_apply(w, MacroStock::Population, MacroStockKey{7, 10, 10}, -100000);
-    CHECK(macro_stock_read(w, MacroStock::Population, MacroStockKey{7, 10, 10}) == 0,
+    macro_stock_apply(w, MacroStock::Population,
+                      MacroStockKey{wld.cityId, 10, 10}, -100000);
+    CHECK(macro_stock_read(w, MacroStock::Population,
+                           MacroStockKey{wld.cityId, 10, 10}) == 0,
           "a town can be emptied to zero and never below it");
 
     macro_stock_apply(w, MacroStock::TreeCount, MacroStockKey{-1, 1, 1}, -100000);
@@ -201,39 +200,42 @@ void test_debts_bill_their_own_subject() {
     entt::registry reg;
     const auto citizen = reg.create();
     stamp_macro_debt(reg, citizen, MacroStock::Population,
-                     MacroStockKey{7, 10, 10}, 1);
+                     MacroStockKey{wld.cityId, 10, 10}, 1);
     const auto* debt = reg.try_get<ecs::MacroDebt>(citizen);
     CHECK_OR_RETURN(debt != nullptr, "stamping leaves a receipt on the body");
 
     settle_macro_debt(w, *debt, -1);
-    CHECK(population_of(wld, 7) == 299, "the dead citizen's own town shrinks by one");
-    CHECK(population_of(wld, 8) == 300, "the town next door is untouched");
-    CHECK(population_of(wld, 42) == 40, "and so is the village");
+    CHECK(population_of(wld, wld.cityId) == 299,
+          "the dead citizen's own town shrinks by one");
+    CHECK(population_of(wld, wld.otherId) == 300,
+          "the town next door is untouched");
+    CHECK(population_of(wld, wld.hamletId) == 40, "and so is the village");
 
     // A village is a named place with people too, on the SAME id space (v54):
     // the id alone names it, no register bit rides the receipt.
     const auto villager = reg.create();
     stamp_macro_debt(reg, villager, MacroStock::Population,
-                     MacroStockKey{42, 20, 20}, 3);
+                     MacroStockKey{wld.hamletId, 20, 20}, 3);
     settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(villager), -1);
-    CHECK(population_of(wld, 42) == 37,
+    CHECK(population_of(wld, wld.hamletId) == 37,
           "a village pays from its own people, by the amount the receipt says");
 
     // THE NEGATIVE CONTROL for the one-space law: killing two villagers of
-    // Twinvale (id 9) must leave every CITY exactly where the earlier checks
+    // Twinvale must leave every CITY exactly where the earlier checks
     // left them — the id alone finds the village, never a city.
     const auto twinVillager = reg.create();
     stamp_macro_debt(reg, twinVillager, MacroStock::Population,
-                     MacroStockKey{9, 40, 40}, 2);
+                     MacroStockKey{wld.twinId, 40, 40}, 2);
     settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(twinVillager), -1);
-    CHECK(village_population_of(wld, 9) == 78,
+    CHECK(village_population_of(wld, wld.twinId) == 78,
           "a village pays its own dead through the one id space");
-    CHECK(city_population_of(wld, 7) == 299 && city_population_of(wld, 8) == 300,
+    CHECK(city_population_of(wld, wld.cityId) == 299
+              && city_population_of(wld, wld.otherId) == 300,
           "and no city is billed for them");
 
     // Signed both ways (owner's ruling): the same row settles creation.
     settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(villager), +1);
-    CHECK(population_of(wld, 42) == 40,
+    CHECK(population_of(wld, wld.hamletId) == 40,
           "handing the borrowed thing back credits the same place");
 }
 
@@ -244,10 +246,12 @@ void test_malformed_receipts_do_nothing() {
     World wld = make_world();
     sm::GameState& gs = wld.gs;
     MacroWorld w{.gs = &gs, .store = wld.store.get()};
-    const int before = population_of(wld, 7);
+    const int before = population_of(wld, wld.cityId);
 
-    ecs::MacroDebt zeroAmount{std::uint8_t(MacroStock::Population), 7, 10, 10, 0};
-    ecs::MacroDebt unknownStock{std::uint8_t(MacroStock::Count), 7, 10, 10, 5};
+    ecs::MacroDebt zeroAmount{std::uint8_t(MacroStock::Population),
+                              wld.cityId, 10, 10, 0};
+    ecs::MacroDebt unknownStock{std::uint8_t(MacroStock::Count),
+                                wld.cityId, 10, 10, 5};
     ecs::MacroDebt noSubject{std::uint8_t(MacroStock::Population), 0, 10, 10, 5};
     ecs::MacroDebt strangerId{std::uint8_t(MacroStock::Population), 9999, 0, 0, 5};
 
@@ -255,7 +259,7 @@ void test_malformed_receipts_do_nothing() {
     settle_macro_debt(w, unknownStock, -1);
     settle_macro_debt(w, noSubject,    -1);
     settle_macro_debt(w, strangerId,   -1);
-    CHECK(population_of(wld, 7) == before,
+    CHECK(population_of(wld, wld.cityId) == before,
           "a receipt for nothing, for an unknown stock or for nobody moves no stock");
 
     // And a world with no tree layer at all must not pretend it wrote one.

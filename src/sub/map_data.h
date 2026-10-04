@@ -10,7 +10,8 @@
 #include "core/table_guard.h"
 #include "tables/biomes.h"
 #include "macro/features.h"
-#include "macro/landmark_registry.h"
+#include "macro/landmark_registry.h"   // landmark_def — транзит city_layout
+                                       //   (нитку снимет M-38, не ломтик F)
 // THE step law: the subworld prices ground in the same units the macro march
 // does (biome beds, feature beds, the canopy term, speed = base/√weight).
 #include "macro/movement_cost.h"
@@ -265,7 +266,7 @@ enum class SubworldMode : std::uint8_t {
     Dungeon,
 };
 
-// The landmark vocabulary is LandmarkType (macro/landmark_registry.h) — the
+// The landmark vocabulary is SquadType (macro/landmark_registry.h) — the
 // one registry enum. A private five-value "CellLandmarkKind" lived here until
 // 2026-08-24 (second copy; the fauna router carried a third), joined by a
 // hand-written bridge in engine.cpp — and Lair/Shrine/Mine/Tower physically
@@ -309,7 +310,7 @@ struct DungeonRef {
 // they fold). A new landmark fact is a member here, not another CellContext
 // column.
 struct LandmarkContext {
-    LandmarkType kind = LandmarkType::None;
+    SquadType kind = SquadType::None;
     int  id   = -1;   // the landmark's id within its kind; -1 = none
     // POPULATION, for every kind (§42: the spire's spell tier used to ride
     // in here — see `tier` below, its own field now).
@@ -437,10 +438,10 @@ struct CellContext {
 // projects as a City cell even when landmark.kind is None (mirrors
 // resolve_mode's `landmark.id >= 0` branch) — one helper so terrain
 // flattening and mode resolution can never disagree.
-inline LandmarkType effective_landmark(const CellContext& ctx) {
-    if (ctx.landmark.kind != LandmarkType::None) return ctx.landmark.kind;
-    if (ctx.landmark.id >= 0) return LandmarkType::City;
-    return LandmarkType::None;
+inline SquadType effective_landmark(const CellContext& ctx) {
+    if (ctx.landmark.kind != SquadType::None) return ctx.landmark.kind;
+    if (ctx.landmark.id >= 0) return SquadType::City;
+    return SquadType::None;
 }
 
 // The GROUND a cell shows where it is dry — the effective_landmark pattern

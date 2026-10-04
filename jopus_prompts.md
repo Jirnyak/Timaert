@@ -746,7 +746,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 терраин `rgba` u8×4×N (`app_state.h:140`), реки u8×N (`map_generator.h:38`),
 `reach` жил u16×N×6 (`deposit_layer`), стоимость пути f32+u8+u8×N
 (`pathfinding.h`, `app_state.h:306`), знание u8×N (`state.h:879`), сетка
-ландмарков u16×N (+refs) (`landmark_grid.h:41`), навигация (6 полей ×N +
+ландмарков — умер (ломтик F: каркас клеток `SquadIndex@src/macro/squad_index.h`), навигация (6 полей ×N +
 планы u16×planeCount×N, `nav_field.h`), угроза u32×R (`nav_field.h:149`),
 следы u16×F×N×2 (`state.h:884`, `scent_field.h`), владение клеткой u8×N
 (`politik.h:77`), индекс летописи u32×N/64 (`chronicle.h:345`), оптический
@@ -812,7 +812,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 `quest_engine.cpp:203-204`, никто не шлёт), `Custom` (только дефолт
 инициализации `logic_nodes.h:23` и тесты). Теги с производителем, но без
 прод-читателя: `QuestStart`, `QuestUpdate` (`quest_engine.cpp:261,294`),
-`SpellCast` (`main.cpp:2101`), `PlayerLeaveSettlement` (`main.cpp:447`).
+`SpellCast` (`main.cpp:2101`), `PlayerLeaveSettlement` (main.cpp:457 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
 
 **1. Контекст.** Читать: `src/events/event_bus.h` целиком,
 `src/events/event_bus.cpp` целиком, `src/events/event_types.h:20-64`
@@ -1207,7 +1207,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 (`politik.h:62`), `PlayerState::name` (`state.h:678`). Генератор —
 `generate_name` (`language.cpp:164-177`, возвращает `std::string` —
 граница мира, законно); ввод игрока — `char name[25]` (`ui/screens.h:70`,
-24 + NUL). Сейв пишет строки `w.str`/`r.str` (`write_landmark@src/macro/save.cpp` и соседние блоки).
+24 + NUL). Сейв пишет строки `w.str`/`r.str` (`write_landmark` (умер в v128 — место едет записью тела) и соседние блоки).
 
 **1. Контекст.** Читать: `src/macro/state.h:462-475, 670-682`,
 `src/macro/politik.h:55-70`, `src/macro/language.cpp:136-180` и

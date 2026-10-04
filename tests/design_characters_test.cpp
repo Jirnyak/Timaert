@@ -64,35 +64,17 @@ TerrainData make_terrain() {
     return t;
 }
 
-Landmark make_landmark(int id, LandmarkType type, int x, int y) {
-    Landmark lm;
-    lm.id = id;
-    lm.type = type;
-    lm.x = x;
-    lm.y = y;
-    return lm;
-}
-
-// ЭМИТЕНТ ОРДИНАЛОВ ОДИН НА МЕСТА И СКВАДЫ (M-37), и с флипа M-90 это уже
-// не бухгалтерия, а ПАМЯТЬ: тело места стоит в том же store со спавн-ординалом
-// своего id, поэтому выдача, начатая заново с 1, отдала бы сквадам чужие
-// ординалы — и поиск по ординалу находил бы ГОРОД вместо сквада. Фикстура
-// держит выдачу выше всякого выданного id ровно так же, как это делает
-// загрузка (save.cpp: «lm.id >= nextMacroSpawnOrdinal → подвинуть»).
-void issue_above(GameState& gs, int id) {
-    if (std::uint32_t(id) >= gs.nextMacroSpawnOrdinal)
-        gs.nextMacroSpawnOrdinal = std::uint32_t(id) + 1u;
-}
-
-// ОСНОВАНИЕ МЕСТА — ОДНА ДВЕРЬ: строка плюс ТЕЛО в store (M-90 шаг 5).
+// ОСНОВАНИЕ МЕСТА — ОДНА ДВЕРЬ: ТЕЛО в store (ломтик F; ординал выдаёт
+// ЕДИНЫЙ эмитент M-37 внутри двери, поэтому «подвинуть выдачу выше id»
+// фикстуре больше нечем и незачем — выдача монотонна по построению).
 // Души — ГОЛОВАМИ в инвентарь ТЕЛА (v122): фабрика мира их не видит,
 // поэтому пасту (worked-число фичи) ставит звонящий, если она ему нужна.
-Landmark& settle(GameState& gs, sm::MacroStore& st, Landmark&& lm) {
-    const int id = lm.id;
-    Landmark& row = birth_landmark(gs, st, std::move(lm));
-    raise_flock_into_roster(place_store(st, row), 100);
-    issue_above(gs, id);
-    return row;
+sm::MacroHandle settle(GameState& gs, sm::MacroStore& st, SquadType kind,
+                       int x, int y, std::int16_t factionIdx = -1) {
+    const sm::MacroHandle h =
+        birth_place(gs, st, kind, x, y, factionIdx);
+    raise_flock_into_roster(st.inventory[h.slot].inv, 100);
+    return h;
 }
 
 // Мир пробы: город и ДВЕ деревни — ближняя и дальняя, чтобы «ближайшая»
@@ -101,24 +83,21 @@ GameState make_world(sm::MacroStore& st) {
     GameState gs{};
     gs.mapW = kW;
     gs.mapH = kH;
-    settle(gs, st, make_landmark(1, LandmarkType::City, 10, 10));
-    settle(gs, st, make_landmark(2, LandmarkType::Village, 20, 10));
-    settle(gs, st, make_landmark(3, LandmarkType::Village, 40, 40));
+    settle(gs, st, SquadType::City, 10, 10);
+    settle(gs, st, SquadType::Village, 20, 10);
+    settle(gs, st, SquadType::Village, 40, 40);
     return gs;
 }
 
-// ПУТЬ ЗАГРУЗКИ — единственный, где строка места законно приходит БЕЗ тела:
-// строки читаются из файла, тела едут записями блока макро-сквадов, и сшивает
-// их relink_place_bodies (place_birth.h). Фикстура снапшота обязана ходить
-// именно этой дверью, иначе она родила бы телам дубли.
+// ПУТЬ ЗАГРУЗКИ ПРИВОЗИТ МЕСТА ЗАПИСЯМИ БЛОКА МАКРО-СКВАДОВ (ломтик F):
+// место есть неподвижный сквад, его тело едет тем же снапшотом, что и всякое
+// другое, и сшивать строку с телом больше нечего. Поэтому мир загрузки —
+// ПУСТОЙ: всё, что в нём стоит, приносит restore_macro_ecs (он же поднимает
+// эмитент выше всякого приехавшего ординала).
 GameState make_loaded_world() {
     GameState gs{};
     gs.mapW = kW;
     gs.mapH = kH;
-    add_landmark(gs, make_landmark(1, LandmarkType::City, 10, 10));
-    add_landmark(gs, make_landmark(2, LandmarkType::Village, 20, 10));
-    add_landmark(gs, make_landmark(3, LandmarkType::Village, 40, 40));
-    for (const Landmark& lm : gs.landmarks) issue_above(gs, lm.id);
     return gs;
 }
 
@@ -259,10 +238,9 @@ void test_snapshot_carries_the_ordinal() {
 
     sm::store_attach(w2, w2Store_.get());
     GameState gs2 = make_loaded_world();
+    // Тела мест приехали теми же записями блока — ровно так же, как на
+    // загрузке игры (main.cpp): второй двери у них больше нет.
     restore_macro_ecs(snap, *w2Store_, gs2);
-    // Тела мест приехали теми же записями блока — строки сшиваются с ними
-    // ровно так же, как на загрузке игры (main.cpp после restore).
-    relink_place_bodies(gs2, *w2Store_);
     const sm::MacroHandle back = find_design(w2, 0);
     CHECK_OR_RETURN(w2Store_->valid(back),
                     "restore re-stamped the design tag from the record");
@@ -279,10 +257,11 @@ void test_king_peasant_births_by_home_faction() {
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
-    GameState gs = make_world(*wStore_);  // города 1 (freefolk) хватает Варнаве
-    Landmark barbCity = make_landmark(9, LandmarkType::City, 50, 20);
-    barbCity.factionIdx = std::int16_t(faction_index("barbarian_north"));
-    settle(gs, *wStore_, std::move(barbCity));
+    GameState gs = make_world(*wStore_);  // freefolk-города хватает Варнаве
+    const sm::MacroHandle barb =
+        settle(gs, *wStore_, SquadType::City, 50, 20,
+               std::int16_t(faction_index("barbarian_north")));
+    const int barbId = int(wStore_->spawnId[barb.slot].index);
     Rng rng(555u);
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
@@ -290,7 +269,7 @@ void test_king_peasant_births_by_home_faction() {
     const sm::MacroHandle king = find_design(w, 1);
     CHECK_OR_RETURN(stk.valid(king),
                     "the king row became one body near the barbarian city");
-    CHECK(stk.runtime[king.slot].homeSettlementId == 9,
+    CHECK(stk.runtime[king.slot].homeSettlementId == barbId,
           "his home is the BARBARIAN city, not the freefolk one — the "
           "faction-prefix filter picked the row's home");
     // Фракция — ОН САМ (вердикт владельца): своя строка одной матрицы,

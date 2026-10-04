@@ -382,9 +382,6 @@ constexpr Row kGameStateRows[] = {
     {"mapH", Rod::WorldVars, "форма мира"},
     {"mapParams", Rod::WorldVars, "параметры генерации (префикс сейва)"},
     {"cityCountTarget", Rod::WorldVars, "параметр генерации"},
-    {"landmarks", Rod::Squads,
-     "место = неподвижный сквад; ФОРМА — штабель Landmark, уничтожается "
-     "целиком в MacroStore (M-90/M-37)"},
     {"markers", Rod::Session,
      "UX-рендер карты (вердикт 2026-09-30); замысел — верхняя система "
      "ФАКТ→ПРЕДИКАТ→ЦЕЛЬ, не достроена; сегодня едет в сейве; строки — "
@@ -512,7 +509,6 @@ constexpr Row kAppRows[] = {
     {"terrain", Rod::Fields, "слой клеток: высота/биом"},
     {"features", Rod::Fields, "слой фич"},
     {"zones", Rod::Fields, "слой опасности"},
-    {"landmarkGrid", Rod::Cache, "запечённое клетка → место"},
     {"treeLayer", Rod::Fields, "живое поле леса (едет в сейве целиком)"},
     {"uploadedTreeRev", Rod::Session, "ревизия GPU-текстуры"},
     {"uploadedKnowledgeRev", Rod::Session, "ревизия GPU-текстуры"},

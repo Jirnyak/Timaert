@@ -46,7 +46,7 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     c.feature = sm::FT_None;
     c.landmark.id = -1;
     c.landmark.size = 0;
-    c.landmark.kind = sm::LandmarkType::None;
+    c.landmark.kind = sm::SquadType::None;
     c.seed = 0x13570000u
         ^ sm::sub::cell_seed(0u, cx, cy);
     return c;
@@ -145,7 +145,7 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
-                             sm::LandmarkType::City,
+                             sm::SquadType::City,
                              /*danger*/0,
                              /*depositsNear*/0,
                              mgr,
@@ -198,7 +198,7 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
-                             sm::LandmarkType::Village,
+                             sm::SquadType::Village,
                              /*danger*/0,
                              /*depositsNear*/0,
                              mgr,

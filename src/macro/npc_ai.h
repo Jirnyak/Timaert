@@ -12,6 +12,7 @@
 #include "macro/state.h"
 #include "macro/spawners.h"
 #include "tables/squad_type.h"
+#include "macro/squad_index.h"
 #include "macro/squad_walk.h"
 #include "macro/tree_layer.h"
 
@@ -58,47 +59,6 @@ inline constexpr float kAiTickGameHours =
 // Public so squad_travel_test derives its march anchor from the same number.
 inline constexpr int kCampBarDivisor = 8;
 
-// ── THE flat bucket grid ─────────────────────────────────────────────────
-//
-// Prefix sums plus one sorted item array — a counting sort, the shape
-// `sub::UnitGrid` already uses for the same job in the battle. It replaces a
-// `vector<vector<T>>`, which is the DOD defect CANON S26 names: a heap
-// container PER CELL, so a 128×128 grid was sixteen thousand vector headers
-// with sixteen thousand possible allocations, rebuilt from scratch at the top
-// of every AI sweep.
-//
-// Items are u32 because both users address by one: a tree grid stores indices
-// into the tree array, a squad grid stores entity bits. Two passes and, after
-// the first build, ZERO allocations — the scatter cursors are a member for
-// exactly that reason.
-struct CellBuckets {
-    int cellSize = 8;
-    int cols = 0;
-    int rows = 0;
-    std::vector<std::uint32_t> begin;    // cols*rows + 1 prefix sums
-    std::vector<std::uint32_t> items;    // bucket-sorted payload
-    std::vector<std::uint32_t> cursor;   // scatter cursors; members = no churn
-
-    std::size_t cell_of(int gx, int gy) const {
-        return std::size_t(gy) * std::size_t(cols) + std::size_t(gx);
-    }
-    const std::uint32_t* cell_begin(int gx, int gy) const {
-        return items.data() + begin[cell_of(gx, gy)];
-    }
-    const std::uint32_t* cell_end(int gx, int gy) const {
-        return items.data() + begin[cell_of(gx, gy) + 1];
-    }
-};
-
-// Size the grid and clear the counts. Call, then `bucket_count` once per item,
-// then `bucket_prefix`, then `bucket_scatter` once per item — the counting
-// sort's three steps, spelled out so a caller cannot do them out of order
-// without noticing.
-void bucket_reset(CellBuckets& g, int mapW, int mapH, int cellSize);
-void bucket_count(CellBuckets& g, int gx, int gy);
-void bucket_prefix(CellBuckets& g, std::size_t itemCount);
-void bucket_scatter(CellBuckets& g, int gx, int gy, std::uint32_t item);
-
 struct TreeGrid {
     CellBuckets grid;
     const std::vector<TreePoint>* trees = nullptr;
@@ -106,53 +66,6 @@ struct TreeGrid {
 
 void build_tree_grid(TreeGrid& g, const std::vector<TreePoint>& trees,
                      int mapW, int mapH, int cellSize = 32);
-
-// КАРКАС КЛЕТОК ПО СКВАДАМ — ЕДИНСТВЕННЫЙ ОТВЕТ МИРА НА «КТО НА ЭТОЙ КЛЕТКЕ»
-// (ЗАКОН КЛЕТОЧНОГО КАРКАСА п.2; вердикт владельца 2026-10-01, M-90 шаг 5).
-//
-// Родился скрэтчем одного драйва («кто рядом» для шага угрозы). Становится
-// носителем МИРА, потому что после флипа мест в сквады вопрос «кто здесь
-// живёт» задаётся той же популяции: место есть неподвижный сквад, и второй
-// сетки под него не заводится. Умирающая `LandmarkGrid` отвечала ровно это
-// по своему, отдельному списку — после шага носителей не два, а один.
-//
-// КАПА НА КЛЕТКУ У НЕГО НЕТ, И ЭТО НЕ НЕДОСМОТР (вердикт владельца
-// 2026-10-01: «я ХОЧУ без капа»). Преаллокации кап на клетку не нужен:
-// полезная нагрузка counting-sort размером с ГЛОБАЛЬНЫЙ кап популяции
-// (`kMacroEntityCap`), и сумма по клеткам переполнить её не может по
-// построению — одна клетка вправе держать хоть всех.
-//
-// И ЗАМЕР ГОВОРИТ, ЧТО КАП БЫЛ БЫ СТЕНОЙ, А НЕ ЗАПАСОМ (зонд M-90 шаг 5,
-// снесён после ответа; три мира, день 48, 13.7-14.4 тыс. тел на 1024²):
-// занята 1 % клеток, в 81 % занятых стоит РОВНО ОДИН сквад, но максимум —
-// **54 на клетку**, и он одинаков на всех трёх сидах, потому что это не
-// хвост распределения, а СТОЛИЦЫ: клеток с одиннадцатью и более ровно
-// десять, их число задано фракциями, их крю — строкой реестра. Кап «с
-// запасом над десятью» отказал бы десяти клеткам мира, а кап «64» стоял бы
-// впритык к структурному числу и пробился бы первым же ростом столицы.
-// Худший бакет 8×8 при этом 63-68 записей — скан девяти кеш-линий на самой
-// плотной клетке мира, то есть сторону бакета замер не двигает.
-//
-// ВЫВОДИМЫЙ, А НЕ ПОДДЕРЖИВАЕМЫЙ. Он пересобирается из `MacroStore` целиком,
-// поэтому соврать дольше одной пересборки не умеет. Цепь через колонку
-// сквада (`cellHead` + `nextInCell`) была бы дешевле по тику и свежее, но
-// она ПОДДЕРЖИВАЕТСЯ записью на каждом ходе: испортившись однажды (сквад в
-// двух цепях, висячая ссылка), она остаётся испорченной молча. Все шрамы
-// этого проекта одного рода — «два писателя» и «устаревшая копия», — и
-// выводимое бьёт поддерживаемое. Это и есть цена, которую мы платим
-// пересборкой.
-struct SquadIndex {
-    CellBuckets grid;
-    // Порядок закона (macro/squad_walk.h): скаттер идёт по ординалу, поэтому
-    // содержимое бакетов не зависит от внутренностей EnTT. Член — чтобы
-    // пересборка на каждый свип не аллоцировала (тот же довод, что cursor).
-    std::vector<SquadWalkEntry> order;
-};
-
-// Читает ТОЛЬКО store: `ecs::World&` стоял здесь, чтобы достать из него
-// `store_of(w)`, — то есть просил целый реестр ради одного поля (M-150).
-void build_squad_index(SquadIndex& g, const MacroStore& st, int mapW,
-                       int mapH, int cellSize = 8);
 
 struct MacroNpcAiRuntime {
     Rng           jitter{0xA1F0u};
@@ -270,7 +183,7 @@ struct CaravanDeal {
 // сделку без канала — гашение то же, факты молчат.
 CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
                                      float capacityKg,
-                                     Landmark& market,
+                                     std::uint16_t marketSlot,
                                      int myTradePct, int theirTradePct,
                                      EconFactSink sink = nullptr,
                                      void* user = nullptr);
@@ -279,7 +192,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
 // капитал», owner 2026-08-30) — each line up to a season's stock at home;
 // what the market cannot supply leaves coin to ride home for the tax graph.
 //
-// `home` — САМ ДОМ, а не его прейскурант. Что почём и чего не хватает,
+// `home` — ТЕЛО дома (невалидный хэндл = у крю нет дома). Что почём и чего не хватает,
 // считается здесь же живьём — теми же двумя дверьми (`season_demand_for` +
 // `stock_price`), которыми это считала снесённая ведомость. Она и решает,
 // что стоит везти: товар берут, если дома за него дают больше, чем просят
@@ -300,8 +213,8 @@ CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
 // по этому огрублённому снимку. Память сквада (ярус 3) веса не несёт нигде.
 CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
                                    float capacityKg,
-                                   Landmark& market,
-                                   const Landmark* home,
+                                   std::uint16_t marketSlot,
+                                   MacroHandle home,
                                    int myTradePct, int theirTradePct,
                                    EconFactSink sink = nullptr,
                                    void* user = nullptr);
@@ -449,7 +362,7 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // закону упряжки (npc.h mount_allowance — по одному на душу) и столько,
 // сколько в стойле стоит. Возвращает, сколько голов вышло. Публично ради
 // свидетеля: он судит ЗАКОН выдачи, не расписание дня ротации.
-int outfit_crew_mounts(MacroStore& st, Landmark& home, MacroHandle crew);
+int outfit_crew_mounts(MacroStore& st, std::uint16_t homeSlot, MacroHandle crew);
 
 int provision_squad(Inventory& store, Inventory& bag, int soldiers,
                     float roundtripCells, float freeCarryKg);

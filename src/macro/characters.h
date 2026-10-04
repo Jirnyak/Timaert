@@ -31,7 +31,7 @@ namespace sm {
 // аппендится сюда и не трогает старые строки (designated-инициализация).
 struct DesignAgenda {
     // Маршрут «дом ↔ ближайший ландмарк этого рода» для Waypoints-моделей:
-    // ординал LandmarkType, −1 = маршрута нет. Абсолютные клетки в строке
+    // ординал SquadType, −1 = маршрута нет. Абсолютные клетки в строке
     // невозможны — мир процедурен, поэтому строка называет РОД цели, а
     // спавн-дверь резолвит её из контекста, как find_valid_spawn.
     std::int8_t routeToNearest = -1;
@@ -43,7 +43,7 @@ struct DesignAgenda {
 // заворот по счёту) или СЛУЧАЙНЫЙ сидом мира (homeIndex < 0); ряд можно
 // сузить префиксом фракции ландмарка (homeFactionPrefix, nullptr = любой:
 // «случайный варварский город» = City + "barbarian"). Когда homeType ==
-// LandmarkType::None — прямая клетка cellX/cellY.
+// SquadType::None — прямая клетка cellX/cellY.
 struct DesignCharacterDef {
     const char*  id;        // authoring-ключ (летопись, консоль) — не рантайм
     const char*  name;      // авторское имя (текст владельца — ДОСЛОВНО)
@@ -57,7 +57,7 @@ struct DesignCharacterDef {
     // Строка ОДНОГО реестра фракций (authoring-ключ); nullptr = фракция
     // ДОМА (царь варварского города — их человек, чей бы город ни выпал).
     const char*  factionId;
-    LandmarkType homeType;  // None = клетка ниже / вершина
+    SquadType homeType;  // None = клетка ниже / вершина
     std::int16_t homeIndex; // N-й ландмарк рода; < 0 = случайный сидом.
                             // При homePeak — ординал ВЕРШИНЫ (0 = высшая).
     const char*  homeFactionPrefix;  // nullptr = род без фильтра фракции
@@ -88,11 +88,11 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         NPCType::Merchant, /*level*/ 3,
         /*authoredSheet*/ false, CharacterSheet{},
         "empire",
-        LandmarkType::City, /*homeIndex*/ 0, /*homeFaction*/ nullptr,
+        SquadType::City, /*homeIndex*/ 0, /*homeFaction*/ nullptr,
         /*homePeak*/ false, /*cell*/ 0, 0,
         AIBehaviour::Waypoints,
         DesignAgenda{.routeToNearest =
-                         std::int8_t(LandmarkType::Village)},
+                         std::int8_t(SquadType::Village)},
     },
     // Царь-крестьянин (владелец, 2026-09-10; тестовая анкета — контент
     // доработается ещё много раз): тело Peasant как есть, лист — бросок
@@ -108,7 +108,7 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         NPCType::Peasant, /*level*/ 70,
         /*authoredSheet*/ false, CharacterSheet{},
         "king_peasant",
-        LandmarkType::City, /*homeIndex: случайный*/ -1,
+        SquadType::City, /*homeIndex: случайный*/ -1,
         /*homeFaction*/ "barbarian",
         /*homePeak*/ false, /*cell*/ 0, 0,
         AIBehaviour::MageHunt,
@@ -125,7 +125,7 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         NPCType::Dragon, /*level*/ 10,
         /*authoredSheet*/ false, CharacterSheet{},
         "dragons",
-        LandmarkType::None, /*homeIndex: вершина №0*/ 0,
+        SquadType::None, /*homeIndex: вершина №0*/ 0,
         /*homeFaction*/ nullptr,
         /*homePeak*/ true, /*cell*/ 0, 0,
         AIBehaviour::LairSorties,
@@ -136,7 +136,7 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         NPCType::Dragon, /*level*/ 10,
         /*authoredSheet*/ false, CharacterSheet{},
         "dragons",
-        LandmarkType::None, /*homeIndex: вершина №1*/ 1,
+        SquadType::None, /*homeIndex: вершина №1*/ 1,
         /*homeFaction*/ nullptr,
         /*homePeak*/ true, /*cell*/ 0, 0,
         AIBehaviour::LairSorties,
@@ -147,7 +147,7 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         NPCType::Dragon, /*level*/ 10,
         /*authoredSheet*/ false, CharacterSheet{},
         "dragons",
-        LandmarkType::None, /*homeIndex: вершина №2*/ 2,
+        SquadType::None, /*homeIndex: вершина №2*/ 2,
         /*homeFaction*/ nullptr,
         /*homePeak*/ true, /*cell*/ 0, 0,
         AIBehaviour::LairSorties,
@@ -172,14 +172,14 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
 // ремесло + ранг). Деревня не чеканит не потому, что она деревня, а потому
 // что её кузнечный ранг ноль. Стены по виду больше нет — есть руки.
 //
-// Столицы отдельным родом ещё не существует (LandmarkType её не знает;
+// Столицы отдельным родом ещё не существует (SquadType её не знает;
 // столица сегодня — город без сюзерена), так что её строка придёт вместе с
 // родом. Незаполненный род = анкета в нулях: место, которое не умеет ничего,
 // — честный случай, а не дыра.
-inline constexpr std::array<CharacterSheet, std::size_t(LandmarkType::Count)>
+inline constexpr std::array<CharacterSheet, std::size_t(SquadType::Count)>
 kLandmarkSheets = [] {
-    std::array<CharacterSheet, std::size_t(LandmarkType::Count)> a{};
-    CharacterSheet& city = a[std::size_t(LandmarkType::City)];
+    std::array<CharacterSheet, std::size_t(SquadType::Count)> a{};
+    CharacterSheet& city = a[std::size_t(SquadType::City)];
     // Город умеет ВСЁ, чем сегодня живёт экономика, и чеканит: кузнечный
     // ранг дотягивается до монетной строки (kRecipes minRank 30).
     city.skills[SkillId::Blacksmith] = 30;
@@ -195,7 +195,7 @@ kLandmarkSheets = [] {
     // — торговать город умеет как кузнечить).
     city.attributes[AttributeId::Cha] = 10;
     city.skills[SkillId::Trade]       = 30;
-    CharacterSheet& village = a[std::size_t(LandmarkType::Village)];
+    CharacterSheet& village = a[std::size_t(SquadType::Village)];
     // ДЕРЕВНЯ ПРОИЗВОДИТ ПО ТОЙ ЖЕ МОДЕЛИ, И МЕНЬШЕ — ЭМЕРДЖЕНТНО (владелец,
     // 2026-09-21, дословно: «пусть деревня тоже производит, просто чеканить
     // монеты не может — типа крутой рецепт, не хардкод, а потолок по скилам;
@@ -239,8 +239,8 @@ kLandmarkSheets = [] {
     return a;
 }();
 
-inline constexpr const CharacterSheet& landmark_sheet(LandmarkType t) {
-    return kLandmarkSheets[std::size_t(t) < std::size_t(LandmarkType::Count)
+inline constexpr const CharacterSheet& landmark_sheet(SquadType t) {
+    return kLandmarkSheets[std::size_t(t) < std::size_t(SquadType::Count)
                                ? std::size_t(t) : 0];
 }
 

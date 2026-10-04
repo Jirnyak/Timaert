@@ -92,7 +92,7 @@ struct DungeonSession {
     int doorsInCell = 0;
     // The door cell's landmark KIND — whose crowd stripe the household rolls
     // (§42: the interior's people are the PLACE's people, not always a town's).
-    LandmarkType landmarkKind = LandmarkType::None;
+    SquadType landmarkKind = SquadType::None;
     std::uint16_t faction = 0;    // owning kingdom's registry faction index
 };
 

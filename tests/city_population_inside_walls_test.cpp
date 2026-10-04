@@ -98,7 +98,7 @@ constexpr float kOuterHalfFloor =
 // A cell resolver that puts ONE settlement of `pop` souls on cell (0,0) and
 // leaves the eight neighbours plain meadow — so the composite the manager hands
 // the spawner carries a real generated town, walls and all.
-sm::sub::CellResolver settlement_resolver(sm::LandmarkType kind,
+sm::sub::CellResolver settlement_resolver(sm::SquadType kind,
                                           int pop) {
     return [kind, pop](int cx, int cy) {
         sm::sub::CellContext c{};
@@ -110,7 +110,7 @@ sm::sub::CellResolver settlement_resolver(sm::LandmarkType kind,
         c.feature = sm::FT_None;
         c.landmark.id = -1;
         c.landmark.size = 0;
-        c.landmark.kind = sm::LandmarkType::None;
+        c.landmark.kind = sm::SquadType::None;
         c.treeCount = 0;
         if (cx == 0 && cy == 0) {
             c.landmark.id = 7;
@@ -166,7 +166,7 @@ std::array<float, kWallBins> outer_wall_profile(
 }
 
 Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
-               sm::LandmarkType landmark, int pop, std::uint32_t seed,
+               sm::SquadType landmark, int pop, std::uint32_t seed,
                const sm::WorldTime& now) {
     Spread s{};
     sm::ecs::World world{};
@@ -195,7 +195,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              &homeSouls,
                              now);
 
-    const bool city = landmark == sm::LandmarkType::City;
+    const bool city = landmark == sm::SquadType::City;
     const float radius = sm::sub::settlement_population_radius(city, pop);
     // The furthest a place of this size may ever reach (sub/city_layout.h).
     // For a village that is its palisade, which stands OUTSIDE the guaranteed
@@ -331,13 +331,13 @@ int main() {
     {
         sm::sub::clear_saved_subworlds();
         sm::sub::SeamlessSubworldManager mgr;
-        mgr.init(0, 0, settlement_resolver(sm::LandmarkType::City, 1200));
+        mgr.init(0, 0, settlement_resolver(sm::SquadType::City, 1200));
         mgr.consume_composite_dirty();
         // NOON, because the spatial assertions below want the fullest street
         // the town ever has — at midnight the crowd is a handful and a claim
         // about angular coverage would be measuring the hour, not the layout.
         const sm::WorldTime noon = sm::world_time_at(1, 12, 0);
-        const Spread s = measure(mgr, sm::LandmarkType::City, 1200,
+        const Spread s = measure(mgr, sm::SquadType::City, 1200,
                                  0xC17015Eu, noon);
         sm::sub::clear_saved_subworlds();
 
@@ -382,10 +382,10 @@ int main() {
         int streetAt[24] = {};
         for (int hour = 0; hour < 24; ++hour) {
             const sm::WorldTime t = sm::world_time_at(1, hour, 0);
-            const Spread h = measure(mgr, sm::LandmarkType::City, 1200,
+            const Spread h = measure(mgr, sm::SquadType::City, 1200,
                                      0xC17015Eu, t);
             const int keptIn = sm::sub::interior_reserve_for_cell(
-                mgr.structures(), sm::LandmarkType::City,
+                mgr.structures(), sm::SquadType::City,
                 /*worldSeed*/0xC17015Eu, 0, 0,
                 float(sm::sub::kCellSize), float(sm::sub::kCellSize), 1200, t);
             streetAt[hour] = h.citizens;
@@ -424,10 +424,10 @@ int main() {
         sm::sub::clear_saved_subworlds();
         sm::sub::SeamlessSubworldManager mgr;
         mgr.init(0, 0,
-                 settlement_resolver(sm::LandmarkType::Village, 400));
+                 settlement_resolver(sm::SquadType::Village, 400));
         mgr.consume_composite_dirty();
         const sm::WorldTime vnoon = sm::world_time_at(1, 12, 0);
-        const Spread s = measure(mgr, sm::LandmarkType::Village, 400,
+        const Spread s = measure(mgr, sm::SquadType::Village, 400,
                                  0x71114Eu, vnoon);
         sm::sub::clear_saved_subworlds();
 
@@ -459,10 +459,10 @@ int main() {
         // because at noon a place is meant to keep nobody at home and "the
         // hearths are empty" is the correct answer rather than a fault.
         const sm::WorldTime vnight = sm::world_time_at(1, 0, 0);
-        const Spread night = measure(mgr, sm::LandmarkType::Village, 400,
+        const Spread night = measure(mgr, sm::SquadType::Village, 400,
                                      0x71114Eu, vnight);
         const int kept = sm::sub::interior_reserve_for_cell(
-            mgr.structures(), sm::LandmarkType::Village,
+            mgr.structures(), sm::SquadType::Village,
             /*worldSeed*/0x71114Eu, 0, 0,
             float(sm::sub::kCellSize), float(sm::sub::kCellSize), 400, vnight);
         if (kept <= 0) return fail("a 400-soul village kept nobody at home at night");
@@ -472,7 +472,7 @@ int main() {
             return fail("the village's day pump created or destroyed people");
         }
         const int reserve = sm::sub::interior_reserve_for_cell(
-            mgr.structures(), sm::LandmarkType::Village,
+            mgr.structures(), sm::SquadType::Village,
             /*worldSeed*/0x71114Eu, 0, 0,
             float(sm::sub::kCellSize), float(sm::sub::kCellSize), 400, vnoon);
         if (s.citizens + reserve != 400) {

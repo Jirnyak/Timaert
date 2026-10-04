@@ -14,7 +14,8 @@
 
 #include "macro/nav_field.h"
 #include "macro/pathfinding.h"
-#include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/squad.h"         // set_place_kind — смена вида места
 #include "macro/state.h"
 #include "macro/store.h"
 #include "core/torus.h"
@@ -27,15 +28,26 @@ namespace {
 
 constexpr int W = 64, H = 64;
 
-// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад: его склад —
-// колонка ТЕЛА (M-90 шаг 5), значит душам нужен store. Фикстуры делят его,
-// потому что их тела друг друга не видят (строка носит СВОЙ bodyBits), а
-// профиль памяти store не зависит от населения (ЗАКОН СТАБИЛЬНОСТИ) — по
-// store на фикстуру было бы гигабайтами за ничто.
+// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад, и ломтиком F
+// оно ЕСТЬ слот этого store целиком — ни строки рядом. Фикстуры по-прежнему
+// делят один блок, потому что профиль памяти store не зависит от населения
+// (ЗАКОН СТАБИЛЬНОСТИ) и по store на фикстуру было бы гигабайтами за ничто;
+// но разделяет их теперь не чужой bodyBits, а `store_reset` в начале каждой
+// сборки: мир фикстуры начинается ПУСТЫМ, иначе её шесть округ считали бы
+// и чужие.
 sm::MacroStore& places() {
     static std::unique_ptr<sm::MacroStore> st = sm::make_macro_store();
     return *st;
 }
+
+// Чем мир родил своё место: адрес для ходока, ординал для округи, слот для
+// двери смены вида. Все три — колонки ТЕЛА, и фикстура запоминает их при
+// рождении, потому что выбирать ординал ей больше нечем (эмитент M-37).
+struct Place {
+    int x = 0, y = 0;
+    int id = 0;
+    std::uint16_t slot = 0;
+};
 
 // Транслируемая пёстрая цена: функция ОТНОСИТЕЛЬНОЙ координаты, сдвиг мира
 // сдвигает и её — иначе инвариантность нечего проверять.
@@ -56,6 +68,7 @@ struct Fixture {
     sm::PathCostData pc;
     sm::NavWorld nav;
     sm::MacroWorld mw{};
+    std::vector<Place> seeded;
 
     void build(int shiftX, int shiftY) {
         gs.mapW = W;
@@ -79,21 +92,23 @@ struct Fixture {
         }
         const int lmx[6] = {2, 30, 50, 63, 5, 40};
         const int lmy[6] = {2, 2, 50, 32, 60, 20};
-        gs.landmarks.clear();
+        sm::store_reset(places());   // мир фикстуры начинается пустым
+        seeded.clear();
         for (int i = 0; i < 6; ++i) {
-            sm::Landmark lm{};
-            lm.id = i + 1;
-            lm.type = i % 2 ? sm::LandmarkType::City
-                            : sm::LandmarkType::Village;
-            lm.x = sm::wrapi(lmx[i] + shiftX, W);
-            lm.y = sm::wrapi(lmy[i] + shiftY, H);
+            const int x = sm::wrapi(lmx[i] + shiftX, W);
+            const int y = sm::wrapi(lmy[i] + shiftY, H);
+            const sm::MacroHandle h = sm::birth_place(
+                gs, places(),
+                i % 2 ? sm::SquadType::City : sm::SquadType::Village,
+                x, y);
             // Души — дверью мира (v122): паства в worked, головы
             // в инвентарь ТЕЛА; жилое место гейтится именно пастой.
-            sm::settle_souls(gs, places(),
-                             sm::birth_landmark(gs, places(), std::move(lm)),
-                             100);
+            sm::settle_souls(gs, places(), h.slot, 100);
+            seeded.push_back(
+                Place{x, y, int(places().spawnId[h.slot].index), h.slot});
         }
         mw.gs = &gs;
+        mw.store = &places();
         mw.pathCost = &pc;
         sm::nav_bake(mw, nav);
     }
@@ -119,24 +134,24 @@ struct Fixture {
                     pc.water[std::size_t(y) * W + x] = 0;
             }
         }
-        gs.landmarks.clear();
-        sm::Landmark main{};
-        main.id = 1;
-        main.type = sm::LandmarkType::City;
-        main.x = 5;
-        main.y = 32;
-        sm::settle_souls(gs, places(),
-                         sm::birth_landmark(gs, places(), std::move(main)),
-                         100);
-        sm::Landmark isle{};
-        isle.id = 2;
-        isle.type = sm::LandmarkType::Village;
-        isle.x = 40;
-        isle.y = 32;
-        sm::settle_souls(gs, places(),
-                         sm::birth_landmark(gs, places(), std::move(isle)),
-                         100);
+        sm::store_reset(places());   // мир фикстуры начинается пустым
+        seeded.clear();
+        {
+            const sm::MacroHandle h =
+                sm::birth_place(gs, places(), sm::SquadType::City, 5, 32);
+            sm::settle_souls(gs, places(), h.slot, 100);
+            seeded.push_back(
+                Place{5, 32, int(places().spawnId[h.slot].index), h.slot});
+        }
+        {
+            const sm::MacroHandle h = sm::birth_place(
+                gs, places(), sm::SquadType::Village, 40, 32);
+            sm::settle_souls(gs, places(), h.slot, 100);
+            seeded.push_back(
+                Place{40, 32, int(places().spawnId[h.slot].index), h.slot});
+        }
         mw.gs = &gs;
+        mw.store = &places();
         mw.pathCost = &pc;
         sm::nav_bake(mw, nav);
     }
@@ -204,8 +219,8 @@ int main() {
     for (int a = 0; a < 6; ++a) {
         for (int b = 0; b < 6; ++b) {
             if (a == b) continue;
-            const auto& A = base.gs.landmarks[std::size_t(a)];
-            const auto& B = base.gs.landmarks[std::size_t(b)];
+            const Place& A = base.seeded[std::size_t(a)];
+            const Place& B = base.seeded[std::size_t(b)];
             const int steps = base.walk(A.x, A.y, B.x, B.y);
             CHECK(steps > 0, "landmark pair arrives");
             pairSteps[a][b] = steps;
@@ -221,7 +236,7 @@ int main() {
         const int y = int(lcg(rng) % H);
         if (!base.standable(x, y)) continue;
         if (sm::nav_region_at(base.nav, x, y) == sm::kNavNoRegion) continue;
-        const auto& T = base.gs.landmarks[lcg(rng) % 6];
+        const Place& T = base.seeded[lcg(rng) % 6];
         CHECK(base.walk(x, y, T.x, T.y) >= 0,
               "a stranded walker finds its way out");
         ++walked;
@@ -236,8 +251,8 @@ int main() {
     for (int a = 0; a < 6; ++a) {
         for (int b = 0; b < 6; ++b) {
             if (a == b) continue;
-            const auto& A = shifted.gs.landmarks[std::size_t(a)];
-            const auto& B = shifted.gs.landmarks[std::size_t(b)];
+            const Place& A = shifted.seeded[std::size_t(a)];
+            const Place& B = shifted.seeded[std::size_t(b)];
             const int steps = shifted.walk(A.x, A.y, B.x, B.y);
             CHECK(steps > 0, "shifted pair arrives");
             CHECK(std::abs(steps - pairSteps[a][b]) <= 2,
@@ -356,24 +371,21 @@ int main() {
         // деревня, ставшая руиной, живой считается по-прежнему — сторож не
         // видел НИЧЕГО, хотя реестровая строка места сменилась. Событию
         // такое не сойдёт.
-        sm::set_landmark_type(f.gs, f.gs.landmarks[1],
-                              sm::LandmarkType::Ruin);
-        sm::Landmark born{};
-        born.id = 3;
-        born.type = sm::LandmarkType::Village;
-        born.x = 40;
-        born.y = 32;
-        sm::settle_souls(f.gs, places(),
-                         sm::birth_landmark(f.gs, places(), std::move(born)),
-                         100);
+        sm::set_place_kind(f.gs, places(), f.seeded[1].slot,
+                           sm::SquadType::Ruin);
+        const int ruinId = f.seeded[1].id;
+        const sm::MacroHandle bornH =
+            sm::birth_place(f.gs, places(), sm::SquadType::Village, 40, 32);
+        sm::settle_souls(f.gs, places(), bornH.slot, 100);
+        const int bornId = int(places().spawnId[bornH.slot].index);
         CHECK(sm::nav_ensure(f.mw, f.nav),
               "ensure still answers after the swap");
         CHECK(f.nav.regionOf[0] != mark,
               "death plus birth in one window still rebakes");
         bool sawDead = false, sawBorn = false;
         for (std::int32_t lid : f.nav.regionLandmarkId) {
-            sawDead = sawDead || lid == 2;
-            sawBorn = sawBorn || lid == 3;
+            sawDead = sawDead || lid == ruinId;
+            sawBorn = sawBorn || lid == bornId;
         }
         CHECK(sawDead && sawBorn,
               "the ruin still stands and seeds its region, the newborn too");

@@ -55,7 +55,7 @@ struct FeatureLayer;
 struct ZoneLayer;
 struct PathCostData;
 struct TreeGrid;
-struct LandmarkGrid;
+struct SquadIndex;
 struct NavWorld;
 namespace ecs { struct World; }
 
@@ -77,8 +77,10 @@ struct MacroWorld {
     const PathCostData* pathCost = nullptr; // baked SP-weight grid + water flag
     const TreeGrid*     treeGrid = nullptr; // tree-point buckets (npc_ai.h) —
                                             //   the woodcutter's target search
-    const LandmarkGrid* landmarks = nullptr; // baked cell → landmark index
-                                             //   (macro/landmark_grid.h)
+    const SquadIndex* squads = nullptr; // каркас клеток по сквадам — ответ
+                                        //   мира «кто на клетке», включая
+                                        //   неподвижные (settlement_at,
+                                        //   macro/squad_index.h)
     NavWorld* nav = nullptr;   // запечённая навигация: округи + порталы +
                                //   граф (macro/nav_field.h, CANON S7); null =
                                //   походка падает в жадный шаг — нулевой

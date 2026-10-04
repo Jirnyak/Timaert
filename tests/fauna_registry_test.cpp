@@ -113,7 +113,7 @@ int main() {
     // empty tower.
     {
         bool seen[std::size_t(sm::NPCType::Count)] = {};
-        auto sweep = [&](sm::LandmarkType place, sm::Biome biome, bool forest,
+        auto sweep = [&](sm::SquadType place, sm::Biome biome, bool forest,
                          std::uint8_t danger, std::uint32_t salt) {
             sm::SpawnContext ctx{};
             ctx.biome = biome;
@@ -136,18 +136,18 @@ int main() {
         // one in hell), the crowd of a town, and the open biomes.
         for (int d = 0; d <= 255; d += 15) {
             const auto danger = std::uint8_t(d);
-            sweep(sm::LandmarkType::Spire,   sm::Meadow,   false, danger, 1u);
-            sweep(sm::LandmarkType::Ruin,    sm::Meadow,   false, danger, 2u);
-            sweep(sm::LandmarkType::City,    sm::Meadow,   false, danger, 3u);
-            sweep(sm::LandmarkType::None,    sm::Mountain, false, danger, 4u);
-            sweep(sm::LandmarkType::None,    sm::Swamp,    false, danger, 5u);
-            sweep(sm::LandmarkType::None,    sm::Desert,   false, danger, 6u);
-            sweep(sm::LandmarkType::None,    sm::Steppe,   false, danger, 7u);
-            sweep(sm::LandmarkType::None,    sm::Valley,   true,  danger, 8u);
-            sweep(sm::LandmarkType::None,    sm::Taiga,    false, danger, 9u);
-            sweep(sm::LandmarkType::None,    sm::Tundra,   false, danger, 10u);
-            sweep(sm::LandmarkType::None,    sm::Snow,     false, danger, 11u);
-            sweep(sm::LandmarkType::None,    sm::Tropics,  false, danger, 12u);
+            sweep(sm::SquadType::Spire,   sm::Meadow,   false, danger, 1u);
+            sweep(sm::SquadType::Ruin,    sm::Meadow,   false, danger, 2u);
+            sweep(sm::SquadType::City,    sm::Meadow,   false, danger, 3u);
+            sweep(sm::SquadType::None,    sm::Mountain, false, danger, 4u);
+            sweep(sm::SquadType::None,    sm::Swamp,    false, danger, 5u);
+            sweep(sm::SquadType::None,    sm::Desert,   false, danger, 6u);
+            sweep(sm::SquadType::None,    sm::Steppe,   false, danger, 7u);
+            sweep(sm::SquadType::None,    sm::Valley,   true,  danger, 8u);
+            sweep(sm::SquadType::None,    sm::Taiga,    false, danger, 9u);
+            sweep(sm::SquadType::None,    sm::Tundra,   false, danger, 10u);
+            sweep(sm::SquadType::None,    sm::Snow,     false, danger, 11u);
+            sweep(sm::SquadType::None,    sm::Tropics,  false, danger, 12u);
         }
         int reachable = 0;
         for (int i = 0; i < n; ++i) {
@@ -169,7 +169,7 @@ int main() {
         // so ordinary rebalancing does not trip it, but a stripe collapsing
         // back to a handful does.
         sm::SpawnContext spire{};
-        spire.landmark = sm::LandmarkType::Spire;
+        spire.landmark = sm::SquadType::Spire;
         spire.biome = sm::Mountain;
         spire.danger = 200;
         bool inThrong[std::size_t(sm::NPCType::Count)] = {};
@@ -196,7 +196,7 @@ int main() {
     {
         sm::SpawnContext ruinCell{};
         ruinCell.biome = sm::Biome::Meadow;
-        ruinCell.landmark = sm::LandmarkType::Ruin;
+        ruinCell.landmark = sm::SquadType::Ruin;
         ruinCell.danger = 128;   // середина руинной полосы реестра (51..229)
         int picks = 0, nonDemon = 0, mismatched = 0;
         for (std::uint32_t s = 0; s < 256u; ++s) {

@@ -37,7 +37,7 @@ void dispatch_generate(const CellContext& ctx,
                        const Biome* nbBiome5,
                        const std::uint8_t nbFeature[9],
                        SubworldMapData& out,
-                       const LandmarkType* nbLandmark = nullptr,
+                       const SquadType* nbLandmark = nullptr,
                        const int* nbTreeCount = nullptr,
                        const float* nbFertility = nullptr);
 

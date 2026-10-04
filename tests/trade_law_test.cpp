@@ -18,8 +18,7 @@
 
 #include "check.h"
 #include "macro/labour.h"   // settle_souls — двери душ
-#include "macro/place_birth.h"   // birth_landmark — место рождается с ТЕЛОМ
-#include "macro/place_body.h"    // place_store — склад места колонкой тела
+#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/agent_memory.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
@@ -54,39 +53,28 @@ int main() {
         MacroStore& st = *wStore_;
         sm::store_attach(w, wStore_.get());
 
-        constexpr int kAcrossSeamId = 2;   // ответ, который ждёт закон ниже
+        // ОРДИНАЛЫ ВЫДАЁТ ЭМИТЕНТ (ломтик F), и это ПОЧИНКА фикстуры: первый
+        // город носил рукописный `id = 0`, то есть ординал «никто» (ЗАКОН
+        // СЛОВАРЯ п.6) — ровно тем номером, которым дверь отвечает «станции
+        // нет». Теперь выдача честная, с единицы.
+        const MacroHandle home =
+            birth_place(gs, st, SquadType::City, 60, 32);  // near east seam
+        const int kHomeId = int(st.spawnId[home.slot].index);
+        st.inventory[home.slot].inv.add("food", 2048);
+        // Души — дверью мира (v122): паства в worked, головы в инвентарь.
+        settle_souls(gs, st, home.slot, 100);
 
-        {
-            Landmark city{};
-            city.type = LandmarkType::City;
-            city.id = 0;
-            city.x = 60;                     // near the east seam
-            city.y = 32;
-            Landmark& row = birth_landmark(gs, st, std::move(city));
-            place_store(st, row).add("food", 2048);
-            // Души — дверью мира (v122): паства в worked, головы в инвентарь.
-            settle_souls(gs, st, row, 100);
-        }
+        // 30 cells west, same side — far enough that the comparable-distance
+        // coin flip stays out.
+        const MacroHandle sameSide =
+            birth_place(gs, st, SquadType::City, 30, 32);
+        settle_souls(gs, st, sameSide.slot, 50);
 
-        {
-            Landmark sameSide{};             // 30 cells west, same side — far
-            sameSide.type = LandmarkType::City;   // enough that the comparable-
-            sameSide.id = 1;                      // distance coin flip stays out
-            sameSide.x = 30;
-            sameSide.y = 32;
-            Landmark& row = birth_landmark(gs, st, std::move(sameSide));
-            settle_souls(gs, st, row, 50);
-        }
-
-        {
-            Landmark acrossSeam{};           // 6 cells east THROUGH the seam
-            acrossSeam.type = LandmarkType::City;
-            acrossSeam.id = kAcrossSeamId;
-            acrossSeam.x = 2;            // 60 -> 63|0 -> 2 = 6 cells by torus
-            acrossSeam.y = 32;
-            Landmark& row = birth_landmark(gs, st, std::move(acrossSeam));
-            settle_souls(gs, st, row, 50);
-        }
+        // 6 cells east THROUGH the seam: 60 -> 63|0 -> 2.
+        const MacroHandle acrossSeam =
+            birth_place(gs, st, SquadType::City, 2, 32);
+        const int kAcrossSeamId = int(st.spawnId[acrossSeam.slot].index);
+        settle_souls(gs, st, acrossSeam.slot, 50);
 
         // ЗАКОН ПИНАЕТСЯ ПРЯМО В СВОЮ ДВЕРЬ (2026-09-21): прежде его
         // водил ИИ каравана, а род каравана снесён — караван оказался
@@ -101,8 +89,8 @@ int main() {
         ctx.rng = &roll;
         float sx = 0.0f, sy = 0.0f;
         const int pick = pick_next_station_(ctx, MacroPos{60.0f, 32.0f},
-                                            /*currentId*/0, /*prevId*/-1,
-                                            sx, sy);
+                                            /*currentId*/kHomeId,
+                                            /*prevId*/-1, sx, sy);
         CHECK(pick >= 0, "the trade door named a station at all");
         CHECK(pick == kAcrossSeamId,
               "ЗАКОН АДРЕСА: the city 6 cells away THROUGH the seam beats the "

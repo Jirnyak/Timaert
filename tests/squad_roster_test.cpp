@@ -19,23 +19,17 @@
 namespace {
 
 // Свидетель рождает своё предусловие САМ (AGENTS §8 п.11): место приходит в
-// мир одной дверью — строка плюс ТЕЛО в store, — и души кладутся головами в
-// инвентарь ТЕЛА, потому что иного склада у места больше нет (M-90 шаг 5).
-sm::Landmark& make_settlement(sm::GameState& gs, sm::MacroStore& st,
-                              int id, int x, int y) {
-    sm::Landmark s{};
-    s.type = sm::LandmarkType::City;
-    s.id = id;
-    std::snprintf(s.name, sizeof s.name, "Test Settlement");
-    s.x = x;
-    s.y = y;
-    s.factionIdx = 0;
-    sm::Landmark& row = sm::birth_landmark(gs, st, std::move(s));
+// мир одной дверью — ТЕЛОМ в store (ломтик F: строки места больше нет), — и
+// души кладутся головами в инвентарь того же тела.
+sm::MacroHandle make_settlement(sm::GameState& gs, sm::MacroStore& st,
+                                int x, int y) {
+    const sm::MacroHandle h = sm::birth_place(gs, st, sm::SquadType::City,
+                                              x, y, 0, "Test Settlement");
     // Души — ГОЛОВАМИ в инвентарь тела (v122): фабрика мира не
     // видит, поэтому пасту (worked-число фичи) ставит звонящий,
     // если она ему нужна; домашние души живут в теле места.
-    sm::raise_flock_into_roster(sm::place_store(st, row), 1000);
-    return row;
+    sm::raise_flock_into_roster(st.inventory[h.slot].inv, 1000);
+    return h;
 }
 
 // Terrain the spawner treats as absent — spawn positions fall back safely.
@@ -55,7 +49,7 @@ void test_every_macro_npc_is_a_squad_of_one() {
     sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    make_settlement(gs, sm::store_of(world), 7, 8, 8);
+    make_settlement(gs, sm::store_of(world), 8, 8);
 
     // ТЕЛА МЕСТ СТОЯТ В ТОМ ЖЕ STORE (M-90 шаг 5), и закон этого свидетеля —
     // про СПАВН-ДВЕРЬ, а не про всякое тело мира: город законно носит в

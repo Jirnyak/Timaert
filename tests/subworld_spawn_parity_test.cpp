@@ -89,7 +89,7 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     c.feature = sm::FT_None;
     c.landmark.id = -1;
     c.landmark.size = 0;
-    c.landmark.kind = sm::LandmarkType::None;
+    c.landmark.kind = sm::SquadType::None;
     c.seed = 0x24680000u
         ^ sm::sub::cell_seed(0u, cx, cy);
     return c;
@@ -102,7 +102,7 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
 std::vector<SpawnRecord> expected_cell_fauna(
     const sm::sub::SeamlessSubworldManager& mgr,
     sm::Biome biome,
-    sm::LandmarkType landmark,
+    sm::SquadType landmark,
     std::uint8_t danger,
     int ox,
     int oy,
@@ -296,7 +296,7 @@ void spawn_cell_at(sm::ecs::World& world,
                    int ox, int oy, int absCx, int absCy) {
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
     sm::sub::spawn_cell_npcs(world, c.biome, c.feature,
-                             sm::LandmarkType::None, /*danger*/0, /*depositsNear*/0, mgr,
+                             sm::SquadType::None, /*danger*/0, /*depositsNear*/0, mgr,
                              ox, oy, c.seed, /*worldSeed*/c.seed,
                              std::uint16_t(sm::faction_index("empire")),
                              0,
@@ -365,7 +365,7 @@ bool run_city_population_projection_case(
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              sm::FT_None,
-                             sm::LandmarkType::City,
+                             sm::SquadType::City,
                              /*danger*/0,
                              /*depositsNear*/0,
                              mgr,
@@ -447,7 +447,7 @@ bool run_population_does_not_scale_bodies_case(
         sm::raise_flock_into_roster(homeSouls, t.pop);
         sm::sub::spawn_cell_npcs(world,
                                  sm::Biome::Meadow, sm::FT_None,
-                                 sm::LandmarkType::City, /*danger*/0, /*depositsNear*/0, mgr,
+                                 sm::SquadType::City, /*danger*/0, /*depositsNear*/0, mgr,
                                  /*ox*/0, /*oy*/0,
                                  0xFACEB00Cu,
                                  /*worldSeed*/0xFACEB00Cu,
@@ -881,7 +881,7 @@ int main() {
 
     const std::vector<SpawnRecord> expected =
         expected_cell_fauna(mgr, sm::Biome::Meadow,
-                            sm::LandmarkType::None, /*danger*/0, 0, 0,
+                            sm::SquadType::None, /*danger*/0, 0, 0,
                             centre.seed, 0);
     const std::vector<SpawnRecord> actual = actual_fauna(world);
     const int cmp = compare_records(expected, actual);
@@ -1000,22 +1000,22 @@ int main() {
         for (int pop : pops) {
             for (int storeys = 1; storeys <= 5 && holds; ++storeys) {
                 const int insideTotal =
-                    pop >> sm::landmark_def(sm::LandmarkType::Spire)
+                    pop >> sm::landmark_def(sm::SquadType::Spire)
                                .crowdInsideShift;
                 const int outside = pop - insideTotal;
                 int inside = 0;
                 for (int level = 0; level < storeys; ++level) {
                     inside += sm::sub::interior_garrison_share(
-                        sm::LandmarkType::Spire, pop, storeys, level);
+                        sm::SquadType::Spire, pop, storeys, level);
                 }
                 holds = (outside + inside == pop);
             }
             if (!holds) break;
         }
         CHECK(holds, "throng + storeys == the spire's population, always");
-        CHECK(sm::sub::interior_garrison_share(sm::LandmarkType::Spire,
+        CHECK(sm::sub::interior_garrison_share(sm::SquadType::Spire,
                                                100, 3, 0)
-                  >= sm::sub::interior_garrison_share(sm::LandmarkType::Spire,
+                  >= sm::sub::interior_garrison_share(sm::SquadType::Spire,
                                                       100, 3, 2),
               "a share remainder lands on the lower floors, never vanishes");
     }

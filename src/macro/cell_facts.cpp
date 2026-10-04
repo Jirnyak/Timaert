@@ -60,34 +60,35 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
                                               std::uint32_t(idx));
     }
 
-    // КТО ЗДЕСЬ ЖИВЁТ — ординал личности из запечённой сетки (один взгляд,
-    // один порядок приоритета); живые поля названного — паства, тир, фракция,
-    // выкачанность — достаются из `GameState` СЕЙЧАС, потому что плывут
-    // ежедневно. Поиск по ординалу идёт только на той редкой клетке, которую
-    // сетка объявила занятой.
-    //
-    // Гейт был `lm.type != None` по КОПИИ РОДА в строке сетки — и копия была
-    // колонкой-сиротой: род, который сюда ложится, всё равно берётся из
-    // колонки самой записи (`rec->type` ниже), а «есть ли тут кто-то» говорит
-    // сам ординал (0 = никто, ЗАКОН НУЛЯ-ОРДИНАЛА). Копия умерла (M-90 шаг 4).
-    const std::int32_t lmId = w.landmarks ? w.landmarks->at(f.x, f.y) : 0;
+    // КТО ЗДЕСЬ ЖИВЁТ — тело неподвижного сквада из КАРКАСА КЛЕТОК (ломтик
+    // F: запечённая сетка мест умерла, ответ один и тот же порядок
+    // приоритета несёт settlement_at); живые поля названного — паства, тир,
+    // фракция, выкачанность — достаются из `GameState` СЕЙЧАС, потому что
+    // плывут ежедневно.
+    const MacroHandle who = (w.squads && w.store)
+        ? settlement_at(*w.squads, *w.store, f.x, f.y) : MacroHandle{};
+    const std::int32_t lmId = (w.store && w.store->valid(who))
+        ? std::int32_t(w.store->spawnId[who.slot].index) : 0;
     if (w.gs && lmId != 0) {
-        // One roster, one find (CANON S9, 2026-08-29): the by-kind switch
-        // over three vectors died with the vectors. Population and tier are
-        // SEPARATE fields (§42): `size` used to carry the spire's tier,
-        // which was harmless only while the population door was locked.
-        if (const Landmark* rec = landmark_by_id(*w.gs, lmId)) {
-            const bool spire = rec->type == LandmarkType::Spire;
-            // The spell is the cell's WORKED number (ordinal+1, 0 = drained;
-            // закон нуля-ординала). A drained spire forgets its spell like a
-            // worked-out vein, so its tier honestly reads 0.
-            const int orb = spire ? worked_read(*w.gs, f.x, f.y) : 0;
-            const int tier = orb > 0
-                ? (orb <= kSpellCount ? kSpellDefs[orb - 1].tier : 1)
-                : 0;
-            f.landmark = {rec->type, rec->id, souls_flock(*w.gs, *w.store, *rec), tier,
-                          int(rec->factionIdx), spire && orb == 0};
-        }
+        // One population, one find (ломтик F): the by-kind switch over three
+        // vectors died with the vectors, and the roster of rows died with the
+        // flip — всё названное читается КОЛОНКАМИ того же слота, который
+        // каркас уже вернул. Population and tier are SEPARATE fields (§42):
+        // `size` used to carry the spire's tier, which was harmless only
+        // while the population door was locked.
+        const std::uint16_t slot = who.slot;
+        const SquadType kind = SquadType(w.store->runtime[slot].squadType);
+        const bool spire = kind == SquadType::Spire;
+        // The spell is the cell's WORKED number (ordinal+1, 0 = drained;
+        // закон нуля-ординала). A drained spire forgets its spell like a
+        // worked-out vein, so its tier honestly reads 0.
+        const int orb = spire ? worked_read(*w.gs, f.x, f.y) : 0;
+        const int tier = orb > 0
+            ? (orb <= kSpellCount ? kSpellDefs[orb - 1].tier : 1)
+            : 0;
+        f.landmark = {kind, lmId, souls_flock(*w.gs, *w.store, slot), tier,
+                      int(std::int16_t(w.store->kind[slot].factionIdx)),
+                      spire && orb == 0};
     }
     return f;
 }

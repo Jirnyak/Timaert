@@ -29,9 +29,9 @@
 namespace {
 // Руки города и деревни — анкета их рода (characters.h), а не вид места.
 static const sm::Skills& CITY =
-    sm::landmark_sheet(sm::LandmarkType::City).skills;
+    sm::landmark_sheet(sm::SquadType::City).skills;
 static const sm::Skills& VILLAGE =
-    sm::landmark_sheet(sm::LandmarkType::Village).skills;
+    sm::landmark_sheet(sm::SquadType::Village).skills;
 
 int fail(const char* msg) {
     // Testing law #1: the verdict lives in the ONE check.h counter — the
@@ -186,120 +186,14 @@ int main() {
     const int ironIdx = commodity_index("iron");
     const int stoneIdx = commodity_index("stone");
 
-    Ledger led{};
-    // The store IS the inventory now (one dictionary, one container).
-    Inventory village{};
-    Inventory city{};
-    // Счета мест (CANON S10, потребление — долг): граница выставляет,
-    // приход гасит; в мире долг живёт на Landmark, здесь — рядом со складом.
-    std::int32_t villageDebt[kCommodityCount] = {};
-    std::int32_t cityDebt[kCommodityCount] = {};
-
-    // The GATHER half lives with the field agents now (ai_gatherer; the
-    // pure econ_gather_day died with the owner's 2026-08-31 ruling — «уже
-    // собирают крестьяне»). The self-play models their person-day norm
-    // directly, and the ledger counts it the way the sink used to.
-    const auto gather = [&](Inventory& store, int commodityIdx, int workers,
-                            Ledger& l) {
-        const int take = workers * kGatherPerWorkerDay;
-        if (store.add_of(commodity_item_index(commodityIdx), take)) {
-            l.gathered[std::size_t(commodityIdx)] += take;
-        }
-    };
-
-    const int villagePop = 16;
-    const int cityPop = 32;
-
-    // Days are 1-based like the world's own (day 1 = the first boundary):
-    // production runs daily, the CONSUME lands on season boundaries only
-    // (CANON S19.2) — three windows inside 96 days.
-    const int kDays = 96;
-    int boundariesStarvedAfterWarmup = 0;
-    for (int day = 1; day <= kDays; ++day) {
-        // Village: 7 workers on food, 1 in the forest, 1 rotating the pits.
-        gather(village, foodIdx, 7, led);
-        gather(village, woodIdx, 1, led);
-        const int pitRotation[3] = {clayIdx, ironIdx, stoneIdx};
-        gather(village, pitRotation[day % 3], 1, led);
-
-        // Caravan abstraction v1: all raw moves to the city for crafting.
-        for (int c = 0; c < kRawCommodityCount; ++c) {
-            city.add_of(commodity_item_index(c), village.count_of(commodity_item_index(c)));
-            village.remove_of(commodity_item_index(c), village.count_of(commodity_item_index(c)));
-        }
-
-        // ОБОЗ ПИЩИ ВВЕРХ — ВМЕСТО ХЛЕБА ВНИЗ (2026-09-20, снос хлеба): поле
-        // растит еду, и еда КОРМИТ САМА, поэтому обратного плеча «испечённое
-        // возвращается в деревню» больше нет. Город получает свою долю
-        // дневного харча, деревня оставляет себе свою — ровно то, что в мире
-        // делает вендорский рейс.
-        // Деревня оставляет себе СВОЙ день и отдаёт излишек: город ест не
-        // только ртами, но и станками — ткань прядётся из пищи, — поэтому
-        // фиксированная доля «по ртам» его не кроет (измерено: долг 446).
-        const int foodToCity = std::max(
-            0, village.count_of(commodity_item_index(foodIdx)) - villagePop);
-        village.remove_of(commodity_item_index(foodIdx), foodToCity);
-        city.add_of(commodity_item_index(foodIdx), foodToCity);
-
-        // Город работает НЕ НАД ЕДОЙ: двенадцать рук кроют лестницу благ
-        // пары (ткань, кирпич, инструмент) — это и есть его вклад в обмен.
-        econ_produce_day(city, cityDebt, CITY, 12, cityPop + villagePop,
-                         &sink, &led);
-
-        // ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10): граница выставляет счёт и
-        // взыскивает прошлый, ДНЕВНОЕ гашение платит по нему тем, что
-        // пришло, — ровно как settle_landmark_day в мире. Съеденное
-        // ложится в леджер фактами Consumed.
-        if (season_boundary(day)) {
-            const ConsumeOutcome ov = econ_debt_boundary(
-                village, villageDebt, villagePop, &sink, &led);
-            const ConsumeOutcome oc = econ_debt_boundary(
-                city, cityDebt, cityPop, &sink, &led);
-            // Law 3: the pair pays every season's bill — nobody dies at any
-            // boundary (the first bill is issued on day 1 and cannot kill;
-            // every later one must find the season already paid).
-            if (ov.starvedPop > 0 || oc.starvedPop > 0) {
-                std::fprintf(stderr,
-                             "day=%d starvedV=%d starvedC=%d "
-                             "debtV=%d debtC=%d foodC=%d\n",
-                             day, ov.starvedPop, oc.starvedPop,
-                             villageDebt[foodIdx], cityDebt[foodIdx],
-                             city.count_of(commodity_item_index(foodIdx)));
-                ++boundariesStarvedAfterWarmup;
-            }
-        }
-        // Дневной такт гашения — та же дверь, что в settle_landmark_day.
-        econ_pay_debt(village, villageDebt, &sink, &led);
-        econ_pay_debt(city, cityDebt, &sink, &led);
-        for (int c = 0; c < kCommodityCount; ++c) {
-            if (village.count_of(commodity_item_index(c)) < 0 || city.count_of(commodity_item_index(c)) < 0) {
-                return fail("negative stock — bookkeeping bug");
-            }
-        }
-    }
-
-    if (boundariesStarvedAfterWarmup > 0) {
-        return fail("balanced scenario starved a season after warm-up");
-    }
-
-    // Law 2: the ledger balances to the unit for EVERY commodity.
-    std::array<long, kCommodityCount> usedAsInputs{};
-    for (int c = 0; c < kCommodityCount; ++c) {
-        inputs_for_output(c, int(led.produced[std::size_t(c)]), usedAsInputs);
-    }
-    for (int c = 0; c < kCommodityCount; ++c) {
-        const long lhs = led.gathered[std::size_t(c)] + led.produced[std::size_t(c)];
-        const long rhs = usedAsInputs[std::size_t(c)] + led.consumed[std::size_t(c)]
-            + village.count_of(commodity_item_index(c)) + city.count_of(commodity_item_index(c));
-        if (lhs != rhs) {
-            std::fprintf(stderr, "commodity=%s lhs=%ld rhs=%ld\n",
-                         kCommodities[c].id, lhs, rhs);
-            return fail("conservation law violated");
-        }
-    }
-    // (The deposit-drain half of the ledger lives with the field agents
-    // now — woodcutter_gather_test holds «layer loss == store gain» over
-    // the live layers; the pure-step drain died with econ_gather_day.)
+    // (── 2+3. САМОИГРА 96 ДНЕЙ — ВЫРЕЗАНА ВЕРДИКТОМ ВЛАДЕЛЬЦА 2026-10-04:
+    // «глупо гонять 100 дней экономику, которой ещё нет — полировка ядра,
+    // до экономики не дошли». Тойская деревня+город гоняли живые двери
+    // econ_produce_day/econ_debt_boundary/econ_pay_debt сквозь 96 дней и
+    // утверждали равновесие и сохранение леджера — арбитраж БАЛАНСА системы,
+    // которая режется (ломтик E) и строится заново (M-191). Законы ДВЕРЕЙ
+    // остались ниже своими блоками: окна голода, переполнение, призрачный
+    // станок, монетный двор. Новый арбитр принесёт эпик экономики.)
 
     // ── ГОЛОД: СМЕРТЬ ПРОПОРЦИОНАЛЬНА, И ОНА ЖЕ ГАСИТ РОСТ ──────────────
     // Долговой закон сдвигает голод на окно (первая граница только
@@ -795,11 +689,9 @@ int main() {
               "выходит из населения, а не из второй стены по виду места");
     }
 
-    std::printf("econ_v1_test: dictionary=ok conservation=ok deposits=ok "
-                "no_starvation=ok famine_transitions=ok consume_laws=ok "
-                "produce_fair=ok birth_stocks=ok population_law=ok "
-                "one_store=ok ghost_bench=ok mint_conservation=ok days=%d\n",
-                kDays);
-    CHECK(true, "every gate above held");
+    std::printf("econ_v1_test: dictionary=ok famine_transitions=ok "
+                "consume_laws=ok produce_fair=ok birth_stocks=ok "
+                "population_law=ok one_store=ok ghost_bench=ok "
+                "mint_conservation=ok\n");
     return sm::test::report("econ_v1_test");
 }

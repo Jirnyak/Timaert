@@ -148,7 +148,7 @@ struct DungeonKindRow {
                              //   fighters — and the wild FaunaCount den law
                              //   stands down. A spire's demons are the
                              //   spire's souls, never the mountain's game.
-    LandmarkType denFamily;  // whose monster-table family the den draws
+    SquadType denFamily;  // whose monster-table family the den draws
     bool shaftLadder;        // pads are directional (W climbs, E descends)
                              //   instead of fixed storey pairs
     bool roofHatch;          // the top storey opens a hatch onto open air

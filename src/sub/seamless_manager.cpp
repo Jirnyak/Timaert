@@ -317,7 +317,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     Biome nbBiome5[25];
     Biome nbGround[9];
     std::uint8_t nbFeature[9];
-    LandmarkType nbLandmark[9];
+    SquadType nbLandmark[9];
     int nbTreeCount[9];
     float nbFertility[9];
     for (int yy = 0; yy < 3; ++yy) {

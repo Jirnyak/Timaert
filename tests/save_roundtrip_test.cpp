@@ -16,8 +16,7 @@
 #include <cstdio>
 #include "check.h"
 #include "macro/labour.h"        // settle_souls / souls_flock — двери душ
-#include "macro/place_birth.h"   // birth_landmark / relink_place_bodies
-#include "macro/place_body.h"    // place_store / place_slot — плечо места
+#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/squad.h"         // set_suzerain / tithe_edge_of
 #include "macro/store.h"
 
@@ -27,6 +26,20 @@
 // досыпала отрядом.
 constexpr int kFixtureCitySouls = 777;
 constexpr int kFixtureVillageSouls = 111;
+
+// ЭМИТЕНТ ОРДИНАЛОВ — СКАЛЯР МИРА, И ОН ЖЕ НАЗЫВАЕТ МЕСТА (ломтик F: место
+// родится ТЕЛОМ и тянет ординал изнутри двери рождения, рукописного `id`
+// больше нет). Отсюда три числа, и все три ВЫВЕДЕНЫ, а не набраны: база,
+// которую фикстура ставит счётчику, ординалы её трёх мест в порядке
+// рождения и значение счётчика ПОСЛЕ них — то самое, что обязано вернуться
+// из файла. База нарочно высокая: рукописные ординалы записей снапшота
+// лежат ниже, и одно пространство ординалов (M-37) столкновений не терпит.
+constexpr std::uint32_t kFixtureIssuerBase = 341u;
+constexpr int kFixtureCityId    = int(kFixtureIssuerBase);
+constexpr int kFixtureVillageId = kFixtureCityId + 1;
+constexpr int kFixtureSpireId   = kFixtureVillageId + 1;
+constexpr std::uint32_t kFixtureIssuerAfter =
+    std::uint32_t(kFixtureSpireId) + 1u;
 
 #include <cstdlib>
 #include <cmath>
@@ -355,11 +368,14 @@ sm::GameState make_state(sm::MacroStore& st) {
     // Autosave/re-bake phase (v22) — non-default so a dropped field reddens.
     gs.lastWorldRebakeDay = 9;
     // Identity issuer (v23): must sit above every fixture ordinal.
-    // Эмитент обязан стоять ВЫШЕ всякого выданного ординала (fixture ids
-    // 7/70/3 ниже): загрузка самолечит отставший счётчик (M-37, тот же закон,
-    // что у macro_snapshot), и фикстура-лжец с эмитентом 41 при живом месте 70
-    // проваливала не закон, а собственную несогласованность (§8 п.11).
-    gs.nextMacroSpawnOrdinal = 341;
+    // Эмитент обязан стоять ВЫШЕ всякого рукописного ординала записей
+    // снапшота: загрузка самолечит отставший счётчик (M-37, тот же закон,
+    // что у macro_snapshot), и фикстура-лжец с эмитентом 41 при живом
+    // субъекте 70 проваливала не закон, а собственную несогласованность
+    // (§8 п.11). Ломтиком F из этого счётчика берут ординал и ТРИ места
+    // ниже — он дойдёт до kFixtureIssuerAfter, и ровно это число обязано
+    // вернуться из файла.
+    gs.nextMacroSpawnOrdinal = kFixtureIssuerBase;
     // World rhythms (v24) — every field non-default.
     gs.worldTickRt.pendingDailyTicks = 3;
     gs.worldTickRt.nextDailyTickDay = 13;
@@ -422,61 +438,44 @@ sm::GameState make_state(sm::MacroStore& st) {
     // every other squad's — see the player record in make_macro_records.)
     add_soldiers(gs.deserterPool, sm::NPCType::Peasant, 2, 1300u);
 
-    sm::Landmark settlement{};
-    settlement.type = sm::LandmarkType::City;
-    settlement.id = 7;
-    std::snprintf(settlement.name, sizeof settlement.name, "Round City");
-    settlement.x = 40;
-    settlement.y = 80;
-    settlement.factionIdx = 2;
     {
-        sm::Landmark& row =
-            sm::birth_landmark(gs, st, std::move(settlement));
-        sm::Inventory& store = sm::place_store(st, row);
+        const sm::MacroHandle row = sm::birth_place(
+            gs, st, sm::SquadType::City, 40, 80, 2, "Round City");
+        sm::Inventory& store = st.inventory[row.slot].inv;
         store.add("wood", 19);
         add_soldiers(store, sm::NPCType::Guard, 5, 2000u);
         add_soldiers(store, sm::NPCType::Peasant, 1, 2100u);
         // Honest-day readouts (v29) — every field non-default; носитель с
         // v127 — колонка wellbeing ТЕЛА.
-        sm::Wellbeing& wb = st.wellbeing[sm::place_slot(st, row)];
+        sm::Wellbeing& wb = st.wellbeing[row.slot];
         wb.starvedYesterday = 12;
         wb.popGrowthCarry = 0.375f;
         // Паства едет в сейв worked-СЛОЕМ полей (v122), а не колонкой
         // записи: фикстура селит души дверью мира, и круг сейва обязан
         // вернуть ИХ.
-        sm::settle_souls(gs, st, row, kFixtureCitySouls);
+        sm::settle_souls(gs, st, row.slot, kFixtureCitySouls);
     }
 
-    sm::Landmark village{};
-    village.type = sm::LandmarkType::Village;
-    village.id = 70;
-    std::snprintf(village.name, sizeof village.name, "Round Hamlet");
-    village.x = 45;
-    village.y = 85;
-    village.factionIdx = 2;
     {
-        sm::Landmark& row = sm::birth_landmark(gs, st, std::move(village));
-        sm::place_store(st, row).add("food_meat", 4);
-        sm::Wellbeing& wb = st.wellbeing[sm::place_slot(st, row)];
+        const sm::MacroHandle row = sm::birth_place(
+            gs, st, sm::SquadType::Village, 45, 85, 2, "Round Hamlet");
+        st.inventory[row.slot].inv.add("food_meat", 4);
+        sm::Wellbeing& wb = st.wellbeing[row.slot];
         wb.starvedYesterday = 5;
         wb.popGrowthCarry = -0.25f;
-        sm::settle_souls(gs, st, row, kFixtureVillageSouls);
+        sm::settle_souls(gs, st, row.slot, kFixtureVillageSouls);
         // Феод — запись реестра интересов (v107), и ставится он дверью на
         // оба конца: сейв обязан привезти обратно ИМЕННО пару, а не
         // половину. v121: та же дверь ведёт ЛЕТОПИСЬ ДОЛГА — ребро в строке
         // фракции сюзерена; долг пишем на ребро и ждём его назад из блока
         // рода 6. Интересы с v127 — колонка ТЕЛА, и едут его записью.
-        sm::set_suzerain(gs, st, /*vassalId*/70, /*suzerainId*/7,
+        sm::set_suzerain(gs, st, /*vassalId*/kFixtureVillageId,
+                         /*suzerainId*/kFixtureCityId,
                          /*value*/80, /*term*/0);
-        sm::tithe_edge_of(gs, st, row)->owedValue = 123;
+        sm::tithe_edge_of(gs, st, row.slot)->owedValue = 123;
     }
 
-    sm::Landmark spire{};
-    spire.type = sm::LandmarkType::Spire;
-    spire.id = 3;
-    spire.x = 12;
-    spire.y = 34;
-    sm::birth_landmark(gs, st, std::move(spire));
+    sm::birth_place(gs, st, sm::SquadType::Spire, 12, 34);
     // v120: the spire's spell rides the worked layer (ordinal + 1), which
     // the save carries as a world-field block — the roundtrip must bring
     // back the NUMBER at the cell, not columns.
@@ -501,7 +500,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     sm::add_player_reputation(gs, "magika", 42);
 
     gs.subState.kind = sm::GameSubStateKind::Trading;
-    gs.subState.settlementId = settlement.id;
+    gs.subState.settlementId = kFixtureCityId;
 
 
 
@@ -776,7 +775,7 @@ void run_roundtrip() {
     if (loaded.lastWorldRebakeDay != 9) {
         FAIL_BAIL("lastWorldRebakeDay (autosave phase) lost");
     }
-    if (loaded.nextMacroSpawnOrdinal != 341) {
+    if (loaded.nextMacroSpawnOrdinal != kFixtureIssuerAfter) {
         FAIL_BAIL("nextMacroSpawnOrdinal (identity issuer) lost");
     }
     if (loaded.worldTickRt.pendingDailyTicks != 3
@@ -1044,29 +1043,31 @@ void run_roundtrip() {
         || p.settledQuestOffers[0].offerSlot != 2) {
         FAIL_BAIL("settled quest offers lost");
     }
-    // ТЕЛА МЕСТ ПРИЕХАЛИ ЗАПИСЯМИ — их возвращает restore, а строки с ними
-    // сшивает relink по ОРДИНАЛУ (M-90 шаг 5). Без этих двух шагов у
-    // загруженного места нет ни склада, ни благополучия, ни интересов.
-    // СТОИТ ПОСЛЕ скалярных проверок: restore САМОЛЕЧИТ эмитент ординалов
-    // (M-37), а свидетель выше спрашивает ровно то число, что лежит в файле.
+    // МЕСТА ПРИЕХАЛИ ЗАПИСЯМИ БЛОКА МАКРО-СКВАДОВ (ломтик F): место ЕСТЬ
+    // неподвижный сквад, его тело возвращает restore, и сшивать с ним
+    // больше нечего — строки места не существует. СТОИТ ПОСЛЕ скалярных
+    // проверок: restore САМОЛЕЧИТ эмитент ординалов (M-37), а свидетель
+    // выше спрашивает ровно то число, что лежит в файле.
     auto loadedStoreOwn = sm::make_macro_store();
     sm::MacroStore& loadedStore = *loadedStoreOwn;
     sm::restore_macro_ecs(loadedMacro, loadedStore, loaded);
-    sm::relink_place_bodies(loaded, loadedStore);
 
-    const sm::Landmark* cityLm = sm::landmark_by_id(loaded, 7);
+    const sm::MacroHandle cityLm = sm::place_handle_by_ordinal(
+        loadedStore, std::uint32_t(kFixtureCityId));
     // ПАСТВА — worked-слой полей (v122), и круг сейва обязан вернуть её
     // ровно. Домашние головы здесь НЕ равны пастве: фикстура досыпала в тот
     // же контейнер отряд (add_soldiers), и это законно — «в поле» и «дома»
     // считаются врозь.
-    if (!cityLm || cityLm->type != sm::LandmarkType::City
-        || sm::souls_flock(loaded, loadedStore, *cityLm) != kFixtureCitySouls
-        || sm::souls_home(loadedStore, *cityLm) < kFixtureCitySouls) {
+    if (!loadedStore.valid(cityLm)
+        || sm::SquadType(loadedStore.runtime[cityLm.slot].squadType)
+               != sm::SquadType::City
+        || sm::souls_flock(loaded, loadedStore, cityLm.slot)
+               != kFixtureCitySouls
+        || sm::souls_home(loadedStore, cityLm.slot) < kFixtureCitySouls) {
         FAIL_BAIL("settlement lost");
     }
-    const sm::Landmark& city = *cityLm;
-    const sm::Inventory& cityStore = sm::place_store(loadedStore, city);
-    if (std::strcmp(city.name, "Round City") != 0
+    const sm::Inventory& cityStore = loadedStore.inventory[cityLm.slot].inv;
+    if (std::strcmp(loadedStore.name[cityLm.slot].text, "Round City") != 0
         || cityStore.count("wood") != 19
         || sm::creature_heads_of(cityStore, sm::NPCType::Peasant)
                != kFixtureCitySouls + 1
@@ -1074,40 +1075,44 @@ void run_roundtrip() {
         FAIL_BAIL("settlement details lost");
     }
     {
-        const sm::Wellbeing& wb =
-            loadedStore.wellbeing[sm::place_slot(loadedStore, city)];
+        const sm::Wellbeing& wb = loadedStore.wellbeing[cityLm.slot];
         if (wb.starvedYesterday != 12 || !nearf(wb.popGrowthCarry, 0.375f)) {
             FAIL_BAIL("settlement honest-day readouts (v29) lost");
         }
     }
-    const sm::Landmark* vilLm = sm::landmark_by_id(loaded, 70);
-    if (vilLm) {
+    const sm::MacroHandle vilLm = sm::place_handle_by_ordinal(
+        loadedStore, std::uint32_t(kFixtureVillageId));
+    if (loadedStore.valid(vilLm)) {
         // v121: долг дани едет блоком рода 6 — ребро вассала обязано
         // вернуться с тем же числом.
         // Знание роли (интересы) приехало колонкой ТЕЛА — без него путь к
         // ребру рода 6 не находится вовсе, так что эта проверка стережёт
         // теперь ОБА носителя сразу.
         const sm::TitheEdge* fe =
-            sm::tithe_edge_of(loaded, loadedStore, *vilLm);
+            sm::tithe_edge_of(loaded, loadedStore, vilLm.slot);
         if (!fe || fe->owedValue != 123) {
             FAIL_BAIL("feudal tithe edge (род 6) lost");
         }
-        if (sm::suzerain_of(loadedStore, *vilLm) != 7) {
+        if (sm::suzerain_of(loadedStore, vilLm.slot) != kFixtureCityId) {
             FAIL_BAIL("феодальное ребро (интересы тела) lost");
         }
     }
-    if (!vilLm || vilLm->type != sm::LandmarkType::Village) {
+    if (!loadedStore.valid(vilLm)
+        || sm::SquadType(loadedStore.runtime[vilLm.slot].squadType)
+               != sm::SquadType::Village) {
         FAIL_BAIL("village lost");
     }
     {
-        const sm::Wellbeing& wb =
-            loadedStore.wellbeing[sm::place_slot(loadedStore, *vilLm)];
+        const sm::Wellbeing& wb = loadedStore.wellbeing[vilLm.slot];
         if (wb.starvedYesterday != 5 || !nearf(wb.popGrowthCarry, -0.25f)) {
             FAIL_BAIL("village honest-day readouts (v29) lost");
         }
     }
-    const sm::Landmark* spireLm = sm::landmark_by_id(loaded, 3);
-    if (!spireLm || spireLm->type != sm::LandmarkType::Spire) {
+    const sm::MacroHandle spireLm = sm::place_handle_by_ordinal(
+        loadedStore, std::uint32_t(kFixtureSpireId));
+    if (!loadedStore.valid(spireLm)
+        || sm::SquadType(loadedStore.runtime[spireLm.slot].squadType)
+               != sm::SquadType::Spire) {
         FAIL_BAIL("spire lost");
     }
     // v120: the spell survives as the worked number at the spire's cell.
@@ -1133,7 +1138,7 @@ void run_roundtrip() {
         FAIL_BAIL("truce clock lost");
     }
     if (loaded.subState.kind != sm::GameSubStateKind::Trading
-        || loaded.subState.settlementId != 7) {
+        || loaded.subState.settlementId != kFixtureCityId) {
         FAIL_BAIL("sub-state lost");
     }
     if (sm::creature_heads_of(loaded.deserterPool, sm::NPCType::Peasant)
@@ -1351,42 +1356,35 @@ void run_roundtrip() {
                 path.c_str(), bytes.size(), loaded.mapW, loaded.mapH,
                 unsigned(loadedQuests[0].ordinal));
 
-    // ОРДИНАЛ И ЕСТЬ АДРЕС — и запасной ход честен (2026-09-20).
-    // В живом мире ординалы плотны (один монотонный выдатчик, ростер только
-    // дополняется), поэтому landmarks[id-1].id == id и by-id ходит без
-    // скана. Фикстура выше нарочно НЕ такая: id 7 / 70 / 3 лежат в позициях
-    // 0 / 1 / 2, и тот же by-id обязан найти всех троих — корректность не
-    // смеет опираться на инвариант, который нечем застраховать
-    // static_assert'ом.
-    for (const sm::Landmark& lm : loaded.landmarks) {
-        if (sm::landmark_by_id(loaded, lm.id) != &lm) {
-            FAIL_BAIL("by-id find missed a place whose ordinal is not its address");
-        }
+    // КАЖДОЕ ПРИЕХАВШЕЕ МЕСТО НАХОДИТСЯ ПО СВОЕМУ ОРДИНАЛУ, и отказ честен.
+    // Предмет сузился вместе с носителем (ломтик F): «ординал И ЕСТЬ адрес»
+    // был законом ВЕКТОРА мест (`landmarks[id-1]`), а вектора больше нет —
+    // резолв идёт колонкой spawnId живого тела плюс гейт оси рода. Остаётся
+    // то, что от этого закона не зависело ни тогда: дверь обязана найти
+    // ВСЯКОЕ место круга и не отвечать за небывалый ординал и за «никто».
+    int placesOfTheRound = 0, unresolvable = 0;
+    for (std::uint32_t slot = 0; slot < sm::kMacroEntityCap; ++slot) {
+        if (loadedStore.alive[slot] == 0 || loadedStore.dead[slot] != 0)
+            continue;
+        if (!sm::is_settlement_kind(
+                sm::SquadType(loadedStore.runtime[slot].squadType)))
+            continue;
+        ++placesOfTheRound;
+        const sm::MacroHandle back = sm::place_handle_by_ordinal(
+            loadedStore, loadedStore.spawnId[slot].index);
+        if (!loadedStore.valid(back)
+            || back.slot != std::uint16_t(slot)) ++unresolvable;
     }
-    if (sm::landmark_by_id(loaded, 4242) != nullptr
-        || sm::landmark_by_id(loaded, 0) != nullptr
-        || sm::landmark_by_id(loaded, -1) != nullptr) {
-        FAIL_BAIL("by-id find answered for an id no place holds");
+    // Цикл утверждает, что ПОМЕРИЛ (§8 п.3): пустой круг зеленел бы нулём
+    // расхождений, а мест в этой фикстуре ровно три.
+    if (placesOfTheRound != 3 || unresolvable != 0) {
+        FAIL_BAIL("by-ordinal find missed a place of the round");
     }
-    {
-        // И тот же закон на ПЛОТНОМ ростере — там, где адрес и есть ответ.
-        auto denseOwn = std::make_unique<sm::GameState>();
-        sm::GameState& dense = *denseOwn;
-        for (int i = 1; i <= 5; ++i) {
-            sm::Landmark lm{};
-            lm.type = sm::LandmarkType::Village;
-            lm.id = i;
-            dense.landmarks.push_back(lm);
-        }
-        for (int i = 1; i <= 5; ++i) {
-            if (sm::landmark_by_id(dense, i)
-                != &dense.landmarks[std::size_t(i - 1)]) {
-                FAIL_BAIL("ordinal is not the address on a dense roster");
-            }
-        }
-        if (sm::landmark_by_id(dense, 6) != nullptr) {
-            FAIL_BAIL("dense roster answered past its end");
-        }
+    if (loadedStore.valid(sm::place_handle_by_ordinal(loadedStore, 4242u))
+        || loadedStore.valid(sm::place_handle_by_ordinal(loadedStore, 0u))
+        || loadedStore.valid(
+               sm::place_handle_by_ordinal(loadedStore, 0xFFFFFFFFu))) {
+        FAIL_BAIL("by-ordinal find answered for an id no place holds");
     }
 
     remove_slot_files(truncatedPath);
@@ -1516,19 +1514,17 @@ void run_payload_cap_is_a_fact() {
     // лежит он теперь колонкой ТЕЛА, значит и в файл едет записью тела —
     // блоком макро-сквадов, а не блоком мест. Предмет свидетеля не
     // изменился: это по-прежнему худший легальный вес ЭТИХ мест.
-    // Ординалы фикстуры начинаются ВЫШЕ мест make_state (7/70/3) — одно
-    // пространство ординалов (M-37), столкновений в нём не бывает.
+    // Ординалы этих мест выдаёт тот же эмитент, что назвал места make_state
+    // (ломтик F): одно пространство ординалов (M-37), и выдача монотонна —
+    // столкновений в нём не бывает по построению.
     for (int i = 0; i < kCensusLandmarks; ++i) {
-        sm::Landmark lm{};
-        lm.id = 1000 + i;   // 0 = «никто» (закон нуля-ординала, M-37)
-        lm.type = sm::LandmarkType::Village;
-        lm.x = i % gs.mapW;
-        lm.y = (i / gs.mapW) % gs.mapH;
         // Душ здесь нет намеренно: предмет этой фикстуры — ХУДШИЙ ВЕС
         // мест, и все слоты забиты неслипающимися стаками. Паства живёт в
         // worked-слое (v122), её вес считает блок полей, а не запись места.
-        sm::Landmark& row = sm::birth_landmark(gs, store, std::move(lm));
-        sm::Inventory& bag = sm::place_store(store, row);
+        const sm::MacroHandle row = sm::birth_place(
+            gs, store, sm::SquadType::Village,
+            i % gs.mapW, (i / gs.mapW) % gs.mapH);
+        sm::Inventory& bag = store.inventory[row.slot].inv;
         for (int s = 0; s < sm::kMaxInventorySlots; ++s) {
             sm::ItemRef ref{};
             ref.def = std::uint16_t(woodDef);

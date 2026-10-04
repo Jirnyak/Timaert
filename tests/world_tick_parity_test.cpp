@@ -12,8 +12,7 @@
 
 #include "tables/npc.h"
 #include "macro/labour.h"       // settle_souls / souls_home / souls_flock
-#include "macro/place_birth.h"  // birth_landmark — место рождается с ТЕЛОМ
-#include "macro/place_body.h"   // place_slot — колонки плеча места
+#include "macro/place_birth.h"  // birth_place — место родится ТЕЛОМ
 #include "macro/world_row.h"
 #include "macro/npc_ai.h"   // squad_season_window — THE boundary window
 #include "macro/world_tick.h"
@@ -303,15 +302,11 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     // дней кроют обе границы; место без прихода умирает целиком за одно
     // взыскание, и летопись обязана записать РОВНО этот день — не тридцать
     // два дня голодания вокруг него.
-    sm::Landmark s{};
-    s.type = sm::LandmarkType::City;
-    s.id = 1;
-    std::snprintf(s.name, sizeof s.name, "Hungry");
-    s.x = 8; s.y = 8;
-    sm::Landmark& row = sm::birth_landmark(gs, st, std::move(s));
+    const sm::MacroHandle town =
+        sm::birth_place(gs, st, sm::SquadType::City, 8, 8, -1, "Hungry");
     // Души селятся ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
     // фичи, головы в инвентарь — тем же законом, что генезис.
-    sm::settle_souls(gs, st, row, 100);
+    sm::settle_souls(gs, st, town.slot, 100);
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 7u);
@@ -330,10 +325,9 @@ void test_a_famine_is_recorded_once_when_it_begins() {
                                ++n.famines;
                        }, &c);
 
-    CHECK(st.wellbeing[sm::place_slot(st, gs.landmarks[0])].starvedYesterday
-              > 0,
+    CHECK(st.wellbeing[town.slot].starvedYesterday > 0,
           "the fixture is honest: this town's bill took souls");
-    CHECK(sm::souls_flock(gs, st, gs.landmarks[0]) < 100,
+    CHECK(sm::souls_flock(gs, st, town.slot) < 100,
           "паства упала на съеденных: число фичи и головы идут ПАРОЙ");
     // БЛАГОПОЛУЧИЕ ЕСТЬ ДОЛЯ ОПЛАЧЕННОГО, и здесь утверждается ИМЕННО это,
     // а не круглый ноль. Прежде тут стояло `== 0`, и ноль держался на
@@ -343,8 +337,8 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     // горстка выживает — и мир честно докладывает эту горстку долей, а не
     // нулём. Число выводится из тех же данных, что его породили (§8 п.4).
     {
-        const sm::Landmark& l = gs.landmarks[0];
-        const sm::Wellbeing& wb = st.wellbeing[sm::place_slot(st, l)];
+        const std::uint16_t l = town.slot;
+        const sm::Wellbeing& wb = st.wellbeing[l];
         // Утверждаются СВОЙСТВА, а не число: благополучие есть произведение
         // доли еды на долю комфорта, и пересчитать его здесь значило бы
         // написать вторую копию продакшен-формулы как «ожидаемое» (§8 п.5 —
@@ -388,11 +382,8 @@ void test_population_dies_honestly_to_zero() {
     sm::MacroStore& st = *storePtr;
     gs.mapW = 64;
     gs.mapH = 64;
-    sm::Landmark lm{};
-    lm.type = sm::LandmarkType::Village;
-    lm.id = 1;
-    lm.x = 4; lm.y = 4;
-    sm::Landmark& v = sm::birth_landmark(gs, st, std::move(lm));
+    const std::uint16_t v =
+        sm::birth_place(gs, st, sm::SquadType::Village, 4, 4).slot;
     // Хутор с пустым амбаром: три души ДВЕРЬЮ МИРА (паства + головы).
     sm::settle_souls(gs, st, v, 3);
     int deaths = 0;
@@ -433,41 +424,37 @@ void test_dungeon_population_regrows_like_fauna() {
     sm::MacroStore& st = *storePtr;
     gs.mapW = 8;
     gs.mapH = 8;
-    sm::Landmark ruin{};
-    ruin.type = sm::LandmarkType::Ruin;
-    ruin.id = 5;
-    ruin.x = 1;
-    ruin.y = 1;
-    {
-        sm::Landmark& row = sm::birth_landmark(gs, st, sm::Landmark{ruin});
-        // Души данжа — ГОЛОВЫ его толпы (v122, вердикт 3): род НЕ
-        // выдумывается, его даёт полоса crowdHabitat этого рода мест
-        // (руина → слабейшая строка).
-        sm::settle_souls(gs, st, row, 10);
-    }
-    sm::Landmark dead = ruin;
-    dead.id = 6;
-    dead.x = 2;
-    dead.y = 2;
+    const sm::MacroHandle live =
+        sm::birth_place(gs, st, sm::SquadType::Ruin, 1, 1);
+    // Души данжа — ГОЛОВЫ его толпы (v122, вердикт 3): род НЕ
+    // выдумывается, его даёт полоса crowdHabitat этого рода мест
+    // (руина → слабейшая строка).
+    sm::settle_souls(gs, st, live.slot, 10);
     // выбита до последней души: ноль голов
-    sm::birth_landmark(gs, st, std::move(dead));
+    const sm::MacroHandle dead =
+        sm::birth_place(gs, st, sm::SquadType::Ruin, 2, 2);
     sm::MacroWorld w{};
     w.gs = &gs;   // no zones layer: the ruin's score is the honest zero,
                   // so its mean is the born base alone (64)
 
-    const int dueDay = 5 % sm::kGrowthEpochDays;
+    // ДЕНЬ ОТРОСТА — ФУНКЦИЯ ОРДИНАЛА (world_tick.cpp: id % эпоха), а
+    // ординал выдаёт эмитент (ломтик F) — он и спрашивается, вместо прежнего
+    // рукописного `5`.
+    const int liveId = int(st.spawnId[live.slot].index);
+    const int deadId = int(st.spawnId[dead.slot].index);
+    const int dueDay = liveId % sm::kGrowthEpochDays;
     sm::regrow_dungeon_populations(w, st, dueDay + 1);
-    CHECK(sm::souls_flock(gs, st, gs.landmarks[0]) == 10,
+    CHECK(sm::souls_flock(gs, st, live.slot) == 10,
           "a landmark regrows only on its own day of the epoch");
     sm::regrow_dungeon_populations(w, st, dueDay);
-    CHECK(sm::souls_flock(gs, st, gs.landmarks[0]) == 11,
+    CHECK(sm::souls_flock(gs, st, live.slot) == 11,
           "on its due day a living garrison regrows one soul");
-    sm::regrow_dungeon_populations(w, st, 6 % sm::kGrowthEpochDays);
-    CHECK(sm::souls_flock(gs, st, gs.landmarks[1]) == 0,
+    sm::regrow_dungeon_populations(w, st, deadId % sm::kGrowthEpochDays);
+    CHECK(sm::souls_flock(gs, st, dead.slot) == 0,
           "wiped clean stays dead — resurrection is the S9 transition's");
-    sm::settle_souls(gs, st, gs.landmarks[0], 53);   // 11 + 53 = born mean 64
+    sm::settle_souls(gs, st, live.slot, 53);   // 11 + 53 = born mean 64
     sm::regrow_dungeon_populations(w, st, dueDay);
-    CHECK(sm::souls_flock(gs, st, gs.landmarks[0]) == 64,
+    CHECK(sm::souls_flock(gs, st, live.slot) == 64,
           "the born mean is the regrow ceiling");
 }
 

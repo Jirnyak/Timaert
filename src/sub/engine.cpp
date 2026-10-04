@@ -832,16 +832,17 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // world keeps.
     subZoneCount_ = 0;
     subZonesEntered_ = 0;
-    for (const auto& sp : gs.landmarks) {
-        if (sp.type != LandmarkType::Spire) continue;
-        if (sp.x != cx || sp.y != cy) continue;
+    // «Что стоит на этой клетке» отвечает ОДИН сборщик фактов клетки
+    // (macro/cell_facts.h) — тот же, из которого собирается весь контекст
+    // генерации; скан населения мира этот вопрос не задаёт.
+    if (const CellFacts cf = cell_facts(mw_, cx, cy);
+        cf.landmark.type == SquadType::Spire) {
         // The amount IS the cell's worked number — already spell ordinal + 1
         // (0 = drained spire: the spell is forgotten, the fact files unknown,
         // exactly the chronicle's «unknown subjects as 0»).
-        add_sub_zone(sp.x, sp.y, kSpireTowerLocalCenter, kSpireTowerLocalCenter,
+        add_sub_zone(cf.x, cf.y, kSpireTowerLocalCenter, kSpireTowerLocalCenter,
                      float(kCellSize) * 0.5f, FactKind::Explored,
-                     worked_read(gs, sp.x, sp.y));
-        break;
+                     worked_read(gs, cf.x, cf.y));
     }
 }
 
@@ -1398,7 +1399,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
 }
 
 // (The `to_landmark_kind` bridge lived here until 2026-08-24 — the toll
-// between two five-value copies of the registry enum. One LandmarkType now;
+// between two five-value copies of the registry enum. One SquadType now;
 // the context's kind IS the spawn table's kind.)
 
 // Populate ONE window cell (offset ox,oy ∈ {-1,0,1} from centre) from that
@@ -1450,9 +1451,9 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     // The place's standing army, embodied beside its crowd (§42 Инк 7):
     // the LIVE garrison roster travels down so the street shows exactly
     // who is home today — patrol out, hired away, killed = not here.
-    const Landmark* lmRec = ctx.landmark.id >= 0
-        ? landmark_by_id(*gs_, ctx.landmark.id)
-        : nullptr;
+    const MacroHandle lmRec = (ctx.landmark.id >= 0 && mw_.store)
+        ? place_handle_by_ordinal(*mw_.store, std::uint32_t(ctx.landmark.id))
+        : MacroHandle{};
     spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, ctx.landmark.kind,
                     ctx.zone, ctx.depositsNear, mgr_,
                     ox, oy, ctx.seed, ctx.worldSeed,
@@ -1462,8 +1463,9 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
                     // (macro/macro_stock.h) instead of vanishing without trace.
                     ctx.landmark.id,
                     wcx, wcy, faunaCount,
-                    lmRec && mw_.store ? &place_store(*mw_.store, *lmRec)
-                                        : nullptr,
+                    mw_.store && mw_.store->valid(lmRec)
+                        ? &mw_.store->inventory[lmRec.slot].inv
+                        : nullptr,
                     // THE CLOCK, because how many of this cell's people are on
                     // its streets is a question about the hour (city_layout.h
                     // crowd_outdoor_share01) — the rest are behind their doors.
@@ -3955,7 +3957,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         // the kind row's column. Placement is the scene's floor catalog: a
         // cave's whole gallery chain holds its creatures, never just the
         // mouth chamber the old rectangle described (CANON S28).
-        const LandmarkType denKind = kindRow.denFamily;
+        const SquadType denKind = kindRow.denFamily;
         spawn_dungeon_vermin(*ecs_,
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level),
@@ -3990,14 +3992,11 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     int cy = (mgr_.center_cy() + winCellY - 1) % mapH;
     if (cx < 0) cx += mapW;
     if (cy < 0) cy += mapH;
-    Landmark* spire = nullptr;
-    for (auto& sp : gs_->landmarks) {
-        if (sp.type != LandmarkType::Spire) continue;
-        if (sp.x == cx && sp.y == cy) {
-            spire = &sp;
-            break;
-        }
-    }
+    // Шпиль клетки спрашивается у ОДНОГО сборщика фактов (macro/cell_facts.h),
+    // как его спрашивает `read_sign` ниже; ординал места — его колонка.
+    const CellFacts cf = cell_facts(mw_, cx, cy);
+    const bool spire = cf.landmark.type == SquadType::Spire;
+    const int spireOrdinal = cf.landmark.id;
     // The spell is the cell's worked number (spires.h: ordinal + 1, 0 =
     // drained). A drained spire forgot its spell — the orb has nothing left.
     const int charge = spire ? worked_read(*gs_, cx, cy) : 0;
@@ -4022,7 +4021,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // SpellLearned once the app layer resolves the ordinal — only content/
     // knows the registry, and this engine never will.
     GameEvent ev{EventTag::SpireDepleted};
-    ev.a = spire->id;
+    ev.a = spireOrdinal;
     ev.b = charge - 1;   // the spell ordinal the orb held (worked = ordinal+1)
     ev.ix = cx;
     ev.iy = cy;
@@ -4049,7 +4048,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // `amount` in a vocabulary of its own (owner, 2026-08-28: unify through
     // annihilation — a drained thing is the place itself changed, and the
     // fact points at the place).
-    record_world_fact(FactKind::Drained, cx, cy, /*amount*/0, spire->id);
+    record_world_fact(FactKind::Drained, cx, cy, /*amount*/0, spireOrdinal);
     set_status("The orb's light passes into you.");
     return true;
 }
@@ -4072,10 +4071,15 @@ bool SubworldEngine::read_sign(const Structure& sign) {
     if (cy < 0) cy += mapH;
     const CellContext ctx = resolve_context(cx, cy);
     const char* place = nullptr;
-    if (const Landmark* lm = landmark_by_id(*gs_, ctx.landmark.id);
-        lm && (lm->type == LandmarkType::City
-               || lm->type == LandmarkType::Village)) {
-        place = lm->name;
+    if (ctx.landmark.kind == SquadType::City
+        || ctx.landmark.kind == SquadType::Village) {
+        const MacroHandle lm = mw_.store
+            ? place_handle_by_ordinal(*mw_.store,
+                                      std::uint32_t(ctx.landmark.id))
+            : MacroHandle{};
+        if (mw_.store && mw_.store->valid(lm)
+            && mw_.store->name[lm.slot].text[0] != '\0')
+            place = mw_.store->name[lm.slot].text;
     }
     char msg[96];
     if (place) {

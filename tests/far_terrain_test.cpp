@@ -486,7 +486,7 @@ int main() {
         // multipliers a third time — a test that re-derives what the code
         // derives tests that you can copy.
         {
-            const TerrainMod road = terrain_mod_for(LandmarkType::None, FT_Road);
+            const TerrainMod road = terrain_mod_for(SquadType::None, FT_Road);
             CHECK(road.damp > 0.0f && road.plateauR == 0.0f,
                   "the fixture measures DAMP alone: a road calms its cell and "
                   "raises no plateau (if this ever changes, the rows below are "

@@ -30,10 +30,6 @@ constexpr std::uint32_t kChecksumPrime = 16777619u;
 constexpr std::uint32_t kMaxInventoryStacks =
     std::uint32_t(kMaxInventorySlots);
 constexpr std::uint32_t kMaxSmallVector = 8192u;
-// v62: one roster, one cap. С 2026-09-25 ЧИСЛО живёт в переписи штабелей
-// (core/stacks.h kWorldLandmarks) — здесь только сторож сейва, дубля-литерала
-// больше нет (второй словарь капа, найден переписью с.18).
-constexpr std::uint32_t kMaxLandmarks = std::uint32_t(kWorldLandmarks);
 constexpr std::uint32_t kMaxMarkers = 16384u;
 constexpr std::uint32_t kMaxQuests = 4096u;
 // (the field caps live with the rows: macro/world_fields.cpp)
@@ -118,14 +114,8 @@ constexpr std::uint64_t kPlayerBytes =               // write_player
       + std::uint64_t(PlayerState::kJournalFactsCap) * sizeof(WorldFact)
     + sizeof(PlayerState::journalSeenSeq) + sizeof(PlayerState::journalFull);
 
-// Места — ВТОРОЙ штабель сущностей, под снос M-90 (core/stacks.h). Пока он
-// жив, он и есть крупнейшее плоское слагаемое потолка.
-constexpr std::uint64_t kLandmarkBytes =             // write_landmark
-    sizeof(Landmark::id) + sizeof(std::uint8_t) + kStrBytes
-    + sizeof(Landmark::x) + sizeof(Landmark::y)
-    + sizeof(Landmark::factionIdx);   // v127: плечо места едет записью тела
-constexpr std::uint64_t kLandmarksBlockBytes =
-    kCountBytes + std::uint64_t(kMaxLandmarks) * kLandmarkBytes;
+// (Блок строк мест УМЕР в v128, ломтик F: место целиком — запись его ТЕЛА в
+// блоке макро-сквадов, второго штабеля сущностей в сейве больше нет.)
 
 constexpr std::uint64_t kMarkersBlockBytes =         // write_marker
     kCountBytes + std::uint64_t(kMaxMarkers)
@@ -243,7 +233,6 @@ constexpr std::uint64_t kQuestsBlockBytes =
 constexpr std::uint64_t kMaxPayloadBytes =
       kPrefixBytes
     + kPlayerBytes
-    + kLandmarksBlockBytes
     + kMarkersBlockBytes
     + kFactionsBlockBytes
     + kSubStateBytes
@@ -968,31 +957,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.journalFull);
 }
 
-// v62: ONE landmark serializer for the one roster (CANON S9) — the kind is
-// the record's `type` column, so every kind writes every column; unused ones
-// ride at their zero defaults (the zero contribution, CANON S6).
-// v127 (M-90 флип): ВСЁ ПЛЕЧО МЕСТА — инвентарь, интересы, благополучие,
-// слава, счёт нужд — едет ЗАПИСЬЮ ЕГО ТЕЛА в блоке макро-сквадов (место есть
-// неподвижный сквад, тело = слот store). Строка места здесь — тонкий индекс:
-// идентичность, род, имя, адрес, фракция. Умрёт целиком в ломтике F.
-void write_landmark(Writer& w, const Landmark& lm) {
-    w.pod(lm.id);
-    write_enum8(w, lm.type);
-    w.pod(lm.name);   // v123: имя места — плоские чары (раскладка ecs::SquadName)
-    w.pod(lm.x);
-    w.pod(lm.y);
-    w.pod(lm.factionIdx);          // v94: faction registry index (kingdoms cut)
-}
-
-void read_landmark(Reader& r, Landmark& lm) {
-    r.pod(lm.id);
-    read_enum8(r, lm.type, static_cast<std::uint8_t>(LandmarkType::Tower));
-    r.pod(lm.name);   // v123
-    r.pod(lm.x);
-    r.pod(lm.y);
-    r.pod(lm.factionIdx);          // v94
-}
-
 void write_marker(Writer& w, const Marker& m) {
     w.str(m.id);
     write_enum8(w, m.style);
@@ -1222,9 +1186,6 @@ void write_payload(Writer& w, const GameState& s,
     // was sorting.)
     write_player(w, s.player);
 
-    if (w.count(s.landmarks.size(), kMaxLandmarks)) {
-        for (const auto& lm : s.landmarks) write_landmark(w, lm);
-    }
     if (w.count(s.markers.size(), kMaxMarkers)) {
         for (const auto& marker : s.markers) write_marker(w, marker);
     }
@@ -1299,23 +1260,9 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.pod(s.lootPoolValue);   // v67
     read_player(r, s.player);
 
+    // (Блок строк мест умер в v128: тела мест едут записями блока
+    // макро-сквадов ниже, самолечение эмитента — там же, macro_snapshot.h.)
     std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxLandmarks)) return;
-    s.landmarks.clear();
-    s.landmarks.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        Landmark lm{};
-        read_landmark(r, lm);
-        // Self-heal the issuer ABOVE every restored landmark — the same law
-        // the quests below and macro_snapshot's spawn ordinal already apply.
-        // An issuer behind a living ordinal hands the next founded place an
-        // identity that is already standing on the map.
-        if (lm.id > 0
-            && std::uint32_t(lm.id) >= s.nextMacroSpawnOrdinal)
-            s.nextMacroSpawnOrdinal = std::uint32_t(lm.id) + 1u;
-        add_landmark(s, std::move(lm));
-    }
-
     if (!read_count(r, n, kMaxMarkers)) return;
     s.markers.clear();
     s.markers.reserve(n);

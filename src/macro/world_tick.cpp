@@ -11,10 +11,9 @@
 // world by exactly that many.
 
 #include "macro/world_tick.h"
-#include "macro/characters.h"   // landmark_sheet — анкета места (что оно умеет)
 #include "macro/econ_day.h"
 #include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
-#include "macro/place_body.h"   // place_slot / place_store — тело места
+#include "macro/landmark_iter.h"  // for_each_place — обход мест по слотам
 #include "macro/squad.h"        // record_landmark_fact — летопись места
 #include "macro/currency.h"
 #include "macro/fauna.h"
@@ -37,8 +36,9 @@ namespace sm {
 namespace {
 
 // (Сторож пары EconSite↔колонка реестра умер вместе с EconSite,
-// 2026-09-18: что место УМЕЕТ, теперь говорит его анкета — characters.h
-// landmark_sheet, — а рецепт называет ремесло и ранг.)
+// 2026-09-18: что место УМЕЕТ, теперь говорит его АНКЕТА — колонка `sheet`
+// его тела, заполненная рождением из стола по роду, — а рецепт называет
+// ремесло и ранг.)
 
 // (`rand01_` умер 2026-09-22 вместе с жребием состава ростера: его
 // единственным читателем был `garrison_recruit_`, бросавший монетку
@@ -52,21 +52,23 @@ namespace {
 // population law (owner's ruling — no flat heads per day). At namespace
 // scope (external linkage, the shuffled_order pattern) so econ_v1_test can
 // drive a landmark to its honest death directly.
-void settle_landmark_day(GameState& gs, MacroStore& st, Landmark& lm, int day,
-                         bool& starved, bool& diedOut,
+void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
+                         int day, bool& starved, bool& diedOut,
                          EconFactSink sink, void* user) {
     starved = false;
     diedOut = false;
-    // Плечо места — колонки его ТЕЛА (M-90 шаг 5): склад, счёт нужд и
-    // благополучие живут в store, строка места их больше не носит.
-    const std::uint16_t slot = place_slot(st, lm);
+    // Плечо места — колонки его ТЕЛА (ломтик F): склад, счёт нужд и
+    // благополучие живут в store, строки места больше не существует.
     Inventory& store = st.inventory[slot].inv;
     Wellbeing& wb = st.wellbeing[slot];
+    const int px = ecs::cell_x(st.cell[slot], gs.mapW);
+    const int py = ecs::cell_y(st.cell[slot], gs.mapW);
     // Переворот населения (v122): у поселения паства — worked-ЧИСЛО фичи, и
     // всякая её убыль/прибыль идёт ПАРОЙ — число И головы в инвентаре; у
     // данжа (bornPopBase != 0) паства и есть головы, worked не трогается
     // (под FT_Spire там живёт спелл).
-    const bool dungeon = landmark_def(lm.type).bornPopBase != 0;
+    const bool dungeon =
+        landmark_def(SquadType(st.runtime[slot].squadType)).bornPopBase != 0;
     // THE SEASON WINDOW (CANON S19.2, единое окно мира) — теперь граница
     // ДОЛГА (CANON S10, вердикт 2026-09-19): взыскание прошлого счёта,
     // новый счёт, немедленное гашение из склада. Её вердикт — ОДНО число,
@@ -76,7 +78,7 @@ void settle_landmark_day(GameState& gs, MacroStore& st, Landmark& lm, int day,
     // даёт рост»).
     if (season_boundary(day)) {
         const ConsumeOutcome o = econ_debt_boundary(
-            store, st.roster[slot].needDebt, souls_home(st, lm), sink, user);
+            store, st.roster[slot].needDebt, souls_home(st, slot), sink, user);
         // СМЕРТЬ — единственная кара голода: доля непогашенного хлеба
         // уходит населением здесь, в единственной двери. Умирают ДОМАШНИЕ
         // головы; у поселения то же число сходит с worked-паствы (drain:
@@ -88,11 +90,11 @@ void settle_landmark_day(GameState& gs, MacroStore& st, Landmark& lm, int day,
             // носитель — паства: число фичи падает на съеденных, у данжа
             // паства и есть головы, и падать ей уже не надо.
             if (!dungeon) {
-                worked_write(gs, lm.x, lm.y,
-                             std::max(0, worked_read(gs, lm.x, lm.y)
+                worked_write(gs, px, py,
+                             std::max(0, worked_read(gs, px, py)
                                              - o.starvedPop));
             }
-            diedOut = souls_flock(gs, st, lm) == 0;
+            diedOut = souls_flock(gs, st, slot) == 0;
         }
         wb.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
         starved = o.starvedPop > 0;
@@ -108,7 +110,7 @@ void settle_landmark_day(GameState& gs, MacroStore& st, Landmark& lm, int day,
     econ_store_hygiene(store, sink, user);
 
     wb.popGrowthCarry += population_delta_per_day(
-        souls_flock(gs, st, lm), float(wb.seasonWellbeing) / 255.0f);
+        souls_flock(gs, st, slot), float(wb.seasonWellbeing) / 255.0f);
     const int whole = int(wb.popGrowthCarry);
     if (whole > 0) {
         wb.popGrowthCarry -= float(whole);
@@ -122,7 +124,7 @@ void settle_landmark_day(GameState& gs, MacroStore& st, Landmark& lm, int day,
         // Родившаяся душа — ГОЛОВА в инвентаре дома (у данжа — голова его
         // толпы); worked-паства поселения растёт на ФАКТ вставших: отказ
         // контейнера не рождает счётных призраков.
-        const int born = settle_souls(gs, st, lm, whole);
+        const int born = settle_souls(gs, st, slot, whole);
         // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h SoulsBorn): единственный приход
         // на склад душ во всём мире. Убыль у склада своя — голод здесь же
         // (Starved выше), дезертирство в окне артели, бой. Доклад идёт
@@ -163,9 +165,11 @@ void tithe_daily_(GameState& gs, MacroStore& st, int day) {
     if (assess) f.fiefSeasonAssessed = season;
     for (int i = 0; i < f.fiefTotal; ++i) {
         TitheEdge& e = f.fief[i];
-        const Landmark* v = landmark_by_id(gs, e.vassal);
-        if (!v) continue;   // вассал умер — ребро снимет смена феода
-        memory_track(e.avgValue, inventory_value(place_store(st, *v)));
+        const MacroHandle v = place_handle_by_ordinal(st,
+                                                      std::uint32_t(e.vassal));
+        if (!st.valid(v)) continue;   // вассал умер — ребро снимет смена феода
+        memory_track(e.avgValue,
+                     inventory_value(st.inventory[v.slot].inv));
         if (assess) e.owedValue += memory_value(e.avgValue) >> 3;
     }
 }
@@ -197,12 +201,14 @@ void relay_econ_fact_(void* user, const EconFact& fact) {
 void tick_settlements_(GameState& gs, MacroStore& st, int day,
                        WorldTickRuntime& runtime,
                        EconFactSink sink, void* user) {
-    for (auto& s : gs.landmarks) {
-        if (s.type != LandmarkType::City) continue;
-        // Плечо места — колонки его ТЕЛА (M-90 шаг 5).
-        const std::uint16_t slot = place_slot(st, s);
+    for_each_place(st, [&](std::uint16_t slot) {
+        if (SquadType(st.runtime[slot].squadType) != SquadType::City)
+            return;
+        const int id = int(st.spawnId[slot].index);
+        const int px = ecs::cell_x(st.cell[slot], gs.mapW);
+        const int py = ecs::cell_y(st.cell[slot], gs.mapW);
         Inventory& store = st.inventory[slot].inv;
-        EconFactRelay relay{sink, user, s.id};
+        EconFactRelay relay{sink, user, id};
         const EconFactSink rs = sink ? &relay_econ_fact_ : nullptr;
         void* ru = sink ? static_cast<void*>(&relay) : nullptr;
         // The city CRAFTS before it eats: today's table first, then fair
@@ -215,32 +221,33 @@ void tick_settlements_(GameState& gs, MacroStore& st, int day,
         // The mint right, v1: every CITY strikes its own faction's coin
         // (owner 2026-08-30; the right becomes a landmark column when a
         // place ever differs from its kind).
-        const int heads = souls_home(st, s);
+        const int heads = souls_home(st, slot);
         econ_produce_day(store, st.roster[slot].needDebt,
-                         landmark_sheet(s.type).skills,
+                         st.sheet[slot].skills,
                          heads > 0
                              ? std::max(1, heads / kHeadsPerCityWorker)
                              : 0,
                          heads, rs, ru,
-                         faction_or_freefolk(s.factionIdx));
+                         faction_or_freefolk(
+                             std::int16_t(st.kind[slot].factionIdx)));
 
         // День границы: население ест ОДНОЙ лестницей потребностей места
         // (второго стола гарнизона больше нет — M-8, v122).
         bool famine = false, died = false;
-        const int headsBefore = souls_home(st, s);
-        settle_landmark_day(gs, st, s, day, famine, died, rs, ru);
+        const int headsBefore = souls_home(st, slot);
+        settle_landmark_day(gs, st, slot, day, famine, died, rs, ru);
 
         // (Дань ушла из пер-местного дня: её ведёт один проход пула
         // феодальных рёбер tithe_daily_ — v121, род 6.)
         if (famine) {
-            record_landmark_fact(st, gs, FactKind::Starved, s.id, s.x, s.y,
+            record_landmark_fact(st, gs, FactKind::Starved, id, px, py,
                                  int(st.wellbeing[slot].starvedYesterday));
         }
         if (died) {
-            record_landmark_fact(st, gs, FactKind::Died, s.id, s.x, s.y,
+            record_landmark_fact(st, gs, FactKind::Died, id, px, py,
                                  headsBefore);
         }
-    }
+    });
 }
 
 
@@ -250,12 +257,14 @@ void tick_settlements_(GameState& gs, MacroStore& st, int day,
 void tick_villages_(GameState& gs, MacroStore& st, int day,
                     WorldTickRuntime& runtime,
                     EconFactSink sink, void* user) {
-    for (auto& v : gs.landmarks) {
-        if (v.type != LandmarkType::Village) continue;
-        // Плечо места — колонки его ТЕЛА (M-90 шаг 5).
-        const std::uint16_t slot = place_slot(st, v);
+    for_each_place(st, [&](std::uint16_t slot) {
+        if (SquadType(st.runtime[slot].squadType) != SquadType::Village)
+            return;
+        const int id = int(st.spawnId[slot].index);
+        const int px = ecs::cell_x(st.cell[slot], gs.mapW);
+        const int py = ecs::cell_y(st.cell[slot], gs.mapW);
         Inventory& store = st.inventory[slot].inv;
-        EconFactRelay relay{sink, user, v.id};
+        EconFactRelay relay{sink, user, id};
         const EconFactSink rs = sink ? &relay_econ_fact_ : nullptr;
         void* ru = sink ? static_cast<void*>(&relay) : nullptr;
         // The village-side half of the craft door. econ_day.h promises «a
@@ -263,9 +272,9 @@ void tick_villages_(GameState& gs, MacroStore& st, int day,
         // which is only true if this call exists: today no recipe carries
         // that site, so this makes nothing, and the day the row lands it
         // works with no code here either.
-        const int heads = souls_home(st, v);
+        const int heads = souls_home(st, slot);
         econ_produce_day(store, st.roster[slot].needDebt,
-                         landmark_sheet(v.type).skills,
+                         st.sheet[slot].skills,
                          heads > 0
                              ? std::max(1, heads / kHeadsPerCityWorker)
                              : 0,
@@ -274,19 +283,19 @@ void tick_villages_(GameState& gs, MacroStore& st, int day,
         // Порядок дня границы — как у города: население ест первым (одной
         // лестницей потребностей — второго стола гарнизона больше нет, M-8).
         bool famine = false, died = false;
-        const int headsBefore = souls_home(st, v);
-        settle_landmark_day(gs, st, v, day, famine, died, rs, ru);
+        const int headsBefore = souls_home(st, slot);
+        settle_landmark_day(gs, st, slot, day, famine, died, rs, ru);
 
         // (Дань деревни — то же одно ребро, ведёт tithe_daily_ — v121.)
         if (famine) {
-            record_landmark_fact(st, gs, FactKind::Starved, v.id, v.x, v.y,
+            record_landmark_fact(st, gs, FactKind::Starved, id, px, py,
                                  int(st.wellbeing[slot].starvedYesterday));
         }
         if (died) {
-            record_landmark_fact(st, gs, FactKind::Died, v.id, v.x, v.y,
+            record_landmark_fact(st, gs, FactKind::Died, id, px, py,
                                  headsBefore);
         }
-    }
+    });
 }
 
 } // namespace
@@ -310,38 +319,45 @@ void tick_player_daily_(PlayerState& p) {
 // — the cell_facts precedent: the score's source is inherently per-kind
 // context, and it is recomputed rather than stored so the save never
 // carries a second copy of what the world already knows.
-static int landmark_context_score(const MacroWorld& w, const Landmark& lm) {
-    if (lm.type == LandmarkType::Spire && w.gs) {
+static int landmark_context_score(const MacroWorld& w, SquadType kind,
+                                  int x, int y) {
+    if (kind == SquadType::Spire && w.gs) {
         // The spell is the cell's worked number (ordinal+1; 0 = drained).
         // A drained spire forgot its spell (вердикт «выкачанность = 0»), so
         // it falls to the zone byte below — the placement gate made the
         // zone track the tier anyway.
-        const int orb = worked_read(*w.gs, lm.x, lm.y);
+        const int orb = worked_read(*w.gs, x, y);
         if (orb > 0) return orb <= kSpellCount ? kSpellDefs[orb - 1].tier : 1;
     }
-    return w.zones ? int(w.zones->at(lm.x, lm.y)) : 0;
+    return w.zones ? int(w.zones->at(x, y)) : 0;
 }
 
 void regrow_dungeon_populations(const MacroWorld& w, MacroStore& st, int day) {
     if (!w.gs) return;
-    for (auto& lm : w.gs->landmarks) {
-        const LandmarkDef& def = landmark_def(lm.type);
-        if (def.bornPopBase == 0) continue;   // settlements keep their own law
-        if (souls_flock(*w.gs, st, lm) <= 0) continue;   // wiped clean stays dead
-        if ((lm.id % kGrowthEpochDays) != (day % kGrowthEpochDays)) continue;
+    const GameState& gs = *w.gs;
+    for_each_place(st, [&](std::uint16_t slot) {
+        const SquadType kind = SquadType(st.runtime[slot].squadType);
+        const LandmarkDef& def = landmark_def(kind);
+        if (def.bornPopBase == 0) return;   // settlements keep their own law
+        if (souls_flock(gs, st, slot) <= 0) return;  // wiped clean stays dead
+        const int id = int(st.spawnId[slot].index);
+        if ((id % kGrowthEpochDays) != (day % kGrowthEpochDays)) return;
+        const int x = ecs::cell_x(st.cell[slot], gs.mapW);
+        const int y = ecs::cell_y(st.cell[slot], gs.mapW);
         const int mean = int(def.bornPopBase)
-                       + int(def.bornPopPerScore) * landmark_context_score(w, lm);
-        if (souls_flock(*w.gs, st, lm) < mean) {
+                       + int(def.bornPopPerScore)
+                             * landmark_context_score(w, kind, x, y);
+        if (souls_flock(gs, st, slot) < mean) {
             // Отросшая душа данжа — ГОЛОВА его толпы (переворот v122,
             // вердикт 3): слабейшая строка полосы crowdHabitat, тем же
             // выводом, что и генезис (шпиль → Imp, руина → CaveBat).
-            const NPCType kind = weakest_crowd_kind(lm.type);
-            if (kind != NPCType::Count) {
-                creatures_push_stack(place_store(st, lm), kind,
-                                     npc_def(kind).baseLevel, 1);
+            const NPCType crowd = weakest_crowd_kind(kind);
+            if (crowd != NPCType::Count) {
+                creatures_push_stack(st.inventory[slot].inv, crowd,
+                                     npc_def(crowd).baseLevel, 1);
             }
         }
-    }
+    });
 }
 
 void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed) {
@@ -402,8 +418,9 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
         // проход не снимает ничего. Он существует ВМЕСТЕ со своим законом,
         // а не вместо него: колонка срока без тика была бы ровно той
         // половиной, которой §55 посвящён целиком.
-        for (Landmark& lm : gs.landmarks)
-            interests_tick_day(st.interests[place_slot(st, lm)]);
+        for_each_place(st, [&](std::uint16_t slot) {
+            interests_tick_day(st.interests[slot]);
+        });
         tick_settlements_(gs, st, day, runtime, esink, euser);
         tick_villages_   (gs, st, day, runtime, esink, euser);
         tithe_daily_     (gs, st, day);  // дань — проход рёбер рода 6 (v121)

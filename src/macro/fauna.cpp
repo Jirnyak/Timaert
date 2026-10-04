@@ -6,7 +6,7 @@
 //     they live in `.rodata` and never allocate.
 #include "macro/fauna.h"
 #include "macro/deposit_layer.h"
-#include "macro/landmark_grid.h"
+#include "macro/squad_index.h"
 #include "macro/macro_world.h"
 #include "macro/map_generator.h"
 #include "macro/state.h"
@@ -92,7 +92,7 @@ constexpr SpawnCounts kForestSpawnCounts{3, 8};
 
 // The place's own counts COLUMN wins (landmark registry faunaMin/faunaMax —
 // the ruin's 2..6 and the spire's 4..9 live there now); faunaMax 0 = the
-// ground answers. The LandmarkType switch that stood here was an if-chain
+// ground answers. The SquadType switch that stood here was an if-chain
 // over the registry (CANON S16).
 SpawnCounts spawn_counts(const SpawnContext& ctx) {
     const LandmarkDef& def = landmark_def(ctx.landmark);
@@ -295,7 +295,7 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
 // ── The honest headcount (Session 16) ────────────────────────────────
 
 int fauna_cell_capacity(Biome biome, int treeCount,
-                        LandmarkType landmark) {
+                        SquadType landmark) {
     // The place's own cap COLUMN wins (landmark registry faunaCap — a town is
     // the poorest hunting ground that still is one); everywhere else the
     // winning counts row caps it.
@@ -326,18 +326,16 @@ int fauna_cell_capacity_at(const MacroWorld& w, int x, int y) {
     const Biome biome = biome_at_cell(*terrain, wx, wy);
     const int treeCount = (w.trees && w.trees->has_complete_storage())
         ? int(w.trees->at(wx, wy)) : 0;
-    // РОД МЕСТА — КОЛОНКА САМОЙ ЗАПИСИ, А НЕ КОПИЯ В ИНДЕКСЕ (M-90 шаг 4).
-    // Сетка отвечает ОДНО — ординал личности клетки; род достаётся оттуда же,
-    // откуда его берёт второй читатель сетки (`cell_facts`), то есть из
-    // колонки записи. Прежде он лежал ВТОРЫМ носителем в строке индекса и
-    // обновлялся только перепёком. Поиск по ординалу идёт лишь на той редкой
-    // клетке, которую сетка объявила занятой (0 = никто).
-    LandmarkType landmark = LandmarkType::None;
-    if (w.gs && w.landmarks) {
-        if (const std::int32_t id = w.landmarks->at(wx, wy); id != 0) {
-            if (const Landmark* rec = landmark_by_id(*w.gs, id))
-                landmark = rec->type;
-        }
+    // РОД МЕСТА — ОСЬ РОДА ЕГО ТЕЛА (ломтик F: сетка мест умерла, «кто здесь
+    // живёт» отвечает каркас клеток по сквадам тем же порядком приоритета —
+    // settlement_at). Колонка runtime.squadType и есть та самая колонка
+    // записи, которую читал второй читатель сетки (`cell_facts`): носитель
+    // один, копий рода больше нет нигде.
+    SquadType landmark = SquadType::None;
+    if (w.squads && w.store) {
+        const MacroHandle who = settlement_at(*w.squads, *w.store, wx, wy);
+        if (w.store->valid(who))
+            landmark = SquadType(w.store->runtime[who.slot].squadType);
     }
     return fauna_cell_capacity(biome, treeCount, landmark);
 }

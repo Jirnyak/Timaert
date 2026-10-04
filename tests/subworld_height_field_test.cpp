@@ -45,7 +45,7 @@ sm::sub::CellContext resolve_relief_cell(int cx, int cy) {
     c.feature = (slot == 1 || slot == 7) ? sm::FT_Road : sm::FT_None;
     c.landmark.id = -1;
     c.landmark.size = 0;
-    c.landmark.kind = sm::LandmarkType::None;
+    c.landmark.kind = sm::SquadType::None;
     c.seed = 0x4e1d0000u ^ sm::sub::cell_seed(0u, cx, cy);
     return c;
 }

@@ -41,23 +41,38 @@ namespace {
 int g_playerCellX = 0;
 int g_playerCellY = 0;
 
-// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад (M-90 шаг 5):
-// склад, счёт нужд и знание роли — колонки его ТЕЛА, значит и фикстуре, и
-// движку квестов нужен store. Миры свидетеля делят его: их тела друг друга
-// не видят (строка носит СВОЙ bodyBits), а профиль памяти store от населения
-// не зависит (ЗАКОН СТАБИЛЬНОСТИ).
+// ОДИН store НА ВЕСЬ СВИДЕТЕЛЬ. Место есть неподвижный сквад, и ломтиком F
+// оно ЕСТЬ слот этого store целиком: склад, счёт нужд, знание роли, ординал и
+// род — его колонки. Миры свидетеля делят один блок, потому что профиль
+// памяти store от населения не зависит (ЗАКОН СТАБИЛЬНОСТИ).
 sm::MacroStore& places() {
     static std::unique_ptr<sm::MacroStore> st = sm::make_macro_store();
     return *st;
 }
 
-// Место приходит в мир ОДНОЙ дверью, и строка держится ИНДЕКСОМ: следующее
-// рождение двигает вектор строк, и ссылка протухла бы молча.
-std::size_t settle_place(sm::GameState& gs, sm::Landmark&& lm, int souls) {
-    const std::size_t idx = gs.landmarks.size();
-    sm::birth_landmark(gs, places(), std::move(lm));
-    if (souls > 0) sm::settle_souls(gs, places(), gs.landmarks[idx], souls);
-    return idx;
+// СВЕЖИЙ МИР СЦЕНАРИЯ — И GameState, И ПУСТОЙ store. До ломтика F сценарию
+// хватало нового GameState: тела прошлых сценариев оставались в store, но
+// места жили СТРОКАМИ, и чужие тела их не касались. Теперь место ЕСТЬ тело,
+// значит мир без обнуления store начинался бы с чужими городами — а эмитент
+// свежего GameState выдаёт с единицы и столкнул бы два субъекта в одном
+// ординале.
+sm::GameState fresh_world(int w = 128, int h = 128) {
+    sm::store_reset(places());
+    sm::GameState gs{};
+    gs.mapW = w;
+    gs.mapH = h;
+    return gs;
+}
+
+// Место приходит в мир ОДНОЙ дверью и возвращает ХЭНДЛ своего тела: ординал
+// эмитится внутри двери, а колонки читаются по слоту.
+sm::MacroHandle settle_place(sm::GameState& gs, sm::SquadType kind,
+                             int x, int y, std::int16_t factionIdx = -1,
+                             const char* name = nullptr, int souls = 0) {
+    const sm::MacroHandle h =
+        sm::birth_place(gs, places(), kind, x, y, factionIdx, name);
+    if (souls > 0) sm::settle_souls(gs, places(), h.slot, souls);
+    return h;
 }
 
 
@@ -300,6 +315,7 @@ void test_quest_accept_event_order() {
     q.onAccept.push_back(onAccept);
     sm::EventBus bus;
     sm::QuestEngine engine;
+    sm::store_reset(places());   // мир сценария начинается пустым
     sm::GameState gs{};
     std::vector<sm::Quest> active;
     std::size_t activeDuringOnAccept = 0;
@@ -460,9 +476,7 @@ void test_grant_xp_pays_the_wis_dividend() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    sm::GameState wisState{};
-    wisState.mapW = 64;
-    wisState.mapH = 64;
+    sm::GameState wisState = fresh_world(64, 64);
     sheet.levelData = sm::default_level_data();
     sheet.levelData.expToNext = 1000;   // выше выплаты: мерим ОПЫТ, не уровень
     sheet.attributes[sm::AttributeId::Wis] = 10;  // expMult = 1.10
@@ -505,9 +519,7 @@ void test_quest_xp_reward_levels_the_player() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 64;
-    gs.mapH = 64;
+    sm::GameState gs = fresh_world(64, 64);
     sheet.levelData = sm::default_level_data();
     sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend
 
@@ -973,9 +985,7 @@ void test_quest_failed_settles_its_offer() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
+    sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(10, 6, 0);
         g_playerCellX = 1;
     g_playerCellY = 1;
@@ -1042,26 +1052,19 @@ void test_item_delivery_direct_path() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
+    sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 12;
     g_playerCellY = 18;
     bag.add("wood", 3);
 
-    sm::Landmark settlement{};
-    settlement.type = sm::LandmarkType::City;
-    settlement.id = 7;
-    std::snprintf(settlement.name, sizeof settlement.name, "Test Anchorage");
-    settlement.x = 12;
-    settlement.y = 18;
-    settlement.factionIdx = 0;
     // Души селятся ОДНОЙ дверью мира (labour.h settle_souls): фикстура
     // обязана ставить их тем же законом, что генезис, — паства в worked,
-    // головы в инвентаре ТЕЛА места (M-90 шаг 5).
-    const int settlementId = settlement.id;
-    settle_place(gs, std::move(settlement), 1000);
+    // головы в инвентаре ТЕЛА места (ломтик F).
+    const sm::MacroHandle settlement =
+        settle_place(gs, sm::SquadType::City, 12, 18, 0,
+                     "Test Anchorage", 1000);
+    const int settlementId = int(places().spawnId[settlement.slot].index);
 
     sm::Quest q{};
     q.ordinal = 7u;
@@ -1104,9 +1107,7 @@ void test_quest_reward_dispatch_order_and_application() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
+    sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 10;
     g_playerCellY = 10;
@@ -1118,14 +1119,10 @@ void test_quest_reward_dispatch_order_and_application() {
     // ДАРИТЕЛЬ с казной, потому что платит только он — выдача монет из
     // воздуха для награды без дарителя снесена (M-139, вердикт владельца
     // 2026-09-26). Место кладём руками, с запасом стоимости на награду.
-    sm::Landmark giver{};
-    giver.id = 1;
-    giver.type = sm::LandmarkType::Village;
-    std::snprintf(giver.name, sizeof giver.name, "Giver");
-    const int giverId = giver.id;
-    const std::size_t giverIdx = settle_place(gs, std::move(giver), 64);
-    sm::place_store(places(), gs.landmarks[giverIdx])
-        .add("coin_empire_copper", 40);
+    const sm::MacroHandle giver =
+        settle_place(gs, sm::SquadType::Village, 0, 0, -1, "Giver", 64);
+    const int giverId = int(places().spawnId[giver.slot].index);
+    places().inventory[giver.slot].inv.add("coin_empire_copper", 40);
 
     sm::Quest q{};
     q.ordinal = 9u;
@@ -1233,9 +1230,7 @@ void test_visit_cell_objective() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
+    sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 40;
     g_playerCellY = 50;
@@ -1265,9 +1260,7 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
+    sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 10;
     g_playerCellY = 10;
@@ -1324,9 +1317,7 @@ void test_destroy_npc_objective() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
+    sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
 
     sm::Quest q{};
@@ -1437,25 +1428,18 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
+    sm::GameState gs = fresh_world(128, 128);
     gs.worldSeed = 0x71477147u;
-    gs.mapW = 128;
-    gs.mapH = 128;
     gs.worldTime = sm::world_time_at(5, 0, 0);
 
-    sm::Landmark city{};
-    city.type = sm::LandmarkType::City;
-    city.id = 7;
-    std::snprintf(city.name, sizeof city.name, "Same Id City");
-    city.x = 20;
-    city.y = 20;
-    const int cityId = city.id;
-    const std::size_t cityIdx = settle_place(gs, std::move(city), 500);
+    const sm::MacroHandle city =
+        settle_place(gs, sm::SquadType::City, 20, 20, -1, "Town", 500);
+    const int cityId = int(places().spawnId[city.slot].index);
     // Steer gen_delivery through the honest surface: tools are the town's
     // SCARCEST consumed good (food plentiful, everything else stocked).
-    // Склад — колонка ТЕЛА места (M-90 шаг 5).
+    // Склад — колонка ТЕЛА места (ломтик F).
     {
-        sm::Inventory& shelf = sm::place_store(places(), gs.landmarks[cityIdx]);
+        sm::Inventory& shelf = places().inventory[city.slot].inv;
         shelf.add("food", 2048);
         shelf.add("cloth", 128);
         shelf.add("bricks", 128);
@@ -1465,17 +1449,17 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
         shelf.add("statue", 128);
     }
 
-    sm::Landmark village{};
-    village.type = sm::LandmarkType::Village;
-    village.id = 7;
-    std::snprintf(village.name, sizeof village.name, "Same Id Village");
-    village.x = 24;
-    village.y = 22;
-    const std::size_t villageIdx = settle_place(gs, std::move(village), 80);
-    sm::set_suzerain(gs, places(), gs.landmarks[villageIdx].id, cityId);
+    // ВАССАЛ ГОРОДА: до ломтика F фикстура давала деревне ТОТ ЖЕ id 7, что
+    // городу («Same Id»), и феодальное ребро молча не ставилось вовсе —
+    // `set_suzerain` отказывает при vassalId == suzerainId. Один эмитент
+    // (M-37) делает такой мир невыразимым, и ребро теперь ставится честно.
+    const sm::MacroHandle village =
+        settle_place(gs, sm::SquadType::Village, 24, 22, -1, "Hamlet", 80);
+    sm::set_suzerain(gs, places(), int(places().spawnId[village.slot].index),
+                     cityId);
 
     const auto cityQuests =
-        sm::generate_quests_for_settlement(gs.landmarks[cityIdx], places(),
+        sm::generate_quests_for_settlement(city.slot, places(),
                                            gs, gs.worldSeed);
     CHECK_OR_RETURN(!(cityQuests.empty()),
         "offer provenance test did not generate quests");
@@ -1496,7 +1480,7 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     // Tomorrow's offers are new identities by construction.
     gs.worldTime = sm::world_time_at(6, 0, 0);
     const auto tomorrow =
-        sm::generate_quests_for_settlement(gs.landmarks[cityIdx], places(),
+        sm::generate_quests_for_settlement(city.slot, places(),
                                            gs, gs.worldSeed);
     CHECK_OR_RETURN(!(tomorrow.empty()),
         "offer provenance test did not generate tomorrow's quests");
@@ -1554,29 +1538,20 @@ void test_shuffled_order_guards_rng_upper_bound() {
 // economy-driven delivery quest is generated, accepted, completed and
 // rewarded exactly once.
 void test_generated_delivery_quest_flow() {
-    sm::GameState gs{};
+    sm::GameState gs = fresh_world(128, 128);
     gs.worldSeed = 0x5eed1234u;
-    gs.mapW = 128;
-    gs.mapH = 128;
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 12;
     g_playerCellY = 18;
     bag.add("coin_empire_copper", 100);
 
-    sm::Landmark settlement{};
-    settlement.type = sm::LandmarkType::City;
-    settlement.id = 7;
-    std::snprintf(settlement.name, sizeof settlement.name, "Test Anchorage");
-    settlement.x = 12;
-    settlement.y = 18;
-    settlement.factionIdx = 0;
-    const int settlementId = settlement.id;
-    const std::size_t settlementIdx =
-        settle_place(gs, std::move(settlement), 1000);
-    // Склад — колонка ТЕЛА места (M-90 шаг 5).
+    const sm::MacroHandle settlement =
+        settle_place(gs, sm::SquadType::City, 12, 18, 0,
+                     "Test Anchorage", 1000);
+    const int settlementId = int(places().spawnId[settlement.slot].index);
+    // Склад — колонка ТЕЛА места (ломтик F).
     {
-        sm::Inventory& shelf =
-            sm::place_store(places(), gs.landmarks[settlementIdx]);
+        sm::Inventory& shelf = places().inventory[settlement.slot].inv;
         shelf.add("food", 2048);
         shelf.add("cloth", 128);
         shelf.add("bricks", 128);
@@ -1591,7 +1566,7 @@ void test_generated_delivery_quest_flow() {
     for (int day = 0; day < 256 && !found; ++day) {
         gs.worldTime = sm::world_time_at(day, 0, 0);
         const auto generated =
-            sm::generate_quests_for_settlement(gs.landmarks[settlementIdx],
+            sm::generate_quests_for_settlement(settlement.slot,
                                                places(), gs, gs.worldSeed);
         if (const sm::Quest* q = find_delivery_quest(generated, "tools")) {
             selected = *q;
@@ -1614,9 +1589,12 @@ void test_generated_delivery_quest_flow() {
     // canon-audit B3 closed) — fund the treasury, or the town honestly
     // pays nothing and this test would measure a thin purse, not the law.
     {
-        sm::Landmark* giver = sm::landmark_by_id(gs, settlementId);
-        CHECK_OR_RETURN(!(giver == nullptr), "fixture: giver landmark");
-        sm::place_store(places(), *giver)
+        // Даритель спрашивается ТОЙ ЖЕ дверью, что у движка (ломтик F):
+        // резолв по ординалу плюс гейт оси рода.
+        const sm::MacroHandle giver = sm::place_handle_by_ordinal(
+            places(), std::uint32_t(settlementId));
+        CHECK_OR_RETURN(!(!places().valid(giver)), "fixture: giver landmark");
+        places().inventory[giver.slot].inv
             .add("coin_empire_copper", rewardGold * 4);
     }
     const int deliverN = selected.objectives.front().quantity;

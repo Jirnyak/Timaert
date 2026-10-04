@@ -56,7 +56,7 @@ struct Town {
 // Build one settlement. `roadDirs` is a bitmask over the 8 kDirOffsets
 // directions that carry a road, so both the connected case and the isolated
 // one (which must still leave a postern) are reachable.
-Town make_town(LandmarkType kind, std::uint32_t seed, int population,
+Town make_town(SquadType kind, std::uint32_t seed, int population,
                unsigned roadDirs) {
     CellContext c{};
     c.cx = 64;
@@ -229,7 +229,7 @@ int houses_in_masonry(const Town& t) {
     return bad;
 }
 
-void check_town(const char* what, LandmarkType kind, std::uint32_t seed,
+void check_town(const char* what, SquadType kind, std::uint32_t seed,
                 int population, unsigned roadDirs) {
     const Town t = make_town(kind, seed, population, roadDirs);
     char msg[256];
@@ -255,7 +255,7 @@ void check_town(const char* what, LandmarkType kind, std::uint32_t seed,
     const int wallTiles = count_tiles(t, TILE_WALL);
     constexpr float kPi = 3.14159265f;
     const float enclosed =
-        kind == LandmarkType::City
+        kind == SquadType::City
             ? city_target_area(population)
             : kPi * wall_inner_bound(village_wall_radius(population),
                                      kSettlementWallRing.villageRoughness)
@@ -294,7 +294,7 @@ void check_town(const char* what, LandmarkType kind, std::uint32_t seed,
     // A VILLAGE fields no garrison, so it mans no circuit: it keeps one watch
     // platform, over the gate, where the road comes in. Demanding four stone
     // towers of a hamlet is what produced a hamlet with four stone towers.
-    if (kind == LandmarkType::City) {
+    if (kind == SquadType::City) {
         // WHAT COUNTS AS A TOWER, asked of the ring model rather than of a
         // hand-picked radius (the old test said `radius > 2.5f`, a number
         // between the two classes it happened to see — M-132). A tower reads as
@@ -348,7 +348,7 @@ void check_town(const char* what, LandmarkType kind, std::uint32_t seed,
 // merely widens that gate, and the audit rightly keeps calling it a gate —
 // which is exactly how the first version of this control fooled itself.
 void check_detector_has_teeth() {
-    Town t = make_town(LandmarkType::City, 1234u, 6000, 0b00001111u);
+    Town t = make_town(SquadType::City, 1234u, 6000, 0b00001111u);
     CHECK(audit_ring(t).breaches == 0, "control: the intact town is sound first");
 
     // The wedge is cleared of BOTH masonry and paving. Masonry alone is not
@@ -389,14 +389,14 @@ int main() {
     // Connected towns: roads from four directions, then a stair-stepped pair —
     // the neighbourhood that used to produce two gates a few tiles apart with
     // an empty arch between them.
-    check_town("city/cardinals",   LandmarkType::City,    1234u,   6000, 0b00001111u);
-    check_town("city/stairstep",   LandmarkType::City,    77u,     2400, 0b00010001u);
-    check_town("city/one road",    LandmarkType::City,    9001u,   800,  0b00000001u);
+    check_town("city/cardinals",   SquadType::City,    1234u,   6000, 0b00001111u);
+    check_town("city/stairstep",   SquadType::City,    77u,     2400, 0b00010001u);
+    check_town("city/one road",    SquadType::City,    9001u,   800,  0b00000001u);
     // Isolated: no road neighbour at all. The postern is the only way in, and
     // the curtain must still close everywhere else.
-    check_town("city/isolated",    LandmarkType::City,    424242u, 1200, 0u);
-    check_town("village/walled",   LandmarkType::Village, 5150u,   400,  0b00000011u);
-    check_town("village/isolated", LandmarkType::Village, 8080u,   300,  0u);
+    check_town("city/isolated",    SquadType::City,    424242u, 1200, 0u);
+    check_town("village/walled",   SquadType::Village, 5150u,   400,  0b00000011u);
+    check_town("village/isolated", SquadType::Village, 8080u,   300,  0u);
     check_detector_has_teeth();
     return sm::test::report("city_wall_integrity_test");
 }

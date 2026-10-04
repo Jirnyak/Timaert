@@ -24,8 +24,7 @@
 #include "macro/economy.h"
 #include "macro/anketa.h"
 #include "macro/npc_ai.h"
-#include "macro/place_birth.h"   // make_place_body — тело фикстурного места
-#include "macro/place_body.h"    // place_store — склад места колонкой тела
+#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/state.h"
 #include "macro/store.h"
 
@@ -36,25 +35,24 @@ long long commodity_total(const sm::Inventory& a, const sm::Inventory& b,
     return (long long)a.count(id) + b.count(id);
 }
 
-// ── ФИКСТУРНОЕ МЕСТО = СТРОКА ПЛЮС ТЕЛО (M-90 шаг 5) ─────────────────────
-// Плечо места — склад и счёт содержания — живёт КОЛОНКАМИ MacroStore его
-// тела, поэтому голая строка без тела не отвечает ни на один вопрос
-// торговли. Рынки этого свидетеля в мировом ростере не стоят (сделке
-// GameState не нужен вовсе), значит им нужна ровно вторая половина двери
-// рождения — тело.
-sm::Landmark fixture_place(sm::MacroStore& st, const sm::GameState& gs,
-                           sm::LandmarkType type, int id = 0) {
-    sm::Landmark lm{};
-    lm.type = type;
-    lm.id = id;
-    sm::make_place_body(st, gs, lm);
-    return lm;
+// ── ФИКСТУРНОЕ МЕСТО = ТЕЛО, И ДРУГОГО МЕСТА НЕТ (ломтик F) ──────────────
+// Плечо места — склад, счёт содержания, род, ординал — КОЛОНКИ его слота в
+// MacroStore. «Половинчатого» места (строка без тела) больше не существует,
+// поэтому все рынки этого свидетеля идут одной дверью рождения; сделке при
+// этом нужен только store, мир — затем, чтобы тело знало свою клетку.
+std::uint16_t fixture_place(sm::MacroStore& st, sm::GameState& gs,
+                            sm::SquadType type) {
+    return sm::birth_place(gs, st, type, 0, 0).slot;
 }
 
 // Счёт содержания места — колонка ростера его тела (roster.h): одна
 // лестница на место и на отряд, байт в байт.
-std::int32_t* need_debt(sm::MacroStore& st, const sm::Landmark& lm) {
-    return st.roster[sm::place_slot(st, lm)].needDebt;
+std::int32_t* need_debt(sm::MacroStore& st, std::uint16_t slot) {
+    return st.roster[slot].needDebt;
+}
+
+sm::Inventory& shelf(sm::MacroStore& st, std::uint16_t slot) {
+    return st.inventory[slot].inv;
 }
 
 }  // namespace
@@ -73,14 +71,14 @@ int main() {
     // «не хватает хлеба» = НЕПОГАШЕННЫЙ СЧЁТ: спрос кривой читает его
     // остаток, а проданный в город хлеб гасит счёт и СЪЕДАЕТСЯ на месте —
     // на полку ложится только излишек сверх счёта.
-    sm::Landmark city = fixture_place(mstore, gsFix, sm::LandmarkType::City);
+    const std::uint16_t city = fixture_place(mstore, gsFix, sm::SquadType::City);
     // Души — ГОЛОВАМИ в инвентарь записи (v122; запись живёт вне мира, так
     // что паства-worked ей не нужна: торговля спрашивает РТЫ). Счёт еды —
     // `roster_bill` по таблице, а не «душа × сезон» литералом.
-    sm::raise_flock_into_roster(sm::place_store(mstore, city), 64);
+    sm::raise_flock_into_roster(shelf(mstore, city), 64);
     need_debt(mstore, city)[sm::commodity_index("food")] =
-        sm::roster_bill(sm::place_store(mstore, city)).board;
-    CHECK(sm::place_store(mstore, city).add("wood", 2000), "fixture: city wood glut");
+        sm::roster_bill(shelf(mstore, city)).board;
+    CHECK(shelf(mstore, city).add("wood", 2000), "fixture: city wood glut");
     // КОШЕЛЁК ФИКСТУРЫ ПОДНЯТ ДО НОВЫХ ЦЕН (S25, тот же переезд, что у
     // вендора и лесоруба на снятии коридора): без «домашней маржи» ×0.7
     // сделка стоит полную цену кривой, и тонкая казна доплачивала ТОВАРОМ
@@ -89,7 +87,7 @@ int main() {
     // сторожит ТОРГОВЛЮ, поэтому его рынок обязан быть платёжеспособным;
     // сама находка — «оплата натурой ест сезонный амбар» — записана хвостом
     // в NEXT_SESSION, она старше этой правки и ею не лечится.
-    CHECK(sm::place_store(mstore, city).add("coin_empire_copper", 6000), "fixture: city purse");
+    CHECK(shelf(mstore, city).add("coin_empire_copper", 6000), "fixture: city purse");
 
     sm::Inventory hold;
     CHECK(hold.add("food", 200), "fixture: hold food");
@@ -101,18 +99,18 @@ int main() {
     CHECK(hold.add("coin_empire_copper", 12000), "fixture: hold purse");
 
     const long long coinBefore =
-        sm::coin_census_value(hold) + sm::coin_census_value(sm::place_store(mstore, city));
-    const long long woodBefore = commodity_total(hold, sm::place_store(mstore, city), "wood");
+        sm::coin_census_value(hold) + sm::coin_census_value(shelf(mstore, city));
+    const long long woodBefore = commodity_total(hold, shelf(mstore, city), "wood");
     const long long foodBefore =
-        commodity_total(hold, sm::place_store(mstore, city), "food");
+        commodity_total(hold, shelf(mstore, city), "food");
     const int foodDebtBefore =
         need_debt(mstore, city)[sm::commodity_index("food")];
     const int foodDemand = sm::season_demand_for(
         sm::item_index("food"), need_debt(mstore, city), sm::souls_home(mstore, city),
-        sm::landmark_sheet(sm::LandmarkType::City).skills, &sm::place_store(mstore, city));
+        sm::landmark_sheet(sm::SquadType::City).skills, &shelf(mstore, city));
     const int woodDemand = sm::season_demand_for(
         sm::item_index("wood"), need_debt(mstore, city), sm::souls_home(mstore, city),
-        sm::landmark_sheet(sm::LandmarkType::City).skills, &sm::place_store(mstore, city));
+        sm::landmark_sheet(sm::SquadType::City).skills, &shelf(mstore, city));
 
     // РАВНЫЕ АНКЕТЫ (S25): обе стороны называют одну торговую силу, значит
     // наценки нет и границы ниже — границы САМОЙ кривой цены, без примеси
@@ -121,7 +119,7 @@ int main() {
         mstore, hold, /*capacityKg=*/1e6f, city,
         /*myTradePct=*/0, /*theirTradePct=*/0);
 
-    CHECK(sm::coin_census_value(hold) + sm::coin_census_value(sm::place_store(mstore, city))
+    CHECK(sm::coin_census_value(hold) + sm::coin_census_value(shelf(mstore, city))
               == coinBefore,
           "station: coin is conserved");
     // ХЛЕБ СОХРАНЯЕТСЯ СКВОЗЬ СЧЁТ: проданное в место гасит долг и
@@ -129,8 +127,8 @@ int main() {
     // единица в единицу.
     const int foodDebtPaid = foodDebtBefore
         - need_debt(mstore, city)[sm::commodity_index("food")];
-    CHECK(commodity_total(hold, sm::place_store(mstore, city), "wood") == woodBefore
-              && commodity_total(hold, sm::place_store(mstore, city), "food")
+    CHECK(commodity_total(hold, shelf(mstore, city), "wood") == woodBefore
+              && commodity_total(hold, shelf(mstore, city), "food")
                          + foodDebtPaid
                      == foodBefore,
           "station: goods are conserved (food — through the bill)");
@@ -141,7 +139,7 @@ int main() {
     CHECK(foodDebtPaid > 0,
           "station: the sold food paid the bill on the spot");
     CHECK(st.boughtValue > 0, "station: the surplus was bought");
-    CHECK(sm::place_store(mstore, city).count("wood") >= woodDemand,
+    CHECK(shelf(mstore, city).count("wood") >= woodDemand,
           "station: never buys below the market's own need");
     CHECK(hold.count("wood") > 0, "station: the surplus rode away");
     // Price bounds derived from the SAME law the code reads: no unit is
@@ -163,18 +161,18 @@ int main() {
     // ── The vendor run ───────────────────────────────────────────────────
     // A village crew brings food to a town that lacks it; home lacks tools
     // (snapshot class 0), the town holds them.
-    sm::Landmark town = fixture_place(mstore, gsFix, sm::LandmarkType::City);
-    sm::raise_flock_into_roster(sm::place_store(mstore, town), 64);
+    const std::uint16_t town = fixture_place(mstore, gsFix, sm::SquadType::City);
+    sm::raise_flock_into_roster(shelf(mstore, town), 64);
     // Хлебный счёт не погашен — из него производный спрос на зерно (город
     // печёт); счёт по инструментам оплачен, полка с ними — ИЗЛИШЕК.
     need_debt(mstore, town)[sm::commodity_index("food")] =
-        sm::roster_bill(sm::place_store(mstore, town)).board;
-    CHECK(sm::place_store(mstore, town).add("tools", 50), "fixture: town tools");
+        sm::roster_bill(shelf(mstore, town)).board;
+    CHECK(shelf(mstore, town).add("tools", 50), "fixture: town tools");
     // The purse covers the load at the SEASONAL famine price (the corridor
     // died 2026-09-18): a starving shelf prices near base × seasonal need,
     // and a fixture purse tuned to the old 4× ceiling could afford nothing —
     // which is the affordability law working, not the vendor failing.
-    CHECK(sm::place_store(mstore, town).add("coin_empire_copper", 20000), "fixture: town purse");
+    CHECK(shelf(mstore, town).add("coin_empire_copper", 20000), "fixture: town purse");
 
     // ДОМ — САМО МЕСТО: зерна навалом, инструментов нет. Ведомость-кэш
     // уничтожена 2026-09-30 (ломтик E шаг 2), и сделка читает дом теми же
@@ -182,25 +180,23 @@ int main() {
     sm::GameState hgs{};
     hgs.mapW = 64;
     hgs.mapH = 64;
-    sm::Landmark homeRow{};
-    homeRow.type = sm::LandmarkType::Village;
-    homeRow.id = 1;
-    // Дом СТОИТ В МИРЕ, поэтому идёт полной дверью рождения: строка в
-    // ростер, тело в store (M-90 шаг 5).
-    sm::Landmark& home = sm::birth_landmark(hgs, mstore, std::move(homeRow));
-    sm::raise_flock_into_roster(sm::place_store(mstore, home), 50);
-    CHECK(sm::place_store(mstore, home).add("food", 5000), "fixture: home food");
+    // Дом идёт ТОЙ ЖЕ дверью, что рынки: ломтиком F второй двери рождения
+    // места не существует вовсе.
+    const sm::MacroHandle home =
+        sm::birth_place(hgs, mstore, sm::SquadType::Village, 0, 0);
+    sm::raise_flock_into_roster(shelf(mstore, home.slot), 50);
+    CHECK(shelf(mstore, home.slot).add("food", 5000), "fixture: home food");
 
     sm::Inventory bag;
     CHECK(bag.add("food", 300), "fixture: vendor food");
 
     const long long vCoinBefore =
-        sm::coin_census_value(bag) + sm::coin_census_value(sm::place_store(mstore, town));
+        sm::coin_census_value(bag) + sm::coin_census_value(shelf(mstore, town));
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
-        mstore, bag, 1e6f, town, &home,
+        mstore, bag, 1e6f, town, home,
         /*myTradePct=*/0, /*theirTradePct=*/0);
 
-    CHECK(sm::coin_census_value(bag) + sm::coin_census_value(sm::place_store(mstore, town))
+    CHECK(sm::coin_census_value(bag) + sm::coin_census_value(shelf(mstore, town))
               == vCoinBefore,
           "vendor: coin is conserved");
     // Проданное в место с непогашенным счётом гасится и СЪЕДАЕТСЯ в дверях
@@ -209,10 +205,10 @@ int main() {
     // привезённое зерно ложится ровно в тот счёт, который город не покрыл.
     // Счёт, который город НЕ покрыл, читается той же дверью, что его
     // выставила (roster_bill по головам) — ни одного пересказанного числа.
-    const int townDebtPaid = sm::roster_bill(sm::place_store(mstore, town)).board
+    const int townDebtPaid = sm::roster_bill(shelf(mstore, town)).board
         - need_debt(mstore, town)[sm::commodity_index("food")];
     CHECK(bag.count("food") == 0
-              && sm::place_store(mstore, town).count("food") + townDebtPaid == 300,
+              && shelf(mstore, town).count("food") + townDebtPaid == 300,
           "vendor: the whole load was sold");
     CHECK(vd.soldValue > 0, "vendor: the sale paid real coin");
     CHECK(bag.count("tools") > 0,
@@ -236,28 +232,29 @@ int main() {
     // грузом сводится с двумя домами, и утверждается РАЗНИЦА.
     {
         const auto buy_home_food = [&](int homeFood) {
-            sm::Landmark hm =
-                fixture_place(mstore, gsFix, sm::LandmarkType::City, 1);
-            sm::raise_flock_into_roster(sm::place_store(mstore, hm), 2520);
+            const std::uint16_t hm =
+                fixture_place(mstore, gsFix, sm::SquadType::City);
+            sm::raise_flock_into_roster(shelf(mstore, hm), 2520);
             // Счёт сезона ВЫСТАВЛЕН целиком у ОБОИХ — довод «у него же есть
             // нужда» снят заранее: нужда есть, и гора всё равно делает хлеб
             // дешёвым дома.
             need_debt(mstore, hm)[sm::commodity_index("food")] =
-                sm::roster_bill(sm::place_store(mstore, hm)).board;
+                sm::roster_bill(shelf(mstore, hm)).board;
             if (homeFood > 0)
-                CHECK(sm::place_store(mstore, hm).add("food", homeFood),
+                CHECK(shelf(mstore, hm).add("food", homeFood),
                       "fixture: the home's shelf");
 
-            sm::Landmark mkt =
-                fixture_place(mstore, gsFix, sm::LandmarkType::City);
-            sm::raise_flock_into_roster(sm::place_store(mstore, mkt), 64);
-            CHECK(sm::place_store(mstore, mkt).add("food", 4000), "fixture: market food");
-            CHECK(sm::place_store(mstore, mkt).add("coin_empire_copper", 20000),
+            const std::uint16_t mkt =
+                fixture_place(mstore, gsFix, sm::SquadType::City);
+            sm::raise_flock_into_roster(shelf(mstore, mkt), 64);
+            CHECK(shelf(mstore, mkt).add("food", 4000), "fixture: market food");
+            CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
                   "fixture: market purse");
 
             sm::Inventory crew;
             CHECK(crew.add("food", 300), "fixture: crew load");
-            sm::trade_vendor_at_market(mstore, crew, 1e6f, mkt, &hm,
+            sm::trade_vendor_at_market(mstore, crew, 1e6f, mkt,
+                                       sm::handle_at(mstore, hm),
                                        /*myTradePct=*/0,
                                        /*theirTradePct=*/0);
             return crew.count("food");
@@ -276,24 +273,25 @@ int main() {
     // обязано продать и уехать с выручкой, а не покупать вслепую (CANON
     // S10, ярус 1 — торговля стоит и без знания).
     {
-        sm::Landmark mkt =
-            fixture_place(mstore, gsFix, sm::LandmarkType::City);
-        sm::raise_flock_into_roster(sm::place_store(mstore, mkt), 64);
-        CHECK(sm::place_store(mstore, mkt).add("tools", 50), "fixture: unlit market tools");
-        CHECK(sm::place_store(mstore, mkt).add("coin_empire_copper", 20000),
+        const std::uint16_t mkt =
+            fixture_place(mstore, gsFix, sm::SquadType::City);
+        sm::raise_flock_into_roster(shelf(mstore, mkt), 64);
+        CHECK(shelf(mstore, mkt).add("tools", 50), "fixture: unlit market tools");
+        CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
               "fixture: unlit market purse");
         sm::Inventory bag4;
         CHECK(bag4.add("food", 300), "fixture: unlit crew load");
         const sm::CaravanDeal d = sm::trade_vendor_at_market(
-            mstore, bag4, 1e6f, mkt, nullptr, /*myTradePct=*/0, /*theirTradePct=*/0);
+            mstore, bag4, 1e6f, mkt, sm::MacroHandle{},
+            /*myTradePct=*/0, /*theirTradePct=*/0);
         CHECK(d.soldValue > 0 && d.boughtValue == 0
                   && bag4.count("tools") == 0,
               "no home, no guessing: the crew sells and rides home");
     }
 
     // ── Negative control: a coinless market buys nothing, loses nothing ──
-    sm::Landmark broke = fixture_place(mstore, gsFix, sm::LandmarkType::City);
-    sm::raise_flock_into_roster(sm::place_store(mstore, broke), 64);
+    const std::uint16_t broke = fixture_place(mstore, gsFix, sm::SquadType::City);
+    sm::raise_flock_into_roster(shelf(mstore, broke), 64);
     sm::Inventory bag2;
     CHECK(bag2.add("food", 50), "fixture: control food");
     const sm::CaravanDeal none = sm::trade_caravan_at_station(
@@ -311,14 +309,14 @@ int main() {
     // бы платежом раньше своей строки — обе половины сделки по отдельности
     // сторожит станция выше, эдж-пин держит продажу.
     const auto run_fixture = [&](int edge) {
-        sm::Landmark m = fixture_place(mstore, gsFix, sm::LandmarkType::City);
-        sm::raise_flock_into_roster(sm::place_store(mstore, m), 64);
+        const std::uint16_t m = fixture_place(mstore, gsFix, sm::SquadType::City);
+        sm::raise_flock_into_roster(shelf(mstore, m), 64);
         need_debt(mstore, m)[sm::commodity_index("food")] =
-            sm::roster_bill(sm::place_store(mstore, m)).board;
+            sm::roster_bill(shelf(mstore, m)).board;
         // Казна с запасом НАД честной ценой лота (полный лот 200 хлеба в
         // голодный счёт ≈ 20 400): упрись оба варианта в одну и ту же
         // казну — эдж стал бы невидим (оба заплатили бы всё, что есть).
-        sm::place_store(mstore, m).add("coin_empire_copper", 30000);
+        shelf(mstore, m).add("coin_empire_copper", 30000);
         sm::Inventory h;
         h.add("food", 200);
         // Перевес — РАЗНИЦА сил (S25): рынок назван нулём, караван — edge.

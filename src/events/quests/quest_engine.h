@@ -64,6 +64,9 @@ public:
 // whole "quest_" marker set, so it is idempotent and also reconciles stale pins
 // carried in from a loaded save. Universal: no per-quest special-casing — the
 // cell resolver mirrors eval_objective() field-for-field.
-void rebuild_quest_markers(GameState& gs, const std::vector<Quest>& active);
+// `st` — там, где живёт адрес места (ломтик F): пин доставки резолвится по
+// ординалу давателя, и без store мир не умеет сказать, где он стоит.
+void rebuild_quest_markers(GameState& gs, const MacroStore& st,
+                           const std::vector<Quest>& active);
 
 } // namespace sm
