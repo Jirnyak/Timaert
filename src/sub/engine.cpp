@@ -159,8 +159,8 @@ constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 // column also scales its sprite, so a body can never be a different size than it
 // looks). Reading the row per tick — one array index — keeps them in sync with
 // the tables for free: making a dragon wide and far-seeing is two numbers in
-// fauna.cpp and no code at all. ecs::BodyRadius still wins when present, because
-// the player body is the camera and carries an explicit radius.
+// fauna.cpp and no code at all. (The explicit ecs::BodyRadius override died in
+// M-150 кусок 0 — zero production writers; the ladder lives in sub/body.h.)
 // Body SIZE moved to sub/body.h (`body_radius`), where BOTH weapons now read it.
 // This file's copy was the better of the two — it consulted both body tables —
 // but keeping a private one here is exactly what let the projectile copy drift
@@ -808,8 +808,8 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
                       projected, projected == 1 ? "" : "s");
         set_status(msg);
     }
-    // Materialise the player as a real ECS entity (the movable AvatarTag flag /
-    // subworld sim-centre): a full combat actor (Health + BodyRadius + Combat +
+    // Materialise the player as a real ECS entity (the movable avatar ref /
+    // subworld sim-centre): a full combat actor (Position + Pools + Combat +
     // SubworldTag) that hostiles target through the universal paths (Inc 4b).
     spawn_player_entity();
     if (gs_) {
@@ -873,10 +873,10 @@ void SubworldEngine::sync_macro_player_to_center() {
 
 // ── Player entity (Inc 4b) ──────────────────────────────────────────────
 //
-// The player is a movable "flag" (`ecs::AvatarTag`) on a real ECS entity — the
-// owner's §8 model where any NPC can receive the flag and the flagged entity is
-// the subworld sim-centre. It is a FULL combat actor: Position + AvatarTag +
-// Health + BodyRadius + Combat + SubworldTag. Because its signature now matches
+// The player is a movable AVATAR REF ({avatarSlot, avatarId} in SubObjects) on
+// a real ECS entity — the owner's §8 model where any NPC can receive the ref
+// and the referenced entity is the subworld sim-centre. It is a FULL combat
+// actor: Position + Pools + Combat + SubworldTag. Because its signature matches
 // the combat/projectile views, hostiles melee it and spells strike it through
 // exactly the same universal paths as any NPC — no player special-case in the
 // sim. Its bars are a MIRROR of the record the flag stands in
@@ -972,9 +972,6 @@ void SubworldEngine::spawn_player_entity() {
     //    nothing pushes it back — the blow already wrote the record.
     //  - SubworldTag puts the entity in the combat actor set so hostiles pick
     //    it as a melee/projectile target through the SAME paths as any NPC.
-    //  - BodyRadius gives it a sane hit size (it has no SubworldAi/Sprite to
-    //    stand in), so melee reach and projectile contact against the player
-    //    match a humanoid instead of the coarse body_radius() fallback.
     //  - Combat carries the player's OUTGOING melee identity (Inc 4c): the
     //    sheet-derived swing damage (10 + rawPhysDamage) plus the melee range /
     //    cooldown constants. tick_player_melee reads THIS component instead of

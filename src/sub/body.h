@@ -18,18 +18,18 @@
 //
 // THE ORDER, most specific first. Each step answers "who has the best claim to
 // know this body's width":
-//   1. `ecs::BodyRadius` — an explicit per-entity override. NO production
-//      spawner writes it any more (census M-150 step 0: zero emplace sites in
-//      src/) — only test fixtures size bodies with it; the rung dies with the
-//      flat-crowd move, where radius is a column.
-//   2. The body's `kNpcTypeDefs` row (macro/npc.h) — ONE table for wolf and
+//   1. The body's `kNpcTypeDefs` row (macro/npc.h) — ONE table for wolf and
 //      spearman alike (CANON S16): its authored `radius` first, then what its
 //      combat line implies for a man-shaped thing (`combat.bodyRadius`).
-//   3. `ecs::SubworldAi.radius` — the mover's own idea of its footprint.
-//   4. `ecs::Sprite.scale` — a billboard's VISUAL size standing in for a
+//   2. `ecs::SubworldAi.radius` — the mover's own idea of its footprint.
+//   3. `ecs::Sprite.scale` — a billboard's VISUAL size standing in for a
 //      physical one. Kept because bare test and console entities rely on it, but
 //      it is a conflation: see the note at the bottom.
-//   5. `kBodyRadiusFallback` — a bare entity that declares nothing at all.
+//   4. `kBodyRadiusFallback` — a bare entity that declares nothing at all.
+// (An explicit `ecs::BodyRadius` override stood ABOVE the row and died in
+// M-150 кусок 0: the census found zero production writers — only fixtures fed
+// it. The player states no width on purpose — sub/engine.cpp «NO BodyRadius
+// override» — and answers with the fallback like any bare body.)
 #pragma once
 
 #include "ecs/components.h"
@@ -42,8 +42,8 @@
 
 namespace sm::sub {
 
-// Last-resort body radius for a body carrying neither an explicit
-// ecs::BodyRadius nor a table row (a bare test/console entity): the same
+// Last-resort body radius for a body carrying neither a table row nor an
+// authored mover/sprite width (a bare test/console entity): the same
 // man-shaped width the table defaults to — one number, one home (npc.h).
 inline constexpr float kBodyRadiusFallback = kNpcBodyRadiusDefault;
 
@@ -59,7 +59,6 @@ inline const NpcTypeDef* row_for(const ecs::NPCKind* kind) {
 
 // THE combat half-width of a body, in world units (≈ metres).
 inline float body_radius(const entt::registry& reg, entt::entity e) {
-    if (const auto* br = reg.try_get<ecs::BodyRadius>(e)) return br->radius;
     const auto* kind = reg.try_get<ecs::NPCKind>(e);
     if (const NpcTypeDef* row = row_for(kind)) {
         // The row's ONE width column, man-shaped default resolved (npc.h).
@@ -132,12 +131,12 @@ inline float body_height_m(const NpcTypeDef& row) {
     return kHumanHeightM;
 }
 
-// KNOWN CONFLATION, left deliberately. Step 5 reads `Sprite.scale`, which is a
+// KNOWN CONFLATION, left deliberately. Step 3 reads `Sprite.scale`, which is a
 // billboard's drawing size, as a physical width — one field wearing two
 // meanings. It survives because bare fixtures lean on it, and removing it would
 // silently shrink those bodies to the fallback rather than fail loudly. The
-// honest cure is to give every spawner a real radius (a table row or an explicit
-// BodyRadius) and then delete the step; until then it lives in ONE place, where
-// changing it changes every weapon at once.
+// honest cure is to give every spawner a real radius (a table row or an
+// authored SubworldAi radius) and then delete the step; until then it lives in
+// ONE place, where changing it changes every weapon at once.
 
 } // namespace sm::sub

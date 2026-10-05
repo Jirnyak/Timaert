@@ -82,15 +82,11 @@ inline int cell_y(MacroCell c, int mapW) {
 // the recovery law and the stamina bookkeeping compile without the component
 // roster; the story of the block lives with the block.
 
-// Explicit combat body radius — the distance at which this entity is struck by
-// melee, projectiles, and blasts (see the sub-layer target_radius()). It is the
-// universal, preferred source for that radius; the combat code falls back to
-// SubworldAi.radius, then Sprite.scale, then a coarse default only when this is
-// absent. Carried by any entity that is neither an AI mover nor a billboard yet
-// must still present a sane hit size — notably the player, who is the camera
-// (no Sprite) and is input-driven (no SubworldAi). Nothing here is
-// player-specific: it is a plain spatial property any actor may hold.
-struct BodyRadius { float radius; };
+// (An explicit `BodyRadius` override lived here and died in M-150 кусок 0:
+// the census found ZERO production writers — only test fixtures fed it, so
+// the override had outlived every author it was built for. A body's width is
+// the ladder in sub/body.h: table row → SubworldAi.radius → Sprite.scale →
+// fallback.)
 
 // Combat stats — universal stat block, the ECS face of CombatTemplate.
 struct Combat {
@@ -727,7 +723,6 @@ TIMAERT_ROW(sm::ecs::Position);
 TIMAERT_ROW(sm::ecs::VisualPos);
 TIMAERT_ROW(sm::ecs::MacroVisual);
 TIMAERT_ROW(sm::ecs::MacroCell);
-TIMAERT_ROW(sm::ecs::BodyRadius);
 TIMAERT_ROW(sm::ecs::Combat);
 TIMAERT_ROW(sm::ecs::MissileAttack);
 TIMAERT_ROW(sm::ecs::SubworldTag);

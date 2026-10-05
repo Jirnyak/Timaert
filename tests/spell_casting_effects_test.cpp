@@ -1123,9 +1123,15 @@ int main() {
         //
         // The ladder below is deliberately irregular and straddles the muzzle
         // offset (5.0) and the old probe points, so a return to point sampling
-        // fails here loudly instead of passing by luck. Radii are production's:
-        // BodyRadius 1.2 on the target, not the fat 6.0 the other fixtures use,
-        // because a fat target hides precisely this bug.
+        // fails here loudly instead of passing by luck. Radii are AUTHORED BY
+        // THIS FIXTURE to pin that geometry: caster 1.5 puts the muzzle at
+        // exactly 5.0 (caster_spawn_offset = 1.5 + bolt 1.5 + 2.0), target 1.2
+        // keeps the contact radius ~2.7 the gap arithmetic above is built on —
+        // not the fat 6.0 the other fixtures use, because a fat target hides
+        // precisely this bug. Both ride SubworldAi.radius, the rung a body
+        // with no table row answers from (sub/body.h; the explicit BodyRadius
+        // override died in M-150 кусок 0). No AI pass ticks here, so the
+        // component is inert beyond its width column.
         const float kRanges[] = {1.5f, 3.0f, 4.9f, 6.0f, 8.0f, 9.4f,
                                  14.3f, 20.6f, 27.0f, 35.8f};
         for (const float range : kRanges) {
@@ -1137,25 +1143,24 @@ int main() {
             sweepCombat.mp = 1000;
             sweepCombat.maxMp = 1000;
             sm::spellbook_learn(sweepBook, sm::spell_ordinal("magic_bolt"));
-            // Caster at the origin, so the muzzle geometry is production's —
-            // including his BODY RADIUS. add_player leaves it off, and without
-            // it target_radius falls back to 6.0, wrapping the caster in a shell
-            // far bigger than kPlayerBodyRadius (1.5): the swept segment would
-            // then start inside its own caster and strike him instead of the
-            // target. Production emplaces BodyRadius on the player
-            // (sub/engine.cpp spawn_player_entity), and caster_spawn_offset's
-            // +2.0 margin is exactly what keeps the muzzle clear of that shell.
+            // Caster at the origin; his authored 1.5 shell pins the muzzle at
+            // 5.0 (see the ladder note above), and caster_spawn_offset's +2.0
+            // margin is exactly what keeps the muzzle clear of that shell.
             const auto sweepCaster = add_player(sweepWorld, 0.0f, 0.0f);
-            sweepWorld.reg.emplace<sm::ecs::BodyRadius>(
-                entt::entity(sweepCaster), sm::ecs::BodyRadius{1.5f});
+            sweepWorld.reg.emplace<sm::ecs::SubworldAi>(
+                entt::entity(sweepCaster),
+                sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
+                                    0.0f, 0.0f, 0.0f, 0.0f, 1.5f});
             auto sweepTarget = sweepWorld.create();
             sm::test::give_slot(sweepWorld.reg, sweepTarget);
             sweepWorld.reg.emplace<sm::ecs::Position>(
                 sweepTarget, range, 0.0f, 0.0f);
             sweepWorld.reg.emplace<sm::ecs::Pools>(sweepTarget, 100, 100);
             sweepWorld.reg.emplace<sm::ecs::SubworldTag>(sweepTarget);
-            sweepWorld.reg.emplace<sm::ecs::BodyRadius>(
-                sweepTarget, sm::ecs::BodyRadius{1.2f});
+            sweepWorld.reg.emplace<sm::ecs::SubworldAi>(
+                sweepTarget,
+                sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
+                                    0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
             if (!sm::spellbook_cast(sweepWorld, sweepBook, sweepCombat,
                                     attributes, skills, sm::spell_ordinal("magic_bolt"),
                                     sweepCaster, 0.0f, 0.0f, 0.0f,
