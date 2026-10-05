@@ -1500,8 +1500,6 @@ void spawn_player_squad(ecs::World& w,
                                soldier.kind, soldier.level}),
             squadBonuses);
         object_flag_set(reg, e, kObjPlayerSoldier);
-        reg.emplace<ecs::SoldierLink>(e, soldier.entityId, soldier.kind,
-                                      std::int16_t(level));
     }
 }
 

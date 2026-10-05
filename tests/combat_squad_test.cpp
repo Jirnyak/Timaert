@@ -8,6 +8,7 @@
 #include "sub/ai.h"
 #include "sub/spawn.h"
 #include "macro/store.h"
+#include "macro/macro_stock.h"  // займ ростера — носитель идентичности солдата
 
 #include <cstdio>
 #include <vector>
@@ -164,21 +165,22 @@ int main() {
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u,
                                 playerFaction);
-    auto view = world.reg.view<sm::ecs::SoldierLink,
+    auto view = world.reg.view<sm::ecs::MacroDebt,
                                sm::ecs::NPCKind, sm::ecs::Combat,
                                sm::ecs::Pools, sm::ecs::NpcLevel,
                                sm::ecs::SubworldAi>();
     int projected = 0;
     for (auto e : view) {
+        const auto& loan = view.get<sm::ecs::MacroDebt>(e);
+        if (loan.stock != std::uint8_t(sm::MacroStock::Roster)) continue;
         ++projected;
         if (!sm::sub::object_flag(world.reg, e, sm::sub::kObjPlayerSoldier)) {
             return fail("a projected soldier lacks the player-side bit");
         }
-        const auto& link = view.get<sm::ecs::SoldierLink>(e);
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
         const auto& ai = view.get<sm::ecs::SubworldAi>(e);
-        if (link.entityId != 42u
-            || link.kind != std::uint8_t(sm::NPCType::Guard)
+        if (loan.detail != 42
+            || loan.detailKind != std::uint16_t(sm::NPCType::Guard)
             || kind.type != std::uint16_t(sm::NPCType::Guard)
             || ai.kind != sm::ecs::SubworldAi::Combat) {
             return fail("subworld projection lost soldier identity or AI contract");
@@ -204,11 +206,11 @@ int main() {
     std::vector<std::uint8_t> malformedTiles(1, 0u);
     sm::sub::spawn_player_squad(malformedWorld, player, malformedTiles,
                                 512.0f, 512.0f, 100u, playerFaction);
-    auto malformedView = malformedWorld.reg.view<sm::ecs::SoldierLink>();
+    auto malformedView = malformedWorld.reg.view<sm::ecs::MacroDebt>();
     int malformedProjected = 0;
     for (auto e : malformedView) {
-        (void)e;
-        ++malformedProjected;
+        if (malformedView.get<sm::ecs::MacroDebt>(e).stock
+            == std::uint8_t(sm::MacroStock::Roster)) ++malformedProjected;
     }
     if (malformedProjected != 1) {
         return fail("malformed tile buffer blocked squad projection");

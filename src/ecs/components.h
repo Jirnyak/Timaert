@@ -275,17 +275,10 @@ struct NpcTraits {
     std::uint8_t traits[2]{};
 };
 
-// Link from a subworld entity back to the macro soldier record. The macro
-// roster remains authoritative; the ECS entity is a session projection.
-struct SoldierLink {
-    std::uint32_t entityId;
-    // The same 16-bit kind a roster record carries (macro/army.h): a humanoid
-    // ordinal below 0x100, a monster catalog row at or above it. A beast in a
-    // squad is an ordinary member, so its link has to be able to say which
-    // beast.
-    std::uint16_t kind;
-    std::int16_t  level;
-};
+// (SoldierLink УМЕР 2026-10-05, M-150 ломоть 2 кусок 1: писатель один,
+// читателей в src НОЛЬ — идентичность солдата {entityId, kind, level} УЖЕ
+// едет займом ростера MacroDebt{detail, detailKind, detailLevel}, второй
+// носитель того же факта; свидетели переякорены на займ.)
 
 // What this body/prop was BORROWED FROM in the macro world (macro/macro_stock.h).
 //
@@ -746,7 +739,6 @@ TIMAERT_ROW(sm::ecs::NpcLevel);
 TIMAERT_ROW(sm::ecs::NpcInventory);
 TIMAERT_ROW(sm::ecs::BodyEquipment);
 TIMAERT_ROW(sm::ecs::NpcTraits);
-TIMAERT_ROW(sm::ecs::SoldierLink);
 TIMAERT_ROW(sm::ecs::MacroDebt);
 TIMAERT_ROW(sm::ecs::MacroOrigin);
 TIMAERT_ROW(sm::ecs::NpcCharacter);

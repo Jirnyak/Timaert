@@ -332,10 +332,10 @@ bool run_water_blocked_squad_case() {
                                 std::uint16_t(sm::faction_index(sm::kPlayerFactionId)));
 
     int projected = 0;
-    auto view = world.reg.view<sm::ecs::SoldierLink>();
+    auto view = world.reg.view<sm::ecs::MacroDebt>();
     for (auto e : view) {
-        (void)e;
-        ++projected;
+        if (view.get<sm::ecs::MacroDebt>(e).stock
+            == std::uint8_t(sm::MacroStock::Roster)) ++projected;
     }
     return projected == 0;
 }

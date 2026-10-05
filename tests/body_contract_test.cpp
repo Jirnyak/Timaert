@@ -67,7 +67,7 @@ void test_every_squad_body_is_a_whole_body() {
                             512.0f, 512.0f, 123u, playerFaction);
 
     auto& reg = world.reg;
-    auto view = reg.view<ecs::SoldierLink>();
+    auto view = reg.view<ecs::MacroDebt>();
 
     int bodies = 0;
     int missingFace = 0, missingCombat = 0, missingHealth = 0, missingSheet = 0;
@@ -76,6 +76,8 @@ void test_every_squad_body_is_a_whole_body() {
     int offTableHeight = 0;
 
     for (auto e : view) {
+        if (view.get<ecs::MacroDebt>(e).stock
+            != std::uint8_t(MacroStock::Roster)) continue;
         ++bodies;
         const auto* kind   = reg.try_get<ecs::NPCKind>(e);
         const auto* health = reg.try_get<ecs::Pools>(e);
@@ -341,11 +343,13 @@ void test_a_leaders_aura_reaches_his_men() {
                             f);
 
     int compared = 0;
-    for (auto eLed : led.reg.view<ecs::SoldierLink>()) {
-        const auto& linkLed = led.reg.get<ecs::SoldierLink>(eLed);
-        for (auto eAlone : alone.reg.view<ecs::SoldierLink>()) {
-            if (alone.reg.get<ecs::SoldierLink>(eAlone).entityId
-                    != linkLed.entityId) {
+    for (auto eLed : led.reg.view<ecs::MacroDebt>()) {
+        const auto& loanLed = led.reg.get<ecs::MacroDebt>(eLed);
+        if (loanLed.stock != std::uint8_t(MacroStock::Roster)) continue;
+        for (auto eAlone : alone.reg.view<ecs::MacroDebt>()) {
+            const auto& loanAlone = alone.reg.get<ecs::MacroDebt>(eAlone);
+            if (loanAlone.stock != std::uint8_t(MacroStock::Roster)
+                || loanAlone.detail != loanLed.detail) {
                 continue;
             }
             const float withAura = (*led.reg.try_get<ecs::Pools>(eLed)).maxHp;
