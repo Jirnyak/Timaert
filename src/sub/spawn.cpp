@@ -806,7 +806,7 @@ void maybe_emplace_missile_attack(entt::registry& reg,
 void maybe_emplace_flying(entt::registry& reg, entt::entity e,
                           const CombatTemplate& combat) {
     if (combat.cruiseM <= 0.0f) return;
-    reg.emplace<ecs::Flying>(e);
+    object_flag_set(reg, e, kObjFlying);
 }
 
 // Attach the NPC type's carried light (torch / lantern / arcane glow), if it has
@@ -1211,7 +1211,8 @@ void clear_subworld_world_entities(ecs::World& w) {
         int doomedCount = 0;
         auto view = reg.view<ecs::SubworldTag>();
         for (auto e : view) {
-            if (reg.any_of<ecs::PlayerSoldierTag, ecs::AvatarTag>(e)) continue;
+            if (reg.any_of<ecs::AvatarTag>(e)
+                || object_flag(reg, e, kObjPlayerSoldier)) continue;
             // Projected macro NPCs (Inc 5d) mirror persistent overworld bodies,
             // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
             // must leave them be, exactly like the player-side projections above.
@@ -1380,7 +1381,8 @@ void despawn_subworld_entities_outside_window(ecs::World& w) {
         int doomedCount = 0;
         auto view = reg.view<ecs::SubworldTag, ecs::Position>();
         for (auto e : view) {
-            if (reg.any_of<ecs::PlayerSoldierTag, ecs::AvatarTag>(e)) continue;
+            if (reg.any_of<ecs::AvatarTag>(e)
+                || object_flag(reg, e, kObjPlayerSoldier)) continue;
             const auto& p = view.get<ecs::Position>(e);
             const bool inside = p.x >= 0.0f && p.x < float(kFullSize)
                              && p.y >= 0.0f && p.y < float(kFullSize);
@@ -1497,7 +1499,7 @@ void spawn_player_squad(ecs::World& w,
                                    : -1,
                                soldier.kind, soldier.level}),
             squadBonuses);
-        reg.emplace<ecs::PlayerSoldierTag>(e);
+        object_flag_set(reg, e, kObjPlayerSoldier);
         reg.emplace<ecs::SoldierLink>(e, soldier.entityId, soldier.kind,
                                       std::int16_t(level));
     }

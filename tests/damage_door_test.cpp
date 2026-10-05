@@ -88,7 +88,8 @@ void test_death_is_indistinguishable() {
 
         CHECK(hit.applied == 25.0f, "lethal blow applies its full amount");
         CHECK(hit.lethal, "a blow past remaining hp is lethal");
-        CHECK(reg.all_of<sm::ecs::Dead>(e), "every kind stamps Dead");
+        CHECK(sm::test::flag_of(reg, e, sm::sub::kObjDead),
+              "every kind stamps the Dead bit");
         CHECK((fx_of(reg, e) & sm::sub::kDmgFxPending) != 0,
               "every kind stamps DamageFx");
         CHECK((fx_of(reg, e) & sm::sub::kDmgFxLethal) != 0,
@@ -475,7 +476,8 @@ void test_survivor_protocol() {
     CHECK(!hit.lethal, "a survivable blow is not lethal");
     CHECK((*reg.try_get<sm::ecs::Pools>(e)).hp == 20.0f,
           "hp drops by exactly the applied amount");
-    CHECK(!reg.any_of<sm::ecs::Dead>(e), "a survivor is not Dead");
+    CHECK(!sm::test::flag_of(reg, e, sm::sub::kObjDead),
+          "a survivor is not Dead");
     CHECK(death_events(bus) == 0, "a survivor emits nothing");
     CHECK((fx_of(reg, e) & sm::sub::kDmgFxPending) != 0,
           "DamageFx is stamped on every hit that lands");
@@ -500,7 +502,7 @@ void test_player_death_is_not_an_npc_kill() {
             apply_damage(reg, e, DamageSource{3u, false}, 50.0f, kind,
                          sm::DamageType::Blunt, &bus);
         CHECK(hit.lethal, "the player body does die");
-        CHECK(reg.all_of<sm::ecs::Dead>(e),
+        CHECK(sm::test::flag_of(reg, e, sm::sub::kObjDead),
               "Dead is stamped so the reconcile sees the death");
         CHECK(death_events(bus) == 0,
               "no NpcDeath for a player death, whatever the weapon");
@@ -643,7 +645,7 @@ void test_the_blow_lands_on_the_record() {
         apply_damage(reg, body, DamageSource{}, 30, DamageKind::Script,
                      sm::DamageType::Blunt, &bus);
     }
-    CHECK(reg.any_of<sm::ecs::Dead>(body)
+    CHECK(sm::test::flag_of(reg, body, sm::sub::kObjDead)
               && (*sm::body_state<sm::ecs::Pools>(*store, record)).hp <= 0,
           "lethality is judged on the record, and the corpse tag lands on the "
           "body that fell");

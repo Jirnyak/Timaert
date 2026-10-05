@@ -138,4 +138,36 @@ inline void objects_attach(entt::registry& reg, SubObjects* o) {
     reg.on_destroy<ecs::ObjectSlot>().connect<&on_object_slot_destroy>(*o);
 }
 
+// ── Биты маски через сущность (ломоть 1б, транзит миграции) ─────────────
+// Бывшие entt-теги читаются/пишутся ТОЛЬКО этими тремя дверями, пока жив
+// реестр; ломоть 7 заменит сущность слотом и двери схлопнутся в прямой
+// доступ к колонке. Тело без слота (фикстура без арены) честно отвечает
+// «бита нет», запись — no-op: та же ветка транзита, что у emplace_body.
+inline bool object_flag(const entt::registry& reg, entt::entity e,
+                        std::uint16_t bit) {
+    if (e == entt::null || !reg.valid(e)) return false;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return false;
+    SubObjects* const* objs = reg.ctx().find<SubObjects*>();
+    return objs != nullptr
+        && ((*objs)->flags[std::size_t(os->slot)] & bit) != 0u;
+}
+inline void object_flag_set(entt::registry& reg, entt::entity e,
+                            std::uint16_t bit) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->flags[std::size_t(os->slot)] |= bit;
+    }
+}
+inline void object_flag_clear(entt::registry& reg, entt::entity e,
+                              std::uint16_t bit) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->flags[std::size_t(os->slot)] =
+            std::uint16_t(objs->flags[std::size_t(os->slot)] & ~bit);
+    }
+}
+
 } // namespace sm::sub

@@ -168,7 +168,10 @@ struct MissileAttack {
 // Tag components. (An `Active` tag lived here with THIRTEEN emplace sites and
 // zero readers — no view, no any_of, nothing ever asked. Deleted 2026-08-05:
 // a tag nobody reads is not a state, it is noise every spawn site paid for.)
-struct Dead {};
+// (Dead / PlayerSoldierTag / TempHostileToPlayer / Flying УМЕРЛИ 2026-10-05,
+// M-150 ломоть 1б: четыре тега тел — БИТЫ маски flags единого массива
+// объектов, kObjDead/kObjPlayerSoldier/kObjTempHostile/kObjFlying
+// (sub/objects.h); читаются/пишутся дверями object_flag* (sub/record.h).)
 // «Кем я на КАРТЕ» — the macro flag, and MACRO ONLY (scale split, owner
 // verdict 2026-09-10): it rides the player's own squad by default and a
 // possessed lord's while he wears one. С 1е (кластер 5) оба макро-вопроса —
@@ -181,12 +184,9 @@ struct Dead {};
 // physically cannot find a macro entity, so the scene's player passes need
 // no scale guards at all.
 struct AvatarTag {};
-struct PlayerSoldierTag {};
-struct TempHostileToPlayer {};
 // Marks an entity that lives only in the current subworld scene; cleared
 // on enter/leave so we never destroy persistent macro NPCs by accident.
 struct SubworldTag {};
-struct Flying {};
 // Lazy vertical state (sub/height.h vertical_step): emplaced the moment a
 // non-flying body leaves its support surface (walked off a battlement, lost
 // flight, a future jump), removed on landing. Grounded bodies — the thousands
@@ -736,12 +736,8 @@ TIMAERT_ROW(sm::ecs::MacroCell);
 TIMAERT_ROW(sm::ecs::BodyRadius);
 TIMAERT_ROW(sm::ecs::Combat);
 TIMAERT_ROW(sm::ecs::MissileAttack);
-TIMAERT_ROW(sm::ecs::Dead);
 TIMAERT_ROW(sm::ecs::AvatarTag);
-TIMAERT_ROW(sm::ecs::PlayerSoldierTag);
-TIMAERT_ROW(sm::ecs::TempHostileToPlayer);
 TIMAERT_ROW(sm::ecs::SubworldTag);
-TIMAERT_ROW(sm::ecs::Flying);
 TIMAERT_ROW(sm::ecs::Airborne);
 TIMAERT_ROW(sm::ecs::NPCKind);
 TIMAERT_ROW(sm::ecs::SubworldAi);

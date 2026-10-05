@@ -80,7 +80,7 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
         std::uint8_t(255), std::uint8_t(255), std::uint8_t(255),
         std::uint8_t(255), 6.0f);
     if (playerSide) {
-        w.reg.emplace<sm::ecs::PlayerSoldierTag>(e);
+        sm::test::give_flag(w.reg, e, sm::sub::kObjPlayerSoldier);
     } else {
         w.reg.emplace<sm::ecs::NPCKind>(e, sm::ecs::NPCKind{2, 2});
     }

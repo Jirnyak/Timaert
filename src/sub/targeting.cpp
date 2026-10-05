@@ -1,6 +1,7 @@
 #include "sub/targeting.h"
 #include "sub/body.h"
 #include "sub/movement.h"   // kMaxBodyCrowd — THE subworld body ceiling
+#include "sub/record.h"     // object_flag — биты маски слота (ломоть 1б)
 
 #include <cmath>
 
@@ -13,10 +14,11 @@ namespace {
 inline bool melee_candidate(entt::registry& reg, entt::entity e) {
     if (!reg.all_of<ecs::Position, ecs::Pools, ecs::NPCKind,
                     ecs::SubworldTag>(e)
-        || reg.any_of<ecs::Dead>(e)) {
+        || object_flag(reg, e, kObjDead)) {
         return false;
     }
-    if (reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(e)) return false;
+    if (reg.any_of<ecs::AvatarTag>(e)
+        || object_flag(reg, e, kObjPlayerSoldier)) return false;
     return (*reg.try_get<ecs::Pools>(e)).hp > 0;
 }
 
@@ -76,7 +78,7 @@ entt::entity melee_pick_target(entt::registry& reg,
         }
     }
     auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
-                         ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+                         ecs::SubworldTag>();
     for (auto e : view) consider(e);
     return hostileBest != entt::null ? hostileBest : anyBest;
 }
@@ -98,10 +100,12 @@ entt::entity aim_target(entt::registry& reg,
     // entity, which carries no NPCKind; the explicit player-side skip below
     // additionally covers projected player soldiers.
     auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
-                         ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+                         ecs::SubworldTag>();
     for (auto e : view) {
         if (e == shooter) continue;
-        if (reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(e)) continue;
+        if (object_flag(reg, e, kObjDead)) continue;
+        if (reg.any_of<ecs::AvatarTag>(e)
+            || object_flag(reg, e, kObjPlayerSoldier)) continue;
 
         const auto& hp = view.get<ecs::Pools>(e);
         if (hp.hp <= 0) continue;

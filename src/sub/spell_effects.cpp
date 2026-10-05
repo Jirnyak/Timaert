@@ -4,6 +4,7 @@
 #include "sub/base_generator.h"
 #include "sub/body.h"
 #include "sub/movement.h"   // kMaxBodyCrowd — THE subworld body ceiling
+#include "sub/record.h"     // object_flag — биты маски слота (ломоть 1б)
 #include "macro/store.h"
 
 #include <array>
@@ -47,7 +48,8 @@ bool projectile_owner_is_player_side(const entt::registry& reg,
                                      const ecs::Projectile& p) {
     const entt::entity owner = entt::entity(p.ownerId);
     return reg.valid(owner)
-        && reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(owner);
+        && (reg.any_of<ecs::AvatarTag>(owner)
+            || object_flag(reg, owner, kObjPlayerSoldier));
 }
 
 bool is_spell_target(const entt::registry& reg, entt::entity e,
@@ -60,7 +62,7 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     // (caster_spawn_offset / the NPC muzzle offset), and its own AoE blast
     // still catches it if it stands in the blast.
     if (!reg.any_of<ecs::Pools>(e)) return false;
-    if (reg.any_of<ecs::Dead>(e)) return false;
+    if (object_flag(reg, e, kObjDead)) return false;
     if (reg.any_of<ecs::Projectile>(e)) return false;
     if (!reg.any_of<ecs::SubworldTag>(e) && !reg.any_of<ecs::AvatarTag>(e)) {
         return false;
@@ -115,9 +117,11 @@ void for_each_spell_candidate(ecs::World& w,
             return;
         }
     }
-    auto targets = w.reg.view<ecs::Position, ecs::Pools>(
-        entt::exclude<ecs::Dead>);
-    for (auto e : targets) fn(e, targets.get<ecs::Position>(e));
+    auto targets = w.reg.view<ecs::Position, ecs::Pools>();
+    for (auto e : targets) {
+        if (object_flag(w.reg, e, kObjDead)) continue;
+        fn(e, targets.get<ecs::Position>(e));
+    }
 }
 
 void queue_reap(std::array<entt::entity, kMaxSpellReaps>& reaps,
@@ -155,7 +159,8 @@ void apply_spell_damage(ecs::World& w,
                                           DamageType(p.dmgType), bus);
     if (hit.applied <= 0) return;
     if (playerOwned && logFn
-        && !w.reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(target)) {
+        && !(w.reg.any_of<ecs::AvatarTag>(target)
+             || object_flag(w.reg, target, kObjPlayerSoldier))) {
         logFn(logUser, std::uint32_t(entt::to_integral(target)),
               hit.applied, hit.lethal);
     }

@@ -6,6 +6,7 @@
 // Assertions go through tests/check.h — CHECK + sm::test::report.
 
 #include "check.h"
+#include "scene_objects_fixture.h"  // give_flag — биты маски (ломоть 1б)
 
 #include "ecs/world.h"
 #include "sub/targeting.h"
@@ -84,7 +85,8 @@ int main() {
         entt::registry reg;
         entt::entity a = make_enemy(reg, 106, 100);  // ahead, dist 6
         entt::entity soldier = make_enemy(reg, 101, 100); // ahead, dist 1
-        reg.emplace<ecs::PlayerSoldierTag>(soldier);  // player's own -> skip
+        sm::test::give_flag(reg, soldier,
+                            sub::kObjPlayerSoldier);  // player's own -> skip
         entt::entity ptag = make_enemy(reg, 102, 100); // ahead, dist 2
         reg.emplace<ecs::AvatarTag>(ptag);            // the player body -> skip
         CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
@@ -96,7 +98,7 @@ int main() {
         entt::registry reg;
         entt::entity a = make_enemy(reg, 106, 100); // ahead, dist 6
         entt::entity corpse = make_enemy(reg, 101, 100); // ahead, dist 1
-        reg.emplace<ecs::Dead>(corpse);
+        sm::test::give_flag(reg, corpse, sub::kObjDead);
         CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "Dead entities excluded even when nearer");
         // Zero-HP but not yet tagged Dead is also excluded.

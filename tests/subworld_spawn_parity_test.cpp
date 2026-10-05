@@ -332,7 +332,7 @@ bool run_water_blocked_squad_case() {
                                 std::uint16_t(sm::faction_index(sm::kPlayerFactionId)));
 
     int projected = 0;
-    auto view = world.reg.view<sm::ecs::PlayerSoldierTag>();
+    auto view = world.reg.view<sm::ecs::SoldierLink>();
     for (auto e : view) {
         (void)e;
         ++projected;

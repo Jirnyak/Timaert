@@ -15,6 +15,7 @@
 //     than blinding the swing.
 
 #include "check.h"
+#include "scene_objects_fixture.h"  // give_flag — биты маски (ломоть 1б)
 #include "sub/targeting.h"
 #include "sub/body.h"
 #include "tables/npc.h"
@@ -117,9 +118,9 @@ void test_grid_arm_parity_and_fallback() {
 void test_player_side_and_dead_are_invisible() {
     entt::registry reg;
     const entt::entity soldier = body(reg, NPCType::Guard, 2.0f, 0.0f);
-    reg.emplace<sm::ecs::PlayerSoldierTag>(soldier);
+    sm::test::give_flag(reg, soldier, sm::sub::kObjPlayerSoldier);
     const entt::entity corpse = body(reg, NPCType::Frog, 2.5f, 0.0f);
-    reg.emplace<sm::ecs::Dead>(corpse);
+    sm::test::give_flag(reg, corpse, sm::sub::kObjDead);
     CHECK(melee_pick_target(reg, 0, 0, 0, 5.0f, &never_hostile, nullptr)
               == entt::null,
           "the swing sees neither the player's own soldier nor a corpse");

@@ -35,6 +35,17 @@ inline void give_slot(entt::registry& reg, entt::entity e) {
     if (slot >= 0) reg.emplace<sm::ecs::ObjectSlot>(e, std::uint16_t(slot));
 }
 
+// Бит маски телу фикстуры — как поставила бы боевая дверь; слот рожается
+// по надобности (свидетель сам рожает предусловие, §8 п.11).
+inline void give_flag(entt::registry& reg, entt::entity e,
+                      std::uint16_t bit) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::object_flag_set(reg, e, bit);
+}
+inline bool flag_of(entt::registry& reg, entt::entity e, std::uint16_t bit) {
+    return sm::sub::object_flag(reg, e, bit);
+}
+
 inline std::uint8_t fx_of(entt::registry& reg, entt::entity e) {
     const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);
     return os ? arena_of(reg).damageFx[os->slot] : std::uint8_t{0};

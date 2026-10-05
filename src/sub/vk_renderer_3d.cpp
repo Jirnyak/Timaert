@@ -8,6 +8,7 @@
 #include "sub/material.h"
 #include "sub/map_data.h"
 #include "sub/movement.h"   // kMaxBodyCrowd — THE subworld body ceiling
+#include "sub/record.h"     // object_flag — биты маски слота (ломоть 1б)
 #include "sub/particles.h"
 #include "sub/seamless_manager.h"
 #include "sub/sky.h"
@@ -3999,8 +4000,9 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
     const float cellM = spanM / float(kLightFieldDim);
 
     auto view = ecs->reg.view<ecs::Position, ecs::LightEmitter,
-                               ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+                               ecs::SubworldTag>();
     for (auto e : view) {
+        if (object_flag(ecs->reg, e, kObjDead)) continue;
         const auto& pos = view.get<ecs::Position>(e);
         const auto& le  = view.get<ecs::LightEmitter>(e);
         float wx = 0.0f, wz = 0.0f;
@@ -4165,7 +4167,7 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
         // SubworldTag scopes to the live scene; the player entity carries it too,
         // so its lantern is gathered through this very view with no special-case.
         auto view = ecs->reg.view<ecs::Position, ecs::LightEmitter,
-                                   ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+                                   ecs::SubworldTag>();
         // Gather EVERY candidate first (each is one GpuLight built exactly as
         // before), with NO upper bound while collecting, then cull to the SSBO
         // budget by nearest-to-camera (cull_nearest_lights, a pure Vulkan-free
@@ -4179,6 +4181,7 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
         static thread_local std::vector<GpuLight> cands;
         cands.clear();
         for (auto e : view) {
+            if (object_flag(ecs->reg, e, kObjDead)) continue;
             const auto& pos = view.get<ecs::Position>(e);
             const auto& le  = view.get<ecs::LightEmitter>(e);
             float wx = 0.0f, wz = 0.0f;

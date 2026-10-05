@@ -186,10 +186,10 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
             std::uint8_t(kDmgFxPending | (out.lethal ? kDmgFxLethal : 0u));
     }
 
-    if (out.lethal && !reg.any_of<ecs::Dead>(target)) {
-        // Смерть тела сцены — тег Dead (кластер 4/7); запись-макро судит
-        // свой байт судьбы своим путём (пулы записи, жнец).
-        reg.emplace_or_replace<ecs::Dead>(target);
+    if (out.lethal && !object_flag(reg, target, kObjDead)) {
+        // Смерть тела сцены — бит kObjDead маски слота (ломоть 1б);
+        // запись-макро судит свой байт судьбы своим путём (пулы, жнец).
+        object_flag_set(reg, target, kObjDead);
         if (bus != nullptr && !reg.any_of<ecs::AvatarTag>(target)) {
             GameEvent ev{EventTag::NpcDeath};
             ev.a = std::uint32_t(entt::to_integral(target));

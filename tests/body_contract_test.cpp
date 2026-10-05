@@ -17,6 +17,7 @@
 
 #include "sub/spawn.h"
 #include "sub/record.h"   // state_of — whose bag/gear/book is this body's
+#include "scene_objects_fixture.h"  // арена: бит стороны игрока — маска
 #include "sub/body.h"
 #include "sub/map_data.h"
 #include "ecs/components.h"
@@ -59,13 +60,14 @@ void test_every_squad_body_is_a_whole_body() {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // слоты телам — бит стороны игрока
     std::vector<std::uint8_t> ground(
         std::size_t(sub::kFullSize) * sub::kFullSize, sub::TILE_GRASS);
     sub::spawn_player_squad(world, mixed_squad(), ground,
                             512.0f, 512.0f, 123u, playerFaction);
 
     auto& reg = world.reg;
-    auto view = reg.view<ecs::PlayerSoldierTag>();
+    auto view = reg.view<ecs::SoldierLink>();
 
     int bodies = 0;
     int missingFace = 0, missingCombat = 0, missingHealth = 0, missingSheet = 0;
@@ -84,7 +86,9 @@ void test_every_squad_body_is_a_whole_body() {
         // The paper-doll pass draws Position + NpcCharacter. A body without a
         // face is a body nobody can see — the exact defect of 2026-08-06.
         if (!reg.all_of<ecs::NpcCharacter>(e))   ++missingFace;
-        if (!reg.all_of<ecs::Position, ecs::VisualPos>(e)) ++missingTag;
+        if (!reg.all_of<ecs::Position, ecs::VisualPos>(e)
+            || !sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+            ++missingTag;
         if (!health) ++missingHealth;
         if (!combat) ++missingCombat;
         if (!reg.all_of<CharacterSheet>(e))      ++missingSheet;

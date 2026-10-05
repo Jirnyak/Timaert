@@ -5130,9 +5130,12 @@ void draw_debug_panels(App& app) {
                     ImGui::TableNextColumn();
                     char tags[8]; int ti = 0;
                     if (reg.any_of<sm::ecs::SubworldTag>(e))        tags[ti++] = 'S';
-                    if (reg.any_of<sm::ecs::Dead>(e))         tags[ti++] = 'D';
-                    if (reg.any_of<sm::ecs::PlayerSoldierTag>(e))   tags[ti++] = 'A';
-                    if (reg.any_of<sm::ecs::TempHostileToPlayer>(e))tags[ti++] = 'H';
+                    if (sm::sub::object_flag(reg, e, sm::sub::kObjDead))
+                        tags[ti++] = 'D';
+                    if (sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+                        tags[ti++] = 'A';
+                    if (sm::sub::object_flag(reg, e, sm::sub::kObjTempHostile))
+                        tags[ti++] = 'H';
                     tags[ti] = '\0';
                     ImGui::TextUnformatted(tags);
                     ++shown;
@@ -5152,6 +5155,17 @@ void draw_debug_panels(App& app) {
             auto cnt = [](auto v) {
                 std::size_t n = 0; for (auto e : v) { (void)e; ++n; } return n;
             };
+            // Теги тел — биты маски единого массива (ломоть 1б): счёт по
+            // живым слотам, не по entt-популяции.
+            auto maskCnt = [&reg](std::uint16_t bit) {
+                std::size_t n = 0;
+                const auto& objs = sm::sub::objects_of(reg);
+                for (int s = 0; s < sm::sub::kMaxBodyCrowd; ++s) {
+                    const std::uint16_t f = objs.flags[std::size_t(s)];
+                    if ((f & sm::sub::kObjAlive) != 0u && (f & bit) != 0u) ++n;
+                }
+                return n;
+            };
             struct Row { const char* name; std::size_t count; };
             const Row rows[] = {
                 {"Position(scene)", cnt(reg.view<sm::ecs::Position>())},
@@ -5166,9 +5180,9 @@ void draw_debug_panels(App& app) {
                 {"Projectile",      cnt(reg.view<sm::ecs::Projectile>())},
                 {"Structure",       cnt(reg.view<sm::ecs::Structure>())},
                 {"Sprite",          cnt(reg.view<sm::ecs::Sprite>())},
-                {"Dead(scene)",     cnt(reg.view<sm::ecs::Dead>())},
-                {"PlayerSoldier",   cnt(reg.view<sm::ecs::PlayerSoldierTag>())},
-                {"TempHostile",     cnt(reg.view<sm::ecs::TempHostileToPlayer>())},
+                {"Dead(col)",       maskCnt(sm::sub::kObjDead)},
+                {"PlayerSoldier(col)", maskCnt(sm::sub::kObjPlayerSoldier)},
+                {"TempHostile(col)",   maskCnt(sm::sub::kObjTempHostile)},
                 {"ObjectSlots",     std::size_t(
                      sm::sub::objects_of(reg).count)},
                 {"CorpseLoot",      cnt(reg.view<sm::ecs::CorpseLoot>())},

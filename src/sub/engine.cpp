@@ -236,7 +236,8 @@ const char* faction_id_for_kind(const ecs::NPCKind* kind) {
 // else — so the subworld reads exactly what the macro layer wrote.
 
 bool is_player_side(entt::registry& reg, entt::entity e) {
-    return reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(e);
+    return reg.any_of<ecs::AvatarTag>(e)
+        || sub::object_flag(reg, e, sub::kObjPlayerSoldier);
 }
 
 bool token_equals(const char* raw, const char* lit) {
@@ -284,7 +285,7 @@ std::uint32_t string_hash(const char* s) {
 bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
     const auto* h = reg.try_get<ecs::Pools>(e);
     return h && h->hp > 0.0f && reg.all_of<ecs::SubworldTag>(e)
-        && !reg.all_of<ecs::Dead>(e);
+        && !sub::object_flag(reg, e, sub::kObjDead);
 }
 
 bool hostile_to_player_entity(entt::registry& reg,
@@ -293,7 +294,7 @@ bool hostile_to_player_entity(entt::registry& reg,
     if (!alive_subworld_entity(reg, e) || is_player_side(reg, e)) {
         return false;
     }
-    if (reg.any_of<ecs::TempHostileToPlayer>(e)) return true;
+    if (sub::object_flag(reg, e, sub::kObjTempHostile)) return true;
     const char* factionId =
         faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
     return player_hostile_to(gs, factionId);
@@ -328,10 +329,10 @@ void maybe_flip_temp_hostile(entt::registry& reg,
     if (!gs || !reg.valid(target) || !factionId || factionId[0] == '\0') {
         return;
     }
-    if (reg.any_of<ecs::TempHostileToPlayer>(target)) return;
+    if (sub::object_flag(reg, target, sub::kObjTempHostile)) return;
     if (player_reputation(gs, factionId) >= kAllyRepThreshold) return;
 
-    reg.emplace_or_replace<ecs::TempHostileToPlayer>(target);
+    sub::object_flag_set(reg, target, sub::kObjTempHostile);
     if (auto* ai = reg.try_get<ecs::SubworldAi>(target)) {
         if (ai->kind == ecs::SubworldAi::Wander) {
             ai->kind = ecs::SubworldAi::Combat;
@@ -490,7 +491,7 @@ void clear_subworld_entities(ecs::World& w) {
 // job (collect_minimap_blips already iterates only live scene NPCs).
 float player_stance(entt::registry& reg, entt::entity e, const GameState* gs) {
     if (is_player_side(reg, e)) return 1.0f;                    // own side
-    if (reg.any_of<ecs::TempHostileToPlayer>(e)) return -1.0f;  // provoked
+    if (sub::object_flag(reg, e, sub::kObjTempHostile)) return -1.0f;  // provoked
     const char* factionId =
         faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
     const int rep = player_reputation(gs, factionId);
@@ -510,8 +511,9 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     // own heading triangle, never a blip. Projected player soldiers keep their
     // NPCKind (and no AvatarTag) and read as fully allied (+1).
     auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
-                         ecs::SubworldTag>(entt::exclude<ecs::Dead, ecs::AvatarTag>);
+                         ecs::SubworldTag>(entt::exclude<ecs::AvatarTag>);
     for (auto e : view) {
+        if (sub::object_flag(reg, e, sub::kObjDead)) continue;
         if (view.get<ecs::Pools>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
         minimapBlips_.push_back(
@@ -541,9 +543,10 @@ float SubworldEngine::crosshair_stance() const {
     float bestT = kMaxRange;
 
     auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
-                         ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+                         ecs::SubworldTag>();
     for (auto e : view) {
         if (reg.any_of<ecs::AvatarTag>(e)) continue;
+        if (sub::object_flag(reg, e, sub::kObjDead)) continue;
         if (view.get<ecs::Pools>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
         const float r = body_radius(reg, e);
@@ -1299,7 +1302,7 @@ void SubworldEngine::report_player_damage() {
             // Invulnerable: put the record back where the tick found it and
             // keep the body out of the death path entirely.
             record->hp = std::clamp(mirror.hp, 0, maxHp);
-            reg.remove<ecs::Dead>(e);
+            sub::object_flag_clear(reg, e, sub::kObjDead);
             continue;
         }
         const int before = std::clamp(mirror.hp, 0, maxHp);
@@ -1310,7 +1313,7 @@ void SubworldEngine::report_player_damage() {
         // hypothetical over-damage-then-refresh ordering could otherwise strand
         // — a live-but-Dead player would be a zombie, silently excluded from
         // all incoming combat for the rest of the session.
-        if (after > 0) reg.remove<ecs::Dead>(e);
+        if (after > 0) sub::object_flag_clear(reg, e, sub::kObjDead);
         // If the body you inhabit dies, your consciousness dies with it — the
         // game-over runs through the squad store exactly as it does for the
         // hero. Needs no possession branch: for the hero the record IS the
@@ -1710,7 +1713,8 @@ void SubworldEngine::tick_day_pump(float dt) {
         const auto& d = crowd.get<ecs::MacroDebt>(e);
         if (d.stock != std::uint8_t(MacroStock::Population)) continue;
         if (d.subject != ctx.landmark.id) continue;
-        if (reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(e)) continue;
+        if (reg.any_of<ecs::AvatarTag>(e)
+            || sub::object_flag(reg, e, sub::kObjPlayerSoldier)) continue;
         if (reg.all_of<ecs::GoingHome>(e)) leaving.push_back(e);
         else                               onStreet.push_back(e);
     }
@@ -3106,8 +3110,9 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     float maxDrive = 0.0f;
 
     auto actorView = reg.view<ecs::Position, ecs::Pools,
-                              ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+                              ecs::SubworldTag>();
     for (auto e : actorView) {
+        if (sub::object_flag(reg, e, sub::kObjDead)) continue;
         const auto& p = actorView.get<ecs::Position>(e);
         const auto& hp = actorView.get<ecs::Pools>(e);
         if (hp.hp <= 0) continue;
@@ -3128,9 +3133,9 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         d.reach = c ? c->attackRange : 0.0f;
         d.sight = body_sight(reg, e);
         if (c && c->kind == ecs::Combat::Missile) d.flags |= B_Missile;
-        if (reg.any_of<ecs::Flying>(e)) d.flags |= B_Flying;
+        if (sub::object_flag(reg, e, sub::kObjFlying)) d.flags |= B_Flying;
 
-        const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
+        const bool owned = sub::object_flag(reg, e, sub::kObjPlayerSoldier);
         const bool isPlayer = reg.any_of<ecs::AvatarTag>(e);
         // A body's side is its DATA. Soldiers used to be forced onto the player
         // side by their tag while their NPCKind said "empire" — dead data that
@@ -3185,7 +3190,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // private grudge, and hands the player side the reciprocal bit — the one
         // per-entity exception survives as data, never as a branch in the loop.
         if (!isPlayer && !owned && d.faction >= 0
-            && reg.any_of<ecs::TempHostileToPlayer>(e)
+            && sub::object_flag(reg, e, sub::kObjTempHostile)
             && crowdPlayerFaction_ >= 0) {
             playerExtraMask |= (1ull << d.faction);
         }
@@ -3353,7 +3358,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         if (!cp) continue;
         auto& c = *cp;
         if (c.recoverySteps > 0u) continue;
-        const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
+        const bool owned = sub::object_flag(reg, e, sub::kObjPlayerSoldier);
         if (c.kind == ecs::Combat::Missile) {
             const auto& p = reg.get<ecs::Position>(e);
             const auto& tp = reg.get<ecs::Position>(targetEnt);
@@ -3373,8 +3378,9 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
     do {
         std::array<entt::entity, kMaxSubworldDeathsPerStep> dead{};
         deadCount = 0;
-        auto view = reg.view<ecs::Dead, ecs::SubworldTag>();
+        auto view = reg.view<ecs::SubworldTag>();
         for (auto e : view) {
+            if (!sub::object_flag(reg, e, sub::kObjDead)) continue;
             if (deadCount >= kMaxSubworldDeathsPerStep) break;
             dead[std::size_t(deadCount++)] = e;
         }
@@ -3438,7 +3444,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 : sub::kObjNoAttacker;
             const int lvl = normalize_soldier_level(level ? level->value : 1);
 
-            if (reg.any_of<ecs::PlayerSoldierTag>(e)) {
+            if (sub::object_flag(reg, e, sub::kObjPlayerSoldier)) {
                 // His roster record was struck by THE settle above (§42
                 // Инк 6): the player's soldier carries the same Roster loan
                 // as any lord's man, so the hand-written removal that stood
@@ -3473,8 +3479,9 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                         leader = macro_handle_by_spawn_id(
                             store_of(mw_.world->reg),
                             std::uint32_t(debt->subject));
-                    } else if (reg.any_of<ecs::AvatarTag,
-                                          ecs::PlayerSoldierTag>(killerBody)) {
+                    } else if (reg.any_of<ecs::AvatarTag>(killerBody)
+                               || sub::object_flag(reg, killerBody,
+                                                   sub::kObjPlayerSoldier)) {
                         if (gs_) {
                             const MacroHandle ps = player_squad_handle(*gs_);
                             if (store_of(mw_.world->reg).valid(ps)) leader = ps;
@@ -3482,8 +3489,9 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     }
                     // «Рука игрока» — сценная правда для репутации: его
                     // аватар (включая одержимое тело) или его солдат.
-                    playerHand = reg.any_of<ecs::AvatarTag,
-                                            ecs::PlayerSoldierTag>(killerBody);
+                    playerHand = reg.any_of<ecs::AvatarTag>(killerBody)
+                        || sub::object_flag(reg, killerBody,
+                                            sub::kObjPlayerSoldier);
                 }
                 MacroStore& mst = store_of(mw_.world->reg);
                 if (mst.valid(leader) && !macro_dead(mst, leader)) {
@@ -4429,23 +4437,25 @@ float SubworldEngine::player_body_radius() const {
 
 bool SubworldEngine::flying() const {
     auto e = player_entity();
-    return e != entt::null && ecs_->reg.any_of<ecs::Flying>(e);
+    return e != entt::null
+        && sub::object_flag(ecs_->reg, e, sub::kObjFlying);
 }
 
 void SubworldEngine::set_flying(bool enabled) {
     auto e = player_entity();
     if (e == entt::null) return;
 
-    const bool currently_flying = ecs_->reg.any_of<ecs::Flying>(e);
+    const bool currently_flying =
+        sub::object_flag(ecs_->reg, e, sub::kObjFlying);
     if (enabled && !currently_flying) {
         // No altitude seeding: flight simply switches gravity off at the
         // current z (which is already honest — grounded or mid-fall).
-        ecs_->reg.emplace<ecs::Flying>(e);
+        sub::object_flag_set(ecs_->reg, e, sub::kObjFlying);
         playerVz_ = 0.0f;
     } else if (!enabled && currently_flying) {
         // Losing flight does NOT snap to the ground: gravity takes over from
         // the current altitude on the next tick, starting from rest.
-        ecs_->reg.remove<ecs::Flying>(e);
+        sub::object_flag_clear(ecs_->reg, e, sub::kObjFlying);
         playerVz_ = 0.0f;
     }
 }
@@ -4687,9 +4697,9 @@ int SubworldEngine::dev_kill_all_hostiles() {
     do {
         std::array<entt::entity, kMaxSubworldDeathsPerStep> victims{};
         batch = 0;
-        auto view = reg.view<ecs::Pools, ecs::SubworldTag>(
-            entt::exclude<ecs::Dead>);
+        auto view = reg.view<ecs::Pools, ecs::SubworldTag>();
         for (auto e : view) {
+            if (sub::object_flag(reg, e, sub::kObjDead)) continue;
             if (batch >= kMaxSubworldDeathsPerStep) break;
             if (!hostile_to_player_entity(reg, e, gs_)) continue;
             victims[std::size_t(batch++)] = e;
@@ -4840,8 +4850,9 @@ void SubworldEngine::tick(float dt) {
         // integrator through sync_player_vertical below.
         {
             auto gv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(
-                entt::exclude<ecs::Flying, ecs::Projectile, ecs::AvatarTag>);
+                entt::exclude<ecs::Projectile, ecs::AvatarTag>);
             for (auto e : gv) {
+                if (sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
                 auto& p = gv.get<ecs::Position>(e);
                 float supportZ = mgr_.height_field().sample(p.x, p.y);
                 if (!structIndex_.empty()) {
@@ -4881,9 +4892,10 @@ void SubworldEngine::tick(float dt) {
         {
             const float ceilZ = mgr_.height_field().max_m()
                               + kFlightMaxAboveTerrainM;
-            auto fv = ecs_->reg.view<ecs::Position, ecs::SubworldTag,
-                                     ecs::Flying>(entt::exclude<ecs::AvatarTag>);
+            auto fv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(
+                entt::exclude<ecs::AvatarTag>);
             for (auto e : fv) {
+                if (!sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
                 auto& p = fv.get<ecs::Position>(e);
                 // Вертикальное НАМЕРЕНИЕ мозга (SubworldAi.wantVz, третья
                 // ось — полёт-посадка 2026-09-10) интегрируется здесь, тем
@@ -5015,8 +5027,9 @@ void SubworldEngine::tick(float dt) {
         // land here as window tiles — blood in the scene's corner from a war
         // a continent away (SUB-1; it survived the Health→Pools rename).
         auto view = ecs_->reg.view<ecs::Pools, ecs::Position,
-                                   ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+                                   ecs::SubworldTag>();
         for (auto e : view) {
+            if (sub::object_flag(ecs_->reg, e, sub::kObjDead)) continue;
             const auto& hp = view.get<ecs::Pools>(e);
             if (hp.maxHp <= 0 || hp.hp * 2 >= hp.maxHp || hp.hp <= 0) continue;
             // drip01 in (0,1]: 0 at half HP, 1 at death's door (the ref's

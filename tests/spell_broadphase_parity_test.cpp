@@ -111,7 +111,7 @@ struct GridBroadPhase {
     void build(entt::registry& reg) {
         units->clear();
         ents.clear();
-        auto view = reg.view<Position, Pools>(entt::exclude<sm::ecs::Dead>);
+        auto view = reg.view<Position, Pools>();
         for (auto e : view) {
             const auto& p = view.get<Position>(e);
             sm::sub::BodyDesc d{};

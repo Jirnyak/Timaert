@@ -1,4 +1,5 @@
 #include "check.h"
+#include "scene_objects_fixture.h"  // арена: флаг солдата — бит маски
 #include "tables/faction.h"
 #include "tables/npc.h"
 #include "macro/world_row.h"
@@ -157,18 +158,22 @@ int main() {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // слоты телам — иначе бит некуда класть
     std::vector<std::uint8_t> emptyTiles;
     const std::uint16_t playerFaction =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u,
                                 playerFaction);
-    auto view = world.reg.view<sm::ecs::PlayerSoldierTag, sm::ecs::SoldierLink,
+    auto view = world.reg.view<sm::ecs::SoldierLink,
                                sm::ecs::NPCKind, sm::ecs::Combat,
                                sm::ecs::Pools, sm::ecs::NpcLevel,
                                sm::ecs::SubworldAi>();
     int projected = 0;
     for (auto e : view) {
         ++projected;
+        if (!sm::sub::object_flag(world.reg, e, sm::sub::kObjPlayerSoldier)) {
+            return fail("a projected soldier lacks the player-side bit");
+        }
         const auto& link = view.get<sm::ecs::SoldierLink>(e);
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
         const auto& ai = view.get<sm::ecs::SubworldAi>(e);
@@ -195,11 +200,11 @@ int main() {
     auto malformedWorldStore_ = sm::make_macro_store();
 
     sm::store_attach(malformedWorld, malformedWorldStore_.get());
+    sm::test::arena_of(malformedWorld.reg);
     std::vector<std::uint8_t> malformedTiles(1, 0u);
     sm::sub::spawn_player_squad(malformedWorld, player, malformedTiles,
                                 512.0f, 512.0f, 100u, playerFaction);
-    auto malformedView = malformedWorld.reg.view<sm::ecs::PlayerSoldierTag,
-                                                 sm::ecs::SoldierLink>();
+    auto malformedView = malformedWorld.reg.view<sm::ecs::SoldierLink>();
     int malformedProjected = 0;
     for (auto e : malformedView) {
         (void)e;
