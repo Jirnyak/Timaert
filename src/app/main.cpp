@@ -5206,7 +5206,6 @@ void draw_debug_panels(App& app) {
                 {"TempHostile(col)",   maskCnt(sm::sub::kObjTempHostile)},
                 {"ObjectSlots",     std::size_t(
                      sm::sub::objects_of(reg).count)},
-                {"CorpseLoot",      cnt(reg.view<sm::ecs::CorpseLoot>())},
             };
             if (ImGui::BeginTable("ecs", 2,
                                   ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {

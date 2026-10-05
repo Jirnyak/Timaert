@@ -468,9 +468,12 @@ enum class InteractId : std::uint8_t {
     Door,
     // Take the shaft this prop stands on: `tag` 1 = up, 0 = down.
     Stairs,
-    // The corpse of something you killed — not a composite prop but an ECS
-    // body; it shares the verb so one prompt and one keypress serve both.
-    Loot,
+    // КОЛОНКА `Loot` СНЕСЕНА 2026-10-05 вместе с трупом-контейнером (вердикт
+    // владельца: «трупы-контейнеры снять совсем — ждём ПУЛ ЛУТА»). Это был
+    // единственный глагол, чьей целью был НЕ проп, а тело сцены, и с ним ушёл
+    // второй род цели у резолвера прицела: сравнивать два счёта больше нечего.
+    // Строка вернётся, когда встанет пул лута, — и вернётся СТРОКОЙ таблицы,
+    // а не вторым родом цели (ЗАКОН ИНТЕРАКЦИИ: выбор применяется данными).
     // КОЛОНКА `Drink` СНЕСЕНА 2026-09-28 (вердикт владельца: «колодец там sp
     // вроде восстанваливет это кал внесистмемный»). Глоток из колодца возвращал
     // SP долей часа отдыха — механика, не выведенная ни из одной системы мира,
@@ -530,7 +533,6 @@ inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
     // other, and there has never been a flight of steps anywhere in the game
     // for the word to name.
     { InteractId::Stairs, "Climb",        0.0f},
-    { InteractId::Loot,   "Loot",         1.0f},
     { InteractId::Read,   "Read",         2.0f},
     { InteractId::Search, "Search",       1.5f},
     { InteractId::Learn,  "Learn spell",  3.0f},

@@ -222,14 +222,18 @@ public:
     // content/ knows the registry).
     bool learn_from_spire_orb(const Structure& orb);
     // WHAT IS UNDER THE RETICLE — one answer, one measure, one reach (owner,
-    // 2026-09-26). Exactly one of `prop`/`corpse` is set; `id` is the row's
-    // verb id. The reach is the ARM of the body the player is currently in
-    // (player_arm_reach) for both kinds — reaching is a property of the one
-    // who reaches, never of the thing — and the winner between a corpse and a
-    // prop is decided by the SAME aim score, so there is no branch by kind.
+    // 2026-09-26). The reach is the ARM of the body the player is currently in
+    // (`player_arm_reach`) — reaching is a property of the one who reaches,
+    // never of the thing.
+    //
+    // РОД ЦЕЛИ ЗДЕСЬ ТЕПЕРЬ ОДИН (2026-10-05): труп-контейнер снят вердиктом
+    // владельца, и вместе с ним ушёл второй кандидат резолвера. Прежде их было
+    // два, и сравнивались они одним `aim_score` ровно затем, чтобы не
+    // появилось ветки по роду; теперь ветке неоткуда взяться вовсе. Когда
+    // встанет ПУЛ ЛУТА, добыча вернётся СТРОКОЙ таблицы интеракций, а не
+    // вторым родом цели (ЗАКОН ИНТЕРАКЦИИ: последствие — строка, не ветка).
     struct AimedTarget {
         const Structure* prop = nullptr;
-        entt::entity corpse = entt::null;
         InteractId id = InteractId::None;
     };
     AimedTarget aimed_target() const;
@@ -880,12 +884,10 @@ private:
     // The prop the player is looking at, or nullptr. Pure query over the
     // interactive cache: forward cone on the camera yaw, within the reach it
     // is GIVEN (the body's arm — the reach is not the prop's property),
-    // measured to the prop's SURFACE. `outScore` carries the winner's aim
-    // score so the one resolver can compare it against a corpse's.
+    // measured to the prop's SURFACE. `outScore` — счёт прицела победителя;
+    // сравнивать его теперь не с кем (род цели один), но величина остаётся
+    // мерой выбора МЕЖДУ ПРОПАМИ, а не служебным остатком снятого трупа.
     const Structure* aimed_prop(float reach, float& outScore) const;
-    // The corpse under the reticle (entt::null if none) — same cone, same
-    // reach, same score, so the two candidates are comparable.
-    entt::entity aimed_corpse(float reach, float& outScore) const;
     // Step through a door prop: resolves the building it belongs to (its
     // `tag` is that house's ordinal within the window cell) and raises the
     // interior. False if the building cannot be resolved.

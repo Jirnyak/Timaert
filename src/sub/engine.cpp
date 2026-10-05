@@ -2622,32 +2622,6 @@ const Structure* SubworldEngine::aimed_prop(float reach, float& outScore) const 
 }
 
 // The corpse under the reticle, by the same cone and the SAME reach as a prop.
-entt::entity SubworldEngine::aimed_corpse(float reach, float& outScore) const {
-    outScore = -1.0f;
-    if (!ecs_) return entt::null;
-    auto& reg = ecs_->reg;
-    entt::entity best = entt::null;
-    float bestScore = -1.0f;
-    auto view = reg.view<ecs::Position, ecs::Structure, ecs::CorpseLoot,
-                         ecs::SubworldTag>();
-    for (auto e : view) {
-        const auto& st = view.get<ecs::Structure>(e);
-        if (st.kind != ecs::Structure::Corpse) continue;
-        const auto& p = view.get<ecs::Position>(e);
-        if (dist3sq(p.x, p.y, p.z, playerX_, playerY_, playerZ_)
-            > reach * reach) {
-            continue;
-        }
-        const float score = aim_score(playerX_, playerY_, cam_.yaw, p.x, p.y);
-        if (score > bestScore) {
-            bestScore = score;
-            best = e;
-        }
-    }
-    outScore = bestScore;
-    return best;
-}
-
 // ── ОДНА ЦЕЛЬ ПОД ПРИЦЕЛОМ, ОДНА МЕРА, ОДИН ПРЕДЕЛ (владелец, 2026-09-26) ──
 // Раньше вопрос «на что смотрит игрок» имел ДВА ответа, и оба пути — подсказка
 // и нажатие — спрашивали труп РАНЬШЕ пропа, то есть решали ветку по РОДУ, а не
@@ -2670,14 +2644,14 @@ SubworldEngine::AimedTarget SubworldEngine::aimed_target() const {
     AimedTarget out{};
     if (!active_ || !ecs_) return out;
     const float reach = player_arm_reach();
-    float propScore = -1.0f, corpseScore = -1.0f;
+    // КАНДИДАТ ОСТАЛСЯ ОДИН (2026-10-05): труп-контейнер снят вердиктом
+    // владельца — добычу убитых будет раздавать ПУЛ ЛУТА, «режиссёр лута всей
+    // игры», и до его постройки лут с тел не падает вовсе (дыра названа в
+    // реестре, а не заткнута заглушкой). Вместе с трупом ушла и вторая
+    // половина этого резолвера: сравнивать два счёта больше нечего, и
+    // расходиться двум мерам негде по построению.
+    float propScore = -1.0f;
     const Structure* prop = aimed_prop(reach, propScore);
-    const entt::entity corpse = aimed_corpse(reach, corpseScore);
-    if (corpse != entt::null && corpseScore >= propScore) {
-        out.corpse = corpse;
-        out.id = InteractId::Loot;
-        return out;
-    }
     if (prop != nullptr) {
         out.prop = prop;
         out.id = structure_interact(prop->kind);
@@ -2687,9 +2661,6 @@ SubworldEngine::AimedTarget SubworldEngine::aimed_target() const {
 
 const char* SubworldEngine::interact_prompt() const {
     const AimedTarget t = aimed_target();
-    if (t.corpse != entt::null) {
-        return interact_row(InteractId::Loot).verb;
-    }
     if (t.prop != nullptr) {
         const InteractId id = t.id;
         // The one door reads both ways: from the street it takes you in, from
@@ -2723,59 +2694,35 @@ bool SubworldEngine::interact() {
         }
     }
     // ОДИН резолвер на подсказку и на нажатие: что HUD обещал, то и делается.
+    // ОДИН резолвер, ОДИН род цели: что под прицелом — проп, и его строка
+    // говорит, что произойдёт. Ветка трупа ушла вместе с трупом-контейнером
+    // (2026-10-05); вернётся она не сюда, а через ПУЛ ЛУТА, той же единой
+    // интеракцией — то есть новой СТРОКОЙ, а не вторым родом цели.
     const AimedTarget target = aimed_target();
-    const entt::entity best = target.corpse;
-    if (best == entt::null) {
-        // Nothing dead under the reticle — then it is a prop, and the prop's
-        // own row says what happens. One dispatch, one place to extend.
-        const Structure* prop = target.prop;
-        if (!prop) {
-            set_status("Nothing to interact with.");
-            return false;
-        }
-        switch (target.id) {
-            case InteractId::Search:
-                return search_chest(*prop);
-            case InteractId::Read:
-                return read_sign(*prop);
-            case InteractId::Door:
-                return sceneKind_ == SceneKind::Dungeon
-                    ? try_exit_dungeon()
-                    : enter_dungeon_by_door(*prop);
-            case InteractId::Stairs:
-                return try_take_dungeon_stairs();
-            case InteractId::Learn:
-                return learn_from_spire_orb(*prop);
-            case InteractId::Loot:
-            case InteractId::None:
-            case InteractId::Count:
-                break;
-        }
+    const Structure* prop = target.prop;
+    if (!prop) {
         set_status("Nothing to interact with.");
         return false;
     }
-
-    auto& loot = reg.get<ecs::CorpseLoot>(best);
-    // Credit FIRST, corpse second (the grant_prop_loot rule above): a full
-    // bag REFUSES, and what it refuses stays ON the body — the corpse is
-    // only destroyed once it holds nothing, never over evaporated spoils.
-    // Монетной половины здесь больше нет (M-139): труп несёт СТАКИ — свою
-    // сумку, включая монеты, которые убитый заработал как обычный товар.
-    bool leftBehind = false;
-    for (ItemRef& s : loot.inv.slots) {
-        if (s.empty()) continue;
-        if (player_bag_of(gs_, ecs_).add_ref(s)) s = ItemRef{};
-        else leftBehind = true;
+    switch (target.id) {
+        case InteractId::Search:
+            return search_chest(*prop);
+        case InteractId::Read:
+            return read_sign(*prop);
+        case InteractId::Door:
+            return sceneKind_ == SceneKind::Dungeon
+                ? try_exit_dungeon()
+                : enter_dungeon_by_door(*prop);
+        case InteractId::Stairs:
+            return try_take_dungeon_stairs();
+        case InteractId::Learn:
+            return learn_from_spire_orb(*prop);
+        case InteractId::None:
+        case InteractId::Count:
+            break;
     }
-    if (leftBehind) {
-        set_status("Your pack is full.");
-        charge_act(interact_row(InteractId::Loot).actSeconds);
-        return true;
-    }
-    reg.destroy(best);
-    set_status("Loot recovered.");
-    charge_act(interact_row(InteractId::Loot).actSeconds);
-    return true;
+    set_status("Nothing to interact with.");
+    return false;
 }
 
 // THE placement rule for fiat-spawned bodies (see engine.h). The ring floor
@@ -3468,7 +3415,6 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     drain_dead_leader_squads(store_of(*ecs_), *gs_);
                 }
             }
-            const auto* pos = reg.try_get<ecs::Position>(e);
             const auto* kind = sub::body_kind(reg, e);
             // Уровень — колонка арены (кусок 1); 0 = безуровневое тело,
             // прежний дефолт отсутствовавшей компоненты сохранён единицей.
@@ -3543,35 +3489,20 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 if (playerHand) apply_player_kill_reputation(gs_, kind);
             }
 
-            // WHAT HE HAD ON HIM — from his record, through the one door
-            // (sub/record.h): for a tracked body that is the lord's own bag,
-            // so the sword you find on the corpse is the sword the map says
-            // he owned. И ЭТО ТЕПЕРЬ ВСЁ, ЧТО НА ТРУПЕ БЫВАЕТ (M-139,
-            // вердикт владельца 2026-09-26): бросок хардкод-профиля роли и
-            // печать кошелька снесены вместе со своими таблицами, поэтому
-            // производное тело, не несшее ничего, трупа-контейнера и не
-            // оставляет. Раздавать добычу по контексту будет ПУЛ ЛУТА —
-            // «режиссёр лута всей игры» (владелец); контейнер вернётся к
-            // нему через ту же единую интеракцию.
+            // ТРУПА-КОНТЕЙНЕРА ЗДЕСЬ БОЛЬШЕ НЕТ — вердикт владельца
+            // 2026-10-05, и это снятие механики, а не перенос: добычу убитых
+            // будет раздавать ПУЛ ЛУТА, «режиссёр лута всей игры», и до его
+            // постройки лут с тел НЕ ПАДАЕТ ВОВСЕ. Дыра стоит открытой и
+            // названа в реестре — «пока-заглушку» на её место ставить
+            // запрещено (игра не играбельна, идёт полировка ядра).
             //
-            // ...и добро ПОКИДАЕТ запись, ложась на труп. Две копии одного
-            // меча — ровно та форма, которую это место и существует убрать;
-            // запись переживает тик (Dead-свип жнёт её позже), так что «он
-            // всё равно мёртв» доводом не является.
-            Inventory inv{};
-            if (auto* bag = state_of<ecs::NpcInventory>(reg, e)) {
-                inv = bag->inv;
-                bag->inv = Inventory{};
-            }
-
-            if (pos && inv.used_slots() > 0) {
-                auto corpse = reg.create();
-                reg.emplace<ecs::Position>(corpse, pos->x, pos->y, pos->z);
-                reg.emplace<ecs::SubworldTag>(corpse);
-                reg.emplace<ecs::Structure>(
-                    corpse, ecs::Structure::Corpse, pos->x, pos->y, 4.0f, 0.3f);
-                reg.emplace<ecs::CorpseLoot>(corpse, std::move(inv));
-            }
+            // ПОЧЕМУ СУМКА БОЛЬШЕ ДАЖЕ НЕ ТРОГАЕТСЯ. Прежде добро выгребали
+            // из записи в труп, чтобы не было ДВУХ копий одного меча. Трупа
+            // нет — значит выгребать некуда, и опорожнять запись было бы
+            // чистым уничтожением имущества ради формы, которой не стало:
+            // мёртвая запись уйдёт своим жнецом вместе со всем, что на ней.
+            // Когда пул лута встанет, он будет читать запись ЖИВУЮ, той же
+            // дверью шва, — а не разбирать оставленный ею мусор.
             reg.destroy(e);
         }
     } while (drainAll && deadCount == kMaxSubworldDeathsPerStep);

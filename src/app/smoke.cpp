@@ -326,7 +326,6 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_seam", SmokeAction::SubworldSeam},
     {"subworld_audio", SmokeAction::SubworldAudio},
     {"subworld_exit_gate", SmokeAction::SubworldExitGate},
-    {"subworld_loot_xp", SmokeAction::SubworldLootXp},
     {"subworld_enemy_feedback", SmokeAction::SubworldEnemyFeedback},
     {"subworld_missile_feedback", SmokeAction::SubworldMissileFeedback},
     {"subworld_self_fireball", SmokeAction::SubworldSelfFireball},
@@ -2490,146 +2489,6 @@ bool run_subworld_exit_gate_smoke(App& app) {
 
     if (!blocked || !statusSet || !freed) {
         smoke_fail(app, "subworld_exit_gate invariant");
-        return false;
-    }
-    return true;
-}
-
-bool run_subworld_loot_xp_smoke(App& app) {
-    if (!smoke_boot_invariants_hold(app)) {
-        smoke_print_counts(app, "subworld_loot_xp_boot_failed");
-        smoke_fail(app, "subworld_loot_xp boot invariants");
-        return false;
-    }
-    if (app.subworld.active()) {
-        smoke_fail(app, "subworld_loot_xp already active");
-        return false;
-    }
-
-    const float oldX = smoke_player_x(app);
-    const float oldY = smoke_player_y(app);
-    const auto oldSubState = app.gs.subState;
-    const int oldUiSettlement = app.ui.settlementId;
-    auto restore = [&]() {
-        if (app.subworld.active()) app.subworld.leave(true);
-                smoke_teleport_player(app, int(oldX), int(oldY));
-        app.gs.subState = oldSubState;
-        app.ui.settlementId = oldUiSettlement;
-    };
-
-    enter_subworld(app);
-    if (!app.subworld.active()) {
-        restore();
-        smoke_fail(app, "subworld_loot_xp enter failed");
-        return false;
-    }
-
-    sm::ecs::NpcInventory bag{};
-    bag.inv.add("misc_gem", 2);
-    if (!app.subworld.spawn_npc_body("bandit", "Smoke Loot Bandit", 2,
-                                     app.gs.worldSeed ^ 0x10A7u, "bandits",
-                                     &bag)) {
-        restore();
-        smoke_fail(app, "subworld_loot_xp hostile spawn failed");
-        return false;
-    }
-
-    auto& reg = app.ecs.reg;
-    const entt::entity target = smoke_find_subworld_npc(app, sm::NPCType::Bandit);
-    if (target == entt::null) {
-        restore();
-        smoke_fail(app, "subworld_loot_xp hostile not found");
-        return false;
-    }
-
-    const int expBefore = sm::player_sheet(app.gs, *app.macroStore)->levelData.exp;
-    const int gemBefore = player_bag(app).count("misc_gem");
-    // Park the victim right next to the PLAYER, wherever they actually stand.
-    // The old window-centre teleport assumed enter() always lands at the
-    // centre; entry-side context (armies enter from the side they walked in)
-    // made that stale, leaving the corpse hundreds of tiles from the player
-    // and interact() honestly reporting "nothing nearby".
-    const float lootX = app.subworld.player_x() + 2.0f;
-    const float lootY = app.subworld.player_y();
-    if (auto* pos = reg.try_get<sm::ecs::Position>(target)) {
-        pos->x = lootX;
-        pos->y = lootY;
-    }
-    if (auto* vp = sm::sub::body_visual(reg, target)) {
-        vp->vx = lootX;
-        vp->vy = lootY;
-    }
-    // Убийца — ТЕЛО аватара (§41 корень 5): «ничей» кил не платит никому.
-    sm::sub::apply_lethal_damage(
-        reg, target,
-        sm::sub::DamageSource{
-            std::uint32_t(entt::to_integral(
-                sm::sub::current_player_body(app.ecs))), true},
-        sm::sub::DamageKind::Dev, &app.bus);
-
-    app.subworld.tick(0.016f);
-    bool corpseFound = false;
-    auto corpses = reg.view<sm::ecs::Structure, sm::ecs::CorpseLoot,
-                            sm::ecs::SubworldTag>();
-    for (auto e : corpses) {
-        const auto& st = corpses.get<sm::ecs::Structure>(e);
-        if (st.kind == sm::ecs::Structure::Corpse) corpseFound = true;
-    }
-    // ── НЕГАТИВНЫЙ КОНТРОЛЬ ЗАКОНА ДОТЯГИВАНИЯ (§8 п.6) ─────────────────
-    // Предел дотягивания ОДИН и он РУКА ТЕЛА (вердикт владельца 2026-09-26).
-    // Контроль обязан РЕАЛЬНО падать при возврате прежней формы: до правки у
-    // лута был свой предел 12 тайлов против 5 у двери, и труп в конце комнаты
-    // не только предлагался, но и ПЕРЕБИВАЛ дверь в двух шагах (капкан на
-    // верхнем этаже шпиля, M-104). Отодвигаем труп на две руки — ни подсказки,
-    // ни взятия; потом возвращаем в половину руки и мерим настоящий закон.
-    const float arm = app.subworld.player_arm_reach();
-    auto place_corpses_at = [&](float dx) {
-        for (auto e : corpses) {
-            const auto& st = corpses.get<sm::ecs::Structure>(e);
-            if (st.kind != sm::ecs::Structure::Corpse) continue;
-            if (auto* cp = reg.try_get<sm::ecs::Position>(e)) {
-                cp->x = app.subworld.player_x() + dx;
-                cp->y = app.subworld.player_y();
-            }
-            if (auto* vp = sm::sub::body_visual(reg, e)) {
-                vp->vx = app.subworld.player_x() + dx;
-                vp->vy = app.subworld.player_y();
-            }
-        }
-    };
-    place_corpses_at(arm * 2.0f);
-    const char* farPrompt = app.subworld.interact_prompt();
-    SMOKE_CHECK(app, farPrompt == nullptr || farPrompt[0] == '\0',
-                "труп за пределом руки не предлагается под прицелом");
-    SMOKE_CHECK(app, !app.subworld.interact(),
-                "труп за пределом руки не берётся нажатием");
-    place_corpses_at(arm * 0.5f);
-    // Corpse-vs-player altitude in the diagnostic: interact() gates on a 3D
-    // distance, so a z divergence (e.g. a body seated on a structure top) is
-    // the first thing to rule out when interact=0 with the corpse present.
-    float corpseZ = -1.0f;
-    for (auto e : corpses) {
-        const auto& st = corpses.get<sm::ecs::Structure>(e);
-        if (st.kind != sm::ecs::Structure::Corpse) continue;
-        if (const auto* cp = reg.try_get<sm::ecs::Position>(e)) corpseZ = cp->z;
-    }
-    const float playerZAtInteract = app.subworld.player_z();
-    const bool interacted = app.subworld.interact();
-    const int expAfter = sm::player_sheet(app.gs, *app.macroStore)->levelData.exp;
-    const int gemAfter = player_bag(app).count("misc_gem");
-    restore();
-
-    std::fprintf(stderr,
-                 "[smoke] subworld_loot_xp corpse=%d interact=%d "
-                 "exp=%d->%d misc_gem=%d->%d corpseZ=%.1f playerZ=%.1f\n",
-                 corpseFound ? 1 : 0, interacted ? 1 : 0,
-                 expBefore, expAfter, gemBefore, gemAfter,
-                 corpseZ, playerZAtInteract);
-    std::fflush(stderr);
-
-    if (!corpseFound || !interacted || expAfter <= expBefore
-        || gemAfter < gemBefore + 2) {
-        smoke_fail(app, "subworld_loot_xp invariant");
         return false;
     }
     return true;
@@ -7606,11 +7465,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=spire_climb\n");
             std::fflush(stderr);
             if (run_spire_climb_smoke(app)) ++app.smoke.cursor;
-            break;
-        case SmokeAction::SubworldLootXp:
-            std::fprintf(stderr, "[smoke] action=subworld_loot_xp\n");
-            std::fflush(stderr);
-            if (run_subworld_loot_xp_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldEnemyFeedback:
             std::fprintf(stderr, "[smoke] action=subworld_enemy_feedback\n");
