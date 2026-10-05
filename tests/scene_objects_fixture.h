@@ -45,6 +45,12 @@ inline void give_flag(entt::registry& reg, entt::entity e,
 inline bool flag_of(entt::registry& reg, entt::entity e, std::uint16_t bit) {
     return sm::sub::object_flag(reg, e, bit);
 }
+// Активное тело фикстуре — как поставила бы дверь входа (ссылка сцены,
+// вердикт 2026-10-05): слот по надобности + перезапись ссылки.
+inline void make_avatar(entt::registry& reg, entt::entity e) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_avatar(reg, e);
+}
 
 inline std::uint8_t fx_of(entt::registry& reg, entt::entity e) {
     const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);

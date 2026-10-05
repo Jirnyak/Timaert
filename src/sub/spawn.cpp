@@ -1211,7 +1211,7 @@ void clear_subworld_world_entities(ecs::World& w) {
         int doomedCount = 0;
         auto view = reg.view<ecs::SubworldTag>();
         for (auto e : view) {
-            if (reg.any_of<ecs::AvatarTag>(e)
+            if (is_avatar(reg, e)
                 || object_flag(reg, e, kObjPlayerSoldier)) continue;
             // Projected macro NPCs (Inc 5d) mirror persistent overworld bodies,
             // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
@@ -1381,7 +1381,7 @@ void despawn_subworld_entities_outside_window(ecs::World& w) {
         int doomedCount = 0;
         auto view = reg.view<ecs::SubworldTag, ecs::Position>();
         for (auto e : view) {
-            if (reg.any_of<ecs::AvatarTag>(e)
+            if (is_avatar(reg, e)
                 || object_flag(reg, e, kObjPlayerSoldier)) continue;
             const auto& p = view.get<ecs::Position>(e);
             const bool inside = p.x >= 0.0f && p.x < float(kFullSize)

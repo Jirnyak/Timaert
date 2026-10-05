@@ -12,6 +12,7 @@
 
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "sub/record.h"   // is_avatar — активное тело есть ссылка сцены
 #include "macro/state.h"   // GameState — поля игрока (вселение, 1е кл.5)
 #include "macro/store.h"
 #include "sub/body.h"      // body_radius — the caster shell the muzzle clears
@@ -227,7 +228,7 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     // Only a body that IS someone's control flag has a flag to move. An NPC
     // casting this row fires and transfers nothing — the cast is generic, the
     // effect argues with a flag the caster does not carry.
-    if (!reg.valid(caster) || !reg.all_of<ecs::AvatarTag>(caster)) return;
+    if (!reg.valid(caster) || !sub::is_avatar(reg, caster)) return;
     // 1-hop ban: the hero husk mirrors his own squad's record; any other
     // record under the avatar means the caster is already wearing somebody.
     // «Кто оригинал» — биты GameState (1е кластер 5): запись под аватаром

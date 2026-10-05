@@ -27,11 +27,11 @@
 
 namespace sm::sub {
 
-// current_player_body: the single entity currently carrying AvatarTag, or
-// entt::null (never null mid-subworld — exactly one flag is always live).
+// current_player_body: тело, на которое смотрит ссылка сцены «активное
+// тело» (вердикт 2026-10-05 — активность есть ССЫЛКА, не свойство тела);
+// entt::null = ссылки нет (между сценами).
 inline entt::entity current_player_body(ecs::World& w) {
-    for (auto e : w.reg.view<ecs::AvatarTag>()) return e;
-    return entt::null;
+    return avatar_entity(w.reg);
 }
 
 // Move the player flag onto `target` (must be a live, positioned scene body).
@@ -88,16 +88,17 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
     const MacroHandle recH = macro_record_of(reg, target);
 
     if (reg.valid(cur)) {
-        reg.remove<ecs::AvatarTag>(cur);
         // Hero husk (no NPCKind) has no independent existence — since the
         // mirror law it is a projection of his macro record like any other
         // body, so destroying it loses nothing and strands no inert,
         // un-rendered, un-AI'd zombie in the scene. A vacated FOREIGN body
-        // keeps every component; with the flag gone its AI / draw /
-        // targetability all resume by construction (each is AvatarTag-gated).
+        // keeps every component; with the reference gone its AI / draw /
+        // targetability all resume by construction (each is is_avatar-gated).
         if (!reg.all_of<ecs::NPCKind>(cur)) reg.destroy(cur);
     }
-    if (!reg.all_of<ecs::AvatarTag>(target)) reg.emplace<ecs::AvatarTag>(target);
+    // Перенос — ОДНА перезапись ссылки: полуперенесённого состояния («тег
+    // снят, тег не поставлен») больше не существует по построению.
+    set_avatar(reg, target);
 
     // …AND THE MACRO FLAG RIDES THE SAME MOVEMENT — when it has a record to
     // ride to. It used to be deferred to leave() — AvatarTag moved here,

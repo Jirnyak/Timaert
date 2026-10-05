@@ -2037,9 +2037,10 @@ bool gameplay_panel_open(const App& app) {
 // the hand is free, or when no body is on stage. Read-only: the turn stop
 // below derives from it, exactly as every action already charges into it.
 std::uint32_t player_gate_steps(const App& app) {
-    for (auto e : app.ecs.reg.view<const sm::ecs::AvatarTag,
-                                   const sm::ecs::Combat>())
-        return app.ecs.reg.get<const sm::ecs::Combat>(e).recoverySteps;
+    const entt::entity e = sm::sub::avatar_entity(app.ecs.reg);
+    if (e != entt::null)
+        if (const auto* c = app.ecs.reg.try_get<const sm::ecs::Combat>(e))
+            return c->recoverySteps;
     return 0u;
 }
 
@@ -2404,10 +2405,10 @@ bool cast_active_spell(App& app) {
     // the caster's own entity id. The world map has no fighting body.
     std::uint32_t gateSteps = 0u;
     if (inMicro) {
-        for (auto e : app.ecs.reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
-            gateSteps = app.ecs.reg.get<sm::ecs::Combat>(e).recoverySteps;
-            break;
-        }
+        const entt::entity e = sm::sub::avatar_entity(app.ecs.reg);
+        if (e != entt::null)
+            if (const auto* c = app.ecs.reg.try_get<sm::ecs::Combat>(e))
+                gateSteps = c->recoverySteps;
     }
     const sm::CastCheck check = sm::spellbook_can_cast_ex(
         player_book(app), player_pools(app), ord, inMicro,
@@ -3684,10 +3685,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     const sm::ecs::Pools* deathPools = nullptr;
     entt::entity avatarBody = entt::null;
     if (app.subworld.active()) {
-        for (auto e : app.ecs.reg.view<sm::ecs::AvatarTag>()) {
-            avatarBody = e;
-            break;
-        }
+        avatarBody = sm::sub::avatar_entity(app.ecs.reg);
         if (avatarBody != entt::null) {
             deathPools = sm::sub::pools_of(app.ecs.reg, avatarBody);
         }

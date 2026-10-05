@@ -179,11 +179,12 @@ struct MissileAttack {
 // `GameState::playerFlagBits`/`playerSquadBits` (macro/player_entity.h,
 // битовые двери). Теги PlayerTag/PlayerSquadTag умерли вместе со сканами
 // view<...> — ответ стал распаковкой поля мира.
-// «Моё ТЕЛО в сцене» — the scene flag, and SCENE ONLY: the hero husk on
-// enter, or a possessed scene body. Dies with the scene. A view<AvatarTag>
-// physically cannot find a macro entity, so the scene's player passes need
-// no scale guards at all.
-struct AvatarTag {};
+// (AvatarTag УМЕР 2026-10-05, M-150 ломоть 2 кусок 2 — вердикт владельца
+// «активность — ссылка, не свойство тела»: «моё тело в сцене» — ССЫЛКА
+// сцены {слот, ID} в SubObjects (avatarSlot/avatarId), двери
+// set_avatar/is_avatar/avatar_entity (sub/record.h). Одержимость и будущее
+// переключение сквадов фракции — перезапись одной ссылки; «двух аватаров»
+// не существует по построению.)
 // Marks an entity that lives only in the current subworld scene; cleared
 // on enter/leave so we never destroy persistent macro NPCs by accident.
 struct SubworldTag {};
@@ -729,7 +730,6 @@ TIMAERT_ROW(sm::ecs::MacroCell);
 TIMAERT_ROW(sm::ecs::BodyRadius);
 TIMAERT_ROW(sm::ecs::Combat);
 TIMAERT_ROW(sm::ecs::MissileAttack);
-TIMAERT_ROW(sm::ecs::AvatarTag);
 TIMAERT_ROW(sm::ecs::SubworldTag);
 TIMAERT_ROW(sm::ecs::Airborne);
 TIMAERT_ROW(sm::ecs::NPCKind);

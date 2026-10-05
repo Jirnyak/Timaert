@@ -236,7 +236,7 @@ const char* faction_id_for_kind(const ecs::NPCKind* kind) {
 // else — so the subworld reads exactly what the macro layer wrote.
 
 bool is_player_side(entt::registry& reg, entt::entity e) {
-    return reg.any_of<ecs::AvatarTag>(e)
+    return sub::is_avatar(reg, e)
         || sub::object_flag(reg, e, sub::kObjPlayerSoldier);
 }
 
@@ -511,8 +511,9 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     // own heading triangle, never a blip. Projected player soldiers keep their
     // NPCKind (and no AvatarTag) and read as fully allied (+1).
     auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
-                         ecs::SubworldTag>(entt::exclude<ecs::AvatarTag>);
+                         ecs::SubworldTag>();
     for (auto e : view) {
+        if (sub::is_avatar(reg, e)) continue;
         if (sub::object_flag(reg, e, sub::kObjDead)) continue;
         if (view.get<ecs::Pools>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
@@ -545,7 +546,7 @@ float SubworldEngine::crosshair_stance() const {
     auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
                          ecs::SubworldTag>();
     for (auto e : view) {
-        if (reg.any_of<ecs::AvatarTag>(e)) continue;
+        if (sub::is_avatar(reg, e)) continue;
         if (sub::object_flag(reg, e, sub::kObjDead)) continue;
         if (view.get<ecs::Pools>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
@@ -910,10 +911,10 @@ void SubworldEngine::clear_player_entity() {
     // never enters this function's world any more.
     std::array<entt::entity, 8> doomed{};
     int n = 0;
-    for (auto e : reg.view<ecs::AvatarTag>()) {
-        if (n >= int(doomed.size())) break;
+    if (const entt::entity e = sub::avatar_entity(reg); e != entt::null) {
         doomed[std::size_t(n++)] = e;
     }
+    sub::set_avatar(reg, entt::null);
     for (int i = 0; i < n; ++i) {
         const entt::entity e = doomed[std::size_t(i)];
         if (reg.valid(e)) reg.destroy(e);
@@ -953,7 +954,7 @@ void SubworldEngine::spawn_player_entity() {
         if (slot >= 0) reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
     }
     reg.emplace<ecs::Position>(e, playerX_, playerY_, 0.0f);
-    reg.emplace<ecs::AvatarTag>(e);
+    sub::set_avatar(reg, e);   // активное тело — ссылка сцены (2026-10-05)
     // WHOSE BODY THIS IS (mirror law, 2026-09-12 — sub/record.h): the same
     // backlink every projected body carries — pointing at the FLAG record,
     // the one that holds the bars, bag, gear and sheet of the man he IS.
@@ -1109,12 +1110,13 @@ void SubworldEngine::pull_player_entity_to_scalars() {
     if (!ecs_) return;
     auto& reg = ecs_->reg;
     // Entity Position is authoritative (Inc 5a); copy it onto the scalar mirror.
-    auto pv = reg.view<ecs::AvatarTag, ecs::Position>();
-    for (auto e : pv) {
-        const auto& p = pv.get<ecs::Position>(e);
+    const entt::entity avatarE = sub::avatar_entity(reg);
+    for (const entt::entity e : {avatarE}) {
+        if (e == entt::null || !reg.all_of<ecs::Position>(e)) continue;
+        const auto& p = reg.get<ecs::Position>(e);
         playerX_ = p.x;
         playerY_ = p.y;
-        break; // exactly one AvatarTag flag is live at a time
+        break; // активное тело одно — ссылка сцены (2026-10-05)
     }
 }
 
@@ -1125,9 +1127,10 @@ void SubworldEngine::push_scalars_to_player_entity() {
     // back onto the authoritative entity Position. Assignment, so it is a no-op
     // when already equal and idempotent w.r.t. the seam rebase that likewise
     // shifts the SubworldTag-tagged player entity by the same ∓cell amount.
-    auto pv = reg.view<ecs::AvatarTag, ecs::Position>();
-    for (auto e : pv) {
-        auto& p = pv.get<ecs::Position>(e);
+    const entt::entity avatarE = sub::avatar_entity(reg);
+    for (const entt::entity e : {avatarE}) {
+        if (e == entt::null || !reg.all_of<ecs::Position>(e)) continue;
+        auto& p = reg.get<ecs::Position>(e);
         p.x = playerX_;
         p.y = playerY_;
         p.z = playerZ_;
@@ -1149,9 +1152,10 @@ void SubworldEngine::sync_player_entity_position() {
     // his hands hold. Any other body — worn or not — already has a row, and its
     // numbers come from its own record through the ordinary mirror
     // (mirror_bodies_from_record / refresh_body_strike).
-    auto pv = reg.view<ecs::AvatarTag, ecs::Position>();
-    for (auto e : pv) {
-        const auto& p = pv.get<ecs::Position>(e);
+    const entt::entity avatarE = sub::avatar_entity(reg);
+    for (const entt::entity e : {avatarE}) {
+        if (e == entt::null || !reg.all_of<ecs::Position>(e)) continue;
+        const auto& p = reg.get<ecs::Position>(e);
         playerX_ = p.x;
         playerY_ = p.y;
         playerZ_ = p.z;
@@ -1287,8 +1291,9 @@ void SubworldEngine::report_player_damage() {
     ecs::Pools* squadPools =
         gs_ ? player_pools(*gs_, store_of(*ecs_)) : nullptr;
     if (!squadPools) return;
-    auto pv = reg.view<ecs::AvatarTag, ecs::Pools>();
-    for (auto e : pv) {
+    const entt::entity avatarE = sub::avatar_entity(reg);
+    for (const entt::entity e : {avatarE}) {
+        if (e == entt::null || !reg.all_of<ecs::Pools>(e)) continue;
         // The record this body spends — his own squad for the hero husk, the
         // lord himself for a body he possesses. One question, one door.
         ecs::Pools* record = pools_of(reg, e);
@@ -1297,7 +1302,7 @@ void SubworldEngine::report_player_damage() {
         // «Before» is the MIRROR: nothing writes it during a tick, so it still
         // holds what the bar was when this tick began. No remembered field, and
         // no second memory to keep honest.
-        const ecs::Pools& mirror = pv.get<ecs::Pools>(e);
+        const ecs::Pools& mirror = reg.get<ecs::Pools>(e);
         if (godMode_) {
             // Invulnerable: put the record back where the tick found it and
             // keep the body out of the death path entirely.
@@ -1713,7 +1718,7 @@ void SubworldEngine::tick_day_pump(float dt) {
         const auto& d = crowd.get<ecs::MacroDebt>(e);
         if (d.stock != std::uint8_t(MacroStock::Population)) continue;
         if (d.subject != ctx.landmark.id) continue;
-        if (reg.any_of<ecs::AvatarTag>(e)
+        if (sub::is_avatar(reg, e)
             || sub::object_flag(reg, e, sub::kObjPlayerSoldier)) continue;
         if (reg.all_of<ecs::GoingHome>(e)) leaving.push_back(e);
         else                               onStreet.push_back(e);
@@ -2015,7 +2020,8 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
 
 std::uint32_t SubworldEngine::player_entity_id() const {
     if (ecs_) {
-        for (auto e : ecs_->reg.view<ecs::AvatarTag>()) {
+        if (const entt::entity e = sub::avatar_entity(ecs_->reg);
+            e != entt::null) {
             return std::uint32_t(entt::to_integral(e));
         }
     }
@@ -2028,11 +2034,11 @@ std::uint32_t SubworldEngine::player_entity_id() const {
 
 float SubworldEngine::player_arm_reach() const {
     if (ecs_) {
-        for (auto e : ecs_->reg.view<ecs::AvatarTag>()) {
+        if (const entt::entity e = sub::avatar_entity(ecs_->reg);
+            e != entt::null) {
             if (const auto* c = ecs_->reg.try_get<ecs::Combat>(e)) {
                 return c->attackRange;
             }
-            break;
         }
     }
     return kAdventurerCombat.attackRange;
@@ -2046,7 +2052,8 @@ int SubworldEngine::player_display_hp() const {
         // the mirror's tick-top value. (The player's own squad stays frozen as
         // the revert target while possessed: it is simply not the record being
         // read.)
-        for (auto e : ecs_->reg.view<ecs::AvatarTag, ecs::Pools>()) {
+        if (const entt::entity e = sub::avatar_entity(ecs_->reg);
+            e != entt::null && ecs_->reg.all_of<ecs::Pools>(e)) {
             if (const ecs::Pools* p = pools_of(ecs_->reg, e)) return p->hp;
         }
         if (const ecs::Pools* squadPools = gs_
@@ -2079,7 +2086,8 @@ void SubworldEngine::tick_player_melee() {
     // the scalars up front so later component emplaces can't dangle the pointer.
     ecs::Combat* pc = nullptr;
     entt::entity playerEnt = entt::null;
-    for (auto pe : reg.view<ecs::AvatarTag, ecs::Combat>()) {
+    for (const entt::entity pe : {sub::avatar_entity(reg)}) {
+        if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
         pc = &reg.get<ecs::Combat>(pe);
         playerEnt = pe;
         break;
@@ -2221,7 +2229,8 @@ void SubworldEngine::tick_player_melee() {
 void SubworldEngine::charge_act(float baseSeconds) {
     if (!ecs_ || baseSeconds <= 0.0f) return;
     auto& reg = ecs_->reg;
-    for (auto pe : reg.view<ecs::AvatarTag, ecs::Combat>()) {
+    for (const entt::entity pe : {sub::avatar_entity(reg)}) {
+        if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
         const CharacterSheet* cs = sub::state_of<CharacterSheet>(reg, pe);
         static const Attributes kBareA{};
         static const Skills kBareS{};
@@ -2244,7 +2253,8 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // жжёт, это граница закона способностей.
     {
         const ecs::Combat* gate = nullptr;
-        for (auto pe : reg.view<ecs::AvatarTag, ecs::Combat>()) {
+        for (const entt::entity pe : {sub::avatar_entity(reg)}) {
+            if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
             gate = &reg.get<ecs::Combat>(pe);
             break;
         }
@@ -2257,7 +2267,8 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // covers the trunk radius the point-range does not model).
     float reach = 1.5f;
     entt::entity playerEnt = entt::null;
-    for (auto pe : reg.view<ecs::AvatarTag, ecs::Combat>()) {
+    for (const entt::entity pe : {sub::avatar_entity(reg)}) {
+        if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
         reach = reg.get<ecs::Combat>(pe).attackRange + 1.5f;
         playerEnt = pe;
         break;
@@ -2427,7 +2438,7 @@ void SubworldEngine::tick_damage_fx() {
         // The player body's damage feedback is the HUD hit-flash; a world burst
         // would spawn on the camera and clip the near plane. Skip it (still
         // consumed below so the tag never lingers).
-        if (reg.any_of<ecs::AvatarTag>(e)) continue;
+        if (sub::is_avatar(reg, e)) continue;
         const bool fxLethal = (fxBits & sub::kDmgFxLethal) != 0u;
         const bool fxBlocked = (fxBits & sub::kDmgFxBlocked) != 0u;
         const auto& pos = view.get<ecs::Position>(e);
@@ -2680,7 +2691,8 @@ bool SubworldEngine::interact() {
     // обыск честно отдаёт миру свой ход.
     {
         const ecs::Combat* gate = nullptr;
-        for (auto pe : reg.view<ecs::AvatarTag, ecs::Combat>()) {
+        for (const entt::entity pe : {sub::avatar_entity(reg)}) {
+            if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
             gate = &reg.get<ecs::Combat>(pe);
             break;
         }
@@ -3136,7 +3148,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         if (sub::object_flag(reg, e, sub::kObjFlying)) d.flags |= B_Flying;
 
         const bool owned = sub::object_flag(reg, e, sub::kObjPlayerSoldier);
-        const bool isPlayer = reg.any_of<ecs::AvatarTag>(e);
+        const bool isPlayer = sub::is_avatar(reg, e);
         // A body's side is its DATA. Soldiers used to be forced onto the player
         // side by their tag while their NPCKind said "empire" — dead data that
         // could never be wrong because nothing read it. Now the squad spawn
@@ -3294,7 +3306,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         auto& p = reg.get<ecs::Position>(e);
         p.x = crowd_->x[si];
         p.y = crowd_->y[si];
-        if (reg.any_of<ecs::AvatarTag>(e)) {
+        if (sub::is_avatar(reg, e)) {
             // The engine's player scalars are a VIEW of his body now, not a
             // second truth beside it: the mover moved him with everyone else,
             // and this is where the camera learns where he ended up.
@@ -3392,7 +3404,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // game-over read off THE RECORD (report_player_damage — the record's
             // hp at 0 -> AppState::Dead), not a loot/XP/removal event, and the
             // entity is reset on the next subworld enter().
-            if (reg.any_of<ecs::AvatarTag>(e)) continue;
+            if (sub::is_avatar(reg, e)) continue;
             // The fall is HEARD (SfxId queue, 2026-09-09) — but only on the
             // fight tick: the drainAll sweeps (leave, teardown) settle books,
             // and a chorus of death-thuds over a door closing would be noise
@@ -3479,7 +3491,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                         leader = macro_handle_by_spawn_id(
                             store_of(mw_.world->reg),
                             std::uint32_t(debt->subject));
-                    } else if (reg.any_of<ecs::AvatarTag>(killerBody)
+                    } else if (sub::is_avatar(reg, killerBody)
                                || sub::object_flag(reg, killerBody,
                                                    sub::kObjPlayerSoldier)) {
                         if (gs_) {
@@ -3489,7 +3501,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     }
                     // «Рука игрока» — сценная правда для репутации: его
                     // аватар (включая одержимое тело) или его солдат.
-                    playerHand = reg.any_of<ecs::AvatarTag>(killerBody)
+                    playerHand = sub::is_avatar(reg, killerBody)
                         || sub::object_flag(reg, killerBody,
                                             sub::kObjPlayerSoldier);
                 }
@@ -4421,8 +4433,8 @@ float SubworldEngine::player_muzzle_z() const {
 
 entt::entity SubworldEngine::player_entity() const {
     if (!ecs_) return entt::null;
-    auto v = ecs_->reg.view<ecs::AvatarTag>();
-    return v.empty() ? entt::null : v.front();
+    // Ссылка сцены вместо скана по тегу: O(1) (вердикт 2026-10-05).
+    return sub::avatar_entity(ecs_->reg);
 }
 
 // How wide the body he is CURRENTLY IN is — asked of the one door every other
@@ -4850,8 +4862,9 @@ void SubworldEngine::tick(float dt) {
         // integrator through sync_player_vertical below.
         {
             auto gv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(
-                entt::exclude<ecs::Projectile, ecs::AvatarTag>);
+                entt::exclude<ecs::Projectile>);
             for (auto e : gv) {
+                if (sub::is_avatar(ecs_->reg, e)) continue;
                 if (sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
                 auto& p = gv.get<ecs::Position>(e);
                 float supportZ = mgr_.height_field().sample(p.x, p.y);
@@ -4892,9 +4905,9 @@ void SubworldEngine::tick(float dt) {
         {
             const float ceilZ = mgr_.height_field().max_m()
                               + kFlightMaxAboveTerrainM;
-            auto fv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(
-                entt::exclude<ecs::AvatarTag>);
+            auto fv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>();
             for (auto e : fv) {
+                if (sub::is_avatar(ecs_->reg, e)) continue;
                 if (!sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
                 auto& p = fv.get<ecs::Position>(e);
                 // Вертикальное НАМЕРЕНИЕ мозга (SubworldAi.wantVz, третья

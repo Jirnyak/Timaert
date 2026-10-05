@@ -88,7 +88,7 @@ int main() {
         sm::test::give_flag(reg, soldier,
                             sub::kObjPlayerSoldier);  // player's own -> skip
         entt::entity ptag = make_enemy(reg, 102, 100); // ahead, dist 2
-        reg.emplace<ecs::AvatarTag>(ptag);            // the player body -> skip
+        sm::test::make_avatar(reg, ptag);            // the player body -> skip
         CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "player-side entities excluded even when nearer");
     }

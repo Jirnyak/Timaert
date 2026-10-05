@@ -48,7 +48,7 @@ bool projectile_owner_is_player_side(const entt::registry& reg,
                                      const ecs::Projectile& p) {
     const entt::entity owner = entt::entity(p.ownerId);
     return reg.valid(owner)
-        && (reg.any_of<ecs::AvatarTag>(owner)
+        && (is_avatar(reg, owner)
             || object_flag(reg, owner, kObjPlayerSoldier));
 }
 
@@ -64,7 +64,7 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     if (!reg.any_of<ecs::Pools>(e)) return false;
     if (object_flag(reg, e, kObjDead)) return false;
     if (reg.any_of<ecs::Projectile>(e)) return false;
-    if (!reg.any_of<ecs::SubworldTag>(e) && !reg.any_of<ecs::AvatarTag>(e)) {
+    if (!reg.any_of<ecs::SubworldTag>(e) && !is_avatar(reg, e)) {
         return false;
     }
     // NO faction shield (owner design decision 2026-07-30): projectiles and
@@ -159,7 +159,7 @@ void apply_spell_damage(ecs::World& w,
                                           DamageType(p.dmgType), bus);
     if (hit.applied <= 0) return;
     if (playerOwned && logFn
-        && !(w.reg.any_of<ecs::AvatarTag>(target)
+        && !(is_avatar(w.reg, target)
              || object_flag(w.reg, target, kObjPlayerSoldier))) {
         logFn(logUser, std::uint32_t(entt::to_integral(target)),
               hit.applied, hit.lethal);

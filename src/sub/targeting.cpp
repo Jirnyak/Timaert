@@ -17,7 +17,7 @@ inline bool melee_candidate(entt::registry& reg, entt::entity e) {
         || object_flag(reg, e, kObjDead)) {
         return false;
     }
-    if (reg.any_of<ecs::AvatarTag>(e)
+    if (is_avatar(reg, e)
         || object_flag(reg, e, kObjPlayerSoldier)) return false;
     return (*reg.try_get<ecs::Pools>(e)).hp > 0;
 }
@@ -104,7 +104,7 @@ entt::entity aim_target(entt::registry& reg,
     for (auto e : view) {
         if (e == shooter) continue;
         if (object_flag(reg, e, kObjDead)) continue;
-        if (reg.any_of<ecs::AvatarTag>(e)
+        if (is_avatar(reg, e)
             || object_flag(reg, e, kObjPlayerSoldier)) continue;
 
         const auto& hp = view.get<ecs::Pools>(e);

@@ -66,7 +66,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         // its own brain. Skip it entirely so Wander/Flee never fights the
         // player. No component churn on possess/vacate — when the flag leaves,
         // the body's AI resumes automatically on the very next tick.
-        if (reg.any_of<ecs::AvatarTag>(e)) continue;
+        if (is_avatar(reg, e)) continue;
         // …и тело брошенного сквада стоит без чувств (предикат выше): сам
         // сквад — по записи, его люди — по ростерному займу.
         if (unconsciousRec.slot != kMacroNoSlot) {

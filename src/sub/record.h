@@ -170,4 +170,43 @@ inline void object_flag_clear(entt::registry& reg, entt::entity e,
     }
 }
 
+// ── АКТИВНОЕ ТЕЛО — ТРИ ДВЕРИ ОДНОЙ ССЫЛКИ (вердикт 2026-10-05) ─────────
+// «Это игрок?» — сравнение со ссылкой; «какое тело игрока?» — чтение
+// ссылки O(1) (прежний view<AvatarTag> сканировал реестр на каждый
+// вопрос). Запись — ОДНА дверь: одержимость переносит тело одной
+// перезаписью, половинчатое состояние «тег снят, тег не поставлен»
+// невыразимо по построению.
+inline void set_avatar(entt::registry& reg, entt::entity e) {
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return;          // фикстура без арены — транзит
+    if (e == entt::null) {
+        objs->avatarId = 0;               // ссылки нет
+        objs->avatarEnttBits = 0xFFFFFFFFu;
+        return;
+    }
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;            // тело без слота — транзит
+    objs->avatarSlot = os->slot;
+    objs->avatarId = objs->id[std::size_t(os->slot)];
+    objs->avatarEnttBits = std::uint32_t(entt::to_integral(e));
+}
+inline bool avatar_ref_live(const SubObjects& o) {
+    return o.avatarId != 0u
+        && o.id[std::size_t(o.avatarSlot)] == o.avatarId
+        && (o.flags[std::size_t(o.avatarSlot)] & kObjAlive) != 0u;
+}
+inline bool is_avatar(const entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return false;
+    SubObjects* const* po = reg.ctx().find<SubObjects*>();
+    if (po == nullptr || !avatar_ref_live(**po)) return false;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    return os != nullptr && os->slot == (*po)->avatarSlot;
+}
+inline entt::entity avatar_entity(const entt::registry& reg) {
+    SubObjects* const* po = reg.ctx().find<SubObjects*>();
+    if (po == nullptr || !avatar_ref_live(**po)) return entt::null;
+    const entt::entity e = entt::entity((*po)->avatarEnttBits);
+    return reg.valid(e) ? e : entt::null;
+}
+
 } // namespace sm::sub

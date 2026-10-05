@@ -151,7 +151,7 @@ static void smoke_stage_possession_cast(App& app, entt::entity target) {
         for (auto e : cv) {
             if (e == target) continue;
             if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)) continue;
-            if (reg.any_of<sm::ecs::AvatarTag>(e)
+            if (sm::sub::is_avatar(reg, e)
                 || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
                 continue;
             auto& op = cv.get<sm::ecs::Position>(e);
@@ -170,9 +170,8 @@ static void smoke_stage_possession_cast(App& app, entt::entity target) {
     if (auto* vp = reg.try_get<sm::ecs::VisualPos>(target)) {
         vp->vx = tx; vp->vy = ty;
     }
-    for (auto e : reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
-        reg.get<sm::ecs::Combat>(e).recoverySteps = 0u;
-    }
+    if (const entt::entity e = sm::sub::avatar_entity(reg); e != entt::null)
+        if (auto* c = reg.try_get<sm::ecs::Combat>(e)) c->recoverySteps = 0u;
 }
 
 static bool smoke_possess_via_spell(App& app, entt::entity target) {
@@ -190,7 +189,7 @@ static bool smoke_possess_via_spell(App& app, entt::entity target) {
     }
     smoke_stage_possession_cast(app, target);
     if (!cast_active_spell(app)) return false;
-    return reg.valid(target) && reg.all_of<sm::ecs::AvatarTag>(target);
+    return reg.valid(target) && sm::sub::is_avatar(reg, target);
 }
 
 // СВИДЕТЕЛЬ РОЖАЕТ СВОЁ ПРЕДУСЛОВИЕ (AGENTS §8 п.11, вердикт владельца
@@ -2647,12 +2646,9 @@ bool run_dungeon_house_smoke(App& app) {
     }
 
     auto playerTags = [&]() {
-        int n = 0;
-        for (auto e : app.ecs.reg.view<sm::ecs::AvatarTag>()) {
-            (void)e;
-            ++n;
-        }
-        return n;
+        // Активное тело — ссылка сцены: «двух аватаров» больше не бывает по
+        // построению, счёт выродился в «жива ли ссылка».
+        return sm::sub::avatar_entity(app.ecs.reg) != entt::null ? 1 : 0;
     };
     auto hashTiles = [&]() {
         std::uint32_t h = 2166136261u;
@@ -4243,7 +4239,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     {
         int playerTags = 0;
         entt::entity pe = entt::null;
-        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++playerTags; pe = e; }
+        if ((pe = sm::sub::avatar_entity(reg)) != entt::null) ++playerTags;
         if (playerTags == 1) {
             if (const auto* h = reg.try_get<sm::ecs::Pools>(pe)) {
                 const int hMax = std::max(1, int(std::round(h->maxHp)));
@@ -4404,9 +4400,10 @@ bool run_subworld_missile_feedback_smoke(App& app) {
 // click and charge the same ecs::Combat::recoverySteps a swing does) — what
 // a scenario prints to show the fight's clock honestly.
 static std::uint32_t smoke_player_recovery_steps(App& app) {
-    for (auto e : app.ecs.reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
-        return app.ecs.reg.get<sm::ecs::Combat>(e).recoverySteps;
-    }
+    if (const entt::entity e = sm::sub::avatar_entity(app.ecs.reg);
+        e != entt::null)
+        if (const auto* c = app.ecs.reg.try_get<sm::ecs::Combat>(e))
+            return c->recoverySteps;
     return 0u;
 }
 
@@ -4442,7 +4439,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
         // (Гард сквада игрока умер с мостом: макро-сквад в реестре не
         // живёт, view<Pools> видит только тела сцены — кластер 7.)
         for (auto e : reg.view<sm::ecs::Pools>()) {
-            if (reg.any_of<sm::ecs::AvatarTag>(e)) continue;
+            if (sm::sub::is_avatar(reg, e)) continue;
             doomed.push_back(e);
         }
         for (const entt::entity e : doomed) {
@@ -4495,8 +4492,8 @@ bool run_subworld_self_fireball_smoke(App& app) {
     const int afterHp = player_pools(app).hp;
 
     bool playerDead = false;
-    for (auto e : reg.view<sm::ecs::AvatarTag>()) {
-        if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)) playerDead = true;
+    if (const entt::entity e = sm::sub::avatar_entity(reg); e != entt::null) {
+        playerDead = sm::sub::object_flag(reg, e, sm::sub::kObjDead);
     }
 
     std::fprintf(stderr,
@@ -4811,9 +4808,9 @@ bool run_subworld_player_melee_smoke(App& app) {
     // no armour, so what was rolled is what landed; a crit changes nothing
     // against a bare target).
     const sm::ecs::Combat* playerCombat = nullptr;
-    for (auto pe : reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
-        playerCombat = &reg.get<sm::ecs::Combat>(pe);
-        break;
+    if (const entt::entity pe = sm::sub::avatar_entity(reg);
+        pe != entt::null) {
+        playerCombat = reg.try_get<sm::ecs::Combat>(pe);
     }
     float minStrike = -1.0f;
     float maxStrike = -1.0f;
@@ -4921,7 +4918,7 @@ bool run_subworld_player_bow_smoke(App& app) {
         // (Гард сквада игрока умер с мостом: макро-сквад в реестре не
         // живёт, view<Pools> видит только тела сцены — кластер 7.)
         for (auto e : reg.view<sm::ecs::Pools>()) {
-            if (reg.any_of<sm::ecs::AvatarTag>(e)) continue;
+            if (sm::sub::is_avatar(reg, e)) continue;
             doomed.push_back(e);
         }
         for (const entt::entity e : doomed) {
@@ -5009,9 +5006,9 @@ bool run_subworld_player_bow_smoke(App& app) {
     // The press routed as a SHOT because the weapon row said Missile — the
     // white-box guard that the delivery column reached the body's Combat.
     const sm::ecs::Combat* playerCombat = nullptr;
-    for (auto pe : reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
-        playerCombat = &reg.get<sm::ecs::Combat>(pe);
-        break;
+    if (const entt::entity pe = sm::sub::avatar_entity(reg);
+        pe != entt::null) {
+        playerCombat = reg.try_get<sm::ecs::Combat>(pe);
     }
     const bool missileRouted = playerCombat
         && playerCombat->kind == sm::ecs::Combat::Missile
@@ -5586,9 +5583,7 @@ bool run_console_smoke(App& app) {
             return app.macroStore->valid(sm::player_flag_handle(app.gs));
         };
         auto count_avatar_tags = [&]() {
-            int n = 0;
-            for (auto e : reg.view<sm::ecs::AvatarTag>()) { (void)e; ++n; }
-            return n;
+            return sm::sub::avatar_entity(reg) != entt::null ? 1 : 0;
         };
 
         // (1) Macro map: a live flag handle, standing where the scalars say;
@@ -5626,7 +5621,8 @@ bool run_console_smoke(App& app) {
         }
         int avatarsInScene = 0;
         entt::entity avatar = entt::null;
-        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++avatarsInScene; avatar = e; }
+        if ((avatar = sm::sub::avatar_entity(reg)) != entt::null)
+            ++avatarsInScene;
         if (avatarsInScene != 1 || !reg.all_of<sm::ecs::SubworldTag>(avatar)) {
             app.subworld.leave(true);
             smoke_fail(app, "macro_player_entity: scene avatar missing/duplicated");
@@ -5887,7 +5883,7 @@ bool run_console_smoke(App& app) {
         auto& reg = app.ecs.reg;
         int playerTags = 0;
         entt::entity pe = entt::null;
-        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++playerTags; pe = e; }
+        if ((pe = sm::sub::avatar_entity(reg)) != entt::null) ++playerTags;
         if (playerTags != 1) {
             restore();
             smoke_fail(app, "player_entity: expected exactly one AvatarTag entity");
@@ -6230,9 +6226,9 @@ bool run_console_smoke(App& app) {
         entt::entity target = entt::null;
         {
             auto tv = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                               sm::ecs::Pools, sm::ecs::Combat>(
-                entt::exclude<sm::ecs::AvatarTag>);
+                               sm::ecs::Pools, sm::ecs::Combat>();
             for (auto e : tv) {
+                if (sm::sub::is_avatar(reg, e)) continue;
                 if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
                     || sm::sub::object_flag(reg, e,
                                             sm::sub::kObjPlayerSoldier))
@@ -6256,7 +6252,7 @@ bool run_console_smoke(App& app) {
         // The hero husk: the sole current scene-flag holder, which carries NO
         // NPCKind (that is precisely what tells a husk from a foreign body).
         entt::entity husk = entt::null;
-        for (auto e : reg.view<sm::ecs::AvatarTag>()) { husk = e; break; }
+        husk = sm::sub::avatar_entity(reg);
         if (husk == entt::null || reg.all_of<sm::ecs::NPCKind>(husk)) {
             restore(); smoke_fail(app, "possess: hero husk missing or not a hero body"); return false;
         }
@@ -6286,18 +6282,19 @@ bool run_console_smoke(App& app) {
             int(player_pools(app).mp) == mpBefore - sm::kSpellDefs[possessionOrd].manaCost;
         // Устоявшая цель меняет НИЧЕГО: сценовый флажок на хаске, макро дома.
         int sceneTags = 0; entt::entity sceneHolder = entt::null;
-        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
+        if ((sceneHolder = sm::sub::avatar_entity(reg)) != entt::null)
+            ++sceneTags;
         const bool macroFlagHeld = app.gs.playerFlagBits == macroFlagBefore;
         std::fprintf(stderr,
                      "[smoke] possess_gate level_refused=%d mana_burned=%d "
                      "scene_flag_held=%d macro_flag_held=%d threshold=%d\n",
-                     reg.all_of<sm::ecs::AvatarTag>(target) ? 0 : 1,
+                     sm::sub::is_avatar(reg, target) ? 0 : 1,
                      manaBurned ? 1 : 0,
                      (sceneTags == 1 && sceneHolder == husk) ? 1 : 0,
                      macroFlagHeld ? 1 : 0,
                      threshold);
         std::fflush(stderr);
-        if (reg.all_of<sm::ecs::AvatarTag>(target)
+        if (sm::sub::is_avatar(reg, target)
             || sceneTags != 1 || sceneHolder != husk || !reg.valid(husk)
             || !macroFlagHeld) {
             restore();
@@ -6317,7 +6314,8 @@ bool run_console_smoke(App& app) {
             return false;
         }
         sceneTags = 0; sceneHolder = entt::null;
-        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
+        if ((sceneHolder = sm::sub::avatar_entity(reg)) != entt::null)
+            ++sceneTags;
         const bool macroFlagHome = app.gs.playerFlagBits == macroFlagBefore;
         std::fprintf(stderr,
                      "[smoke] possess_gate derived_taken=%d husk_gone=%d "
@@ -6397,8 +6395,10 @@ bool run_console_smoke(App& app) {
         // is MANDATORY: a witness that may not fire is a dead detector.
         {
             const auto authoritative_pools = [&]() -> sm::ecs::Pools* {
-                for (auto pe : app.ecs.reg.view<sm::ecs::AvatarTag,
-                                                sm::ecs::Pools>()) {
+                for (const entt::entity pe :
+                     {sm::sub::avatar_entity(app.ecs.reg)}) {
+                    if (pe == entt::null
+                        || !app.ecs.reg.all_of<sm::ecs::Pools>(pe)) break;
                     if (app.ecs.reg.all_of<sm::ecs::NPCKind>(pe)) {
                         return &(*app.ecs.reg.try_get<sm::ecs::Pools>(pe));
                     }
@@ -7268,7 +7268,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // The hero husk before the take — the take must destroy it and
                 // (by the next engine tick) snap the scalars onto the body.
                 entt::entity husk = entt::null;
-                for (auto e : reg.view<sm::ecs::AvatarTag>()) { husk = e; break; }
+                husk = sm::sub::avatar_entity(reg);
 
                 // Взятие — СПЕЛЛОМ, сквозь тот же рантайм, что у игрока
                 // (2026-09-17): выучить possession, взвести, кастануть в
@@ -7290,7 +7290,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // the climb-out — and every «кто я» asked in between answered
                 // with the man he used to be.
                 int sceneTags = 0; entt::entity sceneHolder = entt::null;
-                for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
+                if ((sceneHolder = sm::sub::avatar_entity(reg))
+                    != entt::null)
+                    ++sceneTags;
                 // Макро-флаг — биты GameState (1е кластер 5): «на записи» =
                 // хэндл флажка равен хэндлу записи взятого тела.
                 const bool macroOnRecord =
@@ -7419,7 +7421,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const bool flagHeld2 =
                     sm::player_flag_handle(app.gs) == origin;
                 entt::entity av = entt::null;
-                for (auto e : reg.view<sm::ecs::AvatarTag>()) { av = e; break; }
+                av = sm::sub::avatar_entity(reg);
                 // Двери говорят про ЛОРДА и под землёй: полосы — его блок
                 // (не nullptr, которым дыра A2 отвечала до правки), а лист —
                 // ровно та правда, что у записи есть (безымянная анкета
@@ -7461,7 +7463,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 for (auto b : reg.view<sm::ecs::SubworldTag,
                                        sm::ecs::MacroOrigin>()) {
                     if (reg.get<sm::ecs::MacroOrigin>(b).macro == homeH
-                        && !reg.any_of<sm::ecs::AvatarTag>(b)) {
+                        && !sm::sub::is_avatar(reg, b)) {
                         abandoned = b;
                         break;
                     }
@@ -9132,7 +9134,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 std::vector<entt::entity> doomed;
                 // (Гард сквада игрока умер с мостом — кластер 7.)
                 for (auto e : app.ecs.reg.view<sm::ecs::Pools>()) {
-                    if (app.ecs.reg.any_of<sm::ecs::AvatarTag>(e)) continue;
+                    if (sm::sub::is_avatar(app.ecs.reg, e)) continue;
                     doomed.push_back(e);
                 }
                 for (const entt::entity e : doomed) {
@@ -9465,7 +9467,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto is_probe_actor = [&](entt::entity e) {
                 if (!app.ecs.reg.all_of<sm::ecs::Sprite, sm::ecs::Position>(e))
                     return false;
-                return !app.ecs.reg.all_of<sm::ecs::AvatarTag>(e);
+                return !sm::sub::is_avatar(app.ecs.reg, e);
             };
             std::vector<entt::entity> before;
             for (auto e : app.ecs.reg.view<sm::ecs::Sprite, sm::ecs::Position>())
@@ -9527,9 +9529,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // lantern simply drops out of the SSBO next frame. Harness only.
             if (std::getenv("TIMAERT_SMOKE_NO_PLAYER_LIGHT")) {
                 int stripped = 0;
-                auto pv = app.ecs.reg.view<sm::ecs::AvatarTag,
-                                           sm::ecs::LightEmitter>();
-                for (auto e : pv) {
+                if (const entt::entity e =
+                        sm::sub::avatar_entity(app.ecs.reg);
+                    e != entt::null
+                    && app.ecs.reg.all_of<sm::ecs::LightEmitter>(e)) {
                     app.ecs.reg.remove<sm::ecs::LightEmitter>(e);
                     ++stripped;
                 }

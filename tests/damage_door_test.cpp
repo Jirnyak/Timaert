@@ -220,7 +220,7 @@ void test_players_worn_plate_stands_underground() {
     // the address the game gives it. Same claim, one less thing the damage door
     // has to know about.
     const entt::entity body = make_body(reg, 100.0f, /*withKind*/false);
-    reg.emplace<sm::ecs::AvatarTag>(body);
+    sm::test::make_avatar(reg, body);
     // His squad on the map: the gear's one home — СЛОТ STORE (шаг 2 1е:
     // запись есть хэндл по построению, entt-двойник фикстуре не нужен).
     // arm_leather is the phase's own promise made flesh — «+2 END» AND a
@@ -290,7 +290,7 @@ void test_players_worn_plate_stands_underground() {
 void test_armor_downtime() {
     entt::registry reg;
     const entt::entity body = make_body(reg, 10000.0f, /*withKind*/false);
-    reg.emplace<sm::ecs::AvatarTag>(body);
+    sm::test::make_avatar(reg, body);
     reg.emplace<sm::ecs::Combat>(body, sm::ecs::Combat{});
 
     auto store = sm::make_macro_store();
@@ -497,7 +497,7 @@ void test_player_death_is_not_an_npc_kill() {
         entt::registry reg;
         sm::EventBus bus;
         const entt::entity e = make_body(reg, 5.0f);
-        reg.emplace<sm::ecs::AvatarTag>(e);
+        sm::test::make_avatar(reg, e);
         const DamageResult hit =
             apply_damage(reg, e, DamageSource{3u, false}, 50.0f, kind,
                          sm::DamageType::Blunt, &bus);

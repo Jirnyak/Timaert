@@ -27,6 +27,7 @@
 #include "imgui.h"
 #include "sub/base_generator.h"
 #include "sub/material.h"
+#include "sub/record.h"    // avatar_entity — активное тело есть ссылка сцены
 #include "sub/gens/dispatch.h"
 #include "sub/seamless_manager.h"
 #include "sub/engine.h"
@@ -1023,10 +1024,10 @@ namespace sm::ui
                                 // пошаговом режиме застывший мир позволял
                                 // пить бесконечно — мир-то стоит.
                                 ecs::Combat* gate = nullptr;
-                                for (auto pe : world.reg.view<ecs::AvatarTag,
-                                                              ecs::Combat>()) {
-                                    gate = &world.reg.get<ecs::Combat>(pe);
-                                    break;
+                                if (const auto pe =
+                                        sm::sub::avatar_entity(world.reg);
+                                    world.reg.valid(pe)) {
+                                    gate = world.reg.try_get<ecs::Combat>(pe);
                                 }
                                 if (!sm::sub::body_is_free(gate)) {
                                     lastUseMessage = "Still recovering.";

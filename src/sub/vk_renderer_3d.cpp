@@ -1327,9 +1327,9 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         // Exclude the player body: first-person, the camera sits at it, so a
         // possessed body must not be drawn over the lens. The hero husk carries
         // no Sprite and never matched anyway.
-        auto view = ecs->reg.view<ecs::Position, ecs::Sprite>(
-            entt::exclude<ecs::AvatarTag>);
+        auto view = ecs->reg.view<ecs::Position, ecs::Sprite>();
         for (auto e : view) {
+            if (is_avatar(ecs->reg, e)) continue;
             if (bodies.size() >= std::size_t(kMaxBodyCrowd)) break;
             const auto& spr = view.get<ecs::Sprite>(e);
             const SpriteDef& look = sprite_row(SpriteId(spr.spriteRow));
@@ -4013,7 +4013,7 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
         // player and projectiles (light that must track every frame); the
         // field owns every other emitter at any range. No boundary, no pop,
         // no double counting by construction.
-        if (ecs->reg.any_of<ecs::AvatarTag>(e)
+        if (is_avatar(ecs->reg, e)
             || ecs->reg.any_of<ecs::Projectile>(e)) {
             continue;
         }
@@ -4192,7 +4192,7 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
             // LIGHT FIELD's (rebuild_light_field applies the inverse of this
             // same test — by nature, not by distance, so nothing is counted
             // twice and nothing pops at a boundary).
-            if (!ecs->reg.any_of<ecs::AvatarTag>(e)
+            if (!is_avatar(ecs->reg, e)
                 && !ecs->reg.any_of<ecs::Projectile>(e)) {
                 continue;
             }

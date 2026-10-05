@@ -190,7 +190,7 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
         // Смерть тела сцены — бит kObjDead маски слота (ломоть 1б);
         // запись-макро судит свой байт судьбы своим путём (пулы, жнец).
         object_flag_set(reg, target, kObjDead);
-        if (bus != nullptr && !reg.any_of<ecs::AvatarTag>(target)) {
+        if (bus != nullptr && !is_avatar(reg, target)) {
             GameEvent ev{EventTag::NpcDeath};
             ev.a = std::uint32_t(entt::to_integral(target));
             ev.b = src.attackerId;
