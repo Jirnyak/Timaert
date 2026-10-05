@@ -38,7 +38,7 @@ DefenseSum defense_of(entt::registry& reg, entt::entity target,
     // The ROW's own defence — hide, scale, issued plate. All-zero for a body
     // whose row omits it, which is a body in its own skin, not a branch.
     Defense row{};
-    if (const auto* kind = reg.try_get<ecs::NPCKind>(target)) {
+    if (const auto* kind = body_kind(reg, target)) {
         if (kind->type < std::uint16_t(NPCType::Count))
             row = npc_def(NPCType(std::uint8_t(kind->type))).defense;
     }
@@ -194,7 +194,7 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
             GameEvent ev{EventTag::NpcDeath};
             ev.a = std::uint32_t(entt::to_integral(target));
             ev.b = src.attackerId;
-            const auto* kindRow = reg.try_get<ecs::NPCKind>(target);
+            const auto* kindRow = body_kind(reg, target);
             ev.ix = kindRow ? int(kindRow->type) : kNoNpcType;
             ev.iy = int(src.spellId);
             bus->emit(ev);

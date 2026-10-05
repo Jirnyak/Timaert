@@ -170,6 +170,48 @@ inline void object_flag_clear(entt::registry& reg, entt::entity e,
     }
 }
 
+// ── РОД И УРОВЕНЬ ТЕЛА — КОЛОНКИ АРЕНЫ (M-150 ломоть 2 кусок 1) ─────────
+// Бывшие компоненты ecs::NPCKind / ecs::NpcLevel. nullptr у body_kind —
+// ровно прежняя семантика «компоненты нет»: у сущности нет слота
+// (бесслотные снаряды/свет/труп-контейнер до ломтей 4-5) ИЛИ род не
+// назначен (kObjNoKind — игрок, голая фикстура). Уровень безуровневого
+// тела — 0: прежние читатели try_get сами подставляли свой дефолт, и
+// каждый сохранил его на своём месте.
+inline const ecs::NPCKind* body_kind(const entt::registry& reg,
+                                     entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* const* objs = reg.ctx().find<SubObjects*>();
+    if (objs == nullptr) return nullptr;
+    const ecs::NPCKind& k = (*objs)->kind[std::size_t(os->slot)];
+    return k.type == kObjNoKind ? nullptr : &k;
+}
+inline void set_body_kind(entt::registry& reg, entt::entity e,
+                          ecs::NPCKind k) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->kind[std::size_t(os->slot)] = k;
+    }
+}
+inline std::int16_t body_level(const entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return 0;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return 0;
+    SubObjects* const* objs = reg.ctx().find<SubObjects*>();
+    if (objs == nullptr) return 0;
+    return (*objs)->level[std::size_t(os->slot)];
+}
+inline void set_body_level(entt::registry& reg, entt::entity e,
+                           std::int16_t v) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->level[std::size_t(os->slot)] = v;
+    }
+}
+
 // ── АКТИВНОЕ ТЕЛО — ТРИ ДВЕРИ ОДНОЙ ССЫЛКИ (вердикт 2026-10-05) ─────────
 // «Это игрок?» — сравнение со ссылкой; «какое тело игрока?» — чтение
 // ссылки O(1) (прежний view<AvatarTag> сканировал реестр на каждый

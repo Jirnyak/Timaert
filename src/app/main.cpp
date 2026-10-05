@@ -5096,7 +5096,7 @@ void draw_debug_panels(App& app) {
                     ImGui::TableNextColumn();
                     ImGui::Text("%u", unsigned(entt::to_integral(e)));
                     ImGui::TableNextColumn();
-                    if (const auto* k = reg.try_get<sm::ecs::NPCKind>(e)) {
+                    if (const auto* k = sm::sub::body_kind(reg, e)) {
                         ImGui::TextUnformatted(
                             sm::valid_npc_kind(std::uint8_t(k->type))
                                 ? sm::npc_def(sm::NPCType(k->type)).label : "?");
@@ -5108,8 +5108,8 @@ void draw_debug_panels(App& app) {
                         ImGui::TextUnformatted("-");
                     }
                     ImGui::TableNextColumn();
-                    if (const auto* lv = reg.try_get<sm::ecs::NpcLevel>(e))
-                        ImGui::Text("%d", int(lv->value));
+                    if (const std::int16_t lv = sm::sub::body_level(reg, e))
+                        ImGui::Text("%d", int(lv));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
                     if (const auto* h = reg.try_get<sm::ecs::Pools>(e))
@@ -5171,7 +5171,19 @@ void draw_debug_panels(App& app) {
                      sm::store_of(app.ecs).aliveCount)},
                 {"Health(scene)",   cnt(reg.view<sm::ecs::Pools>())},
                 {"Combat",          cnt(reg.view<sm::ecs::Combat>())},
-                {"NPCKind",         cnt(reg.view<sm::ecs::NPCKind>())},
+                // Род тела — колонка арены (кусок 1): счёт по живым слотам
+                // с назначенным родом, не по entt-популяции.
+                {"BodyKind(arena)", [&reg] {
+                     std::size_t n = 0;
+                     const auto& objs = sm::sub::objects_of(reg);
+                     for (int s = 0; s < sm::sub::kMaxBodyCrowd; ++s) {
+                         if ((objs.flags[std::size_t(s)]
+                              & sm::sub::kObjAlive) != 0u
+                             && objs.kind[std::size_t(s)].type
+                                    != sm::sub::kObjNoKind) ++n;
+                     }
+                     return n;
+                 }()},
                 {"SubworldTag",     cnt(reg.view<sm::ecs::SubworldTag>())},
                 {"SubworldAi",      cnt(reg.view<sm::ecs::SubworldAi>())},
 

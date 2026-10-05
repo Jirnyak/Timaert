@@ -52,6 +52,19 @@ inline void make_avatar(entt::registry& reg, entt::entity e) {
     sm::sub::set_avatar(reg, e);
 }
 
+// Род/уровень телу фикстуры — как записала бы дверь рождения (кусок 1);
+// слот рожается по надобности (§8 п.11): set_body_kind на бесслотном теле
+// ушёл бы в no-op МОЛЧА — ровно шрам ломтя 1б.
+inline void give_kind(entt::registry& reg, entt::entity e,
+                      sm::ecs::NPCKind k) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_body_kind(reg, e, k);
+}
+inline void give_level(entt::registry& reg, entt::entity e, std::int16_t v) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_body_level(reg, e, v);
+}
+
 inline std::uint8_t fx_of(entt::registry& reg, entt::entity e) {
     const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);
     return os ? arena_of(reg).damageFx[os->slot] : std::uint8_t{0};

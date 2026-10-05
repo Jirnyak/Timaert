@@ -210,17 +210,17 @@ int main(int argc, char** argv) {
         go.store = macroStore.get();
         sm::generate_macro_world(go, gp);
 
-        // Muster law: nobody is BORN at sea.
+        // Muster law: nobody is BORN at sea. Сквады живут в store (M-106 —
+        // entt-вью по макро-населению пуст по построению и молчал бы вечно);
+        // адрес сквада — колонка cell, тот же row-major индекс, что у поля
+        // воды.
         {
             int atSea = 0;
-            for (auto [e, kind, p]
-                 : ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Position>()
-                       .each()) {
-                (void)e; (void)kind;
-                const int wx = ((int(p.x) % gs.mapW) + gs.mapW) % gs.mapW;
-                const int wy = ((int(p.y) % gs.mapH) + gs.mapH) % gs.mapH;
+            for (std::size_t s = 0; s < sm::kMacroEntityCap; ++s) {
+                if (!macroStore->alive[s]) continue;
+                const std::uint32_t idx = macroStore->cell[s].idx;
                 if (!pathCost.water.empty()
-                    && pathCost.water[std::size_t(wy) * gs.mapW + wx])
+                    && idx < pathCost.water.size() && pathCost.water[idx])
                     ++atSea;
             }
             std::fprintf(stderr, "[muster] spawned at sea: %d\n", atSea);
@@ -566,15 +566,14 @@ int main(int argc, char** argv) {
         }
 
         {
+            // Тот же закон на конец прогона — по store, не по пустому
+            // entt-вью (см. рождение выше).
             int atSea = 0;
-            for (auto [e, kind, p]
-                 : ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Position>()
-                       .each()) {
-                (void)e; (void)kind;
-                const int wx = ((int(p.x) % gs.mapW) + gs.mapW) % gs.mapW;
-                const int wy = ((int(p.y) % gs.mapH) + gs.mapH) % gs.mapH;
+            for (std::size_t s = 0; s < sm::kMacroEntityCap; ++s) {
+                if (!macroStore->alive[s]) continue;
+                const std::uint32_t idx = macroStore->cell[s].idx;
                 if (!pathCost.water.empty()
-                    && pathCost.water[std::size_t(wy) * gs.mapW + wx])
+                    && idx < pathCost.water.size() && pathCost.water[idx])
                     ++atSea;
             }
             std::fprintf(stderr, "[muster] AT SEA at run end: %d\n", atSea);

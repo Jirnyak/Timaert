@@ -494,7 +494,7 @@ public:
     void jump();
     DangerLevel danger_level() const;
     // Fill and return one blip per live subworld NPC / monster — the SAME
-    // candidate set as targeting/melee (view<Position,Health,NPCKind,
+    // candidate set as targeting/melee (view<Position,Health,
     // SubworldTag> minus Dead, hp>0). Each blip's stance comes from the shared
     // player_stance() axis, so the HUD's gradient dots track real combat
     // stance. Reused internal buffer: no per-frame allocation after warm-up.

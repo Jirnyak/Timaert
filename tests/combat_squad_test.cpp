@@ -165,9 +165,8 @@ int main() {
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u,
                                 playerFaction);
-    auto view = world.reg.view<sm::ecs::MacroDebt,
-                               sm::ecs::NPCKind, sm::ecs::Combat,
-                               sm::ecs::Pools, sm::ecs::NpcLevel,
+    auto view = world.reg.view<sm::ecs::MacroDebt, sm::ecs::Combat,
+                               sm::ecs::Pools,
                                sm::ecs::SubworldAi>();
     int projected = 0;
     for (auto e : view) {
@@ -177,11 +176,12 @@ int main() {
         if (!sm::sub::object_flag(world.reg, e, sm::sub::kObjPlayerSoldier)) {
             return fail("a projected soldier lacks the player-side bit");
         }
-        const auto& kind = view.get<sm::ecs::NPCKind>(e);
+        const auto* kind = sm::sub::body_kind(world.reg, e);
         const auto& ai = view.get<sm::ecs::SubworldAi>(e);
         if (loan.detail != 42
             || loan.detailKind != std::uint16_t(sm::NPCType::Guard)
-            || kind.type != std::uint16_t(sm::NPCType::Guard)
+            || kind == nullptr
+            || kind->type != std::uint16_t(sm::NPCType::Guard)
             || ai.kind != sm::ecs::SubworldAi::Combat) {
             return fail("subworld projection lost soldier identity or AI contract");
         }
@@ -189,7 +189,7 @@ int main() {
         // the faction is the OWNER's, and it is real data on the body — not a
         // tag the battle pass has to special-case. Anything else (the old
         // hardcoded "empire") would make your own troops foreign subjects.
-        if (kind.factionIdx != playerFaction) {
+        if (kind->factionIdx != playerFaction) {
             return fail("squad member does not wear its owner's faction");
         }
     }
@@ -202,6 +202,7 @@ int main() {
     auto malformedWorldStore_ = sm::make_macro_store();
 
     sm::store_attach(malformedWorld, malformedWorldStore_.get());
+    sm::test::arena_of(malformedWorld.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     sm::test::arena_of(malformedWorld.reg);
     std::vector<std::uint8_t> malformedTiles(1, 0u);
     sm::sub::spawn_player_squad(malformedWorld, player, malformedTiles,

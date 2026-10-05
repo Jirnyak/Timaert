@@ -178,7 +178,7 @@ Inventory& player_bag_of(const GameState* gs, ecs::World* ecs) {
 }
 
 float body_sight(const entt::registry& reg, entt::entity e) {
-    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    const auto* kind = sub::body_kind(reg, e);
     if (const NpcTypeDef* row = row_for(kind)) {
         if (row->combat.sight > 0.0f) return row->combat.sight;
     }
@@ -296,7 +296,7 @@ bool hostile_to_player_entity(entt::registry& reg,
     }
     if (sub::object_flag(reg, e, sub::kObjTempHostile)) return true;
     const char* factionId =
-        faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
+        faction_id_for_kind(sub::body_kind(reg, e));
     return player_hostile_to(gs, factionId);
 }
 
@@ -311,7 +311,7 @@ bool hostile_to_player_entity(entt::registry& reg,
 // own mask — same semantics, integer cost.
 
 const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
-    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    const auto* kind = sub::body_kind(reg, e);
     if (kind && kind->type < std::uint16_t(NPCType::Count)) {
         const NPCType type = static_cast<NPCType>(std::uint8_t(kind->type));
         return npc_def(type).label;
@@ -347,7 +347,7 @@ void apply_player_hit_reputation(entt::registry& reg,
     if (hostile_to_player_entity(reg, target, gs)) return;
 
     const char* factionId =
-        faction_id_for_kind(reg.try_get<ecs::NPCKind>(target));
+        faction_id_for_kind(sub::body_kind(reg, target));
     if (!factionId || factionId[0] == '\0') return;
     add_player_reputation(*gs, factionId, kHitRepPenalty);
     maybe_flip_temp_hostile(reg, target, gs, factionId);
@@ -493,7 +493,7 @@ float player_stance(entt::registry& reg, entt::entity e, const GameState* gs) {
     if (is_player_side(reg, e)) return 1.0f;                    // own side
     if (sub::object_flag(reg, e, sub::kObjTempHostile)) return -1.0f;  // provoked
     const char* factionId =
-        faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
+        faction_id_for_kind(sub::body_kind(reg, e));
     const int rep = player_reputation(gs, factionId);
     if (rep >= 0) {
         return std::min(1.0f, float(rep) / float(kAllyRepThreshold));
@@ -507,13 +507,13 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     entt::registry& reg = ecs_->reg;
     // Same candidate set as targeting/melee: live, current-scene NPCs/monsters.
     // The hero body carries no NPCKind, but a POSSESSED foreign body does (Inc
-    // 5c), so exclude AvatarTag explicitly — the player is the map centre / its
-    // own heading triangle, never a blip. Projected player soldiers keep their
-    // NPCKind (and no AvatarTag) and read as fully allied (+1).
-    auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
-                         ecs::SubworldTag>();
+    // 5c), so exclude the avatar explicitly — the player is the map centre /
+    // its own heading triangle, never a blip. Projected player soldiers keep
+    // their kind (and are not the avatar) and read as fully allied (+1).
+    auto view = reg.view<ecs::Position, ecs::Pools, ecs::SubworldTag>();
     for (auto e : view) {
         if (sub::is_avatar(reg, e)) continue;
+        if (sub::body_kind(reg, e) == nullptr) continue;
         if (sub::object_flag(reg, e, sub::kObjDead)) continue;
         if (view.get<ecs::Pools>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
@@ -543,10 +543,10 @@ float SubworldEngine::crosshair_stance() const {
     entt::entity best = entt::null;
     float bestT = kMaxRange;
 
-    auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
-                         ecs::SubworldTag>();
+    auto view = reg.view<ecs::Position, ecs::Pools, ecs::SubworldTag>();
     for (auto e : view) {
         if (sub::is_avatar(reg, e)) continue;
+        if (sub::body_kind(reg, e) == nullptr) continue;
         if (sub::object_flag(reg, e, sub::kObjDead)) continue;
         if (view.get<ecs::Pools>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
@@ -1156,7 +1156,7 @@ void SubworldEngine::sync_player_entity_position() {
         playerX_ = p.x;
         playerY_ = p.y;
         playerZ_ = p.z;
-        if (gs_ && !reg.all_of<ecs::NPCKind>(e)) {
+        if (gs_ && sub::body_kind(reg, e) == nullptr) {
             // (The bars used to be pulled here, by hand, for this one body.
             // They are mirrored for EVERY body that stands for a record now —
             // mirror_bodies_from_record, run just above this — so what is left
@@ -1209,7 +1209,7 @@ void SubworldEngine::sync_player_entity_position() {
                               ? ecs::Combat::Missile : ecs::Combat::Melee;
                 {
                     float armReach = kAdventurerCombat.attackRange;
-                    if (const auto* k = sub::state_of<ecs::NPCKind>(reg, e)) {
+                    if (const auto* k = sub::body_kind(reg, e)) {
                         armReach =
                             npc_def(NPCType(k->type)).combat.attackRange;
                     }
@@ -1769,7 +1769,7 @@ void SubworldEngine::tick_day_pump(float dt) {
             liveNamed.push_back(std::uint32_t(d.detail));
             continue;
         }
-        const auto* kind = reg.try_get<ecs::NPCKind>(e);
+        const auto* kind = sub::body_kind(reg, e);
         if (kind != nullptr && kind->type < std::uint16_t(NPCType::Count)) {
             ++liveByKind[std::size_t(kind->type)];
         }
@@ -2904,7 +2904,7 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     if (body == entt::null) return false;
 
     char msg[160]{};
-    const auto& kind = (*reg.try_get<ecs::NPCKind>(body));
+    const auto& kind = *sub::body_kind(reg, body);
     std::snprintf(msg, sizeof(msg), "Encounter: %s",
                   npc_def(static_cast<NPCType>(kind.type)).label);
     set_status(msg);
@@ -3157,7 +3157,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // keeps its own colours. «Ты полностью тот, в чьём теле стоишь» — в
         // том числе для чужих глаз; перекраска любого AvatarTag-тела в
         // «player» делала одержимого лорда предателем собственных стен.
-        const auto* bodyKind = reg.try_get<ecs::NPCKind>(e);
+        const auto* bodyKind = sub::body_kind(reg, e);
         d.faction = std::int16_t(
             isPlayer && !bodyKind
                 ? crowdPlayerFaction_
@@ -3444,14 +3444,17 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 }
             }
             const auto* pos = reg.try_get<ecs::Position>(e);
-            const auto* kind = reg.try_get<ecs::NPCKind>(e);
-            const auto* level = reg.try_get<ecs::NpcLevel>(e);
+            const auto* kind = sub::body_kind(reg, e);
+            // Уровень — колонка арены (кусок 1); 0 = безуровневое тело,
+            // прежний дефолт отсутствовавшей компоненты сохранён единицей.
+            const std::int16_t lvlCol = sub::body_level(reg, e);
             // «Кто бил последним» — колонка lastHitBy (ломоть 1а).
             const auto* osDead = reg.try_get<ecs::ObjectSlot>(e);
             const std::uint32_t lastHitBy = osDead
                 ? sub::objects_of(reg).lastHitBy[osDead->slot]
                 : sub::kObjNoAttacker;
-            const int lvl = normalize_soldier_level(level ? level->value : 1);
+            const int lvl =
+                normalize_soldier_level(lvlCol != 0 ? lvlCol : 1);
 
             if (sub::object_flag(reg, e, sub::kObjPlayerSoldier)) {
                 // His roster record was struck by THE settle above (§42

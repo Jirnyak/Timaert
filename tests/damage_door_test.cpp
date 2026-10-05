@@ -50,8 +50,10 @@ entt::entity make_body(entt::registry& reg, int hp, bool withKind = true) {
     // Слот арены — как выдала бы дверь спавна (fx — колонки, M-150 1а).
     sm::test::give_slot(reg, e);
     reg.emplace<sm::ecs::Pools>(e, hp, hp);
-    if (withKind) reg.emplace<sm::ecs::NPCKind>(e, kTestNpcType,
-                                                std::uint16_t{0});
+    // Род — колонка арены (кусок 1); без give_kind слот честно несёт
+    // kObjNoKind — прежнее «тело без компоненты».
+    if (withKind) sm::test::give_kind(
+        reg, e, sm::ecs::NPCKind{kTestNpcType, std::uint16_t{0}});
     return e;
 }
 
@@ -130,8 +132,9 @@ void test_armour_softens_by_the_row_and_the_kind() {
     const entt::entity bare = make_body(reg, 100.0f);
     const entt::entity plated = reg.create();
     reg.emplace<sm::ecs::Pools>(plated, 100, 100);
-    reg.emplace<sm::ecs::NPCKind>(
-        plated, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
+    sm::test::give_kind(
+        reg, plated,
+        sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Guard), std::uint16_t{0}});
 
     const float blow = 20.0f;
     const DamageResult onBare =
@@ -165,8 +168,9 @@ void test_armour_softens_by_the_row_and_the_kind() {
     const entt::entity turtle = reg.create();
     sm::test::give_slot(reg, turtle);
     reg.emplace<sm::ecs::Pools>(turtle, 100, 100);
-    reg.emplace<sm::ecs::NPCKind>(
-        turtle, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
+    sm::test::give_kind(
+        reg, turtle,
+        sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Guard), std::uint16_t{0}});
     const DamageResult tink =
         apply_damage(reg, turtle, DamageSource{},
                      float(guard.block_of(sm::DamageType::Blunt)),
@@ -194,8 +198,9 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // ...and whether armour is in the way at all is the KIND's column.
     const entt::entity falling = reg.create();
     reg.emplace<sm::ecs::Pools>(falling, 100, 100);
-    reg.emplace<sm::ecs::NPCKind>(
-        falling, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
+    sm::test::give_kind(
+        reg, falling,
+        sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Guard), std::uint16_t{0}});
     const DamageResult fell =
         apply_damage(reg, falling, DamageSource{}, blow, DamageKind::Fall, sm::DamageType::Blunt, &bus);
     CHECK(fell.applied == blow,

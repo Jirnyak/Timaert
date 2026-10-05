@@ -1,8 +1,10 @@
 #include "check.h"
+#include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "tables/faction.h"
 #include "macro/world_row.h"
 #include "sub/spawn.h"
 #include "sub/record.h"   // THE door: whose record is this body (mirror law)
+#include "sub/body.h"     // body_height_m — продукт лица головы (кусок 1)
 #include "core/rng.h"
 #include "ecs/components.h"
 #include "tables/npc.h"
@@ -209,16 +211,18 @@ std::vector<SpawnRecord> expected_cell_fauna(
 
 std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
     std::vector<SpawnRecord> out;
-    auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+    auto view = world.reg.view<sm::ecs::SubworldTag,
                                sm::ecs::Position, sm::ecs::Pools,
-                               sm::ecs::Combat, sm::ecs::NpcLevel,
+                               sm::ecs::Combat,
                                sm::ecs::SubworldAi, sm::ecs::Sprite>();
     for (auto e : view) {
-        const auto& kind = view.get<sm::ecs::NPCKind>(e);
+        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        if (kindCol == nullptr) continue;
+        const auto& kind = *kindCol;
         const auto& pos = view.get<sm::ecs::Position>(e);
         const auto& hp = view.get<sm::ecs::Pools>(e);
         const auto& combat = view.get<sm::ecs::Combat>(e);
-        const auto& level = view.get<sm::ecs::NpcLevel>(e);
+        const std::int16_t level = sm::sub::body_level(world.reg, e);
         const auto& ai = view.get<sm::ecs::SubworldAi>(e);
         const auto& sprite = view.get<sm::ecs::Sprite>(e);
 
@@ -237,7 +241,7 @@ std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
         r.range = combat.attackRange;
         r.cooldown = 0.0f;   // property, not mirror — see expected_fauna
         r.radius = ai.radius;
-        r.level = level.value;
+        r.level = level;
         r.ai = ai.kind;
         r.kind = combat.kind;
         r.r = sprite.r;
@@ -325,6 +329,7 @@ bool run_water_blocked_squad_case() {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     std::vector<std::uint8_t> water(
         std::size_t(sm::sub::kFullSize) * sm::sub::kFullSize,
         sm::sub::TILE_WATER);
@@ -345,6 +350,7 @@ bool run_city_population_projection_case(
     sm::ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // City in the CENTRE window cell (ox=oy=0) — off-centre cities are covered
     // by the carry-across case; here we lock the citizen role mix.
     //
@@ -389,11 +395,11 @@ bool run_city_population_projection_case(
     int peasants = 0;
     int others = 0;
     auto view = world.reg.view<sm::ecs::SubworldTag,
-                               sm::ecs::NPCKind,
-                               sm::ecs::NpcCharacter,
                                sm::ecs::SubworldAi>();
     for (auto e : view) {
-        const auto& kind = view.get<sm::ecs::NPCKind>(e);
+        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        if (kindCol == nullptr) continue;
+        const auto& kind = *kindCol;
         const auto& ai = view.get<sm::ecs::SubworldAi>(e);
         ++count;
         if (kind.type == std::uint16_t(sm::NPCType::Guard)
@@ -408,9 +414,9 @@ bool run_city_population_projection_case(
 
     // Citizens must land inside the centre cell's sub-region, never the whole
     // 3×3 — proof the per-cell origin gate replaced the old centre-only window.
-    auto posView = world.reg.view<sm::ecs::SubworldTag, sm::ecs::Position,
-                                  sm::ecs::NpcCharacter>();
+    auto posView = world.reg.view<sm::ecs::SubworldTag, sm::ecs::Position>();
     for (auto e : posView) {
+        if (sm::sub::body_kind(world.reg, e) == nullptr) continue;
         const auto& p = posView.get<sm::ecs::Position>(e);
         if (p.x < float(sm::sub::kCellSize) || p.x >= float(2 * sm::sub::kCellSize)
             || p.y < float(sm::sub::kCellSize)
@@ -438,6 +444,7 @@ bool run_population_does_not_scale_bodies_case(
         sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
         sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122), и предмет этого контроля от того лишь
         // ЖЁСТЧЕ: уровень тела теперь ФАКТ его головы, а головы обоих
         // городов рождены одной дверью — значит размер города не может
@@ -457,12 +464,13 @@ bool run_population_does_not_scale_bodies_case(
                                  /*macroCellX*/0, /*macroCellY*/0,
                                  /*faunaCount*/-1, &homeSouls,
                                  sm::world_time_at(1, 12, 0));
-        auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                                   sm::ecs::NpcLevel, sm::ecs::NpcCharacter>();
+        auto view = world.reg.view<sm::ecs::SubworldTag>();
         for (auto e : view) {
-            const std::uint16_t typeId = view.get<sm::ecs::NPCKind>(e).type;
+            const auto* kindCol = sm::sub::body_kind(world.reg, e);
+            if (kindCol == nullptr) continue;
+            const std::uint16_t typeId = kindCol->type;
             if (typeId >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
-            const int lvl = int(view.get<sm::ecs::NpcLevel>(e).value);
+            const int lvl = int(sm::sub::body_level(world.reg, e));
             const int base = int(sm::npc_def(sm::NPCType(typeId)).baseLevel);
             const int ceiling = sm::normalize_soldier_level(base + 2);
             const int floorLvl = sm::normalize_soldier_level(base);
@@ -487,6 +495,7 @@ bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr) {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     spawn_all_cells(world, mgr);
     const std::vector<SpawnRecord> before = actual_fauna(world);
     if (before.empty()) return false;
@@ -544,6 +553,7 @@ bool run_reentry_determinism_case(
     sm::ecs::World a{};
     auto aStore_ = sm::make_macro_store();
     sm::store_attach(a, aStore_.get());
+    sm::test::arena_of(a.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     spawn_cell_at(a, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3);
     const std::vector<SpawnRecord> first = actual_fauna(a);
 
@@ -552,6 +562,7 @@ bool run_reentry_determinism_case(
     auto bStore_ = sm::make_macro_store();
 
     sm::store_attach(b, bStore_.get());
+    sm::test::arena_of(b.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     spawn_cell_at(b, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3);
     const std::vector<SpawnRecord> second = actual_fauna(b);
 
@@ -588,6 +599,10 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
         st.level[h.slot] = sm::ecs::NpcLevel{level};
         sm::ecs::NpcCharacter ch{};
         ch.visualSeed = vseed;
+        // Отличимое от дефолта телосложение: лицо на теле не хранится
+        // (кусок 1), закон «лицо — факт головы» свидетельствуется ростом,
+        // и рост нулевой формы был бы неотличим от «лицо потеряно».
+        ch.bodyShape = 3;
         st.character[h.slot] = ch;
         return h;
     };
@@ -620,6 +635,7 @@ bool run_beast_member_projection_case(
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     sm::MacroStore& stl = sm::store_of(reg);
@@ -643,8 +659,10 @@ bool run_beast_member_projection_case(
     if (projected != 3) return false;   // the leader and both of his members
 
     int beasts = 0, men = 0;
-    for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>()) {
-        const std::uint16_t t = (*reg.try_get<sm::ecs::NPCKind>(e)).type;
+    for (auto e : reg.view<sm::ecs::SubworldTag>()) {
+        const auto* kindCol = sm::sub::body_kind(reg, e);
+        if (kindCol == nullptr) continue;
+        const std::uint16_t t = kindCol->type;
         if (t == kBeast) {
             // Built from the WOLF's line: its picture is the wolf's sprite row
             // and its bulk is the wolf's authored radius, not a man's. (The old
@@ -673,10 +691,12 @@ bool run_beast_member_projection_case(
 // where it was met.
 bool sheet_lifts_every_body(sm::ecs::World& world) {
     int checked = 0;
-    auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                            sm::ecs::Pools, sm::ecs::NpcLevel>();
+    auto v = world.reg.view<sm::ecs::SubworldTag,
+                            sm::ecs::Pools>();
     for (auto e : v) {
-        const std::uint16_t t = v.get<sm::ecs::NPCKind>(e).type;
+        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        if (kindCol == nullptr) continue;
+        const std::uint16_t t = kindCol->type;
         if (!sm::valid_npc_kind(t)) return false;
         const sm::NpcTypeDef& row = sm::npc_def(sm::NPCType(t));
         const auto& h = v.get<sm::ecs::Pools>(e);
@@ -701,11 +721,12 @@ bool sheet_lifts_every_body(sm::ecs::World& world) {
 std::vector<std::array<float, 3>> projection_fingerprint(sm::ecs::World& world) {
     std::vector<std::array<float, 3>> out;
     auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin,
-                            sm::ecs::Position, sm::ecs::NPCKind>();
+                            sm::ecs::Position>();
     for (auto e : v) {
+        const auto* k = sm::sub::body_kind(world.reg, e);
+        if (k == nullptr) continue;
         const auto& p = v.get<sm::ecs::Position>(e);
-        const auto& k = v.get<sm::ecs::NPCKind>(e);
-        out.push_back({float(k.factionIdx), p.x, p.y});
+        out.push_back({float(k->factionIdx), p.x, p.y});
     }
     std::sort(out.begin(), out.end());
     return out;
@@ -730,6 +751,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
     const MacroSeeds s = seed_macro_npcs(reg, kMapW);
 
@@ -806,10 +828,28 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     if (!(reg.get<sm::ecs::Combat>(pBandit).dice.n > 0)) return false;
     if (!(reg.get<sm::ecs::Combat>(pBandit).flatAdd > 0)) return false;
 
-    // Identity + faction copied verbatim from the macro NPC.
-    if ((*reg.try_get<sm::ecs::NpcCharacter>(pBandit)).visualSeed != 0xB0B0u) return false;
-    if ((*reg.try_get<sm::ecs::NPCKind>(pBandit)).factionIdx != 3) return false;
-    if ((*reg.try_get<sm::ecs::NPCKind>(pWrap)).factionIdx != 2) return false;
+    // Identity + faction copied verbatim from the macro NPC. Лицо на теле не
+    // хранится (кусок 1) — «лицо — факт головы» свидетельствуется ПРОДУКТОМ:
+    // рост спрайта обязан быть ростом строки, умноженным на телосложение
+    // ЗАПИСИ (store — истина; ослабление против дословной копии названо
+    // при вердикте).
+    {
+        const sm::MacroStore& st = sm::store_of(reg);
+        const float want =
+            sm::sub::body_height_m(sm::npc_def(sm::NPCType::Bandit))
+            * sm::sub::body_shape_height_scale(
+                  st.character[s.bandit.slot].bodyShape);
+        const auto* spr = reg.try_get<sm::ecs::Sprite>(pBandit);
+        if (!spr || spr->height != want) return false;
+    }
+    {
+        const auto* k = sm::sub::body_kind(reg, pBandit);
+        if (!k || k->factionIdx != 3) return false;
+    }
+    {
+        const auto* k = sm::sub::body_kind(reg, pWrap);
+        if (!k || k->factionIdx != 2) return false;
+    }
 
     // Placement: each projection lands in ITS window cell's sub-region (never
     // outside the composite window). Centre → [kC,2kC); +1,0 → [2kC,3kC); the
@@ -841,6 +881,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world2{};
     auto world2Store_ = sm::make_macro_store();
     sm::store_attach(world2, world2Store_.get());
+    sm::test::arena_of(world2.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     seed_macro_npcs(world2.reg, kMapW);
     const int projected2 = sm::sub::project_macro_npcs_into_subworld(
         world2, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
@@ -877,6 +918,7 @@ int main() {
     sm::ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
 
     const std::vector<SpawnRecord> expected =
@@ -1039,6 +1081,7 @@ int main() {
         sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
         sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         auto& reg = world.reg;
 
         sm::MacroStore& stq = sm::store_of(reg);
@@ -1126,6 +1169,7 @@ int main() {
         sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
         sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         auto& reg = world.reg;
 
         sm::MacroStore& stq = sm::store_of(reg);
@@ -1205,6 +1249,7 @@ int main() {
         sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
         sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         auto& reg = world.reg;
 
         sm::MacroStore& stq = sm::store_of(reg);
@@ -1276,6 +1321,7 @@ int main() {
         sm::ecs::World world{};
         auto segStore = sm::make_macro_store();
         sm::store_attach(world, segStore.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         sm::Inventory inv{};
         CHECK(sm::creatures_push_stack(inv, sm::NPCType::Wolf,  2, 1)
                   && sm::creatures_push_stack(inv, sm::NPCType::Witch, 5, 1)
@@ -1309,21 +1355,24 @@ int main() {
         bool sawStreetHead = false, sawForeignHead = false;
         bool loansNameHeads = true;
         bool levelsAreHeadFacts = true;
-        auto segView =
-            world.reg.view<sm::ecs::NPCKind, sm::ecs::MacroDebt>();
+        auto segView = world.reg.view<sm::ecs::MacroDebt>();
         for (auto e : segView) {
+            const auto* kindCol = sm::sub::body_kind(world.reg, e);
+            if (kindCol == nullptr) continue;
+            const auto& kind = *kindCol;
             ++bodies;
-            const auto& kind = segView.get<sm::ecs::NPCKind>(e);
             const auto& debt = segView.get<sm::ecs::MacroDebt>(e);
             sawSecond |= kind.type == std::uint16_t(heads[1].kind);
             sawThird |= kind.type == std::uint16_t(heads[2].kind);
             sawStreetHead |= kind.type == std::uint16_t(heads[0].kind);
             sawForeignHead |= kind.type == std::uint16_t(heads[3].kind);
             loansNameHeads &= debt.detailKind == std::uint8_t(kind.type);
-            const auto* lvl = world.reg.try_get<sm::ecs::NpcLevel>(e);
+            // Уровень — колонка арены (кусок 1): 0 значил бы «не назначен»
+            // и валит проверку, как валило отсутствие компоненты.
+            const int lvl = int(sm::sub::body_level(world.reg, e));
             const int wantLevel = kind.type == std::uint16_t(heads[1].kind)
                 ? int(heads[1].level) : int(heads[2].level);
-            levelsAreHeadFacts &= lvl != nullptr && int(lvl->value) == wantLevel;
+            levelsAreHeadFacts &= lvl == wantLevel;
         }
         CHECK(bodies == 2, "в сцене ровно тела отрезка");
         CHECK(sawSecond && sawThird,

@@ -23,6 +23,7 @@
 // style of subworld_spawn_parity_test (same manager init) so it stays in lock-
 // step with the shipping spawn path rather than re-deriving it.
 #include "check.h"
+#include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "tables/faction.h"
@@ -30,6 +31,7 @@
 #include "tables/npc.h"
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
+#include "sub/record.h"   // body_kind — род тела из колонки арены (кусок 1)
 #include "macro/store.h"
 
 #include <cmath>
@@ -94,6 +96,7 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // Street guards are the place's GARRISON records now (§42 Инк 7) — the
     // fixture brings a three-man wall, and every one of them must be lit.
     sm::Inventory wall{};
@@ -136,9 +139,11 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     int strengthDrift = 0;
     int offsetDrift = 0;
 
-    auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>();
+    auto view = world.reg.view<sm::ecs::SubworldTag>();
     for (auto e : view) {
-        const auto& kind = view.get<sm::ecs::NPCKind>(e);
+        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        if (kindCol == nullptr) continue;
+        const auto& kind = *kindCol;
         const bool isGuard = kind.type == std::uint16_t(sm::NPCType::Guard);
         const bool hasLight = world.reg.all_of<sm::ecs::LightEmitter>(e);
 

@@ -94,7 +94,7 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
         // un-rendered, un-AI'd zombie in the scene. A vacated FOREIGN body
         // keeps every component; with the reference gone its AI / draw /
         // targetability all resume by construction (each is is_avatar-gated).
-        if (!reg.all_of<ecs::NPCKind>(cur)) reg.destroy(cur);
+        if (body_kind(reg, cur) == nullptr) reg.destroy(cur);
     }
     // Перенос — ОДНА перезапись ссылки: полуперенесённого состояния («тег
     // снят, тег не поставлен») больше не существует по построению.

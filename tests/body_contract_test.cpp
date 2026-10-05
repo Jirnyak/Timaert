@@ -70,7 +70,7 @@ void test_every_squad_body_is_a_whole_body() {
     auto view = reg.view<ecs::MacroDebt>();
 
     int bodies = 0;
-    int missingFace = 0, missingCombat = 0, missingHealth = 0, missingSheet = 0;
+    int missingCombat = 0, missingHealth = 0, missingSheet = 0;
     int missingAi = 0, missingSprite = 0, missingLevel = 0, missingTag = 0;
     int wrongFaction = 0, wrongSpriteKind = 0, offTableRadius = 0, deadOnArrival = 0;
     int offTableHeight = 0;
@@ -79,15 +79,15 @@ void test_every_squad_body_is_a_whole_body() {
         if (view.get<ecs::MacroDebt>(e).stock
             != std::uint8_t(MacroStock::Roster)) continue;
         ++bodies;
-        const auto* kind   = reg.try_get<ecs::NPCKind>(e);
+        const auto* kind   = sm::sub::body_kind(reg, e);
         const auto* health = reg.try_get<ecs::Pools>(e);
         const auto* combat = reg.try_get<ecs::Combat>(e);
         const auto* sprite = reg.try_get<ecs::Sprite>(e);
         const auto* ai     = reg.try_get<ecs::SubworldAi>(e);
 
-        // The paper-doll pass draws Position + NpcCharacter. A body without a
-        // face is a body nobody can see — the exact defect of 2026-08-06.
-        if (!reg.all_of<ecs::NpcCharacter>(e))   ++missingFace;
+        // (Лицо на теле НЕ хранится — кусок 1, вердикт «не хранить, как
+        // вспышку»: оно потребляется рождением в рост спрайта; законность
+        // роста судится ниже, по множеству четырёх значений телосложения.)
         if (!reg.all_of<ecs::Position, ecs::VisualPos>(e)
             || !sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
             ++missingTag;
@@ -96,7 +96,7 @@ void test_every_squad_body_is_a_whole_body() {
         if (!reg.all_of<CharacterSheet>(e))      ++missingSheet;
         if (!ai)     ++missingAi;
         if (!sprite) ++missingSprite;
-        if (!reg.all_of<ecs::NpcLevel>(e))       ++missingLevel;
+        if (sm::sub::body_level(reg, e) == 0)    ++missingLevel;
 
         if (kind && kind->factionIdx != playerFaction) ++wrongFaction;
         // The sprite must name the SAME kind the body is, or the renderer draws
@@ -119,13 +119,18 @@ void test_every_squad_body_is_a_whole_body() {
             }
             // …and so does its HEIGHT, which the renderer used to invent as a
             // flat 2 metres for everyone. Derived from the same row, varied by
-            // the body's own shape byte — so this expectation moves when the
-            // table moves and cannot be satisfied by a literal.
-            const auto* face = reg.try_get<ecs::NpcCharacter>(e);
-            if (sprite && face) {
-                const float want = sub::body_height_m(def)
-                    * sub::body_shape_height_scale(face->bodyShape);
-                if (sprite->height != want) ++offTableHeight;
+            // the head's shape byte, which the body does not store (кусок 1) —
+            // so the law asserted is MEMBERSHIP: the height is exactly one of
+            // the four shape-scaled values of the row. A literal cannot
+            // satisfy this across table moves.
+            if (sprite) {
+                bool legal = false;
+                for (std::uint8_t s = 0; s < 4; ++s) {
+                    legal = legal
+                        || sprite->height == sub::body_height_m(def)
+                               * sub::body_shape_height_scale(s);
+                }
+                if (!legal) ++offTableHeight;
                 if (!(sprite->height > 0.0f)) ++offTableHeight;
             }
         }
@@ -133,8 +138,6 @@ void test_every_squad_body_is_a_whole_body() {
 
     CHECK(bodies == 4,
           "the squad embodies every member of its roster, whatever kind it is");
-    CHECK(bodies > 0 && missingFace == 0,
-          "every body has a face: the paper-doll pass can see all of them");
     CHECK(bodies > 0 && missingTag == 0,
           "every body has a place in the world and a drawn position");
     CHECK(bodies > 0 && missingHealth == 0 && missingCombat == 0,
@@ -178,6 +181,9 @@ sm::MacroHandle make_macro_lord(entt::registry& reg, sm::NPCType type,
     sm::ecs::NpcCharacter face{};
     face.visualSeed = visualSeed;
     face.nameIdx = 3;
+    // Отличимое от дефолта телосложение: продукт лица (рост спрайта) обязан
+    // отличаться от роста нулевой формы, иначе свидетель продукта слеп.
+    face.bodyShape = 3;
     st.character[h.slot] = face;
     sm::ecs::NpcTraits traits{};
     traits.count = 1;
@@ -192,6 +198,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     // Half dead on the map, with a face and belongings of his own.
@@ -205,15 +212,26 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     CHECK_OR_RETURN(body != entt::null && reg.valid(body),
                     "a body-shaped macro entity can be embodied");
 
-    CHECK((reg.all_of<ecs::NpcCharacter, ecs::Position, ecs::Pools, ecs::Combat,
-                      CharacterSheet, ecs::SubworldAi, ecs::NpcLevel,
+    CHECK((reg.all_of<ecs::Position, ecs::Pools, ecs::Combat,
+                      CharacterSheet, ecs::SubworldAi,
                       ecs::Sprite, ecs::SubworldTag>(body)),
           "a tracked body is as whole a body as a derived one");
-    CHECK((*reg.try_get<ecs::NpcCharacter>(body)).visualSeed == 0xFEEDu,
-          "the same lord wears the same face in both worlds");
-    CHECK((*reg.try_get<ecs::NPCKind>(body)).factionIdx == 5,
+    // Лицо на теле не хранится (кусок 1, вердикт «не хранить»); закон
+    // «лицо — факт головы» свидетельствуется ПРОДУКТОМ: рост спрайта обязан
+    // быть ростом строки, умноженным на телосложение ЗАПИСИ (store —
+    // истина). Ослабление против дословной копии названо при вердикте.
+    {
+        const sm::MacroStore& st = sm::store_of(reg);
+        const float want =
+            sub::body_height_m(npc_def(NPCType::Guard))
+            * sub::body_shape_height_scale(st.character[macro.slot].bodyShape);
+        CHECK((*reg.try_get<ecs::Sprite>(body)).height == want,
+              "the lord's height is his OWN record's face, both worlds agree");
+    }
+    CHECK(sm::sub::body_kind(reg, body) != nullptr
+              && sm::sub::body_kind(reg, body)->factionIdx == 5,
           "a tracked body wears its own allegiance, read from the entity itself");
-    CHECK((*reg.try_get<ecs::NpcLevel>(body)).value == 4,
+    CHECK(sm::sub::body_level(reg, body) == 4,
           "a tracked body holds its own rank");
 
     // The wound crosses as a fraction, not as points: half above, half below,
@@ -270,6 +288,7 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     // Half-tracked is the failure mode the two forms exist to make impossible:
@@ -374,6 +393,7 @@ void test_a_squad_on_the_map_projects_its_roster() {
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     const sm::MacroHandle macro = make_macro_lord(
@@ -415,9 +435,9 @@ void test_a_squad_on_the_map_projects_its_roster() {
               "a member's receipt names the roster row and its own squad");
         saw77 = saw77 || debt->detail == 77;
         saw88 = saw88 || debt->detail == 88;
-        const auto* kind = reg.try_get<ecs::NPCKind>(e);
+        const auto* kind = sm::sub::body_kind(reg, e);
         if (kind && kind->factionIdx != 5) ++wrongFaction;
-        if (reg.all_of<ecs::NpcCharacter, CharacterSheet, ecs::Sprite,
+        if (reg.all_of<CharacterSheet, ecs::Sprite,
                        ecs::Pools, ecs::Combat>(e)) {
             ++wholeMembers;
         }
@@ -448,6 +468,7 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     // THE RULE (owner, 2026-08-06): a derived body stores nothing its seed
@@ -480,16 +501,10 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
               && debt->subject == 7 && debt->amount == 1,
           "a borrowed body carries the receipt naming what lent it");
 
-    // Two bodies from the same seed but a different salt are different people —
-    // otherwise a crowd is one man standing in many places.
-    const entt::entity a = sub::spawn_derived_body(reg,
-        sub::BodySpec{NPCType::Peasant, 1.0f, 1.0f, 1, 1, 5150u, false}, 1u);
-    const entt::entity b = sub::spawn_derived_body(reg,
-        sub::BodySpec{NPCType::Peasant, 2.0f, 2.0f, 1, 1, 5150u, false}, 2u);
-    CHECK_OR_RETURN(a != entt::null && b != entt::null, "both crowd bodies born");
-    CHECK((*reg.try_get<ecs::NpcCharacter>(a)).visualSeed
-              != (*reg.try_get<ecs::NpcCharacter>(b)).visualSeed,
-          "the salt makes a crowd out of one seed");
+    // (Пара «одна соль — два лица» умерла с хранением лица на теле, кусок 1:
+    // сид визуала после рождения не живёт нигде. Вариацию толпы охраняет
+    // test_two_bodies_of_one_kind_can_differ_in_height — 64 тела, рост обязан
+    // разойтись.)
 }
 
 } // namespace
@@ -499,6 +514,7 @@ void test_two_bodies_of_one_kind_can_differ_in_height() {
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     // A crowd of one kind, drawn from one row: the row fixes what a peasant is,
@@ -514,17 +530,21 @@ void test_two_bodies_of_one_kind_can_differ_in_height() {
             /*faceSalt*/i * 7919u);
         if (e == entt::null) continue;
         const auto* spr = reg.try_get<ecs::Sprite>(e);
-        const auto* face = reg.try_get<ecs::NpcCharacter>(e);
-        if (!spr || !face) continue;
+        if (!spr) continue;
         ++seen;
         shortest = std::min(shortest, spr->height);
         tallest = std::max(tallest, spr->height);
-        // Every body's height is its row's height times its own shape — no
-        // literal can satisfy this, because both factors are read back.
-        const float want = sub::body_height_m(npc_def(NPCType::Peasant))
-            * sub::body_shape_height_scale(face->bodyShape);
-        CHECK_OR_RETURN(spr->height == want,
-                        "a body is as tall as its row and its shape say");
+        // Every body's height is its row's height times a shape — the shape
+        // byte itself is not stored on the body (кусок 1), so the law is
+        // MEMBERSHIP: exactly one of the four legal shape-scaled values.
+        bool legal = false;
+        for (std::uint8_t s = 0; s < 4; ++s) {
+            legal = legal
+                || spr->height == sub::body_height_m(npc_def(NPCType::Peasant))
+                       * sub::body_shape_height_scale(s);
+        }
+        CHECK_OR_RETURN(legal,
+                        "a body is as tall as its row and a legal shape say");
     }
     CHECK_OR_RETURN(seen >= 32, "the crowd was actually born and measured");
     CHECK(tallest > shortest,

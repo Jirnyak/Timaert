@@ -483,7 +483,8 @@ void spawn_player_squad(ecs::World& w,
 // A macro NPC is "in the window" when its integer cell is within ±1 of the
 // window centre (centerCx,centerCy) on the map torus (mapW×mapH) — the SAME nine
 // cells the seamless manager loads. Each projection mirrors the settlement-
-// citizen layout: NPCKind/faction and NpcCharacter copied verbatim, HP MIRRORED
+// citizen layout: kind/faction copied verbatim into the arena columns (кусок 1;
+// лицо не хранится — его рост потребляется рождением), HP MIRRORED
 // from the record (not «body-native persistent state» — that was the wording
 // of the era when a body owned its bars; mirror_bodies_from_record re-pulls
 // them every tick top, and the record is where a wound actually lands), Combat

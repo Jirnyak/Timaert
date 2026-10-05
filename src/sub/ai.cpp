@@ -169,7 +169,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         // беглец предпочитает вдвое выше: высота — его дорога. Темп
         // подъёма = его же wanderSpeed: одно тело — один темп.
         if (heightFn && object_flag(reg, e, kObjFlying)) {
-            const auto* kind = reg.try_get<ecs::NPCKind>(e);
+            const auto* kind = body_kind(reg, e);
             const float cruise =
                 kind && kind->type < std::uint16_t(NPCType::Count)
                     ? kNpcTypeDefs[kind->type].combat.cruiseM : 0.0f;

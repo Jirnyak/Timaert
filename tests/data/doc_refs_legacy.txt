@@ -254,7 +254,6 @@ SKELETON.md	core/time.h:49-59
 SKELETON.md	core/time.h:82
 SKELETON.md	core/torus.h:60
 SKELETON.md	currency.h:184
-SKELETON.md	damage.cpp:120-146
 SKELETON.md	damage.cpp:129
 SKELETON.md	debug_console.h:38-40
 SKELETON.md	deposit_layer.cpp:137-138
@@ -305,7 +304,6 @@ SKELETON.md	engine.cpp:2285
 SKELETON.md	engine.cpp:2301
 SKELETON.md	engine.cpp:232-234
 SKELETON.md	engine.cpp:2622
-SKELETON.md	engine.cpp:4782
 SKELETON.md	engine.h:609
 SKELETON.md	event_bus.cpp:23
 SKELETON.md	event_bus.h:54-55

@@ -340,7 +340,8 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     }
     reg.emplace<ecs::Position>(e, body.x, body.y, 0.0f);
     reg.emplace<ecs::VisualPos>(e, body.x, body.y, kBodyVisualCatchUp);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(body.type), body.faction);
+    sub::set_body_kind(reg, e,
+                       ecs::NPCKind{std::uint16_t(body.type), body.faction});
     // ALL THREE pools, through the sheet's own doors (CANON S14 «три
     // ресурса» — a scene body is not a kind of body that gets fewer bars;
     // sp/maxSp stood at ZERO here until landing 4в). Mana does NOT cross as
@@ -373,7 +374,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     reg.emplace<ecs::Combat>(e, combat_from_sheet(sheet, def));
     maybe_emplace_missile_attack(reg, e, pc);
     maybe_emplace_flying(reg, e, pc);
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(body.level));
+    sub::set_body_level(reg, e, std::int16_t(body.level));
     reg.emplace<ecs::SubworldTag>(e);
     // How much room this body takes: the row's ONE width column, man-shaped
     // default resolved (npc.h npc_body_radius). This is the ONE line where
@@ -386,8 +387,10 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
         /*wanderSpeed*/bodySpeed * kBodyWanderSpeedFraction,
         /*radius*/bodyRadius);
     reg.emplace<CharacterSheet>(e, sheet);
-    // A face for every body. This is the line the squad never had.
-    reg.emplace<ecs::NpcCharacter>(e, face);
+    // Лицо тела (NpcCharacter) НЕ хранится: оно потребляется здесь же —
+    // ростом тела от bodyShape строкой ниже — и после рождения его не
+    // читает никто (прецедент вспышки, «минимизировать число колонок»).
+    // Истина лица — колонка character головы в MacroStore.
     // The sprite record. Colour comes from THE sprite table's row — the same
     // place a wolf's grey and a peasant's cloth come from — and never from the
     // call site: three spawners each used to invent a tint (a guard 170, a
@@ -764,7 +767,7 @@ bool refresh_body_strike(entt::registry& reg, entt::entity body) {
     // A body with no row has no creature template to project a swing from —
     // the hero husk is exactly that, and his hands are assembled elsewhere
     // (hand_strike_fields), from the same effective sheet.
-    const auto* kind = reg.try_get<ecs::NPCKind>(body);
+    const auto* kind = sub::body_kind(reg, body);
     if (!kind || !valid_npc_kind(kind->type)) return false;
     auto* combat = reg.try_get<ecs::Combat>(body);
     if (!combat) return false;

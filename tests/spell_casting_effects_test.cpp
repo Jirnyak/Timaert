@@ -82,7 +82,7 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
     if (playerSide) {
         sm::test::give_flag(w.reg, e, sm::sub::kObjPlayerSoldier);
     } else {
-        w.reg.emplace<sm::ecs::NPCKind>(e, sm::ecs::NPCKind{2, 2});
+        sm::test::give_kind(w.reg, e, sm::ecs::NPCKind{2, 2});
     }
     return e;
 }
@@ -1090,7 +1090,7 @@ int main() {
         npcWorld.reg.emplace<sm::ecs::Position>(npcCaster, 0.0f, 0.0f, 0.0f);
         npcWorld.reg.emplace<sm::ecs::Pools>(npcCaster, 100, 100);
         npcWorld.reg.emplace<sm::ecs::SubworldTag>(npcCaster);
-        npcWorld.reg.emplace<sm::ecs::NPCKind>(npcCaster, sm::ecs::NPCKind{2, 2});
+        sm::test::give_kind(npcWorld.reg, npcCaster, sm::ecs::NPCKind{2, 2});
         auto npcBlast = npcWorld.create();
         npcWorld.reg.emplace<sm::ecs::Position>(npcBlast, 0.0f, 0.0f, 0.0f);
         npcWorld.reg.emplace<sm::ecs::Projectile>(npcBlast,

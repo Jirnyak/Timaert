@@ -37,6 +37,7 @@
 #include "macro/fauna.h"
 #include "macro/store.h"
 #include "sub/height.h"   // kBodyEyeM — the number body_eye_m() hands out
+#include "sub/record.h"   // body_kind — род тела из колонки арены (кусок 1)
 
 #include <entt/entt.hpp>  // registry-читатели ниже; транзит store.h умер (M-150 шаг 0)
 
@@ -59,7 +60,7 @@ inline const NpcTypeDef* row_for(const ecs::NPCKind* kind) {
 
 // THE combat half-width of a body, in world units (≈ metres).
 inline float body_radius(const entt::registry& reg, entt::entity e) {
-    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    const auto* kind = body_kind(reg, e);
     if (const NpcTypeDef* row = row_for(kind)) {
         // The row's ONE width column, man-shaped default resolved (npc.h).
         // The template shadow copy this used to fall through to is dead

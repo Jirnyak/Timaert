@@ -146,10 +146,11 @@ static void smoke_stage_possession_cast(App& app, entt::entity target) {
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     {
-        auto cv = reg.view<sm::ecs::Position, sm::ecs::Pools, sm::ecs::NPCKind,
+        auto cv = reg.view<sm::ecs::Position, sm::ecs::Pools,
                            sm::ecs::SubworldTag>();
         for (auto e : cv) {
             if (e == target) continue;
+            if (sm::sub::body_kind(reg, e) == nullptr) continue;
             if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)) continue;
             if (sm::sub::is_avatar(reg, e)
                 || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
@@ -182,11 +183,9 @@ static bool smoke_possess_via_spell(App& app, entt::entity target) {
     if (auto* cs = sm::player_sheet(app.gs, *app.macroStore)) {
         cs->levelData.level = std::max(cs->levelData.level, 50);
     }
-    if (auto* lvl = reg.try_get<sm::ecs::NpcLevel>(target)) {
-        lvl->value = std::min<std::int16_t>(lvl->value, 1);
-    } else {
-        reg.emplace<sm::ecs::NpcLevel>(target, std::int16_t(1));
-    }
+    // Цель заведомо ниже порога: уровень 1 (прежние ветки «min(v,1)» и
+    // «нет компоненты → 1» давали единицу во всех исходах).
+    sm::sub::set_body_level(reg, target, std::int16_t(1));
     smoke_stage_possession_cast(app, target);
     if (!cast_active_spell(app)) return false;
     return reg.valid(target) && sm::sub::is_avatar(reg, target);
@@ -2337,14 +2336,13 @@ bool run_macro_npc_trace_smoke(App& app) {
 
 entt::entity smoke_find_subworld_npc(App& app, sm::NPCType type) {
     auto& reg = app.ecs.reg;
-    auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                         sm::ecs::Pools>();
+    auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::Pools>();
     for (auto e : view) {
         if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
             || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
             continue;
-        const auto& kind = view.get<sm::ecs::NPCKind>(e);
-        if (kind.type == std::uint16_t(type)) return e;
+        const auto* kind = sm::sub::body_kind(reg, e);
+        if (kind != nullptr && kind->type == std::uint16_t(type)) return e;
     }
     return entt::null;
 }
@@ -3033,8 +3031,9 @@ bool run_dungeon_house_smoke(App& app) {
     int residents = 0;
     entt::entity victim = entt::null;
     sm::ecs::MacroDebt victimDebt{};
-    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::MacroDebt,
+    for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt,
                                    sm::ecs::Pools, sm::ecs::SubworldTag>()) {
+        if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
         if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
         const auto& d = app.ecs.reg.get<sm::ecs::MacroDebt>(e);
         if (d.stock != std::uint8_t(sm::MacroStock::Population)) continue;
@@ -3499,7 +3498,8 @@ bool run_prologue_road_smoke(App& app) {
     };
     auto scene_bodies = [&]() {
         int n = 0;
-        for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::SubworldTag>()) {
+        for (auto e : app.ecs.reg.view<sm::ecs::SubworldTag>()) {
+            if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
             if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead))
                 continue;
             ++n;
@@ -3532,8 +3532,9 @@ bool run_prologue_road_smoke(App& app) {
     // springs — and it is off the bed, in the trees.
     int ambushers = 0;
     float nearestAmbush2 = 1e18f;
-    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Position,
+    for (auto e : app.ecs.reg.view<sm::ecs::Position,
                                    sm::ecs::SubworldTag>()) {
+        if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
         if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
         const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
         const float dx = p.x - app.subworld.player_x();
@@ -3552,8 +3553,9 @@ bool run_prologue_road_smoke(App& app) {
     // the world's bandit (50) — the prologue's teeth are a creature, not a
     // tuned spawn.
     int ambushMaxHp = 0;
-    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Pools,
+    for (auto e : app.ecs.reg.view<sm::ecs::Pools,
                                    sm::ecs::SubworldTag>()) {
+        if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
         if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
         ambushMaxHp = std::max(ambushMaxHp,
                                int((*app.ecs.reg.try_get<sm::ecs::Pools>(e)).maxHp));
@@ -3567,8 +3569,9 @@ bool run_prologue_road_smoke(App& app) {
     // from a number in a table.
     advance_sim_seconds(app, 4.0f, false);
     float closed2 = 1e18f;
-    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Position,
+    for (auto e : app.ecs.reg.view<sm::ecs::Position,
                                    sm::ecs::SubworldTag>()) {
+        if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
         if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
         const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
         const float dx = p.x - app.subworld.player_x();
@@ -4191,8 +4194,8 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::VisualPos>(hostile,
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
-    reg.emplace<sm::ecs::NPCKind>(
-        hostile, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
+    sm::sub::set_body_kind(
+        reg, hostile, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
     reg.emplace<sm::ecs::Pools>(hostile, 18, 18);
     reg.emplace<sm::ecs::Combat>(hostile,
         sm::Dice{7, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
@@ -4206,6 +4209,9 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         std::uint8_t(255), std::uint8_t(60), std::uint8_t(45),
         std::uint8_t(255), 1.2f);
 
+    // Все тела рисуются ОДНИМ спрайт-проходом (СПРАЙТ-ЗАКОН, кукла мертва);
+    // прежний фильтр «без NpcCharacter» отделял куклу от спрайта и умер
+    // вместе с компонентой лица (кусок 1).
     int spriteOnlyVisible = 0;
     auto spriteView = reg.view<sm::ecs::Position, sm::ecs::Sprite,
                                sm::ecs::Pools, sm::ecs::SubworldTag>();
@@ -4213,7 +4219,6 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)) continue;
         const auto& hp = spriteView.get<sm::ecs::Pools>(e);
         if (hp.hp <= 0) continue;
-        if (reg.any_of<sm::ecs::NpcCharacter>(e)) continue;
         ++spriteOnlyVisible;
     }
 
@@ -4314,8 +4319,8 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     // player is -10 — above kHostileThreshold, so the witch had no quarrel with
     // anyone and simply never drew. Bandits sit at -100: hostile by construction,
     // which is the whole premise of a scenario about being shot at.
-    reg.emplace<sm::ecs::NPCKind>(
-        hostile,
+    sm::sub::set_body_kind(
+        reg, hostile,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Witch),
             std::uint16_t(sm::faction_index("bandits"))});
@@ -4551,12 +4556,11 @@ bool run_turn_based_cycle_smoke(App& app) {
             float(sm::sub::kFullSize - 2));
         const float armZ = app.subworld.ground_height_at(armX, py);
         const entt::entity target = reg.create();
-    smoke_give_slot(reg, target);
         smoke_give_slot(reg, target);
         reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
         reg.emplace<sm::ecs::VisualPos>(target, armX, py, armZ);
-        reg.emplace<sm::ecs::NPCKind>(
-            target,
+        sm::sub::set_body_kind(
+            reg, target,
             sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
                              std::uint16_t(3)});
         reg.emplace<sm::ecs::Pools>(target, 4000, 4000);
@@ -4759,8 +4763,8 @@ bool run_subworld_player_melee_smoke(App& app) {
     smoke_give_slot(reg, target);
     reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
     reg.emplace<sm::ecs::VisualPos>(target, armX, py, armZ);
-    reg.emplace<sm::ecs::NPCKind>(
-        target,
+    sm::sub::set_body_kind(
+        reg, target,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit),
             std::uint16_t(3)});
@@ -4969,8 +4973,8 @@ bool run_subworld_player_bow_smoke(App& app) {
     smoke_give_slot(reg, target);
     reg.emplace<sm::ecs::Position>(target, tx, py, pz);
     reg.emplace<sm::ecs::VisualPos>(target, tx, py, pz);
-    reg.emplace<sm::ecs::NPCKind>(
-        target,
+    sm::sub::set_body_kind(
+        reg, target,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit),
             std::uint16_t(sm::faction_index("bandits"))});
@@ -5104,8 +5108,8 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // `wildlife`, so hitting this "imperial" peasant honestly docked the
     // reputation of the local wolves while the scenario watched `empire` and
     // saw nothing move.
-    reg.emplace<sm::ecs::NPCKind>(
-        target,
+    sm::sub::set_body_kind(
+        reg, target,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Peasant),
             std::uint16_t(sm::faction_index("empire"))});
@@ -5925,8 +5929,9 @@ bool run_console_smoke(App& app) {
         }
         // Still not an NPC/soldier: none of these may be present, or an NPC-only
         // system (AI, loot, XP, squad removal) would start acting on the player.
-        if (reg.any_of<sm::ecs::NPCKind, sm::ecs::SubworldAi,
-                       sm::ecs::NpcInventory>(pe)
+        // Род — колонка арены (кусок 1): у игрока она обязана быть kObjNoKind.
+        if (sm::sub::body_kind(reg, pe) != nullptr
+            || reg.any_of<sm::ecs::SubworldAi, sm::ecs::NpcInventory>(pe)
             || sm::sub::object_flag(reg, pe, sm::sub::kObjPlayerSoldier)) {
             restore();
             smoke_fail(app,
@@ -5944,14 +5949,14 @@ bool run_console_smoke(App& app) {
     auto count_live_bandits = [&]() {
         auto& reg = app.ecs.reg;
         int n = 0;
-        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                             sm::ecs::Pools>();
+        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::Pools>();
         for (auto e : view) {
             if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
                 || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
                 continue;
-            if (view.get<sm::ecs::NPCKind>(e).type
-                == std::uint16_t(sm::NPCType::Bandit)) ++n;
+            const auto* k = sm::sub::body_kind(reg, e);
+            if (k != nullptr
+                && k->type == std::uint16_t(sm::NPCType::Bandit)) ++n;
         }
         return n;
     };
@@ -5968,10 +5973,11 @@ bool run_console_smoke(App& app) {
     std::vector<entt::entity> preexistingBandits;
     {
         auto& reg = app.ecs.reg;
-        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>();
+        auto view = reg.view<sm::ecs::SubworldTag>();
         for (auto e : view) {
-            if (view.get<sm::ecs::NPCKind>(e).type
-                == std::uint16_t(sm::NPCType::Bandit)) {
+            const auto* k = sm::sub::body_kind(reg, e);
+            if (k != nullptr
+                && k->type == std::uint16_t(sm::NPCType::Bandit)) {
                 preexistingBandits.push_back(e);
             }
         }
@@ -6009,14 +6015,14 @@ bool run_console_smoke(App& app) {
             return sum;
         };
         entt::entity be = entt::null;
-        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                             sm::ecs::Pools>();
+        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::Pools>();
         for (auto e : view) {
             if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
                 || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
                 continue;
-            if (view.get<sm::ecs::NPCKind>(e).type
-                != std::uint16_t(sm::NPCType::Bandit)) continue;
+            const auto* k = sm::sub::body_kind(reg, e);
+            if (k == nullptr
+                || k->type != std::uint16_t(sm::NPCType::Bandit)) continue;
             bool preexisting = false;
             for (entt::entity p : preexistingBandits)
                 preexisting = preexisting || p == e;
@@ -6039,9 +6045,11 @@ bool run_console_smoke(App& app) {
             sheet->levelData.skillPoints != 0) {
             restore(); smoke_fail(app, "sheet: bandit has unspent points"); return false;
         }
-        const auto* nlvl = reg.try_get<sm::ecs::NpcLevel>(be);
-        if (!nlvl || int(nlvl->value) != sheet->levelData.level) {
-            restore(); smoke_fail(app, "sheet: bandit NpcLevel != sheet level"); return false;
+        // Уровень — колонка арены (кусок 1): 0 значил бы «уровень не
+        // назначен» и валит проверку так же, как валило отсутствие компоненты.
+        const std::int16_t nlvl = sm::sub::body_level(reg, be);
+        if (int(nlvl) != sheet->levelData.level) {
+            restore(); smoke_fail(app, "sheet: bandit level column != sheet level"); return false;
         }
         // (b) Combat derived from the sheet: the entity's Health/Combat must be
         // exactly what the ONE body door writes — FLOOR(project_combat(sheet))
@@ -6097,13 +6105,13 @@ bool run_console_smoke(App& app) {
     auto count_live_creatures = [&]() {
         auto& reg = app.ecs.reg;
         int n = 0;
-        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                             sm::ecs::Pools>();
+        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::Pools>();
         for (auto e : view) {
             if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
                 || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
                 continue;
-            if (!sm::is_folk_kind(view.get<sm::ecs::NPCKind>(e).type)) ++n;
+            const auto* k = sm::sub::body_kind(reg, e);
+            if (k != nullptr && !sm::is_folk_kind(k->type)) ++n;
         }
         return n;
     };
@@ -6117,14 +6125,16 @@ bool run_console_smoke(App& app) {
         auto& reg = app.ecs.reg;
         const sm::FaunaEntry* wolf = sm::creature_def("wolf");
         entt::entity wolfE = entt::null;
-        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                             sm::ecs::Pools>();
+        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::Pools>();
         for (auto e : view) {
             if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
                 || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
                 continue;
-            if (sm::creature_def_from_kind(
-                    view.get<sm::ecs::NPCKind>(e).type) == wolf) { wolfE = e; break; }
+            const auto* k = sm::sub::body_kind(reg, e);
+            if (k != nullptr
+                && sm::creature_def_from_kind(k->type) == wolf) {
+                wolfE = e; break;
+            }
         }
         if (!wolf || wolfE == entt::null) {
             restore();
@@ -6225,7 +6235,7 @@ bool run_console_smoke(App& app) {
         // A fresh, non-player-side bandit.
         entt::entity target = entt::null;
         {
-            auto tv = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+            auto tv = reg.view<sm::ecs::SubworldTag,
                                sm::ecs::Pools, sm::ecs::Combat>();
             for (auto e : tv) {
                 if (sm::sub::is_avatar(reg, e)) continue;
@@ -6233,8 +6243,11 @@ bool run_console_smoke(App& app) {
                     || sm::sub::object_flag(reg, e,
                                             sm::sub::kObjPlayerSoldier))
                     continue;
-                if (tv.get<sm::ecs::NPCKind>(e).type
-                    == std::uint16_t(sm::NPCType::Bandit)) { target = e; break; }
+                const auto* k = sm::sub::body_kind(reg, e);
+                if (k != nullptr
+                    && k->type == std::uint16_t(sm::NPCType::Bandit)) {
+                    target = e; break;
+                }
             }
         }
         if (target == entt::null) {
@@ -6250,10 +6263,12 @@ bool run_console_smoke(App& app) {
             return false;
         }
         // The hero husk: the sole current scene-flag holder, which carries NO
-        // NPCKind (that is precisely what tells a husk from a foreign body).
+        // body kind (that is precisely what tells a husk from a foreign body;
+        // род — колонка арены, кусок 1).
         entt::entity husk = entt::null;
         husk = sm::sub::avatar_entity(reg);
-        if (husk == entt::null || reg.all_of<sm::ecs::NPCKind>(husk)) {
+        if (husk == entt::null
+            || sm::sub::body_kind(reg, husk) != nullptr) {
             restore(); smoke_fail(app, "possess: hero husk missing or not a hero body"); return false;
         }
         // Макро-флаг «до» — биты GameState (1е кластер 5).
@@ -6268,11 +6283,7 @@ bool run_console_smoke(App& app) {
         const int voidRank = int(sm::player_effective_sheet(app.gs, *app.macroStore)
                                      .skills.of(sm::SkillId::VoidMagic));
         const int threshold = casterLevel + voidRank;
-        if (auto* lvl = reg.try_get<sm::ecs::NpcLevel>(target)) {
-            lvl->value = std::int16_t(threshold);
-        } else {
-            reg.emplace<sm::ecs::NpcLevel>(target, std::int16_t(threshold));
-        }
+        sm::sub::set_body_level(reg, target, std::int16_t(threshold));
         smoke_stage_possession_cast(app, target);
         const int mpBefore = int(player_pools(app).mp);
         if (!cast_active_spell(app)) {
@@ -6399,7 +6410,7 @@ bool run_console_smoke(App& app) {
                      {sm::sub::avatar_entity(app.ecs.reg)}) {
                     if (pe == entt::null
                         || !app.ecs.reg.all_of<sm::ecs::Pools>(pe)) break;
-                    if (app.ecs.reg.all_of<sm::ecs::NPCKind>(pe)) {
+                    if (sm::sub::body_kind(app.ecs.reg, pe) != nullptr) {
                         return &(*app.ecs.reg.try_get<sm::ecs::Pools>(pe));
                     }
                     break;
@@ -7352,10 +7363,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "exit_remap: player_* doors did not follow the flag");
                     break;
                 }
-                // The taken body keeps its OWN components — nothing is stripped.
-                if (!reg.all_of<sm::ecs::NPCKind, sm::ecs::Pools,
-                                sm::ecs::Combat>(body)) {
-                    smoke_fail(app, "exit_remap: taken body lost its own components");
+                // The taken body keeps its OWN state — nothing is stripped
+                // (род — колонка арены, кусок 1).
+                if (sm::sub::body_kind(reg, body) == nullptr
+                    || !reg.all_of<sm::ecs::Pools, sm::ecs::Combat>(body)) {
+                    smoke_fail(app, "exit_remap: taken body lost its own state");
                     break;
                 }
                 // …and its numbers are its RECORD's (the mirror law): the HUD
@@ -7671,8 +7683,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "battle_start hostile not found for death flush");
                 break;
             }
-            if (!app.ecs.reg.any_of<sm::ecs::NpcCharacter>(smokeHostile)) {
-                smoke_fail(app, "battle_start hostile missing paper-doll character");
+            if (sm::sub::body_kind(app.ecs.reg, smokeHostile) == nullptr) {
+                smoke_fail(app, "battle_start hostile missing body kind");
                 break;
             }
             auto* smokeHp = app.ecs.reg.try_get<sm::ecs::Pools>(smokeHostile);
@@ -7893,11 +7905,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
             }
             int citizens = 0;
-            auto cityView = app.ecs.reg.view<sm::ecs::SubworldTag,
-                                             sm::ecs::NpcCharacter,
-                                             sm::ecs::NPCKind>();
+            auto cityView = app.ecs.reg.view<sm::ecs::SubworldTag>();
             for (auto e : cityView) {
-                (void)e;
+                if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
                 ++citizens;
             }
             // HOW LAZY IS THE TOWN'S GROUND. The layout law asks for one
@@ -8236,9 +8246,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto street = [&app]() {
                 int n = 0;
                 auto v = app.ecs.reg.view<sm::ecs::SubworldTag,
-                                          sm::ecs::NpcCharacter,
                                           sm::ecs::MacroDebt>();
                 for (auto e : v) {
+                    if (sm::sub::body_kind(app.ecs.reg, e) == nullptr)
+                        continue;
                     const auto& d = v.get<sm::ecs::MacroDebt>(e);
                     if (d.stock != std::uint8_t(sm::MacroStock::Population)) {
                         continue;
@@ -9192,8 +9203,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // wearing a cultist's colours. Projectiles are faction-agnostic, so
             // it never blocked the hit — but a target that lies about its side
             // is a trap for the next person to read this.
-            app.ecs.reg.emplace<sm::ecs::NPCKind>(
-                spellTarget,
+            sm::sub::set_body_kind(
+                app.ecs.reg, spellTarget,
                 sm::ecs::NPCKind{
                     std::uint16_t(sm::NPCType::Bandit),
                     std::uint16_t(sm::faction_index("bandits"))});

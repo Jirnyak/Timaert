@@ -21,6 +21,7 @@
 // Pure ECS + data assertions: no Vulkan, no window, no GameState needed beyond a
 // hand-built ownership field. Manager construction mirrors subworld_spawn_parity_test.
 #include "check.h"
+#include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "tables/faction.h"
@@ -28,6 +29,7 @@
 #include "macro/world_row.h"   // raise_flock_into_roster — души головами
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
+#include "sub/record.h"   // body_kind — род тела из колонки арены (кусок 1)
 #include "macro/store.h"
 
 #include <cstdint>
@@ -137,6 +139,7 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122), поэтому предусловие свидетеля — не число,
     // а контейнер душ места: он рождает его САМ (§8 п.11), тем же законом,
     // которым его наполняет генезис.
@@ -162,13 +165,14 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     int citizens = 0;
     int wrongFaction = 0;
     int imperial = 0;
-    auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>();
+    auto view = world.reg.view<sm::ecs::SubworldTag>();
     for (auto e : view) {
-        const auto& kind = view.get<sm::ecs::NPCKind>(e);
-        if (kind.type >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
+        const auto* kind = sm::sub::body_kind(world.reg, e);
+        if (kind == nullptr) continue;
+        if (kind->type >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
         ++citizens;
-        if (kind.factionIdx != magica) ++wrongFaction;
-        if (kind.factionIdx == empire) ++imperial;
+        if (kind->factionIdx != magica) ++wrongFaction;
+        if (kind->factionIdx == empire) ++imperial;
     }
 
     // The count is asserted FIRST: without it the two zero-checks below pass
@@ -193,6 +197,7 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     sm::Inventory homeSouls{};
     sm::raise_flock_into_roster(homeSouls, 400);
     sm::sub::spawn_cell_npcs(world,
@@ -214,12 +219,13 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
 
     int citizens = 0;
     int foreign = 0;
-    auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>();
+    auto view = world.reg.view<sm::ecs::SubworldTag>();
     for (auto e : view) {
-        const auto& kind = view.get<sm::ecs::NPCKind>(e);
-        if (kind.type >= std::uint16_t(sm::NPCType::Count)) continue;
+        const auto* kind = sm::sub::body_kind(world.reg, e);
+        if (kind == nullptr) continue;
+        if (kind->type >= std::uint16_t(sm::NPCType::Count)) continue;
         ++citizens;
-        if (kind.factionIdx != empire) ++foreign;
+        if (kind->factionIdx != empire) ++foreign;
     }
     CHECK_OR_RETURN(citizens > 0, "the imperial village fielded citizens at all");
     CHECK(foreign == 0,

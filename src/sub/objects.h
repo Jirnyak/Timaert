@@ -33,6 +33,7 @@
 #include <array>
 #include <cstdint>
 
+#include "ecs/components.h" // ecs::NPCKind — тип колонки kind (кусок 1)
 #include "sub/movement.h"   // kMaxBodyCrowd — кап до ломтя 6
 
 namespace sm::sub {
@@ -58,6 +59,14 @@ inline constexpr std::uint8_t kDmgFxBlocked = 1u << 2;
 // в ломте 7).
 inline constexpr std::uint32_t kObjNoAttacker = 0xFFFFFFFFu;
 
+// «Рода нет» у колонки kind: ноль — законный род (NPCType::Peasant = 0),
+// поэтому «нет» — ПОСЛЕДНЕЕ значение u16 (ЗАКОН УЗКОГО ИНДЕКСА). Enum
+// NPCType шириной u8, так что столкнуться с живым родом это значение не
+// может по типу; valid_npc_kind() отвергает его без спецслучая. Носят его
+// слоты без рода: игрок и голые фикстуры — прежнее «компоненты NPCKind
+// нет» тела.
+inline constexpr std::uint16_t kObjNoKind = 0xFFFFu;
+
 struct SubObjects {
     // Идентичность жильца: ID рождения (счётчик стора, с 1; 0 = «никто»).
     // u32 — за жизнь сцены не заворачивается (4 млрд рождений недостижимы:
@@ -75,6 +84,15 @@ struct SubObjects {
     // Событие «в этом тике по телу попали»: бит 0 = pending, бит 1 =
     // lethal, бит 2 = blocked. Дренируется одним проходом за тик.
     std::array<std::uint8_t, std::size_t(kMaxBodyCrowd)> damageFx{};
+    // ── Род и уровень тела (кусок 1 ломтя 2): бывшие ecs::NPCKind /
+    // ecs::NpcLevel. Род — факт головы при воплощении; .type == kObjNoKind
+    // значит «рода нет» (игрок, голая фикстура). Уровень безуровневого — 0.
+    // Лицо (NpcCharacter) колонкой НЕ стало: потребляется один раз при
+    // рождении (рост тела от bodyShape) и после не читается никем —
+    // прецедент вспышки («минимизировать число колонок»); вернётся
+    // колонкой вместе с читателем (вариация спрайтов).
+    std::array<ecs::NPCKind, std::size_t(kMaxBodyCrowd)> kind{};
+    std::array<std::int16_t, std::size_t(kMaxBodyCrowd)> level{};
 
     int count = 0;        // живых слотов (для приборов, не для обхода)
     int cursor = 0;       // бегунок выдачи — слоты переиспользуются по кругу
@@ -104,6 +122,8 @@ struct SubObjects {
             flags[std::size_t(s)] = kObjAlive;
             lastHitBy[std::size_t(s)] = kObjNoAttacker;
             damageFx[std::size_t(s)] = 0u;
+            kind[std::size_t(s)] = ecs::NPCKind{kObjNoKind, 0u};
+            level[std::size_t(s)] = 0;
             ++count;
             return s;
         }
@@ -119,8 +139,9 @@ struct SubObjects {
         --count;
     }
 };
-// 16384 × (4+2+4+1) Б колонок + служебные: цена названа и закреплена.
-static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 11 + 24,
-              "массив объектов сцены: 11 Б/слот (ломоть 1а) + служебные");
+// 16384 × (4+2+4+1+4+2) Б колонок + служебные: цена названа и закреплена.
+static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 17 + 24,
+              "массив объектов сцены: 17 Б/слот (кусок 1: +kind 4, +level 2) "
+              "+ служебные");
 
 } // namespace sm::sub

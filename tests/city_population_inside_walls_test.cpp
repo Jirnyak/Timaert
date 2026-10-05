@@ -26,6 +26,7 @@
 //      literals gen_city / gen_village carried before they were hoisted out —
 //      the refactor must not have moved a single wall.
 #include "check.h"
+#include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "macro/world_row.h"   // raise_flock_into_roster — души головами
 #include "ecs/components.h"
 #include "ecs/world.h"
@@ -34,6 +35,7 @@
 #include "sub/map_data.h"
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
+#include "sub/record.h"   // body_kind — род тела из колонки арены (кусок 1)
 #include "macro/store.h"
 
 #include <array>
@@ -172,6 +174,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
     sm::ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
+    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122): предусловие свидетеля — контейнер душ
     // места, и он рождает его САМ (§8 п.11). Паства (число `pop` ниже)
     // осталась мерой ГЕОМЕТРИИ: стены строились на всех, включая ушедших.
@@ -219,10 +222,12 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
 
     std::array<int, 8> sector{};
     int outerHalf = 0;
-    auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+    auto view = world.reg.view<sm::ecs::SubworldTag,
                                sm::ecs::Position>();
     for (auto e : view) {
-        const auto& kind = view.get<sm::ecs::NPCKind>(e);
+        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        if (kindCol == nullptr) continue;
+        const auto& kind = *kindCol;
         if (kind.type >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
         const auto& p = view.get<sm::ecs::Position>(e);
         ++s.citizens;
