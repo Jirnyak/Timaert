@@ -138,7 +138,6 @@ struct SeedResult {
     std::uint32_t seed = 0;
     float landFrac = 0.0f;
     float mtnFrac = 0.0f;
-    float riverFrac = 0.0f;
     float p50 = 0.0f, p90 = 0.0f, p99 = 0.0f, p999 = 0.0f, maxH = 0.0f;
     // ЗАПАС ПОЛЯ СВЕРХУ. Синтез складывает базовый fBm с континентальным
     // сдвигом и членом хребтов, а потом КЛАМПИТ в [0,1]: если верхний хвост
@@ -277,12 +276,16 @@ SeedResult census_seed(std::uint32_t seed) {
     // ── 3. ПЕРЦЕНТИЛИ ПО СУШЕ ────────────────────────────────────────────
     std::vector<float> land;
     land.reserve(n);
-    std::size_t mtn = 0, river = 0, sat = 0, near1 = 0, bed = 0;
+    // Счётчика «клеток рек» здесь больше нет, и это не потеря прибора:
+    // M-211 снёс реку КАК СТРУКТУРУ (вердикт владельца 2026-10-03 — «рек нет
+    // как структуры, от них остаются только прокопы в рельефе, и агностично
+    // эмерджентно там вода»), поэтому доля русел перестала быть величиной
+    // мира; воду считает один ответ `is_water` ниже.
+    std::size_t mtn = 0, sat = 0, near1 = 0, bed = 0;
     for (std::size_t i = 0; i < n; ++i) {
         // СЛОВО, а не байт: `std::uint8_t` здесь срезал бы старшие восемь бит,
         // и «насыщение сверху» мерило бы младший байт шума.
         const std::uint16_t b = td.rgba[i * 4u];
-        if (td.riverData.size() == n && td.riverData[i] > 0) ++river;
         if (b == 0u) ++bed;
         if (td.is_water(std::uint32_t(i))) continue;        // ОДИН ответ про воду
         land.push_back(field[i]);
@@ -293,7 +296,6 @@ SeedResult census_seed(std::uint32_t seed) {
     std::sort(land.begin(), land.end());
     r.landFrac  = float(land.size()) / float(n);
     r.mtnFrac   = float(mtn) / float(n);
-    r.riverFrac = float(river) / float(n);
     r.satFrac   = land.empty() ? 0.0f : float(sat) / float(land.size());
     r.near1Frac = land.empty() ? 0.0f : float(near1) / float(land.size());
     r.bedFrac   = float(bed) / float(n);
@@ -370,8 +372,8 @@ SeedResult census_seed(std::uint32_t seed) {
 
 void print_seed(const SeedResult& r) {
     std::printf("\n=== СИД %u ===\n", r.seed);
-    std::printf("  суша %.1f %% карты · биом Mountain %.2f %% · клеток рек %.2f %%\n",
-                r.landFrac * 100.0f, r.mtnFrac * 100.0f, r.riverFrac * 100.0f);
+    std::printf("  суша %.1f %% карты · биом Mountain %.2f %%\n",
+                r.landFrac * 100.0f, r.mtnFrac * 100.0f);
     // Метры — ЧЕРЕЗ КРИВУЮ (sub/height.h height_m), и отсчитаны ОТ МОРЯ:
     // «пик 10 км» есть высота над водой, а не над дном океана.
     const float seaM = sm::sub::height_m(sm::kDefaultSeaLevel);

@@ -154,26 +154,45 @@ void coldest_mountain_center(const sm::TerrainData& td,
         densest_mountain_center(td, mapW, mapH, B, cx, cy, stat);
 }
 
-// Centre of the B×B block with the most river cells -- frames a river + its
-// banks so the river rendering (now Biome::Water, formerly the buggy overlay)
-// can be judged. River cells are CARVED below sea level in generation (that is
-// what makes them honest water), so we frame by river-mask presence, not by
-// height -- the old "> seaByte" filter matched nothing post-carve.
-long densest_river_center(const sm::TerrainData& td, int mapW, int mapH, int B,
-                          float& cx, float& cy) {
+// Centre of the B×B block with the most CHANNEL cells -- frames a river and its
+// banks so the water rendering can be judged.
+//
+// WHAT A RIVER IS NOW, and why this is not the question it used to be. The tool
+// used to ask the river MASK (`TerrainData::riverData`), and M-211 deleted it:
+// the owner's verdict (2026-10-03) is that rivers do not exist as a structure at
+// all -- all that remains of one is a CARVE in the relief, and the water in it
+// is emergent, because the carve lies below the sea plane. So "is there a river
+// here" has no carrier left to ask, and asking plain water instead would frame
+// the OCEAN, which is the densest water on any map by a wide margin.
+//
+// A carve is narrow water, and narrowness is what the sea does not have: a
+// channel cell carries LAND ON OPPOSITE SIDES -- north and south, or east and
+// west. An open coastline, however ragged, has land on one side only, so it
+// scores zero and cannot outbid a river; mid-ocean scores zero too. Every cell
+// of a river bed scores. No heuristic about coast shape is needed, and no
+// resurrected structure either: the question is answered by the ONE answer about
+// water (`is_water`), read through the torus door.
+long densest_channel_center(const sm::TerrainData& td, int mapW, int mapH, int B,
+                            float& cx, float& cy) {
     cx = float(mapW) * 0.5f;
     cy = float(mapH) * 0.5f;
-    if (!td.has_river_storage() || mapW <= 0 || mapH <= 0) return 0;
+    if (!td.has_rgba_storage() || mapW <= 0 || mapH <= 0) return 0;
+    const auto is_channel = [&td, mapW](int x, int y) {
+        const std::uint32_t at = sm::cell_of(x, y, mapW);
+        if (!td.is_water(at)) return false;
+        const bool landW = !td.is_water(sm::cell_step(at, -1, 0, mapW));
+        const bool landE = !td.is_water(sm::cell_step(at, 1, 0, mapW));
+        const bool landN = !td.is_water(sm::cell_step(at, 0, -1, mapW));
+        const bool landS = !td.is_water(sm::cell_step(at, 0, 1, mapW));
+        return (landW && landE) || (landN && landS);
+    };
     long best = 0;
     for (int by = 0; by + B <= mapH; by += B) {
         for (int bx = 0; bx + B <= mapW; bx += B) {
             long n = 0;
             for (int y = by; y < by + B; ++y) {
-                const std::size_t row = std::size_t(y) * std::size_t(mapW);
                 for (int x = bx; x < bx + B; ++x) {
-                    const std::size_t i = row + std::size_t(x);
-                    if (td.riverData[i] > 0)
-                        ++n;
+                    if (is_channel(x, y)) ++n;
                 }
             }
             if (n > best) {
@@ -504,9 +523,10 @@ int main(int argc, char** argv) {
                  double(coldStat.meanTemp), double(coldStat.meanH));
 
     float riverX = 0.f, riverY = 0.f;
-    const long riverCells = densest_river_center(td, td.width, td.height,
-                                                 kFrameBlock, riverX, riverY);
-    std::fprintf(stderr, "[macro_shot] densest river cell (%.0f, %.0f): %ld river\n",
+    const long riverCells = densest_channel_center(td, td.width, td.height,
+                                                   kFrameBlock, riverX, riverY);
+    std::fprintf(stderr,
+                 "[macro_shot] densest channel cell (%.0f, %.0f): %ld channel\n",
                  double(riverX), double(riverY), riverCells);
 
     // -- Synthesize forests + roads so the headless capture exercises EVERY macro
