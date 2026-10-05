@@ -2813,6 +2813,48 @@ bool run_dungeon_house_smoke(App& app) {
         return true;
     }
 
+    // ── ТА ЖЕ РУКА ПО ГОРИЗОНТАЛИ (переселено сюда 2026-10-05) ───────────
+    // Эту половину закона держал негативный контроль `subworld_loot_xp`: труп,
+    // отодвинутый на две руки, не предлагался и не брался. Труп-КОНТЕЙНЕР снят
+    // вердиктом владельца (добычу раздаст ПУЛ ЛУТА), и его свидетель ушёл бы
+    // вместе с ним — оставив ГОРИЗОНТАЛЬ закона без охраны. А ломалась именно
+    // она: в M-104 «Loot» тянулся через всю комнату и перебивал «Enter» в двух
+    // шагах. Предмет у контроля сменился (труп → дверь), закон тот же, и обе
+    // оси теперь держит один свидетель.
+    //
+    // Отход — строго НАЗАД по оси «стоянка → дверь», то есть на улицу, откуда
+    // игрок и пришёл: вбок он упёрся бы в стену, и ноль читался бы как предел
+    // руки, не будучи им.
+    {
+        const float back = app.subworld.player_arm_reach() * 2.0f;
+        const float dx = door.x - standX, dy = door.y - standY;
+        const float len = std::sqrt(dx * dx + dy * dy);
+        const float ux = len > 0.001f ? dx / len : 1.0f;
+        const float uy = len > 0.001f ? dy / len : 0.0f;
+        app.subworld.set_player_pos(standX - ux * back, standY - uy * back);
+        smoke_settle_on_foot(app);
+        const char* farPrompt = app.subworld.interact_prompt();
+        const bool farOffered = farPrompt != nullptr && farPrompt[0] != '\0';
+        const bool farActed = app.subworld.interact();
+        face_door();
+        smoke_settle_on_foot(app);
+        const char* nearPrompt = app.subworld.interact_prompt();
+        const bool nearOffered = nearPrompt != nullptr && nearPrompt[0] != '\0';
+        std::fprintf(stderr,
+                     "[smoke] dungeon_house reach_horizontal arm=%.2f "
+                     "far_prompt='%s' far_acted=%d near_prompt='%s'\n",
+                     double(back * 0.5f), farPrompt ? farPrompt : "",
+                     farActed ? 1 : 0, nearPrompt ? nearPrompt : "");
+        std::fflush(stderr);
+        SMOKE_CHECK(app, !farOffered,
+                    "дверь не предлагается телу за две руки ОТ порога");
+        SMOKE_CHECK(app, !farActed,
+                    "дверь не открывается нажатием за две руки от порога");
+        SMOKE_CHECK(app, nearOffered,
+                    "вернувшись на порог, дверь ОБЯЗАНА предлагаться — иначе "
+                    "ноль выше ничего не доказывает");
+    }
+
     // ── ПРЕДЕЛ РУКИ ИЗОТРОПЕН: Z — НЕ ПРИВИЛЕГИРОВАННАЯ ОСЬ ──────────────
     // Владелец, живой прогон 2026-09-28: «снова не зависит от расстояния
     // интерактор E выскакивает даже если ты далеко летишь высоко». Причина
