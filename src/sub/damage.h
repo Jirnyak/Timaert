@@ -17,7 +17,7 @@
 //      without armour is the limiting case of the law, not a branch around it;
 //   3. subtract, judge lethality by the RESULT (no predictions);
 //   4. stamp the protocol: LastHit when the kind attributes a killer,
-//      HitFlash + DamageFx always and always together;
+//      DamageFx always (HitFlash died with the body-flash column, 2026-10-05);
 //   5. on the killing blow: Dead once, and NpcDeath with the ONE AvatarTag
 //      guard — a dead player is a game-over, never an NPC kill, whatever
 //      weapon did it.
@@ -38,10 +38,9 @@ namespace sm { class EventBus; }
 
 namespace sm::sub {
 
-// One duration for the on-hit flash, whatever weapon landed it. Lived in
-// spell_effects.h while melee and spells were the only stampers; the door owns
-// the stamp now, so it owns the number.
-inline constexpr float kHitFlashDuration = 0.15f;
+// (kHitFlashDuration умерла со вспышкой тела — вердикт владельца 2026-10-05
+// «пока не нужна снесём»: колонка писалась и гасла, визуального читателя не
+// имела; «удар виден» несёт damageFx.)
 
 // The mitigation law itself (the 9-type symmetry, kPlainBlow,
 // mitigate_amount) lives in tables/damage_types.h — the auto-resolve reads it

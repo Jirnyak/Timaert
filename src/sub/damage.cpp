@@ -152,19 +152,18 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     if (amt <= 0) {
         // BLOCKED, not silent (owner 2026-09-06: «пусть пишет всё равно»).
         // A real blow the armour swallowed whole is a fact the world shows:
-        // the same flash + fx pair as a wound, with the blocked flag riding
+        // the same fx event as a wound, with the blocked flag riding
         // DamageFx so the drain throws a spark off the plate instead of
         // blood. Nothing happened to the BODY — no Health change, no LastHit,
         // no event — only to the armour, so the protocol below is not walked.
         if (amount > 0) {
-            // FX — колонки единого массива объектов (M-150 ломоть 1а):
-            // вспышка + событие «попали» с флагом blocked — слив кинет
-            // искру с пластины вместо крови. Тело без слота — фикстура
-            // без арены (транзит миграции).
+            // FX — колонка единого массива объектов (M-150 ломоть 1а):
+            // событие «попали» с флагом blocked — слив кинет искру с
+            // пластины вместо крови. Тело без слота — фикстура без арены
+            // (транзит миграции).
             if (const auto* os = reg.try_get<ecs::ObjectSlot>(target)) {
-                SubObjects& objs = objects_of(reg);
-                objs.hitFlash[os->slot] = kHitFlashDuration;
-                objs.damageFx[os->slot] = kDmgFxPending | kDmgFxBlocked;
+                objects_of(reg).damageFx[os->slot] =
+                    kDmgFxPending | kDmgFxBlocked;
             }
             out.blocked = true;
         }
@@ -183,7 +182,6 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
         if (row.attributesKiller) {
             objs.lastHitBy[os->slot] = src.attackerId;
         }
-        objs.hitFlash[os->slot] = kHitFlashDuration;
         objs.damageFx[os->slot] =
             std::uint8_t(kDmgFxPending | (out.lethal ? kDmgFxLethal : 0u));
     }

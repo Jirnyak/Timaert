@@ -341,9 +341,11 @@ struct MacroDebt {
 struct MacroOrigin { MacroHandle macro; };
 
 // (LastHit / HitFlash / DamageFx УМЕРЛИ 2026-10-05, M-150 ломоть 1а: «кто
-// бил», вспышка и событие «попали» — колонки единого массива объектов
-// lastHitBy / hitFlash / damageFx (sub/objects.h); их законы — там же, у
-// колонок, вместе с законом «никто» для атакера.)
+// бил» и событие «попали» — колонки единого массива объектов
+// lastHitBy / damageFx (sub/objects.h); их законы — там же, у колонок,
+// вместе с законом «никто» для атакера. Вспышка тела снесена ЦЕЛИКОМ тем же
+// днём — вердикт владельца «пока не нужна снесём»: колонкой она писалась и
+// гасла, но визуального читателя не имела никогда.)
 
 // Per-NPC visual identity. POD reinterpretation of TS `CharacterData`
 // (which is HTML-canvas-targeted: name + sprite-layer indices + palette

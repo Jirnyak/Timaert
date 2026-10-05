@@ -104,8 +104,6 @@ constexpr const char* kDisengageBlockedMsg =
 // was the band, not the geometry (owner 2026-09-11). Being seen does not
 // pin you; a hostile on you does.
 constexpr float kDangerProximityM = 40.0f;
-// kHitFlashDuration now lives in sub/spell_effects.h — one constant for every
-// weapon's on-hit flash.
 // kPlayerMeleeCooldown / kPlayerBaseMeleeDamage (dead) are chronicled in
 // sub/engine.h (Session 15): the macro encounter's auto-resolve must price
 // the player with the same numbers this file arms his body with.
@@ -945,7 +943,8 @@ void SubworldEngine::spawn_player_entity() {
     }
     const entt::entity e = reg.create();
     // Слот единого массива объектов (M-150 1а): тело игрока — обычный
-    // жилец арены, его колонки (вспышка, «кто бил») читает тот же закон.
+    // жилец арены, его колонки («кто бил», событие «попали») читает тот же
+    // закон.
     if (sub::SubObjects* objs = sub::objects_find(reg)) {
         const int slot = objs->alloc();
         if (slot >= 0) reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
@@ -2483,17 +2482,6 @@ void SubworldEngine::tick_damage_fx() {
     // every tick after, because the overflow was never reached. Колонке
     // слив — один fill: байт события гаснет у ВСЕХ слотов разом.
     objs.damageFx.fill(0u);
-}
-
-void SubworldEngine::tick_hit_flashes(float dt) {
-    if (!ecs_ || dt <= 0.0f) return;
-    // Вспышка — КОЛОНКА единого массива (ломоть 1а), и весь прежний
-    // дренаж remove-партиями УМЕР вместе с компонентой: у колонки нечего
-    // снимать, погасший слот просто лежит нулём. Проход — константа от
-    // капа (ЗАКОН СТАБИЛЬНОСТИ: цена не зависит от населения).
-    for (float& t : sub::objects_of(ecs_->reg).hitFlash) {
-        t = t > dt ? t - dt : 0.0f;
-    }
 }
 
 // Both of these answer "how close is the nearest body hostile to the player",
@@ -4961,7 +4949,6 @@ void SubworldEngine::tick(float dt) {
                                // close the box over projectiles instead.
                                mgr_.height_field().max_m()
                                    + kFlightMaxAboveTerrainM);
-        tick_hit_flashes(dt);
         // Turn this tick's damage markers into blood/dust BEFORE deaths are
         // resolved, so a killing blow still sprays from the body's live position.
         tick_damage_fx();

@@ -35,10 +35,6 @@ inline void give_slot(entt::registry& reg, entt::entity e) {
     if (slot >= 0) reg.emplace<sm::ecs::ObjectSlot>(e, std::uint16_t(slot));
 }
 
-inline float flash_of(entt::registry& reg, entt::entity e) {
-    const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);
-    return os ? arena_of(reg).hitFlash[os->slot] : 0.0f;
-}
 inline std::uint8_t fx_of(entt::registry& reg, entt::entity e) {
     const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);
     return os ? arena_of(reg).damageFx[os->slot] : std::uint8_t{0};

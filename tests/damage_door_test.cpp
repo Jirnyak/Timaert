@@ -3,8 +3,9 @@
 //
 // What is pinned, with negative controls:
 //   * one protocol: any lethal blow leaves the same component set (Dead +
-//     DamageFx{lethal} + HitFlash) and emits exactly one NpcDeath with the
-//     right attribution (a = victim, b = attacker, ix = kind, iy = spellId);
+//     DamageFx{lethal}) and emits exactly one NpcDeath with the right
+//     attribution (a = victim, b = attacker, ix = kind, iy = spellId);
+//     (HitFlash снесена вердиктом 2026-10-05 — «удар виден» несёт DamageFx);
 //   * attribution is DATA: the Fall/Script rows stamp no LastHit (nobody gets
 //     XP for gravity), the Melee/Spell/Dev rows do;
 //   * the ONE AvatarTag guard: a dead player body emits no NpcDeath from ANY kind —
@@ -54,7 +55,6 @@ entt::entity make_body(entt::registry& reg, int hp, bool withKind = true) {
     return e;
 }
 
-using sm::test::flash_of;
 using sm::test::fx_of;
 using sm::test::last_hit_of;
 
@@ -89,7 +89,6 @@ void test_death_is_indistinguishable() {
         CHECK(hit.applied == 25.0f, "lethal blow applies its full amount");
         CHECK(hit.lethal, "a blow past remaining hp is lethal");
         CHECK(reg.all_of<sm::ecs::Dead>(e), "every kind stamps Dead");
-        CHECK(flash_of(reg, e) > 0.0f, "every kind stamps HitFlash");
         CHECK((fx_of(reg, e) & sm::sub::kDmgFxPending) != 0,
               "every kind stamps DamageFx");
         CHECK((fx_of(reg, e) & sm::sub::kDmgFxLethal) != 0,
@@ -158,8 +157,8 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // the plate's block finds no flesh at all — full block is real. And
     // since 2026-09-06 (owner: «пусть пишет всё равно») a block is NOT a
     // silent no-op: the flesh is untouched, but the world SHOWS the blow —
-    // HitFlash + DamageFx{blocked} so the drain sparks off the plate instead
-    // of bleeding, and the result says `blocked` so the striker can speak.
+    // DamageFx{blocked} so the drain sparks off the plate instead of
+    // bleeding, and the result says `blocked` so the striker can speak.
     // The silence here was the shipped «как будто не попадаю» feel: every
     // early-game fist swing against mail vanished without a trace.
     const entt::entity turtle = reg.create();
@@ -179,9 +178,8 @@ void test_armour_softens_by_the_row_and_the_kind() {
           "and the result names it BLOCKED, distinct from a dead-target no-op");
     CHECK((*reg.try_get<sm::ecs::Pools>(turtle)).hp == 100,
           "the flesh under the plate is untouched");
-    CHECK(flash_of(reg, turtle) > 0.0f
-              && (fx_of(reg, turtle) & sm::sub::kDmgFxPending) != 0,
-          "a blocked blow still shows: HitFlash + DamageFx travel together");
+    CHECK((fx_of(reg, turtle) & sm::sub::kDmgFxPending) != 0,
+          "a blocked blow still shows: DamageFx is stamped");
     CHECK((fx_of(reg, turtle) & sm::sub::kDmgFxBlocked) != 0
               && (fx_of(reg, turtle) & sm::sub::kDmgFxLethal) == 0,
           "and the fx is the spark flavour, not blood");
@@ -479,9 +477,8 @@ void test_survivor_protocol() {
           "hp drops by exactly the applied amount");
     CHECK(!reg.any_of<sm::ecs::Dead>(e), "a survivor is not Dead");
     CHECK(death_events(bus) == 0, "a survivor emits nothing");
-    CHECK(flash_of(reg, e) > 0.0f
-              && (fx_of(reg, e) & sm::sub::kDmgFxPending) != 0,
-          "HitFlash and DamageFx travel together on every hit");
+    CHECK((fx_of(reg, e) & sm::sub::kDmgFxPending) != 0,
+          "DamageFx is stamped on every hit that lands");
     CHECK((fx_of(reg, e) & sm::sub::kDmgFxLethal) == 0,
           "a survivable blow's DamageFx is not lethal");
     CHECK(last_hit_of(reg, e) == 7u,
@@ -578,7 +575,7 @@ void test_zero_and_missing_target() {
     const DamageResult zero =
         apply_damage(reg, e, DamageSource{}, 0.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
     CHECK(zero.applied == 0.0f, "a zero blow is a no-op");
-    CHECK(flash_of(reg, e) == 0.0f,
+    CHECK(fx_of(reg, e) == 0u,
           "a no-op stamps nothing — zero is a silent contribution");
     const entt::entity bare = reg.create();  // no Health at all
     const DamageResult none =
@@ -622,12 +619,12 @@ void test_the_blow_lands_on_the_record() {
           "...and the body's own block is untouched: it is the scene's copy, "
           "not a second memory the world must reconcile");
 
-    // The protocol still stamps the BODY — the flash, the corpse tag and the
-    // killer attribution describe the thing standing in the scene, which is
-    // what the eye and the reaper look at. (Запись — слот store: entt-штампа
+    // The protocol still stamps the BODY — the fx event, the corpse tag and
+    // the killer attribution describe the thing standing in the scene, which
+    // is what the eye and the reaper look at. (Запись — слот store: entt-штампа
     // на ней не существует по построению, вторая половина старой проверки
     // умерла вместе с entt-записью.)
-    CHECK(flash_of(reg, body) > 0.0f,
+    CHECK((fx_of(reg, body) & sm::sub::kDmgFxPending) != 0,
           "the visible protocol stamps the body, not the record");
 
     // NEGATIVE CONTROL: no backlink, no record — the very same call spends the

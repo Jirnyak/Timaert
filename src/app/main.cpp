@@ -5152,11 +5152,6 @@ void draw_debug_panels(App& app) {
             auto cnt = [](auto v) {
                 std::size_t n = 0; for (auto e : v) { (void)e; ++n; } return n;
             };
-            // Вспышка — колонка единого массива объектов (M-150 ломоть 1а).
-            std::size_t flashLit = 0;
-            for (float t : sm::sub::objects_of(reg).hitFlash) {
-                flashLit += t > 0.0f ? 1u : 0u;
-            }
             struct Row { const char* name; std::size_t count; };
             const Row rows[] = {
                 {"Position(scene)", cnt(reg.view<sm::ecs::Position>())},
@@ -5174,7 +5169,6 @@ void draw_debug_panels(App& app) {
                 {"Dead(scene)",     cnt(reg.view<sm::ecs::Dead>())},
                 {"PlayerSoldier",   cnt(reg.view<sm::ecs::PlayerSoldierTag>())},
                 {"TempHostile",     cnt(reg.view<sm::ecs::TempHostileToPlayer>())},
-                {"HitFlash(col)",   flashLit},
                 {"ObjectSlots",     std::size_t(
                      sm::sub::objects_of(reg).count)},
                 {"CorpseLoot",      cnt(reg.view<sm::ecs::CorpseLoot>())},

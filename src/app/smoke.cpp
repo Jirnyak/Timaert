@@ -4780,10 +4780,9 @@ bool run_subworld_player_melee_smoke(App& app) {
     }
 
     const auto* hp = reg.try_get<sm::ecs::Pools>(target);
-    // fx и атрибуция — колонки единого массива объектов (M-150 1а).
+    // Атрибуция — колонка единого массива объектов (M-150 1а; вспышка
+    // тела снесена вердиктом 2026-10-05).
     const auto* osMelee = reg.try_get<sm::ecs::ObjectSlot>(target);
-    const float meleeFlash = osMelee
-        ? sm::sub::objects_of(reg).hitFlash[osMelee->slot] : 0.0f;
     const std::uint32_t meleeLastBy = osMelee
         ? sm::sub::objects_of(reg).lastHitBy[osMelee->slot]
         : sm::sub::kObjNoAttacker;
@@ -4827,14 +4826,13 @@ bool run_subworld_player_melee_smoke(App& app) {
 
     std::fprintf(stderr,
                  "[smoke] subworld_player_melee hp=%.1f->%.1f "
-                 "bounds=[%.1f,%.1f] routed=%d flash=%.3f "
+                 "bounds=[%.1f,%.1f] routed=%d "
                  "byPlayerBody=%d log=\"%s\" status=\"%s\"\n",
                  double(beforeHp),
                  double(afterHp),
                  double(minStrike),
                  double(maxStrike),
                  combatRouted ? 1 : 0,
-                 double(meleeFlash),
                  meleeLastBy == std::uint32_t(entt::to_integral(
                                     sm::sub::current_player_body(app.ecs)))
                      ? 1 : 0,
@@ -4865,8 +4863,6 @@ bool run_subworld_player_melee_smoke(App& app) {
                     "what landed lies inside the roll the SHEET can produce — "
                     "the bare bandit wears no armour, so roll == wound");
     }
-    SMOKE_CHECK(app, meleeFlash > 0.0f,
-                "the hit flash is still burning when the strike resolves");
     SMOKE_CHECK(app, meleeLastBy != sm::sub::kObjNoAttacker,
                 "the struck body remembers who hit it");
     SMOKE_CHECK(app, meleeLastBy
@@ -5186,12 +5182,9 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const bool spellTookHp =
         std::fabs(beforeFriendlySpellHp - afterFriendlySpellHp
                   - float(kFriendlySpellDamage)) <= 0.001f;
-    const auto* osSpell = reg.try_get<sm::ecs::ObjectSlot>(target);
-    const bool spellFlashed = osSpell
-        && sm::sub::objects_of(reg).hitFlash[osSpell->slot] > 0.0f;
     const bool spellLogged =
         app.subworld.combat_log_count() > beforeFriendlySpellLog;
-    const bool friendlySpellHit = spellTookHp && spellFlashed && spellLogged;
+    const bool friendlySpellHit = spellTookHp && spellLogged;
     if (reg.valid(friendlyProjectile)) {
         reg.destroy(friendlyProjectile);
     }
@@ -5219,7 +5212,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     std::fprintf(stderr,
                  "[smoke] subworld_reputation_hit rep=%d->%d temp=%d "
                  "ai=%d danger=%d neutralMove=%.3f "
-                 "spellHp=%d spellFlash=%d spellLog=%d friendlySpellHit=%d log=\"%s\"\n",
+                 "spellHp=%d spellLog=%d friendlySpellHit=%d log=\"%s\"\n",
                  beforeRep,
                  afterRep,
                  tempHostile ? 1 : 0,
@@ -5227,7 +5220,6 @@ bool run_subworld_reputation_hit_smoke(App& app) {
                  int(danger),
                  double(neutralMove),
                  spellTookHp ? 1 : 0,
-                 spellFlashed ? 1 : 0,
                  spellLogged ? 1 : 0,
                  friendlySpellHit ? 1 : 0,
                  combatLog ? combatLog->text : "");
@@ -9218,12 +9210,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "projectile was not spawned");
                 break;
             }
-            // This window is bounded on BOTH sides. Lower: the bolt needs
-            // dist/400 s to arrive (400 units/s). Upper: the HitFlash this
-            // scenario asserts lasts kHitFlashDuration (0.15 s) from impact —
-            // waiting too long watches the evidence decay. The distance is
-            // ADAPTIVE now (the terrain probe above), so the window is
-            // derived, not pinned: arrival + half the flash's life.
+            // The bolt needs dist/400 s to arrive (400 units/s), plus slack
+            // for the impact tick to resolve. The distance is ADAPTIVE (the
+            // terrain probe above), so the window is derived, not pinned.
+            // (The upper bound died with the body hit-flash, 2026-10-05: the
+            // combat log this scenario asserts does not decay.)
             RuntimeFrameStats frameStats =
                 advance_sim_seconds(app, spellDist / 400.0f + 0.07f, false);
             if (!frameStats.ticked || !frameStats.subworldActive) {
@@ -9235,11 +9226,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.subworld.combat_log_entry(afterCombatLog - 1);
             const bool hitLogged = afterCombatLog > beforeCombatLog
                 && combatLog && combatLog->text[0] != '\0';
-            const auto* osBolt =
-                app.ecs.reg.try_get<sm::ecs::ObjectSlot>(spellTarget);
-            const float boltFlash = osBolt
-                ? sm::sub::objects_of(app.ecs.reg).hitFlash[osBolt->slot]
-                : -1.0f;
             // PRINT BEFORE YOU JUDGE. A scenario that fails first tells you only
             // that something is wrong; these numbers say WHICH thing. `alive` is
             // the load-bearing one — a bolt that is gone without a hit was reaped
@@ -9256,7 +9242,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] spell_projectile active=%s dist=%.2f muzzleZ=%.2f "
                          "shell=%.2f projectiles=%d->%d alive=%d "
-                         "targetHp=%.1f mp=%d cd=%zu event=%d flash=%.3f log=\"%s\"\n",
+                         "targetHp=%.1f mp=%d cd=%zu event=%d log=\"%s\"\n",
                          sm::spell_ordinal_ok(book.activeSpell)
                              ? sm::kSpellDefs[book.activeSpell].id : "(none)",
                          // The three numbers that decide whether a bolt can
@@ -9273,15 +9259,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          player_pools(app).mp,
                          std::size_t(smoke_player_recovery_steps(app)),
                          afterSpellCastEvents - beforeSpellCastEvents,
-                         double(boltFlash),
                          combatLog ? combatLog->text : "");
             std::fflush(stderr);
             if (!hitLogged) {
                 smoke_fail(app, "spell hit combat log missing");
-                break;
-            }
-            if (boltFlash <= 0.0f) {
-                smoke_fail(app, "spell hit flash missing");
                 break;
             }
             ++app.smoke.cursor;

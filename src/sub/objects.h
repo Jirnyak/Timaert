@@ -49,8 +49,11 @@ struct SubObjects {
     // Род и состояние — МАСКА, не компоненты (ЗАКОН СТРОКИ КАТАЛОГА:
     // смена архетипа в тике невыразима по построению).
     std::array<std::uint16_t, std::size_t(kMaxBodyCrowd)> flags{};
-    // ── FX-колонки (ломоть 1а): бывшие HitFlash / DamageFx / LastHit ────
-    std::array<float, std::size_t(kMaxBodyCrowd)> hitFlash{};      // сек
+    // ── FX-колонки (ломоть 1а): бывшие DamageFx / LastHit. Вспышка тела
+    // (hitFlash) СНЕСЕНА вердиктом владельца 2026-10-05 («пока не нужна
+    // снесём … минимизировать число колонок») — она писалась и гасла, но
+    // визуального читателя не имела никогда; возврат после предемо =
+    // колонка + тинт тел в рендере.
     std::array<std::uint32_t, std::size_t(kMaxBodyCrowd)> lastHitBy{};
     // Событие «в этом тике по телу попали»: бит 0 = pending, бит 1 =
     // lethal, бит 2 = blocked. Дренируется одним проходом за тик.
@@ -71,7 +74,6 @@ struct SubObjects {
             if (g == 0u) g = 1u;          // ген 0 навсегда «никого»
             gen[std::size_t(s)] = g;
             flags[std::size_t(s)] = kObjAlive;
-            hitFlash[std::size_t(s)] = 0.0f;
             lastHitBy[std::size_t(s)] = kObjNoAttacker;
             damageFx[std::size_t(s)] = 0u;
             ++count;
@@ -89,8 +91,8 @@ struct SubObjects {
         --count;
     }
 };
-// 16384 × (2+2+4+4+1) Б колонок + служебные: цена названа и закреплена.
-static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 13 + 8,
-              "массив объектов сцены: 13 Б/слот (ломоть 1а) + count/cursor");
+// 16384 × (2+2+4+1) Б колонок + служебные: цена названа и закреплена.
+static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 9 + 8,
+              "массив объектов сцены: 9 Б/слот (ломоть 1а) + count/cursor");
 
 } // namespace sm::sub
