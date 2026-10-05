@@ -339,7 +339,8 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
         }
     }
     reg.emplace<ecs::Position>(e, body.x, body.y, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, body.x, body.y, kBodyVisualCatchUp);
+    sub::set_body_visual(reg, e,
+                         ecs::VisualPos{body.x, body.y, kBodyVisualCatchUp});
     sub::set_body_kind(reg, e,
                        ecs::NPCKind{std::uint16_t(body.type), body.faction});
     // ALL THREE pools, through the sheet's own doors (CANON S14 «три
@@ -381,11 +382,11 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     // the creature birth and the humanoid birth used to differ about a
     // number — and where a template shadow copy of the width used to answer.
     const float bodyRadius = npc_body_radius(def);
-    reg.emplace<ecs::SubworldAi>(e,
+    sub::set_body_ai(reg, e, ecs::SubworldAi{
         body.combatant ? ecs::SubworldAi::Combat : subworld_ai_for(def.ai),
         /*aiTimer*/0.0f, /*vx*/0.0f, /*vy*/0.0f,
         /*wanderSpeed*/bodySpeed * kBodyWanderSpeedFraction,
-        /*radius*/bodyRadius);
+        /*radius*/bodyRadius});
     reg.emplace<CharacterSheet>(e, sheet);
     // Лицо тела (NpcCharacter) НЕ хранится: оно потребляется здесь же —
     // ростом тела от bodyShape строкой ниже — и после рождения его не
@@ -1370,11 +1371,14 @@ void rebase_subworld_entities(ecs::World& w, float dxTiles, float dyTiles) {
         p.x += dxTiles;
         p.y += dyTiles;
     }
-    auto visView = reg.view<ecs::SubworldTag, ecs::VisualPos>();
-    for (auto e : visView) {
-        auto& v = visView.get<ecs::VisualPos>(e);
-        v.vx += dxTiles;
-        v.vy += dyTiles;
+    // Визуальная позиция — колонка арены (кусок 3): сдвигается у каждого
+    // слотного тела; нулевой интерполятор (speed 0) сдвиг не портит — его
+    // не читает никто.
+    for (auto e : posView) {
+        if (ecs::VisualPos* v = body_visual(reg, e)) {
+            v->vx += dxTiles;
+            v->vy += dyTiles;
+        }
     }
 }
 

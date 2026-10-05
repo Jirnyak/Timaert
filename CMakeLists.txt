@@ -687,9 +687,6 @@ timaert_test(damage_door_test
         src/macro/anketa.cpp
         src/tables/items.cpp
         src/events/event_bus.cpp
-        # ...и ту же дверь слива, которой мир сливает ОБА субъекта закона
-        # восстановления (M-194): свидетель живёт там, где линкуется его предмет
-        src/ecs/systems.cpp
     LINK_ENTT)
 
 timaert_test(spell_casting_effects_test
@@ -697,9 +694,6 @@ timaert_test(spell_casting_effects_test
         src/events/event_bus.cpp
         src/content/spells/spell_book.cpp
         src/content/spells/effects.cpp
-        # The recovery-law block drains the BODY's one gate through the real
-        # system (tick_combat_recovery), not a hand-rolled twin of it.
-        src/ecs/systems.cpp
         # Projectile contact now asks sub/body.h for a body's width, and that reads
         # the MONSTER table (creature_def_from_kind) like melee always has — so this
         # test links the table rather than a second opinion about how wide a wolf is.

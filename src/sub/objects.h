@@ -53,6 +53,14 @@ inline constexpr std::uint16_t kObjFlying        = 1u << 4; // Flying
 // ставит ТОЛЬКО дверь set_body_combat (record.h) — рассинхрон бита и
 // колонки невыразим второй дверью записи.
 inline constexpr std::uint16_t kObjHasCombat     = 1u << 5;
+// Кусок 3 — мозг и два ЛЕНИВЫХ состояния (бывшие компоненты-присутствия):
+// у мозга нуля-сентинела нет (Wander = 0 — законный род), бит ставит
+// дверь set_body_ai; «идёт домой» и «в воздухе» — состояния, что прежде
+// выражались самим наличием компоненты (GoingHome / Airborne), теперь —
+// бит + колонка, ставят/снимают только двери record.h.
+inline constexpr std::uint16_t kObjHasAi         = 1u << 6;
+inline constexpr std::uint16_t kObjGoingHome     = 1u << 7;
+inline constexpr std::uint16_t kObjAirborne      = 1u << 8;
 
 // Событие «в этом тике по телу попали» (колонка damageFx) — биты:
 inline constexpr std::uint8_t kDmgFxPending = 1u << 0;
@@ -111,6 +119,16 @@ struct SubObjects {
     std::array<ecs::Pools, std::size_t(kMaxBodyCrowd)> pools{};
     std::array<ecs::Combat, std::size_t(kMaxBodyCrowd)> combat{};
     std::array<ecs::MissileAttack, std::size_t(kMaxBodyCrowd)> missile{};
+    // ── Движение/думка (кусок 3 ломтя 2): бывшие ecs::SubworldAi /
+    // ecs::VisualPos / ecs::GoingHome / ecs::Airborne. Мозг — колонка +
+    // бит kObjHasAi (Wander = 0 законен, сентинела нет). Визуальная
+    // позиция — безусловная колонка слота: нулевая скорость = интерполятор
+    // стоит (законное авторское значение смоук-фикстур), биту нечего
+    // охранять. «Домой» и «в воздухе» — бит + колонка (см. маску).
+    std::array<ecs::SubworldAi, std::size_t(kMaxBodyCrowd)> ai{};
+    std::array<ecs::VisualPos, std::size_t(kMaxBodyCrowd)> visual{};
+    std::array<ecs::GoingHome, std::size_t(kMaxBodyCrowd)> goHome{};
+    std::array<float, std::size_t(kMaxBodyCrowd)> airborneVz{};
 
     int count = 0;        // живых слотов (для приборов, не для обхода)
     int cursor = 0;       // бегунок выдачи — слоты переиспользуются по кругу
@@ -145,6 +163,10 @@ struct SubObjects {
             pools[std::size_t(s)] = ecs::Pools{};
             combat[std::size_t(s)] = ecs::Combat{};
             missile[std::size_t(s)] = ecs::MissileAttack{};
+            ai[std::size_t(s)] = ecs::SubworldAi{};
+            visual[std::size_t(s)] = ecs::VisualPos{};
+            goHome[std::size_t(s)] = ecs::GoingHome{};
+            airborneVz[std::size_t(s)] = 0.0f;
             ++count;
             return s;
         }
@@ -160,11 +182,11 @@ struct SubObjects {
         --count;
     }
 };
-// 16384 × (4+2+4+1+4+2+36+28+12) Б колонок + служебные: цена названа и
-// закреплена. 93 Б/слот × 16384 ≈ 1.45 МиБ — профиль один у пустой и
-// полной сцены (ЗАКОН СТАБИЛЬНОСТИ).
-static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 93 + 24,
-              "массив объектов сцены: 93 Б/слот (кусок 2: +pools 36, "
-              "+combat 28, +missile 12) + служебные");
+// 16384 × (4+2+4+1+4+2+36+28+12+40+12+8+4) Б колонок + служебные: цена
+// названа и закреплена. 157 Б/слот × 16384 ≈ 2.45 МиБ — профиль один у
+// пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ).
+static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 157 + 24,
+              "массив объектов сцены: 157 Б/слот (кусок 3: +ai 40, "
+              "+visual 12, +goHome 8, +airborneVz 4) + служебные");
 
 } // namespace sm::sub

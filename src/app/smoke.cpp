@@ -59,6 +59,16 @@ static void smoke_give_missile(entt::registry& reg, entt::entity e,
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
     sm::sub::set_body_missile(reg, e, m);
 }
+static void smoke_give_ai(entt::registry& reg, entt::entity e,
+                          const sm::ecs::SubworldAi& a) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
+    sm::sub::set_body_ai(reg, e, a);
+}
+static void smoke_give_visual(entt::registry& reg, entt::entity e,
+                              sm::ecs::VisualPos v) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
+    sm::sub::set_body_visual(reg, e, v);
+}
 #include "tables/codex.h"
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
 #include "macro/anketa.h"
@@ -185,7 +195,7 @@ static void smoke_stage_possession_cast(App& app, entt::entity target) {
     // XY only, and the stale z put the target outside the now-3D aim cone
     // (CANON S13) — the fixture lied, not the law.
     pos.z = app.subworld.ground_height_at(tx, ty);
-    if (auto* vp = reg.try_get<sm::ecs::VisualPos>(target)) {
+    if (auto* vp = sm::sub::body_visual(reg, target)) {
         vp->vx = tx; vp->vy = ty;
     }
     if (const entt::entity e = sm::sub::avatar_entity(reg); e != entt::null)
@@ -2519,7 +2529,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
         pos->x = lootX;
         pos->y = lootY;
     }
-    if (auto* vp = reg.try_get<sm::ecs::VisualPos>(target)) {
+    if (auto* vp = sm::sub::body_visual(reg, target)) {
         vp->vx = lootX;
         vp->vy = lootY;
     }
@@ -2555,7 +2565,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
                 cp->x = app.subworld.player_x() + dx;
                 cp->y = app.subworld.player_y();
             }
-            if (auto* vp = reg.try_get<sm::ecs::VisualPos>(e)) {
+            if (auto* vp = sm::sub::body_visual(reg, e)) {
                 vp->vx = app.subworld.player_x() + dx;
                 vp->vy = app.subworld.player_y();
             }
@@ -4208,8 +4218,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     smoke_give_slot(reg, hostile);
     reg.emplace<sm::ecs::Position>(hostile,
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
-    reg.emplace<sm::ecs::VisualPos>(hostile,
-        std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
+    smoke_give_visual(reg, hostile, sm::ecs::VisualPos{std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f});
     sm::sub::set_body_kind(
         reg, hostile, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
     smoke_give_pools(reg, hostile, sm::ecs::Pools{18, 18});
@@ -4218,8 +4227,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         std::uint8_t(sm::DamageType::Blunt),
         0.0f, 8.0f, 0.30f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
     reg.emplace<sm::ecs::SubworldTag>(hostile);
-    reg.emplace<sm::ecs::SubworldAi>(hostile,
-        sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f);
+    smoke_give_ai(reg, hostile, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
     reg.emplace<sm::ecs::Sprite>(hostile,
         std::uint16_t(0x1FE),
         std::uint8_t(255), std::uint8_t(60), std::uint8_t(45),
@@ -4328,8 +4336,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     smoke_give_slot(reg, hostile);
     reg.emplace<sm::ecs::Position>(hostile,
         std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz);
-    reg.emplace<sm::ecs::VisualPos>(hostile,
-        std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz);
+    smoke_give_visual(reg, hostile, sm::ecs::VisualPos{std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz});
     // "bandits" ASKED OF THE REGISTRY, not the literal 3 this used to carry.
     // Under the ONE faction registry index 3 is `cults`, whose standing with the
     // player is -10 — above kHostileThreshold, so the witch had no quarrel with
@@ -4352,10 +4359,8 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     smoke_give_missile(reg, hostile,
         sm::ecs::MissileAttack{160.0f, 0.0f, std::uint32_t{0xFFA070D0u}});
     reg.emplace<sm::ecs::SubworldTag>(hostile);
-    reg.emplace<sm::ecs::SubworldAi>(
-        hostile,
-        sm::ecs::SubworldAi::Combat,
-        0.0f, 0.0f, 0.0f, 0.0f, 1.2f);
+    smoke_give_ai(reg, hostile, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
+        0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
     reg.emplace<sm::ecs::Sprite>(
         hostile,
         std::uint16_t(sm::NPCType::Witch),
@@ -4574,7 +4579,7 @@ bool run_turn_based_cycle_smoke(App& app) {
         const entt::entity target = reg.create();
         smoke_give_slot(reg, target);
         reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
-        reg.emplace<sm::ecs::VisualPos>(target, armX, py, armZ);
+        smoke_give_visual(reg, target, sm::ecs::VisualPos{armX, py, armZ});
         sm::sub::set_body_kind(
             reg, target,
             sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
@@ -4778,7 +4783,7 @@ bool run_subworld_player_melee_smoke(App& app) {
     const entt::entity target = reg.create();
     smoke_give_slot(reg, target);
     reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
-    reg.emplace<sm::ecs::VisualPos>(target, armX, py, armZ);
+    smoke_give_visual(reg, target, sm::ecs::VisualPos{armX, py, armZ});
     sm::sub::set_body_kind(
         reg, target,
         sm::ecs::NPCKind{
@@ -4989,7 +4994,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     const entt::entity target = reg.create();
     smoke_give_slot(reg, target);
     reg.emplace<sm::ecs::Position>(target, tx, py, pz);
-    reg.emplace<sm::ecs::VisualPos>(target, tx, py, pz);
+    smoke_give_visual(reg, target, sm::ecs::VisualPos{tx, py, pz});
     sm::sub::set_body_kind(
         reg, target,
         sm::ecs::NPCKind{
@@ -5118,7 +5123,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const entt::entity target = reg.create();
     smoke_give_slot(reg, target);
     reg.emplace<sm::ecs::Position>(target, tx, py, pz);
-    reg.emplace<sm::ecs::VisualPos>(target, tx, py, pz);
+    smoke_give_visual(reg, target, sm::ecs::VisualPos{tx, py, pz});
     // ASK THE REGISTRY for the empire's index instead of spelling a literal.
     // This used to read `0`, from the days of the per-vocabulary faction
     // dictionaries; under the ONE registry (macro/faction.h) index 0 is
@@ -5136,10 +5141,8 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         std::uint8_t(sm::DamageType::Blunt),
         20.0f, 2.0f, 1.5f, 0u,
         sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
-    reg.emplace<sm::ecs::SubworldAi>(
-        target,
-        sm::ecs::SubworldAi::Flee,
-        3.0f, 0.0f, 0.0f, 8.0f, 0.55f);
+    smoke_give_ai(reg, target, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Flee,
+        3.0f, 0.0f, 0.0f, 8.0f, 0.55f});
     reg.emplace<sm::ecs::SubworldTag>(target);
     reg.emplace<sm::ecs::Sprite>(
         target,
@@ -5223,7 +5226,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const int afterRep = sm::player_reputation(&app.gs, "empire");
     const bool tempHostile =
         sm::sub::object_flag(reg, target, sm::sub::kObjTempHostile);
-    const auto* ai = reg.try_get<sm::ecs::SubworldAi>(target);
+    const auto* ai = sm::sub::body_ai(reg, target);
     const auto danger = app.subworld.danger_level();
     const int combatLogCount = app.subworld.combat_log_count();
     const sm::sub::CombatLogEntry* combatLog =
@@ -5948,7 +5951,8 @@ bool run_console_smoke(App& app) {
         // system (AI, loot, XP, squad removal) would start acting on the player.
         // Род — колонка арены (кусок 1): у игрока она обязана быть kObjNoKind.
         if (sm::sub::body_kind(reg, pe) != nullptr
-            || reg.any_of<sm::ecs::SubworldAi, sm::ecs::NpcInventory>(pe)
+            || sm::sub::body_ai(reg, pe) != nullptr
+            || reg.any_of<sm::ecs::NpcInventory>(pe)
             || sm::sub::object_flag(reg, pe, sm::sub::kObjPlayerSoldier)) {
             restore();
             smoke_fail(app,
@@ -7504,7 +7508,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     }
                 }
                 const auto* aai = abandoned != entt::null
-                    ? reg.try_get<sm::ecs::SubworldAi>(abandoned) : nullptr;
+                    ? sm::sub::body_ai(reg, abandoned) : nullptr;
                 const bool stands =
                     aai && aai->wantVx == 0.0f && aai->wantVy == 0.0f;
                 std::fprintf(stderr,
@@ -7623,14 +7627,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             auto countHostiles = [&]() {
                 int n = 0;
-                auto view = app.ecs.reg.view<sm::ecs::SubworldTag,
-                                             sm::ecs::SubworldAi>();
+                auto view = app.ecs.reg.view<sm::ecs::SubworldTag>();
                 for (auto e : view) {
                     if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)
                         || sm::sub::object_flag(
                                app.ecs.reg, e, sm::sub::kObjPlayerSoldier))
                         continue;
-                    const auto& ai = view.get<sm::ecs::SubworldAi>(e);
+                    const auto* aiCol = sm::sub::body_ai(app.ecs.reg, e);
+                    if (aiCol == nullptr) continue;
+                    const auto& ai = *aiCol;
                     const auto* hp = sm::sub::body_pools(app.ecs.reg, e);
                     if (hp != nullptr
                         && ai.kind == sm::ecs::SubworldAi::Combat
@@ -7650,14 +7655,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 return n;
             };
             auto findSmokeHostile = [&]() -> entt::entity {
-                auto view = app.ecs.reg.view<sm::ecs::SubworldTag,
-                                             sm::ecs::SubworldAi>();
+                auto view = app.ecs.reg.view<sm::ecs::SubworldTag>();
                 for (auto e : view) {
                     if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)
                         || sm::sub::object_flag(
                                app.ecs.reg, e, sm::sub::kObjPlayerSoldier))
                         continue;
-                    const auto& ai = view.get<sm::ecs::SubworldAi>(e);
+                    const auto* aiCol = sm::sub::body_ai(app.ecs.reg, e);
+                    if (aiCol == nullptr) continue;
+                    const auto& ai = *aiCol;
                     const auto* hp = sm::sub::body_pools(app.ecs.reg, e);
                     if (hp != nullptr
                         && ai.kind == sm::ecs::SubworldAi::Combat
@@ -9221,8 +9227,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             smoke_give_slot(app.ecs.reg, spellTarget);
             app.ecs.reg.emplace<sm::ecs::Position>(
                 spellTarget, spellTargetX, spellTargetY, spellTargetZ);
-            app.ecs.reg.emplace<sm::ecs::VisualPos>(
-                spellTarget, spellTargetX, spellTargetY, spellTargetZ);
+            smoke_give_visual(app.ecs.reg, spellTarget, sm::ecs::VisualPos{spellTargetX, spellTargetY, spellTargetZ});
             // Ask the registry: the literal 3 predates the ONE faction registry
             // and now means `cults`, so this body called itself a Bandit while
             // wearing a cultist's colours. Projectiles are faction-agnostic, so

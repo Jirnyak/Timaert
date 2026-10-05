@@ -83,12 +83,17 @@ void test_every_squad_body_is_a_whole_body() {
         const auto* health = sm::sub::body_pools(reg, e);
         const auto* combat = sm::sub::body_combat(reg, e);
         const auto* sprite = reg.try_get<ecs::Sprite>(e);
-        const auto* ai     = reg.try_get<ecs::SubworldAi>(e);
+        const auto* ai     = sm::sub::body_ai(reg, e);
 
         // (Лицо на теле НЕ хранится — кусок 1, вердикт «не хранить, как
         // вспышку»: оно потребляется рождением в рост спрайта; законность
         // роста судится ниже, по множеству четырёх значений телосложения.)
-        if (!reg.all_of<ecs::Position, ecs::VisualPos>(e)
+        // Визуальная позиция — безусловная колонка слота (кусок 3):
+        // «есть» = интерполятор заведён, скорость > 0 (фабрика пишет
+        // kBodyVisualCatchUp).
+        const auto* vis = sm::sub::body_visual(reg, e);
+        if (!reg.all_of<ecs::Position>(e)
+            || vis == nullptr || !(vis->speed > 0.0f)
             || !sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
             ++missingTag;
         if (!health) ++missingHealth;
@@ -213,10 +218,11 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
                     "a body-shaped macro entity can be embodied");
 
     CHECK((reg.all_of<ecs::Position,
-                      CharacterSheet, ecs::SubworldAi,
+                      CharacterSheet,
                       ecs::Sprite, ecs::SubworldTag>(body)
            && sm::sub::body_pools(reg, body) != nullptr
-           && sm::sub::body_combat(reg, body) != nullptr),
+           && sm::sub::body_combat(reg, body) != nullptr
+           && sm::sub::body_ai(reg, body) != nullptr),
           "a tracked body is as whole a body as a derived one");
     // Лицо на теле не хранится (кусок 1, вердикт «не хранить»); закон
     // «лицо — факт головы» свидетельствуется ПРОДУКТОМ: рост спрайта обязан

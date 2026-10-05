@@ -5196,7 +5196,7 @@ void draw_debug_panels(App& app) {
                      return n;
                  }()},
                 {"SubworldTag",     cnt(reg.view<sm::ecs::SubworldTag>())},
-                {"SubworldAi",      cnt(reg.view<sm::ecs::SubworldAi>())},
+                {"BodyAi(arena)",   maskCnt(sm::sub::kObjHasAi)},
 
                 {"Projectile",      cnt(reg.view<sm::ecs::Projectile>())},
                 {"Structure",       cnt(reg.view<sm::ecs::Structure>())},

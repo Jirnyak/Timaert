@@ -58,9 +58,13 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     // not by its own errands — excluded here so the two never write the same
     // intent in one step. The exclusion is the WHOLE integration: no new brain
     // kind, no branch inside Wander.
-    auto view = reg.view<ecs::Position, ecs::SubworldAi>(
-        entt::exclude<ecs::GoingHome>);
+    auto view = reg.view<ecs::Position>();
     for (auto e : view) {
+        // Мозг — колонка арены (кусок 3); тело без мозга (игрок, реквизит)
+        // здесь не живёт. «Идёт домой» — бит: его ведёт помпа дня, не мозг.
+        ecs::SubworldAi* aiCol = body_ai(reg, e);
+        if (aiCol == nullptr) continue;
+        if (object_flag(reg, e, kObjGoingHome)) continue;
         // A body wearing the scene flag (AvatarTag) is driven by player
         // input (its authoritative Position is written by the engine), not by
         // its own brain. Skip it entirely so Wander/Flee never fights the
@@ -71,20 +75,18 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         // сквад — по записи, его люди — по ростерному займу.
         if (unconsciousRec.slot != kMacroNoSlot) {
             if (macro_record_of(reg, e) == unconsciousRec) {
-                auto& stillA = view.get<ecs::SubworldAi>(e);
-                stillA.wantVx = stillA.wantVy = 0.0f;
+                aiCol->wantVx = aiCol->wantVy = 0.0f;
                 continue;
             }
             if (const auto* debt = reg.try_get<ecs::MacroDebt>(e);
                 debt && debt->stock == std::uint8_t(MacroStock::Roster)
                 && debt->subject == unconsciousSubject) {
-                auto& stillA = view.get<ecs::SubworldAi>(e);
-                stillA.wantVx = stillA.wantVy = 0.0f;
+                aiCol->wantVx = aiCol->wantVy = 0.0f;
                 continue;
             }
         }
         auto& p = view.get<ecs::Position>(e);
-        auto& a = view.get<ecs::SubworldAi>(e);
+        auto& a = *aiCol;
         // Deterministic per-decision seed: entity bits, the DECISION COUNTER
         // (see SubworldAi.seq — position alone froze standing minds), and a
         // coarse position bucket so a herd doesn't turn in lockstep.

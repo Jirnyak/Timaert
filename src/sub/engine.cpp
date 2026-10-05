@@ -24,7 +24,6 @@
 #include "sub/material.h"
 #include "ecs/npc_character.h"
 #include "sub/height.h"
-#include "ecs/systems.h"
 #include "macro/anketa.h"
 #include "macro/state.h"
 #include "macro/entry_context.h"
@@ -333,7 +332,7 @@ void maybe_flip_temp_hostile(entt::registry& reg,
     if (player_reputation(gs, factionId) >= kAllyRepThreshold) return;
 
     sub::object_flag_set(reg, target, sub::kObjTempHostile);
-    if (auto* ai = reg.try_get<ecs::SubworldAi>(target)) {
+    if (auto* ai = sub::body_ai(reg, target)) {
         if (ai->kind == ecs::SubworldAi::Wander) {
             ai->kind = ecs::SubworldAi::Combat;
         }
@@ -1633,13 +1632,18 @@ void SubworldEngine::tick_day_pump(float dt) {
     // The body keeps its own legs, its own mover and its own ground law; all
     // that is written here is the INTENT it already had a field for.
     {
-        auto walking = reg.view<ecs::Position, ecs::SubworldAi, ecs::GoingHome>();
+        auto walking = reg.view<ecs::Position>();
         std::array<entt::entity, 256> arrived{};
         int arrivedCount = 0;
         for (auto e : walking) {
+            // «Идёт домой» — бит + колонка (кусок 3); мозг — колонка.
+            const ecs::GoingHome* hCol = sub::going_home(reg, e);
+            if (hCol == nullptr) continue;
+            ecs::SubworldAi* aCol = sub::body_ai(reg, e);
+            if (aCol == nullptr) continue;
             const auto& p = walking.get<ecs::Position>(e);
-            auto& a = walking.get<ecs::SubworldAi>(e);
-            const auto& h = walking.get<ecs::GoingHome>(e);
+            auto& a = *aCol;
+            const auto& h = *hCol;
             const float dx = h.x - p.x;
             const float dy = h.y - p.y;
             const float d = std::sqrt(dx * dx + dy * dy);
@@ -1718,15 +1722,16 @@ void SubworldEngine::tick_day_pump(float dt) {
     std::vector<entt::entity> onStreet;
     std::vector<entt::entity> leaving;
     onStreet.reserve(512);
-    auto crowd = reg.view<ecs::Position, ecs::SubworldAi, ecs::MacroDebt>();
+    auto crowd = reg.view<ecs::Position, ecs::MacroDebt>();
     for (auto e : crowd) {
+        if (sub::body_ai(reg, e) == nullptr) continue;
         const auto& d = crowd.get<ecs::MacroDebt>(e);
         if (d.stock != std::uint8_t(MacroStock::Population)) continue;
         if (d.subject != ctx.landmark.id) continue;
         if (sub::is_avatar(reg, e)
             || sub::object_flag(reg, e, sub::kObjPlayerSoldier)) continue;
-        if (reg.all_of<ecs::GoingHome>(e)) leaving.push_back(e);
-        else                               onStreet.push_back(e);
+        if (sub::object_flag(reg, e, sub::kObjGoingHome)) leaving.push_back(e);
+        else                                              onStreet.push_back(e);
     }
 
     const int staying = int(onStreet.size());
@@ -1743,7 +1748,7 @@ void SubworldEngine::tick_day_pump(float dt) {
                 const float d2 = dx * dx + dy * dy;
                 if (d2 < bestD2) { bestD2 = d2; best = d; }
             }
-            reg.emplace<ecs::GoingHome>(e, ecs::GoingHome{best->x, best->y});
+            sub::set_going_home(reg, e, ecs::GoingHome{best->x, best->y});
         }
         return;
     }
@@ -1755,7 +1760,7 @@ void SubworldEngine::tick_day_pump(float dt) {
         const entt::entity e = leaving.back();
         leaving.pop_back();
         if (reg.valid(e)) {
-            reg.remove<ecs::GoingHome>(e);
+            sub::clear_going_home(reg, e);
             onStreet.push_back(e);   // развёрнутый стоит на улице — счёту ниже
         }
         --deficit;
@@ -2905,7 +2910,7 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
             p->x = fx;
             p->y = fy;
         }
-        if (auto* vp = reg.try_get<ecs::VisualPos>(e)) {
+        if (auto* vp = sub::body_visual(reg, e)) {
             vp->vx = fx;
             vp->vy = fy;
         }
@@ -3199,7 +3204,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             // the mover: ground under the feet, slope, separation, solids.
             d.flags |= B_Passive;
         }
-        else if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
+        else if (auto* ai = sub::body_ai(reg, e)) {
             d.vx = ai->vx;
             d.vy = ai->vy;
             d.intentVx = ai->wantVx;
@@ -3326,7 +3331,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             playerVx_ = crowd_->vx[si];
             playerVy_ = crowd_->vy[si];
         }
-        if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
+        if (auto* ai = sub::body_ai(reg, e)) {
             ai->vx = crowd_->vx[si];
             ai->vy = crowd_->vy[si];
         }
@@ -4887,19 +4892,21 @@ void SubworldEngine::tick(float dt) {
                     supportZ = std::max(supportZ, structIndex_.support_at(
                         p.x, p.y, body_radius(ecs_->reg, e), p.z));
                 }
-                auto* air = ecs_->reg.try_get<ecs::Airborne>(e);
-                if (air == nullptr) {
+                float* vz = sub::airborne_vz(ecs_->reg, e);
+                if (vz == nullptr) {
                     if (p.z <= supportZ + kGroundStickM) {
                         p.z = supportZ;   // grounded: rest on the support
                         continue;
                     }
-                    air = &ecs_->reg.emplace<ecs::Airborne>(e);
+                    vz = sub::set_airborne(ecs_->reg, e, 0.0f);
+                    if (vz == nullptr) continue;   // бесслотный: земли нет —
+                                                   // вертикали тоже (до л.4-5)
                 }
-                const float prevVz = air->vz;
-                // Carrying an ecs::Airborne IS the statement "not resting":
+                const float prevVz = *vz;
+                // Бит kObjAirborne IS the statement "not resting":
                 // the branch above already snapped every grounded body.
-                if (vertical_step(supportZ, dt, p.z, air->vz, false)) {
-                    ecs_->reg.remove<ecs::Airborne>(e);
+                if (vertical_step(supportZ, dt, p.z, *vz, false)) {
+                    sub::clear_airborne(ecs_->reg, e);
                     // Fall damage: the ONE shared path with the player
                     // (apply_fall_damage — honest kinetics, neutral death).
                     if (prevVz < 0.0f) {
@@ -4929,8 +4936,7 @@ void SubworldEngine::tick(float dt) {
                 // ось — полёт-посадка 2026-09-10) интегрируется здесь, тем
                 // же тактом, что клампится конверт: mover исполняет, мозг
                 // хочет — ровно как ноги по x/y.
-                if (const auto* ai =
-                        ecs_->reg.try_get<ecs::SubworldAi>(e)) {
+                if (const auto* ai = sub::body_ai(ecs_->reg, e)) {
                     p.z += ai->wantVz * dt;
                 }
                 float floorZ = mgr_.height_field().sample(p.x, p.y);
@@ -4965,7 +4971,7 @@ void SubworldEngine::tick(float dt) {
         // be THIS tick's (it used to run before the build and could only full-
         // scan the registry on every swing).
         tick_player_melee();
-        ecs::sys::tick_visual_interp(*ecs_, dt);
+        sub::tick_body_visual_interp(ecs_->reg, dt);
         sub::tick_body_recovery(sub::objects_of(ecs_->reg), /*steps=*/1u);
         tick_spell_projectiles(*ecs_, bus_, dt,
                                &SubworldEngine::spell_damage_log_callback,

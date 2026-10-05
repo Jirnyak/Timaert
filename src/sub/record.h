@@ -268,6 +268,100 @@ inline void clear_body_combat(entt::registry& reg, entt::entity e) {
             std::uint16_t(objs->flags[std::size_t(os->slot)] & ~kObjHasCombat);
     }
 }
+// ── ДВИЖЕНИЕ/ДУМКА — КОЛОНКИ АРЕНЫ (M-150 ломоть 2 кусок 3) ─────────────
+// Мозг: бит kObjHasAi + колонка (Wander = 0 законен — сентинела нет).
+// Визуальная позиция — безусловная колонка слота (нулевая скорость =
+// интерполятор стоит). «Домой»/«в воздухе» — ленивые состояния: прежнее
+// «наличие компоненты» стало битом, числа — колонкой.
+inline ecs::SubworldAi* body_ai(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    if ((objs->flags[std::size_t(os->slot)] & kObjHasAi) == 0u)
+        return nullptr;
+    return &objs->ai[std::size_t(os->slot)];
+}
+inline const ecs::SubworldAi* body_ai(const entt::registry& reg,
+                                      entt::entity e) {
+    return body_ai(const_cast<entt::registry&>(reg), e);
+}
+inline void set_body_ai(entt::registry& reg, entt::entity e,
+                        const ecs::SubworldAi& a) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->ai[std::size_t(os->slot)] = a;
+        objs->flags[std::size_t(os->slot)] |= kObjHasAi;
+    }
+}
+inline ecs::VisualPos* body_visual(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    return &objs->visual[std::size_t(os->slot)];
+}
+inline const ecs::VisualPos* body_visual(const entt::registry& reg,
+                                         entt::entity e) {
+    return body_visual(const_cast<entt::registry&>(reg), e);
+}
+inline void set_body_visual(entt::registry& reg, entt::entity e,
+                            ecs::VisualPos v) {
+    if (ecs::VisualPos* col = body_visual(reg, e)) *col = v;
+}
+inline ecs::GoingHome* going_home(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    if ((objs->flags[std::size_t(os->slot)] & kObjGoingHome) == 0u)
+        return nullptr;
+    return &objs->goHome[std::size_t(os->slot)];
+}
+inline const ecs::GoingHome* going_home(const entt::registry& reg,
+                                        entt::entity e) {
+    return going_home(const_cast<entt::registry&>(reg), e);
+}
+inline void set_going_home(entt::registry& reg, entt::entity e,
+                           ecs::GoingHome g) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->goHome[std::size_t(os->slot)] = g;
+        objs->flags[std::size_t(os->slot)] |= kObjGoingHome;
+    }
+}
+inline void clear_going_home(entt::registry& reg, entt::entity e) {
+    object_flag_clear(reg, e, kObjGoingHome);
+}
+inline float* airborne_vz(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    if ((objs->flags[std::size_t(os->slot)] & kObjAirborne) == 0u)
+        return nullptr;
+    return &objs->airborneVz[std::size_t(os->slot)];
+}
+inline float* set_airborne(entt::registry& reg, entt::entity e, float vz) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->airborneVz[std::size_t(os->slot)] = vz;
+        objs->flags[std::size_t(os->slot)] |= kObjAirborne;
+        return &objs->airborneVz[std::size_t(os->slot)];
+    }
+    return nullptr;
+}
+inline void clear_airborne(entt::registry& reg, entt::entity e) {
+    object_flag_clear(reg, e, kObjAirborne);
+}
+
 inline const ecs::MissileAttack* body_missile(const entt::registry& reg,
                                               entt::entity e) {
     if (e == entt::null || !reg.valid(e)) return nullptr;

@@ -67,7 +67,7 @@ inline float body_radius(const entt::registry& reg, entt::entity e) {
         // (damage-door Inc 4).
         return npc_body_radius(*row);
     }
-    if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
+    if (const auto* ai = body_ai(reg, e)) return ai->radius;
     if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;
     return kBodyRadiusFallback;
 }

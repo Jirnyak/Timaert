@@ -165,8 +165,7 @@ int main() {
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u,
                                 playerFaction);
-    auto view = world.reg.view<sm::ecs::MacroDebt,
-                               sm::ecs::SubworldAi>();
+    auto view = world.reg.view<sm::ecs::MacroDebt>();
     int projected = 0;
     for (auto e : view) {
         // Бары и лист — колонки арены (кусок 2): полнота тела спрашивается
@@ -180,7 +179,9 @@ int main() {
             return fail("a projected soldier lacks the player-side bit");
         }
         const auto* kind = sm::sub::body_kind(world.reg, e);
-        const auto& ai = view.get<sm::ecs::SubworldAi>(e);
+        const auto* aiCol = sm::sub::body_ai(world.reg, e);
+        if (aiCol == nullptr) { return fail("soldier body lost its brain"); }
+        const auto& ai = *aiCol;
         if (loan.detail != 42
             || loan.detailKind != std::uint16_t(sm::NPCType::Guard)
             || kind == nullptr
@@ -226,11 +227,12 @@ int main() {
         sm::Dice{5, 1}, std::int16_t(0), std::int16_t(100),
         std::uint8_t(0), std::uint8_t(sm::DamageType::Blunt),
         20.0f, 3.0f, 1.0f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
-    world.reg.emplace<sm::ecs::SubworldAi>(hostile, sm::ecs::SubworldAi::Combat,
-                                           0.0f, 4.0f, 4.0f, 8.0f, 1.0f);
+    sm::test::give_ai(world.reg, hostile,
+                      sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
+                                          0.0f, 4.0f, 4.0f, 8.0f, 1.0f});
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
     const auto& combatPos = world.reg.get<sm::ecs::Position>(hostile);
-    const auto& combatAi = world.reg.get<sm::ecs::SubworldAi>(hostile);
+    const auto& combatAi = *sm::sub::body_ai(world.reg, hostile);
     // Ownership contract, TIGHTENED. tick_npc_ai must not touch a combat body at
     // ALL — neither its position nor its velocity. The mass-battle pass
     // (sub/movement.h) owns both, and it READS the stored velocity as the body's
@@ -246,8 +248,9 @@ int main() {
 
     auto fallback = world.reg.create();
     world.reg.emplace<sm::ecs::Position>(fallback, 100.0f, 100.0f, 0.0f);
-    world.reg.emplace<sm::ecs::SubworldAi>(fallback, sm::ecs::SubworldAi::Combat,
-                                           0.0f, 0.0f, 0.0f, 8.0f, 1.0f);
+    sm::test::give_ai(world.reg, fallback,
+                      sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
+                                          0.0f, 0.0f, 0.0f, 8.0f, 1.0f});
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
     const auto& fallbackPos = world.reg.get<sm::ecs::Position>(fallback);
     // A body with combat AI but NO ecs::Combat has no damage, no speed and no
@@ -270,14 +273,14 @@ int main() {
     // forever, and deer petrified on their first idle roll.
     auto wanderer = world.reg.create();
     world.reg.emplace<sm::ecs::Position>(wanderer, 200.0f, 200.0f, 0.0f);
-    world.reg.emplace<sm::ecs::SubworldAi>(wanderer,
-                                           sm::ecs::SubworldAi::Wander,
-                                           0.0f, 0.0f, 0.0f, 8.0f, 0.6f);
+    sm::test::give_ai(world.reg, wanderer,
+                      sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
+                                          0.0f, 0.0f, 0.0f, 8.0f, 0.6f});
     bool decidedToWalk = false;
     bool decidedToStand = false;
     for (int i = 0; i < 400; ++i) {
         sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
-        const auto& wai = world.reg.get<sm::ecs::SubworldAi>(wanderer);
+        const auto& wai = *sm::sub::body_ai(world.reg, wanderer);
         if (wai.wantVx != 0.0f || wai.wantVy != 0.0f) decidedToWalk = true;
         else decidedToStand = true;
     }

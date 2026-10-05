@@ -212,20 +212,21 @@ std::vector<SpawnRecord> expected_cell_fauna(
 std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
     std::vector<SpawnRecord> out;
     auto view = world.reg.view<sm::ecs::SubworldTag,
-                               sm::ecs::Position,
-                               sm::ecs::SubworldAi, sm::ecs::Sprite>();
+                               sm::ecs::Position, sm::ecs::Sprite>();
     for (auto e : view) {
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;
         const auto* hpCol = sm::sub::body_pools(world.reg, e);
         const auto* combatCol = sm::sub::body_combat(world.reg, e);
-        if (hpCol == nullptr || combatCol == nullptr) continue;
+        const auto* aiColF = sm::sub::body_ai(world.reg, e);
+        if (hpCol == nullptr || combatCol == nullptr
+            || aiColF == nullptr) continue;
         const auto& kind = *kindCol;
         const auto& pos = view.get<sm::ecs::Position>(e);
         const auto& hp = *hpCol;
         const auto& combat = *combatCol;
         const std::int16_t level = sm::sub::body_level(world.reg, e);
-        const auto& ai = view.get<sm::ecs::SubworldAi>(e);
+        const auto& ai = *aiColF;
         const auto& sprite = view.get<sm::ecs::Sprite>(e);
 
         SpawnRecord r{};
@@ -396,13 +397,14 @@ bool run_city_population_projection_case(
     int guards = 0;
     int peasants = 0;
     int others = 0;
-    auto view = world.reg.view<sm::ecs::SubworldTag,
-                               sm::ecs::SubworldAi>();
+    auto view = world.reg.view<sm::ecs::SubworldTag>();
     for (auto e : view) {
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;
+        const auto* aiCol = sm::sub::body_ai(world.reg, e);
+        if (aiCol == nullptr) continue;
         const auto& kind = *kindCol;
-        const auto& ai = view.get<sm::ecs::SubworldAi>(e);
+        const auto& ai = *aiCol;
         ++count;
         if (kind.type == std::uint16_t(sm::NPCType::Guard)
             && ai.kind == sm::ecs::SubworldAi::Combat) {
@@ -805,9 +807,9 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // rows are Aggressive (bandits) and Patrol (guards); every other type
     // flees. So the projected bandit AND the projected guard hold ground while
     // the peasant runs — the same one-column rule as settlement citizens.
-    if (reg.get<SubworldAi>(pBandit).kind != SubworldAi::Combat) return false;
-    if (reg.get<SubworldAi>(pPeasant).kind != SubworldAi::Flee) return false;
-    if (reg.get<SubworldAi>(pWrap).kind != SubworldAi::Combat) return false;
+    if (sm::sub::body_ai(reg, pBandit)->kind != SubworldAi::Combat) return false;
+    if (sm::sub::body_ai(reg, pPeasant)->kind != SubworldAi::Flee) return false;
+    if (sm::sub::body_ai(reg, pWrap)->kind != SubworldAi::Combat) return false;
 
     // A wound travels as a FRACTION, not as a number of points: the two layers
     // never have to agree on how big a bar is, and the return trip needs no

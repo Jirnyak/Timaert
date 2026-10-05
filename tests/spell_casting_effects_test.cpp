@@ -4,7 +4,6 @@
 #include "core/time.h"
 #include "content/spells/casting.h"
 #include "content/spells/spell_book.h"
-#include "ecs/systems.h"
 #include "ecs/world.h"
 #include "sub/spell_effects.h"
 #include "sub/body.h"
@@ -1149,8 +1148,8 @@ int main() {
             // 5.0 (see the ladder note above), and caster_spawn_offset's +2.0
             // margin is exactly what keeps the muzzle clear of that shell.
             const auto sweepCaster = add_player(sweepWorld, 0.0f, 0.0f);
-            sweepWorld.reg.emplace<sm::ecs::SubworldAi>(
-                entt::entity(sweepCaster),
+            sm::test::give_ai(
+                sweepWorld.reg, entt::entity(sweepCaster),
                 sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
                                     0.0f, 0.0f, 0.0f, 0.0f, 1.5f});
             auto sweepTarget = sweepWorld.create();
@@ -1159,8 +1158,8 @@ int main() {
                 sweepTarget, range, 0.0f, 0.0f);
             sm::test::give_pools(sweepWorld.reg, sweepTarget, sm::ecs::Pools{100, 100});
             sweepWorld.reg.emplace<sm::ecs::SubworldTag>(sweepTarget);
-            sweepWorld.reg.emplace<sm::ecs::SubworldAi>(
-                sweepTarget,
+            sm::test::give_ai(
+                sweepWorld.reg, sweepTarget,
                 sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
                                     0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
             if (!sm::spellbook_cast(sweepWorld, sweepBook, sweepCombat,

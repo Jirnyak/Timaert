@@ -79,6 +79,16 @@ inline void give_missile(entt::registry& reg, entt::entity e,
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
     sm::sub::set_body_missile(reg, e, m);
 }
+inline void give_ai(entt::registry& reg, entt::entity e,
+                    const sm::ecs::SubworldAi& a) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_body_ai(reg, e, a);
+}
+inline void give_visual(entt::registry& reg, entt::entity e,
+                        sm::ecs::VisualPos v) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_body_visual(reg, e, v);
+}
 
 inline std::uint8_t fx_of(entt::registry& reg, entt::entity e) {
     const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);

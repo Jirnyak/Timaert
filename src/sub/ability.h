@@ -29,6 +29,9 @@
 #include "ecs/components.h"      // ecs::Combat — тот самый гейт
 #include "macro/anketa.h"    // recovery_steps — дверь восстановления S14
 #include "sub/objects.h"     // SubObjects — лист стал колонкой (кусок 2)
+#include "sub/record.h"      // body_visual — колонка визуальной позиции (кусок 3)
+
+#include <cmath>             // sqrt — интерполятор ниже
 
 namespace sm::sub {
 
@@ -56,6 +59,26 @@ inline void tick_body_recovery(SubObjects& objs, std::uint32_t steps) {
         c.recoverySteps = c.recoverySteps > steps ? c.recoverySteps - steps : 0u;
         c.armorSteps = c.armorSteps > steps
                            ? std::uint16_t(c.armorSteps - steps) : std::uint16_t{0};
+    }
+}
+
+// ИНТЕРПОЛЯТОР СЦЕНЫ (бывший ecs::sys::tick_visual_interp; визуальная
+// позиция — колонка арены с куска 3). Пока Position — компонента (умирает
+// ломтями 4-5), проход ходит по сущностям; нулевая скорость колонки =
+// интерполятор стоит, это значение, а не отсутствие.
+template <class Registry>
+inline void tick_body_visual_interp(Registry& reg, float dt) {
+    auto view = reg.template view<ecs::Position, ecs::SubworldTag>();
+    for (auto e : view) {
+        ecs::VisualPos* v = body_visual(reg, e);
+        if (v == nullptr || v->speed <= 0.0f) continue;
+        const auto& p = view.template get<ecs::Position>(e);
+        const float dx = p.x - v->vx, dy = p.y - v->vy;
+        const float d = std::sqrt(dx * dx + dy * dy);
+        if (d < 0.001f) continue;
+        const float step = v->speed * dt;
+        if (step >= d) { v->vx = p.x; v->vy = p.y; }
+        else { v->vx += dx / d * step; v->vy += dy / d * step; }
     }
 }
 
