@@ -2600,8 +2600,11 @@ const Structure* SubworldEngine::aimed_prop(float reach, float& outScore) const 
         // footprint `structure_surface_dist2` is the distance to a rectangle in
         // the XY plane and carries no Z at all, so «E enter the door» offered
         // itself from any altitude. A branch by ROD is what let one of the two
-        // candidates of this very resolver (`aimed_corpse`, dist3sq) be honest
-        // while the other was not.
+        // candidates of this resolver be honest while the other was not — the
+        // corpse measured `dist3sq`, the prop did not. (Второго кандидата с
+        // 2026-10-05 нет вовсе: труп-контейнер снят, и разъехаться двум мерам
+        // больше негде. Изотропия здесь остаётся законом тела, а не следствием
+        // сравнения с кем-то.)
         const float seat = mgr_.height_field().sample(s.x, s.y);
         float zLow, zHigh;
         structure_solid_span(s, seat, zLow, zHigh);
