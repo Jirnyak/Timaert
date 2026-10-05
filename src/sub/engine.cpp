@@ -4887,9 +4887,13 @@ void SubworldEngine::tick(float dt) {
         // never a support). AvatarTag is excluded — the player runs the same
         // integrator through sync_player_vertical below.
         {
-            auto gv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(
-                entt::exclude<ecs::Projectile>);
+            auto gv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>();
             for (auto e : gv) {
+                // Снаряд землёй не держится — он летит по своей дуге и умирает
+                // о мир (`tick_spell_projectiles`). Прежде его отсекал
+                // `entt::exclude<ecs::Projectile>`; роль теперь спрашивается
+                // колонкой арены, и исключающего множества реестр не держит.
+                if (sub::is_projectile(ecs_->reg, e)) continue;
                 if (sub::is_avatar(ecs_->reg, e)) continue;
                 if (sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
                 auto& p = gv.get<ecs::Position>(e);

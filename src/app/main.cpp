@@ -5100,7 +5100,7 @@ void draw_debug_panels(App& app) {
                         ImGui::TextUnformatted(
                             sm::valid_npc_kind(std::uint8_t(k->type))
                                 ? sm::npc_def(sm::NPCType(k->type)).label : "?");
-                    } else if (reg.any_of<sm::ecs::Projectile>(e)) {
+                    } else if (sm::sub::is_projectile(reg, e)) {
                         ImGui::TextUnformatted("(projectile)");
                     } else if (reg.any_of<sm::ecs::Structure>(e)) {
                         ImGui::TextUnformatted("(structure)");
@@ -5198,7 +5198,7 @@ void draw_debug_panels(App& app) {
                 {"SubworldTag",     cnt(reg.view<sm::ecs::SubworldTag>())},
                 {"BodyAi(arena)",   maskCnt(sm::sub::kObjHasAi)},
 
-                {"Projectile",      cnt(reg.view<sm::ecs::Projectile>())},
+                {"Projectile(col)", maskCnt(sm::sub::kObjProjectile)},
                 {"Structure",       cnt(reg.view<sm::ecs::Structure>())},
                 {"Sprite",          cnt(reg.view<sm::ecs::Sprite>())},
                 {"Dead(col)",       maskCnt(sm::sub::kObjDead)},

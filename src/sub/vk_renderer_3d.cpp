@@ -4013,8 +4013,7 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
         // player and projectiles (light that must track every frame); the
         // field owns every other emitter at any range. No boundary, no pop,
         // no double counting by construction.
-        if (is_avatar(ecs->reg, e)
-            || ecs->reg.any_of<ecs::Projectile>(e)) {
+        if (is_avatar(ecs->reg, e) || is_projectile(ecs->reg, e)) {
             continue;
         }
         const int cx0 = std::max(
@@ -4192,8 +4191,7 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
             // LIGHT FIELD's (rebuild_light_field applies the inverse of this
             // same test — by nature, not by distance, so nothing is counted
             // twice and nothing pops at a boundary).
-            if (!is_avatar(ecs->reg, e)
-                && !ecs->reg.any_of<ecs::Projectile>(e)) {
+            if (!is_avatar(ecs->reg, e) && !is_projectile(ecs->reg, e)) {
                 continue;
             }
             GpuLight g{};

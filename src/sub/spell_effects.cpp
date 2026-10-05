@@ -63,7 +63,7 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     // still catches it if it stands in the blast.
     if (body_pools(reg, e) == nullptr) return false;
     if (object_flag(reg, e, kObjDead)) return false;
-    if (reg.any_of<ecs::Projectile>(e)) return false;
+    if (is_projectile(reg, e)) return false;
     if (!reg.any_of<ecs::SubworldTag>(e) && !is_avatar(reg, e)) {
         return false;
     }

@@ -64,6 +64,25 @@ static void smoke_give_ai(entt::registry& reg, entt::entity e,
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
     sm::sub::set_body_ai(reg, e, a);
 }
+// СКОЛЬКО СНАРЯДОВ СТОИТ В СЦЕНЕ (ломоть 4): роль снаряда — бит слота, значит
+// счёт есть проход по колонке арены, а не по множеству реестра. Тринадцать
+// смоуков считали его одинаковым четырёхстрочным циклом по `view<Projectile>`;
+// четырнадцатый спрашивал ДРУГОЕ (снаряды со светом) и потому остался циклом
+// по сущностям — сплошная замена съела бы эту разницу молча (§5 п.5).
+static int smoke_projectile_count(entt::registry& reg) {
+    const sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+    if (objs == nullptr) return 0;
+    int n = 0;
+    for (int s = 0; s < sm::sub::kMaxBodyCrowd; ++s) {
+        const std::uint16_t f = objs->flags[std::size_t(s)];
+        if ((f & sm::sub::kObjAlive) != 0u
+            && (f & sm::sub::kObjProjectile) != 0u) {
+            ++n;
+        }
+    }
+    return n;
+}
+
 // Снаряд-фикстура смоука (ломоть 4): слот + колонка + роль-бит, как записала
 // бы дверь выстрела birth_projectile.
 static void smoke_give_projectile(entt::registry& reg, entt::entity e,
@@ -4374,18 +4393,10 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         std::uint8_t(160), std::uint8_t(112), std::uint8_t(208),
         std::uint8_t(255), 1.2f);
 
-    int beforeProjectiles = 0;
-    for (auto e : reg.view<sm::ecs::Projectile>()) {
-        (void)e;
-        ++beforeProjectiles;
-    }
+    const int beforeProjectiles = smoke_projectile_count(reg);
     const int beforeHp = player_pools(app).hp;
     advance_sim_seconds(app, 0.10f, false);
-    int afterProjectiles = 0;
-    for (auto e : reg.view<sm::ecs::Projectile>()) {
-        (void)e;
-        ++afterProjectiles;
-    }
+    const int afterProjectiles = smoke_projectile_count(reg);
     const int afterHp = player_pools(app).hp;
     const float flash = app.subworldHitFlashTimer;
     const int combatLogCount = app.subworld.combat_log_count();
@@ -4498,21 +4509,13 @@ bool run_subworld_self_fireball_smoke(App& app) {
     app.subworld.rotate_camera(0.0f, 0.9f);
 
     const int beforeHp = player_pools(app).hp;
-    int beforeProjectiles = 0;
-    for (auto e : reg.view<sm::ecs::Projectile>()) {
-        (void)e;
-        ++beforeProjectiles;
-    }
+    const int beforeProjectiles = smoke_projectile_count(reg);
 
     if (!cast_active_spell(app)) {
         smoke_fail(app, "subworld_self_fireball cast failed");
         return false;
     }
-    int spawnedProjectiles = 0;
-    for (auto e : reg.view<sm::ecs::Projectile>()) {
-        (void)e;
-        ++spawnedProjectiles;
-    }
+    const int spawnedProjectiles = smoke_projectile_count(reg);
     if (spawnedProjectiles <= beforeProjectiles) {
         smoke_fail(app, "subworld_self_fireball projectile not spawned");
         return false;
@@ -5016,11 +5019,7 @@ bool run_subworld_player_bow_smoke(App& app) {
         std::uint8_t(255), 1.2f);
 
     const float beforeHp = (*sm::sub::body_pools(reg, target)).hp;
-    int beforeProjectiles = 0;
-    for (auto e : reg.view<sm::ecs::Projectile>()) {
-        (void)e;
-        ++beforeProjectiles;
-    }
+    const int beforeProjectiles = smoke_projectile_count(reg);
 
     app.subworld.set_player_attack_held(true);
     RuntimeFrameStats frameStats = advance_sim_seconds(app, 0.05f, false);
@@ -5030,11 +5029,7 @@ bool run_subworld_player_bow_smoke(App& app) {
         return false;
     }
 
-    int loosedProjectiles = 0;
-    for (auto e : reg.view<sm::ecs::Projectile>()) {
-        (void)e;
-        ++loosedProjectiles;
-    }
+    const int loosedProjectiles = smoke_projectile_count(reg);
     const std::uint32_t gateSteps = smoke_player_recovery_steps(app);
     // The press routed as a SHOT because the weapon row said Missile — the
     // white-box guard that the delivery column reached the body's Combat.
@@ -9257,11 +9252,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 std::uint16_t(sm::NPCType::Bandit),
                 std::uint8_t(255), std::uint8_t(72), std::uint8_t(48),
                 std::uint8_t(255), 1.2f);
-            int beforeProjectiles = 0;
-            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
-                (void)e;
-                ++beforeProjectiles;
-            }
+            const int beforeProjectiles = smoke_projectile_count(app.ecs.reg);
             const int beforeCombatLog = app.subworld.combat_log_count();
             const int beforeSpellCastEvents =
                 count_tick_events(app.bus, sm::EventTag::SpellCast);
@@ -9283,11 +9274,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "SpellCast event was not emitted honestly");
                 break;
             }
-            int afterProjectiles = 0;
-            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
-                (void)e;
-                ++afterProjectiles;
-            }
+            const int afterProjectiles = smoke_projectile_count(app.ecs.reg);
             if (afterProjectiles <= beforeProjectiles) {
                 smoke_fail(app, "projectile was not spawned");
                 break;
@@ -9313,11 +9300,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // the load-bearing one — a bolt that is gone without a hit was reaped
             // in flight (it struck the ground or a wall), which is a different
             // story from one that arrived and did nothing.
-            int liveProjectiles = 0;
-            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
-                (void)e;
-                ++liveProjectiles;
-            }
+            const int liveProjectiles = smoke_projectile_count(app.ecs.reg);
             const auto* targetHp =
                 sm::sub::body_pools(app.ecs.reg, spellTarget);
             const auto& book = smoke_player_book(app);
@@ -9379,21 +9362,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // Refill mana so the cast cannot fail on cost in a fresh smoke run.
             player_pools(app).mp =
                 player_pools(app).maxMp;
-            int beforeProjectiles = 0;
-            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
-                (void)e;
-                ++beforeProjectiles;
-            }
+            const int beforeProjectiles = smoke_projectile_count(app.ecs.reg);
             if (!cast_active_spell(app)) {
                 smoke_fail(app, "cast_bolt_capture cast failed");
                 break;
             }
-            int afterProjectiles = 0;
+            const int afterProjectiles = smoke_projectile_count(app.ecs.reg);
+            // «Несёт ли болт свет» — вопрос к СВЕТИЛЬНИКАМ, а не к снарядам:
+            // идём по тем, у кого свет есть, и роль спрашиваем колонкой. Так
+            // счёт снарядов и вопрос о свете перестают делить один индекс.
             int litProjectiles = 0;
-            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
-                ++afterProjectiles;
-                if (app.ecs.reg.all_of<sm::ecs::LightEmitter>(e))
-                    ++litProjectiles;
+            for (auto e : app.ecs.reg.view<sm::ecs::LightEmitter>()) {
+                if (sm::sub::is_projectile(app.ecs.reg, e)) ++litProjectiles;
             }
             if (afterProjectiles <= beforeProjectiles) {
                 smoke_fail(app, "cast_bolt_capture projectile not spawned");
@@ -9418,11 +9398,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             int flownProjectiles = afterProjectiles;
             if (boltFlight > 0.0f) {
                 (void)advance_sim_seconds(app, boltFlight, false);
-                flownProjectiles = 0;
-                for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
-                    (void)e;
-                    ++flownProjectiles;
-                }
+                flownProjectiles = smoke_projectile_count(app.ecs.reg);
             }
             std::fprintf(stderr,
                          "[smoke] cast_bolt_capture projectiles=%d->%d lit=%d flight=%.3f alive=%d\n",
@@ -9708,21 +9684,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal("flight"));
             sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal("flight"));
-            int beforeProjectiles = 0;
-            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
-                (void)e;
-                ++beforeProjectiles;
-            }
+            const int beforeProjectiles = smoke_projectile_count(app.ecs.reg);
             const int beforeMp = player_pools(app).mp;
             if (!cast_active_spell(app)) {
                 smoke_fail(app, "flight toggle failed");
                 break;
             }
-            int afterProjectiles = 0;
-            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
-                (void)e;
-                ++afterProjectiles;
-            }
+            const int afterProjectiles = smoke_projectile_count(app.ecs.reg);
             if (afterProjectiles != beforeProjectiles) {
                 smoke_fail(app, "flight spawned projectile");
                 break;
