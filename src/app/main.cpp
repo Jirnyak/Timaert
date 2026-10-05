@@ -2039,7 +2039,7 @@ bool gameplay_panel_open(const App& app) {
 std::uint32_t player_gate_steps(const App& app) {
     const entt::entity e = sm::sub::avatar_entity(app.ecs.reg);
     if (e != entt::null)
-        if (const auto* c = app.ecs.reg.try_get<const sm::ecs::Combat>(e))
+        if (const auto* c = sm::sub::body_combat(app.ecs.reg, e))
             return c->recoverySteps;
     return 0u;
 }
@@ -2407,7 +2407,7 @@ bool cast_active_spell(App& app) {
     if (inMicro) {
         const entt::entity e = sm::sub::avatar_entity(app.ecs.reg);
         if (e != entt::null)
-            if (const auto* c = app.ecs.reg.try_get<sm::ecs::Combat>(e))
+            if (const auto* c = sm::sub::body_combat(app.ecs.reg, e))
                 gateSteps = c->recoverySteps;
     }
     const sm::CastCheck check = sm::spellbook_can_cast_ex(
@@ -3467,7 +3467,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                        /*steps=*/1u);
     // (No wind-up queue: a cast resolves at its own click — owner verdict
     // 2026-09-09 — and what it costs in time is the body's recovery gate,
-    // drained with every other fighter's by tick_combat_recovery.)
+    // drained with every other fighter's by tick_body_recovery.)
     // The bars follow the EFFECTIVE sheet (phase 4): a worn «+2 END» plate
     // fattens the SP bar, and taking it off (or a sustained spell lapsing —
     // spellbook_tick above has already snuffed this step's casualties) thins
@@ -5112,7 +5112,7 @@ void draw_debug_panels(App& app) {
                         ImGui::Text("%d", int(lv));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
-                    if (const auto* h = reg.try_get<sm::ecs::Pools>(e))
+                    if (const auto* h = sm::sub::body_pools(reg, e))
                         ImGui::Text("%.0f/%.0f", double(h->hp), double(h->maxHp));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
@@ -5169,8 +5169,19 @@ void draw_debug_panels(App& app) {
                 {"Position(scene)", cnt(reg.view<sm::ecs::Position>())},
                 {"MacroSquads",     std::size_t(
                      sm::store_of(app.ecs).aliveCount)},
-                {"Health(scene)",   cnt(reg.view<sm::ecs::Pools>())},
-                {"Combat",          cnt(reg.view<sm::ecs::Combat>())},
+                // Бары и лист — колонки арены (кусок 2): счёт по живым
+                // слотам, не по entt-популяции.
+                {"BodyPools(arena)", [&reg] {
+                     std::size_t n = 0;
+                     const auto& objs = sm::sub::objects_of(reg);
+                     for (int s = 0; s < sm::sub::kMaxBodyCrowd; ++s) {
+                         if ((objs.flags[std::size_t(s)]
+                              & sm::sub::kObjAlive) != 0u
+                             && objs.pools[std::size_t(s)].maxHp != 0) ++n;
+                     }
+                     return n;
+                 }()},
+                {"BodyCombat(arena)", maskCnt(sm::sub::kObjHasCombat)},
                 // Род тела — колонка арены (кусок 1): счёт по живым слотам
                 // с назначенным родом, не по entt-популяции.
                 {"BodyKind(arena)", [&reg] {

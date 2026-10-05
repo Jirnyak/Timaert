@@ -26,7 +26,7 @@
 #include "scene_objects_fixture.h"   // арена объектов: fx — колонки (M-150 1а)
 #include "sub/damage.h"
 #include "sub/record.h"    // pools_of — удар ложится на ЗАПИСЬ
-#include "ecs/systems.h"   // tick_combat_recovery — та же дверь слива
+#include "sub/ability.h"   // tick_body_recovery — та же дверь слива (кусок 2)
 #include "tables/npc.h"
 #include "ecs/components.h"
 #include "events/event_bus.h"
@@ -49,7 +49,7 @@ entt::entity make_body(entt::registry& reg, int hp, bool withKind = true) {
     const entt::entity e = reg.create();
     // Слот арены — как выдала бы дверь спавна (fx — колонки, M-150 1а).
     sm::test::give_slot(reg, e);
-    reg.emplace<sm::ecs::Pools>(e, hp, hp);
+    sm::test::give_pools(reg, e, sm::ecs::Pools{hp, hp});
     // Род — колонка арены (кусок 1); без give_kind слот честно несёт
     // kObjNoKind — прежнее «тело без компоненты».
     if (withKind) sm::test::give_kind(
@@ -131,7 +131,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // number is READ and not assumed.
     const entt::entity bare = make_body(reg, 100.0f);
     const entt::entity plated = reg.create();
-    reg.emplace<sm::ecs::Pools>(plated, 100, 100);
+    sm::test::give_pools(reg, plated, sm::ecs::Pools{100, 100});
     sm::test::give_kind(
         reg, plated,
         sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Guard), std::uint16_t{0}});
@@ -167,7 +167,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // early-game fist swing against mail vanished without a trace.
     const entt::entity turtle = reg.create();
     sm::test::give_slot(reg, turtle);
-    reg.emplace<sm::ecs::Pools>(turtle, 100, 100);
+    sm::test::give_pools(reg, turtle, sm::ecs::Pools{100, 100});
     sm::test::give_kind(
         reg, turtle,
         sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Guard), std::uint16_t{0}});
@@ -181,7 +181,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
           "a blow the plate's block eats never lands — 100% reduction is real");
     CHECK(tink.blocked && !tink.lethal,
           "and the result names it BLOCKED, distinct from a dead-target no-op");
-    CHECK((*reg.try_get<sm::ecs::Pools>(turtle)).hp == 100,
+    CHECK((*sm::sub::body_pools(reg, turtle)).hp == 100,
           "the flesh under the plate is untouched");
     CHECK((fx_of(reg, turtle) & sm::sub::kDmgFxPending) != 0,
           "a blocked blow still shows: DamageFx is stamped");
@@ -197,7 +197,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
 
     // ...and whether armour is in the way at all is the KIND's column.
     const entt::entity falling = reg.create();
-    reg.emplace<sm::ecs::Pools>(falling, 100, 100);
+    sm::test::give_pools(reg, falling, sm::ecs::Pools{100, 100});
     sm::test::give_kind(
         reg, falling,
         sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Guard), std::uint16_t{0}});
@@ -296,7 +296,7 @@ void test_armor_downtime() {
     entt::registry reg;
     const entt::entity body = make_body(reg, 10000.0f, /*withKind*/false);
     sm::test::make_avatar(reg, body);
-    reg.emplace<sm::ecs::Combat>(body, sm::ecs::Combat{});
+    sm::test::give_combat(reg, body, sm::ecs::Combat{});
 
     auto store = sm::make_macro_store();
     reg.ctx().insert_or_assign(store.get());
@@ -330,7 +330,7 @@ void test_armor_downtime() {
                     "предусловие своё: у куртки есть и колонка блока, и ВЕС — "
                     "без веса простою не из чего взяться");
 
-    auto& clock = reg.get<sm::ecs::Combat>(body);
+    auto& clock = *sm::sub::body_combat(reg, body);
     CHECK(clock.armorSteps == 0u, "броня рождается В СТРОЮ: простой есть факт "
                                   "удара, а не свойство рождения");
 
@@ -375,25 +375,25 @@ void test_armor_downtime() {
     sm::ecs::World w{};
     w.reg.ctx().insert_or_assign(store.get());
     const entt::entity drained = w.reg.create();
-    w.reg.emplace<sm::ecs::Pools>(drained, 100, 100);
+    sm::test::give_pools(w.reg, drained, sm::ecs::Pools{100, 100});
     sm::ecs::Combat c{};
     c.armorSteps = 64;
     c.recoverySteps = 64u;
-    w.reg.emplace<sm::ecs::Combat>(drained, c);
-    sm::ecs::sys::tick_combat_recovery(w, 64u);
-    const auto& after = w.reg.get<sm::ecs::Combat>(drained);
+    sm::test::give_combat(w.reg, drained, c);
+    sm::sub::tick_body_recovery(sm::test::arena_of(w.reg), 64u);
+    const auto& after = *sm::sub::body_combat(w.reg, drained);
     CHECK(after.armorSteps == 0u && after.recoverySteps == 0u,
-          "один tick_combat_recovery сливает ОБА субъекта закона");
+          "один tick_body_recovery сливает ОБА субъекта закона");
 
     // 6. У ТЕЛА БЕЗ НАДЕТОЙ БРОНИ ПРОСТОЯ НЕТ ВОВСЕ — вросшую шкуру строки
     //    существа не сбивают (владелец: «0 для строки существа»). Это не
     //    ветка в коде, а предельный случай: вес надетого нулевой, значит и
     //    база нулевая.
     const entt::entity hide = make_body(reg, 1000.0f, /*withKind*/true);
-    reg.emplace<sm::ecs::Combat>(hide, sm::ecs::Combat{});
+    sm::test::give_combat(reg, hide, sm::ecs::Combat{});
     apply_damage(reg, hide, DamageSource{}, 200.0f, DamageKind::Melee,
                  sm::DamageType::Blunt, nullptr);
-    CHECK(reg.get<sm::ecs::Combat>(hide).armorSteps == 0u,
+    CHECK(sm::sub::body_combat(reg, hide)->armorSteps == 0u,
           "шкура строки существа простоя не знает: надетого веса ноль");
 }
 
@@ -479,7 +479,7 @@ void test_survivor_protocol() {
           "a body in its own skin keeps the whole blow: armour 0 is the "
           "limiting case of the law, applied == asked to the bit");
     CHECK(!hit.lethal, "a survivable blow is not lethal");
-    CHECK((*reg.try_get<sm::ecs::Pools>(e)).hp == 20.0f,
+    CHECK((*sm::sub::body_pools(reg, e)).hp == 20.0f,
           "hp drops by exactly the applied amount");
     CHECK(!sm::test::flag_of(reg, e, sm::sub::kObjDead),
           "a survivor is not Dead");
@@ -536,12 +536,12 @@ void test_no_second_blow() {
     const entt::entity e = make_body(reg, 10.0f);
     apply_damage(reg, e, DamageSource{1u, false}, 50.0f, DamageKind::Melee, sm::DamageType::Blunt,
                  &bus);
-    const float hpAfterDeath = (*reg.try_get<sm::ecs::Pools>(e)).hp;
+    const float hpAfterDeath = (*sm::sub::body_pools(reg, e)).hp;
     const DamageResult again = apply_damage(reg, e, DamageSource{2u, false},
                                             50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
     CHECK(again.applied == 0.0f, "a corpse takes no damage");
     CHECK(!again.lethal, "a no-op blow is not lethal");
-    CHECK((*reg.try_get<sm::ecs::Pools>(e)).hp == hpAfterDeath,
+    CHECK((*sm::sub::body_pools(reg, e)).hp == hpAfterDeath,
           "a corpse's hp does not move");
     CHECK(death_events(bus) == 1, "a corpse dies once — one event, ever");
     CHECK(last_hit_of(reg, e) == 1u,
@@ -559,7 +559,7 @@ void test_execution_helper() {
         reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);
     CHECK(hit.lethal, "an execution is lethal by construction");
     CHECK(hit.applied == 37, "an execution strikes exactly remaining hp");
-    CHECK((*reg.try_get<sm::ecs::Pools>(e)).hp == 0.0f,
+    CHECK((*sm::sub::body_pools(reg, e)).hp == 0.0f,
           "an execution lands the body at exactly zero");
     const DamageResult again = apply_lethal_damage(
         reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);
@@ -622,7 +622,7 @@ void test_the_blow_lands_on_the_record() {
     CHECK((*sm::body_state<sm::ecs::Pools>(*store, record)).hp == 70,
           "a projected body's wound is its RECORD's wound, in the tick it "
           "lands — there is nothing left to fold up");
-    CHECK((*reg.try_get<sm::ecs::Pools>(body)).hp == 100,
+    CHECK((*sm::sub::body_pools(reg, body)).hp == 100,
           "...and the body's own block is untouched: it is the scene's copy, "
           "not a second memory the world must reconcile");
 
@@ -640,7 +640,7 @@ void test_the_blow_lands_on_the_record() {
     const entt::entity orphan = make_body(reg, 100);
     apply_damage(reg, orphan, DamageSource{}, 30, DamageKind::Script,
                  sm::DamageType::Blunt, &bus);
-    CHECK((*reg.try_get<sm::ecs::Pools>(orphan)).hp == 70,
+    CHECK((*sm::sub::body_pools(reg, orphan)).hp == 70,
           "a body nothing above remembers spends its own bar — the detector "
           "above reads a real difference");
 

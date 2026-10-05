@@ -61,7 +61,7 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     // caster is kept off its OWN muzzle purely by spawn geometry
     // (caster_spawn_offset / the NPC muzzle offset), and its own AoE blast
     // still catches it if it stands in the blast.
-    if (!reg.any_of<ecs::Pools>(e)) return false;
+    if (body_pools(reg, e) == nullptr) return false;
     if (object_flag(reg, e, kObjDead)) return false;
     if (reg.any_of<ecs::Projectile>(e)) return false;
     if (!reg.any_of<ecs::SubworldTag>(e) && !is_avatar(reg, e)) {
@@ -117,8 +117,9 @@ void for_each_spell_candidate(ecs::World& w,
             return;
         }
     }
-    auto targets = w.reg.view<ecs::Position, ecs::Pools>();
+    auto targets = w.reg.view<ecs::Position>();
     for (auto e : targets) {
+        if (body_pools(w.reg, e) == nullptr) continue;
         if (object_flag(w.reg, e, kObjDead)) continue;
         fn(e, targets.get<ecs::Position>(e));
     }

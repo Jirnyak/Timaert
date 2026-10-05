@@ -17,6 +17,7 @@
 //                 DIFFER: it is the negative control that proves the parity
 //                 assertions can catch a broad phase that loses bodies.
 #include "check.h"
+#include "scene_objects_fixture.h"  // арена: бары — колонки (кусок 2)
 
 #include "sub/spell_effects.h"
 #include "sub/movement.h"
@@ -40,7 +41,7 @@ constexpr int kBodyHp = 100;
 entt::entity add_body(entt::registry& reg, float x, float y, float z) {
     const auto e = reg.create();
     reg.emplace<Position>(e, x, y, z);
-    reg.emplace<Pools>(e, kBodyHp, kBodyHp);
+    sm::test::give_pools(reg, e, Pools{kBodyHp, kBodyHp});
     reg.emplace<SubworldTag>(e);
     return e;
 }
@@ -91,8 +92,11 @@ void build_scene(entt::registry& reg, int scenario) {
 
 std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
     std::vector<entt::entity> v;
-    auto view = reg.view<Position, Pools>();
-    for (auto e : view) v.push_back(e);
+    auto view = reg.view<Position, SubworldTag>();
+    for (auto e : view) {
+        if (sm::sub::body_pools(reg, e) == nullptr) continue;
+        v.push_back(e);
+    }
     // EnTT iterates newest-first; reverse for stable creation order.
     std::vector<entt::entity> r(v.rbegin(), v.rend());
     return r;
@@ -111,8 +115,9 @@ struct GridBroadPhase {
     void build(entt::registry& reg) {
         units->clear();
         ents.clear();
-        auto view = reg.view<Position, Pools>();
+        auto view = reg.view<Position, SubworldTag>();
         for (auto e : view) {
+            if (sm::sub::body_pools(reg, e) == nullptr) continue;
             const auto& p = view.get<Position>(e);
             sm::sub::BodyDesc d{};
             d.x = p.x; d.y = p.y; d.z = p.z;
@@ -268,7 +273,8 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
 
     std::vector<float> hp;
     hp.reserve(bodies.size());
-    for (auto e : bodies) hp.push_back(reg.get<Pools>(e).hp);
+    for (auto e : bodies)
+        hp.push_back(float(sm::sub::body_pools(reg, e)->hp));
     return hp;
 }
 

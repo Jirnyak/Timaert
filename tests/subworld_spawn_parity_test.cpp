@@ -212,16 +212,18 @@ std::vector<SpawnRecord> expected_cell_fauna(
 std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
     std::vector<SpawnRecord> out;
     auto view = world.reg.view<sm::ecs::SubworldTag,
-                               sm::ecs::Position, sm::ecs::Pools,
-                               sm::ecs::Combat,
+                               sm::ecs::Position,
                                sm::ecs::SubworldAi, sm::ecs::Sprite>();
     for (auto e : view) {
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;
+        const auto* hpCol = sm::sub::body_pools(world.reg, e);
+        const auto* combatCol = sm::sub::body_combat(world.reg, e);
+        if (hpCol == nullptr || combatCol == nullptr) continue;
         const auto& kind = *kindCol;
         const auto& pos = view.get<sm::ecs::Position>(e);
-        const auto& hp = view.get<sm::ecs::Pools>(e);
-        const auto& combat = view.get<sm::ecs::Combat>(e);
+        const auto& hp = *hpCol;
+        const auto& combat = *combatCol;
         const std::int16_t level = sm::sub::body_level(world.reg, e);
         const auto& ai = view.get<sm::ecs::SubworldAi>(e);
         const auto& sprite = view.get<sm::ecs::Sprite>(e);
@@ -691,21 +693,22 @@ bool run_beast_member_projection_case(
 // where it was met.
 bool sheet_lifts_every_body(sm::ecs::World& world) {
     int checked = 0;
-    auto v = world.reg.view<sm::ecs::SubworldTag,
-                            sm::ecs::Pools>();
+    auto v = world.reg.view<sm::ecs::SubworldTag>();
     for (auto e : v) {
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;
         const std::uint16_t t = kindCol->type;
         if (!sm::valid_npc_kind(t)) return false;
         const sm::NpcTypeDef& row = sm::npc_def(sm::NPCType(t));
-        const auto& h = v.get<sm::ecs::Pools>(e);
+        const auto* hCol = sm::sub::body_pools(world.reg, e);
+        if (hCol == nullptr) continue;
+        const auto& h = *hCol;
         if (!world.reg.all_of<sm::CharacterSheet>(e)) return false;
         if (!(h.maxHp >= float(row.combat.hp))) return false;
         // The recovery door's half of the same property (S14, 2026-09-07):
         // the sheet may only QUICKEN the row's authored tempo — Spd and the
         // generic skill divide, nothing multiplies — and never to zero.
-        if (const auto* c = world.reg.try_get<sm::ecs::Combat>(e)) {
+        if (const auto* c = sm::sub::body_combat(world.reg, e)) {
             if (!(c->cooldown > 0.0f
                   && c->cooldown <= row.combat.cooldown + 1.0e-4f)) {
                 return false;
@@ -812,7 +815,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // of whatever his sheet gives him down here — that is the invariant, and it
     // survives any rebalance of either side.
     {
-        const auto& h = (*reg.try_get<sm::ecs::Pools>(pBandit));
+        const auto& h = (*sm::sub::body_pools(reg, pBandit));
         if (!(h.maxHp > 0 && h.hp >= 1 && h.hp <= h.maxHp)) return false;
         const float frac = float(h.hp) / float(h.maxHp);
         if (!(frac > 0.4f && frac < 0.6f)) return false;
@@ -820,13 +823,13 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // The control: an untouched macro entity arrives untouched. Without this,
     // "wounded arrives wounded" would also pass if every body arrived at half.
     {
-        const auto& h = (*reg.try_get<sm::ecs::Pools>(pWrap));
+        const auto& h = (*sm::sub::body_pools(reg, pWrap));
         if (!(h.maxHp > 0.0f && h.hp == h.maxHp)) return false;
     }
     // Combat SYNTHESISED from the fresh sheet (capability): the row's dice
     // must be real and the sheet's add positive — a spent sheet always adds.
-    if (!(reg.get<sm::ecs::Combat>(pBandit).dice.n > 0)) return false;
-    if (!(reg.get<sm::ecs::Combat>(pBandit).flatAdd > 0)) return false;
+    if (!(sm::sub::body_combat(reg, pBandit)->dice.n > 0)) return false;
+    if (!(sm::sub::body_combat(reg, pBandit)->flatAdd > 0)) return false;
 
     // Identity + faction copied verbatim from the macro NPC. Лицо на теле не
     // хранится (кусок 1) — «лицо — факт головы» свидетельствуется ПРОДУКТОМ:
@@ -1206,7 +1209,7 @@ int main() {
               "the bars a projected body spends are LITERALLY the record's "
               "block — one memory, so there is nothing to fold back up");
         CHECK(sm::sub::pools_of(reg, citizen)
-                  == &(*reg.try_get<sm::ecs::Pools>(citizen)),
+                  == &(*sm::sub::body_pools(reg, citizen)),
               "a derived body spends its own bars");
 
         // NEGATIVE CONTROL, asserted: strip the backlink and the very same
@@ -1216,7 +1219,7 @@ int main() {
         reg.remove<sm::ecs::MacroOrigin>(body);
         CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
                   && sm::sub::pools_of(reg, body)
-                         == &(*reg.try_get<sm::ecs::Pools>(body)),
+                         == &(*sm::sub::body_pools(reg, body)),
               "without the backlink the door answers SELF — the detector "
               "above is reading a real difference");
 
@@ -1229,7 +1232,7 @@ int main() {
         sm::store_death(stq, hq);
         CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
                   && sm::sub::pools_of(reg, body)
-                         == &(*reg.try_get<sm::ecs::Pools>(body)),
+                         == &(*sm::sub::body_pools(reg, body)),
               "a stale backlink degrades to the body itself, not to null");
     }
 
@@ -1273,7 +1276,7 @@ int main() {
 
         // His clock, set to something recognisable BEFORE the rebuild: a
         // re-derive must not hand a busy arm a free swing.
-        reg.get<sm::ecs::Combat>(body).recoverySteps = 7u;
+        sm::sub::body_combat(reg, body)->recoverySteps = 7u;
 
         // Now something stands on him. An AFFIX carries the bonus rows
         // directly, so the claim does not rest on which catalog row happens to
@@ -1302,7 +1305,7 @@ int main() {
         CHECK(!sm::sub::refresh_body_strike(reg, body),
               "...and closes again immediately — it re-cached what it saw, so "
               "one change costs one rebuild, not one per tick");
-        CHECK(reg.get<sm::ecs::Combat>(body).recoverySteps == 7u,
+        CHECK(sm::sub::body_combat(reg, body)->recoverySteps == 7u,
               "the rebuild kept his clock: how busy a hand is, is not one of "
               "the numbers a sheet decides");
     }

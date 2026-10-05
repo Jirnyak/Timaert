@@ -358,7 +358,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
         pools.maxHp = int(maxHp);
         pools.mp = pools.maxMp = body_max_mp(sheet, def.combat);
         pools.sp = pools.maxSp = body_max_sp(sheet, def.combat);
-        reg.emplace<ecs::Pools>(e, pools);
+        sub::set_body_pools(reg, e, pools);
     }
     // Its pace: the world's march (macro/movement_cost.h) times what this row
     // is against a walking man. ONE scale for every body, the player's
@@ -371,7 +371,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
                   "sub/map_data.h kCellSize must equal the macro side's "
                   "kSubworldTilesPerMacroCell — the parity anchor rides on it");
     const float bodySpeed = march_speed(pc.speedMarchMult);
-    reg.emplace<ecs::Combat>(e, combat_from_sheet(sheet, def));
+    sub::set_body_combat(reg, e, combat_from_sheet(sheet, def));
     maybe_emplace_missile_attack(reg, e, pc);
     maybe_emplace_flying(reg, e, pc);
     sub::set_body_level(reg, e, std::int16_t(body.level));
@@ -769,7 +769,7 @@ bool refresh_body_strike(entt::registry& reg, entt::entity body) {
     // (hand_strike_fields), from the same effective sheet.
     const auto* kind = sub::body_kind(reg, body);
     if (!kind || !valid_npc_kind(kind->type)) return false;
-    auto* combat = reg.try_get<ecs::Combat>(body);
+    auto* combat = sub::body_combat(reg, body);
     if (!combat) return false;
 
     // THE GATE. Everything below it is the expensive half (CANON's 0.00196 ms);
@@ -799,11 +799,12 @@ void maybe_emplace_missile_attack(entt::registry& reg,
                                   entt::entity e,
                                   const CombatTemplate& combat) {
     if (combat.attackKind != CombatTemplate::Missile) return;
-    reg.emplace<ecs::MissileAttack>(
-        e,
+    // Коэрция нуля в 200 — она же ГАРАНТ кодировки «нет»: у настоящего
+    // стрелка speed > 0 всегда, нулевая колонка значит «снарядных нет».
+    sub::set_body_missile(reg, e, ecs::MissileAttack{
         combat.missileSpeed > 0.0f ? combat.missileSpeed : 200.0f,
         combat.missileBlast,
-        combat.missileColorRGBA);
+        combat.missileColorRGBA});
 }
 
 void maybe_emplace_flying(entt::registry& reg, entt::entity e,

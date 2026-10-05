@@ -13,9 +13,7 @@ namespace sm::ecs::sys {
 // Smoothly lerp VisualPos toward Position.
 void tick_visual_interp(World& w, float dt);
 
-// Drain every body's ONE recovery gate (Combat::recoverySteps) by `steps`
-// simulation steps (core/time.h). Not a float dt of real seconds: a fight is
-// measured in the simulation's own integer quantum.
-void tick_combat_recovery(World& w, std::uint32_t steps);
+// (tick_combat_recovery переехал в sub/ability.h — tick_body_recovery:
+// боевой лист — колонка арены SubObjects (M-150 кусок 2), слой sub выше.)
 
 } // namespace sm::ecs::sys

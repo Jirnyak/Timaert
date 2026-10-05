@@ -21,7 +21,7 @@ static entt::entity make_enemy(entt::registry& reg, float x, float y,
                                float z = 0.0f) {
     entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, x, y, z);
-    reg.emplace<ecs::Pools>(e, 10, 10);
+    sm::test::give_pools(reg, e, ecs::Pools{10, 10});
     sm::test::give_kind(reg, e,
         ecs::NPCKind{std::uint16_t(4), std::uint16_t(0)}); // any kind
     reg.emplace<ecs::SubworldTag>(e);
@@ -104,7 +104,7 @@ int main() {
               "Dead entities excluded even when nearer");
         // Zero-HP but not yet tagged Dead is also excluded.
         entt::entity downed = make_enemy(reg, 102, 100);
-        (*reg.try_get<ecs::Pools>(downed)).hp = 0.0f;
+        (*sm::sub::body_pools(reg, downed)).hp = 0.0f;
         CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "zero-HP entities excluded even when nearer");
     }

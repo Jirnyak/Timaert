@@ -12,14 +12,15 @@ namespace {
 // The shared melee-candidate filter: live, current-scene, not the player's
 // own side. One spelling for both the grid arm and the full-scan arm.
 inline bool melee_candidate(entt::registry& reg, entt::entity e) {
-    if (!reg.all_of<ecs::Position, ecs::Pools, ecs::SubworldTag>(e)
+    if (!reg.all_of<ecs::Position, ecs::SubworldTag>(e)
         || body_kind(reg, e) == nullptr
         || object_flag(reg, e, kObjDead)) {
         return false;
     }
     if (is_avatar(reg, e)
         || object_flag(reg, e, kObjPlayerSoldier)) return false;
-    return (*reg.try_get<ecs::Pools>(e)).hp > 0;
+    const auto* hp = body_pools(reg, e);
+    return hp != nullptr && hp->hp > 0;
 }
 
 } // namespace
@@ -77,7 +78,7 @@ entt::entity melee_pick_target(entt::registry& reg,
             return hostileBest != entt::null ? hostileBest : anyBest;
         }
     }
-    auto view = reg.view<ecs::Position, ecs::Pools, ecs::SubworldTag>();
+    auto view = reg.view<ecs::Position, ecs::SubworldTag>();
     for (auto e : view) consider(e);
     return hostileBest != entt::null ? hostileBest : anyBest;
 }
@@ -99,7 +100,7 @@ entt::entity aim_target(entt::registry& reg,
     // кусок 1) also excludes the player entity, whose slot carries no kind;
     // the explicit player-side skip below additionally covers projected
     // player soldiers.
-    auto view = reg.view<ecs::Position, ecs::Pools, ecs::SubworldTag>();
+    auto view = reg.view<ecs::Position, ecs::SubworldTag>();
     for (auto e : view) {
         if (e == shooter) continue;
         if (body_kind(reg, e) == nullptr) continue;
@@ -107,8 +108,8 @@ entt::entity aim_target(entt::registry& reg,
         if (is_avatar(reg, e)
             || object_flag(reg, e, kObjPlayerSoldier)) continue;
 
-        const auto& hp = view.get<ecs::Pools>(e);
-        if (hp.hp <= 0) continue;
+        const auto* hpCol = body_pools(reg, e);
+        if (hpCol == nullptr || hpCol->hp <= 0) continue;
 
         const auto& pos = view.get<ecs::Position>(e);
         const float dx = pos.x - px;

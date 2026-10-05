@@ -80,8 +80,8 @@ void test_every_squad_body_is_a_whole_body() {
             != std::uint8_t(MacroStock::Roster)) continue;
         ++bodies;
         const auto* kind   = sm::sub::body_kind(reg, e);
-        const auto* health = reg.try_get<ecs::Pools>(e);
-        const auto* combat = reg.try_get<ecs::Combat>(e);
+        const auto* health = sm::sub::body_pools(reg, e);
+        const auto* combat = sm::sub::body_combat(reg, e);
         const auto* sprite = reg.try_get<ecs::Sprite>(e);
         const auto* ai     = reg.try_get<ecs::SubworldAi>(e);
 
@@ -212,9 +212,11 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     CHECK_OR_RETURN(body != entt::null && reg.valid(body),
                     "a body-shaped macro entity can be embodied");
 
-    CHECK((reg.all_of<ecs::Position, ecs::Pools, ecs::Combat,
+    CHECK((reg.all_of<ecs::Position,
                       CharacterSheet, ecs::SubworldAi,
-                      ecs::Sprite, ecs::SubworldTag>(body)),
+                      ecs::Sprite, ecs::SubworldTag>(body)
+           && sm::sub::body_pools(reg, body) != nullptr
+           && sm::sub::body_combat(reg, body) != nullptr),
           "a tracked body is as whole a body as a derived one");
     // Лицо на теле не хранится (кусок 1, вердикт «не хранить»); закон
     // «лицо — факт головы» свидетельствуется ПРОДУКТОМ: рост спрайта обязан
@@ -237,7 +239,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     // The wound crosses as a fraction, not as points: half above, half below,
     // whatever either layer thinks a health bar is worth.
     {
-        const auto& h = (*reg.try_get<ecs::Pools>(body));
+        const auto& h = (*sm::sub::body_pools(reg, body));
         const float frac =
             h.maxHp > 0 ? float(h.hp) / float(h.maxHp) : -1.0f;
         CHECK(frac > 0.4f && frac < 0.6f,
@@ -277,7 +279,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         sub::spawn_tracked_body(reg, whole, 60.0f, 61.0f, 778u, true);
     CHECK_OR_RETURN(wholeBody != entt::null, "the control body was embodied");
     {
-        const auto& h = (*reg.try_get<ecs::Pools>(wholeBody));
+        const auto& h = (*sm::sub::body_pools(reg, wholeBody));
         CHECK(h.maxHp > 0.0f && h.hp == h.maxHp,
               "an untouched entity arrives untouched");
     }
@@ -356,6 +358,10 @@ void test_a_leaders_aura_reaches_his_men() {
     std::vector<std::uint8_t> ground(
         std::size_t(sub::kFullSize) * sub::kFullSize, sub::TILE_GRASS);
     ecs::World led{}, alone{};
+    // Арена сцены — предусловие рождения тел (§8 п.11): без неё дверь
+    // спавна рожает тела без слотов, и колонки рода/баров некуда класть.
+    sm::test::arena_of(led.reg);
+    sm::test::arena_of(alone.reg);
     sub::spawn_player_squad(led, mixed_squad(), ground, 512.0f, 512.0f, 123u,
                             f, &gift);
     sub::spawn_player_squad(alone, mixed_squad(), ground, 512.0f, 512.0f, 123u,
@@ -371,8 +377,8 @@ void test_a_leaders_aura_reaches_his_men() {
                 || loanAlone.detail != loanLed.detail) {
                 continue;
             }
-            const float withAura = (*led.reg.try_get<ecs::Pools>(eLed)).maxHp;
-            const float without  = (*alone.reg.try_get<ecs::Pools>(eAlone)).maxHp;
+            const float withAura = (*sm::sub::body_pools(led.reg, eLed)).maxHp;
+            const float without  = (*sm::sub::body_pools(alone.reg, eAlone)).maxHp;
             const float delta = withAura - without;
             CHECK(delta >= 9.0f && delta <= 61.0f,
                   "a led soldier is tougher by his leader's vit point - "
@@ -437,8 +443,9 @@ void test_a_squad_on_the_map_projects_its_roster() {
         saw88 = saw88 || debt->detail == 88;
         const auto* kind = sm::sub::body_kind(reg, e);
         if (kind && kind->factionIdx != 5) ++wrongFaction;
-        if (reg.all_of<CharacterSheet, ecs::Sprite,
-                       ecs::Pools, ecs::Combat>(e)) {
+        if (reg.all_of<CharacterSheet, ecs::Sprite>(e)
+            && sm::sub::body_pools(reg, e) != nullptr
+            && sm::sub::body_combat(reg, e) != nullptr) {
             ++wholeMembers;
         }
     }

@@ -165,11 +165,14 @@ int main() {
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u,
                                 playerFaction);
-    auto view = world.reg.view<sm::ecs::MacroDebt, sm::ecs::Combat,
-                               sm::ecs::Pools,
+    auto view = world.reg.view<sm::ecs::MacroDebt,
                                sm::ecs::SubworldAi>();
     int projected = 0;
     for (auto e : view) {
+        // Бары и лист — колонки арены (кусок 2): полнота тела спрашивается
+        // дверьми, не составом entt-компонент.
+        if (sm::sub::body_pools(world.reg, e) == nullptr
+            || sm::sub::body_combat(world.reg, e) == nullptr) continue;
         const auto& loan = view.get<sm::ecs::MacroDebt>(e);
         if (loan.stock != std::uint8_t(sm::MacroStock::Roster)) continue;
         ++projected;
@@ -219,10 +222,10 @@ int main() {
 
     auto hostile = world.reg.create();
     world.reg.emplace<sm::ecs::Position>(hostile, 100.0f, 100.0f, 0.0f);
-    world.reg.emplace<sm::ecs::Combat>(
-        hostile, sm::Dice{5, 1}, std::int16_t(0), std::int16_t(100),
+    sm::test::give_combat(world.reg, hostile, sm::ecs::Combat{
+        sm::Dice{5, 1}, std::int16_t(0), std::int16_t(100),
         std::uint8_t(0), std::uint8_t(sm::DamageType::Blunt),
-        20.0f, 3.0f, 1.0f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0});
+        20.0f, 3.0f, 1.0f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
     world.reg.emplace<sm::ecs::SubworldAi>(hostile, sm::ecs::SubworldAi::Combat,
                                            0.0f, 4.0f, 4.0f, 8.0f, 1.0f);
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);

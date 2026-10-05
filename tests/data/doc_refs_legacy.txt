@@ -292,7 +292,6 @@ SKELETON.md	ecs/components.h:441-442
 SKELETON.md	ecs/components.h:457
 SKELETON.md	ecs/components.h:55
 SKELETON.md	ecs/systems.cpp:18
-SKELETON.md	ecs/systems.cpp:35-42
 SKELETON.md	ecs/systems.cpp:39
 SKELETON.md	effect_applicator.cpp:53-60
 SKELETON.md	effect_applicator.h:12

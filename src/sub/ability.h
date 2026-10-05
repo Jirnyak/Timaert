@@ -28,6 +28,7 @@
 
 #include "ecs/components.h"      // ecs::Combat — тот самый гейт
 #include "macro/anketa.h"    // recovery_steps — дверь восстановления S14
+#include "sub/objects.h"     // SubObjects — лист стал колонкой (кусок 2)
 
 namespace sm::sub {
 
@@ -36,6 +37,26 @@ namespace sm::sub {
 // предельный случай закона, а не исключение из него.
 inline bool body_is_free(const ecs::Combat* gate) {
     return gate == nullptr || gate->recoverySteps == 0u;
+}
+
+// СЛИВ ОБОИХ ЧАСОВ ЗАКОНА ВОССТАНОВЛЕНИЯ — одним проходом по КОЛОНКЕ
+// (бывший ecs::sys::tick_combat_recovery; лист — колонка арены с куска 2,
+// первый чистый DOD-проход субмира: ни сущностей, ни вьюх). Шаги приходят
+// от МИРА (целый квант core/time.h, не float-секунды): в застое пошагового
+// режима ни рука, ни броня не встают — встают ровно на тиках, которые
+// игрок купил действием. Второй субъект (armorSteps) сливается Тем же
+// шагом — отдельный проход был бы вторым законом восстановления (M-194).
+// Мёртвые тела включены нарочно, как и прежде: слот жив, часы дотекают.
+inline void tick_body_recovery(SubObjects& objs, std::uint32_t steps) {
+    if (steps == 0u) return;
+    for (int s = 0; s < kMaxBodyCrowd; ++s) {
+        const std::uint16_t f = objs.flags[std::size_t(s)];
+        if ((f & kObjAlive) == 0u || (f & kObjHasCombat) == 0u) continue;
+        ecs::Combat& c = objs.combat[std::size_t(s)];
+        c.recoverySteps = c.recoverySteps > steps ? c.recoverySteps - steps : 0u;
+        c.armorSteps = c.armorSteps > steps
+                           ? std::uint16_t(c.armorSteps - steps) : std::uint16_t{0};
+    }
 }
 
 // ЗАНЯТЬ РУКУ на длину, которую называет СТРОКА действия.

@@ -30,7 +30,7 @@ using sm::sub::melee_pick_target;
 entt::entity body(entt::registry& reg, NPCType type, float x, float y) {
     const entt::entity e = reg.create();
     reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
-    reg.emplace<sm::ecs::Pools>(e, 30, 30);
+    sm::test::give_pools(reg, e, sm::ecs::Pools{30, 30});
     sm::test::give_kind(reg, e,
         sm::ecs::NPCKind{std::uint16_t(type), std::uint16_t{0}});
     reg.emplace<sm::ecs::SubworldTag>(e);

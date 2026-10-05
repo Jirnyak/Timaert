@@ -64,6 +64,21 @@ inline void give_level(entt::registry& reg, entt::entity e, std::int16_t v) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
     sm::sub::set_body_level(reg, e, v);
 }
+// Бары/лист/снарядные — колонки арены (кусок 2), слот по надобности.
+inline void give_pools(entt::registry& reg, entt::entity e, sm::ecs::Pools p) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_body_pools(reg, e, p);
+}
+inline void give_combat(entt::registry& reg, entt::entity e,
+                        const sm::ecs::Combat& c) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_body_combat(reg, e, c);
+}
+inline void give_missile(entt::registry& reg, entt::entity e,
+                         sm::ecs::MissileAttack m) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_body_missile(reg, e, m);
+}
 
 inline std::uint8_t fx_of(entt::registry& reg, entt::entity e) {
     const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);

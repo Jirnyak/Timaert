@@ -1027,7 +1027,7 @@ namespace sm::ui
                                 if (const auto pe =
                                         sm::sub::avatar_entity(world.reg);
                                     world.reg.valid(pe)) {
-                                    gate = world.reg.try_get<ecs::Combat>(pe);
+                                    gate = sm::sub::body_combat(world.reg, pe);
                                 }
                                 if (!sm::sub::body_is_free(gate)) {
                                     lastUseMessage = "Still recovering.";

@@ -65,7 +65,7 @@ DefenseSum defense_of(entt::registry& reg, entt::entity target,
 // на время рековери (урон проходит)» (владелец, 2026-09-30). Действий простой
 // не запирает — этим он и отличается от гейта занятости тела.
 bool armor_is_up(entt::registry& reg, entt::entity e) {
-    const auto* c = reg.try_get<ecs::Combat>(e);
+    const auto* c = body_combat(reg, e);
     return c == nullptr || c->armorSteps == 0u;
 }
 
@@ -76,7 +76,7 @@ bool armor_is_up(entt::registry& reg, entt::entity e) {
 // удар во время простоя его НЕ ПРОДЛЕВАЕТ (владелец: «НЕ перезаводить НО
 // СТАВИТЬ ЕСЛИ БРОНЯ В СТРОЮ»), иначе рой крыс держал бы рыцаря голым вечно.
 void charge_armor_recovery(entt::registry& reg, entt::entity e) {
-    auto* c = reg.try_get<ecs::Combat>(e);
+    auto* c = body_combat(reg, e);
     if (c == nullptr) return;
     const auto* cs = state_of<CharacterSheet>(reg, e);
     const auto* bag = state_of<ecs::NpcInventory>(reg, e);

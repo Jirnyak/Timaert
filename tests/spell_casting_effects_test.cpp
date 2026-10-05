@@ -8,6 +8,7 @@
 #include "ecs/world.h"
 #include "sub/spell_effects.h"
 #include "sub/body.h"
+#include "sub/ability.h"   // tick_body_recovery — один слив (кусок 2)
 #include "macro/store.h"
 
 #include <cmath>
@@ -74,7 +75,7 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
     // Слот арены объектов: атрибуция «кем ранен» — колонка lastHitBy (1а).
     sm::test::give_slot(w.reg, e);
     w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
-    w.reg.emplace<sm::ecs::Pools>(e, hp, hp);
+    sm::test::give_pools(w.reg, e, sm::ecs::Pools{hp, hp});
     w.reg.emplace<sm::ecs::SubworldTag>(e);
     w.reg.emplace<sm::ecs::Sprite>(e, std::uint16_t(0),
         std::uint8_t(255), std::uint8_t(255), std::uint8_t(255),
@@ -95,14 +96,14 @@ std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
     auto e = w.create();
     sm::test::give_slot(w.reg, e);
     w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
-    w.reg.emplace<sm::ecs::Pools>(e, 1000, 1000);
+    sm::test::give_pools(w.reg, e, sm::ecs::Pools{1000, 1000});
     w.reg.emplace<sm::ecs::SubworldTag>(e);
     sm::test::make_avatar(w.reg, e);
     return std::uint32_t(entt::to_integral(e));
 }
 
 float hp_of(sm::ecs::World& w, entt::entity e) {
-    const auto* hp = w.reg.try_get<sm::ecs::Pools>(e);
+    const auto* hp = sm::sub::body_pools(w.reg, e);
     return hp ? hp->hp : -1.0f;
 }
 
@@ -460,7 +461,7 @@ int main() {
     sm::spellbook_learn(book, sm::spell_ordinal("fireball"));
     const auto casterBody = world.create();
     world.reg.emplace<sm::ecs::Position>(casterBody, 100.0f, 100.0f, 0.0f);
-    world.reg.emplace<sm::ecs::Combat>(casterBody);
+    sm::test::give_combat(world.reg, casterBody, sm::ecs::Combat{});
     const auto casterId = std::uint32_t(entt::to_integral(casterBody));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
                             sm::spell_ordinal("fireball"), casterId, 100.0f, 100.0f, 0.0f,
@@ -468,7 +469,7 @@ int main() {
         return fail("fireball cast rejected");
     }
     const std::uint32_t fireGate =
-        world.reg.get<sm::ecs::Combat>(casterBody).recoverySteps;
+        sm::sub::body_combat(world.reg, casterBody)->recoverySteps;
     const auto wantGate = std::uint32_t(sm::recovery_steps(
         fireDef->recovery, attributes, skills, sm::SkillId::Spellcraft));
     if (fireGate == 0u || fireGate != wantGate) {
@@ -489,10 +490,11 @@ int main() {
         || projectile_count(world) != busyProjectiles) {
         return fail("busy body cast through the gate");
     }
-    // The ONE drain — the same system that frees a swordarm frees the caster.
-    sm::ecs::sys::tick_combat_recovery(world, fireGate);
-    if (world.reg.get<sm::ecs::Combat>(casterBody).recoverySteps != 0u) {
-        return fail("tick_combat_recovery did not drain the gate");
+    // The ONE drain — the same system that frees a swordarm frees the caster
+    // (проход по арене с куска 2).
+    sm::sub::tick_body_recovery(sm::test::arena_of(world.reg), fireGate);
+    if (sm::sub::body_combat(world.reg, casterBody)->recoverySteps != 0u) {
+        return fail("tick_body_recovery did not drain the gate");
     }
 
     sm::ecs::Projectile fireball{};
@@ -1027,7 +1029,7 @@ int main() {
         auto selfPlayer = selfWorld.create();
         sm::test::give_slot(selfWorld.reg, selfPlayer);
         selfWorld.reg.emplace<sm::ecs::Position>(selfPlayer, 0.0f, 0.0f, 0.0f);
-        selfWorld.reg.emplace<sm::ecs::Pools>(selfPlayer, 100, 100);
+        sm::test::give_pools(selfWorld.reg, selfPlayer, sm::ecs::Pools{100, 100});
         selfWorld.reg.emplace<sm::ecs::SubworldTag>(selfPlayer);
         sm::test::make_avatar(selfWorld.reg, selfPlayer);
         auto selfBlast = selfWorld.create();
@@ -1059,7 +1061,7 @@ int main() {
         auto shieldPlayer = shieldWorld.create();
         sm::test::give_slot(shieldWorld.reg, shieldPlayer);
         shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f, 0.0f);
-        shieldWorld.reg.emplace<sm::ecs::Pools>(shieldPlayer, 100, 100);
+        sm::test::give_pools(shieldWorld.reg, shieldPlayer, sm::ecs::Pools{100, 100});
         shieldWorld.reg.emplace<sm::ecs::SubworldTag>(shieldPlayer);
         sm::test::make_avatar(shieldWorld.reg, shieldPlayer);
         auto shieldBolt = shieldWorld.create();
@@ -1088,7 +1090,7 @@ int main() {
         auto npcCaster = npcWorld.create();
         sm::test::give_slot(npcWorld.reg, npcCaster);
         npcWorld.reg.emplace<sm::ecs::Position>(npcCaster, 0.0f, 0.0f, 0.0f);
-        npcWorld.reg.emplace<sm::ecs::Pools>(npcCaster, 100, 100);
+        sm::test::give_pools(npcWorld.reg, npcCaster, sm::ecs::Pools{100, 100});
         npcWorld.reg.emplace<sm::ecs::SubworldTag>(npcCaster);
         sm::test::give_kind(npcWorld.reg, npcCaster, sm::ecs::NPCKind{2, 2});
         auto npcBlast = npcWorld.create();
@@ -1155,7 +1157,7 @@ int main() {
             sm::test::give_slot(sweepWorld.reg, sweepTarget);
             sweepWorld.reg.emplace<sm::ecs::Position>(
                 sweepTarget, range, 0.0f, 0.0f);
-            sweepWorld.reg.emplace<sm::ecs::Pools>(sweepTarget, 100, 100);
+            sm::test::give_pools(sweepWorld.reg, sweepTarget, sm::ecs::Pools{100, 100});
             sweepWorld.reg.emplace<sm::ecs::SubworldTag>(sweepTarget);
             sweepWorld.reg.emplace<sm::ecs::SubworldAi>(
                 sweepTarget,

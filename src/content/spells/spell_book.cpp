@@ -157,13 +157,13 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
                     GameState* gs) {
     // THE body gate (owner verdict 2026-09-09, «одно рекавери на всё»): the
     // caster's own ecs::Combat, found by the same id that will own the bolt —
-    // the field a sword swing charges and tick_combat_recovery drains. A
+    // the field a sword swing charges and tick_body_recovery drains. A
     // harness world with no such body (or the world map) carries no gate.
     ecs::Combat* gate = nullptr;
     entt::entity caster = entt::null;
     if (const auto body = static_cast<entt::entity>(pid); w.reg.valid(body)) {
         caster = body;
-        gate = w.reg.try_get<ecs::Combat>(body);
+        gate = sub::body_combat(w.reg, body);
     }
     if (!spellbook_can_cast_ex(sb, combat, spellOrd, inMicro,
                                gate ? gate->recoverySteps : 0u).ok)
@@ -245,7 +245,7 @@ void spellbook_tick(SpellBook& sb, ecs::Pools& combat, std::uint32_t steps) {
     if (steps == 0u) return;
     const float dt = float(steps) * kStepSeconds;   // for the per-second rates
     // No cooldown loop: recovery lives on the BODY's one gate, drained by
-    // tick_combat_recovery with every other fighter's (verdict 2026-09-09).
+    // tick_body_recovery with every other fighter's (verdict 2026-09-09).
 
     // Sustained drains: flat flags over the registry — a set flag is valid
     // by construction (toggle guards the ordinal), so the row's own

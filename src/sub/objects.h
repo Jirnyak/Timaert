@@ -47,6 +47,12 @@ inline constexpr std::uint16_t kObjDead          = 1u << 1; // бывший ecs:
 inline constexpr std::uint16_t kObjPlayerSoldier = 1u << 2; // PlayerSoldierTag
 inline constexpr std::uint16_t kObjTempHostile   = 1u << 3; // TempHostileToPlayer
 inline constexpr std::uint16_t kObjFlying        = 1u << 4; // Flying
+// «Несёт ли боевой лист» (кусок 2): у листа естественного нуля НЕТ — пустой
+// лист есть ЗАКОННОЕ значение (ЗАКОН АНКЕТЫ п.4: сквад без личности), и
+// сентинел в любом его поле был бы числом внутри области значений. Бит
+// ставит ТОЛЬКО дверь set_body_combat (record.h) — рассинхрон бита и
+// колонки невыразим второй дверью записи.
+inline constexpr std::uint16_t kObjHasCombat     = 1u << 5;
 
 // Событие «в этом тике по телу попали» (колонка damageFx) — биты:
 inline constexpr std::uint8_t kDmgFxPending = 1u << 0;
@@ -93,6 +99,18 @@ struct SubObjects {
     // колонкой вместе с читателем (вариация спрайтов).
     std::array<ecs::NPCKind, std::size_t(kMaxBodyCrowd)> kind{};
     std::array<std::int16_t, std::size_t(kMaxBodyCrowd)> level{};
+    // ── Боевая пара (кусок 2 ломтя 2): бывшие ecs::Pools / ecs::Combat /
+    // ecs::MissileAttack. «Баров нет» = maxHp 0 — коллизия невыразима:
+    // даже мёртвое тело хранит максимум, тела с барами и maxHp 0 не бывает
+    // по построению. Лист — колонка + бит kObjHasCombat (см. маску выше).
+    // Снарядные параметры: «нет» = speed 0 — дверь рождения коэрсит
+    // авторский ноль в 200 (maybe_emplace_missile_attack), ноль недостижим
+    // у настоящего стрелка. У зеркальных тел pools — КОПИЯ записи store
+    // (зеркальный закон: mirror_bodies_from_record переливает каждый тик;
+    // рана ложится на ЗАПИСЬ дверью pools_of, store-первой).
+    std::array<ecs::Pools, std::size_t(kMaxBodyCrowd)> pools{};
+    std::array<ecs::Combat, std::size_t(kMaxBodyCrowd)> combat{};
+    std::array<ecs::MissileAttack, std::size_t(kMaxBodyCrowd)> missile{};
 
     int count = 0;        // живых слотов (для приборов, не для обхода)
     int cursor = 0;       // бегунок выдачи — слоты переиспользуются по кругу
@@ -124,6 +142,9 @@ struct SubObjects {
             damageFx[std::size_t(s)] = 0u;
             kind[std::size_t(s)] = ecs::NPCKind{kObjNoKind, 0u};
             level[std::size_t(s)] = 0;
+            pools[std::size_t(s)] = ecs::Pools{};
+            combat[std::size_t(s)] = ecs::Combat{};
+            missile[std::size_t(s)] = ecs::MissileAttack{};
             ++count;
             return s;
         }
@@ -139,9 +160,11 @@ struct SubObjects {
         --count;
     }
 };
-// 16384 × (4+2+4+1+4+2) Б колонок + служебные: цена названа и закреплена.
-static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 17 + 24,
-              "массив объектов сцены: 17 Б/слот (кусок 1: +kind 4, +level 2) "
-              "+ служебные");
+// 16384 × (4+2+4+1+4+2+36+28+12) Б колонок + служебные: цена названа и
+// закреплена. 93 Б/слот × 16384 ≈ 1.45 МиБ — профиль один у пустой и
+// полной сцены (ЗАКОН СТАБИЛЬНОСТИ).
+static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 93 + 24,
+              "массив объектов сцены: 93 Б/слот (кусок 2: +pools 36, "
+              "+combat 28, +missile 12) + служебные");
 
 } // namespace sm::sub

@@ -283,7 +283,7 @@ std::uint32_t string_hash(const char* s) {
 // could not carry a name. Faces are derived in ONE place now: sub/spawn.cpp.)
 
 bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
-    const auto* h = reg.try_get<ecs::Pools>(e);
+    const auto* h = sub::body_pools(reg, e);
     return h && h->hp > 0.0f && reg.all_of<ecs::SubworldTag>(e)
         && !sub::object_flag(reg, e, sub::kObjDead);
 }
@@ -384,7 +384,7 @@ void spawn_npc_missile(entt::registry& reg,
                        float targetY,
                        float targetZ,
                        entt::entity target = entt::null) {
-    const auto* missile = reg.try_get<ecs::MissileAttack>(attacker);
+    const auto* missile = sub::body_missile(reg, attacker);
     const float speed = missile && missile->speed > 0.0f
         ? missile->speed
         : 200.0f;
@@ -510,12 +510,13 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     // 5c), so exclude the avatar explicitly — the player is the map centre /
     // its own heading triangle, never a blip. Projected player soldiers keep
     // their kind (and are not the avatar) and read as fully allied (+1).
-    auto view = reg.view<ecs::Position, ecs::Pools, ecs::SubworldTag>();
+    auto view = reg.view<ecs::Position, ecs::SubworldTag>();
     for (auto e : view) {
         if (sub::is_avatar(reg, e)) continue;
         if (sub::body_kind(reg, e) == nullptr) continue;
         if (sub::object_flag(reg, e, sub::kObjDead)) continue;
-        if (view.get<ecs::Pools>(e).hp <= 0) continue;
+        const auto* hp = sub::body_pools(reg, e);
+        if (hp == nullptr || hp->hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
         minimapBlips_.push_back(
             MinimapBlip{pos.x, pos.y, player_stance(reg, e, gs_)});
@@ -543,12 +544,13 @@ float SubworldEngine::crosshair_stance() const {
     entt::entity best = entt::null;
     float bestT = kMaxRange;
 
-    auto view = reg.view<ecs::Position, ecs::Pools, ecs::SubworldTag>();
+    auto view = reg.view<ecs::Position, ecs::SubworldTag>();
     for (auto e : view) {
         if (sub::is_avatar(reg, e)) continue;
         if (sub::body_kind(reg, e) == nullptr) continue;
         if (sub::object_flag(reg, e, sub::kObjDead)) continue;
-        if (view.get<ecs::Pools>(e).hp <= 0) continue;
+        const auto* hp = sub::body_pools(reg, e);
+        if (hp == nullptr || hp->hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
         const float r = body_radius(reg, e);
         // Ray-sphere: project entity onto the aim segment, check distance.
@@ -993,7 +995,7 @@ void SubworldEngine::spawn_player_entity() {
         }
         pools.maxHp = std::max(1, pools.maxHp);
         pools.hp = std::clamp(pools.hp, 0, pools.maxHp);
-        reg.emplace<ecs::Pools>(e, pools);
+        sub::set_body_pools(reg, e, pools);
     }
     // NO BodyRadius override. That component is the "sized deliberately"
     // escape hatch (sub/body.h), and using it here is what let a spell's
@@ -1042,8 +1044,8 @@ void SubworldEngine::spawn_player_entity() {
         armReach = npc_def(
             NPCType(pst.kind[flagRec.slot].type)).combat.attackRange;
     }
-    reg.emplace<ecs::Combat>(
-        e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
+    sub::set_body_combat(
+        reg, e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
                        std::uint8_t(hs.dmgType), playerPace,
                        hs.delivery == Delivery::Missile && hs.range > 0.0f
                            ? hs.range : armReach,
@@ -1163,7 +1165,7 @@ void SubworldEngine::sync_player_entity_position() {
             // in this branch is the hero husk's OUTGOING identity, which is
             // genuinely his: a husk has no NPC row to derive a swing from, so
             // it reads his sheet and what his hands hold.)
-            if (auto* c = reg.try_get<ecs::Combat>(e)) {
+            if (auto* c = sub::body_combat(reg, e)) {
                 // Per-tick refresh reads the same EFFECTIVE sheet the spawn
                 // did (phase 4) — equipping mid-fight changes the next swing.
                 // The record is the husk's own backlink (mirror law): the
@@ -1257,9 +1259,13 @@ void SubworldEngine::mirror_bodies_from_record() {
     // считает свой бюджет в 0.00041 мс на тело (шапка ниже) — lookup на
     // каждое тело был бы налогом того же порядка, что вся работа.
     const MacroStore& st = store_of(reg);
-    for (auto [body, origin, mirror] :
-         reg.view<ecs::MacroOrigin, ecs::Pools, ecs::SubworldTag>().each()) {
-        (void)body;
+    for (auto [body, origin] :
+         reg.view<ecs::MacroOrigin, ecs::SubworldTag>().each()) {
+        // Зеркало — колонка арены (кусок 2); тело без баров (слот без
+        // pools) зеркалом не живёт.
+        ecs::Pools* mirrorCol = sub::body_pools(reg, body);
+        if (mirrorCol == nullptr) continue;
+        ecs::Pools& mirror = *mirrorCol;
         const auto* record = body_state<ecs::Pools>(st, origin.macro);
         if (!record || record->maxHp <= 0) continue;
         mirror = *record;
@@ -1290,16 +1296,18 @@ void SubworldEngine::report_player_damage() {
     if (!squadPools) return;
     const entt::entity avatarE = sub::avatar_entity(reg);
     for (const entt::entity e : {avatarE}) {
-        if (e == entt::null || !reg.all_of<ecs::Pools>(e)) continue;
+        if (e == entt::null) continue;
+        const ecs::Pools* mirrorCol = sub::body_pools(reg, e);
+        if (mirrorCol == nullptr) continue;
         // The record this body spends — his own squad for the hero husk, the
         // lord himself for a body he possesses. One question, one door.
         ecs::Pools* record = pools_of(reg, e);
         if (!record) continue;
         const int maxHp = std::max(1, record->maxHp);
-        // «Before» is the MIRROR: nothing writes it during a tick, so it still
-        // holds what the bar was when this tick began. No remembered field, and
-        // no second memory to keep honest.
-        const ecs::Pools& mirror = reg.get<ecs::Pools>(e);
+        // «Before» is the MIRROR (колонка арены): nothing writes it during a
+        // tick, so it still holds what the bar was when this tick began. No
+        // remembered field, and no second memory to keep honest.
+        const ecs::Pools& mirror = *mirrorCol;
         if (godMode_) {
             // Invulnerable: put the record back where the tick found it and
             // keep the body out of the death path entirely.
@@ -2033,7 +2041,7 @@ float SubworldEngine::player_arm_reach() const {
     if (ecs_) {
         if (const entt::entity e = sub::avatar_entity(ecs_->reg);
             e != entt::null) {
-            if (const auto* c = ecs_->reg.try_get<ecs::Combat>(e)) {
+            if (const auto* c = sub::body_combat(ecs_->reg, e)) {
                 return c->attackRange;
             }
         }
@@ -2050,7 +2058,7 @@ int SubworldEngine::player_display_hp() const {
         // the revert target while possessed: it is simply not the record being
         // read.)
         if (const entt::entity e = sub::avatar_entity(ecs_->reg);
-            e != entt::null && ecs_->reg.all_of<ecs::Pools>(e)) {
+            e != entt::null && sub::body_pools(ecs_->reg, e) != nullptr) {
             if (const ecs::Pools* p = pools_of(ecs_->reg, e)) return p->hp;
         }
         if (const ecs::Pools* squadPools = gs_
@@ -2084,8 +2092,9 @@ void SubworldEngine::tick_player_melee() {
     ecs::Combat* pc = nullptr;
     entt::entity playerEnt = entt::null;
     for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-        if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
-        pc = &reg.get<ecs::Combat>(pe);
+        if (pe == entt::null) continue;
+        pc = sub::body_combat(reg, pe);
+        if (pc == nullptr) continue;
         playerEnt = pe;
         break;
     }
@@ -2093,7 +2102,7 @@ void SubworldEngine::tick_player_melee() {
     // The swing gate is his Combat's OWN recoverySteps — THE one gate every
     // action shares (a cast charges the same field via spellbook_cast), so a
     // hand mid-recovery from anything swings nothing. Drained by the one
-    // tick_combat_recovery like every fighter's.
+    // tick_body_recovery like every fighter's.
     if (pc->recoverySteps > 0u) return;
     const ecs::Combat strikeStats = *pc;  // scalars up front (see above)
     // EVERY swing swings (owner 2026-09-06, the «не чувствуется сражение»
@@ -2227,11 +2236,13 @@ void SubworldEngine::charge_act(float baseSeconds) {
     if (!ecs_ || baseSeconds <= 0.0f) return;
     auto& reg = ecs_->reg;
     for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-        if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
+        if (pe == entt::null) continue;
+        ecs::Combat* gate = sub::body_combat(reg, pe);
+        if (gate == nullptr) continue;
         const CharacterSheet* cs = sub::state_of<CharacterSheet>(reg, pe);
         static const Attributes kBareA{};
         static const Skills kBareS{};
-        sub::charge_ability(&reg.get<ecs::Combat>(pe), baseSeconds,
+        sub::charge_ability(gate, baseSeconds,
                             cs ? cs->attributes : kBareA,
                             cs ? cs->skills : kBareS,
                             SkillId::Armsmaster);
@@ -2251,8 +2262,8 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     {
         const ecs::Combat* gate = nullptr;
         for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-            if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
-            gate = &reg.get<ecs::Combat>(pe);
+            if (pe == entt::null) continue;
+            gate = sub::body_combat(reg, pe);
             break;
         }
         if (!sub::body_is_free(gate)) {
@@ -2265,8 +2276,10 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     float reach = 1.5f;
     entt::entity playerEnt = entt::null;
     for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-        if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
-        reach = reg.get<ecs::Combat>(pe).attackRange + 1.5f;
+        if (pe == entt::null) continue;
+        const ecs::Combat* c = sub::body_combat(reg, pe);
+        if (c == nullptr) continue;
+        reach = c->attackRange + 1.5f;
         playerEnt = pe;
         break;
     }
@@ -2689,8 +2702,8 @@ bool SubworldEngine::interact() {
     {
         const ecs::Combat* gate = nullptr;
         for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-            if (pe == entt::null || !reg.all_of<ecs::Combat>(pe)) continue;
-            gate = &reg.get<ecs::Combat>(pe);
+            if (pe == entt::null) continue;
+            gate = sub::body_combat(reg, pe);
             break;
         }
         if (!sub::body_is_free(gate)) {
@@ -3118,14 +3131,15 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // is exactly the staleness the spell broad phase must pad its queries by.
     float maxDrive = 0.0f;
 
-    auto actorView = reg.view<ecs::Position, ecs::Pools,
-                              ecs::SubworldTag>();
+    auto actorView = reg.view<ecs::Position, ecs::SubworldTag>();
     for (auto e : actorView) {
         if (sub::object_flag(reg, e, sub::kObjDead)) continue;
         const auto& p = actorView.get<ecs::Position>(e);
-        const auto& hp = actorView.get<ecs::Pools>(e);
+        const auto* hpCol = sub::body_pools(reg, e);
+        if (hpCol == nullptr) continue;
+        const auto& hp = *hpCol;
         if (hp.hp <= 0) continue;
-        const auto* c = reg.try_get<ecs::Combat>(e);
+        const auto* c = sub::body_combat(reg, e);
 
         BodyDesc d{};
         d.x = p.x; d.y = p.y; d.z = p.z;
@@ -3363,7 +3377,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // nothing to strike with. try_get, not get: the snapshot now admits
         // bodies without Combat, and steering's inReach flag is not a promise
         // that the body owns a weapon.
-        auto* cp = reg.try_get<ecs::Combat>(e);
+        auto* cp = sub::body_combat(reg, e);
         if (!cp) continue;
         auto& c = *cp;
         if (c.recoverySteps > 0u) continue;
@@ -4709,8 +4723,9 @@ int SubworldEngine::dev_kill_all_hostiles() {
     do {
         std::array<entt::entity, kMaxSubworldDeathsPerStep> victims{};
         batch = 0;
-        auto view = reg.view<ecs::Pools, ecs::SubworldTag>();
+        auto view = reg.view<ecs::SubworldTag>();
         for (auto e : view) {
+            if (sub::body_pools(reg, e) == nullptr) continue;
             if (sub::object_flag(reg, e, sub::kObjDead)) continue;
             if (batch >= kMaxSubworldDeathsPerStep) break;
             if (!hostile_to_player_entity(reg, e, gs_)) continue;
@@ -4951,7 +4966,7 @@ void SubworldEngine::tick(float dt) {
         // scan the registry on every swing).
         tick_player_melee();
         ecs::sys::tick_visual_interp(*ecs_, dt);
-        ecs::sys::tick_combat_recovery(*ecs_, /*steps=*/1u);
+        sub::tick_body_recovery(sub::objects_of(ecs_->reg), /*steps=*/1u);
         tick_spell_projectiles(*ecs_, bus_, dt,
                                &SubworldEngine::spell_damage_log_callback,
                                this,
@@ -5039,11 +5054,13 @@ void SubworldEngine::tick(float dt) {
         // for both scales, and a wounded lord's cell coordinates (0..1023)
         // land here as window tiles — blood in the scene's corner from a war
         // a continent away (SUB-1; it survived the Health→Pools rename).
-        auto view = ecs_->reg.view<ecs::Pools, ecs::Position,
+        auto view = ecs_->reg.view<ecs::Position,
                                    ecs::SubworldTag>();
         for (auto e : view) {
             if (sub::object_flag(ecs_->reg, e, sub::kObjDead)) continue;
-            const auto& hp = view.get<ecs::Pools>(e);
+            const auto* hpCol = sub::body_pools(ecs_->reg, e);
+            if (hpCol == nullptr) continue;
+            const auto& hp = *hpCol;
             if (hp.maxHp <= 0 || hp.hp * 2 >= hp.maxHp || hp.hp <= 0) continue;
             // drip01 in (0,1]: 0 at half HP, 1 at death's door (the ref's
             // (0.5 - ratio) * 2, integer-house form).

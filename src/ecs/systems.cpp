@@ -32,22 +32,8 @@ void tick_visual_interp(World& w, float dt) {
     }
 }
 
-void tick_combat_recovery(World& w, std::uint32_t steps) {
-    if (steps == 0u) return;
-    auto view = w.reg.view<Combat>();
-    for (auto e : view) {
-        auto& c = view.get<Combat>(e);
-        c.recoverySteps = c.recoverySteps > steps ? c.recoverySteps - steps : 0u;
-        // ВТОРОЙ СУБЪЕКТ ТОГО ЖЕ ЗАКОНА сливается ТОЙ ЖЕ дверью и тем же шагом
-        // (CANON S13, M-194): «да у нас единая система рековери». Отдельный
-        // проход по тем же телам был бы вторым законом восстановления.
-        //
-        // И ИМЕННО ЗДЕСЬ ВЫПАДАЕТ ПОВЕДЕНИЕ ПОШАГОВОГО РЕЖИМА, принятое
-        // владельцем: шаги приходят от МИРА, значит в застое броня не встаёт, а
-        // встаёт ровно на тех тиках, которые игрок купил своим действием.
-        c.armorSteps = c.armorSteps > steps
-                           ? std::uint16_t(c.armorSteps - steps) : std::uint16_t{0};
-    }
-}
+// (tick_combat_recovery переехал в sub/ability.h — `tick_body_recovery`:
+// боевой лист стал колонкой арены (M-150 кусок 2), а арена живёт в sub/,
+// то есть ВЫШЕ этого слоя — проход по ней отсюда был бы включением вверх.)
 
 } // namespace sm::ecs::sys

@@ -101,16 +101,8 @@ inline const C* state_of(const entt::registry& reg, entt::entity body) {
 // next tick; a lord nobody touched pays one comparison.
 struct StandingMirror { BonusTotals totals{}; };
 
-// The three bars (CANON S14). Damage, casting, harvesting and crafting all
-// land here — «действия платят в склад», now stated once for every body
-// rather than once for the player and once for everyone else.
-inline ecs::Pools* pools_of(entt::registry& reg, entt::entity body) {
-    return state_of<ecs::Pools>(reg, body);
-}
-inline const ecs::Pools* pools_of(const entt::registry& reg,
-                                  entt::entity body) {
-    return state_of<ecs::Pools>(reg, body);
-}
+// (pools_of — ниже моста арены: его фолбэк с куска 2 — КОЛОНКА, не
+// компонента, и ему нужны objects_find/body_pools.)
 
 // ── МОСТ ЕДИНОГО МАССИВА ОБЪЕКТОВ (M-150, транзит миграции) ─────────────
 // Тот же ctx-приём, что у MacroStore: указатель живёт в реестре и умирает
@@ -210,6 +202,107 @@ inline void set_body_level(entt::registry& reg, entt::entity e,
     if (SubObjects* objs = objects_find(reg)) {
         objs->level[std::size_t(os->slot)] = v;
     }
+}
+
+// ── БОЕВАЯ ПАРА ТЕЛА — КОЛОНКИ АРЕНЫ (M-150 ломоть 2 кусок 2) ───────────
+// Бывшие компоненты ecs::Pools / ecs::Combat / ecs::MissileAttack.
+// «Баров нет» = maxHp 0 (даже мёртвый хранит максимум); «листа нет» —
+// бит kObjHasCombat, его ставит ТОЛЬКО set_body_combat (у листа
+// естественного нуля нет: пустой лист — законное значение, ЗАКОН АНКЕТЫ
+// п.4); «снарядных нет» = speed 0 (дверь рождения коэрсит авторский ноль
+// в 200). nullptr каждой двери — ровно прежняя семантика «компоненты
+// нет». У зеркальных тел pools-колонка — КОПИЯ записи (mirror-проход);
+// рана ложится на ЗАПИСЬ дверью pools_of ниже, store-первой.
+inline ecs::Pools* body_pools(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    ecs::Pools& p = objs->pools[std::size_t(os->slot)];
+    return p.maxHp != 0 ? &p : nullptr;
+}
+inline const ecs::Pools* body_pools(const entt::registry& reg,
+                                    entt::entity e) {
+    return body_pools(const_cast<entt::registry&>(reg), e);
+}
+inline void set_body_pools(entt::registry& reg, entt::entity e,
+                           ecs::Pools p) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->pools[std::size_t(os->slot)] = p;
+    }
+}
+inline ecs::Combat* body_combat(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    if ((objs->flags[std::size_t(os->slot)] & kObjHasCombat) == 0u)
+        return nullptr;
+    return &objs->combat[std::size_t(os->slot)];
+}
+inline const ecs::Combat* body_combat(const entt::registry& reg,
+                                      entt::entity e) {
+    return body_combat(const_cast<entt::registry&>(reg), e);
+}
+inline void set_body_combat(entt::registry& reg, entt::entity e,
+                            const ecs::Combat& c) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->combat[std::size_t(os->slot)] = c;
+        objs->flags[std::size_t(os->slot)] |= kObjHasCombat;
+    }
+}
+// Разоружить тело (бывший remove<Combat> — смоук-нейтрализация): лист
+// гаснет битом, колонка зануляется, чтобы протухшие числа не пережили слот.
+inline void clear_body_combat(entt::registry& reg, entt::entity e) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->combat[std::size_t(os->slot)] = ecs::Combat{};
+        objs->flags[std::size_t(os->slot)] =
+            std::uint16_t(objs->flags[std::size_t(os->slot)] & ~kObjHasCombat);
+    }
+}
+inline const ecs::MissileAttack* body_missile(const entt::registry& reg,
+                                              entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* const* objs = reg.ctx().find<SubObjects*>();
+    if (objs == nullptr) return nullptr;
+    const ecs::MissileAttack& m = (*objs)->missile[std::size_t(os->slot)];
+    return m.speed > 0.0f ? &m : nullptr;
+}
+inline void set_body_missile(entt::registry& reg, entt::entity e,
+                             ecs::MissileAttack m) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->missile[std::size_t(os->slot)] = m;
+    }
+}
+
+// The three bars (CANON S14). Damage, casting, harvesting and crafting all
+// land here — «действия платят в склад», now stated once for every body
+// rather than once for the player and once for everyone else. Store-первый
+// (рана ложится на ЗАПИСЬ зеркального тела), фолбэк — колонка арены
+// (кусок 2; прежде — компонента через state_of).
+inline ecs::Pools* pools_of(entt::registry& reg, entt::entity body) {
+    const MacroHandle rec = macro_record_of(reg, body);
+    if (rec.slot != kMacroNoSlot) {
+        if (ecs::Pools* owned = body_state<ecs::Pools>(store_of(reg), rec))
+            return owned;
+    }
+    return body_pools(reg, body);
+}
+inline const ecs::Pools* pools_of(const entt::registry& reg,
+                                  entt::entity body) {
+    return pools_of(const_cast<entt::registry&>(reg), body);
 }
 
 // ── АКТИВНОЕ ТЕЛО — ТРИ ДВЕРИ ОДНОЙ ССЫЛКИ (вердикт 2026-10-05) ─────────
