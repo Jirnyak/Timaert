@@ -64,6 +64,13 @@ static void smoke_give_ai(entt::registry& reg, entt::entity e,
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
     sm::sub::set_body_ai(reg, e, a);
 }
+// Снаряд-фикстура смоука (ломоть 4): слот + колонка + роль-бит, как записала
+// бы дверь выстрела birth_projectile.
+static void smoke_give_projectile(entt::registry& reg, entt::entity e,
+                                  const sm::ecs::Projectile& p) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
+    sm::sub::set_projectile(reg, e, p);
+}
 static void smoke_give_visual(entt::registry& reg, entt::entity e,
                               sm::ecs::VisualPos v) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
@@ -5198,6 +5205,11 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         false, false, false,
         std::uint8_t(sm::DamageType::Blunt), false);
     reg.emplace<sm::ecs::SubworldTag>(friendlyProjectile);
+    // Колонка арены (ломоть 4): снаряд-фикстура — такой же жилец слота, как
+    // рождённый дверью выстрела; значение берётся у компоненты, что исключает
+    // расхождение двух носителей. Строка умрёт вместе с компонентой (К7).
+    smoke_give_projectile(reg, friendlyProjectile,
+                          reg.get<sm::ecs::Projectile>(friendlyProjectile));
     RuntimeFrameStats friendlySpellFrame =
         advance_sim_seconds(app, 0.05f, false);
     if (!friendlySpellFrame.ticked || !friendlySpellFrame.subworldActive) {

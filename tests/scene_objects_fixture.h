@@ -89,6 +89,14 @@ inline void give_visual(entt::registry& reg, entt::entity e,
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
     sm::sub::set_body_visual(reg, e, v);
 }
+// Снаряд-фикстура (ломоть 4): слот + колонка + роль-бит, как записала бы
+// дверь выстрела `birth_projectile`. Арена рожается по надобности — тот же
+// закон «свидетель рожает своё предусловие» (§8 п.11).
+inline void give_projectile(entt::registry& reg, entt::entity e,
+                            const sm::ecs::Projectile& p) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_projectile(reg, e, p);
+}
 
 inline std::uint8_t fx_of(entt::registry& reg, entt::entity e) {
     const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);

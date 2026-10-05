@@ -248,6 +248,10 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         break;
     }
     reg.emplace<SubworldTag>(pe);
+    // Колонка арены (ломоть 4): снаряд — жилец слота. Значение берётся у
+    // только что записанной компоненты, поэтому два носителя разъехаться не
+    // могут по построению; строка умирает в К7 вместе с компонентой.
+    sm::test::give_projectile(reg, pe, reg.get<Projectile>(pe));
 
     GridBroadPhase grid{};
     grid.build(reg);

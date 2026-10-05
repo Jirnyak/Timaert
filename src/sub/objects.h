@@ -61,6 +61,12 @@ inline constexpr std::uint16_t kObjHasCombat     = 1u << 5;
 inline constexpr std::uint16_t kObjHasAi         = 1u << 6;
 inline constexpr std::uint16_t kObjGoingHome     = 1u << 7;
 inline constexpr std::uint16_t kObjAirborne      = 1u << 8;
+// Ломоть 4 — роль снаряда: запретного нуля у снаряда НЕТ (скорость 0,0,0
+// законна у метеоров армагеддона, kind Bolt = 0, жизнь — шкала, где ноль
+// достигает каждый), поэтому роль — бит, как боевой лист. Ставит ТОЛЬКО
+// дверь set_projectile (record.h); снимать некому — снаряд умирает слотом
+// целиком (queue_reap → destroy → on_destroy-хук).
+inline constexpr std::uint16_t kObjProjectile    = 1u << 9;
 
 // Событие «в этом тике по телу попали» (колонка damageFx) — биты:
 inline constexpr std::uint8_t kDmgFxPending = 1u << 0;
@@ -129,6 +135,13 @@ struct SubObjects {
     std::array<ecs::VisualPos, std::size_t(kMaxBodyCrowd)> visual{};
     std::array<ecs::GoingHome, std::size_t(kMaxBodyCrowd)> goHome{};
     std::array<float, std::size_t(kMaxBodyCrowd)> airborneVz{};
+    // ── СНАРЯД (ломоть 4): бывшая ecs::Projectile. Роль — бит
+    // kObjProjectile (нуля-сентинела у снаряда нет: скорость 0,0,0 законна у
+    // метеоров армагеддона, kind Bolt = 0, жизнь — шкала с достижимым нулём).
+    // Самая широкая колонка арены (68 Б) — и этим слот впервые даёт снаряду
+    // КАП: до ломтя 4 снарядов могло родиться сколько угодно, теперь предел
+    // один с телами («кап стоит на воплощённом объекте»).
+    std::array<ecs::Projectile, std::size_t(kMaxBodyCrowd)> projectile{};
 
     int count = 0;        // живых слотов (для приборов, не для обхода)
     int cursor = 0;       // бегунок выдачи — слоты переиспользуются по кругу
@@ -167,6 +180,7 @@ struct SubObjects {
             visual[std::size_t(s)] = ecs::VisualPos{};
             goHome[std::size_t(s)] = ecs::GoingHome{};
             airborneVz[std::size_t(s)] = 0.0f;
+            projectile[std::size_t(s)] = ecs::Projectile{};
             ++count;
             return s;
         }
@@ -182,11 +196,11 @@ struct SubObjects {
         --count;
     }
 };
-// 16384 × (4+2+4+1+4+2+36+28+12+40+12+8+4) Б колонок + служебные: цена
-// названа и закреплена. 157 Б/слот × 16384 ≈ 2.45 МиБ — профиль один у
+// 16384 × (4+2+4+1+4+2+36+28+12+40+12+8+4+68) Б колонок + служебные: цена
+// названа и закреплена. 225 Б/слот × 16384 ≈ 3.52 МиБ — профиль один у
 // пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ).
-static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 157 + 24,
-              "массив объектов сцены: 157 Б/слот (кусок 3: +ai 40, "
-              "+visual 12, +goHome 8, +airborneVz 4) + служебные");
+static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 225 + 24,
+              "массив объектов сцены: 225 Б/слот (ломоть 4: +projectile 68) "
+              "+ служебные");
 
 } // namespace sm::sub

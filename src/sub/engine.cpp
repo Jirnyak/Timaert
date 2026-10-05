@@ -434,10 +434,7 @@ void spawn_npc_missile(entt::registry& reg,
     const StrikeRoll loose = roll_strike(combatRng, combat.dice,
                                          combat.flatAdd, combat.multPct,
                                          int(combat.luck));
-    entt::entity e = reg.create();
-    reg.emplace<ecs::Position>(e, sx, sy, sz);
-    reg.emplace<ecs::Projectile>(
-        e,
+    const ecs::Projectile arrow{
         nx * speed, ny * speed, nz * speed,
         projectileRadius, life, life,
         loose.amount,
@@ -454,7 +451,16 @@ void spawn_npc_missile(entt::registry& reg,
         false,
         false,
         combat.dmgType,
-        loose.critical);
+        loose.critical};
+    entt::entity e = reg.create();
+    // Стрела — жилец арены (ломоть 4): нет слота — выстрела нет, и
+    // восстановление лучника уже списано, как при промахе.
+    if (!sub::birth_projectile(reg, e, arrow)) {
+        reg.destroy(e);
+        return;
+    }
+    reg.emplace<ecs::Position>(e, sx, sy, sz);
+    reg.emplace<ecs::Projectile>(e, arrow);   // транзит: читатели в К4-К7
     reg.emplace<ecs::Sprite>(e, std::uint16_t(0x1FD), r, g, b,
                              a == 0 ? std::uint8_t(255) : a, 1.2f);
     reg.emplace<ecs::SubworldTag>(e);

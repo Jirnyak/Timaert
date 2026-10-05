@@ -546,6 +546,10 @@ int main() {
         std::int16_t{0}, sm::ecs::Projectile::Bolt,
         true, true, true,
         std::uint8_t(sm::DamageType::Fire), false);
+    // Колонка арены (ломоть 4): значение — у только что записанной
+    // компоненты, два носителя разъехаться не могут; строка умрёт с нею.
+    sm::test::give_projectile(blastWorld.reg, blastProjectile,
+                              blastWorld.reg.get<sm::ecs::Projectile>(blastProjectile));
     const auto blastEdge =
         add_target(blastWorld, 48.0f, 0.0f, 100.0f, false);
     const auto blastOutside =
@@ -1041,6 +1045,8 @@ int main() {
             std::int16_t{0}, sm::ecs::Projectile::Bolt,
             true, true, true,   // friendlyFire, visualOnly, explodeOnExpiry
             std::uint8_t(sm::DamageType::Fire), false);
+        sm::test::give_projectile(selfWorld.reg, selfBlast,
+                                  selfWorld.reg.get<sm::ecs::Projectile>(selfBlast));
         sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f);
         if (!(hp_of(selfWorld, selfPlayer) < 100.0f)
             || !last_hit_by(selfWorld, selfPlayer, selfPlayer)) {
@@ -1073,6 +1079,8 @@ int main() {
             std::int16_t{0}, sm::ecs::Projectile::Bolt,
             false, false, false,   // NOT friendlyFire
             std::uint8_t(sm::DamageType::Arcane), false);
+        sm::test::give_projectile(shieldWorld.reg, shieldBolt,
+                                  shieldWorld.reg.get<sm::ecs::Projectile>(shieldBolt));
         sm::sub::tick_spell_projectiles(shieldWorld, nullptr, 0.0f);
         if (!nearf(hp_of(shieldWorld, shieldPlayer), 90.0f)) {
             return fail("agnostic projectiles: bolt on its own player caster "
@@ -1102,6 +1110,8 @@ int main() {
             std::int16_t{0}, sm::ecs::Projectile::Bolt,
             true, true, true,   // friendlyFire
             std::uint8_t(sm::DamageType::Fire), false);
+        sm::test::give_projectile(npcWorld.reg, npcBlast,
+                                  npcWorld.reg.get<sm::ecs::Projectile>(npcBlast));
         sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f);
         if (!(hp_of(npcWorld, npcCaster) < 100.0f)
             || !last_hit_by(npcWorld, npcCaster, npcCaster)) {
@@ -1184,6 +1194,61 @@ int main() {
                 return fail("sweep: muzzle stretch wounded its own caster");
             }
         }
+    }
+
+    // ── КАП АРЕНЫ: СНАРЯДУ ОТКАЗЫВАЮТ ЧЕСТНО, И ЧИСЛА ЖИВУТ В КОЛОНКЕ ──────
+    // До ломтя 4 (M-150) у снарядов КАПА НЕ БЫЛО ВОВСЕ: рождалось столько,
+    // сколько позовут. Теперь снаряд — жилец арены объектов, и предел у него
+    // один с телами — СЛОТ; закон отказа тот же, что у `BodyCrowd::add`: нет
+    // слота — нет объекта, и сущности за собой он не оставляет. Каст при этом
+    // ОПЛАЧЕН (мана списана), как промах мечом — вердикт владельца 2026-09-17
+    // о касте, который «фыркнул и ничего не нашёл».
+    // Обе полярности в одном блоке: забитая арена обязана дать НОЛЬ снарядов,
+    // а освобождённый слот — ровно один, и числа его обязаны лежать В КОЛОНКЕ
+    // (`projectile_of`), иначе свидетель охранял бы компоненту, которая в
+    // ломте 7 умрёт.
+    {
+        sm::ecs::World capWorld;
+        auto capStore_ = sm::make_macro_store();
+        sm::store_attach(capWorld, capStore_.get());
+        sm::sub::SubObjects& capArena = sm::test::arena_of(capWorld.reg);
+        int capFilled = 0;
+        while (capArena.alloc() >= 0) ++capFilled;
+        CHECK(capFilled == int(sm::sub::kMaxBodyCrowd),
+              "арена набивается ровно до своего капа, не дальше");
+
+        sm::SpellBook capBook;
+        sm::ecs::Pools capCombat{};
+        capCombat.mp = 2000;
+        capCombat.maxMp = 2000;
+        sm::spellbook_learn(capBook, sm::spell_ordinal("magic_bolt"));
+        const bool capCast = sm::spellbook_cast(
+            capWorld, capBook, capCombat, attributes, skills,
+            sm::spell_ordinal("magic_bolt"), std::uint32_t{0},
+            100.0f, 100.0f, 0.0f, 1.0f, 0.0f, 0.0f, true);
+        CHECK(capCast && capCombat.mp < 2000,
+              "каст состоялся и ОПЛАЧЕН, хотя снаряду отказал кап");
+        CHECK(projectile_count(capWorld) == 0,
+              "кап арены: снаряда нет вовсе — сущность за собой не остаётся");
+
+        // Вторая полярность: слот освободился — снаряд рождается снова, и его
+        // числа отвечает КОЛОНКА.
+        capArena.free(0);
+        const bool capCast2 = sm::spellbook_cast(
+            capWorld, capBook, capCombat, attributes, skills,
+            sm::spell_ordinal("magic_bolt"), std::uint32_t{0},
+            100.0f, 100.0f, 0.0f, 1.0f, 0.0f, 0.0f, true);
+        int capWithColumn = 0;
+        for (auto e : capWorld.reg.view<sm::ecs::Projectile>()) {
+            const sm::ecs::Projectile* col =
+                sm::sub::projectile_of(capWorld.reg, e);
+            if (col != nullptr && col->spellId == sm::stable_spell_id("magic_bolt")
+                && sm::sub::is_projectile(capWorld.reg, e)) {
+                ++capWithColumn;
+            }
+        }
+        CHECK(capCast2 && capWithColumn == 1,
+              "освободился слот — снаряд родился, и числа его несёт КОЛОНКА");
     }
 
     int susActive = 0;

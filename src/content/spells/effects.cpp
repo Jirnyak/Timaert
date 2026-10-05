@@ -102,18 +102,25 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
                         float blast,
                         std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     const float spawnOffset = caster_spawn_offset(c, radius);
-    auto e = w.create();
-    w.reg.emplace<ecs::Position>(e,
-        c.px + c.nx * spawnOffset,
-        c.py + c.ny * spawnOffset,
-        c.pz + c.nz * spawnOffset);
-    w.reg.emplace<ecs::Projectile>(e,
+    const ecs::Projectile bolt{
         c.nx * speed, c.ny * speed, c.nz * speed,
         radius, life, life, c.damage, blast,
         c.px, c.py, 0.0f,
         std::uint8_t(0), 0.0f,
         c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Bolt,
-        c.friendlyFire, false, false, c.dmgType, c.critical);
+        c.friendlyFire, false, false, c.dmgType, c.critical};
+    auto e = w.create();
+    // Снаряд — жилец арены (ломоть 4): нет слота — нет снаряда, и каст
+    // остаётся оплаченным, как промах.
+    if (!sub::birth_projectile(w.reg, e, bolt)) {
+        w.reg.destroy(e);
+        return;
+    }
+    w.reg.emplace<ecs::Position>(e,
+        c.px + c.nx * spawnOffset,
+        c.py + c.ny * spawnOffset,
+        c.pz + c.nz * spawnOffset);
+    w.reg.emplace<ecs::Projectile>(e, bolt);   // транзит: читатели в К4-К7
     w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
         r, g, b, std::uint8_t(255), 1.0f);
     w.reg.emplace<ecs::SubworldTag>(e);
@@ -153,19 +160,24 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
     constexpr float kBeamLen = 300.0f;
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
     const float spawnOffset = caster_spawn_offset(c, radius);
-    auto e = w.create();
-    w.reg.emplace<ecs::Position>(e,
-        c.px + c.nx * (kBeamLen * 0.5f),
-        c.py + c.ny * (kBeamLen * 0.5f),
-        c.pz + c.nz * (kBeamLen * 0.5f));
-    w.reg.emplace<ecs::Projectile>(e,
+    const ecs::Projectile beam{
         c.nx, c.ny, c.nz,
         radius,
         0.35f, 0.35f, c.damage, 0.0f,
         c.px + c.nx * spawnOffset, c.py + c.ny * spawnOffset, kBeamLen,
         std::uint8_t(0), 0.0f,
         c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Beam,
-        c.friendlyFire, true, true, c.dmgType, c.critical);
+        c.friendlyFire, true, true, c.dmgType, c.critical};
+    auto e = w.create();
+    if (!sub::birth_projectile(w.reg, e, beam)) {
+        w.reg.destroy(e);
+        return;
+    }
+    w.reg.emplace<ecs::Position>(e,
+        c.px + c.nx * (kBeamLen * 0.5f),
+        c.py + c.ny * (kBeamLen * 0.5f),
+        c.pz + c.nz * (kBeamLen * 0.5f));
+    w.reg.emplace<ecs::Projectile>(e, beam);   // транзит: читатели в К4-К7
     w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
         std::uint8_t(0xAA), std::uint8_t(0xDD), std::uint8_t(0xFF),
         std::uint8_t(220), 1.0f);
@@ -187,18 +199,25 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
         const float delay = spawn_random01(c, seed ^ kArmageddonSaltB) * 0.5f;
         const float life = 0.3f + delay;
 
-        auto e = w.create();
-        w.reg.emplace<ecs::Position>(e,
-            c.px + std::cos(angle) * dist,
-            c.py + std::sin(angle) * dist,
-            c.pz);
-        w.reg.emplace<ecs::Projectile>(e,
+        const ecs::Projectile meteor{
             0.0f, 0.0f, 0.0f,
             radius, life, life, c.damage, kArmageddonPerMeteorBlast,
             c.px, c.py, 0.0f,
             std::uint8_t(0), 0.0f,
             c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Bolt,
-            c.friendlyFire, true, true, c.dmgType, c.critical);
+            c.friendlyFire, true, true, c.dmgType, c.critical};
+        auto e = w.create();
+        // Кап арены обрывает ДОЖДЬ, а не отдельный метеор: освобождений
+        // внутри цикла не бывает, значит следующий alloc отказал бы так же.
+        if (!sub::birth_projectile(w.reg, e, meteor)) {
+            w.reg.destroy(e);
+            break;
+        }
+        w.reg.emplace<ecs::Position>(e,
+            c.px + std::cos(angle) * dist,
+            c.py + std::sin(angle) * dist,
+            c.pz);
+        w.reg.emplace<ecs::Projectile>(e, meteor);  // транзит: К4-К7
         w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
             std::uint8_t(0xFF), std::uint8_t(0x55), std::uint8_t(0x11),
             std::uint8_t(255), 1.0f);

@@ -405,14 +405,27 @@ void tick_spell_projectiles(ecs::World& w,
                             SpellNeighborsFn neighborsFn,
                             void* neighborsUser,
                             float ceilingM) {
+    // ЧИСЛА СНАРЯДА — КОЛОНКА АРЕНЫ, ИТЕРАЦИЯ — ПОКА ПО СУЩНОСТЯМ (ломоть 4,
+    // тот же приём, что у `tick_body_visual_interp@src/sub/ability.h`):
+    // компонента `ecs::Projectile` осталась ТРАНЗИТНЫМ ИНДЕКСОМ «кто здесь
+    // снаряд» и умирает в ломте 7 — тогда, когда `Position` станет колонкой и
+    // проход схлопнется в слотный цикл арены, как `tick_body_recovery`.
+    // Мутирует снаряд ровно одна величина (`lifeTimer`) и ровно эта дверь,
+    // поэтому второго носителя правды нет: компонента после рождения не
+    // читается никем.
     auto view = w.reg.view<ecs::Position, ecs::Projectile>();
     std::array<entt::entity, kMaxSpellReaps> reaps{};
     int reapCount = 0;
 
     for (auto e : view) {
         if (!w.reg.valid(e)) continue;
+        // Слота нет — снаряда для симуляции нет: это не молчаливый пропуск, а
+        // пропущенная дверь рождения, и видно её громко (выстрел не наносит
+        // урона). Все пять дверей пишут колонку, см. `birth_projectile`.
+        ecs::Projectile* col = projectile_of(w.reg, e);
+        if (col == nullptr) continue;
         auto& pos = view.get<ecs::Position>(e);
-        auto& p = view.get<ecs::Projectile>(e);
+        auto& p = *col;
 
         p.lifeTimer -= dt;
         if (p.lifeTimer <= 0.0f) {
