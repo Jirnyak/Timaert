@@ -1,4 +1,5 @@
 #include "check.h"
+#include "scene_objects_fixture.h"   // арена объектов: fx/атрибуция — колонки
 
 #include "core/time.h"
 #include "content/spells/casting.h"
@@ -70,6 +71,8 @@ bool find_projectile_pose_by_spell(sm::ecs::World& w, const char* spellId,
 entt::entity add_target(sm::ecs::World& w, float x, float y,
                         int hp, bool playerSide) {
     auto e = w.create();
+    // Слот арены объектов: атрибуция «кем ранен» — колонка lastHitBy (1а).
+    sm::test::give_slot(w.reg, e);
     w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
     w.reg.emplace<sm::ecs::Pools>(e, hp, hp);
     w.reg.emplace<sm::ecs::SubworldTag>(e);
@@ -90,6 +93,7 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
 // Placed far from targets so it is never itself in a blast/line by accident.
 std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
     auto e = w.create();
+    sm::test::give_slot(w.reg, e);
     w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
     w.reg.emplace<sm::ecs::Pools>(e, 1000, 1000);
     w.reg.emplace<sm::ecs::SubworldTag>(e);
@@ -102,12 +106,11 @@ float hp_of(sm::ecs::World& w, entt::entity e) {
     return hp ? hp->hp : -1.0f;
 }
 
-// Атрибуция «кем убит/ранен» — тело убийцы в LastHit (§41 корень 5:
-// байт playerOwned мёртв, жнец резолвит лидера по телу).
+// Атрибуция «кем убит/ранен» — колонка lastHitBy единого массива объектов
+// (M-150 1а; §41 корень 5: жнец резолвит лидера по телу).
 bool last_hit_by(sm::ecs::World& w, entt::entity e,
                  std::uint32_t attackerId) {
-    const auto* hit = w.reg.try_get<sm::ecs::LastHit>(e);
-    return hit && hit->attackerId == attackerId;
+    return sm::test::last_hit_of(w.reg, e) == attackerId;
 }
 bool last_hit_by(sm::ecs::World& w, entt::entity e, entt::entity attacker) {
     return last_hit_by(w, e, std::uint32_t(entt::to_integral(attacker)));
@@ -1022,6 +1025,7 @@ int main() {
         auto selfWorldStore_ = sm::make_macro_store();
         sm::store_attach(selfWorld, selfWorldStore_.get());
         auto selfPlayer = selfWorld.create();
+        sm::test::give_slot(selfWorld.reg, selfPlayer);
         selfWorld.reg.emplace<sm::ecs::Position>(selfPlayer, 0.0f, 0.0f, 0.0f);
         selfWorld.reg.emplace<sm::ecs::Pools>(selfPlayer, 100, 100);
         selfWorld.reg.emplace<sm::ecs::SubworldTag>(selfPlayer);
@@ -1053,6 +1057,7 @@ int main() {
         auto shieldWorldStore_ = sm::make_macro_store();
         sm::store_attach(shieldWorld, shieldWorldStore_.get());
         auto shieldPlayer = shieldWorld.create();
+        sm::test::give_slot(shieldWorld.reg, shieldPlayer);
         shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f, 0.0f);
         shieldWorld.reg.emplace<sm::ecs::Pools>(shieldPlayer, 100, 100);
         shieldWorld.reg.emplace<sm::ecs::SubworldTag>(shieldPlayer);
@@ -1081,6 +1086,7 @@ int main() {
         auto npcWorldStore_ = sm::make_macro_store();
         sm::store_attach(npcWorld, npcWorldStore_.get());
         auto npcCaster = npcWorld.create();
+        sm::test::give_slot(npcWorld.reg, npcCaster);
         npcWorld.reg.emplace<sm::ecs::Position>(npcCaster, 0.0f, 0.0f, 0.0f);
         npcWorld.reg.emplace<sm::ecs::Pools>(npcCaster, 100, 100);
         npcWorld.reg.emplace<sm::ecs::SubworldTag>(npcCaster);
@@ -1143,6 +1149,7 @@ int main() {
             sweepWorld.reg.emplace<sm::ecs::BodyRadius>(
                 entt::entity(sweepCaster), sm::ecs::BodyRadius{1.5f});
             auto sweepTarget = sweepWorld.create();
+            sm::test::give_slot(sweepWorld.reg, sweepTarget);
             sweepWorld.reg.emplace<sm::ecs::Position>(
                 sweepTarget, range, 0.0f, 0.0f);
             sweepWorld.reg.emplace<sm::ecs::Pools>(sweepTarget, 100, 100);

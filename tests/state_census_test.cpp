@@ -525,6 +525,8 @@ constexpr Row kAppRows[] = {
     {"ecs", Rod::Divergence,
      "entt-мир сцены — легаси под снос: тела M-150, стена M-188"},
     {"macroStore", Rod::Squads, "гладкая память рода 2"},
+    {"sceneObjects", Rod::Session,
+     "единый массив объектов сцены (M-150) — транзиент окна, в сейв не едет"},
     {"bus", Rod::Session, "шина событий кадра"},
     {"logic", Rod::Facts,
      "живая половина прогресса узлов; сейв-образ gs.logicNodes*"},

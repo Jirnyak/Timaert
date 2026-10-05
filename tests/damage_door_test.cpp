@@ -22,6 +22,7 @@
 //     the damage KIND's column: plate does not soften a fall.
 
 #include "check.h"
+#include "scene_objects_fixture.h"   // арена объектов: fx — колонки (M-150 1а)
 #include "sub/damage.h"
 #include "sub/record.h"    // pools_of — удар ложится на ЗАПИСЬ
 #include "ecs/systems.h"   // tick_combat_recovery — та же дверь слива
@@ -45,11 +46,17 @@ constexpr std::uint16_t kTestNpcType = 7;
 
 entt::entity make_body(entt::registry& reg, int hp, bool withKind = true) {
     const entt::entity e = reg.create();
+    // Слот арены — как выдала бы дверь спавна (fx — колонки, M-150 1а).
+    sm::test::give_slot(reg, e);
     reg.emplace<sm::ecs::Pools>(e, hp, hp);
     if (withKind) reg.emplace<sm::ecs::NPCKind>(e, kTestNpcType,
                                                 std::uint16_t{0});
     return e;
 }
+
+using sm::test::flash_of;
+using sm::test::fx_of;
+using sm::test::last_hit_of;
 
 int death_events(const sm::EventBus& bus) {
     int n = 0;
@@ -82,9 +89,10 @@ void test_death_is_indistinguishable() {
         CHECK(hit.applied == 25.0f, "lethal blow applies its full amount");
         CHECK(hit.lethal, "a blow past remaining hp is lethal");
         CHECK(reg.all_of<sm::ecs::Dead>(e), "every kind stamps Dead");
-        CHECK(reg.all_of<sm::ecs::HitFlash>(e), "every kind stamps HitFlash");
-        CHECK(reg.all_of<sm::ecs::DamageFx>(e), "every kind stamps DamageFx");
-        CHECK(reg.get<sm::ecs::DamageFx>(e).lethal,
+        CHECK(flash_of(reg, e) > 0.0f, "every kind stamps HitFlash");
+        CHECK((fx_of(reg, e) & sm::sub::kDmgFxPending) != 0,
+              "every kind stamps DamageFx");
+        CHECK((fx_of(reg, e) & sm::sub::kDmgFxLethal) != 0,
               "the killing blow's DamageFx is lethal");
         CHECK(death_events(bus) == 1, "every kind emits exactly one NpcDeath");
         if (const sm::GameEvent* ev = last_death(bus)) {
@@ -100,10 +108,10 @@ void test_death_is_indistinguishable() {
         // Attribution is the kind row's DATA, not a per-site omission.
         const bool wantsKiller =
             sm::sub::kDamageKinds[std::size_t(kind)].attributesKiller;
-        CHECK(reg.all_of<sm::ecs::LastHit>(e) == wantsKiller,
+        CHECK((last_hit_of(reg, e) != sm::sub::kObjNoAttacker) == wantsKiller,
               "LastHit follows the kind row's attributesKiller column");
         if (wantsKiller) {
-            CHECK(reg.get<sm::ecs::LastHit>(e).attackerId == 42u,
+            CHECK(last_hit_of(reg, e) == 42u,
                   "LastHit names the attacker the source named");
         }
     }
@@ -155,6 +163,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // The silence here was the shipped «как будто не попадаю» feel: every
     // early-game fist swing against mail vanished without a trace.
     const entt::entity turtle = reg.create();
+    sm::test::give_slot(reg, turtle);
     reg.emplace<sm::ecs::Pools>(turtle, 100, 100);
     reg.emplace<sm::ecs::NPCKind>(
         turtle, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
@@ -170,13 +179,13 @@ void test_armour_softens_by_the_row_and_the_kind() {
           "and the result names it BLOCKED, distinct from a dead-target no-op");
     CHECK((*reg.try_get<sm::ecs::Pools>(turtle)).hp == 100,
           "the flesh under the plate is untouched");
-    CHECK(reg.all_of<sm::ecs::HitFlash>(turtle)
-              && reg.all_of<sm::ecs::DamageFx>(turtle),
+    CHECK(flash_of(reg, turtle) > 0.0f
+              && (fx_of(reg, turtle) & sm::sub::kDmgFxPending) != 0,
           "a blocked blow still shows: HitFlash + DamageFx travel together");
-    CHECK(reg.get<sm::ecs::DamageFx>(turtle).blocked
-              && !reg.get<sm::ecs::DamageFx>(turtle).lethal,
+    CHECK((fx_of(reg, turtle) & sm::sub::kDmgFxBlocked) != 0
+              && (fx_of(reg, turtle) & sm::sub::kDmgFxLethal) == 0,
           "and the fx is the spark flavour, not blood");
-    CHECK(!reg.any_of<sm::ecs::LastHit>(turtle),
+    CHECK(last_hit_of(reg, turtle) == sm::sub::kObjNoAttacker,
           "nothing happened to the BODY: no LastHit, no killer named");
     // Negative control for the flag itself: a blow that DOES wound is not
     // blocked — the two exits of the door stay distinguishable.
@@ -470,11 +479,12 @@ void test_survivor_protocol() {
           "hp drops by exactly the applied amount");
     CHECK(!reg.any_of<sm::ecs::Dead>(e), "a survivor is not Dead");
     CHECK(death_events(bus) == 0, "a survivor emits nothing");
-    CHECK(reg.all_of<sm::ecs::HitFlash>(e) && reg.all_of<sm::ecs::DamageFx>(e),
+    CHECK(flash_of(reg, e) > 0.0f
+              && (fx_of(reg, e) & sm::sub::kDmgFxPending) != 0,
           "HitFlash and DamageFx travel together on every hit");
-    CHECK(!reg.get<sm::ecs::DamageFx>(e).lethal,
+    CHECK((fx_of(reg, e) & sm::sub::kDmgFxLethal) == 0,
           "a survivable blow's DamageFx is not lethal");
-    CHECK(reg.get<sm::ecs::LastHit>(e).attackerId == 7u,
+    CHECK(last_hit_of(reg, e) == 7u,
           "LastHit carries the killer's BODY — the reaper resolves its "
           "leader through the one kill-XP door (§41 root 5)");
 }
@@ -530,7 +540,7 @@ void test_no_second_blow() {
     CHECK((*reg.try_get<sm::ecs::Pools>(e)).hp == hpAfterDeath,
           "a corpse's hp does not move");
     CHECK(death_events(bus) == 1, "a corpse dies once — one event, ever");
-    CHECK(reg.get<sm::ecs::LastHit>(e).attackerId == 1u,
+    CHECK(last_hit_of(reg, e) == 1u,
           "the kill stays attributed to the killer, not the corpse-kicker");
 }
 
@@ -568,7 +578,7 @@ void test_zero_and_missing_target() {
     const DamageResult zero =
         apply_damage(reg, e, DamageSource{}, 0.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
     CHECK(zero.applied == 0.0f, "a zero blow is a no-op");
-    CHECK(!reg.any_of<sm::ecs::HitFlash>(e),
+    CHECK(flash_of(reg, e) == 0.0f,
           "a no-op stamps nothing — zero is a silent contribution");
     const entt::entity bare = reg.create();  // no Health at all
     const DamageResult none =
@@ -617,7 +627,7 @@ void test_the_blow_lands_on_the_record() {
     // what the eye and the reaper look at. (Запись — слот store: entt-штампа
     // на ней не существует по построению, вторая половина старой проверки
     // умерла вместе с entt-записью.)
-    CHECK(reg.any_of<sm::ecs::HitFlash>(body),
+    CHECK(flash_of(reg, body) > 0.0f,
           "the visible protocol stamps the body, not the record");
 
     // NEGATIVE CONTROL: no backlink, no record — the very same call spends the

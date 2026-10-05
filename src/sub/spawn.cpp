@@ -328,6 +328,16 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     const int hp = std::clamp(int(maxHp * healthFraction), 1, int(maxHp));
 
     const auto e = reg.create();
+    // СЛОТ ЕДИНОГО МАССИВА ОБЪЕКТОВ (M-150 ломоть 1а): тело рождается
+    // жильцом плоского носителя; освобождение — on_destroy-хук моста.
+    // Фикстура без арены (objects_find == null) рождает тело без слота —
+    // ветка ТРАНЗИТА миграции, умирает с реестром (ломоть 7).
+    if (SubObjects* objs = objects_find(reg)) {
+        const int slot = objs->alloc();
+        if (slot >= 0) {
+            reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
+        }
+    }
     reg.emplace<ecs::Position>(e, body.x, body.y, 0.0f);
     reg.emplace<ecs::VisualPos>(e, body.x, body.y, kBodyVisualCatchUp);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(body.type), body.faction);

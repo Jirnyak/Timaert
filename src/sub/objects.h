@@ -31,6 +31,17 @@ namespace sm::sub {
 // хранит идентичность, а не занятость (слот умершего жив трупом, ломоть 5).
 inline constexpr std::uint16_t kObjAlive = 1u << 0;
 
+// Событие «в этом тике по телу попали» (колонка damageFx) — биты:
+inline constexpr std::uint8_t kDmgFxPending = 1u << 0;
+inline constexpr std::uint8_t kDmgFxLethal  = 1u << 1;
+inline constexpr std::uint8_t kDmgFxBlocked = 1u << 2;
+
+// «Никто не бил» у lastHitBy: ПОСЛЕДНЕЕ значение типа (ЗАКОН УЗКОГО
+// ИНДЕКСА — ноль здесь ЗАКОННЫЙ ид), и оно же integral entt-null на время
+// миграции (атакер пока носит entt-ид тела; хэндл {slot, gen} сменит его
+// в ломте 7).
+inline constexpr std::uint32_t kObjNoAttacker = 0xFFFFFFFFu;
+
 struct SubObjects {
     // Идентичность: поколение слота. 0 = «никого» — слот ещё не жил или
     // хэндл протух; выдача начинается с 1 и заворачивается мимо нуля.
@@ -61,7 +72,7 @@ struct SubObjects {
             gen[std::size_t(s)] = g;
             flags[std::size_t(s)] = kObjAlive;
             hitFlash[std::size_t(s)] = 0.0f;
-            lastHitBy[std::size_t(s)] = 0u;
+            lastHitBy[std::size_t(s)] = kObjNoAttacker;
             damageFx[std::size_t(s)] = 0u;
             ++count;
             return s;

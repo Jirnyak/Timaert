@@ -196,6 +196,11 @@ struct Airborne { float vz = 0.0f; };
 // NPC link to type registry (NPCType enum value).
 struct NPCKind { std::uint16_t type; std::uint16_t factionIdx; };
 
+// Слот тела в ЕДИНОМ МАССИВЕ ОБЪЕКТОВ СЦЕНЫ (sub/objects.h, M-150).
+// ТРАНЗИТ МИГРАЦИИ: умирает вместе с реестром (ломоть 7), когда слот
+// станет самой идентичностью тела, а не его компонентой.
+struct ObjectSlot { std::uint16_t slot; };
+
 // Subworld behaviour state (mirrors `subworld/ai.ts`). Only attached to
 // SubworldTag entities; engine dispatches Wander/Flee/Combat by `kind`.
 // ONE owner of legs. `wantVx/wantVy` are the brain's INTENT — the wander
@@ -335,32 +340,10 @@ struct MacroDebt {
 // (sub/record.h macro_record_of) честно деградирует тело в «сам себе запись».
 struct MacroOrigin { MacroHandle macro; };
 
-// Last damaging owner — the killer's BODY, and nothing else. The death
-// reaper resolves the body to its macro LEADER (MacroOrigin / roster
-// receipt / the avatar's own squad) and pays the kill through the ONE
-// XP door (squad.h award_kill_xp). It carried a `playerOwned` byte until
-// §41 root 5 (owner 2026-09-10: «байт умирает; жнец резолвит лидера
-// убийцы для ВСЕХ») — a second answer to «чья рука», fixed at hit time,
-// that split the reaper into two XP laws.
-struct LastHit {
-    std::uint32_t attackerId;
-};
-
-// Short-lived red damage flash for subworld actors. Mirrors TS `hitTimer`.
-struct HitFlash { float timer; };
-
-// One-shot "a hit just landed on this body" marker (transient VFX seam). Every
-// damage site that already stamps HitFlash also stamps this; ONE engine pass
-// (tick_damage_fx) drains it the same tick and turns it into a blood/dust burst
-// at the body's position, classifying the spray from the victim's own sprite
-// archetype — so no damage site needs to know about particles (the spell TU
-// stays renderer-free) and there is no per-creature hardcoding. `lethal` lets
-// the drain throw a bigger burst on the killing blow. `blocked` is a real blow
-// that armour swallowed whole (damage door, owner 2026-09-06): the drain
-// answers it with a spark off the plate instead of blood — a swing that lands
-// is never silent, even when it wounds nothing. Removed as soon as it is
-// consumed, so it never lingers on a surviving body.
-struct DamageFx { bool lethal; bool blocked; };
+// (LastHit / HitFlash / DamageFx УМЕРЛИ 2026-10-05, M-150 ломоть 1а: «кто
+// бил», вспышка и событие «попали» — колонки единого массива объектов
+// lastHitBy / hitFlash / damageFx (sub/objects.h); их законы — там же, у
+// колонок, вместе с законом «никто» для атакера.)
 
 // Per-NPC visual identity. POD reinterpretation of TS `CharacterData`
 // (which is HTML-canvas-targeted: name + sprite-layer indices + palette
@@ -743,6 +726,7 @@ static_assert(sizeof(Projectile) == 68, "снаряд — 68 Б");
 // Новая структура в этом файле обязана появиться и в этом списке — за полнотой
 // списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
 TIMAERT_ROW(sm::MacroHandle);
+TIMAERT_ROW(sm::ecs::ObjectSlot);
 TIMAERT_ROW(sm::ecs::Position);
 TIMAERT_ROW(sm::ecs::VisualPos);
 TIMAERT_ROW(sm::ecs::MacroVisual);
@@ -767,9 +751,6 @@ TIMAERT_ROW(sm::ecs::NpcTraits);
 TIMAERT_ROW(sm::ecs::SoldierLink);
 TIMAERT_ROW(sm::ecs::MacroDebt);
 TIMAERT_ROW(sm::ecs::MacroOrigin);
-TIMAERT_ROW(sm::ecs::LastHit);
-TIMAERT_ROW(sm::ecs::HitFlash);
-TIMAERT_ROW(sm::ecs::DamageFx);
 TIMAERT_ROW(sm::ecs::NpcCharacter);
 TIMAERT_ROW(sm::ecs::SquadName);
 TIMAERT_ROW(sm::ecs::Sprite);

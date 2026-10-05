@@ -944,6 +944,12 @@ void SubworldEngine::spawn_player_entity() {
         }
     }
     const entt::entity e = reg.create();
+    // Слот единого массива объектов (M-150 1а): тело игрока — обычный
+    // жилец арены, его колонки (вспышка, «кто бил») читает тот же закон.
+    if (sub::SubObjects* objs = sub::objects_find(reg)) {
+        const int slot = objs->alloc();
+        if (slot >= 0) reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
+    }
     reg.emplace<ecs::Position>(e, playerX_, playerY_, 0.0f);
     reg.emplace<ecs::AvatarTag>(e);
     // WHOSE BODY THIS IS (mirror law, 2026-09-12 — sub/record.h): the same
@@ -1318,8 +1324,14 @@ void SubworldEngine::report_player_damage() {
             const char* label = "Hostile";
             float ax = playerX_;
             float ay = playerY_;
-            if (const auto* lh = reg.try_get<ecs::LastHit>(e)) {
-                const entt::entity atk = entt::entity(lh->attackerId);
+            // «Кто бил» — колонка lastHitBy (ломоть 1а); «никто» —
+            // последнее значение типа (kObjNoAttacker == integral entt-null).
+            const auto* osHit = reg.try_get<ecs::ObjectSlot>(e);
+            const std::uint32_t lastBy = osHit
+                ? sub::objects_of(reg).lastHitBy[osHit->slot]
+                : sub::kObjNoAttacker;
+            if (lastBy != sub::kObjNoAttacker) {
+                const entt::entity atk = entt::entity(lastBy);
                 if (reg.valid(atk)) {
                     label = subworld_attacker_label(reg, atk);
                     if (const auto* ap = reg.try_get<ecs::Position>(atk)) {
@@ -2401,13 +2413,20 @@ void SubworldEngine::tick_damage_fx() {
     // out from the torso rather than the feet. One constant, not per-creature —
     // the archetype only chooses blood vs dust, never geometry.
     constexpr float kSprayHeightM = 1.1f;
-    auto view = reg.view<ecs::DamageFx, ecs::Position>();
+    // Событие «попали» — колонка damageFx единого массива (ломоть 1а):
+    // проход по телам со слотом, бит pending вместо компоненты.
+    sub::SubObjects& objs = sub::objects_of(reg);
+    auto view = reg.view<ecs::ObjectSlot, ecs::Position>();
     for (auto e : view) {
+        const std::uint8_t fxBits =
+            objs.damageFx[view.get<ecs::ObjectSlot>(e).slot];
+        if (!(fxBits & sub::kDmgFxPending)) continue;
         // The player body's damage feedback is the HUD hit-flash; a world burst
         // would spawn on the camera and clip the near plane. Skip it (still
         // consumed below so the tag never lingers).
         if (reg.any_of<ecs::AvatarTag>(e)) continue;
-        const auto& fx = view.get<ecs::DamageFx>(e);
+        const bool fxLethal = (fxBits & sub::kDmgFxLethal) != 0u;
+        const bool fxBlocked = (fxBits & sub::kDmgFxBlocked) != 0u;
         const auto& pos = view.get<ecs::Position>(e);
 
         // Blood by default (flesh); dust for the bloodless body plans — bony /
@@ -2418,7 +2437,7 @@ void SubworldEngine::tick_damage_fx() {
         // it whole, damage door) never reached the flesh at all — it strikes a
         // spark off the plate, whatever the body plan.
         FxKind kind = FxKind::Blood;
-        if (fx.blocked) kind = FxKind::Spark;
+        if (fxBlocked) kind = FxKind::Spark;
         else if (const auto* spr = reg.try_get<ecs::Sprite>(e)) {
             const auto arch = static_cast<CreatureArchetype>(
                 sprite_row(SpriteId(spr->spriteRow)).archetype);
@@ -2429,7 +2448,7 @@ void SubworldEngine::tick_damage_fx() {
         }
         // A killing blow throws a bigger, more emphatic burst than a glancing
         // hit — the one gameplay fact (lethal) scales the spray, no new data.
-        const float scale = fx.lethal ? 1.8f : 1.0f;
+        const float scale = fxLethal ? 1.8f : 1.0f;
 
         float wx = 0.0f, wz = 0.0f;
         Renderer3DVk::tile_to_world(pos.x, pos.y, wx, wz);
@@ -2441,7 +2460,7 @@ void SubworldEngine::tick_damage_fx() {
         // sprayed outward across neighbouring ground. Bloodless plans (the
         // Dust kinds — skeletons, hulks) fall without a pool, exactly like
         // the reference. Colour = the Blood row's own dark red.
-        if (fx.lethal && kind == FxKind::Blood) {
+        if (fxLethal && kind == FxKind::Blood) {
             const FxPreset& blood = fx_preset(FxKind::Blood);
             push_stamp(wx, wz, 0.43f, blood.r, blood.g, blood.b, 255,
                        MarkType::Pool);
@@ -2461,31 +2480,19 @@ void SubworldEngine::tick_damage_fx() {
     // EVERY spray is consumed, not the first batch of them. The mark is a
     // one-shot read by exactly this pass, so the whole set goes at once —
     // a body left holding its DamageFx bled again on the next tick, and on
-    // every tick after, because the overflow was never reached.
-    reg.clear<ecs::DamageFx>();
+    // every tick after, because the overflow was never reached. Колонке
+    // слив — один fill: байт события гаснет у ВСЕХ слотов разом.
+    objs.damageFx.fill(0u);
 }
 
 void SubworldEngine::tick_hit_flashes(float dt) {
     if (!ecs_ || dt <= 0.0f) return;
-    auto& reg = ecs_->reg;
-    auto view = reg.view<ecs::HitFlash>();
-    for (auto e : view) view.get<ecs::HitFlash>(e).timer -= dt;
-    // Then DRAIN the burnt-out ones — repeating while the batch fills, the way
-    // clear_subworld_entities drains. Removal is deferred because a view may
-    // not be mutated while it is walked; truncating at the batch instead left
-    // the surplus lit with a timer already past zero, and nothing ever came
-    // back for them.
-    for (int taken = kMaxSubworldEntityReaps; taken == kMaxSubworldEntityReaps;) {
-        std::array<entt::entity, kMaxSubworldEntityReaps> expired{};
-        taken = 0;
-        for (auto e : reg.view<ecs::HitFlash>()) {
-            if (reg.get<ecs::HitFlash>(e).timer > 0.0f) continue;
-            expired[std::size_t(taken++)] = e;
-            if (taken == kMaxSubworldEntityReaps) break;
-        }
-        for (int i = 0; i < taken; ++i) {
-            reg.remove<ecs::HitFlash>(expired[std::size_t(i)]);
-        }
+    // Вспышка — КОЛОНКА единого массива (ломоть 1а), и весь прежний
+    // дренаж remove-партиями УМЕР вместе с компонентой: у колонки нечего
+    // снимать, погасший слот просто лежит нулём. Проход — константа от
+    // капа (ЗАКОН СТАБИЛЬНОСТИ: цена не зависит от населения).
+    for (float& t : sub::objects_of(ecs_->reg).hitFlash) {
+        t = t > dt ? t - dt : 0.0f;
     }
 }
 
@@ -3436,7 +3443,11 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             const auto* pos = reg.try_get<ecs::Position>(e);
             const auto* kind = reg.try_get<ecs::NPCKind>(e);
             const auto* level = reg.try_get<ecs::NpcLevel>(e);
-            const auto* lastHit = reg.try_get<ecs::LastHit>(e);
+            // «Кто бил последним» — колонка lastHitBy (ломоть 1а).
+            const auto* osDead = reg.try_get<ecs::ObjectSlot>(e);
+            const std::uint32_t lastHitBy = osDead
+                ? sub::objects_of(reg).lastHitBy[osDead->slot]
+                : sub::kObjNoAttacker;
             const int lvl = normalize_soldier_level(level ? level->value : 1);
 
             if (reg.any_of<ecs::PlayerSoldierTag>(e)) {
@@ -3448,7 +3459,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 continue;
             }
 
-            if (lastHit && mw_.world) {
+            if (lastHitBy != sub::kObjNoAttacker && mw_.world) {
                 // ОДИН закон оплаты килла (§41 корень 5, владелец
                 // 2026-09-10: «байт умирает; жнец резолвит лидера убийцы
                 // для ВСЕХ — игрок просто лидер своего сквада»). The
@@ -3460,8 +3471,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // ordinary leader he is. The leader is then paid through
                 // THE one kill-XP door (squad.h award_kill_xp): an owned
                 // sheet grows like the player's, a transient rolls.
-                const entt::entity killerBody =
-                    entt::entity(lastHit->attackerId);
+                const entt::entity killerBody = entt::entity(lastHitBy);
                 MacroHandle leader{};
                 bool playerHand = false;
                 if (reg.valid(killerBody)) {

@@ -157,10 +157,15 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
         // blood. Nothing happened to the BODY — no Health change, no LastHit,
         // no event — only to the armour, so the protocol below is not walked.
         if (amount > 0) {
-            reg.emplace_or_replace<ecs::HitFlash>(
-                target, ecs::HitFlash{kHitFlashDuration});
-            reg.emplace_or_replace<ecs::DamageFx>(
-                target, ecs::DamageFx{false, true});
+            // FX — колонки единого массива объектов (M-150 ломоть 1а):
+            // вспышка + событие «попали» с флагом blocked — слив кинет
+            // искру с пластины вместо крови. Тело без слота — фикстура
+            // без арены (транзит миграции).
+            if (const auto* os = reg.try_get<ecs::ObjectSlot>(target)) {
+                SubObjects& objs = objects_of(reg);
+                objs.hitFlash[os->slot] = kHitFlashDuration;
+                objs.damageFx[os->slot] = kDmgFxPending | kDmgFxBlocked;
+            }
             out.blocked = true;
         }
         return out;
@@ -171,13 +176,17 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     out.lethal = hp->hp <= 0;
 
     const DamageKindRow& row = kDamageKinds[std::size_t(kind)];
-    if (row.attributesKiller) {
-        reg.emplace_or_replace<ecs::LastHit>(target, src.attackerId);
+    // FX и «кто бил последним» — колонки единого массива объектов (M-150
+    // ломоть 1а); атакер пока носит entt-ид тела (хэндл {slot,gen} — л.7).
+    if (const auto* os = reg.try_get<ecs::ObjectSlot>(target)) {
+        SubObjects& objs = objects_of(reg);
+        if (row.attributesKiller) {
+            objs.lastHitBy[os->slot] = src.attackerId;
+        }
+        objs.hitFlash[os->slot] = kHitFlashDuration;
+        objs.damageFx[os->slot] =
+            std::uint8_t(kDmgFxPending | (out.lethal ? kDmgFxLethal : 0u));
     }
-    reg.emplace_or_replace<ecs::HitFlash>(target,
-                                          ecs::HitFlash{kHitFlashDuration});
-    reg.emplace_or_replace<ecs::DamageFx>(target,
-                                          ecs::DamageFx{out.lethal, false});
 
     if (out.lethal && !reg.any_of<ecs::Dead>(target)) {
         // Смерть тела сцены — тег Dead (кластер 4/7); запись-макро судит

@@ -71,6 +71,7 @@
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
 #include "sub/damage.h"
+#include "sub/objects.h"     // единый массив объектов сцены (M-150)
 #include "sub/dgn/dispatch.h"
 #include "sub/height.h"
 #include "sub/map_data.h"
@@ -197,6 +198,11 @@ struct App {
     // шага 1е. Родится один раз на старте приложения — преаллокация мира
     // (1460 МиБ по капу, вердикт владельца 2026-09-25).
     std::unique_ptr<sm::MacroStore> macroStore;
+    // ЕДИНЫЙ МАССИВ ОБЪЕКТОВ СЦЕНЫ (sub/objects.h, M-150): постоянный
+    // носитель слотов тел/трупов/снарядов окна; транзиент сессии — в сейв
+    // не едет (сейв — только макро-слой, §10). Родится на старте рядом со
+    // store, мост в реестр — objects_attach (умирает с реестром, ломоть 7).
+    std::unique_ptr<sm::sub::SubObjects> sceneObjects;
     sm::EventBus         bus;
     sm::LogicNodeEngine  logic;
     sm::QuestEngine      quests;

@@ -29,6 +29,18 @@
 #include "sub/possess.h"   // current_player_body — «рука игрока» атрибуции
 #include "sub/spawn.h"
 #include "sub/record.h"    // macro_record_of / pools_of — дверь шва «чья это запись»
+
+// Слот арены объектов телу-фикстуре смоука (M-150 1а): свидетель рожает
+// предусловие САМ (§8 п.11) — тело, собранное голым create мимо двери
+// спавна, обязано получить слот, как выдала бы дверь.
+static void smoke_give_slot(entt::registry& reg, entt::entity e) {
+    if (sm::sub::SubObjects* objs = sm::sub::objects_find(reg)) {
+        const int slot = objs->alloc();
+        if (slot >= 0) {
+            reg.emplace<sm::ecs::ObjectSlot>(e, std::uint16_t(slot));
+        }
+    }
+}
 #include "tables/codex.h"
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
 #include "macro/anketa.h"
@@ -4172,6 +4184,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     const entt::entity hostile = reg.create();
+    smoke_give_slot(reg, hostile);
     reg.emplace<sm::ecs::Position>(hostile,
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::VisualPos>(hostile,
@@ -4289,6 +4302,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     // shot.
     const float pz = app.subworld.player_z();
     const entt::entity hostile = reg.create();
+    smoke_give_slot(reg, hostile);
     reg.emplace<sm::ecs::Position>(hostile,
         std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz);
     reg.emplace<sm::ecs::VisualPos>(hostile,
@@ -4534,6 +4548,8 @@ bool run_turn_based_cycle_smoke(App& app) {
             float(sm::sub::kFullSize - 2));
         const float armZ = app.subworld.ground_height_at(armX, py);
         const entt::entity target = reg.create();
+    smoke_give_slot(reg, target);
+        smoke_give_slot(reg, target);
         reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
         reg.emplace<sm::ecs::VisualPos>(target, armX, py, armZ);
         reg.emplace<sm::ecs::NPCKind>(
@@ -4737,6 +4753,7 @@ bool run_subworld_player_melee_smoke(App& app) {
         float(sm::sub::kFullSize - 2));
     const float armZ = app.subworld.ground_height_at(armX, py);
     const entt::entity target = reg.create();
+    smoke_give_slot(reg, target);
     reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
     reg.emplace<sm::ecs::VisualPos>(target, armX, py, armZ);
     reg.emplace<sm::ecs::NPCKind>(
@@ -4763,8 +4780,13 @@ bool run_subworld_player_melee_smoke(App& app) {
     }
 
     const auto* hp = reg.try_get<sm::ecs::Pools>(target);
-    const auto* hitFlash = reg.try_get<sm::ecs::HitFlash>(target);
-    const auto* lastHit = reg.try_get<sm::ecs::LastHit>(target);
+    // fx и атрибуция — колонки единого массива объектов (M-150 1а).
+    const auto* osMelee = reg.try_get<sm::ecs::ObjectSlot>(target);
+    const float meleeFlash = osMelee
+        ? sm::sub::objects_of(reg).hitFlash[osMelee->slot] : 0.0f;
+    const std::uint32_t meleeLastBy = osMelee
+        ? sm::sub::objects_of(reg).lastHitBy[osMelee->slot]
+        : sm::sub::kObjNoAttacker;
     const int afterCombatLog = app.subworld.combat_log_count();
     const sm::sub::CombatLogEntry* combatLog =
         app.subworld.combat_log_entry(afterCombatLog - 1);
@@ -4812,10 +4834,9 @@ bool run_subworld_player_melee_smoke(App& app) {
                  double(minStrike),
                  double(maxStrike),
                  combatRouted ? 1 : 0,
-                 hitFlash ? double(hitFlash->timer) : 0.0,
-                 lastHit && lastHit->attackerId
-                         == std::uint32_t(entt::to_integral(
-                                sm::sub::current_player_body(app.ecs)))
+                 double(meleeFlash),
+                 meleeLastBy == std::uint32_t(entt::to_integral(
+                                    sm::sub::current_player_body(app.ecs)))
                      ? 1 : 0,
                  combatLogVisible ? combatLog->text : "",
                  statusSet ? status : "");
@@ -4844,11 +4865,11 @@ bool run_subworld_player_melee_smoke(App& app) {
                     "what landed lies inside the roll the SHEET can produce — "
                     "the bare bandit wears no armour, so roll == wound");
     }
-    SMOKE_CHECK(app, hitFlash != nullptr, "the struck body takes a hit flash");
-    SMOKE_CHECK(app, hitFlash && hitFlash->timer > 0.0f,
+    SMOKE_CHECK(app, meleeFlash > 0.0f,
                 "the hit flash is still burning when the strike resolves");
-    SMOKE_CHECK(app, lastHit != nullptr, "the struck body remembers who hit it");
-    SMOKE_CHECK(app, lastHit && lastHit->attackerId
+    SMOKE_CHECK(app, meleeLastBy != sm::sub::kObjNoAttacker,
+                "the struck body remembers who hit it");
+    SMOKE_CHECK(app, meleeLastBy
                     == std::uint32_t(entt::to_integral(
                            sm::sub::current_player_body(app.ecs))),
                 "attribution names the PLAYER'S BODY — the hand that swung");
@@ -4946,6 +4967,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     const float pz = app.subworld.player_z();
     const float tx = std::min(px + 8.0f, float(sm::sub::kFullSize - 2));
     const entt::entity target = reg.create();
+    smoke_give_slot(reg, target);
     reg.emplace<sm::ecs::Position>(target, tx, py, pz);
     reg.emplace<sm::ecs::VisualPos>(target, tx, py, pz);
     reg.emplace<sm::ecs::NPCKind>(
@@ -4996,7 +5018,11 @@ bool run_subworld_player_bow_smoke(App& app) {
     // Let the arrow fly: 20 units at 200 u/s plus muzzle clearance.
     (void)advance_sim_seconds(app, 0.30f, false);
     const auto* hp = reg.try_get<sm::ecs::Pools>(target);
-    const auto* lastHit = reg.try_get<sm::ecs::LastHit>(target);
+    // Атрибуция — колонка lastHitBy (M-150 1а).
+    const auto* osBow = reg.try_get<sm::ecs::ObjectSlot>(target);
+    const std::uint32_t bowLastBy = osBow
+        ? sm::sub::objects_of(reg).lastHitBy[osBow->slot]
+        : sm::sub::kObjNoAttacker;
     const float afterHp = hp ? hp->hp : -1.0f;
     const float dealt = beforeHp - afterHp;
 
@@ -5007,9 +5033,8 @@ bool run_subworld_player_bow_smoke(App& app) {
                  missileRouted ? 1 : 0,
                  unsigned(gateSteps),
                  double(beforeHp), double(afterHp),
-                 lastHit && lastHit->attackerId
-                         == std::uint32_t(entt::to_integral(
-                                sm::sub::current_player_body(app.ecs)))
+                 bowLastBy == std::uint32_t(entt::to_integral(
+                                  sm::sub::current_player_body(app.ecs)))
                      ? 1 : 0);
     std::fflush(stderr);
 
@@ -5020,8 +5045,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     if (!missileRouted
         || gateSteps == 0u
         || !hp || dealt <= 0.0f
-        || !lastHit
-        || lastHit->attackerId != std::uint32_t(entt::to_integral(
+        || bowLastBy != std::uint32_t(entt::to_integral(
                sm::sub::current_player_body(app.ecs)))) {
         smoke_fail(app, "subworld_player_bow invariant");
         return false;
@@ -5072,6 +5096,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // a slope, which is most of the time on most worlds.
     const float pz = app.subworld.ground_height_at(tx, py);
     const entt::entity target = reg.create();
+    smoke_give_slot(reg, target);
     reg.emplace<sm::ecs::Position>(target, tx, py, pz);
     reg.emplace<sm::ecs::VisualPos>(target, tx, py, pz);
     // ASK THE REGISTRY for the empire's index instead of spelling a literal.
@@ -5161,7 +5186,9 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const bool spellTookHp =
         std::fabs(beforeFriendlySpellHp - afterFriendlySpellHp
                   - float(kFriendlySpellDamage)) <= 0.001f;
-    const bool spellFlashed = reg.any_of<sm::ecs::HitFlash>(target);
+    const auto* osSpell = reg.try_get<sm::ecs::ObjectSlot>(target);
+    const bool spellFlashed = osSpell
+        && sm::sub::objects_of(reg).hitFlash[osSpell->slot] > 0.0f;
     const bool spellLogged =
         app.subworld.combat_log_count() > beforeFriendlySpellLog;
     const bool friendlySpellHit = spellTookHp && spellFlashed && spellLogged;
@@ -9134,6 +9161,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const float spellTargetY = app.subworld.player_y();
             const float spellTargetZ = muzzleZ;
             const entt::entity spellTarget = app.ecs.reg.create();
+            smoke_give_slot(app.ecs.reg, spellTarget);
             app.ecs.reg.emplace<sm::ecs::Position>(
                 spellTarget, spellTargetX, spellTargetY, spellTargetZ);
             app.ecs.reg.emplace<sm::ecs::VisualPos>(
@@ -9207,8 +9235,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.subworld.combat_log_entry(afterCombatLog - 1);
             const bool hitLogged = afterCombatLog > beforeCombatLog
                 && combatLog && combatLog->text[0] != '\0';
-            const auto* hitFlash =
-                app.ecs.reg.try_get<sm::ecs::HitFlash>(spellTarget);
+            const auto* osBolt =
+                app.ecs.reg.try_get<sm::ecs::ObjectSlot>(spellTarget);
+            const float boltFlash = osBolt
+                ? sm::sub::objects_of(app.ecs.reg).hitFlash[osBolt->slot]
+                : -1.0f;
             // PRINT BEFORE YOU JUDGE. A scenario that fails first tells you only
             // that something is wrong; these numbers say WHICH thing. `alive` is
             // the load-bearing one — a bolt that is gone without a hit was reaped
@@ -9242,14 +9273,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          player_pools(app).mp,
                          std::size_t(smoke_player_recovery_steps(app)),
                          afterSpellCastEvents - beforeSpellCastEvents,
-                         hitFlash ? double(hitFlash->timer) : -1.0,
+                         double(boltFlash),
                          combatLog ? combatLog->text : "");
             std::fflush(stderr);
             if (!hitLogged) {
                 smoke_fail(app, "spell hit combat log missing");
                 break;
             }
-            if (!hitFlash || hitFlash->timer <= 0.0f) {
+            if (boltFlash <= 0.0f) {
                 smoke_fail(app, "spell hit flash missing");
                 break;
             }

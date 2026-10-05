@@ -943,7 +943,7 @@ private:
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee();
     void tick_hit_flashes(float dt);
-    // Drain the one-shot ecs::DamageFx markers stamped by every damage site this
+    // Drain the one-shot damageFx column bits stamped by every damage site this
     // tick into blood / dust particle bursts, then remove them. ONE place turns a
     // "hit landed" signal into VFX: the spray archetype (red blood vs grey dust)
     // is classified from the victim's Sprite.archetype (Undead / Hulk = dust,
