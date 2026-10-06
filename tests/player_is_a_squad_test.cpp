@@ -2,7 +2,7 @@
 // ruling 2026-08-27: «сквад игрока — обычный сквад, просто с флажком»).
 //
 // Making that true has a price the merge had to pay in full: the player's
-// entity now carries the SAME components every macro squad carries — a roster,
+// entity now carries the SAME components every macro squad carries — a creatures,
 // a bag, a level, a runtime, a face. So every scan on the map that used to
 // mean "an NPC" now finds him too, and the ones that mean "somebody OTHER than
 // me" have to say so. They used to say it with `exclude<PlayerTag>`, which is
@@ -235,10 +235,10 @@ void test_the_players_men_are_never_swept() {
     sm::store_attach(w, wStore_.get());
     ensure_macro_player_entity(gs, sm::store_of(w));
     const MacroHandle mine = player_squad_handle(gs);
-    Inventory* roster = player_inventory(gs, *wStore_);
-    CHECK(roster != nullptr, "his roster is there to lose");
+    Inventory* creatures = player_inventory(gs, *wStore_);
+    CHECK(creatures != nullptr, "his creatures is there to lose");
     for (int i = 0; i < 4; ++i) {
-        creatures_push(*roster,
+        creatures_push(*creatures,
                        make_soldier(std::uint16_t(NPCType::Guard), 1,
                                     9000u + std::uint32_t(i)));
     }
@@ -256,9 +256,9 @@ void test_the_players_men_are_never_swept() {
     const int killed = kill_fallen_squad_creatures(*wStore_, gs);
 
     CHECK(killed == 3, "погибли только трое людей павшего НПЦ-лидера");
-    CHECK(creature_heads(pool) == 0,
+    CHECK(creature_count(pool) == 0,
           "и ни один из них не ушёл в пул: павшие ГИБНУТ (M-228)");
-    CHECK(creature_heads(*player_inventory(gs, *wStore_)) == 4,
+    CHECK(creature_count(*player_inventory(gs, *wStore_)) == 4,
           "the player's four are still his, dead flag or not");
     CHECK(creatures_empty(wStore_->inventory[fallen.slot].inv),
           "negative control: the NPC's container WAS emptied by the same call");
@@ -379,7 +379,7 @@ void test_one_door_assembles_every_battle_side() {
 
     // A transient squad owns no sheet — the same door, the derive path.
     // Spawned BEFORE `mine` is assembled: the side carries a pointer into
-    // the roster pool, and a later spawn may reallocate it (ecs-ref grabla).
+    // the creatures pool, and a later spawn may reallocate it (ecs-ref grabla).
     const sm::MacroHandle transient = npc_squad(w, 30.0f, 30.0f, 9u, 0);
     // Транзиент по ЗАКОНУ владения — не именной род: Bandit из фикстуры
     // именной (kNamedKinds) и владел бы листом; крестьянин — деривирует.
@@ -399,8 +399,8 @@ void test_one_door_assembles_every_battle_side() {
           "honest");
     CHECK(mine.fatigue > 0.2f && mine.fatigue < 0.3f,
           "and so does his tiredness");
-    CHECK(mine.roster == player_inventory(gs, *wStore_),
-          "his men are his roster — the same lookup, not a second one");
+    CHECK(mine.creatures == player_inventory(gs, *wStore_),
+          "his men are his creatures — the same lookup, not a second one");
 }
 
 // ── 8. Его рана оседает через ту же дверь ────────────────────────────────
@@ -430,8 +430,8 @@ void test_the_players_wound_settles_through_the_one_door() {
     o.winner = 0;                 // the player's side takes it
     o.leaderFractionA = 0.5f;     // ...limping
     o.leaderFractionB = 0.0f;
-    for (const CreatureHead r :
-         creature_heads_range(wStore_->inventory[foe.slot].inv)) {
+    for (const CreatureRef r :
+         creatures_range(wStore_->inventory[foe.slot].inv)) {
         o.casualtiesB.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
     settle_player_auto_battle(mw, foe, o, /*playerIsA*/true);

@@ -199,7 +199,7 @@ bool modal_overlay_active(const App& app);
 // An ECS entity's SAVE-STABLE identity, which is what a fact must carry: the
 // registry is never serialised, so entity bits mean nothing tomorrow while a
 // MacroSpawnId means the same body for the life of the world. 0 = this body
-// has no identity — a roster row, a body below — and the chronicle will say
+// has no identity — a creature row, a body below — and the chronicle will say
 // so by naming the place instead of a figure.
 std::uint32_t macro_identity_of(const App& app, std::uint32_t handleBits) {
     const sm::MacroHandle h = sm::macro_handle_from_bits(handleBits);
@@ -210,7 +210,7 @@ std::uint32_t macro_identity_of(const App& app, std::uint32_t handleBits) {
 
 // Has this band done enough to be somebody? ONE number answers, and it lives
 // on the band (MacroNpcRuntime::renown — колонка store), so there is no flag
-// beside it to disagree. A stale handle — a roster row, a corpse — is nobody.
+// beside it to disagree. A stale handle — a creature row, a corpse — is nobody.
 bool squad_is_named(const App& app, std::uint32_t handleBits) {
     const sm::MacroHandle h = sm::macro_handle_from_bits(handleBits);
     const auto* rt =
@@ -272,7 +272,7 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     // leaves exactly these traces, and the witcher finds it by them.
     //
     // The killer is the SUBJECT because a chronicle records deeds, not
-    // misfortunes; a killer with no identity (a roster row settling its own
+    // misfortunes; a killer with no identity (a creature row settling its own
     // side's losses) leaves the place itself as the subject, which is how a
     // nameless slaughter still shows up on the trail without pretending
     // somebody famous did it.
@@ -585,7 +585,7 @@ bool modal_overlay_active(const App& app);   // defined with the pause block
 // squad's side goes through (macro/squad.h auto_battle_side_of), because his
 // squad is an ordinary squad. This function used to be that door's hand-built
 // twin: it restated health-as-a-fraction, fatigue-as-sp-over-max and the
-// roster lookup in its own words, reading PlayerState where the door read the
+// creatures lookup in its own words, reading PlayerState where the door read the
 // entity — two answers about one squad, free to disagree the moment either
 // moved. All that is left of it is the ONE number macro is not allowed to
 // know: what a swing of his is worth, which is the subworld's melee identity
@@ -598,7 +598,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     const sm::CharacterSheet eff = player_effective_sheet(app);
     // ОДИН человек по обе стороны цены (A3, 2026-09-17): лист выше читается
     // по флажку, значит и сторона боя, и гир — запись ФЛАГА, кем бы он ни
-    // ходил. До этого ростер/полосы шли по ординалу оригинала — §45 «два
+    // ходил. До этого контейнер/полосы шли по ординалу оригинала — §45 «два
     // ответа» об одном бое.
     sm::MacroStore& st = sm::store_of(app.ecs);
     const sm::MacroHandle flagH = sm::player_flag_handle(app.gs);
@@ -809,7 +809,7 @@ const PreBattleAction kPreBattleActions[] = {
          return true;
      },
      "Odds follow the strength law. Fail, and they are on you."},
-    // Fight: the subworld battle against exactly the people the roster
+    // Fight: the subworld battle against exactly the people the creatures
     // names — the old attack path, now behind the forced stop.
     {[](App&, sm::MacroHandle, char* out, std::size_t n) {
          std::snprintf(out, n, "Fight!");
@@ -901,7 +901,7 @@ void detect_forced_encounter(App& app) {
 
 // The screen itself — the modal shape of draw_encounter_modal, filled from
 // the squad's own data: the leader's name and rank from his row and face,
-// the roster summarised by kind, the odds read through squad_power.
+// the creatures summarised by kind, the odds read through squad_power.
 void draw_pre_battle_modal(App& app) {
     if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) return;
     // Хэндл — носитель ссылки (1г); весь тракт (route/auto/flee) на нём же,
@@ -4189,7 +4189,7 @@ void register_console_commands(App& app) {
     con.register_cmd("spawn_squad",
         "spawn_squad <leader> [level] [members] [memberKind] [faction]",
         "spawn a SQUAD on your macro cell: a leader of <leader> kind with "
-        "[members] roster rows of [memberKind] (default: the leader's kind); "
+        "[members] creature rows of [memberKind] (default: the leader's kind); "
         "[faction] any registry id, omitted -> the land decides. Prints the "
         "squad's ordinal for squad_orders.",
         [&app](Con& c, const std::vector<std::string>& a) {
@@ -4225,7 +4225,7 @@ void register_console_commands(App& app) {
                 spec.x = pc ? sm::ecs::cell_x(*pc, app.gs.mapW) : 0;
                 spec.y = pc ? sm::ecs::cell_y(*pc, app.gs.mapW) : 0;
             }
-            // Row ids in a console-made roster: a private id space (high two
+            // Row ids in a console-made creatures: a private id space (high two
             // bits 01) so they can never collide with garrison ids (high bit
             // 1) or quest/hire ids.
             static std::uint32_t seq = 0;
@@ -5317,7 +5317,7 @@ void draw_debug_panels(App& app) {
 // ── Frame ─────────────────────────────────────────────────────
 
 // Build a small biome-coloured RGBA preview of the currently-loaded
-// terrain + landmark roster and upload it to `app.customPreviewTex`. Cheap
+// terrain + landmark list and upload it to `app.customPreviewTex`. Cheap
 // CPU loop — same biome rule as the macro shader (`Water` if h<sea, else
 // 3×3 climate matrix). Cities drawn as 3×3 yellow stamps.
 void build_world_preview(App& app, int side = 384) {

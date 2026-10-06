@@ -324,7 +324,7 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
                                      % std::uint32_t(kVillageBornSpread));
             // The village's suzerain IS its market city (one edge, S24) —
             // ставится НИЖЕ, после рождения: дверь пишет ОБА конца, а
-            // значит вассал уже должен стоять в ростере мест.
+            // значит вассал уже должен стоять в контейнере мест.
             const int suzerainId = s.id;
             const std::string vilName =
                 s.factionIdx >= 0 ? generate_name(lang_of(s.factionIdx), rng)

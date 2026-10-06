@@ -29,12 +29,12 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
         m.book      = st.spellBook[slot];
         m.inventory = st.inventory[slot].inv;
         {
-            const ecs::SquadRoster& ro = st.roster[slot];
-            // Счёт едет вместе с ростером, которому он выставлен (v105);
+            const ecs::SquadUpkeep& ro = st.upkeep[slot];
+            // Счёт едет вместе с контейнером, которому он выставлен (v105);
             // сами существа — в m.inventory (единый контейнер, M-71).
             for (int c = 0; c < kCommodityCount; ++c)
-                m.rosterNeedDebt[c] = ro.needDebt[c];
-            m.rosterWageDebt = ro.wageDebt;
+                m.upkeepNeedDebt[c] = ro.needDebt[c];
+            m.upkeepWageDebt = ro.wageDebt;
         }
         m.wellbeing = st.wellbeing[slot];
         m.interests = st.interests[slot];
@@ -84,11 +84,11 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         st.spellBook[h.slot] = m.book;
         st.inventory[h.slot] = ecs::NpcInventory{m.inventory};
         {
-            ecs::SquadRoster ro{};
+            ecs::SquadUpkeep ro{};
             for (int c = 0; c < kCommodityCount; ++c)
-                ro.needDebt[c] = m.rosterNeedDebt[c];
-            ro.wageDebt = m.rosterWageDebt;
-            st.roster[h.slot] = ro;
+                ro.needDebt[c] = m.upkeepNeedDebt[c];
+            ro.wageDebt = m.upkeepWageDebt;
+            st.upkeep[h.slot] = ro;
         }
         st.wellbeing[h.slot] = m.wellbeing;
         st.interests[h.slot] = m.interests;

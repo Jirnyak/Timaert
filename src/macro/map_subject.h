@@ -3,7 +3,7 @@
 //
 // THE FACT THESE DOORS REST ON (verified 2026-09-11; слияние M-71): a squad
 // and a landmark hold the SAME type — ONE Inventory (bag, market, granary,
-// treasury AND roster in one: существа лежат областью того же контейнера;
+// treasury AND creatures in one: существа лежат областью того же контейнера;
 // population.md, снесён (CANON S28): «гарнизон = армия ландмарка»). What
 // differed was only the ADDRESS, and since ломтик F even that is gone: место
 // есть НЕПОДВИЖНЫЙ СКВАД того же гладкого массива, so both kinds hold their
@@ -84,11 +84,11 @@ inline Inventory* store_of(const MacroWorld& w, MapSubject s) {
     return nullptr;
 }
 
-// ── THE roster door ──────────────────────────────────────────────────────
+// ── THE creatures door ──────────────────────────────────────────────────────
 // The subject's standing men live in the ONE container (M-71): a squad's —
 // its NpcInventory, a landmark's — its store; hire_npc, upkeep and the
 // strike-through loan all speak the creature area of the same Inventory.
-inline Inventory* roster_of(const MacroWorld& w, MapSubject s) {
+inline Inventory* creatures_of(const MacroWorld& w, MapSubject s) {
     switch (s.kind) {
     case MapSubjectKind::Squad: {
         if (!w.store) return nullptr;

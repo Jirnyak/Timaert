@@ -12,7 +12,7 @@
 #include "macro/memory.h"   // WorldMemory — память мира с горизонтом сезона
 #include "macro/agent_memory.h"
 #include "macro/anketa.h"
-#include "macro/roster.h"   // Roster — ОДИН ростер на место и на сквад (S4)
+#include "macro/upkeep.h"   // Upkeep — ОДИН счёт содержания на место и на сквад (S4)
 #include "macro/interests.h"   // Interests — ВСЕ связи субъекта одной таблицей
 #include "macro/landmark_registry.h"
 #include "macro/resource_field.h"
@@ -135,7 +135,7 @@ namespace sm {
 // enormous step counts — a saved book would come back locked for hours.
 // v42: a squad member's `kind` is 16 bits — the ONE id space bodies already
 // share (humanoid ordinal below 0x100, monster catalog row at or above it).
-// A beast could not stand in a roster while the field was a byte, so a wolf
+// A beast could not stand in a creatures while the field was a byte, so a wolf
 // pack was not expressible as a squad; the macro snapshot refused monster
 // entities for the same reason. Both are now open (CANON.md S4/S16).
 // v44: the player is an ordinary squad, so his goods and his head stopped
@@ -228,7 +228,7 @@ namespace sm {
 // four bytes, different meaning, so the version moves. Every seed the game
 // ever wrote was < 100000 (the UI decimation), exactly representable in
 // both types: the worlds themselves are bit-identical.
-// v62: ONE landmark roster (CANON S9, owner 2026-08-29). The three vectors
+// v62: ONE landmark list (CANON S9, owner 2026-08-29). The three vectors
 // (settlements / villages / spires) and their three serializers became one
 // `std::vector<Landmark>` with a kind column and one serializer; every kind
 // writes every column, unused ones ride at zero defaults. A S9 transition
@@ -334,7 +334,7 @@ namespace sm {
 // просто товар (12 фракционных монет данными, ворота и список валют мертвы);
 // слой разработки + счётчики кораблей полем (shipsAtCell/resourceScars
 // умирают); металлы медь/золото. Старые сейвы ничего не стоят (закон P1).
-// v97 (2026-09-19): РОСТЕР — ИНВЕНТАРЬ СУЩЕСТВ (CANON S4) — на диске
+// v97 (2026-09-19): КОНТЕЙНЕР — ИНВЕНТАРЬ СУЩЕСТВ (CANON S4) — на диске
 // СЛОТ-строки {kind, level, count, entityId}, не по-душам: гарнизон в 752
 // души — два слота, не 752 записи, и int32-стак не разворачивается в стену.
 // v98 (2026-09-19): ЛОШАДЬ — ЮНИТ (CANON S10) — ResourceFieldId вырос
@@ -536,7 +536,7 @@ struct PlayerState {
     // (No `army` field. The player's squad is an ORDINARY squad — his men
     // live in the creature area of his ONE container (M-71), reached through
     // macro/player_entity.h player_inventory(). It sat here as its own
-    // roster until 2026-08-27, and every consumer of it was a
+    // creatures until 2026-08-27, and every consumer of it was a
     // player-specific path CANON S4 forbids by name.)
     // Codex unlock state: one bit per article ordinal (tables/codex.h
     // CodexArticleId; the static_assert there is the loud cap). Replaced a
@@ -678,7 +678,7 @@ struct GameState {
     LayerParameters mapParams{};
     int cityCountTarget = 0;
 
-    // THE landmark roster (CANON S9, 2026-08-29): every placed landmark of
+    // THE landmark list (CANON S9, 2026-08-29): every placed landmark of
     // every kind, one vector, kind = the record's `type` column. Ownership
     // priority for a contested cell is for_each_landmark's yield order
     // (landmark_iter.h), not storage order.
@@ -758,7 +758,7 @@ struct GameState {
     // должна быть единая система-дверь, никаких проверщиков»). Счётчик
     // растёт в дверях рождения и смерти места и в тех немногих событиях,
     // что меняют проходимость мира (мост). Всё, что запечено ОТ СОСТАВА
-    // (навигация S7), сравнивает одно число вместо прохода по ростеру.
+    // (навигация S7), сравнивает одно число вместо прохода по контейнеру.
     //
     // Производное состояние сессии, В СЕЙВ НЕ ЕДЕТ: загрузка поднимает
     // места через ту же дверь и тем самым честно взводит счётчик заново.
@@ -959,17 +959,17 @@ GameState  default_game_state(std::uint32_t seed, int mapW, int mapH,
                               const LayerParameters& mapParams = LayerParameters{},
                               int cityCountTarget = 0);
 
-// Bridge the politik PLAN → the landmark roster. After `generate_politik`
+// Bridge the politik PLAN → the landmark list. After `generate_politik`
 // (and the `snap_cities_to_land` post-pass) the `cities` plan holds the
 // world's capitals and major cities. This turns each plan row into a landmark
-// of the one roster and settles villages on the best-scoring cells of each
+// of the one list and settles villages on the best-scoring cells of each
 // city's hinterland (R2: resources are primary, settlement is derived —
 // macro/settlement_score.h), so the tree and deposit layers must exist BEFORE
 // this runs. Idempotent — clears prior landmarks before populating.
 //
 // The plan arrives as a PARAMETER and not off `gs` (M-90): it is the
 // generator's scratch, the caller owns it for the length of genesis, and the
-// living world has no city list of its own to disagree with the roster.
+// living world has no city list of its own to disagree with the creatures.
 struct TerrainData;  // fwd
 struct TreeLayer;
 struct DepositLayer;

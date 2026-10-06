@@ -8,7 +8,7 @@
 #include "sub/ai.h"
 #include "sub/spawn.h"
 #include "macro/store.h"
-#include "macro/macro_stock.h"  // займ ростера — носитель идентичности солдата
+#include "macro/macro_stock.h"  // займ контейнера — носитель идентичности солдата
 
 #include <cstdio>
 #include <vector>
@@ -62,15 +62,15 @@ int main() {
         return fail("hire_npc did not charge exact NPC-kind price");
     }
     const sm::ItemRef* hired = &player.slots[sm::kMaxInventorySlots - 1];
-    if (sm::creature_heads(player) != 1
+    if (sm::creature_count(player) != 1
         || sm::creature_of_world_row(hired->def) != sm::NPCType::Guard
-        || hired->entityId != 42u || sm::creature_heads(garrison) != 1) {
+        || hired->entityId != 42u || sm::creature_count(garrison) != 1) {
         return fail("hire_npc did not move the concrete soldier record");
     }
 
     const int denied = sm::hire_npc(player, garrison, sm::NPCType::Merchant, gold);
-    if (denied != 0 || sm::creature_heads(player) != 1
-        || sm::creature_heads(garrison) != 1) {
+    if (denied != 0 || sm::creature_count(player) != 1
+        || sm::creature_count(garrison) != 1) {
         return fail("non-hireable NPC kind was recruitable");
     }
 
@@ -82,17 +82,17 @@ int main() {
     sm::creatures_push(duplicateIds, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Peasant), 1, 78u));
     int with77 = 0;
-    for (const sm::CreatureHead h : sm::creature_heads_range(duplicateIds)) {
+    for (const sm::CreatureRef h : sm::creatures_range(duplicateIds)) {
         if (h.entityId == 77u) ++with77;
     }
     if (with77 != 2) return fail("fixture sanity: two souls share id 77");
     if (!sm::creatures_remove_one_by_entity_id(duplicateIds, 77u)
-        || sm::creature_heads(duplicateIds) != 2
+        || sm::creature_count(duplicateIds) != 2
         || sm::creatures_remove_one_by_entity_id(duplicateIds, 999u)) {
         return fail("soldier death removal did not remove exactly one record");
     }
     with77 = 0;
-    for (const sm::CreatureHead h : sm::creature_heads_range(duplicateIds)) {
+    for (const sm::CreatureRef h : sm::creatures_range(duplicateIds)) {
         if (h.entityId == 77u) ++with77;
     }
     if (with77 != 1) {
@@ -107,23 +107,23 @@ int main() {
 
     // Upkeep is MAINTENANCE, not a deal (owner 2026-09-17, CANON S14/S19.2):
     // the CHA discount died as a player-special — the law is the plain sum
-    // of the soldier rows' own prices, whoever's roster it is.
+    // of the soldier rows' own prices, whoever's creatures it is.
     const int baseUpkeep = sm::calculate_squad_upkeep(player);
     int rowSum = 0;
-    for (const sm::CreatureHead h : sm::creature_heads_range(player))
+    for (const sm::CreatureRef h : sm::creatures_range(player))
         rowSum += sm::soldier_upkeep(h.kind, h.level);
     if (baseUpkeep <= 0 || baseUpkeep != rowSum) {
         return fail("squad upkeep must be the plain soldier-row sum");
     }
 
-    // ПАСТВА ВСТАЁТ В РОСТЕР ОДНОЙ СТРОКОЙ (2026-09-22). Здесь проверялся
+    // ПАСТВА ВСТАЁТ В КОНТЕЙНЕР ОДНОЙ СТРОКОЙ (2026-09-22). Здесь проверялся
     // `generate_garrison` с броском монетки на каждую душу (60 % Guard /
     // 40 % Peasant); он вырезан вместе со стражей, и состав перестал быть
     // жребием — значит `FixedRng` этой проверке больше не нужен вовсе.
     sm::Inventory flock{};
-    const int raised = sm::raise_flock_into_roster(flock, 9);
-    if (raised != 9 || sm::creature_heads(flock) != 9) {
-        return fail("паства не встала в ростер полностью");
+    const int raised = sm::raise_flock_into_container(flock, 9);
+    if (raised != 9 || sm::creature_count(flock) != 9) {
+        return fail("паства не встала в контейнер полностью");
     }
     // ОДИН РОД — ОДИН СЛОТ: генерики стоят стопкой (CANON S4), поэтому
     // девять душ это ОДНА строка области, а не девять.
@@ -135,7 +135,7 @@ int main() {
             flock.slots[sm::kMaxInventorySlots - 1];
         if (sm::creature_of_world_row(s0.def) != sm::NPCType::Peasant
             || s0.entityId != 0 || s0.count != 9) {
-            return fail("в ростере места стоят только крестьяне-генерики");
+            return fail("в контейнере места стоят только крестьяне-генерики");
         }
     }
 
@@ -145,10 +145,10 @@ int main() {
     }
 
     sm::Inventory selfAppend = flock;
-    const int selfAppendBase = sm::creature_heads(selfAppend);
+    const int selfAppendBase = sm::creature_count(selfAppend);
     const int selfAppendSlots = sm::creature_slot_count(selfAppend);
     sm::creatures_add(selfAppend, selfAppend);
-    if (sm::creature_heads(selfAppend) != selfAppendBase * 2
+    if (sm::creature_count(selfAppend) != selfAppendBase * 2
         || sm::creature_slot_count(selfAppend) != selfAppendSlots) {
         return fail("self squad append is not stable: generic stacks must "
                     "merge, souls must double");
@@ -173,7 +173,7 @@ int main() {
         if (sm::sub::body_pools(world.reg, e) == nullptr
             || sm::sub::body_combat(world.reg, e) == nullptr) continue;
         const auto& loan = view.get<sm::ecs::MacroDebt>(e);
-        if (loan.stock != std::uint8_t(sm::MacroStock::Roster)) continue;
+        if (loan.stock != std::uint8_t(sm::MacroStock::Creatures)) continue;
         ++projected;
         if (!sm::sub::object_flag(world.reg, e, sm::sub::kObjPlayerSoldier)) {
             return fail("a projected soldier lacks the player-side bit");
@@ -215,7 +215,7 @@ int main() {
     int malformedProjected = 0;
     for (auto e : malformedView) {
         if (malformedView.get<sm::ecs::MacroDebt>(e).stock
-            == std::uint8_t(sm::MacroStock::Roster)) ++malformedProjected;
+            == std::uint8_t(sm::MacroStock::Creatures)) ++malformedProjected;
     }
     if (malformedProjected != 1) {
         return fail("malformed tile buffer blocked squad projection");
@@ -293,8 +293,8 @@ int main() {
     }
 
     std::printf("OK combat_squad_test hired=%d garrison=%d upkeep=%d generated=%d projected=%d malformed_tiles=%d ai_owner=1 unique_ids=1\n",
-                sm::creature_heads(player), sm::creature_heads(garrison),
-                baseUpkeep, sm::creature_heads(flock),
+                sm::creature_count(player), sm::creature_count(garrison),
+                baseUpkeep, sm::creature_count(flock),
                 projected, malformedProjected);
     CHECK(true, "every gate above held");
     return sm::test::report("combat_squad_test");

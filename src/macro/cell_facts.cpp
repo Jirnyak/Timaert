@@ -71,7 +71,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
         ? std::int32_t(w.store->spawnId[who.slot].index) : 0;
     if (w.gs && lmId != 0) {
         // One population, one find (ломтик F): the by-kind switch over three
-        // vectors died with the vectors, and the roster of rows died with the
+        // vectors died with the vectors, and the creatures of rows died with the
         // flip — всё названное читается КОЛОНКАМИ того же слота, который
         // каркас уже вернул. Population and tier are SEPARATE fields (§42):
         // `size` used to carry the spire's tier, which was harmless only

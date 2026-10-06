@@ -22,7 +22,7 @@ namespace sm {
 // A fact the macro layer produces about a fight it resolved. One kind so far;
 // it grows like every other row-shaped thing here. `victim` and `killer` are
 // PACKED store handles — {slot | gen<<16}, macro_handle_bits (store.h);
-// all-ones = a roster row, which has no slot of its own — it is named by its
+// all-ones = a creature row, which has no slot of its own — it is named by its
 // record id in `detail`. (Шаг 1г: прежний сентинель 0 был легальным слотом —
 // первый рождённый сквад получает слот 0 — и его смерть молча читалась как
 // «никто».) The app raises this as the ordinary NpcDeath the whole story
@@ -33,9 +33,9 @@ struct BattleFact {
     enum class Kind : std::uint8_t { Death = 0 };
     Kind          kind    = Kind::Death;
     std::uint16_t npcType = 0;       // the fallen body's row (NpcDeath.ix)
-    std::uint32_t victim  = 0xFFFFFFFFu;  // packed handle; ones = roster row
+    std::uint32_t victim  = 0xFFFFFFFFu;  // packed handle; ones = creature row
     std::uint32_t killer  = 0xFFFFFFFFu;  // packed handle of the victor
-    std::int32_t  detail  = -1;      // the roster record id, -1 for a leader
+    std::int32_t  detail  = -1;      // the creatures record id, -1 for a leader
     int           level   = 1;
     const char*   factionId = "";    // whose colours the fallen wore
 };
@@ -62,7 +62,7 @@ namespace ecs { struct World; }
 struct MacroWorld {
     GameState*  gs    = nullptr;
     TreeLayer*  trees = nullptr;
-    ecs::World* world = nullptr;   // the roster row lives on squad entities
+    ecs::World* world = nullptr;   // the creature row lives on squad entities
     MacroStore* store = nullptr;   // гладкая память макро-сквадов (M-106):
                                    //   состояние — колонками по слоту
     const TerrainData* terrain = nullptr;   // the fauna row derives its

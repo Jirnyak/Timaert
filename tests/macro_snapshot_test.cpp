@@ -5,7 +5,7 @@
 // and the runtime ordinal issuer (max-over-living) could hand a dead man's
 // identity to a stranger (problems.md 19.24). What is pinned here:
 //   · snapshot -> save -> load -> restore round-trips the ENTITIES — wounds,
-//     debt, xp, orders, roster, death — not just their scalars;
+//     debt, xp, orders, creatures, death — not just their scalars;
 //   · the killed lord STAYS dead across the save;
 //   · MacroSpawnId ordinals are for LIFE: destroy the highest-ordinal squad,
 //     save, load, spawn anew — the dead man's ordinal is never reissued
@@ -162,8 +162,8 @@ void test_snapshot_round_trips_the_living_map() {
     CHECK(w2Store_->level[a2.slot].value == 5, "the level survives");
     CHECK(std::strcmp(w2Store_->name[a2.slot].text, "Chornyy Voron") == 0,
           "мутированное имя анкеты пережило сейв колонкой (v119)");
-    CHECK(creature_heads(w2Store_->inventory[a2.slot].inv) == 2,
-          "the roster rows survive");
+    CHECK(creature_count(w2Store_->inventory[a2.slot].inv) == 2,
+          "the creature rows survive");
     CHECK(w2Store_->orders[a2.slot].waypointCount == 2,
           "the squad's route survives");
     CHECK(!sm::macro_dead(*w2Store_, a2), "the living leader is not dead");

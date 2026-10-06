@@ -6532,7 +6532,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // EXACTLY ONE flag holder, and the doors must answer with that
                 // carrier or the flag holder. Before v87 the load-path genesis
                 // raised a second carrier and every door pointed at it: bars,
-                // bag and roster silently reset to a fresh husk while the
+                // bag and creatures silently reset to a fresh husk while the
                 // restored squad ghosted the map — green fold witness, green
                 // ctest, nothing weighed the registry.
                 {
@@ -8415,7 +8415,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const sm::Inventory* pArmy = sm::player_inventory(app.gs, *app.macroStore);
-            const int armyBefore = pArmy ? sm::creature_heads(*pArmy) : 0;
+            const int armyBefore = pArmy ? sm::creature_count(*pArmy) : 0;
             const int hpBefore = player_pools(app).hp;
             perform_encounter_auto(app, hostile, sm::Ambush::None);
             if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
@@ -8430,7 +8430,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                        < app.macroStore->pools[hostile.slot].maxHp;
             const bool playerPaid =
                 (sm::player_inventory(app.gs, *app.macroStore)
-                     ? sm::creature_heads(*sm::player_inventory(app.gs, *app.macroStore))
+                     ? sm::creature_count(*sm::player_inventory(app.gs, *app.macroStore))
                      : 0) < armyBefore
                 || player_pools(app).hp < hpBefore;
             if (!enemyGone && !enemyHurt && !playerPaid) {

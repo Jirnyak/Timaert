@@ -1,7 +1,7 @@
 // AUTO-RESOLVE — the macro law of battle (owner, 2026-08-06, CANON S4/S13 (бывший macrosim.md)):
 // two AI squads meeting on the map must produce a winner without a subworld,
 // or the macro sim cannot run a war at all. ONE resolver, fed by what the
-// rosters already say — the same table rows, the same character sheets, the
+// containers already say — the same table rows, the same character sheets, the
 // same project_combat numbers the subworld births fight with — plus context
 // (terrain, fatigue, who ambushed whom). The player's own battles may use it
 // too (the M&B "auto-resolve" button): same function, same inputs, no second
@@ -11,8 +11,8 @@
 // not playing a different game from the one the world plays around him.
 //
 // Like sub/movement.h this is a PURE law: it computes who won and who fell and
-// touches nothing. The CALLER settles the world — roster rows through the
-// macro-stock roster row, the leader through the tracked-death path, the
+// touches nothing. The CALLER settles the world — creature rows through the
+// macro-stock creature row, the leader through the tracked-death path, the
 // creatures of a dead leader through kill_fallen_squad_creatures, loot and XP
 // through their one registries — so the auto-battle and the fought battle
 // pay their debts through the very same doors.
@@ -34,7 +34,7 @@
 namespace sm {
 
 // One side of an auto-battle: the squad as the macro layer holds it — the
-// leader (the entity itself) plus the roster rows. The aura is COLLECTED BY
+// leader (the entity itself) plus the creature rows. The aura is COLLECTED BY
 // THE CALLER from the leader's sheet (character_sheet.h squad_bonuses), exactly as the body
 // births do, so a Leader-perk lord is stronger here and below by the same
 // modifiers. Context multipliers are per-side because terrain and fatigue
@@ -54,8 +54,8 @@ struct AutoBattleSide {
     float         leaderHpOverride  = -1.0f;
     float         leaderDpsOverride = -1.0f;
     // ЕДИНЫЙ КОНТЕЙНЕР сквада (M-71): бой читает только область существ
-    // (creature_heads_range), предметная область для него не существует.
-    const Inventory* roster = nullptr;   // may be empty/null
+    // (creatures_range), предметная область для него не существует.
+    const Inventory* creatures = nullptr;   // may be empty/null
     BonusTotals   bonuses{};
     // Context, composed by the caller from what the cell and the squad say:
     // terrain advantage (defender's hill, forest cover — data rows when the
@@ -73,13 +73,13 @@ struct AutoBattleOutcome {
     // The fallen, by the same COIN their deaths are settled under everywhere
     // (macro/army.h remove_one_soldier): a storied soul by its entityId, a
     // generic one by {kind, level, 0} — one of its stack, which is all a
-    // generic ever was. The bare id list died with the roster-as-inventory
+    // generic ever was. The bare id list died with the creatures-as-inventory
     // (CANON S4): a generic death has no id to be listed by.
     std::vector<SoldierRecord> casualtiesA, casualtiesB;
     // The leaders' post-battle health as the FRACTION wounds already travel
     // in (sub/spawn.h): 0 = dead, and the caller routes that through the one
     // tracked-death path. A winner limps out; a loser's leader dies ONLY if
-    // his whole roster died with him — never by dice (owner ruling).
+    // his whole creatures died with him — never by dice (owner ruling).
     float leaderFractionA = 1.0f, leaderFractionB = 1.0f;
 };
 
@@ -159,18 +159,18 @@ inline float fighter_power(NPCType type, int level, std::uint32_t seed,
 // LEVEL, which fix the sheet's entire point budget; the seed only shuffles
 // its allocation. Deterministic from the member's own identity so the same
 // battle re-resolved is the same battle.
-inline std::uint32_t member_seed(const CreatureHead& r) {
+inline std::uint32_t member_seed(const CreatureRef& r) {
     // A generic soul has no name; its ADDRESS (slot, index) stands in, so
     // the same composition re-resolved is the same battle (the id formula
     // for storied souls is the historical one, verbatim). Слот здесь —
-    // СТАРЫЙ РОСТЕРНЫЙ ординал (0 = старейший): область существ растёт
+    // СТАРЫЙ КОНТЕЙНЕРНЫЙ ординал (0 = старейший): область существ растёт
     // сверху вниз, поэтому он ВЫЧИСЛЯЕТСЯ из слота контейнера — та же
     // композиция даёт тот же бой, что до слияния M-71.
-    const std::uint32_t rosterSlot =
+    const std::uint32_t creatureSlotId =
         std::uint32_t(kMaxInventorySlots - 1 - r.slot);
     const std::uint32_t name = r.entityId != 0
         ? r.entityId
-        : ((rosterSlot << 16) | (std::uint32_t(r.index) + 1u));
+        : ((creatureSlotId << 16) | (std::uint32_t(r.index) + 1u));
     return (name * 2654435761u) ^ (std::uint32_t(r.kind) << 16)
          ^ std::uint32_t(r.level);
 }
@@ -191,8 +191,8 @@ inline float squad_power(const AutoBattleSide& s) {
         power = fighter_power(s.leaderType, s.leaderLevel, s.leaderSeed,
                               /*aura*/nullptr, s.leaderHealthFraction);
     }
-    if (s.roster) {
-        for (const CreatureHead r : creature_heads_range(*s.roster)) {
+    if (s.creatures) {
+        for (const CreatureRef r : creatures_range(*s.creatures)) {
             if (!valid_npc_kind(r.kind)) continue;
             power += fighter_power(NPCType(r.kind),
                                    normalize_soldier_level(r.level),
@@ -237,18 +237,18 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
         1.0f - std::sqrt(std::max(0.0f, 1.0f - ratio * ratio));
     const float loserLoss = std::clamp(0.55f + 0.45f * ratio, 0.0f, 1.0f);
 
-    // Distribute a side's losses over its actual roster rows. The FRACTION
+    // Distribute a side's losses over its actual creature rows. The FRACTION
     // decides how many fell — that is the law above, and it must hold for a
     // band of three as surely as for a thousand — while the rng decides WHO,
-    // because the ledger settles deaths by name (the roster row's `detail`).
-    // The leader is not a roster row: he takes the battle as wounds (winner)
+    // because the ledger settles deaths by name (the creature row's `detail`).
+    // The leader is not a creature row: he takes the battle as wounds (winner)
     // and only a broken side can lose him outright.
     auto distribute = [&rng](const AutoBattleSide& side, float lossFrac,
                              std::vector<SoldierRecord>& casualties) {
-        if (!side.roster || creatures_empty(*side.roster)) return;
+        if (!side.creatures || creatures_empty(*side.creatures)) return;
         std::vector<SoldierRecord> souls;
-        souls.reserve(std::size_t(creature_heads(*side.roster)));
-        for (const CreatureHead r : creature_heads_range(*side.roster)) {
+        souls.reserve(std::size_t(creature_count(*side.creatures)));
+        for (const CreatureRef r : creatures_range(*side.creatures)) {
             if (valid_npc_kind(r.kind))
                 souls.push_back(SoldierRecord{r.entityId, r.kind,
                                               std::int16_t(r.level)});
@@ -268,19 +268,19 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     distribute(b, aWins ? loserLoss : winnerLoss, out.casualtiesB);
 
     // Leaders. The winner walks out wounded in proportion to how hard the
-    // fight was. The loser's leader dies ONLY when his whole roster died
+    // fight was. The loser's leader dies ONLY when his whole creatures died
     // with him (owner ruling, 2026-08-06): a lord's head is never given to
     // chance, or lords would fall regularly to dice in a war of auto-battles
     // — defeat costs him HP, not his life, while a single man of his still
     // stands. The consequence for a squad of ONE is deliberate: a lone
     // wanderer who loses has nobody left to stand between him and the field.
     // Fractions, because that is how wounds travel between layers.
-    const auto roster_size = [](const AutoBattleSide& s) {
+    const auto creatures_size = [](const AutoBattleSide& s) {
         int n = 0;
-        if (s.roster) {
-            for (int i = s.roster->creature_first();
+        if (s.creatures) {
+            for (int i = s.creatures->creature_first();
                  i < kMaxInventorySlots; ++i) {
-                const ItemRef& r = s.roster->slots[std::size_t(i)];
+                const ItemRef& r = s.creatures->slots[std::size_t(i)];
                 if (valid_npc_kind(
                         std::uint16_t(creature_of_world_row(r.def)))) {
                     n += r.count;
@@ -291,11 +291,11 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     };
     const AutoBattleSide& loserSide = aWins ? b : a;
     const auto& loserCasualties = aWins ? out.casualtiesB : out.casualtiesA;
-    const bool rosterWipedOut =
-        int(loserCasualties.size()) >= roster_size(loserSide);
+    const bool creaturesWipedOut =
+        int(loserCasualties.size()) >= creatures_size(loserSide);
     const float winnerFraction = std::clamp(1.0f - winnerLoss * 0.8f,
                                             0.05f, 1.0f);
-    const float loserFraction = rosterWipedOut
+    const float loserFraction = creaturesWipedOut
         ? 0.0f
         : std::clamp(0.25f * (1.0f - ratio) + 0.05f, 0.05f, 1.0f);
     const float startA = std::clamp(a.leaderHealthFraction, 0.0f, 1.0f);

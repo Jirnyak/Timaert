@@ -72,7 +72,7 @@ struct PlayerFlag {
     X(runtime,   ecs::MacroNpcRuntime)                                       \
     X(spellBook, SpellBook)                                                  \
     X(memory,    AgentMemory)                                                \
-    X(roster,    ecs::SquadRoster)                                           \
+    X(upkeep,    ecs::SquadUpkeep)                                           \
     X(wellbeing, Wellbeing)                                                  \
     X(interests, Interests)                                                  \
     X(inventory, ecs::NpcInventory)                                          \

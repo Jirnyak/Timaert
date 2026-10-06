@@ -89,7 +89,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         }
         // His book, born WITH the body like every squad's (v89) — with the
         // starter spell the old PlayerState default carried (state.cpp).
-        // Память/ростер/сумка/черты уже обнулены рождением слота.
+        // Память/контейнер/сумка/черты уже обнулены рождением слота.
         spellbook_learn(st.spellBook[h.slot], spell_ordinal("magic_bolt"));
         // The march caches come from the player's OWN sheet, through the same
         // door every leader's do.

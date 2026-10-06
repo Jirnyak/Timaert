@@ -1,6 +1,6 @@
 // Squad lifecycle helpers — the macro side of "THE macro entity is a squad"
-// (CANON S4/S13 (бывший macrosim.md), ecs::SquadRoster doctrine). The squad IS its leader entity;
-// what lives here is what happens to the roster around the leader's own
+// (CANON S4/S13 (бывший macrosim.md), ecs::SquadUpkeep doctrine). The squad IS its leader entity;
+// what lives here is what happens to the creatures around the leader's own
 // life and death. Header-only: pure ECS + army.h record moves, no engine,
 // no renderer, so every layer (subworld leave, the coming auto-resolve,
 // tests) settles squads through the same functions.
@@ -128,7 +128,7 @@ inline void refresh_body_from_sheet(ecs::Pools& pools,
                         : get_carry_capacity(sheet.attributes, sheet.skills))
                    * (haul > 0.0f ? haul : 1.0f);
     // Лист обновился — обоз считается от него заново; состав добавит своё
-    // через refresh_squad_carry (эта дверь листа ростера не видит).
+    // через refresh_squad_carry (эта дверь листа контейнера не видит).
     rt->carryCap = rt->carryPerSoul;
 }
 
@@ -137,13 +137,13 @@ inline void refresh_body_from_sheet(ecs::Pools& pools,
 // членов». Слагаемое души = спина лидера × (haulMult ЕЁ строки / haulMult
 // строки лидера): у крестьянина это ровно одна спина, у тяглового рода —
 // столько, сколько говорит его колонка. Отсюда даром получается лошадь в
-// ростере (владелец 2026-09-19): она не особый случай, а строка с большим
+// контейнере (владелец 2026-09-19): она не особый случай, а строка с большим
 // haulMult, и её вклад считает тот же закон.
 //
 // ПОЧЕМУ ДВЕРЬ, А НЕ ОДИН РАСЧЁТ ПРИ СПАВНЕ: состав ДЫШИТ (S19.2 — добор и
 // ссадка на границе, дезертирство 1/8, потери в поле). Кэш, посчитанный при
 // рождении, после первого же добора врёт — и врёт молча, потому что вес
-// груза он всё равно как-то ограничивает. Каждое место, меняющее ростер,
+// груза он всё равно как-то ограничивает. Каждое место, меняющее контейнер,
 // обязано позвать эту дверь.
 inline void refresh_squad_carry(MacroStore& st, MacroHandle leader) {
     if (!st.valid(leader)) return;
@@ -165,7 +165,7 @@ inline void refresh_squad_carry(MacroStore& st, MacroHandle leader) {
 
 // THE lookup by save-stable ordinal (ecs::MacroSpawnId): the one identity a
 // macro entity keeps across a regeneration, so it is what a receipt names
-// (ecs::MacroDebt.subject for a roster row) and what possession stores. The
+// (ecs::MacroDebt.subject for a creature row) and what possession stores. The
 // store is never serialized by slot, so this is a scan — of thousands, not
 // of a hot loop: a death, a possession, a load.
 // ── ИМЯ СКВАДА — ОДНА ДВЕРЬ ЧТЕНИЯ КОЛОНКИ (вердикт 3, ход 2) ───────────
@@ -366,9 +366,9 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
 // pre-battle modal re-checks its foe), and every LONG-lived reference is
 // ordinal-based or validity-guarded by construction (MacroOrigin backlinks
 // check reg.valid; MacroDebt receipts and possession resolve spawn ordinals
-// through scans that simply find nothing; find_roster fails to a no-op).
+// through scans that simply find nothing; find_creatures fails to a no-op).
 //
-// A roster the pool REFUSED keeps its entity — the dead lord's band stands
+// A creatures the pool REFUSED keeps its entity — the dead lord's band stands
 // until the drain takes the men (its own contract: nobody is destroyed for
 // standing past a cap, CANON S26). The player's squad is never swept: his
 // death is a game-over screen, not a disappearance. Returns how many left
@@ -409,7 +409,7 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
             *lootPoolValue += inventory_value(st.inventory[slot].inv);
         // ЛИДЕР — СВОЯ ДУША, И ОН ТОЖЕ БЫЛ ВЗЯТ ИЗ ДОМА (v122: рождение
         // артели списывает `1 + members` голов, npc_ai rotate_worker_squads).
-        // Ростер здесь уже пуст — членов увёл пул, и их дом списал сам, —
+        // Контейнер здесь уже пуст — членов увёл пул, и их дом списал сам, —
         // поэтому остаётся ровно одна душа, и списывается она ровно раз: слот
         // умирает в этой строке и второй раз сюда не придёт.
         if (is_folk_kind(st.kind[slot].type)) {
@@ -771,7 +771,7 @@ inline std::uint32_t record_landmark_fact(MacroStore& st, GameState& gs,
 // (The `storedSheet` parameter this replaced is what killed the twin: the
 // app used to assemble the player's side by hand in
 // `player_auto_battle_side` — twenty lines restating health-as-a-fraction,
-// fatigue-as-sp-over-max and roster lookup beside the twenty here saying
+// fatigue-as-sp-over-max and creatures lookup beside the twenty here saying
 // the same about everyone else. Посадка Б retired the parameter itself:
 // the sheet lives ON the entity now, so the door reads it like every other
 // component above.)
@@ -794,7 +794,7 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
         s.fatigue = std::clamp(
             float(hp.sp) / float(std::max<int>(1, hp.maxSp)), 0.1f, 1.0f);
     }
-    s.roster = &st.inventory[slot].inv;   // область существ контейнера (M-71)
+    s.creatures = &st.inventory[slot].inv;   // область существ контейнера (M-71)
     if (sheet_owned_at(st, slot)) {
         // A named leader's hp ceiling is his OWN sheet's, not a roll of his
         // row — and his aura is what his perks and skills actually say. The
@@ -900,7 +900,7 @@ inline void award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
 // ── The settling halves — one set of doors for EVERY consumer ──────────────
 // An auto-battle's outcome lands in the world through exactly the pieces
 // below, whether the caller is the AI threat step (two macro entities) or
-// the player's own auto-resolve button (Inc 6). No consumer edits a roster
+// the player's own auto-resolve button (Inc 6). No consumer edits a creatures
 // vector or a health bar directly.
 
 // ── The fallen SPEAK (damage-door track Inc 6) ────────────────────────────
@@ -947,14 +947,14 @@ inline const char* squad_faction_id(const MacroStore& st, MacroHandle h) {
 // «что павший этой РОЛИ был бы должен нести»: бросок хардкод-профиля роли
 // плюс печать кошелька. Обе таблицы снесены, и с ними эта дверь. Победителю
 // достаётся РОВНО то, что павший нёс: сумку лидера переносит
-// `loot_fallen_owner` ниже, а ростерные записи — это записи, и нести им
+// `loot_fallen_owner` ниже, а контейнерные записи — это записи, и нести им
 // нечего до ПУЛА ЛУТА, который будет раздавать добычу по стоимости и
 // контексту (дыра названа в M-139).
 
-// Every death this side suffered, told once: the roster rows by their fallen
+// Every death this side suffered, told once: the creature rows by their fallen
 // records and the leader by his entity. The casualty coin carries its own
-// kind and level (CANON S4) — no roster scan; the resolver drew these FROM
-// the roster, and a generic record has no id a scan could match anyway.
+// kind and level (CANON S4) — no creatures scan; the resolver drew these FROM
+// the creatures, and a generic record has no id a scan could match anyway.
 inline void report_battle_deaths(const MacroWorld& mw, const MacroStore& st,
                                  MacroHandle side,
                                  const std::vector<SoldierRecord>& casualties,
@@ -978,7 +978,7 @@ inline void report_battle_deaths(const MacroWorld& mw, const MacroStore& st,
     }
 }
 
-// Roster deaths through the ledger row: a storied soul by its entityId, a
+// Creatures deaths through the ledger row: a storied soul by its entityId, a
 // generic one by {kind, level} (the key's detailKind/detailLevel pair).
 inline void settle_squad_casualties(GameState& gs, ecs::World& w,
                                     MacroStore& st, MacroHandle h,
@@ -988,7 +988,7 @@ inline void settle_squad_casualties(GameState& gs, ecs::World& w,
     MacroWorld mw{.gs = &gs, .world = &w, .store = &st};
     // named, not positional — the envelope grows, positions rot; store
     // ОБЯЗАН ехать в каждом локальном конверте (шрам с.18: без него
-    // find_roster отказывал в no-op и потери авто-боя молча не списывались)
+    // find_creatures отказывал в no-op и потери авто-боя молча не списывались)
     MacroStockKey key{};
     key.subject = std::int32_t(st.spawnId[h.slot].index);
     key.cellX = std::int16_t(ecs::cell_x(cell, gs.mapW));
@@ -997,7 +997,7 @@ inline void settle_squad_casualties(GameState& gs, ecs::World& w,
         key.detail = r.entityId != 0 ? std::int32_t(r.entityId) : -1;
         key.detailKind = r.kind;
         key.detailLevel = r.level;
-        macro_stock_apply(mw, MacroStock::Roster, key, -1);
+        macro_stock_apply(mw, MacroStock::Creatures, key, -1);
     }
 }
 
@@ -1178,7 +1178,7 @@ inline void settle_auto_battle(const MacroWorld& mw,
 // button). The player is the same shape as any leader — and «the player» is
 // the FLAG record (A3, 2026-09-17): the man he is on the map, his own squad
 // as himself, the worn lord's while he wears one. Until then the sheet
-// priced the fight by the flag while roster, wound and facts settled into
+// priced the fight by the flag while creatures, wound and facts settled into
 // the ordinal original — the §45 «два ответа» shape, fought and paid by two
 // different men. The enemy half goes through exactly the halves above; the
 // player half lands where the flag record's truth lives — army rows removed
@@ -1214,7 +1214,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
         ? xp_for_fallen(st, enemy, enemyCas, enemyFraction <= 0.0f)
         : 0;
 
-    // The player's fallen leave his roster by the SAME door every squad's do
+    // The player's fallen leave his creatures by the SAME door every squad's do
     // — his squad is an ordinary squad record now, so this is
     // settle_squad_casualties over his own record, ledger and all. The
     // hand-written removal that used to stand here was one of the four
@@ -1246,7 +1246,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
 
     // Spoils: РОВНО то, что павший НЁС. Бросок реестра лута по роли ушёл
     // вместе с хардкод-таблицами (M-139): сумку павшего лидера переносит
-    // `loot_fallen_owner` ниже — один перенос, ноль печати. Ростерные
+    // `loot_fallen_owner` ниже — один перенос, ноль печати. Контейнерные
     // мертвецы своих сумок не имеют (они записи, не энтити) и до ПУЛА ЛУТА
     // не роняют ничего.
 

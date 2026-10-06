@@ -495,12 +495,6 @@ SKELETON.md	resource_field.h:213-217
 SKELETON.md	resource_field.h:268
 SKELETON.md	resource_field.h:336-341
 SKELETON.md	resource_field.h:64-83
-SKELETON.md	roster.h:30
-SKELETON.md	roster_window.h:103
-SKELETON.md	roster_window.h:108
-SKELETON.md	roster_window.h:139
-SKELETON.md	roster_window.h:58-59
-SKELETON.md	roster_window.h:74
 SKELETON.md	ruins.cpp:25-31
 SKELETON.md	ruins.cpp:44
 SKELETON.md	ruins.cpp:73
@@ -1092,9 +1086,6 @@ macro-registry.md	resource_field.h:137
 macro-registry.md	resource_field.h:16-19
 macro-registry.md	resource_field.h:238
 macro-registry.md	resource_field.h:424
-macro-registry.md	roster_window.h:110
-macro-registry.md	roster_window.h:48
-macro-registry.md	roster_window.h:56
 macro-registry.md	scent_field.cpp:21-32
 macro-registry.md	scent_field.h:88-104
 macro-registry.md	settlement_score.h:154

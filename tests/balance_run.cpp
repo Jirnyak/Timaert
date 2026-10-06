@@ -411,7 +411,7 @@ int main(int argc, char** argv) {
                 if (settled) {
                     long long debtComfort = 0;
                     for (int k = 0; k < comfortOrdCount; ++k)
-                        debtComfort += macroStore->roster[slot]
+                        debtComfort += macroStore->upkeep[slot]
                                            .needDebt[comfortOrd[k]];
                     // Лес под местом и лес в его руке — бокс ±kSettlementReach
                     // шагами ИНДЕКСА (ЗАКОН АДРЕСА), той же рукой, которой
@@ -442,7 +442,7 @@ int main(int argc, char** argv) {
                                  int(macroStore->wellbeing[slot]
                                          .starvedYesterday),
                                  hungerOrd >= 0
-                                     ? macroStore->roster[slot]
+                                     ? macroStore->upkeep[slot]
                                            .needDebt[hungerOrd]
                                      : 0,
                                  debtComfort,
@@ -465,7 +465,7 @@ int main(int argc, char** argv) {
             sm::for_each_place(*macroStore, [&](std::uint16_t slot) {
                 const sm::Inventory& bag = macroStore->inventory[slot].inv;
                 horsesGarr +=
-                    sm::creature_heads_of(bag, sm::NPCType::Horse);
+                    sm::creature_count_of(bag, sm::NPCType::Horse);
                 // Гарнизон — область существ ЕДИНОГО контейнера места
                 // (M-71). Считаются ЛЮДИ: табун у места свой столбец, и
                 // душой населения лошадь не была никогда.
@@ -475,12 +475,12 @@ int main(int argc, char** argv) {
             for (std::uint16_t slot = 0;
                  slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
                 if (macroStore->alive[slot] == 0) continue;
-                horsesSquads += sm::creature_heads_of(
+                horsesSquads += sm::creature_count_of(
                     macroStore->inventory[slot].inv, sm::NPCType::Horse);
             }
             // ДУШИ В СКВАДАХ, разделённые ПО АДРЕСУ ДОМА. Лидер — такая же
-            // душа, как любая в ростере (CANON S4: «одиночка = лидер с
-            // пустым ростером»), поэтому он +1, а не особый случай.
+            // душа, как любая в контейнере (CANON S4: «одиночка = лидер с
+            // пустым контейнером»), поэтому он +1, а не особый случай.
             // Бездомный сквад — это банда: выплаченная кем-то душа, которую
             // не ждёт ни один склад. По вердикту владельца такого состояния
             // быть не должно вовсе («банды это население ландмарка логово
@@ -549,7 +549,7 @@ int main(int argc, char** argv) {
                          accum.starvedPops,
                          accum.mintedCoins, trades, tradedValue, foodHolds,
                          crewsGather, crewsSell, crewsOther,
-                         int(sm::creature_heads(gs.deserterPool)));
+                         int(sm::creature_count(gs.deserterPool)));
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld",
                          horsesGarr, horsesSquads, pastures, parcels);
             // Баланс душ мира. soulsWorld печатается суммой, а не считается

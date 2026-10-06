@@ -29,7 +29,7 @@
 //   1. Hostility is one integer op. Faction identity is the id STRING (the
 //      universal key of this codebase), interned per tick into a dense index; a
 //      unit carries a 64-bit `enemyMask` and "is j my enemy" is a shift and an
-//      AND. No vocabulary, no roster limit, no strings and no maps in the loop.
+//      AND. No vocabulary, no fixed list, no strings and no maps in the loop.
 //   2. Navigation reads a FIELD, not neighbours. A coarse per-faction influence
 //      grid (`InfluenceField`) holds, for each cell, the position of the nearest
 //      hostile concentration. An actor reads one cell. Armies flow toward each
@@ -92,7 +92,7 @@ static_assert(kMaxBodyCrowd > 0 && (kMaxBodyCrowd & (kMaxBodyCrowd - 1)) == 0,
 constexpr float kNoThreatDistance2 = 1.0e18f;
 
 // ── Factions ───────────────────────────────────────────────────────────────
-// There is NO faction vocabulary in this module and no fixed roster. The
+// There is NO faction vocabulary in this module and no fixed creatures. The
 // universal faction identity in this codebase is the id STRING — the same key
 // gs->factions, player reputation and the loot profiles use — so battle code
 // never names a faction and never needs editing when one is added.
@@ -107,7 +107,7 @@ constexpr float kNoThreatDistance2 = 1.0e18f;
 // std::uint64_t. A 65th distinct faction in one window degrades to neutral (it
 // fights nobody) rather than misbehaving. Since 2026-09-03 (owner, CANON S10)
 // this is THE world faction limit spelled once — macro/faction.h kMaxFactions —
-// and the world's roster obeys the same 64 (static_assert beside the registry).
+// and the world's creatures obeys the same 64 (static_assert beside the registry).
 constexpr int kMaxCrowdFactions = kMaxFactions;
 
 struct FactionSet {
@@ -329,7 +329,7 @@ struct InfluenceField {
     std::uint64_t factionEnemyMask[kMaxCrowdFactions]{};  // OR of member masks
     // Planes are allocated ONLY for factions actually standing in the window. A
     // two-army battle pays for two planes — the per-frame clear was the whole
-    // fixed cost of this pass, and a lone bandit must not pay a roster price.
+    // fixed cost of this pass, and a lone bandit must not pay a creatures price.
     std::int16_t planeIdx[kMaxCrowdFactions]{};          // -1 = faction absent
     int planeCount = 0;
     std::vector<std::uint64_t> occMask;   // [cell] factions present in the cell

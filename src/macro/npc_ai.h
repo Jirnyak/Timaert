@@ -230,7 +230,7 @@ int gather_goal_row(ResourceFieldId row);
 // ── The daily labour rotation (owner 2026-08-30; CANON S10) ──────────────
 // «Поселение поднимает рабочий сквад → сквад идёт к полю → возвращается,
 // кладёт на склад, растворяется в населении.» Souls are the stock every
-// working crew draws from and returns to; the roster multiplies the take at
+// working crew draws from and returns to; the creatures multiplies the take at
 // the squad's one SP price (ai_gatherer). Called once per game day:
 // yesterday's crews standing home in Idle DISSOLVE first (souls + leftovers
 // back to the landmark), then every settled landmark raises a fresh crew for
@@ -300,12 +300,12 @@ AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
                                     const ecs::NPCKind& kind);
 
 // THE SQUAD SEASON WINDOW (owner 2026-08-30/31 + 2026-09-17; CANON S10,
-// S19.2, реф M&B): board and pay are for the ROSTER only — the leader is a
+// S19.2, реф M&B): board and pay are for the СУЩЕСТВ КОНТЕЙНЕРА only — the leader is a
 // SUBJECT and needs nothing by himself («0 бойцов = 0 хлеба и жалования» —
 // why a lone rider is honestly immune to hunger). On the season BOUNDARY
-// every squad with a roster settles BOTH needs a season ahead, out of its
+// every squad with a creatures settles BOTH needs a season ahead, out of its
 // OWN bag:
-//   · board — РАЦИОН СВОЕЙ СТРОКИ в день на каждую душу ростера, чей бы он
+//   · board — РАЦИОН СВОЕЙ СТРОКИ в день на каждую душу контейнера, чей бы он
 //     ни был (npc.h `npc_board_per_day`, 2026-09-22). Здесь стояло «одна
 //     душа, чья строка на содержании (upkeepGoldPerDay >= 0; звери и
 //     монстры — нет), со скидкой на Foraging ведущего» — и то и другое
@@ -314,7 +314,7 @@ AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
 //   · pay — the one upkeep law × the season, and the paid coin BURNS into
 //     the world loot pool («жалованье сгорает»).
 // Each need is covered WHOLE or not debited at all; ANY miss bleeds an
-// eighth of the roster into the deserter pool ONCE per window («ВСЕ НУЖДЫ
+// eighth of the creatures into the deserter pool ONCE per window («ВСЕ НУЖДЫ
 // ДОЛЖНЫ БЫТЬ ПОКРЫТЫ, иначе потеря 1/8»). The judge is the SOLDIER'S own
 // row, never the leader's — the old leader-typed gate was the player-special
 // Adventurer.upkeep=0 door, dead by «игрок == нпц»: the player's squad pays
@@ -326,7 +326,7 @@ int squad_season_window(MacroWorld& mw, int day);
 // touched — his scrap is a manual act). Returns stacks melted.
 int squad_bags_hygiene_daily(MacroWorld& mw);
 
-// A roster's SEASON of needs — the one arithmetic the boundary window bills
+// A creatures's SEASON of needs — the one arithmetic the boundary window bills
 // by and the landmark's crew-loading fills by (drift between the two would
 // be a second truth of содержание). Bread is per soul whose own row is on
 // upkeep, foraging-scaled by the leader's effective sheet; wage is the one
@@ -338,8 +338,8 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // лестницы, какой бы она ни была (econ_day.h hunger_item_index).
 //
 // ЗДЕСЬ СТОЯЛИ `SquadSeasonNeeds` И `squad_season_needs` — снесены
-// 2026-09-22: счёт ростера стал ОДНИМ на весь мир и переехал к суду,
-// которому служит (macro/roster_window.h `roster_bill`). Разбор — в теле,
+// 2026-09-22: счёт контейнера стал ОДНИМ на весь мир и переехал к суду,
+// которому служит (macro/upkeep_window.h `upkeep_bill`). Разбор — в теле,
 // на месте бывшего определения (npc_ai.cpp).
 
 // ── THE provisioning law of squad creation (owner 2026-08-31, CANON S10):
@@ -350,7 +350,7 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // and the trip loaf died with the daily feed. A patrol still carries bread
 // for its march+dwell days.
 // The raising landmark loads the new squad's bag with bread for
-// its ROSTER (the leader eats nothing — the M&B law above):
+// its СУЩЕСТВ КОНТЕЙНЕРА (the leader eats nothing — the M&B law above):
 //   portion = soldiers × (roundtrip days to the destination + the work day)
 // Days derive from the squad's own errand — the same march that will walk
 // it — so a far vein honestly demands a bigger loaf. A store that cannot

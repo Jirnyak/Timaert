@@ -280,7 +280,7 @@ static_assert(sizeof(WorldFact) == 32,
 // растворяется; как в DF, история — это история ФИГУР»). In this world that
 // rule is not a heuristic but a consequence: a squad IS a lord and carries an
 // ordinal identity (MacroSpawnId); a landmark and a faction likewise. The
-// nameless crowd — roster rows, bodies below, the peasants of a city — has no
+// nameless crowd — creature rows, bodies below, the peasants of a city — has no
 // ordinal at all and can only appear as `amount`. So the test is simply
 // whether a fact has a named participant, and the volume follows: deeds
 // between figures are hundreds a day, not thousands.

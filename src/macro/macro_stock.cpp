@@ -100,7 +100,7 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
                 ++died;
             }
         } else {
-            died = dungeon ? bleed_heads(store, -delta)
+            died = dungeon ? bleed_creatures(store, -delta)
                            : bleed_flock(store, -delta);
         }
         if (!dungeon && died > 0) {
@@ -115,18 +115,18 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
     }
 }
 
-// ── roster: the members of a squad standing on the map ─────────────────────
-// The squad IS its leader entity (ecs::SquadRoster doctrine), so the subject
+// ── creatures: the members of a squad standing on the map ─────────────────────
+// The squad IS its leader entity (ecs::SquadUpkeep doctrine), so the subject
 // of this row is the squad's save-stable MacroSpawnId ordinal — the one
 // identity that survives the ECS never being serialized — and `detail` names
 // the member (SoldierRecord::entityId, compared as a bit pattern because ids
 // may use the high bit). This is what makes "a squad cannot hold zero members"
 // a consequence instead of a special case: members die through this row, the
 // leader dies through the tracked-body path, and a Dead leader with an empty
-// roster simply is no squad any more — nothing extra removes it.
+// creatures simply is no squad any more — nothing extra removes it.
 // Слияние M-71: члены сквада живут в области существ ЕДИНОГО контейнера
-// (NpcInventory), обвязка счетов (SquadRoster) им больше не дом.
-Inventory* find_roster(const MacroWorld& w, std::int32_t subject) {
+// (NpcInventory), обвязка счетов (SquadUpkeep) им больше не дом.
+Inventory* find_creatures(const MacroWorld& w, std::int32_t subject) {
     // ФЛИП 1в: скан одной u32-колонки store вместо entt-пары — дешевле и
     // без entt вовсе (за O(1) по ординалу придёт таблица слота, 1е/M-37).
     // Store берём из ctx мира: конверт может его не нести (тестовые
@@ -143,12 +143,12 @@ Inventory* find_roster(const MacroWorld& w, std::int32_t subject) {
     return nullptr;
 }
 
-int read_roster(const MacroWorld& w, MacroStockKey k) {
-    const Inventory* r = find_roster(w, k.subject);
-    return r ? creature_heads(*r) : 0;
+int read_creatures(const MacroWorld& w, MacroStockKey k) {
+    const Inventory* r = find_creatures(w, k.subject);
+    return r ? creature_count(*r) : 0;
 }
 
-void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
+void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
     if (delta >= 0) {
         // The creation direction (recruitment, deserters re-raised) cannot be
         // conjured from a count — a member is a kind and a level, which the
@@ -157,7 +157,7 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
         // other malformed receipt.
         return;
     }
-    Inventory* r = find_roster(w, k.subject);
+    Inventory* r = find_creatures(w, k.subject);
     if (!r) return;
     // The receipt names its member or it pays nothing: by entityId for a
     // storied soul, by {kind, level} for a generic one (detailLevel > 0 is
@@ -699,7 +699,7 @@ void write_crop_count(MacroWorld& w, MacroStockKey k, int delta) {
 constexpr MacroStockRow kRows[] = {
     {"tree_count",  &read_tree_count,  &write_tree_count},
     {"population",  &read_population,  &write_population},
-    {"roster",      &read_roster,      &write_roster},
+    {"creatures",   &read_creatures,   &write_creatures},
     {"fauna_count", &read_fauna_count, &write_fauna_count},
     {"crop_count",  &read_crop_count,  &write_crop_count},
 };

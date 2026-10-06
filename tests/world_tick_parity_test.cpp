@@ -92,7 +92,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     sm::creatures_push(*army, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 77u));
     // Вторая душа — не украшение фикстуры: закон v105 взыскивает ДОЛЮ
-    // ростера, и на ростере из одного «доля» неотличима от «хотя бы
+    // контейнера, и на контейнере из одного «доля» неотличима от «хотя бы
     // один» — то есть от той самой отменённой кромки. Двое — минимум, на
     // котором пропорция вообще может быть измерена.
     sm::creatures_push(*army, sm::make_soldier(
@@ -124,10 +124,10 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // The expectation is DERIVED from the same law the window pays by:
     // wage = the plain soldier-row sum × the season (no CHA haggling — the
     // discount died as a player-special), board = a season of harch per
-    // roster soul whose own row is on upkeep.
+    // creatures soul whose own row is on upkeep.
     const int wageSeason =
         sm::calculate_squad_upkeep(*army) * sm::kDaysPerSeason;
-    CHECK(wageSeason > 0, "the Guard row prices the roster (fixture sanity)");
+    CHECK(wageSeason > 0, "the Guard row prices the creatures (fixture sanity)");
 
     // A non-boundary day is a silent day — negative control.
     CHECK(sm::squad_season_window(mw, 12) == 0,
@@ -150,10 +150,10 @@ void test_daily_processing_applies_player_upkeep_and_age() {
 
     // ПЕРВАЯ граница: счёта ещё не было, значит взыскивать нечего —
     // дезертиров ноль, но 5 монет кошелька уходят в уплату НОВОГО счёта.
-    const int poolBefore = sm::creature_heads(gs.deserterPool);
+    const int poolBefore = sm::creature_count(gs.deserterPool);
     CHECK(sm::squad_season_window(mw, 33) == 0,
           "первая граница выставляет счёт, а не взыскивает: долга не было");
-    CHECK(sm::creature_heads(gs.deserterPool) == poolBefore,
+    CHECK(sm::creature_count(gs.deserterPool) == poolBefore,
           "никто не ушёл — уходят за НЕОПЛАЧЕННОЕ, а счёт только что выписан");
     CHECK(sm::inventory_value(*sm::player_inventory(gs, *worldStore_)) == 0,
           "частичная оплата ЗАКОННА: что было в кошельке, то и ушло в счёт");
@@ -161,15 +161,15 @@ void test_daily_processing_applies_player_upkeep_and_age() {
           "уплаченная часть платы сгорает в пул лута, как и полная");
 
     // ВТОРАЯ граница, кошелёк пуст: счёт не погашен почти целиком, и
-    // уходит ровно ЭТА доля ростера — не восьмая и не «хотя бы один».
-    const int roster = sm::creature_heads(*army);
-    CHECK(roster >= 2, "негативный контроль: ростеру есть кого терять");
+    // уходит ровно ЭТА доля контейнера — не восьмая и не «хотя бы один».
+    const int creatures = sm::creature_count(*army);
+    CHECK(creatures >= 2, "негативный контроль: контейнеру есть кого терять");
     const int walked = sm::squad_season_window(mw, 65);
     CHECK(walked > 0, "неоплаченный сезон стоит людей");
-    CHECK(walked == roster,
+    CHECK(walked == creatures,
           "ушла ВСЯ доля неоплаченного — при пустом кошельке это весь "
-          "ростер, а не назначенная восьмая");
-    CHECK(sm::creature_heads(gs.deserterPool) == poolBefore + walked,
+          "контейнер, а не назначенная восьмая");
+    CHECK(sm::creature_count(gs.deserterPool) == poolBefore + walked,
           "ушедшие легли в пул дезертиров");
 
     // ПОКРЫТЫЙ сезон: вернуть душу, дать харч и плату — счёт гасится

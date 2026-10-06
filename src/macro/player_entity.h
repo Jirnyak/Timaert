@@ -15,11 +15,11 @@
 //
 // This entity used to be a HUSK: `Position` + a tag, recreated every macro
 // tick, deliberately invisible to render / proximity / AI, while the real
-// party lived beside it in PlayerState as a roster, a bag and a head of its
+// party lived beside it in PlayerState as a creatures, a bag and a head of its
 // own. Every consumer of those was a player-specific path — a second kind
 // of squad with its own projection, its own battle side and its own casualty
-// bookkeeping. The merge of 2026-08-27 collapsed them: the roster is
-// `ecs::SquadRoster`, the bag `ecs::NpcInventory`, the head `AgentMemory`, and
+// bookkeeping. The merge of 2026-08-27 collapsed them: the creatures is
+// `ecs::SquadUpkeep`, the bag `ecs::NpcInventory`, the head `AgentMemory`, and
 // all three ride the same macro-snapshot record every lord's do.
 //
 // EVERYTHING has moved. WHERE he stands moved HERE with подпосадка 4
@@ -151,7 +151,7 @@ inline bool player_wears_another_body(const GameState& gs) {
 }
 
 // (player_roster умер слиянием M-71: армия игрока — область существ его же
-// контейнера, то есть ответ и на «ростер», и на «сумка» — player_inventory.)
+// контейнера, то есть ответ и на «армию», и на «сумку» — player_inventory.)
 
 // …his BAG, which is the ordinary ecs::NpcInventory every macro body
 // carries. It was `PlayerState::inventory`: the last large field that made the

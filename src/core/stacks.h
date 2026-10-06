@@ -136,7 +136,7 @@ inline constexpr std::size_t kMacroStoreRowBytes =
     + sizeof(ecs::SquadName)          // имя анкеты (ход 2, вердикт 3)
     + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)
     + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook) + sizeof(AgentMemory)
-    + sizeof(ecs::SquadRoster)
+    + sizeof(ecs::SquadUpkeep)
     + sizeof(Wellbeing)               // благополучие анкеты (M-90 флип)
     + sizeof(Interests)               // связи любых сквадов (M-90 флип)
     + sizeof(ecs::NpcInventory)
@@ -166,8 +166,8 @@ static_assert(sizeof(ecs::NpcCharacter) == 12, "строка лица");
 static_assert(sizeof(ecs::NpcInventory) == 40960,
               "инвентарь сущности: 1024 стака по 40 Б (единый контейнер "
               "32×32, шаг А слияния 2026-09-24)");
-static_assert(sizeof(ecs::SquadRoster) == 72,
-              "ростер = обвязка счетов над единым контейнером (M-71): "
+static_assert(sizeof(ecs::SquadUpkeep) == 72,
+              "содержание = счёт харча и платы над единым контейнером (M-71): "
               "харч 60 + пад 4 + плата 8; существа живут в NpcInventory");
 static_assert(sizeof(ResourceGrid) == 72, "заголовок поля над миром");
 static_assert(sizeof(FeatureLayer) == 32, "заголовок слоя фич");
@@ -368,8 +368,8 @@ inline constexpr StackRow kStacks[] = {
      sizeof(ecs::MacroNpcRuntime), kWorldSquads},
     {"инвентарь сквада", "ecs::NpcInventory", StackKind::ByOrdinal,
      sizeof(ecs::NpcInventory), kWorldSquads},
-    {"ростер сквада", "ecs::SquadRoster", StackKind::ByOrdinal,
-     sizeof(ecs::SquadRoster), kWorldSquads},
+    {"содержание сквада", "ecs::SquadUpkeep", StackKind::ByOrdinal,
+     sizeof(ecs::SquadUpkeep), kWorldSquads},
     {"полосы сквада", "ecs::Pools", StackKind::ByOrdinal,
      sizeof(ecs::Pools), kWorldSquads},
     // ВТОРОЙ ШТАБЕЛЬ СУЩНОСТЕЙ, ПОДЛЕЖИТ СНОСУ (M-90). Строки не было —

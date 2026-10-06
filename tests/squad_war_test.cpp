@@ -6,7 +6,7 @@
 //   · a hostile squad NEARBY is perceived through the transient SquadIndex
 //     and answered by the strength law — the weak flee, fighters pursue;
 //   · a hostile squad ON THE SAME CELL is a battle, resolved by the one
-//     auto-battle law and settled through the one ledger: roster rows die by
+//     auto-battle law and settled through the one ledger: creature rows die by
 //     name, a fallen leader is hp=0 + Dead, the victor takes the spoils and
 //     the XP — and levels by the same curve the player climbs;
 //   · neutral squads ignore each other, and the underground drive
@@ -90,9 +90,9 @@ sm::MacroHandle make_squad_at(ecs::World& w, NPCType type,
     return h;
 }
 
-int roster_count(ecs::World& w, GameState& gs, std::uint32_t ordinal) {
+int container_count(ecs::World& w, GameState& gs, std::uint32_t ordinal) {
     MacroWorld mw{.gs = &gs, .world = &w, .store = &sm::store_of(w)};
-    return macro_stock_read(mw, MacroStock::Roster,
+    return macro_stock_read(mw, MacroStock::Creatures,
                             MacroStockKey{std::int32_t(ordinal), 0, 0});
 }
 
@@ -132,8 +132,8 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     reset_macro_npc_ai_runtime(rt, 42u);
     drive(gs, w, rt, 1);
 
-    CHECK(roster_count(w, gs, 2u) == 0,
-          "the caravan's roster died by name through the roster row");
+    CHECK(container_count(w, gs, 2u) == 0,
+          "the caravan's creatures died by name through the creature row");
     // The loser fell (hp=0 + Dead inside the settle) — and by CANON S4
     // («убили всех — сквада на карте нет», 2026-08-29) the end-of-tick sweep
     // then destroyed the drained corpse-row: a dead squad LEAVES the map.
@@ -141,7 +141,7 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     CHECK(!sm::store_of(w).valid(
               sm::handle_at(sm::store_of(w),
                             caravan.slot)),
-          "a loser whose whole roster fell falls with it and leaves the map");
+          "a loser whose whole creatures fell falls with it and leaves the map");
     CHECK(!sm::macro_dead(sm::store_of(w), bandit),
           "the crushing winner survives");
     CHECK((*sm::body_state<ecs::NpcInventory>(sm::store_of(w), bandit)).inv.count("wood") == 5,
@@ -240,8 +240,8 @@ void test_neutral_squads_ignore_each_other() {
     drive(gs, w, rt, 3);
     CHECK(!sm::macro_dead(sm::store_of(w), a) && !sm::macro_dead(sm::store_of(w), b),
           "no relation below the line, no war - hostility is data");
-    CHECK(roster_count(w, gs, 1u) == 2 && roster_count(w, gs, 2u) == 1,
-          "nobody's roster paid for a meeting of neutrals");
+    CHECK(container_count(w, gs, 1u) == 2 && container_count(w, gs, 2u) == 1,
+          "nobody's creatures paid for a meeting of neutrals");
 }
 
 // The underground drive perceives but does not resolve (live projected
@@ -261,7 +261,7 @@ void test_no_auto_battle_when_the_ground_owns_the_fight() {
     reset_macro_npc_ai_runtime(rt, 46u);
     drive(gs, w, rt, 3, /*allowAutoBattle*/false);
     CHECK(!sm::macro_dead(sm::store_of(w), a) && !sm::macro_dead(sm::store_of(w), b)
-              && roster_count(w, gs, 2u) == 1,
+              && container_count(w, gs, 2u) == 1,
           "with the resolver gated off, a meeting resolves nothing");
 }
 
@@ -311,7 +311,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     ecs::World w;
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
-    // The player's men are a roster on his own SQUAD ENTITY now — the same
+    // The player's men are a creatures on his own SQUAD ENTITY now — the same
     // shape the enemy lord below has, settled through the same doors.
     ensure_macro_player_entity(gs, sm::store_of(w));
     Inventory* army = player_inventory(gs, *wStore_);
@@ -327,7 +327,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), enemy)).inv.add("wood", 4);
 
     // The player WINS: one of his men fell, he limps out at 60%; the enemy
-    // is wiped — roster and leader both.
+    // is wiped — creatures and leader both.
     AutoBattleOutcome win{};
     win.winner = 0;                       // player is side A
     win.casualtiesA = {make_soldier(std::uint8_t(NPCType::Guard), 3, 501u)};
@@ -342,13 +342,13 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     MacroWorld mw{}; mw.gs = &gs; mw.world = &w;
     const int xp = settle_player_auto_battle(mw, enemy, win,
                                              /*playerIsA*/true);
-    CHECK(creature_heads(*army) == 1
+    CHECK(creature_count(*army) == 1
               && army->slots[std::size_t(army->creature_first())].entityId
                      == 502u,
           "the player's fallen soldier left the army by name");
     CHECK(player_pools(gs, *wStore_)->hp == 60,
           "the player's wound landed as the fraction, in THE store — his squad's Pools");
-    CHECK(roster_count(w, gs, 9u) == 0 && sm::macro_dead(sm::store_of(w), enemy),
+    CHECK(container_count(w, gs, 9u) == 0 && sm::macro_dead(sm::store_of(w), enemy),
           "the enemy died through the ledger and the tracked-death shape");
     CHECK(player_inventory(gs, *wStore_)->count("wood") == 4,
           "the fallen owner's goods landed in the player's own bag");
@@ -382,7 +382,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     loss.leaderFractionB = 0.9f;
     MacroWorld mw2{}; mw2.gs = &gs2; mw2.world = &w2;
     settle_player_auto_battle(mw2, victor, loss, /*playerIsA*/true);
-    CHECK(creature_heads(*army2) == 1,
+    CHECK(creature_count(*army2) == 1,
           "defeat took the fallen and left the survivor");
     CHECK(player_pools(gs2, *w2Store_)->hp >= 1,
           "while one of his men stands, defeat wounds the player - "
@@ -392,7 +392,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
 }
 
 // Squad creation as data (Inc 7): one spec, one door. The leader comes out
-// of make_npc whole (the ONE creation path), the roster and the route are
+// of make_npc whole (the ONE creation path), the creatures and the route are
 // fields of the spec — and the ROUTE'S PRESENCE overrides the type row's ai
 // (owner's ruling: one knob), which is what makes a player patrol a data
 // row and not a code path.
@@ -429,8 +429,8 @@ void test_spawn_squad_is_one_spec_one_door() {
                     "хэндлом — слот store несёт все колонки по построению)");
     CHECK(st.level[leader.slot].value == 4,
           "the spec's level pinned the leader's level");
-    CHECK(creature_heads(st.inventory[leader.slot].inv) == 2,
-          "the roster rows are the spec's rows");
+    CHECK(creature_count(st.inventory[leader.slot].inv) == 2,
+          "the creature rows are the spec's rows");
     CHECK(st.orders[leader.slot].waypointCount == 2,
           "the route landed as data on the squad");
 
@@ -555,7 +555,7 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         const sm::MacroHandle untrained = make_squad_at(
             w, NPCType::Guard, "timaert", 3, 20.0f, 20.0f, 999u,
             {11u, 12u, 13u, 14u, 15u, 16u, 17u, 18u}, NPCType::Guard, 1);
-        // ЗВЕРЬ В РОСТЕРЕ — ТРЕТИЙ ЛАГЕРЬ: его строка несёт kNpcUpkeepNone,
+        // ЗВЕРЬ В КОНТЕЙНЕРЕ — ТРЕТИЙ ЛАГЕРЬ: его строка несёт kNpcUpkeepNone,
         // то есть жалованья он не берёт, а рацион по своей строке — берёт.
         const sm::MacroHandle beasts = make_squad_at(
             w, NPCType::Peasant, "timaert", 1, 30.0f, 30.0f, 777u,
@@ -567,7 +567,7 @@ void test_the_leaders_training_reads_at_the_new_doors() {
               "негативный контроль строки: волк и правда не на жалованье");
         // A season of harch and a season of wages in each bag: the window
         // judges BOTH needs whole, and an uncovered wage would bleed the
-        // roster before the harch law under test ever showed.
+        // creatures before the harch law under test ever showed.
         const int stock = 8 * kDaysPerSeason * 2;
         for (const sm::MacroHandle e : {forager, untrained, beasts}) {
             auto& bag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;

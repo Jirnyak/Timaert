@@ -404,7 +404,7 @@ void draw_macro_overlay(GameState& gs, const MacroStore& store,
             const float size = std::clamp(zoom, 12.0f, 56.0f);
             // ONE walker, ONE sprite — a squad is not drawn as a crowd of
             // figures. Its kind IS its picture; how many souls march under it
-            // is the roster's business, not the map's (owner, 2026-08-20).
+            // is the creatures's business, not the map's (owner, 2026-08-20).
             draw_sprite(dl, p, sid, size, col, figureTint);
         }
     }

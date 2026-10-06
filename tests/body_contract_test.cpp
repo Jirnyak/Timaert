@@ -34,7 +34,7 @@
 
 namespace {
 
-// A roster of mixed kinds: the owner's rule is that a squad is CONTEXT from the
+// A creatures of mixed kinds: the owner's rule is that a squad is CONTEXT from the
 // macro world and may hold anyone the tables know, so the contract must hold
 // for every kind alike, not just for the one the fixture happened to pick.
 sm::Inventory mixed_squad() {
@@ -77,7 +77,7 @@ void test_every_squad_body_is_a_whole_body() {
 
     for (auto e : view) {
         if (view.get<ecs::MacroDebt>(e).stock
-            != std::uint8_t(MacroStock::Roster)) continue;
+            != std::uint8_t(MacroStock::Creatures)) continue;
         ++bodies;
         const auto* kind   = sm::sub::body_kind(reg, e);
         const auto* health = sm::sub::body_pools(reg, e);
@@ -142,7 +142,7 @@ void test_every_squad_body_is_a_whole_body() {
     }
 
     CHECK(bodies == 4,
-          "the squad embodies every member of its roster, whatever kind it is");
+          "the squad embodies every member of its creatures, whatever kind it is");
     CHECK(bodies > 0 && missingTag == 0,
           "every body has a place in the world and a drawn position");
     CHECK(bodies > 0 && missingHealth == 0 && missingCombat == 0,
@@ -376,10 +376,10 @@ void test_a_leaders_aura_reaches_his_men() {
     int compared = 0;
     for (auto eLed : led.reg.view<ecs::MacroDebt>()) {
         const auto& loanLed = led.reg.get<ecs::MacroDebt>(eLed);
-        if (loanLed.stock != std::uint8_t(MacroStock::Roster)) continue;
+        if (loanLed.stock != std::uint8_t(MacroStock::Creatures)) continue;
         for (auto eAlone : alone.reg.view<ecs::MacroDebt>()) {
             const auto& loanAlone = alone.reg.get<ecs::MacroDebt>(eAlone);
-            if (loanAlone.stock != std::uint8_t(MacroStock::Roster)
+            if (loanAlone.stock != std::uint8_t(MacroStock::Creatures)
                 || loanAlone.detail != loanLed.detail) {
                 continue;
             }
@@ -392,15 +392,15 @@ void test_a_leaders_aura_reaches_his_men() {
             ++compared;
         }
     }
-    CHECK(compared == 4, "every soldier of the roster was born in both runs");
+    CHECK(compared == 4, "every soldier of the creatures was born in both runs");
 }
 
-// A squad on the map projects its ROSTER, not just its leader (Session 15):
-// the leader arrives as the tracked body it always was, and every roster row
+// A squad on the map projects its СУЩЕСТВ КОНТЕЙНЕРА, not just its leader (Session 15):
+// the leader arrives as the tracked body it always was, and every creature row
 // arrives as a derived body wearing the OWNER's faction and carrying the
-// receipt that pays its death back into the roster — the same one-table,
+// receipt that pays its death back into the creatures — the same one-table,
 // one-door law as every other borrowed thing.
-void test_a_squad_on_the_map_projects_its_roster() {
+void test_a_squad_on_the_map_projects_its_creatures() {
     using namespace sm;
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
@@ -442,9 +442,9 @@ void test_a_squad_on_the_map_projects_its_roster() {
         const auto* debt = reg.try_get<ecs::MacroDebt>(e);
         if (!debt) continue;
         ++members;
-        CHECK(debt->stock == std::uint8_t(MacroStock::Roster)
+        CHECK(debt->stock == std::uint8_t(MacroStock::Creatures)
                   && debt->subject == 9,
-              "a member's receipt names the roster row and its own squad");
+              "a member's receipt names the creature row and its own squad");
         saw77 = saw77 || debt->detail == 77;
         saw88 = saw88 || debt->detail == 88;
         const auto* kind = sm::sub::body_kind(reg, e);
@@ -463,17 +463,17 @@ void test_a_squad_on_the_map_projects_its_roster() {
     CHECK(wholeMembers == 2,
           "a projected member is as whole a body as any other");
 
-    // The return trip, end to end: a member's death pays the roster row, the
-    // second death empties it — and an empty roster around a LIVE leader is a
+    // The return trip, end to end: a member's death pays the creature row, the
+    // second death empties it — and an empty creatures around a LIVE leader is a
     // squad of one, alive and well, not a special case anyone must clean up.
     MacroWorld w{.world = &world};
     for (auto e : reg.view<ecs::MacroDebt, ecs::SubworldTag>()) {
         settle_macro_debt(w, reg.get<ecs::MacroDebt>(e), -1);
     }
     CHECK(creatures_empty(sm::store_of(reg).inventory[macro.slot].inv),
-          "both deaths below emptied the roster above, by name");
+          "both deaths below emptied the creatures above, by name");
     CHECK(sm::store_of(reg).dead[macro.slot] == 0,
-          "the leader outlives his men: an empty roster is a squad of one");
+          "the leader outlives his men: an empty creatures is a squad of one");
 }
 
 void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
@@ -623,7 +623,7 @@ int main() {
     test_a_tracked_body_is_the_entity_it_embodies();
     test_a_body_that_is_not_an_entity_is_refused();
     test_a_leaders_aura_reaches_his_men();
-    test_a_squad_on_the_map_projects_its_roster();
+    test_a_squad_on_the_map_projects_its_creatures();
     test_a_derived_body_stores_only_what_its_seed_cannot_say();
     return sm::test::report("body_contract_test");
 }

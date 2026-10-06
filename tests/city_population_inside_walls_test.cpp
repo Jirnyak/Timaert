@@ -27,7 +27,7 @@
 //      the refactor must not have moved a single wall.
 #include "check.h"
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
-#include "macro/world_row.h"   // raise_flock_into_roster — души головами
+#include "macro/world_row.h"   // raise_flock_into_container — души головами
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "tables/faction.h"
@@ -179,7 +179,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
     // места, и он рождает его САМ (§8 п.11). Паства (число `pop` ниже)
     // осталась мерой ГЕОМЕТРИИ: стены строились на всех, включая ушедших.
     sm::Inventory homeSouls{};
-    sm::raise_flock_into_roster(homeSouls, pop);
+    sm::raise_flock_into_container(homeSouls, pop);
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,

@@ -33,7 +33,7 @@ namespace {
 // целиком прибивает static_assert(sizeof(MacroStore))@macro/store.h.
 // Здесь остаётся закон доминанты: ядро субъекта — контейнер + обвязка
 // счетов, ОДНО на место и на отряд («ландмарк есть неподвижный сквад»).
-static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadRoster) == 41032,
+static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadUpkeep) == 41032,
               "ядро субъекта — одно на место и на отряд (CANON S4)");
 
 // Переходник `RngFn` для реестра лута стоял здесь (`tl_rng`/`tl_rng_f01`) и
@@ -74,7 +74,7 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
 
 // `levelOverride > 0` pins the level (quest spawns name their difficulty);
 // the level draw is consumed either way, so the boot RNG stream is untouched.
-// Returns the created entity (spawn_squad decorates it with roster/orders).
+// Returns the created entity (spawn_squad decorates it with creatures/orders).
 MacroHandle make_npc(MacroStore& st, NPCType type,
                      std::uint16_t factionIdx,
                      int x, int y, int mapW, int homeId, Rng& rng,
@@ -160,8 +160,8 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
         make_character_sheet(type, lvl, leader_sheet_seed(ordinal));
 
     // Every macro entity IS a squad; born alone, it is a squad of one and its
-    // own leader (ecs::SquadRoster doctrine). Draws no RNG — streams untouched.
-    // Roster/память/книга/приказы/гир/тег-анкеты/судьба уже обнулены
+    // own leader (ecs::SquadUpkeep doctrine). Draws no RNG — streams untouched.
+    // Creatures/память/книга/приказы/гир/тег-анкеты/судьба уже обнулены
     // рождением слота (store_birth, единый X-список колонок).
 
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(lvl)};
@@ -264,7 +264,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
         // ГЕНЕЗИСНЫЕ ОДИНОЧКИ-СТРАЖНИКИ (1-2 на город) ВЫРЕЗАНЫ 2026-09-22
         // по вердикту владельца («пока никаких стражников, это усложняет
         // систему»). Они и до того нарушали §42 Инк 7: именное тело идёт
-        // через анкеты, массовое — через ростер места, а вечный одиночка
+        // через анкеты, массовое — через контейнер места, а вечный одиночка
         // вне ротации не был ни тем ни другим. Строка `NPCType::Guard` в
         // каталоге тел жива — вырезан не вид, а то, что город его спавнит.
     }
@@ -273,7 +273,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
     const std::size_t nSet = cities.size();
 
     // ЗАСЕВ КАРАВАНОВ ВЫРЕЗАН 2026-09-21 вместе с родом NPCType::Caravan:
-    // караван — это СКВАД, а не вид существа, и его обоз считает ростер
+    // караван — это СКВАД, а не вид существа, и его обоз считает контейнер
     // (сумма спин: люди плюс лошади), а не вписанные в породу 32 спины.
     // Торговый канал мира держат артели рейсами сбыта (ai_vendor).
 
@@ -569,7 +569,7 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
                  spec.leaderLevel);
     if (!store.valid(leader)) return {};
 
-    // The roster rows — through the same append every other producer uses:
+    // The creature rows — through the same append every other producer uses:
     // души встают в область существ ЕДИНОГО контейнера лидера (M-71),
     // генерик-заявка — стаком, душа с историей — записью.
     auto& bag = store.inventory[leader.slot];
@@ -586,7 +586,7 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
     // по своей грузоподъёмности — СУММА ЛИСТОВ ЧЛЕНОВ») — through THE door
     // (squad.h refresh_squad_carry), which weighs every soul by ITS OWN row's
     // haulMult column. The inline `*= 1 + size` that stood here counted heads
-    // and was computed once: a horse in the roster added nothing, and any
+    // and was computed once: a horse in the creatures added nothing, and any
     // later добор/ссадка/дезертирство left the number lying.
     refresh_squad_carry(store, leader);
 

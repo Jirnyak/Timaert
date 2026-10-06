@@ -12,7 +12,7 @@
 #include <cstdint>
 #include "core/rng.h"    // the ONE generator (landmark_born_population)
 #include "core/table_guard.h"
-#include "macro/econ_day.h"     // kHeadsPerCityWorker — the bench quota the
+#include "macro/econ_day.h"     // kCreaturesPerCityWorker — the bench quota the
                                 // city's labourShift is log2 of (guard below)
 #include "tables/map_actions.h"  // the verb bits the `actions` column declares
 #include "tables/npc.h"   // NPCType — the crew rows below name who a place raises
@@ -207,7 +207,7 @@ struct LandmarkDef {
     // owner's word; the world-feeding arithmetic backs it: 32 souls per
     // farmer × villages ≈ 1/6 of the world's souls ⇒ at least every fifth
     // villager must farm, half gives slack for wood/clay/ore/vendor runs).
-    // City = 3 (= log2(kHeadsPerCityWorker), the bench quota's own shift):
+    // City = 3 (= log2(kCreaturesPerCityWorker), the bench quota's own shift):
     // the M&B doctrine — «деревня добывает ресурсы, город производит
     // товары» — keeps a city's hands at its benches; its crew pool exists
     // for couriers. Default 3 = the bench quota, inert while crewCount = 0.
@@ -235,7 +235,7 @@ struct LandmarkDef {
 // 128..255, unchanged in meaning, finer in resolution.
 inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     {SquadType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
-    // Стража города — строка ростера {Guard, Auction} с душами ИЗ ГАРНИЗОНА
+    // Стража города — строка контейнера {Guard, Auction} с душами ИЗ ГАРНИЗОНА
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
@@ -246,7 +246,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
                    // по уму их всегда сможем норм добавить»). Строка
                    // NPCType::Guard в таблице существ ОСТАЁТСЯ — вырезан
                    // не вид, а то, что город его спавнит. Гарнизон места
-                   // жив: он ростер ландмарка, а не вылазка.
+                   // жив: он контейнер ландмарка, а не вылазка.
                    // АРТЕЛЬ ГОРОЖАН ЗА ПОКУПКАМИ (владелец 2026-09-19:
                    // «добавим сквад горожан, которые типа идут в деревню
                    // закупаться — бонусом разнообразие и доп контекст»).
@@ -370,13 +370,13 @@ static_assert(sizeof(LandmarkDef) == 120,
 // THE two labour laws of a city meet at the same eighth of its people, and
 // until now that meeting was a claim in a COMMENT: the crew pool's shift
 // (labourShift, this table) and the bench quota (econ_day.h
-// kHeadsPerCityWorker) are one number spelled two ways, and nothing compared
+// kCreaturesPerCityWorker) are one number spelled two ways, and nothing compared
 // them. Retune either alone and a city raises crews on one eighth while its
 // benches staff another — silently, because both numbers stay plausible.
 static_assert(
     (1 << kLandmarks[std::size_t(SquadType::City)].labourShift)
-        == kHeadsPerCityWorker,
-    "city labourShift must be log2(kHeadsPerCityWorker)");
+        == kCreaturesPerCityWorker,
+    "city labourShift must be log2(kCreaturesPerCityWorker)");
 
 inline constexpr const LandmarkDef& landmark_def(SquadType t) {
     return kLandmarks[std::size_t(t)];

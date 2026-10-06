@@ -26,7 +26,7 @@
 #include "ecs/world.h"
 #include "tables/faction.h"
 #include "macro/politik.h"
-#include "macro/world_row.h"   // raise_flock_into_roster — души головами
+#include "macro/world_row.h"   // raise_flock_into_container — души головами
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
 #include "sub/record.h"   // body_kind — род тела из колонки арены (кусок 1)
@@ -144,7 +144,7 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     // а контейнер душ места: он рождает его САМ (§8 п.11), тем же законом,
     // которым его наполняет генезис.
     sm::Inventory homeSouls{};
-    sm::raise_flock_into_roster(homeSouls, 2000);
+    sm::raise_flock_into_container(homeSouls, 2000);
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
@@ -199,7 +199,7 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
     sm::store_attach(world, worldStore_.get());
     sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     sm::Inventory homeSouls{};
-    sm::raise_flock_into_roster(homeSouls, 400);
+    sm::raise_flock_into_container(homeSouls, 400);
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              /*treeCount*/0,

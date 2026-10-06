@@ -269,10 +269,10 @@ void test_malformed_receipts_do_nothing() {
           "a missing tree layer reads zero and swallows writes instead of crashing");
 }
 
-// ── The roster row: a squad's members are a stock like anyone else ─────────
+// ── The creature row: a squad's members are a stock like anyone else ─────────
 
 // One squad the way the overworld shapes them: the entity IS the leader, the
-// ordinal is its save-stable name, the roster holds everyone else.
+// ordinal is its save-stable name, the creatures holds everyone else.
 sm::MacroHandle make_squad(sm::ecs::World& w, std::uint32_t ordinal,
                            std::initializer_list<std::uint32_t> memberIds) {
     sm::MacroStore& st = sm::store_of(w);
@@ -288,7 +288,7 @@ sm::MacroHandle make_squad(sm::ecs::World& w, std::uint32_t ordinal,
 
 // A member's death removes the very soldier who fell — named by the receipt,
 // never "one of them" — and only from its own squad.
-void test_the_roster_row_pays_by_name() {
+void test_the_creature_row_pays_by_name() {
     using namespace sm;
     ecs::World world;
     auto worldStore_ = sm::make_macro_store();
@@ -298,49 +298,49 @@ void test_the_roster_row_pays_by_name() {
     MacroWorld w{.world = &world, .store = &sm::store_of(world)};
 
     const MacroStockKey member11{5, 0, 0, 11};
-    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 3,
+    CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 3,
           "read reports how many members the squad actually holds");
 
-    macro_stock_apply(w, MacroStock::Roster, member11, -1);
-    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 2,
+    macro_stock_apply(w, MacroStock::Creatures, member11, -1);
+    CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 2,
           "a death removes exactly one member");
-    macro_stock_apply(w, MacroStock::Roster, member11, -1);
-    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 2,
+    macro_stock_apply(w, MacroStock::Creatures, member11, -1);
+    CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 2,
           "the same man cannot fall twice: a spent receipt moves nothing");
 
     // Ids are bit patterns: the high bit (garrison id space) must round-trip
     // through the signed detail field intact.
-    macro_stock_apply(w, MacroStock::Roster,
+    macro_stock_apply(w, MacroStock::Creatures,
                       MacroStockKey{5, 0, 0, std::int32_t(0x80000021u)}, -1);
-    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 1,
+    CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 1,
           "a high-bit entityId names its member exactly");
 
-    CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{6, 0, 0}) == 1,
+    CHECK(macro_stock_read(w, MacroStock::Creatures, MacroStockKey{6, 0, 0}) == 1,
           "the squad next door never pays for this one's dead");
 
     // Fail closed, like every malformed receipt in this table.
-    macro_stock_apply(w, MacroStock::Roster, MacroStockKey{5, 0, 0, -1}, -1);
-    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 1,
+    macro_stock_apply(w, MacroStock::Creatures, MacroStockKey{5, 0, 0, -1}, -1);
+    CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 1,
           "a nameless death removes nobody: the receipt names its member");
-    macro_stock_apply(w, MacroStock::Roster, MacroStockKey{5, 0, 0, 22}, +1);
-    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 1,
+    macro_stock_apply(w, MacroStock::Creatures, MacroStockKey{5, 0, 0, 22}, +1);
+    CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 1,
           "a bare positive delta conjures nobody: recruitment brings real rows");
-    macro_stock_apply(w, MacroStock::Roster, MacroStockKey{999, 0, 0, 22}, -1);
-    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 1
-              && macro_stock_read(w, MacroStock::Roster,
+    macro_stock_apply(w, MacroStock::Creatures, MacroStockKey{999, 0, 0, 22}, -1);
+    CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 1
+              && macro_stock_read(w, MacroStock::Creatures,
                                   MacroStockKey{6, 0, 0}) == 1,
-          "a receipt against an unknown squad moves no roster anywhere");
+          "a receipt against an unknown squad moves no creatures anywhere");
 
     // The full settle path — the same door a subworld death actually uses.
     entt::registry& reg = world.reg;
     const auto body = reg.create();
-    stamp_macro_debt(reg, body, MacroStock::Roster,
+    stamp_macro_debt(reg, body, MacroStock::Creatures,
                      MacroStockKey{5, 0, 0, 22}, 1);
     const auto* debt = reg.try_get<ecs::MacroDebt>(body);
     CHECK_OR_RETURN(debt != nullptr && debt->detail == 22,
                     "the receipt carries the member's name to the grave");
     settle_macro_debt(w, *debt, -1);
-    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 0,
+    CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 0,
           "settling the receipt removes the named member");
     (void)other;
 }
@@ -390,16 +390,16 @@ void test_the_fallen_squads_creatures_die() {
     CHECK(kill_fallen_squad_creatures(sm::store_of(world), gs, sink, &tally)
               == 3,
           "гибнут ВСЕ головы павшего — два человека И конь, без ветки по роду");
-    CHECK(creature_heads(pool) == 0,
+    CHECK(creature_count(pool) == 0,
           "НЕГАТИВНЫЙ КОНТРОЛЬ (M-228): павшие НЕ дезертируют — пул не вырос "
           "ни на одну голову");
     CHECK(tally.souls == 2 && tally.reports == 1,
           "ведомость склада душ назвала смерть ОДНИМ фактом и в ДУШАХ: конь "
           "паствой не был");
     MacroWorld w{.world = &world, .store = &sm::store_of(world)};
-    CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{10, 0, 0}) == 0,
+    CHECK(macro_stock_read(w, MacroStock::Creatures, MacroStockKey{10, 0, 0}) == 0,
           "контейнер павшего пуст: платить второй раз не из чего");
-    CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{11, 0, 0}) == 1,
+    CHECK(macro_stock_read(w, MacroStock::Creatures, MacroStockKey{11, 0, 0}) == 1,
           "a live leader keeps his men");
 
     CHECK(kill_fallen_squad_creatures(sm::store_of(world), gs, sink, &tally)
@@ -523,7 +523,7 @@ int main() {
     test_stocks_are_bounded();
     test_debts_bill_their_own_subject();
     test_malformed_receipts_do_nothing();
-    test_the_roster_row_pays_by_name();
+    test_the_creature_row_pays_by_name();
     test_the_fallen_squads_creatures_die();
     test_trees_are_a_carrier_row();
     test_deposits_are_carrier_rows();

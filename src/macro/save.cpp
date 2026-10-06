@@ -156,8 +156,8 @@ constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     + sizeof(MacroNpcRecord::playerFlag)   // 5б: флажок игрока — колонкой
     + sizeof(MacroNpcRecord::designOrdinal)
     + kInventoryBytes + kEquipmentBytes
-    + sizeof(MacroNpcRecord::rosterNeedDebt)
-    + sizeof(MacroNpcRecord::rosterWageDebt)
+    + sizeof(MacroNpcRecord::upkeepNeedDebt)
+    + sizeof(MacroNpcRecord::upkeepWageDebt)
     + sizeof(MacroNpcRecord::wellbeing)    // v127: колонка анкеты (M-90)
     + sizeof(MacroNpcRecord::interests);   // v127: связи любых сквадов
 constexpr std::uint64_t kMacroNpcsBlockBytes =
@@ -661,8 +661,8 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.designOrdinal);   // v92: строка стола анкет, −1 у обычных
     write_inventory(w, m.inventory);   // v110: существа едут здесь (M-71)
     write_equipment(w, m.gear);
-    w.pod(m.rosterNeedDebt);   // v105: счёт содержания ростера
-    w.pod(m.rosterWageDebt);
+    w.pod(m.upkeepNeedDebt);   // v105: счёт содержания контейнера
+    w.pod(m.upkeepWageDebt);
     w.pod(m.wellbeing);   // v127: благополучие — колонка анкеты (M-90 флип)
     w.pod(m.interests);   // v127: связи любых сквадов (M-90 флип)
 }
@@ -708,8 +708,8 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     read_inventory(r, m.inventory);   // v110: существа едут здесь (M-71)
     read_equipment(r, m.gear);
     remark_gear_blocks(m.gear, m.inventory);
-    r.pod(m.rosterNeedDebt);   // v105
-    r.pod(m.rosterWageDebt);
+    r.pod(m.upkeepNeedDebt);   // v105
+    r.pod(m.upkeepWageDebt);
     r.pod(m.wellbeing);   // v127
     r.pod(m.interests);   // v127
 }

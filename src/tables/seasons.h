@@ -28,7 +28,7 @@ struct SeasonDef {
     Season        id;
     const char*   name;
     // Added to the 0..1 temperature fed to temperature-driven classifiers
-    // (foliage today; biome tint / spawn rosters are natural future readers).
+    // (foliage today; biome tint / spawn containers are natural future readers).
     // Signed; consumers clamp the sum back into [0,1].
     float         tempOffset;
     // Scales agricultural yield for a future economy consumer (CANON S19, бывший seasons.md).

@@ -414,19 +414,19 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
 
 // ── ГОЛОВА → ТЕЛО: один закон на улицу, интерьер и дверь рассвета ────────
 // Лицо: у именной души — её entityId (лицо переживает пере-вход), у
-// генерика ВЫВОДИТСЯ из АДРЕСА (старый ростерный ординал слота, номер в
+// генерика ВЫВОДИТСЯ из АДРЕСА (старый контейнерный ординал слота, номер в
 // стаке) — CANON S4: «лицо генерика выводится, а не хранится».
-std::uint32_t head_soul_id(const CreatureHead& head) {
-    const std::uint32_t rosterSlot =
+std::uint32_t creature_soul_id(const CreatureRef& head) {
+    const std::uint32_t creatureSlotId =
         std::uint32_t(kMaxInventorySlots - 1 - head.slot);
     return head.entityId != 0
         ? head.entityId
-        : ((rosterSlot << 16) | (std::uint32_t(head.index) + 1u));
+        : ((creatureSlotId << 16) | (std::uint32_t(head.index) + 1u));
 }
 
 // Займ называет ИМЕННО ЭТУ голову, поэтому смерть списывает её, а не первую
 // подвернувшуюся: именную — по entityId, генерика — по роду и уровню.
-void name_head_in_loan(MacroStockKey& key, const CreatureHead& head) {
+void name_creature_in_loan(MacroStockKey& key, const CreatureRef& head) {
     key.detail = head.entityId != 0 ? std::int32_t(head.entityId) : -1;
     key.detailKind = head.kind;
     key.detailLevel = head.level;
@@ -459,7 +459,7 @@ void spawn_landmark_population(ecs::World& w,
     //             и воплотить их здесь значило бы поставить одну душу дважды.
     const int pop = std::max(0, landmarkPop);
     if (pop == 0 || def.crowdHabitat == 0 || homeSouls == nullptr) return;
-    const int heads = creature_heads(*homeSouls);
+    const int heads = creature_count(*homeSouls);
     if (heads == 0) return;
 
     // Partition (CANON S28: one soul embodies once): the interiors' own
@@ -553,14 +553,14 @@ void spawn_landmark_population(ecs::World& w,
     int refused = 0;
     int seen = 0;
     int placed = 0;
-    for (const CreatureHead head : creature_heads_range(*homeSouls)) {
+    for (const CreatureRef head : creatures_range(*homeSouls)) {
         if (seen++ < reserve) continue;   // эта душа дома, за дверью
         if (placed >= target) break;
         ++placed;
         if (!valid_npc_kind(head.kind)) continue;
         // Лицо и адрес головы — ОДИН закон на улицу, интерьер и рассвет
-        // (head_soul_id/name_head_in_loan выше).
-        const std::uint32_t soulId = head_soul_id(head);
+        // (creature_soul_id/name_creature_in_loan выше).
+        const std::uint32_t soulId = creature_soul_id(head);
         float fx = 0.0f;
         float fy = 0.0f;
         // Каждая вторая душа берёт квартал, поэтому деление точно при любом
@@ -592,7 +592,7 @@ void spawn_landmark_population(ecs::World& w,
         // table — и `detail` называет ИМЕННО ЭТУ голову, поэтому смерть
         // списывает её, а не первую подвернувшуюся.
         MacroStockKey key = populationKey;
-        name_head_in_loan(key, head);
+        name_creature_in_loan(key, head);
         spawn_derived_body(reg,
             BodySpec{
                 type, fx, fy, settlementFaction,
@@ -1014,8 +1014,8 @@ InteriorSegment interior_segment_for_door(
     return seg;
 }
 
-int home_heads(const Inventory& homeSouls) {
-    return creature_heads(homeSouls);
+int home_creatures(const Inventory& homeSouls) {
+    return creature_count(homeSouls);
 }
 
 namespace {
@@ -1080,12 +1080,12 @@ int spawn_dungeon_residents(ecs::World& w,
     int consumed = 0;
     int placed = 0;
     int seen = 0;
-    for (const CreatureHead head : creature_heads_range(*homeSouls)) {
+    for (const CreatureRef head : creatures_range(*homeSouls)) {
         if (seen++ < segmentStart) continue;   // улица или чужая дверь
         if (consumed >= count) break;
         ++consumed;
         if (!valid_npc_kind(head.kind)) continue;
-        const std::uint32_t soulId = head_soul_id(head);
+        const std::uint32_t soulId = creature_soul_id(head);
         const StandPoint& pt = draw.next(floorCatalog, rng);
         const float fx = originX + float(pt.x) + 0.5f;
         const float fy = originY + float(pt.y) + 0.5f;
@@ -1094,7 +1094,7 @@ int spawn_dungeon_residents(ecs::World& w,
         // square. Whether it fights is CONTEXT: a hearth's family flees, a
         // garrisoned storey stands its ground.
         MacroStockKey key = populationKey;
-        name_head_in_loan(key, head);
+        name_creature_in_loan(key, head);
         spawn_derived_body(w.reg,
             BodySpec{
                 NPCType(head.kind), fx, fy, settlementFaction,
@@ -1122,7 +1122,7 @@ int spawn_street_arrivals(ecs::World& w,
     Rng rng(seed ^ 0xDA47B00Du);
     int placed = 0;
     int seen = 0;
-    for (const CreatureHead head : creature_heads_range(homeSouls)) {
+    for (const CreatureRef head : creatures_range(homeSouls)) {
         if (seen++ < reserve) continue;        // эта душа дома, за дверью
         if (placed >= deficit) break;
         if (!valid_npc_kind(head.kind)) continue;
@@ -1138,10 +1138,10 @@ int spawn_street_arrivals(ecs::World& w,
             --liveByKind[std::size_t(head.kind)];
             continue;
         }
-        const std::uint32_t soulId = head_soul_id(head);
+        const std::uint32_t soulId = creature_soul_id(head);
         const Structure* d = doors[std::size_t(rng.next_u32() % doors.size())];
         MacroStockKey key = populationKey;
-        name_head_in_loan(key, head);
+        name_creature_in_loan(key, head);
         spawn_derived_body(w.reg,
             BodySpec{NPCType(head.kind), d->x, d->y, faction,
                      normalize_soldier_level(head.level),
@@ -1414,11 +1414,11 @@ void spawn_player_squad(ecs::World& w,
                         std::uint32_t seed,
                         std::uint16_t faction,
                         const BonusTotals* squadBonuses,
-                        std::int32_t rosterSubject,
-                        std::int16_t rosterCx,
-                        std::int16_t rosterCy) {
+                        std::int32_t creaturesSubject,
+                        std::int16_t creaturesCx,
+                        std::int16_t creaturesCy) {
     spawn_player_squad(w, squad, mgr.tiles(), playerX, playerY, seed, faction,
-                       squadBonuses, rosterSubject, rosterCx, rosterCy);
+                       squadBonuses, creaturesSubject, creaturesCx, creaturesCy);
 }
 
 void spawn_player_squad(ecs::World& w,
@@ -1429,21 +1429,21 @@ void spawn_player_squad(ecs::World& w,
                         std::uint32_t seed,
                         std::uint16_t faction,
                         const BonusTotals* squadBonuses,
-                        std::int32_t rosterSubject,
-                        std::int16_t rosterCx,
-                        std::int16_t rosterCy) {
+                        std::int32_t creaturesSubject,
+                        std::int16_t creaturesCx,
+                        std::int16_t creaturesCy) {
     if (creatures_empty(squad)) return;
 
     auto& reg = w.reg;
     Rng rng(seed ^ 0x51AD5A11u);
     constexpr float kPi = 3.1415926535f;
     constexpr float kTau = kPi * 2.0f;
-    const int count = std::max(1, creature_heads(squad));
+    const int count = std::max(1, creature_count(squad));
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
 
     int i = -1;
-    for (const CreatureHead soldier : creature_heads_range(squad)) {
+    for (const CreatureRef soldier : creatures_range(squad)) {
         ++i;
         if (!valid_npc_kind(soldier.kind)) continue;
 
@@ -1479,18 +1479,18 @@ void spawn_player_squad(ecs::World& w,
         // The squad is born through the ONE birth every subworld humanoid gets.
         // A squad is not a kind of creature — it is CONTEXT from the map above:
         // whoever the leader raised, embodied here under the leader's faction.
-        // Put a goblin or a dragon in the roster on the macro layer and that is
+        // Put a goblin or a dragon in the creatures on the macro layer and that is
         // what walks beside you, drawn from the same table as everything else.
         // Before this, the squad had its own hand-written birth that forgot
         // `NpcCharacter` — which is precisely why an army of ten was invisible.
         //
-        // A soldier is DERIVED: the roster line says WHO stands here, the
+        // A soldier is DERIVED: the creatures line says WHO stands here, the
         // seed says everything else — and he is LENT like any lord's man
         // (§42 Инк 6, «игрок не особен»): the receipt names the OWNING
         // squad's MacroSpawnId (the flag record's — a worn lord's men are
         // HIS stock, A2 2026-09-17) and this member's entityId, so his death
-        // strikes the roster through THE one settle door
-        // (macro_stock.cpp "roster"), exactly as every other army pays.
+        // strikes the creatures through THE one settle door
+        // (macro_stock.cpp "creatures"), exactly as every other army pays.
         const auto e = spawn_derived_body(reg,
             BodySpec{
                 type, fx, fy, faction, level,
@@ -1499,9 +1499,9 @@ void spawn_player_squad(ecs::World& w,
                     ^ std::uint32_t(level),
                 /*combatant*/true},
             /*faceSalt*/std::uint32_t(i) * 2654435761u,
-            BodyLoan::from(MacroStock::Roster,
+            BodyLoan::from(MacroStock::Creatures,
                            MacroStockKey{
-                               rosterSubject, rosterCx, rosterCy,
+                               creaturesSubject, creaturesCx, creaturesCy,
                                soldier.entityId != 0
                                    ? std::int32_t(soldier.entityId)
                                    : -1,
@@ -1684,23 +1684,23 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             leaderBonuses = squad_bonuses(*leaderSheet);
         }
 
-        // The leader's troops. Each roster row is one unit of the squad's
-        // roster STOCK made visible: a DERIVED body — the row says WHO stands
+        // The leader's troops. Each creature row is one unit of the squad's
+        // creatures STOCK made visible: a DERIVED body — the row says WHO stands
         // here, the seed says everything else — wearing the OWNER's faction
         // (the banner rule, spawn.h) and carrying the receipt that pays its
-        // death back into the roster (macro/macro_stock.h "roster": subject =
+        // death back into the container (macro/macro_stock.h "creatures": subject =
         // the squad's MacroSpawnId ordinal, detail = this member's entityId).
         // Placed on a tight ring around the leader, dodging water like every
         // other placement here; a member that finds no land stands ON the
-        // leader's spot rather than being lost. The whole roster walks in —
+        // leader's spot rather than being lost. The whole creatures walks in —
         // no ceiling (§42 Инк 6): an army of hundreds meets you as hundreds.
         {
             const auto* mbag = &st.inventory[macro.slot];
             const auto* sid = &st.spawnId[macro.slot];
             constexpr float kTau = 6.2831853f;
-            const int memberCount = int(creature_heads(mbag->inv));
+            const int memberCount = int(creature_count(mbag->inv));
             int m = -1;
-            for (const CreatureHead rec : creature_heads_range(mbag->inv)) {
+            for (const CreatureRef rec : creatures_range(mbag->inv)) {
                 ++m;
                 if (!valid_npc_kind(rec.kind)) continue;
 
@@ -1723,11 +1723,11 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                 }
 
                 // No MacroSpawnId (synthetic setups only — make_npc always
-                // stamps one) means no addressable roster: an honest fiat body
+                // stamps one) means no addressable creatures: an honest fiat body
                 // rather than a receipt against nobody.
                 const BodyLoan loan = sid
                     ? BodyLoan::from(
-                          MacroStock::Roster,
+                          MacroStock::Creatures,
                           MacroStockKey{std::int32_t(sid->index),
                                         std::int16_t(mcx),
                                         std::int16_t(mcy),
@@ -1739,14 +1739,14 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                 // ONE birth for every member — the sheet-less second birth is
                 // dead: man or beast, the row and level project a sheet through
                 // spawn_derived_body (leader's bonuses applied in it), and every
-                // body carries the same roster receipt, so a wolf's death pays
+                // body carries the same creatures receipt, so a wolf's death pays
                 // the pack back exactly like a spearman's.
                 spawn_derived_body(reg,
                     BodySpec{
                         static_cast<NPCType>(rec.kind), mfx, mfy,
                         kind.factionIdx,
                         normalize_soldier_level(rec.level),
-                        // Слот — старый ростерный ординал (0 = старейший),
+                        // Слот — старый контейнерный ординал (0 = старейший),
                         // из слота контейнера (M-71): то же тело до и после.
                         ((seed ^ salt) + std::uint32_t(m) * 2654435761u)
                             ^ ((rec.entityId != 0

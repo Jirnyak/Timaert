@@ -210,7 +210,7 @@ namespace sm::ui
         }
 
         // Старейший слот рода в области существ (обход 1023 → first =
-        // старый порядок ростера) — цена найма показывается по нему.
+        // старый порядок контейнера) — цена найма показывается по нему.
         const ItemRef* first_soldier_of_kind(const Inventory& inv,
                                              NPCType kind)
         {
@@ -782,7 +782,7 @@ namespace sm::ui
         const float carryCap = get_carry_capacity(effPanel.attributes,
                                                   effPanel.skills,
                                                   panelStanding);
-        const int armyTotal = army ? creature_heads(*army) : 0;
+        const int armyTotal = army ? creature_count(*army) : 0;
         // Upkeep is maintenance, not a deal (2026-09-17): no CHA discount,
         // and the bill is the SEASON'S — paid a season ahead at the boundary
         // window, the same law every squad pays by.
@@ -1302,7 +1302,7 @@ namespace sm::ui
                         {
                             const NPCType t = npc_type_at(ti);
                             const int count =
-                                army ? creature_heads_of(*army, t) : 0;
+                                army ? creature_count_of(*army, t) : 0;
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
                             ImGui::TableNextRow();
@@ -1833,7 +1833,7 @@ namespace sm::ui
                             {
                                 draw_info_overview_row(
                                     "Soldiers",
-                                    creature_heads(bag->inv));
+                                    creature_count(bag->inv));
                             }
                             if (bag)
                             {
@@ -2013,7 +2013,7 @@ namespace sm::ui
                                                int(mw->store->wellbeing[sslot]
                                     .starvedYesterday));
                         draw_info_overview_row(
-                            "Garrison units", creature_heads(sInv));
+                            "Garrison units", creature_count(sInv));
                         draw_info_overview_row("Inventory stacks", sInv.used_slots());
                         draw_info_overview_row("Inventory items", sInv.total());
                         ImGui::EndTable();
@@ -2109,7 +2109,7 @@ namespace sm::ui
                             stock_price(value_of(ref),
                                         sInv.count_of(int(ref.def)) - n,
                                         season_demand_for(
-                                            int(ref.def), mw->store->roster[sslot].needDebt,
+                                            int(ref.def), mw->store->upkeep[sslot].needDebt,
                                             souls_home(*mw->store, sslot),
                                             landmark_sheet(
                                                 sKind).skills,
@@ -2124,7 +2124,7 @@ namespace sm::ui
                             stock_price(value_of(ref),
                                         sInv.count_of(int(ref.def)) + n,
                                         season_demand_for(
-                                            int(ref.def), mw->store->roster[sslot].needDebt,
+                                            int(ref.def), mw->store->upkeep[sslot].needDebt,
                                             souls_home(*mw->store, sslot),
                                             landmark_sheet(
                                                 sKind).skills,
@@ -2153,7 +2153,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Garrison;
                 if (garrisonOpen)
                 {
-                    int total = creature_heads(sInv);
+                    int total = creature_count(sInv);
                     ImGui::Text("Total: %d units", total);
                     ImGui::Spacing();
                     if (ImGui::BeginTable("garrison", 2,
@@ -2163,7 +2163,7 @@ namespace sm::ui
                         {
                             const NPCType t = npc_type_at(ti);
                             const int count =
-                                creature_heads_of(sInv, t);
+                                creature_count_of(sInv, t);
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
                             ImGui::TableNextRow();
@@ -2176,7 +2176,7 @@ namespace sm::ui
                     }
                     ImGui::EndTabItem();
                 }
-                // Recruit — the Hire verb of the actions column (Roster-заём
+                // Recruit — the Hire verb of the actions column (Creatures-заём
                 // из гарнизона; деревня нанимает так же, как город).
                 if (acts & kMapActHire)
                 {
@@ -2200,9 +2200,9 @@ namespace sm::ui
                             ? hire_price_for(
                                   std::uint16_t(t), offer->level)
                             : npc_hire_price_base(t);
-                        int avail = creature_heads_of(sInv, t);
+                        int avail = creature_count_of(sInv, t);
                         Inventory* playerArmy = &playerBag;
-                        int owned = creature_heads_of(playerBag, t);
+                        int owned = creature_count_of(playerBag, t);
                         ImGui::PushID(static_cast<int>(t));
                         bool can = avail > 0
                                    && inventory_value(playerBag) >= cost;

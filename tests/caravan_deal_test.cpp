@@ -15,7 +15,7 @@
 #include "macro/characters.h"   // landmark_sheet — руки места
 #include "check.h"
 #include "macro/labour.h"           // souls_home — рты места
-#include "macro/roster_window.h"   // roster_bill — счёт по таблице
+#include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
 
 #include "macro/agent_memory.h"
 #include "tables/commodity.h"
@@ -45,10 +45,10 @@ std::uint16_t fixture_place(sm::MacroStore& st, sm::GameState& gs,
     return sm::birth_place(gs, st, type, 0, 0).slot;
 }
 
-// Счёт содержания места — колонка ростера его тела (roster.h): одна
+// Счёт содержания места — колонка контейнера его тела (creatures.h): одна
 // лестница на место и на отряд, байт в байт.
 std::int32_t* need_debt(sm::MacroStore& st, std::uint16_t slot) {
-    return st.roster[slot].needDebt;
+    return st.upkeep[slot].needDebt;
 }
 
 sm::Inventory& shelf(sm::MacroStore& st, std::uint16_t slot) {
@@ -74,10 +74,10 @@ int main() {
     const std::uint16_t city = fixture_place(mstore, gsFix, sm::SquadType::City);
     // Души — ГОЛОВАМИ в инвентарь записи (v122; запись живёт вне мира, так
     // что паства-worked ей не нужна: торговля спрашивает РТЫ). Счёт еды —
-    // `roster_bill` по таблице, а не «душа × сезон» литералом.
-    sm::raise_flock_into_roster(shelf(mstore, city), 64);
+    // `upkeep_bill` по таблице, а не «душа × сезон» литералом.
+    sm::raise_flock_into_container(shelf(mstore, city), 64);
     need_debt(mstore, city)[sm::commodity_index("food")] =
-        sm::roster_bill(shelf(mstore, city)).board;
+        sm::upkeep_bill(shelf(mstore, city)).board;
     CHECK(shelf(mstore, city).add("wood", 2000), "fixture: city wood glut");
     // КОШЕЛЁК ФИКСТУРЫ ПОДНЯТ ДО НОВЫХ ЦЕН (S25, тот же переезд, что у
     // вендора и лесоруба на снятии коридора): без «домашней маржи» ×0.7
@@ -162,11 +162,11 @@ int main() {
     // A village crew brings food to a town that lacks it; home lacks tools
     // (snapshot class 0), the town holds them.
     const std::uint16_t town = fixture_place(mstore, gsFix, sm::SquadType::City);
-    sm::raise_flock_into_roster(shelf(mstore, town), 64);
+    sm::raise_flock_into_container(shelf(mstore, town), 64);
     // Хлебный счёт не погашен — из него производный спрос на зерно (город
     // печёт); счёт по инструментам оплачен, полка с ними — ИЗЛИШЕК.
     need_debt(mstore, town)[sm::commodity_index("food")] =
-        sm::roster_bill(shelf(mstore, town)).board;
+        sm::upkeep_bill(shelf(mstore, town)).board;
     CHECK(shelf(mstore, town).add("tools", 50), "fixture: town tools");
     // The purse covers the load at the SEASONAL famine price (the corridor
     // died 2026-09-18): a starving shelf prices near base × seasonal need,
@@ -184,7 +184,7 @@ int main() {
     // места не существует вовсе.
     const sm::MacroHandle home =
         sm::birth_place(hgs, mstore, sm::SquadType::Village, 0, 0);
-    sm::raise_flock_into_roster(shelf(mstore, home.slot), 50);
+    sm::raise_flock_into_container(shelf(mstore, home.slot), 50);
     CHECK(shelf(mstore, home.slot).add("food", 5000), "fixture: home food");
 
     sm::Inventory bag;
@@ -204,8 +204,8 @@ int main() {
     // и оплаченного счёта — с 2026-09-20 голодная строка и есть пища, и
     // привезённое зерно ложится ровно в тот счёт, который город не покрыл.
     // Счёт, который город НЕ покрыл, читается той же дверью, что его
-    // выставила (roster_bill по головам) — ни одного пересказанного числа.
-    const int townDebtPaid = sm::roster_bill(shelf(mstore, town)).board
+    // выставила (upkeep_bill по головам) — ни одного пересказанного числа.
+    const int townDebtPaid = sm::upkeep_bill(shelf(mstore, town)).board
         - need_debt(mstore, town)[sm::commodity_index("food")];
     CHECK(bag.count("food") == 0
               && shelf(mstore, town).count("food") + townDebtPaid == 300,
@@ -234,19 +234,19 @@ int main() {
         const auto buy_home_food = [&](int homeFood) {
             const std::uint16_t hm =
                 fixture_place(mstore, gsFix, sm::SquadType::City);
-            sm::raise_flock_into_roster(shelf(mstore, hm), 2520);
+            sm::raise_flock_into_container(shelf(mstore, hm), 2520);
             // Счёт сезона ВЫСТАВЛЕН целиком у ОБОИХ — довод «у него же есть
             // нужда» снят заранее: нужда есть, и гора всё равно делает хлеб
             // дешёвым дома.
             need_debt(mstore, hm)[sm::commodity_index("food")] =
-                sm::roster_bill(shelf(mstore, hm)).board;
+                sm::upkeep_bill(shelf(mstore, hm)).board;
             if (homeFood > 0)
                 CHECK(shelf(mstore, hm).add("food", homeFood),
                       "fixture: the home's shelf");
 
             const std::uint16_t mkt =
                 fixture_place(mstore, gsFix, sm::SquadType::City);
-            sm::raise_flock_into_roster(shelf(mstore, mkt), 64);
+            sm::raise_flock_into_container(shelf(mstore, mkt), 64);
             CHECK(shelf(mstore, mkt).add("food", 4000), "fixture: market food");
             CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
                   "fixture: market purse");
@@ -275,7 +275,7 @@ int main() {
     {
         const std::uint16_t mkt =
             fixture_place(mstore, gsFix, sm::SquadType::City);
-        sm::raise_flock_into_roster(shelf(mstore, mkt), 64);
+        sm::raise_flock_into_container(shelf(mstore, mkt), 64);
         CHECK(shelf(mstore, mkt).add("tools", 50), "fixture: unlit market tools");
         CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
               "fixture: unlit market purse");
@@ -291,7 +291,7 @@ int main() {
 
     // ── Negative control: a coinless market buys nothing, loses nothing ──
     const std::uint16_t broke = fixture_place(mstore, gsFix, sm::SquadType::City);
-    sm::raise_flock_into_roster(shelf(mstore, broke), 64);
+    sm::raise_flock_into_container(shelf(mstore, broke), 64);
     sm::Inventory bag2;
     CHECK(bag2.add("food", 50), "fixture: control food");
     const sm::CaravanDeal none = sm::trade_caravan_at_station(
@@ -310,9 +310,9 @@ int main() {
     // сторожит станция выше, эдж-пин держит продажу.
     const auto run_fixture = [&](int edge) {
         const std::uint16_t m = fixture_place(mstore, gsFix, sm::SquadType::City);
-        sm::raise_flock_into_roster(shelf(mstore, m), 64);
+        sm::raise_flock_into_container(shelf(mstore, m), 64);
         need_debt(mstore, m)[sm::commodity_index("food")] =
-            sm::roster_bill(shelf(mstore, m)).board;
+            sm::upkeep_bill(shelf(mstore, m)).board;
         // Казна с запасом НАД честной ценой лота (полный лот 200 хлеба в
         // голодный счёт ≈ 20 400): упрись оба варианта в одну и ту же
         // казну — эдж стал бы невидим (оба заплатили бы всё, что есть).

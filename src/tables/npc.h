@@ -74,7 +74,7 @@ enum class NPCType : std::uint8_t {
     GiantRat, CaveBat, Kobold, CaveSpider, Imp, Zombie, Orc, Ghoul, Harpy,
     Cultist, Gargoyle, Wraith, Ogre, Minotaur, Basilisk, Lich,
     // ЛОШАДЬ — ЮНИТ, А НЕ ПРЕДМЕТ (CANON S10, владелец 2026-09-19): the
-    // pasture's yield is a CREATURE into the roster, so it is a row of THIS
+    // pasture's yield is a CREATURE into the creatures, so it is a row of THIS
     // table like every creature is — it eats by its upkeep column, hauls by
     // its haulMult, sells through the one hire door. Appended.
     Horse,
@@ -298,7 +298,7 @@ struct NpcTypeDef {
     // вросшую шкуру не сбивают, и простой (M-194) живёт только у НАДЕТОГО.
     Defense defense{};
 
-    // WHAT A BODY OF THIS ROW COSTS to take into a roster, in gold at its
+    // WHAT A BODY OF THIS ROW COSTS to take into a creatures, in gold at its
     // level-1 worth (CANON S25: a creature's price is a column of its row,
     // exactly like a sword's — not a formula living beside the item prices).
     // DERIVATION: the row's own upkeepGoldPerDay × 30 days — a recruit is
@@ -325,10 +325,10 @@ struct NpcTypeDef {
 
     // СКОЛЬКО ЕСТ В ДЕНЬ, в единицах голодной строки — ровно та же единица,
     // что у населения (econ_day.h kNeeds: 1 = один житель-день), поэтому
-    // счёт ростера и счёт населения складываются без переводного
+    // счёт контейнера и счёт населения складываются без переводного
     // множителя. Близнец `upkeepGoldPerDay`: тот говорит, сколько род
     // ПОЛУЧАЕТ, этот — сколько ПОТРЕБЛЯЕТ, и обе колонки читает одна дверь
-    // счёта (roster_window.h roster_bill). 0 = не ест вовсе.
+    // счёта (upkeep_window.h upkeep_bill). 0 = не ест вовсе.
     int boardPerDay = 1;
 
     // КОШЕЛЬКА У РОДА БОЛЬШЕ НЕТ (M-139, вердикт владельца 2026-09-26):
@@ -463,7 +463,7 @@ inline constexpr CombatTemplate kDragonCombat    {500,{3,20}, 1.6f, 40.0f,3.0f, 
 // КРЕСТЬЯНЕ РАБОТАЮТ ЗА ЕДУ (владелец 2026-09-18: «пусть будут 0, чтобы не
 // нарушать единство систем — их зп 0 в деньгах»): upkeepGoldPerDay = 0 у
 // крестьянских родов значит «на содержании ЕДОЙ, жалованья не берёт» —
-// жалованье есть цена НАЁМНОЙ службы (гарнизоны, варбанды, ростер игрока).
+// жалованье есть цена НАЁМНОЙ службы (гарнизоны, варбанды, контейнер игрока).
 // kNpcUpkeepNone (−1) остаётся «не на содержании вовсе» (звери, монстры,
 // бандиты). Цена найма — своя колонка hireGold, от нуля жалованья не
 // зависит.
@@ -1695,7 +1695,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .wildFaction = "demons",
     },
 
-    // Horse — the roster's beast of burden (CANON S10 «ЛОШАДЬ — ЮНИТ»).
+    // Horse — the creatures's beast of burden (CANON S10 «ЛОШАДЬ — ЮНИТ»).
     // A sturdy flighty grazer: hooves 1d4, faster than any march. It EATS
     // (upkeep 0 = a mouth on the board law, no wage — the column humans
     // use, the beast default kNpcUpkeepNone is exactly what this row must
@@ -1770,7 +1770,7 @@ inline constexpr std::uint32_t npc_map_color(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)].mapColor;
 }
 
-// THE id space, and it has one half now. Any "kind" that travels — a roster
+// THE id space, and it has one half now. Any "kind" that travels — a creatures
 // record, an ECS NPCKind, a save — is an ordinal of the one table above, and a
 // wolf is as legal as a spearman (CANON.md S16). The `0x100 | catalog row`
 // encoding that used to mark "monster" is gone with the second table.
@@ -1814,7 +1814,7 @@ inline int soldier_upkeep(std::uint16_t kind, int level) {
     return npc_upkeep_base(soldier_npc_type(kind)) * soldier_level_factor(level);
 }
 
-// ── ПРИРОДА, СПРОШЕННАЯ У ЗАПИСИ РОСТЕРА ──────────────────────────────────
+// ── ПРИРОДА, СПРОШЕННАЯ У ЗАПИСИ КОНТЕЙНЕРА ──────────────────────────────────
 // Три двери, один столбец данных. Имя рода ни в одной из них не звучит:
 // верблюд, мул и овца-вьюк становятся ездовыми, назвав свою спину, а народ
 // нового вида — назвав свою природу.
@@ -1856,7 +1856,7 @@ inline int npc_xp_reward(NPCType t, int level) {
 // One soul, one name space — a record that walked garrison → patrol →
 // garrison keeps one identity for its whole life.)
 
-// ── ПАСТВА ВСТАЁТ В РОСТЕР ОДНОЙ СТРОКОЙ ─────────────────────────────────
+// ── ПАСТВА ВСТАЁТ В КОНТЕЙНЕР ОДНОЙ СТРОКОЙ ─────────────────────────────────
 // Здесь стоял `generate_garrison` (и тип `GarrisonResult` при нём): бросок
 // монетки на КАЖДУЮ душу, 60 % Guard / 40 % Peasant. Вырезан 2026-09-22 по
 // вердикту владельца: «в мире только СКВАДЫ и РОСТЕРЫ… пока никаких
@@ -1864,14 +1864,14 @@ inline int npc_xp_reward(NPCType t, int level) {
 // патрули и стражу».
 //
 // ЧТО ЭТИМ УМЕРЛО, КРОМЕ СТРАЖИ:
-//   · ТРИ ПОТОКА RNG. Состав ростера был жребием — на генезисе города, на
+//   · ТРИ ПОТОКА RNG. Состав контейнера был жребием — на генезисе города, на
 //     генезисе деревни и в ежедневном наборе. Теперь состав — факт, а не
 //     бросок, и три `Rng grng(...)` у вызывающих ушли вместе с ним.
 //   · ПОСЛЕДНИЙ ПЛАТЕЛЬЩИК ЖАЛОВАНЬЯ В МИРЕ. У крестьянина
 //     `upkeepGoldPerDay` = 0 («работают за еду»), у лошади 0, у зверья −1.
 //     Значит `wageDebt` мира становится СТРУКТУРНЫМ НУЛЁМ, а с ним —
 //     колонки прибора `soulsUnpaid`/`crewsUnpaid` и ветка `byWage` в окне
-//     ростера. Колонка НЕ СНОСИТСЯ: жалованье вернётся с наёмниками, и это
+//     контейнера. Колонка НЕ СНОСИТСЯ: жалованье вернётся с наёмниками, и это
 //     известная спящая половина (§55), а не забытая.
 //   · СТОК МОНЕТЫ. «Уплаченное сгорает в пул лута» перестаёт качать монету
 //     из мира этой дверью.
@@ -1880,7 +1880,7 @@ inline int npc_xp_reward(NPCType t, int level) {
 // патрульной строки реестра мест: «вырезан не вид, а то, что город его
 // спавнит». Её носят авто-бой, сцена и двадцать тестов.
 //
-// (raise_flock_into_roster и hire_npc переехали в macro/world_row.h
+// (raise_flock_into_container и hire_npc переехали в macro/world_row.h
 // слиянием M-71 — обе двери двигают души между едиными контейнерами.)
 
 // Case-insensitive token → registry row, matched against the row's stable

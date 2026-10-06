@@ -40,7 +40,7 @@ namespace {
 // его тела, заполненная рождением из стола по роду, — а рецепт называет
 // ремесло и ранг.)
 
-// (`rand01_` умер 2026-09-22 вместе с жребием состава ростера: его
+// (`rand01_` умер 2026-09-22 вместе с жребием состава контейнера: его
 // единственным читателем был `garrison_recruit_`, бросавший монетку
 // «страж или крестьянин» на КАЖДУЮ набранную душу. Состав перестал быть
 // случайным — и поток вместе с ним.)
@@ -78,7 +78,7 @@ void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
     // даёт рост»).
     if (season_boundary(day)) {
         const ConsumeOutcome o = econ_debt_boundary(
-            store, st.roster[slot].needDebt, souls_home(st, slot), sink, user);
+            store, st.upkeep[slot].needDebt, souls_home(st, slot), sink, user);
         // СМЕРТЬ — единственная кара голода: доля непогашенного хлеба
         // уходит населением здесь, в единственной двери. Умирают ДОМАШНИЕ
         // головы; у поселения то же число сходит с worked-паствы (drain:
@@ -105,7 +105,7 @@ void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
     // долг сразу; этот такт кроет пути мимо них): вчерашний привоз и
     // сегодняшняя выпечка (econ_produce_day идёт ПЕРЕД этим днём) платят
     // по счёту не позже суток.
-    econ_pay_debt(store, st.roster[slot].needDebt, sink, user);
+    econ_pay_debt(store, st.upkeep[slot].needDebt, sink, user);
     // Daily slot hygiene (CANON «Крафт/Скрап») — hygiene, not a balance.
     econ_store_hygiene(store, sink, user);
 
@@ -222,10 +222,10 @@ void tick_settlements_(GameState& gs, MacroStore& st, int day,
         // (owner 2026-08-30; the right becomes a landmark column when a
         // place ever differs from its kind).
         const int heads = souls_home(st, slot);
-        econ_produce_day(store, st.roster[slot].needDebt,
+        econ_produce_day(store, st.upkeep[slot].needDebt,
                          st.sheet[slot].skills,
                          heads > 0
-                             ? std::max(1, heads / kHeadsPerCityWorker)
+                             ? std::max(1, heads / kCreaturesPerCityWorker)
                              : 0,
                          heads, rs, ru,
                          faction_or_freefolk(
@@ -273,10 +273,10 @@ void tick_villages_(GameState& gs, MacroStore& st, int day,
         // that site, so this makes nothing, and the day the row lands it
         // works with no code here either.
         const int heads = souls_home(st, slot);
-        econ_produce_day(store, st.roster[slot].needDebt,
+        econ_produce_day(store, st.upkeep[slot].needDebt,
                          st.sheet[slot].skills,
                          heads > 0
-                             ? std::max(1, heads / kHeadsPerCityWorker)
+                             ? std::max(1, heads / kCreaturesPerCityWorker)
                              : 0,
                          heads, rs, ru);
 
@@ -463,7 +463,7 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
             // into the population, today's are raised to its size.
             rotate_worker_squads(*macro, day);
             // THE SQUAD SEASON WINDOW (npc_ai.h, CANON S19.2): on the
-            // boundary day every roster settles board AND pay a season
+            // boundary day every creatures settles board AND pay a season
             // ahead. ВЗЫСКАНИЕ ПРОПОРЦИОНАЛЬНО (v105): доля неоплаченного
             // и есть доля ушедших. Кромка «покрыто целиком или не
             // списывается» и доля 1/8, которые здесь были описаны, умерли

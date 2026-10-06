@@ -346,7 +346,7 @@ void test_aggressive_spares_a_friend() {
 
 // (ПАТРУЛЬ ВЫРЕЗАН 2026-09-22 вместе со своим свидетелем: `ai_patrol`,
 // значение `AIBehaviour::Patrol` и состояние `NPCState::Patrolling` снесены
-// курсом «идти от минимума системы». Патруль вернётся ростером сквада-
+// курсом «идти от минимума системы». Патруль вернётся контейнером сквада-
 // ландмарка после слияния гарнизона (CANON S10, наряд Б-1) — и свидетеля
 // тогда писать ПО НОВОЙ ФОРМЕ, а не воскрешать этот.)
 
@@ -585,7 +585,7 @@ void test_rotation_does_not_dissolve_the_dead() {
         terrain.rgba[i * 4u] = sm::field_word_of(180.0f / 255.0f);
 
     // A DEAD crew standing at its home city, Idle — the exact state the
-    // dissolve used to swallow. Род взят ЖИВОЙ строкой ростера города
+    // dissolve used to swallow. Род взят ЖИВОЙ строкой контейнера города
     // (Peasant, артель горожан): патрульная строка Guard вырезана
     // 2026-09-21, и свидетель на ней проверял бы уже не закон, а пустоту —
     // rotate_worker_squads не считает крю то, чего место не поднимает.
@@ -604,13 +604,13 @@ void test_rotation_does_not_dissolve_the_dead() {
     const int popBefore =
         sm::souls_flock(gs, *worldStore_, cityBody.slot);
     const int garrisonBefore =
-        sm::creature_heads(worldStore_->inventory[cityBody.slot].inv);
+        sm::creature_count(worldStore_->inventory[cityBody.slot].inv);
     sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
     sm::rotate_worker_squads(mw, /*day=*/3);
 
     CHECK(sm::souls_flock(gs, *worldStore_, cityBody.slot) == popBefore,
           "a dead crew's souls never return to the population");
-    CHECK(sm::creature_heads(worldStore_->inventory[cityBody.slot].inv)
+    CHECK(sm::creature_count(worldStore_->inventory[cityBody.slot].inv)
               == garrisonBefore,
           "and dead records never march into the garrison");
     CHECK(sm::store_of(world).valid(dead),

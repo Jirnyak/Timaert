@@ -1,5 +1,5 @@
 #include "check.h"
-#include "macro/world_row.h"   // raise_flock_into_roster — души головами
+#include "macro/world_row.h"   // raise_flock_into_container — души головами
 #include "macro/npc_spawn.h"
 #include "macro/place_birth.h" // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "ecs/components.h"
@@ -18,7 +18,7 @@ void add_settlement(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
     // Души — ГОЛОВАМИ в инвентарь тела (v122): фабрика мира не
     // видит, поэтому пасту (worked-число фичи) ставит звонящий,
     // если она ему нужна; домашние души живут в теле места.
-    sm::raise_flock_into_roster(st.inventory[h.slot].inv, 1000);
+    sm::raise_flock_into_container(st.inventory[h.slot].inv, 1000);
 }
 
 // ТЕЛО МЕСТА СТОИТ В ТОМ ЖЕ STORE (M-90 шаг 5: «место есть неподвижный

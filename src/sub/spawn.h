@@ -53,7 +53,7 @@ void maybe_emplace_carried_light(entt::registry& reg, entt::entity e,
 // to fill.
 //
 //   DERIVED — an embodied NUMBER or table row. A townsman standing for one unit
-//   of his settlement's population; a soldier standing for one line of a roster;
+//   of his settlement's population; a soldier standing for one line of a creatures;
 //   an animal standing for one head of the cell's game. Nothing about him is
 //   remembered above, so everything about him is derived from a seed: his face,
 //   his sheet, and — at the instant he dies — his loot. He stores NOTHING that
@@ -325,7 +325,7 @@ InteriorSegment interior_segment_for_door(
 // worked сюда не годится — она считает и ушедших в поле, и мерить ею улицу
 // значило бы рождать тела без голов, второй счёт класса «6272 паствы →
 // 11774 тела»). Тонкая дверь: субмиру не нужен noситель голов целиком.
-int home_heads(const Inventory& homeSouls);
+int home_creatures(const Inventory& homeSouls);
 
 // stock system, никакой второй копии). Placement is the scene's OWN floor
 // catalog (map_data.h StandPoint, CANON S28) — a uniform draw without
@@ -437,8 +437,8 @@ void despawn_subworld_entities_outside_window(ecs::World& w);
 // squad_bonuses over his owned component, squad.h sheet_of) and applied into
 // every member's sheet at birth. nullptr = a leaderless context, nothing
 // applied.
-// `rosterSubject`/`rosterCx`/`rosterCy` — WHOSE roster stock the members'
-// death receipts strike (macro/macro_stock.h "roster"): the FLAG record's own
+// `creaturesSubject`/`creaturesCx`/`creaturesCy` — WHOSE creatures stock the members'
+// death receipts strike (macro/macro_stock.h "creatures"): the FLAG record's own
 // MacroSpawnId and cell, read at the call site — a worn lord's men pay their
 // deaths back into HIS squad, not into the player ordinal (A2, 2026-09-17).
 // Defaults name the ordinary hero squad, which is what every fixture has.
@@ -450,10 +450,10 @@ void spawn_player_squad(ecs::World& w,
                         std::uint32_t seed,
                         std::uint16_t faction,
                         const BonusTotals* squadBonuses = nullptr,
-                        std::int32_t rosterSubject =
+                        std::int32_t creaturesSubject =
                             std::int32_t(ecs::kPlayerSquadOrdinal),
-                        std::int16_t rosterCx = 0,
-                        std::int16_t rosterCy = 0);
+                        std::int16_t creaturesCx = 0,
+                        std::int16_t creaturesCy = 0);
 
 void spawn_player_squad(ecs::World& w,
                         const Inventory& squad,
@@ -463,10 +463,10 @@ void spawn_player_squad(ecs::World& w,
                         std::uint32_t seed,
                         std::uint16_t faction,
                         const BonusTotals* squadBonuses = nullptr,
-                        std::int32_t rosterSubject =
+                        std::int32_t creaturesSubject =
                             std::int32_t(ecs::kPlayerSquadOrdinal),
-                        std::int16_t rosterCx = 0,
-                        std::int16_t rosterCy = 0);
+                        std::int16_t creaturesCx = 0,
+                        std::int16_t creaturesCy = 0);
 
 // ── Macro→subworld projection (Inc 5d) ───────────────────────────────────
 //
@@ -492,13 +492,13 @@ void spawn_player_squad(ecs::World& w,
 // NpcTypeDef.ai (Aggressive→fight, else flee). Placement scatters within the
 // cell's sub-region, dodging water.
 //
-// A macro NPC IS a squad (ecs::SquadRoster doctrine): the entity itself is the
-// leader — projected as the TRACKED body — and every roster row is one unit of
-// the squad's roster STOCK made visible, projected around the leader as a
+// A macro NPC IS a squad (ecs::SquadUpkeep doctrine): the entity itself is the
+// leader — projected as the TRACKED body — and every creature row is one unit of
+// the squad's creatures STOCK made visible, projected around the leader as a
 // DERIVED body wearing the OWNER's faction (the banner rule above) and
-// carrying the receipt (MacroStock::Roster, subject = the squad's MacroSpawnId
+// carrying the receipt (MacroStock::Creatures, subject = the squad's MacroSpawnId
 // ordinal, detail = the member's entityId) that pays its death back into the
-// roster. An empty roster projects a lone wanderer, exactly as before.
+// creatures. An empty creatures projects a lone wanderer, exactly as before.
 //
 // Enter-only: it does NOT re-run on a seam crossing, so a macro NPC in a newly
 // entered neighbour cell is not yet materialised — an accepted v1 scope, since

@@ -64,14 +64,14 @@ inline NPCType creature_of_world_row(std::uint16_t row) noexcept {
 
 // ── ДВЕРИ СУЩЕСТВ НАД ЕДИНЫМ КОНТЕЙНЕРОМ (M-71, слияние 2026-09-24) ───────
 //
-// Ростер перестал быть отдельной вещью: существа лежат СТРОКАМИ МИРА в тех
+// Отдельного носителя существ больше нет: они лежат СТРОКАМИ МИРА в тех
 // же 1024 слотах, что и предметы (закон двух областей — items.h: существа
 // плотной областью сверху вниз, новейший слот — наименьший индекс; дыра
-// затыкается новейшим, зеркало swap-with-last старого ростера). Эти функции
+// затыкается новейшим, зеркало swap-with-last прежнего «ростера»). Эти функции
 // — ЕДИНСТВЕННЫЙ путь существа в контейнер и из него: пересчёт род ↔ строка
 // мира живёт ровно здесь; сдвиг базы наружу не выходит.
 //
-// СООТВЕТСТВИЕ СТАРОМУ ПОРЯДКУ РОСТЕРА — точное, ради закона ходока «свежие
+// СООТВЕТСТВИЕ СТАРОМУ ПОРЯДКУ — точное, ради закона ходока «свежие
 // уходят первыми» и паритета мира: старый обход slots[0..n-1] (старейший →
 // новейший) = здесь обход 1023 → creature_first().
 
@@ -108,7 +108,7 @@ inline bool creatures_push(Inventory& inv, const SoldierRecord& s) {
         creature_slot(soldier_npc_type(s.kind), s.level, 1, s.entityId));
 }
 
-// Целый слот существа внутрь (свод ростера в гарнизон, пул поглощает
+// Целый слот существа внутрь (свод контейнера в гарнизон, пул поглощает
 // отряд): генерик сольётся, именное возьмёт свой слот. Всё-или-ничего.
 inline bool creatures_push_slot(Inventory& inv, const ItemRef& s) {
     if (s.count <= 0 || !world_row_is_creature(s.def)) return false;
@@ -118,14 +118,14 @@ inline bool creatures_push_slot(Inventory& inv, const ItemRef& s) {
 
 // СКОЛЬКО ГОЛОВ — души и генерики вместе, Σ count по области (старые
 // Roster::souls() / total_soldiers / SoldierSquad::size()).
-inline int creature_heads(const Inventory& inv) noexcept {
+inline int creature_count(const Inventory& inv) noexcept {
     int n = 0;
     for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
         n += inv.slots[std::size_t(i)].count;
     }
     return n;
 }
-inline int creature_heads_of(const Inventory& inv, NPCType kind) noexcept {
+inline int creature_count_of(const Inventory& inv, NPCType kind) noexcept {
     const std::uint16_t row = world_row_of_creature(kind);
     int n = 0;
     for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
@@ -246,10 +246,10 @@ inline int creatures_add(Inventory& dst, const Inventory& src) {
 
 // ── ГОЛОВЫ ПОШТУЧНО — адресный обход для воплощения тел ───────────────────
 // Развёртка стаков: (slot, index) — адрес головы, по которому субмир вешает
-// заём тела. Порядок — СТАРЫЙ порядок ростера (старейший слот первым).
+// заём тела. Порядок — СТАРЫЙ порядок контейнера (старейший слот первым).
 // ДУШИ (entityId != 0, count == 1) — фильтр по head.entityId у читателя:
 // это и есть souls() слитого мира, отдельного контейнера у душ нет.
-struct CreatureHead {
+struct CreatureRef {
     std::uint16_t kind     = 0;   // сырой NPCType — монета SoldierRecord
     std::uint8_t  level    = 1;
     std::uint32_t entityId = 0;
@@ -257,23 +257,23 @@ struct CreatureHead {
     std::int32_t  index    = 0;   // [0, count) внутри стака
 };
 
-class CreatureHeadIterator {
+class CreatureIterator {
   public:
-    CreatureHeadIterator(const Inventory* inv, int slot)
+    CreatureIterator(const Inventory* inv, int slot)
         : inv_(inv), slot_(slot) {}
-    CreatureHead operator*() const {
+    CreatureRef operator*() const {
         const ItemRef& s = inv_->slots[std::size_t(slot_)];
-        return CreatureHead{std::uint16_t(creature_of_world_row(s.def)),
+        return CreatureRef{std::uint16_t(creature_of_world_row(s.def)),
                             s.level, s.entityId, slot_, index_};
     }
-    CreatureHeadIterator& operator++() {
+    CreatureIterator& operator++() {
         if (++index_ >= inv_->slots[std::size_t(slot_)].count) {
             index_ = 0;
             --slot_;
         }
         return *this;
     }
-    bool operator!=(const CreatureHeadIterator& o) const {
+    bool operator!=(const CreatureIterator& o) const {
         return slot_ != o.slot_ || index_ != o.index_;
     }
   private:
@@ -282,18 +282,18 @@ class CreatureHeadIterator {
     std::int32_t     index_ = 0;
 };
 
-struct CreatureHeadsRange {
+struct CreaturesRange {
     const Inventory* inv = nullptr;
     int              first = kMaxInventorySlots;
-    CreatureHeadIterator begin() const {
-        return CreatureHeadIterator(inv, kMaxInventorySlots - 1);
+    CreatureIterator begin() const {
+        return CreatureIterator(inv, kMaxInventorySlots - 1);
     }
-    CreatureHeadIterator end() const {
-        return CreatureHeadIterator(inv, first - 1);
+    CreatureIterator end() const {
+        return CreatureIterator(inv, first - 1);
     }
 };
-inline CreatureHeadsRange creature_heads_range(const Inventory& inv) {
-    return CreatureHeadsRange{&inv, inv.creature_first()};
+inline CreaturesRange creatures_range(const Inventory& inv) {
+    return CreaturesRange{&inv, inv.creature_first()};
 }
 
 // ── ВЗГЛЯДЫ ПО КОЛОНКАМ СТРОКИ (переехали из npc.h слиянием M-71) ─────────
@@ -342,7 +342,7 @@ inline int bleed_flock(Inventory& inv, int n) {
 // — головами, и голова его толпы — Imp, не человек): снять до n голов
 // ЛЮБОГО рода из области существ, вернуть факт. У поселения этой дверью не
 // ходят — там душа человеческая (bleed_flock выше), а зверь — имущество.
-inline int bleed_heads(Inventory& inv, int n) {
+inline int bleed_creatures(Inventory& inv, int n) {
     int taken = 0;
     while (taken < n) {
         const int si = inv.creature_first();
@@ -370,7 +370,7 @@ inline int calculate_squad_upkeep(const Inventory& inv) {
 
 // Паства встаёт в область ОДНОЙ строкой (вердикт 2026-09-22: стражи нет,
 // состав — факт). Возвращает СКОЛЬКО ВСТАЛО: отказ контейнера — вслух.
-inline int raise_flock_into_roster(Inventory& inv, int souls) {
+inline int raise_flock_into_container(Inventory& inv, int souls) {
     if (souls <= 0) return 0;
     const NpcTypeDef& row = npc_def(NPCType::Peasant);
     return creatures_push_stack(inv, NPCType::Peasant, row.baseLevel, souls)

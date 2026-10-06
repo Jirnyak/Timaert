@@ -3,7 +3,7 @@
 #include "ecs/components.h"
 #include "core/rng.h"
 #include "macro/store.h"
-#include "macro/macro_stock.h" // MacroStock::Roster — чьи люди стоят без чувств
+#include "macro/macro_stock.h" // MacroStock::Creatures — чьи люди стоят без чувств
 #include "tables/npc.h"   // cruiseM — крейсерская высота рода летуна
 #include "sub/record.h"  // macro_record_of — «без сознания» читается через зеркало
 #include <cmath>
@@ -39,7 +39,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     // прочитанное на единственной двери ИИ. Пока владелец ходит в чужом теле,
     // его собственный сквад стоит в сцене видимым и недвижимым: лидер — тело,
     // чья запись (через зеркало) и есть сквад без AvatarTag; его люди — тела
-    // с ростерным займом на тот же сквад. Флажок вернулся — мозги проснулись
+    // с контейнерным займом на тот же сквад. Флажок вернулся — мозги проснулись
     // на следующем же тике, без единого компонента.
     std::int32_t unconsciousSubject = -1;
     MacroHandle unconsciousRec{};
@@ -72,14 +72,14 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         // the body's AI resumes automatically on the very next tick.
         if (is_avatar(reg, e)) continue;
         // …и тело брошенного сквада стоит без чувств (предикат выше): сам
-        // сквад — по записи, его люди — по ростерному займу.
+        // сквад — по записи, его люди — по контейнерному займу.
         if (unconsciousRec.slot != kMacroNoSlot) {
             if (macro_record_of(reg, e) == unconsciousRec) {
                 aiCol->wantVx = aiCol->wantVy = 0.0f;
                 continue;
             }
             if (const auto* debt = reg.try_get<ecs::MacroDebt>(e);
-                debt && debt->stock == std::uint8_t(MacroStock::Roster)
+                debt && debt->stock == std::uint8_t(MacroStock::Creatures)
                 && debt->subject == unconsciousSubject) {
                 aiCol->wantVx = aiCol->wantVy = 0.0f;
                 continue;

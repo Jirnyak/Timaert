@@ -12,7 +12,7 @@
 //     and therefore never advanced.
 //
 // What is pinned here:
-//   1. Factions are interned STRINGS with no vocabulary and no roster limit:
+//   1. Factions are interned STRINGS with no vocabulary and no fixed list:
 //      dedup, pointer-vs-strcmp identity, empty/null rejection, full-table
 //      degradation. Hostility is asymmetric-capable (private grudges ride it).
 //   2. UnitGrid is a correct counting sort; it fits the crowd's bbox; a crowd
@@ -202,7 +202,7 @@ MoveGround flat_terrain() {
     return t;
 }
 
-// ── 1. Factions: interned strings, no vocabulary, no roster limit ──────────
+// ── 1. Factions: interned strings, no vocabulary, no fixed list ──────────
 void test_factions() {
     FactionSet fs{};
     const int a = fs.intern(kEmpire);

@@ -5,11 +5,11 @@
 // auto-resolve broke both: it settled deaths in silence — no facts, so quest
 // kill-tallies never counted an auto-resolved kill; no kill reputation, so a
 // massacre by button cost nothing; and no loot roll, so the spoils were only
-// whatever bag the loser happened to carry (a roster's dead dropped nothing at
+// whatever bag the loser happened to carry (a creatures's dead dropped nothing at
 // all). The same deaths underfoot paid all three.
 //
 // Pinned here, each with its negative control:
-//   * every death is REPORTED once — roster rows by their record ids, the
+//   * every death is REPORTED once — creature rows by their record ids, the
 //     leader by his entity — and a survivor is never reported;
 //   * the kill price is the registry's column: a lawful faction charges
 //     kKillRepPenalty per body, an outlaw charges nothing (killIsNoCrime);
@@ -49,7 +49,7 @@ void collect(void* user, const BattleFact& f) {
     static_cast<FactLog*>(user)->facts.push_back(f);
 }
 
-// A macro squad: leader entity + roster records, the shape every macro body
+// A macro squad: leader entity + creatures records, the shape every macro body
 // has (squad == leader, CANON S4).
 sm::MacroHandle squad(ecs::World& w, NPCType leaderType,
                       const char* factionId,
@@ -70,15 +70,15 @@ sm::MacroHandle squad(ecs::World& w, NPCType leaderType,
     return h;
 }
 
-// An outcome that kills the whole enemy side: every roster row plus the
+// An outcome that kills the whole enemy side: every creature row plus the
 // leader. Hand-built so the test states the law, not the resolver's dice.
 AutoBattleOutcome wipe_of(ecs::World& w, sm::MacroHandle loser,
                           bool loserIsB) {
     AutoBattleOutcome o{};
     o.winner = loserIsB ? 0 : 1;
     auto& cas = loserIsB ? o.casualtiesB : o.casualtiesA;
-    for (const CreatureHead r :
-         creature_heads_range(sm::store_of(w).inventory[loser.slot].inv)) {
+    for (const CreatureRef r :
+         creatures_range(sm::store_of(w).inventory[loser.slot].inv)) {
         cas.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
     (loserIsB ? o.leaderFractionB : o.leaderFractionA) = 0.0f;
@@ -107,14 +107,14 @@ squad(w, NPCType::Bandit, "bandits", 2, 3, 2u);
     settle_auto_battle(mw, a, b, wipe_of(w, b, /*loserIsB*/true));
 
     CHECK(log.facts.size() == 4,
-          "three roster rows and the leader — four deaths, four facts");
-    int leaderFacts = 0, rosterFacts = 0;
+          "three creature rows and the leader — four deaths, four facts");
+    int leaderFacts = 0, creatureFacts = 0;
     for (const BattleFact& f : log.facts) {
         CHECK(f.kind == BattleFact::Kind::Death, "the fact is a death");
-        if (f.detail < 0) ++leaderFacts; else ++rosterFacts;
+        if (f.detail < 0) ++leaderFacts; else ++creatureFacts;
     }
     CHECK(leaderFacts == 1, "the fallen leader is reported by his entity");
-    CHECK(rosterFacts == 3, "each roster row is reported by its record id");
+    CHECK(creatureFacts == 3, "each creature row is reported by its record id");
     CHECK(log.facts.back().npcType == std::uint16_t(NPCType::Bandit),
           "the leader's fact carries HIS row, not a member's");
 
@@ -199,7 +199,7 @@ void test_spoils_are_rolled_not_scavenged() {
     ensure_macro_player_entity(gs, sm::store_of(w));
     // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): чтобы спросить «дошла ли
     // добыча», у павшего должна БЫТЬ добыча. Раньше её рождал бросок
-    // хардкод-профиля роли — и вопрос стоял «роняет ли ростерная запись то,
+    // хардкод-профиля роли — и вопрос стоял «роняет ли контейнерная запись то,
     // чего у неё нет»; вердикт владельца 2026-09-26 (M-139) снёс и профили,
     // и кошельки, поэтому закон теперь ОДИН и честный: победителю достаётся
     // РОВНО то, что павший нёс. Кладём купцу настоящий товар руками.

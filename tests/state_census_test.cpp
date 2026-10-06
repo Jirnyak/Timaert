@@ -465,7 +465,7 @@ constexpr Row kMacroStoreRows[] = {
     {"runtime", Rod::Squads, ""},
     {"spellBook", Rod::Squads, ""},
     {"memory", Rod::Squads, ""},
-    {"roster", Rod::Squads, ""},
+    {"upkeep", Rod::Squads, ""},
     {"wellbeing", Rod::Squads, "благополучие анкеты (M-90 флип: было плечом места)"},
     {"interests", Rod::Squads, "связи любых сквадов (M-90 флип: было плечом места)"},
     {"inventory", Rod::Squads, "единый контейнер: предметы + существа"},

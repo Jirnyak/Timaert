@@ -10,7 +10,7 @@
 //     and the bag is empty after delivery: nothing minted, nothing dropped.
 #include "check.h"
 #include "macro/labour.h"   // settle_souls — двери душ
-#include "macro/roster_window.h"   // roster_bill — счёт по таблице
+#include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
 
 #include "macro/npc_ai.h"
 #include "macro/landmark_iter.h"  // for_each_place — перепись мест
@@ -480,11 +480,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
         // ДОМ ГОЛОДЕН СЧЁТОМ (CANON S10): «дома нет хлеба» = непогашенный
         // сезонный счёт — из него и читается нужда, которую вендор едет
         // закрывать покупкой.
-        // СЧЁТ ЕДЫ — ПО ТАБЛИЦЕ (v122): сезонная нужда есть `roster_bill` по
+        // СЧЁТ ЕДЫ — ПО ТАБЛИЦЕ (v122): сезонная нужда есть `upkeep_bill` по
         // головам этого места, а не «душа × сезон» литералом.
         sm::settle_souls(gs, st, vil.slot, 50);
-        st.roster[vil.slot].needDebt[commodity_index("food")] =
-            sm::roster_bill(row).board;
+        st.upkeep[vil.slot].needDebt[commodity_index("food")] =
+            sm::upkeep_bill(row).board;
     }
     // (ЗДЕСЬ ФИКСТУРА ПУБЛИКОВАЛА ВЕДОМОСТИ — уничтожены 2026-09-30,
     // ломтик E шаг 2: что везти домой, судит сам дом, читаемый живьём в
@@ -536,7 +536,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // ПОД ДОЛГОМ (CANON S10) «купил домой хлеб» видно СЧЁТОМ: привезённое
     // гасит его в дверях прихода и съедается — полка держит только излишек.
     const int vilFoodDebtPaid = 50 * kDaysPerSeason
-        - st.roster[vil.slot].needDebt[commodity_index("food")];
+        - st.upkeep[vil.slot].needDebt[commodity_index("food")];
     CHECK(vilFoodDebtPaid > 0,
           "the earnings FED the home's lack — the food bill fell");
     // КОНСЕРВАЦИЯ ОДНОЙ ПИЩЕЙ (2026-09-20, снос хлеба): до этого дня в мире
@@ -737,7 +737,7 @@ void test_the_miner_works_the_vein() {
 // одна колонка haulMult и сохранение улова, теперь через ОДИН контейнер.
 // Проверка «у дома ноль голов» и есть негативный контроль сноса: вернись
 // двухтактный обоз — она краснеет первой.
-void test_the_catch_lands_in_the_roster() {
+void test_the_catch_lands_as_creatures() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
@@ -807,8 +807,8 @@ void test_the_catch_lands_in_the_roster() {
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
 
-    const Inventory& roster = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
-    const int caught = creature_heads_of(roster, NPCType::Horse);
+    const Inventory& creatures = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
+    const int caught = creature_count_of(creatures, NPCType::Horse);
     const ResourceGrid& herdScars =
         gs.resourceScarCells[std::size_t(ResourceFieldId::Horses)];
     int lost = 0;
@@ -817,7 +817,7 @@ void test_the_catch_lands_in_the_roster() {
     });
 
     const int athome =
-        creature_heads_of(st.inventory[vil.slot].inv, NPCType::Horse);
+        creature_count_of(st.inventory[vil.slot].inv, NPCType::Horse);
     CHECK(caught > 0, "the catch landed as SOULS, not as cargo");
     CHECK(lost == caught,
           "CONSERVATION ОДНИМ контейнером: поле лишилось ровно того, что "
@@ -865,6 +865,6 @@ int main() {
     test_the_mine_runs_while_the_player_is_away();
     test_agent_memory_is_bounded_and_current();
     test_the_vendor_sells_at_the_nearest_city();
-    test_the_catch_lands_in_the_roster();
+    test_the_catch_lands_as_creatures();
     return sm::test::report("woodcutter_gather_test");
 }

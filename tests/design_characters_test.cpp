@@ -16,7 +16,7 @@
 // стола катается броском; колонка получит свидетеля с первой авторской
 // анкетой. Testing law 7 — говорим это вслух.)
 #include "check.h"
-#include "macro/world_row.h"   // raise_flock_into_roster — души головами
+#include "macro/world_row.h"   // raise_flock_into_container — души головами
 
 #include "core/rng.h"
 #include "macro/characters.h"
@@ -73,7 +73,7 @@ sm::MacroHandle settle(GameState& gs, sm::MacroStore& st, SquadType kind,
                        int x, int y, std::int16_t factionIdx = -1) {
     const sm::MacroHandle h =
         birth_place(gs, st, kind, x, y, factionIdx);
-    raise_flock_into_roster(st.inventory[h.slot].inv, 100);
+    raise_flock_into_container(st.inventory[h.slot].inv, 100);
     return h;
 }
 

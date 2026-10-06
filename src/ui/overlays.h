@@ -74,7 +74,7 @@ struct DialogOverlayState {
     std::array<char, 64> nodeId{};
 };
 
-// `world` is here because the player's ROSTER is an ordinary squad on his
+// `world` is here because the player's СУЩЕСТВ КОНТЕЙНЕРА is an ordinary squad on his
 // macro entity now (macro/player_entity.h), not a field of PlayerState. The UI
 // sits above every layer and may read from them; it still owns no game logic.
 void draw_character_panel(GameState& gs, ecs::World& world, bool* open,

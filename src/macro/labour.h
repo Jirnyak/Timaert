@@ -19,7 +19,7 @@
 //   • два литерала `20` в двух файлах (world_tick, npc_spawn) — их перевод
 //     идёт своей порцией, дверь для них уже здесь.
 // `labourShift` в реестре ОСТАЁТСЯ, но только для станков города — сколько
-// душ стоит у верстака (kHeadsPerCityWorker), а это другой вопрос.
+// душ стоит у верстака (kCreaturesPerCityWorker), а это другой вопрос.
 #pragma once
 
 #include <algorithm>
@@ -27,7 +27,7 @@
 #include "tables/npc.h"     // природа строки: кто есть народ (kNpcNature)
 #include "macro/state.h"   // worked_read — паства
 #include "macro/store.h"   // склад места — колонка его ТЕЛА (слот)
-#include "macro/world_row.h"          // count_human_souls / creature_heads
+#include "macro/world_row.h"          // count_human_souls / creature_count
 #include "macro/landmark_registry.h"  // bornPopBase — признак данжа
 #include "macro/fauna.h"              // weakest_crowd_kind — душа данжа
 
@@ -56,7 +56,7 @@ inline int souls_flock(const GameState& gs, const MacroStore& st,
     const auto& c = st.cell[slot];
     return landmark_def(kind).bornPopBase == 0
         ? worked_read(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW))
-        : creature_heads(st.inventory[slot].inv);
+        : creature_count(st.inventory[slot].inv);
 }
 
 // ── ПОСЕЛИТЬ ДУШИ — ОДНА ДВЕРЬ НА ВСЯКОЕ ИХ ПОЯВЛЕНИЕ (v122) ─────────────
@@ -86,7 +86,7 @@ inline int settle_souls(GameState& gs, MacroStore& st, std::uint16_t slot,
                                     npc_def(kind).baseLevel, souls)
                    ? souls : 0;
     }
-    const int stood = raise_flock_into_roster(store, souls);
+    const int stood = raise_flock_into_container(store, souls);
     if (stood > 0) {
         const auto& c = st.cell[slot];
         worked_add(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW),

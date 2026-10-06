@@ -50,7 +50,7 @@ int commodity_item_index(int commodityIdx);
 // система УЖЕ держит каталожный ординал (слот склада несёт `def`, строка
 // цели — свой ординал), а сказать надо о ТОВАРЕ: факт ведомости, счёт нужды
 // и прейскурант адресуются товарным ординалом, а не каталожным
-// (ecs::SquadRoster). Второй таблицы не рождается — это тот же
+// (ecs::SquadUpkeep). Второй таблицы не рождается — это тот же
 // список kCommodities, прочитанный наоборот и кэшированный один раз.
 int commodity_of_item(int itemIdx);
 
@@ -245,7 +245,7 @@ int season_comfort_units(int population, int commodityIdx);
 // пищевая строка словаря» прибито `static_assert`ом ВНУТРИ `items.cpp`, а
 // дверь ниже отвечает -1, если каталог этому закону противоречит.
 // Товарным ординалом — то, ЧЕМ голод адресуется в СЧЁТЕ (`needDebt`
-// индексируется товарным ординалом: state.h Landmark, ecs::SquadRoster).
+// индексируется товарным ординалом: state.h Landmark, ecs::SquadUpkeep).
 int hunger_commodity_ordinal();
 
 // Она же каталожным ОРДИНАЛОМ — то, ЧЕМ её списывают из закромов.
@@ -267,7 +267,7 @@ constexpr int season_hunger_units(int population) {
 // labourShift — «какие сквады кто спавнит — таблично»); the city's
 // labourShift = log2 of this number, so the two laws meet at the same
 // eighth of a town.
-inline constexpr int kHeadsPerCityWorker = 8;
+inline constexpr int kCreaturesPerCityWorker = 8;
 
 // (THE WORKING RHYTHM died here, 2026-09-16. `kWorkCyclesPerBar` = 4 declared
 // how many hauls a rested worker made in a day, and `kGatherPerCycle` = 32/4
@@ -303,14 +303,14 @@ inline constexpr int sp_price(int maxSp, int ratePerDay) {
 
 // HOW MANY HANDS a production has. Hands multiply the YIELD and never the
 // price: the bar belongs to the SQUAD (it is the leader body's own bar and
-// does not grow with the roster), so N souls do N workers' work for one
+// does not grow with the creatures), so N souls do N workers' work for one
 // action's price. Owner, verbatim: «каждый работник рубит по дереву, SP
 // тратится как у игрока, просто деревьев в число людей больше».
 //
 // The leader is a hand too — that is the +1, and it is why a lone walker is
 // not a special case of anything.
-inline constexpr int production_hands(int rosterSize) {
-    return 1 + (rosterSize > 0 ? rosterSize : 0);
+inline constexpr int production_hands(int creatureCount) {
+    return 1 + (creatureCount > 0 ? creatureCount : 0);
 }
 
 // ── Facts ────────────────────────────────────────────────────────────────

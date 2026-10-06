@@ -58,14 +58,14 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, MacroStore& st,
 // One spec, one door: whoever wants a squad on the map — the console, the
 // player's patrol order, a future macro-sim raiser of deserter bands —
 // states WHAT it wants and this function makes it through make_npc (the ONE
-// creation path: ordinal, sheet-derived hp, bag, traits, roster, all of it)
-// plus the roster rows and an optional waypoint route. The route's presence
+// creation path: ordinal, sheet-derived hp, bag, traits, creatures, all of it)
+// plus the creature rows and an optional waypoint route. The route's presence
 // IS the order (owner's ruling); a new KIND of squad AI is a type row with
 // its own ai column, never a field here.
 // Авторский список членов при рождении — заявка СТАКАМИ, как у старого
-// ростера: генерик одного рода и уровня СЛИВАЕТСЯ (городская артель — это
+// контейнера: генерик одного рода и уровня СЛИВАЕТСЯ (городская артель — это
 // тысячи душ и ОДИН стак, а не тысячи записей), душа с историей — своя
-// строка. Кап 256 — прежний потолок СЛОТОВ ростера (стаков, не душ); отказ
+// строка. Кап 256 — прежний потолок СЛОТОВ контейнера (стаков, не душ); отказ
 // push громкий, как был. Дом душ — единый контейнер лидера (M-71), спек
 // лишь несёт заявку.
 struct SquadSpecMembers {
@@ -108,7 +108,7 @@ struct SquadSpec {
     int     x = 0, y = 0;              // macro cell (wrapped, nudged to land)
     int     factionIndex = -1;         // -1 = the land decides (politik)
     int     homeSettlementId = 0;  // 0 = без дома (закон нуля-ординала, M-37)
-    SquadSpecMembers members;          // заявка ростера, caller-authored
+    SquadSpecMembers members;          // заявка контейнера, caller-authored
     std::uint8_t waypointCount = 0;
     std::array<std::int16_t, 16> waypoints{};   // 8 × (x, y)
 };

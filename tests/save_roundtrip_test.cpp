@@ -140,7 +140,7 @@ void remove_slot_files(const std::string& path) {
 }
 
 // The macro-ECS snapshot fixture (v23): two records, every field non-default —
-// one living leader with debt, orders and a roster; one dead one, because the
+// one living leader with debt, orders and a creatures; one dead one, because the
 // whole point of the snapshot is that a killed lord STAYS dead across a load.
 std::vector<sm::MacroNpcRecord> make_macro_records() {
     std::vector<sm::MacroNpcRecord> out;
@@ -201,7 +201,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
         std::uint16_t(sm::NPCType::Guard), 4, 900u));
     sm::creatures_push(a.inventory, sm::make_soldier(
         std::uint16_t(sm::NPCType::Peasant), 2, 901u));
-    // v42: a BEAST in the roster. A squad is a squad whatever it is made of
+    // v42: a BEAST in the creatures. A squad is a squad whatever it is made of
     // (CANON.md S4/S16), and while `kind` was a byte the monster half of the id
     // space (0x100 | catalog row) could not be written down at all — the record
     // was silently dropped by the validity gate on the way out.
@@ -434,7 +434,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     // MacroNpcRuntime — record `a` above plants runtime.entryDir = 0x12 and
     // the record comparison proves the bytes ride.)
     // (The player's MEN are not a field of PlayerState any more: his squad is
-    // an ordinary squad entity, so his roster rides the macro snapshot with
+    // an ordinary squad entity, so his creatures rides the macro snapshot with
     // every other squad's — see the player record in make_macro_records.)
     add_soldiers(gs.deserterPool, sm::NPCType::Peasant, 2, 1300u);
 
@@ -936,17 +936,17 @@ void run_roundtrip() {
             || a.inventory.count("food") != 3) {
             FAIL_BAIL("macro inventory lost");
         }
-        std::vector<sm::CreatureHead> heads;
-        for (const sm::CreatureHead h :
-             sm::creature_heads_range(a.inventory)) {
+        std::vector<sm::CreatureRef> heads;
+        for (const sm::CreatureRef h :
+             sm::creatures_range(a.inventory)) {
             heads.push_back(h);
         }
-        // Порядок области — старый порядок ростера (старейший первым).
+        // Порядок области — старый порядок контейнера (старейший первым).
         if (heads.size() != 3
             || heads[0].kind != std::uint16_t(sm::NPCType::Guard)
             || heads[0].level != 4
             || heads[1].entityId != 901u) {
-            FAIL_BAIL("macro roster lost");
+            FAIL_BAIL("macro creatures lost");
         }
         // The beast came back a beast — not truncated to its low byte, not
         // dropped, not turned into whatever humanoid that byte would name.
@@ -1069,9 +1069,9 @@ void run_roundtrip() {
     const sm::Inventory& cityStore = loadedStore.inventory[cityLm.slot].inv;
     if (std::strcmp(loadedStore.name[cityLm.slot].text, "Round City") != 0
         || cityStore.count("wood") != 19
-        || sm::creature_heads_of(cityStore, sm::NPCType::Peasant)
+        || sm::creature_count_of(cityStore, sm::NPCType::Peasant)
                != kFixtureCitySouls + 1
-        || sm::creature_heads_of(cityStore, sm::NPCType::Guard) != 5) {
+        || sm::creature_count_of(cityStore, sm::NPCType::Guard) != 5) {
         FAIL_BAIL("settlement details lost");
     }
     {
@@ -1141,7 +1141,7 @@ void run_roundtrip() {
         || loaded.subState.settlementId != kFixtureCityId) {
         FAIL_BAIL("sub-state lost");
     }
-    if (sm::creature_heads_of(loaded.deserterPool, sm::NPCType::Peasant)
+    if (sm::creature_count_of(loaded.deserterPool, sm::NPCType::Peasant)
         != 2) {
         FAIL_BAIL("deserter pool lost");
     }

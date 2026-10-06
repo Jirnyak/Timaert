@@ -242,7 +242,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // populate_landmarks_from_politik. One spire per registered spell; a load
     // restores every place as a record of the macro-squad block
     // (boot_world_from_save), spires with everything else — one population,
-    // one block, no roster of its own (ломтик F).
+    // one block, no creatures of its own (ломтик F).
     {
         generate_spires(gs, *out.store, *out.zones, *out.terrain);
         // Ruins follow the same zone-field law (§42 Инк 5): the row, the

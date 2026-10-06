@@ -343,7 +343,7 @@ bool run_water_blocked_squad_case() {
     auto view = world.reg.view<sm::ecs::MacroDebt>();
     for (auto e : view) {
         if (view.get<sm::ecs::MacroDebt>(e).stock
-            == std::uint8_t(sm::MacroStock::Roster)) ++projected;
+            == std::uint8_t(sm::MacroStock::Creatures)) ++projected;
     }
     return projected == 0;
 }
@@ -364,7 +364,7 @@ bool run_city_population_projection_case(
     // фикстура, целиком и сама (§8 п.11). Пять стражей ИМЕННЫЕ: их лица
     // обязаны переживать пере-вход, и свидетель ниже ждёт ровно пятерых.
     sm::Inventory homeSouls{};
-    sm::raise_flock_into_roster(homeSouls, 4000);
+    sm::raise_flock_into_container(homeSouls, 4000);
     for (int i = 0; i < 5; ++i) {
         sm::creatures_push(homeSouls, sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard),
@@ -455,7 +455,7 @@ bool run_population_does_not_scale_bodies_case(
         // сдвинуть уровень даже случайно. Предусловие свидетель рождает
         // сам (§8 п.11).
         sm::Inventory homeSouls{};
-        sm::raise_flock_into_roster(homeSouls, t.pop);
+        sm::raise_flock_into_container(homeSouls, t.pop);
         sm::sub::spawn_cell_npcs(world,
                                  sm::Biome::Meadow, sm::FT_None,
                                  sm::SquadType::City, /*danger*/0, /*depositsNear*/0, mgr,
@@ -623,11 +623,11 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
 }
 
 // A squad is a squad whatever it is made of (CANON.md S4/S16). A pack leader's
-// roster may name BEASTS, and each of them must come down as its own catalog
-// row — a sheet-less creature body — while a man in the same roster still comes
+// creatures may name BEASTS, and each of them must come down as its own catalog
+// row — a sheet-less creature body — while a man in the same creatures still comes
 // down a man. Before the kind field was widened this was not expressible: the
 // monster half of the id space (0x100 | row) did not fit in a byte, so a wolf
-// in a roster either vanished at the validity gate or arrived as whatever
+// in a creatures either vanished at the validity gate or arrived as whatever
 // humanoid its low byte happened to name.
 bool run_beast_member_projection_case(
     const sm::sub::SeamlessSubworldManager& mgr) {
@@ -682,7 +682,7 @@ bool run_beast_member_projection_case(
             ++men;
         }
     }
-    // One wolf, two men (the leader and his guard) — the roster was honoured
+    // One wolf, two men (the leader and his guard) — the creatures was honoured
     // member by member, not flattened to one kind.
     return beasts == 1 && men == 2;
 }
@@ -971,7 +971,7 @@ int main() {
 
     if (!run_beast_member_projection_case(mgr)) {
         sm::sub::clear_saved_subworlds();
-        return fail("a BEAST in a roster did not come down as its own row "
+        return fail("a BEAST in a creatures did not come down as its own row "
                     "(squads carry men and monsters alike — CANON.md S4/S16)");
     }
 
@@ -1165,7 +1165,7 @@ int main() {
     // that can fail is ADDRESS EQUALITY — not «the numbers look alike», which
     // two copies also satisfy, but «it is literally the same block», which is
     // the only thing that makes a fold-up unnecessary. The same form
-    // map_subject_test uses for store_of/roster_of.
+    // map_subject_test uses for store_of/creatures_of.
     //
     // Both births are asserted, because the door has exactly two honest
     // answers and a test that only exercised one would not notice the day it
@@ -1320,7 +1320,7 @@ int main() {
     // рода мёртв. Фикстура кладёт четыре РАЗЛИЧИМЫХ ПО ПОЗИЦИИ рода —
     // экзотику, которой полоса толпы города не роллила бы никогда, — и
     // спрашивает тела отрезка [1, 3). Ожидание читается ИЗ ВХОДА
-    // (creature_heads_range — это определение последовательности, не копия
+    // (creatures_range — это определение последовательности, не копия
     // логики под судом: судятся прогулка отрезка, род и займ).
     {
         sm::ecs::World world{};
@@ -1333,8 +1333,8 @@ int main() {
                   && sm::creatures_push_stack(inv, sm::NPCType::Bear,  3, 1)
                   && sm::creatures_push_stack(inv, sm::NPCType::Deer,  1, 1),
               "фикстура: четыре головы легли");
-        std::vector<sm::CreatureHead> heads;
-        for (const sm::CreatureHead h : sm::creature_heads_range(inv)) {
+        std::vector<sm::CreatureRef> heads;
+        for (const sm::CreatureRef h : sm::creatures_range(inv)) {
             heads.push_back(h);
         }
         CHECK(heads.size() == 4, "последовательность видит все четыре головы");

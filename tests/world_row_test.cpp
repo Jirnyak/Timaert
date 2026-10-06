@@ -75,7 +75,7 @@ int main() {
 
     // ═══ ЗАКОН ДВУХ ОБЛАСТЕЙ ЕДИНОГО КОНТЕЙНЕРА (M-71, слияние) ═════════
     // Свойства, не пересказ: предметы селятся снизу, существа — плотной
-    // областью сверху; порядок области зеркалит старый плотный ростер.
+    // областью сверху; порядок области зеркалит старый плотный контейнер.
     {
         Inventory inv{};
         CHECK(creatures_empty(inv), "пустой контейнер — пустая область");
@@ -91,11 +91,11 @@ int main() {
               "существо живёт сверху");
         CHECK(inv.creature_first() == kMaxInventorySlots - 1,
               "область — ровно один слот");
-        CHECK(creature_heads(inv) == 10, "головы считаются по count");
+        CHECK(creature_count(inv) == 10, "головы считаются по count");
 
         // Стакование: тот же род и уровень сливается, иной уровень — нет.
         CHECK(creatures_push_stack(inv, NPCType::Peasant, 1, 6), "долив");
-        CHECK(creature_slot_count(inv) == 1 && creature_heads(inv) == 16,
+        CHECK(creature_slot_count(inv) == 1 && creature_count(inv) == 16,
               "генерики одного рода и уровня — ОДИН слот");
         CHECK(creatures_push_stack(inv, NPCType::Peasant, 2, 1),
               "другой уровень");
@@ -107,8 +107,8 @@ int main() {
             std::uint16_t(NPCType::Peasant), 1, 777u);
         CHECK(creatures_push(inv, soul), "душа вошла");
         CHECK(creature_slot_count(inv) == 3, "душа взяла свой слот");
-        CHECK(creature_heads(inv) == 18, "головы: 16 + 1 + душа");
-        CHECK(creature_heads_of(inv, NPCType::Peasant) == 18,
+        CHECK(creature_count(inv) == 18, "головы: 16 + 1 + душа");
+        CHECK(creature_count_of(inv, NPCType::Peasant) == 18,
               "счёт по роду видит все слоты рода");
 
         // Предметные двери НЕ трогают существ: подсчёт и снятие по
@@ -125,7 +125,7 @@ int main() {
         const SoldierRecord g = make_soldier(
             std::uint16_t(NPCType::Peasant), 1, 0u);
         CHECK(creatures_remove_one(inv, g), "генерик снят");
-        CHECK(creature_heads_of(inv, NPCType::Peasant) == 16,
+        CHECK(creature_count_of(inv, NPCType::Peasant) == 16,
               "снята одна голова стака");
 
         // РЕМОНТ ОБЛАСТИ: смерть слота в середине затыкается новейшим —
@@ -144,12 +144,12 @@ int main() {
         const int moved = creatures_move(pool, inv);
         CHECK(moved == 15, "пересажены все головы (15 генериков)");
         CHECK(creatures_empty(inv), "исток пуст");
-        CHECK(creature_heads(pool) == 15, "цель приняла всех");
+        CHECK(creature_count(pool) == 15, "цель приняла всех");
         CHECK(inv.count_of(0) == 5, "предметы переносом существ не тронуты");
 
         // ГОЛОВЫ ПОШТУЧНО: развёртка стака даёт адрес (slot, index).
         int heads = 0;
-        for (const CreatureHead h : creature_heads_range(pool)) {
+        for (const CreatureRef h : creatures_range(pool)) {
             CHECK(h.kind == std::uint16_t(NPCType::Peasant), "род головы");
             CHECK(h.index >= 0 && h.index < 15, "индекс внутри стака");
             ++heads;
@@ -168,7 +168,7 @@ int main() {
               "ординальный счёт честен и для существа");
         CHECK(!inv.remove_of(row, 1),
               "предметная дверь снятия отказывает существу");
-        CHECK(creature_heads(inv) == 3, "и ничего не тронула");
+        CHECK(creature_count(inv) == 3, "и ничего не тронула");
     }
 
     return sm::test::report("world_row_test");

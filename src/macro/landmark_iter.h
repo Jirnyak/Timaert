@@ -1,4 +1,4 @@
-// THE landmark enumeration over the ONE roster (gs.landmarks, CANON S9
+// THE landmark enumeration over the ONE list (gs.landmarks, CANON S9
 // 2026-08-29). Every consumer (map draw loop, hover pick, minimap,
 // collect_landmarks, the cell grid) walks THIS visitor and dispatches on the
 // registry row (landmark_registry.h), so a new landmark kind = its registry

@@ -10,7 +10,7 @@
 //
 // WHY A SYSTEM AND NOT A COUNTER PER THING. Trees already wrote back, through
 // their own hand-made path. Population did not, and neither did garrisons,
-// deposits or squad rosters. Copying the tree counter four more times is how a
+// deposits or squad containers. Copying the tree counter four more times is how a
 // codebase acquires four dialects of one idea and then loses one of them: the
 // audit of 2026-08-06 found exactly that pattern — five spawn sites already
 // disagreeing about what a body is made of. So there is one mechanism here and
@@ -65,7 +65,10 @@ inline constexpr int kWheatSeasonsToRegrow = 1;
 enum class MacroStock : std::uint8_t {
     TreeCount = 0,   // macro/tree_layer.h — the forest standing in one cell
     Population,      // the people of a settlement or village
-    Roster,          // the members of a squad standing on the map (ecs::SquadRoster)
+    Creatures,       // существа инвентаря сквада, стоящего на карте: ординал
+                     //   не двинулся (2), двинулось только ИМЯ — слово
+                     //   «ростер» снесено целиком (M-227), а строка всегда
+                     //   была про содержимое ЕДИНОГО контейнера
     FaunaCount,      // the wild headcount of one cell (macro/fauna.h capacity
                      //   + GameState::faunaOverrides — the hunted delta)
     CropCount,       // the standing wheat of one cell (fertility-derived
@@ -81,11 +84,11 @@ enum class MacroStock : std::uint8_t {
 // belonging to a NAMED thing standing in that cell also carries its id.
 struct MacroStockKey {
     std::int32_t subject = 0;   // settlement / village id; -1 = the cell itself
-                                 //   (the roster row: the squad's MacroSpawnId)
+                                 //   (the creature row: the squad's MacroSpawnId)
     std::int16_t cellX = 0;
     std::int16_t cellY = 0;
     // Which row WITHIN the subject, when the stock is a TABLE rather than a
-    // count. The roster row stores the member's SoldierRecord::entityId (a bit
+    // count. The creature row stores the member's SoldierRecord::entityId (a bit
     // pattern — ids may use the high bit); -1 = no name, the stock is a plain
     // number. Anonymous rows ignore it, so every existing key stays valid.
     std::int32_t detail = -1;

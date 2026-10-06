@@ -19,7 +19,7 @@
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
-#include "macro/world_row.h"   // raise_flock_into_roster / count_human_souls
+#include "macro/world_row.h"   // raise_flock_into_container / count_human_souls
 #include "macro/anketa.h"
 
 #include <array>
@@ -195,7 +195,7 @@ int main() {
     // своё предусловие тем же законом, что мир. Взыскание снимает головы
     // сама дверь, значит население читается у контейнера, а не ведётся
     // рядом вторым счётом.
-    raise_flock_into_roster(poor, 32);
+    raise_flock_into_container(poor, 32);
     int poorPop = count_human_souls(poor);
     for (int window = 0; window < 5; ++window) {
         poorPop = count_human_souls(poor);
@@ -254,7 +254,7 @@ int main() {
         // (v122), а не с переданного числа. У крестьянина рацион 1/день,
         // поэтому счёт совпадает с прежним «pop × сезон» — закон тот же,
         // спрошен у строки.
-        raise_flock_into_roster(s, pop);
+        raise_flock_into_container(s, pop);
         s.add_of(commodity_item_index(commodity_index("food")),
                  pop * kDaysPerSeason);
         const ConsumeOutcome first =
@@ -292,7 +292,7 @@ int main() {
         // (v122), а не с переданного числа. У крестьянина рацион 1/день,
         // поэтому счёт совпадает с прежним «pop × сезон» — закон тот же,
         // спрошен у строки.
-        raise_flock_into_roster(s, pop);
+        raise_flock_into_container(s, pop);
         const int half = pop * kDaysPerSeason / 2;
         s.add_of(commodity_item_index(commodity_index("food")), half);
         econ_debt_boundary(s, debt, pop, nullptr, nullptr);
@@ -313,7 +313,7 @@ int main() {
         // старого «кусок меньше сезона не кормит никого»): 31 хлеба гасят
         // 31 единицу счёта и снимают со смертей ровно одну душу.
         Inventory tail{};
-        raise_flock_into_roster(tail, pop);
+        raise_flock_into_container(tail, pop);
         std::int32_t tailDebt[kCommodityCount] = {};
         tail.add_of(commodity_item_index(commodity_index("food")),
                     kDaysPerSeason - 1);

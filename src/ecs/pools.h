@@ -3,7 +3,7 @@
 //
 // In its own header, apart from the ECS glue, because it is pure DATA: the
 // recovery law (macro/recovery.cpp) and the stamina bookkeeping
-// operate on this block without needing entt or the component roster, and a
+// operate on this block without needing entt or the component set, and a
 // slim test target must be able to compile them without either.
 //
 // It was called `Health` and it held one bar, because the other two were the

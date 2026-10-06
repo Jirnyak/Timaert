@@ -2,7 +2,7 @@
 //
 // The fact under test is not "the functions return something" but the CLAIM
 // the menu session stands on: a squad and a landmark hold the SAME types
-// (Inventory / SoldierSquad), and store_of/roster_of return THE VERY OBJECTS
+// (Inventory / SoldierSquad), and store_of/creatures_of return THE VERY OBJECTS
 // the two address books hold — the store COLUMNS of the leader's slot (шаг
 // 1г: субъект = {slot,gen}, двери отвечают колонками без entt), the bare
 // fields of the landmark record — never copies, never a third store.
@@ -99,30 +99,30 @@ void test_the_door_opens_the_old_addresses() {
     CHECK(store_of(w, subject_of_squad(squad))
               == &st.inventory[squad.slot].inv,
           "a squad's store IS its inventory column, the very object");
-    CHECK(roster_of(w, subject_of_squad(squad))
+    CHECK(creatures_of(w, subject_of_squad(squad))
               == &st.inventory[squad.slot].inv,
-          "a squad's roster IS its one container (M-71), the very object");
+          "a squad's creatures IS its one container (M-71), the very object");
 
     CHECK(store_of(w, subject_of_landmark(fx.cityId))
               == &place_store_of(st, fx.cityId),
           "a landmark's store IS its BODY's inventory column, the very object");
-    CHECK(roster_of(w, subject_of_landmark(fx.cityId))
+    CHECK(creatures_of(w, subject_of_landmark(fx.cityId))
               == &place_store_of(st, fx.cityId),
-          "a landmark's roster IS its one container (M-71), the very object");
+          "a landmark's creatures IS its one container (M-71), the very object");
 
     // PLAY-2's law: the door is KIND-BLIND. A village and a spire answer
     // through the same door a city does — no SquadType filter anywhere.
     CHECK(store_of(w, subject_of_landmark(fx.vilId)) != nullptr
-              && roster_of(w, subject_of_landmark(fx.vilId)) != nullptr,
+              && creatures_of(w, subject_of_landmark(fx.vilId)) != nullptr,
           "a village answers the door like any place");
     CHECK(store_of(w, subject_of_landmark(fx.spireId)) != nullptr
-              && roster_of(w, subject_of_landmark(fx.spireId)) != nullptr,
+              && creatures_of(w, subject_of_landmark(fx.spireId)) != nullptr,
           "a spire answers the door like any place");
 
     // Хэндл, который никогда не рождался, — честное «ничего», не чужой
     // склад и не падение (наследник контроля «энтити без компонент»).
     CHECK(store_of(w, subject_of_squad(MacroHandle{})) == nullptr
-              && roster_of(w, subject_of_squad(MacroHandle{})) == nullptr,
+              && creatures_of(w, subject_of_squad(MacroHandle{})) == nullptr,
           "a never-born handle answers nullptr, fail closed");
 }
 
@@ -145,19 +145,19 @@ void test_a_write_through_the_door_lands_in_the_world() {
 
     // The symmetry the menu will trade on: hire_npc already takes two
     // Inventory& — the door's returns feed it directly, both ways (M-71).
-    Inventory* garrison = roster_of(w, subject_of_landmark(fx.cityId));
-    Inventory* men = roster_of(w, subject_of_squad(squad));
+    Inventory* garrison = creatures_of(w, subject_of_landmark(fx.cityId));
+    Inventory* men = creatures_of(w, subject_of_squad(squad));
     CHECK_OR_RETURN(garrison != nullptr && men != nullptr,
-                    "both rosters open through the one door");
-    const int before = creature_heads(*garrison);
+                    "both containers open through the one door");
+    const int before = creature_count(*garrison);
     SoldierRecord moved{};
     CHECK_OR_RETURN(
         creatures_take_at(*garrison, garrison->creature_first(), moved),
         "the garrison yields a soul");
     creatures_push(*men, moved);
-    CHECK(creature_heads(*garrison) == before - 1
-              && creature_heads(*men) == 2,
-          "a garrison record moves into a squad roster: one type, no seam");
+    CHECK(creature_count(*garrison) == before - 1
+              && creature_count(*men) == 2,
+          "a garrison record moves into a squad creatures: one type, no seam");
 }
 
 // The verbs door: data declares, the door answers — and the owner's verdicts
@@ -205,13 +205,13 @@ void test_the_door_fails_closed() {
     MacroWorld w{.gs = &gs, .store = &st};
 
     CHECK(store_of(w, MapSubject{}) == nullptr
-              && roster_of(w, MapSubject{}) == nullptr,
+              && creatures_of(w, MapSubject{}) == nullptr,
           "a None subject names nobody");
     CHECK(store_of(w, subject_of_landmark(9999)) == nullptr
-              && roster_of(w, subject_of_landmark(9999)) == nullptr,
+              && creatures_of(w, subject_of_landmark(9999)) == nullptr,
           "an unknown landmark id names nobody");
     CHECK(store_of(w, subject_of_squad(MacroHandle{})) == nullptr
-              && roster_of(w, subject_of_squad(MacroHandle{})) == nullptr,
+              && creatures_of(w, subject_of_squad(MacroHandle{})) == nullptr,
           "a never-born handle names nobody");
 
     // Поколение мертвит пережившую смерть ссылку: тот же слот, но старый
@@ -223,7 +223,7 @@ void test_the_door_fails_closed() {
 
     MacroWorld headless{};
     CHECK(store_of(headless, subject_of_landmark(fx.cityId)) == nullptr
-              && roster_of(headless, subject_of_squad(squad)) == nullptr,
+              && creatures_of(headless, subject_of_squad(squad)) == nullptr,
           "an absent layer answers nullptr, never a crash (S6 zero contribution)");
 }
 

@@ -1,10 +1,10 @@
 // THE macro entity is a squad (Session 15, Inc 1). This test pins the doctrine
 // structurally: every macro NPC born through the one creation path carries an
-// ecs::SquadRoster, and it is born EMPTY — a lone wanderer is a squad of one
+// ecs::SquadUpkeep, and it is born EMPTY — a lone wanderer is a squad of one
 // whose leader is the entity itself, not a special kind of thing. Both spawn
 // doors are checked (the boot spawner and the runtime console/event spawner),
 // because a doctrine that holds at one door and not the other is two dialects.
-// The reverse direction guards against orphan rosters: a SquadRoster on a
+// The reverse direction guards against orphan containers: a SquadUpkeep on a
 // non-macro entity would be a second squad representation growing beside the
 // real one.
 #include "check.h"
@@ -28,7 +28,7 @@ sm::MacroHandle make_settlement(sm::GameState& gs, sm::MacroStore& st,
     // Души — ГОЛОВАМИ в инвентарь тела (v122): фабрика мира не
     // видит, поэтому пасту (worked-число фичи) ставит звонящий,
     // если она ему нужна; домашние души живут в теле места.
-    sm::raise_flock_into_roster(st.inventory[h.slot].inv, 1000);
+    sm::raise_flock_into_container(st.inventory[h.slot].inv, 1000);
     return h;
 }
 
@@ -71,7 +71,7 @@ void test_every_macro_npc_is_a_squad_of_one() {
             if (st.alive[s32] == 0 || before[s32] != 0) continue;
             ++macroNpcs;
             CHECK(sm::creatures_empty(st.inventory[s32].inv),
-                  "a freshly spawned wanderer is a squad of ONE: empty roster, "
+                  "a freshly spawned wanderer is a squad of ONE: empty creatures, "
                   "the slot itself is the leader");
         }
     }
@@ -80,15 +80,15 @@ void test_every_macro_npc_is_a_squad_of_one() {
     // Runtime door: the console/event spawner goes through the same make_npc.
     CHECK(sm::spawn_npc_at(gs, world, sm::store_of(world), terrain, "bandit", 4, 4, /*level*/ 3),
           "runtime spawn door must accept a registry label");
-    int rosters = 0;
-    rosters = int(sm::store_of(world).aliveCount) - placeBodies;
-    CHECK(rosters == macroNpcs + 1,
-          "both spawn doors must attach exactly one roster per macro NPC");
+    int containers = 0;
+    containers = int(sm::store_of(world).aliveCount) - placeBodies;
+    CHECK(containers == macroNpcs + 1,
+          "both spawn doors must attach exactly one creatures per macro NPC");
 }
 
 } // namespace
 
 int main() {
     test_every_macro_npc_is_a_squad_of_one();
-    return sm::test::report("squad_roster_test");
+    return sm::test::report("squad_creatures_test");
 }

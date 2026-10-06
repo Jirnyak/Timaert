@@ -3,8 +3,8 @@
 #include "ecs/pools.h"
 #include "core/torus.h"        // cell_of — ОДИН адрес клетки мира
 #include "macro/anketa.h"
-#include "tables/commodity.h"   // kCommodityCount — счёт содержания ростера
-#include "macro/roster.h"      // sm::Roster — ОДИН ростер на место и на сквад
+#include "tables/commodity.h"   // kCommodityCount — счёт содержания контейнера
+#include "macro/upkeep.h"      // sm::Upkeep — ОДИН контейнер на место и на сквад
 #include <array>
 #include <cstdint>
 #include <string>
@@ -80,7 +80,7 @@ inline int cell_y(MacroCell c, int mapW) {
 
 // THE POOLS OF A BODY — moved to its own entt-free header (ecs/pools.h) so
 // the recovery law and the stamina bookkeeping compile without the component
-// roster; the story of the block lives with the block.
+// creatures; the story of the block lives with the block.
 
 // (An explicit `BodyRadius` override lived here and died in M-150 кусок 0:
 // the census found ZERO production writers — only test fixtures fed it, so
@@ -274,7 +274,7 @@ struct NpcTraits {
 
 // (SoldierLink УМЕР 2026-10-05, M-150 ломоть 2 кусок 1: писатель один,
 // читателей в src НОЛЬ — идентичность солдата {entityId, kind, level} УЖЕ
-// едет займом ростера MacroDebt{detail, detailKind, detailLevel}, второй
+// едет займом контейнера MacroDebt{detail, detailKind, detailLevel}, второй
 // носитель того же факта; свидетели переякорены на займ.)
 
 // What this body/prop was BORROWED FROM in the macro world (macro/macro_stock.h).
@@ -295,10 +295,10 @@ struct MacroDebt {
     std::int16_t  cellY;
     std::uint16_t amount;         // how much of the stock this one thing is
     // Which row WITHIN the subject this thing stands for, when the stock is a
-    // TABLE rather than a count: the roster row stores the member's
+    // TABLE rather than a count: the creature row stores the member's
     // SoldierRecord::entityId here (as a bit pattern — ids may use the high
     // bit), so a death removes the very soldier who fell, not "one of them".
-    // -1 = no name. A GENERIC soul (roster-as-inventory, CANON S4) HAS no
+    // -1 = no name. A GENERIC soul (creatures-as-inventory, CANON S4) HAS no
     // entityId — its name IS {kind, level}, carried in the two fields below
     // (detailLevel > 0 marks them live; kind alone cannot, Peasant == 0), and
     // its death honestly removes "one of that stack".
@@ -462,14 +462,14 @@ struct MacroNpcRuntime {
     // laden man, and the pack a caravan carries is finally part of the price
     // of carrying it.
     // СПИНА ОДНОЙ ДУШИ и СУММА СПИН — два числа, потому что второе ВЫВОДИТСЯ
-    // из первого и живого ростера (CANON S10: «берёт по своей
+    // из первого и живого контейнера (CANON S10: «берёт по своей
     // грузоподъёмности — сумма листов членов»), а лист лидера меняется реже,
     // чем состав. `carryPerSoul` — спина лидера по его листу и колонке его
     // строки; `carryCap` — весь обоз сквада, пересчитывается дверью
     // refresh_squad_carry в КАЖДОМ месте, где состав меняется. До 2026-09-19
     // сумма считалась ОДИН раз при спавне и молча врала после любого добора,
     // ссадки и дезертирства, а колонка haulMult душ не читалась вовсе — из-за
-    // чего лошадь в ростере не дала бы ни килограмма.
+    // чего лошадь в контейнере не дала бы ни килограмма.
     float         carryPerSoul = 0.0f;
     float         carryCap = 0.0f;
     std::int16_t  overloadCost = 0;
@@ -586,7 +586,7 @@ struct MacroSpawnId { std::uint32_t index = 0; };   // 0 = «никто»: эм�
 // The PLAYER's squad ordinal — reserved at the top of the space so it can
 // never collide with the 0,1,2… the world spawner hands out. His squad is an
 // ordinary macro squad (owner, 2026-08-27) and therefore needs an ordinal like
-// any other: it is what the roster ledger keys casualties by, and what finds
+// any other: it is what the creatures ledger keys casualties by, and what finds
 // him again after a load regenerates the world.
 // NOT 0xFFFFFFFF: the stock ledger carries a subject as a SIGNED int32 —
 // the all-ones ordinal would read as a negative there and be dropped by the
@@ -598,34 +598,38 @@ inline constexpr std::uint32_t kPlayerSquadOrdinal = 0x7FFFFFFFu;
 // "Squad as THE macro entity"). This component is that ruling made structural:
 // every macro NPC carries one, and `members` holds everyone EXCEPT the leader
 // — the leader IS the carrying entity, with its sheet, inventory, wounds and
-// MacroSpawnId exactly as before. An empty roster is not a special case, it is
+// MacroSpawnId exactly as before. An empty creatures is not a special case, it is
 // the common one: a peasant on the road is a squad of one, its own leader.
 // The player is the same shape — his entity is the leader, PlayerState::army
-// is his roster — so possession of a leader is acquisition of its squad by
+// is his creatures — so possession of a leader is acquisition of its squad by
 // construction, not by code.
 //
 // Members are procedural rows (macro/army.h SoldierRecord), embodied through
-// the one body birth as DERIVED bodies; only the leader is TRACKED. The roster
+// the one body birth as DERIVED bodies; only the leader is TRACKED. The creatures
 // is a macro STOCK (macro/macro_stock.h): members embodied below are borrowed
 // from it and their deaths are paid back up, and a squad whose members are
 // gone and whose leader is dead is gone from the map by that general rule.
 // Runtime-only until the macro snapshot save (Session 17) — the ECS is never
 // serialized, so no kSaveVersion cost today.
-// ЭТО НЕ «ТАКОЙ ЖЕ» РОСТЕР, ЧТО У МЕСТА — ЭТО БУКВАЛЬНО ОДИН ТИП
-// (macro/roster.h, CANON S4: «гарнизон = ростер ландмарка, армия = ростер,
+// ЭТО НЕ «ТАКОЙ ЖЕ» СЧЁТ, ЧТО У МЕСТА — ЭТО БУКВАЛЬНО ОДИН ТИП
+// (macro/upkeep.h, CANON S4: «гарнизон = ростер ландмарка, армия = ростер,
 // артель = ростер; одна система, одна арифметика пищи, один суд границы»).
 // До 2026-09-21 здесь стояла своя тройка полей (squad + needDebt + wageDebt),
 // а у места — своя (garrison + garrisonDebt + garrisonWageDebt), поле в поле
-// одна и та же, и над ними ДВЕ копии закона. Имя компонента остаётся: entt
-// адресует компонент типом, и «ростер сквада» — честное имя роли, а не
-// второго вида ростера.
+// одна и та же, и над ними ДВЕ копии закона.
+// **ИМЯ СМЕНИЛОСЬ 2026-10-06 (M-227).** Здесь стоял довод «entt адресует
+// компонент типом, и „ростер сквада“ — честное имя роли, а не второго вида
+// ростера». Вердикт владельца его снял: «ГОЛОВЫ РОСТЕРА НЕТ ЭТО ОШИБКА ЕГО НЕ
+// МОЖЕТ БЫТЬ У НАС ДАЖЕ РОСТЕРА ТЕПЕРЬ НЕТ ЭТО ЛЕГАСИ СЖЕЧЬ ВЫРЕЗАТЬ ВСЁ».
+// Роли под этим именем не было вовсе: тип несёт ДВА ДОЛГА (харч и плату), ни
+// одного существа, — то есть ведомость СОДЕРЖАНИЯ, и так он теперь и зовётся.
 //
 // ЧЕМ РАЗДВОЕНИЕ БЫЛО ИЗМЕРЕНО: за 512 дней на четырёх сидах в местах НИ
 // ОДНОЙ голодной смерти (у них долг), а мир при этом потерял три четверти
-// населения через ростеры (у них долга не было) — 154 385 душ в пуле
+// населения через контейнеры (у них долга не было) — 154 385 душ в пуле
 // дезертиров. Эксперимент поставлен самим миром: сущность со счётом не
 // голодает, сущность без счёта обескровливает мир.
-using SquadRoster = sm::Roster;
+using SquadUpkeep = sm::Upkeep;
 
 // A waypoint route a squad was ORDERED onto (Session 15, Inc 7) — OPT-IN,
 // and the route's presence IS the order (owner's ruling: no second knob):

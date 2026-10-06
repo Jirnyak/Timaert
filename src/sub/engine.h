@@ -686,7 +686,7 @@ private:
     float crowdMaxStepM_ = 0.0f;
     // Faction identity is the id STRING (the universal key gs->factions,
     // reputation and loot profiles already use), interned per tick into dense
-    // indices. There is no faction roster in the engine and no limit on the
+    // indices. There is no faction creatures in the engine and no limit on the
     // world's factions — only on how many stand in one window at once.
     FactionSet              crowdFactions_;
     int                     crowdPlayerFaction_ = -1;

@@ -44,7 +44,7 @@ MoveGround flat_terrain() {
 
 constexpr std::uint64_t mask_of(int faction) { return 1ull << faction; }
 
-Inventory roster_of(NPCType kind, int level, int n,
+Inventory creatures_of(NPCType kind, int level, int n,
                     std::uint32_t idBase) {
     Inventory r{};
     for (int i = 0; i < n; ++i) {
@@ -55,12 +55,12 @@ Inventory roster_of(NPCType kind, int level, int n,
 }
 
 AutoBattleSide side_of(NPCType leader, int leaderLevel,
-                       const Inventory* roster) {
+                       const Inventory* creatures) {
     AutoBattleSide s{};
     s.leaderType = leader;
     s.leaderLevel = leaderLevel;
     s.leaderSeed = 0xABCDu ^ std::uint32_t(leader);
-    s.roster = roster;
+    s.creatures = creatures;
     return s;
 }
 
@@ -123,8 +123,8 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         const AutoBattleSide& s = *sides[side];
         add_fighter(s.leaderType, s.leaderLevel, s.leaderSeed, nullptr,
                     s.leaderHealthFraction, side);
-        if (s.roster) {
-            for (const CreatureHead r : creature_heads_range(*s.roster)) {
+        if (s.creatures) {
+            for (const CreatureRef r : creatures_range(*s.creatures)) {
                 if (!valid_npc_kind(r.kind)) continue;
                 add_fighter(NPCType(r.kind), normalize_soldier_level(r.level),
                             auto_battle_detail::member_seed(r), &s.bonuses,
@@ -214,9 +214,9 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
 
 void test_power_grows_with_the_sheet() {
     using namespace sm;
-    const auto few  = roster_of(NPCType::Guard, 3, 3, 100u);
-    const auto more = roster_of(NPCType::Guard, 3, 9, 100u);
-    const auto veteran = roster_of(NPCType::Guard, 9, 3, 100u);
+    const auto few  = creatures_of(NPCType::Guard, 3, 3, 100u);
+    const auto more = creatures_of(NPCType::Guard, 3, 9, 100u);
+    const auto veteran = creatures_of(NPCType::Guard, 9, 3, 100u);
 
     const float pFew  = squad_power(side_of(NPCType::Guard, 3, &few));
     const float pMore = squad_power(side_of(NPCType::Guard, 3, &more));
@@ -245,8 +245,8 @@ void test_power_grows_with_the_sheet() {
 
 void test_a_clear_advantage_cannot_be_rolled_away() {
     using namespace sm;
-    const auto strongR = roster_of(NPCType::Guard, 5, 8, 100u);
-    const auto weakR   = roster_of(NPCType::Peasant, 1, 3, 200u);
+    const auto strongR = creatures_of(NPCType::Guard, 5, 8, 100u);
+    const auto weakR   = creatures_of(NPCType::Peasant, 1, 3, 200u);
     const AutoBattleSide strong = side_of(NPCType::Guard, 5, &strongR);
     const AutoBattleSide weak   = side_of(NPCType::Peasant, 1, &weakR);
 
@@ -256,7 +256,7 @@ void test_a_clear_advantage_cannot_be_rolled_away() {
         const AutoBattleOutcome o =
             resolve_auto_battle(strong, weak, Ambush::None, rng);
         if (o.winner == 0) ++strongWins;
-        if (int(o.casualtiesB.size()) * 2 >= creature_heads(weakR))
+        if (int(o.casualtiesB.size()) * 2 >= creature_count(weakR))
             ++loserBled;
         CHECK(o.leaderFractionA > 0.0f,
               "a winner's leader limps out - only a broken side can lose its head");
@@ -279,12 +279,12 @@ void test_a_clear_advantage_cannot_be_rolled_away() {
 }
 
 // Owner ruling (2026-08-06): a leader's head is never given to chance. He
-// dies in an auto-battle ONLY when he lost AND his whole roster died with
+// dies in an auto-battle ONLY when he lost AND his whole creatures died with
 // him; while one of his men still stands, defeat costs him HP — above zero.
 void test_a_leaders_head_is_never_given_to_chance() {
     using namespace sm;
-    const auto strongR = roster_of(NPCType::Guard, 5, 8, 100u);
-    const auto weakR   = roster_of(NPCType::Peasant, 1, 6, 200u);
+    const auto strongR = creatures_of(NPCType::Guard, 5, 8, 100u);
+    const auto weakR   = creatures_of(NPCType::Peasant, 1, 6, 200u);
     const AutoBattleSide strong = side_of(NPCType::Guard, 5, &strongR);
     const AutoBattleSide weak   = side_of(NPCType::Peasant, 1, &weakR);
 
@@ -295,7 +295,7 @@ void test_a_leaders_head_is_never_given_to_chance() {
             resolve_auto_battle(strong, weak, Ambush::None, rng);
         CHECK_OR_RETURN(o.winner == 0, "the fixture's strong side must win");
         const bool wiped =
-            int(o.casualtiesB.size()) >= creature_heads(weakR);
+            int(o.casualtiesB.size()) >= creature_count(weakR);
         if (wiped) {
             CHECK(o.leaderFractionB == 0.0f,
                   "a loser with no men left falls with the last of them");
@@ -310,7 +310,7 @@ void test_a_leaders_head_is_never_given_to_chance() {
     CHECK(checkedAlive + checkedDead == 64,
           "every resolved battle judged the leader rule");
 
-    // A squad of one is its own whole roster: a lone loser has nobody left
+    // A squad of one is its own whole creatures: a lone loser has nobody left
     // to stand between him and the field.
     Rng rng(9u);
     const AutoBattleSide lone = side_of(NPCType::Peasant, 1, nullptr);
@@ -322,10 +322,10 @@ void test_a_leaders_head_is_never_given_to_chance() {
 
 void test_context_tips_the_scales() {
     using namespace sm;
-    const auto rosterA = roster_of(NPCType::Guard, 3, 5, 100u);
-    const auto rosterB = roster_of(NPCType::Guard, 3, 5, 200u);
-    const AutoBattleSide a = side_of(NPCType::Guard, 3, &rosterA);
-    const AutoBattleSide b = side_of(NPCType::Guard, 3, &rosterB);
+    const auto creaturesA = creatures_of(NPCType::Guard, 3, 5, 100u);
+    const auto creaturesB = creatures_of(NPCType::Guard, 3, 5, 200u);
+    const AutoBattleSide a = side_of(NPCType::Guard, 3, &creaturesA);
+    const AutoBattleSide b = side_of(NPCType::Guard, 3, &creaturesB);
 
     // Identical squads: the ambusher's free volley outweighs bounded fortune.
     int ambusherWins = 0;
@@ -369,9 +369,9 @@ void agreement_case(const char* what, const AutoBattleSide& a,
         const auto& winnerCas = o.winner == 0 ? o.casualtiesA : o.casualtiesB;
         const AutoBattleSide& winner = o.winner == 0 ? a : b;
         const int loserMen =
-            loser.roster ? creature_heads(*loser.roster) : 0;
+            loser.creatures ? creature_count(*loser.creatures) : 0;
         const int winnerMen =
-            winner.roster ? creature_heads(*winner.roster) : 0;
+            winner.creatures ? creature_count(*winner.creatures) : 0;
         // The fought loser is annihilated (the sim runs to conclusion); the
         // resolved loser must at least be BROKEN - the majority down - or the
         // two worlds tell different stories about the same defeat.
@@ -395,8 +395,8 @@ void agreement_case(const char* what, const AutoBattleSide& a,
 void test_auto_and_fought_agree() {
     using namespace sm;
     // Guards over peasants: quality wins in both worlds.
-    const auto guardsR   = roster_of(NPCType::Guard, 4, 6, 100u);
-    const auto peasantsR = roster_of(NPCType::Peasant, 1, 6, 200u);
+    const auto guardsR   = creatures_of(NPCType::Guard, 4, 6, 100u);
+    const auto peasantsR = creatures_of(NPCType::Peasant, 1, 6, 200u);
     agreement_case(
         "quality: the resolver names the same winner the fought battle does",
         side_of(NPCType::Guard, 4, &guardsR),
@@ -406,8 +406,8 @@ void test_auto_and_fought_agree() {
     // used to be enough — until the resolver learned to credit the guards'
     // plate as the door does; a clear mass verdict now has to out-mass the
     // armour too.)
-    const auto banditsR = roster_of(NPCType::Bandit, 3, 20, 300u);
-    const auto thinR    = roster_of(NPCType::Guard, 3, 4, 400u);
+    const auto banditsR = creatures_of(NPCType::Bandit, 3, 20, 300u);
+    const auto thinR    = creatures_of(NPCType::Guard, 3, 4, 400u);
     agreement_case(
         "mass: the resolver names the same winner the fought battle does",
         side_of(NPCType::Bandit, 3, &banditsR),
@@ -418,8 +418,8 @@ void test_auto_and_fought_agree() {
     // effective HP at kPlainBlow) turns the fight. A resolver that does
     // not read armour names the mob here; the door-mitigated fought battle
     // names the guards.
-    const auto mobR   = roster_of(NPCType::Bandit, 3, 8, 500u);
-    const auto plateR = roster_of(NPCType::Guard, 3, 6, 600u);
+    const auto mobR   = creatures_of(NPCType::Bandit, 3, 8, 500u);
+    const auto plateR = creatures_of(NPCType::Guard, 3, 6, 600u);
     agreement_case(
         "armour: the resolver credits plate exactly as the door mitigates it",
         side_of(NPCType::Bandit, 3, &mobR),

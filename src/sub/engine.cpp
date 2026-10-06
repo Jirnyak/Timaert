@@ -767,16 +767,16 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     const BonusTotals playerBonuses =
         squad_bonuses(player_effective_sheet(gs, store_of(ecs)));
     const MacroHandle flagRec = player_flag_handle(gs);
-    std::int32_t rosterSubject = std::int32_t(ecs::kPlayerSquadOrdinal);
-    std::int16_t rosterCx = 0, rosterCy = 0;
+    std::int32_t creaturesSubject = std::int32_t(ecs::kPlayerSquadOrdinal);
+    std::int16_t creaturesCx = 0, creaturesCy = 0;
     std::uint16_t squadFaction = std::uint16_t(faction_index(kPlayerFactionId));
     {
         MacroStore& st = store_of(ecs);
         if (st.valid(flagRec)) {
-            rosterSubject = std::int32_t(st.spawnId[flagRec.slot].index);
+            creaturesSubject = std::int32_t(st.spawnId[flagRec.slot].index);
             const auto& mc = st.cell[flagRec.slot];
-            rosterCx = std::int16_t(ecs::cell_x(mc, gs.mapW));
-            rosterCy = std::int16_t(ecs::cell_y(mc, gs.mapW));
+            creaturesCx = std::int16_t(ecs::cell_x(mc, gs.mapW));
+            creaturesCy = std::int16_t(ecs::cell_y(mc, gs.mapW));
             squadFaction = st.kind[flagRec.slot].factionIdx;
         }
     }
@@ -786,7 +786,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
                            : Inventory{},
                        mgr_, playerX_, playerY_,
         cell_seed(gs.worldSeed, cx, cy) ^ kSquadSpawnSalt,
-        squadFaction, &playerBonuses, rosterSubject, rosterCx, rosterCy);
+        squadFaction, &playerBonuses, creaturesSubject, creaturesCx, creaturesCy);
     // Project the persistent macro NPCs standing in this 3×3 window into the
     // scene as real combat bodies (Inc 5d) — the overworld lords / bandits /
     // peasants are physically MET where they roam, and each projection carries a
@@ -1482,7 +1482,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
         faunaWorld, MacroStock::FaunaCount,
         MacroStockKey{-1, std::int16_t(wcx), std::int16_t(wcy)});
     // The place's standing army, embodied beside its crowd (§42 Инк 7):
-    // the LIVE garrison roster travels down so the street shows exactly
+    // the LIVE garrison creatures travels down so the street shows exactly
     // who is home today — patrol out, hired away, killed = not here.
     const MacroHandle lmRec = (ctx.landmark.id >= 0 && mw_.store)
         ? place_handle_by_ordinal(*mw_.store, std::uint32_t(ctx.landmark.id))
@@ -1696,7 +1696,7 @@ void SubworldEngine::tick_day_pump(float dt) {
         st, std::uint32_t(ctx.landmark.id));
     const Inventory* souls =
         st.valid(ph) ? &st.inventory[ph.slot].inv : nullptr;
-    const int heads = souls ? home_heads(*souls) : 0;
+    const int heads = souls ? home_creatures(*souls) : 0;
     if (heads <= 0) return;
 
     const float originX = float(kCellSize);
@@ -3072,7 +3072,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     //
     // Faction identity is the id STRING, interned here into a dense index. The
     // set is rebuilt every tick, so a faction that walks into the window (or a
-    // brand-new faction added to the data) simply appears — there is no roster to
+    // brand-new faction added to the data) simply appears — there is no creatures to
     // extend and no vocabulary in the battle code. The relation matrix over the
     // interned set is recomputed only when that set CHANGES or the refresh timer
     // fires, which is what keeps the string lookups off the per-frame path.
@@ -3431,8 +3431,8 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 normalize_soldier_level(lvlCol != 0 ? lvlCol : 1);
 
             if (sub::object_flag(reg, e, sub::kObjPlayerSoldier)) {
-                // His roster record was struck by THE settle above (§42
-                // Инк 6): the player's soldier carries the same Roster loan
+                // His creatures record was struck by THE settle above (§42
+                // Инк 6): the player's soldier carries the same Creatures loan
                 // as any lord's man, so the hand-written removal that stood
                 // here — the player being special one last time — is dead.
                 reg.destroy(e);
@@ -3445,7 +3445,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // для ВСЕХ — игрок просто лидер своего сквада»). The
                 // killer's own BODY names its macro leader: a projected
                 // leader carries MacroOrigin (a possessed projection pays
-                // ITS OWN lord — body-native), a roster member's receipt
+                // ITS OWN lord — body-native), a creatures member's receipt
                 // names its leader's spawn ordinal, and the hero husk /
                 // the player's soldiers name the player's squad — the
                 // ordinary leader he is. The leader is then paid through
@@ -3461,7 +3461,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     } else if (const auto* debt =
                                    reg.try_get<ecs::MacroDebt>(killerBody);
                                debt && debt->stock
-                                   == std::uint8_t(MacroStock::Roster)) {
+                                   == std::uint8_t(MacroStock::Creatures)) {
                         leader = macro_handle_by_spawn_id(
                             store_of(mw_.world->reg),
                             std::uint32_t(debt->subject));
@@ -3687,7 +3687,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
         const MacroHandle ph = place_handle_by_ordinal(
             st, std::uint32_t(ses.settlementId));
         const int heads = st.valid(ph)
-            ? home_heads(st.inventory[ph.slot].inv) : 0;
+            ? home_creatures(st.inventory[ph.slot].inv) : 0;
         for (int l = 0; l < DungeonSession::kMaxInteriorStoreys; ++l) {
             const InteriorSegment seg = interior_segment_for_door(
                 mgr_.structures(), ses.landmarkKind, doorCtx.worldSeed,
