@@ -46,6 +46,7 @@ const ActionSpec kActionSpec[kActionCount] = {
     {ActionId::Interact,     "act.interact",   "Interact",              UiScope::Sub,  SDL_SCANCODE_E},
     {ActionId::Harvest,      "act.harvest",    "Harvest",               UiScope::Sub,  SDL_SCANCODE_H},
     {ActionId::TurnBased,    "act.turnbased",  "Turn-based mode",       UiScope::Sub,  SDL_SCANCODE_P},
+    {ActionId::NavFieldView, "act.navfield",   "Nav field view",        UiScope::Macro, SDL_SCANCODE_F4},
 };
 
 static_assert(sizeof(kActionSpec) / sizeof(kActionSpec[0]) == kActionCount,

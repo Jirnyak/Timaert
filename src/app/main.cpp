@@ -2611,6 +2611,9 @@ void handle_event_playing(App& app, const SDL_Event& e) {
             };
             if (sc == SDL_SCANCODE_ESCAPE) { app.state = sm::ui::AppState::Menu; }
             else if (is(ActionId::DebugOverlay)) { app.showDebug = !app.showDebug; }
+            else if (is(ActionId::NavFieldView)) {
+                app.navView = sm::next_nav_debug_view(app.navView);
+            }
             else if (is(ActionId::Settlement)) { toggle_settlement_panel(app); }
             else if (is(ActionId::Quests))     { app.ui.quest = !app.ui.quest; }
             else if (is(ActionId::Character)) {
@@ -3442,6 +3445,24 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         && app.macro.ready()) {
         app.macro.upload_knowledge_field(app.device, &app.gs.knowledge);
         app.uploadedKnowledgeRev = app.gs.knowledge.revision;
+    }
+
+    // Refresh u_navMap (binding 7) when the отладочный вид или САМО ЗАПЕЧЕНИЕ
+    // сдвинулось. Четыре сравнения за кадр, перезалив — только на
+    // расхождении: вид переключает игрок клавишей, а поле под ним меняет
+    // перепёк навигации, и прибор обязан показывать сегодняшнее поле, а не
+    // вчерашнее. Рядом со свежестью тумана, потому что это ровно та же
+    // дисциплина и то же место в кадре.
+    if (app.macro.ready()
+        && (app.navView != app.uploadedNavView
+            || app.navWorld.baked() != app.uploadedNavBaked
+            || app.navWorld.bakedSeed != app.uploadedNavSeed
+            || app.navWorld.bakedNavEpoch != app.uploadedNavEpoch)) {
+        app.macro.upload_nav_field(app.device, &app.navWorld, app.navView);
+        app.uploadedNavView  = app.navView;
+        app.uploadedNavBaked = app.navWorld.baked();
+        app.uploadedNavSeed  = app.navWorld.bakedSeed;
+        app.uploadedNavEpoch = app.navWorld.bakedNavEpoch;
     }
 
     // THE pause, asked once, for whichever world is on screen. Everything below
@@ -5893,7 +5914,7 @@ void frame(App& app, int simSteps) {
                              // усечение, то есть на клетку высоты.
                              sm::field01_of(app.terrain.seaLevel16), tod,
                              float(SDL_GetTicks()) * 0.001f,
-                             /*mapStyle=*/mapOpen);
+                             /*mapStyle=*/mapOpen, app.navView);
         }
     }
     const auto tSceneEnd = cpuNow();

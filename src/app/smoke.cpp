@@ -8731,6 +8731,20 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     std::fprintf(stderr, "[smoke] force zoom -> %.1f\n", z);
                     std::fflush(stderr);
                 }
+                // Opt-in (TIMAERT_SMOKE_NAVVIEW=1|2): ОТЛАДОЧНЫЙ ВИД
+                // ЗАПЕЧЁННЫХ ПОЛЕЙ НАВИГАЦИИ (M-239) — 1 округи, 2 цена пути
+                // до своего места. Стоит ЗДЕСЬ, в ставящемся кадре, а не
+                // рядом со снимком: перезалив образа идёт в кадровом цикле,
+                // поэтому вид, включённый в тот же кадр, сфотографировался бы
+                // ПУСТЫМ (та же грабля устаревшего кадра, что у зума).
+                if (const char* nv = std::getenv("TIMAERT_SMOKE_NAVVIEW")) {
+                    const int v = std::atoi(nv);
+                    app.navView = v >= 2 ? sm::NavDebugView::HomeCost
+                                : v >= 1 ? sm::NavDebugView::Regions
+                                         : sm::NavDebugView::Off;
+                    std::fprintf(stderr, "[smoke] nav field view -> %d\n", v);
+                    std::fflush(stderr);
+                }
                 app.smoke.captureStaged = true;
                 break;  // no cursor advance: capture arms NEXT frame
             }

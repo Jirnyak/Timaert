@@ -518,6 +518,16 @@ constexpr Row kAppRows[] = {
     {"treeLayer", Rod::Fields, "живое поле леса (едет в сейве целиком)"},
     {"uploadedTreeRev", Rod::Session, "ревизия GPU-текстуры"},
     {"uploadedKnowledgeRev", Rod::Session, "ревизия GPU-текстуры"},
+    // ОТЛАДОЧНЫЙ ВИД ПОЛЕЙ НАВИГАЦИИ (M-239) — весь блок СЕССИОННЫЙ, и это
+    // не отговорка: вид выбирает игрок клавишей, а четыре соседних числа
+    // помнят, ЧТО уже лежит в GPU-текстуре. Ни одно не состояние мира —
+    // мир о них не знает, в сейв они не едут, и после загрузки вид честно
+    // начинается выключенным.
+    {"navView", Rod::Session, "какой вид полей показывает прибор"},
+    {"uploadedNavView", Rod::Session, "какой вид уже в GPU-текстуре"},
+    {"uploadedNavSeed", Rod::Session, "сид мира, с которым текстура снята"},
+    {"uploadedNavEpoch", Rod::Session, "эпоха запекания, с которой снята"},
+    {"uploadedNavBaked", Rod::Session, "было ли запечено на момент снимка"},
     {"mapScreen", Rod::Session, ""},
     {"deposits", Rod::Fields, "слой жил Clay/Iron/Stone"},
     {"sightRt", Rod::Session, "сессионная половина знания"},

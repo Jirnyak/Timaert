@@ -27,6 +27,12 @@ layout(set = 0, binding = 3) uniform sampler2D u_lightField; // RGB night glow (
 layout(set = 0, binding = 4) uniform sampler2D u_treeMap;    // R8: tree count / 16384 (macro/tree_layer.h)
 layout(set = 0, binding = 5) uniform sampler2D u_knowledgeMap; // R8: knowledge level / 2 (macro/knowledge.h)
 layout(set = 0, binding = 6) uniform sampler2D u_biomePal;     // RGBA32F Nx1: строка kBiomes (tables/biomes.h)
+// ОТЛАДОЧНЫЙ БАЙТ ЗАПЕЧЁННОЙ НАВИГАЦИИ. Что в нём лежит — решает CPU
+// (`encode_nav_field@src/macro/vk_macro_renderer.cpp`); здесь известно только
+// ОДНО: ноль значит «НЕТ», а остальное красится способом из `pc.navView`.
+// Имён подсистем мира («округа», «дистанция») в шейдере нет намеренно —
+// поток идёт строго вниз, и рендер их знать не должен.
+layout(set = 0, binding = 7) uniform sampler2D u_navMap;       // R8: 0 = нет, 1..255 = величина
 
 layout(push_constant) uniform Push {
     vec2 resolution; // кадровый буфер в пикселях — И ЕСТЬ вьюпорт (§ЗАКОН
@@ -42,6 +48,7 @@ layout(push_constant) uniform Push {
     float nightDarken; // 0..1 night strength (TS GameScreen curve)
     float elapsed;   // real seconds — drives haze flow / water shimmer
     float mapStyle;  // 0 = the living world; 1 = the CHART (map page document)
+    float navView;   // 0 = мир; 1 = КАТЕГОРИЯ; 2 = СКАЛЯР (способ раскраски u_navMap)
 } pc;
 
 layout(location = 0) out vec4 outColor;
@@ -1106,6 +1113,44 @@ void main() {
     uv.y = 1.0 - uv.y;
     vec2 worldPx = (uv - 0.5) * pc.resolution / pc.zoom + pc.cam;
     vec2 mapUV = fract(worldPx / pc.mapSize);
+
+    // ОТЛАДОЧНЫЙ ВИД ПОЛЕЙ НАВИГАЦИИ — ПЕРВЫМ, И ОН ЗАМЕЩАЕТ ВСЁ.
+    // Замещает, а не смешивается: полупрозрачный слой поверх терраина прячет
+    // ровно то, что им ищут, — тёмное пятно на тёмной горе. Туман знания
+    // здесь тоже не применяется: прибор обязан показывать ПРАВДУ мира, а не
+    // то, что успел увидеть игрок.
+    if (pc.navView > 0.5) {
+        float b = texture(u_navMap, mapUV).r;
+        if (b <= 0.0) {
+            // «НЕТ» КРАСИТСЯ ВНЕ ПАЛИТРЫ СВОЕГО ВИДА, И ПОЭТОМУ ЦВЕТ У НЕГО
+            // РАЗНЫЙ. Один цвет на оба вида невозможен по построению: круг
+            // оттенков КАТЕГОРИИ выдаёт любой тон (включая пурпур), а серая
+            // рампа СКАЛЯРА — любую яркость (включая чёрное). Значит
+            // категории резервируется ЧЁРНОЕ (круг его не достигает: у
+            // насыщенного тона хоть один канал всегда 0.98), а скаляру —
+            // ПУРПУР (серой рампе он недостижим).
+            // Куплено первым же снятым кадром: пурпур у категории оказался
+            // неотличим от округи, чей хеш лёг в пурпурный тон, — то есть
+            // прибор не мог ответить на единственный вопрос, ради которого
+            // его и открывают.
+            outColor = pc.navView < 1.5 ? vec4(0.0, 0.0, 0.0, 1.0)
+                                        : vec4(1.0, 0.0, 0.85, 1.0);
+            return;
+        }
+        if (pc.navView < 1.5) {
+            // КАТЕГОРИЯ: байт на круг оттенков золотым сечением — соседние
+            // байты расходятся по цвету максимально, значит ГРАНИЦА видна.
+            float hue = fract(b * 255.0 * 0.6180339887);
+            vec3  k = clamp(abs(fract(hue + vec3(0.0, 0.66667, 0.33333)) * 6.0 - 3.0) - 1.0,
+                            0.0, 1.0);
+            outColor = vec4(k * 0.92 + 0.06, 1.0);
+        } else {
+            // СКАЛЯР: у источника светло, дальше темнее — рецепт статьи.
+            float t = clamp(1.0 - b, 0.0, 1.0);
+            outColor = vec4(vec3(0.14, 0.16, 0.22) + vec3(0.82, 0.80, 0.74) * t, 1.0);
+        }
+        return;
+    }
 
     // The map page draws the CHART and nothing below runs — the living
     // composition (sun, night, glints, decor) belongs to the world.

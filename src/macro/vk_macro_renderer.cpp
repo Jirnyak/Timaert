@@ -6,6 +6,7 @@
 #include "macro/knowledge.h"
 #include "macro/macro_night.h"
 #include "macro/map_generator.h"
+#include "macro/nav_field.h"
 #include "macro/tree_layer.h"
 #include "macro/zones.h"
 
@@ -38,6 +39,11 @@ struct MacroPush {
     float nightDarken;
     float elapsed;  // real seconds — drives haze flow / water shimmer
     float mapStyle; // 0 = the living world; 1 = the CHART (map page document)
+    // ОТЛАДОЧНЫЙ ВИД ПОЛЕЙ НАВИГАЦИИ: 0 = мир, 1 = КАТЕГОРИЯ, 2 = СКАЛЯР.
+    // Шейдеру передаётся способ РАСКРАСКИ, а не смысл величины (смысл знает
+    // только `encode_nav_field` ниже) — иначе имя подсистемы мира попало бы
+    // в рендер, а поток обязан идти строго вниз.
+    float navView;
 };
 
 // БАЙТОВАЯ СЕТКА ГРУЗИТСЯ ОДНОЙ ДВЕРЬЮ — `create_r8`.
@@ -87,13 +93,107 @@ bool encode_tree_field(const TreeLayer* layer, std::vector<std::uint8_t>& out,
     return true;
 }
 
+// Отладочный байт запечённой навигации (M-239). Ноль ВСЕГДА значит «нет
+// округи» — шейдер печатает его отдельным цветом, и ради этого единственного
+// факта вид и существует: карман без округи обязан быть виден ПЯТНОМ, а не
+// оттенком. Значащие величины занимают 1..255.
+//
+// Квантование названо вслух, потому что это ПРИБОР, а не картинка мира:
+// категория жмётся хешем ординала, скаляр — нормировкой на 99-й процент поля
+// (вывод шкалы и две отвергнутые формы — ниже, у самого счёта). Для поиска
+// карманов, переливов и швов этого довольно; точное число даёт
+// `nav_path_cost@src/macro/nav_field.cpp`, а не глаз.
+//
+// МАСШТАБ ПРОСМОТРА — ЧАСТЬ ПРИБОРА, И ЭТО КУПЛЕНО ТРЕМЯ СНЯТЫМИ КАДРАМИ:
+// на игровом зуме (≈50 клеток в экране при округе ≈23) скаляр показывает
+// белый лист НЕ потому, что шкала плоха, а потому, что в кадре всё и так
+// рядом со своим местом. Градиент читается на зуме, где в экран входит мир
+// целиком. Две итерации шкалы были потрачены на эту ошибку диагноза, прежде
+// чем её сняли зумом, — отсюда правило: сперва смени МАСШТАБ, потом шкалу.
+bool encode_nav_field(const NavWorld* nav, NavDebugView view,
+                      std::vector<std::uint8_t>& out, int& w, int& h) {
+    if (!nav || !nav->baked()) return false;
+
+    // Способ упаковки выбирается ОДИН раз, switch'ем без `default:` — новый
+    // вид делает это место красным под компилятором, а не молча едет чужой
+    // кодировкой (ветка Off здесь ради той же полноты).
+    bool categorical = false;
+    switch (view) {
+    case NavDebugView::Off:      return false;
+    case NavDebugView::Regions:  categorical = true;  break;
+    case NavDebugView::HomeCost: categorical = false; break;
+    }
+
+    w = nav->mapW;
+    h = nav->mapH;
+    const std::size_t n = std::size_t(w) * std::size_t(h);
+    if (nav->regionOf.size() < n || nav->distHome.size() < n) return false;
+
+    // ШКАЛА СКАЛЯРА — 99-Й ПРОЦЕНТ ПОЛЯ, А НЕ ЕГО МАКСИМУМ, и обе отвергнутые
+    // формы названы, потому что обе были сняты КАДРОМ, а не рассуждением:
+    //   · фиксированный делитель (цена/16) — округа много мельче потолка
+    //     байта, значения жмутся в начало диапазона, градиент не читается;
+    //   · максимум мира — на торе далёкая клетка есть ВСЕГДА, один выброс
+    //     съедает весь диапазон, и картинка выходит белым листом (хуже
+    //     первой формы, проверено снимком).
+    // Процент снимается гистограммой на 256 корзин: один проход, ноль
+    // сортировки, и это загрузка, а не кадр.
+    // ЦЕНА НАЗВАНА: по цвету НЕ ЧИТАЕТСЯ абсолютное число — цвет отвечает
+    // «далеко ли относительно того, что в этом мире бывает». Абсолютное даёт
+    // `nav_path_cost@src/macro/nav_field.cpp`, и это его работа, не глаза.
+    std::uint32_t scale = 1u;
+    if (!categorical) {
+        std::uint32_t maxCost = 1u;
+        for (std::size_t i = 0; i < n; ++i) {
+            if (nav->regionOf[i] == kNavNoRegion) continue;
+            maxCost = std::max(maxCost, std::uint32_t(nav->distHome[i]));
+        }
+        std::uint32_t hist[256] = {};
+        std::size_t live = 0;
+        for (std::size_t i = 0; i < n; ++i) {
+            if (nav->regionOf[i] == kNavNoRegion) continue;
+            ++hist[std::uint32_t(nav->distHome[i]) * 255u / maxCost];
+            ++live;
+        }
+        std::uint32_t bucket = 255u;
+        std::size_t acc = 0;
+        for (std::uint32_t b = 0; b < 256u; ++b) {
+            acc += hist[b];
+            if (acc * 100u >= live * 99u) { bucket = b; break; }
+        }
+        scale = std::max(1u, maxCost * (bucket + 1u) / 256u);
+    }
+
+    out.resize(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (nav->regionOf[i] == kNavNoRegion) {
+            out[i] = 0u;
+            continue;
+        }
+        if (categorical) {
+            // Хеш Кнута разводит СОСЕДНИЕ ординалы округ в далёкие байты.
+            // Без него соседние округи красились бы соседними оттенками, и
+            // граница между ними была бы невидима ровно там, где её смотрят.
+            out[i] = std::uint8_t(
+                1u + ((std::uint32_t(nav->regionOf[i]) * 2654435761u) >> 24)
+                         % 255u);
+        } else {
+            const std::uint32_t cost =
+                std::uint32_t(nav->distHome[i]) * 254u / scale;
+            out[i] = std::uint8_t(1u + std::min<std::uint32_t>(cost, 254u));
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
-    // Descriptor set 0 = seven combined image samplers (master/feature/zone
-    // + night light field + tree field + knowledge + biome palette).
-    VkDescriptorSetLayoutBinding bindings[7]{};
-    for (std::uint32_t i = 0; i < 7; ++i) {
+    // Descriptor set 0 = eight combined image samplers (master/feature/zone
+    // + night light field + tree field + knowledge + biome palette + nav
+    // debug field).
+    VkDescriptorSetLayoutBinding bindings[8]{};
+    for (std::uint32_t i = 0; i < 8; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
@@ -101,12 +201,12 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
     }
     VkDescriptorSetLayoutCreateInfo dlci{};
     dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dlci.bindingCount = 7;
+    dlci.bindingCount = 8;
     dlci.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7};
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8};
     VkDescriptorPoolCreateInfo dpci{};
     dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     dpci.maxSets = 1;
@@ -136,6 +236,7 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
 }
 
 void MacroRendererVk::free_textures(const gpu::VulkanDevice& dev) {
+    navField_.destroy(dev);
     biomePalette_.destroy(dev);
     knowledgeField_.destroy(dev);
     treeField_.destroy(dev);
@@ -248,13 +349,23 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
                                      pal.data(), false, false);
     }
 
-    // Bind the seven textures into set 0.
-    const gpu::VulkanTexture* tex[7] = {&master_, &feature_, &zone_,
+    // Отладочное поле навигации при полной выгрузке ВСЕГДА пустое: вид
+    // включает игрок клавишей, и тогда его грузит `upload_nav_field`. 1×1
+    // нуль держит биндинг 7 валидным — та же дисциплина, что у света и
+    // деревьев.
+    {
+        const std::uint8_t none = 0;
+        navField_.create_r8(dev, 1, 1, &none, false, true);
+    }
+
+    // Bind the eight textures into set 0.
+    const gpu::VulkanTexture* tex[8] = {&master_, &feature_, &zone_,
                                         &lightField_, &treeField_,
-                                        &knowledgeField_, &biomePalette_};
-    VkDescriptorImageInfo dii[7]{};
-    VkWriteDescriptorSet writes[7]{};
-    for (std::uint32_t i = 0; i < 7; ++i) {
+                                        &knowledgeField_, &biomePalette_,
+                                        &navField_};
+    VkDescriptorImageInfo dii[8]{};
+    VkWriteDescriptorSet writes[8]{};
+    for (std::uint32_t i = 0; i < 8; ++i) {
         dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         dii[i].imageView = tex[i]->view;
         dii[i].sampler = tex[i]->sampler;
@@ -265,8 +376,47 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo = &dii[i];
     }
-    vkUpdateDescriptorSets(dev.device, 7, writes, 0, nullptr);
+    vkUpdateDescriptorSets(dev.device, 8, writes, 0, nullptr);
     uploaded_ = true;
+}
+
+void MacroRendererVk::upload_nav_field(const gpu::VulkanDevice& dev,
+                                       const NavWorld* nav,
+                                       NavDebugView view) {
+    // Та же дисциплина, что у поля деревьев: до первой полной выгрузки патчить
+    // нечего; живой образ меняется после простоя устройства. Зовётся по
+    // нажатию клавиши и по сдвигу запекания — никогда за кадр.
+    if (!uploaded_) return;
+    vkDeviceWaitIdle(dev.device);
+    navField_.destroy(dev);
+
+    std::vector<std::uint8_t> nb;
+    int nw = 0, nh = 0;
+    if (encode_nav_field(nav, view, nb, nw, nh)) {
+        // NEAREST обязателен: байт здесь — ОРДИНАЛ или ступень цены, и
+        // линейная фильтрация смешала бы два разных ответа в третий, которого
+        // в мире нет. Ровно этим прибор отличается от картинки (у поля знания
+        // фильтр LINEAR законен — там граница тумана и обязана дышать).
+        navField_.create_r8(dev, std::uint32_t(nw), std::uint32_t(nh),
+                            nb.data(), false, true);
+    } else {
+        const std::uint8_t none = 0;
+        navField_.create_r8(dev, 1, 1, &none, false, true);
+    }
+
+    // Rewrite only binding 7; the other samplers stay live.
+    VkDescriptorImageInfo dii{};
+    dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    dii.imageView = navField_.view;
+    dii.sampler = navField_.sampler;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = 7;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &dii;
+    vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
 }
 
 void MacroRendererVk::upload_knowledge_field(const gpu::VulkanDevice& dev,
@@ -423,7 +573,8 @@ void MacroRendererVk::upload_light_field(const gpu::VulkanDevice& dev,
 
 void MacroRendererVk::record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainData& td,
                              float camX, float camY, float zoom, float seaLevel,
-                             float timeOfDay, float elapsed, bool mapStyle) {
+                             float timeOfDay, float elapsed, bool mapStyle,
+                             NavDebugView navView) {
     if (!uploaded_) return;
 
     VkViewport vp{};
@@ -464,6 +615,14 @@ void MacroRendererVk::record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainD
     pc.nightDarken = macro_night_darken(timeOfDay);
     pc.elapsed = elapsed;
     pc.mapStyle = mapStyle ? 1.0f : 0.0f;
+    // Вид отдаёт шейдеру СПОСОБ РАСКРАСКИ, а не свою величину: 1 =
+    // категория, 2 = скаляр. `switch` без `default:` — новый вид краснеет
+    // здесь под компилятором, а не рисуется молча чужим законом.
+    switch (navView) {
+    case NavDebugView::Off:      pc.navView = 0.0f; break;
+    case NavDebugView::Regions:  pc.navView = 1.0f; break;
+    case NavDebugView::HomeCost: pc.navView = 2.0f; break;
+    }
     vkCmdPushConstants(cmd, pipeline_.layout, VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(pc), &pc);
     vkCmdDraw(cmd, 3, 1, 0, 0);

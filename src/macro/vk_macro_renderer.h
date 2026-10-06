@@ -21,6 +21,32 @@ struct FeatureLayer;
 struct ZoneLayer;
 struct TreeLayer;
 struct KnowledgeLayer;
+struct NavWorld;
+
+// ОТЛАДОЧНЫЙ ВИД ЗАПЕЧЁННОЙ НАВИГАЦИИ (M-239). Схема запекания этого мира
+// целиком выведена из прототипа-лабиринта (CANON S7), и ГЛАВНЫЙ совет той
+// работы — «рисуйте свои промежуточные данные: один кадр хитмапа заменяет час
+// чтения кода» — не был исполнен ни одной строкой, из-за чего 4.3 тыс. клеток
+// суши без округи не видел никто ни разу.
+//
+// Вид ЗАМЕЩАЕТ картинку мира, а не смешивается с ней: полупрозрачный слой
+// поверх терраина прячет ровно то, что ищут, — тёмное пятно на тёмной горе.
+enum class NavDebugView : std::uint8_t {
+    Off,       // мир как обычно
+    Regions,   // округа клетки — КАТЕГОРИЯ (соседние значения расходятся цветом)
+    HomeCost,  // цена пути до своего места — СКАЛЯР (светлое у места, дальше темнее)
+};
+
+// Следующий вид по кругу. `switch` без `default:` намеренно: новый вид делает
+// это место красным под компилятором (-Wswitch), а не молча невидимым.
+inline NavDebugView next_nav_debug_view(NavDebugView v) {
+    switch (v) {
+    case NavDebugView::Off:      return NavDebugView::Regions;
+    case NavDebugView::Regions:  return NavDebugView::HomeCost;
+    case NavDebugView::HomeCost: return NavDebugView::Off;
+    }
+    return NavDebugView::Off;
+}
 
 class MacroRendererVk {
 public:
@@ -73,6 +99,17 @@ public:
     void upload_knowledge_field(const gpu::VulkanDevice& dev,
                                 const KnowledgeLayer* knowledge);
 
+    // Refresh ONLY the nav debug field (binding 7), same surgical discipline.
+    // ЧТО ЛЕЖИТ В БАЙТЕ — РЕШАЕТСЯ ЗДЕСЬ, НА CPU, и это не удобство, а
+    // ЗАКОН ТУПИКА РЕНДЕРА: поток строго вниз, поэтому шейдер получает только
+    // «категория это или скаляр» и не знает слов «округа» и «дистанция». Ноль
+    // байта зарезервирован под «НЕТ ОКРУГИ» — ради него вид и существует.
+    // `view == Off` (или отсутствие запечённой навигации) биндит 1×1 нуль,
+    // поэтому биндинг 7 всегда валиден. Зовётся по НАЖАТИЮ клавиши и по
+    // сдвигу запекания, никогда за кадр.
+    void upload_nav_field(const gpu::VulkanDevice& dev, const NavWorld* nav,
+                          NavDebugView view);
+
     // Record the fullscreen map draw for the current framebuffer.
     // `mapStyle` selects the CHART composition (the map page's document
     // rendering — flat atlas colours, inked coast/roads, fixed relief light,
@@ -80,7 +117,8 @@ public:
     // harness and the live view keep their pictures unchanged.
     void record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainData& td,
                 float camX, float camY, float zoom, float seaLevel,
-                float timeOfDay, float elapsed, bool mapStyle = false);
+                float timeOfDay, float elapsed, bool mapStyle = false,
+                NavDebugView navView = NavDebugView::Off);
 
     bool ready() const { return uploaded_; }
 
@@ -99,6 +137,7 @@ private:
     // построению — поэтому копии больше нет, а счёт строк шейдер берёт из
     // самих данных (`textureSize`), не из литерала.
     gpu::VulkanTexture biomePalette_{};   // kBiomes RGB, RGBA32F Nx1
+    gpu::VulkanTexture navField_{};       // отладочный байт навигации R8 (binding 7)
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
     VkDescriptorSet set_ = VK_NULL_HANDLE;

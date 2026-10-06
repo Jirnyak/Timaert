@@ -312,6 +312,18 @@ struct App {
     // (macro/nav_field.h, CANON S7). Derived: свежесть ловит nav_ensure
     // (сид, ландмарки, мосты) — ручной чистки не нужно.
     sm::NavWorld navWorld;
+    // ОТЛАДОЧНЫЙ ВИД ЗАПЕЧЁННЫХ ПОЛЕЙ (M-239) и свежесть его образа.
+    // Сверяются ЗА КАДР четыре числа — ровно как `nav_ensure` сверяет своё
+    // запекание четырьмя сравнениями, — и перезалив идёт только на
+    // расхождении. Четыре, а не одно: вид меняет игрок, а образ под ним
+    // меняет ПЕРЕПЁК (другой сид = другой мир, другая эпоха = другие округи,
+    // и отдельно сам факт «запечено ли уже»). Прибор, показывающий вчерашнее
+    // поле, есть лгущий прибор, а это дороже пяти байт состояния.
+    sm::NavDebugView navView = sm::NavDebugView::Off;
+    sm::NavDebugView uploadedNavView = sm::NavDebugView::Off;
+    std::uint32_t uploadedNavSeed = 0;
+    std::uint32_t uploadedNavEpoch = 0;
+    bool uploadedNavBaked = false;
     sm::ui::CustomGameParams customParams; // remembered across visits to the menu
     // The pre-world character creation screen's working state. Reset on every
     // entry (a new hero starts blank); `creationCustom` remembers whether
