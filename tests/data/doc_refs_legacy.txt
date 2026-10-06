@@ -764,7 +764,6 @@ jopus_prompts.md	node_registry.cpp:20
 jopus_prompts.md	npc_ai.cpp:144
 jopus_prompts.md	npc_ai.cpp:159
 jopus_prompts.md	npc_ai.cpp:2313
-jopus_prompts.md	npc_ai.cpp:4981-5085
 jopus_prompts.md	npc_spawn.cpp:82
 jopus_prompts.md	pathfinding.h:207
 jopus_prompts.md	politik.cpp:192
@@ -1070,7 +1069,6 @@ macro-registry.md	npc_ai.cpp:2850-2960
 macro-registry.md	npc_ai.cpp:2862
 macro-registry.md	npc_ai.cpp:2978
 macro-registry.md	npc_ai.cpp:2999-3012
-macro-registry.md	npc_ai.cpp:3048-3068
 macro-registry.md	npc_ai.cpp:3113-3115
 macro-registry.md	npc_ai.cpp:3508-3514
 macro-registry.md	npc_ai.cpp:3535

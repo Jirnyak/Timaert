@@ -69,24 +69,11 @@ void sink(void* user, const sm::EconFact& f) {
     }
 }
 
-// Inputs drawn per unit of each produced commodity — from the output row's
-// own composition (tables/items.h item_parts), which since 2026-09-11 IS the
-// recipe's matter (outputs are unique in v1, asserted below). The ledger
-// deliberately reads through the same door production does: a drift between
-// «что ест станок» and «из чего ткань» is exactly what the merge killed.
-void inputs_for_output(int outputIdx, int madeUnits,
-                       std::array<long, sm::kCommodityCount>& used) {
-    const int outCatalog = sm::commodity_item_index(outputIdx);
-    // One batch of the composition makes `yield` units — inputs per unit are
-    // count/yield (exact: a Produced amount is always whole batches).
-    const int yield = sm::item_yield(outCatalog);
-    for (const sm::ItemPart& part : sm::item_parts(outCatalog)) {
-        const sm::ItemDef* d = sm::item_def_at(int(part.def));
-        if (!d) continue;
-        used[std::size_t(sm::commodity_index(d->id))]
-            += long(madeUnits) * int(part.count) / yield;
-    }
-}
+// (ЗДЕСЬ СТОЯЛА `inputs_for_output` — ведомость входов производства за
+// единицу выхода. Её единственным читателем была 96-дневная самоига,
+// вырезанная вердиктом владельца 2026-10-04 («глупо гонять 100 дней
+// экономику, которой ещё нет»), и с тех пор функция стояла без звонящего:
+// предупреждение `-Wunused-function` ждало первой же пересборки этого TU.)
 
 } // namespace
 
@@ -180,11 +167,9 @@ int main() {
     // оба `commodity_index("food")`: два мёртвых существительных на один
     // ординал, и именно они делали правдоподобной шапку «день производства
     // печёт хлеб из зерна». Ни зерна, ни хлеба в словаре нет (M-148).
+    // Сырьевые ординалы (`wood`/`clay`/`iron`/`stone`) стояли рядом и умерли
+    // с той же самоигрой: читателей у них не осталось ни одного.
     const int foodIdx = commodity_index("food");
-    const int woodIdx = commodity_index("wood");
-    const int clayIdx = commodity_index("clay");
-    const int ironIdx = commodity_index("iron");
-    const int stoneIdx = commodity_index("stone");
 
     // (── 2+3. САМОИГРА 96 ДНЕЙ — ВЫРЕЗАНА ВЕРДИКТОМ ВЛАДЕЛЬЦА 2026-10-04:
     // «глупо гонять 100 дней экономику, которой ещё нет — полировка ядра,

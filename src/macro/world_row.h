@@ -275,38 +275,7 @@ inline CreatureHeadsRange creature_heads_range(const Inventory& inv) {
 
 // ── ВЗГЛЯДЫ ПО КОЛОНКАМ СТРОКИ (переехали из npc.h слиянием M-71) ─────────
 // Всё по ЗАКОНУ СТРОКИ КАТАЛОГА: не «это существо?», а колонка рода —
-// ездовая спина, природа Human, колонка жалованья.
-
-// Сколько ездовых стоит в области — вторая половина закона упряжки.
-inline int count_mount_souls(const Inventory& inv) {
-    int n = 0;
-    for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
-        const ItemRef& s = inv.slots[std::size_t(i)];
-        if (is_mount_kind(std::uint16_t(creature_of_world_row(s.def)))) {
-            n += s.count;
-        }
-    }
-    return n;
-}
-
-// ЗАКОН УПРЯЖКИ (владелец, 2026-09-19: «по лошадке на душу»): отряд ведёт
-// столько ездовых, сколько в нём НЕ-ездовых душ — по одной на душу, и ни
-// одной лишней. Лидер — своя душа, он тоже ведёт коня, поэтому +1.
-//
-// Это МЕРА ВЫДАЧИ, а не право собственности: табун принадлежит МЕСТУ
-// (ДВУХТАКТНЫЙ ОБОЗ, вердикт владельца 2026-09-19) — на приходе отряд
-// сдаёт в стойло ВСЁ ездовое, на выходе место выдаёт ему столько, сколько
-// говорит эта мера и сколько стоит в стойле.
-inline int mount_allowance(const Inventory& inv) {
-    int riders = 1;   // лидер
-    for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
-        const ItemRef& s = inv.slots[std::size_t(i)];
-        if (!is_mount_kind(std::uint16_t(creature_of_world_row(s.def)))) {
-            riders += s.count;
-        }
-    }
-    return riders;
-}
+// природа Human, колонка жалованья, спина haulMult.
 
 // ЛЮДИ области — руки и рты ведомости труда, подсудимые суда крю. Зверь —
 // спина и рот, но не рука. Спрашивает ПРИРОДУ (kNpcNature), не границу.

@@ -27,6 +27,7 @@
 #include "macro/tree_layer.h"
 #include "macro/store.h"
 
+#include <cmath>
 #include <cstdint>
 
 namespace {
@@ -722,11 +723,20 @@ void test_the_miner_works_the_vein() {
 }
 
 // ЛОШАДЬ — ЮНИТ, А НЕ ПРЕДМЕТ (CANON S10, владелец 2026-09-19). Пинится
-// ровно новая колонка закона — «выход ложится в РОСТЕР, а не в сумку» — и
-// её сохранение: поле теряет ровно столько голов, сколько встало в отряд,
-// сумка при этом пуста, а обоз растёт спинами пойманных (haulMult 8).
-// Бутстрап тот же, что у шахты над жилой: первый день артель поднимает
-// ПАСТБИЩЕ, ловля — следующим днём.
+// ровно колонка закона — «выход ложится СУЩЕСТВОМ в контейнер, а не в
+// сумку» — и её сохранение: поле теряет ровно столько голов, сколько встало
+// в отряд, сумка при этом пуста, а обоз растёт спинами пойманных
+// (haulMult 8). Бутстрап тот же, что у шахты над жилой: первый день артель
+// поднимает ПАСТБИЩЕ, ловля — следующим днём.
+//
+// ЗАКОН УПРЯЖКИ СНЕСЁН ЦЕЛИКОМ (M-230, вердикт владельца 2026-10-06), и
+// здесь стояли ШЕСТЬ его свидетелей — такт 1 (сдача в стойло), тег Mount,
+// мера «по лошадке на душу», такт 2 с его сохранением и потолком. Они сняты
+// ВМЕСТЕ С НОСИТЕЛЕМ, а не подогнаны (AGENTS §5 п.6): закона, который они
+// охраняли, больше нет. Что осталось от них живым, то и проверяется ниже —
+// одна колонка haulMult и сохранение улова, теперь через ОДИН контейнер.
+// Проверка «у дома ноль голов» и есть негативный контроль сноса: вернись
+// двухтактный обоз — она краснеет первой.
 void test_the_catch_lands_in_the_roster() {
     GameState gs{};
     gs.mapW = kMap;
@@ -806,59 +816,40 @@ void test_the_catch_lands_in_the_roster() {
         lost += int(scar);
     });
 
-    const int stabled =
+    const int athome =
         creature_heads_of(st.inventory[vil.slot].inv, NPCType::Horse);
-    CHECK(caught + stabled > 0, "the catch landed as SOULS, not as cargo");
-    CHECK(lost == caught + stabled,
-          "CONSERVATION через два контейнера: упряжка + стойло == голов, "
-          "которых лишилось поле");
-    CHECK(stabled > 0,
-          "ТАКТ 1: отряд сдал табун ДОМОЙ — стойло места, не карман артели");
+    CHECK(caught > 0, "the catch landed as SOULS, not as cargo");
+    CHECK(lost == caught,
+          "CONSERVATION ОДНИМ контейнером: поле лишилось ровно того, что "
+          "встало в отряд");
+    CHECK(athome == 0,
+          "НЕГАТИВНЫЙ КОНТРОЛЬ СНОСА (M-230): табун не принадлежит месту — "
+          "дом не получает ни одной головы, потому что обоза больше нет");
     CHECK(st.inventory[vil.slot].inv.count("food") == 0
               && (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("food") == 0,
           "a creature yield rides NO bag: nothing landed in the store");
-    CHECK(is_mount_kind(std::uint16_t(NPCType::Horse)),
-          "строка лошади несёт тег Mount — закон спрашивает ТЕГ, не род");
-    CHECK(caught <= mount_allowance(roster),
-          "ТАКТ 2: отряд ведёт не больше ездовых, чем душ (закон упряжки)");
     // (ЗДЕСЬ СТОЯЛИ ДВА СВИДЕТЕЛЯ ЗАКОНА «артель ставит загон ПЕРЕД ловлей».
     // Закон отменён вердиктом владельца 2026-09-22 — «СТРОИТЕЛЬСТВО
     // КРЕСТЬЯНАМИ НЕ РАБОТАЕТ НА НЕГО НЕЛЬЗЯ ПОЛАГАТЬСЯ», — поэтому
     // свидетели сняты ВМЕСТЕ С ЗАКОНОМ, а не подогнаны под новый ответ.
-    // Ловля от этого не изменилась: проверки сохранения и двух контейнеров
-    // выше зелены — артель берёт с клетки поля, как лесоруб с клетки леса.
+    // Ловля от этого не изменилась: проверка сохранения выше зелена —
+    // артель берёт с клетки поля, как лесоруб с клетки леса.
     // Прегенерацию загонов миром несёт наряд M-79 реестра.)
-    // ТАКТ 2 ОТДЕЛЬНО: стойло снаряжает уходящую артель. Дверь зовётся
-    // из суда ротации, здесь — прямо, чтобы свидетель судил ЗАКОН, а не
-    // расписание дня: место выдаёт по коню на душу и ни одного сверх.
+    // ЕДИНСТВЕННАЯ ВЫЖИВШАЯ КОЛОНКА ЛОШАДИ — СПИНА, и считает её живая
+    // дверь состава (squad.h refresh_squad_carry), которую зовёт сама
+    // ловля. Лидер — крестьянин (haulMult 1.0), поэтому каждая пойманная
+    // голова добавляет РОВНО восемь его спин, и обоз есть точное
+    // carryPerSoul × (1 + 8 × голов): закон вместимости, а не пересказанное
+    // число (AGENTS §8 п.4).
     {
-        auto& roMut = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
-        while (!creatures_empty(roMut)) {         // пешая артель
-            SoldierRecord off{};
-            if (!creatures_pop_back(roMut, off)) break;
-        }
-        const std::uint16_t home = vil.slot;
-        const int stall =
-            creature_heads_of(st.inventory[home].inv, NPCType::Horse);
-        CHECK(stall >= 2, "фикстура: в стойле есть из чего снаряжать");
-        // Лидер без членов — одна душа, значит ровно один конь.
-        const int given =
-            outfit_crew_mounts(sm::store_of(w), home, e);
-        CHECK(given == 1 && count_mount_souls(roMut) == 1,
-              "ТАКТ 2: дом выдал по ездовому на душу — одному лидеру коня");
-        CHECK(creature_heads_of(st.inventory[home].inv, NPCType::Horse)
-                  == stall - given,
-              "CONSERVATION такта 2: сколько вышло из стойла, столько и "
-              "встало в упряжку");
-        const int twice =
-            outfit_crew_mounts(sm::store_of(w), home, e);
-        CHECK(twice == 0,
-              "мера — потолок, а не запрос: снаряжённый отряд второго коня "
-              "не берёт, даже когда стойло полно");
-        // И обоз вырос ровно на спину коня — та же дверь, что у добора.
-        const auto& rtNow = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), e));
-        CHECK(rtNow.carryCap >= rtNow.carryPerSoul * (1.0f + 8.0f) - 0.5f,
-              "выданный конь — восемь спин в обозе (haulMult)");
+        const auto& rtNow =
+            (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), e));
+        const float horseHaul = npc_def(NPCType::Horse).haulMult;
+        const float leaderHaul = npc_def(NPCType::Peasant).haulMult;
+        const float backs = 1.0f + horseHaul / leaderHaul * float(caught);
+        CHECK(std::fabs(rtNow.carryCap - rtNow.carryPerSoul * backs) <= 0.5f,
+              "обоз = сумма спин по строкам состава: пойманный конь несёт "
+              "восемь крестьянских (haulMult)");
     }
 }
 

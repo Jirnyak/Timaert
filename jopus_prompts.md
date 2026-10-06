@@ -1369,7 +1369,7 @@ src/sub`); `src/sub/dgn/dispatch.h` — колонки рода интерьер
 порядке просто размазано медленнее». Закон порядка обхода (эпик 2, шаг 1а):
 обход ПО ОРДИНАЛУ РОЖДЕНИЯ (`macro/squad_walk.h`).
 
-**Как сейчас (`npc_ai.cpp:4981-5085`, SKELETON I.8 `:481,:526`):**
+**Как сейчас (`tick_macro_npc_ai_budgeted@src/macro/npc_ai.cpp`, SKELETON I.8 `:481,:526`):**
 1. свипы сверх `kMaxQueuedSweeps = 4` ВЫБРАСЫВАЮТСЯ (`:4991-5001`,
    `result.backlog = true`) — думки мира теряются: чит;
 2. `sweepCursor` — ПОЗИЦИЯ в листе `sweepOrder`, который пересобирается

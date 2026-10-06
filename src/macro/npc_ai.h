@@ -357,13 +357,6 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // fill the portion loads what it has (credit-before-debit): a starving
 // village cannot outfit a far expedition, and that is the truth of it.
 // Returns bread actually loaded.
-// ТАКТ 2 ДВУХТАКТНОГО ОБОЗА (CANON S10 «ЛОШАДЬ — ЮНИТ», вердикт владельца
-// 2026-09-19): место снаряжает уходящую артель ездовыми из своего стойла по
-// закону упряжки (npc.h mount_allowance — по одному на душу) и столько,
-// сколько в стойле стоит. Возвращает, сколько голов вышло. Публично ради
-// свидетеля: он судит ЗАКОН выдачи, не расписание дня ротации.
-int outfit_crew_mounts(MacroStore& st, std::uint16_t homeSlot, MacroHandle crew);
-
 int provision_squad(Inventory& store, Inventory& bag, int soldiers,
                     float roundtripCells, float freeCarryKg);
 
