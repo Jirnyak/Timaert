@@ -409,6 +409,56 @@ void test_the_fallen_squads_creatures_die() {
           "не считают");
 }
 
+// ЗАПИСЬ ПАВШЕГО ЖИВЁТ РОВНО СТОЛЬКО, СКОЛЬКО АРЕНДА ОКНА (M-226, AGENTS
+// ЗАКОН ШВА: девять клеток ведёт субмир один, и жать их записи наверху
+// значило бы завести второго писателя).
+//
+// ПОЧЕМУ ЭТО ВАЖНО ЧИСЛОМ, А НЕ ПО ЗАМЫСЛУ: со смертью существ (M-228) гейт
+// `creatures_empty` перестал держать слот, и запись павшего стала жить ОДИН
+// макро-тик — подобрать с трупа было нечего. Гейт аренды и есть срок жизни
+// трупа, а конец аренды (подъём ИЛИ ре-центр рамки, оба равноправны) — тот
+// момент, когда неподобранное сворачивается в казну.
+//
+// Свидетель судит ОБЕ полярности одного числа и рождает своё предусловие
+// сам (AGENTS §8 п.11): аренда сдаётся дверью мира.
+void test_the_lease_holds_the_dead_record_against_the_sweep() {
+    using namespace sm;
+    ecs::World world;
+    auto worldStore_ = sm::make_macro_store();
+    sm::store_attach(world, worldStore_.get());
+    auto gsp = std::make_unique<sm::GameState>();
+    sm::GameState& gs = *gsp;
+    gs.mapW = gs.mapH = 64;
+
+    // Два павших с ПУСТЫМ контейнером существ — то есть ровно те, кого свип
+    // жнёт: один внутри арендованной рамки, один за ней.
+    const auto inside  = make_squad(world, 40, {});
+    const auto outside = make_squad(world, 41, {});
+    sm::MacroStore& st = sm::store_of(world);
+    st.cell[inside.slot]  = ecs::MacroCell{cell_of(10, 10, gs.mapW)};
+    st.cell[outside.slot] = ecs::MacroCell{cell_of(20, 20, gs.mapW)};
+    sm::macro_mark_dead(st, inside);
+    sm::macro_mark_dead(st, outside);
+
+    // Рамка стоит на соседе клетки «внутри» — значит сама клетка в аренде
+    // через `cell_step`, а не потому, что совпала с центром.
+    sm::lease_window_at(gs, cell_of(11, 10, gs.mapW));
+    CHECK(cell_is_leased(gs, st.cell[inside.slot].idx)
+              && !cell_is_leased(gs, st.cell[outside.slot].idx),
+          "фикстура: одна запись в арендованной рамке, другая за ней");
+
+    CHECK(destroy_dead_macro_squads(st, gs) == 1,
+          "свип взял РОВНО одну запись: арендованную он не трогает");
+    CHECK(st.valid(inside) && !st.valid(outside),
+          "труп в окне дожил до подбора, труп за рамкой сжат как всегда");
+
+    // ── ВТОРАЯ ПОЛЯРНОСТЬ: КОНЕЦ АРЕНДЫ И ЕСТЬ МОМЕНТ ЖАТВЫ ─────────────
+    sm::release_window(gs);
+    CHECK(destroy_dead_macro_squads(st, gs) == 1 && !st.valid(inside),
+          "аренда снята — та же запись сжата тем же свипом, без второго "
+          "закона жизни записи и без сезонного чистильщика");
+}
+
 // The Trees row is a CARRIER row (resource_field.h): its live state is the
 // dense grid the map renders, not a sparse scar map. The discipline that
 // makes that safe for the 21 direct grid readers: every registry write lands
@@ -525,6 +575,7 @@ int main() {
     test_malformed_receipts_do_nothing();
     test_the_creature_row_pays_by_name();
     test_the_fallen_squads_creatures_die();
+    test_the_lease_holds_the_dead_record_against_the_sweep();
     test_trees_are_a_carrier_row();
     test_deposits_are_carrier_rows();
     return sm::test::report("macro_stock_test");

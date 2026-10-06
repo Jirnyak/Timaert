@@ -826,6 +826,11 @@ private:
     // existed because the macro flag arrived late. It no longer does —
     // possess_entity moves it with the body — so the man standing at the centre
     // is already the flag holder, and this door is asked about him.
+    // АРЕНДА ОКНА — ОДНА ТОЧКА НА ВСЕ ПЕРЕХОДЫ (AGENTS ЗАКОН ШВА, M-226):
+    // сцена называет миру клетку-центр девяти, которые ведёт она. Приватно:
+    // снаружи аренда читается и снимается дверями мира (`cell_is_leased`,
+    // `release_window`), а назвать центр может только тот, кто его знает.
+    void lease_window_here_();
     void sync_macro_player_to_center();
     CellContext resolve_context(int x, int y) const;
     // Terrain difficulty of the macro cell under a composite-window tile. Same

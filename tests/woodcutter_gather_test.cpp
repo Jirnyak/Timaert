@@ -127,7 +127,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     for (int i = 0; i < 400; ++i) {
         MacroWorld mw{.gs = &gs, .trees = &layer, .world = &w,
                       .treeGrid = &grid};
-        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
+        tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
     const int layerLost = 16 - int(layer.at(14, 10));
@@ -221,7 +221,7 @@ void test_the_farmer_works_the_field() {
     for (int i = 0; i < 400; ++i) {
         MacroWorld mw{.gs = &gs, .world = &w, .terrain = &terrain,
                       .features = &features};
-        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
+        tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     const int foodUnits = st.inventory[vil.slot].inv.count("food");
     const int inBag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("food");
@@ -297,7 +297,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     reset_macro_npc_ai_runtime(rt, 60u);
     for (int i = 0; i < 200; ++i) {
         MacroWorld mw{.gs = &gs, .world = &w, .features = &features};
-        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
+        tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     CHECK(st.inventory[vil.slot].inv.count("food") == 0,
           "no terrain wired: nothing to reap against, nothing conjured");
@@ -393,8 +393,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     for (int i = 0; i < 400; ++i) {
         MacroWorld mw{.gs = &gs, .world = &w, .deposits = &deposits};
         tick_macro_npc_ai_budgeted(mw, art, kAiTicks,
-                                   /*max_npc_ticks=*/64,
-                                   /*allowAutoBattle=*/true);
+                                   /*max_npc_ticks=*/64);
     }
 
     // Annihilation (v55): a vein worked all the way out within the run has
@@ -646,7 +645,7 @@ void test_the_miner_works_the_vein() {
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
         MacroWorld mw{.gs = &gs, .world = &w, .deposits = &deposits};
-        tick_macro_npc_ai(mw, art, kAiTicks, /*allowAutoBattle=*/true);
+        tick_macro_npc_ai(mw, art, kAiTicks);
     }
 
     const auto& ironCells = deposits.grid(DepositKind::Iron);
@@ -804,7 +803,7 @@ void test_the_catch_lands_as_creatures() {
     for (int i = 0; i < 400; ++i) {
         MacroWorld mw{.gs = &gs, .world = &w, .terrain = &terrain,
                       .features = &features};
-        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
+        tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
     const Inventory& creatures = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;

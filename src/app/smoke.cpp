@@ -2236,8 +2236,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     // resolves during the trace — a battle death would let the corpse sweep
     // destroy entities under this smoke's live references.
     for (int i = 0; i < 64; ++i) {
-        sm::tick_macro_npc_ai(traceMw, app.npcAi, sm::kAiTicks,
-                              /*allowAutoBattle=*/false);
+        sm::tick_macro_npc_ai(traceMw, app.npcAi, sm::kAiTicks);
         if (rt.state == std::uint8_t(sm::NPCState::Idle)) {
             break;
         }
@@ -2278,8 +2277,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     sm::MacroWorld traceMw2{.gs = &app.gs, .world = &app.ecs,
                             .treeGrid = &app.treeGrid};
     for (int i = 0; i < marchThinks; ++i) {
-        sm::tick_macro_npc_ai(traceMw2, app.npcAi, sm::kAiTicks,
-                              /*allowAutoBattle=*/false);
+        sm::tick_macro_npc_ai(traceMw2, app.npcAi, sm::kAiTicks);
     }
     const float logicalX = float(sm::ecs::cell_x(cell, app.gs.mapW));
     const float logicalY = float(sm::ecs::cell_y(cell, app.gs.mapW));

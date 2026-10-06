@@ -362,8 +362,7 @@ int main(int argc, char** argv) {
             for (int s = 0; s < kSweepsPerDay; ++s) {
                 sm::tick_world(gs, *macroStore, gs.worldTickRt, sm::kAiTicks,
                                /*max_daily_ticks=*/32, &mw);
-                sm::tick_macro_npc_ai(mw, ai, sm::kAiTicks,
-                                      /*allowAutoBattle=*/true);
+                sm::tick_macro_npc_ai(mw, ai, sm::kAiTicks);
             }
 
             // Day-end sampling: stocks from the landmarks, flows from facts.

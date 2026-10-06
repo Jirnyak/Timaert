@@ -2460,7 +2460,12 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                     rt.visualSpeed = 0.0f;
                     return;
                 }
-                if (!ctx.allowAutoBattle) return;
+                // ИЗЪЯТИЕ ПО КЛЕТКЕ, А НЕ ПО РОДУ СЦЕНЫ (M-226): клетка
+                // встречи в аренде у субмира — значит её ведёт он, и решать
+                // этот бой наверху значило бы завести второго писателя.
+                // Встреча не пропадает: она ОТЛАГАЕТСЯ до конца аренды.
+                if (ctx.mw.gs
+                    && cell_is_leased(*ctx.mw.gs, st.cell[self.slot].idx)) return;
                 const AutoBattleOutcome o = resolve_auto_battle(
                     auto_battle_side_of(st, self),
                     auto_battle_side_of(st, prey),
@@ -2591,7 +2596,8 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
                     rt.visualSpeed = 0.0f;
                     return;
                 }
-                if (!ctx.allowAutoBattle) return;
+                if (ctx.mw.gs
+                    && cell_is_leased(*ctx.mw.gs, st.cell[self.slot].idx)) return;
                 const AutoBattleOutcome o = resolve_auto_battle(
                     auto_battle_side_of(st, self),
                     auto_battle_side_of(st, prey),
@@ -2851,7 +2857,8 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
             rt.visualSpeed = 0.0f;
             return true;
         }
-        if (!ctx.allowAutoBattle) return false;
+        if (ctx.mw.gs
+            && cell_is_leased(*ctx.mw.gs, st.cell[self.slot].idx)) return false;
         ecs::MacroNpcRuntime* ert = &st.runtime[enemy.slot];
         const bool ambush =
             rt.state == std::uint8_t(NS::Chasing) && ert
@@ -4751,8 +4758,7 @@ void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
 // world stopped digging while the player was underground). The layer envelope
 // arrives assembled by its owner; this adds only the drive-state.
 static TickContext make_tick_context(MacroWorld& mw,
-                                     MacroNpcAiRuntime& runtime,
-                                     bool allowAutoBattle) {
+                                     MacroNpcAiRuntime& runtime) {
     TickContext ctx{};
     ctx.mw      = mw;
     ctx.mapW    = mw.gs->mapW;
@@ -4782,7 +4788,6 @@ static TickContext make_tick_context(MacroWorld& mw,
         }
     }
     ctx.squads  = &runtime.squadIndex;
-    ctx.allowAutoBattle = allowAutoBattle;
     // Запечь враждебность реестра на свип (CANON S10 «хищник-жертва»): F²
     // вопросов к ОДНОЙ матрице раз в свип — копейки, и охота по следу читает
     // бит вместо строкового слота отношений на каждом think.
@@ -4823,8 +4828,7 @@ void settle_dead_squads(MacroWorld& mw) {
 } // namespace
 
 void tick_macro_npc_ai(MacroWorld& mw,
-                       MacroNpcAiRuntime& runtime, std::uint64_t ticks,
-                       bool allowAutoBattle) {
+                       MacroNpcAiRuntime& runtime, std::uint64_t ticks) {
     if (!mw.gs || !mw.world) return;   // no world, no thinking (fail-closed)
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
@@ -4837,7 +4841,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     if (mw.nav) nav_ensure(mw, *mw.nav);
     scent_ensure(gs.scent, gs.mapW, gs.mapH);
 
-    TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
+    TickContext ctx = make_tick_context(mw, runtime);
     scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
     // Свип делит ОДИН RNG на всех — порядок обхода есть закон мира
@@ -4959,8 +4963,7 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
 
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     MacroWorld& mw,
-    MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
-    bool allowAutoBattle) {
+    MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
     if (!mw.gs || !mw.world) return result;  // no world, no thinking
@@ -4992,7 +4995,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     // never in what world the squads think about (CANON.md S2).
     if (mw.nav) nav_ensure(mw, *mw.nav);
     scent_ensure(gs.scent, gs.mapW, gs.mapH);
-    TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
+    TickContext ctx = make_tick_context(mw, runtime);
     scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
     // Тот же закон порядка, что у карт-драйвера (squad_walk.h): курсор —

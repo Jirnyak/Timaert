@@ -105,11 +105,10 @@ float dist(ecs::World& w, sm::MacroHandle a, sm::MacroHandle b) {
         float(kMap), float(kMap)));
 }
 
-void drive(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt, int thinks,
-           bool allowAutoBattle = true) {
+void drive(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt, int thinks) {
     for (int i = 0; i < thinks; ++i) {
         MacroWorld mw{.gs = &gs, .world = &w};
-        tick_macro_npc_ai(mw, rt, kAiTicks, allowAutoBattle);
+        tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 }
 
@@ -244,25 +243,79 @@ void test_neutral_squads_ignore_each_other() {
           "nobody's creatures paid for a meeting of neutrals");
 }
 
-// The underground drive perceives but does not resolve (live projected
-// bodies own their own fight down there).
-void test_no_auto_battle_when_the_ground_owns_the_fight() {
-    GameState gs = make_world(-80);
-    ecs::World w;
-    auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    const auto a = make_squad_at(w, NPCType::Bandit, "bandits", 5,
-                                 10.0f, 10.0f, 1u, {11u, 12u},
-                                 NPCType::Bandit, 4);
-    const auto b = make_squad_at(w, NPCType::Merchant, "timaert", 1,
-                                 10.0f, 10.0f, 2u, {21u},
-                                 NPCType::Peasant, 1);
-    MacroNpcAiRuntime rt{};
-    reset_macro_npc_ai_runtime(rt, 46u);
-    drive(gs, w, rt, 3, /*allowAutoBattle*/false);
-    CHECK(!sm::macro_dead(sm::store_of(w), a) && !sm::macro_dead(sm::store_of(w), b)
-              && container_count(w, gs, 2u) == 1,
-          "with the resolver gated off, a meeting resolves nothing");
+// ИЗЪЯТИЕ ВСТРЕЧИ АДРЕСУЕТСЯ КЛЕТКАМИ, А НЕ РОДОМ СЦЕНЫ (M-226, вердикт
+// владельца 2026-10-06: «это плохо нельзя отклюячать автобой во всём мире
+// толкьо в этих 3х3 клетках»).
+//
+// Здесь стоял свидетель ГЛОБАЛЬНОГО ФЛАГА: он водил думку с
+// `allowAutoBattle=false` и утверждал «с выключенным резолвером встреча не
+// решается». Флаг умер, и вместе с ним умер вопрос, на который тот
+// свидетель отвечал: выключать резолвер во всём мире больше нечем.
+//
+// Новый свидетель судит ОБЕ полярности одной аренды — это и есть весь смысл
+// правки: клетка встречи в аренде ⇒ наверху не решается (её ведёт субмир);
+// аренда на ДРУГОЙ клетке ⇒ мир дерётся как всегда. Вторая половина до
+// M-226 была невыразима: пока игрок внизу, не дрался НИКТО.
+void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
+    // ── ПОЛЯРНОСТЬ 1: встреча НА арендованной клетке ────────────────────
+    {
+        GameState gs = make_world(-80);
+        ecs::World w;
+        auto wStore_ = sm::make_macro_store();
+        sm::store_attach(w, wStore_.get());
+        const auto a = make_squad_at(w, NPCType::Bandit, "bandits", 5,
+                                     10.0f, 10.0f, 1u, {11u, 12u},
+                                     NPCType::Bandit, 4);
+        const auto b = make_squad_at(w, NPCType::Merchant, "timaert", 1,
+                                     10.0f, 10.0f, 2u, {21u},
+                                     NPCType::Peasant, 1);
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 46u);
+        // Свидетель РОЖДАЕТ своё предусловие сам (AGENTS §8 п.11): аренда
+        // сдаётся дверью мира, а не выставлением поля руками.
+        //
+        // ЦЕНТР СТОИТ НА СОСЕДЕ, А НЕ НА САМОЙ КЛЕТКЕ ВСТРЕЧИ — и это не
+        // придирка: с центром на (10,10) мутация «рамки нет, только центр»
+        // прошла бы ЗЕЛЁНОЙ (проверено прогоном). Пинится РАМКА, то есть
+        // `cell_step` по румбам, а не совпадение с центром.
+        sm::lease_window_at(gs, sm::cell_of(11, 9, gs.mapW));
+        CHECK(sm::cell_is_leased(gs, sm::cell_of(10, 10, gs.mapW))
+                  && gs.leasedWindow != sm::cell_of(10, 10, gs.mapW),
+              "фикстура: клетка встречи в арендованной РАМКЕ, но не центр");
+        drive(gs, w, rt, 3);
+        CHECK(!sm::macro_dead(sm::store_of(w), a)
+                  && !sm::macro_dead(sm::store_of(w), b)
+                  && container_count(w, gs, 2u) == 1,
+              "встреча на арендованной клетке наверху НЕ решается: её ведёт "
+              "субмир, и второго писателя быть не должно");
+    }
+    // ── ПОЛЯРНОСТЬ 2: та же встреча, аренда ЗА рамкой ───────────────────
+    // Это и есть выигрыш правки: мир за девятью клетками дерётся, пока
+    // игрок внизу. До M-226 здесь не дрался никто.
+    {
+        GameState gs = make_world(-80);
+        ecs::World w;
+        auto wStore_ = sm::make_macro_store();
+        sm::store_attach(w, wStore_.get());
+        const auto a = make_squad_at(w, NPCType::Bandit, "bandits", 5,
+                                     10.0f, 10.0f, 1u, {11u, 12u},
+                                     NPCType::Bandit, 4);
+        const auto b = make_squad_at(w, NPCType::Merchant, "timaert", 1,
+                                     10.0f, 10.0f, 2u, {21u},
+                                     NPCType::Peasant, 1);
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 46u);
+        // Две клетки от места встречи — вне рамки 3×3 по построению.
+        sm::lease_window_at(gs, sm::cell_of(14, 14, gs.mapW));
+        CHECK(!sm::cell_is_leased(gs, sm::cell_of(10, 10, gs.mapW)),
+              "фикстура: клетка встречи вне арендованной рамки");
+        drive(gs, w, rt, 3);
+        CHECK(sm::macro_dead(sm::store_of(w), b)
+                  || container_count(w, gs, 2u) == 0,
+              "за рамкой мир дерётся, пока игрок внизу: купец пал или его "
+              "состав выбит");
+        (void)a;
+    }
 }
 
 // The wandering-tsar seed: any leader that wins fights levels by the same
@@ -611,7 +664,7 @@ int main() {
     test_the_leaders_training_reads_at_the_new_doors();
     test_the_weak_flee_and_fighters_pursue();
     test_neutral_squads_ignore_each_other();
-    test_no_auto_battle_when_the_ground_owns_the_fight();
+    test_a_meeting_in_the_leased_window_is_not_resolved_upstairs();
     test_a_victorious_leader_levels();
     test_player_auto_resolve_settles_through_the_same_doors();
     test_spawn_squad_is_one_spec_one_door();

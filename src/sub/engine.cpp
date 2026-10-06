@@ -853,6 +853,21 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
                      float(kCellSize) * 0.5f, FactKind::Explored,
                      worked_read(gs, cf.x, cf.y));
     }
+    // ── СЦЕНА СДАЁТ МИРУ АРЕНДУ ОКНА (AGENTS ЗАКОН ШВА, M-226) ─────────
+    // Последним действием входа: окно собрано, центр установлен, значит мир
+    // вправе узнать, какие девять клеток с этой секунды ведёт субмир.
+    lease_window_here_();
+}
+
+// АРЕНДА — ОДНО ЧИСЛО, И СЦЕНА НАЗЫВАЕТ ЕГО ОДНИМ МЕСТОМ. Зовётся на входе
+// и на РЕ-ЦЕНТРЕ: для мира смещение рамки есть тот же конец аренды и начало
+// новой, поэтому второй двери у ре-центра нет (вердикт владельца 2026-10-06:
+// «смещение клетки рамки это смена аренды»). Центр берётся у менеджера шва —
+// он единственный, кто знает, где рамка стоит сейчас.
+void SubworldEngine::lease_window_here_() {
+    if (!gs_) return;
+    lease_window_at(*gs_, cell_of(mgr_.center_cx(), mgr_.center_cy(),
+                                  gs_->mapW));
 }
 
 void SubworldEngine::sync_macro_player_to_center() {
@@ -1528,6 +1543,10 @@ void SubworldEngine::spawn_all_cells() {
 // vanishes; only the far cells that actually left do.
 void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
     refresh_window_step_weights();
+    // РЕ-ЦЕНТР ЕСТЬ СМЕНА АРЕНДЫ, а не отдельное событие: прежние девять
+    // клеток мир забирает назад (и это один из двух равноправных концов
+    // аренды), новые сдаёт — ТОЙ ЖЕ дверью.
+    lease_window_here_();
     if (!ecs_) return;
     rebase_subworld_entities(*ecs_,
         float(-dx * kCellSize), float(-dy * kCellSize));
@@ -3583,6 +3602,11 @@ void SubworldEngine::leave(bool force) {
         // into the macro world.
         clear_player_entity();
     }
+    // ── АРЕНДА СНЯТА: ПОДЪЁМ — ВТОРОЙ ИЗ ДВУХ РАВНОПРАВНЫХ КОНЦОВ ───────
+    // Снимается ДО обнуления `gs_`: после него двери некого спросить. С
+    // этого числа мир снова ведёт те девять клеток сам — решает за них бой
+    // и жнёт их мёртвые записи.
+    if (gs_) release_window(*gs_);
     active_ = false;
     pendingUpload3d_ = {};
     sceneKind_ = SceneKind::Overworld;
@@ -3830,6 +3854,13 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     active_ = true;
     pendingUpload3d_ = {};
     structIndexDirty_ = true;
+    // ── ДАНЖ: АРЕНДЫ НЕТ, И ЭТО ЗНАЧЕНИЕ, А НЕ ВЕТКА ───────────────────
+    // Данж вне мира технически (ЗАКОН ДВУХ МИРОВ п.4): окна 3×3 у него нет
+    // вовсе, значит и девяти клеток он не ведёт — мир работает над ними
+    // штатно, как велел владелец («данж частный случай когда арендованой
+    // клетки нет всё должно работать нормально»). Снимается ТОЙ ЖЕ дверью,
+    // что на подъёме: у «аренды нет» одно значение, а не два.
+    if (gs_) release_window(*gs_);
 
     // The player materialises on the threshold they came in by. A shaft
     // arrival lands where the MODULE says that shaft tops/bottoms out

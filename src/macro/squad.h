@@ -368,11 +368,30 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
 // check reg.valid; MacroDebt receipts and possession resolve spawn ordinals
 // through scans that simply find nothing; find_creatures fails to a no-op).
 //
-// A creatures the pool REFUSED keeps its entity — the dead lord's band stands
-// until the drain takes the men (its own contract: nobody is destroyed for
-// standing past a cap, CANON S26). The player's squad is never swept: his
-// death is a game-over screen, not a disappearance. Returns how many left
-// the map.
+// The player's squad is never swept: his death is a game-over screen, not a
+// disappearance. Returns how many left the map.
+//
+// ЗДЕСЬ СТОЯЛ АБЗАЦ ПРО «РОСТЕР, КОТОРОМУ ПУЛ ОТКАЗАЛ»: мёртвый сквад стоял,
+// пока слив не увёл его людей, потому что пул мог упереться в кап. Слив умер
+// 2026-10-06 (M-228): существа ГИБНУТ, приёмника нет, значит и отказа нет —
+// область пуста с первого прохода.
+//
+// ── ГЕЙТ АРЕНДЫ: ДЕВЯТЬ КЛЕТОК ОКНА СВИП НЕ ТРОГАЕТ (M-226) ─────────────
+// AGENTS ЗАКОН ШВА: пока игрок внизу, эти клетки ведёт СУБМИР ОДИН, и жать
+// их записи наверху значило бы завести второго писателя. Практическая цена
+// отсутствия гейта была измерена: со смертью существ (M-228) гейт
+// `creatures_empty` перестал держать слот, и запись павшего жилась ровно
+// ОДИН макро-тик — подобрать с трупа было нечего.
+//
+// СРОК ЖИЗНИ ЗАПИСИ ЕСТЬ АРЕНДА, А НЕ КАЛЕНДАРЬ (CANON S10): сезонный
+// чистильщик мёртвых анкет НЕ заводится — он был бы вторым законом жизни
+// записи (DOD п.6) и сделал бы доступность лута функцией календаря. Конец
+// аренды — подъём или ре-центр рамки, оба равноправны — и есть тот момент,
+// когда неподобранное сворачивается в казну стоимостью.
+//
+// ИЗЪЯТИЕ АДРЕСУЕТСЯ КЛЕТКАМИ, НИКОГДА РОДОМ СЦЕНЫ: `cell_is_leased` читает
+// ОДНО число мира, а рамку строит `cell_step` по восьми румбам (ЗАКОН
+// АДРЕСА). Флага «игрок внизу» у свипа нет и быть не должно.
 inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
                                      std::int64_t* lootPoolValue = nullptr) {
     // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
@@ -391,7 +410,8 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
         [&](std::uint16_t slot) {
             return st.dead[slot] != 0
                 && st.spawnId[slot].index != ecs::kPlayerSquadOrdinal
-                && !(flagLive && slot == flag.slot);
+                && !(flagLive && slot == flag.slot)
+                && !cell_is_leased(gs, st.cell[slot].idx);
         });
     int swept = 0;
     for (const SquadWalkEntry& sw : snapshot) {

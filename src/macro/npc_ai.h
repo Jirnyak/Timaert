@@ -109,12 +109,19 @@ struct TickContext {
     float           playerX = 0.0f;
     float           playerY = 0.0f;
     // Squad↔squad perception (Session 15). `mw.world` + `squads` let a
-    // behaviour see the OTHER squads; `allowAutoBattle` gates the meeting's
-    // resolution — the map path fights, the underground drive only perceives,
-    // because squads standing in the player's 3×3 window may have LIVE
-    // projected bodies whose fight belongs to the ground, not to the resolver.
+    // behaviour see the OTHER squads.
+    //
+    // ЗДЕСЬ СТОЯЛ `allowAutoBattle` — ГЛОБАЛЬНЫЙ ФЛАГ, И ОН УМЕР (M-226,
+    // вердикт владельца 2026-10-06: «это плохо нельзя отклюячать автобой во
+    // всём мире толкьо в этих 3х3 клетках»). Он гасил резолв встреч ВО ВСЁМ
+    // МИРЕ, пока игрок внизу, — то есть ровно та форма, которую ЗАКОН ДВУХ
+    // ТЕМПОВ п.5 называет признаком нарушения: «глобальный флаг,
+    // выключающий систему макромира (вместо изъятия по девяти клеткам)».
+    // Теперь изъятие адресуется КЛЕТКАМИ: встреча не решается наверху, если
+    // её клетка В АРЕНДЕ у субмира (`cell_is_leased@src/macro/state.h`), а
+    // за рамкой мир дерётся как всегда. Второго числа для этого не
+    // понадобилось — аренда есть одно поле мира.
     const SquadIndex* squads = nullptr;
-    bool              allowAutoBattle = true;
     // СЛОТЫ ИГРОКА, резолв один раз на свип (1е): «кем я на карте» (флажок,
     // вселение двигает) и родной сквад (зарезервированный ординал). Читатели
     // — гейты встреч и исключение свипа; до смерти тегов заполняются из
@@ -365,8 +372,7 @@ int provision_squad(Inventory& store, Inventory& bag, int soldiers,
 // envelope must carry at least `gs` and `world`; every other layer is an
 // optional contribution (see TickContext above).
 void tick_macro_npc_ai(MacroWorld& mw,
-                       MacroNpcAiRuntime& runtime, std::uint64_t ticks,
-                       bool allowAutoBattle = true);
+                       MacroNpcAiRuntime& runtime, std::uint64_t ticks);
 
 // Smooth macro NPC render positions toward their logical cell positions.
 // Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
@@ -378,7 +384,6 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt);
 // pace of the day it is actually living through.
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     MacroWorld& mw,
-    MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
-    bool allowAutoBattle = false);
+    MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks);
 
 } // namespace sm
