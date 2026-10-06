@@ -64,9 +64,10 @@ struct DayAccum {
     // потерявшее сто душ, выглядят одинаково. Эти четыре величины и есть
     // разница между «мир умирает» и «мир переливается».
     long long soulsBorn = 0;
-    int crewsUnfed = 0;          // артелей провалило окно по ХАРЧУ...
-    long long soulsUnfed = 0;    // ...и сколько душ из них ушло
-    int crewsUnpaid = 0;         // то же по ПЛАТЕ
+    // (`crewsUnfed`/`soulsUnfed` УМЕРЛИ 2026-10-06, M-232: исхода «ушёл за
+    // харч» в мире больше нет — некормленные умирают и попадают в
+    // `starvedPops` выше, той же строкой, которой говорит голод места.)
+    int crewsUnpaid = 0;         // контейнеров провалило окно по ПЛАТЕ
     long long soulsUnpaid = 0;
     // ЕДИНСТВЕННАЯ БОЕВАЯ УБЫЛЬ (M-228): души, погибшие с павшим сквадом.
     // До 2026-10-06 они не умирали, а переезжали в пул дезертиров, и
@@ -102,10 +103,6 @@ void econ_fact_sink(void* user, const sm::EconFact& f) {
         // поэтому здесь считаются ОБЕ величины: артели фактами, души суммой.
         case sm::EconFact::Kind::SoulsBorn:
             a->soulsBorn += f.amount;
-            break;
-        case sm::EconFact::Kind::SoulsDesertedUnfed:
-            a->crewsUnfed += 1;
-            a->soulsUnfed += f.amount;
             break;
         case sm::EconFact::Kind::SoulsDesertedUnpaid:
             a->crewsUnpaid += 1;
@@ -299,7 +296,7 @@ int main(int argc, char** argv) {
                          "\tsoulsHomed\tsoulsFree\tsoulsGarr\tsoulsPool"
                          "\tsoulsWorld"
                          // Потоки дня (ведомость склада душ, econ_day.h).
-                         "\tsoulsBorn\tcrewsUnfed\tsoulsUnfed"
+                         "\tsoulsBorn"
                          "\tcrewsUnpaid\tsoulsUnpaid\tsoulsKilled");
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             const char* id = sm::kCommodities[c].id;
@@ -557,12 +554,12 @@ int main(int argc, char** argv) {
             // рано или поздно складывается по-разному.
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld"
                              "\t%lld\t%lld\t%lld\t%lld\t%lld"
-                             "\t%lld\t%d\t%lld\t%d\t%lld\t%lld",
+                             "\t%lld\t%d\t%lld\t%lld",
                          popCity, popVil, popLair, popElse,
                          soulsHomed, soulsFree, soulsGarr, soulsPool,
                          popTotal + soulsHomed + soulsFree + soulsGarr
                              + soulsPool,
-                         accum.soulsBorn, accum.crewsUnfed, accum.soulsUnfed,
+                         accum.soulsBorn,
                          accum.crewsUnpaid, accum.soulsUnpaid,
                          accum.soulsKilled);
             for (int c = 0; c < sm::kCommodityCount; ++c) {

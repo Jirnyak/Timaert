@@ -15,6 +15,7 @@
 #include "macro/place_birth.h"  // birth_place — место родится ТЕЛОМ
 #include "macro/world_row.h"
 #include "macro/npc_ai.h"   // squad_season_window — THE boundary window
+#include "macro/upkeep_window.h"   // upkeep_season_window — сама дверь суда
 #include "macro/world_tick.h"
 #include "macro/player_entity.h"
 #include "macro/macro_world.h"
@@ -73,6 +74,55 @@ void test_day_rollover_queues_budgeted_daily_tick() {
           "midnight queues exactly one daily tick, named by the day it starts");
     CHECK(gs.player.ageDays == 1000,
           "queueing daily work does not perform it: the clock only queues");
+}
+
+// ДВЕ ДОЛИ НЕЗАВИСИМЫ, И ЭТО РАЗЛИЧИМО ТОЛЬКО КОГДА ОНИ РАЗНЫЕ И ОБЕ
+// НЕНУЛЕВЫЕ (M-232). Свидетели ниже, гоняющие полный день, такого состояния
+// не создают: у них либо непокрыто ВСЁ (доли равны 1.0), либо покрыт харч
+// (доля еды 0). Отменённая формула «берётся ХУДШАЯ из двух долей» проходила
+// их ЗЕЛЁНОЙ — поймано мутацией, и поэтому здесь стоит прямой суд над
+// дверью, с долями 1/2 по харчу и 1/4 по плате.
+//
+// Долги выставляются ПРЯМО: это ВХОД судимой функции, а не подделка
+// состояния мира, и другого способа получить ЧАСТИЧНУЮ недоимку у двери нет
+// — её рождает только сезон, оплаченный наполовину.
+void test_the_two_shares_are_independent() {
+    sm::Inventory store{};
+    for (std::uint32_t i = 0; i < 4; ++i) {
+        sm::creatures_push(store, sm::make_soldier(
+            static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 300u + i));
+    }
+    CHECK(sm::creature_count(store) == 4, "фикстура: четыре души в составе");
+    const sm::UpkeepBill bill = sm::upkeep_bill(store);
+    CHECK(bill.board > 0 && bill.wage > 0,
+          "фикстура: строка Guard несёт И рацион, И жалованье — без этого "
+          "две доли неразличимы по построению");
+
+    sm::Upkeep r{};
+    const int boardOrd = sm::hunger_commodity_ordinal();
+    CHECK(boardOrd >= 0, "фикстура: у мира есть голодная строка");
+    r.needDebt[boardOrd] = std::int32_t(bill.board / 2);   // харч: половина
+    r.wageDebt = bill.wage / 4;                            // плата: четверть
+
+    sm::Inventory pool{};
+    std::int64_t burned = 0;
+    const sm::UpkeepWindowOutcome out = sm::upkeep_season_window(
+        r, store, pool, burned, nullptr, nullptr);
+
+    CHECK(out.starved == 2,
+          "половина непокрытого харча = половина состава УМЕРЛА (4 × 1/2)");
+    CHECK(out.walked == 1,
+          "четверть непокрытой платы = четверть состава УШЛА (4 × 1/4), и "
+          "доля взята от состава ДО убыли, а не от остатка");
+    CHECK(sm::creature_count(pool) == 1,
+          "в пул легли ТОЛЬКО неоплаченные — умершие из мира ушли совсем");
+    CHECK(sm::creature_count(store) == 1,
+          "сохранение: 4 = 2 умерли + 1 ушёл + 1 остался");
+    // НЕГАТИВНЫЙ КОНТРОЛЬ ОТМЕНЁННОЙ ФОРМУЛЫ: «худшая из двух долей» дала бы
+    // ОДИН исход на обе причины — 2 ушедших в пул и НОЛЬ умерших.
+    CHECK(!(out.starved == 0 && out.walked == 2),
+          "формула «худшая доля» отменена вердиктом 2026-09-22: один исход "
+          "на две причины стирал разницу «мир потерял» и «сменил хозяина»");
 }
 
 void test_daily_processing_applies_player_upkeep_and_age() {
@@ -160,17 +210,52 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     CHECK(gs.lootPoolValue == 5,
           "уплаченная часть платы сгорает в пул лута, как и полная");
 
-    // ВТОРАЯ граница, кошелёк пуст: счёт не погашен почти целиком, и
-    // уходит ровно ЭТА доля контейнера — не восьмая и не «хотя бы один».
+    // ── ВТОРАЯ граница, кошелёк пуст: НЕ ПОКРЫТО НИЧЕГО ─────────────────
+    // ДВЕ НУЖДЫ — ДВА ИСХОДА (M-232, вердикт владельца 2026-09-22: «еда
+    // голод смерть пропорционально / неуплата дезертирство пропорционально»;
+    // 2026-10-06 ещё прямее: «ЕСЛИ НЕТ ЖАЛОВАНИЯ ДЕЗЕРТИРСТВО ЕСЛИ НЕТ ЕДЫ
+    // УМЕР»). Здесь свидетель утверждал, что при пустом кошельке весь
+    // контейнер ложится В ПУЛ ДЕЗЕРТИРОВ — он охранял ровно тот исход,
+    // которого по закону нет, и у него умер НОСИТЕЛЬ (AGENTS §5 п.6).
+    //
+    // При обеих долях = 1.0 независимость физически невозможна (у тела одна
+    // судьба), и ничья разрешена в пользу СМЕРТИ: мёртвый не дезертирует.
+    // Проверка «пул не вырос» — негативный контроль старого закона.
     const int creatures = sm::creature_count(*army);
     CHECK(creatures >= 2, "негативный контроль: контейнеру есть кого терять");
     const int walked = sm::squad_season_window(mw, 65);
-    CHECK(walked > 0, "неоплаченный сезон стоит людей");
-    CHECK(walked == creatures,
-          "ушла ВСЯ доля неоплаченного — при пустом кошельке это весь "
+    CHECK(walked == 0,
+          "за ХАРЧ не уходят: при непокрытой еде доля УМИРАЕТ, и уход за "
+          "плату получает уже пустой контейнер");
+    CHECK(sm::creature_count(*army) == 0,
+          "ушла ВСЯ доля непокрытого — при пустом кошельке это весь "
           "контейнер, а не назначенная восьмая");
-    CHECK(sm::creature_count(gs.deserterPool) == poolBefore + walked,
-          "ушедшие легли в пул дезертиров");
+    CHECK(sm::creature_count(gs.deserterPool) == poolBefore,
+          "НЕГАТИВНЫЙ КОНТРОЛЬ (M-232): некормленные УМЕРЛИ — из мира они "
+          "ушли совсем, а не сменили хозяина");
+
+    // ── ХАРЧ ПОКРЫТ, ПЛАТА НЕТ: ВТОРАЯ ПОЛОВИНА ЗАКОНА ──────────────────
+    // Это и есть различие, которого прежний свидетель не проверял вовсе:
+    // один и тот же суд обязан дать РАЗНЫЕ исходы двум строкам счёта.
+    {
+        sm::creatures_push(*army, sm::make_soldier(
+            static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 91u));
+        sm::Inventory* p = sm::player_inventory(gs, *worldStore_);
+        p->add("food", sm::kDaysPerSeason);          // харч — есть
+        const int heads = sm::creature_count(*army);
+        const int poolWas = sm::creature_count(gs.deserterPool);
+        CHECK(heads == 1 && p->count("coin_empire_copper") == 0,
+              "фикстура: один человек, харч на сезон, монет НОЛЬ");
+        // Граница выписывает счёт и гасит харч; плату гасить нечем.
+        CHECK(sm::squad_season_window(mw, 97) == 0,
+              "граница, выписавшая счёт, не взыскивает его же");
+        const int left = sm::squad_season_window(mw, 129);
+        CHECK(left == 1 && sm::creature_count(*army) == 0,
+              "за НЕВЫПЛАТУ человек УХОДИТ, а не умирает");
+        CHECK(sm::creature_count(gs.deserterPool) == poolWas + 1,
+              "и ложится он именно в пул дезертиров — единственный законный "
+              "путь туда");
+    }
 
     // ПОКРЫТЫЙ сезон: вернуть душу, дать харч и плату — счёт гасится
     // целиком, и следующая граница не уводит никого.
@@ -180,7 +265,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     purse->add("food", sm::kDaysPerSeason);
     purse->add("coin_empire_copper", wageSeason);
     const std::int64_t burnedBefore = gs.lootPoolValue;
-    CHECK(sm::squad_season_window(mw, 97) == 0,
+    CHECK(sm::squad_season_window(mw, 161) == 0,
           "покрытый сезон не уводит никого");
     CHECK(purse->count("food") == 0,
           "покрытый сезон съедает харч сезона разом");
@@ -471,6 +556,7 @@ int main() {
     test_many_small_advances_equal_one_big_one();
     test_subworld_steps_lose_nothing_when_split();
     test_day_rollover_queues_budgeted_daily_tick();
+    test_the_two_shares_are_independent();
     test_daily_processing_applies_player_upkeep_and_age();
     test_a_famine_is_recorded_once_when_it_begins();
     test_population_dies_honestly_to_zero();

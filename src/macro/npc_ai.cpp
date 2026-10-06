@@ -3587,10 +3587,25 @@ int squad_season_window(MacroWorld& mw, int day) {
         // провалившая окно, поэтому слушатель считает и артели (числом
         // фактов), и души (суммой). Адрес — ДОМ артели: по канону S9 это
         // его ресурс ушёл, а не «мировой».
+        //
+        // ДВЕ ПРИЧИНЫ — ДВА ФАКТА, И ОНИ НЕ АЛЬТЕРНАТИВА (M-232). Здесь
+        // стоял тернарник по ярлыку `byWage`: ОДИН факт на две причины, и
+        // при равных долях он называл полный провал «не кормлен». Теперь
+        // голодная смерть говорит `Starved` — ТОЙ ЖЕ строкой, которой
+        // говорит голод места, потому что это одно событие мира, — а уход
+        // за неоплату говорит `SoulsDesertedUnpaid`. Строка
+        // `SoulsDesertedUnfed` умерла: у «не кормлен» больше нет исхода
+        // «ушёл».
+        if (out.starved > 0 && mw.econFacts) {
+            EconFact f{};
+            f.kind = EconFact::Kind::Starved;
+            f.amount = out.starved;
+            f.landmarkId = rt.homeSettlementId;
+            mw.econFacts(mw.econFactsUser, f);
+        }
         if (out.walked > 0 && mw.econFacts) {
             EconFact f{};
-            f.kind = out.byWage ? EconFact::Kind::SoulsDesertedUnpaid
-                                : EconFact::Kind::SoulsDesertedUnfed;
+            f.kind = EconFact::Kind::SoulsDesertedUnpaid;
             f.amount = out.walked;
             f.landmarkId = rt.homeSettlementId;
             mw.econFacts(mw.econFactsUser, f);
