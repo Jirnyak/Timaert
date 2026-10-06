@@ -873,7 +873,6 @@ jopus_prompts.md	world_tick.cpp:190-193
 jopus_prompts.md	world_tick.h:38-42
 jopus_prompts.md	zones.cpp:123
 macro-registry.md	:103
-macro-registry.md	:1038
 macro-registry.md	:113-135
 macro-registry.md	:114
 macro-registry.md	:1146
@@ -911,7 +910,6 @@ macro-registry.md	:3031
 macro-registry.md	:304
 macro-registry.md	:322-349
 macro-registry.md	:3244
-macro-registry.md	:3496
 macro-registry.md	:3581
 macro-registry.md	:3585
 macro-registry.md	:362
@@ -928,7 +926,6 @@ macro-registry.md	:490
 macro-registry.md	:507
 macro-registry.md	:513
 macro-registry.md	:514
-macro-registry.md	:5243
 macro-registry.md	:550
 macro-registry.md	:575
 macro-registry.md	:592
@@ -1071,7 +1068,6 @@ macro-registry.md	npc_ai.cpp:2978
 macro-registry.md	npc_ai.cpp:2999-3012
 macro-registry.md	npc_ai.cpp:3113-3115
 macro-registry.md	npc_ai.cpp:3508-3514
-macro-registry.md	npc_ai.cpp:3535
 macro-registry.md	npc_ai.cpp:3556-3596
 macro-registry.md	npc_ai.cpp:3580
 macro-registry.md	npc_ai.cpp:383
@@ -1112,7 +1108,6 @@ macro-registry.md	squad.h:189
 macro-registry.md	squad.h:199
 macro-registry.md	squad.h:829
 macro-registry.md	squad.h:836
-macro-registry.md	squad.h:916
 macro-registry.md	squad.h:932
 macro-registry.md	state.cpp:209
 macro-registry.md	state.h:966
@@ -1127,7 +1122,6 @@ macro-registry.md	sub/engine.cpp:2248
 macro-registry.md	sub/engine.cpp:2314
 macro-registry.md	sub/engine.cpp:2583-2590
 macro-registry.md	sub/engine.cpp:2663
-macro-registry.md	sub/engine.cpp:3317
 macro-registry.md	sub/engine.cpp:4355
 macro-registry.md	sub/map_data.h:424
 macro-registry.md	sub/spawn.cpp:1507

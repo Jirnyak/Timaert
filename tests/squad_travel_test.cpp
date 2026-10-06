@@ -286,9 +286,9 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         CHECK(!std_.valid(eh),
               "an ocean the bar cannot pay kills, and the dead squad leaves "
               "the map: there is no Resting at sea and no corpse-row after");
-        CHECK(creature_heads(gs.deserterPool) == 2,
-              "the drowned lord's men settled by the standing dead-leader "
-              "rule");
+        CHECK(creature_heads(gs.deserterPool) == 0,
+              "утонувший лорд утопил и своих людей: павшие ГИБНУТ, а в пул "
+              "дезертиров идёт только неоплата сезона (M-228)");
     }
 }
 

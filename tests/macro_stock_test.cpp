@@ -345,37 +345,68 @@ void test_the_roster_row_pays_by_name() {
     (void)other;
 }
 
-// Owner ruling 3: the survivors of a dead leader become deserters — once,
-// when the fight ends, and never from a squad whose leader still stands.
-void test_dead_leader_squads_fall_into_the_pool() {
+// ПАВШИЙ СКВАД ГИБНЕТ ЦЕЛИКОМ, И СУДЬБА У ВСЕХ ОДНА (M-228, вердикт
+// владельца 2026-10-06: «тупо уничтожение… не важно кто умер и умер всё
+// никаких»; закон назван ещё 2026-09-21 — CANON S9 п.6 «при бое убитый сквад
+// не должен идти в дезертиры он погибает»).
+//
+// Здесь стоял свидетель ОБРАТНОГО закона — «уцелевшие падают в пул
+// дезертиров». У него умер НОСИТЕЛЬ (AGENTS §5 п.6), и подгонять его было
+// нельзя: он охранял второй источник пула, которого по канону не существует.
+//
+// Пинится ровно то, что РАЗЛИЧАЕТ новый закон от старого, и обе половины:
+//   · гибнут ВСЕ головы, включая зверя — ветки по роду убитого нет ни одной;
+//   · ведомость склада душ считает ПАСТВУ, поэтому зверь в её число не
+//     входит; это не ветка судьбы, а единица учёта (econ_day.h SoulsKilled).
+// «Пул не вырос» — негативный контроль сноса: верни слив, и он краснеет.
+void test_the_fallen_squads_creatures_die() {
     using namespace sm;
     ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
     const auto fallen = make_squad(world, 10, {1u, 2u});
+    // ЗВЕРЬ В ТОМ ЖЕ КОНТЕЙНЕРЕ: свидетель рождает своё предусловие сам
+    // (AGENTS §8 п.11) — без него «одна судьба на всех» нечем проверить.
+    sm::creatures_push_stack(sm::store_of(world).inventory[fallen.slot].inv,
+                             NPCType::Horse, 1, 1);
     make_squad(world, 11, {3u});
     sm::macro_mark_dead(sm::store_of(world), fallen);
 
-    // ДВЕРЬ ТЕПЕРЬ ТРЕБУЕТ МИР (v122), и это не удобство, а закон: душа,
-    // ушедшая в пул, ПОКИНУЛА паству своего дома, и число фичи обязано
-    // упасть (leave_home_flock). Пул живёт в мире, а не рядом с ним.
-    // GameState на КУЧЕ: он ~0.84 МиБ (грабля ломтика C).
+    // ДВЕРЬ ТРЕБУЕТ МИР (v122), и это не удобство, а закон: погибшая душа
+    // ПОКИНУЛА паству своего дома, и число фичи обязано упасть
+    // (leave_home_flock). GameState на КУЧЕ: он ~0.84 МиБ (грабля ломтика C).
     auto gsp = std::make_unique<sm::GameState>();
     sm::GameState& gs = *gsp;
     Inventory& pool = gs.deserterPool;
-    CHECK(drain_dead_leader_squads(sm::store_of(world), gs) == 2,
-          "the dead leader's survivors walk away, all of them");
-    CHECK(creature_heads(pool) == 2,
-          "and they land in the deserter pool");
+
+    struct Tally { int souls = 0; int reports = 0; } tally;
+    const EconFactSink sink = [](void* u, const EconFact& f) {
+        if (f.kind != EconFact::Kind::SoulsKilled) return;
+        auto* t = static_cast<Tally*>(u);
+        t->souls += f.amount;
+        ++t->reports;
+    };
+
+    CHECK(kill_fallen_squad_creatures(sm::store_of(world), gs, sink, &tally)
+              == 3,
+          "гибнут ВСЕ головы павшего — два человека И конь, без ветки по роду");
+    CHECK(creature_heads(pool) == 0,
+          "НЕГАТИВНЫЙ КОНТРОЛЬ (M-228): павшие НЕ дезертируют — пул не вырос "
+          "ни на одну голову");
+    CHECK(tally.souls == 2 && tally.reports == 1,
+          "ведомость склада душ назвала смерть ОДНИМ фактом и в ДУШАХ: конь "
+          "паствой не был");
     MacroWorld w{.world = &world, .store = &sm::store_of(world)};
     CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{10, 0, 0}) == 0,
-          "the faceless squad is emptied: nothing left to pay twice");
+          "контейнер павшего пуст: платить второй раз не из чего");
     CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{11, 0, 0}) == 1,
           "a live leader keeps his men");
 
-    CHECK(drain_dead_leader_squads(sm::store_of(world), gs) == 0
-              && creature_heads(pool) == 2,
-          "draining again pays nothing: the pool is never billed twice");
+    CHECK(kill_fallen_squad_creatures(sm::store_of(world), gs, sink, &tally)
+                  == 0
+              && tally.reports == 1,
+          "второй проход не убивает никого и НЕ докладывает: мёртвых дважды "
+          "не считают");
 }
 
 // The Trees row is a CARRIER row (resource_field.h): its live state is the
@@ -493,7 +524,7 @@ int main() {
     test_debts_bill_their_own_subject();
     test_malformed_receipts_do_nothing();
     test_the_roster_row_pays_by_name();
-    test_dead_leader_squads_fall_into_the_pool();
+    test_the_fallen_squads_creatures_die();
     test_trees_are_a_carrier_row();
     test_deposits_are_carrier_rows();
     return sm::test::report("macro_stock_test");

@@ -13,7 +13,7 @@
 // Like sub/movement.h this is a PURE law: it computes who won and who fell and
 // touches nothing. The CALLER settles the world — roster rows through the
 // macro-stock roster row, the leader through the tracked-death path, the
-// survivors of a dead leader through drain_dead_leader_squads, loot and XP
+// creatures of a dead leader through kill_fallen_squad_creatures, loot and XP
 // through their one registries — so the auto-battle and the fought battle
 // pay their debts through the very same doors.
 //

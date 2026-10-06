@@ -3168,7 +3168,9 @@ void settle_exhaustion(MacroHandle e, const MacroPos& p,
     if (hp.hp <= 0 && ctx.mw.world && ctx.mw.gs) {
         MacroStore& st = store_ctx(ctx);
         settle_leader_fraction(st, e, 0.0f);
-        drain_dead_leader_squads(st, *ctx.mw.gs);
+        kill_fallen_squad_creatures(st, *ctx.mw.gs,
+                                    ctx.mw.econFacts,
+                                    ctx.mw.econFactsUser);
     }
 }
 
@@ -4813,7 +4815,8 @@ namespace {
 void settle_dead_squads(MacroWorld& mw) {
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
-    drain_dead_leader_squads(store_of(w), gs);
+    kill_fallen_squad_creatures(store_of(w), gs,
+                                mw.econFacts, mw.econFactsUser);
     destroy_dead_macro_squads(store_of(w), gs, &gs.lootPoolValue);
 }
 

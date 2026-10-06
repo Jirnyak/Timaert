@@ -11,6 +11,7 @@
 #include "core/rng.h"
 #include <cstdio>
 #include "macro/currency.h"
+#include "macro/econ_day.h"   // EconFact/EconFactSink — ведомость склада душ
 #include "macro/landmark_registry.h"
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
@@ -240,15 +241,39 @@ inline void set_place_kind(GameState& gs, MacroStore& st, std::uint16_t slot,
     ++gs.navEpoch;
 }
 
-// Owner ruling 3 (CANON S4/S13 (бывший macrosim.md)): kill the leader and the squad lives on,
-// FACELESS, until the fight ends — only then do the survivors stop being a
-// squad and fall into the deserter pool, out of which the macro sim later
-// raises deserter and bandit bands. "The fight ends" is the caller's word:
-// the subworld says it on leave(), the auto-resolve will say it when its
-// battle settles. Sweeps every squad whose leader is Dead but whose roster
-// still holds members; a live leader's squad is never touched, and a swept
-// roster is emptied so the pool can never be paid twice for the same men.
-// Returns how many soldiers walked away.
+// ПАВШИЙ СКВАД ГИБНЕТ ЦЕЛИКОМ — ОДНА СУДЬБА, НИ ОДНОЙ ВЕТКИ ПО РОДУ (M-228).
+//
+// Здесь стоял СЛИВ УЦЕЛЕВШИХ В ПУЛ ДЕЗЕРТИРОВ (owner ruling 3, CANON S4/S13):
+// лидер падал, сквад жил БЕЗЛИКИМ до конца боя, и затем его люди «перестают
+// быть сквадом» и уезжают в пул, из которого мир поднимал банды. Слив умер по
+// трём причинам, и все три названы:
+//   1. ЗАКОН ЭТОГО ЗАПРЕЩАЛ С 2026-09-21 (CANON S9 п.6, дословно: «при бое
+//      убитый сквад не должен идти в дезертиры он погибает»): у пула ровно
+//      один законный источник — неоплата на границе сезона, — а слив был
+//      ВТОРЫМ, и жил рядом с запретом полмесяца;
+//   2. РАЗГРУЗКИ У ПУЛА НЕТ С ТОГО ЖЕ ДНЯ (`raise_deserter_bands` вырезана,
+//      npc_spawn.h), то есть «из которого мир поднимает банды» было ложью
+//      шапки: души уезжали в контейнер без оттока и копились там навсегда;
+//   3. ВЕРДИКТ ВЛАДЕЛЬЦА 2026-10-06 выбрал гибель прямо: «да давай пока тупо
+//      уничтожение мы же потом всегда сможем расширить?»; «просто убрать всё
+//      это просто универсально не важно кто умер и умер всё никаких».
+//
+// ЧТО ДЕЛАЕТ ЭТА ДВЕРЬ. Обходит каждый сквад, чей лидер мёртв, и УНИЧТОЖАЕТ
+// его область существ целиком (`creatures_kill_all`), списывая паству дома на
+// погибшие ДУШИ и докладывая их же в ведомость склада душ
+// (`EconFact::Kind::SoulsKilled`). Сквад с живым лидером не трогается.
+// Возвращает погибшие ГОЛОВЫ — любого рода.
+//
+// ПОЧЕМУ ОТКАЗА БОЛЬШЕ НЕТ: прежний слив мог упереться в кап слотов пула, и
+// тогда души ОСТАВАЛИСЬ стоять в мёртвом скваде до следующего тика. У смерти
+// приёмника нет, значит нет и капа: область пуста с первого прохода.
+//
+// ГДЕ ВЕДОМОСТЬ МОЛЧИТ, И ЭТО НАЗВАНО: `sink` есть у четырёх звонящих из
+// шести — у всех, кто держит `MacroWorld`. Два пути субмира
+// (`SubworldEngine::resolve_subworld_deaths`, `::leave`) своего канала фактов
+// не имеют и передают nullptr: наверх субмир отчитывается ДЕЛЬТОЙ, а не
+// макро-фактами (ЗАКОН ШВА). Это предел доклада, а не предел закона —
+// существа гибнут одинаково на всех шести путях.
 // ── ДУША ПОКИНУЛА ПАСТВУ СВОЕГО ДОМА (переворот населения, v122) ──────────
 // Паства поселения — worked-ЧИСЛО его фичи, и она считает ВСЕХ своих: и тех,
 // кто стоит дома головой в инвентаре, и тех, кто ушёл в поле сквадом. Отсюда
@@ -275,17 +300,20 @@ inline void leave_home_flock(GameState& gs, const MacroStore& st,
     worked_write(gs, x, y, std::max(0, worked_read(gs, x, y) - souls));
 }
 
-inline int drain_dead_leader_squads(MacroStore& st, GameState& gs) {
-    Inventory& deserterPool = gs.deserterPool;
-    int moved = 0;
-    // The player's own squad never deserts wholesale: he is not a leader whose
-    // men wander off when he falls, and losing his roster into the pool would
-    // be silent — его ординал — колонка (kPlayerSquadOrdinal), тот же
-    // предикат, каким владение листом узнаёт сквад игрока (sheet_owned_at).
+inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
+                                      EconFactSink sink = nullptr,
+                                      void* user = nullptr) {
+    int killed = 0;
+    int souls = 0;
+    // The player's own squad is never swept: он не лидер, чьи люди уходят,
+    // когда он падает, — его ординал есть КОЛОНКА (kPlayerSquadOrdinal), тот
+    // же предикат, каким владение листом узнаёт сквад игрока (sheet_owned_at).
+    // Это вопрос «ЧЬЯ ЭТО ЗАПИСЬ», а не «кто умер», поэтому веткой по роду
+    // убитого он не является и вердикт «не важно кто умер» его не касается.
     // Существа живут в ЕДИНОМ контейнере сквада (M-71).
-    // Порядок слива — закон (squad_walk.h): пул принимает души слотами, и
-    // «чьи люди легли первыми» не должно зависеть от кишки хранилища. Вектор
-    // пуст почти каждый тик (смерть — редкое событие), аллокации нет.
+    // Порядок обхода — закон (squad_walk.h): «чьи люди легли первыми» не
+    // должно зависеть от кишки хранилища. Вектор пуст почти каждый тик
+    // (смерть — редкое событие), аллокации нет.
     std::vector<SquadWalkEntry> order;
     collect_squads_by_ordinal(
         st, order,
@@ -296,24 +324,31 @@ inline int drain_dead_leader_squads(MacroStore& st, GameState& gs) {
     for (const SquadWalkEntry& sw : order) {
         auto& bag = st.inventory[sw.slot];
         if (creatures_empty(bag.inv)) continue;
-        const int humansBefore = count_human_souls(bag.inv);
-        // The pool CAN refuse (its own slot ceiling): only the men it
-        // actually took leave the roster; the rest STAY as the dead lord's
-        // band and the next sweep tries again — nobody is destroyed for
-        // standing past a cap (CANON S26).
-        moved += creatures_move(deserterPool, bag.inv);
-        // СПИСЫВАЕТСЯ ФАКТ, а не намерение: пул мог отказать, и тогда душа
-        // осталась в ростере — она всё ещё паства своего дома. Повторный
-        // проход следующего тика спишет ровно то, что уедет тогда.
+        // Паства считается ДО смерти: после неё спрашивать уже некого.
+        const int homeSouls = count_human_souls(bag.inv);
+        killed += creatures_kill_all(bag.inv);
+        souls += homeSouls;
+        // Душа вышла из мира своего дома — число паствы обязано упасть.
+        // Списывается ВСЁ, а не разница «до и после»: отказа у смерти нет,
+        // поэтому намерение и факт здесь — одно и то же.
         leave_home_flock(gs, st, st.runtime[sw.slot].homeSettlementId,
-                         humansBefore - count_human_souls(bag.inv));
+                         homeSouls);
     }
-    return moved;
+    // ОДИН ДОКЛАД НА ПРОХОД, А НЕ НА СКВАД: ведомость склада душ отвечает на
+    // «сколько мир потерял», и дробить это по трупам значило бы заводить
+    // отдельную строку на каждую смерть ради того же числа.
+    if (souls > 0 && sink) {
+        EconFact f{};
+        f.kind = EconFact::Kind::SoulsKilled;
+        f.amount = souls;
+        sink(user, f);
+    }
+    return killed;
 }
 
 // (`dead_rosters_remain` вырезана 2026-09-22: её комментарий утверждал «тик-
 // драйверы спрашивают это», а вызовов не было НИ ОДНОГО — ни одного с тех
-// пор, как разгрузку пула бандами вырезали 2026-09-21. Слив выше зовётся
+// пор, как разгрузку пула бандами вырезали 2026-09-21. Дверь выше зовётся
 // безусловно, и вопрос «остался ли труп с людьми» миру не задаётся.)
 
 // ── The END of a dead squad's story (CANON S4, canon audit 2026-08-29) ────
@@ -1011,7 +1046,8 @@ inline void loot_fallen_owner(MacroStore& st, MacroHandle fallen,
     for (ItemRef& stack : st.inventory[fallen.slot].inv.slots) {
         if (stack.empty()) continue;
         // ЛУТ — ТОЛЬКО ПРЕДМЕТНАЯ ОБЛАСТЬ (M-71): выжившие люди павшего —
-        // не добыча, их судьба — пул дезертиров (drain_dead_leader_squads).
+        // не добыча: живое добычей не бывает, и павшие ГИБНУТ вместе со
+        // своим лидером (kill_fallen_squad_creatures ниже, M-228).
         if (!world_row_is_item(stack.def)) continue;
         // Credit first: a stack the victor's bag refuses (full) STAYS on the
         // fallen — a refused pickup leaves the corpse holding it (items.h's
@@ -1124,7 +1160,7 @@ inline void settle_auto_battle(const MacroWorld& mw,
         loot_fallen_owner(st, loser, st.inventory[winner.slot].inv);
     }
 
-    drain_dead_leader_squads(st, gs);
+    kill_fallen_squad_creatures(st, gs, mw.econFacts, mw.econFactsUser);
     // ОДНА дверь оплаты (корень 5): именованный победитель растёт как
     // игрок (лист владеем, WIS-дивиденд, очки копятся), транзиент —
     // прежний бросок.
@@ -1219,7 +1255,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     if (playerWon && macro_dead(st, enemy)) {
         loot_fallen_owner(st, enemy, *playerBag);
     }
-    drain_dead_leader_squads(st, gs);
+    kill_fallen_squad_creatures(st, gs, mw.econFacts, mw.econFactsUser);
 
     // Пара Killed+Died — ТА ЖЕ дверь, что у ИИ↔ИИ (хвост 2б, владелец
     // 2026-09-02): осиротевшие дома жертв игрока получают Died, и

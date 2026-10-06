@@ -222,8 +222,12 @@ void test_ai_leaves_the_player_squad_standing() {
           "negative control: the same eight sweeps DID reach the squad beside him");
 }
 
-// ── 4. His men never desert into the pool ────────────────────────────────
-void test_the_players_men_never_desert() {
+// ── 4. Его люди не гибнут со свипом павших ───────────────────────────────
+// ЗАКОН ТОТ ЖЕ, СУДЬБА ДРУГАЯ (M-228): прежде свип уводил уцелевших павшего
+// в пул дезертиров, теперь он их УНИЧТОЖАЕТ, — а исключение игрока осталось
+// ровно тем, чем было. Это вопрос «ЧЬЯ ЭТО ЗАПИСЬ», а не «кто умер», поэтому
+// вердикт «не важно кто умер и умер всё никаких» его не отменяет.
+void test_the_players_men_are_never_swept() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
     ecs::World w;
@@ -239,24 +243,25 @@ void test_the_players_men_never_desert() {
                                     9000u + std::uint32_t(i)));
     }
 
-    // `Dead` on the player's squad is not supposed to happen — but the drain
+    // `Dead` on the player's squad is not supposed to happen — but the sweep
     // is called unconditionally at the end of every auto-battle, and a rule
     // that holds only because nothing has broken yet is not a rule.
     sm::macro_mark_dead(*wStore_, mine);
     const MacroHandle fallen = npc_squad(w, 30.0f, 30.0f, 7u, 3);
     sm::macro_mark_dead(*wStore_, fallen);
 
-    // Пул — в МИРЕ (v122): дверь смерти списывает ушедшую душу с паствы её
-    // дома, поэтому мир ей нужен по закону, а не для удобства.
+    // Мир нужен двери ПО ЗАКОНУ, а не для удобства: погибшая душа списывается
+    // с паствы своего дома (leave_home_flock).
     Inventory& pool = gs.deserterPool;
-    const int moved = drain_dead_leader_squads(*wStore_, gs);
+    const int killed = kill_fallen_squad_creatures(*wStore_, gs);
 
-    CHECK(moved == 3, "only the fallen NPC leader's three men walked away");
-    CHECK(creature_heads(pool) == 3, "and only they landed in the pool");
+    CHECK(killed == 3, "погибли только трое людей павшего НПЦ-лидера");
+    CHECK(creature_heads(pool) == 0,
+          "и ни один из них не ушёл в пул: павшие ГИБНУТ (M-228)");
     CHECK(creature_heads(*player_inventory(gs, *wStore_)) == 4,
           "the player's four are still his, dead flag or not");
     CHECK(creatures_empty(wStore_->inventory[fallen.slot].inv),
-          "negative control: the NPC's roster WAS emptied by the same call");
+          "negative control: the NPC's container WAS emptied by the same call");
 }
 
 // ── 5. Его числа на сущности не врут ─────────────────────────────────────
@@ -501,7 +506,7 @@ int main() {
     test_the_mark_survives_losing_the_flag();
     test_death_in_a_worn_body_wakes_him_at_home();
     test_ai_leaves_the_player_squad_standing();
-    test_the_players_men_never_desert();
+    test_the_players_men_are_never_swept();
     test_the_entity_numbers_are_not_stale();
     test_the_head_is_on_the_entity();
     test_one_door_assembles_every_battle_side();
