@@ -3559,18 +3559,51 @@ int provision_squad(Inventory& store, Inventory& bag, int soldiers,
 //     спящая колонка, а не забытая.
 // Счёт теперь один: `upkeep_bill` (macro/upkeep_window.h).
 
-int squad_season_window(MacroWorld& mw, int day) {
-    if (!mw.gs || !mw.world) return 0;
+// КЛЕЙМО АДРЕСА НА ФАКТАХ ОДНОЙ ДВЕРИ СОДЕРЖАНИЯ. Дверь судит ОДИН
+// контейнер и адресов не знает; окно — единственный, кто знает, чей это
+// склад. Та же форма, что у дневного релея (world_tick.cpp): по канону S9
+// ушедший ресурс принадлежит ДОМУ судимого, а не «миру».
+namespace {
+struct UpkeepFactRelay {
+    EconFactSink sink = nullptr;
+    void* user = nullptr;
+    std::int32_t homeId = 0;
+};
+void relay_upkeep_fact_(void* user, const EconFact& fact) {
+    const auto* r = static_cast<const UpkeepFactRelay*>(user);
+    EconFact stamped = fact;
+    stamped.landmarkId = r->homeId;
+    r->sink(r->user, stamped);
+}
+}   // namespace
+
+// ВХОД — `gs` И `st`, И БОЛЬШЕ НИЧЕГО. Здесь стоял конверт `MacroWorld`, из
+// которого окно брало ОДНУ вещь — `store_of(reg)`, то есть тот самый store,
+// который звонящий уже держит в руках, — и платило за это зависимостью от
+// entt-реестра (ЗАКОН ГЛАДКОЙ ПАМЯТИ п.2: entt легаси под снос везде).
+//
+// ЦЕНА КОНВЕРТА БЫЛА НЕ СТИЛЕВОЙ: дневной проход звал окно ИЗ-ПОД гейта
+// `macro && macro->world && macro->terrain`, то есть мир без загруженного
+// ТЕРРАИНА не ел и не платил ВООБЩЕ. Содержание — не рендер и не поле
+// угрозы; у него с терраином нет общего вопроса, и выключать его вместе с
+// ним значит ровно то, что запрещает ЗАКОН ДВУХ ТЕМПОВ п.5: глобальный
+// флаг, гасящий систему макромира.
+int squad_season_window(GameState& gs, MacroStore& st, int day,
+                        EconFactSink sink, void* user) {
     if (!season_boundary(day)) return 0;
-    GameState& gs = *mw.gs;
-    auto& reg = mw.world->reg;
     int deserted = 0;
     // Окно делит ОДИН пул дезертиров и один пул лута на всех — порядок суда
     // есть закон мира (squad_walk.h): по ординалу. Скрэтч локальный, как у
     // прочих дневных проходов.
-    MacroStore& st = store_of(reg);
     std::vector<SquadWalkEntry> order;
-    collect_squads_by_ordinal(st, order, [](std::uint16_t) { return true; });
+    // МЁРТВЫЙ НЕ ПОДСУДИМЫЙ, И ЭТОГО ФИЛЬТРА ЗДЕСЬ НЕ БЫЛО (M-233, попутно).
+    // `collect_squads_by_ordinal` отбирает по ОДНОМУ условию — `alive[slot]
+    // == 0`, — а `dead` не читает; два соседних прохода по тем же слотам
+    // (`kill_fallen_squad_creatures@src/macro/squad.h`, свип мёртвых записей)
+    // его читают. Павший сквад выставлял себе новый сезонный счёт и платил по
+    // нему со своего склада: покойник ел, пока его не свиповали.
+    collect_squads_by_ordinal(
+        st, order, [&](std::uint16_t slot) { return st.dead[slot] == 0; });
     for (const SquadWalkEntry& sw : order) {
         const std::uint16_t slot = sw.slot;
         auto& rt     = st.runtime[slot];
@@ -3590,37 +3623,46 @@ int squad_season_window(MacroWorld& mw, int day) {
         // списанной ни на одну душу. Мир кормил, растил, поднимал сквады и
         // облагал данью людей, которых у него нет.
         const int folkBefore = count_human_souls(bag.inv);
+        // АДРЕС ФАКТА — ДОМ СУДИМОГО, И ШТАМПУЕТ ЕГО РЕЛЕЙ. Дверь про адреса
+        // не знает (и не должна: она видит один контейнер), а звонящий —
+        // единственный, кто знает, чей это склад. Тот же приём, которым
+        // дневной проход клеймит факты своего места. Клеймятся ВСЕ факты
+        // двери, включая `Consumed` её гашения: до релея они уезжали в
+        // ведомость безадресными.
+        UpkeepFactRelay relay{sink, user, rt.homeSettlementId};
+        const EconFactSink us = sink ? &relay_upkeep_fact_ : nullptr;
+        void* uu = sink ? static_cast<void*>(&relay) : nullptr;
         const UpkeepWindowOutcome out = upkeep_season_window(
-            creatures, bag.inv, gs.deserterPool, gs.lootPoolValue,
-            mw.econFacts, mw.econFactsUser);
+            creatures, bag.inv, gs.deserterPool, st.wellbeing[slot],
+            gs.lootPoolValue, us, uu);
         flock_left_home(gs, st, slot, folkBefore);
         deserted += out.walked;
-        // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h): ОДИН факт = ОДНА артель,
-        // провалившая окно, поэтому слушатель считает и артели (числом
-        // фактов), и души (суммой). Адрес — ДОМ артели: по канону S9 это
-        // его ресурс ушёл, а не «мировой».
-        //
-        // ДВЕ ПРИЧИНЫ — ДВА ФАКТА, И ОНИ НЕ АЛЬТЕРНАТИВА (M-232). Здесь
-        // стоял тернарник по ярлыку `byWage`: ОДИН факт на две причины, и
-        // при равных долях он называл полный провал «не кормлен». Теперь
-        // голодная смерть говорит `Starved` — ТОЙ ЖЕ строкой, которой
-        // говорит голод места, потому что это одно событие мира, — а уход
-        // за неоплату говорит `SoulsDesertedUnpaid`. Строка
-        // `SoulsDesertedUnfed` умерла: у «не кормлен» больше нет исхода
-        // «ушёл».
-        if (out.starved > 0 && mw.econFacts) {
-            EconFact f{};
-            f.kind = EconFact::Kind::Starved;
-            f.amount = out.starved;
-            f.landmarkId = rt.homeSettlementId;
-            mw.econFacts(mw.econFactsUser, f);
-        }
-        if (out.walked > 0 && mw.econFacts) {
-            EconFact f{};
-            f.kind = EconFact::Kind::SoulsDesertedUnpaid;
-            f.amount = out.walked;
-            f.landmarkId = rt.homeSettlementId;
-            mw.econFacts(mw.econFactsUser, f);
+        // (ВЕДОМОСТЬ СКЛАДА ДУШ переехала В САМУ ДВЕРЬ, M-233: событие
+        // рождается там, где взыскание, и прямой суд над дверью теперь даёт
+        // ведомости оба факта. Здесь оставался только их АДРЕС — он ушёл в
+        // релей выше. Два исхода — два факта, и они НЕ альтернатива
+        // (M-232): прежде здесь стоял тернарник по ярлыку `byWage`, один
+        // факт на две причины, и при равных долях он называл полный провал
+        // «не кормлен». Строка `SoulsDesertedUnfed` умерла вместе с ним.)
+        // ── ЛЕТОПИСЬ ГОЛОДА — ЗДЕСЬ, ПОТОМУ ЧТО СУД ЗДЕСЬ ────────────────
+        // Переехала из `tick_settlements_`/`tick_villages_` вместе с судом:
+        // раньше её писали ДВА близнеца, каждый под своим гейтом рода, и
+        // артель, корован и сборщик не попадали в хронику НИКОГДА — хотя
+        // голодали по тому же закону. «Сквад голодал» есть ОДНО событие
+        // мира, и говорит о нём одна строка на всех.
+        if (out.starved > 0) {
+            const int px = ecs::cell_x(st.cell[slot], gs.mapW);
+            const int py = ecs::cell_y(st.cell[slot], gs.mapW);
+            record_landmark_fact(st, gs, FactKind::Starved,
+                                 int(st.spawnId[slot].index), px, py,
+                                 out.starved);
+            // ВЫМЕР — это «был состав и не стало», и судится он ПОСЛЕ
+            // взыскания: до него спрашивать нечего, после — некого.
+            if (creatures_empty(bag.inv)) {
+                record_landmark_fact(st, gs, FactKind::Died,
+                                     int(st.spawnId[slot].index), px, py,
+                                     folkBefore);
+            }
         }
         // Состав изменился — обоз заново (squad.h): ушедшая душа унесла и
         // свою спину.

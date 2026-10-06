@@ -19,6 +19,7 @@
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
+#include "macro/upkeep_window.h"  // upkeep_season_window — ОДНА дверь суда границы (M-233)
 #include "macro/world_row.h"   // raise_flock_into_container / count_human_souls
 #include "macro/anketa.h"
 
@@ -27,6 +28,44 @@
 #include <cstring>
 
 namespace {
+
+// ── СУД ГРАНИЦЫ — ОДНА ДВЕРЬ МИРА, И ЭТО АДАПТЕР К НЕЙ (M-233) ───────────
+// Вторая дверь содержания (`econ_debt_boundary`) УНИЧТОЖЕНА: в день границы
+// она судила поселение ПЕРВОЙ, по старому счёту, а `upkeep_season_window` —
+// ВТОРОЙ, по счёту, только что ею же перезаписанному, и принимала свежий
+// сезонный счёт за недоимку (замер: 51 322 души за одну границу).
+//
+// НИ ОДИН ЗАКОН, УТВЕРЖДАЕМЫЙ БЛОКАМИ НИЖЕ, НЕ ИЗМЕНИЛСЯ. Все четыре
+// переехали в выжившую дверь и там перестали зависеть от рода: прощение
+// хвоста меньше одной рто-доли, комфортные строки счёта, благополучие,
+// закрытие счёта у мёртвого. Формула смертей — та же буквально:
+// `недоимка / (счёт/ртов)`.
+//
+// Вход у выжившей шире — пул ходоков, колонка благополучия, костёр платы.
+// Блоки ниже судят ГОЛОД и КОМФОРТ, а плата у строки Peasant нулевая
+// (`upkeepGoldPerDay` ноль), поэтому ходоков тут не бывает и пул с костром
+// — приёмники, чьё содержимое ни одно утверждение не читает. Это сказано
+// вслух, чтобы следующий читатель не принял локальный пул за дыру.
+struct Boundary {
+    int starved = 0;   // было ConsumeOutcome::starvedPop
+    // Было `ConsumeOutcome::wellbeing`, float 0…1, который звонящий тут же
+    // множил на 255. Теперь величина ЦЕЛАЯ и считается прямо в байт своей
+    // колонки (вердикт владельца 2026-10-06 о флоате), поэтому и утверждения
+    // ниже сравнивают целые: половина — это 128, а не 0.5f ± эпсилон.
+    int wb255 = 0;
+};
+Boundary boundary_(sm::Inventory& store, std::int32_t* needDebt,
+                   sm::EconFactSink sink, void* user) {
+    sm::Upkeep r{};
+    for (int c = 0; c < sm::kCommodityCount; ++c) r.needDebt[c] = needDebt[c];
+    sm::Inventory pool{};
+    sm::Wellbeing wb{};
+    std::int64_t burned = 0;
+    const sm::UpkeepWindowOutcome out =
+        sm::upkeep_season_window(r, store, pool, wb, burned, sink, user);
+    for (int c = 0; c < sm::kCommodityCount; ++c) needDebt[c] = r.needDebt[c];
+    return Boundary{out.starved, int(wb.seasonWellbeing)};
+}
 // Руки города и деревни — анкета их рода (characters.h), а не вид места.
 static const sm::Skills& CITY =
     sm::landmark_sheet(sm::SquadType::City).skills;
@@ -174,7 +213,7 @@ int main() {
     // (── 2+3. САМОИГРА 96 ДНЕЙ — ВЫРЕЗАНА ВЕРДИКТОМ ВЛАДЕЛЬЦА 2026-10-04:
     // «глупо гонять 100 дней экономику, которой ещё нет — полировка ядра,
     // до экономики не дошли». Тойская деревня+город гоняли живые двери
-    // econ_produce_day/econ_debt_boundary/econ_pay_debt сквозь 96 дней и
+    // econ_produce_day/суд границы/econ_pay_debt сквозь 96 дней и
     // утверждали равновесие и сохранение леджера — арбитраж БАЛАНСА системы,
     // которая режется (ломтик E) и строится заново (M-191). Законы ДВЕРЕЙ
     // остались ниже своими блоками: окна голода, переполнение, призрачный
@@ -199,26 +238,25 @@ int main() {
     int poorPop = count_human_souls(poor);
     for (int window = 0; window < 5; ++window) {
         poorPop = count_human_souls(poor);
-        const ConsumeOutcome o = econ_debt_boundary(
-            poor, poorDebt, poorPop, &sink, &fled);
-        if (window == 0 && o.starvedPop != 0) {
+        const Boundary o = boundary_(poor, poorDebt, &sink, &fled);
+        if (window == 0 && o.starved != 0) {
             return fail("the first bill cannot kill before it is due");
         }
         if (window > 0) {
-            if (o.starvedPop != poorPop / 2) {
+            if (o.starved != poorPop / 2) {
                 return fail("a half-paid season claims exactly half the souls");
             }
             // Благополучие = доля еды × доля комфорта. Половина счёта
             // еды — не больше половины хода, НИКОГДА: это и есть
             // возвращённое «голодал — не плодись».
-            if (!(o.wellbeing <= 0.5f + 1e-4f)) {
+            if (!(o.wb255 <= 128)) {
                 return fail("half-paid food can never buy full growth");
             }
             // Пока место достаточно велико, чтобы иметь счёт по комфорту
             // (ткань — 1 на 32 души-дня), голая полка держит ход в НУЛЕ.
             // Усохнув ниже разрешения лестницы, место комфортного счёта не
             // получает вовсе — и тогда ход судит одна еда, это не дыра.
-            if (poorPop >= 32 && !(o.wellbeing < 0.01f)) {
+            if (poorPop >= 32 && o.wb255 != 0) {
                 return fail("a comfortless place does not grow — wellbeing 0");
             }
         }
@@ -234,9 +272,8 @@ int main() {
     // взыскивает никого.
     poor.add_of(commodity_item_index(foodIdx), poorDebt[foodIdx]);
     econ_pay_debt(poor, poorDebt, &sink, &fled);
-    const ConsumeOutcome relief = econ_debt_boundary(
-        poor, poorDebt, poorPop, &sink, &fled);
-    if (relief.starvedPop != 0) {
+    const Boundary relief = boundary_(poor, poorDebt, &sink, &fled);
+    if (relief.starved != 0) {
         return fail("a paid season kills nobody");
     }
 
@@ -257,23 +294,21 @@ int main() {
         raise_flock_into_container(s, pop);
         s.add_of(commodity_item_index(commodity_index("food")),
                  pop * kDaysPerSeason);
-        const ConsumeOutcome first =
-            econ_debt_boundary(s, debt, pop, nullptr, nullptr);
-        if (first.starvedPop != 0) {
+        const Boundary first = boundary_(s, debt, nullptr, nullptr);
+        if (first.starved != 0) {
             return fail("the first bill cannot kill before it is due");
         }
         if (s.count_of(commodity_item_index(commodity_index("food"))) != 0) {
             return fail("the bill must eat the whole shelf on the spot");
         }
-        const ConsumeOutcome o =
-            econ_debt_boundary(s, debt, pop, nullptr, nullptr);
-        if (o.starvedPop != 0) {
+        const Boundary o = boundary_(s, debt, nullptr, nullptr);
+        if (o.starved != 0) {
             return fail("harch-only pop must be fed in full");
         }
         // Еда покрыта целиком, комфорт — ни одной строкой: благополучие
         // ноль, и место СТОИТ (вердикт владельца 2026-09-19). Недостача
         // комфорта не падает в пустоту — она и есть этот ноль.
-        if (!(o.wellbeing >= 0.0f && o.wellbeing < 0.01f)) {
+        if (o.wb255 != 0) {
             return fail("a non-daily shortfall fell into the void");
         }
     }
@@ -295,7 +330,7 @@ int main() {
         raise_flock_into_container(s, pop);
         const int half = pop * kDaysPerSeason / 2;
         s.add_of(commodity_item_index(commodity_index("food")), half);
-        econ_debt_boundary(s, debt, pop, nullptr, nullptr);
+        boundary_(s, debt, nullptr, nullptr);
         // Каждая единица на полке платит по счёту — склад пуст, долг
         // помнит ровно вторую половину.
         if (s.count_of(commodity_item_index(commodity_index("food"))) != 0) {
@@ -304,9 +339,8 @@ int main() {
         if (debt[commodity_index("food")] != half) {
             return fail("the debt must remember exactly the unpaid half");
         }
-        const ConsumeOutcome o =
-            econ_debt_boundary(s, debt, pop, nullptr, nullptr);
-        if (o.starvedPop != pop - pop / 2) {
+        const Boundary o = boundary_(s, debt, nullptr, nullptr);
+        if (o.starved != pop - pop / 2) {
             return fail("half a season must starve exactly half the souls");
         }
         // Хвост меньше душевого сезона ПРОЩАЕТСЯ на взыскании (зеркало
@@ -317,10 +351,9 @@ int main() {
         std::int32_t tailDebt[kCommodityCount] = {};
         tail.add_of(commodity_item_index(commodity_index("food")),
                     kDaysPerSeason - 1);
-        econ_debt_boundary(tail, tailDebt, pop, nullptr, nullptr);
-        const ConsumeOutcome ot =
-            econ_debt_boundary(tail, tailDebt, pop, nullptr, nullptr);
-        if (ot.starvedPop != pop - 1) {
+        boundary_(tail, tailDebt, nullptr, nullptr);
+        const Boundary ot = boundary_(tail, tailDebt, nullptr, nullptr);
+        if (ot.starved != pop - 1) {
             return fail("a sub-season scrap forgives exactly one death");
         }
     }
@@ -537,7 +570,7 @@ int main() {
         std::int32_t debt[kCommodityCount] = {};
         econ_produce_day(inv, debt, VILLAGE, /*workers*/4,
                          /*population*/40, nullptr, nullptr);
-        econ_debt_boundary(inv, debt, /*population*/40, nullptr, nullptr);
+        boundary_(inv, debt, nullptr, nullptr);
         if (inv.count("potion_hp") != 3) {
             return fail("a day of economy disturbed what is not a commodity");
         }

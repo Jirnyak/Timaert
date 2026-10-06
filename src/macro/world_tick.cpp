@@ -47,63 +47,33 @@ namespace {
 
 } // namespace
 
-// The shared tail of every landmark's day (W2b-4): the debt boundary off the
-// UNIVERSAL inventory, then ONE measure — благополучие — driving the
-// population law (owner's ruling — no flat heads per day). At namespace
-// scope (external linkage, the shuffled_order pattern) so econ_v1_test can
-// drive a landmark to its honest death directly.
+// ДЕНЬ СКВАДА — ТО, ЧТО ИДЁТ КАЖДЫЕ СУТКИ, И НИЧЕГО БОЛЬШЕ.
+//
+// ГРАНИЦА СЕЗОНА УШЛА ОТСЮДА ЦЕЛИКОМ, И ЭТО СНОС ДВОЙНОГО СУДА (M-233).
+// Здесь стояла ВТОРАЯ дверь содержания — `econ_debt_boundary`, — и в день
+// границы поселение судилось ДВАЖДЫ: сперва тут по старому счёту, потом
+// `upkeep_season_window` по счёту, только что этой же дверью перезаписанному.
+// Замер назвал цену поимённо: на дне 33 первая дверь убила НОЛЬ (Σ
+// `starvedYesterday` по всем 2190 и 2213 поселениям), вторая — 51 322 и
+// 51 544, потому что принимала СВЕЖИЙ сезонный счёт за недоимку и казнила
+// ту его долю, которую город не мог выплатить из кармана в первый же день
+// сезона — до того, как сезон хоть что-то произвёл.
+//
+// Четыре умения мёртвой двери НЕ ПОТЕРЯНЫ, а переехали в выжившую
+// (`upkeep_season_window@src/macro/upkeep_window.h`): комфортные строки
+// счёта, благополучие, прощение хвоста меньше одной рто-доли и закрытие
+// ВСЕГО счёта у мёртвого. Переезд их РАСШИРИЛ: они жили за гейтом рода и
+// артели с корованами не касались вовсе.
+//
+// Благополучие теперь ЧИТАЕТСЯ здесь, а пишется там — один писатель на
+// величину, как и было, только дверь другая.
 void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
-                         int day, bool& starved, bool& diedOut,
-                         EconFactSink sink, void* user) {
-    starved = false;
-    diedOut = false;
-    // Плечо места — колонки его ТЕЛА (ломтик F): склад, счёт нужд и
+                         int day, EconFactSink sink, void* user) {
+    (void)day;   // сутки больше не ветвятся: границу судит одна дверь мира
+    // Плечо сквада — колонки его ТЕЛА (ломтик F): склад, счёт нужд и
     // благополучие живут в store, строки места больше не существует.
     Inventory& store = st.inventory[slot].inv;
     Wellbeing& wb = st.wellbeing[slot];
-    // Переворот населения (v122): у поселения паства — worked-ЧИСЛО фичи, и
-    // всякая её убыль/прибыль идёт ПАРОЙ — число И головы в инвентаре; у
-    // данжа (bornPopBase != 0) паства и есть головы, worked не трогается
-    // (под FT_Spire там живёт спелл). ВЕТКИ ПО ЭТОЙ КОЛОНКЕ ЗДЕСЬ БОЛЬШЕ НЕТ:
-    // её несёт сама дверь пары (`flock_left_home` → `leave_home_flock`), и
-    // данж уходит из неё пустым по построению.
-    // THE SEASON WINDOW (CANON S19.2, единое окно мира) — теперь граница
-    // ДОЛГА (CANON S10, вердикт 2026-09-19): взыскание прошлого счёта,
-    // новый счёт, немедленное гашение из склада. Её вердикт — ОДНО число,
-    // благополучие, которое место носит до следующей границы: по нему
-    // каждый день идёт рост, и второй меры («настроение») в мире больше
-    // нет (владелец 2026-09-19: «теперь только есть благополучие и оно
-    // даёт рост»).
-    if (season_boundary(day)) {
-        // Паства мерится ДО суда: после него спрашивать уже некого, а
-        // списывать надо ФАКТ (`flock_left_home`).
-        const int folkBefore = count_human_souls(store);
-        const ConsumeOutcome o = econ_debt_boundary(
-            store, st.upkeep[slot].needDebt, souls_home(st, slot), sink, user);
-        // СМЕРТЬ — единственная кара голода: доля непогашенного хлеба
-        // уходит населением здесь, в единственной двери. Умирают ДОМАШНИЕ
-        // головы; у поселения то же число сходит с worked-паствы (drain:
-        // списывается ФАКТ — сколько голов реально стояло).
-        //
-        // ГОЛОВЫ УЖЕ СНЯТЫ ГРАНИЦЕЙ (econ_debt_boundary исполняет взыскание
-        // там же, где судит его: иначе новый счёт выставлялся бы по составу,
-        // которого уже нет). Здесь остаётся ВТОРОЙ носитель — паства, и она
-        // снимается ТОЙ ЖЕ дверью, что у всякой другой убыли души.
-        //
-        // ЗДЕСЬ СТОЯЛО `worked -= o.starvedPop`, И ЭТО БЫЛО НЕ ТО ЧИСЛО:
-        // `starvedPop` считает ЛЮБУЮ павшую голову (`bleed_creatures` —
-        // «никаких особенностей лошадей»), а worked есть паства ЧЕЛОВЕЧЕСКАЯ
-        // — приход в неё идёт строкой Peasant. Падёж табуна списывал людей;
-        // латентно лишь потому, что табун у мест сегодня нулевой.
-        flock_left_home(gs, st, slot, folkBefore);
-        if (o.starvedPop > 0) {
-            diedOut = souls_flock(gs, st, slot) == 0;
-        }
-        wb.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
-        starved = o.starvedPop > 0;
-        wb.seasonWellbeing = std::uint8_t(std::lround(
-            std::clamp(o.wellbeing, 0.0f, 1.0f) * 255.0f));
-    }
     // ДНЕВНОЕ ГАШЕНИЕ — страховочный такт той же двери (двери прихода гасят
     // долг сразу; этот такт кроет пути мимо них): вчерашний привоз и
     // сегодняшняя выпечка (econ_produce_day идёт ПЕРЕД этим днём) платят
@@ -193,37 +163,53 @@ void relay_econ_fact_(void* user, const EconFact& fact) {
     r->sink(r->user, stamped);
 }
 
-// ── Settlement daily tick ─────────────────────────────────────
-// (Гарнизонная подсистема — garrison_upkeep_/recruit_/trim_/cap_ — умерла
-// 2026-09-30 с контейнером Landmark::garrison, M-8: домашние души ЖИВУТ в
-// инвентаре места и едят ОДНОЙ лестницей потребностей (econ_debt_boundary
-// от souls_home); второе окно содержания кормило бы их дважды. Набор =
-// рождение душ (settle_landmark_day), обрезки нет — оборона места вся
-// толпа, излишка не существует.)
-
-void tick_settlements_(GameState& gs, MacroStore& st, int day,
-                       WorldTickRuntime& runtime,
-                       EconFactSink sink, void* user) {
+// ── ДЕНЬ СКВАДА — ОДИН ПРОХОД, НИ ОДНОГО ГЕЙТА ПО РОДУ (M-233) ───────────
+//
+// Здесь стояли ДВА БЛИЗНЕЦА — `tick_settlements_` и `tick_villages_`, — и
+// различались они РОВНО ОДНОЙ строкой: город передавал право монеты своей
+// фракцией, деревня не передавала ничего. Всё остальное было копией: тот же
+// крафт, тот же счёт, та же летопись. Два ответа на один вопрос мира
+// («что сквад делает за сутки») — DOD п.6, и оба за гейтом рода.
+//
+// ПРАВО МОНЕТЫ ОКАЗАЛОСЬ НЕ ПРАВОМ РОДА, А КОЛОНКОЙ АНКЕТЫ, И ЭТО СНЯЛО
+// ЕДИНСТВЕННОЕ РАЗЛИЧИЕ. Минтовый рецепт гейтится `recipe_known(hands, …)`
+// — скилами СВОЕГО листа, — а аргумент фракции лишь называет СЕМЬЮ монет
+// (`faction_mint_rows(-1)` возвращает `{-1,-1,-1}`, и кандидат отпадает
+// fail-closed). Значит фракция передаётся ВСЕМ без изменения поведения, а
+// старая асимметрия была дефектом: деревня, чей лист умеет монетный двор,
+// не могла бить монету своей фракции — не потому, что не вправе, а потому
+// что её ветка аргумента не передавала. Комментарий на месте сам обещал
+// «право станет колонкой, когда место начнёт отличаться от своего рода» —
+// колонкой оно уже было, и ею же осталось.
+//
+// ГЕЙТЫ `!= City` И `!= Village` УМЕРЛИ, И МИР ОТ ЭТОГО ПРИБЫЛ: шпиль,
+// руина, логово, святилище, шахта и башня не получали дневной экономики
+// НИКОГДА — проход до них просто не доходил, и ветка данжа внутри общего
+// хвоста была мёртвым кодом в продакшене. Теперь живут все.
+//
+// ЧЕГО ЗДЕСЬ ЕЩЁ НЕТ, И ЭТО НАЗВАНО ВСЛУХ: проход идёт по `for_each_place`,
+// то есть по НЕПОДВИЖНЫМ. Расширить его на артели и корованы нельзя до
+// того, как `souls_flock@src/macro/labour.h` научится отвечать за ХОДОКА:
+// у подвижного рода `bornPopBase == 0`, и дверь возвращает ему worked-число
+// КЛЕТКИ, НА КОТОРОЙ ОН СТОИТ, — чужую паству, по которой рост тут же
+// дописал бы ему душ в чужой дом. Это вопрос «что такое паства у того, у
+// кого нет своей клетки», и он идёт владельцу, а не выдумывается здесь.
+void tick_squads_day_(GameState& gs, MacroStore& st, int day,
+                      EconFactSink sink, void* user) {
     for_each_place(st, [&](std::uint16_t slot) {
-        if (SquadType(st.runtime[slot].squadType) != SquadType::City)
-            return;
         const int id = int(st.spawnId[slot].index);
-        const int px = ecs::cell_x(st.cell[slot], gs.mapW);
-        const int py = ecs::cell_y(st.cell[slot], gs.mapW);
         Inventory& store = st.inventory[slot].inv;
         EconFactRelay relay{sink, user, id};
         const EconFactSink rs = sink ? &relay_econ_fact_ : nullptr;
         void* ru = sink ? static_cast<void*>(&relay) : nullptr;
-        // The city CRAFTS before it eats: today's table first, then fair
-        // shares (econ_day's three passes), off the same one inventory the
-        // caravans stock and the market sells from.
-        // Zero souls staff zero benches: max(1, …) alone minted a ghost
-        // worker for an empty town — the same air-minting the pop floor did.
-        // The production TABLE comes off the place's own registry row
-        // (econSite column), not a hardcoded per-loop literal.
-        // The mint right, v1: every CITY strikes its own faction's coin
-        // (owner 2026-08-30; the right becomes a landmark column when a
-        // place ever differs from its kind).
+        // Сквад КРАФТИТ прежде, чем ест: сегодняшний стол первым, с того же
+        // единственного инвентаря, который набивают корованы и с которого
+        // торгует рынок. Руки ранжируются по стоимости выхода на день
+        // (econ_day.h), рецепт берётся из АНКЕТЫ — её скилы и есть «что
+        // этот сквад умеет».
+        // Ноль душ держит ноль верстаков: один `max(1, …)` печатал
+        // призрачного работника пустому городу — то же рождение из воздуха,
+        // что делал пол населения.
         const int heads = souls_home(st, slot);
         econ_produce_day(store, st.upkeep[slot].needDebt,
                          st.sheet[slot].skills,
@@ -234,70 +220,12 @@ void tick_settlements_(GameState& gs, MacroStore& st, int day,
                          faction_or_freefolk(
                              std::int16_t(st.kind[slot].factionIdx)));
 
-        // День границы: население ест ОДНОЙ лестницей потребностей места
-        // (второго стола гарнизона больше нет — M-8, v122).
-        bool famine = false, died = false;
-        const int headsBefore = souls_home(st, slot);
-        settle_landmark_day(gs, st, slot, day, famine, died, rs, ru);
-
+        // Сутки: гашение счёта, гигиена склада, рост по благополучию.
+        // Границу сезона судит ОДНА дверь мира (upkeep_season_window), и
+        // летопись голода пишется там же, где суд.
         // (Дань ушла из пер-местного дня: её ведёт один проход пула
         // феодальных рёбер tithe_daily_ — v121, род 6.)
-        if (famine) {
-            record_landmark_fact(st, gs, FactKind::Starved, id, px, py,
-                                 int(st.wellbeing[slot].starvedYesterday));
-        }
-        if (died) {
-            record_landmark_fact(st, gs, FactKind::Died, id, px, py,
-                                 headsBefore);
-        }
-    });
-}
-
-
-// ── Village daily tick ────────────────────────────────────────
-// No gather here any more: gathering is AGENTS now — woodcutters and
-// farmers hauling real units into this same inventory (npc_ai.cpp).
-void tick_villages_(GameState& gs, MacroStore& st, int day,
-                    WorldTickRuntime& runtime,
-                    EconFactSink sink, void* user) {
-    for_each_place(st, [&](std::uint16_t slot) {
-        if (SquadType(st.runtime[slot].squadType) != SquadType::Village)
-            return;
-        const int id = int(st.spawnId[slot].index);
-        const int px = ecs::cell_x(st.cell[slot], gs.mapW);
-        const int py = ecs::cell_y(st.cell[slot], gs.mapW);
-        Inventory& store = st.inventory[slot].inv;
-        EconFactRelay relay{sink, user, id};
-        const EconFactSink rs = sink ? &relay_econ_fact_ : nullptr;
-        void* ru = sink ? static_cast<void*>(&relay) : nullptr;
-        // The village-side half of the craft door. econ_day.h promises «a
-        // village-side craft later is one row with site=Village, no code» —
-        // which is only true if this call exists: today no recipe carries
-        // that site, so this makes nothing, and the day the row lands it
-        // works with no code here either.
-        const int heads = souls_home(st, slot);
-        econ_produce_day(store, st.upkeep[slot].needDebt,
-                         st.sheet[slot].skills,
-                         heads > 0
-                             ? std::max(1, heads / kCreaturesPerCityWorker)
-                             : 0,
-                         heads, rs, ru);
-
-        // Порядок дня границы — как у города: население ест первым (одной
-        // лестницей потребностей — второго стола гарнизона больше нет, M-8).
-        bool famine = false, died = false;
-        const int headsBefore = souls_home(st, slot);
-        settle_landmark_day(gs, st, slot, day, famine, died, rs, ru);
-
-        // (Дань деревни — то же одно ребро, ведёт tithe_daily_ — v121.)
-        if (famine) {
-            record_landmark_fact(st, gs, FactKind::Starved, id, px, py,
-                                 int(st.wellbeing[slot].starvedYesterday));
-        }
-        if (died) {
-            record_landmark_fact(st, gs, FactKind::Died, id, px, py,
-                                 headsBefore);
-        }
+        settle_landmark_day(gs, st, slot, day, rs, ru);
     });
 }
 
@@ -421,12 +349,18 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
         // проход не снимает ничего. Он существует ВМЕСТЕ со своим законом,
         // а не вместо него: колонка срока без тика была бы ровно той
         // половиной, которой §55 посвящён целиком.
-        for_each_place(st, [&](std::uint16_t slot) {
+        // ГЕЙТ РОДА СНЯТ (M-233, попутно): колонка `interests` стоит у
+        // КАЖДОГО слота (store.h), а тик срока шёл по `for_each_place`, то
+        // есть только по неподвижным. Срочные связи артели, корована и
+        // сборщика не убывали НИКОГДА — их перемирия и контракты были
+        // вечными не по замыслу, а потому что проход до них не доходил.
+        // Проход капом, а не населением (ЗАКОН СТАБИЛЬНОСТИ).
+        for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
+            if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
             interests_tick_day(st.interests[slot]);
-        });
-        tick_settlements_(gs, st, day, runtime, esink, euser);
-        tick_villages_   (gs, st, day, runtime, esink, euser);
-        tithe_daily_     (gs, st, day);  // дань — проход рёбер рода 6 (v121)
+        }
+        tick_squads_day_(gs, st, day, esink, euser);
+        tithe_daily_    (gs, st, day);  // дань — проход рёбер рода 6 (v121)
         tick_player_daily_(gs.player);
 
         // The ONE growth/diffusion law (R2 track): every resource field is
@@ -465,17 +399,27 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
             // The labour rotation (npc_ai.h): yesterday's crews dissolve
             // into the population, today's are raised to its size.
             rotate_worker_squads(*macro, day);
-            // THE SQUAD SEASON WINDOW (npc_ai.h, CANON S19.2): on the
-            // boundary day every creatures settles board AND pay a season
-            // ahead. ВЗЫСКАНИЕ ПРОПОРЦИОНАЛЬНО (v105): доля неоплаченного
-            // и есть доля ушедших. Кромка «покрыто целиком или не
-            // списывается» и доля 1/8, которые здесь были описаны, умерли
-            // 2026-09-21 — описание пережило закон на день.
-            // The player's squad pays here like everyone («игрок == нпц»).
-            squad_season_window(*macro, day);
             // Daily bag hygiene (the auto-scrap half of the old feed loop).
             squad_bags_hygiene_daily(*macro);
         }
+
+        // ── СУД ГРАНИЦЫ СЕЗОНА — ОДНА ДВЕРЬ НА ВЕСЬ МИР, И ОНА ВНЕ ГЕЙТОВ ──
+        // На границе КАЖДЫЙ контейнер платит харч и жалованье на сезон
+        // вперёд; взыскание пропорционально, в рто-единицах (ЗАКОН КОНСТАНТ:
+        // кромка «покрыто целиком или не списывается» и доля 1/8 умерли
+        // 2026-09-21). Сквад игрока платит здесь как все («игрок == нпц»).
+        //
+        // ЗДЕСЬ БЫЛО ДВА ГЕЙТА, И ОБА СНЯТЫ (M-233). Первый — род: суд жил
+        // ДВУМЯ дверьми, и городскую половину звал дневной проход под
+        // `!= City`/`!= Village`, отчего поселение судилось дважды, а шпиль,
+        // руина и логово — ни разу. Второй — КОНВЕРТ: вызов стоял внутри
+        // `if (macro && macro->world && macro->terrain)`, то есть мир без
+        // загруженного терраина не ел и не платил вовсе. Содержание с
+        // терраином общего вопроса не имеет; гасить его вместе с ним —
+        // ровно тот глобальный флаг, что запрещает ЗАКОН ДВУХ ТЕМПОВ п.5.
+        // Теперь дверь просит только то, чем судит: `gs` (пулы мира) и `st`
+        // (слоты), и день зовёт её всегда.
+        squad_season_window(gs, st, day, esink, euser);
 
         --runtime.pendingDailyTicks;
         ++runtime.nextDailyTickDay;

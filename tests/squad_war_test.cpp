@@ -627,13 +627,15 @@ void test_the_leaders_training_reads_at_the_new_doors() {
             bag.add("food", stock);
             bag.add("coin_empire_copper", 8 * 3 * kDaysPerSeason * 4);
         }
-        MacroWorld mw{.gs = &gs, .world = &w};
-        CHECK(squad_season_window(mw, 2) == 0,
+        // (Конверт `MacroWorld` здесь больше не нужен: дверь просит
+        // ровно то, чем судит — `gs` и `st`, — и от entt-реестра
+        // отвязана, M-233.)
+        CHECK(squad_season_window(gs, sm::store_of(w), 2) == 0,
               "no window off the boundary (negative control)");
         CHECK((*sm::body_state<ecs::NpcInventory>(sm::store_of(w), untrained)).inv.count("food")
                   == stock,
               "an ordinary day draws no harch at all");
-        squad_season_window(mw, 1);
+        squad_season_window(gs, sm::store_of(w), 1);
         const int foragerLeft =
             (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), forager)).inv.count("food");
         const int untrainedLeft =

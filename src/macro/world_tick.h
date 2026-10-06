@@ -62,8 +62,14 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // парой); у данжа (bornPopBase != 0) обе двери идут по головам его толпы.
 // `slot` — ТЕЛО места в гладкой памяти макро-сквадов (ломтик F): род, адрес,
 // склад, счёт нужд и благополучие — его колонки, строки-индекса больше нет.
+// ИСХОДОВ `starved`/`diedOut` ЗДЕСЬ БОЛЬШЕ НЕТ (M-233): их рождала
+// ВТОРАЯ дверь содержания, которая стояла в этой функции и судила
+// поселение ПЕРВЫМ — до того, как единая дверь мира
+// (`upkeep_season_window`) судила его ВТОРЫМ по счёту, только что ею
+// же перезаписанному. Голод и вымирание теперь говорит летопись в
+// точке суда; этой функции остались СУТКИ: гашение, гигиена, рост.
 void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
-                         int day, bool& starved, bool& diedOut,
+                         int day,
                          EconFactSink sink = nullptr, void* user = nullptr);
 
 // The dungeon garrisons' regrowth (§42, owner: «как фауна — медленно,

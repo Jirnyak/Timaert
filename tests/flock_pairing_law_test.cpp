@@ -100,11 +100,12 @@ void test_the_season_window_pays_the_flock() {
     // Половина харча не покрыта ⇒ половина состава обязана умереть.
     w.store->upkeep[slot].needDebt[boardOrd] = std::int32_t(bill.board / 2);
 
-    sm::MacroWorld mw = w.envelope();
+    // (Конверт мира сезонной двери больше не нужен: она отвязана от
+    // entt-реестра и просит ровно `gs` и `st` — M-233.)
     // День ГРАНИЦЫ: окно гейтится `season_boundary`, и вне её оно no-op.
     const int day = 1 + sm::kDaysPerSeason;
     CHECK(sm::season_boundary(day), "фикстура: день 33 есть граница сезона");
-    sm::squad_season_window(mw, day);
+    sm::squad_season_window(w.gs, *w.store, day);
 
     const int folkAfter = folk_of(w, slot);
     const int flockAfter = flock_of(w, slot);
@@ -268,9 +269,10 @@ void test_a_refused_walker_stays_in_the_flock() {
           "утверждение ниже проверяло бы не то");
 
     std::int64_t burned = 0;
+    sm::Wellbeing wb{};
     const int before = sm::creature_count(store);
     const sm::UpkeepWindowOutcome out =
-        sm::upkeep_season_window(r, store, pool, burned, nullptr, nullptr);
+        sm::upkeep_season_window(r, store, pool, wb, burned, nullptr, nullptr);
     CHECK(out.walked == 0,
           "пул отказал — ушедших НОЛЬ, и это исход, а не ошибка");
     CHECK(sm::creature_count(store) == before,

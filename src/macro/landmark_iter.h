@@ -1,10 +1,17 @@
-// THE landmark enumeration over the ONE list (gs.landmarks, CANON S9
-// 2026-08-29). Every consumer (map draw loop, hover pick, minimap,
-// collect_landmarks, the cell grid) walks THIS visitor and dispatches on the
-// registry row (landmark_registry.h), so a new landmark kind = its registry
-// row + its entry in the yield order below — no consumer is touched. The
-// yield order is the ONE cell-ownership priority ("first hit at a cell"
-// agrees with the subworld's idea of who owns the cell).
+// ОБХОД НЕПОДВИЖНЫХ СКВАДОВ — ПО СЛОТАМ ГЛАДКОЙ ПАМЯТИ.
+//
+// ЗДЕСЬ СТОЯЛО «over the ONE list (gs.landmarks)» — АДРЕС МЁРТВ (правка
+// 2026-10-06): ни `gs.landmarks`, ни `std::vector<Landmark>` не существует,
+// место есть неподвижный СКВАД того же массива (ЗАКОН ПОЛЯ п.4), и оба
+// обхода ниже идут слотами `MacroStore`. Шапка пережила своё хранилище и
+// называла читателю структуру, которой нет, — ровно тот род лжи, из-за
+// которого §0 запрещает считать шапку доказательством.
+//
+// Всякий потребитель ходит ЭТИМ визитором и решает по СТРОКЕ реестра
+// (landmark_registry.h), поэтому новый неподвижный род = его строка плюс
+// место в порядке выдачи ниже, и ни один потребитель не правится. Порядок
+// выдачи есть ОДИН закон владения клеткой («первое попадание на клетке»
+// согласовано с тем, кто владеет клеткой по мнению субмира).
 //
 // Split from landmark_registry.h because the visitor needs the full
 // GameState definition, and the registry table is included by far lighter

@@ -273,7 +273,25 @@ TerrainMod terrain_mod_for(SquadType landmark, FeatureType feature) {
         // Registry kinds no world places yet (Lair/Shrine/Mine/Tower): bare
         // ground until each kind's generator module lands — a landmark calms
         // the terrain only once something actually stands on it.
-        default:                    break;
+        //
+        // ВЫПИСАНЫ ПОИМЁННО, И `default:` СНЯТ (ЗАКОН СЛОВАРЯ п.4): он был
+        // ЕДИНСТВЕННЫМ среди четырёх switch-ей по этой оси, а три соседних
+        // (`stamp_settlement_features`, диспетчер макро-ИИ,
+        // `resolve_mode`) держат полное покрытие намеренно и прямо
+        // запрещают `default` своими комментариями. Здесь он глушил
+        // `-Wswitch` ровно там, где тот нужен: следующий НЕПОДВИЖНЫЙ род
+        // получал бы `{0, 0}` молча — то есть «не трогать рельеф» вместо
+        // «про тебя забыли», и отличить одно от другого было бы нечем.
+        case SquadType::Lair:
+        case SquadType::Shrine:
+        case SquadType::Mine:
+        case SquadType::Tower:
+        // Подвижные роды оси: сквад, который ХОДИТ, рельеф не ровняет —
+        // он на клетке не стоит, он через неё идёт.
+        case SquadType::Artel:
+        case SquadType::Caravan:
+        case SquadType::Collector:
+        case SquadType::Count:
         case SquadType::None:    break;
     }
     if (feature == FT_Road || feature == FT_DirtRoad) {

@@ -106,8 +106,11 @@ void test_the_two_shares_are_independent() {
 
     sm::Inventory pool{};
     std::int64_t burned = 0;
+    // Благополучие — колонка СУДИМОГО, и пишет её теперь сам суд (M-233:
+    // вторая дверь содержания снесена, её умения переехали сюда).
+    sm::Wellbeing wb{};
     const sm::UpkeepWindowOutcome out = sm::upkeep_season_window(
-        r, store, pool, burned, nullptr, nullptr);
+        r, store, pool, wb, burned, nullptr, nullptr);
 
     CHECK(out.starved == 2,
           "половина непокрытого харча = половина состава УМЕРЛА (4 × 1/2)");
@@ -180,7 +183,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     CHECK(wageSeason > 0, "the Guard row prices the creatures (fixture sanity)");
 
     // A non-boundary day is a silent day — negative control.
-    CHECK(sm::squad_season_window(mw, 12) == 0,
+    CHECK(sm::squad_season_window(gs, *worldStore_, 12) == 0,
           "no window off the boundary: nobody deserts");
     CHECK(sm::inventory_value((*sm::player_inventory(gs, *worldStore_))) == 5,
           "no window off the boundary: nothing debited");
@@ -201,7 +204,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // ПЕРВАЯ граница: счёта ещё не было, значит взыскивать нечего —
     // дезертиров ноль, но 5 монет кошелька уходят в уплату НОВОГО счёта.
     const int poolBefore = sm::creature_count(gs.deserterPool);
-    CHECK(sm::squad_season_window(mw, 33) == 0,
+    CHECK(sm::squad_season_window(gs, *worldStore_, 33) == 0,
           "первая граница выставляет счёт, а не взыскивает: долга не было");
     CHECK(sm::creature_count(gs.deserterPool) == poolBefore,
           "никто не ушёл — уходят за НЕОПЛАЧЕННОЕ, а счёт только что выписан");
@@ -223,7 +226,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // Проверка «пул не вырос» — негативный контроль старого закона.
     const int creatures = sm::creature_count(*army);
     CHECK(creatures >= 2, "негативный контроль: контейнеру есть кого терять");
-    const int walked = sm::squad_season_window(mw, 65);
+    const int walked = sm::squad_season_window(gs, *worldStore_, 65);
     CHECK(walked == 0,
           "за ХАРЧ не уходят: при непокрытой еде доля УМИРАЕТ, и уход за "
           "плату получает уже пустой контейнер");
@@ -247,9 +250,9 @@ void test_daily_processing_applies_player_upkeep_and_age() {
         CHECK(heads == 1 && p->count("coin_empire_copper") == 0,
               "фикстура: один человек, харч на сезон, монет НОЛЬ");
         // Граница выписывает счёт и гасит харч; плату гасить нечем.
-        CHECK(sm::squad_season_window(mw, 97) == 0,
+        CHECK(sm::squad_season_window(gs, *worldStore_, 97) == 0,
               "граница, выписавшая счёт, не взыскивает его же");
-        const int left = sm::squad_season_window(mw, 129);
+        const int left = sm::squad_season_window(gs, *worldStore_, 129);
         CHECK(left == 1 && sm::creature_count(*army) == 0,
               "за НЕВЫПЛАТУ человек УХОДИТ, а не умирает");
         CHECK(sm::creature_count(gs.deserterPool) == poolWas + 1,
@@ -265,7 +268,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     purse->add("food", sm::kDaysPerSeason);
     purse->add("coin_empire_copper", wageSeason);
     const std::int64_t burnedBefore = gs.lootPoolValue;
-    CHECK(sm::squad_season_window(mw, 161) == 0,
+    CHECK(sm::squad_season_window(gs, *worldStore_, 161) == 0,
           "покрытый сезон не уводит никого");
     CHECK(purse->count("food") == 0,
           "покрытый сезон съедает харч сезона разом");
@@ -471,17 +474,36 @@ void test_population_dies_honestly_to_zero() {
         sm::birth_place(gs, st, sm::SquadType::Village, 4, 4).slot;
     // Хутор с пустым амбаром: три души ДВЕРЬЮ МИРА (паства + головы).
     sm::settle_souls(gs, st, v, 3);
-    int deaths = 0;
+    sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     int dayOfDeath = -1;
     bool sawBelowOldFloor = false;
+    // ИСХОД ЧИТАЕТСЯ ИЗ ЛЕТОПИСИ, А НЕ ИЗ out-ПАРАМЕТРА (M-233). Флаги
+    // `famine`/`diedOut` рождала ВТОРАЯ дверь содержания, стоявшая внутри
+    // `settle_landmark_day`; она уничтожена, и голод с вымиранием говорит
+    // теперь строка летописи в точке суда. ЗАКОН, который судит этот
+    // свидетель, не изменился ни на слово: пол населения мёртв, спад идёт до
+    // нуля, ноль поглощающий, переход в смерть срабатывает РОВНО один раз.
+    const auto died_facts = [&]() {
+        int n = 0;
+        sm::chronicle_near(gs.chronicle, 4, 4, /*radiusCells*/1, /*sinceDay*/0,
+                           [](void* u, const sm::WorldFact& f) {
+                               if (f.kind == std::uint16_t(sm::FactKind::Died))
+                                   ++*static_cast<int*>(u);
+                           }, &n);
+        return n;
+    };
     // Days are the world's own, 1-based: day 1 is the first season boundary,
     // where the empty larder fails the window and the season turns hungry.
+    // ДЕНЬ ГОНЯЕТСЯ ЦЕЛИКОМ — сутки сквада И суд границы: это ДВЕ двери, и
+    // порознь ни одна из них мир не убивает (прежде обе жили в одной, и
+    // поселение этим судилось дважды).
     for (int day = 1; day <= 2048 && dayOfDeath < 0; ++day) {
-        bool famine = false, died = false;
-        sm::settle_landmark_day(gs, st, v, day, famine, died);
+        sm::settle_landmark_day(gs, st, v, day);
+        sm::squad_season_window(gs, st, day);
         if (sm::souls_flock(gs, st, v) < 5) sawBelowOldFloor = true;
-        if (died) { ++deaths; dayOfDeath = day; }
+        if (died_facts() > 0) dayOfDeath = day;
     }
+    int deaths = died_facts();
     CHECK(dayOfDeath >= 0 && sm::souls_flock(gs, st, v) == 0,
           "a starving settlement dies honestly to zero");
     CHECK(sm::souls_home(st, v) == 0,
@@ -489,10 +511,10 @@ void test_population_dies_honestly_to_zero() {
     CHECK(sawBelowOldFloor,
           "population passed the old floor: no crutch is back");
     for (int day = 1; day <= 100; ++day) {
-        bool famine = false, died = false;
-        sm::settle_landmark_day(gs, st, v, day, famine, died);
-        if (died) ++deaths;
+        sm::settle_landmark_day(gs, st, v, day);
+        sm::squad_season_window(gs, st, day);
     }
+    deaths = died_facts();
     CHECK(sm::souls_flock(gs, st, v) == 0,
           "zero population is absorbing: nobody is minted from air");
     CHECK(deaths == 1,
@@ -550,6 +572,87 @@ void test_dungeon_population_regrows_like_fauna() {
 // сезон содержания стража). Излишек снимается со СЛАБЕЙШИХ; куда — решает
 // СТРОКА: человек в пул дезертиров, зверь по тегу Mount под нож — мясо
 // гасит долг места той же дверью гашения (S10).
+// ── ОДНА ДВЕРЬ СОДЕРЖАНИЯ НА ВЕСЬ МИР, И ОНА НЕ ЗНАЕТ РОДА (M-233) ───────
+//
+// Вердикт владельца 2026-10-06, дословно: «У НАС ЕДИНАЯ СИСТЕМА СКВАДОВ
+// НИКАКИЕ СКВАДЫ НЕ ОСОВБЕННЫЕ … И ИХ ВСЕХ ПЕРЕБИРАЕТ ЧЕСТНО И ОНИ
+// ЕДЯТ/ПЛАТЯТ ВСЁ!!!»
+//
+// ПОДСУДИМЫЙ — АРТЕЛЬ, И ЭТО ВЫБОР, А НЕ УДОБСТВО. Во-первых, её лист
+// пуст (у подвижных родов строка стола нулевая), значит она ничего не
+// производит, и число смертей не зашумлено выпечкой. Во-вторых, именно
+// подвижный сквад НИКОГДА не получал ни благополучия, ни комфортных строк
+// счёта: оба жили во ВТОРОЙ двери, которую звал проход мест под гейтом
+// `!= City`/`!= Village`.
+//
+// ЧТО ДЕЛАЕТ ЭТОТ СВИДЕТЕЛЬ РАЗЛИЧАЮЩИМ: недоимка ставится РОВНО в одну
+// сезонную долю рта, то есть «обязан умереть ровно один». Двойной суд этим
+// числом виден невооружённо: первая дверь взяла бы одного и ПЕРЕЗАПИСАЛА
+// счёт свежим сезонным, а вторая, приняв его за недоимку, казнила бы почти
+// весь состав (ровно так мир и терял 51 322 души за границу).
+void test_one_upkeep_door_judges_every_squad_once() {
+    auto gsp = std::make_unique<sm::GameState>();
+    sm::GameState& gs = *gsp;
+    auto storePtr = sm::make_macro_store();
+    sm::MacroStore& st = *storePtr;
+    gs.mapW = 64;
+    gs.mapH = 64;
+    sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+
+    const std::uint16_t a =
+        sm::birth_place(gs, st, sm::SquadType::Artel, 12, 12).slot;
+    // Фикстура рождает своё предусловие сама (§8 п.11): восемь людских голов
+    // в контейнере — дверью мира, не присваиванием колонки.
+    CHECK(sm::raise_flock_into_container(st.inventory[a].inv, 8) == 8,
+          "фикстура: восемь душ встали в контейнер артели");
+    CHECK(!sm::is_settlement_kind(sm::SquadType::Artel),
+          "фикстура: артель подвижна, значит дневного прохода мест она не "
+          "видит вовсе — ничего не производит, и число смертей ниже не "
+          "зашумлено выпечкой");
+
+    const int boardOrd = sm::hunger_commodity_ordinal();
+    const sm::UpkeepBill bill = sm::upkeep_bill(st.inventory[a].inv);
+    const int souls = sm::creature_count(st.inventory[a].inv);
+    const int perMouth = bill.board / souls;
+    CHECK(perMouth > 0,
+          "фикстура: сезонная доля рта положительна — иначе рто-единицы "
+          "неизмеримы и утверждение ниже проверяло бы не то");
+    st.upkeep[a].needDebt[boardOrd] = std::int32_t(perMouth);
+    CHECK(st.wellbeing[a].seasonWellbeing == 255,
+          "фикстура: сквад рождён сытым (255) — значит любое иное значение "
+          "ниже ЗАПИСАНО судом, а не досталось от рождения");
+
+    sm::WorldTickRuntime runtime{};
+    sm::reset_world_tick_runtime(runtime, 31u);
+    runtime.pendingDailyTicks = 1;
+    runtime.nextDailyTickDay = 1 + sm::kDaysPerSeason;   // граница сезона
+    CHECK(sm::season_boundary(runtime.nextDailyTickDay),
+          "фикстура: день 33 есть граница сезона");
+    // КОНВЕРТА НЕТ НАМЕРЕННО: суд содержания стоял под гейтом
+    // `macro->terrain`, и мир без терраина не ел вовсе. Передай сюда
+    // конверт — и этот свидетель перестал бы различать тот гейт.
+    sm::process_world_daily_ticks(gs, st, runtime, 1);
+
+    CHECK(sm::creature_count(st.inventory[a].inv) == souls - 1,
+          "одна непокрытая сезонная доля рта забрала РОВНО одну голову: "
+          "двойной суд забрал бы почти весь состав");
+    CHECK(int(st.wellbeing[a].starvedYesterday) == 1,
+          "исход суда записан в колонку подсудимого, а не потерян");
+    const int wb = int(st.wellbeing[a].seasonWellbeing);
+    CHECK(wb > 0 && wb < 255,
+          "АРТЕЛЬ ПОЛУЧИЛА БЛАГОПОЛУЧИЕ: прежде оно жило во второй двери, "
+          "за гейтом рода, и подвижный сквад не имел его НИКОГДА");
+    // Счёт перевыставлен по выжившим — комфортные строки тоже, и это второе
+    // умение, которого у подвижного рода не было вовсе.
+    int comfortRows = 0;
+    for (int c = 0; c < sm::kCommodityCount; ++c) {
+        if (c != boardOrd && st.upkeep[a].needDebt[c] > 0) ++comfortRows;
+    }
+    CHECK(comfortRows > 0,
+          "артели выставлены КОМФОРТНЫЕ строки лестницы: вторая дверь "
+          "выставляла их только местам");
+}
+
 int main() {
     test_dungeon_population_regrows_like_fauna();
     test_hour_rollover();
@@ -560,5 +663,6 @@ int main() {
     test_daily_processing_applies_player_upkeep_and_age();
     test_a_famine_is_recorded_once_when_it_begins();
     test_population_dies_honestly_to_zero();
+    test_one_upkeep_door_judges_every_squad_once();
     return sm::test::report("world_tick_parity_test");
 }

@@ -326,7 +326,8 @@ AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
 // row, never the leader's — the old leader-typed gate was the player-special
 // Adventurer.upkeep=0 door, dead by «игрок == нпц»: the player's squad pays
 // here through the very same loop. Returns souls deserted.
-int squad_season_window(MacroWorld& mw, int day);
+int squad_season_window(GameState& gs, MacroStore& st, int day,
+                        EconFactSink sink = nullptr, void* user = nullptr);
 
 // Daily bag hygiene — the auto-scrap half of the old daily feed loop (CANON
 // «Крафт/Скрап»: авто-скрап ИИ по порогу >50%; the player's bag is NEVER

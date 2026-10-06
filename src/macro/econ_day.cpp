@@ -5,7 +5,6 @@
 #include "macro/economy.h"    // stock_price — ranking asks THE price law
 #include "tables/faction.h"    // монетная семья фракции — ординалы номиналов
 #include "macro/state.h"      // GameState/Landmark — ведомость пишется в место
-#include "macro/characters.h" // landmark_sheet — анкета места судит спрос
 
 #include <algorithm>
 #include <bit>
@@ -227,114 +226,6 @@ int econ_pay_debt(Inventory& store, std::int32_t* needDebt,
     return paid;
 }
 
-ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
-                                  int population,
-                                  EconFactSink sink, void* user) {
-    ConsumeOutcome out{};
-    if (population <= 0) {
-        // Мёртвое место — не должник: счёт закрывается вместе с жизнью, и
-        // закрывается ЦЕЛИКОМ — проход по словарю, а не по списку нужд.
-        for (int c = 0; c < kCommodityCount; ++c) needDebt[c] = 0;
-        out.wellbeing = 0.0f;
-        return out;
-    }
-    // 1. ВЗЫСКАНИЕ прошлого счёта. Хлеб: по душе за каждый непокрытый
-    // душевой сезон — пропорция «доля долга × население» выходит сама,
-    // хранить исходный счёт не нужно (счёт и был население × душевой
-    // сезон); хвост меньше душевого сезона прощается — зеркало закона
-    // «кусок меньше сезона не кормит никого». Прочие строки не убивают:
-    // от нехватки ткани не умирают, она гасит РОСТ. Шкала комфорта — по
-    // СЕГОДНЯШНЕМУ населению: с выставления счёта оно дрейфует ростом, но
-    // доля читается на той же границе, где выставится новый счёт.
-    // РАЦИОН СПРАШИВАЕТСЯ У СТРОКИ, А НЕ У ЧИСЛА ДУШ (вердикт владельца
-    // 2026-09-30, дословно: «с чего это лошади не едят если в таблице
-    // объектов они ещё как едят! убрать все хардкоды — агностичный сквад,
-    // все кто в нём едят по таблице по системе; никаких особенностей
-    // лошадей»). Счёт голода места есть ТОТ ЖЕ `upkeep_bill`, которым
-    // судится отряд в поле, — этим закрыт наряд M-140 «свести рот места и
-    // рот отряда в один»: раньше здесь стоял `population × kDaysPerSeason`,
-    // то есть «один юнит на душу в день» ЛИТЕРАЛОМ, и колонка `boardPerDay`
-    // всей таблицы существ молча не читалась.
-    //
-    // СЛЕДСТВИЕ, КОТОРОЕ ЭТИМ ПОКУПАЕТСЯ: предел ТАБУНА места стал
-    // эмерджентным. Прежде его держал потолок `garrison_cap_` — ровно тот
-    // костыль, что запрещён ЗАКОНОМ КЛАМПА («потолок численности МАСКИРУЕТ
-    // отсутствие обратной связи»); теперь лишняя лошадь просто ЕСТ, счёт
-    // растёт, и недоимка забирает головы. Предел наступает через мир.
-    const int headsBefore = creature_count(store);
-    const std::int64_t boardSeason = upkeep_bill(store).board;
-    // Сезонный рацион ОДНОЙ головы этого места — среднее по её же составу:
-    // оба числа из одних данных, ни одной назначенной константы.
-    const int perHeadSeason = headsBefore > 0
-        ? std::max<int>(1, int(boardSeason / headsBefore))
-        : kDaysPerSeason;
-    int deaths = 0;
-    // ДОЛЯ КОМФОРТА МЕРЯЕТСЯ СТОИМОСТЬЮ, А НЕ ШТУКАМИ (вердикт владельца
-    // 2026-09-26, подтверждён прямо). Бюджет горожанина задан в стоимости,
-    // значит и «сколько из него не покрыто» — стоимость: в штуках кирпич
-    // весил бы столько же, сколько статуя, и рост судил бы не то.
-    long long comfortValue = 0;
-    long long unmetValue = 0;
-    const int hungerOrd = hunger_commodity_ordinal();
-    for (int c = 0; c < kCommodityCount; ++c) {
-        const std::int32_t remaining = needDebt[c];
-        if (c == hungerOrd) {
-            // Сколько РТОВ не прокормлено: недоимка, делённая на сезонный
-            // рацион рта. Смерть снимает ЛЮБУЮ голову — «никаких
-            // особенностей лошадей» (вердикт): голодный двор теряет и
-            // человека, и скотину, по своей же таблице.
-            deaths = std::min(headsBefore, int(remaining / perHeadSeason));
-            continue;
-        }
-        const int demand = season_comfort_units(population, c);
-        if (demand <= 0) continue;
-        const ItemDef* def = item_def_at(commodity_item_index(c));
-        const long long unit = def ? def->value : 0;
-        comfortValue += (long long)demand * unit;
-        unmetValue += (long long)(remaining < demand ? remaining : demand)
-                      * unit;
-    }
-    out.starvedPop = deaths;
-    if (deaths > 0) {
-        report(sink, user, EconFact::Kind::Starved, -1, deaths);
-    }
-    // БЛАГОПОЛУЧИЕ — ОДНА МЕРА (владелец 2026-09-19): доля оплаченной еды ×
-    // доля оплаченного комфорта. Доля еды — это выжившие против населения
-    // ДО взыскания: смертей ровно столько, сколько душевых сезонов не
-    // оплачено, поэтому отношение И ЕСТЬ «оплачено / выставлено», без
-    // второго хранимого числа. Голодавший сезон гасит рост сам, и это не
-    // вторая кара: мёртвых уже не вернуть, а живые просто не плодятся,
-    // пока не прокормятся.
-    // Доля прокормленных — по РТАМ этого места: счёт выставлен ртам, и
-    // судить его людьми значило бы мерить оплату не тем, что оплачивалось.
-    const float foodShare = headsBefore > 0
-        ? float(headsBefore - deaths) / float(headsBefore)
-        : 0.0f;
-    const float comfortShare = comfortValue > 0
-        ? 1.0f - float(unmetValue) / float(comfortValue)
-        : 1.0f;
-    out.wellbeing = foodShare * comfortShare;
-    // 2. ВЗЫСКАНИЕ ИСПОЛНЯЕТСЯ ЗДЕСЬ — головы снимает та же дверь, что их
-    // судила. Иначе новый счёт ниже пришлось бы выставлять по составу,
-    // которого уже нет, — и он врал бы ровно на съеденных.
-    if (deaths > 0) bleed_creatures(store, deaths);
-    // 3. НОВЫЙ СЧЁТ — по ФАКТИЧЕСКОМУ составу, перезаписью: старый долг не
-    // переносится (взыскали — выставили новый). Голод спрашивает таблицу
-    // (`upkeep_bill` по живым головам), комфорт — людей: бюджет горожанина
-    // есть свойство человека, и лошадь его не тратит.
-    const int popAfter = std::max(0, count_human_souls(store));
-    const std::int64_t boardAfter = upkeep_bill(store).board;
-    for (int c = 0; c < kCommodityCount; ++c) {
-        needDebt[c] = std::int32_t(c == hungerOrd
-            ? boardAfter
-            : season_comfort_units(popAfter, c));
-    }
-    // 3. НЕМЕДЛЕННОЕ ГАШЕНИЕ: посевной амбар и прошлый излишек платят по
-    // счёту в ту же минуту — та же дверь, что у прихода.
-    econ_pay_debt(store, needDebt, sink, user);
-    return out;
-}
-
 int econ_store_hygiene(Inventory& store, EconFactSink sink, void* user) {
     // Slot hygiene stays DAILY while the balances went seasonal (CANON
     // «Крафт/Скрап»: авто-скрап ИИ по порогу >50%): a store clogged past the
@@ -460,7 +351,7 @@ int commodity_of_item(int itemIdx) {
 void seed_landmark_inventory(Inventory& inv, int population, bool isCity) {
     if (population <= 0) return;
     // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the
-    // first boundary (econ_debt_boundary) bills a whole season of harch and
+    // first boundary (`upkeep_season_window`) bills a whole season of harch and
     // the larder pays it on the spot — a place seeded with less starts life
     // in debt and must out-produce it or bury the shortfall a season later.
     // The larder IS a season.

@@ -270,7 +270,6 @@ SKELETON.md	econ_day.cpp:194
 SKELETON.md	econ_day.cpp:209
 SKELETON.md	econ_day.cpp:320
 SKELETON.md	econ_day.cpp:394-401
-SKELETON.md	econ_day.cpp:461
 SKELETON.md	econ_day.cpp:70
 SKELETON.md	econ_day.cpp:95-99
 SKELETON.md	econ_day.h:108
@@ -716,7 +715,6 @@ jopus_prompts.md	core/stacks.h:150-158
 jopus_prompts.md	deposit_layer.h:81
 jopus_prompts.md	econ_day.cpp:200
 jopus_prompts.md	econ_day.cpp:40-55
-jopus_prompts.md	econ_day.cpp:413
 jopus_prompts.md	econ_day.cpp:46
 jopus_prompts.md	econ_day.cpp:46-51
 jopus_prompts.md	econ_day.h:139
@@ -972,7 +970,6 @@ macro-registry.md	econ_day.cpp:262-266
 macro-registry.md	econ_day.cpp:288
 macro-registry.md	econ_day.cpp:387
 macro-registry.md	econ_day.cpp:394-401
-macro-registry.md	econ_day.cpp:461
 macro-registry.md	econ_day.h:121
 macro-registry.md	econ_day.h:193-196
 macro-registry.md	econ_day.h:265
