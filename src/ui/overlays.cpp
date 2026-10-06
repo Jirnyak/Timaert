@@ -2211,6 +2211,17 @@ namespace sm::ui
                         if (ImGui::Button("Hire"))
                         {
                             int purse = inventory_value(playerBag);
+                            // Паства мерится ДО сделки: нанятый уходит в
+                            // армию игрока НАВСЕГДА (у его сквада свой дом),
+                            // то есть покидает паству этого места — ровно
+                            // случай, для которого `leave_home_flock` и
+                            // написан. Списания здесь не было вовсе: найм
+                            // уменьшал головы гарнизона, а worked-число
+                            // оставалось, и место продолжало кормить и
+                            // облагать данью уехавшего. Откат неудачной
+                            // сделки ниже возвращает голову в состав, и
+                            // замер до/после это учитывает сам.
+                            const int folkBefore = count_human_souls(sInv);
                             const int paid = playerArmy
                                 ? hire_npc(*playerArmy, sInv, t, purse)
                                 : 0;
@@ -2233,6 +2244,7 @@ namespace sm::ui
                                         creatures_push(sInv, back);
                                 }
                             }
+                            flock_left_home(gs, *mw->store, sslot, folkBefore);
                         }
                         if (!can)
                             ImGui::EndDisabled();

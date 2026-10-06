@@ -607,6 +607,33 @@ timaert_test(world_tick_parity_test
         src/macro/npc_spawn.cpp
     LINK_SDL LINK_ENTT)
 
+# ЗАКОН ПАРЫ ДУШИ: у паствы поселения ДВА носителя (число worked и головы
+# контейнера), и всякая убыль обязана снять ОБА. Свой таргет, а не строка в
+# соседнем: закон живёт в ЧЕТЫРЁХ дверях четырёх файлов (сезонное окно,
+# квитанция стока, найм в панели, граница дня), и спрашивать его там, где
+# судится клок мира, значило бы спрятать его под чужой ответственностью.
+# Цена дыры замерена: 51 322 призрака за одну границу сезона.
+timaert_test(flock_pairing_law_test
+    SOURCES
+        src/macro/world_tick.cpp
+        src/macro/npc_ai.cpp
+        src/macro/macro_stock.cpp
+        src/macro/econ_day.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/recovery.cpp
+        src/macro/player_entity.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
+        src/macro/npc_spawn.cpp
+    LINK_SDL LINK_ENTT)
+
 timaert_test(recovery_law_test
     SOURCES
         src/macro/recovery.cpp)

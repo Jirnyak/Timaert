@@ -300,6 +300,38 @@ inline void leave_home_flock(GameState& gs, const MacroStore& st,
     worked_write(gs, x, y, std::max(0, worked_read(gs, x, y) - souls));
 }
 
+// ── ВТОРАЯ ПОЛОВИНА ПАРЫ, ИЗМЕРЕННАЯ ФАКТОМ ──────────────────────────────
+// `leave_home_flock` выше умеет СПИСАТЬ, но не умеет узнать СКОЛЬКО, и
+// каждый звонящий отвечал на это сам — четырьмя разными способами, из
+// которых верным был один. Эта дверь отвечает за всех, и ответ у неё
+// измеренный: СНЯТО = было минус стало.
+//
+// ПОЧЕМУ ИМЕННО ИЗМЕРЕНИЕ, А НЕ НАМЕРЕНИЕ. Всякая дверь убыли вправе взять
+// МЕНЬШЕ запрошенного — пустой стак, кап приёмника, отказ пула (ходок
+// возвращается в состав). Списать с паствы запрошенное значило бы вычесть
+// людей, которые остались стоять. Это ровно закон `drain` (ЗАКОН ТРЁХ
+// ДВЕРЕЙ) на втором носителе той же души.
+//
+// ПОЧЕМУ СЧЁТ ЧЕЛОВЕЧЕСКИЙ. Паства поселения — число worked, и приход в неё
+// идёт людьми (`settle_souls` → `raise_flock_into_container`, строка
+// Peasant). Значит и убыль обязана считаться людьми: конь в стойле —
+// имущество, и его падёж человеческую паству уменьшать не смеет. До этой
+// двери `settle_landmark_day` вычитал из worked ЛЮБУЮ павшую голову, считая
+// её душой (латентно: табун у мест сегодня нулевой).
+//
+// ВЕТКИ ПО РОДУ ЗДЕСЬ НЕТ И НЕ НУЖНО: у данжа паства И ЕСТЬ головы, поэтому
+// `leave_home_flock` сам уходит пустым по колонке `bornPopBase`, а
+// безымянный дом (homeId = 0) отсекается там же. Оба — ЗНАЧЕНИЯ, а не
+// исключения.
+inline int flock_left_home(GameState& gs, const MacroStore& st,
+                           std::uint16_t slot, int folkBefore) {
+    const int lost = folkBefore - count_human_souls(st.inventory[slot].inv);
+    if (lost > 0) {
+        leave_home_flock(gs, st, st.runtime[slot].homeSettlementId, lost);
+    }
+    return lost;
+}
+
 inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
                                       EconFactSink sink = nullptr,
                                       void* user = nullptr) {

@@ -71,8 +71,10 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
     if (!w.store || !w.store->valid(h)) return;
     const std::uint16_t slot = h.slot;
     Inventory& store = w.store->inventory[slot].inv;
-    const int px = ecs::cell_x(w.store->cell[slot], w.gs->mapW);
-    const int py = ecs::cell_y(w.store->cell[slot], w.gs->mapW);
+    // Колонка, а не род: у данжа «душа» — голова его толпы и человеком не
+    // является по природе (Imp), поэтому дверь убыли у него другая. Самой
+    // ПАСТВЫ эта ветка больше не касается — её снимает `flock_left_home`,
+    // который про данж знает сам.
     const bool dungeon =
         landmark_def(SquadType(w.store->runtime[slot].squadType))
             .bornPopBase != 0;
@@ -93,20 +95,21 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
         who.entityId = k.detail == -1 ? 0u : std::uint32_t(k.detail);
         who.kind = k.detailKind;
         who.level = k.detailLevel;
-        int died = 0;
+        // Паства мерится ДО убыли и списывается ФАКТОМ — одной дверью на все
+        // пути души (`flock_left_home`). Здесь стоял свой счётчик `died` и
+        // своя запись worked, и у счётчика был изъян: именная квитанция
+        // инкрементировала его на ЛЮБОЕ снятое существо, то есть названный
+        // конь списывал человеческую паству.
+        const int folkBefore = count_human_souls(store);
         if (who.entityId != 0 || who.level > 0) {
             for (int i = 0; i < -delta; ++i) {
                 if (!creatures_remove_one(store, who)) break;
-                ++died;
             }
         } else {
-            died = dungeon ? bleed_creatures(store, -delta)
-                           : bleed_flock(store, -delta);
+            if (dungeon) bleed_creatures(store, -delta);
+            else         bleed_flock(store, -delta);
         }
-        if (!dungeon && died > 0) {
-            worked_write(*w.gs, px, py,
-                         std::max(0, worked_read(*w.gs, px, py) - died));
-        }
+        flock_left_home(*w.gs, *w.store, slot, folkBefore);
     } else {
         // Вернувшееся тело — то же событие «место получило душу», одной
         // дверью (labour.h settle_souls): второй писатель пары
@@ -126,26 +129,32 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
 // creatures simply is no squad any more — nothing extra removes it.
 // Слияние M-71: члены сквада живут в области существ ЕДИНОГО контейнера
 // (NpcInventory), обвязка счетов (SquadUpkeep) им больше не дом.
-Inventory* find_creatures(const MacroWorld& w, std::int32_t subject) {
+// ВОЗВРАЩАЕТ СЛОТ, А НЕ ГОЛЫЙ ИНВЕНТАРЬ: у всякой убыли души есть ВТОРОЙ
+// носитель — паства её дома, — и адресуется он колонками слота
+// (`homeSettlementId`). Дверь, отдававшая только `Inventory*`, тем самым
+// делала парную запись НЕВЫРАЗИМОЙ у своего звонящего, и та не писалась.
+MacroHandle find_creatures_subject(const MacroWorld& w,
+                                   std::int32_t subject) {
     // ФЛИП 1в: скан одной u32-колонки store вместо entt-пары — дешевле и
     // без entt вовсе (за O(1) по ординалу придёт таблица слота, 1е/M-37).
     // Store берём из ctx мира: конверт может его не нести (тестовые
-    // фикстуры), а мир без store — это мир без сквадов, честный nullptr.
-    if (!w.world || subject <= 0) return nullptr;
+    // фикстуры), а мир без store — это мир без сквадов, честный отказ.
+    if (!w.world || subject <= 0) return MacroHandle{};
     MacroStore& st = store_of(*w.world);
     for (std::uint16_t slot = 0; slot < std::uint16_t(kMacroEntityCap);
          ++slot) {
         if (st.alive[slot] != 0
             && st.spawnId[slot].index == std::uint32_t(subject)) {
-            return &st.inventory[slot].inv;
+            return handle_at(st, slot);
         }
     }
-    return nullptr;
+    return MacroHandle{};
 }
 
 int read_creatures(const MacroWorld& w, MacroStockKey k) {
-    const Inventory* r = find_creatures(w, k.subject);
-    return r ? creature_count(*r) : 0;
+    const MacroHandle h = find_creatures_subject(w, k.subject);
+    if (!w.world || !store_of(*w.world).valid(h)) return 0;
+    return creature_count(store_of(*w.world).inventory[h.slot].inv);
 }
 
 void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
@@ -157,8 +166,11 @@ void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
         // other malformed receipt.
         return;
     }
-    Inventory* r = find_creatures(w, k.subject);
-    if (!r) return;
+    if (!w.world) return;
+    MacroStore& st = store_of(*w.world);
+    const MacroHandle h = find_creatures_subject(w, k.subject);
+    if (!st.valid(h)) return;
+    Inventory& r = st.inventory[h.slot].inv;
     // The receipt names its member or it pays nothing: by entityId for a
     // storied soul, by {kind, level} for a generic one (detailLevel > 0 is
     // the pair's liveness — kind alone cannot be, Peasant is row 0).
@@ -167,9 +179,24 @@ void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
     who.kind = k.detailKind;
     who.level = k.detailLevel;
     if (who.entityId == 0 && who.level <= 0) return;
+    // ПАСТВА — ТОЙ ЖЕ ПАРОЙ, ЧТО У СТРОКИ `population` РЯДОМ. Эта строка
+    // субъекта НЕ ФИЛЬТРУЕТ (скан по ординалу берёт любой живой слот), а
+    // квитанции авто-боя приходят и на поселения: индекс сквадов их тоже не
+    // отсеивает, так что набег на деревню снимал головы из её инвентаря и
+    // worked не трогал. Два ответа на «душа вышла из контейнера» были
+    // вторым словарём (DOD п.6) — теперь ответ один.
+    const int folkBefore = count_human_souls(r);
     for (int i = 0; i < -delta; ++i) {
-        if (!creatures_remove_one(*r, who)) break;
+        if (!creatures_remove_one(r, who)) break;
     }
+    // ПАРА ПИШЕТСЯ ТАМ, ГДЕ ЕСТЬ ВТОРОЙ НОСИТЕЛЬ, А СНЯТИЕ ГОЛОВЫ ОТ НЕГО НЕ
+    // ЗАВИСИТ. Паства — число слоя `worked`, то есть колонка `gs`; конверт
+    // мира вправе его не нести (тестовые фикстуры — о чём говорит и резолв
+    // субъекта выше). Мир без `gs` есть мир без паствы, и пары в нём нет —
+    // но квитанция остаётся исполнимой. Гейт на всю дверь был бы отказом
+    // СНЯТИЯ по отсутствию ВТОРОГО носителя: поймано `macro_stock_test`
+    // (7 из 51) и `body_contract_test`.
+    if (w.gs) flock_left_home(*w.gs, st, h.slot, folkBefore);
 }
 
 // (Сток `garrison` УНИЧТОЖЕН 2026-09-30, v122 — вместе с сословием: он

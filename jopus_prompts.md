@@ -1599,7 +1599,7 @@ return -1` — второй запрет мира рядом с водой. Го
 ЛЕС ЭТО ПОЛЕ РЕСУРСОВ И ЖИЛО УЖЕ НА УРОВНЕ СТРУКТУРЫ ПРОБЛЕМА»).
 
 **Как сейчас (SKELETON I.2 `:200-240`, `stacks.h:150-168`):** реестр
-`kResourceFields` (`macro_stock.cpp:358-405`, 10 рядов: wheat, fauna,
+`kResourceFields` (`kResourceFields@src/macro/macro_stock.cpp`, 10 рядов: wheat, fauna,
 trees, horses, stone, silver, copper, …) описывает все ряды ОДНИМ
 законом, а данные лежат в ТРЁХ контейнерах: шрамы — `GameState::resourceScarCells`
 (`ResourceGrid` u16×N, живых рядов 3 из 10: `kScarRows`), жилы —

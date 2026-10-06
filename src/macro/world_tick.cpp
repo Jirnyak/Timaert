@@ -61,14 +61,12 @@ void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
     // благополучие живут в store, строки места больше не существует.
     Inventory& store = st.inventory[slot].inv;
     Wellbeing& wb = st.wellbeing[slot];
-    const int px = ecs::cell_x(st.cell[slot], gs.mapW);
-    const int py = ecs::cell_y(st.cell[slot], gs.mapW);
     // Переворот населения (v122): у поселения паства — worked-ЧИСЛО фичи, и
     // всякая её убыль/прибыль идёт ПАРОЙ — число И головы в инвентаре; у
     // данжа (bornPopBase != 0) паства и есть головы, worked не трогается
-    // (под FT_Spire там живёт спелл).
-    const bool dungeon =
-        landmark_def(SquadType(st.runtime[slot].squadType)).bornPopBase != 0;
+    // (под FT_Spire там живёт спелл). ВЕТКИ ПО ЭТОЙ КОЛОНКЕ ЗДЕСЬ БОЛЬШЕ НЕТ:
+    // её несёт сама дверь пары (`flock_left_home` → `leave_home_flock`), и
+    // данж уходит из неё пустым по построению.
     // THE SEASON WINDOW (CANON S19.2, единое окно мира) — теперь граница
     // ДОЛГА (CANON S10, вердикт 2026-09-19): взыскание прошлого счёта,
     // новый счёт, немедленное гашение из склада. Её вердикт — ОДНО число,
@@ -77,23 +75,28 @@ void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
     // нет (владелец 2026-09-19: «теперь только есть благополучие и оно
     // даёт рост»).
     if (season_boundary(day)) {
+        // Паства мерится ДО суда: после него спрашивать уже некого, а
+        // списывать надо ФАКТ (`flock_left_home`).
+        const int folkBefore = count_human_souls(store);
         const ConsumeOutcome o = econ_debt_boundary(
             store, st.upkeep[slot].needDebt, souls_home(st, slot), sink, user);
         // СМЕРТЬ — единственная кара голода: доля непогашенного хлеба
         // уходит населением здесь, в единственной двери. Умирают ДОМАШНИЕ
         // головы; у поселения то же число сходит с worked-паствы (drain:
         // списывается ФАКТ — сколько голов реально стояло).
+        //
+        // ГОЛОВЫ УЖЕ СНЯТЫ ГРАНИЦЕЙ (econ_debt_boundary исполняет взыскание
+        // там же, где судит его: иначе новый счёт выставлялся бы по составу,
+        // которого уже нет). Здесь остаётся ВТОРОЙ носитель — паства, и она
+        // снимается ТОЙ ЖЕ дверью, что у всякой другой убыли души.
+        //
+        // ЗДЕСЬ СТОЯЛО `worked -= o.starvedPop`, И ЭТО БЫЛО НЕ ТО ЧИСЛО:
+        // `starvedPop` считает ЛЮБУЮ павшую голову (`bleed_creatures` —
+        // «никаких особенностей лошадей»), а worked есть паства ЧЕЛОВЕЧЕСКАЯ
+        // — приход в неё идёт строкой Peasant. Падёж табуна списывал людей;
+        // латентно лишь потому, что табун у мест сегодня нулевой.
+        flock_left_home(gs, st, slot, folkBefore);
         if (o.starvedPop > 0) {
-            // ГОЛОВЫ УЖЕ СНЯТЫ ГРАНИЦЕЙ (econ_debt_boundary исполняет
-            // взыскание там же, где судит его: иначе новый счёт выставлялся
-            // бы по составу, которого уже нет). Здесь остаётся ВТОРОЙ
-            // носитель — паства: число фичи падает на съеденных, у данжа
-            // паства и есть головы, и падать ей уже не надо.
-            if (!dungeon) {
-                worked_write(gs, px, py,
-                             std::max(0, worked_read(gs, px, py)
-                                             - o.starvedPop));
-            }
             diedOut = souls_flock(gs, st, slot) == 0;
         }
         wb.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
