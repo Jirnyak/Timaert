@@ -222,6 +222,24 @@ struct LandmarkDef {
     // this column is the kind's vocabulary. Owner's verdicts: деревня =
     // прилавок + найм + доска контрактов; отдых таверны вырезан вообще.
     std::uint16_t     actions = 0;
+    // ── АМБАР РОЖДЕНИЯ: ДВА ЧИСЛА РОДА, А НЕ БУЛЕВ РОД В АРГУМЕНТЕ ────────
+    // Здесь их не было: `seed_landmark_inventory(..., bool isCity)` тащил
+    // РОД булевым параметром и сам решал по нему оба числа (`isCity ? 32 : 8`
+    // и `isCity ? 1 : 2`) — ветка по роду внутри фундаментальной двери,
+    // ровно то, что запрещает ЗАКОН СТРОКИ КАТАЛОГА. А оба звонящих
+    // передавали ТАВТОЛОГИЮ: спрашивали род у слота там, где литералом
+    // только что его туда и записали.
+    //
+    // ЗАЧЕМ ИМЕННО ЭТИ ДВА (DOD п.9 «кто читает и зачем»): их читает
+    // `seed_landmark_inventory@src/macro/econ_day.cpp` — единственный
+    // читатель, — чтобы ответить «с чем сквад рождается посреди жизни».
+    // Числа БАЛАНСНЫЕ (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ: не по-двойки, значит
+    // контент), и по вердикту владельца 2026-10-06 они СОДЕРЖИМОЕ модуля
+    // рода — здесь они стоят до эпика M-72/M-235 и уедут в модуль с ним.
+    // Дефолты — деревенские: сквад, про который ничего не сказано, рождается
+    // скромно, а не богато.
+    std::uint8_t     seedComfortDays = 8;   // дней бюджета комфорта в амбаре
+    std::uint8_t     seedRawMult = 2;       // множитель сырьевых буферов
 };
 
 // Night-light columns (lightColor / lightPop) drive the universal macro
@@ -286,7 +304,8 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
                    // они перестают выводиться друг из друга.
                    {NPCType::Peasant, CrewGate::Auction,
                     /*solo*/false, SquadType::Caravan}}, 2,
-     /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
+     /*actions*/ kMapActTrade | kMapActHire | kMapActQuests,
+     /*seedComfortDays*/ 32, /*seedRawMult*/ 1 },
     // ОДНА строка артели — ШАБЛОН, а не слот (CANON S4, 2026-09-22). Здесь
     // стояли ЧЕТЫРЕ одинаковые крестьянские строки, и четвёрка была
     // крутилкой «одновременность артелей», то есть числом с потолка в
@@ -294,7 +313,8 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // получили положительный скор, — а пул рук его урезает; строка же
     // объявляет только КОГО поднимать и КАКОГО ТИПА.
     {SquadType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false, SquadType::Artel}}, 1,
-     /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
+     /*actions*/ kMapActTrade | kMapActHire | kMapActQuests,
+     /*seedComfortDays*/ 8, /*seedRawMult*/ 2 },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and
     // clearing the tower can never again be ambiguous between garrison and
@@ -366,6 +386,22 @@ static_assert(crew_rows_match_count(kLandmarks,
 static_assert(sizeof(LandmarkDef) == 120,
               "LandmarkDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
+
+// ── СТРАЖ ПОЗИЦИОННОЙ СТРОКИ: ДВА АМБАРНЫХ ЧИСЛА СТОЯТ ГДЕ ОБЕЩАНО ───────
+// Строки этой таблицы инициализируются ПОЗИЦИОННО, и новая колонка в хвосте
+// — ровно тот промах на единицу, который числами не виден: значение село бы
+// в соседнее поле, мир остался бы правдоподобным, а свидетель замера молчал
+// бы. Поэтому пин под КОМПИЛЯТОРОМ, а не в тесте: неверная раскладка
+// перестаёт СОБИРАТЬСЯ (§8 п.6 — лучшая форма свидетеля).
+// Числа БАЛАНСНЫЕ и менять их можно; менять ВМЕСТЕ с этой строкой.
+static_assert(
+    kLandmarks[std::size_t(SquadType::City)].seedComfortDays == 32
+        && kLandmarks[std::size_t(SquadType::City)].seedRawMult == 1
+        && kLandmarks[std::size_t(SquadType::Village)].seedComfortDays == 8
+        && kLandmarks[std::size_t(SquadType::Village)].seedRawMult == 2,
+    "амбар рождения: город — сезон комфорта и одинарное сырьё, деревня — "
+    "восемь дней и двойное (значения перенесены из булева параметра "
+    "seed_landmark_inventory один в один)");
 
 // THE two labour laws of a city meet at the same eighth of its people, and
 // until now that meeting was a claim in a COMMENT: the crew pool's shift

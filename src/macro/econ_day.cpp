@@ -1,4 +1,5 @@
 #include "macro/econ_day.h"
+#include "macro/landmark_registry.h"  // строка рода — амбар рождения
 #include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
 #include "macro/upkeep_window.h"   // upkeep_bill — ОДИН счёт содержания (M-140)
 
@@ -348,7 +349,8 @@ int commodity_of_item(int itemIdx) {
         ? int(kBack[std::size_t(itemIdx)]) : -1;
 }
 
-void seed_landmark_inventory(Inventory& inv, int population, bool isCity) {
+void seed_landmark_inventory(Inventory& inv, int population,
+                            const LandmarkDef& row) {
     if (population <= 0) return;
     // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the
     // first boundary (`upkeep_season_window`) bills a whole season of harch and
@@ -358,7 +360,10 @@ void seed_landmark_inventory(Inventory& inv, int population, bool isCity) {
     constexpr int kSeedVitalDays = kDaysPerSeason;
     static_assert(kSeedVitalDays == kDaysPerSeason,
                   "the seed larder must survive the first season window");
-    const int needDays = isCity ? 32 : 8;   // a season / days
+    // ЧИСЛА — КОЛОНКИ СТРОКИ РОДА, А НЕ ВЕТКА ПО БУЛЕВУ РОДУ. Здесь стояло
+    // `isCity ? 32 : 8`, то есть род, протащенный в фундаментальную дверь
+    // аргументом, и дверь решала по нему сама (ЗАКОН СТРОКИ КАТАЛОГА).
+    const int needDays = int(row.seedComfortDays);
     const int hungerOrd = hunger_commodity_ordinal();
     for (int c = 0; c < kCommodityCount; ++c) {
         // ГОЛОД — своя система (сезон харча), комфорт — доля бюджета за
@@ -381,7 +386,7 @@ void seed_landmark_inventory(Inventory& inv, int population, bool isCity) {
         // ещё одним днём, и закон «амбар рождения = ровно сезон» тихо врёт.
         {"wood", 0}, {"fibre", 1}, {"stone", 1}, {"clay", 2}, {"iron", 3},
     };
-    const int siteMult = isCity ? 1 : 2;
+    const int siteMult = int(row.seedRawMult);
     for (const RawSeed& r : kRawSeeds) {
         const int qty = (population >> r.shift) * siteMult;
         if (qty > 0) inv.add(r.id, qty);

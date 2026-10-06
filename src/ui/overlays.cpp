@@ -14,7 +14,6 @@
 #include "macro/landmark_iter.h"
 #include "ui/landmark_draw.h"
 #include "tables/npc.h"
-#include "macro/characters.h"   // landmark_sheet — что место умеет
 #include "tables/commodity.h"   // the raw rows the scrap variant byte names
 #include "macro/economy.h"
 #include "tables/faction.h"
@@ -2103,6 +2102,16 @@ namespace sm::ui
                     draw_trade_carry_line(h.sheet, playerBag, h.standing);
                     draw_counterparty_gold(sInv);
                     draw_trade_amount_input(&g_settlementTrade.amount);
+                    // ── АНКЕТА ЭТОГО СКВАДА, А НЕ СТОЛ ЕГО РОДА ──────────
+                    // Здесь ЧЕТЫРЕЖДЫ стоял `landmark_sheet(sKind)` — чтение
+                    // таблицы РОДА в рантайме, то есть второй ответ на вопрос,
+                    // на который у сквада стоит СВОЯ колонка `sheet`. Панель
+                    // показывала «что умеет РОД», а торговала бы по тому, что
+                    // умеет ЭТОТ сквад: ЗАКОН АНКЕТЫ — «анкета источник», а
+                    // таблица рода только ШАБЛОН РОЖДЕНИЯ (`birth_place`
+                    // ставит `st.sheet[slot] = landmark_sheet(kind)`, и после
+                    // рождения истина у анкеты — она качается).
+                    const CharacterSheet &sSheet = mw->store->sheet[sslot];
                     const auto buyUnit = [&](const ItemRef &ref,
                                              const ItemDef &def, int n) {
                         return trade_overlay_buy_price(
@@ -2111,12 +2120,10 @@ namespace sm::ui
                                         season_demand_for(
                                             int(ref.def), mw->store->upkeep[sslot].needDebt,
                                             souls_home(*mw->store, sslot),
-                                            landmark_sheet(
-                                                sKind).skills,
+                                            sSheet.skills,
                                             &sInv)),
                             h.tradePct,
-                            trade_power_of(
-                                landmark_sheet(sKind)));
+                            trade_power_of(sSheet));
                     };
                     const auto sellUnit = [&](const ItemRef &ref,
                                               const ItemDef &def, int n) {
@@ -2126,12 +2133,10 @@ namespace sm::ui
                                         season_demand_for(
                                             int(ref.def), mw->store->upkeep[sslot].needDebt,
                                             souls_home(*mw->store, sslot),
-                                            landmark_sheet(
-                                                sKind).skills,
+                                            sSheet.skills,
                                             &sInv)),
                             h.tradePct,
-                            trade_power_of(
-                                landmark_sheet(sKind)));
+                            trade_power_of(sSheet));
                     };
                     draw_barter_body(
                         "Settlement stock", g_settlementTrade,

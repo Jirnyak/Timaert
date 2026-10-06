@@ -19,6 +19,7 @@
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
+#include "macro/landmark_registry.h"  // строка рода — амбар рождения
 #include "macro/upkeep_window.h"  // upkeep_season_window — ОДНА дверь суда границы (M-233)
 #include "macro/world_row.h"   // raise_flock_into_container / count_human_souls
 #include "macro/anketa.h"
@@ -468,7 +469,7 @@ int main() {
     {
         const int pop = 640;
         Inventory city;
-        seed_landmark_inventory(city, pop, true);
+        seed_landmark_inventory(city, pop, landmark_def(SquadType::City));
         if (city.count("food") != pop * kDaysPerSeason) {
             return fail("birth larder must hold a SEASON of food — a place "
                         "seeded thinner dies of arithmetic at its first "
@@ -480,7 +481,7 @@ int main() {
                   "a consumed need row was born empty");
         }
         Inventory village;
-        seed_landmark_inventory(village, pop, false);
+        seed_landmark_inventory(village, pop, landmark_def(SquadType::Village));
         // ДЕЛО ДЕРЕВНИ — СЫРЬЁ, и мерить это надо СЫРЬЁМ (2026-09-20): пища
         // с этого дня не материал, а голодная строка, и её амбар рождения
         // равен сезону у всех — деревня перестала «держать больше еды» не
@@ -492,7 +493,7 @@ int main() {
             return fail("a crafting city banks deeper crafted stocks");
         }
         Inventory again;
-        seed_landmark_inventory(again, pop, true);
+        seed_landmark_inventory(again, pop, landmark_def(SquadType::City));
         if (again.count("food") != city.count("food")
             || again.used_slots() != city.used_slots()) {
             return fail("birth stocks must be deterministic from population");

@@ -27,6 +27,11 @@
 
 namespace sm {
 
+// Строка рода — только по ССЫЛКЕ (§12: forward-declare в заголовке,
+// include в .cpp): тянуть сюда весь реестр ради одного параметра
+// значило бы заставить каждого включившего парсить его.
+struct LandmarkDef;
+
 // ── State ────────────────────────────────────────────────────────────────
 
 // Integer units per commodity — discrete by house style; signed so a
@@ -520,7 +525,14 @@ inline float population_delta_per_day(int population, float wellbeing) {
 //     рождается со складом и БЕЗ МОНЕТ, потому что выдача монет из воздуха
 //     снесена целиком. Отсюда и сигнатура без `factionIdx`/`seedSalt` —
 //     чьи номиналы печатать и с каким разбросом, спрашивать больше некому.
-void seed_landmark_inventory(Inventory& inv, int population, bool isCity);
+// РОД ПРИХОДИТ СТРОКОЙ, А НЕ БУЛЕВЫМ ФЛАГОМ: `bool isCity` смуглил сюда
+// ось рода, и дверь решала по нему два числа сама. Теперь числа — две
+// колонки строки (`seedComfortDays`/`seedRawMult`), а дверь их только
+// читает (ЗАКОН АГНОСТИЧНОСТИ: фундаментальная система не знает, кто и
+// зачем её позвал). Оба прежних звонящих передавали ТАВТОЛОГИЮ —
+// спрашивали род у слота там, где литералом только что его записали.
+void seed_landmark_inventory(Inventory& inv, int population,
+                            const LandmarkDef& row);
 
 
 } // namespace sm
