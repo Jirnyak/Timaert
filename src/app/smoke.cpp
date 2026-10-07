@@ -7704,9 +7704,16 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.map = false;
             app.ui.quest = false;
             refresh_available_settlement_quests(app);
-            const std::uint32_t previewSeed =
-                app.gs.worldSeed
-                + std::uint32_t(sOrdinal > 0 ? sOrdinal : 0) * 123u;
+            // СИД ПРЕВЬЮ — ТОЙ ЖЕ ДВЕРЬЮ, ЧТО У КАРТИНКИ. Здесь стояло
+            // `worldSeed + ordinal*123` — ПАРАЛЛЕЛЬНЫЙ ЗАКОН СИДА, который
+            // продакшен снёс именем («карта в меню города вообще другая»,
+            // владелец 2026-09-11), а прибор продолжал его печатать: лог
+            // называл число, которого в картинке нет ни разу. Закон один —
+            // `cell_seed@src/sub/map_data.h` по клетке места.
+            const std::uint32_t previewSeed = sm::sub::cell_seed(
+                app.gs.worldSeed,
+                ecs::cell_x(app.macroStore->cell[s], app.gs.mapW),
+                ecs::cell_y(app.macroStore->cell[s], app.gs.mapW));
             std::fprintf(stderr,
                          "[smoke] settlement_map open id=%d name=\"%s\" seed=0x%08X pop=%d\n",
                          sOrdinal,

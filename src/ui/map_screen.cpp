@@ -117,7 +117,6 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     // тем же: три прежних аргумента были ровно этими тремя полями.
     if (!mw.gs || !mw.store || !mw.terrain) return;
     GameState& gs = *mw.gs;
-    const MacroStore& store = *mw.store;
     const TerrainData& terrain = *mw.terrain;
     const int mapW = gs.mapW, mapH = gs.mapH;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();

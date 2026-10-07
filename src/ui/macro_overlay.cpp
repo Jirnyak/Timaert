@@ -182,7 +182,6 @@ void draw_macro_overlay(const MacroWorld& mw,
     // прежних аргумента были ровно этими четырьмя полями (M-233 п.8).
     if (!mw.gs || !mw.store || !mw.terrain || !mw.features) return;
     GameState& gs = *mw.gs;
-    const MacroStore& store = *mw.store;
     const TerrainData& terrain = *mw.terrain;
     const FeatureLayer& features = *mw.features;
     const TreeLayer* treeLayer = mw.trees;
