@@ -156,15 +156,27 @@ struct Fixture {
         sm::nav_bake(mw, nav);
     }
 
-    bool standable(int x, int y) const {
+    // «Суша ли» — ОПИСАНИЕ ГЕОГРАФИИ фикстуры, а не правило мира: с
+    // 2026-10-06 предиката стояния не существует, и клетка воды законна для
+    // всякого ходока. Осталось затем, чтобы ИЗМЕРЯТЬ, сколько воды прошёл
+    // маршрут, и чтобы выборка могла начинаться с берега.
+    bool dry(int x, int y) const {
         return pc.water[std::size_t(sm::wrapi(y, H)) * W
                         + std::size_t(sm::wrapi(x, W))] == 0;
     }
 
     // Чистый ходок: только nav_step. Возвращает шаги до цели, -1 = не дошёл
-    // (лимит — жёсткая крышка против аттракторов и топтания).
-    int walk(int x, int y, int tx, int ty) const {
+    // (лимит — жёсткая крышка против аттракторов и топтания); `wet`, если
+    // передан, получает число пройденных водных клеток.
+    //
+    // ЗДЕСЬ ЖИЛА ТРЕТЬЯ КОПИЯ СТЕНЫ: `if (!standable(...)) return -1; //
+    // походка в воду — дефект». То есть свидетель держал СВОЁ правило мира
+    // рядом с правилом мира, и когда владелец снёс второе («ВЕСА БЫЛО
+    // ЕДИНОЕ РЕШЕНИЕ»), третье осталось бы краснеть на верном поведении.
+    // Теперь вода считается, а не запрещается.
+    int walk(int x, int y, int tx, int ty, int* wet = nullptr) const {
         const int cap = 8 * W * H;
+        if (wet) *wet = 0;
         for (int s = 0; s < cap; ++s) {
             if (sm::wrapi(x, W) == sm::wrapi(tx, W)
                 && sm::wrapi(y, H) == sm::wrapi(ty, H))
@@ -173,7 +185,7 @@ struct Fixture {
             if (!sm::nav_step(nav, x, y, tx, ty, dx, dy)) return -1;
             x = sm::wrapi(x + dx, W);
             y = sm::wrapi(y + dy, H);
-            if (!standable(x, y)) return -1;   // походка в воду — дефект
+            if (wet && !dry(x, y)) ++*wet;
         }
         return -1;
     }
@@ -199,19 +211,28 @@ int main() {
     // в лог, grep не ловит» убита механизмом).
     CHECK(base.nav.portalOverflows == 0,
           "no region silently lost a portal to the cap");
-    std::size_t land = 0, owned = 0;
+    // ВСЯ КАРТА РАЗОБРАНА, И ЭТО ИЗМЕРИМЫЙ СМЫСЛ СНОСА СТЕНЫ. До 2026-10-06
+    // тут стоял обратный негативный контроль — «ровно одна клетка суши,
+    // озёрный карман, обязана остаться ничьей», — и он был верен ровно
+    // потому, что кольцо воды вокруг (56,8) ЗАПРЕЩАЛО вход. В живых мирах
+    // та же стена держала 4328–4701 клетку суши вне всякой округи. Теперь
+    // вода есть цена, и ничьих клеток не бывает ни одной: ни суши, ни моря.
+    std::size_t cellsAll = 0, owned = 0, dryCells = 0, dryOwned = 0;
     for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x) {
-            if (!base.standable(x, y)) continue;
-            ++land;
-            if (sm::nav_region_at(base.nav, x, y) != sm::kNavNoRegion)
-                ++owned;
+            ++cellsAll;
+            const bool isOwned =
+                sm::nav_region_at(base.nav, x, y) != sm::kNavNoRegion;
+            if (isOwned) ++owned;
+            if (base.dry(x, y)) { ++dryCells; if (isOwned) ++dryOwned; }
         }
-    // Негативный контроль: ровно одна клетка суши — озёрный карман — обязана
-    // остаться ничьей; будь она достижима, тест бы лгал о честности NoRegion.
-    CHECK(land - owned == 1, "exactly the lake pocket stays unreachable");
-    CHECK(sm::nav_region_at(base.nav, 56, 8) == sm::kNavNoRegion,
-          "the lake pocket is honestly NoRegion");
+    CHECK(owned == cellsAll,
+          "EVERY cell of the torus belongs to a region — water included");
+    CHECK(dryCells > 0 && dryOwned == dryCells,
+          "...and in particular every cell of LAND, which is the requirement "
+          "«от любого места до любого добраться» made true by construction");
+    CHECK(sm::nav_region_at(base.nav, 56, 8) != sm::kNavNoRegion,
+          "the lake pocket has an округа now: its ring of water is a price");
 
     // Ландмарк → ландмарк: все 30 упорядоченных пар доходят (в т.ч. через
     // разрез — река x=16 заставляет заворачиваться).
@@ -234,8 +255,10 @@ int main() {
     for (int i = 0; i < 160; ++i) {
         const int x = int(lcg(rng) % W);
         const int y = int(lcg(rng) % H);
-        if (!base.standable(x, y)) continue;
-        if (sm::nav_region_at(base.nav, x, y) == sm::kNavNoRegion) continue;
+        // Выборка берётся с СУШИ — не потому, что вода незаконна, а потому,
+        // что «телепорт в глушь» есть критерий владельца про сухопутного
+        // ходока; гейт NoRegion снят, таких клеток больше нет.
+        if (!base.dry(x, y)) continue;
         const Place& T = base.seeded[lcg(rng) % 6];
         CHECK(base.walk(x, y, T.x, T.y) >= 0,
               "a stranded walker finds its way out");
@@ -260,9 +283,13 @@ int main() {
         }
     }
 
-    // ВОДНОЕ РЕБРО (CANON S10 «ярус на стихию»): остров через пролив.
-    // Пеший профиль ОТКАЗЫВАЕТ (сухая таблица маршрут не знает), морской
-    // ЗНАЕТ — и вода у берегов честно чья-то (водный ярус залит).
+    // ── ОСТРОВ ДОСТИЖИМ, И ЭТО ГЛАВНЫЙ СВИДЕТЕЛЬ M-236 ────────────────
+    // Этот блок утверждал РОВНО ОБРАТНОЕ до 2026-10-06: «пеший профиль
+    // ОТКАЗЫВАЕТ (сухого маршрута нет), морской ЗНАЕТ». Вердикт владельца
+    // снёс вторую стену — «да уничтодить вторую стену она портит всё (ВЕСА
+    // БЫЛО ЕДИНОЕ РЕШЕНИЕ» — и вместе с ней отказ: пролив не запрещён, он
+    // ДОРОГ. Морской ярус умер тем же шагом (M-237), потому что его вопрос
+    // «чья эта вода» перестал существовать: у воды теперь своя округа.
     {
         Fixture sea;
         sea.build_island();
@@ -272,22 +299,29 @@ int main() {
         const auto rm = sm::nav_region_at(sea.nav, 5, 32);
         const auto ri = sm::nav_region_at(sea.nav, 40, 32);
         CHECK(rm != sm::kNavNoRegion && ri != sm::kNavNoRegion && rm != ri,
-              "the strait honestly splits the partition in two");
+              "the strait still SPLITS the partition: water is dear, so the "
+              "two shores remain two округи with a portal between them");
         const std::size_t R = sea.nav.regionLandmarkId.size();
         CHECK(sea.nav.routeNext[std::size_t(ri) * R + rm]
-                  == sm::kNavNoRegion,
-              "the DRY profile refuses the strait (no walking route)");
-        CHECK(sea.nav.routeNextSea[std::size_t(ri) * R + rm]
                   != sm::kNavNoRegion,
-              "the SEA profile knows the crossing (water edge in the graph)");
-        CHECK(sea.nav.routeNextSea[std::size_t(rm) * R + ri]
+              "THE ISLAND IS REACHABLE ON FOOT: the one table knows the "
+              "crossing, because a price is not a refusal");
+        CHECK(sea.nav.routeNext[std::size_t(rm) * R + ri]
                   != sm::kNavNoRegion,
-              "the water edge carries both directions");
-        // Вода у берега — чья-то (водный ярус залит от берегов): клетка
-        // моря возле острова принадлежит чьей-то воде, не ничейная.
-        CHECK(sea.nav.waterRegionOf[std::size_t(32) * W + 44]
-                  != sm::kNavNoRegion,
-              "shore water is owned by the water tier");
+              "and it carries both directions");
+        // Открытое море — тоже чья-то округа: заливка замощает ВЕСЬ тор, и
+        // «ничейных» клеток не остаётся ни одной. Это та самая правда,
+        // которой стена не давала быть: 4328–4701 клетка суши жила вне всякой
+        // округи в каждом замеренном мире.
+        CHECK(sm::nav_region_at(sea.nav, 44, 32) != sm::kNavNoRegion,
+              "shore water belongs to a region like any other cell");
+        std::size_t noRegion = 0;
+        for (std::size_t c = 0; c < sea.nav.regionOf.size(); ++c)
+            if (sea.nav.regionOf[c] == sm::kNavNoRegion) ++noRegion;
+        CHECK(noRegion == 0,
+              "NOT ONE CELL OF THE TORUS IS OUTSIDE A REGION — the measured "
+              "point of the demolition, and the negative control is the old "
+              "world itself, where this count was in the thousands");
     }
 
     // ── ЦЕНА ПУТИ — ОДНА ДВЕРЬ, И ОНА ЗНАЕТ ПРО ОБХОД (CANON S7) ───────
@@ -295,8 +329,27 @@ int main() {
         // Недостижимое честно: карман озера — это НЕТ ПУТИ, а не большое
         // число. Тот же класс тихой ошибки, что «недостижимость нулём»:
         // вес рулетки перевернулся бы, и место за водой стало бы лучшим.
-        CHECK(sm::nav_path_cost(base.nav, 5, 32, 56, 8) == sm::kNavFar,
-              "no path answers kNavFar, never a big number");
+        // ...И ТЕПЕРЬ ТАКИХ КАРМАНОВ НЕТ. Блок утверждал, что озёрный
+        // карман (56,8) — кольцо воды вокруг одной сухой клетки — честно
+        // отвечает kNavFar. После сноса стены вода есть ЦЕНА, кольцо
+        // переходится, и карман стоит дорого, а не бесконечно. Сам отказ
+        // никуда не делся как МЕХАНИЗМ (`kNavFar` возвращается при
+        // незапечённом мире и выходе за таблицу) — но географией он больше
+        // не рождается, и это ровно то требование владельца «от любого места
+        // до любого добраться», ставшее правдой по построению.
+        const std::uint32_t pocket = sm::nav_path_cost(base.nav, 5, 32, 56, 8);
+        CHECK(pocket != sm::kNavFar,
+              "a lake pocket is EXPENSIVE, not unreachable: the ring of water "
+              "is a price now");
+        // ...и строго дороже клетки ЗА кольцом. (56,6) — именно она: кольцо
+        // есть `max(|x-56|,|y-8|) == 1`, поэтому (55,7) сама вода, и сравнение
+        // с ней не измеряло бы переправу.
+        CHECK(base.dry(56, 6) && !base.dry(56, 7),
+              "the fixture is honest: (56,6) is dry land outside the ring and "
+              "(56,7) is the ring itself");
+        CHECK(pocket > sm::nav_path_cost(base.nav, 5, 32, 56, 6),
+              "...and strictly dearer than the dry doorstep outside the ring, "
+              "so the water really is being PAID for and not ignored");
         // ЗАКОН, НА КОТОРОМ СТОЯТ ВСЕ ЧИТАТЕЛИ: из МЕСТА дверь точна —
         // цена до любой клетки его округи равна ровно distHome этой клетки,
         // тому самому числу, которым ходит артель и которое хранит опись.
@@ -336,7 +389,7 @@ int main() {
             const int ay = int(lcg(seed) % unsigned(H));
             const int bx = int(lcg(seed) % unsigned(W));
             const int by = int(lcg(seed) % unsigned(H));
-            if (!base.standable(ax, ay) || !base.standable(bx, by)) continue;
+            if (!base.dry(ax, ay) || !base.dry(bx, by)) continue;
             const std::uint32_t c = sm::nav_path_cost(base.nav, ax, ay, bx, by);
             if (c == sm::kNavFar) continue;
             ++sampled;

@@ -84,7 +84,6 @@ NavWorld make_nav(const World& w, bool withPortal) {
             nv.regionOf[std::size_t(y) * kMap + x] = x < kMap / 2 ? 0 : 1;
     nv.distHome.assign(cells, 16);
     nv.stepHome.assign(cells, 0);
-    nv.waterRegionOf.assign(cells, kNavNoRegion);
     nv.regionLandmarkId = {w.cityId, w.vilId};
     nv.regionCell = {10 * kMap + 10, 10 * kMap + 40};
     if (withPortal) {
