@@ -49,7 +49,6 @@ README.md	src/app/main.cpp:3840-3843
 README.md	src/app/main.cpp:3930
 README.md	tests/balance_run.cpp:1-13
 SKELETON.md	:101
-SKELETON.md	:1025-1046
 SKELETON.md	:103
 SKELETON.md	:113
 SKELETON.md	:1168
@@ -156,7 +155,6 @@ SKELETON.md	:442-463
 SKELETON.md	:4430
 SKELETON.md	:4454
 SKELETON.md	:4468
-SKELETON.md	:450-458
 SKELETON.md	:4528
 SKELETON.md	:466
 SKELETON.md	:468
@@ -165,9 +163,7 @@ SKELETON.md	:47
 SKELETON.md	:4773
 SKELETON.md	:4784
 SKELETON.md	:481
-SKELETON.md	:488
 SKELETON.md	:4985
-SKELETON.md	:499
 SKELETON.md	:5022
 SKELETON.md	:5025
 SKELETON.md	:5031
@@ -178,7 +174,6 @@ SKELETON.md	:510
 SKELETON.md	:541-573
 SKELETON.md	:55-59
 SKELETON.md	:566-605
-SKELETON.md	:573-605
 SKELETON.md	:576-577
 SKELETON.md	:6070
 SKELETON.md	:61
@@ -403,7 +398,6 @@ SKELETON.md	movement.h:149-151
 SKELETON.md	movement.h:367-368
 SKELETON.md	nav_field.cpp:122
 SKELETON.md	nav_field.cpp:27
-SKELETON.md	nav_field.cpp:622-630
 SKELETON.md	nav_field.h:107
 SKELETON.md	nav_field.h:149
 SKELETON.md	nav_field.h:73-74
@@ -425,13 +419,11 @@ SKELETON.md	npc_ai.cpp:2862
 SKELETON.md	npc_ai.cpp:2894
 SKELETON.md	npc_ai.cpp:2978
 SKELETON.md	npc_ai.cpp:3107-3112
-SKELETON.md	npc_ai.cpp:340
 SKELETON.md	npc_ai.cpp:3468
 SKELETON.md	npc_ai.cpp:3479
 SKELETON.md	npc_ai.cpp:3608
 SKELETON.md	npc_ai.cpp:3644
 SKELETON.md	npc_ai.cpp:3768
-SKELETON.md	npc_ai.cpp:383
 SKELETON.md	npc_ai.cpp:3841
 SKELETON.md	npc_ai.cpp:3929
 SKELETON.md	npc_ai.cpp:427
@@ -487,7 +479,6 @@ SKELETON.md	quest_engine.cpp:234-235
 SKELETON.md	quest_engine.cpp:63
 SKELETON.md	quest_lifecycle_test.cpp:428
 SKELETON.md	record.h:94
-SKELETON.md	recovery.h:33
 SKELETON.md	resource_field.h:12-14
 SKELETON.md	resource_field.h:153-154
 SKELETON.md	resource_field.h:213-217
