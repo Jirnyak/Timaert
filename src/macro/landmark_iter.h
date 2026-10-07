@@ -20,6 +20,7 @@
 #include "macro/features.h"
 #include "macro/labour.h"   // souls_flock — паства места (переворот v122)
 #include "macro/landmark_registry.h"   // kLandmarkYieldOrder — закон клетки
+#include "macro/macro_world.h"   // конверт слоёв — вход визитора (п.8)
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "macro/state.h"
 
@@ -57,9 +58,17 @@ void for_each_place(const MacroStore& st, F&& fn) {
     }
 }
 
-// `st` — тела мест (M-90 шаг 5): вся идентичность места — колонки тела.
+// КОНВЕРТ, А НЕ ПАРА СЫРЫХ СЛОЁВ (M-233 п.8): вид места несёт выкачанность,
+// а она выводится из ФИЧИ клетки (ЗАКОН ПОЛЯ п.3), поэтому визитору нужен
+// слой фич. Передавать его ОТДЕЛЬНЫМ аргументом запрещает шапка
+// `macro_world.h` («never by a new argument at a call site») — и шрам там
+// назван числом. Тела мест по-прежнему колонки `*w.store` (M-90 шаг 5).
+// Пустой конверт законен: нет мира — обход пуст, нулевой вклад S6.
 template <class F>
-void for_each_landmark(const GameState& gs, const MacroStore& st, F&& fn) {
+void for_each_landmark(const MacroWorld& w, F&& fn) {
+    if (!w.gs || !w.store) return;
+    const GameState& gs = *w.gs;
+    const MacroStore& st = *w.store;
     for (SquadType t : kLandmarkYieldOrder) {
         for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
@@ -78,8 +87,7 @@ void for_each_landmark(const GameState& gs, const MacroStore& st, F&& fn) {
             const int y = ecs::cell_y(c, gs.mapW);
             fn(LandmarkView{t, int(st.spawnId[slot].index), x, y, name,
                             souls_flock(gs, st, std::uint16_t(slot)),
-                            spire_orb(gs, st,
-                                      std::uint16_t(slot)).depleted});
+                            spire_orb(w, x, y).depleted});
         }
     }
 }

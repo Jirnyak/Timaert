@@ -3,6 +3,8 @@
 #include "macro/place_birth.h" // birth_place — место родится ТЕЛОМ
 #include "macro/landmark_iter.h"   // for_each_place — места по слотам
 #include "macro/landmark_registry.h"
+#include "macro/features.h"      // FT_Spire — смысл числу задаёт ФИЧА (п.8)
+#include "macro/macro_world.h"   // конверт слоёв: закон его собственной шапки
 #include "tables/faction.h"
 #include "macro/map_generator.h"
 #include "macro/anketa.h"
@@ -151,14 +153,16 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
 // ── ОДИН ВЫВОД О ОРБЕ (M-233 п.8; закон — в шапке spires.h) ──────────────
 // Вне строки: вопрос задают панель, оверлей, сборщик фактов клетки и дневной
 // тик — ни одного горячего цикла, а заголовок за это остаётся на `<cstdint>`
-// и двух fwd-декларациях (§5 п.13: тело в заголовке платит каждый включивший).
-SpireOrb spire_orb(const GameState& gs, const MacroStore& st,
-                   std::uint16_t slot) {
+// и fwd-декларациях (§5 п.13: тело в заголовке платит каждый включивший).
+SpireOrb spire_orb(const MacroWorld& w, int x, int y) {
     SpireOrb o{};
-    if (SquadType(st.runtime[slot].squadType) != SquadType::Spire) return o;
-    const auto& c = st.cell[slot];
-    o.spell = worked_read(gs, ecs::cell_x(c, gs.mapW),
-                          ecs::cell_y(c, gs.mapW));
+    // Нулевой вклад отсутствующего слоя (S6) — не ветка, а данные.
+    if (!w.gs || !w.features) return o;
+    const GameState& gs = *w.gs;
+    const int cx = wrap_axis(x, gs.mapW);
+    const int cy = wrap_axis(y, gs.mapH);
+    if (w.features->at(cx, cy) != FT_Spire) return o;
+    o.spell = worked_read(gs, cx, cy);
     // Выкачанный шпиль ЗАБЫЛ свой спелл, как выработанная жила — свою руду,
     // поэтому тир у него честно ноль, а не последний запомненный.
     o.tier = o.spell > 0

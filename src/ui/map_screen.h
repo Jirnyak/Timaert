@@ -18,9 +18,7 @@
 #pragma once
 
 namespace sm {
-struct MacroStore;   // паства мест — склад ТЕЛА (M-90 шаг 5)
-struct GameState;
-struct TerrainData;
+struct MacroWorld;   // конверт слоёв мира (macro/macro_world.h)
 namespace ecs { struct World; }
 }
 
@@ -53,9 +51,12 @@ float map_fit_zoom(int viewHPx, int mapH);
 // `gs` is mutable for exactly one reason: pins edit gs.markers. `viewW/viewH`
 // and `zoomLogical` in logical points (the page camera's zoom / dpr), like
 // every ImGui surface.
-void draw_map_screen(MapScreenState& st, GameState& gs,
-                     const MacroStore& store, ecs::World& world,
-                     const TerrainData& terrain, bool* open,
+// КОНВЕРТ ВМЕСТО ТРЁХ СЛОЁВ (M-233 п.8): странице нужен ещё и слой фич —
+// выкачанность шпиля выводится из ФИЧИ клетки, — а шапка `macro_world.h`
+// запрещает добирать слои аргументами на сайте. `mw.gs` немутабелен не по
+// форме, а по смыслу: страница правит ровно `gs.markers` (пины).
+void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
+                     ecs::World& world, bool* open,
                      int viewW, int viewH, float zoomLogical, float scale);
 
 } // namespace sm::ui

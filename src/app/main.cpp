@@ -1446,7 +1446,7 @@ float player_sight_budget_cells() {
 // world is passed so glow propagates through terrain (open land carries it
 // far, forest dims it, mountains wall it off — increments B/C).
 void bake_macro_light_field(App& app, std::vector<std::uint8_t>& out) {
-    std::vector<sm::MacroLight> lights = sm::collect_macro_lights(app.gs, *app.macroStore);
+    std::vector<sm::MacroLight> lights = sm::collect_macro_lights(macro_world(app));
     const sm::OpticalWorld world = optical_world(app);
     sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, world.features,
                          world.heights, world.treeDensity);
@@ -5925,23 +5925,21 @@ void frame(App& app, int simSteps) {
         // click is the pin toggle.
         const bool mapOpen = macro_map_open(app);
         if (mapOpen) {
-            sm::ui::draw_map_screen(app.mapScreen, app.gs, *app.macroStore,
-                                    app.ecs, app.terrain,
+            sm::ui::draw_map_screen(app.mapScreen, macro_world(app),
+                                    app.ecs,
                                     &app.ui.map, logicalW, logicalH,
                                     app.mapScreen.zoom / dpr,
                                     app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
         } else {
         const float zoomLogical = app.zoom / dpr;
-        sm::ui::draw_macro_overlay(app.gs, *app.macroStore, app.ecs,
-                                   app.terrain, app.features,
+        sm::ui::draw_macro_overlay(macro_world(app), app.ecs,
                                    app.cursor,
                                    app.camX, app.camY, zoomLogical,
                                    logicalW, logicalH,
                                    app.gs.mapW, app.gs.mapH,
                                    app.uiSettings.visible(sm::ui::UiElementId::MacroOverlay),
                                    app.uiSettings.visible(sm::ui::UiElementId::QuestMarkers),
-                                   app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers),
-                                   &app.treeLayer);
+                                   app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers));
         if (app.cursor.hoverSettlementId >= 0) {
             app.ui.settlementId = app.cursor.hoverSettlementId;
         }
@@ -6358,7 +6356,7 @@ void frame(App& app, int simSteps) {
                 int logicalW = app.width, logicalH = app.height;
                 SDL_GetWindowSize(app.window, &logicalW, &logicalH);
                 const sm::ui::NpcProximityResult npcResult =
-                    sm::ui::draw_npc_proximity_panel(app.gs, *app.macroStore, app.ecs,
+                    sm::ui::draw_npc_proximity_panel(macro_world(app), app.ecs,
                                                      logicalW, logicalH,
                                                      showNpcRows,
                                                      app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));

@@ -11,9 +11,7 @@
 #include <vector>
 
 namespace sm {
-struct MacroStore;   // паства мест — склад ТЕЛА (M-90 шаг 5)
-struct GameState;
-struct TerrainData;
+struct MacroWorld;   // конверт слоёв мира (macro/macro_world.h)
 struct TreeLayer;
 struct FeatureLayer;
 namespace ecs { struct World; }
@@ -69,17 +67,17 @@ using MacroWalkReachedFn = void (*)(void* user, int x, int y);
 // The LIVE world's overlay only — the map page (ui/map_screen.h) draws its
 // own primitives and never calls this. The marker pass filters styles by
 // kMarkerSurface: a waypoint is map ink and does not float here.
-void draw_macro_overlay(GameState& gs, const MacroStore& store,
+// КОНВЕРТ ВМЕСТО ЧЕТЫРЁХ СЛОЁВ (M-233 п.8): оверлей и так несёт `terrain` и
+// `features` порознь — ровно та «parallel list of layer arguments», которую
+// шапка `macro_world.h` называет шрамом; выкачанность шпиля добавила бы пятый.
+void draw_macro_overlay(const MacroWorld& mw,
                         ecs::World& w,
-                        const TerrainData& terrain,
-                        const FeatureLayer& features,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
                         int viewW, int viewH, int mapW, int mapH,
                         bool showMarkers = true,
                         bool showQuestMarkers = true,
-                        float questMarkerScale = 1.0f,
-                        const TreeLayer* treeLayer = nullptr);
+                        float questMarkerScale = 1.0f);
 
 // Advance auto-walk: the INPUT half of the one macro march (подпосадка 4).
 // Input is the flag holder's "AI": it banks `cellsPerSec * dt` into the SAME
@@ -100,12 +98,12 @@ std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
 // Squad window (Info/Trade tabs + Talk/Attack buttons), a landmark the
 // settlement panel. The old per-row button scatter (PLAY-1) and the interim
 // generic verb window are both dead.
-NpcProximityResult draw_npc_proximity_panel(GameState& gs,
-                                            const MacroStore& store,
+// Конверт — тот же закон (M-233 п.8): панели нужен слой фич, чтобы спросить
+// выкачанность шпиля ОДНОЙ дверью, а не добирать слой аргументом.
+NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                                             ecs::World& w,
                                             int viewW, int viewH,
-                                            bool showRows = true,
-                                            float scale = 1.0f);
+                                            bool showRows, float scale);
 
 // (open_npc_trade_panel / npc_proximity_popup_open died with the module's
 // own popups: the subject panel is app state now — a smoke or a caller sets

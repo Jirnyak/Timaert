@@ -251,17 +251,14 @@ void tick_player_daily_(PlayerState& p) {
 // — the cell_facts precedent: the score's source is inherently per-kind
 // context, and it is recomputed rather than stored so the save never
 // carries a second copy of what the world already knows.
-static int landmark_context_score(const MacroWorld& w, const MacroStore& st,
-                                  std::uint16_t slot, int x, int y) {
+static int landmark_context_score(const MacroWorld& w, int x, int y) {
     // Тир орба — ОДИН вывод на весь мир (spire_orb@src/macro/spires.h,
     // M-233 п.8): здесь стояло ВТОРОЕ его написание, побайтово то же, что в
     // сборщике фактов клетки. Выкачанный шпиль забыл свой спелл, поэтому
     // падает на байт зоны ниже — гейт расстановки и так заставил зону
-    // следовать тиру.
-    if (w.gs) {
-        const int tier = spire_orb(*w.gs, st, slot).tier;
-        if (tier > 0) return tier;
-    }
+    // следовать тиру. Род сквада этой функции больше не нужен ВОВСЕ: смысл
+    // числу задаёт фича клетки, а она здесь и спрашивается.
+    if (const int tier = spire_orb(w, x, y).tier; tier > 0) return tier;
     return w.zones ? int(w.zones->at(x, y)) : 0;
 }
 
@@ -279,7 +276,7 @@ void regrow_dungeon_populations(const MacroWorld& w, MacroStore& st, int day) {
         const int y = ecs::cell_y(st.cell[slot], gs.mapW);
         const int mean = int(def.bornPopBase)
                        + int(def.bornPopPerScore)
-                             * landmark_context_score(w, st, slot, x, y);
+                             * landmark_context_score(w, x, y);
         if (souls_flock(gs, st, slot) < mean) {
             // Отросшая душа данжа — ГОЛОВА его толпы (переворот v122,
             // вердикт 3): слабейшая строка полосы crowdHabitat, тем же

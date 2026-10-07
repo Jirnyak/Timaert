@@ -57,8 +57,11 @@ inline constexpr float kMacroGlowGain = 0.45f;
 // emitting landmark type is one table row plus, once it has world instances,
 // one loop here — never an engine branch in the renderer or shader.
 struct MacroStore;   // паства мест — склад ТЕЛА (M-90 шаг 5)
-std::vector<MacroLight> collect_macro_lights(const GameState& gs,
-                                             const MacroStore& st);
+// КОНВЕРТ, А НЕ ПАРА СЛОЁВ (M-233 п.8): выкачанность шпиля гасит его свет, а
+// выводится она из ФИЧИ клетки, значит перепись нужен слой фич — и он едет
+// конвертом, как велит шапка `macro_world.h`, а не новым аргументом.
+struct MacroWorld;
+std::vector<MacroLight> collect_macro_lights(const MacroWorld& w);
 
 // Bake the per-cell RGB night-light field. Writes width*height*4 RGBA8 bytes
 // into `out` (RGB = glow encoded in [0, kMacroGlowCeil], A = 255).

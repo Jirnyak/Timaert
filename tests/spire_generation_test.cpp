@@ -428,7 +428,44 @@ void test_one_answer_to_the_drained_orb() {
     CHECK(souls_flock(gs, places(), city.slot) == 0,
           "свежий город пуст — worked его клетки ноль, то есть ровно то "
           "число, которое у шпиля значит «выкачан»");
-    const SpireOrb cityOrb = spire_orb(gs, places(), city.slot);
+
+    // ── ПРЕДУСЛОВИЕ, КОТОРОЕ СВИДЕТЕЛЬ РОЖДАЕТ САМ (§8 п.11): смысл числу
+    // задаёт ФИЧА клетки, значит без штампа вопрос не задаётся вовсе. Штамп
+    // идёт ТОЙ ЖЕ дверью, что в живом мире.
+    FeatureLayer feat;
+    feat.width = kW;
+    feat.height = kH;
+    feat.data.assign(std::size_t(kW) * std::size_t(kH), std::uint8_t(FT_None));
+    stamp_settlement_features(places(), gs.mapW, terrain, feat);
+    MacroWorld mw{};
+    mw.gs = &gs;
+    mw.store = &places();
+    mw.features = &feat;
+    mw.terrain = &terrain;
+
+    // РИСК, КОТОРЫЙ ПРИНЁС КЛЮЧ-ФИЧА, И ОН ПИНИТСЯ ЗДЕСЬ. Байт фичи у
+    // клетки ОДИН, и пишет его не только штамп поселений: `plough_field_cell`
+    // ставит `FT_Field`. Затёртая фича молча превращает число орба в чужое
+    // число — шпиль читается «не шпиль», выкачанный выглядит заряженным.
+    // Клетку шпиля затирать сегодня некому (`cell_occupied` ветирует
+    // совместную клетку с названным местом), и вот это утверждение:
+    int spiresSeen = 0, featureLost = 0;
+    for_each_place(places(), [&](std::uint16_t slot) {
+        if (SquadType(places().runtime[slot].squadType) != SquadType::Spire)
+            return;
+        ++spiresSeen;
+        if (feat.at(ecs::cell_x(places().cell[slot], gs.mapW),
+                    ecs::cell_y(places().cell[slot], gs.mapW)) != FT_Spire)
+            ++featureLost;
+    });
+    CHECK(spiresSeen > 0, "штамп прошёл по настоящим шпилям");
+    CHECK(featureLost == 0,
+          "У КАЖДОГО ШПИЛЯ НА КЛЕТКЕ СТОИТ `FT_Spire` — иначе вопрос «выкачан "
+          "ли» задан не той клетке, и выкачанный орб выглядит заряженным");
+    CHECK(feat.at(40, 40) == FT_City,
+          "а на клетке города стоит ЕГО фича — значит ключ различает их");
+
+    const SpireOrb cityOrb = spire_orb(mw, 40, 40);
     CHECK(!cityOrb.depleted,
           "ГОРОД С ПУСТОЙ ПАСТВОЙ НЕ ВЫКАЧАН: выкачанность есть вопрос о "
           "ШПИЛЕ, и у не-шпиля она ЛОЖЬ всегда");
@@ -442,7 +479,9 @@ void test_one_answer_to_the_drained_orb() {
         if (SquadType(places().runtime[slot].squadType) != SquadType::Spire)
             return;
         ++charged;
-        const SpireOrb o = spire_orb(gs, places(), slot);
+        const SpireOrb o = spire_orb(mw,
+                                     ecs::cell_x(places().cell[slot], gs.mapW),
+                                     ecs::cell_y(places().cell[slot], gs.mapW));
         if (o.depleted) ++falseDepleted;
         if (o.spell <= 0 || o.spell > kSpellCount) ++wrongSpell;
         else if (o.tier != kSpellDefs[o.spell - 1].tier) ++wrongTier;
@@ -472,13 +511,13 @@ void test_one_answer_to_the_drained_orb() {
     const int victimId = int(places().spawnId[victim].index);
     worked_write(gs, vx, vy, 0);   // ровно то, что делает рука игрока внизу
 
-    const SpireOrb drained = spire_orb(gs, places(), victim);
+    const SpireOrb drained = spire_orb(mw, vx, vy);
     CHECK(drained.depleted && drained.spell == 0 && drained.tier == 0,
           "забранный орб: выкачан, спелла нет, тир ноль — выкачанный шпиль "
           "ЗАБЫЛ свой спелл, как выработанная жила — свою руду");
 
     int seenVictim = 0, viewDisagreed = 0, cityViewDepleted = 0;
-    for_each_landmark(gs, places(), [&](const LandmarkView& lv) {
+    for_each_landmark(mw, [&](const LandmarkView& lv) {
         const bool byKind = lv.type == SquadType::Spire;
         if (lv.id == victimId) {
             ++seenVictim;
@@ -562,12 +601,16 @@ void test_place_faction_is_the_instance_only() {
 // нет вовсе — ни белого списка, ни тающего остатка.
 //
 // ПРАВИЛО, И ПОЧЕМУ ИМЕННО ОНО. Вывод о орбе опознаётся по ПАРЕ: файл
-// спрашивает `worked_read` И называет `SquadType::Spire`. Пара и есть
-// преступление — у worked-числа два смысла (паства у поселения, спелл у
-// шпиля), поэтому один `worked_read` невинен, один `SquadType::Spire` невинен,
-// а вместе они значат «я вывожу состояние орба сам». Комментарии и строковые
-// литералы срезаются: иначе прибор ловил бы собственные объяснения, а
-// стрижка может его только ОСЛЕПИТЬ, не обмануть.
+// спрашивает `worked_read` И называет шпиль — `FT_Spire` (ключ по вердикту
+// владельца 2026-10-07) ИЛИ `SquadType::Spire` (прежний ключ, чтобы возврат
+// к нему тоже был виден). Пара и есть преступление — у worked-числа ДВА
+// смысла (паства у поселения, спелл у шпиля), поэтому один `worked_read`
+// невинен, одно имя шпиля невинно, а вместе они значат «я вывожу состояние
+// орба сам». Комментарии и строковые литералы срезаются: иначе прибор ловил
+// бы собственные объяснения — и это ЗАМЕРЕНО, а не предположено: без стрижки
+// правило ловит `labour.h`, `squad.h` и `state.h`, которые называют `FT_Spire`
+// РОВНО в объяснении двух смыслов числа. Стрижка может прибор только
+// ОСЛЕПИТЬ, не обмануть.
 //
 // ДВА ИМЕНИ РАЗРЕШЕНЫ, И ОБА НАЗВАНЫ, А НЕ ПРОЩЕНЫ:
 //   · `src/macro/spires.cpp` — САМА дверь плюс запись орба в генезисе;
@@ -616,7 +659,8 @@ void test_no_second_orb_derivation_in_the_tree() {
         while (std::getline(in, line)) {
             const std::string code = strip_comments_and_strings(line);
             if (code.find("worked_read") != std::string::npos) readsWorked = true;
-            if (code.find("SquadType::Spire") != std::string::npos)
+            if (code.find("FT_Spire") != std::string::npos
+                || code.find("SquadType::Spire") != std::string::npos)
                 namesSpire = true;
         }
         if (readsWorked && namesSpire) offenders.push_back(rel);
@@ -627,7 +671,8 @@ void test_no_second_orb_derivation_in_the_tree() {
           "означает «не смотрел», а не «чисто»");
     for (const std::string& f : offenders) {
         std::printf("  ВТОРОЙ ВЫВОД О ОРБЕ: %s спрашивает worked_read и "
-                    "называет SquadType::Spire\n", f.c_str());
+                    "называет шпиль (FT_Spire / SquadType::Spire)\n",
+                    f.c_str());
     }
     CHECK(offenders.empty(),
           "выкачанность шпиля выводится РОВНО в одном месте мира "

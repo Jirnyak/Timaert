@@ -109,11 +109,16 @@ float map_fit_zoom(int viewHPx, int mapH) {
     return float(viewHPx) / float(mapH);
 }
 
-void draw_map_screen(MapScreenState& st, GameState& gs,
-                     const MacroStore& store, ecs::World& world,
-                     const TerrainData& terrain, bool* open,
+void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
+                     ecs::World& world, bool* open,
                      int viewW, int viewH, float zoomLogical, float scale) {
     if (!open || !*open) return;
+    // Конверт РАСПАКОВЫВАЕТСЯ один раз здесь, и тело страницы ниже остаётся
+    // тем же: три прежних аргумента были ровно этими тремя полями.
+    if (!mw.gs || !mw.store || !mw.terrain) return;
+    GameState& gs = *mw.gs;
+    const MacroStore& store = *mw.store;
+    const TerrainData& terrain = *mw.terrain;
     const int mapW = gs.mapW, mapH = gs.mapH;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
@@ -148,7 +153,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs,
                 const Biome b = biome_at_cell(terrain, cx, cy);
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[std::size_t(b)].name);
-                for_each_landmark(gs, store, [&](const LandmarkView& lm) {
+                for_each_landmark(mw, [&](const LandmarkView& lm) {
                     if (lm.x == cx && lm.y == cy && lm.name[0])
                         ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1), "%s",
                                            lm.name);
@@ -172,7 +177,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs,
     // the registry's ONE colour; ashen when depleted, faded when merely
     // remembered. The mark grows to half its cell when zoomed in, floored
     // at the row's legend radius so it never dissolves at world-fit.
-    for_each_landmark(gs, store, [&](const LandmarkView& lm) {
+    for_each_landmark(mw, [&](const LandmarkView& lm) {
         const std::uint8_t know = gs.knowledge.at(lm.x, lm.y);
         if (know == kKnowledgeUnknown) return;
         const bool faded = know < kKnowledgeVisible;
@@ -246,7 +251,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs,
         cells > 0.0 ? 100.0 * double(st.exploredCells) / cells : 0.0;
 
     int discovered[std::size_t(SquadType::Count)] = {};
-    for_each_landmark(gs, store, [&](const LandmarkView& lm) {
+    for_each_landmark(mw, [&](const LandmarkView& lm) {
         if (gs.knowledge.at(lm.x, lm.y) != kKnowledgeUnknown)
             ++discovered[std::size_t(lm.type)];
     });

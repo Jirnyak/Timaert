@@ -171,16 +171,21 @@ inline ImU32 marker_imcol(std::uint32_t argb) {
 
 } // namespace
 
-void draw_macro_overlay(GameState& gs, const MacroStore& store,
+void draw_macro_overlay(const MacroWorld& mw,
                         ecs::World& w,
-                        const TerrainData& terrain,
-                        const FeatureLayer& features,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
                         int viewW, int viewH, int mapW, int mapH,
                         bool showMarkers,
-                        bool showQuestMarkers, float questMarkerScale,
-                        const TreeLayer* treeLayer) {
+                        bool showQuestMarkers, float questMarkerScale) {
+    // Конверт РАСПАКОВЫВАЕТСЯ один раз, тело ниже не правится: четыре
+    // прежних аргумента были ровно этими четырьмя полями (M-233 п.8).
+    if (!mw.gs || !mw.store || !mw.terrain || !mw.features) return;
+    GameState& gs = *mw.gs;
+    const MacroStore& store = *mw.store;
+    const TerrainData& terrain = *mw.terrain;
+    const FeatureLayer& features = *mw.features;
+    const TreeLayer* treeLayer = mw.trees;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
     const ImU32 figureTint = figure_tint_for_time(gs.worldTime);
@@ -250,7 +255,7 @@ void draw_macro_overlay(GameState& gs, const MacroStore& store,
         // the click when the hit is a city.
         const char* landmark = "";
         int hoverSettlementId = -1;
-        for_each_landmark(gs, store, [&](const LandmarkView& lm) {
+        for_each_landmark(mw, [&](const LandmarkView& lm) {
             if (lm.x != cursor.hoverX || lm.y != cursor.hoverY) return;
             if (!landmark[0]) landmark = lm.name;
             // Any landmark is pickable — the City hardcode died with
@@ -321,7 +326,7 @@ void draw_macro_overlay(GameState& gs, const MacroStore& store,
     // variant IS the state (a consumed spire draws its dark tower — same
     // rule as the night glow, macro_lighting.cpp), and the glyph-circle
     // fallback takes its colour from the ONE authority, the registry row.
-    for_each_landmark(gs, store, [&](const LandmarkView& lm) {
+    for_each_landmark(mw, [&](const LandmarkView& lm) {
         // The knowledge law (macro/knowledge.h): terra incognita hides even
         // the glyph; an Explored landmark is MEMORY and draws faded — same
         // sprite, same ONE registry colour, alpha alone says "remembered".
@@ -619,12 +624,14 @@ inline int wrap_chebyshev(int d, int period) {
 
 } // namespace
 
-NpcProximityResult draw_npc_proximity_panel(GameState& gs,
-                                            const MacroStore& store,
+NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                                             ecs::World& w,
                                             int viewW, int viewH,
                                             bool showRows, float scale) {
     NpcProximityResult result{};
+    if (!mw.gs || !mw.store) return result;
+    GameState& gs = *mw.gs;
+    const MacroStore& store = *mw.store;
     if (gs.mapW <= 0 || gs.mapH <= 0) return result;
 
     // Right-edge anchor; width matches Svelte (`w-52` ~= 208px).
@@ -847,8 +854,12 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs,
                             // Выкачанность — ОДИН вывод на весь мир
                             // (spire_orb@src/macro/spires.h, M-233 п.8); здесь
                             // стояло своё написание, четвёртое по счёту.
+                            const auto& lcell = st.cell[lslot];
                             const SpriteId sid =
-                                spire_orb(gs, st, lslot).depleted
+                                spire_orb(mw,
+                                          ecs::cell_x(lcell, gs.mapW),
+                                          ecs::cell_y(lcell, gs.mapW))
+                                        .depleted
                                     ? drow.spriteDepleted : drow.sprite;
                             if (sid != SpriteId::None) sp = sprite_get(sid);
                         }

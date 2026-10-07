@@ -14,6 +14,9 @@
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/macro_lighting.h"
+#include "macro/landmark_iter.h"   // stamp_settlement_features — дверь штампа
+#include "macro/macro_world.h"    // конверт слоёв — вход переписи (M-233 п.8)
+#include "macro/map_generator.h"  // field_word_of / kDefaultSeaLevel
 #include "macro/features.h"
 #include "macro/landmark_registry.h"
 #include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
@@ -165,7 +168,34 @@ int main() {
         sm::birth_place(gs, st, SquadType::Spire, 40, 40);
         sm::birth_place(gs, st, SquadType::Spire, 50, 50);
 
-        std::vector<MacroLight> lights = collect_macro_lights(gs, st);
+        // СМЫСЛ ЧИСЛУ ЗАДАЁТ ФИЧА КЛЕТКИ (M-233 п.8, ЗАКОН ПОЛЯ п.3),
+        // поэтому свидетель рождает СВОЁ ПРЕДУСЛОВИЕ сам (§8 п.11): без
+        // штампа `FT_Spire` выкачанный шпиль читался бы «не шпиль», то есть
+        // НЕ выкачанным, и перепись дала бы пять источников вместо четырёх.
+        // Штамп идёт ТОЙ ЖЕ дверью, что в живом мире, и ей нужен терраин —
+        // поселение проходит воду тем же единственным штампом (M-212).
+        sm::TerrainData land;
+        land.width = gs.mapW;
+        land.height = gs.mapH;
+        land.rgba.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH) * 4u,
+                         sm::field_word_of(0.6f));
+        land.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
+        sm::FeatureLayer feat;
+        feat.width = gs.mapW;
+        feat.height = gs.mapH;
+        feat.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH),
+                         std::uint8_t(FT_None));
+        sm::stamp_settlement_features(st, gs.mapW, land, feat);
+        CHECK(feat.at(40, 40) == FT_Spire && feat.at(50, 50) == FT_Spire,
+              "штамп поставил обеим клеткам шпиля их фичу — без неё вопрос "
+              "«выкачан ли» не задаётся вовсе");
+
+        sm::MacroWorld mw{};
+        mw.gs = &gs;
+        mw.store = &st;
+        mw.features = &feat;
+        mw.terrain = &land;
+        std::vector<MacroLight> lights = collect_macro_lights(mw);
         // 2 settlements + 1 village + 1 active spire; the depleted spire emits none.
         CHECK(lights.size() == 4u, "census: 4 emitters (depleted spire excluded)");
 
