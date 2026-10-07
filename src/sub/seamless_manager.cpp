@@ -327,7 +327,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
             nbBiome   [yy * 3 + xx] = nctx.biome;
             nbGround  [yy * 3 + xx] = ground_biome(nctx);
             nbFeature [yy * 3 + xx] = std::uint8_t(nctx.feature);
-            nbLandmark[yy * 3 + xx] = effective_landmark(nctx);
+            nbLandmark[yy * 3 + xx] = nctx.landmark.kind;
             nbTreeCount[yy * 3 + xx] = nctx.treeCount;
             nbFertility[yy * 3 + xx] = nctx.fertility01;
         }
@@ -596,7 +596,7 @@ void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
             job.nbBiome[ni] = nctx.biome;
             job.nbGround[ni] = ground_biome(nctx);
             job.nbFeature[ni] = std::uint8_t(nctx.feature);
-            job.nbLandmark[ni] = effective_landmark(nctx);
+            job.nbLandmark[ni] = nctx.landmark.kind;
             job.nbTreeCount[ni] = nctx.treeCount;
             job.nbFertility[ni] = nctx.fertility01;
         }

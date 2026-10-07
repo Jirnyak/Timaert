@@ -152,7 +152,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     for (int i = 0; i < 9; ++i) {
         const SquadType lm = nbLandmark
             ? nbLandmark[i]
-            : (i == 4 ? effective_landmark(safeCtx) : SquadType::None);
+            : (i == 4 ? safeCtx.landmark.kind : SquadType::None);
         nbMods[i] = terrain_mod_for(lm, FeatureType(safeFeature[i]));
     }
 

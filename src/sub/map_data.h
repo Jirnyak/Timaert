@@ -434,17 +434,27 @@ struct CellContext {
     DungeonRef dungeon{};
 };
 
-// The effective landmark of a cell for terrain purposes. A macro settlement
-// projects as a City cell even when landmark.kind is None (mirrors
-// resolve_mode's `landmark.id >= 0` branch) — one helper so terrain
-// flattening and mode resolution can never disagree.
-inline SquadType effective_landmark(const CellContext& ctx) {
-    if (ctx.landmark.kind != SquadType::None) return ctx.landmark.kind;
-    if (ctx.landmark.id >= 0) return SquadType::City;
-    return SquadType::None;
-}
+// ЗДЕСЬ СТОЯЛ `effective_landmark` — ВТОРОЙ ОТВЕТ НА «КАКОГО РОДА КЛЕТКА».
+// Он фабриковал `SquadType::City` из одного ординала (`landmark.id >= 0`), а
+// его собственный комментарий оправдывал это тем, что он «зеркалит ветку
+// `resolve_mode`» — ветку, СНЕСЁННУЮ ещё по GEN-5 (некролог стоит на месте, в
+// `resolve_mode@src/sub/gens/dispatch.cpp`: «the day a castle was placed on
+// the map it would raise a city — walls, keep and four hundred houses»).
+// То есть зеркало пережило оригинал и осталось единственным в мире местом,
+// где род клетки ВЫДУМЫВАЛСЯ.
+//
+// В продакшене ветка была недостижима ПО ПОСТРОЕНИЮ, и это свойство пакета:
+// `.type` и `.id` у `LandmarkFacts` пишутся ОДНОЙ строкой из ОДНОЙ ветки
+// (`cell_facts@src/macro/cell_facts.cpp`, единственный писатель в мире, под
+// `lmId != 0`), а род там берётся у `settlement_at@src/macro/squad_index.h`,
+// которая сама гейтится `is_settlement_kind` ⇒ `None` не отдаёт никогда.
+// Незаданный полюс — дефолты структуры, и он прибит `static_assert` у самого
+// объявления (`src/macro/cell_facts.h`). Значит «род есть» и «ординал есть»
+// равносильны, и выдумывать второй ответ нечему.
+// Звонящие (`resolve_mode` и сборщик соседей шва) читают КОЛОНКУ напрямую:
+// функция, возвращавшая поле, была индирекцией без вопроса.
 
-// The GROUND a cell shows where it is dry — the effective_landmark pattern
+// The GROUND a cell shows where it is dry — the ground_biome pattern
 // for the material dither. Land is its biome (groundBiome is never consulted,
 // so it cannot drift); a flooded cell answers with its unflooded climate
 // ground. Never Water: the ring built from this is what lets the dither drop

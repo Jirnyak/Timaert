@@ -14,8 +14,8 @@ SubworldMode resolve_mode(const CellContext& ctx);
 // features in row-major order for the 3×3 neighbourhood centred on this
 // cell. Generators use them to blend heightmap, carve organic roads /
 // dirt paths that line up across cell boundaries, etc.
-// `nbLandmark` (optional, 9 entries) is the neighbours' EFFECTIVE landmark
-// (map_data.h effective_landmark) — it drives the universal terrain
+// `nbLandmark` (optional, 9 entries) is the neighbours' own kind COLUMN
+// (`CellContext::landmark.kind`, map_data.h) — it drives the universal terrain
 // flattening around settlements (base_generator.h TerrainMod). Null keeps
 // the centre cell's own landmark (from `ctx`) and assumes bare neighbours,
 // which is exact for every synthetic/test context that has no neighbours.
