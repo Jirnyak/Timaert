@@ -227,6 +227,25 @@ inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
         ? h : MacroHandle{};
 }
 
+// ГОРЯЧАЯ ДВЕРЬ ТОГО ЖЕ РЕЗОЛВА МЕСТА — порядок закона вместо скана, ровно
+// парой к `macro_handle_by_spawn_id` выше: у субъекта две двери (скан и
+// порядок), значит и у места их две, а не три написания закона в трёх файлах.
+//
+// ЗДЕСЬ СТОЯЛО ОДНО НАПИСАНИЕ ИЗ ТРЁХ. Два других жили в `src/macro/npc_ai.cpp`
+// — `place_slot_by_id` (с порядком драйва) и лямбда `slot_of` дневной ротации
+// (со своим `crewOrder`), — и повторяли ТОТ ЖЕ закон строка в строку: резолв
+// по ординалу, проверка валидности, гейт оси рода. Различались они только тем,
+// ПО КАКОМУ порядку идёт бинарный поиск, то есть параметром, а не законом
+// (DOD п.6: второй ответ на один вопрос мира).
+inline MacroHandle place_handle_by_ordinal(
+        const MacroStore& st, const std::vector<SquadWalkEntry>& order,
+        std::uint32_t index) {
+    const MacroHandle h = macro_handle_by_spawn_id(st, order, index);
+    return st.valid(h)
+            && is_settlement_kind(SquadType(st.runtime[h.slot].squadType))
+        ? h : MacroHandle{};
+}
+
 // ДВЕРЬ ПЕРЕХОДА ВИДА — второе событие места, и оно же его СМЕРТЬ (владелец
 // 2026-09-20: «уничтожение ландмарка и рождение будет как механика»). Смерть
 // места не освобождает слот, а МЕНЯЕТ ВИД: деревня становится руиной и

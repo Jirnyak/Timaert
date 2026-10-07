@@ -70,17 +70,40 @@ inline MacroStore& store_ctx(const TickContext& ctx) {
 // O(кап) на каждый think, то есть ровно та граница, которую §6 запрещает.
 // Фикстура, водящая одну думку без каркаса, падает в скан — у неё порядка
 // нет, и это её цена, не цена мира.
-// Ось рода гейтится здесь: пространство ординалов ОДНО (M-37), и «это
-// место» отвечает только ось тела.
-inline std::uint16_t place_slot_by_id(const TickContext& ctx, int id) {
+// Ось рода гейтится НЕ ЗДЕСЬ, а в самой двери `place_handle_by_ordinal`
+// (`src/macro/squad.h`): пространство ординалов ОДНО (M-37), и «это место»
+// отвечает только ось тела — одним написанием на весь мир. Ниже остался
+// ПЕРЕХОДНИК «хэндл → слот», и он один на оба звонящих этого файла: дневная
+// ротация зовёт его со своим `crewOrder`, думка — с порядком драйва.
+// `order == nullptr` — скан-ветка (фикстура без каркаса; её цена названа
+// выше и остаётся её ценой, не ценой мира).
+inline std::uint16_t place_slot_of(const MacroStore& st,
+                                   const std::vector<SquadWalkEntry>* order,
+                                   int id) {
     if (id <= 0) return kMacroNoSlot;   // 0 = «никого» (ЗАКОН НУЛЯ-ОРДИНАЛА)
-    const MacroStore& st = store_ctx(ctx);
-    const MacroHandle h = ctx.squads
-        ? macro_handle_by_spawn_id(st, ctx.squads->order, std::uint32_t(id))
-        : macro_handle_by_spawn_id(st, std::uint32_t(id));
-    if (!st.valid(h)) return kMacroNoSlot;
-    return is_settlement_kind(SquadType(st.runtime[h.slot].squadType))
-        ? h.slot : kMacroNoSlot;
+    const MacroHandle h = order
+        ? place_handle_by_ordinal(st, *order, std::uint32_t(id))
+        : place_handle_by_ordinal(st, std::uint32_t(id));
+    // «Дома нет» = kMacroNoSlot — ПОСЛЕДНЕЕ значение типа индекса (ЗАКОН
+    // УЗКОГО ИНДЕКСА: слот 0 законен, нулём тут сказать нечего).
+    return st.valid(h) ? h.slot : kMacroNoSlot;
+}
+inline std::uint16_t place_slot_by_id(const TickContext& ctx, int id) {
+    return place_slot_of(store_ctx(ctx),
+                         ctx.squads ? &ctx.squads->order : nullptr, id);
+}
+
+// УРНА ГОРОДОВ — ОДИН предикат на оба рейса (торговец и кочевник). Он стоял
+// ДВУМЯ побайтово одинаковыми лямбдами в двух соседних поведениях, и это был
+// второй ответ на один вопрос мира (DOD п.6), просто спрятанный в области
+// видимости функции. Обход мест — одна дверь (`for_each_place`,
+// `macro/landmark_iter.h`): ось рода ТЕЛА отвечает «город ли это», второго
+// списка городов в мире нет. `notId` — ординал, который спрашивающий
+// исключает (свой дом у торговца, текущая цель у кочевника).
+inline bool is_other_city(const MacroStore& st, std::uint16_t slot,
+                          int notId) {
+    return SquadType(st.runtime[slot].squadType) == SquadType::City
+           && int(st.spawnId[slot].index) != notId;
 }
 
 // Клетка слота парой координат — геометрия марша и округи (ЗАКОН АДРЕСА:
@@ -2259,12 +2282,6 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
     XY home;
     if (!home_pos(rt, ctx, home)) return;
     const MacroStore& st = store_ctx(ctx);
-    // Урна городов — ОДНА дверь обхода мест (landmark_iter.h): ось рода
-    // тела отвечает «город ли это», и второго списка мест в мире нет.
-    const auto is_other_city = [&](std::uint16_t slot, int notId) {
-        return SquadType(st.runtime[slot].squadType) == SquadType::City
-               && int(st.spawnId[slot].index) != notId;
-    };
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -2272,7 +2289,7 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
             // Pick another city (id != home).
             int candidates = 0;
             for_each_place(st, [&](std::uint16_t slot) {
-                if (is_other_city(slot, rt.homeSettlementId)) ++candidates;
+                if (is_other_city(st, slot, rt.homeSettlementId)) ++candidates;
             });
             if (candidates > 0) {
                 int pick = rand_int(ctx, candidates);
@@ -2281,7 +2298,7 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
                 // порядок есть закон приоритета клетки).
                 bool taken = false;
                 for_each_place(st, [&](std::uint16_t slot) {
-                    if (taken || !is_other_city(slot, rt.homeSettlementId))
+                    if (taken || !is_other_city(st, slot, rt.homeSettlementId))
                         return;
                     if (pick-- != 0) return;
                     rt.targetSettlementId = int(st.spawnId[slot].index);
@@ -2327,22 +2344,19 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
 void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx) {
     const MacroStore& st = store_ctx(ctx);
-    const auto is_other_city = [&](std::uint16_t slot, int notId) {
-        return SquadType(st.runtime[slot].squadType) == SquadType::City
-               && int(st.spawnId[slot].index) != notId;
-    };
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             int candidates = 0;
             for_each_place(st, [&](std::uint16_t slot) {
-                if (is_other_city(slot, rt.targetSettlementId)) ++candidates;
+                if (is_other_city(st, slot, rt.targetSettlementId))
+                    ++candidates;
             });
             if (candidates > 0) {
                 int pick = rand_int(ctx, candidates);
                 bool taken = false;
                 for_each_place(st, [&](std::uint16_t slot) {
-                    if (taken || !is_other_city(slot, rt.targetSettlementId))
+                    if (taken || !is_other_city(st, slot, rt.targetSettlementId))
                         return;
                     if (pick-- != 0) return;
                     rt.targetSettlementId = int(st.spawnId[slot].index);
@@ -3723,19 +3737,16 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // строки места больше нет, а с ней и индекса в её векторе). Бинарный
     // поиск по порядку выше: дверь зовётся на КАЖДУЮ сущность дважды в день,
     // и скан капа сделал бы это O(сущности × кап) — та же худшая точка
-    // переписи M-90, только дороже. Ось рода гейтится здесь: пространство
-    // ординалов ОДНО (M-37).
-    // «Дома нет» = kMacroNoSlot — ПОСЛЕДНЕЕ значение типа индекса (ЗАКОН
-    // УЗКОГО ИНДЕКСА: слот 0 законен, нулём тут сказать нечего), и тот же
-    // сентинел, каким этот проход уже называет «нет артели» (idleByHome,
-    // claim_standing). Второго имени для «нет слота» здесь не заводится.
+    // переписи M-90, только дороже.
+    // ЗДЕСЬ СТОЯЛА ТРЕТЬЯ КОПИЯ ЗАКОНА (резолв + валидность + гейт оси рода),
+    // отличавшаяся от `place_slot_by_id` выше ровно тем, по какому ПОРЯДКУ
+    // идёт поиск. Порядок — параметр, а не закон: оба зовут один переходник,
+    // а сам закон живёт в `place_handle_by_ordinal@src/macro/squad.h`.
+    // Сентинел «дома нет» — тот же kMacroNoSlot, каким этот проход уже
+    // называет «нет артели» (idleByHome, claim_standing); второго имени для
+    // «нет слота» здесь не заводится.
     const auto slot_of = [&](int id) -> std::uint16_t {
-        if (id <= 0) return kMacroNoSlot;
-        const MacroHandle h =
-            macro_handle_by_spawn_id(stq, crewOrder, std::uint32_t(id));
-        if (!stq.valid(h)) return kMacroNoSlot;
-        return is_settlement_kind(SquadType(stq.runtime[h.slot].squadType))
-            ? h.slot : kMacroNoSlot;
+        return place_slot_of(stq, &crewOrder, id);
     };
     // A type is a CREW exactly when some landmark's registry row raises it —
     // the old hand-kept list (professions + Vendor + TaxCollector) is now a
