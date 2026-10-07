@@ -251,14 +251,41 @@ struct LandmarkDef {
 // 2026-08-24). The old 0..9 rows translate as band edges: min = band*256/10,
 // max = (band+1)*256/10 - 1 — City "0..2" became 0..76, Spire "5..9" became
 // 128..255, unchanged in meaning, finer in resolution.
+// ── ПОЛЯ НАЗЫВАЮТСЯ, А НЕ СЧИТАЮТСЯ (DOD п.9) ───────────────────────────
+// Строки ниже стояли ПОЗИЦИОННЫМИ, и колонки им подписывали ad-hoc
+// комментарии (`/*wealth*/`, `/*hab*/`, `/*born*/`) — то есть имя поля
+// существовало для ЧИТАТЕЛЯ и не существовало для КОМПИЛЯТОРА. Цена этой
+// формы измерена и записана ниже, в самом шраме города: счётчик `crewCount`
+// не убавили, вырезая строку, её место занял ДЕФОЛТ, и призрачная артель
+// держала треть мировой добычи дерева много коммитов. Промах на единицу —
+// родовой дефект позиционного агрегата: новая колонка в середине садится в
+// соседнее поле МОЛЧА, а мир остаётся правдоподобным.
+// С именованными инициализаторами этот класс дефекта ловит СБОРКА, и граница
+// названа ЗАМЕРОМ, а не на глаз: порядок полей судит `-Wreorder-init-list`
+// (`timaert_build_flags`, CMakeLists.txt) — clang предупреждает, GCC/MinGW
+// ОТВЕРГАЕТ, и по §9 «ноль предупреждений» предупреждение здесь и есть стоп.
+// Пропуск поля даёт объявленный дефолт ЯВНО (проверено мутацией: шесть полей,
+// дописанных шпилю значениями их же дефолтов, не двинули ни одного из четырёх
+// TSV замера). Переезд строк в ИИ-модули рода (M-235) становится
+// механическим: поля называются, значит их нельзя пересчитать.
 inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
-    {SquadType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
+    {.type = SquadType::None, .id = "none", .label = "",
+     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
+     .walkable = true, .lightColor = 0x00000000u, .lightPop = 0.0f },
     // Стража города — строка контейнера {Guard, Auction} с душами ИЗ ГАРНИЗОНА
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
-    {SquadType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/3, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false,
-                     SquadType::Collector},
+    {.type = SquadType::City, .id = "city", .label = "City",
+     .minZone = 0, .maxZone = 76, .glyph = '#', .color = 0xFFE7D27Au,
+     .walkable = true, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .wealthMul = 1.5f,
+     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
+     .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
+     .bornPopBase = 0, .bornPopPerScore = 0,
+     .worldPlaces = true, .garrisonShift = 3, .labourShift = 3,
+     .crews = {{.npc = NPCType::Peasant, .gate = CrewGate::Auction,
+                .solo = false, .type = SquadType::Collector},
                    // ПАТРУЛЬНАЯ СТРОКА ВЫРЕЗАНА 2026-09-21 (владелец:
                    // «вырезаем бандитов, патрули — даже не временно; потом
                    // по уму их всегда сможем норм добавить»). Строка
@@ -302,31 +329,71 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
                    // город), а не строкой-призраком; названный рычаг «число
                    // против размера» — это и есть реформа рождения крю, где
                    // они перестают выводиться друг из друга.
-                   {NPCType::Peasant, CrewGate::Auction,
-                    /*solo*/false, SquadType::Caravan}}, 2,
-     /*actions*/ kMapActTrade | kMapActHire | kMapActQuests,
-     /*seedComfortDays*/ 32, /*seedRawMult*/ 1 },
+               {.npc = NPCType::Peasant, .gate = CrewGate::Auction,
+                .solo = false, .type = SquadType::Caravan}},
+     .crewCount = 2,
+     .actions = kMapActTrade | kMapActHire | kMapActQuests,
+     .seedComfortDays = 32, .seedRawMult = 1 },
     // ОДНА строка артели — ШАБЛОН, а не слот (CANON S4, 2026-09-22). Здесь
     // стояли ЧЕТЫРЕ одинаковые крестьянские строки, и четвёрка была
     // крутилкой «одновременность артелей», то есть числом с потолка в
     // таблице. Теперь число артелей говорит СПРОС — сколько целей добычи
     // получили положительный скор, — а пул рук его урезает; строка же
     // объявляет только КОГО поднимать и КАКОГО ТИПА.
-    {SquadType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction, /*solo*/false, SquadType::Artel}}, 1,
-     /*actions*/ kMapActTrade | kMapActHire | kMapActQuests,
-     /*seedComfortDays*/ 8, /*seedRawMult*/ 2 },
+    {.type = SquadType::Village, .id = "village", .label = "Village",
+     .minZone = 0, .maxZone = 101, .glyph = 'v', .color = 0xFFCCB068u,
+     .walkable = true, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .wealthMul = 1.0f,
+     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
+     .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
+     .bornPopBase = 0, .bornPopPerScore = 0,
+     .worldPlaces = true, .garrisonShift = 3, .labourShift = 1,
+     .crews = {{.npc = NPCType::Peasant, .gate = CrewGate::Auction,
+                .solo = false, .type = SquadType::Artel}},
+     .crewCount = 1,
+     .actions = kMapActTrade | kMapActHire | kMapActQuests,
+     .seedComfortDays = 8, .seedRawMult = 2 },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and
     // clearing the tower can never again be ambiguous between garrison and
     // game. The Ruin row keeps kHabRuin: that bit is ALSO the den
     // dictionary (what creeps into cellars and caves), and a ruin's ground
     // honestly crawls.
-    {SquadType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, /*wealth*/1.25f, /*hab*/kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 13, /*inside*/2, /*born*/128, 64, /*places*/true },
-    {SquadType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12, /*inside*/0, /*born*/64, 1, /*places*/true },
-    {SquadType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, /*wealth*/1.25f, kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
-    {SquadType::Shrine,  "shrine",  "Shrine",   25, 178, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
-    {SquadType::Mine,    "mine",    "Mine",     51, 203, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f, /*wealth*/1.25f },
-    {SquadType::Tower,   "tower",   "Tower",    76, 203, 'T', 0xFF6E6E89u, true, 0xFF6E6E89u,  80.0f },
+    {.type = SquadType::Spire, .id = "spire", .label = "Spire",
+     .minZone = 128, .maxZone = 255, .glyph = 'I', .color = 0xFFA86CFFu,
+     .walkable = true, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
+     .wealthMul = 1.25f,
+     .faunaHabitat = kLandmarkFaunaGround, .faunaMin = 0, .faunaMax = 0,
+     .faunaCap = kLandmarkFaunaCapGround,
+     .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
+     .bornPopBase = 128, .bornPopPerScore = 64,
+     .worldPlaces = true },
+    {.type = SquadType::Ruin, .id = "ruin", .label = "Ruin",
+     .minZone = 51, .maxZone = 229, .glyph = 'r', .color = 0xFF8E8576u,
+     .walkable = true, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
+     .wealthMul = 0.5f,
+     .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
+     .faunaCap = kLandmarkFaunaCapGround,
+     .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
+     .bornPopBase = 64, .bornPopPerScore = 1,
+     .worldPlaces = true },
+    {.type = SquadType::Lair, .id = "lair", .label = "Lair",
+     .minZone = 102, .maxZone = 255, .glyph = 'L', .color = 0xFF883A3Au,
+     .walkable = true, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
+     .wealthMul = 1.25f,
+     .faunaHabitat = kLandmarkFaunaGround, .faunaMin = 0, .faunaMax = 0,
+     .faunaCap = kLandmarkFaunaCapGround,
+     .crowdHabitat = 1u << 12 },
+    {.type = SquadType::Shrine, .id = "shrine", .label = "Shrine",
+     .minZone = 25, .maxZone = 178, .glyph = '+', .color = 0xFFE2E2E2u,
+     .walkable = true, .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
+    {.type = SquadType::Mine, .id = "mine", .label = "Mine",
+     .minZone = 51, .maxZone = 203, .glyph = 'M', .color = 0xFF8B6332u,
+     .walkable = true, .lightColor = 0xFF8B6332u, .lightPop = 60.0f,
+     .wealthMul = 1.25f },
+    {.type = SquadType::Tower, .id = "tower", .label = "Tower",
+     .minZone = 76, .maxZone = 203, .glyph = 'T', .color = 0xFF6E6E89u,
+     .walkable = true, .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
 
     // ── ПОДВИЖНЫЕ РОДЫ ОСИ: СТРОКИ ЧЕСТНО ПУСТЫЕ (M-90 шаг 3а) ───────────
     // Артель, корован и сборщик стоят на ТОЙ ЖЕ оси, что места (одна ось у
@@ -339,9 +406,15 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // (2) пустая строка обязана быть ВИДНА как решение, а не как пропуск.
     // Это цена, названная в шапке `squad_type.h`: платим пустотой за то,
     // что `landmark_def` остаётся ПОЛНОЙ функцией без гейта по роду.
-    {SquadType::Artel,     "artel",     "", 0, 255, ' ', 0x00000000u, false, 0x00000000u, 0.0f },
-    {SquadType::Caravan,   "caravan",   "", 0, 255, ' ', 0x00000000u, false, 0x00000000u, 0.0f },
-    {SquadType::Collector, "collector", "", 0, 255, ' ', 0x00000000u, false, 0x00000000u, 0.0f },
+    {.type = SquadType::Artel, .id = "artel", .label = "",
+     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
+     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f },
+    {.type = SquadType::Caravan, .id = "caravan", .label = "",
+     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
+     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f },
+    {.type = SquadType::Collector, .id = "collector", .label = "",
+     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
+     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f },
 };
 static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
               "kLandmarks row order must mirror SquadType");
