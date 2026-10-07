@@ -105,18 +105,25 @@ constexpr float kNoThreatDistance2 = 1.0e18f;
 //
 // The cap is on SIMULTANEOUSLY PRESENT factions; one enemy mask stays a single
 // std::uint64_t. A 65th distinct faction in one window degrades to neutral (it
-// fights nobody) rather than misbehaving. Since 2026-09-03 (owner, CANON S10)
-// this is THE world faction limit spelled once — macro/faction.h kMaxFactions —
-// and the world's creatures obeys the same 64 (static_assert beside the registry).
-constexpr int kMaxCrowdFactions = kMaxFactions;
+// fights nobody) rather than misbehaving.
+//
+// ИМЯ ЧИСЛУ ОДНО — `kMaxFactions@src/tables/faction.h`, И ЗДЕСЬ ЕГО НЕТ
+// (M-182, вердикт владельца 2026-09-28: «число фракций заменить на 64 (к
+// одному числу единому)»). Тут стоял алиас `kMaxCrowdFactions`, и он врал не
+// значением, а ВОПРОСОМ: читатель видел два имени и достраивал к ним два
+// разных вопроса — «сколько народов бывает в мире» против «сколько их сошлось
+// в одном окне». Ответ у них общий и причина общая: 64 есть ШИРИНА
+// `std::uint64_t` маски враждебности, которой `hostile` ниже отвечает «враг ли
+// j» одним сдвигом и одним И. Вывод стоит под `static_assert` у самого
+// объявления числа, а не здесь в прозе.
 
 struct FactionSet {
-    const char* ids[kMaxCrowdFactions]{};
+    const char* ids[kMaxFactions]{};
     // enemyMask[f] has bit g set iff faction f treats faction g as an enemy.
     // Asymmetry is allowed and used: the macro matrix is not required to be
     // symmetric, and a body may carry a private grudge on top (see
     // BodyDesc::enemyMask).
-    std::uint64_t enemyMask[kMaxCrowdFactions]{};
+    std::uint64_t enemyMask[kMaxFactions]{};
     int count = 0;
 
     void clear();
@@ -326,11 +333,11 @@ struct InfluenceField {
     float originX = 0.0f, originY = 0.0f;
     int cols = 1, rows = 1;
     std::uint64_t presentMask = 0;                        // factions with a body
-    std::uint64_t factionEnemyMask[kMaxCrowdFactions]{};  // OR of member masks
+    std::uint64_t factionEnemyMask[kMaxFactions]{};       // OR of member masks
     // Planes are allocated ONLY for factions actually standing in the window. A
     // two-army battle pays for two planes — the per-frame clear was the whole
     // fixed cost of this pass, and a lone bandit must not pay a creatures price.
-    std::int16_t planeIdx[kMaxCrowdFactions]{};          // -1 = faction absent
+    std::int16_t planeIdx[kMaxFactions]{};               // -1 = faction absent
     int planeCount = 0;
     std::vector<std::uint64_t> occMask;   // [cell] factions present in the cell
     std::vector<std::uint32_t> count;     // [plane*cells + cell]
@@ -366,7 +373,7 @@ struct InfluenceField {
         return originY + (float(cy) + 0.5f) * cell;
     }
     inline bool has_faction(int f) const noexcept {
-        return f >= 0 && f < kMaxCrowdFactions && planeIdx[f] >= 0;
+        return f >= 0 && f < kMaxFactions && planeIdx[f] >= 0;
     }
     // Valid only when has_faction(f).
     inline std::size_t plane(int f) const noexcept {

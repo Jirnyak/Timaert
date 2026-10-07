@@ -227,13 +227,13 @@ void test_factions() {
     // id the same pointer and silently dedup to a single faction.
     FactionSet full{};
     std::vector<std::vector<char>> ids;
-    ids.resize(std::size_t(kMaxCrowdFactions));
-    for (int i = 0; i < kMaxCrowdFactions; ++i) {
+    ids.resize(std::size_t(kMaxFactions));
+    for (int i = 0; i < kMaxFactions; ++i) {
         ids[std::size_t(i)].resize(16);
         std::snprintf(ids[std::size_t(i)].data(), 16, "f%d", i);
         full.intern(ids[std::size_t(i)].data());
     }
-    CHECK(full.count == kMaxCrowdFactions, "table fills to its capacity");
+    CHECK(full.count == kMaxFactions, "table fills to its capacity");
     CHECK(full.intern("one_too_many") < 0,
           "beyond capacity degrades to factionless, never overruns");
 

@@ -67,7 +67,7 @@ int FactionSet::find(const char* id) const {
 int FactionSet::intern(const char* id) {
     const int found = find(id);
     if (found >= 0) return found;
-    if (!id || id[0] == '\0' || count >= kMaxCrowdFactions) return -1;
+    if (!id || id[0] == '\0' || count >= kMaxFactions) return -1;
     ids[count] = id;
     enemyMask[count] = 0ull;
     return count++;
@@ -228,7 +228,7 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
     }
     f.presentMask = 0ull;
     f.planeCount = 0;
-    for (int i = 0; i < kMaxCrowdFactions; ++i) {
+    for (int i = 0; i < kMaxFactions; ++i) {
         f.factionEnemyMask[i] = 0ull;
         f.planeIdx[i] = -1;
     }
@@ -245,10 +245,10 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
     // per-frame clear below is proportional to the factions on the field.
     for (int i = 0; i < u.count; ++i) {
         const std::int16_t fi = u.faction[std::size_t(i)];
-        if (fi < 0 || fi >= kMaxCrowdFactions) continue;
+        if (fi < 0 || fi >= kMaxFactions) continue;
         f.presentMask |= (1ull << fi);
     }
-    for (int s = 0; s < kMaxCrowdFactions; ++s) {
+    for (int s = 0; s < kMaxFactions; ++s) {
         if (((f.presentMask >> s) & 1ull) != 0ull)
             f.planeIdx[s] = std::int16_t(f.planeCount++);
     }
@@ -284,7 +284,7 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
     // that cell's HOSTILE centroid, then propagate the nearest site with two
     // sweeps (Danielsson-style vector distance transform — approximate in the
     // corners, exact along the sweeps, and far finer than steering needs).
-    for (int s = 0; s < kMaxCrowdFactions; ++s) {
+    for (int s = 0; s < kMaxFactions; ++s) {
         if (!f.has_faction(s)) continue;
         const std::uint64_t enemies = f.factionEnemyMask[s];
         if (enemies == 0ull) continue;
@@ -375,7 +375,7 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
     // between it and the fighting is simply not connected and stays home.
     std::vector<std::uint32_t>& queue = f.alertQueue;
     queue.reserve(cells);
-    for (int s = 0; s < kMaxCrowdFactions; ++s) {
+    for (int s = 0; s < kMaxFactions; ++s) {
         if (!f.has_faction(s)) continue;
         const std::size_t base = f.plane(s);
         queue.clear();
