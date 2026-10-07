@@ -69,7 +69,6 @@ verdict	SKELETON.md	* **`CarrierSpread`** — **ЕДИНСТВЕННОЕ ИСК�
 verdict	SKELETON.md	* **`HealToBaseline`** — ёмкость клетки есть чистая функция терраина и сида и не убыва�
 verdict	SKELETON.md	**Вердикт владельца 2026-09-25:** app-слой есть РЕДАКТОР над миром (ЗАКОН АГНОСТИЧНО�
 verdict	SKELETON.md	**ПРАВИЛО ОДЕВАНИЯ.** Ни один шаг не считается сделанным, пока в этом файле не �
-verdict	SKELETON.md	**РАСХОЖДЕНИЕ, ЗДЕСЬ ЖЕ: `allowAutoBattle=false` ВЫКЛЮЧАЕТ АВТОРЕЗОЛВ НА ВСЁМ ТОРЕ, А НЕ �
 verdict	SKELETON.md	- «вода ли клетка» — ОДИН порог высоты (`is_water`), никаких масок, макро и микро од
 verdict	SKELETON.md	- интерьеры/этажи, берущие население и фауну клетки двери — смешение двух аг�
 verdict	SKELETON.md	- макромир под землёй симулируется штатно, медленнее по делителю → фоновый т
@@ -79,7 +78,6 @@ verdict	SKELETON.md	| **добыча и материя** (перепись 2026-
 verdict	SKELETON.md	| **числа клетки, до шейдера не доезжающие** | числа ресурсных полей (`resource_field.h`)
 verdict	SKELETON.md	| **шапка `macro.frag` переписана по факту** | врала в ПЯТИ утверждениях: «Four sampled images�
 verdict	SKELETON.md	| AI | порядок по ординалу и один RNG — ПРАВДА; два switch; 9 машин без хвоста; backlog-skip;
-verdict	SKELETON.md	| `allowAutoBattle=false` — один ответ гейта | рефлекс угрозы отдаёт думку роли (`:2761`), `ai_m
 verdict	SKELETON.md	| `cells_[9]` (тайлы, trav, высоты, структуры на клетку) | ≈6 МиБ × 9 | 54 МиБ | менеджер (`:24
 verdict	SKELETON.md	| app — редактор: прямой доступ законен | матрица выше; вердикт 2026-09-25 | **ПРАВДА**
 verdict	SKELETON.md	| staging светового поля кольцуется | slot = `lightFieldFrame_ % 2` при гейте `% 8 == 0` ⇒ всегда 0; 
