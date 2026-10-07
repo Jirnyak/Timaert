@@ -390,14 +390,25 @@ inline float cell_sp_weight(Biome b, FeatureType f, float treeDensity01 = 0.0f) 
 // one law of zero (CANON S14.1). Zero while stamina lasts, so it can be
 // asked unconditionally, and integer through and through.
 //
-// ITS QUANTUM IS ONE POINT OF SP, and that is what makes it cadence-free. The
-// continuous burn is settled by two drivers at two rates — the player's turn
-// is 0.176 game minutes, a squad's think is 5.625, exactly 32× apart — so a
-// bite charged PER CALL would have made the depth of the sea a function of who
-// was walking in it. settle_pools_over_time therefore bites once per whole
-// point driven below zero, which is also the literal reading of the ruling:
-// «ЛЮБАЯ ЗАТРАТА SP ниже 0». A discrete act (apply_stamina_cost below) is one
-// spend and bites once — one law, two quanta, because an act is not a rate.
+// BILLED BY THE SPEND, NEVER BY THE STATE, and the owner named the defect that
+// settles it (2026-10-07, дословно): «он привязан к трате — любая трата sp
+// снимает также хп если оно отрицательно (квадратично) … иначе просто стоя на
+// месте с нулём sp будут умирать». A state-billed bite would bleed a body
+// standing on a road with an empty bar, where the regen outruns the burn and
+// NOTHING is being spent — nonsense. In the open sea the burn outruns the
+// regen, SP is spent every hour, and the bite follows the spend: that is how
+// «ночёвка в море смертельна» works without naming water anywhere.
+//
+// ITS QUANTUM IS ONE POINT OF SP, and the quantum carries two properties at
+// once. It is CADENCE-FREE: the continuous burn is settled by two drivers at
+// two rates — the player's turn is 0.176 game minutes, a squad's think is
+// 5.625, exactly 32× apart — so a bite charged PER CALL would have made the
+// depth of the sea a function of who was walking in it. And it is AGNOSTIC
+// ABOUT WHAT SPENT: ten points taken by a swing and ten points burned by a
+// crossing are the same ten points. Until 2026-10-07 they were not — the act
+// bit once at its final depth (3 HP) where the crossing bit each point at its
+// own (12 HP) — and the owner asked for one law, plainly: «сделай просто
+// красиво». One law, one quantum, one door (`bite_spent_debt` below).
 //
 // This used to be inlined in the player's charge and hand-copied in the macro
 // AI's per-think settle, where it was also gated on WATER: a squad marching
@@ -409,19 +420,40 @@ inline int exhaustion_bite(int sp) {
     return (-sp) * (-sp) / kExhaustionBiteDivisor;
 }
 
-// Charge whole SP, and let the exhaustion curve take the rest out of HP.
-// Returns the HP lost (0 while stamina lasts).
+// THE BITE OF A SPEND — THE one door, for an hour of ground and for a swing of
+// a sword alike. `before` is the bar as it stood before the spend, `pools.sp`
+// as it stands after; every whole point the spend drove below zero is charged
+// at ITS OWN depth, the quadratic curve integrated honestly instead of sampled
+// once at the end.
+//
+// A RISING BAR BITES NOTHING, and that is the owner's own guard made
+// structural: a body standing where rest outruns the burn spent nothing, so
+// nothing may be taken from it («иначе просто стоя на месте с нулём sp будут
+// умирать»). No branch is needed at any call site to say so.
+inline int bite_spent_debt(ecs::Pools& pools, int before) {
+    if (pools.sp >= before) return 0;        // the bar rose: nothing was spent
+    const int from = before < 0 ? before : 0;   // only the part below zero
+    int lost = 0;
+    for (int sp = from - 1; sp >= pools.sp; --sp) lost += exhaustion_bite(sp);
+    if (lost <= 0) return 0;
+    pools.hp -= lost;
+    return lost;
+}
+
+// THE DISCRETE SPEND — a swing, a cast, a day of labour — debited and billed
+// through the SAME two lines an hour of ground goes through. Returns the HP
+// lost (0 while stamina lasts).
 //
 // The body keeps its debt: stamina is NOT floored at zero, so the state is
-// visible in the UI and has to be recovered before the bar refills. What the
-// curve above charges is that debt, once per step. Operates on the body's
-// own Pools block — the one home of every bar since landing 4.
+// visible in the UI and has to be recovered before the bar refills.
+//
+// It bit ONCE at its final depth until 2026-10-07, and that was the last place
+// in the game where the price of a point depended on WHAT spent it.
 inline int apply_stamina_cost(ecs::Pools& pools, int cost) {
     if (cost <= 0) return 0;
+    const int before = pools.sp;
     pools.sp -= cost;
-    const int bite = exhaustion_bite(pools.sp);
-    pools.hp -= bite;
-    return bite;
+    return bite_spent_debt(pools, before);
 }
 
 // THE fractional stamina carry, settled — one shape for every body on the map.
@@ -446,28 +478,6 @@ inline int settle_sp_carry(int& sp, int maxSp, float& carry) {
     carry -= float(whole);
     sp = std::min(std::max(1, maxSp), sp + whole);
     return whole;
-}
-
-// THE bite of a CONTINUOUS spend, billed point by point: `before` is the bar
-// as it stood before the settle moved it, `pools.sp` as it stands after. Every
-// whole point the slice drove below zero is one spend in debt, and each is
-// charged at ITS OWN depth — the quadratic curve integrated honestly instead of
-// sampled once at the end (sampling once would have made a coarse driver gentle
-// and a fine one lethal for the same hour of ocean; see exhaustion_bite).
-// Returns the HP lost, 0 while stamina lasts.
-//
-// A rising bar bites nothing, so this can be asked after every settle without
-// a branch at the call site. Lives here, next to the curve, because the door
-// that calls it (macro/recovery.h settle_pools_over_time) is the ONE place a
-// body's bars move with time — the law of one door for price and recovery.
-inline int bite_continuous_debt(ecs::Pools& pools, int before) {
-    if (pools.sp >= before) return 0;        // the bar rose: nothing was spent
-    const int from = before < 0 ? before : 0;   // only the part below zero
-    int lost = 0;
-    for (int sp = from - 1; sp >= pools.sp; --sp) lost += exhaustion_bite(sp);
-    if (lost <= 0) return 0;
-    pools.hp -= lost;
-    return lost;
 }
 
 } // namespace sm

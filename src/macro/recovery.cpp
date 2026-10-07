@@ -82,8 +82,8 @@ int settle_pools_over_time(ecs::Pools& pools, float hours, int marathonRank,
                     pools.mpCarry, pools.mp, pools.maxMp);
     }
     // ...и укус долга — ЗДЕСЬ, в той же двери, что потратила (ЗАКОН
-    // СПОСОБНОСТИ п.4), почково по очку (bite_continuous_debt).
-    return bite_continuous_debt(pools, spBefore);
+    // СПОСОБНОСТИ п.4), почково по очку (bite_spent_debt).
+    return bite_spent_debt(pools, spBefore);
 }
 
 } // namespace sm

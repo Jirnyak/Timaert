@@ -186,7 +186,7 @@ void test_ground_decides_whether_standing_still_wins() {
 
 void test_bite_is_cadence_free() {
     // THE property the whole shape of the bite rests on (movement_cost.h
-    // bite_continuous_debt): the HP an hour of debt costs must NOT depend on
+    // bite_spent_debt): the HP an hour of debt costs must NOT depend on
     // who settled it. The player's driver slices a game hour into 341 turns,
     // a squad's think into 10.67 — exactly 32× apart — so a bite charged per
     // CALL would have made the open sea 32× deadlier for the player than for

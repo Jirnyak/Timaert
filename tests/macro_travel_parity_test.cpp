@@ -173,13 +173,47 @@ void test_exhaustion_curve_bites_deeper_each_step() {
     CHECK(cs.sp == 0 && cs.hp == 1000,
            "reaching exactly zero costs no health");
 
-    // Past zero: each spend bites the SQUARED outstanding debt.
+    // Past zero: the spend bites EVERY POINT it drove below zero, each at its
+    // own depth. Not once at the final depth — that was the last place where
+    // the price of a point depended on WHAT spent it (owner 2026-10-07:
+    // «он привязан к трате … сделай просто красиво»), and an act and an hour
+    // of ocean now cost the same per point.
+    const auto law_over = [&](int from, int to) {   // sum of the curve, (from, to]
+        int sum = 0;
+        for (int sp = from - 1; sp >= to; --sp) sum += law(sp);
+        return sum;
+    };
     int hp = 1000;
     for (const int debt : {8, 16, 24}) {
         const int bite = sm::apply_stamina_cost(cs, 8);
-        CHECK(bite == law(-debt), "the spend bites debt squared, from the law");
+        CHECK(bite == law_over(debt - 8 == 0 ? 0 : -(debt - 8), -debt),
+              "the spend bites every point it drove below zero, each at its "
+              "own depth — the curve integrated, not sampled");
         hp -= bite;
         CHECK(cs.sp == -debt && cs.hp == hp, "debt is kept, health paid");
+    }
+    // ...AND THAT IS STRICTLY CRUELLER THAN SAMPLING ONCE, which is the whole
+    // visible consequence of the unification. Stated as the inequality rather
+    // than as a number, so a retuned divisor cannot make it vacuous.
+    CHECK(law_over(0, -8) > law(-8),
+          "integrating the curve over a spend costs more than reading it once "
+          "at the end: eight points of debt bite as 1+2+...+8 depths, not as "
+          "the depth 8 alone");
+
+    // THE ACT AND THE HOUR AGREE, which is the law this unification exists
+    // for: the same ten points, spent by a swing or burned by a crossing,
+    // cost the same blood.
+    {
+        sm::ecs::Pools byAct{};
+        byAct.sp = 0; byAct.hp = 1000;
+        sm::ecs::Pools byPoint{};
+        byPoint.sp = 0; byPoint.hp = 1000;
+        const int actBite = sm::apply_stamina_cost(byAct, 10);
+        int pointBite = 0;
+        for (int i = 0; i < 10; ++i) pointBite += sm::apply_stamina_cost(byPoint, 1);
+        CHECK(actBite > 0 && actBite == pointBite && byAct.hp == byPoint.hp,
+              "ten points taken at once cost exactly what ten points taken one "
+              "at a time cost — no quantum of spending is cheaper than another");
     }
     CHECK(law(-16) > 2 * law(-8) && law(-32) > 2 * law(-16),
           "the curve is QUADRATIC: doubling the debt more than doubles the "
