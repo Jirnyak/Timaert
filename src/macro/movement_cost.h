@@ -1,18 +1,32 @@
-// Movement stamina — how much a step across the world costs, and what happens
-// when the body cannot pay it.
+// Movement stamina — what standing in the world costs a body per hour of it,
+// and what happens when the body cannot pay.
 //
-// ONE UNIT: the macro cell. A journey costs `terrain weight × distance in macro
-// cells`, wherever it is walked. The map layer covers exactly one cell per cell;
-// the subworld covers `tiles / kCellSize` of one. That is why the same crossing
-// costs the same on both layers — the earlier model had two independent laws
-// (10 SP per macro cell here, 10 SP per 1000 tiles there) that disagreed by
-// roughly 12× once converted to game time, so the price of a road depended on
-// which layer you happened to be looking at it from.
+// ONE UNIT: THE GAME HOUR (owner, 2026-10-06). A body BURNS `cell weight ×
+// kStaminaPerWeightHour` every game hour, moving or not, and RECOVERS a flat
+// percent of its bars per hour whenever it is not moving (macro/recovery.h
+// settle_pools_over_time). Two always-on processes, added by SIGN, no branch
+// between them.
 //
-// Costs are FRACTIONAL and accumulate; SP is spent in whole points
-// (TravelStamina below), the same fractional-carry idiom the hourly regeneration
-// uses (macro/recovery.cpp). Nothing is lost to rounding and nothing is
-// stored in the save — a load starts the carry at zero, worth at most 1 SP.
+// THERE IS NO PRICE OF A STEP, and that is the point. A march is dear because
+// heavy ground is SLOWER (terrain_speed_mult below, from the same weight row),
+// so the body spends more hours on it — the spread of the weight table arrives
+// as TIME, and stamina follows the time. The per-cell price this replaced was
+// the last thing in the world that answered «можно ли тут идти» with a number
+// of its own; with it went the standing predicate that answered the same
+// question with a WALL (`nav_can_stand` — see burn_stamina_per_hour).
+//
+// WHAT THIS LEFT OPEN, NAMED RATHER THAN PLUGGED (owner, 2026-10-06, дословно:
+// «давай тогда ща sp за движение в субмире не тратится и регена нет и всё
+// просто временно для субмира нет этой механик типа самое простое чистое
+// минимальеон решение»): the SUBWORLD has no stamina-over-time mechanic at
+// all — neither burn nor regen. The hole is in the registry (M-236), not
+// behind a temporary stand-in: a placeholder here would be the second law
+// this whole change exists to remove.
+//
+// Costs are FRACTIONAL and accumulate through the body's own signed carry
+// (settle_sp_carry below); SP moves in whole points. Nothing is lost to
+// rounding and nothing is stored in the save — a load starts the carry at
+// zero, worth at most 1 SP.
 #pragma once
 #include <cmath>
 #include "core/time.h"       // the ladder: kSubworldWalkTilesPerSecond derives from it
@@ -23,54 +37,48 @@
 
 namespace sm {
 
-// SP per weight-unit per macro cell. THE knob for how far a body can march:
-// this number × the cell's weight × cells crossed, and every modifier (travel
-// skill, overload, terrain √) is a multiplier ON TOP, never folded in — the
-// owner's shape, 2026-08-24.
+// SP per weight-unit per GAME HOUR. THE knob for how long a body can stand
+// anywhere at all: this number × the cell's weight, and every modifier
+// (travel skill, overload) rides ON TOP, never folded in — the owner's shape,
+// 2026-08-24, unchanged by the move to the hour.
 //
-// TWO, and the two has a compile-time gate under it (kRoadHoursPerFreshBar,
-// below the bed tables) because THIS NUMBER ALONE SAYS NOTHING. What is
-// balanced is GAME HOURS of road, and the hours are the PRODUCT of this knob
-// and the pace — a product with no name of its own to fail under. That is
-// exactly how it drifted: the 2026-08-24 recalibration moved the pace
-// 32 → 8 cells/h and this knob 7/16 → 1, the product fell 14 → 8 SP/h, and
-// every quoted hour below silently grew by 1.75× while the arithmetic that
-// derived them stayed in the comment. Measured in play 2026-09-09: a fresh bar
-// bought 13.75 h of road — a day and a half — under a comment that said 7.9.
-// The gate closes the CLASS, not the instance: move either knob and the build
-// fails naming the design, instead of the balance failing in someone's hands.
+// TWO, and the two keeps a compile-time gate under it
+// (kWaterDriftHoursPerFreshBar, below the bed tables) because THIS NUMBER
+// ALONE SAYS NOTHING: what is balanced is GAME HOURS, and before 2026-10-06
+// the hours were the PRODUCT of this knob and the PACE — a product with no
+// name of its own to fail under. It drifted exactly there: the 2026-08-24
+// recalibration moved the pace 32 → 8 cells/h and this knob 7/16 → 1, the
+// product fell 14 → 8 SP/h, and every quoted hour grew 1.75× inside a comment.
+// The hour quantum takes the pace OUT of the price, so the product is gone and
+// this knob now says the whole thing by itself — the drift of that class is
+// not fixed, it is unspellable.
 //
-// Priced per CELL, never per hour. Walking faster covers the same ground for
-// the same stamina, which is why `travel` (distance) and `spd` (speed) never
-// fight; the hours are only how the result READS.
+// Priced per HOUR, never per cell — the reverse of what stood here until
+// 2026-10-06, and the reversal is the whole law. Walking faster now covers
+// more ground for the same stamina, because what is paid for is the TIME spent
+// on the ground, and heavy ground takes longer per cell (terrain_speed_mult).
+// So `travel` (price of ground) and `spd` (pace) still never fight: one buys
+// the rate down, the other shortens the exposure.
 //
-// With the terrain speed law below folded in, a fresh level-1 bar (110 SP —
-// attributes.h, the bare sheet) buys about
+// With the terrain speed law folded in, a fresh level-1 bar (110 SP —
+// attributes.h, the bare sheet) is worth, per cell crossed, about
 //
-//     road 6.9 h · meadow 4.9 h · forest 3.2 h · mountain 3.1 h · water 2.2 h
+//    road 0.25 · meadow 0.7 · full thicket 1.2 · mountain 1.4 · water 7.9 SP
 //
-// — a real day's march on the road, camp by nightfall, and a night's rest
-// (kRestRegenPctPerHour) buys it all back: the daily rhythm closes itself.
-//
-// The number is chosen to sit ABOVE the standing regen, not on it: the road
-// costs 16 SP/h against a fresh 13.75 SP/h at rest, so a stop-and-go march
-// always loses ground and stamina stays a BUDGET. The 1.75 that would have
-// restored the old hours exactly puts 16 → 14 against that same 13.75 — a
-// knife-edge that two ranks of `marathon` flip into the free ride the owner
-// already caught in play once ("SP не тратится вообще", when the road cost
-// 6.4 SP/h against ~10 of regen). Under 2 that flip is EARNED, at marathon
-// ~17: a road that pays for itself is what a travel-trained character is for.
-// Stamina still does not recover while marching at all — a marching body
-// simply never calls the rest law (structural since landing 4; the old
-// kMarchRecoveryPct=0 knob had become a constant with no reader).
-constexpr float kStaminaPerCell = 2.0f;
+// — a road costs 8× less than the per-cell law charged, and the owner ruled
+// the shift accepted rather than tuned («если сдвинет мир не важно не надо
+// даже подгонять … тот был не идеален так что делаем чисто системно»). What
+// holds the economy now is not the road's price but the LADDER: see the two
+// static_asserts under burn_stamina_per_hour — water must out-burn rest, road
+// must not.
+constexpr float kStaminaPerWeightHour = 2.0f;
 
-// (No kMarchRecoveryPct. «Марш не лечит НИЧЕГО» is not a rate of zero any
-// more — it is the SHAPE of the callers: rest_pools has exactly two, the
-// player's standing-in-camp branch (main.cpp) and the squads'
-// `stopped && !moved` camp think (npc_ai.cpp), and legs in motion reach
-// neither. A knob that could be set to 0.2 was a door back to the road
-// healing for free.)
+// (No kMarchRecoveryPct, and no «the march simply never calls the rest law»
+// either. «Марш не лечит НИЧЕГО» is now ONE ARGUMENT of the one door
+// (settle_pools_over_time's `regenerates`), asked of every body on every
+// slice: moving bodies pass false. A rate knob that could be set to 0.2 was a
+// door back to the road healing for free; a caller-shaped law was a door to
+// the opposite — a body nobody remembered to call simply stopped living.)
 
 // What the `travel` skill does, and the only thing it does: it buys down the
 // stamina cost of ground, one percent per rank, under THE skill law
@@ -79,10 +87,10 @@ constexpr float kStaminaPerCell = 2.0f;
 // stops resisting you. What that does NOT buy is a free ride: an overloaded pack
 // is a separate term in the cost, and the exhaustion curve is untouched.
 //
-// One skill, one effect. Distance is this skill's business; SPEED is `spd` and
-// `athletics`. The two never fight, which is a property of pricing by CELL and
-// not by time: walking faster covers the same ground for the same stamina, it
-// simply takes fewer hours.
+// One skill, one effect. The RATE of ground is this skill's business; SPEED is
+// `spd` and `athletics`. The two never fight, and under the hour quantum they
+// compose instead: this rank buys the burn-per-hour down, the pace shortens the
+// hours exposed to it.
 inline float travel_skill_efficiency(const Skills& s) {
     return skill_mult(s, SkillId::Travel);
 }
@@ -169,10 +177,14 @@ inline constexpr float kHumanMarchMult = 1.0f;
 // first (the target_radius lesson). √ rather than 1/weight so terrain bites
 // but does not crawl: water (10×) walks at a third of road pace, not a tenth.
 //
-// Composition note: stamina is priced per CELL, so slowing down does not add
-// SP cost — it converts part of the terrain's price from stamina into HOURS.
-// Per game hour the burn is (√weight × base × kStaminaPerCell): the weight
-// table's ORDER is preserved, its spread arrives as time and stamina both.
+// Composition note, INVERTED on 2026-10-06 and load-bearing now: stamina is
+// priced per HOUR, so slowing down is EXACTLY how heavy ground costs stamina.
+// Per cell crossed the burn is (weight^1.5 × kStaminaPerWeightHour /
+// kMacroWalkCellsPerHour) — the √ of this law multiplying the weight of the
+// burn — so the table's ORDER is not merely preserved, it is SHARPENED: road
+// to water spreads 1:10 per hour and 1:32 per cell. This function is the only
+// place that spread comes from; a second pace law would silently re-price
+// every ground in the game.
 inline float terrain_speed_mult(float weight) {
     if (weight <= 1.0f) return 1.0f;
     return 1.0f / std::sqrt(weight);
@@ -228,14 +240,14 @@ inline constexpr float feature_bed_weight(FeatureType f) {
     return feature_def(f).bedWeight;
 }
 
-// ── THE anchor gate: where the hours and the per-cell price meet ──────────
+// ── THE anchor: the bar the whole ladder is measured against ──────────────
 //
-// The economy is BALANCED in game hours and PRICED per cell, and until
-// 2026-09-09 the arithmetic joining the two lived in a comment — which cannot
-// follow a moved knob. It failed exactly that way (kStaminaPerCell's own
-// epitaph): two knobs moved, their product fell 1.75×, and every test stayed
-// green because every test DERIVED its expectation from the same constants it
-// was meant to be guarding. A tautology guards nothing.
+// The economy is BALANCED in game hours, and until 2026-09-09 the arithmetic
+// joining the hours to the price lived in a comment — which cannot follow a
+// moved knob. It failed exactly that way (kStaminaPerWeightHour's epitaph):
+// two knobs moved, their product fell 1.75×, and every test stayed green
+// because every test DERIVED its expectation from the same constants it was
+// meant to be guarding. A tautology guards nothing.
 //
 // So the design numbers are stated here as literals, and the derived ones are
 // asserted against them. `kFreshBarSp` is the bare level-1 bar — 100 base plus
@@ -244,26 +256,96 @@ inline constexpr float feature_bed_weight(FeatureType f) {
 // away from the sheet in silence either.
 inline constexpr float kFreshBarSp = 110.0f;
 
-// What that bar buys on the reference bed, in game hours. The one number the
-// owner actually balances: "a day's march, camp by nightfall".
-inline constexpr float kRoadHoursPerFreshBar =
-    kFreshBarSp / (feature_bed_weight(FT_Road) * kStaminaPerCell
-                   * kMacroWalkCellsPerHour);
-static_assert(kRoadHoursPerFreshBar > 6.0f && kRoadHoursPerFreshBar < 9.0f,
-              "a fresh bar must buy a DAY of road (6-9 game hours). Moving "
-              "kStaminaPerCell or kMacroWalkCellsPerHour moves their PRODUCT, "
-              "and this is the line that says so out loud");
+// ── ЖЖЕНИЕ — ВТОРОЙ ВСЕГДА-ВКЛЮЧЁННЫЙ ПРОЦЕСС ────────────────────────────
+// Вердикт владельца 2026-10-06, дословно: «можно просто сделать реген от веса
+// гладкую функцию … можно чтобы даже жгло сп всегда просто при движении реген
+// откл … 2 процесса агностичных системных — реген который всегда одинаковый
+// НЕ от веса … и жжение которое от веса».
+//
+// ЭТИМ УМИРАЕТ СТЕНА, И ЭТО ГЛАВНОЕ. До этого дня на вопрос «можно ли тут
+// встать» отвечал ОТДЕЛЬНЫЙ предикат (`nav_can_stand`: по воде нельзя, кроме
+// моста) — второй ответ на вопрос, на который уже отвечал ВЕС, — и он же
+// держал 4328 клеток суши вне всякой округи навигации (остров без моста был
+// недостижим не потому, что дорого, а потому, что запрещено). После смены
+// вопроса нет вовсе: стоять можно где угодно, а смертельность места есть
+// СЛЕДСТВИЕ двух процессов, идущих всегда. Предел наступает обратной связью,
+// как и требует ЗАКОН КЛАМПА, а не стеной.
+//
+// ОДИН СКАЛЯР И ОДИН КВАНТ — ЧАС. Три члена — ровно те, что несла мёртвая
+// `travel_stamina_cost`, минус `cells`: грунт под телом, НАВЫК, сбивающий
+// цену грунта, и ПЕРЕГРУЗ, который навык не сбивает никогда (владелец
+// 2026-08-27: «да, перегруз универсальный всем»). Переезд был вынужден:
+// пошаговая цена была их единственным плательщиком, и оставить их без двери
+// значило снять два стоячих закона молча.
+inline constexpr float burn_stamina_per_hour(float cellWeight,
+                                             int overloadCost = 0,
+                                             float efficiency = 1.0f) {
+    return cellWeight * kStaminaPerWeightHour * efficiency
+           + float(overloadCost);
+}
 
-// ...and the road has to stay dearer than standing still, or a stop-and-go
-// march repays itself and the budget is an allowance again — the failure the
-// owner caught in play ("SP не тратится вообще"). Marching earns nothing
-// (a marching body never calls the rest law), so the comparison is
-// march-hour against rest-hour.
-inline constexpr float kRoadStaminaPerHour =
-    feature_bed_weight(FT_Road) * kStaminaPerCell * kMacroWalkCellsPerHour;
-static_assert(kRoadStaminaPerHour > kFreshBarSp * kRestRegenPctPerHour,
-              "the road must outrun the rest it is measured against, with "
-              "room for `marathon` to buy the free ride honestly");
+// ЛЕСТНИЦА ПРИБИТА КОМПИЛЯТОРОМ, А НЕ НАБЛЮДЕНИЕМ. Два конца таблицы весов
+// задают её целиком, и между ними она выходит сама (реген 13.75 SP/ч на
+// свежей планке): дорога и мост 1.0 → +11.75, луг 2.0 → +9.75, болото 4.0 →
+// +5.75, полный лес 4.5 → +4.75, гора 5.0 → +3.75, вода 10.0 → −6.25.
+static_assert(burn_stamina_per_hour(biome_sp_weight(Biome::Water))
+                  > kFreshBarSp * kRestRegenPctPerHour,
+              "ВОДА ОБЯЗАНА ТОПИТЬ: жжение больше отдыха. Иначе океан "
+              "становится медленной, но БЕЗОПАСНОЙ дорогой, и закон "
+              "«неоплатный океан топит лорда» (CANON S7) умирает молча");
+static_assert(burn_stamina_per_hour(feature_bed_weight(FT_Road))
+                  < kFreshBarSp * kRestRegenPctPerHour,
+              "ДОРОГА ОБЯЗАНА ЛЕЧИТЬ: жжение меньше отдыха. Иначе "
+              "отдохнуть нельзя нигде и мир встаёт");
+
+// ДОЕЗЖАЕТ ЛИ ОТДЫХ ЗДЕСЬ ДО ЖЖЕНИЯ — ОДИН ВОПРОС, ОДНА ДВЕРЬ, ДВА ВОДИТЕЛЯ.
+// Не «можно ли тут встать» (на это отвечает ВЕС, и ответ всегда «да»), а
+// «стоит ли тут стоять»: окупается ли час привала его собственным часом
+// жжения. Место в вопросе не названо ни разу — названы две ставки, которые у
+// тела и так есть.
+//
+// ЗАЧЕМ ОТДЕЛЬНАЯ ДВЕРЬ, А НЕ ДВА СРАВНЕНИЯ НА МЕСТАХ: решение принимают ДВА
+// водителя времени — свип макро-ИИ для сквадов и ход главного цикла для
+// игрока (свип игрока не водит никогда), — и это один закон, а не дубль. Две
+// рукописные копии сравнения разъехались бы первой же правкой ставки отдыха.
+//
+// И ЭТО НЕ ВОЗВРАТ СТЕНЫ, купленной сносом в тот же день. Стена ВЕТИРОВАЛА
+// проход и привал по роду клетки; это ничего не запрещает — тело, которому
+// стоянка невыгодна, идёт дальше и платит долг кровью («pressing on is
+// priced, never gated», CANON S14.1). Без этого вопроса снос стены убил бы
+// собственную цель: пробуждение требует ПОЛОВИНЫ планки, а там, где жжение
+// обгоняет отдых, планка только падает — значит сквад, у которого ноги
+// кончились в клетке от берега острова, встал бы лагерем В МОРЕ, не проснулся
+// никогда и утонул на месте. То же «от любого места до любого не добраться»,
+// только смертью вместо запрета.
+inline float rest_stamina_per_hour(int maxSp, int marathonRank) {
+    return float(maxSp > 1 ? maxSp : 1) * kRestRegenPctPerHour
+           * skill_mult_of(SkillId::Marathon, marathonRank);
+}
+inline bool camp_repays_its_hour(float burnPerHour, int maxSp,
+                                 int marathonRank) {
+    return rest_stamina_per_hour(maxSp, marathonRank) > burnPerHour;
+}
+
+// ЧАСОВОЙ ЯКОРЬ НОВОГО ЗАКОНА — он заменил `kRoadHoursPerFreshBar`, и замена
+// НЕ косметическая: прежний якорь мерил, сколько ДОРОГИ покупает планка, а
+// дорога теперь дешевле отдыха, то есть её часы бесконечны и мерить там
+// нечего. Мерить стало смысл у ХУДШЕГО конца лестницы: сколько планка держит
+// в открытом море, где жжение честно обгоняет отдых. Это и есть то число,
+// которым владелец балансирует «океан топит, но не стеной».
+//
+// 17.6 ч: 110 SP / (20 жжения − 13.75 отдыха). Дальше долг и квадратичный
+// укус (exhaustion_bite ниже). Река в одну-две клетки стоит 8–16 SP из 110 —
+// брод открыт всем и без моста, ровно как требует вердикт «вода — ВЕС».
+inline constexpr float kWaterDriftHoursPerFreshBar =
+    kFreshBarSp / (burn_stamina_per_hour(biome_sp_weight(Biome::Water))
+                   - kFreshBarSp * kRestRegenPctPerHour);
+static_assert(kWaterDriftHoursPerFreshBar > 8.0f
+                  && kWaterDriftHoursPerFreshBar < 32.0f,
+              "полная планка обязана держать в море ПОЧТИ СУТКИ, но не "
+              "больше: меньше восьми часов — и море стена, больше суток — и "
+              "оно безопасно. Двинули kStaminaPerWeightHour, вес воды или "
+              "ставку отдыха — эта строка говорит об этом вслух");
 
 // Full-thicket drag: at density 1.0 (kMaxTreesPerCell) the wood adds 2.5 on
 // top of its ground — a meadow choked to full forest walks at 4.5, the old
@@ -272,13 +354,22 @@ static_assert(kRoadStaminaPerHour > kFreshBarSp * kRestRegenPctPerHour,
 inline constexpr float kCanopySpWeight = 2.5f;
 
 // Climbing surcharge per full normalized height (h01 = field01_of the R word):
-// an ascent over the WHOLE world relief costs as much again as ten cells of
+// an ascent over the WHOLE world relief weighs as much again as ten cells of
 // open meadow (20 = 10 × meadow 2.0) — spread over however many cells the
 // approach takes, and refunded by nothing on the way down.
+//
+// ROUTING ONLY SINCE 2026-10-06, and that is a consequence, not a decision: a
+// climb is a fact of an EDGE, and the hour quantum has no edges. So this term
+// no longer bills stamina anywhere — it prices edges for the things that CHOOSE
+// edges (nav_bake's Dijkstra, find_path, the greedy step), which is where it
+// does its real work: a mountain route stays dearer than the valley around it.
+// Relief still costs the body, through the bed (mountain ground 5.0) and
+// through terrain_speed_mult holding it there longer — 1.4 SP a cell against
+// the road's 0.25.
 inline constexpr float kClimbSpWeight = 20.0f;
 
-// The CELL half of the law — bed + canopy. The climb half lives on the edge
-// and is priced by the walker (A*, the greedy step, the player's charge):
+// The CELL half of the law — bed + canopy — and the half the BURN reads. The
+// climb half lives on the edge and is read only by the route-choosers:
 //   edge cost = cell_sp_weight(to) × step + kClimbSpWeight × max(0, Δh01).
 inline float cell_sp_weight(Biome b, FeatureType f, float treeDensity01 = 0.0f) {
     const float bed = feature_bed_weight(f);
@@ -288,26 +379,25 @@ inline float cell_sp_weight(Biome b, FeatureType f, float treeDensity01 = 0.0f) 
                   : treeDensity01 > 1.0f ? 1.0f : treeDensity01);
 }
 
-// THE cost formula, for both layers: (difficulty of the ground + the burden you
-// carry) × how much of a cell was crossed. `cells` is 1.0 for a macro cell step
-// and tiles/kCellSize underfoot in the subworld. The overload surcharge scales
-// with distance like everything else — carrying too much is paid for by the
-// step, not by the bookkeeping event that happens to charge it.
-// `efficiency` is the traveller's own skill at covering ground
-// (travel_skill_efficiency); it discounts the TERRAIN, not the burden — what you
-// carry is governed by `weightlifting` through the carry capacity, and no amount
-// of pathfinding makes an overloaded pack lighter.
-inline float travel_stamina_cost(float weight, float cells,
-                                 int overloadCost = 0,
-                                 float efficiency = 1.0f) {
-    if (cells <= 0.0f) return 0.0f;
-    return (weight * kStaminaPerCell * efficiency + float(overloadCost)) * cells;
-}
+// (No travel_stamina_cost. THE per-cell price died 2026-10-06 — see the file
+// header: what a journey costs is the HOURS it spends on ground, and the one
+// formula is burn_stamina_per_hour above. Its four callers — the squad's step,
+// the player's macro cell, the player's subworld distance, and the UI preview —
+// all went with it, and so did the standing wall that lived beside it.)
 
 // THE bite, for a body of either scale (owner's rulings, 2026-08-27 +
 // 2026-09-17): what one spend-in-debt takes, given the debt — QUADRATIC, the
 // one law of zero (CANON S14.1). Zero while stamina lasts, so it can be
 // asked unconditionally, and integer through and through.
+//
+// ITS QUANTUM IS ONE POINT OF SP, and that is what makes it cadence-free. The
+// continuous burn is settled by two drivers at two rates — the player's turn
+// is 0.176 game minutes, a squad's think is 5.625, exactly 32× apart — so a
+// bite charged PER CALL would have made the depth of the sea a function of who
+// was walking in it. settle_pools_over_time therefore bites once per whole
+// point driven below zero, which is also the literal reading of the ruling:
+// «ЛЮБАЯ ЗАТРАТА SP ниже 0». A discrete act (apply_stamina_cost below) is one
+// spend and bites once — one law, two quanta, because an act is not a rate.
 //
 // This used to be inlined in the player's charge and hand-copied in the macro
 // AI's per-think settle, where it was also gated on WATER: a squad marching
@@ -358,19 +448,26 @@ inline int settle_sp_carry(int& sp, int maxSp, float& carry) {
     return whole;
 }
 
-// Spend one step's worth (travel_stamina_cost above) through the body's OWN
-// signed carry, and let the exhaustion curve bill the body for the step it
-// could not pay for. Returns the SP actually charged (0 while the cost is
-// still fractional). One bookkeeping for both scales since landing 4: the
-// carry is Pools::spCarry — the player used to spend a CombatStats bar
-// through a carry that lived on a different struct, while the macro AI spent
-// the same shape through its own per-think settle.
-inline int spend_travel_stamina(ecs::Pools& pools, float cost) {
-    if (cost > 0.0f) pools.spCarry -= cost;
-    const int moved = settle_sp_carry(pools.sp, pools.maxSp, pools.spCarry);
-    if (moved >= 0) return 0;
-    pools.hp -= exhaustion_bite(pools.sp);
-    return -moved;
+// THE bite of a CONTINUOUS spend, billed point by point: `before` is the bar
+// as it stood before the settle moved it, `pools.sp` as it stands after. Every
+// whole point the slice drove below zero is one spend in debt, and each is
+// charged at ITS OWN depth — the quadratic curve integrated honestly instead of
+// sampled once at the end (sampling once would have made a coarse driver gentle
+// and a fine one lethal for the same hour of ocean; see exhaustion_bite).
+// Returns the HP lost, 0 while stamina lasts.
+//
+// A rising bar bites nothing, so this can be asked after every settle without
+// a branch at the call site. Lives here, next to the curve, because the door
+// that calls it (macro/recovery.h settle_pools_over_time) is the ONE place a
+// body's bars move with time — the law of one door for price and recovery.
+inline int bite_continuous_debt(ecs::Pools& pools, int before) {
+    if (pools.sp >= before) return 0;        // the bar rose: nothing was spent
+    const int from = before < 0 ? before : 0;   // only the part below zero
+    int lost = 0;
+    for (int sp = from - 1; sp >= pools.sp; --sp) lost += exhaustion_bite(sp);
+    if (lost <= 0) return 0;
+    pools.hp -= lost;
+    return lost;
 }
 
 } // namespace sm

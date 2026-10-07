@@ -263,17 +263,22 @@ void settle_sp_carry(ecs::Pools& pools) {
 // was `continue`d past its own recovery.
 enum class ThinkGate : std::uint8_t { Dead, Rest, Think };
 
-void settle_exhaustion(MacroHandle e, const MacroPos& p,
-                       ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
-                       bool canCamp, const TickContext& ctx);
+void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
+                       const TickContext& ctx);
 
-// THE standing predicate (owner 2026-08-30; CANON S7): the cell types a
-// walking NPC almost never enters are exactly the cells where NO CAMP CAN
-// STAND — water today, lava tomorrow, one data-driven answer. A BRIDGE is
-// dry masonry over water, so it both carries a march and holds a camp. The
-// player is not gated here: stepping into the sea stays his own decision,
-// and the ocean drowns him by the same bar law as ever.
-bool can_stand_at(const TickContext& ctx, int x, int y);
+// The weight of the ground under a body, from the one baked grid (defined
+// below, beside the edge weight the greedy step reads). Declared here because
+// the march rhythm needs it to price its hour, and the rhythm is settled
+// before the stepping code is written.
+float cell_weight(const TickContext& ctx, int x, int y);
+
+// (No can_stand_at, and no nav_can_stand behind it. THE standing predicate
+// died 2026-10-06 — «да уничтодить вторую стену она портит всё (ВЕСА БЫЛО
+// ЕДИНОЕ РЕШЕНИЕ», владелец: a cell a walker could not stop on was a SECOND
+// answer to the question the weight table already answered, and it held
+// 4328 land cells outside every region of the baked navigation. Standing is
+// now possible everywhere and lethality is a CONSEQUENCE of the two always-on
+// processes — macro/recovery.h settle_pools_over_time.)
 
 // What this leader's load is costing him per cell, asked once per think: a
 // bag changes at every market, so unlike the rest of the sheet cache this one
@@ -332,9 +337,11 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // recovered nothing, while the player recovered whenever his route was empty.
 // Now both ask the one question the law actually asks: did you move?
 //
-// Standing where no camp is possible is not rest either — the same decision
-// the bite below consults, so an ocean stays lethal without the mechanic ever
-// naming water.
+// WHERE a body stands no longer enters the question (2026-10-06): rest is owed
+// to anything that stopped, ocean included, and the ocean stays lethal because
+// its HOUR burns 20 SP against 13.75 of rest — the sign of the difference, not
+// a predicate. The old «standing where no camp is possible is not rest» was the
+// second half of the wall, and it died with the first.
 //
 // STOPPED is not the same question as "did not change cell this think", and
 // getting that wrong is how the first cut of this law paid marchers to march:
@@ -348,17 +355,51 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                          bool moved, const TickContext& ctx) {
     const int maxSp = std::max<int>(1, hp.maxSp);
-    const bool canCamp = can_stand_at(ctx, int(p.x), int(p.y));
 
-    // The automaton's CAMP decision, BEFORE debt (npc_ai.h kCampBarDivisor):
-    // legs below an eighth of the bar on campable ground pitch camp now; the
-    // half-bar wake-up (prepare_) resumes the leg. The regen gate below
-    // stays strict — banking a part-cell on the road is NOT rest (the first
-    // cut of this law let the road pay for itself; its test still stands).
-    if (canCamp && int(hp.sp) <= maxSp / kCampBarDivisor
+    // THE two rates of this body, in this cell, this hour — computed ONCE and
+    // read by both halves below, so the decision and the settle can never
+    // disagree about what standing here is worth.
+    //
+    // The hour is priced from the ground UNDER THE BODY plus the two terms
+    // that were the dead per-step price's other half: the leader's own load
+    // (`overloadCost`, refreshed from his bag by the sweep before the
+    // behaviour ran) and his training (`travelRank`). Both come from the same
+    // runtime caches the march itself read, so no sheet is rebuilt per think.
+    const float burnRate = burn_stamina_per_hour(
+        cell_weight(ctx, int(p.x), int(p.y)), int(rt.overloadCost),
+        skill_mult_of(SkillId::Travel, int(rt.travelRank)));
+    const bool campRepays =
+        camp_repays_its_hour(burnRate, maxSp, int(rt.marathonRank));
+
+    // The automaton's CAMP decision (npc_ai.h kCampBarDivisor): legs below an
+    // eighth of the bar pitch camp — WHERE CAMP IS WORTH PITCHING. The
+    // half-bar wake-up (prepare_) resumes the leg.
+    //
+    // `camp_repays_its_hour` is THE door of that question
+    // (movement_cost.h) — one law, and the player's own driver asks the same
+    // one. Why it is not the standing wall coming back, and why the demolition
+    // would defeat its own purpose without it, is written there.
+    //
+    // ONE camp decision, and it used to be TWO: settle_exhaustion took the
+    // same decision again for a body already in debt, each behind its own
+    // copy of the standing predicate. A bar at or below an eighth already
+    // includes every negative bar there is, so the second site was answering a
+    // question this one had answered — it went with the predicate.
+    if (campRepays
+        && int(hp.sp) <= maxSp / kCampBarDivisor
         && rt.state != std::uint8_t(NPCState::Resting)) {
         rt.stateAfterRest = rt.state;   // пауза, не амнезия (components.h)
         rt.state = std::uint8_t(NPCState::Resting);
+        rt.stateTimer = 0;
+    }
+    // ...and a body ALREADY camped where the ground turned against it is woken
+    // on the spot, for the same reason: the rising tide of a flooded cell, a
+    // re-centred frame, a bridge washed away. Sleeping through that is the
+    // deadlock above with one extra step.
+    if (!campRepays
+        && rt.state == std::uint8_t(NPCState::Resting)) {
+        rt.state = rt.stateAfterRest;
+        rt.stateAfterRest = std::uint8_t(NPCState::Idle);
         rt.stateTimer = 0;
     }
 
@@ -378,21 +419,24 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // ...and `!moved` on top, because a think that arrived still MARCHED: you
     // do not walk two cells and take a slice of rest in the same breath. Rest
     // begins on the first think after the legs stop.
-    if (stopped && !moved && canCamp) {
-        // THE rest law, THE implementation (recovery.h rest_pools):
-        // all three bars, a percent of themselves per game hour, paid out in
-        // this think's slice of the day. This block used to restate the three
-        // formulas inline — a drifted copy of attributes.h held together by a
-        // parity test — and before that it fed only stamina, so a wounded
-        // lord stayed wounded until something killed him: `ecs::Pools` had no
-        // writer anywhere in the game that moved it UP. The old 5%-per-think
-        // was ~53% of the bar per game HOUR — a rest that cost nothing.
-        rest_pools(hp, kAiTickGameHours, int(rt.marathonRank));
-    }
+    const bool resting = stopped && !moved;
 
-    // A body that took a step with its bar already spent pays for it, whether
-    // or not it also counts as stopped — the two halves answer two questions.
-    if (moved) settle_exhaustion(e, p, rt, hp, canCamp, ctx);
+    // THE two always-on processes, THE one door (recovery.h
+    // settle_pools_over_time), asked UNCONDITIONALLY — which is the shape of
+    // the 2026-10-06 law and not a widening of it. The burn runs for a body
+    // that marched, a body that stood and a body asleep in camp alike; only
+    // the REGEN half reads `resting`. Before this it was an `if` around the
+    // whole call, and the price of a step lived in try_move below — two laws
+    // of one quantity, the thing §5 п.14 is written about.
+    const int bite = settle_pools_over_time(
+        hp, kAiTickGameHours, int(rt.marathonRank), burnRate,
+        /*regenerates=*/resting);
+
+    // ...and a body the BITE killed is buried here. Gated on the bite itself,
+    // not on `hp <= 0`: a squad cut down by an auto-battle earlier in this
+    // very think already went through its own death door, and a second funeral
+    // would settle its leader and kill its creatures twice.
+    if (bite > 0) settle_exhaustion(e, hp, ctx);
 }
 
 void set_visual_speed(ecs::MacroNpcRuntime& rt, float oldX, float oldY,
@@ -431,7 +475,11 @@ float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
     return w;
 }
 
-void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+// THE march, and since 2026-10-06 it takes NO BARS: a step has no price, so
+// the walk has no business holding the block it used to debit. What it still
+// owns is the geometry — budget, the baked gait, the greedy fallback and the
+// entry stamp. Who pays for the hours is settle_march_rhythm, once per think.
+void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
               float tx, float ty, const TickContext& ctx) {
     int ix = int(p.x), iy = int(p.y);
     int itx = int(tx), ity = int(ty);
@@ -464,8 +512,6 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
     // across thinks on top of this think's own production.
     if (rt.moveBudget > perThink + 1.0f) rt.moveBudget = perThink + 1.0f;
 
-    // What the leader's own training says a cell costs him (travel skill).
-    const float efficiency = skill_mult_of(SkillId::Travel, int(rt.travelRank));
     const int playerCellX = wrap_axis(int(ctx.playerX), ctx.mapW);
     const int playerCellY = wrap_axis(int(ctx.playerY), ctx.mapH);
 
@@ -479,7 +525,6 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         // through is finally forded at its honest price. O(8) per cell:
         // 16384 squads can afford it where a pathfind each would starve
         // the frame.
-        const bool standingDry = can_stand_at(ctx, ix, iy);
         int bx = -1, by = -1;
         float bw = 1e30f;
         // Сосед шага — арифметика ИНДЕКСА (cell_step, ЗАКОН АДРЕСА): здесь
@@ -490,7 +535,10 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         // ЗАПЕЧЁННАЯ ПОХОДКА (CANON S7, 2026-09-02): округи + порталы +
         // граф — три чтения, ни волны, ни поиска. Жадный шаг остаётся миру
         // без запечённого слоя.
-        if (!flying && standingDry && ctx.mw.nav && ctx.mw.nav->baked()) {
+        // Гейт «стоит на суше» снят 2026-10-06 вместе со стеной: после единой
+        // заливки у КАЖДОЙ клетки тора есть округа, поэтому походке больше
+        // нечего не знать — она отвечает и из воды.
+        if (!flying && ctx.mw.nav && ctx.mw.nav->baked()) {
             int fdx = 0, fdy = 0;
             if (nav_step(*ctx.mw.nav, ix, iy, itx, ity, fdx, fdy)) {
                 const std::uint32_t n = cell_step(hereIdx, fdx, fdy, ctx.mapW);
@@ -504,38 +552,22 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
             // Жадный шаг — закон дальних маршей вне округ (Session 21).
             const Step straight =
                 torus_step_toward(ix, iy, itx, ity, ctx.mapW, ctx.mapH);
-            // The straight step is a CANDIDATE, not a right: it obeys the
-            // same standing predicate as every neighbour. The old shape let
-            // it through unfiltered — «a river is forded at its honest
-            // price» was Session 21's design, and the owner's 2026-08-30
-            // ruling ended it: ground a walker cannot stop on is ground it
-            // does not enter, so a squad with no standable step simply
-            // halts at the bank.
-            // …and the gate binds only DRY feet: a body already floating (a
-            // genesis accident, a shipwreck) may step wherever gets it out —
-            // its unpayable steps bleed by the sea-bite law below.
+            // The straight step is the TIE-BREAKER candidate, and since
+            // 2026-10-06 it is nothing but that: it used to be filtered by the
+            // standing predicate, and so did every neighbour below, and the
+            // predicate's three exceptions (dry feet, flight, a fleeing body's
+            // ford) were three answers to one question. All four died
+            // together. Water is now simply the dearest row of the price list,
+            // so a coast is walked AROUND because it is expensive, and a river
+            // IS forded when going round costs more — which was Session 21's
+            // own design before the wall overrode it.
             const auto walker_w = [&](int nx2, int ny2) {
                 if (flying) return 1.0f;   // воздух — дорога летуна
                 return edge_weight(ctx, ix, iy, nx2, ny2);
             };
-            // БРОД — исключение РЕФЛЕКСА, не маршрута (владелец 2026-09-02):
-            // БЕГЛЕЦУ терять нечего — Fleeing может шагнуть в воду, платя
-            // существующим законом (на воде нет лагеря, долг кусает HP):
-            // узкую реку переходит с парой клеток долга, загнанный в океан
-            // тонет. ПОГОНЕ вода запрещена — река спасает беглеца (по-M&B),
-            // и это же держит брод от превращения в общий маршрут: закон
-            // стояния мирных рейсов (2026-08-30, утопленники-торговцы
-            // кормили пул лута) нетронут.
-            const bool fleeingFord =
-                rt.state == std::uint8_t(NPCState::Fleeing);
-            const auto walker_stands = [&](int nx2, int ny2) {
-                return flying || fleeingFord || can_stand_at(ctx, nx2, ny2);
-            };
-            if (!standingDry || walker_stands(straight.nx, straight.ny)) {
-                bx = straight.nx;
-                by = straight.ny;
-                bw = walker_w(bx, by);
-            }
+            bx = straight.nx;
+            by = straight.ny;
+            bw = walker_w(bx, by);
             const float dHere =
                 torus_dist_sq(float(ix), float(iy), float(itx), float(ity),
                               mapWf, mapHf);
@@ -551,18 +583,12 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                                                   float(itx), float(ity),
                                                   mapWf, mapHf);
                     if (d >= dHere) continue;   // only steps that progress
-                    // The standing predicate: a walking NPC does not
-                    // consider ground it could not stop on (water without a
-                    // bridge) — the drowned-trader flood this closes fed
-                    // 70% of the world's money into the loot pool
-                    // (measured 2026-08-30).
-                    if (standingDry && !walker_stands(nx, ny)) continue;
                     const float w = walker_w(nx, ny);
                     if (w < bw) { bx = nx; by = ny; bw = w; }
                 }
             }
         }
-        if (bx < 0) break;   // nowhere to stand: the leg ends at the bank
+        if (bx < 0) break;   // no step progresses: the leg ends here
 
         // Entry-side stamp: the signed step of THIS cell change, torus-folded
         // (stepping east off the map's edge is still +1, not -(w-1)).
@@ -570,19 +596,6 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
         int dy = by - iy;
         if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
-        // The legs REFUSE a step they cannot pay for, wherever a camp can
-        // stand: the step's price is known BEFORE it is taken, so dry-land
-        // debt is impossible by construction — the bar used to walk into
-        // minus in per-step slices INSIDE one think (693 bites in 3 days,
-        // measured), past every after-the-fact camp check. On WATER there
-        // is no stopping: the unpayable step goes through and pays the
-        // bite — «неоплатный океан топит лорда» (S7), verbatim.
-        const float stepCost = travel_stamina_cost(
-            bw, 1.0f, int(rt.overloadCost), efficiency);
-        if (float(pools.sp) + pools.spCarry < stepCost
-            && (flying || can_stand_at(ctx, ix, iy))) {
-            break;
-        }
 
         rt.entryDir = pack_entry_dir(dx, dy);
         rt.entryTicks = 0;
@@ -590,16 +603,20 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         ix = bx; iy = by;
         rt.moveBudget -= 1.0f;
 
-        // The step pays THE cell price — the same rows and formula the
-        // player's march is charged (travel_stamina_cost), through the
-        // fractional carry. The flat `sp -= 10` dialect dies here.
-        // The step pays the load too (owner: перегруз универсальный) —
-        // `overloadCost` is this think's surcharge, refreshed from the bag by
-        // the sweep before the behaviour ran, so a caravan hauling more than
-        // its leader's back can hold buys the trip at the honest price.
-        pools.spCarry -= stepCost;
-        settle_sp_carry(pools);
-        if (int(pools.sp) < 0) break;   // spent: the think's march ends
+        // NOTHING IS CHARGED HERE, AND THAT IS THE LAW (2026-10-06). A step
+        // has no price: what the body pays is the HOUR it spends on ground,
+        // settled once per think by settle_march_rhythm above. Three things
+        // stood on this spot and all three went together — the per-step
+        // charge, the legs' REFUSAL of a step they could not pay for, and the
+        // `sp < 0` break that ended a think mid-stride. Each was a second
+        // writer of the same bar, and the refusal was a THIRD wall: a body
+        // could be stopped by price as surely as by water.
+        //
+        // What stops a body now is the world, not a gate: heavy ground is
+        // slower (terrain_speed_mult feeds `perThink`), debt bites HP
+        // quadratically, and a bar below an eighth pitches camp by DECISION.
+        // «Pressing on is priced, never gated» (CANON S14.1) finally holds on
+        // the macro march too.
 
         // Never hop OVER the player's cell in a multi-cell think: the forced
         // encounter (Inc 6) is geometric, so the squad stops ON the meeting
@@ -683,7 +700,7 @@ void ai_home_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -1110,7 +1127,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
             return;
         }
         const float ox = p.x, oy = p.y;
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         // A leg that cannot advance gives the run up (the vendor's own
         // law): the reach wave keeps this rare, but a concave shore can
         // still wedge a greedy march — better home tonight than frozen at
@@ -1314,7 +1331,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
             rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -1883,7 +1900,7 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             return;
         }
         const float ox = p.x, oy = p.y;
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         if (march_is_stuck_(p, ox, oy, rt, pools)) {
             rt.targetX = home.x;
             rt.targetY = home.y;
@@ -2036,7 +2053,7 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -2118,7 +2135,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
         // ровно так и было при первой сборке 2026-09-22 — гистограмма
         // состояний показала Traveling 799 563 при Working РОВНО НОЛЬ, и
         // канал дани был пуст, хотя заявки и рождение работали.
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -2230,7 +2247,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         return;
     }
     rt.state = std::uint8_t(NS::Idle);
@@ -2285,7 +2302,7 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(15 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -2303,7 +2320,7 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(20 + rand_int(ctx, 30));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -2346,7 +2363,7 @@ void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -2379,7 +2396,7 @@ void ai_aggressive(MacroPos& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -2481,7 +2498,7 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
             rt.targetX = ep.x;
             rt.targetY = ep.y;
             rt.state = std::uint8_t(NS::Chasing);
-            try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+            try_move(p, rt, rt.targetX, rt.targetY, ctx);
             return;
         }
     }
@@ -2507,7 +2524,7 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -2613,7 +2630,7 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
             rt.targetX = ep.x;
             rt.targetY = ep.y;
             rt.state = std::uint8_t(NS::Chasing);
-            try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+            try_move(p, rt, rt.targetX, rt.targetY, ctx);
             return;
         }
     }
@@ -2625,7 +2642,7 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
         rt.targetX = float(rt.lairX);
         rt.targetY = float(rt.lairY);
         rt.state = std::uint8_t(NS::Returning);
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         return;
     }
     // Дома и сыт: кружи по округе логова.
@@ -2645,7 +2662,7 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         return;
     }
     rt.state = std::uint8_t(NS::Idle);
@@ -2699,7 +2716,7 @@ void ai_teleporter(MacroPos& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(12 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -2720,7 +2737,7 @@ void ai_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -2894,7 +2911,7 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         rt.targetX = wrapf(p.x + dx / len * 8.0f, float(ctx.mapW));
         rt.targetY = wrapf(p.y + dy / len * 8.0f, float(ctx.mapH));
         rt.state = std::uint8_t(NS::Fleeing);
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         return true;
     }
 
@@ -2905,7 +2922,7 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         rt.state = std::uint8_t(NS::Chasing);
         rt.targetX = ep.x;
         rt.targetY = ep.y;
-        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         return true;
     }
 
@@ -3047,7 +3064,7 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
         }
     }
     if (bx < 0) return false;
-    try_move(p, rt, pools, float(bx), float(by), ctx);
+    try_move(p, rt, float(bx), float(by), ctx);
     return true;
 }
 
@@ -3082,7 +3099,7 @@ void ai_waypoints(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
         return;
     }
     rt.state = std::uint8_t(NS::Traveling);
-    try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+    try_move(p, rt, rt.targetX, rt.targetY, ctx);
 }
 
 } // namespace
@@ -3128,57 +3145,33 @@ namespace {
 //
 // ONE LAW, both scales (owner's ruling, 2026-08-27): «истощение — это когда
 // SP кончилось, и тогда отнимается HP от ДВИЖЕНИЯ по миру; остановился —
-// отдыхаешь». So the bite is owed by a body that MOVED this think with its
-// bar already spent, wherever it stands — the same `exhaustion_bite` the
-// player's every step pays (movement_cost.h). It used to be gated on WATER:
-// a squad that marched itself into the ground on dry meadow simply made camp
-// and paid nothing, while the player bled for the identical step. That gate
-// is gone; drowning is no longer a special case, it is the general case
-// happening on the most expensive ground there is.
+// отдыхаешь». Since 2026-10-06 the first half of that sentence is wider than
+// movement: the burn runs every hour, so a body can exhaust itself STANDING,
+// and in the open sea that is exactly what kills it. The second half is
+// untouched — stopping on cheap ground still repays more than it burns.
 //
-// The bite lands on the LORD's HP because the lord IS the squad — the creatures
-// is a row inside him, macro damage lands on the avatar. A march the bar
+// WHAT IS LEFT HERE IS THE FUNERAL, AND NOTHING ELSE. The bite itself moved
+// into the one door that moves bars with time (recovery.h
+// settle_pools_over_time), because price and recovery belong in one place
+// (ЗАКОН СПОСОБНОСТИ п.4) and because a bite billed per CALL would have made
+// the sea's depth depend on which driver was walking in it. The camp decision
+// moved into settle_march_rhythm's single `kCampBarDivisor` branch, which
+// already covers every negative bar there is. Both were duplicates behind
+// their own copy of the dead standing predicate.
+//
+// The bite lands on the LORD's HP because the lord IS the squad — a creature
+// is a row inside him, macro damage lands on the avatar. An hour the bar
 // cannot pay therefore kills, through the same tracked-death door an
 // auto-battle uses; the dead lord's men settle by the standing rule.
-//
-// MAKING CAMP is a DECISION, not a mechanic (owner: «до скольки отдыхать —
-// решение конечного автомата, а не механики»), so it stays here as what the
-// AI chooses when its legs are gone, and the player keeps his own aim. What
-// is one law is the PRICE; what is two is who decides to stop paying it.
-bool can_stand_at(const TickContext& ctx, int x, int y) {
-    // ОДИН закон стояния на марш и запекание округи (nav_field.h).
-    return nav_can_stand(ctx.mw, x, y);
-}
-
-
-void settle_exhaustion(MacroHandle e, const MacroPos& p,
-                       ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
-                       bool canCamp, const TickContext& ctx) {
-    if (int(hp.sp) >= 0) return;
-
-    // The AI's DECISION: legs gone, make camp — wherever a camp is possible.
-    // Standing still costs nothing; that is the same sentence as «остановился
-    // — отдыхаешь». Open water offers no camp, so a squad caught mid-ocean
-    // does not get to stop, and the one mechanic below bills it for every
-    // further step until it makes a shore or drowns. That is the SAME outcome
-    // the old water-only bite produced, arrived at by the right layer: the
-    // price is a law, the choice of where to stop is a decision.
-    if (canCamp && rt.state != std::uint8_t(NPCState::Resting)) {
-        rt.stateAfterRest = rt.state;   // пауза, не амнезия (components.h)
-        rt.state = std::uint8_t(NPCState::Resting);
-        rt.stateTimer = 0;
-    }
-
-    const int bite = exhaustion_bite(int(hp.sp));
-    if (bite <= 0) return;
-    hp.hp -= bite;
-    if (hp.hp <= 0 && ctx.mw.world && ctx.mw.gs) {
-        MacroStore& st = store_ctx(ctx);
-        settle_leader_fraction(st, e, 0.0f);
-        kill_fallen_squad_creatures(st, *ctx.mw.gs,
-                                    ctx.mw.econFacts,
-                                    ctx.mw.econFactsUser);
-    }
+void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
+                       const TickContext& ctx) {
+    if (hp.hp > 0) return;
+    if (!ctx.mw.world || !ctx.mw.gs) return;
+    MacroStore& st = store_ctx(ctx);
+    settle_leader_fraction(st, e, 0.0f);
+    kill_fallen_squad_creatures(st, *ctx.mw.gs,
+                                ctx.mw.econFacts,
+                                ctx.mw.econFactsUser);
 }
 
 // ОДНА ДВЕРЬ «ЧТО ДЕЛАЕТ ЭТОТ СКВАД» (владелец 2026-09-21: «сквад должен

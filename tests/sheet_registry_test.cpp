@@ -254,9 +254,9 @@ void test_the_governed_numbers_follow_the_row() {
     CHECK(bar_ceilings(a, marathoner, 100, 100, 100).maxSp == bare.maxSp,
           "no skill grows the stamina BAR: marathon shortens the rest instead");
     CHECK(skill_mult_of(SkillId::Marathon, 50) > 1.0f,
-          "negative control: the rank does move the rest RATE (rest_pools "
-          "multiplies by this same skill law), so the check above is an "
-          "absence and not a dead sheet");
+          "negative control: the rank does move the rest RATE "
+          "(settle_pools_over_time multiplies the regen half by this same "
+          "skill law), so the check above is an absence and not a dead sheet");
 
     // And the cost skill, through the movement law's own door.
     Skills pathfinder{};

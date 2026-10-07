@@ -1,20 +1,17 @@
-// Macro travel stamina: what one cell of the world costs to cross, and the act
-// of paying for it. The cost formula and the exhaustion curve live in
-// macro/movement_cost.h — shared with the subworld, which walks the same world
-// in smaller steps.
+// THE carry-overload surcharge — what a back carries over its capacity, and
+// the integer SP that costs per hour. One law for any back on the map.
+//
+// It is all that is left of this file: until 2026-10-06 it also owned the
+// per-cell travel price, and that whole question died with the hour quantum
+// (macro/movement_cost.h — the burn and the two processes it belongs to).
 #pragma once
 
-#include "tables/biomes.h"
-#include "macro/features.h"
 #include "macro/movement_cost.h"
 #include "macro/anketa.h"
 #include <cmath>
 
 namespace sm {
 
-struct GameState;
-struct TerrainData;
-struct TreeLayer;
 struct CharacterSheet;
 struct Inventory;
 
@@ -47,59 +44,16 @@ inline OverloadCharge overload_charge_from_capacity(float capacityKg,
     return {overload, overload > 0.0f ? int(std::ceil(overload)) : 0};
 }
 
-struct MacroTravelCost {
-    Biome biome = Meadow;
-    FeatureType feature = FT_None;
-    // Terrain difficulty of the cell, and the stamina one crossing of it costs
-    // (weight × kStaminaPerCell). FRACTIONAL: a meadow is 2 SP but tundra is
-    // 2.5, and the carry between steps is the body's one signed spCarry.
-    float weight = 0.0f;
-    // The traveller's own discount on that ground (travel_skill_efficiency):
-    // 1.0 for a novice, lower for a veteran. Reported so the UI can show WHY a
-    // march is cheap, and so a test can pin progression.
-    float efficiency = 1.0f;
-    float cellCost = 0.0f;
-    float overload = 0.0f;      // kg carried over capacity
-    int   overloadCost = 0;     // its integer SP surcharge
-    float totalCost = 0.0f;
-};
-
-// `treeLayer` (optional): forest-class cells (macro/tree_layer.h) drain like
-// the old FT_Tree undergrowth; null = no forest drag (bare/test contexts).
-// `bag` prices the OVERLOAD half of the march — the player's carried weight.
-// It is passed in because his bag is an ordinary NpcInventory on his squad
-// entity now (macro/player_entity.h); null = an unburdened walker, which is
-// exactly what a bare test fixture is.
-// `sheet` is the walker's — passed in, not dug out of GameState, because the
-// caller owns WHICH sheet walks (phase 4: the player's callers hand the
-// EFFECTIVE sheet through player_effective_sheet; a bare test fixture hands
-// a base one, which is honestly a walker wearing nothing).
-bool macro_travel_cost_for_cell(const CharacterSheet& sheet,
-                                const Inventory* bag,
-                                const TerrainData& terrain,
-                                const FeatureLayer* features,
-                                int x, int y,
-                                MacroTravelCost& out,
-                                const TreeLayer* treeLayer = nullptr,
-                                // The cell being stepped FROM — prices the
-                                // uphill climb half of the law (downhill and
-                                // an originless first step are free).
-                                int fromX = -1, int fromY = -1);
-
-// Cross ONE macro cell: resolve its cost and pay it out of `pools` — the
-// body's OWN bar block, carry included (movement_cost.h spend_travel_stamina;
-// the same fields a macro squad spends through, because the player is one).
-// Pass the SAME Pools the subworld path charges, since it is one body
-// walking. Returns false only when the terrain query fails; `out` receives
-// the resolved cost either way.
-bool drain_player_sp_for_macro_cell(ecs::Pools& pools,
-                                    const CharacterSheet& sheet,
-                                    const Inventory* bag,
-                                    const TerrainData& terrain,
-                                    const FeatureLayer* features,
-                                    int x, int y,
-                                    MacroTravelCost* out = nullptr,
-                                    const TreeLayer* treeLayer = nullptr,
-                                    int fromX = -1, int fromY = -1);
+// (No MacroTravelCost, no macro_travel_cost_for_cell, no
+// drain_player_sp_for_macro_cell. All three answered «what does CROSSING THIS
+// CELL cost», and on 2026-10-06 that question stopped existing: a body pays
+// for HOURS, not for cells (movement_cost.h burn_stamina_per_hour). Their one
+// production caller — the player's per-cell charge in app/main.cpp — went with
+// them, and the ground under his feet is now read where every squad reads it:
+// one weight from the one baked cost grid, no second resolve out of terrain +
+// features + trees that could disagree with it at the coast.
+//
+// What survived is the OVERLOAD law above, because it priced the body's LOAD
+// rather than its step, and the hourly burn carries it as its own term.)
 
 } // namespace sm

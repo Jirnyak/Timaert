@@ -1000,64 +1000,27 @@ void emit_player_move(App& app, float prevX, float prevY, float dist) {
     refresh_player_settlement(app);
 }
 
-struct MacroWalkChargeResult {
-    std::size_t cells = 0;
-    float totalCost = 0.0f;     // fractional SP owed by the cells crossed
-    sm::MacroTravelCost lastCost{};
-};
-
 float& player_sp_carry(App& app);   // defined with the world-query helpers
 
-struct MacroWalkChargeContext {
-    App* app = nullptr;
-    MacroWalkChargeResult result{};
-    // The last crossed cell — the climb edge's origin (-1 = walk start).
-    int fromX = -1;
-    int fromY = -1;
-};
-
-void charge_macro_walk_cell(void* user, int x, int y) {
-    auto* ctx = static_cast<MacroWalkChargeContext*>(user);
-    if (!ctx || !ctx->app) return;
-
-    sm::MacroTravelCost cost;
-    // The climb half of the law prices the EDGE: the previous crossed cell
-    // is the origin; the walk's first cell has none and climbs free.
-    if (!sm::drain_player_sp_for_macro_cell(player_pools(*ctx->app),
-                                            player_effective_sheet(*ctx->app),
-                                            &player_bag(*ctx->app),
-                                            ctx->app->terrain,
-                                            &ctx->app->features,
-                                            x, y,
-                                            &cost,
-                                            &ctx->app->treeLayer,
-                                            ctx->fromX, ctx->fromY)) {
-        return;
-    }
-    ctx->fromX = x;
-    ctx->fromY = y;
-    ++ctx->result.cells;
-    ctx->result.totalCost += cost.totalCost;
-    ctx->result.lastCost = cost;
-}
-
-MacroWalkChargeResult step_macro_walk_with_travel_cost(App& app,
-                                                       float dt,
-                                                       float cellsPerSec) {
+// THE player's macro walk, and since 2026-10-06 it CHARGES NOTHING — exactly
+// like a squad's try_move. What stood here was a per-cell charge with its own
+// cell-cost resolve (terrain + features + trees, a second answer to the weight
+// the baked grid already holds), a climb origin threaded across callbacks, and
+// a `MacroWalkChargeResult` whose every field was discarded by its one caller.
+// All of it priced a STEP; a body pays for HOURS now, settled once per turn in
+// the macro branch of the main loop (macro/recovery.h settle_pools_over_time).
+void step_macro_walk_and_emit(App& app, float dt, float cellsPerSec) {
     const sm::ecs::MacroCell* before = sm::player_flag_cell(app.gs, *app.macroStore);
     const float prevX = before ? float(sm::ecs::cell_x(*before, app.gs.mapW))
                                : 0.0f;
     const float prevY = before ? float(sm::ecs::cell_y(*before, app.gs.mapW))
                                : 0.0f;
-    MacroWalkChargeContext charge{&app, {}};
     const std::size_t stepped =
         sm::ui::step_macro_walk(app.gs, app.ecs, app.cursor, dt, cellsPerSec,
-                                charge_macro_walk_cell, &charge);
-    // Distance travelled = whole cells stepped: the march law prices every
-    // cell at 1.0 (try_move), and the walker stamped the entry edge per
-    // step itself — nothing to re-derive from coordinates here.
+                                nullptr, nullptr);
+    // Distance travelled = whole cells stepped; the walker stamped the entry
+    // edge per step itself — nothing to re-derive from coordinates here.
     emit_player_move(app, prevX, prevY, float(stepped));
-    return charge.result;
 }
 
 // Weight of the ground under the player's feet, from the SAME baked cost grid
@@ -1077,22 +1040,49 @@ float macro_cell_cost_weight(const App& app) {
                       sm::ecs::cell_y(*pcell, app.gs.mapW));
 }
 
-// Can the player make camp where he stands? The same DECISION the macro AI
-// asks before it lets a spent squad rest (macro/npc_ai.cpp settle_exhaustion),
-// read from the same `water` column of the same cost grid. Open water offers
-// no camp to anyone: the exhaustion mechanic is one law for both scales, and
-// so is the one thing that can stop you paying it.
-bool player_can_make_camp(const App& app) {
-    const sm::PathCostData& pc = app.pathCost;
-    if (pc.width <= 0 || pc.height <= 0
-        || pc.water.size() != std::size_t(pc.width) * std::size_t(pc.height)) {
-        return true;   // no grid yet: nothing says he cannot
-    }
-    const sm::ecs::MacroCell* pcell = app.macroStore
-        ? sm::player_flag_cell(app.gs, *app.macroStore) : nullptr;
-    if (!pcell) return true;
-    return !pc.water_at(sm::ecs::cell_x(*pcell, app.gs.mapW),
-                        sm::ecs::cell_y(*pcell, app.gs.mapW));
+// (No player_can_make_camp. It was the player's own copy of the standing
+// predicate — read from the same `water` column, asking the same question the
+// weight table already answered — and it died with its macro twin on
+// 2026-10-06. He can pitch camp anywhere; what the open sea does to him is
+// burn 20 SP an hour against 13.75 of rest, so the crossing is priced rather
+// than forbidden, and the price is lethal if he keeps standing in it.)
+
+// Forward declarations for the hour's two rates — defined with the world-query
+// helpers below, read by the rest aim above them.
+float macro_cell_cost_weight(const App& app);
+sm::ecs::MacroNpcRuntime* player_march_cache(App& app);
+sm::Inventory& player_bag(App& app);
+
+// WOULD AN HOUR OF CAMP REPAY ITS OWN HOUR OF BURN, where he stands? THE one
+// door of that question (movement_cost.h camp_repays_its_hour), the very one
+// a squad's think asks — one law, two drivers of time, because the macro AI
+// sweep never walks the player. It is not the dead standing predicate: it
+// names no place and forbids nothing. He may stand in the sea as long as he
+// likes; what it refuses is COMPRESSING TIME while he does, because «rest
+// until rested» cannot end where rest does not rest.
+bool player_camp_repays_its_hour(App& app) {
+    const sm::ecs::MacroNpcRuntime* prt = player_march_cache(app);
+    if (!prt) return true;   // no body yet: nothing says the camp is futile
+    const sm::ecs::Pools& pools = player_pools(app);
+    return sm::camp_repays_its_hour(
+        sm::burn_stamina_per_hour(
+            macro_cell_cost_weight(app),
+            sm::overload_charge_from_capacity(prt->carryCap,
+                                              player_bag(app)).cost,
+            sm::skill_mult_of(sm::SkillId::Travel, int(prt->travelRank))),
+        pools.maxSp, int(prt->marathonRank));
+}
+
+// HIS march caches, the same two columns every squad carries (travelRank,
+// marathonRank, carryCap) — filled by the ONE sheet door
+// (macro/squad.h refresh_body_from_sheet, reached every macro turn through
+// refresh_player_body). On the FLAG, because that is the body that walks and
+// the body whose bars `player_pools` returns. nullptr before a world exists.
+sm::ecs::MacroNpcRuntime* player_march_cache(App& app) {
+    if (!app.macroStore) return nullptr;
+    const sm::MacroHandle h = sm::player_flag_handle(app.gs);
+    if (!app.macroStore->valid(h)) return nullptr;
+    return &app.macroStore->runtime[h.slot];
 }
 
 // His carry, through the one door. The scratch fallback is the same shape
@@ -2224,24 +2214,15 @@ void tick_subworld_hit_flash(App& app, float dt) {
     }
 }
 
-// Walking in the subworld is walking in the world: the SAME law as the map
-// (macro/movement_cost.h), fed the ground under the player's feet and the
-// fraction of a macro cell he just covered. kCellSize tiles make one cell, which
-// is the only conversion this needs — and the reason the second stamina formula
-// (a flat 10 SP per 1000 tiles, blind to terrain) is gone.
-int charge_subworld_sp_for_distance(App& app, float distance) {
-    if (distance <= 0.01f) return 0;
-    const float cells = distance / float(sm::sub::kCellSize);
-    // The EFFECTIVE sheet prices his legs (phase 4): a strength ring carries,
-    // a travel-skill charm marches, exactly as the macro path charges.
-    const sm::CharacterSheet eff = player_effective_sheet(app);
-    const int overloadCost =
-        sm::overload_charge(eff, player_bag(app)).cost;
-    const float cost = sm::travel_stamina_cost(
-        app.subworld.player_ground_travel_weight(), cells, overloadCost,
-        sm::travel_skill_efficiency(eff.skills));
-    return sm::spend_travel_stamina(player_pools(app), cost);
-}
+// (No charge_subworld_sp_for_distance. The subworld has NO stamina-over-time
+// mechanic at all — owner's ruling 2026-10-06, дословно: «давай тогда ща sp за
+// движение в субмире не тратится и регена нет и всё просто временно для
+// субмира нет этой механик типа самое простое чистое минимальеон решение».
+// Walking underground is free and nothing recovers underground either; the
+// hole is named in the registry (M-236) and deliberately NOT plugged, because
+// a stand-in here would be the second law of one quantity that this whole
+// change exists to remove. When it returns, it returns as the ONE law — the
+// hourly burn, from the ground under his feet.)
 
 float subworld_spell_rng01(void* user) {
     auto* sub = static_cast<sm::sub::SubworldEngine*>(user);
@@ -2492,20 +2473,28 @@ void set_paused(App& app, bool on) {
 }
 
 // Rest IS a stop (owner ruling): there is no rest mode, only the ONE macro
-// law that a STANDING squad regenerates (a walking player never calls the
-// rest law; NPC squads: regen in Idle/Resting only). So Z
+// law of two always-on processes, whose REGEN half a standing body gets and a
+// marching one does not (macro/recovery.h settle_pools_over_time). So Z
 // first stops the squad — the click-route dies here, exactly as an
 // encounter kills it — and then merely compresses time until the bar is
 // full. restUntilTick holds only a hard CAP of two days (an SP DEBT climbs
 // out slowly); the REAL stop — SP reaching max — and every cancel live in
 // apply_rest_promotion. Already-full SP arms nothing: Z is then just the
 // stop it always was.
+//
+// NOTHING REFUSES THE AIM BY PLACE any more — what refuses it is ARITHMETIC.
+// Z in the open sea still stops the squad, as Z always did; what it will not
+// do is compress two days of a bar that only falls (20 SP/h of burn against
+// 13.75 of rest) into one keypress and bury him at the far end of the
+// fast-forward. He may stand there in real time and drown — «ночёвка в море не
+// запрещена, она смертельна» (CANON S7) — but time is not compressed towards
+// an end that cannot arrive.
 void aim_rest_until_rested(App& app) {
     app.cursor.path.clear();
     app.cursor.pathIdx = 0;
     const sm::ecs::Pools& pools = player_pools(app);
     if (pools.sp >= pools.maxSp) return;
-    if (!player_can_make_camp(app)) return;   // no camp in open water
+    if (!player_camp_repays_its_hour(app)) return;
     app.restUntilTick = app.gs.worldTime.tick + 2 * sm::kTicksPerDay;
 }
 
@@ -2526,7 +2515,10 @@ int apply_rest_promotion(App& app, int ticks) {
         || app.gs.subState.kind != sm::GameSubStateKind::Exploring
         || !app.cursor.path.empty()
         || cs.sp >= cs.maxSp
-        || !player_can_make_camp(app)
+        // ...and the ground turning against him mid-rest cancels too: a
+        // flooded cell, a re-centre, a bridge gone. The aim ends the moment
+        // its own end becomes unreachable.
+        || !player_camp_repays_its_hour(app)
         || app.gs.worldTime.tick >= app.restUntilTick;
     if (cancelled) {
         app.restUntilTick = 0;
@@ -2953,7 +2945,7 @@ void poll_movement(App& app, float dt) {
         // read from the one cost grid the pathfinder already bakes.
         const float ground =
             sm::terrain_speed_mult(macro_cell_cost_weight(app));
-        step_macro_walk_with_travel_cost(
+        step_macro_walk_and_emit(
             app, dt, kMarchCellsPerRealSecond * pace * ground);
         // A hostile squad's cell stops the march right here (Inc 6): the
         // meeting is geometric, and the map is not silent about it.
@@ -3508,14 +3500,10 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     }
     if (app.subworld.active()) {
         stats.subworldActive = true;
-        // Where he stands BEFORE the world steps. The input below only states
-        // an intent now — the ONE mover moves him inside subworld.tick, with
-        // every other body — so the distance he actually covered is only
-        // known after that tick, and the stamina for it is charged there
-        // (see `movedThisStep` below).
-        const float prevX = app.subworld.player_x();
-        const float prevY = app.subworld.player_y();
-        float movedThisStep = 0.0f;
+        // (No before/after position pair, and no distance walked. They existed
+        // for ONE reader — the per-distance stamina charge — and the subworld
+        // has no stamina mechanic at all since 2026-10-06; the seam-shift
+        // correction that made the measurement honest went with it.)
         if (allowInput) {
             poll_movement(app, dt);
         } else {
@@ -3551,24 +3539,6 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             const int n = app.subworld.take_pending_sfx(
                 sfx, int(std::size(sfx)));
             for (int i = 0; i < n; ++i) app.audio.play_sfx(sfx[i]);
-        }
-        // He has now been moved — by the same pass that moved every other
-        // body — so this is where the ground he actually covered is known,
-        // and where his legs pay for it.
-        {
-            // The seam's re-centre rebased his coordinates by ∓kCellSize per
-            // crossed axis inside that tick (check_boundary). Add the shift
-            // back before measuring: the rebase moved the numbers, not the
-            // legs — billing it charged a whole phantom cell of SP at every
-            // window boundary (the red subworld_sp_drain smoke, 2026-09-06).
-            const float movedX = app.subworld.player_x() - prevX
-                + float(app.subworld.player_seam_shift_cells_x())
-                      * float(sm::sub::kCellSize);
-            const float movedY = app.subworld.player_y() - prevY
-                + float(app.subworld.player_seam_shift_cells_y())
-                      * float(sm::sub::kCellSize);
-            movedThisStep = std::sqrt(movedX * movedX + movedY * movedY);
-            (void)charge_subworld_sp_for_distance(app, movedThisStep);
         }
         // The macro world thinks on WORLD time, so underground it thinks as
         // slowly as the day passes: kSubworldTickDivisor steps buy one tick,
@@ -3611,33 +3581,49 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                 rebake_world(app);
             }
         }
-        // Marching is not resting: while the player is walking a route, NO
-        // bar comes back — stamina, health and mana all wait for camp (one
-        // recovery law, CANON S14). This is what turns a journey into a
-        // budget he has to plan instead of an allowance that pays for itself
-        // — the gate below is the march half of the one recovery law.
-        // ...and standing in the open sea is not resting either: a body that
-        // cannot make camp cannot recover, which is the same sentence a macro
-        // squad's think obeys (npc_ai.cpp settle_march_rhythm). It is what
-        // keeps an ocean lethal now that the exhaustion bite is a law rather
-        // than a water special case — stopping mid-crossing buys nothing.
+        // THE two always-on processes over the player's own Pools — the very
+        // door a lord's think calls (macro/recovery.h settle_pools_over_time),
+        // asked UNCONDITIONALLY, which is the whole 2026-10-06 law: the BURN
+        // runs whether he marches, stands or sleeps, and only the REGEN half
+        // reads `marching`. Marching is still not resting — no bar comes back
+        // while he walks a route (CANON S14) — but that is now one argument
+        // instead of an `if` around the call, and the ocean is lethal by the
+        // SIGN of the difference instead of by a camp predicate.
+        //
+        // The hour is priced from the one baked cost grid under his feet, plus
+        // the two terms the dead per-cell charge used to carry: his training
+        // (`travelRank`) and his load. The rank comes from the runtime cache
+        // the one sheet door fills (refresh_player_body, called every macro
+        // turn by ensure_macro_player_entity), so no derived sheet is rebuilt
+        // 64 times a second; the load is asked of the bag directly, because
+        // `overloadCost` is refreshed by the AI SWEEP and the sweep never
+        // drives the player — reading that column here would have priced his
+        // pack at a permanent zero.
+        //
+        // ON THE FLAG, NOT ON HIS HOME SQUAD, and that is a fix riding along:
+        // the rest law this replaces settled `player_squad_handle`'s bars,
+        // while `player_pools` (the UI, every spender) and the ground weight
+        // above both read `player_flag_handle`. The two are the same record
+        // until he POSSESSES a lord — and from then on the old law healed the
+        // body he had left behind while the screen showed the body he was
+        // wearing. One body, one set of bars, one hour.
         const bool marching = !app.cursor.path.empty();
-        const bool resting = !marching && player_can_make_camp(app);
-        // THE rest law over his own Pools — the very rest_pools a lord's camp
-        // think calls, at the one rate; Marathon from the same rt cache the
-        // refresh door fills. A body that is not resting simply does not
-        // call. The harness gate (restRegenSuppressed) freezes the LAW for a
-        // conservation measurement instead of zeroing a cached rate — the
-        // frozen-spRegen idiom whose silent thaw was the seed-999 regression.
-        if (resting && !app.restRegenSuppressed
-            && stats.timeTick.minutesAdvanced > 0) {
-            const sm::MacroHandle squadH = sm::player_squad_handle(app.gs);
-            if (app.macroStore->valid(squadH)) {
-                sm::MacroStore& stq = *app.macroStore;
-                sm::rest_pools(
-                    stq.pools[squadH.slot],
+        if (stats.timeTick.minutesAdvanced > 0) {
+            const sm::MacroHandle flagH = sm::player_flag_handle(app.gs);
+            if (app.macroStore->valid(flagH)) {
+                const sm::ecs::MacroNpcRuntime& prt =
+                    app.macroStore->runtime[flagH.slot];
+                sm::settle_pools_over_time(
+                    player_pools(app),
                     float(stats.timeTick.minutesAdvanced) / 60.0f,
-                    int(stq.runtime[squadH.slot].marathonRank));
+                    int(prt.marathonRank),
+                    sm::burn_stamina_per_hour(
+                        macro_cell_cost_weight(app),
+                        sm::overload_charge_from_capacity(
+                            prt.carryCap, player_bag(app)).cost,
+                        sm::skill_mult_of(sm::SkillId::Travel,
+                                          int(prt.travelRank))),
+                    /*regenerates=*/!marching);
             }
         }
         sm::tick_macro_npc_ai(macroTickWorld, app.npcAi,

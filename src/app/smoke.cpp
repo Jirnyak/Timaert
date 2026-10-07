@@ -335,7 +335,6 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_mouse_release", SmokeAction::SubworldMouseRelease},
     {"subworld_tree_anchor", SmokeAction::SubworldTreeAnchor},
     {"subworld_recovery", SmokeAction::SubworldRecovery},
-    {"subworld_sp_drain", SmokeAction::SubworldSpDrain},
     {"turn_based_cycle", SmokeAction::TurnBasedCycle},
     {"subworld_enter", SmokeAction::SubworldEnter},
     {"subworld_exit_remap", SmokeAction::SubworldExitRemap},
@@ -1176,7 +1175,12 @@ bool run_subworld_recovery_smoke(App& app) {
     // minutes were worth whole points to a resting macro body, which is what
     // makes their buying ZERO underground a statement instead of a rounding.
     // A hypothetical BODY, not the player's: the same bars, the same minutes,
-    // through the very rest law the macro branch calls (rest_pools).
+    // through the very door the macro branch calls — STANDING STILL ON A ROAD,
+    // which is the cheapest ground there is, so the control measures the
+    // regen half at its best. `burn_stamina_per_hour` of the road bed is the
+    // honest rate for such a body rather than a zero: the two processes always
+    // both run up there, and the road's compile-time guarantee (it must heal
+    // more than it burns) is what makes this control sound.
     sm::ecs::Pools reference{};
     reference.hp = 5;
     reference.mp = 5;
@@ -1184,8 +1188,10 @@ bool run_subworld_recovery_smoke(App& app) {
     reference.maxHp = maxHp;
     reference.maxMp = maxMp;
     reference.maxSp = maxSp;
-    sm::rest_pools(reference, float(minutesAdvanced) / 60.0f,
-                   /*marathonRank=*/0);
+    sm::settle_pools_over_time(
+        reference, float(minutesAdvanced) / 60.0f, /*marathonRank=*/0,
+        sm::burn_stamina_per_hour(sm::feature_bed_weight(sm::FT_Road)),
+        /*regenerates=*/true);
 
     std::fprintf(stderr,
                  "[smoke] subworld_recovery steps=%d minutes=%d "
@@ -1210,123 +1216,14 @@ bool run_subworld_recovery_smoke(App& app) {
     return true;
 }
 
-bool run_subworld_sp_drain_smoke(App& app) {
-    if (!smoke_boot_invariants_hold(app)) {
-        smoke_print_counts(app, "subworld_sp_drain_boot_failed");
-        smoke_fail(app, "subworld_sp_drain boot invariants");
-        return false;
-    }
-    if (app.subworld.active()) {
-        smoke_fail(app, "subworld_sp_drain already active");
-        return false;
-    }
-
-    smoke_clear_modal_overlays(app);
-    int safeCellX = 0;
-    int safeCellY = 0;
-    if (smoke_find_open_subworld_cell(app, safeCellX, safeCellY)) {
-                smoke_teleport_player(app, int(float(safeCellX)), int(float(safeCellY)));
-        app.gs.subState.settlementId = 0;
-        app.ui.settlementId = 0;
-    }
-    player_pools(app).sp = 100;
-    player_pools(app).hp = 100;
-    player_pools(app).maxSp = 100;
-    player_pools(app).maxHp = 100;
-    player_sp_carry(app) = 0.0f;
-    // (No spRegen freeze any more — there is no spRegen field to freeze, and
-    // no regen underground AT ALL (owner 2026-09-10): the whole measurement
-    // runs below ground, where the rest law simply is not called. The ruler
-    // measures what the GROUND charged, by construction.)
-
-    enter_subworld(app);
-    if (!app.subworld.active()) {
-        smoke_fail(app, "subworld_sp_drain enter failed");
-        return false;
-    }
-
-    const int beforeSp = player_pools(app).sp;
-    const int beforeHp = player_pools(app).hp;
-    // Walk far enough to owe a WHOLE point of SP. How far that is has moved
-    // three times now (1.0 → 0.2 → 7/16 → 2.0 per weight-unit), which is why
-    // the expectation below is BUILT from the shipping formula leg by leg
-    // instead of naming a distance: the scenario is "walk until a whole point
-    // is owed", and it must not care what the knob currently says.
-    //
-    // Each leg is priced with the weight of the ground under THAT leg, sampled
-    // at the same instant charge_subworld_sp_for_distance samples it, so the
-    // expected total stays exact even when the route crosses terrain types —
-    // which it now does, because the walk is long enough to leave the cell it
-    // started in.
-    const float carryBefore = player_sp_carry(app);
-    float distance = 0.0f;
-    float expected = 0.0f;
-    float weight = 0.0f;
-    int charged = 0;
-    // The ruler must walk the same door the legs pay through: the charge reads
-    // the EFFECTIVE sheet (overload, travel-skill efficiency — the Default
-    // creation preset learns Travel, which is a real −1%), so an expectation
-    // priced without them is a second law off by exactly that percent.
-    const sm::CharacterSheet effDrain = player_effective_sheet(app);
-    const int overloadCostDrain =
-        sm::overload_charge(effDrain, player_bag(app)).cost;
-    const float travelEffDrain =
-        sm::travel_skill_efficiency(effDrain.skills);
-    for (int leg = 0; leg < 24; ++leg) {
-        const float legX = app.subworld.player_x();
-        const float legY = app.subworld.player_y();
-        app.subworld.move_player(0.0f, 100.0f);
-        const float dx = app.subworld.player_x() - legX;
-        const float dy = app.subworld.player_y() - legY;
-        const float legDist = std::sqrt(dx * dx + dy * dy);
-        if (legDist <= 0.01f) break;          // wall
-        weight = app.subworld.player_ground_travel_weight();
-        distance += legDist;
-        expected += sm::travel_stamina_cost(
-            weight, legDist / float(sm::sub::kCellSize),
-            overloadCostDrain, travelEffDrain);
-        charged += charge_subworld_sp_for_distance(app, legDist);
-        // Let a tick run between legs. The seamless 3×3 window only re-centres
-        // inside tick(), so a walk that never ticks rams the edge of the window
-        // after exactly 1.5 macro cells and stops — far short of a whole point
-        // of SP, which is precisely how this scenario used to fail.
-        advance_sim_seconds(app, 0.05f, false);
-    }
-    const int afterSp = player_pools(app).sp;
-    const int afterHp = player_pools(app).hp;
-    const float carryAfter = player_sp_carry(app);
-    app.subworld.leave(true);
-
-    // THE law, not a magic number: distance in macro cells × the weight of the
-    // ground, every point of it either charged or still carried. This is the
-    // same formula the map layer pays (macro/movement_cost.h) — one journey,
-    // one price, whichever layer you walk it on. `expected` was summed leg by
-    // leg above; `weight` is the last leg's ground, printed as a witness that
-    // the walk was on real terrain.
-    // The carry is SIGNED and a march drives it DOWN, so what is still owed
-    // reads as a negative remainder: the ground asked for everything the bar
-    // gave up plus everything the carry sank by.
-    const float accounted = float(charged) + (carryBefore - carryAfter);
-
-    std::fprintf(stderr,
-                 "[smoke] subworld_sp_drain distance=%.1f weight=%.2f "
-                 "expected=%.3f charged=%d carry=%.3f->%.3f sp=%d->%d hp=%d->%d\n",
-                 double(distance), double(weight), double(expected), charged,
-                 double(carryBefore), double(carryAfter),
-                 beforeSp, afterSp, beforeHp, afterHp);
-    std::fflush(stderr);
-
-    if (distance <= 0.01f
-        || !(weight > 0.0f)
-        || charged <= 0
-        || std::fabs(accounted - expected) > 0.01f
-        || afterSp != beforeSp - charged
-        || afterHp != beforeHp) {
-        smoke_fail(app, "subworld_sp_drain invariant");
-        return false;
-    }
-    return true;
-}
+// (No subworld_sp_drain scenario. It measured THE law «the ground under
+// your feet charges your legs underground» — distance in macro cells x
+// cell weight, leg by leg — and that law was retired by the owner on
+// 2026-10-06: the subworld has no stamina mechanic at all. Inverting it
+// into «walking underground costs nothing» was considered and rejected:
+// that is a NAMED HOLE (registry M-236), and a witness pinning a hole
+// guards a defect (AGENTS §8 п.7). `subworld_recovery` above still pins
+// the half that IS a law — no bar moves underground.)
 
 bool run_subworld_seam_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
@@ -1730,40 +1627,44 @@ bool run_macro_travel_sp_smoke(App& app) {
         return false;
     }
 
-    float expectedCost = 0.0f;
-    sm::MacroTravelCost lastExpected{};
-    // The walk below charges through the EFFECTIVE sheet (phase 4), so the
-    // expectation must price the same walker — sheet door parity is part of
-    // what this smoke pins.
-    const sm::CharacterSheet travelSheet = player_effective_sheet(app);
-    for (int i = 1; i <= kSmokeMacroTravelSteps; ++i) {
-        sm::MacroTravelCost cost;
-        if (!sm::macro_travel_cost_for_cell(travelSheet, &player_bag(app), app.terrain,
-                                            &app.features,
-                                            path.path[std::size_t(i)].x,
-                                            path.path[std::size_t(i)].y,
-                                            cost, &app.treeLayer)) {
-            smoke_fail(app, "macro_travel_sp cost failed");
-            return false;
-        }
-        expectedCost += cost.totalCost;
-        lastExpected = cost;
+    // ── THE RULER, REBUILT ON THE HOUR (2026-10-06) ──────────────────────
+    // What this smoke used to pin was «cells crossed x cell weight», summed
+    // from a second cost resolve. There is no price of a cell any more, so the
+    // assertion is the new law stated as a BRACKET over the march, and the
+    // bracket is DERIVED, not observed:
+    //   · a marching body gets NO regen, so its bar can only fall;
+    //   · it falls by burn(ground under it) x hours, and the ground is one of
+    //     the cells of this route — hence a cheapest and a dearest bound from
+    //     the ONE baked grid the law itself reads;
+    //   · the loop below exits on the first turn with an empty route, and that
+    //     turn's settle sees `marching == false`, so AT MOST ONE turn of regen
+    //     can land inside the measurement. That is the only slack, and it is
+    //     one tick wide.
+    // The upper bound is therefore strict: a return of per-cell pricing would
+    // charge ~8x the hour and blow straight through it.
+    float cheapest = 1e30f, dearest = 0.0f;
+    for (int i = 0; i <= kSmokeMacroTravelSteps; ++i) {
+        const float w = app.pathCost.cost_at(path.path[std::size_t(i)].x,
+                                             path.path[std::size_t(i)].y);
+        cheapest = std::min(cheapest, w);
+        dearest = std::max(dearest, w);
     }
 
     app.cursor.path.assign(path.path.begin(),
                            path.path.begin() + kSmokeMacroTravelSteps + 1);
     app.cursor.pathIdx = 1;
-    // One signed carry means a frame of rest (an idle frame at the route's
-    // end) would land inside the number being measured. Freeze the LAW at
-    // its one call site, not a cached rate: the old spRegen-zeroing idiom
-    // was thawed silently by a maxima refresh once (seed-999, 2026-09-06),
-    // and the rate it zeroed no longer exists. The ruler measures the ground.
-    app.restRegenSuppressed = true;
+    // THE WITNESS BUILDS ITS OWN PRECONDITION (§8 п.11): the HP/MP remainders
+    // are zeroed here, so the one turn of regen the loop allows cannot tip an
+    // INHERITED fraction into a whole point and make the equality below flake.
+    // One tick buys 0.00037 of a bar; 2730 would be needed to move one point.
+    player_pools(app).hpCarry = 0.0f;
+    player_pools(app).mpCarry = 0.0f;
     const int beforeSp = player_pools(app).sp;
     const int beforeHp = player_pools(app).hp;
     const float beforeX = smoke_player_x(app);
     const float beforeY = smoke_player_y(app);
     const float carryBefore = player_sp_carry(app);
+    const std::uint64_t tickBefore = app.gs.worldTime.tick;
 
     // Walk it through REAL FRAMES, not by calling the step directly. The whole
     // frame participates — input, the walk, world time, recovery, the hit-flash
@@ -1781,12 +1682,42 @@ bool run_macro_travel_sp_smoke(App& app) {
     const int afterSp = player_pools(app).sp;
     const int afterHp = player_pools(app).hp;
     const int spentSp = beforeSp - afterSp;
-    // Costs are fractional now, so the invariant is CONSERVATION, not equality
-    // with a whole number: every point the terrain asked for is either taken
-    // from stamina or still carried, and stamina fell by exactly what was taken.
+    // Fractional costs, so what is measured is the WHOLE spend: points taken
+    // out of the bar plus points still owed in the signed carry.
     const float accounted =
         float(spentSp) + (carryBefore - player_sp_carry(app));
-    app.restRegenSuppressed = false;   // the body may mend again
+    // Hours of GAME time the march actually took — the quantum the law prices
+    // in, read from the world clock and not from frames (AGENTS: calibrate in
+    // ticks, never in real seconds).
+    const float hours = float(app.gs.worldTime.tick - tickBefore)
+                        * sm::kGameHoursPerTick;
+    // THE TWO RATES, READ THROUGH THE DOORS THE GAME ITSELF READS — his
+    // march caches, not a freshly derived sheet. A ruler that re-derives the
+    // walker's load and training is a SECOND copy of production logic
+    // (AGENTS §8 п.5), and this one was: it priced the ground at the sheet's
+    // Travel rank while the burn priced it at the cached one. They happen to
+    // agree, and «happen to» is not a witness.
+    const sm::ecs::MacroNpcRuntime* prt = player_march_cache(app);
+    const int overloadCost = prt
+        ? sm::overload_charge_from_capacity(prt->carryCap,
+                                            player_bag(app)).cost : 0;
+    const float eff = sm::skill_mult_of(sm::SkillId::Travel,
+                                        prt ? int(prt->travelRank) : 0);
+    // ...AND ONE WHOLE GAME MINUTE OF SLACK, because that is the quantum the
+    // player's driver settles in: `WorldTickResult::minutesAdvanced` is an
+    // INT, so a walk of 124 ticks (21.8 min) is billed as 22. Measured: the
+    // bracket missed by exactly that rounding before the slack was named.
+    // The slack is DERIVED from the quantum, not fitted to the miss.
+    constexpr float kMinuteSlack = 1.0f / 60.0f;
+    const float floorBurn =
+        sm::burn_stamina_per_hour(cheapest, overloadCost, eff)
+            * std::max(0.0f, hours - kMinuteSlack)
+        // the one turn of regen the loop's exit condition allows in
+        - float(player_pools(app).maxSp) * sm::kRestRegenPctPerHour
+              * sm::kGameHoursPerTick;
+    const float ceilBurn =
+        sm::burn_stamina_per_hour(dearest, overloadCost, eff)
+            * (hours + kMinuteSlack);
 
     // Print BEFORE judging. A harness that reports its numbers only when it
     // passes is useless exactly when it matters; this line is the first thing
@@ -1794,19 +1725,18 @@ bool run_macro_travel_sp_smoke(App& app) {
     std::fprintf(stderr,
                  "[smoke] macro_travel_sp steps=%d cells=%d frames=%d "
                  "left=%d pos=%.0f,%.0f->%.0f,%.0f sp=%d->%d(-%d) hp=%d->%d "
-                 "expected=%.3f accounted=%.3f carry=%.3f->%.3f "
-                 "lastBiome=%d lastFeature=%d lastCell=%.3f\n",
+                 "hours=%.3f accounted=%.3f bracket=%.3f..%.3f "
+                 "weight=%.2f..%.2f carry=%.3f->%.3f\n",
                  kSmokeMacroTravelSteps, int(cellsBefore), frames,
                  int(app.cursor.path.size()),
                  beforeX, beforeY,
                  smoke_player_x(app), smoke_player_y(app),
                  beforeSp, afterSp, spentSp,
                  beforeHp, afterHp,
-                 double(expectedCost), double(accounted),
-                 double(carryBefore), double(player_sp_carry(app)),
-                 int(lastExpected.biome),
-                 int(lastExpected.feature),
-                 double(lastExpected.cellCost));
+                 double(hours), double(accounted),
+                 double(floorBurn), double(ceilBurn),
+                 double(cheapest), double(dearest),
+                 double(carryBefore), double(player_sp_carry(app)));
     std::fflush(stderr);
 
     // One condition, one message — so a failure says WHICH law broke.
@@ -1818,22 +1748,33 @@ bool run_macro_travel_sp_smoke(App& app) {
         smoke_fail(app, "macro_travel_sp did not finish its route in 600 frames");
         return false;
     }
-    if (std::fabs(accounted - expectedCost) > 0.01f) {
-        smoke_fail(app, "macro_travel_sp stamina not conserved "
-                        "(charged + carried != what the terrain asked)");
+    if (!(hours > 0.0f)) {
+        smoke_fail(app, "macro_travel_sp bought no game hours — the bracket "
+                        "below would be zero-wide and prove nothing");
+        return false;
+    }
+    if (accounted > ceilBurn + 0.01f) {
+        smoke_fail(app, "macro_travel_sp burned MORE than its dearest cell "
+                        "could ask per hour — a per-STEP price is back");
+        return false;
+    }
+    if (accounted < floorBurn - 0.01f) {
+        smoke_fail(app, "macro_travel_sp burned LESS than its cheapest cell "
+                        "asks per hour — the march stopped paying");
         return false;
     }
     // Travel must COST something end to end — the guard against a wiring change
     // that silently makes walking free again.
-    if (expectedCost >= 1.0f && spentSp <= 0) {
+    if (ceilBurn >= 1.0f && accounted <= 0.0f) {
         smoke_fail(app, "macro_travel_sp charged nothing for a walk");
         return false;
     }
     // Health must not DROP: with stamina in the bar, a walk costs no blood.
-    // It may RISE — hourly recovery keeps mending while the legs work, which is
-    // deliberate (only stamina is suppressed while marching), so equality would
-    // be the wrong assertion.
-    if (afterHp < beforeHp) {
+    // Since 2026-10-06 it must not RISE either, and that is the stronger
+    // statement — «марш не лечит НИЧЕГО» now covers all three bars through one
+    // argument of one door, where before it covered only stamina and a
+    // marching lord quietly mended. Equality is the assertion.
+    if (afterHp != beforeHp) {
         smoke_fail(app, "macro_travel_sp cost health while stamina remained");
         return false;
     }
@@ -7508,11 +7449,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=subworld_recovery\n");
             std::fflush(stderr);
             if (run_subworld_recovery_smoke(app)) ++app.smoke.cursor;
-            break;
-        case SmokeAction::SubworldSpDrain:
-            std::fprintf(stderr, "[smoke] action=subworld_sp_drain\n");
-            std::fflush(stderr);
-            if (run_subworld_sp_drain_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::TurnBasedCycle:
             std::fprintf(stderr, "[smoke] action=turn_based_cycle\n");

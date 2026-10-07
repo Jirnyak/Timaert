@@ -76,102 +76,79 @@ sm::FeatureLayer make_features() {
     return features;
 }
 
+// THE cell cascade and THE weight it yields — asked of the two doors that
+// survive (map_generator.h biome_at_cell → movement_cost.h cell_sp_weight),
+// not of a third one that used to resolve both and a price besides. The price
+// it resolved was per CELL and died on 2026-10-06; the cascade did not, so the
+// law is pinned where it actually lives.
 void test_cell_costs_follow_the_weight_table() {
     bag.clear();
-    sm::GameState gs;
-    gs.mapParams.seaLevel = 0.40f;
     const sm::TerrainData terrain = make_terrain();
     const sm::FeatureLayer features = make_features();
+    const auto weight_at = [&](int x, int y, const sm::FeatureLayer* f) {
+        const int wx = sm::FeatureLayer::wrap_coord(x, terrain.width);
+        const int wy = sm::FeatureLayer::wrap_coord(y, terrain.height);
+        const sm::Biome b = sm::biome_at_cell(terrain, wx, wy);
+        const sm::FeatureType ft =
+            f && f->covers(terrain.width, terrain.height) ? f->at(wx, wy)
+                                                          : sm::FT_None;
+        return sm::cell_sp_weight(b, ft);
+    };
 
-    sm::MacroTravelCost cost;
-    CHECK(sm::macro_travel_cost_for_cell(walkerSheet, &bag, terrain, nullptr, 0, 0, cost),
-           "water cost query succeeds");
-    CHECK(cost.biome == sm::Water, "height below seaLevel becomes Water");
-    CHECK(cost.feature == sm::FT_None, "missing feature layer means no feature");
-    // Cost is the terrain weight per macro cell: open water is the 10.0 row.
-    CHECK(nearf(cost.weight, 10.0f), "bare water carries the water weight");
-    CHECK(nearf(cost.cellCost, 10.0f * sm::kStaminaPerCell),
-           "one cell of open water costs weight x kStaminaPerCell");
-    CHECK(cost.totalCost == cost.cellCost, "no inventory means no overload");
+    CHECK(sm::biome_at_cell(terrain, 0, 0) == sm::Water,
+          "height below seaLevel becomes Water");
+    CHECK(nearf(weight_at(0, 0, nullptr), 10.0f),
+          "bare water carries the water weight");
+    CHECK(nearf(weight_at(0, 0, &features), 1.0f),
+          "a road over water is walked at the road weight, not the water one");
+    CHECK(sm::biome_at_cell(terrain, 0, 1) == sm::Mountain,
+          "height above mountain level becomes the Mountain biome");
+    CHECK(nearf(weight_at(0, 1, &features), 5.0f),
+          "a mountain cell carries the mountain weight (no feature on it)");
+    CHECK(nearf(weight_at(-1, -1, &features), 1.5f),
+          "negative coordinates wrap, and the wrapped cell reads dirt road");
 
-    CHECK(sm::macro_travel_cost_for_cell(walkerSheet, &bag, terrain, &features, 0, 0, cost),
-           "road-over-water query succeeds");
-    CHECK(cost.biome == sm::Water, "feature does not rewrite biome");
-    CHECK(cost.feature == sm::FT_Road, "feature layer returns road");
-    CHECK(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
-           "a road over water is paid at the road weight, not the water one");
-
-    CHECK(sm::macro_travel_cost_for_cell(walkerSheet, &bag, terrain, &features, 0, 1, cost),
-           "mountain biome query succeeds");
-    CHECK(cost.biome == sm::Mountain,
-           "height above mountain level becomes the Mountain biome");
-    CHECK(cost.feature == sm::FT_None, "mountain biome carries no feature");
-    CHECK(nearf(cost.cellCost, 5.0f * sm::kStaminaPerCell),
-           "a mountain cell costs the mountain weight");
-
-    CHECK(sm::macro_travel_cost_for_cell(walkerSheet, &bag, terrain, &features, -1, -1, cost),
-           "negative coordinates wrap");
-    CHECK(cost.feature == sm::FT_DirtRoad, "wrapped cell reads dirt road");
-    CHECK(nearf(cost.cellCost, 1.5f * sm::kStaminaPerCell),
-           "a dirt road costs half again what a paved one does");
+    // ...and the ONE price built on top of those weights is per HOUR. Stated
+    // here so the burn and the weight table cannot drift into two laws: the
+    // rate of a cell IS its weight times the one knob.
+    CHECK(nearf(sm::burn_stamina_per_hour(weight_at(0, 0, nullptr)),
+                10.0f * sm::kStaminaPerWeightHour),
+          "an hour afloat in open water burns weight x the one knob");
+    CHECK(nearf(sm::burn_stamina_per_hour(weight_at(0, 0, &features)),
+                1.0f * sm::kStaminaPerWeightHour),
+          "an hour on a road burns the road's weight at the same knob");
 }
 
-void test_overload_and_drain_charge_per_cell() {
+// THE overload law, and WHERE it is paid now: it is a TERM of the hourly burn,
+// added after the terrain is discounted — so a trained traveller walks cheap
+// ground for nothing and still carries what he carries. Until 2026-10-06 this
+// term rode the per-cell price; it moved because killing the step's price
+// without rehousing the load would have silently retired the owner's own
+// ruling («да, перегруз универсальный всем», 2026-08-27).
+void test_overload_is_a_term_of_the_hour() {
     bag.clear();
-    sm::GameState gs;
-    gs.mapParams.seaLevel = 0.40f;
     bag.add("wood", 56);   // 112 kg, default capacity is 110 kg.
-    const sm::TerrainData terrain = make_terrain();
-    const sm::FeatureLayer features = make_features();
+    const sm::OverloadCharge oc = sm::overload_charge(walkerSheet, bag);
+    CHECK(std::fabs(oc.overload - 2.0f) < 0.001f,
+          "overload is weight minus carry capacity");
+    CHECK(oc.cost == 2, "any overload hurts: kilos over, rounded up");
 
-    sm::MacroTravelCost cost;
-    CHECK(sm::macro_travel_cost_for_cell(walkerSheet, &bag, terrain, &features, 0, 0, cost),
-           "overload road query succeeds");
-    CHECK(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
-           "overload case walks a road");
-    CHECK(std::fabs(cost.overload - 2.0f) < 0.001f,
-           "overload is weight minus carry capacity");
-    CHECK(cost.overloadCost == 2, "any overload hurts: kilos over, rounded up");
-    CHECK(nearf(cost.totalCost, 1.0f * sm::kStaminaPerCell + 2.0f),
-           "one cell costs the ground plus the burden carried over it");
+    const float road = sm::feature_bed_weight(sm::FT_Road);
+    CHECK(nearf(sm::burn_stamina_per_hour(road, oc.cost),
+                sm::burn_stamina_per_hour(road) + 2.0f),
+          "an hour costs the ground PLUS the burden carried over it");
 
-    // Crossing cells drains stamina, and the fractional remainder is CARRIED
-    // rather than rounded away at each step: five 1.5-SP dirt-road cells cost
-    // exactly 7 whole SP with 0.5 left pending, not 5 or 10.
-    // The drain half walks a DIFFERENT walker — its own state, and therefore
-    // its own (empty) pack. Sharing the overloaded bag above would fold the
-    // burden surcharge into an accounting check about whole SP.
-    sm::Inventory drainBag{};
-    sm::GameState drainGs;
-    drainGs.mapParams.seaLevel = 0.40f;
-    // The walker is a BODY block (landing 4): the bar, its ceiling and the
-    // ONE signed carry all live together — a march drives the carry DOWN, so
-    // the fraction still owed reads as a negative remainder.
-    sm::ecs::Pools drainPools{};
-    drainPools.sp = 100;
-    drainPools.maxSp = 100;
-    drainPools.hp = 100;
-    drainPools.maxHp = 100;
-    for (int i = 0; i < 5; ++i) {
-        CHECK(sm::drain_player_sp_for_macro_cell(drainPools,
-                                                  walkerSheet,
-                                                  &drainBag, terrain,
-                                                  &features,
-                                                  -1, -1, &cost),
-               "drain query succeeds");
-    }
-    // Expectations derived from the constants, never restated as numbers: a
-    // recalibration must move the balance, not break the accounting.
-    const float perCell = sm::travel_stamina_cost(1.5f, 1.0f);   // dirt road
-    const float owed = 5.0f * perCell;
-    const int charged = int(owed);
-    CHECK(nearf(cost.cellCost, perCell), "the dirt-road cell costs its weight");
-    CHECK(drainPools.sp == 100 - charged,
-           "whole SP are charged, and only whole ones");
-    CHECK(nearf(drainPools.spCarry, -(owed - float(charged))),
-           "the fraction is carried to the next step, not lost or rounded up");
-    CHECK(drainPools.hp == 100,
-           "a rested body pays travel in stamina alone");
+    // The discount is on the GROUND alone. At mastery the world stops
+    // resisting the traveller — and the pack on his back still weighs what it
+    // weighs, which is the whole reason the two terms are added and not
+    // multiplied together.
+    sm::Skills master{};
+    master[sm::SkillId::Travel] = sm::kMaxSkillRank;
+    const float eff = sm::travel_skill_efficiency(master);
+    CHECK(nearf(sm::burn_stamina_per_hour(10.0f, 0, eff), 0.0f),
+          "at mastery the ground is free");
+    CHECK(nearf(sm::burn_stamina_per_hour(10.0f, 3, eff), 3.0f),
+          "but his load is not: the burden survives any skill");
 }
 
 // Death by exhaustion is DESIGN, and since 2026-09-17 the ONE law of zero is
@@ -216,22 +193,12 @@ void test_exhaustion_curve_bites_deeper_each_step() {
     CHECK(cs.sp == -24 && cs.hp == hp, "and touches neither pool");
 }
 
-// The two layers walk the same world, so the same journey costs the same:
-// one macro cell on the map == kCellSize tiles on foot.
-void test_both_layers_price_one_journey_alike() {
-    bag.clear();
-    const float weight = sm::cell_sp_weight(sm::Meadow, sm::FT_None);
-    const float wholeCell = sm::travel_stamina_cost(weight, 1.0f);
-    const float onFoot = sm::travel_stamina_cost(weight, 1024.0f / 1024.0f);
-    CHECK(nearf(wholeCell, onFoot),
-           "a cell crossed on foot costs what it costs on the map");
-    CHECK(nearf(sm::travel_stamina_cost(weight, 0.5f), wholeCell * 0.5f),
-           "half a cell costs half as much");
-    CHECK(nearf(sm::travel_stamina_cost(weight, 0.0f), 0.0f),
-           "standing still is free");
-    CHECK(nearf(sm::travel_stamina_cost(weight, 1.0f, 3), wholeCell + 3.0f),
-           "the burden carried is paid per cell, alongside the ground");
-}
+// (No test_both_layers_price_one_journey_alike. It pinned «one macro cell
+// on the map == kCellSize tiles on foot cost the same», and that whole
+// parity was retired by the owner on 2026-10-06: the subworld has no
+// stamina-over-time mechanic at all, so there is no second price to agree
+// with. The hole is named in the registry (M-236); inverting this witness
+// into «the subworld charges nothing» would guard a hole, not a law.)
 
 // ── The balance itself ──────────────────────────────────────────────────────
 // A test about DESIGN INTENT, stated in game hours, so that any retuning has to
@@ -248,28 +215,41 @@ void test_both_layers_price_one_journey_alike() {
 // 10 SP per game hour against a road that cost 25, so any pause paid for the
 // journey. Marching and resting are separate states now, and these numbers are
 // what that separation is worth.
-// Cells covered per game hour of marching. Since the march is now quoted in
-// exactly that unit (macro/movement_cost.h), this is no longer a derivation
-// from two constants that could drift apart — it IS the shipping number, and
-// every hour below is a game hour, whatever a day costs in real seconds.
+// Cells covered per game hour of marching on the REFERENCE bed. Since the
+// march is quoted in exactly that unit (macro/movement_cost.h), this is no
+// longer a derivation from two constants that could drift apart — it IS the
+// shipping number, and every hour below is a game hour, whatever a day costs
+// in real seconds.
 float cells_per_game_hour() {
     return sm::kMacroWalkCellsPerHour;
 }
 
-float march_hours(int fullBarSp, const sm::Skills& skills,
-                  float weight) {
-    const float perCell = sm::travel_stamina_cost(
-        weight, 1.0f, 0, sm::travel_skill_efficiency(skills));
-    if (perCell <= 0.0f) return 0.0f;
-    const float cells = float(fullBarSp) / perCell;
-    // Heavy ground also slows the legs (terrain_speed_mult, Session 21), so
-    // the HOURS a bar buys shrink by √weight, not by weight: part of the
-    // terrain's price arrives as time instead of stamina.
-    return cells / (cells_per_game_hour() * sm::terrain_speed_mult(weight));
+// HOURS a full bar buys on ground of this weight. Under the hour quantum this
+// is the whole of it: bar / burn-rate, and the PACE does not appear — which is
+// the single most load-bearing consequence of the 2026-10-06 law and the thing
+// `march_cells` below exists to contrast.
+float march_hours(int fullBarSp, const sm::Skills& skills, float weight) {
+    const float perHour = sm::burn_stamina_per_hour(
+        weight, 0, sm::travel_skill_efficiency(skills));
+    if (perHour <= 0.0f) return 0.0f;
+    return float(fullBarSp) / perHour;
 }
 
-// Hours of camp until a bar refills from empty, lived through THE rest law
-// (rest_pools) hour by hour — never a restated rate.
+// ...and the DISTANCE those hours cover, which is where the pace enters: heavy
+// ground is walked slower (terrain_speed_mult), so it eats the bar twice —
+// once through its rate and once through the hours it stretches a cell into.
+float march_cells(int fullBarSp, const sm::Skills& skills, float weight) {
+    return march_hours(fullBarSp, skills, weight)
+           * cells_per_game_hour() * sm::terrain_speed_mult(weight)
+           * float(sm::calculate_derived(sm::default_attributes(), skills)
+                       .moveSpeedPct) / 100.0f;
+}
+
+// Hours of camp until a bar refills from empty, lived through THE door hour by
+// hour — never a restated rate. On the ROAD, because the door takes a burn
+// rate now and a camp stands somewhere: the road is the reference bed, and its
+// compile-time guarantee (it heals more than it burns) is what makes the loop
+// terminate at all.
 int rest_hours_to_full(int maxSp, int marathonRank) {
     sm::ecs::Pools p{};
     p.maxSp = maxSp;
@@ -277,7 +257,10 @@ int rest_hours_to_full(int maxSp, int marathonRank) {
     p.hp = 1;
     int hours = 0;
     while (p.sp < maxSp && hours < 64) {
-        sm::rest_pools(p, 1.0f, marathonRank);
+        sm::settle_pools_over_time(
+            p, 1.0f, marathonRank,
+            sm::burn_stamina_per_hour(sm::feature_bed_weight(sm::FT_Road)),
+            /*regenerates=*/true);
         ++hours;
     }
     return hours;
@@ -289,60 +272,74 @@ void test_travel_balance_holds_its_intent() {
     const sm::Skills skills = sm::default_skills();
     const sm::BarCeilings fresh = sm::bar_ceilings(attrs, skills, 100, 100, 100);
 
-    // THE anchor (owner, 2026-08-24; RESTATED ON THE ROAD 2026-09-09): a fresh
-    // traveller burns his whole bar in ROUGHLY A DAY'S MARCH — out at dawn,
-    // spent by dusk, camp. The bar has to run out inside a day, or camping is
-    // a thing the player never has to think about (at the old 0.2/cell it
-    // never did: 17+ hours of road, and any pause repaid the walk).
-    //
-    // Stated on the ROAD, and the bed matters: this band used to be written on
-    // the MEADOW at 8-12 h, which is the SAME SENTENCE about a bed the law
-    // makes √2 cheaper — it quietly licensed 11-17 hours of road. That is
-    // exactly the day-and-a-half the owner walked in play (2026-09-09), under
-    // a comment in movement_cost.h that said 7.9 h. Two anchors on two beds
-    // cannot both be the design; the reference bed wins, because it is the one
-    // every other ground is a multiplier OF — and the one the player walks on.
-    // movement_cost.h asserts the same band at compile time
-    // (kRoadHoursPerFreshBar); this checks the same claim through the shipping
-    // cost formula, sheet and all.
-    const float road = march_hours(fresh.maxSp, skills,
-                                   sm::cell_sp_weight(sm::Meadow, sm::FT_Road));
-    CHECK(road > 6.0f && road < 9.0f,
-           "a day's march down the road spends the fresh bar");
-    // Open country is then DERIVED, never pinned twice: the road stretches the
-    // same bar further by exactly the law's own ratio — weight halves, pace
-    // gains √2, endurance gains weight × 1/√weight = √2 (that is WHY roads are
-    // worth building).
-    const float meadow = march_hours(fresh.maxSp, skills,
-                                      sm::cell_sp_weight(sm::Meadow, sm::FT_None));
-    CHECK(road > meadow * 1.35f && road < meadow * 1.5f,
-           "the road stretches the bar by the law's own sqrt-2");
+    const float roadW = sm::cell_sp_weight(sm::Meadow, sm::FT_Road);
+    const float meadowW = sm::cell_sp_weight(sm::Meadow, sm::FT_None);
+    const float mountainW = sm::cell_sp_weight(sm::Mountain, sm::FT_None);
+    const float waterW = sm::cell_sp_weight(sm::Water, sm::FT_None);
 
-    // Terrain has to MATTER, in the order the weight table declares. The gaps
-    // are √weight, not weight: heavy ground pays part of its price in HOURS
-    // (terrain_speed_mult) and the rest in stamina.
-    const float mountain = march_hours(fresh.maxSp, skills,
-                                       sm::cell_sp_weight(sm::Mountain, sm::FT_None));
-    const float water = march_hours(fresh.maxSp, skills,
-                                    sm::cell_sp_weight(sm::Water, sm::FT_None));
-    CHECK(road > meadow * 1.3f, "a road is worth walking to");
-    CHECK(mountain < meadow * 0.7f, "mountains are a real obstacle");
-    CHECK(water < mountain * 0.8f, "swimming is the most expensive way to travel");
+    const float road = march_hours(fresh.maxSp, skills, roadW);
+    const float meadow = march_hours(fresh.maxSp, skills, meadowW);
+    const float mountain = march_hours(fresh.maxSp, skills, mountainW);
+    const float water = march_hours(fresh.maxSp, skills, waterW);
+
+    // ── THE ANCHOR MOVED, AND THE MOVE IS THE LAW (2026-10-06) ───────────
+    // The anchor used to be «a fresh bar buys a DAY of road, camp by
+    // nightfall», and it cannot be that any more: the road now burns 2 SP an
+    // hour against 13.75 of rest, so a body ON a road gains ground by standing
+    // on it and the hours it can march are not what the economy is balanced
+    // against. What IS balanced is the DEAR end of the table — how long a bar
+    // keeps a body alive where rest cannot repay the burn — and
+    // movement_cost.h asserts exactly that at compile time
+    // (kWaterDriftHoursPerFreshBar). This checks the marching half of the same
+    // ladder through the shipping formula, sheet and all.
+    //
+    // The owner ruled the shift ACCEPTED rather than tuned: «если сдвинет мир
+    // не важно не надо даже подгонять … тот был не идеален так что делаем
+    // чисто системно». So the numbers below state the new shape; they are not
+    // the old band re-fitted.
+    CHECK(water > 4.0f && water < 8.0f,
+          "a fresh bar buys the better part of a day of SWIMMING, and that is "
+          "the end of the ladder the economy is anchored on");
+    CHECK(road > 24.0f,
+          "...while the road is days of it: under the hour quantum a cheap bed "
+          "is cheap in TIME, not merely in points per step");
+
+    // HOURS are inversely proportional to WEIGHT, exactly — no √, no pace.
+    // This is the law stated as a ratio rather than as a number, so a
+    // recalibration of the knob cannot touch it (AGENTS §8 п.4).
+    CHECK(nearf(road / meadow, meadowW / roadW, 0.01f),
+          "hours scale as 1/weight: the road's bed is the whole of its gain");
+    CHECK(nearf(meadow / mountain, mountainW / meadowW, 0.01f),
+          "and the same single ratio holds at the dear end of the table");
+
+    // DISTANCE, though, scales as weight^-1.5: the pace enters here and only
+    // here. Heavy ground is paid for TWICE — richer rate and longer hours per
+    // cell — which is why a road is worth building even though standing on any
+    // ground is now survivable.
+    const float roadCells = march_cells(fresh.maxSp, skills, roadW);
+    const float meadowCells = march_cells(fresh.maxSp, skills, meadowW);
+    const float mountainCells = march_cells(fresh.maxSp, skills, mountainW);
+    const float waterCells = march_cells(fresh.maxSp, skills, waterW);
+    CHECK(nearf(roadCells / meadowCells,
+                std::pow(meadowW / roadW, 1.5f), 0.01f),
+          "distance scales as weight^-1.5 — the rate times the pace");
+    CHECK(roadCells > meadowCells * 2.5f, "a road is worth walking to");
+    CHECK(mountainCells < meadowCells * 0.4f, "mountains are a real obstacle");
+    CHECK(waterCells < mountainCells * 0.4f,
+          "swimming is still the most expensive way to travel");
 
     // Progression: an RPG must reward the character sheet. A veteran carries a
     // bigger pool (END and WILL by half each — the canon eight, 2026-09-03)
-    // AND spends less on the same ground (travel), so his day of marching
-    // becomes several.
+    // AND burns less on the same ground (travel), so his day becomes several.
     sm::Attributes vetAttrs = attrs;
     vetAttrs[sm::AttributeId::End] = 20;
     vetAttrs[sm::AttributeId::Wil] = 20;
     sm::Skills vetSkills = skills;
     vetSkills[sm::SkillId::Travel] = 10;
     const sm::BarCeilings veteran = sm::bar_ceilings(vetAttrs, vetSkills, 100, 100, 100);
-    const float vetMeadow = march_hours(veteran.maxSp, vetSkills,
-                                        sm::cell_sp_weight(sm::Meadow, sm::FT_None));
+    const float vetMeadow = march_hours(veteran.maxSp, vetSkills, meadowW);
     CHECK(vetMeadow > meadow * 3.0f,
-           "training triples the distance a traveller covers");
+          "training triples the time a traveller lasts on the same ground");
 
     // The Session 21 lever split, pinned. The bar belongs to the ATTRIBUTES
     // alone (END and WILL by half each); `marathon` buys the RATE of recovery
@@ -352,91 +349,106 @@ void test_travel_balance_holds_its_intent() {
     sm::Skills marathoner = skills;
     marathoner[sm::SkillId::Marathon] = 20;
     CHECK(sm::bar_ceilings(attrs, marathoner, 100, 100, 100).maxSp == fresh.maxSp,
-           "marathon does not grow the bar");
-    // The rate lives in the LAW now, not in a cached field: ask the law.
+          "marathon does not grow the bar");
     CHECK(rest_hours_to_full(fresh.maxSp, 20)
-               < rest_hours_to_full(fresh.maxSp, 0),
-           "marathon does speed the recovery");
+              < rest_hours_to_full(fresh.maxSp, 0),
+          "marathon does speed the recovery");
     const int freshRestH = rest_hours_to_full(fresh.maxSp, 0);
     const int vetRestH = rest_hours_to_full(veteran.maxSp, 0);
-    CHECK(freshRestH == int(1.0f / sm::kRestRegenPctPerHour),
-           "a full rest is the designed 8 hours");
-    CHECK(vetRestH == freshRestH,
-           "a bigger bar rests no longer — regen is a percent of it");
-    CHECK(sm::travel_skill_efficiency(vetSkills) < 1.0f
-               && sm::travel_skill_efficiency(vetSkills) > 0.0f,
-           "the travel skill discounts terrain without ever making it free");
-    CHECK(nearf(sm::travel_skill_efficiency(skills), 1.0f),
-           "an untrained traveller gets no discount");
+    // A bigger bar rests no LONGER — and since 2026-10-06 it rests slightly
+    // SHORTER, which is the burn being real: the regen is a PERCENT of the bar
+    // and the burn is an ABSOLUTE rate, so the ground's 2 SP/h eats 1/7 of a
+    // fresh body's hourly recovery and only 1/19 of a veteran's. Measured on
+    // the road: 10 h against 9. Equality was the old law, when nothing burned
+    // in camp at all.
+    CHECK(vetRestH <= freshRestH,
+          "a bigger bar rests no longer: the regen is a percent of it, while "
+          "the camp's own burn is a flat rate the big bar barely feels");
+    // ...and a camp on the road is SLOWER to fill than the bare 1/8 law, by
+    // exactly the hour it also burns. The design's eight hours became nine,
+    // and that is the burn being real rather than a rounding.
+    CHECK(freshRestH > int(1.0f / sm::kRestRegenPctPerHour),
+          "a night of camp costs its own burn: the road's 2 SP/h is paid even "
+          "asleep, so a full bar takes LONGER than the bare regen law says");
+    CHECK(freshRestH < 2 * int(1.0f / sm::kRestRegenPctPerHour),
+          "...but not twice as long: the road must stay a place one can rest");
 
-    // One skill, one meaning. `athletics` moves you FASTER; `travel` moves you
-    // FURTHER on the same bar. Neither may quietly become the other, or the
-    // sheet stops telling the player what his choices buy.
+    CHECK(sm::travel_skill_efficiency(vetSkills) < 1.0f
+              && sm::travel_skill_efficiency(vetSkills) > 0.0f,
+          "the travel skill discounts terrain without ever making it free");
+    CHECK(nearf(sm::travel_skill_efficiency(skills), 1.0f),
+          "an untrained traveller gets no discount");
+
+    // One skill, one meaning — AND THE MEANING OF `athletics` SHARPENED on
+    // 2026-10-06 instead of staying orthogonal. `travel` lowers the RATE, so
+    // it buys HOURS; `athletics` shortens the exposure, so it buys only
+    // DISTANCE. Under the dead per-cell price speed bought nothing at all for
+    // the bar; under the hour it buys ground, and that is a consequence of the
+    // quantum rather than a design change, so it is stated rather than hidden.
     sm::Skills sprinter = skills;
     sprinter[sm::SkillId::Athletics] = 20;
     CHECK(nearf(sm::travel_skill_efficiency(sprinter), 1.0f),
-           "athletics does not make ground cheaper");
+          "athletics does not make ground cheaper per hour");
+    CHECK(nearf(march_hours(fresh.maxSp, sprinter, meadowW), meadow),
+          "so a sprinter lasts exactly as many HOURS as a plodder");
+    CHECK(march_cells(fresh.maxSp, sprinter, meadowW) > meadowCells * 1.05f,
+          "...and covers MORE GROUND in them, which is what speed now buys");
     CHECK(sm::calculate_derived(attrs, sprinter).moveSpeedPct
-               > sm::calculate_derived(attrs, skills).moveSpeedPct,
-           "athletics does make the traveller faster");
+              > sm::calculate_derived(attrs, skills).moveSpeedPct,
+          "athletics does make the traveller faster");
     sm::Skills pathfinder = skills;
     pathfinder[sm::SkillId::Travel] = 20;
     CHECK(sm::calculate_derived(attrs, pathfinder).moveSpeedPct
-               == sm::calculate_derived(attrs, skills).moveSpeedPct,
-           "the travel skill does not make the traveller faster");
+              == sm::calculate_derived(attrs, skills).moveSpeedPct,
+          "the travel skill does not make the traveller faster");
     CHECK(sm::travel_skill_efficiency(pathfinder) < 1.0f,
-           "the travel skill does make ground cheaper");
-    // And speed costs no stamina: pricing per CELL means a sprinter and a
-    // plodder pay the same for the same road, they just arrive at different
-    // hours. That orthogonality is why both stats are worth having.
-    CHECK(nearf(march_hours(fresh.maxSp, sprinter,
-                             sm::cell_sp_weight(sm::Meadow, sm::FT_None)),
-                 meadow),
-           "running does not burn a bigger share of the bar per cell");
+          "the travel skill does make ground cheaper");
 
-    // A night undoes a day: the bar refills in the hours the design promises.
-    // (The march half of this pin is STRUCTURAL now: a marching body simply
-    // does not call the rest law — main.cpp's gate and npc_ai's
-    // `stopped && !moved` are the two callers, and neither calls it for legs
-    // in motion. There is no restRate parameter left to misuse.)
+    // A night undoes a day, and the march half of the pin is ONE ARGUMENT now
+    // (settle_pools_over_time's `regenerates`), not the shape of the callers:
+    // legs in motion pass false, and that covers all three bars.
     sm::ecs::Pools resting{};
     resting.maxHp = fresh.maxHp;
     resting.hp = fresh.maxHp;
     resting.maxMp = fresh.maxMp;
     resting.maxSp = fresh.maxSp;
     resting.sp = 0;
-    sm::rest_pools(resting, 8.0f, 0);
+    // TEN hours, not the bare law's eight: a camp on the road burns its own
+    // 2 SP/h even asleep, so the night the design promises got longer by
+    // exactly that. `freshRestH` above measures the same number through the
+    // door rather than restating it.
+    sm::settle_pools_over_time(
+        resting, float(freshRestH), 0,
+        sm::burn_stamina_per_hour(sm::feature_bed_weight(sm::FT_Road)),
+        /*regenerates=*/true);
     CHECK(resting.sp >= fresh.maxSp - 1,
-           "eight hours of rest refill the whole bar (the 1/8-per-hour law)");
+          "a night of camp on the road refills the whole bar");
+    sm::ecs::Pools marchingBody = resting;
+    marchingBody.sp = 0;
+    marchingBody.hp = 1;
+    sm::settle_pools_over_time(
+        marchingBody, float(freshRestH), 0,
+        sm::burn_stamina_per_hour(sm::feature_bed_weight(sm::FT_Road)),
+        /*regenerates=*/false);
+    CHECK(marchingBody.sp < 0 && marchingBody.hp <= 1,
+          "the same nine hours spent MARCHING refill nothing and cost blood — "
+          "the negative control on the gate above");
 
     // THE SKILL LAW, pinned through the one door (skill_mult_of): a rank is
-    // the row's percent, and the cap is the ceiling. The generic helpers that
-    // once answered without knowing their row died in the 2026-09-03 sweep.
+    // the row's percent, and the cap is the ceiling.
     CHECK(nearf(sm::skill_mult_of(sm::SkillId::Marathon, 0), 1.0f),
-           "rank 0 grants nothing");
+          "rank 0 grants nothing");
     CHECK(nearf(sm::skill_mult_of(sm::SkillId::Marathon, 37), 1.37f),
-           "rank reads as the row's percent");
+          "rank reads as the row's percent");
     CHECK(nearf(sm::skill_mult_of(sm::SkillId::Travel, 37), 0.63f),
-           "and as percent off a cost");
+          "and as percent off a cost");
     CHECK(nearf(sm::skill_mult_of(sm::SkillId::Travel, sm::kMaxSkillRank), 0.0f),
-           "mastery of a cost skill removes that cost entirely");
+          "mastery of a cost skill removes that cost entirely");
     CHECK(nearf(sm::skill_mult_of(sm::SkillId::Marathon, sm::kMaxSkillRank + 500),
-                 sm::skill_mult_of(sm::SkillId::Marathon, sm::kMaxSkillRank)),
-           "nothing above the cap counts, however it got there");
+                sm::skill_mult_of(sm::SkillId::Marathon, sm::kMaxSkillRank)),
+          "nothing above the cap counts, however it got there");
     CHECK(nearf(sm::skill_mult_of(sm::SkillId::Travel, -5), 1.0f),
-           "and nothing below zero does");
-
-    // Mastery earns free ground — but only the GROUND. An overloaded master
-    // still pays for what he carries, and the exhaustion curve is untouched.
-    sm::Skills master = skills;
-    master[sm::SkillId::Travel] = sm::kMaxSkillRank;
-    CHECK(nearf(sm::travel_stamina_cost(10.0f, 1.0f, 0,
-                                         sm::travel_skill_efficiency(master)),
-                 0.0f),
-           "at mastery the world stops resisting the traveller");
-    CHECK(sm::travel_stamina_cost(10.0f, 1.0f, 3,
-                                   sm::travel_skill_efficiency(master)) > 2.9f,
-           "but the pack on his back still weighs what it weighs");
+          "and nothing below zero does");
 
     // The cap is enforced at the one door into a rank, so no path can exceed
     // it. Learning comes first (THE learn law): rank 0 refuses a spend, so
@@ -445,51 +457,46 @@ void test_travel_balance_holds_its_intent() {
     sm::Skills capped{};
     ld.skillPoints = sm::kMaxSkillRank + 10;
     CHECK(!sm::spend_skill_point(ld, capped, sm::SkillId::Travel),
-           "an unknown skill refuses the point: learn first");
+          "an unknown skill refuses the point: learn first");
     CHECK(sm::learn_skill(capped, sm::SkillId::Travel),
-           "the world teaches, and rank 1 is the knowing");
+          "the world teaches, and rank 1 is the knowing");
     int spent = 0;
     while (sm::spend_skill_point(ld, capped, sm::SkillId::Travel)) ++spent;
     CHECK(spent == sm::kMaxSkillRank - 1
               && capped.of(sm::SkillId::Travel) == sm::kMaxSkillRank,
-           "a rank stops at mastery");
+          "a rank stops at mastery");
     CHECK(ld.skillPoints == 11,
-           "and a refused spend keeps the point for another skill");
+          "and a refused spend keeps the point for another skill");
 
     // The balance, printed on every run: a number you can read is a number you
     // can argue with.
-    std::printf("   travel balance (game hours of marching per full bar)\n"
-                "     fresh   road %.1f  meadow %.1f  mountain %.1f  water %.1f\n"
-                "     veteran meadow %.1f  (bar %d, terrain x%.2f)\n",
+    std::printf("   travel balance per full bar (%d SP)\n"
+                "     game HOURS of marching: road %.1f  meadow %.1f  "
+                "mountain %.1f  water %.1f\n"
+                "     macro CELLS covered:    road %.0f  meadow %.0f  "
+                "mountain %.0f  water %.0f\n"
+                "     veteran meadow %.1f h  (bar %d, terrain x%.2f)  "
+                "camp-to-full %d h\n",
+                fresh.maxSp,
                 double(road), double(meadow), double(mountain), double(water),
+                double(roadCells), double(meadowCells),
+                double(mountainCells), double(waterCells),
                 double(vetMeadow), veteran.maxSp,
-                double(sm::travel_skill_efficiency(vetSkills)));
+                double(sm::travel_skill_efficiency(vetSkills)), freshRestH);
 }
 
-void test_invalid_terrain_fails_closed() {
-    bag.clear();
-    sm::GameState gs;
-    sm::TerrainData terrain;
-    terrain.width = 2;
-    terrain.height = 2;
-    terrain.rgba.assign(3u, 255u);
-
-    sm::MacroTravelCost cost;
-    cost.cellCost = 777.0f;
-    CHECK(!sm::macro_travel_cost_for_cell(walkerSheet, &bag, terrain, nullptr, 0, 0, cost),
-           "invalid terrain storage is rejected");
-    CHECK(nearf(cost.cellCost, 0.0f) && nearf(cost.totalCost, 0.0f),
-           "failed query clears stale cost output");
-}
+// (No test_invalid_terrain_fails_closed. It pinned that a REJECTED terrain
+// query clears its stale cost output — a property of macro_travel_cost_for_cell,
+// which no longer exists. The fail-closed law itself is alive and witnessed
+// where it lives: pathfinding_parity_test asserts cell_sp_weight returns the
+// default weight for a garbage biome and a garbage feature, never 0.0.)
 
 } // namespace
 
 int main() {
     test_cell_costs_follow_the_weight_table();
-    test_overload_and_drain_charge_per_cell();
+    test_overload_is_a_term_of_the_hour();
     test_exhaustion_curve_bites_deeper_each_step();
-    test_both_layers_price_one_journey_alike();
     test_travel_balance_holds_its_intent();
-    test_invalid_terrain_fails_closed();
     return sm::test::report("macro_travel_parity_test");
 }

@@ -565,7 +565,6 @@ constexpr Row kAppRows[] = {
     {"audioFailed", Rod::Session, ""},
     {"subworldLastPlayerHp", Rod::Session, ""},
     {"subworldHitFlashTimer", Rod::Session, ""},
-    {"restRegenSuppressed", Rod::Session, "прибор смоука"},
     {"trees", Rod::Cache, "точки деревьев от treeLayer"},
     {"treeGrid", Rod::Cache, "bucket-сетка точек"},
     {"camX", Rod::Session, ""},

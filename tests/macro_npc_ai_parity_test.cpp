@@ -283,12 +283,25 @@ void test_aggressive_chases_visible_player() {
     // meeting cell, where the forced-encounter door looks.
     CHECK(sm::ecs::cell_x(pcell, 128) == 12 && sm::ecs::cell_y(pcell, 128) == 10,
           "the chase closes the two-cell gap and stops on the player");
-    // The march debt is the trip's true price: two featureless cells at
-    // kStaminaPerCell each, part paid in whole SP, the rest in the carry.
+    // The march debt is the trip's true price, and since 2026-10-06 that
+    // price is HOURS, not cells: every think burns the ground under the body
+    // for a slice of the day, and a marching body earns no regen back. The
+    // chase spent exactly `thinksToClose` slices on featureless ground
+    // (weight 1.0 — this fixture has no baked cost grid).
     const auto& chaserPools = (*sm::body_state<sm::ecs::Pools>(sm::store_of(world), e));
     const float paid = float(100 - chaserPools.sp) - chaserPools.spCarry;
-    CHECK(std::fabs(paid - 2.0f * sm::kStaminaPerCell) < 0.01f,
-          "chasing pays exactly the two cells' derived march debt");
+    const float marched = sm::burn_stamina_per_hour(1.0f)
+                          * sm::kAiTickGameHours * float(thinksToClose);
+    CHECK(std::fabs(paid - marched) < 0.01f,
+          "chasing pays the HOURS it marched, at its ground's burn rate");
+    // ...and the line that catches a per-STEP price coming back. The dead law
+    // charged `weight × kStaminaPerWeightHour` per CELL — 4.0 SP for this
+    // trip against 0.56 for its hours — so the two cannot be confused by
+    // accident, and this inequality says so out loud rather than leaving the
+    // equality above to be re-derived from whatever the code does next.
+    CHECK(paid < 2.0f * sm::kStaminaPerWeightHour,
+          "the trip costs its hours, which is far less than the two cells "
+          "used to cost: the per-step price is gone and must stay gone");
     CHECK(rt.visualSpeed > 0.0f,
           "the visual speed reports that the chase actually moved");
 }
@@ -506,7 +519,12 @@ void test_a_resting_lord_mends_at_the_players_rate() {
     player.hp = 10;
     player.maxMp = 50;
     player.mp = 10;
-    sm::rest_pools(player, 90.0f / 60.0f, 0);
+    // The same door, the same ground (featureless 1.0 — this fixture bakes no
+    // cost grid), the same «standing still» answer. One call of 1.5 h against
+    // the lord's sixteen slices of it.
+    sm::settle_pools_over_time(player, 90.0f / 60.0f, 0,
+                               sm::burn_stamina_per_hour(1.0f),
+                               /*regenerates=*/true);
 
     CHECK(hp.hp == player.hp,
           "one recovery law: lord and player mend the SAME points per hour");

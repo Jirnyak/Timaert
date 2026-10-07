@@ -231,12 +231,12 @@ struct App {
     sm::MusicId          audioFailed = sm::MusicId::Count;
     int                  subworldLastPlayerHp = -1;
     float                subworldHitFlashTimer = 0.0f;
-    // Harness-only: freeze the REST LAW itself for a conservation
-    // measurement (smoke.cpp SP-drain scenarios). The old idiom — zeroing
-    // the cached spRegen field — could be thawed silently by any maxima
-    // refresh (seed-999 regression, 2026-09-06); a gate on the one call
-    // site cannot, because there is no cached rate left to overwrite.
-    bool                 restRegenSuppressed = false;
+    // (No restRegenSuppressed. The harness froze the rest law so a march
+    // could be measured without regen leaking into the number; since
+    // 2026-10-06 a marching body gets no regen BY LAW — `regenerates` is
+    // false while a route is walked — so the instrument was measuring a
+    // condition the world now guarantees. A field whose only reader is a gate
+    // that cannot fire is a colonka-sirota, DOD п.9.)
     // (No pending-cast wind-up: a cast resolves at its own click and the
     // time it costs is the BODY's one recovery gate — ecs::Combat::
     // recoverySteps, owner verdict 2026-09-09.)
@@ -465,7 +465,10 @@ std::vector<sm::PathPoint> build_flight_path(int sx, int sy, int gx, int gy,
 int count_tick_events(const sm::EventBus& bus, sm::EventTag tag);
 const sm::GameEvent* latest_tick_event(const sm::EventBus& bus,
                                        sm::EventTag tag);
-int charge_subworld_sp_for_distance(App& app, float distance);
+// HIS march caches — the two columns every squad carries (travelRank,
+// marathonRank, carryCap), on the FLAG. The hourly burn reads them, and so
+// does the camp-repays question.
+sm::ecs::MacroNpcRuntime* player_march_cache(App& app);
 bool cast_active_spell(App& app);
 void aim_rest_until_rested(App& app);
 int apply_rest_promotion(App& app, int ticks);

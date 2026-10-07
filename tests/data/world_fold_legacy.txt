@@ -63,7 +63,6 @@ src/macro/spawners.cpp	index	if (cg.costGrid[std::size_t(p.y) * W + p.x]
 src/macro/spawners.cpp	index	std::size_t k = std::size_t(p.y) * W + p.x;
 src/macro/spires.cpp	mod	const int x = int(rng.next_u32() % std::uint32_t(gs.mapW));
 src/macro/spires.cpp	mod	const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
-src/macro/travel.cpp	index	std::size_t(wy) * std::size_t(terrain.width) + std::size_t(wx);
 src/macro/tree_layer.cpp	index	const std::size_t i = std::size_t(wy) * std::size_t(layer.width) + std::size_t(wx);
 src/macro/tree_layer.cpp	index	const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
 src/macro/zones.cpp	index	const std::size_t i = std::size_t(y) * std::size_t(width) + std::size_t(x);

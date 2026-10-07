@@ -40,7 +40,6 @@ enum class SmokeAction : std::uint8_t {
     SubworldMouseRelease,
     SubworldTreeAnchor,
     SubworldRecovery,
-    SubworldSpDrain,
     TurnBasedCycle,
     SubworldEnter,
     SubworldExitRemap,

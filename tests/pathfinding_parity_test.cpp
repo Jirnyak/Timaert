@@ -68,10 +68,10 @@ int main()
                  "water biome weight must be 10");
     CHECK(nearly(sm::cell_sp_weight(sm::Water, sm::FT_Road), 1.0f),
                  "road feature must override water biome cost");
-    CHECK(nearly(sm::travel_stamina_cost(
-                            sm::cell_sp_weight(sm::Meadow, sm::FT_DirtRoad), 1.0f),
-                        1.5f * sm::kStaminaPerCell),
-                 "one dirt-road cell costs its weight x kStaminaPerCell");
+    CHECK(nearly(sm::burn_stamina_per_hour(
+                            sm::cell_sp_weight(sm::Meadow, sm::FT_DirtRoad)),
+                        1.5f * sm::kStaminaPerWeightHour),
+                 "an hour on a dirt road burns its weight x the one knob");
     // The canopy is a CONTINUOUS contribution now (the sum law, 2026-08-24):
     // meadow ground 2.0 + kCanopySpWeight × density, thickening smoothly —
     // and an engineered bed is a CUT: the road gates the canopy off.
