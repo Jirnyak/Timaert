@@ -135,20 +135,18 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
 // делала парную запись НЕВЫРАЗИМОЙ у своего звонящего, и та не писалась.
 MacroHandle find_creatures_subject(const MacroWorld& w,
                                    std::int32_t subject) {
-    // ФЛИП 1в: скан одной u32-колонки store вместо entt-пары — дешевле и
-    // без entt вовсе (за O(1) по ординалу придёт таблица слота, 1е/M-37).
-    // Store берём из ctx мира: конверт может его не нести (тестовые
-    // фикстуры), а мир без store — это мир без сквадов, честный отказ.
+    // РЕЗОЛВ ОРДИНАЛА — ЧУЖАЯ ДВЕРЬ, И ЗДЕСЬ ЕЁ ВТОРОГО ЭКЗЕМПЛЯРА БОЛЬШЕ НЕТ.
+    // Тут стоял свой скан колонки `spawnId` — строка в строку тот же цикл, что
+    // у `macro_handle_by_spawn_id@src/macro/squad.h`, то есть второй ответ на
+    // один вопрос мира (DOD п.6). Совпадали они не случайно, а потому, что
+    // вопрос один: «чьё это имя-ординал». Теперь он задаётся один раз, и когда
+    // у резолва появится таблица слота по ординалу (1е/M-37), квитанции
+    // подешевеют вместе со всеми — а не отдельной правкой этого файла.
+    // Store берём из ctx мира: конверт может его не нести (тестовые фикстуры),
+    // а мир без store — это мир без сквадов, честный отказ.
     if (!w.world || subject <= 0) return MacroHandle{};
     MacroStore& st = store_of(*w.world);
-    for (std::uint16_t slot = 0; slot < std::uint16_t(kMacroEntityCap);
-         ++slot) {
-        if (st.alive[slot] != 0
-            && st.spawnId[slot].index == std::uint32_t(subject)) {
-            return handle_at(st, slot);
-        }
-    }
-    return MacroHandle{};
+    return macro_handle_by_spawn_id(st, std::uint32_t(subject));
 }
 
 int read_creatures(const MacroWorld& w, MacroStockKey k) {
