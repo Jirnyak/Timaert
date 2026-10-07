@@ -18,6 +18,7 @@
 #include "macro/state.h"
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
 #include "macro/landmark_iter.h"
+#include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "ui/landmark_draw.h"
 #include "macro/markers.h"
 #include "macro/tree_layer.h"
@@ -843,15 +844,12 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs,
                         } else {
                             const LandmarkDrawRow& drow =
                                 kLandmarkDraw[std::size_t(lmKind)];
-                            const auto& lcell = st.cell[lslot];
-                            const bool drained =
-                                lmKind == SquadType::Spire
-                                && worked_read(gs,
-                                               ecs::cell_x(lcell, gs.mapW),
-                                               ecs::cell_y(lcell, gs.mapW))
-                                       == 0;
-                            const SpriteId sid = drained
-                                ? drow.spriteDepleted : drow.sprite;
+                            // Выкачанность — ОДИН вывод на весь мир
+                            // (spire_orb@src/macro/spires.h, M-233 п.8); здесь
+                            // стояло своё написание, четвёртое по счёту.
+                            const SpriteId sid =
+                                spire_orb(gs, st, lslot).depleted
+                                    ? drow.spriteDepleted : drow.sprite;
                             if (sid != SpriteId::None) sp = sprite_get(sid);
                         }
                         if (sp && sp->tex) {

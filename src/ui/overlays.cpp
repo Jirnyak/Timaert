@@ -495,11 +495,6 @@ namespace sm::ui
             ctx.landmark.size = preview_flock_(mw, slot);
             ctx.landmark.kind = kind;
             ctx.landmark.factionIdx = int(std::int16_t(store.kind[slot].factionIdx));
-            // Spire's drained state = worked 0 at its cell (v120); a preview
-            // without the world degrades to "not drained" like the rest of
-            // the missing envelope.
-            ctx.landmark.depleted = kind == SquadType::Spire && mw
-                && mw->gs && worked_read(*mw->gs, cellX, cellY) == 0;
             ctx.seed = previewSeed;
             ctx.worldSeed = worldSeed;
 
@@ -518,6 +513,11 @@ namespace sm::ui
                 ctx.macroHeight = cf.height01;
                 ctx.biome = cf.biome;
                 ctx.feature = cf.feature;
+                // Выкачанность — КОЛОНКА этого же сборщика (M-233 п.8). Она
+                // стояла ВЫШЕ своим написанием, в двадцати строках от вызова,
+                // который её уже посчитал; мир без конверта по-прежнему
+                // вырождается в «не выкачан» — это дефолт `CellContext`.
+                ctx.landmark.depleted = cf.landmark.depleted;
                 // Neighbours in the seamless manager's own order
                 // (ni = yy*3 + xx, offsets −1..1).
                 for (int yy = 0; yy < 3; ++yy)

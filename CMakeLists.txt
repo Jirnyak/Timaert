@@ -605,6 +605,10 @@ timaert_test(world_tick_parity_test
         # ...and raises deserter bands out of the pool, through the ONE
         # creation door (spawn_squad → make_npc).
         src/macro/npc_spawn.cpp
+        # Тир орба данжа-шпиля — ОДИН вывод на весь мир (M-233 п.8,
+        # spire_orb@src/macro/spires.h): раньше дневной тик писал его САМ,
+        # поэтому модуль шпиля ему и не был нужен.
+        src/macro/spires.cpp
     LINK_SDL LINK_ENTT)
 
 # ЗАКОН ПАРЫ ДУШИ: у паствы поселения ДВА носителя (число worked и головы
@@ -616,6 +620,8 @@ timaert_test(world_tick_parity_test
 timaert_test(flock_pairing_law_test
     SOURCES
         src/macro/world_tick.cpp
+        # Дневной тик спрашивает тир орба ОДНИМ выводом (M-233 п.8).
+        src/macro/spires.cpp
         src/macro/npc_ai.cpp
         src/macro/macro_stock.cpp
         src/macro/econ_day.cpp
@@ -1398,6 +1404,10 @@ timaert_test(macro_lighting_test
         # инвентаре), поэтому фикстура, селящая их дверью мира, обязана
         # знать каталог: свидетель рождает своё предусловие сам (§8 п.11).
         src/tables/items.cpp
+        # Выкачанность шпиля гасит его свет, и это ОДИН вывод на весь мир
+        # (M-233 п.8, spire_orb@src/macro/spires.h) — у `LandmarkView` своего
+        # написания больше нет.
+        src/macro/spires.cpp
     LINK_SDL LINK_ENTT)
 # Faction-relations data contract behind the universal subworld hostility
 # relation (sub/engine.cpp entities_hostile). Links macro/state.cpp + its
@@ -1455,6 +1465,8 @@ timaert_test(trade_law_test
         src/tables/items.cpp
         src/macro/econ_day.cpp
         src/macro/world_tick.cpp
+        # Дневной тик спрашивает тир орба ОДНИМ выводом (M-233 п.8).
+        src/macro/spires.cpp
         src/macro/threat_field.cpp
         src/macro/scent_field.cpp
         # a landmark's famine and revolt are facts of the world
@@ -1560,6 +1572,8 @@ timaert_test(crop_stock_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/world_tick.cpp
+        # Дневной тик спрашивает тир орба ОДНИМ выводом (M-233 п.8).
+        src/macro/spires.cpp
         src/macro/threat_field.cpp
         src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
@@ -1587,6 +1601,11 @@ timaert_test(spire_generation_test
     # Души места — СТРОКИ КАТАЛОГА (v122, головы в его инвентаре):
     # фикстура, селящая их дверью мира, обязана знать каталог.
     src/tables/items.cpp)
+# Стена «второго вывода о орбе в дереве нет» (M-233 п.8) читает ИСХОДНИКИ,
+# поэтому прибору нужен корень репозитория — §0 п.2: утверждение об отсутствии
+# указывает на свой тест, а тест обязан уметь посмотреть.
+target_compile_definitions(spire_generation_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 timaert_test(fauna_stock_test
     SOURCES
@@ -1595,6 +1614,8 @@ timaert_test(fauna_stock_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/world_tick.cpp
+        # Дневной тик спрашивает тир орба ОДНИМ выводом (M-233 п.8).
+        src/macro/spires.cpp
         src/macro/threat_field.cpp
         src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)

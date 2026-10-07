@@ -38,8 +38,17 @@ struct LandmarkFacts {
     // The spire's spell tier (its strength column, asked from the spell
     // registry); 0 for every other kind. Its OWN field, never smuggled.
     int  tier = 0;
+    // ЧИСЛО ОРБА — worked-число клетки шпиля (ординал kSpellDefs + 1, 0 =
+    // выкачан); 0 у всякого другого рода. ЧИТАТЕЛИ НАЗВАНЫ (DOD п.9):
+    // `learn_from_spire_orb@src/sub/engine.cpp` называет им спелл, который
+    // орб держал (`ev.b = charge - 1`), а сборщик зон субмира — количество в
+    // факте `Explored`. Оба читали его прямым `worked_read` по `*gs_`, то
+    // есть лазили в макро-состояние мимо канала; колонка уводит их на пакет
+    // (M-233 п.8 + долг M-98).
+    int  spell = 0;
     int  factionIdx = -1;  // owning faction (registry index); -1 = none
-    bool depleted = false; // a spire whose orb is gone
+    bool depleted = false; // шпиль, чей орб забран; у НЕ-шпиля ВСЕГДА false
+                           //   (spire_orb@src/macro/spires.h — ОДИН вывод)
 };
 
 struct CellFacts {

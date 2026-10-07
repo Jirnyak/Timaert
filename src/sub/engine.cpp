@@ -848,10 +848,12 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
         cf.landmark.type == SquadType::Spire) {
         // The amount IS the cell's worked number — already spell ordinal + 1
         // (0 = drained spire: the spell is forgotten, the fact files unknown,
-        // exactly the chronicle's «unknown subjects as 0»).
+        // exactly the chronicle's «unknown subjects as 0»). И оно приезжает
+        // КОЛОНКОЙ сборщика, который уже в руках: прямой `worked_read` по
+        // `gs` был чтением макро-состояния мимо канала (M-233 п.8).
         add_sub_zone(cf.x, cf.y, kSpireTowerLocalCenter, kSpireTowerLocalCenter,
                      float(kCellSize) * 0.5f, FactKind::Explored,
-                     worked_read(gs, cf.x, cf.y));
+                     cf.landmark.spell);
     }
     // ── СЦЕНА СДАЁТ МИРУ АРЕНДУ ОКНА (AGENTS ЗАКОН ШВА, M-226) ─────────
     // Последним действием входа: окно собрано, центр установлен, значит мир
@@ -4053,7 +4055,9 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     const int spireOrdinal = cf.landmark.id;
     // The spell is the cell's worked number (spires.h: ordinal + 1, 0 =
     // drained). A drained spire forgot its spell — the orb has nothing left.
-    const int charge = spire ? worked_read(*gs_, cx, cy) : 0;
+    // И это КОЛОНКА сборщика, а не прямой `worked_read` по `*gs_`: вывод
+    // «выкачан» живёт ОДНИМ местом в мире (M-233 п.8), а сцена его читает.
+    const int charge = cf.landmark.spell;
     if (!spire || charge == 0) {
         // A stale scene can outlive the fact (the world remembers, the
         // composite does not, yet): the prop answers, the spire does not.

@@ -5,6 +5,7 @@
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
 #include "macro/resource_field.h"
+#include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "tables/seasons.h"
 #include "macro/anketa.h"
 #include "macro/state.h"
@@ -78,17 +79,22 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
         // while the population door was locked.
         const std::uint16_t slot = who.slot;
         const SquadType kind = SquadType(w.store->runtime[slot].squadType);
-        const bool spire = kind == SquadType::Spire;
-        // The spell is the cell's WORKED number (ordinal+1, 0 = drained;
-        // закон нуля-ординала). A drained spire forgets its spell like a
-        // worked-out vein, so its tier honestly reads 0.
-        const int orb = spire ? worked_read(*w.gs, f.x, f.y) : 0;
-        const int tier = orb > 0
-            ? (orb <= kSpellCount ? kSpellDefs[orb - 1].tier : 1)
-            : 0;
-        f.landmark = {kind, lmId, souls_flock(*w.gs, *w.store, slot), tier,
-                      int(std::int16_t(w.store->kind[slot].factionIdx)),
-                      spire && orb == 0};
+        // Орб шпиля — ОДИН вывод на весь мир (spire_orb@src/macro/spires.h,
+        // M-233 п.8). Здесь он СТОЯЛ, и три соседа писали его заново; теперь
+        // сборщик его ПУБЛИКУЕТ, а вывод живёт в модуле шпиля.
+        const SpireOrb orb = spire_orb(*w.gs, *w.store, slot);
+        // ПОЛЯ НАЗЫВАЮТСЯ, А НЕ СЧИТАЮТСЯ (DOD п.9). Здесь стояла
+        // ПОЗИЦИОННАЯ выкладка, и это ровно грабля, купленная прошлой
+        // сессией: новая колонка в середине садится в соседнее поле МОЛЧА,
+        // а мир остаётся правдоподобным.
+        f.landmark = {.type = kind,
+                      .id = lmId,
+                      .size = souls_flock(*w.gs, *w.store, slot),
+                      .tier = orb.tier,
+                      .spell = orb.spell,
+                      .factionIdx =
+                          int(std::int16_t(w.store->kind[slot].factionIdx)),
+                      .depleted = orb.depleted};
     }
     return f;
 }

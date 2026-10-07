@@ -148,4 +148,24 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
     }
 }
 
+// ── ОДИН ВЫВОД О ОРБЕ (M-233 п.8; закон — в шапке spires.h) ──────────────
+// Вне строки: вопрос задают панель, оверлей, сборщик фактов клетки и дневной
+// тик — ни одного горячего цикла, а заголовок за это остаётся на `<cstdint>`
+// и двух fwd-декларациях (§5 п.13: тело в заголовке платит каждый включивший).
+SpireOrb spire_orb(const GameState& gs, const MacroStore& st,
+                   std::uint16_t slot) {
+    SpireOrb o{};
+    if (SquadType(st.runtime[slot].squadType) != SquadType::Spire) return o;
+    const auto& c = st.cell[slot];
+    o.spell = worked_read(gs, ecs::cell_x(c, gs.mapW),
+                          ecs::cell_y(c, gs.mapW));
+    // Выкачанный шпиль ЗАБЫЛ свой спелл, как выработанная жила — свою руду,
+    // поэтому тир у него честно ноль, а не последний запомненный.
+    o.tier = o.spell > 0
+        ? (o.spell <= kSpellCount ? kSpellDefs[o.spell - 1].tier : 1)
+        : 0;
+    o.depleted = o.spell == 0;
+    return o;
+}
+
 } // namespace sm

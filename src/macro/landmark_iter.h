@@ -20,6 +20,7 @@
 #include "macro/features.h"
 #include "macro/labour.h"   // souls_flock — паства места (переворот v122)
 #include "macro/landmark_registry.h"   // kLandmarkYieldOrder — закон клетки
+#include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "macro/state.h"
 
 namespace sm {
@@ -33,9 +34,10 @@ struct LandmarkView {
     const char* name; // display name; never null, may be ""
     int  population;  // ПАСТВА места (souls_flock: worked-число у поселения,
                       // головы толпы у данжа) — производное, не колонка
-    bool depleted = false; // Spire only — DERIVED from the worked layer at
-                           // the spire's cell (0 = orb drained); never a
-                           // Landmark column since v120
+    bool depleted = false; // шпиль, чей орб забран — ОДИН вывод на весь мир
+                           // (spire_orb@src/macro/spires.h); колонкой
+                           // `Landmark` не был с v120, а СВОИМ написанием
+                           // этого вывода перестал быть с M-233 п.8
 };
 
 // (kLandmarkYieldOrder живёт в landmark_registry.h: сетке мест нужен тот же
@@ -74,11 +76,10 @@ void for_each_landmark(const GameState& gs, const MacroStore& st, F&& fn) {
             const auto& c = st.cell[slot];
             const int x = ecs::cell_x(c, gs.mapW);
             const int y = ecs::cell_y(c, gs.mapW);
-            const bool depleted = t == SquadType::Spire
-                && worked_read(gs, x, y) == 0;
             fn(LandmarkView{t, int(st.spawnId[slot].index), x, y, name,
                             souls_flock(gs, st, std::uint16_t(slot)),
-                            depleted});
+                            spire_orb(gs, st,
+                                      std::uint16_t(slot)).depleted});
         }
     }
 }
