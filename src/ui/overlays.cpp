@@ -385,6 +385,12 @@ namespace sm::ui
             std::uint32_t previewSeed = 0;
             int settlementId = 0;
             int population = -1;
+            // ВЫКАЧАННОСТЬ — ВХОД КАРТИНКИ, ЗНАЧИТ И КЛЮЧ (M-233 п.8 завёл
+            // колонку, а ключ её не знал): обобрали орб шпиля — картинка не
+            // перестраивалась, потому что сид, ординал и паства у клетки те
+            // же. Дефект СТАРШЕ колонки: у кеша ключом обязан быть ВЕСЬ вход
+            // генератора, а не та его часть, которую автор помнил.
+            bool depleted = false;
             int houses = 0;
             int walls = 0;
             bool ready = false;
@@ -472,11 +478,19 @@ namespace sm::ui
             const int ordinal = int(store.spawnId[slot].index);
             const std::uint32_t previewSeed =
                 settlement_preview_seed(worldSeed, cellX, cellY);
+            // ФАКТЫ ЦЕНТРАЛЬНОЙ КЛЕТКИ — ОДИН ВОПРОС СБОРЩИКУ, И ОН ЗАДАН ДО
+            // КЛЮЧА: выкачанность входит в ключ, а ниже тот же ответ строит
+            // контекст. Второго вызова на ту же клетку не появляется — вопрос
+            // о клетке один (DOD п.6). Без конверта факты вырождаются, и ниже
+            // контекст остаётся на своих дефолтах, как и был.
+            const CellFacts centre =
+                mw ? cell_facts(*mw, cellX, cellY) : CellFacts{};
             if (cache.ready &&
                 cache.tex != 0 &&
                 cache.worldSeed == worldSeed &&
                 cache.previewSeed == previewSeed &&
                 cache.settlementId == ordinal &&
+                cache.depleted == centre.landmark.depleted &&
                 cache.population == preview_flock_(mw, slot))
             {
                 return true;
@@ -509,7 +523,7 @@ namespace sm::ui
             }
             if (mw)
             {
-                const CellFacts cf = cell_facts(*mw, cellX, cellY);
+                const CellFacts& cf = centre;
                 ctx.macroHeight = cf.height01;
                 ctx.biome = cf.biome;
                 ctx.feature = cf.feature;
@@ -609,6 +623,7 @@ namespace sm::ui
             cache.worldSeed = worldSeed;
             cache.previewSeed = previewSeed;
             cache.settlementId = ordinal;
+            cache.depleted = centre.landmark.depleted;
             cache.population = preview_flock_(mw, slot);
             cache.houses = houses;
             cache.walls = walls;
