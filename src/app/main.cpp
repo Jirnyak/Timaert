@@ -1580,7 +1580,7 @@ void begin_scene(App& app, const sm::content::SceneDef& scene) {
         app.subworld.spawn_npc_body(p.npcId, p.displayName, p.level,
                                     app.gs.worldSeed
                                         ^ (0xA3B10000u + std::uint32_t(i)),
-                                    p.factionId, nullptr, pos);
+                                    p.factionId, pos);
     }
     if (scene.feedLine != nullptr) {
         sm::session_feed_push(app.gs.sessionFeed, scene.feedLine);
@@ -4181,8 +4181,7 @@ void register_console_commands(App& app) {
             for (int i = 0; i < count; ++i) {
                 const std::uint32_t seed = app.gs.worldSeed ^ (++seq * 2654435761u);
                 if (app.subworld.spawn_npc_body(type.c_str(), type.c_str(),
-                                                level, seed, faction,
-                                                nullptr))
+                                                level, seed, faction))
                     ++placed;
             }
             c.printfln(Lvl::Ok, "spawned %d x %s (level %d, faction %s)",
@@ -4345,8 +4344,7 @@ void register_console_commands(App& app) {
                         side == 0 ? "Test Guard" : "Test Bandit",
                         1,
                         app.gs.worldSeed + std::uint32_t(side * 100003 + i),
-                        side == 0 ? sideA : sideB,
-                        nullptr, pos);
+                        side == 0 ? sideA : sideB, pos);
                     if (ok) ++placed;
                 }
             }
@@ -5107,8 +5105,6 @@ void draw_debug_panels(App& app) {
                                 ? sm::npc_def(sm::NPCType(k->type)).label : "?");
                     } else if (sm::sub::is_projectile(reg, e)) {
                         ImGui::TextUnformatted("(projectile)");
-                    } else if (reg.any_of<sm::ecs::Structure>(e)) {
-                        ImGui::TextUnformatted("(structure)");
                     } else {
                         ImGui::TextUnformatted("-");
                     }
@@ -5204,7 +5200,6 @@ void draw_debug_panels(App& app) {
                 {"BodyAi(arena)",   maskCnt(sm::sub::kObjHasAi)},
 
                 {"Projectile(col)", maskCnt(sm::sub::kObjProjectile)},
-                {"Structure",       cnt(reg.view<sm::ecs::Structure>())},
                 {"Sprite",          cnt(reg.view<sm::ecs::Sprite>())},
                 {"Dead(col)",       maskCnt(sm::sub::kObjDead)},
                 {"PlayerSoldier(col)", maskCnt(sm::sub::kObjPlayerSoldier)},

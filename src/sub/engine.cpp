@@ -2783,7 +2783,6 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
                                     int level,
                                     std::uint32_t seed,
                                     const char* factionId,
-                                    const ecs::NpcInventory* inventoryOverride,
                                     const float* positionOverride) {
     if (!active_ || !ecs_) return false;
 
@@ -2834,18 +2833,28 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
     // The position-mixed seed keeps co-spawned hostiles distinct at one call site.
     const std::uint32_t bodySeed =
         cell_seed(seed, int(fx), int(fy));
-    const entt::entity e = spawn_derived_body(reg,
+    // Хэндл не берётся: его единственным потребителем была мёртвая сумка ниже,
+    // а рождение само вписывает тело и в реестр, и в арену (`emplace_body`).
+    spawn_derived_body(reg,
         BodySpec{type, fx, fy, bodyFaction, lvl, bodySeed,
                      /*combatant*/true},
         /*faceSalt*/bodySeed);
 
-    // The one thing this spawner may still say about the body that its row does
-    // not: exactly what it is carrying. A scenario that plants a named item to
-    // be looted is naming CONTEXT, not inventing a second kind of body.
-    if (inventoryOverride) {
-        ecs::NpcInventory bag = *inventoryOverride;
-        reg.emplace<ecs::NpcInventory>(e, std::move(bag));
-    }
+    // (ЗДЕСЬ ЛЕЖАЛА СУМКА НА ТЕЛЕ СЦЕНЫ, И ОНА УМЕРЛА 2026-10-09, M-150
+    // ломоть 1. Параметр `inventoryOverride` обещал «что именно несёт это
+    // тело», но передавали в него `nullptr` ВСЕ ВОСЕМЬ звонящих — три в
+    // `src/app/main.cpp`, пять в `src/app/smoke.cpp`, — то есть ветка не
+    // исполнялась ни разу, а сценария, который «кладёт named item под лут»,
+    // не существовало никогда. Тот же случай, что `BodyRadius` в куске 0:
+    // параметр пережил всех авторов, ради которых строился.
+    // И СНОС ТУТ НЕ ЭКОНОМИЯ, А ЗАКОН: зеркальный закон `sub/record.h`
+    // говорит, что тело субмира НЕ ВЛАДЕЕТ НИЧЕМ — его сумка есть сумка
+    // макро-ЗАПИСИ, колонка `inventory` стора, и другого носителя имущества
+    // в игре нет (ЗАКОН КОНТЕЙНЕРА: один инвентарь на сквад, в анкете).
+    // Вторая сумка на теле была бы вторым носителем одного имущества, а
+    // колонкой арены она стоила бы 640 МиБ по капу 16384 — `sizeof` сумки
+    // 40 960 Б. Лут процедурного тела катится из его строки в момент смерти,
+    // как и обещала шапка двери.)
 
     char msg[160]{};
     std::snprintf(msg, sizeof(msg), "Encounter spawned: %s",

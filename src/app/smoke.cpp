@@ -2390,7 +2390,7 @@ bool run_subworld_exit_gate_smoke(App& app) {
     const float banditPos[2] = {gatePx + 10.0f, gatePy};
     if (!app.subworld.spawn_npc_body("bandit", "Smoke Gate Bandit", 3,
                                      app.gs.worldSeed ^ 0xE917u, "bandits",
-                                     nullptr, banditPos)) {
+                                     banditPos)) {
         restore();
         smoke_fail(app, "subworld_exit_gate hostile spawn failed");
         return false;
@@ -6775,8 +6775,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                     1,
                                     app.gs.worldSeed
                                         + std::uint32_t(side * 100003 + i),
-                                    side == 0 ? "empire" : "bandits",
-                                    nullptr, pos))
+                                    side == 0 ? "empire" : "bandits", pos))
                                 ++deployed;
                         }
                     }
@@ -7524,7 +7523,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (!app.subworld.active()
                 || !app.subworld.spawn_npc_body("bandit", "Smoke Bandit", 2,
                                                 app.gs.worldSeed ^ 0xB471u,
-                                                "bandits", nullptr)) {
+                                                "bandits")) {
                 smoke_fail(app, "battle_start could not stand up a hostile");
                 break;
             }

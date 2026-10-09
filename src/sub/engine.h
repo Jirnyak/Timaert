@@ -32,11 +32,10 @@ struct TerrainData;
 struct FeatureLayer;
 struct ZoneLayer;
 struct TreeLayer;
-namespace ecs {
-struct NpcCharacter;
-struct NpcInventory;
-struct NpcTraits;
-}
+// (Блок предобъявлений `ecs::NpcCharacter`/`NpcInventory`/`NpcTraits` снят
+// 2026-10-09, M-150 ломоть 1: ни одно из трёх имён в этом заголовке больше
+// не упоминается — `NpcInventory` осиротел со смертью `inventoryOverride`
+// ниже, двое других пережили своих потребителей раньше и молча.)
 }
 
 namespace sm::sub {
@@ -302,11 +301,12 @@ public:
                         int level,
                         std::uint32_t seed,
                         const char* factionId = nullptr,
-                        // Exactly what this body carries, when a scenario or a
-                        // quest wants a specific thing looted off it. Absent, it
-                        // carries nothing and its loot is rolled from its row at
-                        // the moment it dies (tables/items.h, one registry).
-                        const ecs::NpcInventory* inventoryOverride = nullptr,
+                        // (`inventoryOverride` УМЕР 2026-10-09, M-150 ломоть 1:
+                        // `nullptr` во ВСЕХ ВОСЬМИ звонящих, то есть сумку на
+                        // теле не кладёт никто. Тело субмира не владеет ничем —
+                        // его сумка есть сумка макро-записи, зеркальный закон
+                        // `sub/record.h`. Лут процедурного тела катится из его
+                        // строки в момент смерти, как и было обещано.)
                         // Explicit {x, y} spawn tile instead of the default
                         // ring around the player. Needed to DEPLOY a body:
                         // an army spawned in one 34-unit ring is a pile, not
