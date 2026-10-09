@@ -226,7 +226,7 @@ int main() {
     }
 
     auto hostile = world.reg.create();
-    world.reg.emplace<sm::ecs::Position>(hostile, 100.0f, 100.0f, 0.0f);
+    sm::test::give_pos(world.reg, hostile, 100.0f, 100.0f, 0.0f);
     sm::test::give_combat(world.reg, hostile, sm::ecs::Combat{
         sm::Dice{5, 1}, std::int16_t(0), std::int16_t(100),
         std::uint8_t(0), std::uint8_t(sm::DamageType::Blunt),
@@ -235,7 +235,7 @@ int main() {
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 4.0f, 4.0f, 8.0f, 1.0f});
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
-    const auto& combatPos = world.reg.get<sm::ecs::Position>(hostile);
+    const auto& combatPos = *sm::sub::body_pos(world.reg, hostile);
     const auto& combatAi = *sm::sub::body_ai(world.reg, hostile);
     // Ownership contract, TIGHTENED. tick_npc_ai must not touch a combat body at
     // ALL — neither its position nor its velocity. The mass-battle pass
@@ -251,12 +251,12 @@ int main() {
     }
 
     auto fallback = world.reg.create();
-    world.reg.emplace<sm::ecs::Position>(fallback, 100.0f, 100.0f, 0.0f);
+    sm::test::give_pos(world.reg, fallback, 100.0f, 100.0f, 0.0f);
     sm::test::give_ai(world.reg, fallback,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 0.0f, 0.0f, 8.0f, 1.0f});
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
-    const auto& fallbackPos = world.reg.get<sm::ecs::Position>(fallback);
+    const auto& fallbackPos = *sm::sub::body_pos(world.reg, fallback);
     // A body with combat AI but NO ecs::Combat has no damage, no speed and no
     // reach — it cannot fight. The old code still walked it at the player
     // scalar ("degrade to chase-only movement"), which was a hidden global
@@ -276,7 +276,7 @@ int main() {
     // body — its position stopped changing, so it re-rolled the same "stand"
     // forever, and deer petrified on their first idle roll.
     auto wanderer = world.reg.create();
-    world.reg.emplace<sm::ecs::Position>(wanderer, 200.0f, 200.0f, 0.0f);
+    sm::test::give_pos(world.reg, wanderer, 200.0f, 200.0f, 0.0f);
     sm::test::give_ai(world.reg, wanderer,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
                                           0.0f, 0.0f, 0.0f, 8.0f, 0.6f});
@@ -288,7 +288,7 @@ int main() {
         if (wai.wantVx != 0.0f || wai.wantVy != 0.0f) decidedToWalk = true;
         else decidedToStand = true;
     }
-    const auto& wpos = world.reg.get<sm::ecs::Position>(wanderer);
+    const auto& wpos = *sm::sub::body_pos(world.reg, wanderer);
     if (wpos.x != 200.0f || wpos.y != 200.0f) {
         return fail("a wander brain must never write Position");
     }

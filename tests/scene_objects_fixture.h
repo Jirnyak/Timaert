@@ -31,8 +31,18 @@ inline sm::sub::SubObjects& arena_of(entt::registry& reg) {
 
 // Слот телу фикстуры — как выдала бы дверь спавна.
 inline void give_slot(entt::registry& reg, entt::entity e) {
-    const int slot = arena_of(reg).alloc();
+    const int slot = arena_of(reg).alloc(sm::ecs::Position{});
     if (slot >= 0) reg.emplace<sm::ecs::ObjectSlot>(e, std::uint16_t(slot));
+}
+
+// Позиция телу фикстуры (ломоть 5) — как записало бы рождение: слот
+// рожается по надобности (§8 п.11), колонка пишется дверью body_pos.
+inline void give_pos(entt::registry& reg, entt::entity e,
+                     float x, float y, float z = 0.0f) {
+    if (!reg.all_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    if (sm::ecs::Position* p = sm::sub::body_pos(reg, e)) {
+        *p = sm::ecs::Position{x, y, z};
+    }
 }
 
 // Бит маски телу фикстуры — как поставила бы боевая дверь; слот рожается

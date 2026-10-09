@@ -93,6 +93,16 @@ inline const C* state_of(const entt::registry& reg, entt::entity body) {
     return state_of<C>(const_cast<entt::registry&>(reg), body);
 }
 
+// Позиция через state_of НЕ ходит НИКОГДА: она не «состояние записи», а
+// колонка арены (ломоть 5), и генерик с try_get после смерти компоненты
+// собирался бы молча и всегда отвечал nullptr. Запрет под компилятором;
+// единственная дверь — body_pos ниже.
+template <>
+ecs::Position* state_of<ecs::Position>(entt::registry&, entt::entity) = delete;
+template <>
+const ecs::Position* state_of<ecs::Position>(const entt::registry&,
+                                             entt::entity) = delete;
+
 // (Зеркало стояния — КОЛОНКА standing@src/sub/objects.h с ломтя 2; его
 // замер и смысл — у колонки, гейт — refresh_body_strike@src/sub/spawn.cpp,
 // двери body_standing/set_body_standing — ниже моста арены. pools_of — там
@@ -460,6 +470,23 @@ inline void set_body_ai(entt::registry& reg, entt::entity e,
         objs->flags[std::size_t(os->slot)] |= kObjHasAi;
     }
 }
+// Позиция — БЕЗУСЛОВНАЯ колонка слота (ломоть 5): ни бита, ни сентинела —
+// бесместного объекта в кубе арены не бывает, nullptr здесь значит ровно
+// «слота нет» (транзит-фикстура без арены). Писатели законные: alloc()
+// при рождении (позиция — его аргумент), мувер x/y (разброс), проходы
+// земли/полёта z, ребейз шва, снарядный тик, телепорты смоуков.
+inline ecs::Position* body_pos(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    return &objs->pos[std::size_t(os->slot)];
+}
+inline const ecs::Position* body_pos(const entt::registry& reg,
+                                     entt::entity e) {
+    return body_pos(const_cast<entt::registry&>(reg), e);
+}
 inline ecs::VisualPos* body_visual(entt::registry& reg, entt::entity e) {
     if (e == entt::null || !reg.valid(e)) return nullptr;
     const auto* os = reg.try_get<ecs::ObjectSlot>(e);
@@ -570,10 +597,11 @@ inline void set_projectile(entt::registry& reg, entt::entity e,
 // несёт компонента, пока она жива, — та же ветка ТРАНЗИТА, что у тел
 // (`spawn.cpp`), и умирает она вместе с реестром (ломоть 7).
 inline bool birth_projectile(entt::registry& reg, entt::entity e,
-                             const ecs::Projectile& p) {
+                             const ecs::Projectile& p,
+                             const ecs::Position& at) {
     SubObjects* objs = objects_find(reg);
     if (objs == nullptr) return true;
-    const int slot = objs->alloc();
+    const int slot = objs->alloc(at);
     if (slot < 0) return false;
     reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
     set_projectile(reg, e, p);

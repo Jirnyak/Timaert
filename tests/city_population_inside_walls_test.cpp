@@ -222,14 +222,16 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
 
     std::array<int, 8> sector{};
     int outerHalf = 0;
+    // Место тела — колонка арены (ломоть 5): вьюха отбирает ЖИЛЬЦОВ сцены
+    // (слот), координаты отвечает дверь body_pos.
     auto view = world.reg.view<sm::ecs::SubworldTag,
-                               sm::ecs::Position>();
+                               sm::ecs::ObjectSlot>();
     for (auto e : view) {
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;
         const auto& kind = *kindCol;
         if (kind.type >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
-        const auto& p = view.get<sm::ecs::Position>(e);
+        const sm::ecs::Position& p = *sm::sub::body_pos(world.reg, e);
         ++s.citizens;
         const float dx = p.x - cx;
         const float dy = p.y - cy;

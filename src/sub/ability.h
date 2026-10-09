@@ -63,22 +63,22 @@ inline void tick_body_recovery(SubObjects& objs, std::uint32_t steps) {
 }
 
 // ИНТЕРПОЛЯТОР СЦЕНЫ (бывший ecs::sys::tick_visual_interp; визуальная
-// позиция — колонка арены с куска 3). Пока Position — компонента (умирает
-// ломтями 4-5), проход ходит по сущностям; нулевая скорость колонки =
-// интерполятор стоит, это значение, а не отсутствие.
-template <class Registry>
-inline void tick_body_visual_interp(Registry& reg, float dt) {
-    auto view = reg.template view<ecs::Position, ecs::SubworldTag>();
-    for (auto e : view) {
-        ecs::VisualPos* v = body_visual(reg, e);
-        if (v == nullptr || v->speed <= 0.0f) continue;
-        const auto& p = view.template get<ecs::Position>(e);
-        const float dx = p.x - v->vx, dy = p.y - v->vy;
+// позиция — колонка арены с куска 3, симуляционная — с ломтя 5). ЧИСТО
+// СЛОТОВЫЙ проход, как tick_body_recovery выше: ни сущностей, ни вьюх.
+// Нулевая скорость колонки = интерполятор стоит — это значение, а не
+// отсутствие.
+inline void tick_body_visual_interp(SubObjects& objs, float dt) {
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & kObjAlive) == 0u) continue;
+        ecs::VisualPos& v = objs.visual[std::size_t(s)];
+        if (v.speed <= 0.0f) continue;
+        const ecs::Position& p = objs.pos[std::size_t(s)];
+        const float dx = p.x - v.vx, dy = p.y - v.vy;
         const float d = std::sqrt(dx * dx + dy * dy);
         if (d < 0.001f) continue;
-        const float step = v->speed * dt;
-        if (step >= d) { v->vx = p.x; v->vy = p.y; }
-        else { v->vx += dx / d * step; v->vy += dy / d * step; }
+        const float step = v.speed * dt;
+        if (step >= d) { v.vx = p.x; v.vy = p.y; }
+        else { v.vx += dx / d * step; v.vy += dy / d * step; }
     }
 }
 

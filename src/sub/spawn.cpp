@@ -327,18 +327,19 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     // return trip needs no conversion table either.
     const int hp = std::clamp(int(maxHp * healthFraction), 1, int(maxHp));
 
-    const auto e = reg.create();
-    // СЛОТ ЕДИНОГО МАССИВА ОБЪЕКТОВ (M-150 ломоть 1а): тело рождается
-    // жильцом плоского носителя; освобождение — on_destroy-хук моста.
+    // СЛОТ ЕДИНОГО МАССИВА ОБЪЕКТОВ (M-150 ломоть 1а; ЧЕСТНЫЙ ОТКАЗ —
+    // ломоть 5): позиция — колонка арены, и тело без слота было бы телом
+    // БЕЗ КООРДИНАТ — его не сдвинул бы ребейз и не сжал бы жнец окна.
+    // Нет слота — нет тела: null, звонящий отказывается, как BodyCrowd::add.
     // Фикстура без арены (objects_find == null) рождает тело без слота —
     // ветка ТРАНЗИТА миграции, умирает с реестром (ломоть 7).
+    int slot = -1;
     if (SubObjects* objs = objects_find(reg)) {
-        const int slot = objs->alloc();
-        if (slot >= 0) {
-            reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
-        }
+        slot = objs->alloc(ecs::Position{body.x, body.y, 0.0f});
+        if (slot < 0) return entt::null;
     }
-    reg.emplace<ecs::Position>(e, body.x, body.y, 0.0f);
+    const auto e = reg.create();
+    if (slot >= 0) reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
     sub::set_body_visual(reg, e,
                          ecs::VisualPos{body.x, body.y, kBodyVisualCatchUp});
     sub::set_body_kind(reg, e,
@@ -636,8 +637,10 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
     // The receipt, stamped by the birth rather than by the caller: borrowing is
     // part of coming into being, not a line a spawner might remember to add.
     // Nothing lent means nothing to stamp — a body drawn from thin air is honest
-    // about owing the map nothing.
-    if (loan.stock != MacroStock::Count) {
+    // about owing the map nothing. Отказ арены (null, ломоть 5) займа не
+    // штампует: душа не воплотилась — квитанции возврата не будет, и список
+    // места не должен уменьшаться.
+    if (e != entt::null && loan.stock != MacroStock::Count) {
         sub::stamp_macro_debt(reg, e, loan.stock, loan.key, 1);
     }
     return e;
@@ -1359,24 +1362,19 @@ void spawn_cell_npcs(ecs::World& w,
 }
 
 void rebase_subworld_entities(ecs::World& w, float dxTiles, float dyTiles) {
-    auto& reg = w.reg;
-    // Shift the authoritative sim position AND the smoothed render position so a
-    // recentre neither drifts entities nor produces a one-frame interpolation
-    // streak. Both views are SubworldTag-gated, so the player squad shifts too.
-    auto posView = reg.view<ecs::SubworldTag, ecs::Position>();
-    for (auto e : posView) {
-        auto& p = posView.get<ecs::Position>(e);
-        p.x += dxTiles;
-        p.y += dyTiles;
-    }
-    // Визуальная позиция — колонка арены (кусок 3): сдвигается у каждого
-    // слотного тела; нулевой интерполятор (speed 0) сдвиг не портит — его
-    // не читает никто.
-    for (auto e : posView) {
-        if (ecs::VisualPos* v = body_visual(reg, e)) {
-            v->vx += dxTiles;
-            v->vy += dyTiles;
-        }
+    // ЧИСТО СЛОТОВЫЙ сдвиг (ломоть 5): симуляционная и визуальная позиции —
+    // обе колонки арены, сдвигается КАЖДЫЙ живой слот (игрок — такой же
+    // жилец), сущность не нужна вовсе. Нулевой интерполятор (speed 0) сдвиг
+    // не портит — его не читает никто. Без арены (фикстура) нет и окна —
+    // сдвигать нечего.
+    SubObjects* objs = objects_find(w.reg);
+    if (objs == nullptr) return;
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs->flags[std::size_t(s)] & kObjAlive) == 0u) continue;
+        objs->pos[std::size_t(s)].x += dxTiles;
+        objs->pos[std::size_t(s)].y += dyTiles;
+        objs->visual[std::size_t(s)].vx += dxTiles;
+        objs->visual[std::size_t(s)].vy += dyTiles;
     }
 }
 
@@ -1385,11 +1383,11 @@ void despawn_subworld_entities_outside_window(ecs::World& w) {
     std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
     for (;;) {
         int doomedCount = 0;
-        auto view = reg.view<ecs::SubworldTag, ecs::Position>();
+        auto view = reg.view<ecs::SubworldTag, ecs::ObjectSlot>();
         for (auto e : view) {
             if (is_avatar(reg, e)
                 || object_flag(reg, e, kObjPlayerSoldier)) continue;
-            const auto& p = view.get<ecs::Position>(e);
+            const ecs::Position& p = *body_pos(reg, e);
             const bool inside = p.x >= 0.0f && p.x < float(kFullSize)
                              && p.y >= 0.0f && p.y < float(kFullSize);
             if (inside) continue;

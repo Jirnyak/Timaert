@@ -5091,10 +5091,11 @@ void draw_debug_panels(App& app) {
                 ImGui::TableSetupColumn("tags");
                 ImGui::TableSetupScrollFreeze(0, 1);
                 ImGui::TableHeadersRow();
-                for (auto e : reg.view<sm::ecs::Position>()) {
+                for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
                     ++total;
                     if (shown >= kMaxRows) continue;
-                    const auto& pos = reg.get<sm::ecs::Position>(e);
+                    const sm::ecs::Position& pos =
+                        *sm::sub::body_pos(reg, e);
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
                     ImGui::Text("%u", unsigned(entt::to_integral(e)));
@@ -5167,7 +5168,8 @@ void draw_debug_panels(App& app) {
             };
             struct Row { const char* name; std::size_t count; };
             const Row rows[] = {
-                {"Position(scene)", cnt(reg.view<sm::ecs::Position>())},
+                {"AliveSlots(arena)", std::size_t(
+                     sm::sub::objects_of(reg).count)},
                 {"MacroSquads",     std::size_t(
                      sm::store_of(app.ecs).aliveCount)},
                 // Бары и лист — колонки арены (кусок 2): счёт по живым

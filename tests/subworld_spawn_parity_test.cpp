@@ -211,8 +211,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
 
 std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
     std::vector<SpawnRecord> out;
-    auto view = world.reg.view<sm::ecs::SubworldTag,
-                               sm::ecs::Position, sm::ecs::ObjectSlot>();
+    auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot>();
     for (auto e : view) {
         if (sm::sub::body_sprite(world.reg, e) == nullptr) continue;
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
@@ -223,7 +222,7 @@ std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
         if (hpCol == nullptr || combatCol == nullptr
             || aiColF == nullptr) continue;
         const auto& kind = *kindCol;
-        const auto& pos = view.get<sm::ecs::Position>(e);
+        const auto& pos = *sm::sub::body_pos(world.reg, e);
         const auto& hp = *hpCol;
         const auto& combat = *combatCol;
         const std::int16_t level = sm::sub::body_level(world.reg, e);
@@ -421,10 +420,10 @@ bool run_city_population_projection_case(
 
     // Citizens must land inside the centre cell's sub-region, never the whole
     // 3×3 — proof the per-cell origin gate replaced the old centre-only window.
-    auto posView = world.reg.view<sm::ecs::SubworldTag, sm::ecs::Position>();
+    auto posView = world.reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot>();
     for (auto e : posView) {
         if (sm::sub::body_kind(world.reg, e) == nullptr) continue;
-        const auto& p = posView.get<sm::ecs::Position>(e);
+        const auto& p = *sm::sub::body_pos(world.reg, e);
         if (p.x < float(sm::sub::kCellSize) || p.x >= float(2 * sm::sub::kCellSize)
             || p.y < float(sm::sub::kCellSize)
             || p.y >= float(2 * sm::sub::kCellSize)) {
@@ -728,14 +727,13 @@ bool sheet_lifts_every_body(sm::ecs::World& world) {
 // so it compares cleanly across two worlds for the determinism check.
 std::vector<std::array<float, 3>> projection_fingerprint(sm::ecs::World& world) {
     std::vector<std::array<float, 3>> out;
-    auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot,
-                            sm::ecs::Position>();
+    auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot>();
     for (auto e : v) {
         if (sm::sub::body_macro_origin(world.reg, e).slot
             == sm::kMacroNoSlot) continue;
         const auto* k = sm::sub::body_kind(world.reg, e);
         if (k == nullptr) continue;
-        const auto& p = v.get<sm::ecs::Position>(e);
+        const auto& p = *sm::sub::body_pos(world.reg, e);
         out.push_back({float(k->factionIdx), p.x, p.y});
     }
     std::sort(out.begin(), out.end());
@@ -867,11 +865,11 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // torus-wrapped -1,0 → [0,kC).
     auto in = [](float v, float lo, float hi) { return v >= lo && v < hi; };
     {
-        const auto& pb = reg.get<sm::ecs::Position>(pBandit);
+        const auto& pb = *sm::sub::body_pos(reg, pBandit);
         if (!in(pb.x, kC, 2 * kC) || !in(pb.y, kC, 2 * kC)) return false;
-        const auto& pp = reg.get<sm::ecs::Position>(pPeasant);
+        const auto& pp = *sm::sub::body_pos(reg, pPeasant);
         if (!in(pp.x, 2 * kC, 3 * kC) || !in(pp.y, kC, 2 * kC)) return false;
-        const auto& pw = reg.get<sm::ecs::Position>(pWrap);
+        const auto& pw = *sm::sub::body_pos(reg, pWrap);
         if (!in(pw.x, 0.0f, kC) || !in(pw.y, kC, 2 * kC)) return false;
     }
 

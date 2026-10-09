@@ -930,7 +930,6 @@ macro-registry.md	engine.cpp:3116-3122
 macro-registry.md	engine.cpp:3123
 macro-registry.md	engine.cpp:337
 macro-registry.md	engine.cpp:4357
-macro-registry.md	engine.cpp:495
 macro-registry.md	faction.h:320
 macro-registry.md	features.h:117-137
 macro-registry.md	features.h:138

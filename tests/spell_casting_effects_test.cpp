@@ -56,12 +56,13 @@ bool find_projectile_pose_by_spell(sm::ecs::World& w, const char* spellId,
                                    sm::ecs::Projectile& outProjectile,
                                    sm::ecs::Position& outPosition) {
     const std::uint32_t stableId = sm::stable_spell_id(spellId);
-    auto view = w.reg.view<sm::ecs::Position, sm::ecs::Projectile>();
+    auto view = w.reg.view<sm::ecs::Projectile>();
     for (auto e : view) {
         const auto& p = view.get<sm::ecs::Projectile>(e);
         if (p.spellId == stableId) {
             outProjectile = p;
-            outPosition = view.get<sm::ecs::Position>(e);
+            // Место снаряда — колонка арены (ломоть 5): дверь body_pos.
+            outPosition = *sm::sub::body_pos(w.reg, e);
             return true;
         }
     }
@@ -73,7 +74,7 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
     auto e = w.create();
     // Слот арены объектов: атрибуция «кем ранен» — колонка lastHitBy (1а).
     sm::test::give_slot(w.reg, e);
-    w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
+    sm::test::give_pos(w.reg, e, x, y, 0.0f);
     sm::test::give_pools(w.reg, e, sm::ecs::Pools{hp, hp});
     w.reg.emplace<sm::ecs::SubworldTag>(e);
     sm::test::give_sprite(w.reg, e, sm::ecs::Sprite{std::uint16_t(0),
@@ -93,7 +94,7 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
 std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
     auto e = w.create();
     sm::test::give_slot(w.reg, e);
-    w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
+    sm::test::give_pos(w.reg, e, x, y, 0.0f);
     sm::test::give_pools(w.reg, e, sm::ecs::Pools{1000, 1000});
     w.reg.emplace<sm::ecs::SubworldTag>(e);
     sm::test::make_avatar(w.reg, e);
@@ -137,6 +138,10 @@ int main() {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+    // Арена сцены — ПРЕДУСЛОВИЕ свидетеля (§8 п.11): с ломтя 5 место снаряда
+    // живёт колонкой слота, значит рождённый без арены снаряд НЕ ИМЕЕТ места
+    // вовсе, и закон дула ниже спрашивать было бы не у кого.
+    sm::test::arena_of(world.reg);
     sm::SpellBook book;
     sm::ecs::Pools combat{};
     combat.mp = 2000;
@@ -458,7 +463,7 @@ int main() {
     // body starts NO action, whatever occupied it.
     sm::spellbook_learn(book, sm::spell_ordinal("fireball"));
     const auto casterBody = world.create();
-    world.reg.emplace<sm::ecs::Position>(casterBody, 100.0f, 100.0f, 0.0f);
+    sm::test::give_pos(world.reg, casterBody, 100.0f, 100.0f, 0.0f);
     sm::test::give_combat(world.reg, casterBody, sm::ecs::Combat{});
     const auto casterId = std::uint32_t(entt::to_integral(casterBody));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
@@ -537,7 +542,7 @@ int main() {
 
     sm::store_attach(blastWorld, blastWorldStore_.get());
     auto blastProjectile = blastWorld.create();
-    blastWorld.reg.emplace<sm::ecs::Position>(blastProjectile, 0.0f, 0.0f, 0.0f);
+    sm::test::give_pos(blastWorld.reg, blastProjectile, 0.0f, 0.0f, 0.0f);
     blastWorld.reg.emplace<sm::ecs::Projectile>(blastProjectile,
         0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10, 48.0f,
         0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
@@ -972,9 +977,9 @@ int main() {
     bool haveMeteorPosition = false;
     float meteorX = 0.0f;
     float meteorY = 0.0f;
-    auto armView = armWorld.reg.view<sm::ecs::Position, sm::ecs::Projectile>();
+    auto armView = armWorld.reg.view<sm::ecs::Projectile>();
     for (auto e : armView) {
-        const auto& pos = armView.get<sm::ecs::Position>(e);
+        const auto& pos = *sm::sub::body_pos(armWorld.reg, e);
         const auto& p = armView.get<sm::ecs::Projectile>(e);
         if (p.spellId != armId) return fail("armageddon spawned wrong spell id");
         if (p.kind != sm::ecs::Projectile::Bolt
@@ -1030,12 +1035,12 @@ int main() {
         sm::store_attach(selfWorld, selfWorldStore_.get());
         auto selfPlayer = selfWorld.create();
         sm::test::give_slot(selfWorld.reg, selfPlayer);
-        selfWorld.reg.emplace<sm::ecs::Position>(selfPlayer, 0.0f, 0.0f, 0.0f);
+        sm::test::give_pos(selfWorld.reg, selfPlayer, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(selfWorld.reg, selfPlayer, sm::ecs::Pools{100, 100});
         selfWorld.reg.emplace<sm::ecs::SubworldTag>(selfPlayer);
         sm::test::make_avatar(selfWorld.reg, selfPlayer);
         auto selfBlast = selfWorld.create();
-        selfWorld.reg.emplace<sm::ecs::Position>(selfBlast, 0.0f, 0.0f, 0.0f);
+        sm::test::give_pos(selfWorld.reg, selfBlast, 0.0f, 0.0f, 0.0f);
         selfWorld.reg.emplace<sm::ecs::Projectile>(selfBlast,
             0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10, 48.0f,
             0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
@@ -1064,12 +1069,12 @@ int main() {
         sm::store_attach(shieldWorld, shieldWorldStore_.get());
         auto shieldPlayer = shieldWorld.create();
         sm::test::give_slot(shieldWorld.reg, shieldPlayer);
-        shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f, 0.0f);
+        sm::test::give_pos(shieldWorld.reg, shieldPlayer, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(shieldWorld.reg, shieldPlayer, sm::ecs::Pools{100, 100});
         shieldWorld.reg.emplace<sm::ecs::SubworldTag>(shieldPlayer);
         sm::test::make_avatar(shieldWorld.reg, shieldPlayer);
         auto shieldBolt = shieldWorld.create();
-        shieldWorld.reg.emplace<sm::ecs::Position>(shieldBolt, 0.0f, 0.0f, 0.0f);
+        sm::test::give_pos(shieldWorld.reg, shieldBolt, 0.0f, 0.0f, 0.0f);
         shieldWorld.reg.emplace<sm::ecs::Projectile>(shieldBolt,
             0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 10, 0.0f,
             0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
@@ -1095,12 +1100,12 @@ int main() {
         sm::store_attach(npcWorld, npcWorldStore_.get());
         auto npcCaster = npcWorld.create();
         sm::test::give_slot(npcWorld.reg, npcCaster);
-        npcWorld.reg.emplace<sm::ecs::Position>(npcCaster, 0.0f, 0.0f, 0.0f);
+        sm::test::give_pos(npcWorld.reg, npcCaster, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(npcWorld.reg, npcCaster, sm::ecs::Pools{100, 100});
         npcWorld.reg.emplace<sm::ecs::SubworldTag>(npcCaster);
         sm::test::give_kind(npcWorld.reg, npcCaster, sm::ecs::NPCKind{2, 2});
         auto npcBlast = npcWorld.create();
-        npcWorld.reg.emplace<sm::ecs::Position>(npcBlast, 0.0f, 0.0f, 0.0f);
+        sm::test::give_pos(npcWorld.reg, npcBlast, 0.0f, 0.0f, 0.0f);
         npcWorld.reg.emplace<sm::ecs::Projectile>(npcBlast,
             0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10, 48.0f,
             0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
@@ -1163,8 +1168,7 @@ int main() {
                                     0.0f, 0.0f, 0.0f, 0.0f, 1.5f});
             auto sweepTarget = sweepWorld.create();
             sm::test::give_slot(sweepWorld.reg, sweepTarget);
-            sweepWorld.reg.emplace<sm::ecs::Position>(
-                sweepTarget, range, 0.0f, 0.0f);
+            sm::test::give_pos(sweepWorld.reg, sweepTarget, range, 0.0f, 0.0f);
             sm::test::give_pools(sweepWorld.reg, sweepTarget, sm::ecs::Pools{100, 100});
             sweepWorld.reg.emplace<sm::ecs::SubworldTag>(sweepTarget);
             sm::test::give_ai(
@@ -1212,7 +1216,7 @@ int main() {
         sm::store_attach(capWorld, capStore_.get());
         sm::sub::SubObjects& capArena = sm::test::arena_of(capWorld.reg);
         int capFilled = 0;
-        while (capArena.alloc() >= 0) ++capFilled;
+        while (capArena.alloc(sm::ecs::Position{}) >= 0) ++capFilled;
         CHECK(capFilled == int(sm::kMaxSubObjects),
               "арена набивается ровно до СВОЕГО капа (kMaxSubObjects), не дальше");
 

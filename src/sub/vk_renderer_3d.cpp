@@ -1327,14 +1327,17 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         // Exclude the player body: first-person, the camera sits at it, so a
         // possessed body must not be drawn over the lens. The hero husk carries
         // no sprite bit and never matched anyway.
+        // ЧИСТО СЛОТОВЫЙ проход (ломоть 5): спрайт, позиция и аватар —
+        // колонки и ссылка арены, сущность биллборду не нужна вовсе.
         SubObjects* sprObjs = objects_find(ecs->reg);
-        auto view = ecs->reg.view<ecs::Position, ecs::ObjectSlot>();
-        for (auto e : view) {
-            if (sprObjs == nullptr) break;
-            const std::size_t sprSlot =
-                std::size_t(view.get<ecs::ObjectSlot>(e).slot);
-            if ((sprObjs->flags[sprSlot] & kObjHasSprite) == 0u) continue;
-            if (is_avatar(ecs->reg, e)) continue;
+        for (int s = 0; sprObjs != nullptr && s < int(kMaxSubObjects); ++s) {
+            const std::size_t sprSlot = std::size_t(s);
+            const std::uint16_t f = sprObjs->flags[sprSlot];
+            if ((f & kObjAlive) == 0u) continue;
+            if ((f & kObjHasSprite) == 0u) continue;
+            if (sprObjs->avatarId != 0u
+                && std::uint16_t(s) == sprObjs->avatarSlot
+                && sprObjs->id[sprSlot] == sprObjs->avatarId) continue;
             if (bodies.size() >= std::size_t(kMaxSubObjects)) break;
             const auto& spr = sprObjs->sprite[sprSlot];
             const SpriteDef& look = sprite_row(SpriteId(spr.spriteRow));
@@ -1344,7 +1347,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             // card, an engine sprite). Nobody draws it here.
             if (!drawn && look.archetype == kNoBody) continue;
 
-            const auto& pos = view.get<ecs::Position>(e);
+            const ecs::Position& pos = sprObjs->pos[sprSlot];
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
             gpu::BbInstance inst{};
@@ -1374,9 +1377,10 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                 const auto asp = creature_arch_aspect(look.archetype);
                 inst.halfW = size * asp.w * 0.5f;
                 inst.height = size * asp.h;
-                // Entity id for stable per-instance variation — iteration order
-                // in EnTT views is not guaranteed stable across frames.
-                const std::uint32_t eid = entt::to_integral(e);
+                // ID рождения арены — стабильное зерно вариации: оно и есть
+                // идентичность тела, слот переживает переиспользование с
+                // НОВЫМ id (прежде тут были биты сущности).
+                const std::uint32_t eid = sprObjs->id[sprSlot];
                 inst.seed = gpu::bb_seed_bits(float(spr.atlasId) * 2.17f
                                               + float(eid & 63u) * 0.5f);
                 inst.tint = gpu::bb_pack_tint(spr.r, spr.g, spr.b);
@@ -4006,14 +4010,15 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
 
     SubObjects* objs = objects_find(ecs->reg);
     if (objs == nullptr) return;
-    auto view = ecs->reg.view<ecs::Position, ecs::ObjectSlot,
-                               ecs::SubworldTag>();
-    for (auto e : view) {
-        const std::size_t slot =
-            std::size_t(view.get<ecs::ObjectSlot>(e).slot);
-        if ((objs->flags[slot] & kObjHasLight) == 0u) continue;
-        if (object_flag(ecs->reg, e, kObjDead)) continue;
-        const auto& pos = view.get<ecs::Position>(e);
+    // ЧИСТО СЛОТОВЫЙ проход (ломоть 5): свет, позиция, роль снаряда и
+    // аватар — биты, колонки и ссылка арены; сущность полю не нужна.
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        const std::size_t slot = std::size_t(s);
+        const std::uint16_t f = objs->flags[slot];
+        if ((f & kObjAlive) == 0u) continue;
+        if ((f & kObjHasLight) == 0u) continue;
+        if ((f & kObjDead) != 0u) continue;
+        const ecs::Position& pos = objs->pos[slot];
         const auto& le  = objs->light[slot];
         float wx = 0.0f, wz = 0.0f;
         tile_to_world(pos.x, pos.y, wx, wz);
@@ -4023,9 +4028,9 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
         // player and projectiles (light that must track every frame); the
         // field owns every other emitter at any range. No boundary, no pop,
         // no double counting by construction.
-        if (is_avatar(ecs->reg, e) || is_projectile(ecs->reg, e)) {
-            continue;
-        }
+        if ((f & kObjProjectile) != 0u) continue;
+        if (objs->avatarId != 0u && std::uint16_t(s) == objs->avatarSlot
+            && objs->id[slot] == objs->avatarId) continue;
         const int cx0 = std::max(
             0, int((wx - le.radius) / cellM + float(kLightFieldDim) * 0.5f));
         const int cx1 = std::min(
@@ -4173,11 +4178,9 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     std::memcpy(buf->lightMvpFar, lightMvpFar_.m, sizeof(buf->lightMvpFar));
     std::uint32_t n = 0;
     if (ecs != nullptr && uploaded_) {
-        // SubworldTag scopes to the live scene; the player entity carries it too,
-        // so its lantern is gathered through this very sweep with no special-case.
+        // ЧИСТО СЛОТОВЫЙ проход (ломоть 5): фонарь игрока — такой же живой
+        // слот арены, его собирает тот же свип без спецслучая.
         SubObjects* objs = objects_find(ecs->reg);
-        auto view = ecs->reg.view<ecs::Position, ecs::ObjectSlot,
-                                   ecs::SubworldTag>();
         // Gather EVERY candidate first (each is one GpuLight built exactly as
         // before), with NO upper bound while collecting, then cull to the SSBO
         // budget by nearest-to-camera (cull_nearest_lights, a pure Vulkan-free
@@ -4190,13 +4193,13 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
         // the first frame that hits its high-water mark.
         static thread_local std::vector<GpuLight> cands;
         cands.clear();
-        for (auto e : view) {
-            if (objs == nullptr) break;
-            const std::size_t slot =
-                std::size_t(view.get<ecs::ObjectSlot>(e).slot);
-            if ((objs->flags[slot] & kObjHasLight) == 0u) continue;
-            if (object_flag(ecs->reg, e, kObjDead)) continue;
-            const auto& pos = view.get<ecs::Position>(e);
+        for (int s = 0; objs != nullptr && s < int(kMaxSubObjects); ++s) {
+            const std::size_t slot = std::size_t(s);
+            const std::uint16_t f = objs->flags[slot];
+            if ((f & kObjAlive) == 0u) continue;
+            if ((f & kObjHasLight) == 0u) continue;
+            if ((f & kObjDead) != 0u) continue;
+            const ecs::Position& pos = objs->pos[slot];
             const auto& le  = objs->light[slot];
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
@@ -4206,7 +4209,10 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
             // LIGHT FIELD's (rebuild_light_field applies the inverse of this
             // same test — by nature, not by distance, so nothing is counted
             // twice and nothing pops at a boundary).
-            if (!is_avatar(ecs->reg, e) && !is_projectile(ecs->reg, e)) {
+            const bool isAvatarSlot = objs->avatarId != 0u
+                && std::uint16_t(s) == objs->avatarSlot
+                && objs->id[slot] == objs->avatarId;
+            if (!isAvatarSlot && (f & kObjProjectile) == 0u) {
                 continue;
             }
             GpuLight g{};

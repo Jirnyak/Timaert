@@ -64,9 +64,9 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     if (body_pools(reg, e) == nullptr) return false;
     if (object_flag(reg, e, kObjDead)) return false;
     if (is_projectile(reg, e)) return false;
-    if (!reg.any_of<ecs::SubworldTag>(e) && !is_avatar(reg, e)) {
-        return false;
-    }
+    // (Ветка «без SubworldTag, но аватар» снесена ломтём 5 как мёртвая:
+    // аватар носит SubworldTag с рождения — spawn_player_entity.)
+    if (!reg.any_of<ecs::SubworldTag>(e)) return false;
     // NO faction shield (owner design decision 2026-07-30): projectiles and
     // spells are faction-agnostic — they strike whoever stands in their path,
     // ally or enemy. Friendly fire is real; formations must respect their own
@@ -110,18 +110,18 @@ void for_each_spell_candidate(ecs::World& w,
             for (int i = 0; i < n; ++i) {
                 const entt::entity e = entt::entity(buf[std::size_t(i)]);
                 if (!w.reg.valid(e)) continue;
-                if (const auto* tp = w.reg.try_get<ecs::Position>(e)) {
+                if (const ecs::Position* tp = body_pos(w.reg, e)) {
                     fn(e, *tp);
                 }
             }
             return;
         }
     }
-    auto targets = w.reg.view<ecs::Position>();
+    auto targets = w.reg.view<ecs::ObjectSlot>();
     for (auto e : targets) {
         if (body_pools(w.reg, e) == nullptr) continue;
         if (object_flag(w.reg, e, kObjDead)) continue;
-        fn(e, targets.get<ecs::Position>(e));
+        fn(e, *body_pos(w.reg, e));
     }
 }
 
@@ -356,7 +356,7 @@ void apply_spell_chain(ecs::World& w,
     int damage = p.damage * int(p.chainDecayPct) / 100;
     for (int i = 0; i < p.chainRemaining && hitCount < int(chainHits.size()); ++i) {
         if (!w.reg.valid(current)) break;
-        const auto* cp = w.reg.try_get<ecs::Position>(current);
+        const ecs::Position* cp = body_pos(w.reg, current);
         if (!cp) break;
 
         entt::entity best = entt::null;
@@ -408,12 +408,14 @@ void tick_spell_projectiles(ecs::World& w,
     // ЧИСЛА СНАРЯДА — КОЛОНКА АРЕНЫ, ИТЕРАЦИЯ — ПОКА ПО СУЩНОСТЯМ (ломоть 4,
     // тот же приём, что у `tick_body_visual_interp@src/sub/ability.h`):
     // компонента `ecs::Projectile` осталась ТРАНЗИТНЫМ ИНДЕКСОМ «кто здесь
-    // снаряд» и умирает в ломте 7 — тогда, когда `Position` станет колонкой и
-    // проход схлопнется в слотный цикл арены, как `tick_body_recovery`.
+    // снаряд» и умирает в ломте 7. Позиция — УЖЕ колонка арены (ломоть 5),
+    // но проход остаётся сущностным до ломтя 7: его жнец — reg.destroy по
+    // СУЩНОСТИ (слот освобождает on_destroy-хук), а жать по слоту при живой
+    // сущности значило бы протухшие ObjectSlot на чужой перерождённый слот.
     // Мутирует снаряд ровно одна величина (`lifeTimer`) и ровно эта дверь,
     // поэтому второго носителя правды нет: компонента после рождения не
     // читается никем.
-    auto view = w.reg.view<ecs::Position, ecs::Projectile>();
+    auto view = w.reg.view<ecs::Projectile>();
     std::array<entt::entity, kMaxSpellReaps> reaps{};
     int reapCount = 0;
 
@@ -424,7 +426,7 @@ void tick_spell_projectiles(ecs::World& w,
         // урона). Все пять дверей пишут колонку, см. `birth_projectile`.
         ecs::Projectile* col = projectile_of(w.reg, e);
         if (col == nullptr) continue;
-        auto& pos = view.get<ecs::Position>(e);
+        ecs::Position& pos = *body_pos(w.reg, e);
         auto& p = *col;
 
         p.lifeTimer -= dt;
@@ -555,7 +557,7 @@ void tick_spell_projectiles(ecs::World& w,
         const bool birthTick = p.lifeTimer + dt >= p.maxLifeTimer - 1e-6f;
         const entt::entity owner = entt::entity(p.ownerId);
         if (birthTick && w.reg.valid(owner)) {
-            if (const auto* op = w.reg.try_get<ecs::Position>(owner)) {
+            if (const ecs::Position* op = body_pos(w.reg, owner)) {
                 // ONLY if this projectile really was born at THIS owner's
                 // muzzle. Not every projectile is: armageddon scatters its
                 // meteors up to 160 units from the caster while still stamping

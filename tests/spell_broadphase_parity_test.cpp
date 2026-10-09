@@ -40,7 +40,7 @@ constexpr int kBodyHp = 100;
 
 entt::entity add_body(entt::registry& reg, float x, float y, float z) {
     const auto e = reg.create();
-    reg.emplace<Position>(e, x, y, z);
+    sm::test::give_pos(reg, e, x, y, z);   // место — колонка арены (ломоть 5)
     sm::test::give_pools(reg, e, Pools{kBodyHp, kBodyHp});
     reg.emplace<SubworldTag>(e);
     return e;
@@ -92,7 +92,7 @@ void build_scene(entt::registry& reg, int scenario) {
 
 std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
     std::vector<entt::entity> v;
-    auto view = reg.view<Position, SubworldTag>();
+    auto view = reg.view<sm::ecs::ObjectSlot, SubworldTag>();
     for (auto e : view) {
         if (sm::sub::body_pools(reg, e) == nullptr) continue;
         v.push_back(e);
@@ -115,10 +115,10 @@ struct GridBroadPhase {
     void build(entt::registry& reg) {
         units->clear();
         ents.clear();
-        auto view = reg.view<Position, SubworldTag>();
+        auto view = reg.view<sm::ecs::ObjectSlot, SubworldTag>();
         for (auto e : view) {
             if (sm::sub::body_pools(reg, e) == nullptr) continue;
-            const auto& p = view.get<Position>(e);
+            const Position& p = *sm::sub::body_pos(reg, e);
             sm::sub::BodyDesc d{};
             d.x = p.x; d.y = p.y; d.z = p.z;
             d.radius = sm::sub::body_radius(reg, e);
@@ -185,7 +185,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     case 0: {
         const std::uint32_t owner =
             std::uint32_t(entt::to_integral(bodies[0]));
-        reg.emplace<Position>(pe, 98.5f, 100.0f, 1.0f);
+        sm::test::give_pos(reg, pe, 98.5f, 100.0f, 1.0f);
         reg.emplace<Projectile>(pe,
             400.0f, 0.0f, 0.0f,               // vx, vy, vz
             1.5f,                             // radius
@@ -201,7 +201,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         break;
     }
     case 1:
-        reg.emplace<Position>(pe, 500.0f, 500.0f, 1.0f);
+        sm::test::give_pos(reg, pe, 500.0f, 500.0f, 1.0f);
         reg.emplace<Projectile>(pe,
             0.0f, 0.0f, 0.0f, 1.5f,
             0.005f, 1.0f,                     // expires on the first tick
@@ -218,8 +218,8 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         // midpoint, origin Z therefore 1.0 (see apply_spell_beam).
         const float len3 = std::sqrt(10.0f * 10.0f + 2.0f * 2.0f);
         const float nx = 10.0f / len3, nz = 2.0f / len3;
-        reg.emplace<Position>(pe, 600.0f + nx * 20.0f, 600.0f,
-                              1.0f + nz * 20.0f);
+        sm::test::give_pos(reg, pe, 600.0f + nx * 20.0f, 600.0f,
+                           1.0f + nz * 20.0f);
         reg.emplace<Projectile>(pe,
             10.0f, 0.0f, 2.0f, 1.2f,
             0.005f, 1.0f,
@@ -233,7 +233,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         break;
     }
     case 3:
-        reg.emplace<Position>(pe, 800.0f, 800.0f, 1.0f);
+        sm::test::give_pos(reg, pe, 800.0f, 800.0f, 1.0f);
         reg.emplace<Projectile>(pe,
             400.0f, 0.0f, 0.0f, 1.5f,
             1.0f, 1.0f,

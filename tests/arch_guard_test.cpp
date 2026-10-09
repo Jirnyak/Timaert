@@ -735,7 +735,8 @@ void test_detectors_actually_see() {
     CHECK(!line_carries_entt("#include \"sub/possess.h\""),
           "включение без entt кодом не считается");
     // Слепое пятно, купленное прятавшимся файлом: реестр через ЗАВИСИМОЕ имя.
-    CHECK(line_carries_entt("    auto v = reg.template view<ecs::Position>();"),
+    CHECK(line_carries_entt(
+              "    auto v = reg.template view<ecs::Projectile>();"),
           "реестр через зависимое имя (.template) опознан как код");
     CHECK(!line_carries_entt("template <class C> inline C* state_of(C& c) {"),
           "объявление шаблона без вызова члена кодом entt не считается");

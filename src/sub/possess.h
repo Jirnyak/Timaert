@@ -67,7 +67,11 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
                            std::uint32_t* playerFlagBits) {
     auto& reg = w.reg;
     if (target == entt::null || !reg.valid(target)) return false;
-    if (!reg.all_of<ecs::Position>(target)) return false; // must be a real body
+    // «Настоящее тело» — у которого есть БАРЫ (ломоть 5): прежний гейт
+    // all_of<Position> этого не проверял никогда — позицию несут и пламя
+    // пропа, и снаряд; переносить его на kObjAlive значило бы переписать
+    // ту же ложь на новый носитель.
+    if (body_pools(reg, target) == nullptr) return false;
     const entt::entity cur = current_player_body(w);
     if (cur == target) return false;                      // already inhabiting it
 

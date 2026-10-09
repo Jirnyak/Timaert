@@ -20,7 +20,7 @@ using namespace sm;
 static entt::entity make_enemy(entt::registry& reg, float x, float y,
                                float z = 0.0f) {
     entt::entity e = reg.create();
-    reg.emplace<ecs::Position>(e, x, y, z);
+    sm::test::give_pos(reg, e, x, y, z);   // место — колонка арены (ломоть 5)
     sm::test::give_pools(reg, e, ecs::Pools{10, 10});
     sm::test::give_kind(reg, e,
         ecs::NPCKind{std::uint16_t(4), std::uint16_t(0)}); // any kind

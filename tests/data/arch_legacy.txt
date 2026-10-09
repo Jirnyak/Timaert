@@ -163,7 +163,6 @@ entt	src/app/smoke.h	entt
 entt	src/content/spells/effects.cpp	entt
 entt	src/content/spells/spell_book.cpp	entt
 entt	src/ecs/world.h	entt
-entt	src/sub/ability.h	entt
 entt	src/sub/ai.cpp	entt
 entt	src/sub/body.h	entt
 entt	src/sub/damage.cpp	entt
@@ -177,7 +176,6 @@ entt	src/sub/spawn.h	entt
 entt	src/sub/spell_effects.cpp	entt
 entt	src/sub/targeting.cpp	entt
 entt	src/sub/targeting.h	entt
-entt	src/sub/vk_renderer_3d.cpp	entt
 subcap	src/sub/spawn.cpp	kUnifiedCap
 minus	src/macro/anketa.cpp	s.count -= 1;
 minus	src/macro/anketa.h	ld.exp -= ld.expToNext;

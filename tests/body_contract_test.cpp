@@ -93,7 +93,9 @@ void test_every_squad_body_is_a_whole_body() {
         // «есть» = интерполятор заведён, скорость > 0 (фабрика пишет
         // kBodyVisualCatchUp).
         const auto* vis = sm::sub::body_visual(reg, e);
-        if (!reg.all_of<ecs::Position>(e)
+        // Позиция — колонка арены (ломоть 5): «тело имеет место» = у тела
+        // есть слот, дверь body_pos отвечает не-нулём.
+        if (sm::sub::body_pos(reg, e) == nullptr
             || vis == nullptr || !(vis->speed > 0.0f)
             || !sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
             ++missingTag;
@@ -218,7 +220,8 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     CHECK_OR_RETURN(body != entt::null && reg.valid(body),
                     "a body-shaped macro entity can be embodied");
 
-    CHECK((reg.all_of<ecs::Position, ecs::SubworldTag>(body)
+    CHECK((reg.all_of<ecs::SubworldTag>(body)
+           && sm::sub::body_pos(reg, body) != nullptr
            && sm::sub::body_sprite(reg, body) != nullptr
            && sm::sub::body_sheet(reg, body) != nullptr
            && sm::sub::body_pools(reg, body) != nullptr
@@ -631,19 +634,23 @@ void test_a_reused_slot_is_born_clean() {
     using namespace sm;
     ecs::World world{};
     sub::SubObjects& arena = sm::test::arena_of(world.reg);
-    const int a = arena.alloc();
+    const int a = arena.alloc(ecs::Position{5.0f, 6.0f, 7.0f});
     CHECK_OR_RETURN(a >= 0, "the arena lends a slot");
     arena.debt[std::size_t(a)] = ecs::MacroDebt{
         std::uint8_t(MacroStock::Population), 7, 1, 1, 1, -1, 0, 0};
     arena.origin[std::size_t(a)] = ecs::MacroOrigin{MacroHandle{3, 0}};
     arena.free(a);
     arena.cursor = a;   // форс переиспользования без 65к прокрутки
-    const int b = arena.alloc();
+    const int b = arena.alloc(ecs::Position{1.0f, 2.0f, 3.0f});
     CHECK_OR_RETURN(b == a, "the freed slot is re-issued");
     CHECK(arena.debt[std::size_t(b)].amount == 0,
           "a reused slot owes nothing: the receipt died with the tenant");
     CHECK(arena.origin[std::size_t(b)].macro.slot == kMacroNoSlot,
           "a reused slot mirrors nobody: the backlink died with the tenant");
+    CHECK(arena.pos[std::size_t(b)].x == 1.0f
+              && arena.pos[std::size_t(b)].y == 2.0f
+              && arena.pos[std::size_t(b)].z == 3.0f,
+          "a reused slot stands where ITS birth put it, not the tenant's");
 }
 
 int main() {

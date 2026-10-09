@@ -111,15 +111,14 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
         c.friendlyFire, false, false, c.dmgType, c.critical};
     auto e = w.create();
     // Снаряд — жилец арены (ломоть 4): нет слота — нет снаряда, и каст
-    // остаётся оплаченным, как промах.
-    if (!sub::birth_projectile(w.reg, e, bolt)) {
+    // остаётся оплаченным, как промах. Позиция — аргумент рождения (ломоть 5).
+    const ecs::Position boltAt{c.px + c.nx * spawnOffset,
+                               c.py + c.ny * spawnOffset,
+                               c.pz + c.nz * spawnOffset};
+    if (!sub::birth_projectile(w.reg, e, bolt, boltAt)) {
         w.reg.destroy(e);
         return;
     }
-    w.reg.emplace<ecs::Position>(e,
-        c.px + c.nx * spawnOffset,
-        c.py + c.ny * spawnOffset,
-        c.pz + c.nz * spawnOffset);
     w.reg.emplace<ecs::Projectile>(e, bolt);   // транзит: читатели в К4-К7
     sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
         r, g, b, 1.0f});
@@ -169,14 +168,13 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
         c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Beam,
         c.friendlyFire, true, true, c.dmgType, c.critical};
     auto e = w.create();
-    if (!sub::birth_projectile(w.reg, e, beam)) {
+    const ecs::Position beamAt{c.px + c.nx * (kBeamLen * 0.5f),
+                               c.py + c.ny * (kBeamLen * 0.5f),
+                               c.pz + c.nz * (kBeamLen * 0.5f)};
+    if (!sub::birth_projectile(w.reg, e, beam, beamAt)) {
         w.reg.destroy(e);
         return;
     }
-    w.reg.emplace<ecs::Position>(e,
-        c.px + c.nx * (kBeamLen * 0.5f),
-        c.py + c.ny * (kBeamLen * 0.5f),
-        c.pz + c.nz * (kBeamLen * 0.5f));
     w.reg.emplace<ecs::Projectile>(e, beam);   // транзит: читатели в К4-К7
     sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
         std::uint8_t(0xAA), std::uint8_t(0xDD), std::uint8_t(0xFF),
@@ -209,14 +207,13 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
         auto e = w.create();
         // Кап арены обрывает ДОЖДЬ, а не отдельный метеор: освобождений
         // внутри цикла не бывает, значит следующий alloc отказал бы так же.
-        if (!sub::birth_projectile(w.reg, e, meteor)) {
+        const ecs::Position meteorAt{c.px + std::cos(angle) * dist,
+                                     c.py + std::sin(angle) * dist,
+                                     c.pz};
+        if (!sub::birth_projectile(w.reg, e, meteor, meteorAt)) {
             w.reg.destroy(e);
             break;
         }
-        w.reg.emplace<ecs::Position>(e,
-            c.px + std::cos(angle) * dist,
-            c.py + std::sin(angle) * dist,
-            c.pz);
         w.reg.emplace<ecs::Projectile>(e, meteor);  // транзит: К4-К7
         sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
             std::uint8_t(0xFF), std::uint8_t(0x55), std::uint8_t(0x11),

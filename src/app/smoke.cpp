@@ -35,10 +35,19 @@
 // спавна, обязано получить слот, как выдала бы дверь.
 static void smoke_give_slot(entt::registry& reg, entt::entity e) {
     if (sm::sub::SubObjects* objs = sm::sub::objects_find(reg)) {
-        const int slot = objs->alloc();
+        const int slot = objs->alloc(sm::ecs::Position{});
         if (slot >= 0) {
             reg.emplace<sm::ecs::ObjectSlot>(e, std::uint16_t(slot));
         }
+    }
+}
+// Позиция телу-фикстуре (ломоть 5) — как записало бы рождение: слот
+// рожается по надобности, колонка пишется дверью body_pos.
+static void smoke_give_pos(entt::registry& reg, entt::entity e,
+                           float x, float y, float z) {
+    if (!reg.all_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
+    if (sm::ecs::Position* p = sm::sub::body_pos(reg, e)) {
+        *p = sm::ecs::Position{x, y, z};
     }
 }
 // Бары/лист/снарядные телу-фикстуре — как записала бы дверь рождения
@@ -208,7 +217,7 @@ static void smoke_stage_possession_cast(App& app, entt::entity target) {
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     {
-        auto cv = reg.view<sm::ecs::Position, sm::ecs::SubworldTag>();
+        auto cv = reg.view<sm::ecs::ObjectSlot, sm::ecs::SubworldTag>();
         for (auto e : cv) {
             if (e == target) continue;
             if (sm::sub::body_kind(reg, e) == nullptr) continue;
@@ -216,14 +225,14 @@ static void smoke_stage_possession_cast(App& app, entt::entity target) {
             if (sm::sub::is_avatar(reg, e)
                 || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
                 continue;
-            auto& op = cv.get<sm::ecs::Position>(e);
+            sm::ecs::Position& op = *sm::sub::body_pos(reg, e);
             op.x = px - fx * 12.0f;
             op.y = py - fy * 12.0f;
         }
     }
     const float tx = px + fx * 6.0f;
     const float ty = py + fy * 6.0f;
-    auto& pos = reg.get<sm::ecs::Position>(target);
+    sm::ecs::Position& pos = *sm::sub::body_pos(reg, target);
     pos.x = tx; pos.y = ty;
     // Feet on the GROUND under the staged spot: the teleport used to move
     // XY only, and the stale z put the target outside the now-3D aim cone
@@ -752,8 +761,9 @@ bool run_subworld_walk_smoke(App& app) {
         app.subworld.debug_player_vx() * app.subworld.debug_player_vx()
         + app.subworld.debug_player_vy() * app.subworld.debug_player_vy());
     int near = 0;
-    for (auto e : app.ecs.reg.view<sm::ecs::Position, sm::ecs::SubworldTag>()) {
-        const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
+    for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot,
+                                   sm::ecs::SubworldTag>()) {
+        const sm::ecs::Position& p = *sm::sub::body_pos(app.ecs.reg, e);
         const float ddx = p.x - app.subworld.player_x();
         const float ddy = p.y - app.subworld.player_y();
         if (ddx * ddx + ddy * ddy < 400.0f) ++near;
@@ -3439,11 +3449,11 @@ bool run_prologue_road_smoke(App& app) {
     // springs — and it is off the bed, in the trees.
     int ambushers = 0;
     float nearestAmbush2 = 1e18f;
-    for (auto e : app.ecs.reg.view<sm::ecs::Position,
+    for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot,
                                    sm::ecs::SubworldTag>()) {
         if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
         if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
-        const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
+        const sm::ecs::Position& p = *sm::sub::body_pos(app.ecs.reg, e);
         const float dx = p.x - app.subworld.player_x();
         const float dy = p.y - app.subworld.player_y();
         ++ambushers;
@@ -3476,11 +3486,11 @@ bool run_prologue_road_smoke(App& app) {
     // from a number in a table.
     advance_sim_seconds(app, 4.0f, false);
     float closed2 = 1e18f;
-    for (auto e : app.ecs.reg.view<sm::ecs::Position,
+    for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot,
                                    sm::ecs::SubworldTag>()) {
         if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
         if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
-        const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
+        const sm::ecs::Position& p = *sm::sub::body_pos(app.ecs.reg, e);
         const float dx = p.x - app.subworld.player_x();
         const float dy = p.y - app.subworld.player_y();
         closed2 = std::min(closed2, dx * dx + dy * dy);
@@ -4098,8 +4108,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     const entt::entity hostile = reg.create();
-    smoke_give_slot(reg, hostile);
-    reg.emplace<sm::ecs::Position>(hostile,
+    smoke_give_pos(reg, hostile,
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     smoke_give_visual(reg, hostile, sm::ecs::VisualPos{std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f});
     sm::sub::set_body_kind(
@@ -4120,8 +4129,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     // прежний фильтр «без NpcCharacter» отделял куклу от спрайта и умер
     // вместе с компонентой лица (кусок 1).
     int spriteOnlyVisible = 0;
-    auto spriteView = reg.view<sm::ecs::Position, sm::ecs::ObjectSlot,
-                               sm::ecs::SubworldTag>();
+    auto spriteView = reg.view<sm::ecs::ObjectSlot, sm::ecs::SubworldTag>();
     for (auto e : spriteView) {
         if (!sm::sub::object_flag(reg, e, sm::sub::kObjHasSprite)) continue;
         if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)) continue;
@@ -4217,8 +4225,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     // shot.
     const float pz = app.subworld.player_z();
     const entt::entity hostile = reg.create();
-    smoke_give_slot(reg, hostile);
-    reg.emplace<sm::ecs::Position>(hostile,
+    smoke_give_pos(reg, hostile,
         std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz);
     smoke_give_visual(reg, hostile, sm::ecs::VisualPos{std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz});
     // "bandits" ASKED OF THE REGISTRY, not the literal 3 this used to carry.
@@ -4444,8 +4451,7 @@ bool run_turn_based_cycle_smoke(App& app) {
             float(sm::sub::kFullSize - 2));
         const float armZ = app.subworld.ground_height_at(armX, py);
         const entt::entity target = reg.create();
-        smoke_give_slot(reg, target);
-        reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
+        smoke_give_pos(reg, target, armX, py, armZ);
         smoke_give_visual(reg, target, sm::ecs::VisualPos{armX, py, armZ});
         sm::sub::set_body_kind(
             reg, target,
@@ -4648,8 +4654,7 @@ bool run_subworld_player_melee_smoke(App& app) {
         float(sm::sub::kFullSize - 2));
     const float armZ = app.subworld.ground_height_at(armX, py);
     const entt::entity target = reg.create();
-    smoke_give_slot(reg, target);
-    reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
+    smoke_give_pos(reg, target, armX, py, armZ);
     smoke_give_visual(reg, target, sm::ecs::VisualPos{armX, py, armZ});
     sm::sub::set_body_kind(
         reg, target,
@@ -4858,8 +4863,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     const float pz = app.subworld.player_z();
     const float tx = std::min(px + 8.0f, float(sm::sub::kFullSize - 2));
     const entt::entity target = reg.create();
-    smoke_give_slot(reg, target);
-    reg.emplace<sm::ecs::Position>(target, tx, py, pz);
+    smoke_give_pos(reg, target, tx, py, pz);
     smoke_give_visual(reg, target, sm::ecs::VisualPos{tx, py, pz});
     sm::sub::set_body_kind(
         reg, target,
@@ -4978,8 +4982,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // a slope, which is most of the time on most worlds.
     const float pz = app.subworld.ground_height_at(tx, py);
     const entt::entity target = reg.create();
-    smoke_give_slot(reg, target);
-    reg.emplace<sm::ecs::Position>(target, tx, py, pz);
+    smoke_give_pos(reg, target, tx, py, pz);
     smoke_give_visual(reg, target, sm::ecs::VisualPos{tx, py, pz});
     // ASK THE REGISTRY for the empire's index instead of spelling a literal.
     // This used to read `0`, from the days of the per-vocabulary faction
@@ -5007,14 +5010,14 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         0.8f});
 
     const int beforeRep = sm::player_reputation(&app.gs, "empire");
-    const float neutralX = reg.get<sm::ecs::Position>(target).x;
-    const float neutralY = reg.get<sm::ecs::Position>(target).y;
+    const float neutralX = sm::sub::body_pos(reg, target)->x;
+    const float neutralY = sm::sub::body_pos(reg, target)->y;
     RuntimeFrameStats neutralFrame = advance_sim_seconds(app, 0.05f, false);
     if (!neutralFrame.ticked || !neutralFrame.subworldActive) {
         smoke_fail(app, "subworld_reputation_hit neutral tick inactive");
         return false;
     }
-    const auto& neutralPos = reg.get<sm::ecs::Position>(target);
+    const sm::ecs::Position& neutralPos = *sm::sub::body_pos(reg, target);
     const float neutralMove = std::sqrt(
         (neutralPos.x - neutralX) * (neutralPos.x - neutralX)
         + (neutralPos.y - neutralY) * (neutralPos.y - neutralY));
@@ -5040,7 +5043,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // about the reputation law, not about projectile geometry — cast_spell
     // proves a real bolt's flight, so this one should not be able to fail for
     // aiming reasons.
-    reg.emplace<sm::ecs::Position>(friendlyProjectile, tx, py, pz);
+    smoke_give_pos(reg, friendlyProjectile, tx, py, pz);
     // ownerId is the PLAYER'S entity, not a placeholder zero: it is what makes
     // this the player's bolt, and only a player-owned hit reaches the damage-log
     // callback that charges reputation (spell_effects.cpp apply_spell_damage).
@@ -5757,12 +5760,13 @@ bool run_console_smoke(App& app) {
     // ── Player is a full combat ECS entity (Inc 4b) ──────────────────
     // Entering a subworld materialises exactly ONE AvatarTag entity — the
     // movable "player flag" / subworld sim-centre (owner's §8 vision). In 4b it
-    // is a full combat actor: AvatarTag + Position + Health + Combat +
-    // SubworldTag, so hostiles target it through the SAME universal melee /
-    // projectile paths as any NPC. Its Position tracks the player scalars and
-    // its Pools mirror the squad store (landing 4). It is still NOT an
-    // NPC: no NPCKind / SubworldAi / PlayerSoldierTag / NpcInventory, so no AI,
-    // loot, XP, or squad-removal path can ever fire on it.
+    // is a full combat actor: AvatarTag + ObjectSlot (its pos / Health / Combat
+    // columns of the object arena) + SubworldTag, so hostiles target it through
+    // the SAME universal melee / projectile paths as any NPC. Its pos column
+    // tracks the player scalars and its Pools mirror the squad store
+    // (landing 4). It is still NOT an NPC: no NPCKind / SubworldAi /
+    // PlayerSoldierTag / NpcInventory, so no AI, loot, XP, or squad-removal
+    // path can ever fire on it.
     {
         auto& reg = app.ecs.reg;
         int playerTags = 0;
@@ -5773,10 +5777,11 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "player_entity: expected exactly one AvatarTag entity");
             return false;
         }
-        const auto* ppos = reg.try_get<sm::ecs::Position>(pe);
+        const sm::ecs::Position* ppos = sm::sub::body_pos(reg, pe);
         if (!ppos) {
             restore();
-            smoke_fail(app, "player_entity: AvatarTag entity has no Position");
+            smoke_fail(app,
+                "player_entity: AvatarTag entity has no arena slot/pos");
             return false;
         }
         auto near_half = [](float a, float b) {
@@ -7175,8 +7180,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "exit_remap: the possession cast did not take");
                     break;
                 }
-                const float bx = reg.get<sm::ecs::Position>(body).x;
-                const float by = reg.get<sm::ecs::Position>(body).y;
+                const float bx = sm::sub::body_pos(reg, body)->x;
+                const float by = sm::sub::body_pos(reg, body)->y;
                 // Один кадр рантайма: скалярное зеркало след за флажком тянет
                 // тик движка (pull_player_entity_to_scalars) — как в игре.
                 sm::app::advance_sim_seconds(app, 0.016f, false);
@@ -7932,8 +7937,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     ? sm::souls_flock(app.gs, *app.macroStore, lm.slot) : 0;
                 const float qr = sm::sub::city_upper_radius(lmPop);
                 int watch = 0, inQuarter = 0;
-                auto gv = app.ecs.reg.view<sm::ecs::Position,
-                                           sm::ecs::ObjectSlot>();
+                auto gv = app.ecs.reg.view<sm::ecs::ObjectSlot>();
                 for (auto e : gv) {
                     const auto* dq = sm::sub::body_debt(app.ecs.reg, e);
                     if (dq == nullptr) continue;
@@ -7941,7 +7945,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     if (d.stock != std::uint8_t(sm::MacroStock::Population))
                         continue;
                     ++watch;
-                    const auto& p = gv.get<sm::ecs::Position>(e);
+                    const sm::ecs::Position& p =
+                        *sm::sub::body_pos(app.ecs.reg, e);
                     const float dx = p.x - keep->x, dy = p.y - keep->y;
                     if (dx * dx + dy * dy <= qr * qr) ++inQuarter;
                 }
@@ -9103,9 +9108,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const float spellTargetY = app.subworld.player_y();
             const float spellTargetZ = muzzleZ;
             const entt::entity spellTarget = app.ecs.reg.create();
-            smoke_give_slot(app.ecs.reg, spellTarget);
-            app.ecs.reg.emplace<sm::ecs::Position>(
-                spellTarget, spellTargetX, spellTargetY, spellTargetZ);
+            smoke_give_pos(app.ecs.reg, spellTarget,
+                           spellTargetX, spellTargetY, spellTargetZ);
             smoke_give_visual(app.ecs.reg, spellTarget, sm::ecs::VisualPos{spellTargetX, spellTargetY, spellTargetZ});
             // Ask the registry: the literal 3 predates the ONE faction registry
             // and now means `cults`, so this body called itself a Bandit while
@@ -9301,10 +9305,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (app.smoke.probeSettleFrames >= 0) {
                 if (app.smoke.probeEntity != entt::null
                     && app.ecs.reg.valid(app.smoke.probeEntity)
-                    && app.ecs.reg.all_of<sm::ecs::Position>(
+                    && app.ecs.reg.all_of<sm::ecs::ObjectSlot>(
                            app.smoke.probeEntity)) {
-                    auto& pp = app.ecs.reg.get<sm::ecs::Position>(
-                        app.smoke.probeEntity);
+                    sm::ecs::Position& pp = *sm::sub::body_pos(
+                        app.ecs.reg, app.smoke.probeEntity);
                     pp.x = app.smoke.probeX;
                     pp.y = app.smoke.probeY;
                 }
@@ -9361,21 +9365,21 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 if (dist > 15.0f) dist = 15.0f;
             }
             // Snapshot existing actor entities so we can identify the new one.
-            // Any non-player Sprite+Position body qualifies — a procedural
-            // creature (archetype != 0xFF) OR a drawn-art humanoid (archetype ==
+            // Any non-player sprite-bearing body with an arena slot qualifies
+            // (the slot IS its position now) — a procedural creature
+            // (archetype != 0xFF) OR a drawn-art humanoid (archetype ==
             // 0xFF), so the same probe can stage a wolf to prove the flat-sprite
             // creature light term OR a guard to prove its data-driven carried
             // torch (Inc 9). Widened from creature-only; wolves still match.
             auto is_probe_actor = [&](entt::entity e) {
-                if (!app.ecs.reg.all_of<sm::ecs::Position>(e)) return false;
+                if (!app.ecs.reg.all_of<sm::ecs::ObjectSlot>(e)) return false;
                 if (!sm::sub::object_flag(app.ecs.reg, e,
                                           sm::sub::kObjHasSprite))
                     return false;
                 return !sm::sub::is_avatar(app.ecs.reg, e);
             };
             std::vector<entt::entity> before;
-            for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot,
-                                           sm::ecs::Position>())
+            for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>())
                 if (is_probe_actor(e)) before.push_back(e);
             const std::uint32_t seed =
                 app.gs.worldSeed ^ 0x9E3779B9u ^ std::uint32_t(before.size());
@@ -9391,8 +9395,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             {
                 std::vector<entt::entity> beforeSorted = before;
                 std::sort(beforeSorted.begin(), beforeSorted.end());
-                for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot,
-                                               sm::ecs::Position>()) {
+                for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
                     if (!is_probe_actor(e)) continue;
                     if (!std::binary_search(beforeSorted.begin(),
                                             beforeSorted.end(), e)) {
@@ -9411,7 +9414,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const float yaw = app.subworld.cam_yaw();
             const float fx = app.subworld.player_x() + std::cos(yaw) * dist;
             const float fy = app.subworld.player_y() + std::sin(yaw) * dist;
-            auto& ppos = app.ecs.reg.get<sm::ecs::Position>(probeE);
+            sm::ecs::Position& ppos = *sm::sub::body_pos(app.ecs.reg, probeE);
             ppos.x = fx;
             ppos.y = fy;
             // Aim the camera down at the actor so it is ALWAYS framed regardless

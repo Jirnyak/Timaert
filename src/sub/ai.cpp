@@ -58,7 +58,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     // not by its own errands — excluded here so the two never write the same
     // intent in one step. The exclusion is the WHOLE integration: no new brain
     // kind, no branch inside Wander.
-    auto view = reg.view<ecs::Position>();
+    auto view = reg.view<ecs::ObjectSlot>();
     for (auto e : view) {
         // Мозг — колонка арены (кусок 3); тело без мозга (игрок, реквизит)
         // здесь не живёт. «Идёт домой» — бит: его ведёт помпа дня, не мозг.
@@ -85,7 +85,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
                 continue;
             }
         }
-        auto& p = view.get<ecs::Position>(e);
+        const ecs::Position& p = *body_pos(reg, e);
         auto& a = *aiCol;
         // Deterministic per-decision seed: entity bits, the DECISION COUNTER
         // (see SubworldAi.seq — position alone froze standing minds), and a
