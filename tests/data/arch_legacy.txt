@@ -9,6 +9,10 @@
 #   entt    — файл src с entt-КОДОМ (`entt::` или включение entt) — M-188
 #             ступень 1, вердикт владельца 2026-09-29: список только тает,
 #             ноль = момент выпила FetchContent (стена препроцессором).
+#   subcap  — файл src/sub с чтением МАКРО-капа (kUnifiedCap или включение
+#             core/caps.h) — шаг 0 M-150 (развод капов, 2026-10-09): субмир
+#             меряется своим kMaxSubObjects@src/sub/caps.h; законный остаток —
+#             скан живых слотов MacroStore в спавне, тает с каналом (M-171).
 #
 # СПИСОК УМЕЕТ ТОЛЬКО ТАЯТЬ. Новый сайт вне списка красит `check` (рост долга);
 # строка списка, которой в дереве больше нет, красит его же. Дописывать сюда
@@ -168,3 +172,4 @@ entt	src/sub/spell_effects.cpp	entt
 entt	src/sub/targeting.cpp	entt
 entt	src/sub/targeting.h	entt
 entt	src/sub/vk_renderer_3d.cpp	entt
+subcap	src/sub/spawn.cpp	kUnifiedCap

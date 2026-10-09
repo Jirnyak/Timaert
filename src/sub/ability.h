@@ -52,7 +52,7 @@ inline bool body_is_free(const ecs::Combat* gate) {
 // Мёртвые тела включены нарочно, как и прежде: слот жив, часы дотекают.
 inline void tick_body_recovery(SubObjects& objs, std::uint32_t steps) {
     if (steps == 0u) return;
-    for (int s = 0; s < int(kUnifiedCap); ++s) {
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
         const std::uint16_t f = objs.flags[std::size_t(s)];
         if ((f & kObjAlive) == 0u || (f & kObjHasCombat) == 0u) continue;
         ecs::Combat& c = objs.combat[std::size_t(s)];

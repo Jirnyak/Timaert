@@ -2152,7 +2152,7 @@ target_compile_definitions(world_fold_law_test
 # правки. Пинится то, чего не предъявляет никто: счёт проверок и само наличие
 # границы в вердикте.
 timaert_test(arch_guard_test
-    PIN "OK arch_guard_test .38 checks. .долг канала [0-9]+ · безадресных вердиктов [0-9]+ · файлов entt [0-9]+ — рост запрещён, чистота НЕ утверждается")
+    PIN "OK arch_guard_test .42 checks. .долг канала [0-9]+ · безадресных вердиктов [0-9]+ · файлов entt [0-9]+ — рост запрещён, чистота НЕ утверждается")
 target_compile_definitions(arch_guard_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

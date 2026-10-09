@@ -320,6 +320,52 @@ void collect_entt(std::vector<Site>& out) {
     }
 }
 
+// ── R6: КАП СУБМИРА РАЗВЕДЁН (шаг 0 M-150) ───────────────────────────────
+// После развода субмир меряется СВОИМ капом (`kMaxSubObjects@src/sub/caps.h`);
+// имя макро-капа `kUnifiedCap` или включение `core/caps.h` в `src/sub/` —
+// рецидив закрытого расхождения. Судится то, что видит компилятор:
+// комментарии срезаются (стена без стрижки ловит собственные некрологи —
+// замерено на FT_Spire). Законный остаток один: спавн читает ЖИВЫЕ СЛОТЫ
+// MacroStore — это МАКРО-население через канал-долг (уедет фреймом M-171),
+// и его строка тает вместе с каналом. Ключ — ФАЙЛ, как у R4: список тает
+// файлами.
+bool line_reads_macro_cap(const std::string& line) {
+    std::string code = line;
+    const std::size_t comment = code.find("//");
+    if (comment != std::string::npos) code.resize(comment);
+    constexpr std::string_view kName = "kUnifiedCap";
+    const std::size_t at = code.find(kName);
+    if (at != std::string::npos) {
+        const bool leftIdent = at > 0 && ident_char(code[at - 1]);
+        const std::size_t end = at + kName.size();
+        const bool rightIdent = end < code.size() && ident_char(code[end]);
+        if (!leftIdent && !rightIdent) return true;
+    }
+    return collapse(code).find("#include \"core/caps.h\"") != std::string::npos;
+}
+
+void collect_subcap(std::vector<Site>& out) {
+    const fs::path dir = fs::path(kRoot) / fs::path(kSubDir);
+    if (!fs::is_directory(dir)) return;
+    std::vector<fs::path> files;
+    for (const auto& e : fs::recursive_directory_iterator(dir)) {
+        if (!e.is_regular_file()) continue;
+        const std::string ext = e.path().extension().string();
+        if (ext == ".cpp" || ext == ".h") files.push_back(e.path());
+    }
+    std::sort(files.begin(), files.end());
+    for (const fs::path& p : files) {
+        const std::vector<std::string> lines = split_lines(read_file(p));
+        for (std::size_t n = 0; n < lines.size(); ++n) {
+            if (!line_reads_macro_cap(lines[n])) continue;
+            out.push_back({"subcap",
+                           fs::relative(p, fs::path(kRoot)).generic_string(),
+                           "kUnifiedCap", int(n) + 1});
+            break;
+        }
+    }
+}
+
 // ── R5: КАРКАС КАТАЛОГОВ ЗАКРЫТ ───────────────────────────────────────────
 // Чистая сверка двух множеств — на неё стоит негативный контроль ниже.
 struct DirDiff {
@@ -490,6 +536,9 @@ Boundary test_melting_rules() {
     const std::size_t verdictCount = sites.size() - channelCount;
     collect_entt(sites);
     const std::size_t enttCount = sites.size() - channelCount - verdictCount;
+    collect_subcap(sites);
+    const std::size_t subcapCount =
+        sites.size() - channelCount - verdictCount - enttCount;
 
     CHECK(channelCount > 0,
           "включения macro/ из src/sub ЕСТЬ — иначе судить нечего, и зелёный "
@@ -518,15 +567,15 @@ Boundary test_melting_rules() {
     const LegacyDiff diff = compare_legacy(sites, allowed, true);
     CHECK(diff.unlisted == 0,
           "архитектурный долг не вырос: новых включений macro/ в src/sub, "
-          "новых безадресных вердиктов в SKELETON.md и новых файлов с entt "
-          "(M-188) нет");
+          "новых безадресных вердиктов в SKELETON.md, новых файлов с entt "
+          "(M-188) и новых чтений макро-капа из src/sub (шаг 0 M-150) нет");
     CHECK(diff.stale == 0, "в белом списке нет строк, которых в дереве уже нет");
 
     std::printf(
         "arch_guard: канал %zu включений · безадресных вердиктов %zu · "
-        "файлов с entt %zu\n"
+        "файлов с entt %zu · макро-кап в sub %zu\n"
         "  строк списка %zu (может только таять)\n",
-        channelCount, verdictCount, enttCount, allowed.size());
+        channelCount, verdictCount, enttCount, subcapCount, allowed.size());
 
     return Boundary{channelCount, verdictCount, enttCount};
 }
@@ -563,6 +612,17 @@ void test_detectors_actually_see() {
                     d3);
     CHECK(d3.empty(),
           "предобъявление и вложенная структура контура не требуют");
+
+    // R6: детектор макро-капа видит КОД и молчит на прозе — иначе стена
+    // ловила бы собственные некрологи (грабля FT_Spire, замерено 2026-10-07).
+    CHECK(line_reads_macro_cap("    static std::uint32_t buf[kUnifiedCap];"),
+          "чтение макро-капа в коде субмира ловится");
+    CHECK(line_reads_macro_cap("#include \"core/caps.h\"  // кап"),
+          "включение core/caps.h ловится и с хвостовым комментарием");
+    CHECK(!line_reads_macro_cap("// kUnifiedCap@src/core/caps.h — некролог"),
+          "имя в комментарии — проза, не код: детектор молчит");
+    CHECK(!line_reads_macro_cap("std::array<float, kMaxSubObjects> x;"),
+          "своё имя субмира детектор не трогает");
 
     // R3: три законные формы адреса опознаются, а безадресное — нет.
     CHECK(has_address("дверь `cell_of@src/core/torus.h` — ПРАВДА"),

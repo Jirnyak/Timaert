@@ -3,7 +3,7 @@
 #include "ecs/components.h"
 #include "sub/base_generator.h"
 #include "sub/body.h"
-#include "core/caps.h"      // kUnifiedCap — THE unified population ceiling
+#include "sub/caps.h"       // kMaxSubObjects — the subworld scene ceiling
 #include "sub/record.h"     // object_flag — биты маски слота (ломоть 1б)
 #include "macro/store.h"
 
@@ -80,7 +80,7 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
 }
 
 // ── Broad phase ────────────────────────────────────────────────────────────
-// The candidate buffer IS the subworld ceiling (kUnifiedCap@src/core/caps.h,
+// The candidate buffer IS the subworld ceiling (kMaxSubObjects@src/sub/caps.h,
 // read directly — one number, no local copy): the grid can never hold more
 // bodies than exist, so overflow is impossible by construction and the -1 arm
 // below is reserved for a broad phase that KNOWS it is incomplete (a truncated
@@ -103,9 +103,9 @@ void for_each_spell_candidate(ecs::World& w,
     if (neighborsFn) {
         // Static: one 64 KiB buffer for the whole single-threaded spell tick,
         // touched only as far as it is filled.
-        static std::uint32_t buf[kUnifiedCap];
+        static std::uint32_t buf[kMaxSubObjects];
         const int n = neighborsFn(neighborsUser, cx, cy, r,
-                                  buf, kUnifiedCap);
+                                  buf, kMaxSubObjects);
         if (n >= 0) {
             for (int i = 0; i < n; ++i) {
                 const entt::entity e = entt::entity(buf[std::size_t(i)]);

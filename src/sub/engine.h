@@ -658,7 +658,7 @@ private:
     // Mass-battle state (sub/movement.h). One SoA snapshot plus its two grids,
     // allocated once and reused every tick — the combat pass never allocates.
     // The ECS stays the authority for damage/death/loot; this is only "where do
-    // bodies want to be", so one bandit and a full kUnifiedCap of soldiers
+    // bodies want to be", so one bandit and a full kMaxSubObjects of soldiers
     // run the very same code.
     // The crowd is one flat MiB and cannot live in a stack frame, so it is born
     // in its own heap block here, once, and never reallocated (movement.h).
@@ -674,7 +674,7 @@ private:
     // like every other column and indexed by the SAME `crowd_->count`, so there
     // is no second length to keep in step (it cannot hold entt inside BodyCrowd
     // itself — that module is deliberately entt-free).
-    std::array<entt::entity, kUnifiedCap> crowdEnts_{};
+    std::array<entt::entity, kMaxSubObjects> crowdEnts_{};
     // The spell broad phase's honesty bits (spell_neighbors_callback). The
     // gather sets truncated when the 16k ceiling cut bodies out of the grids —
     // the callback then answers -1 and the spell tick falls back to its full
