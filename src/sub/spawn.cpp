@@ -14,7 +14,7 @@
 #include "macro/squad.h"              // sheet_of — THE door to "who is this"
 #include "macro/player_entity.h"      // player_squad_entity — «чья это запись»
 #include "sub/record.h"
-#include "tables/squad_type.h"   // squad_archetype — ось рода (M-90)              // macro_record_of / StandingMirror — дверь шва
+#include "tables/squad_type.h"   // squad_archetype — ось рода (M-90)
 #include "sub/body.h"
 #include "macro/store.h"
 #include <algorithm>
@@ -387,7 +387,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
         /*aiTimer*/0.0f, /*vx*/0.0f, /*vy*/0.0f,
         /*wanderSpeed*/bodySpeed * kBodyWanderSpeedFraction,
         /*radius*/bodyRadius});
-    reg.emplace<CharacterSheet>(e, sheet);
+    sub::set_body_sheet(reg, e, sheet);
     // Лицо тела (NpcCharacter) НЕ хранится: оно потребляется здесь же —
     // ростом тела от bodyShape строкой ниже — и после рождения его не
     // читает никто (прецедент вспышки, «минимизировать число колонок»).
@@ -669,9 +669,6 @@ struct OwnedState {
     static bool none_on(const entt::registry& reg, entt::entity body) {
         return (... && !reg.all_of<Cs>(body));
     }
-    static bool any_on(const entt::registry& reg, entt::entity e) {
-        return (... || reg.all_of<Cs>(e));
-    }
 };
 // The belongings, the personality, WHAT HE IS WEARING and what he knows.
 using TrackedInheritance =
@@ -750,14 +747,14 @@ entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
     // there is no return trip any more, because there is no copy to return.
     reg.emplace<ecs::MacroOrigin>(e, macro);
     // What stood on him when the numbers above were derived — the comparison
-    // the per-tick re-derive is gated on (sub/record.h StandingMirror).
-    reg.emplace<StandingMirror>(e, standing);
+    // the per-tick re-derive is gated on (standing@src/sub/objects.h).
+    sub::set_body_standing(reg, e, standing);
     return e;
 }
 
 bool refresh_body_strike(entt::registry& reg, entt::entity body) {
     if (!reg.valid(body)) return false;
-    auto* cache = reg.try_get<StandingMirror>(body);
+    BonusTotals* cache = sub::body_standing(reg, body);
     if (!cache) return false;                  // not a mirror; nothing to track
     // Зеркало без живой записи не пере-деривится: протухший бэклинк —
     // мертвец, чей клинок больше никого не касается (шаг 2 1е: запись —
@@ -777,8 +774,8 @@ bool refresh_body_strike(entt::registry& reg, entt::entity body) {
     // everything above is the 0.00041 ms the owner accepted paying every tick.
     const MacroStore& st = store_of(reg);
     const BonusTotals now = standing_bonuses_of(st, rec);
-    if (now == cache->totals) return false;
-    cache->totals = now;
+    if (now == *cache) return false;
+    *cache = now;
 
     const NpcTypeDef& def = npc_def(NPCType(std::uint8_t(kind->type)));
     const CharacterSheet eff = effective_sheet(sheet_of(st, rec), now);
@@ -1680,7 +1677,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // hand-authored or persistent leader with a Leader-class perk buffs
         // its troops through this same line with no further change anywhere.
         BonusTotals leaderBonuses{};
-        if (const auto* leaderSheet = reg.try_get<CharacterSheet>(leaderBody)) {
+        if (const auto* leaderSheet = sub::body_sheet(reg, leaderBody)) {
             leaderBonuses = squad_bonuses(*leaderSheet);
         }
 

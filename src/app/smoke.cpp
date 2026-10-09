@@ -5901,7 +5901,7 @@ bool run_console_smoke(App& app) {
         if (be == entt::null) {
             restore(); smoke_fail(app, "sheet: no live bandit to inspect"); return false;
         }
-        const auto* sheet = reg.try_get<sm::CharacterSheet>(be);
+        const auto* sheet = sm::sub::body_sheet(reg, be);
         if (!sheet) {
             restore(); smoke_fail(app, "sheet: bandit has no CharacterSheet"); return false;
         }

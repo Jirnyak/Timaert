@@ -98,7 +98,7 @@ void test_every_squad_body_is_a_whole_body() {
             ++missingTag;
         if (!health) ++missingHealth;
         if (!combat) ++missingCombat;
-        if (!reg.all_of<CharacterSheet>(e))      ++missingSheet;
+        if (sm::sub::body_sheet(reg, e) == nullptr) ++missingSheet;
         if (!ai)     ++missingAi;
         if (!sprite) ++missingSprite;
         if (sm::sub::body_level(reg, e) == 0)    ++missingLevel;
@@ -116,7 +116,7 @@ void test_every_squad_body_is_a_whole_body() {
         // hardcodes its own width shows up right here.
         if (kind && ai && kind->type < std::uint16_t(NPCType::Count)) {
             const NpcTypeDef& def = npc_def(NPCType(std::uint8_t(kind->type)));
-            const auto* sheet = reg.try_get<CharacterSheet>(e);
+            const auto* sheet = sm::sub::body_sheet(reg, e);
             if (sheet) {
                 if (ai->radius != npc_body_radius(def)) ++offTableRadius;
                 if (sprite && sprite->scale != npc_body_radius(def))
@@ -218,8 +218,8 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
                     "a body-shaped macro entity can be embodied");
 
     CHECK((reg.all_of<ecs::Position,
-                      CharacterSheet,
                       ecs::Sprite, ecs::SubworldTag>(body)
+           && sm::sub::body_sheet(reg, body) != nullptr
            && sm::sub::body_pools(reg, body) != nullptr
            && sm::sub::body_combat(reg, body) != nullptr
            && sm::sub::body_ai(reg, body) != nullptr),
@@ -449,7 +449,8 @@ void test_a_squad_on_the_map_projects_its_creatures() {
         saw88 = saw88 || debt->detail == 88;
         const auto* kind = sm::sub::body_kind(reg, e);
         if (kind && kind->factionIdx != 5) ++wrongFaction;
-        if (reg.all_of<CharacterSheet, ecs::Sprite>(e)
+        if (reg.all_of<ecs::Sprite>(e)
+            && sm::sub::body_sheet(reg, e) != nullptr
             && sm::sub::body_pools(reg, e) != nullptr
             && sm::sub::body_combat(reg, e) != nullptr) {
             ++wholeMembers;

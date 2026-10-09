@@ -37,6 +37,10 @@
 #include <cstdint>
 
 #include "ecs/components.h" // ecs::NPCKind — тип колонки kind (кусок 1)
+#include "macro/anketa.h"   // CharacterSheet + BonusTotals — колонки листа и
+                            // зеркала (ломоть 2; включение ПЕРЕЕХАЛО из
+                            // record.h — канал M-171 не вырос, тип анкеты
+                            // пересекал его и раньше)
 #include "sub/caps.h"       // kMaxSubObjects — кап сцены субмира (шаг 0 M-150)
 
 namespace sm::sub {
@@ -70,6 +74,20 @@ inline constexpr std::uint16_t kObjAirborne      = 1u << 8;
 // дверь set_projectile (record.h); снимать некому — снаряд умирает слотом
 // целиком (queue_reap → destroy → on_destroy-хук).
 inline constexpr std::uint16_t kObjProjectile    = 1u << 9;
+// Ломоть 2 (листья) — зеркало стояния: «это вообще не зеркало» против
+// «зеркало, на котором ничего не стоит» — РАЗНЫЕ состояния, а свободного
+// значения в BonusTotals нет (92 ячейки i16, любая комбинация законна —
+// лорд без колец рождается с честными нулями). Сегодня не-зеркало у головы
+// игрока отсекает лишь ТРЕТИЙ гейт refresh_body_strike (body_kind == null) —
+// совпадение, не закон; нулевое «зеркало» без бита открыло бы гейт и
+// затёрло собранный руками удар шаблоном строки записи. Ставит ТОЛЬКО
+// дверь set_body_standing (record.h); снимать некому — зеркало умирает
+// слотом. У колонки sheet бита НЕТ сознательно: ни один читатель мира не
+// различает «листа нет» от нулевого листа (все коэрсят nullptr в ноль —
+// kUntrained@src/sub/damage.cpp), пустой лист идёт общим путём (ЗАКОН
+// АНКЕТЫ п.4), а бит, читаемый только тестами, — колонка без читателя
+// (DOD п.9).
+inline constexpr std::uint16_t kObjStandingMirror = 1u << 10;
 
 // Событие «в этом тике по телу попали» (колонка damageFx) — биты:
 inline constexpr std::uint8_t kDmgFxPending = 1u << 0;
@@ -145,6 +163,20 @@ struct SubObjects {
     // КАП: до ломтя 4 снарядов могло родиться сколько угодно, теперь предел
     // один с телами («кап стоит на воплощённом объекте»).
     std::array<ecs::Projectile, std::size_t(kMaxSubObjects)> projectile{};
+    // ── ЛИСТЬЯ (ломоть 2): бывшие CharacterSheet-компонента и StandingMirror.
+    // Лист — БЕЗУСЛОВНАЯ колонка без бита: эффективный лист на момент
+    // рождения (write-once, пишет только emplace_body дверью set_body_sheet);
+    // «листа нет» (голая фикстура, тушка игрока) читается как нулевой лист —
+    // ровно то, что каждый читатель подставлял сам при nullptr. Зеркало —
+    // «что стояло на записи, когда производные числа собирались последний
+    // раз»: сборка стояния стоит 0.00041 мс/тело (принято владельцем),
+    // пере-ролл листа и удара — 0.00196 мс, впятеро больше, поэтому бежит
+    // дешёвая половина, а дорогую открывает несовпадение с зеркалом
+    // (BonusTotals::operator== существует ровно для этого вопроса; гейт —
+    // refresh_body_strike@src/sub/spawn.cpp). Наличие зеркала — бит
+    // kObjStandingMirror (см. маску выше).
+    std::array<CharacterSheet, std::size_t(kMaxSubObjects)> sheet{};
+    std::array<BonusTotals, std::size_t(kMaxSubObjects)> standing{};
 
     int count = 0;        // живых слотов (для приборов, не для обхода)
     int cursor = 0;       // бегунок выдачи — слоты переиспользуются по кругу
@@ -184,6 +216,8 @@ struct SubObjects {
             goHome[std::size_t(s)] = ecs::GoingHome{};
             airborneVz[std::size_t(s)] = 0.0f;
             projectile[std::size_t(s)] = ecs::Projectile{};
+            sheet[std::size_t(s)] = CharacterSheet{};
+            standing[std::size_t(s)] = BonusTotals{};
             ++count;
             return s;
         }
@@ -199,11 +233,13 @@ struct SubObjects {
         --count;
     }
 };
-// 16384 × (4+2+4+1+4+2+36+28+12+40+12+8+4+68) Б колонок + служебные: цена
-// названа и закреплена. 225 Б/слот × 16384 ≈ 3.52 МиБ — профиль один у
-// пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ).
-static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 225 + 24,
-              "массив объектов сцены: 225 Б/слот (ломоть 4: +projectile 68) "
-              "+ служебные");
+// 16384 × (4+2+4+1+4+2+36+28+12+40+12+8+4+68+144+184) Б колонок + служебные:
+// цена названа и закреплена. 553 Б/слот × 16384 ≈ 8.64 МиБ — профиль один у
+// пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ). Ассерт заодно пинит
+// sizeof(CharacterSheet) == 144 и sizeof(BonusTotals) == 184: разъехаться
+// молча колонки не могут.
+static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 553 + 24,
+              "массив объектов сцены: 553 Б/слот (ломоть 2: +sheet 144 "
+              "+standing 184) + служебные");
 
 } // namespace sm::sub

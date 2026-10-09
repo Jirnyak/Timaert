@@ -150,7 +150,7 @@ bool tracked_body_owns_nothing(const entt::registry& reg,
                                MacroHandle record, entt::entity body);
 
 // Re-derive a standing body's OUTGOING numbers from its record — but only if
-// what stands on that record actually changed (sub/record.h StandingMirror,
+// what stands on that record actually changed (колонка standing@src/sub/objects.h,
 // `BonusTotals::operator==`). Returns true when it rebuilt.
 //
 // This is the half of the mirror that is NOT the bars: a body's swing comes

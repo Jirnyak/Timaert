@@ -33,8 +33,9 @@
 #include "ecs/components.h"
 #include "ecs/world.h"      // store_of(reg) — ctx-мост (переехал из store.h, M-150 шаг 0)
 #include "macro/store.h"
-#include "macro/anketa.h"   // BonusTotals — «что на нём стоит», and its ==
-#include "sub/objects.h"    // SubObjects — единый массив объектов сцены (M-150)
+#include "sub/objects.h"    // SubObjects — единый массив объектов сцены (M-150);
+                            // он же несёт macro/anketa.h (колонки листа и
+                            // зеркала, ломоть 2)
 
 #include <entt/entt.hpp>
 
@@ -86,23 +87,11 @@ inline const C* state_of(const entt::registry& reg, entt::entity body) {
     return state_of<C>(const_cast<entt::registry&>(reg), body);
 }
 
-// WHAT STOOD ON THE RECORD when this body's derived numbers were last built.
-//
-// The cost of the mirror was measured before it was built (owner's note in
-// CANON, worst case — all 42 anatomy slots worn): assembling «what stands on
-// him» costs 0.00041 ms per body, which is 0.8 % of a frame at 300 bodies and
-// was accepted; RE-ROLLING the sheet and the strike off it costs 0.00196 ms,
-// five times more, and at a thousand bodies that is 12.5 % of the frame — not
-// acceptable, and not necessary, because it almost never changes.
-//
-// So the assembly runs and the RESULT is compared: `BonusTotals::operator==`
-// exists for exactly this question, and the expensive half runs only when the
-// answer is no. A lord who levels from a kill mid-fight swings harder on the
-// next tick; a lord nobody touched pays one comparison.
-struct StandingMirror { BonusTotals totals{}; };
-
-// (pools_of — ниже моста арены: его фолбэк с куска 2 — КОЛОНКА, не
-// компонента, и ему нужны objects_find/body_pools.)
+// (Зеркало стояния — КОЛОНКА standing@src/sub/objects.h с ломтя 2; его
+// замер и смысл — у колонки, гейт — refresh_body_strike@src/sub/spawn.cpp,
+// двери body_standing/set_body_standing — ниже моста арены. pools_of — там
+// же: его фолбэк с куска 2 — КОЛОНКА, не компонента, и ему нужны
+// objects_find/body_pools.)
 
 // ── МОСТ ЕДИНОГО МАССИВА ОБЪЕКТОВ (M-150, транзит миграции) ─────────────
 // Тот же ctx-приём, что у MacroStore: указатель живёт в реестре и умирает
@@ -267,6 +256,69 @@ inline void clear_body_combat(entt::registry& reg, entt::entity e) {
         objs->flags[std::size_t(os->slot)] =
             std::uint16_t(objs->flags[std::size_t(os->slot)] & ~kObjHasCombat);
     }
+}
+// ── ЛИСТ И ЗЕРКАЛО — КОЛОНКИ АРЕНЫ (M-150 ломоть 2, листья) ─────────────
+// Лист — БЕЗУСЛОВНАЯ колонка (бита нет): «листа нет» и нулевой лист — одно
+// значение для каждого читателя мира (все коэрсили nullptr в ноль), а
+// пустой лист — законное значение, идущее общим путём (ЗАКОН АНКЕТЫ п.4).
+// nullptr отсюда значит ровно «тела нет на арене» (нет слота/арены) — та же
+// честная ветка транзита, что у остальных дверей.
+inline CharacterSheet* body_sheet(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    return &objs->sheet[std::size_t(os->slot)];
+}
+inline const CharacterSheet* body_sheet(const entt::registry& reg,
+                                        entt::entity e) {
+    return body_sheet(const_cast<entt::registry&>(reg), e);
+}
+inline void set_body_sheet(entt::registry& reg, entt::entity e,
+                           const CharacterSheet& sh) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->sheet[std::size_t(os->slot)] = sh;
+    }
+}
+// Зеркало стояния: бит kObjStandingMirror ставит ТОЛЬКО эта дверь — «я
+// зеркало» и числа зеркала невыразимы порознь (objects.h, маска).
+inline BonusTotals* body_standing(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    if ((objs->flags[std::size_t(os->slot)] & kObjStandingMirror) == 0u)
+        return nullptr;
+    return &objs->standing[std::size_t(os->slot)];
+}
+inline void set_body_standing(entt::registry& reg, entt::entity e,
+                              const BonusTotals& t) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->standing[std::size_t(os->slot)] = t;
+        objs->flags[std::size_t(os->slot)] |= kObjStandingMirror;
+    }
+}
+// Лист через ОДНУ дверь состояния (специализация self-фолбэка): запись
+// отвечает колонкой store, как всякое владение; тело без записи — колонкой
+// sheet СВОЕГО слота (компонента CharacterSheet умерла ломтём 2). Фолд
+// остальных владений (сумка/черты/гир/книга) не тронут — они состояние
+// ЗАПИСИ и колонками арены не становятся никогда.
+template <>
+inline CharacterSheet* state_of<CharacterSheet>(entt::registry& reg,
+                                                entt::entity body) {
+    const MacroHandle rec = macro_record_of(reg, body);
+    if (rec.slot != kMacroNoSlot) {
+        if (CharacterSheet* owned =
+                body_state<CharacterSheet>(store_of(reg), rec))
+            return owned;
+    }
+    return body_sheet(reg, body);
 }
 // ── ДВИЖЕНИЕ/ДУМКА — КОЛОНКИ АРЕНЫ (M-150 ломоть 2 кусок 3) ─────────────
 // Мозг: бит kObjHasAi + колонка (Wander = 0 законен — сентинела нет).

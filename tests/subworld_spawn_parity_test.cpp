@@ -705,7 +705,7 @@ bool sheet_lifts_every_body(sm::ecs::World& world) {
         const auto* hCol = sm::sub::body_pools(world.reg, e);
         if (hCol == nullptr) continue;
         const auto& h = *hCol;
-        if (!world.reg.all_of<sm::CharacterSheet>(e)) return false;
+        if (sm::sub::body_sheet(world.reg, e) == nullptr) return false;
         if (!(h.maxHp >= float(row.combat.hp))) return false;
         // The recovery door's half of the same property (S14, 2026-09-07):
         // the sheet may only QUICKEN the row's authored tempo — Spd and the
@@ -1134,7 +1134,7 @@ int main() {
               "absent from the body — не-запись есть невалидный хэндл");
 
         const auto* carried = body != entt::null
-            ? reg.try_get<sm::CharacterSheet>(body) : nullptr;
+            ? sm::sub::body_sheet(reg, body) : nullptr;
         CHECK(carried != nullptr, "a body always has a sheet");
         CHECK(carried && carried->attributes.of(sm::AttributeId::Str)
                   == own.attributes.of(sm::AttributeId::Str),
@@ -1150,7 +1150,7 @@ int main() {
         anon.seed = 0xD1FFu;
         const entt::entity stranger =
             sm::sub::spawn_derived_body(reg, anon, /*faceSalt*/0u);
-        const auto* strangerSheet = reg.try_get<sm::CharacterSheet>(stranger);
+        const auto* strangerSheet = sm::sub::body_sheet(reg, stranger);
         CHECK(strangerSheet != nullptr, "a derived body has a sheet");
         CHECK(strangerSheet && strangerSheet->attributes.of(sm::AttributeId::Str)
                   != own.attributes.of(sm::AttributeId::Str),
