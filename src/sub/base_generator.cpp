@@ -448,7 +448,10 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                         const float nbHeights[9],
                         const Biome nbBiome[9],
                         const Biome* nbBiome5,
-                        Biome biome, std::uint32_t seed,
+                        // `std::uint32_t seed` снят 2026-10-09: тело его не
+                        // читало — высоту ведут globalOffset* и worldSeed
+                        // (дальний мир), а клеточный сид был вторым.
+                        Biome biome,
                         int globalOffsetX, int globalOffsetY, float seaLevel,
                         const TerrainMod* nbMods, int worldCellsX,
                         std::uint32_t worldSeed) {

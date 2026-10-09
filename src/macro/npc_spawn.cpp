@@ -223,7 +223,7 @@ std::uint16_t settlement_faction_index(const MacroStore& st,
 
 } // namespace
 
-void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
+void spawn_macro_npcs(GameState& gs, MacroStore& st,
                       const TerrainData& terrain, std::uint32_t seed,
                       const DepositLayer* deposits) {
     Rng rng(seed + 7777u);
@@ -322,7 +322,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w, MacroStore& st,
 
     // СТОЛ АНКЕТ — авторские фигуры мира, после массовки: их ординалы
     // продолжают тот же поток идентичности.
-    spawn_design_characters(gs, w, st, terrain, rng, spawnIndex);
+    spawn_design_characters(gs, st, terrain, rng, spawnIndex);
 }
 
 // Вершины горных массивов — дома драконьих анкет: K высочайших клеток
@@ -366,7 +366,7 @@ static void resolve_mountain_peaks(const TerrainData& terrain,
     }
 }
 
-void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
+void spawn_design_characters(GameState& gs, MacroStore& st,
                              const TerrainData& terrain, Rng& rng,
                              std::uint32_t& spawnIndex) {
     const int mw = gs.mapW;
@@ -496,7 +496,7 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
     }
 }
 
-bool spawn_npc_at(GameState& gs, ecs::World& w, MacroStore& st,
+bool spawn_npc_at(GameState& gs, MacroStore& st,
                   const TerrainData& terrain,
                   const char* typeToken, int x, int y, int level) {
     NPCType type{};

@@ -1089,9 +1089,9 @@ int main() {
         mountainNbB[i] = Mountain;
     }
     generate_heightmap(directPlainsHeightmap, 32, directNbH, plainsNbB, /*nbBiome5*/nullptr,
-                       Meadow, grass.seed, 0, 0, grass.seaLevel);
+                       Meadow, 0, 0, grass.seaLevel);
     generate_heightmap(directMountainHeightmap, 32, directNbH, mountainNbB, /*nbBiome5*/nullptr,
-                       Mountain, grass.seed, 0, 0, grass.seaLevel);
+                       Mountain, 0, 0, grass.seaLevel);
     const auto vertical_range = [](const std::vector<float>& hm) {
         float lo = 99.0f, hi = -99.0f;
         for (const float h : hm) {

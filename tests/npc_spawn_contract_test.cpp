@@ -96,7 +96,7 @@ int main() {
     // GameState: общий эмитент ординалов на два store выдавал бы один
     // ординал двум разным телам (ломтик F).
     add_settlement(gs, sm::store_of(world), 8, 8);
-    sm::spawn_macro_npcs(gs, world, sm::store_of(world), invalidTerrain, 123u);
+    sm::spawn_macro_npcs(gs, sm::store_of(world), invalidTerrain, 123u);
 
     // FAIL-CLOSED, BOTH WAYS. A terrain the world cannot read must not
     // silence the world (no NPCs at all), and must not let it write outside
@@ -128,7 +128,7 @@ int main() {
 
     sm::store_attach(mismatchWorld, mismatchWorldStore_.get());
     add_settlement(gsMismatch, sm::store_of(mismatchWorld), 8, 8);
-    sm::spawn_macro_npcs(gsMismatch, mismatchWorld, sm::store_of(mismatchWorld), mismatchedTerrain, 124u);
+    sm::spawn_macro_npcs(gsMismatch, sm::store_of(mismatchWorld), mismatchedTerrain, 124u);
     CHECK(count_macro_npcs(mismatchWorld) > 0,
           "terrain whose size disagrees with the map is treated as ABSENT "
           "terrain, not as a reason to spawn nobody");
@@ -145,7 +145,7 @@ int main() {
 
     sm::store_attach(invalidMapWorld, invalidMapWorldStore_.get());
     add_settlement(invalidMap, sm::store_of(invalidMapWorld), 0, 0);
-    sm::spawn_macro_npcs(invalidMap, invalidMapWorld, sm::store_of(invalidMapWorld), invalidTerrain, 125u);
+    sm::spawn_macro_npcs(invalidMap, sm::store_of(invalidMapWorld), invalidTerrain, 125u);
     // THE NEGATIVE CONTROL of the two above, and the reason they are not
     // vacuous: a world with no dimensions has nowhere to put anybody, so the
     // spawner must refuse rather than fall back. If this ever passed by

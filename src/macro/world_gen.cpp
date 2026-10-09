@@ -388,7 +388,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // A loaded world does NOT respawn its people from the seed — the macro
     // snapshot restores them (Session 17); only a NEW world gets a genesis.
     if (p.spawnMacroNpcs) {
-        spawn_macro_npcs(gs, *out.world, *out.store, *out.terrain,
+        spawn_macro_npcs(gs, *out.store, *out.terrain,
                          gs.worldSeed, out.deposits);
         // (Генезисный цензус профессий умер со сносом профессий — поручения
         // раздаёт аукцион ротации, CANON S10, владелец 2026-09-02.)

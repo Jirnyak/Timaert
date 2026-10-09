@@ -76,7 +76,8 @@ public:
     void destroy(const gpu::VulkanDevice& dev);
     // camPos (world metres) splits lights between the hero loop and the
     // light field — see gather_point_lights and rebuild_light_field.
-    void prepare_frame(VkCommandBuffer cmd, ecs::World* ecs, float elapsed,
+    // (`float elapsed` снят 2026-10-09: не читался в теле ни разу.)
+    void prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                        const sm::vec3& camPos);
 
     // Upload the frame's live particle instances into the device-local particle

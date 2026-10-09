@@ -53,7 +53,7 @@ constexpr float kHeightScale = 1500.0f;
 // One 3x3 composite of a single biome at a fixed macro height, assembled the
 // same way seamless_manager does (per-cell generate_heightmap then memcpy into
 // the 3072x3072 buffer at the cell offset).
-std::vector<float> composite(Biome b, std::uint32_t seed, float macroH) {
+std::vector<float> composite(Biome b, float macroH) {
     std::vector<float> full(std::size_t(kFullSize) * kFullSize, 0.0f);
     float nbH[9];
     Biome nbB[9];
@@ -61,7 +61,7 @@ std::vector<float> composite(Biome b, std::uint32_t seed, float macroH) {
     for (int oy = 0; oy < 3; ++oy)
         for (int ox = 0; ox < 3; ++ox) {
             std::vector<float> cell;
-            generate_heightmap(cell, kCellSize, nbH, nbB, /*nbBiome5*/nullptr, b, seed,
+            generate_heightmap(cell, kCellSize, nbH, nbB, /*nbBiome5*/nullptr, b,
                                ox * kCellSize, oy * kCellSize, WATER_LEVEL);
             for (int y = 0; y < kCellSize; ++y)
                 for (int x = 0; x < kCellSize; ++x)
@@ -176,9 +176,9 @@ int main() {
     float worstRangeRatio = 1e9f, worstCurvRatio = 1e9f;
     int measured = 0;
     for (const Case& c : cases) {
-        MeshStat mtn = measure(composite(Mountain, c.seed, c.macroH));
+        MeshStat mtn = measure(composite(Mountain, c.macroH));
         // Plains reference at a lowland height with the SAME seed.
-        MeshStat pln = measure(composite(Meadow, c.seed, 0.30f));
+        MeshStat pln = measure(composite(Meadow, 0.30f));
         // В МЕТРЫ, КАЖДЫЙ СВОЕЙ МЕРОЙ: наклон кривой на СВОЕЙ высоте. Гора и
         // равнина живут на разных участках кривой, поэтому общего множителя у
         // них нет и быть не может — это и есть причина, по которой поле их не

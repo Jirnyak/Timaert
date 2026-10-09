@@ -501,8 +501,9 @@ std::vector<std::pair<int, int>> trace_river_to_water(
     const std::vector<std::uint16_t>& height,
     const std::vector<std::uint8_t>& riverMask,
     std::uint16_t seaLevel16,
+    // `int h` снят 2026-10-09: мир КВАДРАТЕН (ЗАКОН АДРЕСА — сторона одна,
+    // степень двойки), второй размерности у него нет, и тело её не читало.
     int w,
-    int h,
     const std::vector<std::uint8_t>& meander,
     RiverTraceScratch& scratch) {
 
@@ -671,7 +672,7 @@ bool continue_river_from_tip(int tipIdx,
 
     const std::vector<std::pair<int, int>> path =
         trace_river_to_water(tipIdx, edgeDist, waterDist, height,
-                             riverMask, seaLevel16, w, h, meander, scratch);
+                             riverMask, seaLevel16, w, meander, scratch);
 
     for (int idx : masked) {
         riverMask[std::size_t(idx)] = 255;
@@ -908,7 +909,7 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     for (int src : sources) {
         const std::vector<std::pair<int, int>> raw =
             trace_river_to_water(src, edgeDist, waterDist, heightWords,
-                                 riverMask, seaLevel16, w, h, meander, scratch);
+                                 riverMask, seaLevel16, w, meander, scratch);
         if (raw.size() < 15) {
             continue;
         }

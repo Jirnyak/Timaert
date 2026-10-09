@@ -136,7 +136,7 @@ void test_spawn_births_the_row() {
     GameState gs = make_world(*wStore_);
     const TerrainData terrain = make_terrain();
     Rng rng(1234u);
-    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     const sm::MacroHandle e = find_design(w, 0);
     CHECK_OR_RETURN(wStore_->valid(e), "the preacher row became one body");
@@ -206,7 +206,7 @@ void test_snapshot_carries_the_ordinal() {
     GameState gs = make_world(*wStore_);
     const TerrainData terrain = make_terrain();
     Rng rng(777u);
-    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     // Обычный сквад рядом — негативный контроль на −1. Через ту же одну
     // дверь создания (spawn_squad → make_npc).
     SquadSpec plain{};
@@ -263,7 +263,7 @@ void test_king_peasant_births_by_home_faction() {
                std::int16_t(faction_index("barbarian_north")));
     const int barbId = int(wStore_->spawnId[barb.slot].index);
     Rng rng(555u);
-    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     sm::MacroStore& stk = sm::store_of(w);
     const sm::MacroHandle king = find_design(w, 1);
@@ -301,7 +301,7 @@ void test_king_needs_a_barbarian_city() {
     GameState gs = make_world(*wStore_);
     const TerrainData terrain = make_terrain();
     Rng rng(556u);
-    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     CHECK(sm::store_of(w).valid(find_design(w, 0)),
           "Varnava is born in a world without barbarians");
     CHECK(!sm::store_of(w).valid(find_design(w, 1)),
@@ -327,7 +327,7 @@ void test_dragons_nest_on_mountain_peaks() {
         }
     }
     Rng rng(999u);
-    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
 
     // Один массив = одна вершина: Dragon1 рождается, №2/№3 (вершины с
     // разносом ≥ mapW/8) — честно нет.
@@ -365,7 +365,7 @@ void test_no_home_no_birth() {
     auto wStore_ = sm::make_macro_store();
     sm::store_attach(w, wStore_.get());
     Rng rng(42u);
-    spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     int tags = 0;
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32)
         if (sm::store_of(w).alive[s32] != 0

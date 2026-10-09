@@ -5125,7 +5125,7 @@ void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
                              scene_sea_level());
         pendingUpload3d_ = {};
     }
-    renderer3dVk_.prepare_frame(cmd, ecs_, elapsed_, cam_.pos);
+    renderer3dVk_.prepare_frame(cmd, ecs_, cam_.pos);
 
     // Pack the live particle pool into GPU instances and stage them for this
     // frame's two particle passes: energy at the head, matter at the tail

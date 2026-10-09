@@ -253,7 +253,7 @@ if(MSVC)
         _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(timaert_build_flags INTERFACE
-        -Wall -Wextra -Wno-unused-parameter
+        -Wall -Wextra
         # ПОРЯДОК ИМЕНОВАННЫХ ПОЛЕЙ — НЕ СТИЛЬ, А ПЕРЕНОСИМОСТЬ (2026-09-22).
         # ISO C++ требует designated-инициализаторы в порядке объявления;
         # clang принимает нарушение как расширение и МОЛЧИТ под -Wall -Wextra,

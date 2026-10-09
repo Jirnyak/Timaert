@@ -158,7 +158,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
 
     out.heightmap.clear();
     generate_heightmap(out.heightmap, kCellSize, nbHeights, nbBiome, nbBiome5,
-                       safeCtx.biome, safeCtx.seed,
+                       safeCtx.biome,
                        safeCtx.cx * kCellSize, safeCtx.cy * kCellSize,
                        safeCtx.seaLevel,
                        nbMods, safeCtx.worldCellsX, safeCtx.worldSeed);

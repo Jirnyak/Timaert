@@ -245,7 +245,7 @@ int main() {
 
         std::vector<float> hm;
         generate_heightmap(hm, kCellSize, nbHeights, nbBiome, nbBiome5,
-                           Biome::Meadow, kSeed,
+                           Biome::Meadow,
                            kCellGX * kCellSize, kCellGY * kCellSize,
                            WATER_LEVEL, /*nbMods=*/nullptr, kWorldCells, kSeed);
 
@@ -496,7 +496,7 @@ int main() {
             for (TerrainMod& m : mods) m = road;
             std::vector<float> hmRoad;
             generate_heightmap(hmRoad, kCellSize, nbHeights, nbBiome, nbBiome5,
-                               Biome::Meadow, kSeed,
+                               Biome::Meadow,
                                kCellGX * kCellSize, kCellGY * kCellSize,
                                WATER_LEVEL, mods, kWorldCells, kSeed);
 

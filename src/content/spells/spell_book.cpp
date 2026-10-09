@@ -25,8 +25,7 @@ std::string recovery_reason(std::uint32_t steps) {
 
 } // namespace
 
-int spell_strength(const SpellDef& spell,
-                   const Attributes& attributes,
+int spell_strength(const Attributes& attributes,
                    const Skills& skills) {
     // THE ADD, raw (CANON S14 «атрибут мощи → сырая прибавка к кубам»): the
     // caster's INT, and nothing else. The `tierPct = 100 + 8·(tier−1)` that
@@ -61,7 +60,7 @@ int spell_damage(const SpellDef& spell,
                  const Attributes& attributes,
                  const Skills& skills) {
     if (spell.dice.n == 0) return 0;
-    const int s = spell_strength(spell, attributes, skills);
+    const int s = spell_strength(attributes, skills);
     // The strike's EXPECTATION — what a panel prints and a macro reader
     // credits; the cast itself rolls (spell_strike below). Exact for the
     // mechanical Nd1 rows, honest for authored spreads later.
@@ -72,7 +71,7 @@ int spell_damage(const SpellDef& spell,
 StrikeRoll spell_strike(Rng& rng, const SpellDef& spell,
                         const Attributes& attributes, const Skills& skills) {
     if (spell.dice.n == 0) return {};
-    const int s = spell_strength(spell, attributes, skills);
+    const int s = spell_strength(attributes, skills);
     // THE strike assembly, the same the sword swings through: dice + the
     // sheet's add, scaled by the row's percent, LCK asking the crit door.
     return roll_strike(rng, spell.dice, s,
@@ -88,7 +87,7 @@ int spell_heal(const SpellDef& spell,
     // brings. (The `scalingPower` factor died with the damage knob — no row
     // in the game heals today, so the translation had nothing to preserve,
     // and the first healing row will be authored under the one law.)
-    const int s = spell_strength(spell, attributes, skills);
+    const int s = spell_strength(attributes, skills);
     return int(std::floor(spell.baseHeal + float(s)));
 }
 
@@ -96,7 +95,7 @@ int spell_radius(const SpellDef& spell,
                  const Attributes& attributes,
                  const Skills& skills) {
     if (spell.baseRadius <= 0.0f) return 0;
-    const int s = spell_strength(spell, attributes, skills);
+    const int s = spell_strength(attributes, skills);
     const float scaleFactor = float(s) / float(s + 50);
     return int(std::floor(spell.baseRadius
         * (1.0f + scaleFactor * spell.scalingRadius)));

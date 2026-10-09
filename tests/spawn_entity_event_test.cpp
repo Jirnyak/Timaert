@@ -48,13 +48,13 @@ void run_spawn_contract() {
     // catalogue does not know must be REFUSED, and — the half that is easy to
     // forget — must leave nothing behind. A spawner that half-built a body
     // and then said no would pass the first check alone.
-    CHECK(!sm::spawn_npc_at(gs, w, sm::store_of(w), terrain, "grue", 10, 12, 3),
+    CHECK(!sm::spawn_npc_at(gs, sm::store_of(w), terrain, "grue", 10, 12, 3),
           "a token the catalogue does not know is REFUSED");
     CHECK(count_npcs(w) == 0, "...and left no half-built entity behind");
 
     // Known token, case-insensitive, level pinned.
     CHECK_OR_RETURN(
-        sm::spawn_npc_at(gs, w, sm::store_of(w), terrain, "Bandit", 10, 12, 3),
+        sm::spawn_npc_at(gs, sm::store_of(w), terrain, "Bandit", 10, 12, 3),
         "a known token spawns — and the lookup ignores case");
     CHECK(count_npcs(w) == 1, "exactly one body was raised, not two");
 
@@ -85,7 +85,7 @@ void run_spawn_contract() {
 
     // Second spawn: ordinal strictly continues (possession identity unique).
     CHECK_OR_RETURN(
-        sm::spawn_npc_at(gs, w, sm::store_of(w), terrain, "bandit", 40, 40, 2),
+        sm::spawn_npc_at(gs, sm::store_of(w), terrain, "bandit", 40, 40, 2),
         "the same token spawns again in lower case");
     CHECK(count_npcs(w) == 2, "two bodies stand, not one and not three");
     bool sawSecond = false;

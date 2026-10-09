@@ -384,7 +384,9 @@ namespace sm::sub
                             // lone cell that has no neighbours to miss.
                             const Biome* nbBiome5,
                             Biome biome,
-                            std::uint32_t seed,
+                            // `std::uint32_t seed` снят 2026-10-09: тело его
+                            // не читало — высоту ведут globalOffset* и
+                            // worldSeed (дальний мир), клеточный сид был вторым.
                             int globalOffsetX,
                             int globalOffsetY,
                             // THE SCENE'S SEA PLANE, normalised — inherited from

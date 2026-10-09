@@ -18,9 +18,11 @@ struct CastCheck {
     float recoveryRemaining = 0.0f;
 };
 
-int spell_strength(const SpellDef& spell,
-                     const Attributes& attributes,
-                     const Skills& skills);
+// Сила заклинания НЕ ЗАВИСИТ от того, какое оно: сырая прибавка есть INT
+// кастера, и только (CANON S14; множитель от тира умер 2026-09-19, session Е).
+// Параметр `const SpellDef& spell` снят 2026-10-09 — подпись врала о законе.
+int spell_strength(const Attributes& attributes,
+                   const Skills& skills);
 // The strike's EXPECTATION — panels and macro readers; the cast rolls.
 int spell_damage(const SpellDef& spell,
                  const Attributes& attributes,

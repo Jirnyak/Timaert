@@ -1281,7 +1281,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
 
 
 void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
-                                  float elapsed, const sm::vec3& camPos) {
+                                  const sm::vec3& camPos) {
     // New frame ⇒ next staging-arena slot (its fence was waited in acquire).
     arenaSlot_ = (arenaSlot_ + 1u) % std::uint32_t(kFramesInFlight);
     arenaOff_ = 0;

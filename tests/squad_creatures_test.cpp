@@ -62,7 +62,7 @@ void test_every_macro_npc_is_a_squad_of_one() {
             before[s32] = st.alive[s32];
     }
     const int placeBodies = int(sm::store_of(world).aliveCount);
-    sm::spawn_macro_npcs(gs, world, sm::store_of(world), terrain, 123u);
+    sm::spawn_macro_npcs(gs, sm::store_of(world), terrain, 123u);
 
     int macroNpcs = 0;
     {
@@ -78,7 +78,7 @@ void test_every_macro_npc_is_a_squad_of_one() {
     CHECK(macroNpcs > 0, "fixture must spawn macro NPCs to say anything");
 
     // Runtime door: the console/event spawner goes through the same make_npc.
-    CHECK(sm::spawn_npc_at(gs, world, sm::store_of(world), terrain, "bandit", 4, 4, /*level*/ 3),
+    CHECK(sm::spawn_npc_at(gs, sm::store_of(world), terrain, "bandit", 4, 4, /*level*/ 3),
           "runtime spawn door must accept a registry label");
     int containers = 0;
     containers = int(sm::store_of(world).aliveCount) - placeBodies;

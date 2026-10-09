@@ -2128,7 +2128,7 @@ namespace sm::ui
                     // рождения истина у анкеты — она качается).
                     const CharacterSheet &sSheet = mw->store->sheet[sslot];
                     const auto buyUnit = [&](const ItemRef &ref,
-                                             const ItemDef &def, int n) {
+                                             [[maybe_unused]] const ItemDef &def, int n) {
                         return trade_overlay_buy_price(
                             stock_price(value_of(ref),
                                         sInv.count_of(int(ref.def)) - n,
@@ -2141,7 +2141,7 @@ namespace sm::ui
                             trade_power_of(sSheet));
                     };
                     const auto sellUnit = [&](const ItemRef &ref,
-                                              const ItemDef &def, int n) {
+                                              [[maybe_unused]] const ItemDef &def, int n) {
                         return trade_overlay_sell_price(
                             stock_price(value_of(ref),
                                         sInv.count_of(int(ref.def)) + n,

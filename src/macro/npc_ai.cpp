@@ -696,7 +696,7 @@ bool find_nearest_tree_grid(const TreeGrid& g, float px, float py,
 using NS = NPCState;
 
 void ai_home_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
-                      ecs::Pools& pools, const TickContext& ctx) {
+                      [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
 
@@ -1672,8 +1672,13 @@ float route_fear_(const TickContext& ctx, int ax, int ay, int bx, int by) {
 // (Параметр `const Landmark& at` снят вместе со строкой места, ломтик F:
 // у него не было ни одного читателя в теле — цену «там» даёт прейскурант
 // каталога, а не адрес рынка.)
-long long trade_bid_value_(const MacroWorld& mw, int fromX, int fromY,
-                           const int* mine,
+// (`mw`, `fromX`, `fromY` снят ы 2026-10-09 — ТОТ ЖЕ класс, что снятый выше
+// `const Landmark& at`: цену спрашивают у `market_price_seen(c)`, которая
+// отвечает абсолютной стоимостью строки ВСЕМ И ВСЕГДА, то есть «где я»
+// этой ставке сегодня не известно вовсе. Это НАЗВАННАЯ ДЫРА M-191
+// (ближняя половина яруса 2 знания о цене), и теперь она видна в подписи,
+// а не спрятана за параметром, который делает вид, что место учтено.)
+long long trade_bid_value_(const int* mine,
                            const int* homePrice, const int* homeLack) {
     long long value = 0;
     long long purse = 0;
@@ -2015,8 +2020,7 @@ void ai_vendor(MacroHandle self, MacroPos& p,
                 const int nextX_ = slot_x(st, next, ctx.mapW);
                 const int nextY_ = slot_y(st, next, ctx.mapW);
                 const long long gain =
-                    trade_bid_value_(ctx.mw, int(p.x), int(p.y),
-                                     cargo, homePrice, homeLack);
+                    trade_bid_value_(cargo, homePrice, homeLack);
                 // ДЛИТЕЛЬНОСТЬ — ВЕСЬ ОСТАТОК РЕЙСА: туда И оттуда домой.
                 // Иначе «дальше» дешевело бы по построению, и крю уходило бы
                 // от дома бесконечно — знаменатель обязан расти с отъездом.
@@ -2278,7 +2282,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
 }
 
 void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
-               ecs::Pools& pools, const TickContext& ctx) {
+               [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
     const MacroStore& st = store_ctx(ctx);
@@ -2342,7 +2346,7 @@ void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
 }
 
 void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
-              ecs::Pools& pools, const TickContext& ctx) {
+              [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     const MacroStore& st = store_ctx(ctx);
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -2382,7 +2386,7 @@ void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
 }
 
 void ai_aggressive(MacroPos& p, ecs::MacroNpcRuntime& rt,
-                   ecs::Pools& pools, const TickContext& ctx) {
+                   [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     // No private player-channel here any more (owner, 2026-08-29: «игрок
     // ничем не особенен»). Perception and pursuit are squad_threat_step's —
     // the player's squad sits in the SAME SquadIndex at the SAME
@@ -2474,7 +2478,7 @@ MacroHandle nearest_magika_mage(MacroHandle self, const MacroPos& p,
 }
 
 void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
-                  ecs::Pools& pools, const TickContext& ctx) {
+                  [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     if (ctx.squads && ctx.mw.world && ctx.mw.gs) {
         const MacroHandle prey = nearest_magika_mage(self, p, ctx);
         MacroStore& st = store_ctx(ctx);
@@ -2588,7 +2592,7 @@ MacroHandle nearest_weaker_squad(MacroHandle self, const MacroPos& p,
 }
 
 void ai_lair_sorties(MacroHandle self, MacroPos& p,
-                     ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+                     ecs::MacroNpcRuntime& rt, [[maybe_unused]] ecs::Pools& pools,
                      const TickContext& ctx) {
     // Логово самозалечивается: тело без дома объявляет домом место, где
     // проснулось (спавн-дверь анкеты пишет честную клетку раньше).
@@ -2701,7 +2705,7 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
 // Поле угрозы и страх артелей ЖИВЫ — kThreatFearShift ниже читает аукцион.)
 
 void ai_teleporter(MacroPos& p, ecs::MacroNpcRuntime& rt,
-                   ecs::Pools& pools, const TickContext& ctx) {
+                   [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     if (rt.teleportCooldown > 0) --rt.teleportCooldown;
     if (rt.teleportCooldown <= 0 && rand_f01(ctx) < 0.005f) {
         XY t = pick_random_nearby(p.x, p.y, 40, ctx);
@@ -2735,7 +2739,7 @@ void ai_teleporter(MacroPos& p, ecs::MacroNpcRuntime& rt,
 }
 
 void ai_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
-                 ecs::Pools& pools, const TickContext& ctx) {
+                 [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
@@ -2854,7 +2858,7 @@ MacroHandle nearest_hostile_squad(MacroHandle self, const MacroPos& p,
 // fought); the role behaviour then waits for a calmer half hour.
 bool squad_threat_step(MacroHandle self, MacroPos& p,
                        const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
-                       ecs::Pools& pools, const TickContext& ctx) {
+                       [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.world || !ctx.squads || !ctx.mw.gs) return false;
 
     const MacroHandle enemy = nearest_hostile_squad(self, p, kind, ctx);
@@ -3018,7 +3022,7 @@ void scent_player_deposit(const TickContext& ctx) {
 // читает тест и вертит дубль-прогон.)
 bool scent_hunt_step(MacroHandle self, MacroPos& p,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
-                     ecs::Pools& pools, const TickContext& ctx) {
+                     [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.gs || !ctx.mw.world) return false;
     if (!combatant_behaviour(kNpcTypeDefs[kind.type].ai)) return false;
     const ScentField& sf = ctx.mw.gs->scent;
@@ -3231,6 +3235,18 @@ void dispatch(MacroHandle e, MacroPos& p,
         case SquadType::Count: return;
         case SquadType::None:  break;   // ниже — течь, названная по имени
     }
+    // ПОЧЕМУ У ДЕСЯТИ `ai_*` НИЖЕ СТОИТ `[[maybe_unused]] ecs::Pools& pools`, А
+    // НЕ СНЯТЫЙ ПАРАМЕТР (2026-10-09, вместе со сносом `-Wno-unused-parameter`).
+    // Это СЕМЕЙСТВО С ЕДИНОЙ ФОРМОЙ ВЫЗОВА: один `switch` по `AIBehaviour`, и
+    // каждая ветвь зовёт свою функцию ОДНОЙ И ТОЙ ЖЕ пятёркой аргументов.
+    // Снять параметр у тех десяти, кто пулы не читает, значит сделать подписи
+    // семейства рваными — ветвь начнёт знать, какой именно вид её callee, то
+    // есть ровно то знание, ради избавления от которого диспетчер и написан.
+    // Поэтому глушитель здесь ЛОКАЛЬНЫЙ и НАЗВАННЫЙ, а глобального одеяла
+    // (`-Wno-unused-parameter` на весь проект) больше нет: новый мёртвый
+    // параметр в любом другом месте дерева теперь красит сборку.
+    // Уйдёт это вместе с модулем: эпик ИИ переписывает здесь всё (M-235/M-242),
+    // и чинить форму семейства ДО его переписки значит работать на снос (§5 п.14).
     switch (untyped_squad_behaviour(store_ctx(ctx), e, kind)) {
         // ПОСЛЕДНИЕ ДВЕ МАКРО-РОЛИ, ЕЩЁ ЖИВУЩИЕ В КАТАЛОГЕ ТЕЛ (CANON S2):
         // `Gatherer` на строке Peasant и `Trader` на строке Merchant. Они

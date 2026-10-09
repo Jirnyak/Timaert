@@ -3174,7 +3174,7 @@ void handle_pending_spawn_entity_events(App& app) {
     for (std::size_t i = begin; i < end; ++i) {
         const sm::GameEvent& ev = events[i];
         if (ev.tag != sm::EventTag::SpawnEntity) continue;
-        if (sm::spawn_npc_at(app.gs, app.ecs, *app.macroStore, app.terrain,
+        if (sm::spawn_npc_at(app.gs, *app.macroStore, app.terrain,
                              ev.s1.c_str(), ev.ix, ev.iy, int(ev.a))) {
             std::string line = "Word spreads of trouble near the marked area: ";
             line += ev.s1;

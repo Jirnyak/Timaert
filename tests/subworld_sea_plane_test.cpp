@@ -101,7 +101,7 @@ std::vector<float> build_cell(float plane) {
     nbB[4] = Biome::Water;
     std::vector<float> out;
     generate_heightmap(out, kCS, nbH, nbB, /*nbBiome5*/nullptr, Biome::Water,
-                       /*seed*/12345u, /*globalOffsetX*/0, /*globalOffsetY*/0,
+                       /*globalOffsetX*/0, /*globalOffsetY*/0,
                        plane);
     return out;
 }

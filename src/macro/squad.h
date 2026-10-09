@@ -702,7 +702,10 @@ inline bool owes_tithe(const GameState& gs, const MacroStore& st,
 // same door. `renown_of` is what makes a deed contextual — killing a legend
 // is worth a share of the legend — and `grant_renown` is what makes fame
 // spread.
-inline std::uint32_t* renown_slot(MacroStore& st, GameState& gs,
+// `GameState& gs` снят 2026-10-09: оба рода субъекта резолвятся ЧЕРЕЗ СТОР
+// (`macro_handle_by_spawn_id`), слава места — колонка `runtime.renown` его
+// ТЕЛА, и строки места тут не было уже давно.
+inline std::uint32_t* renown_slot(MacroStore& st,
                                   std::uint8_t participantKind,
                                   std::uint32_t ordinal) {
     switch (fact_subject_kind(participantKind)) {
@@ -722,10 +725,10 @@ inline std::uint32_t* renown_slot(MacroStore& st, GameState& gs,
     }
 }
 
-inline std::uint32_t renown_of(MacroStore& st, GameState& gs,
+inline std::uint32_t renown_of(MacroStore& st,
                                std::uint8_t participantKind,
                                std::uint32_t ordinal) {
-    const std::uint32_t* slot = renown_slot(st, gs, participantKind, ordinal);
+    const std::uint32_t* slot = renown_slot(st, participantKind, ordinal);
     return slot ? *slot : 0u;
 }
 
@@ -733,11 +736,11 @@ inline std::uint32_t renown_of(MacroStore& st, GameState& gs,
 // against a nobody is worth twenty, so reaching it takes two hundred million
 // of them. What the clamp really buys is that ADDITION can never be the thing
 // that wraps a legend into a nobody.
-inline void grant_renown(MacroStore& st, GameState& gs,
+inline void grant_renown(MacroStore& st,
                          std::uint8_t participantKind, std::uint32_t ordinal,
                          std::uint32_t gain) {
     if (gain == 0u) return;
-    std::uint32_t* slot = renown_slot(st, gs, participantKind, ordinal);
+    std::uint32_t* slot = renown_slot(st, participantKind, ordinal);
     if (!slot) return;
     const std::uint64_t sum = std::uint64_t(*slot) + gain;
     *slot = std::uint32_t(std::min<std::uint64_t>(sum, 0xFFFFFFFFull));
@@ -767,12 +770,12 @@ inline std::uint32_t record_deed_filed(MacroStore& st, GameState& gs,
                                        WorldFact fact) {
     fact.subjectKind = fact_subject(
         FactSubject(fact_subject_kind(fact.subjectKind)),
-        renown_is_named(renown_of(st, gs, fact.subjectKind, fact.subject)));
+        renown_is_named(renown_of(st, fact.subjectKind, fact.subject)));
     if (fact_subject_kind(fact.objectKind)
         != std::uint8_t(FactSubject::None)) {
         fact.objectKind = fact_subject(
             FactSubject(fact_subject_kind(fact.objectKind)),
-            renown_is_named(renown_of(st, gs, fact.objectKind, fact.object)));
+            renown_is_named(renown_of(st, fact.objectKind, fact.object)));
     }
     const std::uint32_t seq = chronicle_record(gs.chronicle, fact);
     if (seq != 0u) {
@@ -783,8 +786,8 @@ inline std::uint32_t record_deed_filed(MacroStore& st, GameState& gs,
         // world keeps about them.
         const std::uint32_t gain = renown_for_deed(
             FactKind(fact.kind),
-            renown_of(st, gs, fact.objectKind, fact.object));
-        grant_renown(st, gs, fact.subjectKind, fact.subject, gain);
+            renown_of(st, fact.objectKind, fact.object));
+        grant_renown(st, fact.subjectKind, fact.subject, gain);
     }
     return seq;
 }
@@ -1182,7 +1185,7 @@ inline void record_battle_facts(MacroStore& st, GameState& gs,
             st.valid(foe) ? st.spawnId[foe.slot].index : 0u;
         if (foeOrd != 0u
             && renown_is_named(renown_of(
-                   st, gs, std::uint8_t(FactSubject::Squad), foeOrd))) {
+                   st, std::uint8_t(FactSubject::Squad), foeOrd))) {
             f.objectKind = std::uint8_t(FactSubject::Squad);
             f.object = foeOrd;
         } else {
