@@ -68,7 +68,7 @@ inline float body_radius(const entt::registry& reg, entt::entity e) {
         return npc_body_radius(*row);
     }
     if (const auto* ai = body_ai(reg, e)) return ai->radius;
-    if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;
+    if (const auto* sp = body_sprite(reg, e)) return sp->scale;
     return kBodyRadiusFallback;
 }
 

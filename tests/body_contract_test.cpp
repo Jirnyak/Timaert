@@ -82,7 +82,7 @@ void test_every_squad_body_is_a_whole_body() {
         const auto* kind   = sm::sub::body_kind(reg, e);
         const auto* health = sm::sub::body_pools(reg, e);
         const auto* combat = sm::sub::body_combat(reg, e);
-        const auto* sprite = reg.try_get<ecs::Sprite>(e);
+        const auto* sprite = sm::sub::body_sprite(reg, e);
         const auto* ai     = sm::sub::body_ai(reg, e);
 
         // (Лицо на теле НЕ хранится — кусок 1, вердикт «не хранить, как
@@ -217,8 +217,8 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     CHECK_OR_RETURN(body != entt::null && reg.valid(body),
                     "a body-shaped macro entity can be embodied");
 
-    CHECK((reg.all_of<ecs::Position,
-                      ecs::Sprite, ecs::SubworldTag>(body)
+    CHECK((reg.all_of<ecs::Position, ecs::SubworldTag>(body)
+           && sm::sub::body_sprite(reg, body) != nullptr
            && sm::sub::body_sheet(reg, body) != nullptr
            && sm::sub::body_pools(reg, body) != nullptr
            && sm::sub::body_combat(reg, body) != nullptr
@@ -233,7 +233,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         const float want =
             sub::body_height_m(npc_def(NPCType::Guard))
             * sub::body_shape_height_scale(st.character[macro.slot].bodyShape);
-        CHECK((*reg.try_get<ecs::Sprite>(body)).height == want,
+        CHECK((*sm::sub::body_sprite(reg, body)).height == want,
               "the lord's height is his OWN record's face, both worlds agree");
     }
     CHECK(sm::sub::body_kind(reg, body) != nullptr
@@ -449,7 +449,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
         saw88 = saw88 || debt->detail == 88;
         const auto* kind = sm::sub::body_kind(reg, e);
         if (kind && kind->factionIdx != 5) ++wrongFaction;
-        if (reg.all_of<ecs::Sprite>(e)
+        if (sm::sub::body_sprite(reg, e) != nullptr
             && sm::sub::body_sheet(reg, e) != nullptr
             && sm::sub::body_pools(reg, e) != nullptr
             && sm::sub::body_combat(reg, e) != nullptr) {
@@ -543,7 +543,7 @@ void test_two_bodies_of_one_kind_can_differ_in_height() {
                               /*seed*/1000u + i, false},
             /*faceSalt*/i * 7919u);
         if (e == entt::null) continue;
-        const auto* spr = reg.try_get<ecs::Sprite>(e);
+        const auto* spr = sm::sub::body_sprite(reg, e);
         if (!spr) continue;
         ++seen;
         shortest = std::min(shortest, spr->height);

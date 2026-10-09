@@ -402,12 +402,12 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     // varied by the body's own shape byte — the one the face rolls — so a crowd
     // has tall and short people in it without a second field or a second roll.
     const SpriteDef& look = sprite_row(def.sprite);
-    reg.emplace<ecs::Sprite>(e, std::uint16_t(body.type),
+    sub::set_body_sprite(reg, e, ecs::Sprite{std::uint16_t(body.type),
         std::uint8_t((look.tint >> 16) & 0xFFu),
         std::uint8_t((look.tint >>  8) & 0xFFu),
         std::uint8_t( look.tint        & 0xFFu),
-        std::uint8_t(255), bodyRadius, std::uint8_t(def.sprite),
-        body_height_m(def) * body_shape_height_scale(face.bodyShape));
+        bodyRadius, std::uint8_t(def.sprite),
+        body_height_m(def) * body_shape_height_scale(face.bodyShape)});
     maybe_emplace_carried_light(reg, e, def);
     return e;
 }
@@ -825,10 +825,10 @@ void maybe_emplace_carried_light(entt::registry& reg,
                                  entt::entity e,
                                  const NpcTypeDef& def) {
     if (def.lightRadius <= 0.0f) return;
-    reg.emplace<ecs::LightEmitter>(
-        e, ecs::LightEmitter{0.0f, def.lightHeight, 0.0f,
-                             def.lightR, def.lightG, def.lightB,
-                             def.lightRadius, def.lightIntensity});
+    sub::set_body_light(
+        reg, e, ecs::LightEmitter{0.0f, def.lightHeight, 0.0f,
+                                  def.lightR, def.lightG, def.lightB,
+                                  def.lightRadius, def.lightIntensity});
 }
 
 // ── Dungeon residents (sub/dgn interiors) ────────────────────────────────

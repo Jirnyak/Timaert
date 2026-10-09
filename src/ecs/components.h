@@ -385,12 +385,15 @@ static_assert(sizeof(SquadName) == 32, "имя анкеты: 32 Б × 32768 = 1 
 // the eye, which is the same defect as "a tree's height was never drawn".
 // 0 = not stated: the draw path derives it the old way, so anything that is not
 // a body (a projectile card) is unaffected.
-struct Sprite { std::uint16_t atlasId; std::uint8_t r, g, b, a; float scale;
+// Альфы нет: поле `a` умерло ломтём 3 M-150 — читателей у него не было ни
+// одного во всём дереве (писатели клали 255 в никуда; колонка-сирота,
+// DOD п.9). sizeof не сдвинулся — байт съедал паддинг.
+struct Sprite { std::uint16_t atlasId; std::uint8_t r, g, b; float scale;
                 std::uint8_t spriteRow = 0; float height = 0.0f; };
 
 // Positional point-light emitter (graphics only). Any subworld entity carrying
-// one casts a point light: the 3D renderer gathers view<Position, LightEmitter,
-// SubworldTag> each frame and packs it into the set-0/binding-1 light SSBO that
+// one casts a point light: the 3D renderer sweeps слоты с битом kObjHasLight
+// (колонка light@src/sub/objects.h) each frame and packs it into the set-0/binding-1 light SSBO that
 // shaders/lighting.glsl's point_lights() sums (see src/sub/lighting.h GpuLight).
 // `off*` is a world-space metres offset added on top of the entity's ground
 // position (e.g. a torch held at chest height, a spell glow at the projectile).

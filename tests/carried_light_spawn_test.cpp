@@ -145,14 +145,15 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
         if (kindCol == nullptr) continue;
         const auto& kind = *kindCol;
         const bool isGuard = kind.type == std::uint16_t(sm::NPCType::Guard);
-        const bool hasLight = world.reg.all_of<sm::ecs::LightEmitter>(e);
+        const bool hasLight =
+            sm::sub::object_flag(world.reg, e, sm::sub::kObjHasLight);
 
         if (isGuard) {
             ++guards;
             if (!hasLight) continue;       // counted below as an unlit guard
             ++guardsLit;
             // Verbatim copy of the type row → tuning is a one-row data edit.
-            const auto& le = world.reg.get<sm::ecs::LightEmitter>(e);
+            const auto& le = *sm::sub::body_light(world.reg, e);
             if (!near(le.radius, guardDef.lightRadius)
                 || !near(le.intensity, guardDef.lightIntensity)) ++strengthDrift;
             if (!near(le.r, guardDef.lightR)

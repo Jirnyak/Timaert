@@ -5121,7 +5121,7 @@ void draw_debug_panels(App& app) {
                     ImGui::TableNextColumn();
                     // The body's row in THE sprite table, by name — far more
                     // use in a debug list than the ordinal it used to print.
-                    if (const auto* sp = reg.try_get<sm::ecs::Sprite>(e);
+                    if (const auto* sp = sm::sub::body_sprite(reg, e);
                         sp && sp->spriteRow != 0)
                         ImGui::TextUnformatted(
                             sm::sprite_row(sm::SpriteId(sp->spriteRow)).name);
@@ -5200,7 +5200,7 @@ void draw_debug_panels(App& app) {
                 {"BodyAi(arena)",   maskCnt(sm::sub::kObjHasAi)},
 
                 {"Projectile(col)", maskCnt(sm::sub::kObjProjectile)},
-                {"Sprite",          cnt(reg.view<sm::ecs::Sprite>())},
+                {"Sprite(col)",     maskCnt(sm::sub::kObjHasSprite)},
                 {"Dead(col)",       maskCnt(sm::sub::kObjDead)},
                 {"PlayerSoldier(col)", maskCnt(sm::sub::kObjPlayerSoldier)},
                 {"TempHostile(col)",   maskCnt(sm::sub::kObjTempHostile)},

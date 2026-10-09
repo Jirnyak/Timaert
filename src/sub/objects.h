@@ -86,6 +86,22 @@ inline constexpr std::uint16_t kObjProjectile    = 1u << 9;
 // АНКЕТЫ п.4), а бит, читаемый только тестами, — колонка без читателя
 // (DOD п.9).
 inline constexpr std::uint16_t kObjStandingMirror = 1u << 10;
+// Ломоть 3 (виды) — спрайт и свет. ОБА с битом, и у каждого довод свой,
+// купленный судом контрактов по телам читателей:
+// - спрайт: лестница body_radius ключуется НАЛИЧИЕМ (тушка игрока несёт
+//   слот, но не спрайт — нулевая колонка без бита дала бы игроку радиус 0
+//   в живой коллизии, зазоре спавна снаряда и separation), а тинт-байты
+//   свободного значения не имеют ПО ДИЗАЙНУ таблицы (tint 0 = «art
+//   speaks» — авторское значение строк None/City/Village);
+// - свет: отбор в SSBO — nth_element по дистанции с бюджетом
+//   kSubworldMaxLights = 16; бессветные слотовые снаряды (лучи, метеоры
+//   армагеддона) без бита стали бы radius-0 кандидатами и ВЫТЕСНИЛИ бы
+//   фонарь игрока из шестнадцати — тьма, которую не видит ни один ассерт.
+// Ставят ТОЛЬКО двери set_body_sprite / set_body_light; свет умеет гаснуть
+// при живом слоте (clear_body_light — бывший remove<LightEmitter> двух
+// смоук-гейтов), спрайт не снимает никто (remove в дереве ноль).
+inline constexpr std::uint16_t kObjHasSprite = 1u << 11;
+inline constexpr std::uint16_t kObjHasLight  = 1u << 12;
 
 // Событие «в этом тике по телу попали» (колонка damageFx) — биты:
 inline constexpr std::uint8_t kDmgFxPending = 1u << 0;
@@ -175,6 +191,13 @@ struct SubObjects {
     // kObjStandingMirror (см. маску выше).
     std::array<CharacterSheet, std::size_t(kMaxSubObjects)> sheet{};
     std::array<BonusTotals, std::size_t(kMaxSubObjects)> standing{};
+    // ── ВИДЫ (ломоть 3): бывшие ecs::Sprite и ecs::LightEmitter. Оба —
+    // колонка + бит (доводы у маски выше). Спрайт write-once при рождении;
+    // свет пишут четыре двери рождения (факел НПЦ, фонарь игрока, пламя
+    // пропа, глоу болта) и гасят смоук-гейты. Пламя пропа — слотовый
+    // житель арены с этого ломтя («кап субмира на все объекты … и пропы»).
+    std::array<ecs::Sprite, std::size_t(kMaxSubObjects)> sprite{};
+    std::array<ecs::LightEmitter, std::size_t(kMaxSubObjects)> light{};
 
     int count = 0;        // живых слотов (для приборов, не для обхода)
     int cursor = 0;       // бегунок выдачи — слоты переиспользуются по кругу
@@ -216,6 +239,8 @@ struct SubObjects {
             projectile[std::size_t(s)] = ecs::Projectile{};
             sheet[std::size_t(s)] = CharacterSheet{};
             standing[std::size_t(s)] = BonusTotals{};
+            sprite[std::size_t(s)] = ecs::Sprite{};
+            light[std::size_t(s)] = ecs::LightEmitter{};
             ++count;
             return s;
         }
@@ -231,14 +256,13 @@ struct SubObjects {
         --count;
     }
 };
-// 65536 × (4+2+4+1+4+2+36+28+12+40+12+8+4+68+144+184) Б колонок + служебные:
-// цена названа и закреплена. 553 Б/слот × 65536 ≈ 34.56 МиБ — профиль один у
-// пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ; куча через unique_ptr,
-// make_unique зануляет весь кап при рождении сцены). Ассерт заодно пинит
-// sizeof(CharacterSheet) == 144 и sizeof(BonusTotals) == 184: разъехаться
-// молча колонки не могут.
-static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 553 + 24,
-              "массив объектов сцены: 553 Б/слот (ломоть 2: +sheet 144 "
-              "+standing 184) + служебные");
+// 65536 × (4+2+4+1+4+2+36+28+12+40+12+8+4+68+144+184+20+32) Б колонок +
+// служебные: цена названа и закреплена. 605 Б/слот × 65536 ≈ 37.81 МиБ —
+// профиль один у пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ; куча через
+// unique_ptr, make_unique зануляет весь кап при рождении сцены). Ассерт
+// заодно пинит sizeof колонок: разъехаться молча они не могут.
+static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 605 + 24,
+              "массив объектов сцены: 605 Б/слот (ломоть 3: +sprite 20 "
+              "+light 32) + служебные");
 
 } // namespace sm::sub

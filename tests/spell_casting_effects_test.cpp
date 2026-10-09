@@ -76,9 +76,8 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
     w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
     sm::test::give_pools(w.reg, e, sm::ecs::Pools{hp, hp});
     w.reg.emplace<sm::ecs::SubworldTag>(e);
-    w.reg.emplace<sm::ecs::Sprite>(e, std::uint16_t(0),
-        std::uint8_t(255), std::uint8_t(255), std::uint8_t(255),
-        std::uint8_t(255), 6.0f);
+    sm::test::give_sprite(w.reg, e, sm::ecs::Sprite{std::uint16_t(0),
+        std::uint8_t(255), std::uint8_t(255), std::uint8_t(255), 6.0f});
     if (playerSide) {
         sm::test::give_flag(w.reg, e, sm::sub::kObjPlayerSoldier);
     } else {

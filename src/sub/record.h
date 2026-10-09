@@ -304,6 +304,69 @@ inline void set_body_standing(entt::registry& reg, entt::entity e,
         objs->flags[std::size_t(os->slot)] |= kObjStandingMirror;
     }
 }
+// ── ВИДЫ — КОЛОНКИ АРЕНЫ (M-150 ломоть 3) ────────────────────────────────
+// Спрайт: бит kObjHasSprite ставит только дверь; снимать некому (remove в
+// дереве ноль — вид рождается с объектом и умирает со слотом).
+inline ecs::Sprite* body_sprite(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    if ((objs->flags[std::size_t(os->slot)] & kObjHasSprite) == 0u)
+        return nullptr;
+    return &objs->sprite[std::size_t(os->slot)];
+}
+inline const ecs::Sprite* body_sprite(const entt::registry& reg,
+                                      entt::entity e) {
+    return body_sprite(const_cast<entt::registry&>(reg), e);
+}
+inline void set_body_sprite(entt::registry& reg, entt::entity e,
+                            const ecs::Sprite& sp) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->sprite[std::size_t(os->slot)] = sp;
+        objs->flags[std::size_t(os->slot)] |= kObjHasSprite;
+    }
+}
+// Свет: бит kObjHasLight — членство в сборе света (SSBO на 16 мест отбирает
+// БЛИЖАЙШИХ; radius-0 кандидаты вытесняли бы настоящие огни — довод бита у
+// маски objects.h). Гаснуть умеет при живом слоте: clear — бывший
+// remove<LightEmitter> смоук-гейтов, бит гаснет И колонка зануляется
+// (образец clear_body_combat: протухшие флоаты не переживают роль).
+inline ecs::LightEmitter* body_light(entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return nullptr;
+    if ((objs->flags[std::size_t(os->slot)] & kObjHasLight) == 0u)
+        return nullptr;
+    return &objs->light[std::size_t(os->slot)];
+}
+inline const ecs::LightEmitter* body_light(const entt::registry& reg,
+                                           entt::entity e) {
+    return body_light(const_cast<entt::registry&>(reg), e);
+}
+inline void set_body_light(entt::registry& reg, entt::entity e,
+                           const ecs::LightEmitter& le) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->light[std::size_t(os->slot)] = le;
+        objs->flags[std::size_t(os->slot)] |= kObjHasLight;
+    }
+}
+inline void clear_body_light(entt::registry& reg, entt::entity e) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->light[std::size_t(os->slot)] = ecs::LightEmitter{};
+        objs->flags[std::size_t(os->slot)] =
+            std::uint16_t(objs->flags[std::size_t(os->slot)] & ~kObjHasLight);
+    }
+}
 // Лист через ОДНУ дверь состояния (специализация self-фолбэка): запись
 // отвечает колонкой store, как всякое владение; тело без записи — колонкой
 // sheet СВОЕГО слота (компонента CharacterSheet умерла ломтём 2). Фолд

@@ -212,8 +212,9 @@ std::vector<SpawnRecord> expected_cell_fauna(
 std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
     std::vector<SpawnRecord> out;
     auto view = world.reg.view<sm::ecs::SubworldTag,
-                               sm::ecs::Position, sm::ecs::Sprite>();
+                               sm::ecs::Position, sm::ecs::ObjectSlot>();
     for (auto e : view) {
+        if (sm::sub::body_sprite(world.reg, e) == nullptr) continue;
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;
         const auto* hpCol = sm::sub::body_pools(world.reg, e);
@@ -227,7 +228,7 @@ std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
         const auto& combat = *combatCol;
         const std::int16_t level = sm::sub::body_level(world.reg, e);
         const auto& ai = *aiColF;
-        const auto& sprite = view.get<sm::ecs::Sprite>(e);
+        const auto& sprite = *sm::sub::body_sprite(world.reg, e);
 
         SpawnRecord r{};
         r.type = kind.type;
@@ -673,7 +674,7 @@ bool run_beast_member_projection_case(
             // proof — "a beast has no face" — died with the second birth: there
             // is one birth now and it gives every body the same components.)
             const sm::NpcTypeDef& wolf = sm::npc_def(sm::NPCType::Wolf);
-            const auto* spr = reg.try_get<sm::ecs::Sprite>(e);
+            const auto* spr = sm::sub::body_sprite(reg, e);
             if (!spr) return false;
             if (spr->spriteRow != std::uint8_t(wolf.sprite)) return false;
             if (!near(spr->scale, wolf.radius)) return false;
@@ -844,7 +845,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
             sm::sub::body_height_m(sm::npc_def(sm::NPCType::Bandit))
             * sm::sub::body_shape_height_scale(
                   st.character[s.bandit.slot].bodyShape);
-        const auto* spr = reg.try_get<sm::ecs::Sprite>(pBandit);
+        const auto* spr = sm::sub::body_sprite(reg, pBandit);
         if (!spr || spr->height != want) return false;
     }
     {

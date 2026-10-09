@@ -1326,12 +1326,17 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         bodies.reserve(std::size_t(kMaxSubObjects));
         // Exclude the player body: first-person, the camera sits at it, so a
         // possessed body must not be drawn over the lens. The hero husk carries
-        // no Sprite and never matched anyway.
-        auto view = ecs->reg.view<ecs::Position, ecs::Sprite>();
+        // no sprite bit and never matched anyway.
+        SubObjects* sprObjs = objects_find(ecs->reg);
+        auto view = ecs->reg.view<ecs::Position, ecs::ObjectSlot>();
         for (auto e : view) {
+            if (sprObjs == nullptr) break;
+            const std::size_t sprSlot =
+                std::size_t(view.get<ecs::ObjectSlot>(e).slot);
+            if ((sprObjs->flags[sprSlot] & kObjHasSprite) == 0u) continue;
             if (is_avatar(ecs->reg, e)) continue;
             if (bodies.size() >= std::size_t(kMaxSubObjects)) break;
-            const auto& spr = view.get<ecs::Sprite>(e);
+            const auto& spr = sprObjs->sprite[sprSlot];
             const SpriteDef& look = sprite_row(SpriteId(spr.spriteRow));
             const std::uint32_t slot = bank_.slot_for(SpriteId(spr.spriteRow));
             const bool drawn = slot != SpriteBank::kNoSlot;
@@ -3999,12 +4004,17 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
     const float spanM = float(kFullSize) * kTileMeters;
     const float cellM = spanM / float(kLightFieldDim);
 
-    auto view = ecs->reg.view<ecs::Position, ecs::LightEmitter,
+    SubObjects* objs = objects_find(ecs->reg);
+    if (objs == nullptr) return;
+    auto view = ecs->reg.view<ecs::Position, ecs::ObjectSlot,
                                ecs::SubworldTag>();
     for (auto e : view) {
+        const std::size_t slot =
+            std::size_t(view.get<ecs::ObjectSlot>(e).slot);
+        if ((objs->flags[slot] & kObjHasLight) == 0u) continue;
         if (object_flag(ecs->reg, e, kObjDead)) continue;
         const auto& pos = view.get<ecs::Position>(e);
-        const auto& le  = view.get<ecs::LightEmitter>(e);
+        const auto& le  = objs->light[slot];
         float wx = 0.0f, wz = 0.0f;
         tile_to_world(pos.x, pos.y, wx, wz);
         wx += le.offX;
@@ -4164,8 +4174,9 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     std::uint32_t n = 0;
     if (ecs != nullptr && uploaded_) {
         // SubworldTag scopes to the live scene; the player entity carries it too,
-        // so its lantern is gathered through this very view with no special-case.
-        auto view = ecs->reg.view<ecs::Position, ecs::LightEmitter,
+        // so its lantern is gathered through this very sweep with no special-case.
+        SubObjects* objs = objects_find(ecs->reg);
+        auto view = ecs->reg.view<ecs::Position, ecs::ObjectSlot,
                                    ecs::SubworldTag>();
         // Gather EVERY candidate first (each is one GpuLight built exactly as
         // before), with NO upper bound while collecting, then cull to the SSBO
@@ -4180,9 +4191,13 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
         static thread_local std::vector<GpuLight> cands;
         cands.clear();
         for (auto e : view) {
+            if (objs == nullptr) break;
+            const std::size_t slot =
+                std::size_t(view.get<ecs::ObjectSlot>(e).slot);
+            if ((objs->flags[slot] & kObjHasLight) == 0u) continue;
             if (object_flag(ecs->reg, e, kObjDead)) continue;
             const auto& pos = view.get<ecs::Position>(e);
-            const auto& le  = view.get<ecs::LightEmitter>(e);
+            const auto& le  = objs->light[slot];
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
             const float wy = pos.z;

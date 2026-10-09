@@ -64,6 +64,13 @@ inline void give_level(entt::registry& reg, entt::entity e, std::int16_t v) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
     sm::sub::set_body_level(reg, e, v);
 }
+// Вид телу фикстуры — как записала бы дверь рождения (ломоть 3), слот по
+// надобности.
+inline void give_sprite(entt::registry& reg, entt::entity e,
+                        const sm::ecs::Sprite& sp) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_body_sprite(reg, e, sp);
+}
 // Бары/лист/снарядные — колонки арены (кусок 2), слот по надобности.
 inline void give_pools(entt::registry& reg, entt::entity e, sm::ecs::Pools p) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);

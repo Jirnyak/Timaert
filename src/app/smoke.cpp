@@ -64,6 +64,11 @@ static void smoke_give_ai(entt::registry& reg, entt::entity e,
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
     sm::sub::set_body_ai(reg, e, a);
 }
+static void smoke_give_sprite(entt::registry& reg, entt::entity e,
+                              const sm::ecs::Sprite& sp) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
+    sm::sub::set_body_sprite(reg, e, sp);
+}
 // СКОЛЬКО СНАРЯДОВ СТОИТ В СЦЕНЕ (ломоть 4): роль снаряда — бит слота, значит
 // счёт есть проход по колонке арены, а не по множеству реестра. Тринадцать
 // смоуков считали его одинаковым четырёхстрочным циклом по `view<Projectile>`;
@@ -73,7 +78,9 @@ static int smoke_projectile_count(entt::registry& reg) {
     const sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
     if (objs == nullptr) return 0;
     int n = 0;
-    for (int s = 0; s < int(sm::kUnifiedCap); ++s) {
+    // kMaxSubObjects, не kUnifiedCap: кап АРЕНЫ (развод капов, шаг 0 M-150;
+    // после подъёма до 65536 скан по макро-капу считал бы четверть слотов).
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
         const std::uint16_t f = objs->flags[std::size_t(s)];
         if ((f & sm::sub::kObjAlive) != 0u
             && (f & sm::sub::kObjProjectile) != 0u) {
@@ -4094,18 +4101,19 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         0.0f, 8.0f, 0.30f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
     reg.emplace<sm::ecs::SubworldTag>(hostile);
     smoke_give_ai(reg, hostile, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
-    reg.emplace<sm::ecs::Sprite>(hostile,
+    smoke_give_sprite(reg, hostile, sm::ecs::Sprite{
         std::uint16_t(0x1FE),
         std::uint8_t(255), std::uint8_t(60), std::uint8_t(45),
-        std::uint8_t(255), 1.2f);
+        1.2f});
 
     // Все тела рисуются ОДНИМ спрайт-проходом (СПРАЙТ-ЗАКОН, кукла мертва);
     // прежний фильтр «без NpcCharacter» отделял куклу от спрайта и умер
     // вместе с компонентой лица (кусок 1).
     int spriteOnlyVisible = 0;
-    auto spriteView = reg.view<sm::ecs::Position, sm::ecs::Sprite,
+    auto spriteView = reg.view<sm::ecs::Position, sm::ecs::ObjectSlot,
                                sm::ecs::SubworldTag>();
     for (auto e : spriteView) {
+        if (!sm::sub::object_flag(reg, e, sm::sub::kObjHasSprite)) continue;
         if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)) continue;
         const auto* hp = sm::sub::body_pools(reg, e);
         if (hp == nullptr || hp->hp <= 0) continue;
@@ -4227,11 +4235,10 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     reg.emplace<sm::ecs::SubworldTag>(hostile);
     smoke_give_ai(reg, hostile, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
         0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
-    reg.emplace<sm::ecs::Sprite>(
-        hostile,
+    smoke_give_sprite(reg, hostile, sm::ecs::Sprite{
         std::uint16_t(sm::NPCType::Witch),
         std::uint8_t(160), std::uint8_t(112), std::uint8_t(208),
-        std::uint8_t(255), 1.2f);
+        1.2f});
 
     const int beforeProjectiles = smoke_projectile_count(reg);
     const int beforeHp = player_pools(app).hp;
@@ -4436,10 +4443,10 @@ bool run_turn_based_cycle_smoke(App& app) {
                              std::uint16_t(3)});
         smoke_give_pools(reg, target, sm::ecs::Pools{4000, 4000});
         reg.emplace<sm::ecs::SubworldTag>(target);
-        reg.emplace<sm::ecs::Sprite>(
-            target, std::uint16_t(sm::NPCType::Bandit),
+        smoke_give_sprite(reg, target, sm::ecs::Sprite{
+            std::uint16_t(sm::NPCType::Bandit),
             std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
-            std::uint8_t(255), 1.2f);
+            1.2f});
     }
 
     // ENTERING raises windows — the arrival popup above all (a known trap:
@@ -4641,11 +4648,10 @@ bool run_subworld_player_melee_smoke(App& app) {
             std::uint16_t(3)});
     smoke_give_pools(reg, target, sm::ecs::Pools{40, 40});
     reg.emplace<sm::ecs::SubworldTag>(target);
-    reg.emplace<sm::ecs::Sprite>(
-        target,
+    smoke_give_sprite(reg, target, sm::ecs::Sprite{
         std::uint16_t(sm::NPCType::Bandit),
         std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
-        std::uint8_t(255), 1.2f);
+        1.2f});
 
     const float beforeHp = (*sm::sub::body_pools(reg, target)).hp;
     const int beforeCombatLog = app.subworld.combat_log_count();
@@ -4852,11 +4858,10 @@ bool run_subworld_player_bow_smoke(App& app) {
             std::uint16_t(sm::faction_index("bandits"))});
     smoke_give_pools(reg, target, sm::ecs::Pools{40, 40});
     reg.emplace<sm::ecs::SubworldTag>(target);
-    reg.emplace<sm::ecs::Sprite>(
-        target,
+    smoke_give_sprite(reg, target, sm::ecs::Sprite{
         std::uint16_t(sm::NPCType::Bandit),
         std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
-        std::uint8_t(255), 1.2f);
+        1.2f});
 
     const float beforeHp = (*sm::sub::body_pools(reg, target)).hp;
     const int beforeProjectiles = smoke_projectile_count(reg);
@@ -4986,11 +4991,10 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     smoke_give_ai(reg, target, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Flee,
         3.0f, 0.0f, 0.0f, 8.0f, 0.55f});
     reg.emplace<sm::ecs::SubworldTag>(target);
-    reg.emplace<sm::ecs::Sprite>(
-        target,
+    smoke_give_sprite(reg, target, sm::ecs::Sprite{
         std::uint16_t(sm::NPCType::Peasant),
         std::uint8_t(190), std::uint8_t(150), std::uint8_t(120),
-        std::uint8_t(255), 0.8f);
+        0.8f});
 
     const int beforeRep = sm::player_reputation(&app.gs, "empire");
     const float neutralX = reg.get<sm::ecs::Position>(target).x;
@@ -9097,11 +9101,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     std::uint16_t(sm::faction_index("bandits"))});
             smoke_give_pools(app.ecs.reg, spellTarget, sm::ecs::Pools{30, 30});
             app.ecs.reg.emplace<sm::ecs::SubworldTag>(spellTarget);
-            app.ecs.reg.emplace<sm::ecs::Sprite>(
-                spellTarget,
+            smoke_give_sprite(app.ecs.reg, spellTarget, sm::ecs::Sprite{
                 std::uint16_t(sm::NPCType::Bandit),
                 std::uint8_t(255), std::uint8_t(72), std::uint8_t(48),
-                std::uint8_t(255), 1.2f);
+                1.2f});
             const int beforeProjectiles = smoke_projectile_count(app.ecs.reg);
             const int beforeCombatLog = app.subworld.combat_log_count();
             const int beforeSpellCastEvents =
@@ -9222,7 +9225,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // идём по тем, у кого свет есть, и роль спрашиваем колонкой. Так
             // счёт снарядов и вопрос о свете перестают делить один индекс.
             int litProjectiles = 0;
-            for (auto e : app.ecs.reg.view<sm::ecs::LightEmitter>()) {
+            for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
+                if (!sm::sub::object_flag(app.ecs.reg, e,
+                                          sm::sub::kObjHasLight)) continue;
                 if (sm::sub::is_projectile(app.ecs.reg, e)) ++litProjectiles;
             }
             if (afterProjectiles <= beforeProjectiles) {
@@ -9344,12 +9349,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // creature light term OR a guard to prove its data-driven carried
             // torch (Inc 9). Widened from creature-only; wolves still match.
             auto is_probe_actor = [&](entt::entity e) {
-                if (!app.ecs.reg.all_of<sm::ecs::Sprite, sm::ecs::Position>(e))
+                if (!app.ecs.reg.all_of<sm::ecs::Position>(e)) return false;
+                if (!sm::sub::object_flag(app.ecs.reg, e,
+                                          sm::sub::kObjHasSprite))
                     return false;
                 return !sm::sub::is_avatar(app.ecs.reg, e);
             };
             std::vector<entt::entity> before;
-            for (auto e : app.ecs.reg.view<sm::ecs::Sprite, sm::ecs::Position>())
+            for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot,
+                                           sm::ecs::Position>())
                 if (is_probe_actor(e)) before.push_back(e);
             const std::uint32_t seed =
                 app.gs.worldSeed ^ 0x9E3779B9u ^ std::uint32_t(before.size());
@@ -9365,7 +9373,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             {
                 std::vector<entt::entity> beforeSorted = before;
                 std::sort(beforeSorted.begin(), beforeSorted.end());
-                for (auto e : app.ecs.reg.view<sm::ecs::Sprite, sm::ecs::Position>()) {
+                for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot,
+                                               sm::ecs::Position>()) {
                     if (!is_probe_actor(e)) continue;
                     if (!std::binary_search(beforeSorted.begin(),
                                             beforeSorted.end(), e)) {
@@ -9403,16 +9412,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // the staged actor's. This isolates a probed guard's data-driven torch
             // (Inc 9) — otherwise the player's 16 m lantern overlaps a guard staged
             // inside it and the two warm pools blend, making the torch impossible
-            // to attribute. Removing the component is exactly what the universal
-            // gather keys off (view<Position, LightEmitter, SubworldTag>), so the
-            // lantern simply drops out of the SSBO next frame. Harness only.
+            // to attribute. Гашение бита — ровно то, чем ключуется сбор света
+            // (kObjHasLight + колонка light, ломоть 3), so the lantern simply
+            // drops out of the SSBO next frame. Harness only.
             if (std::getenv("TIMAERT_SMOKE_NO_PLAYER_LIGHT")) {
                 int stripped = 0;
                 if (const entt::entity e =
                         sm::sub::avatar_entity(app.ecs.reg);
                     e != entt::null
-                    && app.ecs.reg.all_of<sm::ecs::LightEmitter>(e)) {
-                    app.ecs.reg.remove<sm::ecs::LightEmitter>(e);
+                    && sm::sub::object_flag(app.ecs.reg, e,
+                                            sm::sub::kObjHasLight)) {
+                    sm::sub::clear_body_light(app.ecs.reg, e);
                     ++stripped;
                 }
                 std::fprintf(stderr,
@@ -9427,19 +9437,22 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // nothing. A `guard` frame then shows a single warm ground pool; a
             // `peasant` frame at identical staging is black. That pair attributes
             // the pool to the guard's data-driven torch (Inc 9) with no other
-            // light source in play. Same universal key as the gather (any
-            // Position+LightEmitter+SubworldTag), so the stripped emitters simply
-            // drop out of the SSBO next frame. Harness only.
+            // light source in play. Same universal key as the gather (бит
+            // kObjHasLight), so the stripped emitters simply drop out of the
+            // SSBO next frame. Harness only.
             if (std::getenv("TIMAERT_SMOKE_SOLO_PROBE_LIGHT")) {
                 int stripped = 0;
-                auto lv = app.ecs.reg.view<sm::ecs::LightEmitter>();
+                auto lv = app.ecs.reg.view<sm::ecs::ObjectSlot>();
                 for (auto e : lv) {
                     if (e == probeE) continue;
-                    app.ecs.reg.remove<sm::ecs::LightEmitter>(e);
+                    if (!sm::sub::object_flag(app.ecs.reg, e,
+                                              sm::sub::kObjHasLight)) continue;
+                    sm::sub::clear_body_light(app.ecs.reg, e);
                     ++stripped;
                 }
                 const bool probeLit =
-                    app.ecs.reg.all_of<sm::ecs::LightEmitter>(probeE);
+                    sm::sub::object_flag(app.ecs.reg, probeE,
+                                         sm::sub::kObjHasLight);
                 std::fprintf(stderr,
                              "[smoke] light_probe_capture solo probe light: "
                              "stripped x%d probe_lit=%d\n",

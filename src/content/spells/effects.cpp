@@ -62,7 +62,7 @@ float caster_spawn_offset(const SpellSpawnContext& c, float projectileRadius) {
 // ── Spell-bolt point light (graphics) ──────────────────────────────────────
 // A flying bolt carries a travelling ecs::LightEmitter so it lights the ground
 // and nearby actors in its element's colour — the universal light path the
-// player lantern already uses (view<Position, LightEmitter, SubworldTag>), no
+// player lantern already uses (бит kObjHasLight + колонка light арены), no
 // renderer change. Colour is DERIVED from the sprite tint the spell already
 // passes (fireball orange, ice white, arcane lavender, lightning yellow), so a
 // new spell lights in its own colour for free. Radius/intensity scale with the
@@ -121,12 +121,12 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
         c.py + c.ny * spawnOffset,
         c.pz + c.nz * spawnOffset);
     w.reg.emplace<ecs::Projectile>(e, bolt);   // транзит: читатели в К4-К7
-    w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
-        r, g, b, std::uint8_t(255), 1.0f);
+    sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
+        r, g, b, 1.0f});
     w.reg.emplace<ecs::SubworldTag>(e);
     // Travelling elemental glow (same universal LightEmitter path as the player
     // lantern), coloured from this bolt's own tint and sized to its radius.
-    w.reg.emplace<ecs::LightEmitter>(e, bolt_light(radius, r, g, b));
+    sub::set_body_light(w.reg, e, bolt_light(radius, r, g, b));
 }
 
 void spawn_fireball(ecs::World& w, const SpellSpawnContext& c) {
@@ -178,9 +178,9 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
         c.py + c.ny * (kBeamLen * 0.5f),
         c.pz + c.nz * (kBeamLen * 0.5f));
     w.reg.emplace<ecs::Projectile>(e, beam);   // транзит: читатели в К4-К7
-    w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
+    sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
         std::uint8_t(0xAA), std::uint8_t(0xDD), std::uint8_t(0xFF),
-        std::uint8_t(220), 1.0f);
+        1.0f});
     w.reg.emplace<ecs::SubworldTag>(e);
 }
 
@@ -218,9 +218,9 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
             c.py + std::sin(angle) * dist,
             c.pz);
         w.reg.emplace<ecs::Projectile>(e, meteor);  // транзит: К4-К7
-        w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
+        sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
             std::uint8_t(0xFF), std::uint8_t(0x55), std::uint8_t(0x11),
-            std::uint8_t(255), 1.0f);
+            1.0f});
         w.reg.emplace<ecs::SubworldTag>(e);
     }
 }

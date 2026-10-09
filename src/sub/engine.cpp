@@ -117,7 +117,7 @@ constexpr float kDangerProximityM = 40.0f;
 // player_body_radius().
 // Player carried-light (LightEmitter component). The player is the first honest
 // point-light emitter: a warm lantern/torch glow gathered through the SAME
-// universal path (view<Position, LightEmitter, SubworldTag>) that every future
+// universal path (бит kObjHasLight + колонка light арены) that every future
 // emitter — NPC torches, spell glows, lit windows — will use, with no
 // player-special-case in the renderer. Additive over the directional sun, so it
 // reads as a warm pool at night and is washed out by daylight on its own. Height
@@ -427,7 +427,6 @@ void spawn_npc_missile(entt::registry& reg,
     const std::uint8_t r = std::uint8_t((color >> 16) & 0xFFu);
     const std::uint8_t g = std::uint8_t((color >> 8) & 0xFFu);
     const std::uint8_t b = std::uint8_t(color & 0xFFu);
-    const std::uint8_t a = std::uint8_t((color >> 24) & 0xFFu);
 
     // The missile's wound is rolled AT LOOSE through the one assembly — the
     // arrow leaves the bow carrying its number, the crit verdict included.
@@ -461,8 +460,8 @@ void spawn_npc_missile(entt::registry& reg,
     }
     reg.emplace<ecs::Position>(e, sx, sy, sz);
     reg.emplace<ecs::Projectile>(e, arrow);   // транзит: читатели в К4-К7
-    reg.emplace<ecs::Sprite>(e, std::uint16_t(0x1FD), r, g, b,
-                             a == 0 ? std::uint8_t(255) : a, 1.2f);
+    sub::set_body_sprite(reg, e,
+                         ecs::Sprite{std::uint16_t(0x1FD), r, g, b, 1.2f});
     reg.emplace<ecs::SubworldTag>(e);
 }
 
@@ -1077,14 +1076,14 @@ void SubworldEngine::spawn_player_entity() {
                        /*armorSteps*/std::uint16_t{0}});
     reg.emplace<ecs::SubworldTag>(e);
     // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
-    // by the renderer through the universal view<Position, LightEmitter,
-    // SubworldTag>, so possessing another body (which moves AvatarTag but leaves
-    // this hero husk's components) simply stops lighting from here and starts
-    // from whatever the possessed body carries — no special-case anywhere.
-    reg.emplace<ecs::LightEmitter>(
-        e, ecs::LightEmitter{0.0f, kPlayerLightHeightM, 0.0f,
-                             kPlayerLightR, kPlayerLightG, kPlayerLightB,
-                             kPlayerLightRadiusM, kPlayerLightIntensity});
+    // by the renderer through the universal slot sweep (бит kObjHasLight +
+    // колонка light), so possessing another body simply stops lighting from
+    // here and starts from whatever the possessed body carries — no
+    // special-case anywhere.
+    sub::set_body_light(
+        reg, e, ecs::LightEmitter{0.0f, kPlayerLightHeightM, 0.0f,
+                                  kPlayerLightR, kPlayerLightG, kPlayerLightB,
+                                  kPlayerLightRadiusM, kPlayerLightIntensity});
 }
 
 void SubworldEngine::rebuild_prop_cache() {
@@ -1103,18 +1102,25 @@ void SubworldEngine::rebuild_prop_cache() {
         if (reg.valid(e)) reg.destroy(e);
     }
     propLights_.clear();
-    // A lit prop's flame is a body like any other: Position + LightEmitter +
-    // SubworldTag is exactly what the renderer's light gather asks for, so a
-    // lantern needs no renderer code of its own. It carries nothing else — no
-    // health, no AI, no sprite — so no other system can see it.
+    // A lit prop's flame is an OBJECT of the arena like any other (владелец:
+    // «кап субмира на все объекты … и пропы»): слот + Position + бит света,
+    // so a lantern needs no renderer code of its own. It carries nothing
+    // else — no health, no AI, no sprite — so no other system can see it.
+    // Слот обязателен: колонка света адресуется им; пламя без слота (кап
+    // исчерпан) честно не рождается — как BodyCrowd::add.
     for (const Structure& s : mgr_.structures()) {
         if (!structure_is_lit(s.kind)) continue;
         const StructureKindRow& row = structure_kind_row(s.kind);
         const float seatM = mgr_.height_field().sample(s.x, s.y);
+        sub::SubObjects* objs = sub::objects_find(reg);
+        if (objs == nullptr) continue;
+        const int slot = objs->alloc();
+        if (slot < 0) continue;
         const entt::entity e = reg.create();
+        reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
         reg.emplace<ecs::Position>(e, s.x, s.y, seatM);
         reg.emplace<ecs::SubworldTag>(e);
-        reg.emplace<ecs::LightEmitter>(e, ecs::LightEmitter{
+        sub::set_body_light(reg, e, ecs::LightEmitter{
             0.0f, row.lightHeightM, 0.0f,
             float((row.lightRgb >> 16) & 0xFFu) / 255.0f,
             float((row.lightRgb >>  8) & 0xFFu) / 255.0f,
@@ -2005,7 +2011,7 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
     bool haveTint = false;
     const entt::entity e = entt::entity(entity);
     if (reg.valid(e)) {
-        if (const auto* spr = reg.try_get<ecs::Sprite>(e)) {
+        if (const auto* spr = sub::body_sprite(reg, e)) {
             const float rf = float(spr->r);
             const float gf = float(spr->g);
             const float bf = float(spr->b);
@@ -2494,7 +2500,7 @@ void SubworldEngine::tick_damage_fx() {
         // spark off the plate, whatever the body plan.
         FxKind kind = FxKind::Blood;
         if (fxBlocked) kind = FxKind::Spark;
-        else if (const auto* spr = reg.try_get<ecs::Sprite>(e)) {
+        else if (const auto* spr = sub::body_sprite(reg, e)) {
             const auto arch = static_cast<CreatureArchetype>(
                 sprite_row(SpriteId(spr->spriteRow)).archetype);
             if (arch == CreatureArchetype::Undead
@@ -3142,7 +3148,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // crowd of men at head height but is honestly inside a dragon's
         // column. No Sprite / unstated height = 0 → the crowd's add() fills
         // the man-column default.
-        if (const auto* spr = reg.try_get<ecs::Sprite>(e)) d.height = spr->height;
+        if (const auto* spr = sub::body_sprite(reg, e)) d.height = spr->height;
         d.speed = c ? c->speed : 0.0f;
         d.reach = c ? c->attackRange : 0.0f;
         d.sight = body_sight(reg, e);
@@ -5017,7 +5023,7 @@ void SubworldEngine::tick(float dt) {
             const entt::entity e = propLights_[i];
             if (!ecs_->reg.valid(e)) continue;
             const auto* pos = ecs_->reg.try_get<ecs::Position>(e);
-            const auto* le = ecs_->reg.try_get<ecs::LightEmitter>(e);
+            const auto* le = sub::body_light(ecs_->reg, e);
             if (pos == nullptr || le == nullptr) continue;
             float wx = 0.0f, wz = 0.0f;
             Renderer3DVk::tile_to_world(pos->x, pos->y, wx, wz);
@@ -5061,7 +5067,7 @@ void SubworldEngine::tick(float dt) {
             const float drip01 =
                 1.0f - 2.0f * float(hp.hp) / float(hp.maxHp);
             if (stampRng_.next_f01() > drip01 * dt * 3.0f) continue;
-            if (const auto* spr = ecs_->reg.try_get<ecs::Sprite>(e)) {
+            if (const auto* spr = sub::body_sprite(ecs_->reg, e)) {
                 const auto arch = static_cast<CreatureArchetype>(
                     sprite_row(SpriteId(spr->spriteRow)).archetype);
                 if (arch == CreatureArchetype::Undead
