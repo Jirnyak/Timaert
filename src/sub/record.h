@@ -653,27 +653,26 @@ inline void set_avatar(entt::registry& reg, entt::entity e) {
     SubObjects* objs = objects_find(reg);
     if (objs == nullptr) return;          // фикстура без арены — транзит
     if (e == entt::null) {
-        objs->avatarId = 0;               // ссылки нет
+        objs->avatar = ObjRef{};          // ссылки нет (id == 0)
         objs->avatarEnttBits = 0xFFFFFFFFu;
         return;
     }
     const auto* os = reg.try_get<ecs::ObjectSlot>(e);
     if (os == nullptr) return;            // тело без слота — транзит
-    objs->avatarSlot = os->slot;
-    objs->avatarId = objs->id[std::size_t(os->slot)];
+    objs->avatar = ObjRef{os->slot, objs->id[std::size_t(os->slot)]};
     objs->avatarEnttBits = std::uint32_t(entt::to_integral(e));
 }
 inline bool avatar_ref_live(const SubObjects& o) {
-    return o.avatarId != 0u
-        && o.id[std::size_t(o.avatarSlot)] == o.avatarId
-        && (o.flags[std::size_t(o.avatarSlot)] & kObjAlive) != 0u;
+    return o.avatar.id != 0u
+        && o.id[std::size_t(o.avatar.slot)] == o.avatar.id
+        && (o.flags[std::size_t(o.avatar.slot)] & kObjAlive) != 0u;
 }
 inline bool is_avatar(const entt::registry& reg, entt::entity e) {
     if (e == entt::null || !reg.valid(e)) return false;
     SubObjects* const* po = reg.ctx().find<SubObjects*>();
     if (po == nullptr || !avatar_ref_live(**po)) return false;
     const auto* os = reg.try_get<ecs::ObjectSlot>(e);
-    return os != nullptr && os->slot == (*po)->avatarSlot;
+    return os != nullptr && os->slot == (*po)->avatar.slot;
 }
 inline entt::entity avatar_entity(const entt::registry& reg) {
     SubObjects* const* po = reg.ctx().find<SubObjects*>();

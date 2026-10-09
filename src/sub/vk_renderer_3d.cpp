@@ -1335,9 +1335,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             const std::uint16_t f = sprObjs->flags[sprSlot];
             if ((f & kObjAlive) == 0u) continue;
             if ((f & kObjHasSprite) == 0u) continue;
-            if (sprObjs->avatarId != 0u
-                && std::uint16_t(s) == sprObjs->avatarSlot
-                && sprObjs->id[sprSlot] == sprObjs->avatarId) continue;
+            if (sprObjs->is_avatar_slot(s)) continue;
             if (bodies.size() >= std::size_t(kMaxSubObjects)) break;
             const auto& spr = sprObjs->sprite[sprSlot];
             const SpriteDef& look = sprite_row(SpriteId(spr.spriteRow));
@@ -4029,8 +4027,7 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
         // field owns every other emitter at any range. No boundary, no pop,
         // no double counting by construction.
         if ((f & kObjProjectile) != 0u) continue;
-        if (objs->avatarId != 0u && std::uint16_t(s) == objs->avatarSlot
-            && objs->id[slot] == objs->avatarId) continue;
+        if (objs->is_avatar_slot(s)) continue;
         const int cx0 = std::max(
             0, int((wx - le.radius) / cellM + float(kLightFieldDim) * 0.5f));
         const int cx1 = std::min(
@@ -4209,9 +4206,7 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
             // LIGHT FIELD's (rebuild_light_field applies the inverse of this
             // same test — by nature, not by distance, so nothing is counted
             // twice and nothing pops at a boundary).
-            const bool isAvatarSlot = objs->avatarId != 0u
-                && std::uint16_t(s) == objs->avatarSlot
-                && objs->id[slot] == objs->avatarId;
+            const bool isAvatarSlot = objs->is_avatar_slot(s);
             if (!isAvatarSlot && (f & kObjProjectile) == 0u) {
                 continue;
             }

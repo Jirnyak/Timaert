@@ -2502,8 +2502,7 @@ void SubworldEngine::tick_damage_fx() {
         // The player body's damage feedback is the HUD hit-flash; a world burst
         // would spawn on the camera and clip the near plane. Skip it (still
         // consumed below so the tag never lingers).
-        if (objs.avatarId != 0u && std::uint16_t(s) == objs.avatarSlot
-            && objs.id[std::size_t(s)] == objs.avatarId) continue;
+        if (objs.is_avatar_slot(s)) continue;
         const bool fxLethal = (fxBits & sub::kDmgFxLethal) != 0u;
         const bool fxBlocked = (fxBits & sub::kDmgFxBlocked) != 0u;
         const ecs::Position& pos = objs.pos[std::size_t(s)];
