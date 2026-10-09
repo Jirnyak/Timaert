@@ -144,24 +144,8 @@ entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant);
 
-// Does this projection OWN NOTHING — is it an address rather than a copy?
-//
-// The mirror law (owner 2026-09-12, sub/record.h): a projected body carries no
-// bag, no gear, no book and no personality of its own; all of it belongs to the
-// record it projects, and every reader goes through the door to reach it.
-//
-// This predicate is the inverse of the one it replaced, and the inversion is
-// the whole landing. `tracked_body_inherits_all` asked whether the COPY was
-// complete — a question that only makes sense while copies exist, and one the
-// project answered wrong once already (SAVE-1: the copier was a hand-written
-// run of `if (try_get) emplace` lines, `BodyEquipment` was not among them, and
-// an armoured lord fought naked while nothing said a word). With no copy there
-// is nothing to be incomplete.
-//
-// Both halves are checked, because either alone is satisfiable for the wrong
-// reason: the body must hold none of it, AND the record must be where it lives.
-bool tracked_body_owns_nothing(const entt::registry& reg,
-                               MacroHandle record, entt::entity body);
+// (Предикат tracked_body_owns_nothing умер 0a ломтя 7: «тело не владеет
+// ничем» держит дверь state_of@src/sub/record.h — арм самозаписи снесён.)
 
 // Re-derive a standing body's OUTGOING numbers from its record — but only if
 // what stands on that record actually changed (колонка standing@src/sub/objects.h,

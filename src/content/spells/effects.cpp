@@ -102,13 +102,19 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
                         float blast,
                         std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     const float spawnOffset = caster_spawn_offset(c, radius);
+    // Поля НАЗВАНЫ (0b ломтя 7): перестановка полей при том же sizeof была
+    // невидима ассерту; designated-форму красит -Wreorder-init-list -Werror.
     const ecs::Projectile bolt{
-        c.nx * speed, c.ny * speed, c.nz * speed,
-        radius, life, life, c.damage, blast,
-        c.px, c.py, 0.0f,
-        std::uint8_t(0), 0.0f,
-        c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Bolt,
-        c.friendlyFire, false, false, c.dmgType, c.critical};
+        .vx = c.nx * speed, .vy = c.ny * speed, .vz = c.nz * speed,
+        .radius = radius, .lifeTimer = life, .maxLifeTimer = life,
+        .damage = c.damage, .blastRadius = blast,
+        .originX = c.px, .originY = c.py, .beamLength = 0.0f,
+        .chainDecayPct = std::uint8_t(0), .chainRadius = 0.0f,
+        .spellId = c.spellId, .ownerId = c.playerId,
+        .chainRemaining = std::int16_t(0), .kind = ecs::Projectile::Bolt,
+        .friendlyFire = c.friendlyFire, .visualOnly = false,
+        .explodeOnExpiry = false, .dmgType = c.dmgType,
+        .critical = c.critical};
     auto e = w.create();
     // Снаряд — жилец арены (ломоть 4): нет слота — нет снаряда, и каст
     // остаётся оплаченным, как промах. Позиция — аргумент рождения (ломоть 5).
@@ -159,13 +165,19 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
     const float spawnOffset = caster_spawn_offset(c, radius);
     const ecs::Projectile beam{
-        c.nx, c.ny, c.nz,
-        radius,
-        0.35f, 0.35f, c.damage, 0.0f,
-        c.px + c.nx * spawnOffset, c.py + c.ny * spawnOffset, kBeamLen,
-        std::uint8_t(0), 0.0f,
-        c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Beam,
-        c.friendlyFire, true, true, c.dmgType, c.critical};
+        .vx = c.nx, .vy = c.ny, .vz = c.nz,
+        .radius = radius,
+        .lifeTimer = 0.35f, .maxLifeTimer = 0.35f,
+        .damage = c.damage, .blastRadius = 0.0f,
+        .originX = c.px + c.nx * spawnOffset,
+        .originY = c.py + c.ny * spawnOffset,
+        .beamLength = kBeamLen,
+        .chainDecayPct = std::uint8_t(0), .chainRadius = 0.0f,
+        .spellId = c.spellId, .ownerId = c.playerId,
+        .chainRemaining = std::int16_t(0), .kind = ecs::Projectile::Beam,
+        .friendlyFire = c.friendlyFire, .visualOnly = true,
+        .explodeOnExpiry = true, .dmgType = c.dmgType,
+        .critical = c.critical};
     auto e = w.create();
     const ecs::Position beamAt{c.px + c.nx * (kBeamLen * 0.5f),
                                c.py + c.ny * (kBeamLen * 0.5f),
@@ -196,12 +208,16 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
         const float life = 0.3f + delay;
 
         const ecs::Projectile meteor{
-            0.0f, 0.0f, 0.0f,
-            radius, life, life, c.damage, kArmageddonPerMeteorBlast,
-            c.px, c.py, 0.0f,
-            std::uint8_t(0), 0.0f,
-            c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Bolt,
-            c.friendlyFire, true, true, c.dmgType, c.critical};
+            .vx = 0.0f, .vy = 0.0f, .vz = 0.0f,
+            .radius = radius, .lifeTimer = life, .maxLifeTimer = life,
+            .damage = c.damage, .blastRadius = kArmageddonPerMeteorBlast,
+            .originX = c.px, .originY = c.py, .beamLength = 0.0f,
+            .chainDecayPct = std::uint8_t(0), .chainRadius = 0.0f,
+            .spellId = c.spellId, .ownerId = c.playerId,
+            .chainRemaining = std::int16_t(0), .kind = ecs::Projectile::Bolt,
+            .friendlyFire = c.friendlyFire, .visualOnly = true,
+            .explodeOnExpiry = true, .dmgType = c.dmgType,
+            .critical = c.critical};
         auto e = w.create();
         // Кап арены обрывает ДОЖДЬ, а не отдельный метеор: освобождений
         // внутри цикла не бывает, значит следующий alloc отказал бы так же.

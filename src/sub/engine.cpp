@@ -436,24 +436,27 @@ void spawn_npc_missile(entt::registry& reg,
     const StrikeRoll loose = roll_strike(combatRng, combat.dice,
                                          combat.flatAdd, combat.multPct,
                                          int(combat.luck));
+    // Поля НАЗВАНЫ (0b ломтя 7): позиционный список переживал перестановку
+    // полей при том же sizeof молча; designated-форму перестановка красит
+    // стеной -Wreorder-init-list -Werror.
     const ecs::Projectile arrow{
-        nx * speed, ny * speed, nz * speed,
-        projectileRadius, life, life,
-        loose.amount,
-        blast,
-        sx, sy,
-        0.0f,
-        std::uint8_t(0),
-        0.0f,
-        kNpcMissileSpellId,
-        std::uint32_t(entt::to_integral(attacker)),
-        std::int16_t(0),
-        ecs::Projectile::Bolt,
-        false,
-        false,
-        false,
-        combat.dmgType,
-        loose.critical};
+        .vx = nx * speed, .vy = ny * speed, .vz = nz * speed,
+        .radius = projectileRadius, .lifeTimer = life, .maxLifeTimer = life,
+        .damage = loose.amount,
+        .blastRadius = blast,
+        .originX = sx, .originY = sy,
+        .beamLength = 0.0f,
+        .chainDecayPct = std::uint8_t(0),
+        .chainRadius = 0.0f,
+        .spellId = kNpcMissileSpellId,
+        .ownerId = std::uint32_t(entt::to_integral(attacker)),
+        .chainRemaining = std::int16_t(0),
+        .kind = ecs::Projectile::Bolt,
+        .friendlyFire = false,
+        .visualOnly = false,
+        .explodeOnExpiry = false,
+        .dmgType = combat.dmgType,
+        .critical = loose.critical};
     entt::entity e = reg.create();
     // Стрела — жилец арены (ломоть 4): нет слота — выстрела нет, и
     // восстановление лучника уже списано, как при промахе.

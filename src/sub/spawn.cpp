@@ -645,48 +645,11 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
     return e;
 }
 
-// ── WHAT A TRACKED BODY DOES NOT OWN ────────────────────────────────────
-//
-// The same list, now answering the opposite question — and that inversion IS
-// the landing (owner's form 2026-09-12, «ЗЕРКАЛО ДЛЯ ВСЕХ»).
-//
-// It used to name what got COPIED across the seam, and the copy was the bug:
-// a lord you stripped and looted underground climbed out dressed, because his
-// belongings down here were a duplicate nobody read back. A duplicate cannot be
-// fixed by remembering to fold it up — the fold-up is what drops fields
-// (BodyEquipment was missing from the hand-written run that preceded this very
-// list). So the copy is gone: the body carries none of these, and every reader
-// asks sub/record.h whose they are.
-//
-// The list survives because the WITNESS needs it: one place naming the kinds of
-// owned state, read by the guard below, so adding a kind adds its guard in the
-// same edit.
-//
-// CharacterSheet is deliberately absent, for the same reason as before: the
-// sheet decides a body's bars and its blow, so it is needed BEFORE the entity
-// exists and rides in through BodySpec (emplace_body above) — where it is read
-// from the record, not rolled.
-template <class... Cs>
-struct OwnedState {
-    static bool none_on(const entt::registry& reg, entt::entity body) {
-        return (... && !reg.all_of<Cs>(body));
-    }
-};
-// The belongings, the personality, WHAT HE IS WEARING and what he knows.
-using TrackedInheritance =
-    OwnedState<ecs::NpcInventory, ecs::NpcTraits,
-               ecs::BodyEquipment, SpellBook>;
-
-bool tracked_body_owns_nothing(const entt::registry& reg,
-                               MacroHandle record, entt::entity body) {
-    if (!reg.valid(body)) return false;
-    // Two halves, and both must hold or the claim is empty: the body carries
-    // none of it, AND the record it points at is where it actually lives.
-    // Кластер 7: запись ЕСТЬ слот store — «владение живёт на записи» истинно
-    // ровно тогда, когда хэндл жив (колонки у живого слота по построению).
-    return TrackedInheritance::none_on(reg, body)
-        && store_of(const_cast<entt::registry&>(reg)).valid(record);
-}
+// (Предикат «tracked body owns nothing» и фолд OwnedState умерли 0a ломтя 7:
+// закон «тело не владеет ничем» держит сама ДВЕРЬ state_of@src/sub/record.h —
+// арм самозаписи снесён, состояние записи читается только с записи, и сумка,
+// контрабандой положенная на тело, двери НЕВИДИМА. Свидетель —
+// subworld_spawn_parity_test, живой контроль контрабандой.)
 
 entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
                                 float x, float y, std::uint32_t seed,

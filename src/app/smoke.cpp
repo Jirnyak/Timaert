@@ -5036,15 +5036,23 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // ownerId is the PLAYER'S entity, not a placeholder zero: it is what makes
     // this the player's bolt, and only a player-owned hit reaches the damage-log
     // callback that charges reputation (spell_effects.cpp apply_spell_damage).
-    reg.emplace<sm::ecs::Projectile>(
-        friendlyProjectile,
-        0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, kFriendlySpellDamage, 0.0f,
-        tx, py, 0.0f, std::uint8_t(0), 0.0f,
-        sm::stable_spell_id("magic_bolt"),
-        app.subworld.player_entity_id(),
-        std::int16_t{0}, sm::ecs::Projectile::Bolt,
-        false, false, false,
-        std::uint8_t(sm::DamageType::Blunt), false);
+    // Поля НАЗВАНЫ (0b ломтя 7): позиционный emplace переживал перестановку
+    // полей молча; designated-форму красит -Wreorder-init-list -Werror.
+    const sm::ecs::Projectile friendlyBolt{
+        .vx = 0.0f, .vy = 0.0f, .vz = 0.0f,
+        .radius = 1.5f, .lifeTimer = 1.0f, .maxLifeTimer = 1.0f,
+        .damage = kFriendlySpellDamage, .blastRadius = 0.0f,
+        .originX = tx, .originY = py, .beamLength = 0.0f,
+        .chainDecayPct = std::uint8_t(0), .chainRadius = 0.0f,
+        .spellId = sm::stable_spell_id("magic_bolt"),
+        .ownerId = app.subworld.player_entity_id(),
+        .chainRemaining = std::int16_t{0},
+        .kind = sm::ecs::Projectile::Bolt,
+        .friendlyFire = false, .visualOnly = false,
+        .explodeOnExpiry = false,
+        .dmgType = std::uint8_t(sm::DamageType::Blunt),
+        .critical = false};
+    reg.emplace<sm::ecs::Projectile>(friendlyProjectile, friendlyBolt);
     // Колонка арены (ломоть 4): снаряд-фикстура — такой же жилец слота, как
     // рождённый дверью выстрела; значение берётся у компоненты, что исключает
     // расхождение двух носителей. Строка умрёт вместе с компонентой (К7).

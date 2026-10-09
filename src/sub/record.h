@@ -74,18 +74,16 @@ inline MacroHandle macro_record_of(const entt::registry& reg,
 // and froze the world's AI — memory: handwritten-foldup-drops-fields). Adding
 // a kind of owned state means adding one line, not a fifth twin.
 //
-// The self-fallback is the same guard as above, one level down: a record that
-// does not keep this kind of state at all leaves the body answering for itself.
+// САМОЗАПИСИ НЕТ (0a ломтя 7): арм «тело без записи — своя компонента»
+// снесён — ни одна строка src/ не прикрепляла C-компоненту к телу никогда
+// (перепись: 0 emplace), и «оба нуля — предельный случай (голое тело толпы),
+// не ветка» (damage.cpp). Записи нет — состояния нет; контрабандная
+// компонента на теле двери НЕВИДИМА (свидетель в spawn_parity).
 template <class C>
 inline C* state_of(entt::registry& reg, entt::entity body) {
-    // Запись-макро отвечает КОЛОНКОЙ store по хэндлу (шаг 2 1е); тело без
-    // записи — своей компонентой (self-fallback — вторая честная форма).
     const MacroHandle rec = macro_record_of(reg, body);
-    if (rec.slot != kMacroNoSlot) {
-        if (C* owned = body_state<C>(store_of(reg), rec)) return owned;
-    }
-    // Тело без записи — «само себе запись»: своя компонента (кластер 7).
-    return reg.try_get<C>(body);
+    if (rec.slot == kMacroNoSlot) return nullptr;
+    return body_state<C>(store_of(reg), rec);
 }
 
 template <class C>

@@ -1079,9 +1079,9 @@ int main() {
     // ADDRESS, not as a copy. Two things are asserted, and each has a real way
     // to fail: the man who arrives is the SAME MAN (his own stored sheet, not a
     // fresh roll of his row from the cell's seed, which is what the projection
-    // used to do), and he OWNS NOTHING down here — the body holds none of the
-    // state the list in spawn.cpp names, and the record holds all of it
-    // (sub/spawn.h tracked_body_owns_nothing).
+    // used to do), and he OWNS NOTHING down here — с 0a ломтя 7 это держит
+    // сама ДВЕРЬ state_of: арм самозаписи снесён, дверь отвечает только
+    // записью (бывший предикат tracked_body_owns_nothing умер с армом).
     //
     // The second claim used to be its mirror image — «the copy is complete» —
     // and inverting it is the landing: with no copy there is no fold-up to
@@ -1117,26 +1117,20 @@ int main() {
         CHECK(body != entt::null,
               "the fixture must actually project a body");
 
-        CHECK(sm::sub::tracked_body_owns_nothing(reg, hq, body),
-              "a projected body owns none of it — bag, gear, book and "
-              "personality stay on the record it projects");
+        CHECK(sm::sub::state_of<sm::ecs::NpcInventory>(reg, body)
+                  == &stq.inventory[hq.slot],
+              "a projected body owns none of it: the door answers with the "
+              "RECORD's bag and nothing else");
 
-        // NEGATIVE CONTROL for THIS half, asserted so the detector is known to
-        // work: hand the body a bag of its own and the predicate must refuse.
-        // Without it, «owns nothing» would also pass for a body the fixture
-        // never built properly.
+        // NEGATIVE CONTROL, live: hand the body a bag of its own — the door
+        // must NOT see it (0a ломтя 7). Владение телом не просто
+        // отсутствует — оно НЕЧИТАЕМО: арм, который мог его прочесть, мёртв.
         reg.emplace<sm::ecs::NpcInventory>(body);
-        CHECK(!sm::sub::tracked_body_owns_nothing(reg, hq, body),
-              "a body that owns a bag of its own is NOT a mirror — the guard "
-              "can see the defect it exists to catch");
+        CHECK(sm::sub::state_of<sm::ecs::NpcInventory>(reg, body)
+                  == &stq.inventory[hq.slot],
+              "a bag smuggled onto the body is INVISIBLE to the door — the "
+              "self-record arm is gone, the record keeps answering");
         reg.remove<sm::ecs::NpcInventory>(body);
-
-        // ...and the other half: a record holding nothing must not satisfy it
-        // either, or «owns nothing» would be true of two empty entities.
-        CHECK(!sm::sub::tracked_body_owns_nothing(reg, sm::MacroHandle{},
-                                                  body),
-              "the state must actually live on the record, not merely be "
-              "absent from the body — не-запись есть невалидный хэндл");
 
         const auto* carried = body != entt::null
             ? sm::sub::body_sheet(reg, body) : nullptr;
