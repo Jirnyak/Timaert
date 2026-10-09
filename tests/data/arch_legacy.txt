@@ -164,6 +164,7 @@ entt	src/content/spells/effects.cpp	entt
 entt	src/content/spells/spell_book.cpp	entt
 entt	src/ecs/world.h	entt
 entt	src/macro/macro_stock.h	entt
+entt	src/sub/ability.h	entt
 entt	src/sub/ai.cpp	entt
 entt	src/sub/body.h	entt
 entt	src/sub/damage.cpp	entt
