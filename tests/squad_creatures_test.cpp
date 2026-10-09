@@ -55,10 +55,10 @@ void test_every_macro_npc_is_a_squad_of_one() {
     // про СПАВН-ДВЕРЬ, а не про всякое тело мира: город законно носит в
     // инвентаре свою тысячу голов. Поэтому отсечка берётся ДО спавна, и
     // спрашиваются ровно те слоты, которые дверь родила.
-    std::uint8_t before[sm::kMacroEntityCap];
+    std::uint8_t before[sm::kUnifiedCap];
     {
         const sm::MacroStore& st = sm::store_of(world);
-        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)
+        for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32)
             before[s32] = st.alive[s32];
     }
     const int placeBodies = int(sm::store_of(world).aliveCount);
@@ -67,7 +67,7 @@ void test_every_macro_npc_is_a_squad_of_one() {
     int macroNpcs = 0;
     {
         const sm::MacroStore& st = sm::store_of(world);
-        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+        for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
             if (st.alive[s32] == 0 || before[s32] != 0) continue;
             ++macroNpcs;
             CHECK(sm::creatures_empty(st.inventory[s32].inv),

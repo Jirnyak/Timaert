@@ -50,7 +50,7 @@ struct LandmarkView {
 // а не населением (ЗАКОН СТАБИЛЬНОСТИ: структурная цена — константа).
 template <class F>
 void for_each_place(const MacroStore& st, F&& fn) {
-    for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
+    for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
         if (!is_settlement_kind(SquadType(st.runtime[slot].squadType)))
             continue;
@@ -70,7 +70,7 @@ void for_each_landmark(const MacroWorld& w, F&& fn) {
     const GameState& gs = *w.gs;
     const MacroStore& st = *w.store;
     for (SquadType t : kLandmarkYieldOrder) {
-        for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
+        for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
             if (SquadType(st.runtime[slot].squadType) != t) continue;
             // БЕЗЫМЯННЫЙ — ЧЕСТНЫЙ СЛУЧАЙ ИМЕНОВАННОГО ТИПА (вердикт

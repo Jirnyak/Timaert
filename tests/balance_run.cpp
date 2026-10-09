@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
         // воды.
         {
             int atSea = 0;
-            for (std::size_t s = 0; s < sm::kMacroEntityCap; ++s) {
+            for (std::size_t s = 0; s < sm::kUnifiedCap; ++s) {
                 if (!macroStore->alive[s]) continue;
                 const std::uint32_t idx = macroStore->cell[s].idx;
                 if (!pathCost.water.empty()
@@ -468,7 +468,7 @@ int main(int argc, char** argv) {
             });
             long long coinSquads = 0, foodHolds = 0;
             for (std::uint16_t slot = 0;
-                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                 slot < std::uint16_t(sm::kUnifiedCap); ++slot) {
                 if (macroStore->alive[slot] == 0) continue;
                 const auto& bag = macroStore->inventory[slot];
                 coinSquads += coins_in(bag.inv, coinIdx);
@@ -486,7 +486,7 @@ int main(int argc, char** argv) {
             });
             long long horsesSquads = 0;
             for (std::uint16_t slot = 0;
-                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                 slot < std::uint16_t(sm::kUnifiedCap); ++slot) {
                 if (macroStore->alive[slot] == 0) continue;
                 horsesSquads += sm::creature_count_of(
                     macroStore->inventory[slot].inv, sm::NPCType::Horse);
@@ -501,7 +501,7 @@ int main(int argc, char** argv) {
             // мимо закона.
             long long soulsHomed = 0, soulsFree = 0;
             for (std::uint16_t slot = 0;
-                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                 slot < std::uint16_t(sm::kUnifiedCap); ++slot) {
                 if (macroStore->alive[slot] == 0) continue;
                 const auto& kind = macroStore->kind[slot];
                 const auto& rt = macroStore->runtime[slot];
@@ -528,7 +528,7 @@ int main(int argc, char** argv) {
             }
             int crewsGather = 0, crewsSell = 0, crewsOther = 0;
             for (std::uint16_t slot = 0;
-                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                 slot < std::uint16_t(sm::kUnifiedCap); ++slot) {
                 if (macroStore->alive[slot] == 0) continue;
                 const auto& kind = macroStore->kind[slot];
                 const auto& crt = macroStore->runtime[slot];
@@ -595,7 +595,7 @@ int main(int argc, char** argv) {
             // Тот же закон на конец прогона — по store, не по пустому
             // entt-вью (см. рождение выше).
             int atSea = 0;
-            for (std::size_t s = 0; s < sm::kMacroEntityCap; ++s) {
+            for (std::size_t s = 0; s < sm::kUnifiedCap; ++s) {
                 if (!macroStore->alive[s]) continue;
                 const std::uint32_t idx = macroStore->cell[s].idx;
                 if (!pathCost.water.empty()
@@ -610,7 +610,7 @@ int main(int argc, char** argv) {
             int caravans = 0, vendors = 0, vIdle = 0, vAway = 0;
             long long vendorLoad = 0;
             for (std::uint16_t slot = 0;
-                 slot < std::uint16_t(sm::kMacroEntityCap); ++slot) {
+                 slot < std::uint16_t(sm::kUnifiedCap); ++slot) {
                 if (macroStore->alive[slot] == 0) continue;
                 const auto& crt = macroStore->runtime[slot];
                 const auto& bag = macroStore->inventory[slot];

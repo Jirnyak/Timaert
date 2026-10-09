@@ -34,7 +34,7 @@ int count_macro_npcs(const sm::ecs::World& world) {
     // 6.3: население — живые слоты store, моста нет; тела мест не в счёт.
     const sm::MacroStore& st = sm::store_of(world);
     int n = 0;
-    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)
+    for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32)
         if (st.alive[s32] != 0 && !is_place_body(st, s32)) ++n;
     return n;
 }
@@ -54,7 +54,7 @@ int count_macro_npcs(const sm::ecs::World& world) {
 int bodies_without_a_full_block(const sm::ecs::World& world) {
     int bad = 0;
     const sm::MacroStore& st = sm::store_of(world);
-    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+    for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         if (st.alive[s32] == 0 || is_place_body(st, s32)) continue;
         const auto& pools = st.pools[s32];
         if (pools.maxHp <= 0 || pools.hp <= 0) ++bad;
@@ -65,7 +65,7 @@ int bodies_without_a_full_block(const sm::ecs::World& world) {
 
 bool positions_inside_map(const sm::ecs::World& world, int mapW, int mapH) {
     const sm::MacroStore& st = sm::store_of(world);
-    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+    for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         if (st.alive[s32] == 0) continue;
         const auto& c = st.cell[s32];
         const int x = sm::ecs::cell_x(c, mapW);

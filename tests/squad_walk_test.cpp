@@ -37,7 +37,7 @@ int main() {
 
     // ── НЕГАТИВНЫЙ КОНТРОЛЬ: сырой слот-порядок НЕ ординальный ──────────
     std::vector<std::uint32_t> raw;
-    for (std::size_t s32 = 0; s32 < kMacroEntityCap; ++s32)
+    for (std::size_t s32 = 0; s32 < kUnifiedCap; ++s32)
         if (st.alive[s32] != 0) raw.push_back(st.spawnId[s32].index);
     CHECK(raw.size() == 9, "в пуле 9 живых: 8 − 2 смерти + 3 дорождения");
     int rawInversions = 0;

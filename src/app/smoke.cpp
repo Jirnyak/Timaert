@@ -73,7 +73,7 @@ static int smoke_projectile_count(entt::registry& reg) {
     const sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
     if (objs == nullptr) return 0;
     int n = 0;
-    for (int s = 0; s < sm::sub::kMaxBodyCrowd; ++s) {
+    for (int s = 0; s < int(sm::kUnifiedCap); ++s) {
         const std::uint16_t f = objs->flags[std::size_t(s)];
         if ((f & sm::sub::kObjAlive) != 0u
             && (f & sm::sub::kObjProjectile) != 0u) {
@@ -1045,7 +1045,7 @@ bool run_subworld_recovery_smoke(App& app) {
     std::uint32_t wCellIdx = 0;
     {
         sm::MacroStore& stx = sm::store_of(app.ecs);
-        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+        for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (stx.alive[slot] == 0 || stx.dead[slot] != 0) continue;
             // Игрок — колонкой ординала (1е кластер 5), тег-exclude умер.
@@ -2060,7 +2060,7 @@ sm::MacroHandle smoke_find_macro_npc_trace_target(App& app) {
     // lawfully overrides the type row the repaint writes. Exclude both —
     // the lab needs a body the type row actually drives.
     sm::MacroStore& stf = sm::store_of(app.ecs);
-    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+    for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (stf.alive[slot] == 0) continue;
         // Прежние exclude-по-наличию — теперь колоночные предикаты
@@ -2125,7 +2125,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     {
         sm::MacroStore& sto = sm::store_of(app.ecs);
         auto lane_clear = [&](int cx, int cy) {
-            for (std::size_t o32 = 0; o32 < sm::kMacroEntityCap; ++o32) {
+            for (std::size_t o32 = 0; o32 < sm::kUnifiedCap; ++o32) {
                 const std::uint16_t oslot = std::uint16_t(o32);
                 if (oslot == traceH.slot) continue;
                 if (sto.alive[oslot] == 0) continue;
@@ -6476,7 +6476,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // ctest, nothing weighed the registry.
                 {
                     int carriers = 0;
-                    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap;
+                    for (std::size_t s32 = 0; s32 < sm::kUnifiedCap;
                          ++s32) {
                         const std::uint16_t slot = std::uint16_t(s32);
                         if (app.macroStore->alive[slot] == 0) continue;
@@ -6629,7 +6629,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 long bestD = 1L << 60;
                 const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
                 const sm::MacroStore& stn = *app.macroStore;
-                for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+                for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                     const std::uint16_t slot = std::uint16_t(s32);
                     if (stn.alive[slot] == 0) continue;
                     if (homeH.slot != sm::kMacroNoSlot
@@ -6760,7 +6760,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (const char* bc = std::getenv("TIMAERT_SMOKE_BATTLE")) {
                 int bcount = 500;
                 if (std::sscanf(bc, "%d", &bcount) == 1) {
-                    bcount = std::clamp(bcount, 1, sm::sub::kMaxBodyCrowd / 2);
+                    bcount = std::clamp(bcount, 1, int(sm::kUnifiedCap) / 2);
                     int deployed = 0;
                     for (int side = 0; side < 2; ++side) {
                         for (int i = 0; i < bcount; ++i) {
@@ -8170,7 +8170,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             smoke_clear_modal_overlays(app);
             sm::MacroStore& stv = sm::store_of(app.ecs);
             bool found = false;
-            for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+            for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
                 if (stv.spawnId[slot].index
@@ -8214,7 +8214,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             sm::MacroHandle target{};
             int stock = 0;
             int type = -1;
-            for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+            for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
                 if (stv.spawnId[slot].index
@@ -8263,7 +8263,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             smoke_clear_modal_overlays(app);
             sm::MacroStore& stv = sm::store_of(app.ecs);
             sm::MacroHandle target{};
-            for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+            for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
                 if (stv.spawnId[slot].index

@@ -397,7 +397,9 @@ namespace sm {
 //    бонуса есть байт в каждом сохранённом аффиксе.
 // Обе ветки подняли версию до 124 независимо; 125 — то число, которое честно
 // называет, что в файле лежит И то, И другое.
-constexpr int kSaveVersion = 128;
+// 129 — единый кап 16384 (`kUnifiedCap@src/core/caps.h`): кап записей макро,
+// пул рёбер дани и `sizeof(FactionState)` в payload ужались вдвое.
+constexpr int kSaveVersion = 129;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

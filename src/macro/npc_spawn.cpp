@@ -386,8 +386,8 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
         // Мир без такого дома — без этой анкеты.
         int hx = row.cellX, hy = row.cellY;
         int homeId = 0;
-        // Дом — СЛОТ тела места (ломтик F); kMacroEntityCap = «дома нет».
-        std::uint32_t homeSlot = kMacroEntityCap;
+        // Дом — СЛОТ тела места (ломтик F); kUnifiedCap = «дома нет».
+        std::uint32_t homeSlot = kUnifiedCap;
         if (row.homePeak) {
             // Дом — вершина горного массива (драконья строка): homeIndex-я
             // из высочайших с разносом. Мир без гор анкету не рождает —
@@ -432,7 +432,7 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
         // города был бы вторым ответом на «чей это человек».
         const std::uint16_t factionIdx = row.factionId != nullptr
             ? std::uint16_t(faction_index(row.factionId))
-            : (homeSlot < kMacroEntityCap
+            : (homeSlot < kUnifiedCap
                    ? settlement_faction_index(st, std::uint16_t(homeSlot))
                    : std::uint16_t(faction_index("freefolk")));
         const MacroHandle h = make_npc(
@@ -466,7 +466,7 @@ void spawn_design_characters(GameState& gs, ecs::World& w, MacroStore& st,
         // контекста, как find_valid_spawn: строка называет РОД цели, мир
         // называет клетки. Наличие маршрута И ЕСТЬ приказ (лестница
         // effective_behaviour, ступень 1).
-        if (row.agenda.routeToNearest >= 0 && homeSlot < kMacroEntityCap) {
+        if (row.agenda.routeToNearest >= 0 && homeSlot < kUnifiedCap) {
             std::uint16_t best = 0;
             bool found = false;
             float bestD = 0.0f;

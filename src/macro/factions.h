@@ -26,6 +26,7 @@
 // fiefStart+fiefCount). Капа «рёбер на фракцию» НЕ СУЩЕСТВУЕТ как числа —
 // фракции делят общий выведенный потолок, перекос компенсируется.
 #pragma once
+#include "core/caps.h"           // kUnifiedCap — кап пула рёбер по построению
 #include "macro/memory.h"        // WorldMemory — память склада вассала
 #include "tables/faction.h"      // kMaxFactions, kFactionDefs, шкала отношений
 
@@ -63,11 +64,11 @@ struct TitheEdge {
 static_assert(sizeof(TitheEdge) == 24,
               "ребро = 2 ординала (8) + долг (8) + память (8)");
 
-// Кап пула = кап макро-субъектов (kMacroEntityCap@src/core/stacks.h;
-// равенство прибито static_assert там, где видны оба — включать сюда
-// stacks.h нельзя, он сам стоит над state.h). Замер 2026-09-30, 4 сида:
-// живых рёбер ~2000 (5 % пула), худшая фракция 644, худший веер 55.
-inline constexpr int kMaxTitheEdges = 32768;
+// Кап пула = ЕДИНЫЙ кап макро-субъектов ПО ПОСТРОЕНИЮ
+// (`kUnifiedCap@src/core/caps.h`): ребро на вассала («сюзерен один»), рёбер
+// больше, чем субъектов, не бывает. Замер 2026-09-30, 4 сида: живых рёбер
+// ~2000 (12 % пула при капе 16384), худшая фракция 644, худший веер 55.
+inline constexpr int kMaxTitheEdges = int(kUnifiedCap);
 
 // ── СТРОКА ФРАКЦИИ ───────────────────────────────────────────────────────
 struct FactionRow {
@@ -100,7 +101,8 @@ struct FactionState {
     // мир, потому что граница сезона одна и проход по пулу один.
     std::int32_t fiefSeasonAssessed = -1;
 };
-static_assert(sizeof(FactionState) == 104 * 64 + 24 * 32768 + 8,
+static_assert(sizeof(FactionState)
+                  == 104 * 64 + 24 * std::size_t(kMaxTitheEdges) + 8,
               "строки (6656) + пул (786432) + счёт и штамп (8) = 793096 Б");
 
 // ── ДВЕРИ СТРОК ──────────────────────────────────────────────────────────

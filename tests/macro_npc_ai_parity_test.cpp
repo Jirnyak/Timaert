@@ -659,7 +659,7 @@ void test_rotation_does_not_dissolve_the_dead() {
         // поэтому счёт артелей исключает его ПО ИМЕНИ: место в своих
         // крестьянах не числится.
         const std::uint16_t placeSlot = cityBody.slot;
-        for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+        for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
             if (stl.alive[s32] == 0 || stl.dead[s32] != 0) continue;
             if (std::uint16_t(s32) == placeSlot) continue;
             if (stl.kind[s32].type == std::uint16_t(sm::NPCType::Peasant))

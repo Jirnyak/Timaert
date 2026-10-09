@@ -104,7 +104,7 @@ GameState make_loaded_world() {
 sm::MacroHandle find_design(ecs::World& w, std::int16_t ord) {
     // Тег стола — колонка store (6.3: население — живые слоты, голый цикл).
     const sm::MacroStore& st = sm::store_of(w);
-    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+    for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0) continue;
         if (st.designTag[slot].ordinal == ord)
@@ -367,7 +367,7 @@ void test_no_home_no_birth() {
     Rng rng(42u);
     spawn_design_characters(gs, w, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
     int tags = 0;
-    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32)
+    for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32)
         if (sm::store_of(w).alive[s32] != 0
             && sm::store_of(w).designTag[s32].ordinal >= 0)
             ++tags;

@@ -108,7 +108,7 @@ void BodyCrowd::clear() {
 }
 
 int BodyCrowd::add(const BodyDesc& d) {
-    if (count >= kMaxBodyCrowd) return -1;
+    if (count >= int(kUnifiedCap)) return -1;
     const int idx = count++;
     const std::size_t i = std::size_t(idx);
     x[i] = d.x; y[i] = d.y; z[i] = d.z;

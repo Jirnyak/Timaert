@@ -50,7 +50,7 @@ inline void collect_squads_by_ordinal(const MacroStore& st,
                                       std::vector<SquadWalkEntry>& out,
                                       Pred keep) {
     out.clear();
-    for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
+    for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
         if (st.alive[slot] == 0) continue;
         if (!keep(std::uint16_t(slot))) continue;
         out.push_back({st.spawnId[slot].index, std::uint16_t(slot)});

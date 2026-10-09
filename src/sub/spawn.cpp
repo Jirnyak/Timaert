@@ -1563,7 +1563,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             const MacroHandle fh = macro_handle_from_bits(playerFlagBits);
             if (st.valid(fh)) flagSlot = fh.slot;
         }
-        for (std::uint32_t s32 = 0; s32 < kMacroEntityCap; ++s32) {
+        for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
             if (slot == flagSlot) continue;

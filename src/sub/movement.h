@@ -1,5 +1,5 @@
 // THE MOVER — how a body moves in the subworld. One algorithm for every living
-// thing down here, from a browsing deer to a full kMaxBodyCrowd in a battle
+// thing down here, from a browsing deer to a full kUnifiedCap in a battle
 // line, and for the player among them.
 //
 // It was called "mass battle steering" until 2026-08-30, and the name was a
@@ -69,22 +69,23 @@
 #include <memory>
 #include <vector>
 
+#include "core/caps.h"        // kUnifiedCap — THE golden population ceiling
 #include "tables/faction.h"   // kMaxFactions — THE world faction limit
 
 namespace sm::sub {
 
 // ── Universal capacity ─────────────────────────────────────────────────────
-// THE 2^14 ceiling of the subworld, written down ONCE: this SoA, the renderer's
-// instance buffer (vk_renderer_3d.cpp) and both broad-phase snapshot buffers
-// (spell contact, melee swing) all read THIS name. A body that cannot be drawn
-// must not be simulated, and a snapshot OF bodies can never hold more than
-// exist — three consumers, one number, so there is nothing to keep in sync.
-// Whatever embodied the body — a cell's module design, a squad off the 3×3
-// window, a field's head count, a scripted event, a console spawn — it lands in
-// this one crowd: the ceiling stands on the BODY, never on its source.
-constexpr int kMaxBodyCrowd = 16384;
-static_assert(kMaxBodyCrowd > 0 && (kMaxBodyCrowd & (kMaxBodyCrowd - 1)) == 0,
-              "one power of two for simulation and render alike");
+// The subworld ceiling IS the game's unified cap, `kUnifiedCap@src/core/caps.h`
+// (16384 = 2^14; owner verdict 2026-10-06 — one golden number for subworld
+// bodies, macro squads and nav regions; the former local name kMaxBodyCrowd
+// died into it 2026-10-09). Locally it still means what it always meant: this
+// SoA, the renderer's instance buffer (vk_renderer_3d.cpp) and both
+// broad-phase snapshot buffers (spell contact, melee swing) all read THIS one
+// name. A body that cannot be drawn must not be simulated, and a snapshot OF
+// bodies can never hold more than exist. Whatever embodied the body — a cell's
+// module design, a squad off the 3×3 window, a field's head count, a scripted
+// event, a console spawn — it lands in this one crowd: the ceiling stands on
+// the BODY, never on its source.
 
 // Sentinel for a squared-distance cache meaning "no such body anywhere".
 // Comfortably past the squared diagonal of the 3×3 window and deliberately
@@ -200,7 +201,7 @@ struct BodyDesc {
 
 // ── Struct of arrays ───────────────────────────────────────────────────────
 // One FIXED column per attribute, every column the length of THE ceiling:
-// 64 B per body × kMaxBodyCrowd = exactly 1 MiB, in ONE block. Nothing is ever
+// 64 B per body × kUnifiedCap = exactly 1 MiB, in ONE block. Nothing is ever
 // reserved, grown or reallocated — `add` refuses past the last slot, `clear`
 // only rewinds `count` — so no index taken during a pass can dangle, and a
 // capacity that has drifted out of step with the cap cannot exist. That promise
@@ -214,16 +215,16 @@ struct BodyDesc {
 // does not compile.
 struct BodyCrowd {
     int count = 0;
-    std::array<float, kMaxBodyCrowd> x, y, z;
-    std::array<float, kMaxBodyCrowd> vx, vy;
-    std::array<float, kMaxBodyCrowd> intentVx, intentVy;
-    std::array<float, kMaxBodyCrowd> radius, height, speed, reach, sight;
-    std::array<std::uint64_t, kMaxBodyCrowd> enemyMask;
-    std::array<std::int16_t,  kMaxBodyCrowd> faction;
-    std::array<std::uint8_t,  kMaxBodyCrowd> flags;
+    std::array<float, kUnifiedCap> x, y, z;
+    std::array<float, kUnifiedCap> vx, vy;
+    std::array<float, kUnifiedCap> intentVx, intentVy;
+    std::array<float, kUnifiedCap> radius, height, speed, reach, sight;
+    std::array<std::uint64_t, kUnifiedCap> enemyMask;
+    std::array<std::int16_t,  kUnifiedCap> faction;
+    std::array<std::uint8_t,  kUnifiedCap> flags;
     // Outputs, one per unit.
-    std::array<std::int32_t, kMaxBodyCrowd> target;  // unit index, -1 = nobody in reach-scan
-    std::array<std::uint8_t, kMaxBodyCrowd> inReach; // 1 => target is strikeable this tick
+    std::array<std::int32_t, kUnifiedCap> target;  // unit index, -1 = nobody in reach-scan
+    std::array<std::uint8_t, kUnifiedCap> inReach; // 1 => target is strikeable this tick
     // Crowd extremes, maintained by add(). The grids size themselves from these
     // instead of from a constant, so the SAME code is correctly scaled for
     // 0.55-unit peasants and for a dragon.
@@ -243,7 +244,7 @@ struct BodyCrowd {
     // every slot below `count` is overwritten by `add` before anyone reads it,
     // and wiping 1 MiB per tick would buy nothing but a memset.
     void clear();
-    // Takes the next slot; returns its index, or -1 once kMaxBodyCrowd is full.
+    // Takes the next slot; returns its index, or -1 once kUnifiedCap is full.
     int add(const BodyDesc& d);
 
     inline bool hostile(int i, int j) const noexcept {
@@ -259,7 +260,7 @@ private:
 // 17 columns × 64 B per body over the ceiling, plus count and the two extremes.
 // Named per DOD п.10: a size that is stated out loud is nailed down here, so it
 // can never quietly drift from the picture of memory.
-static_assert(sizeof(BodyCrowd) == std::size_t(kMaxBodyCrowd) * 64u + 16u,
+static_assert(sizeof(BodyCrowd) == std::size_t(kUnifiedCap) * 64u + 16u,
               "one flat MiB: 64 B/body, nothing hidden but four bytes of pad");
 
 // Births the crowd in its own heap block. Defined in movement.cpp on purpose:

@@ -60,7 +60,7 @@ void run_spawn_contract() {
 
     std::uint32_t firstOrdinal = 0;
     sm::MacroStore& st = sm::store_of(w);
-    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+    for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0) continue;
         const auto& kind = st.kind[slot];
@@ -90,7 +90,7 @@ void run_spawn_contract() {
     CHECK(count_npcs(w) == 2, "two bodies stand, not one and not three");
     bool sawSecond = false;
     int wentBackwards = 0;
-    for (std::size_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+    for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0) continue;
         const std::uint32_t idx = st.spawnId[slot].index;

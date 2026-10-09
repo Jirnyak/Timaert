@@ -354,7 +354,7 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
         // сборщика не убывали НИКОГДА — их перемирия и контракты были
         // вечными не по замыслу, а потому что проход до них не доходил.
         // Проход капом, а не населением (ЗАКОН СТАБИЛЬНОСТИ).
-        for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
+        for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
             interests_tick_day(st.interests[slot]);
         }

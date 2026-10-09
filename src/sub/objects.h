@@ -20,7 +20,7 @@
 // поколения-суррогата НЕТ — у макро ту же роль играет spawnId (M-220
 // убивает колонку generation ровно этим правилом).
 //
-// КАП: пока kMaxBodyCrowd (16384) — тела и есть первые жители массива;
+// КАП: пока kUnifiedCap (16384) — тела и есть первые жители массива;
 // ломоть 6 меняет его ОДНИМ именем на kMaxSubObjects = 65536 (2^16 =
 // мощность u16-индекса, «решить на века», вердикт 2026-10-05).
 //
@@ -34,7 +34,7 @@
 #include <cstdint>
 
 #include "ecs/components.h" // ecs::NPCKind — тип колонки kind (кусок 1)
-#include "sub/movement.h"   // kMaxBodyCrowd — кап до ломтя 6
+#include "core/caps.h"      // kUnifiedCap — единый кап (до ломтя 6 он же кап тел)
 
 namespace sm::sub {
 
@@ -91,19 +91,19 @@ struct SubObjects {
     // Идентичность жильца: ID рождения (счётчик стора, с 1; 0 = «никто»).
     // u32 — за жизнь сцены не заворачивается (4 млрд рождений недостижимы:
     // 16к тел на тик входа — это 262 тысячи полных сцен).
-    std::array<std::uint32_t, std::size_t(kMaxBodyCrowd)> id{};
+    std::array<std::uint32_t, std::size_t(kUnifiedCap)> id{};
     // Род и состояние — МАСКА, не компоненты (ЗАКОН СТРОКИ КАТАЛОГА:
     // смена архетипа в тике невыразима по построению).
-    std::array<std::uint16_t, std::size_t(kMaxBodyCrowd)> flags{};
+    std::array<std::uint16_t, std::size_t(kUnifiedCap)> flags{};
     // ── FX-колонки (ломоть 1а): бывшие DamageFx / LastHit. Вспышка тела
     // (hitFlash) СНЕСЕНА вердиктом владельца 2026-10-05 («пока не нужна
     // снесём … минимизировать число колонок») — она писалась и гасла, но
     // визуального читателя не имела никогда; возврат после предемо =
     // колонка + тинт тел в рендере.
-    std::array<std::uint32_t, std::size_t(kMaxBodyCrowd)> lastHitBy{};
+    std::array<std::uint32_t, std::size_t(kUnifiedCap)> lastHitBy{};
     // Событие «в этом тике по телу попали»: бит 0 = pending, бит 1 =
     // lethal, бит 2 = blocked. Дренируется одним проходом за тик.
-    std::array<std::uint8_t, std::size_t(kMaxBodyCrowd)> damageFx{};
+    std::array<std::uint8_t, std::size_t(kUnifiedCap)> damageFx{};
     // ── Род и уровень тела (кусок 1 ломтя 2): бывшие ecs::NPCKind /
     // ecs::NpcLevel. Род — факт головы при воплощении; .type == kObjNoKind
     // значит «рода нет» (игрок, голая фикстура). Уровень безуровневого — 0.
@@ -111,8 +111,8 @@ struct SubObjects {
     // рождении (рост тела от bodyShape) и после не читается никем —
     // прецедент вспышки («минимизировать число колонок»); вернётся
     // колонкой вместе с читателем (вариация спрайтов).
-    std::array<ecs::NPCKind, std::size_t(kMaxBodyCrowd)> kind{};
-    std::array<std::int16_t, std::size_t(kMaxBodyCrowd)> level{};
+    std::array<ecs::NPCKind, std::size_t(kUnifiedCap)> kind{};
+    std::array<std::int16_t, std::size_t(kUnifiedCap)> level{};
     // ── Боевая пара (кусок 2 ломтя 2): бывшие ecs::Pools / ecs::Combat /
     // ecs::MissileAttack. «Баров нет» = maxHp 0 — коллизия невыразима:
     // даже мёртвое тело хранит максимум, тела с барами и maxHp 0 не бывает
@@ -122,26 +122,26 @@ struct SubObjects {
     // у настоящего стрелка. У зеркальных тел pools — КОПИЯ записи store
     // (зеркальный закон: mirror_bodies_from_record переливает каждый тик;
     // рана ложится на ЗАПИСЬ дверью pools_of, store-первой).
-    std::array<ecs::Pools, std::size_t(kMaxBodyCrowd)> pools{};
-    std::array<ecs::Combat, std::size_t(kMaxBodyCrowd)> combat{};
-    std::array<ecs::MissileAttack, std::size_t(kMaxBodyCrowd)> missile{};
+    std::array<ecs::Pools, std::size_t(kUnifiedCap)> pools{};
+    std::array<ecs::Combat, std::size_t(kUnifiedCap)> combat{};
+    std::array<ecs::MissileAttack, std::size_t(kUnifiedCap)> missile{};
     // ── Движение/думка (кусок 3 ломтя 2): бывшие ecs::SubworldAi /
     // ecs::VisualPos / ecs::GoingHome / ecs::Airborne. Мозг — колонка +
     // бит kObjHasAi (Wander = 0 законен, сентинела нет). Визуальная
     // позиция — безусловная колонка слота: нулевая скорость = интерполятор
     // стоит (законное авторское значение смоук-фикстур), биту нечего
     // охранять. «Домой» и «в воздухе» — бит + колонка (см. маску).
-    std::array<ecs::SubworldAi, std::size_t(kMaxBodyCrowd)> ai{};
-    std::array<ecs::VisualPos, std::size_t(kMaxBodyCrowd)> visual{};
-    std::array<ecs::GoingHome, std::size_t(kMaxBodyCrowd)> goHome{};
-    std::array<float, std::size_t(kMaxBodyCrowd)> airborneVz{};
+    std::array<ecs::SubworldAi, std::size_t(kUnifiedCap)> ai{};
+    std::array<ecs::VisualPos, std::size_t(kUnifiedCap)> visual{};
+    std::array<ecs::GoingHome, std::size_t(kUnifiedCap)> goHome{};
+    std::array<float, std::size_t(kUnifiedCap)> airborneVz{};
     // ── СНАРЯД (ломоть 4): бывшая ecs::Projectile. Роль — бит
     // kObjProjectile (нуля-сентинела у снаряда нет: скорость 0,0,0 законна у
     // метеоров армагеддона, kind Bolt = 0, жизнь — шкала с достижимым нулём).
     // Самая широкая колонка арены (68 Б) — и этим слот впервые даёт снаряду
     // КАП: до ломтя 4 снарядов могло родиться сколько угодно, теперь предел
     // один с телами («кап стоит на воплощённом объекте»).
-    std::array<ecs::Projectile, std::size_t(kMaxBodyCrowd)> projectile{};
+    std::array<ecs::Projectile, std::size_t(kUnifiedCap)> projectile{};
 
     int count = 0;        // живых слотов (для приборов, не для обхода)
     int cursor = 0;       // бегунок выдачи — слоты переиспользуются по кругу
@@ -163,10 +163,10 @@ struct SubObjects {
     // Родить слот: первый свободный от бегунка. -1 = кап («кап стоит на
     // воплощённом»: звонящий отказывается честно, как BodyCrowd::add).
     int alloc() {
-        for (int step = 0; step < kMaxBodyCrowd; ++step) {
-            const int s = (cursor + step) & (kMaxBodyCrowd - 1);
+        for (int step = 0; step < int(kUnifiedCap); ++step) {
+            const int s = (cursor + step) & (kUnifiedCap - 1);
             if (flags[std::size_t(s)] & kObjAlive) continue;
-            cursor = (s + 1) & (kMaxBodyCrowd - 1);
+            cursor = (s + 1) & (kUnifiedCap - 1);
             id[std::size_t(s)] = nextId++;
             flags[std::size_t(s)] = kObjAlive;
             lastHitBy[std::size_t(s)] = kObjNoAttacker;
@@ -190,7 +190,7 @@ struct SubObjects {
     // Занулить слот (смерть объекта как ЗАПИСИ; труп ломтя 5 слот НЕ
     // освобождает — он гасит kObjAlive-роль маской, оставаясь жильцом).
     void free(int slot) {
-        if (slot < 0 || slot >= kMaxBodyCrowd) return;
+        if (slot < 0 || slot >= int(kUnifiedCap)) return;
         if (!(flags[std::size_t(slot)] & kObjAlive)) return;
         flags[std::size_t(slot)] = 0u;
         --count;
@@ -199,7 +199,7 @@ struct SubObjects {
 // 16384 × (4+2+4+1+4+2+36+28+12+40+12+8+4+68) Б колонок + служебные: цена
 // названа и закреплена. 225 Б/слот × 16384 ≈ 3.52 МиБ — профиль один у
 // пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ).
-static_assert(sizeof(SubObjects) == std::size_t(kMaxBodyCrowd) * 225 + 24,
+static_assert(sizeof(SubObjects) == std::size_t(kUnifiedCap) * 225 + 24,
               "массив объектов сцены: 225 Б/слот (ломоть 4: +projectile 68) "
               "+ служебные");
 

@@ -1363,7 +1363,7 @@ void run_roundtrip() {
     // то, что от этого закона не зависело ни тогда: дверь обязана найти
     // ВСЯКОЕ место круга и не отвечать за небывалый ординал и за «никто».
     int placesOfTheRound = 0, unresolvable = 0;
-    for (std::uint32_t slot = 0; slot < sm::kMacroEntityCap; ++slot) {
+    for (std::uint32_t slot = 0; slot < sm::kUnifiedCap; ++slot) {
         if (loadedStore.alive[slot] == 0 || loadedStore.dead[slot] != 0)
             continue;
         if (!sm::is_settlement_kind(

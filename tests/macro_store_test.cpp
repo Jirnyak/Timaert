@@ -48,11 +48,11 @@ int main() {
 
     // ── Кап: рождение до полного, следующий отказ — невалидный хэндл ────
     std::uint32_t born = 0;
-    while (s.aliveCount < std::uint32_t(kMacroEntityCap)) {
+    while (s.aliveCount < std::uint32_t(kUnifiedCap)) {
         if (!s.valid(store_birth(s))) break;
         ++born;
     }
-    CHECK(s.aliveCount == std::uint32_t(kMacroEntityCap) && born > 0,
+    CHECK(s.aliveCount == std::uint32_t(kUnifiedCap) && born > 0,
           "массив заполняется до капа целиком");
     const MacroHandle overflow = store_birth(s);
     CHECK(!s.valid(overflow) && overflow.slot == kMacroNoSlot,

@@ -85,40 +85,41 @@ struct PlayerFlag {
 
 // Сам MacroHandle живёт в ecs/components.h (шаг 2 1е, вердикт Б с.19):
 // его несёт через шов миров компонента ecs::MacroOrigin. Здесь — его законы.
-static_assert(kMacroEntityCap < kMacroNoSlot,
+static_assert(kUnifiedCap < kMacroNoSlot,
               "кап обязан умещаться в u16 с местом под «нет элемента»");
 
 struct MacroStore {
-#define SM_X(name, T) std::array<T, kMacroEntityCap> name;
+#define SM_X(name, T) std::array<T, kUnifiedCap> name;
     SM_MACRO_STORE_COLUMNS(SM_X)
 #undef SM_X
 
     // Служебное: поколение слота, занятость, freelist стеком.
-    std::array<std::uint16_t, kMacroEntityCap> generation;
-    std::array<std::uint8_t,  kMacroEntityCap> alive;
-    std::array<std::uint16_t, kMacroEntityCap> freeSlots;
+    std::array<std::uint16_t, kUnifiedCap> generation;
+    std::array<std::uint8_t,  kUnifiedCap> alive;
+    std::array<std::uint16_t, kUnifiedCap> freeSlots;
     std::uint32_t freeCount  = 0;
     std::uint32_t aliveCount = 0;
 
     bool valid(MacroHandle h) const {
-        return h.slot < kMacroEntityCap && alive[h.slot] != 0
+        return h.slot < kUnifiedCap && alive[h.slot] != 0
                && generation[h.slot] == h.gen;
     }
 };
 
-// КАРТИНА ПАМЯТИ ЗАКРЕПЛЕНА ЗАМЕРОМ (AGENTS п.10): 1 431 699 464 Б =
-// 1365.4 МиБ по капу 32768 — резидентно с рождения мира, пустота оплачена
-// (вердикт 2026-09-25). Из них инвентарь 1280 МиБ, интересы 32 (M-90 флип:
-// связи ЛЮБЫХ сквадов — вердикт 2026-09-30), гир 32 (M-183), имя 1 (ход 2),
-// благополучие 0.25 (та же порция флипа).
+// КАРТИНА ПАМЯТИ ЗАКРЕПЛЕНА (AGENTS п.10): 715 849 736 Б = 682.7 МиБ по
+// ЕДИНОМУ капу 16384 (`kUnifiedCap@src/core/caps.h`, вердикт 2026-10-06;
+// прежняя цена 1 431 699 464 Б = 1365.4 МиБ стояла на отменённом капе 32768)
+// — резидентно с рождения мира, пустота оплачена. Из них инвентарь 640 МиБ,
+// интересы 16 (M-90 флип: связи ЛЮБЫХ сквадов — вердикт 2026-09-30), гир 16
+// (M-183), имя 0.5 (ход 2), благополучие 0.125 (та же порция флипа).
 //
 // ЗАПОЛНЕНИЕ КАПА ЗАМЕРЕНО (M-204, 2026-10-01, сид 12345): после генерации
 // живых слотов 58, на границе первого сезона (день 32) разовый прыжок
-// 54 → 11711 = 35.7 % капа, дальше плато. Прежние «~10.7k = 65 %, пик 78 %»
-// этой шапки не воспроизвелись ни числом, ни долей — они мерились против
-// другого капа. И это ЗАПАС, а не пустота (владелец, M-204): кап и есть
-// место, куда мир растёт прыжками по одиннадцать тысяч слотов за тик.
-static_assert(sizeof(MacroStore) == 1431699464ull,   // M-90 флип: +Interests 1024 Б + Wellbeing 8 Б = +32.25 МиБ; ход 2: +SquadName; 5б: +playerFlag; M-183: gear 5124 → 1024
+// 54 → 11711, дальше плато; при капе 16384 это 71.5 % — и это ЗАПАС, а не
+// пустота (владелец, M-204): кап и есть место, куда мир растёт прыжками по
+// одиннадцать тысяч слотов за тик, а отказ рождения ГРОМКИЙ (store_birth
+// печатает в stderr), день конца капа будет НАЗВАН, а не угадан.
+static_assert(sizeof(MacroStore) == 715849736ull,    // единый кап 16384: вдвое от 1 431 699 464 по капу 32768
               "гладкая память макромира: новая колонка = новая цена, "
               "названная вслух (AGENTS п.10)");
 
@@ -130,7 +131,7 @@ static_assert(sizeof(MacroStore) == 1431699464ull,   // M-90 флип: +Interest
 // — он же назовёт ложь в ней. Хвост 8 Б — два счётчика (`freeCount`,
 // `aliveCount`), единственное в структуре, что не умножается на кап.
 static_assert(sizeof(MacroStore)
-                  == kMacroStoreRowBytes * kMacroEntityCap
+                  == kMacroStoreRowBytes * kUnifiedCap
                          + sizeof(std::uint32_t) * 2u,
               "перепись штабелей и гладкая память разъехались: цена слота "
               "kMacroStoreRowBytes (core/stacks.h) больше не равна колонкам");
@@ -181,9 +182,9 @@ static_assert(sizeof(MacroStore)
 inline std::unique_ptr<MacroStore> make_macro_store() {
     std::unique_ptr<MacroStore> s;
     s.reset(new MacroStore());
-    for (std::size_t i = 0; i < kMacroEntityCap; ++i)
-        s->freeSlots[i] = std::uint16_t(kMacroEntityCap - 1u - i);
-    s->freeCount = std::uint32_t(kMacroEntityCap);
+    for (std::size_t i = 0; i < kUnifiedCap; ++i)
+        s->freeSlots[i] = std::uint16_t(kUnifiedCap - 1u - i);
+    s->freeCount = std::uint32_t(kUnifiedCap);
     return s;
 }
 
@@ -195,7 +196,7 @@ inline MacroHandle store_birth(MacroStore& s) {
     if (s.freeCount == 0) {
         std::fprintf(stderr,
                      "[store] ОТКАЗ РОЖДЕНИЯ: все %zu слотов заняты\n",
-                     kMacroEntityCap);
+                     kUnifiedCap);
         return MacroHandle{};
     }
     const std::uint16_t slot = s.freeSlots[--s.freeCount];
@@ -215,12 +216,12 @@ inline MacroHandle store_birth(MacroStore& s) {
 // моста не носил). Поколение выживших бампается, как в store_death: всякий
 // хэндл прошлого мира мертвеет, даже если слот переиспользует новый.
 inline void store_reset(MacroStore& s) {
-    for (std::size_t i = 0; i < kMacroEntityCap; ++i) {
+    for (std::size_t i = 0; i < kUnifiedCap; ++i) {
         if (s.alive[i] != 0) ++s.generation[i];
         s.alive[i] = 0;
-        s.freeSlots[i] = std::uint16_t(kMacroEntityCap - 1u - i);
+        s.freeSlots[i] = std::uint16_t(kUnifiedCap - 1u - i);
     }
-    s.freeCount  = std::uint32_t(kMacroEntityCap);
+    s.freeCount  = std::uint32_t(kUnifiedCap);
     s.aliveCount = 0;
 }
 

@@ -1,6 +1,6 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
-#include "core/stacks.h"           // kWorldSquads — резерв скрэтчей порядка
+#include "core/stacks.h"           // kUnifiedCap — резерв скрэтчей порядка
 #include "macro/upkeep_window.h"   // ОДИН суд границы на всякий контейнер
 #include "macro/agent_memory.h"
 #include "macro/characters.h"  // стол анкет — ступень лестницы поведения
@@ -3002,7 +3002,7 @@ void scent_player_deposit(const TickContext& ctx) {
     if (!ctx.mw.world) return;
     const MacroStore& st = store_ctx(ctx);
     const auto put = [&](std::uint16_t slot) {
-        if (slot >= kMacroEntityCap || st.alive[slot] == 0) return;
+        if (slot >= kUnifiedCap || st.alive[slot] == 0) return;
         const MacroHandle h = handle_at(st, slot);
         if (macro_dead(st, h)) return;
         const auto& c = st.cell[slot];
@@ -3849,12 +3849,12 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // членами в дневную runtime-структуру (образец
     // `MacroNpcAiRuntime@src/macro/npc_ai.h`: прогрев `reserve` один раз,
     // дальше `clear` + `push_back`), и это наряд M-234, а не правка строки.
-    std::vector<std::array<std::uint8_t, 8>> outCount(kMacroEntityCap);
-    std::vector<int> afield(kMacroEntityCap, 0);
+    std::vector<std::array<std::uint8_t, 8>> outCount(kUnifiedCap);
+    std::vector<int> afield(kUnifiedCap, 0);
     // Души артелей, СТОЯЩИХ ДОМА, — часть базы пула труда: суд границы,
     // меривший пул одним населением, ужимал составы каждый сезон (души
     // стоящих выпадали из базы — поймано свидетелем resize).
-    std::vector<int> standingSouls(kMacroEntityCap, 0);
+    std::vector<int> standingSouls(kUnifiedCap, 0);
     // Пара {слот дома, слот стоящей артели}; kMacroNoSlot во второй =
     // заявка уже разобрана (claim_standing).
     std::vector<std::pair<std::uint16_t, std::uint16_t>> idleByHome;
@@ -4842,8 +4842,8 @@ void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
     runtime.jitter = Rng{seed ^ 0xA1F0u};
     // Аллокация на сборке мира, не в тике (DOD п.4): скрэтчи закона порядка
     // (squad_walk.h) греются до капа один раз, свипы дальше zero-alloc.
-    runtime.sweepOrder.reserve(kWorldSquads);
-    runtime.squadIndex.order.reserve(kWorldSquads);
+    runtime.sweepOrder.reserve(kUnifiedCap);
+    runtime.squadIndex.order.reserve(kUnifiedCap);
 }
 
 // ONE assembly of the AI think's view (canon-audit H2: this block used to
@@ -4997,7 +4997,7 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
     // ФЛИП 1в: чистый проход колонок store — глазу энтити не нужна вовсе,
     // это самый честный SoA-проход (только cell/visual/runtime/pools).
     MacroStore& st = store_of(w);
-    for (std::uint16_t slot = 0; slot < std::uint16_t(kMacroEntityCap);
+    for (std::uint16_t slot = 0; slot < std::uint16_t(kUnifiedCap);
          ++slot) {
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
         const auto& c = st.cell[slot];

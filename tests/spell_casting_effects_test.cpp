@@ -1214,7 +1214,7 @@ int main() {
         sm::sub::SubObjects& capArena = sm::test::arena_of(capWorld.reg);
         int capFilled = 0;
         while (capArena.alloc() >= 0) ++capFilled;
-        CHECK(capFilled == int(sm::sub::kMaxBodyCrowd),
+        CHECK(capFilled == int(sm::kUnifiedCap),
               "арена набивается ровно до своего капа, не дальше");
 
         sm::SpellBook capBook;

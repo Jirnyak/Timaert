@@ -1184,7 +1184,7 @@ void test_determinism_and_capacity() {
           "visit counts match exactly");
 
     // CAPACITY is no longer witnessed here: the columns are fixed arrays of
-    // kMaxBodyCrowd, nailed by static_assert(sizeof(BodyCrowd)) in movement.h,
+    // kUnifiedCap, nailed by static_assert(sizeof(BodyCrowd)) in movement.h,
     // so a capacity out of step with the cap cannot be compiled (AGENTS §8 п.6).
     // What still needs a run is the REFUSAL — behaviour, not layout: the crowd
     // must stop taking bodies at the ceiling instead of writing past its last
@@ -1193,10 +1193,10 @@ void test_determinism_and_capacity() {
     auto uOwn = make_body_crowd();
     BodyCrowd& u = *uOwn;
     int refused = 0;
-    for (int i = 0; i < kMaxBodyCrowd + 16; ++i) {
+    for (int i = 0; i < int(kUnifiedCap) + 16; ++i) {
         if (u.add(soldier(float(i % 3000) + 1.0f, 1.0f, 0, 0)) < 0) ++refused;
     }
-    CHECK(u.count == kMaxBodyCrowd, "the ceiling is where adding stops");
+    CHECK(u.count == int(kUnifiedCap), "the ceiling is where adding stops");
     CHECK(refused == 16, "every body past the ceiling is refused, none written");
 }
 

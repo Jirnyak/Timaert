@@ -7,7 +7,7 @@
 #include "sub/lighting.h"
 #include "sub/material.h"
 #include "sub/map_data.h"
-#include "sub/movement.h"   // kMaxBodyCrowd — THE subworld body ceiling
+#include "core/caps.h"      // kUnifiedCap — THE unified population ceiling
 #include "sub/record.h"     // object_flag — биты маски слота (ломоть 1б)
 #include "sub/particles.h"
 #include "sub/seamless_manager.h"
@@ -212,8 +212,8 @@ struct StructInstance {
 // shadow_cyl.vert): kSides(12) × (6 side + 3 cap) verts.
 constexpr std::uint32_t kCylVertexCount = 12u * 9u;
 
-// Body instances are sized by THE subworld ceiling itself — sub/movement.h
-// kMaxBodyCrowd, read directly at each of the three sites below so there is no
+// Body instances are sized by THE unified population ceiling itself —
+// kUnifiedCap@src/core/caps.h, read directly at each of the three sites below so there is no
 // second name for one number. ONE lane holds every body alive, the drawn and the
 // procedural together: there are no per-category buffers since the sprite law
 // merged them. vkCmdUpdateBuffer is capped at 65536 bytes per call, so uploads
@@ -428,7 +428,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     // ONE instance buffer for every body alive: the drawn and the procedural
     // ride the same lane, distinguished by their row inside `kind`.
     std::vector<gpu::BbInstance> dummyBodies(
-        static_cast<std::size_t>(kMaxBodyCrowd));
+        static_cast<std::size_t>(kUnifiedCap));
     if (!bodyInstBuf_.create_device_local(dev, dummyBodies.data(),
                                           dummyBodies.size() * sizeof(gpu::BbInstance),
                                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
@@ -1323,14 +1323,14 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         // slice of the city's `rec` column.
         static thread_local std::vector<gpu::BbInstance> bodies;
         bodies.clear();
-        bodies.reserve(std::size_t(kMaxBodyCrowd));
+        bodies.reserve(std::size_t(kUnifiedCap));
         // Exclude the player body: first-person, the camera sits at it, so a
         // possessed body must not be drawn over the lens. The hero husk carries
         // no Sprite and never matched anyway.
         auto view = ecs->reg.view<ecs::Position, ecs::Sprite>();
         for (auto e : view) {
             if (is_avatar(ecs->reg, e)) continue;
-            if (bodies.size() >= std::size_t(kMaxBodyCrowd)) break;
+            if (bodies.size() >= std::size_t(kUnifiedCap)) break;
             const auto& spr = view.get<ecs::Sprite>(e);
             const SpriteDef& look = sprite_row(SpriteId(spr.spriteRow));
             const std::uint32_t slot = bank_.slot_for(SpriteId(spr.spriteRow));

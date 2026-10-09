@@ -185,7 +185,7 @@ inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
 
 inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
                                             std::uint32_t index) {
-    for (std::uint32_t slot = 0; slot < kMacroEntityCap; ++slot) {
+    for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
         if (st.alive[slot] != 0 && st.spawnId[slot].index == index)
             return MacroHandle{std::uint16_t(slot), st.generation[slot]};
     }

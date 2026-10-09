@@ -174,7 +174,7 @@ void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
     // playerFlag записей снапшота, кэши GameState пересобираются из неё.
     MacroHandle flag{};
     std::uint32_t holders = 0;
-    for (std::size_t s = 0; s < kMacroEntityCap; ++s) {
+    for (std::size_t s = 0; s < kUnifiedCap; ++s) {
         if (!st.alive[s] || st.playerFlag[s].on == 0) continue;
         ++holders;
         flag = handle_at(st, std::uint16_t(s));
@@ -182,7 +182,7 @@ void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
     if (holders != 1) {
         // Порченый файл не рождает ни безфлажного мира, ни двух игроков:
         // колонку вычистить, флаг честно домой (мира без флага не бывает).
-        for (std::size_t s = 0; s < kMacroEntityCap; ++s)
+        for (std::size_t s = 0; s < kUnifiedCap; ++s)
             st.playerFlag[s].on = 0;
         flag = home;
         if (st.valid(home)) st.playerFlag[home.slot].on = 1;

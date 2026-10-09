@@ -37,11 +37,13 @@ constexpr std::uint32_t kMaxQuestParts = 4096u;
 // (kMaxSoldiers 8192 died with v97; с v110 существа едут внутри инвентаря —
 // один кап слотов, один дом: kMaxInventoryStacks.)
 // The macro-ECS snapshot (v23): one record per living macro NPC. v127: кап
-// записей = КАП ХРАНИЛИЩА (kMacroEntityCap, 2^15) — прежний kWorldSquads
-// (16384) отказывал файлу на мире, который store законно держит (названное
-// расхождение «сейв 16384 против хранилища 32768»), а с флипом M-90 в записи
-// едут и ТЕЛА МЕСТ (~2.1k), то есть отказ стал бы достижим в живой партии.
-constexpr std::uint32_t kMaxMacroNpcs = std::uint32_t(kMacroEntityCap);
+// записей = КАП ХРАНИЛИЩА (тогда `kMacroEntityCap`, 2^15) — прежний
+// `kWorldSquads` (16384) отказывал файлу на мире, который store законно
+// держал (названное расхождение «сейв 16384 против хранилища 32768»). v129:
+// хранилище и сейв стоят на ЕДИНОМ капе 16384 (`kUnifiedCap@src/core/caps.h`,
+// вердикт 2026-10-06), равенство «кап записей = кап хранилища» держится
+// ИМЕНЕМ, второго числа нет.
+constexpr std::uint32_t kMaxMacroNpcs = std::uint32_t(kUnifiedCap);
 constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
 
 // ── ПОТОЛОК PAYLOAD — ФАКТ О РАСКЛАДКЕ, А НЕ ЧИСЛО ───────────────────────
@@ -131,7 +133,7 @@ constexpr std::uint64_t kSubStateBytes =             // write_sub_state
     sizeof(std::uint8_t) + sizeof(GameSubState::settlementId);
 
 // Сквады — гладкий массив макро-энтити (ЗАКОН ГЛАДКОЙ ПАМЯТИ). Кап — тот же
-// kWorldSquads переписи, что и у колонок мира.
+// единый `kUnifiedCap`, что и у колонок мира.
 constexpr std::uint64_t kSpellBookBytes =            // write_spell_book
     sizeof(std::int32_t)                             // конверт ёмкости
     + sizeof(MacroNpcRecord::book.learned)

@@ -44,7 +44,7 @@ using HostileFn = bool (*)(void* user, entt::entity e);
 // spell contact reaches it (same shape as SpellNeighborsFn, same promises: a
 // SUPERSET of everything within `r` of (x, y), -1 when completeness cannot be
 // promised this tick, null = no grid at all — both mean the full scan).
-// `maxOut` is THE subworld ceiling (sub/movement.h kMaxBodyCrowd) — the swing's
+// `maxOut` is THE subworld ceiling (kUnifiedCap@src/core/caps.h) — the swing's
 // own buffer is sized by it in targeting.cpp, where it is read directly: this
 // header states the contract, never a second copy of the number.
 using MeleeNeighborsFn = int (*)(void* user, float x, float y, float r,

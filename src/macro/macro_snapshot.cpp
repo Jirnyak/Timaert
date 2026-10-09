@@ -12,7 +12,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
     // 6.3 (M-106 1е): население — живые слоты store, голый цикл по alive.
     // Формат записи НЕ двигается — ординал был и остался идентичностью,
     // сортировка ниже прежняя.
-    for (std::size_t s32 = 0; s32 < kMacroEntityCap; ++s32) {
+    for (std::size_t s32 = 0; s32 < kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0) continue;
         MacroNpcRecord m{};

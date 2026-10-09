@@ -863,7 +863,7 @@ void detect_forced_encounter(App& app) {
         const sm::MacroHandle h = sm::player_flag_handle(app.gs);
         return app.macroStore->valid(h) ? h.slot : sm::kMacroNoSlot;
     }();
-    for (std::uint32_t slot32 = 0; slot32 < sm::kMacroEntityCap; ++slot32) {
+    for (std::uint32_t slot32 = 0; slot32 < sm::kUnifiedCap; ++slot32) {
         const std::uint16_t slot = std::uint16_t(slot32);
         if (st.alive[slot] == 0) continue;
         if (slot == flagSlot
@@ -4314,7 +4314,7 @@ void register_console_commands(App& app) {
             }
             int count = 500;
             if (!a.empty()) sm::dev::arg_int(a, 0, count);
-            count = std::clamp(count, 1, sm::sub::kMaxBodyCrowd / 2);
+            count = std::clamp(count, 1, int(sm::kUnifiedCap) / 2);
 
             // Side A defaults to the defenders of this very ground, side B to
             // raiders — a fight you can rely on without naming anyone, and any
@@ -5163,7 +5163,7 @@ void draw_debug_panels(App& app) {
             auto maskCnt = [&reg](std::uint16_t bit) {
                 std::size_t n = 0;
                 const auto& objs = sm::sub::objects_of(reg);
-                for (int s = 0; s < sm::sub::kMaxBodyCrowd; ++s) {
+                for (int s = 0; s < int(sm::kUnifiedCap); ++s) {
                     const std::uint16_t f = objs.flags[std::size_t(s)];
                     if ((f & sm::sub::kObjAlive) != 0u && (f & bit) != 0u) ++n;
                 }
@@ -5179,7 +5179,7 @@ void draw_debug_panels(App& app) {
                 {"BodyPools(arena)", [&reg] {
                      std::size_t n = 0;
                      const auto& objs = sm::sub::objects_of(reg);
-                     for (int s = 0; s < sm::sub::kMaxBodyCrowd; ++s) {
+                     for (int s = 0; s < int(sm::kUnifiedCap); ++s) {
                          if ((objs.flags[std::size_t(s)]
                               & sm::sub::kObjAlive) != 0u
                              && objs.pools[std::size_t(s)].maxHp != 0) ++n;
@@ -5192,7 +5192,7 @@ void draw_debug_panels(App& app) {
                 {"BodyKind(arena)", [&reg] {
                      std::size_t n = 0;
                      const auto& objs = sm::sub::objects_of(reg);
-                     for (int s = 0; s < sm::sub::kMaxBodyCrowd; ++s) {
+                     for (int s = 0; s < int(sm::kUnifiedCap); ++s) {
                          if ((objs.flags[std::size_t(s)]
                               & sm::sub::kObjAlive) != 0u
                              && objs.kind[std::size_t(s)].type
@@ -5647,7 +5647,7 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
         const sm::MacroHandle h = sm::player_flag_handle(app.gs);
         return st.valid(h) ? h.slot : sm::kMacroNoSlot;
     }();
-    for (std::uint32_t s32 = 0; s32 < sm::kMacroEntityCap; ++s32) {
+    for (std::uint32_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
         if (slot == flagSlot
