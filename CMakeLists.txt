@@ -2152,7 +2152,7 @@ target_compile_definitions(world_fold_law_test
 # правки. Пинится то, чего не предъявляет никто: счёт проверок и само наличие
 # границы в вердикте.
 timaert_test(arch_guard_test
-    PIN "OK arch_guard_test .42 checks. .долг канала [0-9]+ · безадресных вердиктов [0-9]+ · файлов entt [0-9]+ — рост запрещён, чистота НЕ утверждается")
+    PIN "OK arch_guard_test .45 checks. .долг канала [0-9]+ · безадресных вердиктов [0-9]+ · файлов entt [0-9]+ — рост запрещён, чистота НЕ утверждается")
 target_compile_definitions(arch_guard_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
@@ -2165,9 +2165,15 @@ target_compile_definitions(arch_guard_test
 # носителя не проскальзывает. Покрытие N из M — класс цифр: M растёт с
 # каждым новым законом, и это законно, пока у него есть строка ведомости.
 timaert_test(law_carrier_test
-    PIN "OK law_carrier_test .20 checks. .носитель есть у [0-9]+ из [0-9]+ законов · прозы 7 — ведомость судит СУЩЕСТВОВАНИЕ носителя, не годность")
+    PIN "OK law_carrier_test .20 checks. .носитель есть у [0-9]+ из [0-9]+ законов · прозы 6 — ведомость судит СУЩЕСТВОВАНИЕ носителя, не годность")
 target_compile_definitions(law_carrier_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+# ТРИ ДВЕРИ ВЫЧИТАНИЯ (M-243 п.2): контракт sub_sat/try_spend/drain на
+# границах диапазона и узких типах; стену «знаковый тип несобираем» держит
+# static_assert в самой двери (поведенческий тест — без пина, по политике
+# пинов выше).
+timaert_test(subtract_doors_test)
 
 # ПЕРЕПИСЬ НОСИТЕЛЕЙ СОСТОЯНИЯ (M-189): каждое поле долгоживущего носителя
 # (GameState, PlayerState, MacroStore, App) названо строкой с РОДОМ фрейма —

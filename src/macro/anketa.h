@@ -18,6 +18,7 @@
 // анкете не знает (AGENTS §11). Что здесь лежит — колонки строки сквада; что
 // в `tables/attributes.h` — что эти колонки ЗНАЧАТ.
 #pragma once
+#include "core/subtract.h"      // try_spend — дверь вычитания шага рулетки
 #include "core/time.h"          // steps_from_seconds — квант двери восстановления
 #include "tables/attributes.h"  // каталог: AttributeId/SkillId, строки, THE skill law
 #include "tables/army.h"        // каталог: CombatTemplate — боевой лист строки
@@ -1036,8 +1037,9 @@ int weighted_pick(const std::uint8_t (&w)[N], std::uint32_t roll) {
     if (total == 0) return 0; // degenerate row — should be impossible
     std::uint32_t r = roll % total;
     for (std::size_t i = 0; i < N; ++i) {
-        if (r < w[i]) return int(i);
-        r -= w[i];
+        // Шаг рулетки — дверь try_spend (ЗАКОН ТРЁХ ДВЕРЕЙ): «не хватает
+        // на этот вес» и есть попадание, гейт выражен типом, не прозой.
+        if (!sm::try_spend(r, std::uint32_t(w[i]))) return int(i);
     }
     return int(N - 1);
 }

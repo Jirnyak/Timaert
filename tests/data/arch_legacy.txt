@@ -13,6 +13,12 @@
 #             core/caps.h) — шаг 0 M-150 (развод капов, 2026-10-09): субмир
 #             меряется своим kMaxSubObjects@src/sub/caps.h; законный остаток —
 #             скан живых слотов MacroStore в спавне, тает с каналом (M-171).
+#   minus   — голое `-=` в src/macro|src/sub (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243 п.2):
+#             беззнаковая величина симуляции обязана ходить дверями
+#             core/subtract.h; мера флоат/знак не различает — такие сайты
+#             живут здесь поимённо (суд 2026-10-09: беззнаковых было 3 из
+#             57, прочее — знак/флоат, им дверь запрещена типом), радиус
+#             эпика ИИ тает его руками.
 #
 # СПИСОК УМЕЕТ ТОЛЬКО ТАЯТЬ. Новый сайт вне списка красит `check` (рост долга);
 # строка списка, которой в дереве больше нет, красит его же. Дописывать сюда
@@ -173,3 +179,53 @@ entt	src/sub/targeting.cpp	entt
 entt	src/sub/targeting.h	entt
 entt	src/sub/vk_renderer_3d.cpp	entt
 subcap	src/sub/spawn.cpp	kUnifiedCap
+minus	src/macro/anketa.cpp	s.count -= 1;
+minus	src/macro/anketa.h	ld.exp -= ld.expToNext;
+minus	src/macro/anketa.h	s.count -= n;
+minus	src/macro/anketa.h	s.count -= take;
+minus	src/macro/anketa.h	left -= take;
+minus	src/macro/currency.h	left -= take * unitV;
+minus	src/macro/econ_day.cpp	needDebt[idx] -= eaten;
+minus	src/macro/economy.cpp	outSeason -= store->count_of(outIdx);
+minus	src/macro/fauna.cpp	roll -= double(w[i]);
+minus	src/macro/loot_pool.cpp	roll -= double(danger_match_weight(value_strength(i), power));
+minus	src/macro/loot_pool.cpp	left -= paid;
+minus	src/macro/movement_cost.h	pools.hp -= lost;
+minus	src/macro/movement_cost.h	pools.sp -= cost;
+minus	src/macro/movement_cost.h	carry -= float(whole);
+minus	src/macro/npc_ai.cpp	rt.moveBudget -= 1.0f;
+minus	src/macro/npc_ai.cpp	pools.spCarry -= float(cycleCost);
+minus	src/macro/npc_ai.cpp	purse -= buyable * therePrice[c];
+minus	src/macro/npc_ai.cpp	owed -= (long long)moved * base;
+minus	src/macro/npc_ai.cpp	owed -= dense;
+minus	src/macro/npc_ai.cpp	edge->owedValue -= took;
+minus	src/macro/npc_ai.cpp	if (dx > float(ctx.mapW) * 0.5f) dx -= float(ctx.mapW);
+minus	src/macro/npc_ai.cpp	if (dy > float(ctx.mapH) * 0.5f) dy -= float(ctx.mapH);
+minus	src/macro/npc_ai.cpp	freeKg -= float(fit) * kg;
+minus	src/macro/npc_ai.cpp	purse -= buyable * therePrice;
+minus	src/macro/npc_ai.cpp	draw -= bids[b].score;
+minus	src/macro/npc_ai.cpp	rt.tickAccum -= kAiTicks;
+minus	src/macro/npc_ai.cpp	runtime.sweepAccum -= kAiTicks;
+minus	src/macro/recovery.cpp	accumulator -= float(whole);
+minus	src/macro/scent_field.cpp	d[yc + x] -= std::int32_t(per) * 8;
+minus	src/macro/spires.cpp	for (; gate >= int(def.minZone); gate -= relaxStep) {
+minus	src/macro/squad.h	rt.xp -= exp_to_next_level(lvl.value);
+minus	src/macro/state.cpp	v -= village_pressure(pv.score, d);
+minus	src/macro/state.cpp	r.pressed -= village_pressure(c.raw, d);
+minus	src/macro/threat_field.cpp	delta[r] -= std::int64_t(per);
+minus	src/macro/upkeep_window.h	r.wageDebt -= canPay;
+minus	src/macro/world_row.h	playerGold -= cost;
+minus	src/macro/world_tick.cpp	wb.popGrowthCarry -= float(whole);
+minus	src/macro/zones.cpp	z -= civPull[i];
+minus	src/sub/ai.cpp	a.aiTimer -= dt;
+minus	src/sub/damage.cpp	hp->hp -= amt;
+minus	src/sub/engine.cpp	statusTimer_ -= dt;
+minus	src/sub/gens/kit/outline.h	a -= std::floor(a); // wrap to [0, 1)
+minus	src/sub/material.h	n -= std::floor(n);
+minus	src/sub/particles.cpp	accum -= 1.0f;
+minus	src/sub/seamless_manager.cpp	playerX -= shiftX * kCellSize;
+minus	src/sub/seamless_manager.cpp	playerY -= shiftY * kCellSize;
+minus	src/sub/sky.h	pick -= int(def.kindWeights[kindIdx]);
+minus	src/sub/spawn.cpp	if (d * 2 > n) d -= n; // fold to (-n/2, n/2]
+minus	src/sub/spell_effects.cpp	p.lifeTimer -= dt;
+minus	src/sub/vk_renderer_3d.cpp	remaining -= n;

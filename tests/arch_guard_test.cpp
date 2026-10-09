@@ -366,6 +366,57 @@ void collect_subcap(std::vector<Site>& out) {
     }
 }
 
+// ── R7: ВЫЧИТАНИЕ ХОДИТ ДВЕРЬМИ (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243 п.2) ───────────
+// Голое `a -= b` в src/macro|src/sub — кандидат дюпа из воздуха
+// («uint16 wood = 5; wood -= 10» кладёт на склад 65 531 дерева молча);
+// двери — `sub_sat`/`try_spend`/`drain` в core/subtract.h. Мера — та же,
+// что у переписи 2026-10-09: `-=`, чей левый сосед не оператор (чтобы не
+// ловить составные и сравнения); комментарии срезаются. Флоат и знаковые
+// сайты закон НЕ покрывает, но мера их не различает — они живут в списке
+// ПОИМЁННО и тают вместе с переводом беззнаковых на двери; сайты радиуса
+// эпика ИИ (npc_ai.cpp) тают его руками, не раньше.
+bool line_has_bare_minus_assign(const std::string& line) {
+    std::string code = line;
+    const std::size_t comment = code.find("//");
+    if (comment != std::string::npos) code.resize(comment);
+    for (std::size_t i = 1; i + 1 < code.size(); ++i) {
+        if (code[i] != '-' || code[i + 1] != '=') continue;
+        const char prev = code[i - 1];
+        if (prev == '-' || prev == '+' || prev == '*' || prev == '/'
+            || prev == '=' || prev == '!' || prev == '<' || prev == '>')
+            continue;
+        return true;
+    }
+    return false;
+}
+
+void collect_minus(std::vector<Site>& out) {
+    for (std::string_view top : {std::string_view("src/macro"),
+                                 std::string_view("src/sub")}) {
+        const fs::path dir = fs::path(kRoot) / fs::path(top);
+        if (!fs::is_directory(dir)) continue;
+        std::vector<fs::path> files;
+        for (const auto& e : fs::recursive_directory_iterator(dir)) {
+            if (!e.is_regular_file()) continue;
+            const std::string ext = e.path().extension().string();
+            if (ext == ".cpp" || ext == ".h") files.push_back(e.path());
+        }
+        std::sort(files.begin(), files.end());
+        for (const fs::path& p : files) {
+            const std::string rel =
+                fs::relative(p, fs::path(kRoot)).generic_string();
+            const std::vector<std::string> lines = split_lines(read_file(p));
+            for (std::size_t n = 0; n < lines.size(); ++n) {
+                if (!line_has_bare_minus_assign(lines[n])) continue;
+                // Ключ — файл + СТРОКА ДОСЛОВНО: перевод одного сайта на
+                // дверь топит ровно его строку, не весь файл.
+                out.push_back({"minus", rel, collapse(lines[n]),
+                               int(n) + 1});
+            }
+        }
+    }
+}
+
 // ── R5: КАРКАС КАТАЛОГОВ ЗАКРЫТ ───────────────────────────────────────────
 // Чистая сверка двух множеств — на неё стоит негативный контроль ниже.
 struct DirDiff {
@@ -539,6 +590,9 @@ Boundary test_melting_rules() {
     collect_subcap(sites);
     const std::size_t subcapCount =
         sites.size() - channelCount - verdictCount - enttCount;
+    collect_minus(sites);
+    const std::size_t minusCount = sites.size() - channelCount - verdictCount
+                                   - enttCount - subcapCount;
 
     CHECK(channelCount > 0,
           "включения macro/ из src/sub ЕСТЬ — иначе судить нечего, и зелёный "
@@ -568,14 +622,16 @@ Boundary test_melting_rules() {
     CHECK(diff.unlisted == 0,
           "архитектурный долг не вырос: новых включений macro/ в src/sub, "
           "новых безадресных вердиктов в SKELETON.md, новых файлов с entt "
-          "(M-188) и новых чтений макро-капа из src/sub (шаг 0 M-150) нет");
+          "(M-188), новых чтений макро-капа из src/sub (шаг 0 M-150) и "
+          "новых голых -= в macro/sub (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243) нет");
     CHECK(diff.stale == 0, "в белом списке нет строк, которых в дереве уже нет");
 
     std::printf(
         "arch_guard: канал %zu включений · безадресных вердиктов %zu · "
-        "файлов с entt %zu · макро-кап в sub %zu\n"
+        "файлов с entt %zu · макро-кап в sub %zu · голых -= %zu\n"
         "  строк списка %zu (может только таять)\n",
-        channelCount, verdictCount, enttCount, subcapCount, allowed.size());
+        channelCount, verdictCount, enttCount, subcapCount, minusCount,
+        allowed.size());
 
     return Boundary{channelCount, verdictCount, enttCount};
 }
@@ -623,6 +679,14 @@ void test_detectors_actually_see() {
           "имя в комментарии — проза, не код: детектор молчит");
     CHECK(!line_reads_macro_cap("std::array<float, kMaxSubObjects> x;"),
           "своё имя субмира детектор не трогает");
+
+    // R7: голое -= ловится, составные операторы и комментарии — нет.
+    CHECK(line_has_bare_minus_assign("    wood -= 10;"),
+          "голое -= в коде ловится");
+    CHECK(!line_has_bare_minus_assign("    if (a <= b || a != c) x += d;"),
+          "сравнения и += детектор не трогает");
+    CHECK(!line_has_bare_minus_assign("// пример из закона: wood -= 10"),
+          "минус в комментарии — проза, не код");
 
     // R3: три законные формы адреса опознаются, а безадресное — нет.
     CHECK(has_address("дверь `cell_of@src/core/torus.h` — ПРАВДА"),
