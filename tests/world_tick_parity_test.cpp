@@ -605,7 +605,7 @@ void test_one_upkeep_door_judges_every_squad_once() {
     // в контейнере — дверью мира, не присваиванием колонки.
     CHECK(sm::raise_flock_into_container(st.inventory[a].inv, 8) == 8,
           "фикстура: восемь душ встали в контейнер артели");
-    CHECK(!sm::is_settlement_kind(sm::SquadType::Artel),
+    CHECK(sm::squad_archetype(sm::SquadType::Artel) != sm::SquadArchetype::Place,
           "фикстура: артель подвижна, значит дневного прохода мест она не "
           "видит вовсе — ничего не производит, и число смертей ниже не "
           "зашумлено выпечкой");

@@ -14,7 +14,7 @@
 #include "macro/squad.h"              // sheet_of — THE door to "who is this"
 #include "macro/player_entity.h"      // player_squad_entity — «чья это запись»
 #include "sub/record.h"
-#include "tables/squad_type.h"   // is_settlement_kind — ось рода (M-90)              // macro_record_of / StandingMirror — дверь шва
+#include "tables/squad_type.h"   // squad_archetype — ось рода (M-90)              // macro_record_of / StandingMirror — дверь шва
 #include "sub/body.h"
 #include "macro/store.h"
 #include <algorithm>
@@ -1572,7 +1572,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             // ГОЛОВАМИ своего контейнера, а не телом-лидером. Без гейта
             // шпиль воплощал самого себя враждебным телом, и смоук
             // spire_climb вис навечно в dev_kill_all_hostiles.
-            if (is_settlement_kind(SquadType(st.runtime[slot].squadType)))
+            if (squad_archetype(SquadType(st.runtime[slot].squadType)) == SquadArchetype::Place)
                 continue;
             sources.push_back(handle_at(st, slot));
         }

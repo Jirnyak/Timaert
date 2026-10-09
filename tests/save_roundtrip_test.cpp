@@ -1366,8 +1366,9 @@ void run_roundtrip() {
     for (std::uint32_t slot = 0; slot < sm::kUnifiedCap; ++slot) {
         if (loadedStore.alive[slot] == 0 || loadedStore.dead[slot] != 0)
             continue;
-        if (!sm::is_settlement_kind(
-                sm::SquadType(loadedStore.runtime[slot].squadType)))
+        if (sm::squad_archetype(
+                sm::SquadType(loadedStore.runtime[slot].squadType))
+            != sm::SquadArchetype::Place)
             continue;
         ++placesOfTheRound;
         const sm::MacroHandle back = sm::place_handle_by_ordinal(

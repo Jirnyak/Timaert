@@ -223,7 +223,7 @@ inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
                                            std::uint32_t index) {
     const MacroHandle h = macro_handle_by_spawn_id(st, index);
     return st.valid(h)
-            && is_settlement_kind(SquadType(st.runtime[h.slot].squadType))
+            && squad_archetype(SquadType(st.runtime[h.slot].squadType)) == SquadArchetype::Place
         ? h : MacroHandle{};
 }
 
@@ -242,7 +242,7 @@ inline MacroHandle place_handle_by_ordinal(
         std::uint32_t index) {
     const MacroHandle h = macro_handle_by_spawn_id(st, order, index);
     return st.valid(h)
-            && is_settlement_kind(SquadType(st.runtime[h.slot].squadType))
+            && squad_archetype(SquadType(st.runtime[h.slot].squadType)) == SquadArchetype::Place
         ? h : MacroHandle{};
 }
 

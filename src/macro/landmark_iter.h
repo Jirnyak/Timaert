@@ -46,13 +46,13 @@ struct LandmarkView {
 // отправил паству в ТЕЛО места, и этот файл теперь тащит store.)
 
 // ── ОБХОД МЕСТ — СЛОТЫ ПО ОСИ РОДА (ломтик F: штабель строк умер) ────────
-// «Все места мира» = живые слоты store с is_settlement_kind. Проход капом,
+// «Все места мира» = живые слоты store с архетипом Place. Проход капом,
 // а не населением (ЗАКОН СТАБИЛЬНОСТИ: структурная цена — константа).
 template <class F>
 void for_each_place(const MacroStore& st, F&& fn) {
     for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
-        if (!is_settlement_kind(SquadType(st.runtime[slot].squadType)))
+        if (squad_archetype(SquadType(st.runtime[slot].squadType)) != SquadArchetype::Place)
             continue;
         fn(std::uint16_t(slot));
     }

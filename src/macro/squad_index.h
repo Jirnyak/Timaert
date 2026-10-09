@@ -133,7 +133,7 @@ inline MacroHandle settlement_at(const SquadIndex& g, const MacroStore& st,
         if (ecs::cell_x(c, mapW) != wx || ecs::cell_y(c, mapW) != wy)
             continue;
         const SquadType t = SquadType(st.runtime[slot].squadType);
-        if (!is_settlement_kind(t)) continue;
+        if (squad_archetype(t) != SquadArchetype::Place) continue;
         for (std::size_t r = 0; r < bestRank; ++r) {
             if (kLandmarkYieldOrder[r] != t) continue;
             bestRank = r;

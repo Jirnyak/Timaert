@@ -130,7 +130,7 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
 
     // ── Сиды: каждое МЕСТО — своя округа ─────────────────────────────────
     // Гейт «род не None» больше не нужен: обход мест и есть ответ оси рода
-    // (is_settlement_kind), а бестиповых мест в популяции не бывает.
+    // (squad_archetype == Place), а бестиповых мест в популяции не бывает.
     nv.regionLandmarkId.clear();
     nv.regionCell.clear();
     for_each_place(st, [&](std::uint16_t slot) {

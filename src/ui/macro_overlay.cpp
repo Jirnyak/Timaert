@@ -379,7 +379,7 @@ void draw_macro_overlay(const MacroWorld& mw,
             // ТЕЛО МЕСТА — НЕ ФИГУРКА (ось рода, грабля флипа M-90):
             // место рисует СВОЙ проход (for_each_landmark), и однажды
             // освежённые pools сделали бы город второй фигуркой здесь.
-            if (is_settlement_kind(SquadType(st.runtime[slot].squadType)))
+            if (squad_archetype(SquadType(st.runtime[slot].squadType)) == SquadArchetype::Place)
                 continue;
             const auto& cell = st.cell[slot];
             const auto& kind = st.kind[slot];
@@ -702,7 +702,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                 || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal)
                 continue;
             // ТЕЛО МЕСТА — НЕ СОСЕД-СКВАД (тот же гейт, что у спрайтов).
-            if (is_settlement_kind(SquadType(st.runtime[slot].squadType)))
+            if (squad_archetype(SquadType(st.runtime[slot].squadType)) == SquadArchetype::Place)
                 continue;
             const auto& cell = st.cell[slot];
             const auto& hp  = st.pools[slot];

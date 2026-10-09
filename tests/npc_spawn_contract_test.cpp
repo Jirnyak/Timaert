@@ -27,7 +27,7 @@ void add_settlement(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
 // самой структурой: ломтиком F «это место?» отвечает ОСЬ РОДА тела — тот же
 // предикат, которым мир обходит свои места (for_each_place).
 bool is_place_body(const sm::MacroStore& st, std::size_t slot) {
-    return sm::is_settlement_kind(sm::SquadType(st.runtime[slot].squadType));
+    return sm::squad_archetype(sm::SquadType(st.runtime[slot].squadType)) == sm::SquadArchetype::Place;
 }
 
 int count_macro_npcs(const sm::ecs::World& world) {

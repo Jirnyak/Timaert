@@ -874,7 +874,7 @@ void detect_forced_encounter(App& app) {
         if (st.dead[slot] != 0) continue;
         // ТЕЛО МЕСТА — НЕ ВСТРЕЧНЫЙ СКВАД (ось рода, M-90 шаг 5): шаг на
         // клетку шпиля не есть бой с его телом; осаду построит свой закон.
-        if (sm::is_settlement_kind(sm::SquadType(st.runtime[slot].squadType)))
+        if (sm::squad_archetype(sm::SquadType(st.runtime[slot].squadType)) == sm::SquadArchetype::Place)
             continue;
         const auto& hp = st.pools[slot];
         if (hp.hp <= 0) continue;
@@ -5655,7 +5655,7 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
             continue;
         // ТЕЛО МЕСТА НЕ РИСУЕТСЯ СКВАД-СПРАЙТОМ (ось рода, M-90 шаг 5):
         // место на карте — глиф своей строки реестра, не ходячая фигурка.
-        if (sm::is_settlement_kind(sm::SquadType(st.runtime[slot].squadType)))
+        if (sm::squad_archetype(sm::SquadType(st.runtime[slot].squadType)) == sm::SquadArchetype::Place)
             continue;
         const auto& c = st.cell[slot];
         const float cx = float(sm::ecs::cell_x(c, app.gs.mapW));

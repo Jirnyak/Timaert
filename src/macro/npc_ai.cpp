@@ -3201,7 +3201,7 @@ void dispatch(MacroHandle e, MacroPos& p,
     // ТЕЛО МЕСТА НЕ ДУМАЕТ ВООБЩЕ (ось рода, M-90 шаг 5): ни следа, ни
     // угрозы, ни охоты — его день идёт своим проходом (settle_landmark_day).
     // Без этого гейта squad_threat_step погнал бы ГОРОД преследовать врага.
-    if (is_settlement_kind(SquadType(rt.squadType))) return;
+    if (squad_archetype(SquadType(rt.squadType)) == SquadArchetype::Place) return;
     // Каждый думающий сквад следит — писатель полей следов один (CANON S10).
     scent_squad_deposit(e, p, kind, ctx);
     if (squad_threat_step(e, p, kind, rt, pools, ctx)) return;
@@ -3791,7 +3791,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // ТЕЛО МЕСТА — НЕ АРТЕЛЬ (ось рода, не строка существа): без этого
         // гейта город, носящий нулевую строку и числящий домом себя,
         // занимал крестьянскую строку СВОЕГО дома и получал поручение.
-        if (is_settlement_kind(SquadType(rt.squadType))) continue;
+        if (squad_archetype(SquadType(rt.squadType)) == SquadArchetype::Place) continue;
         if (!is_crew(kind.type)) continue;
         if (rt.state != std::uint8_t(NS::Idle)) continue;
         const std::uint16_t homeSlot = slot_of(rt.homeSettlementId);
@@ -3871,7 +3871,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         if (homeSlot == kMacroNoSlot) continue;
         // ТЕЛО МЕСТА — НЕ АРТЕЛЬ: без гейта весь инвентарь города шёл в
         // труд-гроссбух как «души в поле» его же строки.
-        if (is_settlement_kind(SquadType(rt.squadType))) continue;
+        if (squad_archetype(SquadType(rt.squadType)) == SquadArchetype::Place) continue;
         const LandmarkDef& ld =
             landmark_def(SquadType(stq.runtime[homeSlot].squadType));
         bool standingHome = false;
