@@ -4313,7 +4313,7 @@ void register_console_commands(App& app) {
             }
             int count = 500;
             if (!a.empty()) sm::dev::arg_int(a, 0, count);
-            count = std::clamp(count, 1, int(sm::kUnifiedCap) / 2);
+            count = std::clamp(count, 1, int(sm::kMaxSubObjects) / 2);
 
             // Side A defaults to the defenders of this very ground, side B to
             // raiders — a fight you can rely on without naming anyone, and any
@@ -5159,7 +5159,7 @@ void draw_debug_panels(App& app) {
             auto maskCnt = [&reg](std::uint16_t bit) {
                 std::size_t n = 0;
                 const auto& objs = sm::sub::objects_of(reg);
-                for (int s = 0; s < int(sm::kUnifiedCap); ++s) {
+                for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
                     const std::uint16_t f = objs.flags[std::size_t(s)];
                     if ((f & sm::sub::kObjAlive) != 0u && (f & bit) != 0u) ++n;
                 }
@@ -5175,7 +5175,7 @@ void draw_debug_panels(App& app) {
                 {"BodyPools(arena)", [&reg] {
                      std::size_t n = 0;
                      const auto& objs = sm::sub::objects_of(reg);
-                     for (int s = 0; s < int(sm::kUnifiedCap); ++s) {
+                     for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
                          if ((objs.flags[std::size_t(s)]
                               & sm::sub::kObjAlive) != 0u
                              && objs.pools[std::size_t(s)].maxHp != 0) ++n;
@@ -5188,7 +5188,7 @@ void draw_debug_panels(App& app) {
                 {"BodyKind(arena)", [&reg] {
                      std::size_t n = 0;
                      const auto& objs = sm::sub::objects_of(reg);
-                     for (int s = 0; s < int(sm::kUnifiedCap); ++s) {
+                     for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
                          if ((objs.flags[std::size_t(s)]
                               & sm::sub::kObjAlive) != 0u
                              && objs.kind[std::size_t(s)].type
