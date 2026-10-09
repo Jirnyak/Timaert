@@ -8,6 +8,7 @@
 #include "ecs/world.h"
 #include "sub/collide.h"
 #include "sub/height.h"
+#include "sub/record.h"   // set_body_debt — колонка квитанции (ломоть 4)
 #include "sub/seamless_manager.h"
 #include "macro/fauna.h"
 #include "tables/biomes.h"
@@ -107,6 +108,19 @@ struct BodyLoan {
     static BodyLoan none() { return BodyLoan{}; }
     static BodyLoan from(MacroStock s, MacroStockKey k) { return BodyLoan{s, k}; }
 };
+
+// Stamp a freshly embodied thing with the debt it owes. This is the ONLY way
+// to take from a macro stock: no stamp, no borrowing — so a spawner that
+// forgets is not one that quietly leaks, it is one that never took anything.
+// (Переехал из macro/macro_stock.h ломтём 4 M-150: квитанция — колонка debt
+// арены, макро-слою она не видна; тело без слота займа честно не получает.)
+inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
+                             MacroStock stock, MacroStockKey key,
+                             std::uint16_t amount = 1) {
+    sub::set_body_debt(reg, e, ecs::MacroDebt{
+        std::uint8_t(stock), key.subject, key.cellX, key.cellY, amount,
+        key.detail, key.detailKind, key.detailLevel});
+}
 
 // Form 1 — DERIVED. `faceSalt` separates two bodies drawn from the same seed
 // (slot index, ordinal in the crowd). Stamps the loan's receipt, if any.

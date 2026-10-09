@@ -64,6 +64,14 @@ inline void give_level(entt::registry& reg, entt::entity e, std::int16_t v) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
     sm::sub::set_body_level(reg, e, v);
 }
+// Бэклинк телу фикстуры — как записала бы дверь tracked-рождения (ломоть 4),
+// слот по надобности. Снятие — give_origin с MacroHandle{} (бита нет,
+// «записи нет» = невалидный хэндл в самой колонке).
+inline void give_origin(entt::registry& reg, entt::entity e,
+                        sm::MacroHandle h) {
+    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
+    sm::sub::set_body_origin(reg, e, h);
+}
 // Вид телу фикстуры — как записала бы дверь рождения (ломоть 3), слот по
 // надобности.
 inline void give_sprite(entt::registry& reg, entt::entity e,

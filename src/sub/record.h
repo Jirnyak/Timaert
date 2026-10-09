@@ -54,11 +54,17 @@ namespace sm::sub {
 inline MacroHandle macro_record_of(const entt::registry& reg,
                                    entt::entity body) {
     if (body == entt::null || !reg.valid(body)) return MacroHandle{};
-    const auto* origin = reg.try_get<ecs::MacroOrigin>(body);
-    if (!origin) return MacroHandle{};
+    const auto* os = reg.try_get<ecs::ObjectSlot>(body);
+    if (os == nullptr) return MacroHandle{};
+    SubObjects* const* objs = reg.ctx().find<SubObjects*>();
+    if (objs == nullptr) return MacroHandle{};
+    // Бэклинк — колонка origin арены (ломоть 4); «записи нет» = невалидный
+    // хэндл в самой колонке (slot == kMacroNoSlot, NSDMI типа).
+    const MacroHandle rec = (*objs)->origin[std::size_t(os->slot)].macro;
+    if (rec.slot == kMacroNoSlot) return MacroHandle{};
     MacroStore* const* st = reg.ctx().find<MacroStore*>();
-    if (!st || !(*st)->valid(origin->macro)) return MacroHandle{};
-    return origin->macro;
+    if (!st || !(*st)->valid(rec)) return MacroHandle{};
+    return rec;
 }
 
 // THE accessor every typed door below is made of. One template, deliberately:
@@ -365,6 +371,49 @@ inline void clear_body_light(entt::registry& reg, entt::entity e) {
         objs->light[std::size_t(os->slot)] = ecs::LightEmitter{};
         objs->flags[std::size_t(os->slot)] =
             std::uint16_t(objs->flags[std::size_t(os->slot)] & ~kObjHasLight);
+    }
+}
+// ── ШОВ И КВИТАНЦИЯ — КОЛОНКИ АРЕНЫ (M-150 ломоть 4) ────────────────────
+// СЫРОЙ бэклинк БЕЗ store-гарды: наличие (slot != kMacroNoSlot) и
+// валидность — РАЗНЫЕ вопросы. Лестница лидера-убийцы и щит жнеца сцены
+// различают «бэклинк есть, но протух» от «бэклинка нет вовсе»; за живым
+// хэндлом иди в macro_record_of (он прибавляет store.valid).
+inline MacroHandle body_macro_origin(const entt::registry& reg,
+                                     entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return MacroHandle{};
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return MacroHandle{};
+    SubObjects* const* objs = reg.ctx().find<SubObjects*>();
+    if (objs == nullptr) return MacroHandle{};
+    return (*objs)->origin[std::size_t(os->slot)].macro;
+}
+inline void set_body_origin(entt::registry& reg, entt::entity e,
+                            MacroHandle h) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->origin[std::size_t(os->slot)] = ecs::MacroOrigin{h};
+    }
+}
+// Квитанция derived-тела: «займа нет» = amount == 0 — тот же сентинел,
+// которым судит единственный расчётчик settle_macro_debt. Пишет ТОЛЬКО
+// stamp_macro_debt (sub/spawn.h — закон «no stamp, no borrowing»).
+inline const ecs::MacroDebt* body_debt(const entt::registry& reg,
+                                       entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return nullptr;
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return nullptr;
+    SubObjects* const* objs = reg.ctx().find<SubObjects*>();
+    if (objs == nullptr) return nullptr;
+    const ecs::MacroDebt& d = (*objs)->debt[std::size_t(os->slot)];
+    return d.amount != 0 ? &d : nullptr;
+}
+inline void set_body_debt(entt::registry& reg, entt::entity e,
+                          const ecs::MacroDebt& d) {
+    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
+    if (os == nullptr) return;
+    if (SubObjects* objs = objects_find(reg)) {
+        objs->debt[std::size_t(os->slot)] = d;
     }
 }
 // Лист через ОДНУ дверь состояния (специализация self-фолбэка): запись

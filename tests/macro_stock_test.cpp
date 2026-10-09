@@ -20,6 +20,8 @@
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"
 #include "macro/macro_stock.h"
+#include "scene_objects_fixture.h"  // арена: квитанция — колонка слота (ломоть 4)
+#include "sub/spawn.h"            // stamp_macro_debt — дверь штампа (ломоть 4)
 #include "macro/landmark_iter.h"  // for_each_place — места по слотам
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/squad.h"
@@ -198,10 +200,12 @@ void test_debts_bill_their_own_subject() {
     MacroWorld w{.gs = &gs, .store = wld.store.get()};
 
     entt::registry reg;
+    sm::test::arena_of(reg);   // квитанция — колонка слота арены (ломоть 4)
     const auto citizen = reg.create();
-    stamp_macro_debt(reg, citizen, MacroStock::Population,
-                     MacroStockKey{wld.cityId, 10, 10}, 1);
-    const auto* debt = reg.try_get<ecs::MacroDebt>(citizen);
+    sm::test::give_slot(reg, citizen);
+    sub::stamp_macro_debt(reg, citizen, MacroStock::Population,
+                          MacroStockKey{wld.cityId, 10, 10}, 1);
+    const auto* debt = sub::body_debt(reg, citizen);
     CHECK_OR_RETURN(debt != nullptr, "stamping leaves a receipt on the body");
 
     settle_macro_debt(w, *debt, -1);
@@ -214,9 +218,10 @@ void test_debts_bill_their_own_subject() {
     // A village is a named place with people too, on the SAME id space (v54):
     // the id alone names it, no register bit rides the receipt.
     const auto villager = reg.create();
-    stamp_macro_debt(reg, villager, MacroStock::Population,
-                     MacroStockKey{wld.hamletId, 20, 20}, 3);
-    settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(villager), -1);
+    sm::test::give_slot(reg, villager);
+    sub::stamp_macro_debt(reg, villager, MacroStock::Population,
+                          MacroStockKey{wld.hamletId, 20, 20}, 3);
+    settle_macro_debt(w, *sub::body_debt(reg, villager), -1);
     CHECK(population_of(wld, wld.hamletId) == 37,
           "a village pays from its own people, by the amount the receipt says");
 
@@ -224,9 +229,10 @@ void test_debts_bill_their_own_subject() {
     // Twinvale must leave every CITY exactly where the earlier checks
     // left them — the id alone finds the village, never a city.
     const auto twinVillager = reg.create();
-    stamp_macro_debt(reg, twinVillager, MacroStock::Population,
-                     MacroStockKey{wld.twinId, 40, 40}, 2);
-    settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(twinVillager), -1);
+    sm::test::give_slot(reg, twinVillager);
+    sub::stamp_macro_debt(reg, twinVillager, MacroStock::Population,
+                          MacroStockKey{wld.twinId, 40, 40}, 2);
+    settle_macro_debt(w, *sub::body_debt(reg, twinVillager), -1);
     CHECK(village_population_of(wld, wld.twinId) == 78,
           "a village pays its own dead through the one id space");
     CHECK(city_population_of(wld, wld.cityId) == 299
@@ -234,7 +240,7 @@ void test_debts_bill_their_own_subject() {
           "and no city is billed for them");
 
     // Signed both ways (owner's ruling): the same row settles creation.
-    settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(villager), +1);
+    settle_macro_debt(w, *sub::body_debt(reg, villager), +1);
     CHECK(population_of(wld, wld.hamletId) == 40,
           "handing the borrowed thing back credits the same place");
 }
@@ -334,9 +340,10 @@ void test_the_creature_row_pays_by_name() {
     // The full settle path — the same door a subworld death actually uses.
     entt::registry& reg = world.reg;
     const auto body = reg.create();
-    stamp_macro_debt(reg, body, MacroStock::Creatures,
-                     MacroStockKey{5, 0, 0, 22}, 1);
-    const auto* debt = reg.try_get<ecs::MacroDebt>(body);
+    sm::test::give_slot(reg, body);
+    sub::stamp_macro_debt(reg, body, MacroStock::Creatures,
+                          MacroStockKey{5, 0, 0, 22}, 1);
+    const auto* debt = sub::body_debt(reg, body);
     CHECK_OR_RETURN(debt != nullptr && debt->detail == 22,
                     "the receipt carries the member's name to the grave");
     settle_macro_debt(w, *debt, -1);

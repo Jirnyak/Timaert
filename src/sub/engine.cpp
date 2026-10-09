@@ -988,7 +988,7 @@ void SubworldEngine::spawn_player_entity() {
     // reason to exist, and no damage/spend path needs to know which kind of
     // body it is holding.
     if (flagRec.slot != kMacroNoSlot)
-        reg.emplace<ecs::MacroOrigin>(e, flagRec);
+        sub::set_body_origin(reg, e, flagRec);
     // Inc 4b: the player is a full combat participant, not an inert anchor.
     //  - Pools MIRROR the record the flag stands in (sub/record.h);
     //    mirror_bodies_from_record re-pulls the block at each tick top, and
@@ -1287,14 +1287,16 @@ void SubworldEngine::mirror_bodies_from_record() {
     // считает свой бюджет в 0.00041 мс на тело (шапка ниже) — lookup на
     // каждое тело был бы налогом того же порядка, что вся работа.
     const MacroStore& st = store_of(reg);
-    for (auto [body, origin] :
-         reg.view<ecs::MacroOrigin, ecs::SubworldTag>().each()) {
+    for (auto body :
+         reg.view<ecs::ObjectSlot, ecs::SubworldTag>()) {
+        const MacroHandle originH = sub::body_macro_origin(reg, body);
+        if (originH.slot == kMacroNoSlot) continue;
         // Зеркало — колонка арены (кусок 2); тело без баров (слот без
         // pools) зеркалом не живёт.
         ecs::Pools* mirrorCol = sub::body_pools(reg, body);
         if (mirrorCol == nullptr) continue;
         ecs::Pools& mirror = *mirrorCol;
-        const auto* record = body_state<ecs::Pools>(st, origin.macro);
+        const auto* record = body_state<ecs::Pools>(st, originH);
         if (!record || record->maxHp <= 0) continue;
         mirror = *record;
         mirror.maxHp = std::max(1, mirror.maxHp);
@@ -1755,10 +1757,12 @@ void SubworldEngine::tick_day_pump(float dt) {
     std::vector<entt::entity> onStreet;
     std::vector<entt::entity> leaving;
     onStreet.reserve(512);
-    auto crowd = reg.view<ecs::Position, ecs::MacroDebt>();
+    auto crowd = reg.view<ecs::Position, ecs::ObjectSlot>();
     for (auto e : crowd) {
         if (sub::body_ai(reg, e) == nullptr) continue;
-        const auto& d = crowd.get<ecs::MacroDebt>(e);
+        const auto* dp = sub::body_debt(reg, e);
+        if (dp == nullptr) continue;
+        const auto& d = *dp;
         if (d.stock != std::uint8_t(MacroStock::Population)) continue;
         if (d.subject != ctx.landmark.id) continue;
         if (sub::is_avatar(reg, e)
@@ -1810,7 +1814,9 @@ void SubworldEngine::tick_day_pump(float dt) {
     liveNamed.reserve(32);
     for (const entt::entity e : onStreet) {
         if (!reg.valid(e)) continue;
-        const auto& d = reg.get<ecs::MacroDebt>(e);
+        const auto* dOnStreet = sub::body_debt(reg, e);
+        if (dOnStreet == nullptr) continue;
+        const auto& d = *dOnStreet;
         if (d.detail > 0) {
             liveNamed.push_back(std::uint32_t(d.detail));
             continue;
@@ -2896,8 +2902,8 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     // в субмир»). Бой ОБЪЯВЛЕН — противник сошёлся: уже стоящее тело
     // встаёт в то же кольцо, куда встало бы рождённое, той же рукой
     // (place_body_ring выше) — а второго тела для одного лорда не бывает.
-    for (auto e : reg.view<ecs::MacroOrigin>()) {
-        if (reg.get<ecs::MacroOrigin>(e).macro != macro) continue;
+    for (auto e : reg.view<ecs::ObjectSlot>()) {
+        if (sub::body_macro_origin(reg, e) != macro) continue;
         if (auto* p = reg.try_get<ecs::Position>(e)) {
             p->x = fx;
             p->y = fy;
@@ -3424,7 +3430,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // (macro/macro_stock.h), so the town is smaller from this tick on,
             // while the player is still underground. No per-kind counter, no
             // queue to lose on the way out: one receipt, one settler.
-            if (const auto* debt = reg.try_get<ecs::MacroDebt>(e)) {
+            if (const auto* debt = sub::body_debt(reg, e)) {
                 MacroWorld macroWorld = mw_;
                 settle_macro_debt(macroWorld, *debt, -1);
             }
@@ -3439,11 +3445,12 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // him again, and again, for as much XP and loot as you had patience
             // for (problems.md 19.13). The reaper above is the ONE place that
             // knows a body has died, so this is the only place that can be.
-            if (const auto* origin = reg.try_get<ecs::MacroOrigin>(e)) {
+            if (const MacroHandle reaped = sub::body_macro_origin(reg, e);
+                reaped.slot != kMacroNoSlot) {
                 MacroStore& st = store_of(reg);
-                if (auto* mh = body_state<ecs::Pools>(st, origin->macro)) {
+                if (auto* mh = body_state<ecs::Pools>(st, reaped)) {
                     mh->hp = 0;
-                    macro_mark_dead(st, origin->macro);
+                    macro_mark_dead(st, reaped);
                     // …and his men stop being a squad THE MOMENT he falls,
                     // exactly as they do when the auto-resolve kills him
                     // (CANON S4: a leaderless squad's survivors fall into the
@@ -3491,11 +3498,12 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 MacroHandle leader{};
                 bool playerHand = false;
                 if (reg.valid(killerBody)) {
-                    if (const auto* origin =
-                            reg.try_get<ecs::MacroOrigin>(killerBody)) {
-                        leader = origin->macro;
+                    if (const MacroHandle killerOrigin =
+                            sub::body_macro_origin(reg, killerBody);
+                        killerOrigin.slot != kMacroNoSlot) {
+                        leader = killerOrigin;
                     } else if (const auto* debt =
-                                   reg.try_get<ecs::MacroDebt>(killerBody);
+                                   sub::body_debt(reg, killerBody);
                                debt && debt->stock
                                    == std::uint8_t(MacroStock::Creatures)) {
                         leader = macro_handle_by_spawn_id(

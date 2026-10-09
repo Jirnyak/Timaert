@@ -235,7 +235,7 @@ void test_players_worn_plate_stands_underground() {
     const sm::MacroHandle squad = sm::store_birth(*store);
     store->pools[squad.slot].hp = 100;
     store->pools[squad.slot].maxHp = 100;
-    reg.emplace<sm::ecs::MacroOrigin>(body, squad);
+    sm::test::give_origin(reg, body, squad);
     auto& eq = store->gear[squad.slot];
     auto& bag = store->inventory[squad.slot].inv;
     const int coatIdx = sm::item_index("arm_leather");
@@ -303,7 +303,7 @@ void test_armor_downtime() {
     const sm::MacroHandle squad = sm::store_birth(*store);
     store->pools[squad.slot].hp = 10000;
     store->pools[squad.slot].maxHp = 10000;
-    reg.emplace<sm::ecs::MacroOrigin>(body, squad);
+    sm::test::give_origin(reg, body, squad);
     auto& eq = store->gear[squad.slot];
     auto& bag = store->inventory[squad.slot].inv;
     const int coatIdx = sm::item_index("arm_leather");
@@ -613,7 +613,7 @@ void test_the_blow_lands_on_the_record() {
     store->pools[record.slot].hp = 100;
     store->pools[record.slot].maxHp = 100;
     const entt::entity body = make_body(reg, 100);
-    reg.emplace<sm::ecs::MacroOrigin>(body, record);
+    sm::test::give_origin(reg, body, record);
 
     const DamageResult hit =
         apply_damage(reg, body, DamageSource{}, 30, DamageKind::Script,

@@ -78,7 +78,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
                 aiCol->wantVx = aiCol->wantVy = 0.0f;
                 continue;
             }
-            if (const auto* debt = reg.try_get<ecs::MacroDebt>(e);
+            if (const auto* debt = body_debt(reg, e);
                 debt && debt->stock == std::uint8_t(MacroStock::Creatures)
                 && debt->subject == unconsciousSubject) {
                 aiCol->wantVx = aiCol->wantVy = 0.0f;

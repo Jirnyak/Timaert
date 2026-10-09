@@ -168,10 +168,11 @@ static void smoke_settle_on_foot(App& app) {
 static bool smoke_projects_foreign_record(App& app, entt::entity body) {
     auto& reg = app.ecs.reg;
     if (!reg.valid(body)) return false;
-    const auto* origin = reg.try_get<sm::ecs::MacroOrigin>(body);
-    if (!origin || !sm::store_of(reg).valid(origin->macro)) return false;
+    const sm::MacroHandle origin = sm::sub::body_macro_origin(reg, body);
+    if (origin.slot == sm::kMacroNoSlot
+        || !sm::store_of(reg).valid(origin)) return false;
     const sm::MacroHandle psq = sm::player_squad_handle(app.gs);
-    return psq.slot == sm::kMacroNoSlot || !(origin->macro == psq);
+    return psq.slot == sm::kMacroNoSlot || !(origin == psq);
 }
 
 // His book, through the one door (v89) — scratch like the main app's own
@@ -846,7 +847,7 @@ bool run_subworld_time_smoke(App& app) {
     // stretch (no macro NPC stood within ±1 cell of the entered centre).
     {
         int macroProjected = 0;
-        for (auto e : app.ecs.reg.view<sm::ecs::MacroOrigin,
+        for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot,
                                        sm::ecs::SubworldTag>()) {
             if (smoke_projects_foreign_record(app, e)) ++macroProjected;
         }
@@ -2776,10 +2777,12 @@ bool run_dungeon_house_smoke(App& app) {
         // fauna_count, so a kill down here thins the cell for good.
         entt::entity beast = entt::null;
         sm::ecs::MacroDebt beastDebt{};
-        for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::SubworldTag>()) {
+        for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot, sm::ecs::SubworldTag>()) {
             if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead))
                 continue;
-            const auto& d = app.ecs.reg.get<sm::ecs::MacroDebt>(e);
+            const auto* dp = sm::sub::body_debt(app.ecs.reg, e);
+            if (dp == nullptr) continue;
+            const auto& d = *dp;
             if (d.stock != std::uint8_t(sm::MacroStock::FaunaCount)) continue;
             ++vermin;
             if (beast == entt::null) {
@@ -2805,10 +2808,12 @@ bool run_dungeon_house_smoke(App& app) {
         // отрезана, пока он жив. Раньше гейт молчал в данжах (байт зоны
         // пуст = выключен), и сценарий поднимался сквозь бой; теперь он
         // уважает закон: подвал зачищается ЦЕЛИКОМ до подъёма.
-        for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::SubworldTag>()) {
+        for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot, sm::ecs::SubworldTag>()) {
             if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead))
                 continue;
-            if (app.ecs.reg.get<sm::ecs::MacroDebt>(e).stock
+            const auto* dStk = sm::sub::body_debt(app.ecs.reg, e);
+            if (dStk == nullptr) continue;
+            if (dStk->stock
                 != std::uint8_t(sm::MacroStock::FaunaCount)) {
                 continue;
             }
@@ -2931,10 +2936,12 @@ bool run_dungeon_house_smoke(App& app) {
     int residents = 0;
     entt::entity victim = entt::null;
     sm::ecs::MacroDebt victimDebt{};
-    for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::SubworldTag>()) {
+    for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot, sm::ecs::SubworldTag>()) {
         if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
         if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
-        const auto& d = app.ecs.reg.get<sm::ecs::MacroDebt>(e);
+        const auto* dp = sm::sub::body_debt(app.ecs.reg, e);
+        if (dp == nullptr) continue;
+        const auto& d = *dp;
         if (d.stock != std::uint8_t(sm::MacroStock::Population)) continue;
         ++residents;
         if (victim == entt::null) {
@@ -3279,9 +3286,10 @@ bool run_dungeon_cave_smoke(App& app) {
                       || floorTile == sm::sub::TILE_ROCK;
 
     int vermin = 0;
-    for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::SubworldTag>()) {
-        if (app.ecs.reg.get<sm::ecs::MacroDebt>(e).stock
-            == std::uint8_t(sm::MacroStock::FaunaCount)) {
+    for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot, sm::ecs::SubworldTag>()) {
+        const auto* dV = sm::sub::body_debt(app.ecs.reg, e);
+        if (dV != nullptr
+            && dV->stock == std::uint8_t(sm::MacroStock::FaunaCount)) {
             ++vermin;
         }
     }
@@ -3830,8 +3838,10 @@ bool run_spire_climb_smoke(App& app) {
     auto count_guards = [&]() {
         int n = 0;
         for (auto e
-             : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::SubworldTag>()) {
-            if (app.ecs.reg.get<sm::ecs::MacroDebt>(e).stock
+             : app.ecs.reg.view<sm::ecs::ObjectSlot, sm::ecs::SubworldTag>()) {
+            const auto* dStk = sm::sub::body_debt(app.ecs.reg, e);
+            if (dStk == nullptr) continue;
+            if (dStk->stock
                 == std::uint8_t(sm::MacroStock::Population)) {
                 ++n;
             }
@@ -6916,7 +6926,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             {
                 int macroProjected = 0;
-                for (auto e : app.ecs.reg.view<sm::ecs::MacroOrigin,
+                for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot,
                                                sm::ecs::SubworldTag>()) {
                     if (smoke_projects_foreign_record(app, e)) ++macroProjected;
                 }
@@ -6992,10 +7002,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 auto& reg = app.ecs.reg;
                 sm::MacroStore& st = sm::store_of(reg);
                 for (auto e : reg.view<sm::ecs::SubworldTag,
-                                       sm::ecs::MacroOrigin>()) {
+                                       sm::ecs::ObjectSlot>()) {
                     if (!smoke_projects_foreign_record(app, e)) continue;
                     const sm::MacroHandle m =
-                        reg.get<sm::ecs::MacroOrigin>(e).macro;
+                        sm::sub::body_macro_origin(reg, e);
                     if (sm::macro_dead(st, m)) continue;
                     const auto* mp = body_state<sm::ecs::Pools>(st, m);
                     if (!mp || mp->hp <= 0.0f) continue;
@@ -7131,12 +7141,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // Grab a projected body and its (valid, positioned) macro origin.
                 entt::entity body = entt::null;
                 sm::MacroHandle origin{};
-                for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
+                for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot>()) {
                     if (!smoke_projects_foreign_record(app, e)) continue;
                     // Запись — хэндл store (6.2): entt-носитель флажку больше
                     // не нужен, свидетельница держит саму запись.
                     const sm::MacroHandle m =
-                        reg.get<sm::ecs::MacroOrigin>(e).macro;
+                        sm::sub::body_macro_origin(reg, e);
                     if (app.macroStore->valid(m)) {
                         body = e; origin = m; break;
                     }
@@ -7350,8 +7360,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 entt::entity abandoned = entt::null;
                 const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
                 for (auto b : reg.view<sm::ecs::SubworldTag,
-                                       sm::ecs::MacroOrigin>()) {
-                    if (reg.get<sm::ecs::MacroOrigin>(b).macro == homeH
+                                       sm::ecs::ObjectSlot>()) {
+                    const sm::MacroHandle bOrigin =
+                        sm::sub::body_macro_origin(reg, b);
+                    if (bOrigin.slot != sm::kMacroNoSlot && bOrigin == homeH
                         && !sm::sub::is_avatar(reg, b)) {
                         abandoned = b;
                         break;
@@ -7921,9 +7933,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const float qr = sm::sub::city_upper_radius(lmPop);
                 int watch = 0, inQuarter = 0;
                 auto gv = app.ecs.reg.view<sm::ecs::Position,
-                                           sm::ecs::MacroDebt>();
+                                           sm::ecs::ObjectSlot>();
                 for (auto e : gv) {
-                    const auto& d = gv.get<sm::ecs::MacroDebt>(e);
+                    const auto* dq = sm::sub::body_debt(app.ecs.reg, e);
+                    if (dq == nullptr) continue;
+                    const auto& d = *dq;
                     if (d.stock != std::uint8_t(sm::MacroStock::Population))
                         continue;
                     ++watch;
@@ -8124,11 +8138,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto street = [&app]() {
                 int n = 0;
                 auto v = app.ecs.reg.view<sm::ecs::SubworldTag,
-                                          sm::ecs::MacroDebt>();
+                                          sm::ecs::ObjectSlot>();
                 for (auto e : v) {
                     if (sm::sub::body_kind(app.ecs.reg, e) == nullptr)
                         continue;
-                    const auto& d = v.get<sm::ecs::MacroDebt>(e);
+                    const auto* dS = sm::sub::body_debt(app.ecs.reg, e);
+                    if (dS == nullptr) continue;
+                    const auto& d = *dS;
                     if (d.stock != std::uint8_t(sm::MacroStock::Population)) {
                         continue;
                     }
@@ -8437,10 +8453,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (app.smoke.trackedPhase == 0) {
                 entt::entity body = entt::null;
                 const sm::ecs::MacroDebt* debt = nullptr;
-                for (auto e : reg.view<sm::ecs::MacroDebt, sm::ecs::SubworldTag>()) {
+                for (auto e : reg.view<sm::ecs::ObjectSlot, sm::ecs::SubworldTag>()) {
                     if (sm::sub::object_flag(reg, e, sm::sub::kObjDead))
                         continue;
-                    const auto& d = reg.get<sm::ecs::MacroDebt>(e);
+                    const auto* dF = sm::sub::body_debt(reg, e);
+                    if (dF == nullptr) continue;
+                    const auto& d = *dF;
                     if (d.stock
                         != std::uint8_t(sm::MacroStock::FaunaCount)) {
                         continue;
@@ -8515,7 +8533,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto& reg = app.ecs.reg;
             if (app.smoke.trackedPhase == 0) {
                 entt::entity body = entt::null;
-                for (auto e : reg.view<sm::ecs::MacroOrigin, sm::ecs::SubworldTag>()) {
+                for (auto e : reg.view<sm::ecs::ObjectSlot, sm::ecs::SubworldTag>()) {
                     if (!smoke_projects_foreign_record(app, e)) continue;
                     body = e;
                     break;
@@ -8525,7 +8543,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     break;
                 }
                 const sm::MacroHandle macro =
-                    reg.get<sm::ecs::MacroOrigin>(body).macro;
+                    sm::sub::body_macro_origin(reg, body);
                 if (!sm::store_of(reg).valid(macro)) {
                     smoke_fail(app, "tracked body backlinks nothing");
                     break;

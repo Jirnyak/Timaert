@@ -67,7 +67,7 @@ void test_every_squad_body_is_a_whole_body() {
                             512.0f, 512.0f, 123u, playerFaction);
 
     auto& reg = world.reg;
-    auto view = reg.view<ecs::MacroDebt>();
+    auto view = reg.view<ecs::ObjectSlot>();
 
     int bodies = 0;
     int missingCombat = 0, missingHealth = 0, missingSheet = 0;
@@ -76,8 +76,9 @@ void test_every_squad_body_is_a_whole_body() {
     int offTableHeight = 0;
 
     for (auto e : view) {
-        if (view.get<ecs::MacroDebt>(e).stock
-            != std::uint8_t(MacroStock::Creatures)) continue;
+        const auto* loan = sm::sub::body_debt(reg, e);
+        if (loan == nullptr
+            || loan->stock != std::uint8_t(MacroStock::Creatures)) continue;
         ++bodies;
         const auto* kind   = sm::sub::body_kind(reg, e);
         const auto* health = sm::sub::body_pools(reg, e);
@@ -271,9 +272,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
           "his bag up there, with no trip to arrange");
     // The backlink is the ADDRESS of all of the above — and of his bars. Without
     // it the encounter is a stranger who happens to look like him.
-    CHECK(reg.all_of<ecs::MacroOrigin>(body)
-              && reg.get<ecs::MacroOrigin>(body).macro
-                     == macro,
+    CHECK(sm::sub::body_macro_origin(reg, body) == macro,
           "a tracked body knows which entity it is");
 
     // A whole entity arrives whole: the control that stops "arrives wounded"
@@ -374,11 +373,15 @@ void test_a_leaders_aura_reaches_his_men() {
                             f);
 
     int compared = 0;
-    for (auto eLed : led.reg.view<ecs::MacroDebt>()) {
-        const auto& loanLed = led.reg.get<ecs::MacroDebt>(eLed);
+    for (auto eLed : led.reg.view<ecs::ObjectSlot>()) {
+        const auto* loanLedP = sm::sub::body_debt(led.reg, eLed);
+        if (loanLedP == nullptr) continue;
+        const auto& loanLed = *loanLedP;
         if (loanLed.stock != std::uint8_t(MacroStock::Creatures)) continue;
-        for (auto eAlone : alone.reg.view<ecs::MacroDebt>()) {
-            const auto& loanAlone = alone.reg.get<ecs::MacroDebt>(eAlone);
+        for (auto eAlone : alone.reg.view<ecs::ObjectSlot>()) {
+            const auto* loanAloneP = sm::sub::body_debt(alone.reg, eAlone);
+            if (loanAloneP == nullptr) continue;
+            const auto& loanAlone = *loanAloneP;
             if (loanAlone.stock != std::uint8_t(MacroStock::Creatures)
                 || loanAlone.detail != loanLed.detail) {
                 continue;
@@ -435,11 +438,11 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     int leaders = 0, members = 0, wrongFaction = 0, wholeMembers = 0;
     bool saw77 = false, saw88 = false;
     for (auto e : reg.view<ecs::SubworldTag>()) {
-        if (reg.all_of<ecs::MacroOrigin>(e)) {
+        if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot) {
             ++leaders;
             continue;
         }
-        const auto* debt = reg.try_get<ecs::MacroDebt>(e);
+        const auto* debt = sm::sub::body_debt(reg, e);
         if (!debt) continue;
         ++members;
         CHECK(debt->stock == std::uint8_t(MacroStock::Creatures)
@@ -468,8 +471,9 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     // second death empties it — and an empty creatures around a LIVE leader is a
     // squad of one, alive and well, not a special case anyone must clean up.
     MacroWorld w{.world = &world};
-    for (auto e : reg.view<ecs::MacroDebt, ecs::SubworldTag>()) {
-        settle_macro_debt(w, reg.get<ecs::MacroDebt>(e), -1);
+    for (auto e : reg.view<ecs::ObjectSlot, ecs::SubworldTag>()) {
+        if (const auto* d = sm::sub::body_debt(reg, e))
+            settle_macro_debt(w, *d, -1);
     }
     CHECK(creatures_empty(sm::store_of(reg).inventory[macro.slot].inv),
           "both deaths below emptied the creatures above, by name");
@@ -497,9 +501,9 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     CHECK_OR_RETURN(e != entt::null && reg.valid(e), "a derived body is born");
     CHECK(!reg.all_of<ecs::NpcInventory>(e),
           "a derived body carries no bag: its loot is rolled when it dies");
-    CHECK(!reg.all_of<ecs::MacroOrigin>(e),
+    CHECK(sm::sub::body_macro_origin(reg, e).slot == sm::kMacroNoSlot,
           "a derived body is nobody in particular up there");
-    CHECK(!reg.all_of<ecs::MacroDebt>(e),
+    CHECK(sm::sub::body_debt(reg, e) == nullptr,
           "a body borrowed from nothing owes nothing");
 
     // Borrowed, and it says so. The receipt is stamped BY the birth, so a
@@ -509,7 +513,7 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
         /*faceSalt*/1u,
         sub::BodyLoan::from(MacroStock::Population, MacroStockKey{7, 3, 4}));
     CHECK_OR_RETURN(borrowed != entt::null, "a borrowed body is born");
-    const auto* debt = reg.try_get<ecs::MacroDebt>(borrowed);
+    const auto* debt = sm::sub::body_debt(reg, borrowed);
     CHECK(debt != nullptr
               && debt->stock == std::uint8_t(MacroStock::Population)
               && debt->subject == 7 && debt->amount == 1,
@@ -616,7 +620,34 @@ void test_a_creature_is_as_tall_as_its_own_row() {
     CHECK(checked > 0, "the creature table was actually walked");
 }
 
+// СЛОТ РОЖДАЕТСЯ ЧИСТЫМ — закон alloc() арены (ломоть 4). Курсор доходит до
+// переиспользования слота только после kMaxSubObjects рождений за жизнь
+// сцены — ни один сценарный свидетель туда не добирается, а длинная игра
+// доберётся: унаследованная квитанция платила бы смертью ЧУЖОМУ городу, а
+// унаследованный бэклинк зеркалил бы мёртвого лорда. Поэтому свидетель
+// говорит с ареной НАПРЯМУЮ и форсирует переиспользование курсором — это
+// тест самого alloc(), двери тут не предмет проверки.
+void test_a_reused_slot_is_born_clean() {
+    using namespace sm;
+    ecs::World world{};
+    sub::SubObjects& arena = sm::test::arena_of(world.reg);
+    const int a = arena.alloc();
+    CHECK_OR_RETURN(a >= 0, "the arena lends a slot");
+    arena.debt[std::size_t(a)] = ecs::MacroDebt{
+        std::uint8_t(MacroStock::Population), 7, 1, 1, 1, -1, 0, 0};
+    arena.origin[std::size_t(a)] = ecs::MacroOrigin{MacroHandle{3, 0}};
+    arena.free(a);
+    arena.cursor = a;   // форс переиспользования без 65к прокрутки
+    const int b = arena.alloc();
+    CHECK_OR_RETURN(b == a, "the freed slot is re-issued");
+    CHECK(arena.debt[std::size_t(b)].amount == 0,
+          "a reused slot owes nothing: the receipt died with the tenant");
+    CHECK(arena.origin[std::size_t(b)].macro.slot == kMacroNoSlot,
+          "a reused slot mirrors nobody: the backlink died with the tenant");
+}
+
 int main() {
+    test_a_reused_slot_is_born_clean();
     test_every_squad_body_is_a_whole_body();
     test_two_bodies_of_one_kind_can_differ_in_height();
     test_a_stated_height_is_obeyed();

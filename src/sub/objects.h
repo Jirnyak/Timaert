@@ -198,6 +198,22 @@ struct SubObjects {
     // житель арены с этого ломтя («кап субмира на все объекты … и пропы»).
     std::array<ecs::Sprite, std::size_t(kMaxSubObjects)> sprite{};
     std::array<ecs::LightEmitter, std::size_t(kMaxSubObjects)> light{};
+    // ── ШОВ И КВИТАНЦИЯ (ломоть 4): бывшие ecs::MacroOrigin и ecs::MacroDebt.
+    // БЕЗ битов — у обоих сентинел в самом значении, и суд контрактов
+    // подтвердил телами всех читателей:
+    // - origin: «записи нет» = MacroHandle{} (slot == kMacroNoSlot — NSDMI
+    //   типа); наличие ≡ валидный слот ПО ПОСТРОЕНИЮ (оба писателя эмплейсили
+    //   только с названным слотом). Гейт читателей — slot != kMacroNoSlot,
+    //   НИКОГДА store.valid(): лестница лидера-убийцы (жнец XP) различает
+    //   «бэклинк есть, но протух» от «бэклинка нет», и valid() сменил бы
+    //   исход для тушки игрока с умершей записью.
+    // - debt: «займа нет» = amount == 0 — единственный расчётчик
+    //   settle_macro_debt уже так судит (и свидетель пинит: «a receipt for
+    //   nothing moves no stock»); stock сентинелом негоден (0 = TreeCount).
+    // Зануление ОБЕИХ в alloc() несущее: унаследованный origin зеркалил бы
+    // мёртвого лорда, унаследованный debt платил бы смертью ЧУЖОМУ городу.
+    std::array<ecs::MacroOrigin, std::size_t(kMaxSubObjects)> origin{};
+    std::array<ecs::MacroDebt, std::size_t(kMaxSubObjects)> debt{};
 
     int count = 0;        // живых слотов (для приборов, не для обхода)
     int cursor = 0;       // бегунок выдачи — слоты переиспользуются по кругу
@@ -241,6 +257,8 @@ struct SubObjects {
             standing[std::size_t(s)] = BonusTotals{};
             sprite[std::size_t(s)] = ecs::Sprite{};
             light[std::size_t(s)] = ecs::LightEmitter{};
+            origin[std::size_t(s)] = ecs::MacroOrigin{};
+            debt[std::size_t(s)] = ecs::MacroDebt{};
             ++count;
             return s;
         }
@@ -256,13 +274,14 @@ struct SubObjects {
         --count;
     }
 };
-// 65536 × (4+2+4+1+4+2+36+28+12+40+12+8+4+68+144+184+20+32) Б колонок +
-// служебные: цена названа и закреплена. 605 Б/слот × 65536 ≈ 37.81 МиБ —
+// 65536 × (4+2+4+1+4+2+36+28+12+40+12+8+4+68+144+184+20+32+4+24) Б колонок +
+// служебные: цена названа и закреплена. 633 Б/слот × 65536 ≈ 39.56 МиБ —
 // профиль один у пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ; куча через
-// unique_ptr, make_unique зануляет весь кап при рождении сцены). Ассерт
-// заодно пинит sizeof колонок: разъехаться молча они не могут.
-static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 605 + 24,
-              "массив объектов сцены: 605 Б/слот (ломоть 3: +sprite 20 "
-              "+light 32) + служебные");
+// unique_ptr, make_unique зануляет весь кап при рождении сцены — value-init
+// исполняет NSDMI, так что origin рождается невалидным хэндлом, не нулём).
+// Ассерт заодно пинит sizeof колонок: разъехаться молча они не могут.
+static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 633 + 24,
+              "массив объектов сцены: 633 Б/слот (ломоть 4: +origin 4 "
+              "+debt 24) + служебные");
 
 } // namespace sm::sub

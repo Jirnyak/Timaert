@@ -341,10 +341,12 @@ bool run_water_blocked_squad_case() {
                                 std::uint16_t(sm::faction_index(sm::kPlayerFactionId)));
 
     int projected = 0;
-    auto view = world.reg.view<sm::ecs::MacroDebt>();
+    auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        if (view.get<sm::ecs::MacroDebt>(e).stock
-            == std::uint8_t(sm::MacroStock::Creatures)) ++projected;
+        const auto* d = sm::sub::body_debt(world.reg, e);
+        if (d != nullptr
+            && d->stock == std::uint8_t(sm::MacroStock::Creatures))
+            ++projected;
     }
     return projected == 0;
 }
@@ -726,9 +728,11 @@ bool sheet_lifts_every_body(sm::ecs::World& world) {
 // so it compares cleanly across two worlds for the determinism check.
 std::vector<std::array<float, 3>> projection_fingerprint(sm::ecs::World& world) {
     std::vector<std::array<float, 3>> out;
-    auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin,
+    auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot,
                             sm::ecs::Position>();
     for (auto e : v) {
+        if (sm::sub::body_macro_origin(world.reg, e).slot
+            == sm::kMacroNoSlot) continue;
         const auto* k = sm::sub::body_kind(world.reg, e);
         if (k == nullptr) continue;
         const auto& p = v.get<sm::ecs::Position>(e);
@@ -766,9 +770,9 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // the projection's source view never sees it.
     spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
     int faunaBefore = 0;
-    for (auto e : reg.view<sm::ecs::SubworldTag>(
-             entt::exclude<sm::ecs::MacroOrigin>)) {
-        (void)e;
+    for (auto e : reg.view<sm::ecs::SubworldTag>()) {
+        if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot)
+            continue;
         ++faunaBefore;
     }
     if (faunaBefore <= 0) return false;   // sanity: fauna actually present
@@ -788,9 +792,10 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // macro NPC, and the far one must never appear.
     entt::entity pBandit = entt::null, pPeasant = entt::null, pWrap = entt::null;
     int projCount = 0;
-    for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
+    for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot>()) {
+        const sm::MacroHandle origin = sm::sub::body_macro_origin(reg, e);
+        if (origin.slot == sm::kMacroNoSlot) continue;
         ++projCount;
-        const sm::MacroHandle origin = reg.get<sm::ecs::MacroOrigin>(e).macro;
         if (!sm::store_of(reg).valid(origin)) {
             return false;
         }
@@ -877,7 +882,8 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::sub::clear_subworld_world_entities(world);
     int faunaAfter = 0, projAfter = 0;
     for (auto e : reg.view<sm::ecs::SubworldTag>()) {
-        if (reg.all_of<sm::ecs::MacroOrigin>(e)) ++projAfter;
+        if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot)
+            ++projAfter;
         else ++faunaAfter;
     }
     if (faunaAfter != 0 || projAfter != 3) return false;
@@ -1219,7 +1225,7 @@ int main() {
         // body answers with its own block instead. Without this the address
         // equality above could be passing because both handles happen to name
         // the same storage, and nobody would know.
-        reg.remove<sm::ecs::MacroOrigin>(body);
+        sm::test::give_origin(reg, body, sm::MacroHandle{});
         CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
                   && sm::sub::pools_of(reg, body)
                          == &(*sm::sub::body_pools(reg, body)),
@@ -1231,7 +1237,7 @@ int main() {
         // invulnerable ghost, which is worse than losing the write-back.
         // Протухание — механикой store (шаг 2 1е): store_death бампает
         // поколение слота, и всякий старый хэндл мертвеет.
-        reg.emplace<sm::ecs::MacroOrigin>(body, hq);
+        sm::test::give_origin(reg, body, hq);
         sm::store_death(stq, hq);
         CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
                   && sm::sub::pools_of(reg, body)
@@ -1361,13 +1367,15 @@ int main() {
         bool sawStreetHead = false, sawForeignHead = false;
         bool loansNameHeads = true;
         bool levelsAreHeadFacts = true;
-        auto segView = world.reg.view<sm::ecs::MacroDebt>();
+        auto segView = world.reg.view<sm::ecs::ObjectSlot>();
         for (auto e : segView) {
+            const auto* debtP = sm::sub::body_debt(world.reg, e);
+            if (debtP == nullptr) continue;
             const auto* kindCol = sm::sub::body_kind(world.reg, e);
             if (kindCol == nullptr) continue;
             const auto& kind = *kindCol;
             ++bodies;
-            const auto& debt = segView.get<sm::ecs::MacroDebt>(e);
+            const auto& debt = *debtP;
             sawSecond |= kind.type == std::uint16_t(heads[1].kind);
             sawThird |= kind.type == std::uint16_t(heads[2].kind);
             sawStreetHead |= kind.type == std::uint16_t(heads[0].kind);

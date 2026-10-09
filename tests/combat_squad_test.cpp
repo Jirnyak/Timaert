@@ -165,14 +165,16 @@ int main() {
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u,
                                 playerFaction);
-    auto view = world.reg.view<sm::ecs::MacroDebt>();
+    auto view = world.reg.view<sm::ecs::ObjectSlot>();
     int projected = 0;
     for (auto e : view) {
         // Бары и лист — колонки арены (кусок 2): полнота тела спрашивается
         // дверьми, не составом entt-компонент.
         if (sm::sub::body_pools(world.reg, e) == nullptr
             || sm::sub::body_combat(world.reg, e) == nullptr) continue;
-        const auto& loan = view.get<sm::ecs::MacroDebt>(e);
+        const auto* loanP = sm::sub::body_debt(world.reg, e);
+        if (loanP == nullptr) continue;
+        const auto& loan = *loanP;
         if (loan.stock != std::uint8_t(sm::MacroStock::Creatures)) continue;
         ++projected;
         if (!sm::sub::object_flag(world.reg, e, sm::sub::kObjPlayerSoldier)) {
@@ -211,11 +213,13 @@ int main() {
     std::vector<std::uint8_t> malformedTiles(1, 0u);
     sm::sub::spawn_player_squad(malformedWorld, player, malformedTiles,
                                 512.0f, 512.0f, 100u, playerFaction);
-    auto malformedView = malformedWorld.reg.view<sm::ecs::MacroDebt>();
+    auto malformedView = malformedWorld.reg.view<sm::ecs::ObjectSlot>();
     int malformedProjected = 0;
     for (auto e : malformedView) {
-        if (malformedView.get<sm::ecs::MacroDebt>(e).stock
-            == std::uint8_t(sm::MacroStock::Creatures)) ++malformedProjected;
+        const auto* d = sm::sub::body_debt(malformedWorld.reg, e);
+        if (d != nullptr
+            && d->stock == std::uint8_t(sm::MacroStock::Creatures))
+            ++malformedProjected;
     }
     if (malformedProjected != 1) {
         return fail("malformed tile buffer blocked squad projection");

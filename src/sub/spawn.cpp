@@ -638,7 +638,7 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
     // Nothing lent means nothing to stamp — a body drawn from thin air is honest
     // about owing the map nothing.
     if (loan.stock != MacroStock::Count) {
-        stamp_macro_debt(reg, e, loan.stock, loan.key, 1);
+        sub::stamp_macro_debt(reg, e, loan.stock, loan.key, 1);
     }
     return e;
 }
@@ -745,7 +745,7 @@ entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
     // it is the ADDRESS — of the bars he spends, the bag he carries and the
     // plate he wears. It used to be described as «where the return trip writes»;
     // there is no return trip any more, because there is no copy to return.
-    reg.emplace<ecs::MacroOrigin>(e, macro);
+    sub::set_body_origin(reg, e, macro);
     // What stood on him when the numbers above were derived — the comparison
     // the per-tick re-derive is gated on (standing@src/sub/objects.h).
     sub::set_body_standing(reg, e, standing);
@@ -1219,7 +1219,8 @@ void clear_subworld_world_entities(ecs::World& w) {
             // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
             // must leave them be, exactly like the player-side projections above.
             // On enter this is a no-op (projection runs after the clear).
-            if (reg.all_of<ecs::MacroOrigin>(e)) continue;
+            if (sub::body_macro_origin(reg, e).slot != kMacroNoSlot)
+                continue;
             if (doomedCount >= kMaxSubworldSpawnReaps) break;
             doomed[std::size_t(doomedCount++)] = e;
         }
@@ -1586,10 +1587,9 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // per-tick `reconcile_tracked_bodies_to_macro` this used to credit died
     // with the fold-up architecture; the mirror law left nothing to pay up.)
     std::vector<MacroHandle> alreadyProjected;
-    for (auto [body, origin] :
-         reg.view<ecs::MacroOrigin, ecs::SubworldTag>().each()) {
-        (void)body;
-        alreadyProjected.push_back(origin.macro);
+    for (auto body : reg.view<ecs::ObjectSlot, ecs::SubworldTag>()) {
+        const MacroHandle h = sub::body_macro_origin(reg, body);
+        if (h.slot != kMacroNoSlot) alreadyProjected.push_back(h);
     }
 
     int projected = 0;

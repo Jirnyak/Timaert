@@ -42,10 +42,8 @@
 #include "macro/macro_world.h"
 #include "macro/resource_field.h"
 
-// stamp_macro_debt ниже пишет компонент на ТЕЛО сцены (entt) — последнее
-// entt-касание этого модуля; умирает вместе с переездом тел (M-150). Include
-// явный, а не транзитом через store.h: store.h entt больше не раздаёт.
-#include <entt/entt.hpp>
+// entt этот модуль больше не трогает: последнее касание (stamp_macro_debt,
+// писавший компонент на тело сцены) уехало в sub/spawn.h ломтём 4 M-150.
 
 #include <cstdint>
 
@@ -118,16 +116,9 @@ void macro_stock_apply(MacroWorld& w, MacroStock s, MacroStockKey k, int delta);
 // The row's name, for logs and for tests that walk the table.
 const char* macro_stock_id(MacroStock s);
 
-// Stamp a freshly embodied thing with the debt it owes. This is the ONLY way to
-// take from a macro stock: no stamp, no borrowing — so a spawner that forgets
-// is not one that quietly leaks, it is one that never took anything.
-inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
-                             MacroStock stock, MacroStockKey key,
-                             std::uint16_t amount = 1) {
-    reg.emplace_or_replace<ecs::MacroDebt>(
-        e, std::uint8_t(stock), key.subject, key.cellX, key.cellY, amount,
-        key.detail, key.detailKind, key.detailLevel);
-}
+// (stamp_macro_debt — дверь штампа квитанции — живёт в sub/spawn.h с ломтя 4
+// M-150: квитанция стала КОЛОНКОЙ арены субмира, и макро-слою её не видно.
+// Здесь остаются чтение, движение и расчёт стока — макро-половина закона.)
 
 // Settle one debt. `sign` is -1 when the borrowed thing is consumed (a citizen
 // killed, a tree felled) and +1 when it is handed back. Called from ONE place
