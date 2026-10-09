@@ -4,7 +4,7 @@
 // `yaw` would strike within a forward cone. It generalises the shipped
 // player-melee selection (SubworldEngine::tick_player_melee, engine.cpp): the
 // candidate set is the live subworld hostiles —
-//   view<Position, Health, SubworldTag> с назначенным родом (body_kind,
+//   живые слоты арены с назначенным родом (body_kind,
 //   колонка арены — кусок 1) minus Dead
 // — excluding the player's own side (AvatarTag / PlayerSoldierTag, i.e. the
 // is_player_side predicate at engine.cpp) and the shooter entity itself. Among

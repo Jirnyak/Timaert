@@ -76,7 +76,6 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
     sm::test::give_slot(w.reg, e);
     sm::test::give_pos(w.reg, e, x, y, 0.0f);
     sm::test::give_pools(w.reg, e, sm::ecs::Pools{hp, hp});
-    w.reg.emplace<sm::ecs::SubworldTag>(e);
     sm::test::give_sprite(w.reg, e, sm::ecs::Sprite{std::uint16_t(0),
         std::uint8_t(255), std::uint8_t(255), std::uint8_t(255), 6.0f});
     if (playerSide) {
@@ -96,7 +95,6 @@ std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
     sm::test::give_slot(w.reg, e);
     sm::test::give_pos(w.reg, e, x, y, 0.0f);
     sm::test::give_pools(w.reg, e, sm::ecs::Pools{1000, 1000});
-    w.reg.emplace<sm::ecs::SubworldTag>(e);
     sm::test::make_avatar(w.reg, e);
     return std::uint32_t(entt::to_integral(e));
 }
@@ -1037,7 +1035,6 @@ int main() {
         sm::test::give_slot(selfWorld.reg, selfPlayer);
         sm::test::give_pos(selfWorld.reg, selfPlayer, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(selfWorld.reg, selfPlayer, sm::ecs::Pools{100, 100});
-        selfWorld.reg.emplace<sm::ecs::SubworldTag>(selfPlayer);
         sm::test::make_avatar(selfWorld.reg, selfPlayer);
         auto selfBlast = selfWorld.create();
         sm::test::give_pos(selfWorld.reg, selfBlast, 0.0f, 0.0f, 0.0f);
@@ -1071,7 +1068,6 @@ int main() {
         sm::test::give_slot(shieldWorld.reg, shieldPlayer);
         sm::test::give_pos(shieldWorld.reg, shieldPlayer, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(shieldWorld.reg, shieldPlayer, sm::ecs::Pools{100, 100});
-        shieldWorld.reg.emplace<sm::ecs::SubworldTag>(shieldPlayer);
         sm::test::make_avatar(shieldWorld.reg, shieldPlayer);
         auto shieldBolt = shieldWorld.create();
         sm::test::give_pos(shieldWorld.reg, shieldBolt, 0.0f, 0.0f, 0.0f);
@@ -1102,7 +1098,6 @@ int main() {
         sm::test::give_slot(npcWorld.reg, npcCaster);
         sm::test::give_pos(npcWorld.reg, npcCaster, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(npcWorld.reg, npcCaster, sm::ecs::Pools{100, 100});
-        npcWorld.reg.emplace<sm::ecs::SubworldTag>(npcCaster);
         sm::test::give_kind(npcWorld.reg, npcCaster, sm::ecs::NPCKind{2, 2});
         auto npcBlast = npcWorld.create();
         sm::test::give_pos(npcWorld.reg, npcBlast, 0.0f, 0.0f, 0.0f);
@@ -1170,7 +1165,6 @@ int main() {
             sm::test::give_slot(sweepWorld.reg, sweepTarget);
             sm::test::give_pos(sweepWorld.reg, sweepTarget, range, 0.0f, 0.0f);
             sm::test::give_pools(sweepWorld.reg, sweepTarget, sm::ecs::Pools{100, 100});
-            sweepWorld.reg.emplace<sm::ecs::SubworldTag>(sweepTarget);
             sm::test::give_ai(
                 sweepWorld.reg, sweepTarget,
                 sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,

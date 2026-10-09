@@ -211,7 +211,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
 
 std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
     std::vector<SpawnRecord> out;
-    auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot>();
+    auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
         if (sm::sub::body_sprite(world.reg, e) == nullptr) continue;
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
@@ -399,7 +399,7 @@ bool run_city_population_projection_case(
     int guards = 0;
     int peasants = 0;
     int others = 0;
-    auto view = world.reg.view<sm::ecs::SubworldTag>();
+    auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;
@@ -420,7 +420,7 @@ bool run_city_population_projection_case(
 
     // Citizens must land inside the centre cell's sub-region, never the whole
     // 3×3 — proof the per-cell origin gate replaced the old centre-only window.
-    auto posView = world.reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot>();
+    auto posView = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : posView) {
         if (sm::sub::body_kind(world.reg, e) == nullptr) continue;
         const auto& p = *sm::sub::body_pos(world.reg, e);
@@ -470,7 +470,7 @@ bool run_population_does_not_scale_bodies_case(
                                  /*macroCellX*/0, /*macroCellY*/0,
                                  /*faunaCount*/-1, &homeSouls,
                                  sm::world_time_at(1, 12, 0));
-        auto view = world.reg.view<sm::ecs::SubworldTag>();
+        auto view = world.reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
             const auto* kindCol = sm::sub::body_kind(world.reg, e);
             if (kindCol == nullptr) continue;
@@ -665,7 +665,7 @@ bool run_beast_member_projection_case(
     if (projected != 3) return false;   // the leader and both of his members
 
     int beasts = 0, men = 0;
-    for (auto e : reg.view<sm::ecs::SubworldTag>()) {
+    for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
         const auto* kindCol = sm::sub::body_kind(reg, e);
         if (kindCol == nullptr) continue;
         const std::uint16_t t = kindCol->type;
@@ -697,7 +697,7 @@ bool run_beast_member_projection_case(
 // where it was met.
 bool sheet_lifts_every_body(sm::ecs::World& world) {
     int checked = 0;
-    auto v = world.reg.view<sm::ecs::SubworldTag>();
+    auto v = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : v) {
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;
@@ -727,7 +727,7 @@ bool sheet_lifts_every_body(sm::ecs::World& world) {
 // so it compares cleanly across two worlds for the determinism check.
 std::vector<std::array<float, 3>> projection_fingerprint(sm::ecs::World& world) {
     std::vector<std::array<float, 3>> out;
-    auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot>();
+    auto v = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : v) {
         if (sm::sub::body_macro_origin(world.reg, e).slot
             == sm::kMacroNoSlot) continue;
@@ -768,7 +768,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // the projection's source view never sees it.
     spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
     int faunaBefore = 0;
-    for (auto e : reg.view<sm::ecs::SubworldTag>()) {
+    for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
         if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot)
             continue;
         ++faunaBefore;
@@ -790,7 +790,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // macro NPC, and the far one must never appear.
     entt::entity pBandit = entt::null, pPeasant = entt::null, pWrap = entt::null;
     int projCount = 0;
-    for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::ObjectSlot>()) {
+    for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
         const sm::MacroHandle origin = sm::sub::body_macro_origin(reg, e);
         if (origin.slot == sm::kMacroNoSlot) continue;
         ++projCount;
@@ -879,7 +879,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // the projections (they mirror persistent macro state, like the player squad).
     sm::sub::clear_subworld_world_entities(world);
     int faunaAfter = 0, projAfter = 0;
-    for (auto e : reg.view<sm::ecs::SubworldTag>()) {
+    for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
         if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot)
             ++projAfter;
         else ++faunaAfter;

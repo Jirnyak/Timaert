@@ -165,7 +165,7 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     int citizens = 0;
     int wrongFaction = 0;
     int imperial = 0;
-    auto view = world.reg.view<sm::ecs::SubworldTag>();
+    auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
         const auto* kind = sm::sub::body_kind(world.reg, e);
         if (kind == nullptr) continue;
@@ -219,7 +219,7 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
 
     int citizens = 0;
     int foreign = 0;
-    auto view = world.reg.view<sm::ecs::SubworldTag>();
+    auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
         const auto* kind = sm::sub::body_kind(world.reg, e);
         if (kind == nullptr) continue;

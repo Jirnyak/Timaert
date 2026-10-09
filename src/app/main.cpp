@@ -5129,7 +5129,6 @@ void draw_debug_panels(App& app) {
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
                     char tags[8]; int ti = 0;
-                    if (reg.any_of<sm::ecs::SubworldTag>(e))        tags[ti++] = 'S';
                     if (sm::sub::object_flag(reg, e, sm::sub::kObjDead))
                         tags[ti++] = 'D';
                     if (sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
@@ -5152,9 +5151,6 @@ void draw_debug_panels(App& app) {
     if (app.panels.ecsStats) {
         ImGui::SetNextWindowSize(ImVec2(300, 420), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("ECS stats", &app.panels.ecsStats)) {
-            auto cnt = [](auto v) {
-                std::size_t n = 0; for (auto e : v) { (void)e; ++n; } return n;
-            };
             // Теги тел — биты маски единого массива (ломоть 1б): счёт по
             // живым слотам, не по entt-популяции.
             auto maskCnt = [&reg](std::uint16_t bit) {
@@ -5198,7 +5194,6 @@ void draw_debug_panels(App& app) {
                      }
                      return n;
                  }()},
-                {"SubworldTag",     cnt(reg.view<sm::ecs::SubworldTag>())},
                 {"BodyAi(arena)",   maskCnt(sm::sub::kObjHasAi)},
 
                 {"Projectile(col)", maskCnt(sm::sub::kObjProjectile)},

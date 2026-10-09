@@ -282,8 +282,11 @@ std::uint32_t string_hash(const char* s) {
 // could not carry a name. Faces are derived in ONE place now: sub/spawn.cpp.)
 
 bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
+    // «Жилец сцены» доказан самим body_pools: бары — колонка арены, и без
+    // слота дверь отвечает nullptr (ломоть 6: тег SubworldTag умер, его
+    // конъюнкт был вторым ответом на тот же вопрос).
     const auto* h = sub::body_pools(reg, e);
-    return h && h->hp > 0.0f && reg.all_of<ecs::SubworldTag>(e)
+    return h && h->hp > 0.0f
         && !sub::object_flag(reg, e, sub::kObjDead);
 }
 
@@ -461,15 +464,16 @@ void spawn_npc_missile(entt::registry& reg,
     reg.emplace<ecs::Projectile>(e, arrow);   // транзит: читатели в К4-К7
     sub::set_body_sprite(reg, e,
                          ecs::Sprite{std::uint16_t(0x1FD), r, g, b, 1.2f});
-    reg.emplace<ecs::SubworldTag>(e);
-}
+    }
 
 void clear_subworld_entities(ecs::World& w) {
     auto& reg = w.reg;
     std::array<entt::entity, kMaxSubworldEntityReaps> doomed{};
     for (;;) {
         int doomedCount = 0;
-        auto view = reg.view<ecs::SubworldTag>();
+        // Полный снос сцены: жильцы арены и есть всё население реестра
+        // (биекция — свидетель в body_contract_test), ключ — слот.
+        auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
             if (doomedCount >= kMaxSubworldEntityReaps) break;
             doomed[std::size_t(doomedCount++)] = e;
@@ -513,7 +517,7 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     // 5c), so exclude the avatar explicitly — the player is the map centre /
     // its own heading triangle, never a blip. Projected player soldiers keep
     // their kind (and are not the avatar) and read as fully allied (+1).
-    auto view = reg.view<ecs::ObjectSlot, ecs::SubworldTag>();
+    auto view = reg.view<ecs::ObjectSlot>();
     for (auto e : view) {
         if (sub::is_avatar(reg, e)) continue;
         if (sub::body_kind(reg, e) == nullptr) continue;
@@ -547,7 +551,7 @@ float SubworldEngine::crosshair_stance() const {
     entt::entity best = entt::null;
     float bestT = kMaxRange;
 
-    auto view = reg.view<ecs::ObjectSlot, ecs::SubworldTag>();
+    auto view = reg.view<ecs::ObjectSlot>();
     for (auto e : view) {
         if (sub::is_avatar(reg, e)) continue;
         if (sub::body_kind(reg, e) == nullptr) continue;
@@ -1079,8 +1083,7 @@ void SubworldEngine::spawn_player_entity() {
                        hs.delivery == Delivery::Missile
                            ? ecs::Combat::Missile : ecs::Combat::Melee,
                        /*armorSteps*/std::uint16_t{0}});
-    reg.emplace<ecs::SubworldTag>(e);
-    // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
+        // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
     // by the renderer through the universal slot sweep (бит kObjHasLight +
     // колонка light), so possessing another body simply stops lighting from
     // here and starts from whatever the possessed body carries — no
@@ -1123,8 +1126,7 @@ void SubworldEngine::rebuild_prop_cache() {
         if (slot < 0) continue;
         const entt::entity e = reg.create();
         reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
-        reg.emplace<ecs::SubworldTag>(e);
-        sub::set_body_light(reg, e, ecs::LightEmitter{
+                sub::set_body_light(reg, e, ecs::LightEmitter{
             0.0f, row.lightHeightM, 0.0f,
             float((row.lightRgb >> 16) & 0xFFu) / 255.0f,
             float((row.lightRgb >>  8) & 0xFFu) / 255.0f,
@@ -1158,7 +1160,7 @@ void SubworldEngine::push_scalars_to_player_entity() {
     // Fold a scalar change (a seam rewrap, or a move_player/set_player_pos edit)
     // back onto the authoritative entity Position. Assignment, so it is a no-op
     // when already equal and idempotent w.r.t. the seam rebase that likewise
-    // shifts the SubworldTag-tagged player entity by the same ∓cell amount.
+    // shifts the player slot's pos column by the same ∓cell amount.
     const entt::entity avatarE = sub::avatar_entity(reg);
     for (const entt::entity e : {avatarE}) {
         ecs::Position* p = sub::body_pos(reg, e);
@@ -1292,8 +1294,7 @@ void SubworldEngine::mirror_bodies_from_record() {
     // считает свой бюджет в 0.00041 мс на тело (шапка ниже) — lookup на
     // каждое тело был бы налогом того же порядка, что вся работа.
     const MacroStore& st = store_of(reg);
-    for (auto body :
-         reg.view<ecs::ObjectSlot, ecs::SubworldTag>()) {
+    for (auto body : reg.view<ecs::ObjectSlot>()) {
         const MacroHandle originH = sub::body_macro_origin(reg, body);
         if (originH.slot == kMacroNoSlot) continue;
         // Зеркало — колонка арены (кусок 2); тело без баров (слот без
@@ -3109,7 +3110,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
 
     // ── Gather: ECS → SoA, O(N) ────────────────────────────────────────────
     // Every living body enters the snapshot — the SAME set the spell pass
-    // targets (is_spell_target: Health + SubworldTag, alive), so a body that a
+    // targets (is_spell_target: Health columns, alive), so a body that a
     // projectile can strike is never invisible to the grids that will answer
     // for it. Combat is read per-body, not demanded by the view: a weaponless
     // body rides with honest zeros for speed/reach (owner ruling 2026-08-05 —
@@ -3145,7 +3146,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // Сбор боя (ломоть 5): позиция — колонка арены, слот уже в вьюхе; сам
     // сбор остаётся сущностным до ломтя 7 (crowdEnts_ — его карта).
     sub::SubObjects& arena = sub::objects_of(reg);
-    auto actorView = reg.view<ecs::ObjectSlot, ecs::SubworldTag>();
+    auto actorView = reg.view<ecs::ObjectSlot>();
     for (auto e : actorView) {
         if (sub::object_flag(reg, e, sub::kObjDead)) continue;
         const ecs::Position& p = arena.pos[std::size_t(
@@ -3415,12 +3416,20 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
     if (!ecs_ || !gs_) return;
     auto& reg = ecs_->reg;
     int deadCount = 0;
+    // ЖНЕЦ НА ФЛАГАХ (ломоть 6): жертву находит БИТ kObjDead колонки арены
+    // по слоту из вьюхи — арена хойстнута, прежние два лукапа на тело
+    // (try_get<ObjectSlot> + ctx.find в object_flag) умерли. Убийство —
+    // по-прежнему сущностью: слот освобождает ЕДИНСТВЕННЫЙ on_destroy-хук,
+    // жать по слоту при живой сущности значило бы протухшие ObjectSlot.
+    sub::SubObjects& arena = sub::objects_of(reg);
     do {
         std::array<entt::entity, kMaxSubworldDeathsPerStep> dead{};
         deadCount = 0;
-        auto view = reg.view<ecs::SubworldTag>();
+        auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
-            if (!sub::object_flag(reg, e, sub::kObjDead)) continue;
+            const std::uint16_t f = arena.flags[std::size_t(
+                view.get<ecs::ObjectSlot>(e).slot)];
+            if ((f & sub::kObjDead) == 0u) continue;
             if (deadCount >= kMaxSubworldDeathsPerStep) break;
             dead[std::size_t(deadCount++)] = e;
         }
@@ -4740,7 +4749,7 @@ int SubworldEngine::dev_kill_all_hostiles() {
     do {
         std::array<entt::entity, kMaxSubworldDeathsPerStep> victims{};
         batch = 0;
-        auto view = reg.view<ecs::SubworldTag>();
+        auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
             if (sub::body_pools(reg, e) == nullptr) continue;
             if (sub::object_flag(reg, e, sub::kObjDead)) continue;
@@ -4894,7 +4903,7 @@ void SubworldEngine::tick(float dt) {
         // integrator through sync_player_vertical below.
         {
             sub::SubObjects& arena = sub::objects_of(ecs_->reg);
-            auto gv = ecs_->reg.view<ecs::ObjectSlot, ecs::SubworldTag>();
+            auto gv = ecs_->reg.view<ecs::ObjectSlot>();
             for (auto e : gv) {
                 // Снаряд землёй не держится — он летит по своей дуге и умирает
                 // о мир (`tick_spell_projectiles`). Прежде его отсекал
@@ -4946,7 +4955,7 @@ void SubworldEngine::tick(float dt) {
             const float ceilZ = mgr_.height_field().max_m()
                               + kFlightMaxAboveTerrainM;
             sub::SubObjects& arena = sub::objects_of(ecs_->reg);
-            auto fv = ecs_->reg.view<ecs::ObjectSlot, ecs::SubworldTag>();
+            auto fv = ecs_->reg.view<ecs::ObjectSlot>();
             for (auto e : fv) {
                 if (sub::is_avatar(ecs_->reg, e)) continue;
                 if (!sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;

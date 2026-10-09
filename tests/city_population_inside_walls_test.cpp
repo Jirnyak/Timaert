@@ -224,8 +224,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
     int outerHalf = 0;
     // Место тела — колонка арены (ломоть 5): вьюха отбирает ЖИЛЬЦОВ сцены
     // (слот), координаты отвечает дверь body_pos.
-    auto view = world.reg.view<sm::ecs::SubworldTag,
-                               sm::ecs::ObjectSlot>();
+    auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;

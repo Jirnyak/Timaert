@@ -12,7 +12,7 @@ namespace {
 // The shared melee-candidate filter: live, current-scene, not the player's
 // own side. One spelling for both the grid arm and the full-scan arm.
 inline bool melee_candidate(entt::registry& reg, entt::entity e) {
-    if (!reg.all_of<ecs::ObjectSlot, ecs::SubworldTag>(e)
+    if (!reg.all_of<ecs::ObjectSlot>(e)
         || body_kind(reg, e) == nullptr
         || object_flag(reg, e, kObjDead)) {
         return false;
@@ -78,7 +78,7 @@ entt::entity melee_pick_target(entt::registry& reg,
             return hostileBest != entt::null ? hostileBest : anyBest;
         }
     }
-    auto view = reg.view<ecs::ObjectSlot, ecs::SubworldTag>();
+    auto view = reg.view<ecs::ObjectSlot>();
     for (auto e : view) consider(e);
     return hostileBest != entt::null ? hostileBest : anyBest;
 }
@@ -100,7 +100,7 @@ entt::entity aim_target(entt::registry& reg,
     // кусок 1) also excludes the player entity, whose slot carries no kind;
     // the explicit player-side skip below additionally covers projected
     // player soldiers.
-    auto view = reg.view<ecs::ObjectSlot, ecs::SubworldTag>();
+    auto view = reg.view<ecs::ObjectSlot>();
     for (auto e : view) {
         if (e == shooter) continue;
         if (body_kind(reg, e) == nullptr) continue;

@@ -34,7 +34,6 @@ namespace {
 using sm::ecs::Position;
 using sm::ecs::Pools;
 using sm::ecs::Projectile;
-using sm::ecs::SubworldTag;
 
 constexpr int kBodyHp = 100;
 
@@ -42,7 +41,6 @@ entt::entity add_body(entt::registry& reg, float x, float y, float z) {
     const auto e = reg.create();
     sm::test::give_pos(reg, e, x, y, z);   // место — колонка арены (ломоть 5)
     sm::test::give_pools(reg, e, Pools{kBodyHp, kBodyHp});
-    reg.emplace<SubworldTag>(e);
     return e;
 }
 
@@ -92,7 +90,7 @@ void build_scene(entt::registry& reg, int scenario) {
 
 std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
     std::vector<entt::entity> v;
-    auto view = reg.view<sm::ecs::ObjectSlot, SubworldTag>();
+    auto view = reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
         if (sm::sub::body_pools(reg, e) == nullptr) continue;
         v.push_back(e);
@@ -115,7 +113,7 @@ struct GridBroadPhase {
     void build(entt::registry& reg) {
         units->clear();
         ents.clear();
-        auto view = reg.view<sm::ecs::ObjectSlot, SubworldTag>();
+        auto view = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
             if (sm::sub::body_pools(reg, e) == nullptr) continue;
             const Position& p = *sm::sub::body_pos(reg, e);
@@ -247,7 +245,6 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         ticks = 10;
         break;
     }
-    reg.emplace<SubworldTag>(pe);
     // Колонка арены (ломоть 4): снаряд — жилец слота. Значение берётся у
     // только что записанной компоненты, поэтому два носителя разъехаться не
     // могут по построению; строка умирает в К7 вместе с компонентой.

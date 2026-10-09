@@ -220,8 +220,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     CHECK_OR_RETURN(body != entt::null && reg.valid(body),
                     "a body-shaped macro entity can be embodied");
 
-    CHECK((reg.all_of<ecs::SubworldTag>(body)
-           && sm::sub::body_pos(reg, body) != nullptr
+    CHECK((sm::sub::body_pos(reg, body) != nullptr
            && sm::sub::body_sprite(reg, body) != nullptr
            && sm::sub::body_sheet(reg, body) != nullptr
            && sm::sub::body_pools(reg, body) != nullptr
@@ -440,7 +439,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
 
     int leaders = 0, members = 0, wrongFaction = 0, wholeMembers = 0;
     bool saw77 = false, saw88 = false;
-    for (auto e : reg.view<ecs::SubworldTag>()) {
+    for (auto e : reg.view<ecs::ObjectSlot>()) {
         if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot) {
             ++leaders;
             continue;
@@ -474,7 +473,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     // second death empties it — and an empty creatures around a LIVE leader is a
     // squad of one, alive and well, not a special case anyone must clean up.
     MacroWorld w{.world = &world};
-    for (auto e : reg.view<ecs::ObjectSlot, ecs::SubworldTag>()) {
+    for (auto e : reg.view<ecs::ObjectSlot>()) {
         if (const auto* d = sm::sub::body_debt(reg, e))
             settle_macro_debt(w, *d, -1);
     }
@@ -653,7 +652,63 @@ void test_a_reused_slot_is_born_clean() {
           "a reused slot stands where ITS birth put it, not the tenant's");
 }
 
+// БИЕКЦИЯ АРЕНЫ — закон, на котором стоит ломоть 6 (ключ «жилец сцены»
+// переезжает с тега SubworldTag на слот): живой слот ⟷ ровно одна сущность
+// с ObjectSlot. Рождение прод-дверью даёт пару слот+сущность атомарно
+// (слот раньше сущности, отказ честный — ломоть 5); смерть сущности
+// возвращает слот через ЕДИНСТВЕННУЮ точку освобождения — on_destroy-хук
+// (objects_attach@src/sub/record.h). Свидетель считает ОБЕ стороны и ловит
+// дубль слота. Мутация «хук отвязан» обязана КРАСНИТЬ счётом после смерти;
+// «жнец не зовёт destroy» биекцию НЕ рвёт (слот и сущность живы оба) —
+// это не её закон, у того свой свидетель.
+void test_live_slots_and_slot_entities_are_a_bijection() {
+    using namespace sm;
+    ecs::World world{};
+    auto store_ = sm::make_macro_store();
+    sm::store_attach(world, store_.get());
+    sub::SubObjects& arena = sm::test::arena_of(world.reg);
+    auto& reg = world.reg;
+
+    std::array<entt::entity, 5> born{};
+    for (int i = 0; i < 5; ++i) {
+        born[std::size_t(i)] = sub::spawn_derived_body(reg,
+            sub::BodySpec{NPCType::Peasant, 8.0f + float(i), 9.0f, 1, 2,
+                          4000u + std::uint32_t(i), false},
+            /*faceSalt*/std::uint32_t(i) * 7919u);
+        CHECK_OR_RETURN(born[std::size_t(i)] != entt::null,
+                        "a production door births a body");
+    }
+
+    const auto bijectionHolds = [&](const char* when) {
+        int entities = 0;
+        bool dup = false, deadSlot = false;
+        std::vector<bool> seen(std::size_t(kMaxSubObjects), false);
+        for (auto e : reg.view<ecs::ObjectSlot>()) {
+            ++entities;
+            const std::size_t s =
+                std::size_t(reg.get<ecs::ObjectSlot>(e).slot);
+            if (seen[s]) dup = true;
+            seen[s] = true;
+            if (!(arena.flags[s] & sub::kObjAlive)) deadSlot = true;
+        }
+        int aliveFlags = 0;
+        for (int s = 0; s < int(kMaxSubObjects); ++s) {
+            if (arena.flags[std::size_t(s)] & sub::kObjAlive) ++aliveFlags;
+        }
+        CHECK(!dup, "no slot is named by two entities");
+        CHECK(!deadSlot, "no entity points at a dead slot");
+        CHECK(entities == arena.count && aliveFlags == arena.count,
+              when);
+    };
+    bijectionHolds("after five births: slots == entities == count");
+
+    reg.destroy(born[1]);
+    reg.destroy(born[3]);
+    bijectionHolds("after two deaths: the hook returned both slots");
+}
+
 int main() {
+    test_live_slots_and_slot_entities_are_a_bijection();
     test_a_reused_slot_is_born_clean();
     test_every_squad_body_is_a_whole_body();
     test_two_bodies_of_one_kind_can_differ_in_height();

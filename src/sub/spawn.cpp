@@ -377,8 +377,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     maybe_emplace_missile_attack(reg, e, pc);
     maybe_emplace_flying(reg, e, pc);
     sub::set_body_level(reg, e, std::int16_t(body.level));
-    reg.emplace<ecs::SubworldTag>(e);
-    // How much room this body takes: the row's ONE width column, man-shaped
+        // How much room this body takes: the row's ONE width column, man-shaped
     // default resolved (npc.h npc_body_radius). This is the ONE line where
     // the creature birth and the humanoid birth used to differ about a
     // number — and where a template shadow copy of the width used to answer.
@@ -1214,7 +1213,7 @@ void clear_subworld_world_entities(ecs::World& w) {
     std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
     for (;;) {
         int doomedCount = 0;
-        auto view = reg.view<ecs::SubworldTag>();
+        auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
             if (is_avatar(reg, e)
                 || object_flag(reg, e, kObjPlayerSoldier)) continue;
@@ -1383,7 +1382,7 @@ void despawn_subworld_entities_outside_window(ecs::World& w) {
     std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
     for (;;) {
         int doomedCount = 0;
-        auto view = reg.view<ecs::SubworldTag, ecs::ObjectSlot>();
+        auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
             if (is_avatar(reg, e)
                 || object_flag(reg, e, kObjPlayerSoldier)) continue;
@@ -1585,7 +1584,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // per-tick `reconcile_tracked_bodies_to_macro` this used to credit died
     // with the fold-up architecture; the mirror law left nothing to pay up.)
     std::vector<MacroHandle> alreadyProjected;
-    for (auto body : reg.view<ecs::ObjectSlot, ecs::SubworldTag>()) {
+    for (auto body : reg.view<ecs::ObjectSlot>()) {
         const MacroHandle h = sub::body_macro_origin(reg, body);
         if (h.slot != kMacroNoSlot) alreadyProjected.push_back(h);
     }

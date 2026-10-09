@@ -64,9 +64,9 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     if (body_pools(reg, e) == nullptr) return false;
     if (object_flag(reg, e, kObjDead)) return false;
     if (is_projectile(reg, e)) return false;
-    // (Ветка «без SubworldTag, но аватар» снесена ломтём 5 как мёртвая:
-    // аватар носит SubworldTag с рождения — spawn_player_entity.)
-    if (!reg.any_of<ecs::SubworldTag>(e)) return false;
+    // «Жилец сцены» доказан body_pools выше: бары — колонка арены, без
+    // слота дверь отвечает nullptr (тег SubworldTag умер ломтём 6 — его
+    // гейт здесь был вторым ответом на тот же вопрос).
     // NO faction shield (owner design decision 2026-07-30): projectiles and
     // spells are faction-agnostic — they strike whoever stands in their path,
     // ally or enemy. Friendly fire is real; formations must respect their own

@@ -122,8 +122,7 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
     w.reg.emplace<ecs::Projectile>(e, bolt);   // транзит: читатели в К4-К7
     sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
         r, g, b, 1.0f});
-    w.reg.emplace<ecs::SubworldTag>(e);
-    // Travelling elemental glow (same universal LightEmitter path as the player
+        // Travelling elemental glow (same universal LightEmitter path as the player
     // lantern), coloured from this bolt's own tint and sized to its radius.
     sub::set_body_light(w.reg, e, bolt_light(radius, r, g, b));
 }
@@ -179,8 +178,7 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
     sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
         std::uint8_t(0xAA), std::uint8_t(0xDD), std::uint8_t(0xFF),
         1.0f});
-    w.reg.emplace<ecs::SubworldTag>(e);
-}
+    }
 
 void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
     const float spread = c.effectRadius > 0.0f ? c.effectRadius : 160.0f;
@@ -218,8 +216,7 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
         sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
             std::uint8_t(0xFF), std::uint8_t(0x55), std::uint8_t(0x11),
             1.0f});
-        w.reg.emplace<ecs::SubworldTag>(e);
-    }
+            }
 }
 
 // ── Possession (CANON S4, вердикты владельца 2026-09-17) ──────────────────

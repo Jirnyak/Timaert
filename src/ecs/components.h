@@ -181,9 +181,9 @@ struct MissileAttack {
 // set_avatar/is_avatar/avatar_entity (sub/record.h). Одержимость и будущее
 // переключение сквадов фракции — перезапись одной ссылки; «двух аватаров»
 // не существует по построению.)
-// Marks an entity that lives only in the current subworld scene; cleared
-// on enter/leave so we never destroy persistent macro NPCs by accident.
-struct SubworldTag {};
+// (SubworldTag умер ломтём 6 M-150: «жилец сцены» = слот арены, биекция
+// «живой слот ⟷ сущность с ObjectSlot» — свидетель в body_contract_test;
+// тег был вторым ответом на вопрос, на который уже отвечал слот.)
 // Lazy vertical state (sub/height.h vertical_step): emplaced the moment a
 // non-flying body leaves its support surface (walked off a battlement, lost
 // flight, a future jump), removed on landing. Grounded bodies — the thousands
@@ -198,8 +198,8 @@ struct NPCKind { std::uint16_t type; std::uint16_t factionIdx; };
 // станет самой идентичностью тела, а не его компонентой.
 struct ObjectSlot { std::uint16_t slot; };
 
-// Subworld behaviour state (mirrors `subworld/ai.ts`). Only attached to
-// SubworldTag entities; engine dispatches Wander/Flee/Combat by `kind`.
+// Subworld behaviour state (mirrors `subworld/ai.ts`). Scene bodies only
+// (жильцы арены); engine dispatches Wander/Flee/Combat by `kind`.
 // ONE owner of legs. `wantVx/wantVy` are the brain's INTENT — the wander
 // amble or the flee sprint, written ONLY by tick_npc_ai (the Combat mind
 // wants nothing here; its drive is the influence field). `vx/vy` are the
@@ -740,7 +740,6 @@ TIMAERT_ROW(sm::ecs::MacroVisual);
 TIMAERT_ROW(sm::ecs::MacroCell);
 TIMAERT_ROW(sm::ecs::Combat);
 TIMAERT_ROW(sm::ecs::MissileAttack);
-TIMAERT_ROW(sm::ecs::SubworldTag);
 TIMAERT_ROW(sm::ecs::Airborne);
 TIMAERT_ROW(sm::ecs::NPCKind);
 TIMAERT_ROW(sm::ecs::SubworldAi);

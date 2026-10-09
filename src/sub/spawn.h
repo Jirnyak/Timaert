@@ -416,7 +416,7 @@ int spawn_dungeon_vermin(ecs::World& w,
 // enter / leave; the per-cell path above avoids it on ordinary seam crossings.
 void clear_subworld_world_entities(ecs::World& w);
 
-// Shift every SubworldTag entity's Position + VisualPos by (dxTiles,dyTiles).
+// Shift every live arena slot's pos + visual columns by (dxTiles,dyTiles).
 // Applied on a seam re-centre with (-dx*kCellSize, -dy*kCellSize) so that fixed
 // physical content — and the player's own squad — track the recentred composite
 // window instead of drifting by one macro cell each crossing.

@@ -139,7 +139,7 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     int strengthDrift = 0;
     int offsetDrift = 0;
 
-    auto view = world.reg.view<sm::ecs::SubworldTag>();
+    auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
         const auto* kindCol = sm::sub::body_kind(world.reg, e);
         if (kindCol == nullptr) continue;

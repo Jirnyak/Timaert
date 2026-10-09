@@ -450,9 +450,8 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
     // бесплатно. Игрок исключается КОЛОНКАМИ (1е кластер 5): родной сквад —
     // зарезервированным ординалом, носитель флажка — битами GameState;
     // тег-exclude умер вместе с резолвом тегом. Обход — слоты store (6.1);
-    // прежний exclude<SubworldTag> был рудиментом: тег носят только тела
-    // сцены, макро-сквад его не носил никогда (emplace один —
-    // sub/spawn.cpp, рождение тела).
+    // прежний exclude<SubworldTag> был рудиментом (сам тег умер ломтём 6
+    // M-150): жильство сцены носили только тела, макро-сквад — никогда.
     const MacroHandle flag = player_flag_handle(gs);
     const bool flagLive = st.valid(flag);
     std::vector<SquadWalkEntry> snapshot;

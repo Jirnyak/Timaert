@@ -24,7 +24,6 @@ static entt::entity make_enemy(entt::registry& reg, float x, float y,
     sm::test::give_pools(reg, e, ecs::Pools{10, 10});
     sm::test::give_kind(reg, e,
         ecs::NPCKind{std::uint16_t(4), std::uint16_t(0)}); // any kind
-    reg.emplace<ecs::SubworldTag>(e);
     return e;
 }
 

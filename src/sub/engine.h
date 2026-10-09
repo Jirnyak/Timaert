@@ -498,8 +498,8 @@ public:
     void jump();
     DangerLevel danger_level() const;
     // Fill and return one blip per live subworld NPC / monster — the SAME
-    // candidate set as targeting/melee (view<Position,Health,
-    // SubworldTag> minus Dead, hp>0). Each blip's stance comes from the shared
+    // candidate set as targeting/melee (live arena slots with a kind,
+    // minus Dead, hp>0). Each blip's stance comes from the shared
     // player_stance() axis, so the HUD's gradient dots track real combat
     // stance. Reused internal buffer: no per-frame allocation after warm-up.
     // Empty outside a subworld or when no ECS world is attached.
@@ -850,7 +850,7 @@ private:
     void spawn_cell(int ox, int oy);
     void repopulate_after_recenter(int dx, int dy);
     // Player-as-entity lifecycle (Inc 4b + 5a). The player is a real ECS entity
-    // carrying AvatarTag + Health + Combat + SubworldTag: a full combat actor
+    // carrying an arena slot + Health + Combat columns: a full combat actor
     // that hostiles target through the universal melee/projectile paths. These
     // keep exactly one such entity alive while a subworld is active.
     //
@@ -927,8 +927,8 @@ private:
     // 5a authority mirror: propagate the authoritative player-entity Position onto
     // the scalar mirror (pull) and vice-versa (push). Both are no-ops when no
     // AvatarTag+Position entity exists (0/1 entities, cheap). push_ is an
-    // assignment so it is idempotent w.r.t. the seam rebase that also shifts the
-    // SubworldTag-tagged player entity.
+    // assignment so it is idempotent w.r.t. the seam rebase that also shifts
+    // the player slot's pos column with every other live slot.
     void pull_player_entity_to_scalars();
     void push_scalars_to_player_entity();
     // ONE player vertical rule, run from tick() (headless-honest — the feet
