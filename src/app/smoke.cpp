@@ -5547,7 +5547,10 @@ bool run_console_smoke(App& app) {
             return app.macroStore->valid(sm::player_flag_handle(app.gs));
         };
         auto count_avatar_tags = [&]() {
-            return sm::sub::avatar_entity(reg) != entt::null ? 1 : 0;
+            // Вопрос выродился в «жива ли ссылка сцены» ((ii-б)): сущность
+            // ему не нужна вовсе.
+            sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+            return objs != nullptr && sm::sub::avatar_slot(*objs) >= 0 ? 1 : 0;
         };
 
         // (1) Macro map: a live flag handle, standing where the scalars say;
@@ -5846,15 +5849,17 @@ bool run_console_smoke(App& app) {
     // XP, or squad-removal path can ever fire on it.
     {
         auto& reg = app.ecs.reg;
-        int playerTags = 0;
-        entt::entity pe = entt::null;
-        if ((pe = sm::sub::avatar_entity(reg)) != entt::null) ++playerTags;
-        if (playerTags != 1) {
+        // Слот аватара — ОДИН раз ((ii-б)): шесть вопросов об ОДНОМ теле
+        // шли шестью entity-дверями, каждая со своим лукапом.
+        sm::sub::SubObjects* pObjs = sm::sub::objects_find(reg);
+        const int ps = pObjs ? sm::sub::avatar_slot(*pObjs) : -1;
+        if (ps < 0) {
             restore();
-            smoke_fail(app, "player_entity: expected exactly one AvatarTag entity");
+            smoke_fail(app, "player_entity: expected exactly one avatar body");
             return false;
         }
-        const sm::ecs::Position* ppos = sm::sub::body_pos(reg, pe);
+        const entt::entity pe = sm::sub::avatar_entity(reg);
+        const sm::ecs::Position* ppos = sm::sub::slot_pos(*pObjs, ps);
         if (!ppos) {
             restore();
             smoke_fail(app,
@@ -5872,8 +5877,8 @@ bool run_console_smoke(App& app) {
         }
         // Full combat actor: the components that put it in the actor/target set
         // must be present, and Health must mirror the macro combat scalar.
-        const auto* phealth = sm::sub::body_pools(reg, pe);
-        if (!phealth || sm::sub::body_combat(reg, pe) == nullptr) {
+        const auto* phealth = sm::sub::slot_pools(*pObjs, ps);
+        if (!phealth || sm::sub::slot_combat(*pObjs, ps) == nullptr) {
             restore();
             smoke_fail(app,
                 "player_entity: combat entity missing Health/Combat");
@@ -5892,10 +5897,10 @@ bool run_console_smoke(App& app) {
         // Still not an NPC/soldier: none of these may be present, or an NPC-only
         // system (AI, loot, XP, squad removal) would start acting on the player.
         // Род — колонка арены (кусок 1): у игрока она обязана быть kObjNoKind.
-        if (sm::sub::body_kind(reg, pe) != nullptr
-            || sm::sub::body_ai(reg, pe) != nullptr
+        if (sm::sub::slot_kind(*pObjs, ps) != nullptr
+            || sm::sub::slot_ai(*pObjs, ps) != nullptr
             || reg.any_of<sm::ecs::NpcInventory>(pe)
-            || sm::sub::object_flag(reg, pe, sm::sub::kObjPlayerSoldier)) {
+            || sm::sub::slot_flag(*pObjs, ps, sm::sub::kObjPlayerSoldier)) {
             restore();
             smoke_fail(app,
                 "player_entity: combat entity wrongly carries an NPC/soldier component");
@@ -5912,12 +5917,15 @@ bool run_console_smoke(App& app) {
     auto count_live_bandits = [&]() {
         auto& reg = app.ecs.reg;
         int n = 0;
+        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
         auto view = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
-            if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
-                || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+            if (objs == nullptr) break;
+            const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)
+                || sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
                 continue;
-            const auto* k = sm::sub::body_kind(reg, e);
+            const auto* k = sm::sub::slot_kind(*objs, s);
             if (k != nullptr
                 && k->type == std::uint16_t(sm::NPCType::Bandit)) ++n;
         }
@@ -5936,9 +5944,15 @@ bool run_console_smoke(App& app) {
     std::vector<entt::entity> preexistingBandits;
     {
         auto& reg = app.ecs.reg;
+        // Гейта здесь нет НАМЕРЕННО и это остаётся так ((ii-б) — перевод):
+        // снимок «кто уже стоял», включая мёртвых и солдат, нужен именно
+        // полным — иначе новое тело спутали бы с прежним.
+        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
         auto view = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
-            const auto* k = sm::sub::body_kind(reg, e);
+            if (objs == nullptr) break;
+            const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            const auto* k = sm::sub::slot_kind(*objs, s);
             if (k != nullptr
                 && k->type == std::uint16_t(sm::NPCType::Bandit)) {
                 preexistingBandits.push_back(e);
@@ -5977,13 +5991,19 @@ bool run_console_smoke(App& app) {
                 sum += a.of(sm::AttributeId(i));
             return sum;
         };
+        // Слот отобранного тела запоминается ВМЕСТО сущности ((ii-б)):
+        // четыре вопроса ниже (лист, уровень, бары, бой) — о нём.
         entt::entity be = entt::null;
+        int bs = -1;
+        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
         auto view = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
-            if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
-                || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+            if (objs == nullptr) break;
+            const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)
+                || sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
                 continue;
-            const auto* k = sm::sub::body_kind(reg, e);
+            const auto* k = sm::sub::slot_kind(*objs, s);
             if (k == nullptr
                 || k->type != std::uint16_t(sm::NPCType::Bandit)) continue;
             bool preexisting = false;
@@ -5991,12 +6011,13 @@ bool run_console_smoke(App& app) {
                 preexisting = preexisting || p == e;
             if (preexisting) continue;   // inspect OUR spawn, nobody else's
             be = e;
+            bs = s;
             break;
         }
         if (be == entt::null) {
             restore(); smoke_fail(app, "sheet: no live bandit to inspect"); return false;
         }
-        const auto* sheet = sm::sub::body_sheet(reg, be);
+        const auto* sheet = sm::sub::slot_sheet(*objs, bs);
         if (!sheet) {
             restore(); smoke_fail(app, "sheet: bandit has no CharacterSheet"); return false;
         }
@@ -6010,7 +6031,7 @@ bool run_console_smoke(App& app) {
         }
         // Уровень — колонка арены (кусок 1): 0 значил бы «уровень не
         // назначен» и валит проверку так же, как валило отсутствие компоненты.
-        const std::int16_t nlvl = sm::sub::body_level(reg, be);
+        const std::int16_t nlvl = sm::sub::slot_level(*objs, bs);
         if (int(nlvl) != sheet->levelData.level) {
             restore(); smoke_fail(app, "sheet: bandit level column != sheet level"); return false;
         }
@@ -6024,8 +6045,8 @@ bool run_console_smoke(App& app) {
         const sm::CombatTemplate base = sm::npc_def(sm::NPCType::Bandit).combat;
         const sm::CombatTemplate proj = sm::project_combat(*sheet, base);
         const float projHp = std::max(1.0f, std::floor(proj.hp));
-        const auto* hlt = sm::sub::body_pools(reg, be);
-        const auto* cmb = sm::sub::body_combat(reg, be);
+        const auto* hlt = sm::sub::slot_pools(*objs, bs);
+        const auto* cmb = sm::sub::slot_combat(*objs, bs);
         if (!hlt || !cmb) {
             restore(); smoke_fail(app, "combat: bandit missing Health/Combat"); return false;
         }
@@ -6068,12 +6089,15 @@ bool run_console_smoke(App& app) {
     auto count_live_creatures = [&]() {
         auto& reg = app.ecs.reg;
         int n = 0;
+        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
         auto view = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
-            if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
-                || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+            if (objs == nullptr) break;
+            const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)
+                || sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
                 continue;
-            const auto* k = sm::sub::body_kind(reg, e);
+            const auto* k = sm::sub::slot_kind(*objs, s);
             if (k != nullptr && !sm::is_folk_kind(k->type)) ++n;
         }
         return n;
@@ -6369,16 +6393,22 @@ bool run_console_smoke(App& app) {
         // witness uses the action's smoke-lab reach seam, and the assertion
         // is MANDATORY: a witness that may not fire is a dead detector.
         {
+            // Вырожденный цикл по braced-init-list из одного элемента —
+            // остаток умершей вьюхи — умер со слот-формой ((ii-б)): бары
+            // одного и того же слота спрашивались ДВАЖДЫ (гейт и возврат).
             const auto authoritative_pools = [&]() -> sm::ecs::Pools* {
-                for (const entt::entity pe :
-                     {sm::sub::avatar_entity(app.ecs.reg)}) {
-                    if (pe == entt::null
-                        || sm::sub::body_pools(app.ecs.reg, pe) == nullptr)
-                        break;
-                    if (sm::sub::body_kind(app.ecs.reg, pe) != nullptr) {
-                        return &(*sm::sub::body_pools(app.ecs.reg, pe));
+                sm::sub::SubObjects* objs =
+                    sm::sub::objects_find(app.ecs.reg);
+                const int s = objs ? sm::sub::avatar_slot(*objs) : -1;
+                if (s >= 0) {
+                    sm::ecs::Pools* body = sm::sub::slot_pools(*objs, s);
+                    // Носимое тело платит СВОИМ блоком (у него есть род),
+                    // герой-голова — записью своего сквада: ровно та же
+                    // выборка, что делает дверь.
+                    if (body != nullptr
+                        && sm::sub::slot_kind(*objs, s) != nullptr) {
+                        return body;
                     }
-                    break;
                 }
                 return sm::player_pools(app.gs, *app.macroStore);
             };
