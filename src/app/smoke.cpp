@@ -84,6 +84,12 @@ static void smoke_give_ai(entt::registry& reg, entt::entity e,
     if (s < 0) return;
     sm::sub::slot_set_ai(sm::sub::objects_of(reg), s, a);
 }
+static void smoke_give_kind(entt::registry& reg, entt::entity e,
+                            sm::ecs::NPCKind k) {
+    const int s = smoke_give_slot(reg, e);
+    if (s < 0) return;
+    sm::sub::slot_set_kind(sm::sub::objects_of(reg), s, k);
+}
 static void smoke_give_sprite(entt::registry& reg, entt::entity e,
                               const sm::ecs::Sprite& sp) {
     const int s = smoke_give_slot(reg, e);
@@ -3433,12 +3439,18 @@ bool run_prologue_road_smoke(App& app) {
         }
         return h;
     };
+    // Гейт ЧАСТИЧНЫЙ и таким остаётся ((ii-б) — перевод, не сведение): род
+    // плюс «не труп». Подмена на общий slot_npc_candidate добавила бы
+    // требование живых баров и молча изменила бы СЧЁТ.
     auto scene_bodies = [&]() {
         int n = 0;
-        for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
-            if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
-            if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead))
-                continue;
+        sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
+        auto v = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : v) {
+            if (objs == nullptr) break;
+            const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_kind(*objs, s) == nullptr) continue;
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)) continue;
             ++n;
         }
         return n;
@@ -3469,14 +3481,20 @@ bool run_prologue_road_smoke(App& app) {
     // springs — and it is off the bed, in the trees.
     int ambushers = 0;
     float nearestAmbush2 = 1e18f;
-    for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
-        if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
-        if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
-        const sm::ecs::Position& p = *sm::sub::body_pos(app.ecs.reg, e);
-        const float dx = p.x - app.subworld.player_x();
-        const float dy = p.y - app.subworld.player_y();
-        ++ambushers;
-        nearestAmbush2 = std::min(nearestAmbush2, dx * dx + dy * dy);
+    {
+        sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
+        auto v = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : v) {
+            if (objs == nullptr) break;
+            const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_kind(*objs, s) == nullptr) continue;
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)) continue;
+            const sm::ecs::Position& p = objs->pos[std::size_t(s)];
+            const float dx = p.x - app.subworld.player_x();
+            const float dy = p.y - app.subworld.player_y();
+            ++ambushers;
+            nearestAmbush2 = std::min(nearestAmbush2, dx * dx + dy * dy);
+        }
     }
     const float nearestAmbush = ambushers > 0 ? std::sqrt(nearestAmbush2)
                                               : 0.0f;
@@ -3489,12 +3507,18 @@ bool run_prologue_road_smoke(App& app) {
     // the world's bandit (50) — the prologue's teeth are a creature, not a
     // tuned spawn.
     int ambushMaxHp = 0;
-    for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
-        if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
-        if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
-        const auto* hp = sm::sub::body_pools(app.ecs.reg, e);
-        if (hp == nullptr) continue;
-        ambushMaxHp = std::max(ambushMaxHp, int(hp->maxHp));
+    {
+        sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
+        auto v = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : v) {
+            if (objs == nullptr) break;
+            const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_kind(*objs, s) == nullptr) continue;
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)) continue;
+            const auto* hp = sm::sub::slot_pools(*objs, s);
+            if (hp == nullptr) continue;
+            ambushMaxHp = std::max(ambushMaxHp, int(hp->maxHp));
+        }
     }
 
     // AND THEY COME. Standing 300 m off, they are far outside the generic
@@ -3505,13 +3529,19 @@ bool run_prologue_road_smoke(App& app) {
     // from a number in a table.
     advance_sim_seconds(app, 4.0f, false);
     float closed2 = 1e18f;
-    for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
-        if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
-        if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
-        const sm::ecs::Position& p = *sm::sub::body_pos(app.ecs.reg, e);
-        const float dx = p.x - app.subworld.player_x();
-        const float dy = p.y - app.subworld.player_y();
-        closed2 = std::min(closed2, dx * dx + dy * dy);
+    {
+        sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
+        auto v = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : v) {
+            if (objs == nullptr) break;
+            const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_kind(*objs, s) == nullptr) continue;
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)) continue;
+            const sm::ecs::Position& p = objs->pos[std::size_t(s)];
+            const float dx = p.x - app.subworld.player_x();
+            const float dy = p.y - app.subworld.player_y();
+            closed2 = std::min(closed2, dx * dx + dy * dy);
+        }
     }
     const float nearestAfter = ambushers > 0 ? std::sqrt(closed2) : 0.0f;
     const bool ambushCloses = ambushers > 0
@@ -4128,7 +4158,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     smoke_give_pos(reg, hostile,
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     smoke_give_visual(reg, hostile, sm::ecs::VisualPos{std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f});
-    sm::sub::set_body_kind(
+    smoke_give_kind(
         reg, hostile, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
     smoke_give_pools(reg, hostile, sm::ecs::Pools{18, 18});
     smoke_give_combat(reg, hostile, sm::ecs::Combat{
@@ -4146,10 +4176,13 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     // вместе с компонентой лица (кусок 1).
     int spriteOnlyVisible = 0;
     auto spriteView = reg.view<sm::ecs::ObjectSlot>();
+    sm::sub::SubObjects* sprObjs = sm::sub::objects_find(reg);
     for (auto e : spriteView) {
-        if (!sm::sub::object_flag(reg, e, sm::sub::kObjHasSprite)) continue;
-        if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)) continue;
-        const auto* hp = sm::sub::body_pools(reg, e);
+        if (sprObjs == nullptr) break;
+        const int s = int(spriteView.get<sm::ecs::ObjectSlot>(e).slot);
+        if (!sm::sub::slot_flag(*sprObjs, s, sm::sub::kObjHasSprite)) continue;
+        if (sm::sub::slot_flag(*sprObjs, s, sm::sub::kObjDead)) continue;
+        const auto* hp = sm::sub::slot_pools(*sprObjs, s);
         if (hp == nullptr || hp->hp <= 0) continue;
         ++spriteOnlyVisible;
     }
@@ -4249,7 +4282,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     // player is -10 — above kHostileThreshold, so the witch had no quarrel with
     // anyone and simply never drew. Bandits sit at -100: hostile by construction,
     // which is the whole premise of a scenario about being shot at.
-    sm::sub::set_body_kind(
+    smoke_give_kind(
         reg, hostile,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Witch),
@@ -4361,9 +4394,13 @@ bool run_subworld_self_fireball_smoke(App& app) {
         std::vector<entt::entity> doomed;
         // (Гард сквада игрока умер с мостом: макро-сквад в реестре не
         // живёт, view<Pools> видит только тела сцены — кластер 7.)
-        for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
-            if (sm::sub::body_pools(reg, e) == nullptr) continue;
-            if (sm::sub::is_avatar(reg, e)) continue;
+        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+        auto dv = reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : dv) {
+            if (objs == nullptr) break;
+            const int s = int(dv.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_pools(*objs, s) == nullptr) continue;
+            if (objs->is_avatar_slot(s)) continue;
             doomed.push_back(e);
         }
         for (const entt::entity e : doomed) {
@@ -4469,7 +4506,7 @@ bool run_turn_based_cycle_smoke(App& app) {
         const entt::entity target = reg.create();
         smoke_give_pos(reg, target, armX, py, armZ);
         smoke_give_visual(reg, target, sm::ecs::VisualPos{armX, py, armZ});
-        sm::sub::set_body_kind(
+        smoke_give_kind(
             reg, target,
             sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
                              std::uint16_t(3)});
@@ -4671,7 +4708,7 @@ bool run_subworld_player_melee_smoke(App& app) {
     const entt::entity target = reg.create();
     smoke_give_pos(reg, target, armX, py, armZ);
     smoke_give_visual(reg, target, sm::ecs::VisualPos{armX, py, armZ});
-    sm::sub::set_body_kind(
+    smoke_give_kind(
         reg, target,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit),
@@ -4682,7 +4719,11 @@ bool run_subworld_player_melee_smoke(App& app) {
         std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
         1.2f});
 
-    const float beforeHp = (*sm::sub::body_pools(reg, target)).hp;
+    // Слот цели — ОДИН раз ((ii-б)): ниже его же брал try_get ради
+    // колонки lastHitBy, то есть сценарий уже держал слот, но позже.
+    const int targetSlot = smoke_give_slot(reg, target);
+    sm::sub::SubObjects& tObjs = sm::sub::objects_of(reg);
+    const float beforeHp = (*sm::sub::slot_pools(tObjs, targetSlot)).hp;
     const int beforeCombatLog = app.subworld.combat_log_count();
     app.subworld.set_player_attack_held(true);
     RuntimeFrameStats frameStats = advance_sim_seconds(app, 0.05f, false);
@@ -4692,12 +4733,11 @@ bool run_subworld_player_melee_smoke(App& app) {
         return false;
     }
 
-    const auto* hp = sm::sub::body_pools(reg, target);
+    const auto* hp = sm::sub::slot_pools(tObjs, targetSlot);
     // Атрибуция — колонка единого массива объектов (M-150 1а; вспышка
     // тела снесена вердиктом 2026-10-05).
-    const auto* osMelee = reg.try_get<sm::ecs::ObjectSlot>(target);
-    const sm::sub::ObjRef meleeLastBy = osMelee
-        ? sm::sub::objects_of(reg).lastHitBy[osMelee->slot]
+    const sm::sub::ObjRef meleeLastBy = targetSlot >= 0
+        ? tObjs.lastHitBy[std::size_t(targetSlot)]
         : sm::sub::ObjRef{};
     const int afterCombatLog = app.subworld.combat_log_count();
     const sm::sub::CombatLogEntry* combatLog =
@@ -4718,9 +4758,10 @@ bool run_subworld_player_melee_smoke(App& app) {
     // no armour, so what was rolled is what landed; a crit changes nothing
     // against a bare target).
     const sm::ecs::Combat* playerCombat = nullptr;
-    if (const entt::entity pe = sm::sub::avatar_entity(reg);
-        pe != entt::null) {
-        playerCombat = sm::sub::body_combat(reg, pe);
+    if (sm::sub::SubObjects* pco = sm::sub::objects_find(reg)) {
+        if (const int ps = sm::sub::avatar_slot(*pco); ps >= 0) {
+            playerCombat = sm::sub::slot_combat(*pco, ps);
+        }
     }
     float minStrike = -1.0f;
     float maxStrike = -1.0f;
@@ -4823,9 +4864,13 @@ bool run_subworld_player_bow_smoke(App& app) {
         std::vector<entt::entity> doomed;
         // (Гард сквада игрока умер с мостом: макро-сквад в реестре не
         // живёт, view<Pools> видит только тела сцены — кластер 7.)
-        for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
-            if (sm::sub::body_pools(reg, e) == nullptr) continue;
-            if (sm::sub::is_avatar(reg, e)) continue;
+        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+        auto dv = reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : dv) {
+            if (objs == nullptr) break;
+            const int s = int(dv.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_pools(*objs, s) == nullptr) continue;
+            if (objs->is_avatar_slot(s)) continue;
             doomed.push_back(e);
         }
         for (const entt::entity e : doomed) {
@@ -4875,7 +4920,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     const entt::entity target = reg.create();
     smoke_give_pos(reg, target, tx, py, pz);
     smoke_give_visual(reg, target, sm::ecs::VisualPos{tx, py, pz});
-    sm::sub::set_body_kind(
+    smoke_give_kind(
         reg, target,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit),
@@ -4886,7 +4931,10 @@ bool run_subworld_player_bow_smoke(App& app) {
         std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
         1.2f});
 
-    const float beforeHp = (*sm::sub::body_pools(reg, target)).hp;
+    // Слот цели — ОДИН раз ((ii-б)), как у мили-близнеца.
+    const int targetSlot = smoke_give_slot(reg, target);
+    sm::sub::SubObjects& tObjs = sm::sub::objects_of(reg);
+    const float beforeHp = (*sm::sub::slot_pools(tObjs, targetSlot)).hp;
     const int beforeProjectiles = smoke_projectile_count(reg);
 
     app.subworld.set_player_attack_held(true);
@@ -4902,9 +4950,10 @@ bool run_subworld_player_bow_smoke(App& app) {
     // The press routed as a SHOT because the weapon row said Missile — the
     // white-box guard that the delivery column reached the body's Combat.
     const sm::ecs::Combat* playerCombat = nullptr;
-    if (const entt::entity pe = sm::sub::avatar_entity(reg);
-        pe != entt::null) {
-        playerCombat = sm::sub::body_combat(reg, pe);
+    if (sm::sub::SubObjects* pco = sm::sub::objects_find(reg)) {
+        if (const int ps = sm::sub::avatar_slot(*pco); ps >= 0) {
+            playerCombat = sm::sub::slot_combat(*pco, ps);
+        }
     }
     const bool missileRouted = playerCombat
         && playerCombat->kind == sm::ecs::Combat::Missile
@@ -4912,11 +4961,10 @@ bool run_subworld_player_bow_smoke(App& app) {
 
     // Let the arrow fly: 20 units at 200 u/s plus muzzle clearance.
     (void)advance_sim_seconds(app, 0.30f, false);
-    const auto* hp = sm::sub::body_pools(reg, target);
+    const auto* hp = sm::sub::slot_pools(tObjs, targetSlot);
     // Атрибуция — колонка lastHitBy (M-150 1а).
-    const auto* osBow = reg.try_get<sm::ecs::ObjectSlot>(target);
-    const sm::sub::ObjRef bowLastBy = osBow
-        ? sm::sub::objects_of(reg).lastHitBy[osBow->slot]
+    const sm::sub::ObjRef bowLastBy = targetSlot >= 0
+        ? tObjs.lastHitBy[std::size_t(targetSlot)]
         : sm::sub::ObjRef{};
     const float afterHp = hp ? hp->hp : -1.0f;
     const float dealt = beforeHp - afterHp;
@@ -4996,7 +5044,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // `wildlife`, so hitting this "imperial" peasant honestly docked the
     // reputation of the local wolves while the scenario watched `empire` and
     // saw nothing move.
-    sm::sub::set_body_kind(
+    smoke_give_kind(
         reg, target,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Peasant),
@@ -5037,7 +5085,11 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // bolt was sitting at z=0 a kilometre below its target and could not hit
     // anything. Fixing the elevation exposed the stale expectation.
     const int kFriendlySpellDamage = 13;
-    const float beforeFriendlySpellHp = (*sm::sub::body_pools(reg, target)).hp;
+    // Слот цели — ОДИН раз ((ii-б)); ниже тем же слотом живёт болт.
+    const int targetSlot = smoke_give_slot(reg, target);
+    sm::sub::SubObjects& tObjs = sm::sub::objects_of(reg);
+    const float beforeFriendlySpellHp =
+        (*sm::sub::slot_pools(tObjs, targetSlot)).hp;
     const int beforeFriendlySpellLog = app.subworld.combat_log_count();
     // Parked exactly ON the peasant, at its own ground height. Two properties
     // fall out and both matter: the hit test measures zero distance, so contact
@@ -5086,7 +5138,8 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         smoke_fail(app, "subworld_reputation_hit friendly spell tick inactive");
         return false;
     }
-    const float afterFriendlySpellHp = (*sm::sub::body_pools(reg, target)).hp;
+    const float afterFriendlySpellHp =
+        (*sm::sub::slot_pools(tObjs, targetSlot)).hp;
     const bool spellTookHp =
         std::fabs(beforeFriendlySpellHp - afterFriendlySpellHp
                   - float(kFriendlySpellDamage)) <= 0.001f;
@@ -9146,7 +9199,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // wearing a cultist's colours. Projectiles are faction-agnostic, so
             // it never blocked the hit — but a target that lies about its side
             // is a trap for the next person to read this.
-            sm::sub::set_body_kind(
+            smoke_give_kind(
                 app.ecs.reg, spellTarget,
                 sm::ecs::NPCKind{
                     std::uint16_t(sm::NPCType::Bandit),
