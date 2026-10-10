@@ -1045,7 +1045,7 @@ private:
     // Static + void* user so spell_effects.cpp needs no SubworldEngine type.
     static void spell_fx_emit_callback(void* user,
                                        SpellFxEvent event,
-                                       std::uint32_t entity,
+                                       std::uint16_t boltSlot,
                                        float ax, float ay, float az,
                                        float bx, float by, float bz,
                                        float blastRadius);

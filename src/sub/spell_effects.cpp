@@ -436,6 +436,9 @@ void tick_spell_projectiles(ecs::World& w,
         // урона). Все пять дверей пишут колонку, см. `birth_projectile`.
         ecs::Projectile* col = projectile_of(w.reg, e);
         if (col == nullptr) continue;
+        // Слот болта — один раз на снаряд (ступень (iv)/(v)): им говорят
+        // свип, растяжка дула и шов VFX.
+        const int projSlot = body_slot(w.reg, e);
         ecs::Position& pos = *body_pos(w.reg, e);
         auto& p = *col;
 
@@ -451,7 +454,7 @@ void tick_spell_projectiles(ecs::World& w,
                                   neighborsFn, neighborsUser);
                 // Detonated on expiry (only bolts with a blast do this) — burst.
                 if (fxFn) fxFn(fxUser, SpellFxEvent::Impact,
-                               std::uint32_t(e), pos.x, pos.y, pos.z,
+                               std::uint16_t(projSlot), pos.x, pos.y, pos.z,
                                pos.x, pos.y, pos.z,
                                p.blastRadius);
             }
@@ -535,14 +538,13 @@ void tick_spell_projectiles(ecs::World& w,
         // Shed a trail over the segment the bolt just crossed (tinted engine-
         // side by the bolt's own Sprite). Bolts only — beams are visualOnly and
         // returned above.
-        if (fxFn) fxFn(fxUser, SpellFxEvent::Trail, std::uint32_t(e),
+        if (fxFn) fxFn(fxUser, SpellFxEvent::Trail, std::uint16_t(projSlot),
                        prevX, prevY, prevZ, pos.x, pos.y, pos.z,
                        p.blastRadius);
 
         // The bolt's OWN path, swept, with nobody excluded — the caster very much
         // included. Inc 4d's rule is untouched here: a projectile carries no
         // immunity for whoever fired it.
-        const int projSlot = body_slot(w.reg, e);
         int hit =
             find_projectile_hit(w, projSlot, prevX, prevY, prevZ, pos, p,
                                 -1, canHitFn, canHitUser,
@@ -619,7 +621,8 @@ void tick_spell_projectiles(ecs::World& w,
             }
             // Impact burst at the hit point (before the bolt is reaped so its
             // Sprite tint is still readable engine-side).
-            if (fxFn) fxFn(fxUser, SpellFxEvent::Impact, std::uint32_t(e),
+            if (fxFn) fxFn(fxUser, SpellFxEvent::Impact,
+                           std::uint16_t(projSlot),
                            pos.x, pos.y, pos.z, pos.x, pos.y, pos.z,
                            p.blastRadius);
             queue_reap(reaps, reapCount, e);
@@ -636,7 +639,7 @@ void tick_spell_projectiles(ecs::World& w,
                                   neighborsFn, neighborsUser);
             }
             if (!onGround && fxFn) {
-                fxFn(fxUser, SpellFxEvent::Impact, std::uint32_t(e),
+                fxFn(fxUser, SpellFxEvent::Impact, std::uint16_t(projSlot),
                      pos.x, pos.y, pos.z, pos.x, pos.y, pos.z, p.blastRadius);
             }
             queue_reap(reaps, reapCount, e);

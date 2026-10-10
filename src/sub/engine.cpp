@@ -2061,7 +2061,7 @@ float SubworldEngine::spell_height_callback(void* user, float x, float y) {
 
 void SubworldEngine::spell_fx_emit_callback(void* user,
                                             SpellFxEvent event,
-                                            std::uint32_t entity,
+                                            std::uint16_t boltSlot,
                                             float ax, float ay, float az,
                                             float bx, float by, float bz,
                                             float blastRadius) {
@@ -2077,9 +2077,9 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
     // hue. No Sprite (e.g. a bare meteor) ⇒ fall back to the preset colour.
     vec3 tint{};
     bool haveTint = false;
-    const entt::entity e = entt::entity(entity);
-    if (reg.valid(e)) {
-        if (const auto* spr = sub::body_sprite(reg, e)) {
+    const sub::SubObjects& objs = sub::objects_of(reg);
+    if (sub::slot_flag(objs, int(boltSlot), sub::kObjAlive)) {
+        if (const auto* spr = sub::slot_sprite(objs, int(boltSlot))) {
             const float rf = float(spr->r);
             const float gf = float(spr->g);
             const float bf = float(spr->b);
