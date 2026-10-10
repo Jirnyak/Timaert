@@ -172,7 +172,6 @@ entt	src/sub/possess.h	entt
 entt	src/sub/record.h	entt
 entt	src/sub/spawn.cpp	entt
 entt	src/sub/spawn.h	entt
-entt	src/sub/spell_effects.cpp	entt
 entt	src/sub/targeting.cpp	entt
 entt	src/sub/targeting.h	entt
 subcap	src/sub/spawn.cpp	kUnifiedCap

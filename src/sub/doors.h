@@ -249,5 +249,19 @@ inline void slot_set_projectile(SubObjects& o, int s,
     o.projectile[std::size_t(s)] = p;
     slot_flag_set(o, s, kObjProjectile);
 }
+// РОДИТЬ СНАРЯД — одна дверь на все места выстрела (ступень (v) ломтя 7:
+// снаряд — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ, сущности у него НЕТ; жнёт его спелл-тик
+// прямо arena.free(slot)). -1 значит КАП: слота нет — снаряда быть не
+// должно вовсе, звонящий отказывается честно, ровно как BodyCrowd::add.
+// Каст при этом уже оплачен маной и восстановлением — как промах мечом
+// (вердикт владельца 2026-09-17 о касте, который «фыркнул и ничего не
+// нашёл»).
+inline int birth_projectile(SubObjects& o, const ecs::Projectile& p,
+                            const ecs::Position& at) {
+    const int s = o.alloc(at);
+    if (s < 0) return -1;
+    slot_set_projectile(o, s, p);
+    return s;
+}
 
 } // namespace sm::sub

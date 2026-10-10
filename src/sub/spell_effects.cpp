@@ -88,7 +88,9 @@ void for_each_spell_candidate(ecs::World& w,
                               void* neighborsUser,
                               float cx, float cy, float r,
                               Fn&& fn) {
-    const SubObjects& objs = objects_of(w.reg);
+    const SubObjects* op = objects_find(w.reg);
+    if (op == nullptr) return;   // мира без арены для спеллов не существует
+    const SubObjects& objs = *op;
     if (neighborsFn) {
         // Static: one 128 KiB buffer (65536 слотов × u16) for the whole
         // single-threaded spell tick, touched only as far as it is filled.
@@ -115,18 +117,21 @@ void for_each_spell_candidate(ecs::World& w,
     }
 }
 
-void queue_reap(std::array<entt::entity, kMaxSpellReaps>& reaps,
+// Жнец копит СЛОТЫ (ступень (v)). Переполнение честно откладывает: не
+// взятый в пакет снаряд доживает тик и встаёт в очередь следующего — работа
+// не исчезает (ЗАКОН ДВУХ ТЕМПОВ п.3); 512 — баланс, не по-двойка структуры.
+void queue_reap(std::array<std::uint16_t, kMaxSpellReaps>& reaps,
                 int& reapCount,
-                entt::entity e) {
+                int slot) {
     if (reapCount >= kMaxSpellReaps) return;
     for (int i = 0; i < reapCount; ++i) {
-        if (reaps[std::size_t(i)] == e) return;
+        if (int(reaps[std::size_t(i)]) == slot) return;
     }
-    reaps[std::size_t(reapCount++)] = e;
+    reaps[std::size_t(reapCount++)] = std::uint16_t(slot);
 }
 
 void apply_spell_damage(ecs::World& w,
-                        std::array<entt::entity, kMaxSpellReaps>& reaps,
+                        std::array<std::uint16_t, kMaxSpellReaps>& reaps,
                         int& reapCount,
                         EventBus* bus,
                         int target,
@@ -239,7 +244,7 @@ int find_projectile_hit(ecs::World& w,
 }
 
 void apply_spell_blast(ecs::World& w,
-                       std::array<entt::entity, kMaxSpellReaps>& reaps,
+                       std::array<std::uint16_t, kMaxSpellReaps>& reaps,
                        int& reapCount,
                        EventBus* bus,
                        const ecs::Position& pos,
@@ -271,7 +276,7 @@ void apply_spell_blast(ecs::World& w,
 }
 
 void apply_spell_beam(ecs::World& w,
-                      std::array<entt::entity, kMaxSpellReaps>& reaps,
+                      std::array<std::uint16_t, kMaxSpellReaps>& reaps,
                       int& reapCount,
                       EventBus* bus,
                       const ecs::Position& beamPos,
@@ -331,7 +336,7 @@ bool already_chained(const std::array<int, 8>& chainHits,
 }
 
 void apply_spell_chain(ecs::World& w,
-                       std::array<entt::entity, kMaxSpellReaps>& reaps,
+                       std::array<std::uint16_t, kMaxSpellReaps>& reaps,
                        int& reapCount,
                        EventBus* bus,
                        int first,
@@ -415,32 +420,25 @@ void tick_spell_projectiles(ecs::World& w,
                             SpellNeighborsFn neighborsFn,
                             void* neighborsUser,
                             float ceilingM) {
-    // ЧИСЛА СНАРЯДА — КОЛОНКА АРЕНЫ, ИТЕРАЦИЯ — ПОКА ПО СУЩНОСТЯМ (ломоть 4,
-    // тот же приём, что у `tick_body_visual_interp@src/sub/ability.h`):
-    // компонента `ecs::Projectile` осталась ТРАНЗИТНЫМ ИНДЕКСОМ «кто здесь
-    // снаряд» и умирает в ломте 7. Позиция — УЖЕ колонка арены (ломоть 5),
-    // но проход остаётся сущностным до ломтя 7: его жнец — reg.destroy по
-    // СУЩНОСТИ (слот освобождает on_destroy-хук), а жать по слоту при живой
-    // сущности значило бы протухшие ObjectSlot на чужой перерождённый слот.
-    // Мутирует снаряд ровно одна величина (`lifeTimer`) и ровно эта дверь,
-    // поэтому второго носителя правды нет: компонента после рождения не
-    // читается никем.
-    auto view = w.reg.view<ecs::Projectile>();
-    std::array<entt::entity, kMaxSpellReaps> reaps{};
+    // СНАРЯД — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v) ломтя 7): сущности у него
+    // нет, итерация — слотовый цикл по роли-биту (образец —
+    // smoke_projectile_count@src/app/smoke.cpp), жнец — arena.free(slot).
+    // Прежнее условие «жать по слоту при живой сущности значило бы
+    // протухшие ObjectSlot» снято ровно здесь: сущностей снаряда больше не
+    // существует, протухать нечему. Мутирует снаряд ровно одна величина
+    // (`lifeTimer`) и ровно эта дверь. Мир без арены (голая фикстура) —
+    // мир без снарядов: двери рождения в него не пишут.
+    SubObjects* const parena = objects_find(w.reg);
+    if (parena == nullptr) return;
+    SubObjects& pobjs = *parena;
+    std::array<std::uint16_t, kMaxSpellReaps> reaps{};
     int reapCount = 0;
 
-    for (auto e : view) {
-        if (!w.reg.valid(e)) continue;
-        // Слота нет — снаряда для симуляции нет: это не молчаливый пропуск, а
-        // пропущенная дверь рождения, и видно её громко (выстрел не наносит
-        // урона). Все пять дверей пишут колонку, см. `birth_projectile`.
-        ecs::Projectile* col = projectile_of(w.reg, e);
-        if (col == nullptr) continue;
-        // Слот болта — один раз на снаряд (ступень (iv)/(v)): им говорят
-        // свип, растяжка дула и шов VFX.
-        const int projSlot = body_slot(w.reg, e);
-        ecs::Position& pos = *body_pos(w.reg, e);
-        auto& p = *col;
+    for (int projSlot = 0; projSlot < int(kMaxSubObjects); ++projSlot) {
+        const std::uint16_t pf = pobjs.flags[std::size_t(projSlot)];
+        if ((pf & kObjAlive) == 0u || (pf & kObjProjectile) == 0u) continue;
+        ecs::Position& pos = pobjs.pos[std::size_t(projSlot)];
+        auto& p = pobjs.projectile[std::size_t(projSlot)];
 
         p.lifeTimer -= dt;
         if (p.lifeTimer <= 0.0f) {
@@ -458,7 +456,7 @@ void tick_spell_projectiles(ecs::World& w,
                                pos.x, pos.y, pos.z,
                                p.blastRadius);
             }
-            queue_reap(reaps, reapCount, e);
+            queue_reap(reaps, reapCount, projSlot);
             continue;
         }
 
@@ -516,7 +514,7 @@ void tick_spell_projectiles(ecs::World& w,
         if (pos.x < 0.0f || pos.y < 0.0f
             || pos.x > float(kFullSize) || pos.y > float(kFullSize)
             || pos.z > ceilingM) {
-            queue_reap(reaps, reapCount, e);
+            queue_reap(reaps, reapCount, projSlot);
             continue;
         }
 
@@ -571,14 +569,13 @@ void tick_spell_projectiles(ecs::World& w,
         // Владелец — ссылка сцены парой {ownerSlot, ownerId} (iii-б):
         // протухшую (кастер умер, слот перерождён) отсеивает ref_slot —
         // растяжка осиротевшего болта честно не бежит.
-        SubObjects& sobjs = objects_of(w.reg);
         const int ownerSlot = birthTick
-            ? ref_slot(sobjs, ObjRef{p.ownerSlot, p.ownerId})
+            ? ref_slot(pobjs, ObjRef{p.ownerSlot, p.ownerId})
             : -1;
         if (ownerSlot >= 0) {
             {
                 const ecs::Position* op =
-                    &sobjs.pos[std::size_t(ownerSlot)];
+                    &pobjs.pos[std::size_t(ownerSlot)];
                 // ONLY if this projectile really was born at THIS owner's
                 // muzzle. Not every projectile is: armageddon scatters its
                 // meteors up to 160 units from the caster while still stamping
@@ -591,7 +588,7 @@ void tick_spell_projectiles(ecs::World& w,
                 const float bx = prevX - op->x;
                 const float by = prevY - op->y;
                 const float maxBack =
-                    slot_body_radius(sobjs, ownerSlot) + p.radius + 2.0f;
+                    slot_body_radius(pobjs, ownerSlot) + p.radius + 2.0f;
                 if (bx * bx + by * by <= maxBack * maxBack + 0.01f) {
                     // Caster centre → spawn point. Z stays the muzzle's: the
                     // bolt leaves the hand at muzzle height, not at the feet.
@@ -625,7 +622,7 @@ void tick_spell_projectiles(ecs::World& w,
                            std::uint16_t(projSlot),
                            pos.x, pos.y, pos.z, pos.x, pos.y, pos.z,
                            p.blastRadius);
-            queue_reap(reaps, reapCount, e);
+            queue_reap(reaps, reapCount, projSlot);
             continue;
         }
 
@@ -642,13 +639,12 @@ void tick_spell_projectiles(ecs::World& w,
                 fxFn(fxUser, SpellFxEvent::Impact, std::uint16_t(projSlot),
                      pos.x, pos.y, pos.z, pos.x, pos.y, pos.z, p.blastRadius);
             }
-            queue_reap(reaps, reapCount, e);
+            queue_reap(reaps, reapCount, projSlot);
         }
     }
 
     for (int i = 0; i < reapCount; ++i) {
-        const entt::entity e = reaps[std::size_t(i)];
-        if (w.reg.valid(e)) w.reg.destroy(e);
+        pobjs.free(int(reaps[std::size_t(i)]));
     }
 }
 

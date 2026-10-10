@@ -481,25 +481,22 @@ void spawn_npc_missile(entt::registry& reg,
         .explodeOnExpiry = false,
         .dmgType = combat.dmgType,
         .critical = loose.critical};
-    entt::entity e = reg.create();
-    // Стрела — жилец арены (ломоть 4): нет слота — выстрела нет, и
-    // восстановление лучника уже списано, как при промахе.
-    if (!sub::birth_projectile(reg, e, arrow, ecs::Position{sx, sy, sz})) {
-        reg.destroy(e);
-        return;
-    }
-    reg.emplace<ecs::Projectile>(e, arrow);   // транзит: читатели в К4-К7
-    sub::set_body_sprite(reg, e,
+    // Стрела — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v)): сущности нет; нет слота —
+    // выстрела нет, и восстановление лучника уже списано, как при промахе.
+    const int ps = sub::birth_projectile(objs, arrow,
+                                         ecs::Position{sx, sy, sz});
+    if (ps < 0) return;
+    sub::slot_set_sprite(objs, ps,
                          ecs::Sprite{std::uint16_t(0x1FD), r, g, b, 1.2f});
-    }
+}
 
 void clear_subworld_entities(ecs::World& w) {
     auto& reg = w.reg;
     std::array<entt::entity, kMaxSubworldEntityReaps> doomed{};
     for (;;) {
         int doomedCount = 0;
-        // Полный снос сцены: жильцы арены и есть всё население реестра
-        // (биекция — свидетель в body_contract_test), ключ — слот.
+        // Полный снос сцены: сущностные жильцы арены (тела; биекция по
+        // НЕ-снарядным слотам — свидетель в body_contract_test), ключ — слот.
         auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
             if (doomedCount >= kMaxSubworldEntityReaps) break;
@@ -509,6 +506,17 @@ void clear_subworld_entities(ecs::World& w) {
         for (int i = 0; i < doomedCount; ++i) {
             const entt::entity e = doomed[std::size_t(i)];
             if (reg.valid(e)) reg.destroy(e);
+        }
+    }
+    // Слот-жильцы БЕЗ сущности — снаряды (ступень (v)): сущностный цикл выше
+    // их не видит, иначе болт пережил бы сцену и прилетел в следующую.
+    if (sub::SubObjects* objs = sub::objects_find(reg)) {
+        for (int s = 0; s < int(kMaxSubObjects); ++s) {
+            const std::uint16_t f = objs->flags[std::size_t(s)];
+            if ((f & sub::kObjAlive) != 0u
+                && (f & sub::kObjProjectile) != 0u) {
+                objs->free(s);
+            }
         }
     }
 }
@@ -4967,11 +4975,9 @@ void SubworldEngine::tick(float dt) {
             sub::SubObjects& arena = sub::objects_of(ecs_->reg);
             auto gv = ecs_->reg.view<ecs::ObjectSlot>();
             for (auto e : gv) {
-                // Снаряд землёй не держится — он летит по своей дуге и умирает
-                // о мир (`tick_spell_projectiles`). Прежде его отсекал
-                // `entt::exclude<ecs::Projectile>`; роль теперь спрашивается
-                // колонкой арены, и исключающего множества реестр не держит.
-                if (sub::is_projectile(ecs_->reg, e)) continue;
+                // Снарядов в этой вьюхе НЕТ по построению (ступень (v):
+                // снаряд — чистый жилец арены, сущности у него нет), так что
+                // прежний отсев роли умер вместе с транзитом.
                 if (sub::is_avatar(ecs_->reg, e)) continue;
                 if (sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
                 ecs::Position& p = arena.pos[std::size_t(

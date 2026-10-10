@@ -116,22 +116,21 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
         .friendlyFire = c.friendlyFire, .visualOnly = false,
         .explodeOnExpiry = false, .dmgType = c.dmgType,
         .critical = c.critical};
-    auto e = w.create();
-    // Снаряд — жилец арены (ломоть 4): нет слота — нет снаряда, и каст
-    // остаётся оплаченным, как промах. Позиция — аргумент рождения (ломоть 5).
+    // Снаряд — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v) ломтя 7): сущности нет,
+    // рождение — слот-дверь; нет слота (кап) — нет снаряда, и каст остаётся
+    // оплаченным, как промах. Позиция — аргумент рождения (ломоть 5).
+    sub::SubObjects* objs = sub::objects_find(w.reg);
+    if (objs == nullptr) return;   // сцены нет — снаряду негде жить
     const ecs::Position boltAt{c.px + c.nx * spawnOffset,
                                c.py + c.ny * spawnOffset,
                                c.pz + c.nz * spawnOffset};
-    if (!sub::birth_projectile(w.reg, e, bolt, boltAt)) {
-        w.reg.destroy(e);
-        return;
-    }
-    w.reg.emplace<ecs::Projectile>(e, bolt);   // транзит: читатели в К4-К7
-    sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
+    const int s = sub::birth_projectile(*objs, bolt, boltAt);
+    if (s < 0) return;
+    sub::slot_set_sprite(*objs, s, ecs::Sprite{std::uint16_t(0),
         r, g, b, 1.0f});
-        // Travelling elemental glow (same universal LightEmitter path as the player
+    // Travelling elemental glow (same universal LightEmitter path as the player
     // lantern), coloured from this bolt's own tint and sized to its radius.
-    sub::set_body_light(w.reg, e, bolt_light(radius, r, g, b));
+    sub::slot_set_light(*objs, s, bolt_light(radius, r, g, b));
 }
 
 void spawn_fireball(ecs::World& w, const SpellSpawnContext& c) {
@@ -180,19 +179,17 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
         .friendlyFire = c.friendlyFire, .visualOnly = true,
         .explodeOnExpiry = true, .dmgType = c.dmgType,
         .critical = c.critical};
-    auto e = w.create();
+    sub::SubObjects* objs = sub::objects_find(w.reg);
+    if (objs == nullptr) return;   // сцены нет — лучу негде жить
     const ecs::Position beamAt{c.px + c.nx * (kBeamLen * 0.5f),
                                c.py + c.ny * (kBeamLen * 0.5f),
                                c.pz + c.nz * (kBeamLen * 0.5f)};
-    if (!sub::birth_projectile(w.reg, e, beam, beamAt)) {
-        w.reg.destroy(e);
-        return;
-    }
-    w.reg.emplace<ecs::Projectile>(e, beam);   // транзит: читатели в К4-К7
-    sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
+    const int s = sub::birth_projectile(*objs, beam, beamAt);
+    if (s < 0) return;
+    sub::slot_set_sprite(*objs, s, ecs::Sprite{std::uint16_t(0),
         std::uint8_t(0xAA), std::uint8_t(0xDD), std::uint8_t(0xFF),
         1.0f});
-    }
+}
 
 void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
     const float spread = c.effectRadius > 0.0f ? c.effectRadius : 160.0f;
@@ -201,6 +198,8 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
 
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 40.0f;
     const std::uint32_t baseSeed = armageddon_seed(c);
+    sub::SubObjects* objs = sub::objects_find(w.reg);
+    if (objs == nullptr) return;   // сцены нет — дождю негде идти
     for (int i = 0; i < count; ++i) {
         const std::uint32_t seed =
             baseSeed + std::uint32_t(i) * kArmageddonMixA;
@@ -221,21 +220,17 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
             .friendlyFire = c.friendlyFire, .visualOnly = true,
             .explodeOnExpiry = true, .dmgType = c.dmgType,
             .critical = c.critical};
-        auto e = w.create();
         // Кап арены обрывает ДОЖДЬ, а не отдельный метеор: освобождений
         // внутри цикла не бывает, значит следующий alloc отказал бы так же.
         const ecs::Position meteorAt{c.px + std::cos(angle) * dist,
                                      c.py + std::sin(angle) * dist,
                                      c.pz};
-        if (!sub::birth_projectile(w.reg, e, meteor, meteorAt)) {
-            w.reg.destroy(e);
-            break;
-        }
-        w.reg.emplace<ecs::Projectile>(e, meteor);  // транзит: К4-К7
-        sub::set_body_sprite(w.reg, e, ecs::Sprite{std::uint16_t(0),
+        const int s = sub::birth_projectile(*objs, meteor, meteorAt);
+        if (s < 0) break;
+        sub::slot_set_sprite(*objs, s, ecs::Sprite{std::uint16_t(0),
             std::uint8_t(0xFF), std::uint8_t(0x55), std::uint8_t(0x11),
             1.0f});
-            }
+    }
 }
 
 // ── Possession (CANON S4, вердикты владельца 2026-09-17) ──────────────────

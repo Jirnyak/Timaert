@@ -25,11 +25,19 @@ int fail(const char* msg) {
     return 1;
 }
 
+// Снаряд — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v) ломтя 7): счёт и поиск — слотовый
+// цикл по роли-биту, те же выражения, что у продакшена (smoke_projectile_count).
+// objects_find, не objects_of: мир без арены честно отвечает «снарядов нет».
 int projectile_count(sm::ecs::World& w) {
+    const sm::sub::SubObjects* objs = sm::sub::objects_find(w.reg);
+    if (objs == nullptr) return 0;
     int count = 0;
-    for (auto e : w.reg.view<sm::ecs::Projectile>()) {
-        (void)e;
-        ++count;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        const std::uint16_t f = objs->flags[std::size_t(s)];
+        if ((f & sm::sub::kObjAlive) != 0u
+            && (f & sm::sub::kObjProjectile) != 0u) {
+            ++count;
+        }
     }
     return count;
 }
@@ -38,35 +46,36 @@ bool nearf(float a, float b) {
     return std::fabs(a - b) <= 0.001f;
 }
 
+// Слот первого живого снаряда со спеллом spellId, -1 = нет такого.
+int projectile_slot_by_spell(sm::ecs::World& w, std::uint32_t stableId) {
+    const sm::sub::SubObjects* objs = sm::sub::objects_find(w.reg);
+    if (objs == nullptr) return -1;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        const std::uint16_t f = objs->flags[std::size_t(s)];
+        if ((f & sm::sub::kObjAlive) == 0u
+            || (f & sm::sub::kObjProjectile) == 0u) continue;
+        if (objs->projectile[std::size_t(s)].spellId == stableId) return s;
+    }
+    return -1;
+}
+
 bool find_projectile_by_spell(sm::ecs::World& w, const char* spellId,
                               sm::ecs::Projectile& out) {
-    const std::uint32_t stableId = sm::stable_spell_id(spellId);
-    auto view = w.reg.view<sm::ecs::Projectile>();
-    for (auto e : view) {
-        const auto& p = view.get<sm::ecs::Projectile>(e);
-        if (p.spellId == stableId) {
-            out = p;
-            return true;
-        }
-    }
-    return false;
+    const int s = projectile_slot_by_spell(w, sm::stable_spell_id(spellId));
+    if (s < 0) return false;
+    out = sm::sub::objects_of(w.reg).projectile[std::size_t(s)];
+    return true;
 }
 
 bool find_projectile_pose_by_spell(sm::ecs::World& w, const char* spellId,
                                    sm::ecs::Projectile& outProjectile,
                                    sm::ecs::Position& outPosition) {
-    const std::uint32_t stableId = sm::stable_spell_id(spellId);
-    auto view = w.reg.view<sm::ecs::Projectile>();
-    for (auto e : view) {
-        const auto& p = view.get<sm::ecs::Projectile>(e);
-        if (p.spellId == stableId) {
-            outProjectile = p;
-            // Место снаряда — колонка арены (ломоть 5): дверь body_pos.
-            outPosition = *sm::sub::body_pos(w.reg, e);
-            return true;
-        }
-    }
-    return false;
+    const int s = projectile_slot_by_spell(w, sm::stable_spell_id(spellId));
+    if (s < 0) return false;
+    const sm::sub::SubObjects& objs = sm::sub::objects_of(w.reg);
+    outProjectile = objs.projectile[std::size_t(s)];
+    outPosition = objs.pos[std::size_t(s)];
+    return true;
 }
 
 entt::entity add_target(sm::ecs::World& w, float x, float y,
@@ -143,6 +152,12 @@ int main() {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
+
+    // Арена — предусловие снарядов (ступень (v): чистые жильцы
+
+    // арены; §8 п.11 — свидетель сам рожает предусловие).
+
+    sm::test::arena_of(world.reg);
     // Арена сцены — ПРЕДУСЛОВИЕ свидетеля (§8 п.11): с ломтя 5 место снаряда
     // живёт колонкой слота, значит рождённый без арены снаряд НЕ ИМЕЕТ места
     // вовсе, и закон дула ниже спрашивать было бы не у кого.
@@ -526,6 +541,12 @@ int main() {
     auto fireExpiryWorldStore_ = sm::make_macro_store();
 
     sm::store_attach(fireExpiryWorld, fireExpiryWorldStore_.get());
+
+    // Арена — предусловие снарядов (ступень (v): чистые жильцы
+
+    // арены; §8 п.11 — свидетель сам рожает предусловие).
+
+    sm::test::arena_of(fireExpiryWorld.reg);
     sm::SpellBook fireExpiryBook;
     sm::ecs::Pools fireExpiryCombat{};
     fireExpiryCombat.mp = 1000;
@@ -550,9 +571,15 @@ int main() {
     auto blastWorldStore_ = sm::make_macro_store();
 
     sm::store_attach(blastWorld, blastWorldStore_.get());
-    auto blastProjectile = blastWorld.create();
-    sm::test::give_pos(blastWorld.reg, blastProjectile, 0.0f, 0.0f, 0.0f);
-    blastWorld.reg.emplace<sm::ecs::Projectile>(blastProjectile,
+
+    // Арена — предусловие снарядов (ступень (v): чистые жильцы
+
+    // арены; §8 п.11 — свидетель сам рожает предусловие).
+
+    sm::test::arena_of(blastWorld.reg);
+    // Снаряд — чистый жилец арены (ступень (v)): рождение дверью выстрела,
+    // сущности нет; позиция — аргумент рождения.
+    sm::test::give_projectile(blastWorld.reg,
         sm::ecs::Projectile{
             .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 2.5f,
             .lifeTimer = 0.0f, .maxLifeTimer = 0.0f, .damage = 10,
@@ -564,11 +591,8 @@ int main() {
             .chainRemaining = std::int16_t{0},
             .kind = sm::ecs::Projectile::Bolt, .friendlyFire = true,
             .visualOnly = true, .explodeOnExpiry = true,
-            .dmgType = std::uint8_t(sm::DamageType::Fire), .critical = false});
-    // Колонка арены (ломоть 4): значение — у только что записанной
-    // компоненты, два носителя разъехаться не могут; строка умрёт с нею.
-    sm::test::give_projectile(blastWorld.reg, blastProjectile,
-                              blastWorld.reg.get<sm::ecs::Projectile>(blastProjectile));
+            .dmgType = std::uint8_t(sm::DamageType::Fire), .critical = false},
+        sm::ecs::Position{0.0f, 0.0f, 0.0f});
     const auto blastEdge =
         add_target(blastWorld, 48.0f, 0.0f, 100.0f, false);
     const auto blastOutside =
@@ -585,6 +609,12 @@ int main() {
     auto iceWorldStore_ = sm::make_macro_store();
 
     sm::store_attach(iceWorld, iceWorldStore_.get());
+
+    // Арена — предусловие снарядов (ступень (v): чистые жильцы
+
+    // арены; §8 п.11 — свидетель сам рожает предусловие).
+
+    sm::test::arena_of(iceWorld.reg);
     sm::SpellBook iceBook;
     sm::ecs::Pools iceCombat{};
     iceCombat.mp = 1000;
@@ -653,13 +683,18 @@ int main() {
         return fail("energy_beam cast rejected");
     }
     bool beamFound = false;
-    auto view = world.reg.view<sm::ecs::Projectile>();
-    for (auto e : view) {
-        const auto& p = view.get<sm::ecs::Projectile>(e);
-        if (p.kind == sm::ecs::Projectile::Beam
-            && p.visualOnly
-            && p.beamLength > 0.0f) {
-            beamFound = true;
+    {
+        const sm::sub::SubObjects& bo = sm::sub::objects_of(world.reg);
+        for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+            const std::uint16_t f = bo.flags[std::size_t(s)];
+            if ((f & sm::sub::kObjAlive) == 0u
+                || (f & sm::sub::kObjProjectile) == 0u) continue;
+            const auto& p = bo.projectile[std::size_t(s)];
+            if (p.kind == sm::ecs::Projectile::Beam
+                && p.visualOnly
+                && p.beamLength > 0.0f) {
+                beamFound = true;
+            }
         }
     }
     if (!beamFound) return fail("energy_beam did not spawn beam visual");
@@ -826,6 +861,12 @@ int main() {
     auto hitWorldStore_ = sm::make_macro_store();
 
     sm::store_attach(hitWorld, hitWorldStore_.get());
+
+    // Арена — предусловие снарядов (ступень (v): чистые жильцы
+
+    // арены; §8 п.11 — свидетель сам рожает предусловие).
+
+    sm::test::arena_of(hitWorld.reg);
     sm::SpellBook hitBook;
     sm::ecs::Pools hitCombat{};
     hitCombat.mp = 1000;
@@ -852,6 +893,9 @@ int main() {
     sm::ecs::World hostWorld;
     auto hostWorldStore_ = sm::make_macro_store();
     sm::store_attach(hostWorld, hostWorldStore_.get());
+    // Арена — предусловие снарядов (ступень (v): чистые жильцы
+    // арены; §8 п.11 — свидетель сам рожает предусловие).
+    sm::test::arena_of(hostWorld.reg);
     sm::SpellBook hostBook;
     sm::ecs::Pools hostCombat{};
     hostCombat.mp = 1000;
@@ -877,6 +921,12 @@ int main() {
     auto beamWorldStore_ = sm::make_macro_store();
 
     sm::store_attach(beamWorld, beamWorldStore_.get());
+
+    // Арена — предусловие снарядов (ступень (v): чистые жильцы
+
+    // арены; §8 п.11 — свидетель сам рожает предусловие).
+
+    sm::test::arena_of(beamWorld.reg);
     sm::SpellBook beamBook;
     sm::ecs::Pools beamCombat{};
     beamCombat.mp = 1000;
@@ -905,6 +955,12 @@ int main() {
     auto chainWorldStore_ = sm::make_macro_store();
 
     sm::store_attach(chainWorld, chainWorldStore_.get());
+
+    // Арена — предусловие снарядов (ступень (v): чистые жильцы
+
+    // арены; §8 п.11 — свидетель сам рожает предусловие).
+
+    sm::test::arena_of(chainWorld.reg);
     sm::SpellBook chainBook;
     sm::ecs::Pools chainCombat{};
     chainCombat.mp = 1000;
@@ -943,6 +999,12 @@ int main() {
     auto armWorldStore_ = sm::make_macro_store();
 
     sm::store_attach(armWorld, armWorldStore_.get());
+
+    // Арена — предусловие снарядов (ступень (v): чистые жильцы
+
+    // арены; §8 п.11 — свидетель сам рожает предусловие).
+
+    sm::test::arena_of(armWorld.reg);
     sm::SpellBook armBook;
     sm::ecs::Pools armCombat{};
     armCombat.mp = 2000;
@@ -992,10 +1054,13 @@ int main() {
     bool haveMeteorPosition = false;
     float meteorX = 0.0f;
     float meteorY = 0.0f;
-    auto armView = armWorld.reg.view<sm::ecs::Projectile>();
-    for (auto e : armView) {
-        const auto& pos = *sm::sub::body_pos(armWorld.reg, e);
-        const auto& p = armView.get<sm::ecs::Projectile>(e);
+    const sm::sub::SubObjects& ao = sm::sub::objects_of(armWorld.reg);
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        const std::uint16_t f = ao.flags[std::size_t(s)];
+        if ((f & sm::sub::kObjAlive) == 0u
+            || (f & sm::sub::kObjProjectile) == 0u) continue;
+        const auto& pos = ao.pos[std::size_t(s)];
+        const auto& p = ao.projectile[std::size_t(s)];
         if (p.spellId != armId) return fail("armageddon spawned wrong spell id");
         if (p.kind != sm::ecs::Projectile::Bolt
             || !p.visualOnly
@@ -1048,17 +1113,19 @@ int main() {
         sm::ecs::World selfWorld;
         auto selfWorldStore_ = sm::make_macro_store();
         sm::store_attach(selfWorld, selfWorldStore_.get());
+        // Арена — предусловие снарядов (ступень (v): чистые жильцы
+        // арены; §8 п.11 — свидетель сам рожает предусловие).
+        sm::test::arena_of(selfWorld.reg);
         auto selfPlayer = selfWorld.create();
         sm::test::give_slot(selfWorld.reg, selfPlayer);
         sm::test::give_pos(selfWorld.reg, selfPlayer, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(selfWorld.reg, selfPlayer, sm::ecs::Pools{100, 100});
         sm::test::make_avatar(selfWorld.reg, selfPlayer);
-        auto selfBlast = selfWorld.create();
-        sm::test::give_pos(selfWorld.reg, selfBlast, 0.0f, 0.0f, 0.0f);
         const sm::sub::ObjRef selfRef = sm::sub::ref_of(
             sm::sub::objects_of(selfWorld.reg),
             sm::sub::body_slot(selfWorld.reg, selfPlayer));
-        selfWorld.reg.emplace<sm::ecs::Projectile>(selfBlast,
+        // Снаряд — чистый жилец арены (ступень (v)): слот без сущности.
+        sm::test::give_projectile(selfWorld.reg,
             sm::ecs::Projectile{
                 .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 2.5f,
                 .lifeTimer = 0.0f, .maxLifeTimer = 0.0f, .damage = 10,
@@ -1071,9 +1138,8 @@ int main() {
                 .kind = sm::ecs::Projectile::Bolt, .friendlyFire = true,
                 .visualOnly = true, .explodeOnExpiry = true,
                 .dmgType = std::uint8_t(sm::DamageType::Fire),
-                .critical = false});
-        sm::test::give_projectile(selfWorld.reg, selfBlast,
-                                  selfWorld.reg.get<sm::ecs::Projectile>(selfBlast));
+                .critical = false},
+            sm::ecs::Position{0.0f, 0.0f, 0.0f});
         sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f);
         if (!(hp_of(selfWorld, selfPlayer) < 100.0f)
             || !last_hit_by(selfWorld, selfPlayer, selfPlayer)) {
@@ -1090,17 +1156,18 @@ int main() {
         sm::ecs::World shieldWorld;
         auto shieldWorldStore_ = sm::make_macro_store();
         sm::store_attach(shieldWorld, shieldWorldStore_.get());
+        // Арена — предусловие снарядов (ступень (v): чистые жильцы
+        // арены; §8 п.11 — свидетель сам рожает предусловие).
+        sm::test::arena_of(shieldWorld.reg);
         auto shieldPlayer = shieldWorld.create();
         sm::test::give_slot(shieldWorld.reg, shieldPlayer);
         sm::test::give_pos(shieldWorld.reg, shieldPlayer, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(shieldWorld.reg, shieldPlayer, sm::ecs::Pools{100, 100});
         sm::test::make_avatar(shieldWorld.reg, shieldPlayer);
-        auto shieldBolt = shieldWorld.create();
-        sm::test::give_pos(shieldWorld.reg, shieldBolt, 0.0f, 0.0f, 0.0f);
         const sm::sub::ObjRef shieldRef = sm::sub::ref_of(
             sm::sub::objects_of(shieldWorld.reg),
             sm::sub::body_slot(shieldWorld.reg, shieldPlayer));
-        shieldWorld.reg.emplace<sm::ecs::Projectile>(shieldBolt,
+        sm::test::give_projectile(shieldWorld.reg,
             sm::ecs::Projectile{
                 .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
                 .lifeTimer = 1.0f, .maxLifeTimer = 1.0f, .damage = 10,
@@ -1113,9 +1180,8 @@ int main() {
                 .kind = sm::ecs::Projectile::Bolt, .friendlyFire = false,
                 .visualOnly = false, .explodeOnExpiry = false,
                 .dmgType = std::uint8_t(sm::DamageType::Arcane),
-                .critical = false});
-        sm::test::give_projectile(shieldWorld.reg, shieldBolt,
-                                  shieldWorld.reg.get<sm::ecs::Projectile>(shieldBolt));
+                .critical = false},
+            sm::ecs::Position{0.0f, 0.0f, 0.0f});
         sm::sub::tick_spell_projectiles(shieldWorld, nullptr, 0.0f);
         if (!nearf(hp_of(shieldWorld, shieldPlayer), 90.0f)) {
             return fail("agnostic projectiles: bolt on its own player caster "
@@ -1129,17 +1195,18 @@ int main() {
         sm::ecs::World npcWorld;
         auto npcWorldStore_ = sm::make_macro_store();
         sm::store_attach(npcWorld, npcWorldStore_.get());
+        // Арена — предусловие снарядов (ступень (v): чистые жильцы
+        // арены; §8 п.11 — свидетель сам рожает предусловие).
+        sm::test::arena_of(npcWorld.reg);
         auto npcCaster = npcWorld.create();
         sm::test::give_slot(npcWorld.reg, npcCaster);
         sm::test::give_pos(npcWorld.reg, npcCaster, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(npcWorld.reg, npcCaster, sm::ecs::Pools{100, 100});
         sm::test::give_kind(npcWorld.reg, npcCaster, sm::ecs::NPCKind{2, 2});
-        auto npcBlast = npcWorld.create();
-        sm::test::give_pos(npcWorld.reg, npcBlast, 0.0f, 0.0f, 0.0f);
         const sm::sub::ObjRef npcRef = sm::sub::ref_of(
             sm::sub::objects_of(npcWorld.reg),
             sm::sub::body_slot(npcWorld.reg, npcCaster));
-        npcWorld.reg.emplace<sm::ecs::Projectile>(npcBlast,
+        sm::test::give_projectile(npcWorld.reg,
             sm::ecs::Projectile{
                 .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 2.5f,
                 .lifeTimer = 0.0f, .maxLifeTimer = 0.0f, .damage = 10,
@@ -1152,9 +1219,8 @@ int main() {
                 .kind = sm::ecs::Projectile::Bolt, .friendlyFire = true,
                 .visualOnly = true, .explodeOnExpiry = true,
                 .dmgType = std::uint8_t(sm::DamageType::Fire),
-                .critical = false});
-        sm::test::give_projectile(npcWorld.reg, npcBlast,
-                                  npcWorld.reg.get<sm::ecs::Projectile>(npcBlast));
+                .critical = false},
+            sm::ecs::Position{0.0f, 0.0f, 0.0f});
         sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f);
         if (!(hp_of(npcWorld, npcCaster) < 100.0f)
             || !last_hit_by(npcWorld, npcCaster, npcCaster)) {
@@ -1192,6 +1258,9 @@ int main() {
             sm::ecs::World sweepWorld;
             auto sweepWorldStore_ = sm::make_macro_store();
             sm::store_attach(sweepWorld, sweepWorldStore_.get());
+            // Арена — предусловие снарядов (ступень (v): чистые жильцы
+            // арены; §8 п.11 — свидетель сам рожает предусловие).
+            sm::test::arena_of(sweepWorld.reg);
             sm::SpellBook sweepBook;
             sm::ecs::Pools sweepCombat{};
             sweepCombat.mp = 1000;
@@ -1248,12 +1317,14 @@ int main() {
     // о касте, который «фыркнул и ничего не нашёл».
     // Обе полярности в одном блоке: забитая арена обязана дать НОЛЬ снарядов,
     // а освобождённый слот — ровно один, и числа его обязаны лежать В КОЛОНКЕ
-    // (`projectile_of`), иначе свидетель охранял бы компоненту, которая в
-    // ломте 7 умрёт.
+    // арены (ступень (v): компонента умерла, снаряд — чистый жилец слота).
     {
         sm::ecs::World capWorld;
         auto capStore_ = sm::make_macro_store();
         sm::store_attach(capWorld, capStore_.get());
+        // Арена — предусловие снарядов (ступень (v): чистые жильцы
+        // арены; §8 п.11 — свидетель сам рожает предусловие).
+        sm::test::arena_of(capWorld.reg);
         sm::sub::SubObjects& capArena = sm::test::arena_of(capWorld.reg);
         int capFilled = 0;
         while (capArena.alloc(sm::ecs::Position{}) >= 0) ++capFilled;
@@ -1282,12 +1353,16 @@ int main() {
             sm::spell_ordinal("magic_bolt"), sm::sub::ObjRef{},
             100.0f, 100.0f, 0.0f, 1.0f, 0.0f, 0.0f, true);
         int capWithColumn = 0;
-        for (auto e : capWorld.reg.view<sm::ecs::Projectile>()) {
-            const sm::ecs::Projectile* col =
-                sm::sub::projectile_of(capWorld.reg, e);
-            if (col != nullptr && col->spellId == sm::stable_spell_id("magic_bolt")
-                && sm::sub::is_projectile(capWorld.reg, e)) {
-                ++capWithColumn;
+        {
+            const sm::sub::SubObjects& co = sm::sub::objects_of(capWorld.reg);
+            for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+                const std::uint16_t f = co.flags[std::size_t(s)];
+                if ((f & sm::sub::kObjAlive) == 0u
+                    || (f & sm::sub::kObjProjectile) == 0u) continue;
+                if (co.projectile[std::size_t(s)].spellId
+                    == sm::stable_spell_id("magic_bolt")) {
+                    ++capWithColumn;
+                }
             }
         }
         CHECK(capCast2 && capWithColumn == 1,

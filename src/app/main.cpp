@@ -5109,9 +5109,9 @@ void draw_debug_panels(App& app) {
                         ImGui::TextUnformatted(
                             sm::valid_npc_kind(std::uint8_t(k->type))
                                 ? sm::npc_def(sm::NPCType(k->type)).label : "?");
-                    } else if (sm::sub::is_projectile(reg, e)) {
-                        ImGui::TextUnformatted("(projectile)");
                     } else {
+                        // Снарядов в сущностной таблице нет (ступень (v):
+                        // чистые жильцы арены) — их счёт даёт Projectile(col).
                         ImGui::TextUnformatted("-");
                     }
                     ImGui::TableNextColumn();

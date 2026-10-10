@@ -526,56 +526,10 @@ inline void clear_airborne(entt::registry& reg, entt::entity e) {
     if (SubObjects* o = objects_find(reg)) slot_clear_airborne(*o, s);
 }
 
-// ── СНАРЯД — КОЛОНКА АРЕНЫ (M-150 ломоть 4) ─────────────────────────────
-// Бывшая компонента ecs::Projectile. Роль — бит kObjProjectile, его ставит
-// ТОЛЬКО set_projectile (у снаряда нет запретного нуля: нулевая скорость
-// законна у метеоров, Bolt = 0, жизнь — шкала с достижимым нулём, так что
-// сентинел попал бы внутрь области значений — ровно случай боевого листа).
-// nullptr — прежняя семантика «компоненты нет»: слота нет ИЛИ слот не
-// снаряд. Снимать бит некому: снаряд умирает слотом целиком (queue_reap →
-// destroy → on_destroy-хук), а слот зануляет колонку при следующей выдаче.
-inline ecs::Projectile* projectile_of(entt::registry& reg, entt::entity e) {
-    const int s = body_slot(reg, e);
-    if (s < 0) return nullptr;
-    SubObjects* o = objects_find(reg);
-    return o != nullptr ? slot_projectile(*o, s) : nullptr;
-}
-inline const ecs::Projectile* projectile_of(const entt::registry& reg,
-                                            entt::entity e) {
-    return projectile_of(const_cast<entt::registry&>(reg), e);
-}
-inline bool is_projectile(const entt::registry& reg, entt::entity e) {
-    const int s = body_slot(reg, e);
-    if (s < 0) return false;
-    const SubObjects* o = objects_find(const_cast<entt::registry&>(reg));
-    return o != nullptr && slot_is_projectile(*o, s);
-}
-inline void set_projectile(entt::registry& reg, entt::entity e,
-                           const ecs::Projectile& p) {
-    const int s = body_slot(reg, e);
-    if (s < 0) return;
-    if (SubObjects* o = objects_find(reg)) slot_set_projectile(*o, s, p);
-}
-// РОДИТЬ СНАРЯД ЖИЛЬЦОМ АРЕНЫ — одна дверь на все четыре места выстрела.
-// `false` значит КАП: слота нет, и снаряда быть не должно вовсе — звонящий
-// убирает сущность и отказывается честно, ровно как `BodyCrowd::add` (до
-// ломтя 4 у снарядов капа не было ВООБЩЕ, слот и есть первый). Каст при
-// этом уже оплачен маной и восстановлением — как промах мечом (вердикт
-// владельца 2026-09-17 о касте, который «фыркнул и ничего не нашёл»).
-// Фикстура без арены рождает снаряд бесслотным и получает `true`: правду
-// несёт компонента, пока она жива, — та же ветка ТРАНЗИТА, что у тел
-// (`spawn.cpp`), и умирает она вместе с реестром (ломоть 7).
-inline bool birth_projectile(entt::registry& reg, entt::entity e,
-                             const ecs::Projectile& p,
-                             const ecs::Position& at) {
-    SubObjects* objs = objects_find(reg);
-    if (objs == nullptr) return true;
-    const int slot = objs->alloc(at);
-    if (slot < 0) return false;
-    reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
-    set_projectile(reg, e, p);
-    return true;
-}
+// (Entity-двери снаряда — projectile_of/is_projectile/set_projectile и
+// сущностная birth_projectile — умерли в ступени (v) ломтя 7: снаряд стал
+// ЧИСТЫМ ЖИЛЬЦОМ АРЕНЫ, рождение и жатва — слот-дверями doors.h, сущности
+// у него нет.)
 
 inline const ecs::MissileAttack* body_missile(const entt::registry& reg,
                                               entt::entity e) {

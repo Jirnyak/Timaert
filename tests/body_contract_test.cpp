@@ -658,10 +658,14 @@ void test_a_reused_slot_is_born_clean() {
 }
 
 // БИЕКЦИЯ АРЕНЫ — закон, на котором стоит ломоть 6 (ключ «жилец сцены»
-// переезжает с тега SubworldTag на слот): живой слот ⟷ ровно одна сущность
-// с ObjectSlot. Рождение прод-дверью даёт пару слот+сущность атомарно
-// (слот раньше сущности, отказ честный — ломоть 5); смерть сущности
-// возвращает слот через ЕДИНСТВЕННУЮ точку освобождения — on_destroy-хук
+// переезжает с тега SubworldTag на слот): живой НЕ-СНАРЯДНЫЙ слот ⟷ ровно
+// одна сущность с ObjectSlot. Ступень (v) внесла единственное изъятие и
+// оно само — закон: СНАРЯД есть чистый жилец арены БЕЗ сущности (рождение
+// слот-дверью birth_projectile, жатва — arena.free), так что снарядный
+// слот с сущностью — то же нарушение, что тело без неё. Рождение тела
+// прод-дверью даёт пару слот+сущность атомарно (слот раньше сущности,
+// отказ честный — ломоть 5); смерть сущности возвращает слот через
+// ЕДИНСТВЕННУЮ точку освобождения — on_destroy-хук
 // (objects_attach@src/sub/record.h). Свидетель считает ОБЕ стороны и ловит
 // дубль слота. Мутация «хук отвязан» обязана КРАСНИТЬ счётом после смерти;
 // «жнец не зовёт destroy» биекцию НЕ рвёт (слот и сущность живы оба) —
@@ -686,7 +690,7 @@ void test_live_slots_and_slot_entities_are_a_bijection() {
 
     const auto bijectionHolds = [&](const char* when) {
         int entities = 0;
-        bool dup = false, deadSlot = false;
+        bool dup = false, deadSlot = false, entOnBolt = false;
         std::vector<bool> seen(std::size_t(kMaxSubObjects), false);
         for (auto e : reg.view<ecs::ObjectSlot>()) {
             ++entities;
@@ -695,21 +699,38 @@ void test_live_slots_and_slot_entities_are_a_bijection() {
             if (seen[s]) dup = true;
             seen[s] = true;
             if (!(arena.flags[s] & sub::kObjAlive)) deadSlot = true;
+            if (arena.flags[s] & sub::kObjProjectile) entOnBolt = true;
         }
-        int aliveFlags = 0;
+        int aliveBodies = 0, aliveBolts = 0;
         for (int s = 0; s < int(kMaxSubObjects); ++s) {
-            if (arena.flags[std::size_t(s)] & sub::kObjAlive) ++aliveFlags;
+            const std::uint16_t f = arena.flags[std::size_t(s)];
+            if ((f & sub::kObjAlive) == 0u) continue;
+            if ((f & sub::kObjProjectile) != 0u) ++aliveBolts;
+            else ++aliveBodies;
         }
         CHECK(!dup, "no slot is named by two entities");
         CHECK(!deadSlot, "no entity points at a dead slot");
-        CHECK(entities == arena.count && aliveFlags == arena.count,
+        CHECK(!entOnBolt,
+              "a projectile slot carries NO entity (ступень (v))");
+        CHECK(entities == aliveBodies
+                  && aliveBodies + aliveBolts == arena.count,
               when);
     };
-    bijectionHolds("after five births: slots == entities == count");
+    bijectionHolds("after five births: body slots == entities == count");
+
+    // Снаряд — чистый жилец арены: живых слотов становится на один больше,
+    // сущностей — ровно столько же.
+    const int boltSlot = sm::test::give_projectile(
+        reg, ecs::Projectile{}, ecs::Position{1.0f, 1.0f, 0.0f});
+    CHECK_OR_RETURN(boltSlot >= 0, "the projectile door births a slot");
+    bijectionHolds("a slot-only bolt widens alive slots, not entities");
 
     reg.destroy(born[1]);
     reg.destroy(born[3]);
     bijectionHolds("after two deaths: the hook returned both slots");
+
+    arena.free(boltSlot);
+    bijectionHolds("the spell reaper's free() returns the bolt's slot");
 }
 
 int main() {

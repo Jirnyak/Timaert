@@ -178,14 +178,17 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
 
     const float dt = 1.0f / 64.0f;
     int ticks = 1;
-    const auto pe = reg.create();
+    // Снаряд — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v)): рождается слот-дверью,
+    // сущности нет; позиция — аргумент рождения.
+    Projectile boltP{};
+    Position boltAt{};
     switch (scenario) {
     case 0: {
         // Владелец — ссылка сцены (iii-б): пара {slot, id} тела bodies[0].
         const sm::sub::ObjRef owner = sm::sub::ref_of(
             sm::sub::objects_of(reg), sm::sub::body_slot(reg, bodies[0]));
-        sm::test::give_pos(reg, pe, 98.5f, 100.0f, 1.0f);
-        reg.emplace<Projectile>(pe, Projectile{
+        boltAt = Position{98.5f, 100.0f, 1.0f};
+        boltP = Projectile{
             .vx = 400.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
             .lifeTimer = 1.0f, .maxLifeTimer = 1.0f,
             .damage = 13, .blastRadius = 0.0f,
@@ -195,13 +198,13 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
             .chainRemaining = std::int16_t{0}, .kind = Projectile::Bolt,
             .friendlyFire = false, .visualOnly = false,
             .explodeOnExpiry = false, .dmgType = std::uint8_t(0),
-            .critical = false});
+            .critical = false};
         ticks = 10;
         break;
     }
     case 1:
-        sm::test::give_pos(reg, pe, 500.0f, 500.0f, 1.0f);
-        reg.emplace<Projectile>(pe, Projectile{
+        boltAt = Position{500.0f, 500.0f, 1.0f};
+        boltP = Projectile{
             .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
             .lifeTimer = 0.005f, .maxLifeTimer = 1.0f, // expires first tick
             .damage = 20, .blastRadius = 12.0f,
@@ -212,16 +215,15 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
             .chainRemaining = std::int16_t{0}, .kind = Projectile::Bolt,
             .friendlyFire = false, .visualOnly = false,
             .explodeOnExpiry = true, .dmgType = std::uint8_t(0),
-            .critical = false});
+            .critical = false};
         break;
     case 2: {
         // Direction (10, 0, 2) normalised inside; entity sits at the beam
         // midpoint, origin Z therefore 1.0 (see apply_spell_beam).
         const float len3 = std::sqrt(10.0f * 10.0f + 2.0f * 2.0f);
         const float nx = 10.0f / len3, nz = 2.0f / len3;
-        sm::test::give_pos(reg, pe, 600.0f + nx * 20.0f, 600.0f,
-                           1.0f + nz * 20.0f);
-        reg.emplace<Projectile>(pe, Projectile{
+        boltAt = Position{600.0f + nx * 20.0f, 600.0f, 1.0f + nz * 20.0f};
+        boltP = Projectile{
             .vx = 10.0f, .vy = 0.0f, .vz = 2.0f, .radius = 1.2f,
             .lifeTimer = 0.005f, .maxLifeTimer = 1.0f,
             .damage = 15, .blastRadius = 0.0f,
@@ -232,12 +234,12 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
             .chainRemaining = std::int16_t{0}, .kind = Projectile::Beam,
             .friendlyFire = false, .visualOnly = false,
             .explodeOnExpiry = false, .dmgType = std::uint8_t(0),
-            .critical = false});
+            .critical = false};
         break;
     }
     case 3:
-        sm::test::give_pos(reg, pe, 800.0f, 800.0f, 1.0f);
-        reg.emplace<Projectile>(pe, Projectile{
+        boltAt = Position{800.0f, 800.0f, 1.0f};
+        boltP = Projectile{
             .vx = 400.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
             .lifeTimer = 1.0f, .maxLifeTimer = 1.0f,
             .damage = 16, .blastRadius = 0.0f,
@@ -248,14 +250,11 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
             .chainRemaining = std::int16_t{3}, .kind = Projectile::Bolt,
             .friendlyFire = false, .visualOnly = false,
             .explodeOnExpiry = false, .dmgType = std::uint8_t(0),
-            .critical = false});
+            .critical = false};
         ticks = 10;
         break;
     }
-    // Колонка арены (ломоть 4): снаряд — жилец слота. Значение берётся у
-    // только что записанной компоненты, поэтому два носителя разъехаться не
-    // могут по построению; строка умирает в К7 вместе с компонентой.
-    sm::test::give_projectile(reg, pe, reg.get<Projectile>(pe));
+    sm::test::give_projectile(reg, boltP, boltAt);
 
     GridBroadPhase grid{};
     grid.build(reg);

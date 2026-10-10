@@ -99,13 +99,6 @@ static int smoke_projectile_count(entt::registry& reg) {
     return n;
 }
 
-// Снаряд-фикстура смоука (ломоть 4): слот + колонка + роль-бит, как записала
-// бы дверь выстрела birth_projectile.
-static void smoke_give_projectile(entt::registry& reg, entt::entity e,
-                                  const sm::ecs::Projectile& p) {
-    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
-    sm::sub::set_projectile(reg, e, p);
-}
 static void smoke_give_visual(entt::registry& reg, entt::entity e,
                               sm::ecs::VisualPos v) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
@@ -5016,7 +5009,6 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const int kFriendlySpellDamage = 13;
     const float beforeFriendlySpellHp = (*sm::sub::body_pools(reg, target)).hp;
     const int beforeFriendlySpellLog = app.subworld.combat_log_count();
-    const entt::entity friendlyProjectile = reg.create();
     // Parked exactly ON the peasant, at its own ground height. Two properties
     // fall out and both matter: the hit test measures zero distance, so contact
     // does not depend on anybody's radius; and the ground reap
@@ -5025,12 +5017,11 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // about the reputation law, not about projectile geometry — cast_spell
     // proves a real bolt's flight, so this one should not be able to fail for
     // aiming reasons.
-    smoke_give_pos(reg, friendlyProjectile, tx, py, pz);
     // Владелец — ссылка АВАТАРА (пара {ownerSlot, ownerId}, iii-б), not a
     // placeholder zero: it is what makes this the player's bolt, and only a
     // player-owned hit reaches the damage-log callback that charges
     // reputation (spell_effects.cpp apply_spell_damage).
-    // Поля НАЗВАНЫ (0b ломтя 7): позиционный emplace переживал перестановку
+    // Поля НАЗВАНЫ (0b ломтя 7): позиционный список переживал перестановку
     // полей молча; designated-форму красит -Wreorder-init-list -Werror.
     const sm::sub::ObjRef smokeCaster = sm::sub::objects_of(reg).avatar;
     const sm::ecs::Projectile friendlyBolt{
@@ -5048,12 +5039,17 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         .explodeOnExpiry = false,
         .dmgType = std::uint8_t(sm::DamageType::Blunt),
         .critical = false};
-    reg.emplace<sm::ecs::Projectile>(friendlyProjectile, friendlyBolt);
-    // Колонка арены (ломоть 4): снаряд-фикстура — такой же жилец слота, как
-    // рождённый дверью выстрела; значение берётся у компоненты, что исключает
-    // расхождение двух носителей. Строка умрёт вместе с компонентой (К7).
-    smoke_give_projectile(reg, friendlyProjectile,
-                          reg.get<sm::ecs::Projectile>(friendlyProjectile));
+    // Снаряд — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v)): рождается слот-дверью
+    // выстрела, сущности нет. Уборку несёт ССЫЛКА сцены: слот кросс-тиковый
+    // (жнец спелл-тика мог освободить и переродить его), голый номер соврал бы.
+    const int friendlySlot = sm::sub::birth_projectile(
+        sm::sub::objects_of(reg), friendlyBolt, sm::ecs::Position{tx, py, pz});
+    if (friendlySlot < 0) {
+        smoke_fail(app, "subworld_reputation_hit friendly bolt: arena full");
+        return false;
+    }
+    const sm::sub::ObjRef friendlyRef =
+        sm::sub::ref_of(sm::sub::objects_of(reg), friendlySlot);
     RuntimeFrameStats friendlySpellFrame =
         advance_sim_seconds(app, 0.05f, false);
     if (!friendlySpellFrame.ticked || !friendlySpellFrame.subworldActive) {
@@ -5067,8 +5063,13 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const bool spellLogged =
         app.subworld.combat_log_count() > beforeFriendlySpellLog;
     const bool friendlySpellHit = spellTookHp && spellLogged;
-    if (reg.valid(friendlyProjectile)) {
-        reg.destroy(friendlyProjectile);
+    {
+        // Болт обычно уже сжат спелл-тиком (попадание = queue_reap → free);
+        // ссылка отвечает «моя ли это ещё запись» — перерождённый слот не
+        // трогаем.
+        sm::sub::SubObjects& sobjs = sm::sub::objects_of(reg);
+        const int fs = sm::sub::ref_slot(sobjs, friendlyRef);
+        if (fs >= 0) sobjs.free(fs);
     }
 
     app.subworld.set_player_attack_held(true);
@@ -9241,14 +9242,19 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const int afterProjectiles = smoke_projectile_count(app.ecs.reg);
-            // «Несёт ли болт свет» — вопрос к СВЕТИЛЬНИКАМ, а не к снарядам:
-            // идём по тем, у кого свет есть, и роль спрашиваем колонкой. Так
-            // счёт снарядов и вопрос о свете перестают делить один индекс.
+            // «Несёт ли болт свет» — вопрос к МАСКЕ слота (ступень (v):
+            // снаряд — чистый жилец арены, сущностной вьюхе он не виден).
             int litProjectiles = 0;
-            for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
-                if (!sm::sub::object_flag(app.ecs.reg, e,
-                                          sm::sub::kObjHasLight)) continue;
-                if (sm::sub::is_projectile(app.ecs.reg, e)) ++litProjectiles;
+            if (const sm::sub::SubObjects* lo =
+                    sm::sub::objects_find(app.ecs.reg)) {
+                for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+                    const std::uint16_t f = lo->flags[std::size_t(s)];
+                    if ((f & sm::sub::kObjAlive) != 0u
+                        && (f & sm::sub::kObjHasLight) != 0u
+                        && (f & sm::sub::kObjProjectile) != 0u) {
+                        ++litProjectiles;
+                    }
+                }
             }
             if (afterProjectiles <= beforeProjectiles) {
                 smoke_fail(app, "cast_bolt_capture projectile not spawned");
