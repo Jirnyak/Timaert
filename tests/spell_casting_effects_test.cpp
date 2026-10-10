@@ -462,7 +462,9 @@ int main() {
         // player's physical width. The shell belongs to the body now, so an
         // expectation that names a width names the wrong thing.
         || !(magicBoltPos.x - 100.0f
-             > sm::sub::body_radius(world.reg, entt::entity(0))
+             > sm::sub::slot_body_radius(
+                   sm::sub::objects_of(world.reg),
+                   sm::sub::body_slot(world.reg, entt::entity(0)))
                    + magicBolt.radius)
         || !nearf(magicBoltPos.y, 100.0f)
         || !nearf(magicBoltPos.y, 100.0f)
@@ -704,7 +706,9 @@ int main() {
         // The beam's origin obeys the same muzzle law as a bolt, and is
         // asserted as that law rather than as the number it came to.
         || !(beamDesc.originX - 100.0f
-             > sm::sub::body_radius(world.reg, entt::entity(0))
+             > sm::sub::slot_body_radius(
+                   sm::sub::objects_of(world.reg),
+                   sm::sub::body_slot(world.reg, entt::entity(0)))
                    + beamDesc.radius)
         || !nearf(beamDesc.originY, 100.0f)) {
         return fail("the beam is born OUTSIDE the caster body - muzzle clear of body_radius plus its own");

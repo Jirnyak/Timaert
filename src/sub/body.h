@@ -34,12 +34,8 @@
 
 #include "ecs/components.h"
 #include "tables/npc.h"
-#include "macro/fauna.h"
-#include "macro/store.h"
-#include "sub/height.h"   // kBodyEyeM — the number body_eye_m() hands out
-#include "sub/record.h"   // body_kind — род тела из колонки арены (кусок 1)
-
-#include <entt/entt.hpp>  // registry-читатели ниже; транзит store.h умер (M-150 шаг 0)
+#include "sub/height.h"   // kBodyEyeM — the number slot_body_eye_m() hands out
+#include "sub/doors.h"    // slot_kind/slot_ai/slot_sprite — колонки арены
 
 namespace sm::sub {
 
@@ -59,8 +55,8 @@ inline const NpcTypeDef* row_for(const ecs::NPCKind* kind) {
 }
 
 // THE combat half-width of a body, in world units (≈ metres). Слот-форма —
-// конечная (ломоть 7 (iii-б)); entity-форма ниже — тонкий адаптер, умирает
-// со ступенью (vi).
+// конечная (ломоть 7 (iii-б)); entity-адаптер умер в (ii-б) — все звонящие
+// держат слот.
 inline float slot_body_radius(const SubObjects& o, int s) {
     if (const NpcTypeDef* row = row_for(slot_kind(o, s))) {
         // The row's ONE width column, man-shaped default resolved (npc.h).
@@ -71,11 +67,6 @@ inline float slot_body_radius(const SubObjects& o, int s) {
     if (const auto* ai = slot_ai(o, s)) return ai->radius;
     if (const auto* sp = slot_sprite(o, s)) return sp->scale;
     return kBodyRadiusFallback;
-}
-inline float body_radius(const entt::registry& reg, entt::entity e) {
-    const int s = body_slot(reg, e);
-    if (s < 0) return kBodyRadiusFallback;
-    return slot_body_radius(objects_of(const_cast<entt::registry&>(reg)), s);
 }
 
 // THE height THIS body looks and shoots from, in world units (≈ metres) above
@@ -96,13 +87,9 @@ inline float body_radius(const entt::registry& reg, entt::entity e) {
 // the same number it always did, and nothing moves. What changed is that there
 // is now somewhere for a row to answer FROM: give `kNpcTypeDefs` an eye column
 // and every caster, archer and camera in the game follows it at once.
-// Слот-форма — конечная (ломоть 7 (iv)); entity-форма — тонкий адаптер.
+// Слот-форма — конечная (ломоть 7 (iv)); entity-адаптер умер в (ii-б).
 inline float slot_body_eye_m(const SubObjects& o, int s) {
     (void)o; (void)s;     // the row does not speak yet; the door already does
-    return kBodyEyeM;
-}
-inline float body_eye_m(const entt::registry& reg, entt::entity e) {
-    (void)reg; (void)e;
     return kBodyEyeM;
 }
 

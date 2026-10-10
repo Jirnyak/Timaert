@@ -114,15 +114,17 @@ struct GridBroadPhase {
     void build(entt::registry& reg) {
         units->clear();
         slots.clear();
+        sm::sub::SubObjects& objs = sm::sub::objects_of(reg);
         auto view = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
-            if (sm::sub::body_pools(reg, e) == nullptr) continue;
-            const Position& p = *sm::sub::body_pos(reg, e);
+            const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_pools(objs, s) == nullptr) continue;
+            const Position& p = objs.pos[std::size_t(s)];
             sm::sub::BodyDesc d{};
             d.x = p.x; d.y = p.y; d.z = p.z;
-            d.radius = sm::sub::body_radius(reg, e);
+            d.radius = sm::sub::slot_body_radius(objs, s);
             units->add(d);
-            slots.push_back(view.get<sm::ecs::ObjectSlot>(e).slot);
+            slots.push_back(std::uint16_t(s));
         }
         const sm::sub::MoveParams prm{};
         build_unit_grid(pick, *units, pick_cell_for(*units, prm), 256);

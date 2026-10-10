@@ -3212,7 +3212,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
 
         BodyDesc d{};
         d.x = p.x; d.y = p.y; d.z = p.z;
-        d.radius = body_radius(reg, e);
+        d.radius = sub::slot_body_radius(arena, int(slot));
         // The column's OTHER half, from the same authority the renderer
         // draws: the Sprite's per-entity height (its row's body_height_m ×
         // the shape byte, stamped at birth). Separation touches two bodies
@@ -4528,9 +4528,15 @@ bool SubworldEngine::try_exit_dungeon() {
 
 float SubworldEngine::player_muzzle_z() const {
     // The body he is IN answers, not a constant: possession puts him in a
-    // wolf, and a wolf sights along a wolf's head.
-    return playerZ_ + (ecs_ ? body_eye_m(ecs_->reg, player_entity())
-                            : kBodyEyeM);
+    // wolf, and a wolf sights along a wolf's head. Слот аватара — ref_slot
+    // (жив-дверь); между сценами тела нет, и константа — честный ответ.
+    if (ecs_) {
+        if (sub::SubObjects* objs = sub::objects_find(ecs_->reg)) {
+            const int s = sub::ref_slot(*objs, objs->avatar);
+            if (s >= 0) return playerZ_ + sub::slot_body_eye_m(*objs, s);
+        }
+    }
+    return playerZ_ + kBodyEyeM;
 }
 
 entt::entity SubworldEngine::player_entity() const {
@@ -4545,8 +4551,11 @@ entt::entity SubworldEngine::player_entity() const {
 // not the hero's. Between scenes there is no body, and the man-shaped default
 // is the honest stand-in for the scalars that still have to be placed.
 float SubworldEngine::player_body_radius() const {
-    const entt::entity e = player_entity();
-    return e == entt::null ? kBodyRadiusFallback : body_radius(ecs_->reg, e);
+    if (!ecs_) return kBodyRadiusFallback;
+    sub::SubObjects* objs = sub::objects_find(ecs_->reg);
+    if (objs == nullptr) return kBodyRadiusFallback;
+    const int s = sub::ref_slot(*objs, objs->avatar);
+    return s < 0 ? kBodyRadiusFallback : sub::slot_body_radius(*objs, s);
 }
 
 bool SubworldEngine::flying() const {
@@ -4975,12 +4984,12 @@ void SubworldEngine::tick(float dt) {
                 // прежний отсев роли умер вместе с транзитом.
                 if (sub::is_avatar(ecs_->reg, e)) continue;
                 if (sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
-                ecs::Position& p = arena.pos[std::size_t(
-                    gv.get<ecs::ObjectSlot>(e).slot)];
+                const int s = int(gv.get<ecs::ObjectSlot>(e).slot);
+                ecs::Position& p = arena.pos[std::size_t(s)];
                 float supportZ = mgr_.height_field().sample(p.x, p.y);
                 if (!structIndex_.empty()) {
                     supportZ = std::max(supportZ, structIndex_.support_at(
-                        p.x, p.y, body_radius(ecs_->reg, e), p.z));
+                        p.x, p.y, sub::slot_body_radius(arena, s), p.z));
                 }
                 float* vz = sub::airborne_vz(ecs_->reg, e);
                 if (vz == nullptr) {
@@ -5001,7 +5010,8 @@ void SubworldEngine::tick(float dt) {
                     // (apply_fall_damage — honest kinetics, neutral death).
                     if (prevVz < 0.0f) {
                         apply_fall_damage(ecs_->reg, e, -prevVz,
-                                          body_radius(ecs_->reg, e), bus_);
+                                          sub::slot_body_radius(arena, s),
+                                          bus_);
                     }
                 }
             }
@@ -5022,8 +5032,8 @@ void SubworldEngine::tick(float dt) {
             for (auto e : fv) {
                 if (sub::is_avatar(ecs_->reg, e)) continue;
                 if (!sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
-                ecs::Position& p = arena.pos[std::size_t(
-                    fv.get<ecs::ObjectSlot>(e).slot)];
+                const int s = int(fv.get<ecs::ObjectSlot>(e).slot);
+                ecs::Position& p = arena.pos[std::size_t(s)];
                 // Вертикальное НАМЕРЕНИЕ мозга (SubworldAi.wantVz, третья
                 // ось — полёт-посадка 2026-09-10) интегрируется здесь, тем
                 // же тактом, что клампится конверт: mover исполняет, мозг
@@ -5034,7 +5044,7 @@ void SubworldEngine::tick(float dt) {
                 float floorZ = mgr_.height_field().sample(p.x, p.y);
                 if (!structIndex_.empty()) {
                     floorZ = std::max(floorZ, structIndex_.support_at(
-                        p.x, p.y, body_radius(ecs_->reg, e), p.z));
+                        p.x, p.y, sub::slot_body_radius(arena, s), p.z));
                 }
                 p.z = std::clamp(p.z, floorZ, std::max(floorZ, ceilZ));
             }

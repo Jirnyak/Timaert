@@ -33,8 +33,6 @@ channel	src/sub/ability.h	#include "macro/anketa.h"
 channel	src/sub/ai.cpp	#include "macro/macro_stock.h"
 channel	src/sub/ai.cpp	#include "macro/store.h"
 channel	src/sub/ai.h	#include "macro/anketa.h"
-channel	src/sub/body.h	#include "macro/fauna.h"
-channel	src/sub/body.h	#include "macro/store.h"
 channel	src/sub/damage.cpp	#include "macro/store.h"
 channel	src/sub/engine.cpp	#include "macro/anketa.h"
 channel	src/sub/engine.cpp	#include "macro/cell_facts.h"
@@ -163,7 +161,6 @@ entt	src/app/smoke.h	entt
 entt	src/content/spells/effects.cpp	entt
 entt	src/ecs/world.h	entt
 entt	src/sub/ai.cpp	entt
-entt	src/sub/body.h	entt
 entt	src/sub/damage.cpp	entt
 entt	src/sub/damage.h	entt
 entt	src/sub/engine.cpp	entt
