@@ -4673,9 +4673,9 @@ bool run_subworld_player_melee_smoke(App& app) {
     // Атрибуция — колонка единого массива объектов (M-150 1а; вспышка
     // тела снесена вердиктом 2026-10-05).
     const auto* osMelee = reg.try_get<sm::ecs::ObjectSlot>(target);
-    const std::uint32_t meleeLastBy = osMelee
+    const sm::sub::ObjRef meleeLastBy = osMelee
         ? sm::sub::objects_of(reg).lastHitBy[osMelee->slot]
-        : sm::sub::kObjNoAttacker;
+        : sm::sub::ObjRef{};
     const int afterCombatLog = app.subworld.combat_log_count();
     const sm::sub::CombatLogEntry* combatLog =
         app.subworld.combat_log_entry(afterCombatLog - 1);
@@ -4723,9 +4723,7 @@ bool run_subworld_player_melee_smoke(App& app) {
                  double(minStrike),
                  double(maxStrike),
                  combatRouted ? 1 : 0,
-                 meleeLastBy == std::uint32_t(entt::to_integral(
-                                    sm::sub::current_player_body(app.ecs)))
-                     ? 1 : 0,
+                 meleeLastBy == sm::sub::objects_of(reg).avatar ? 1 : 0,
                  combatLogVisible ? combatLog->text : "",
                  statusSet ? status : "");
     std::fflush(stderr);
@@ -4753,11 +4751,9 @@ bool run_subworld_player_melee_smoke(App& app) {
                     "what landed lies inside the roll the SHEET can produce — "
                     "the bare bandit wears no armour, so roll == wound");
     }
-    SMOKE_CHECK(app, meleeLastBy != sm::sub::kObjNoAttacker,
+    SMOKE_CHECK(app, meleeLastBy.id != 0u,
                 "the struck body remembers who hit it");
-    SMOKE_CHECK(app, meleeLastBy
-                    == std::uint32_t(entt::to_integral(
-                           sm::sub::current_player_body(app.ecs))),
+    SMOKE_CHECK(app, meleeLastBy == sm::sub::objects_of(reg).avatar,
                 "attribution names the PLAYER'S BODY — the hand that swung");
     SMOKE_CHECK(app, afterCombatLog > beforeCombatLog,
                 "the strike appended a combat log line");
@@ -4896,9 +4892,9 @@ bool run_subworld_player_bow_smoke(App& app) {
     const auto* hp = sm::sub::body_pools(reg, target);
     // Атрибуция — колонка lastHitBy (M-150 1а).
     const auto* osBow = reg.try_get<sm::ecs::ObjectSlot>(target);
-    const std::uint32_t bowLastBy = osBow
+    const sm::sub::ObjRef bowLastBy = osBow
         ? sm::sub::objects_of(reg).lastHitBy[osBow->slot]
-        : sm::sub::kObjNoAttacker;
+        : sm::sub::ObjRef{};
     const float afterHp = hp ? hp->hp : -1.0f;
     const float dealt = beforeHp - afterHp;
 
@@ -4909,9 +4905,7 @@ bool run_subworld_player_bow_smoke(App& app) {
                  missileRouted ? 1 : 0,
                  unsigned(gateSteps),
                  double(beforeHp), double(afterHp),
-                 bowLastBy == std::uint32_t(entt::to_integral(
-                                  sm::sub::current_player_body(app.ecs)))
-                     ? 1 : 0);
+                 bowLastBy == sm::sub::objects_of(reg).avatar ? 1 : 0);
     std::fflush(stderr);
 
     // The projectile COUNT is diagnostic only: at 8 units the arrow can
@@ -4921,8 +4915,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     if (!missileRouted
         || gateSteps == 0u
         || !hp || dealt <= 0.0f
-        || bowLastBy != std::uint32_t(entt::to_integral(
-               sm::sub::current_player_body(app.ecs)))) {
+        || bowLastBy != sm::sub::objects_of(reg).avatar) {
         smoke_fail(app, "subworld_player_bow invariant");
         return false;
     }
@@ -6026,12 +6019,12 @@ bool run_console_smoke(App& app) {
         }
         const int expBefore = sm::player_sheet(app.gs, *app.macroStore)->levelData.exp;
         // Убийца — ТЕЛО аватара (§41 корень 5): жнец резолвит лидера по
-        // телу, и «ничей» чит-кил (attackerId 0) честно не платит никому.
+        // телу, и «ничей» чит-кил (attacker.id == 0) честно не платит никому.
         sm::sub::apply_lethal_damage(
             reg, wolfE,
             sm::sub::DamageSource{
-                std::uint32_t(entt::to_integral(
-                    sm::sub::current_player_body(app.ecs))), true},
+                .attacker = sm::sub::objects_of(reg).avatar,
+                .playerOwned = true},
             sm::sub::DamageKind::Dev, &app.bus);
         app.subworld.tick(0.016f);
         if (sm::player_sheet(app.gs, *app.macroStore)->levelData.exp <= expBefore) {
@@ -7574,12 +7567,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             // Убийца — ТЕЛО аватара (§41 корень 5): жнец резолвит лидера
-            // по телу; «ничей» кил (attackerId 0) честно не платит никому.
+            // по телу; «ничей» кил (attacker.id == 0) честно не платит никому.
             sm::sub::apply_lethal_damage(
                 app.ecs.reg, smokeHostile,
                 sm::sub::DamageSource{
-                    std::uint32_t(entt::to_integral(
-                        sm::sub::current_player_body(app.ecs))), true},
+                    .attacker = sm::sub::objects_of(app.ecs.reg).avatar,
+                    .playerOwned = true},
                 sm::sub::DamageKind::Dev, &app.bus);
             app.subworld.leave(true);
             const sm::LevelData afterDeathXp = sm::player_sheet(app.gs, *app.macroStore)->levelData;

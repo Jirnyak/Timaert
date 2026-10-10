@@ -29,6 +29,7 @@
 // the wound.
 #pragma once
 
+#include "sub/objects.h" // ObjRef — ссылка сцены, идентичность атакера
 #include "tables/damage_types.h"
 
 #include <cstdint>
@@ -79,15 +80,19 @@ inline constexpr DamageKindRow kDamageKinds[] = {
     {"dev",    true,  false},
 };
 
-// Who struck, and how. attackerId is the entity bits (or a projectile's
-// ownerId); 0 is the established "the player himself" convention. spellId
-// rides into NpcDeath.iy so spell kills stay tellable apart downstream (0 =
-// not a spell). critical is the crit door's verdict (core/dice.h, rolled at
-// the strike site where the attacker's LCK lives): the blade found the
-// ARMOUR GAP, so the door lets the blow past mitigation — the one thing a
-// crit does (owner verdict 2026-09-05).
+// Who struck, and how. attacker — ССЫЛКА СЦЕНЫ (ObjRef, ступень (iii)
+// ломтя 7): id == 0 значит «ничей удар» (Fall/Script по строке рода, чит
+// dev_kill — XP не платится никому, и теперь это правда ПО ПОСТРОЕНИЮ, а
+// не по совпадению битов; прежняя проза «0 = сам игрок» врала — все
+// прод-удары игрока несут тело аватара). Протухшую ссылку (убийца умер,
+// слот перерождён) читатель отсеивает сам (ref_slot). spellId rides into
+// NpcDeath.iy so spell kills stay tellable apart downstream (0 = not a
+// spell). critical is the crit door's verdict (core/dice.h, rolled at the
+// strike site where the attacker's LCK lives): the blade found the ARMOUR
+// GAP, so the door lets the blow past mitigation — the one thing a crit
+// does (owner verdict 2026-09-05).
 struct DamageSource {
-    std::uint32_t attackerId = 0;
+    ObjRef attacker{};
     bool playerOwned = false;
     std::uint32_t spellId = 0;
     bool critical = false;

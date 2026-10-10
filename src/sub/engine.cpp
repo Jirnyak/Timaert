@@ -312,13 +312,21 @@ bool hostile_to_player_entity(entt::registry& reg,
 // matrix, and the per-entity TempHostileToPlayer exception rides in the unit's
 // own mask — same semantics, integer cost.
 
-const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
-    const auto* kind = sub::body_kind(reg, e);
+// Слот-форма — конечная (ломоть 7); entity-форма — тонкий адаптер над ней,
+// умирает со ступенью (vi) вместе с реестром.
+const char* subworld_attacker_label(const sub::SubObjects& objs, int slot) {
+    const auto* kind = sub::slot_kind(objs, slot);
     if (kind && kind->type < std::uint16_t(NPCType::Count)) {
         const NPCType type = static_cast<NPCType>(std::uint8_t(kind->type));
         return npc_def(type).label;
     }
     return "Hostile";
+}
+
+const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
+    const int slot = sub::body_slot(reg, e);
+    return slot >= 0 ? subworld_attacker_label(sub::objects_of(reg), slot)
+                     : "Hostile";
 }
 
 // maybe_emplace_missile_attack / maybe_emplace_carried_light: the file-local
@@ -1375,21 +1383,21 @@ void SubworldEngine::report_player_damage() {
             const char* label = "Hostile";
             float ax = playerX_;
             float ay = playerY_;
-            // «Кто бил» — колонка lastHitBy (ломоть 1а); «никто» —
-            // последнее значение типа (kObjNoAttacker == integral entt-null).
+            // «Кто бил» — колонка lastHitBy, ссылка сцены (ступень (iii)):
+            // «никто» — id == 0, протухшая (атакер умер/слот перерождён)
+            // отваливается в ref_slot — компас не укажет на чужого жильца.
+            sub::SubObjects& objsHit = sub::objects_of(reg);
             const auto* osHit = reg.try_get<ecs::ObjectSlot>(e);
-            const std::uint32_t lastBy = osHit
-                ? sub::objects_of(reg).lastHitBy[osHit->slot]
-                : sub::kObjNoAttacker;
-            if (lastBy != sub::kObjNoAttacker) {
-                const entt::entity atk = entt::entity(lastBy);
-                if (reg.valid(atk)) {
-                    label = subworld_attacker_label(reg, atk);
-                    if (const ecs::Position* ap = sub::body_pos(reg, atk)) {
-                        ax = ap->x;
-                        ay = ap->y;
-                    }
-                }
+            const sub::ObjRef lastBy = osHit
+                ? objsHit.lastHitBy[osHit->slot]
+                : sub::ObjRef{};
+            if (const int atkSlot = sub::ref_slot(objsHit, lastBy);
+                atkSlot >= 0) {
+                label = subworld_attacker_label(objsHit, atkSlot);
+                const ecs::Position& ap =
+                    objsHit.pos[std::size_t(atkSlot)];
+                ax = ap.x;
+                ay = ap.y;
             }
             const bool lethal = after <= 0;
             char status[160]{};
@@ -2234,14 +2242,14 @@ void SubworldEngine::tick_player_melee() {
     const StrikeRoll swing =
         roll_strike(combatRng_, strikeStats.dice, strikeStats.flatAdd,
                     strikeStats.multPct, strikeStats.luck);
-    // Убийца — ТЕЛО аватара, не «ничей ноль» (§41 корень 5): жнец резолвит
-    // лидера по телу, и нулевой attackerId платил бы XP никому. Байт
-    // playerOwned остаётся правдой лога, атрибуция — сущность.
+    // Убийца — ССЫЛКА АВАТАРА (ObjRef, ступень (iii)), не «ничей ноль»
+    // (§41 корень 5): жнец резолвит лидера по телу, а id == 0 платил бы XP
+    // никому. Байт playerOwned остаётся правдой лога, атрибуция — ссылка.
     const DamageResult hit = apply_damage(
         reg, target,
-        DamageSource{std::uint32_t(entt::to_integral(
-                         sub::current_player_body(*ecs_))),
-                     true, 0u, swing.critical},
+        DamageSource{.attacker = sub::objects_of(reg).avatar,
+                     .playerOwned = true,
+                     .critical = swing.critical},
         swing.amount, DamageKind::Melee,
         DamageType(strikeStats.dmgType), bus_);
     const char* label = subworld_attacker_label(reg, target);
@@ -3355,10 +3363,15 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                       ecs::Combat& c, bool playerOwned) {
         const StrikeRoll swing =
             roll_strike(combatRng_, c.dice, c.flatAdd, c.multPct, c.luck);
+        // Атакер — ссылка сцены (ступень (iii)): слот берётся один раз,
+        // ref_of даёт {слот, живой ID} — протухание решит читатель.
         const DamageResult hit = apply_damage(
             reg, target,
-            DamageSource{std::uint32_t(entt::to_integral(attacker)),
-                         playerOwned, 0u, swing.critical},
+            DamageSource{.attacker = sub::ref_of(
+                             sub::objects_of(reg),
+                             sub::body_slot(reg, attacker)),
+                         .playerOwned = playerOwned,
+                         .critical = swing.critical},
             swing.amount, DamageKind::Melee, DamageType(c.dmgType),
             bus_);
         // A blocked or dead-blocked swing still swung: the recovery pays
@@ -3490,11 +3503,14 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // Уровень — колонка арены (кусок 1); 0 = безуровневое тело,
             // прежний дефолт отсутствовавшей компоненты сохранён единицей.
             const std::int16_t lvlCol = sub::body_level(reg, e);
-            // «Кто бил последним» — колонка lastHitBy (ломоть 1а).
+            // «Кто бил последним» — ссылка сцены (ступень (iii)): протухшую
+            // (убийца умер раньше чтения или слот перерождён — окно
+            // бюджетного жнеца) отсеивает ref_slot, и XP не платится
+            // чужому жильцу перерождённого слота.
             const auto* osDead = reg.try_get<ecs::ObjectSlot>(e);
-            const std::uint32_t lastHitBy = osDead
-                ? sub::objects_of(reg).lastHitBy[osDead->slot]
-                : sub::kObjNoAttacker;
+            const sub::ObjRef lastRef = osDead
+                ? arena.lastHitBy[osDead->slot]
+                : sub::ObjRef{};
             const int lvl =
                 normalize_soldier_level(lvlCol != 0 ? lvlCol : 1);
 
@@ -3507,7 +3523,8 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 continue;
             }
 
-            if (lastHitBy != sub::kObjNoAttacker && mw_.world) {
+            if (const int killerSlot = sub::ref_slot(arena, lastRef);
+                killerSlot >= 0 && mw_.world) {
                 // ОДИН закон оплаты килла (§41 корень 5, владелец
                 // 2026-09-10: «байт умирает; жнец резолвит лидера убийцы
                 // для ВСЕХ — игрок просто лидер своего сквада»). The
@@ -3519,35 +3536,31 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // ordinary leader he is. The leader is then paid through
                 // THE one kill-XP door (squad.h award_kill_xp): an owned
                 // sheet grows like the player's, a transient rolls.
-                const entt::entity killerBody = entt::entity(lastHitBy);
                 MacroHandle leader{};
-                bool playerHand = false;
-                if (reg.valid(killerBody)) {
-                    if (const MacroHandle killerOrigin =
-                            sub::body_macro_origin(reg, killerBody);
-                        killerOrigin.slot != kMacroNoSlot) {
-                        leader = killerOrigin;
-                    } else if (const auto* debt =
-                                   sub::body_debt(reg, killerBody);
-                               debt && debt->stock
-                                   == std::uint8_t(MacroStock::Creatures)) {
-                        leader = macro_handle_by_spawn_id(
-                            store_of(mw_.world->reg),
-                            std::uint32_t(debt->subject));
-                    } else if (sub::is_avatar(reg, killerBody)
-                               || sub::object_flag(reg, killerBody,
-                                                   sub::kObjPlayerSoldier)) {
-                        if (gs_) {
-                            const MacroHandle ps = player_squad_handle(*gs_);
-                            if (store_of(mw_.world->reg).valid(ps)) leader = ps;
-                        }
+                if (const MacroHandle killerOrigin =
+                        sub::slot_macro_origin(arena, killerSlot);
+                    killerOrigin.slot != kMacroNoSlot) {
+                    leader = killerOrigin;
+                } else if (const auto* debt =
+                               sub::slot_debt(arena, killerSlot);
+                           debt && debt->stock
+                               == std::uint8_t(MacroStock::Creatures)) {
+                    leader = macro_handle_by_spawn_id(
+                        store_of(mw_.world->reg),
+                        std::uint32_t(debt->subject));
+                } else if (arena.is_avatar_slot(killerSlot)
+                           || sub::slot_flag(arena, killerSlot,
+                                             sub::kObjPlayerSoldier)) {
+                    if (gs_) {
+                        const MacroHandle ps = player_squad_handle(*gs_);
+                        if (store_of(mw_.world->reg).valid(ps)) leader = ps;
                     }
-                    // «Рука игрока» — сценная правда для репутации: его
-                    // аватар (включая одержимое тело) или его солдат.
-                    playerHand = sub::is_avatar(reg, killerBody)
-                        || sub::object_flag(reg, killerBody,
-                                            sub::kObjPlayerSoldier);
                 }
+                // «Рука игрока» — сценная правда для репутации: его
+                // аватар (включая одержимое тело) или его солдат.
+                const bool playerHand = arena.is_avatar_slot(killerSlot)
+                    || sub::slot_flag(arena, killerSlot,
+                                      sub::kObjPlayerSoldier);
                 MacroStore& mst = store_of(mw_.world->reg);
                 if (mst.valid(leader) && !macro_dead(mst, leader)) {
                     // One row, one formula (owner, 2026-08-29): what a kill
@@ -4761,8 +4774,11 @@ int SubworldEngine::dev_kill_all_hostiles() {
         }
         for (int i = 0; i < batch; ++i) {
             const entt::entity e = victims[std::size_t(i)];
+            // «Ничей» чит-кил: attacker{} = id 0 = «никого» — XP не платится
+            // никому ПО ПОСТРОЕНИЮ (ступень (iii)); прежний нулевой u32 был
+            // битами законной сущности 0 и честность держалась совпадением.
             const DamageResult hit = apply_lethal_damage(
-                reg, e, DamageSource{std::uint32_t{0}, true}, DamageKind::Dev,
+                reg, e, DamageSource{.playerOwned = true}, DamageKind::Dev,
                 bus_);
             if (hit.lethal) ++killed;
         }

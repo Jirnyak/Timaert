@@ -4,7 +4,8 @@
 // What is pinned, with negative controls:
 //   * one protocol: any lethal blow leaves the same component set (Dead +
 //     DamageFx{lethal}) and emits exactly one NpcDeath with the right
-//     attribution (a = victim, b = attacker, ix = kind, iy = spellId);
+//     payload (ix = kind, iy = spellId; идентичность a/b снесена вердиктом
+//     2026-10-10 — пустота пинится как негативный контроль);
 //     (HitFlash снесена вердиктом 2026-10-05 — «удар виден» несёт DamageFx);
 //   * attribution is DATA: the Fall/Script rows stamp no LastHit (nobody gets
 //     XP for gravity), the Melee/Spell/Dev rows do;
@@ -87,7 +88,10 @@ void test_death_is_indistinguishable() {
         // битов (мутация «вернуть ev.a» прошла зелёной, 2026-10-10).
         (void)reg.create();
         const entt::entity e = make_body(reg, 10.0f);
-        const DamageSource src{42u, false,
+        // Атакер — синтетическая ссылка сцены: писатель хранит её ДОСЛОВНО
+        // (суд протухания — у читателя, ref_slot), так что свидетелю
+        // хватает различимых битов {слот, id}.
+        const DamageSource src{sm::sub::ObjRef{9, 42u}, false,
                                kind == DamageKind::Spell ? 900u : 0u};
         const DamageResult hit = apply_damage(reg, e, src, 25.0f, kind,
                                               sm::DamageType::Blunt, &bus);
@@ -118,10 +122,10 @@ void test_death_is_indistinguishable() {
         // Attribution is the kind row's DATA, not a per-site omission.
         const bool wantsKiller =
             sm::sub::kDamageKinds[std::size_t(kind)].attributesKiller;
-        CHECK((last_hit_of(reg, e) != sm::sub::kObjNoAttacker) == wantsKiller,
+        CHECK((last_hit_of(reg, e).id != 0u) == wantsKiller,
               "LastHit follows the kind row's attributesKiller column");
         if (wantsKiller) {
-            CHECK(last_hit_of(reg, e) == 42u,
+            CHECK(last_hit_of(reg, e) == (sm::sub::ObjRef{9, 42u}),
                   "LastHit names the attacker the source named");
         }
     }
@@ -196,7 +200,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     CHECK((fx_of(reg, turtle) & sm::sub::kDmgFxBlocked) != 0
               && (fx_of(reg, turtle) & sm::sub::kDmgFxLethal) == 0,
           "and the fx is the spark flavour, not blood");
-    CHECK(last_hit_of(reg, turtle) == sm::sub::kObjNoAttacker,
+    CHECK(last_hit_of(reg, turtle).id == 0u,
           "nothing happened to the BODY: no LastHit, no killer named");
     // Negative control for the flag itself: a blow that DOES wound is not
     // blocked — the two exits of the door stay distinguishable.
@@ -481,8 +485,9 @@ void test_survivor_protocol() {
     entt::registry reg;
     sm::EventBus bus;
     const entt::entity e = make_body(reg, 30.0f);
-    const DamageResult hit = apply_damage(reg, e, DamageSource{7u, true},
-                                          10.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
+    const DamageResult hit = apply_damage(
+        reg, e, DamageSource{sm::sub::ObjRef{5, 7u}, true},
+        10.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
     CHECK(hit.applied == 10.0f,
           "a body in its own skin keeps the whole blow: armour 0 is the "
           "limiting case of the law, applied == asked to the bit");
@@ -496,7 +501,7 @@ void test_survivor_protocol() {
           "DamageFx is stamped on every hit that lands");
     CHECK((fx_of(reg, e) & sm::sub::kDmgFxLethal) == 0,
           "a survivable blow's DamageFx is not lethal");
-    CHECK(last_hit_of(reg, e) == 7u,
+    CHECK(last_hit_of(reg, e) == (sm::sub::ObjRef{5, 7u}),
           "LastHit carries the killer's BODY — the reaper resolves its "
           "leader through the one kill-XP door (§41 root 5)");
 }
@@ -512,7 +517,8 @@ void test_player_death_is_not_an_npc_kill() {
         const entt::entity e = make_body(reg, 5.0f);
         sm::test::make_avatar(reg, e);
         const DamageResult hit =
-            apply_damage(reg, e, DamageSource{3u, false}, 50.0f, kind,
+            apply_damage(reg, e, DamageSource{sm::sub::ObjRef{3, 3u}, false},
+                         50.0f, kind,
                          sm::DamageType::Blunt, &bus);
         CHECK(hit.lethal, "the player body does die");
         CHECK(sm::test::flag_of(reg, e, sm::sub::kObjDead),
@@ -528,8 +534,8 @@ void test_kindless_body_still_reports() {
     entt::registry reg;
     sm::EventBus bus;
     const entt::entity e = make_body(reg, 5.0f, /*withKind=*/false);
-    apply_damage(reg, e, DamageSource{1u, false, 33u}, 50.0f,
-                 DamageKind::Spell, sm::DamageType::Blunt, &bus);
+    apply_damage(reg, e, DamageSource{sm::sub::ObjRef{1, 21u}, false, 33u},
+                 50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
     CHECK(death_events(bus) == 1, "a kindless death still emits");
     if (const sm::GameEvent* ev = last_death(bus)) {
         CHECK(ev->ix == sm::kNoNpcType,
@@ -542,17 +548,18 @@ void test_no_second_blow() {
     entt::registry reg;
     sm::EventBus bus;
     const entt::entity e = make_body(reg, 10.0f);
-    apply_damage(reg, e, DamageSource{1u, false}, 50.0f, DamageKind::Melee, sm::DamageType::Blunt,
-                 &bus);
+    apply_damage(reg, e, DamageSource{sm::sub::ObjRef{1, 1u}, false}, 50.0f,
+                 DamageKind::Melee, sm::DamageType::Blunt, &bus);
     const float hpAfterDeath = (*sm::sub::body_pools(reg, e)).hp;
-    const DamageResult again = apply_damage(reg, e, DamageSource{2u, false},
-                                            50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
+    const DamageResult again = apply_damage(
+        reg, e, DamageSource{sm::sub::ObjRef{2, 2u}, false},
+        50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
     CHECK(again.applied == 0.0f, "a corpse takes no damage");
     CHECK(!again.lethal, "a no-op blow is not lethal");
     CHECK((*sm::sub::body_pools(reg, e)).hp == hpAfterDeath,
           "a corpse's hp does not move");
     CHECK(death_events(bus) == 1, "a corpse dies once — one event, ever");
-    CHECK(last_hit_of(reg, e) == 1u,
+    CHECK(last_hit_of(reg, e) == (sm::sub::ObjRef{1, 1u}),
           "the kill stays attributed to the killer, not the corpse-kicker");
 }
 
@@ -564,13 +571,13 @@ void test_execution_helper() {
     // under a point, still one blow) is asserted separately below.
     const entt::entity e = make_body(reg, 37.0f);
     const DamageResult hit = apply_lethal_damage(
-        reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);
+        reg, e, DamageSource{.playerOwned = true}, DamageKind::Dev, &bus);
     CHECK(hit.lethal, "an execution is lethal by construction");
     CHECK(hit.applied == 37, "an execution strikes exactly remaining hp");
     CHECK((*sm::sub::body_pools(reg, e)).hp == 0.0f,
           "an execution lands the body at exactly zero");
     const DamageResult again = apply_lethal_damage(
-        reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);
+        reg, e, DamageSource{.playerOwned = true}, DamageKind::Dev, &bus);
     CHECK(again.applied == 0, "executing a corpse is a no-op");
     CHECK(death_events(bus) == 1, "one execution, one event");
 
@@ -578,9 +585,49 @@ void test_execution_helper() {
     // left, and one blow is always enough — no ceil, no survivor.
     const entt::entity odd = make_body(reg, 13);
     const DamageResult oddHit = apply_lethal_damage(
-        reg, odd, DamageSource{0u, true}, DamageKind::Dev, &bus);
+        reg, odd, DamageSource{.playerOwned = true}, DamageKind::Dev, &bus);
     CHECK(oddHit.lethal && oddHit.applied == 13,
           "the whole remaining bar is one lethal blow, never a survivor");
+}
+
+// ПРОТУХАНИЕ ССЫЛКИ АТАКЕРА (ступень (iii) ломтя 7). Носитель кросс-тиковый:
+// жнец бюджетный (512/тик), убийца может умереть и его слот переродиться ДО
+// чтения XP-лестницы. Закон: байты колонки хранятся дословно, а судит ТОЛЬКО
+// ref_slot — мёртвый убийца и перерождённый жилец равно «никто». До ObjRef
+// закон держался совпадением (версия entt-битов), свидетеля не имел вовсе.
+void test_stale_attacker_ref_resolves_to_nobody() {
+    entt::registry reg;
+    sm::EventBus bus;
+    const entt::entity killer = make_body(reg, 10);
+    const entt::entity victim = make_body(reg, 30);
+    sm::sub::SubObjects& arena = sm::test::arena_of(reg);
+    const int killerSlot = sm::sub::body_slot(reg, killer);
+    CHECK(killerSlot >= 0, "предусловие своё: у убийцы есть слот арены");
+    const sm::sub::ObjRef killerRef = sm::sub::ref_of(arena, killerSlot);
+    apply_damage(reg, victim, DamageSource{killerRef, false}, 10.0f,
+                 DamageKind::Melee, sm::DamageType::Blunt, &bus);
+    CHECK(last_hit_of(reg, victim) == killerRef,
+          "живая ссылка хранится дословно");
+    CHECK(sm::sub::ref_slot(arena, killerRef) == killerSlot,
+          "и разыменуется в слот убийцы, пока тот жив");
+
+    // Убийца умирает — слот свободен, ссылка протухла уже этим (мёртв =
+    // протух: ref_slot судит и бит kObjAlive, не только ID).
+    reg.destroy(killer);
+    CHECK(sm::sub::ref_slot(arena, killerRef) == -1,
+          "мёртвый убийца — протухшая ссылка: XP не платится никому");
+
+    // ФОРС КУРСОРА (прецедент body_contract_test): перерождаем РОВНО его
+    // слот новым жильцом — сценарные пути дошли бы сюда лишь после 65536
+    // рождений, и закон остался бы без носителя.
+    arena.cursor = killerSlot;
+    const entt::entity reborn = make_body(reg, 10);
+    CHECK(sm::sub::body_slot(reg, reborn) == killerSlot,
+          "предусловие своё: слот перерождён (форс курсора)");
+    CHECK(sm::sub::ref_slot(arena, killerRef) == -1,
+          "перерождённый жилец ЧУЖОЙ килл не наследует: ID слота сменился");
+    CHECK(last_hit_of(reg, victim) == killerRef,
+          "байты колонки при этом не переписаны — суд только у читателя");
 }
 
 void test_zero_and_missing_target() {
@@ -677,6 +724,7 @@ int main() {
     test_kindless_body_still_reports();
     test_no_second_blow();
     test_execution_helper();
+    test_stale_attacker_ref_resolves_to_nobody();
     test_zero_and_missing_target();
     test_the_blow_lands_on_the_record();
     return sm::test::report("damage_door_test");

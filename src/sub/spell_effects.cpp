@@ -153,7 +153,14 @@ void apply_spell_damage(ecs::World& w,
     const bool playerOwned = projectile_owner_is_player_side(w.reg, p);
     // The projectile brought everything from the cast: its wound, its tag's
     // armour column and the crit verdict — the door just applies them.
-    const DamageSource src{p.ownerId, playerOwned,
+    // ТРАНЗИТ (умирает в (iii-б), когда снаряд понесёт пару {ownerSlot,
+    // ownerId} арены): пока ownerId — entt-биты, ссылку атакера собираем
+    // из слота владельца здесь.
+    const entt::entity owner = entt::entity(p.ownerId);
+    const ObjRef attacker = w.reg.valid(owner)
+        ? ref_of(objects_of(w.reg), body_slot(w.reg, owner))
+        : ObjRef{};
+    const DamageSource src{attacker, playerOwned,
                            p.spellId & kSpellEventIdMask, p.critical};
     const DamageResult hit = apply_damage(w.reg, target, src, damage,
                                           DamageKind::Spell,

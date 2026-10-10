@@ -55,7 +55,9 @@
 - `lastHitBy` (objects.h, сейчас биты entt + kObjNoAttacker) → колонка
   ObjRef: 645 → 649 Б/слот, ассерт переедет (+256 КиБ). Окно структурное:
   жнец бюджетный (512/тик), убийца может умереть раньше чтения XP-лестницы.
-- `DamageSource::attackerId@src/sub/damage.h` → ObjRef (9 прод-сайтов).
+- `DamageSource::attackerId` → `attacker@src/sub/damage.h` (ObjRef) — СДЕЛАНО
+  2026-10-10 (перепись: именованных сайтов 9, позиционных агрегатов 38 —
+  компилятор назвал каждый).
 - `Projectile.ownerId` → пара `ownerSlot u16 + ownerId u32` В ДЫРУ 45-47
   (0b сдан, designated-формы готовы; 68 Б держатся, ассерт не двигается).
   Читатели: `projectile_owner_is_player_side`, дульная растяжка

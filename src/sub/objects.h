@@ -108,11 +108,9 @@ inline constexpr std::uint8_t kDmgFxPending = 1u << 0;
 inline constexpr std::uint8_t kDmgFxLethal  = 1u << 1;
 inline constexpr std::uint8_t kDmgFxBlocked = 1u << 2;
 
-// «Никто не бил» у lastHitBy: ПОСЛЕДНЕЕ значение типа (ЗАКОН УЗКОГО
-// ИНДЕКСА — ноль здесь ЗАКОННЫЙ ид), и оно же integral entt-null на время
-// миграции (атакер пока носит entt-ид тела; ссылка {слот, ID} сменит его
-// в ломте 7).
-inline constexpr std::uint32_t kObjNoAttacker = 0xFFFFFFFFu;
+// (kObjNoAttacker умер в ступени (iii) ломтя 7: атакер стал ObjRef, и
+// «никто не бил» — это id == 0 по ЗАКОНУ НУЛЯ-ОРДИНАЛА, как у всякой
+// ссылки сцены.)
 
 // «Рода нет» у колонки kind: ноль — законный род (NPCType::Peasant = 0),
 // поэтому «нет» — ПОСЛЕДНЕЕ значение u16 (ЗАКОН УЗКОГО ИНДЕКСА). Enum
@@ -153,7 +151,12 @@ struct SubObjects {
     // снесём … минимизировать число колонок») — она писалась и гасла, но
     // визуального читателя не имела никогда; возврат после предемо =
     // колонка + тинт тел в рендере.
-    std::array<std::uint32_t, std::size_t(kMaxSubObjects)> lastHitBy{};
+    // «Кто бил последним» — ССЫЛКА СЦЕНЫ (ступень (iii) ломтя 7): носитель
+    // кросс-тиковый (жнец бюджетный, убийца может умереть раньше чтения
+    // XP-лестницы), поэтому голый слот запрещён — протухшая ссылка
+    // отваливается проверкой ID (ref_slot), перерождённый жилец чужой килл
+    // не наследует. id == 0 — «никто не бил» (зануляет alloc).
+    std::array<ObjRef, std::size_t(kMaxSubObjects)> lastHitBy{};
     // Событие «в этом тике по телу попали»: бит 0 = pending, бит 1 =
     // lethal, бит 2 = blocked. Дренируется одним проходом за тик.
     std::array<std::uint8_t, std::size_t(kMaxSubObjects)> damageFx{};
@@ -279,7 +282,7 @@ struct SubObjects {
             id[std::size_t(s)] = nextId++;
             flags[std::size_t(s)] = kObjAlive;
             pos[std::size_t(s)] = at;
-            lastHitBy[std::size_t(s)] = kObjNoAttacker;
+            lastHitBy[std::size_t(s)] = ObjRef{};
             damageFx[std::size_t(s)] = 0u;
             kind[std::size_t(s)] = ecs::NPCKind{kObjNoKind, 0u};
             level[std::size_t(s)] = 0;
@@ -314,15 +317,15 @@ struct SubObjects {
         --count;
     }
 };
-// 65536 × (4+2+4+1+4+2+36+28+12+40+12+8+4+68+144+184+20+32+4+24+12) Б
-// колонок + служебные: цена названа и закреплена. 645 Б/слот × 65536 ≈
-// 40.31 МиБ — профиль один у пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ;
+// 65536 × (4+2+8+1+4+2+36+28+12+40+12+8+4+68+144+184+20+32+4+24+12) Б
+// колонок + служебные: цена названа и закреплена. 649 Б/слот × 65536 ≈
+// 40.56 МиБ — профиль один у пустой и полной сцены (ЗАКОН СТАБИЛЬНОСТИ;
 // куча через unique_ptr, make_unique зануляет весь кап при рождении сцены —
 // value-init исполняет NSDMI, так что origin рождается невалидным хэндлом,
 // не нулём). Ассерт заодно пинит sizeof колонок: разъехаться молча они не
 // могут.
-static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 645 + 24,
-              "массив объектов сцены: 645 Б/слот (ломоть 5: +pos 12) + "
-              "служебные");
+static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 649 + 24,
+              "массив объектов сцены: 649 Б/слот (ступень (iii): lastHitBy "
+              "u32 → ObjRef 8 Б) + служебные");
 
 } // namespace sm::sub

@@ -127,9 +127,9 @@ inline std::uint8_t fx_of(entt::registry& reg, entt::entity e) {
     const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);
     return os ? arena_of(reg).damageFx[os->slot] : std::uint8_t{0};
 }
-inline std::uint32_t last_hit_of(entt::registry& reg, entt::entity e) {
+inline sm::sub::ObjRef last_hit_of(entt::registry& reg, entt::entity e) {
     const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);
-    return os ? arena_of(reg).lastHitBy[os->slot] : sm::sub::kObjNoAttacker;
+    return os ? arena_of(reg).lastHitBy[os->slot] : sm::sub::ObjRef{};
 }
 
 } // namespace sm::test

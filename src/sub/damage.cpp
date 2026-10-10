@@ -176,11 +176,12 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
 
     const DamageKindRow& row = kDamageKinds[std::size_t(kind)];
     // FX и «кто бил последним» — колонки единого массива объектов (M-150
-    // ломоть 1а); атакер пока носит entt-ид тела (хэндл {slot,gen} — л.7).
+    // ломоть 1а); атакер — ObjRef (ступень (iii)): пишется дословно, судит
+    // его ЧИТАТЕЛЬ (ref_slot) — протухание решается в момент чтения.
     if (const auto* os = reg.try_get<ecs::ObjectSlot>(target)) {
         SubObjects& objs = objects_of(reg);
         if (row.attributesKiller) {
-            objs.lastHitBy[os->slot] = src.attackerId;
+            objs.lastHitBy[os->slot] = src.attacker;
         }
         objs.damageFx[os->slot] =
             std::uint8_t(kDmgFxPending | (out.lethal ? kDmgFxLethal : 0u));

@@ -104,14 +104,19 @@ float hp_of(sm::ecs::World& w, entt::entity e) {
     return hp ? hp->hp : -1.0f;
 }
 
-// Атрибуция «кем убит/ранен» — колонка lastHitBy единого массива объектов
-// (M-150 1а; §41 корень 5: жнец резолвит лидера по телу).
-bool last_hit_by(sm::ecs::World& w, entt::entity e,
-                 std::uint32_t attackerId) {
-    return sm::test::last_hit_of(w.reg, e) == attackerId;
-}
+// Атрибуция «кем убит/ранен» — колонка lastHitBy единого массива объектов,
+// ссылка сцены ObjRef (ступень (iii); §41 корень 5: жнец резолвит лидера
+// по телу). Ожидание строится ТОЙ ЖЕ дверью ref_of, что у писателя.
 bool last_hit_by(sm::ecs::World& w, entt::entity e, entt::entity attacker) {
-    return last_hit_by(w, e, std::uint32_t(entt::to_integral(attacker)));
+    const int slot = sm::sub::body_slot(w.reg, attacker);
+    return slot >= 0
+        && sm::test::last_hit_of(w.reg, e)
+               == sm::sub::ref_of(sm::sub::objects_of(w.reg), slot);
+}
+// ТРАНЗИТ (умирает в (iii-б)): add_player пока возвращает entt-биты —
+// ровно то, что несёт Projectile.ownerId до пары {ownerSlot, ownerId}.
+bool last_hit_by(sm::ecs::World& w, entt::entity e, std::uint32_t ownerBits) {
+    return last_hit_by(w, e, entt::entity(ownerBits));
 }
 
 struct SeqRng {

@@ -638,6 +638,7 @@ void test_a_reused_slot_is_born_clean() {
     arena.debt[std::size_t(a)] = ecs::MacroDebt{
         std::uint8_t(MacroStock::Population), 7, 1, 1, 1, -1, 0, 0};
     arena.origin[std::size_t(a)] = ecs::MacroOrigin{MacroHandle{3, 0}};
+    arena.lastHitBy[std::size_t(a)] = sub::ObjRef{4, 99u};
     arena.free(a);
     arena.cursor = a;   // форс переиспользования без 65к прокрутки
     const int b = arena.alloc(ecs::Position{1.0f, 2.0f, 3.0f});
@@ -650,6 +651,10 @@ void test_a_reused_slot_is_born_clean() {
               && arena.pos[std::size_t(b)].y == 2.0f
               && arena.pos[std::size_t(b)].z == 3.0f,
           "a reused slot stands where ITS birth put it, not the tenant's");
+    // Ступень (iii): унаследованный атакер приписал бы НОВОМУ жильцу чужую
+    // рану — компас HUD и протокол атрибуции врали бы с первого удара.
+    CHECK(arena.lastHitBy[std::size_t(b)].id == 0u,
+          "a reused slot was hit by nobody: the wound died with the tenant");
 }
 
 // БИЕКЦИЯ АРЕНЫ — закон, на котором стоит ломоть 6 (ключ «жилец сцены»
