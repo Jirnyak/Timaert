@@ -87,10 +87,15 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         }
         const ecs::Position& p = *body_pos(reg, e);
         auto& a = *aiCol;
-        // Deterministic per-decision seed: entity bits, the DECISION COUNTER
-        // (see SubworldAi.seq — position alone froze standing minds), and a
-        // coarse position bucket so a herd doesn't turn in lockstep.
-        std::uint32_t salt = std::uint32_t(entt::to_integral(e)) * 2654435761u;
+        // Deterministic per-decision seed: the ARENA BIRTH ID (iii-г, вердикт
+        // владельца 2026-10-10 «обрезай всё лишнее» — entt-биты ушли из соли;
+        // детерминизм блуждания на том же сиде СМЕНИЛСЯ этим осознанно), the
+        // DECISION COUNTER (see SubworldAi.seq — position alone froze
+        // standing minds), and a coarse position bucket so a herd doesn't
+        // turn in lockstep.
+        const std::uint32_t salt =
+            objects_of(reg).id[view.get<ecs::ObjectSlot>(e).slot]
+            * 2654435761u;
         Rng rng(salt ^ (a.seq * 0x9E3779B9u)
                 ^ std::uint32_t(p.x * 31.7f) ^ std::uint32_t(p.y * 17.3f));
 
