@@ -46,10 +46,11 @@ namespace sm
     enum class EventTag : std::uint16_t
     {
         PlayerMove = 0,
-        NpcDeath,         // ix = NPCKind.type, iy = spell id. Сценная смерть
-                          // идентичность в a/b НЕ несёт (сирота снесена,
-                          // вердикт 2026-10-10); макро-путь пока пакует
-                          // хэндлы store в a/b (main.cpp raise_macro_fact)
+        NpcDeath,         // ix = NPCKind.type, iy = spell id. Идентичности
+                          // в a/b НЕТ ВОВСЕ (обе сироты снесены вердиктами
+                          // 2026-10-10 — сценная и макро; живая макро-
+                          // цепочка идёт конвертом BattleFact мимо события;
+                          // системная форма — эпиком событий/фрейма)
         QuestStart,       // a = quest ordinal, s2 = title (feed display)
         QuestUpdate,      // a = quest ordinal
         QuestComplete,    // a = quest ordinal
@@ -97,10 +98,10 @@ namespace sm
     struct GameEvent
     {
         EventTag tag = EventTag::Custom;
-        // Пространство id зависит от тега: макро-NpcDeath несёт ПАКОВАННЫЙ
-        // хэндл store (macro_handle_bits, все единицы = никого), квесты —
-        // свои ординалы. Сценная смерть идентичность НЕ кладёт (сирота
-        // снесена вердиктом 2026-10-10; системная форма — эпиком событий).
+        // Пространство id зависит от тега (квесты — ординалы, SpireDepleted
+        // — ид шпиля/спелла…). У NpcDeath идентичности здесь НЕТ ВОВСЕ:
+        // обе сироты (сценная и макро) снесены вердиктами 2026-10-10,
+        // системная форма идентичности придёт эпиком событий/фрейма.
         std::uint32_t a = 0, b = 0; // packed handle / entity / ordinal ids
         float fx = 0, fy = 0;
         int ix = 0, iy = 0;

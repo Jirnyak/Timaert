@@ -259,9 +259,12 @@ sm::FactNaming app_fact_naming(App& app) {
 void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     auto& app = *static_cast<App*>(user);
     if (fact.kind != sm::BattleFact::Kind::Death) return;
+    // Идентичность в a/b НЕ кладётся — вторая сирота снесена (вердикт
+    // владельца 2026-10-10: «сноси»): читателей a/b у NpcDeath не было ни
+    // одного, живая цепочка идентичности идёт КОНВЕРТОМ BattleFact
+    // (fact.victim/killer → macro_identity_of / record_deed ниже) мимо
+    // события. Живой закон события — род (ix, квесты DestroyNpc).
     sm::GameEvent ev{sm::EventTag::NpcDeath};
-    ev.a = fact.victim;
-    ev.b = fact.killer;
     ev.ix = fact.npcType < std::uint16_t(sm::NPCType::Count)
         ? int(fact.npcType) : sm::kNoNpcType;
     app.bus.emit(ev);
