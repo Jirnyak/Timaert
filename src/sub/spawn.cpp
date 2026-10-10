@@ -334,15 +334,20 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     // Фикстура без арены (objects_find == null) рождает тело без слота —
     // ветка ТРАНЗИТА миграции, умирает с реестром (ломоть 7).
     int slot = -1;
-    if (SubObjects* objs = objects_find(reg)) {
+    SubObjects* objs = objects_find(reg);
+    if (objs != nullptr) {
         slot = objs->alloc(ecs::Position{body.x, body.y, 0.0f});
         if (slot < 0) return entt::null;
     }
     const auto e = reg.create();
-    if (slot >= 0) reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
-    sub::set_body_visual(reg, e,
+    // Ветка ТРАНЗИТА (фикстура без арены): тело без слота не несёт ни одной
+    // колонки — прежние entity-двери отвечали ему no-op ровно так же
+    // (slot < 0). Умирает с реестром (ломоть 7 (vi)).
+    if (slot < 0) return e;
+    reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
+    sub::slot_set_visual(*objs, slot,
                          ecs::VisualPos{body.x, body.y, kBodyVisualCatchUp});
-    sub::set_body_kind(reg, e,
+    sub::slot_set_kind(*objs, slot,
                        ecs::NPCKind{std::uint16_t(body.type), body.faction});
     // ALL THREE pools, through the sheet's own doors (CANON S14 «три
     // ресурса» — a scene body is not a kind of body that gets fewer bars;
@@ -360,7 +365,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
         pools.maxHp = int(maxHp);
         pools.mp = pools.maxMp = body_max_mp(sheet, def.combat);
         pools.sp = pools.maxSp = body_max_sp(sheet, def.combat);
-        sub::set_body_pools(reg, e, pools);
+        sub::slot_set_pools(*objs, slot, pools);
     }
     // Its pace: the world's march (macro/movement_cost.h) times what this row
     // is against a walking man. ONE scale for every body, the player's
@@ -373,21 +378,21 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
                   "sub/map_data.h kCellSize must equal the macro side's "
                   "kSubworldTilesPerMacroCell — the parity anchor rides on it");
     const float bodySpeed = march_speed(pc.speedMarchMult);
-    sub::set_body_combat(reg, e, combat_from_sheet(sheet, def));
-    maybe_emplace_missile_attack(reg, e, pc);
-    maybe_emplace_flying(reg, e, pc);
-    sub::set_body_level(reg, e, std::int16_t(body.level));
+    sub::slot_set_combat(*objs, slot, combat_from_sheet(sheet, def));
+    maybe_emplace_missile_attack(*objs, slot, pc);
+    maybe_emplace_flying(*objs, slot, pc);
+    sub::slot_set_level(*objs, slot, std::int16_t(body.level));
         // How much room this body takes: the row's ONE width column, man-shaped
     // default resolved (npc.h npc_body_radius). This is the ONE line where
     // the creature birth and the humanoid birth used to differ about a
     // number — and where a template shadow copy of the width used to answer.
     const float bodyRadius = npc_body_radius(def);
-    sub::set_body_ai(reg, e, ecs::SubworldAi{
+    sub::slot_set_ai(*objs, slot, ecs::SubworldAi{
         body.combatant ? ecs::SubworldAi::Combat : subworld_ai_for(def.ai),
         /*aiTimer*/0.0f, /*vx*/0.0f, /*vy*/0.0f,
         /*wanderSpeed*/bodySpeed * kBodyWanderSpeedFraction,
         /*radius*/bodyRadius});
-    sub::set_body_sheet(reg, e, sheet);
+    sub::slot_set_sheet(*objs, slot, sheet);
     // Лицо тела (NpcCharacter) НЕ хранится: оно потребляется здесь же —
     // ростом тела от bodyShape строкой ниже — и после рождения его не
     // читает никто (прецедент вспышки, «минимизировать число колонок»).
@@ -402,13 +407,13 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     // varied by the body's own shape byte — the one the face rolls — so a crowd
     // has tall and short people in it without a second field or a second roll.
     const SpriteDef& look = sprite_row(def.sprite);
-    sub::set_body_sprite(reg, e, ecs::Sprite{std::uint16_t(body.type),
+    sub::slot_set_sprite(*objs, slot, ecs::Sprite{std::uint16_t(body.type),
         std::uint8_t((look.tint >> 16) & 0xFFu),
         std::uint8_t((look.tint >>  8) & 0xFFu),
         std::uint8_t( look.tint        & 0xFFu),
         bodyRadius, std::uint8_t(def.sprite),
         body_height_m(def) * body_shape_height_scale(face.bodyShape)});
-    maybe_emplace_carried_light(reg, e, def);
+    maybe_emplace_carried_light(*objs, slot, def);
     return e;
 }
 
@@ -716,29 +721,42 @@ entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
     // it is the ADDRESS — of the bars he spends, the bag he carries and the
     // plate he wears. It used to be described as «where the return trip writes»;
     // there is no return trip any more, because there is no copy to return.
-    sub::set_body_origin(reg, e, macro);
-    // What stood on him when the numbers above were derived — the comparison
-    // the per-tick re-derive is gated on (standing@src/sub/objects.h).
-    sub::set_body_standing(reg, e, standing);
+    // Слот-идиома (ii-б): рождение выше уже отказало без арены (entt::null)
+    // либо выдало слот — бэклинк и зеркало пишутся слот-дверями.
+    if (const int s = sub::body_slot(reg, e); s >= 0) {
+        SubObjects& objs = objects_of(reg);
+        sub::slot_set_origin(objs, s, macro);
+        // What stood on him when the numbers above were derived — the
+        // comparison the per-tick re-derive is gated on
+        // (standing@src/sub/objects.h).
+        sub::slot_set_standing(objs, s, standing);
+    }
     return e;
 }
 
 bool refresh_body_strike(entt::registry& reg, entt::entity body) {
     if (!reg.valid(body)) return false;
-    BonusTotals* cache = sub::body_standing(reg, body);
+    // Слот-идиома (ii-б): слот один раз, дальше слот-двери одной арены.
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return false;
+    const int s = sub::body_slot(reg, body);
+    if (s < 0) return false;
+    BonusTotals* cache = sub::slot_standing(*objs, s);
     if (!cache) return false;                  // not a mirror; nothing to track
     // Зеркало без живой записи не пере-деривится: протухший бэклинк —
     // мертвец, чей клинок больше никого не касается (шаг 2 1е: запись —
     // хэндлом, деградация в тело здесь бессмысленна — у зеркала нет своего
     // гира и книги, гейт сравнивал бы нули).
-    const MacroHandle rec = sub::macro_record_of(reg, body);
+    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    const MacroHandle rec = stp != nullptr
+        ? sub::slot_macro_record(*objs, s, **stp) : MacroHandle{};
     if (rec.slot == kMacroNoSlot) return false;
     // A body with no row has no creature template to project a swing from —
     // the hero husk is exactly that, and his hands are assembled elsewhere
     // (hand_strike_fields), from the same effective sheet.
-    const auto* kind = sub::body_kind(reg, body);
+    const auto* kind = sub::slot_kind(*objs, s);
     if (!kind || !valid_npc_kind(kind->type)) return false;
-    auto* combat = sub::body_combat(reg, body);
+    auto* combat = sub::slot_combat(*objs, s);
     if (!combat) return false;
 
     // THE GATE. Everything below it is the expensive half (CANON's 0.00196 ms);
@@ -764,22 +782,21 @@ bool refresh_body_strike(entt::registry& reg, entt::entity body) {
 // (engine.cpp). These used to exist as byte-identical file-local twins in
 // both TUs, each with a comment admitting the duplication.
 
-void maybe_emplace_missile_attack(entt::registry& reg,
-                                  entt::entity e,
+void maybe_emplace_missile_attack(SubObjects& objs, int s,
                                   const CombatTemplate& combat) {
     if (combat.attackKind != CombatTemplate::Missile) return;
     // Коэрция нуля в 200 — она же ГАРАНТ кодировки «нет»: у настоящего
     // стрелка speed > 0 всегда, нулевая колонка значит «снарядных нет».
-    sub::set_body_missile(reg, e, ecs::MissileAttack{
+    sub::slot_set_missile(objs, s, ecs::MissileAttack{
         combat.missileSpeed > 0.0f ? combat.missileSpeed : 200.0f,
         combat.missileBlast,
         combat.missileColorRGBA});
 }
 
-void maybe_emplace_flying(entt::registry& reg, entt::entity e,
+void maybe_emplace_flying(SubObjects& objs, int s,
                           const CombatTemplate& combat) {
     if (combat.cruiseM <= 0.0f) return;
-    object_flag_set(reg, e, kObjFlying);
+    slot_flag_set(objs, s, kObjFlying);
 }
 
 // Attach the NPC type's carried light (torch / lantern / arcane glow), if it has
@@ -792,14 +809,13 @@ void maybe_emplace_flying(entt::registry& reg, entt::entity e,
 // lit whether it is a settlement citizen, a projected macro body or a squad
 // soldier — one rule, one place. Budget-safe: guards are bounded per settlement
 // and the nearest-N cull (gather_point_lights) protects the SSBO regardless.
-void maybe_emplace_carried_light(entt::registry& reg,
-                                 entt::entity e,
+void maybe_emplace_carried_light(SubObjects& objs, int s,
                                  const NpcTypeDef& def) {
     if (def.lightRadius <= 0.0f) return;
-    sub::set_body_light(
-        reg, e, ecs::LightEmitter{0.0f, def.lightHeight, 0.0f,
-                                  def.lightR, def.lightG, def.lightB,
-                                  def.lightRadius, def.lightIntensity});
+    sub::slot_set_light(
+        objs, s, ecs::LightEmitter{0.0f, def.lightHeight, 0.0f,
+                                   def.lightR, def.lightG, def.lightB,
+                                   def.lightRadius, def.lightIntensity});
 }
 
 // ── Dungeon residents (sub/dgn interiors) ────────────────────────────────
@@ -1180,17 +1196,20 @@ int spawn_dungeon_vermin(ecs::World& w,
 void clear_subworld_world_entities(ecs::World& w) {
     auto& reg = w.reg;
     std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
+    SubObjects* objs = objects_find(reg);
     for (;;) {
         int doomedCount = 0;
         auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
-            if (is_avatar(reg, e)
-                || object_flag(reg, e, kObjPlayerSoldier)) continue;
+            if (objs == nullptr) break;   // арены нет — нет и тел (транзит)
+            const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+            if (objs->is_avatar_slot(s)
+                || slot_flag(*objs, s, kObjPlayerSoldier)) continue;
             // Projected macro NPCs (Inc 5d) mirror persistent overworld bodies,
             // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
             // must leave them be, exactly like the player-side projections above.
             // On enter this is a no-op (projection runs after the clear).
-            if (sub::body_macro_origin(reg, e).slot != kMacroNoSlot)
+            if (slot_macro_origin(*objs, s).slot != kMacroNoSlot)
                 continue;
             if (doomedCount >= kMaxSubworldSpawnReaps) break;
             doomed[std::size_t(doomedCount++)] = e;
@@ -1349,13 +1368,16 @@ void rebase_subworld_entities(ecs::World& w, float dxTiles, float dyTiles) {
 void despawn_subworld_entities_outside_window(ecs::World& w) {
     auto& reg = w.reg;
     std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
+    SubObjects* objs = objects_find(reg);
     for (;;) {
         int doomedCount = 0;
         auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
-            if (is_avatar(reg, e)
-                || object_flag(reg, e, kObjPlayerSoldier)) continue;
-            const ecs::Position& p = *body_pos(reg, e);
+            if (objs == nullptr) break;   // арены нет — нет и тел (транзит)
+            const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+            if (objs->is_avatar_slot(s)
+                || slot_flag(*objs, s, kObjPlayerSoldier)) continue;
+            const ecs::Position& p = objs->pos[std::size_t(s)];
             const bool inside = p.x >= 0.0f && p.x < float(kFullSize)
                              && p.y >= 0.0f && p.y < float(kFullSize);
             if (inside) continue;
@@ -1471,7 +1493,11 @@ void spawn_player_squad(ecs::World& w,
                                    : -1,
                                soldier.kind, soldier.level}),
             squadBonuses);
-        object_flag_set(reg, e, kObjPlayerSoldier);
+        // Слот-идиома (ii-б): отказ арены (null, слота нет) бит не ставит —
+        // ровно прежний no-op entity-двери.
+        if (const int ss = sub::body_slot(reg, e); ss >= 0) {
+            slot_flag_set(objects_of(reg), ss, kObjPlayerSoldier);
+        }
     }
 }
 
@@ -1553,9 +1579,15 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // per-tick `reconcile_tracked_bodies_to_macro` this used to credit died
     // with the fold-up architecture; the mirror law left nothing to pay up.)
     std::vector<MacroHandle> alreadyProjected;
-    for (auto body : reg.view<ecs::ObjectSlot>()) {
-        const MacroHandle h = sub::body_macro_origin(reg, body);
-        if (h.slot != kMacroNoSlot) alreadyProjected.push_back(h);
+    {
+        SubObjects* apObjs = objects_find(reg);
+        auto apView = reg.view<ecs::ObjectSlot>();
+        for (auto body : apView) {
+            if (apObjs == nullptr) break;   // арены нет — нет и проекций
+            const int s = int(apView.get<ecs::ObjectSlot>(body).slot);
+            const MacroHandle h = slot_macro_origin(*apObjs, s);
+            if (h.slot != kMacroNoSlot) alreadyProjected.push_back(h);
+        }
     }
 
     int projected = 0;
@@ -1643,8 +1675,11 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // hand-authored or persistent leader with a Leader-class perk buffs
         // its troops through this same line with no further change anywhere.
         BonusTotals leaderBonuses{};
-        if (const auto* leaderSheet = sub::body_sheet(reg, leaderBody)) {
-            leaderBonuses = squad_bonuses(*leaderSheet);
+        if (const int ls = sub::body_slot(reg, leaderBody); ls >= 0) {
+            if (const auto* leaderSheet =
+                    sub::slot_sheet(objects_of(reg), ls)) {
+                leaderBonuses = squad_bonuses(*leaderSheet);
+            }
         }
 
         // The leader's troops. Each creature row is one unit of the squad's
