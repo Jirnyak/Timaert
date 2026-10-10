@@ -255,9 +255,11 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     // casting this row fires and transfers nothing — the cast is generic, the
     // effect argues with a flag the caster does not carry. Суд — ссылкой
     // сцены (iii-б): кастер конверта обязан БЫТЬ аватаром (ObjRef ==).
-    if (c.caster.id == 0u || c.caster != sub::objects_of(reg).avatar) return;
-    // ТРАНЗИТ до (vi): aim_target и macro_record_of ещё entity-формы;
-    // сущность даёт дверь аватара — она та же, что судила ссылка выше.
+    sub::SubObjects* objs = sub::objects_find(reg);
+    if (objs == nullptr) return;
+    if (c.caster.id == 0u || c.caster != objs->avatar) return;
+    // ТРАНЗИТ до (vi): aim_target берёт стрелка СУЩНОСТЬЮ — её даёт дверь
+    // аватара, та же ссылка, что судила строкой выше.
     const entt::entity caster = sub::avatar_entity(reg);
     if (caster == entt::null) return;
     // 1-hop ban: the hero husk mirrors his own squad's record; any other
@@ -267,9 +269,14 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     // (записи нет) пакуется в сентинель и честно ловит тот же запрет.
     if (c.gs) {
         const MacroHandle home = macro_handle_from_bits(c.gs->playerSquadBits);
+        // Запись под аватаром — шовной слот-дверью: слот даёт сама ссылка
+        // сцены (суд выше), стора у фикстуры может не быть — «записи нет».
+        MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+        const MacroHandle avRec = stp != nullptr
+            ? sub::slot_macro_record(*objs, int(objs->avatar.slot), **stp)
+            : MacroHandle{};
         if (home.slot != kMacroNoSlot
-            && macro_handle_bits(sub::macro_record_of(reg, caster))
-                   != c.gs->playerSquadBits) return;
+            && macro_handle_bits(avRec) != c.gs->playerSquadBits) return;
     }
     // The body under the reticle, within THIS row's reach. The row is this
     // function's own binding (kSpellEffects), so reading it back is the
@@ -285,7 +292,9 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     // THE GATE: strictly weaker in level, each trained rank of the school
     // raising the threshold by one (owner formula, 2026-09-17). A body with
     // no level is a nobody — level 0, ровно дефолт колонки (кусок 1).
-    const int targetLevel = int(sub::body_level(reg, target));
+    const int targetSlot = sub::body_slot(reg, target);
+    const int targetLevel =
+        targetSlot >= 0 ? int(sub::slot_level(*objs, targetSlot)) : 0;
     if (targetLevel >= int(c.casterLevel) + int(c.schoolRank)) return;
     sub::possess_entity(w, target,
                         c.gs ? &c.gs->playerFlagBits : nullptr);

@@ -21,7 +21,10 @@ constexpr float kDetectionRadius  = kNpcSightDefaultM;
 // cannot live in two headers. Unqualified uses in sm::sub still resolve.
 constexpr int   kHitRepPenalty    = -1;
 
-using PlayerThreatFn = bool (*)(void* user, std::uint32_t entityId);
+// Ключ — СЛОТ арены ((ii-б) ломтя 7): колбэк зовётся из живого цикла тика,
+// голый слот внутри тика законен; entity-ключ был последним entt-литералом
+// мозга (round-trip to_integral).
+using PlayerThreatFn = bool (*)(void* user, int slot);
 // Рельеф под точкой, метры — восприятие ЗЕМЛИ ПОД СОБОЙ для вертикального
 // намерения летуна (полёт-посадка 2026-09-10: «все воспринимают x/y/z»).
 // nullptr = мозг слеп по вертикали и wantVz не пишет (headless-тесты).

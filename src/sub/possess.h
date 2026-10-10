@@ -67,11 +67,15 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
                            std::uint32_t* playerFlagBits) {
     auto& reg = w.reg;
     if (target == entt::null || !reg.valid(target)) return false;
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return false;       // сцены нет — вселяться некуда
+    // Слот-идиома (ii-б): слот цели один раз, дальше слот-двери.
+    const int ts = body_slot(reg, target);
     // «Настоящее тело» — у которого есть БАРЫ (ломоть 5): прежний гейт
     // all_of<Position> этого не проверял никогда — позицию несут и пламя
     // пропа, и снаряд; переносить его на kObjAlive значило бы переписать
     // ту же ложь на новый носитель.
-    if (body_pools(reg, target) == nullptr) return false;
+    if (ts < 0 || slot_pools(*objs, ts) == nullptr) return false;
     const entt::entity cur = current_player_body(w);
     if (cur == target) return false;                      // already inhabiting it
 
@@ -88,8 +92,11 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
     //     («одержим генерик — при выходе сброс») is not written anywhere: the
     //     body dies with the scene while your macro flag never left you.
     // Запись — хэндлом: с 1е кластера 5 макро-флаг ЕСТЬ биты GameState,
-    // entt-носитель записи флажку больше не нужен вовсе.
-    const MacroHandle recH = macro_record_of(reg, target);
+    // entt-носитель записи флажку больше не нужен вовсе. Шовная слот-дверь:
+    // стора у фикстуры может не быть — тот же честный «записи нет».
+    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    const MacroHandle recH = stp != nullptr
+        ? slot_macro_record(*objs, ts, **stp) : MacroHandle{};
 
     if (reg.valid(cur)) {
         // Hero husk (no NPCKind) has no independent existence — since the
@@ -98,7 +105,8 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
         // un-rendered, un-AI'd zombie in the scene. A vacated FOREIGN body
         // keeps every component; with the reference gone its AI / draw /
         // targetability all resume by construction (each is is_avatar-gated).
-        if (body_kind(reg, cur) == nullptr) reg.destroy(cur);
+        const int cs = body_slot(reg, cur);
+        if (cs < 0 || slot_kind(*objs, cs) == nullptr) reg.destroy(cur);
     }
     // Перенос — ОДНА перезапись ссылки: полуперенесённого состояния («тег
     // снят, тег не поставлен») больше не существует по построению.

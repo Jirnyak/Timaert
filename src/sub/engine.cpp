@@ -2170,14 +2170,14 @@ int SubworldEngine::player_display_hp() const {
     return 0;
 }
 
-bool SubworldEngine::player_threat_callback(void* user,
-                                            std::uint32_t entityId) {
+bool SubworldEngine::player_threat_callback(void* user, int slot) {
     auto* engine = static_cast<SubworldEngine*>(user);
     if (!engine || !engine->ecs_ || !engine->gs_) return true;
-    auto& reg = engine->ecs_->reg;
-    const entt::entity e = entt::entity(entityId);
-    if (!reg.valid(e)) return false;
-    return hostile_to_player_entity(reg, e, engine->gs_);
+    // Слот-ключ ((ii-б)): зовётся из живого цикла мозга — голый слот внутри
+    // тика законен; живость судит сама слот-форма (alive_subworld_slot).
+    sub::SubObjects* objs = sub::objects_find(engine->ecs_->reg);
+    if (objs == nullptr) return false;
+    return hostile_to_player_slot(*objs, slot, engine->gs_);
 }
 
 void SubworldEngine::tick_player_melee() {

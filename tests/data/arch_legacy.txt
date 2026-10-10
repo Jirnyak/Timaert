@@ -160,7 +160,6 @@ entt	src/app/smoke.cpp	entt
 entt	src/app/smoke.h	entt
 entt	src/content/spells/effects.cpp	entt
 entt	src/ecs/world.h	entt
-entt	src/sub/ai.cpp	entt
 entt	src/sub/damage.cpp	entt
 entt	src/sub/damage.h	entt
 entt	src/sub/engine.cpp	entt

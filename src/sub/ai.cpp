@@ -5,7 +5,8 @@
 #include "macro/store.h"
 #include "macro/macro_stock.h" // MacroStock::Creatures — чьи люди стоят без чувств
 #include "tables/npc.h"   // cruiseM — крейсерская высота рода летуна
-#include "sub/record.h"  // macro_record_of — «без сознания» читается через зеркало
+#include "sub/record.h"  // objects_find + slot_macro_record — «без сознания»
+                         // читается шовной слот-дверью зеркала
 #include <cmath>
 #include <algorithm>
 
@@ -58,34 +59,41 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     // not by its own errands — excluded here so the two never write the same
     // intent in one step. The exclusion is the WHOLE integration: no new brain
     // kind, no branch inside Wander.
+    SubObjects* objsP = objects_find(reg);
+    if (objsP == nullptr) return;   // сцены нет — думать некому
+    SubObjects& objs = *objsP;
+    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
     auto view = reg.view<ecs::ObjectSlot>();
     for (auto e : view) {
+        // Слот-идиома (ii-б): слот один раз из вьюхи, дальше слот-двери.
+        const int s = int(view.get<ecs::ObjectSlot>(e).slot);
         // Мозг — колонка арены (кусок 3); тело без мозга (игрок, реквизит)
         // здесь не живёт. «Идёт домой» — бит: его ведёт помпа дня, не мозг.
-        ecs::SubworldAi* aiCol = body_ai(reg, e);
+        ecs::SubworldAi* aiCol = slot_ai(objs, s);
         if (aiCol == nullptr) continue;
-        if (object_flag(reg, e, kObjGoingHome)) continue;
-        // A body wearing the scene flag (AvatarTag) is driven by player
-        // input (its authoritative Position is written by the engine), not by
-        // its own brain. Skip it entirely so Wander/Flee never fights the
-        // player. No component churn on possess/vacate — when the flag leaves,
-        // the body's AI resumes automatically on the very next tick.
-        if (is_avatar(reg, e)) continue;
+        if (slot_flag(objs, s, kObjGoingHome)) continue;
+        // A body wearing the scene flag is driven by player input (its
+        // authoritative Position is written by the engine), not by its own
+        // brain. Skip it entirely so Wander/Flee never fights the player. No
+        // component churn on possess/vacate — when the flag leaves, the
+        // body's AI resumes automatically on the very next tick.
+        if (objs.is_avatar_slot(s)) continue;
         // …и тело брошенного сквада стоит без чувств (предикат выше): сам
         // сквад — по записи, его люди — по контейнерному займу.
         if (unconsciousRec.slot != kMacroNoSlot) {
-            if (macro_record_of(reg, e) == unconsciousRec) {
+            if (stp != nullptr
+                && slot_macro_record(objs, s, **stp) == unconsciousRec) {
                 aiCol->wantVx = aiCol->wantVy = 0.0f;
                 continue;
             }
-            if (const auto* debt = body_debt(reg, e);
+            if (const auto* debt = slot_debt(objs, s);
                 debt && debt->stock == std::uint8_t(MacroStock::Creatures)
                 && debt->subject == unconsciousSubject) {
                 aiCol->wantVx = aiCol->wantVy = 0.0f;
                 continue;
             }
         }
-        const ecs::Position& p = *body_pos(reg, e);
+        const ecs::Position& p = objs.pos[std::size_t(s)];
         auto& a = *aiCol;
         // Deterministic per-decision seed: the ARENA BIRTH ID (iii-г, вердикт
         // владельца 2026-10-10 «обрезай всё лишнее» — entt-биты ушли из соли;
@@ -119,7 +127,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
             float dx = p.x - px, dy = p.y - py;
             float d2 = dx * dx + dy * dy;
             const bool playerIsThreat = threatFn
-                ? threatFn(threatUser, std::uint32_t(entt::to_integral(e)))
+                ? threatFn(threatUser, s)
                 : true;
             if (playerIsThreat && d2 < kFleeRadius * kFleeRadius) {
                 float d = std::sqrt(d2) + 1e-4f;
@@ -175,8 +183,8 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         // закон — конверт [опора, потолок] остаётся единственным законом),
         // беглец предпочитает вдвое выше: высота — его дорога. Темп
         // подъёма = его же wanderSpeed: одно тело — один темп.
-        if (heightFn && object_flag(reg, e, kObjFlying)) {
-            const auto* kind = body_kind(reg, e);
+        if (heightFn && slot_flag(objs, s, kObjFlying)) {
+            const auto* kind = slot_kind(objs, s);
             const float cruise =
                 kind && kind->type < std::uint16_t(NPCType::Count)
                     ? kNpcTypeDefs[kind->type].combat.cruiseM : 0.0f;

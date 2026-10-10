@@ -1050,8 +1050,7 @@ private:
                                        float ax, float ay, float az,
                                        float bx, float by, float bz,
                                        float blastRadius);
-    static bool player_threat_callback(void* user,
-                                       std::uint32_t entityId);
+    static bool player_threat_callback(void* user, int slot);
     float statusTimer_ = 0.0f;
     // Reused scratch for collect_minimap_blips() — rebuilt each call, kept
     // allocated across frames so the HUD never allocates in the draw path.
