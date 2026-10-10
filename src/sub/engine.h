@@ -661,8 +661,9 @@ private:
     // The ECS stays the authority for damage/death/loot; this is only "where do
     // bodies want to be", so one bandit and a full kMaxSubObjects of soldiers
     // run the very same code.
-    // The crowd is one flat MiB and cannot live in a stack frame, so it is born
-    // in its own heap block here, once, and never reallocated (movement.h).
+    // The crowd is one flat 4 MiB block (65536 slots × 64 B, static_assert at
+    // movement.h) and cannot live in a stack frame, so it is born in its own
+    // heap block here, once, and never reallocated.
     std::unique_ptr<BodyCrowd> crowd_ = make_body_crowd();
     // Two bucket grids at two scales: bodies are ~1 unit wide, weapons reach up
     // to 25, and one cell size cannot serve both queries without going quadratic
@@ -671,11 +672,12 @@ private:
     UnitGrid                crowdPick_;   // contact / target search
     InfluenceField          crowdField_;
     MoveParams            moveParams_{};
-    // Parallel column of the crowd: the entity each SoA index came from. Fixed
-    // like every other column and indexed by the SAME `crowd_->count`, so there
-    // is no second length to keep in step (it cannot hold entt inside BodyCrowd
-    // itself — that module is deliberately entt-free).
-    std::array<entt::entity, kMaxSubObjects> crowdEnts_{};
+    // Parallel column of the crowd: the arena SLOT each SoA index came from
+    // (ступень (iv) ломтя 7 — сущность из карты толпы умерла: всё
+    // внутритиковое, голый u16 законен внутри тика). Fixed like every other
+    // column and indexed by the SAME `crowd_->count`, so there is no second
+    // length to keep in step.
+    std::array<std::uint16_t, kMaxSubObjects> crowdSlots_{};
     // The spell broad phase's honesty bits (spell_neighbors_callback). The
     // gather sets truncated when the 16k ceiling cut bodies out of the grids —
     // the callback then answers -1 and the spell tick falls back to its full

@@ -96,8 +96,13 @@ inline float body_radius(const entt::registry& reg, entt::entity e) {
 // the same number it always did, and nothing moves. What changed is that there
 // is now somewhere for a row to answer FROM: give `kNpcTypeDefs` an eye column
 // and every caster, archer and camera in the game follows it at once.
+// Слот-форма — конечная (ломоть 7 (iv)); entity-форма — тонкий адаптер.
+inline float slot_body_eye_m(const SubObjects& o, int s) {
+    (void)o; (void)s;     // the row does not speak yet; the door already does
+    return kBodyEyeM;
+}
 inline float body_eye_m(const entt::registry& reg, entt::entity e) {
-    (void)reg; (void)e;   // the row does not speak yet; the door already does
+    (void)reg; (void)e;
     return kBodyEyeM;
 }
 

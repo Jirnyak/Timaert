@@ -49,7 +49,7 @@ state_census 192/1; `balance_run 12345,1 48` — 4 TSV md5 идентичны б
 
 ## ЗАДАЧА — ЛОМОТЬ 7, ОСТАТОК ЛЕСТНИЦЫ (порядок суда 2026-10-10)
 
-**(iv)** `crowdEnts_@src/sub/engine.h` → `crowdSlots_` u16 (−128 КиБ);
+**(iv)** `crowdEnts_` → `crowdSlots_@src/sub/engine.h` u16 (−128 КиБ);
 броадфейз-буферы (`spell_neighbors_callback` → spell_effects, targeting)
 несут СЛОТ, не биты. Всё внутритиковое — ID не нужен (голый слот законен
 внутри тика).
@@ -218,7 +218,7 @@ to_integral НЕ соль, а адрес с round-trip (подмена молч�
   держатся; ядро M-220 (смерть колонки generation, ссылка {слот,
   spawnId}) — в очередь СРАЗУ после ломтя 7. `ev.a/ev.b` сценной смерти — СЛОТОМ (см. вопрос владельцу).
 
-**(iv)** `crowdEnts_@src/sub/engine.h` → `crowdSlots_` u16 (−128 КиБ);
+**(iv)** `crowdEnts_` → `crowdSlots_@src/sub/engine.h` u16 (−128 КиБ);
 броадфейз-буферы (`spell_neighbors_callback` → spell_effects:111,
 targeting:75) несут СЛОТ, не биты. Всё внутритиковое — ID не нужен.
 
@@ -479,7 +479,7 @@ MacroDebt, NpcInventory, CharacterSheet/StandingMirror спавна — в ко�
 `SubObjects@src/sub/objects.h` (колонки kind/level/pools/combat/missile/
 ai/visual/goHome/airborneVz/projectile уже там); sizeof каждой колонки,
 итог в МиБ по 16384 И по 65536; что УБИВАЕТСЯ поимённо:
-`crowdEnts_@src/sub/engine.h`, `avatarEnttBits` (objects.h), entt-ид
+`crowdEnts_`, `avatarEnttBits` (objects.h), entt-ид
 атакера (`src/sub/damage.cpp`), ctx-мосты `store_attach`/`objects_attach`,
 `reg@src/ecs/world.h` и `App::ecs`, фикстура `scene_objects_fixture.h`.
 Картину — владельцу ДО кода.
@@ -620,7 +620,7 @@ state_census 192 / 1. Паритет шага 0 ПОБАЙТОВЫЙ (4 TSV × 2
 
 Ломти M-150: сперва КАРТИНА ПАМЯТИ ДО КОДА (DOD п.10 — 10 компонент registry
 → колонки SubObjects, sizeof, итог МиБ по 16384 И 65536, что убивается:
-`crowdEnts_@src/sub/engine.h`, `avatarEnttBits`, ctx-мосты, `App::ecs`);
+`crowdEnts_`, `avatarEnttBits`, ctx-мосты, `App::ecs`);
 порядок против M-98 решён — M-150 раньше (реестр, шапка). Затем эпик данжей,
 затем эпик ИИ (M-235 → M-242).
 
@@ -699,7 +699,7 @@ MacroDebt, NpcInventory, CharacterSheet/StandingMirror спавна — в ко�
 `SubObjects@src/sub/objects.h` (миграция «ломти 1а..7» уже идёт, колонки
 kind/level/pools/combat/missile/ai/visual/goHome/airborneVz/projectile там);
 sizeof каждой колонки, итог в МиБ по 16384 И по 65536; что УБИВАЕТСЯ
-поимённо: `crowdEnts_@src/sub/engine.h`, `avatarEnttBits` (objects.h),
+поимённо: `crowdEnts_`, `avatarEnttBits` (objects.h),
 entt-ид атакера (`src/sub/damage.cpp`, «атакер пока носит entt-ид тела»), ctx-мосты `store_attach`/`objects_attach`,
 `reg@src/ecs/world.h` и `App::ecs`, фикстура `scene_objects_fixture.h`.
 
@@ -833,7 +833,7 @@ EnTT НЕ уничтожена: **21 файл entt-кода в `src/`** (мер�
 MacroOrigin, MacroDebt, NpcInventory + CharacterSheet/StandingMirror на
 спавне); остальные уже колонки `SubObjects`/`MacroStore`. Крупнейшие
 держатели: `app/smoke.cpp` 108 строк, `sub/engine.cpp` 107, `sub/record.h` 86
-(весь файл — фасад). Мосты, по которым виден шов: `crowdEnts_@src/sub/engine.h`,
+(весь файл — фасад). Мосты, по которым виден шов: `crowdEnts_`,
 `avatarEnttBits` (objects.h), атакер носит entt-ид (`damage.cpp`). Порядок
 ломтей — по M-150; связный рефактор субагенту НЕ отдавать (§2 п.4).
 
@@ -1763,7 +1763,7 @@ check не видел.
 
 ## ОСТАТОК ПОРЯДКА ЛОМТЕЙ (вердикты взяты, не перевыводить)
 
-3 (мост макро: `macroRec`/`debt`/`sheet`, смерть `crowdEnts_@src/sub/engine.h`,
+3 (мост макро: `macroRec`/`debt`/`sheet`, смерть `crowdEnts_`,
 `state_of`-семейство) → 6 (кап ОДНИМ именем `kMaxSubObjects` = 65536 + правка
 инварианта CLAUDE §7 «16384» тем же шагом) → 7 (смерть реестра: `App::ecs`,
 `LINK_ENTT` → 0, выпил FetchContent EnTT, `state_census` 0 расхождений).
@@ -2554,7 +2554,7 @@ CANON S13 записал дисциплину — **игрок живёт в п�
   ЛОМТИ, каждый под зелёный check: (1) fx-колонки + теги → маска;
   (2) ядро pos/pools/combat/kind/sprite/ai/face/level + снос SoldierLink и
   оверрайда инвентаря; (3) мост макро (macroRec/debt/sheet) + смерть
-  crowdEnts_@src/sub/engine.h; (4) снаряды колонкой того же массива;
+  crowdEnts_; (4) снаряды колонкой того же массива;
   (5) труп = маска слота (CorpseLoot умирает); (6) кап одним именем
   **kMaxSubObjects = 65536** (вердикт 2026-10-05: 2^16 = мощность u16,
   «решить на века»; «нет» = ген 0 по ЗАКОНУ НУЛЯ-ОРДИНАЛА, хэндл

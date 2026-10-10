@@ -290,11 +290,9 @@ bool alive_subworld_slot(const sub::SubObjects& objs, int s) {
         && !sub::slot_flag(objs, s, sub::kObjDead);
 }
 
-bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
-    const sub::SubObjects* objs = sub::objects_find(reg);
-    return objs != nullptr
-        && alive_subworld_slot(*objs, sub::body_slot(reg, e));
-}
+// (entity-адаптер alive_subworld_entity умер в ступени (iv): последний
+// звонящий — разрешение ударов — судит слотом; живость сущностных путей
+// спрашивает hostile_to_player_entity через слот-форму ниже.)
 
 bool is_player_side_slot(const sub::SubObjects& objs, int s) {
     return objs.is_avatar_slot(s)
@@ -397,33 +395,35 @@ const char* compass_from_delta(float dx, float dy) {
 }
 
 void spawn_npc_missile(entt::registry& reg,
-                       entt::entity attacker,
+                       int attackerSlot,
                        const ecs::Position& origin,
                        const ecs::Combat& combat,
                        Rng& combatRng,
                        float targetX,
                        float targetY,
                        float targetZ,
-                       entt::entity target = entt::null) {
-    const auto* missile = sub::body_missile(reg, attacker);
+                       int targetSlot = -1) {
+    if (attackerSlot < 0) return;   // тела на арене нет — выстрела нет
+    sub::SubObjects& objs = sub::objects_of(reg);
+    const auto* missile = sub::slot_missile(objs, attackerSlot);
     const float speed = missile && missile->speed > 0.0f
         ? missile->speed
         : 200.0f;
     // EYE TO EYE, not foot to foot. The shot leaves the SHOOTER's eye and is
     // aimed at the mark's — each end asks the one door for the body it belongs
-    // to (sub/body.h body_eye_m) instead of adding a constant here, which is
-    // what this spawner used to do and what made it a third author of "where a
-    // body's eyes are". While every body answers the same height the shot stays
-    // level exactly as before; when a row finally says a troll's eyes are
-    // higher than a goblin's, the goblin aims up with no code here.
+    // to (sub/body.h slot_body_eye_m) instead of adding a constant here, which
+    // is what this spawner used to do and what made it a third author of
+    // "where a body's eyes are". While every body answers the same height the
+    // shot stays level exactly as before; when a row finally says a troll's
+    // eyes are higher than a goblin's, the goblin aims up with no code here.
     //
-    // `target` is optional because not every shot is aimed at a BODY: the
-    // player's bow aims at a point on his own crosshair ray, which is already
-    // stated at the height he is looking from, so the mark's end measures from
-    // the shooter.
-    const entt::entity markBody = target != entt::null ? target : attacker;
-    const float originZ = origin.z + body_eye_m(reg, attacker);
-    const float aimZ = targetZ + body_eye_m(reg, markBody);
+    // `targetSlot` is optional (-1) because not every shot is aimed at a BODY:
+    // the player's bow aims at a point on his own crosshair ray, which is
+    // already stated at the height he is looking from, so the mark's end
+    // measures from the shooter.
+    const int markSlot = targetSlot >= 0 ? targetSlot : attackerSlot;
+    const float originZ = origin.z + sub::slot_body_eye_m(objs, attackerSlot);
+    const float aimZ = targetZ + sub::slot_body_eye_m(objs, markSlot);
     const float dx = targetX - origin.x;
     const float dy = targetY - origin.y;
     const float dz = aimZ - originZ;
@@ -431,7 +431,7 @@ void spawn_npc_missile(entt::registry& reg,
     const float nx = dx / dist3;
     const float ny = dy / dist3;
     const float nz = dz / dist3;
-    const float attackerRadius = body_radius(reg, attacker);
+    const float attackerRadius = sub::slot_body_radius(objs, attackerSlot);
     // Muzzle geometry mirrors the player's caster_spawn_offset(): spawn the
     // bolt fully clear of the caster's own hit shell so it can never strike
     // its owner on frame 1. Since Inc 4d removed the owner self-exclusion,
@@ -458,11 +458,10 @@ void spawn_npc_missile(entt::registry& reg,
     // Поля НАЗВАНЫ (0b ломтя 7): позиционный список переживал перестановку
     // полей при том же sizeof молча; designated-форму перестановка красит
     // стеной -Wreorder-init-list -Werror.
-    // Владелец стрелы — ссылка сцены (iii-б): слот берётся один раз,
+    // Владелец стрелы — ссылка сцены (iii-б): слот уже в руках,
     // пара {ownerSlot, ownerId} уносит её в снаряд; протухание судит
     // читатель (ref_slot).
-    const sub::ObjRef atk =
-        sub::ref_of(sub::objects_of(reg), sub::body_slot(reg, attacker));
+    const sub::ObjRef atk = sub::ref_of(objs, attackerSlot);
     const ecs::Projectile arrow{
         .vx = nx * speed, .vy = ny * speed, .vz = nz * speed,
         .radius = projectileRadius, .lifeTimer = life, .maxLifeTimer = life,
@@ -2230,7 +2229,7 @@ void SubworldEngine::tick_player_melee() {
         const float dirX = std::cos(cam_.yaw) * cp;
         const float dirY = std::sin(cam_.yaw) * cp;
         const float dirZ = std::sin(cam_.pitch);
-        spawn_npc_missile(reg, playerEnt,
+        spawn_npc_missile(reg, sub::body_slot(reg, playerEnt),
                           ecs::Position{playerX_, playerY_, playerZ_},
                           strikeStats, combatRng_,
                           playerX_ + dirX * strikeStats.attackRange,
@@ -3122,15 +3121,11 @@ int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
                 const std::size_t sj = std::size_t(g.items[k]);
                 const float dx = u.x[sj] - x, dy = u.y[sj] - y;
                 if (dx * dx + dy * dy > rr2) continue;
-                // Груз — СЛОТ (ступень (iv)); до (iv-в) карта толпы ещё
-                // сущностная, слот берётся преамбулой адаптера. Тело,
-                // умершее между сбором и запросом, честно пропускается —
-                // прежде его пропускал reg.valid у потребителя.
-                const int bs = sub::body_slot(self->ecs_->reg,
-                                              self->crowdEnts_[sj]);
-                if (bs < 0) continue;
+                // Груз — СЛОТ (ступень (iv)): карта толпы слотовая, гейт
+                // живости — у потребителя (тело, умершее между сбором и
+                // запросом, отсеивает его kObjAlive, как прежде reg.valid).
                 if (n >= maxOut) return -1; // cannot promise completeness
-                out[n++] = std::uint16_t(bs);
+                out[n++] = self->crowdSlots_[sj];
             }
         }
     }
@@ -3184,7 +3179,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // fires, which is what keeps the string lookups off the per-frame path.
     // Rewinding the count IS the clear: every column is already the ceiling
     // long, so there is nothing to reserve and nothing that can reallocate
-    // mid-gather. crowdEnts_ rides the same count.
+    // mid-gather. crowdSlots_ rides the same count.
     crowd_->clear();
     crowdFactions_.clear();
     // The player side is interned FIRST so it owns a stable index for the tick;
@@ -3198,14 +3193,14 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // is exactly the staleness the spell broad phase must pad its queries by.
     float maxDrive = 0.0f;
 
-    // Сбор боя (ломоть 5): позиция — колонка арены, слот уже в вьюхе; сам
-    // сбор остаётся сущностным до ломтя 7 (crowdEnts_ — его карта).
+    // Сбор боя (ломоть 5): позиция — колонка арены, слот уже в вьюхе; карта
+    // толпы — СЛОТЫ (ступень (iv)); сама вьюха умирает в (vi).
     sub::SubObjects& arena = sub::objects_of(reg);
     auto actorView = reg.view<ecs::ObjectSlot>();
     for (auto e : actorView) {
         if (sub::object_flag(reg, e, sub::kObjDead)) continue;
-        const ecs::Position& p = arena.pos[std::size_t(
-            actorView.get<ecs::ObjectSlot>(e).slot)];
+        const std::uint16_t slot = actorView.get<ecs::ObjectSlot>(e).slot;
+        const ecs::Position& p = arena.pos[std::size_t(slot)];
         const auto* hpCol = sub::body_pools(reg, e);
         if (hpCol == nullptr) continue;
         const auto& hp = *hpCol;
@@ -3300,7 +3295,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             crowdGatherTruncated_ = true;
             break;
         }
-        crowdEnts_[std::size_t(idx)] = e;
+        crowdSlots_[std::size_t(idx)] = slot;
     }
     crowdMaxStepM_ = maxDrive * dt;
     if (crowd_->count <= 0) {
@@ -3378,18 +3373,17 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     steer_bodies(*crowd_, crowdFine_, crowdPick_, crowdField_, terrain,
                  moveParams_, dt, &stats);
 
-    // ── Scatter: SoA → колонка pos (ломоть 5) ─────────────────────────────
+    // ── Scatter: SoA → колонка pos (ломоть 5; слотами — ступень (iv)) ─────
     // Z is deliberately untouched: the ground-follow pass in tick() owns it.
     for (int i = 0; i < crowd_->count; ++i) {
         const std::size_t si = std::size_t(i);
         if ((crowd_->flags[si] & B_Pinned) != 0u) continue;
-        const entt::entity e = crowdEnts_[si];
-        if (!reg.valid(e)) continue;
-        ecs::Position* p = sub::body_pos(reg, e);
-        if (p == nullptr) continue;
-        p->x = crowd_->x[si];
-        p->y = crowd_->y[si];
-        if (sub::is_avatar(reg, e)) {
+        const int s = int(crowdSlots_[si]);
+        if (!sub::slot_flag(arena, s, sub::kObjAlive)) continue;
+        ecs::Position& p = arena.pos[std::size_t(s)];
+        p.x = crowd_->x[si];
+        p.y = crowd_->y[si];
+        if (arena.is_avatar_slot(s)) {
             // The engine's player scalars are a VIEW of his body now, not a
             // second truth beside it: the mover moved him with everyone else,
             // and this is where the camera learns where he ended up.
@@ -3398,23 +3392,22 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             playerVx_ = crowd_->vx[si];
             playerVy_ = crowd_->vy[si];
         }
-        if (auto* ai = sub::body_ai(reg, e)) {
+        if (auto* ai = sub::slot_ai(arena, s)) {
             ai->vx = crowd_->vx[si];
             ai->vy = crowd_->vy[si];
         }
     }
 
-    auto strike = [&](entt::entity attacker, entt::entity target,
+    MacroStore* const* strikeSt = reg.ctx().find<MacroStore*>();
+    auto strike = [&](int attacker, int target,
                       ecs::Combat& c, bool playerOwned) {
         const StrikeRoll swing =
             roll_strike(combatRng_, c.dice, c.flatAdd, c.multPct, c.luck);
-        // Атакер — ссылка сцены (ступень (iii)): слот берётся один раз,
+        // Атакер — ссылка сцены (ступень (iii)): слот уже в руках,
         // ref_of даёт {слот, живой ID} — протухание решит читатель.
         const DamageResult hit = apply_damage(
-            reg, target,
-            DamageSource{.attacker = sub::ref_of(
-                             sub::objects_of(reg),
-                             sub::body_slot(reg, attacker)),
+            arena, strikeSt != nullptr ? *strikeSt : nullptr, target,
+            DamageSource{.attacker = sub::ref_of(arena, attacker),
                          .playerOwned = playerOwned,
                          .critical = swing.critical},
             swing.amount, DamageKind::Melee, DamageType(c.dmgType),
@@ -3442,33 +3435,31 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // merged, 2026-08-30: the player was pinned OUT of the mover then, and
         // nothing wears that flag in the shipping engine any more.)
         if ((crowd_->flags[si] & (B_Passive | B_Pinned)) != 0u) continue;
-        const entt::entity e = crowdEnts_[si];
-        if (!reg.valid(e) || !alive_subworld_entity(reg, e)) continue;
+        const int s = int(crowdSlots_[si]);
+        if (!alive_subworld_slot(arena, s)) continue;
         const std::int32_t t = crowd_->target[si];
         if (t < 0) continue;
-        const entt::entity targetEnt = crowdEnts_[std::size_t(t)];
-        if (!reg.valid(targetEnt) || !alive_subworld_entity(reg, targetEnt))
-            continue;
+        const int targetSlot = int(crowdSlots_[std::size_t(t)]);
+        if (!alive_subworld_slot(arena, targetSlot)) continue;
 
         // A weaponless body can be a target but never an attacker — it has
-        // nothing to strike with. try_get, not get: the snapshot now admits
-        // bodies without Combat, and steering's inReach flag is not a promise
-        // that the body owns a weapon.
-        auto* cp = sub::body_combat(reg, e);
+        // nothing to strike with. Null, not get: the snapshot admits bodies
+        // without Combat, and steering's inReach flag is not a promise that
+        // the body owns a weapon.
+        auto* cp = sub::slot_combat(arena, s);
         if (!cp) continue;
         auto& c = *cp;
         if (c.recoverySteps > 0u) continue;
-        const bool owned = sub::object_flag(reg, e, sub::kObjPlayerSoldier);
+        const bool owned = sub::slot_flag(arena, s, sub::kObjPlayerSoldier);
         if (c.kind == ecs::Combat::Missile) {
-            const ecs::Position* p = sub::body_pos(reg, e);
-            const ecs::Position* tp = sub::body_pos(reg, targetEnt);
-            if (p == nullptr || tp == nullptr) continue;
-            spawn_npc_missile(reg, e, *p, c, combatRng_, tp->x, tp->y, tp->z,
-                              targetEnt);
+            const ecs::Position& p = arena.pos[std::size_t(s)];
+            const ecs::Position& tp = arena.pos[std::size_t(targetSlot)];
+            spawn_npc_missile(reg, s, p, c, combatRng_, tp.x, tp.y, tp.z,
+                              targetSlot);
             c.recoverySteps = steps_from_seconds(c.cooldown);
             continue;
         }
-        strike(e, targetEnt, c, owned);
+        strike(s, targetSlot, c, owned);
     }
 }
 
