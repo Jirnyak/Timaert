@@ -848,7 +848,6 @@ macro-registry.md	:265-276
 macro-registry.md	:285-287
 macro-registry.md	:293-294
 macro-registry.md	:295
-macro-registry.md	:300
 macro-registry.md	:3031
 macro-registry.md	:304
 macro-registry.md	:3244
@@ -927,7 +926,6 @@ macro-registry.md	econ_day.h:320
 macro-registry.md	econ_day.h:329
 macro-registry.md	engine.cpp:3116-3122
 macro-registry.md	engine.cpp:3123
-macro-registry.md	engine.cpp:337
 macro-registry.md	engine.cpp:4357
 macro-registry.md	faction.h:320
 macro-registry.md	features.h:117-137
