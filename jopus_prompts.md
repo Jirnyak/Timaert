@@ -817,7 +817,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 `quest_engine.cpp:203-204`, никто не шлёт), `Custom` (только дефолт
 инициализации `logic_nodes.h:23` и тесты). Теги с производителем, но без
 прод-читателя: `QuestStart`, `QuestUpdate` (`quest_engine.cpp:261,294`),
-`SpellCast` (`main.cpp:2101`), `PlayerLeaveSettlement` (main.cpp:457 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
+`SpellCast` (`main.cpp:2101`), `PlayerLeaveSettlement` (main.cpp:460 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
 
 **1. Контекст.** Читать: `src/events/event_bus.h` целиком,
 `src/events/event_bus.cpp` целиком, `src/events/event_types.h:20-64`
