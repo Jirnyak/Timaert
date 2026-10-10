@@ -19,7 +19,8 @@
 // unit-testable in isolation and can back both the first-person reticle and the
 // macro `control <id>` debug aim without duplication.
 #pragma once
-#include "ecs/world.h" // entt::registry/entity + ecs components
+#include "ecs/world.h"   // entt::registry/entity + ecs components (aim_target)
+#include "sub/objects.h" // SubObjects — арена сцены (melee_pick_target)
 
 namespace sm::sub {
 
@@ -37,8 +38,9 @@ namespace sm::sub {
 // striking a neutral stays possible (and keeps its reputation price) but a
 // bystander no longer catches the blow meant for the bandit behind him.
 // `isHostile` is a callback because hostility needs GameState (reputation),
-// which this pure module deliberately does not know.
-using HostileFn = bool (*)(void* user, entt::entity e);
+// which this pure module deliberately does not know. Груз — СЛОТ арены
+// (ступень (iv) ломтя 7): всё внутритиковое, голый u16 законен внутри тика.
+using HostileFn = bool (*)(void* user, int slot);
 
 // Broad phase for the swing — the battle pick grid, reached exactly like the
 // spell contact reaches it (same shape as SpellNeighborsFn, same promises: a
@@ -48,7 +50,7 @@ using HostileFn = bool (*)(void* user, entt::entity e);
 // own buffer is sized by it in targeting.cpp, where it is read directly: this
 // header states the contract, never a second copy of the number.
 using MeleeNeighborsFn = int (*)(void* user, float x, float y, float r,
-                                 std::uint32_t* out, int maxOut);
+                                 std::uint16_t* out, int maxOut);
 
 // `range` is the attacker's reach — ONE number (owner ruling 2026-08-27: a
 // mob's row states its own attack radius; a man's will come from his spear
@@ -57,12 +59,14 @@ using MeleeNeighborsFn = int (*)(void* user, float x, float y, float r,
 // dist − body_radius(target) ≤ range, the same law the NPC strike walks
 // (sub/movement.cpp reach + radius[target]) — a troll is struck from farther
 // away than a frog because a troll is wider, not because anyone branched.
-entt::entity melee_pick_target(entt::registry& reg,
-                               float px, float py, float pz,
-                               float range,
-                               HostileFn isHostile, void* user,
-                               MeleeNeighborsFn neighborsFn = nullptr,
-                               void* neighborsUser = nullptr);
+// Возврат — СЛОТ арены, -1 = в досягаемости никого (ступень (iv): форма
+// двери — АРЕНА, не реестр; сущность в выборе цели больше не участвует).
+int melee_pick_target(const SubObjects& objs,
+                      float px, float py, float pz,
+                      float range,
+                      HostileFn isHostile, void* user,
+                      MeleeNeighborsFn neighborsFn = nullptr,
+                      void* neighborsUser = nullptr);
 
 entt::entity aim_target(entt::registry& reg,
                         float px, float py, float pz,

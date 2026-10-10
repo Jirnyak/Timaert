@@ -102,17 +102,18 @@ std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
 
 // ── The grid broad phase under test — the engine callback's twin ───────────
 // Same walk, same padding law (fattest body radius; the scene is static so
-// the per-tick-drift term is zero), same -1 overflow honesty.
+// the per-tick-drift term is zero), same -1 overflow honesty. Груз — СЛОТ
+// арены (ступень (iv) ломтя 7), как у spell_neighbors_callback.
 struct GridBroadPhase {
     // One flat MiB in its own block — the rig cannot hold it by value.
     std::unique_ptr<sm::sub::BodyCrowd> units = sm::sub::make_body_crowd();
     sm::sub::UnitGrid pick;
-    std::vector<entt::entity> ents;
+    std::vector<std::uint16_t> slots;
     float pad = 0.0f;
 
     void build(entt::registry& reg) {
         units->clear();
-        ents.clear();
+        slots.clear();
         auto view = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
             if (sm::sub::body_pools(reg, e) == nullptr) continue;
@@ -121,7 +122,7 @@ struct GridBroadPhase {
             d.x = p.x; d.y = p.y; d.z = p.z;
             d.radius = sm::sub::body_radius(reg, e);
             units->add(d);
-            ents.push_back(e);
+            slots.push_back(view.get<sm::ecs::ObjectSlot>(e).slot);
         }
         const sm::sub::MoveParams prm{};
         build_unit_grid(pick, *units, pick_cell_for(*units, prm), 256);
@@ -129,7 +130,7 @@ struct GridBroadPhase {
     }
 
     static int fn(void* user, float x, float y, float r,
-                  std::uint32_t* out, int maxOut) {
+                  std::uint16_t* out, int maxOut) {
         auto* self = static_cast<GridBroadPhase*>(user);
         const auto& u = *self->units;
         const auto& g = self->pick;
@@ -148,18 +149,17 @@ struct GridBroadPhase {
                     const float dx = u.x[sj] - x, dy = u.y[sj] - y;
                     if (dx * dx + dy * dy > rr2) continue;
                     if (n >= maxOut) return -1;
-                    out[n++] = std::uint32_t(
-                        entt::to_integral(self->ents[sj]));
+                    out[n++] = self->slots[sj];
                 }
             }
         }
         return n;
     }
 
-    static int fallback_fn(void*, float, float, float, std::uint32_t*, int) {
+    static int fallback_fn(void*, float, float, float, std::uint16_t*, int) {
         return -1;
     }
-    static int lossy_fn(void*, float, float, float, std::uint32_t*, int) {
+    static int lossy_fn(void*, float, float, float, std::uint16_t*, int) {
         return 0;                             // loses every body — must be caught
     }
 };

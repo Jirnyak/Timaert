@@ -161,36 +161,41 @@ int main() {
     }
 
     // ── melee_pick_target: hostiles first, nearest-any as fallback ────────
+    // Выбор цели — слотами арены (ступень (iv) ломтя 7): груз оракула и
+    // возврат — слот, -1 = никого.
     {
         entt::registry reg;
-        entt::entity peasant = make_enemy(reg, 102, 100); // dist 2, NEUTRAL
-        entt::entity bandit = make_enemy(reg, 104, 100);  // dist 4, HOSTILE
-        auto hostileIsBandit = [](void* user, entt::entity e) {
-            return e == *static_cast<entt::entity*>(user);
+        const int peasant =
+            sub::body_slot(reg, make_enemy(reg, 102, 100)); // dist 2, NEUTRAL
+        int bandit =
+            sub::body_slot(reg, make_enemy(reg, 104, 100)); // dist 4, HOSTILE
+        const sub::SubObjects& objs = sm::test::arena_of(reg);
+        auto hostileIsBandit = [](void* user, int s) {
+            return s == *static_cast<int*>(user);
         };
         // The OLD rule (no oracle): nearest body of any stripe — the peasant
         // catches the blow meant for the bandit behind him. Kept as the
         // documented fallback when nothing hostile is in reach.
-        entt::entity oldPick = sub::melee_pick_target(
-            reg, 100, 100, 0, 25.0f, nullptr, nullptr);
+        const int oldPick = sub::melee_pick_target(
+            objs, 100, 100, 0, 25.0f, nullptr, nullptr);
         CHECK(oldPick == peasant,
               "fallback (no hostile oracle) is nearest-any — the old rule");
         // The NEW rule: the hostile wins even though it stands farther.
-        entt::entity pick = sub::melee_pick_target(
-            reg, 100, 100, 0, 25.0f, hostileIsBandit, &bandit);
+        const int pick = sub::melee_pick_target(
+            objs, 100, 100, 0, 25.0f, hostileIsBandit, &bandit);
         CHECK(pick == bandit,
               "a hostile in reach beats a nearer neutral");
         // No hostile in reach -> nearest-any fallback (striking a neutral
         // deliberately stays possible; the reputation price handles it).
-        entt::entity far = make_enemy(reg, 200, 200);
-        entt::entity pick2 = sub::melee_pick_target(
-            reg, 100, 100, 0, 25.0f, hostileIsBandit, &far);
+        int far = sub::body_slot(reg, make_enemy(reg, 200, 200));
+        const int pick2 = sub::melee_pick_target(
+            objs, 100, 100, 0, 25.0f, hostileIsBandit, &far);
         CHECK(pick2 == peasant,
               "with no hostile in reach the swing falls back to nearest-any");
-        // Range gate still absolute: nothing in reach -> null.
-        entt::entity pick3 = sub::melee_pick_target(
-            reg, 0, 0, 0, 25.0f, nullptr, nullptr);
-        CHECK(pick3 == entt::null, "outside reach nothing is picked");
+        // Range gate still absolute: nothing in reach -> -1.
+        const int pick3 = sub::melee_pick_target(
+            objs, 0, 0, 0, 25.0f, nullptr, nullptr);
+        CHECK(pick3 == -1, "outside reach nothing is picked");
     }
 
     (void)kCone30;

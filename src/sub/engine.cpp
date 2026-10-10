@@ -281,25 +281,42 @@ std::uint32_t string_hash(const char* s) {
 // a different tint base, and a display name mixed into the seed of a face that
 // could not carry a name. Faces are derived in ONE place now: sub/spawn.cpp.)
 
+// Слот-формы — конечные (ломоть 7, ступень (iv)); entity-формы ниже — тонкие
+// адаптеры (преамбула record.h) и умирают со ступенью (vi).
+bool alive_subworld_slot(const sub::SubObjects& objs, int s) {
+    if (s < 0 || !sub::slot_flag(objs, s, sub::kObjAlive)) return false;
+    const auto* h = sub::slot_pools(objs, s);
+    return h && h->hp > 0
+        && !sub::slot_flag(objs, s, sub::kObjDead);
+}
+
 bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
-    // «Жилец сцены» доказан самим body_pools: бары — колонка арены, и без
-    // слота дверь отвечает nullptr (ломоть 6: тег SubworldTag умер, его
-    // конъюнкт был вторым ответом на тот же вопрос).
-    const auto* h = sub::body_pools(reg, e);
-    return h && h->hp > 0.0f
-        && !sub::object_flag(reg, e, sub::kObjDead);
+    const sub::SubObjects* objs = sub::objects_find(reg);
+    return objs != nullptr
+        && alive_subworld_slot(*objs, sub::body_slot(reg, e));
+}
+
+bool is_player_side_slot(const sub::SubObjects& objs, int s) {
+    return objs.is_avatar_slot(s)
+        || sub::slot_flag(objs, s, sub::kObjPlayerSoldier);
+}
+
+bool hostile_to_player_slot(const sub::SubObjects& objs, int s,
+                            const GameState* gs) {
+    if (!alive_subworld_slot(objs, s) || is_player_side_slot(objs, s)) {
+        return false;
+    }
+    if (sub::slot_flag(objs, s, sub::kObjTempHostile)) return true;
+    const char* factionId = faction_id_for_kind(sub::slot_kind(objs, s));
+    return player_hostile_to(gs, factionId);
 }
 
 bool hostile_to_player_entity(entt::registry& reg,
                               entt::entity e,
                               const GameState* gs) {
-    if (!alive_subworld_entity(reg, e) || is_player_side(reg, e)) {
-        return false;
-    }
-    if (sub::object_flag(reg, e, sub::kObjTempHostile)) return true;
-    const char* factionId =
-        faction_id_for_kind(sub::body_kind(reg, e));
-    return player_hostile_to(gs, factionId);
+    const sub::SubObjects* objs = sub::objects_find(reg);
+    return objs != nullptr
+        && hostile_to_player_slot(*objs, sub::body_slot(reg, e), gs);
 }
 
 // NOTE. The old per-pair `entities_hostile(reg, a, b, gs)` is GONE. It was the
@@ -312,8 +329,8 @@ bool hostile_to_player_entity(entt::registry& reg,
 // matrix, and the per-entity TempHostileToPlayer exception rides in the unit's
 // own mask — same semantics, integer cost.
 
-// Слот-форма — конечная (ломоть 7); entity-форма — тонкий адаптер над ней,
-// умирает со ступенью (vi) вместе с реестром.
+// Слот-форма — конечная (ломоть 7); entity-адаптер умер в ступени (iv):
+// оба его звонящих (лог удара, melee-метка) берут слот сами.
 const char* subworld_attacker_label(const sub::SubObjects& objs, int slot) {
     const auto* kind = sub::slot_kind(objs, slot);
     if (kind && kind->type < std::uint16_t(NPCType::Count)) {
@@ -323,44 +340,38 @@ const char* subworld_attacker_label(const sub::SubObjects& objs, int slot) {
     return "Hostile";
 }
 
-const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
-    const int slot = sub::body_slot(reg, e);
-    return slot >= 0 ? subworld_attacker_label(sub::objects_of(reg), slot)
-                     : "Hostile";
-}
-
 // maybe_emplace_missile_attack / maybe_emplace_carried_light: the file-local
 // twins that lived here moved to their one home — sub/spawn.{h,cpp}.
 
-void maybe_flip_temp_hostile(entt::registry& reg,
-                             entt::entity target,
+void maybe_flip_temp_hostile(sub::SubObjects& objs,
+                             int target,
                              const GameState* gs,
                              const char* factionId) {
-    if (!gs || !reg.valid(target) || !factionId || factionId[0] == '\0') {
+    if (!gs || target < 0 || !factionId || factionId[0] == '\0') {
         return;
     }
-    if (sub::object_flag(reg, target, sub::kObjTempHostile)) return;
+    if (sub::slot_flag(objs, target, sub::kObjTempHostile)) return;
     if (player_reputation(gs, factionId) >= kAllyRepThreshold) return;
 
-    sub::object_flag_set(reg, target, sub::kObjTempHostile);
-    if (auto* ai = sub::body_ai(reg, target)) {
+    sub::slot_flag_set(objs, target, sub::kObjTempHostile);
+    if (auto* ai = sub::slot_ai(objs, target)) {
         if (ai->kind == ecs::SubworldAi::Wander) {
             ai->kind = ecs::SubworldAi::Combat;
         }
     }
 }
 
-void apply_player_hit_reputation(entt::registry& reg,
-                                 entt::entity target,
+void apply_player_hit_reputation(sub::SubObjects& objs,
+                                 int target,
                                  GameState* gs) {
-    if (!gs || !reg.valid(target)) return;
-    if (hostile_to_player_entity(reg, target, gs)) return;
+    if (!gs || target < 0) return;
+    if (hostile_to_player_slot(objs, target, gs)) return;
 
     const char* factionId =
-        faction_id_for_kind(sub::body_kind(reg, target));
+        faction_id_for_kind(sub::slot_kind(objs, target));
     if (!factionId || factionId[0] == '\0') return;
     add_player_reputation(*gs, factionId, kHitRepPenalty);
-    maybe_flip_temp_hostile(reg, target, gs, factionId);
+    maybe_flip_temp_hostile(objs, target, gs, factionId);
 }
 
 void apply_player_kill_reputation(GameState* gs, const ecs::NPCKind* kind) {
@@ -2002,44 +2013,46 @@ int SubworldEngine::take_pending_sfx(SfxId* out, int cap) {
     return n;
 }
 
-void SubworldEngine::push_player_hit_log(std::uint32_t targetEntityId,
+void SubworldEngine::push_player_hit_log(int targetSlot,
                                          int damage,
                                          bool lethal) {
-    if (!ecs_ || damage <= 0) return;
-    entt::entity target = entt::entity(targetEntityId);
-    if (!ecs_->reg.valid(target)) return;
-    apply_player_hit_reputation(ecs_->reg, target, gs_);
+    if (!ecs_ || damage <= 0 || targetSlot < 0) return;
+    sub::SubObjects& objs = sub::objects_of(ecs_->reg);
+    // Протухший слот жив-гейтом не пускается: лог и репутация — о теле,
+    // которое ЕСТЬ (прежний reg.valid, слот-формой).
+    if (!sub::slot_flag(objs, targetSlot, sub::kObjAlive)) return;
+    apply_player_hit_reputation(objs, targetSlot, gs_);
 
     const int dmg = damage;
     char msg[96]{};
     std::snprintf(msg, sizeof(msg), "You %s %s for %d",
                   lethal ? "killed" : "hit",
-                  subworld_attacker_label(ecs_->reg, target),
+                  subworld_attacker_label(objs, targetSlot),
                   dmg);
     push_combat_log(msg);
 }
 
 void SubworldEngine::spell_damage_log_callback(void* user,
-                                               std::uint32_t targetEntityId,
+                                               std::uint16_t targetSlot,
                                                int damage,
                                                bool lethal) {
     auto* engine = static_cast<SubworldEngine*>(user);
     if (!engine) return;
-    engine->push_player_hit_log(targetEntityId, damage, lethal);
+    engine->push_player_hit_log(int(targetSlot), damage, lethal);
 }
 
 bool SubworldEngine::spell_can_hit_callback(void* user,
                                             const ecs::Projectile& projectile,
-                                            std::uint32_t targetEntityId) {
+                                            std::uint16_t targetSlot) {
     // Projectiles are physics — they hit whatever body they intersect.
     // Faction/hostility only determines consequences (reputation, aggro),
     // handled by the damage log callback, not here.
     (void)projectile;
     auto* engine = static_cast<SubworldEngine*>(user);
     if (!engine || !engine->ecs_) return true;
-    auto& reg = engine->ecs_->reg;
-    const entt::entity target = entt::entity(targetEntityId);
-    return reg.valid(target);
+    const sub::SubObjects* objs = sub::objects_find(engine->ecs_->reg);
+    return objs != nullptr
+        && sub::slot_flag(*objs, int(targetSlot), sub::kObjAlive);
 }
 
 float SubworldEngine::spell_height_callback(void* user, float x, float y) {
@@ -2238,17 +2251,18 @@ void SubworldEngine::tick_player_melee() {
     // behind him, while deliberately striking a neutral (and paying its
     // reputation price) stays possible. Reach is surface-honest (Inc 4):
     // range + body_radius(target), through the battle pick grid.
-    struct HostileCtx { entt::registry* reg; const GameState* gs; };
-    HostileCtx hostileCtx{&reg, gs_};
-    const entt::entity target = melee_pick_target(
-        reg, playerX_, playerY_, playerZ_, pc->attackRange,
-        [](void* user, entt::entity e) {
+    sub::SubObjects& objs = sub::objects_of(reg);
+    struct HostileCtx { const sub::SubObjects* objs; const GameState* gs; };
+    HostileCtx hostileCtx{&objs, gs_};
+    const int target = melee_pick_target(
+        objs, playerX_, playerY_, playerZ_, pc->attackRange,
+        [](void* user, int slot) {
             auto* c = static_cast<HostileCtx*>(user);
-            return hostile_to_player_entity(*c->reg, e, c->gs);
+            return hostile_to_player_slot(*c->objs, slot, c->gs);
         },
         &hostileCtx,
         &SubworldEngine::spell_neighbors_callback, this);
-    if (target == entt::null) {
+    if (target < 0) {
         // No creature in reach: the swing whooshes through air, paid and
         // heard, and nothing else. It used to harvest the nearest lootable
         // prop as a fallback — killed by owner verdict 2026-09-12 (CANON
@@ -2270,14 +2284,15 @@ void SubworldEngine::tick_player_melee() {
     // Убийца — ССЫЛКА АВАТАРА (ObjRef, ступень (iii)), не «ничей ноль»
     // (§41 корень 5): жнец резолвит лидера по телу, а id == 0 платил бы XP
     // никому. Байт playerOwned остаётся правдой лога, атрибуция — ссылка.
+    MacroStore* const* meleeSt = reg.ctx().find<MacroStore*>();
     const DamageResult hit = apply_damage(
-        reg, target,
-        DamageSource{.attacker = sub::objects_of(reg).avatar,
+        objs, meleeSt != nullptr ? *meleeSt : nullptr, target,
+        DamageSource{.attacker = objs.avatar,
                      .playerOwned = true,
                      .critical = swing.critical},
         swing.amount, DamageKind::Melee,
         DamageType(strikeStats.dmgType), bus_);
-    const char* label = subworld_attacker_label(reg, target);
+    const char* label = subworld_attacker_label(objs, target);
     if (combatLog) {
         std::fprintf(stderr,
                      "[melee] swing target=%s rolled=%d applied=%d blocked=%d"
@@ -2301,8 +2316,7 @@ void SubworldEngine::tick_player_melee() {
     }
     if (hit.applied <= 0) return;   // dead/invalid target — no-op, no sound
     queue_sfx(SfxId::MeleeHit);
-    push_player_hit_log(std::uint32_t(entt::to_integral(target)),
-                        hit.applied, hit.lethal);
+    push_player_hit_log(target, hit.applied, hit.lethal);
     char status[96]{};
     std::snprintf(status, sizeof(status), "You %s %s for %d%s",
                   hit.lethal ? "killed" : "hit",
@@ -3086,7 +3100,7 @@ bool SubworldEngine::spell_solid_callback(void* user, float x, float y,
 // and "centre within r" must survive the fattest body in the crowd when the
 // asker measures surface contact (crowd_->maxRadius).
 int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
-                                             float r, std::uint32_t* out,
+                                             float r, std::uint16_t* out,
                                              int maxOut) {
     auto* self = static_cast<SubworldEngine*>(user);
     if (self->crowdGatherTruncated_) return -1;
@@ -3108,9 +3122,15 @@ int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
                 const std::size_t sj = std::size_t(g.items[k]);
                 const float dx = u.x[sj] - x, dy = u.y[sj] - y;
                 if (dx * dx + dy * dy > rr2) continue;
+                // Груз — СЛОТ (ступень (iv)); до (iv-в) карта толпы ещё
+                // сущностная, слот берётся преамбулой адаптера. Тело,
+                // умершее между сбором и запросом, честно пропускается —
+                // прежде его пропускал reg.valid у потребителя.
+                const int bs = sub::body_slot(self->ecs_->reg,
+                                              self->crowdEnts_[sj]);
+                if (bs < 0) continue;
                 if (n >= maxOut) return -1; // cannot promise completeness
-                out[n++] = std::uint32_t(
-                    entt::to_integral(self->crowdEnts_[sj]));
+                out[n++] = std::uint16_t(bs);
             }
         }
     }

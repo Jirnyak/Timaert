@@ -9,32 +9,34 @@
 
 namespace sm::sub {
 
+// Груз всех трёх швов ниже — СЛОТ арены (ступень (iv) ломтя 7): всё
+// внутритиковое, ID не нужен — голый u16 законен внутри тика (objects.h).
 using SpellDamageLogFn = void (*)(void* user,
-                                  std::uint32_t targetEntityId,
+                                  std::uint16_t targetSlot,
                                   int damage,
                                   bool lethal);
 using SpellCanHitFn = bool (*)(void* user,
                                const ecs::Projectile& projectile,
-                               std::uint32_t targetEntityId);
+                               std::uint16_t targetSlot);
 
 // Broad-phase candidate enumeration — the battle bucket grids, reached through
 // the engine the same way height and solidity are. Fills `out` with up to
-// `maxOut` entity ids whose CENTRES may lie within `r` of (x, y), and returns
-// how many. The promise is a SUPERSET: extras are harmless (the exact 3D
-// checks in this TU are the only filter that decides hits), a MISS is a bug —
-// so the provider pads the query with everything the caller cannot know: the
-// fattest body radius in the crowd and the largest per-tick step (the grid is
-// built before steering moves bodies). The caller asks in terms of its own
-// geometry alone.
+// `maxOut` arena SLOTS whose bodies' CENTRES may lie within `r` of (x, y),
+// and returns how many. The promise is a SUPERSET: extras are harmless (the
+// exact 3D checks in this TU are the only filter that decides hits), a MISS
+// is a bug — so the provider pads the query with everything the caller cannot
+// know: the fattest body radius in the crowd and the largest per-tick step
+// (the grid is built before steering moves bodies). The caller asks in terms
+// of its own geometry alone.
 //
 // Returns -1 when completeness cannot be promised this tick (the battle
 // gather hit its ceiling, or the candidates outnumber maxOut): the caller
-// then falls back to the full registry scan, so a projectile is never
+// then falls back to the full arena scan, so a projectile is never
 // blinded by an overloaded broad phase — a miss from exhaustion would be a
 // bug, not an approximation (unlike the AI's budgeted contact scan, which is
 // a legitimate heuristic). Null = always the full scan (headless tests).
 using SpellNeighborsFn = int (*)(void* user, float x, float y, float r,
-                                 std::uint32_t* out, int maxOut);
+                                 std::uint16_t* out, int maxOut);
 
 // Transient-VFX seam for the spell tick. `event` selects what happened; the
 // engine turns it into a particle burst (this TU stays renderer/particle-free,

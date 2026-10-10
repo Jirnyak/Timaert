@@ -27,16 +27,18 @@ namespace {
 using sm::NPCType;
 using sm::sub::melee_pick_target;
 
-entt::entity body(entt::registry& reg, NPCType type, float x, float y) {
+// Тело фикстуры рождается сущностью (двери give_*), а СУДИТСЯ слотом:
+// груз и возврат выбора цели — слот арены (ступень (iv) ломтя 7).
+int body(entt::registry& reg, NPCType type, float x, float y) {
     const entt::entity e = reg.create();
     sm::test::give_pos(reg, e, x, y, 0.0f);   // место — колонка арены (ломоть 5)
     sm::test::give_pools(reg, e, sm::ecs::Pools{30, 30});
     sm::test::give_kind(reg, e,
         sm::ecs::NPCKind{std::uint16_t(type), std::uint16_t{0}});
-    return e;
+    return sm::sub::body_slot(reg, e);
 }
 
-bool never_hostile(void*, entt::entity) { return false; }
+bool never_hostile(void*, int) { return false; }
 
 void test_wide_body_is_struck_from_farther() {
     const float range = 5.0f;
@@ -50,16 +52,18 @@ void test_wide_body_is_struck_from_farther() {
 
     {
         entt::registry reg;
-        const entt::entity troll = body(reg, NPCType::Troll, d, 0.0f);
-        CHECK(melee_pick_target(reg, 0, 0, 0, range, &never_hostile, nullptr)
+        const int troll = body(reg, NPCType::Troll, d, 0.0f);
+        CHECK(melee_pick_target(sm::test::arena_of(reg), 0, 0, 0, range,
+                                &never_hostile, nullptr)
                   == troll,
               "the troll's flank is in reach at a distance its centre is not");
     }
     {
         entt::registry reg;
         body(reg, NPCType::Frog, d, 0.0f);
-        CHECK(melee_pick_target(reg, 0, 0, 0, range, &never_hostile, nullptr)
-                  == entt::null,
+        CHECK(melee_pick_target(sm::test::arena_of(reg), 0, 0, 0, range,
+                                &never_hostile, nullptr)
+                  == -1,
               "the frog at the same distance is out of reach — the width is "
               "the whole difference");
     }
@@ -67,15 +71,16 @@ void test_wide_body_is_struck_from_farther() {
 
 void test_hostiles_first_by_surface_gap() {
     entt::registry reg;
-    const entt::entity nearFrog = body(reg, NPCType::Frog, 2.0f, 0.0f);
-    const entt::entity farTroll = body(reg, NPCType::Troll, 5.5f, 0.0f);
-    struct Ctx { entt::entity hostile; } ctx{farTroll};
-    const auto oracle = [](void* user, entt::entity e) {
-        return e == static_cast<Ctx*>(user)->hostile;
+    const int nearFrog = body(reg, NPCType::Frog, 2.0f, 0.0f);
+    const int farTroll = body(reg, NPCType::Troll, 5.5f, 0.0f);
+    const sm::sub::SubObjects& objs = sm::test::arena_of(reg);
+    struct Ctx { int hostile; } ctx{farTroll};
+    const auto oracle = [](void* user, int s) {
+        return s == static_cast<Ctx*>(user)->hostile;
     };
-    CHECK(melee_pick_target(reg, 0, 0, 0, 5.0f, oracle, &ctx) == farTroll,
+    CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, oracle, &ctx) == farTroll,
           "a hostile in surface reach beats a nearer neutral");
-    CHECK(melee_pick_target(reg, 0, 0, 0, 5.0f, &never_hostile, nullptr)
+    CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr)
               == nearFrog,
           "with no hostile in reach the swing falls back to the nearest "
           "neutral — the deliberate crime stays possible");
@@ -85,31 +90,32 @@ void test_hostiles_first_by_surface_gap() {
 // that cannot promise completeness must fall back, not blind the swing.
 void test_grid_arm_parity_and_fallback() {
     entt::registry reg;
-    const entt::entity troll = body(reg, NPCType::Troll, 5.5f, 0.0f);
+    const int troll = body(reg, NPCType::Troll, 5.5f, 0.0f);
     body(reg, NPCType::Frog, 9.0f, 0.0f);   // out of reach either way
+    const sm::sub::SubObjects& objs = sm::test::arena_of(reg);
 
-    struct Feed { std::uint32_t ids[8]; int n; };
+    struct Feed { std::uint16_t ids[8]; int n; };
     Feed feed{};
-    feed.ids[feed.n++] = std::uint32_t(entt::to_integral(troll));
+    feed.ids[feed.n++] = std::uint16_t(troll);
     const auto superset = [](void* user, float, float, float,
-                             std::uint32_t* out, int maxOut) {
+                             std::uint16_t* out, int maxOut) {
         auto* f = static_cast<Feed*>(user);
         const int n = f->n < maxOut ? f->n : maxOut;
         for (int i = 0; i < n; ++i) out[i] = f->ids[i];
         return n;
     };
-    const auto refuses = [](void*, float, float, float, std::uint32_t*, int) {
+    const auto refuses = [](void*, float, float, float, std::uint16_t*, int) {
         return -1;
     };
 
-    const entt::entity fullScan =
-        melee_pick_target(reg, 0, 0, 0, 5.0f, &never_hostile, nullptr);
+    const int fullScan =
+        melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr);
     CHECK(fullScan == troll, "the reference arm reaches the troll");
-    CHECK(melee_pick_target(reg, 0, 0, 0, 5.0f, &never_hostile, nullptr,
+    CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr,
                             superset, &feed)
               == fullScan,
           "the grid arm answers exactly what the full scan answers");
-    CHECK(melee_pick_target(reg, 0, 0, 0, 5.0f, &never_hostile, nullptr,
+    CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr,
                             refuses, nullptr)
               == fullScan,
           "a broad phase that answers -1 falls back to the full scan");
@@ -117,12 +123,21 @@ void test_grid_arm_parity_and_fallback() {
 
 void test_player_side_and_dead_are_invisible() {
     entt::registry reg;
-    const entt::entity soldier = body(reg, NPCType::Guard, 2.0f, 0.0f);
+    const entt::entity soldier = reg.create();
+    sm::test::give_pos(reg, soldier, 2.0f, 0.0f, 0.0f);
+    sm::test::give_pools(reg, soldier, sm::ecs::Pools{30, 30});
+    sm::test::give_kind(reg, soldier,
+        sm::ecs::NPCKind{std::uint16_t(NPCType::Guard), std::uint16_t{0}});
     sm::test::give_flag(reg, soldier, sm::sub::kObjPlayerSoldier);
-    const entt::entity corpse = body(reg, NPCType::Frog, 2.5f, 0.0f);
+    const entt::entity corpse = reg.create();
+    sm::test::give_pos(reg, corpse, 2.5f, 0.0f, 0.0f);
+    sm::test::give_pools(reg, corpse, sm::ecs::Pools{30, 30});
+    sm::test::give_kind(reg, corpse,
+        sm::ecs::NPCKind{std::uint16_t(NPCType::Frog), std::uint16_t{0}});
     sm::test::give_flag(reg, corpse, sm::sub::kObjDead);
-    CHECK(melee_pick_target(reg, 0, 0, 0, 5.0f, &never_hostile, nullptr)
-              == entt::null,
+    CHECK(melee_pick_target(sm::test::arena_of(reg), 0, 0, 0, 5.0f,
+                            &never_hostile, nullptr)
+              == -1,
           "the swing sees neither the player's own soldier nor a corpse");
 }
 

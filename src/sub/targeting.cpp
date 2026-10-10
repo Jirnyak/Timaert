@@ -1,7 +1,8 @@
 #include "sub/targeting.h"
 #include "sub/body.h"
 #include "sub/caps.h"       // kMaxSubObjects — the subworld scene ceiling
-#include "sub/record.h"     // object_flag — биты маски слота (ломоть 1б)
+#include "sub/doors.h"      // slot_* — слот-двери арены (ступень (iv))
+#include "sub/record.h"     // entity-двери aim_target (до ломтя (ii-б))
 
 #include <cmath>
 
@@ -11,54 +12,54 @@ namespace {
 
 // The shared melee-candidate filter: live, current-scene, not the player's
 // own side. One spelling for both the grid arm and the full-scan arm.
-inline bool melee_candidate(entt::registry& reg, entt::entity e) {
-    if (!reg.all_of<ecs::ObjectSlot>(e)
-        || body_kind(reg, e) == nullptr
-        || object_flag(reg, e, kObjDead)) {
+inline bool melee_candidate(const SubObjects& objs, int s) {
+    if (!slot_flag(objs, s, kObjAlive)
+        || slot_kind(objs, s) == nullptr
+        || slot_flag(objs, s, kObjDead)) {
         return false;
     }
-    if (is_avatar(reg, e)
-        || object_flag(reg, e, kObjPlayerSoldier)) return false;
-    const auto* hp = body_pools(reg, e);
+    if (objs.is_avatar_slot(s)
+        || slot_flag(objs, s, kObjPlayerSoldier)) return false;
+    const auto* hp = slot_pools(objs, s);
     return hp != nullptr && hp->hp > 0;
 }
 
 } // namespace
 
-entt::entity melee_pick_target(entt::registry& reg,
-                               float px, float py, float pz,
-                               float range,
-                               HostileFn isHostile, void* user,
-                               MeleeNeighborsFn neighborsFn,
-                               void* neighborsUser) {
-    if (range <= 0.0f) return entt::null;
+int melee_pick_target(const SubObjects& objs,
+                      float px, float py, float pz,
+                      float range,
+                      HostileFn isHostile, void* user,
+                      MeleeNeighborsFn neighborsFn,
+                      void* neighborsUser) {
+    if (range <= 0.0f) return -1;
 
     // A blow reaches a body's SURFACE, not its centre: the target's own
     // radius extends the reach (the same `reach + radius[target]` law the NPC
     // strike walks in sub/movement.cpp). Candidates are ranked by the surface
     // GAP, so "nearest" means nearest to being hit, not nearest centre — a
     // troll's flank two metres out loses to a frog an arm's length away.
-    entt::entity hostileBest = entt::null;
+    int hostileBest = -1;
     float hostileGap = range;
-    entt::entity anyBest = entt::null;
+    int anyBest = -1;
     float anyGap = range;
 
-    const auto consider = [&](entt::entity e) {
-        if (!melee_candidate(reg, e)) return;
-        const ecs::Position& pos = *body_pos(reg, e);
+    const auto consider = [&](int s) {
+        if (!melee_candidate(objs, s)) return;
+        const ecs::Position& pos = objs.pos[std::size_t(s)];
         const float dx = pos.x - px;
         const float dy = pos.y - py;
         const float dz = pos.z - pz;
         const float gap = std::sqrt(dx * dx + dy * dy + dz * dz)
-                        - body_radius(reg, e);
+                        - slot_body_radius(objs, s);
         if (gap > range) return;
         if (gap <= anyGap) {
             anyGap = gap;
-            anyBest = e;
+            anyBest = s;
         }
-        if (gap <= hostileGap && isHostile && isHostile(user, e)) {
+        if (gap <= hostileGap && isHostile && isHostile(user, s)) {
             hostileGap = gap;
-            hostileBest = e;
+            hostileBest = s;
         }
     };
 
@@ -67,20 +68,18 @@ entt::entity melee_pick_target(entt::registry& reg,
     // bug, so a broad phase that cannot promise completeness answers -1 and
     // the swing falls back to the full scan; null = no grid, headless tests).
     if (neighborsFn) {
-        static std::uint32_t buf[kMaxSubObjects];
+        static std::uint16_t buf[kMaxSubObjects];
         const int n = neighborsFn(neighborsUser, px, py, range,
                                   buf, kMaxSubObjects);
         if (n >= 0) {
-            for (int i = 0; i < n; ++i) {
-                const entt::entity e = entt::entity(buf[std::size_t(i)]);
-                if (reg.valid(e)) consider(e);
-            }
-            return hostileBest != entt::null ? hostileBest : anyBest;
+            for (int i = 0; i < n; ++i) consider(int(buf[std::size_t(i)]));
+            return hostileBest >= 0 ? hostileBest : anyBest;
         }
     }
-    auto view = reg.view<ecs::ObjectSlot>();
-    for (auto e : view) consider(e);
-    return hostileBest != entt::null ? hostileBest : anyBest;
+    // Полный проход — по слотам арены (гейт kObjAlive внутри кандидата);
+    // вьюха реестра в выборе цели больше не участвует.
+    for (int s = 0; s < int(kMaxSubObjects); ++s) consider(s);
+    return hostileBest >= 0 ? hostileBest : anyBest;
 }
 
 entt::entity aim_target(entt::registry& reg,

@@ -41,7 +41,7 @@ constexpr float kProjectileSweepStepM = 1.0f;
 // different size depending on the weapon aimed at it.
 
 
-bool is_spell_target(const entt::registry& reg, entt::entity e,
+bool is_spell_target(const SubObjects& objs, int s,
                      const ecs::Projectile& p,
                      SpellCanHitFn canHitFn,
                      void* canHitUser) {
@@ -50,19 +50,18 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     // caster is kept off its OWN muzzle purely by spawn geometry
     // (caster_spawn_offset / the NPC muzzle offset), and its own AoE blast
     // still catches it if it stands in the blast.
-    if (body_pools(reg, e) == nullptr) return false;
-    if (object_flag(reg, e, kObjDead)) return false;
-    if (is_projectile(reg, e)) return false;
-    // «Жилец сцены» доказан body_pools выше: бары — колонка арены, без
-    // слота дверь отвечает nullptr (тег SubworldTag умер ломтём 6 — его
-    // гейт здесь был вторым ответом на тот же вопрос).
+    if (!slot_flag(objs, s, kObjAlive)) return false;
+    if (slot_pools(objs, s) == nullptr) return false;
+    if (slot_flag(objs, s, kObjDead)) return false;
+    if (slot_is_projectile(objs, s)) return false;
+    // «Жилец сцены» — бит kObjAlive выше (тег SubworldTag умер ломтём 6 —
+    // его гейт здесь был вторым ответом на тот же вопрос).
     // NO faction shield (owner design decision 2026-07-30): projectiles and
     // spells are faction-agnostic — they strike whoever stands in their path,
     // ally or enemy. Friendly fire is real; formations must respect their own
     // archers. (Projectile.friendlyFire survives as the AoE-blast marker the
     // spell tables use — it no longer gates WHO can be hit.)
-    if (canHitFn && !canHitFn(canHitUser, p,
-                              std::uint32_t(entt::to_integral(e)))) {
+    if (canHitFn && !canHitFn(canHitUser, p, std::uint16_t(s))) {
         return false;
     }
     return true;
@@ -76,10 +75,10 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
 // gather).
 
 // Enumerate every body that MAY matter within `r` of (cx, cy) and hand each
-// (entity, position) to `fn`. Three arms, one promise — nobody is missed:
+// (slot, position) to `fn`. Three arms, one promise — nobody is missed:
 //   • a broad phase that answers: its candidates, a strict superset;
 //   • a broad phase that returns -1 ("cannot promise completeness"): the
-//     full registry scan, exactly the pre-grid behaviour;
+//     full arena scan, exactly the pre-grid behaviour;
 //   • no broad phase at all (headless tests, harnesses): the full scan.
 // The exact hit rules — is_spell_target and the 3D distances — stay in the
 // callers; this helper decides only WHO gets asked, never who gets hit.
@@ -89,28 +88,30 @@ void for_each_spell_candidate(ecs::World& w,
                               void* neighborsUser,
                               float cx, float cy, float r,
                               Fn&& fn) {
+    const SubObjects& objs = objects_of(w.reg);
     if (neighborsFn) {
-        // Static: one 64 KiB buffer for the whole single-threaded spell tick,
-        // touched only as far as it is filled.
-        static std::uint32_t buf[kMaxSubObjects];
+        // Static: one 128 KiB buffer (65536 слотов × u16) for the whole
+        // single-threaded spell tick, touched only as far as it is filled.
+        static std::uint16_t buf[kMaxSubObjects];
         const int n = neighborsFn(neighborsUser, cx, cy, r,
                                   buf, kMaxSubObjects);
         if (n >= 0) {
             for (int i = 0; i < n; ++i) {
-                const entt::entity e = entt::entity(buf[std::size_t(i)]);
-                if (!w.reg.valid(e)) continue;
-                if (const ecs::Position* tp = body_pos(w.reg, e)) {
-                    fn(e, *tp);
-                }
+                const int s = int(buf[std::size_t(i)]);
+                // Гейт живости — у потребителя (голый слот внутри тика):
+                // тело, умершее между сбором сетки и запросом, отсеивается
+                // здесь, как прежде его отсеивал reg.valid.
+                if (!slot_flag(objs, s, kObjAlive)) continue;
+                fn(s, objs.pos[std::size_t(s)]);
             }
             return;
         }
     }
-    auto targets = w.reg.view<ecs::ObjectSlot>();
-    for (auto e : targets) {
-        if (body_pools(w.reg, e) == nullptr) continue;
-        if (object_flag(w.reg, e, kObjDead)) continue;
-        fn(e, *body_pos(w.reg, e));
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if (!slot_flag(objs, s, kObjAlive)) continue;
+        if (slot_pools(objs, s) == nullptr) continue;
+        if (slot_flag(objs, s, kObjDead)) continue;
+        fn(s, objs.pos[std::size_t(s)]);
     }
 }
 
@@ -128,7 +129,7 @@ void apply_spell_damage(ecs::World& w,
                         std::array<entt::entity, kMaxSpellReaps>& reaps,
                         int& reapCount,
                         EventBus* bus,
-                        entt::entity target,
+                        int target,
                         const ecs::Projectile& p,
                         int damage,
                         SpellDamageLogFn logFn,
@@ -137,24 +138,25 @@ void apply_spell_damage(ecs::World& w,
                         void* canHitUser) {
     (void)reaps;
     (void)reapCount;
-    if (damage <= 0 || !w.reg.valid(target)) return;
-    if (!is_spell_target(w.reg, target, p, canHitFn, canHitUser)) return;
-    const bool playerOwned =
-        projectile_owner_is_player_side(objects_of(w.reg), p);
+    SubObjects& objs = objects_of(w.reg);
+    if (damage <= 0 || target < 0) return;
+    if (!is_spell_target(objs, target, p, canHitFn, canHitUser)) return;
+    const bool playerOwned = projectile_owner_is_player_side(objs, p);
     // The projectile brought everything from the cast: its wound, its tag's
     // armour column and the crit verdict — the door just applies them.
     // Атакер — ссылка владельца, которую снаряд принёс парой (iii-б).
     const DamageSource src{ObjRef{p.ownerSlot, p.ownerId}, playerOwned,
                            p.spellId & kSpellEventIdMask, p.critical};
-    const DamageResult hit = apply_damage(w.reg, target, src, damage,
+    MacroStore* const* stp = w.reg.ctx().find<MacroStore*>();
+    const DamageResult hit = apply_damage(objs, stp != nullptr ? *stp : nullptr,
+                                          target, src, damage,
                                           DamageKind::Spell,
                                           DamageType(p.dmgType), bus);
     if (hit.applied <= 0) return;
     if (playerOwned && logFn
-        && !(is_avatar(w.reg, target)
-             || object_flag(w.reg, target, kObjPlayerSoldier))) {
-        logFn(logUser, std::uint32_t(entt::to_integral(target)),
-              hit.applied, hit.lethal);
+        && !(objs.is_avatar_slot(target)
+             || slot_flag(objs, target, kObjPlayerSoldier))) {
+        logFn(logUser, std::uint16_t(target), hit.applied, hit.lethal);
     }
 }
 
@@ -191,20 +193,21 @@ float segment_closest_t(float ax, float ay, float az,
 // gravity, because a falling projectile's stride grows.
 //
 // `skipSlot` closes the last stretch — see the caller (слот кастера, −1 =
-// никого; слот-форма iii-б). Returns the EARLIEST hit along the sweep, so a
-// bolt strikes the body it reaches first rather than whichever body the view
-// happened to list first.
-entt::entity find_projectile_hit(ecs::World& w,
-                                 entt::entity projectile,
-                                 float fromX, float fromY, float fromZ,
-                                 const ecs::Position& pos,
-                                 const ecs::Projectile& p,
-                                 int skipSlot,
-                                 SpellCanHitFn canHitFn,
-                                 void* canHitUser,
-                                 SpellNeighborsFn neighborsFn,
-                                 void* neighborsUser) {
-    entt::entity best = entt::null;
+// никого; слот-форма iii-б). Returns the EARLIEST hit along the sweep (слот
+// арены, -1 = никого), so a bolt strikes the body it reaches first rather
+// than whichever body the scan happened to list first.
+int find_projectile_hit(ecs::World& w,
+                        int projSlot,
+                        float fromX, float fromY, float fromZ,
+                        const ecs::Position& pos,
+                        const ecs::Projectile& p,
+                        int skipSlot,
+                        SpellCanHitFn canHitFn,
+                        void* canHitUser,
+                        SpellNeighborsFn neighborsFn,
+                        void* neighborsUser) {
+    const SubObjects& objs = objects_of(w.reg);
+    int best = -1;
     float bestT = 2.0f;
     // Broad phase: the circle around the swept segment's 2D midpoint, wide
     // enough for the segment's own half-length plus the bolt's radius. Target
@@ -215,11 +218,11 @@ entt::entity find_projectile_hit(ecs::World& w,
         0.5f * std::sqrt(segX * segX + segY * segY) + p.radius;
     for_each_spell_candidate(w, neighborsFn, neighborsUser,
                              (fromX + pos.x) * 0.5f, (fromY + pos.y) * 0.5f, qr,
-        [&](entt::entity e, const ecs::Position& tp) {
-            if (e == projectile) return;
-            if (skipSlot >= 0 && body_slot(w.reg, e) == skipSlot) return;
-            if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) return;
-            const float r = p.radius + body_radius(w.reg, e);
+        [&](int s, const ecs::Position& tp) {
+            if (s == projSlot) return;
+            if (skipSlot >= 0 && s == skipSlot) return;
+            if (!is_spell_target(objs, s, p, canHitFn, canHitUser)) return;
+            const float r = p.radius + slot_body_radius(objs, s);
             const float t = segment_closest_t(fromX, fromY, fromZ,
                                               pos.x, pos.y, pos.z,
                                               tp.x, tp.y, tp.z);
@@ -229,7 +232,7 @@ entt::entity find_projectile_hit(ecs::World& w,
             const float dx = tp.x - cx, dy = tp.y - cy, dz = tp.z - cz;
             if (dx * dx + dy * dy + dz * dz <= r * r && t < bestT) {
                 bestT = t;
-                best = e;
+                best = s;
             }
         });
     return best;
@@ -251,16 +254,17 @@ void apply_spell_blast(ecs::World& w,
     // Broad phase: the blast sphere's own 2D shadow. A centre within
     // blastRadius in 3D is within it in 2D — dropping a coordinate never
     // grows a distance — so the circle is a superset of the sphere.
+    const SubObjects& objs = objects_of(w.reg);
     for_each_spell_candidate(w, neighborsFn, neighborsUser,
                              pos.x, pos.y, p.blastRadius,
-        [&](entt::entity e, const ecs::Position& tp) {
-            if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) return;
+        [&](int s, const ecs::Position& tp) {
+            if (!is_spell_target(objs, s, p, canHitFn, canHitUser)) return;
             const float dx = tp.x - pos.x;
             const float dy = tp.y - pos.y;
             const float dz = tp.z - pos.z;
             const float r = p.blastRadius;
             if (dx * dx + dy * dy + dz * dz <= r * r) {
-                apply_spell_damage(w, reaps, reapCount, bus, e, p, p.damage,
+                apply_spell_damage(w, reaps, reapCount, bus, s, p, p.damage,
                                    logFn, logUser, canHitFn, canHitUser);
             }
         });
@@ -294,9 +298,10 @@ void apply_spell_beam(ecs::World& w,
     const float qy = p.originY + ny * (p.beamLength * 0.5f);
     const float qr = 0.5f * p.beamLength * std::sqrt(nx * nx + ny * ny)
                    + p.radius * 2.0f;
+    const SubObjects& objs = objects_of(w.reg);
     for_each_spell_candidate(w, neighborsFn, neighborsUser, qx, qy, qr,
-        [&](entt::entity e, const ecs::Position& tp) {
-            if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) return;
+        [&](int s, const ecs::Position& tp) {
+            if (!is_spell_target(objs, s, p, canHitFn, canHitUser)) return;
             const float dx = tp.x - p.originX;
             const float dy = tp.y - p.originY;
             // Beam origin Z: the beam entity's position is at the beam
@@ -308,19 +313,19 @@ void apply_spell_beam(ecs::World& w,
             const float px = dx - nx * along;
             const float py = dy - ny * along;
             const float pz = dz - nz_b * along;
-            const float r = p.radius * 2.0f + body_radius(w.reg, e);
+            const float r = p.radius * 2.0f + slot_body_radius(objs, s);
             if (px * px + py * py + pz * pz <= r * r) {
-                apply_spell_damage(w, reaps, reapCount, bus, e, p, p.damage,
+                apply_spell_damage(w, reaps, reapCount, bus, s, p, p.damage,
                                    logFn, logUser, canHitFn, canHitUser);
             }
         });
 }
 
-bool already_chained(const std::array<entt::entity, 8>& chainHits,
+bool already_chained(const std::array<int, 8>& chainHits,
                      int hitCount,
-                     entt::entity e) {
+                     int s) {
     for (int i = 0; i < hitCount; ++i) {
-        if (chainHits[std::size_t(i)] == e) return true;
+        if (chainHits[std::size_t(i)] == s) return true;
     }
     return false;
 }
@@ -329,7 +334,7 @@ void apply_spell_chain(ecs::World& w,
                        std::array<entt::entity, kMaxSpellReaps>& reaps,
                        int& reapCount,
                        EventBus* bus,
-                       entt::entity first,
+                       int first,
                        const ecs::Projectile& p,
                        SpellDamageLogFn logFn,
                        void* logUser,
@@ -340,37 +345,37 @@ void apply_spell_chain(ecs::World& w,
     if (p.chainRemaining <= 0 || p.chainDecayPct == 0 || p.chainRadius <= 0.0f) {
         return;
     }
-    std::array<entt::entity, 8> chainHits{};
+    const SubObjects& objs = objects_of(w.reg);
+    std::array<int, 8> chainHits{};
     int hitCount = 0;
     chainHits[std::size_t(hitCount++)] = first;
 
-    entt::entity current = first;
+    int current = first;
     int damage = p.damage * int(p.chainDecayPct) / 100;
     for (int i = 0; i < p.chainRemaining && hitCount < int(chainHits.size()); ++i) {
-        if (!w.reg.valid(current)) break;
-        const ecs::Position* cp = body_pos(w.reg, current);
-        if (!cp) break;
+        if (current < 0 || !slot_flag(objs, current, kObjAlive)) break;
+        const ecs::Position* cp = &objs.pos[std::size_t(current)];
 
-        entt::entity best = entt::null;
+        int best = -1;
         float bestD2 = p.chainRadius * p.chainRadius;
         // Broad phase per hop: the XY grid query pre-filters at chainRadius;
         // the victim itself is judged by honest 3D distance (S13 — all
         // distances are 3D), exactly like the blast sphere above.
         for_each_spell_candidate(w, neighborsFn, neighborsUser,
                                  cp->x, cp->y, p.chainRadius,
-            [&](entt::entity e, const ecs::Position& tp) {
-                if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) return;
-                if (already_chained(chainHits, hitCount, e)) return;
+            [&](int s, const ecs::Position& tp) {
+                if (!is_spell_target(objs, s, p, canHitFn, canHitUser)) return;
+                if (already_chained(chainHits, hitCount, s)) return;
                 const float dx = tp.x - cp->x;
                 const float dy = tp.y - cp->y;
                 const float dz = tp.z - cp->z;
                 const float d2 = dx * dx + dy * dy + dz * dz;
                 if (d2 <= bestD2) {
                     bestD2 = d2;
-                    best = e;
+                    best = s;
                 }
             });
-        if (best == entt::null) break;
+        if (best < 0) break;
         apply_spell_damage(w, reaps, reapCount, bus, best, p, damage,
                            logFn, logUser, canHitFn, canHitUser);
         chainHits[std::size_t(hitCount++)] = best;
@@ -537,8 +542,9 @@ void tick_spell_projectiles(ecs::World& w,
         // The bolt's OWN path, swept, with nobody excluded — the caster very much
         // included. Inc 4d's rule is untouched here: a projectile carries no
         // immunity for whoever fired it.
-        entt::entity hit =
-            find_projectile_hit(w, e, prevX, prevY, prevZ, pos, p,
+        const int projSlot = body_slot(w.reg, e);
+        int hit =
+            find_projectile_hit(w, projSlot, prevX, prevY, prevZ, pos, p,
                                 -1, canHitFn, canHitUser,
                                 neighborsFn, neighborsUser);
 
@@ -588,18 +594,18 @@ void tick_spell_projectiles(ecs::World& w,
                     // Caster centre → spawn point. Z stays the muzzle's: the
                     // bolt leaves the hand at muzzle height, not at the feet.
                     const ecs::Position spawnPos{prevX, prevY, prevZ};
-                    const entt::entity muzzleHit =
-                        find_projectile_hit(w, e, op->x, op->y, prevZ,
+                    const int muzzleHit =
+                        find_projectile_hit(w, projSlot, op->x, op->y, prevZ,
                                             spawnPos, p, ownerSlot,
                                             canHitFn, canHitUser,
                                             neighborsFn, neighborsUser);
                     // This stretch happens BEFORE the travel above, so whatever
                     // it finds is struck first.
-                    if (muzzleHit != entt::null) hit = muzzleHit;
+                    if (muzzleHit >= 0) hit = muzzleHit;
                 }
             }
         }
-        if (hit != entt::null) {
+        if (hit >= 0) {
             if (p.blastRadius > 0.0f) {
                 apply_spell_blast(w, reaps, reapCount, bus, pos, p,
                                   logFn, logUser, canHitFn, canHitUser,

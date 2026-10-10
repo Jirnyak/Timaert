@@ -1000,22 +1000,23 @@ private:
     // the step that crosses into it and not on every step inside it.
     std::uint32_t subZonesEntered_ = 0;   // bitmask over kMaxSubZones
     void push_combat_log(const char* msg);
-    void push_player_hit_log(std::uint32_t targetEntityId,
+    // Жертва — СЛОТ арены (ступень (iv): груз всех спелл-швов — слот).
+    void push_player_hit_log(int targetSlot,
                              int damage,
                              bool lethal);
     static void spell_damage_log_callback(void* user,
-                                          std::uint32_t targetEntityId,
+                                          std::uint16_t targetSlot,
                                           int damage,
                                           bool lethal);
     static bool spell_can_hit_callback(void* user,
                                        const ecs::Projectile& projectile,
-                                       std::uint32_t targetEntityId);
+                                       std::uint16_t targetSlot);
     static float spell_height_callback(void* user, float x, float y);
     // Spell broad phase over crowdPick_ (the contact grid): full-radius walk,
     // NO visit budget — a projectile miss from an exhausted budget would be a
     // bug, not an approximation, unlike the AI's budgeted contact scan.
     static int spell_neighbors_callback(void* user, float x, float y, float r,
-                                        std::uint32_t* out, int maxOut);
+                                        std::uint16_t* out, int maxOut);
     // Terrain hook for the battle pass (sub/movement.h stays Vulkan-free, so it
     // reaches the CPU heightfield through a function pointer, not an include).
     static float ground_height_callback(void* user, float x, float y);
