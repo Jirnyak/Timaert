@@ -47,6 +47,14 @@ inline ObjRef ref_of(const SubObjects& o, int slot) {
     if (slot < 0 || slot >= int(kMaxSubObjects)) return ObjRef{};
     return ObjRef{std::uint16_t(slot), o.id[std::size_t(slot)]};
 }
+// ГДЕ АКТИВНОЕ ТЕЛО — один вопрос, одно имя ((ii-б) ломтя 7): -1 значит
+// «активного тела нет» (между сценами, ссылка протухла). Разыменование —
+// тот же ref_slot, что у всякой ссылки сцены; имя заведено затем, что
+// тройка «ref_slot(o, o.avatar)» стояла копиями у гейта руки, баров HUD,
+// дула, жатвы и двери смерти.
+inline int avatar_slot(const SubObjects& o) {
+    return ref_slot(o, o.avatar);
+}
 
 // ── Биты маски ───────────────────────────────────────────────────────────
 inline bool slot_flag(const SubObjects& o, int s, std::uint16_t bit) {

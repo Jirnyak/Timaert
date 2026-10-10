@@ -72,6 +72,22 @@ inline ecs::Pools* slot_pools_of(SubObjects& o, int s, MacroStore& st) {
     }
     return slot_pools(o, s);
 }
+// Лист — ТОТ ЖЕ закон, что у баров: запись первой, фолбэк — колонка sheet
+// СВОЕГО слота (компонента CharacterSheet умерла ломтём 2; пустой лист —
+// законное значение, ЗАКОН АНКЕТЫ п.4). Дверь ОДНА на вопрос «чей это
+// лист» ((ii-б) ломтя 7): до неё закон жил ДВУМЯ носителями — специализация
+// state_of<CharacterSheet> для сущности и РУЧНАЯ пара «slot_state + фолбэк
+// на колонку» у каста (spell_book.cpp), то есть два ответа на один вопрос
+// мира (DOD п.6). Фолд остальных владений (сумка/черты/гир/книга) не
+// тронут — они состояние ЗАПИСИ и колонками арены не становятся никогда.
+inline CharacterSheet* slot_sheet_of(SubObjects& o, int s, MacroStore& st) {
+    const MacroHandle rec = slot_macro_record(o, s, st);
+    if (rec.slot != kMacroNoSlot) {
+        if (CharacterSheet* owned = body_state<CharacterSheet>(st, rec))
+            return owned;
+    }
+    return slot_sheet(o, s);
+}
 
 
 
@@ -414,22 +430,9 @@ inline void set_body_debt(entt::registry& reg, entt::entity e,
     if (s < 0) return;
     if (SubObjects* o = objects_find(reg)) slot_set_debt(*o, s, d);
 }
-// Лист через ОДНУ дверь состояния (специализация self-фолбэка): запись
-// отвечает колонкой store, как всякое владение; тело без записи — колонкой
-// sheet СВОЕГО слота (компонента CharacterSheet умерла ломтём 2). Фолд
-// остальных владений (сумка/черты/гир/книга) не тронут — они состояние
-// ЗАПИСИ и колонками арены не становятся никогда.
-template <>
-inline CharacterSheet* state_of<CharacterSheet>(entt::registry& reg,
-                                                entt::entity body) {
-    const MacroHandle rec = macro_record_of(reg, body);
-    if (rec.slot != kMacroNoSlot) {
-        if (CharacterSheet* owned =
-                body_state<CharacterSheet>(store_of(reg), rec))
-            return owned;
-    }
-    return body_sheet(reg, body);
-}
+// (Специализация state_of<CharacterSheet> умерла в (ii-б): её закон —
+// «запись первой, фолбэк колонка слота» — живёт ОДНИМ телом в
+// slot_sheet_of выше, и звонящие берут лист им.)
 // ── ДВИЖЕНИЕ/ДУМКА — КОЛОНКИ АРЕНЫ (M-150 ломоть 2 кусок 3) ─────────────
 // Мозг: бит kObjHasAi + колонка (Wander = 0 законен — сентинела нет).
 // Визуальная позиция — безусловная колонка слота (нулевая скорость =

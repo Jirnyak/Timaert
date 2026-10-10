@@ -1197,13 +1197,16 @@ void SubworldEngine::pull_player_entity_to_scalars() {
     auto& reg = ecs_->reg;
     // Колонка pos авторитетна (Inc 5a, с ломтя 5 — колонка арены); копия на
     // скалярное зеркало.
-    const entt::entity avatarE = sub::avatar_entity(reg);
-    for (const entt::entity e : {avatarE}) {
-        const ecs::Position* p = sub::body_pos(reg, e);
-        if (p == nullptr) continue;
+    // Активное тело одно — ССЫЛКА сцены (2026-10-05), поэтому вырожденного
+    // цикла по одному элементу здесь больше нет ((ii-б)): слот аватара даёт
+    // ref_slot, позиция — колонка арены.
+    sub::SubObjects* objs = sub::objects_find(reg);
+    if (objs == nullptr) return;
+    const int s = sub::avatar_slot(*objs);
+    if (s < 0) return;
+    if (const ecs::Position* p = sub::slot_pos(*objs, s)) {
         playerX_ = p->x;
         playerY_ = p->y;
-        break; // активное тело одно — ссылка сцены (2026-10-05)
     }
 }
 
@@ -1214,14 +1217,14 @@ void SubworldEngine::push_scalars_to_player_entity() {
     // back onto the authoritative entity Position. Assignment, so it is a no-op
     // when already equal and idempotent w.r.t. the seam rebase that likewise
     // shifts the player slot's pos column by the same ∓cell amount.
-    const entt::entity avatarE = sub::avatar_entity(reg);
-    for (const entt::entity e : {avatarE}) {
-        ecs::Position* p = sub::body_pos(reg, e);
-        if (p == nullptr) continue;
+    sub::SubObjects* objs = sub::objects_find(reg);
+    if (objs == nullptr) return;
+    const int s = sub::avatar_slot(*objs);
+    if (s < 0) return;
+    if (ecs::Position* p = sub::slot_pos(*objs, s)) {
         p->x = playerX_;
         p->y = playerY_;
         p->z = playerZ_;
-        break;
     }
 }
 
@@ -1239,27 +1242,33 @@ void SubworldEngine::sync_player_entity_position() {
     // his hands hold. Any other body — worn or not — already has a row, and its
     // numbers come from its own record through the ordinary mirror
     // (mirror_bodies_from_record / refresh_body_strike).
-    const entt::entity avatarE = sub::avatar_entity(reg);
-    for (const entt::entity e : {avatarE}) {
-        const ecs::Position* p = sub::body_pos(reg, e);
-        if (p == nullptr) continue;
+    sub::SubObjects* objsP = sub::objects_find(reg);
+    if (objsP == nullptr) return;
+    sub::SubObjects& objs = *objsP;
+    const int s = sub::avatar_slot(objs);
+    if (s < 0) return;
+    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    {
+        const ecs::Position* p = sub::slot_pos(objs, s);
+        if (p == nullptr) return;
         playerX_ = p->x;
         playerY_ = p->y;
         playerZ_ = p->z;
-        if (gs_ && sub::body_kind(reg, e) == nullptr) {
+        if (gs_ && sub::slot_kind(objs, s) == nullptr) {
             // (The bars used to be pulled here, by hand, for this one body.
             // They are mirrored for EVERY body that stands for a record now —
             // mirror_bodies_from_record, run just above this — so what is left
             // in this branch is the hero husk's OUTGOING identity, which is
             // genuinely his: a husk has no NPC row to derive a swing from, so
             // it reads his sheet and what his hands hold.)
-            if (auto* c = sub::body_combat(reg, e)) {
+            if (auto* c = sub::slot_combat(objs, s)) {
                 // Per-tick refresh reads the same EFFECTIVE sheet the spawn
                 // did (phase 4) — equipping mid-fight changes the next swing.
                 // The record is the husk's own backlink (mirror law): the
                 // FLAG record, not the ordinal — a worn lord swings by HIS
                 // gear and his standing effects (A2, §45 «два ответа»).
-                const MacroHandle rec = sub::macro_record_of(reg, e);
+                const MacroHandle rec = stp != nullptr
+                    ? sub::slot_macro_record(objs, s, **stp) : MacroHandle{};
                 // Гол без макро-записи стоит ГОЛЫМ по построению: на тело
                 // сцены никто не пишет ни BodyEquipment, ни SpellBook
                 // (перепись M-150 шаг 0), и снесённая entt-дверь
@@ -1273,10 +1282,12 @@ void SubworldEngine::sync_player_entity_position() {
                     ? effective_sheet(*base, st) : CharacterSheet{};
                 const DerivedBonuses d = calculate_derived(
                     eff.attributes, eff.skills, st);
-                const ecs::BodyEquipment* eqp =
-                    sub::state_of<ecs::BodyEquipment>(reg, e);
-                const ecs::NpcInventory* ebag =
-                    sub::state_of<ecs::NpcInventory>(reg, e);
+                const ecs::BodyEquipment* eqp = stp != nullptr
+                    ? sub::slot_state<ecs::BodyEquipment>(objs, s, **stp)
+                    : nullptr;
+                const ecs::NpcInventory* ebag = stp != nullptr
+                    ? sub::slot_state<ecs::NpcInventory>(objs, s, **stp)
+                    : nullptr;
                 const StrikeFields hs = hand_strike_fields(
                     eff.attributes, eff.skills,
                     eqp ? &eqp->gear : nullptr,
@@ -1299,7 +1310,7 @@ void SubworldEngine::sync_player_entity_position() {
                               ? ecs::Combat::Missile : ecs::Combat::Melee;
                 {
                     float armReach = kAdventurerCombat.attackRange;
-                    if (const auto* k = sub::body_kind(reg, e)) {
+                    if (const auto* k = sub::slot_kind(objs, s)) {
                         armReach =
                             npc_def(NPCType(k->type)).combat.attackRange;
                     }
@@ -1316,7 +1327,6 @@ void SubworldEngine::sync_player_entity_position() {
                 c->speed = march_speed(kHumanMarchMult) * float(d.moveSpeedPct) / 100.0f;
             }
         }
-        break;
     }
 }
 
@@ -1389,15 +1399,26 @@ void SubworldEngine::report_player_damage() {
     ecs::Pools* squadPools =
         gs_ ? player_pools(*gs_, store_of(*ecs_)) : nullptr;
     if (!squadPools) return;
-    const entt::entity avatarE = sub::avatar_entity(reg);
-    for (const entt::entity e : {avatarE}) {
-        if (e == entt::null) continue;
-        const ecs::Pools* mirrorCol = sub::body_pools(reg, e);
-        if (mirrorCol == nullptr) continue;
+    // Слот аватара — ОДИН раз ((ii-б)): ниже его же держал try_get ради
+    // колонки lastHitBy, то есть функция уже брала слот, но позже четырёх
+    // entity-дверей.
+    sub::SubObjects* objsP = sub::objects_find(reg);
+    if (objsP == nullptr) return;
+    sub::SubObjects& objsHit = *objsP;
+    const int s = sub::avatar_slot(objsHit);
+    if (s < 0) return;
+    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    {
+        const ecs::Pools* mirrorCol = sub::slot_pools(objsHit, s);
+        if (mirrorCol == nullptr) return;
         // The record this body spends — his own squad for the hero husk, the
         // lord himself for a body he possesses. One question, one door.
-        ecs::Pools* record = pools_of(reg, e);
-        if (!record) continue;
+        // Фолбэк тот же, что был у entity-двери pools_of: стора нет (голый
+        // реестр фикстуры) — «записи нет», бары берутся колонкой.
+        ecs::Pools* record = stp != nullptr
+            ? sub::slot_pools_of(objsHit, s, **stp)
+            : sub::slot_pools(objsHit, s);
+        if (!record) return;
         const int maxHp = std::max(1, record->maxHp);
         // «Before» is the MIRROR (колонка арены): nothing writes it during a
         // tick, so it still holds what the bar was when this tick began. No
@@ -1407,8 +1428,8 @@ void SubworldEngine::report_player_damage() {
             // Invulnerable: put the record back where the tick found it and
             // keep the body out of the death path entirely.
             record->hp = std::clamp(mirror.hp, 0, maxHp);
-            sub::object_flag_clear(reg, e, sub::kObjDead);
-            continue;
+            sub::slot_flag_clear(objsHit, s, sub::kObjDead);
+            return;
         }
         const int before = std::clamp(mirror.hp, 0, maxHp);
         const int after = std::clamp(record->hp, 0, maxHp);
@@ -1418,7 +1439,7 @@ void SubworldEngine::report_player_damage() {
         // hypothetical over-damage-then-refresh ordering could otherwise strand
         // — a live-but-Dead player would be a zombie, silently excluded from
         // all incoming combat for the rest of the session.
-        if (after > 0) sub::object_flag_clear(reg, e, sub::kObjDead);
+        if (after > 0) sub::slot_flag_clear(objsHit, s, sub::kObjDead);
         // If the body you inhabit dies, your consciousness dies with it — the
         // game-over runs through the squad store exactly as it does for the
         // hero. Needs no possession branch: for the hero the record IS the
@@ -1434,11 +1455,7 @@ void SubworldEngine::report_player_damage() {
             // «Кто бил» — колонка lastHitBy, ссылка сцены (ступень (iii)):
             // «никто» — id == 0, протухшая (атакер умер/слот перерождён)
             // отваливается в ref_slot — компас не укажет на чужого жильца.
-            sub::SubObjects& objsHit = sub::objects_of(reg);
-            const auto* osHit = reg.try_get<ecs::ObjectSlot>(e);
-            const sub::ObjRef lastBy = osHit
-                ? objsHit.lastHitBy[osHit->slot]
-                : sub::ObjRef{};
+            const sub::ObjRef lastBy = objsHit.lastHitBy[std::size_t(s)];
             if (const int atkSlot = sub::ref_slot(objsHit, lastBy);
                 atkSlot >= 0) {
                 label = subworld_attacker_label(objsHit, atkSlot);
@@ -2143,10 +2160,15 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
 
 float SubworldEngine::player_arm_reach() const {
     if (ecs_) {
-        if (const entt::entity e = sub::avatar_entity(ecs_->reg);
-            e != entt::null) {
-            if (const auto* c = sub::body_combat(ecs_->reg, e)) {
-                return c->attackRange;
+        // const_cast — приём самих дверей (record.h): ctx-поиск арены
+        // реестра не меняет, читается колонка слота аватара.
+        if (sub::SubObjects* objs =
+                sub::objects_find(const_cast<entt::registry&>(ecs_->reg))) {
+            const int s = sub::avatar_slot(*objs);
+            if (s >= 0) {
+                if (const auto* c = sub::slot_combat(*objs, s)) {
+                    return c->attackRange;
+                }
             }
         }
     }
@@ -2161,9 +2183,16 @@ int SubworldEngine::player_display_hp() const {
         // the mirror's tick-top value. (The player's own squad stays frozen as
         // the revert target while possessed: it is simply not the record being
         // read.)
-        if (const entt::entity e = sub::avatar_entity(ecs_->reg);
-            e != entt::null && sub::body_pools(ecs_->reg, e) != nullptr) {
-            if (const ecs::Pools* p = pools_of(ecs_->reg, e)) return p->hp;
+        entt::registry& reg = const_cast<entt::registry&>(ecs_->reg);
+        if (sub::SubObjects* objs = sub::objects_find(reg)) {
+            const int s = sub::avatar_slot(*objs);
+            MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+            if (s >= 0 && sub::slot_pools(*objs, s) != nullptr) {
+                const ecs::Pools* p = stp != nullptr
+                    ? sub::slot_pools_of(*objs, s, **stp)
+                    : sub::slot_pools(*objs, s);
+                if (p != nullptr) return p->hp;
+            }
         }
         if (const ecs::Pools* squadPools = gs_
                 ? player_pools(*gs_, store_of(*ecs_)) : nullptr) {
@@ -2193,15 +2222,13 @@ void SubworldEngine::tick_player_melee() {
     // (damage/range/cooldown), refreshed from the sheet by
     // sync_player_entity_position — read it here instead of recomputing. Capture
     // the scalars up front so later component emplaces can't dangle the pointer.
-    ecs::Combat* pc = nullptr;
-    entt::entity playerEnt = entt::null;
-    for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-        if (pe == entt::null) continue;
-        pc = sub::body_combat(reg, pe);
-        if (pc == nullptr) continue;
-        playerEnt = pe;
-        break;
-    }
+    // Слот аватара — ОДИН раз ((ii-б)): им же ниже заряжается выстрел, так
+    // что прежний вырожденный цикл по сущности и body_slot у дула умерли.
+    sub::SubObjects* objsP = sub::objects_find(reg);
+    if (objsP == nullptr) return;
+    const int playerSlot = sub::avatar_slot(*objsP);
+    if (playerSlot < 0) return;
+    ecs::Combat* pc = sub::slot_combat(*objsP, playerSlot);
     if (!pc) return;
     // The swing gate is his Combat's OWN recoverySteps — THE one gate every
     // action shares (a cast charges the same field via spellbook_cast), so a
@@ -2235,7 +2262,7 @@ void SubworldEngine::tick_player_melee() {
         const float dirX = std::cos(cam_.yaw) * cp;
         const float dirY = std::sin(cam_.yaw) * cp;
         const float dirZ = std::sin(cam_.pitch);
-        spawn_npc_missile(reg, sub::body_slot(reg, playerEnt),
+        spawn_npc_missile(reg, playerSlot,
                           ecs::Position{playerX_, playerY_, playerZ_},
                           strikeStats, combatRng_,
                           playerX_ + dirX * strikeStats.attackRange,
@@ -2340,19 +2367,27 @@ void SubworldEngine::tick_player_melee() {
 void SubworldEngine::charge_act(float baseSeconds) {
     if (!ecs_ || baseSeconds <= 0.0f) return;
     auto& reg = ecs_->reg;
-    for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-        if (pe == entt::null) continue;
-        ecs::Combat* gate = sub::body_combat(reg, pe);
-        if (gate == nullptr) continue;
-        const CharacterSheet* cs = sub::state_of<CharacterSheet>(reg, pe);
-        static const Attributes kBareA{};
-        static const Skills kBareS{};
-        sub::charge_ability(gate, baseSeconds,
-                            cs ? cs->attributes : kBareA,
-                            cs ? cs->skills : kBareS,
-                            SkillId::Armsmaster);
-        break;
-    }
+    sub::SubObjects* objs = sub::objects_find(reg);
+    if (objs == nullptr) return;
+    const int s = sub::avatar_slot(*objs);
+    if (s < 0) return;
+    ecs::Combat* gate = sub::slot_combat(*objs, s);
+    if (gate == nullptr) return;
+    // Лист — ОДНА дверь (slot_sheet_of): запись первой, фолбэк колонка
+    // слота. Прежняя entity-специализация state_of<CharacterSheet> несла
+    // тот же фолбэк ВТОРЫМ телом и умерла в (ii-б); голый слот-generic
+    // фолбэка не имеет, и наивная подмена сделала бы голое тело пролога
+    // новичком молча.
+    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    const CharacterSheet* cs = stp != nullptr
+        ? sub::slot_sheet_of(*objs, s, **stp)
+        : sub::slot_sheet(*objs, s);
+    static const Attributes kBareA{};
+    static const Skills kBareS{};
+    sub::charge_ability(gate, baseSeconds,
+                        cs ? cs->attributes : kBareA,
+                        cs ? cs->skills : kBareS,
+                        SkillId::Armsmaster);
 }
 
 bool SubworldEngine::harvest_action(float reachOverride) {
@@ -2364,31 +2399,21 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // только когда удар по дереву действительно состоялся (ниже, у самого
     // выхода true) — отказ по своей причине («нечего рубить») рекавери не
     // жжёт, это граница закона способностей.
-    {
-        const ecs::Combat* gate = nullptr;
-        for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-            if (pe == entt::null) continue;
-            gate = sub::body_combat(reg, pe);
-            break;
-        }
-        if (!sub::body_is_free(gate)) {
-            set_status("Still recovering.");
-            return false;
-        }
+    // Слот аватара — ОДИН раз на всю жатву ((ii-б)): прежде он спрашивался
+    // ТРЕМЯ вырожденными циклами (гейт, предел руки, оплата SP).
+    sub::SubObjects* objsP = sub::objects_find(reg);
+    if (objsP == nullptr) return false;
+    const int playerSlot = sub::avatar_slot(*objsP);
+    if (playerSlot < 0) return false;
+    const ecs::Combat* gateCol = sub::slot_combat(*objsP, playerSlot);
+    if (!sub::body_is_free(gateCol)) {
+        set_status("Still recovering.");
+        return false;
     }
     // Arm's reach — the same envelope the melee swing measures with (+1.5
     // covers the trunk radius the point-range does not model).
-    float reach = 1.5f;
-    entt::entity playerEnt = entt::null;
-    for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-        if (pe == entt::null) continue;
-        const ecs::Combat* c = sub::body_combat(reg, pe);
-        if (c == nullptr) continue;
-        reach = c->attackRange + 1.5f;
-        playerEnt = pe;
-        break;
-    }
-    if (playerEnt == entt::null) return false;
+    if (gateCol == nullptr) return false;
+    float reach = gateCol->attackRange + 1.5f;
     if (reachOverride > 0.0f) reach = reachOverride;   // smoke lab only
     if (!harvest_prop_near_player(reach)) return false;
     // The gather law's SP price (CANON «Вердикты ТРУДА», owner 2026-09-12):
@@ -2404,7 +2429,10 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // branches that stood here — store for the hero, body-native for a
     // possessed body — was the «выборка власти полос» the mirror law retired:
     // whoever you are wearing, you spend what that record has.
-    ecs::Pools* pay = pools_of(reg, playerEnt);
+    MacroStore* const* payStp = reg.ctx().find<MacroStore*>();
+    ecs::Pools* pay = payStp != nullptr
+        ? sub::slot_pools_of(*objsP, playerSlot, **payStp)
+        : sub::slot_pools(*objsP, playerSlot);
     // ONE price law (CANON S14.1): the bar divided by the rate. The player's
     // rate is objects-in-a-day, and since 2026-09-16 so is a macro crew's —
     // it takes one object per HAND at this very price. The hero and the artel
@@ -2781,12 +2809,10 @@ bool SubworldEngine::interact() {
     // же гейт: обыскивать тело посреди замаха нельзя, и в пошаговом режиме
     // обыск честно отдаёт миру свой ход.
     {
-        const ecs::Combat* gate = nullptr;
-        for (const entt::entity pe : {sub::avatar_entity(reg)}) {
-            if (pe == entt::null) continue;
-            gate = sub::body_combat(reg, pe);
-            break;
-        }
+        sub::SubObjects* objs = sub::objects_find(reg);
+        const int s = objs ? sub::avatar_slot(*objs) : -1;
+        const ecs::Combat* gate =
+            s >= 0 ? sub::slot_combat(*objs, s) : nullptr;
         if (!sub::body_is_free(gate)) {
             set_status("Still recovering.");
             return false;
@@ -4533,7 +4559,7 @@ bool SubworldEngine::try_exit_dungeon() {
         if (ecs_) {
             // Слот аватара — ref_slot (жив-дверь); позиция — колонка арены.
             if (sub::SubObjects* objs = sub::objects_find(ecs_->reg)) {
-                const int s = sub::ref_slot(*objs, objs->avatar);
+                const int s = sub::avatar_slot(*objs);
                 if (s >= 0) {
                     if (ecs::Position* p = sub::slot_pos(*objs, s)) {
                         p->z = playerZ_;
@@ -4551,7 +4577,7 @@ float SubworldEngine::player_muzzle_z() const {
     // (жив-дверь); между сценами тела нет, и константа — честный ответ.
     if (ecs_) {
         if (sub::SubObjects* objs = sub::objects_find(ecs_->reg)) {
-            const int s = sub::ref_slot(*objs, objs->avatar);
+            const int s = sub::avatar_slot(*objs);
             if (s >= 0) return playerZ_ + sub::slot_body_eye_m(*objs, s);
         }
     }
@@ -4573,31 +4599,36 @@ float SubworldEngine::player_body_radius() const {
     if (!ecs_) return kBodyRadiusFallback;
     sub::SubObjects* objs = sub::objects_find(ecs_->reg);
     if (objs == nullptr) return kBodyRadiusFallback;
-    const int s = sub::ref_slot(*objs, objs->avatar);
+    const int s = sub::avatar_slot(*objs);
     return s < 0 ? kBodyRadiusFallback : sub::slot_body_radius(*objs, s);
 }
 
 bool SubworldEngine::flying() const {
-    auto e = player_entity();
-    return e != entt::null
-        && sub::object_flag(ecs_->reg, e, sub::kObjFlying);
+    if (!ecs_) return false;
+    sub::SubObjects* objs =
+        sub::objects_find(const_cast<entt::registry&>(ecs_->reg));
+    if (objs == nullptr) return false;
+    const int s = sub::avatar_slot(*objs);
+    return s >= 0 && sub::slot_flag(*objs, s, sub::kObjFlying);
 }
 
 void SubworldEngine::set_flying(bool enabled) {
-    auto e = player_entity();
-    if (e == entt::null) return;
+    if (!ecs_) return;
+    sub::SubObjects* objs = sub::objects_find(ecs_->reg);
+    if (objs == nullptr) return;
+    const int s = sub::avatar_slot(*objs);
+    if (s < 0) return;
 
-    const bool currently_flying =
-        sub::object_flag(ecs_->reg, e, sub::kObjFlying);
+    const bool currently_flying = sub::slot_flag(*objs, s, sub::kObjFlying);
     if (enabled && !currently_flying) {
         // No altitude seeding: flight simply switches gravity off at the
         // current z (which is already honest — grounded or mid-fall).
-        sub::object_flag_set(ecs_->reg, e, sub::kObjFlying);
+        sub::slot_flag_set(*objs, s, sub::kObjFlying);
         playerVz_ = 0.0f;
     } else if (!enabled && currently_flying) {
         // Losing flight does NOT snap to the ground: gravity takes over from
         // the current altitude on the next tick, starting from rest.
-        sub::object_flag_clear(ecs_->reg, e, sub::kObjFlying);
+        sub::slot_flag_clear(*objs, s, sub::kObjFlying);
         playerVz_ = 0.0f;
     }
 }
@@ -4695,7 +4726,7 @@ void SubworldEngine::sync_player_vertical(float dt) {
             // Слот аватара — ref_slot (жив-дверь); стор — тот же ctx-мост,
             // которым ходила entity-дверь урона.
             sub::SubObjects* objs = sub::objects_find(ecs_->reg);
-            const int ps = objs ? sub::ref_slot(*objs, objs->avatar) : -1;
+            const int ps = objs ? sub::avatar_slot(*objs) : -1;
             MacroStore* const* stp = ecs_->reg.ctx().find<MacroStore*>();
             const int dmg = ps >= 0
                 ? apply_fall_damage(*objs, stp != nullptr ? *stp : nullptr,

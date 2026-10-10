@@ -2035,7 +2035,7 @@ std::uint32_t player_gate_steps(const App& app) {
     // не меняет, читается только слот аватара.
     if (sm::sub::SubObjects* objs = sm::sub::objects_find(
             const_cast<entt::registry&>(app.ecs.reg))) {
-        const int s = sm::sub::ref_slot(*objs, objs->avatar);
+        const int s = sm::sub::avatar_slot(*objs);
         if (s >= 0)
             if (const auto* c = sm::sub::slot_combat(*objs, s))
                 return c->recoverySteps;
@@ -2396,7 +2396,7 @@ bool cast_active_spell(App& app) {
     std::uint32_t gateSteps = 0u;
     if (inMicro) {
         if (sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg)) {
-            const int s = sm::sub::ref_slot(*objs, objs->avatar);
+            const int s = sm::sub::avatar_slot(*objs);
             if (s >= 0)
                 if (const auto* c = sm::sub::slot_combat(*objs, s))
                     gateSteps = c->recoverySteps;
@@ -3706,7 +3706,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     if (app.subworld.active()) {
         sceneObjs = sm::sub::objects_find(app.ecs.reg);
         if (sceneObjs != nullptr) {
-            avatarSlot = sm::sub::ref_slot(*sceneObjs, sceneObjs->avatar);
+            avatarSlot = sm::sub::avatar_slot(*sceneObjs);
             if (avatarSlot >= 0) {
                 deathPools = sm::sub::slot_pools_of(*sceneObjs, avatarSlot,
                                                     *app.macroStore);

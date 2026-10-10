@@ -1041,8 +1041,7 @@ namespace sm::ui
                                 ecs::Combat* gate = nullptr;
                                 if (sm::sub::SubObjects* objs =
                                         sm::sub::objects_find(world.reg)) {
-                                    const int s = sm::sub::ref_slot(
-                                        *objs, objs->avatar);
+                                    const int s = sm::sub::avatar_slot(*objs);
                                     if (s >= 0) {
                                         gate = sm::sub::slot_combat(*objs, s);
                                     }

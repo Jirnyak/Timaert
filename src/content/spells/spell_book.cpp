@@ -226,13 +226,14 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     ctx.schoolRank = std::uint8_t(
         school != SkillId::Count ? skills.of(school) : 0);
     if (casterSlot >= 0) {
-        // Дверь записи целиком (шаг 2 1е, слот-форма iii-б): запись store
-        // первой, фолбэк — колонка листа арены; fixture body с пустыми
-        // руками — новичок (нулевой лист, уровень 0).
-        const CharacterSheet* cs = sub::slot_state<CharacterSheet>(
-            *objs, casterSlot, store_of(w.reg));
-        if (cs == nullptr) cs = &objs->sheet[std::size_t(casterSlot)];
-        ctx.casterLevel = std::int16_t(cs->levelData.level);
+        // Дверь листа ОДНА (slot_sheet_of, (ii-б)): запись store первой,
+        // фолбэк — колонка листа арены; fixture body с пустыми руками —
+        // новичок (нулевой лист, уровень 0). Прежняя ручная пара здесь
+        // была вторым телом того же закона (DOD п.6).
+        const CharacterSheet* cs =
+            sub::slot_sheet_of(*objs, casterSlot, store_of(w.reg));
+        ctx.casterLevel =
+            std::int16_t(cs != nullptr ? cs->levelData.level : 0);
     }
 
     if (!cast_spell(w, *d, ctx)) return false;
