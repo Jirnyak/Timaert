@@ -1002,15 +1002,18 @@ void SubworldEngine::spawn_player_entity() {
     // без слота была бы телом БЕЗ КООРДИНАТ (фантом угла окна). На входе в
     // сцену арена свежая и игрок рождается среди первых — отказ значит, что
     // сцена сломана целиком; говорим вслух и не рождаем фантома.
-    if (sub::SubObjects* objs = sub::objects_find(reg)) {
-        const int slot = objs->alloc(ecs::Position{playerX_, playerY_, 0.0f});
-        if (slot < 0) {
-            std::fprintf(stderr, "[sub] WARN avatar refused: arena full\n");
-            reg.destroy(e);
-            return;
-        }
-        reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
+    sub::SubObjects* objs = sub::objects_find(reg);
+    // Ветка ТРАНЗИТА (фикстура без арены): тело остаётся бесслотным и
+    // колонок не несёт — ровно прежний исход, где слот не эмплейсился, а
+    // четыре сеттера ниже отвечали no-op (и set_avatar тоже).
+    if (objs == nullptr) return;
+    const int slot = objs->alloc(ecs::Position{playerX_, playerY_, 0.0f});
+    if (slot < 0) {
+        std::fprintf(stderr, "[sub] WARN avatar refused: arena full\n");
+        reg.destroy(e);
+        return;
     }
+    reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
     sub::set_avatar(reg, e);   // активное тело — ссылка сцены (2026-10-05)
     // WHOSE BODY THIS IS (mirror law, 2026-09-12 — sub/record.h): the same
     // backlink every projected body carries — pointing at the FLAG record,
@@ -1022,7 +1025,7 @@ void SubworldEngine::spawn_player_entity() {
     // reason to exist, and no damage/spend path needs to know which kind of
     // body it is holding.
     if (flagRec.slot != kMacroNoSlot)
-        sub::set_body_origin(reg, e, flagRec);
+        sub::slot_set_origin(*objs, slot, flagRec);
     // Inc 4b: the player is a full combat participant, not an inert anchor.
     //  - Pools MIRROR the record the flag stands in (sub/record.h);
     //    mirror_bodies_from_record re-pulls the block at each tick top, and
@@ -1050,7 +1053,7 @@ void SubworldEngine::spawn_player_entity() {
         }
         pools.maxHp = std::max(1, pools.maxHp);
         pools.hp = std::clamp(pools.hp, 0, pools.maxHp);
-        sub::set_body_pools(reg, e, pools);
+        sub::slot_set_pools(*objs, slot, pools);
     }
     // NO BodyRadius override. That component is the "sized deliberately"
     // escape hatch (sub/body.h), and using it here is what let a spell's
@@ -1099,8 +1102,8 @@ void SubworldEngine::spawn_player_entity() {
         armReach = npc_def(
             NPCType(pst.kind[flagRec.slot].type)).combat.attackRange;
     }
-    sub::set_body_combat(
-        reg, e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
+    sub::slot_set_combat(
+        *objs, slot, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
                        std::uint8_t(hs.dmgType), playerPace,
                        hs.delivery == Delivery::Missile && hs.range > 0.0f
                            ? hs.range : armReach,
@@ -1113,10 +1116,11 @@ void SubworldEngine::spawn_player_entity() {
     // колонка light), so possessing another body simply stops lighting from
     // here and starts from whatever the possessed body carries — no
     // special-case anywhere.
-    sub::set_body_light(
-        reg, e, ecs::LightEmitter{0.0f, kPlayerLightHeightM, 0.0f,
-                                  kPlayerLightR, kPlayerLightG, kPlayerLightB,
-                                  kPlayerLightRadiusM, kPlayerLightIntensity});
+    sub::slot_set_light(
+        *objs, slot, ecs::LightEmitter{0.0f, kPlayerLightHeightM, 0.0f,
+                                       kPlayerLightR, kPlayerLightG,
+                                       kPlayerLightB, kPlayerLightRadiusM,
+                                       kPlayerLightIntensity});
 }
 
 void SubworldEngine::rebuild_prop_cache() {
@@ -1750,16 +1754,19 @@ void SubworldEngine::tick_day_pump(float dt) {
     // The body keeps its own legs, its own mover and its own ground law; all
     // that is written here is the INTENT it already had a field for.
     {
+        sub::SubObjects* walkObjs = sub::objects_find(reg);
         auto walking = reg.view<ecs::ObjectSlot>();
         std::array<entt::entity, 256> arrived{};
         int arrivedCount = 0;
         for (auto e : walking) {
+            if (walkObjs == nullptr) break;   // арены нет — тел тоже нет
+            const int s = int(walking.get<ecs::ObjectSlot>(e).slot);
             // «Идёт домой» — бит + колонка (кусок 3); мозг — колонка.
-            const ecs::GoingHome* hCol = sub::going_home(reg, e);
+            const ecs::GoingHome* hCol = sub::slot_going_home(*walkObjs, s);
             if (hCol == nullptr) continue;
-            ecs::SubworldAi* aCol = sub::body_ai(reg, e);
+            ecs::SubworldAi* aCol = sub::slot_ai(*walkObjs, s);
             if (aCol == nullptr) continue;
-            const ecs::Position& p = *sub::body_pos(reg, e);
+            const ecs::Position& p = walkObjs->pos[std::size_t(s)];
             auto& a = *aCol;
             const auto& h = *hCol;
             const float dx = h.x - p.x;
@@ -1837,21 +1844,29 @@ void SubworldEngine::tick_day_pump(float dt) {
     // each citizen carries (MacroDebt), because that is what says whose
     // townsman a body is. A leaver still stands there but is already spoken
     // for, so he is counted apart.
-    std::vector<entt::entity> onStreet;
-    std::vector<entt::entity> leaving;
+    // ОБА набора — СЛОТЫ, не сущности ((ii-б)): голый слот законен внутри
+    // тика (вердикт), а эта помпа целиком живёт в одном — между сбором и
+    // разворотом никто не рождается и не умирает. Живость ниже судит бит
+    // kObjAlive, а не reg.valid: вопрос о ТЕЛЕ, не о сущности.
+    std::vector<int> onStreet;
+    std::vector<int> leaving;
     onStreet.reserve(512);
+    sub::SubObjects* objsP = sub::objects_find(reg);
+    if (objsP == nullptr) return;
+    sub::SubObjects& objs = *objsP;
     auto crowd = reg.view<ecs::ObjectSlot>();
     for (auto e : crowd) {
-        if (sub::body_ai(reg, e) == nullptr) continue;
-        const auto* dp = sub::body_debt(reg, e);
+        const int s = int(crowd.get<ecs::ObjectSlot>(e).slot);
+        if (sub::slot_ai(objs, s) == nullptr) continue;
+        const auto* dp = sub::slot_debt(objs, s);
         if (dp == nullptr) continue;
         const auto& d = *dp;
         if (d.stock != std::uint8_t(MacroStock::Population)) continue;
         if (d.subject != ctx.landmark.id) continue;
-        if (sub::is_avatar(reg, e)
-            || sub::object_flag(reg, e, sub::kObjPlayerSoldier)) continue;
-        if (sub::object_flag(reg, e, sub::kObjGoingHome)) leaving.push_back(e);
-        else                                              onStreet.push_back(e);
+        if (objs.is_avatar_slot(s)
+            || sub::slot_flag(objs, s, sub::kObjPlayerSoldier)) continue;
+        if (sub::slot_flag(objs, s, sub::kObjGoingHome)) leaving.push_back(s);
+        else                                             onStreet.push_back(s);
     }
 
     const int staying = int(onStreet.size());
@@ -1859,8 +1874,8 @@ void SubworldEngine::tick_day_pump(float dt) {
     if (surplus > 0) {
         // Home is the NEAREST door — a man does not cross his town to sleep.
         for (int i = 0; i < surplus && i < int(onStreet.size()); ++i) {
-            const entt::entity e = onStreet[std::size_t(i)];
-            const ecs::Position& p = *sub::body_pos(reg, e);
+            const int s = onStreet[std::size_t(i)];
+            const ecs::Position& p = objs.pos[std::size_t(s)];
             const Structure* best = doors.front();
             float bestD2 = 1e30f;
             for (const Structure* d : doors) {
@@ -1868,7 +1883,8 @@ void SubworldEngine::tick_day_pump(float dt) {
                 const float d2 = dx * dx + dy * dy;
                 if (d2 < bestD2) { bestD2 = d2; best = d; }
             }
-            sub::set_going_home(reg, e, ecs::GoingHome{best->x, best->y});
+            sub::slot_set_going_home(objs, s,
+                                     ecs::GoingHome{best->x, best->y});
         }
         return;
     }
@@ -1877,11 +1893,11 @@ void SubworldEngine::tick_day_pump(float dt) {
     // round first — cheaper than birth, and truer, since he never left.
     int deficit = target - staying;
     while (deficit > 0 && !leaving.empty()) {
-        const entt::entity e = leaving.back();
+        const int s = leaving.back();
         leaving.pop_back();
-        if (reg.valid(e)) {
-            sub::clear_going_home(reg, e);
-            onStreet.push_back(e);   // развёрнутый стоит на улице — счёту ниже
+        if (sub::slot_flag(objs, s, sub::kObjAlive)) {
+            sub::slot_clear_going_home(objs, s);
+            onStreet.push_back(s);   // развёрнутый стоит на улице — счёту ниже
         }
         --deficit;
     }
@@ -1895,16 +1911,16 @@ void SubworldEngine::tick_day_pump(float dt) {
     std::array<int, std::size_t(NPCType::Count)> liveByKind{};
     std::vector<std::uint32_t> liveNamed;
     liveNamed.reserve(32);
-    for (const entt::entity e : onStreet) {
-        if (!reg.valid(e)) continue;
-        const auto* dOnStreet = sub::body_debt(reg, e);
+    for (const int s : onStreet) {
+        if (!sub::slot_flag(objs, s, sub::kObjAlive)) continue;
+        const auto* dOnStreet = sub::slot_debt(objs, s);
         if (dOnStreet == nullptr) continue;
         const auto& d = *dOnStreet;
         if (d.detail > 0) {
             liveNamed.push_back(std::uint32_t(d.detail));
             continue;
         }
-        const auto* kind = sub::body_kind(reg, e);
+        const auto* kind = sub::slot_kind(objs, s);
         if (kind != nullptr && kind->type < std::uint16_t(NPCType::Count)) {
             ++liveByKind[std::size_t(kind->type)];
         }
