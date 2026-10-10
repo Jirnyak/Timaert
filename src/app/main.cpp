@@ -73,7 +73,8 @@
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
 #include "sub/damage.h"
-#include "sub/record.h"   // pools_of/macro_record_of — the death check asks the
+#include "sub/record.h"   // objects_find + шовные slot_pools_of/
+                          // slot_macro_record — the death check asks the
                           // body the player is STANDING IN, mirror-law wise
 #include "sub/dgn/dispatch.h"
 #include "sub/height.h"
@@ -2030,10 +2031,15 @@ bool gameplay_panel_open(const App& app) {
 // the hand is free, or when no body is on stage. Read-only: the turn stop
 // below derives from it, exactly as every action already charges into it.
 std::uint32_t player_gate_steps(const App& app) {
-    const entt::entity e = sm::sub::avatar_entity(app.ecs.reg);
-    if (e != entt::null)
-        if (const auto* c = sm::sub::body_combat(app.ecs.reg, e))
-            return c->recoverySteps;
+    // const_cast — приём самих дверей (record.h): поиск арены в ctx реестр
+    // не меняет, читается только слот аватара.
+    if (sm::sub::SubObjects* objs = sm::sub::objects_find(
+            const_cast<entt::registry&>(app.ecs.reg))) {
+        const int s = sm::sub::ref_slot(*objs, objs->avatar);
+        if (s >= 0)
+            if (const auto* c = sm::sub::slot_combat(*objs, s))
+                return c->recoverySteps;
+    }
     return 0u;
 }
 
@@ -2389,10 +2395,12 @@ bool cast_active_spell(App& app) {
     // the caster's own entity id. The world map has no fighting body.
     std::uint32_t gateSteps = 0u;
     if (inMicro) {
-        const entt::entity e = sm::sub::avatar_entity(app.ecs.reg);
-        if (e != entt::null)
-            if (const auto* c = sm::sub::body_combat(app.ecs.reg, e))
-                gateSteps = c->recoverySteps;
+        if (sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg)) {
+            const int s = sm::sub::ref_slot(*objs, objs->avatar);
+            if (s >= 0)
+                if (const auto* c = sm::sub::slot_combat(*objs, s))
+                    gateSteps = c->recoverySteps;
+        }
     }
     const sm::CastCheck check = sm::spellbook_can_cast_ex(
         player_book(app), player_pools(app), ord, inMicro,
@@ -3693,11 +3701,16 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // always. The REAL pools only: the scratch fallback is all zeros, and a
     // frame before the squad entity exists must not read as a death.
     const sm::ecs::Pools* deathPools = nullptr;
-    entt::entity avatarBody = entt::null;
+    int avatarSlot = -1;
+    sm::sub::SubObjects* sceneObjs = nullptr;
     if (app.subworld.active()) {
-        avatarBody = sm::sub::avatar_entity(app.ecs.reg);
-        if (avatarBody != entt::null) {
-            deathPools = sm::sub::pools_of(app.ecs.reg, avatarBody);
+        sceneObjs = sm::sub::objects_find(app.ecs.reg);
+        if (sceneObjs != nullptr) {
+            avatarSlot = sm::sub::ref_slot(*sceneObjs, sceneObjs->avatar);
+            if (avatarSlot >= 0) {
+                deathPools = sm::sub::slot_pools_of(*sceneObjs, avatarSlot,
+                                                    *app.macroStore);
+            }
         }
     }
     if (!deathPools) deathPools = sm::player_pools(app.gs, *app.macroStore);
@@ -3718,10 +3731,10 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
         const bool homeLive = app.macroStore->valid(homeH);
         const bool foreignBody =
-            avatarBody != entt::null
+            avatarSlot >= 0
                 ? (!homeLive
-                   || sm::sub::macro_record_of(app.ecs.reg, avatarBody)
-                          != homeH)
+                   || sm::sub::slot_macro_record(*sceneObjs, avatarSlot,
+                                                 *app.macroStore) != homeH)
                 : sm::player_wears_another_body(app.gs);
         if (app.subworld.in_dungeon() && storyNode != nullptr) {
             end_scene_by_death(app, storyNode);
@@ -5096,16 +5109,23 @@ void draw_debug_panels(App& app) {
                 ImGui::TableSetupColumn("tags");
                 ImGui::TableSetupScrollFreeze(0, 1);
                 ImGui::TableHeadersRow();
-                for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
+                // Слот-идиома (ii-б): слот один раз из вьюхи, арена хойстом,
+                // дальше слот-двери; сущность остаётся только колонкой id.
+                // Арены нет — нет и тел (слот эмплейсит только рождение),
+                // поэтому пустой гейт честен, а не ветка-заглушка.
+                sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+                auto entView = reg.view<sm::ecs::ObjectSlot>();
+                for (auto e : entView) {
+                    if (objs == nullptr) break;
                     ++total;
                     if (shown >= kMaxRows) continue;
-                    const sm::ecs::Position& pos =
-                        *sm::sub::body_pos(reg, e);
+                    const int s = int(entView.get<sm::ecs::ObjectSlot>(e).slot);
+                    const sm::ecs::Position& pos = objs->pos[std::size_t(s)];
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
                     ImGui::Text("%u", unsigned(entt::to_integral(e)));
                     ImGui::TableNextColumn();
-                    if (const auto* k = sm::sub::body_kind(reg, e)) {
+                    if (const auto* k = sm::sub::slot_kind(*objs, s)) {
                         ImGui::TextUnformatted(
                             sm::valid_npc_kind(std::uint8_t(k->type))
                                 ? sm::npc_def(sm::NPCType(k->type)).label : "?");
@@ -5115,11 +5135,11 @@ void draw_debug_panels(App& app) {
                         ImGui::TextUnformatted("-");
                     }
                     ImGui::TableNextColumn();
-                    if (const std::int16_t lv = sm::sub::body_level(reg, e))
+                    if (const std::int16_t lv = sm::sub::slot_level(*objs, s))
                         ImGui::Text("%d", int(lv));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
-                    if (const auto* h = sm::sub::body_pools(reg, e))
+                    if (const auto* h = sm::sub::slot_pools(*objs, s))
                         ImGui::Text("%.0f/%.0f", double(h->hp), double(h->maxHp));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
@@ -5127,18 +5147,18 @@ void draw_debug_panels(App& app) {
                     ImGui::TableNextColumn();
                     // The body's row in THE sprite table, by name — far more
                     // use in a debug list than the ordinal it used to print.
-                    if (const auto* sp = sm::sub::body_sprite(reg, e);
+                    if (const auto* sp = sm::sub::slot_sprite(*objs, s);
                         sp && sp->spriteRow != 0)
                         ImGui::TextUnformatted(
                             sm::sprite_row(sm::SpriteId(sp->spriteRow)).name);
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
                     char tags[8]; int ti = 0;
-                    if (sm::sub::object_flag(reg, e, sm::sub::kObjDead))
+                    if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead))
                         tags[ti++] = 'D';
-                    if (sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+                    if (sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
                         tags[ti++] = 'A';
-                    if (sm::sub::object_flag(reg, e, sm::sub::kObjTempHostile))
+                    if (sm::sub::slot_flag(*objs, s, sm::sub::kObjTempHostile))
                         tags[ti++] = 'H';
                     tags[ti] = '\0';
                     ImGui::TextUnformatted(tags);
