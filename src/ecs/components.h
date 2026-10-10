@@ -711,7 +711,6 @@ struct Projectile {
     std::uint32_t ownerId;
     std::int16_t chainRemaining;
     Kind kind;
-    bool friendlyFire;
     bool visualOnly;
     bool explodeOnExpiry;
     // The blow's armour column (DamageType ordinal) and the crit verdict —

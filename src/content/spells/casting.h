@@ -32,7 +32,6 @@ struct SpellSpawnContext {
     float speed;
     float projectileRadius;
     float effectRadius;
-    bool  friendlyFire;
     // Кастер — ССЫЛКА СЦЕНЫ (ломоть 7 (iii-б)): снаряд уносит её парой
     // {ownerSlot, ownerId}; id 0 — «ничей» конверт (фикстура без тела).
     sub::ObjRef caster;

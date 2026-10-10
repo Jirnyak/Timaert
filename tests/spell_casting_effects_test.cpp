@@ -589,7 +589,7 @@ int main() {
             .spellId = sm::stable_spell_id("fireball"),
             .ownerId = 0u,   // «ничей» взрыв — id 0 (iii-б)
             .chainRemaining = std::int16_t{0},
-            .kind = sm::ecs::Projectile::Bolt, .friendlyFire = true,
+            .kind = sm::ecs::Projectile::Bolt,
             .visualOnly = true, .explodeOnExpiry = true,
             .dmgType = std::uint8_t(sm::DamageType::Fire), .critical = false},
         sm::ecs::Position{0.0f, 0.0f, 0.0f});
@@ -1065,7 +1065,6 @@ int main() {
         if (p.kind != sm::ecs::Projectile::Bolt
             || !p.visualOnly
             || !p.explodeOnExpiry
-            || !p.friendlyFire
             || !nearf(p.blastRadius, 25.0f)
             || !nearf(p.radius, 2.5f)
             || p.lifeTimer < 0.3f
@@ -1103,12 +1102,12 @@ int main() {
 
     // ---- Inc 4d: the owner self-exclusion is gone. Whether a caster is
     // caught by its OWN projectile is decided purely by geometry (does the
-    // caster stand in the hit region?) and faction (friendlyFire bypasses the
-    // same-side shield). No player special-casing — the owner is a real entity
-    // id, exactly like an NPC firer's. -----------------------------------
+    // caster stand in the hit region?) — there is no faction shield at all.
+    // No player special-casing — the owner is a real scene reference,
+    // exactly like an NPC firer's. -----------------------------------
     {
-        // (a) Q1 — "свой взрыв ловит и тебя": a player's own friendlyFire
-        // blast catches the player when the player stands in it, and the hit
+        // (a) Q1 — "свой взрыв ловит и тебя": a player's own AoE blast
+        // (blastRadius > 0) catches the player when the player stands in it, and the hit
         // is still attributed player-owned (XP/log route to the player).
         sm::ecs::World selfWorld;
         auto selfWorldStore_ = sm::make_macro_store();
@@ -1135,7 +1134,7 @@ int main() {
                 .spellId = sm::stable_spell_id("fireball"),
                 .ownerId = selfRef.id,
                 .chainRemaining = std::int16_t{0},
-                .kind = sm::ecs::Projectile::Bolt, .friendlyFire = true,
+                .kind = sm::ecs::Projectile::Bolt,
                 .visualOnly = true, .explodeOnExpiry = true,
                 .dmgType = std::uint8_t(sm::DamageType::Fire),
                 .critical = false},
@@ -1143,7 +1142,7 @@ int main() {
         sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f);
         if (!(hp_of(selfWorld, selfPlayer) < 100.0f)
             || !last_hit_by(selfWorld, selfPlayer, selfPlayer)) {
-            return fail("Inc 4d: player friendlyFire blast did not catch its "
+            return fail("Inc 4d: player AoE blast did not catch its "
                         "own caster (Q1)");
         }
     }
@@ -1177,7 +1176,7 @@ int main() {
                 .spellId = sm::stable_spell_id("magic_bolt"),
                 .ownerId = shieldRef.id,
                 .chainRemaining = std::int16_t{0},
-                .kind = sm::ecs::Projectile::Bolt, .friendlyFire = false,
+                .kind = sm::ecs::Projectile::Bolt,
                 .visualOnly = false, .explodeOnExpiry = false,
                 .dmgType = std::uint8_t(sm::DamageType::Arcane),
                 .critical = false},
@@ -1190,7 +1189,7 @@ int main() {
     }
     {
         // (c) Owner-agnostic — no player special-case: an NPC-owned
-        // friendlyFire blast catches its OWN NPC caster too, and the hit is
+        // AoE blast catches its OWN NPC caster too, and the hit is
         // NOT player-owned (no XP leaks to the player sheet).
         sm::ecs::World npcWorld;
         auto npcWorldStore_ = sm::make_macro_store();
@@ -1216,7 +1215,7 @@ int main() {
                 .spellId = sm::stable_spell_id("fireball"),
                 .ownerId = npcRef.id,
                 .chainRemaining = std::int16_t{0},
-                .kind = sm::ecs::Projectile::Bolt, .friendlyFire = true,
+                .kind = sm::ecs::Projectile::Bolt,
                 .visualOnly = true, .explodeOnExpiry = true,
                 .dmgType = std::uint8_t(sm::DamageType::Fire),
                 .critical = false},
@@ -1224,7 +1223,7 @@ int main() {
         sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f);
         if (!(hp_of(npcWorld, npcCaster) < 100.0f)
             || !last_hit_by(npcWorld, npcCaster, npcCaster)) {
-            return fail("Inc 4d: NPC friendlyFire blast self-catch/ownership "
+            return fail("Inc 4d: NPC AoE blast self-catch/ownership "
                         "wrong (must hit, attributed to the NPC body)");
         }
     }

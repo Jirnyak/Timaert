@@ -196,7 +196,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
             .chainDecayPct = std::uint8_t(0), .ownerSlot = owner.slot,
             .chainRadius = 0.0f, .spellId = 1u, .ownerId = owner.id,
             .chainRemaining = std::int16_t{0}, .kind = Projectile::Bolt,
-            .friendlyFire = false, .visualOnly = false,
+            .visualOnly = false,
             .explodeOnExpiry = false, .dmgType = std::uint8_t(0),
             .critical = false};
         ticks = 10;
@@ -213,7 +213,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
             .chainRadius = 0.0f, .spellId = 2u,
             .ownerId = 0u,   // «ничей» — id 0 (iii-б; прежний 0xFFFFFFFF умер)
             .chainRemaining = std::int16_t{0}, .kind = Projectile::Bolt,
-            .friendlyFire = false, .visualOnly = false,
+            .visualOnly = false,
             .explodeOnExpiry = true, .dmgType = std::uint8_t(0),
             .critical = false};
         break;
@@ -232,7 +232,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
             .chainRadius = 0.0f, .spellId = 3u,
             .ownerId = 0u,   // «ничей» — id 0 (iii-б)
             .chainRemaining = std::int16_t{0}, .kind = Projectile::Beam,
-            .friendlyFire = false, .visualOnly = false,
+            .visualOnly = false,
             .explodeOnExpiry = false, .dmgType = std::uint8_t(0),
             .critical = false};
         break;
@@ -248,7 +248,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
             .chainRadius = 15.0f, .spellId = 4u,
             .ownerId = 0u,   // «ничей» — id 0 (iii-б)
             .chainRemaining = std::int16_t{3}, .kind = Projectile::Bolt,
-            .friendlyFire = false, .visualOnly = false,
+            .visualOnly = false,
             .explodeOnExpiry = false, .dmgType = std::uint8_t(0),
             .critical = false};
         ticks = 10;

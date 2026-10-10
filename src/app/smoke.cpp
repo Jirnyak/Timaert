@@ -5035,7 +5035,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         .ownerId = smokeCaster.id,
         .chainRemaining = std::int16_t{0},
         .kind = sm::ecs::Projectile::Bolt,
-        .friendlyFire = false, .visualOnly = false,
+        .visualOnly = false,
         .explodeOnExpiry = false,
         .dmgType = std::uint8_t(sm::DamageType::Blunt),
         .critical = false};

@@ -59,8 +59,9 @@ bool is_spell_target(const SubObjects& objs, int s,
     // NO faction shield (owner design decision 2026-07-30): projectiles and
     // spells are faction-agnostic — they strike whoever stands in their path,
     // ally or enemy. Friendly fire is real; formations must respect their own
-    // archers. (Projectile.friendlyFire survives as the AoE-blast marker the
-    // spell tables use — it no longer gates WHO can be hit.)
+    // archers. (Projectile.friendlyFire умерла 2026-10-10 — колонка-сирота,
+    // DOD п.9, вердикт владельца «снести»: маркер AoE-взрыва — колонка СТРОКИ
+    // СПЕЛЛА SpellDef::friendlyFire, свёрнутая кастом в blastRadius.)
     if (canHitFn && !canHitFn(canHitUser, p, std::uint16_t(s))) {
         return false;
     }

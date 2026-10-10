@@ -113,7 +113,7 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
         .chainRadius = 0.0f,
         .spellId = c.spellId, .ownerId = c.caster.id,
         .chainRemaining = std::int16_t(0), .kind = ecs::Projectile::Bolt,
-        .friendlyFire = c.friendlyFire, .visualOnly = false,
+        .visualOnly = false,
         .explodeOnExpiry = false, .dmgType = c.dmgType,
         .critical = c.critical};
     // Снаряд — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v) ломтя 7): сущности нет,
@@ -176,7 +176,7 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
         .chainRadius = 0.0f,
         .spellId = c.spellId, .ownerId = c.caster.id,
         .chainRemaining = std::int16_t(0), .kind = ecs::Projectile::Beam,
-        .friendlyFire = c.friendlyFire, .visualOnly = true,
+        .visualOnly = true,
         .explodeOnExpiry = true, .dmgType = c.dmgType,
         .critical = c.critical};
     sub::SubObjects* objs = sub::objects_find(w.reg);
@@ -217,7 +217,7 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
             .chainRadius = 0.0f,
         .spellId = c.spellId, .ownerId = c.caster.id,
             .chainRemaining = std::int16_t(0), .kind = ecs::Projectile::Bolt,
-            .friendlyFire = c.friendlyFire, .visualOnly = true,
+            .visualOnly = true,
             .explodeOnExpiry = true, .dmgType = c.dmgType,
             .critical = c.critical};
         // Кап арены обрывает ДОЖДЬ, а не отдельный метеор: освобождений
