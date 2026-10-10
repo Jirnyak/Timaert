@@ -5026,19 +5026,22 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // proves a real bolt's flight, so this one should not be able to fail for
     // aiming reasons.
     smoke_give_pos(reg, friendlyProjectile, tx, py, pz);
-    // ownerId is the PLAYER'S entity, not a placeholder zero: it is what makes
-    // this the player's bolt, and only a player-owned hit reaches the damage-log
-    // callback that charges reputation (spell_effects.cpp apply_spell_damage).
+    // Владелец — ссылка АВАТАРА (пара {ownerSlot, ownerId}, iii-б), not a
+    // placeholder zero: it is what makes this the player's bolt, and only a
+    // player-owned hit reaches the damage-log callback that charges
+    // reputation (spell_effects.cpp apply_spell_damage).
     // Поля НАЗВАНЫ (0b ломтя 7): позиционный emplace переживал перестановку
     // полей молча; designated-форму красит -Wreorder-init-list -Werror.
+    const sm::sub::ObjRef smokeCaster = sm::sub::objects_of(reg).avatar;
     const sm::ecs::Projectile friendlyBolt{
         .vx = 0.0f, .vy = 0.0f, .vz = 0.0f,
         .radius = 1.5f, .lifeTimer = 1.0f, .maxLifeTimer = 1.0f,
         .damage = kFriendlySpellDamage, .blastRadius = 0.0f,
         .originX = tx, .originY = py, .beamLength = 0.0f,
-        .chainDecayPct = std::uint8_t(0), .chainRadius = 0.0f,
+        .chainDecayPct = std::uint8_t(0), .ownerSlot = smokeCaster.slot,
+        .chainRadius = 0.0f,
         .spellId = sm::stable_spell_id("magic_bolt"),
-        .ownerId = app.subworld.player_entity_id(),
+        .ownerId = smokeCaster.id,
         .chainRemaining = std::int16_t{0},
         .kind = sm::ecs::Projectile::Bolt,
         .friendlyFire = false, .visualOnly = false,

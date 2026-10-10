@@ -181,35 +181,38 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     const auto pe = reg.create();
     switch (scenario) {
     case 0: {
-        const std::uint32_t owner =
-            std::uint32_t(entt::to_integral(bodies[0]));
+        // Владелец — ссылка сцены (iii-б): пара {slot, id} тела bodies[0].
+        const sm::sub::ObjRef owner = sm::sub::ref_of(
+            sm::sub::objects_of(reg), sm::sub::body_slot(reg, bodies[0]));
         sm::test::give_pos(reg, pe, 98.5f, 100.0f, 1.0f);
-        reg.emplace<Projectile>(pe,
-            400.0f, 0.0f, 0.0f,               // vx, vy, vz
-            1.5f,                             // radius
-            1.0f, 1.0f,                       // lifeTimer, maxLifeTimer
-            13, 0.0f,                         // damage, blastRadius
-            98.5f, 100.0f,                    // originX, originY
-            0.0f, std::uint8_t(0), 0.0f,      // beamLength, chainDecayPct, chainRadius
-            1u, owner,
-            std::int16_t{0}, Projectile::Bolt,
-            false, false, false,
-            std::uint8_t(0), false);
+        reg.emplace<Projectile>(pe, Projectile{
+            .vx = 400.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
+            .lifeTimer = 1.0f, .maxLifeTimer = 1.0f,
+            .damage = 13, .blastRadius = 0.0f,
+            .originX = 98.5f, .originY = 100.0f, .beamLength = 0.0f,
+            .chainDecayPct = std::uint8_t(0), .ownerSlot = owner.slot,
+            .chainRadius = 0.0f, .spellId = 1u, .ownerId = owner.id,
+            .chainRemaining = std::int16_t{0}, .kind = Projectile::Bolt,
+            .friendlyFire = false, .visualOnly = false,
+            .explodeOnExpiry = false, .dmgType = std::uint8_t(0),
+            .critical = false});
         ticks = 10;
         break;
     }
     case 1:
         sm::test::give_pos(reg, pe, 500.0f, 500.0f, 1.0f);
-        reg.emplace<Projectile>(pe,
-            0.0f, 0.0f, 0.0f, 1.5f,
-            0.005f, 1.0f,                     // expires on the first tick
-            20, 12.0f,
-            500.0f, 500.0f,
-            0.0f, std::uint8_t(0), 0.0f,
-            2u, std::uint32_t(0xFFFFFFFFu),
-            std::int16_t{0}, Projectile::Bolt,
-            false, false, true,               // explodeOnExpiry
-            std::uint8_t(0), false);
+        reg.emplace<Projectile>(pe, Projectile{
+            .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
+            .lifeTimer = 0.005f, .maxLifeTimer = 1.0f, // expires first tick
+            .damage = 20, .blastRadius = 12.0f,
+            .originX = 500.0f, .originY = 500.0f, .beamLength = 0.0f,
+            .chainDecayPct = std::uint8_t(0), .ownerSlot = 0,
+            .chainRadius = 0.0f, .spellId = 2u,
+            .ownerId = 0u,   // «ничей» — id 0 (iii-б; прежний 0xFFFFFFFF умер)
+            .chainRemaining = std::int16_t{0}, .kind = Projectile::Bolt,
+            .friendlyFire = false, .visualOnly = false,
+            .explodeOnExpiry = true, .dmgType = std::uint8_t(0),
+            .critical = false});
         break;
     case 2: {
         // Direction (10, 0, 2) normalised inside; entity sits at the beam
@@ -218,30 +221,34 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         const float nx = 10.0f / len3, nz = 2.0f / len3;
         sm::test::give_pos(reg, pe, 600.0f + nx * 20.0f, 600.0f,
                            1.0f + nz * 20.0f);
-        reg.emplace<Projectile>(pe,
-            10.0f, 0.0f, 2.0f, 1.2f,
-            0.005f, 1.0f,
-            15, 0.0f,
-            600.0f, 600.0f,
-            40.0f, std::uint8_t(0), 0.0f,     // beamLength
-            3u, std::uint32_t(0xFFFFFFFFu),
-            std::int16_t{0}, Projectile::Beam,
-            false, false, false,
-            std::uint8_t(0), false);
+        reg.emplace<Projectile>(pe, Projectile{
+            .vx = 10.0f, .vy = 0.0f, .vz = 2.0f, .radius = 1.2f,
+            .lifeTimer = 0.005f, .maxLifeTimer = 1.0f,
+            .damage = 15, .blastRadius = 0.0f,
+            .originX = 600.0f, .originY = 600.0f, .beamLength = 40.0f,
+            .chainDecayPct = std::uint8_t(0), .ownerSlot = 0,
+            .chainRadius = 0.0f, .spellId = 3u,
+            .ownerId = 0u,   // «ничей» — id 0 (iii-б)
+            .chainRemaining = std::int16_t{0}, .kind = Projectile::Beam,
+            .friendlyFire = false, .visualOnly = false,
+            .explodeOnExpiry = false, .dmgType = std::uint8_t(0),
+            .critical = false});
         break;
     }
     case 3:
         sm::test::give_pos(reg, pe, 800.0f, 800.0f, 1.0f);
-        reg.emplace<Projectile>(pe,
-            400.0f, 0.0f, 0.0f, 1.5f,
-            1.0f, 1.0f,
-            16, 0.0f,
-            800.0f, 800.0f,
-            0.0f, std::uint8_t(50), 15.0f,    // chainDecayPct, chainRadius
-            4u, std::uint32_t(0xFFFFFFFFu),
-            std::int16_t{3}, Projectile::Bolt, // chainRemaining
-            false, false, false,
-            std::uint8_t(0), false);
+        reg.emplace<Projectile>(pe, Projectile{
+            .vx = 400.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
+            .lifeTimer = 1.0f, .maxLifeTimer = 1.0f,
+            .damage = 16, .blastRadius = 0.0f,
+            .originX = 800.0f, .originY = 800.0f, .beamLength = 0.0f,
+            .chainDecayPct = std::uint8_t(50), .ownerSlot = 0,
+            .chainRadius = 15.0f, .spellId = 4u,
+            .ownerId = 0u,   // «ничей» — id 0 (iii-б)
+            .chainRemaining = std::int16_t{3}, .kind = Projectile::Bolt,
+            .friendlyFire = false, .visualOnly = false,
+            .explodeOnExpiry = false, .dmgType = std::uint8_t(0),
+            .critical = false});
         ticks = 10;
         break;
     }

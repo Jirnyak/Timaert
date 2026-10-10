@@ -88,15 +88,19 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
 
 // A real player-tagged entity to own player-cast projectiles. Inc 4d retired
 // the ownerId==0 sentinel — ownership/faction now key off the owner entity's
-// tags, exactly as production does via SubworldEngine::player_entity_id().
+// tags, exactly as production does via the avatar scene reference (iii-б).
 // Placed far from targets so it is never itself in a blast/line by accident.
-std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
+sm::sub::ObjRef add_player(sm::ecs::World& w, float x, float y) {
+    // Кастер — НЕ слот 0: на фикстуре, где игрок — первый жилец арены,
+    // мутация «писатель кладёт чужой слот 0» прошла бы зелёной (слепота
+    // слота 0 — родня слепоты сущности 0, пойманной в (iii-д)).
+    (void)sm::test::arena_of(w.reg).alloc(sm::ecs::Position{});
     auto e = w.create();
     sm::test::give_slot(w.reg, e);
     sm::test::give_pos(w.reg, e, x, y, 0.0f);
     sm::test::give_pools(w.reg, e, sm::ecs::Pools{1000, 1000});
     sm::test::make_avatar(w.reg, e);
-    return std::uint32_t(entt::to_integral(e));
+    return sm::sub::objects_of(w.reg).avatar;
 }
 
 float hp_of(sm::ecs::World& w, entt::entity e) {
@@ -113,10 +117,8 @@ bool last_hit_by(sm::ecs::World& w, entt::entity e, entt::entity attacker) {
         && sm::test::last_hit_of(w.reg, e)
                == sm::sub::ref_of(sm::sub::objects_of(w.reg), slot);
 }
-// ТРАНЗИТ (умирает в (iii-б)): add_player пока возвращает entt-биты —
-// ровно то, что несёт Projectile.ownerId до пары {ownerSlot, ownerId}.
-bool last_hit_by(sm::ecs::World& w, entt::entity e, std::uint32_t ownerBits) {
-    return last_hit_by(w, e, entt::entity(ownerBits));
+bool last_hit_by(sm::ecs::World& w, entt::entity e, sm::sub::ObjRef owner) {
+    return owner.id != 0u && sm::test::last_hit_of(w.reg, e) == owner;
 }
 
 struct SeqRng {
@@ -421,7 +423,7 @@ int main() {
 
     sm::spellbook_learn(book, sm::spell_ordinal("magic_bolt"));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("magic_bolt"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("magic_bolt"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("magic_bolt cast rejected");
     }
@@ -468,7 +470,11 @@ int main() {
     const auto casterBody = world.create();
     sm::test::give_pos(world.reg, casterBody, 100.0f, 100.0f, 0.0f);
     sm::test::give_combat(world.reg, casterBody, sm::ecs::Combat{});
-    const auto casterId = std::uint32_t(entt::to_integral(casterBody));
+    // Кастер — ссылка сцены (iii-б): слот тела через ту же дверь, что у
+    // прод-писателя.
+    const sm::sub::ObjRef casterId = sm::sub::ref_of(
+        sm::sub::objects_of(world.reg),
+        sm::sub::body_slot(world.reg, casterBody));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
                             sm::spell_ordinal("fireball"), casterId, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
@@ -529,7 +535,7 @@ int main() {
         add_target(fireExpiryWorld, 120.0f, 100.0f, 100.0f, false);
     if (!sm::spellbook_cast(fireExpiryWorld, fireExpiryBook,
                             fireExpiryCombat, attributes, skills,
-                            sm::spell_ordinal("fireball"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("fireball"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("fireball expiry setup cast rejected");
     }
@@ -547,12 +553,18 @@ int main() {
     auto blastProjectile = blastWorld.create();
     sm::test::give_pos(blastWorld.reg, blastProjectile, 0.0f, 0.0f, 0.0f);
     blastWorld.reg.emplace<sm::ecs::Projectile>(blastProjectile,
-        0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10, 48.0f,
-        0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
-        sm::stable_spell_id("fireball"), std::uint32_t{0},
-        std::int16_t{0}, sm::ecs::Projectile::Bolt,
-        true, true, true,
-        std::uint8_t(sm::DamageType::Fire), false);
+        sm::ecs::Projectile{
+            .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 2.5f,
+            .lifeTimer = 0.0f, .maxLifeTimer = 0.0f, .damage = 10,
+            .blastRadius = 48.0f, .originX = 0.0f, .originY = 0.0f,
+            .beamLength = 0.0f, .chainDecayPct = std::uint8_t(0),
+            .ownerSlot = 0, .chainRadius = 0.0f,
+            .spellId = sm::stable_spell_id("fireball"),
+            .ownerId = 0u,   // «ничей» взрыв — id 0 (iii-б)
+            .chainRemaining = std::int16_t{0},
+            .kind = sm::ecs::Projectile::Bolt, .friendlyFire = true,
+            .visualOnly = true, .explodeOnExpiry = true,
+            .dmgType = std::uint8_t(sm::DamageType::Fire), .critical = false});
     // Колонка арены (ломоть 4): значение — у только что записанной
     // компоненты, два носителя разъехаться не могут; строка умрёт с нею.
     sm::test::give_projectile(blastWorld.reg, blastProjectile,
@@ -579,7 +591,7 @@ int main() {
     iceCombat.maxMp = 1000;
     sm::spellbook_learn(iceBook, sm::spell_ordinal("ice_shard"));
     if (!sm::spellbook_cast(iceWorld, iceBook, iceCombat, attributes, skills,
-                            sm::spell_ordinal("ice_shard"), std::uint32_t{0}, 10.0f, 10.0f, 0.0f,
+                            sm::spell_ordinal("ice_shard"), sm::sub::ObjRef{}, 10.0f, 10.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("ice_shard cast rejected");
     }
@@ -625,7 +637,7 @@ int main() {
     }
     const int beforeMacroProjectiles = projectile_count(world);
     if (sm::spellbook_cast(world, macroBook, macroCombat, attributes, skills,
-                           sm::spell_ordinal("fireball"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                           sm::spell_ordinal("fireball"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                            1.0f, 0.0f, 0.0f, false)) {
         return fail("world-map fireball spawned micro projectile");
     }
@@ -636,7 +648,7 @@ int main() {
 
     sm::spellbook_learn(book, sm::spell_ordinal("energy_beam"));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("energy_beam"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("energy_beam"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("energy_beam cast rejected");
     }
@@ -665,7 +677,7 @@ int main() {
 
     sm::spellbook_learn(book, sm::spell_ordinal("lightning_chain"));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("lightning_chain"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("lightning_chain"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("lightning_chain cast rejected");
     }
@@ -708,7 +720,7 @@ int main() {
 
     sm::spellbook_learn(book, sm::spell_ordinal("haste"));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("haste"), std::uint32_t{0}, 0.0f, 0.0f, 0.0f,
+                            sm::spell_ordinal("haste"), sm::sub::ObjRef{}, 0.0f, 0.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("haste toggle rejected");
     }
@@ -735,7 +747,7 @@ int main() {
     zeroTickCombat.mp = 1;
     zeroTickCombat.maxMp = 1;
     if (!sm::spellbook_cast(world, zeroTickBook, zeroTickCombat,
-                            attributes, skills, sm::spell_ordinal("haste"), std::uint32_t{0},
+                            attributes, skills, sm::spell_ordinal("haste"), sm::sub::ObjRef{},
                             0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
         return fail("zero-mp sustained setup rejected");
     }
@@ -770,7 +782,7 @@ int main() {
     flightCombat.mp = 50;
     flightCombat.maxMp = 50;
     if (!sm::spellbook_cast(world, flightBook, flightCombat, attributes, skills,
-                            sm::spell_ordinal("flight"), std::uint32_t{0}, 0.0f, 0.0f, 0.0f,
+                            sm::spell_ordinal("flight"), sm::sub::ObjRef{}, 0.0f, 0.0f, 0.0f,
                             0.0f, 1.0f, 0.0f, false)) {
         return fail("flight macro toggle rejected");
     }
@@ -789,10 +801,10 @@ int main() {
     sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("haste"));
     sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("flight"));
     if (!sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
-                            attributes, skills, sm::spell_ordinal("haste"), std::uint32_t{0},
+                            attributes, skills, sm::spell_ordinal("haste"), sm::sub::ObjRef{},
                             0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)
         || !sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
-                               attributes, skills, sm::spell_ordinal("flight"), std::uint32_t{0},
+                               attributes, skills, sm::spell_ordinal("flight"), sm::sub::ObjRef{},
                                0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
         return fail("multi sustained setup cast rejected");
     }
@@ -1043,14 +1055,23 @@ int main() {
         sm::test::make_avatar(selfWorld.reg, selfPlayer);
         auto selfBlast = selfWorld.create();
         sm::test::give_pos(selfWorld.reg, selfBlast, 0.0f, 0.0f, 0.0f);
+        const sm::sub::ObjRef selfRef = sm::sub::ref_of(
+            sm::sub::objects_of(selfWorld.reg),
+            sm::sub::body_slot(selfWorld.reg, selfPlayer));
         selfWorld.reg.emplace<sm::ecs::Projectile>(selfBlast,
-            0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10, 48.0f,
-            0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
-            sm::stable_spell_id("fireball"),
-            std::uint32_t(entt::to_integral(selfPlayer)),
-            std::int16_t{0}, sm::ecs::Projectile::Bolt,
-            true, true, true,   // friendlyFire, visualOnly, explodeOnExpiry
-            std::uint8_t(sm::DamageType::Fire), false);
+            sm::ecs::Projectile{
+                .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 2.5f,
+                .lifeTimer = 0.0f, .maxLifeTimer = 0.0f, .damage = 10,
+                .blastRadius = 48.0f, .originX = 0.0f, .originY = 0.0f,
+                .beamLength = 0.0f, .chainDecayPct = std::uint8_t(0),
+                .ownerSlot = selfRef.slot, .chainRadius = 0.0f,
+                .spellId = sm::stable_spell_id("fireball"),
+                .ownerId = selfRef.id,
+                .chainRemaining = std::int16_t{0},
+                .kind = sm::ecs::Projectile::Bolt, .friendlyFire = true,
+                .visualOnly = true, .explodeOnExpiry = true,
+                .dmgType = std::uint8_t(sm::DamageType::Fire),
+                .critical = false});
         sm::test::give_projectile(selfWorld.reg, selfBlast,
                                   selfWorld.reg.get<sm::ecs::Projectile>(selfBlast));
         sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f);
@@ -1076,14 +1097,23 @@ int main() {
         sm::test::make_avatar(shieldWorld.reg, shieldPlayer);
         auto shieldBolt = shieldWorld.create();
         sm::test::give_pos(shieldWorld.reg, shieldBolt, 0.0f, 0.0f, 0.0f);
+        const sm::sub::ObjRef shieldRef = sm::sub::ref_of(
+            sm::sub::objects_of(shieldWorld.reg),
+            sm::sub::body_slot(shieldWorld.reg, shieldPlayer));
         shieldWorld.reg.emplace<sm::ecs::Projectile>(shieldBolt,
-            0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 10, 0.0f,
-            0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
-            sm::stable_spell_id("magic_bolt"),
-            std::uint32_t(entt::to_integral(shieldPlayer)),
-            std::int16_t{0}, sm::ecs::Projectile::Bolt,
-            false, false, false,   // NOT friendlyFire
-            std::uint8_t(sm::DamageType::Arcane), false);
+            sm::ecs::Projectile{
+                .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
+                .lifeTimer = 1.0f, .maxLifeTimer = 1.0f, .damage = 10,
+                .blastRadius = 0.0f, .originX = 0.0f, .originY = 0.0f,
+                .beamLength = 0.0f, .chainDecayPct = std::uint8_t(0),
+                .ownerSlot = shieldRef.slot, .chainRadius = 0.0f,
+                .spellId = sm::stable_spell_id("magic_bolt"),
+                .ownerId = shieldRef.id,
+                .chainRemaining = std::int16_t{0},
+                .kind = sm::ecs::Projectile::Bolt, .friendlyFire = false,
+                .visualOnly = false, .explodeOnExpiry = false,
+                .dmgType = std::uint8_t(sm::DamageType::Arcane),
+                .critical = false});
         sm::test::give_projectile(shieldWorld.reg, shieldBolt,
                                   shieldWorld.reg.get<sm::ecs::Projectile>(shieldBolt));
         sm::sub::tick_spell_projectiles(shieldWorld, nullptr, 0.0f);
@@ -1106,14 +1136,23 @@ int main() {
         sm::test::give_kind(npcWorld.reg, npcCaster, sm::ecs::NPCKind{2, 2});
         auto npcBlast = npcWorld.create();
         sm::test::give_pos(npcWorld.reg, npcBlast, 0.0f, 0.0f, 0.0f);
+        const sm::sub::ObjRef npcRef = sm::sub::ref_of(
+            sm::sub::objects_of(npcWorld.reg),
+            sm::sub::body_slot(npcWorld.reg, npcCaster));
         npcWorld.reg.emplace<sm::ecs::Projectile>(npcBlast,
-            0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10, 48.0f,
-            0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
-            sm::stable_spell_id("fireball"),
-            std::uint32_t(entt::to_integral(npcCaster)),
-            std::int16_t{0}, sm::ecs::Projectile::Bolt,
-            true, true, true,   // friendlyFire
-            std::uint8_t(sm::DamageType::Fire), false);
+            sm::ecs::Projectile{
+                .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 2.5f,
+                .lifeTimer = 0.0f, .maxLifeTimer = 0.0f, .damage = 10,
+                .blastRadius = 48.0f, .originX = 0.0f, .originY = 0.0f,
+                .beamLength = 0.0f, .chainDecayPct = std::uint8_t(0),
+                .ownerSlot = npcRef.slot, .chainRadius = 0.0f,
+                .spellId = sm::stable_spell_id("fireball"),
+                .ownerId = npcRef.id,
+                .chainRemaining = std::int16_t{0},
+                .kind = sm::ecs::Projectile::Bolt, .friendlyFire = true,
+                .visualOnly = true, .explodeOnExpiry = true,
+                .dmgType = std::uint8_t(sm::DamageType::Fire),
+                .critical = false});
         sm::test::give_projectile(npcWorld.reg, npcBlast,
                                   npcWorld.reg.get<sm::ecs::Projectile>(npcBlast));
         sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f);
@@ -1163,7 +1202,7 @@ int main() {
             // margin is exactly what keeps the muzzle clear of that shell.
             const auto sweepCaster = add_player(sweepWorld, 0.0f, 0.0f);
             sm::test::give_ai(
-                sweepWorld.reg, entt::entity(sweepCaster),
+                sweepWorld.reg, sm::sub::avatar_entity(sweepWorld.reg),
                 sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
                                     0.0f, 0.0f, 0.0f, 0.0f, 1.5f});
             auto sweepTarget = sweepWorld.create();
@@ -1192,7 +1231,9 @@ int main() {
             }
             // The caster stands at the origin, behind the muzzle: the stretch
             // swept back to his hand must never wound him.
-            if (!nearf(hp_of(sweepWorld, entt::entity(sweepCaster)), 1000.0f)) {
+            if (!nearf(hp_of(sweepWorld,
+                             sm::sub::avatar_entity(sweepWorld.reg)),
+                       1000.0f)) {
                 return fail("sweep: muzzle stretch wounded its own caster");
             }
         }
@@ -1226,7 +1267,7 @@ int main() {
         sm::spellbook_learn(capBook, sm::spell_ordinal("magic_bolt"));
         const bool capCast = sm::spellbook_cast(
             capWorld, capBook, capCombat, attributes, skills,
-            sm::spell_ordinal("magic_bolt"), std::uint32_t{0},
+            sm::spell_ordinal("magic_bolt"), sm::sub::ObjRef{},
             100.0f, 100.0f, 0.0f, 1.0f, 0.0f, 0.0f, true);
         CHECK(capCast && capCombat.mp < 2000,
               "каст состоялся и ОПЛАЧЕН, хотя снаряду отказал кап");
@@ -1238,7 +1279,7 @@ int main() {
         capArena.free(0);
         const bool capCast2 = sm::spellbook_cast(
             capWorld, capBook, capCombat, attributes, skills,
-            sm::spell_ordinal("magic_bolt"), std::uint32_t{0},
+            sm::spell_ordinal("magic_bolt"), sm::sub::ObjRef{},
             100.0f, 100.0f, 0.0f, 1.0f, 0.0f, 0.0f, true);
         int capWithColumn = 0;
         for (auto e : capWorld.reg.view<sm::ecs::Projectile>()) {
@@ -1251,6 +1292,48 @@ int main() {
         }
         CHECK(capCast2 && capWithColumn == 1,
               "освободился слот — снаряд родился, и числа его несёт КОЛОНКА");
+    }
+
+    // ОСИРОТЕВШИЙ СНАРЯД (ступень (iii-б)): владелец — ссылка сцены парой
+    // {ownerSlot, ownerId}, и протухание судит ТОЛЬКО ref_slot. Мёртвый
+    // кастер и перерождённый жилец его слота равно «не владелец»: репутация
+    // и лог игрока не достаются чужому. До пары закон держался версией
+    // entt-битов и свидетеля не имел.
+    {
+        sm::ecs::World orphanWorld;
+        auto orphanCaster = orphanWorld.create();
+        sm::test::give_slot(orphanWorld.reg, orphanCaster);
+        sm::test::make_avatar(orphanWorld.reg, orphanCaster);
+        const sm::sub::ObjRef ownerRef = sm::sub::ref_of(
+            sm::sub::objects_of(orphanWorld.reg),
+            sm::sub::body_slot(orphanWorld.reg, orphanCaster));
+        sm::ecs::Projectile orphanBolt{};
+        orphanBolt.ownerSlot = ownerRef.slot;
+        orphanBolt.ownerId = ownerRef.id;
+        CHECK(sm::sub::projectile_owner_is_player_side(
+                  sm::sub::objects_of(orphanWorld.reg),
+                                                       orphanBolt),
+              "живой аватар-владелец опознан по ссылке");
+        const int ownerSlot = int(ownerRef.slot);
+        orphanWorld.reg.destroy(orphanCaster);
+        CHECK(!sm::sub::projectile_owner_is_player_side(
+                  sm::sub::objects_of(orphanWorld.reg),
+                                                        orphanBolt),
+              "мёртвый владелец — протухшая ссылка: снаряд осиротел");
+        // Форс курсора (прецедент body_contract): перерождаем РОВНО его слот
+        // жильцом, который БЫЛ БЫ на стороне игрока, — только сверка ID
+        // отличает его от погибшего кастера.
+        sm::sub::objects_of(orphanWorld.reg).cursor = ownerSlot;
+        auto reborn = orphanWorld.create();
+        sm::test::give_slot(orphanWorld.reg, reborn);
+        sm::test::give_flag(orphanWorld.reg, reborn,
+                            sm::sub::kObjPlayerSoldier);
+        CHECK(sm::sub::body_slot(orphanWorld.reg, reborn) == ownerSlot,
+              "предусловие своё: слот владельца перерождён (форс курсора)");
+        CHECK(!sm::sub::projectile_owner_is_player_side(
+                  sm::sub::objects_of(orphanWorld.reg),
+                                                        orphanBolt),
+              "перерождённый жилец ЧУЖОЙ снаряд не наследует: ID сменился");
     }
 
     int susActive = 0;

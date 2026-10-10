@@ -148,22 +148,22 @@ int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
 bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
                     const Attributes& attributes, const Skills& skills,
                     int spellOrd,
-                    std::uint32_t pid, float px, float py, float pz,
+                    sub::ObjRef caster, float px, float py, float pz,
                     float nx, float ny, float nz, bool inMicro,
                     SpellRngFn rng01,
                     void* rngUser,
                     Rng* diceRng,
                     GameState* gs) {
     // THE body gate (owner verdict 2026-09-09, «одно рекавери на всё»): the
-    // caster's own ecs::Combat, found by the same id that will own the bolt —
-    // the field a sword swing charges and tick_body_recovery drains. A
-    // harness world with no such body (or the world map) carries no gate.
-    ecs::Combat* gate = nullptr;
-    entt::entity caster = entt::null;
-    if (const auto body = static_cast<entt::entity>(pid); w.reg.valid(body)) {
-        caster = body;
-        gate = sub::body_combat(w.reg, body);
-    }
+    // caster's own ecs::Combat, found by the same REFERENCE that will own the
+    // bolt (iii-б: кастер — ссылка сцены, разыменование — ref_slot) — the
+    // field a sword swing charges and tick_body_recovery drains. A harness
+    // world with no such body (or the world map) carries no gate.
+    sub::SubObjects* objs = sub::objects_find(w.reg);
+    const int casterSlot =
+        objs != nullptr ? sub::ref_slot(*objs, caster) : -1;
+    ecs::Combat* gate =
+        casterSlot >= 0 ? sub::slot_combat(*objs, casterSlot) : nullptr;
     if (!spellbook_can_cast_ex(sb, combat, spellOrd, inMicro,
                                gate ? gate->recoverySteps : 0u).ok)
         return false;
@@ -203,15 +203,15 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
         // so a 0.55 m NPC mage spawned his bolt a metre further out than the
         // muzzle-hit guard (spell_effects.cpp) would look for it, and that
         // guard silently never ran for any NPC.
-        caster != entt::null ? sub::body_radius(w.reg, caster)
-                             : sub::kBodyRadiusFallback,
+        casterSlot >= 0 ? sub::slot_body_radius(*objs, casterSlot)
+                        : sub::kBodyRadiusFallback,
         nx, ny, nz,
         strike.amount,
         d->speed > 0.0f ? d->speed : 300.0f,
         d->projectileRadius,
         blastRadius,
         d->friendlyFire,
-        pid,
+        caster,
         stable_spell_id(d->id),
         rng01,
         rngUser,
@@ -226,12 +226,14 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     const SkillId school = spell_school(*d);
     ctx.schoolRank = std::uint8_t(
         school != SkillId::Count ? skills.of(school) : 0);
-    if (caster != entt::null) {
-        // Дверь записи целиком (шаг 2 1е): запись → колонка store, derived
-        // тело → своя компонента; fixture body с пустыми руками — новичок.
-        if (const auto* cs = sub::state_of<CharacterSheet>(w.reg, caster)) {
-            ctx.casterLevel = std::int16_t(cs->levelData.level);
-        }
+    if (casterSlot >= 0) {
+        // Дверь записи целиком (шаг 2 1е, слот-форма iii-б): запись store
+        // первой, фолбэк — колонка листа арены; fixture body с пустыми
+        // руками — новичок (нулевой лист, уровень 0).
+        const CharacterSheet* cs = sub::slot_state<CharacterSheet>(
+            *objs, casterSlot, store_of(w.reg));
+        if (cs == nullptr) cs = &objs->sheet[std::size_t(casterSlot)];
+        ctx.casterLevel = std::int16_t(cs->levelData.level);
     }
 
     if (!cast_spell(w, *d, ctx)) return false;

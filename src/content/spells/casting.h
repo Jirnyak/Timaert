@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "macro/anketa.h"
+#include "sub/objects.h" // ObjRef — ссылка сцены: кастер конверта (iii-б)
 
 namespace sm::ecs { struct World; }
 
@@ -32,7 +33,9 @@ struct SpellSpawnContext {
     float projectileRadius;
     float effectRadius;
     bool  friendlyFire;
-    std::uint32_t playerId;
+    // Кастер — ССЫЛКА СЦЕНЫ (ломоть 7 (iii-б)): снаряд уносит её парой
+    // {ownerSlot, ownerId}; id 0 — «ничей» конверт (фикстура без тела).
+    sub::ObjRef caster;
     std::uint32_t spellId;
     SpellRngFn rng01 = nullptr;
     void* rngUser = nullptr;
@@ -67,8 +70,8 @@ using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);
 // sides of that guard used to disagree for every NPC caster, because only one
 // of them asked the body.)
 
-bool cast_spell(ecs::World& w, std::string_view id,
-                std::uint32_t playerId, float px, float py, float nx, float ny);
+// (Строковая дверь cast_spell(w, id, playerId, …) снесена в (iii-б):
+// звонящих у неё не было ни одного — мёртвая дверь, мандат «обрезай лишнее».)
 bool cast_spell(ecs::World& w, const SpellDef& spell,
                 const SpellSpawnContext& ctx);
 

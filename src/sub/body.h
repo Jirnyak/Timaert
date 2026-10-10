@@ -58,18 +58,24 @@ inline const NpcTypeDef* row_for(const ecs::NPCKind* kind) {
     return &npc_def(static_cast<NPCType>(kind->type));
 }
 
-// THE combat half-width of a body, in world units (≈ metres).
-inline float body_radius(const entt::registry& reg, entt::entity e) {
-    const auto* kind = body_kind(reg, e);
-    if (const NpcTypeDef* row = row_for(kind)) {
+// THE combat half-width of a body, in world units (≈ metres). Слот-форма —
+// конечная (ломоть 7 (iii-б)); entity-форма ниже — тонкий адаптер, умирает
+// со ступенью (vi).
+inline float slot_body_radius(const SubObjects& o, int s) {
+    if (const NpcTypeDef* row = row_for(slot_kind(o, s))) {
         // The row's ONE width column, man-shaped default resolved (npc.h).
         // The template shadow copy this used to fall through to is dead
         // (damage-door Inc 4).
         return npc_body_radius(*row);
     }
-    if (const auto* ai = body_ai(reg, e)) return ai->radius;
-    if (const auto* sp = body_sprite(reg, e)) return sp->scale;
+    if (const auto* ai = slot_ai(o, s)) return ai->radius;
+    if (const auto* sp = slot_sprite(o, s)) return sp->scale;
     return kBodyRadiusFallback;
+}
+inline float body_radius(const entt::registry& reg, entt::entity e) {
+    const int s = body_slot(reg, e);
+    if (s < 0) return kBodyRadiusFallback;
+    return slot_body_radius(objects_of(const_cast<entt::registry&>(reg)), s);
 }
 
 // THE height THIS body looks and shoots from, in world units (≈ metres) above

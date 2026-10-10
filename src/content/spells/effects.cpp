@@ -109,8 +109,9 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
         .radius = radius, .lifeTimer = life, .maxLifeTimer = life,
         .damage = c.damage, .blastRadius = blast,
         .originX = c.px, .originY = c.py, .beamLength = 0.0f,
-        .chainDecayPct = std::uint8_t(0), .chainRadius = 0.0f,
-        .spellId = c.spellId, .ownerId = c.playerId,
+        .chainDecayPct = std::uint8_t(0), .ownerSlot = c.caster.slot,
+        .chainRadius = 0.0f,
+        .spellId = c.spellId, .ownerId = c.caster.id,
         .chainRemaining = std::int16_t(0), .kind = ecs::Projectile::Bolt,
         .friendlyFire = c.friendlyFire, .visualOnly = false,
         .explodeOnExpiry = false, .dmgType = c.dmgType,
@@ -172,8 +173,9 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
         .originX = c.px + c.nx * spawnOffset,
         .originY = c.py + c.ny * spawnOffset,
         .beamLength = kBeamLen,
-        .chainDecayPct = std::uint8_t(0), .chainRadius = 0.0f,
-        .spellId = c.spellId, .ownerId = c.playerId,
+        .chainDecayPct = std::uint8_t(0), .ownerSlot = c.caster.slot,
+        .chainRadius = 0.0f,
+        .spellId = c.spellId, .ownerId = c.caster.id,
         .chainRemaining = std::int16_t(0), .kind = ecs::Projectile::Beam,
         .friendlyFire = c.friendlyFire, .visualOnly = true,
         .explodeOnExpiry = true, .dmgType = c.dmgType,
@@ -212,8 +214,9 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
             .radius = radius, .lifeTimer = life, .maxLifeTimer = life,
             .damage = c.damage, .blastRadius = kArmageddonPerMeteorBlast,
             .originX = c.px, .originY = c.py, .beamLength = 0.0f,
-            .chainDecayPct = std::uint8_t(0), .chainRadius = 0.0f,
-            .spellId = c.spellId, .ownerId = c.playerId,
+            .chainDecayPct = std::uint8_t(0), .ownerSlot = c.caster.slot,
+            .chainRadius = 0.0f,
+        .spellId = c.spellId, .ownerId = c.caster.id,
             .chainRemaining = std::int16_t(0), .kind = ecs::Projectile::Bolt,
             .friendlyFire = c.friendlyFire, .visualOnly = true,
             .explodeOnExpiry = true, .dmgType = c.dmgType,
@@ -253,11 +256,15 @@ constexpr float kTargetedConeCosHalfAngle = 0.70710678f; // the ~45° reticle
 
 void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     auto& reg = w.reg;
-    const entt::entity caster = entt::entity(c.playerId);
     // Only a body that IS someone's control flag has a flag to move. An NPC
     // casting this row fires and transfers nothing — the cast is generic, the
-    // effect argues with a flag the caster does not carry.
-    if (!reg.valid(caster) || !sub::is_avatar(reg, caster)) return;
+    // effect argues with a flag the caster does not carry. Суд — ссылкой
+    // сцены (iii-б): кастер конверта обязан БЫТЬ аватаром (ObjRef ==).
+    if (c.caster.id == 0u || c.caster != sub::objects_of(reg).avatar) return;
+    // ТРАНЗИТ до (vi): aim_target и macro_record_of ещё entity-формы;
+    // сущность даёт дверь аватара — она та же, что судила ссылка выше.
+    const entt::entity caster = sub::avatar_entity(reg);
+    if (caster == entt::null) return;
     // 1-hop ban: the hero husk mirrors his own squad's record; any other
     // record under the avatar means the caster is already wearing somebody.
     // «Кто оригинал» — биты GameState (1е кластер 5): запись под аватаром
@@ -337,28 +344,8 @@ bool cast_spell(ecs::World& w, const SpellDef& spell,
     return true;
 }
 
-bool cast_spell(ecs::World& w, std::string_view id,
-                std::uint32_t playerId, float px, float py, float nx, float ny) {
-    const SpellDef* s = spell_find(id);
-    if (!s) return false;
-    SpellSpawnContext ctx{px, py,
-                          0.0f,
-                          // Same law as spellbook_cast: the shell belongs to
-                          // the body that casts.
-                          w.reg.valid(entt::entity(playerId))
-                              ? sub::body_radius(w.reg, entt::entity(playerId))
-                              : sub::kBodyRadiusFallback,
-                          nx, ny, 0.0f,
-                          // No sheet, no stream: the row's own expectation.
-                          dice_mean_x2(s->dice) / 2,
-                          s->speed > 0.0f ? s->speed : 300.0f,
-                          s->projectileRadius,
-                          s->friendlyFire ? s->baseRadius : 0.0f,
-                          s->friendlyFire,
-                          playerId,
-                          stable_spell_id(s->id)};
-    ctx.dmgType = std::uint8_t(spell_damage_type(*s));
-    return cast_spell(w, *s, ctx);
-}
+// (Строковая дверь cast_spell(w, id, playerId, …) снесена в (iii-б):
+// звонящих ноль по переписи 2026-10-10 — мёртвая дверь, мандат
+// «обрезай лишнее». Живая дверь — cast_spell(w, spell, ctx).)
 
 } // namespace sm

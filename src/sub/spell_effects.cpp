@@ -41,17 +41,6 @@ constexpr float kProjectileSweepStepM = 1.0f;
 // different size depending on the weapon aimed at it.
 
 
-// Player-side ownership is decided purely by the owner entity's tags — the
-// old `ownerId == 0` sentinel is gone (Inc 4d): player-cast projectiles carry
-// the real player entity id, exactly like NPC missiles carry their firer's.
-bool projectile_owner_is_player_side(const entt::registry& reg,
-                                     const ecs::Projectile& p) {
-    const entt::entity owner = entt::entity(p.ownerId);
-    return reg.valid(owner)
-        && (is_avatar(reg, owner)
-            || object_flag(reg, owner, kObjPlayerSoldier));
-}
-
 bool is_spell_target(const entt::registry& reg, entt::entity e,
                      const ecs::Projectile& p,
                      SpellCanHitFn canHitFn,
@@ -150,17 +139,12 @@ void apply_spell_damage(ecs::World& w,
     (void)reapCount;
     if (damage <= 0 || !w.reg.valid(target)) return;
     if (!is_spell_target(w.reg, target, p, canHitFn, canHitUser)) return;
-    const bool playerOwned = projectile_owner_is_player_side(w.reg, p);
+    const bool playerOwned =
+        projectile_owner_is_player_side(objects_of(w.reg), p);
     // The projectile brought everything from the cast: its wound, its tag's
     // armour column and the crit verdict — the door just applies them.
-    // ТРАНЗИТ (умирает в (iii-б), когда снаряд понесёт пару {ownerSlot,
-    // ownerId} арены): пока ownerId — entt-биты, ссылку атакера собираем
-    // из слота владельца здесь.
-    const entt::entity owner = entt::entity(p.ownerId);
-    const ObjRef attacker = w.reg.valid(owner)
-        ? ref_of(objects_of(w.reg), body_slot(w.reg, owner))
-        : ObjRef{};
-    const DamageSource src{attacker, playerOwned,
+    // Атакер — ссылка владельца, которую снаряд принёс парой (iii-б).
+    const DamageSource src{ObjRef{p.ownerSlot, p.ownerId}, playerOwned,
                            p.spellId & kSpellEventIdMask, p.critical};
     const DamageResult hit = apply_damage(w.reg, target, src, damage,
                                           DamageKind::Spell,
@@ -206,15 +190,16 @@ float segment_closest_t(float ax, float ay, float az,
 // against a contact radius of ~2. Point sampling, by contrast, gets WORSE under
 // gravity, because a falling projectile's stride grows.
 //
-// `skipOwner` closes the last stretch — see the caller. Returns the EARLIEST hit
-// along the sweep, so a bolt strikes the body it reaches first rather than
-// whichever body the view happened to list first.
+// `skipSlot` closes the last stretch — see the caller (слот кастера, −1 =
+// никого; слот-форма iii-б). Returns the EARLIEST hit along the sweep, so a
+// bolt strikes the body it reaches first rather than whichever body the view
+// happened to list first.
 entt::entity find_projectile_hit(ecs::World& w,
                                  entt::entity projectile,
                                  float fromX, float fromY, float fromZ,
                                  const ecs::Position& pos,
                                  const ecs::Projectile& p,
-                                 entt::entity skipOwner,
+                                 int skipSlot,
                                  SpellCanHitFn canHitFn,
                                  void* canHitUser,
                                  SpellNeighborsFn neighborsFn,
@@ -232,7 +217,7 @@ entt::entity find_projectile_hit(ecs::World& w,
                              (fromX + pos.x) * 0.5f, (fromY + pos.y) * 0.5f, qr,
         [&](entt::entity e, const ecs::Position& tp) {
             if (e == projectile) return;
-            if (e == skipOwner) return;
+            if (skipSlot >= 0 && body_slot(w.reg, e) == skipSlot) return;
             if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) return;
             const float r = p.radius + body_radius(w.reg, e);
             const float t = segment_closest_t(fromX, fromY, fromZ,
@@ -396,6 +381,19 @@ void apply_spell_chain(ecs::World& w,
 
 } // namespace
 
+// Player-side ownership is decided purely by the owner slot's mask — the
+// owner is the scene reference pair {ownerSlot, ownerId} (iii-б): ref_slot
+// отсеивает протухшую (кастер умер, слот перерождён) — «ничей» снаряд
+// честно не на стороне игрока.
+bool projectile_owner_is_player_side(const SubObjects& objs,
+                                     const ecs::Projectile& p) {
+    const int s = ref_slot(objs, ObjRef{p.ownerSlot, p.ownerId});
+    return s >= 0
+        && (objs.is_avatar_slot(s)
+            || slot_flag(objs, s, kObjPlayerSoldier));
+}
+
+
 void tick_spell_projectiles(ecs::World& w,
                             EventBus* bus,
                             float dt,
@@ -541,7 +539,7 @@ void tick_spell_projectiles(ecs::World& w,
         // immunity for whoever fired it.
         entt::entity hit =
             find_projectile_hit(w, e, prevX, prevY, prevZ, pos, p,
-                                entt::null, canHitFn, canHitUser,
+                                -1, canHitFn, canHitUser,
                                 neighborsFn, neighborsUser);
 
         // THE MUZZLE STRETCH, birth tick only. A bolt is born
@@ -562,9 +560,17 @@ void tick_spell_projectiles(ecs::World& w,
         // already carries for reputation attribution and the death event, so not
         // one byte of new data exists.
         const bool birthTick = p.lifeTimer + dt >= p.maxLifeTimer - 1e-6f;
-        const entt::entity owner = entt::entity(p.ownerId);
-        if (birthTick && w.reg.valid(owner)) {
-            if (const ecs::Position* op = body_pos(w.reg, owner)) {
+        // Владелец — ссылка сцены парой {ownerSlot, ownerId} (iii-б):
+        // протухшую (кастер умер, слот перерождён) отсеивает ref_slot —
+        // растяжка осиротевшего болта честно не бежит.
+        SubObjects& sobjs = objects_of(w.reg);
+        const int ownerSlot = birthTick
+            ? ref_slot(sobjs, ObjRef{p.ownerSlot, p.ownerId})
+            : -1;
+        if (ownerSlot >= 0) {
+            {
+                const ecs::Position* op =
+                    &sobjs.pos[std::size_t(ownerSlot)];
                 // ONLY if this projectile really was born at THIS owner's
                 // muzzle. Not every projectile is: armageddon scatters its
                 // meteors up to 160 units from the caster while still stamping
@@ -577,14 +583,14 @@ void tick_spell_projectiles(ecs::World& w,
                 const float bx = prevX - op->x;
                 const float by = prevY - op->y;
                 const float maxBack =
-                    body_radius(w.reg, owner) + p.radius + 2.0f;
+                    slot_body_radius(sobjs, ownerSlot) + p.radius + 2.0f;
                 if (bx * bx + by * by <= maxBack * maxBack + 0.01f) {
                     // Caster centre → spawn point. Z stays the muzzle's: the
                     // bolt leaves the hand at muzzle height, not at the feet.
                     const ecs::Position spawnPos{prevX, prevY, prevZ};
                     const entt::entity muzzleHit =
                         find_projectile_hit(w, e, op->x, op->y, prevZ,
-                                            spawnPos, p, owner,
+                                            spawnPos, p, ownerSlot,
                                             canHitFn, canHitUser,
                                             neighborsFn, neighborsUser);
                     // This stretch happens BEFORE the travel above, so whatever

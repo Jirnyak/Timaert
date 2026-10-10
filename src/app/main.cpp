@@ -2430,7 +2430,9 @@ bool cast_active_spell(App& app) {
         effCast.attributes,
         effCast.skills,
         ord,
-        app.subworld.player_entity_id(),
+        // Кастер — ссылка аватара (iii-б): нет аватара — ссылка пустая
+        // (id 0), гейт и уровень честно отсутствуют.
+        sm::sub::objects_of(app.ecs.reg).avatar,
         app.subworld.player_x(),
         app.subworld.player_y(),
         // The MUZZLE, not the feet: this is the same point (nx, ny, nz) is

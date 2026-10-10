@@ -161,7 +161,6 @@ entt	src/app/main.cpp	entt
 entt	src/app/smoke.cpp	entt
 entt	src/app/smoke.h	entt
 entt	src/content/spells/effects.cpp	entt
-entt	src/content/spells/spell_book.cpp	entt
 entt	src/ecs/world.h	entt
 entt	src/sub/ai.cpp	entt
 entt	src/sub/body.h	entt

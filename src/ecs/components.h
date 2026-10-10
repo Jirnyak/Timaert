@@ -699,6 +699,13 @@ struct Projectile {
     // Per-jump damage retention in whole percent (70 = each hop keeps 70%) —
     // the int face of the spell row's own column.
     std::uint8_t chainDecayPct;
+    // Владелец — ПАРА ГОЛЫХ КОЛОНОК {ownerSlot, ownerId}: ссылка сцены по
+    // закону ObjRef (ломоть 7 (iii-б)), но БЕЗ типа — ecs/ не включает sub/
+    // (вердикт 2026-10-10: «ObjRef в components.h не нужен»). ownerId — ID
+    // рождения арены, 0 = «ничей» (кастер умер, фикстура); судит ТОЛЬКО
+    // читатель через ref_slot. ownerSlot сел в дыру выравнивания 45-47
+    // (офсет 46; байт 45 остался паддингом) — sizeof 68 НЕ вырос.
+    std::uint16_t ownerSlot;
     float chainRadius;
     std::uint32_t spellId;
     std::uint32_t ownerId;

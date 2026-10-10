@@ -52,6 +52,13 @@ using SpellFxEmitFn = void (*)(void* user,
                                float bx, float by, float bz,
                                float blastRadius);
 
+// «На стороне игрока ли владелец снаряда» — закон атрибуции репутации и
+// лога (iii-б): владелец — ссылка сцены парой {ownerSlot, ownerId}, судит
+// её ТОЛЬКО ref_slot (мёртвый кастер и перерождённый жилец равно «ничей»).
+// Форма — АРЕНА, не реестр: заголовок чист от entt (храповик M-188).
+bool projectile_owner_is_player_side(const SubObjects& objs,
+                                     const ecs::Projectile& p);
+
 void tick_spell_projectiles(ecs::World& w,
                             EventBus* bus,
                             float dt,

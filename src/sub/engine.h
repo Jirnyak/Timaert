@@ -420,11 +420,8 @@ public:
     float world_sea_level() const;
     float scene_sea_level() const;
     float scene_sea_level_m() const;   // = sea_level_m(scene_sea_level())
-    // Integral id (index+version) of the subworld player entity carrying
-    // AvatarTag — stamps player-cast spell projectiles with a real owner
-    // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the
-    // entt::null integral when no player entity exists (never mid-cast).
-    std::uint32_t player_entity_id() const;
+    // (player_entity_id умер в (iii-б): владельца несёт ссылка сцены
+    // objects.avatar — парой {ownerSlot, ownerId} у снаряда, ObjRef у каста.)
     // (possess_aim/possess_by_id вырезаны 2026-09-17 — «МАШИНЕРИЮ ВСЕЛЕНИЯ
     // ВЫРЕЗАТЬ»: вселение — спелл possession (macro/spells.h) со своим гейтом
     // уровня; его эффект зовёт header-only дверь sub/possess.h, а скалярное
@@ -626,10 +623,14 @@ private:
     // battle pass and spell projectiles (blocking) — one solidity authority.
     StructureIndex structIndex_;
     bool structIndexDirty_ = true;
-    // Bodies carrying the lights of lit props (rebuild_prop_cache). Held so a
-    // rebuild can retire the previous set; they are ordinary scene entities
-    // otherwise, reaped with everything else on leave.
-    std::vector<entt::entity> propLights_;
+    // Пламёна пропов — ССЫЛКИ СЦЕНЫ (ломоть 7 (iii-в)): кросс-тиковый
+    // носитель, протухшая ссылка (чужой жнец — ре-центр шва, смена этажа)
+    // отваливается ID-проверкой ref_slot. Прежний хрупкий порядок
+    // destroy/clear жил на 12-битной версии entt (заворот на 4096
+    // переиспользований) — ID арены делает закон честным. Держится, чтобы
+    // пересборка могла отставить прошлый набор; в остальном — обычные
+    // объекты сцены, жнутся со всеми.
+    std::vector<sub::ObjRef> propLights_;
     // Copies of every prop in the composite whose kind carries an interaction
     // (doors, stairs — a handful per scene next to tens of thousands of
     // trees). Copies, not indices: the composite reindexes on every seam.

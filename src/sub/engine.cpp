@@ -447,6 +447,11 @@ void spawn_npc_missile(entt::registry& reg,
     // Поля НАЗВАНЫ (0b ломтя 7): позиционный список переживал перестановку
     // полей при том же sizeof молча; designated-форму перестановка красит
     // стеной -Wreorder-init-list -Werror.
+    // Владелец стрелы — ссылка сцены (iii-б): слот берётся один раз,
+    // пара {ownerSlot, ownerId} уносит её в снаряд; протухание судит
+    // читатель (ref_slot).
+    const sub::ObjRef atk =
+        sub::ref_of(sub::objects_of(reg), sub::body_slot(reg, attacker));
     const ecs::Projectile arrow{
         .vx = nx * speed, .vy = ny * speed, .vz = nz * speed,
         .radius = projectileRadius, .lifeTimer = life, .maxLifeTimer = life,
@@ -455,9 +460,10 @@ void spawn_npc_missile(entt::registry& reg,
         .originX = sx, .originY = sy,
         .beamLength = 0.0f,
         .chainDecayPct = std::uint8_t(0),
+        .ownerSlot = atk.slot,
         .chainRadius = 0.0f,
         .spellId = kNpcMissileSpellId,
-        .ownerId = std::uint32_t(entt::to_integral(attacker)),
+        .ownerId = atk.id,
         .chainRemaining = std::int16_t(0),
         .kind = ecs::Projectile::Bolt,
         .friendlyFire = false,
@@ -1117,8 +1123,28 @@ void SubworldEngine::rebuild_prop_cache() {
             interactProps_.push_back(s);
         }
     }
-    for (entt::entity e : propLights_) {
-        if (reg.valid(e)) reg.destroy(e);
+    // Отставка прошлого набора: ссылки судит ref_slot (протухшие после
+    // чужих жнецов отваливаются сами — дыра ре-центра закрыта законом ID,
+    // а не порядком clear'ов). Живые — убиваются СУЩНОСТЬЮ одним проходом
+    // вьюхи: ТРАНЗИТ до (vi), слот освобождает только on_destroy-хук
+    // (убийство по слоту при живой сущности — названный дефект).
+    if (!propLights_.empty()) {
+        if (sub::SubObjects* objs = sub::objects_find(reg)) {
+            std::vector<std::uint16_t> doomed;
+            doomed.reserve(propLights_.size());
+            for (const sub::ObjRef r : propLights_) {
+                const int s = sub::ref_slot(*objs, r);
+                if (s >= 0) doomed.push_back(std::uint16_t(s));
+            }
+            std::sort(doomed.begin(), doomed.end());
+            auto view = reg.view<ecs::ObjectSlot>();
+            for (entt::entity e : view) {
+                if (std::binary_search(doomed.begin(), doomed.end(),
+                                       view.get<ecs::ObjectSlot>(e).slot)) {
+                    reg.destroy(e);
+                }
+            }
+        }
     }
     propLights_.clear();
     // A lit prop's flame is an OBJECT of the arena like any other (владелец:
@@ -1146,8 +1172,14 @@ void SubworldEngine::rebuild_prop_cache() {
             // 1), so the row's reach in tiles is its reach in metres.
             row.lightRadiusTiles,
             1.0f});
-        propLights_.push_back(e);
+        propLights_.push_back(sub::ref_of(*objs, slot));
     }
+    // Аккумуляторы потоков (угли/дым) ключуются ИНДЕКСОМ в propLights_ —
+    // пересборка сбрасывает ОБА БЕЗУСЛОВНО: прежний сброс «по расхождению
+    // размера» переносил накопители на чужие пламёна, когда новый набор
+    // совпадал со старым счётом (шапка обещала сброс и врала).
+    emberAccum_.assign(propLights_.size(), 0.0f);
+    smokeAccum_.assign(propLights_.size(), 0.0f);
 }
 
 void SubworldEngine::pull_player_entity_to_scalars() {
@@ -1553,8 +1585,9 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
 void SubworldEngine::spawn_all_cells() {
     if (!ecs_) return;
     clear_subworld_world_entities(*ecs_);
-    // The reaper above takes prop lights with everything else world-owned —
-    // drop the stale handles so the next rebuild does not free them twice.
+    // The reaper above takes prop lights with everything else world-owned.
+    // С (iii-в) двойное освобождение НЕВЫРАЗИМО (протухшую ссылку отсеивает
+    // ref_slot) — clear здесь лишь гигиена: не держать мёртвые ссылки.
     propLights_.clear();
     structIndexDirty_ = true;
     for (int oy = -1; oy <= 1; ++oy)
@@ -2084,16 +2117,8 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
     }
 }
 
-std::uint32_t SubworldEngine::player_entity_id() const {
-    if (ecs_) {
-        if (const entt::entity e = sub::avatar_entity(ecs_->reg);
-            e != entt::null) {
-            return std::uint32_t(entt::to_integral(e));
-        }
-    }
-    return std::uint32_t(
-        entt::to_integral(static_cast<entt::entity>(entt::null)));
-}
+// (player_entity_id снесён в (iii-б): владение снарядом и кастером несёт
+// ссылка сцены objects.avatar — entt-биты игрока больше не спрашивает никто.)
 
 // (possess_aim/possess_by_id вырезаны 2026-09-17: вселение — спелл possession,
 // его эффект зовёт sub/possess.h; скаляры тянет за флажком обычный тик.)
@@ -5068,16 +5093,20 @@ void SubworldEngine::tick(float dt) {
     // accumulator zeroes (no burst of saved-up motes when you walk back).
     {
         if (emberAccum_.size() != propLights_.size()) {
+            // Страж рассинхрона (clear сцены без пересборки): сама
+            // пересборка сбрасывает оба безусловно (rebuild_prop_cache).
             emberAccum_.assign(propLights_.size(), 0.0f);
             smokeAccum_.assign(propLights_.size(), 0.0f);
         }
         constexpr float kFlameFxRangeM = 48.0f;
+        sub::SubObjects& flameArena = sub::objects_of(ecs_->reg);
         for (std::size_t i = 0; i < propLights_.size(); ++i) {
-            const entt::entity e = propLights_[i];
-            if (!ecs_->reg.valid(e)) continue;
-            const ecs::Position* pos = sub::body_pos(ecs_->reg, e);
-            const auto* le = sub::body_light(ecs_->reg, e);
-            if (pos == nullptr || le == nullptr) continue;
+            // Протухшую ссылку (чужой жнец) отсеивает ref_slot (iii-в).
+            const int s = sub::ref_slot(flameArena, propLights_[i]);
+            if (s < 0) continue;
+            const ecs::Position* pos = &flameArena.pos[std::size_t(s)];
+            const auto* le = sub::slot_light(flameArena, s);
+            if (le == nullptr) continue;
             float wx = 0.0f, wz = 0.0f;
             Renderer3DVk::tile_to_world(pos->x, pos->y, wx, wz);
             const float dx = wx - cam_.pos.x;
