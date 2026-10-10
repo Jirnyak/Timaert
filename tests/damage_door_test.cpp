@@ -82,6 +82,10 @@ void test_death_is_indistinguishable() {
     for (const DamageKind kind : kinds) {
         entt::registry reg;
         sm::EventBus bus;
+        // Жертва — НЕ сущность 0: у свежего реестра to_integral первой
+        // сущности равен нулю, и пин пустоты a/b был бы слеп к воскрешению
+        // битов (мутация «вернуть ev.a» прошла зелёной, 2026-10-10).
+        (void)reg.create();
         const entt::entity e = make_body(reg, 10.0f);
         const DamageSource src{42u, false,
                                kind == DamageKind::Spell ? 900u : 0u};
@@ -98,9 +102,13 @@ void test_death_is_indistinguishable() {
               "the killing blow's DamageFx is lethal");
         CHECK(death_events(bus) == 1, "every kind emits exactly one NpcDeath");
         if (const sm::GameEvent* ev = last_death(bus)) {
-            CHECK(ev->a == std::uint32_t(entt::to_integral(e)),
-                  "NpcDeath.a names the victim");
-            CHECK(ev->b == 42u, "NpcDeath.b names the attacker");
+            // Идентичность в a/b СНЕСЕНА (вердикт владельца 2026-10-10):
+            // читателей у неё не было, прежние пины охраняли случай (§8
+            // п.5). Пустота — негативный контроль против молчаливого
+            // воскрешения; умрёт вместе с системной формой идентичности
+            // (эпик событий/фрейма).
+            CHECK(ev->a == 0u && ev->b == 0u,
+                  "scene NpcDeath carries no identity (orphan demolished)");
             CHECK(ev->ix == int(kTestNpcType),
                   "NpcDeath.ix carries the victim's kind");
             CHECK(ev->iy == (kind == DamageKind::Spell ? 900 : 0),

@@ -191,9 +191,14 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
         // запись-макро судит свой байт судьбы своим путём (пулы, жнец).
         object_flag_set(reg, target, kObjDead);
         if (bus != nullptr && !is_avatar(reg, target)) {
+            // Идентичность в a/b НЕ кладётся — сирота снесена (вердикт
+            // владельца 2026-10-10: «сносим сносим мы всегда потом по уму
+            // сделать можем заново уже системно»): читателей a/b у сценной
+            // смерти не было ни одного, а перегруженное поле без читателя —
+            // колонка-сирота (DOD п.9). Живой закон события — род (ix,
+            // квесты: quest_engine DestroyNpc) и спелл (iy). Системная
+            // форма идентичности придёт эпиком событий/фрейма.
             GameEvent ev{EventTag::NpcDeath};
-            ev.a = std::uint32_t(entt::to_integral(target));
-            ev.b = src.attackerId;
             const auto* kindRow = body_kind(reg, target);
             ev.ix = kindRow ? int(kindRow->type) : kNoNpcType;
             ev.iy = int(src.spellId);

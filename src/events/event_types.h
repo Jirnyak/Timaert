@@ -46,7 +46,10 @@ namespace sm
     enum class EventTag : std::uint16_t
     {
         PlayerMove = 0,
-        NpcDeath,         // a = entity id, b = killer, ix = NPCKind.type
+        NpcDeath,         // ix = NPCKind.type, iy = spell id. Сценная смерть
+                          // идентичность в a/b НЕ несёт (сирота снесена,
+                          // вердикт 2026-10-10); макро-путь пока пакует
+                          // хэндлы store в a/b (main.cpp raise_macro_fact)
         QuestStart,       // a = quest ordinal, s2 = title (feed display)
         QuestUpdate,      // a = quest ordinal
         QuestComplete,    // a = quest ordinal
@@ -95,8 +98,9 @@ namespace sm
     {
         EventTag tag = EventTag::Custom;
         // Пространство id зависит от тега: макро-NpcDeath несёт ПАКОВАННЫЙ
-        // хэндл store (macro_handle_bits, все единицы = никого), сценная
-        // смерть — биты entt-энтити тела, квесты — свои ординалы.
+        // хэндл store (macro_handle_bits, все единицы = никого), квесты —
+        // свои ординалы. Сценная смерть идентичность НЕ кладёт (сирота
+        // снесена вердиктом 2026-10-10; системная форма — эпиком событий).
         std::uint32_t a = 0, b = 0; // packed handle / entity / ordinal ids
         float fx = 0, fy = 0;
         int ix = 0, iy = 0;
