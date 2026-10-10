@@ -203,7 +203,8 @@ void test_debts_bill_their_own_subject() {
     sm::test::arena_of(reg);   // квитанция — колонка слота арены (ломоть 4)
     const auto citizen = reg.create();
     sm::test::give_slot(reg, citizen);
-    sub::stamp_macro_debt(reg, citizen, MacroStock::Population,
+    sub::stamp_macro_debt(sub::objects_of(reg), sub::body_slot(reg, citizen),
+                          MacroStock::Population,
                           MacroStockKey{wld.cityId, 10, 10}, 1);
     const auto* debt = sub::body_debt(reg, citizen);
     CHECK_OR_RETURN(debt != nullptr, "stamping leaves a receipt on the body");
@@ -219,7 +220,8 @@ void test_debts_bill_their_own_subject() {
     // the id alone names it, no register bit rides the receipt.
     const auto villager = reg.create();
     sm::test::give_slot(reg, villager);
-    sub::stamp_macro_debt(reg, villager, MacroStock::Population,
+    sub::stamp_macro_debt(sub::objects_of(reg), sub::body_slot(reg, villager),
+                          MacroStock::Population,
                           MacroStockKey{wld.hamletId, 20, 20}, 3);
     settle_macro_debt(w, *sub::body_debt(reg, villager), -1);
     CHECK(population_of(wld, wld.hamletId) == 37,
@@ -230,7 +232,9 @@ void test_debts_bill_their_own_subject() {
     // left them — the id alone finds the village, never a city.
     const auto twinVillager = reg.create();
     sm::test::give_slot(reg, twinVillager);
-    sub::stamp_macro_debt(reg, twinVillager, MacroStock::Population,
+    sub::stamp_macro_debt(sub::objects_of(reg),
+                          sub::body_slot(reg, twinVillager),
+                          MacroStock::Population,
                           MacroStockKey{wld.twinId, 40, 40}, 2);
     settle_macro_debt(w, *sub::body_debt(reg, twinVillager), -1);
     CHECK(village_population_of(wld, wld.twinId) == 78,
@@ -341,7 +345,8 @@ void test_the_creature_row_pays_by_name() {
     entt::registry& reg = world.reg;
     const auto body = reg.create();
     sm::test::give_slot(reg, body);
-    sub::stamp_macro_debt(reg, body, MacroStock::Creatures,
+    sub::stamp_macro_debt(sub::objects_of(reg), sub::body_slot(reg, body),
+                          MacroStock::Creatures,
                           MacroStockKey{5, 0, 0, 22}, 1);
     const auto* debt = sub::body_debt(reg, body);
     CHECK_OR_RETURN(debt != nullptr && debt->detail == 22,

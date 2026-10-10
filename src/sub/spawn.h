@@ -8,7 +8,7 @@
 #include "ecs/world.h"
 #include "sub/collide.h"
 #include "sub/height.h"
-#include "sub/record.h"   // set_body_debt — колонка квитанции (ломоть 4)
+#include "sub/doors.h"    // slot_set_debt — колонка квитанции (ломоть 4; слот-форма (ii-б))
 #include "sub/seamless_manager.h"
 #include "macro/fauna.h"
 #include "tables/biomes.h"
@@ -113,11 +113,12 @@ struct BodyLoan {
 // to take from a macro stock: no stamp, no borrowing — so a spawner that
 // forgets is not one that quietly leaks, it is one that never took anything.
 // (Переехал из macro/macro_stock.h ломтём 4 M-150: квитанция — колонка debt
-// арены, макро-слою она не видна; тело без слота займа честно не получает.)
-inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
+// арены, макро-слою она не видна; тело без слота займа честно не получает —
+// отрицательный слот у звонящего значит «не штампуй», как прежний no-op.)
+inline void stamp_macro_debt(SubObjects& objs, int s,
                              MacroStock stock, MacroStockKey key,
                              std::uint16_t amount = 1) {
-    sub::set_body_debt(reg, e, ecs::MacroDebt{
+    slot_set_debt(objs, s, ecs::MacroDebt{
         std::uint8_t(stock), key.subject, key.cellX, key.cellY, amount,
         key.detail, key.detailKind, key.detailLevel});
 }

@@ -640,7 +640,13 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
     // штампует: душа не воплотилась — квитанции возврата не будет, и список
     // места не должен уменьшаться.
     if (e != entt::null && loan.stock != MacroStock::Count) {
-        sub::stamp_macro_debt(reg, e, loan.stock, loan.key, 1);
+        // Слот-идиома (ii-б): слот один раз, дальше слот-дверь; s < 0 —
+        // прежний честный no-op (тело без слота займа не получает).
+        const int s = sub::body_slot(reg, e);
+        if (s >= 0) {
+            sub::stamp_macro_debt(sub::objects_of(reg), s,
+                                  loan.stock, loan.key, 1);
+        }
     }
     return e;
 }
