@@ -13,6 +13,14 @@ namespace sm::sub {
 
 namespace {
 
+// Состояние ЗАПИСИ зеркального тела при сторе-УКАЗАТЕЛЕ: стора нет
+// (фикстура с голым реестром) — «записи нет», тот же ответ, что у
+// протухшего бэклинка. Одно написание на все три чтения двери.
+template <class C>
+C* record_state(SubObjects& objs, int s, MacroStore* st) {
+    return st != nullptr ? slot_state<C>(objs, s, *st) : nullptr;
+}
+
 // WHAT STANDS BETWEEN THIS BODY AND A BLOW.
 //
 // The idiom is the body radius's: an INSTANCE answers if it can, otherwise the
@@ -23,22 +31,22 @@ namespace {
 // thousand times. A body that also WEARS things adds them on top; that sum is
 // one line here when the equipment component lands, and no damage site
 // changes to gain it.
-DefenseSum defense_of(entt::registry& reg, entt::entity target,
+DefenseSum defense_of(SubObjects& objs, MacroStore* st, int s,
                       DamageType type) {
     // WHAT HE WAS TRAINED TO WEAR (CANON S14). The sheet is the body's own —
-    // through THE door (state_of), like every other piece of its state — and a
-    // body without one (a prop, a headless test fixture) answers with the
-    // untrained ×1 the law already gave everyone.
+    // through THE door (slot_state), like every other piece of its state —
+    // and a body without one (a prop, a headless test fixture) answers with
+    // the untrained ×1 the law already gave everyone.
     static const Skills kUntrained{};
     const Skills& skills = [&]() -> const Skills& {
-        if (const auto* cs = state_of<CharacterSheet>(reg, target))
+        if (const auto* cs = record_state<CharacterSheet>(objs, s, st))
             return cs->skills;
         return kUntrained;
     }();
     // The ROW's own defence — hide, scale, issued plate. All-zero for a body
     // whose row omits it, which is a body in its own skin, not a branch.
     Defense row{};
-    if (const auto* kind = body_kind(reg, target)) {
+    if (const auto* kind = slot_kind(objs, s)) {
         if (kind->type < std::uint16_t(NPCType::Count))
             row = npc_def(NPCType(std::uint8_t(kind->type))).defense;
     }
@@ -46,8 +54,8 @@ DefenseSum defense_of(entt::registry& reg, entt::entity target,
     // RECORD's state, and a body wears what its record wears. Both nulls is the
     // limiting case (a bare crowd body), not a branch — and it is exactly the
     // case the «Без брони» rank speaks in.
-    const auto* wornBag = state_of<ecs::NpcInventory>(reg, target);
-    const auto* eq = state_of<ecs::BodyEquipment>(reg, target);
+    const auto* wornBag = record_state<ecs::NpcInventory>(objs, s, st);
+    const auto* eq = record_state<ecs::BodyEquipment>(objs, s, st);
     const bool dressed = eq != nullptr && wornBag != nullptr;
     // ONE assembly for both laws of battle (macro/anketa.h body_defense): the
     // fought body and the auto-resolve read the SAME sentence. Нет ни клампа в
@@ -64,8 +72,8 @@ DefenseSum defense_of(entt::registry& reg, entt::entity target,
 // строю: «только рековери от брони не останавливет дейтсвия а отключает броню
 // на время рековери (урон проходит)» (владелец, 2026-09-30). Действий простой
 // не запирает — этим он и отличается от гейта занятости тела.
-bool armor_is_up(entt::registry& reg, entt::entity e) {
-    const auto* c = body_combat(reg, e);
+bool armor_is_up(const SubObjects& objs, int s) {
+    const auto* c = slot_combat(objs, s);
     return c == nullptr || c->armorSteps == 0u;
 }
 
@@ -75,12 +83,12 @@ bool armor_is_up(entt::registry& reg, entt::entity e) {
 // ветка. Ставится ТОЛЬКО когда броня была в строю (звонящий это проверил):
 // удар во время простоя его НЕ ПРОДЛЕВАЕТ (владелец: «НЕ перезаводить НО
 // СТАВИТЬ ЕСЛИ БРОНЯ В СТРОЮ»), иначе рой крыс держал бы рыцаря голым вечно.
-void charge_armor_recovery(entt::registry& reg, entt::entity e) {
-    auto* c = body_combat(reg, e);
+void charge_armor_recovery(SubObjects& objs, MacroStore* st, int s) {
+    auto* c = slot_combat(objs, s);
     if (c == nullptr) return;
-    const auto* cs = state_of<CharacterSheet>(reg, e);
-    const auto* bag = state_of<ecs::NpcInventory>(reg, e);
-    const auto* eq = state_of<ecs::BodyEquipment>(reg, e);
+    const auto* cs = record_state<CharacterSheet>(objs, s, st);
+    const auto* bag = record_state<ecs::NpcInventory>(objs, s, st);
+    const auto* eq = record_state<ecs::BodyEquipment>(objs, s, st);
     if (cs == nullptr || bag == nullptr || eq == nullptr) return;
     const int steps = armor_recovery_steps(eq->gear, bag->inv,
                                            cs->attributes, cs->skills);
@@ -104,15 +112,15 @@ struct Mitigated {
     bool engaged  = false;   // удар дошёл СКВОЗЬ блок, то есть плита сработала
 };
 
-Mitigated mitigate(entt::registry& reg, entt::entity target, int amount,
+Mitigated mitigate(SubObjects& objs, MacroStore* st, int s, int amount,
                    DamageKind kind, DamageType type) {
     const DamageKindRow& row = kDamageKinds[std::size_t(kind)];
     if (!row.armourApplies) return {amount, false};
-    DefenseSum d = defense_of(reg, target, type);
+    DefenseSum d = defense_of(objs, st, s, type);
     // ПРОСТОЙ ВЫКЛЮЧАЕТ ТОЛЬКО ПРОЦЕНТ. Блок остаётся — он «НИКОГДА вообще не
     // вызывает простой это другая колонка даже в том и смысл» (владелец), и
     // значит в простой он и не уходит.
-    if (!armor_is_up(reg, target)) d.armor = 0;
+    if (!armor_is_up(objs, s)) d.armor = 0;
     // ПЛИТА СРАБОТАЛА, ЕСЛИ УДАР ПРОШЁЛ СКВОЗЬ БЛОК — ровно смысл второй
     // колонки: «чтобы слабые тычки не сбивали рековери» (владелец). Тычку,
     // которую съел блок, плита не заметила.
@@ -121,11 +129,15 @@ Mitigated mitigate(entt::registry& reg, entt::entity target, int amount,
 
 } // namespace
 
-DamageResult apply_damage(entt::registry& reg, entt::entity target,
+DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
                           const DamageSource& src, int amount,
                           DamageKind kind, DamageType type, EventBus* bus) {
     DamageResult out{};
-    if (!reg.valid(target)) return out;
+    // «Тела на арене нет» (-1 адаптера или протухший ref_slot) и мёртвый/
+    // переиспользованный слот — честный no-op, как невалидная сущность
+    // прежде: колонки мёртвого слота целы, но бить по ним нечего.
+    if (targetSlot < 0 || !slot_flag(objs, targetSlot, kObjAlive)) return out;
+    const int s = targetSlot;
     // THE bar this blow spends is the RECORD's (mirror law, sub/record.h): a
     // projected lord's wound is that lord's wound the instant it lands, and a
     // hit on the player lands on the store that drives his death screen. The
@@ -133,22 +145,23 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     // reads, never what the world remembers. This single substitution is what
     // retired the fold-up: there is no longer a second number to carry up, and
     // no fraction to convert between two bars that were sized by two sheets.
-    auto* hp = pools_of(reg, target);
+    auto* hp = st != nullptr ? slot_pools_of(objs, s, *st)
+                             : slot_pools(objs, s);
     if (hp == nullptr || hp->hp <= 0) return out;
     // A crit found the armour gap: mitigation is not in the way, exactly as
     // the Fall row's column says plate is not in the way of the ground. И
     // ПРОСТОЙ КРИТ НЕ СТАВИТ: плита в таком ударе не участвовала вовсе, сбивать
     // было нечего — клинок прошёл мимо неё, а не сквозь неё.
-    const bool armorWasUp = armor_is_up(reg, target);
+    const bool armorWasUp = armor_is_up(objs, s);
     const Mitigated m = src.critical
                             ? Mitigated{amount, false}
-                            : mitigate(reg, target, amount, kind, type);
+                            : mitigate(objs, st, s, amount, kind, type);
     const int amt = m.amount;
     // Удар, дошедший сквозь блок, ВЫБИВАЕТ броню из строя — но только если она
     // в строю была (простой не перезаводится). Стоит ЗДЕСЬ, до разветвления на
     // «заблокировано» и «ранено», потому что плита срабатывает в обоих случаях:
     // съеденный ею удар — это её работа, а не её отсутствие.
-    if (m.engaged && armorWasUp) charge_armor_recovery(reg, target);
+    if (m.engaged && armorWasUp) charge_armor_recovery(objs, st, s);
     if (amt <= 0) {
         // BLOCKED, not silent (owner 2026-09-06: «пусть пишет всё равно»).
         // A real blow the armour swallowed whole is a fact the world shows:
@@ -159,12 +172,8 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
         if (amount > 0) {
             // FX — колонка единого массива объектов (M-150 ломоть 1а):
             // событие «попали» с флагом blocked — слив кинет искру с
-            // пластины вместо крови. Тело без слота — фикстура без арены
-            // (транзит миграции).
-            if (const auto* os = reg.try_get<ecs::ObjectSlot>(target)) {
-                objects_of(reg).damageFx[os->slot] =
-                    kDmgFxPending | kDmgFxBlocked;
-            }
+            // пластины вместо крови.
+            objs.damageFx[std::size_t(s)] = kDmgFxPending | kDmgFxBlocked;
             out.blocked = true;
         }
         return out;
@@ -178,20 +187,17 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     // FX и «кто бил последним» — колонки единого массива объектов (M-150
     // ломоть 1а); атакер — ObjRef (ступень (iii)): пишется дословно, судит
     // его ЧИТАТЕЛЬ (ref_slot) — протухание решается в момент чтения.
-    if (const auto* os = reg.try_get<ecs::ObjectSlot>(target)) {
-        SubObjects& objs = objects_of(reg);
-        if (row.attributesKiller) {
-            objs.lastHitBy[os->slot] = src.attacker;
-        }
-        objs.damageFx[os->slot] =
-            std::uint8_t(kDmgFxPending | (out.lethal ? kDmgFxLethal : 0u));
+    if (row.attributesKiller) {
+        objs.lastHitBy[std::size_t(s)] = src.attacker;
     }
+    objs.damageFx[std::size_t(s)] =
+        std::uint8_t(kDmgFxPending | (out.lethal ? kDmgFxLethal : 0u));
 
-    if (out.lethal && !object_flag(reg, target, kObjDead)) {
+    if (out.lethal && !slot_flag(objs, s, kObjDead)) {
         // Смерть тела сцены — бит kObjDead маски слота (ломоть 1б);
         // запись-макро судит свой байт судьбы своим путём (пулы, жнец).
-        object_flag_set(reg, target, kObjDead);
-        if (bus != nullptr && !is_avatar(reg, target)) {
+        slot_flag_set(objs, s, kObjDead);
+        if (bus != nullptr && !objs.is_avatar_slot(s)) {
             // Идентичность в a/b НЕ кладётся — сирота снесена (вердикт
             // владельца 2026-10-10: «сносим сносим мы всегда потом по уму
             // сделать можем заново уже системно»): читателей a/b у сценной
@@ -200,7 +206,7 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
             // квесты: quest_engine DestroyNpc) и спелл (iy). Системная
             // форма идентичности придёт эпиком событий/фрейма.
             GameEvent ev{EventTag::NpcDeath};
-            const auto* kindRow = body_kind(reg, target);
+            const auto* kindRow = slot_kind(objs, s);
             ev.ix = kindRow ? int(kindRow->type) : kNoNpcType;
             ev.iy = int(src.spellId);
             bus->emit(ev);
@@ -209,15 +215,45 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     return out;
 }
 
-DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
-                                 const DamageSource& src, DamageKind kind,
-                                 EventBus* bus) {
-    const auto* hp = pools_of(reg, target);
+// ── Entity-форма — тонкий адаптер (преамбула record.h): сущность → слот,
+// стор и арена из ctx; умирает со ступенью (vi). Тело без слота или реестр
+// без арены (фикстура транзита) — тот же честный no-op, что и прежде
+// (pools_of отвечал nullptr по той же цепочке). ─────────────────────────
+DamageResult apply_damage(entt::registry& reg, entt::entity target,
+                          const DamageSource& src, int amount,
+                          DamageKind kind, DamageType type, EventBus* bus) {
+    const int s = body_slot(reg, target);
+    if (s < 0) return {};
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return {};
+    MacroStore* const* st = reg.ctx().find<MacroStore*>();
+    return apply_damage(*objs, st != nullptr ? *st : nullptr, s, src, amount,
+                        kind, type, bus);
+}
+
+DamageResult apply_lethal_damage(SubObjects& objs, MacroStore* st,
+                                 int targetSlot, const DamageSource& src,
+                                 DamageKind kind, EventBus* bus) {
+    if (targetSlot < 0 || !slot_flag(objs, targetSlot, kObjAlive)) return {};
+    const auto* hp = st != nullptr ? slot_pools_of(objs, targetSlot, *st)
+                                   : slot_pools(objs, targetSlot);
     if (hp == nullptr || hp->hp <= 0) return {};
     // The bar is integer now (4г), so "everything it has left" needs no ceil
     // — the whole remaining number is exactly one lethal blow.
-    return apply_damage(reg, target, src, hp->hp, kind,
+    return apply_damage(objs, st, targetSlot, src, hp->hp, kind,
                         DamageType::Blunt, bus);
+}
+
+DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
+                                 const DamageSource& src, DamageKind kind,
+                                 EventBus* bus) {
+    const int s = body_slot(reg, target);
+    if (s < 0) return {};
+    SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return {};
+    MacroStore* const* st = reg.ctx().find<MacroStore*>();
+    return apply_lethal_damage(*objs, st != nullptr ? *st : nullptr, s, src,
+                               kind, bus);
 }
 
 } // namespace sm::sub
