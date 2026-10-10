@@ -176,9 +176,8 @@ Inventory& player_bag_of(const GameState* gs, ecs::World* ecs) {
     return bag ? *bag : scratch;
 }
 
-float body_sight(const entt::registry& reg, entt::entity e) {
-    const auto* kind = sub::body_kind(reg, e);
-    if (const NpcTypeDef* row = row_for(kind)) {
+float slot_body_sight(const sub::SubObjects& objs, int s) {
+    if (const NpcTypeDef* row = row_for(sub::slot_kind(objs, s))) {
         if (row->combat.sight > 0.0f) return row->combat.sight;
     }
     return kDetectionRadius;
@@ -210,12 +209,12 @@ float dist3sq(float ax, float ay, float az, float bx, float by, float bz) {
 // round to nothing or the body is already dead) so the player path can log
 // it. The physics stays float and rounds ONCE, here — the blow past this
 // line is integer like every combat quantity.
-int apply_fall_damage(entt::registry& reg, entt::entity e, float impactVz,
-                      float radius, EventBus* bus) {
+int apply_fall_damage(sub::SubObjects& objs, MacroStore* st, int s,
+                      float impactVz, float radius, EventBus* bus) {
     const int dmg = int(std::lround(fall_damage(impactVz, radius)));
     if (dmg <= 0) return 0;
     // Typed Blunt for form's sake — the Fall row says armour is not in the way.
-    return apply_damage(reg, e, DamageSource{}, dmg, DamageKind::Fall,
+    return apply_damage(objs, st, s, DamageSource{}, dmg, DamageKind::Fall,
                         DamageType::Blunt, bus)
         .applied;
 }
@@ -3201,14 +3200,16 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     sub::SubObjects& arena = sub::objects_of(reg);
     auto actorView = reg.view<ecs::ObjectSlot>();
     for (auto e : actorView) {
-        if (sub::object_flag(reg, e, sub::kObjDead)) continue;
+        // Слот-идиома (ii-б): слот первым, гейты — по колонкам арены.
         const std::uint16_t slot = actorView.get<ecs::ObjectSlot>(e).slot;
+        const int s = int(slot);
+        if (sub::slot_flag(arena, s, sub::kObjDead)) continue;
         const ecs::Position& p = arena.pos[std::size_t(slot)];
-        const auto* hpCol = sub::body_pools(reg, e);
+        const auto* hpCol = sub::slot_pools(arena, s);
         if (hpCol == nullptr) continue;
         const auto& hp = *hpCol;
         if (hp.hp <= 0) continue;
-        const auto* c = sub::body_combat(reg, e);
+        const auto* c = sub::slot_combat(arena, s);
 
         BodyDesc d{};
         d.x = p.x; d.y = p.y; d.z = p.z;
@@ -3220,15 +3221,15 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // crowd of men at head height but is honestly inside a dragon's
         // column. No Sprite / unstated height = 0 → the crowd's add() fills
         // the man-column default.
-        if (const auto* spr = sub::body_sprite(reg, e)) d.height = spr->height;
+        if (const auto* spr = sub::slot_sprite(arena, s)) d.height = spr->height;
         d.speed = c ? c->speed : 0.0f;
         d.reach = c ? c->attackRange : 0.0f;
-        d.sight = body_sight(reg, e);
+        d.sight = slot_body_sight(arena, s);
         if (c && c->kind == ecs::Combat::Missile) d.flags |= B_Missile;
-        if (sub::object_flag(reg, e, sub::kObjFlying)) d.flags |= B_Flying;
+        if (sub::slot_flag(arena, s, sub::kObjFlying)) d.flags |= B_Flying;
 
-        const bool owned = sub::object_flag(reg, e, sub::kObjPlayerSoldier);
-        const bool isPlayer = sub::is_avatar(reg, e);
+        const bool owned = sub::slot_flag(arena, s, sub::kObjPlayerSoldier);
+        const bool isPlayer = arena.is_avatar_slot(s);
         // A body's side is its DATA. Soldiers used to be forced onto the player
         // side by their tag while their NPCKind said "empire" — dead data that
         // could never be wrong because nothing read it. Now the squad spawn
@@ -3240,7 +3241,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // keeps its own colours. «Ты полностью тот, в чьём теле стоишь» — в
         // том числе для чужих глаз; перекраска любого AvatarTag-тела в
         // «player» делала одержимого лорда предателем собственных стен.
-        const auto* bodyKind = sub::body_kind(reg, e);
+        const auto* bodyKind = sub::slot_kind(arena, s);
         d.faction = std::int16_t(
             isPlayer && !bodyKind
                 ? crowdPlayerFaction_
@@ -3268,7 +3269,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             // the mover: ground under the feet, slope, separation, solids.
             d.flags |= B_Passive;
         }
-        else if (auto* ai = sub::body_ai(reg, e)) {
+        else if (auto* ai = sub::slot_ai(arena, s)) {
             d.vx = ai->vx;
             d.vy = ai->vy;
             d.intentVx = ai->wantVx;
@@ -3282,7 +3283,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // private grudge, and hands the player side the reciprocal bit — the one
         // per-entity exception survives as data, never as a branch in the loop.
         if (!isPlayer && !owned && d.faction >= 0
-            && sub::object_flag(reg, e, sub::kObjTempHostile)
+            && sub::slot_flag(arena, s, sub::kObjTempHostile)
             && crowdPlayerFaction_ >= 0) {
             playerExtraMask |= (1ull << d.faction);
         }
@@ -3491,11 +3492,18 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
         for (int i = 0; i < deadCount; ++i) {
             const entt::entity e = dead[std::size_t(i)];
             if (!reg.valid(e)) continue;
+            // Слот-идиома (ii-б): слот мертвеца один раз — все книги ниже
+            // (займ, бэклинк, род, уровень, lastHitBy) читаются по нему.
+            // Сборщик нашёл тело ПО ФЛАГУ АРЕНЫ, так что слот есть по
+            // построению; try_get — пояс транзита.
+            const auto* osDead = reg.try_get<ecs::ObjectSlot>(e);
+            if (osDead == nullptr) { reg.destroy(e); continue; }
+            const int ds = int(osDead->slot);
             // The player is a combat entity but never a corpse: its death is a
             // game-over read off THE RECORD (report_player_damage — the record's
             // hp at 0 -> AppState::Dead), not a loot/XP/removal event, and the
             // entity is reset on the next subworld enter().
-            if (sub::is_avatar(reg, e)) continue;
+            if (arena.is_avatar_slot(ds)) continue;
             // The fall is HEARD (SfxId queue, 2026-09-09) — but only on the
             // fight tick: the drainAll sweeps (leave, teardown) settle books,
             // and a chorus of death-thuds over a door closing would be noise
@@ -3507,7 +3515,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // (macro/macro_stock.h), so the town is smaller from this tick on,
             // while the player is still underground. No per-kind counter, no
             // queue to lose on the way out: one receipt, one settler.
-            if (const auto* debt = sub::body_debt(reg, e)) {
+            if (const auto* debt = sub::slot_debt(arena, ds)) {
                 MacroWorld macroWorld = mw_;
                 settle_macro_debt(macroWorld, *debt, -1);
             }
@@ -3522,7 +3530,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // him again, and again, for as much XP and loot as you had patience
             // for (problems.md 19.13). The reaper above is the ONE place that
             // knows a body has died, so this is the only place that can be.
-            if (const MacroHandle reaped = sub::body_macro_origin(reg, e);
+            if (const MacroHandle reaped = sub::slot_macro_origin(arena, ds);
                 reaped.slot != kMacroNoSlot) {
                 MacroStore& st = store_of(reg);
                 if (auto* mh = body_state<ecs::Pools>(st, reaped)) {
@@ -3538,22 +3546,19 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     kill_fallen_squad_creatures(store_of(*ecs_), *gs_);
                 }
             }
-            const auto* kind = sub::body_kind(reg, e);
+            const auto* kind = sub::slot_kind(arena, ds);
             // Уровень — колонка арены (кусок 1); 0 = безуровневое тело,
             // прежний дефолт отсутствовавшей компоненты сохранён единицей.
-            const std::int16_t lvlCol = sub::body_level(reg, e);
+            const std::int16_t lvlCol = sub::slot_level(arena, ds);
             // «Кто бил последним» — ссылка сцены (ступень (iii)): протухшую
             // (убийца умер раньше чтения или слот перерождён — окно
             // бюджетного жнеца) отсеивает ref_slot, и XP не платится
             // чужому жильцу перерождённого слота.
-            const auto* osDead = reg.try_get<ecs::ObjectSlot>(e);
-            const sub::ObjRef lastRef = osDead
-                ? arena.lastHitBy[osDead->slot]
-                : sub::ObjRef{};
+            const sub::ObjRef lastRef = arena.lastHitBy[std::size_t(ds)];
             const int lvl =
                 normalize_soldier_level(lvlCol != 0 ? lvlCol : 1);
 
-            if (sub::object_flag(reg, e, sub::kObjPlayerSoldier)) {
+            if (sub::slot_flag(arena, ds, sub::kObjPlayerSoldier)) {
                 // His creatures record was struck by THE settle above (§42
                 // Инк 6): the player's soldier carries the same Creatures loan
                 // as any lord's man, so the hand-written removal that stood
@@ -4673,10 +4678,14 @@ void SubworldEngine::sync_player_vertical(float dt) {
         // included, so a lethal fall dies like any other damage (reconcile
         // still drives the death screen).
         if (playerGrounded_ && prevVz < 0.0f && !godMode_ && ecs_) {
-            const auto e = player_entity();
-            const int dmg = e != entt::null
-                ? apply_fall_damage(ecs_->reg, e, -prevVz, player_body_radius(),
-                                    bus_)
+            // Слот аватара — ref_slot (жив-дверь); стор — тот же ctx-мост,
+            // которым ходила entity-дверь урона.
+            sub::SubObjects* objs = sub::objects_find(ecs_->reg);
+            const int ps = objs ? sub::ref_slot(*objs, objs->avatar) : -1;
+            MacroStore* const* stp = ecs_->reg.ctx().find<MacroStore*>();
+            const int dmg = ps >= 0
+                ? apply_fall_damage(*objs, stp != nullptr ? *stp : nullptr,
+                                    ps, -prevVz, player_body_radius(), bus_)
                 : 0;
             if (dmg > 0) {
                 char msg[96];
@@ -4977,39 +4986,40 @@ void SubworldEngine::tick(float dt) {
         // integrator through sync_player_vertical below.
         {
             sub::SubObjects& arena = sub::objects_of(ecs_->reg);
+            MacroStore* const* stp = ecs_->reg.ctx().find<MacroStore*>();
             auto gv = ecs_->reg.view<ecs::ObjectSlot>();
             for (auto e : gv) {
                 // Снарядов в этой вьюхе НЕТ по построению (ступень (v):
                 // снаряд — чистый жилец арены, сущности у него нет), так что
                 // прежний отсев роли умер вместе с транзитом.
-                if (sub::is_avatar(ecs_->reg, e)) continue;
-                if (sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
                 const int s = int(gv.get<ecs::ObjectSlot>(e).slot);
+                if (arena.is_avatar_slot(s)) continue;
+                if (sub::slot_flag(arena, s, sub::kObjFlying)) continue;
                 ecs::Position& p = arena.pos[std::size_t(s)];
                 float supportZ = mgr_.height_field().sample(p.x, p.y);
                 if (!structIndex_.empty()) {
                     supportZ = std::max(supportZ, structIndex_.support_at(
                         p.x, p.y, sub::slot_body_radius(arena, s), p.z));
                 }
-                float* vz = sub::airborne_vz(ecs_->reg, e);
+                float* vz = sub::slot_airborne_vz(arena, s);
                 if (vz == nullptr) {
                     if (p.z <= supportZ + kGroundStickM) {
                         p.z = supportZ;   // grounded: rest on the support
                         continue;
                     }
-                    vz = sub::set_airborne(ecs_->reg, e, 0.0f);
-                    if (vz == nullptr) continue;   // арены нет (фикстура):
-                                                   // вертикали тоже нет
+                    vz = sub::slot_set_airborne(arena, s, 0.0f);
                 }
                 const float prevVz = *vz;
                 // Бит kObjAirborne IS the statement "not resting":
                 // the branch above already snapped every grounded body.
                 if (vertical_step(supportZ, dt, p.z, *vz, false)) {
-                    sub::clear_airborne(ecs_->reg, e);
+                    sub::slot_clear_airborne(arena, s);
                     // Fall damage: the ONE shared path with the player
                     // (apply_fall_damage — honest kinetics, neutral death).
                     if (prevVz < 0.0f) {
-                        apply_fall_damage(ecs_->reg, e, -prevVz,
+                        apply_fall_damage(arena,
+                                          stp != nullptr ? *stp : nullptr,
+                                          s, -prevVz,
                                           sub::slot_body_radius(arena, s),
                                           bus_);
                     }
@@ -5030,15 +5040,15 @@ void SubworldEngine::tick(float dt) {
             sub::SubObjects& arena = sub::objects_of(ecs_->reg);
             auto fv = ecs_->reg.view<ecs::ObjectSlot>();
             for (auto e : fv) {
-                if (sub::is_avatar(ecs_->reg, e)) continue;
-                if (!sub::object_flag(ecs_->reg, e, sub::kObjFlying)) continue;
                 const int s = int(fv.get<ecs::ObjectSlot>(e).slot);
+                if (arena.is_avatar_slot(s)) continue;
+                if (!sub::slot_flag(arena, s, sub::kObjFlying)) continue;
                 ecs::Position& p = arena.pos[std::size_t(s)];
                 // Вертикальное НАМЕРЕНИЕ мозга (SubworldAi.wantVz, третья
                 // ось — полёт-посадка 2026-09-10) интегрируется здесь, тем
                 // же тактом, что клампится конверт: mover исполняет, мозг
                 // хочет — ровно как ноги по x/y.
-                if (const auto* ai = sub::body_ai(ecs_->reg, e)) {
+                if (const auto* ai = sub::slot_ai(arena, s)) {
                     p.z += ai->wantVz * dt;
                 }
                 float floorZ = mgr_.height_field().sample(p.x, p.y);
