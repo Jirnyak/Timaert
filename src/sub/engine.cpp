@@ -306,13 +306,9 @@ bool hostile_to_player_slot(const sub::SubObjects& objs, int s,
     return player_hostile_to(gs, factionId);
 }
 
-bool hostile_to_player_entity(entt::registry& reg,
-                              entt::entity e,
-                              const GameState* gs) {
-    const sub::SubObjects* objs = sub::objects_find(reg);
-    return objs != nullptr
-        && hostile_to_player_slot(*objs, sub::body_slot(reg, e), gs);
-}
+// (Entity-адаптер hostile_to_player_entity умер в (ii-б): оба звонящих —
+// think-колбэк мозга и чит-кил консоли — судят слотом ПРЯМО, а адаптер
+// делал три лишних лукапа на каждого кандидата горячего цикла.)
 
 // NOTE. The old per-pair `entities_hostile(reg, a, b, gs)` is GONE. It was the
 // measured hot spot: two std::map<std::string> lookups plus strcmp for every
@@ -1165,17 +1161,19 @@ void SubworldEngine::rebuild_prop_cache() {
     // else — no health, no AI, no sprite — so no other system can see it.
     // Слот обязателен: колонка света адресуется им; пламя без слота (кап
     // исчерпан) честно не рождается — как BodyCrowd::add.
+    // Арена — ОДИН лукап на пересборку, не на пламя ((ii-б)): ctx-поиск
+    // внутри цикла был налогом на каждую лампу.
+    sub::SubObjects* objs = sub::objects_find(reg);
     for (const Structure& s : mgr_.structures()) {
+        if (objs == nullptr) break;        // арены нет — пламени негде жить
         if (!structure_is_lit(s.kind)) continue;
         const StructureKindRow& row = structure_kind_row(s.kind);
         const float seatM = mgr_.height_field().sample(s.x, s.y);
-        sub::SubObjects* objs = sub::objects_find(reg);
-        if (objs == nullptr) continue;
         const int slot = objs->alloc(ecs::Position{s.x, s.y, seatM});
         if (slot < 0) continue;
         const entt::entity e = reg.create();
         reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
-                sub::set_body_light(reg, e, ecs::LightEmitter{
+        sub::slot_set_light(*objs, slot, ecs::LightEmitter{
             0.0f, row.lightHeightM, 0.0f,
             float((row.lightRgb >> 16) & 0xFFu) / 255.0f,
             float((row.lightRgb >>  8) & 0xFFu) / 255.0f,
@@ -1349,12 +1347,18 @@ void SubworldEngine::mirror_bodies_from_record() {
     // считает свой бюджет в 0.00041 мс на тело (шапка ниже) — lookup на
     // каждое тело был бы налогом того же порядка, что вся работа.
     const MacroStore& st = store_of(reg);
-    for (auto body : reg.view<ecs::ObjectSlot>()) {
-        const MacroHandle originH = sub::body_macro_origin(reg, body);
+    // Арена — ОДИН лукап на проход, тем же доводом, что и стор выше
+    // ((ii-б)); слот тела берётся из вьюхи.
+    sub::SubObjects* objs = sub::objects_find(reg);
+    if (objs == nullptr) return;
+    auto mirrorView = reg.view<ecs::ObjectSlot>();
+    for (auto body : mirrorView) {
+        const int s = int(mirrorView.get<ecs::ObjectSlot>(body).slot);
+        const MacroHandle originH = sub::slot_macro_origin(*objs, s);
         if (originH.slot == kMacroNoSlot) continue;
         // Зеркало — колонка арены (кусок 2); тело без баров (слот без
         // pools) зеркалом не живёт.
-        ecs::Pools* mirrorCol = sub::body_pools(reg, body);
+        ecs::Pools* mirrorCol = sub::slot_pools(*objs, s);
         if (mirrorCol == nullptr) continue;
         ecs::Pools& mirror = *mirrorCol;
         const auto* record = body_state<ecs::Pools>(st, originH);
@@ -2961,13 +2965,17 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     // в субмир»). Бой ОБЪЯВЛЕН — противник сошёлся: уже стоящее тело
     // встаёт в то же кольцо, куда встало бы рождённое, той же рукой
     // (place_body_ring выше) — а второго тела для одного лорда не бывает.
-    for (auto e : reg.view<ecs::ObjectSlot>()) {
-        if (sub::body_macro_origin(reg, e) != macro) continue;
-        if (ecs::Position* p = sub::body_pos(reg, e)) {
+    sub::SubObjects* objs = sub::objects_find(reg);
+    auto standingView = reg.view<ecs::ObjectSlot>();
+    for (auto e : standingView) {
+        if (objs == nullptr) break;        // арены нет — тел тоже нет
+        const int s = int(standingView.get<ecs::ObjectSlot>(e).slot);
+        if (sub::slot_macro_origin(*objs, s) != macro) continue;
+        if (ecs::Position* p = sub::slot_pos(*objs, s)) {
             p->x = fx;
             p->y = fy;
         }
-        if (auto* vp = sub::body_visual(reg, e)) {
+        if (auto* vp = sub::slot_visual(*objs, s)) {
             vp->vx = fx;
             vp->vy = fy;
         }
@@ -2979,7 +2987,10 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     if (body == entt::null) return false;
 
     char msg[160]{};
-    const auto& kind = *sub::body_kind(reg, body);
+    // Род — колонка арены свежего тела; slot >= 0 по построению (рождение
+    // без арены отдаёт entt::null, отсев строкой выше).
+    const int bodySlot = sub::body_slot(reg, body);
+    const auto& kind = *sub::slot_kind(sub::objects_of(reg), bodySlot);
     std::snprintf(msg, sizeof(msg), "Encounter: %s",
                   npc_def(static_cast<NPCType>(kind.type)).label);
     set_status(msg);
@@ -4520,10 +4531,13 @@ bool SubworldEngine::try_exit_dungeon() {
         playerVz_ = 0.0f;
         playerGrounded_ = true;
         if (ecs_) {
-            const auto e = player_entity();
-            if (e != entt::null) {
-                if (ecs::Position* p = sub::body_pos(ecs_->reg, e)) {
-                    p->z = playerZ_;
+            // Слот аватара — ref_slot (жив-дверь); позиция — колонка арены.
+            if (sub::SubObjects* objs = sub::objects_find(ecs_->reg)) {
+                const int s = sub::ref_slot(*objs, objs->avatar);
+                if (s >= 0) {
+                    if (ecs::Position* p = sub::slot_pos(*objs, s)) {
+                        p->z = playerZ_;
+                    }
                 }
             }
         }
@@ -4826,15 +4840,21 @@ int SubworldEngine::dev_kill_all_hostiles() {
     // Batched drain mirroring resolve_subworld_deaths: collect a bounded set of
     // still-alive hostiles, tag them Dead (which drops them from the excl view),
     // repeat until a pass finds none. The normal death path then awards XP+loot.
+    sub::SubObjects* objs = sub::objects_find(reg);
+    if (objs == nullptr) return 0;         // сцены нет — убивать некого
     do {
         std::array<entt::entity, kMaxSubworldDeathsPerStep> victims{};
         batch = 0;
         auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
-            if (sub::body_pools(reg, e) == nullptr) continue;
-            if (sub::object_flag(reg, e, sub::kObjDead)) continue;
+            // Слот-идиома ((ii-б)): слот первым, и гейт враждебности идёт
+            // ПРЯМО слот-формой — entity-адаптер делал три лишних лукапа
+            // на каждого кандидата.
+            const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+            if (sub::slot_pools(*objs, s) == nullptr) continue;
+            if (sub::slot_flag(*objs, s, sub::kObjDead)) continue;
             if (batch >= kMaxSubworldDeathsPerStep) break;
-            if (!hostile_to_player_entity(reg, e, gs_)) continue;
+            if (!hostile_to_player_slot(*objs, s, gs_)) continue;
             victims[std::size_t(batch++)] = e;
         }
         for (int i = 0; i < batch; ++i) {
