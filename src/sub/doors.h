@@ -31,6 +31,17 @@ inline int ref_slot(const SubObjects& o, ObjRef r) {
     if ((o.flags[s] & kObjAlive) == 0u) return -1;
     return int(r.slot);
 }
+// Разыменование ПОСМЕРТНОЕ: слот, чьи колонки ещё принадлежат ЭТОЙ
+// идентичности — жив он или мёртв, но НЕ перерождён (колонки мёртвого
+// слота целы до alloc() нового жильца). Вердикт владельца 2026-10-10 об
+// оплате килла, дословно: «если член сквада лидера убил то лидер получает
+// экспу а что он сам умер какая разница». Второй дверью это НЕ является
+// (DOD п.6): ref_slot отвечает «жив ли и где», эта — «чья это запись».
+inline int ref_slot_identity(const SubObjects& o, ObjRef r) {
+    if (r.id == 0u) return -1;
+    if (o.id[std::size_t(r.slot)] != r.id) return -1;
+    return int(r.slot);
+}
 // Ссылка НА слот — для полей и событий, переживающих тик.
 inline ObjRef ref_of(const SubObjects& o, int slot) {
     if (slot < 0 || slot >= int(kMaxSubObjects)) return ObjRef{};
