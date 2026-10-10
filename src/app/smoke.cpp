@@ -33,50 +33,62 @@
 // Слот арены объектов телу-фикстуре смоука (M-150 1а): свидетель рожает
 // предусловие САМ (§8 п.11) — тело, собранное голым create мимо двери
 // спавна, обязано получить слот, как выдала бы дверь.
-static void smoke_give_slot(entt::registry& reg, entt::entity e) {
-    if (sm::sub::SubObjects* objs = sm::sub::objects_find(reg)) {
-        const int slot = objs->alloc(sm::ecs::Position{});
-        if (slot >= 0) {
-            reg.emplace<sm::ecs::ObjectSlot>(e, std::uint16_t(slot));
-        }
+// Возвращает СЛОТ ((ii-б) ломтя 7): им фикстуры пишут колонки, и
+// идемпотентна — тело, у которого слот уже есть, получает его номер, а не
+// второй emplace (прежде это сторожил каждый звонящий своей строкой
+// `if (!reg.any_of<ObjectSlot>(e))`). −1 = арены нет или кап исчерпан.
+static int smoke_give_slot(entt::registry& reg, entt::entity e) {
+    if (const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e)) {
+        return int(os->slot);
     }
+    sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+    if (objs == nullptr) return -1;
+    const int slot = objs->alloc(sm::ecs::Position{});
+    if (slot < 0) return -1;
+    reg.emplace<sm::ecs::ObjectSlot>(e, std::uint16_t(slot));
+    return slot;
 }
 // Позиция телу-фикстуре (ломоть 5) — как записало бы рождение: слот
 // рожается по надобности, колонка пишется дверью body_pos.
 static void smoke_give_pos(entt::registry& reg, entt::entity e,
                            float x, float y, float z) {
-    if (!reg.all_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
-    if (sm::ecs::Position* p = sm::sub::body_pos(reg, e)) {
-        *p = sm::ecs::Position{x, y, z};
-    }
+    const int s = smoke_give_slot(reg, e);
+    if (s < 0) return;
+    sm::sub::objects_of(reg).pos[std::size_t(s)] =
+        sm::ecs::Position{x, y, z};
 }
 // Бары/лист/снарядные телу-фикстуре — как записала бы дверь рождения
 // (кусок 2); слот рожается по надобности: set_body_* на бесслотном теле
 // ушёл бы в no-op МОЛЧА (шрам ломтя 1б).
 static void smoke_give_pools(entt::registry& reg, entt::entity e,
                              sm::ecs::Pools p) {
-    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
-    sm::sub::set_body_pools(reg, e, p);
+    const int s = smoke_give_slot(reg, e);
+    if (s < 0) return;
+    sm::sub::slot_set_pools(sm::sub::objects_of(reg), s, p);
 }
 static void smoke_give_combat(entt::registry& reg, entt::entity e,
                               const sm::ecs::Combat& c) {
-    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
-    sm::sub::set_body_combat(reg, e, c);
+    const int s = smoke_give_slot(reg, e);
+    if (s < 0) return;
+    sm::sub::slot_set_combat(sm::sub::objects_of(reg), s, c);
 }
 static void smoke_give_missile(entt::registry& reg, entt::entity e,
                                sm::ecs::MissileAttack m) {
-    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
-    sm::sub::set_body_missile(reg, e, m);
+    const int s = smoke_give_slot(reg, e);
+    if (s < 0) return;
+    sm::sub::slot_set_missile(sm::sub::objects_of(reg), s, m);
 }
 static void smoke_give_ai(entt::registry& reg, entt::entity e,
                           const sm::ecs::SubworldAi& a) {
-    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
-    sm::sub::set_body_ai(reg, e, a);
+    const int s = smoke_give_slot(reg, e);
+    if (s < 0) return;
+    sm::sub::slot_set_ai(sm::sub::objects_of(reg), s, a);
 }
 static void smoke_give_sprite(entt::registry& reg, entt::entity e,
                               const sm::ecs::Sprite& sp) {
-    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
-    sm::sub::set_body_sprite(reg, e, sp);
+    const int s = smoke_give_slot(reg, e);
+    if (s < 0) return;
+    sm::sub::slot_set_sprite(sm::sub::objects_of(reg), s, sp);
 }
 // СКОЛЬКО СНАРЯДОВ СТОИТ В СЦЕНЕ (ломоть 4): роль снаряда — бит слота, значит
 // счёт есть проход по колонке арены, а не по множеству реестра. Тринадцать
@@ -101,8 +113,9 @@ static int smoke_projectile_count(entt::registry& reg) {
 
 static void smoke_give_visual(entt::registry& reg, entt::entity e,
                               sm::ecs::VisualPos v) {
-    if (!reg.any_of<sm::ecs::ObjectSlot>(e)) smoke_give_slot(reg, e);
-    sm::sub::set_body_visual(reg, e, v);
+    const int s = smoke_give_slot(reg, e);
+    if (s < 0) return;
+    sm::sub::slot_set_visual(sm::sub::objects_of(reg), s, v);
 }
 #include "tables/codex.h"
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
@@ -170,7 +183,11 @@ static void smoke_settle_on_foot(App& app) {
 static bool smoke_projects_foreign_record(App& app, entt::entity body) {
     auto& reg = app.ecs.reg;
     if (!reg.valid(body)) return false;
-    const sm::MacroHandle origin = sm::sub::body_macro_origin(reg, body);
+    // Слот-идиома ((ii-б)): бэклинк — колонка арены по слоту тела.
+    sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+    const int s = objs ? sm::sub::body_slot(reg, body) : -1;
+    if (s < 0) return false;
+    const sm::MacroHandle origin = sm::sub::slot_macro_origin(*objs, s);
     if (origin.slot == sm::kMacroNoSlot
         || !sm::store_of(reg).valid(origin)) return false;
     const sm::MacroHandle psq = sm::player_squad_handle(app.gs);
@@ -209,33 +226,39 @@ static void smoke_stage_possession_cast(App& app, entt::entity target) {
     const float fx = std::cos(yaw), fy = std::sin(yaw);
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
+    sm::sub::SubObjects* objsP = sm::sub::objects_find(reg);
+    if (objsP == nullptr) return;          // арены нет — стенда тоже нет
+    sm::sub::SubObjects& objs = *objsP;
     {
         auto cv = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : cv) {
             if (e == target) continue;
-            if (sm::sub::body_kind(reg, e) == nullptr) continue;
-            if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)) continue;
-            if (sm::sub::is_avatar(reg, e)
-                || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+            // Отбор — ТОТ ЖЕ гейт, что у мира ((ii-б)): живой NPC-кандидат
+            // плюс отсев проекции игроцкой стороны.
+            const int s = int(cv.get<sm::ecs::ObjectSlot>(e).slot);
+            if (!sm::sub::slot_npc_candidate(objs, s)) continue;
+            if (sm::sub::slot_flag(objs, s, sm::sub::kObjPlayerSoldier))
                 continue;
-            sm::ecs::Position& op = *sm::sub::body_pos(reg, e);
+            sm::ecs::Position& op = objs.pos[std::size_t(s)];
             op.x = px - fx * 12.0f;
             op.y = py - fy * 12.0f;
         }
     }
     const float tx = px + fx * 6.0f;
     const float ty = py + fy * 6.0f;
-    sm::ecs::Position& pos = *sm::sub::body_pos(reg, target);
+    const int targetSlot = sm::sub::body_slot(reg, target);
+    if (targetSlot < 0) return;            // цель без тела — стенда нет
+    sm::ecs::Position& pos = objs.pos[std::size_t(targetSlot)];
     pos.x = tx; pos.y = ty;
     // Feet on the GROUND under the staged spot: the teleport used to move
     // XY only, and the stale z put the target outside the now-3D aim cone
     // (CANON S13) — the fixture lied, not the law.
     pos.z = app.subworld.ground_height_at(tx, ty);
-    if (auto* vp = sm::sub::body_visual(reg, target)) {
+    if (auto* vp = sm::sub::slot_visual(objs, targetSlot)) {
         vp->vx = tx; vp->vy = ty;
     }
-    if (const entt::entity e = sm::sub::avatar_entity(reg); e != entt::null)
-        if (auto* c = sm::sub::body_combat(reg, e)) c->recoverySteps = 0u;
+    if (const int av = sm::sub::avatar_slot(objs); av >= 0)
+        if (auto* c = sm::sub::slot_combat(objs, av)) c->recoverySteps = 0u;
 }
 
 static bool smoke_possess_via_spell(App& app, entt::entity target) {
@@ -248,7 +271,10 @@ static bool smoke_possess_via_spell(App& app, entt::entity target) {
     }
     // Цель заведомо ниже порога: уровень 1 (прежние ветки «min(v,1)» и
     // «нет компоненты → 1» давали единицу во всех исходах).
-    sm::sub::set_body_level(reg, target, std::int16_t(1));
+    if (const int ts = sm::sub::body_slot(reg, target); ts >= 0) {
+        sm::sub::slot_set_level(sm::sub::objects_of(reg), ts,
+                                std::int16_t(1));
+    }
     smoke_stage_possession_cast(app, target);
     if (!cast_active_spell(app)) return false;
     return reg.valid(target) && sm::sub::is_avatar(reg, target);
@@ -2338,12 +2364,15 @@ bool run_macro_npc_trace_smoke(App& app) {
 
 entt::entity smoke_find_subworld_npc(App& app, sm::NPCType type) {
     auto& reg = app.ecs.reg;
+    sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
     auto view = reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
-            || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+        if (objs == nullptr) break;        // арены нет — тел тоже нет
+        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)
+            || sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
             continue;
-        const auto* kind = sm::sub::body_kind(reg, e);
+        const auto* kind = sm::sub::slot_kind(*objs, s);
         if (kind != nullptr && kind->type == std::uint16_t(type)) return e;
     }
     return entt::null;
@@ -4293,10 +4322,11 @@ bool run_subworld_missile_feedback_smoke(App& app) {
 // click and charge the same ecs::Combat::recoverySteps a swing does) — what
 // a scenario prints to show the fight's clock honestly.
 static std::uint32_t smoke_player_recovery_steps(App& app) {
-    if (const entt::entity e = sm::sub::avatar_entity(app.ecs.reg);
-        e != entt::null)
-        if (const auto* c = sm::sub::body_combat(app.ecs.reg, e))
-            return c->recoverySteps;
+    if (sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg)) {
+        if (const int s = sm::sub::avatar_slot(*objs); s >= 0)
+            if (const auto* c = sm::sub::slot_combat(*objs, s))
+                return c->recoverySteps;
+    }
     return 0u;
 }
 
