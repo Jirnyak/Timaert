@@ -2,7 +2,7 @@
 #include "sub/body.h"
 #include "sub/caps.h"       // kMaxSubObjects — the subworld scene ceiling
 #include "sub/doors.h"      // slot_* — слот-двери арены (ступень (iv))
-#include "sub/record.h"     // entity-двери aim_target (до ломтя (ii-б))
+#include "sub/record.h"     // objects_find — мост арены (уедет фреймом, (vi))
 
 #include <cmath>
 
@@ -11,17 +11,12 @@ namespace sm::sub {
 namespace {
 
 // The shared melee-candidate filter: live, current-scene, not the player's
-// own side. One spelling for both the grid arm and the full-scan arm.
+// own side. One spelling for both the grid arm and the full-scan arm —
+// кандидатский гейт ОДИН (slot_npc_candidate@src/sub/doors.h), игроцкая
+// сторона — отдельной строкой (боевой выбор своих не бьёт, миникарта видит).
 inline bool melee_candidate(const SubObjects& objs, int s) {
-    if (!slot_flag(objs, s, kObjAlive)
-        || slot_kind(objs, s) == nullptr
-        || slot_flag(objs, s, kObjDead)) {
-        return false;
-    }
-    if (objs.is_avatar_slot(s)
-        || slot_flag(objs, s, kObjPlayerSoldier)) return false;
-    const auto* hp = slot_pools(objs, s);
-    return hp != nullptr && hp->hp > 0;
+    return slot_npc_candidate(objs, s)
+        && !slot_flag(objs, s, kObjPlayerSoldier);
 }
 
 } // namespace
@@ -94,31 +89,27 @@ entt::entity aim_target(entt::registry& reg,
     entt::entity best = entt::null;
     float bestD2 = maxR2; // start at the range boundary; nearer replaces it
 
-    // Same candidate set as the shipped melee path (engine.cpp:828-829): live,
-    // current-scene NPCs/monsters. Requiring a body kind (колонка арены,
-    // кусок 1) also excludes the player entity, whose slot carries no kind;
-    // the explicit player-side skip below additionally covers projected
-    // player soldiers.
+    // Same candidate set as the shipped melee path: ОДИН кандидатский гейт
+    // slot_npc_candidate (он же отсекает игрока — у его слота нет рода);
+    // проекция игроцкой стороны — отдельной строкой, как у melee_candidate.
+    const SubObjects* objs = objects_find(reg);
+    if (objs == nullptr) return entt::null;   // сцены нет — целей нет
     auto view = reg.view<ecs::ObjectSlot>();
     for (auto e : view) {
         if (e == shooter) continue;
-        if (body_kind(reg, e) == nullptr) continue;
-        if (object_flag(reg, e, kObjDead)) continue;
-        if (is_avatar(reg, e)
-            || object_flag(reg, e, kObjPlayerSoldier)) continue;
+        const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+        if (!slot_npc_candidate(*objs, s)) continue;
+        if (slot_flag(*objs, s, kObjPlayerSoldier)) continue;
 
-        const auto* hpCol = body_pools(reg, e);
-        if (hpCol == nullptr || hpCol->hp <= 0) continue;
-
-        const ecs::Position& pos = *body_pos(reg, e);
+        const ecs::Position& pos = objs->pos[std::size_t(s)];
         const float dx = pos.x - px;
         const float dy = pos.y - py;
-        // Eye to EYE, through the one door (body_eye_m — the same height an
-        // NPC missile aims at: «оба конца на высоте глаз»). A body's
+        // Eye to EYE, through the one door (slot_body_eye_m — the same height
+        // an NPC missile aims at: «оба конца на высоте глаз»). A body's
         // Position.z is its FEET, and a bearing to feet drops a close target
         // out of a level cone — the possess smokes caught exactly that when
         // the cone first went 3D (2026-09-19).
-        const float dz = (pos.z + body_eye_m(reg, e)) - pz;
+        const float dz = (pos.z + slot_body_eye_m(*objs, s)) - pz;
         const float d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > maxR2) continue;
 

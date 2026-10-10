@@ -234,10 +234,8 @@ const char* faction_id_for_kind(const ecs::NPCKind* kind) {
 // ONE relation matrix (macro/state.h) — the player is a row in it like everyone
 // else — so the subworld reads exactly what the macro layer wrote.
 
-bool is_player_side(entt::registry& reg, entt::entity e) {
-    return sub::is_avatar(reg, e)
-        || sub::object_flag(reg, e, sub::kObjPlayerSoldier);
-}
+// (Entity-форма is_player_side умерла в (ii-б): единственный звонящий —
+// player_stance — перешёл на слот-двойник is_player_side_slot ниже.)
 
 bool token_equals(const char* raw, const char* lit) {
     if (!raw || !lit) return false;
@@ -530,11 +528,11 @@ void clear_subworld_entities(ecs::World& w) {
 // dead-centre neutral. Each side is scaled independently by its own threshold
 // so an asymmetric retune stays correct. Alive/scene filtering is the caller's
 // job (collect_minimap_blips already iterates only live scene NPCs).
-float player_stance(entt::registry& reg, entt::entity e, const GameState* gs) {
-    if (is_player_side(reg, e)) return 1.0f;                    // own side
-    if (sub::object_flag(reg, e, sub::kObjTempHostile)) return -1.0f;  // provoked
+float player_stance(const sub::SubObjects& objs, int s, const GameState* gs) {
+    if (is_player_side_slot(objs, s)) return 1.0f;              // own side
+    if (sub::slot_flag(objs, s, sub::kObjTempHostile)) return -1.0f;  // provoked
     const char* factionId =
-        faction_id_for_kind(sub::body_kind(reg, e));
+        faction_id_for_kind(sub::slot_kind(objs, s));
     const int rep = player_reputation(gs, factionId);
     if (rep >= 0) {
         return std::min(1.0f, float(rep) / float(kAllyRepThreshold));
@@ -551,16 +549,15 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     // 5c), so exclude the avatar explicitly — the player is the map centre /
     // its own heading triangle, never a blip. Projected player soldiers keep
     // their kind (and are not the avatar) and read as fully allied (+1).
+    sub::SubObjects* objs = sub::objects_find(reg);
+    if (objs == nullptr) return minimapBlips_;
     auto view = reg.view<ecs::ObjectSlot>();
     for (auto e : view) {
-        if (sub::is_avatar(reg, e)) continue;
-        if (sub::body_kind(reg, e) == nullptr) continue;
-        if (sub::object_flag(reg, e, sub::kObjDead)) continue;
-        const auto* hp = sub::body_pools(reg, e);
-        if (hp == nullptr || hp->hp <= 0) continue;
-        const ecs::Position& pos = *sub::body_pos(reg, e);
+        const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+        if (!sub::slot_npc_candidate(*objs, s)) continue;
+        const ecs::Position& pos = objs->pos[std::size_t(s)];
         minimapBlips_.push_back(
-            MinimapBlip{pos.x, pos.y, player_stance(reg, e, gs_)});
+            MinimapBlip{pos.x, pos.y, player_stance(*objs, s, gs_)});
     }
     return minimapBlips_;
 }
@@ -582,19 +579,18 @@ float SubworldEngine::crosshair_stance() const {
     // describes exactly this class of gap). One door answers the height.
     const float ax = playerX_, ay = playerY_, az = player_muzzle_z();
 
-    entt::entity best = entt::null;
+    sub::SubObjects* objs = sub::objects_find(reg);
+    if (objs == nullptr) return std::numeric_limits<float>::quiet_NaN();
+    int best = -1;
     float bestT = kMaxRange;
 
     auto view = reg.view<ecs::ObjectSlot>();
     for (auto e : view) {
-        if (sub::is_avatar(reg, e)) continue;
-        if (sub::body_kind(reg, e) == nullptr) continue;
-        if (sub::object_flag(reg, e, sub::kObjDead)) continue;
-        const auto* hp = sub::body_pools(reg, e);
-        if (hp == nullptr || hp->hp <= 0) continue;
-        const ecs::Position& pos = *sub::body_pos(reg, e);
-        const float r = body_radius(reg, e);
-        // Ray-sphere: project entity onto the aim segment, check distance.
+        const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+        if (!sub::slot_npc_candidate(*objs, s)) continue;
+        const ecs::Position& pos = objs->pos[std::size_t(s)];
+        const float r = sub::slot_body_radius(*objs, s);
+        // Ray-sphere: project the body onto the aim segment, check distance.
         const float dx = pos.x - ax, dy = pos.y - ay, dz = pos.z - az;
         const float dot = dx * fx + dy * fy + dz * fz;
         if (dot < 0.0f || dot > kMaxRange) continue;
@@ -603,11 +599,11 @@ float SubworldEngine::crosshair_stance() const {
         if (perp2 > r * r) continue;
         if (dot < bestT) {
             bestT = dot;
-            best = e;
+            best = s;
         }
     }
-    if (best == entt::null) return std::numeric_limits<float>::quiet_NaN();
-    return player_stance(reg, best, gs_);
+    if (best < 0) return std::numeric_limits<float>::quiet_NaN();
+    return player_stance(*objs, best, gs_);
 }
 
 void SubworldEngine::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {

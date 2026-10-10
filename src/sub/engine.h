@@ -132,11 +132,12 @@ struct CombatLogEntry {
 // below kHostileThreshold it saturates to -1, at or above kAllyRepThreshold to
 // +1, and 0 reputation maps to 0. The two hard overrides the combat code
 // applies are preserved: a provoked entity (TempHostileToPlayer) pins to -1
-// and the player's own side (AvatarTag / PlayerSoldierTag) to +1. Because the
+// and the player's own side (аватар / kObjPlayerSoldier) to +1. Because the
 // relationship is numeric, the HUD renders a smooth red→yellow→green gradient
 // rather than discrete buckets. Extensible by construction: retune a threshold
 // or add a per-faction shade here and every consumer updates at once.
-float player_stance(entt::registry& reg, entt::entity e, const GameState* gs);
+// Форма АРЕНЫ ((ii-б) ломтя 7): субъект — слот, не сущность.
+float player_stance(const SubObjects& objs, int s, const GameState* gs);
 
 // One minimap marker: world tile-space position ([0..kFullSize], the same
 // space as player_x()/player_y()) plus its signed player_stance() in [-1,+1].

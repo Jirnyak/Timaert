@@ -114,6 +114,23 @@ inline void slot_set_missile(SubObjects& o, int s, ecs::MissileAttack m) {
     o.missile[std::size_t(s)] = m;
 }
 
+// ── «Живой NPC-кандидат» — ОБЩИЙ гейт отбора тел ((ii-б) ломтя 7) ────────
+// Слот жив, это не аватар, род назначен (у игрока и голой фикстуры рода
+// нет), не труп, бары живы. Гейт стоял ПОБУКВЕННО трижды
+// (collect_minimap_blips / crosshair_stance @ src/sub/engine.cpp,
+// aim_target@src/sub/targeting.cpp) и четвёртым у melee_candidate там же.
+// Отсев проекции игроцкой стороны (kObjPlayerSoldier) — НЕ часть гейта:
+// миникарта и прицел стойки своих солдат ВИДЯТ, боевые выборы отсеивают
+// их отдельной строкой.
+inline bool slot_npc_candidate(const SubObjects& o, int s) {
+    if (!slot_flag(o, s, kObjAlive)) return false;
+    if (o.is_avatar_slot(s)) return false;
+    if (slot_kind(o, s) == nullptr) return false;
+    if (slot_flag(o, s, kObjDead)) return false;
+    const ecs::Pools* hp = slot_pools(o, s);
+    return hp != nullptr && hp->hp > 0;
+}
+
 // ── Листья (ломоть 2): лист безусловный, зеркало — бит ──────────────────
 inline CharacterSheet* slot_sheet(SubObjects& o, int s) {
     return &o.sheet[std::size_t(s)];
