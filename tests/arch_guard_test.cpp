@@ -112,6 +112,7 @@ constexpr std::string_view kRowHeaders[] = {
 };
 
 constexpr std::string_view kSubDir = "src/sub";
+constexpr std::string_view kMacroDir = "src/macro";
 constexpr std::string_view kSrcDir = "src";
 constexpr std::string_view kSkeleton = "SKELETON.md";
 
@@ -254,6 +255,59 @@ int test_contour_is_everywhere() {
           "у каждой строки мира есть контур: без него новый тип обходит "
           "компиляторную стену молча (AGENTS §8 п.6)");
     return structs;
+}
+
+// ── R2б: НАПРАВЛЕНИЕ ОДНОСТОРОННЕЕ — И ЭТО СТЕНА, А НЕ ТАЮЩИЙ СПИСОК ─────
+//
+// ЗАКОН ДВУХ МИРОВ: макромир есть ОСНОВНАЯ симуляция и ни от чего не
+// производен, микромир — режим, производный от него. Значит нитка
+// `src/macro` → `src/sub` незаконна НЕ ПОЧТИ, а совсем: её не бывает ни
+// одной, и список терпимости ей не нужен. Обратная сторона (R2 выше) —
+// долг, у неё список и она тает; эта — ноль, и ноль обязан держаться
+// СТЕНОЙ, иначе первая же нитка пройдёт молча.
+//
+// ПОЧЕМУ ЭТОТ СВИДЕТЕЛЬ ПОЯВИЛСЯ ТОЛЬКО СЕЙЧАС (вердикт владельца
+// 2026-10-11 «только канал — он дешёвый»). Строка `SKELETON.md`
+// «направление: `src/macro` не включает `src/sub`» стояла ПРАВДОЙ с
+// доказательством `rg '#include "sub/' src/macro` → 0 — то есть
+// утверждением об ОТСУТСТВИИ, у которого адреса в коде нет по природе
+// (§0 п.2), а своего теста не было: закон жил на одном прогоне `rg`,
+// сделанном однажды руками. Перепись безадресных вердиктов 2026-10-11
+// назвала его одним из четырёх законов БЕЗ СВИДЕТЕЛЯ; этот — первый,
+// у кого свидетель появился.
+//
+// Проверка считает И ФАЙЛЫ: проход по пустому каталогу отчитался бы
+// нулём нарушений и зеленел бы ровно тогда, когда сломан сам обход
+// (§8 п.2 — тест с нулём измерений есть проваленный тест).
+void test_direction_is_one_way() {
+    const fs::path dir = fs::path(kRoot) / fs::path(kMacroDir);
+    CHECK_OR_RETURN(fs::is_directory(dir), "каталог макромира на месте");
+    int files = 0, threads = 0;
+    for (const auto& e : fs::recursive_directory_iterator(dir)) {
+        if (!e.is_regular_file()) continue;
+        const std::string ext = e.path().extension().string();
+        if (ext != ".cpp" && ext != ".h") continue;
+        ++files;
+        const std::string rel =
+            fs::relative(e.path(), fs::path(kRoot)).generic_string();
+        const std::vector<std::string> lines = split_lines(read_file(e.path()));
+        for (std::size_t n = 0; n < lines.size(); ++n) {
+            const std::string t = collapse(lines[n]);
+            if (t.rfind("#include \"sub/", 0) != 0) continue;
+            ++threads;
+            std::fprintf(stderr,
+                         "  НИТКА ВВЕРХ ПО НАПРАВЛЕНИЮ: %s:%d  %s  — "
+                         "макромир ни от чего не производен (ЗАКОН ДВУХ "
+                         "МИРОВ п.1); число из субмира едет ПАКЕТОМ\n",
+                         rel.c_str(), int(n) + 1, t.c_str());
+        }
+    }
+    CHECK(files > 20,
+          "файлы макромира прочитаны — иначе ноль нарушений означал бы "
+          "сломанный обход, а не чистое направление");
+    CHECK(threads == 0,
+          "ни одного `#include \"sub/...\"` в `src/macro`: направление "
+          "ОДНОСТОРОННЕЕ, и у этого закона теперь есть свидетель");
 }
 
 // ── R2: УЗКИЙ КАНАЛ ───────────────────────────────────────────────────────
@@ -816,6 +870,7 @@ int main() {
     const int structs = test_contour_is_everywhere();
     std::printf("arch_guard: контуров проверено %d в %zu заголовках-строках\n",
                 structs, std::size(kRowHeaders));
+    test_direction_is_one_way();
     const Boundary b = test_melting_rules();
     test_closed_top_dirs();
     test_detectors_actually_see();

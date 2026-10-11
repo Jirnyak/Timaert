@@ -796,12 +796,10 @@ macro-registry.md	:2093-2100
 macro-registry.md	:2215
 macro-registry.md	:2245
 macro-registry.md	:2265-2268
-macro-registry.md	:230-232
 macro-registry.md	:2363-2393
 macro-registry.md	:2409
 macro-registry.md	:2588
 macro-registry.md	:265-276
-macro-registry.md	:285-287
 macro-registry.md	:293-294
 macro-registry.md	:295
 macro-registry.md	:3031
