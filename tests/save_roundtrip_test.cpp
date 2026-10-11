@@ -436,7 +436,10 @@ sm::GameState make_state(sm::MacroStore& st) {
     // (The player's MEN are not a field of PlayerState any more: his squad is
     // an ordinary squad entity, so his creatures rides the macro snapshot with
     // every other squad's — see the player record in make_macro_records.)
-    add_soldiers(gs.deserterPool, sm::NPCType::Peasant, 2, 1300u);
+    // (Две души фикстуры стояли в `gs.deserterPool`, уничтоженном
+    // 2026-10-11. Контейнер, который едет в файл, теперь только один рода —
+    // инвентарь записи сквада, и он проверяется сравнением записей ниже,
+    // поэтому отдельной посадки душ в состояние мира больше нет.)
 
     {
         const sm::MacroHandle row = sm::birth_place(
@@ -1141,10 +1144,6 @@ void run_roundtrip() {
         || loaded.subState.settlementId != kFixtureCityId) {
         FAIL_BAIL("sub-state lost");
     }
-    if (sm::creature_count_of(loaded.deserterPool, sm::NPCType::Peasant)
-        != 2) {
-        FAIL_BAIL("deserter pool lost");
-    }
     for (std::size_t k = 0; k < std::size_t(sm::kDepositKindCount); ++k) {
         if (loadedDeposits.cells[k] != deposits.cells[k]) {
             FAIL_BAIL("deposit cells lost (kind block mismatch)");
@@ -1318,9 +1317,17 @@ void run_roundtrip() {
     // Дверь существ такую порчу уже не пускает (creatures_push отказывает
     // невалидному роду — проверено ниже), поэтому порча сажается В СЛОТ
     // НАПРЯМУЮ: предмет свидетеля — fail-closed ПИСАТЕЛЯ.
+    // НОСИТЕЛЬ ПОРЧИ СМЕНИЛСЯ, ПРЕДМЕТ СВИДЕТЕЛЯ — НЕТ. Порча сидела в
+    // `gs.deserterPool`, уничтоженном 2026-10-11; теперь она сажается в
+    // ЕДИНСТВЕННЫЙ контейнер, который едет в файл — инвентарь записи сквада.
+    // Судится по-прежнему fail-closed ПИСАТЕЛЯ, а не дверь существ.
     auto invalidSquadStateOwn = std::make_unique<sm::GameState>(gs);
     sm::GameState& invalidSquadState = *invalidSquadStateOwn;
-    if (sm::creatures_push(invalidSquadState.deserterPool, sm::SoldierRecord{
+    std::vector<sm::MacroNpcRecord> invalidMacro = macroFixture;
+    if (invalidMacro.empty()) {
+        FAIL_BAIL("фикстура снапшота пуста — порчу некуда посадить");
+    }
+    if (sm::creatures_push(invalidMacro[0].inventory, sm::SoldierRecord{
             10001u, std::uint16_t(sm::NPCType::Count), 1})) {
         FAIL_BAIL("the creature door accepted a kind the tables do not know");
     }
@@ -1328,10 +1335,10 @@ void run_roundtrip() {
         sm::ItemRef rot{};
         rot.def = sm::world_row_count();   // строка ЗА концом пространства
         rot.count = 1;
-        invalidSquadState.deserterPool
+        invalidMacro[0].inventory
             .slots[std::size_t(sm::kMaxInventorySlots - 1)] = rot;
     }
-    if (sm::save_game(invalidSquadState, quests, macroFixture, treeCounts,
+    if (sm::save_game(invalidSquadState, quests, invalidMacro, treeCounts,
                       deposits,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {
         FAIL_BAIL("invalid squad kind saved");

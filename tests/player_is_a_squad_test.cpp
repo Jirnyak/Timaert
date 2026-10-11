@@ -252,12 +252,14 @@ void test_the_players_men_are_never_swept() {
 
     // Мир нужен двери ПО ЗАКОНУ, а не для удобства: погибшая душа списывается
     // с паствы своего дома (leave_home_flock).
-    Inventory& pool = gs.deserterPool;
     const int killed = kill_fallen_squad_creatures(*wStore_, gs);
 
     CHECK(killed == 3, "погибли только трое людей павшего НПЦ-лидера");
-    CHECK(creature_count(pool) == 0,
-          "и ни один из них не ушёл в пул: павшие ГИБНУТ (M-228)");
+    // (Прежде рядом стояло `creature_count(gs.deserterPool) == 0` — «ни один
+    // из них не ушёл в пул: павшие ГИБНУТ (M-228)». Пул уничтожен
+    // 2026-10-11; закон «павшие гибнут» держит негативный контроль ниже —
+    // контейнер павшего ОПУСТЕЛ, и души из него не всплыли нигде, потому что
+    // всплывать больше некуда.)
     CHECK(creature_count(*player_inventory(gs, *wStore_)) == 4,
           "the player's four are still his, dead flag or not");
     CHECK(creatures_empty(wStore_->inventory[fallen.slot].inv),

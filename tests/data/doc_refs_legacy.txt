@@ -382,7 +382,6 @@ SKELETON.md	npc_ai.cpp:3468
 SKELETON.md	npc_ai.cpp:3479
 SKELETON.md	npc_ai.cpp:3608
 SKELETON.md	npc_ai.cpp:3644
-SKELETON.md	npc_ai.cpp:3841
 SKELETON.md	npc_ai.cpp:3929
 SKELETON.md	npc_ai.cpp:427
 SKELETON.md	npc_ai.cpp:4410
@@ -442,7 +441,6 @@ SKELETON.md	ruins.cpp:44
 SKELETON.md	ruins.cpp:73
 SKELETON.md	save.cpp:1031
 SKELETON.md	save.cpp:1031-1113
-SKELETON.md	save.cpp:1051
 SKELETON.md	scent_field.cpp:15
 SKELETON.md	scent_field.cpp:20-41
 SKELETON.md	scent_field.cpp:21-32
@@ -492,9 +490,7 @@ SKELETON.md	spires.cpp:45
 SKELETON.md	spires.cpp:81
 SKELETON.md	squad.h:190
 SKELETON.md	squad.h:191
-SKELETON.md	squad.h:199
 SKELETON.md	squad.h:261
-SKELETON.md	squad.h:262-265
 SKELETON.md	squad.h:378
 SKELETON.md	squad.h:656-712
 SKELETON.md	squad.h:785
@@ -551,7 +547,6 @@ SKELETON.md	surface_lib.glsl:30
 SKELETON.md	targeting.cpp:24-80
 SKELETON.md	targeting.cpp:66
 SKELETON.md	targeting.cpp:77-79
-SKELETON.md	tests/balance_run.cpp:488
 SKELETON.md	tests/spire_generation_test.cpp:307-316
 SKELETON.md	threat_field.cpp:14-17
 SKELETON.md	threat_field.cpp:21
@@ -588,7 +583,6 @@ SKELETON.md	world_row.h:342-343
 SKELETON.md	world_row.h:66
 SKELETON.md	world_tick.cpp:201
 SKELETON.md	world_tick.cpp:212-221
-SKELETON.md	world_tick.cpp:387
 SKELETON.md	world_tick.cpp:74
 SKELETON.md	zones.cpp:139-166
 SKELETON.md	zones.cpp:159-160

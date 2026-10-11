@@ -418,10 +418,6 @@ constexpr Row kGameStateRows[] = {
     {"subState", Rod::Session,
      "сцена оболочки (Trading/ViewingMap/PreBattle + settlementId); сегодня "
      "едет в сейве; чистая судьба не решена — вопрос у владельца (2026-09-30)"},
-    {"deserterPool", Rod::WorldVars,
-     "пул мира-актора; потребитель — РЕЖИССЁР ЛУТА (над-система: бандиты/"
-     "монстры/сложность/лут — вердикт 2026-09-30, не достроена)"},
-    {"lootPoolValue", Rod::WorldVars, "казна пула — актор сам мир"},
     {"leasedWindow", Rod::Session,
      "АРЕНДА ОКНА (M-226): клетка-центр девяти, которые ведёт субмир; "
      "сентинел kNoWindowLease = аренды нет. Читатели — суд встречи и свип "

@@ -399,7 +399,7 @@ namespace sm {
 // называет, что в файле лежит И то, И другое.
 // 129 — единый кап 16384 (`kUnifiedCap@src/core/caps.h`): кап записей макро,
 // пул рёбер дани и `sizeof(FactionState)` в payload ужались вдвое.
-constexpr int kSaveVersion = 130;
+constexpr int kSaveVersion = 131;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -781,19 +781,17 @@ struct GameState {
     std::vector<std::string> logicNodesRegistered;
     std::vector<std::string> logicNodesActive;
     GameSubState subState;
-    // ПУЛ ДЕЗЕРТИРОВ — тот же ЕДИНЫЙ контейнер (M-71): существа строками
-    // мира в области сверху, предметной областью пул не пользуется.
-    Inventory deserterPool;
-    // THE WORLD'S LOOT POOL — one VALUE, not a warehouse (owner 2026-08-30,
-    // CANON S5/S10): the belongings of every squad that died with NO victor
-    // (exhaustion, drowning) fold into their catalog worth and add here.
-    // Future consumers (ruin & dungeon loot, mob drops) ROLL loot from
-    // their own tables with a budget drawn off this number — many dead
-    // caravans = richer, MORE VARIED loot, O(1) memory; storing the actual
-    // items would have given a warehouse of identical sacks (rejected by
-    // the owner). Signed: the ledger must show a bookkeeping bug as a
-    // negative, not a wrap. Rides the save (v67).
-    std::int64_t lootPoolValue = 0;
+    // (ПУЛ ДЕЗЕРТИРОВ `deserterPool` и КАЗНА ПУЛА ЛУТА `lootPoolValue`
+    // УНИЧТОЖЕНЫ в v131 — перепись сирот 2026-10-11, вердикт владельца
+    // «снести». Обе были ПОЛОВИНОЙ КОНТУРА: писатель живой (уход за
+    // невыплату складывал душу в пул; уплаченная плата и добро павших без
+    // победителя складывались в казну), а ЧИТАТЕЛЕЙ — НИ ОДНОГО. Из пула
+    // никто никогда не нанимал, казну никто никогда не тратил, то есть
+    // «оседает в пуле» и «сгорает в казну» были словами о числе, которое
+    // некому прочесть. Второй конец обоих контуров — АУКЦИОН НАЙМА и ПУЛ
+    // ЛУТА как система (M-17); когда их построят, приёмники заведут заново,
+    // и заведут ТАМ, где их читают. Времянки на освободившееся место не
+    // поставлено — дыра названа нарядом M-206, AGENTS §1.)
     // ── АРЕНДА ОКНА — ОДНО ЧИСЛО МИРА (AGENTS ЗАКОН ШВА, вердикты владельца
     // 2026-10-06: «да состояние мира»; «смещение клетки рамки это смена
     // аренды а арендована может быть всегда одна клетка (ну и рамка вокруг

@@ -229,56 +229,21 @@ void test_a_dungeon_has_no_second_carrier() {
           "двинулось: под FT_Spire живёт спелл, и паствы там нет вовсе");
 }
 
-// ── 5. ОТКАЗ ПРИЁМНИКА — ЭТО ФАКТ, И ПАСТВА ЧИТАЕТ ФАКТ ──────────────────
-// Ходок, которого пул не принял, ВОЗВРАЩАЕТСЯ в состав. Списать с паствы
-// «намерение» значило бы вычесть человека, который остался стоять, — ровно
-// то, от чего измерение до/после и защищает.
-void test_a_refused_walker_stays_in_the_flock() {
-    sm::Inventory store{};
-    for (std::uint32_t i = 0; i < 4; ++i) {
-        sm::creatures_push(store, sm::make_soldier(
-            std::uint8_t(sm::NPCType::Guard), 1, 500u + i));
-    }
-    const sm::UpkeepBill bill = sm::upkeep_bill(store);
-    CHECK(bill.wage > 0,
-          "фикстура: строка Guard несёт жалованье — без него исход «уход» "
-          "недостижим вовсе");
-    sm::Upkeep r{};
-    r.wageDebt = bill.wage;            // не плачено НИЧЕГО ⇒ уходят все
-    const int boardOrd = sm::hunger_commodity_ordinal();
-    r.needDebt[boardOrd] = 0;          // харч покрыт: смерть не вмешивается
-
-    // Пул, который НЕ МОЖЕТ принять: область существ забита доверху.
-    //
-    // НАБИВАЕТСЯ ИМЕННЫМИ, И ЭТО НЕ ПРИДИРКА К ФИКСТУРЕ, А СВОЙСТВО
-    // КОНТЕЙНЕРА: генерик сливается в ОДИН слот стаком (`add_ref`), поэтому
-    // пулом генериков этот кап недостижим вовсе — первая редакция свидетеля
-    // набила 1025 крестьян в один слот и объявила пул полным, которым он не
-    // был. Именная душа берёт слот себе (`entityId != 0`), и только ею кап
-    // области и выражается.
-    sm::Inventory pool{};
-    int packed = 0;
-    while (sm::creatures_push(pool, sm::make_soldier(
-               std::uint8_t(sm::NPCType::Peasant), 1,
-               std::uint32_t(1000 + packed)))) {
-        ++packed;
-    }
-    CHECK(packed > 0 && !sm::creatures_push(pool, sm::make_soldier(
-              std::uint8_t(sm::NPCType::Peasant), 1, 999999u)),
-          "фикстура: пул действительно полон — иначе отказ недостижим и "
-          "утверждение ниже проверяло бы не то");
-
-    std::int64_t burned = 0;
-    sm::Wellbeing wb{};
-    const int before = sm::creature_count(store);
-    const sm::UpkeepWindowOutcome out =
-        sm::upkeep_season_window(r, store, pool, wb, burned, nullptr, nullptr);
-    CHECK(out.walked == 0,
-          "пул отказал — ушедших НОЛЬ, и это исход, а не ошибка");
-    CHECK(sm::creature_count(store) == before,
-          "человек, которого некуда положить, остался в составе целиком: "
-          "за капом никого не уничтожают (CANON S26)");
-}
+// ── 5. ОТКАЗ ПРИЁМНИКА — ЗАКОН УМЕР ВМЕСТЕ С ПРИЁМНИКОМ (2026-10-11) ─────
+// Здесь стоял `test_a_refused_walker_stays_in_the_flock`: ходок, которого пул
+// дезертиров не принял (своя область существ забита доверху), ВОЗВРАЩАЛСЯ в
+// состав — «за капом никого не уничтожают» (CANON S26), а паства читала ФАКТ
+// исхода, не намерение.
+//
+// Свидетель снят не как плохой, а как ОСИРОТЕВШИЙ (AGENTS §5 п.6): колонка
+// `GameState::deserterPool` уничтожена вердиктом владельца по переписи сирот
+// — у неё не было НИ ОДНОГО читателя, то есть из пула никто никогда не
+// нанимал. Приёмника больше нет, значит отказ приёмника НЕВЫРАЗИМ: фикстура
+// не может набить то, чего не существует, и «пул отказал» перестало быть
+// состоянием мира. Это не значит, что закон CANON S26 отменён — он остаётся
+// верен и будет проверяться снова, когда аукцион найма заведёт настоящий
+// приёмник (наряд M-206). Пока приёмника нет, честнее не иметь свидетеля,
+// чем иметь зелёного.
 
 }   // namespace
 
@@ -287,6 +252,5 @@ int main() {
     test_the_creature_receipt_pays_the_flock();
     test_a_dead_horse_is_not_a_dead_soul();
     test_a_dungeon_has_no_second_carrier();
-    test_a_refused_walker_stays_in_the_flock();
     return sm::test::report("flock_pairing_law_test");
 }

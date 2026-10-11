@@ -337,9 +337,11 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         CHECK(!std_.valid(eh),
               "an ocean the bar cannot pay kills, and the dead squad leaves "
               "the map: there is no Resting at sea and no corpse-row after");
-        CHECK(creature_count(gs.deserterPool) == 0,
-              "утонувший лорд утопил и своих людей: павшие ГИБНУТ, а в пул "
-              "дезертиров идёт только неоплата сезона (M-228)");
+        // (Прежде здесь стояло `creature_count(gs.deserterPool) == 0` —
+        // «павшие ГИБНУТ, а в пул дезертиров идёт только неоплата сезона
+        // (M-228)». Пул уничтожен 2026-10-11, и утверждать про его
+        // содержимое нечего; закон «павшие гибнут» держит строка выше —
+        // сквад ушёл с карты целиком, а не сменил хозяина.)
     }
 }
 

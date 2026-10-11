@@ -101,7 +101,7 @@ constexpr std::uint64_t kPrefixBytes =
     + sizeof(GameState::lastWorldRebakeDay)
     + sizeof(GameState::nextMacroSpawnOrdinal)
     + sizeof(GameState::nextQuestOrdinal)
-    + kStrBytes + kStrBytes + sizeof(GameState::lootPoolValue);
+    + kStrBytes + kStrBytes;
     // (Скаляр v116 «ординал носителя флажка» умер в v117 — флаг едет
     // колонкой playerFlag записи снапшота, kMacroNpcBytes считает его там.)
 
@@ -1177,7 +1177,6 @@ void write_payload(Writer& w, const GameState& s,
     w.str(savedAt);
     // v67: the world's loot pool — the victorless dead's worth, ONE number
     // (CANON S5, the deserter pool's sibling for things).
-    w.pod(s.lootPoolValue);
     // («Кем я на карте» с 5б едет КОЛОНКОЙ playerFlag записи снапшота —
     // свой скаляр v116 в скалярах мира умер, провод получает флаг даром.)
     // (v74's own ship-counter block died in v96: hulls moored are the WORKED
@@ -1193,7 +1192,6 @@ void write_payload(Writer& w, const GameState& s,
     write_factions(w, s.factions);
 
     write_sub_state(w, s.subState);
-    write_inventory(w, s.deserterPool);   // v110: пул = единый контейнер
 
 
     // The saved world FIELDS ride as registry rows (macro/world_fields.h):
@@ -1257,7 +1255,6 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.pod(s.nextQuestOrdinal);      // v63
     r.str(s.saveName);
     r.str(s.savedAt);
-    r.pod(s.lootPoolValue);   // v67
     read_player(r, s.player);
 
     // (Блок строк мест умер в v128: тела мест едут записями блока
@@ -1275,7 +1272,6 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     read_factions(r, s.factions);
 
     read_sub_state(r, s.subState);
-    read_inventory(r, s.deserterPool);   // v110: пул = единый контейнер
 
     // The saved world FIELDS, by registry row (macro/world_fields.h) — the
     // mirror of the write side; the caller validates trees against the

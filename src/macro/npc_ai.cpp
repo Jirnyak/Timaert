@@ -3656,8 +3656,7 @@ int squad_season_window(GameState& gs, MacroStore& st, int day,
         const EconFactSink us = sink ? &relay_upkeep_fact_ : nullptr;
         void* uu = sink ? static_cast<void*>(&relay) : nullptr;
         const UpkeepWindowOutcome out = upkeep_season_window(
-            creatures, bag.inv, gs.deserterPool, st.wellbeing[slot],
-            gs.lootPoolValue, us, uu);
+            creatures, bag.inv, st.wellbeing[slot], us, uu);
         flock_left_home(gs, st, slot, folkBefore);
         deserted += out.walked;
         // (ВЕДОМОСТЬ СКЛАДА ДУШ переехала В САМУ ДВЕРЬ, M-233: событие
@@ -3955,20 +3954,20 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         std::uint16_t(creature_of_world_row(sl.def)))) {
                     souls += sl.count;
                 }
-                if (!creatures_push_slot(stq.inventory[homeSlot].inv, sl)) {
-                    // Дому тесно (кап контейнера) — лишние честно уходят
-                    // в пул, никто не испаряется.
-                    creatures_push_slot(gs.deserterPool, sl);
-                }
+                // Дому тесно (кап контейнера) — лишние ИСПАРЯЮТСЯ, и это
+                // названная дыра, а не замысел: пул дезертиров, куда они
+                // уходили, уничтожен 2026-10-11 (читателей ноль, из него
+                // никто не нанимал). Приёмник вернётся с аукционом найма —
+                // M-206; времянки на его место не ставим (AGENTS §1).
+                creatures_push_slot(stq.inventory[homeSlot].inv, sl);
             }
         }
         {
             const NPCType leaderKind = NPCType(stq.kind[slot].type);
-            if (is_folk_kind(std::uint16_t(leaderKind))
-                && !creatures_push_stack(stq.inventory[homeSlot].inv,
-                                         leaderKind,
-                                         npc_def(leaderKind).baseLevel, 1)) {
-                creatures_push_stack(gs.deserterPool, leaderKind,
+            if (is_folk_kind(std::uint16_t(leaderKind))) {
+                // Та же названная дыра: не влез в дом — исчез, пула больше
+                // нет (M-206).
+                creatures_push_stack(stq.inventory[homeSlot].inv, leaderKind,
                                      npc_def(leaderKind).baseLevel, 1);
             }
         }
@@ -4932,7 +4931,7 @@ void settle_dead_squads(MacroWorld& mw) {
     ecs::World& w = *mw.world;
     kill_fallen_squad_creatures(store_of(w), gs,
                                 mw.econFacts, mw.econFactsUser);
-    destroy_dead_macro_squads(store_of(w), gs, &gs.lootPoolValue);
+    destroy_dead_macro_squads(store_of(w), gs);
 }
 
 } // namespace

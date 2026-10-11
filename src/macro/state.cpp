@@ -101,7 +101,6 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
     gs.cityCountTarget = cityCountTarget;
     gs.worldTime    = world_time_at(1, 8, 0);   // day 1, 08:00
     gs.subState     = GameSubState{};       // Exploring
-    gs.deserterPool = Inventory{};
     gs.player       = default_player();
     create_factions(gs, seed);
     return gs;

@@ -59,11 +59,9 @@ Boundary boundary_(sm::Inventory& store, std::int32_t* needDebt,
                    sm::EconFactSink sink, void* user) {
     sm::Upkeep r{};
     for (int c = 0; c < sm::kCommodityCount; ++c) r.needDebt[c] = needDebt[c];
-    sm::Inventory pool{};
     sm::Wellbeing wb{};
-    std::int64_t burned = 0;
     const sm::UpkeepWindowOutcome out =
-        sm::upkeep_season_window(r, store, pool, wb, burned, sink, user);
+        sm::upkeep_season_window(r, store, wb, sink, user);
     for (int c = 0; c < sm::kCommodityCount; ++c) needDebt[c] = r.needDebt[c];
     return Boundary{out.starved, int(wb.seasonWellbeing)};
 }

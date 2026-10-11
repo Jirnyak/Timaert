@@ -389,7 +389,6 @@ void test_the_fallen_squads_creatures_die() {
     // (leave_home_flock). GameState на КУЧЕ: он ~0.84 МиБ (грабля ломтика C).
     auto gsp = std::make_unique<sm::GameState>();
     sm::GameState& gs = *gsp;
-    Inventory& pool = gs.deserterPool;
 
     struct Tally { int souls = 0; int reports = 0; } tally;
     const EconFactSink sink = [](void* u, const EconFact& f) {
@@ -402,9 +401,11 @@ void test_the_fallen_squads_creatures_die() {
     CHECK(kill_fallen_squad_creatures(sm::store_of(world), gs, sink, &tally)
               == 3,
           "гибнут ВСЕ головы павшего — два человека И конь, без ветки по роду");
-    CHECK(creature_count(pool) == 0,
-          "НЕГАТИВНЫЙ КОНТРОЛЬ (M-228): павшие НЕ дезертируют — пул не вырос "
-          "ни на одну голову");
+    // (НЕГАТИВНЫЙ КОНТРОЛЬ M-228 «павшие НЕ дезертируют — пул не вырос ни на
+    // одну голову» потерял НОСИТЕЛЯ: пул дезертиров уничтожен 2026-10-11.
+    // `CHECK(true, …)` на его место не ставим — это проверка, которая не
+    // может упасть никогда (§8 п.6). Закон держит утверждение ниже: контейнер
+    // павшего ПУСТ, то есть головы никуда не переехали.)
     CHECK(tally.souls == 2 && tally.reports == 1,
           "ведомость склада душ назвала смерть ОДНИМ фактом и в ДУШАХ: конь "
           "паствой не был");

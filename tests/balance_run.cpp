@@ -266,9 +266,13 @@ int main(int argc, char** argv) {
         // артелей — счёт живых крестьянских крю по глаголу поручения, плюс
         // пул дезертиров (кровь закона 1/8). Ответ на «почему зерно не
         // едет»: мало рейсов или пустые сделки.
-        std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tcoinLootPool"
+        // (Колонки `coinLootPool` и `deserters` УНИЧТОЖЕНЫ 2026-10-11 вместе
+        // со своими величинами: казна пула и пул дезертиров были половинами
+        // контура — писатель живой, читателей ноль. Прибор не печатает то,
+        // чего в мире нет; колонки читать ПО ИМЕНИ, §5 п.7.)
+        std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads"
                          "\tstarvedPops\tminted\ttrades\ttradedValue\tfoodHolds"
-                         "\tcrewsGather\tcrewsSell\tcrewsOther\tdeserters"
+                         "\tcrewsGather\tcrewsSell\tcrewsOther"
                          // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
                          // табуны в гарнизонах и спины в отрядах, миром.
                          "\thorsesGarr\thorsesSquads\tpastures"
@@ -310,7 +314,7 @@ int main(int argc, char** argv) {
                          // (каждая отвечает на свой вопрос), но в СУММУ
                          // теперь входит каждая душа РОВНО раз.
                          "\tpopCity\tpopVil\tpopLair\tpopElse"
-                         "\tsoulsHomed\tsoulsFree\tsoulsGarr\tsoulsPool"
+                         "\tsoulsHomed\tsoulsFree\tsoulsGarr"
                          "\tsoulsWorld"
                          // Потоки дня (ведомость склада душ, econ_day.h).
                          "\tsoulsBorn"
@@ -516,8 +520,6 @@ int main(int argc, char** argv) {
                 else
                     soulsFree += souls;
             }
-            const long long soulsPool =
-                sm::count_human_souls(gs.deserterPool);
             long long pastures = 0, parcels = 0;
             if (!features.data.empty()) {
                 for (const std::uint8_t f : features.data) {
@@ -555,14 +557,12 @@ int main(int argc, char** argv) {
             ringCursor = gs.chronicle.nextSeq;
 
             std::fprintf(fw,
-                         "%d\t%lld\t%lld\t%lld\t%lld\t%d\t%lld\t%lld"
-                         "\t%lld\t%lld\t%d\t%d\t%d\t%d",
+                         "%d\t%lld\t%lld\t%lld\t%d\t%lld\t%lld"
+                         "\t%lld\t%lld\t%d\t%d\t%d",
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
-                         (long long)gs.lootPoolValue,
                          accum.starvedPops,
                          accum.mintedCoins, trades, tradedValue, foodHolds,
-                         crewsGather, crewsSell, crewsOther,
-                         int(sm::creature_count(gs.deserterPool)));
+                         crewsGather, crewsSell, crewsOther);
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld",
                          horsesGarr, horsesSquads, pastures, parcels);
             // Баланс душ мира. soulsWorld печатается суммой, а не считается
@@ -570,16 +570,19 @@ int main(int argc, char** argv) {
             // существует: величина, которую каждый читатель складывает сам,
             // рано или поздно складывается по-разному.
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld"
-                             "\t%lld\t%lld\t%lld\t%lld\t%lld"
+                             "\t%lld\t%lld\t%lld\t%lld"
                              "\t%lld\t%d\t%lld\t%lld",
                          popCity, popVil, popLair, popElse,
-                         soulsHomed, soulsFree, soulsGarr, soulsPool,
-                         // Паства мест + бездомные + пул: ни одной души
-                         // дважды. `soulsHomed` и `soulsGarr` в сумму НЕ
+                         soulsHomed, soulsFree, soulsGarr,
+                         // Паства мест + бездомные: ни одной души дважды.
+                         // Слагаемое «пул» ушло вместе с самим пулом
+                         // (2026-10-11), и сумма от этого стала ЧЕСТНЕЕ: душа
+                         // ушедшего больше нигде не числится, потому что её
+                         // нигде и нет. `soulsHomed` и `soulsGarr` в сумму НЕ
                          // входят — они подмножества паствы и живут рядом
                          // как ответы на «кто стоит дома» и «кто за домом
                          // числится».
-                         popTotal + soulsFree + soulsPool,
+                         popTotal + soulsFree,
                          accum.soulsBorn,
                          accum.crewsUnpaid, accum.soulsUnpaid,
                          accum.soulsKilled);

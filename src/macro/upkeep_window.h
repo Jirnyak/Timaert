@@ -104,9 +104,7 @@ inline int unmet_mouths(std::int64_t debt, std::int64_t bill, int heads) {
 // `store` — ЕДИНЫЙ контейнер владельца (M-71): его область существ и есть
 // контейнер, его предметная область и есть склад; суд читает обе.
 inline UpkeepWindowOutcome upkeep_season_window(Upkeep& r, Inventory& store,
-                                                Inventory& pool,
                                                 Wellbeing& wb,
-                                                std::int64_t& burnedValue,
                                                 EconFactSink sink,
                                                 void* user) {
     UpkeepWindowOutcome out{};
@@ -204,17 +202,18 @@ inline UpkeepWindowOutcome upkeep_season_window(Upkeep& r, Inventory& store,
         if (!creatures_pop_back(store, dead)) break;
         ++out.starved;
     }
-    // ПЛАТА — УХОД. Пул МОЖЕТ отказать (свой кап слотов), и тогда человек
-    // возвращается в состав: никто не уничтожается за то, что стоял за
-    // капом (CANON S26). Голодная смерть выше этого права не имеет и не
-    // нуждается в нём.
+    // ПЛАТА — УХОД, И ПРИЁМНИКА У НЕГО СЕГОДНЯ НЕТ. Душа снимается тем же
+    // `creatures_pop_back`, что у голодной смерти, и никуда не кладётся:
+    // `GameState::deserterPool` УНИЧТОЖЕН 2026-10-11 (вердикт владельца по
+    // переписи сирот) — читателей у пула не было НИ ОДНОГО, то есть из него
+    // никто никогда не нанимал, и он был половиной контура, а не системой.
+    // Вместе с ним ушло право пула ОТКАЗАТЬ: отказывать было нечему, и
+    // «человек возвращается в состав за капом» больше не выразимо. Когда
+    // появится аукцион найма, приёмник ухода заведут заново — дыра названа
+    // нарядом M-206, времянки на её место не поставлено (AGENTS §1).
     while (walkers-- > 0 && !creatures_empty(store)) {
         SoldierRecord walker{};
         if (!creatures_pop_back(store, walker)) break;
-        if (!creatures_push(pool, walker)) {
-            creatures_push(store, walker);   // пул полон: человек остаётся
-            break;
-        }
         ++out.walked;
     }
 
@@ -298,7 +297,13 @@ inline UpkeepWindowOutcome upkeep_season_window(Upkeep& r, Inventory& store,
         const std::int64_t canPay =
             std::min<std::int64_t>(r.wageDebt, inventory_value(store));
         if (canPay > 0) {
-            burnedValue += pay_value_dense(store, int(canPay));
+            // Плата УХОДИТ со склада и нигде не оседает: счётчик
+            // `GameState::lootPoolValue` уничтожен 2026-10-11 — читателей у
+            // него не было ни одного, то есть «сгорело» было ровно словом, а
+            // не числом, которое кто-то тратит. Сам платёж цел: дверь
+            // `pay_value_dense` снимает стоимость со склада, и это и есть
+            // «жалованье сгорает». Пул лута как СИСТЕМА — наряд M-17.
+            pay_value_dense(store, int(canPay));
             r.wageDebt -= canPay;
         }
     }
