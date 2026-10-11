@@ -2375,11 +2375,14 @@ entt::entity smoke_find_subworld_npc(App& app, sm::NPCType type) {
     for (auto e : view) {
         if (objs == nullptr) break;        // арены нет — тел тоже нет
         const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
-        if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)
-            || sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
-            continue;
+        // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт владельца 2026-10-11 «надо свести
+        // системно единая система»): отбор живого NPC-кандидата — ОДНА
+        // дверь slot_npc_candidate@src/sub/doors.h; игроцкая сторона —
+        // отдельной строкой, как у melee_candidate.
+        if (!sm::sub::slot_npc_candidate(*objs, s)) continue;
+        if (sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier)) continue;
         const auto* kind = sm::sub::slot_kind(*objs, s);
-        if (kind != nullptr && kind->type == std::uint16_t(type)) return e;
+        if (kind->type == std::uint16_t(type)) return e;
     }
     return entt::null;
 }
@@ -2813,10 +2816,16 @@ bool run_dungeon_house_smoke(App& app) {
         // fauna_count, so a kill down here thins the cell for good.
         entt::entity beast = entt::null;
         sm::ecs::MacroDebt beastDebt{};
-        for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
-            if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead))
-                continue;
-            const auto* dp = sm::sub::body_debt(app.ecs.reg, e);
+        sm::sub::SubObjects* bObjs = sm::sub::objects_find(app.ecs.reg);
+        auto bv = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : bv) {
+            if (bObjs == nullptr) break;
+            const int s = int(bv.get<sm::ecs::ObjectSlot>(e).slot);
+            // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): прежде здесь стоял
+            // ОБРЕЗОК — только «не труп», — и зверь мог оказаться тушкой с
+            // нулевыми барами. Теперь дверь одна.
+            if (!sm::sub::slot_npc_candidate(*bObjs, s)) continue;
+            const auto* dp = sm::sub::slot_debt(*bObjs, s);
             if (dp == nullptr) continue;
             const auto& d = *dp;
             if (d.stock != std::uint8_t(sm::MacroStock::FaunaCount)) continue;
@@ -2844,10 +2853,15 @@ bool run_dungeon_house_smoke(App& app) {
         // отрезана, пока он жив. Раньше гейт молчал в данжах (байт зоны
         // пуст = выключен), и сценарий поднимался сквозь бой; теперь он
         // уважает закон: подвал зачищается ЦЕЛИКОМ до подъёма.
-        for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
-            if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead))
-                continue;
-            const auto* dStk = sm::sub::body_debt(app.ecs.reg, e);
+        sm::sub::SubObjects* cObjs = sm::sub::objects_find(app.ecs.reg);
+        auto cv = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : cv) {
+            if (cObjs == nullptr) break;
+            const int s = int(cv.get<sm::ecs::ObjectSlot>(e).slot);
+            // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): обрезок «только не
+            // труп» считал и тушки с нулевыми барами.
+            if (!sm::sub::slot_npc_candidate(*cObjs, s)) continue;
+            const auto* dStk = sm::sub::slot_debt(*cObjs, s);
             if (dStk == nullptr) continue;
             if (dStk->stock
                 != std::uint8_t(sm::MacroStock::FaunaCount)) {
@@ -2972,10 +2986,13 @@ bool run_dungeon_house_smoke(App& app) {
     int residents = 0;
     entt::entity victim = entt::null;
     sm::ecs::MacroDebt victimDebt{};
-    for (auto e : app.ecs.reg.view<sm::ecs::ObjectSlot>()) {
-        if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
-        if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)) continue;
-        const auto* dp = sm::sub::body_debt(app.ecs.reg, e);
+    sm::sub::SubObjects* rObjs = sm::sub::objects_find(app.ecs.reg);
+    auto rv = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+    for (auto e : rv) {
+        if (rObjs == nullptr) break;
+        const int s = int(rv.get<sm::ecs::ObjectSlot>(e).slot);
+        if (!sm::sub::slot_npc_candidate(*rObjs, s)) continue;
+        const auto* dp = sm::sub::slot_debt(*rObjs, s);
         if (dp == nullptr) continue;
         const auto& d = *dp;
         if (d.stock != std::uint8_t(sm::MacroStock::Population)) continue;
@@ -3439,9 +3456,10 @@ bool run_prologue_road_smoke(App& app) {
         }
         return h;
     };
-    // Гейт ЧАСТИЧНЫЙ и таким остаётся ((ii-б) — перевод, не сведение): род
-    // плюс «не труп». Подмена на общий slot_npc_candidate добавила бы
-    // требование живых баров и молча изменила бы СЧЁТ.
+    // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт владельца 2026-10-11 «надо свести
+    // системно единая система»): четыре цикла этого сценария несли ОБРЕЗОК
+    // (род плюс «не труп»), и счёт амбушеров включал бы тушку с нулевыми
+    // барами. Дверь одна — slot_npc_candidate@src/sub/doors.h.
     auto scene_bodies = [&]() {
         int n = 0;
         sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
@@ -3449,8 +3467,7 @@ bool run_prologue_road_smoke(App& app) {
         for (auto e : v) {
             if (objs == nullptr) break;
             const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
-            if (sm::sub::slot_kind(*objs, s) == nullptr) continue;
-            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)) continue;
+            if (!sm::sub::slot_npc_candidate(*objs, s)) continue;
             ++n;
         }
         return n;
@@ -3487,8 +3504,7 @@ bool run_prologue_road_smoke(App& app) {
         for (auto e : v) {
             if (objs == nullptr) break;
             const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
-            if (sm::sub::slot_kind(*objs, s) == nullptr) continue;
-            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)) continue;
+            if (!sm::sub::slot_npc_candidate(*objs, s)) continue;
             const sm::ecs::Position& p = objs->pos[std::size_t(s)];
             const float dx = p.x - app.subworld.player_x();
             const float dy = p.y - app.subworld.player_y();
@@ -3513,8 +3529,7 @@ bool run_prologue_road_smoke(App& app) {
         for (auto e : v) {
             if (objs == nullptr) break;
             const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
-            if (sm::sub::slot_kind(*objs, s) == nullptr) continue;
-            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)) continue;
+            if (!sm::sub::slot_npc_candidate(*objs, s)) continue;
             const auto* hp = sm::sub::slot_pools(*objs, s);
             if (hp == nullptr) continue;
             ambushMaxHp = std::max(ambushMaxHp, int(hp->maxHp));
@@ -3535,8 +3550,7 @@ bool run_prologue_road_smoke(App& app) {
         for (auto e : v) {
             if (objs == nullptr) break;
             const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
-            if (sm::sub::slot_kind(*objs, s) == nullptr) continue;
-            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)) continue;
+            if (!sm::sub::slot_npc_candidate(*objs, s)) continue;
             const sm::ecs::Position& p = objs->pos[std::size_t(s)];
             const float dx = p.x - app.subworld.player_x();
             const float dy = p.y - app.subworld.player_y();
@@ -5922,8 +5936,10 @@ bool run_console_smoke(App& app) {
         for (auto e : view) {
             if (objs == nullptr) break;
             const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
-            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)
-                || sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
+            // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): одна дверь плюс
+            // отсев игроцкой стороны строкой.
+            if (!sm::sub::slot_npc_candidate(*objs, s)) continue;
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
                 continue;
             const auto* k = sm::sub::slot_kind(*objs, s);
             if (k != nullptr
@@ -5944,14 +5960,16 @@ bool run_console_smoke(App& app) {
     std::vector<entt::entity> preexistingBandits;
     {
         auto& reg = app.ecs.reg;
-        // Гейта здесь нет НАМЕРЕННО и это остаётся так ((ii-б) — перевод):
-        // снимок «кто уже стоял», включая мёртвых и солдат, нужен именно
-        // полным — иначе новое тело спутали бы с прежним.
+        // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт владельца 2026-10-11): снимок «кто
+        // уже стоял» идёт ТОЙ ЖЕ дверью, что отбор ниже. Мёртвые в нём и
+        // были бесполезны — отбор «наш спавн» их всё равно не берёт, так
+        // что полнота снимка ничего не охраняла.
         sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
         auto view = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
             if (objs == nullptr) break;
             const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            if (!sm::sub::slot_npc_candidate(*objs, s)) continue;
             const auto* k = sm::sub::slot_kind(*objs, s);
             if (k != nullptr
                 && k->type == std::uint16_t(sm::NPCType::Bandit)) {
@@ -6000,8 +6018,10 @@ bool run_console_smoke(App& app) {
         for (auto e : view) {
             if (objs == nullptr) break;
             const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
-            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)
-                || sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
+            // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): одна дверь плюс
+            // отсев игроцкой стороны строкой.
+            if (!sm::sub::slot_npc_candidate(*objs, s)) continue;
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
                 continue;
             const auto* k = sm::sub::slot_kind(*objs, s);
             if (k == nullptr
@@ -6094,8 +6114,10 @@ bool run_console_smoke(App& app) {
         for (auto e : view) {
             if (objs == nullptr) break;
             const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
-            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjDead)
-                || sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
+            // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): одна дверь плюс
+            // отсев игроцкой стороны строкой.
+            if (!sm::sub::slot_npc_candidate(*objs, s)) continue;
+            if (sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
                 continue;
             const auto* k = sm::sub::slot_kind(*objs, s);
             if (k != nullptr && !sm::is_folk_kind(k->type)) ++n;
@@ -6113,13 +6135,15 @@ bool run_console_smoke(App& app) {
         const sm::FaunaEntry* wolf = sm::creature_def("wolf");
         entt::entity wolfE = entt::null;
         auto view = reg.view<sm::ecs::ObjectSlot>();
+        sm::sub::SubObjects* wObjs = sm::sub::objects_find(reg);
         for (auto e : view) {
-            if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
-                || sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+            if (wObjs == nullptr) break;
+            const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            if (!sm::sub::slot_npc_candidate(*wObjs, s)) continue;
+            if (sm::sub::slot_flag(*wObjs, s, sm::sub::kObjPlayerSoldier))
                 continue;
-            const auto* k = sm::sub::body_kind(reg, e);
-            if (k != nullptr
-                && sm::creature_def_from_kind(k->type) == wolf) {
+            const auto* k = sm::sub::slot_kind(*wObjs, s);
+            if (sm::creature_def_from_kind(k->type) == wolf) {
                 wolfE = e; break;
             }
         }
@@ -6222,18 +6246,20 @@ bool run_console_smoke(App& app) {
         // A fresh, non-player-side bandit.
         entt::entity target = entt::null;
         {
+            // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): здесь стояла
+            // ЕДИНСТВЕННАЯ полная копия отбора — теперь это дверь, а своё
+            // у вселения осталось ровно одно требование: боевой лист.
+            sm::sub::SubObjects* tObjs = sm::sub::objects_find(reg);
             auto tv = reg.view<sm::ecs::ObjectSlot>();
             for (auto e : tv) {
-                if (sm::sub::body_pools(reg, e) == nullptr
-                    || sm::sub::body_combat(reg, e) == nullptr) continue;
-                if (sm::sub::is_avatar(reg, e)) continue;
-                if (sm::sub::object_flag(reg, e, sm::sub::kObjDead)
-                    || sm::sub::object_flag(reg, e,
-                                            sm::sub::kObjPlayerSoldier))
+                if (tObjs == nullptr) break;
+                const int s = int(tv.get<sm::ecs::ObjectSlot>(e).slot);
+                if (!sm::sub::slot_npc_candidate(*tObjs, s)) continue;
+                if (sm::sub::slot_flag(*tObjs, s, sm::sub::kObjPlayerSoldier))
                     continue;
-                const auto* k = sm::sub::body_kind(reg, e);
-                if (k != nullptr
-                    && k->type == std::uint16_t(sm::NPCType::Bandit)) {
+                if (sm::sub::slot_combat(*tObjs, s) == nullptr) continue;
+                const auto* k = sm::sub::slot_kind(*tObjs, s);
+                if (k->type == std::uint16_t(sm::NPCType::Bandit)) {
                     target = e; break;
                 }
             }
@@ -6922,12 +6948,21 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                             int alive = 0, dead = 0;
                             auto view =
                                 app.ecs.reg.view<sm::ecs::ObjectSlot>();
+                            // НЕ сведение: прибор печатает ДВЕ категории —
+                            // живых и мёртвых, — то есть спрашивает не «кто
+                            // кандидат», а перепись сцены. Дверь гейта здесь
+                            // съела бы половину ответа.
+                            sm::sub::SubObjects* sObjs =
+                                sm::sub::objects_find(app.ecs.reg);
                             for (auto e : view) {
+                                if (sObjs == nullptr) break;
+                                const int sl = int(
+                                    view.get<sm::ecs::ObjectSlot>(e).slot);
                                 const auto* hp =
-                                    sm::sub::body_pools(app.ecs.reg, e);
+                                    sm::sub::slot_pools(*sObjs, sl);
                                 if (hp == nullptr) continue;
-                                if (sm::sub::object_flag(
-                                        app.ecs.reg, e, sm::sub::kObjDead))
+                                if (sm::sub::slot_flag(*sObjs, sl,
+                                                       sm::sub::kObjDead))
                                     ++dead;
                                 else if (hp->hp > 0) ++alive;
                             }
@@ -7588,18 +7623,20 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto countHostiles = [&]() {
                 int n = 0;
                 auto view = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+                sm::sub::SubObjects* hObjs =
+                    sm::sub::objects_find(app.ecs.reg);
                 for (auto e : view) {
-                    if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)
-                        || sm::sub::object_flag(
-                               app.ecs.reg, e, sm::sub::kObjPlayerSoldier))
+                    if (hObjs == nullptr) break;
+                    const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+                    // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): дверь одна,
+                    // своё у этих двух близнецов — только «мозг боевой».
+                    if (!sm::sub::slot_npc_candidate(*hObjs, s)) continue;
+                    if (sm::sub::slot_flag(*hObjs, s,
+                                           sm::sub::kObjPlayerSoldier))
                         continue;
-                    const auto* aiCol = sm::sub::body_ai(app.ecs.reg, e);
+                    const auto* aiCol = sm::sub::slot_ai(*hObjs, s);
                     if (aiCol == nullptr) continue;
-                    const auto& ai = *aiCol;
-                    const auto* hp = sm::sub::body_pools(app.ecs.reg, e);
-                    if (hp != nullptr
-                        && ai.kind == sm::ecs::SubworldAi::Combat
-                        && hp->hp > 0) {
+                    if (aiCol->kind == sm::ecs::SubworldAi::Combat) {
                         ++n;
                     }
                 }
@@ -7616,18 +7653,20 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             };
             auto findSmokeHostile = [&]() -> entt::entity {
                 auto view = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+                sm::sub::SubObjects* hObjs =
+                    sm::sub::objects_find(app.ecs.reg);
                 for (auto e : view) {
-                    if (sm::sub::object_flag(app.ecs.reg, e, sm::sub::kObjDead)
-                        || sm::sub::object_flag(
-                               app.ecs.reg, e, sm::sub::kObjPlayerSoldier))
+                    if (hObjs == nullptr) break;
+                    const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+                    // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): дверь одна,
+                    // своё у этих двух близнецов — только «мозг боевой».
+                    if (!sm::sub::slot_npc_candidate(*hObjs, s)) continue;
+                    if (sm::sub::slot_flag(*hObjs, s,
+                                           sm::sub::kObjPlayerSoldier))
                         continue;
-                    const auto* aiCol = sm::sub::body_ai(app.ecs.reg, e);
+                    const auto* aiCol = sm::sub::slot_ai(*hObjs, s);
                     if (aiCol == nullptr) continue;
-                    const auto& ai = *aiCol;
-                    const auto* hp = sm::sub::body_pools(app.ecs.reg, e);
-                    if (hp != nullptr
-                        && ai.kind == sm::ecs::SubworldAi::Combat
-                        && hp->hp > 0) {
+                    if (aiCol->kind == sm::ecs::SubworldAi::Combat) {
                         return e;
                     }
                 }
@@ -7903,9 +7942,16 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
             }
             int citizens = 0;
+            // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): обрезок «есть род»
+            // считал горожанами и трупы.
+            sm::sub::SubObjects* cityObjs =
+                sm::sub::objects_find(app.ecs.reg);
             auto cityView = app.ecs.reg.view<sm::ecs::ObjectSlot>();
             for (auto e : cityView) {
-                if (sm::sub::body_kind(app.ecs.reg, e) == nullptr) continue;
+                if (cityObjs == nullptr) break;
+                const int cs = int(
+                    cityView.get<sm::ecs::ObjectSlot>(e).slot);
+                if (!sm::sub::slot_npc_candidate(*cityObjs, cs)) continue;
                 ++citizens;
             }
             // HOW LAZY IS THE TOWN'S GROUND. The layout law asks for one
@@ -8246,10 +8292,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto street = [&app]() {
                 int n = 0;
                 auto v = app.ecs.reg.view<sm::ecs::ObjectSlot>();
+                sm::sub::SubObjects* stObjs =
+                    sm::sub::objects_find(app.ecs.reg);
                 for (auto e : v) {
-                    if (sm::sub::body_kind(app.ecs.reg, e) == nullptr)
-                        continue;
-                    const auto* dS = sm::sub::body_debt(app.ecs.reg, e);
+                    if (stObjs == nullptr) break;
+                    const int ss = int(v.get<sm::ecs::ObjectSlot>(e).slot);
+                    if (!sm::sub::slot_npc_candidate(*stObjs, ss)) continue;
+                    const auto* dS = sm::sub::slot_debt(*stObjs, ss);
                     if (dS == nullptr) continue;
                     const auto& d = *dS;
                     if (d.stock != std::uint8_t(sm::MacroStock::Population)) {
@@ -8560,10 +8609,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (app.smoke.trackedPhase == 0) {
                 entt::entity body = entt::null;
                 const sm::ecs::MacroDebt* debt = nullptr;
-                for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
-                    if (sm::sub::object_flag(reg, e, sm::sub::kObjDead))
-                        continue;
-                    const auto* dF = sm::sub::body_debt(reg, e);
+                sm::sub::SubObjects* fObjs = sm::sub::objects_find(reg);
+                auto fv = reg.view<sm::ecs::ObjectSlot>();
+                for (auto e : fv) {
+                    if (fObjs == nullptr) break;
+                    const int fs = int(fv.get<sm::ecs::ObjectSlot>(e).slot);
+                    if (!sm::sub::slot_npc_candidate(*fObjs, fs)) continue;
+                    const auto* dF = sm::sub::slot_debt(*fObjs, fs);
                     if (dF == nullptr) continue;
                     const auto& d = *dF;
                     if (d.stock
