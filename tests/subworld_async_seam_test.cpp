@@ -83,18 +83,28 @@ std::uint8_t expected_placeholder_tile(const sm::sub::CellContext& c, float heig
     return sm::sub::TILE_GRASS;
 }
 
-// Records ONE check under `reason`, and hands the verdict back so a caller can
-// keep the original early-exit on a broken placeholder.
+// ТРИ ФАКТА, ТРИ УТВЕРЖДЕНИЯ — И НИ ОДНОГО `CHECK(true)`. Прежде эта функция
+// писала ровно ОДНУ проверку на вызов: три ранних выхода с `CHECK(false,
+// reason)` и `CHECK(true, reason)` в хвосте. Два дефекта в одной форме, и оба
+// названы §8: (1) проверка, которая не может упасть НИКОГДА (п.6) — читатель
+// видит её и принимает за свидетельство, что факты сошлись; (2) первый
+// сломанный факт ПРЯТАЛ второй ранним выходом, то есть прогон узнавал одну
+// беду за правку. Теперь плитка и высота судятся ПОРОЗНЬ и обе печатаются.
+//
+// Индекс остаётся отдельным и ПЕРВЫМ: при выходе за буфер два факта ниже не
+// читаются вовсе, и утверждать их было бы нечем — это не ранний выход ради
+// краткости, а граница области определения.
 bool expect_placeholder(const sm::sub::SeamlessSubworldManager& mgr,
                         sm::sub::CellContext (*resolver)(int, int),
                         int x,
                         int y,
                         const char* reason) {
     const std::size_t idx = sm::sub::tile_index(x, y);
-    if (idx >= mgr.tiles().size() || idx >= mgr.heightmap().size()) {
-        CHECK(false, reason);
-        return false;
-    }
+    const bool inRange =
+        idx < mgr.tiles().size() && idx < mgr.heightmap().size();
+    CHECK(inRange, reason);
+    if (!inRange) return false;
+
     const int cellX = x / sm::sub::kCellSize;
     const int cellY = y / sm::sub::kCellSize;
     const sm::sub::CellContext ctx = resolver(
@@ -102,16 +112,13 @@ bool expect_placeholder(const sm::sub::SeamlessSubworldManager& mgr,
         mgr.center_cy() + cellY - 1);
     const float expectedHeight = expected_placeholder_height(ctx);
     const std::uint8_t expectedTile = expected_placeholder_tile(ctx, expectedHeight);
-    if (mgr.tiles()[idx] != expectedTile) {
-        CHECK(false, reason);
-        return false;
-    }
-    if (std::fabs(mgr.heightmap()[idx] - expectedHeight) > 0.0001f) {
-        CHECK(false, reason);
-        return false;
-    }
-    CHECK(true, reason);
-    return true;
+
+    const bool tileOk = mgr.tiles()[idx] == expectedTile;
+    const bool heightOk =
+        std::fabs(mgr.heightmap()[idx] - expectedHeight) <= 0.0001f;
+    CHECK(tileOk, reason);
+    CHECK(heightOk, reason);
+    return tileOk && heightOk;
 }
 
 bool has_structure(const sm::sub::SeamlessSubworldManager& mgr,
