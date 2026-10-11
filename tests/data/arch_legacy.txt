@@ -73,61 +73,25 @@ channel	src/sub/spawn.h	#include "macro/macro_stock.h"
 channel	src/sub/spell_effects.cpp	#include "macro/store.h"
 channel	src/sub/vk_renderer_3d.cpp	#include "macro/fauna.h"
 channel	src/sub/vk_renderer_3d.cpp	#include "macro/state.h"
-verdict	SKELETON.md	* **`CarrierSpread`** — **ЕДИНСТВЕННОЕ ИСКЛЮЧЕНИЕ, названное вслух:** лес. Прибавка про�
-verdict	SKELETON.md	* **`HealToBaseline`** — ёмкость клетки есть чистая функция терраина и сида и не убыва�
 verdict	SKELETON.md	**Вердикт владельца 2026-09-25:** app-слой есть РЕДАКТОР над миром (ЗАКОН АГНОСТИЧНО�
 verdict	SKELETON.md	**ПРАВИЛО ОДЕВАНИЯ.** Ни один шаг не считается сделанным, пока в этом файле не �
-verdict	SKELETON.md	- «вода ли клетка» — ОДИН порог высоты (`is_water`), никаких масок, макро и микро од
 verdict	SKELETON.md	- интерьеры/этажи, берущие население и фауну клетки двери — смешение двух аг�
 verdict	SKELETON.md	- макромир под землёй симулируется штатно, медленнее по делителю → фоновый т
 verdict	SKELETON.md	- раны солдат ростера не сохраняются — ДА, значение имеют только смерти → ПР�
 verdict	SKELETON.md	- раны спроецированного лорда → его анкету — ДА (макросквады входят в субмир
 verdict	SKELETON.md	| **добыча и материя** (перепись 2026-09-27) | одна дверь изъятия — ПРАВДА; но контур 
-verdict	SKELETON.md	| **числа клетки, до шейдера не доезжающие** | числа ресурсных полей (`resource_field.h`)
-verdict	SKELETON.md	| **шапка `macro.frag` переписана по факту** | врала в ПЯТИ утверждениях: «Four sampled images�
 verdict	SKELETON.md	| AI | порядок по ординалу и один RNG — ПРАВДА; два switch; 9 машин без хвоста; backlog-skip;
-verdict	SKELETON.md	| `cells_[9]` (тайлы, trav, высоты, структуры на клетку) | ≈6 МиБ × 9 | 54 МиБ | менеджер (`:24
 verdict	SKELETON.md	| app — редактор: прямой доступ законен | матрица выше; вердикт 2026-09-25 | **ПРАВДА**
-verdict	SKELETON.md	| staging светового поля кольцуется | slot = `lightFieldFrame_ % 2` при гейте `% 8 == 0` ⇒ всегда 0; 
-verdict	SKELETON.md	| ЗАКОН КОНСТАНТ | `kRestTicksPerTurn = 128 // po2` (`:2479`) — вывода нет; литерал `max_daily_ticks=32` в �
-verdict	SKELETON.md	| адрес клетки | ПРАВДА в `src/macro` для `cell_of/cell_step`; остатки делений (8 строк), рукоп
-verdict	SKELETON.md	| буферы аллоцируются на входе в сцену | в `init` — тела, частицы, стампы, светово
 verdict	SKELETON.md	| время | ПРАВДА; даты фактов дня расходятся с обрабатываемым днём | — |
-verdict	SKELETON.md	| все пайплайны используются | `shadowMeshPipe_` создаётся и уничтожается, биндится 0 
 verdict	SKELETON.md	| выход из мира | факт POD — ПРАВДА; четыре канала, второй тип записи со строкам�
-verdict	SKELETON.md	| генерация из 2D высот макромира и контекста 3×3 | `nbHeights[9]`, `nbBiome[9]`, `nbBiome5` (5×5 би�
-verdict	SKELETON.md	| два потока заселения | в одной функции `spawn_cell_npcs`: население места (займ Populatio
 verdict	SKELETON.md	| каждое действие смоука что-то утверждает | НЕТ: сюита 66 сценариев вычисляет 
-verdict	SKELETON.md	| канвас пятен — состояние только на GPU, не сохраняемое | `stainCanvas_` 8192² RGBA8 = **256 М
-verdict	SKELETON.md	| кладбище по фенсу | `defer_destroy` (`:2464,:2497`), `collect_deferred` строго после фенса; `static_assert 
-verdict	SKELETON.md	| кросс-кадровое состояние боя пересобирается каждый тик | `crowd_`, сетки, поле, �
 verdict	SKELETON.md	| направление: `src/macro` не включает `src/sub` | `rg '#include "sub/' src/macro` → 0 | **ПРАВДА** |
-verdict	SKELETON.md	| настройка — CSV + генератор, шейдер не правится | `gen_ground_table.py` → `ground_surface.glsl`; с�
 verdict	SKELETON.md	| никаких LOD-скипов и заморозки NPC | в тике субмира пропусков тел нет; смерти св
-verdict	SKELETON.md	| ноль здоровья — событие, hp в минус свободно | зеркало клампит `[0,maxHp]` (`:1227`); о�
-verdict	SKELETON.md	| нужда места есть ДОЛЯ БЮДЖЕТА ГОРОЖАНИНА, а не строка авторской лестницы | **
-verdict	SKELETON.md	| один оборот = один тик, мир не быстрее номинала | `:6320-6349`, дверь `promote_turn_ticks` од�
-verdict	SKELETON.md	| память | `sizeof` под `static_assert` — ПРАВДА на libc++; на libstdc++/MSVC ассерты падают из-за `st
 verdict	SKELETON.md	| перемещение спроецированного лорда в субмире → его `MacroCell` | записи нет (`rg 'Ma
 verdict	SKELETON.md	| производство/экономика | крафт одной дверью — ПРАВДА; скор без стоимости вх
-verdict	SKELETON.md	| промоушн только на живой карте, сброс, а не игнор | `fast_forward_allowed` (`:2505`), `:2519-2523` 
-verdict	SKELETON.md	| путь полёта | `build_flight_path` (`:2076-2098`) — второй закон пути (прямая по тору) рядом с
-verdict	SKELETON.md	| рендерер — не член симуляции | **нарушено:** `Renderer3DVk renderer3dVk_` — ЧЛЕН класса `Subw
 verdict	SKELETON.md	| рождение мира | порядок рельеф→вода→биомы→реки→залежи — ПРАВДА; дороги �
-verdict	SKELETON.md	| снимок мира — одна структура | `gs` + `npcAi` + `logic` + `quests` + слои в `App`; `stage_save_state` коп
 verdict	SKELETON.md	| стык | направление — ПРАВДА; вход конвертом, выход по ходу, один registry, лут тр�
-verdict	SKELETON.md	| стык клеток на карте — ОДНА ширина на все переходы | `BT_SEAM = BT_CELL / 3` (`shaders/macro.fra
-verdict	SKELETON.md	| субмир-рендер не читает `GameState`/`MacroWorld` | 0 упоминаний в `vk_renderer_3d.cpp`; но включен
-verdict	SKELETON.md	| у стыка есть материал только у одной пары | вода вырезана из цветового смеше
-verdict	SKELETON.md	| — ЧАРТ рисует 3 рода фич из 12: ПАШНЮ не рисует вовсе | ветви `fb > 0.5 && fb < 2.5` (доро
-verdict	SKELETON.md	| — блик по воде есть зеркальная геометрия, и его числа без вывода | виртуальн
-verdict	SKELETON.md	| — гнездо чисел без вывода | `MTN_AMBIENT = 0.44`, `MTN_RIDGE_FREQ = 0.16`, `octN = 3`, `eC = 2.0`, `MTN_TERRACES = 4
 verdict	SKELETON.md	| — комментарий над проходом врёт | «Squad NPCs draw a 3-figure cluster around the cell centre» — класт
-verdict	SKELETON.md	| — материал стыка есть только у пары «суша/вода» | вода вырезана из смешения 
-verdict	SKELETON.md	| — порог опасности выведен из прежней настройки | `smoothstep(166.0, 255.0, zone)` с обосно
-verdict	SKELETON.md	| — сквад рисуется ОДНИМ спрайтом | `draw_sprite` зовётся один раз на сквад; «how many sou
-verdict	SKELETON.md	| — фигуры гейтит ЗНАНИЕ, и гейт совпадает с законом шейдера | рисуются тольк�
-verdict	SKELETON.md	| — цветовое смешение смотрит НЕПОЛНЫЙ контекст | диагонали (`nbNE`…`nbSW`) вычисл
 verdict	SKELETON.md	| — чернильный берег смотрит только четыре кардинала | диагональный контакт 
 verdict	SKELETON.md	До 2026-09-23 эта таблица утверждала: «одна свёртка на весь проект: `wrapi`; шесть рук
 verdict	SKELETON.md	Число агностично, смысл ему задаёт фича, стоящая РОВНО на той клетке; второго
