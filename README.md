@@ -154,7 +154,7 @@ balance_out`; `tests/balance_run.cpp:1-13`) — мир играет сам се�
 **Консоль** (`` ` `` в игре) — ЕДИНАЯ тест-система (вердикт владельца
 2026-09-07, CANON S22): состояние игры собирается командами, `exec <file>`
 прогоняет файл команд как один сценарий (останов на первой ошибке). Реестр —
-49 строк `register_cmd` в `register_console_commands` (`src/app/main.cpp:3930`);
+49 строк `register_cmd` в `register_console_commands@src/app/main.cpp`;
 `help` и `help <cmd>` печатают всё из реестра. Группы: мир (`tp`,
 `tp_settlement`, `settime`, `addtime`, `simspeed [mult]`, `rest`, `revealmap`,
 `chop [radius]`, `pos`, `time`), спавн (`spawn`, `spawn_squad`, `squad_orders`,

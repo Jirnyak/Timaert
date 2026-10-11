@@ -18,7 +18,6 @@
 #
 # Строки ниже отсортированы и порождены прогоном прибора на 2026-09-27.
 CANON.md	CMakeLists.txt:15
-CANON.md	core/stacks.h:160
 CANON.md	core/time.h:47
 CANON.md	currency.h:96-168
 CANON.md	deposit_layer.cpp:229-232
@@ -29,7 +28,6 @@ CANON.md	engine.cpp:3123
 CANON.md	features.h:173
 CANON.md	features.h:5-8
 CANON.md	items.cpp:266
-CANON.md	items.cpp:40-62
 CANON.md	npc_ai.cpp:3070
 CANON.md	npc_ai.cpp:3161
 CANON.md	npc_ai.cpp:3279
@@ -46,7 +44,6 @@ CANON.md	ui/overlays.cpp:887-899
 CANON.md	zones.h:30
 README.md	src/app/main.cpp:155-162
 README.md	src/app/main.cpp:3840-3843
-README.md	src/app/main.cpp:3930
 README.md	tests/balance_run.cpp:1-13
 SKELETON.md	:101
 SKELETON.md	:103
@@ -75,7 +72,6 @@ SKELETON.md	:184-185
 SKELETON.md	:197
 SKELETON.md	:201
 SKELETON.md	:2027
-SKELETON.md	:2041
 SKELETON.md	:207-208
 SKELETON.md	:207-209
 SKELETON.md	:21
@@ -197,14 +193,11 @@ SKELETON.md	:9512
 SKELETON.md	:96
 SKELETON.md	:99-100
 SKELETON.md	:990
-SKELETON.md	:993
 SKELETON.md	ai.cpp:109-118
 SKELETON.md	ai.cpp:93
 SKELETON.md	app/app_state.h:161
 SKELETON.md	app/main.cpp:1375
-SKELETON.md	app/main.cpp:1645
 SKELETON.md	app/main.cpp:1897-1901
-SKELETON.md	app/main.cpp:277
 SKELETON.md	app/main.cpp:320-335
 SKELETON.md	app/main.cpp:3400
 SKELETON.md	app/main.cpp:3490-3497
@@ -214,7 +207,6 @@ SKELETON.md	app/main.cpp:4970
 SKELETON.md	app/main.cpp:6320-6322
 SKELETON.md	app/main.cpp:662
 SKELETON.md	app/main.cpp:700
-SKELETON.md	app_state.h:151
 SKELETON.md	app_state.h:201
 SKELETON.md	army.h:179
 SKELETON.md	auto_battle.h:168
@@ -244,7 +236,6 @@ SKELETON.md	core/time.h:82
 SKELETON.md	core/torus.h:60
 SKELETON.md	currency.h:184
 SKELETON.md	damage.cpp:129
-SKELETON.md	debug_console.h:38-40
 SKELETON.md	deposit_layer.cpp:137-138
 SKELETON.md	deposit_layer.cpp:144-156
 SKELETON.md	deposit_layer.cpp:178
@@ -257,19 +248,15 @@ SKELETON.md	econ_day.cpp:148-189
 SKELETON.md	econ_day.cpp:176
 SKELETON.md	econ_day.cpp:194
 SKELETON.md	econ_day.cpp:209
-SKELETON.md	econ_day.cpp:320
 SKELETON.md	econ_day.cpp:394-401
 SKELETON.md	econ_day.cpp:70
 SKELETON.md	econ_day.cpp:95-99
 SKELETON.md	econ_day.h:114-115
 SKELETON.md	econ_day.h:18-19
-SKELETON.md	econ_day.h:246
-SKELETON.md	econ_day.h:506
 SKELETON.md	econ_day.h:86
 SKELETON.md	econ_v1_test.cpp:565
 SKELETON.md	economy.cpp:46-63
 SKELETON.md	economy.cpp:85
-SKELETON.md	economy.h:100
 SKELETON.md	ecs/components.h:218
 SKELETON.md	ecs/components.h:243
 SKELETON.md	ecs/components.h:362
@@ -304,8 +291,6 @@ SKELETON.md	items.cpp:444-447
 SKELETON.md	items.cpp:466-470
 SKELETON.md	items.cpp:478-485
 SKELETON.md	items.cpp:572
-SKELETON.md	items.cpp:688
-SKELETON.md	items.cpp:692
 SKELETON.md	items.cpp:762-777
 SKELETON.md	items.cpp:99
 SKELETON.md	items.h:104-174
@@ -337,7 +322,6 @@ SKELETON.md	macro_stock.cpp:607
 SKELETON.md	macro_stock.cpp:610
 SKELETON.md	macro_stock.h:114-116
 SKELETON.md	macro_stock.h:60-74
-SKELETON.md	macro_world.h:63
 SKELETON.md	macro_world.h:68-71
 SKELETON.md	main.cpp:1398
 SKELETON.md	main.cpp:1674
@@ -385,8 +369,6 @@ SKELETON.md	nav_field.h:73-74
 SKELETON.md	node_registry.cpp:19
 SKELETON.md	node_registry.h:4
 SKELETON.md	npc.h:134
-SKELETON.md	npc.h:378
-SKELETON.md	npc_ai.cpp:1185
 SKELETON.md	npc_ai.cpp:1199
 SKELETON.md	npc_ai.cpp:1372
 SKELETON.md	npc_ai.cpp:1742
@@ -397,7 +379,6 @@ SKELETON.md	npc_ai.cpp:2313
 SKELETON.md	npc_ai.cpp:2725
 SKELETON.md	npc_ai.cpp:2862
 SKELETON.md	npc_ai.cpp:2894
-SKELETON.md	npc_ai.cpp:3107-3112
 SKELETON.md	npc_ai.cpp:3468
 SKELETON.md	npc_ai.cpp:3479
 SKELETON.md	npc_ai.cpp:3608
@@ -414,7 +395,6 @@ SKELETON.md	npc_ai.cpp:4867
 SKELETON.md	npc_ai.cpp:4872
 SKELETON.md	npc_ai.cpp:4875
 SKELETON.md	npc_ai.cpp:4981
-SKELETON.md	npc_ai.cpp:679
 SKELETON.md	npc_ai.cpp:791
 SKELETON.md	npc_ai.cpp:917
 SKELETON.md	npc_ai.cpp:946-949
@@ -520,7 +500,6 @@ SKELETON.md	squad.h:378
 SKELETON.md	squad.h:656-712
 SKELETON.md	squad.h:785
 SKELETON.md	squad.h:896
-SKELETON.md	squad.h:932
 SKELETON.md	squad_walk.h:42
 SKELETON.md	squad_walk.h:42-51
 SKELETON.md	stacks.h:125
@@ -534,11 +513,6 @@ SKELETON.md	state.h:616
 SKELETON.md	state.h:617
 SKELETON.md	state.h:623-626
 SKELETON.md	state.h:845-849
-SKELETON.md	state.h:868
-SKELETON.md	state.h:872
-SKELETON.md	state.h:884
-SKELETON.md	state.h:977
-SKELETON.md	store.h:256
 SKELETON.md	store.h:65
 SKELETON.md	sub/ai.cpp:28
 SKELETON.md	sub/base_generator.cpp:373-374
@@ -546,8 +520,6 @@ SKELETON.md	sub/damage.cpp:10-11
 SKELETON.md	sub/damage.cpp:105
 SKELETON.md	sub/engine.cpp:1346-1356
 SKELETON.md	sub/engine.cpp:1402-1403
-SKELETON.md	sub/engine.cpp:1743
-SKELETON.md	sub/engine.cpp:2178
 SKELETON.md	sub/engine.cpp:2220
 SKELETON.md	sub/engine.cpp:2245
 SKELETON.md	sub/engine.cpp:2248
@@ -559,7 +531,6 @@ SKELETON.md	sub/engine.cpp:3473-3565
 SKELETON.md	sub/engine.cpp:4501
 SKELETON.md	sub/engine.cpp:4644
 SKELETON.md	sub/engine.cpp:620-622
-SKELETON.md	sub/engine.cpp:622
 SKELETON.md	sub/engine.cpp:636-638
 SKELETON.md	sub/engine.cpp:779-787
 SKELETON.md	sub/engine.cpp:841-842
@@ -602,7 +573,6 @@ SKELETON.md	ui/screens.cpp:387-392
 SKELETON.md	vk_macro_renderer.cpp:189
 SKELETON.md	vk_macro_renderer.cpp:31
 SKELETON.md	vk_macro_renderer.cpp:89
-SKELETON.md	vk_renderer_3d.cpp:1964
 SKELETON.md	vk_renderer_3d.cpp:2305-2321
 SKELETON.md	vk_renderer_3d.cpp:2742
 SKELETON.md	vk_renderer_3d.cpp:2986-2990
