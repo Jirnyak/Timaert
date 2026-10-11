@@ -1,7 +1,6 @@
 #include "macro/player_entity.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
-#include "macro/agent_memory.h"
 #include "macro/entry_context.h"
 #include "macro/landmark_iter.h"   // for_each_place — места по слотам
 #include "tables/faction.h"
@@ -280,11 +279,6 @@ const SpellBook* player_spellbook(const GameState& gs,
                                   const MacroStore& st) {
     const std::uint16_t slot = flag_slot_or_none(gs, st);
     return slot == kMacroNoSlot ? nullptr : &st.spellBook[slot];
-}
-
-AgentMemory* player_head(const GameState& gs, MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
-    return slot == kMacroNoSlot ? nullptr : &st.memory[slot];
 }
 
 } // namespace sm

@@ -832,7 +832,6 @@ macro-registry.md	:790-791
 macro-registry.md	:828
 macro-registry.md	:850-882
 macro-registry.md	CMakeLists.txt:249
-macro-registry.md	agent_memory.h:64-67
 macro-registry.md	app/main.cpp:277
 macro-registry.md	app/main.cpp:4970
 macro-registry.md	app/main.cpp:621

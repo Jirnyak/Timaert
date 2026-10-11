@@ -1,5 +1,4 @@
 #include "macro/npc_spawn.h"
-#include "macro/agent_memory.h"
 #include "macro/characters.h"
 #include "tables/faction.h"
 #include "tables/biomes.h"

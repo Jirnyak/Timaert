@@ -91,9 +91,13 @@ enum class FactKind : std::uint16_t {
     // a vein worked out. NOT "used a thing": that is a mechanism, and this is
     // a deed (see the note above the enum).
     Drained,
-    // Found what the world did not know it had: a vein under a hill, a black
-    // artifact in a ruin.
-    Discovered,
+    // (Род `Discovered` УНИЧТОЖЕН 2026-10-11, вердикт владельца: «снести
+    // строку». Единственным его писателем было РОЖДЕНИЕ ЖИЛ в течение партии,
+    // вырезанное нарядом M-81 («НЕ БУДЕТ РОЖАТЬСЯ ЖИЛ В ТЕЧЕНИ ВАРТИИ МЫ ЭТО
+    // ВЫРЕЗАЕМ»), и с того дня род факта стоял строкой словаря с НУЛЁМ
+    // отправителей — та же колонка-сирота, только в каталоге (DOD п.9).
+    // Когда у открытия появится настоящий открыватель — данж, руина, чёрный
+    // артефакт (эпик M-248), — род заведут заново вместе с ним.)
     Spawned,         // subject appeared in the world
     QuestTaken,      // subject took object's contract
     QuestDone,       // subject finished it
@@ -161,9 +165,6 @@ inline constexpr FactKindDef kFactKinds[] = {
     {FactKind::OwnerChanged, "owner_changed", "Changed hands", 64,     20},
     {FactKind::Explored,     "explored",      "Explored",      64,      2},
     {FactKind::Drained,      "drained",       "Drained",       64,     10},
-    // Finding what the world did not know it had: a vein under a hill, a
-    // black artifact in a ruin (owner's examples).
-    {FactKind::Discovered,   "discovered",    "Discovered",    64,     15},
     {FactKind::Spawned,      "spawned",       "Appeared",      16,      0},
     {FactKind::QuestTaken,   "quest_taken",   "Took contract", 32,      1},
     {FactKind::QuestDone,    "quest_done",    "Kept contract", 32,      5},

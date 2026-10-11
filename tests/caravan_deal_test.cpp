@@ -17,7 +17,6 @@
 #include "macro/labour.h"           // souls_home — рты места
 #include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
 
-#include "macro/agent_memory.h"
 #include "tables/commodity.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"

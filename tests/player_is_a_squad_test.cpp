@@ -325,33 +325,19 @@ void test_the_entity_numbers_are_not_stale() {
           "the entity stands where he stands");
 }
 
-// ── 6. Его голова — компонент, а не поле ─────────────────────────────────
-void test_the_head_is_on_the_entity() {
-    GameState gs{};
-    gs.mapW = gs.mapH = 64;
-    ecs::World w;
-    auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    ensure_macro_player_entity(gs, sm::store_of(w));
-
-    AgentMemory* head = player_head(gs, *wStore_);
-    CHECK(head != nullptr, "the player's head is reachable through one door");
-    remember(*head, make_debt_fact(kDebtToSettlement, 7, 15, 3));
-
-    // It rides the SAME record every leader's memory rides — proving it is not
-    // saved twice and not saved never.
-    const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(*wStore_);
-    const MacroNpcRecord* mine = nullptr;
-    for (const MacroNpcRecord& r : snap) {
-        if (r.spawnId.index == ecs::kPlayerSquadOrdinal) mine = &r;
-    }
-    CHECK(mine != nullptr, "his record is in the snapshot");
-    const MemoryEntry* debt = mine
-        ? recall(mine->memory, AgentMemoryKind::Debt, 7, kDebtToSettlement)
-        : nullptr;
-    CHECK(debt != nullptr, "and it carries what he remembers");
-    CHECK(debt && memory_amount(*debt) == 15, "with the amount intact");
-}
+// ── 6. ЕГО ГОЛОВА — СВИДЕТЕЛЬ УМЕР ВМЕСТЕ С КОЛОНКОЙ (2026-10-11) ────────
+// Здесь стоял `test_the_head_is_on_the_entity`: он доказывал, что голова
+// игрока есть ОБЫЧНАЯ колонка его записи, достижимая одной дверью
+// (`player_head`), и что она едет в снимке РОВНО ОДИН раз — не дважды и не
+// никогда. Это был свидетель замысла «игрок — частный случай сквада», и
+// проверял он его по памяти.
+//
+// Снят как ОСИРОТЕВШИЙ (AGENTS §5 п.6): колонка `memory` и вся
+// `AgentMemory` уничтожены вердиктом владельца по переписи сирот — `recall`
+// имел НОЛЬ прод-вызовов. САМ ЗАМЫСЕЛ при этом не остался без свидетеля: что
+// игрок едет в снимке обычной записью, доказывают соседние проверки этого же
+// файла — его инвентарь, пулы, лист и клетка. Памяти среди них больше нет,
+// потому что её больше нет в мире (M-206).
 
 // ── 7. Одна дверь сборки стороны боя ─────────────────────────────────────
 // The app used to build the player's AutoBattleSide by hand beside the door
@@ -510,7 +496,6 @@ int main() {
     test_ai_leaves_the_player_squad_standing();
     test_the_players_men_are_never_swept();
     test_the_entity_numbers_are_not_stale();
-    test_the_head_is_on_the_entity();
     test_one_door_assembles_every_battle_side();
     test_the_players_wound_settles_through_the_one_door();
     return sm::test::report("player_is_a_squad_test");

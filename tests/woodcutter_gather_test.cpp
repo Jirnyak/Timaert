@@ -16,7 +16,6 @@
 #include "macro/landmark_iter.h"  // for_each_place — перепись мест
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/world_row.h"
-#include "macro/agent_memory.h"
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"
 #include "tables/faction.h"
@@ -405,34 +404,21 @@ void test_the_mine_runs_while_the_player_is_away() {
           "is worked while he is on the map");
 }
 
-void test_agent_memory_is_bounded_and_current() {
-    // ЖИЛЕЦ ПАМЯТИ СЕГОДНЯ ОДИН — ДОЛГ. Снимок рынка (первый жилец) вырезан
-    // 2026-09-22: он писался каждым выездом и не читался ни одной строкой
-    // мира. Законы САМОГО ВМЕСТИЛИЩА от этого не изменились, и свидетель
-    // обязан проверять их на живом роде, а не на снесённом.
-    AgentMemory m{};
-    remember(m, make_debt_fact(kDebtToSettlement, 5, 100, 10));
-    const MemoryEntry* d = recall(m, AgentMemoryKind::Debt, 5,
-                                  kDebtToSettlement);
-    CHECK(m.count == 1 && d && memory_amount(*d) == 100,
-          "a memory can be recalled by (kind, subject)");
-    remember(m, make_debt_fact(kDebtToSettlement, 5, 40, 20));
-    d = recall(m, AgentMemoryKind::Debt, 5, kDebtToSettlement);
-    CHECK(m.count == 1 && d && memory_amount(*d) == 140 && d->day == 20,
-          "the same (kind, subject) FOLDS by its own law - a debt SUMS");
-    CHECK(recall(m, AgentMemoryKind::Debt, 5, kDebtToFaction) == nullptr,
-          "the key is (kind, subject, SPACE): owing a town is not owing a "
-          "crown");
-    for (int i = 0; i < kAgentMemorySlots + 3; ++i) {
-        remember(m, make_debt_fact(kDebtToSettlement,
-                                   std::uint16_t(100 + i), 1,
-                                   std::uint32_t(30 + i)));
-    }
-    CHECK(int(m.count) == kAgentMemorySlots,
-          "a bounded head never grows past its slots");
-    CHECK(recall(m, AgentMemoryKind::Debt, 5, kDebtToSettlement) == nullptr,
-          "past the cap the OLDEST memory is forgotten");
-}
+// ── ПАМЯТЬ АГЕНТА — СВИДЕТЕЛЬ УМЕР ВМЕСТЕ С ВМЕСТИЛИЩЕМ (2026-10-11) ─────
+// Здесь стоял `test_agent_memory_is_bounded_and_current`: он проверял законы
+// САМОГО ВМЕСТИЛИЩА — отзыв по ключу (род, субъект, пространство), свёртку
+// одного ключа своим законом (долг СУММИРУЕТСЯ), кап слотов и забывание
+// старейшего за капом. Проверял честно и на живом роде.
+//
+// Снят как ОСИРОТЕВШИЙ (AGENTS §5 п.6), а не как плохой: вся `AgentMemory`
+// уничтожена вердиктом владельца по переписи сирот — `recall` имел НОЛЬ
+// прод-вызовов, то есть НИКТО НИКОГДА НЕ ВСПОМИНАЛ, а писала память одна
+// недоплата штрафа квеста. 2.125 МиБ по капу, 99 % мёртвых байт
+// макро-состояния. Законы вместилища верны и сегодня — проверять их не на
+// чем: вместилища нет. Когда отношения макромира дойдут до долга, память
+// заведут заново ТАМ, где её читают (M-206), и свидетель вернётся вместе с
+// ней. Из прежнего жильца уцелела одна функция — `stock_class` переехала к
+// своему единственному читателю (`src/content/quests/procedural.cpp`).
 
 void test_the_vendor_sells_at_the_nearest_city() {
     GameState gs{};
@@ -862,7 +848,6 @@ int main() {
     test_farmer_without_terrain_conjures_nothing();
     test_the_miner_works_the_vein();
     test_the_mine_runs_while_the_player_is_away();
-    test_agent_memory_is_bounded_and_current();
     test_the_vendor_sells_at_the_nearest_city();
     test_the_catch_lands_as_creatures();
     return sm::test::report("woodcutter_gather_test");

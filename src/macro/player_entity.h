@@ -19,7 +19,7 @@
 // own. Every consumer of those was a player-specific path — a second kind
 // of squad with its own projection, its own battle side and its own casualty
 // bookkeeping. The merge of 2026-08-27 collapsed them: the creatures is
-// `ecs::SquadUpkeep`, the bag `ecs::NpcInventory`, the head `AgentMemory`, and
+// `ecs::SquadUpkeep`, the bag `ecs::NpcInventory`, and
 // all three ride the same macro-snapshot record every lord's do.
 //
 // EVERYTHING has moved. WHERE he stands moved HERE with подпосадка 4
@@ -159,10 +159,10 @@ inline bool player_wears_another_body(const GameState& gs) {
 Inventory* player_inventory(const GameState& gs, MacroStore& st);
 const Inventory* player_inventory(const GameState& gs, const MacroStore& st);
 
-// What the player REMEMBERS: the ordinary AgentMemory of the same record, the
-// same column every squad leader carries. It sat on PlayerState as a second
-// store until 2026-08-27; the macro record already saved the copy, so the
-// field was a duplicate the save wrote twice and nothing read back.
+// (Дверь «что игрок помнит» — `player_head` — и вся колонка `AgentMemory`
+// УНИЧТОЖЕНЫ 2026-10-11, перепись сирот: `recall` имел НОЛЬ прод-вызовов,
+// то есть никто никогда не вспоминал, а писала память одна недоплата штрафа.
+// 2.125 МиБ по капу — 99 % всех мёртвых байт макро-состояния.)
 // The player's ONE signed fractional stamina carry — `MacroNpcRuntime::spCarry`
 // of his record, the very field every lord on the map keeps. It used to
 // be two unsigned accumulators on App (a spend-only TravelStamina and a
@@ -197,8 +197,6 @@ const SpellBook* player_spellbook(const GameState& gs, const MacroStore& st);
 // (squad.h refresh_body_from_sheet), each bar preserving its fraction
 // («доля у всех», owner 2026-09-10). No-op before the world exists.
 void refresh_player_body(const GameState& gs, MacroStore& st);
-
-AgentMemory* player_head(const GameState& gs, MacroStore& st);
 
 // THE player's OWNED base sheet — the ordinary CharacterSheet column of
 // his record (посадка Б, v91): the writable store creation, level-up,

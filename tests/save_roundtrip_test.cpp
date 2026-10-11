@@ -3,7 +3,6 @@
 #include "macro/state.h"
 #include "macro/macro_snapshot.h"
 #include "macro/deposit_layer.h"
-#include "macro/agent_memory.h"
 #include "tables/codex.h"
 #include "macro/currency.h"
 #include "tables/npc.h"
@@ -291,10 +290,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.inventory.add("coin_empire_copper", 999);
     player.inventory.add("misc_gem", 3);
     player.inventory.add("food", 11);
-    // The player's HEAD rides his record like any leader's (v28 column): a
-    // debt fact, summed by the fact arithmetic.
-    sm::remember(player.memory,
-                 sm::make_debt_fact(sm::kDebtToSettlement, 7, 15, 3));
     add_soldiers(player.inventory, sm::NPCType::Peasant, 4, 1000u);
     add_soldiers(player.inventory, sm::NPCType::Peasant, 3, 1100u);
     add_soldiers(player.inventory, sm::NPCType::Guard, 2, 1200u);
@@ -395,8 +390,9 @@ sm::GameState make_state(sm::MacroStore& st) {
     // MacroCell — set in make_macro_records and proven with every other
     // record field. His coin and goods ride the same record, because his bag
     // is an ordinary NpcInventory on his squad entity.)
-    // (His HEAD rides the same record: AgentMemory is a column of every
-    // leader's macro record, and the player is a leader.)
+    // (Голова лидера `AgentMemory` была колонкой каждой макро-записи и
+    // проверялась здесь; колонка уничтожена 2026-10-11 — читателей у памяти
+    // не было ни одного.)
     // (No sheet here since v91 — посадка Б: his build is the owned
     // CharacterSheet component riding his RECORD's hasSheet block, driven
     // and asserted with the player record in make_macro_records.)

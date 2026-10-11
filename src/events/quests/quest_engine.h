@@ -18,23 +18,21 @@ public:
     // squad entity now (macro/player_entity.h), so the engine is handed the
     // container instead of reaching into PlayerState for one. Null = no world
     // yet: nothing is paid and no delivery can complete.
-    // `head` is what the player REMEMBERS — the ordinary AgentMemory on the
-    // same squad entity, where an unpayable fine is written down as a debt
-    // fact. Handed in for the same reason `bag` is: this layer may not reach
-    // into the ECS, and PlayerState is not a second store for either.
+    // (Параметр `head` — память лидера, куда ложился непокрытый штраф, —
+    // умер 2026-10-11 вместе со всей `AgentMemory`: читателей у памяти не
+    // было ни одного. См. некролог у места записи в `quest_engine.cpp`.)
     // `px`/`py` — the player's macro CELL (his squad's MacroCell, decoded by
     // the caller): handed in like `bag` and `head`, because WHERE he stands
     // stopped being a PlayerState scalar with подпосадка 4 and this layer
     // does not reach into the ECS for it.
     // `sheet` — the player's OWNED CharacterSheet component (посадка Б),
-    // handed in exactly like `bag` and `head`: an XP reward lands in the
+    // handed in exactly like `bag`: an XP reward lands in the
     // body that owns the build, and there is no PlayerState field to write
     // to any more. Null = no world yet; an XP reward simply does not land.
     void tick(std::vector<Quest>& active, MacroStore& st,
               EventBus& bus,
               GameState& gs,
               Inventory* bag,
-              AgentMemory* head,
               CharacterSheet* sheet,
               int px, int py);
 

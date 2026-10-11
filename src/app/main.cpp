@@ -3363,7 +3363,6 @@ void process_world_events(App& app) {
         const sm::ecs::MacroCell* qc = sm::player_flag_cell(app.gs, *app.macroStore);
         app.quests.tick(app.activeQuests, *app.macroStore, app.bus, app.gs,
                         sm::player_inventory(app.gs, *app.macroStore),
-                        sm::player_head(app.gs, *app.macroStore),
                         sm::player_sheet(app.gs, *app.macroStore),
                         qc ? sm::ecs::cell_x(*qc, app.gs.mapW) : 0,
                         qc ? sm::ecs::cell_y(*qc, app.gs.mapW) : 0);

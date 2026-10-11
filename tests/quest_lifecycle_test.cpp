@@ -9,7 +9,6 @@
 #include "events/logic_nodes.h"
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
-#include "macro/agent_memory.h"
 #include "macro/labour.h"   // settle_souls — фикстура селит души дверью мира
 #include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/squad.h"        // set_suzerain — знание роли в interests ТЕЛА
@@ -81,13 +80,12 @@ sm::MacroHandle settle_place(sm::GameState& gs, sm::SquadType kind,
 // bag is an ordinary NpcInventory on his squad entity), so a headless test
 // simply owns one. It is reset per scenario where a scenario cares.
 sm::Inventory bag{};
-// The player's head: an unpayable fine is written down as a debt fact, and the
-// engine is handed the container instead of reaching into PlayerState — the
-// same reason it is handed `bag`.
-sm::AgentMemory head{};
+// (Голова игрока — `sm::AgentMemory head` — умерла 2026-10-11 вместе со всей
+// памятью агента: непокрытый штраф ложился туда долговым фактом, а читателей
+// у памяти не было ни одного. Движок больше не принимает её параметром.)
 // The player's OWNED sheet (посадка Б): an XP grant lands in the component
-// the body owns, and the applicator/engine are handed it like `bag` and
-// `head`. Reset per scenario beside them.
+// the body owns, and the applicator/engine are handed it like `bag`.
+// Reset per scenario beside them.
 sm::CharacterSheet sheet{};
 
 const sm::Quest* find_delivery_quest(const std::vector<sm::Quest>& quests,
@@ -162,7 +160,6 @@ int count_tag(const sm::EventBus& bus, sm::EventTag tag) {
 
 void test_event_bus_contract_surface() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::EventBus bus;
     CHECK_OR_RETURN(!(bus.tick() != 0
@@ -306,7 +303,6 @@ void test_event_bus_contract_surface() {
 
 void test_quest_accept_event_order() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::Quest q{};
     q.title = "Alias";
@@ -357,7 +353,6 @@ void test_quest_accept_event_order() {
 // one a returning `damage_hp` would have to get past.
 void test_effect_applicator_ts_verbs() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     // The player's standing lives in the relation matrix now, so the verb test
     // drives a whole GameState; `player` stays a reference for readability.
@@ -474,7 +469,6 @@ void test_effect_applicator_ts_verbs() {
 // а не в двери, которую никто не звал.
 void test_grant_xp_pays_the_wis_dividend() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState wisState = fresh_world(64, 64);
     sheet.levelData = sm::default_level_data();
@@ -499,7 +493,7 @@ void test_grant_xp_pays_the_wis_dividend() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, wisState, &bag, &head, &sheet,
+    engine.tick(active, places(), bus, wisState, &bag, &sheet,
                 g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(active.empty(), "the wis-dividend quest did not complete");
@@ -517,7 +511,6 @@ void test_grant_xp_pays_the_wis_dividend() {
 // piled up unspendable, and a quest-only playthrough never levelled at all.
 void test_quest_xp_reward_levels_the_player() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(64, 64);
     sheet.levelData = sm::default_level_data();
@@ -547,7 +540,7 @@ void test_quest_xp_reward_levels_the_player() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(active.empty(), "the reward quest did not complete");
     CHECK_OR_RETURN(!(sheet.levelData.level != 4),
@@ -566,7 +559,6 @@ void test_quest_xp_reward_levels_the_player() {
 // which nothing has ever emitted, so it could not fire (removed 2026-08-05).
 void test_builtin_nodes_are_registered_and_active() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::LogicNodeEngine logic;
     sm::register_builtin_nodes(logic);
@@ -587,7 +579,6 @@ void test_builtin_nodes_are_registered_and_active() {
 // mutating the player. Custom is the permanent such tag.
 void test_unhandled_tag_is_inert_in_applicator() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState levelState{};
     bag.add("coin_empire_copper", 6);
@@ -623,7 +614,6 @@ void test_unhandled_tag_is_inert_in_applicator() {
 
 void test_settlement_show_dialog_node() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     const auto run_case = [](sm::EventTag tag, const char* name) {
         sm::PlayerState player{};
@@ -669,7 +659,6 @@ void test_settlement_show_dialog_node() {
 
 void test_logic_node_add_registers_inactive() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
@@ -700,7 +689,6 @@ void test_logic_node_add_registers_inactive() {
 
 void test_logic_node_pending_ids_survive_node_add() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
@@ -753,7 +741,6 @@ void test_logic_node_pending_ids_survive_node_add() {
 
 void test_logic_node_tick_order_matches_ts_set() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
@@ -800,7 +787,6 @@ void test_logic_node_tick_order_matches_ts_set() {
 
 void test_logic_node_effect_can_remove_self() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
@@ -831,7 +817,6 @@ void test_logic_node_effect_can_remove_self() {
 
 void test_logic_node_self_reactivation_safe_cases() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     {
         sm::PlayerState player{};
@@ -891,7 +876,6 @@ void test_logic_node_self_reactivation_safe_cases() {
 
 void test_intro_show_story_node() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     // The intro is PURE SLIDES since 2026-09-03: the asking (sex, name,
     // homeland) moved to the pre-world creation screen, which renders the
@@ -983,7 +967,6 @@ void test_intro_show_story_node() {
 
 void test_quest_failed_settles_its_offer() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(10, 6, 0);
@@ -1010,7 +993,7 @@ void test_quest_failed_settles_its_offer() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "expired quest was not removed");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestFail)),
@@ -1043,14 +1026,13 @@ void test_quest_failed_settles_its_offer() {
     // The day turns: this offer can never be generated again (its bornDay is
     // part of its identity), so the settled memory prunes itself.
     gs.worldTime = sm::world_time_at(11, 6, 0);
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!gs.player.settledQuestOffers.empty()),
         "yesterday's settled offer was not pruned with its day");
 }
 
 void test_item_delivery_direct_path() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
@@ -1088,7 +1070,7 @@ void test_item_delivery_direct_path() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery quest did not complete from inventory condition");
@@ -1105,7 +1087,6 @@ void test_item_delivery_direct_path() {
 
 void test_quest_reward_dispatch_order_and_application() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
@@ -1176,7 +1157,7 @@ void test_quest_reward_dispatch_order_and_application() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
 
     const auto& events = bus.tick_events();
     CHECK_OR_RETURN(!(!active.empty() || events.size() != 3),
@@ -1228,7 +1209,6 @@ void test_quest_reward_dispatch_order_and_application() {
 
 void test_visit_cell_objective() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
@@ -1251,14 +1231,13 @@ void test_visit_cell_objective() {
     std::vector<sm::Quest> active;
     active.push_back(q);
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "VisitCell did not complete from player radius");
 }
 
 void test_quest_completion_order_matches_ts_reverse_scan() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
@@ -1287,7 +1266,7 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
     active.push_back(make_visit(2u, "q_high"));
 
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
 
     std::vector<std::uint32_t> completed;
     for (const auto& ev : bus.tick_events()) {
@@ -1315,7 +1294,6 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
 
 void test_destroy_npc_objective() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
@@ -1354,7 +1332,7 @@ void test_destroy_npc_objective() {
     bus.emit(impostor);
     bus.emit(kindless);
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.size() != 1),
         "DestroyNpc counted an entity handle / a kindless body as a kill");
     CHECK_OR_RETURN(!(active[0].objectives[0].killed != 1),
@@ -1366,7 +1344,7 @@ void test_destroy_npc_objective() {
     secondReal.ix = 2;
     bus.emit(secondReal);
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "DestroyNpc did not complete on kills of the wanted type");
 }
@@ -1383,7 +1361,6 @@ void test_destroy_npc_objective() {
 
 void test_abandon_emits_and_removes() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::Quest q{};
     q.ordinal = 13u;
@@ -1426,7 +1403,6 @@ void test_abandon_emits_and_removes() {
 
 void test_offer_provenance_is_unique_per_slot_and_day() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldSeed = 0x71477147u;
@@ -1506,7 +1482,6 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
 // on these; otherwise the corrupted order[6] fails the permutation check.
 void test_shuffled_order_guards_rng_upper_bound() {
     bag.clear();
-    head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     constexpr int kSlots = 7;   // произвольная длина: закон не про число
     auto is_permutation = [](const std::vector<int>& order, int n) -> bool {
@@ -1620,7 +1595,7 @@ void test_generated_delivery_quest_flow() {
         "accept applied reward before completion");
 
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery items did not complete generated quest");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestComplete)),

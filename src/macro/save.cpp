@@ -152,7 +152,7 @@ constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     + sizeof(MacroNpcRecord::runtime) + sizeof(MacroNpcRecord::traits)
     + sizeof(MacroNpcRecord::character) + sizeof(MacroNpcRecord::name)
     + sizeof(MacroNpcRecord::orders)
-    + sizeof(MacroNpcRecord::memory) + kSpellBookBytes
+    + kSpellBookBytes
     + sizeof(MacroNpcRecord::hasSheet) + kSheetBytes
     + sizeof(MacroNpcRecord::hasOrders) + sizeof(MacroNpcRecord::dead)
     + sizeof(MacroNpcRecord::playerFlag)   // 5б: флажок игрока — колонкой
@@ -646,7 +646,6 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.character);
     w.pod(m.name);   // v119: имя анкеты — колонка (вердикт 3)
     w.pod(m.orders);
-    w.pod(m.memory);   // v28: the leader's memory — padding-free by static_assert
     write_spell_book(w, m.book);   // v89: knowledge is the body's (§41 root 3)
     // v90: the OWNED sheet of a named character, opt-in like orders — the
     // ММОРПГ-модель's whole point is that his campaign rides the save.
@@ -681,7 +680,6 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.character);
     r.pod(m.name);   // v119
     r.pod(m.orders);
-    r.pod(m.memory);   // v28
     read_spell_book(r, m.book);    // v89
     r.pod(m.hasSheet);             // v90
     if (!r.ok || m.hasSheet > 1) { r.ok = false; return; }

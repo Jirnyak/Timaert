@@ -19,7 +19,6 @@
 #include "check.h"
 #include "macro/labour.h"   // settle_souls — двери душ
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
-#include "macro/agent_memory.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
 #include "macro/npc_ai.h"

@@ -44,7 +44,6 @@
 
 #include "core/caps.h"
 #include "ecs/components.h"
-#include "macro/agent_memory.h"
 #include "macro/anketa.h"
 #include "macro/chronicle.h"
 #include "macro/deposit_layer.h"
@@ -133,7 +132,7 @@ inline constexpr std::size_t kMacroStoreRowBytes =
     + sizeof(ecs::MacroVisual) + sizeof(ecs::NpcCharacter)
     + sizeof(ecs::SquadName)          // имя анкеты (ход 2, вердикт 3)
     + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)
-    + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook) + sizeof(AgentMemory)
+    + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook)
     + sizeof(ecs::SquadUpkeep)
     + sizeof(Wellbeing)               // благополучие анкеты (M-90 флип)
     + sizeof(Interests)               // связи любых сквадов (M-90 флип)

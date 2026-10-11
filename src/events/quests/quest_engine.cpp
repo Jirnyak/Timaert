@@ -1,5 +1,4 @@
 #include "events/quests/quest_engine.h"
-#include "macro/agent_memory.h"
 #include "macro/currency.h"
 #include "macro/squad.h"   // place_handle_by_ordinal — резолв места в store
 #include "core/torus.h"
@@ -47,11 +46,11 @@ static bool objective_target_cell(const GameState& gs, const MacroStore& st,
 
 // Takes the GameState because a Reputation reward moves the player's row in the
 // ONE relation matrix — his standing is not a map of his own any more.
-// `sheet` — his OWNED component (посадка Б), handed in like `bag`/`head`:
+// `sheet` — his OWNED component (посадка Б), handed in like `bag`:
 // an XP reward lands in the body that owns the build.
 static void emit_reward(const Reward& r, GameState& gs, MacroStore& st,
                         Inventory* bag,
-                        AgentMemory* head, CharacterSheet* sheet,
+                        CharacterSheet* sheet,
                         EventBus& bus, int giverSettlementId) {
     if (!bag) return;   // no world, nowhere to pay
     switch (r.kind) {
@@ -93,14 +92,14 @@ static void emit_reward(const Reward& r, GameState& gs, MacroStore& st,
                 // arithmetic. When macro relations arrive, this bites.
                 const int paid = pay_value_dense((*bag), -r.amount);
                 delta = -paid;
-                const int short_ = -r.amount - paid;
-                if (short_ > 0 && giverSettlementId > 0 && head) {
-                    remember(*head,
-                             make_debt_fact(kDebtToSettlement,
-                                            std::uint16_t(giverSettlementId),
-                                            short_,
-                                            gs.worldTime.day()));
-                }
+                // (НЕДОПЛАЧЕННЫЙ ШТРАФ БОЛЬШЕ НИГДЕ НЕ ЗАПИСЫВАЕТСЯ, и это
+                // названная дыра. Он ложился долговым фактом в память лидера
+                // (`AgentMemory`), а память уничтожена 2026-10-11 вердиктом
+                // владельца: `recall` имел НОЛЬ прод-вызовов — никто никогда
+                // не вспоминал, то есть факт писался в пустоту. Когда
+                // отношения макромира дойдут до долга, он заведётся ТАМ, где
+                // его читают: M-206, и `giverSettlementId` ждёт этого дня.)
+                (void)giverSettlementId;
             }
             GameEvent ev{EventTag::PlayerGoldChange};
             ev.ix = delta;
@@ -184,7 +183,7 @@ static void prune_settled_offers(PlayerState& p, int today) {
 
 void QuestEngine::tick(std::vector<Quest>& active, MacroStore& st,
                        EventBus& bus,
-                       GameState& gs, Inventory* bag, AgentMemory* head,
+                       GameState& gs, Inventory* bag,
                        CharacterSheet* sheet, int px, int py) {
     auto& events = bus.last_tick_events();
     prune_settled_offers(gs.player, gs.worldTime.day());
@@ -229,7 +228,7 @@ void QuestEngine::tick(std::vector<Quest>& active, MacroStore& st,
         settle_offer(gs.player, q);
         ++gs.player.completedQuestCount;
         for (auto& r : q.rewards)
-            emit_reward(r, gs, st, bag, head, sheet, bus, q.giverSettlementId);
+            emit_reward(r, gs, st, bag, sheet, bus, q.giverSettlementId);
         GameEvent ev; ev.tag = EventTag::QuestComplete;
         ev.a = q.ordinal;
         ev.b = kEventEffectAlreadyApplied;

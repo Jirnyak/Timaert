@@ -2,7 +2,6 @@
 #include "macro/npc_ai.h"
 #include "core/stacks.h"           // kUnifiedCap — резерв скрэтчей порядка
 #include "macro/upkeep_window.h"   // ОДИН суд границы на всякий контейнер
-#include "macro/agent_memory.h"
 #include "macro/characters.h"  // стол анкет — ступень лестницы поведения
 #include "macro/chronicle.h"
 #include "macro/currency.h"

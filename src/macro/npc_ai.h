@@ -172,7 +172,6 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
 // (economy.h stock_price at post-trade supply; transfer_value moves coin —
 // nothing minted, nothing confiscated). At namespace scope (the
 // settle_landmark_day pattern) so caravan_deal_test can drive one deal.
-struct MemoryEntry;
 struct CaravanDeal {
     int boughtValue = 0;      // coin paid INTO the market for goods taken
     int soldValue   = 0;      // coin the market paid for goods delivered

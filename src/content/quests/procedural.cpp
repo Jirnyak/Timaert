@@ -2,7 +2,6 @@
 
 #include "core/rng.h"
 #include "core/torus.h"
-#include "macro/agent_memory.h"
 #include "tables/commodity.h"
 #include "macro/anketa.h"
 #include "macro/landmark_iter.h"   // for_each_place — места по слотам
@@ -37,6 +36,19 @@ std::vector<int> shuffled_order(Rng& rng, int count) {
 }
 
 namespace {
+
+// ЯРУСЫ ЗАПАСА — по-двойке, и грубость НАМЕРЕННАЯ: процедурный квест
+// спрашивает «чего в этом городе мало», а не ведёт книгу. Жило в
+// `macro/agent_memory.h` как остаток снимка рынка и переехало СЮДА вместе со
+// сносом памяти агента (2026-10-11): читатель у функции РОВНО ОДИН — цикл
+// ниже, — и в заголовке она была телом, за которое платил каждый включивший
+// (AGENTS §5 п.13).
+int stock_class(int count) {
+    if (count <= 0) return 0;        // none
+    if (count < 64) return 1;        // scarce
+    if (count < 1024) return 2;      // stocked
+    return 3;                        // plenty
+}
 
 struct QuestGenCtx {
     int id = -1;

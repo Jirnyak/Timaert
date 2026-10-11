@@ -47,7 +47,6 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
         m.sheet = st.sheet[slot];
         m.hasSheet = 1;
         m.designOrdinal = st.designTag[slot].ordinal;
-        m.memory = st.memory[slot];
         m.gear = st.gear[slot].gear;
         m.dead = st.dead[slot] ? 1 : 0;
         // «Кем я управляю» — колонка анкеты (5б): провод несёт флаг ДАРОМ
@@ -95,7 +94,6 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         if (m.hasOrders) st.orders[h.slot] = m.orders;
         if (m.hasSheet) st.sheet[h.slot] = m.sheet;
         st.designTag[h.slot] = ecs::DesignCharacterTag{m.designOrdinal};
-        st.memory[h.slot] = m.memory;
         st.gear[h.slot] = ecs::BodyEquipment{m.gear};
         if (m.dead) st.dead[h.slot] = 1;
         // Флажок игрока — колонкой записи (5б); кэши GameState (биты)

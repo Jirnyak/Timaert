@@ -11,7 +11,6 @@
 #include "macro/anketa.h"
 #include "tables/commodity.h"   // kCommodityCount — дань по позициям (v73)
 #include "macro/memory.h"   // WorldMemory — память мира с горизонтом сезона
-#include "macro/agent_memory.h"
 #include "macro/anketa.h"
 #include "macro/upkeep.h"   // Upkeep — ОДИН счёт содержания на место и на сквад (S4)
 #include "macro/interests.h"   // Interests — ВСЕ связи субъекта одной таблицей
@@ -217,7 +216,8 @@ namespace sm {
 // v58: the event log is GONE (owner, 2026-08-28: «чисти ивент лог»). Session
 // messages are a fading HUD feed that dies with the moment (SessionFeed,
 // never serialized); the player's past is his JOURNAL of chronicle records;
-// two of its lines became honest facts instead (a struck vein = Discovered,
+// two of its lines became honest facts instead (a struck vein — тот род
+// факта снесён 2026-10-11 вместе со своим единственным писателем,
 // a player's deal = Traded). 8192 saved std::strings leave the format.
 // v59: the spellbook is FLAT (macro/spell_book_state.h) — ordinal-indexed
 // rows over the append-only spell registry; the string ids and the three
@@ -399,7 +399,7 @@ namespace sm {
 // называет, что в файле лежит И то, И другое.
 // 129 — единый кап 16384 (`kUnifiedCap@src/core/caps.h`): кап записей макро,
 // пул рёбер дани и `sizeof(FactionState)` в payload ужались вдвое.
-constexpr int kSaveVersion = 131;
+constexpr int kSaveVersion = 132;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

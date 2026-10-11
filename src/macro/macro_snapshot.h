@@ -22,7 +22,6 @@
 
 #include "ecs/components.h"
 #include "ecs/world.h"
-#include "macro/agent_memory.h"
 #include "macro/anketa.h"
 #include "macro/interests.h"
 #include "macro/spell_book_state.h"
@@ -50,7 +49,8 @@ struct MacroNpcRecord {
     // born all-zero with every squad and ridden verbatim.
     SpellBook            book{};
     ecs::SquadOrders     orders{};          // meaningful iff hasOrders
-    AgentMemory          memory{};          // what the leader remembers (v28)
+    // (Колонка `memory` записи снапшота умерла в v132 вместе с `AgentMemory`:
+    //  читателей у памяти не было ни одного.)
     // The OWNED sheet of a NAMED character (v90, owner 2026-09-10 ММОРПГ-
     // модель: «у каждого персистентного персонажа свой лист и идёт в
     // сейв»). Opt-in like orders: a transient crew derives its generic
