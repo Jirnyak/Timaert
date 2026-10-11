@@ -90,59 +90,35 @@ verdict	SKELETON.md	| `cells_[9]` (тайлы, trav, высоты, структ�
 verdict	SKELETON.md	| app — редактор: прямой доступ законен | матрица выше; вердикт 2026-09-25 | **ПРАВДА**
 verdict	SKELETON.md	| staging светового поля кольцуется | slot = `lightFieldFrame_ % 2` при гейте `% 8 == 0` ⇒ всегда 0; 
 verdict	SKELETON.md	| ЗАКОН КОНСТАНТ | `kRestTicksPerTurn = 128 // po2` (`:2479`) — вывода нет; литерал `max_daily_ticks=32` в �
-verdict	SKELETON.md	| ШЕСТЬ рядов жил | `DepositLayer::cells[6]`, u16 (+ `reach` u16 на каждый) | **ПРАВДА сегодня, подле
 verdict	SKELETON.md	| адрес клетки | ПРАВДА в `src/macro` для `cell_of/cell_step`; остатки делений (8 строк), рукоп
 verdict	SKELETON.md	| буферы аллоцируются на входе в сцену | в `init` — тела, частицы, стампы, светово
-verdict	SKELETON.md	| весь свип делит один RNG | `ctx.rng = &runtime.jitter` (`:4803`); авто-бой `*ctx.rng` (`:2372,:2503,:2770`) | **П
 verdict	SKELETON.md	| время | ПРАВДА; даты фактов дня расходятся с обрабатываемым днём | — |
 verdict	SKELETON.md	| все пайплайны используются | `shadowMeshPipe_` создаётся и уничтожается, биндится 0 
-verdict	SKELETON.md	| выбор цели без перебора мест | `ai_trader`/`ai_nomad` — полный скан `gs.landmarks` с фильтром
 verdict	SKELETON.md	| выход из мира | факт POD — ПРАВДА; четыре канала, второй тип записи со строкам�
 verdict	SKELETON.md	| генерация из 2D высот макромира и контекста 3×3 | `nbHeights[9]`, `nbBiome[9]`, `nbBiome5` (5×5 би�
-verdict	SKELETON.md	| два драйвера — один закон каданса | карта: пер-сквадный `rt.tickAccum` (`:4885-4887`); суб
 verdict	SKELETON.md	| два потока заселения | в одной функции `spawn_cell_npcs`: население места (займ Populatio
-verdict	SKELETON.md	| знание игрока | `KnowledgeLayer::data`, байт 0/1/2 | **ПРАВДА** |
 verdict	SKELETON.md	| каждое действие смоука что-то утверждает | НЕТ: сюита 66 сценариев вычисляет 
 verdict	SKELETON.md	| канвас пятен — состояние только на GPU, не сохраняемое | `stainCanvas_` 8192² RGBA8 = **256 М
 verdict	SKELETON.md	| кладбище по фенсу | `defer_destroy` (`:2464,:2497`), `collect_deferred` строго после фенса; `static_assert 
 verdict	SKELETON.md	| кросс-кадровое состояние боя пересобирается каждый тик | `crowd_`, сетки, поле, �
-verdict	SKELETON.md	| лес | `TreeLayer::data` u16, счёт деревьев | **ПРАВДА** |
-verdict	SKELETON.md	| макромир читает каталог тел в одной точке (шапка `:3009-3011`) | `kNpcTypeDefs[` в думке 3 �
-verdict	SKELETON.md	| награда предметом идёт из чьих-то рук | **ВОПРОС СНЯТ СНОСОМ (2026-09-28).** `RewardKind::I
 verdict	SKELETON.md	| направление: `src/macro` не включает `src/sub` | `rg '#include "sub/' src/macro` → 0 | **ПРАВДА** |
 verdict	SKELETON.md	| настройка — CSV + генератор, шейдер не правится | `gen_ground_table.py` → `ground_surface.glsl`; с�
 verdict	SKELETON.md	| никаких LOD-скипов и заморозки NPC | в тике субмира пропусков тел нет; смерти св
 verdict	SKELETON.md	| ноль здоровья — событие, hp в минус свободно | зеркало клампит `[0,maxHp]` (`:1227`); о�
 verdict	SKELETON.md	| нужда места есть ДОЛЯ БЮДЖЕТА ГОРОЖАНИНА, а не строка авторской лестницы | **
 verdict	SKELETON.md	| один оборот = один тик, мир не быстрее номинала | `:6320-6349`, дверь `promote_turn_ticks` од�
-verdict	SKELETON.md	| одна величина времени, остальное выводится | `WorldTime::tick` — ОДНО поле u64 (`core/time.
-verdict	SKELETON.md	| округи и порталы навигации | `NavWorld` (u16 региона, u16 дистанции, u8 шага ×2 яруса + �
-verdict	SKELETON.md	| опасность | `ZoneLayer::data`, байт 0..255 | **ПРАВДА** |
-verdict	SKELETON.md	| отправители родов летописи | отправляются 7: Killed, Died, Traded, Starved, Explored, Drained, Taxed; 
-verdict	SKELETON.md	| охотник на магов выбирает по колонкам | `faction_index("magika")` (`:2313`), `NPCType::Witch/Sorceress` (`
-verdict	SKELETON.md	| охотничий шаг пишет цель | `scent_hunt_step` зовёт `try_move` без записи `rt.targetX/Y` (`:2956`); `set
 verdict	SKELETON.md	| память | `sizeof` под `static_assert` — ПРАВДА на libc++; на libstdc++/MSVC ассерты падают из-за `st
 verdict	SKELETON.md	| перемещение спроецированного лорда в субмире → его `MacroCell` | записи нет (`rg 'Ma
 verdict	SKELETON.md	| производство/экономика | крафт одной дверью — ПРАВДА; скор без стоимости вх
 verdict	SKELETON.md	| промоушн только на живой карте, сброс, а не игнор | `fast_forward_allowed` (`:2505`), `:2519-2523` 
 verdict	SKELETON.md	| путь полёта | `build_flight_path` (`:2076-2098`) — второй закон пути (прямая по тору) рядом с
 verdict	SKELETON.md	| рендерер — не член симуляции | **нарушено:** `Renderer3DVk renderer3dVk_` — ЧЛЕН класса `Subw
-verdict	SKELETON.md	| род сквада — колонка, а не класс | `SquadType` (`squad_type.h`) | **ПРАВДА** |
 verdict	SKELETON.md	| рождение мира | порядок рельеф→вода→биомы→реки→залежи — ПРАВДА; дороги �
-verdict	SKELETON.md	| сейв пишет память байт-в-байт одним куском (DOD §4) | поимённо, поле за полем; ст
-verdict	SKELETON.md	| снимка входа в субмир не существует | `macro/entry_context.h` — 87 строк, **ни одной стру�
 verdict	SKELETON.md	| снимок мира — одна структура | `gs` + `npcAi` + `logic` + `quests` + слои в `App`; `stage_save_state` коп
-verdict	SKELETON.md	| сперва рельеф: высота и температура | `synth_master` — высота `:60-85`, влажность `:88-89`,
-verdict	SKELETON.md	| стоимость пути + вода + высота8 | `PathCostData` (f32 + u8 + u8) | **ПРАВДА** |
 verdict	SKELETON.md	| стык | направление — ПРАВДА; вход конвертом, выход по ходу, один registry, лут тр�
 verdict	SKELETON.md	| стык клеток на карте — ОДНА ширина на все переходы | `BT_SEAM = BT_CELL / 3` (`shaders/macro.fra
 verdict	SKELETON.md	| субмир-рендер не читает `GameState`/`MacroWorld` | 0 упоминаний в `vk_renderer_3d.cpp`; но включен
-verdict	SKELETON.md	| терраин (высота, влажность, температура, маска моря) | `TerrainData::rgba`, 4 байта | **П�
-verdict	SKELETON.md	| у каждой машины есть хвостовой `else` | без хвоста 9 из 12 машин ролей: `ai_home_wanderer :
-verdict	SKELETON.md	| у самой широкой авторской строки нет `static_assert` на размер | `sizeof(ItemDef)` = 120 Б, пос
 verdict	SKELETON.md	| у стыка есть материал только у одной пары | вода вырезана из цветового смеше
-verdict	SKELETON.md	| у шины нет второй двери в память мира | `EventBus` несёт только канал КАДРА: `emit`/`em
-verdict	SKELETON.md	| фичи | `FeatureLayer::data`, байт вида | **ПРАВДА** |
 verdict	SKELETON.md	| — ЧАРТ рисует 3 рода фич из 12: ПАШНЮ не рисует вовсе | ветви `fb > 0.5 && fb < 2.5` (доро
 verdict	SKELETON.md	| — блик по воде есть зеркальная геометрия, и его числа без вывода | виртуальн
 verdict	SKELETON.md	| — гнездо чисел без вывода | `MTN_AMBIENT = 0.44`, `MTN_RIDGE_FREQ = 0.16`, `octN = 3`, `eC = 2.0`, `MTN_TERRACES = 4
