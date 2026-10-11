@@ -493,11 +493,12 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 1. маска `A == 0` — `map_generator.h:120`, `spawners.cpp:253,644`,
    `tree_layer.cpp:23-24`;
 2. маска `< 128` — `zones.cpp:123,225`, `npc_spawn.cpp:82`;
-3. байт высоты `< sea8` — `map_generator.h:89-91` **`is_water`** — ЭТО
-   КАНОН, 7 вызовов;
+3. байт высоты ниже плоскости моря — **`is_water@src/macro/map_generator.h`**
+   — ЭТО КАНОН, 7 вызовов;
 4. float `h/255 < seaLevel` — `spawners.cpp:138,149`;
 5. маска ИЛИ float — `spawners.cpp:631-635`, `macro_stock.cpp:491-499`;
-6. трассер рек `<= seaLevel8` — `map_generator.cpp:349,558,618` — клетку
+6. трассер рек `<= seaLevel8` — `map_generator.cpp`, три места (сведены в
+   `is_water`, порог стал колонкой `TerrainData::seaLevel8`) — клетку
    `h == seaLevel8` трассер считает водой, маска — сушей (`:723`).
 Плюс седьмой в `app/main.cpp:775` (закрывается П-4 / M-124).
 
@@ -532,7 +533,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 - Трассер рек (`map_generator.cpp:349,558,618`): `<=` → тот же `is_water`
   (`<`). Это МЕНЯЕТ мир на сиде: клетки `h == seaLevel8` станут сушей для
   трассера. Ожидаемо; см. приёмку.
-- `biome_at_cell` (`map_generator.h:118-122`): первая ветка по маске
+- `biome_at_cell@src/macro/map_generator.h`: первая ветка по маске
   `rgba[s+3] == 0` → по `is_water`. Если после этого байт A терраина не
   читает НИКТО (`rg`), — его генерацию не сносить в этой сессии, а
   записать в отчёт строкой (снос — отдельный шаг, чтобы диф остался
@@ -756,8 +757,9 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 следы u16×F×N×2 (`state.h:884`, `scent_field.h`), владение клеткой u8×N
 (`politik.h:77`), индекс летописи u32×N/64 (`chronicle.h:345`), оптический
 кэш f32×2×N (представление, `app_state.h:177`), A\* скрэтч 7×N
-(`pathfinding.h:207`), `deserterPool` (`state.h:943`), `MacroStore` (уже
-под своим `static_assert`, `store.h:102` — строка в перепись со ссылкой).
+(`pathfinding.h:207`), `deserterPool@src/macro/state.h`, `MacroStore` (уже
+под своим `static_assert` на `sizeof` — `MacroStore@src/macro/store.h`, строка
+в перепись со ссылкой).
 
 **1. Контекст.** Читать: `src/core/stacks.h` целиком (формат `StackRow`,
 сторожа, `kStacks`), и ОБЪЯВЛЕНИЯ перечисленных буферов по названным
@@ -811,13 +813,13 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 (один вызов `main.cpp:1659`, читателей у `chronicle_` кроме `record` нет),
 `chronicle()`, `frame_first_seq()`/`last_frame_first_seq()` (0 читателей),
 поля `chronicle_`, `frameFirstSeq_`, `lastFrameFirstSeq_` (`:85-87`) и
-блок в `flush()` (`event_bus.cpp:70-74`). Теги `EventTag` без
+блок в `flush@src/events/event_bus.cpp`. Теги `EventTag` без
 производителя: `SettlementVisit` (читает `node_registry.cpp:20`, никто не
 шлёт), `LandmarkChangeOwner`, `WorldCellChange` (читает
 `quest_engine.cpp:203-204`, никто не шлёт), `Custom` (только дефолт
 инициализации `logic_nodes.h:23` и тесты). Теги с производителем, но без
-прод-читателя: `QuestStart`, `QuestUpdate` (`quest_engine.cpp:261,294`),
-`SpellCast` (`main.cpp:2101`), `PlayerLeaveSettlement` (main.cpp:461 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
+прод-читателя: `QuestStart`, `QuestUpdate@src/events/quests/quest_engine.cpp`,
+`SpellCast@src/app/main.cpp`, `PlayerLeaveSettlement` (main.cpp:461 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
 
 **1. Контекст.** Читать: `src/events/event_bus.h` целиком,
 `src/events/event_bus.cpp` целиком, `src/events/event_types.h:20-64`
@@ -1209,7 +1211,7 @@ DOD п.6 (две записи одной фичи — второй ответ). 
 `static_assert(sizeof(Landmark) == 42400)` и `sizeof(GameState) == 49456`
 (`core/stacks.h:125,141`) верны ТОЛЬКО на libc++ (24 Б) и падают на
 libstdc++/MSVC (32 Б). Ещё две строки той же породы: `City::name`
-(`politik.h:62`), `PlayerState::name` (`state.h:678`). Генератор —
+(`politik.h:62`), `PlayerState::name@src/macro/state.h`. Генератор —
 `generate_name` (`language.cpp:164-177`, возвращает `std::string` —
 граница мира, законно); ввод игрока — `char name[25]` (`ui/screens.h:70`,
 24 + NUL). Сейв пишет строки `w.str`/`r.str` (`write_landmark` (умер в v128 — место едет записью тела) и соседние блоки).
@@ -1243,7 +1245,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 - Было: три `std::string name`. Стало: `NameCol name{}` в `Landmark`,
   `City`, `PlayerState`.
 - Писатели: `state.cpp:184-187,360`, `politik.cpp:192,235,295` —
-  `name_set(x.name, generate_name(...))`; `main.cpp:3015` —
+  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3077 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
   `name_set(app.gs.player.name, cs.name)`.
 - Читатели: `.c_str()` → само поле; `.empty()` → `name[0] == '\0'`;
   `procedural.cpp:426` `ctx.name = s.name` — если `ctx.name` — `std::string`
@@ -1524,7 +1526,7 @@ return -1` — второй запрет мира рядом с водой. Го
 **Точки (проверено 2026-09-25; перепроверить):** строковые двери
 `Inventory::count(const std::string&)` / `add` / `remove` (`macro/anketa.h` — разрез M-181 увёз контейнер
 — каждый вызов строит `std::string` из `const char*` и ищет в хеше) в
-тике: доставка `deliver_bag_home` (`npc_ai.cpp:144,151`), перевозка
+тике: доставка `deliver_bag_home@src/macro/npc_ai.cpp`, перевозка
 `haul_between` (`:1341,:1346,:1347`), планировщик корована (`:1886,:1889,
 :2104`), рынок (`:3210,:3214,:3281,:3285,:3335`), дневная цена
 (`econ_produce_day@src/macro/econ_day.cpp`); `commodity_index(id)` в тике: факт доставки
@@ -1651,7 +1653,7 @@ AGENTS §2 п.4 (связная миграция — малыми шагами, 
   остаётся у вида как производное с пересборкой из ряда. Два ответа на
   «жила ли рядом» недопустимы — выбрать один, сказать в отчёте.
 - Шаг В: снести `carrierRead`/`carrierApply` из `FieldRowDef` и все ветки
-  `if (carrier…)` (`macro_stock.cpp:454,:578,:588`); `allocate_world_fields`
+  `if (carrier…)` (`carrierRead@src/macro/macro_stock.cpp`); `allocate_world_fields`
   выделяет ВСЕ ряды.
 - Шаг Г: снести структуры `DepositLayer`/`TreeLayer`, если после А–Б они
   стали пустыми обёртками; читатели вне `macro/` (`app`, `sub`, `ui`)
@@ -1796,8 +1798,8 @@ M-131, «это ровно её предмет», и чинятся ОДНИМ �
 
 **ЧЕГО НЕ ДЕЛАТЬ.** Не трогать `spire_climb` — это единственный настоящий
 дефект МИРА из четырёх (два автора высоты короны: `sub/gens/spire.cpp:92-128`
-объявляет `groundM + kSpireTowerHeightM`, `sub/engine.cpp:4355` пересчитывает
-через `sample_height_m`), он остаётся нарядом M-104 и уже краснеет двумя
+объявляет `groundM + kSpireTowerHeightM`, а `try_exit_dungeon@src/sub/engine.cpp`
+пересчитывает его через `height_field().sample`), он остаётся нарядом M-104 и уже краснеет двумя
 адресными фактами вместо семнадцати. Не взводить вердикт «ноль проверок =
 провал» — это конец миграции M-131, а не её шаг 1.
 

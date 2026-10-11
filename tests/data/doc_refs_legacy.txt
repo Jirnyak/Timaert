@@ -641,7 +641,6 @@ jopus_prompts.md	econ_day.cpp:46
 jopus_prompts.md	econ_day.cpp:46-51
 jopus_prompts.md	econ_day.h:139
 jopus_prompts.md	engine.h:619
-jopus_prompts.md	event_bus.cpp:70-74
 jopus_prompts.md	event_bus.h:27-40
 jopus_prompts.md	events/quests/quest_engine.cpp:179
 jopus_prompts.md	language.h:20-35
@@ -655,9 +654,7 @@ jopus_prompts.md	macro_stock.cpp:523
 jopus_prompts.md	macro_stock.cpp:533
 jopus_prompts.md	main.cpp:126-130
 jopus_prompts.md	main.cpp:1659
-jopus_prompts.md	main.cpp:2101
 jopus_prompts.md	main.cpp:263
-jopus_prompts.md	main.cpp:3015
 jopus_prompts.md	main.cpp:3490
 jopus_prompts.md	main.cpp:3635-3637
 jopus_prompts.md	main.cpp:5612
@@ -668,14 +665,11 @@ jopus_prompts.md	map_generator.cpp:349
 jopus_prompts.md	map_generator.cpp:552-570
 jopus_prompts.md	map_generator.cpp:557-570
 jopus_prompts.md	map_generator.h:110
-jopus_prompts.md	map_generator.h:118-122
 jopus_prompts.md	map_generator.h:120
 jopus_prompts.md	map_generator.h:38
-jopus_prompts.md	map_generator.h:89-91
 jopus_prompts.md	movement.h:2
 jopus_prompts.md	nav_field.h:149
 jopus_prompts.md	node_registry.cpp:20
-jopus_prompts.md	npc_ai.cpp:144
 jopus_prompts.md	npc_ai.cpp:159
 jopus_prompts.md	npc_ai.cpp:2313
 jopus_prompts.md	npc_spawn.cpp:82
@@ -685,7 +679,6 @@ jopus_prompts.md	politik.h:62
 jopus_prompts.md	politik.h:77
 jopus_prompts.md	procedural.cpp:426
 jopus_prompts.md	quest_engine.cpp:203-204
-jopus_prompts.md	quest_engine.cpp:261
 jopus_prompts.md	resource_field.h:284-289
 jopus_prompts.md	settlement_score.cpp:129
 jopus_prompts.md	smoke_suite.txt:65
@@ -759,16 +752,12 @@ jopus_prompts.md	stacks.h:150-168
 jopus_prompts.md	state.cpp:166-173
 jopus_prompts.md	state.cpp:184-187
 jopus_prompts.md	state.h:469
-jopus_prompts.md	state.h:678
 jopus_prompts.md	state.h:879
 jopus_prompts.md	state.h:884
-jopus_prompts.md	state.h:943
-jopus_prompts.md	store.h:102
 jopus_prompts.md	sub/city_layout.h:431-441
 jopus_prompts.md	sub/damage.cpp:145
 jopus_prompts.md	sub/engine.cpp:1782
 jopus_prompts.md	sub/engine.cpp:3685
-jopus_prompts.md	sub/engine.cpp:4355
 jopus_prompts.md	sub/gens/spire.cpp:92-128
 jopus_prompts.md	sub/movement.h:77
 jopus_prompts.md	sub/spell_effects.cpp:83
