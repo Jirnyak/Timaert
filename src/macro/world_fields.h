@@ -37,9 +37,12 @@ enum class WorldField : std::uint8_t {
                  //   on write, sight is recomputed after load (since v40)
     Deposits,    // sparse i32 per kind — Clay/Iron/Stone veins (since v37)
     Scars,       // sparse u16 per resource row — harvest/hunt debts (v35)
-    Built,       // sparse — features squads built: ploughed fields… (v71).
-                 //   The feature GRID stays derived (rebaked from seed);
-                 //   this row is the truth the load re-stamps onto it.
+    // (Ряд `Built` УНИЧТОЖЕН в v130, перепись сирот 2026-10-11: вектор
+    //   `GameState::builtFeatures` не имел НИ ОДНОГО писателя из геймплея —
+    //   `push_back` в дереве ноль, наполняло его только чтение этого ряда,
+    //   то есть сейв возил список, который мир никогда не писал. Когда
+    //   стройка фич сквадами будет построена, свой факт она заведёт заново;
+    //   дыра названа нарядом M-206.)
     Worked,      // THE worked layer, one field for the world (v96): the
                  //   number under a feature — hulls moored at a harbour
                  //   today (CANON S5 «слой разработки — ОДНО поле на всё»).
@@ -57,7 +60,9 @@ enum class WorldField : std::uint8_t {
 // не могут. Столбец не вынесен в заголовок сознательно — он тянул бы сюда
 // deposit_layer.h/resource_field.h/state.h, а тело в заголовке платит каждый
 // включивший (AGENTS §5 п.13).
-inline constexpr std::uint64_t kWorldFieldsMaxBytes = 155'189'328ull;
+// 2026-10-11, v130: 155'189'328 → 145'752'140, −9'437'188 Б — ряд `Built`
+// снесён (4 Б счёта + 2^20 клеток × 9 Б записи `{i32 x, i32 y, u8 ft}`).
+inline constexpr std::uint64_t kWorldFieldsMaxBytes = 145'752'140ull;
 
 // The owning stores of the saved rows. Not a second world envelope: load
 // runs BEFORE the app's layers exist (it fills these, and the boot moves

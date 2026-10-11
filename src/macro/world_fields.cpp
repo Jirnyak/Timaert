@@ -237,40 +237,9 @@ bool worked_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st) {
 constexpr std::uint64_t kWorkedMaxBytes =
     kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes;
 
-// ── Built: features squads made — ploughed fields… (since v71) ──────────
-// Verbatim, append-order: the list IS the history of works, and the load
-// re-stamps it in the same order the crews built it.
-void built_write(savefmt::Writer& w, const WorldFieldStores& st) {
-    if (!st.gs) { w.count(0, kMaxFieldCells); return; }
-    const auto& built = st.gs->builtFeatures;
-    if (w.count(built.size(), kMaxFieldCells)) {
-        for (const BuiltFeature& b : built) {
-            w.pod(b.x);
-            w.pod(b.y);
-            w.pod(b.ft);
-        }
-    }
-}
-bool built_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
-    std::uint32_t n = 0;
-    if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
-    if (!st.gs) { r.ok = false; return false; }
-    auto& built = st.gs->builtFeatures;
-    built.clear();
-    built.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        BuiltFeature b{};
-        r.pod(b.x);
-        r.pod(b.y);
-        r.pod(b.ft);
-        if (r.ok) built.push_back(b);
-    }
-    return r.ok;
-}
-constexpr std::uint64_t kBuiltMaxBytes =
-    kBlockCountBytes + std::uint64_t(kMaxFieldCells)
-    * (sizeof(BuiltFeature::x) + sizeof(BuiltFeature::y)
-       + sizeof(BuiltFeature::ft));
+// (Ряд `Built` и пара `built_write`/`built_read` УНИЧТОЖЕНЫ в v130 вместе с
+// вектором `builtFeatures`: писателей из геймплея у него было НОЛЬ, то есть
+// ряд возил в файл свой же результат чтения — см. некролог в `world_fields.h`.)
 
 struct WorldFieldRow {
     WorldField id;
@@ -291,8 +260,6 @@ constexpr WorldFieldRow kWorldFields[std::size_t(WorldField::Count)] = {
      kDepositsMaxBytes},
     {WorldField::Scars,     "scars",     scars_write,     scars_read,
      kScarsMaxBytes},
-    {WorldField::Built,     "built",     built_write,     built_read,
-     kBuiltMaxBytes},
     {WorldField::Worked,    "worked",    worked_write_block, worked_read_block,
      kWorkedMaxBytes},
 };

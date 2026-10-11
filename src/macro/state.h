@@ -399,7 +399,7 @@ namespace sm {
 // называет, что в файле лежит И то, И другое.
 // 129 — единый кап 16384 (`kUnifiedCap@src/core/caps.h`): кап записей макро,
 // пул рёбер дани и `sizeof(FactionState)` в payload ужались вдвое.
-constexpr int kSaveVersion = 129;
+constexpr int kSaveVersion = 130;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -500,10 +500,12 @@ struct SettledQuestOffer {
 
 struct PlayerState {
     std::string name;
-    // The creation screen's "nature" pick (v78): 0 = male, 1 = female. A
-    // byte, not an enum class — it indexes the authored choice table
-    // (content/plot/intro.h creation_sex_choices) whose rows own the words.
-    std::uint8_t sexIdx = 0;
+    // (Колонка `sexIdx` УНИЧТОЖЕНА в v130, перепись сирот 2026-10-11: она
+    // была КОПИЕЙ экранного поля `CreationState::sexIdx` и не имела ни одного
+    // прод-читателя. Очко атрибута за «female» считается ТАМ, где стоит
+    // авторская таблица выбора — `apply_creation@src/app/main.cpp` читает
+    // `cs.sexIdx`, то есть экран, а не мир. Колонка состояния мира, которую
+    // пишут и не читают, есть колонка-сирота, DOD п.9.)
     int ageDays = 1000;
     // (No `x`/`y` since v88. WHERE he stands is the ordinary ecs::MacroCell
     // on his squad entity — подпосадка 4: the input walker steps it, the one
@@ -660,16 +662,6 @@ struct MacroAiRhythm {
     std::uint32_t sweepAccum = 0;
     std::int32_t  pendingSweeps = 0;
     std::uint64_t sweepCursor = 0;
-};
-
-// One work of a squad's hands on the world's feature grid (v71; CANON S10
-// «фичи создаются сквадами»): the cell and what now stands there. POD,
-// append-only — the save row (world_fields.h Built) writes it verbatim and
-// the load re-stamps it onto the seed-baked grid.
-struct BuiltFeature {
-    std::int32_t x = 0;
-    std::int32_t y = 0;
-    std::uint8_t ft = 0;   // FeatureType byte (macro/features.h)
 };
 
 // «АРЕНДЫ НЕТ» — последнее значение типа (ЗАКОН УЗКОГО ИНДЕКСА): клетка 0
@@ -861,16 +853,14 @@ struct GameState {
     // (kSpellDefs ordinal + 1; 0 = orb drained, закон нуля-ординала).
     ResourceGrid worked;
 
-    // Features BUILT BY SQUADS (v71; owner 2026-08-31, CANON S10 «фичи
-    // создаются сквадами»): the ploughed field today, the crew-laid road or
-    // bridge tomorrow — appended when a squad's work stamps the feature
-    // grid, re-stamped onto the seed-baked grid at load (world_fields.h row
-    // Built). The grid itself stays DERIVED; this list is the truth.
-    std::vector<BuiltFeature> builtFeatures;
-    // (gs.shipsAtCell — третий хеш мира со сканом — УМЕР 2026-09-18: счётчик
-    // пришвартованных стоит числом ФИЧИ в слое разработки `worked` выше,
-    // ровно как обещал канон S10, а «ближайший корпус округи» читается
-    // обходом builtFeatures вместо скана хеша.)
+    // (Вектор `builtFeatures` и структура `BuiltFeature` УНИЧТОЖЕНЫ в v130,
+    // перепись сирот 2026-10-11. Шапка на этом месте обещала «appended when
+    // a squad's work stamps the feature grid» — и была ЛЖЕЦОМ: `push_back` из
+    // геймплея в дереве НОЛЬ, наполняло вектор только чтение сейва. Фичи
+    // сквадами сегодня не строятся вовсе; когда будут — свой факт заведут
+    // заново. Дыра названа нарядом M-206.
+    // gs.shipsAtCell — третий хеш мира со сканом — умер 2026-09-18: счётчик
+    // пришвартованных стоит числом ФИЧИ в слое разработки `worked` выше.)
 };
 
 // ── ДВЕРИ АРЕНДЫ ОКНА — ОДНА НА СДАЧУ, ОДНА НА СНЯТИЕ ────────────────────

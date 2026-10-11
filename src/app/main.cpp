@@ -1930,16 +1930,10 @@ bool boot_world_from_save(App& app, const std::string& path) {
                      loadedTrees.size(), app.treeLayer.cell_count());
     }
     sm::restore_deposit_cells(app.deposits, loadedDeposits);
-    // Features BUILT BY SQUADS (v71, CANON S10): boot_world baked the SEED's
-    // virgin grid; re-stamp the crews' works onto it BEFORE the rebaker
-    // reads features (zones, cost). The list is append-order — the same
-    // order the crews built in.
-    for (const sm::BuiltFeature& bf : app.gs.builtFeatures) {
-        // Дверь слоя (M-112): она же заворачивает адрес и она же спрашивает
-        // РОД байта — байт из файла, не бывший законной фичей, ложится
-        // `FT_None`, а не мусором в поле, из которого потом читает зона.
-        app.features.set(bf.x, bf.y, sm::FeatureType(bf.ft));
-    }
+    // (Ре-штамп построенных сквадами фич УМЕР в v130: вектор `builtFeatures`
+    // был всегда пуст — писателей из геймплея ноль, — то есть этот цикл
+    // крутился по нулю элементов с самого v71. Слой фич остаётся ПРОИЗВОДНЫМ
+    // от сида, и это сегодня вся правда о нём.)
     rebake_world(app);
     app.macro.upload_tree_field(app.device, &app.treeLayer);
     app.uploadedTreeRev = app.treeLayer.revision;
@@ -3075,7 +3069,6 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload&) {
 void apply_creation(App& app) {
     const sm::ui::CreationState& cs = app.creation;
     if (cs.name[0] != '\0') app.gs.player.name = cs.name;
-    app.gs.player.sexIdx = std::uint8_t(cs.sexIdx > 0 ? 1 : 0);
     // The authored build lands in the OWNED component on his freshly-booted
     // squad (посадка Б): boot_world ran ensure_macro_player_entity a moment
     // ago, so the body — and the sheet slot on it — already exists.

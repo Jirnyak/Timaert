@@ -106,7 +106,7 @@ constexpr std::uint64_t kPrefixBytes =
     // колонкой playerFlag записи снапшота, kMacroNpcBytes считает его там.)
 
 constexpr std::uint64_t kPlayerBytes =               // write_player
-    kStrBytes + sizeof(PlayerState::sexIdx) + sizeof(PlayerState::ageDays)
+    kStrBytes + sizeof(PlayerState::ageDays)
     + sizeof(PlayerState::codexUnlockedBits)
     + sizeof(PlayerState::factionPeaceUntilDay)
     + kCountBytes + std::uint64_t(kMaxQuests) * sizeof(SettledQuestOffer)
@@ -883,7 +883,6 @@ void read_chronicle(Reader& r, Chronicle& c) {
 
 void write_player(Writer& w, const PlayerState& p) {
     w.str(p.name);
-    w.pod(p.sexIdx);              // v78: the creation screen's nature pick
     w.pod(p.ageDays);
     // (No position block since v88: WHERE he stands is his squad's MacroCell
     // inside its MacroNpcRecord — подпосадка 4 killed the scalar double,
@@ -930,7 +929,6 @@ void write_player(Writer& w, const PlayerState& p) {
 
 void read_player(Reader& r, PlayerState& p) {
     r.str(p.name);
-    r.pod(p.sexIdx);              // v78
     r.pod(p.ageDays);
     r.pod(p.codexUnlockedBits);   // v63
     r.pod(p.factionPeaceUntilDay);
