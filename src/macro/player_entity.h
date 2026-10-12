@@ -1,14 +1,17 @@
 // THE player's squad on the macro map — an ordinary squad record of the one
 // smooth store, told from every other squad by two things and two things
-// only: a reserved ordinal (`ecs::kPlayerSquadOrdinal`) and the anketa's own
-// column `playerFlag`.
+// only: the two bits of the anketa's own column `playerFlag` — `home` («кто
+// оригинал») and `on` («кем я на карте»). His ORDINAL is an ordinary one from
+// the single emitter, like every squad's: the reserved literal 0x7FFFFFFF died
+// with M-255, and with it the last place where the player was a special kind
+// of identity rather than a flag on an ordinary record.
 //
 // «ИГРОК = НПЦ» (CANON S4). «Кем я управляю сейчас» — a DIFFERENT question,
 // and it MOVES: onto a possessed lord, onto a body underground. That is why
 // it cannot be the thing that identifies his party, and why the two answers
 // are two carriers. С 5б (вердикт владельца 2026-09-29) ИСТИНА обоих —
-// анкета: колонка playerFlag («кем я на карте») и spawnId ==
-// kPlayerSquadOrdinal («кто оригинал»); `GameState::playerFlagBits`/
+// анкета: биты ОДНОЙ колонки playerFlag — `on` («кем я на карте») и `home`
+// («кто оригинал», M-255); `GameState::playerFlagBits`/
 // `playerSquadBits` — КЭШИ-хэндлы этих колонок, и вопрос «где флажок»
 // остался распаковкой поля мира, скана нет. Перенос флажка — ОДНА дверь
 // transfer_player_flag (store.h): колонка + кэш одним движением.
@@ -45,8 +48,9 @@ namespace sm {
 // honest. Called once at world boot and at the top of every macro
 // (non-subworld) tick: it creates the squad on first call (spawn cell
 // derived from the world — the realm's first city), re-resolves handles a
-// stale field cannot carry (boot after load resolves by the reserved
-// ordinal), and keeps the sheet's derivatives honest. It does NOT touch the
+// stale field cannot carry (boot after load re-resolves by the home BIT of
+// the playerFlag column — M-255 killed the reserved-ordinal scan), and keeps
+// the sheet's derivatives honest. It does NOT touch the
 // squad's MacroCell — where he stands is the record's own truth
 // (подпосадка 4). Idempotent and cheap; never touches a live scene body
 // (that lifecycle is owned by SubworldEngine).
@@ -61,6 +65,29 @@ inline MacroHandle player_flag_handle(const GameState& gs) {
 }
 inline MacroHandle player_squad_handle(const GameState& gs) {
     return macro_handle_from_bits(gs.playerSquadBits);
+}
+
+// ОРДИНАЛ ЕГО РОДНОГО СКВАДА — «ПОД КАКИМ НОМЕРОМ ПОДШИТЫ ЕГО ДЕЛА» (M-255).
+// Летопись, расписки за павших существ и имена фактов знают субъекта
+// ОРДИНАЛОМ, а не слотом, — потому что ординал переживает сейв, а слот нет.
+// До M-255 ответом был ЛИТЕРАЛ 0x7FFFFFFF, вписанный в каждого такого
+// читателя; теперь это распаковка кэша плюс чтение колонки, ноль сканов.
+// 0 — «никого»: мира с игроком без дома не бывает, но у фикстуры и у кадра
+// до рождения мира дома нет, и закон нуля-ординала даёт им честный ответ
+// (AGENTS, ЗАКОН СЛОВАРЯ И ОРДИНАЛА п.6).
+inline std::uint32_t player_home_ordinal(const GameState& gs,
+                                         const MacroStore& st) {
+    const MacroHandle home = player_squad_handle(gs);
+    return st.valid(home) ? st.spawnId[home.slot].index : 0u;
+}
+
+// ОРДИНАЛ ТОГО, НА КОМ ФЛАЖОК — «ЧЬИМ ИМЕНЕМ СДЕЛАНО ДЕЛО». Пока он носит
+// лорда, дела подшиваются под ЛОРДА, где бы ни случились (A2, 2026-09-17:
+// «вся семья» — его люди платят свои смерти в ЕГО сквад, не в игрока).
+inline std::uint32_t player_flag_ordinal(const GameState& gs,
+                                         const MacroStore& st) {
+    const MacroHandle flag = player_flag_handle(gs);
+    return st.valid(flag) ? st.spawnId[flag.slot].index : 0u;
 }
 
 // The flag holder's cell and map-glide visual — the SAME columns every
@@ -133,7 +160,8 @@ static_assert(macro_handle_from_bits(0xFFFFFFFFu).slot == kMacroNoSlot,
 // Пересборка кэшей игрока — звать строго ПОСЛЕ restore_macro_ecs: истина
 // «кто игрок» приехала колонкой playerFlag записей снапшота (5б), и оба
 // поля GameState пересобираются из колонок ОДНИМ сканом на границе
-// загрузки (home — spawnId == kPlayerSquadOrdinal, флаг — playerFlag == 1).
+// загрузки ОДНИМ проходом: home — playerFlag.home == 1, флаг — playerFlag.on
+// == 1 (M-255 убил второй проход, искавший дом по литералу-ординалу).
 // Порченый файл (ноль или несколько носителей) не рождает ни безфлажного
 // мира, ни двух игроков: колонка чистится, флаг честно складывается домой.
 void resolve_player_handles_after_load(GameState& gs, MacroStore& st);

@@ -40,6 +40,17 @@ constexpr int kFixtureSpireId   = kFixtureVillageId + 1;
 constexpr std::uint32_t kFixtureIssuerAfter =
     std::uint32_t(kFixtureSpireId) + 1u;
 
+// ОРДИНАЛ ИГРОКА В ФИКСТУРЕ — ОБЫЧНЫЙ, И ИМЕННО ЭТО ОН ДОКАЗЫВАЕТ (M-255).
+// До сноса здесь стоял зарезервированный литерал `kPlayerSquadOrdinal`
+// (0x7FFFFFFF), то есть игрок был единственной записью мира, чью личность
+// называло магическое число. Теперь он лежит в том же пространстве, что
+// записи 200 и 9 выше, и ниже эмитента 341 — как любой сквад; узнаётся он
+// БИТОМ `playerHome`, тем же, каким его узнаёт загрузка.
+constexpr std::uint32_t kFixturePlayerOrdinal = 150u;
+static_assert(kFixturePlayerOrdinal < kFixtureIssuerBase,
+              "рукописный ординал записи обязан лежать НИЖЕ эмитента: одно "
+              "пространство ординалов (M-37) столкновений не терпит");
+
 #include <cstdlib>
 #include <cmath>
 #include <memory>
@@ -218,12 +229,18 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     d.dead = 1;
     out.push_back(std::move(d));
     // THE PLAYER's own squad — an ordinary record of the same snapshot, told
-    // apart only by its reserved ordinal (owner, 2026-08-27: «игрок = обычный
-    // сквад просто с флажком»). His men used to be a field of PlayerState;
-    // that they now ride here, by the same law as any lord's warband, is
-    // exactly what this record proves.
+    // apart only by the HOME BIT of its playerFlag column (owner, 2026-08-27:
+    // «игрок = обычный сквад просто с флажком»). His men used to be a field of
+    // PlayerState; that they now ride here, by the same law as any lord's
+    // warband, is exactly what this record proves.
+    //
+    // ЕГО ОРДИНАЛ — ОБЫЧНЫЙ (M-255): здесь стоял зарезервированный литерал
+    // 0x7FFFFFFF, и фикстура находила его запись сравнением с ним. Теперь
+    // ординал ничем не выделен, а ищется он тем же битом, каким его ищет
+    // загрузка, — то есть свидетель проверяет НАСТОЯЩЕГО носителя.
     sm::MacroNpcRecord player{};
-    player.spawnId.index = sm::ecs::kPlayerSquadOrdinal;
+    player.spawnId.index = kFixturePlayerOrdinal;
+    player.playerHome = 1;
     player.cell = {sm::ecs::cell_index(12, 13, 512)};
     player.visual = {12.0f, 13.0f, 0.0f};
     player.kind = {std::uint16_t(sm::NPCType::Adventurer),
@@ -407,7 +424,7 @@ sm::GameState make_state(sm::MacroStore& st) {
         jf.day = 12;
         jf.kind = std::uint16_t(sm::FactKind::Killed);
         jf.subjectKind = sm::fact_subject(sm::FactSubject::Squad, true);
-        jf.subject = sm::ecs::kPlayerSquadOrdinal;
+        jf.subject = kFixturePlayerOrdinal;
         jf.x = 3; jf.y = 4; jf.amount = 2;
         gs.player.journal.push_back(jf);
         jf.kind = std::uint16_t(sm::FactKind::Traded);
@@ -861,7 +878,7 @@ void run_roundtrip() {
     {
         const sm::MacroNpcRecord* worn = nullptr;
         for (const sm::MacroNpcRecord& r : loadedMacro) {
-            if (r.spawnId.index == sm::ecs::kPlayerSquadOrdinal) worn = &r;
+            if (r.playerHome != 0) worn = &r;
         }
         if (!worn) FAIL_BAIL("the player's own record did not come back");
         if (sm::worn_cells(worn->gear) != 1) FAIL_BAIL("worn gear lost");
@@ -997,10 +1014,10 @@ void run_roundtrip() {
 
     {
         // His SHEET rides his squad's record now (посадка Б, v91) — find it
-        // by the reserved ordinal and demand the build came back verbatim.
+        // by the HOME BIT (M-255) and demand the build came back verbatim.
         const sm::MacroNpcRecord* prec = nullptr;
         for (const sm::MacroNpcRecord& r : loadedMacro) {
-            if (r.spawnId.index == sm::ecs::kPlayerSquadOrdinal) prec = &r;
+            if (r.playerHome != 0) prec = &r;
         }
         if (!prec) FAIL_BAIL("the player's squad record vanished");
         if (!prec->hasSheet) FAIL_BAIL("the player's owned sheet flag lost");
@@ -1038,11 +1055,11 @@ void run_roundtrip() {
         FAIL_BAIL("the player's journal did not round-trip entry-for-entry");
     }
     {
-        // His BOOK rides his squad's record (v89) — find it by the reserved
-        // ordinal and demand the knowledge came back bit-for-bit.
+        // His BOOK rides his squad's record (v89) — find it by the HOME BIT
+        // (M-255) and demand the knowledge came back bit-for-bit.
         const sm::MacroNpcRecord* prec = nullptr;
         for (const sm::MacroNpcRecord& r : loadedMacro) {
-            if (r.spawnId.index == sm::ecs::kPlayerSquadOrdinal) prec = &r;
+            if (r.playerHome != 0) prec = &r;
         }
         if (!prec) FAIL_BAIL("the player's squad record vanished");
         if (!sm::spellbook_has_learned(prec->book,

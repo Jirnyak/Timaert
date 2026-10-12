@@ -441,7 +441,11 @@ void despawn_subworld_entities_outside_window(ecs::World& w);
 // death receipts strike (macro/macro_stock.h "creatures"): the FLAG record's own
 // MacroSpawnId and cell, read at the call site — a worn lord's men pay their
 // deaths back into HIS squad, not into the player ordinal (A2, 2026-09-17).
-// Defaults name the ordinary hero squad, which is what every fixture has.
+// ДЕФОЛТ — 0, «НИКТО» (закон нуля-ординала, M-255): здесь стоял
+// зарезервированный литерал 0x7FFFFFFF, то есть подпись «игрок» ставилась
+// скваду ДО того, как звонящий сказал, чей он. Фикстуре без макромира
+// расписку класть некуда, и ноль говорит это честно; единственный боевой
+// звонящий (sub/engine.cpp) передаёт ординал носителя флажка явно.
 void spawn_player_squad(ecs::World& w,
                         const Inventory& squad,
                         const SeamlessSubworldManager& mgr,
@@ -450,8 +454,7 @@ void spawn_player_squad(ecs::World& w,
                         std::uint32_t seed,
                         std::uint16_t faction,
                         const BonusTotals* squadBonuses = nullptr,
-                        std::int32_t creaturesSubject =
-                            std::int32_t(ecs::kPlayerSquadOrdinal),
+                        std::int32_t creaturesSubject = 0,
                         std::int16_t creaturesCx = 0,
                         std::int16_t creaturesCy = 0);
 
@@ -463,8 +466,7 @@ void spawn_player_squad(ecs::World& w,
                         std::uint32_t seed,
                         std::uint16_t faction,
                         const BonusTotals* squadBonuses = nullptr,
-                        std::int32_t creaturesSubject =
-                            std::int32_t(ecs::kPlayerSquadOrdinal),
+                        std::int32_t creaturesSubject = 0,
                         std::int16_t creaturesCx = 0,
                         std::int16_t creaturesCy = 0);
 

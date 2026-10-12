@@ -436,7 +436,7 @@ namespace sm {
 // было нельзя. Замер сразу дал число: пик 211 фактов в день × горизонт 64 дня
 // (теперь ВЫВЕДЕННЫЙ из таблицы, `kChronicleLongestInterestDays`) = 13 504
 // против капа 65 536 — кольцо с запасом 4.9×, и это теперь ЗАМЕР.
-constexpr int kSaveVersion = 135;
+constexpr int kSaveVersion = 136;   // M-255: байт playerHome в записи анкеты
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -764,8 +764,10 @@ struct GameState {
     // колонки playerFlag == 1 («кем я на карте»; двигают вселение
     // possess_entity и пробуждение wake_player_in_original_body — ОДНОЙ
     // дверью transfer_player_flag, пишущей колонку и кэш вместе);
-    // playerSquadBits кэширует запись spawnId == kPlayerSquadOrdinal (родной
-    // сквад, «кто оригинал»). Форма — packed-хэндл store {slot | gen<<16}
+    // playerSquadBits кэширует носителя БИТА playerFlag.home (родной сквад,
+    // «кто оригинал»; ставит его дверь mark_player_home). До M-255 дом был
+    // зарезервированным ординалом-литералом, и загрузка искала его сканом по
+    // магическому числу — теперь оба вопроса стоят битами одной колонки. Форма — packed-хэндл store {slot | gen<<16}
     // (macro_handle_bits@src/macro/store.h); сентинель «никого» — все
     // единицы (kMacroHandleNoneBits; литерал здесь, потому что state.h не
     // включает store.h — согласие держит static_assert в player_entity.h).

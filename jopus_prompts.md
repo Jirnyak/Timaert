@@ -941,7 +941,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 `quest_engine.cpp:203-204`, никто не шлёт), `Custom` (только дефолт
 инициализации `logic_nodes.h:23` и тесты). Теги с производителем, но без
 прод-читателя: `QuestStart`, `QuestUpdate@src/events/quests/quest_engine.cpp`,
-`SpellCast@src/app/main.cpp`, `PlayerLeaveSettlement` (main.cpp:461 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
+`SpellCast@src/app/main.cpp`, `PlayerLeaveSettlement` (main.cpp:471 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
 
 **1. Контекст.** Читать: `src/events/event_bus.h` целиком,
 `src/events/event_bus.cpp` целиком, `src/events/event_types.h:20-64`
@@ -1367,7 +1367,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 - Было: три `std::string name`. Стало: `NameCol name{}` в `Landmark`,
   `City`, `PlayerState`.
 - Писатели: `state.cpp:184-187,360`, `politik.cpp:192,235,295` —
-  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3071 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
+  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3080 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
   `name_set(app.gs.player.name, cs.name)`.
 - Читатели: `.c_str()` → само поле; `.empty()` → `name[0] == '\0'`;
   `procedural.cpp:426` `ctx.name = s.name` — если `ctx.name` — `std::string`

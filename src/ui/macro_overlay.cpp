@@ -373,8 +373,7 @@ void draw_macro_overlay(const MacroWorld& mw,
         for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
-            if (slot == flagSlot
-                || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal)
+            if (slot == flagSlot || st.playerFlag[slot].home != 0)
                 continue;
             // ТЕЛО МЕСТА — НЕ ФИГУРКА (ось рода, грабля флипа M-90):
             // место рисует СВОЙ проход (for_each_landmark), и однажды
@@ -698,8 +697,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
         for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (st.alive[slot] == 0) continue;
-            if (slot == flagSlot
-                || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal)
+            if (slot == flagSlot || st.playerFlag[slot].home != 0)
                 continue;
             // ТЕЛО МЕСТА — НЕ СОСЕД-СКВАД (тот же гейт, что у спрайтов).
             if (squad_archetype(SquadType(st.runtime[slot].squadType)) == SquadArchetype::Place)

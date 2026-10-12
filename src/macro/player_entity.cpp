@@ -16,8 +16,39 @@ namespace sm {
 
 // (PlayerSquadCache и find_player_squad умерли в 1е кластере 5: ответ «кто
 // оригинал» стал распаковкой `gs.playerSquadBits` — кэшировать распаковку
-// поля нечего, а скан по ординалу остался ровно один, на границе резолва
-// ниже, где биты ещё не назначены.)
+// поля нечего, а скан остался ровно один, на границе резолва ниже, где биты
+// ещё не назначены.)
+
+namespace {
+// ЕДИНСТВЕННЫЙ СКАН «ГДЕ ЕГО ДОМ» — по КОЛОНКЕ, и только на границе (буте и
+// загрузке), где кэш-биты ещё не назначены или протухли. До M-255 этот же
+// скан шёл по ЗАРЕЗЕРВИРОВАННОМУ ОРДИНАЛУ-ЛИТЕРАЛУ, то есть у вопроса «кто
+// оригинал» носителем было магическое число, а не колонка анкеты.
+// kMacroNoSlot — «дома нет вовсе» (мир ещё не родил игрока).
+MacroHandle find_player_home_column(const MacroStore& st) {
+    for (std::size_t s = 0; s < kUnifiedCap; ++s) {
+        if (!st.alive[s] || st.playerFlag[s].home == 0) continue;
+        return handle_at(st, std::uint16_t(s));
+    }
+    return MacroHandle{};
+}
+
+// СИД ЛИЦА ИГРОКА ПО УМОЛЧАНИЮ — СВОЁ ЧИСЛО, А НЕ ЧЕЙ-ТО ОРДИНАЛ (M-255).
+// Вывод: он ОДИН И ТОТ ЖЕ ЧЕЛОВЕК В ЛЮБОМ МИРЕ, пока экран создания не
+// перерисует его, — значит лицо не вправе зависеть ни от сида мира, ни от
+// выданного ему эмитентом ординала. Отсюда константа, а не ролл.
+//
+// Значение ЗАМОРОЖЕНО СОЗНАТЕЛЬНО: это ровно `0x7FFFFFFF ^ 0x9E3779B9`, то
+// есть то, чем лицо сеялось, пока «кто оригинал» был литералом-ординалом.
+// Сид был ПОБОЧНЫМ ЖИТЕЛЕМ того литерала, и снос ординала без этой строки
+// молча перерисовал бы персонажа — дефект, которого игрок не заказывал.
+// Само число — контент (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ: «все числа это баланс»),
+// и менять его можно молча; нельзя — ВЫВОДИТЬ его из чужой идентичности.
+constexpr std::uint32_t kPlayerDefaultFaceSeed = 0xE1C88646u;
+static_assert(kPlayerDefaultFaceSeed == (0x7FFFFFFFu ^ 0x9E3779B9u),
+              "сид лица игрока обязан остаться тем, чем был до сноса "
+              "kPlayerSquadOrdinal — иначе снос перерисовал персонажа");
+} // namespace
 
 void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
 
@@ -30,12 +61,12 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // player-specific paths, which CANON S4 forbids by name.
     //
     // «Кто оригинал» — биты GameState; протухшие после загрузки или пустые
-    // на буте биты резолвятся зарезервированным ординалом ОДИН раз (граница,
-    // не тик: валидные биты — распаковка без скана).
+    // на буте биты резолвятся КОЛОНКОЙ ОДИН раз (граница, не тик: валидные
+    // биты — распаковка без скана). Ревалидация спрашивает ту же колонку:
+    // бит дома на том слоте, на который биты показывают.
     MacroHandle home = player_squad_handle(gs);
-    if (!st.valid(home)
-        || st.spawnId[home.slot].index != ecs::kPlayerSquadOrdinal) {
-        home = macro_handle_by_spawn_id(st, ecs::kPlayerSquadOrdinal);
+    if (!st.valid(home) || st.playerFlag[home.slot].home == 0) {
+        home = find_player_home_column(st);
     }
     if (home.slot == kMacroNoSlot) {
         // THE spawn cell, derived from the world itself (подпосадка 4 — no
@@ -59,7 +90,11 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         });
         const MacroHandle h = store_birth(st);
         if (!st.valid(h)) return;   // отказ капа уже прозвучал вслух
-        st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};
+        // ОРДИНАЛ ОТ ЕДИНОГО ЭМИТЕНТА, КАК ВСЯКОМУ СКВАДУ (M-255): здесь
+        // стоял литерал 0x7FFFFFFF, делавший игрока единственной сущностью
+        // мира с идентичностью-литералом. Столкновения не бывает и без
+        // резерва — эмитент монотонен и ординалы не переиспользует.
+        st.spawnId[h.slot] = ecs::MacroSpawnId{gs.nextMacroSpawnOrdinal++};
         st.cell[h.slot]    = ecs::MacroCell{ecs::cell_index(sx, sy, gs.mapW)};
         st.visual[h.slot]  = ecs::MacroVisual{float(sx), float(sy), 0.0f};
         st.kind[h.slot]    = ecs::NPCKind{
@@ -83,7 +118,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
             std::int16_t(std::max(1, sheet.levelData.level))};
         ecs::Pools& pools = st.pools[h.slot];
         {
-            Rng faceRng(ecs::kPlayerSquadOrdinal ^ 0x9E3779B9u);
+            Rng faceRng(kPlayerDefaultFaceSeed);
             st.character[h.slot] = ecs::roll_npc_character(faceRng, 160);
         }
         // His book, born WITH the body like every squad's (v89) — with the
@@ -116,7 +151,10 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         st.runtime[h.slot] = rt;
         home = h;
     }
-    gs.playerSquadBits = macro_handle_bits(home);
+    // ДОМ СТАВИТСЯ ОДНОЙ ДВЕРЬЮ (M-255): колонка + кэш одним движением,
+    // ровно как флажок выше. Звонок на уже отмеченном слоте идемпотентен,
+    // невалидный хэндл — no-op (кэш не сжигается о протухшие биты).
+    mark_player_home(st, gs.playerSquadBits, home);
 
     // ── No position projection any more ──────────────────────────────────
     // The MacroCell of this record IS where he stands (подпосадка 4): the
@@ -167,20 +205,32 @@ bool wake_player_in_original_body(GameState& gs, MacroStore& st) {
 }
 
 void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
-    const MacroHandle home =
-        macro_handle_by_spawn_id(st, ecs::kPlayerSquadOrdinal);
-    // Один скан колонок на границе загрузки (5б): истина приехала колонкой
-    // playerFlag записей снапшота, кэши GameState пересобираются из неё.
-    MacroHandle flag{};
-    std::uint32_t holders = 0;
+    // ОДИН СКАН КОЛОНКИ, ДВА БИТА (5б + M-255): истина ОБОИХ вопросов
+    // приехала колонкой playerFlag записей снапшота, оба кэша GameState
+    // пересобираются из неё. Дом искался здесь ВТОРЫМ проходом по store —
+    // сканом по зарезервированному ординалу-литералу; теперь он бит рядом.
+    MacroHandle flag{}, home{};
+    std::uint32_t flagHolders = 0, homeHolders = 0;
     for (std::size_t s = 0; s < kUnifiedCap; ++s) {
-        if (!st.alive[s] || st.playerFlag[s].on == 0) continue;
-        ++holders;
-        flag = handle_at(st, std::uint16_t(s));
+        if (!st.alive[s]) continue;
+        if (st.playerFlag[s].on != 0) {
+            ++flagHolders;
+            flag = handle_at(st, std::uint16_t(s));
+        }
+        if (st.playerFlag[s].home != 0) {
+            ++homeHolders;
+            home = handle_at(st, std::uint16_t(s));
+        }
     }
-    if (holders != 1) {
-        // Порченый файл не рождает ни безфлажного мира, ни двух игроков:
-        // колонку вычистить, флаг честно домой (мира без флага не бывает).
+    // Порченый файл не рождает ни мира с двумя домами, ни безфлажного мира,
+    // ни двух игроков: колонка чистится, носитель каждого бита остаётся ОДИН.
+    if (homeHolders > 1) {
+        for (std::size_t s = 0; s < kUnifiedCap; ++s)
+            st.playerFlag[s].home = 0;
+        if (st.valid(home)) st.playerFlag[home.slot].home = 1;
+    }
+    if (flagHolders != 1) {
+        // Флаг честно складывается домой — мира без флага не бывает.
         for (std::size_t s = 0; s < kUnifiedCap; ++s)
             st.playerFlag[s].on = 0;
         flag = home;

@@ -399,7 +399,7 @@ constexpr Row kGameStateRows[] = {
      "ГЕНЕРАТОРА и уехал локальным буфером генезиса, копия размера карты умерла "
      "как второй ответ на сторону мира"},
     {"player", Rod::Nested, "переписан своей таблицей ниже"},
-    {"playerSquadBits", Rod::Cache, "кэш записи spawnId == kPlayerSquadOrdinal"},
+    {"playerSquadBits", Rod::Cache, "кэш носителя бита playerFlag.home (M-255)"},
     {"playerFlagBits", Rod::Cache, "кэш носителя колонки playerFlag"},
     {"worldTime", Rod::WorldVars, "время — частный случай мировой переменной"},
     {"lastWorldRebakeDay", Rod::WorldVars, "фаза перепёка/автосейва"},

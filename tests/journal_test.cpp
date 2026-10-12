@@ -39,21 +39,28 @@ WorldFact fact(int day, FactKind kind, std::uint8_t subjKind,
 // a flagged entity with a MacroCell, moved by writing that cell — exactly
 // what the walker and the jump door do in the game.
 // The player standing somewhere — and standing there AS HIMSELF, which since
-// 2026-09-14 means the fixture must raise an honest ORIGINAL: the reserved
-// ordinal is what «кто оригинал» is spelled as, and «ношу ли я чужое тело» is
-// the flag and the original being different entities (player_entity.h). A
-// stand-in with only PlayerTag used to be enough because the question was then
-// asked by comparing the FLAG's own ordinal to the constant — one entity, one
-// read. It is not enough now, and that is the fixture's debt, not the law's:
-// a world without an original is a world that cannot exist.
+// 2026-09-14 means the fixture must raise an honest ORIGINAL: «кто оригинал» is
+// the HOME BIT of the playerFlag column (M-255 — it used to be a reserved
+// ordinal-literal), and «ношу ли я чужое тело» is the flag and the original
+// being different entities (player_entity.h). A stand-in with only PlayerTag
+// used to be enough because the question was then asked by comparing the FLAG's
+// own ordinal to the constant — one entity, one read. It is not enough now, and
+// that is the fixture's debt, not the law's: a world without an original is a
+// world that cannot exist.
+//
+// СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ САМ (§8 п.11) и ходит ТЕМИ ЖЕ ДВЕРЬМИ,
+// что игра: ординал — от эмитента, дом — mark_player_home, флаг — дверь
+// переноса. Прибей он ординал литералом, как раньше, — и свидетель проверял бы
+// форму, которой в игре больше нет.
 void stand_at(sm::GameState& gs, ecs::World& w, int x, int y) {
     sm::MacroStore& st = sm::store_of(w);
     if (!st.valid(sm::player_squad_handle(gs))) {
         const sm::MacroHandle h = sm::store_birth(st);
-        st.spawnId[h.slot] = ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal};
-        // Оба носителя, как настоящая дверь (5б): колонка playerFlag —
-        // истина, биты GameState — кэш; флажок ставит дверь переноса.
-        gs.playerSquadBits = sm::macro_handle_bits(h);
+        st.spawnId[h.slot] =
+            ecs::MacroSpawnId{gs.nextMacroSpawnOrdinal++};
+        // Оба носителя — СВОЕЙ дверью (5б + M-255): колонка playerFlag —
+        // истина, биты GameState — кэш, и каждая дверь пишет их вместе.
+        sm::mark_player_home(st, gs.playerSquadBits, h);
         sm::transfer_player_flag(st, gs.playerFlagBits, h);
     }
     // Клетка пишется НОСИТЕЛЮ ФЛАЖКА — локальность журнал мерит по нему.
@@ -75,7 +82,8 @@ void test_participation_locality_and_silence() {
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad, true),
-                          ecs::kPlayerSquadOrdinal, 50, 50));
+                          sm::player_home_ordinal(gs, sm::store_of(w)),
+                          50, 50));
     // (b) Somebody else's deed on the player's cell — learned by LOCALITY.
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Battle,
@@ -90,7 +98,8 @@ void test_participation_locality_and_silence() {
     player_journal_capture(gs, w);
     CHECK(gs.player.journal.size() == 2,
           "participation and locality are learned; the far world is not");
-    CHECK(gs.player.journal[0].subject == ecs::kPlayerSquadOrdinal
+    CHECK(gs.player.journal[0].subject
+                  == sm::player_home_ordinal(gs, sm::store_of(w))
               && gs.player.journal[1].subject == 777u,
           "the journal keeps the very records, in the order they happened");
 
@@ -104,11 +113,12 @@ void test_participation_locality_and_silence() {
                          fact_subject(FactSubject::Squad, false), 778u,
                          30, 30);
     hit.objectKind = fact_subject(FactSubject::Squad, true);
-    hit.object = ecs::kPlayerSquadOrdinal;
+    hit.object = sm::player_home_ordinal(gs, sm::store_of(w));
     chronicle_record(gs.chronicle, hit);
     player_journal_capture(gs, w);
     CHECK(gs.player.journal.size() == 3
-              && gs.player.journal[2].object == ecs::kPlayerSquadOrdinal,
+              && gs.player.journal[2].object
+                     == sm::player_home_ordinal(gs, sm::store_of(w)),
           "being done-to is participation too");
 
     // Walking away changes what "here" means: the same foreign cell that was

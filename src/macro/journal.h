@@ -61,10 +61,18 @@ inline void player_journal_capture(GameState& gs, ecs::World& world) {
         const MacroStore& st = store_of(world);
         if (st.valid(flag)) possessed = int(st.spawnId[flag.slot].index);
     }
-    const auto isHis = [possessed](std::uint8_t kind, std::uint32_t ordinal) {
+    // ОРДИНАЛ ЕГО ДОМА — ТОЙ ЖЕ ФОРМОЙ, ЧТО ОРДИНАЛ ВСЕЛЁННОГО ЛОРДА выше
+    // (M-255): распаковка кэша один раз ПЕРЕД циклом, ноль сканов на факт.
+    // Здесь стоял литерал 0x7FFFFFFF, и шапка рядом уже предупреждала, что
+    // он «задрейфует в день, когда „кто оригинал“ перестанет писаться этой
+    // константой». День пришёл: дом стал битом колонки playerFlag.home.
+    const std::uint32_t homeOrd = player_home_ordinal(gs, store_of(world));
+    const auto isHis = [possessed, homeOrd](std::uint8_t kind,
+                                            std::uint32_t ordinal) {
         if (fact_subject_kind(kind) != std::uint8_t(FactSubject::Squad))
             return false;
-        return ordinal == ecs::kPlayerSquadOrdinal
+        // 0 — «никто» (закон нуля-ординала): безымянный субъект не его.
+        return (homeOrd != 0 && ordinal == homeOrd)
             || (possessed >= 0 && ordinal == std::uint32_t(possessed));
     };
     for (std::uint32_t s = p.journalSeenSeq + 1u; s < c.nextSeq; ++s) {

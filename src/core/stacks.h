@@ -139,7 +139,13 @@ inline constexpr std::size_t kMacroStoreRowBytes =
     + sizeof(ecs::NpcInventory)
     + sizeof(CharacterSheet) + sizeof(ecs::SquadOrders)
     + sizeof(ecs::BodyEquipment) + sizeof(ecs::DesignCharacterTag)
-    + sizeof(std::uint8_t)            // playerFlag — флажок игрока (5б)
+    + sizeof(std::uint8_t) * 2u       // playerFlag — ДВА бита игрока: `on`
+                                      // («кем я на карте», 5б) и `home`
+                                      // («кто оригинал», M-255). Тип
+                                      // `PlayerFlag` сюда не включить —
+                                      // store.h ВЫШЕ по включению, — поэтому
+                                      // ширина названа байтами, а сходимость
+                                      // держит ассерт на той стороне.
     + sizeof(std::uint8_t)            // dead — байт судьбы
     + sizeof(std::uint16_t)           // generation — поколение слота
     + sizeof(std::uint8_t)            // alive — занятость

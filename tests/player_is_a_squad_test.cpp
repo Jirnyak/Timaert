@@ -77,15 +77,24 @@ void test_player_carries_everything_a_squad_carries() {
     // 6.3: моста нет — сквад ЕСТЬ слот store, снапшот ходит по alive-слотам
     // и читает каждую колонку; «игрок в снапшоте» утверждается ниже по
     // СОДЕРЖИМОМУ снапшота, а не по носителю.
-    CHECK(wStore_->spawnId[mineH.slot].index == ecs::kPlayerSquadOrdinal,
-          "he is found by his reserved ordinal");
+    CHECK(wStore_->playerFlag[mineH.slot].home != 0,
+          "he is found by the HOME BIT of his playerFlag column (M-255)");
+    // И ЕГО ОРДИНАЛ — ОБЫЧНЫЙ, ВЫДАННЫЙ ЭМИТЕНТОМ (M-255). Это негатив к
+    // снесённому литералу 0x7FFFFFFF: вернёт кто-нибудь игроку
+    // зарезервированный номер — оба утверждения ниже покраснеют, потому что
+    // литерал лежал ВЫШЕ любого выданного счётчиком значения.
+    const std::uint32_t mineOrd = wStore_->spawnId[mineH.slot].index;
+    CHECK(mineOrd != 0u && mineOrd < gs.nextMacroSpawnOrdinal,
+          "его ординал выдан единым эмитентом, а не прибит литералом");
+    CHECK(player_home_ordinal(gs, *wStore_) == mineOrd,
+          "дверь ординала дома называет ту же запись, что бит колонки");
     CHECK(player_inventory(gs, *wStore_) != nullptr, "his bag is reachable");
 
     // And he is proved to be IN the snapshot, not merely shaped like it.
     const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(*wStore_);
     int mine = 0;
     for (const MacroNpcRecord& r : snap) {
-        if (r.spawnId.index == ecs::kPlayerSquadOrdinal) ++mine;
+        if (r.playerHome != 0) ++mine;
     }
     CHECK(mine == 1, "the snapshot carries the player's squad exactly once");
 }

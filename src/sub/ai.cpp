@@ -46,12 +46,15 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     MacroHandle unconsciousRec{};
     {
         // Флаг НЕ на родном скваде = хозяин ходит в чужом теле, его сквад
-        // без чувств. Ответ — сравнение двух чисел GameState (1е кластер 5);
-        // ординал родного сквада — зарезервированная константа, скана нет.
+        // без чувств. Ответ — сравнение двух чисел GameState (1е кластер 5).
+        // Ординал дома СПРАШИВАЕТСЯ У ЕГО ЗАПИСИ (M-255): он выдан тем же
+        // эмитентом, что всякому скваду, а не зарезервированной константой.
         const MacroHandle home = macro_handle_from_bits(playerSquadBits);
         if (home.slot != kMacroNoSlot && playerFlagBits != playerSquadBits) {
+            const MacroStore& st = store_of(w);
             unconsciousRec = home;
-            unconsciousSubject = std::int32_t(ecs::kPlayerSquadOrdinal);
+            unconsciousSubject = st.valid(home)
+                ? std::int32_t(st.spawnId[home.slot].index) : -1;
         }
     }
 

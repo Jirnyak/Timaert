@@ -794,7 +794,11 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     const BonusTotals playerBonuses =
         squad_bonuses(player_effective_sheet(gs, store_of(ecs)));
     const MacroHandle flagRec = player_flag_handle(gs);
-    std::int32_t creaturesSubject = std::int32_t(ecs::kPlayerSquadOrdinal);
+    // 0 — «НИКТО» (закон нуля-ординала): если флажок невалиден, мира с
+    // игроком ещё нет, и расписке некуда ложиться. Здесь стоял литерал
+    // 0x7FFFFFFF (M-255) — то есть несуществующий флажок молча подшивал
+    // расписки под зарезервированный ординал.
+    std::int32_t creaturesSubject = 0;
     std::int16_t creaturesCx = 0, creaturesCy = 0;
     std::uint16_t squadFaction = std::uint16_t(faction_index(kPlayerFactionId));
     {
@@ -1986,9 +1990,10 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     f.kind = std::uint16_t(kind);
     // The PLAYER is the only one who acts down here (interactions are his
     // alone), and he is a squad like any other — so the deed is his, by his
-    // save-stable ordinal.
+    // save-stable ordinal. Тот ординал выдан ЕДИНЫМ эмитентом (M-255) и
+    // спрашивается у его записи; здесь стоял литерал 0x7FFFFFFF.
     f.subjectKind = std::uint8_t(FactSubject::Squad);
-    f.subject = ecs::kPlayerSquadOrdinal;
+    f.subject = ecs_ ? player_home_ordinal(*gs_, store_of(*ecs_)) : 0u;
     // When the deed was done TO a named place, the place rides as the object
     // by its landmark ordinal (v54: one id space names it alone).
     if (objectLandmarkId > 0) {

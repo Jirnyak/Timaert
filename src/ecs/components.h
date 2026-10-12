@@ -605,16 +605,15 @@ static_assert(sizeof(MacroNpcRuntime) == 84,
 struct MacroSpawnId { std::uint32_t index = 0; };   // 0 = «никто»: эмитент
                                     // выдаёт с 1 (закон нуля-ординала, M-37)
 
-// The PLAYER's squad ordinal — reserved at the top of the space so it can
-// never collide with the 0,1,2… the world spawner hands out. His squad is an
-// ordinary macro squad (owner, 2026-08-27) and therefore needs an ordinal like
-// any other: it is what the creatures ledger keys casualties by, and what finds
-// him again after a load regenerates the world.
-// NOT 0xFFFFFFFF: the stock ledger carries a subject as a SIGNED int32 —
-// the all-ones ordinal would read as a negative there and be dropped by the
-// subject-validity gates. INT32_MAX is as far from the spawner's 1,2,3… as
-// an ordinal can be while staying a positive number (0 = «никто», M-37).
-inline constexpr std::uint32_t kPlayerSquadOrdinal = 0x7FFFFFFFu;
+// (kPlayerSquadOrdinal = 0x7FFFFFFF УМЕР ЗДЕСЬ, M-255. Он был ВТОРЫМ
+// носителем «кто игрок» и делал игрока единственной сущностью мира с
+// идентичностью-ЛИТЕРАЛОМ. Оба его оправдания были пусты: столкновения с
+// выдачей 1,2,3… не бывает и без резерва — эмитент `nextMacroSpawnOrdinal`
+// персистентный и МОНОТОННЫЙ, ординалы не переиспользует (ровно за это его
+// и вводили, v23); а «найти его снова после загрузки» делает КОЛОНКА.
+// Теперь оба вопроса — биты одной колонки анкеты `PlayerFlag`
+// (macro/store.h): `on` — «кем я на карте», `home` — «кто оригинал»;
+// ординал игроку выдаёт тот же эмитент, что всякому скваду.)
 
 // THE macro entity is a SQUAD, not a person (owner's design, CANON S4/S13 (бывший macrosim.md)
 // "Squad as THE macro entity"). This component is that ruling made structural:

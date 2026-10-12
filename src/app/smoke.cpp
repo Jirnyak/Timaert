@@ -1089,8 +1089,8 @@ bool run_subworld_recovery_smoke(App& app) {
         for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (stx.alive[slot] == 0 || stx.dead[slot] != 0) continue;
-            // Игрок — колонкой ординала (1е кластер 5), тег-exclude умер.
-            if (stx.spawnId[slot].index == sm::ecs::kPlayerSquadOrdinal)
+            // Игрок — БИТОМ КОЛОНКИ playerFlag.home (M-255), тег-exclude умер.
+            if (stx.playerFlag[slot].home != 0)
                 continue;
             auto& c = stx.cell[slot];
             auto& v = stx.visual[slot];
@@ -2106,9 +2106,9 @@ sm::MacroHandle smoke_find_macro_npc_trace_target(App& app) {
         if (stf.alive[slot] == 0) continue;
         // Прежние exclude-по-наличию — теперь колоночные предикаты
         // (маршрут = waypointCount > 0; анкета стола = ordinal >= 0;
-        // игрок = зарезервированный ординал, 1е кластер 5).
+        // игрок = бит playerFlag.home, M-255).
         if (stf.dead[slot] != 0) continue;
-        if (stf.spawnId[slot].index == sm::ecs::kPlayerSquadOrdinal) continue;
+        if (stf.playerFlag[slot].home != 0) continue;
         if (stf.orders[slot].waypointCount > 0) continue;
         if (stf.designTag[slot].ordinal >= 0) continue;
         const auto& hp = stf.pools[slot];
@@ -6628,9 +6628,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (app.smoke.pendingLoadBoot) {
                 smoke_print_counts(app, "load_boot");
                 // THE SAVE-5 trap (permanent, not a scratch print). A load must
-                // leave EXACTLY ONE carrier of the reserved player ordinal and
-                // EXACTLY ONE flag holder, and the doors must answer with that
-                // carrier or the flag holder. Before v87 the load-path genesis
+                // leave EXACTLY ONE carrier of the home bit (playerFlag.home,
+                // M-255 — это был зарезервированный ординал) and EXACTLY ONE
+                // flag holder, and the doors must answer with that carrier or
+                // the flag holder. Before v87 the load-path genesis
                 // raised a second carrier and every door pointed at it: bars,
                 // bag and creatures silently reset to a fresh husk while the
                 // restored squad ghosted the map — green fold witness, green
@@ -6641,8 +6642,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          ++s32) {
                         const std::uint16_t slot = std::uint16_t(s32);
                         if (app.macroStore->alive[slot] == 0) continue;
-                        if (app.macroStore->spawnId[slot].index
-                            == sm::ecs::kPlayerSquadOrdinal) ++carriers;
+                        if (app.macroStore->playerFlag[slot].home != 0)
+                            ++carriers;
                     }
                     // Флаг и родной сквад — биты GameState (1е кластер 5):
                     // «ровно один флаг» = валидный хэндл в store.
@@ -6652,8 +6653,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         sm::player_squad_handle(app.gs);
                     const bool doorHonest =
                         app.macroStore->valid(door)
-                        && app.macroStore->spawnId[door.slot].index
-                               == sm::ecs::kPlayerSquadOrdinal;
+                        && app.macroStore->playerFlag[door.slot].home != 0;
                     std::fprintf(stderr,
                                  "[smoke] load_boot player carriers=%d flags=%d "
                                  "door_honest=%d\n",
@@ -8358,8 +8358,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
-                if (stv.spawnId[slot].index
-                    == sm::ecs::kPlayerSquadOrdinal) continue;
+                if (stv.playerFlag[slot].home != 0) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& pcell = stv.cell[slot];
@@ -8402,8 +8401,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
-                if (stv.spawnId[slot].index
-                    == sm::ecs::kPlayerSquadOrdinal) continue;
+                if (stv.playerFlag[slot].home != 0) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& pcell = stv.cell[slot];
@@ -8451,8 +8449,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
-                if (stv.spawnId[slot].index
-                    == sm::ecs::kPlayerSquadOrdinal) continue;
+                if (stv.playerFlag[slot].home != 0) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& acell = stv.cell[slot];

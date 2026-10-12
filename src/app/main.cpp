@@ -232,17 +232,27 @@ bool squad_is_named(const App& app, std::uint32_t handleBits) {
 // frame the sentence is rendered in, which is the only life a sentence has.
 sm::FactNaming app_fact_naming(App& app) {
     sm::FactNaming n{};
-    n.user = app.macroStore.get();
+    // КОНВЕРТ НЕСЁТ App, А НЕ ОДИН store (M-255): «кто из них — читатель»
+    // отвечает ординал его дома, то есть распаковка кэша GameState плюс
+    // колонка. Нёс бы конверт только store — ответ стоил бы СКАНА по
+    // ординалу на КАЖДУЮ названную строку журнала, то есть 16 384 шага на
+    // строку в пути рисования. Раньше здесь стоял литерал, и скан был не
+    // нужен ценой того, что у игрока была идентичность-литерал.
+    n.user = &app;
     n.squad = [](void* u, std::uint32_t ordinal) -> const char* {
-        (void)u;
+        auto& a = *static_cast<App*>(u);
         // Squads have no display names yet (a lord's name is a future
         // column); the one the journal's reader IS gets the honest pronoun.
-        return ordinal == sm::ecs::kPlayerSquadOrdinal ? "You" : nullptr;
+        if (!a.macroStore) return nullptr;
+        const std::uint32_t home = sm::player_home_ordinal(a.gs, *a.macroStore);
+        // 0 — «никто» (закон нуля-ординала): до рождения мира дома нет, и
+        // безымянный субъект не вправе получить его местоимение.
+        return (home != 0 && ordinal == home) ? "You" : nullptr;
     };
     n.landmark = [](void* u, std::uint32_t id) -> const char* {
         // Имя места — колонка его ТЕЛА (ломтик F); конверт летописи несёт
-        // store, потому что строки мест больше нет.
-        auto& st = *static_cast<sm::MacroStore*>(u);
+        // store, потому что строк мест больше нет.
+        auto& st = *static_cast<App*>(u)->macroStore;
         const sm::MacroHandle h = sm::place_handle_by_ordinal(st, id);
         if (st.valid(h) && st.name[h.slot].text[0] != '\0')
             return st.name[h.slot].text;
@@ -870,8 +880,7 @@ void detect_forced_encounter(App& app) {
     for (std::uint32_t slot32 = 0; slot32 < sm::kUnifiedCap; ++slot32) {
         const std::uint16_t slot = std::uint16_t(slot32);
         if (st.alive[slot] == 0) continue;
-        if (slot == flagSlot
-            || st.spawnId[slot].index == sm::ecs::kPlayerSquadOrdinal)
+        if (slot == flagSlot || st.playerFlag[slot].home != 0)
             continue;
         if (sm::MacroHandle{slot, st.generation[slot]}
             == app.encounterGraceNpc) continue;
@@ -5659,8 +5668,7 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     for (std::uint32_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
-        if (slot == flagSlot
-            || st.spawnId[slot].index == sm::ecs::kPlayerSquadOrdinal)
+        if (slot == flagSlot || st.playerFlag[slot].home != 0)
             continue;
         // ТЕЛО МЕСТА НЕ РИСУЕТСЯ СКВАД-СПРАЙТОМ (ось рода, M-90 шаг 5):
         // место на карте — глиф своей строки реестра, не ходячая фигурка.

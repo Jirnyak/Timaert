@@ -357,8 +357,9 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
     int killed = 0;
     int souls = 0;
     // The player's own squad is never swept: он не лидер, чьи люди уходят,
-    // когда он падает, — его ординал есть КОЛОНКА (kPlayerSquadOrdinal), тот
-    // же предикат, каким владение листом узнаёт сквад игрока (sheet_owned_at).
+    // когда он падает, — его родная запись есть БИТ КОЛОНКИ (playerFlag.home,
+    // M-255), тот же предикат, каким владение листом узнаёт сквад игрока
+    // (sheet_owned_at).
     // Это вопрос «ЧЬЯ ЭТО ЗАПИСЬ», а не «кто умер», поэтому веткой по роду
     // убитого он не является и вердикт «не важно кто умер» его не касается.
     // Существа живут в ЕДИНОМ контейнере сквада (M-71).
@@ -370,7 +371,7 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
         st, order,
         [&](std::uint16_t slot) {
             return st.dead[slot] != 0
-                && st.spawnId[slot].index != ecs::kPlayerSquadOrdinal;
+                && st.playerFlag[slot].home == 0;
         });
     for (const SquadWalkEntry& sw : order) {
         auto& bag = st.inventory[sw.slot];
@@ -459,7 +460,7 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
         st, snapshot,
         [&](std::uint16_t slot) {
             return st.dead[slot] != 0
-                && st.spawnId[slot].index != ecs::kPlayerSquadOrdinal
+                && st.playerFlag[slot].home == 0
                 && !(flagLive && slot == flag.slot)
                 && !cell_is_leased(gs, st.cell[slot].idx);
         });
@@ -525,14 +526,14 @@ inline bool order_squad_route(MacroStore& st, std::uint32_t ordinal,
 // theirs to store. One door, an honest ontology split — never «игрок/НПЦ».
 
 // Владение листом по колонкам слота — ОДИН предикат на обе двери: именной
-// род, анкета стола, сквад игрока (его ординал — колонка, и это тот же
-// признак, каким PlayerSquadCache ревалидируется).
+// род, анкета стола, РОДНАЯ ЗАПИСЬ ИГРОКА (бит колонки playerFlag.home,
+// M-255 — тот же признак, каким её узнают свип, рисовка и резолв загрузки).
 inline bool sheet_owned_at(const MacroStore& st, std::uint16_t slot) {
     const auto& kind = st.kind[slot];
     return (kind.type < std::uint16_t(NPCType::Count)
             && npc_named(NPCType(std::uint8_t(kind.type))))
         || st.designTag[slot].ordinal >= 0
-        || st.spawnId[slot].index == ecs::kPlayerSquadOrdinal;
+        || st.playerFlag[slot].home != 0;
 }
 
 // entt-двери листа (owned_sheet/sheet_of/standing_bonuses_of от registry)

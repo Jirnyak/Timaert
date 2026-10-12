@@ -278,7 +278,7 @@ namespace sm::ui
             f.day = gs.worldTime.day();
             f.kind = std::uint16_t(FactKind::Traded);
             f.subjectKind = std::uint8_t(FactSubject::Squad);
-            f.subject = ecs::kPlayerSquadOrdinal;
+            f.subject = player_home_ordinal(gs, store_of(w));
             f.objectKind = std::uint8_t(FactSubject::Squad);
             f.object = traderOrdinal;
             const ecs::MacroCell* pc = player_flag_cell(gs, store_of(w));
@@ -307,7 +307,7 @@ namespace sm::ui
             f.day = gs.worldTime.day();
             f.kind = std::uint16_t(FactKind::Traded);
             f.subjectKind = std::uint8_t(FactSubject::Squad);
-            f.subject = ecs::kPlayerSquadOrdinal;
+            f.subject = player_home_ordinal(gs, store_of(world));
             f.objectKind = std::uint8_t(FactSubject::Landmark);
             f.object = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
             f.x = std::int16_t(x);
@@ -1758,8 +1758,7 @@ namespace sm::ui
             MacroStore &st = store_of(world);
             const bool alive = st.valid(squadSubject)
                 && !macro_dead(st, squadSubject)
-                && st.spawnId[squadSubject.slot].index
-                       != ecs::kPlayerSquadOrdinal;
+                && st.playerFlag[squadSubject.slot].home == 0;
             const ecs::Pools *pools = alive
                 ? &st.pools[squadSubject.slot] : nullptr;
             if (!alive || pools->hp <= 0.0f)
