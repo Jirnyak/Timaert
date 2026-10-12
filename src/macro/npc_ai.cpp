@@ -4962,8 +4962,12 @@ void tick_macro_npc_ai(MacroWorld& mw,
         // One think per call at most, as before: a caller that hands over a
         // huge jump does not get a burst of catch-up thinking, it gets one.
         rt.tickAccum += std::uint32_t(std::min<std::uint64_t>(ticks, kAiTicks));
-        if (rt.tickAccum < kAiTicks) continue;
-        rt.tickAccum -= kAiTicks;
+        // ТРАТА КВАНТА — ДВЕРЬ «ВСЁ ИЛИ НИЧЕГО» (M-218, 2026-10-12). Здесь
+        // стояли гейт и голое `-=` двумя строками, то есть `try_spend`,
+        // написанный руками над БЕЗЗНАКОВЫМ счётчиком: разъехались бы они —
+        // и копилка завернулась бы в 4 млрд тиков, то есть сквад перестал бы
+        // думать молча и навсегда. Дверь делает расхождение невыразимым.
+        if (!try_spend(rt.tickAccum, kAiTicks)) continue;
 
         if (kind.type >= std::uint16_t(NPCType::Count)) continue;
         // A battle earlier in this very sweep may have killed this squad —
@@ -5072,8 +5076,9 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     if (ticks > 0) {
         runtime.sweepAccum +=
             std::uint32_t(std::min<std::uint64_t>(ticks, kAiTicks * kMaxQueuedSweeps));
-        while (runtime.sweepAccum >= kAiTicks) {
-            runtime.sweepAccum -= kAiTicks;
+        // Та же дверь, тот же закон (M-218): условие цикла И ЕСТЬ трата
+        // кванта, а не спутник вычитания рядом с ним.
+        while (try_spend(runtime.sweepAccum, kAiTicks)) {
             if (runtime.pendingSweeps < kMaxQueuedSweeps) {
                 ++runtime.pendingSweeps;
             } else {

@@ -16,9 +16,15 @@
 #   minus   — голое `-=` в src/macro|src/sub (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243 п.2):
 #             беззнаковая величина симуляции обязана ходить дверями
 #             core/subtract.h; мера флоат/знак не различает — такие сайты
-#             живут здесь поимённо (суд 2026-10-09: беззнаковых было 3 из
-#             57, прочее — знак/флоат, им дверь запрещена типом), радиус
-#             эпика ИИ тает его руками.
+#             живут здесь поимённо, им дверь запрещена типом.
+#             ПЕРЕПИСЬ ПО ТИПАМ 2026-10-12 (M-218) закрыла счёт: суд
+#             2026-10-09 «3 беззнаковых из 57» был ВЕРЕН, и два из трёх были
+#             КОПИЛКИ ТИКОВ ИИ (`tickAccum`/`sweepAccum`, u32) с рукописным
+#             try_spend рядом — гейт одной строкой, голое `-=` следующей.
+#             Переведены на дверь, список растаял на две строки (56 → 54).
+#             Третий беззнаковый — `remaining -= std::min(remaining, ...)`
+#             в рендерере: НЕ величина симуляции, андерфлоу невыразим.
+#             Дальше список почти не умеет таять — остальное знак и флоат.
 #
 # СПИСОК УМЕЕТ ТОЛЬКО ТАЯТЬ. Новый сайт вне списка красит `check` (рост долга);
 # строка списка, которой в дереве больше нет, красит его же. Дописывать сюда
@@ -135,8 +141,6 @@ minus	src/macro/npc_ai.cpp	if (dy > float(ctx.mapH) * 0.5f) dy -= float(ctx.mapH
 minus	src/macro/npc_ai.cpp	freeKg -= float(fit) * kg;
 minus	src/macro/npc_ai.cpp	purse -= buyable * therePrice;
 minus	src/macro/npc_ai.cpp	draw -= bids[b].score;
-minus	src/macro/npc_ai.cpp	rt.tickAccum -= kAiTicks;
-minus	src/macro/npc_ai.cpp	runtime.sweepAccum -= kAiTicks;
 minus	src/macro/recovery.cpp	accumulator -= float(whole);
 minus	src/macro/scent_field.cpp	d[yc + x] -= std::int32_t(per) * 8;
 minus	src/macro/spires.cpp	for (; gate >= int(def.minZone); gate -= relaxStep) {
