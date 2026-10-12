@@ -4923,17 +4923,99 @@ bool run_subworld_player_bow_smoke(App& app) {
         return false;
     }
 
-    // +8: past the melee arm's reach (the Adventurer row's 3) so only a SHOT
-    // can wound it, yet short enough that no seed's rising terrain eats the
-    // level arrow mid-flight (seed 1 did exactly that at +20 — the fireball
-    // smoke's old referendum-on-terrain failure mode).
+    // ЛИНИЯ ОГНЯ СПРАШИВАЕТСЯ У МИРА, А НЕ ЗАГАДЫВАЕТСЯ (§8 п.11: свидетель
+    // рождает своё предусловие). Прежде этот блок ставил цель на `player_z()`
+    // — высоту ступней СТРЕЛКА — в точке за 8 м, не спросив рельеф ТАМ, и
+    // стрелял строго по +X тем курсом, какой случайно смотрела камера. Замер
+    // 2026-10-12 на сиде 12345 назвал цену обоих допущений: земля в точке
+    // цели 770.35 против поставленных 767.97, то есть цель стояла ЗАКОПАННОЙ
+    // В СКЛОН НА 2.38 м, а ровная стрела честно гибла об этот же склон в 2.3 м
+    // от дула (уклон 30 %: 769.32 → 769.55 → 769.78 при дуле 769.67). Это и
+    // был красный Л4 ОБЕИМИ своими половинами — и «снаряд не родился», и
+    // «цель не ранена»: мир вёл себя правильно, врал свидетель.
+    //
+    // Поэтому курс ВЫБИРАЕТСЯ: цель встаёт НА ЗЕМЛЮ (идиома мили-близнеца
+    // выше), а линия от дула до её корпуса прочёсывается ТЕМИ ЖЕ ДВУМЯ
+    // дверями, какими её прочёсывает снаряд в полёте — `ground_height_at` и
+    // `solid_at`, которые заголовок движка велит спрашивать вместе: «a line of
+    // fire that clears the hills and ends in a wall is not a line of fire».
+    // Шаг прочёса — метр, та же решётка, на какой построен мир
+    // (kProjectileSweepStepM). Рельеф после этого не решает ничего: свидетель
+    // либо нашёл честную линию и назвал её, либо провалился словами.
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     const float pz = app.subworld.player_z();
-    const float tx = std::min(px + 8.0f, float(sm::sub::kFullSize - 2));
+    // Дуло, а не ступни — у двери, которая сама это и говорит
+    // (`player_muzzle_z`: «ask for this, never player_z()»): стрела выходит с
+    // высоты глаз, и прочёсывать надо ЕЁ линию.
+    const float muzzleZ = app.subworld.player_muzzle_z();
+    const float eyeM = muzzleZ - pz;
+    // 8 м: за пределом руки (строка Adventurer даёт 3), то есть ранить может
+    // ТОЛЬКО выстрел.
+    const float shotRange = 8.0f;
+    // Прицел — в КОРПУС, на половину высоты глаз. Это не вкус: попадание
+    // судится 3D-расстоянием до ПОЗИЦИИ тела (ступней) с радиусом
+    // projectileRadius + bodyRadius = 1.2 + 0.55 = 1.75 м
+    // (find_projectile_hit@src/sub/spell_effects.cpp), поэтому прицел в глаза
+    // дал бы dz = 1.70 против 1.75 — попадание на пять сантиметров, то есть
+    // свидетеля, которого качнёт любая перекалибровка роста. Половина высоты
+    // глаз лежит в сфере с запасом И держит линию на 0.85 м над землёй у
+    // самой цели.
+    const float aimLift = 0.5f * eyeM;
+    float tx = 0.0f, ty = 0.0f, tz = 0.0f;
+    bool lineFound = false;
+    int headingDeg = 0;
+    // Восемь румбов — ровно те, какими мир считает соседство клетки; первый
+    // чистый и берётся. Перебор нужен потому, что чистой линии НЕ ОБЯЗАН дать
+    // ни один фиксированный курс: надеяться на везение сида и значит писать
+    // красный смоук, который краснеет не от дефекта.
+    for (int h = 0; h < 8 && !lineFound; ++h) {
+        const float a = float(h) * 0.78539816f;   // 2π/8
+        const float cx = px + std::cos(a) * shotRange;
+        const float cy = py + std::sin(a) * shotRange;
+        if (cx < 2.0f || cy < 2.0f
+            || cx > float(sm::sub::kFullSize - 2)
+            || cy > float(sm::sub::kFullSize - 2)) {
+            continue;
+        }
+        const float gz = app.subworld.ground_height_at(cx, cy);
+        const float aimZ = gz + aimLift;
+        bool clear = true;
+        const int steps = int(shotRange);   // метр на шаг — решётка мира
+        for (int i = 1; i <= steps && clear; ++i) {
+            const float t = float(i) / float(steps);
+            const float wx = px + (cx - px) * t;
+            const float wy = py + (cy - py) * t;
+            const float wz = muzzleZ + (aimZ - muzzleZ) * t;
+            if (wz < app.subworld.ground_height_at(wx, wy)) clear = false;
+            else if (app.subworld.solid_at(wx, wy, wz)) clear = false;
+        }
+        if (clear) {
+            tx = cx; ty = cy; tz = gz; lineFound = true;
+            headingDeg = h * 45;
+        }
+    }
+    if (!lineFound) {
+        std::fprintf(stderr,
+                     "[smoke] subworld_player_bow no clear line of fire from "
+                     "(%.1f,%.1f,%.1f) at %.0f m on any of 8 headings\n",
+                     double(px), double(py), double(muzzleZ),
+                     double(shotRange));
+        smoke_fail(app, "subworld_player_bow no clear line of fire");
+        return false;
+    }
+    // ВЗГЛЯД НАВОДИТСЯ НА ВЫБРАННУЮ ЦЕЛЬ. Выстрел игрока идёт по лучу камеры
+    // (`spawn_npc_missile` нормализует дельту прицела), поэтому курс, который
+    // свидетель проверил, обязан стать курсом камеры — иначе проверена одна
+    // линия, а полетит стрела по другой.
+    const float wantYaw = std::atan2(ty - py, tx - px);
+    const float wantPitch =
+        std::atan2((tz + aimLift) - muzzleZ, shotRange);
+    app.subworld.rotate_camera(wantYaw - app.subworld.cam_yaw(),
+                               wantPitch - app.subworld.cam_pitch());
     const entt::entity target = reg.create();
-    smoke_give_pos(reg, target, tx, py, pz);
-    smoke_give_visual(reg, target, sm::ecs::VisualPos{tx, py, pz});
+    smoke_give_pos(reg, target, tx, ty, tz);
+    smoke_give_visual(reg, target, sm::ecs::VisualPos{tx, ty, tz});
     smoke_give_kind(
         reg, target,
         sm::ecs::NPCKind{
@@ -4985,12 +5067,13 @@ bool run_subworld_player_bow_smoke(App& app) {
 
     std::fprintf(stderr,
                  "[smoke] subworld_player_bow projectiles=%d->%d routed=%d "
-                 "gate=%u hp=%.1f->%.1f byPlayerBody=%d\n",
+                 "gate=%u hp=%.1f->%.1f byPlayerBody=%d heading=%d\n",
                  beforeProjectiles, loosedProjectiles,
                  missileRouted ? 1 : 0,
                  unsigned(gateSteps),
                  double(beforeHp), double(afterHp),
-                 bowLastBy == sm::sub::objects_of(reg).avatar ? 1 : 0);
+                 bowLastBy == sm::sub::objects_of(reg).avatar ? 1 : 0,
+                 headingDeg);
     std::fflush(stderr);
 
     // The projectile COUNT is diagnostic only: at 8 units the arrow can
