@@ -41,13 +41,6 @@ struct SpawnRecord {
     std::uint8_t b = 0;
 };
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/subworld_spawn_parity_test.cpp", 0);
-    return 1;
-}
-
 // Canonical monster id: (0x100 | stable catalog index), mirroring the shipping
 // spawn path (src/sub/spawn.cpp + src/sub/engine.cpp) and every design doc. The
 // TS authority assigns fauna NO numeric id — identity is label + table row — so
@@ -268,16 +261,20 @@ bool records_match(const SpawnRecord& e, const SpawnRecord& a) {
 
 int compare_records(const std::vector<SpawnRecord>& expected,
                     const std::vector<SpawnRecord>& actual) {
-    if (expected.size() != actual.size()) {
+    const bool ok1 = !(expected.size() != actual.size());
+    if (!ok1) {
         std::fprintf(stderr, "expected=%zu actual=%zu\n",
                      expected.size(), actual.size());
-        return fail("the cell spawns exactly as many creatures as its seeded roll names");
     }
+    CHECK(ok1,
+          "the cell spawns exactly as many creatures as its seeded roll names");
+    if (!ok1) return 1;
 
     for (std::size_t i = 0; i < expected.size(); ++i) {
         const SpawnRecord& e = expected[i];
         const SpawnRecord& a = actual[i];
-        if (!records_match(e, a)) {
+        const bool ok2 = !(!records_match(e, a));
+        if (!ok2) {
             std::fprintf(
                 stderr,
                 "idx=%zu expected type=%u faction=%u level=%d pos=%.3f,%.3f "
@@ -288,8 +285,10 @@ int compare_records(const std::vector<SpawnRecord>& expected,
                 e.damage, int(e.ai), e.r, e.g, e.b,
                 a.type, a.faction, int(a.level), a.x, a.y, a.hp,
                 a.damage, int(a.ai), a.r, a.g, a.b);
-            return fail("every spawned creature matches its catalogue row and stands inside its OWN cell");
         }
+        CHECK(ok2,
+              "every spawned creature matches its catalogue row and stands inside its OWN cell");
+        if (!ok2) return 1;
     }
     return 0;
 }
@@ -942,49 +941,65 @@ int main() {
         return cmp;
     }
 
-    if (!run_water_blocked_squad_case()) {
+    const bool ok1 = !(!run_water_blocked_squad_case());
+    if (!ok1) {
         sm::sub::clear_saved_subworlds();
-        return fail("player squad spawned on an all-water traversability grid");
     }
+    CHECK(ok1, "player squad spawned on an all-water traversability grid");
+    if (!ok1) return 1;
 
-    if (!sheet_lifts_every_body(world)) {
+    const bool ok2 = !(!sheet_lifts_every_body(world));
+    if (!ok2) {
         sm::sub::clear_saved_subworlds();
-        return fail("a wild body came up without a sheet, or weaker than the "
-                    "row it is made of (CANON.md S14)");
     }
+    CHECK(ok2, "a wild body came up without a sheet, or weaker than the "
+               "row it is made of (CANON.md S14)");
+    if (!ok2) return 1;
 
-    if (!run_population_does_not_scale_bodies_case(mgr)) {
+    const bool ok3 = !(!run_population_does_not_scale_bodies_case(mgr));
+    if (!ok3) {
         sm::sub::clear_saved_subworlds();
-        return fail("a settlement's population moved a body's LEVEL "
-                    "(auto-level by town size is deleted — CANON.md S12)");
     }
+    CHECK(ok3, "a settlement's population moved a body's LEVEL "
+               "(auto-level by town size is deleted — CANON.md S12)");
+    if (!ok3) return 1;
 
-    if (!run_city_population_projection_case(mgr)) {
+    const bool ok4 = !(!run_city_population_projection_case(mgr));
+    if (!ok4) {
         sm::sub::clear_saved_subworlds();
-        return fail("city population projection missing roles or off-cell");
     }
+    CHECK(ok4, "city population projection missing roles or off-cell");
+    if (!ok4) return 1;
 
-    if (!run_carry_across_case(mgr)) {
+    const bool ok5 = !(!run_carry_across_case(mgr));
+    if (!ok5) {
         sm::sub::clear_saved_subworlds();
-        return fail("seam crossing did not carry/evict/respawn cells correctly");
     }
+    CHECK(ok5, "seam crossing did not carry/evict/respawn cells correctly");
+    if (!ok5) return 1;
 
-    if (!run_reentry_determinism_case(mgr)) {
+    const bool ok6 = !(!run_reentry_determinism_case(mgr));
+    if (!ok6) {
         sm::sub::clear_saved_subworlds();
-        return fail("per-cell fauna respawn is not deterministic from its seed");
     }
+    CHECK(ok6, "per-cell fauna respawn is not deterministic from its seed");
+    if (!ok6) return 1;
 
-    if (!run_beast_member_projection_case(mgr)) {
+    const bool ok7 = !(!run_beast_member_projection_case(mgr));
+    if (!ok7) {
         sm::sub::clear_saved_subworlds();
-        return fail("a BEAST in a creatures did not come down as its own row "
-                    "(squads carry men and monsters alike — CANON.md S4/S16)");
     }
+    CHECK(ok7, "a BEAST in a creatures did not come down as its own row "
+               "(squads carry men and monsters alike — CANON.md S4/S16)");
+    if (!ok7) return 1;
 
-    if (!run_macro_projection_case(mgr)) {
+    const bool ok8 = !(!run_macro_projection_case(mgr));
+    if (!ok8) {
         sm::sub::clear_saved_subworlds();
-        return fail("macro->subworld projection wrong "
-                    "(window/wrap/backlink/hostility/hp/placement/reaper/determinism)");
     }
+    CHECK(ok8, "macro->subworld projection wrong "
+               "(window/wrap/backlink/hostility/hp/placement/reaper/determinism)");
+    if (!ok8) return 1;
 
     std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u no_autolevel=%d "
                 "water_squad_blocked=1 city_projection=1 carry_across=1 "
@@ -1390,6 +1405,5 @@ int main() {
         CHECK(levelsAreHeadFacts, "уровень жильца — факт головы");
     }
 
-    CHECK(true, "every gate above held");
     return sm::test::report("subworld_spawn_parity_test");
 }
