@@ -181,7 +181,8 @@ constexpr std::uint64_t kFactBytes =                 // write_fact
     + sizeof(WorldFact::x) + sizeof(WorldFact::y) + sizeof(WorldFact::amount);
 constexpr std::uint64_t kChronicleBlockBytes =       // write_chronicle
     sizeof(Chronicle::nextSeq) + sizeof(Chronicle::countingDay)
-    + sizeof(Chronicle::factsToday) + sizeof(std::uint8_t)
+    + sizeof(Chronicle::factsToday) + sizeof(Chronicle::factsPeak)
+    + sizeof(std::uint8_t)
     + kCountBytes + std::uint64_t(kChronicleFacts) * kFactBytes
     + kCountBytes + std::uint64_t(kChronicleAnnals) * kFactBytes;
 
@@ -746,6 +747,7 @@ void write_chronicle(Writer& w, const Chronicle& c) {
     w.pod(c.nextSeq);
     w.pod(c.countingDay);
     w.pod(c.factsToday);
+    w.pod(c.factsPeak);          // v135: пик дня — величина формулы кольца
     const std::uint8_t full = c.annalsFull ? 1u : 0u;
     w.pod(full);
 
@@ -840,6 +842,7 @@ void read_chronicle(Reader& r, Chronicle& c) {
     r.pod(c.nextSeq);
     r.pod(c.countingDay);
     r.pod(c.factsToday);
+    r.pod(c.factsPeak);          // v135
     std::uint8_t full = 0;
     r.pod(full);
     if (full > 1u) { r.ok = false; return; }

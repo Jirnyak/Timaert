@@ -45,6 +45,7 @@ void chronicle_init(Chronicle& c, int mapW, int mapH) {
     c.nextSeq = 1u;
     c.countingDay = -1;
     c.factsToday = 0u;
+    c.factsPeak = 0u;
 }
 
 std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact) {
@@ -69,6 +70,10 @@ std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact) {
         c.factsToday = 0u;
     }
     ++c.factsToday;
+    // ПИК — та самая величина формулы (chronicle.h kChronicleFacts): максимум
+    // по ВСЕМ дням жизни мира, а не по текущему. Без него прибор отвечал на
+    // другой вопрос, чем тот, ради которого заведён (M-254).
+    if (c.factsToday > c.factsPeak) c.factsPeak = c.factsToday;
 
     // ...and if a FIGURE took part — and the kind itself is more than a
     // week's news (kChronicleWeatherDays: a famous city's grain deliveries

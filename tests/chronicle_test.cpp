@@ -200,6 +200,58 @@ void test_the_world_counts_its_own_facts() {
     CHECK(c.factsToday == 1u && c.countingDay == 8,
           "and starts again on the next day — so the ring's size can be tuned "
           "from evidence instead of from feel");
+
+    // ПИК — ТО, ЧЕМ ФОРМУЛА СЧИТАЕТСЯ, И ОН НЕ ТОТ ЖЕ, ЧТО СЧЁТ ДНЯ (M-254).
+    // `factsToday` обнулился на смене суток; величина формулы — максимум по
+    // ВСЕМ дням, иначе кап кольца калибровать нечем.
+    CHECK(c.factsPeak == 5u,
+          "the peak remembers the fattest day (5), not the current one (1)");
+    for (int i = 0; i < 9; ++i) chronicle_record(c, killing(8, 1, 1, 1u, 1));
+    CHECK(c.factsToday == 10u && c.factsPeak == 10u,
+          "a fatter day raises the peak");
+    chronicle_record(c, killing(9, 1, 1, 1u, 1));
+    CHECK(c.factsToday == 1u && c.factsPeak == 10u,
+          "негативный контроль: ТОЩИЙ день пик НЕ опускает — иначе прибор "
+          "мерил бы последний день, а формуле нужен самый плодовитый");
+
+    // И ГОРИЗОНТ ФОРМУЛЫ ВЫВЕДЕН ИЗ ТАБЛИЦЫ, А НЕ НАЗВАН ЧИСЛОМ: правка
+    // строки рода обязана двигать его сама (ЗАКОН СЛОВАРЯ п.3).
+    std::uint16_t longest = 0;
+    for (std::size_t k = 0; k < std::size_t(FactKind::Count); ++k) {
+        const std::uint16_t d = fact_kind_def(FactKind(k)).interestDays;
+        if (d > longest) longest = d;
+    }
+    CHECK(kChronicleLongestInterestDays == longest && longest > 0,
+          "the formula's horizon IS the table's longest interestDays");
+}
+
+// ── КАП АННАЛОВ ГРОМКИЙ, А НЕ ТИХИЙ (chronicle.h: «loud rather than silent»)
+// Обещание прозы жило без свидетеля вовсе (M-254): флаг поднимается только на
+// 2^20 записей, поэтому ни один прогон мира его не поднимал, и проверить
+// «громкость» было нечем. Анналы набиваются ПРЯМО до капа — дверь записи тут
+// не предмет суда, предмет — что она делает НА капе.
+void test_the_annals_are_loud_when_they_fill() {
+    Chronicle c;
+    chronicle_init(c, 128, 128);
+
+    WorldFact deed{};
+    deed.day = 1;
+    deed.kind = std::uint16_t(FactKind::OwnerChanged);
+    deed.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
+    deed.subject = 7u;
+    deed.x = 5; deed.y = 5;
+
+    chronicle_record(c, deed);
+    CHECK(c.annals.size() == 1u && !c.annalsFull,
+          "негативный контроль: пока место есть, флаг молчит");
+
+    c.annals.resize(std::size_t(kChronicleAnnals), deed);
+    chronicle_record(c, deed);
+    CHECK(c.annalsFull,
+          "на капе анналы ГРОМКИЕ — иначе мир терял бы прошлое молча");
+    CHECK(c.annals.size() == std::size_t(kChronicleAnnals),
+          "и не растут за кап: громкость вместо тихой потери, а не вместо "
+          "предела");
 }
 
 // ── TWO TIERS: the world forgets weather and remembers figures ───────────
@@ -534,6 +586,7 @@ int main() {
     test_recent_walks_time_without_an_index();
     test_the_chronicle_refuses_what_it_cannot_record();
     test_the_world_counts_its_own_facts();
+    test_the_annals_are_loud_when_they_fill();
     test_the_annals_keep_figures_and_forget_weather();
     test_the_annals_are_asked_about_a_figure();
     test_a_band_becomes_a_figure_by_its_deeds();

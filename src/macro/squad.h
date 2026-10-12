@@ -625,11 +625,13 @@ inline int suzerain_of(const MacroStore& st, std::uint16_t slot) {
     return 0;
 }
 
-// СРОКА И СИЛЫ У ЭТОЙ ДВЕРИ БОЛЬШЕ НЕТ (M-252, 2026-10-12): оба аргумента
-// шли дефолтом 0 у всех прод-звонящих и оседали в колонках, которых не
-// читал никто. Вернутся вместе с механикой перемирий и контрактов.
+// СРОК И СИЛА — ДЕФОЛТНЫЕ, И ЭТО СТРОЙКА, А НЕ СИРОТА (M-252, 2026-10-12):
+// оба сегодня идут нулём у всех прод-звонящих, то есть феод бессрочен и без
+// веса. Снести их как «колонки без читателя» пробовали тем же днём и вернули
+// — они две из четырёх колонок формы, согласованной с владельцем построчно
+// 2026-09-21 (разбор у `Interest@src/macro/interests.h`).
 inline void set_suzerain(GameState& gs, MacroStore& st, int vassalId,
-                         int suzerainId) {
+                         int suzerainId, int value = 0, int term = 0) {
     const MacroHandle vh = place_handle_by_ordinal(st, std::uint32_t(vassalId));
     if (!st.valid(vh) || vassalId == suzerainId) return;
     Interests& vin = st.interests[vh.slot];
@@ -655,8 +657,9 @@ inline void set_suzerain(GameState& gs, MacroStore& st, int vassalId,
     const MacroHandle sh = place_handle_by_ordinal(st,
                                                    std::uint32_t(suzerainId));
     if (!st.valid(sh)) return;     // висячего ребра не заводим
-    interest_set(vin, suzerainId, Stance::Suzerain);
-    interest_set(st.interests[sh.slot], vassalId, Stance::Vassal);
+    interest_set(vin, suzerainId, Stance::Suzerain, value, term);
+    interest_set(st.interests[sh.slot], vassalId, Stance::Vassal,
+                 value, term);
     // ОДНА ДВЕРЬ ПИШЕТ ОБА НОСИТЕЛЯ: знание роли — в интересы (род 2),
     // летопись долга — ребром в строку фракции СЮЗЕРЕНА (род 6).
     tithe_edge_add(gs.factions,

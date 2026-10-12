@@ -469,7 +469,8 @@ sm::GameState make_state(sm::MacroStore& st) {
         // фракции сюзерена; долг пишем на ребро и ждём его назад из блока
         // рода 6. Интересы с v127 — колонка ТЕЛА, и едут его записью.
         sm::set_suzerain(gs, st, /*vassalId*/kFixtureVillageId,
-                         /*suzerainId*/kFixtureCityId);
+                         /*suzerainId*/kFixtureCityId,
+                         /*value*/80, /*term*/0);
         sm::tithe_edge_of(gs, st, row.slot)->owedValue = 123;
     }
 
@@ -910,11 +911,37 @@ void run_roundtrip() {
         if (a.level.value != want.level.value) FAIL_BAIL("macro level lost");
         if (a.pools.sp != -25) FAIL_BAIL("macro SP debt lost");
         if (a.runtime.xp != 555) FAIL_BAIL("macro leader xp lost");
+        // ВЕСЬ РАНТАЙМ, КОТОРЫЙ ФИКСТУРА СТАВИТ, ЗДЕСЬ И СУДИТСЯ (M-254,
+        // 2026-10-12). До этой правки фикстура ставила ТРИНАДЦАТЬ полей
+        // `MacroNpcRuntime`, а вердикт спрашивал ЧЕТЫРЕ — остальные девять
+        // переживали круг без свидетеля, и сюита была бы зелена при их
+        // потере. Это ровно §8 п.3 на колонках: ставить и не спрашивать
+        // значит мерить и не утверждать, что померил.
         if (a.runtime.targetX != want.runtime.targetX
+            || a.runtime.targetY != want.runtime.targetY
             || a.runtime.state != want.runtime.state
             || a.runtime.entryDir != want.runtime.entryDir
-            || a.runtime.tickAccum != want.runtime.tickAccum) {
+            || a.runtime.entryTicks != want.runtime.entryTicks
+            || a.runtime.tickAccum != want.runtime.tickAccum
+            || a.runtime.visualSpeed != want.runtime.visualSpeed
+            || a.runtime.moveBudget != want.runtime.moveBudget) {
             FAIL_BAIL("macro runtime state lost");
+        }
+        if (a.runtime.homeSettlementId != want.runtime.homeSettlementId
+            || a.runtime.targetSettlementId
+                   != want.runtime.targetSettlementId) {
+            FAIL_BAIL("macro runtime errand ids lost");
+        }
+        if (a.runtime.stateTimer != want.runtime.stateTimer
+            || a.runtime.teleportCooldown != want.runtime.teleportCooldown) {
+            FAIL_BAIL("macro runtime clocks lost");
+        }
+        // Кэши листа, которые марш читает per-think: до M-254 ни у одного из
+        // шести не было ассерта НИ В ОДНОМ тесте дерева — их только ставили.
+        if (a.runtime.travelRank != want.runtime.travelRank
+            || a.runtime.marathonRank != want.runtime.marathonRank
+            || a.runtime.moveMult != want.runtime.moveMult) {
+            FAIL_BAIL("macro sheet cache lost");
         }
         if (a.traits.count != 2 || a.traits.traits[1] != 4) {
             FAIL_BAIL("macro traits lost");

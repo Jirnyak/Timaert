@@ -332,16 +332,7 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
     // both drink from the one regen law below, which is where the mechanic
     // ends and the decider begins.
     if (state == NPCState::Resting) {
-        if (int(hp.sp) >= maxSp / 2) {
-            // ЛАГЕРЬ — ПАУЗА, НЕ АМНЕЗИЯ (components.h stateAfterRest):
-            // подъём возвращает ПРЕРВАННУЮ ногу — Returning остаётся
-            // Returning. Старая побудка в Idle посреди дороги домой
-            // отдавала артель правилу «Idle вне дома = продолжить рейс к
-            // рынку», и рейс не завершался никогда.
-            rt.state = rt.stateAfterRest;
-            rt.stateAfterRest = std::uint8_t(NPCState::Idle);
-            rt.stateTimer = 0;
-        }
+        if (int(hp.sp) >= maxSp / 2) wake_from_rest(rt);
         rt.visualSpeed = 0.0f;
         return ThinkGate::Rest;
     }
@@ -418,11 +409,8 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // on the spot, for the same reason: the rising tide of a flooded cell, a
     // re-centred frame, a bridge washed away. Sleeping through that is the
     // deadlock above with one extra step.
-    if (!campRepays
-        && rt.state == std::uint8_t(NPCState::Resting)) {
-        rt.state = rt.stateAfterRest;
-        rt.stateAfterRest = std::uint8_t(NPCState::Idle);
-        rt.stateTimer = 0;
+    if (!campRepays && rt.state == std::uint8_t(NPCState::Resting)) {
+        wake_from_rest(rt);
     }
 
     // A body is STOPPED when it is where it meant to be, when it DECIDED to
@@ -906,6 +894,23 @@ bool find_home_pasture(const TickContext& ctx, float px, float py,
 }
 
 } // namespace
+
+// ПОДЪЁМ ИЗ ЛАГЕРЯ — ОДНА ДВЕРЬ, И ЭТО НЕ СТИЛЬ (DOD п.6; сведено 2026-10-12,
+// M-254). ЛАГЕРЬ — ПАУЗА, НЕ АМНЕЗИЯ (`stateAfterRest@src/ecs/components.h`):
+// подъём возвращает ПРЕРВАННУЮ ногу — Returning остаётся Returning. Старая
+// побудка в Idle посреди дороги домой отдавала артель правилу «Idle вне дома =
+// продолжить рейс к рынку», и рейс не завершался никогда.
+//
+// ПОЧЕМУ ДВЕРЬ, А НЕ ТРИ СТРОКИ НА МЕСТЕ: причин встать ДВЕ и они разные —
+// SP добрал половину бара, и земля перестала окупать лагерь. Пока тройка
+// строк стояла в обоих местах списком, это были ДВА ОТВЕТА на один вопрос
+// мира («как тело просыпается»), из которых правка одного молча расходится с
+// другим. Условий по-прежнему два; ПОДЪЁМ — один.
+void wake_from_rest(ecs::MacroNpcRuntime& rt) {
+    rt.state = rt.stateAfterRest;
+    rt.stateAfterRest = std::uint8_t(NPCState::Idle);
+    rt.stateTimer = 0;
+}
 
 // Контракт npc_ai.h: цель называется РЕСУРСОМ — порядок таблицы остаётся
 // деталью этого файла.

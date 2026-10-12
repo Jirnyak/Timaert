@@ -407,6 +407,43 @@ void test_wanderer_enters_wandering_state() {
           "wandering picks somewhere ELSE: its own cell is not a destination");
 }
 
+// ── ЛАГЕРЬ — ПАУЗА, НЕ АМНЕЗИЯ: ОДНА ДВЕРЬ ПОДЪЁМА (M-254, 2026-10-12) ───
+// До этой правки у всей механики не было НИ ОДНОГО ассерта ни в одном тесте
+// дерева: `stateAfterRest` только ставили. А тройка строк подъёма стояла
+// списком в ДВУХ местах с разными условиями, то есть мир имел два ответа на
+// вопрос «как тело просыпается» (DOD п.6). Теперь дверь одна, и свидетель
+// судит ЕЁ, а не одно из двух мест.
+void test_the_camp_is_a_pause_not_amnesia() {
+    sm::ecs::MacroNpcRuntime rt{};
+
+    // Прерванная нога — возврат домой; лагерь её ЗАПОМНИЛ.
+    rt.state = std::uint8_t(sm::NPCState::Resting);
+    rt.stateAfterRest = std::uint8_t(sm::NPCState::Returning);
+    rt.stateTimer = 42;
+
+    sm::wake_from_rest(rt);
+    CHECK(rt.state == std::uint8_t(sm::NPCState::Returning),
+          "подъём возвращает ПРЕРВАННУЮ ногу, а не Idle — иначе артель "
+          "посреди дороги домой «продолжает рейс к рынку» и не завершает его "
+          "никогда");
+    CHECK(rt.stateAfterRest == std::uint8_t(sm::NPCState::Idle),
+          "и память о ноге ТРАТИТСЯ подъёмом: второй подъём не вернёт её "
+          "снова");
+    CHECK(rt.stateTimer == 0,
+          "часы прерванного состояния не переносятся в новое");
+
+    // НЕГАТИВНЫЙ КОНТРОЛЬ: тело, легшее БЕЗ прерванной ноги, встаёт в Idle —
+    // то есть дверь не выдумывает ногу, которой не было.
+    sm::ecs::MacroNpcRuntime bare{};
+    bare.state = std::uint8_t(sm::NPCState::Resting);
+    CHECK(bare.stateAfterRest == std::uint8_t(sm::NPCState::Idle),
+          "контроль: у свежего рантайма прерванной ноги нет (0 = Idle)");
+    sm::wake_from_rest(bare);
+    CHECK(bare.state == std::uint8_t(sm::NPCState::Idle),
+          "контроль: и подъём даёт именно Idle — старое поведение для тех, "
+          "кто лёг без прерванной ноги");
+}
+
 void test_resting_recovery_prevents_permanent_stall() {
     sm::GameState gs{};
     gs.mapW = 128;
@@ -681,6 +718,7 @@ int main() {
     test_aggressive_spares_a_friend();
     test_teleporter_cooldown_counts_down();
     test_wanderer_enters_wandering_state();
+    test_the_camp_is_a_pause_not_amnesia();
     test_resting_recovery_prevents_permanent_stall();
     test_a_resting_lord_mends_at_the_players_rate();
     test_a_marching_body_does_not_mend();

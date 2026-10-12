@@ -182,6 +182,24 @@ inline constexpr const FactKindDef& fact_kind_def(FactKind k) {
     return kFactKinds[std::size_t(k)];
 }
 
+// САМЫЙ ДЛИННЫЙ ГОРИЗОНТ ИНТЕРЕСА — ВЫВЕДЕН ИЗ ТАБЛИЦЫ, А НЕ НАЗВАН В ПРОЗЕ
+// (M-254, 2026-10-12). Это первый член формулы размера кольца (см.
+// `kChronicleFacts` ниже: «самый длинный interestDays × факты мира за день»),
+// и до этой правки он жил ЧИСЛОМ В КОММЕНТАРИИ — «64 дня (строки
+// Built/Explored)». Число в прозе рядом с таблицей, из которой оно выводится,
+// есть второй словарь (ЗАКОН СЛОВАРЯ п.3): правка строки таблицы молча
+// расходилась бы с формулой, и никто бы не узнал. Теперь формулу можно
+// ПОСЧИТАТЬ, и смоук `chronicle_rate` её печатает.
+inline constexpr std::uint16_t chronicle_longest_interest_days() {
+    std::uint16_t longest = 0;
+    for (const FactKindDef& d : kFactKinds) {
+        if (d.interestDays > longest) longest = d.interestDays;
+    }
+    return longest;
+}
+inline constexpr std::uint16_t kChronicleLongestInterestDays =
+    chronicle_longest_interest_days();
+
 // ── WHAT A DEED IS WORTH: THE VICTIM ANSWERS ─────────────────────────────
 //
 // Owner's ruling, 2026-08-27: renown is CONTEXTUAL, and the context is what
@@ -289,9 +307,12 @@ inline constexpr std::uint32_t kChronicleAnnals = 1u << 20;   // 1M x 32 B = 32 
 
 // The ring's size is a FORMULA with one unmeasured term, and it is written
 // down rather than hidden: it must hold `longest interestDays × the world's
-// facts per day`. The longest span is 64 days (the Built/Explored
-// rows); the world's daily rate has never been measured, which is exactly why
-// `Chronicle::factsToday` ships as part of the contract. 2^16 records is 2 MB
+// facts per day`. The longest span is DERIVED from the table
+// (`kChronicleLongestInterestDays` above) and no longer recited here; the
+// world's daily rate has never been measured, which is exactly why
+// `Chronicle::factsPeak` ships as part of the contract — the PEAK day, because
+// that is the term the formula names (`factsToday` alone answered a different
+// question and could not calibrate anything; M-254). 2^16 records is 2 MB
 // — by house rule not an argument (CANON S26) — and covers 64 days at a
 // thousand facts a day. Retune it from the counter, not from feel.
 inline constexpr std::uint32_t kChronicleFacts = 1u << 16;
@@ -355,6 +376,20 @@ struct Chronicle {
     // instrument that turns kChronicleFacts from a feeling into a measurement.
     std::int32_t countingDay = -1;
     std::uint32_t factsToday = 0;
+    // САМЫЙ ПЛОДОВИТЫЙ ДЕНЬ ЗА ЖИЗНЬ МИРА — И БЕЗ НЕГО ПРИБОР НЕ ОТВЕЧАЛ НА
+    // СВОЙ ЖЕ ВОПРОС (M-254, 2026-10-12). Формула размера кольца, записанная
+    // над `kChronicleFacts`, требует «самый длинный interestDays × факты
+    // мира ЗА ДЕНЬ», то есть ПИК. `factsToday` обнуляется на смене суток
+    // (chronicle.cpp), поэтому отвечал только «сколько набежало в тот день, в
+    // который кто-то посмотрел» — а это не величина формулы. Перепись назвала
+    // это контуром, который короче своей прозы: читателей в симуляции ноль,
+    // живым его держали сейв и printf смоука.
+    //
+    // ЧИТАТЕЛЬ ЭТОЙ КОЛОНКИ НАЗВАН И ОН ЧЕЛОВЕК (DOD п.9): сценарий
+    // `chronicle_rate` печатает её в лог, и по ней калибруется
+    // `kChronicleFacts`. Персистентна — пик за ОДИН прогон отвечает на
+    // вопрос слабее, чем пик за жизнь мира, а длинные прогоны и есть мера.
+    std::uint32_t factsPeak = 0;
 
     bool ready() const { return cols > 0 && rows > 0 && !ring.empty(); }
     // The oldest sequence still in the ring. Everything below it has been
@@ -366,11 +401,12 @@ struct Chronicle {
 
 // СТОРОЖ РАЗМЕРА (AGENTS DOD п.10). Строка факта уже под ассертом выше (32 Б),
 // а это — сторож САМОГО КОНТЕЙНЕРА: 96 Б есть три заголовка вектора по 24 плюс
-// семь чисел шапки по выравниванию. Он не сторожит вес летописи — её несут
-// кольцо (2 МиБ) и анналы (32 МиБ), и обе стоят своими строками в переписи
-// штабелей (`core/stacks.h`); он сторожит, что четвёртый ярус памяти мира не
-// вырастет здесь молча, без строки переписи.
-static_assert(sizeof(Chronicle) == 96,
+// восемь чисел шапки по выравниванию (96 → 104 — 2026-10-12, M-254: прибор
+// дня получил ПИК, без которого не отвечал на свой же вопрос). Он не сторожит
+// вес летописи — её несут кольцо (2 МиБ) и анналы (32 МиБ), и обе стоят
+// своими строками в переписи штабелей (`core/stacks.h`); он сторожит, что
+// четвёртый ярус памяти мира не вырастет здесь молча, без строки переписи.
+static_assert(sizeof(Chronicle) == 104,
               "летопись: новый ярус = новая строка переписи штабелей");
 
 // Size it for a map. Safe to call again; a resize forgets, which is correct —

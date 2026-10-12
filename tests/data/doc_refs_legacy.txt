@@ -91,13 +91,11 @@ SKELETON.md	:26
 SKELETON.md	:2637
 SKELETON.md	:265-276
 SKELETON.md	:278
-SKELETON.md	:287
 SKELETON.md	:291
 SKELETON.md	:295-296
 SKELETON.md	:2967
 SKELETON.md	:299
 SKELETON.md	:300-304
-SKELETON.md	:301
 SKELETON.md	:3054
 SKELETON.md	:309
 SKELETON.md	:3113-3146
@@ -220,7 +218,6 @@ SKELETON.md	cell_facts.cpp:21-22
 SKELETON.md	cell_facts.h:13-17
 SKELETON.md	chronicle.cpp:14-15
 SKELETON.md	chronicle.cpp:214
-SKELETON.md	chronicle.h:296
 SKELETON.md	chronicle.h:345
 SKELETON.md	collide.cpp:120-195
 SKELETON.md	collide.cpp:26

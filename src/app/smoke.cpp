@@ -5484,10 +5484,20 @@ bool run_chronicle_rate_smoke(App& app) {
         int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 24 * 60)),
         false);
     const std::uint32_t factsInDay = app.gs.chronicle.nextSeq - seqBefore;
+    // `factsPeak` — ВЕЛИЧИНА ФОРМУЛЫ (chronicle.h kChronicleFacts: «самый
+    // длинный interestDays × факты мира за день»), и печатается она здесь
+    // потому, что читатель этой колонки — ЧЕЛОВЕК, калибрующий кап кольца
+    // (M-254). `factsToday` рядом оставлен нарочно: он отвечает на другой
+    // вопрос — «сколько набежало в тот день, в который посмотрели», — и
+    // путать их и значило бы калибровать не тем числом.
     std::printf("[smoke] chronicle_rate day=%d->%d factsInDay=%u "
-                "factsToday=%u annals=%zu ringCap=%u\n",
+                "factsToday=%u factsPeak=%u needRing=%u annals=%zu "
+                "ringCap=%u\n",
                 dayBefore, app.gs.worldTime.day(), unsigned(factsInDay),
                 unsigned(app.gs.chronicle.factsToday),
+                unsigned(app.gs.chronicle.factsPeak),
+                unsigned(app.gs.chronicle.factsPeak
+                         * sm::kChronicleLongestInterestDays),
                 app.gs.chronicle.annals.size(),
                 unsigned(sm::kChronicleFacts));
     // The tuning information itself: WHICH kinds carry the volume. Walk the
