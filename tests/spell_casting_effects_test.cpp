@@ -18,13 +18,6 @@
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/spell_casting_effects_test.cpp", 0);
-    return 1;
-}
-
 // Снаряд — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v) ломтя 7): счёт и поиск — слотовый
 // цикл по роли-биту, те же выражения, что у продакшена (smoke_projectile_count).
 // objects_find, не objects_of: мир без арены честно отвечает «снарядов нет».
@@ -177,106 +170,106 @@ int main() {
     const sm::SpellDef* armDef = sm::spell_find("armageddon");
     const sm::SpellDef* hasteDef = sm::spell_find("haste");
     const sm::SpellDef* flightDef = sm::spell_find("flight");
-    if (!fireDef || fireDef->secondaryTag != fireDef->tag
-        || !sm::spell_has_tag(*fireDef, sm::SpellTag::Fire)
-        || std::strcmp(fireDef->statusEffect, "burning") != 0
-        || !nearf(fireDef->statusDuration, 3.0f)) {
-        return fail("fireball metadata wrong");
-    }
-    if (!iceDef || iceDef->secondaryTag != iceDef->tag
-        || !sm::spell_has_tag(*iceDef, sm::SpellTag::Ice)
-        || std::strcmp(iceDef->statusEffect, "chilled") != 0
-        || !nearf(iceDef->statusDuration, 4.0f)) {
-        return fail("ice_shard metadata wrong");
-    }
-    if (!chainDef || chainDef->secondaryTag != chainDef->tag
-        || !sm::spell_has_tag(*chainDef, sm::SpellTag::Lightning)
-        || std::strcmp(chainDef->statusEffect, "shocked") != 0
-        || !nearf(chainDef->statusDuration, 2.0f)) {
-        return fail("lightning_chain metadata wrong");
-    }
-    if (!beamDef || beamDef->secondaryTag == beamDef->tag
-        || !sm::spell_has_tag(*beamDef, sm::SpellTag::Arcane)
-        || !sm::spell_has_tag(*beamDef, sm::SpellTag::Light)
-        || beamDef->statusEffect[0] != '\0') {
-        return fail("energy_beam metadata wrong");
-    }
-    if (!hasteDef || hasteDef->secondaryTag == hasteDef->tag
-        || !sm::spell_has_tag(*hasteDef, sm::SpellTag::Body)
-        || !sm::spell_has_tag(*hasteDef, sm::SpellTag::Air)
-        || std::strcmp(hasteDef->statusEffect, "hasted") != 0) {
-        return fail("haste metadata wrong");
-    }
-    if (!flightDef || flightDef->secondaryTag == flightDef->tag
-        || !sm::spell_has_tag(*flightDef, sm::SpellTag::Air)
-        || !sm::spell_has_tag(*flightDef, sm::SpellTag::Arcane)
-        || std::strcmp(flightDef->statusEffect, "flying") != 0) {
-        return fail("flight metadata wrong");
-    }
-    if (!fireDef->icon || std::strcmp(fireDef->icon, "*") != 0
-        || !fireDef->sourceIcon || std::strcmp(fireDef->sourceIcon, "\xF0\x9F\x94\xA5") != 0
-        || fireDef->rarity != sm::SpellRarity::Common
-        || !nearf(fireDef->recovery, 2.3f)) {
-        return fail("fireball identity metadata wrong");
-    }
-    if (!iceDef->icon || std::strcmp(iceDef->icon, "I") != 0
-        || !iceDef->sourceIcon || std::strcmp(iceDef->sourceIcon, "\xE2\x9D\x84") != 0
-        || iceDef->rarity != sm::SpellRarity::Uncommon
-        || !nearf(iceDef->recovery, 1.7f)) {
-        return fail("ice_shard identity metadata wrong");
-    }
-    if (!magicDef || !magicDef->icon || std::strcmp(magicDef->icon, "+") != 0
-        || !magicDef->sourceIcon || std::strcmp(magicDef->sourceIcon, "\xE2\x9C\xA6") != 0
-        || magicDef->rarity != sm::SpellRarity::Common
-        || !nearf(magicDef->recovery, 0.0f)) {
-        return fail("magic_bolt identity metadata wrong");
-    }
-    if (!chainDef->icon || std::strcmp(chainDef->icon, "Z") != 0
-        || !chainDef->sourceIcon || std::strcmp(chainDef->sourceIcon, "\xE2\x9B\xA7") != 0
-        || chainDef->rarity != sm::SpellRarity::Rare
-        || !nearf(chainDef->recovery, 4.1f)) {
-        return fail("lightning_chain identity metadata wrong");
-    }
-    if (!beamDef->icon || std::strcmp(beamDef->icon, "=") != 0
-        || !beamDef->sourceIcon || std::strcmp(beamDef->sourceIcon, "\xE2\x9A\xA1") != 0
-        || beamDef->rarity != sm::SpellRarity::Uncommon
-        || !nearf(beamDef->recovery, 2.9f)) {
-        return fail("energy_beam identity metadata wrong");
-    }
-    if (!armDef || !armDef->icon || std::strcmp(armDef->icon, "X") != 0
-        || !armDef->sourceIcon || std::strcmp(armDef->sourceIcon, "\xE2\x98\xA0") != 0
-        || armDef->rarity != sm::SpellRarity::Mythic
-        || !nearf(armDef->recovery, 122.0f)) {
-        return fail("armageddon identity metadata wrong");
-    }
-    if (!hasteDef->icon || std::strcmp(hasteDef->icon, ">") != 0
-        || !hasteDef->sourceIcon || std::strcmp(hasteDef->sourceIcon, "\xF0\x9F\x92\xA8") != 0
-        || hasteDef->rarity != sm::SpellRarity::Uncommon
-        || !nearf(hasteDef->recovery, 0.0f)) {
-        return fail("haste identity metadata wrong");
-    }
-    if (!flightDef->icon || std::strcmp(flightDef->icon, "^") != 0
-        || !flightDef->sourceIcon || std::strcmp(flightDef->sourceIcon, "\xF0\x9F\x95\x8A") != 0
-        || flightDef->rarity != sm::SpellRarity::Rare
-        || !nearf(flightDef->recovery, 0.0f)) {
-        return fail("flight identity metadata wrong");
-    }
-    if (!std::strstr(fireDef->description, "allies included")
-        || !std::strstr(iceDef->description, "bosses and elites")
-        || !std::strstr(magicDef->description, "bread and butter")
-        || !std::strstr(chainDef->description, "losing force")
-        || !std::strstr(beamDef->description, "line up")
-        || !std::strstr(armDef->description, "moral bankruptcy")
-        || !std::strstr(hasteDef->description, "supernatural speed")
-        || !std::strstr(flightDef->description, "fall is unforgiving")) {
-        return fail("spell description metadata wrong");
-    }
-    if (!magicDef || magicDef->rule != sm::SpellRuleId::None
-        || sm::spell_flavor_count(magicDef->pros) != 3
-        || std::strcmp(magicDef->pros[0], "No recovery") != 0
-        || std::strcmp(magicDef->cons[2], "No utility") != 0) {
-        return fail("magic_bolt flavor metadata wrong");
-    }
+    const bool ok1 = !(!fireDef || fireDef->secondaryTag != fireDef->tag
+                       || !sm::spell_has_tag(*fireDef, sm::SpellTag::Fire)
+                       || std::strcmp(fireDef->statusEffect, "burning") != 0
+                       || !nearf(fireDef->statusDuration, 3.0f));
+    CHECK(ok1, "fireball metadata wrong");
+    if (!ok1) return 1;
+    const bool ok2 = !(!iceDef || iceDef->secondaryTag != iceDef->tag
+                       || !sm::spell_has_tag(*iceDef, sm::SpellTag::Ice)
+                       || std::strcmp(iceDef->statusEffect, "chilled") != 0
+                       || !nearf(iceDef->statusDuration, 4.0f));
+    CHECK(ok2, "ice_shard metadata wrong");
+    if (!ok2) return 1;
+    const bool ok3 = !(!chainDef || chainDef->secondaryTag != chainDef->tag
+                       || !sm::spell_has_tag(*chainDef, sm::SpellTag::Lightning)
+                       || std::strcmp(chainDef->statusEffect, "shocked") != 0
+                       || !nearf(chainDef->statusDuration, 2.0f));
+    CHECK(ok3, "lightning_chain metadata wrong");
+    if (!ok3) return 1;
+    const bool ok4 = !(!beamDef || beamDef->secondaryTag == beamDef->tag
+                       || !sm::spell_has_tag(*beamDef, sm::SpellTag::Arcane)
+                       || !sm::spell_has_tag(*beamDef, sm::SpellTag::Light)
+                       || beamDef->statusEffect[0] != '\0');
+    CHECK(ok4, "energy_beam metadata wrong");
+    if (!ok4) return 1;
+    const bool ok5 = !(!hasteDef || hasteDef->secondaryTag == hasteDef->tag
+                       || !sm::spell_has_tag(*hasteDef, sm::SpellTag::Body)
+                       || !sm::spell_has_tag(*hasteDef, sm::SpellTag::Air)
+                       || std::strcmp(hasteDef->statusEffect, "hasted") != 0);
+    CHECK(ok5, "haste metadata wrong");
+    if (!ok5) return 1;
+    const bool ok6 = !(!flightDef || flightDef->secondaryTag == flightDef->tag
+                       || !sm::spell_has_tag(*flightDef, sm::SpellTag::Air)
+                       || !sm::spell_has_tag(*flightDef, sm::SpellTag::Arcane)
+                       || std::strcmp(flightDef->statusEffect, "flying") != 0);
+    CHECK(ok6, "flight metadata wrong");
+    if (!ok6) return 1;
+    const bool ok7 = !(!fireDef->icon || std::strcmp(fireDef->icon, "*") != 0
+                       || !fireDef->sourceIcon || std::strcmp(fireDef->sourceIcon, "\xF0\x9F\x94\xA5") != 0
+                       || fireDef->rarity != sm::SpellRarity::Common
+                       || !nearf(fireDef->recovery, 2.3f));
+    CHECK(ok7, "fireball identity metadata wrong");
+    if (!ok7) return 1;
+    const bool ok8 = !(!iceDef->icon || std::strcmp(iceDef->icon, "I") != 0
+                       || !iceDef->sourceIcon || std::strcmp(iceDef->sourceIcon, "\xE2\x9D\x84") != 0
+                       || iceDef->rarity != sm::SpellRarity::Uncommon
+                       || !nearf(iceDef->recovery, 1.7f));
+    CHECK(ok8, "ice_shard identity metadata wrong");
+    if (!ok8) return 1;
+    const bool ok9 = !(!magicDef || !magicDef->icon || std::strcmp(magicDef->icon, "+") != 0
+                       || !magicDef->sourceIcon || std::strcmp(magicDef->sourceIcon, "\xE2\x9C\xA6") != 0
+                       || magicDef->rarity != sm::SpellRarity::Common
+                       || !nearf(magicDef->recovery, 0.0f));
+    CHECK(ok9, "magic_bolt identity metadata wrong");
+    if (!ok9) return 1;
+    const bool ok10 = !(!chainDef->icon || std::strcmp(chainDef->icon, "Z") != 0
+                        || !chainDef->sourceIcon || std::strcmp(chainDef->sourceIcon, "\xE2\x9B\xA7") != 0
+                        || chainDef->rarity != sm::SpellRarity::Rare
+                        || !nearf(chainDef->recovery, 4.1f));
+    CHECK(ok10, "lightning_chain identity metadata wrong");
+    if (!ok10) return 1;
+    const bool ok11 = !(!beamDef->icon || std::strcmp(beamDef->icon, "=") != 0
+                        || !beamDef->sourceIcon || std::strcmp(beamDef->sourceIcon, "\xE2\x9A\xA1") != 0
+                        || beamDef->rarity != sm::SpellRarity::Uncommon
+                        || !nearf(beamDef->recovery, 2.9f));
+    CHECK(ok11, "energy_beam identity metadata wrong");
+    if (!ok11) return 1;
+    const bool ok12 = !(!armDef || !armDef->icon || std::strcmp(armDef->icon, "X") != 0
+                        || !armDef->sourceIcon || std::strcmp(armDef->sourceIcon, "\xE2\x98\xA0") != 0
+                        || armDef->rarity != sm::SpellRarity::Mythic
+                        || !nearf(armDef->recovery, 122.0f));
+    CHECK(ok12, "armageddon identity metadata wrong");
+    if (!ok12) return 1;
+    const bool ok13 = !(!hasteDef->icon || std::strcmp(hasteDef->icon, ">") != 0
+                        || !hasteDef->sourceIcon || std::strcmp(hasteDef->sourceIcon, "\xF0\x9F\x92\xA8") != 0
+                        || hasteDef->rarity != sm::SpellRarity::Uncommon
+                        || !nearf(hasteDef->recovery, 0.0f));
+    CHECK(ok13, "haste identity metadata wrong");
+    if (!ok13) return 1;
+    const bool ok14 = !(!flightDef->icon || std::strcmp(flightDef->icon, "^") != 0
+                        || !flightDef->sourceIcon || std::strcmp(flightDef->sourceIcon, "\xF0\x9F\x95\x8A") != 0
+                        || flightDef->rarity != sm::SpellRarity::Rare
+                        || !nearf(flightDef->recovery, 0.0f));
+    CHECK(ok14, "flight identity metadata wrong");
+    if (!ok14) return 1;
+    const bool ok15 = !(!std::strstr(fireDef->description, "allies included")
+                        || !std::strstr(iceDef->description, "bosses and elites")
+                        || !std::strstr(magicDef->description, "bread and butter")
+                        || !std::strstr(chainDef->description, "losing force")
+                        || !std::strstr(beamDef->description, "line up")
+                        || !std::strstr(armDef->description, "moral bankruptcy")
+                        || !std::strstr(hasteDef->description, "supernatural speed")
+                        || !std::strstr(flightDef->description, "fall is unforgiving"));
+    CHECK(ok15, "spell description metadata wrong");
+    if (!ok15) return 1;
+    const bool ok16 = !(!magicDef || magicDef->rule != sm::SpellRuleId::None
+                        || sm::spell_flavor_count(magicDef->pros) != 3
+                        || std::strcmp(magicDef->pros[0], "No recovery") != 0
+                        || std::strcmp(magicDef->cons[2], "No utility") != 0);
+    CHECK(ok16, "magic_bolt flavor metadata wrong");
+    if (!ok16) return 1;
     // A DAMAGING spell carries no stat row and no rule: damage is a BLOW, and
     // blows have exactly one door. Its DICE are THE WHOLE of what it strikes
     // for — 36d1 since 2026-09-19 (session Е), when the `scalingPower` knob
@@ -284,12 +277,12 @@ int main() {
     // lives in ONE column, not in a column times a float beside it.
     // The old `macroType = DamageRegion, macroPower = 10` was the same fact
     // told a second time, in a vocabulary nobody read.
-    if (fireDef->rule != sm::SpellRuleId::None
-        || fireDef->effects[0].row != 0
-        || fireDef->dice.n != 36 || fireDef->dice.m != 1
-        || sm::spell_flavor_count(fireDef->pros) < 1) {
-        return fail("fireball effect/flavor metadata wrong");
-    }
+    const bool ok17 = !(fireDef->rule != sm::SpellRuleId::None
+                        || fireDef->effects[0].row != 0
+                        || fireDef->dice.n != 36 || fireDef->dice.m != 1
+                        || sm::spell_flavor_count(fireDef->pros) < 1);
+    CHECK(ok17, "fireball effect/flavor metadata wrong");
+    if (!ok17) return 1;
     // A FLAVOUR LINE MAY NOT PROMISE A MECHANIC THAT DOES NOT EXIST.
     // This assertion used to pin the literal "Burning DOT" in fireball's
     // pros — and that line sold the `statusEffect` column, which NOTHING but
@@ -335,26 +328,26 @@ int main() {
                         "statusEffect as a mechanic",
                         "tests/spell_casting_effects_test.cpp", 0);
     }
-    if (!armDef || armDef->rule != sm::SpellRuleId::None
-        || armDef->effects[0].row != 0
-        || sm::spell_flavor_count(armDef->cons) != 4
-        || std::strcmp(armDef->cons[3], "2 min recovery") != 0) {
-        return fail("armageddon effect/flavor metadata wrong");
-    }
+    const bool ok18 = !(!armDef || armDef->rule != sm::SpellRuleId::None
+                        || armDef->effects[0].row != 0
+                        || sm::spell_flavor_count(armDef->cons) != 4
+                        || std::strcmp(armDef->cons[3], "2 min recovery") != 0);
+    CHECK(ok18, "armageddon effect/flavor metadata wrong");
+    if (!ok18) return 1;
 
     // ...and the two SUSTAINED spells say what they do in the two halves of
     // the hybrid: haste moves a NUMBER the body already has, flight changes a
     // RULE. Neither is a literal at a call site any more.
-    if (!hasteDef || hasteDef->rule != sm::SpellRuleId::None
-        || hasteDef->effects[0].row != std::uint8_t(sm::BonusId::Spd)
-        || hasteDef->effects[0].value <= 0) {
-        return fail("haste must be a STAT row: speed is a number a body has");
-    }
-    if (!flightDef || flightDef->rule != sm::SpellRuleId::Flight
-        || flightDef->effects[0].row != 0) {
-        return fail("flight must be a RULE: leaving the ground is not a "
-                    "bigger number");
-    }
+    const bool ok19 = !(!hasteDef || hasteDef->rule != sm::SpellRuleId::None
+                        || hasteDef->effects[0].row != std::uint8_t(sm::BonusId::Spd)
+                        || hasteDef->effects[0].value <= 0);
+    CHECK(ok19, "haste must be a STAT row: speed is a number a body has");
+    if (!ok19) return 1;
+    const bool ok20 = !(!flightDef || flightDef->rule != sm::SpellRuleId::Flight
+                        || flightDef->effects[0].row != 0);
+    CHECK(ok20, "flight must be a RULE: leaving the ground is not a "
+                "bigger number");
+    if (!ok20) return 1;
     // The magnitude follows the CASTER, through the one door that turns a
     // rank into a multiplier — with its own negative control. Haste's tag
     // (Body) SLEEPS (phase 5, CANON S15), so its school is none and
@@ -362,20 +355,20 @@ int main() {
     sm::Skills novice{}, adept{};
     adept[sm::SkillId::Spellcraft] = 10;   // 5 %/rank -> x1.5
     const sm::SkillId hasteSchool = sm::spell_school(*hasteDef);
-    if (hasteSchool != sm::SkillId::Count) {
-        return fail("Body is a sleeping tag: it must have no school yet");
-    }
+    const bool ok21 = !(hasteSchool != sm::SkillId::Count);
+    CHECK(ok21, "Body is a sleeping tag: it must have no school yet");
+    if (!ok21) return 1;
     const sm::Bonus weak =
         sm::spell_bonus(hasteDef->effects[0], novice, hasteSchool);
     const sm::Bonus strong =
         sm::spell_bonus(hasteDef->effects[0], adept, hasteSchool);
-    if (weak.row != strong.row || strong.value <= weak.value) {
-        return fail("a trained caster's haste must be worth more than a "
-                    "novice's, and land in the same place");
-    }
-    if (weak.value != hasteDef->effects[0].value) {
-        return fail("an untrained caster gets exactly what the row says");
-    }
+    const bool ok22 = !(weak.row != strong.row || strong.value <= weak.value);
+    CHECK(ok22, "a trained caster's haste must be worth more than a "
+                "novice's, and land in the same place");
+    if (!ok22) return 1;
+    const bool ok23 = !(weak.value != hasteDef->effects[0].value);
+    CHECK(ok23, "an untrained caster gets exactly what the row says");
+    if (!ok23) return 1;
     // ── Phase 5: the school is the typed half of the damage stack ────────
     // A fire adept's fireball hits harder; water training buys fire nothing
     // (the negative control that says the SPELL'S OWN school is read).
@@ -388,12 +381,12 @@ int main() {
         const int plain = sm::spell_damage(*fireDef, caster, bare);
         const int trained = sm::spell_damage(*fireDef, caster, fireAdept);
         const int wrong = sm::spell_damage(*fireDef, caster, waterAdept);
-        if (!(trained > plain)) {
-            return fail("fire training must strengthen a fire spell");
-        }
-        if (wrong != plain) {
-            return fail("negative control: water training buys fire nothing");
-        }
+        const bool ok24 = !(!(trained > plain));
+        CHECK(ok24, "fire training must strengthen a fire spell");
+        if (!ok24) return 1;
+        const bool ok25 = !(wrong != plain);
+        CHECK(ok25, "negative control: water training buys fire nothing");
+        if (!ok25) return 1;
         // ── THE WHOLE FORMULA, stated (CANON S13, session Е 2026-09-19) ──
         // урон = (бросок + добавка) · скилл-процент, and NOTHING else. Two
         // undercanon multipliers stood between the dice and this line until
@@ -403,80 +396,86 @@ int main() {
         // line from the row and the sheet — and a third knob reappearing
         // reddens here rather than drifting the balance silently.
         const int add = caster.of(sm::AttributeId::Intl);
-        if (plain != int(fireDef->dice.n) + add) {
-            return fail("untrained: the expectation is dice + INT, exactly");
-        }
+        const bool ok26 = !(plain != int(fireDef->dice.n) + add);
+        CHECK(ok26, "untrained: the expectation is dice + INT, exactly");
+        if (!ok26) return 1;
         const int schoolPct = sm::skill_mult_pct(fireAdept,
                                                  sm::SkillId::FireMagic);
-        if (trained != (int(fireDef->dice.n) + add) * schoolPct / 100) {
-            return fail("trained: the school percent is the ONLY multiplier");
-        }
+        const bool ok27 =
+            !(trained != (int(fireDef->dice.n) + add) * schoolPct / 100);
+        CHECK(ok27, "trained: the school percent is the ONLY multiplier");
+        if (!ok27) return 1;
         // And the TIER buys nothing: armageddon is tier 5, magic_bolt tier 1,
         // and neither tier appears in either expectation.
         const sm::SpellDef* bolt = sm::spell_find("magic_bolt");
         const sm::SpellDef* doom = sm::spell_find("armageddon");
-        if (!bolt || !doom || bolt->tier == doom->tier) {
-            return fail("fixture: the two rows must differ in tier");
-        }
-        if (sm::spell_damage(*bolt, caster, bare) != int(bolt->dice.n) + add
-            || sm::spell_damage(*doom, caster, bare)
-                   != int(doom->dice.n) + add) {
-            return fail("a spell's TIER is spire gating, never damage");
-        }
+        const bool ok28 = !(!bolt || !doom || bolt->tier == doom->tier);
+        CHECK(ok28, "fixture: the two rows must differ in tier");
+        if (!ok28) return 1;
+        const bool ok29 = !(sm::spell_damage(*bolt, caster, bare) != int(bolt->dice.n) + add
+                            || sm::spell_damage(*doom, caster, bare)
+                                   != int(doom->dice.n) + add);
+        CHECK(ok29, "a spell's TIER is spire gating, never damage");
+        if (!ok29) return 1;
     }
     // Both are castable on the map because their ROW says so — the old test
     // read a macro-effect enum instead, which is the field that had to agree
     // with `hasMacro` and had no mechanism to.
-    if (!hasteDef->hasMacro || !hasteDef->sustained
-        || std::strcmp(hasteDef->pros[2], "Works on world map") != 0) {
-        return fail("haste world-map metadata wrong");
-    }
-    if (!flightDef->hasMacro || !flightDef->sustained
-        || std::strcmp(flightDef->cons[2], "Blocked indoors") != 0) {
-        return fail("flight world-map metadata wrong");
-    }
+    const bool ok30 = !(!hasteDef->hasMacro || !hasteDef->sustained
+                        || std::strcmp(hasteDef->pros[2], "Works on world map") != 0);
+    CHECK(ok30, "haste world-map metadata wrong");
+    if (!ok30) return 1;
+    const bool ok31 = !(!flightDef->hasMacro || !flightDef->sustained
+                        || std::strcmp(flightDef->cons[2], "Blocked indoors") != 0);
+    CHECK(ok31, "flight world-map metadata wrong");
+    if (!ok31) return 1;
 
     sm::spellbook_learn(book, sm::spell_ordinal("magic_bolt"));
-    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("magic_bolt"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("magic_bolt cast rejected");
-    }
-    if (combat.mp != 1990) return fail("magic_bolt mana cost");
-    if (projectile_count(world) != 1) return fail("magic_bolt projectile spawn");
+    const bool ok32 = !(!sm::spellbook_cast(world, book, combat, attributes, skills,
+                                            sm::spell_ordinal("magic_bolt"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok32, "magic_bolt cast rejected");
+    if (!ok32) return 1;
+    const bool ok33 = !(combat.mp != 1990);
+    CHECK(ok33, "magic_bolt mana cost");
+    if (!ok33) return 1;
+    const bool ok34 = !(projectile_count(world) != 1);
+    CHECK(ok34, "magic_bolt projectile spawn");
+    if (!ok34) return 1;
     sm::ecs::Projectile magicBolt{};
     sm::ecs::Position magicBoltPos{};
-    if (!find_projectile_pose_by_spell(world, "magic_bolt",
-                                       magicBolt, magicBoltPos)) {
-        return fail("magic_bolt descriptor missing");
-    }
-    if (magicBolt.kind != sm::ecs::Projectile::Bolt
-        || magicBolt.blastRadius != 0.0f
-        || !nearf(magicBolt.radius, 1.5f)
-        // WHAT THE MUZZLE IS FOR, stated as the law instead of as the number
-        // it happens to produce: the bolt is born clear of the caster's own
-        // shell AND of its own body, so it can never detonate on the one who
-        // cast it. The old assertion restated 5.0 = 1.5 + 1.5 + 2, and that
-        // first 1.5 was ONE constant standing in for every caster's shell —
-        // the same constant that, through ecs::BodyRadius, had become the
-        // player's physical width. The shell belongs to the body now, so an
-        // expectation that names a width names the wrong thing.
-        || !(magicBoltPos.x - 100.0f
-             > sm::sub::slot_body_radius(
-                   sm::sub::objects_of(world.reg),
-                   sm::sub::body_slot(world.reg, entt::entity(0)))
-                   + magicBolt.radius)
-        || !nearf(magicBoltPos.y, 100.0f)
-        || !nearf(magicBoltPos.y, 100.0f)
-        || !nearf(magicBolt.maxLifeTimer, 3.0f)) {
-        return fail("magic_bolt descriptor wrong");
-    }
+    const bool ok35 = !(!find_projectile_pose_by_spell(world, "magic_bolt",
+                                                       magicBolt, magicBoltPos));
+    CHECK(ok35, "magic_bolt descriptor missing");
+    if (!ok35) return 1;
+    const bool ok36 = !(magicBolt.kind != sm::ecs::Projectile::Bolt
+                        || magicBolt.blastRadius != 0.0f
+                        || !nearf(magicBolt.radius, 1.5f)
+                        // WHAT THE MUZZLE IS FOR, stated as the law instead of as the number
+                        // it happens to produce: the bolt is born clear of the caster's own
+                        // shell AND of its own body, so it can never detonate on the one who
+                        // cast it. The old assertion restated 5.0 = 1.5 + 1.5 + 2, and that
+                        // first 1.5 was ONE constant standing in for every caster's shell —
+                        // the same constant that, through ecs::BodyRadius, had become the
+                        // player's physical width. The shell belongs to the body now, so an
+                        // expectation that names a width names the wrong thing.
+                        || !(magicBoltPos.x - 100.0f
+                             > sm::sub::slot_body_radius(
+                                   sm::sub::objects_of(world.reg),
+                                   sm::sub::body_slot(world.reg, entt::entity(0)))
+                                   + magicBolt.radius)
+                        || !nearf(magicBoltPos.y, 100.0f)
+                        || !nearf(magicBoltPos.y, 100.0f)
+                        || !nearf(magicBolt.maxLifeTimer, 3.0f));
+    CHECK(ok36, "magic_bolt descriptor wrong");
+    if (!ok36) return 1;
     const sm::CastCheck macroBolt =
         sm::spellbook_can_cast_ex(book, combat, sm::spell_ordinal("magic_bolt"),
                                   false, 0u);
-    if (macroBolt.ok || macroBolt.reason != "Cannot use on world map") {
-        return fail("magic_bolt macro gate failed");
-    }
+    const bool ok37 =
+        !(macroBolt.ok || macroBolt.reason != "Cannot use on world map");
+    CHECK(ok37, "magic_bolt macro gate failed");
+    if (!ok37) return 1;
 
     // ── THE recovery law (owner verdict 2026-09-09) ──────────────────────
     // A cast charges the CASTER BODY's one gate — ecs::Combat::recoverySteps,
@@ -492,51 +491,52 @@ int main() {
     const sm::sub::ObjRef casterId = sm::sub::ref_of(
         sm::sub::objects_of(world.reg),
         sm::sub::body_slot(world.reg, casterBody));
-    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("fireball"), casterId, 100.0f, 100.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("fireball cast rejected");
-    }
+    const bool ok38 = !(!sm::spellbook_cast(world, book, combat, attributes, skills,
+                                            sm::spell_ordinal("fireball"), casterId, 100.0f, 100.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok38, "fireball cast rejected");
+    if (!ok38) return 1;
     const std::uint32_t fireGate =
         sm::sub::body_combat(world.reg, casterBody)->recoverySteps;
     const auto wantGate = std::uint32_t(sm::recovery_steps(
         fireDef->recovery, attributes, skills, sm::SkillId::Spellcraft));
-    if (fireGate == 0u || fireGate != wantGate) {
-        return fail("fireball recovery did not charge the body gate");
-    }
+    const bool ok39 = !(fireGate == 0u || fireGate != wantGate);
+    CHECK(ok39, "fireball recovery did not charge the body gate");
+    if (!ok39) return 1;
     // Agnostic: the gate blocks even the no-recovery bolt, and the reason
     // speaks recovery, not the spell that caused it.
     const sm::CastCheck fireBlocked = sm::spellbook_can_cast_ex(
         book, combat, sm::spell_ordinal("magic_bolt"), true, fireGate);
-    if (fireBlocked.ok || fireBlocked.recoveryRemaining <= 0.0f
-        || fireBlocked.reason.rfind("Recovery", 0) != 0) {
-        return fail("busy body was allowed to act");
-    }
+    const bool ok40 = !(fireBlocked.ok || fireBlocked.recoveryRemaining <= 0.0f
+                        || fireBlocked.reason.rfind("Recovery", 0) != 0);
+    CHECK(ok40, "busy body was allowed to act");
+    if (!ok40) return 1;
     const int busyProjectiles = projectile_count(world);
-    if (sm::spellbook_cast(world, book, combat, attributes, skills,
-                           sm::spell_ordinal("magic_bolt"), casterId, 100.0f, 100.0f, 0.0f,
-                           1.0f, 0.0f, 0.0f, true)
-        || projectile_count(world) != busyProjectiles) {
-        return fail("busy body cast through the gate");
-    }
+    const bool ok41 = !(sm::spellbook_cast(world, book, combat, attributes, skills,
+                                           sm::spell_ordinal("magic_bolt"), casterId, 100.0f, 100.0f, 0.0f,
+                                           1.0f, 0.0f, 0.0f, true)
+                        || projectile_count(world) != busyProjectiles);
+    CHECK(ok41, "busy body cast through the gate");
+    if (!ok41) return 1;
     // The ONE drain — the same system that frees a swordarm frees the caster
     // (проход по арене с куска 2).
     sm::sub::tick_body_recovery(sm::test::arena_of(world.reg), fireGate);
-    if (sm::sub::body_combat(world.reg, casterBody)->recoverySteps != 0u) {
-        return fail("tick_body_recovery did not drain the gate");
-    }
+    const bool ok42 =
+        !(sm::sub::body_combat(world.reg, casterBody)->recoverySteps != 0u);
+    CHECK(ok42, "tick_body_recovery did not drain the gate");
+    if (!ok42) return 1;
 
     sm::ecs::Projectile fireball{};
-    if (!find_projectile_by_spell(world, "fireball", fireball)) {
-        return fail("fireball descriptor missing");
-    }
-    if (fireball.kind != sm::ecs::Projectile::Bolt
-        || !nearf(fireball.radius, 2.5f)
-        || !nearf(fireball.blastRadius, 48.0f)
-        || fireball.explodeOnExpiry
-        || !nearf(fireball.maxLifeTimer, 3.0f)) {
-        return fail("fireball descriptor wrong");
-    }
+    const bool ok43 = !(!find_projectile_by_spell(world, "fireball", fireball));
+    CHECK(ok43, "fireball descriptor missing");
+    if (!ok43) return 1;
+    const bool ok44 = !(fireball.kind != sm::ecs::Projectile::Bolt
+                        || !nearf(fireball.radius, 2.5f)
+                        || !nearf(fireball.blastRadius, 48.0f)
+                        || fireball.explodeOnExpiry
+                        || !nearf(fireball.maxLifeTimer, 3.0f));
+    CHECK(ok44, "fireball descriptor wrong");
+    if (!ok44) return 1;
 
     sm::ecs::World fireExpiryWorld;
 
@@ -556,17 +556,18 @@ int main() {
     sm::spellbook_learn(fireExpiryBook, sm::spell_ordinal("fireball"));
     const auto fireExpiryVictim =
         add_target(fireExpiryWorld, 120.0f, 100.0f, 100.0f, false);
-    if (!sm::spellbook_cast(fireExpiryWorld, fireExpiryBook,
-                            fireExpiryCombat, attributes, skills,
-                            sm::spell_ordinal("fireball"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("fireball expiry setup cast rejected");
-    }
+    const bool ok45 = !(!sm::spellbook_cast(fireExpiryWorld, fireExpiryBook,
+                                            fireExpiryCombat, attributes, skills,
+                                            sm::spell_ordinal("fireball"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok45, "fireball expiry setup cast rejected");
+    if (!ok45) return 1;
     sm::sub::tick_spell_projectiles(fireExpiryWorld, nullptr, 3.1f);
-    if (!nearf(hp_of(fireExpiryWorld, fireExpiryVictim), 100.0f)
-        || projectile_count(fireExpiryWorld) != 0) {
-        return fail("a fireball that ran out of life EXPIRES, it does not detonate");
-    }
+    const bool ok46 = !(!nearf(hp_of(fireExpiryWorld, fireExpiryVictim), 100.0f)
+                        || projectile_count(fireExpiryWorld) != 0);
+    CHECK(ok46,
+          "a fireball that ran out of life EXPIRES, it does not detonate");
+    if (!ok46) return 1;
 
     sm::ecs::World blastWorld;
 
@@ -600,11 +601,12 @@ int main() {
     const auto blastOutside =
         add_target(blastWorld, 53.0f, 0.0f, 100.0f, false);
     sm::sub::tick_spell_projectiles(blastWorld, nullptr, 0.0f);
-    if (!(hp_of(blastWorld, blastEdge) < 100.0f)
-        || !nearf(hp_of(blastWorld, blastOutside), 100.0f)
-        || projectile_count(blastWorld) != 0) {
-        return fail("the blast reaches a target at exactly blastRadius and no further - the edge is measured centre to centre");
-    }
+    const bool ok47 = !(!(hp_of(blastWorld, blastEdge) < 100.0f)
+                        || !nearf(hp_of(blastWorld, blastOutside), 100.0f)
+                        || projectile_count(blastWorld) != 0);
+    CHECK(ok47,
+          "the blast reaches a target at exactly blastRadius and no further - the edge is measured centre to centre");
+    if (!ok47) return 1;
 
     sm::ecs::World iceWorld;
 
@@ -622,19 +624,19 @@ int main() {
     iceCombat.mp = 1000;
     iceCombat.maxMp = 1000;
     sm::spellbook_learn(iceBook, sm::spell_ordinal("ice_shard"));
-    if (!sm::spellbook_cast(iceWorld, iceBook, iceCombat, attributes, skills,
-                            sm::spell_ordinal("ice_shard"), sm::sub::ObjRef{}, 10.0f, 10.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("ice_shard cast rejected");
-    }
+    const bool ok48 = !(!sm::spellbook_cast(iceWorld, iceBook, iceCombat, attributes, skills,
+                                            sm::spell_ordinal("ice_shard"), sm::sub::ObjRef{}, 10.0f, 10.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok48, "ice_shard cast rejected");
+    if (!ok48) return 1;
     sm::ecs::Projectile ice{};
-    if (!find_projectile_by_spell(iceWorld, "ice_shard", ice)
-        || ice.kind != sm::ecs::Projectile::Bolt
-        || !nearf(ice.radius, 1.5f)
-        || ice.blastRadius != 0.0f
-        || !nearf(ice.maxLifeTimer, 3.0f)) {
-        return fail("ice_shard descriptor wrong");
-    }
+    const bool ok49 = !(!find_projectile_by_spell(iceWorld, "ice_shard", ice)
+                        || ice.kind != sm::ecs::Projectile::Bolt
+                        || !nearf(ice.radius, 1.5f)
+                        || ice.blastRadius != 0.0f
+                        || !nearf(ice.maxLifeTimer, 3.0f));
+    CHECK(ok49, "ice_shard descriptor wrong");
+    if (!ok49) return 1;
 
     sm::SpellBook lowBook;
     sm::spellbook_learn(lowBook, sm::spell_ordinal("fireball"));
@@ -644,9 +646,9 @@ int main() {
     const sm::CastCheck lowMana =
         sm::spellbook_can_cast_ex(lowBook, lowCombat, sm::spell_ordinal("fireball"),
                                   true, 0u);
-    if (lowMana.ok || lowMana.reason != "Not enough mana") {
-        return fail("low mana gate failed");
-    }
+    const bool ok50 = !(lowMana.ok || lowMana.reason != "Not enough mana");
+    CHECK(ok50, "low mana gate failed");
+    if (!ok50) return 1;
 
     sm::SpellBook macroBook;
     const char* macroSpellIds[] = {
@@ -663,27 +665,28 @@ int main() {
         const sm::CastCheck macroCheck =
             sm::spellbook_can_cast_ex(macroBook, macroCombat, sm::spell_ordinal(id),
                                       false, 0u);
-        if (!macroCheck.ok) {
-            return fail("on the macro map can_cast still answers YES - the restriction lives in cast, not in the question");
-        }
+        const bool ok51 = !(!macroCheck.ok);
+        CHECK(ok51,
+              "on the macro map can_cast still answers YES - the restriction lives in cast, not in the question");
+        if (!ok51) return 1;
     }
     const int beforeMacroProjectiles = projectile_count(world);
-    if (sm::spellbook_cast(world, macroBook, macroCombat, attributes, skills,
-                           sm::spell_ordinal("fireball"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
-                           1.0f, 0.0f, 0.0f, false)) {
-        return fail("world-map fireball spawned micro projectile");
-    }
-    if (projectile_count(world) != beforeMacroProjectiles
-        || macroCombat.mp != 2000) {
-        return fail("world-map fireball mutated state");
-    }
+    const bool ok52 = !(sm::spellbook_cast(world, macroBook, macroCombat, attributes, skills,
+                                           sm::spell_ordinal("fireball"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
+                                           1.0f, 0.0f, 0.0f, false));
+    CHECK(ok52, "world-map fireball spawned micro projectile");
+    if (!ok52) return 1;
+    const bool ok53 = !(projectile_count(world) != beforeMacroProjectiles
+                        || macroCombat.mp != 2000);
+    CHECK(ok53, "world-map fireball mutated state");
+    if (!ok53) return 1;
 
     sm::spellbook_learn(book, sm::spell_ordinal("energy_beam"));
-    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("energy_beam"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("energy_beam cast rejected");
-    }
+    const bool ok54 = !(!sm::spellbook_cast(world, book, combat, attributes, skills,
+                                            sm::spell_ordinal("energy_beam"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok54, "energy_beam cast rejected");
+    if (!ok54) return 1;
     bool beamFound = false;
     {
         const sm::sub::SubObjects& bo = sm::sub::objects_of(world.reg);
@@ -699,31 +702,35 @@ int main() {
             }
         }
     }
-    if (!beamFound) return fail("energy_beam did not spawn beam visual");
+    const bool ok55 = !(!beamFound);
+    CHECK(ok55, "energy_beam did not spawn beam visual");
+    if (!ok55) return 1;
     sm::ecs::Projectile beamDesc{};
-    if (!find_projectile_by_spell(world, "energy_beam", beamDesc)
-        || !nearf(beamDesc.radius, 1.5f)
-        // The beam's origin obeys the same muzzle law as a bolt, and is
-        // asserted as that law rather than as the number it came to.
-        || !(beamDesc.originX - 100.0f
-             > sm::sub::slot_body_radius(
-                   sm::sub::objects_of(world.reg),
-                   sm::sub::body_slot(world.reg, entt::entity(0)))
-                   + beamDesc.radius)
-        || !nearf(beamDesc.originY, 100.0f)) {
-        return fail("the beam is born OUTSIDE the caster body - muzzle clear of body_radius plus its own");
-    }
+    const bool ok56 = !(!find_projectile_by_spell(world, "energy_beam", beamDesc)
+                        || !nearf(beamDesc.radius, 1.5f)
+                        // The beam's origin obeys the same muzzle law as a bolt, and is
+                        // asserted as that law rather than as the number it came to.
+                        || !(beamDesc.originX - 100.0f
+                             > sm::sub::slot_body_radius(
+                                   sm::sub::objects_of(world.reg),
+                                   sm::sub::body_slot(world.reg, entt::entity(0)))
+                                   + beamDesc.radius)
+                        || !nearf(beamDesc.originY, 100.0f));
+    CHECK(ok56,
+          "the beam is born OUTSIDE the caster body - muzzle clear of body_radius plus its own");
+    if (!ok56) return 1;
 
     sm::spellbook_learn(book, sm::spell_ordinal("lightning_chain"));
-    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("lightning_chain"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("lightning_chain cast rejected");
-    }
+    const bool ok57 = !(!sm::spellbook_cast(world, book, combat, attributes, skills,
+                                            sm::spell_ordinal("lightning_chain"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok57, "lightning_chain cast rejected");
+    if (!ok57) return 1;
     sm::ecs::Projectile chain{};
-    if (!find_projectile_by_spell(world, "lightning_chain", chain)) {
-        return fail("lightning_chain descriptor missing");
-    }
+    const bool ok58 =
+        !(!find_projectile_by_spell(world, "lightning_chain", chain));
+    CHECK(ok58, "lightning_chain descriptor missing");
+    if (!ok58) return 1;
     // WHAT THIS ASSERTS, AND WHAT IT DELIBERATELY DOES NOT.
     //
     // Lightning Chain flies; it does not chain. `emplace_projectile`
@@ -742,54 +749,59 @@ int main() {
     // What IS promised is asserted, and asserted against the registry row
     // rather than against restated numbers: the row is the single source of
     // truth, so retuning the spell retunes the expectation with it.
-    if (chain.kind != sm::ecs::Projectile::Bolt) {
-        return fail("lightning_chain must spawn a bolt");
-    }
-    if (!nearf(chain.radius, chainDef->projectileRadius)) {
-        return fail("the bolt's radius must be the one the registry row states");
-    }
-    if (!(chain.maxLifeTimer > 0.0f) || !nearf(chain.lifeTimer, chain.maxLifeTimer)) {
-        return fail("a freshly cast bolt starts with a full life timer");
-    }
+    const bool ok59 = !(chain.kind != sm::ecs::Projectile::Bolt);
+    CHECK(ok59, "lightning_chain must spawn a bolt");
+    if (!ok59) return 1;
+    const bool ok60 = !(!nearf(chain.radius, chainDef->projectileRadius));
+    CHECK(ok60, "the bolt's radius must be the one the registry row states");
+    if (!ok60) return 1;
+    const bool ok61 =
+        !(!(chain.maxLifeTimer > 0.0f) || !nearf(chain.lifeTimer, chain.maxLifeTimer));
+    CHECK(ok61, "a freshly cast bolt starts with a full life timer");
+    if (!ok61) return 1;
     // Cast direction was (1, 0, 0): the bolt travels along the aim vector, at
     // whatever speed the spawner gives it.
-    if (!(chain.vx > 0.0f) || !nearf(chain.vy, 0.0f) || !nearf(chain.vz, 0.0f)) {
-        return fail("the bolt must fly along the direction it was aimed");
-    }
+    const bool ok62 =
+        !(!(chain.vx > 0.0f) || !nearf(chain.vy, 0.0f) || !nearf(chain.vz, 0.0f));
+    CHECK(ok62, "the bolt must fly along the direction it was aimed");
+    if (!ok62) return 1;
 
     sm::spellbook_learn(book, sm::spell_ordinal("haste"));
-    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("haste"), sm::sub::ObjRef{}, 0.0f, 0.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("haste toggle rejected");
-    }
-    if (!sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
-        return fail("haste not sustained");
-    }
+    const bool ok63 = !(!sm::spellbook_cast(world, book, combat, attributes, skills,
+                                            sm::spell_ordinal("haste"), sm::sub::ObjRef{}, 0.0f, 0.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok63, "haste toggle rejected");
+    if (!ok63) return 1;
+    const bool ok64 =
+        !(!sm::spellbook_has_sustained(book, sm::spell_ordinal("haste")));
+    CHECK(ok64, "haste not sustained");
+    if (!ok64) return 1;
     const int beforeDrain = combat.mp;
     sm::spellbook_tick(book, combat, sm::steps_from_seconds(1.2f));
-    if (beforeDrain - combat.mp != 12) {
-        return fail("haste fractional drain wrong");
-    }
-    if (!sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
-        return fail("haste dropped while mana remained");
-    }
+    const bool ok65 = !(beforeDrain - combat.mp != 12);
+    CHECK(ok65, "haste fractional drain wrong");
+    if (!ok65) return 1;
+    const bool ok66 =
+        !(!sm::spellbook_has_sustained(book, sm::spell_ordinal("haste")));
+    CHECK(ok66, "haste dropped while mana remained");
+    if (!ok66) return 1;
     combat.mp = 1;
     sm::spellbook_tick(book, combat, sm::steps_from_seconds(1.0f));
-    if (combat.mp != 0 || sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
-        return fail("haste did not stop on mana depletion");
-    }
+    const bool ok67 =
+        !(combat.mp != 0 || sm::spellbook_has_sustained(book, sm::spell_ordinal("haste")));
+    CHECK(ok67, "haste did not stop on mana depletion");
+    if (!ok67) return 1;
 
     sm::SpellBook zeroTickBook;
     sm::spellbook_learn(zeroTickBook, sm::spell_ordinal("haste"));
     sm::ecs::Pools zeroTickCombat{};
     zeroTickCombat.mp = 1;
     zeroTickCombat.maxMp = 1;
-    if (!sm::spellbook_cast(world, zeroTickBook, zeroTickCombat,
-                            attributes, skills, sm::spell_ordinal("haste"), sm::sub::ObjRef{},
-                            0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
-        return fail("zero-mp sustained setup rejected");
-    }
+    const bool ok68 = !(!sm::spellbook_cast(world, zeroTickBook, zeroTickCombat,
+                                            attributes, skills, sm::spell_ordinal("haste"), sm::sub::ObjRef{},
+                                            0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true));
+    CHECK(ok68, "zero-mp sustained setup rejected");
+    if (!ok68) return 1;
     // The PROPERTY, not a pinned boundary: a sustained spell burns the pool one
     // step at a time and stays up for exactly as long as there is mana, then
     // drops on the first step after it runs out. This used to be two magic
@@ -801,37 +813,40 @@ int main() {
         sm::spellbook_tick(zeroTickBook, zeroTickCombat, 1u);
         ++stepsToEmpty;
     }
-    if (zeroTickCombat.mp != 0) {
-        return fail("sustained drain never emptied a one-point pool");
-    }
-    if (stepsToEmpty <= 0) {
-        return fail("the pool emptied without a single step being taken");
-    }
-    if (!sm::spellbook_has_sustained(zeroTickBook, sm::spell_ordinal("haste"))) {
-        return fail("sustained spell dropped while it was still being paid for");
-    }
+    const bool ok69 = !(zeroTickCombat.mp != 0);
+    CHECK(ok69, "sustained drain never emptied a one-point pool");
+    if (!ok69) return 1;
+    const bool ok70 = !(stepsToEmpty <= 0);
+    CHECK(ok70, "the pool emptied without a single step being taken");
+    if (!ok70) return 1;
+    const bool ok71 =
+        !(!sm::spellbook_has_sustained(zeroTickBook, sm::spell_ordinal("haste")));
+    CHECK(ok71, "sustained spell dropped while it was still being paid for");
+    if (!ok71) return 1;
     sm::spellbook_tick(zeroTickBook, zeroTickCombat, 1u);
-    if (sm::spellbook_has_sustained(zeroTickBook, sm::spell_ordinal("haste"))) {
-        return fail("zero-mp sustained spell survived positive drain tick");
-    }
+    const bool ok72 =
+        !(sm::spellbook_has_sustained(zeroTickBook, sm::spell_ordinal("haste")));
+    CHECK(ok72, "zero-mp sustained spell survived positive drain tick");
+    if (!ok72) return 1;
 
     sm::SpellBook flightBook;
     sm::spellbook_learn(flightBook, sm::spell_ordinal("flight"));
     sm::ecs::Pools flightCombat{};
     flightCombat.mp = 50;
     flightCombat.maxMp = 50;
-    if (!sm::spellbook_cast(world, flightBook, flightCombat, attributes, skills,
-                            sm::spell_ordinal("flight"), sm::sub::ObjRef{}, 0.0f, 0.0f, 0.0f,
-                            0.0f, 1.0f, 0.0f, false)) {
-        return fail("flight macro toggle rejected");
-    }
-    if (!sm::spellbook_has_sustained(flightBook, sm::spell_ordinal("flight"))) {
-        return fail("flight not sustained");
-    }
+    const bool ok73 = !(!sm::spellbook_cast(world, flightBook, flightCombat, attributes, skills,
+                                            sm::spell_ordinal("flight"), sm::sub::ObjRef{}, 0.0f, 0.0f, 0.0f,
+                                            0.0f, 1.0f, 0.0f, false));
+    CHECK(ok73, "flight macro toggle rejected");
+    if (!ok73) return 1;
+    const bool ok74 =
+        !(!sm::spellbook_has_sustained(flightBook, sm::spell_ordinal("flight")));
+    CHECK(ok74, "flight not sustained");
+    if (!ok74) return 1;
     sm::spellbook_tick(flightBook, flightCombat, sm::steps_from_seconds(0.5f));
-    if (flightCombat.mp != 40) {
-        return fail("flight drain wrong");
-    }
+    const bool ok75 = !(flightCombat.mp != 40);
+    CHECK(ok75, "flight drain wrong");
+    if (!ok75) return 1;
 
     sm::SpellBook multiSustainBook;
     sm::ecs::Pools multiSustainCombat{};
@@ -839,26 +854,26 @@ int main() {
     multiSustainCombat.maxMp = 25;
     sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("haste"));
     sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("flight"));
-    if (!sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
-                            attributes, skills, sm::spell_ordinal("haste"), sm::sub::ObjRef{},
-                            0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)
-        || !sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
-                               attributes, skills, sm::spell_ordinal("flight"), sm::sub::ObjRef{},
-                               0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
-        return fail("multi sustained setup cast rejected");
-    }
+    const bool ok76 = !(!sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
+                                            attributes, skills, sm::spell_ordinal("haste"), sm::sub::ObjRef{},
+                                            0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)
+                        || !sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
+                                               attributes, skills, sm::spell_ordinal("flight"), sm::sub::ObjRef{},
+                                               0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true));
+    CHECK(ok76, "multi sustained setup cast rejected");
+    if (!ok76) return 1;
     sm::spellbook_tick(multiSustainBook, multiSustainCombat,
                        sm::steps_from_seconds(1.0f));
-    if (multiSustainCombat.mp != 0
-        || sm::spellbook_has_sustained(multiSustainBook, sm::spell_ordinal("haste"))
-        || !sm::spellbook_has_sustained(multiSustainBook, sm::spell_ordinal("flight"))
-        || [&]{ int n = 0;
-                for (int i = 0; i < sm::kSpellCount; ++i)
-                    n += sm::spellbook_has_sustained(multiSustainBook, i)
-                             ? 1 : 0;
-                return n; }() != 1) {
-        return fail("multi sustained partial depletion wrong");
-    }
+    const bool ok77 = !(multiSustainCombat.mp != 0
+                        || sm::spellbook_has_sustained(multiSustainBook, sm::spell_ordinal("haste"))
+                        || !sm::spellbook_has_sustained(multiSustainBook, sm::spell_ordinal("flight"))
+                        || [&]{ int n = 0;
+                                for (int i = 0; i < sm::kSpellCount; ++i)
+                                    n += sm::spellbook_has_sustained(multiSustainBook, i)
+                                             ? 1 : 0;
+                                return n; }() != 1);
+    CHECK(ok77, "multi sustained partial depletion wrong");
+    if (!ok77) return 1;
 
     sm::ecs::World hitWorld;
 
@@ -881,16 +896,17 @@ int main() {
     // CONNECTS. Friendly fire is real; watch where you aim.
     const auto hitPlayer = add_player(hitWorld, -1000.0f, -1000.0f);
     const auto friendly = add_target(hitWorld, 104.0f, 100.0f, 100.0f, true);
-    if (!sm::spellbook_cast(hitWorld, hitBook, hitCombat, attributes, skills,
-                            sm::spell_ordinal("magic_bolt"), hitPlayer, 0.0f, 100.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("magic_bolt agnostic-hit setup cast rejected");
-    }
+    const bool ok78 = !(!sm::spellbook_cast(hitWorld, hitBook, hitCombat, attributes, skills,
+                                            sm::spell_ordinal("magic_bolt"), hitPlayer, 0.0f, 100.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok78, "magic_bolt agnostic-hit setup cast rejected");
+    if (!ok78) return 1;
     sm::sub::tick_spell_projectiles(hitWorld, nullptr, 0.25f);
-    if (nearf(hp_of(hitWorld, friendly), 100.0f)
-        || projectile_count(hitWorld) != 0) {
-        return fail("agnostic projectiles: bolt must strike a friendly in its path");
-    }
+    const bool ok79 = !(nearf(hp_of(hitWorld, friendly), 100.0f)
+                        || projectile_count(hitWorld) != 0);
+    CHECK(ok79,
+          "agnostic projectiles: bolt must strike a friendly in its path");
+    if (!ok79) return 1;
     // The bolt was consumed by the friendly it struck; the hostile hit runs in
     // its own fresh world (fresh cooldown, clear lane) — the stages no longer
     // share one projectile now that nothing flies through a friendly.
@@ -907,18 +923,18 @@ int main() {
     sm::spellbook_learn(hostBook, sm::spell_ordinal("magic_bolt"));
     const auto hostPlayer = add_player(hostWorld, -1000.0f, -1000.0f);
     const auto hostile = add_target(hostWorld, 204.0f, 100.0f, 100.0f, false);
-    if (!sm::spellbook_cast(hostWorld, hostBook, hostCombat, attributes, skills,
-                            sm::spell_ordinal("magic_bolt"), hostPlayer, 0.0f, 100.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("magic_bolt hostile-hit setup cast rejected");
-    }
+    const bool ok80 = !(!sm::spellbook_cast(hostWorld, hostBook, hostCombat, attributes, skills,
+                                            sm::spell_ordinal("magic_bolt"), hostPlayer, 0.0f, 100.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok80, "magic_bolt hostile-hit setup cast rejected");
+    if (!ok80) return 1;
     sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f);
     sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f);
-    if (!(hp_of(hostWorld, hostile) < 100.0f)
-        || !last_hit_by(hostWorld, hostile, hostPlayer)
-        || projectile_count(hostWorld) != 0) {
-        return fail("magic_bolt did not hit hostile target");
-    }
+    const bool ok81 = !(!(hp_of(hostWorld, hostile) < 100.0f)
+                        || !last_hit_by(hostWorld, hostile, hostPlayer)
+                        || projectile_count(hostWorld) != 0);
+    CHECK(ok81, "magic_bolt did not hit hostile target");
+    if (!ok81) return 1;
 
     sm::ecs::World beamWorld;
 
@@ -940,19 +956,19 @@ int main() {
     const auto beamHit = add_target(beamWorld, 160.0f, 10.0f, 100.0f, false);
     const auto beamNearMiss = add_target(beamWorld, 160.0f, 21.0f, 100.0f, false);
     const auto beamMiss = add_target(beamWorld, 160.0f, 40.0f, 100.0f, false);
-    if (!sm::spellbook_cast(beamWorld, beamBook, beamCombat, attributes, skills,
-                            sm::spell_ordinal("energy_beam"), beamPlayer, 0.0f, 10.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("energy_beam effect setup cast rejected");
-    }
+    const bool ok82 = !(!sm::spellbook_cast(beamWorld, beamBook, beamCombat, attributes, skills,
+                                            sm::spell_ordinal("energy_beam"), beamPlayer, 0.0f, 10.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok82, "energy_beam effect setup cast rejected");
+    if (!ok82) return 1;
     sm::sub::tick_spell_projectiles(beamWorld, nullptr, 0.40f);
-    if (!(hp_of(beamWorld, beamHit) < 100.0f)
-        || !last_hit_by(beamWorld, beamHit, beamPlayer)
-        || !nearf(hp_of(beamWorld, beamNearMiss), 100.0f)
-        || !nearf(hp_of(beamWorld, beamMiss), 100.0f)
-        || projectile_count(beamWorld) != 0) {
-        return fail("energy_beam line damage wrong");
-    }
+    const bool ok83 = !(!(hp_of(beamWorld, beamHit) < 100.0f)
+                        || !last_hit_by(beamWorld, beamHit, beamPlayer)
+                        || !nearf(hp_of(beamWorld, beamNearMiss), 100.0f)
+                        || !nearf(hp_of(beamWorld, beamMiss), 100.0f)
+                        || projectile_count(beamWorld) != 0);
+    CHECK(ok83, "energy_beam line damage wrong");
+    if (!ok83) return 1;
 
     sm::ecs::World chainWorld;
 
@@ -980,23 +996,23 @@ int main() {
     const auto chainFriendly = add_target(chainWorld, 109.0f, 50.0f, 100.0f, true);
     const auto chainFirst = add_target(chainWorld, 113.0f, 50.0f, 100.0f, false);
     const auto chainSecond = add_target(chainWorld, 120.0f, 50.0f, 100.0f, false);
-    if (!sm::spellbook_cast(chainWorld, chainBook, chainCombat, attributes, skills,
-                            sm::spell_ordinal("lightning_chain"), chainPlayer, 0.0f, 50.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true)) {
-        return fail("lightning_chain effect setup cast rejected");
-    }
+    const bool ok84 = !(!sm::spellbook_cast(chainWorld, chainBook, chainCombat, attributes, skills,
+                                            sm::spell_ordinal("lightning_chain"), chainPlayer, 0.0f, 50.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true));
+    CHECK(ok84, "lightning_chain effect setup cast rejected");
+    if (!ok84) return 1;
     sm::sub::tick_spell_projectiles(chainWorld, nullptr, 0.35f);
     // Agnostic projectiles (owner design decision 2026-07-30): the bolt strikes
     // the body it REACHES FIRST — faction plays no part. Here that is the
     // friendly at x=109; with a faction shield he would be filtered out of the
     // candidates and the hostile behind him would take the hit instead. One
     // victim, bolt consumed, the bodies further along untouched.
-    if (!(hp_of(chainWorld, chainFriendly) < 100.0f)
-        || !nearf(hp_of(chainWorld, chainFirst), 100.0f)
-        || !nearf(hp_of(chainWorld, chainSecond), 100.0f)
-        || projectile_count(chainWorld) != 0) {
-        return fail("lightning_chain agnostic collision wrong");
-    }
+    const bool ok85 = !(!(hp_of(chainWorld, chainFriendly) < 100.0f)
+                        || !nearf(hp_of(chainWorld, chainFirst), 100.0f)
+                        || !nearf(hp_of(chainWorld, chainSecond), 100.0f)
+                        || projectile_count(chainWorld) != 0);
+    CHECK(ok85, "lightning_chain agnostic collision wrong");
+    if (!ok85) return 1;
 
     sm::ecs::World armWorld;
 
@@ -1014,13 +1030,15 @@ int main() {
     armCombat.mp = 2000;
     armCombat.maxMp = 2000;
     sm::spellbook_learn(armBook, sm::spell_ordinal("armageddon"));
-    if (!armDef) return fail("armageddon definition missing");
+    const bool ok86 = !(!armDef);
+    CHECK(ok86, "armageddon definition missing");
+    if (!ok86) return 1;
     sm::Attributes armAttributes{};
     armAttributes[sm::AttributeId::Intl] = 200;
-    if (sm::spell_radius(*armDef, armAttributes, skills)
-        <= int(armDef->baseRadius)) {
-        return fail("armageddon high-radius test does not exceed base radius");
-    }
+    const bool ok87 = !(sm::spell_radius(*armDef, armAttributes, skills)
+                        <= int(armDef->baseRadius));
+    CHECK(ok87, "armageddon high-radius test does not exceed base radius");
+    if (!ok87) return 1;
     // `expectedMeteors` used to come from `armageddon_meteor_count()`, a
     // VERBATIM copy of spawn_armageddon's formula living in this file
     // (ceil(spread * 0.2f), floored at 16 — with kArmageddonMinMeteors
@@ -1040,18 +1058,18 @@ int main() {
     const float armRngValues[] = {0.0f, 0.5f, 0.25f};
     SeqRng armRng{armRngValues, 3, 0};
     const auto armPlayer = add_player(armWorld, -1000.0f, -1000.0f);
-    if (!sm::spellbook_cast(armWorld, armBook, armCombat, armAttributes, skills,
-                            sm::spell_ordinal("armageddon"), armPlayer, 100.0f, 100.0f, 0.0f,
-                            1.0f, 0.0f, 0.0f, true,
-                            &seq_rng01, &armRng)) {
-        return fail("armageddon cast rejected");
-    }
-    if (armCombat.mp != int(armBefore) - int(armDef->manaCost)) {
-        return fail("armageddon charged exactly the mana its row names");
-    }
-    if (projectile_count(armWorld) < kStormAtLeast) {
-        return fail("armageddon falls as a STORM — many meteors, not one bolt");
-    }
+    const bool ok88 = !(!sm::spellbook_cast(armWorld, armBook, armCombat, armAttributes, skills,
+                                            sm::spell_ordinal("armageddon"), armPlayer, 100.0f, 100.0f, 0.0f,
+                                            1.0f, 0.0f, 0.0f, true,
+                                            &seq_rng01, &armRng));
+    CHECK(ok88, "armageddon cast rejected");
+    if (!ok88) return 1;
+    const bool ok89 = !(armCombat.mp != int(armBefore) - int(armDef->manaCost));
+    CHECK(ok89, "armageddon charged exactly the mana its row names");
+    if (!ok89) return 1;
+    const bool ok90 = !(projectile_count(armWorld) < kStormAtLeast);
+    CHECK(ok90, "armageddon falls as a STORM — many meteors, not one bolt");
+    if (!ok90) return 1;
 
     const std::uint32_t armId = sm::stable_spell_id("armageddon");
     int armSeen = 0;
@@ -1065,17 +1083,19 @@ int main() {
             || (f & sm::sub::kObjProjectile) == 0u) continue;
         const auto& pos = ao.pos[std::size_t(s)];
         const auto& p = ao.projectile[std::size_t(s)];
-        if (p.spellId != armId) return fail("armageddon spawned wrong spell id");
-        if (p.kind != sm::ecs::Projectile::Bolt
-            || !p.visualOnly
-            || !p.explodeOnExpiry
-            || !nearf(p.blastRadius, 25.0f)
-            || !nearf(p.radius, 2.5f)
-            || p.lifeTimer < 0.3f
-            || p.lifeTimer > 0.8f
-            || !nearf(p.lifeTimer, p.maxLifeTimer)) {
-            return fail("armageddon meteor descriptor wrong");
-        }
+        const bool ok91 = !(p.spellId != armId);
+        CHECK(ok91, "armageddon spawned wrong spell id");
+        if (!ok91) return 1;
+        const bool ok92 = !(p.kind != sm::ecs::Projectile::Bolt
+                            || !p.visualOnly
+                            || !p.explodeOnExpiry
+                            || !nearf(p.blastRadius, 25.0f)
+                            || !nearf(p.radius, 2.5f)
+                            || p.lifeTimer < 0.3f
+                            || p.lifeTimer > 0.8f
+                            || !nearf(p.lifeTimer, p.maxLifeTimer));
+        CHECK(ok92, "armageddon meteor descriptor wrong");
+        if (!ok92) return 1;
         if (!haveMeteorPosition) {
             meteorX = pos.x;
             meteorY = pos.y;
@@ -1089,20 +1109,20 @@ int main() {
     // spell; it is a fingerprint of an implementation that no longer exists.
     // What survives is that every meteor the storm spawned was inspected, and
     // that the storm has a position to aim a victim at.
-    if (armSeen != projectile_count(armWorld)) {
-        return fail("every meteor the cast spawned was actually inspected");
-    }
-    if (!haveMeteorPosition) {
-        return fail("the storm put a meteor somewhere to read a position from");
-    }
+    const bool ok93 = !(armSeen != projectile_count(armWorld));
+    CHECK(ok93, "every meteor the cast spawned was actually inspected");
+    if (!ok93) return 1;
+    const bool ok94 = !(!haveMeteorPosition);
+    CHECK(ok94, "the storm put a meteor somewhere to read a position from");
+    if (!ok94) return 1;
     const auto armVictim =
         add_target(armWorld, meteorX, meteorY, 1000.0f, false);
     sm::sub::tick_spell_projectiles(armWorld, nullptr, 1.0f);
-    if (!(hp_of(armWorld, armVictim) < 1000.0f)
-        || !last_hit_by(armWorld, armVictim, armPlayer)
-        || projectile_count(armWorld) != 0) {
-        return fail("armageddon expiry blast wrong");
-    }
+    const bool ok95 = !(!(hp_of(armWorld, armVictim) < 1000.0f)
+                        || !last_hit_by(armWorld, armVictim, armPlayer)
+                        || projectile_count(armWorld) != 0);
+    CHECK(ok95, "armageddon expiry blast wrong");
+    if (!ok95) return 1;
 
     // ---- Inc 4d: the owner self-exclusion is gone. Whether a caster is
     // caught by its OWN projectile is decided purely by geometry (does the
@@ -1144,11 +1164,11 @@ int main() {
                 .critical = false},
             sm::ecs::Position{0.0f, 0.0f, 0.0f});
         sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f);
-        if (!(hp_of(selfWorld, selfPlayer) < 100.0f)
-            || !last_hit_by(selfWorld, selfPlayer, selfPlayer)) {
-            return fail("Inc 4d: player AoE blast did not catch its "
-                        "own caster (Q1)");
-        }
+        const bool ok96 = !(!(hp_of(selfWorld, selfPlayer) < 100.0f)
+                            || !last_hit_by(selfWorld, selfPlayer, selfPlayer));
+        CHECK(ok96, "Inc 4d: player AoE blast did not catch its "
+                    "own caster (Q1)");
+        if (!ok96) return 1;
     }
     {
         // (b) NO faction shield (owner design decision 2026-07-30): projectiles
@@ -1186,10 +1206,10 @@ int main() {
                 .critical = false},
             sm::ecs::Position{0.0f, 0.0f, 0.0f});
         sm::sub::tick_spell_projectiles(shieldWorld, nullptr, 0.0f);
-        if (!nearf(hp_of(shieldWorld, shieldPlayer), 90.0f)) {
-            return fail("agnostic projectiles: bolt on its own player caster "
-                        "must connect (friendly fire is real)");
-        }
+        const bool ok97 = !(!nearf(hp_of(shieldWorld, shieldPlayer), 90.0f));
+        CHECK(ok97, "agnostic projectiles: bolt on its own player caster "
+                    "must connect (friendly fire is real)");
+        if (!ok97) return 1;
     }
     {
         // (c) Owner-agnostic — no player special-case: an NPC-owned
@@ -1225,11 +1245,11 @@ int main() {
                 .critical = false},
             sm::ecs::Position{0.0f, 0.0f, 0.0f});
         sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f);
-        if (!(hp_of(npcWorld, npcCaster) < 100.0f)
-            || !last_hit_by(npcWorld, npcCaster, npcCaster)) {
-            return fail("Inc 4d: NPC AoE blast self-catch/ownership "
-                        "wrong (must hit, attributed to the NPC body)");
-        }
+        const bool ok98 = !(!(hp_of(npcWorld, npcCaster) < 100.0f)
+                            || !last_hit_by(npcWorld, npcCaster, npcCaster));
+        CHECK(ok98, "Inc 4d: NPC AoE blast self-catch/ownership "
+                    "wrong (must hit, attributed to the NPC body)");
+        if (!ok98) return 1;
     }
 
     {
@@ -1285,29 +1305,31 @@ int main() {
                 sweepWorld.reg, sweepTarget,
                 sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
                                     0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
-            if (!sm::spellbook_cast(sweepWorld, sweepBook, sweepCombat,
-                                    attributes, skills, sm::spell_ordinal("magic_bolt"),
-                                    sweepCaster, 0.0f, 0.0f, 0.0f,
-                                    1.0f, 0.0f, 0.0f, true)) {
-                return fail("sweep: magic_bolt cast rejected");
-            }
+            const bool ok99 = !(!sm::spellbook_cast(sweepWorld, sweepBook, sweepCombat,
+                                                    attributes, skills, sm::spell_ordinal("magic_bolt"),
+                                                    sweepCaster, 0.0f, 0.0f, 0.0f,
+                                                    1.0f, 0.0f, 0.0f, true));
+            CHECK(ok99, "sweep: magic_bolt cast rejected");
+            if (!ok99) return 1;
             // Production-sized ticks, until the bolt is spent.
             for (int i = 0; i < 64 && projectile_count(sweepWorld) > 0; ++i) {
                 sm::sub::tick_spell_projectiles(sweepWorld, nullptr,
                                                 1.0f / 64.0f);
             }
-            if (!(hp_of(sweepWorld, sweepTarget) < 100.0f)) {
+            const bool ok100 = !(!(hp_of(sweepWorld, sweepTarget) < 100.0f));
+            if (!ok100) {
                 std::fprintf(stderr, "  range=%.1f survived untouched\n",
                              double(range));
-                return fail("sweep: bolt passed through a body in its path");
             }
+            CHECK(ok100, "sweep: bolt passed through a body in its path");
+            if (!ok100) return 1;
             // The caster stands at the origin, behind the muzzle: the stretch
             // swept back to his hand must never wound him.
-            if (!nearf(hp_of(sweepWorld,
-                             sm::sub::avatar_entity(sweepWorld.reg)),
-                       1000.0f)) {
-                return fail("sweep: muzzle stretch wounded its own caster");
-            }
+            const bool ok101 = !(!nearf(hp_of(sweepWorld,
+                                              sm::sub::avatar_entity(sweepWorld.reg)),
+                                        1000.0f));
+            CHECK(ok101, "sweep: muzzle stretch wounded its own caster");
+            if (!ok101) return 1;
         }
     }
 
@@ -1422,6 +1444,5 @@ int main() {
                  "PASS: projectiles=%d mp=%d sustained=%d\n",
                  projectile_count(world), combat.mp,
                  susActive);
-    CHECK(true, "every gate above held");
     return sm::test::report("spell_casting_effects_test");
 }

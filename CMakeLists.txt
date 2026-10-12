@@ -763,7 +763,8 @@ timaert_test(spell_casting_effects_test
         # that asks the catalog what each worn row is worth (tables/items.cpp)
         src/macro/anketa.cpp
         src/tables/items.cpp
-    LINK_ENTT)
+    LINK_ENTT
+    PIN "OK spell_casting_effects_test .205 checks.")
 
 timaert_test(combat_squad_test
     SOURCES
