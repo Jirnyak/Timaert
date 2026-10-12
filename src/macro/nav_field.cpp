@@ -443,10 +443,65 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
     std::size_t unreached = 0;
     for (std::size_t c = 0; c < cells; ++c)
         if (nv.regionOf[c] == kNavNoRegion) ++unreached;
+
+    // ГЛУБИНА ЦЕПОЧКИ РОДИТЕЛЕЙ — ЦЕНА ПОХОДКИ, НАЗВАННАЯ ЧИСЛОМ (M-259).
+    // `nav_step` в своей округе идёт по `stepHome` ОТ ЦЕЛИ ВВЕРХ, пока не
+    // встретит клетку ходока, поэтому его худший случай есть ГЛУБИНА ЦЕЛИ в
+    // дереве своей округи — не «три чтения», как обещала шапка. Число едет
+    // здесь, в сводке запекания, ровно затем, чтобы о цене не спорили: страж
+    // `1 << 14` у того цикла есть потолок ТИПА задачи, а не её цена.
+    //
+    // Один проход с ПАМЯТКОЙ: глубина клетки = глубина её родителя + 1, и
+    // каждая клетка считается ровно раз. Запекание и так заливает карту
+    // волнами — этот проход в их шуме, а в тик и в кадр не попадает ни разу.
+    constexpr std::uint16_t kDepthUnknown = 0xFFFFu;
+    std::vector<std::uint16_t> depth(cells, kDepthUnknown);
+    std::vector<std::uint32_t> chain;
+    std::size_t deepest = 0, depthSum = 0, counted = 0;
+    for (std::size_t c0 = 0; c0 < cells; ++c0) {
+        if (depth[c0] != kDepthUnknown) continue;
+        chain.clear();
+        std::size_t cur = c0;
+        std::uint16_t base = 0;
+        // Страж длины — на случай кольца в `stepHome`: дерево кольца нести не
+        // может, но молчаливое зависание прибора хуже его отсутствия.
+        while (chain.size() <= cells) {
+            if (depth[cur] != kDepthUnknown) { base = depth[cur]; break; }
+            const std::uint8_t dir = nv.stepHome[cur];
+            if (dir == kNavNoStep) { depth[cur] = 0; base = 0; break; }
+            chain.push_back(std::uint32_t(cur));
+            cur = cell_step(std::uint32_t(cur), kNavDX[dir], kNavDY[dir], W);
+        }
+        for (std::size_t i = chain.size(); i-- > 0;) {
+            base = std::uint16_t(base < kDepthUnknown - 1 ? base + 1 : base);
+            depth[chain[i]] = base;
+        }
+    }
+    for (std::size_t c = 0; c < cells; ++c) {
+        if (depth[c] == kDepthUnknown) continue;
+        ++counted;
+        depthSum += depth[c];
+        if (depth[c] > deepest) deepest = depth[c];
+    }
+    // Девяносто девятый процентиль — гистограммой по самой же глубине:
+    // средняя прячет хвост, а именно хвост и платит за шаг.
+    std::size_t p99 = 0;
+    if (counted > 0) {
+        std::vector<std::uint32_t> hist(deepest + 1u, 0u);
+        for (std::size_t c = 0; c < cells; ++c)
+            if (depth[c] != kDepthUnknown) ++hist[depth[c]];
+        const std::size_t want = counted - counted / 100u;
+        std::size_t acc = 0;
+        for (std::size_t d = 0; d < hist.size(); ++d) {
+            acc += hist[d];
+            if (acc >= want) { p99 = d; break; }
+        }
+    }
     std::fprintf(stderr,
                  "[nav] baked R=%d portals=%zu planes=%d "
-                 "noRegion=%zu\n",
-                 R, nv.portals.size(), nv.planeCount, unreached);
+                 "noRegion=%zu chainMax=%zu chainMean=%zu chainP99=%zu\n",
+                 R, nv.portals.size(), nv.planeCount, unreached, deepest,
+                 counted ? depthSum / counted : 0u, p99);
 }
 
 bool nav_ensure(const MacroWorld& mw, NavWorld& nv) {
