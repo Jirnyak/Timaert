@@ -1100,7 +1100,7 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
         csheet_detail::mix32(seed, std::uint32_t(role), 0x5C11u)};
 
     while (cs.levelData.attributePoints > 0) {
-        const int pick = csheet_detail::weighted_pick(w.attr, attrRng.next());
+        const int pick = csheet_detail::weighted_pick(w.attr.w, attrRng.next());
         if (!spend_attribute_point(cs.levelData, cs.attributes,
                                    AttributeId(std::uint8_t(pick))))
             break; // safety net; the loop guard already prevents this
@@ -1113,7 +1113,7 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
         bool learned = false;
         for (int attempt = 0; attempt < 16 && !learned; ++attempt) {
             const int pick =
-                csheet_detail::weighted_pick(w.skill, skillRng.next());
+                csheet_detail::weighted_pick(w.skill.w, skillRng.next());
             learned = spend_learn_pick(cs.levelData, cs.skills,
                                        SkillId(std::uint8_t(pick)));
         }
