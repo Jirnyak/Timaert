@@ -38,7 +38,12 @@ using GroundHeightFn = float (*)(void* user, float x, float y);
 // кластер 5): «без сознания» = флаг стоит НЕ на родном скваде. Субмиру
 // даются числа, не мир; сентинели (все единицы) у фикстуры без игрока
 // честно значат «сознание не терялось».
-void tick_npc_ai(ecs::World& w, float playerX, float playerY,
+// `playerZ` — ВЫСОТА ИГРОКА, и без неё закон изотропии нарушался молча:
+// гейт паники мерил «насколько он близко» в ПЛОСКОСТИ, то есть летящий игрок
+// на любой высоте пугал всякого зверя в 60 планарных метрах, а зверь на
+// вершине утёса панировал от того, кто стоит под утёсом. Направление бегства
+// остаётся ПЛОСКИМ — ноги бегут по земле (законное 2D, оговорка закона).
+void tick_npc_ai(ecs::World& w, float playerX, float playerY, float playerZ,
                  std::uint32_t playerEntityId, float dt,
                  PlayerThreatFn threatFn = nullptr,
                  void* threatUser = nullptr,

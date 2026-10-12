@@ -5146,7 +5146,7 @@ void SubworldEngine::tick(float dt) {
         // onto the authoritative entity so hostiles target the true altitude.
         sync_player_vertical(dt);
         push_scalars_to_player_entity();
-        tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
+        tick_npc_ai(*ecs_, playerX_, playerY_, playerZ_, std::uint32_t{0}, dt,
                     &SubworldEngine::player_threat_callback, this,
                     // Восприятие земли под собой — для вертикального
                     // намерения летунов (третья ось мозга).

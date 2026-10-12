@@ -491,8 +491,18 @@ void steer_bodies(BodyCrowd& u, const UnitGrid& fine, const UnitGrid& pick,
                         ++seen;
                         if (j == i || !u.hostile(i, j)) continue;
                         const std::size_t sj = std::size_t(j);
+                        // ВЫБОР ЦЕЛИ МЕРИТСЯ ПО ТРЁМ ОСЯМ (ЗАКОН ИЗОТРОПИИ).
+                        // Он был ПЛОСКИМ, тогда как вердикт досягаемости ниже
+                        // уже судил в 3D, — то есть один вопрос «кто мой
+                        // противник» мерился двумя размерностями (п.2 закона).
+                        // Цена была не косметической: летун, чья ТЕНЬ ближе
+                        // достижимого наземного врага, ПЕРЕБИВАЛ его в выборе,
+                        // становился `u.target`, и тело вечно шло к нему с
+                        // `inReach = 0` — то есть игнорировало того, кого
+                        // могло бы ударить. `u.z` лежал в SoA и ронялся.
                         const float dx = u.x[sj] - px, dy = u.y[sj] - py;
-                        const float d2 = dx * dx + dy * dy;
+                        const float dz = u.z[sj] - pz;
+                        const float d2 = dx * dx + dy * dy + dz * dz;
                         if (d2 < bestD2) { bestD2 = d2; best = j; }
                     }
                 }
@@ -608,10 +618,13 @@ void steer_bodies(BodyCrowd& u, const UnitGrid& fine, const UnitGrid& pick,
             }
             u.target[si] = best;
             // Reach is judged in 3D — a flier overhead is out of a sword's
-            // reach even when its ground shadow is under your feet.
-            const float dz = u.z[sb] - pz;
+            // reach even when its ground shadow is under your feet. `bestD2`
+            // ТЕПЕРЬ УЖЕ ТРЁХМЕРЕН (скан выше), поэтому вертикаль здесь НЕ
+            // добавляется второй раз: стояло `bestD2 + dz*dz`, и с плоским
+            // сканом это было верно, а с трёхмерным дало бы двойной счёт `dz`
+            // — то есть меч, не достающий до цели под ногами.
             const float reach3 = u.reach[si] + u.radius[sb];
-            if (bestD2 + dz * dz <= reach3 * reach3) {
+            if (bestD2 <= reach3 * reach3) {
                 u.inReach[si] = 1u;
                 ++engaged;
             }

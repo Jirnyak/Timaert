@@ -1307,7 +1307,22 @@ int main() {
                                     0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
             const bool ok99 = !(!sm::spellbook_cast(sweepWorld, sweepBook, sweepCombat,
                                                     attributes, skills, sm::spell_ordinal("magic_bolt"),
-                                                    sweepCaster, 0.0f, 0.0f, 0.0f,
+                                                    // ОТ ДУЛА, А НЕ ОТ СТУПНЕЙ:
+                                                    // продакшен кастует с
+                                                    // `player_muzzle_z()`
+                                                    // («The MUZZLE, not the
+                                                    // feet» — main.cpp), и
+                                                    // фикстура, рождавшая болт
+                                                    // на полу, моделировала
+                                                    // кастера, которого в игре
+                                                    // не бывает. Поймано, когда
+                                                    // страж обратного прочёса
+                                                    // стал трёхмерным: он мерит
+                                                    // до ДУЛА, и фальшивая
+                                                    // высота рождения съедала
+                                                    // его допуск.
+                                                    sweepCaster, 0.0f, 0.0f,
+                                                    sm::sub::kBodyEyeM,
                                                     1.0f, 0.0f, 0.0f, true));
             CHECK(ok99, "sweep: magic_bolt cast rejected");
             if (!ok99) return 1;

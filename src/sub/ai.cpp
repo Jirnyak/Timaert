@@ -25,7 +25,7 @@ static constexpr float kFleeSpeedMult = 2.2f;
 // remains back, so wander was a 0.1 s twitch per decision — and its
 // wall-handling was a near-verbatim copy of steering's. Both are gone.
 
-void tick_npc_ai(ecs::World& w, float px, float py,
+void tick_npc_ai(ecs::World& w, float px, float py, float pz,
                  std::uint32_t /*playerEnt*/, float dt,
                  PlayerThreatFn threatFn,
                  void* threatUser,
@@ -128,12 +128,22 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         }
         case ecs::SubworldAi::Flee: {
             float dx = p.x - px, dy = p.y - py;
-            float d2 = dx * dx + dy * dy;
+            // ДВЕ РАЗНЫЕ ВЕЛИЧИНЫ, И ЭТО НЕ ДВЕ МЕРЫ ОДНОГО ВОПРОСА:
+            //  · `d2` — «НАСКОЛЬКО ОН БЛИЗКО», гейт паники, и он ТРЁХМЕРЕН
+            //    (ЗАКОН ИЗОТРОПИИ). Был плоским: летящий игрок пугал зверей в
+            //    60 планарных метрах под собой, а зверь на утёсе — того, кто
+            //    стоит под утёсом;
+            //  · `planar2` — ШАГ БЕГСТВА по плоскости, и он законно плоский
+            //    (оговорка закона: «ходовой шаг по плоскости»). Ноги бегут по
+            //    земле, и вертикаль в направлении бегства смысла не имеет.
+            const float planar2 = dx * dx + dy * dy;
+            const float dz = p.z - pz;
+            const float d2 = planar2 + dz * dz;
             const bool playerIsThreat = threatFn
                 ? threatFn(threatUser, s)
                 : true;
             if (playerIsThreat && d2 < kFleeRadius * kFleeRadius) {
-                float d = std::sqrt(d2) + 1e-4f;
+                float d = std::sqrt(planar2) + 1e-4f;
                 float fs = a.wanderSpeed * kFleeSpeedMult;
                 a.wantVx = dx / d * fs;
                 a.wantVy = dy / d * fs;

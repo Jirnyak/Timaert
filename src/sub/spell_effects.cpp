@@ -588,9 +588,26 @@ void tick_spell_projectiles(ecs::World& w,
                 // the bolt is leaving the hand that cast it.
                 const float bx = prevX - op->x;
                 const float by = prevY - op->y;
+                // ТРЕТЬЯ ОСЬ — И МЕРИТСЯ ОНА ДО ДУЛА, А НЕ ДО СТУПНЕЙ
+                // (ЗАКОН ИЗОТРОПИИ). `op->z` есть ПОЛ владельца, а `prevZ` —
+                // высота ДУЛА, то есть у честно рождённого болта вертикальная
+                // разница равна росту до глаза, а не нулю; наивное `+dz*dz`
+                // к ступням съело бы весь допуск и отключило растяжку для
+                // всех. Поэтому вычитается муzzle-точка той же дверью, что
+                // задаёт высоту выстрела («оба конца на высоте глаз»).
+                //
+                // Гейт был ПЛОСКИМ, и это была дыра ровно того рода, от
+                // которой он сам защищает: болт, поставленный спавнером
+                // ПРЯМО НАД владельцем, имеет планарное смещение ≈ 0,
+                // проходил страж и давал ложный прочёс отрезка из центра
+                // владельца — то есть удар по всему, что стоит рядом с
+                // кастером, которого тот не делал.
+                const float bz =
+                    prevZ - (op->z + slot_body_eye_m(pobjs, ownerSlot));
                 const float maxBack =
                     slot_body_radius(pobjs, ownerSlot) + p.radius + 2.0f;
-                if (bx * bx + by * by <= maxBack * maxBack + 0.01f) {
+                if (bx * bx + by * by + bz * bz
+                        <= maxBack * maxBack + 0.01f) {
                     // Caster centre → spawn point. Z stays the muzzle's: the
                     // bolt leaves the hand at muzzle height, not at the feet.
                     const ecs::Position spawnPos{prevX, prevY, prevZ};

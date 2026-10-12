@@ -234,7 +234,7 @@ int main() {
     sm::test::give_ai(world.reg, hostile,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 4.0f, 4.0f, 8.0f, 1.0f});
-    sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
+    sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0.0f, 0u, 0.5f);
     const auto& combatPos = *sm::sub::body_pos(world.reg, hostile);
     const auto& combatAi = *sm::sub::body_ai(world.reg, hostile);
     // Ownership contract, TIGHTENED. tick_npc_ai must not touch a combat body at
@@ -255,7 +255,7 @@ int main() {
     sm::test::give_ai(world.reg, fallback,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 0.0f, 0.0f, 8.0f, 1.0f});
-    sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
+    sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0.0f, 0u, 0.5f);
     const auto& fallbackPos = *sm::sub::body_pos(world.reg, fallback);
     // A body with combat AI but NO ecs::Combat has no damage, no speed and no
     // reach — it cannot fight. The old code still walked it at the player
@@ -283,7 +283,7 @@ int main() {
     bool decidedToWalk = false;
     bool decidedToStand = false;
     for (int i = 0; i < 400; ++i) {
-        sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
+        sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0.0f, 0u, 0.5f);
         const auto& wai = *sm::sub::body_ai(world.reg, wanderer);
         if (wai.wantVx != 0.0f || wai.wantVy != 0.0f) decidedToWalk = true;
         else decidedToStand = true;

@@ -109,13 +109,31 @@ entt::entity aim_target(entt::registry& reg,
         // Position.z is its FEET, and a bearing to feet drops a close target
         // out of a level cone — the possess smokes caught exactly that when
         // the cone first went 3D (2026-09-19).
-        const float dz = (pos.z + slot_body_eye_m(*objs, s)) - pz;
+        const float eye = slot_body_eye_m(*objs, s);
+        const float dz = (pos.z + eye) - pz;
         const float d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > maxR2) continue;
 
-        // Cone test. An XY-co-located target has no defined bearing and is
-        // treated as "in front" so it is never unreachable.
-        if (dx * dx + dy * dy > 1e-8f) {
+        // Cone test. СТРАЖ СТОИТ НА ТОМ, ЧТО ОН ОХРАНЯЕТ — на `d2`, то есть
+        // на самом ЗНАМЕНАТЕЛЕ деления ниже, — И МЕРА ЕГО ТЕЛЕСНАЯ, А НЕ
+        // ПЛОСКАЯ (ЗАКОН ИЗОТРОПИИ). Вырожден тот, кто стоит В МОЁМ ОБЪЁМЕ:
+        // пеленга у него нет, и схватка в упор не спрашивает направления.
+        // Масштаб берётся у САМОГО ТЕЛА (`slot_body_eye_m`, уже в руках) —
+        // своего числа тут не заводится.
+        //
+        // Стояло `dx*dx + dy*dy > 1e-8f` — ПЛОСКИЙ страж у трёхмерного
+        // пеленга, и он пропускал цель РОВНО НАД ГОЛОВОЙ (dx=dy=0, dz=50)
+        // мимо конуса ВОВСЕ: она принималась «перед тобой» на любой
+        // дистанции внутри maxRange. Такая цель теперь честно судится
+        // конусом — смотришь вверх, попадает; смотришь прямо, нет.
+        //
+        // А вот `d2 > 1e-8f` было бы ДРУГОЙ крайностью, и `targeting_test`
+        // поймал её сразу: враг, стоящий НА СТРЕЛКЕ, имеет пеленг «строго
+        // вверх» (его глаз выше моего на свой рост), и ровный взгляд
+        // отверг бы того, с кем борешься в упор. Закон, который охраняет тот
+        // свидетель, — «co-located enemy is reachable», и он верен.
+        const float eye2 = eye * eye;
+        if (d2 > eye2) {
             const float cosang =
                 (fx * dx + fy * dy + fz * dz) / std::sqrt(d2);
             if (cosang < cosHalfAngle) continue;
