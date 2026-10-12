@@ -281,6 +281,27 @@ struct NpcTypeDef {
     // reads it but the one capacity call (squad.h refresh_leader_travel_stats).
     // Last field on purpose, beside the light block: an opt-in column at the
     // end costs no other row a comma.
+    //
+    // ── БЕЗРУКИЕ СТРОКИ ВЫСКАЗЫВАЮТСЯ САМИ (вердикт владельца 2026-10-12) ──
+    // Умолчание «1 = человек» ВЕРНО и остаётся, но до этого дня молчали ВСЕ
+    // звери, то есть волк, кролик и змея в контейнере заявляли полную
+    // человеческую спину. Ось здесь НЕ «природа строки»: гоблин, орк, тролль,
+    // огр, минотавр, кобольд и гарпия несут колонку `NpcNature::Fauna`, но у
+    // них ЕСТЬ РУКИ, и умолчание им верно. Высказываются те, у кого рук нет:
+    // четыре лапы, крылья, хвост.
+    //
+    // ЧИСЛА — ТОЙ ЖЕ ЦЕПОЧКОЙ КИЛОГРАММОВ, ЧТО У ЛОШАДИ (человек ~15 кг,
+    // вьючный конь ~120 → 8), и СПИНА ЕСТЬ ТАМ, ГДЕ САДИТСЯ УПРЯЖЬ:
+    //   · конь 8 — вьючное седло;
+    //   · коза 0.7 — вьючная коза несёт ~10 кг, то есть 10/15;
+    //   · овца 0.5 — панньеры ~8 кг (владелец: «овечке можно дать немножко»);
+    //   · всё прочее безрукое — 0: ни кролика, ни волка, ни ястреба, ни
+    //     дракона в этом мире не запрягают, и выдумывать им число значило бы
+    //     взять его с потолка. Запрягут — строка получит его одной правкой.
+    // ОСТАТОК НАЗВАН: рукастые тяжёлые строки (тролль, огр, минотавр) несут
+    // ровно человеческую спину, хотя по массе должны больше. Это КОНТЕНТ, не
+    // дефект формы: лестница масс для них не выведена, и до вывода 1.0 —
+    // честное «как человек», а не молчание.
     float haulMult = 1.0f;
 
 
@@ -676,6 +697,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe) | hab(Taiga)
@@ -701,6 +723,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
@@ -726,6 +749,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
@@ -751,6 +775,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Taiga)
@@ -777,6 +802,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Taiga) | kHabForest,
@@ -801,6 +827,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
@@ -826,6 +853,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Desert) | hab(Steppe) | hab(Swamp)
@@ -853,6 +881,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Desert)
@@ -878,6 +907,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Swamp),
@@ -902,6 +932,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.7f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Mountain),
@@ -927,6 +958,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Mountain),
@@ -951,6 +983,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Swamp) | hab(Tropics),
@@ -1095,6 +1128,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Desert),
@@ -1226,6 +1260,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xB03030u,
     },
@@ -1280,6 +1315,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0x6A5A4Au,
         .habitat = kHabRuin | hab(Mountain),
@@ -1309,6 +1345,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0x4A4048u,
         .habitat = kHabRuin | hab(Mountain),
@@ -1364,6 +1401,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0x2A2A3Au,
         .habitat = kHabRuin | kHabForest | hab(Mountain),
@@ -1666,6 +1704,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
+        .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
         .mapColor = 0x3A6A4Au,
         .habitat = kHabRuin | hab(Swamp) | hab(Desert),
@@ -1760,9 +1799,11 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     //     ничего не снимают — ни шерсти, ни мяса (товара `wool` в словаре
     //     нет, и выдумывать его запрещено, §1). Появится съём — появится и
     //     вывод цены, одной колонкой;
-    //   · haulMult 0 — овца не несёт НИЧЕГО: она сама груз. Умолчание 1.0
-    //     («каждая строка, которая молчит, есть человек») для неё было бы
-    //     ложью в обозе;
+    //   · haulMult 0.5 — ПОЛСПИНЫ ЧЕЛОВЕКА, панньеры ~8 кг против его 15
+    //     (вердикт владельца 2026-10-12: «овечке кстати можно дать немножко»,
+    //     «баряся станет полезной»). Та же цепочка килограммов, что у коня,
+    //     и ровно «немножко»: везти овцами выгоднее не станет — они ещё и
+    //     едят по рациону;
     //   · спрайт козы — тот же четвероногий травоядный лист, ровно тем же
     //     прецедентом, каким лошадь берёт лист оленя;
     //   · ареал — та же трава, которую оценивает ряд стада.
@@ -1783,7 +1824,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .nameCount = 0,
         .talkLines = {{}},
         .talkCount = 0,
-        .haulMult = 0.0f,
+        .haulMult = 0.5f,
         .nature = NpcNature::Fauna,
         .mapColor = 0xE8E4D8u,   // шерсть: на тон светлее козьего камня
         .habitat = hab(Steppe) | hab(Meadow) | hab(Valley),
