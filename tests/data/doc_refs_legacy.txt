@@ -848,7 +848,6 @@ macro-registry.md	econ_day.cpp:132
 macro-registry.md	econ_day.cpp:136
 macro-registry.md	econ_day.cpp:164-167
 macro-registry.md	econ_day.cpp:194
-macro-registry.md	econ_day.cpp:262-266
 macro-registry.md	econ_day.cpp:387
 macro-registry.md	econ_day.cpp:394-401
 macro-registry.md	econ_day.h:121
