@@ -793,7 +793,8 @@ timaert_test(melee_reach_test
 timaert_test(audio_contract_test
     SOURCES
         src/macro/audio.cpp
-    LINK_SDL LINK_MIXER)
+    LINK_SDL LINK_MIXER
+    PIN "OK audio_contract_test .32 checks.")
 
 timaert_test(audio_runtime_test
     SOURCES

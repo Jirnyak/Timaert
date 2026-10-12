@@ -7,13 +7,6 @@
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/audio_contract_test.cpp", 0);
-    return 1;
-}
-
 bool close_enough(float a, float b) {
     const float d = a > b ? a - b : b - a;
     return d < 0.0001f;
@@ -92,118 +85,135 @@ int main() {
     static_assert(static_cast<int>(sm::MusicId::Count) == 2);
     static_assert(static_cast<int>(sm::SfxId::Count) == 6);
 
-    if (!same_text(sm::music_key(sm::MusicId::Explore), "explore")) {
-        return fail("explore music key changed");
-    }
-    if (!same_text(sm::music_key(sm::MusicId::Subworld), "subworld")) {
-        return fail("subworld music key changed");
-    }
-    if (!same_text(sm::sfx_key(sm::SfxId::MeleeSwing), "melee-swing")
-        || !same_text(sm::sfx_file(sm::SfxId::MeleeSwing), "melee-swing.wav")) {
-        return fail("melee-swing sfx row changed");
-    }
-    if (!same_text(sm::sfx_key(sm::SfxId::MeleeHit), "melee-hit")
-        || !same_text(sm::sfx_file(sm::SfxId::MeleeHit), "melee-hit.wav")) {
-        return fail("melee-hit sfx row changed");
-    }
-    if (!same_text(sm::sfx_key(sm::SfxId::MeleeBlocked), "melee-blocked")
-        || !same_text(sm::sfx_file(sm::SfxId::MeleeBlocked),
-                      "melee-blocked.wav")) {
-        return fail("melee-blocked sfx row changed");
-    }
-    if (!same_text(sm::sfx_key(sm::SfxId::SpellCast), "spell-cast")
-        || !same_text(sm::sfx_file(sm::SfxId::SpellCast), "spell-cast.wav")) {
-        return fail("spell-cast sfx row changed");
-    }
-    if (!same_text(sm::sfx_key(sm::SfxId::PlayerHurt), "player-hurt")
-        || !same_text(sm::sfx_file(sm::SfxId::PlayerHurt), "player-hurt.wav")) {
-        return fail("player-hurt sfx row changed");
-    }
-    if (!same_text(sm::sfx_key(sm::SfxId::Death), "death")
-        || !same_text(sm::sfx_file(sm::SfxId::Death), "death.wav")) {
-        return fail("death sfx row changed");
-    }
-    if (sm::music_key(sm::MusicId::Count) || sm::music_file(sm::MusicId::Count)) {
-        return fail("invalid music id returned metadata");
-    }
-    if (sm::sfx_key(sm::SfxId::Count) || sm::sfx_file(sm::SfxId::Count)) {
-        return fail("invalid sfx id returned metadata");
-    }
+    const bool ok1 =
+        !(!same_text(sm::music_key(sm::MusicId::Explore), "explore"));
+    CHECK(ok1, "explore music key changed");
+    if (!ok1) return 1;
+    const bool ok2 =
+        !(!same_text(sm::music_key(sm::MusicId::Subworld), "subworld"));
+    CHECK(ok2, "subworld music key changed");
+    if (!ok2) return 1;
+    const bool ok3 = !(!same_text(sm::sfx_key(sm::SfxId::MeleeSwing), "melee-swing")
+                       || !same_text(sm::sfx_file(sm::SfxId::MeleeSwing), "melee-swing.wav"));
+    CHECK(ok3, "melee-swing sfx row changed");
+    if (!ok3) return 1;
+    const bool ok4 = !(!same_text(sm::sfx_key(sm::SfxId::MeleeHit), "melee-hit")
+                       || !same_text(sm::sfx_file(sm::SfxId::MeleeHit), "melee-hit.wav"));
+    CHECK(ok4, "melee-hit sfx row changed");
+    if (!ok4) return 1;
+    const bool ok5 = !(!same_text(sm::sfx_key(sm::SfxId::MeleeBlocked), "melee-blocked")
+                       || !same_text(sm::sfx_file(sm::SfxId::MeleeBlocked),
+                                     "melee-blocked.wav"));
+    CHECK(ok5, "melee-blocked sfx row changed");
+    if (!ok5) return 1;
+    const bool ok6 = !(!same_text(sm::sfx_key(sm::SfxId::SpellCast), "spell-cast")
+                       || !same_text(sm::sfx_file(sm::SfxId::SpellCast), "spell-cast.wav"));
+    CHECK(ok6, "spell-cast sfx row changed");
+    if (!ok6) return 1;
+    const bool ok7 = !(!same_text(sm::sfx_key(sm::SfxId::PlayerHurt), "player-hurt")
+                       || !same_text(sm::sfx_file(sm::SfxId::PlayerHurt), "player-hurt.wav"));
+    CHECK(ok7, "player-hurt sfx row changed");
+    if (!ok7) return 1;
+    const bool ok8 = !(!same_text(sm::sfx_key(sm::SfxId::Death), "death")
+                       || !same_text(sm::sfx_file(sm::SfxId::Death), "death.wav"));
+    CHECK(ok8, "death sfx row changed");
+    if (!ok8) return 1;
+    const bool ok9 =
+        !(sm::music_key(sm::MusicId::Count) || sm::music_file(sm::MusicId::Count));
+    CHECK(ok9, "invalid music id returned metadata");
+    if (!ok9) return 1;
+    const bool ok10 =
+        !(sm::sfx_key(sm::SfxId::Count) || sm::sfx_file(sm::SfxId::Count));
+    CHECK(ok10, "invalid sfx id returned metadata");
+    if (!ok10) return 1;
 
     constexpr long kMinAudioAssetBytes = 64 * 1024;
-    if (!same_text(sm::music_file(sm::MusicId::Explore), "15-dungeon-suno.mp3")
-        || !asset_exists(sm::music_file(sm::MusicId::Explore))
-        || !asset_has_min_bytes(sm::music_file(sm::MusicId::Explore),
-                                kMinAudioAssetBytes)) {
-        return fail("explore music asset missing");
-    }
-    if (!same_text(sm::music_file(sm::MusicId::Subworld), "subworld.mp3")
-        || !asset_exists(sm::music_file(sm::MusicId::Subworld))
-        || !asset_has_min_bytes(sm::music_file(sm::MusicId::Subworld),
-                                kMinAudioAssetBytes)) {
-        return fail("subworld music asset missing");
-    }
+    const bool ok11 = !(!same_text(sm::music_file(sm::MusicId::Explore), "15-dungeon-suno.mp3")
+                        || !asset_exists(sm::music_file(sm::MusicId::Explore))
+                        || !asset_has_min_bytes(sm::music_file(sm::MusicId::Explore),
+                                                kMinAudioAssetBytes));
+    CHECK(ok11, "explore music asset missing");
+    if (!ok11) return 1;
+    const bool ok12 = !(!same_text(sm::music_file(sm::MusicId::Subworld), "subworld.mp3")
+                        || !asset_exists(sm::music_file(sm::MusicId::Subworld))
+                        || !asset_has_min_bytes(sm::music_file(sm::MusicId::Subworld),
+                                                kMinAudioAssetBytes));
+    CHECK(ok12, "subworld music asset missing");
+    if (!ok12) return 1;
 
     sm::AudioSystem audio;
 
-    if (audio.is_initialized()) return fail("fresh audio starts initialized");
-    if (audio.music_playing()) return fail("fresh audio reports music playing");
-    if (audio.current_music() != sm::MusicId::Count) {
-        return fail("fresh audio has current music");
-    }
-    if (audio.play_music(sm::MusicId::Explore, 0)) {
-        return fail("play_music succeeds before init");
-    }
-    if (!contains_text(audio.last_error(), "audio not initialized")) {
-        return fail("play_music did not explain preinit failure");
-    }
-    if (audio.play_sfx(sm::SfxId::MeleeSwing, -1)) {
-        return fail("play_sfx succeeds before init");
-    }
-    if (!contains_text(audio.last_error(), "audio not initialized")) {
-        return fail("play_sfx did not explain preinit failure");
-    }
-    if (audio.play_music(sm::MusicId::Count, 0)) {
-        return fail("invalid music id succeeded");
-    }
-    if (!contains_text(audio.last_error(), "invalid music id")) {
-        return fail("invalid music id did not set error");
-    }
-    if (audio.play_sfx(sm::SfxId::Count, -1)) {
-        return fail("invalid sfx id succeeded");
-    }
-    if (!contains_text(audio.last_error(), "invalid sfx id")) {
-        return fail("invalid sfx id did not set error");
-    }
+    const bool ok13 = !(audio.is_initialized());
+    CHECK(ok13, "fresh audio starts initialized");
+    if (!ok13) return 1;
+    const bool ok14 = !(audio.music_playing());
+    CHECK(ok14, "fresh audio reports music playing");
+    if (!ok14) return 1;
+    const bool ok15 = !(audio.current_music() != sm::MusicId::Count);
+    CHECK(ok15, "fresh audio has current music");
+    if (!ok15) return 1;
+    const bool ok16 = !(audio.play_music(sm::MusicId::Explore, 0));
+    CHECK(ok16, "play_music succeeds before init");
+    if (!ok16) return 1;
+    const bool ok17 =
+        !(!contains_text(audio.last_error(), "audio not initialized"));
+    CHECK(ok17, "play_music did not explain preinit failure");
+    if (!ok17) return 1;
+    const bool ok18 = !(audio.play_sfx(sm::SfxId::MeleeSwing, -1));
+    CHECK(ok18, "play_sfx succeeds before init");
+    if (!ok18) return 1;
+    const bool ok19 =
+        !(!contains_text(audio.last_error(), "audio not initialized"));
+    CHECK(ok19, "play_sfx did not explain preinit failure");
+    if (!ok19) return 1;
+    const bool ok20 = !(audio.play_music(sm::MusicId::Count, 0));
+    CHECK(ok20, "invalid music id succeeded");
+    if (!ok20) return 1;
+    const bool ok21 = !(!contains_text(audio.last_error(), "invalid music id"));
+    CHECK(ok21, "invalid music id did not set error");
+    if (!ok21) return 1;
+    const bool ok22 = !(audio.play_sfx(sm::SfxId::Count, -1));
+    CHECK(ok22, "invalid sfx id succeeded");
+    if (!ok22) return 1;
+    const bool ok23 = !(!contains_text(audio.last_error(), "invalid sfx id"));
+    CHECK(ok23, "invalid sfx id did not set error");
+    if (!ok23) return 1;
 
     audio.set_master_volume(2.0f);
     audio.set_music_volume(-1.0f);
     audio.set_sfx_volume(0.25f);
-    if (!close_enough(audio.master_volume(), 1.0f)) {
-        return fail("master volume did not clamp high");
-    }
-    if (!close_enough(audio.music_volume(), 0.0f)) {
-        return fail("music volume did not clamp low");
-    }
-    if (!close_enough(audio.sfx_volume(), 0.25f)) {
-        return fail("sfx volume changed unexpectedly");
-    }
+    const bool ok24 = !(!close_enough(audio.master_volume(), 1.0f));
+    CHECK(ok24, "master volume did not clamp high");
+    if (!ok24) return 1;
+    const bool ok25 = !(!close_enough(audio.music_volume(), 0.0f));
+    CHECK(ok25, "music volume did not clamp low");
+    if (!ok25) return 1;
+    const bool ok26 = !(!close_enough(audio.sfx_volume(), 0.25f));
+    CHECK(ok26, "sfx volume changed unexpectedly");
+    if (!ok26) return 1;
 
-    if (audio.muted()) return fail("fresh audio starts muted");
-    if (!audio.toggle_muted()) return fail("toggle_muted did not mute");
-    if (!audio.muted()) return fail("muted flag not persisted");
+    const bool ok27 = !(audio.muted());
+    CHECK(ok27, "fresh audio starts muted");
+    if (!ok27) return 1;
+    const bool ok28 = !(!audio.toggle_muted());
+    CHECK(ok28, "toggle_muted did not mute");
+    if (!ok28) return 1;
+    const bool ok29 = !(!audio.muted());
+    CHECK(ok29, "muted flag not persisted");
+    if (!ok29) return 1;
     audio.set_muted(false);
-    if (audio.muted()) return fail("set_muted(false) failed");
+    const bool ok30 = !(audio.muted());
+    CHECK(ok30, "set_muted(false) failed");
+    if (!ok30) return 1;
 
     audio.stop_music(0);
-    if (audio.music_playing()) {
-        return fail("stop_music before init left music playing");
-    }
-    if (audio.current_music() != sm::MusicId::Count) {
-        return fail("stop_music before init changed state incorrectly");
-    }
+    const bool ok31 = !(audio.music_playing());
+    CHECK(ok31, "stop_music before init left music playing");
+    if (!ok31) return 1;
+    const bool ok32 = !(audio.current_music() != sm::MusicId::Count);
+    CHECK(ok32, "stop_music before init changed state incorrectly");
+    if (!ok32) return 1;
 
     std::printf("OK audio_contract_test metadata assets volumes mute preinit contract\n");
-    CHECK(true, "every gate above held");
     return sm::test::report("audio_contract_test");
 }
