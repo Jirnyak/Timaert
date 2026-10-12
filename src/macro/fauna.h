@@ -110,7 +110,15 @@ struct SpawnContext {
     std::uint8_t depositsNear = 0;
 };
 
-struct FaunaPick { const FaunaEntry* entry; const char* factionId; };
+// ОРДИНАЛ, А НЕ СТРОКА (ЗАКОН СЛОВАРЯ п.1-2, наряд M-187). Здесь стоял
+// `const char* factionId`, и `faction_index()` звался НА КАЖДОЕ ТЕЛО — дважды
+// в `src/sub/spawn.cpp`, то есть линейный скан 64 строк реестра со `strcmp`
+// внутри цикла заселения. Имя переводится в число ОДИН раз, на границе ролла
+// (`roll_spawns`), как велит закон: «граница переводит имя в ординал ОДИН
+// раз». Ширина — та же, какой её берёт `BodySpec::faction`; «неизвестная
+// строка» остаётся прежним значением `std::uint16_t(-1)`, которое звонящие
+// уже получали от `faction_index`, — поведение не тронуто ни в одном бите.
+struct FaunaPick { const FaunaEntry* entry; std::uint16_t faction; };
 
 // Roll a cell's wild population by the law. Count comes from the place's
 // counts row; faction comes from the species row's own wildFaction and from

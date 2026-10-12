@@ -13,6 +13,7 @@
 #include "check.h"
 
 #include "macro/fauna.h"
+#include "tables/faction.h"   // faction_index — перевод имени в ординал (M-187)
 
 #include <cstdint>
 #include <cstdio>
@@ -207,10 +208,17 @@ int main() {
                 // Ответ РОВНО тот, что сказала строка вида. Это не копия
                 // продакшен-логики: утверждается тождество двух ЧИТАТЕЛЕЙ
                 // одной колонки, а прежний код их разводил.
-                if (p.factionId != sm::npc_def(p.entry->type).wildFaction) {
+                // Носитель стал ОРДИНАЛОМ (M-187), закон не тронут:
+                // сравниваются те же два читателя одной колонки, только
+                // числами, а имя переводится на границе — здесь.
+                if (p.faction != std::uint16_t(sm::faction_index(
+                        sm::npc_def(p.entry->type).wildFaction))) {
                     ++mismatched;
                 }
-                if (std::string_view(p.factionId) != "demons") ++nonDemon;
+                if (p.faction
+                    != std::uint16_t(sm::faction_index("demons"))) {
+                    ++nonDemon;
+                }
             }
         }
         CHECK(picks > 0, "a ruin cell really does roll wild heads");

@@ -171,7 +171,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
 
         SpawnRecord r{};
         r.type = catalog_type_id(pick.entry);
-        r.faction = std::uint16_t(sm::faction_index(pick.factionId));
+        r.faction = pick.faction;   // ОРДИНАЛ колонкой (M-187)
         r.x = fx;
         r.y = fy;
         r.hp = hp;

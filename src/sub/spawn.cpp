@@ -1181,7 +1181,7 @@ int spawn_dungeon_vermin(ecs::World& w,
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
         spawn_derived_body(reg,
             BodySpec{f.type, fx, fy,
-                     std::uint16_t(faction_index(p.factionId)), npcLevel,
+                     p.faction, npcLevel,
                      seed ^ (std::uint32_t(placed) * 2654435761u),
                      /*combatant*/false},
             /*faceSalt*/std::uint32_t(placed) * 7919u,
@@ -1334,7 +1334,7 @@ void spawn_cell_npcs(ecs::World& w,
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
         spawn_derived_body(reg,
             BodySpec{f.type, fx, fy,
-                     std::uint16_t(faction_index(p.factionId)), npcLevel,
+                     p.faction, npcLevel,
                      cellSeed ^ (std::uint32_t(budget) * 2654435761u),
                      /*combatant*/false},
             /*faceSalt*/std::uint32_t(budget) * 7919u, faunaLoan);

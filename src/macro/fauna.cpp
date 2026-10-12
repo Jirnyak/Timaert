@@ -191,7 +191,10 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
             roll -= double(w[i]);
             if (roll <= 0.0) {
                 const NpcTypeDef& row = kNpcTypeDefs[i];
-                out.push_back({&row, npc_def(NPCType(i)).wildFaction});
+                // Имя → ординал ЗДЕСЬ, на границе: ниже, в заселении,
+                // число уже готово (M-187).
+                out.push_back({&row, std::uint16_t(faction_index(
+                    npc_def(NPCType(i)).wildFaction))});
                 break;
             }
         }
