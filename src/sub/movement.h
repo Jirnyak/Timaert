@@ -343,9 +343,15 @@ struct InfluenceField {
     int planeCount = 0;
     std::vector<std::uint64_t> occMask;   // [cell] factions present in the cell
     std::vector<std::uint32_t> count;     // [plane*cells + cell]
-    std::vector<float> sumX, sumY;        // [plane*cells + cell] centroid accum
+    // ТРИ ОСИ, ОДНА ФОРМА (ЗАКОН ИЗОТРОПИИ + вердикт владельца 2026-10-12:
+    // «могут быть армии со всеми: наземные, летающие… и уже есть в субмире
+    // летающие мобы типа драконов, их можно отстрелять и они стреляют»).
+    // Вертикаль нужна ГЕЙТУ ЗРЕНИЯ ниже: без неё драконья стая в 200 м НАД
+    // строем будила его как из-под ног, а строй под утёсом будился от врага
+    // на утёсе и бежал в скалу. ШАГ ПОДХОДА остаётся плоским — ноги по земле.
+    std::vector<float> sumX, sumY, sumZ;  // [plane*cells + cell] centroid accum
     // Nearest hostile concentration for a faction, propagated by the transform.
-    std::vector<float> siteX, siteY;      // [plane*cells + cell]
+    std::vector<float> siteX, siteY, siteZ;   // [plane*cells + cell]
     std::vector<std::uint8_t> hasSite;    // [plane*cells + cell]
     // Alert chain: 1 => bodies of this faction in this cell know where the enemy
     // is, either by their own eyes or relayed through comrades.

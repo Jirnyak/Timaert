@@ -236,8 +236,9 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
     const std::size_t cells = f.cell_count();
     f.occMask.assign(cells, std::uint64_t(0));
     if (u.count <= 0) {
-        f.count.clear(); f.sumX.clear(); f.sumY.clear();
-        f.siteX.clear(); f.siteY.clear(); f.hasSite.clear(); f.alert.clear();
+        f.count.clear(); f.sumX.clear(); f.sumY.clear(); f.sumZ.clear();
+        f.siteX.clear(); f.siteY.clear(); f.siteZ.clear();
+        f.hasSite.clear(); f.alert.clear();
         return;
     }
 
@@ -257,8 +258,10 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
     f.count.assign(planes, 0u);
     f.sumX.assign(planes, 0.0f);
     f.sumY.assign(planes, 0.0f);
+    f.sumZ.assign(planes, 0.0f);
     f.siteX.assign(planes, 0.0f);
     f.siteY.assign(planes, 0.0f);
+    f.siteZ.assign(planes, 0.0f);
     f.hasSite.assign(planes, std::uint8_t(0));
     f.alert.assign(planes, std::uint8_t(0));
 
@@ -278,6 +281,25 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
         f.sumY[pi] += u.y[std::size_t(i)];
         f.occMask[ci] |= (1ull << fi);
         f.factionEnemyMask[fi] |= u.enemyMask[std::size_t(i)];
+    }
+
+    // ВЕРТИКАЛЬ НАКАПЛИВАЕТСЯ СВОИМ ПРОХОДОМ, И ЭТО НЕ СТИЛЬ, А ЗАМЕР.
+    // Та же сумма внутри цикла выше меняла РЕГИСТРОВОЕ ДАВЛЕНИЕ, компилятор
+    // иначе разворачивал цикл и под `-ffast-math` РЕАССОЦИИРОВАЛ накопление
+    // `sumX`/`sumY` в другие частичные суммы — последние биты центроида
+    // уезжали, и хаотичный бой 16 384 тел расходился: `movement_steering_test`
+    // показал «worst gap 0 → 3 bins» при СЕМАНТИЧЕСКИ ТОЖДЕСТВЕННОМ коде
+    // (в той фикстуре все z = 0, то есть dz ровно ноль). Отдельный проход
+    // оставляет кодоген горячего цикла нетронутым — бой бит-в-бит тот же,
+    // и порог свидетеля не пришлось двигать. Неассоциативность float названа
+    // ценой в AGENTS, ЗАКОН ТИПА п.5; это она.
+    for (int i = 0; i < u.count; ++i) {
+        const int fi = u.faction[std::size_t(i)];
+        if (!f.has_faction(fi)) continue;
+        const int cx = f.col_of(u.x[std::size_t(i)]);
+        const int cy = f.row_of(u.y[std::size_t(i)]);
+        f.sumZ[f.plane(fi) + std::size_t(cy) * std::size_t(f.cols)
+               + std::size_t(cx)] += u.z[std::size_t(i)];
     }
 
     // Per present faction: seed every cell that holds one of its enemies with
@@ -308,7 +330,40 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
             if (n == 0u) continue;
             f.siteX[base + ci] = sx / float(n);
             f.siteY[base + ci] = sy / float(n);
+            // ВЫСОТА ВРАЖДЕБНОЙ МАССЫ. У СМЕШАННОЙ армии (пехота на земле +
+            // драконы сверху) это ОГРУБЛЕНИЕ: средняя высота — та, на которой
+            // никого нет. Названо вслух и принято вердиктом владельца
+            // 2026-10-12 («симметричный siteZ сейчас, слои потом»): честный
+            // ответ потребует ключевать плоскость парой (фракция, слой
+            // земля/воздух), и это отдельный наряд, а не правка строки.
             f.hasSite[base + ci] = 1u;
+        }
+
+        // ВЫСОТА ВРАЖДЕБНОЙ МАССЫ — СВОИМ ПРОХОДОМ, по той же причине, что и
+        // `sumZ` выше: не трогать кодоген цикла, который считает `siteX/siteY`.
+        // Условие ровно то же (`hasSite`, уже выставленный затравкой), поэтому
+        // второго закона «где сидит масса» здесь нет — есть вторая ОСЬ одного.
+        //
+        // У СМЕШАННОЙ армии (пехота на земле + драконы сверху) это
+        // ОГРУБЛЕНИЕ: средняя высота — та, на которой никого нет. Названо
+        // вслух и принято вердиктом владельца 2026-10-12 («симметричный siteZ
+        // сейчас, слои потом»); честный ответ потребует ключевать плоскость
+        // парой (фракция, слой земля/воздух) — отдельный наряд.
+        for (std::size_t ci = 0; ci < cells; ++ci) {
+            if (!f.hasSite[base + ci]) continue;
+            const std::uint64_t hit = f.occMask[ci] & enemies;
+            float sz = 0.0f;
+            std::uint32_t n = 0;
+            std::uint64_t rest = hit;
+            while (rest != 0ull) {
+                const int g = std::countr_zero(rest);
+                rest &= rest - 1ull;
+                if (!f.has_faction(g)) continue;
+                const std::size_t gi = f.plane(g) + ci;
+                sz += f.sumZ[gi];
+                n += f.count[gi];
+            }
+            if (n != 0u) f.siteZ[base + ci] = sz / float(n);
         }
 
         // Distance is measured from a cell's centre to the carried site, so the
@@ -331,6 +386,7 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
             }
             f.siteX[di] = f.siteX[ni];
             f.siteY[di] = f.siteY[ni];
+            f.siteZ[di] = f.siteZ[ni];
             f.hasSite[di] = 1u;
         };
 
@@ -363,10 +419,23 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
         const std::size_t pi = f.plane(fi)
             + std::size_t(cy) * std::size_t(f.cols) + std::size_t(cx);
         if (!f.hasSite[pi] || f.alert[pi]) continue;
+        // ЗРЕНИЕ ТРЁХМЕРНО (ЗАКОН ИЗОТРОПИИ; вердикт владельца 2026-10-12 —
+        // летающие враги есть уже сейчас, «лучникам и магам же надо
+        // стрелять»). Гейт был ПЛОСКИМ, и это были два живых вранья мира:
+        // драконья стая в 200 м НАД строем будила его как из-под ног, то
+        // есть армия шла в атаку на ТЕНЬ; а строй, стоящий под утёсом,
+        // будился от врага на утёсе и бежал в скалу.
+        //
+        // Это ГЕЙТ, и только он. ШАГ ПОДХОДА ниже остаётся плоским —
+        // «ходовой шаг по плоскости» есть дословная оговорка закона, и ноги
+        // наземного тела вверх не идут. Та же развязка, что у радиуса паники
+        // в `tick_npc_ai`: трёхмерен ВОПРОС «насколько он близко», плоским
+        // остаётся ОТВЕТ «куда переставить ноги».
         const float dx = f.siteX[pi] - u.x[std::size_t(i)];
         const float dy = f.siteY[pi] - u.y[std::size_t(i)];
+        const float dz = f.siteZ[pi] - u.z[std::size_t(i)];
         const float s = u.sight[std::size_t(i)];
-        if (dx * dx + dy * dy <= s * s) f.alert[pi] = 1u;
+        if (dx * dx + dy * dy + dz * dz <= s * s) f.alert[pi] = 1u;
     }
 
     // Spread: flood the alert through cells occupied by the SAME faction. This
