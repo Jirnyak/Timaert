@@ -1128,7 +1128,16 @@ timaert_test(subworld_generator_parity_test
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
-    LINK_SDL)
+    LINK_SDL
+    # ПИН СТАЛ ЧЕСТНЫМ ТОЛЬКО ПОСЛЕ M-250, И ЭТО НЕ ФОРМАЛЬНОСТЬ. До сведения
+    # цикловых гейтов к §8 п.3 счёт этого прибора был СОДЕРЖАНИЕМ, а не
+    # покрытием: 2 363 813 проверок, из них ≈1.3 М — обходы выхода генератора
+    # (79 полян, 16 031 древесная структура, 3568 дорожных тайлов). Замер
+    # 2026-10-12: смена ОДНОГО сида фикстуры двигала его 2 363 813 → 2 728 688,
+    # то есть пин на ту форму был бы пином на выход одного сида — ровно то, что
+    # владелец назвал бредом («ДОЛЖНО БЫТЬ 301 предмет»). Теперь 21 гейт
+    # утверждает ПОСЛЕ обхода, счёт структурен, и тот же сид его не двигает.
+    PIN "OK subworld_generator_parity_test .102 checks.")
 
 timaert_test(tree_layer_test
     SOURCES
@@ -1333,7 +1342,13 @@ timaert_test(subworld_spawn_parity_test
         # anatomy what is worn and the catalog what each row is worth.
         src/macro/anketa.cpp
         src/tables/items.cpp
-    LINK_ENTT)
+    LINK_ENTT
+    # Та же история, что у subworld_generator_parity (M-250): гейт в
+    # `compare_records` бил по разу на ТВАРЬ, поэтому счёт прибора был числом
+    # тварей, накатанных сидом. Замер 2026-10-12: смена сида фикстуры двигала
+    # его 109 → 123. После сведения к §8 п.3 обход утверждается ОДНИМ
+    # вердиктом, счёт структурен (52), и тот же сид его не двигает.
+    PIN "OK subworld_spawn_parity_test .52 checks.")
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
 # functions live in items.cpp (self-contained — no SDL2/EnTT, same as

@@ -188,6 +188,17 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
     // Every deck top over water, in span order, to prove the ARCH is walked
     // and not jumped: (distance along the span, top).
     std::vector<std::pair<float, float>> wetDeckTops;
+    // ОДИН ВЕРДИКТ НА ОБХОД, А НЕ ОДИН НА СТРУКТУРУ (AGENTS §8 п.3). Счёт
+    // плохих копится, вердикт выносится ПОСЛЕ обхода и называет «сколько из
+    // скольких»; первая виноватая структура печатается на месте, своими
+    // координатами. Что обход вообще СОСТОЯЛСЯ, утверждают ok7/ok8/ok9 ниже —
+    // отдельные гейты на само население, поэтому «помирил ли» здесь не
+    // дублируется (дубль был бы вечнозелёным рядом с живым гейтом).
+    int badPierWorld = 0;
+    int badPierFoot = 0;
+    int badPierRise = 0;
+    int badDeckWorld = 0;
+    int badWetDeck = 0;
     for (const Structure& s : map.structures) {
         if (s.kind != Structure::Bridge) continue;
         const int tx = std::clamp(int(s.x), 0, kCellSize - 1);
@@ -201,32 +212,81 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
         if (s.shape == Structure::Cylinder) {
             ++piers;
             pierWidthSum += 2.0f * s.radius;
-            const bool ok2 = !(!s.zWorld);
-            CHECK(ok2, "a pier stands at a world level, like its deck");
-            if (!ok2) return 1;
-            const bool ok3 = !(z0 > seatM);
-            CHECK(ok3, "a pier's footing must reach into the bed");
-            if (!ok3) return 1;
-            const bool ok4 = !(z1 <= seatM);
-            CHECK(ok4, "a pier must rise out of the bed to meet the deck");
-            if (!ok4) return 1;
+            if (!s.zWorld && badPierWorld++ == 0) {
+                std::fprintf(stderr, "pier off world level at (%.2f,%.2f)\n",
+                             double(s.x), double(s.y));
+            }
+            if (z0 > seatM && badPierFoot++ == 0) {
+                std::fprintf(stderr,
+                             "pier footing above the bed at (%.2f,%.2f): "
+                             "z0=%.3f seat=%.3f\n",
+                             double(s.x), double(s.y), double(z0),
+                             double(seatM));
+            }
+            if (z1 <= seatM && badPierRise++ == 0) {
+                std::fprintf(stderr,
+                             "pier does not rise out of the bed at "
+                             "(%.2f,%.2f): z1=%.3f seat=%.3f\n",
+                             double(s.x), double(s.y), double(z1),
+                             double(seatM));
+            }
             continue;
         }
         ++decks;
-        const bool ok5 = !(!s.zWorld);
-        CHECK(ok5, "a deck stands at a world level, not on the bed");
-        if (!ok5) return 1;
+        if (!s.zWorld && badDeckWorld++ == 0) {
+            std::fprintf(stderr, "deck off world level at (%.2f,%.2f)\n",
+                         double(s.x), double(s.y));
+        }
         const float projD = ((s.x - ax) * sx + (s.y - ay) * sy) / spanLen;
         if (seatM < seaM) {
-            const bool ok6 = !(z1 < seaM);
-            CHECK(ok6, "a deck top below the water plane is not a bridge");
-            if (!ok6) return 1;
+            if (z1 < seaM && badWetDeck++ == 0) {
+                std::fprintf(stderr,
+                             "deck top under the water plane at (%.2f,%.2f): "
+                             "z1=%.3f sea=%.3f\n",
+                             double(s.x), double(s.y), double(z1),
+                             double(seaM));
+            }
             wetDeckTops.emplace_back(projD, z1);
         }
         const float proj = projD;
         deckSpans.emplace_back(proj - structure_half_x(s),
                                proj + structure_half_x(s));
     }
+    const bool ok2 = !(badPierWorld != 0);
+    if (!ok2) {
+        std::fprintf(stderr, "piers off world level: %d of %d\n",
+                     badPierWorld, piers);
+    }
+    CHECK(ok2, "a pier stands at a world level, like its deck");
+    if (!ok2) return 1;
+    const bool ok3 = !(badPierFoot != 0);
+    if (!ok3) {
+        std::fprintf(stderr, "pier footings above the bed: %d of %d\n",
+                     badPierFoot, piers);
+    }
+    CHECK(ok3, "a pier's footing must reach into the bed");
+    if (!ok3) return 1;
+    const bool ok4 = !(badPierRise != 0);
+    if (!ok4) {
+        std::fprintf(stderr, "piers not reaching the deck: %d of %d\n",
+                     badPierRise, piers);
+    }
+    CHECK(ok4, "a pier must rise out of the bed to meet the deck");
+    if (!ok4) return 1;
+    const bool ok5 = !(badDeckWorld != 0);
+    if (!ok5) {
+        std::fprintf(stderr, "decks off world level: %d of %d\n",
+                     badDeckWorld, decks);
+    }
+    CHECK(ok5, "a deck stands at a world level, not on the bed");
+    if (!ok5) return 1;
+    const bool ok6 = !(badWetDeck != 0);
+    if (!ok6) {
+        std::fprintf(stderr, "deck tops under the water plane: %d of %zu\n",
+                     badWetDeck, wetDeckTops.size());
+    }
+    CHECK(ok6, "a deck top below the water plane is not a bridge");
+    if (!ok6) return 1;
     const bool ok7 = !(decks < 2);
     CHECK(ok7, "a water span must carry a chain of deck chords");
     if (!ok7) return 1;
@@ -242,15 +302,30 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
     std::sort(wetDeckTops.begin(), wetDeckTops.end());
     float lowest = wetDeckTops.front().second;
     float highest = wetDeckTops.front().second;
+    // Население пар утверждает ok9 выше (wetDeckTops >= 2 ⇒ хотя бы одна пара).
+    int badStep = 0;
     for (std::size_t i = 1; i < wetDeckTops.size(); ++i) {
         const float step =
             std::fabs(wetDeckTops[i].second - wetDeckTops[i - 1].second);
-        const bool ok10 = !(step >= kStepUpM);
-        CHECK(ok10, "a step in the deck: the arch must be walked, not jumped");
-        if (!ok10) return 1;
+        if (step >= kStepUpM && badStep++ == 0) {
+            std::fprintf(stderr,
+                         "deck step %.3f >= kStepUpM %.3f at span d=%.2f "
+                         "(tops %.3f -> %.3f)\n",
+                         double(step), double(kStepUpM),
+                         double(wetDeckTops[i].first),
+                         double(wetDeckTops[i - 1].second),
+                         double(wetDeckTops[i].second));
+        }
         lowest = std::min(lowest, wetDeckTops[i].second);
         highest = std::max(highest, wetDeckTops[i].second);
     }
+    const bool ok10 = !(badStep != 0);
+    if (!ok10) {
+        std::fprintf(stderr, "jumped steps in the deck: %d of %zu\n",
+                     badStep, wetDeckTops.size() - 1);
+    }
+    CHECK(ok10, "a step in the deck: the arch must be walked, not jumped");
+    if (!ok10) return 1;
     // The rise itself is only owed where the span HAS two banks — an arch is
     // a shape between shores. A line that runs off into open water (a stub, a
     // fixture with no dry end) has no midpoint to crown, and demanding one
@@ -280,6 +355,8 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
     // Every WET stretch of the road line must be decked; a dry stretch is the
     // bank's own business (the ramp lands and the ground carries the walker).
     int wetSamples = 0;
+    // Что обход что-то намерил, утверждает ok14 сразу под ним (wetSamples > 0).
+    int badUncovered = 0;
     for (float d = 0.0f; d <= spanLen; d += 4.0f) {
         const float t = d / spanLen;
         const int tx = std::clamp(int(ax + sx * t), 0, kCellSize - 1);
@@ -295,10 +372,20 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
                 break;
             }
         }
-        const bool ok13 = !(!covered);
-        CHECK(ok13, "open water on the road line with no deck overhead");
-        if (!ok13) return 1;
+        if (!covered && badUncovered++ == 0) {
+            std::fprintf(stderr,
+                         "open water with no deck at span d=%.2f tile "
+                         "(%d,%d)\n",
+                         double(d), tx, ty);
+        }
     }
+    const bool ok13 = !(badUncovered != 0);
+    if (!ok13) {
+        std::fprintf(stderr, "uncovered wet samples: %d of %d\n",
+                     badUncovered, wetSamples);
+    }
+    CHECK(ok13, "open water on the road line with no deck overhead");
+    if (!ok13) return 1;
     const bool ok14 = !(wetSamples == 0);
     CHECK(ok14, "bridge fixture has no wet stretch to bridge");
     if (!ok14) return 1;
@@ -375,6 +462,14 @@ int main() {
 
     const int center = kCellSize / 2;
 
+    // ОДИН ВЕРДИКТ НА ВЕСЬ ОБХОД ВСЕХ ПОЛЯН (AGENTS §8 п.3), а не один на
+    // тайл и не один на дерево: раньше эти два гейта били 79 полян × диск
+    // радиуса × 16031 древесных структур. Что поляны есть, утверждает ok4
+    // выше; что деревья есть — ok5; поэтому «помирил ли» здесь не дублируется.
+    int gladeTiles = 0;
+    int gladeTrees = 0;
+    int badGladeDecor = 0;
+    int badGladeTree = 0;
     for (const Glade& g : glades) {
         const int r2 = g.r * g.r;
         for (int dy = -g.r; dy <= g.r; ++dy) {
@@ -383,23 +478,45 @@ int main() {
                 const int px = g.x + dx;
                 const int py = g.y + dy;
                 if (px < 0 || py < 0 || px >= kCellSize || py >= kCellSize) continue;
-                const bool ok6 =
-                    !(out.tiles[std::size_t(py) * kCellSize + px] == TILE_TREE_DECOR);
-                CHECK(ok6, "forest glade still contains tree decor tiles");
-                if (!ok6) return 1;
+                ++gladeTiles;
+                if (out.tiles[std::size_t(py) * kCellSize + px] == TILE_TREE_DECOR
+                    && badGladeDecor++ == 0) {
+                    std::fprintf(stderr,
+                                 "tree decor inside glade (%d,%d r=%d) at "
+                                 "tile (%d,%d)\n",
+                                 g.x, g.y, g.r, px, py);
+                }
             }
         }
         for (const Structure& s : out.structures) {
             if (s.kind != Structure::Tree) continue;
+            ++gladeTrees;
             const int tx = int(std::floor(s.x));
             const int ty = int(std::floor(s.y));
             const int dx = tx - g.x;
             const int dy = ty - g.y;
-            const bool ok7 = !(dx * dx + dy * dy <= r2);
-            CHECK(ok7, "forest glade still contains tree structures");
-            if (!ok7) return 1;
+            if (dx * dx + dy * dy <= r2 && badGladeTree++ == 0) {
+                std::fprintf(stderr,
+                             "tree structure inside glade (%d,%d r=%d) at "
+                             "(%.2f,%.2f)\n",
+                             g.x, g.y, g.r, double(s.x), double(s.y));
+            }
         }
     }
+    const bool ok6 = !(badGladeDecor != 0);
+    if (!ok6) {
+        std::fprintf(stderr, "glade tiles carrying tree decor: %d of %d\n",
+                     badGladeDecor, gladeTiles);
+    }
+    CHECK(ok6, "forest glade still contains tree decor tiles");
+    if (!ok6) return 1;
+    const bool ok7 = !(badGladeTree != 0);
+    if (!ok7) {
+        std::fprintf(stderr, "tree structures inside glades: %d of %d\n",
+                     badGladeTree, gladeTrees);
+    }
+    CHECK(ok7, "forest glade still contains tree structures");
+    if (!ok7) return 1;
 
     CellContext grassTrail{};
     grassTrail.cx = 8;
@@ -603,13 +720,30 @@ int main() {
     }
     // 2. The rail is chest-high — a body must not be able to step over it
     // (sub/collide.h kStepUpM), which is the whole reason it is built.
+    // Один вердикт на обход хорд парапета (AGENTS §8 п.3). Что хорды есть,
+    // уже доказали ok14/ok15 выше: при нуле хорд кольцо из 256 лучей было бы
+    // открыто целиком и ok14 упал бы — поэтому «помирил ли» не дублируется.
+    int crownChords = 0;
+    int badRail = 0;
     for (const Structure& s : spireOut.structures) {
         if (s.kind != Structure::Wall || s.shape != Structure::Box) continue;
         if (std::fabs(s.zBase - crownM) > 0.001f) continue;
-        const bool ok16 = !(s.height <= sm::sub::kStepUpM);
-        CHECK(ok16, "a parapet a body steps over is not a parapet");
-        if (!ok16) return 1;
+        ++crownChords;
+        if (s.height <= sm::sub::kStepUpM && badRail++ == 0) {
+            std::fprintf(stderr,
+                         "parapet chord at (%.2f,%.2f) is %.3f high, "
+                         "kStepUpM is %.3f\n",
+                         double(s.x), double(s.y), double(s.height),
+                         double(sm::sub::kStepUpM));
+        }
     }
+    const bool ok16 = !(badRail != 0);
+    if (!ok16) {
+        std::fprintf(stderr, "steppable parapet chords: %d of %d\n",
+                     badRail, crownChords);
+    }
+    CHECK(ok16, "a parapet a body steps over is not a parapet");
+    if (!ok16) return 1;
     // 3. The way back in stands on the crown, at the SHARED point, and NOT on
     // the axis — the axis is the orb's plinth, and a body put there comes up
     // inside the shrine (the 2026-09-09 defect this whole crown answers).
@@ -673,16 +807,35 @@ int main() {
     CHECK(ok22, "spire scorch/crater tile invariants failed");
     if (!ok22) return 1;
 
+    // Один вердикт на обход (AGENTS §8 п.3). САМО НАСЕЛЕНИЕ ЗДЕСЬ НЕ
+    // УТВЕРЖДАЕТСЯ СОЗНАТЕЛЬНО: закон — «в выжженном круге деревьев НЕТ», и
+    // клетка шпиля вправе не вырастить ни одного дерева вовсе. Требовать
+    // «деревья есть» значило бы выдумать миру обязанность, которой у него нет.
+    int spireTrees = 0;
+    int badScorchTree = 0;
     for (const Structure& s : spireOut.structures) {
         if (s.kind != Structure::Tree) continue;
+        ++spireTrees;
         const int tx = int(std::floor(s.x));
         const int ty = int(std::floor(s.y));
         const int dx = tx - center;
         const int dy = ty - center;
-        const bool ok23 = !(dx * dx + dy * dy < kScorchRadius * kScorchRadius);
-        CHECK(ok23, "spire scorch radius still contains tree structures");
-        if (!ok23) return 1;
+        if (dx * dx + dy * dy < kScorchRadius * kScorchRadius
+            && badScorchTree++ == 0) {
+            std::fprintf(stderr,
+                         "tree inside the scorch radius at (%.2f,%.2f), "
+                         "centre (%d,%d) r=%d\n",
+                         double(s.x), double(s.y), center, center,
+                         kScorchRadius);
+        }
     }
+    const bool ok23 = !(badScorchTree != 0);
+    if (!ok23) {
+        std::fprintf(stderr, "trees inside the scorch radius: %d of %d\n",
+                     badScorchTree, spireTrees);
+    }
+    CHECK(ok23, "spire scorch radius still contains tree structures");
+    if (!ok23) return 1;
 
     CellContext ruin{};
     ruin.cx = 8;
@@ -933,14 +1086,31 @@ int main() {
     // road lying on the bed; the DECK is the road over water, so no road
     // tile may sit below the plane. In this all-water fixture that means
     // none at all.
+    // Один вердикт на обход (AGENTS §8 п.3). НЕПУСТОТА ЗДЕСЬ НЕ УТВЕРЖДАЕТСЯ
+    // СОЗНАТЕЛЬНО, и это ровно смысл фикстуры: в сплошь водной клетке сухих
+    // дорожных тайлов НОЛЬ по замыслу (см. `roadTiles` ниже — «dry ramp
+    // footing only»). Гейт «тайлов > 0» здесь требовал бы от мира обратного.
     int roadTiles = 0;
+    int badBedRoad = 0;
     for (std::size_t i = 0; i < roadOut.tiles.size(); ++i) {
         if (roadOut.tiles[i] != TILE_ROAD) continue;
-        const bool ok34 = !(roadOut.heightmap[i] < WATER_LEVEL);
-        CHECK(ok34, "a road tile on the river bed: the bridge is the road");
-        if (!ok34) return 1;
+        if (roadOut.heightmap[i] < WATER_LEVEL && badBedRoad++ == 0) {
+            std::fprintf(stderr,
+                         "road tile on the river bed at (%zu,%zu): h=%.3f "
+                         "WATER_LEVEL=%.3f\n",
+                         i % std::size_t(kCellSize),
+                         i / std::size_t(kCellSize),
+                         double(roadOut.heightmap[i]), double(WATER_LEVEL));
+        }
         ++roadTiles;   // dry ramp footing only — nil in an all-water cell
     }
+    const bool ok34 = !(badBedRoad != 0);
+    if (!ok34) {
+        std::fprintf(stderr, "road tiles below the water plane: %d of %d\n",
+                     badBedRoad, roadTiles);
+    }
+    CHECK(ok34, "a road tile on the river bed: the bridge is the road");
+    if (!ok34) return 1;
 
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
     for (int i = 0; i < 9; ++i) nbH[i] = 0.30f;   // honest water, as above
@@ -991,6 +1161,9 @@ int main() {
     dispatch_generate(road, nbH, nbB, /*nbBiome5*/nullptr, nbF, forkOut);
     {
         int spanChords = 0;
+        // Один вердикт на обход (AGENTS §8 п.3); что хорды есть, утверждает
+        // ok37 сразу под ним.
+        int badChordYaw = 0;
         for (const Structure& s : forkOut.structures) {
             if (s.kind != Structure::Bridge || s.shape == Structure::Cylinder) {
                 continue;
@@ -998,28 +1171,53 @@ int main() {
             ++spanChords;
             // Every deck chord lies along the crossing AXIS (east-west here).
             // A chord aimed at the southern neighbour is the old fork.
-            const bool ok36 = !(std::fabs(std::sin(s.yaw)) > 0.35f);
-            CHECK(ok36,
-                  "a deck chord aimed off the crossing axis: forked span");
-            if (!ok36) return 1;
+            if (std::fabs(std::sin(s.yaw)) > 0.35f && badChordYaw++ == 0) {
+                std::fprintf(stderr,
+                             "deck chord off axis at (%.2f,%.2f): "
+                             "|sin(yaw)|=%.3f > 0.35\n",
+                             double(s.x), double(s.y),
+                             double(std::fabs(std::sin(s.yaw))));
+            }
         }
+        const bool ok36 = !(badChordYaw != 0);
+        if (!ok36) {
+            std::fprintf(stderr, "deck chords off the crossing axis: %d of %d\n",
+                         badChordYaw, spanChords);
+        }
+        CHECK(ok36,
+              "a deck chord aimed off the crossing axis: forked span");
+        if (!ok36) return 1;
         const bool ok37 = !(spanChords < 2);
         CHECK(ok37, "the fork fixture built no span at all");
         if (!ok37) return 1;
         // The passing road still ARRIVES — it just arrives on land.
         int southRoadTiles = 0;
         int joinY = kCellSize;          // northmost tile of the passing lane
+        // Один вердикт на обход (AGENTS §8 п.3); что полоса дошла, утверждает
+        // ok39 сразу под ним.
+        int badWetLane = 0;
         for (int y = kCellSize / 2; y < kCellSize; ++y) {
             for (int x = 0; x < kCellSize; ++x) {
                 const std::size_t i = std::size_t(y) * kCellSize + x;
                 if (forkOut.tiles[i] != TILE_ROAD) continue;
                 ++southRoadTiles;
                 joinY = std::min(joinY, y);
-                const bool ok38 = !(forkOut.heightmap[i] < WATER_LEVEL);
-                CHECK(ok38, "the passing road walked into the water");
-                if (!ok38) return 1;
+                if (forkOut.heightmap[i] < WATER_LEVEL && badWetLane++ == 0) {
+                    std::fprintf(stderr,
+                                 "passing lane under water at tile (%d,%d): "
+                                 "h=%.3f WATER_LEVEL=%.3f\n",
+                                 x, y, double(forkOut.heightmap[i]),
+                                 double(WATER_LEVEL));
+                }
             }
         }
+        const bool ok38 = !(badWetLane != 0);
+        if (!ok38) {
+            std::fprintf(stderr, "passing-lane tiles under water: %d of %d\n",
+                         badWetLane, southRoadTiles);
+        }
+        CHECK(ok38, "the passing road walked into the water");
+        if (!ok38) return 1;
         const bool ok39 = !(southRoadTiles <= 0);
         CHECK(ok39, "the passing road never reached the crossing");
         if (!ok39) return 1;
@@ -1305,16 +1503,28 @@ int main() {
     if (!ok51) return 1;
     // An ISOLATED field cell (this fixture: no field neighbours) keeps its
     // plots clear of ground nobody ploughed — the raw edge stays grass.
+    // Один вердикт на обход всей рамки (AGENTS §8 п.3). Длина обхода —
+    // kCellSize, то есть непустота тут тавтология, и гейта на неё нет
+    // намеренно: вечнозелёная проверка не свидетель.
+    int badEdge = 0;
     for (int x = 0; x < kCellSize; ++x) {
-        const bool ok52 = !(fieldOut.tiles[std::size_t(x)] == TILE_FIELD
-                            || fieldOut.tiles[std::size_t(kCellSize - 1) * kCellSize
-                                              + std::size_t(x)] == TILE_FIELD
-                            || fieldOut.tiles[std::size_t(x) * kCellSize] == TILE_FIELD
-                            || fieldOut.tiles[std::size_t(x) * kCellSize
-                                              + std::size_t(kCellSize - 1)] == TILE_FIELD);
-        CHECK(ok52, "a plot reached the raw edge of an isolated field cell");
-        if (!ok52) return 1;
+        if ((fieldOut.tiles[std::size_t(x)] == TILE_FIELD
+             || fieldOut.tiles[std::size_t(kCellSize - 1) * kCellSize
+                               + std::size_t(x)] == TILE_FIELD
+             || fieldOut.tiles[std::size_t(x) * kCellSize] == TILE_FIELD
+             || fieldOut.tiles[std::size_t(x) * kCellSize
+                               + std::size_t(kCellSize - 1)] == TILE_FIELD)
+            && badEdge++ == 0) {
+            std::fprintf(stderr, "plot on the raw edge at offset %d\n", x);
+        }
     }
+    const bool ok52 = !(badEdge != 0);
+    if (!ok52) {
+        std::fprintf(stderr, "edge offsets carrying plots: %d of %d\n",
+                     badEdge, kCellSize);
+    }
+    CHECK(ok52, "a plot reached the raw edge of an isolated field cell");
+    if (!ok52) return 1;
     // LOOK hook: FIELD_PPM=<prefix> dumps the plot layouts as PPMs (field =
     // wheat, grass = green, water = blue, trees = dark) — the eyes-on half
     // of this block's verification.
@@ -1378,6 +1588,9 @@ int main() {
     // far from fencing every parcel (gaps are the design).
     {
         int fences = 0;
+        // Один вердикт на обход (AGENTS §8 п.3); что стенки есть, утверждает
+        // ok55 сразу под ним.
+        int badFence = 0;
         for (const Structure& s : fieldOut.structures) {
             if (s.kind != Structure::Fence) continue;
             ++fences;
@@ -1385,11 +1598,21 @@ int main() {
             const int sy = std::clamp(int(s.y), 0, kCellSize - 1);
             const std::uint8_t t =
                 fieldOut.tiles[std::size_t(sy) * kCellSize + sx];
-            const bool ok54 =
-                !(t == TILE_FIELD || t == TILE_ROAD || t == TILE_WATER);
-            CHECK(ok54, "a boulder wall stands off its balk");
-            if (!ok54) return 1;
+            if ((t == TILE_FIELD || t == TILE_ROAD || t == TILE_WATER)
+                && badFence++ == 0) {
+                std::fprintf(stderr,
+                             "boulder wall off its balk at (%.2f,%.2f): "
+                             "tile=%u\n",
+                             double(s.x), double(s.y), unsigned(t));
+            }
         }
+        const bool ok54 = !(badFence != 0);
+        if (!ok54) {
+            std::fprintf(stderr, "boulder walls off their balk: %d of %d\n",
+                         badFence, fences);
+        }
+        CHECK(ok54, "a boulder wall stands off its balk");
+        if (!ok54) return 1;
         const bool ok55 = !(fences == 0);
         CHECK(ok55, "the field system grew no boulder walls at all");
         if (!ok55) return 1;
@@ -1535,37 +1758,88 @@ int main() {
     if (!ok63) return 1;
     SubworldMapData bareOut{};
     dispatch_generate(bareMeadow, nbH, nbB, /*nbBiome5*/nullptr, nbF, bareOut, nullptr, nbFewTrees);
-    for (const std::uint8_t t : bareOut.tiles) {
-        const bool ok64 = !(t == TILE_FIELD);
-        CHECK(ok64, "grassland invented field tiles without the feature");
-        if (!ok64) return 1;
+    // Один вердикт на обход всего буфера тайлов (AGENTS §8 п.3). Непустота —
+    // тавтология (буфер фиксированной длины), гейта на неё нет намеренно.
+    int badBareField = 0;
+    for (std::size_t i = 0; i < bareOut.tiles.size(); ++i) {
+        if (bareOut.tiles[i] == TILE_FIELD && badBareField++ == 0) {
+            std::fprintf(stderr,
+                         "grassland grew a field tile at (%zu,%zu)\n",
+                         i % std::size_t(kCellSize),
+                         i / std::size_t(kCellSize));
+        }
     }
+    const bool ok64 = !(badBareField != 0);
+    if (!ok64) {
+        std::fprintf(stderr, "field tiles on bare grassland: %d of %zu\n",
+                     badBareField, bareOut.tiles.size());
+    }
+    CHECK(ok64, "grassland invented field tiles without the feature");
+    if (!ok64) return 1;
 
     // Crop stands: the field grows wheat, every stand roots in ploughed
     // ground, and ground without a field grows none — the ONE scatterer all
     // TILE_FIELD producers share (scatter_field_crops).
     int cropStands = 0;
+    // Два вердикта на обход, а не два на стебель (AGENTS §8 п.3); что стебли
+    // есть, утверждает ok67 сразу под обходом.
+    int badCropGround = 0;
+    int badCropHeight = 0;
     for (const Structure& s : fieldOut.structures) {
         if (s.kind != Structure::Crop) continue;
         ++cropStands;
         const int sx = std::clamp(int(s.x), 0, kCellSize - 1);
         const int sy = std::clamp(int(s.y), 0, kCellSize - 1);
-        const bool ok65 =
-            !(fieldOut.tiles[std::size_t(sy) * kCellSize + sx] != TILE_FIELD);
-        CHECK(ok65, "a crop stand grew off the ploughed ground");
-        if (!ok65) return 1;
-        const bool ok66 = !(s.height <= 0.0f);
-        CHECK(ok66, "a crop stand has no height");
-        if (!ok66) return 1;
+        if (fieldOut.tiles[std::size_t(sy) * kCellSize + sx] != TILE_FIELD
+            && badCropGround++ == 0) {
+            std::fprintf(stderr,
+                         "crop stand off the plough at (%.2f,%.2f): tile=%u\n",
+                         double(s.x), double(s.y),
+                         unsigned(fieldOut.tiles[std::size_t(sy) * kCellSize
+                                                 + sx]));
+        }
+        if (s.height <= 0.0f && badCropHeight++ == 0) {
+            std::fprintf(stderr, "crop stand with no height at (%.2f,%.2f)\n",
+                         double(s.x), double(s.y));
+        }
     }
+    const bool ok65 = !(badCropGround != 0);
+    if (!ok65) {
+        std::fprintf(stderr, "crop stands off the plough: %d of %d\n",
+                     badCropGround, cropStands);
+    }
+    CHECK(ok65, "a crop stand grew off the ploughed ground");
+    if (!ok65) return 1;
+    const bool ok66 = !(badCropHeight != 0);
+    if (!ok66) {
+        std::fprintf(stderr, "crop stands with no height: %d of %d\n",
+                     badCropHeight, cropStands);
+    }
+    CHECK(ok66, "a crop stand has no height");
+    if (!ok66) return 1;
     const bool ok67 = !(cropStands == 0);
     CHECK(ok67, "field cell grew no crop stands");
     if (!ok67) return 1;
+    // Один вердикт на обход. НЕПУСТОТА НЕ УТВЕРЖДАЕТСЯ СОЗНАТЕЛЬНО: закон —
+    // «без фичи поля стеблей НЕТ», и голый луг вправе не породить ни одной
+    // структуры вовсе.
+    int bareStructures = 0;
+    int badBareCrop = 0;
     for (const Structure& s : bareOut.structures) {
-        const bool ok68 = !(s.kind == Structure::Crop);
-        CHECK(ok68, "grassland grew crops without a field");
-        if (!ok68) return 1;
+        ++bareStructures;
+        if (s.kind == Structure::Crop && badBareCrop++ == 0) {
+            std::fprintf(stderr,
+                         "crop on bare grassland at (%.2f,%.2f)\n",
+                         double(s.x), double(s.y));
+        }
     }
+    const bool ok68 = !(badBareCrop != 0);
+    if (!ok68) {
+        std::fprintf(stderr, "crops on bare grassland: %d of %d structures\n",
+                     badBareCrop, bareStructures);
+    }
+    CHECK(ok68, "grassland grew crops without a field");
+    if (!ok68) return 1;
 
     // The harvest scar (crop_count row, Field Inc F3) thins the replant
     // DETERMINISTICALLY: a cell that lost k stands regrows exactly k fewer,
@@ -1589,11 +1863,27 @@ int main() {
     SubworldMapData razedOut{};
     dispatch_generate(razedField, nbH, nbB, /*nbBiome5*/nullptr, nbF, razedOut, nullptr,
                       nbFewTrees);
+    // Один вердикт на обход. НЕПУСТОТА НЕ УТВЕРЖДАЕТСЯ СОЗНАТЕЛЬНО — по той
+    // же причине, что у голого луга выше: закон говорит «пшеницы НЕТ», и
+    // выбитая клетка вправе не вырастить ничего.
+    int razedStructures = 0;
+    int badRazedCrop = 0;
     for (const Structure& s : razedOut.structures) {
-        const bool ok70 = !(s.kind == Structure::Crop);
-        CHECK(ok70, "a fully harvested cell still grew wheat");
-        if (!ok70) return 1;
+        ++razedStructures;
+        if (s.kind == Structure::Crop && badRazedCrop++ == 0) {
+            std::fprintf(stderr,
+                         "wheat on a fully harvested cell at (%.2f,%.2f)\n",
+                         double(s.x), double(s.y));
+        }
     }
+    const bool ok70 = !(badRazedCrop != 0);
+    if (!ok70) {
+        std::fprintf(stderr,
+                     "crops on a razed cell: %d of %d structures\n",
+                     badRazedCrop, razedStructures);
+    }
+    CHECK(ok70, "a fully harvested cell still grew wheat");
+    if (!ok70) return 1;
 
     // The furrow-orientation door (sub/material.h, twin of macro.frag): if
     // the hash degenerated to a constant, every field on the map would

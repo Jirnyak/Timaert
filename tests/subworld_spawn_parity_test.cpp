@@ -270,11 +270,18 @@ int compare_records(const std::vector<SpawnRecord>& expected,
           "the cell spawns exactly as many creatures as its seeded roll names");
     if (!ok1) return 1;
 
+    // ОДИН ВЕРДИКТ НА ОБХОД, А НЕ ОДИН НА ЗАПИСЬ (AGENTS §8 п.3). Раньше гейт
+    // бил по разу на существо и выходил на первом несовпавшем, из-за чего счёт
+    // проверок прибора был СОДЕРЖАНИЕМ (сколько тварей накатал генератор), а
+    // не покрытием, и пин на него был бы пином на выход одного сида. Теперь
+    // обход полный: печатается ПЕРВАЯ несовпавшая запись целиком (адрес
+    // провала настоящий) и общий счёт «N из M». Что обход что-то намерил,
+    // утверждает ok1 выше — он требует непустого и равного размера.
+    int mismatches = 0;
     for (std::size_t i = 0; i < expected.size(); ++i) {
         const SpawnRecord& e = expected[i];
         const SpawnRecord& a = actual[i];
-        const bool ok2 = !(!records_match(e, a));
-        if (!ok2) {
+        if (!records_match(e, a) && mismatches++ == 0) {
             std::fprintf(
                 stderr,
                 "idx=%zu expected type=%u faction=%u level=%d pos=%.3f,%.3f "
@@ -286,10 +293,15 @@ int compare_records(const std::vector<SpawnRecord>& expected,
                 a.type, a.faction, int(a.level), a.x, a.y, a.hp,
                 a.damage, int(a.ai), a.r, a.g, a.b);
         }
-        CHECK(ok2,
-              "every spawned creature matches its catalogue row and stands inside its OWN cell");
-        if (!ok2) return 1;
     }
+    const bool ok2 = !(mismatches != 0);
+    if (!ok2) {
+        std::fprintf(stderr, "records that do not match: %d of %zu\n",
+                     mismatches, expected.size());
+    }
+    CHECK(ok2,
+          "every spawned creature matches its catalogue row and stands inside its OWN cell");
+    if (!ok2) return 1;
     return 0;
 }
 
