@@ -45,13 +45,6 @@
 
 namespace {
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/city_population_inside_walls_test.cpp", 0);
-    return 1;
-}
-
 constexpr float kTwoPi = 6.28318530718f;
 
 // ── THE TWO LAWS THE OLD LITERALS STOOD IN FOR (M-132) ────────────────────
@@ -347,32 +340,43 @@ int main() {
                                  0xC17015Eu, noon);
         sm::sub::clear_saved_subworlds();
 
-        if (s.citizens < street_floor(1200, doors_of(mgr), noon)) {
+        const bool ok1 =
+            !(s.citizens < street_floor(1200, doors_of(mgr), noon));
+        if (!ok1) {
             std::fprintf(stderr, "  street %d, the sun owes at least %d of "
                          "1200 souls (%d doors)\n", s.citizens,
                          street_floor(1200, doors_of(mgr), noon), doors_of(mgr));
-            return fail("the noon street holds the share of the town the SUN "
-                        "dictates, bar one soul per door");
         }
-        if (s.outsideReach != 0) {
+        CHECK(ok1, "the noon street holds the share of the town the SUN "
+                   "dictates, bar one soul per door");
+        if (!ok1) return 1;
+        const bool ok2 = !(s.outsideReach != 0);
+        if (!ok2) {
             std::fprintf(stderr, "  %d/%d citizens beyond the town's reach "
                          "(maxR %.1f)\n", s.outsideReach, s.citizens, s.maxR);
-            return fail("city citizens spawned outside the settlement");
         }
-        if (s.outsideMasonry != 0) {
-            return fail("city citizens spawned at or beyond the town wall");
-        }
-        if (s.onSolid != 0) return fail("city citizens spawned in water/masonry");
-        if (s.fracOuterHalf < kOuterHalfFloor) {
+        CHECK(ok2, "city citizens spawned outside the settlement");
+        if (!ok2) return 1;
+        const bool ok3 = !(s.outsideMasonry != 0);
+        CHECK(ok3, "city citizens spawned at or beyond the town wall");
+        if (!ok3) return 1;
+        const bool ok4 = !(s.onSolid != 0);
+        CHECK(ok4, "city citizens spawned in water/masonry");
+        if (!ok4) return 1;
+        const bool ok5 = !(s.fracOuterHalf < kOuterHalfFloor);
+        if (!ok5) {
             std::fprintf(stderr, "  fracOuterHalf %.3f (area law %.2f, the "
                          "linear bug %.2f)\n", double(s.fracOuterHalf),
                          double(kAreaShareOuterHalf),
                          double(kLinearShareOuterHalf));
-            return fail("the crowd is scattered BY AREA, not along the radius "
-                        "— the outer half of the disk carries the outer half's "
-                        "share of the ground");
         }
-        if (s.emptySectors != 0) return fail("city has an empty angular sector");
+        CHECK(ok5, "the crowd is scattered BY AREA, not along the radius "
+                   "— the outer half of the disk carries the outer half's "
+                   "share of the ground");
+        if (!ok5) return 1;
+        const bool ok6 = !(s.emptySectors != 0);
+        CHECK(ok6, "city has an empty angular sector");
+        if (!ok6) return 1;
 
         // §42 PARTITION WITNESS (CANON S28: одна душа воплощается один раз).
         // The street crowd plus the hearth reserves behind the doors must
@@ -395,32 +399,35 @@ int main() {
                 /*worldSeed*/0xC17015Eu, 0, 0,
                 float(sm::sub::kCellSize), float(sm::sub::kCellSize), 1200, t);
             streetAt[hour] = h.citizens;
-            if (h.citizens + keptIn != 1200) {
+            const bool ok7 = !(h.citizens + keptIn != 1200);
+            if (!ok7) {
                 std::fprintf(stderr, "  %02d:00 street %d + hearths %d != 1200\n",
                              hour, h.citizens, keptIn);
-                return fail("the day's pump created or destroyed people");
             }
+            CHECK(ok7, "the day's pump created or destroyed people");
+            if (!ok7) return 1;
         }
         std::fprintf(stderr,
                      "  street by the clock: 00h=%d 06h=%d 12h=%d 18h=%d\n",
                      streetAt[0], streetAt[6], streetAt[12], streetAt[18]);
-        if (streetAt[12] <= streetAt[6] || streetAt[6] <= streetAt[0]) {
-            return fail("the street does not fill as the sun rises");
-        }
-        if (streetAt[18] >= streetAt[12]) {
-            return fail("the street does not empty as the sun sets");
-        }
+        const bool ok8 =
+            !(streetAt[12] <= streetAt[6] || streetAt[6] <= streetAt[0]);
+        CHECK(ok8, "the street does not fill as the sun rises");
+        if (!ok8) return 1;
+        const bool ok9 = !(streetAt[18] >= streetAt[12]);
+        CHECK(ok9, "the street does not empty as the sun sets");
+        if (!ok9) return 1;
         // Dawn and dusk stand at the same height of sun, so they must field
         // the same crowd — the curve is the sun's, not a hand-drawn day.
-        if (streetAt[6] != streetAt[18]) {
-            return fail("dawn and dusk disagree though the sun does not");
-        }
+        const bool ok10 = !(streetAt[6] != streetAt[18]);
+        CHECK(ok10, "dawn and dusk disagree though the sun does not");
+        if (!ok10) return 1;
 
         // The hearths must actually FILL as the sun goes down — the sum alone
         // would be satisfied by a law that never moved anybody.
-        if (1200 - streetAt[0] <= 1200 - streetAt[12]) {
-            return fail("the hearths do not fill as the sun goes down");
-        }
+        const bool ok11 = !(1200 - streetAt[0] <= 1200 - streetAt[12]);
+        CHECK(ok11, "the hearths do not fill as the sun goes down");
+        if (!ok11) return 1;
     }
 
     // ── Village ─────────────────────────────────────────────────────────────
@@ -437,29 +444,40 @@ int main() {
                                  0x71114Eu, vnoon);
         sm::sub::clear_saved_subworlds();
 
-        if (s.citizens < street_floor(400, doors_of(mgr), vnoon)) {
+        const bool ok12 =
+            !(s.citizens < street_floor(400, doors_of(mgr), vnoon));
+        if (!ok12) {
             std::fprintf(stderr, "  green %d, the sun owes at least %d of 400 "
                          "souls (%d doors)\n", s.citizens,
                          street_floor(400, doors_of(mgr), vnoon), doors_of(mgr));
-            return fail("the same pump law at village scale — one law, not a "
-                        "second literal");
         }
-        if (s.outsideReach != 0) {
+        CHECK(ok12, "the same pump law at village scale — one law, not a "
+                    "second literal");
+        if (!ok12) return 1;
+        const bool ok13 = !(s.outsideReach != 0);
+        if (!ok13) {
             std::fprintf(stderr, "  %d/%d villagers beyond the town's reach "
                          "(maxR %.1f)\n", s.outsideReach, s.citizens, s.maxR);
-            return fail("villagers spawned outside the village");
         }
-        if (s.outsideMasonry != 0) {
-            return fail("villagers spawned at or beyond the village wall");
-        }
-        if (s.onSolid != 0) return fail("villagers spawned in water/masonry");
-        if (s.fracOuterHalf < kOuterHalfFloor) {
+        CHECK(ok13, "villagers spawned outside the village");
+        if (!ok13) return 1;
+        const bool ok14 = !(s.outsideMasonry != 0);
+        CHECK(ok14, "villagers spawned at or beyond the village wall");
+        if (!ok14) return 1;
+        const bool ok15 = !(s.onSolid != 0);
+        CHECK(ok15, "villagers spawned in water/masonry");
+        if (!ok15) return 1;
+        const bool ok16 = !(s.fracOuterHalf < kOuterHalfFloor);
+        if (!ok16) {
             std::fprintf(stderr, "  fracOuterHalf %.3f\n",
                          double(s.fracOuterHalf));
-            return fail("the same area law on the green — villagers are not "
-                        "piled on the well");
         }
-        if (s.emptySectors != 0) return fail("village has an empty angular sector");
+        CHECK(ok16, "the same area law on the green — villagers are not "
+                    "piled on the well");
+        if (!ok16) return 1;
+        const bool ok17 = !(s.emptySectors != 0);
+        CHECK(ok17, "village has an empty angular sector");
+        if (!ok17) return 1;
 
         // The same partition witness at village scale — asked at MIDNIGHT,
         // because at noon a place is meant to keep nobody at home and "the
@@ -471,35 +489,40 @@ int main() {
             mgr.structures(), sm::SquadType::Village,
             /*worldSeed*/0x71114Eu, 0, 0,
             float(sm::sub::kCellSize), float(sm::sub::kCellSize), 400, vnight);
-        if (kept <= 0) return fail("a 400-soul village kept nobody at home at night");
-        if (night.citizens + kept != 400) {
+        const bool ok18 = !(kept <= 0);
+        CHECK(ok18, "a 400-soul village kept nobody at home at night");
+        if (!ok18) return 1;
+        const bool ok19 = !(night.citizens + kept != 400);
+        if (!ok19) {
             std::fprintf(stderr, "  night street %d + hearths %d != 400\n",
                          night.citizens, kept);
-            return fail("the village's day pump created or destroyed people");
         }
+        CHECK(ok19, "the village's day pump created or destroyed people");
+        if (!ok19) return 1;
         const int reserve = sm::sub::interior_reserve_for_cell(
             mgr.structures(), sm::SquadType::Village,
             /*worldSeed*/0x71114Eu, 0, 0,
             float(sm::sub::kCellSize), float(sm::sub::kCellSize), 400, vnoon);
-        if (s.citizens + reserve != 400) {
+        const bool ok20 = !(s.citizens + reserve != 400);
+        if (!ok20) {
             std::fprintf(stderr, "  street %d + hearths %d != pop 400\n",
                          s.citizens, reserve);
-            return fail("the green and the hearths do not sum to the village");
         }
+        CHECK(ok20, "the green and the hearths do not sum to the village");
+        if (!ok20) return 1;
     }
 
-    if (!city_density_holds()) {
-        return fail("a city's area is no longer its houses' ground plus its "
-                    "market — the density law broke");
-    }
+    const bool ok21 = !(!city_density_holds());
+    CHECK(ok21, "a city's area is no longer its houses' ground plus its "
+                "market — the density law broke");
+    if (!ok21) return 1;
 
-    if (!run_footprint_formula_parity()) {
-        return fail("hoisting the footprint into sub/city_layout.h moved a "
-                    "VILLAGE wall (village_core_radius / village_wall_radius "
-                    "disagree with the literals gen_village used to carry)");
-    }
+    const bool ok22 = !(!run_footprint_formula_parity());
+    CHECK(ok22, "hoisting the footprint into sub/city_layout.h moved a "
+                "VILLAGE wall (village_core_radius / village_wall_radius "
+                "disagree with the literals gen_village used to carry)");
+    if (!ok22) return 1;
 
     std::printf("PASS city_population_inside_walls_test\n");
-    CHECK(true, "every gate above held");
     return sm::test::report("city_population_inside_walls_test");
 }

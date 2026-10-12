@@ -1826,7 +1826,8 @@ timaert_test(city_population_inside_walls_test
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
-    LINK_ENTT)
+    LINK_ENTT
+    PIN "OK city_population_inside_walls_test .45 checks.")
 # Particle-sim contract (FX Inc A): the transient-VFX pool is Vulkan-free by
 # design, so it links only particles.cpp + core and asserts every numeric
 # invariant of the sim (table, emit, lifecycle, physics, pack, determinism).
