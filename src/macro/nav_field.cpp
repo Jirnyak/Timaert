@@ -24,6 +24,18 @@ inline std::uint16_t quant16(float g) {
     return std::uint16_t(std::clamp(q, 0L, long(kNavUnreached) - 1L));
 }
 
+// ТОТ ЖЕ КВАНТ, ШИРОКАЯ ПОЛКА — для `distHome` (M-238). Кламп здесь СТРАЖ
+// области определения, а не кламп динамики: верхняя полка 2^32/16 единиц
+// недостижима путём по миру из 1024² клеток (вывод — в шапке колонки), и
+// отрицательная цена пути невыразима. `planes` остаётся u16 сознательно:
+// его предел — путь ВНУТРИ округи до портала, и он же умножен на кап слотов
+// портала, то есть широкая полка там стоила бы 23 МиБ за вопрос, которого
+// у плана нет.
+inline std::uint32_t quant32(float g) {
+    const long long q = std::llround(double(g) * 16.0);
+    return std::uint32_t(std::clamp(q, 0LL, (long long)(kNavFar) - 1LL));
+}
+
 inline float cell_weight_of(const PathCostData* pc, std::size_t idx) {
     return pc && idx < pc->costGrid.size() ? pc->costGrid[idx] : 1.0f;
 }
@@ -147,7 +159,7 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
 
     // ── Разбиение: одна мультиисточниковая Дейкстра по становимым ────────
     nv.regionOf.assign(cells, kNavNoRegion);
-    nv.distHome.assign(cells, kNavUnreached);
+    nv.distHome.assign(cells, kNavFar);
     nv.stepHome.assign(cells, kNavNoStep);
     std::vector<float> g(cells, 1e30f);
     BakeHeap heap;
@@ -175,7 +187,7 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
             if (ng >= g[n]) continue;
             g[n] = ng;
             nv.regionOf[n] = nv.regionOf[c];
-            nv.distHome[n] = quant16(ng);
+            nv.distHome[n] = quant32(ng);
             nv.stepHome[n] = std::uint8_t((d + 4) & 7);   // шаг назад к дому
             heap.push(ng, n);
         }
@@ -457,9 +469,13 @@ std::uint32_t nav_path_cost(const NavWorld& nv, int ax, int ay,
     const std::uint16_t ra = nav_region_at(nv, ax, ay);
     const std::uint16_t rb = nav_region_at(nv, bx, by);
     if (std::size_t(ra) >= R || std::size_t(rb) >= R) return kNavFar;
-    const std::uint16_t da = nv.distHome[nv.cell(ax, ay)];
-    const std::uint16_t db = nv.distHome[nv.cell(bx, by)];
-    if (da == kNavUnreached || db == kNavUnreached) return kNavFar;
+    // u32: локальные копии были `std::uint16_t` и СРЕЗАЛИ бы расширенное поле
+    // обратно — тот же немой кламп на уровень ниже. Назвал его компилятор
+    // (-Wtautological-constant-out-of-range-compare на сравнении с сентинелом),
+    // а не ревью, и это ровно то, зачем стоит -Werror.
+    const std::uint32_t da = nv.distHome[nv.cell(ax, ay)];
+    const std::uint32_t db = nv.distHome[nv.cell(bx, by)];
+    if (da == kNavFar || db == kNavFar) return kNavFar;
     if (ra == rb) return std::uint32_t(da) + std::uint32_t(db);
     const std::uint32_t mid = nv.routeDist[std::size_t(ra) * R + std::size_t(rb)];
     if (mid == kNavFar) return kNavFar;

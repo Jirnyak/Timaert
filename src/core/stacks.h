@@ -316,8 +316,10 @@ inline constexpr StackRow kStacks[] = {
     // ── НАВИГАЦИЯ ПО КЛЕТКЕ (macro/nav_field.h) ─────────────────────────
     {"навигация: округа клетки", "std::uint16_t", StackKind::ByCell, 2,
      kWorldCells},
-    {"навигация: цена до своего места", "std::uint16_t", StackKind::ByCell,
-     2, kWorldCells},
+    // u32, не u16: немой кламп на 4095.9 марш-единицы снят 2026-10-12
+    // (M-238) — вывод потолка стоит у самой колонки `distHome`.
+    {"навигация: цена до своего места", "std::uint32_t", StackKind::ByCell,
+     4, kWorldCells},
     {"навигация: шаг к своему месту", "std::uint8_t", StackKind::ByCell, 1,
      kWorldCells},
     // (Трёх колонок водного яруса — «чья вода», «цена до берега», «шаг к

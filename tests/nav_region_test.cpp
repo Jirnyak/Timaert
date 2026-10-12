@@ -368,7 +368,7 @@ int main() {
                     if (sm::nav_region_at(base.nav, x, y) != 0) continue;
                     const std::uint32_t dh =
                         base.nav.distHome[base.nav.cell(x, y)];
-                    if (dh == sm::kNavUnreached) continue;
+                    if (dh == sm::kNavFar) continue;
                     ++checked;
                     if (sm::nav_path_cost(base.nav, lx, ly, x, y) != dh) {
                         CHECK(false,
