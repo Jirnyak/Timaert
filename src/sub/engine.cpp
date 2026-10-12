@@ -2475,8 +2475,10 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     if (!active_ || !gs_) return false;
     int mcx = 0, mcy = 0;
     Structure victim{};
-    if (!mgr_.fell_prop_near(playerX_, playerY_, maxDist, mcx, mcy, &victim,
-                             onlyKind))
+    // ПРЕДЕЛ РУКИ — 3D (ЗАКОН ИЗОТРОПИИ): его высота едет третьим аргументом,
+    // иначе рубка срабатывала с любой высоты НАД деревом.
+    if (!mgr_.fell_prop_near(playerX_, playerY_, playerZ_, maxDist, mcx, mcy,
+                             &victim, onlyKind))
         return false;
     // The macro writeback, through THE ledger (macro/macro_stock.h) rather than
     // through a counter of its own: one tree gone in the subworld is one unit
@@ -4245,7 +4247,10 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // the next visit.
     int mcx = 0, mcy = 0;
     const Structure::Kind orbKind = Structure::SpireOrb;
-    mgr_.fell_prop_near(orb.x, orb.y, 4.0f, mcx, mcy, nullptr, &orbKind);
+    // Орб гасится ПО СВОЕМУ ЖЕ месту — вертикаль берётся его собственная,
+    // то есть промежуток ноль и радиус 4 м остаётся тем, чем был.
+    mgr_.fell_prop_near(orb.x, orb.y, orb.zBase, 4.0f, mcx, mcy, nullptr,
+                        &orbKind);
     // The world fact for every observer. The spell itself lands through
     // SpellLearned once the app layer resolves the ordinal — only content/
     // knows the registry, and this engine never will.

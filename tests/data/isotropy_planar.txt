@@ -1,0 +1,180 @@
+# ВЕДОМОСТЬ ПЛОСКИХ СУММ КВАДРАТОВ В src/sub — судья tests/isotropy_law_test.cpp.
+#
+# Формат: <класс> TAB <файл> TAB <пара операндов>. ОДНА СТРОКА НА ОДНО
+# ВХОЖДЕНИЕ: если в файле три одинаковых `kx/ky`, здесь три строки, и прибор
+# сверяет МУЛЬТИМНОЖЕСТВО. Номера строк НЕ хранятся — производное, не факт
+# (та же причина, что у arch_legacy.txt); прибор печатает их сам, когда ругается.
+#
+# Классы:
+#   природа — величина ПЛОСКАЯ ПО ПРИРОДЕ, и закон разрешает это дословно:
+#             «след стопы на земле (footprint), ходовой шаг по плоскости,
+#             радиус зоны на карте, сетка соседства». Сюда же по тому же
+#             предмету: генерация карты (решётка тайлов — её мир ДВУМЕРЕН),
+#             планарный ГРАДИЕНТ высоты (∂h/∂x и ∂h/∂y — это две производные,
+#             а не вертикаль), широкая фаза, заведомо консервативная к 3D-узкой
+#             (плоский круг — НАДмножество 3D-сферы, так что ни одна цель не
+#             теряется), и рендер (ЗАКОН ТУПИКА РЕНДЕРА: что ушло в рендер,
+#             поведением не становится);
+#   долг    — НАСТОЯЩЕЕ НАРУШЕНИЕ. Счёт долга пинится в CMakeLists и может
+#             ТОЛЬКО УБЫВАТЬ.
+#
+# СПИСОК УМЕЕТ ТОЛЬКО ТАЯТЬ. Новый сайт вне ведомости красит `check`; строка,
+# которой в дереве больше нет, красит его же. Дописывать сюда строку, чтобы
+# позеленело, — подгонка под тест (§8 ЗАКОН НУЛЕВОЙ п.4): «природа» есть
+# УТВЕРЖДЕНИЕ, что величина плоская по предмету, и оно обязано быть верным.
+#
+# Наполнено ЗАМЕРОМ 2026-10-12 (наряд M-256), не рукой: 79 сайтов, 57 ключей.
+# Каждый судился отдельно; группы объяснены комментарием над собой.
+
+# ── ДОЛГ: ПЯТЬ НАСТОЯЩИХ НАРУШЕНИЙ ───────────────────────────────────────
+# Шестое — `fell_prop_near@src/sub/seamless_manager.cpp` — ЗАКРЫТО в тот же
+# день (M-256): дверь рубки мерила предел руки в XY, то есть валила дерево с
+# любой высоты НАД ним и платила за это макро-записью (−1 дерево). Теперь
+# вертикаль считается до Z-ПРОЛЁТА пропа, и сайта в дереве больше нет.
+#
+# movement.cpp — ОБА `dx/dy` файла суть нарушения, и оба нуждаются в НОВОЙ
+# ПРОВОДКЕ, поэтому закрыты не этой сессией:
+#   · гейт ЗРЕНИЯ (`build_influence_field`, затравка цепи тревоги): масса
+#     врагов в 200 м НАД строем будит его как из-под ног. У носителя поля нет
+#     вертикали ВОВСЕ (`sumX/sumY`, `siteX/siteY`) — нужна колонка `siteZ`;
+#   · выбор ЦЕЛИ (`steer_bodies`, contact-скан): цель выбирается в плоскости,
+#     а вердикт досягаемости 119 строк ниже — УЖЕ 3D («Reach is judged in 3D»).
+#     Летун, чья тень ближе достижимого наземного врага, ПЕРЕБИВАЕТ его в
+#     выборе, и тело вечно игнорирует того, кого могло бы ударить. `u.z` в SoA
+#     есть — его роняют.
+долг	src/sub/movement.cpp	dx/dy
+долг	src/sub/movement.cpp	dx/dy
+# ai.cpp — радиус ПАНИКИ (`tick_npc_ai`, разум Flee): летящий игрок на любой
+# высоте пугает всякого зверя в 60 планарных метрах. Нужен параметр `playerZ`:
+# `tick_npc_ai(w, playerX, playerY, …)` вертикали не получает вовсе.
+долг	src/sub/ai.cpp	dx/dy
+# targeting.cpp — страж вырожденности конуса прицела взят на ПЛОСКОМ смещении,
+# тогда как пеленг, который он охраняет, трёхмерен. Цель ровно над головой или
+# под ногами (dx=dy=0, dz=50) проскакивает проверку конуса и принимается «перед
+# тобой» на любой дистанции внутри maxRange. Страж обязан стоять на 3D-`d2`,
+# который посчитан двумя строками выше.
+долг	src/sub/targeting.cpp	dx/dy
+# spell_effects.cpp — страж обратного прочёса от дула: он существует ровно
+# затем, чтобы снаряд, поставленный спавнером куда угодно, не прочесал отрезок
+# НАЗАД в своего владельца. Болт над владельцем имеет планарное смещение ≈ 0,
+# проходит страж и даёт ложный прочёс из центра владельца. Починка НЕ сводится
+# к `+dz*dz`: `prevZ` есть высота ДУЛА, а `op->z` — ступней, и бюджет обязан
+# учесть дверь высоты глаз (`slot_body_eye_m`).
+долг	src/sub/spell_effects.cpp	bx/by
+
+# ── ПРИРОДА: ВЕЛИЧИНА ПЛОСКАЯ ПО ПРЕДМЕТУ ────────────────────────────────
+# ability.h — ПРЕДСТАВЛЕНИЕ: интерполяция картинки между тиками. У `VisualPos`
+# третьей оси НЕ СУЩЕСТВУЕТ (`{vx, vy, speed}`), ронять нечего.
+природа	src/sub/ability.h	dx/dy
+# collide.cpp — СЛЕД СТОПЫ, дословная оговорка закона. Вертикаль у солидов
+# живёт ОТДЕЛЬНЫМ z-пролётом, и каждый запрос его спрашивает («LAYERING —
+# solids are z-SPANS, not footprints»): support_at(z1), blocked_at(z0,z1),
+# solid_at(z). `e.hx/e.hy` — радиус обёртки следа для bin-сетки.
+природа	src/sub/collide.cpp	dx/dy
+природа	src/sub/collide.cpp	e.hx/e.hy
+# map_data.h — `structure_surface_dist2`: расстояние до ПРЯМОУГОЛЬНИКА следа,
+# и шапка функции говорит о своей двумерности вслух. Её единственный
+# геймплейный звонящий (`aimed_prop`) добавляет `dz*dz` БЕЗУСЛОВНО — ветку по
+# роду снесли 2026-09-28, это и был шрам, купивший закон.
+природа	src/sub/map_data.h	qx/qy
+# engine.cpp — шесть `dx/dy` поимённо: `dist2` (единственный звонящий —
+# snprintf строки статуса HUD, пеленг и дальность; ни один гейт его не
+# читает), ходовой шаг «домой» и выбор ближайшей ДВЕРИ по следам,
+# РАДИУС ЗОНЫ НА КАРТЕ (дословная оговорка закона), конус КАМЕРНОГО РЫСКАНЬЯ
+# в `aim_score` («so pitch never loses a target at your feet» — дистанционный
+# гейт рядом 3D) и широкая фаза соседства спеллов (плоский круг —
+# надмножество 3D-сферы, узкая фаза 3D).
+природа	src/sub/engine.cpp	dx/dy
+природа	src/sub/engine.cpp	dx/dy
+природа	src/sub/engine.cpp	dx/dy
+природа	src/sub/engine.cpp	dx/dy
+природа	src/sub/engine.cpp	dx/dy
+природа	src/sub/engine.cpp	dx/dy
+# `d.intentVx/d.intentVy` — МОДУЛЬ ПЛАНАРНОГО ШАГА, которым мерится клетка
+# сетки соседства; `dx/dz` — отсечение эмиттера искр по камере (рендер/FX);
+# две `(a.wx-cx)/(a.wz-cz)` — ключ сортировки штампов рендера в плоскости XZ.
+# Последние три — ТУПИК РЕНДЕРА, поведением не становятся.
+природа	src/sub/engine.cpp	d.intentVx/d.intentVy
+природа	src/sub/engine.cpp	dx/dz
+природа	src/sub/engine.cpp	(a.wx-cx)/(a.wz-cz)
+природа	src/sub/engine.cpp	(b.wx-cx)/(b.wz-cz)
+# movement.cpp — СЕТКА СОСЕДСТВА и ПЛАНАРНЫЙ ШАГ, обе оговорки закона:
+# `ax/ay` — помощник `length2d` (все 12 звонящих — шаг/скорость/градиент;
+# толчок разделения ПО ЗАМЫСЛУ горизонтален и проверяет перекрытие колонн
+# отдельным вертикальным тестом), `ddx/ddy` и `ndx/ndy` — распространение по
+# клеткам поля влияния, `selfX/selfY` — «враг внутри одной клетки поля».
+природа	src/sub/movement.cpp	ax/ay
+природа	src/sub/movement.cpp	ddx/ddy
+природа	src/sub/movement.cpp	ndx/ndy
+природа	src/sub/movement.cpp	selfX/selfY
+# spawn.cpp — `TownShape::holds`: РАДИУС ЗОНЫ НА КАРТЕ (контур города по 256
+# пеленгам). Дословная оговорка закона.
+природа	src/sub/spawn.cpp	dx/dy
+# spell_effects.cpp — ШИРОКАЯ ФАЗА, и её консервативность доказана на месте
+# («Projection only shrinks distances»): радиус запроса считается по проекции
+# подметаемого отрезка/луча, узкая фаза ниже — 3D.
+природа	src/sub/spell_effects.cpp	segX/segY
+природа	src/sub/spell_effects.cpp	nx/ny
+# vk_renderer_3d.cpp — РЕНДЕР (ТУПИК): лестница LOD деревьев от центра окна и
+# плоскость наземной текстуры поля света. «Представление, никогда поведение».
+природа	src/sub/vk_renderer_3d.cpp	dxM/dzM
+природа	src/sub/vk_renderer_3d.cpp	ddx/ddz
+# base_generator.cpp — ГЕНЕРАЦИЯ КАРТЫ: подтяг плато и зачистка под город
+# (радиус зоны); `gxs/gys` — ПЛАНАРНЫЙ ГРАДИЕНТ высоты (∂h/∂x, ∂h/∂y), то
+# есть две производные, а не вертикальная ось.
+природа	src/sub/base_generator.cpp	dx/dy
+природа	src/sub/base_generator.cpp	dx/dy
+природа	src/sub/base_generator.cpp	gxs/gys
+# ── ГЕНЕРАЦИЯ И РАСКЛАДКА: МИР РЕШЁТКИ ТАЙЛОВ ДВУМЕРЕН ПО ПОСТРОЕНИЮ ──────
+# Всё ниже — gens/ и dgn/: стены, ворота, кварталы, улицы, дороги, мосты,
+# поляны, руины, шпили, палисады, пещеры. Сюда же планарные градиенты высоты
+# (`dh/dv` в growth.cpp, `(hR-hL)/(hU-hD)` в mountain.cpp), эвристика A* по
+# решётке (streets.cpp) и габариты плана (`w/d`, `w/h` в plots.cpp).
+природа	src/sub/gens/city.cpp	dx/dy
+природа	src/sub/gens/city_wall.cpp	dx/dy
+природа	src/sub/gens/city_wall.cpp	dx/dy
+природа	src/sub/gens/city_wall.cpp	ddx/ddy
+природа	src/sub/gens/city_wall.cpp	ddx/ddy
+природа	src/sub/gens/city_wall.cpp	ax/ay
+природа	src/sub/gens/city_wall.cpp	bx/by
+природа	src/sub/gens/field.cpp	(gx-cx)/(gy-cy)
+природа	src/sub/gens/field.cpp	gxs/gys
+природа	src/sub/gens/forest.cpp	dx/dy
+природа	src/sub/gens/forest.cpp	dx/dy
+природа	src/sub/gens/mountain.cpp	(hR-hL)/(hU-hD)
+природа	src/sub/gens/road.cpp	dx/dy
+природа	src/sub/gens/road.cpp	ddx/ddy
+природа	src/sub/gens/road.cpp	lx/ly
+природа	src/sub/gens/ruin.cpp	dx/dy
+природа	src/sub/gens/ruin.cpp	ddx/ddy
+природа	src/sub/gens/spire.cpp	dx/dy
+природа	src/sub/gens/spire.cpp	dx/dy
+природа	src/sub/gens/spire.cpp	dx/dy
+природа	src/sub/gens/spire.cpp	dx/dy
+природа	src/sub/gens/village_palisade.cpp	dx/dy
+природа	src/sub/gens/village_palisade.cpp	dx/dy
+природа	src/sub/gens/village_palisade.cpp	ddx/ddy
+природа	src/sub/gens/village_palisade.cpp	(px[1]-px[0])/(py[1]-py[0])
+природа	src/sub/gens/kit/growth.cpp	dx/dy
+природа	src/sub/gens/kit/growth.cpp	dx/dy
+природа	src/sub/gens/kit/growth.cpp	dh/dv
+природа	src/sub/gens/kit/lanes.cpp	dx/dy
+природа	src/sub/gens/kit/lanes.cpp	dx/dy
+природа	src/sub/gens/kit/lanes.cpp	dx/dy
+природа	src/sub/gens/kit/lanes.cpp	dx/dy
+природа	src/sub/gens/kit/outline.h	dx/dy
+природа	src/sub/gens/kit/plots.cpp	dx/dy
+природа	src/sub/gens/kit/plots.cpp	kx/ky
+природа	src/sub/gens/kit/plots.cpp	kx/ky
+природа	src/sub/gens/kit/plots.cpp	kx/ky
+природа	src/sub/gens/kit/plots.cpp	w/d
+природа	src/sub/gens/kit/plots.cpp	w/d
+природа	src/sub/gens/kit/plots.cpp	w/h
+природа	src/sub/gens/kit/streets.cpp	dx/dy
+природа	src/sub/gens/kit/streets.cpp	dx/dy
+природа	src/sub/gens/kit/streets.cpp	fdx/fdy
+природа	src/sub/gens/kit/streets.cpp	ox/oy
+природа	src/sub/dgn/cave.cpp	dx/dy
+природа	src/sub/dgn/cave.cpp	dx/dy
+природа	src/sub/dgn/spire_tower.cpp	dx/dy
+природа	src/sub/dgn/spire_tower.cpp	dx/dy

@@ -184,7 +184,15 @@ public:
     // macro ledger (the micro → macro writeback) — and, optionally, a copy
     // of the record that fell, so the caller can pay out by what the prop
     // actually WAS (its metric height) instead of a flat per-swing constant.
-    bool fell_prop_near(float x, float y, float maxDist,
+    // `z` — ВЫСОТА ТОГО, КТО ТЯНЕТСЯ: предел руки есть 3D-величина (AGENTS,
+    // ЗАКОН ИЗОТРОПИИ п.1), и мерить его в плоскости XY значило бы валить
+    // дерево с пятидесяти метров над ним — тот же дефект, что «E войти в
+    // дверь» у `aimed_prop` 2026-09-28, воспроизведённый в двери рубки.
+    // Вертикаль считается до Z-ПРОЛЁТА пропа, а не до точки: проп есть
+    // z-span (`zBase`…`zBase+height`), ровно как у `StructureIndex`
+    // («solids are z-SPANS, not footprints»), поэтому до ствола дотянуться
+    // можно на любой его высоте, а до вершины издалека — нельзя.
+    bool fell_prop_near(float x, float y, float z, float maxDist,
                         int& outMacroCx, int& outMacroCy,
                         Structure* outFelled = nullptr,
                         const Structure::Kind* onlyKind = nullptr);

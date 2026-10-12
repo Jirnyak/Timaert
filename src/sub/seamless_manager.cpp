@@ -467,7 +467,8 @@ void SeamlessSubworldManager::rebuild_composite_structures() {
     }
 }
 
-bool SeamlessSubworldManager::fell_prop_near(float x, float y, float maxDist,
+bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
+                                             float maxDist,
                                              int& outMacroCx, int& outMacroCy,
                                              Structure* outFelled,
                                              const Structure::Kind* onlyKind) {
@@ -484,7 +485,17 @@ bool SeamlessSubworldManager::fell_prop_near(float x, float y, float maxDist,
         if (!onlyKind && !structure_is_lootable(s.kind)) continue;
         if (onlyKind && s.kind != *onlyKind) continue;
         const float dx = s.x - x, dy = s.y - y;
-        const float d2 = dx * dx + dy * dy;
+        // ТРЕТЬЯ ОСЬ — ДО Z-ПРОЛЁТА ПРОПА, А НЕ ДО ТОЧКИ (ЗАКОН ИЗОТРОПИИ).
+        // Внутри пролёта вертикального промежутка нет: ствол десятиметрового
+        // дерева достаётся на любой своей высоте. `height` бывает
+        // ОТРИЦАТЕЛЬНОЙ (ветхость, map_factory.h), поэтому пролёт берётся
+        // неотрицательным — иначе верх оказался бы НИЖЕ низа и промежуток
+        // соврал бы в сторону недосягаемости.
+        const float spanTop = s.zBase + std::max(0.0f, s.height);
+        const float dz = z < s.zBase ? s.zBase - z
+                       : z > spanTop ? z - spanTop
+                                     : 0.0f;
+        const float d2 = dx * dx + dy * dy + dz * dz;
         if (d2 <= bestD2) { bestD2 = d2; best = int(i); }
     }
     if (best < 0) return false;
