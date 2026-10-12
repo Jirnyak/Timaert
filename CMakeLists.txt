@@ -779,7 +779,8 @@ timaert_test(combat_squad_test
         # one solidity authority linked, exactly as the game does.
         src/sub/collide.cpp
         src/macro/fauna.cpp
-    LINK_ENTT)
+    LINK_ENTT
+    PIN "OK combat_squad_test .24 checks.")
 
 # The melee reach law: range + body_radius(target), hostiles-first by surface
 # gap, grid-arm/full-scan parity. Pure targeting TU — the body table it reads
