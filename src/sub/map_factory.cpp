@@ -41,46 +41,21 @@ SavedSubworld snapshot_subworld(std::uint32_t seed, SubworldMode mode,
     SavedSubworld out;
     out.seed = seed;
     out.mode = mode;
-    out.heightmap.resize(src.heightmap.size());
-    // The quantiser's ceiling: peaks legitimately exceed 1.0, so the 16-bit
-    // range has to cover more than the unit interval or a saved mountain
-    // comes back with its top sawn off.
-    //
-    // WHAT BOUNDS A PEAK TODAY (`apply_mountain_ridges`, which the derivation
-    // here used to name, has not existed for a long time): the crest target
-    // is clamped to 1.04 (base_generator.h skeleton_cell_peak01) and the
-    // ridge pass runs it through soft_compress_peak (base_generator.cpp),
-    // whose excess term saturates at +0.20 — so the live ceiling is 1.20.
-    // 2.5 is therefore ~2× headroom over it, deliberately loose because the
-    // cost of slack is quantiser resolution (2.5 / 65535 ≈ 4e-5 of the unit
-    // range, invisible) and the cost of tightness is a clipped summit.
-    // Number unchanged; only its derivation is now true.
-    constexpr float kHmaxQuant = 2.5f;
-    for (std::size_t i = 0; i < src.heightmap.size(); ++i) {
-        float v = std::clamp(src.heightmap[i] / kHmaxQuant, 0.0f, 1.0f);
-        out.heightmap[i] = std::uint16_t(v * 65535.0f + 0.5f);
-    }
+    // (ЗДЕСЬ СТОЯЛ КВАНТОВАТЕЛЬ РЕЛЬЕФА — 2 МиБ на клетку и целый абзац
+    // вывода про потолок 2.5. Снесён 2026-10-12, M-262: игра рельеф сцены не
+    // мутирует, значит снимок был лосси-копией детерминированной функции, то
+    // есть вторым ответом на вопрос мира. Полный разбор с числами —
+    // `SavedSubworld@src/sub/map_factory.h`.)
     out.structures = src.structures;
     return out;
 }
 
 void restore_into(const SavedSubworld& saved, SubworldMapData& fresh) {
-    // Restore heightmap if sizes match. A mismatch means the saved relief
-    // CANNOT be applied — the fresh generation stands — and that refusal is
-    // said out loud (CANON S26): a save that quietly loses the player's
-    // remembered ground is a save nobody can debug.
-    if (saved.heightmap.size() == fresh.heightmap.size()) {
-        constexpr float kHmaxQuant = 2.5f;
-        for (std::size_t i = 0; i < saved.heightmap.size(); ++i) {
-            fresh.heightmap[i] = float(saved.heightmap[i]) / 65535.0f * kHmaxQuant;
-        }
-    } else {
-        std::fprintf(stderr,
-                     "[map_factory] saved heightmap size %zu != fresh %zu "
-                     "(seed 0x%08X) — saved relief NOT restored\n",
-                     saved.heightmap.size(), fresh.heightmap.size(),
-                     saved.seed);
-    }
+    // (ЗДЕСЬ ВОССТАНАВЛИВАЛСЯ РЕЛЬЕФ — и вместе с ним стоял громкий отказ на
+    // несовпадение длин. Оба снесены 2026-10-12, M-262: свежая генерация из
+    // того же сида И ЕСТЬ рельеф этой клетки, а восстановление из кванта
+    // возвращало его с ошибкой 3.8e-5 на единицу поля. Отказ при этом
+    // охранял форму, которой больше нет.)
 
     // Group structures by kind on both sides — EVERY kind the prop table
     // knows. This used to be a literal 5 (Tree/Rock/House/Wall/Bridge), so

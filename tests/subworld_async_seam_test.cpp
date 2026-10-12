@@ -304,14 +304,23 @@ void run_snapshot_during_pending_case() {
 void run_worker_restore_saved_case() {
     sm::sub::clear_saved_subworlds();
 
-    constexpr float kSavedHeight = 0.73f;
+    // ЗДЕСЬ СТОЯЛА ПОЛОВИНА ПРО РЕЛЬЕФ, И ОНА УШЛА ВМЕСТЕ С МЕХАНИКОЙ
+    // (M-262, 2026-10-12, §5 п.6 «снимая механику, ищи, чьим носителем она
+    // была в тестах»). Свидетель наполнял снимок РОВНЫМ рельефом 0.73 и ждал
+    // его обратно через квант 2.5/65535 — то есть охранял не закон мира, а
+    // САМ КВАНТОВАТЕЛЬ: ровного поля генератор не рождает, и ровно потому
+    // фикстуре приходилось его подделывать. Закон мира тут обратный, и он
+    // записан в самом движке: «an interior re-derives byte-identically from
+    // its identity», а «the overworld cache carries felled trees» — то есть
+    // СТРУКТУРЫ (`src/sub/engine.cpp`, у зова `snapshot_all_to_cache`).
+    // Рельеф сцена не мутирует вовсе (`fell_prop_near@src/sub/seamless_manager.cpp`:
+    // «heights did not»), значит снимок его и не несёт. Живая половина —
+    // ниже: вернувшаяся клетка обязана принести СОХРАНЁННЫЙ ПРОП.
     constexpr float kSavedBridgeX = 123.25f;
     constexpr float kSavedBridgeY = 277.5f;
     constexpr float kSavedBridgeRadius = 9.0f;
     constexpr float kSavedBridgeHeight = 3.5f;
     sm::sub::SubworldMapData savedMap;
-    savedMap.heightmap.assign(
-        std::size_t(sm::sub::kCellSize) * sm::sub::kCellSize, kSavedHeight);
     savedMap.structures.push_back(sm::sub::Structure{
         sm::sub::Structure::Bridge,
         kSavedBridgeX,
@@ -339,35 +348,32 @@ void run_worker_restore_saved_case() {
             return;
         }
 
-        const float expected = float(std::lround((kSavedHeight / 2.5f) * 65535.0f))
-            / 65535.0f * 2.5f;
         const float expectedBridgeX = float(sm::sub::kCellSize * 2) + kSavedBridgeX;
         const float expectedBridgeY = float(sm::sub::kCellSize) + kSavedBridgeY;
-        bool restored = false;
         bool restoredStructure = false;
         for (int i = 0; i < 500; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             mgr.check_boundary(playerX, playerY);
             mgr.consume_composite_dirty();
-            const std::size_t idx = sm::sub::tile_index(sampleX, sampleY);
-            if (idx < mgr.heightmap().size()
-                && std::fabs(mgr.heightmap()[idx] - expected) < 0.0001f) {
-                restored = true;
-            }
             restoredStructure = has_structure(mgr,
                 sm::sub::Structure::Bridge,
                 expectedBridgeX,
                 expectedBridgeY,
                 kSavedBridgeRadius,
                 -kSavedBridgeHeight);
-            if (restored && restoredStructure) {
-                break;
-            }
+            if (restoredStructure) break;
         }
-        CHECK_OR_RETURN(restored,
-                        "worker generation did not restore saved heightmap");
         CHECK_OR_RETURN(restoredStructure,
                         "worker generation did not restore saved structure");
+        // НЕГАТИВНЫЙ КОНТРОЛЬ ПОЛОВИНЫ, КОТОРАЯ УМЕРЛА: клетка, вернувшаяся
+        // из кэша, обязана нести рельеф СВЕЖЕЙ ГЕНЕРАЦИИ, а не ровную
+        // подделку. Ровного поля генератор не рождает, поэтому проверка
+        // «высота в точке не равна подставленной 0.73» краснеет ровно тогда,
+        // когда кто-нибудь вернёт восстановление рельефа из снимка.
+        const std::size_t probe = sm::sub::tile_index(sampleX, sampleY);
+        CHECK(probe < mgr.heightmap().size()
+                  && std::fabs(mgr.heightmap()[probe] - 0.73f) > 0.0001f,
+              "рельеф вернувшейся клетки — свежая генерация, а не снимок");
 
         mgr.snapshot_all_to_cache();
     }
