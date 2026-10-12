@@ -26,7 +26,6 @@
 #include "tables/npc.h"         // каталог: строка существа — цена найма, содержание, награда
 #include "tables/spells.h"      // каталог: строка спелла — что делает каст новичка
 #include "tables/items.h"       // каталог: строки предметов, ItemRef — что ХРАНИТ контейнер ниже
-#include "tables/role_weights.h" // каталог: веса ролей — куда строка тратит бюджет анкеты
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -1087,7 +1086,10 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     cs.levelData.skillPoints     = (level - 1);
     cs.levelData.perkPoints      = 5 + (level - 1);
 
-    const RoleWeights& w = role_weights(role);
+    // Веса роли — КОЛОНКИ строки каталога (M-263, 2026-10-12): таблицы
+    // `kRoleWeights` по тому же ординалу больше нет.
+    const AttrWeights&  attrW  = npc_attr_weights(role);
+    const SkillWeights& skillW = npc_skill_weights(role);
     // TWO streams, and LEVEL is in NEITHER seed — this is what makes a
     // levelling leader's sheet MONOTONIC: the level-N sheet is the level-N-1
     // sheet plus exactly one more attribute pick and one more skill pick
@@ -1102,7 +1104,7 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
         csheet_detail::mix32(seed, std::uint32_t(role), 0x5C11u)};
 
     while (cs.levelData.attributePoints > 0) {
-        const int pick = csheet_detail::weighted_pick(w.attr.w, attrRng.next());
+        const int pick = csheet_detail::weighted_pick(attrW.w, attrRng.next());
         if (!spend_attribute_point(cs.levelData, cs.attributes,
                                    AttributeId(std::uint8_t(pick))))
             break; // safety net; the loop guard already prevents this
@@ -1115,13 +1117,13 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
         bool learned = false;
         for (int attempt = 0; attempt < 16 && !learned; ++attempt) {
             const int pick =
-                csheet_detail::weighted_pick(w.skill.w, skillRng.next());
+                csheet_detail::weighted_pick(skillW.w, skillRng.next());
             learned = spend_learn_pick(cs.levelData, cs.skills,
                                        SkillId(std::uint8_t(pick)));
         }
         if (learned) continue;
         for (int i = 0; i < int(SkillId::Count) && !learned; ++i)
-            if (w.skill[std::size_t(i)] > 0)
+            if (skillW[std::size_t(i)] > 0)
                 learned = spend_learn_pick(cs.levelData, cs.skills,
                                            SkillId(std::uint8_t(i)));
         if (!learned) break;   // fewer than 5 weighted skills in the row
@@ -1133,8 +1135,8 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
         for (int i = 0; i < int(SkillId::Count); ++i)
             if (cs.skills.rank[std::size_t(i)] > 0
                 && cs.skills.rank[std::size_t(i)] < kMaxSkillRank)
-                known[std::size_t(i)] = w.skill[std::size_t(i)] > 0
-                                            ? w.skill[std::size_t(i)] : 1;
+                known[std::size_t(i)] = skillW[std::size_t(i)] > 0
+                                            ? skillW[std::size_t(i)] : 1;
         const int pick = csheet_detail::weighted_pick(known, skillRng.next());
         if (!spend_skill_point(cs.levelData, cs.skills,
                                SkillId(std::uint8_t(pick))))

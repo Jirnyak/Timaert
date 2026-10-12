@@ -10,6 +10,7 @@
 #pragma once
 #include <array>
 #include "core/table_guard.h"
+#include "tables/attributes.h"   // AttrWeights/SkillWeights — колонки весов роли (M-263)
 #include "tables/army.h"        // CombatTemplate — боевой лист строки существа
 #include "tables/behaviour.h"
 #include "tables/body_parts.h"  // SlotMask — какие слоты экипировки у тела этой строки
@@ -351,6 +352,44 @@ struct NpcTypeDef {
     // блока, и мир считал их зверьём.
     NpcNature nature = NpcNature::Human;
 
+    // ИМЕНОВАННОСТЬ — СУБЪЕКТНОСТЬ РОДА (вердикт владельца 2026-09-10): у
+    // именованного рода КАЖДЫЙ экземпляр ВЛАДЕЕТ своим листом — он рождается
+    // с телом, качается на месте и едет в сейве, «он как игрок». Массовка
+    // (ротационные профессии, корованы — «они уничтожаются своим
+    // ландмарком») выводит генерик-лист из строки на месте и не хранит
+    // ничего. Дверь, говорящая этот раздел, — `sheet_of@src/macro/squad.h`.
+    //
+    // ЗДЕСЬ БЫЛА ТАБЛИЦА-СПУТНИК `kNamedKinds` ПО ТОМУ ЖЕ КЛЮЧУ, И ЕЁ
+    // СОБСТВЕННОЕ ОБОСНОВАНИЕ УМЕРЛО 2026-09-22 (M-263, влита 2026-10-12).
+    // Текст над ней говорил: стоит рядом со строками «only because the rows
+    // are positional aggregates and a trailing opt-in bool would cost every
+    // named row the whole light/haul/armor tail spelled by hand». Ровно тот
+    // ход, который влил ТРИ других спутника (`kNpcNature`/`kNpcPurse`/
+    // `kNpcMapColor`), перевёл строки на ИМЕНОВАННЫЕ поля и снёс это
+    // препятствие — а довод остался стоять и читался как живой. Вопрос
+    // владельца, дословно: «а почему обе таблицы? где единая таблица
+    // объектов? не пон».
+    bool named = false;
+
+    // ── ВЕСА РОЛИ: КУДА ЭТА СТРОКА ТРАТИТ БЮДЖЕТ АНКЕТЫ ─────────────────
+    // Второй и ПОСЛЕДНИЙ спутник по ключу `NPCType`, влитый 2026-10-12
+    // (M-263, вопрос владельца: «а почему обе таблицы? где единая таблица
+    // объектов? не пон»). Таблица `kRoleWeights` жила отдельным файлом не по
+    // замыслу, а по истории: слияние анкеты вынесло её из
+    // `macro/character_sheet.h` в `tables/` и не довело до строки. Читатель у
+    // неё в продакшене был ОДИН (`make_character_sheet@src/macro/anketa.h`), а
+    // ключ — тот же ординал, то есть ровно «у двух таблиц один и тот же ключ»
+    // (DOD п.9). Со слиянием исчез и её страж порядка `rows_in_enum_order`:
+    // расходиться стало НЕЧЕМУ — колонка И ЕСТЬ строка.
+    //
+    // Веса ОТНОСИТЕЛЬНЫ: бюджет уровня раскладывается по ним, поэтому важны
+    // только отношения, не величины. Полный набор обязателен у обеих колонок
+    // (`role_attrs`/`role_skills` в `tables/attributes.h` — неполный набор
+    // НЕСОБИРАЕМ, M-251); пустые веса законны и означают «этот род о навыках
+    // думает ноль» — дверь генерации выходит из обучения сама.
+    AttrWeights  attrWeights{};
+    SkillWeights skillWeights{};
+
     // СКОЛЬКО ЕСТ В ДЕНЬ, в единицах голодной строки — ровно та же единица,
     // что у населения (econ_day.h kNeeds: 1 = один житель-день), поэтому
     // счёт контейнера и счёт населения складываются без переводного
@@ -393,32 +432,6 @@ struct NpcTypeDef {
     // одну строку здесь и НОЛЬ правок в сорока шести рядах, а строка
     // называет только своё. Три спутника влиты выше.
 };
-
-// ── «ИМЕНОВАННОСТЬ» — субъектность рода (owner verdict 2026-09-10) ─────────
-// The MMORPG model: a NAMED kind's every individual OWNS his character sheet
-// — an ecs::CharacterSheet component born with the body (make_npc), levelled
-// in place and ridden by the save — «он как игрок». A transient crew
-// (rotation professions, caravans — «они уничтожаются своим ландмарком»)
-// derives its generic sheet from its row on the spot and stores nothing.
-// The door that speaks this split is sheet_of (macro/squad.h).
-//
-// A TABLE, not an engine branch: adding a named kind is one line here. It
-// sits beside the rows instead of being a NpcTypeDef column only because
-// the rows are positional aggregates and a trailing opt-in bool would cost
-// every named row the whole light/haul/armor tail spelled by hand.
-inline constexpr NPCType kNamedKinds[] = {
-    NPCType::Merchant,     // торговец-одиночка
-    NPCType::Bandit,       // вожак банды — банда не растворяется ландмарком
-    NPCType::Witch,        // фигуры, не массовка
-    NPCType::Sorceress,
-    NPCType::Adventurer,   // герой/игрок (его лист приедет посадкой Б)
-};
-inline constexpr bool npc_named(NPCType t) {
-    for (const NPCType k : kNamedKinds) {
-        if (k == t) return true;
-    }
-    return false;
-}
 
 // Humanoid cooldowns are authored ON THE MASS CURVE (anatomy.h
 // weapon_swing_seconds, owner 2026-09-07): a humanoid's natural attack IS an
@@ -523,6 +536,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // the price column at the row's end: upkeep 1 × 30 days.
         .hireGold = 30,
         .nature = NpcNature::Human,
+        .attrWeights = role_attrs(3, 3, 1, 1, 1, 1, 1, 2),
+        .skillWeights = role_skills(0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xDCC8A0u,
         .habitat = kHabTown,
     },
@@ -548,6 +563,9 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Business has been slow. Perhaps you need something?"}},
         .talkCount = 4,
         .nature = NpcNature::Human,
+        .named = true,   // торговец-одиночка
+        .attrWeights = role_attrs(1, 2, 2, 1, 1, 3, 4, 3),
+        .skillWeights = role_skills(0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,1,0,2, 2,0,0, 4, 0, 0,0,0,0),
         .mapColor = 0xF0C850u,
     },
 
@@ -571,6 +589,9 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "The strong survive. The weak feed us."}},
         .talkCount = 4,
         .nature = NpcNature::Human,
+        .named = true,   // вожак банды — банда не растворяется ландмарком
+        .attrWeights = role_attrs(4, 3, 1, 1, 3, 2, 1, 1),
+        .skillWeights = role_skills(2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2, 0, 0, 0,0,0,0),
         .mapColor = 0xDC3C3Cu,
     },
 
@@ -628,6 +649,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // The price column: upkeep 3 × 30 days.
         .hireGold = 90,
         .nature = NpcNature::Human,
+        .attrWeights = role_attrs(4, 4, 1, 1, 2, 1, 2, 2),
+        .skillWeights = role_skills(3,0,2,1,0,0,0, 3,0,0,3, 0,0,0,0,0,0, 2,0, 3,0,2,1,1, 1,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0x508CDCu,
         .habitat = kHabTown,
     },
@@ -653,6 +676,9 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "The forest knows all. Listen carefully."}},
         .talkCount = 4,
         .nature = NpcNature::Human,
+        .named = true,   // фигуры, не массовка
+        .attrWeights = role_attrs(1, 2, 4, 4, 1, 2, 2, 3),
+        .skillWeights = role_skills(0,0,0,0,1,0,2, 0,0,2,0, 2,2,0,2,0,1, 0,4, 0,4,1,1,0, 1,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xB464C8u,
     },
 
@@ -676,6 +702,9 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Power has a price. Are you willing to pay?"}},
         .talkCount = 4,
         .nature = NpcNature::Human,
+        .named = true,
+        .attrWeights = role_attrs(1, 2, 5, 4, 1, 3, 3, 3),
+        .skillWeights = role_skills(0,0,0,0,0,0,2, 0,1,2,0, 3,0,2,0,3,2, 0,5, 0,4,1,1,0, 1,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0x78C8E6u,
     },
 
@@ -699,6 +728,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(1, 4, 1, 1, 5, 3, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 0,0, 1,0,3,5,0, 2,3,2, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe) | hab(Taiga)
                           | hab(Tundra) | hab(Snow) | kHabForest,
@@ -725,6 +756,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(2, 4, 1, 1, 5, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,3,5,0, 2,2,2, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
                           | hab(Tropics) | hab(Taiga) | kHabForest,
@@ -751,6 +784,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(2, 3, 2, 1, 4, 3, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,4,0, 2,1,3, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
                           | hab(Taiga) | hab(Tundra) | kHabForest,
@@ -777,6 +812,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(4, 3, 1, 1, 4, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 4,0, 2,0,2,3,0, 2,0,3, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Taiga)
                           | hab(Tundra) | hab(Snow) | hab(Mountain)
@@ -804,6 +841,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(5, 5, 1, 1, 2, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,1, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Taiga) | kHabForest,
         .wildFaction = "wildlife",
@@ -829,6 +868,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(4, 4, 1, 1, 3, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 4,0,1,2,0, 1,0,1, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
                           | hab(Tropics) | kHabForest,
@@ -855,6 +896,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(3, 2, 1, 1, 3, 3, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 4,0, 1,0,1,2,0, 1,0,1, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Desert) | hab(Steppe) | hab(Swamp)
                           | hab(Tropics) | kHabRuin,
@@ -883,6 +926,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(2, 3, 2, 1, 5, 3, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,5,0, 2,0,3, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Desert)
                           | hab(Steppe),
@@ -909,6 +954,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(1, 3, 1, 1, 3, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,2,3,0, 1,3,0, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Swamp),
         .wildFaction = "wildlife",
@@ -934,6 +981,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.7f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(2, 4, 1, 1, 4, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Mountain),
         .wildFaction = "wildlife",
@@ -960,6 +1009,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(2, 3, 2, 1, 5, 3, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 3,0, 1,0,2,5,0, 2,0,3, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Mountain),
         .wildFaction = "wildlife",
@@ -985,6 +1036,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(4, 4, 1, 1, 2, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 4,0,1,1,0, 1,0,1, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Swamp) | hab(Tropics),
         .wildFaction = "wildlife",
@@ -1009,6 +1062,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(3, 3, 2, 1, 3, 2, 1, 1),
+        .skillWeights = role_skills(0,0,1,0,2,1,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 2,0,2,3,1, 2,0,1, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = kHabForest | kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1033,6 +1088,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(3, 4, 1, 1, 2, 1, 1, 1),
+        .skillWeights = role_skills(2,0,1,0,0,0,0, 1,0,1,1, 0,0,0,0,0,0, 3,0, 3,0,1,1,0, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1057,6 +1114,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(5, 5, 1, 1, 1, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1081,6 +1140,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(4, 4, 1, 2, 1, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,3,0, 0,2,0,1,0,0, 3,1, 4,1,1,1,0, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Swamp),
         .wildFaction = "demons",
@@ -1105,6 +1166,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(3, 3, 3, 4, 3, 2, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,3,1,0,0,2, 1,3, 1,3,1,3,0, 1,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Tundra) | hab(Snow) | kHabSpire,
         .wildFaction = "demons",
@@ -1130,6 +1193,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(3, 3, 1, 1, 3, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 2,0,1, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Desert),
         .wildFaction = "demons",
@@ -1154,6 +1219,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(5, 5, 1, 1, 1, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 3,0, 5,0,1,1,0, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Mountain) | kHabSpire,
         .wildFaction = "demons",
@@ -1181,6 +1248,9 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Human,
+        .named = true,   // герой/игрок
+        .attrWeights = role_attrs(2, 2, 2, 2, 2, 2, 2, 2),
+        .skillWeights = role_skills(1,1,1,1,1,1,1, 1,1,1,1, 1,1,1,1,1,1, 1,1, 1,1,1,1,1, 1,1,1, 1, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
     },
 
@@ -1205,6 +1275,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 3,
         .hireGold = 30,
         .nature = NpcNature::Human,
+        .attrWeights = role_attrs(2, 3, 2, 2, 3, 1, 2, 2),
+        .skillWeights = role_skills(0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 3,0,0, 2, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
     },
 
@@ -1234,6 +1306,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Down. Stay down and it goes easier."}},
         .talkCount = 3,
         .nature = NpcNature::Human,
+        .attrWeights = role_attrs(4, 3, 1, 1, 3, 2, 1, 1),
+        .skillWeights = role_skills(2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2, 0, 0, 0,0,0,0),
         .mapColor = 0xDC3C3Cu,
     },
 
@@ -1262,6 +1336,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(8, 6, 4, 5, 3, 2, 1, 4),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,0,0, 0,0,0,0,0,0, 0,0, 0,0,0,0,0, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xB03030u,
     },
 
@@ -1317,6 +1393,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(1, 3, 1, 1, 5, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 1,0,0,4,0, 0,2,2, 0, 0, 0,0,0,0),
         .mapColor = 0x6A5A4Au,
         .habitat = kHabRuin | hab(Mountain),
         .wildFaction = "wildlife",
@@ -1347,6 +1425,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(1, 2, 1, 1, 6, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,0,5,0, 0,3,3, 0, 0, 0,0,0,0),
         .mapColor = 0x4A4048u,
         .habitat = kHabRuin | hab(Mountain),
         .wildFaction = "wildlife",
@@ -1376,6 +1456,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Sharp! Sharp and quick!"}},
         .talkCount = 3,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(2, 2, 2, 1, 4, 3, 1, 1),
+        .skillWeights = role_skills(0,0,1,0,2,0,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 1,0,1,3,0, 1,2,2, 0, 0, 0,0,0,0),
         .mapColor = 0x8A6A3Au,
         .habitat = kHabRuin | kHabForest | hab(Mountain),
         .wildFaction = "demons",
@@ -1403,6 +1485,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(3, 3, 1, 1, 4, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 0,2,1, 0, 0, 0,0,0,0),
         .mapColor = 0x2A2A3Au,
         .habitat = kHabRuin | kHabForest | hab(Mountain),
         .wildFaction = "wildlife",
@@ -1429,6 +1513,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(2, 2, 3, 2, 5, 3, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 3,0,0,0,0,0, 1,2, 1,0,0,4,0, 0,3,1, 0, 0, 0,0,0,0),
         .mapColor = 0xA03050u,
         .habitat = kHabSpire | kHabRuin,
         .wildFaction = "demons",
@@ -1456,6 +1542,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(4, 5, 1, 1, 1, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 3,0, 5,0,1,0,1, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0x6A7A5Au,
         .habitat = kHabRuin | kHabSpire | hab(Swamp),
         .wildFaction = "demons",
@@ -1485,6 +1573,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Come on then. Come on!"}},
         .talkCount = 3,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(4, 4, 1, 2, 3, 2, 1, 1),
+        .skillWeights = role_skills(1,3,0,0,0,0,0, 2,0,1,0, 0,0,0,0,0,0, 3,0, 3,0,2,2,0, 1,0,1, 0, 0, 0,0,0,0),
         .mapColor = 0x5A7A4Au,
         .habitat = kHabForest | kHabRuin | hab(Steppe) | hab(Valley),
         .wildFaction = "demons",
@@ -1512,6 +1602,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(3, 3, 1, 1, 4, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,1,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 0,2,1, 0, 0, 0,0,0,0),
         .mapColor = 0x9A8A7Au,
         .habitat = kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1539,6 +1631,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(2, 3, 1, 2, 5, 3, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 1,0,0,5,0, 0,3,2, 0, 0, 0,0,0,0),
         .mapColor = 0xB07850u,
         .habitat = kHabSpire | hab(Mountain),
         .wildFaction = "demons",
@@ -1569,6 +1663,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Kneel, and it will be quick."}},
         .talkCount = 3,
         .nature = NpcNature::Human,
+        .attrWeights = role_attrs(2, 2, 4, 4, 2, 2, 2, 3),
+        .skillWeights = role_skills(0,0,0,0,0,0,2, 0,1,0,0, 2,0,0,0,3,1, 0,4, 1,3,0,1,0, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0x50306Au,
         .habitat = kHabSpire | kHabRuin,
         .wildFaction = "demons",
@@ -1597,6 +1693,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(5, 5, 1, 2, 2, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,2,0,0, 3,0, 4,0,1,2,1, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0x60605Au,
         .habitat = kHabSpire | hab(Mountain),
         .wildFaction = "demons",
@@ -1624,6 +1722,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(3, 3, 3, 4, 4, 2, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,1,3, 2,3, 1,3,0,3,0, 0,1,0, 0, 0, 0,0,0,0),
         .mapColor = 0x7060A0u,
         .habitat = kHabSpire | kHabRuin,
         .wildFaction = "demons",
@@ -1651,6 +1751,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(6, 6, 1, 1, 1, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,0,2, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0x8A7050u,
         .habitat = kHabRuin | kHabForest | hab(Mountain),
         .wildFaction = "demons",
@@ -1678,6 +1780,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(6, 5, 2, 2, 3, 1, 1, 1),
+        .skillWeights = role_skills(1,2,0,0,0,0,0, 1,0,2,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0x6A3A2Au,
         .habitat = kHabRuin | kHabSpire,
         .wildFaction = "demons",
@@ -1706,6 +1810,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.0f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(4, 4, 1, 2, 3, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,2,0,0, 4,0, 3,0,1,1,0, 0,0,1, 0, 0, 0,0,0,0),
         .mapColor = 0x3A6A4Au,
         .habitat = kHabRuin | hab(Swamp) | hab(Desert),
         .wildFaction = "demons",
@@ -1736,6 +1842,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Come closer. I want to see it happen."}},
         .talkCount = 3,
         .nature = NpcNature::Void,
+        .attrWeights = role_attrs(2, 3, 6, 6, 1, 2, 2, 5),
+        .skillWeights = role_skills(0,0,0,0,0,0,2, 0,0,0,0, 1,0,0,0,3,4, 0,5, 1,4,0,0,0, 0,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xC0D0B0u,
         .habitat = kHabSpire,
         .wildFaction = "demons",
@@ -1770,6 +1878,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // the row above) — dearer than a soldier, cheaper than a house.
         .hireGold = 240,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(4, 5, 1, 1, 4, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0, 0, 0, 0,0,0,0),
         .mapColor = 0x8A6A42u,
         .habitat = hab(Steppe) | hab(Meadow) | hab(Valley),
         .wildFaction = "wildlife",
@@ -1826,6 +1936,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkCount = 0,
         .haulMult = 0.5f,
         .nature = NpcNature::Fauna,
+        .attrWeights = role_attrs(1, 4, 1, 1, 2, 1, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 0,0, 2,0,3,1,0, 3,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xE8E4D8u,   // шерсть: на тон светлее козьего камня
         .habitat = hab(Steppe) | hab(Meadow) | hab(Valley),
         .wildFaction = "wildlife",
@@ -1846,6 +1958,28 @@ inline constexpr const NpcTypeDef& npc_def(NPCType t) {
 
 inline constexpr NpcNature npc_nature(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)].nature;
+}
+
+// ИМЕНОВАННОСТЬ — КОЛОНКА СТРОКИ (`NpcTypeDef::named`, см. её разбор там же).
+// Дверь осталась той же подписи, поэтому ни один звонящий не тронут: менялось
+// ХРАНИЛИЩЕ ответа, а не вопрос. Новый именованный род — `.named = true` в его
+// строке, и больше нигде.
+inline constexpr bool npc_named(NPCType t) {
+    return kNpcTypeDefs[std::size_t(t) < std::size_t(NPCType::Count)
+                            ? std::size_t(t) : 0].named;
+}
+
+// ВЕСА РОЛИ — ДВЕ ДВЕРИ К КОЛОНКАМ, И ОБЕ С ГРАНИЦЕЙ ОРДИНАЛА. Граница
+// приехала вместе с весами: снесённая `role_weights()` отвечала строкой 0 на
+// ординал вне диапазона, и терять этот fail-safe при переезде было нельзя —
+// `npc_def` его не имеет, потому что у неё другой контракт.
+inline constexpr const AttrWeights& npc_attr_weights(NPCType t) {
+    return kNpcTypeDefs[std::size_t(t) < std::size_t(NPCType::Count)
+                            ? std::size_t(t) : 0].attrWeights;
+}
+inline constexpr const SkillWeights& npc_skill_weights(NPCType t) {
+    return kNpcTypeDefs[std::size_t(t) < std::size_t(NPCType::Count)
+                            ? std::size_t(t) : 0].skillWeights;
 }
 
 // СКОЛЬКО ЭТА СТРОКА ЕСТ В ДЕНЬ, в единицах голодной строки.
