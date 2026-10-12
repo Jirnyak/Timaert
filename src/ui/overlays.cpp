@@ -268,8 +268,18 @@ namespace sm::ui
         // торговца.)
 
         // A completed deal with a squad is a FACT of the world (S20.1) —
-        // subject = the player, object = the trader's squad by its
+        // subject = ТОТ, НА КОМ ФЛАЖОК, object = the trader's squad by its
         // save-stable ordinal; filed through THE one deed door.
+        //
+        // ВСЕЛЕНИЕ НЕ БОЛЕЕ ЧЕМ ПЕРЕНОС ФЛАЖКА «ЗА КОГО ИГРАЕМ» (вердикт
+        // владельца 2026-10-12, дословно: «да уничтожить все спец механики
+        // вселения было решено что вселение не более чем перенос флажка за
+        // кого играем (это шире то есть если будет потом в игре несколько
+        // сквадов у игрока он будет перекоючаться между ними тоже переносом
+        // флажка)»). Значит сделку подшивает ДЕЛАТЕЛЬ: торгуешь в теле лорда
+        // — сделка ЛОРДА. Здесь стоял ординал ДОМА, то есть у факта было два
+        // хозяина: клетку он брал у флажка (строкой ниже), а субъекта — у
+        // оригинала, и вселённая сделка числилась за оставленной оболочкой.
         void record_npc_deal_fact(GameState& gs, ecs::World& w,
                                   std::uint32_t traderOrdinal,
                                   int gave, int took)
@@ -278,7 +288,7 @@ namespace sm::ui
             f.day = gs.worldTime.day();
             f.kind = std::uint16_t(FactKind::Traded);
             f.subjectKind = std::uint8_t(FactSubject::Squad);
-            f.subject = player_home_ordinal(gs, store_of(w));
+            f.subject = player_flag_ordinal(gs, store_of(w));
             f.objectKind = std::uint8_t(FactSubject::Squad);
             f.object = traderOrdinal;
             const ecs::MacroCell* pc = player_flag_cell(gs, store_of(w));
@@ -307,7 +317,8 @@ namespace sm::ui
             f.day = gs.worldTime.day();
             f.kind = std::uint16_t(FactKind::Traded);
             f.subjectKind = std::uint8_t(FactSubject::Squad);
-            f.subject = player_home_ordinal(gs, store_of(world));
+            // Та же дверь, что у сделки со сквадом: подшивает ДЕЛАТЕЛЬ.
+            f.subject = player_flag_ordinal(gs, store_of(world));
             f.objectKind = std::uint8_t(FactSubject::Landmark);
             f.object = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
             f.x = std::int16_t(x);

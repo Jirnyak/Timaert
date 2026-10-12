@@ -1989,11 +1989,15 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     f.day = gs_->worldTime.day();
     f.kind = std::uint16_t(kind);
     // The PLAYER is the only one who acts down here (interactions are his
-    // alone), and he is a squad like any other — so the deed is his, by his
-    // save-stable ordinal. Тот ординал выдан ЕДИНЫМ эмитентом (M-255) и
-    // спрашивается у его записи; здесь стоял литерал 0x7FFFFFFF.
+    // alone), and he is a squad like any other — so the deed is ТОГО, НА КОМ
+    // ФЛАЖОК. Вселение есть не более чем перенос флажка «за кого играем»
+    // (вердикт владельца 2026-10-12), поэтому обысканный сундук в теле лорда
+    // — дело ЛОРДА; ровно та же дверь, что у расписок за его павших людей
+    // двадцатью строками выше («a worn lord's men pay their deaths back into
+    // HIS squad», A2 2026-09-17). Ординал выдан ЕДИНЫМ эмитентом (M-255) и
+    // спрашивается у записи; здесь стоял литерал 0x7FFFFFFF.
     f.subjectKind = std::uint8_t(FactSubject::Squad);
-    f.subject = ecs_ ? player_home_ordinal(*gs_, store_of(*ecs_)) : 0u;
+    f.subject = ecs_ ? player_flag_ordinal(*gs_, store_of(*ecs_)) : 0u;
     // When the deed was done TO a named place, the place rides as the object
     // by its landmark ordinal (v54: one id space names it alone).
     if (objectLandmarkId > 0) {
