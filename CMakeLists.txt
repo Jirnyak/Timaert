@@ -1462,7 +1462,8 @@ timaert_test(faction_fief_test)
 # onto every minute, mutually consistent, invertible at every hh:mm, and with
 # whole-day durations converting at zero residue.
 
-timaert_test(time_ladder_test)
+timaert_test(time_ladder_test
+    PIN "OK time_ladder_test .115689 checks.")
 # Seasons data contract (tables/seasons.h). Header-only, pure derivation of the
 # world day — no macro/renderer sources needed. Proves the season cycle starts
 # at Spring on day 1, is periodic and total (wraps non-positive days), and that
