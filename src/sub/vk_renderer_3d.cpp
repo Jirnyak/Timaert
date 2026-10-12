@@ -13,6 +13,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/sky.h"
 #include "sub/tree_atlas.h"
+#include "core/torus.h"    // cell_of/cell_x/cell_y — ОДНА дверь адреса клетки (M-202)
 #include "tables/forest.h"   // forest_fraction_byte — ONE spelling of the division
 #include "tables/prop_profiles.h"  // PropProfile — shape as a ROW
 #include "gpu/bb_instance.h"
@@ -1533,10 +1534,6 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     const auto t0 = std::chrono::steady_clock::now();
     const int camCx = mgr.center_cx();
     const int camCy = mgr.center_cy();
-    if (camCx == farBuiltCx_ && camCy == farBuiltCy_
-        && farIndexCount_ > 0) {
-        return;   // the sheet already belongs to this place
-    }
 
     // ── A SCENE WITH NO WORLD HAS NO HORIZON ─────────────────────────────
     // A dungeon is OUTSIDE the world technically (AGENTS, ЗАКОН ДВУХ МИРОВ
@@ -1559,8 +1556,27 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
         // world's horizon and drawing that behind a dungeon wall would be the
         // overworld leaking into a pocket.
         farSheetLive_ = false;
-        farBuiltCx_ = INT_MIN;   // the next real world rebuilds, wherever it is
+        farBuiltCell_ = kFarNoCell;   // next real world rebuilds, wherever it is
+        farBuiltSide_ = 0;
         return;
+    }
+
+    // ── ТО ЖЕ МЕСТО ИЛИ ДРУГОЕ — СПРАШИВАЕТ СВЁРНУТЫЙ АДРЕС (M-202) ──────
+    // Сравнение стояло ВЫШЕ этого резолва и потому мерило несвёрнутые
+    // координаты: на шве мира одно место получало два имени и лист собирался
+    // заново по ~25-36 мс (замер — в шапке колонки `farBuiltCell_`). Резолв
+    // центра уже был здесь и уже отвечал на «сколько клеток у мира»; ключу
+    // этого и достаточно, так что ни одного нового обращения к макромиру не
+    // появилось — поменялся ПОРЯДОК, а не канал (ЗАКОН ДВУХ МИРОВ).
+    //
+    // Содержание листа есть функция СВЁРНУТОЙ клетки и только её: грид ниже
+    // наполняется через `mgr.resolve_cell`, который заворачивает сам, а сеется
+    // пекарь мировым сидом `home.worldSeed`. Значит при совпадении ключа
+    // пересобирать буквально нечего — выйдет байт в байт тот же меш.
+    const std::uint32_t camCell = cell_of(camCx, camCy, home.worldCellsX);
+    if (camCell == farBuiltCell_ && farBuiltSide_ == home.worldCellsX
+        && farIndexCount_ > 0) {
+        return;   // the sheet already belongs to this place
     }
 
     // HOW FAR THE PROBE REACHES, and it is NOT a draw distance (S18.1 forbids
@@ -1811,8 +1827,8 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     // the in-flight frame's sampling. That ordering — not a fence, and not a
     // second copy of the image — is what makes the overwrite legal.
     pend_.farSheet = true;
-    farBuiltCx_ = camCx;
-    farBuiltCy_ = camCy;
+    farBuiltCell_ = camCell;
+    farBuiltSide_ = home.worldCellsX;
     farWorldSeed_ = worldSeed;
     // Triangles are reported for the WHOLE ladder, not for one ring: the index
     // buffer is shared and drawn once per ring, so `farIndexCount_ / 3` alone
@@ -3663,8 +3679,14 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         fp.mesh = push;
         // THE WINDOW'S ADDRESS IN THE WORLD, in metres — so a field drawn from
         // a hash is keyed on the GROUND and not on the camera (see FarPush).
-        fp.origin[0] = float(farBuiltCx_) * float(kCellSize) * kTileMeters;
-        fp.origin[1] = float(farBuiltCy_) * float(kCellSize) * kTileMeters;
+        // ИЗ СВЁРНУТОГО АДРЕСА, ДВЕРЬМИ РАСПАКОВКИ (M-202): контракт выше
+        // требует ключа НА ЗЕМЛЕ, а несвёрнутая пара давала одному месту
+        // столько адресов, сколько раз игрок обошёл мир. Гейт `farSheetLive_`
+        // выше гарантирует, что сторона здесь уже ненулевая.
+        fp.origin[0] = float(cell_x(farBuiltCell_, farBuiltSide_))
+                     * float(kCellSize) * kTileMeters;
+        fp.origin[1] = float(cell_y(farBuiltCell_, farBuiltSide_))
+                     * float(kCellSize) * kTileMeters;
         // Low bits only: the mottle wants a world's identity, not its whole
         // seed, and a float carries 24 bits of integer exactly.
         fp.origin[3] = float(farWorldSeed_ & 0xFFFFu);

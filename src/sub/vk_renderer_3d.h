@@ -268,9 +268,31 @@ private:
     // from being drawn behind a pocket's walls. Distinct from the count above,
     // which is the lattice's length and a function of two constants.
     bool                farSheetLive_ = false;
-    // Which macro cell the sheet was built around; INT_MIN = never built.
-    int                 farBuiltCx_ = INT_MIN;
-    int                 farBuiltCy_ = INT_MIN;
+    // КАКОГО МЕСТА ЭТОТ ЛИСТ — ОДИН СВЁРНУТЫЙ АДРЕС КЛЕТКИ (M-202). Здесь
+    // стояла пара `farBuiltCx_`/`farBuiltCy_` с НЕСВЁРНУТЫМИ координатами
+    // центра окна: `cx_ += shiftX` (`src/sub/seamless_manager.cpp`) копит их
+    // без маски, поэтому за краем мира они уходят в минус и у ОДНОГО места
+    // выходит ДВА имени. Замер 2026-10-01 назвал цену: `dungeon_cave` печатал
+    // подряд `cell=28,-1` и `cell=28,1023` — одна и та же клетка тора
+    // 1024×1024, — и лист для неё собирался ДВАЖДЫ, по 24.1 и 29.3 мс.
+    //
+    // ЭТО ЗАКОННЫЙ МАКРО-АДРЕС В `src/sub/`, И РОВНО ОДИН (ЗАКОН АДРЕСА п.5):
+    // окно субмира ЕСТЬ одна клетка макромира, и спрашивать её тождество
+    // можно только дверью `cell_of@src/core/torus.h`. Своего адресного
+    // пространства субмира это не касается — ключ не адресует ничего внутри
+    // сцены, он называет МЕСТО снаружи.
+    //
+    // И ОН ЖЕ ПОЧИНИЛ ВТОРОЕ, НЕЗАМЕЧЕННОЕ: `FarPush::origin` обязан быть
+    // «адресом окна в мире, чтобы поле от хеша ключевалось НА ЗЕМЛЕ, а не на
+    // камере» (его собственный контракт), а считался он из той же
+    // несвёрнутой пары — значит пятна полога у одного места зависели от того,
+    // с какой стороны игрок к нему пришёл.
+    static constexpr std::uint32_t kFarNoCell = ~std::uint32_t{0};
+    std::uint32_t       farBuiltCell_ = kFarNoCell;
+    // Сторона мира ТОГО запекания: без неё адрес не распаковать обратно в
+    // клетку, и одинаковое число двух миров разной стороны неотличимо.
+    // 0 = не запекали ни разу.
+    int                 farBuiltSide_ = 0;
     // The world's own seed, kept from the build so the draw can hand it to
     // the cover's mottle. Two worlds with the same forest field must not wear
     // the same blotches, and the field itself cannot say which world it is.
