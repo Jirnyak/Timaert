@@ -546,8 +546,10 @@ void test_spawn_squad_is_one_spec_one_door() {
 
 // ── Phase 6: the leader's TRAINING reads at the three new doors ──────────
 // Trade → the price law's bargaining argument (a literal 0 since the law
-// was written), Foraging → the daily harch draw, Scouting → the runtime's
-// sight cache. Each with a negative control.
+// was written), Scouting → the runtime's sight cache. Each with a negative
+// control. (Третьей дверью здесь стоял «харч по рангу фуражирования» — она
+// умерла 2026-09-22 вместе со скидкой, а сам навык 2026-10-12, M-144. Блок 3
+// ниже охраняет то, что встало на её место: лист ведущего счёт НЕ меняет.)
 void test_the_leaders_training_reads_at_the_new_doors() {
     // 1. The scouting rank rides the runtime cache through the ONE refresh
     // door — the same door the march caches cannot drift through.
@@ -581,8 +583,11 @@ void test_the_leaders_training_reads_at_the_new_doors() {
     // ставкой у мест: «один закон без исключений». Тест переписан не в
     // «проверку отсутствия», а в свидетеля ДЕЙСТВУЮЩЕГО закона, и у него
     // два конца:
-    //   · лист ведущего на счёт НЕ ВЛИЯЕТ — обученный фуражир и необученный
-    //     контроль тянут ОДНО И ТО ЖЕ (прежде этот CHECK был бы красным);
+    //   · лист ведущего на счёт НЕ ВЛИЯЕТ — богатый лист сорокового уровня и
+    //     бедный первого тянут ОДНО И ТО ЖЕ (прежде этот CHECK был бы
+    //     красным). До 2026-10-12 носителем этого конца был ранг
+    //     фуражирования; навык снесён M-144, закон жив, носителем стал ВЕСЬ
+    //     лист — и прибор перестал зависеть от везения генератора;
     //   · рот объявляет КОЛОНКА РАЦИОНА строки, а не колонка платы: зверь с
     //     `kNpcUpkeepNone` ест наравне с людьми. До этой правки он в поле не
     //     ел вовсе, хотя у места ел — то самое расхождение двух копий.
@@ -591,38 +596,52 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         ecs::World w;
         auto wStore_ = sm::make_macro_store();
         sm::store_attach(w, wStore_.get());
-        int trainedRank = 0, lvl = 0;
-        std::uint32_t ord = 0;
-        for (int L = 2; L <= 40 && trainedRank == 0; ++L) {
-            for (std::uint32_t o = 1; o <= 8 && trainedRank == 0; ++o) {
-                const int r = make_character_sheet(
-                                  NPCType::Peasant, L, leader_sheet_seed(o))
-                                  .skills.of(SkillId::Foraging);
-                if (r > 0 && r < 100) { trainedRank = r; lvl = L; ord = o; }
-            }
-        }
-        CHECK_OR_RETURN(trainedRank > 0, "the scan found a trained forager");
-        const sm::MacroHandle forager = make_squad_at(
-            w, NPCType::Peasant, "timaert", lvl, 10.0f, 10.0f, ord,
+        // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ САМ (§8 п.11), и это сильнее
+        // прежней формы: здесь стоял СКАН по сидам в поисках ведущего с
+        // ненулевым рангом фуражирования, то есть прибор зависел от того,
+        // повезёт ли генератору. Навык снесён 2026-10-12 (M-144), а ЗАКОН,
+        // который тот скан обслуживал, ЖИВ дословно — «лист ведущего счёт НЕ
+        // МЕНЯЕТ» (вердикт 2026-09-22: один закон без исключений), — поэтому
+        // утверждение перевешено с одной мёртвой колонки на ВЕСЬ ЛИСТ:
+        // сороковой уровень против первого, и оба тянут одно и то же.
+        const int kRichLevel = 40, kPoorLevel = 1;
+        const sm::MacroHandle rich = make_squad_at(
+            w, NPCType::Peasant, "timaert", kRichLevel, 10.0f, 10.0f, 1u,
             {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u}, NPCType::Peasant, 1);
-        const sm::MacroHandle untrained = make_squad_at(
-            w, NPCType::Guard, "timaert", 3, 20.0f, 20.0f, 999u,
-            {11u, 12u, 13u, 14u, 15u, 16u, 17u, 18u}, NPCType::Guard, 1);
+        // РОСТЕР ОБОИХ — ОДИН РОД: иначе менялись бы ДВЕ величины сразу (лист
+        // ведущего и рацион состава), и равенство ниже ничего бы не доказало.
+        const sm::MacroHandle poor = make_squad_at(
+            w, NPCType::Guard, "timaert", kPoorLevel, 20.0f, 20.0f, 999u,
+            {11u, 12u, 13u, 14u, 15u, 16u, 17u, 18u}, NPCType::Peasant, 1);
         // ЗВЕРЬ В КОНТЕЙНЕРЕ — ТРЕТИЙ ЛАГЕРЬ: его строка несёт kNpcUpkeepNone,
         // то есть жалованья он не берёт, а рацион по своей строке — берёт.
         const sm::MacroHandle beasts = make_squad_at(
             w, NPCType::Peasant, "timaert", 1, 30.0f, 30.0f, 777u,
             {21u, 22u, 23u, 24u, 25u, 26u, 27u, 28u}, NPCType::Wolf, 1);
-        CHECK(make_character_sheet(NPCType::Guard, 3, leader_sheet_seed(999u))
-                      .skills.of(SkillId::Foraging) == 0,
-              "the Guard control is honestly untrained");
+        // НЕГАТИВНЫЙ КОНТРОЛЬ САМОГО СРАВНЕНИЯ: два листа обязаны РЕАЛЬНО
+        // расходиться, иначе ниже сравниваются два одинаковых счёта и закон
+        // не проверен вовсе (§8 п.3 — цикл, который меряет, утверждает, что
+        // ПОМЕРИЛ). Сумма рангов — мера грубая и этого достаточно: она
+        // ненулевая у богатого листа и строго меньше у бедного.
+        int richRanks = 0, poorRanks = 0;
+        const CharacterSheet richSheet = make_character_sheet(
+            NPCType::Peasant, kRichLevel, leader_sheet_seed(1u));
+        const CharacterSheet poorSheet = make_character_sheet(
+            NPCType::Guard, kPoorLevel, leader_sheet_seed(999u));
+        for (int i = 0; i < int(SkillId::Count); ++i) {
+            richRanks += richSheet.skills.of(SkillId(i));
+            poorRanks += poorSheet.skills.of(SkillId(i));
+        }
+        CHECK(richRanks > poorRanks && poorRanks >= 0,
+              "негативный контроль: листы ведущих и правда расходятся, "
+              "значит равенство счёта ниже что-то утверждает");
         CHECK(npc_def(NPCType::Wolf).upkeepGoldPerDay == kNpcUpkeepNone,
               "негативный контроль строки: волк и правда не на жалованье");
         // A season of harch and a season of wages in each bag: the window
         // judges BOTH needs whole, and an uncovered wage would bleed the
         // creatures before the harch law under test ever showed.
         const int stock = 8 * kDaysPerSeason * 2;
-        for (const sm::MacroHandle e : {forager, untrained, beasts}) {
+        for (const sm::MacroHandle e : {rich, poor, beasts}) {
             auto& bag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
             bag.add("food", stock);
             bag.add("coin_empire_copper", 8 * 3 * kDaysPerSeason * 4);
@@ -632,23 +651,23 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         // отвязана, M-233.)
         CHECK(squad_season_window(gs, sm::store_of(w), 2) == 0,
               "no window off the boundary (negative control)");
-        CHECK((*sm::body_state<ecs::NpcInventory>(sm::store_of(w), untrained)).inv.count("food")
+        CHECK((*sm::body_state<ecs::NpcInventory>(sm::store_of(w), poor)).inv.count("food")
                   == stock,
               "an ordinary day draws no harch at all");
         squad_season_window(gs, sm::store_of(w), 1);
-        const int foragerLeft =
-            (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), forager)).inv.count("food");
-        const int untrainedLeft =
-            (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), untrained)).inv.count("food");
+        const int richLeft =
+            (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), rich)).inv.count("food");
+        const int poorLeft =
+            (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), poor)).inv.count("food");
         const int beastsLeft =
             (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), beasts)).inv.count("food");
         // Восемь душ × рацион строки × сезон — счёт читается прямо из
         // таблицы существ, а не из литерала теста.
         const int draw = 8 * npc_board_per_day(NPCType::Peasant)
                        * kDaysPerSeason;
-        CHECK(untrainedLeft == stock - draw,
+        CHECK(poorLeft == stock - draw,
               "лагерь ест сумму рационов своих строк за сезон");
-        CHECK(foragerLeft == untrainedLeft,
+        CHECK(richLeft == poorLeft,
               "лист ведущего счёт НЕ МЕНЯЕТ: один закон без исключений");
         CHECK(beastsLeft
                   == stock - 8 * npc_board_per_day(NPCType::Wolf)

@@ -107,8 +107,14 @@ enum class BonusId : std::uint8_t {
     Sword, Axe, Spear, Mace, Dagger, Bow, Staff,
     HeavyArmor, LightArmor, Unarmored, Shield,
     FireMagic, WaterMagic, AirMagic, EarthMagic, ArcaneMagic, VoidMagic,
-    Acrobatics, Scouting, Prospecting,
-    Trade, Quartermaster, Foraging, Learning,
+    Acrobatics, Scouting,
+    Trade,
+    // ЗДЕСЬ СТОЯЛИ ЧЕТЫРЕ ПАРНЫЕ СТРОКИ ДОБЫЧИ И ХОЗЯЙСТВА (названы на месте
+    // реза в `tables/attributes.h`, там же разбор и вердикт владельца) —
+    // снесены 2026-10-12 вместе со своими навыками (M-144): адресовать ранг
+    // строки, которой в `SkillId` больше нет, невыразимо, и это правильный
+    // способ задать вопрос. Ординалы после них сдвинулись — тот же законный
+    // ход, что у `ArmorSlash` в M-193 строкой ниже.
     // Appended v79 with SkillId::Unarmed — ordinals are forever.
     Unarmed,
     // ── affix-track tail (2026-09-07). One row per armour column (the 8×8
@@ -221,16 +227,10 @@ inline constexpr BonusDef kBonusDefs[] = {
      BonusTarget::SkillRank, std::uint8_t(SkillId::Acrobatics)},
     {BonusId::Scouting,    "scouting",     "Scouting",
      BonusTarget::SkillRank, std::uint8_t(SkillId::Scouting)},
-    {BonusId::Prospecting, "prospecting",  "Prospecting",
-     BonusTarget::SkillRank, std::uint8_t(SkillId::Prospecting)},
     {BonusId::Trade,       "trade",        "Trade",
      BonusTarget::SkillRank, std::uint8_t(SkillId::Trade)},
-    {BonusId::Quartermaster, "quartermaster", "Quartermaster",
-     BonusTarget::SkillRank, std::uint8_t(SkillId::Quartermaster)},
-    {BonusId::Foraging,    "foraging",     "Foraging",
-     BonusTarget::SkillRank, std::uint8_t(SkillId::Foraging)},
-    {BonusId::Learning,    "learning",     "Learning",
-     BonusTarget::SkillRank, std::uint8_t(SkillId::Learning)},
+    // (Четыре парные строки добычи и хозяйства снесены здесь 2026-10-12 —
+    // разбор на месте реза в enum выше.)
     {BonusId::Unarmed,     "unarmed",      "Unarmed",
      BonusTarget::SkillRank, std::uint8_t(SkillId::Unarmed)},
 

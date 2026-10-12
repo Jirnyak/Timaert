@@ -27,9 +27,14 @@ struct RoleWeights {
     // and a compile error asks better than a silent zero.
     std::uint8_t attr[std::size_t(AttributeId::Count)];
     // SkillId order; the weighted pick indexes this directly. Sized by the
-    // enum, not by a literal 8, so adding a skill to the registry makes every
-    // role state what it thinks of it — a compile error is the right way to
-    // ask that question, and a silent zero is the wrong one.
+    // enum, not by a literal 8 — но ОБЕЩАНИЕ, которое здесь стояло («adding a
+    // skill to the registry makes every role state what it thinks of it — a
+    // compile error is the right way to ask that question, and a silent zero
+    // is the wrong one»), НЕ ИСПОЛНЯЕТСЯ И НЕ ИСПОЛНЯЛОСЬ: длина массива
+    // больше числа инициализаторов в строке, а позиционному списку C++
+    // разрешено быть короче своего массива — значит хвост получает ровно тот
+    // молчаливый ноль, который текст объявлял невозможным, и компилятор не
+    // задаёт вопроса. Счёт назван в легенде таблицы ниже (M-251).
     std::uint8_t skill[std::size_t(SkillId::Count)];
 };
 
@@ -41,38 +46,59 @@ struct RoleWeights {
 // weights answer TWO questions with one row: which 5 skills its people LEARN
 // at creation (weighted picks, no repeats) and where their level points go
 // (weighted spends into the learned set only). The flavor writes itself:
-// the miner's weapon is his pick (Mace) and his eye is Prospecting; a beast
+// the guard's blade is his trade (Sword) and his coat is Heavy Armor; a beast
 // fights through Armsmaster (its body IS the weapon) and wears Unarmored.
 //
 // skills: Swd Axe Spr Mac Dag Bow Stf|Hvy Lgt Una Shd|Fir Wat Air Ear Arc Voi|
-//         Arm Spl|Bod Med Mar Ath Wgt|Trv Acr Sct Prs|Trd Qtm For Lrn|Unr
+//         Arm Spl|Bod Med Mar Ath Wgt|Trv Acr Sct|Trd|Unr
 // (Unr = Unarmed, appended v79 like its enum row; 0 everywhere until a
 // brawler role wants it — beasts keep fighting through Armsmaster.)
+//
+// ЧЕТЫРЕ КОЛОНКИ УШЛИ ИЗ ЭТОЙ ЛЕГЕНДЫ 2026-10-12 (M-144): `Prs` стояла
+// четвёртой в дорожной группе, `Qtm`/`For`/`Lrn` — хвостом хозяйственной.
+// Снято по одной клетке из КАЖДОЙ из 46 строк, позиционно; что все выжившие
+// веса остались БАЙТ В БАЙТ теми же, доказано снимком таблицы ПО ИМЕНАМ до и
+// после реза (1702 пары «род · навык» → 1518, различий в выживших 0).
+//
+// И ЗДЕСЬ ЖИВЁТ ДЕФЕКТ, НАЙДЕННЫЙ ТЕМ ЖЕ ЗАМЕРОМ И СОЗНАТЕЛЬНО НЕ ТРОНУТЫЙ:
+// строка несёт 29 инициализаторов в массиве длиной `SkillId::Count` = 33,
+// поэтому ЧЕТЫРЕ РЕМЕСЛА (`Blacksmith`, `Tailoring`, `Masonry`, `Alchemy`)
+// не названы НИ ОДНИМ родом и получают МОЛЧАЛИВЫЙ НОЛЬ — ровно то, что шапка
+// `RoleWeights::skill` ниже объявляет невозможным. До реза было 33 из 37, то
+// есть дефект не заведён этим нарядом, а обнажён им. Ждёт вердикта владельца
+// (реестр M-251): лечится не типом, а РАСКЛАДКОЙ — designated initializers по
+// имени навыка, которые C++23 умеет, и тогда «молчаливый ноль» перестаёт быть
+// выразимым. Та же мера относится и к обещанию «every row has at least one
+// non-zero skill weight» двумя абзацами выше: у `NPCType::Dragon` ненулевых
+// навыков НОЛЬ, и так было до этого наряда — его бой живёт в комбат-шаблоне,
+// о чём говорит собственный комментарий строки, а шапка об этом молчит.
 inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Peasant     — hardy laborer: pitchfork and flail, forage and endure
     {NPCType::Peasant, {3, 3, 1, 1, 1, 1, 1, 2},
-     {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0,0, 0,0,3,1,0}},
+     {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0, 0, 0}},
     // Merchant    — social, lucky, sedentary: the ledger, not the blade
     {NPCType::Merchant, {1, 2, 2, 1, 1, 3, 4, 3},
-     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,1,0,2, 2,0,0,0, 4,2,0,2,0}},
+     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,1,0,2, 2,0,0, 4, 0}},
     // Caravan     — mobile trader: lives on the road, hence the road skills
     // Cha 5: the trade house on wheels — its whole market edge is this row
     // (owner 2026-08-30: «у каравана в таблице выше уровень и харизма»).
     // Bandit      — aggressive raider: knife and bow, fast on his feet
     {NPCType::Bandit, {4, 3, 1, 1, 3, 2, 1, 1},
-     {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2,0, 0,0,1,0,0}},
+     {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2, 0, 0}},
     // Guard       — disciplined tank: sword, shield and heavy plate
     {NPCType::Guard, {4, 4, 1, 1, 2, 1, 2, 2},
-     {3,0,2,1,0,0,0, 3,0,0,3, 0,0,0,0,0,0, 2,0, 3,0,2,1,1, 1,0,0,0, 0,0,0,0,0}},
+     {3,0,2,1,0,0,0, 3,0,0,3, 0,0,0,0,0,0, 2,0, 3,0,2,1,1, 1,0,0, 0, 0}},
     // Witch       — practical caster: hedge schools, a staff to lean on
     {NPCType::Witch, {1, 2, 4, 4, 1, 2, 2, 3},
-     {0,0,0,0,1,0,2, 0,0,2,0, 2,2,0,2,0,1, 0,4, 0,4,1,1,0, 1,0,0,0, 0,0,1,2,0}},
+     {0,0,0,0,1,0,2, 0,0,2,0, 2,2,0,2,0,1, 0,4, 0,4,1,1,0, 1,0,0, 0, 0}},
     // Sorceress   — elite caster: the high schools, arcane first
     {NPCType::Sorceress, {1, 2, 5, 4, 1, 3, 3, 3},
-     {0,0,0,0,0,0,2, 0,1,2,0, 3,0,2,0,3,2, 0,5, 0,4,1,1,0, 1,0,0,0, 0,0,0,2,0}},
-    // Miner       — strong laborer: the pick swings like a mace, the eye
-    // reads the vein (Prospecting is the trade's whole point)
-    // Clay-digger — hardy laborer (the peasant's build, wetter)
+     {0,0,0,0,0,0,2, 0,1,2,0, 3,0,2,0,3,2, 0,5, 0,4,1,1,0, 1,0,0, 0, 0}},
+    // (Здесь стояли подписи `Miner` и `Clay-digger` — РОДОВ С ТАКИМИ ИМЕНАМИ
+    // В `NPCType` НЕТ, профессии добычи ушли из реестра раньше, и подписи
+    // переживали свои строки. Единственным их содержанием был «глаз, читающий
+    // жилу», то есть `Prospecting`, снесённый 2026-10-12 M-144, — так что
+    // чинить тут было нечего, кроме удаления.)
     // ── The creature rows ────────────────────────────────────────────────
     // A beast has a sheet like a man has a sheet (owner, 2026-08-20: one
     // system, "у всех лист статов как в обливионе"). What differs is only the
@@ -83,63 +109,63 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // weapon skill is Armsmaster (its body is the weapon) and its armor is
     // Unarmored (its hide is the coat); prey reads the wind (Scouting).
     {NPCType::Rabbit,       {1, 4, 1, 1, 5, 3, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 0,0, 1,0,3,5,0, 2,3,2,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 0,0, 1,0,3,5,0, 2,3,2, 0, 0}},
     {NPCType::Deer,         {2, 4, 1, 1, 5, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,3,5,0, 2,2,2,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,3,5,0, 2,2,2, 0, 0}},
     {NPCType::Fox,          {2, 3, 2, 1, 4, 3, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,4,0, 2,1,3,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,4,0, 2,1,3, 0, 0}},
     {NPCType::Wolf,         {4, 3, 1, 1, 4, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 4,0, 2,0,2,3,0, 2,0,3,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 4,0, 2,0,2,3,0, 2,0,3, 0, 0}},
     {NPCType::Bear,         {5, 5, 1, 1, 2, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,1,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,1, 0, 0}},
     {NPCType::Boar,         {4, 4, 1, 1, 3, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 4,0,1,2,0, 1,0,1,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 4,0,1,2,0, 1,0,1, 0, 0}},
     {NPCType::Snake,        {3, 2, 1, 1, 3, 3, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 4,0, 1,0,1,2,0, 1,0,1,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 4,0, 1,0,1,2,0, 1,0,1, 0, 0}},
     {NPCType::Hawk,         {2, 3, 2, 1, 5, 3, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,5,0, 2,0,3,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,5,0, 2,0,3, 0, 0}},
     {NPCType::Frog,         {1, 3, 1, 1, 3, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,2,3,0, 1,3,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,2,3,0, 1,3,0, 0, 0}},
     {NPCType::Goat,         {2, 4, 1, 1, 4, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0, 0, 0}},
     {NPCType::Eagle,        {2, 3, 2, 1, 5, 3, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 3,0, 1,0,2,5,0, 2,0,3,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 3,0, 1,0,2,5,0, 2,0,3, 0, 0}},
     {NPCType::Croc,         {4, 4, 1, 1, 2, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 4,0,1,1,0, 1,0,1,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 4,0,1,1,0, 1,0,1, 0, 0}},
     {NPCType::Goblin,       {3, 3, 2, 1, 3, 2, 1, 1},
-     {0,0,1,0,2,1,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 2,0,2,3,1, 2,0,1,0, 0,0,0,0,0}},
+     {0,0,1,0,2,1,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 2,0,2,3,1, 2,0,1, 0, 0}},
     {NPCType::Skeleton,     {3, 4, 1, 1, 2, 1, 1, 1},
-     {2,0,1,0,0,0,0, 1,0,1,1, 0,0,0,0,0,0, 3,0, 3,0,1,1,0, 0,0,0,0, 0,0,0,0,0}},
+     {2,0,1,0,0,0,0, 1,0,1,1, 0,0,0,0,0,0, 3,0, 3,0,1,1,0, 0,0,0, 0, 0}},
     {NPCType::Troll,        {5, 5, 1, 1, 1, 1, 1, 1},
-     {0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,0,0, 0,0,0,0,0}},
+     {0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,0, 0, 0}},
     {NPCType::SwampThing,   {4, 4, 1, 2, 1, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,3,0, 0,2,0,1,0,0, 3,1, 4,1,1,1,0, 0,0,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,2,0,1,0,0, 3,1, 4,1,1,1,0, 0,0,0, 0, 0}},
     // Ice is the Water school (S15 remap): the wraith casts what it is.
     {NPCType::IceWraith,    {3, 3, 3, 4, 3, 2, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,3,1,0,0,2, 1,3, 1,3,1,3,0, 1,0,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,3,1,0,0,2, 1,3, 1,3,1,3,0, 1,0,0, 0, 0}},
     {NPCType::SandScorpion, {3, 3, 1, 1, 3, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 2,0,1,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 2,0,1, 0, 0}},
     {NPCType::StoneGolem,   {5, 5, 1, 1, 1, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 3,0, 5,0,1,1,0, 0,0,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 3,0, 5,0,1,1,0, 0,0,0, 0, 0}},
     // Adventurer — the player's row. Even weights on purpose: a generated
     // adventurer is a blank slate, and the player's OWN points are spent by
     // him, not rolled by this table (it answers only when something asks the
     // world for "an adventurer", e.g. a projected body of his squad).
     {NPCType::Adventurer,   {2, 2, 2, 2, 2, 2, 2, 2},
-     {1,1,1,1,1,1,1, 1,1,1,1, 1,1,1,1,1,1, 1,1, 1,1,1,1,1, 1,1,1,1, 1,1,1,1,0}},
+     {1,1,1,1,1,1,1, 1,1,1,1, 1,1,1,1,1,1, 1,1, 1,1,1,1,1, 1,1,1, 1, 0}},
     // Silver-miner — the miner's body, row for row.
     // Tax-collector — a courier's legs, a clerk's head.
     {NPCType::TaxCollector, {2, 3, 2, 2, 3, 1, 2, 2},
-     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 3,0,0,0, 2,2,0,2,0}},
+     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 3,0,0, 2, 0}},
     // Road ambusher — the bandit's sheet, row for row: what sets him apart
     // lives in his combat template (the road-wide eye, the HP), not here.
     {NPCType::RoadAmbusher, {4, 3, 1, 1, 3, 2, 1, 1},
-     {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2,0, 0,0,1,0,0}},
+     {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2, 0, 0}},
     // Дракон — зверь силы и воли: STR/END тяжёлые, интеллект древний;
     // скиллы зверя пусты — его бой живёт в комбат-шаблоне (3d20 Fire),
     // не в оружейных рядах человека.
     {NPCType::Dragon, {8, 6, 4, 5, 3, 2, 1, 4},
-     {0,0,0,0,0,0,0, 0,0,0,0, 0,0,0,0,0,0, 0,0, 0,0,0,0,0, 0,0,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,0,0, 0,0,0,0,0,0, 0,0, 0,0,0,0,0, 0,0,0, 0, 0}},
     // ── The populated bestiary (2026-09-11) ──────────────────────────────
     // Same reading as the creature rows above: a beast fights through
     // Armsmaster (its body IS the weapon) and wears Unarmored (its hide is
@@ -150,57 +176,59 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // attrs: Str End Int Wil Spd Lck Cha Wis
     // Giant rat — legs and teeth, nothing else.
     {NPCType::GiantRat,     {1, 3, 1, 1, 5, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 1,0,0,4,0, 0,2,2,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 1,0,0,4,0, 0,2,2, 0, 0}},
     // Cave bat — the fastest thing in the table, and the frailest.
     {NPCType::CaveBat,      {1, 2, 1, 1, 6, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,0,5,0, 0,3,3,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,0,5,0, 0,3,3, 0, 0}},
     // Kobold — a scavenger with a knife: spear-and-dagger, and a forager's
     // eye for what was dropped.
     {NPCType::Kobold,       {2, 2, 2, 1, 4, 3, 1, 1},
-     {0,0,1,0,2,0,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 1,0,1,3,0, 1,2,2,0, 0,0,1,0,0}},
+     {0,0,1,0,2,0,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 1,0,1,3,0, 1,2,2, 0, 0}},
     {NPCType::CaveSpider,   {3, 3, 1, 1, 4, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 0,2,1,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 0,2,1, 0, 0}},
     // Imp — a spark with legs: Fire is its one school and it never learns
     // a second.
     {NPCType::Imp,          {2, 2, 3, 2, 5, 3, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,1,0, 3,0,0,0,0,0, 1,2, 1,0,0,4,0, 0,3,1,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 3,0,0,0,0,0, 1,2, 1,0,0,4,0, 0,3,1, 0, 0}},
     // Zombie — all of it goes into Body. It does not dodge and does not run.
     {NPCType::Zombie,       {4, 5, 1, 1, 1, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 3,0, 5,0,1,0,1, 0,0,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 3,0, 5,0,1,0,1, 0,0,0, 0, 0}},
     // Orc — a soldier by any other name: axe, heavy coat, march discipline.
     {NPCType::Orc,          {4, 4, 1, 2, 3, 2, 1, 1},
-     {1,3,0,0,0,0,0, 2,0,1,0, 0,0,0,0,0,0, 3,0, 3,0,2,2,0, 1,0,1,0, 0,0,0,0,0}},
+     {1,3,0,0,0,0,0, 2,0,1,0, 0,0,0,0,0,0, 3,0, 3,0,2,2,0, 1,0,1, 0, 0}},
     // Ghoul — the zombie's points, spent on legs instead of meat.
     {NPCType::Ghoul,        {3, 3, 1, 1, 4, 2, 1, 1},
-     {0,0,0,0,1,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 0,2,1,0, 0,0,0,0,0}},
+     {0,0,0,0,1,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 0,2,1, 0, 0}},
     {NPCType::Harpy,        {2, 3, 1, 2, 5, 3, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 1,0,0,5,0, 0,3,2,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 1,0,0,5,0, 0,3,2, 0, 0}},
     // Cultist — the crowd's only educated man: staff, Arcane, and the
-    // Learning that says he chose this.
+    // Meditation that says he chose this. (Его `Learning` 2 снесён вместе с
+    // навыком 2026-10-12, M-144; «он выбрал это сам» теперь говорит глубина
+    // медитации, а не строка, которую никто не читал.)
     {NPCType::Cultist,      {2, 2, 4, 4, 2, 2, 2, 3},
-     {0,0,0,0,0,0,2, 0,1,0,0, 2,0,0,0,3,1, 0,4, 1,3,0,1,0, 0,0,0,1, 0,0,0,2,0}},
+     {0,0,0,0,0,0,2, 0,1,0,0, 2,0,0,0,3,1, 0,4, 1,3,0,1,0, 0,0,0, 0, 0}},
     // Gargoyle — masonry that flies: Earth in its fists, Body under them.
     {NPCType::Gargoyle,     {5, 5, 1, 2, 2, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,2,0,0, 3,0, 4,0,1,2,1, 0,0,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,2,0,0, 3,0, 4,0,1,2,1, 0,0,0, 0, 0}},
     // Wraith — Void where the ice wraith keeps cold, and the Meditation
     // that makes it a caster's problem rather than a brawler's.
     {NPCType::Wraith,       {3, 3, 3, 4, 4, 2, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,1,3, 2,3, 1,3,0,3,0, 0,1,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,1,3, 2,3, 1,3,0,3,0, 0,1,0, 0, 0}},
     // Ogre — the heaviest hands in the table under the dragon's.
     {NPCType::Ogre,         {6, 6, 1, 1, 1, 1, 1, 1},
-     {0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,0,2, 0,0,0,0, 0,0,0,0,0}},
+     {0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,0,2, 0,0,0, 0, 0}},
     // Minotaur — an ogre that kept its legs: the row that punishes running.
     {NPCType::Minotaur,     {6, 5, 2, 2, 3, 1, 1, 1},
-     {1,2,0,0,0,0,0, 1,0,2,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 0,0,0,0, 0,0,0,0,0}},
+     {1,2,0,0,0,0,0, 1,0,2,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 0,0,0, 0, 0}},
     {NPCType::Basilisk,     {4, 4, 1, 2, 3, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,2,0,0, 4,0, 3,0,1,1,0, 0,0,1,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,2,0,0, 4,0, 3,0,1,1,0, 0,0,1, 0, 0}},
     // Lich — the top of the climb: Will and Intellect above everything,
     // Void and Arcane, and the deepest Spellpower in the table.
     {NPCType::Lich,         {2, 3, 6, 6, 1, 2, 2, 5},
-     {0,0,0,0,0,0,2, 0,0,0,0, 1,0,0,0,3,4, 0,5, 1,4,0,0,0, 0,0,0,2, 0,0,0,3,0}},
+     {0,0,0,0,0,0,2, 0,0,0,0, 1,0,0,0,3,4, 0,5, 1,4,0,0,0, 0,0,0, 0, 0}},
     // Horse — the goat's own build, a size up: body and speed, no craft.
     {NPCType::Horse,        {4, 5, 1, 1, 4, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0,0, 0,0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0, 0, 0}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),

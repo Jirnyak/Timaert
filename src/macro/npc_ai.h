@@ -314,9 +314,11 @@ AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
 //   · board — РАЦИОН СВОЕЙ СТРОКИ в день на каждую душу контейнера, чей бы он
 //     ни был (npc.h `npc_board_per_day`, 2026-09-22). Здесь стояло «одна
 //     душа, чья строка на содержании (upkeepGoldPerDay >= 0; звери и
-//     монстры — нет), со скидкой на Foraging ведущего» — и то и другое
-//     снесено: рот теперь объявляет колонка рациона, а не колонка платы, и
-//     скидки на счёт больше нет («один закон без исключений»);
+//     монстры — нет), со скидкой на ранг фуражирования ведущего» — и то и
+//     другое снесено: рот теперь объявляет колонка рациона, а не колонка
+//     платы, и скидки на счёт больше нет («один закон без исключений»).
+//     Сам навык умер 2026-10-12 (M-144), так что второй ответ на этот
+//     вопрос мира теперь НЕВЫРАЗИМ, а не просто не дан;
 //   · pay — the one upkeep law × the season, and the paid coin BURNS into
 //     the world loot pool («жалованье сгорает»).
 // Each need is covered WHOLE or not debited at all; ANY miss bleeds an
@@ -335,9 +337,11 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 
 // A creatures's SEASON of needs — the one arithmetic the boundary window bills
 // by and the landmark's crew-loading fills by (drift between the two would
-// be a second truth of содержание). Bread is per soul whose own row is on
-// upkeep, foraging-scaled by the leader's effective sheet; wage is the one
-// upkeep law × the season.
+// be a second truth of содержание). Борд идёт по РАЦИОНУ СВОЕЙ СТРОКИ на
+// каждую душу контейнера; жалованье — один закон содержания × сезон. (Здесь
+// стояло «per soul whose own row is on upkeep, foraging-scaled by the leader's
+// effective sheet» — оба гейта умерли 2026-09-22 вместе с функцией, которую
+// этот абзац описывал, а сам навык фуражирования — 2026-10-12, M-144.)
 // БОРД и ПЛАТА — ровно две нужды армии, и это вердикт, а не упрощение
 // (владелец 2026-09-18): горожанин судится по ВСЕЙ лестнице нужд, солдат —
 // по харчу и жалованью. Поле звалось `bread` и тем самым делало литерал

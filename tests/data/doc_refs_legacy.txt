@@ -562,7 +562,6 @@ SKELETON.md	ui/overlays.cpp:1245
 SKELETON.md	ui/overlays.cpp:1253
 SKELETON.md	ui/overlays.cpp:1653-1660
 SKELETON.md	ui/overlays.cpp:2764-2765
-SKELETON.md	ui/overlays.cpp:887-899
 SKELETON.md	ui/screens.cpp:387-392
 SKELETON.md	vk_macro_renderer.cpp:189
 SKELETON.md	vk_macro_renderer.cpp:31

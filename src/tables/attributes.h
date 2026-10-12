@@ -49,10 +49,26 @@ enum class SkillId : std::uint8_t {
     Armsmaster, Spellcraft,
     // body (5)
     Bodybuilding, Meditation, Marathon, Athletics, Weightlifting,
-    // road & world (4)
-    Travel, Acrobatics, Scouting, Prospecting,
-    // husbandry (4)
-    Trade, Quartermaster, Foraging, Learning,
+    // road & world (3)
+    Travel, Acrobatics, Scouting,
+    // husbandry (1)
+    Trade,
+    // ЗДЕСЬ СТОЯЛИ `Prospecting`, `Quartermaster`, `Foraging` И `Learning` —
+    // СНЕСЕНЫ 2026-10-12 (вердикт владельца 2026-09-27, наряд M-144).
+    // Механических читателей у всех четырёх было НОЛЬ, а лист персонажа рисует
+    // процент и эффект ЛЮБОЙ строки этой таблицы ОБЩИМ циклом (`src/ui/
+    // overlays.cpp`, `src/ui/screens.cpp`), поэтому игрок читал «Prospecting
+    // +1% deposit sense per rank» как рабочее обещание мира: спящая колонка,
+    // ВИДИМАЯ игроку, есть дефект, а не долг. Третий законный ответ закона
+    // рамки — «названный спящий» (список в `tests/sheet_registry_test.cpp`) —
+    // их не покрывал: все четыре объявляли ЖИВОЙ процент и тем самым проходили
+    // сквозь свидетеля, который ищет молчаливый ноль.
+    // СНОС ВЫНУЖДЕННЫЙ, А НЕ ИДЕЙНЫЙ (владелец, дословно: «сносим вынуждено
+    // потому что это доп механики потом будем после демо релиза апдейтами
+    // добавлять»): место в замысле за навыками добычи СОХРАНЕНО — они вернутся
+    // апдейтом после демо и войдут колонкой строки ПРЕДМЕТА, а не этой таблицы.
+    // Ординалы хвоста сдвинулись; законно, формат сейва ограничением не
+    // является (`kSaveVersion@src/macro/state.h` бампнут).
     // the EIGHTH weapon (owner verdict 2026-09-05, appended v79 — ordinals
     // are forever): the bare fist is a weapon type like any other, so an
     // unarmed monk is a build and not a gap in the law.
@@ -167,8 +183,13 @@ struct SkillDef {
 // на ручку» снял прежнюю роль «процент поверх итогового урона»; шапка обещала её
 // до 2026-10-01 и врала — M-195). World-skill rows whose
 // reader is a later phase (weapons → the damage door, schools → S15 wiring,
-// Acrobatics/Scouting/Prospecting/Trade/… → the world readers) still state
+// Acrobatics/Scouting/Trade → the world readers) still state
 // their law here: the row IS the design, the reader arrives once.
+// И У ЭТОГО ПРАВИЛА ЕСТЬ ГРАНИЦА, КУПЛЕННАЯ M-144: «читатель придёт однажды»
+// законно, пока строку ещё СТРОЯТ, — а четыре строки добычи стояли с живым
+// процентом и нулём читателей, и лист показывал этот процент игроку как
+// обещание. Строка без читателя ЖДЁТ только тогда, когда её ждут названно
+// (`tests/sheet_registry_test.cpp`, список спящих); иначе она врёт.
 inline constexpr SkillDef kSkillDefs[] = {
     {SkillId::Sword,       "sword",       "Sword",
      "sword damage per rank",                 10},
@@ -273,16 +294,10 @@ inline constexpr SkillDef kSkillDefs[] = {
      "jump height per rank",                   1},
     {SkillId::Scouting,    "scouting",    "Scouting",
      "track-field reading per rank",           1},
-    {SkillId::Prospecting, "prospecting", "Prospecting",
-     "deposit sense per rank",                 1},
     {SkillId::Trade,       "trade",       "Trade",
      "final price edge per rank",              1},
-    {SkillId::Quartermaster, "quartermaster", "Quartermaster",
-     "squad payroll per rank",                 1, /*buysCostDown*/true},
-    {SkillId::Foraging,    "foraging",    "Foraging",
-     "provision drain per rank",               1, /*buysCostDown*/true},
-    {SkillId::Learning,    "learning",    "Learning",
-     "experience gained per rank",             1},
+    // (Четыре строки добычи и хозяйства снесены здесь 2026-10-12 вместе со
+    // своими значениями enum — разбор стоит на месте реза, выше.)
     // Appended v79 with its enum row — a weapon skill like the seven above.
     {SkillId::Unarmed,     "unarmed",     "Unarmed",
      "unarmed damage per rank",               10},
@@ -334,8 +349,12 @@ inline float skill_mult_of(SkillId id, int rank) {
 // The SAME law in whole percent, for the integer house (the strike assembly
 // multiplies by multPct/100; the world readers scale counts and radii by
 // pct/100). Both directions, exactly as the float door: a cost-down row
-// walks DOWN and floors at free — Foraging 100 is a squad fed off the land,
-// not a negative loaf.
+// walks DOWN and floors at free — Travel 100 is a march the terrain charges
+// nothing for, not a negative bar. (С 2026-10-12 `Travel` — ЕДИНСТВЕННАЯ
+// cost-down строка каталога: два её спутника из хозяйственной группы
+// снесены M-144. Колонка `buysCostDown` от этого не осиротела — у неё есть
+// читатель и ровно одна живая строка, — но следующий, кто заведёт вторую,
+// должен знать, что считает он от одной.)
 inline int skill_mult_pct_of(SkillId id, int rank) {
     if (rank < 0) rank = 0;
     if (rank > kMaxSkillRank) rank = kMaxSkillRank;

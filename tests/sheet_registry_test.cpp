@@ -70,11 +70,13 @@ void test_attributes_are_an_envelope_and_a_table() {
 
 // ── The table is a table ─────────────────────────────────────────────────
 void test_the_registry_is_addressable_by_ordinal() {
-    CHECK(int(SkillId::Count) == 37,
-          "the canon thirty-two, Unarmed (v79) and the FOUR crafts stand in "
-          "the registry today — five crafts landed 2026-09-18, and Cooking "
-          "was cut 2026-09-28 (M-148) because «ЕДА НЕ ПРОИЗВОДИТСЯ» closes "
-          "its recipe by LAW, not by schedule");
+    CHECK(int(SkillId::Count) == 33,
+          "the registry's count today — Cooking was cut 2026-09-28 (M-148) "
+          "because «ЕДА НЕ ПРОИЗВОДИТСЯ» closes its recipe by LAW, and the "
+          "FOUR husbandry rows (Prospecting, Quartermaster, Foraging, "
+          "Learning) were cut 2026-10-12 (M-144) because a row that shows a "
+          "live percent to the player and is read by nobody does not SLEEP, "
+          "it LIES — the sleeper list below is the only legal way to wait");
     // A SKILL MUST HAVE POWER — and this used to say «power is a percent per
     // rank», which is true of every skill that multiplies a blow or shaves a
     // price and false of a CRAFT: a craft's rank does not scale a number, it
