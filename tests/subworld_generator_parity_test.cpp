@@ -73,13 +73,6 @@ std::vector<Glade> expected_forest_glades(const sm::sub::CellContext& ctx) {
     return out;
 }
 
-int fail(const char* msg) {
-    // Testing law #1: the verdict lives in the ONE check.h counter — the
-    // returned int is vestigial and IGNORED; main ends with report().
-    sm::test::check(false, msg, "tests/subworld_generator_parity_test.cpp", 0);
-    return 1;
-}
-
 bool heightmaps_nearly_equal(const std::vector<float>& a,
                              const std::vector<float>& b) {
     if (a.size() != b.size()) return false;
@@ -185,7 +178,9 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
     const float sx = bx - ax;
     const float sy = by - ay;
     const float spanLen = std::sqrt(sx * sx + sy * sy);
-    if (spanLen <= 1.0f) return fail("bridge check needs a real span");
+    const bool ok1 = !(spanLen <= 1.0f);
+    CHECK(ok1, "bridge check needs a real span");
+    if (!ok1) return 1;
     int decks = 0;
     int piers = 0;
     float pierWidthSum = 0.0f;
@@ -206,37 +201,41 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
         if (s.shape == Structure::Cylinder) {
             ++piers;
             pierWidthSum += 2.0f * s.radius;
-            if (!s.zWorld) {
-                return fail("a pier stands at a world level, like its deck");
-            }
-            if (z0 > seatM) {
-                return fail("a pier's footing must reach into the bed");
-            }
-            if (z1 <= seatM) {
-                return fail("a pier must rise out of the bed to meet the deck");
-            }
+            const bool ok2 = !(!s.zWorld);
+            CHECK(ok2, "a pier stands at a world level, like its deck");
+            if (!ok2) return 1;
+            const bool ok3 = !(z0 > seatM);
+            CHECK(ok3, "a pier's footing must reach into the bed");
+            if (!ok3) return 1;
+            const bool ok4 = !(z1 <= seatM);
+            CHECK(ok4, "a pier must rise out of the bed to meet the deck");
+            if (!ok4) return 1;
             continue;
         }
         ++decks;
-        if (!s.zWorld) {
-            return fail("a deck stands at a world level, not on the bed");
-        }
+        const bool ok5 = !(!s.zWorld);
+        CHECK(ok5, "a deck stands at a world level, not on the bed");
+        if (!ok5) return 1;
         const float projD = ((s.x - ax) * sx + (s.y - ay) * sy) / spanLen;
         if (seatM < seaM) {
-            if (z1 < seaM) {
-                return fail("a deck top below the water plane is not a bridge");
-            }
+            const bool ok6 = !(z1 < seaM);
+            CHECK(ok6, "a deck top below the water plane is not a bridge");
+            if (!ok6) return 1;
             wetDeckTops.emplace_back(projD, z1);
         }
         const float proj = projD;
         deckSpans.emplace_back(proj - structure_half_x(s),
                                proj + structure_half_x(s));
     }
-    if (decks < 2) return fail("a water span must carry a chain of deck chords");
-    if (piers < 1) return fail("a deck chain needs piers to stand on");
-    if (wetDeckTops.size() < 2) {
-        return fail("a wet crossing must carry a chain of level chords");
-    }
+    const bool ok7 = !(decks < 2);
+    CHECK(ok7, "a water span must carry a chain of deck chords");
+    if (!ok7) return 1;
+    const bool ok8 = !(piers < 1);
+    CHECK(ok8, "a deck chain needs piers to stand on");
+    if (!ok8) return 1;
+    const bool ok9 = !(wetDeckTops.size() < 2);
+    CHECK(ok9, "a wet crossing must carry a chain of level chords");
+    if (!ok9) return 1;
     // THE ARCH, walked and not jumped. Neighbouring chords may differ only by
     // less than a kerb (kStepUpM) — the invariant the flat deck was built to
     // win, and the one the camber may not spend.
@@ -246,9 +245,9 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
     for (std::size_t i = 1; i < wetDeckTops.size(); ++i) {
         const float step =
             std::fabs(wetDeckTops[i].second - wetDeckTops[i - 1].second);
-        if (step >= kStepUpM) {
-            return fail("a step in the deck: the arch must be walked, not jumped");
-        }
+        const bool ok10 = !(step >= kStepUpM);
+        CHECK(ok10, "a step in the deck: the arch must be walked, not jumped");
+        if (!ok10) return 1;
         lowest = std::min(lowest, wetDeckTops[i].second);
         highest = std::max(highest, wetDeckTops[i].second);
     }
@@ -263,9 +262,9 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
         return map.heightmap[std::size_t(ty) * kCellSize + tx] >= WATER_LEVEL;
     };
     if (dry_at(0.0f) && dry_at(spanLen)) {
-        if (highest - lowest <= 0.01f) {
-            return fail("a span between two banks must carry an arch");
-        }
+        const bool ok11 = !(highest - lowest <= 0.01f);
+        CHECK(ok11, "a span between two banks must carry an arch");
+        if (!ok11) return 1;
         float crownAt = wetDeckTops.front().first;
         for (const auto& d : wetDeckTops) {
             if (d.second >= highest - 0.001f) { crownAt = d.first; break; }
@@ -273,9 +272,10 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
         const float wetFirst = wetDeckTops.front().first;
         const float wetLast = wetDeckTops.back().first;
         const float wetMid = (wetFirst + wetLast) * 0.5f;
-        if (std::fabs(crownAt - wetMid) > 0.25f * (wetLast - wetFirst) + 1.0f) {
-            return fail("the arch crowns off-centre: that is a ramp, not an arch");
-        }
+        const bool ok12 =
+            !(std::fabs(crownAt - wetMid) > 0.25f * (wetLast - wetFirst) + 1.0f);
+        CHECK(ok12, "the arch crowns off-centre: that is a ramp, not an arch");
+        if (!ok12) return 1;
     }
     // Every WET stretch of the road line must be decked; a dry stretch is the
     // bank's own business (the ramp lands and the ground carries the walker).
@@ -295,18 +295,18 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
                 break;
             }
         }
-        if (!covered) {
-            return fail("open water on the road line with no deck overhead");
-        }
+        const bool ok13 = !(!covered);
+        CHECK(ok13, "open water on the road line with no deck overhead");
+        if (!ok13) return 1;
     }
-    if (wetSamples == 0) {
-        return fail("bridge fixture has no wet stretch to bridge");
-    }
+    const bool ok14 = !(wetSamples == 0);
+    CHECK(ok14, "bridge fixture has no wet stretch to bridge");
+    if (!ok14) return 1;
     // The arches themselves: piers must not dam the crossing — most of the
     // wet stretch stays open water under the deck.
-    if (pierWidthSum > 0.5f * float(wetSamples) * 4.0f) {
-        return fail("piers dam the river: no arches left");
-    }
+    const bool ok15 = !(pierWidthSum > 0.5f * float(wetSamples) * 4.0f);
+    CHECK(ok15, "piers dam the river: no arches left");
+    if (!ok15) return 1;
     return 0;
 }
 
@@ -349,28 +349,29 @@ int main() {
     SubworldMapData out{};
     dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out, nullptr, nbForest);
 
-    if (resolve_mode(ctx) != SubworldMode::Forest) {
-        return fail("forest-class tree count did not resolve to Forest mode");
-    }
-    if (out.tiles.size() != std::size_t(kCellSize) * kCellSize) {
-        return fail("forest generator produced wrong tile count");
-    }
-    if (out.trav.size() != out.tiles.size() || out.heightmap.size() != out.tiles.size()) {
-        return fail("forest generator produced mismatched map buffers");
-    }
+    const bool ok1 = !(resolve_mode(ctx) != SubworldMode::Forest);
+    CHECK(ok1, "forest-class tree count did not resolve to Forest mode");
+    if (!ok1) return 1;
+    const bool ok2 = !(out.tiles.size() != std::size_t(kCellSize) * kCellSize);
+    CHECK(ok2, "forest generator produced wrong tile count");
+    if (!ok2) return 1;
+    const bool ok3 =
+        !(out.trav.size() != out.tiles.size() || out.heightmap.size() != out.tiles.size());
+    CHECK(ok3, "forest generator produced mismatched map buffers");
+    if (!ok3) return 1;
 
     const std::vector<Glade> glades = expected_forest_glades(ctx);
-    if (glades.size() < 8) {
-        return fail("forest glade constants produced too few test glades");
-    }
+    const bool ok4 = !(glades.size() < 8);
+    CHECK(ok4, "forest glade constants produced too few test glades");
+    if (!ok4) return 1;
 
     int treeStructures = 0;
     for (const Structure& s : out.structures) {
         if (s.kind == Structure::Tree) ++treeStructures;
     }
-    if (treeStructures <= 0) {
-        return fail("forest generator produced no tree structures");
-    }
+    const bool ok5 = !(treeStructures <= 0);
+    CHECK(ok5, "forest generator produced no tree structures");
+    if (!ok5) return 1;
 
     const int center = kCellSize / 2;
 
@@ -382,9 +383,10 @@ int main() {
                 const int px = g.x + dx;
                 const int py = g.y + dy;
                 if (px < 0 || py < 0 || px >= kCellSize || py >= kCellSize) continue;
-                if (out.tiles[std::size_t(py) * kCellSize + px] == TILE_TREE_DECOR) {
-                    return fail("forest glade still contains tree decor tiles");
-                }
+                const bool ok6 =
+                    !(out.tiles[std::size_t(py) * kCellSize + px] == TILE_TREE_DECOR);
+                CHECK(ok6, "forest glade still contains tree decor tiles");
+                if (!ok6) return 1;
             }
         }
         for (const Structure& s : out.structures) {
@@ -393,9 +395,9 @@ int main() {
             const int ty = int(std::floor(s.y));
             const int dx = tx - g.x;
             const int dy = ty - g.y;
-            if (dx * dx + dy * dy <= r2) {
-                return fail("forest glade still contains tree structures");
-            }
+            const bool ok7 = !(dx * dx + dy * dy <= r2);
+            CHECK(ok7, "forest glade still contains tree structures");
+            if (!ok7) return 1;
         }
     }
 
@@ -414,14 +416,14 @@ int main() {
     nbF[5] = std::uint8_t(FT_DirtRoad);
     SubworldMapData grassTrailOut{};
     dispatch_generate(grassTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, grassTrailOut);
-    if (resolve_mode(grassTrail) != SubworldMode::Grassland
-        || anchor_is_road(grassTrailOut, grassTrail, -1, 0)
-        || anchor_is_road(grassTrailOut, grassTrail, 1, 0)
-        || grassTrailOut.tiles[std::size_t(center) * kCellSize + center]
-            == TILE_ROAD) {
-        return fail("grassland wilderness cell must NOT carve roads "
-                    "(a road is built from the cell's OWN feature, never from its neighbours)");
-    }
+    const bool ok8 = !(resolve_mode(grassTrail) != SubworldMode::Grassland
+                       || anchor_is_road(grassTrailOut, grassTrail, -1, 0)
+                       || anchor_is_road(grassTrailOut, grassTrail, 1, 0)
+                       || grassTrailOut.tiles[std::size_t(center) * kCellSize + center]
+                           == TILE_ROAD);
+    CHECK(ok8, "grassland wilderness cell must NOT carve roads "
+               "(a road is built from the cell's OWN feature, never from its neighbours)");
+    if (!ok8) return 1;
 
     CellContext forestTrail = ctx;
     forestTrail.cx = -8;
@@ -434,13 +436,13 @@ int main() {
     SubworldMapData forestTrailOut{};
     dispatch_generate(forestTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, forestTrailOut, nullptr,
                       nbForest);
-    if (anchor_is_road(forestTrailOut, forestTrail, 0, -1)
-        || anchor_is_road(forestTrailOut, forestTrail, 0, 1)
-        || forestTrailOut.tiles[std::size_t(center) * kCellSize + center]
-            == TILE_ROAD) {
-        return fail("forest wilderness cell must NOT carve roads "
-                    "(a road is built from the cell's OWN feature, never from its neighbours)");
-    }
+    const bool ok9 = !(anchor_is_road(forestTrailOut, forestTrail, 0, -1)
+                       || anchor_is_road(forestTrailOut, forestTrail, 0, 1)
+                       || forestTrailOut.tiles[std::size_t(center) * kCellSize + center]
+                           == TILE_ROAD);
+    CHECK(ok9, "forest wilderness cell must NOT carve roads "
+               "(a road is built from the cell's OWN feature, never from its neighbours)");
+    if (!ok9) return 1;
 
     CellContext swampTrail{};
     swampTrail.cx = 6;
@@ -456,13 +458,13 @@ int main() {
     nbF[5] = std::uint8_t(FT_Road);
     SubworldMapData swampTrailOut{};
     dispatch_generate(swampTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, swampTrailOut);
-    if (resolve_mode(swampTrail) != SubworldMode::Swamp
-        || anchor_is_road(swampTrailOut, swampTrail, 1, 0)
-        || swampTrailOut.tiles[std::size_t(center) * kCellSize + center]
-            == TILE_ROAD) {
-        return fail("swamp wilderness cell must NOT carve roads "
-                    "(a road is built from the cell's OWN feature, never from its neighbours)");
-    }
+    const bool ok10 = !(resolve_mode(swampTrail) != SubworldMode::Swamp
+                        || anchor_is_road(swampTrailOut, swampTrail, 1, 0)
+                        || swampTrailOut.tiles[std::size_t(center) * kCellSize + center]
+                            == TILE_ROAD);
+    CHECK(ok10, "swamp wilderness cell must NOT carve roads "
+                "(a road is built from the cell's OWN feature, never from its neighbours)");
+    if (!ok10) return 1;
 
     CellContext mountainTrail{};
     mountainTrail.cx = -9;
@@ -478,13 +480,13 @@ int main() {
     nbF[1] = std::uint8_t(FT_Road);
     SubworldMapData mountainTrailOut{};
     dispatch_generate(mountainTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, mountainTrailOut);
-    if (resolve_mode(mountainTrail) != SubworldMode::Mountain
-        || anchor_is_road(mountainTrailOut, mountainTrail, 0, -1)
-        || mountainTrailOut.tiles[std::size_t(center) * kCellSize + center]
-            == TILE_ROAD) {
-        return fail("mountain wilderness cell must NOT carve roads "
-                    "(a road is built from the cell's OWN feature, never from its neighbours)");
-    }
+    const bool ok11 = !(resolve_mode(mountainTrail) != SubworldMode::Mountain
+                        || anchor_is_road(mountainTrailOut, mountainTrail, 0, -1)
+                        || mountainTrailOut.tiles[std::size_t(center) * kCellSize + center]
+                            == TILE_ROAD);
+    CHECK(ok11, "mountain wilderness cell must NOT carve roads "
+                "(a road is built from the cell's OWN feature, never from its neighbours)");
+    if (!ok11) return 1;
 
     CellContext spire{};
     spire.cx = -2;
@@ -500,9 +502,9 @@ int main() {
 
     SubworldMapData spireOut{};
     dispatch_generate(spire, nbH, nbB, /*nbBiome5*/nullptr, nbF, spireOut);
-    if (resolve_mode(spire) != SubworldMode::Spire) {
-        return fail("spire landmark did not resolve to Spire mode");
-    }
+    const bool ok12 = !(resolve_mode(spire) != SubworldMode::Spire);
+    CHECK(ok12, "spire landmark did not resolve to Spire mode");
+    if (!ok12) return 1;
 
     // The tower is ONE round central cylinder of the dungeon layer's shared
     // dimensions (dgn/dispatch.h — the same authority the roof exit reads;
@@ -522,9 +524,10 @@ int main() {
             ++towerCount;
         }
     }
-    if (towerCount != 1) {
-        return fail("a spire cell carries exactly ONE round central tower, sized from the shared spire constants");
-    }
+    const bool ok13 = !(towerCount != 1);
+    CHECK(ok13,
+          "a spire cell carries exactly ONE round central tower, sized from the shared spire constants");
+    if (!ok13) return 1;
 
     // ── The crown is a PLACE a body stands on ───────────────────────────────
     // Everything up here shares ONE stated height (zWorld), or the rail ripples
@@ -561,9 +564,9 @@ int main() {
             }
             uncovered += covered ? 0 : 1;
         }
-        if (uncovered != 0) {
-            return fail("the crown's parapet has gaps a body can walk out of");
-        }
+        const bool ok14 = !(uncovered != 0);
+        CHECK(ok14, "the crown's parapet has gaps a body can walk out of");
+        if (!ok14) return 1;
         // NEGATIVE CONTROL: drop one chord and the same detector must see it,
         // or "sealed" proved only that the detector is blind.
         SubworldMapData holed = spireOut;
@@ -594,18 +597,18 @@ int main() {
             }
             holes += covered ? 0 : 1;
         }
-        if (holes == 0) {
-            return fail("control: a removed parapet chord is a visible gap");
-        }
+        const bool ok15 = !(holes == 0);
+        CHECK(ok15, "control: a removed parapet chord is a visible gap");
+        if (!ok15) return 1;
     }
     // 2. The rail is chest-high — a body must not be able to step over it
     // (sub/collide.h kStepUpM), which is the whole reason it is built.
     for (const Structure& s : spireOut.structures) {
         if (s.kind != Structure::Wall || s.shape != Structure::Box) continue;
         if (std::fabs(s.zBase - crownM) > 0.001f) continue;
-        if (s.height <= sm::sub::kStepUpM) {
-            return fail("a parapet a body steps over is not a parapet");
-        }
+        const bool ok16 = !(s.height <= sm::sub::kStepUpM);
+        CHECK(ok16, "a parapet a body steps over is not a parapet");
+        if (!ok16) return 1;
     }
     // 3. The way back in stands on the crown, at the SHARED point, and NOT on
     // the axis — the axis is the orb's plinth, and a body put there comes up
@@ -619,25 +622,28 @@ int main() {
             if (s.kind == Structure::SpireHatch) hatch = &s;
             if (s.kind == Structure::SpireOrb) orb = &s;
         }
-        if (!hatch || hatch->x != hx || hatch->y != hy
-            || std::fabs(hatch->zBase - crownM) > 0.001f) {
-            return fail("the crown carries no hatch at the shared point");
-        }
-        if (!orb) return fail("an un-drained spire raises its orb");
-        if (structure_surface_dist2(*orb, hatch->x, hatch->y) <= 0.0f) {
-            return fail("the crown's hatch stands inside the orb's plinth");
-        }
-        if (std::fabs(orb->zBase - crownM) > 0.001f) {
-            return fail("the orb stands on the same crown as everything else");
-        }
+        const bool ok17 = !(!hatch || hatch->x != hx || hatch->y != hy
+                            || std::fabs(hatch->zBase - crownM) > 0.001f);
+        CHECK(ok17, "the crown carries no hatch at the shared point");
+        if (!ok17) return 1;
+        const bool ok18 = !(!orb);
+        CHECK(ok18, "an un-drained spire raises its orb");
+        if (!ok18) return 1;
+        const bool ok19 =
+            !(structure_surface_dist2(*orb, hatch->x, hatch->y) <= 0.0f);
+        CHECK(ok19, "the crown's hatch stands inside the orb's plinth");
+        if (!ok19) return 1;
+        const bool ok20 = !(std::fabs(orb->zBase - crownM) > 0.001f);
+        CHECK(ok20, "the orb stands on the same crown as everything else");
+        if (!ok20) return 1;
         // And it lands INSIDE the rail, not on it.
         const float dx = hatch->x - float(center);
         const float dy = hatch->y - float(center);
         const float rail = kSpireTowerRadiusTiles
                          - 2.0f * structure_min_half_xy(Structure::Wall);
-        if (dx * dx + dy * dy >= rail * rail) {
-            return fail("the crown's hatch is buried in its own parapet");
-        }
+        const bool ok21 = !(dx * dx + dy * dy >= rail * rail);
+        CHECK(ok21, "the crown's hatch is buried in its own parapet");
+        if (!ok21) return 1;
     }
 
     int scorchRock = 0;
@@ -663,9 +669,9 @@ int main() {
             }
         }
     }
-    if (scorchRock <= 0 || craterRing <= 0 || craterBad != 0) {
-        return fail("spire scorch/crater tile invariants failed");
-    }
+    const bool ok22 = !(scorchRock <= 0 || craterRing <= 0 || craterBad != 0);
+    CHECK(ok22, "spire scorch/crater tile invariants failed");
+    if (!ok22) return 1;
 
     for (const Structure& s : spireOut.structures) {
         if (s.kind != Structure::Tree) continue;
@@ -673,9 +679,9 @@ int main() {
         const int ty = int(std::floor(s.y));
         const int dx = tx - center;
         const int dy = ty - center;
-        if (dx * dx + dy * dy < kScorchRadius * kScorchRadius) {
-            return fail("spire scorch radius still contains tree structures");
-        }
+        const bool ok23 = !(dx * dx + dy * dy < kScorchRadius * kScorchRadius);
+        CHECK(ok23, "spire scorch radius still contains tree structures");
+        if (!ok23) return 1;
     }
 
     CellContext ruin{};
@@ -692,9 +698,9 @@ int main() {
 
     SubworldMapData ruinOut{};
     dispatch_generate(ruin, nbH, nbB, /*nbBiome5*/nullptr, nbF, ruinOut);
-    if (resolve_mode(ruin) != SubworldMode::Ruin) {
-        return fail("ruin landmark did not resolve to Ruin mode");
-    }
+    const bool ok24 = !(resolve_mode(ruin) != SubworldMode::Ruin);
+    CHECK(ok24, "ruin landmark did not resolve to Ruin mode");
+    if (!ok24) return 1;
     int wallTiles = 0;
     int blockedWallTiles = 0;
     int centerSquares = 0;
@@ -712,9 +718,10 @@ int main() {
             }
         }
     }
-    if (wallTiles < 100 || blockedWallTiles != wallTiles || centerSquares <= 0) {
-        return fail("ruin wall/square invariants failed");
-    }
+    const bool ok25 =
+        !(wallTiles < 100 || blockedWallTiles != wallTiles || centerSquares <= 0);
+    CHECK(ok25, "ruin wall/square invariants failed");
+    if (!ok25) return 1;
 
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
     nbF[5] = std::uint8_t(FT_Road);
@@ -726,11 +733,11 @@ int main() {
     for (const std::uint8_t tile : ruinRoadOut.tiles) {
         if (tile == TILE_ROAD) ++ruinRoadTiles;
     }
-    if (ruinRoadOut.tiles[std::size_t(ruinEastY) * kCellSize + ruinEastX] != TILE_ROAD
-        || ruinRoadTiles <= 0
-        || wall_structures_on_protected_tiles(ruinRoadOut) != 0) {
-        return fail("ruin generator ignored anchored road gate");
-    }
+    const bool ok26 = !(ruinRoadOut.tiles[std::size_t(ruinEastY) * kCellSize + ruinEastX] != TILE_ROAD
+                        || ruinRoadTiles <= 0
+                        || wall_structures_on_protected_tiles(ruinRoadOut) != 0);
+    CHECK(ok26, "ruin generator ignored anchored road gate");
+    if (!ok26) return 1;
 
     CellContext city{};
     city.cx = -11;
@@ -746,9 +753,9 @@ int main() {
 
     SubworldMapData cityOut{};
     dispatch_generate(city, nbH, nbB, /*nbBiome5*/nullptr, nbF, cityOut);
-    if (resolve_mode(city) != SubworldMode::City) {
-        return fail("city landmark did not resolve to City mode");
-    }
+    const bool ok27 = !(resolve_mode(city) != SubworldMode::City);
+    CHECK(ok27, "city landmark did not resolve to City mode");
+    if (!ok27) return 1;
     int cityHouses = 0;
     int cityWalls = 0;
     int cityFields = 0;
@@ -773,9 +780,10 @@ int main() {
         if (tile == TILE_SQUARE) ++citySquares;
         if (tile == TILE_ROAD) ++cityRoads;
     }
-    if (cityHouses < 40 || cityWalls < 40 || cityFields <= 0
-        || citySquares <= 0 || cityRoads <= 0 || cityKeeps != 1
-        || cityBlockedWallRecords != 0) {
+    const bool ok28 = !(cityHouses < 40 || cityWalls < 40 || cityFields <= 0
+                        || citySquares <= 0 || cityRoads <= 0 || cityKeeps != 1
+                        || cityBlockedWallRecords != 0);
+    if (!ok28) {
         std::cerr << "city counts houses=" << cityHouses
                   << " walls=" << cityWalls
                   << " fields=" << cityFields
@@ -783,8 +791,9 @@ int main() {
                   << " roads=" << cityRoads
                   << " keeps=" << cityKeeps
                   << " blockedWallRecords=" << cityBlockedWallRecords << "\n";
-        return fail("city generator settlement invariants failed");
     }
+    CHECK(ok28, "city generator settlement invariants failed");
+    if (!ok28) return 1;
 
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
     nbF[3] = std::uint8_t(FT_Road);
@@ -794,13 +803,13 @@ int main() {
     int cityWestX, cityWestY, cityEastX, cityEastY;
     expected_edge_anchor(city, -1, 0, cityWestX, cityWestY);
     expected_edge_anchor(city, 1, 0, cityEastX, cityEastY);
-    if (cityAlignedOut.tiles[std::size_t(cityWestY) * kCellSize + cityWestX] != TILE_ROAD
-        || cityAlignedOut.tiles[std::size_t(cityEastY) * kCellSize + cityEastX] != TILE_ROAD
-        || cityAlignedOut.tiles[std::size_t(0) * kCellSize + center] == TILE_ROAD
-        || cityAlignedOut.tiles[std::size_t(kCellSize - 1) * kCellSize + center] == TILE_ROAD
-        || wall_structures_on_protected_tiles(cityAlignedOut) != 0) {
-        return fail("city generator ignored neighbour road directions");
-    }
+    const bool ok29 = !(cityAlignedOut.tiles[std::size_t(cityWestY) * kCellSize + cityWestX] != TILE_ROAD
+                        || cityAlignedOut.tiles[std::size_t(cityEastY) * kCellSize + cityEastX] != TILE_ROAD
+                        || cityAlignedOut.tiles[std::size_t(0) * kCellSize + center] == TILE_ROAD
+                        || cityAlignedOut.tiles[std::size_t(kCellSize - 1) * kCellSize + center] == TILE_ROAD
+                        || wall_structures_on_protected_tiles(cityAlignedOut) != 0);
+    CHECK(ok29, "city generator ignored neighbour road directions");
+    if (!ok29) return 1;
 
     CellContext village{};
     village.cx = 13;
@@ -816,9 +825,9 @@ int main() {
 
     SubworldMapData villageOut{};
     dispatch_generate(village, nbH, nbB, /*nbBiome5*/nullptr, nbF, villageOut);
-    if (resolve_mode(village) != SubworldMode::Village) {
-        return fail("village landmark did not resolve to Village mode");
-    }
+    const bool ok30 = !(resolve_mode(village) != SubworldMode::Village);
+    CHECK(ok30, "village landmark did not resolve to Village mode");
+    if (!ok30) return 1;
     int villageHouses = 0;
     int villageWalls = 0;
     int villageFields = 0;
@@ -837,16 +846,18 @@ int main() {
         if (tile == TILE_SQUARE) ++villageSquares;
         if (tile == TILE_ROAD) ++villageRoads;
     }
-    if (villageHouses < 10 || villageWalls <= 0 || villageFields <= 0
-        || villageSquares <= 0 || villageRoads <= 0
-        || villageBlockedWallRecords != 0) {
+    const bool ok31 = !(villageHouses < 10 || villageWalls <= 0 || villageFields <= 0
+                        || villageSquares <= 0 || villageRoads <= 0
+                        || villageBlockedWallRecords != 0);
+    if (!ok31) {
         std::cerr << "village counts houses=" << villageHouses
                   << " walls=" << villageWalls
                   << " fields=" << villageFields
                   << " squares=" << villageSquares
                   << " roads=" << villageRoads << "\n";
-        return fail("village generator settlement invariants failed");
     }
+    CHECK(ok31, "village generator settlement invariants failed");
+    if (!ok31) return 1;
 
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
     nbF[3] = std::uint8_t(FT_Road);
@@ -856,13 +867,13 @@ int main() {
     int villageWestX, villageWestY, villageEastX, villageEastY;
     expected_edge_anchor(village, -1, 0, villageWestX, villageWestY);
     expected_edge_anchor(village, 1, 0, villageEastX, villageEastY);
-    if (villageAlignedOut.tiles[std::size_t(villageWestY) * kCellSize + villageWestX] != TILE_ROAD
-        || villageAlignedOut.tiles[std::size_t(villageEastY) * kCellSize + villageEastX] != TILE_ROAD
-        || villageAlignedOut.tiles[std::size_t(0) * kCellSize + center] == TILE_ROAD
-        || villageAlignedOut.tiles[std::size_t(kCellSize - 1) * kCellSize + center] == TILE_ROAD
-        || wall_structures_on_protected_tiles(villageAlignedOut) != 0) {
-        return fail("village generator ignored neighbour road directions");
-    }
+    const bool ok32 = !(villageAlignedOut.tiles[std::size_t(villageWestY) * kCellSize + villageWestX] != TILE_ROAD
+                        || villageAlignedOut.tiles[std::size_t(villageEastY) * kCellSize + villageEastX] != TILE_ROAD
+                        || villageAlignedOut.tiles[std::size_t(0) * kCellSize + center] == TILE_ROAD
+                        || villageAlignedOut.tiles[std::size_t(kCellSize - 1) * kCellSize + center] == TILE_ROAD
+                        || wall_structures_on_protected_tiles(villageAlignedOut) != 0);
+    CHECK(ok32, "village generator ignored neighbour road directions");
+    if (!ok32) return 1;
 
     CellContext road{};
     road.cx = 1;
@@ -901,9 +912,9 @@ int main() {
 
     SubworldMapData roadOut{};
     dispatch_generate(road, nbH, nbB, /*nbBiome5*/nullptr, nbF, roadOut);
-    if (resolve_mode(road) != SubworldMode::Road) {
-        return fail("water road feature did not resolve to Road mode");
-    }
+    const bool ok33 = !(resolve_mode(road) != SubworldMode::Road);
+    CHECK(ok33, "water road feature did not resolve to Road mode");
+    if (!ok33) return 1;
 
     int roadWestX, roadWestY, roadEastX, roadEastY;
     expected_edge_anchor(road, -1, 0, roadWestX, roadWestY);
@@ -925,9 +936,9 @@ int main() {
     int roadTiles = 0;
     for (std::size_t i = 0; i < roadOut.tiles.size(); ++i) {
         if (roadOut.tiles[i] != TILE_ROAD) continue;
-        if (roadOut.heightmap[i] < WATER_LEVEL) {
-            return fail("a road tile on the river bed: the bridge is the road");
-        }
+        const bool ok34 = !(roadOut.heightmap[i] < WATER_LEVEL);
+        CHECK(ok34, "a road tile on the river bed: the bridge is the road");
+        if (!ok34) return 1;
         ++roadTiles;   // dry ramp footing only — nil in an all-water cell
     }
 
@@ -951,12 +962,12 @@ int main() {
     // Same law as the through-road above: over water the DECK is the road,
     // so the anchor and the terminus carry stone overhead, not road tiles on
     // the bed. check_bridge_chain has just proven the chain covers both ends.
-    if (roadSingleOut.tiles[std::size_t(roadSingleEastY) * kCellSize
-                              + roadSingleEastX] == TILE_ROAD
-        || roadSingleOut.tiles[std::size_t(roadSingleCenter) * kCellSize
-                              + roadSingleCenter] == TILE_ROAD) {
-        return fail("single-neighbour road anchor invariants failed");
-    }
+    const bool ok35 = !(roadSingleOut.tiles[std::size_t(roadSingleEastY) * kCellSize
+                                              + roadSingleEastX] == TILE_ROAD
+                        || roadSingleOut.tiles[std::size_t(roadSingleCenter) * kCellSize
+                                              + roadSingleCenter] == TILE_ROAD);
+    CHECK(ok35, "single-neighbour road anchor invariants failed");
+    if (!ok35) return 1;
 
     // ── THE FORK BELONGS ON THE BANK (owner in play, 2026-08-30) ─────────
     // A road running along the far shore is a neighbour that CARRIES a road
@@ -987,11 +998,14 @@ int main() {
             ++spanChords;
             // Every deck chord lies along the crossing AXIS (east-west here).
             // A chord aimed at the southern neighbour is the old fork.
-            if (std::fabs(std::sin(s.yaw)) > 0.35f) {
-                return fail("a deck chord aimed off the crossing axis: forked span");
-            }
+            const bool ok36 = !(std::fabs(std::sin(s.yaw)) > 0.35f);
+            CHECK(ok36,
+                  "a deck chord aimed off the crossing axis: forked span");
+            if (!ok36) return 1;
         }
-        if (spanChords < 2) return fail("the fork fixture built no span at all");
+        const bool ok37 = !(spanChords < 2);
+        CHECK(ok37, "the fork fixture built no span at all");
+        if (!ok37) return 1;
         // The passing road still ARRIVES — it just arrives on land.
         int southRoadTiles = 0;
         int joinY = kCellSize;          // northmost tile of the passing lane
@@ -1001,14 +1015,14 @@ int main() {
                 if (forkOut.tiles[i] != TILE_ROAD) continue;
                 ++southRoadTiles;
                 joinY = std::min(joinY, y);
-                if (forkOut.heightmap[i] < WATER_LEVEL) {
-                    return fail("the passing road walked into the water");
-                }
+                const bool ok38 = !(forkOut.heightmap[i] < WATER_LEVEL);
+                CHECK(ok38, "the passing road walked into the water");
+                if (!ok38) return 1;
             }
         }
-        if (southRoadTiles <= 0) {
-            return fail("the passing road never reached the crossing");
-        }
+        const bool ok39 = !(southRoadTiles <= 0);
+        CHECK(ok39, "the passing road never reached the crossing");
+        if (!ok39) return 1;
         (void)joinY;
         // NOT asserted here: WHERE along the span the lane joins (the owner's
         // «не прилеплять вплотную к границе субмира»). The obvious probe —
@@ -1052,10 +1066,11 @@ int main() {
 
     SubworldMapData grassOut{};
     dispatch_generate(grass, nbH, nbB, /*nbBiome5*/nullptr, nbF, grassOut);
-    if (resolve_mode(grass) != SubworldMode::Grassland
-        || std::fabs(grassOut.waterLevel - WATER_LEVEL) > 0.0001f) {
-        return fail("a cell with no feature resolves to Grassland and sits on the one water plane");
-    }
+    const bool ok40 = !(resolve_mode(grass) != SubworldMode::Grassland
+                        || std::fabs(grassOut.waterLevel - WATER_LEVEL) > 0.0001f);
+    CHECK(ok40,
+          "a cell with no feature resolves to Grassland and sits on the one water plane");
+    if (!ok40) return 1;
 
     CellContext invalidFeatureGrass = grass;
     invalidFeatureGrass.feature = static_cast<FeatureType>(255u);
@@ -1064,13 +1079,14 @@ int main() {
     nbF[4] = 255u;
     SubworldMapData invalidFeatureGrassOut{};
     dispatch_generate(invalidFeatureGrass, nbH, nbB, /*nbBiome5*/nullptr, nbF, invalidFeatureGrassOut);
-    if (invalidFeatureGrassOut.tiles != grassOut.tiles
-        || invalidFeatureGrassOut.trav != grassOut.trav
-        || invalidFeatureGrassOut.structures.size() != grassOut.structures.size()
-        || !heightmaps_nearly_equal(invalidFeatureGrassOut.heightmap,
-                                    grassOut.heightmap)) {
-        return fail("subworld dispatch did not fail closed for invalid feature bytes");
-    }
+    const bool ok41 = !(invalidFeatureGrassOut.tiles != grassOut.tiles
+                        || invalidFeatureGrassOut.trav != grassOut.trav
+                        || invalidFeatureGrassOut.structures.size() != grassOut.structures.size()
+                        || !heightmaps_nearly_equal(invalidFeatureGrassOut.heightmap,
+                                                    grassOut.heightmap));
+    CHECK(ok41,
+          "subworld dispatch did not fail closed for invalid feature bytes");
+    if (!ok41) return 1;
 
     // Direct heightmap coverage for the elevation-classified Mountain biome.
     // Relief amplification keys off nbBiome==Mountain (base_generator ridge /
@@ -1100,20 +1116,21 @@ int main() {
         }
         return hm.empty() ? 0.0f : hi - lo;
     };
-    if (directPlainsHeightmap.size() != directMountainHeightmap.size()
-        || directMountainHeightmap.empty()
-        || vertical_range(directMountainHeightmap)
-               <= vertical_range(directPlainsHeightmap)) {
-        return fail("Mountain-biome neighbourhood did not amplify heightmap relief");
-    }
+    const bool ok42 = !(directPlainsHeightmap.size() != directMountainHeightmap.size()
+                        || directMountainHeightmap.empty()
+                        || vertical_range(directMountainHeightmap)
+                               <= vertical_range(directPlainsHeightmap));
+    CHECK(ok42,
+          "Mountain-biome neighbourhood did not amplify heightmap relief");
+    if (!ok42) return 1;
 
     int grassTrees = 0;
     for (const Structure& s : grassOut.structures) {
         if (s.kind == Structure::Tree) ++grassTrees;
     }
-    if (grassTrees <= 0) {
-        return fail("grassland generator produced no universal tree scatter");
-    }
+    const bool ok43 = !(grassTrees <= 0);
+    CHECK(ok43, "grassland generator produced no universal tree scatter");
+    if (!ok43) return 1;
 
     CellContext water{};
     water.cx = 5;
@@ -1138,12 +1155,12 @@ int main() {
     for (const Structure& s : waterOut.structures) {
         if (s.kind == Structure::Tree) ++waterTrees;
     }
-    if (resolve_mode(water) != SubworldMode::Water
-        || std::fabs(waterOut.waterLevel - WATER_LEVEL) > 0.0001f
-        || waterTiles != int(waterOut.tiles.size())
-        || waterTrees != 0) {
-        return fail("water generator invariants failed");
-    }
+    const bool ok44 = !(resolve_mode(water) != SubworldMode::Water
+                        || std::fabs(waterOut.waterLevel - WATER_LEVEL) > 0.0001f
+                        || waterTiles != int(waterOut.tiles.size())
+                        || waterTrees != 0);
+    CHECK(ok44, "water generator invariants failed");
+    if (!ok44) return 1;
 
     CellContext coast = water;
     coast.macroHeight = 0.38f;
@@ -1176,15 +1193,18 @@ int main() {
             if (h < WATER_LEVEL - 0.0001f) ++badCoastLand;
         }
     }
-    if (coastWater <= 0 || coastShore <= 0 || coastLand <= 0
-        || badCoastWater != 0 || badCoastLand != 0) {
+    const bool ok45 = !(coastWater <= 0 || coastShore <= 0 || coastLand <= 0
+                        || badCoastWater != 0 || badCoastLand != 0);
+    if (!ok45) {
         std::cerr << "coast water=" << coastWater
                   << " shore=" << coastShore
                   << " land=" << coastLand
                   << " badWater=" << badCoastWater
                   << " badLand=" << badCoastLand << "\n";
-        return fail("a coastal cell carries water, shore and land at once, and no tile contradicts its height");
     }
+    CHECK(ok45,
+          "a coastal cell carries water, shore and land at once, and no tile contradicts its height");
+    if (!ok45) return 1;
 
     CellContext swamp{};
     swamp.cx = -4;
@@ -1204,11 +1224,11 @@ int main() {
     for (const Structure& s : swampOut.structures) {
         if (s.kind == Structure::Tree) ++swampTrees;
     }
-    if (resolve_mode(swamp) != SubworldMode::Swamp
-        || std::fabs(swampOut.waterLevel - WATER_LEVEL) > 0.0001f
-        || swampTrees <= 0) {
-        return fail("swamp generator invariants failed");
-    }
+    const bool ok46 = !(resolve_mode(swamp) != SubworldMode::Swamp
+                        || std::fabs(swampOut.waterLevel - WATER_LEVEL) > 0.0001f
+                        || swampTrees <= 0);
+    CHECK(ok46, "swamp generator invariants failed");
+    if (!ok46) return 1;
 
     CellContext mountain{};
     mountain.cx = 12;
@@ -1230,11 +1250,11 @@ int main() {
         mountainMin = std::min(mountainMin, h);
         mountainMax = std::max(mountainMax, h);
     }
-    if (resolve_mode(mountain) != SubworldMode::Mountain
-        || std::fabs(mountainOut.waterLevel - WATER_LEVEL) > 0.0001f
-        || mountainMax <= mountainMin) {
-        return fail("mountain generator invariants failed");
-    }
+    const bool ok47 = !(resolve_mode(mountain) != SubworldMode::Mountain
+                        || std::fabs(mountainOut.waterLevel - WATER_LEVEL) > 0.0001f
+                        || mountainMax <= mountainMin);
+    CHECK(ok47, "mountain generator invariants failed");
+    if (!ok47) return 1;
 
     // ── FT_Field: an ORGANIC PLOT MODULE, not a painted cell. Feature rank
     // equals the roads' (one byte per cell, settled at macro stamp time);
@@ -1260,9 +1280,9 @@ int main() {
     int nbFewTrees[9];
     for (int i = 0; i < 9; ++i) nbFewTrees[i] = 64;
 
-    if (resolve_mode(field) != SubworldMode::Field) {
-        return fail("FT_Field did not resolve to Field mode");
-    }
+    const bool ok48 = !(resolve_mode(field) != SubworldMode::Field);
+    CHECK(ok48, "FT_Field did not resolve to Field mode");
+    if (!ok48) return 1;
 
     SubworldMapData fieldOut{};
     dispatch_generate(field, nbH, nbB, /*nbBiome5*/nullptr, nbF, fieldOut, nullptr, nbFewTrees);
@@ -1274,26 +1294,26 @@ int main() {
         if (fieldOut.heightmap[i] < WATER_LEVEL) ++wetFieldTiles;
     }
     const std::size_t fieldTotal = fieldOut.tiles.size();
-    if (fieldTiles * 20 < fieldTotal) {
-        return fail("field cell grew almost no ploughland");
-    }
-    if (fieldTiles * 10 > fieldTotal * 8) {
-        return fail("field cell is a painted square again (coverage > 80%)");
-    }
-    if (wetFieldTiles != 0) {
-        return fail("plough claimed underwater tiles");
-    }
+    const bool ok49 = !(fieldTiles * 20 < fieldTotal);
+    CHECK(ok49, "field cell grew almost no ploughland");
+    if (!ok49) return 1;
+    const bool ok50 = !(fieldTiles * 10 > fieldTotal * 8);
+    CHECK(ok50, "field cell is a painted square again (coverage > 80%)");
+    if (!ok50) return 1;
+    const bool ok51 = !(wetFieldTiles != 0);
+    CHECK(ok51, "plough claimed underwater tiles");
+    if (!ok51) return 1;
     // An ISOLATED field cell (this fixture: no field neighbours) keeps its
     // plots clear of ground nobody ploughed — the raw edge stays grass.
     for (int x = 0; x < kCellSize; ++x) {
-        if (fieldOut.tiles[std::size_t(x)] == TILE_FIELD
-            || fieldOut.tiles[std::size_t(kCellSize - 1) * kCellSize
-                              + std::size_t(x)] == TILE_FIELD
-            || fieldOut.tiles[std::size_t(x) * kCellSize] == TILE_FIELD
-            || fieldOut.tiles[std::size_t(x) * kCellSize
-                              + std::size_t(kCellSize - 1)] == TILE_FIELD) {
-            return fail("a plot reached the raw edge of an isolated field cell");
-        }
+        const bool ok52 = !(fieldOut.tiles[std::size_t(x)] == TILE_FIELD
+                            || fieldOut.tiles[std::size_t(kCellSize - 1) * kCellSize
+                                              + std::size_t(x)] == TILE_FIELD
+                            || fieldOut.tiles[std::size_t(x) * kCellSize] == TILE_FIELD
+                            || fieldOut.tiles[std::size_t(x) * kCellSize
+                                              + std::size_t(kCellSize - 1)] == TILE_FIELD);
+        CHECK(ok52, "a plot reached the raw edge of an isolated field cell");
+        if (!ok52) return 1;
     }
     // LOOK hook: FIELD_PPM=<prefix> dumps the plot layouts as PPMs (field =
     // wheat, grass = green, water = blue, trees = dark) — the eyes-on half
@@ -1349,9 +1369,9 @@ int main() {
             }
             if (area >= 200) ++components;
         }
-        if (components < 3) {
-            return fail("field cell is not a patchwork (fewer than 3 plots)");
-        }
+        const bool ok53 = !(components < 3);
+        CHECK(ok53, "field cell is not a patchwork (fewer than 3 plots)");
+        if (!ok53) return 1;
     }
     // Boulder walls: the balks carry SOME dry-stone rows — they exist, they
     // stand on the balks (never on ploughed or carved ground), and they are
@@ -1365,13 +1385,14 @@ int main() {
             const int sy = std::clamp(int(s.y), 0, kCellSize - 1);
             const std::uint8_t t =
                 fieldOut.tiles[std::size_t(sy) * kCellSize + sx];
-            if (t == TILE_FIELD || t == TILE_ROAD || t == TILE_WATER) {
-                return fail("a boulder wall stands off its balk");
-            }
+            const bool ok54 =
+                !(t == TILE_FIELD || t == TILE_ROAD || t == TILE_WATER);
+            CHECK(ok54, "a boulder wall stands off its balk");
+            if (!ok54) return 1;
         }
-        if (fences == 0) {
-            return fail("the field system grew no boulder walls at all");
-        }
+        const bool ok55 = !(fences == 0);
+        CHECK(ok55, "the field system grew no boulder walls at all");
+        if (!ok55) return 1;
         std::cout << "field_fences=" << fences << "\n";
     }
 
@@ -1386,9 +1407,9 @@ int main() {
         SubworldMapData lanedOut{};
         dispatch_generate(field, nbH, nbB, /*nbBiome5*/nullptr, nbRoadEast, lanedOut, nullptr,
                           nbFewTrees);
-        if (!anchor_is_road(lanedOut, field, 1, 0)) {
-            return fail("field cell grew no lane at the shared road anchor");
-        }
+        const bool ok56 = !(!anchor_is_road(lanedOut, field, 1, 0));
+        CHECK(ok56, "field cell grew no lane at the shared road anchor");
+        if (!ok56) return 1;
         // The other half of the same lane: the ROAD cell spurs toward its
         // field neighbour, aimed at the SAME anchor.
         CellContext roadCell = field;
@@ -1402,9 +1423,9 @@ int main() {
         SubworldMapData roadOut2{};
         dispatch_generate(roadCell, nbH, nbB, /*nbBiome5*/nullptr, nbFieldWest, roadOut2, nullptr,
                           nbFewTrees);
-        if (!anchor_is_road(roadOut2, roadCell, -1, 0)) {
-            return fail("road cell grew no spur at the shared field anchor");
-        }
+        const bool ok57 = !(!anchor_is_road(roadOut2, roadCell, -1, 0));
+        CHECK(ok57, "road cell grew no spur at the shared field anchor");
+        if (!ok57) return 1;
     }
 
     // Fertility is the module's context: a rich cell quilts denser than a
@@ -1424,9 +1445,9 @@ int main() {
             if (t == TILE_FIELD) ++richTiles;
         for (const std::uint8_t t : poorOut.tiles)
             if (t == TILE_FIELD) ++poorTiles;
-        if (richTiles <= poorTiles) {
-            return fail("fertility does not drive the patchwork density");
-        }
+        const bool ok58 = !(richTiles <= poorTiles);
+        CHECK(ok58, "fertility does not drive the patchwork density");
+        if (!ok58) return 1;
     }
     // The SEAM: two adjacent field cells (whole ring ploughed) derive any
     // straddling plot identically — fields MERGE across the border instead
@@ -1463,12 +1484,12 @@ int main() {
             if (l != r) ++disagree;
             if (l || r) ++either;
         }
-        if (both == 0) {
-            return fail("no plot merges across the field-field seam");
-        }
-        if (either == 0 || disagree * 4 > either) {
-            return fail("the two sides of the seam disagree about the fields");
-        }
+        const bool ok59 = !(both == 0);
+        CHECK(ok59, "no plot merges across the field-field seam");
+        if (!ok59) return 1;
+        const bool ok60 = !(either == 0 || disagree * 4 > either);
+        CHECK(ok60, "the two sides of the seam disagree about the fields");
+        if (!ok60) return 1;
     }
 
     // A field on the waterline: with a water column to the west the blended
@@ -1497,27 +1518,27 @@ int main() {
             if (shoreOut.tiles[i] == TILE_FIELD) ++shoreWetField;
         }
     }
-    if (shoreUnderwater == 0) {
-        return fail("shore-field fixture has no underwater ground to measure");
-    }
-    if (shoreWetField != 0) {
-        return fail("plough claimed underwater tiles on the waterline");
-    }
+    const bool ok61 = !(shoreUnderwater == 0);
+    CHECK(ok61, "shore-field fixture has no underwater ground to measure");
+    if (!ok61) return 1;
+    const bool ok62 = !(shoreWetField != 0);
+    CHECK(ok62, "plough claimed underwater tiles on the waterline");
+    if (!ok62) return 1;
 
     // Negative control of the mode ladder: the same cell WITHOUT the feature
     // is plain grassland, and nothing in the base fill invents field tiles.
     CellContext bareMeadow = field;
     bareMeadow.feature = FT_None;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
-    if (resolve_mode(bareMeadow) != SubworldMode::Grassland) {
-        return fail("bare meadow stopped resolving to Grassland");
-    }
+    const bool ok63 = !(resolve_mode(bareMeadow) != SubworldMode::Grassland);
+    CHECK(ok63, "bare meadow stopped resolving to Grassland");
+    if (!ok63) return 1;
     SubworldMapData bareOut{};
     dispatch_generate(bareMeadow, nbH, nbB, /*nbBiome5*/nullptr, nbF, bareOut, nullptr, nbFewTrees);
     for (const std::uint8_t t : bareOut.tiles) {
-        if (t == TILE_FIELD) {
-            return fail("grassland invented field tiles without the feature");
-        }
+        const bool ok64 = !(t == TILE_FIELD);
+        CHECK(ok64, "grassland invented field tiles without the feature");
+        if (!ok64) return 1;
     }
 
     // Crop stands: the field grows wheat, every stand roots in ploughed
@@ -1529,20 +1550,21 @@ int main() {
         ++cropStands;
         const int sx = std::clamp(int(s.x), 0, kCellSize - 1);
         const int sy = std::clamp(int(s.y), 0, kCellSize - 1);
-        if (fieldOut.tiles[std::size_t(sy) * kCellSize + sx] != TILE_FIELD) {
-            return fail("a crop stand grew off the ploughed ground");
-        }
-        if (s.height <= 0.0f) {
-            return fail("a crop stand has no height");
-        }
+        const bool ok65 =
+            !(fieldOut.tiles[std::size_t(sy) * kCellSize + sx] != TILE_FIELD);
+        CHECK(ok65, "a crop stand grew off the ploughed ground");
+        if (!ok65) return 1;
+        const bool ok66 = !(s.height <= 0.0f);
+        CHECK(ok66, "a crop stand has no height");
+        if (!ok66) return 1;
     }
-    if (cropStands == 0) {
-        return fail("field cell grew no crop stands");
-    }
+    const bool ok67 = !(cropStands == 0);
+    CHECK(ok67, "field cell grew no crop stands");
+    if (!ok67) return 1;
     for (const Structure& s : bareOut.structures) {
-        if (s.kind == Structure::Crop) {
-            return fail("grassland grew crops without a field");
-        }
+        const bool ok68 = !(s.kind == Structure::Crop);
+        CHECK(ok68, "grassland grew crops without a field");
+        if (!ok68) return 1;
     }
 
     // The harvest scar (crop_count row, Field Inc F3) thins the replant
@@ -1559,18 +1581,18 @@ int main() {
     for (const Structure& s : scarOut.structures) {
         if (s.kind == Structure::Crop) ++scarStands;
     }
-    if (scarStands != cropStands - scarK) {
-        return fail("harvest scar did not thin the replant by exactly k");
-    }
+    const bool ok69 = !(scarStands != cropStands - scarK);
+    CHECK(ok69, "harvest scar did not thin the replant by exactly k");
+    if (!ok69) return 1;
     CellContext razedField = field;
     razedField.cropHarvested = 1 << 20;
     SubworldMapData razedOut{};
     dispatch_generate(razedField, nbH, nbB, /*nbBiome5*/nullptr, nbF, razedOut, nullptr,
                       nbFewTrees);
     for (const Structure& s : razedOut.structures) {
-        if (s.kind == Structure::Crop) {
-            return fail("a fully harvested cell still grew wheat");
-        }
+        const bool ok70 = !(s.kind == Structure::Crop);
+        CHECK(ok70, "a fully harvested cell still grew wheat");
+        if (!ok70) return 1;
     }
 
     // The furrow-orientation door (sub/material.h, twin of macro.frag): if
@@ -1584,9 +1606,9 @@ int main() {
             else ++furrowHoriz;
         }
     }
-    if (furrowVert == 0 || furrowHoriz == 0) {
-        return fail("furrow orientation hash is constant");
-    }
+    const bool ok71 = !(furrowVert == 0 || furrowHoriz == 0);
+    CHECK(ok71, "furrow orientation hash is constant");
+    if (!ok71) return 1;
 
     std::cout << "subworld_generator_parity_test ok: forest_glades="
               << glades.size() << " tree_structures=" << treeStructures
@@ -1598,6 +1620,5 @@ int main() {
               << " grassland_trees=" << grassTrees
               << " swamp_trees=" << swampTrees
               << " field_tiles=" << fieldTiles << "\n";
-    CHECK(true, "every gate above held");
     return sm::test::report("subworld_generator_parity_test");
 }
