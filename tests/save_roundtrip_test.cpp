@@ -469,8 +469,7 @@ sm::GameState make_state(sm::MacroStore& st) {
         // фракции сюзерена; долг пишем на ребро и ждём его назад из блока
         // рода 6. Интересы с v127 — колонка ТЕЛА, и едут его записью.
         sm::set_suzerain(gs, st, /*vassalId*/kFixtureVillageId,
-                         /*suzerainId*/kFixtureCityId,
-                         /*value*/80, /*term*/0);
+                         /*suzerainId*/kFixtureCityId);
         sm::tithe_edge_of(gs, st, row.slot)->owedValue = 123;
     }
 

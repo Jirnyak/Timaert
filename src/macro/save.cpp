@@ -143,8 +143,7 @@ constexpr std::uint64_t kSpellBookBytes =            // write_spell_book
 constexpr std::uint64_t kSheetBytes =                // лист опционален (v90)
     sizeof(MacroNpcRecord::sheet.attributes)
     + sizeof(MacroNpcRecord::sheet.skills)
-    + sizeof(MacroNpcRecord::sheet.levelData)
-    + sizeof(MacroNpcRecord::sheet.perks);
+    + sizeof(MacroNpcRecord::sheet.levelData);   // маска перков снесена (M-252)
 constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     sizeof(MacroNpcRecord::spawnId) + sizeof(MacroNpcRecord::cell)
     + sizeof(MacroNpcRecord::visual) + sizeof(MacroNpcRecord::kind)
@@ -654,7 +653,6 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
         w.pod(m.sheet.attributes);
         w.pod(m.sheet.skills);
         w.pod(m.sheet.levelData);   // v100: grew perkPoints (third K, S14)
-        w.pod(m.sheet.perks);       // v100: 256-bit learned-perk mask (S26)
     }
     w.pod(m.hasOrders);
     w.pod(m.dead);
@@ -687,7 +685,6 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
         r.pod(m.sheet.attributes);
         r.pod(m.sheet.skills);
         r.pod(m.sheet.levelData);   // v100
-        r.pod(m.sheet.perks);       // v100
     }
     r.pod(m.hasOrders);
     r.pod(m.dead);

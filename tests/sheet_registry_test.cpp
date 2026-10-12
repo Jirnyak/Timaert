@@ -273,9 +273,9 @@ void test_the_governed_numbers_follow_the_row() {
 // ── The third currency: 5-5-5 at creation, 1-1-1 per level (CANON S14) ───
 // The perk GRAPH is consciously absent (stub, owner 2026-09-19) — what must
 // already be true is the ECONOMY: perk points accrue symmetrically with the
-// other two currencies, for the player and for every procedural sheet, and
-// the 256-bit mask answers has_perk without a graph to walk. The old
-// «perk point every 10th level» died with this witness watching.
+// other two currencies, for the player and for every procedural sheet. The old
+// «perk point every 10th level» died with this witness watching. (Маска
+// выученных узлов отсюда ушла вместе с самой маской — M-252.)
 void test_the_third_currency_accrues() {
     LevelData ld = default_level_data();
     CHECK(ld.attributePoints == 5 && ld.learnPicks == 5 && ld.perkPoints == 5,
@@ -290,16 +290,14 @@ void test_the_third_currency_accrues() {
         make_character_sheet(NPCType(0), 6, leader_sheet_seed(1u));
     CHECK(cs.levelData.perkPoints == 5 + 5,
           "an NPC sheet accrues the perk pool it cannot spend yet");
-    bool bornEmpty = true;
-    for (int i = 0; i < 256; ++i) bornEmpty &= !cs.perks.has_perk(i);
-    CHECK(bornEmpty, "a sheet's mask is born all zeroes — no graph, no perks");
-    // The mask itself: 1-instruction reads by ordinal across the envelope.
-    PerkMask m{};
-    m.set_perk(0); m.set_perk(63); m.set_perk(64); m.set_perk(255);
-    CHECK(m.has_perk(0) && m.has_perk(63) && m.has_perk(64) && m.has_perk(255),
-          "set/has round-trips across word boundaries");
-    CHECK(!m.has_perk(1) && !m.has_perk(62) && !m.has_perk(254),
-          "and neighbours stay untouched");
+    // ЗДЕСЬ СТОЯЛИ ТРИ УТВЕРЖДЕНИЯ О `PerkMask` — у них УМЕР НОСИТЕЛЬ
+    // (M-252, 2026-10-12): маска снесена как сирота, прод-читателей у неё не
+    // было ни одного. Снято осознанно, а не «чтобы позеленело»: закон, за
+    // которым они следили, был законом СНЕСЁННОЙ механики, тогда как закон
+    // ЭТОЙ функции — экономика третьей валюты (5-5-5 при создании, 1-1-1 за
+    // уровень, симметрия игрока и процедурного листа) — жив целиком и
+    // утверждается выше. Когда придут строки узлов, выученность вернётся в
+    // анкету, и свидетель на неё пишется заново вместе с читателем.
 }
 
 // ── An NPC hits with his SHEET (CANON S13/S14, session Е 2026-09-19) ─────

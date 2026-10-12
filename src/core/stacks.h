@@ -155,8 +155,8 @@ inline constexpr std::size_t kScarRows = 3u;
 // ── СТОРОЖ (1): РАЗМЕР СТРОКИ ────────────────────────────────────────────
 // Каждое число выведено из формы строки, а не замерено «как вышло». Разъехался
 // вывод с правдой — компилятор говорит об этом здесь, а не проза где-то.
-static_assert(sizeof(ecs::MacroNpcRuntime) == 92,
-              "строка марша: 92 Б × 16384 = 1.44 МиБ");
+static_assert(sizeof(ecs::MacroNpcRuntime) == 84,
+              "строка марша: 84 Б × 16384 = 1.31 МиБ");
 static_assert(sizeof(ecs::Pools) == 36, "строка полос");
 static_assert(sizeof(ecs::MacroVisual) == 12, "строка вида");
 static_assert(sizeof(ecs::NpcCharacter) == 12, "строка лица");

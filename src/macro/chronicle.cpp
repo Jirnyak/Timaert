@@ -78,7 +78,19 @@ std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact) {
         && (subject_is_named(fact.subjectKind)
             || subject_is_named(fact.objectKind))) {
         if (c.annals.size() < std::size_t(kChronicleAnnals)) {
-            c.annals.push_back(slot);
+            // ССЫЛКА КОЛЬЦА В АННАЛЫ НЕ ЕДЕТ (M-254, 2026-10-12). `slot` уже
+            // несёт живой `nextInCell` — его поставили двадцатью строками
+            // выше, — а анналы обходятся ЛИНЕЙНО и цепь не читают никогда.
+            // Хранить производное как факт запрещено (§10), и цена была не
+            // только в мёртвом поле: `write_fact` эту ссылку роняет, а
+            // `read_fact` зануляет, поэтому БАЙТЫ АННАЛОВ менялись через круг
+            // сейв→загрузка. Журнал игрока от ровно этой болезни вылечен
+            // явно и с объяснением (`journal.h`: «A live link here rode into
+            // the save as garbage»); анналы лечения не получили, и свидетель
+            // не видел, потому что сверяет у факта только subject/object/kind.
+            WorldFact kept = slot;
+            kept.nextInCell = 0u;
+            c.annals.push_back(kept);
         } else {
             // Loud rather than silent: a world whose legend outgrew its cap
             // has a tuning problem, and dropping history quietly is how you

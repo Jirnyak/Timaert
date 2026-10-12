@@ -137,25 +137,26 @@ inline int skill_mult_pct(const Skills& s, SkillId id) {
 // other two (5-5-5 at creation, 1-1-1 per level, CANON S14 2026-09-14):
 //   - LevelData.perkPoints — 5 at creation, +1 EVERY level; nothing spends
 //     them until the graph lands, so they honestly accrue;
-//   - PerkMask below — the 256-bit learned-set (32 bytes) inside every
-//     CharacterSheet, all zeroes until kPerkNodes exists. has_perk is the
-//     1-instruction reader the graph was architected around (S26).
+//   - хранилища выученности СЕЙЧАС НЕТ: маска жила здесь 32 Б в каждой
+//     анкете и была снесена как сирота (M-252, разбор ниже). Придёт она
+//     вместе с СТРОКАМИ узлов и своим читателем, а не раньше.
 // The aura DOOR (character_sheet.h squad_bonuses) still stands: when nodes
 // arrive they feed BonusTotals rows through it, not new code.
 
-struct PerkMask {
-    std::uint64_t bits[4] = {};   // 256 node ordinals — kPerkNodes' envelope
-
-    bool has_perk(int ordinal) const {
-        return (bits[std::size_t(ordinal >> 6) & 3]
-                >> (std::uint32_t(ordinal) & 63u)) & 1u;
-    }
-    void set_perk(int ordinal) {
-        bits[std::size_t(ordinal >> 6) & 3] |=
-            std::uint64_t(1) << (std::uint32_t(ordinal) & 63u);
-    }
-};
-static_assert(sizeof(PerkMask) == 32, "CANON S26: 256-bit mask, 32 bytes");
+// ЗДЕСЬ СТОЯЛА `PerkMask` — 256-битная маска выученных узлов, 32 Б в КАЖДОЙ
+// анкете. СНЕСЕНА 2026-10-12 (M-252, вердикт владельца «все три»): она была
+// СИРОТОЙ по дверям — прод-вызовов `has_perk` ноль, `set_perk` ноль, во всём
+// дереве её трогали четыре строки, из которых три — сейв, а четвёртая
+// проверяла, что маска ПУСТА. Шапка при этом не врала ни дня («all zeroes
+// until the constellation graph lands»), и платили мы за эту правду 32 Б × кап
+// 16384 = 512 КиБ резидентно.
+//
+// ПОЧЕМУ СНОС, А НЕ ОЖИДАНИЕ: место в замысле за перками сохранено целиком —
+// придут СТРОКИ узлов в `tables/`, и выученность ляжет обратно в анкету (род
+// 2). Но до появления читателя колонка была ровно тем, что DOD п.9 запрещает:
+// данными «на будущее», которые следующий читатель принимает за закон.
+// Третья валюта (`LevelData::perkPoints`) НЕ ТРОНУТА — у неё читатели есть, и
+// лист честно говорит игроку, что точки копятся до графа.
 
 // ── Bar ceilings ───────────────────────────────────────────────
 //
@@ -978,16 +979,17 @@ struct CharacterSheet {
     Attributes attributes;
     Skills     skills;
     LevelData  levelData;
-    // The 256-bit learned-perk set (CANON S26 DOD architecture) — all zeroes
-    // until the constellation graph lands (stub, owner 2026-09-19). Saved
-    // with the sheet (v100) so the graph arrives without a save move.
-    PerkMask   perks;
 };
-// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10): анкета носится ИМЕНОВАННЫМИ телами
-// (npc_named), а не каждым сквадом, — потому 144 Б здесь стоят долю мира, а
-// не 2.25 МиБ. 4 Б из 144 — выравнивание перед маской перков.
-static_assert(sizeof(CharacterSheet) == 144,
-              "анкета = атрибуты 16 + скиллы 64 + уровень 28 + перки 32 + 4");
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). И ЗДЕСЬ СТОЯЛА ВРУЩАЯ ПРОЗА, снятая
+// 2026-10-12 (M-253): «анкета носится ИМЕНОВАННЫМИ телами, а не каждым
+// сквадом, — потому 144 Б здесь стоят долю мира, а не 2.25 МиБ». Анкета есть
+// КОЛОНКА `MacroStore` (`X(sheet, CharacterSheet)@src/macro/store.h`), то есть
+// `std::array` длиной кап: она стоила РОВНО 2.25 МиБ, которые проза объявляла
+// невозможными. Снос маски перков (M-252) сделал 144 → 108, то есть 2.25 →
+// 1.69 МиБ, и число теперь названо тем, чем оно является.
+static_assert(sizeof(CharacterSheet) == 108,
+              "анкета = атрибуты 16 + скиллы 64 + уровень 28; "
+              "× кап 16384 = 1.69 МиБ резидентно");
 
 // ── ТОРГОВАЯ СИЛА АНКЕТЫ — ОДНА ДВЕРЬ НА ВЕСЬ МИР (CANON S25) ─────────────
 // Сделка двусторонняя, и обе стороны называют ОДНО число — финальное
@@ -1503,7 +1505,6 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
 // списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
 TIMAERT_ROW(sm::Attributes);
 TIMAERT_ROW(sm::Skills);
-TIMAERT_ROW(sm::PerkMask);
 TIMAERT_ROW(sm::BarCeilings);
 TIMAERT_ROW(sm::DerivedBonuses);
 TIMAERT_ROW(sm::LevelData);

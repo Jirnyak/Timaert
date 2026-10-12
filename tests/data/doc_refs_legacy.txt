@@ -499,7 +499,6 @@ SKELETON.md	squad_walk.h:42
 SKELETON.md	squad_walk.h:42-51
 SKELETON.md	stacks.h:125
 SKELETON.md	state.cpp:124
-SKELETON.md	state.cpp:214
 SKELETON.md	state.cpp:266-272
 SKELETON.md	state.cpp:277-307
 SKELETON.md	state.cpp:88

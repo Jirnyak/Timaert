@@ -409,7 +409,9 @@ struct LightEmitter {
 
 // Macroworld NPC runtime — per-NPC mutable state for the AI tick
 // (mirrors fields on TS `NPC` not already covered by Position / NPCKind).
-// Pure POD, 96 bytes (assert below). The home/target landmark ids draw on the ONE
+// Pure POD; its size is stated ONLY by the assert below (84 B) — the prose here
+// said «96 bytes» long after the assert said 92, which is exactly how a number
+// that lives in two places goes stale. The home/target landmark ids draw on the ONE
 // subject-ordinal space (nextMacroSpawnOrdinal, M-37) — a home may be a city or
 // a village, and the id alone says which place it is (0 = none). The v27
 // homeIsVillage register bit died with the second id space it existed to
@@ -418,21 +420,28 @@ struct MacroNpcRuntime {
     std::int32_t  homeSettlementId;
     std::int32_t  targetSettlementId;
     // РЕЙС, СТАНЦИЯ ЗА СТАНЦИЕЙ (владелец 2026-08-30: «решает с того рынка,
-    // на котором стоит — никакого всеведения»). Runtime-only, в сейв не едет.
+    // на котором стоит — никакого всеведения»).
     //
-    // `stationsLeft` — МЁРТВ И УМРЁТ: это счётчик остановок снесённого
-    // ai_caravan, то есть НЕВЕРНЫЙ ЗАКОН конца рейса (CANON S10 «ДОМОЙ» —
-    // ЭТО ПРОСТО ЕЩЁ ОДНА ЗАЯВКА В ТОМ ЖЕ АУКЦИОНЕ»: возврат решается
-    // ГРУЗОМ, а не числом станций). Ноль писателей, ноль читателей; снос
-    // меняет LAYOUT, поэтому идёт своим инкрементом.
-    std::uint8_t  stationsLeft = 0;
+    // ЗДЕСЬ СТОЯЛИ `stationsLeft` (u8) И `taxCarried` (i32) — СНЕСЕНЫ
+    // 2026-10-12, M-252, вердикт владельца «все три». У обеих было НОЛЬ
+    // кодовых сайтов во ВСЁМ дереве — ни в `src/`, ни в `tests/`, ни в
+    // смоуках, — и судились они ДВЕРЯМИ, а не грепом имени. Первая была
+    // счётчиком остановок снесённого `ai_caravan`, то есть НЕВЕРНЫМ ЗАКОНОМ
+    // конца рейса (CANON S10: возврат решается ГРУЗОМ, а не числом станций);
+    // вторая обещала дань «в сумке к сюзерену», которой никогда не было —
+    // феодальный долг живёт ребром `TitheEdge@src/macro/factions.h`, и у него
+    // есть настоящие читатели.
+    //
+    // ЦЕНА СНОСА БОЛЬШЕ, ЧЕМ ВЕСИЛИ ИМЕНА: 92 → 84 Б, то есть −131 072 Б по
+    // капу 16384. Названного байта было пять, освободилось восемь — три из них
+    // были дырой выравнивания между `stationsLeft` и `prevStationId`, и ровно
+    // поэтому «одинокий узкий член рядом с широким не экономит ничего»
+    // (DOD п.2) читается здесь в обратную сторону: его снос экономит ВДВОЕ.
+    //
     // `prevStationId` — ОЖИЛ 2026-09-22 вместе с многоскачковым рейсом:
     // станция, с которой крю пришло, чтобы рулетка соседей не гоняла его
     // обратно на только что обслуженный рынок. -1 = рейс только начат.
     std::int32_t  prevStationId = -1;
-    // The tithe riding in the bag toward the suzerain (the feudal tax graph,
-    // CANON S24): set at departure, paid out at the market. Runtime-only.
-    std::int32_t  taxCarried = 0;
     float         targetX, targetY;
     std::int16_t  stateTimer;
     std::int16_t  teleportCooldown;
@@ -486,8 +495,15 @@ struct MacroNpcRuntime {
     // last cell change (0xFF = none: spawned here / teleported), and a
     // saturating count of AI ticks since it. Stamped by try_move, consumed by
     // the macro→subworld projection to place this NPC's body on the side of the
-    // map it actually walked in from. Runtime-only — the ECS is never
-    // serialized, so no save cost.
+    // map it actually walked in from.
+    //
+    // «Runtime-only — the ECS is never serialized, so no save cost» СТОЯЛО
+    // ЗДЕСЬ И БЫЛО ЛОЖЬЮ (поправлено 2026-10-12, M-253). Колонка едет в файл
+    // ЦЕЛИКОМ и POD-ом — `snapshot_macro_ecs@src/macro/macro_snapshot.cpp`
+    // копирует её байт в байт, `write_macro_npc@src/macro/save.cpp` пишет, и
+    // фильтра по полям нет ни одного. Опровергал ту прозу трейлер ЭТОГО ЖЕ
+    // файла («their LAYOUT is the format») и абзац про `renown` ниже, который
+    // всё это время говорил правду.
     std::uint8_t  entryDir  = 0xFF;
     std::uint8_t  entryTicks = 0;
     float         visualSpeed;   // last-tick travelled distance, cells/real s
@@ -495,8 +511,9 @@ struct MacroNpcRuntime {
     // Experience toward the leader's next level (Session 15): auto-battle
     // victories pay XP through the one npc_xp_reward law, and
     // award_leader_xp (macro/squad.h) consumes it into NpcLevel by the same
-    // exp_to_next_level curve the player climbs. Runtime-only like the rest
-    // of this struct — persistent leader progression is the S17 snapshot's.
+    // exp_to_next_level curve the player climbs. PERSISTENT, like the rest of
+    // this struct: «Runtime-only» стояло и здесь (M-253) — вся колонка едет
+    // POD-ом, см. поправку над `entryDir`.
     std::int32_t  xp = 0;
     // WHAT THE WORLD THINKS THIS BAND HAS DONE (macro/chronicle.h). A squad
     // starts as one more band on the map: its deeds are weather, remembered by
@@ -565,11 +582,13 @@ struct MacroNpcRuntime {
 // вслух вместо того, чтобы число тихо разошлось с прозой во второй раз.
 //   96 → 92: ушли `aboard` (1 Б) и `dockX`/`dockY` (2 × 2 Б), выравнивание
 //   вернуло 1 Б обратно.
-// Ещё 1 байт — мёртвое поле `stationsLeft` (ноль писателей, ноль читателей
-// во всём src/). `prevStationId` из мёртвых вышел 2026-09-22 — его читает и
-// пишет многоскачковый рейс корована.
-static_assert(sizeof(MacroNpcRuntime) == 92,
-              "рантайм марша: 92 Б × 16384 сквадов = 1.44 МиБ (AGENTS п.10)");
+//   92 → 84 (2026-10-12, M-252): ушли `stationsLeft` (1 Б) и `taxCarried`
+//   (4 Б) — обе с НУЛЁМ кодовых сайтов в дереве. Названных байт было 5,
+//   освободилось 8: три добрала дыра выравнивания, стоявшая за u8.
+// `prevStationId` из мёртвых вышел 2026-09-22 — его читает и пишет
+// многоскачковый рейс корована.
+static_assert(sizeof(MacroNpcRuntime) == 84,
+              "рантайм марша: 84 Б × 16384 сквадов = 1.31 МиБ (AGENTS п.10)");
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
 // in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one
