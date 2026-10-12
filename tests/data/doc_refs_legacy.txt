@@ -131,7 +131,6 @@ SKELETON.md	:382-389
 SKELETON.md	:3825
 SKELETON.md	:383
 SKELETON.md	:3866
-SKELETON.md	:388-416
 SKELETON.md	:3901
 SKELETON.md	:407
 SKELETON.md	:411
@@ -224,7 +223,6 @@ SKELETON.md	collide.cpp:26
 SKELETON.md	commodity.h:101
 SKELETON.md	commodity.h:111
 SKELETON.md	commodity.h:56-97
-SKELETON.md	core/stacks.h:99
 SKELETON.md	core/time.h:30
 SKELETON.md	core/time.h:47
 SKELETON.md	core/time.h:49-59
@@ -312,8 +310,6 @@ SKELETON.md	macro_stock.cpp:358-410
 SKELETON.md	macro_stock.cpp:360-363
 SKELETON.md	macro_stock.cpp:407-416
 SKELETON.md	macro_stock.cpp:440
-SKELETON.md	macro_stock.cpp:447
-SKELETON.md	macro_stock.cpp:559
 SKELETON.md	macro_stock.cpp:607
 SKELETON.md	macro_stock.cpp:610
 SKELETON.md	macro_stock.h:114-116
@@ -390,7 +386,6 @@ SKELETON.md	npc_ai.cpp:4867
 SKELETON.md	npc_ai.cpp:4872
 SKELETON.md	npc_ai.cpp:4875
 SKELETON.md	npc_ai.cpp:4981
-SKELETON.md	npc_ai.cpp:791
 SKELETON.md	npc_ai.cpp:917
 SKELETON.md	npc_ai.cpp:946-949
 SKELETON.md	npc_ai.cpp:999
@@ -428,7 +423,6 @@ SKELETON.md	quest_engine.cpp:234-235
 SKELETON.md	quest_engine.cpp:63
 SKELETON.md	quest_lifecycle_test.cpp:428
 SKELETON.md	resource_field.h:12-14
-SKELETON.md	resource_field.h:153-154
 SKELETON.md	resource_field.h:213-217
 SKELETON.md	resource_field.h:268
 SKELETON.md	resource_field.h:336-341
@@ -550,7 +544,6 @@ SKELETON.md	threat_field.cpp:65
 SKELETON.md	threat_field.cpp:92-94
 SKELETON.md	threat_field.h:55
 SKELETON.md	tree_layer.cpp:34
-SKELETON.md	tree_layer.cpp:43-54
 SKELETON.md	tree_layer.cpp:5
 SKELETON.md	ui/macro_overlay.h:87
 SKELETON.md	ui/map_screen.cpp:335

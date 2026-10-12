@@ -161,13 +161,10 @@ bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
 bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
                        int x, int y, FeatureType parcel = FT_Field);
 
-// The pasture's same two doors (CANON S10 «ЛОШАДЬ — ЮНИТ»): the plough
-// gates with the HERD row's fertility bar, laying FT_Pasture. There is no
-// worldgen stamp for pastures — a crew raises the first one the day the
-// horse goal wins its auction, which is the same bootstrap every mine has.
-bool pasture_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
-                     int x, int y, int& herdOut);
-bool fence_pasture_cell(FeatureLayer& fl, const MacroWorld& world,
-                        int x, int y);
+// (ДВЕ ДВЕРИ ЗАГОНА — `pasture_cell_ok` и `fence_pasture_cell` — СНЕСЕНЫ
+// 2026-10-12 нарядом M-258; эпитафия с числами стоит у их тел,
+// `macro_stock.cpp`. Коротко: загон ставит ГЕНЕРАЦИЯ, а не руки артели
+// (вердикт 2026-09-22, наряд M-79), и число стада живёт числом ФИЧИ, поэтому
+// «огораживаемая клетка без фичи» перестала быть вопросом о мире.)
 
 } // namespace sm

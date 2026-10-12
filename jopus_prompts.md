@@ -1734,7 +1734,7 @@ trees, horses, stone, silver, copper, …) описывает все ряды О
 (`ResourceGrid` u16×N, живых рядов 3 из 10: `kScarRows`), жилы —
 `DepositLayer::cells` (u16×N×6 + `reach` ×6, `deposit_layer.h:81`), лес —
 `TreeLayer::data` (u16×N, `TreeLayer@src/macro/tree_layer.h`) — и реестр ходит между ними
-указателями `carrierRead`/`carrierApply` (`resource_field.h:153-154`,
+указателями `carrierRead`/`carrierApply` (`carrierApply@src/macro/resource_field.h`,
 `macro_stock.cpp:454,:578,:588`). Семь из десяти заголовков массива шрамов
 стоят ПУСТЫМИ — цена тройного хранилища, названная числом (`kScarRows`).
 

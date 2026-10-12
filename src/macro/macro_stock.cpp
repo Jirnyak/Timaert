@@ -360,34 +360,59 @@ int trees_growth_at(const MacroWorld& w, int x, int y) {
     return growth * std::min(base, 1024) / 1024;
 }
 
-// Horses: the herd a cell's GRASS can feed — the same fertility the wheat
-// row prices, read as mouths: a mouth eats kDaysPerSeason × 4 food a year
-// (one a day, the human ration the horse row shares), and the cell's grass
-// yields its wheat baseline a year — so the best land (4096) carries 32
-// head, lean land none. No new fertility door, no second constant.
-int horses_baseline(const MacroWorld& w, int x, int y) {
+// СКОЛЬКО ГОЛОВ КОРМИТ ТРАВА КЛЕТКИ — чистая функция фертильности, и она же
+// КАП СТАДА (владелец 2026-10-12: «кап из фертильити»). Та же фертильность,
+// которую оценивает ряд хлеба, прочитанная как РТЫ: рот съедает
+// kDaysPerSeason × 4 пищи в год (по единице в день — тот же рацион, что у
+// человека), а трава клетки даёт за год свою хлебную базовую, поэтому лучшая
+// земля (4096) держит 32 головы, тощая — ни одной. Ни второй двери
+// фертильности, ни второй константы.
+//
+// Fail-closed без терраина: у ряда-НОСИТЕЛЯ двери зовутся ДО общего гейта
+// `resource_field_read`, значит собственную землю они обязаны проверять сами.
+int grass_feeds_head(const MacroWorld& w, int x, int y) {
+    if (!w.terrain || w.terrain->width <= 0) return 0;
     return wheat_baseline(w, x, y) / (kDaysPerSeason * 4);
 }
 
-// Horses breed where horses graze — the fauna law on the herd's own field:
-// one head per seasonal visit while at least half the 3×3 valley's capacity
-// is alive; an emptied range repopulates from its edges inward.
-int horses_growth_at(const MacroWorld& w, int x, int y) {
-    if (!w.terrain || !world_shape_ok(w.terrain->width, w.terrain->height))
-        return 0;
-    const int side = w.terrain->width;
-    const std::uint32_t at = cell_of(x, y, side);
-    int alive = 0, cap = 0;
-    for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            const std::uint32_t n = cell_step(at, dx, dy, side);
-            const int nx = cell_x(n, side), ny = cell_y(n, side);
-            cap   += horses_baseline(w, nx, ny);
-            alive += resource_field_read(w, ResourceFieldId::Horses, nx, ny);
-        }
-    }
-    if (cap <= 0) return 0;
-    return (2 * alive >= cap) ? 1 : 0;
+// НА КАКОЙ КЛЕТКЕ ЧИСЛО ЕСТЬ СТАДО — спрашивается КОЛОНКОЙ СТРОКИ ФИЧИ
+// (`FeatureDef::numberRow`), никогда родом фичи веткой: поле чисел фич одно,
+// и «что значит это число» есть вопрос о фиче (ЗАКОН ПОЛЯ п.3, ЗАКОН СТРОКИ
+// КАТАЛОГА). Без слоя фич стада нет вовсе — fail-closed, ничего не выдумываем.
+bool livestock_cell_(const MacroWorld& w, int x, int y) {
+    return w.gs && w.features
+        && feature_def(w.features->at(x, y)).numberRow
+               == ResourceFieldId::Livestock;
+}
+
+// Кап стада ЭТОЙ клетки: трава её кормит, но только если на ней стоит фича,
+// чьё число есть стадо. Ноль у всех прочих клеток — и это он даёт ходоку
+// роста право пропустить их одним сравнением (`cap <= 0 → continue`), то
+// есть мир больше не платит за выгон, которого нет.
+int livestock_baseline(const MacroWorld& w, int x, int y) {
+    return livestock_cell_(w, x, y) ? grass_feeds_head(w, x, y) : 0;
+}
+
+// ПОГОЛОВЬЕ РАСТЁТ, ПОКА ЗАГОН НЕ ПОЛОН: одна голова за сезонный визит —
+// ровно тот темп, какой держал прежний закон в своём лучшем случае.
+// ЧТО УШЛО ВМЕСТЕ С ПОЛЕМ И НАЗВАНО ВСЛУХ: условие «жив хотя бы половина
+// ёмкости 3×3» и заселение выеденной округи с краёв. Оба меряли ДИКОЕ стадо
+// соседних клеток, а дикого стада больше нет — число живёт внутри загона,
+// и у загона нет соседей, у которых бы оно стояло. Закон стал проще, потому
+// что вопрос стал уже, а не потому что его упростили.
+int livestock_growth_at(const MacroWorld&, int, int) { return 1; }
+
+// ЧТЕНИЕ И ЗАПИСЬ — ЧЕРЕЗ ПОЛЕ ЧИСЕЛ ФИЧ. Выемка зажимается в [0, кап] ЗДЕСЬ,
+// у единственной двери ряда: `worked_write` сам по себе про кап стада не
+// знает ничего (под другой фичей там спелл или паства), и знать не должен.
+int livestock_read(const MacroWorld& w, int x, int y) {
+    return livestock_cell_(w, x, y) ? worked_read(*w.gs, x, y) : 0;
+}
+void livestock_apply(MacroWorld& w, int x, int y, int delta) {
+    if (!livestock_cell_(w, x, y)) return;
+    const int cap = grass_feeds_head(w, x, y);
+    worked_write(*w.gs, x, y,
+                 std::clamp(worked_read(*w.gs, x, y) + delta, 0, cap));
 }
 
 // ЁМКОСТЬ ЖИЛЫ — ТА ЖЕ ФЕРТИЛЬНОСТЬ, ТОЛЬКО ДЛЯ КАМНЯ (владелец, 2026-09-22).
@@ -424,9 +449,12 @@ constexpr ResourceFieldDef kResourceFields[] = {
     /* Trees */ {"trees", nullptr,
                  GrowthDomain::CarrierSpread, &trees_growth_at,
                  &trees_read, &trees_apply, 0},
-    /* Horses */ {"horses", &horses_baseline,
-                 GrowthDomain::HealToBaseline, &horses_growth_at,
-                 nullptr, nullptr, 0},
+    // СТАДО — РЯД-НОСИТЕЛЬ НА ПОЛЕ ЧИСЕЛ ФИЧ (M-258): базовая есть КАП, а
+    // живое число лежит в `worked` под фичей, которая объявила его своим.
+    // Форма ровно та же, что у жилы ниже: своя базовая плюс чужой контейнер.
+    /* Livestock */ {"livestock", &livestock_baseline,
+                 GrowthDomain::HealToBaseline, &livestock_growth_at,
+                 &livestock_read, &livestock_apply, 0},
     // ЖИЛЫ — ТОТ ЖЕ ЗАКОН, ЧТО У ПАШНИ (2026-09-22): ёмкость чистой функцией,
     // клетка держит взятое, взятое заживает. Ни рождения, ни исчезновения с
     // карты: «метал не убывает как и фертильность».
@@ -585,25 +613,17 @@ bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
     return stamp_feature(fl, *world.terrain, x, y, parcel) != FT_None;
 }
 
-bool pasture_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
-                     int x, int y, int& herdOut)
-{
-    // The plough's own ground gates; the bar is the HERD row's — one head
-    // must actually graze here, or the fence would enclose dust.
-    if (!parcel_ground_ok_(fl, world, x, y)) return false;
-    herdOut = resource_field_read(world, ResourceFieldId::Horses,
-                                  FeatureLayer::wrap_coord(x, fl.width),
-                                  FeatureLayer::wrap_coord(y, fl.height));
-    return herdOut >= 1;
-}
-
-bool fence_pasture_cell(FeatureLayer& fl, const MacroWorld& world,
-                        int x, int y)
-{
-    int herd = 0;
-    if (!pasture_cell_ok(fl, world, x, y, herd)) return false;
-    return stamp_feature(fl, *world.terrain, x, y, FT_Pasture) != FT_None;
-}
+// (ДВЕ ДВЕРИ ЗАГОНА СНЕСЕНЫ 2026-10-12, M-258: `pasture_cell_ok` и
+// `fence_pasture_cell`. У второй был НОЛЬ звонящих с 2026-09-22 — в тот день
+// вердикт владельца «СТРОИТЕЛЬСТВО КРЕСТЬЯНАМИ НЕ РАБОТАЕТ НА НЕГО НЕЛЬЗЯ
+// ПОЛАГАТЬСЯ» снёс ветку стройки из цикла артели, а дверь осталась жить
+// мёртвой. Первая держалась ровно на бутстрап-ветке `find_home_pasture`,
+// которая искала «лучшую ОГОРАЖИВАЕМУЮ клетку» и вместе с полем лошадей
+// стала ложью: число стада есть число ФИЧИ, а на клетке без фичи его нет и
+// быть не может. Ставить загоны будет ГЕНЕРАЦИЯ — вердикт владельца
+// 2026-09-22 (наряд M-79) и 2026-10-12, дословно: «у нас будет сложная
+// весовая контекстная генерация не всё так просто». Заглушки на место
+// снесённых дверей НЕ СТАВИМ — дыра названа и открыта, §1.)
 
 const ResourceFieldDef& resource_field_def(ResourceFieldId f) {
     return kResourceFields[std::size_t(f)

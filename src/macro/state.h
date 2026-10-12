@@ -341,7 +341,8 @@ namespace sm {
 // v98 (2026-09-19): ЛОШАДЬ — ЮНИТ (CANON S10) — ResourceFieldId вырос
 // строкой Horses ПЕРЕД блоком жил (скар-блоки сейва сдвинулись), фича
 // FT_Pasture = байт 14, таблица NPC выросла строкой Horse. Старые сейвы
-// ничего не стоят (закон P1).
+// ничего не стоят (закон P1). (Собственного ПОЛЯ у этого ряда не стало в
+// v137: стадо — число фичи, см. хвост списка.)
 // v99 (2026-09-19): ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10) — Landmark несёт
 // needDebt[kCommodityCount]: сезонный счёт лестницы нужд, гасится приходом.
 // v100 (2026-09-19): ПЕРКИ — ТРЕТЬЯ ВАЛЮТА (CANON S14 5-5-5/1-1-1, заглушка
@@ -436,7 +437,14 @@ namespace sm {
 // было нельзя. Замер сразу дал число: пик 211 фактов в день × горизонт 64 дня
 // (теперь ВЫВЕДЕННЫЙ из таблицы, `kChronicleLongestInterestDays`) = 13 504
 // против капа 65 536 — кольцо с запасом 4.9×, и это теперь ЗАМЕР.
-constexpr int kSaveVersion = 136;   // M-255: байт playerHome в записи анкеты
+// 137 — ПОЛЕ ЛОШАДЕЙ СНЕСЕНО (M-258, 2026-10-12, вердикт владельца «сноси
+// поле лошадей это бред»). Файл стал КОРОЧЕ, и это тот же род причины: ряд
+// `Horses` → `Livestock` перестал быть шрамовым и стал НОСИТЕЛЕМ на поле
+// чисел фич, поэтому его скар-блок теперь всегда пуст, а поголовье едет в
+// блоке `worked`, который и так писался. Ординалы рядов НЕ двинулись (ряд
+// остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
+// версию ровно смена ЖИЛЬЦА блока.
+constexpr int kSaveVersion = 137;   // M-258: стадо — число фичи, не поле
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -876,7 +884,8 @@ struct GameState {
     // has not yet returned, one grid per sparse-dialect row (wheat, fauna;
     // the baseline is derived from terrain/climate, the scar is the only
     // storage, a healed cell zeroes itself). Carrier rows (trees, the vein
-    // kinds) keep their grid EMPTY: their live state is their own carrier.
+    // kinds, and since v137 the LIVESTOCK — its carrier is the worked layer
+    // below) keep their grid EMPTY: their live state is their own carrier.
     ResourceGrid resourceScarCells[std::size_t(ResourceFieldId::Count)];
     // THE WORKED LAYER — ONE field for the whole world («1 шахта в клетке —
     // одно поле в клетке! в том и замысел!»): a number in it means whatever
@@ -887,7 +896,13 @@ struct GameState {
     // parcel and the consolidated seam under a mine move here as their laws
     // are rebuilt (CANON S5 «постройка — это перенос»). Tenants today: the
     // harbour's ships counter and — v120 — the SPIRE'S SPELL under FT_Spire
-    // (kSpellDefs ordinal + 1; 0 = orb drained, закон нуля-ординала).
+    // (kSpellDefs ordinal + 1; 0 = orb drained, закон нуля-ординала), паства
+    // поселения (v122) и — v137, M-258 — ПОГОЛОВЬЕ ЗАГОНА.
+    //
+    // ЧТО ИМЕННО ЗНАЧИТ ЧИСЛО, ГОВОРИТ КОЛОНКА СТРОКИ ФИЧИ
+    // `FeatureDef::numberRow` (features.h), а не ветка у читателя: стадо стало
+    // рядом-НОСИТЕЛЕМ на это поле, и своего массива над миром у него больше
+    // нет вовсе (вердикт владельца 2026-10-12: «сноси поле лошадей это бред»).
     ResourceGrid worked;
 
     // (Вектор `builtFeatures` и структура `BuiltFeature` УНИЧТОЖЕНЫ в v130,

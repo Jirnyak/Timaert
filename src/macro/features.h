@@ -13,6 +13,9 @@
 // Цикла нет и быть не может: `map_generator.h` слой фич не включает —
 // терраин о фичах не знает, фичи о терраине знают.
 #include "macro/map_generator.h"
+// Колонка `numberRow` ниже называет РЯД РЕЕСТРА, чьё число стоит на фиче.
+// Цикла нет: реестр полей знает про клетки и сезоны, про фичи — ничего.
+#include "macro/resource_field.h"
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -150,6 +153,31 @@ struct FeatureDef {
     // `FT_City`/`FT_Village`/`FT_Spire`/`FT_Ruin` несут эту колонку наравне со
     // всеми: отдельного «водного правила для мест» не существует.
     FeatureType onWater;
+
+    // ── ЧЕЙ РЯД НЕСЁТ ЧИСЛО, СТОЯЩЕЕ НА ЭТОЙ ФИЧЕ ────────────────────────
+    // ЗАКОН ПОЛЯ п.3, сделанный СТРУКТУРОЙ. Владелец, дословно: «ЧИСЛО В
+    // ПАШНЕ ЧИСЛО В ГОРОДЕ ЧИСЛО В ШАХТЕ ЭТО И БУДЕТ ВСЁ ТАКИ ЕДИНОЕ ПЛОСКОЕ
+    // ПОЛЕ НАД МИРОМ ДЛЯ ЧИСЕЛ В ФИЧАХ … смысл числу задаёт фича на той же
+    // клетке»; и 2026-10-12 о табуне: «у нас есть поля фич а пастбища это
+    // фича числа на нём и будут значить всё». Поле чисел фич ОДНО
+    // (`GameState::worked`), значит вопрос «что значит число на этой клетке»
+    // есть вопрос О ФИЧЕ — и отвечает на него ЕЁ СТРОКА, а не ветка
+    // `if (f == FT_Pasture)` у читателя (ЗАКОН СТРОКИ КАТАЛОГА).
+    //
+    // ЭТО НЕ ВОСКРЕСШАЯ `worksRow` (вырезана 2026-09-22 с нулём читателей за
+    // всю жизнь). Та отвечала «что с фичи БЕРУТ», и этот вопрос действительно
+    // написан строкой цели (`kGathererDefs.row`) и только там. Эта колонка
+    // отвечает на ДРУГОЙ вопрос — «чьё число на фиче СТОИТ», — и у неё есть
+    // читатель с первого дня: двери ряда-носителя стада (`macro_stock.cpp`
+    // `livestock_read`/`livestock_apply`), без неё спрашивавшие бы род фичи
+    // веткой.
+    //
+    // `ResourceFieldId::Count` = «число этой фичи рядом реестра НЕ является»:
+    // у шпиля там ординал спелла, у города и деревни — паства, у дороги числа
+    // нет вовсе. У ПАШНИ сегодня тоже `Count`, и это ПРАВДА, а не недосмотр:
+    // стоячий хлеб живёт шрамом ряда `Wheat`, а не полем чисел фич, и
+    // переедет сюда нарядом M-78 (консолидированная жила шахты — M-88).
+    ResourceFieldId numberRow;
 };
 
 // A DAY'S WORK RAISES FOUR. The number the three build sites used to spell as
@@ -161,31 +189,48 @@ struct FeatureDef {
 inline constexpr int kBuildsPerDay = 4;
 
 inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
-    //                     bed   optics  civ   строит/день  на воде
-    {FT_None,     0.0f, 1.00f, 0.0f,  0,             FT_None},
-    {FT_Road,     1.0f, 0.65f, 0.35f, 0,             FT_Bridge},
-    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, 0,             FT_Bridge},
+    //                     bed   optics  civ   строит/день  на воде   чьё число
+    {FT_None,     0.0f, 1.00f, 0.0f,  0,             FT_None,
+     ResourceFieldId::Count},
+    {FT_Road,     1.0f, 0.65f, 0.35f, 0,             FT_Bridge,
+     ResourceFieldId::Count},
+    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, 0,             FT_Bridge,
+     ResourceFieldId::Count},
     // Вспаханная парцелла. Какой культурой засеяна — вопрос ТИПА фичи, а не
     // второго ресурсного ряда: картофельное и маковое поля будут новыми
     // строками ЭТОЙ таблицы, работающими то же число.
-    {FT_Field,    1.8f, 1.00f, 0.0f,  kBuildsPerDay, FT_None},
+    {FT_Field,    1.8f, 1.00f, 0.0f,  kBuildsPerDay, FT_None,
+     ResourceFieldId::Count},
     // Мост несёт колонки каменной дороги: его настил И ЕСТЬ мощёное ложе
     // (марш не замечает реки под ним), тот же коридор свету и взгляду, та же
     // тяга цивилизации. Кладёт его планировщик дорог при генерации мира.
-    {FT_Bridge,   1.0f, 0.65f, 0.35f, kBuildsPerDay, FT_Bridge},
+    {FT_Bridge,   1.0f, 0.65f, 0.35f, kBuildsPerDay, FT_Bridge,
+     ResourceFieldId::Count},
     // Шахты делят колонки пашни: разработанная земля, не инженерное ложе
     // (0 = своё основание биома), прятаться не за чем, и рабочее место,
     // которое возделывают, а не держат гарнизоном.
-    {FT_ClayPit,    0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
-    {FT_IronMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
-    {FT_Quarry,     0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
-    {FT_SilverMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
-    {FT_CopperMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
-    {FT_GoldMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
+    {FT_ClayPit,    0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
+     ResourceFieldId::Count},
+    {FT_IronMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
+     ResourceFieldId::Count},
+    {FT_Quarry,     0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
+     ResourceFieldId::Count},
+    {FT_SilverMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
+     ResourceFieldId::Count},
+    {FT_CopperMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
+     ResourceFieldId::Count},
+    {FT_GoldMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
+     ResourceFieldId::Count},
     // Пастбище и льняное поле несут колонки пашни: та же возделанная земля,
     // та же трава по пояс, которая ничего не прячет, та же цена работы.
-    {FT_Pasture,  1.8f, 1.00f, 0.0f,  kBuildsPerDay, FT_None},
-    {FT_FlaxField, 1.8f, 1.00f, 0.0f, kBuildsPerDay, FT_None},
+    // А ЧИСЛО НА ПАСТБИЩЕ ЕСТЬ СТАДО — единственная строка таблицы, чьё
+    // число сегодня принадлежит ряду реестра (вердикт владельца 2026-10-12,
+    // M-258): собственного массива у ряда больше нет, его носитель — поле
+    // чисел фич, и смысл числу задаёт ВОТ ЭТА колонка.
+    {FT_Pasture,  1.8f, 1.00f, 0.0f,  kBuildsPerDay, FT_None,
+     ResourceFieldId::Livestock},
+    {FT_FlaxField, 1.8f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
+     ResourceFieldId::Count},
     // ── Поселения. Ложе — по прецеденту моста («мост несёт колонки
     // каменной дороги»): город есть МОЩЁНЫЙ узел дорожной сети — его клетка
     // несёт ложе камня (1.0); деревня — грунтовый двор (ложе грунтовки,
@@ -194,10 +239,12 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // опасности продолжают читать свои прежние источники; собственные числа
     // этим колонкам выдаст тот, кто первым начнёт их читать (ЗАКОН КОНСТАНТ
     // — не выдумывать). Руки поселений не строят (0): их ставит генерация.
-    {FT_City,    1.0f, 1.00f, 0.0f, 0, FT_None},
-    {FT_Village, 1.5f, 1.00f, 0.0f, 0, FT_None},
-    {FT_Spire,   0.0f, 1.00f, 0.0f, 0, FT_None},
-    {FT_Ruin,    0.0f, 1.00f, 0.0f, 0, FT_None},
+    // Число на поселении — ПАСТВА, на шпиле — ординал спелла: ни то, ни
+    // другое рядом реестра не является, поэтому здесь `Count` (см. колонку).
+    {FT_City,    1.0f, 1.00f, 0.0f, 0, FT_None, ResourceFieldId::Count},
+    {FT_Village, 1.5f, 1.00f, 0.0f, 0, FT_None, ResourceFieldId::Count},
+    {FT_Spire,   0.0f, 1.00f, 0.0f, 0, FT_None, ResourceFieldId::Count},
+    {FT_Ruin,    0.0f, 1.00f, 0.0f, 0, FT_None, ResourceFieldId::Count},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "

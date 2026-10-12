@@ -282,6 +282,14 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Horse — the goat's own build, a size up: body and speed, no craft.
     {NPCType::Horse,        role_attrs(4, 5, 1, 1, 4, 1, 1, 1),
      role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0, 0, 0, 0,0,0,0)},
+    // Sheep — строка козы НА СТУПЕНЬ НИЖЕ, и ровно в двух местах ВЫШЕ: стадо
+    // идёт весь день (Marathon 3 против 2, End 4 держится), а всё, чем коза
+    // живёт на скале, у овцы падает в ноль — Athletics 4 → 1, Acrobatics
+    // 3 → 0, Spd 4 → 2. Armsmaster 1 → 0: бой этой строки живёт в
+    // комбат-шаблоне целиком, как у дракона, и пустой вес навыка законен
+    // (дверь генерации выходит из обучения, когда взвешенных навыков нет).
+    {NPCType::Sheep,        role_attrs(1, 4, 1, 1, 2, 1, 1, 1),
+     role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 0,0, 2,0,3,1,0, 3,0,0, 0, 0, 0,0,0,0)},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),

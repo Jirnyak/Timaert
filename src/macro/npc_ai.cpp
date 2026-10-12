@@ -739,10 +739,11 @@ enum class Worksite : std::uint8_t {
     // поэтому «где охотиться» — это лучшая по поголовью клетка своей округи,
     // а не поиск редкости. Рыба придёт третьим таким же источником.
     HomeFauna,
-    // ПАСТБИЩЕ (CANON S10 «ЛОШАДЬ — ЮНИТ»): стоящая FT_Pasture с поголовьем,
-    // а без неё — лучшая огораживаемая клетка того же ±3 бокса: артель
-    // СНАЧАЛА поднимает пастбище (S10 «фичи создаются сквадами» — тот же
-    // бутстрап, что у шахты над жилой), назавтра ловит.
+    // ПАСТБИЩЕ (CANON S10 «ЛОШАДЬ — ЮНИТ»): стоящий загон с поголовьем, и
+    // только он — точное зеркало HomeField. Бутстрап «а без него — лучшая
+    // огораживаемая клетка» снесён 2026-10-12 (M-258) вместе с полем дикого
+    // табуна: число стада есть число ФИЧИ, и брать его с клетки без фичи
+    // нечего. Загоны ставит генерация (M-79).
     HomePasture,
 };
 
@@ -792,7 +793,7 @@ constexpr GathererDef kGathererDefs[] = {
     // ЛОШАДЬ-ЮНИТ: темп 1 — поимка стоит работнику ДЕНЬ (цикл = целый бар
     // по закону цены труда S14.1), против 32 колосьев той же ценой; выход
     // не товар, а существо (колонка creatureYield).
-    {ResourceFieldId::Horses, nullptr,  Worksite::HomePasture,
+    {ResourceFieldId::Livestock, nullptr, Worksite::HomePasture,
      1, NPCType::Horse},
 };
 constexpr int kGathererGoalCount =
@@ -831,10 +832,18 @@ const GathererDef* gatherer_def_of(const ecs::MacroNpcRuntime& rt) {
     return &kGathererDefs[rt.errandObject];
 }
 
-// Пастбище артели: стоящая FT_Pasture с живым поголовьем — а если её нет,
-// лучшая ОГОРАЖИВАЕМАЯ клетка (pasture_cell_ok) того же бокса: вернувшись
-// с аукциона, артель первым делом её поднимет (акт ниже). Зеркало
-// find_home_field с bootstrap-веткой вместо мёртвого отказа.
+// Пастбище артели: стоящая FT_Pasture с живым поголовьем — и ТОЛЬКО она.
+// Точное зеркало find_home_field: нет парцеллы — нет работы, fail-closed.
+//
+// БУТСТРАП-ВЕТКА СНЕСЕНА 2026-10-12 (M-258), И ЭТО НЕ УПРОЩЕНИЕ, А СНЯТИЕ
+// ЛЖИ. Она искала «лучшую огораживаемую клетку» и отправляла артель брать
+// стадо с клетки, на которой НЕТ ЗАГОНА, — то есть с дикого табуна, стоявшего
+// по вердикту владельца «бредом» (своё поле на весь мир под невидимых
+// лошадей). Число стада теперь есть число ФИЧИ, и на клетке без фичи его нет
+// по построению: ветка вернула бы цель, с которой нечего взять.
+// ДЫРА НАЗВАНА И ОТКРЫТА (§1): загоны ставит ГЕНЕРАЦИЯ — «сложная весовая
+// контекстная» (владелец 2026-10-12, наряд M-79), — и до неё эта цель не
+// находит работы ни на одном сиде. Заглушки не ставим.
 bool find_home_pasture(const TickContext& ctx, float px, float py,
                        const XY& home, XY& out) {
     if (!ctx.mw.features) return false;
@@ -847,44 +856,18 @@ bool find_home_pasture(const TickContext& ctx, float px, float py,
             const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
             const int cx = cell_x(n, ctx.mapW);
             const int cy = cell_y(n, ctx.mapW);
-            if (ctx.mw.features->at(cx, cy) != FT_Pasture) continue;
+            // Род фичи тут НЕ спрашивается: «моё ли это число» отвечает сам
+            // ряд своей дверью (`resource_field_read` → носитель стада читает
+            // колонку `numberRow` фичи), поэтому загон льна или шпиль дадут
+            // здесь ноль, не зная друг о друге.
             const int stock =
-                resource_field_read(ctx.mw, ResourceFieldId::Horses, cx, cy);
-            if (stock <= 0) continue;   // grazed bare — nothing to catch
+                resource_field_read(ctx.mw, ResourceFieldId::Livestock, cx, cy);
+            if (stock <= 0) continue;   // нет загона или выеден начисто
             const float d = torus_dist_sq(px, py, float(cx), float(cy),
                                           float(ctx.mapW), float(ctx.mapH));
             if (stock > bestStock || (stock == bestStock && d < best)) {
                 bestStock = stock;
                 best = d;
-                out = {float(cx), float(cy)};
-                found = true;
-            }
-        }
-    }
-    if (found) return true;
-    // A pasture stands but is grazed bare: the herd law regrows it by the
-    // season walker — fencing a SECOND meadow would sprawl one parcel per
-    // trip (measured: 8 928 pastures in eight days, сид 7).
-    for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
-        for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
-            const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
-            if (ctx.mw.features->at(cell_x(n, ctx.mapW), cell_y(n, ctx.mapW))
-                == FT_Pasture)
-                return false;
-        }
-    }
-    // No pasture stands yet: the goal opens on the best fence-able cell.
-    for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
-        for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
-            if (dx == 0 && dy == 0) continue;  // the town
-            const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
-            const int cx = cell_x(n, ctx.mapW);
-            const int cy = cell_y(n, ctx.mapW);
-            int herd = 0;
-            if (!pasture_cell_ok(*ctx.mw.features, ctx.mw, cx, cy, herd))
-                continue;
-            if (herd > bestStock) {
-                bestStock = herd;
                 out = {float(cx), float(cy)};
                 found = true;
             }

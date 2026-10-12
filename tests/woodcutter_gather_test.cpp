@@ -711,8 +711,15 @@ void test_the_miner_works_the_vein() {
 // ровно колонка закона — «выход ложится СУЩЕСТВОМ в контейнер, а не в
 // сумку» — и её сохранение: поле теряет ровно столько голов, сколько встало
 // в отряд, сумка при этом пуста, а обоз растёт спинами пойманных
-// (haulMult 8). Бутстрап тот же, что у шахты над жилой: первый день артель
-// поднимает ПАСТБИЩЕ, ловля — следующим днём.
+// (haulMult 8).
+//
+// СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11, переписан 2026-10-12, M-258):
+// число стада есть ЧИСЛО ФИЧИ, поэтому загон здесь СТАВИТСЯ руками теста, а
+// не ожидается от мира — ставить его будет генерация (M-79), которой ещё нет,
+// и надеяться на дикий табун больше нельзя: поле лошадей снесено вердиктом
+// владельца. Наполняется загон СВОЕЙ ЖЕ ДВЕРЬЮ ряда с заведомо избыточным
+// дельтой, то есть до КАПА, выведенного из фертильности клетки, — числа с
+// потолка здесь нет ни одного (§8 п.4).
 //
 // ЗАКОН УПРЯЖКИ СНЕСЁН ЦЕЛИКОМ (M-230, вердикт владельца 2026-10-06), и
 // здесь стояли ШЕСТЬ его свидетелей — такт 1 (сдача в стойло), тег Mount,
@@ -775,7 +782,8 @@ void test_the_catch_lands_as_creatures() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     prt.squadType = std::uint8_t(SquadType::Artel);
-    prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Horses));
+    prt.errandObject =
+        std::uint32_t(gather_goal_row(ResourceFieldId::Livestock));
     prt.carryPerSoul = 40.0f;
     prt.carryCap = 40.0f;
     st.runtime[h.slot] = prt;
@@ -783,6 +791,23 @@ void test_the_catch_lands_as_creatures() {
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;
+
+    // ЗАГОН — ПРЕДУСЛОВИЕ, И ЕГО СТАВИТ СВИДЕТЕЛЬ. Клетка в боксе
+    // ±kSettlementReach вокруг дома и НЕ сама деревня: её число — паства
+    // (`settle_souls` выше), и смысл ему задаёт её собственная фича.
+    constexpr int kFoldX = 12, kFoldY = 10;
+    features.set(kFoldX, kFoldY, sm::FT_Pasture);
+    MacroWorld seedWorld{.gs = &gs, .world = &w, .terrain = &terrain,
+                         .features = &features};
+    // Избыточная дельта: дверь ряда САМА зажимает в кап клетки, поэтому
+    // число берётся из фертильности, а не из головы автора.
+    sm::resource_field_apply(seedWorld, ResourceFieldId::Livestock,
+                             kFoldX, kFoldY, sm::kMaxFieldUnitsPerCell);
+    const int herdAtFence = sm::resource_field_read(
+        seedWorld, ResourceFieldId::Livestock, kFoldX, kFoldY);
+    CHECK(herdAtFence > 0,
+          "загон наполнился СВОЕЙ дверью до капа, выведенного из травы "
+          "клетки — число стада есть число фичи");
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 77u);
@@ -794,12 +819,15 @@ void test_the_catch_lands_as_creatures() {
 
     const Inventory& creatures = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
     const int caught = creature_count_of(creatures, NPCType::Horse);
-    const ResourceGrid& herdScars =
-        gs.resourceScarCells[std::size_t(ResourceFieldId::Horses)];
-    int lost = 0;
-    herdScars.for_each_live([&](std::uint32_t, std::int32_t scar) {
-        lost += int(scar);
-    });
+    // УБЫЛЬ ЧИТАЕТСЯ ТАМ, ГДЕ ТЕПЕРЬ ЖИВЁТ ЧИСЛО — на поле чисел фич, одной
+    // дверью ряда. Шрамового поля у стада больше нет вовсе, и негативный
+    // контроль этого стоит ниже: его заголовок обязан остаться пустым.
+    const int lost = herdAtFence
+        - sm::resource_field_read(seedWorld, ResourceFieldId::Livestock,
+                                  kFoldX, kFoldY);
+    CHECK(!gs.resourceScarCells[std::size_t(ResourceFieldId::Livestock)].live(),
+          "у ряда-НОСИТЕЛЯ своего поля шрамов нет: массив над миром снесён "
+          "(M-258), и аллокатор полей его пропускает");
 
     const int athome =
         creature_count_of(st.inventory[vil.slot].inv, NPCType::Horse);
