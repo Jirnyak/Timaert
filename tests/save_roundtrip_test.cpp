@@ -1395,7 +1395,6 @@ void run_roundtrip() {
     remove_slot_files(corruptPath);
     remove_slot_files(badVersionPath);
     remove_slot_files(path);
-    CHECK(true, "every roundtrip gate above passed");
 }
 
 // EVERY LIVE SUB-STATE KIND SURVIVES THE ROUND TRIP.
