@@ -76,10 +76,11 @@ namespace sm::sub {
 
 // ── Universal capacity ─────────────────────────────────────────────────────
 // The subworld ceiling is its OWN cap, `kMaxSubObjects@src/sub/caps.h`
-// (16384 = 2^14 today; owner correction 2026-10-09 split it from the macro
-// cap — step 0 of M-150; the former local name kMaxBodyCrowd and the shared
-// reading of kUnifiedCap both died). Locally it means what it always meant:
-// this
+// (65536 = 2^16, the reach of the u16 slot index; owner correction 2026-10-09
+// split it from the macro cap AND raised it — step 0 of M-150; the former
+// local name kMaxBodyCrowd and the shared reading of kUnifiedCap both died,
+// and quoting 16k for subworld bodies is an ERROR, owner 2026-10-13).
+// Locally it means what it always meant: this
 // SoA, the renderer's instance buffer (vk_renderer_3d.cpp) and both
 // broad-phase snapshot buffers (spell contact, melee swing) all read THIS one
 // name. A body that cannot be drawn must not be simulated, and a snapshot OF

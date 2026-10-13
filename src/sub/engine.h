@@ -680,7 +680,9 @@ private:
     // length to keep in step.
     std::array<std::uint16_t, kMaxSubObjects> crowdSlots_{};
     // The spell broad phase's honesty bits (spell_neighbors_callback). The
-    // gather sets truncated when the 16k ceiling cut bodies out of the grids —
+    // gather sets truncated when the scene ceiling (`kMaxSubObjects` = 65536,
+    // NOT the macro 16k — that reading is an error, owner 2026-10-13) cut
+    // bodies out of the grids —
     // the callback then answers -1 and the spell tick falls back to its full
     // scan, because a body missing from the grid must not be missing from the
     // world. maxStep is the farthest any body can move between the grid build

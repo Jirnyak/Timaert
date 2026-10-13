@@ -2675,7 +2675,9 @@ void SubworldEngine::tick_damage_fx() {
 // and BOTH are read every frame (the HUD danger gem, the exit gate). They used
 // to walk every subworld entity calling hostile_to_player_entity — two
 // std::map<std::string> lookups apiece, i.e. ~32k map lookups per frame at the
-// 16k-body ceiling, to colour one gem. The battle pass already knows the answer:
+// body ceiling OF THAT DAY (16384; the scene cap is 65536 now, so the same
+// shape would cost four times as much), to colour one gem. The battle pass
+// already knows the answer:
 // it holds a packed SoA whose enemy masks encode exactly the same rule
 // (reputation, plus TempHostileToPlayer per body), so the distance is cached
 // there once per tick and both queries are now O(1) reads.
@@ -3356,7 +3358,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             std::sqrt(d.intentVx * d.intentVx + d.intentVy * d.intentVy)));
 
         const int idx = crowd_->add(d);
-        if (idx < 0) {                      // 16k ceiling: shared with the renderer
+        if (idx < 0) {                      // kMaxSubObjects: shared with the renderer
             // Bodies past the ceiling exist in the world but not in the grids.
             // The spell broad phase must know it is blind to them — it answers
             // -1 and the spell tick falls back to the full scan.
