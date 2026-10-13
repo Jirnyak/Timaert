@@ -947,6 +947,84 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
 
 } // namespace
 
+// ПРИЗРАК ХЭНДЛА НЕ СМЕЕТ ПРИКРЫВАТЬ ЖИВУЮ ЗАПИСЬ, ЗАНЯВШУЮ ЕГО СЛОТ.
+// Плоскость бита идемпотентности (M-260) ставит бит ТОЛЬКО по ГОДНОМУ хэндлу
+// (`st.valid` — слот жив И поколение совпало), и это не украшение: слоты
+// стора переиспользуются фрилистом стеком (`store_death` кладёт слот назад и
+// бампает поколение, `store_birth` снимает его первым). Значит тело, чья
+// запись умерла, продолжает СТОЯТЬ в сцене с протухшим хэндлом на тот же
+// слот — и бит «по слоту» закрыл бы им НОВУЮ запись, то есть живой сквад не
+// воплотился бы никогда, молча.
+//
+// Свидетеля у этого закона не было: мутация «бит по слоту без `valid`»
+// проходила 127/127 ЗЕЛЁНОЙ (замер M-260, 2026-10-13), потому что ни один
+// прогон не рождал призрака. Предусловие — призрак и перерождение слота —
+// рождается ЗДЕСЬ, а не ожидается от генератора (§8 п.11).
+bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
+    constexpr int kMapW = 1024, kMapH = 1024;
+    constexpr int kCenterCx = 0, kCenterCy = 0;
+    constexpr std::uint32_t kSeed = 0x9A17C0DEu;
+
+    sm::ecs::World world{};
+    auto storeMem = sm::make_macro_store();
+    sm::store_attach(world, storeMem.get());
+    sm::test::arena_of(world.reg);   // арена — предусловие рождения тел
+    auto& reg = world.reg;
+    const MacroSeeds s = seed_macro_npcs(reg, kMapW);
+    sm::MacroStore& st = sm::store_of(reg);
+
+    // Трое в окне встают телами (четвёртый за окном) — как в кейсе проекции.
+    if (sm::sub::project_macro_npcs_into_subworld(
+            world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            sm::sub::WATER_LEVEL) != 3) return false;
+
+    auto count_origins = [&](bool wantValid) {
+        int n = 0;
+        for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
+            const sm::MacroHandle h = sm::sub::body_macro_origin(reg, e);
+            if (h.slot == sm::kMacroNoSlot) continue;
+            if (st.valid(h) == wantValid) ++n;
+        }
+        return n;
+    };
+    if (count_origins(/*wantValid*/true) != 3) return false;
+
+    // ПРИЗРАК: запись бандита умирает, его тело со сцены никто не убирал.
+    sm::store_death(st, s.bandit);
+    if (st.valid(s.bandit)) return false;            // хэндл протух
+    if (count_origins(/*wantValid*/true) != 2) return false;
+    if (count_origins(/*wantValid*/false) != 1) return false;   // он и есть призрак
+
+    // ПЕРЕРОЖДЕНИЕ ТОГО ЖЕ СЛОТА: фрилист — стек, значит слот возвращается
+    // первым. Если это перестанет быть правдой, сценарий обязан сказать об
+    // этом вслух, а не проверять пустоту.
+    const sm::MacroHandle reborn = sm::store_birth(st);
+    if (reborn.slot != s.bandit.slot) return false;  // не тот слот — нет сценария
+    if (reborn.gen == s.bandit.gen) return false;    // поколение обязано отличаться
+    st.spawnId[reborn.slot] = sm::ecs::MacroSpawnId{77u};
+    st.cell[reborn.slot] = sm::ecs::MacroCell{
+        sm::ecs::cell_index(kCenterCx, kCenterCy, kMapW)};
+    st.kind[reborn.slot] = sm::ecs::NPCKind{
+        std::uint16_t(sm::NPCType::Guard), 2};
+    st.pools[reborn.slot] = sm::ecs::Pools{9, 9};
+    st.level[reborn.slot] = sm::ecs::NpcLevel{std::int16_t(2)};
+    {
+        sm::ecs::NpcCharacter ch{};
+        ch.visualSeed = 0xFEEDu;
+        ch.bodyShape = 3;
+        st.character[reborn.slot] = ch;
+    }
+
+    // ЗАКОН: новая запись воплощается, призрак её не прикрыл. Двое уже
+    // стоящих при этом не удваиваются — тот же гейт идемпотентности.
+    if (sm::sub::project_macro_npcs_into_subworld(
+            world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            sm::sub::WATER_LEVEL) != 1) return false;
+    if (count_origins(/*wantValid*/true) != 3) return false;
+    if (count_origins(/*wantValid*/false) != 1) return false;   // призрак так и стоит
+    return true;
+}
+
 int main() {
     sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;
@@ -1033,9 +1111,17 @@ int main() {
                "(window/wrap/backlink/hostility/hp/placement/reaper/determinism)");
     if (!ok8) return 1;
 
+    const bool ok9 = !(!run_ghost_origin_case(mgr));
+    if (!ok9) {
+        sm::sub::clear_saved_subworlds();
+    }
+    CHECK(ok9, "призрак мёртвой записи прикрыл живую, занявшую его слот "
+               "(бит идемпотентности обязан стоять на ГОДНОМ хэндле)");
+    if (!ok9) return 1;
+
     std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u no_autolevel=%d "
                 "water_squad_blocked=1 city_projection=1 carry_across=1 "
-                "reentry_determinism=1 macro_projection=1 "
+                "reentry_determinism=1 macro_projection=1 ghost_origin=1 "
                 "identity_remap=1\n",
                 actual.size(), centre.seed, 1);
     sm::sub::clear_saved_subworlds();

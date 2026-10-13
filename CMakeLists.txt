@@ -1348,7 +1348,7 @@ timaert_test(subworld_spawn_parity_test
     # тварей, накатанных сидом. Замер 2026-10-12: смена сида фикстуры двигала
     # его 109 → 123. После сведения к §8 п.3 обход утверждается ОДНИМ
     # вердиктом, счёт структурен (52), и тот же сид его не двигает.
-    PIN "OK subworld_spawn_parity_test .52 checks.")
+    PIN "OK subworld_spawn_parity_test .53 checks.")
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
 # functions live in items.cpp (self-contained — no SDL2/EnTT, same as
