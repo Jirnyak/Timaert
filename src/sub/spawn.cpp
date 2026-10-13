@@ -1527,45 +1527,38 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
 
-    // Snapshot the source set FIRST. Projecting a body emplaces into the very
-    // component pools this view iterates (Position / NPCKind / Health / …),
-    // which can reallocate and invalidate a live view iterator mid-loop. So we
-    // collect the persistent macro NPCs, then create their projections.
-    // MacroNpcRuntime is the macro discriminator (subworld bodies never have it);
-    // excluding SubworldTag/Dead keeps the source set to live overworld NPCs.
-    // AvatarTag skips the macro record the player is currently BEING — his
-    // body in the scene is the tracked avatar, not a foreign projection.
-    // The player's OWN squad is NOT excluded any more (вердикт владельца №6,
-    // 2026-09-17): while he wears somebody else, his abandoned party stands
-    // in the world — so standing on its cell it projects like any other
-    // party, visibly and senselessly (the ai door reads «флажка на мне нет»
-    // through the mirror). The old writeback fear died with the mirror law:
-    // a projected body owns nothing, it reads and writes THE record. While
-    // he is HIMSELF the squad carries AvatarTag, so nothing double-projects.
-    std::vector<MacroHandle> sources;
+    // ИСТОЧНИК — ЖИВЫЕ СЛОТЫ STORE, И СНИМКА ИМ НЕ НУЖНО. Здесь стоял вектор
+    // `sources` и при нём объяснение: «проекция эмплейсит в те самые пулы, по
+    // которым идёт вьюха, и может реаллоцировать их, инвалидировав живой
+    // итератор». Причина УМЕРЛА с переворотом стора (M-150): обход идёт по
+    // ПЛОСКИМ колонкам фиксированной длины `kUnifiedCap` — реаллокация им
+    // невыразима по построению, — а макро-слотов проекция не рождает ни
+    // одного (`st.alloc` из `src/sub/` не зовёт никто; тело пишет САМУ
+    // запись, а не создаёт новую). Снимок пережил свою причину и стоил
+    // аллокации на каждом ре-центре; теперь фильтры и рождение идут ОДНИМ
+    // проходом в том же порядке слотов, то есть тем же потоком солей, что и
+    // раньше (`projected` входит в соль — порядок обязан совпадать).
+    //
+    // Кого проход пропускает: игроцкий флажок — его тело в сцене есть АВАТАР,
+    // а не чужая проекция; и ТЕЛО МЕСТА (M-90 шаг 5, ось рода) — место стоит
+    // в сцене ЗДАНИЯМИ и ГОЛОВАМИ своего контейнера, а не телом-лидером, и
+    // без этого гейта шпиль воплощал самого себя враждебным телом, а смоук
+    // spire_climb вис навечно в dev_kill_all_hostiles.
+    //
+    // А СВОЙ сквад игрока проход НЕ пропускает (вердикт владельца №6,
+    // 2026-09-17): пока он носит чужое тело, его брошенная партия стоит в
+    // мире — и, стоя на своей клетке, проецируется как любая другая, зримо и
+    // бессмысленно (дверь ai читает «флажка на мне нет» через зеркало). Страх
+    // записи-назад умер с законом зеркала: проекция не владеет ничем, она
+    // читает и пишет САМУ запись. Пока он ЦЕЛ — на его слоте стоит флажок, и
+    // дважды не проецируется ничто.
     MacroStore& st = store_of(reg);
+    // Флаг игрока — его слот; источник — биты GameState, пришедшие числом в
+    // параметре (1е кластер 5).
+    std::uint16_t flagSlot = kMacroNoSlot;
     {
-        // Население — живые слоты store (1е, голый цикл); флаг игрока —
-        // его слот (его тело в сцене — аватар, не проекция). Источник —
-        // биты GameState, пришедшие числом в параметре (1е кластер 5).
-        std::uint16_t flagSlot = kMacroNoSlot;
-        {
-            const MacroHandle fh = macro_handle_from_bits(playerFlagBits);
-            if (st.valid(fh)) flagSlot = fh.slot;
-        }
-        for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
-            const std::uint16_t slot = std::uint16_t(s32);
-            if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
-            if (slot == flagSlot) continue;
-            // ТЕЛО МЕСТА НЕ ПРОЕЦИРУЕТСЯ (M-90 шаг 5, ось рода): место —
-            // неподвижный сквад store, но в сцене оно стоит ЗДАНИЯМИ и
-            // ГОЛОВАМИ своего контейнера, а не телом-лидером. Без гейта
-            // шпиль воплощал самого себя враждебным телом, и смоук
-            // spire_climb вис навечно в dev_kill_all_hostiles.
-            if (squad_archetype(SquadType(st.runtime[slot].squadType)) == SquadArchetype::Place)
-                continue;
-            sources.push_back(handle_at(st, slot));
-        }
+        const MacroHandle fh = macro_handle_from_bits(playerFlagBits);
+        if (st.valid(fh)) flagSlot = fh.slot;
     }
 
     // Idempotence (SUB-2): a macro NPC whose projection ALREADY stands in the
@@ -1578,7 +1571,16 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // struck (sub/record.h), and the body was only ever a mirror of it. (The
     // per-tick `reconcile_tracked_bodies_to_macro` this used to credit died
     // with the fold-up architecture; the mirror law left nothing to pay up.)
-    std::vector<MacroHandle> alreadyProjected;
+    //
+    // ФОРМА ПАМЯТИ — БИТ НА СЛОТ, А НЕ СПИСОК ХЭНДЛОВ: список отвечал на
+    // «стоит ли он уже» линейным `std::find`, то есть O(S·P) — по разу на
+    // каждый сквад окна против каждого стоящего тела. Плоскость капа делает
+    // тот же ответ одним сдвигом, а её цена названа капом: 16384 бита = 2 КиБ
+    // на кадр ре-центра, ноль аллокаций.
+    static_assert(kUnifiedCap % 64u == 0u,
+                  "плоскость бита на слот кроится словами по 64 — кап обязан "
+                  "делиться на ширину слова без остатка");
+    std::array<std::uint64_t, kUnifiedCap / 64u> projectedSlots{};
     {
         SubObjects* apObjs = objects_find(reg);
         auto apView = reg.view<ecs::ObjectSlot>();
@@ -1586,12 +1588,25 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             if (apObjs == nullptr) break;   // арены нет — нет и проекций
             const int s = int(apView.get<ecs::ObjectSlot>(body).slot);
             const MacroHandle h = slot_macro_origin(*apObjs, s);
-            if (h.slot != kMacroNoSlot) alreadyProjected.push_back(h);
+            // Бит ставит ТОЛЬКО годный хэндл, и `valid` есть ровно то
+            // равенство, которое искал `std::find`: слот жив И поколение
+            // совпало. Поэтому призрак умершей записи, чей хэндл протух, не
+            // прикрывает собой ЖИВУЮ запись, занявшую тот же слот, — она
+            // честно проецируется, как и прежде.
+            if (!st.valid(h)) continue;
+            projectedSlots[std::size_t(h.slot) >> 6] |=
+                std::uint64_t(1) << (h.slot & 63u);
         }
     }
 
     int projected = 0;
-    for (const MacroHandle macro : sources) {
+    for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
+        const std::uint16_t slot = std::uint16_t(s32);
+        if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
+        if (slot == flagSlot) continue;
+        if (squad_archetype(SquadType(st.runtime[slot].squadType))
+            == SquadArchetype::Place) continue;
+        const MacroHandle macro = handle_at(st, slot);
         const auto& mcell = st.cell[macro.slot];
         const int mcx = ecs::cell_x(mcell, mapW);
         const int mcy = ecs::cell_y(mcell, mapW);
@@ -1599,9 +1614,8 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         const int ox = toroidal_cell_offset(mcx, centerCx, mapW);
         const int oy = toroidal_cell_offset(mcy, centerCy, mapH);
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
-        if (std::find(alreadyProjected.begin(), alreadyProjected.end(),
-                      macro)
-            != alreadyProjected.end()) continue;
+        if ((projectedSlots[std::size_t(slot) >> 6] >> (slot & 63u)) & 1ull)
+            continue;
 
         // (The projection cap that stood here — kMaxProjectedMacroNpcs, 128
         // for the whole scene — died with §42 Инк 6, owner: «потолков нет».

@@ -261,7 +261,6 @@ SKELETON.md	effect_applicator.cpp:53-60
 SKELETON.md	effect_applicator.h:12
 SKELETON.md	engine.cpp:1223-1225
 SKELETON.md	engine.cpp:1388
-SKELETON.md	engine.cpp:1621-1638
 SKELETON.md	engine.cpp:1655-1660
 SKELETON.md	engine.cpp:2285
 SKELETON.md	engine.cpp:2301
@@ -454,7 +453,6 @@ SKELETON.md	smoke.cpp:5450
 SKELETON.md	spawn.cpp:1010
 SKELETON.md	spawn.cpp:1225
 SKELETON.md	spawn.cpp:1239-1256
-SKELETON.md	spawn.cpp:1425-1447
 SKELETON.md	spawn.cpp:599-601
 SKELETON.md	spawners.cpp:162
 SKELETON.md	spawners.cpp:210

@@ -884,6 +884,26 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
         if (!in(pw.x, 0.0f, kC) || !in(pw.y, kC, 2 * kC)) return false;
     }
 
+    // ИДЕМПОТЕНТНОСТЬ ДВЕРИ (SUB-2) — НОСИТЕЛЬ ЗАКОНА, КОТОРОГО НЕ БЫЛО.
+    // Шов зовёт эту дверь СНОВА на каждом ре-центре (ровно за этим она и
+    // идемпотентна), и второй зов по тому же миру обязан вернуть НОЛЬ: сквад,
+    // чья проекция уже стоит, не воплощается вторым телом. Закон был записан
+    // в коде абзацем и не охранялся ничем — мутация «гейт идемпотентности
+    // выключен» проходила 127/127 ctest и смоуки ЗЕЛЁНОЙ, потому что ни один
+    // прогон не звал дверь по одному миру дважды (замер M-260, 2026-10-13).
+    {
+        const int again = sm::sub::project_macro_npcs_into_subworld(
+            world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            sm::sub::WATER_LEVEL);
+        if (again != 0) return false;   // второй зов не рождает ни одного тела
+        int standing = 0;
+        for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
+            if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot)
+                ++standing;
+        }
+        if (standing != 3) return false;   // и не удваивает уже стоящих
+    }
+
     const std::vector<std::array<float, 3>> fp1 = projection_fingerprint(world);
 
     // Reaper skip: clear_subworld_world_entities wipes ordinary fauna but SPARES
