@@ -996,6 +996,17 @@ private:
     // cannot move between two steps of the same tick.
     void tick_day_pump(float dt);
     std::uint64_t pumpTick_ = 0;   // world tick the pump last ran on
+    // ДВЕРИ ДОМОХОЗЯЙСТВ ЦЕНТРАЛЬНОЙ КЛЕТКИ — КОЛОНКА СЦЕНЫ, НЕ РАБОТА ТИКА
+    // (M-260). Список есть чистая функция композита строений, и ключ его
+    // свежести — `struct_revision@src/sub/seamless_manager.h`, а не центр
+    // окна: рубка делает `erase` в композите, после которого ЭТИ указатели
+    // недействительны. Резерв здесь законен (DOD п.4): длина не выводится из
+    // капа — у строений клетки именованного потолка нет вовсе, — а берётся он
+    // на ре-центре, не в тике; после прогрева capacity держится и не растёт.
+    // Замер до правки: 9 626 … 71 039 строений перебиралось КАЖДЫЙ мировой
+    // тик ради 621 … 1392 дверей.
+    std::vector<const Structure*> pumpDoors_;
+    std::uint32_t pumpDoorsRevision_ = 0;   // 0 = кэша не было
 
     // Where the player is standing, in MACRO cells — the seam's own
     // coordinate, and the only translation the layers need between them.

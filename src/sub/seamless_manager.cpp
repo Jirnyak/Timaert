@@ -123,6 +123,7 @@ void SeamlessSubworldManager::init(int cx, int cy, CellResolver r,
     composite_tiles_.assign(std::size_t(kFullSize) * kFullSize, 0);
     composite_height_.assign(std::size_t(kFullSize) * kFullSize, 0.0f);
     composite_struct_.clear();
+    ++structRevision_;   // список строений сменился (struct_revision)
     start_worker();
     load_all();
 }
@@ -418,6 +419,7 @@ void SeamlessSubworldManager::blit_into_composite(bool smoothRoads) {
         smooth_road_heights(composite_height_, composite_tiles_, kFullSize, kFullSize);
         lastTiming_.smoothMs = elapsed_ms(t0, Clock::now());
     }
+    ++structRevision_;   // список строений сменился (struct_revision)
 }
 
 void SeamlessSubworldManager::blit_cell_into_composite(int idx) {
@@ -465,6 +467,7 @@ void SeamlessSubworldManager::rebuild_composite_structures() {
             composite_struct_.push_back(t);
         }
     }
+    ++structRevision_;   // список строений сменился (struct_revision)
 }
 
 bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
@@ -525,6 +528,7 @@ bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
     if (cellEntry < 0) return false;
     cell.data.structures.erase(cell.data.structures.begin() + cellEntry);
     composite_struct_.erase(composite_struct_.begin() + best);
+    ++structRevision_;   // список строений сменился (struct_revision)
 
     // The stump tile reverts to open ground, in both the cell (authoritative
     // for snapshots) and the live composite (2D map / movement cost).

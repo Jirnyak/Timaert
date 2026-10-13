@@ -484,6 +484,71 @@ void run_water_placeholder_case() {
     sm::sub::clear_saved_subworlds();
 }
 
+// Клетка с НАЗНАЧЕННЫМ лесом: свидетель ниже рубит дерево, и надеяться на
+// щедрость генератора ему запрещено (§8 п.11) — счёт приходит резолвером.
+sm::sub::CellContext resolve_forest_cell(int cx, int cy) {
+    sm::sub::CellContext c = resolve_plain_cell(cx, cy);
+    c.treeCount = 8192;   // половина золотого густейшего леса (16384)
+    c.seed ^= 0x0F0E5700u;
+    return c;
+}
+
+// РЕВИЗИЯ СПИСКА СТРОЕНИЙ — НОСИТЕЛЬ ТОГО, НА ЧЁМ СТОИТ КЭШ ЧИТАТЕЛЯ (M-260,
+// 2026-10-13). Уличная помпа держит двери домохозяйств КОЛОНКОЙ СЦЕНЫ и
+// пересобирает её только когда это число сменилось — иначе она перебирала бы
+// 9 626 … 71 039 строений каждый мировой тик. Из четырёх писателей списка
+// опаснее всех РУБКА: она делает `erase`, после которого указатели в композит
+// недействительны, и кэш, не узнавший об этом, читал бы освобождённую память.
+// Поэтому проверяются оба конца: что композит вообще поднял ревизию с нуля и
+// что изъятие пропа её двинуло; ре-центр проверяется опросом, потому что
+// новую клетку собирает рабочий поток.
+void run_struct_revision_case() {
+    sm::sub::clear_saved_subworlds();
+    sm::sub::SeamlessSubworldManager mgr;
+    mgr.init(0, 0, resolve_forest_cell);
+    mgr.consume_composite_dirty();
+
+    const std::uint32_t afterInit = mgr.struct_revision();
+    CHECK_OR_RETURN(afterInit != 0,
+                    "композит собран, а ревизия строений осталась нулём — "
+                    "кэш читателя счёл бы себя свежим");
+
+    const sm::sub::Structure* tree = nullptr;
+    for (const auto& s : mgr.structures()) {
+        if (s.kind == sm::sub::Structure::Tree) { tree = &s; break; }
+    }
+    CHECK_OR_RETURN(tree != nullptr,
+                    "клетке назначен лес 8192, а генератор не поставил ни дерева");
+    const float tx = tree->x, ty = tree->y, tz = tree->zBase;
+    const std::size_t before = mgr.structures().size();
+
+    int mcx = 0, mcy = 0;
+    sm::sub::Structure felled{};
+    CHECK_OR_RETURN(mgr.fell_prop_near(tx, ty, tz, 4.0f, mcx, mcy, &felled),
+                    "дерево под рукой не срубилось — рубить нечего, "
+                    "и проверять нечего");
+    CHECK_OR_RETURN(mgr.structures().size() == before - 1,
+                    "список строений не укоротился на срубленное");
+    CHECK_OR_RETURN(mgr.struct_revision() != afterInit,
+                    "рубка не двинула ревизию: кэш читателя остался бы на "
+                    "указателях, которые erase уже сделал мёртвыми");
+
+    const std::uint32_t afterChop = mgr.struct_revision();
+    float px = float(sm::sub::kCellSize * 2 + 20);
+    float py = float(sm::sub::kCellSize + 64);
+    mgr.check_boundary(px, py);
+    CHECK_OR_RETURN(mgr.center_cx() == 1, "ре-центр на восток не случился");
+    bool moved = false;
+    for (int i = 0; i < 500 && !moved; ++i) {
+        mgr.consume_composite_dirty();
+        moved = mgr.struct_revision() != afterChop;
+        if (!moved) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    CHECK_OR_RETURN(moved,
+                    "ре-центр пересобрал композит, а ревизия не двинулась");
+    sm::sub::clear_saved_subworlds();
+}
+
 void run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_plain_cell);
@@ -587,6 +652,8 @@ int main() {
     run_worker_restore_saved_case();
     if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
     run_water_placeholder_case();
+    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
+    run_struct_revision_case();
     if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
     run_water_plane_invariant_case();
 

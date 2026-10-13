@@ -1832,78 +1832,113 @@ void SubworldEngine::tick_day_pump(float dt) {
 
     // The doors this town keeps — where a man goes home to, and where one
     // steps out of at first light.
-    std::vector<const Structure*> doors;
-    doors.reserve(256);
-    for (const Structure& s : mgr_.structures()) {
-        if (structure_opens(s.kind) == DungeonRef::None) continue;
-        if (structure_opens_top(s.kind)) continue;
-        if (!dungeon_kind_row(structure_opens(s.kind)).householdAbove) continue;
-        if (s.x < originX || s.x >= originX + float(kCellSize)) continue;
-        if (s.y < originY || s.y >= originY + float(kCellSize)) continue;
-        doors.push_back(&s);
+    //
+    // КОЛОНКА СЦЕНЫ, А НЕ РАБОТА ТИКА (M-260, 2026-10-13). Список дверей есть
+    // ЧИСТАЯ ФУНКЦИЯ композита строений: отбор идёт по роду пропа и по
+    // ОКОННЫМ границам центральной клетки `[kCellSize, 2·kCellSize)`, то есть
+    // по константам, а не по макро-адресу центра. Значит пересобирать его
+    // каждый мировой тик незачем — а именно это и делалось, ценой **9 626 …
+    // 71 039 строений за тик** (замер трёх сидов) и двух-трёх реаллокаций
+    // вектора: резерв 256 против замеренных 621 … 1392 дверей.
+    //
+    // Ключ кэша — РЕВИЗИЯ, а не координаты центра: рубка пропа делает `erase`
+    // в композите, после которого указатели недействительны, и ре-центр тоже
+    // пересобирает список целиком. Одно число отвечает на оба случая
+    // (`struct_revision@src/sub/seamless_manager.h`).
+    if (pumpDoorsRevision_ != mgr_.struct_revision()) {
+        pumpDoors_.clear();
+        for (const Structure& s : mgr_.structures()) {
+            if (structure_opens(s.kind) == DungeonRef::None) continue;
+            if (structure_opens_top(s.kind)) continue;
+            if (!dungeon_kind_row(structure_opens(s.kind)).householdAbove) continue;
+            if (s.x < originX || s.x >= originX + float(kCellSize)) continue;
+            if (s.y < originY || s.y >= originY + float(kCellSize)) continue;
+            pumpDoors_.push_back(&s);
+        }
+        pumpDoorsRevision_ = mgr_.struct_revision();
     }
-    if (doors.empty()) return;
+    if (pumpDoors_.empty()) return;
 
     // Who is standing on this town's streets right now — asked of the LOAN
     // each citizen carries (MacroDebt), because that is what says whose
     // townsman a body is. A leaver still stands there but is already spoken
     // for, so he is counted apart.
-    // ОБА набора — СЛОТЫ, не сущности ((ii-б)): голый слот законен внутри
-    // тика (вердикт), а эта помпа целиком живёт в одном — между сбором и
-    // разворотом никто не рождается и не умирает. Живость ниже судит бит
+    // СПИСКОВ ЗДЕСЬ БОЛЬШЕ НЕТ ВОВСЕ (M-260, 2026-10-13). Стояли два вектора
+    // слотов с резервами 512 и НОЛЬ против замеренных **5 076 … 5 486**
+    // стоящих и **до 2 983** уходящих — то есть десяток реаллокаций за мировой
+    // тик. Но дефект был не «вектор вместо массива», а СПИСОК вместо СЧЁТА:
+    // помпе нужны ровно числа (сколько стоит, сколько уходит) и действие над
+    // первыми N подходящими. И то и другое отвечается проходом по той же
+    // вьюхе, поэтому под них не берётся ни байта и кап выдумывать не пришлось.
+    //
+    // Голый слот законен внутри тика (вердикт (ii-б)), а живость судит бит
     // kObjAlive, а не reg.valid: вопрос о ТЕЛЕ, не о сущности.
-    std::vector<int> onStreet;
-    std::vector<int> leaving;
-    onStreet.reserve(512);
     sub::SubObjects* objsP = sub::objects_find(reg);
     if (objsP == nullptr) return;
     sub::SubObjects& objs = *objsP;
     auto crowd = reg.view<ecs::ObjectSlot>();
+    // ОДИН предикат «этот слот — горожанин ЭТОГО места» на все проходы:
+    // второго ответа на этот вопрос в помпе нет.
+    const auto townsman = [&](int s) {
+        if (sub::slot_ai(objs, s) == nullptr) return false;
+        const auto* dp = sub::slot_debt(objs, s);
+        if (dp == nullptr) return false;
+        if (dp->stock != std::uint8_t(MacroStock::Population)) return false;
+        if (dp->subject != ctx.landmark.id) return false;
+        return !(objs.is_avatar_slot(s)
+                 || sub::slot_flag(objs, s, sub::kObjPlayerSoldier));
+    };
+
+    int staying = 0;
+    int leavingCount = 0;
     for (auto e : crowd) {
         const int s = int(crowd.get<ecs::ObjectSlot>(e).slot);
-        if (sub::slot_ai(objs, s) == nullptr) continue;
-        const auto* dp = sub::slot_debt(objs, s);
-        if (dp == nullptr) continue;
-        const auto& d = *dp;
-        if (d.stock != std::uint8_t(MacroStock::Population)) continue;
-        if (d.subject != ctx.landmark.id) continue;
-        if (objs.is_avatar_slot(s)
-            || sub::slot_flag(objs, s, sub::kObjPlayerSoldier)) continue;
-        if (sub::slot_flag(objs, s, sub::kObjGoingHome)) leaving.push_back(s);
-        else                                             onStreet.push_back(s);
+        if (!townsman(s)) continue;
+        if (sub::slot_flag(objs, s, sub::kObjGoingHome)) ++leavingCount;
+        else                                             ++staying;
     }
 
-    const int staying = int(onStreet.size());
-    int surplus = staying - target;
+    const int surplus = staying - target;
     if (surplus > 0) {
         // Home is the NEAREST door — a man does not cross his town to sleep.
-        for (int i = 0; i < surplus && i < int(onStreet.size()); ++i) {
-            const int s = onStreet[std::size_t(i)];
+        int sent = 0;
+        for (auto e : crowd) {
+            if (sent >= surplus) break;
+            const int s = int(crowd.get<ecs::ObjectSlot>(e).slot);
+            if (!townsman(s)) continue;
+            if (sub::slot_flag(objs, s, sub::kObjGoingHome)) continue;
             const ecs::Position& p = objs.pos[std::size_t(s)];
-            const Structure* best = doors.front();
+            const Structure* best = pumpDoors_.front();
             float bestD2 = 1e30f;
-            for (const Structure* d : doors) {
+            for (const Structure* d : pumpDoors_) {
                 const float dx = d->x - p.x, dy = d->y - p.y;
                 const float d2 = dx * dx + dy * dy;
                 if (d2 < bestD2) { bestD2 = d2; best = d; }
             }
             sub::slot_set_going_home(objs, s,
                                      ecs::GoingHome{best->x, best->y});
+            ++sent;
         }
         return;
     }
 
     // The sun is climbing: doors open. A man already on his way home turns
     // round first — cheaper than birth, and truer, since he never left.
+    // Порядок разворота стал прямым по вьюхе вместо обратного по списку: КТО
+    // именно повернёт, законом не задано (уходящие равноправны), а
+    // детерминизм держится тем же порядком вьюхи, что и прежде.
     int deficit = target - staying;
-    while (deficit > 0 && !leaving.empty()) {
-        const int s = leaving.back();
-        leaving.pop_back();
-        if (sub::slot_flag(objs, s, sub::kObjAlive)) {
-            sub::slot_clear_going_home(objs, s);
-            onStreet.push_back(s);   // развёрнутый стоит на улице — счёту ниже
+    if (deficit > 0 && leavingCount > 0) {
+        for (auto e : crowd) {
+            if (deficit <= 0) break;
+            const int s = int(crowd.get<ecs::ObjectSlot>(e).slot);
+            if (!townsman(s)) continue;
+            if (!sub::slot_flag(objs, s, sub::kObjGoingHome)) continue;
+            if (sub::slot_flag(objs, s, sub::kObjAlive)) {
+                sub::slot_clear_going_home(objs, s);
+            }
+            --deficit;   // мёртвый уходящий тоже снимался со счёта и прежде
         }
-        --deficit;
     }
     if (deficit <= 0) return;
 
@@ -1912,16 +1947,42 @@ void SubworldEngine::tick_day_pump(float dt) {
     // генерики гасятся по-родным счётом живых, именные — по entityId займа.
     // Именное тело в по-родный счёт НЕ входит — его голову гасит entityId,
     // и генерик того же рода не был бы погашен дважды.
+    // ПРЕДЕЛ ИМЕНИТЫХ ВЫВЕДЕН, А НЕ ВЫБРАН: именной ключ головы — `entityId`
+    // СЛОТА контейнера (`CreatureRef@src/macro/world_row.h` берёт его у
+    // `ItemRef`), значит различных именных у места не больше, чем слотов
+    // инвентаря. Отсюда плоский массив длиной `kMaxInventorySlots` (4 КиБ) и
+    // ОБЯЗАТЕЛЬНАЯ склейка дубликатов: стак в одном слоте делит один
+    // entityId, и без склейки предел был бы ложью. Замер трёх городов дал
+    // именных **0** (все души генерики), так что склейка сегодня бесплатна;
+    // переполнение невозможно по выводу выше и потому говорит ВСЛУХ, а не
+    // режет молча (ЗАКОН КЛАМПА).
     std::array<int, std::size_t(NPCType::Count)> liveByKind{};
-    std::vector<std::uint32_t> liveNamed;
-    liveNamed.reserve(32);
-    for (const int s : onStreet) {
+    std::array<std::uint32_t, std::size_t(kMaxInventorySlots)> liveNamed{};
+    int liveNamedCount = 0;
+    for (auto e : crowd) {
+        const int s = int(crowd.get<ecs::ObjectSlot>(e).slot);
+        if (!townsman(s)) continue;
+        if (sub::slot_flag(objs, s, sub::kObjGoingHome)) continue;
         if (!sub::slot_flag(objs, s, sub::kObjAlive)) continue;
         const auto* dOnStreet = sub::slot_debt(objs, s);
         if (dOnStreet == nullptr) continue;
         const auto& d = *dOnStreet;
         if (d.detail > 0) {
-            liveNamed.push_back(std::uint32_t(d.detail));
+            const std::uint32_t id = std::uint32_t(d.detail);
+            bool seenId = false;
+            for (int i = 0; i < liveNamedCount; ++i) {
+                if (liveNamed[std::size_t(i)] == id) { seenId = true; break; }
+            }
+            if (!seenId) {
+                if (liveNamedCount >= int(kMaxInventorySlots)) {
+                    std::fprintf(stderr,
+                                 "[sub] ОТКАЗ: именных душ на улице больше, "
+                                 "чем слотов контейнера (%d) — место %d\n",
+                                 int(kMaxInventorySlots), ctx.landmark.id);
+                } else {
+                    liveNamed[std::size_t(liveNamedCount++)] = id;
+                }
+            }
             continue;
         }
         const auto* kind = sub::slot_kind(objs, s);
@@ -1935,7 +1996,8 @@ void SubworldEngine::tick_day_pump(float dt) {
                                std::int16_t(mgr_.center_cy())};
     spawn_street_arrivals(*ecs_, ctx.seed ^ std::uint32_t(nowTick),
                           faction, *souls, reserve, deficit,
-                          liveByKind, liveNamed, doors, popKey);
+                          liveByKind, liveNamed.data(), liveNamedCount,
+                          pumpDoors_.data(), int(pumpDoors_.size()), popKey);
 }
 
 void SubworldEngine::tick_zones() {

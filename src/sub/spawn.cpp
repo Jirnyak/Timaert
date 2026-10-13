@@ -1099,10 +1099,14 @@ int spawn_street_arrivals(ecs::World& w,
                           int reserve,
                           int deficit,
                           std::array<int, std::size_t(NPCType::Count)>& liveByKind,
-                          const std::vector<std::uint32_t>& liveNamed,
-                          const std::vector<const Structure*>& doors,
+                          const std::uint32_t* liveNamed, int liveNamedCount,
+                          const Structure* const* doors, int doorCount,
                           MacroStockKey populationKey) {
-    if (deficit <= 0 || doors.empty() || reserve < 0) return 0;
+    // ГРУЗ — АДРЕС И СЧЁТ, НЕ КОНТЕЙНЕР (M-260, 2026-10-13): звонящий держит
+    // и двери, и именных в плоских массивах без аллокации, и подпись не
+    // смеет заставлять его заводить вектор ради зова.
+    if (deficit <= 0 || doorCount <= 0 || reserve < 0) return 0;
+    if (doors == nullptr || (liveNamed == nullptr && liveNamedCount > 0)) return 0;
     Rng rng(seed ^ 0xDA47B00Du);
     int placed = 0;
     int seen = 0;
@@ -1113,8 +1117,8 @@ int spawn_street_arrivals(ecs::World& w,
         if (head.entityId != 0) {
             // Именная душа уже ходит по улице: её тело носит её entityId в
             // займе, и второго её рассвет не рождает никогда.
-            if (std::find(liveNamed.begin(), liveNamed.end(),
-                          head.entityId) != liveNamed.end()) continue;
+            if (std::find(liveNamed, liveNamed + liveNamedCount,
+                          head.entityId) != liveNamed + liveNamedCount) continue;
         } else if (liveByKind[std::size_t(head.kind)] > 0) {
             // Генерик взаимозаменяем ВНУТРИ рода: стоящее тело этого рода
             // гасит одну голову того же рода, и состав улицы сходится с
@@ -1123,7 +1127,8 @@ int spawn_street_arrivals(ecs::World& w,
             continue;
         }
         const std::uint32_t soulId = creature_soul_id(head);
-        const Structure* d = doors[std::size_t(rng.next_u32() % doors.size())];
+        const Structure* d =
+            doors[std::size_t(rng.next_u32() % std::uint32_t(doorCount))];
         MacroStockKey key = populationKey;
         name_creature_in_loan(key, head);
         spawn_derived_body(w.reg,

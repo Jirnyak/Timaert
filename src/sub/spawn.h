@@ -372,8 +372,8 @@ int spawn_street_arrivals(ecs::World& w,
                           int reserve,
                           int deficit,
                           std::array<int, std::size_t(NPCType::Count)>& liveByKind,
-                          const std::vector<std::uint32_t>& liveNamed,
-                          const std::vector<const Structure*>& doors,
+                          const std::uint32_t* liveNamed, int liveNamedCount,
+                          const Structure* const* doors, int doorCount,
                           MacroStockKey populationKey);
 
 // The vermin of ONE interior (a cellar, a cave floor): creatures rolled from

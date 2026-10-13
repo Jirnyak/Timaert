@@ -212,6 +212,17 @@ public:
     // depends on a GPU existing.
     const SubworldHeightField& height_field() const { return heightField_; }
     const std::vector<Structure>&    structures() const { return composite_struct_; }
+    // РЕВИЗИЯ СПИСКА СТРОЕНИЙ — ОДНО ЧИСЛО, ЧТОБЫ ЧИТАТЕЛЬ НЕ ПЕРЕСОБИРАЛ
+    // СВОЙ ОТВЕТ КАЖДЫЙ ТИК. Список меняют ровно четыре места (`init`,
+    // `blit_into_composite`, `rebuild_composite_structures` и изъятие пропа
+    // рубкой в `fell_prop_near`), и последнее — `erase`, то есть указатели
+    // и индексы в композит после него НЕДЕЙСТВИТЕЛЬНЫ. Поэтому кэш, живущий
+    // снаружи, обязан сравнивать не «сменилась ли клетка», а это число.
+    // Монотонное, начинается с 1 после первой сборки: кэш, помнящий 0,
+    // пересобирается всегда (M-260: уличная помпа перебирала 9 626 … 71 039
+    // строений КАЖДЫЙ мировой тик ради списка, который между тиками не
+    // менялся).
+    std::uint32_t struct_revision() const { return structRevision_; }
     // A window cell whose composite content is one constant (LoadedCell::
     // heightIsFlat) — its height, and its tile id. False for any cell holding
     // real terrain, so the caller falls back to honest sampling.
@@ -262,6 +273,7 @@ private:
     std::vector<std::uint8_t> composite_tiles_;
     std::vector<float>        composite_height_;
     std::vector<Structure>    composite_struct_;
+    std::uint32_t             structRevision_ = 0;   // см. struct_revision()
     SubworldHeightField       heightField_;
 
     // The pending change set as a value, so both consumes read the same facts
