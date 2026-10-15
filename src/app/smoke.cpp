@@ -1085,7 +1085,7 @@ bool run_subworld_recovery_smoke(App& app) {
     float wPx = 0.0f, wPy = 0.0f, wVx = 0.0f, wVy = 0.0f;
     std::uint32_t wCellIdx = 0;
     {
-        sm::MacroStore& stx = sm::store_of(app.ecs);
+        sm::MacroStore& stx = (*app.macroStore);
         for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (stx.alive[slot] == 0 || stx.dead[slot] != 0) continue;
@@ -1159,9 +1159,9 @@ bool run_subworld_recovery_smoke(App& app) {
     // held the witness green only while the first-in-view squad happened
     // to idle (caught 2026-09-18, the need-driven trade run gave it a
     // trip).
-    if (sm::store_of(app.ecs).valid(scaleWitness)) {
-        const auto& c = sm::store_of(app.ecs).cell[scaleWitness.slot];
-        const auto& v = sm::store_of(app.ecs).visual[scaleWitness.slot];
+    if ((*app.macroStore).valid(scaleWitness)) {
+        const auto& c = (*app.macroStore).cell[scaleWitness.slot];
+        const auto& v = (*app.macroStore).visual[scaleWitness.slot];
         (void)wCellIdx;
         // THE UNIT TEST, literally: how far has the visual drifted from the
         // cell it belongs to? Interpolation between neighbours is worth
@@ -2100,7 +2100,7 @@ sm::MacroHandle smoke_find_macro_npc_trace_target(App& app) {
     // row (the preacher walks his circuit whatever the kind byte says)
     // lawfully overrides the type row the repaint writes. Exclude both —
     // the lab needs a body the type row actually drives.
-    sm::MacroStore& stf = sm::store_of(app.ecs);
+    sm::MacroStore& stf = (*app.macroStore);
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (stf.alive[slot] == 0) continue;
@@ -2136,13 +2136,13 @@ bool run_macro_npc_trace_smoke(App& app) {
     smoke_clear_modal_overlays(app);
 
     const sm::MacroHandle traceH = smoke_find_macro_npc_trace_target(app);
-    if (!sm::store_of(app.ecs).valid(traceH)) {
+    if (!(*app.macroStore).valid(traceH)) {
         smoke_fail(app, "macro_npc_trace found no macro NPC");
         return false;
     }
 
     // Колонки store — стабильные массивы: ссылки живут через тики (грабля 4).
-    sm::MacroStore& stt = sm::store_of(app.ecs);
+    sm::MacroStore& stt = (*app.macroStore);
     auto& cell = stt.cell[traceH.slot];
     auto& kind = stt.kind[traceH.slot];
     auto& rt = stt.runtime[traceH.slot];
@@ -2164,7 +2164,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     int baseX = sm::cell_x(antipode, app.gs.mapW);
     int baseY = sm::cell_y(antipode, app.gs.mapW);
     {
-        sm::MacroStore& sto = sm::store_of(app.ecs);
+        sm::MacroStore& sto = (*app.macroStore);
         auto lane_clear = [&](int cx, int cy) {
             for (std::size_t o32 = 0; o32 < sm::kUnifiedCap; ++o32) {
                 const std::uint16_t oslot = std::uint16_t(o32);
@@ -2212,7 +2212,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     // makes that 4 game hours ≈ 43 thinks from empty for ANY bar. 64 = margin.
     // Deliberately PARTIAL envelope: the trace checks recovery mechanics on a
     // featureless world — no cost grid, no layers (each reads fail-closed).
-    sm::MacroWorld traceMw{.gs = &app.gs, .world = &app.ecs,
+    sm::MacroWorld traceMw{.gs = &app.gs, .store = app.macroStore.get(),
                            .treeGrid = &app.treeGrid};
     // allowAutoBattle=false: the world keeps thinking, but no meeting
     // resolves during the trace — a battle death would let the corpse sweep
@@ -2256,7 +2256,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     const float cellsPerThink =
         sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
     const int marchThinks = int(std::ceil(3.0f / cellsPerThink)) + 2;
-    sm::MacroWorld traceMw2{.gs = &app.gs, .world = &app.ecs,
+    sm::MacroWorld traceMw2{.gs = &app.gs, .store = app.macroStore.get(),
                             .treeGrid = &app.treeGrid};
     for (int i = 0; i < marchThinks; ++i) {
         sm::tick_macro_npc_ai(traceMw2, app.npcAi, sm::kAiTicks);
@@ -2264,7 +2264,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     const float logicalX = float(sm::ecs::cell_x(cell, app.gs.mapW));
     const float logicalY = float(sm::ecs::cell_y(cell, app.gs.mapW));
     const float visualBefore = visual.vx;
-    sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, 0.25f);
+    sm::tick_macro_npc_visuals(*app.macroStore, app.gs.mapW, app.gs.mapH, 0.25f);
     const float visualMid = visual.vx;
     // Convergence is a property, not a stopwatch: glide until the visual
     // catches the logical cell (bounded — 16 quarter-seconds covers any sane
@@ -2272,7 +2272,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     // the pre-recalibration three-cells-per-think visualSpeed.
     float visualEnd = visual.vx;
     for (int i = 0; i < 16 && std::fabs(visualEnd - logicalX) >= 0.001f; ++i) {
-        sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, 0.25f);
+        sm::tick_macro_npc_visuals(*app.macroStore, app.gs.mapW, app.gs.mapH, 0.25f);
         visualEnd = visual.vx;
     }
 
@@ -4902,8 +4902,8 @@ bool run_subworld_player_bow_smoke(App& app) {
     // ФЛИП 1в: гир — колонка store у каждого сквада; ленивый opt-in умер.
     // M-183: истина одна — лук кладётся В ИНВЕНТАРЬ, надевание ставит индекс.
     const std::uint16_t pslot = sq.slot;
-    auto* eqc = &sm::store_of(app.ecs).gear[pslot];
-    sm::Inventory& pbag = sm::store_of(app.ecs).inventory[pslot].inv;
+    auto* eqc = &(*app.macroStore).gear[pslot];
+    sm::Inventory& pbag = (*app.macroStore).inventory[pslot].inv;
     const int bowDef = sm::item_index("wpn_bow");
     sm::ItemRef bow{};
     bow.def = std::uint16_t(bowDef);
@@ -8436,7 +8436,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             smoke_clear_modal_overlays(app);
-            sm::MacroStore& stv = sm::store_of(app.ecs);
+            sm::MacroStore& stv = (*app.macroStore);
             bool found = false;
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
@@ -8477,7 +8477,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.codex = false;
             app.ui.map = false;
             app.ui.quest = false;
-            sm::MacroStore& stv = sm::store_of(app.ecs);
+            sm::MacroStore& stv = (*app.macroStore);
             sm::MacroHandle target{};
             int stock = 0;
             int type = -1;
@@ -8527,7 +8527,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             smoke_clear_modal_overlays(app);
-            sm::MacroStore& stv = sm::store_of(app.ecs);
+            sm::MacroStore& stv = (*app.macroStore);
             sm::MacroHandle target{};
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);

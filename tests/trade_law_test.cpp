@@ -17,6 +17,7 @@
 // real village and moves real stacks.)
 
 #include "check.h"
+#include "ecs/world.h"
 #include "macro/labour.h"   // settle_souls — двери душ
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "tables/faction.h"
@@ -79,7 +80,7 @@ int main() {
         // водил ИИ каравана, а род каравана снесён — караван оказался
         // сквадом, притворившимся видом существа. Дверь та же, что ведёт
         // рейсы сбыта артелей сегодня.
-        MacroWorld mw{.gs = &gs, .world = &w};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w)};
         TickContext ctx{};
         ctx.mw = mw;
         ctx.mapW = gs.mapW;

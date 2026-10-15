@@ -19,6 +19,7 @@
 //     a defeat pays the player nothing.
 
 #include "check.h"
+#include "ecs/world.h"
 #include "macro/squad.h"
 #include "macro/world_row.h"
 #include "macro/player_entity.h"
@@ -95,7 +96,7 @@ void test_every_death_is_reported_once() {
     FactLog log{};
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.world = &w;
+    mw.store = &sm::store_of(w);
     ensure_macro_player_entity(gs, sm::store_of(w));
     mw.facts = &collect;
     mw.factsUser = &log;
@@ -135,7 +136,7 @@ void test_no_facts_when_nobody_listens() {
     sm::store_attach(w, wStore_.get());
     MacroWorld mw{};       // no sink: a headless fixture
     mw.gs = &gs;
-    mw.world = &w;
+    mw.store = &sm::store_of(w);
     const sm::MacroHandle a = 
 squad(w, NPCType::Guard, "empire", 3, 0, 1u);
     const sm::MacroHandle b = 
@@ -156,7 +157,7 @@ void test_kill_price_is_the_registry_column() {
         sm::store_attach(w, wStore_.get());
         MacroWorld mw{};
         mw.gs = &gs;
-        mw.world = &w;
+        mw.store = &sm::store_of(w);
         const sm::MacroHandle enemy =
             
 squad(w, NPCType::Guard, "empire", 2, 2, 5u);
@@ -175,7 +176,7 @@ squad(w, NPCType::Guard, "empire", 2, 2, 5u);
         sm::store_attach(w, wStore_.get());
         MacroWorld mw{};
         mw.gs = &gs;
-        mw.world = &w;
+        mw.store = &sm::store_of(w);
         const sm::MacroHandle enemy =
             
 squad(w, NPCType::Bandit, "bandits", 2, 2, 6u);
@@ -195,7 +196,7 @@ void test_spoils_are_rolled_not_scavenged() {
     sm::store_attach(w, wStore_.get());
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.world = &w;
+    mw.store = &sm::store_of(w);
     ensure_macro_player_entity(gs, sm::store_of(w));
     // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): чтобы спросить «дошла ли
     // добыча», у павшего должна БЫТЬ добыча. Раньше её рождал бросок
@@ -241,7 +242,7 @@ squad(w, NPCType::Merchant, "empire", 4, 3, 7u);
     sm::store_attach(w2, w2Store_.get());
     MacroWorld mw2{};
     mw2.gs = &gs2;
-    mw2.world = &w2;
+    mw2.store = &sm::store_of(w2);
     ensure_macro_player_entity(gs2, sm::store_of(w2));
     const sm::MacroHandle enemy2 =
         
@@ -269,7 +270,7 @@ void test_empty_handed_fallen_pays_nothing() {
     sm::store_attach(w, wStore_.get());
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.world = &w;
+    mw.store = &sm::store_of(w);
     ensure_macro_player_entity(gs, sm::store_of(w));
     const sm::MacroHandle pack = 
 squad(w, NPCType::Wolf, "wildlife", 3, 0, 9u);

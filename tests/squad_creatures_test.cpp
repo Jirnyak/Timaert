@@ -8,6 +8,7 @@
 // non-macro entity would be a second squad representation growing beside the
 // real one.
 #include "check.h"
+#include "ecs/world.h"
 
 #include "ecs/components.h"
 #include "macro/npc_spawn.h"

@@ -8,6 +8,7 @@
 //     не преследуется, пылинки ниже пола не дёргают, локальный максимум =
 //     конец погони; макроцель (errand) отвлечением НЕ трогается.
 #include "check.h"
+#include "ecs/world.h"
 
 #include "ecs/components.h"
 #include "macro/anketa.h"
@@ -132,7 +133,7 @@ struct HuntRig {
         gs.mapH = 64;
         scent_ensure(gs.scent, 64, 64);
         mw.gs = &gs;
-        mw.world = &w;
+        mw.store = &sm::store_of(w);
         mw.terrain = &absent;
         ctx.mw = mw;
         ctx.mapW = 64;

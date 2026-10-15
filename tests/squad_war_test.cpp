@@ -15,6 +15,7 @@
 // rows must behave exactly as the world always did (the parity test guards
 // that side).
 #include "check.h"
+#include "ecs/world.h"
 
 #include "macro/npc_ai.h"
 #include "macro/world_row.h"
@@ -91,7 +92,7 @@ sm::MacroHandle make_squad_at(ecs::World& w, NPCType type,
 }
 
 int container_count(ecs::World& w, GameState& gs, std::uint32_t ordinal) {
-    MacroWorld mw{.gs = &gs, .world = &w, .store = &sm::store_of(w)};
+    MacroWorld mw{.gs = &gs, .store = &sm::store_of(w)};
     return macro_stock_read(mw, MacroStock::Creatures,
                             MacroStockKey{std::int32_t(ordinal), 0, 0});
 }
@@ -107,7 +108,7 @@ float dist(ecs::World& w, sm::MacroHandle a, sm::MacroHandle b) {
 
 void drive(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt, int thinks) {
     for (int i = 0; i < thinks; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w)};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 }
@@ -392,7 +393,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     // world's own layers to price the spoils, and its facts leave through
     // the envelope's channel. A fixture that plugs in no channel is the
     // honest headless case.
-    MacroWorld mw{}; mw.gs = &gs; mw.world = &w;
+    MacroWorld mw{}; mw.gs = &gs; mw.store = &sm::store_of(w);
     const int xp = settle_player_auto_battle(mw, enemy, win,
                                              /*playerIsA*/true);
     CHECK(creature_count(*army) == 1
@@ -433,7 +434,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
         make_soldier(std::uint8_t(NPCType::Guard), 3, 601u)};
     loss.leaderFractionA = 0.15f;
     loss.leaderFractionB = 0.9f;
-    MacroWorld mw2{}; mw2.gs = &gs2; mw2.world = &w2;
+    MacroWorld mw2{}; mw2.gs = &gs2; mw2.store = &sm::store_of(w2);
     settle_player_auto_battle(mw2, victor, loss, /*playerIsA*/true);
     CHECK(creature_count(*army2) == 1,
           "defeat took the fallen and left the survivor");

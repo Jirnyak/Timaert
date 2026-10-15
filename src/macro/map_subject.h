@@ -26,7 +26,6 @@
 // "no such counterparty" (S6 zero contribution).
 #pragma once
 
-#include "ecs/world.h"
 #include "macro/landmark_registry.h"
 #include "macro/macro_world.h"
 #include "tables/map_actions.h"

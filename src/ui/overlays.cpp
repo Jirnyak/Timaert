@@ -280,7 +280,7 @@ namespace sm::ui
         // — сделка ЛОРДА. Здесь стоял ординал ДОМА, то есть у факта было два
         // хозяина: клетку он брал у флажка (строкой ниже), а субъекта — у
         // оригинала, и вселённая сделка числилась за оставленной оболочкой.
-        void record_npc_deal_fact(GameState& gs, ecs::World& w,
+        void record_npc_deal_fact(GameState& gs, MacroStore& st,
                                   std::uint32_t traderOrdinal,
                                   int gave, int took)
         {
@@ -288,14 +288,14 @@ namespace sm::ui
             f.day = gs.worldTime.day();
             f.kind = std::uint16_t(FactKind::Traded);
             f.subjectKind = std::uint8_t(FactSubject::Squad);
-            f.subject = player_flag_ordinal(gs, store_of(w));
+            f.subject = player_flag_ordinal(gs, st);
             f.objectKind = std::uint8_t(FactSubject::Squad);
             f.object = traderOrdinal;
-            const ecs::MacroCell* pc = player_flag_cell(gs, store_of(w));
+            const ecs::MacroCell* pc = player_flag_cell(gs, st);
             f.x = std::int16_t(pc ? ecs::cell_x(*pc, gs.mapW) : 0);
             f.y = std::int16_t(pc ? ecs::cell_y(*pc, gs.mapW) : 0);
             f.amount = gave + took;
-            record_deed(store_of(w), gs, f, MacroHandle{});
+            record_deed(st, gs, f, MacroHandle{});
         }
 
 
@@ -309,7 +309,7 @@ namespace sm::ui
         // from each party's renown — a hand-written `true` filed the player
         // as a figure he had not yet become — and the deal pays the doer
         // like every other deed.
-        void record_settlement_deal_fact(GameState &gs, ecs::World &world,
+        void record_settlement_deal_fact(GameState &gs, MacroStore &st,
                                          int landmarkId,
                                          int x, int y, int gave, int took)
         {
@@ -318,13 +318,13 @@ namespace sm::ui
             f.kind = std::uint16_t(FactKind::Traded);
             f.subjectKind = std::uint8_t(FactSubject::Squad);
             // Та же дверь, что у сделки со сквадом: подшивает ДЕЛАТЕЛЬ.
-            f.subject = player_flag_ordinal(gs, store_of(world));
+            f.subject = player_flag_ordinal(gs, st);
             f.objectKind = std::uint8_t(FactSubject::Landmark);
             f.object = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
             f.x = std::int16_t(x);
             f.y = std::int16_t(y);
             f.amount = gave + took;
-            record_deed(store_of(world), gs, f, MacroHandle{});
+            record_deed(st, gs, f, MacroHandle{});
         }
 
         // (Колонка настроения в цене вырезана 2026-09-19 вместе с самим
@@ -720,10 +720,10 @@ namespace sm::ui
 
         // The panel's derived block after a spend — same door as its header.
         DerivedBonuses calculate_derived_effective(const GameState &gs,
-                                                   ecs::World &world)
+                                                   MacroStore &st)
         {
             const CharacterSheet eff =
-                player_effective_sheet(gs, store_of(world));
+                player_effective_sheet(gs, st);
             return calculate_derived(eff.attributes, eff.skills);
         }
 
@@ -763,7 +763,8 @@ namespace sm::ui
         }
     } // namespace
 
-    void draw_character_panel(GameState &gs, ecs::World &world, bool *open,
+    void draw_character_panel(GameState &gs, MacroStore &st,
+                              sub::SubObjects *sceneObjs, bool *open,
                               CharacterPanelTab *tab, float scale)
     {
         // What the last swallow did, kept between frames so the player can
@@ -775,12 +776,12 @@ namespace sm::ui
         PlayerState &p = gs.player;
         // His bag and his men both live on his squad entity now; a world that
         // has none yet reads as an empty pack rather than a crash.
-        Inventory *bagPtr = player_inventory(gs, store_of(world));
+        Inventory *bagPtr = player_inventory(gs, st);
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
         // His bars, through the one door (landing 4) — same fallback shape
         // as the bag: a world that has none yet shows zeros, not a crash.
-        ecs::Pools *poolsPtr = player_pools(gs, store_of(world));
+        ecs::Pools *poolsPtr = player_pools(gs, st);
         ecs::Pools poolsFallback{};
         ecs::Pools &pools = poolsPtr ? *poolsPtr : poolsFallback;
         const Inventory *army = bagPtr;   // армия = область существ (M-71)
@@ -788,7 +789,7 @@ namespace sm::ui
         // His BASE sheet, through the one door (посадка Б) — same fallback
         // shape as the bag and the bars: a world that has none yet shows a
         // blank build, not a crash. The spend buttons write THIS block.
-        CharacterSheet *sheetPtr = player_sheet(gs, store_of(world));
+        CharacterSheet *sheetPtr = player_sheet(gs, st);
         CharacterSheet sheetFallback{};
         CharacterSheet &sheet = sheetPtr ? *sheetPtr : sheetFallback;
         // The panel SHOWS the EFFECTIVE sheet (phase 4, owner: «финальное
@@ -797,10 +798,10 @@ namespace sm::ui
         // Mutable: a spend refreshes it in place so the row shows the new
         // number this very frame, not the next.
         const MacroHandle panelSquadH = player_squad_handle(gs);
-        const BonusTotals panelStanding = store_of(world).valid(panelSquadH)
-            ? standing_bonuses_of(store_of(world), panelSquadH)
+        const BonusTotals panelStanding = st.valid(panelSquadH)
+            ? standing_bonuses_of(st, panelSquadH)
             : BonusTotals{};
-        CharacterSheet effPanel = player_effective_sheet(gs, store_of(world));
+        CharacterSheet effPanel = player_effective_sheet(gs, st);
         DerivedBonuses derived = calculate_derived(effPanel.attributes,
                                                    effPanel.skills,
                                                    panelStanding);
@@ -856,7 +857,7 @@ namespace sm::ui
                             if (ImGui::Button("Level Up"))
                             {
                                 if (try_level_up(sheet.levelData))
-                                    refresh_player_body(gs, store_of(world));
+                                    refresh_player_body(gs, st);
                             }
                         }
                         ImGui::TableNextColumn();
@@ -884,9 +885,9 @@ namespace sm::ui
                             {
                                 if (spend_attribute_point(sheet.levelData, sheet.attributes, row.id))
                                 {
-                                    refresh_player_body(gs, store_of(world));
-                                    effPanel = player_effective_sheet(gs, store_of(world));
-                                    derived = calculate_derived_effective(gs, world);
+                                    refresh_player_body(gs, st);
+                                    effPanel = player_effective_sheet(gs, st);
+                                    derived = calculate_derived_effective(gs, st);
                                 }
                             }
                             ImGui::EndDisabled();
@@ -950,9 +951,9 @@ namespace sm::ui
                                 {
                                     if (spend_learn_pick(sheet.levelData, sheet.skills, row.id))
                                     {
-                                        refresh_player_body(gs, store_of(world));
-                                        effPanel = player_effective_sheet(gs, store_of(world));
-                                        derived = calculate_derived_effective(gs, world);
+                                        refresh_player_body(gs, st);
+                                        effPanel = player_effective_sheet(gs, st);
+                                        derived = calculate_derived_effective(gs, st);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -970,9 +971,9 @@ namespace sm::ui
                                 {
                                     if (spend_skill_point(sheet.levelData, sheet.skills, row.id))
                                     {
-                                        refresh_player_body(gs, store_of(world));
-                                        effPanel = player_effective_sheet(gs, store_of(world));
-                                        derived = calculate_derived_effective(gs, world);
+                                        refresh_player_body(gs, st);
+                                        effPanel = player_effective_sheet(gs, st);
+                                        derived = calculate_derived_effective(gs, st);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -1050,8 +1051,7 @@ namespace sm::ui
                                 // пошаговом режиме застывший мир позволял
                                 // пить бесконечно — мир-то стоит.
                                 ecs::Combat* gate = nullptr;
-                                if (sm::sub::SubObjects* objs =
-                                        sm::sub::objects_find(world.reg)) {
+                                if (sub::SubObjects* objs = sceneObjs) {
                                     const int s = sm::sub::avatar_slot(*objs);
                                     if (s >= 0) {
                                         gate = sm::sub::slot_combat(*objs, s);
@@ -1360,10 +1360,10 @@ namespace sm::ui
                     // what was missing was only the hands to use them.
                     ecs::BodyEquipment *eqc = nullptr;
                     if (const MacroHandle pe = player_squad_handle(gs);
-                        store_of(world).valid(pe))
+                        st.valid(pe))
                     {
                         // ФЛИП 1в: гир — колонка store у каждого сквада.
-                        eqc = &store_of(world).gear[pe.slot];
+                        eqc = &st.gear[pe.slot];
                     }
 
                     if (!eqc)
@@ -1517,7 +1517,7 @@ namespace sm::ui
                     // His book, through the one door (v89): the component on
                     // his squad — the panel is a reader like any other.
                     static SpellBook bookScratch{};
-                    SpellBook* bookPtr = player_spellbook(gs, store_of(world));
+                    SpellBook* bookPtr = player_spellbook(gs, st);
                     SpellBook& book = bookPtr ? *bookPtr : bookScratch;
                     ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
                     if (spell_ordinal_ok(book.activeSpell))
@@ -1737,7 +1737,7 @@ namespace sm::ui
     }
 
     void draw_settlement(GameState &gs,
-                         ecs::World &world,
+                         MacroStore &st,
                          int settlementId,
                          MacroHandle squadSubject,
                          const MacroWorld *mw,
@@ -1753,7 +1753,7 @@ namespace sm::ui
         if (!open || !*open)
             return;
         // The player's bag rides his squad entity (macro/player_entity.h).
-        Inventory *bagPtr = player_inventory(gs, store_of(world));
+        Inventory *bagPtr = player_inventory(gs, st);
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
 
@@ -1766,7 +1766,6 @@ namespace sm::ui
             // ФЛИП 1в/1г: субъект-сквад — хэндл store, гейт читает колонки.
             // Прежний гейт требовал entt-компоненты, которых у макро-сквада
             // после флипа нет, — панель закрывалась для ЛЮБОГО сквада.
-            MacroStore &st = store_of(world);
             const bool alive = st.valid(squadSubject)
                 && !macro_dead(st, squadSubject)
                 && st.playerFlag[squadSubject.slot].home == 0;
@@ -1895,7 +1894,7 @@ namespace sm::ui
                             *tab = SettlementPanelTab::Trade;
                         if (tradeOpen)
                         {
-                            const PlayerHaggler h = player_haggler(gs, world);
+                            const PlayerHaggler h = player_haggler(gs, st);
                             ImGui::Text("Player value: %d",
                                         inventory_value(playerBag));
                             draw_trade_carry_line(h.sheet, playerBag,
@@ -1936,7 +1935,7 @@ namespace sm::ui
                                     // Ординал — колонка store (1в); try_get
                                     // у энтити молчал, и факт сделки терялся.
                                     record_npc_deal_fact(
-                                        gs, world,
+                                        gs, st,
                                         st.spawnId[squadSubject.slot].index,
                                         gave, took);
                                 });
@@ -2122,7 +2121,7 @@ namespace sm::ui
                     // body come from trade_widgets.h — this site keeps only
                     // its price laws (a town's demand = econSite +
                     // population, its trade sheet haggles) and its fact.
-                    const PlayerHaggler h = player_haggler(gs, world);
+                    const PlayerHaggler h = player_haggler(gs, st);
                     ImGui::Text("Player value: %d",
                                 inventory_value(playerBag));
                     ImGui::SameLine();
@@ -2170,7 +2169,7 @@ namespace sm::ui
                         "Settlement stock", g_settlementTrade,
                         playerBag, sInv,
                         buyUnit, sellUnit, [&](int gave, int took) {
-                            record_settlement_deal_fact(gs, world, settlementId,
+                            record_settlement_deal_fact(gs, st, settlementId,
                                                         sx, sy,
                                                         gave, took);
                         });

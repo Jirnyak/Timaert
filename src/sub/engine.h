@@ -167,14 +167,15 @@ public:
     // an exact spot instead of the entry-side placement — the dungeon exit
     // walks back out to the very tile the door was opened from, BEFORE the
     // squad ring / macro projections spawn around the player.
-    void enter(const MacroWorld& mw, EventBus& bus,
+    void enter(const MacroWorld& mw, ecs::World& scene, EventBus& bus,
                const float* posOverride = nullptr);
     // Raise a POCKET scene directly — no street door, no overworld session
     // underneath (the prologue's entry: character creation drops the player
     // here). The scene has no doorstep and no walked exit; it ends by the
     // plot's teardown (leave(true)). `floorHeight` is the pocket's macro
     // height in the normalised [0,1] range the heightmap law reads.
-    void enter_pocket_scene(const MacroWorld& mw, EventBus& bus,
+    void enter_pocket_scene(const MacroWorld& mw, ecs::World& scene,
+                            EventBus& bus,
                             const DungeonRef& ref, float floorHeight);
     void leave(bool force = false);
     bool interact();
@@ -885,7 +886,8 @@ private:
     // mw_, so a scene raised with only the named views left the deposit and
     // population rows fail-closed — a house with no residents and kills that
     // never thinned the town (found by the dungeon_house smoke, 2026-08-24).
-    void enter_dungeon_scene(const MacroWorld& mw, EventBus& bus);
+    void enter_dungeon_scene(const MacroWorld& mw, ecs::World& scene,
+                             EventBus& bus);
     // Rebuild what the engine keeps ABOUT props, from the one composite:
     // the lights of lit props (hung as ordinary `LightEmitter` bodies, so a
     // street lantern and a carried torch reach the shader through the same

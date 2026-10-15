@@ -14,6 +14,7 @@
 //   * a debt names its subject, so one town's dead never bill its neighbour;
 //   * a malformed receipt changes nothing (fail closed).
 #include "check.h"
+#include "ecs/world.h"
 #include <memory>
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
@@ -305,7 +306,7 @@ void test_the_creature_row_pays_by_name() {
     sm::store_attach(world, worldStore_.get());
     make_squad(world, 5, {11u, 22u, 0x80000021u});   // high-bit id: a garrison-
     const auto other = make_squad(world, 6, {77u});  // born soldier's shape
-    MacroWorld w{.world = &world, .store = &sm::store_of(world)};
+    MacroWorld w{.store = &sm::store_of(world)};
 
     const MacroStockKey member11{5, 0, 0, 11};
     CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 3,
@@ -409,7 +410,7 @@ void test_the_fallen_squads_creatures_die() {
     CHECK(tally.souls == 2 && tally.reports == 1,
           "ведомость склада душ назвала смерть ОДНИМ фактом и в ДУШАХ: конь "
           "паствой не был");
-    MacroWorld w{.world = &world, .store = &sm::store_of(world)};
+    MacroWorld w{.store = &sm::store_of(world)};
     CHECK(macro_stock_read(w, MacroStock::Creatures, MacroStockKey{10, 0, 0}) == 0,
           "контейнер павшего пуст: платить второй раз не из чего");
     CHECK(macro_stock_read(w, MacroStock::Creatures, MacroStockKey{11, 0, 0}) == 1,

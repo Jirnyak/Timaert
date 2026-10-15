@@ -9,6 +9,7 @@
 //   · CONSERVATION — wood gained by the store == wood lost by the layer,
 //     and the bag is empty after delivery: nothing minted, nothing dropped.
 #include "check.h"
+#include "ecs/world.h"
 #include "macro/labour.h"   // settle_souls — двери душ
 #include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
 
@@ -124,7 +125,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
 
     // Live a while: idle -> travel -> WORK (the chop) -> return (the haul).
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .trees = &layer, .world = &w,
+        MacroWorld mw{.gs = &gs, .trees = &layer, .store = &sm::store_of(w),
                       .treeGrid = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
@@ -218,7 +219,7 @@ void test_the_farmer_works_the_field() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .terrain = &terrain,
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .terrain = &terrain,
                       .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
@@ -295,7 +296,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
     for (int i = 0; i < 200; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .features = &features};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     CHECK(st.inventory[vil.slot].inv.count("food") == 0,
@@ -324,7 +325,7 @@ void test_no_layer_no_chop() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
     for (int i = 0; i < 200; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .treeGrid = &grid};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .treeGrid = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     CHECK(sm::store_of(w).inventory[vil.slot].inv.count("wood") == 0,
@@ -390,7 +391,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .deposits = &deposits};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .deposits = &deposits};
         tick_macro_npc_ai_budgeted(mw, art, kAiTicks,
                                    /*max_npc_ticks=*/64);
     }
@@ -509,7 +510,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 70u);
     for (int i = 0; i < 600; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w)};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
@@ -630,7 +631,7 @@ void test_the_miner_works_the_vein() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .deposits = &deposits};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .deposits = &deposits};
         tick_macro_npc_ai(mw, art, kAiTicks);
     }
 
@@ -700,7 +701,7 @@ void test_the_miner_works_the_vein() {
     MacroNpcAiRuntime art2{};
     reset_macro_npc_ai_runtime(art2, 71u);
     for (int i = 0; i < 200; ++i) {
-        MacroWorld mw2{.gs = &gs2, .world = &w2};
+        MacroWorld mw2{.gs = &gs2, .store = &sm::store_of(w2)};
         tick_macro_npc_ai(mw2, art2, kAiTicks);
     }
     CHECK(st2.inventory[vil2.slot].inv.count("iron") == 0,
@@ -797,7 +798,7 @@ void test_the_catch_lands_as_creatures() {
     // (`settle_souls` выше), и смысл ему задаёт её собственная фича.
     constexpr int kFoldX = 12, kFoldY = 10;
     features.set(kFoldX, kFoldY, sm::FT_Pasture);
-    MacroWorld seedWorld{.gs = &gs, .world = &w, .terrain = &terrain,
+    MacroWorld seedWorld{.gs = &gs, .store = &sm::store_of(w), .terrain = &terrain,
                          .features = &features};
     // Избыточная дельта: дверь ряда САМА зажимает в кап клетки, поэтому
     // число берётся из фертильности, а не из головы автора.
@@ -812,7 +813,7 @@ void test_the_catch_lands_as_creatures() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 77u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .terrain = &terrain,
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .terrain = &terrain,
                       .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }

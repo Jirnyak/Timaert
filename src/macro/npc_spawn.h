@@ -11,7 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <vector>
-#include "ecs/world.h"
+#include "ecs/components.h"
 #include "macro/econ_day.h"   // EconFactSink — доклад оттока пула душ
 #include "tables/npc.h"
 #include "macro/state.h"

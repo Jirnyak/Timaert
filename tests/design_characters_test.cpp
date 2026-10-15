@@ -16,6 +16,7 @@
 // стола катается броском; колонка получит свидетеля с первой авторской
 // анкетой. Testing law 7 — говорим это вслух.)
 #include "check.h"
+#include "ecs/world.h"
 #include "macro/world_row.h"   // raise_flock_into_container — души головами
 
 #include "core/rng.h"

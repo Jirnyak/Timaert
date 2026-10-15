@@ -2,7 +2,6 @@
 // a free function that draws into the current ImGui frame and is toggled by
 // a boolean owned by the application. Mirrors svelte overlays in TS.
 #pragma once
-#include "ecs/world.h"
 #include "macro/state.h"
 #include "macro/store.h"   // MacroHandle — субъект-сквад после шага 1г
 #include "events/quests/quest_engine.h"
@@ -15,7 +14,7 @@ struct TerrainData;
 struct ZoneLayer;
 struct MacroWorld;
 class  EventBus;
-namespace sub { class SeamlessSubworldManager; struct MinimapBlip; }
+namespace sub { class SeamlessSubworldManager; struct MinimapBlip; struct SubObjects; }
 namespace content { struct StoryDef; }
 }
 
@@ -74,10 +73,13 @@ struct DialogOverlayState {
     std::array<char, 64> nodeId{};
 };
 
-// `world` is here because the player's СУЩЕСТВ КОНТЕЙНЕРА is an ordinary squad on his
-// macro entity now (macro/player_entity.h), not a field of PlayerState. The UI
-// sits above every layer and may read from them; it still owns no game logic.
-void draw_character_panel(GameState& gs, ecs::World& world, bool* open,
+// `st` is here because the player's СУЩЕСТВ КОНТЕЙНЕРА is an ordinary squad
+// slot of the MacroStore now (macro/player_entity.h), not a field of
+// PlayerState; `sceneObjs` (nullable — no scene on the macro map) carries the
+// avatar's Combat gate for the Use-potion ability charge. The UI sits above
+// every layer and may read from them; it still owns no game logic.
+void draw_character_panel(GameState& gs, MacroStore& st,
+                          sub::SubObjects* sceneObjs, bool* open,
                           CharacterPanelTab* tab, float scale = 1.0f);
 // THE subject panel (меню-сессия, фидбек владельца 2026-09-11: «сделай
 // единую систему... меню города хороший пример, его обобщить»). ONE window,
@@ -90,7 +92,7 @@ void draw_character_panel(GameState& gs, ecs::World& world, bool* open,
 // `mw` (nullable) feeds the Map tab's preview the REAL cell facts, so the
 // picture is the town you actually enter.
 void draw_settlement(GameState& gs,
-                     ecs::World& world,
+                     MacroStore& st,
                      int settlementId,
                      MacroHandle squadSubject,
                      const MacroWorld* mw,

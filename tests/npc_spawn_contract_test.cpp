@@ -1,4 +1,5 @@
 #include "check.h"
+#include "ecs/world.h"
 #include "macro/world_row.h"   // raise_flock_into_container — души головами
 #include "macro/npc_spawn.h"
 #include "macro/place_birth.h" // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)

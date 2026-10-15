@@ -52,11 +52,11 @@ inline int rand_int(const TickContext& ctx, int range) {
 
 inline float rand_f01(const TickContext& ctx) { return ctx.rng->next_f01(); }
 
-// Store свипа — из конверта (make_tick_context кладёт адрес в ctx.mw.store);
-// фикстура, зовущая публичную дверь напрямую, несёт store в ctx мира —
-// фоллбек читает его оттуда. Звонящий обязан был проверить ctx.mw.world.
+// Store свипа — из конверта (make_tick_context кладёт адрес в ctx.mw.store).
+// Фолбэка через ctx реестра больше нет (M-150 ломоть A): store в конверте
+// обязателен, звонящий проверяет ctx.mw.store.
 inline MacroStore& store_mw(const MacroWorld& mw) {
-    return mw.store ? *mw.store : store_of(mw.world->reg);
+    return *mw.store;
 }
 inline MacroStore& store_ctx(const TickContext& ctx) {
     return store_mw(ctx.mw);
@@ -168,7 +168,7 @@ Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
 // ординал один раз рядом со своей таблицей (gatherer_item_index).
 void deliver_bag_home(MacroHandle self, const ecs::MacroNpcRuntime& rt,
                       const TickContext& ctx, int defIdx) {
-    if (!ctx.mw.world) return;
+    if (!ctx.mw.store) return;
     Inventory& bag = store_ctx(ctx).inventory[self.slot].inv;
     const int n = bag.count_of(defIdx);
     Inventory* store = home_inventory(rt, ctx);
@@ -1083,7 +1083,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
             // Вечный челнок «шахта→привал→шахта» держал 536 серебра в одной
             // сумке 48 дней при пустом складе (измерено, сид 7).
             if (const Inventory* bagIdle = def->creatureYield == NPCType::Count
-                    && ctx.mw.world
+                    && ctx.mw.store
                     ? &store_ctx(ctx).inventory[self.slot].inv
                     : nullptr) {
                 // (a CREATURE yield rides the creatures, not the bag — there
@@ -1177,7 +1177,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
             // A row whose layers are not wired reads 0 and takes nothing —
             // the fail-closed rule every gatherer shares.
             bool tookSomething = false;
-            if (ctx.mw.world) {
+            if (ctx.mw.store) {
                 const int tx = int(rt.targetX);
                 const int ty = int(rt.targetY);
                 // (ЗДЕСЬ АРТЕЛЬ СТРОИЛА ШАХТУ НАД ГОЛОЙ ЖИЛОЙ И ЗАГОН ПОД
@@ -1295,7 +1295,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
             // The day's yield is unchanged — a full bar still buys the same
             // number of objects — but no constant says how many trips that is.
             {
-                const Inventory* bagNow = ctx.mw.world
+                const Inventory* bagNow = ctx.mw.store
                     ? &store_ctx(ctx).inventory[self.slot].inv
                     : nullptr;
                 bool backsFull = false;
@@ -1825,7 +1825,7 @@ void ai_vendor(MacroHandle self, MacroPos& p,
                ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                const TickContext& ctx) {
     XY home;
-    if (!home_pos(rt, ctx, home) || !ctx.mw.world) {
+    if (!home_pos(rt, ctx, home) || !ctx.mw.store) {
         ai_nomad(p, rt, pools, ctx);
         return;
     }
@@ -2094,7 +2094,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
                   ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                   const TickContext& ctx) {
     XY home;
-    if (!home_pos(rt, ctx, home) || !ctx.mw.world) {
+    if (!home_pos(rt, ctx, home) || !ctx.mw.store) {
         ai_nomad(p, rt, pools, ctx);
         return;
     }
@@ -2466,7 +2466,7 @@ MacroHandle nearest_magika_mage(MacroHandle self, const MacroPos& p,
 
 void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                   [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    if (ctx.squads && ctx.mw.world && ctx.mw.gs) {
+    if (ctx.squads && ctx.mw.store && ctx.mw.gs) {
         const MacroHandle prey = nearest_magika_mage(self, p, ctx);
         MacroStore& st = store_ctx(ctx);
         if (st.valid(prey)) {
@@ -2604,7 +2604,7 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
         p.x, p.y, float(rt.lairX), float(rt.lairY),
         float(ctx.mapW), float(ctx.mapH)));
 
-    if (ctx.squads && ctx.mw.world && ctx.mw.gs && fromLair < radius) {
+    if (ctx.squads && ctx.mw.store && ctx.mw.gs && fromLair < radius) {
         const MacroHandle prey =
             nearest_weaker_squad(self, p, radius, ctx);
         MacroStore& st = store_ctx(ctx);
@@ -2846,7 +2846,7 @@ MacroHandle nearest_hostile_squad(MacroHandle self, const MacroPos& p,
 bool squad_threat_step(MacroHandle self, MacroPos& p,
                        const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                        [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.world || !ctx.squads || !ctx.mw.gs) return false;
+    if (!ctx.mw.store || !ctx.squads || !ctx.mw.gs) return false;
 
     const MacroHandle enemy = nearest_hostile_squad(self, p, kind, ctx);
     MacroStore& st = store_ctx(ctx);
@@ -2969,7 +2969,7 @@ static std::uint32_t creatures_worth(const MacroStore& st, MacroHandle e) {
 
 void scent_squad_deposit(MacroHandle self, const MacroPos& p,
                          const ecs::NPCKind& kind, const TickContext& ctx) {
-    if (!ctx.mw.gs || !ctx.mw.world) return;
+    if (!ctx.mw.gs || !ctx.mw.store) return;
     ScentField& sf = ctx.mw.gs->scent;
     const int f = int(kind.factionIdx);
     if (f < 0 || f >= sf.factions) return;   // kNoFaction не следит
@@ -2990,7 +2990,7 @@ void scent_squad_deposit(MacroHandle self, const MacroPos& p,
 // пах как ходячий); стоящий — там, где стоит: бандит находит по следу и
 // того, и другого. Петля демо «убегай от бандитов к страже».
 void scent_player_deposit(const TickContext& ctx) {
-    if (!ctx.mw.world) return;
+    if (!ctx.mw.store) return;
     const MacroStore& st = store_ctx(ctx);
     const auto put = [&](std::uint16_t slot) {
         if (slot >= kUnifiedCap || st.alive[slot] == 0) return;
@@ -3010,7 +3010,7 @@ void scent_player_deposit(const TickContext& ctx) {
 bool scent_hunt_step(MacroHandle self, MacroPos& p,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                      [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.gs || !ctx.mw.world) return false;
+    if (!ctx.mw.gs || !ctx.mw.store) return false;
     if (!combatant_behaviour(kNpcTypeDefs[kind.type].ai)) return false;
     const ScentField& sf = ctx.mw.gs->scent;
     if (sf.factions <= 0 || sf.w != ctx.mapW || sf.h != ctx.mapH)
@@ -3081,7 +3081,7 @@ namespace {
 // frozen one.
 void ai_waypoints(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
                   ecs::Pools& pools, const TickContext& ctx) {
-    ecs::SquadOrders* orders = ctx.mw.world
+    ecs::SquadOrders* orders = ctx.mw.store
         ? &store_ctx(ctx).orders[e.slot] : nullptr;
     if (!orders || orders->waypointCount == 0) {
         ai_wanderer(p, rt, pools, ctx);
@@ -3171,7 +3171,7 @@ namespace {
 void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
                        const TickContext& ctx) {
     if (hp.hp > 0) return;
-    if (!ctx.mw.world || !ctx.mw.gs) return;
+    if (!ctx.mw.store || !ctx.mw.gs) return;
     MacroStore& st = store_ctx(ctx);
     settle_leader_fraction(st, e, 0.0f);
     kill_fallen_squad_creatures(st, *ctx.mw.gs,
@@ -3683,12 +3683,11 @@ int squad_season_window(GameState& gs, MacroStore& st, int day,
 }
 
 int squad_bags_hygiene_daily(MacroWorld& mw) {
-    if (!mw.gs || !mw.world) return 0;
-    auto& reg = mw.world->reg;
+    if (!mw.gs || !mw.store) return 0;
     int melted = 0;
     // Порядок по ординалу (squad_walk.h): авто-скрап и гашение счёта трогают
     // цену дня через факты — одна очередь фактов на всех.
-    MacroStore& st = store_of(reg);
+    MacroStore& st = *mw.store;
     std::vector<SquadWalkEntry> order;
     collect_squads_by_ordinal(st, order, [](std::uint16_t) { return true; });
     // Мешок носителя флажка решает ввод, не ИИ — слот из битов GameState
@@ -3721,16 +3720,15 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
 
 // ── The daily labour rotation (contract in npc_ai.h) ─────────────────────
 int rotate_worker_squads(MacroWorld& mw, int day) {
-    if (!mw.gs || !mw.world || !mw.terrain) return 0;
+    if (!mw.gs || !mw.store || !mw.terrain) return 0;
     GameState& gs = *mw.gs;
-    auto& reg = mw.world->reg;
     TickContext ctx{};
     ctx.mw = mw;
     ctx.mapW = gs.mapW;
     ctx.mapH = gs.mapH;
     if (mw.nav) nav_ensure(mw, *mw.nav);   // гейты читают округи
 
-    MacroStore& stq = store_of(reg);
+    MacroStore& stq = *mw.store;
     // ПОРЯДОК ЗАКОНА (squad_walk.h) — он же ключ резолва ниже: ординально
     // отсортированные живые слоты. Собирается ОДИН раз на день, читают его
     // оба прохода переписи и `slot_of`; рождения и смерти идут ПОСЛЕ них.
@@ -4767,7 +4765,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 if (!spec.members.push(rec)) break;
             }
             const MacroHandle ent = spawn_squad(
-                gs, store_of(*mw.world), *mw.terrain, spec);
+                gs, *mw.store, *mw.terrain, spec);
             if (stq.valid(ent)) {
                 const std::uint16_t newSlot = ent.slot;
                 // Души артели ВЗЯТЫ из дома (v122): лидер + члены сходят
@@ -4802,7 +4800,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             spec.x = slot_x(stq, sSlot, gs.mapW);
             spec.y = slot_y(stq, sSlot, gs.mapW);
             spec.homeSettlementId = sId;
-            if (stq.valid(spawn_squad(gs, store_of(*mw.world),
+            if (stq.valid(spawn_squad(gs, *mw.store,
                                       *mw.terrain, spec))) {
                 bleed_flock(sInv, 1);   // душа курьера — из дома (v122)
                 --soloBudget;
@@ -4864,10 +4862,9 @@ static TickContext make_tick_context(MacroWorld& mw,
     ctx.rng     = &runtime.jitter;
     // The player is a squad: WHERE he is = his flag holder's cell, the same
     // one-number truth every squad keeps (подпосадка 4).
-    if (mw.world) {
-        if (!ctx.mw.store) ctx.mw.store = &store_of(*mw.world);
+    if (mw.store) {
         if (const ecs::MacroCell* pc =
-                player_flag_cell(*mw.gs, *ctx.mw.store)) {
+                player_flag_cell(*mw.gs, *mw.store)) {
             ctx.playerX = float(ecs::cell_x(*pc, ctx.mapW));
             ctx.playerY = float(ecs::cell_y(*pc, ctx.mapW));
         }
@@ -4917,22 +4914,20 @@ namespace {
 // спавн реаллоцирует хранилище).
 void settle_dead_squads(MacroWorld& mw) {
     GameState& gs = *mw.gs;
-    ecs::World& w = *mw.world;
-    kill_fallen_squad_creatures(store_of(w), gs,
-                                mw.econFacts, mw.econFactsUser);
-    destroy_dead_macro_squads(store_of(w), gs);
+    MacroStore& st = *mw.store;
+    kill_fallen_squad_creatures(st, gs, mw.econFacts, mw.econFactsUser);
+    destroy_dead_macro_squads(st, gs);
 }
 
 } // namespace
 
 void tick_macro_npc_ai(MacroWorld& mw,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks) {
-    if (!mw.gs || !mw.world) return;   // no world, no thinking (fail-closed)
+    if (!mw.gs || !mw.store) return;   // no store, no thinking (fail-closed)
     GameState& gs = *mw.gs;
-    ecs::World& w = *mw.world;
-    MacroStore& st = store_of(w);
+    MacroStore& st = *mw.store;
 
-    build_squad_index(runtime.squadIndex, store_of(w), gs.mapW, gs.mapH);
+    build_squad_index(runtime.squadIndex, st, gs.mapW, gs.mapH);
 
     // Свежесть запечённой навигации — раз на свип, не в шаге (тор-закон
     // gigahrush2 «never re-bake per tick»: перепёк только на границах).
@@ -4996,7 +4991,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     settle_dead_squads(mw);
 }
 
-void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
+void tick_macro_npc_visuals(MacroStore& st, int mapW, int mapH, float dt) {
     if (mapW <= 0 || mapH <= 0 || dt <= 0.0f) return;
 
     // No player exclusion (подпосадка 4, owner: «универсально без игрокового
@@ -5004,7 +4999,6 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
     // sprite on the map — the walker moves the cell, this pass moves the eye.
     // ФЛИП 1в: чистый проход колонок store — глазу энтити не нужна вовсе,
     // это самый честный SoA-проход (только cell/visual/runtime/pools).
-    MacroStore& st = store_of(w);
     for (std::uint16_t slot = 0; slot < std::uint16_t(kUnifiedCap);
          ++slot) {
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
@@ -5068,9 +5062,8 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
-    if (!mw.gs || !mw.world) return result;  // no world, no thinking
+    if (!mw.gs || !mw.store) return result;  // no store, no thinking
     GameState& gs = *mw.gs;
-    ecs::World& w = *mw.world;
 
     constexpr int kMaxQueuedSweeps = 4;
     if (ticks > 0) {
@@ -5088,9 +5081,9 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     }
     if (runtime.pendingSweeps <= 0) return result;
 
-    MacroStore& st = store_of(w);
+    MacroStore& st = *mw.store;
 
-    build_squad_index(runtime.squadIndex, store_of(w), gs.mapW, gs.mapH);
+    build_squad_index(runtime.squadIndex, st, gs.mapW, gs.mapH);
 
     // The same ONE assembly as the map-view driver. This used to be a paste
     // that had drifted (the deposits epitaph now lives on TickContext itself,

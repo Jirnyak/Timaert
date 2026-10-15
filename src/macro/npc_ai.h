@@ -5,7 +5,6 @@
 #include <vector>
 #include "core/rng.h"
 #include "core/time.h"
-#include "ecs/world.h"
 #include "tables/behaviour.h"
 #include "macro/macro_stock.h"
 #include "macro/pathfinding.h"
@@ -383,14 +382,14 @@ int provision_squad(Inventory& store, Inventory& bag, int soldiers,
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
 // per-NPC tick accumulator matured. `ticks` is world ticks elapsed. The
-// envelope must carry at least `gs` and `world`; every other layer is an
+// envelope must carry at least `gs` and `store`; every other layer is an
 // optional contribution (see TickContext above).
 void tick_macro_npc_ai(MacroWorld& mw,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks);
 
 // Smooth macro NPC render positions toward their logical cell positions.
 // Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
-void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt);
+void tick_macro_npc_visuals(MacroStore& st, int mapW, int mapH, float dt);
 
 // Subworld path: queues one AI sweep per kAiTicks of WORLD time, then
 // dispatches at most `max_npc_ticks` entities this step. Because the clock

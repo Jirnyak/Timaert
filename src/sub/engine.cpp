@@ -621,7 +621,8 @@ void SubworldEngine::destroy(const gpu::VulkanDevice& dev) {
     dev_ = nullptr;
 }
 
-void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
+void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
+                           EventBus& bus,
                            const float* posOverride) {
     statusLine_.clear();
     statusTimer_ = 0.0f;
@@ -637,7 +638,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // A fresh session starts with no known threat: the exit gate can be asked
     // before the first combat tick runs.
     playerThreatD2_ = kNoThreatDistance2;
-    if (!mw.gs || !mw.terrain || !mw.features || !mw.world
+    if (!mw.gs || !mw.terrain || !mw.features || !mw.store
         || !mw.terrain->has_rgba_storage()) {
         mw_ = {};
         gs_ = nullptr;
@@ -659,7 +660,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // nobody read was simply a column with no reader (DOD п.9, снесён M-152).
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
-    ecs_ = mw_.world; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
+    ecs_ = &scene; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
     ecs::World& ecs = *ecs_;   // shadows the namespace, as the old parameter did
     // The scene raises around the FLAG HOLDER's cell — «кем я на карте» is
@@ -2069,13 +2070,13 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     f.x = std::int16_t(cellX);
     f.y = std::int16_t(cellY);
     f.amount = amount;
-    if (mw_.world) {
+    if (mw_.store) {
         // Filed AND paid through THE one macro door (macro/squad.h
         // record_deed): the named bit and the renown come with the filing —
         // the engine never learns where renown lives, and a drained orb or a
         // crossed circle now makes something of the one who did it, exactly
         // like a kill above ground. This writer used to file for free.
-        record_deed(store_of(*mw_.world), *gs_, f, MacroHandle{});
+        record_deed(*mw_.store, *gs_, f, MacroHandle{});
     } else {
         // No macro world under this session (a bare harness): there is
         // nobody to pay, and the fact alone is still the truth.
@@ -3713,7 +3714,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // макро-анкет ПО ПОСТРОЕНИЮ: оплата идёт в MacroHandle лидера.
             if (const int killerSlot =
                     sub::ref_slot_identity(arena, lastRef);
-                killerSlot >= 0 && mw_.world) {
+                killerSlot >= 0 && mw_.store) {
                 // ОДИН закон оплаты килла (§41 корень 5, владелец
                 // 2026-09-10: «байт умирает; жнец резолвит лидера убийцы
                 // для ВСЕХ — игрок просто лидер своего сквада»). The
@@ -3735,14 +3736,13 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                            debt && debt->stock
                                == std::uint8_t(MacroStock::Creatures)) {
                     leader = macro_handle_by_spawn_id(
-                        store_of(mw_.world->reg),
-                        std::uint32_t(debt->subject));
+                        *mw_.store, std::uint32_t(debt->subject));
                 } else if (arena.is_avatar_slot(killerSlot)
                            || sub::slot_flag(arena, killerSlot,
                                              sub::kObjPlayerSoldier)) {
                     if (gs_) {
                         const MacroHandle ps = player_squad_handle(*gs_);
-                        if (store_of(mw_.world->reg).valid(ps)) leader = ps;
+                        if (mw_.store->valid(ps)) leader = ps;
                     }
                 }
                 // «Рука игрока» — сценная правда для репутации: его
@@ -3750,7 +3750,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 const bool playerHand = arena.is_avatar_slot(killerSlot)
                     || sub::slot_flag(arena, killerSlot,
                                       sub::kObjPlayerSoldier);
-                MacroStore& mst = store_of(mw_.world->reg);
+                MacroStore& mst = *mw_.store;
                 if (mst.valid(leader) && !macro_dead(mst, leader)) {
                     // One row, one formula (owner, 2026-08-29): what a kill
                     // is worth is npc_xp_reward — the row's own xpReward
@@ -3985,17 +3985,19 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // runs the danger gate and every write-back — and RESETS the envelope, so
     // it is captured by copy first, exactly as the dungeon-exit re-enter does.
     const MacroWorld mwCopy = mw_;
+    ecs::World& scene = *ecs_;   // leave() resets the views — capture first
     EventBus& bus = *bus_;
     leave();
     if (active_) return false;
 
     dungeon_ = ses;
     sceneKind_ = SceneKind::Dungeon;
-    enter_dungeon_scene(mwCopy, bus);
+    enter_dungeon_scene(mwCopy, scene, bus);
     return true;
 }
 
-void SubworldEngine::enter_pocket_scene(const MacroWorld& mw, EventBus& bus,
+void SubworldEngine::enter_pocket_scene(const MacroWorld& mw,
+                                        ecs::World& scene, EventBus& bus,
                                         const DungeonRef& ref,
                                         float floorHeight) {
     // A pocket is raised from the map or from boot, never over a live scene
@@ -4010,18 +4012,18 @@ void SubworldEngine::enter_pocket_scene(const MacroWorld& mw, EventBus& bus,
     dungeon_.floorHeight = floorHeight;
     dungeon_.settlementId = 0;
     sceneKind_ = SceneKind::Dungeon;
-    enter_dungeon_scene(mw, bus);
+    enter_dungeon_scene(mw, scene, bus);
 }
 
 void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
-                                         EventBus& bus) {
+                                         ecs::World& scene, EventBus& bus) {
     // NO `mw.features` HERE any more (наряд M-152): an interior's ground comes
     // from the synthetic resolver below, and the one thing that used to reach
     // the feature column from in here — the nine-cell step weight — is gone
     // (`refresh_window_step_weights` returns at the door for a dungeon). The
     // three pointers left are the ones the body actually spends: the seed and
     // the clock (`gs`), the scene's plane (`terrain`), the bodies (`world`).
-    if (!mw.gs || !mw.terrain || !mw.world) return;
+    if (!mw.gs || !mw.terrain || !mw.store) return;
     statusLine_.clear();
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
@@ -4041,7 +4043,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // the town, vermin from the fauna stock) pay through mw_ like any scene.
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
-    ecs_ = mw_.world; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
+    ecs_ = &scene; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
 
     // Synthetic resolver: the door cell IS the interior, the ring is sealed
@@ -4500,13 +4502,14 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     }
 
     const MacroWorld mwCopy = mw_;
+    ecs::World& scene = *ecs_;
     EventBus& bus = *bus_;
 
     // Storey teardown: the same reaping as an exit (deaths settle their
     // ledgers, every scene body goes), but we never surface — the next scene
     // is the same interior identity one level along.
     resolve_subworld_deaths(true);
-    clear_subworld_entities(*mwCopy.world);
+    clear_subworld_entities(*ecs_);
     clear_player_entity();
     structIndex_.clear();
     structIndexDirty_ = true;
@@ -4518,7 +4521,7 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     dungeon_.ref.level = std::int8_t(target);
     dungeon_.arrival = arrival;
     sceneKind_ = SceneKind::Dungeon;
-    enter_dungeon_scene(mwCopy, bus);
+    enter_dungeon_scene(mwCopy, scene, bus);
     set_status(target > level ? "Up the stairs." : "Down the stairs.");
     return true;
 }
@@ -4628,7 +4631,7 @@ bool SubworldEngine::try_exit_dungeon() {
     // at the very spot the door was opened from — or, through the hatch, ON
     // the tower's crown: the cylinder's centre, one tower height above the
     // ground the honest support physics already carries bodies on.
-    player_jump_to_cell(gs, store_of(*ecs_), ses.doorCx, ses.doorCy);
+    player_jump_to_cell(gs, store_of(ecs), ses.doorCx, ses.doorCy);
     // Out through the crown: you come up ON THE HATCH you climbed to, not on
     // the tower's axis — the axis is where the orb's plinth stands, and a body
     // put there materialised INSIDE the shrine, its eye in the burning head
@@ -4641,7 +4644,7 @@ bool SubworldEngine::try_exit_dungeon() {
     const float pos[2] = {
         float(kCellSize) + (roofExit ? crownX : ses.returnLocalX),
         float(kCellSize) + (roofExit ? crownY : ses.returnLocalY)};
-    enter(mwCopy, bus, pos);
+    enter(mwCopy, ecs, bus, pos);
     if (roofExit && active_) {
         // enter() seated the player on the terrain 128 m below — and it has
         // already indexed the scene's solids, so ASK what is up here instead

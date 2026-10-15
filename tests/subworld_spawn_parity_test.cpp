@@ -1,4 +1,5 @@
 #include "check.h"
+#include "ecs/world.h"
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "tables/faction.h"
 #include "macro/world_row.h"

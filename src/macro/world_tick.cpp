@@ -374,7 +374,7 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
             resource_fields_daily_growth(*macro, day);
         }
 
-        if (macro && macro->world && macro->terrain) {
+        if (macro && macro->store && macro->terrain) {
             // The fleet law (npc_spawn.h): a city without a caravan outfits
             // one from its population — losses stay permanent, the trade
             // arm regrows through the world (CANON S4).

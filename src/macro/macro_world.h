@@ -57,14 +57,16 @@ struct PathCostData;
 struct TreeGrid;
 struct SquadIndex;
 struct NavWorld;
-namespace ecs { struct World; }
 
 struct MacroWorld {
     GameState*  gs    = nullptr;
     TreeLayer*  trees = nullptr;
-    ecs::World* world = nullptr;   // the creature row lives on squad entities
     MacroStore* store = nullptr;   // гладкая память макро-сквадов (M-106):
-                                   //   состояние — колонками по слоту
+                                   //   состояние — колонками по слоту;
+                                   //   реестра сцены в конверте НЕТ (ломоть A
+                                   //   M-150): субмир берёт его явным
+                                   //   параметром enter(), макро не видит
+                                   //   вовсе — шапка «ecs-free» снова правда
     const TerrainData* terrain = nullptr;   // the fauna row derives its
                                             //   baseline from the cell's biome
     DepositLayer* deposits = nullptr;       // the Clay/Iron/Stone carrier

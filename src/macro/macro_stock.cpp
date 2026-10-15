@@ -5,7 +5,6 @@
 #include "macro/macro_stock.h"
 #include "macro/store.h"
 
-#include "ecs/world.h"
 #include "macro/anketa.h"
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"  // двери существ единого контейнера (M-71)
@@ -142,17 +141,16 @@ MacroHandle find_creatures_subject(const MacroWorld& w,
     // вопрос один: «чьё это имя-ординал». Теперь он задаётся один раз, и когда
     // у резолва появится таблица слота по ординалу (1е/M-37), квитанции
     // подешевеют вместе со всеми — а не отдельной правкой этого файла.
-    // Store берём из ctx мира: конверт может его не нести (тестовые фикстуры),
-    // а мир без store — это мир без сквадов, честный отказ.
-    if (!w.world || subject <= 0) return MacroHandle{};
-    MacroStore& st = store_of(*w.world);
-    return macro_handle_by_spawn_id(st, std::uint32_t(subject));
+    // Мир без store — это мир без сквадов, честный отказ (нулевой слой
+    // конверта, как у всякого слоя MacroWorld).
+    if (!w.store || subject <= 0) return MacroHandle{};
+    return macro_handle_by_spawn_id(*w.store, std::uint32_t(subject));
 }
 
 int read_creatures(const MacroWorld& w, MacroStockKey k) {
     const MacroHandle h = find_creatures_subject(w, k.subject);
-    if (!w.world || !store_of(*w.world).valid(h)) return 0;
-    return creature_count(store_of(*w.world).inventory[h.slot].inv);
+    if (!w.store || !w.store->valid(h)) return 0;
+    return creature_count(w.store->inventory[h.slot].inv);
 }
 
 void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
@@ -164,8 +162,8 @@ void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
         // other malformed receipt.
         return;
     }
-    if (!w.world) return;
-    MacroStore& st = store_of(*w.world);
+    if (!w.store) return;
+    MacroStore& st = *w.store;
     const MacroHandle h = find_creatures_subject(w, k.subject);
     if (!st.valid(h)) return;
     Inventory& r = st.inventory[h.slot].inv;

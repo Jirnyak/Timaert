@@ -16,6 +16,7 @@
 // ordinary NPC in the very same state, which MUST be picked up by the loop
 // that skips the player.
 #include "check.h"
+#include "ecs/world.h"
 
 #include "macro/player_entity.h"
 #include "macro/world_row.h"
@@ -209,7 +210,7 @@ void test_ai_leaves_the_player_squad_standing() {
     MacroNpcAiRuntime runtime;
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.world = &w;
+    mw.store = &sm::store_of(w);
     for (int i = 0; i < 8; ++i) tick_macro_npc_ai(mw, runtime, kAiTicks);
 
     const auto& after = wStore_->runtime[mineH.slot];
@@ -420,7 +421,7 @@ void test_the_players_wound_settles_through_the_one_door() {
 
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.world = &w;
+    mw.store = &sm::store_of(w);
     const MacroHandle foe = npc_squad(w, 10.0f, 10.0f, 7u, 2);
 
     AutoBattleOutcome o{};

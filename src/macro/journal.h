@@ -20,14 +20,13 @@
 
 #include "core/torus.h"
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "macro/player_entity.h"
 #include "macro/state.h"
 #include "macro/store.h"
 
 namespace sm {
 
-inline void player_journal_capture(GameState& gs, ecs::World& world) {
+inline void player_journal_capture(GameState& gs, const MacroStore& st) {
     const Chronicle& c = gs.chronicle;
     if (!c.ready() || gs.mapW <= 0 || gs.mapH <= 0) return;
     PlayerState& p = gs.player;
@@ -42,7 +41,7 @@ inline void player_journal_capture(GameState& gs, ecs::World& world) {
     }
     // WHERE he stands = the flag holder's cell (подпосадка 4) — locality is
     // asked of the world, like possession above.
-    const ecs::MacroCell* pcell = player_flag_cell(gs, store_of(world));
+    const ecs::MacroCell* pcell = player_flag_cell(gs, st);
     const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : -1;
     const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : -1;
     // Participation is by the ordinal his deeds FILE UNDER — and while he wears
@@ -58,7 +57,6 @@ inline void player_journal_capture(GameState& gs, ecs::World& world) {
     int possessed = -1;
     if (player_wears_another_body(gs)) {
         const MacroHandle flag = player_flag_handle(gs);
-        const MacroStore& st = store_of(world);
         if (st.valid(flag)) possessed = int(st.spawnId[flag.slot].index);
     }
     // ОРДИНАЛ ЕГО ДОМА — ТОЙ ЖЕ ФОРМОЙ, ЧТО ОРДИНАЛ ВСЕЛЁННОГО ЛОРДА выше
@@ -66,7 +64,7 @@ inline void player_journal_capture(GameState& gs, ecs::World& world) {
     // Здесь стоял литерал 0x7FFFFFFF, и шапка рядом уже предупреждала, что
     // он «задрейфует в день, когда „кто оригинал“ перестанет писаться этой
     // константой». День пришёл: дом стал битом колонки playerFlag.home.
-    const std::uint32_t homeOrd = player_home_ordinal(gs, store_of(world));
+    const std::uint32_t homeOrd = player_home_ordinal(gs, st);
     const auto isHis = [possessed, homeOrd](std::uint8_t kind,
                                             std::uint32_t ordinal) {
         if (fact_subject_kind(kind) != std::uint8_t(FactSubject::Squad))

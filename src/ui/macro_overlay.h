@@ -71,7 +71,6 @@ using MacroWalkReachedFn = void (*)(void* user, int x, int y);
 // `features` порознь — ровно та «parallel list of layer arguments», которую
 // шапка `macro_world.h` называет шрамом; выкачанность шпиля добавила бы пятый.
 void draw_macro_overlay(const MacroWorld& mw,
-                        ecs::World& w,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
                         int viewW, int viewH, int mapW, int mapH,
@@ -85,7 +84,7 @@ void draw_macro_overlay(const MacroWorld& mw,
 // squad's MacroCell whole cells at 1.0 budget each — a fractional macro
 // position is unrepresentable, the glide between cells is MacroVisual's.
 // Calls `onReached` once per entered path cell.
-std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
+std::size_t step_macro_walk(GameState& gs, MacroStore& st, MacroCursor& cursor,
                             float dt, float cellsPerSec,
                             MacroWalkReachedFn onReached = nullptr,
                             void* onReachedUser = nullptr);
@@ -101,7 +100,6 @@ std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
 // Конверт — тот же закон (M-233 п.8): панели нужен слой фич, чтобы спросить
 // выкачанность шпиля ОДНОЙ дверью, а не добирать слой аргументом.
 NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
-                                            ecs::World& w,
                                             int viewW, int viewH,
                                             bool showRows, float scale);
 

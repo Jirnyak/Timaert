@@ -56,7 +56,7 @@ float map_fit_zoom(int viewHPx, int mapH);
 // запрещает добирать слои аргументами на сайте. `mw.gs` немутабелен не по
 // форме, а по смыслу: страница правит ровно `gs.markers` (пины).
 void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
-                     ecs::World& world, bool* open,
+                     bool* open,
                      int viewW, int viewH, float zoomLogical, float scale);
 
 } // namespace sm::ui

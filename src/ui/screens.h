@@ -23,6 +23,8 @@ namespace sm {
 struct GameState;
 }
 
+namespace sm { struct MacroStore; }
+
 namespace sm::ui {
 
 class Keymap;
@@ -155,10 +157,10 @@ ShellResult draw_death_screen(const GameState& gs);
 
 // Top-left player HUD: HP / MP / SP bars, gold, day/time, level, position.
 // `pools` — THE store of his bars (the ordinary ecs::Pools on his squad
-// entity, landing 4); `world` — where he STANDS is his flag holder's cell
+// entity, landing 4); `st` — where he STANDS is his flag holder's cell
 // (подпосадка 4): the HUD is a reader like any other, handed the stores
 // rather than scalar copies that no longer exist.
-void draw_player_hud(const GameState& gs, ecs::World& world,
+void draw_player_hud(const GameState& gs, const MacroStore& st,
                      const ecs::Pools& pools, float scale = 1.0f);
 
 // Proto_c-style bottom command toolbar — visual buttons that emit

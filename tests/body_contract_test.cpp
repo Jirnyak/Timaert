@@ -14,6 +14,7 @@
 // restated in this file: retuning a soldier must never require editing a test,
 // and a spawner that invents its own numbers must fail.
 #include "check.h"
+#include "ecs/world.h"
 
 #include "sub/spawn.h"
 #include "sub/record.h"   // state_of — whose bag/gear/book is this body's
@@ -472,7 +473,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     // The return trip, end to end: a member's death pays the creature row, the
     // second death empties it — and an empty creatures around a LIVE leader is a
     // squad of one, alive and well, not a special case anyone must clean up.
-    MacroWorld w{.world = &world};
+    MacroWorld w{.store = &sm::store_of(world)};
     for (auto e : reg.view<ecs::ObjectSlot>()) {
         if (const auto* d = sm::sub::body_debt(reg, e))
             settle_macro_debt(w, *d, -1);

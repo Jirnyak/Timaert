@@ -24,6 +24,7 @@
 //     the damage KIND's column: plate does not soften a fall.
 
 #include "check.h"
+#include "ecs/world.h"
 #include "scene_objects_fixture.h"   // арена объектов: fx — колонки (M-150 1а)
 #include "sub/damage.h"
 #include "sub/record.h"    // pools_of — удар ложится на ЗАПИСЬ

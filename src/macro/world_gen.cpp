@@ -11,7 +11,6 @@
 #include <cstdio>
 
 #include "core/torus.h"
-#include "ecs/world.h"
 #include "macro/chronicle.h"
 #include "macro/deposit_layer.h"
 #include "macro/knowledge.h"
@@ -37,10 +36,10 @@
 namespace sm {
 
 void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
-    // Store прицепляется к ctx мира ЗДЕСЬ — одна дверь на всех звонящих
-    // генезис (бут, balance_run, фикстуры). Ctx-мост живёт для СУБМИРА до
-    // M-171 (вердикт 4а); макро-двери принимают MacroStore& параметром.
-    store_attach(*out.world, out.store);
+    // Ctx-мост store_attach генезис НЕ ставит: он нужен только СУБМИРУ
+    // (вердикт 4а, живёт до M-171), и каждый владелец реестра цепляет его
+    // сам — app в main(), фикстуры у себя. Генезис реестра не видит вовсе:
+    // макро-двери принимают MacroStore& параметром (M-150 ломоть A).
     GameState& gs = *out.gs;
     // Места генезиса — слоты ЭТОГО массива (ломтик F): всякий вопрос «где
     // стоят города/деревни/шпили» задаётся ему, а не отдельному списку.
@@ -401,7 +400,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // there is no player position scalar to seed since подпосадка 4.
         // The macro tick re-heals the invariant thereafter; doing it here
         // makes it hold immediately after genesis, before the first tick.
-        ensure_macro_player_entity(gs, store_of(*out.world));
+        ensure_macro_player_entity(gs, *out.store);
     }
 
     // (ПЕРВАЯ ВЕДОМОСТЬ стояла здесь и уничтожена 2026-09-30, ломтик E

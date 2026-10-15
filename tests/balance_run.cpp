@@ -211,7 +211,6 @@ int main(int argc, char** argv) {
         go.treeGrid = &treeGrid;
         go.squadIndex = &ai.squadIndex;
         go.pathCost = &pathCost;
-        go.world = &ecs;
         go.store = macroStore.get();
         sm::generate_macro_world(go, gp);
 
@@ -237,7 +236,6 @@ int main(int argc, char** argv) {
         mw.gs = &gs;
         mw.nav = &nav;
         mw.trees = &treeLayer;
-        mw.world = &ecs;
         mw.store = macroStore.get();
         mw.terrain = &terrain;
         mw.deposits = &deposits;

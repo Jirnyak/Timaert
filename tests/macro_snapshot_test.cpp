@@ -11,6 +11,7 @@
 //     save, load, spawn anew — the dead man's ordinal is never reissued
 //     (with the old max-over-living scan that exact sequence reissued it).
 #include "check.h"
+#include "ecs/world.h"
 
 #include "macro/macro_snapshot.h"
 #include "macro/world_row.h"

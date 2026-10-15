@@ -1059,12 +1059,12 @@ inline void report_battle_deaths(const MacroWorld& mw, const MacroStore& st,
 
 // Creatures deaths through the ledger row: a storied soul by its entityId, a
 // generic one by {kind, level} (the key's detailKind/detailLevel pair).
-inline void settle_squad_casualties(GameState& gs, ecs::World& w,
+inline void settle_squad_casualties(GameState& gs,
                                     MacroStore& st, MacroHandle h,
                                     const std::vector<SoldierRecord>& ids) {
     if (!st.valid(h)) return;
     const ecs::MacroCell cell = st.cell[h.slot];
-    MacroWorld mw{.gs = &gs, .world = &w, .store = &st};
+    MacroWorld mw{.gs = &gs, .store = &st};
     // named, not positional — the envelope grows, positions rot; store
     // ОБЯЗАН ехать в каждом локальном конверте (шрам с.18: без него
     // find_creatures отказывал в no-op и потери авто-боя молча не списывались)
@@ -1215,8 +1215,7 @@ inline void settle_auto_battle(const MacroWorld& mw,
                                MacroHandle ha, MacroHandle hb,
                                const AutoBattleOutcome& o) {
     GameState& gs = *mw.gs;
-    ecs::World& w = *mw.world;
-    MacroStore& st = store_of(w);
+    MacroStore& st = *mw.store;
     const MacroHandle winner = o.winner == 0 ? ha : hb;
     const MacroHandle loser  = o.winner == 0 ? hb : ha;
     const auto& loserCasualties = o.winner == 0 ? o.casualtiesB
@@ -1230,8 +1229,8 @@ inline void settle_auto_battle(const MacroWorld& mw,
     report_battle_deaths(mw, st, hb, o.casualtiesB,
                          o.leaderFractionB <= 0.0f, ha);
 
-    settle_squad_casualties(gs, w, st, ha, o.casualtiesA);
-    settle_squad_casualties(gs, w, st, hb, o.casualtiesB);
+    settle_squad_casualties(gs, st, ha, o.casualtiesA);
+    settle_squad_casualties(gs, st, hb, o.casualtiesB);
     settle_leader_fraction(st, ha, o.leaderFractionA);
     settle_leader_fraction(st, hb, o.leaderFractionB);
 
@@ -1271,8 +1270,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
                                      const AutoBattleOutcome& o,
                                      bool playerIsA) {
     GameState& gs = *mw.gs;
-    ecs::World& w = *mw.world;
-    MacroStore& st = store_of(w);
+    MacroStore& st = *mw.store;
     const auto& playerCas = playerIsA ? o.casualtiesA : o.casualtiesB;
     const auto& enemyCas  = playerIsA ? o.casualtiesB : o.casualtiesA;
     const float playerFraction =
@@ -1285,7 +1283,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // The player's spoils land in HIS bag — the ordinary NpcInventory on his
     // squad record (macro/player_entity.h), the same container an enemy
     // lord's goods came out of.
-    Inventory* playerBag = player_inventory(gs, store_of(w));
+    Inventory* playerBag = player_inventory(gs, st);
     Inventory scratch{};
     if (!playerBag) playerBag = &scratch;   // headless fixture: nowhere to put
 
@@ -1298,7 +1296,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // settle_squad_casualties over his own record, ledger and all. The
     // hand-written removal that used to stand here was one of the four
     // player-specific paths.
-    settle_squad_casualties(gs, w, st, playerH, playerCas);
+    settle_squad_casualties(gs, st, playerH, playerCas);
     // His wound settles through THE door every leader's does
     // (settle_leader_fraction), not through a second copy of the same three
     // lines of arithmetic — and it lands in THE store (his squad's Pools),
@@ -1329,7 +1327,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // мертвецы своих сумок не имеют (они записи, не энтити) и до ПУЛА ЛУТА
     // не роняют ничего.
 
-    settle_squad_casualties(gs, w, st, enemy, enemyCas);
+    settle_squad_casualties(gs, st, enemy, enemyCas);
     settle_leader_fraction(st, enemy, enemyFraction);
     if (playerWon && macro_dead(st, enemy)) {
         loot_fallen_owner(st, enemy, *playerBag);

@@ -58,7 +58,6 @@ SKELETON.md	:132
 SKELETON.md	:1321
 SKELETON.md	:1416
 SKELETON.md	:1423
-SKELETON.md	:1425
 SKELETON.md	:143
 SKELETON.md	:156-158
 SKELETON.md	:1602
@@ -320,7 +319,6 @@ SKELETON.md	main.cpp:1695
 SKELETON.md	main.cpp:1839-1854
 SKELETON.md	main.cpp:1862
 SKELETON.md	main.cpp:2963
-SKELETON.md	main.cpp:3541
 SKELETON.md	main.cpp:3635-3637
 SKELETON.md	main.cpp:4064
 SKELETON.md	main.cpp:4630
@@ -392,7 +390,6 @@ SKELETON.md	npc_ai.h:102
 SKELETON.md	npc_ai.h:155
 SKELETON.md	npc_spawn.cpp:141
 SKELETON.md	npc_spawn.cpp:216
-SKELETON.md	npc_spawn.cpp:275
 SKELETON.md	npc_spawn.cpp:304
 SKELETON.md	npc_spawn.cpp:396-399
 SKELETON.md	npc_spawn.cpp:79-80
@@ -523,7 +520,6 @@ SKELETON.md	sub/map_data.h:20-21
 SKELETON.md	sub/map_data.h:518-519
 SKELETON.md	sub/map_factory.cpp:27-28
 SKELETON.md	sub/seamless_manager.cpp:309
-SKELETON.md	sub/spawn.cpp:1427-1430
 SKELETON.md	sub/spawn.cpp:1489-1491
 SKELETON.md	sub/spawn.cpp:494
 SKELETON.md	sub/spawn.cpp:514

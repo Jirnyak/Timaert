@@ -205,7 +205,7 @@ bool modal_overlay_active(const App& app);
 std::uint32_t macro_identity_of(const App& app, std::uint32_t handleBits) {
     const sm::MacroHandle h = sm::macro_handle_from_bits(handleBits);
     const auto* id =
-        sm::body_state<sm::ecs::MacroSpawnId>(sm::store_of(app.ecs), h);
+        sm::body_state<sm::ecs::MacroSpawnId>((*app.macroStore), h);
     return id ? id->index : 0u;
 }
 
@@ -215,7 +215,7 @@ std::uint32_t macro_identity_of(const App& app, std::uint32_t handleBits) {
 bool squad_is_named(const App& app, std::uint32_t handleBits) {
     const sm::MacroHandle h = sm::macro_handle_from_bits(handleBits);
     const auto* rt =
-        sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(app.ecs), h);
+        sm::body_state<sm::ecs::MacroNpcRuntime>((*app.macroStore), h);
     return rt && sm::renown_is_named(rt->renown);
 }
 
@@ -306,7 +306,7 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     // WHERE it happened: the killer's cell if he has one, else the victim's.
     // A fact with no place would be invisible to the only question the
     // chronicle exists to answer. Хэндлы (1г): протухший отвечает nullptr.
-    const sm::MacroStore& st = sm::store_of(app.ecs);
+    const sm::MacroStore& st = (*app.macroStore);
     const sm::MacroHandle killerH = sm::macro_handle_from_bits(fact.killer);
     const sm::MacroHandle whereH = st.valid(killerH)
         ? killerH : sm::macro_handle_from_bits(fact.victim);
@@ -319,7 +319,7 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     // crosses the bar and becomes a figure, after which its deeds go into the
     // annals. Before that they are weather — which is exactly why sixteen
     // thousand bands do not drown the world's memory.
-    sm::record_deed(sm::store_of(app.ecs), app.gs, wf, killerH);
+    sm::record_deed((*app.macroStore), app.gs, wf, killerH);
 }
 
 // THE player's bag, from his squad entity (macro/player_entity.h). A world
@@ -339,7 +339,6 @@ sm::MacroWorld macro_world(App& app) {
     mw.factsUser = &app;
     mw.gs       = &app.gs;
     mw.trees    = &app.treeLayer;
-    mw.world    = &app.ecs;
     mw.store    = app.macroStore.get();
     mw.terrain  = &app.terrain;
     mw.deposits = &app.deposits;
@@ -551,7 +550,7 @@ void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
 
 bool route_macro_npc_attack(App& app, sm::MacroHandle npc) {
     if (!app.worldLoaded || app.subworld.active()) return false;
-    sm::MacroStore& st = sm::store_of(app.ecs);
+    sm::MacroStore& st = (*app.macroStore);
     if (!st.valid(npc)) return false;
 
     if (st.pools[npc.slot].hp <= 0) return false;
@@ -614,7 +613,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     // по флажку, значит и сторона боя, и гир — запись ФЛАГА, кем бы он ни
     // ходил. До этого контейнер/полосы шли по ординалу оригинала — §45 «два
     // ответа» об одном бое.
-    sm::MacroStore& st = sm::store_of(app.ecs);
+    sm::MacroStore& st = (*app.macroStore);
     const sm::MacroHandle flagH = sm::player_flag_handle(app.gs);
     sm::AutoBattleSide s = sm::auto_battle_side_of(st, flagH);
     // The player's swing, credited exactly as the fought path rolls it: the
@@ -642,7 +641,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
 // a Greedy leader asks double — the trait is data on the entity. Balance
 // knob (owner: retune after playtests).
 int encounter_payoff_cost(App& app, sm::MacroHandle npc) {
-    const sm::MacroStore& st = sm::store_of(app.ecs);
+    const sm::MacroStore& st = (*app.macroStore);
     const float their =
         sm::squad_power(sm::auto_battle_side_of(st, npc));
     int cost = std::max(10, int(their / 10.0f));
@@ -660,7 +659,7 @@ int encounter_payoff_cost(App& app, sm::MacroHandle npc) {
 float encounter_flee_chance(App& app, sm::MacroHandle npc) {
     const float mine = sm::squad_power(player_auto_battle_side(app));
     const float their = sm::squad_power(
-        sm::auto_battle_side_of(sm::store_of(app.ecs), npc));
+        sm::auto_battle_side_of((*app.macroStore), npc));
     return std::clamp(0.25f + 0.5f * mine / std::max(1.0f, mine + their),
                       0.05f, 0.95f);
 }
@@ -686,7 +685,7 @@ void push_combat_log(App& app, std::string msg) {
 // by the resolver's own law that only happens when his whole army died
 // with him.
 void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush) {
-    sm::MacroStore& st = sm::store_of(app.ecs);
+    sm::MacroStore& st = (*app.macroStore);
     const sm::AutoBattleOutcome o = sm::resolve_auto_battle(
         player_auto_battle_side(app),
         sm::auto_battle_side_of(st, npc),
@@ -722,7 +721,7 @@ const PreBattleAction kPreBattleActions[] = {
      },
      [](App&, sm::MacroHandle) { return true; },
      [](App& app, sm::MacroHandle npc) {
-         const auto& kind = sm::store_of(app.ecs).kind[npc.slot];
+         const auto& kind = (*app.macroStore).kind[npc.slot];
          const sm::NpcTypeDef& def =
              sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
          if (def.talkCount > 0) {
@@ -747,7 +746,7 @@ const PreBattleAction kPreBattleActions[] = {
          // density, №1) into the bandit's own bag — rob him back later and
          // it is there. What his bag refuses stays yours, and the line
          // reports what actually changed hands.
-         sm::MacroStore& st = sm::store_of(app.ecs);
+         sm::MacroStore& st = (*app.macroStore);
          int paid = cost;
          if (st.valid(npc)) {
              paid = sm::transfer_value_dense(
@@ -775,7 +774,7 @@ const PreBattleAction kPreBattleActions[] = {
              // Slip two cells straight away from them, dodging water; a
              // failed search leaves you where you stand — graced, but they
              // may catch you again.
-             const auto& ec = sm::store_of(app.ecs).cell[npc.slot];
+             const auto& ec = (*app.macroStore).cell[npc.slot];
              const sm::ecs::MacroCell* pcell =
                  sm::player_flag_cell(app.gs, *app.macroStore);
              if (!pcell) return true;
@@ -859,7 +858,7 @@ void detect_forced_encounter(App& app) {
     const int px = sm::ecs::cell_x(*pcell, app.gs.mapW);
     const int py = sm::ecs::cell_y(*pcell, app.gs.mapW);
 
-    sm::MacroStore& st = sm::store_of(app.ecs);
+    sm::MacroStore& st = (*app.macroStore);
 
     // A graced squad stops gracing the moment the two part cells.
     if (app.encounterGraceNpc.slot != sm::kMacroNoSlot) {
@@ -919,7 +918,7 @@ void draw_pre_battle_modal(App& app) {
     if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) return;
     // Хэндл — носитель ссылки (1г); весь тракт (route/auto/flee) на нём же,
     // entt-тело здесь больше не резолвится.
-    const sm::MacroStore& st = sm::store_of(app.ecs);
+    const sm::MacroStore& st = (*app.macroStore);
     const sm::MacroHandle npc = app.preBattleNpc;
     if (sm::macro_dead(st, npc) || st.pools[npc.slot].hp <= 0) {
         close_pre_battle(app, false);   // fail closed (stale save / dead foe)
@@ -1029,7 +1028,7 @@ void step_macro_walk_and_emit(App& app, float dt, float cellsPerSec) {
     const float prevY = before ? float(sm::ecs::cell_y(*before, app.gs.mapW))
                                : 0.0f;
     const std::size_t stepped =
-        sm::ui::step_macro_walk(app.gs, app.ecs, app.cursor, dt, cellsPerSec,
+        sm::ui::step_macro_walk(app.gs, *app.macroStore, app.cursor, dt, cellsPerSec,
                                 nullptr, nullptr);
     // Distance travelled = whole cells stepped; the walker stamped the entry
     // edge per step itself — nothing to re-derive from coordinates here.
@@ -1554,7 +1553,7 @@ void enter_subworld(App& app) {
     // сейва, — а вход ОДИН, и он гарантирует, что мир под ногами тикает,
     // руки пусты и ни одна панель не держит кадр.
     reset_scene_session_state(app);
-    app.subworld.enter(macro_world(app), app.bus);
+    app.subworld.enter(macro_world(app), app.ecs, app.bus);
 }
 
 // Raise an authored SCENE over the standing world (release.md §3, owner
@@ -1569,7 +1568,7 @@ void begin_scene(App& app, const sm::content::SceneDef& scene) {
     sm::sub::DungeonRef ref{};
     ref.kind = sm::sub::dungeon_kind_from_token(scene.pocketId);
     if (ref.kind != sm::sub::DungeonRef::None) {
-        app.subworld.enter_pocket_scene(macro_world(app), app.bus, ref,
+        app.subworld.enter_pocket_scene(macro_world(app), app.ecs, app.bus, ref,
                                         scene.floorHeight);
     }
     if (!app.subworld.active()) {
@@ -1692,7 +1691,6 @@ void boot_world(App& app, std::uint32_t seed,
     go.treeGrid     = &app.treeGrid;
     go.squadIndex   = &app.npcAi.squadIndex;
     go.pathCost     = &app.pathCost;
-    go.world        = &app.ecs;
     go.store        = app.macroStore.get();
     sm::generate_macro_world(go, gp);
     boot_trace("macro world generated");
@@ -3692,7 +3690,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // The player LEARNS this tick's facts — participation and his own cell
     // (macro/journal.h). Runs on both sides of the seam: underground the
     // engine files into the very macro cell he stands in.
-    sm::player_journal_capture(app.gs, app.ecs);
+    sm::player_journal_capture(app.gs, *app.macroStore);
     tick_subworld_hit_flash(app, dt);
     // The bar that says «я умер» belongs to the body he is STANDING IN — its
     // record's, through the mirror door: his own squad as himself, the lord's
@@ -4306,7 +4304,7 @@ void register_console_commands(App& app) {
             // ОДНА ДВЕРЬ НА ОБА ИСХОДА: пустой маршрут ЕСТЬ снятие приказа
             // (macro/squad.h order_squad_route) — граница не держит своего дома
             // для приказа и не знает, где он лежит.
-            if (!sm::order_squad_route(sm::store_of(app.ecs),
+            if (!sm::order_squad_route((*app.macroStore),
                                        std::uint32_t(ordinal), orders)) {
                 c.error("no squad with that ordinal");
                 return true;
@@ -5193,7 +5191,7 @@ void draw_debug_panels(App& app) {
                 {"AliveSlots(arena)", std::size_t(
                      sm::sub::objects_of(reg).count)},
                 {"MacroSquads",     std::size_t(
-                     sm::store_of(app.ecs).aliveCount)},
+                     (*app.macroStore).aliveCount)},
                 // Бары и лист — колонки арены (кусок 2): счёт по живым
                 // слотам, не по entt-популяции.
                 {"BodyPools(arena)", [&reg] {
@@ -5658,7 +5656,7 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     int  npcs = 0, gliding = 0, moved = 0;
     float maxGap = 0.0f;
     std::uint16_t sample = sm::kMacroNoSlot;
-    sm::MacroStore& st = sm::store_of(app.ecs);
+    sm::MacroStore& st = (*app.macroStore);
     // Обход живых слотов (1е, голый цикл); игрок — по слоту флага и
     // колонке ординала, как в свипе ИИ.
     const std::uint16_t flagSlot = [&]() -> std::uint16_t {
@@ -5773,7 +5771,7 @@ void frame(App& app, int simSteps) {
     // kSubworldTickDivisor steps, so the squads think rarely and smooth rarely,
     // in the same crawling ratio.
     if (app.state == sm::ui::AppState::Playing && app.worldLoaded) {
-        sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH,
+        sm::tick_macro_npc_visuals(*app.macroStore, app.gs.mapW, app.gs.mapH,
                                    float(turn.timeTick.ticksAdvanced)
                                        * sm::kStepSeconds);
         trace_macro_npc_visuals(app, turn.timeTick.ticksAdvanced);
@@ -5943,13 +5941,12 @@ void frame(App& app, int simSteps) {
         const bool mapOpen = macro_map_open(app);
         if (mapOpen) {
             sm::ui::draw_map_screen(app.mapScreen, macro_world(app),
-                                    app.ecs,
                                     &app.ui.map, logicalW, logicalH,
                                     app.mapScreen.zoom / dpr,
                                     app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
         } else {
         const float zoomLogical = app.zoom / dpr;
-        sm::ui::draw_macro_overlay(macro_world(app), app.ecs,
+        sm::ui::draw_macro_overlay(macro_world(app),
                                    app.cursor,
                                    app.camX, app.camY, zoomLogical,
                                    logicalW, logicalH,
@@ -6022,7 +6019,7 @@ void frame(App& app, int simSteps) {
         {
             const bool modalActive = modal_overlay_active(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
-                sm::ui::draw_player_hud(app.gs, app.ecs, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
+                sm::ui::draw_player_hud(app.gs, *app.macroStore, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             if (!modalActive)
             {
                 sm::ui::ToolbarResult tb{};
@@ -6086,7 +6083,7 @@ void frame(App& app, int simSteps) {
             draw_debug_panels(app);
             draw_session_feed(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))
-                sm::ui::draw_character_panel(app.gs, app.ecs, &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
+                sm::ui::draw_character_panel(app.gs, *app.macroStore, app.sceneObjects.get(), &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
             if (app.ui.settlement && app.subjectSquad.slot == sm::kMacroNoSlot)
                 refresh_available_settlement_quests(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelSettlement)) {
@@ -6098,7 +6095,7 @@ void frame(App& app, int simSteps) {
                 sm::MacroHandle attackReq{};
                 sm::MacroWorld panelMw = macro_world(app);
                 sm::ui::draw_settlement(app.gs,
-                                        app.ecs,
+                                        *app.macroStore,
                                         app.ui.settlementId,
                                         app.subjectSquad,
                                         &panelMw,
@@ -6114,7 +6111,7 @@ void frame(App& app, int simSteps) {
                 if (attackReq.slot != sm::kMacroNoSlot) {
                     // Клетка защитника — колонка store (прежний try_get у
                     // энтити молчал, и закон переноса не исполнялся).
-                    sm::MacroStore& ast = sm::store_of(app.ecs);
+                    sm::MacroStore& ast = (*app.macroStore);
                     if (const auto* cell =
                             sm::body_state<sm::ecs::MacroCell>(ast,
                                                                attackReq)) {
@@ -6373,7 +6370,7 @@ void frame(App& app, int simSteps) {
                 int logicalW = app.width, logicalH = app.height;
                 SDL_GetWindowSize(app.window, &logicalW, &logicalH);
                 const sm::ui::NpcProximityResult npcResult =
-                    sm::ui::draw_npc_proximity_panel(macro_world(app), app.ecs,
+                    sm::ui::draw_npc_proximity_panel(macro_world(app),
                                                      logicalW, logicalH,
                                                      showNpcRows,
                                                      app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));
@@ -6401,7 +6398,7 @@ void frame(App& app, int simSteps) {
         }
         case sm::ui::AppState::Menu:
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
-                sm::ui::draw_player_hud(app.gs, app.ecs, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
+                sm::ui::draw_player_hud(app.gs, *app.macroStore, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             shell = sm::ui::draw_game_menu();
             break;
         case sm::ui::AppState::Dead:

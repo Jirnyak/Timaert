@@ -20,6 +20,7 @@
 //     lasts the camp margin over its ground's burn rate, and a full bar keeps
 //     a body afloat the better part of a day — one law, two walkers.
 #include "check.h"
+#include "ecs/world.h"
 #include <vector>
 
 #include "macro/npc_ai.h"
@@ -122,7 +123,7 @@ int drive_until(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
                 NPCState stop, int capThinks) {
     int thinks = 0;
     while (npc.state != std::uint8_t(stop) && thinks < capThinks) {
-        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = grid};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
         ++thinks;
     }
@@ -148,7 +149,7 @@ bool drive_to_arrival(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
                           float(gs.mapW), float(gs.mapH)) < 4.0f) {
             return true;
         }
-        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = grid};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     const MacroPos p = at();
@@ -232,7 +233,7 @@ void test_river_is_forded_and_a_bridge_is_cheaper() {
         reset_macro_npc_ai_runtime(rt, seed);
         bool crossed = false;
         for (int i = 0; i < 96 && !crossed; ++i) {
-            MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+            MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks);
             crossed = float(ecs::cell_x(
                           (*sm::body_state<ecs::MacroCell>(sm::store_of(w), e)),
@@ -298,7 +299,7 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         // honest place to read that is while it is happening.
         int lowest = (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp;
         for (int i = 0; i < 60 && sm::store_of(w).valid(e); ++i) {
-            MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+            MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks);
             if (sm::store_of(w).valid(e))
                 lowest = std::min(lowest, (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp);
@@ -330,7 +331,7 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         // 6.3: смерть сквада — смерть СЛОТА store (свип конца тика), суд по
         // хэндлу; entt-тела у макро-сквада больше нет.
         while (std_.valid(eh) && std_.dead[eh.slot] == 0 && thinks < 400) {
-            MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+            MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks);
             ++thinks;
         }
@@ -401,7 +402,7 @@ void test_land_exhaustion_makes_camp_without_blood() {
     // The file's own convention — sp + carry — is what actually moved.
     const float ledgerAt = float((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).sp) + (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).spCarry;
     for (int i = 0; i < 8; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     CHECK((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp == campedAt,
@@ -453,7 +454,7 @@ void test_a_map_of_marchers_survives_the_new_law() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 77u);
     for (int think = 0; think < 600; ++think) {
-        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
@@ -620,7 +621,7 @@ void test_banking_a_part_cell_is_not_resting() {
     // Forty thinks of unbroken marching, far short of the ~110 cells the bar
     // can pay, so nothing here is confused by exhaustion or camp.
     for (int i = 0; i < 40; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     const float cells = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(sm::store_of(w), e)), gs.mapW)) - 10.0f;
@@ -644,7 +645,7 @@ void test_banking_a_part_cell_is_not_resting() {
     npc.targetY = 4.0f;
     const float restingFrom = float((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).sp) + (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).spCarry;
     for (int i = 0; i < 8; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     CHECK(float((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).sp) + (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).spCarry > restingFrom,
@@ -698,7 +699,7 @@ void test_a_laden_squad_pays_for_its_load() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 93u);
     for (int i = 0; i < 30; ++i) {
-        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 

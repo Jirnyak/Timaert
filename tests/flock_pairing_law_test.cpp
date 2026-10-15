@@ -24,6 +24,7 @@
 // расхождение в 275 тысяч голов никого не разбудило, потому что сравнивать
 // их было не велено.
 #include "check.h"
+#include "ecs/world.h"
 
 #include <cstdint>
 #include <memory>
@@ -59,7 +60,7 @@ struct World {
     }
 
     sm::MacroWorld envelope() {
-        return sm::MacroWorld{.gs = &gs, .world = &world, .store = store.get()};
+        return sm::MacroWorld{.gs = &gs, .store = store.get()};
     }
 };
 

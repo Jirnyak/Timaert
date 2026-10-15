@@ -12,7 +12,6 @@
 #include "ui/macro_overlay.h"
 #include "macro/player_entity.h"
 #include "ui/trade_widgets.h"
-#include "ecs/world.h"
 #include "ecs/components.h"
 #include "macro/map_subject.h"   // MapSubject + actions_of — the menu's doors
 #include "macro/state.h"
@@ -172,7 +171,6 @@ inline ImU32 marker_imcol(std::uint32_t argb) {
 } // namespace
 
 void draw_macro_overlay(const MacroWorld& mw,
-                        ecs::World& w,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
                         int viewW, int viewH, int mapW, int mapH,
@@ -363,7 +361,7 @@ void draw_macro_overlay(const MacroWorld& mw,
     // cleanly — at zoom < 10 px/cell a 256-px sprite shrinks to a
     // monochromatic blob that visually competes with the GLSL features.
     if (zoom >= 10.0f) {
-        MacroStore& st = store_of(w);
+        MacroStore& st = *mw.store;
         // Обход живых слотов store (1е, голый цикл); игрок — свой маркер,
         // и под вселением тоже: слот флага + колонка ординала.
         const std::uint16_t flagSlot = [&]() -> std::uint16_t {
@@ -488,7 +486,7 @@ void draw_macro_overlay(const MacroWorld& mw,
     // (cell centre = X+0.5). Drawn at the flag holder's VISUAL — the same
     // glide every squad sprite rides (подпосадка 4); the cell is the truth,
     // the visual is what the eye may see between cells.
-    if (const ecs::MacroVisual* pv = player_flag_visual(gs, store_of(w))) {
+    if (const ecs::MacroVisual* pv = player_flag_visual(gs, *mw.store)) {
         ImVec2 p = world_to_screen(pv->vx + 0.5f, pv->vy + 0.5f,
                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
         const float size = std::clamp(zoom * 1.1f, 14.0f, 64.0f);
@@ -497,7 +495,7 @@ void draw_macro_overlay(const MacroWorld& mw,
     }
 }
 
-std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
+std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
                             float dt, float cellsPerSec,
                             MacroWalkReachedFn onReached,
                             void* onReachedUser) {
@@ -505,7 +503,6 @@ std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
 
     // Input drives the FLAG HOLDER — «игрок это просто флажок для сквада,
     // что на него инпут» (owner, подпосадка 4). No flag standing = no legs.
-    MacroStore& stw = store_of(w);
     const MacroHandle fh = player_flag_handle(gs);
     if (!stw.valid(fh)) return 0u;
     ecs::MacroCell* cell = &stw.cell[fh.slot];
@@ -623,7 +620,6 @@ inline int wrap_chebyshev(int d, int period) {
 } // namespace
 
 NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
-                                            ecs::World& w,
                                             int viewW, int viewH,
                                             bool showRows, float scale) {
     NpcProximityResult result{};
@@ -644,7 +640,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
 
     if (showRows) {
 
-        MacroStore& st = store_of(w);
+        MacroStore& st = *mw.store;
         // Обход живых слотов store (1е): игрок не сосед самому себе —
         // слот флага + колонка ординала, как у маркеров выше.
         const std::uint16_t flagSlot = [&]() -> std::uint16_t {

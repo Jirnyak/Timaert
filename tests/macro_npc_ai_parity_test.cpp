@@ -8,6 +8,7 @@
 // were split: one promise per check, so a red line names the promise it broke
 // instead of the seven it was bundled with.
 #include "check.h"
+#include "ecs/world.h"
 #include "macro/labour.h"   // souls_flock — паства места
 
 #include "macro/npc_ai.h"
@@ -91,7 +92,7 @@ void tick_once(sm::GameState& gs,
                sm::ecs::World& world,
                sm::MacroNpcAiRuntime& runtime,
                const sm::TreeGrid* treeGrid = nullptr) {
-    sm::MacroWorld mw{.gs = &gs, .world = &world, .treeGrid = treeGrid};
+    sm::MacroWorld mw{.gs = &gs, .store = &sm::store_of(world), .treeGrid = treeGrid};
     sm::tick_macro_npc_ai(mw, runtime, sm::kAiTicks);
 }
 
@@ -489,13 +490,13 @@ void test_macro_visual_smoothing_and_snap() {
     visual.vx = 10.0f;
     visual.vy = 10.0f;
     rt.visualSpeed = 4.0f;
-    sm::tick_macro_npc_visuals(world, 128, 128, 0.25f);
+    sm::tick_macro_npc_visuals(sm::store_of(world), 128, 128, 0.25f);
     CHECK(close_enough(visual.vx, 11.0f) && close_enough(visual.vy, 10.0f),
           "the render position glides toward the logical one at speed * dt");
 
     (*sm::body_state<sm::ecs::MacroCell>(sm::store_of(world), e)).idx =
         sm::ecs::cell_index(30, 10, 128);
-    sm::tick_macro_npc_visuals(world, 128, 128, 0.25f);
+    sm::tick_macro_npc_visuals(sm::store_of(world), 128, 128, 0.25f);
     CHECK(close_enough(visual.vx, 30.0f) && close_enough(visual.vy, 10.0f),
           "a jump too far to glide SNAPS instead of sliding across the map");
     CHECK(close_enough(visual.speed, 0.0f),
@@ -660,7 +661,7 @@ void test_rotation_does_not_dissolve_the_dead() {
         sm::souls_flock(gs, *worldStore_, cityBody.slot);
     const int garrisonBefore =
         sm::creature_count(worldStore_->inventory[cityBody.slot].inv);
-    sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
+    sm::MacroWorld mw{.gs = &gs, .store = &sm::store_of(world), .terrain = &terrain};
     sm::rotate_worker_squads(mw, /*day=*/3);
 
     CHECK(sm::souls_flock(gs, *worldStore_, cityBody.slot) == popBefore,

@@ -25,7 +25,6 @@ struct TreeGrid;
 struct SquadIndex;
 struct PathCostData;
 struct LayerParameters;
-namespace ecs { struct World; }
 
 struct MacroStore;
 
@@ -59,7 +58,6 @@ struct WorldGenOut {
     TreeGrid*               treeGrid = nullptr;
     SquadIndex*             squadIndex = nullptr;  // каркас клеток по сквадам
     PathCostData*           pathCost = nullptr;
-    ecs::World*             world = nullptr;
     MacroStore*             store = nullptr;   // гладкая память сквадов (M-106)
 };
 

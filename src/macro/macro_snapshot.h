@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "macro/anketa.h"
 #include "macro/interests.h"
 #include "macro/spell_book_state.h"

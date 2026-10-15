@@ -110,7 +110,7 @@ float map_fit_zoom(int viewHPx, int mapH) {
 }
 
 void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
-                     ecs::World& world, bool* open,
+                     bool* open,
                      int viewW, int viewH, float zoomLogical, float scale) {
     if (!open || !*open) return;
     // Конверт РАСПАКОВЫВАЕТСЯ один раз здесь, и тело страницы ниже остаётся
@@ -223,7 +223,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     // ── The player — a position mark, not a figure: cyan ring + crosshair
     // (the old panel's mark, at page scale). The mark stands on the flag
     // holder's CELL — the map is a chart of truths, not of glides.
-    if (const ecs::MacroCell* pc = player_flag_cell(gs, store_of(world))) {
+    if (const ecs::MacroCell* pc = player_flag_cell(gs, *mw.store)) {
         const ImVec2 p = to_screen(float(ecs::cell_x(*pc, mapW)) + 0.5f,
                                    float(ecs::cell_y(*pc, mapW)) + 0.5f, st,
                                    zoomLogical, viewW, viewH, mapW, mapH);
@@ -272,7 +272,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         ImGui::SetWindowFontScale(scale);
         ImGui::Text("%d x %d   Seed 0x%X", gs.mapW, gs.mapH, gs.worldSeed);
         {
-            const ecs::MacroCell* pc = player_flag_cell(gs, store_of(world));
+            const ecs::MacroCell* pc = player_flag_cell(gs, *mw.store);
             ImGui::Text("Position %d, %d",
                         pc ? ecs::cell_x(*pc, mapW) : 0,
                         pc ? ecs::cell_y(*pc, mapW) : 0);

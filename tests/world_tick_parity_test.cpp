@@ -7,6 +7,7 @@
 // where a verdict is not something a function can return, and a test that runs
 // zero checks fails by counting.
 #include "check.h"
+#include "ecs/world.h"
 #include <cmath>
 #include <memory>
 
@@ -156,7 +157,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 79u));
     sm::MacroWorld mw{};
     mw.gs = &gs;
-    mw.world = &world;
+    mw.store = &sm::store_of(world);
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 789u);

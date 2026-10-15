@@ -10,6 +10,7 @@
 //     record_deed) makes the two halves one action, and the raw chronicle
 //     door pays nothing (the negative control).
 #include "check.h"
+#include "ecs/world.h"
 
 #include "macro/journal.h"
 #include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
@@ -95,7 +96,7 @@ void test_participation_locality_and_silence() {
                      fact(1, FactKind::Starved,
                           std::uint8_t(FactSubject::Landmark), 3u, 40, 40));
 
-    player_journal_capture(gs, w);
+    player_journal_capture(gs, sm::store_of(w));
     CHECK(gs.player.journal.size() == 2,
           "participation and locality are learned; the far world is not");
     CHECK(gs.player.journal[0].subject
@@ -104,7 +105,7 @@ void test_participation_locality_and_silence() {
           "the journal keeps the very records, in the order they happened");
 
     // Idempotence: the reader's cursor moved, so nothing is learned twice.
-    player_journal_capture(gs, w);
+    player_journal_capture(gs, sm::store_of(w));
     CHECK(gs.player.journal.size() == 2,
           "re-asking the chronicle re-learns nothing");
 
@@ -115,7 +116,7 @@ void test_participation_locality_and_silence() {
     hit.objectKind = fact_subject(FactSubject::Squad, true);
     hit.object = sm::player_home_ordinal(gs, sm::store_of(w));
     chronicle_record(gs.chronicle, hit);
-    player_journal_capture(gs, w);
+    player_journal_capture(gs, sm::store_of(w));
     CHECK(gs.player.journal.size() == 3
               && gs.player.journal[2].object
                      == sm::player_home_ordinal(gs, sm::store_of(w)),
@@ -128,7 +129,7 @@ void test_participation_locality_and_silence() {
                      fact(3, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false),
                           779u, 40, 40));
-    player_journal_capture(gs, w);
+    player_journal_capture(gs, sm::store_of(w));
     CHECK(gs.player.journal.size() == 4,
           "locality follows the player, not a fixed home cell");
 }
@@ -158,7 +159,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
                                   1000u + filed + i, 5, 5));
         }
         filed += slice;
-        player_journal_capture(gs, w);
+        player_journal_capture(gs, sm::store_of(w));
     }
     CHECK(gs.player.journal.size() == std::size_t(cap)
               && gs.player.journalFull == 0,
@@ -170,7 +171,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
                      fact(300, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false),
                           999999u, 5, 5));
-    player_journal_capture(gs, w);
+    player_journal_capture(gs, sm::store_of(w));
     CHECK(gs.player.journal.size() == std::size_t(cap)
               && gs.player.journalFull == 1,
           "the cap is loud, never a silent drop of his past");
@@ -194,7 +195,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
                      fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad, false),
                           42u, 50, 50));
-    player_journal_capture(gs, w);
+    player_journal_capture(gs, sm::store_of(w));
     CHECK(gs.player.journal.empty(),
           "an unpossessed lord's deed far away is not the player's");
 
@@ -211,7 +212,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
                      fact(2, FactKind::Killed,
                           fact_subject(FactSubject::Squad, false),
                           42u, 50, 50));
-    player_journal_capture(gs, w);
+    player_journal_capture(gs, sm::store_of(w));
     CHECK(gs.player.journal.size() == 1
               && gs.player.journal[0].subject == 42u,
           "while possessed, the lord's ordinal is the player's participation");
@@ -238,7 +239,7 @@ void test_a_captured_copy_carries_no_ring_link() {
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false), 8u, 5, 5));
-    player_journal_capture(gs, w);
+    player_journal_capture(gs, sm::store_of(w));
     CHECK(gs.player.journal.size() == 2
               && gs.player.journal[0].nextInCell == 0u
               && gs.player.journal[1].nextInCell == 0u,
