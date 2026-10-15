@@ -679,16 +679,17 @@ private:
     // column and indexed by the SAME `crowd_->count`, so there is no second
     // length to keep in step.
     std::array<std::uint16_t, kMaxSubObjects> crowdSlots_{};
-    // The spell broad phase's honesty bits (spell_neighbors_callback). The
-    // gather sets truncated when the scene ceiling (`kMaxSubObjects` = 65536,
-    // NOT the macro 16k — that reading is an error, owner 2026-10-13) cut
-    // bodies out of the grids —
-    // the callback then answers -1 and the spell tick falls back to its full
-    // scan, because a body missing from the grid must not be missing from the
-    // world. maxStep is the farthest any body can move between the grid build
-    // and the spell tick (steering runs in between): the callback pads every
-    // query with it plus the fattest body radius.
-    bool  crowdGatherTruncated_ = false;
+    // The spell broad phase's padding term (spell_neighbors_callback): the
+    // farthest any body can move between the grid build and the spell tick
+    // (steering runs in between). The callback pads every query with it plus
+    // the fattest body radius.
+    //
+    // Рядом стоял бит `crowdGatherTruncated_` — «сбор боя не влез в кап, и
+    // потребитель обязан уйти в полный скан». Он УМЕР 2026-10-261: ставить
+    // его было нечем (M-261). Кап сцены ОДИН (`kMaxSubObjects` = 65536, НЕ макро-16к
+    // — то чтение ошибка, вердикт владельца 2026-10-13) и обслуживает И
+    // арену, И толпу разом, а слот у каждого тела СВОЙ, поэтому добавлений в
+    // толпу не бывает больше, чем живых слотов арены, то есть ровно кап.
     float crowdMaxStepM_ = 0.0f;
     // Faction identity is the id STRING (the universal key gs->factions,
     // reputation and loot profiles already use), interned per tick into dense
@@ -1031,8 +1032,9 @@ private:
     // Spell broad phase over crowdPick_ (the contact grid): full-radius walk,
     // NO visit budget — a projectile miss from an exhausted budget would be a
     // bug, not an approximation, unlike the AI's budgeted contact scan.
-    static int spell_neighbors_callback(void* user, float x, float y, float r,
-                                        std::uint16_t* out, int maxOut);
+    static std::uint32_t spell_neighbors_callback(
+        void* user, float x, float y, float r,
+        std::uint16_t (&out)[kMaxSubObjects]);
     // Terrain hook for the battle pass (sub/movement.h stays Vulkan-free, so it
     // reaches the CPU heightfield through a function pointer, not an include).
     static float ground_height_callback(void* user, float x, float y);

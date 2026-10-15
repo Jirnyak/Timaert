@@ -2,20 +2,24 @@
 // identity: for the same scene and the same projectile, the grid-backed
 // candidate enumeration must produce EXACTLY the hits of the full O(N·M)
 // registry scan it replaced. The full scan is kept alive in the shipping code
-// as the nullptr / -1 arm of for_each_spell_candidate, so the reference here
-// is the real code path, not a copy.
+// as the nullptr arm of for_each_spell_candidate, so the reference here is the
+// real code path, not a copy.
 //
 // Four scenarios, one per scan that was replaced: the swept bolt (plus its
 // muzzle stretch), the blast sphere, the beam, and the chain. Each runs on
-// four identical worlds:
-//   • Full      — no broad phase (the reference),
-//   • Grid      — the bucket-grid callback, mirroring the engine's
-//                 spell_neighbors_callback over crowdPick_,
-//   • Fallback  — a callback that always answers -1 (must equal Full: the
-//                 "cannot promise completeness" arm is a fallback, not a loss),
-//   • Lossy     — a callback that returns zero candidates. This one MUST
-//                 DIFFER: it is the negative control that proves the parity
-//                 assertions can catch a broad phase that loses bodies.
+// three identical worlds:
+//   • Full  — no broad phase at all (the reference),
+//   • Grid  — the bucket-grid callback, mirroring the engine's
+//             spell_neighbors_callback over crowdPick_,
+//   • Lossy — a callback that returns zero candidates. This one MUST DIFFER:
+//             it is the negative control that proves the parity assertions
+//             can catch a broad phase that loses bodies.
+//
+// МИР «Fallback» (колбэк, всегда отвечавший -1) СНЯТ ВМЕСТЕ С КОНТРАКТОМ
+// (M-261): «полноту не обещаю» больше не выразимо в типе двери — счёт
+// беззнаковый, — и свидетель, кормивший её -1, охранял мёртвый путь, а не
+// закон мира (§8 п.5). Оба входа в тот путь были недостижимы по построению:
+// кап сцены ОДИН на арену, толпу и этот буфер, а слот у каждого тела СВОЙ.
 #include "check.h"
 #include "scene_objects_fixture.h"  // арена: бары — колонки (кусок 2)
 
@@ -102,8 +106,9 @@ std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
 
 // ── The grid broad phase under test — the engine callback's twin ───────────
 // Same walk, same padding law (fattest body radius; the scene is static so
-// the per-tick-drift term is zero), same -1 overflow honesty. Груз — СЛОТ
-// арены (ступень (iv) ломтя 7), как у spell_neighbors_callback.
+// the per-tick-drift term is zero), и та же ФОРМА ДВЕРИ: ссылка на массив
+// длиной в кап и беззнаковый счёт, так что усечь выдачу нечем — ровно как у
+// `spell_neighbors_callback`. Груз — СЛОТ арены (ступень (iv) ломтя 7).
 struct GridBroadPhase {
     // One flat MiB in its own block — the rig cannot hold it by value.
     std::unique_ptr<sm::sub::BodyCrowd> units = sm::sub::make_body_crowd();
@@ -131,8 +136,8 @@ struct GridBroadPhase {
         pad = units->maxRadius;
     }
 
-    static int fn(void* user, float x, float y, float r,
-                  std::uint16_t* out, int maxOut) {
+    static std::uint32_t fn(void* user, float x, float y, float r,
+                            std::uint16_t (&out)[sm::kMaxSubObjects]) {
         auto* self = static_cast<GridBroadPhase*>(user);
         const auto& u = *self->units;
         const auto& g = self->pick;
@@ -141,7 +146,7 @@ struct GridBroadPhase {
         const float rr2 = rr * rr;
         const int c0 = g.col_of(x - rr), c1 = g.col_of(x + rr);
         const int r0 = g.row_of(y - rr), r1 = g.row_of(y + rr);
-        int n = 0;
+        std::uint32_t n = 0;
         for (int cy = r0; cy <= r1; ++cy) {
             for (int cx = c0; cx <= c1; ++cx) {
                 const std::size_t ci = std::size_t(cy) * std::size_t(g.cols)
@@ -150,7 +155,9 @@ struct GridBroadPhase {
                     const std::size_t sj = std::size_t(g.items[k]);
                     const float dx = u.x[sj] - x, dy = u.y[sj] - y;
                     if (dx * dx + dy * dy > rr2) continue;
-                    if (n >= maxOut) return -1;
+                    // Границ не проверяем по той же причине, что и движок:
+                    // тел в сетке `u.count`, каждое в ОДНОЙ клетке, клетки
+                    // обходятся по разу, а `out` длиной в кап — n ≤ кап.
                     out[n++] = self->slots[sj];
                 }
             }
@@ -158,15 +165,13 @@ struct GridBroadPhase {
         return n;
     }
 
-    static int fallback_fn(void*, float, float, float, std::uint16_t*, int) {
-        return -1;
-    }
-    static int lossy_fn(void*, float, float, float, std::uint16_t*, int) {
-        return 0;                             // loses every body — must be caught
+    static std::uint32_t lossy_fn(void*, float, float, float,
+                                  std::uint16_t (&)[sm::kMaxSubObjects]) {
+        return 0;                           // loses every body — must be caught
     }
 };
 
-enum class Mode { Full, Grid, Fallback, Lossy };
+enum class Mode { Full, Grid, Lossy };
 
 // Build the scene, fire the scenario's projectile, tick, and report every
 // body's hp in creation order.
@@ -265,9 +270,8 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     void* user = nullptr;
     switch (mode) {
     case Mode::Full: break;
-    case Mode::Grid:     fn = &GridBroadPhase::fn; user = &grid; break;
-    case Mode::Fallback: fn = &GridBroadPhase::fallback_fn; break;
-    case Mode::Lossy:    fn = &GridBroadPhase::lossy_fn; break;
+    case Mode::Grid:  fn = &GridBroadPhase::fn; user = &grid; break;
+    case Mode::Lossy: fn = &GridBroadPhase::lossy_fn; break;
     }
 
     for (int t = 0; t < ticks; ++t) {
@@ -299,7 +303,6 @@ const char* scenario_name(int s) {
 void test_scenario(int s) {
     const auto full = run_scenario(s, Mode::Full);
     const auto grid = run_scenario(s, Mode::Grid);
-    const auto fall = run_scenario(s, Mode::Fallback);
     const auto lossy = run_scenario(s, Mode::Lossy);
 
     int damaged = 0;
@@ -308,22 +311,20 @@ void test_scenario(int s) {
     }
     CHECK(damaged > 0, "the scenario draws blood (else parity proves nothing)");
 
-    CHECK(full.size() == grid.size() && full.size() == fall.size(),
+    CHECK(full.size() == grid.size() && full.size() == lossy.size(),
           "same bodies in every world");
-    bool gridSame = true, fallSame = true, lossySame = true;
+    bool gridSame = true, lossySame = true;
     for (std::size_t i = 0; i < full.size(); ++i) {
         if (full[i] != grid[i]) gridSame = false;
-        if (full[i] != fall[i]) fallSame = false;
         if (full[i] != lossy[i]) lossySame = false;
     }
     std::fprintf(stderr,
-                 "[spell_broadphase] %s: %d damaged, grid %s, fallback %s\n",
+                 "[spell_broadphase] %s: %d damaged, grid %s, lossy %s\n",
                  scenario_name(s), damaged,
-                 gridSame ? "==" : "!=", fallSame ? "==" : "!=");
+                 gridSame ? "==" : "!=", lossySame ? "==" : "!=");
     CHECK(gridSame, "grid broad phase hits EXACTLY what the full scan hits");
-    CHECK(fallSame, "the -1 arm falls back to the full scan losslessly");
     // Negative control: a broad phase that loses bodies must be VISIBLE to
-    // the comparisons above, or they guard nothing.
+    // the comparison above, or it guards nothing.
     CHECK(!lossySame, "a lossy broad phase must change outcomes (control)");
 }
 

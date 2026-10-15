@@ -10,9 +10,11 @@
 //     wider — same range, same distance, different answer, no branches;
 //   * hostiles-first survives the radius law: a hostile within reach beats a
 //     nearer neutral, the neutral fallback (the legal crime) survives;
-//   * the grid arm and the full-scan arm agree on the same scene, and a
-//     broad phase that cannot promise completeness (-1) falls back rather
-//     than blinding the swing.
+//   * the grid arm and the full-scan arm agree on the same scene, and a grid
+//     that LOSES the body loses the swing — the control proving that the
+//     agreement above is checkable at all. Проверка «−1 роняет в полный
+//     скан» снята с самим контрактом (M-261): отрицательного счёта у двери
+//     больше нет, и охранять было нечего, кроме мёртвого пути.
 
 #include "check.h"
 #include "scene_objects_fixture.h"  // give_flag — биты маски (ломоть 1б)
@@ -86,26 +88,30 @@ void test_hostiles_first_by_surface_gap() {
           "neutral — the deliberate crime stays possible");
 }
 
-// The grid arm must agree with the full scan it replaces — and a broad phase
-// that cannot promise completeness must fall back, not blind the swing.
-void test_grid_arm_parity_and_fallback() {
+// The grid arm must agree with the full scan it replaces. Проверка «а если
+// сетка вернёт -1» СНЯТА вместе с самим контрактом (M-261): отрицательного
+// счёта у двери больше нет в ТИПЕ, и свидетель, звавший его, охранял путь, а
+// не закон (§8 п.5). Негативный контроль остаётся и усилен: сетка, ПОТЕРЯВШАЯ
+// тело, обязана менять исход — иначе утверждение о паритете ничего не стоит.
+void test_grid_arm_parity() {
     entt::registry reg;
     const int troll = body(reg, NPCType::Troll, 5.5f, 0.0f);
     body(reg, NPCType::Frog, 9.0f, 0.0f);   // out of reach either way
     const sm::sub::SubObjects& objs = sm::test::arena_of(reg);
 
-    struct Feed { std::uint16_t ids[8]; int n; };
+    struct Feed { std::uint16_t ids[8]; std::uint32_t n; };
     Feed feed{};
     feed.ids[feed.n++] = std::uint16_t(troll);
     const auto superset = [](void* user, float, float, float,
-                             std::uint16_t* out, int maxOut) {
+                             std::uint16_t (&out)[sm::kMaxSubObjects]) {
         auto* f = static_cast<Feed*>(user);
-        const int n = f->n < maxOut ? f->n : maxOut;
-        for (int i = 0; i < n; ++i) out[i] = f->ids[i];
-        return n;
+        for (std::uint32_t i = 0; i < f->n; ++i) out[i] = f->ids[i];
+        return f->n;
     };
-    const auto refuses = [](void*, float, float, float, std::uint16_t*, int) {
-        return -1;
+    // Negative control: a grid that loses the troll must NOT answer the troll.
+    const auto lossy = [](void*, float, float, float,
+                          std::uint16_t (&)[sm::kMaxSubObjects]) {
+        return std::uint32_t{0};
     };
 
     const int fullScan =
@@ -116,9 +122,10 @@ void test_grid_arm_parity_and_fallback() {
               == fullScan,
           "the grid arm answers exactly what the full scan answers");
     CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr,
-                            refuses, nullptr)
-              == fullScan,
-          "a broad phase that answers -1 falls back to the full scan");
+                            lossy, nullptr)
+              == -1,
+          "a grid that loses the body loses the swing (control: the parity "
+          "assertion above can fail)");
 }
 
 void test_player_side_and_dead_are_invisible() {
@@ -146,7 +153,7 @@ void test_player_side_and_dead_are_invisible() {
 int main() {
     test_wide_body_is_struck_from_farther();
     test_hostiles_first_by_surface_gap();
-    test_grid_arm_parity_and_fallback();
+    test_grid_arm_parity();
     test_player_side_and_dead_are_invisible();
     return sm::test::report("melee_reach_test");
 }

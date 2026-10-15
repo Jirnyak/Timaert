@@ -60,16 +60,17 @@ int melee_pick_target(const SubObjects& objs,
 
     // Broad phase: the battle pick grid, exactly like the spell contact asks
     // it (a SUPERSET promise — extras are filtered above, a miss would be a
-    // bug, so a broad phase that cannot promise completeness answers -1 and
-    // the swing falls back to the full scan; null = no grid, headless tests).
+    // bug, and полнота обещана ВСЕГДА: длина буфера есть ссылка на массив в
+    // кап, а у счёта нет сентинела, так что доложить об усечке нечем — ровно
+    // как у спелловой двери, и там же замерено, где кончается гарантия ТИПА;
+    // null = сетки нет вовсе, безголовые свидетели).
     if (neighborsFn) {
         static std::uint16_t buf[kMaxSubObjects];
-        const int n = neighborsFn(neighborsUser, px, py, range,
-                                  buf, kMaxSubObjects);
-        if (n >= 0) {
-            for (int i = 0; i < n; ++i) consider(int(buf[std::size_t(i)]));
-            return hostileBest >= 0 ? hostileBest : anyBest;
+        const std::uint32_t n = neighborsFn(neighborsUser, px, py, range, buf);
+        for (std::uint32_t i = 0; i < n; ++i) {
+            consider(int(buf[std::size_t(i)]));
         }
+        return hostileBest >= 0 ? hostileBest : anyBest;
     }
     // Полный проход — по слотам арены (гейт kObjAlive внутри кандидата);
     // вьюха реестра в выборе цели больше не участвует.

@@ -470,7 +470,6 @@ SKELETON.md	spawners.cpp:651-662
 SKELETON.md	spawners.cpp:675-679
 SKELETON.md	spawners.cpp:681
 SKELETON.md	spell_effects.cpp:111
-SKELETON.md	spell_effects.cpp:127-129
 SKELETON.md	spell_effects.cpp:151
 SKELETON.md	spell_effects.cpp:409
 SKELETON.md	spell_effects.cpp:48-70
@@ -534,7 +533,6 @@ SKELETON.md	sub/spell_effects.h:7
 SKELETON.md	surface_lib.glsl:30
 SKELETON.md	targeting.cpp:24-80
 SKELETON.md	targeting.cpp:66
-SKELETON.md	targeting.cpp:77-79
 SKELETON.md	tests/spire_generation_test.cpp:307-316
 SKELETON.md	threat_field.cpp:14-17
 SKELETON.md	threat_field.cpp:21

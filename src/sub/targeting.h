@@ -20,6 +20,7 @@
 // macro `control <id>` debug aim without duplication.
 #pragma once
 #include "ecs/world.h"   // entt::registry/entity + ecs components (aim_target)
+#include "sub/caps.h"    // kMaxSubObjects — длина буфера кандидатов В ТИПЕ
 #include "sub/objects.h" // SubObjects — арена сцены (melee_pick_target)
 
 namespace sm::sub {
@@ -43,14 +44,18 @@ namespace sm::sub {
 using HostileFn = bool (*)(void* user, int slot);
 
 // Broad phase for the swing — the battle pick grid, reached exactly like the
-// spell contact reaches it (same shape as SpellNeighborsFn, same promises: a
-// SUPERSET of everything within `r` of (x, y), -1 when completeness cannot be
-// promised this tick, null = no grid at all — both mean the full scan).
-// `maxOut` is THE subworld ceiling (kMaxSubObjects@src/sub/caps.h) — the swing's
-// own buffer is sized by it in targeting.cpp, where it is read directly: this
-// header states the contract, never a second copy of the number.
-using MeleeNeighborsFn = int (*)(void* user, float x, float y, float r,
-                                 std::uint16_t* out, int maxOut);
+// spell contact reaches it (same shape as SpellNeighborsFn, same promise: a
+// SUPERSET of everything within `r` of (x, y), ALWAYS complete; null = no grid
+// at all, which means the full scan). Длина буфера есть САМ КАП
+// (`kMaxSubObjects@src/sub/caps.h`, ССЫЛКОЙ НА МАССИВ), поэтому числа длины у
+// двери нет вовсе — ни параметром, ни второй копией: обе стороны читают одно
+// объявление, а короткий буфер НЕСОБИРАЕМ. «Полноту не обещаю» (-1) снято
+// вместе со спелловой дверью (M-261) — у счёта нет сентинела; НО это
+// контракт, а не стена: границу типовых гарантий этой пары смотри у
+// `SpellNeighborsFn@src/sub/spell_effects.h`, там она замерена мутацией.
+using MeleeNeighborsFn =
+    std::uint32_t (*)(void* user, float x, float y, float r,
+                      std::uint16_t (&out)[kMaxSubObjects]);
 
 // `range` is the attacker's reach — ONE number (owner ruling 2026-08-27: a
 // mob's row states its own attack radius; a man's will come from his spear

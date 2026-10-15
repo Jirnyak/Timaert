@@ -71,16 +71,17 @@ bool is_spell_target(const SubObjects& objs, int s,
 // ── Broad phase ────────────────────────────────────────────────────────────
 // The candidate buffer IS the subworld ceiling (kMaxSubObjects@src/sub/caps.h,
 // read directly — one number, no local copy): the grid can never hold more
-// bodies than exist, so overflow is impossible by construction and the -1 arm
-// below is reserved for a broad phase that KNOWS it is incomplete (a truncated
-// gather).
+// bodies than exist, so overflow is impossible BY CONSTRUCTION — and since
+// M-261 the buffer LENGTH says so in the type too (SpellNeighborsFn takes a
+// reference to an array of exactly the cap, so a short one will not compile).
+// The «усечённая выдача» arm that used to live here answered a question the
+// world cannot ask. Где у этой пары кончается ТИПОВАЯ гарантия и начинается
+// ревью — замерено и названо у `SpellNeighborsFn@src/sub/spell_effects.h`.
 
 // Enumerate every body that MAY matter within `r` of (cx, cy) and hand each
-// (slot, position) to `fn`. Three arms, one promise — nobody is missed:
-//   • a broad phase that answers: its candidates, a strict superset;
-//   • a broad phase that returns -1 ("cannot promise completeness"): the
-//     full arena scan, exactly the pre-grid behaviour;
-//   • no broad phase at all (headless tests, harnesses): the full scan.
+// (slot, position) to `fn`. Two arms, one promise — nobody is missed:
+//   • a broad phase: its candidates, a strict superset, ALWAYS complete;
+//   • no broad phase at all (headless witnesses): the full arena scan.
 // The exact hit rules — is_spell_target and the 3D distances — stay in the
 // callers; this helper decides only WHO gets asked, never who gets hit.
 template <typename Fn>
@@ -96,19 +97,16 @@ void for_each_spell_candidate(ecs::World& w,
         // Static: one 128 KiB buffer (65536 слотов × u16) for the whole
         // single-threaded spell tick, touched only as far as it is filled.
         static std::uint16_t buf[kMaxSubObjects];
-        const int n = neighborsFn(neighborsUser, cx, cy, r,
-                                  buf, kMaxSubObjects);
-        if (n >= 0) {
-            for (int i = 0; i < n; ++i) {
-                const int s = int(buf[std::size_t(i)]);
-                // Гейт живости — у потребителя (голый слот внутри тика):
-                // тело, умершее между сбором сетки и запросом, отсеивается
-                // здесь, как прежде его отсеивал reg.valid.
-                if (!slot_flag(objs, s, kObjAlive)) continue;
-                fn(s, objs.pos[std::size_t(s)]);
-            }
-            return;
+        const std::uint32_t n = neighborsFn(neighborsUser, cx, cy, r, buf);
+        for (std::uint32_t i = 0; i < n; ++i) {
+            const int s = int(buf[std::size_t(i)]);
+            // Гейт живости — у потребителя (голый слот внутри тика):
+            // тело, умершее между сбором сетки и запросом, отсеивается
+            // здесь, как прежде его отсеивал reg.valid.
+            if (!slot_flag(objs, s, kObjAlive)) continue;
+            fn(s, objs.pos[std::size_t(s)]);
         }
+        return;
     }
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
         if (!slot_flag(objs, s, kObjAlive)) continue;

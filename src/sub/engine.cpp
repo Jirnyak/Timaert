@@ -3228,11 +3228,10 @@ bool SubworldEngine::spell_solid_callback(void* user, float x, float y,
 // positions from BEFORE steering moved bodies (≤ crowdMaxStepM_ of drift),
 // and "centre within r" must survive the fattest body in the crowd when the
 // asker measures surface contact (crowd_->maxRadius).
-int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
-                                             float r, std::uint16_t* out,
-                                             int maxOut) {
+std::uint32_t SubworldEngine::spell_neighbors_callback(
+    void* user, float x, float y, float r,
+    std::uint16_t (&out)[kMaxSubObjects]) {
     auto* self = static_cast<SubworldEngine*>(user);
-    if (self->crowdGatherTruncated_) return -1;
     const BodyCrowd& u = *self->crowd_;
     if (u.count <= 0) return 0;             // an honestly empty world
     const UnitGrid& g = self->crowdPick_;
@@ -3240,7 +3239,7 @@ int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
     const float rr2 = rr * rr;
     const int c0 = g.col_of(x - rr), c1 = g.col_of(x + rr);
     const int r0 = g.row_of(y - rr), r1 = g.row_of(y + rr);
-    int n = 0;
+    std::uint32_t n = 0;
     for (int cy = r0; cy <= r1; ++cy) {
         for (int cx = c0; cx <= c1; ++cx) {
             const std::size_t ci = std::size_t(cy) * std::size_t(g.cols)
@@ -3254,7 +3253,13 @@ int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
                 // Груз — СЛОТ (ступень (iv)): карта толпы слотовая, гейт
                 // живости — у потребителя (тело, умершее между сбором и
                 // запросом, отсеивает его kObjAlive, как прежде reg.valid).
-                if (n >= maxOut) return -1; // cannot promise completeness
+                //
+                // Границы буфера здесь не проверяются, и это НЕ упущение:
+                // `out` есть ссылка на массив длиной РОВНО в кап, сетка
+                // держит `u.count` тел и кладёт каждое в ОДНУ клетку, а
+                // клетки обходятся по разу — значит n ≤ u.count ≤ кап по
+                // построению. Стоявшая тут проверка умела только вернуть
+                // -1, то есть ослепить спелл ради невозможного случая.
                 out[n++] = self->crowdSlots_[sj];
             }
         }
@@ -3317,7 +3322,6 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     crowdPlayerFaction_ = crowdFactions_.intern(kPlayerFactionId);
     std::uint64_t playerExtraMask = 0ull;
     float threat2 = kNoThreatDistance2;
-    crowdGatherTruncated_ = false;
     // The fastest DRIVE in the crowd — combat sprint or brain intent,
     // whichever is larger — bounds how far any body can move per tick, which
     // is exactly the staleness the spell broad phase must pad its queries by.
@@ -3420,11 +3424,16 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             std::sqrt(d.intentVx * d.intentVx + d.intentVy * d.intentVy)));
 
         const int idx = crowd_->add(d);
-        if (idx < 0) {                      // kMaxSubObjects: shared with the renderer
-            // Bodies past the ceiling exist in the world but not in the grids.
-            // The spell broad phase must know it is blind to them — it answers
-            // -1 and the spell tick falls back to the full scan.
-            crowdGatherTruncated_ = true;
+        if (idx < 0) {
+            // СТРУКТУРНЫЙ СТРАЖ, А НЕ ЖИВАЯ ВЕТКА: `crowdSlots_[idx]` ниже
+            // адресуется этим числом, поэтому отказ обязан остановить сбор.
+            // Но отказать толпа НЕ МОЖЕТ: её кап и кап арены — ОДНО число
+            // (`kMaxSubObjects`), вьюха даёт по записи на живой слот арены, а
+            // слот у тела СВОЙ (`alloc` отказывает на полной арене, и все
+            // четыре двери рождения отказываются без слота) — значит
+            // добавлений не бывает больше, чем живых слотов, то есть капа.
+            // Отсюда и снят бит усечки (M-261): он объявлял потребителю, что
+            // выдача неполна, в случае, которого мир не умеет создать.
             break;
         }
         crowdSlots_[std::size_t(idx)] = slot;
