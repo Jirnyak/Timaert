@@ -169,7 +169,7 @@ int main() {
             sub::body_slot(reg, make_enemy(reg, 102, 100)); // dist 2, NEUTRAL
         int bandit =
             sub::body_slot(reg, make_enemy(reg, 104, 100)); // dist 4, HOSTILE
-        const sub::SubObjects& objs = sm::test::arena_of(reg);
+        sub::SubObjects& objs = sm::test::arena_of(reg);
         auto hostileIsBandit = [](void* user, int s) {
             return s == *static_cast<int*>(user);
         };
@@ -177,24 +177,28 @@ int main() {
         // catches the blow meant for the bandit behind him. Kept as the
         // documented fallback when nothing hostile is in reach.
         const int oldPick = sub::melee_pick_target(
-            objs, 100, 100, 0, 25.0f, nullptr, nullptr);
+            objs, 100, 100, 0, 25.0f, nullptr, nullptr,
+            &sm::test::all_live_slots, &objs);
         CHECK(oldPick == peasant,
               "fallback (no hostile oracle) is nearest-any — the old rule");
         // The NEW rule: the hostile wins even though it stands farther.
         const int pick = sub::melee_pick_target(
-            objs, 100, 100, 0, 25.0f, hostileIsBandit, &bandit);
+            objs, 100, 100, 0, 25.0f, hostileIsBandit, &bandit,
+            &sm::test::all_live_slots, &objs);
         CHECK(pick == bandit,
               "a hostile in reach beats a nearer neutral");
         // No hostile in reach -> nearest-any fallback (striking a neutral
         // deliberately stays possible; the reputation price handles it).
         int far = sub::body_slot(reg, make_enemy(reg, 200, 200));
         const int pick2 = sub::melee_pick_target(
-            objs, 100, 100, 0, 25.0f, hostileIsBandit, &far);
+            objs, 100, 100, 0, 25.0f, hostileIsBandit, &far,
+            &sm::test::all_live_slots, &objs);
         CHECK(pick2 == peasant,
               "with no hostile in reach the swing falls back to nearest-any");
         // Range gate still absolute: nothing in reach -> -1.
         const int pick3 = sub::melee_pick_target(
-            objs, 0, 0, 0, 25.0f, nullptr, nullptr);
+            objs, 0, 0, 0, 25.0f, nullptr, nullptr,
+            &sm::test::all_live_slots, &objs);
         CHECK(pick3 == -1, "outside reach nothing is picked");
     }
 

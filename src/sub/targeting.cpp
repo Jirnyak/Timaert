@@ -64,17 +64,11 @@ int melee_pick_target(const SubObjects& objs,
     // кап, а у счёта нет сентинела, так что доложить об усечке нечем — ровно
     // как у спелловой двери, и там же замерено, где кончается гарантия ТИПА;
     // null = сетки нет вовсе, безголовые свидетели).
-    if (neighborsFn) {
-        static std::uint16_t buf[kMaxSubObjects];
-        const std::uint32_t n = neighborsFn(neighborsUser, px, py, range, buf);
-        for (std::uint32_t i = 0; i < n; ++i) {
-            consider(int(buf[std::size_t(i)]));
-        }
-        return hostileBest >= 0 ? hostileBest : anyBest;
+    static std::uint16_t buf[kMaxSubObjects];
+    const std::uint32_t n = neighborsFn(neighborsUser, px, py, range, buf);
+    for (std::uint32_t i = 0; i < n; ++i) {
+        consider(int(buf[std::size_t(i)]));
     }
-    // Полный проход — по слотам арены (гейт kObjAlive внутри кандидата);
-    // вьюха реестра в выборе цели больше не участвует.
-    for (int s = 0; s < int(kMaxSubObjects); ++s) consider(s);
     return hostileBest >= 0 ? hostileBest : anyBest;
 }
 

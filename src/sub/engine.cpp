@@ -5240,6 +5240,13 @@ void SubworldEngine::tick(float dt) {
         sub::tick_body_visual_interp(sub::objects_of(ecs_->reg), dt);
         sub::tick_body_recovery(sub::objects_of(ecs_->reg), /*steps=*/1u);
         tick_spell_projectiles(*ecs_, bus_, dt,
+                               // Broad phase: the battle contact grid, built
+                               // by tick_subworld_bodies moments ago. ТРЕТЬИМ
+                               // аргументом, к обязательным (M-261): полного
+                               // прохода капа у этой двери больше нет, значит
+                               // «забыл сетку» не собирается.
+                               &SubworldEngine::spell_neighbors_callback,
+                               this,
                                &SubworldEngine::spell_damage_log_callback,
                                this,
                                &SubworldEngine::spell_can_hit_callback,
@@ -5249,12 +5256,6 @@ void SubworldEngine::tick(float dt) {
                                &SubworldEngine::spell_height_callback,
                                this,
                                &SubworldEngine::spell_solid_callback,
-                               this,
-                               // Broad phase: the battle contact grid, built
-                               // by tick_subworld_bodies moments ago. This is
-                               // what retires the O(N·M) full scans — see
-                               // SpellNeighborsFn for the honesty contract.
-                               &SubworldEngine::spell_neighbors_callback,
                                this,
                                // The window's ONE ceiling — the same surface
                                // flying bodies are clamped to, here used to

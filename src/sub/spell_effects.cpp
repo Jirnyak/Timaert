@@ -93,25 +93,16 @@ void for_each_spell_candidate(ecs::World& w,
     const SubObjects* op = objects_find(w.reg);
     if (op == nullptr) return;   // мира без арены для спеллов не существует
     const SubObjects& objs = *op;
-    if (neighborsFn) {
-        // Static: one 128 KiB buffer (65536 слотов × u16) for the whole
-        // single-threaded spell tick, touched only as far as it is filled.
-        static std::uint16_t buf[kMaxSubObjects];
-        const std::uint32_t n = neighborsFn(neighborsUser, cx, cy, r, buf);
-        for (std::uint32_t i = 0; i < n; ++i) {
-            const int s = int(buf[std::size_t(i)]);
-            // Гейт живости — у потребителя (голый слот внутри тика):
-            // тело, умершее между сбором сетки и запросом, отсеивается
-            // здесь, как прежде его отсеивал reg.valid.
-            if (!slot_flag(objs, s, kObjAlive)) continue;
-            fn(s, objs.pos[std::size_t(s)]);
-        }
-        return;
-    }
-    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+    // Static: one 128 KiB buffer (65536 слотов × u16) for the whole
+    // single-threaded spell tick, touched only as far as it is filled.
+    static std::uint16_t buf[kMaxSubObjects];
+    const std::uint32_t n = neighborsFn(neighborsUser, cx, cy, r, buf);
+    for (std::uint32_t i = 0; i < n; ++i) {
+        const int s = int(buf[std::size_t(i)]);
+        // Гейт живости — у потребителя (голый слот внутри тика): тело,
+        // умершее между сбором сетки и запросом, отсеивается здесь, как
+        // прежде его отсеивал reg.valid.
         if (!slot_flag(objs, s, kObjAlive)) continue;
-        if (slot_pools(objs, s) == nullptr) continue;
-        if (slot_flag(objs, s, kObjDead)) continue;
         fn(s, objs.pos[std::size_t(s)]);
     }
 }
@@ -406,6 +397,8 @@ bool projectile_owner_is_player_side(const SubObjects& objs,
 void tick_spell_projectiles(ecs::World& w,
                             EventBus* bus,
                             float dt,
+                            SpellNeighborsFn neighborsFn,
+                            void* neighborsUser,
                             SpellDamageLogFn logFn,
                             void* logUser,
                             SpellCanHitFn canHitFn,
@@ -416,8 +409,6 @@ void tick_spell_projectiles(ecs::World& w,
                             void* heightUser,
                             bool (*solidFn)(void*, float, float, float),
                             void* solidUser,
-                            SpellNeighborsFn neighborsFn,
-                            void* neighborsUser,
                             float ceilingM) {
     // СНАРЯД — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v) ломтя 7): сущности у него
     // нет, итерация — слотовый цикл по роли-биту (образец —

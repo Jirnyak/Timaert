@@ -29,6 +29,31 @@ inline sm::sub::SubObjects& arena_of(entt::registry& reg) {
     return *scene_arenas().back();
 }
 
+// ШИРОКАЯ ФАЗА ДЛЯ СВИДЕТЕЛЕЙ (§8 п.11: предусловие рождает сам свидетель).
+// Двери удара и спелла требуют широкую фазу БЕЗУСЛОВНО — ветки «сетки не
+// дали» у них больше нет (M-261), потому что полный проход капа в симуляции
+// запрещён границей O(N) (§6). Свидетелю, который проверяет урон, а не
+// сетку, настоящая `UnitGrid` не нужна: контракт двери — СУПЕРСЕТ, а самый
+// тривиальный суперсет есть «все живые слоты». Точные гейты (род, фракция,
+// 3D-дистанция) стоят у потребителя и работают те же, что в игре.
+//
+// Да, обход здесь по всему капу — и это законно именно потому, что он
+// ПЕРЕЕХАЛ ИЗ СИМУЛЯЦИИ В ПРИБОР: тик игры его больше не содержит, а
+// свидетель тиком не является (§8 п.8 — приоритет игра, тест прибор).
+// Настоящую `UnitGrid` держит и сверяет с этим перечислителем
+// `spell_broadphase_parity_test` — там она и есть предмет проверки.
+// `user` — АРЕНА (`&arena_of(reg)`), подпись годится обеим дверям разом.
+inline std::uint32_t all_live_slots(void* user, float, float, float,
+                                    std::uint16_t (&out)[sm::kMaxSubObjects]) {
+    const auto* objs = static_cast<const sm::sub::SubObjects*>(user);
+    std::uint32_t n = 0;
+    for (std::size_t s = 0; s < sm::kMaxSubObjects; ++s) {
+        if (!sm::sub::slot_flag(*objs, int(s), sm::sub::kObjAlive)) continue;
+        out[n++] = std::uint16_t(s);
+    }
+    return n;
+}
+
 // Слот телу фикстуры — как выдала бы дверь спавна.
 inline void give_slot(entt::registry& reg, entt::entity e) {
     const int slot = arena_of(reg).alloc(sm::ecs::Position{});

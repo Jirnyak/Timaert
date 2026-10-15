@@ -66,12 +66,15 @@ using MeleeNeighborsFn =
 // away than a frog because a troll is wider, not because anyone branched.
 // Возврат — СЛОТ арены, -1 = в досягаемости никого (ступень (iv): форма
 // двери — АРЕНА, не реестр; сущность в выборе цели больше не участвует).
+// Широкая фаза ОБЯЗАТЕЛЬНА (M-261): прежнее умолчание `nullptr` включало
+// полный проход капа 65536 слотов внутри тика — запрет §6. Свидетелям
+// перечислитель даёт `all_live_slots@tests/scene_objects_fixture.h`.
 int melee_pick_target(const SubObjects& objs,
                       float px, float py, float pz,
                       float range,
                       HostileFn isHostile, void* user,
-                      MeleeNeighborsFn neighborsFn = nullptr,
-                      void* neighborsUser = nullptr);
+                      MeleeNeighborsFn neighborsFn,
+                      void* neighborsUser);
 
 entt::entity aim_target(entt::registry& reg,
                         float px, float py, float pz,

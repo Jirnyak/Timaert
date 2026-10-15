@@ -56,7 +56,9 @@ void test_wide_body_is_struck_from_farther() {
         entt::registry reg;
         const int troll = body(reg, NPCType::Troll, d, 0.0f);
         CHECK(melee_pick_target(sm::test::arena_of(reg), 0, 0, 0, range,
-                                &never_hostile, nullptr)
+                                &never_hostile, nullptr,
+                                &sm::test::all_live_slots,
+                                &sm::test::arena_of(reg))
                   == troll,
               "the troll's flank is in reach at a distance its centre is not");
     }
@@ -64,7 +66,9 @@ void test_wide_body_is_struck_from_farther() {
         entt::registry reg;
         body(reg, NPCType::Frog, d, 0.0f);
         CHECK(melee_pick_target(sm::test::arena_of(reg), 0, 0, 0, range,
-                                &never_hostile, nullptr)
+                                &never_hostile, nullptr,
+                                &sm::test::all_live_slots,
+                                &sm::test::arena_of(reg))
                   == -1,
               "the frog at the same distance is out of reach — the width is "
               "the whole difference");
@@ -75,14 +79,16 @@ void test_hostiles_first_by_surface_gap() {
     entt::registry reg;
     const int nearFrog = body(reg, NPCType::Frog, 2.0f, 0.0f);
     const int farTroll = body(reg, NPCType::Troll, 5.5f, 0.0f);
-    const sm::sub::SubObjects& objs = sm::test::arena_of(reg);
+    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
     struct Ctx { int hostile; } ctx{farTroll};
     const auto oracle = [](void* user, int s) {
         return s == static_cast<Ctx*>(user)->hostile;
     };
-    CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, oracle, &ctx) == farTroll,
+    CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, oracle, &ctx,
+                             &sm::test::all_live_slots, &objs) == farTroll,
           "a hostile in surface reach beats a nearer neutral");
-    CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr)
+    CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr,
+                             &sm::test::all_live_slots, &objs)
               == nearFrog,
           "with no hostile in reach the swing falls back to the nearest "
           "neutral — the deliberate crime stays possible");
@@ -97,7 +103,7 @@ void test_grid_arm_parity() {
     entt::registry reg;
     const int troll = body(reg, NPCType::Troll, 5.5f, 0.0f);
     body(reg, NPCType::Frog, 9.0f, 0.0f);   // out of reach either way
-    const sm::sub::SubObjects& objs = sm::test::arena_of(reg);
+    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
 
     struct Feed { std::uint16_t ids[8]; std::uint32_t n; };
     Feed feed{};
@@ -115,7 +121,8 @@ void test_grid_arm_parity() {
     };
 
     const int fullScan =
-        melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr);
+        melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr,
+                          &sm::test::all_live_slots, &objs);
     CHECK(fullScan == troll, "the reference arm reaches the troll");
     CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f, &never_hostile, nullptr,
                             superset, &feed)
@@ -143,7 +150,9 @@ void test_player_side_and_dead_are_invisible() {
         sm::ecs::NPCKind{std::uint16_t(NPCType::Frog), std::uint16_t{0}});
     sm::test::give_flag(reg, corpse, sm::sub::kObjDead);
     CHECK(melee_pick_target(sm::test::arena_of(reg), 0, 0, 0, 5.0f,
-                            &never_hostile, nullptr)
+                            &never_hostile, nullptr,
+                            &sm::test::all_live_slots,
+                            &sm::test::arena_of(reg))
               == -1,
           "the swing sees neither the player's own soldier nor a corpse");
 }

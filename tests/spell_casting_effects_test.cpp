@@ -562,7 +562,9 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok45, "fireball expiry setup cast rejected");
     if (!ok45) return 1;
-    sm::sub::tick_spell_projectiles(fireExpiryWorld, nullptr, 3.1f);
+    sm::sub::tick_spell_projectiles(fireExpiryWorld, nullptr, 3.1f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(fireExpiryWorld.reg));
     const bool ok46 = !(!nearf(hp_of(fireExpiryWorld, fireExpiryVictim), 100.0f)
                         || projectile_count(fireExpiryWorld) != 0);
     CHECK(ok46,
@@ -600,7 +602,9 @@ int main() {
         add_target(blastWorld, 48.0f, 0.0f, 100.0f, false);
     const auto blastOutside =
         add_target(blastWorld, 53.0f, 0.0f, 100.0f, false);
-    sm::sub::tick_spell_projectiles(blastWorld, nullptr, 0.0f);
+    sm::sub::tick_spell_projectiles(blastWorld, nullptr, 0.0f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(blastWorld.reg));
     const bool ok47 = !(!(hp_of(blastWorld, blastEdge) < 100.0f)
                         || !nearf(hp_of(blastWorld, blastOutside), 100.0f)
                         || projectile_count(blastWorld) != 0);
@@ -901,7 +905,9 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok78, "magic_bolt agnostic-hit setup cast rejected");
     if (!ok78) return 1;
-    sm::sub::tick_spell_projectiles(hitWorld, nullptr, 0.25f);
+    sm::sub::tick_spell_projectiles(hitWorld, nullptr, 0.25f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(hitWorld.reg));
     const bool ok79 = !(nearf(hp_of(hitWorld, friendly), 100.0f)
                         || projectile_count(hitWorld) != 0);
     CHECK(ok79,
@@ -928,8 +934,12 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok80, "magic_bolt hostile-hit setup cast rejected");
     if (!ok80) return 1;
-    sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f);
-    sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f);
+    sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(hostWorld.reg));
+    sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(hostWorld.reg));
     const bool ok81 = !(!(hp_of(hostWorld, hostile) < 100.0f)
                         || !last_hit_by(hostWorld, hostile, hostPlayer)
                         || projectile_count(hostWorld) != 0);
@@ -961,7 +971,9 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok82, "energy_beam effect setup cast rejected");
     if (!ok82) return 1;
-    sm::sub::tick_spell_projectiles(beamWorld, nullptr, 0.40f);
+    sm::sub::tick_spell_projectiles(beamWorld, nullptr, 0.40f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(beamWorld.reg));
     const bool ok83 = !(!(hp_of(beamWorld, beamHit) < 100.0f)
                         || !last_hit_by(beamWorld, beamHit, beamPlayer)
                         || !nearf(hp_of(beamWorld, beamNearMiss), 100.0f)
@@ -1001,7 +1013,9 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok84, "lightning_chain effect setup cast rejected");
     if (!ok84) return 1;
-    sm::sub::tick_spell_projectiles(chainWorld, nullptr, 0.35f);
+    sm::sub::tick_spell_projectiles(chainWorld, nullptr, 0.35f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(chainWorld.reg));
     // Agnostic projectiles (owner design decision 2026-07-30): the bolt strikes
     // the body it REACHES FIRST — faction plays no part. Here that is the
     // friendly at x=109; with a faction shield he would be filtered out of the
@@ -1117,7 +1131,9 @@ int main() {
     if (!ok94) return 1;
     const auto armVictim =
         add_target(armWorld, meteorX, meteorY, 1000.0f, false);
-    sm::sub::tick_spell_projectiles(armWorld, nullptr, 1.0f);
+    sm::sub::tick_spell_projectiles(armWorld, nullptr, 1.0f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(armWorld.reg));
     const bool ok95 = !(!(hp_of(armWorld, armVictim) < 1000.0f)
                         || !last_hit_by(armWorld, armVictim, armPlayer)
                         || projectile_count(armWorld) != 0);
@@ -1163,7 +1179,9 @@ int main() {
                 .dmgType = std::uint8_t(sm::DamageType::Fire),
                 .critical = false},
             sm::ecs::Position{0.0f, 0.0f, 0.0f});
-        sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f);
+        sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(selfWorld.reg));
         const bool ok96 = !(!(hp_of(selfWorld, selfPlayer) < 100.0f)
                             || !last_hit_by(selfWorld, selfPlayer, selfPlayer));
         CHECK(ok96, "Inc 4d: player AoE blast did not catch its "
@@ -1205,7 +1223,9 @@ int main() {
                 .dmgType = std::uint8_t(sm::DamageType::Arcane),
                 .critical = false},
             sm::ecs::Position{0.0f, 0.0f, 0.0f});
-        sm::sub::tick_spell_projectiles(shieldWorld, nullptr, 0.0f);
+        sm::sub::tick_spell_projectiles(shieldWorld, nullptr, 0.0f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(shieldWorld.reg));
         const bool ok97 = !(!nearf(hp_of(shieldWorld, shieldPlayer), 90.0f));
         CHECK(ok97, "agnostic projectiles: bolt on its own player caster "
                     "must connect (friendly fire is real)");
@@ -1244,7 +1264,9 @@ int main() {
                 .dmgType = std::uint8_t(sm::DamageType::Fire),
                 .critical = false},
             sm::ecs::Position{0.0f, 0.0f, 0.0f});
-        sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f);
+        sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f,
+                                   &sm::test::all_live_slots,
+                                   &sm::test::arena_of(npcWorld.reg));
         const bool ok98 = !(!(hp_of(npcWorld, npcCaster) < 100.0f)
                             || !last_hit_by(npcWorld, npcCaster, npcCaster));
         CHECK(ok98, "Inc 4d: NPC AoE blast self-catch/ownership "
@@ -1328,8 +1350,10 @@ int main() {
             if (!ok99) return 1;
             // Production-sized ticks, until the bolt is spent.
             for (int i = 0; i < 64 && projectile_count(sweepWorld) > 0; ++i) {
-                sm::sub::tick_spell_projectiles(sweepWorld, nullptr,
-                                                1.0f / 64.0f);
+                sm::sub::tick_spell_projectiles(
+                    sweepWorld, nullptr, 1.0f / 64.0f,
+                    &sm::test::all_live_slots,
+                    &sm::test::arena_of(sweepWorld.reg));
             }
             const bool ok100 = !(!(hp_of(sweepWorld, sweepTarget) < 100.0f));
             if (!ok100) {

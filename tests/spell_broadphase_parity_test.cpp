@@ -266,8 +266,13 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     GridBroadPhase grid{};
     grid.build(reg);
 
-    sm::sub::SpellNeighborsFn fn = nullptr;
-    void* user = nullptr;
+    // ЭТАЛОН — ПЕРЕЧИСЛИТЕЛЬ ФИКСТУРЫ, А НЕ ПОЛНЫЙ СКАН ВНУТРИ ДВЕРИ
+    // (M-261): ветки «сетки не дали» у двери больше нет, потому что она была
+    // проходом по всему капу внутри тика. Семантика эталона НЕ изменилась —
+    // «спроси у всех живых слотов» есть ровно то, что делал снесённый скан,
+    // только теперь это код ПРИБОРА, а не симуляции (§8 п.8).
+    sm::sub::SpellNeighborsFn fn = &sm::test::all_live_slots;
+    void* user = &sm::sub::objects_of(reg);
     switch (mode) {
     case Mode::Full: break;
     case Mode::Grid:  fn = &GridBroadPhase::fn; user = &grid; break;
@@ -275,13 +280,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     }
 
     for (int t = 0; t < ticks; ++t) {
-        sm::sub::tick_spell_projectiles(w, nullptr, dt,
-                                        nullptr, nullptr,   // log
-                                        nullptr, nullptr,   // canHit
-                                        nullptr, nullptr,   // fx
-                                        nullptr, nullptr,   // height
-                                        nullptr, nullptr,   // solid
-                                        fn, user);
+        sm::sub::tick_spell_projectiles(w, nullptr, dt, fn, user);
     }
 
     std::vector<float> hp;

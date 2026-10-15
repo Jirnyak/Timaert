@@ -88,9 +88,19 @@ using SpellFxEmitFn = void (*)(void* user,
 bool projectile_owner_is_player_side(const SubObjects& objs,
                                      const ecs::Projectile& p);
 
+// ШИРОКАЯ ФАЗА — ПАРАМЕТР ОБЯЗАТЕЛЬНЫЙ, И ЭТО ВЕСЬ СМЫСЛ ЕЁ МЕСТА В СПИСКЕ
+// (M-261). Стояла она в умолчанном хвосте со значением `nullptr`, и это
+// значение включало ПОЛНЫЙ ПРОХОД КАПА (65536 слотов) внутри тика — ровно
+// то, что запрещает граница O(N) (§6). Убрать одно умолчание из середины
+// хвоста нельзя (в C++ умолчания только хвостовые), поэтому дверь встала
+// ТРЕТЬИМ аргументом, к обязательным: теперь «забыл подать сетку» не
+// собирается, а не «не случается». Свидетелям перечислитель даёт фикстура
+// (`all_live_slots@tests/scene_objects_fixture.h`).
 void tick_spell_projectiles(ecs::World& w,
                             EventBus* bus,
                             float dt,
+                            SpellNeighborsFn neighborsFn,
+                            void* neighborsUser,
                             SpellDamageLogFn logFn = nullptr,
                             void* logUser = nullptr,
                             SpellCanHitFn canHitFn = nullptr,
@@ -105,12 +115,6 @@ void tick_spell_projectiles(ecs::World& w,
                             // keeps structures transparent (headless tests).
                             bool (*solidFn)(void*, float, float, float) = nullptr,
                             void* solidUser = nullptr,
-                            // Broad phase (see SpellNeighborsFn above). Null
-                            // keeps the O(N·M) full scan — correct, just slow,
-                            // and in the shipping build never taken: the one
-                            // production caller always hands the battle grid.
-                            SpellNeighborsFn neighborsFn = nullptr,
-                            void* neighborsUser = nullptr,
                             // THE LID of the 3×3 box. The window is a closed
                             // volume: four walls in XY and a floor of terrain
                             // and masonry were always checked, but the top was
