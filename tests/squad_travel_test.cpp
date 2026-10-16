@@ -20,7 +20,6 @@
 //     lasts the camp margin over its ground's burn rate, and a full bar keeps
 //     a body afloat the better part of a day — one law, two walkers.
 #include "check.h"
-#include "ecs/world.h"
 #include <vector>
 
 #include "macro/npc_ai.h"
@@ -81,10 +80,9 @@ void paint_bridge(PathCostData& g, int x, int y) {
 // A marching fixture: one Traveling caravan with an explicit, known sheet
 // cache (bar 110 = the fresh traveller, no skills, neutral pace) so every
 // number below is arithmetic, not a seed's opinion.
-sm::MacroHandle make_walker(ecs::World& w, int mapW, float x, float y,
+sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, float x, float y,
                             float tx, float ty,
                             int maxSp, int hp = 100) {
-    sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), mapW)};
     st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
@@ -118,12 +116,12 @@ sm::MacroHandle make_walker(ecs::World& w, int mapW, float x, float y,
     return h;
 }
 
-int drive_until(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
+int drive_until(GameState& gs, sm::MacroStore& st, MacroNpcAiRuntime& rt,
                 const PathCostData* grid, ecs::MacroNpcRuntime& npc,
                 NPCState stop, int capThinks) {
     int thinks = 0;
     while (npc.state != std::uint8_t(stop) && thinks < capThinks) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = grid};
+        MacroWorld mw{.gs = &gs, .store = &st, .pathCost = grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
         ++thinks;
     }
@@ -133,13 +131,13 @@ int drive_until(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
 // Drive until the walker stands within arrival range of (tx,ty). The ledger
 // (sp + carry) must be read HERE, before an arrival state starts the Idle
 // regen that would quietly refill what the march charged.
-bool drive_to_arrival(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
+bool drive_to_arrival(GameState& gs, sm::MacroStore& st, MacroNpcAiRuntime& rt,
                       const PathCostData* grid, sm::MacroHandle e,
                       float tx, float ty, int capThinks) {
     // Fresh decode EVERY look (never a reference across a tick — the
     // landing-4 grabla): the store is the cell, and a tick moves it.
     auto at = [&]() {
-        const auto c = (*sm::body_state<ecs::MacroCell>(sm::store_of(w), e));
+        const auto c = (*sm::body_state<ecs::MacroCell>(st, e));
         return MacroPos{float(ecs::cell_x(c, gs.mapW)),
                         float(ecs::cell_y(c, gs.mapW))};
     };
@@ -149,7 +147,7 @@ bool drive_to_arrival(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
                           float(gs.mapW), float(gs.mapH)) < 4.0f) {
             return true;
         }
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = grid};
+        MacroWorld mw{.gs = &gs, .store = &st, .pathCost = grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     const MacroPos p = at();
@@ -177,22 +175,21 @@ void test_greedy_walks_around_a_wet_cell() {
     gs.mapH = 32;
 
     const auto trip_cost = [&](bool fullRiver) {
-        ecs::World w;
         auto wStore_ = sm::make_macro_store();
-        sm::store_attach(w, wStore_.get());
+        sm::MacroStore& st = *wStore_;
         PathCostData grid = make_grid(32, 32, 1.0f);
         if (fullRiver) {
             for (int y = 0; y < 32; ++y) paint_water(grid, 16, y);
         } else {
             paint_water(grid, 16, 10);   // one wet cell dead on the line
         }
-        auto e = make_walker(w, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
+        auto e = make_walker(st, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, fullRiver ? 32u : 21u);
         const bool arrived =
-            drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 64);
+            drive_to_arrival(gs, st, rt, &grid, e, 20.0f, 10.0f, 64);
         const float spent =
-            sp_spent((*sm::body_state<ecs::Pools>(sm::store_of(w), e)), 110);
+            sp_spent((*sm::body_state<ecs::Pools>(st, e)), 110);
         return std::pair<bool, float>{arrived, spent};
     };
 
@@ -222,24 +219,23 @@ void test_river_is_forded_and_a_bridge_is_cheaper() {
     gs.mapH = 32;
 
     const auto cross = [&](bool bridged, unsigned seed) {
-        ecs::World w;
         auto wStore_ = sm::make_macro_store();
-        sm::store_attach(w, wStore_.get());
+        sm::MacroStore& st = *wStore_;
         PathCostData grid = make_grid(32, 32, 1.0f);
         for (int y = 0; y < 32; ++y) paint_water(grid, 16, y);   // full river
         if (bridged) paint_bridge(grid, 16, 10);   // dead on the straight line
-        auto e = make_walker(w, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
+        auto e = make_walker(st, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, seed);
         bool crossed = false;
         for (int i = 0; i < 96 && !crossed; ++i) {
-            MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
+            MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks);
             crossed = float(ecs::cell_x(
-                          (*sm::body_state<ecs::MacroCell>(sm::store_of(w), e)),
+                          (*sm::body_state<ecs::MacroCell>(st, e)),
                           gs.mapW)) >= 18.0f;
         }
-        const auto& pools = (*sm::body_state<ecs::Pools>(sm::store_of(w), e));
+        const auto& pools = (*sm::body_state<ecs::Pools>(st, e));
         return std::tuple<bool, float, int>{crossed, sp_spent(pools, 110),
                                             pools.hp};
     };
@@ -272,9 +268,8 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
     GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::MacroStore& st = *wStore_;
     PathCostData grid = make_grid(64, 64, 1.0f);
     // A wide strait: land only at x ≥ 26.
     for (int y = 0; y < 64; ++y)
@@ -287,7 +282,7 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         // of 14 therefore reaches the beach owing ≈ 10, and the QUADRATIC
         // bite (CANON S14.1, «как в Elin») takes that debt point by point —
         // deep enough to bleed, shallow enough to live.
-        auto e = make_walker(w, gs.mapW, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/14,
+        auto e = make_walker(st, gs.mapW, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/14,
                              /*hp*/30.0f);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 23u);
@@ -297,26 +292,26 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         // survivor is whole again and a probe of his final HP measures the
         // rest, not the bite. The promise here is that the sea BIT him; the
         // honest place to read that is while it is happening.
-        int lowest = (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp;
-        for (int i = 0; i < 60 && sm::store_of(w).valid(e); ++i) {
-            MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
+        int lowest = (*sm::body_state<ecs::Pools>(st, e)).hp;
+        for (int i = 0; i < 60 && st.valid(e); ++i) {
+            MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks);
-            if (sm::store_of(w).valid(e))
-                lowest = std::min(lowest, (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp);
+            if (st.valid(e))
+                lowest = std::min(lowest, (*sm::body_state<ecs::Pools>(st, e)).hp);
         }
-        CHECK(sm::store_of(w).valid(e) && float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(sm::store_of(w), e)), gs.mapW)) >= 26.0f,
+        CHECK(st.valid(e) && float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, e)), gs.mapW)) >= 26.0f,
               "a floating body wades OUT: water is exited, never entered");
         CHECK(lowest < 30,
               "and the unpayable steps out were paid in blood — the sea "
               "bite lives");
-        CHECK((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp > lowest,
+        CHECK((*sm::body_state<ecs::Pools>(st, e)).hp > lowest,
               "and ashore the wound MENDS: the one recovery law reaches an "
               "NPC in camp, not only the player");
     }
     {   // Far from shore: the crossing is unpayable by design and kills.
-        auto e = make_walker(w, gs.mapW, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
+        auto e = make_walker(st, gs.mapW, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
                              /*hp*/30.0f);
-        sm::MacroStore& std_ = sm::store_of(w);
+        sm::MacroStore& std_ = st;
         const sm::MacroHandle eh =
             e;
         std_.spawnId[eh.slot] = ecs::MacroSpawnId{55u};
@@ -331,7 +326,7 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         // 6.3: смерть сквада — смерть СЛОТА store (свип конца тика), суд по
         // хэндлу; entt-тела у макро-сквада больше нет.
         while (std_.valid(eh) && std_.dead[eh.slot] == 0 && thinks < 400) {
-            MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
+            MacroWorld mw{.gs = &gs, .store = &std_, .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks);
             ++thinks;
         }
@@ -357,9 +352,8 @@ void test_land_exhaustion_makes_camp_without_blood() {
     GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::MacroStore& st = *wStore_;
     PathCostData grid = make_grid(64, 64, 2.0f);   // meadow everywhere
 
     // A REAL bar (110 — the minimum any row in the creature table carries,
@@ -371,20 +365,20 @@ void test_land_exhaustion_makes_camp_without_blood() {
     // killed it. Measured over all 46 creature rows: the smallest real maxSp
     // is 110 and a road repays from 16 up, so no body in the game is in that
     // class. The fixture had to stop being one.
-    auto e = make_walker(w, gs.mapW, 10.0f, 10.0f, 60.0f, 10.0f, /*maxSp*/110);
-    sm::store_of(w).pools[e.slot].sp = 20;   // a leg's worth above the margin
-    auto& npc = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), e));
+    auto e = make_walker(st, gs.mapW, 10.0f, 10.0f, 60.0f, 10.0f, /*maxSp*/110);
+    st.pools[e.slot].sp = 20;   // a leg's worth above the margin
+    auto& npc = (*sm::body_state<ecs::MacroNpcRuntime>(st, e));
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 24u);
-    const int thinks = drive_until(gs, w, rt, &grid, npc,
+    const int thinks = drive_until(gs, st, rt, &grid, npc,
                                    NPCState::Resting, 32);
 
     CHECK(thinks < 32 && npc.state == std::uint8_t(NPCState::Resting),
           "a bar spent on land is a camp, not a catastrophe");
-    const auto& campPools = (*sm::body_state<ecs::Pools>(sm::store_of(w), e));
+    const auto& campPools = (*sm::body_state<ecs::Pools>(st, e));
     CHECK(campPools.sp <= campPools.maxSp / kCampBarDivisor,
           "the legs stopped at the camp margin, the automaton's own answer");
-    const float bled = 100.0f - (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp;
+    const float bled = 100.0f - (*sm::body_state<ecs::Pools>(st, e)).hp;
     // The camp decision lands BEFORE debt (npc_ai.h kCampBarDivisor): on
     // campable ground nobody bleeds — the bite stays a LAW for whoever
     // cannot stop (the ocean section above drowns a lord through it) or
@@ -396,18 +390,18 @@ void test_land_exhaustion_makes_camp_without_blood() {
     // Resting must cost nothing, or a tired squad would bleed out standing
     // still. This is the control that separates "moving in debt" from
     // "being in debt".
-    const float campedAt = (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp;
+    const float campedAt = (*sm::body_state<ecs::Pools>(st, e)).hp;
     // The LEDGER, not the bar: regen is fractional (kRestRegenPctPerHour of a
     // 4-point bar per game hour), so eight thinks may not add a WHOLE point.
     // The file's own convention — sp + carry — is what actually moved.
-    const float ledgerAt = float((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).sp) + (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).spCarry;
+    const float ledgerAt = float((*sm::body_state<ecs::Pools>(st, e)).sp) + (*sm::body_state<ecs::Pools>(st, e)).spCarry;
     for (int i = 0; i < 8; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
-    CHECK((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp == campedAt,
+    CHECK((*sm::body_state<ecs::Pools>(st, e)).hp == campedAt,
           "eight thinks in camp cost no blood at all");
-    CHECK(float((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).sp) + (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).spCarry > ledgerAt,
+    CHECK(float((*sm::body_state<ecs::Pools>(st, e)).sp) + (*sm::body_state<ecs::Pools>(st, e)).spCarry > ledgerAt,
           "negative control: those thinks DID pass — the bar was refilling");
 }
 
@@ -422,9 +416,8 @@ void test_a_map_of_marchers_survives_the_new_law() {
     GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::MacroStore& st = *wStore_;
     // MOUNTAIN ground, not meadow, and that is what forces the case: with a
     // real bar (110) the burn has to be heavy enough that 116 cells of haul
     // cannot be walked in one leg. Mountain burns 10 SP/h, so a leg lasts
@@ -444,9 +437,9 @@ void test_a_map_of_marchers_survives_the_new_law() {
     for (int i = 0; i < kWalkers; ++i) {
         const float y = float(i % 100) + 8.0f;
         const sm::MacroHandle e =
-            make_walker(w, gs.mapW, 4.0f, y, 120.0f, y, /*maxSp*/110);
+            make_walker(st, gs.mapW, 4.0f, y, 120.0f, y, /*maxSp*/110);
         // Each one hauls right across the map on its own line.
-        sm::store_of(w).spawnId[e.slot] =
+        st.spawnId[e.slot] =
             ecs::MacroSpawnId{std::uint32_t(100 + i)};
         walkers.push_back(e);
     }
@@ -454,7 +447,7 @@ void test_a_map_of_marchers_survives_the_new_law() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 77u);
     for (int think = 0; think < 600; ++think) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
@@ -463,11 +456,11 @@ void test_a_map_of_marchers_survives_the_new_law() {
         // A dead squad LEAVES the map (S4): a destroyed walker counts as
         // neither alive nor moved, so a regression fails the checks below
         // loudly instead of dereferencing a gone entity.
-        if (!sm::store_of(w).valid(e)) continue;
-        if (sm::store_of(w).dead[e.slot] == 0
-            && (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp > 0.0f) ++alive;
-        if ((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).hp < 100.0f) ++bled;
-        if (float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(sm::store_of(w), e)), gs.mapW)) != 4.0f) ++moved;
+        if (!st.valid(e)) continue;
+        if (st.dead[e.slot] == 0
+            && (*sm::body_state<ecs::Pools>(st, e)).hp > 0.0f) ++alive;
+        if ((*sm::body_state<ecs::Pools>(st, e)).hp < 100.0f) ++bled;
+        if (float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, e)), gs.mapW)) != 4.0f) ++moved;
     }
     CHECK(alive == kWalkers,
           "a season of honest marching kills nobody: the bite is a cost, "
@@ -509,9 +502,8 @@ void test_road_bar_lasts_a_days_march() {
     // адреса и тонким только для аллокации.
     gs.mapW = 1024;
     gs.mapH = 1024;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::MacroStore& st = *wStore_;
     // MEADOW, not road: the leg has to END, and on a road it never would —
     // standing still there repays more than walking burns, so the automaton
     // keeps its legs forever. That is not a defect to work around but the law
@@ -525,14 +517,14 @@ void test_road_bar_lasts_a_days_march() {
     // Target 300 cells EAST — well beyond what the bar can pay, and well
     // under the torus half-width so the straight step never discovers a
     // short way west around the seam.
-    auto e = make_walker(w, gs.mapW, 10.0f, 4.0f, 310.0f, 4.0f, /*maxSp*/110);
-    auto& npc = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), e));
+    auto e = make_walker(st, gs.mapW, 10.0f, 4.0f, 310.0f, 4.0f, /*maxSp*/110);
+    auto& npc = (*sm::body_state<ecs::MacroNpcRuntime>(st, e));
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 25u);
-    const int thinks = drive_until(gs, w, rt, &grid, npc,
+    const int thinks = drive_until(gs, st, rt, &grid, npc,
                                    NPCState::Resting, 400);
 
-    const auto& pcell = (*sm::body_state<ecs::MacroCell>(sm::store_of(w), e));
+    const auto& pcell = (*sm::body_state<ecs::MacroCell>(st, e));
     const MacroPos p{float(ecs::cell_x(pcell, gs.mapW)),
                      float(ecs::cell_y(pcell, gs.mapW))};
     const float cells = p.x - 10.0f;
@@ -608,24 +600,23 @@ void test_banking_a_part_cell_is_not_resting() {
     // адреса и тонким только для аллокации.
     gs.mapW = 1024;
     gs.mapH = 1024;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::MacroStore& st = *wStore_;
     PathCostData grid = make_grid(1024, 1024, 1.0f);   // one long road
 
-    auto e = make_walker(w, gs.mapW, 10.0f, 4.0f, 400.0f, 4.0f, /*maxSp*/110);
-    auto& npc = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), e));
+    auto e = make_walker(st, gs.mapW, 10.0f, 4.0f, 400.0f, 4.0f, /*maxSp*/110);
+    auto& npc = (*sm::body_state<ecs::MacroNpcRuntime>(st, e));
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 91u);
 
     // Forty thinks of unbroken marching, far short of the ~110 cells the bar
     // can pay, so nothing here is confused by exhaustion or camp.
     for (int i = 0; i < 40; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
-    const float cells = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(sm::store_of(w), e)), gs.mapW)) - 10.0f;
-    const float ledgerSpent = 110.0f - (float((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).sp) + (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).spCarry);
+    const float cells = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, e)), gs.mapW)) - 10.0f;
+    const float ledgerSpent = 110.0f - (float((*sm::body_state<ecs::Pools>(st, e)).sp) + (*sm::body_state<ecs::Pools>(st, e)).spCarry);
 
     CHECK(cells > 0.0f, "the walker is on the road");
     // THE gate, measured in the quantum it is paid in: forty thinks of
@@ -641,14 +632,14 @@ void test_banking_a_part_cell_is_not_resting() {
           "one slice less, so no think on the road was quietly paid as rest");
 
     // The control: the SAME body, standing at its target, DOES recover.
-    npc.targetX = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(sm::store_of(w), e)), gs.mapW));
+    npc.targetX = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, e)), gs.mapW));
     npc.targetY = 4.0f;
-    const float restingFrom = float((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).sp) + (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).spCarry;
+    const float restingFrom = float((*sm::body_state<ecs::Pools>(st, e)).sp) + (*sm::body_state<ecs::Pools>(st, e)).spCarry;
     for (int i = 0; i < 8; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
-    CHECK(float((*sm::body_state<ecs::Pools>(sm::store_of(w), e)).sp) + (*sm::body_state<ecs::Pools>(sm::store_of(w), e)).spCarry > restingFrom,
+    CHECK(float((*sm::body_state<ecs::Pools>(st, e)).sp) + (*sm::body_state<ecs::Pools>(st, e)).spCarry > restingFrom,
           "negative control: standing where it meant to be, it recovers — "
           "the gate is «остановился», and it is open");
 }
@@ -663,9 +654,8 @@ void test_a_laden_squad_pays_for_its_load() {
     GameState gs{};
     gs.mapW = 256;
     gs.mapH = 256;   // ЗАКОН АДРЕСА: квадрат, po2
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::MacroStore& st = *wStore_;
     PathCostData grid = make_grid(256, 256, 1.0f);   // one long road
 
     // Bodies that SURVIVE the measurement: an overloaded march in debt bites
@@ -674,21 +664,21 @@ void test_a_laden_squad_pays_for_its_load() {
     // squad LEAVES the map at tick end now (CANON S4, 2026-08-29), so the
     // fixture gives both walkers the health to outlive the 30 thinks — what
     // is measured here is the PRICE of the load, not the death it can buy.
-    auto light = make_walker(w, gs.mapW, 10.0f, 4.0f, 60.0f, 4.0f, /*maxSp*/110,
+    auto light = make_walker(st, gs.mapW, 10.0f, 4.0f, 60.0f, 4.0f, /*maxSp*/110,
                              /*hp*/1e6f);
-    auto heavy = make_walker(w, gs.mapW, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110,
+    auto heavy = make_walker(st, gs.mapW, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110,
                              /*hp*/1e6f);
-    sm::store_of(w).spawnId[heavy.slot] =
+    st.spawnId[heavy.slot] =
         ecs::MacroSpawnId{8u};
-    (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), light)).targetY = 4.0f;
-    (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), heavy)).targetY = 6.0f;
+    (*sm::body_state<ecs::MacroNpcRuntime>(st, light)).targetY = 4.0f;
+    (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy)).targetY = 6.0f;
 
     // A back a person actually has, and a load well past it.
     const float cap = 40.0f;
-    (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), light)).carryCap = cap;
-    (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), heavy)).carryCap = cap;
+    (*sm::body_state<ecs::MacroNpcRuntime>(st, light)).carryCap = cap;
+    (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy)).carryCap = cap;
     auto& load =
-        sm::store_of(w).inventory[heavy.slot].inv;
+        st.inventory[heavy.slot].inv;
     // A BEARABLE overload: past the back, but a price the bar can pay per
     // step. (An unbearable pack now honestly refuses to march at all — the
     // legs decline a step they cannot pay for, by the same pre-priced law.)
@@ -699,21 +689,21 @@ void test_a_laden_squad_pays_for_its_load() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 93u);
     for (int i = 0; i < 30; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .pathCost = &grid};
+        MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
-    const auto& lrt = (*sm::body_state<ecs::Pools>(sm::store_of(w), light));
-    const auto& hrt = (*sm::body_state<ecs::Pools>(sm::store_of(w), heavy));
+    const auto& lrt = (*sm::body_state<ecs::Pools>(st, light));
+    const auto& hrt = (*sm::body_state<ecs::Pools>(st, heavy));
     const float lightSpent = 110.0f - (float(lrt.sp) + lrt.spCarry);
     const float heavySpent = 110.0f - (float(hrt.sp) + hrt.spCarry);
-    const float lightCells = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(sm::store_of(w), light)), gs.mapW)) - 10.0f;
-    const float heavyCells = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(sm::store_of(w), heavy)), gs.mapW)) - 10.0f;
+    const float lightCells = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, light)), gs.mapW)) - 10.0f;
+    const float heavyCells = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, heavy)), gs.mapW)) - 10.0f;
 
     CHECK(heavySpent > lightSpent,
           "the laden squad paid more for the same road — the pack is a cost");
-    const auto& lrtRun = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), light));
-    const auto& hrtRun = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), heavy));
+    const auto& lrtRun = (*sm::body_state<ecs::MacroNpcRuntime>(st, light));
+    const auto& hrtRun = (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy));
     CHECK(hrtRun.overloadCost > 0 && lrtRun.overloadCost == 0,
           "and the surcharge is on the laden one alone");
     CHECK(lightCells > 0.0f && heavyCells > 0.0f,

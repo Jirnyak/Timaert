@@ -11,7 +11,6 @@
 //     save, load, spawn anew — the dead man's ordinal is never reissued
 //     (with the old max-over-living scan that exact sequence reissued it).
 #include "check.h"
-#include "ecs/world.h"
 
 #include "macro/macro_snapshot.h"
 #include "macro/world_row.h"
@@ -46,8 +45,8 @@ std::string temp_path(const char* name) {
     return p + name;
 }
 
-MacroHandle find_by_ordinal(ecs::World& w, std::uint32_t ordinal) {
-    return macro_handle_by_spawn_id(sm::store_of(w), ordinal);
+MacroHandle find_by_ordinal(sm::MacroStore& st, std::uint32_t ordinal) {
+    return macro_handle_by_spawn_id(st, ordinal);
 }
 
 void test_snapshot_round_trips_the_living_map() {
@@ -58,9 +57,7 @@ void test_snapshot_round_trips_the_living_map() {
     TerrainData absent{};
     absent.width = 0;
     absent.height = 0;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
 
     // Squad A: a bandit lord with two guards and a route.
     SquadSpec specA{};
@@ -74,7 +71,7 @@ void test_snapshot_round_trips_the_living_map() {
     specA.waypointCount = 2;
     specA.waypoints[0] = 24; specA.waypoints[1] = 20;
     specA.waypoints[2] = 20; specA.waypoints[3] = 20;
-    const MacroHandle a = spawn_squad(gs, sm::store_of(w), absent, specA);
+    const MacroHandle a = spawn_squad(gs, *wStore_, absent, specA);
     CHECK_OR_RETURN(wStore_->valid(a), "squad A spawned");
 
     // Squad B: a lone peasant — a squad of one, its own leader.
@@ -84,7 +81,7 @@ void test_snapshot_round_trips_the_living_map() {
     specB.x = 40;
     specB.y = 40;
     specB.factionIndex = faction_index("timaert");
-    const MacroHandle b = spawn_squad(gs, sm::store_of(w), absent, specB);
+    const MacroHandle b = spawn_squad(gs, *wStore_, absent, specB);
     CHECK_OR_RETURN(wStore_->valid(b), "squad B spawned");
 
     const std::uint32_t ordinalA = wStore_->spawnId[a.slot].index;
@@ -102,14 +99,14 @@ void test_snapshot_round_trips_the_living_map() {
     // анкеты, биты GameState — кэш, флажок двигает дверь переноса; загрузка
     // обязана вернуть флажок на ТОГО ЖЕ лорда (SAVE-5: второй склад «кем
     // управляю» вне снимка мёртв).
-    sm::transfer_player_flag(sm::store_of(w), gs.playerFlagBits, a);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, a);
     // Имя анкеты — колонка (вердикт 3, ход 2): рождение кладёт непустой
     // дефолт генерации, МУТАЦИЯ колонки обязана пережить сейв (в этом весь
     // смысл колонки против перевывода из nameIdx).
-    CHECK(sm::store_of(w).name[a.slot].text[0] != '\0',
+    CHECK(wStore_->name[a.slot].text[0] != '\0',
           "рождённый сквад несёт непустое имя-дефолт");
-    std::snprintf(sm::store_of(w).name[a.slot].text,
-                  sizeof(sm::store_of(w).name[a.slot].text), "%s",
+    std::snprintf(wStore_->name[a.slot].text,
+                  sizeof(wStore_->name[a.slot].text), "%s",
                   "Chornyy Voron");
     // A bandit chief is a NAMED character (v90): born OWNING his sheet.
     // His campaign diverges it from the birth roll — the owner's ММОРПГ
@@ -143,15 +140,11 @@ void test_snapshot_round_trips_the_living_map() {
     CHECK(gs2.nextMacroSpawnOrdinal == gs.nextMacroSpawnOrdinal,
           "the identity issuer survives the save");
 
-    ecs::World w2;
-
     auto w2Store_ = sm::make_macro_store();
-
-    sm::store_attach(w2, w2Store_.get());
     restore_macro_ecs(records2, *w2Store_, gs2);
     resolve_player_handles_after_load(gs2, *w2Store_);
 
-    const MacroHandle a2 = find_by_ordinal(w2, ordinalA);
+    const MacroHandle a2 = find_by_ordinal(*w2Store_, ordinalA);
     CHECK_OR_RETURN(w2Store_->valid(a2), "leader A restored under his ordinal");
     CHECK(w2Store_->runtime[a2.slot].xp == 777,
           "the leader's campaigns (xp) survive the save");
@@ -178,14 +171,14 @@ void test_snapshot_round_trips_the_living_map() {
                     "the named chief still OWNS his sheet after the save");
     CHECK(w2Store_->sheet[a2.slot].attributes.of(AttributeId::End) == 13,
           "…and his campaign's divergence from the birth roll survived");
-    const MacroHandle b2pre = find_by_ordinal(w2, ordinalB);
+    const MacroHandle b2pre = find_by_ordinal(*w2Store_, ordinalB);
     CHECK(w2Store_->valid(b2pre)
               && owned_sheet(*w2Store_, b2pre) == nullptr,
           "the transient crew still stores nothing (owned_sheet law)");
     CHECK(w2Store_->valid(player_flag_handle(gs2)),
           "exactly one player flag restored — the handle is live");
 
-    const MacroHandle b2 = find_by_ordinal(w2, ordinalB);
+    const MacroHandle b2 = find_by_ordinal(*w2Store_, ordinalB);
     CHECK_OR_RETURN(w2Store_->valid(b2), "the dead leader is still ON the map");
     CHECK(sm::macro_dead(*w2Store_, b2)
               && w2Store_->pools[b2.slot].hp == 0.0f,
@@ -195,7 +188,7 @@ void test_snapshot_round_trips_the_living_map() {
     // entirely — under the old max-over-living issuer the next spawn re-took
     // exactly that ordinal; the persistent counter must never.
     const std::uint32_t highest = ordinalA > ordinalB ? ordinalA : ordinalB;
-    const MacroHandle doomed = find_by_ordinal(w2, highest);
+    const MacroHandle doomed = find_by_ordinal(*w2Store_, highest);
     CHECK_OR_RETURN(w2Store_->valid(doomed), "the highest-ordinal squad exists");
     sm::store_death(*w2Store_, doomed);
 
@@ -205,7 +198,7 @@ void test_snapshot_round_trips_the_living_map() {
     specC.x = 10;
     specC.y = 10;
     specC.factionIndex = faction_index("bandits");
-    const MacroHandle c = spawn_squad(gs2, sm::store_of(w2), absent, specC);
+    const MacroHandle c = spawn_squad(gs2, *w2Store_, absent, specC);
     CHECK_OR_RETURN(w2Store_->valid(c), "a new squad spawned after the load");
     CHECK(w2Store_->spawnId[c.slot].index > highest,
           "a dead man's ordinal is NEVER reissued - identity is for life");
@@ -229,9 +222,7 @@ void test_resnapshot_is_byte_identical() {
     gs.mapH = 64;
     gs.worldSeed = 777u;
     TerrainData absent{};
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
 
     // Та же пара судеб, что в тесте выше: походивший именной лорд с
     // приказами и владеемым листом + убитый транзиент — обе ветки формата
@@ -245,7 +236,7 @@ void test_resnapshot_is_byte_identical() {
     specA.members.push(make_soldier(std::uint8_t(NPCType::Guard), 3, 1001u));
     specA.waypointCount = 1;
     specA.waypoints[0] = 24; specA.waypoints[1] = 20;
-    const MacroHandle a = spawn_squad(gs, sm::store_of(w), absent, specA);
+    const MacroHandle a = spawn_squad(gs, *wStore_, absent, specA);
     CHECK_OR_RETURN(wStore_->valid(a), "squad A spawned");
     wStore_->runtime[a.slot].xp = 777;
     CHECK_OR_RETURN(owned_sheet(*wStore_, a) != nullptr,
@@ -258,7 +249,7 @@ void test_resnapshot_is_byte_identical() {
     specB.x = 40;
     specB.y = 40;
     specB.factionIndex = faction_index("timaert");
-    const MacroHandle b = spawn_squad(gs, sm::store_of(w), absent, specB);
+    const MacroHandle b = spawn_squad(gs, *wStore_, absent, specB);
     CHECK_OR_RETURN(wStore_->valid(b), "squad B spawned");
     wStore_->pools[b.slot].hp = 0.0f;
     sm::macro_mark_dead(*wStore_, b);
@@ -266,9 +257,7 @@ void test_resnapshot_is_byte_identical() {
     const std::vector<MacroNpcRecord> snap1 = snapshot_macro_ecs(*wStore_);
     CHECK_OR_RETURN(snap1.size() == 2, "the snapshot names both squads");
 
-    ecs::World w2;
     auto w2Store_ = sm::make_macro_store();
-    sm::store_attach(w2, w2Store_.get());
     restore_macro_ecs(snap1, *w2Store_, gs);
     std::vector<MacroNpcRecord> snap2 = snapshot_macro_ecs(*w2Store_);
     CHECK_OR_RETURN(snap2.size() == snap1.size(),
@@ -286,7 +275,7 @@ void test_resnapshot_is_byte_identical() {
     // Негативный контроль, и он утверждается сам: детектор обязан ВИДЕТЬ
     // дельту — иначе зелёный memcmp выше не доказывает ничего.
     const MacroHandle a2 = find_by_ordinal(
-        w2, wStore_->spawnId[a.slot].index);
+        *w2Store_, wStore_->spawnId[a.slot].index);
     CHECK_OR_RETURN(w2Store_->valid(a2), "lord A restored for the control");
     w2Store_->runtime[a2.slot].xp += 1;
     const std::vector<MacroNpcRecord> snap3 = snapshot_macro_ecs(*w2Store_);

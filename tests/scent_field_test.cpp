@@ -8,7 +8,6 @@
 //     не преследуется, пылинки ниже пола не дёргают, локальный максимум =
 //     конец погони; макроцель (errand) отвлечением НЕ трогается.
 #include "check.h"
-#include "ecs/world.h"
 
 #include "ecs/components.h"
 #include "macro/anketa.h"
@@ -120,7 +119,6 @@ int faction_idx(const char* id) {
 
 struct HuntRig {
     GameState gs{};
-    ecs::World w;
     std::unique_ptr<sm::MacroStore> wStore_ = sm::make_macro_store();
     TerrainData absent{};
     Rng rng{123u};
@@ -128,12 +126,11 @@ struct HuntRig {
     TickContext ctx{};
 
     HuntRig() {
-        sm::store_attach(w, wStore_.get());
         gs.mapW = 64;
         gs.mapH = 64;
         scent_ensure(gs.scent, 64, 64);
         mw.gs = &gs;
-        mw.store = &sm::store_of(w);
+        mw.store = wStore_.get();
         mw.terrain = &absent;
         ctx.mw = mw;
         ctx.mapW = 64;
@@ -142,7 +139,7 @@ struct HuntRig {
     }
 
     sm::MacroHandle spawn(NPCType type, int factionIdx, float x, float y) {
-        sm::MacroStore& st = sm::store_of(w);
+        sm::MacroStore& st = *wStore_;
         const sm::MacroHandle h = sm::store_birth(st);
         st.cell[h.slot] = ecs::MacroCell{
             ecs::cell_index(int(x), int(y), ctx.mapW)};
@@ -167,17 +164,17 @@ void test_deposit_writes_both_channels() {
     CHECK(fVil >= 0, "фикстура: фракция реестра существует");
     auto e = rig.spawn(NPCType::Peasant, fVil, 20.0f, 20.0f);
 
-    auto& bag = sm::store_of(rig.w).inventory[e.slot];
+    auto& bag = rig.wStore_->inventory[e.slot];
     creatures_push(bag.inv,
                    make_soldier(std::uint16_t(NPCType::Peasant), 1, 1u));
     creatures_push(bag.inv,
                    make_soldier(std::uint16_t(NPCType::Peasant), 1, 2u));
     bag.inv.add("food", 10);
 
-    const auto& dcell = (*sm::body_state<ecs::MacroCell>(sm::store_of(rig.w), e));
+    const auto& dcell = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
     scent_squad_deposit(e, MacroPos{float(ecs::cell_x(dcell, rig.ctx.mapW)),
                                     float(ecs::cell_y(dcell, rig.ctx.mapW))},
-                        (*sm::body_state<ecs::NPCKind>(sm::store_of(rig.w), e)), rig.ctx);
+                        (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rig.ctx);
 
     CHECK(scent_strength_at(rig.gs.scent, fVil, 20, 20) > 0u,
           "сила следа легла: squad_power сквада — не ноль");
@@ -199,15 +196,15 @@ void test_hunter_climbs_wealth_gradient() {
     // Жирный след цены на востоке, силы в нём нет — чистая добыча.
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
 
-    const auto& pc = (*sm::body_state<ecs::MacroCell>(sm::store_of(rig.w), e));
+    const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
     MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
                float(ecs::cell_y(pc, rig.ctx.mapW))};
-    auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(rig.w), e));
-    CHECK(scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(sm::store_of(rig.w), e)), rt, (*sm::body_state<ecs::Pools>(sm::store_of(rig.w), e)), rig.ctx),
+    auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(*rig.wStore_, e));
+    CHECK(scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "запах добычи съедает think — охота пошла");
     // Один think копит бюджет ног (0.75 клетки), второй шагает — та же
     // честная походка, что у любого марша.
-    scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(sm::store_of(rig.w), e)), rt, (*sm::body_state<ecs::Pools>(sm::store_of(rig.w), e)), rig.ctx);
+    scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx);
     CHECK(int(p.x) == 11 && int(p.y) == 10,
           "шаг строго вверх по градиенту цены");
 }
@@ -219,23 +216,23 @@ void test_fear_filter_and_scent_floor() {
     auto e = rig.spawn(NPCType::Bandit, fBandit, 10.0f, 10.0f);
     rig.ctx.factionHostileMask[fBandit] = 1ull << fPrey;
 
-    const auto& pc = (*sm::body_state<ecs::MacroCell>(sm::store_of(rig.w), e));
+    const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
     MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
                float(ecs::cell_y(pc, rig.ctx.mapW))};
-    auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(rig.w), e));
-    const auto& kind = (*sm::body_state<ecs::NPCKind>(sm::store_of(rig.w), e));
+    auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(*rig.wStore_, e));
+    const auto& kind = (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e));
 
     // Богато, но след силы страшнее моей смелости — не преследуем: пусть
     // решает визуальный рефлекс (закон боя), не запах.
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 4u << 20, 400u);
-    CHECK(!scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(sm::store_of(rig.w), e)), rig.ctx),
+    CHECK(!scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "страшный след не преследуется");
 
     // Пылинка диффузии ниже пола не дёргает бойца с места.
     scent_reset(rig.gs.scent, 64, 64);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u,
                   (kHuntScentFloor / 2u) << kScentQuantShift);
-    CHECK(!scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(sm::store_of(rig.w), e)), rig.ctx),
+    CHECK(!scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "запах беднее пола — не стоит и шага");
     CHECK(int(p.x) == 10 && int(p.y) == 10, "ноги не тронуты");
 }
@@ -247,11 +244,11 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     auto e = rig.spawn(NPCType::Bandit, fBandit, 10.0f, 10.0f);
     rig.ctx.factionHostileMask[fBandit] = 1ull << fPrey;
 
-    const auto& pc = (*sm::body_state<ecs::MacroCell>(sm::store_of(rig.w), e));
+    const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
     MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
                float(ecs::cell_y(pc, rig.ctx.mapW))};
-    auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(rig.w), e));
-    const auto& kind = (*sm::body_state<ecs::NPCKind>(sm::store_of(rig.w), e));
+    auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(*rig.wStore_, e));
+    const auto& kind = (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e));
 
     // Макроцель на месте до и после охоты: отвлечение — пауза, не амнезия.
     // Глагол здесь — ЛЮБОЙ живой: закон не про патруль, а про то, что
@@ -268,12 +265,12 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     // Сам стою на максимуме — подъёма нет, погоня окончена, думает роль.
     scent_deposit(rig.gs.scent, fPrey, 10, 10, 0u, 4000u);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
-    CHECK(!scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(sm::store_of(rig.w), e)), rig.ctx),
+    CHECK(!scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "локальный максимум = конец погони");
 
     scent_reset(rig.gs.scent, 64, 64);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
-    CHECK(scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(sm::store_of(rig.w), e)), rig.ctx), "охота пошла (фикстура)");
+    CHECK(scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx), "охота пошла (фикстура)");
     CHECK(rt.squadType == std::uint8_t(SquadType::Caravan)
               && rt.errandObject == 42u
               && int(rt.targetX) == 50 && int(rt.targetY) == 50,
@@ -288,11 +285,11 @@ void test_civilian_never_hunts() {
     rig.ctx.factionHostileMask[fVil] = 1ull << fPrey;
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 4000u);
 
-    const auto& pc = (*sm::body_state<ecs::MacroCell>(sm::store_of(rig.w), e));
+    const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
     MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
                float(ecs::cell_y(pc, rig.ctx.mapW))};
-    auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(rig.w), e));
-    CHECK(!scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(sm::store_of(rig.w), e)), rt, (*sm::body_state<ecs::Pools>(sm::store_of(rig.w), e)), rig.ctx),
+    auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(*rig.wStore_, e));
+    CHECK(!scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "не-combatant не охотится: кто хищник — решает колонка поведения");
 }
 

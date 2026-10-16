@@ -8,7 +8,6 @@
 // were split: one promise per check, so a red line names the promise it broke
 // instead of the seven it was bundled with.
 #include "check.h"
-#include "ecs/world.h"
 #include "macro/labour.h"   // souls_flock — паства места
 
 #include "macro/npc_ai.h"
@@ -42,7 +41,7 @@ int push_settlement(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
     return int(st.spawnId[h.slot].index);
 }
 
-sm::MacroHandle spawn_ai(sm::ecs::World& world,
+sm::MacroHandle spawn_ai(sm::MacroStore& st,
                          sm::NPCType type,
                          float x,
                          float y,
@@ -52,7 +51,6 @@ sm::MacroHandle spawn_ai(sm::ecs::World& world,
                          int sp = 100,
                          int mapW = 128) {
     // 6.3: фикстура рождает слот store — тем же законом, что make_npc.
-    sm::MacroStore& st = sm::store_of(world);
     const sm::MacroHandle h = sm::store_birth(st);
     // ОРДИНАЛЫ ФИКСТУРЫ — СВОЙ ДИАПАЗОН, И ОН НЕ С НУЛЯ. Ломтиком F тело
     // места стоит в ТОМ ЖЕ store с ординалом от эмитента (1, 2, …), поэтому
@@ -89,10 +87,10 @@ sm::MacroHandle spawn_ai(sm::ecs::World& world,
 }
 
 void tick_once(sm::GameState& gs,
-               sm::ecs::World& world,
+               sm::MacroStore& st,
                sm::MacroNpcAiRuntime& runtime,
                const sm::TreeGrid* treeGrid = nullptr) {
-    sm::MacroWorld mw{.gs = &gs, .store = &sm::store_of(world), .treeGrid = treeGrid};
+    sm::MacroWorld mw{.gs = &gs, .store = &st, .treeGrid = treeGrid};
     sm::tick_macro_npc_ai(mw, runtime, sm::kAiTicks);
 }
 
@@ -114,16 +112,15 @@ void test_home_wanderer_returns_when_far() {
     gs.mapH = 128;
 
     // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const int homeId = push_settlement(gs, *worldStore_, 50, 50);
-    auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, homeId);
+    sm::MacroStore& st = *worldStore_;
+    const int homeId = push_settlement(gs, st, 50, 50);
+    auto e = spawn_ai(st, sm::NPCType::Peasant, 80.0f, 50.0f, homeId);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 10u);
-    tick_once(gs, world, runtime);
+    tick_once(gs, st, runtime);
 
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Returning),
           "a HomeWanderer 30 cells from home enters Returning");
     CHECK(targets(rt, 50.0f, 50.0f),
@@ -135,30 +132,29 @@ void test_woodcutter_targets_nearest_tree() {
     gs.mapW = 128;
     gs.mapH = 128;
     // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const int homeId = push_settlement(gs, *worldStore_, 20, 20);
+    sm::MacroStore& st = *worldStore_;
+    const int homeId = push_settlement(gs, st, 20, 20);
     // Two trees: one within reach, one across the map. The near one must win —
     // "nearest", not "first in the grid".
     std::vector<sm::TreePoint> trees{{23, 20}, {80, 80}};
     sm::TreeGrid grid;
     sm::build_tree_grid(grid, trees, gs.mapW, gs.mapH, 32);
 
-    auto e = spawn_ai(world, sm::NPCType::Peasant, 21.0f, 20.0f, homeId);
+    auto e = spawn_ai(st, sm::NPCType::Peasant, 21.0f, 20.0f, homeId);
     {
         // Работа именуется поручением (аукцион, CANON S10): рубка = Gather
         // над строкой целей Trees; тип — лишь лист и спина.
-        auto& wrt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+        auto& wrt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
         wrt.squadType = std::uint8_t(sm::SquadType::Artel);
         wrt.errandObject = std::uint32_t(
             sm::gather_goal_row(sm::ResourceFieldId::Trees));
     }
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 20u);
-    tick_once(gs, world, runtime, &grid);
+    tick_once(gs, st, runtime, &grid);
 
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Woodcutter with a tree in range travels to it");
     CHECK(targets(rt, 23.0f, 20.0f),
@@ -171,17 +167,16 @@ void test_trader_targets_other_settlement() {
     gs.mapH = 128;
 
     // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const int homeId = push_settlement(gs, *worldStore_, 10, 10);
-    const int awayId = push_settlement(gs, *worldStore_, 40, 10);
-    auto e = spawn_ai(world, sm::NPCType::Merchant, 10.0f, 10.0f, homeId);
+    sm::MacroStore& st = *worldStore_;
+    const int homeId = push_settlement(gs, st, 10, 10);
+    const int awayId = push_settlement(gs, st, 40, 10);
+    auto e = spawn_ai(st, sm::NPCType::Merchant, 10.0f, 10.0f, homeId);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 30u);
-    tick_once(gs, world, runtime);
+    tick_once(gs, st, runtime);
 
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Trader standing at home sets out");
     CHECK(rt.targetSettlementId == awayId,
@@ -196,23 +191,22 @@ void test_nomad_excludes_current_target() {
     gs.mapH = 128;
 
     // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const int firstId = push_settlement(gs, *worldStore_, 10, 10);
-    const int standingId = push_settlement(gs, *worldStore_, 40, 10);
+    sm::MacroStore& st = *worldStore_;
+    const int firstId = push_settlement(gs, st, 10, 10);
+    const int standingId = push_settlement(gs, st, 40, 10);
     // Бродяга — ТИП СКВАДА без дома: диспетчер спрашивает тип первым, а
     // корован без дома честно сваливается в ai_nomad. На роли тела этот
     // тест стоять больше не может — роль TaxCollector осталась без машины
     // 2026-09-22, и фикстура молча перестала ехать.
-    auto e = spawn_ai(world, sm::NPCType::Peasant, 40.0f, 10.0f, -1);
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    auto e = spawn_ai(st, sm::NPCType::Peasant, 40.0f, 10.0f, -1);
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     rt.squadType = std::uint8_t(sm::SquadType::Caravan);
     rt.targetSettlementId = standingId;
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 40u);
-    tick_once(gs, world, runtime);
+    tick_once(gs, st, runtime);
 
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Nomad that arrived picks a new leg immediately");
@@ -227,42 +221,39 @@ void test_aggressive_chases_visible_player() {
     gs.mapW = 128;
     gs.mapH = 128;
 
-    sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *worldStore_;
 
-    sm::store_attach(world, worldStore_.get());
     // The player the pursuit rule sees: a FLAGGED squad standing on its cell
     // (подпосадка 4 — the AI asks the world for the flag holder, no scalar).
     {
-        sm::MacroStore& stp = sm::store_of(world);
-        const sm::MacroHandle hp2 = sm::store_birth(stp);
+        const sm::MacroHandle hp2 = sm::store_birth(st);
         // Носитель флажка — дверью переноса (5б): колонка анкеты — истина,
         // биты GameState — кэш; make_tick_context читает кэш.
-        sm::transfer_player_flag(stp, gs.playerFlagBits, hp2);
-        stp.cell[hp2.slot] = sm::ecs::MacroCell{
+        sm::transfer_player_flag(st, gs.playerFlagBits, hp2);
+        st.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }
-    auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1);
+    auto e = spawn_ai(st, sm::NPCType::Bandit, 10.0f, 10.0f, -1);
     // Pursuit asks THE hostility rule now (damage-door Inc 3), so the fixture
     // must say WHO this bandit is and WHERE the pair stands — an aggressive
     // row chases nobody it is not at war with.
-    (*sm::body_state<sm::ecs::NPCKind>(sm::store_of(world), e)).factionIdx =
+    (*sm::body_state<sm::ecs::NPCKind>(st, e)).factionIdx =
         std::uint16_t(sm::faction_index("bandits"));
     sm::add_player_reputation(gs, "bandits", -100);
     // ONE law of sight (owner, 2026-08-29): the private player channel is
     // dead — the bandit perceives the player's SQUAD through the same
     // SquadIndex as any other squad, at the same kSquadSightCells. So the
     // fixture spawns that squad; a bare gs.player position is invisible now.
-    auto player = spawn_ai(world, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
-    (*sm::body_state<sm::ecs::NPCKind>(sm::store_of(world), player)).factionIdx =
+    auto player = spawn_ai(st, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
+    (*sm::body_state<sm::ecs::NPCKind>(st, player)).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     gs.playerSquadBits =
         sm::macro_handle_bits(player);
     // And pursuit is the one STRENGTH law (squad_threat_step): a fighter
     // closes only fights it wins with margin. The player is wounded to 10%
     // so the chase is the law's own verdict, not a leftover reflex.
-    (*sm::body_state<sm::ecs::Pools>(sm::store_of(world), player)).hp = 5.0f;
+    (*sm::body_state<sm::ecs::Pools>(st, player)).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
     // The march budget is DERIVED data now (kMacroWalkCellsPerHour ×
@@ -271,11 +262,11 @@ void test_aggressive_chases_visible_player() {
     const float perThink =
         sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
     const int thinksToClose = int(std::ceil(2.0f / perThink));
-    for (int i = 0; i < thinksToClose; ++i) tick_once(gs, world, runtime);
+    for (int i = 0; i < thinksToClose; ++i) tick_once(gs, st, runtime);
 
-    const auto& pcell = (*sm::body_state<sm::ecs::MacroCell>(sm::store_of(world), e));
+    const auto& pcell = (*sm::body_state<sm::ecs::MacroCell>(st, e));
     (void)pcell;
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Chasing),
           "an Aggressive NPC that can see the player gives chase");
     CHECK(targets(rt, 12.0f, 10.0f),
@@ -289,7 +280,7 @@ void test_aggressive_chases_visible_player() {
     // for a slice of the day, and a marching body earns no regen back. The
     // chase spent exactly `thinksToClose` slices on featureless ground
     // (weight 1.0 — this fixture has no baked cost grid).
-    const auto& chaserPools = (*sm::body_state<sm::ecs::Pools>(sm::store_of(world), e));
+    const auto& chaserPools = (*sm::body_state<sm::ecs::Pools>(st, e));
     const float paid = float(100 - chaserPools.sp) - chaserPools.spCarry;
     const float marched = sm::burn_stamina_per_hour(1.0f)
                           * sm::kAiTickGameHours * float(thinksToClose);
@@ -317,43 +308,40 @@ void test_aggressive_spares_a_friend() {
     gs.mapW = 128;
     gs.mapH = 128;
 
-    sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *worldStore_;
 
-    sm::store_attach(world, worldStore_.get());
     // The player the pursuit rule sees: a FLAGGED squad standing on its cell
     // (подпосадка 4 — the AI asks the world for the flag holder, no scalar).
     {
-        sm::MacroStore& stp = sm::store_of(world);
-        const sm::MacroHandle hp2 = sm::store_birth(stp);
+        const sm::MacroHandle hp2 = sm::store_birth(st);
         // Носитель флажка — дверью переноса (5б): колонка анкеты — истина,
         // биты GameState — кэш; make_tick_context читает кэш.
-        sm::transfer_player_flag(stp, gs.playerFlagBits, hp2);
-        stp.cell[hp2.slot] = sm::ecs::MacroCell{
+        sm::transfer_player_flag(st, gs.playerFlagBits, hp2);
+        st.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }
-    auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1);
-    (*sm::body_state<sm::ecs::NPCKind>(sm::store_of(world), e)).factionIdx =
+    auto e = spawn_ai(st, sm::NPCType::Bandit, 10.0f, 10.0f, -1);
+    (*sm::body_state<sm::ecs::NPCKind>(st, e)).factionIdx =
         std::uint16_t(sm::faction_index("bandits"));
     sm::add_player_reputation(gs, "bandits", 60);   // above kHostileThreshold
     // The same visible, beatable player squad as the positive twin — the
     // ONLY difference between the tests is the standing, so a broken
     // hostility check (not a broken perception) is what would turn this red.
-    auto player = spawn_ai(world, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
-    (*sm::body_state<sm::ecs::NPCKind>(sm::store_of(world), player)).factionIdx =
+    auto player = spawn_ai(st, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
+    (*sm::body_state<sm::ecs::NPCKind>(st, player)).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     gs.playerSquadBits =
         sm::macro_handle_bits(player);
-    (*sm::body_state<sm::ecs::Pools>(sm::store_of(world), player)).hp = 5.0f;
+    (*sm::body_state<sm::ecs::Pools>(st, player)).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
     const float perThink =
         sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
     const int thinks = int(std::ceil(2.0f / perThink));
-    for (int i = 0; i < thinks; ++i) tick_once(gs, world, runtime);
+    for (int i = 0; i < thinks; ++i) tick_once(gs, st, runtime);
 
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(!in_state(rt, sm::NPCState::Chasing),
           "an aggressive row does not chase a faction it is not at war with");
 }
@@ -369,18 +357,15 @@ void test_teleporter_cooldown_counts_down() {
     gs.mapW = 128;
     gs.mapH = 128;
 
-    sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    auto e = spawn_ai(world, sm::NPCType::Witch, 20.0f, 20.0f, -1);
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    sm::MacroStore& st = *worldStore_;
+    auto e = spawn_ai(st, sm::NPCType::Witch, 20.0f, 20.0f, -1);
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     rt.teleportCooldown = 2;
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 70u);
-    tick_once(gs, world, runtime);
+    tick_once(gs, st, runtime);
 
     CHECK(rt.teleportCooldown == 1,
           "a Teleporter's cooldown burns down one AI tick at a time");
@@ -391,17 +376,14 @@ void test_wanderer_enters_wandering_state() {
     gs.mapW = 128;
     gs.mapH = 128;
 
-    sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    auto e = spawn_ai(world, sm::NPCType::Sorceress, 30.0f, 30.0f, -1);
+    sm::MacroStore& st = *worldStore_;
+    auto e = spawn_ai(st, sm::NPCType::Sorceress, 30.0f, 30.0f, -1);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 80u);
-    tick_once(gs, world, runtime);
+    tick_once(gs, st, runtime);
 
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Wandering),
           "a homeless Wanderer starts wandering rather than standing still");
     CHECK(!targets(rt, 30.0f, 30.0f),
@@ -450,12 +432,9 @@ void test_resting_recovery_prevents_permanent_stall() {
     gs.mapW = 128;
     gs.mapH = 128;
 
-    sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1,
+    sm::MacroStore& st = *worldStore_;
+    auto e = spawn_ai(st, sm::NPCType::Bandit, 10.0f, 10.0f, -1,
                       sm::NPCState::Resting, 0, 0);
 
     // Resting exits at HALF the bar, and the regen law is a percent of the
@@ -467,36 +446,35 @@ void test_resting_recovery_prevents_permanent_stall() {
     // honesty bound.
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 90u);
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     int thinks = 0;
     while (in_state(rt, sm::NPCState::Resting) && thinks < 128) {
-        tick_once(gs, world, runtime);
+        tick_once(gs, st, runtime);
         ++thinks;
     }
     CHECK(in_state(rt, sm::NPCState::Idle),
           "Resting is a state an NPC LEAVES: exhaustion is never permanent");
-    const auto& restedPools = (*sm::body_state<sm::ecs::Pools>(sm::store_of(world), e));
+    const auto& restedPools = (*sm::body_state<sm::ecs::Pools>(st, e));
     CHECK(restedPools.sp >= restedPools.maxSp / 2,
           "leaving Resting means stamina actually came back");
 }
 
 void test_macro_visual_smoothing_and_snap() {
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    auto e = spawn_ai(world, sm::NPCType::Peasant, 12.0f, 10.0f, -1);
-    auto& visual = (*sm::body_state<sm::ecs::MacroVisual>(sm::store_of(world), e));
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e));
+    sm::MacroStore& st = *worldStore_;
+    auto e = spawn_ai(st, sm::NPCType::Peasant, 12.0f, 10.0f, -1);
+    auto& visual = (*sm::body_state<sm::ecs::MacroVisual>(st, e));
+    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     visual.vx = 10.0f;
     visual.vy = 10.0f;
     rt.visualSpeed = 4.0f;
-    sm::tick_macro_npc_visuals(sm::store_of(world), 128, 128, 0.25f);
+    sm::tick_macro_npc_visuals(st, 128, 128, 0.25f);
     CHECK(close_enough(visual.vx, 11.0f) && close_enough(visual.vy, 10.0f),
           "the render position glides toward the logical one at speed * dt");
 
-    (*sm::body_state<sm::ecs::MacroCell>(sm::store_of(world), e)).idx =
+    (*sm::body_state<sm::ecs::MacroCell>(st, e)).idx =
         sm::ecs::cell_index(30, 10, 128);
-    sm::tick_macro_npc_visuals(sm::store_of(world), 128, 128, 0.25f);
+    sm::tick_macro_npc_visuals(st, 128, 128, 0.25f);
     CHECK(close_enough(visual.vx, 30.0f) && close_enough(visual.vy, 10.0f),
           "a jump too far to glide SNAPS instead of sliding across the map");
     CHECK(close_enough(visual.speed, 0.0f),
@@ -523,12 +501,11 @@ void test_a_resting_lord_mends_at_the_players_rate() {
     // Resting with an empty bar: the body stays in camp for the whole window
     // (Resting is left at HALF the bar, ~43 thinks away), so all sixteen
     // thinks are honest rest and none of them is a march.
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1,
+    sm::MacroStore& st = *worldStore_;
+    auto e = spawn_ai(st, sm::NPCType::Bandit, 10.0f, 10.0f, -1,
                       sm::NPCState::Resting, 0, 0);
-    auto& hp = (*sm::body_state<sm::ecs::Pools>(sm::store_of(world), e));
+    auto& hp = (*sm::body_state<sm::ecs::Pools>(st, e));
     hp.maxHp = 50;
     hp.hp = 10;
     hp.maxMp = 50;
@@ -537,9 +514,9 @@ void test_a_resting_lord_mends_at_the_players_rate() {
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 90u);
     constexpr int kThinks = 16;
-    for (int i = 0; i < kThinks; ++i) tick_once(gs, world, runtime);
+    for (int i = 0; i < kThinks; ++i) tick_once(gs, st, runtime);
 
-    CHECK(in_state((*sm::body_state<sm::ecs::MacroNpcRuntime>(sm::store_of(world), e)),
+    CHECK(in_state((*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e)),
                    sm::NPCState::Resting),
           "the fixture is honest: the lord spent the whole window in camp");
     CHECK(hp.hp > 10,
@@ -585,25 +562,24 @@ void test_a_marching_body_does_not_mend() {
     gs.mapH = 128;
 
     // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const int homeId = push_settlement(gs, *worldStore_, 50, 50);
-    auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, homeId);
-    auto& hp = (*sm::body_state<sm::ecs::Pools>(sm::store_of(world), e));
+    sm::MacroStore& st = *worldStore_;
+    const int homeId = push_settlement(gs, st, 50, 50);
+    auto e = spawn_ai(st, sm::NPCType::Peasant, 80.0f, 50.0f, homeId);
+    auto& hp = (*sm::body_state<sm::ecs::Pools>(st, e));
     hp.maxHp = 50;
     hp.hp = 10;
     const float startX = float(sm::ecs::cell_x(
-        (*sm::body_state<sm::ecs::MacroCell>(sm::store_of(world), e)), 128));
+        (*sm::body_state<sm::ecs::MacroCell>(st, e)), 128));
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 11u);
-    for (int i = 0; i < 16; ++i) tick_once(gs, world, runtime);
+    for (int i = 0; i < 16; ++i) tick_once(gs, st, runtime);
 
     // Not a tolerance — a precondition. If the body never walked, the wound
     // check below would pass for the wrong reason, so it fails out loud.
     CHECK(!close_enough(float(sm::ecs::cell_x(
-              (*sm::body_state<sm::ecs::MacroCell>(sm::store_of(world), e)), 128)), startX),
+              (*sm::body_state<sm::ecs::MacroCell>(st, e)), 128)), startX),
           "the fixture is honest: the body actually MARCHED these sixteen thinks");
     CHECK(hp.hp == 10,
           "the road does not heal: a body on the move mends nothing");
@@ -625,12 +601,11 @@ void test_rotation_does_not_dissolve_the_dead() {
     gs.mapW = 128;
     gs.mapH = 128;
     // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const int cityId = push_settlement(gs, *worldStore_, 50, 50);
+    sm::MacroStore& st = *worldStore_;
+    const int cityId = push_settlement(gs, st, 50, 50);
     const sm::MacroHandle cityBody =
-        sm::place_handle_by_ordinal(*worldStore_, std::uint32_t(cityId));
+        sm::place_handle_by_ordinal(st, std::uint32_t(cityId));
     sm::TerrainData terrain;
     terrain.width = 8;
     terrain.height = 8;
@@ -646,30 +621,29 @@ void test_rotation_does_not_dissolve_the_dead() {
     // 2026-09-21, и свидетель на ней проверял бы уже не закон, а пустоту —
     // rotate_worker_squads не считает крю то, чего место не поднимает.
     const auto dead =
-        spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
+        spawn_ai(st, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
     {
-        sm::MacroStore& std_ = sm::store_of(world);
         const std::uint16_t ds = dead.slot;
-        std_.spawnId[ds] = sm::ecs::MacroSpawnId{77u};
+        st.spawnId[ds] = sm::ecs::MacroSpawnId{77u};
         sm::creatures_push(
-            std_.inventory[ds].inv,
+            st.inventory[ds].inv,
             sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 200u));
-        std_.dead[ds] = 1;
+        st.dead[ds] = 1;
     }
 
     const int popBefore =
-        sm::souls_flock(gs, *worldStore_, cityBody.slot);
+        sm::souls_flock(gs, st, cityBody.slot);
     const int garrisonBefore =
-        sm::creature_count(worldStore_->inventory[cityBody.slot].inv);
-    sm::MacroWorld mw{.gs = &gs, .store = &sm::store_of(world), .terrain = &terrain};
+        sm::creature_count(st.inventory[cityBody.slot].inv);
+    sm::MacroWorld mw{.gs = &gs, .store = &st, .terrain = &terrain};
     sm::rotate_worker_squads(mw, /*day=*/3);
 
-    CHECK(sm::souls_flock(gs, *worldStore_, cityBody.slot) == popBefore,
+    CHECK(sm::souls_flock(gs, st, cityBody.slot) == popBefore,
           "a dead crew's souls never return to the population");
-    CHECK(sm::creature_count(worldStore_->inventory[cityBody.slot].inv)
+    CHECK(sm::creature_count(st.inventory[cityBody.slot].inv)
               == garrisonBefore,
           "and dead records never march into the garrison");
-    CHECK(sm::store_of(world).valid(dead),
+    CHECK(st.valid(dead),
           "the corpse-row is the drain's business, not the rotation's");
 
     // Negative control: ЖИВЫЕ артели той же строки этот же проход РАСПУСКАЕТ
@@ -680,33 +654,31 @@ void test_rotation_does_not_dissolve_the_dead() {
     // которую та же граница двигает ещё и набором.
     for (std::uint32_t i = 0; i < 2u; ++i) {
         const auto alive =
-            spawn_ai(world, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
-        sm::MacroStore& sta = sm::store_of(world);
+            spawn_ai(st, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
         const std::uint16_t as = alive.slot;
-        sta.spawnId[as] = sm::ecs::MacroSpawnId{78u + i};
+        st.spawnId[as] = sm::ecs::MacroSpawnId{78u + i};
         sm::creatures_push(
-            sta.inventory[as].inv,
+            st.inventory[as].inv,
             sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2,
                              201u + i));
     }
     sm::rotate_worker_squads(mw, /*day=*/33);   // граница сезона
     int livingLeft = 0;
     {
-        const sm::MacroStore& stl = sm::store_of(world);
         // ТЕЛО МЕСТА — ТОТ ЖЕ STORE и нулевая строка существа (Peasant),
         // поэтому счёт артелей исключает его ПО ИМЕНИ: место в своих
         // крестьянах не числится.
         const std::uint16_t placeSlot = cityBody.slot;
         for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
-            if (stl.alive[s32] == 0 || stl.dead[s32] != 0) continue;
+            if (st.alive[s32] == 0 || st.dead[s32] != 0) continue;
             if (std::uint16_t(s32) == placeSlot) continue;
-            if (stl.kind[s32].type == std::uint16_t(sm::NPCType::Peasant))
+            if (st.kind[s32].type == std::uint16_t(sm::NPCType::Peasant))
                 ++livingLeft;
         }
     }
     CHECK(livingLeft < 2,
           "negative control: лишняя ЖИВАЯ артель распущена тем же проходом");
-    CHECK(sm::store_of(world).valid(dead),
+    CHECK(st.valid(dead),
           "и труп пережил границу — растворение его по-прежнему не трогает");
 }
 

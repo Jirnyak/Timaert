@@ -1,5 +1,4 @@
 #include "check.h"
-#include "ecs/world.h"
 #include "macro/world_row.h"   // raise_flock_into_container — души головами
 #include "macro/npc_spawn.h"
 #include "macro/place_birth.h" // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
@@ -31,9 +30,8 @@ bool is_place_body(const sm::MacroStore& st, std::size_t slot) {
     return sm::squad_archetype(sm::SquadType(st.runtime[slot].squadType)) == sm::SquadArchetype::Place;
 }
 
-int count_macro_npcs(const sm::ecs::World& world) {
+int count_macro_npcs(const sm::MacroStore& st) {
     // 6.3: население — живые слоты store, моста нет; тела мест не в счёт.
-    const sm::MacroStore& st = sm::store_of(world);
     int n = 0;
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32)
         if (st.alive[s32] != 0 && !is_place_body(st, s32)) ++n;
@@ -52,9 +50,8 @@ int count_macro_npcs(const sm::ecs::World& world) {
 // every macro NPC the genesis raises must carry a full block. The day a new
 // pool joins ecs::Pools, this is the line that fails until every birth fills
 // it.
-int bodies_without_a_full_block(const sm::ecs::World& world) {
+int bodies_without_a_full_block(const sm::MacroStore& st) {
     int bad = 0;
-    const sm::MacroStore& st = sm::store_of(world);
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         if (st.alive[s32] == 0 || is_place_body(st, s32)) continue;
         const auto& pools = st.pools[s32];
@@ -64,8 +61,7 @@ int bodies_without_a_full_block(const sm::ecs::World& world) {
     return bad;
 }
 
-bool positions_inside_map(const sm::ecs::World& world, int mapW, int mapH) {
-    const sm::MacroStore& st = sm::store_of(world);
+bool positions_inside_map(const sm::MacroStore& st, int mapW, int mapH) {
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         if (st.alive[s32] == 0) continue;
         const auto& c = st.cell[s32];
@@ -88,29 +84,26 @@ int main() {
     invalidTerrain.height = 0;
     invalidTerrain.rgba.assign(3u, 255u);
 
-    sm::ecs::World world;
-
     auto worldStore_ = sm::make_macro_store();
 
-    sm::store_attach(world, worldStore_.get());
     // Тело места живёт в ОДНОМ store, поэтому у каждого мира свой
     // GameState: общий эмитент ординалов на два store выдавал бы один
     // ординал двум разным телам (ломтик F).
-    add_settlement(gs, sm::store_of(world), 8, 8);
-    sm::spawn_macro_npcs(gs, sm::store_of(world), invalidTerrain, 123u);
+    add_settlement(gs, *worldStore_, 8, 8);
+    sm::spawn_macro_npcs(gs, *worldStore_, invalidTerrain, 123u);
 
     // FAIL-CLOSED, BOTH WAYS. A terrain the world cannot read must not
     // silence the world (no NPCs at all), and must not let it write outside
     // itself either. The two used to share `return fail(...)`, so the first
     // ended the test and the second was never reached on the run that needed
     // it most.
-    const int spawned = count_macro_npcs(world);
+    const int spawned = count_macro_npcs(*worldStore_);
     CHECK(spawned > 0,
           "unreadable terrain does not suppress macro NPC spawns — the world "
           "falls back, it does not go empty");
-    CHECK(positions_inside_map(world, gs.mapW, gs.mapH),
+    CHECK(positions_inside_map(*worldStore_, gs.mapW, gs.mapH),
           "...and every fallback position still lands INSIDE the map");
-    CHECK(bodies_without_a_full_block(world) == 0,
+    CHECK(bodies_without_a_full_block(*worldStore_) == 0,
           "every body the world raises is born with EVERY pool filled — "
           "mana included, for all of them, not for the player alone");
 
@@ -123,39 +116,33 @@ int main() {
     gsMismatch.mapW = 16;
     gsMismatch.mapH = 16;
 
-    sm::ecs::World mismatchWorld;
-
     auto mismatchWorldStore_ = sm::make_macro_store();
 
-    sm::store_attach(mismatchWorld, mismatchWorldStore_.get());
-    add_settlement(gsMismatch, sm::store_of(mismatchWorld), 8, 8);
-    sm::spawn_macro_npcs(gsMismatch, sm::store_of(mismatchWorld), mismatchedTerrain, 124u);
-    CHECK(count_macro_npcs(mismatchWorld) > 0,
+    add_settlement(gsMismatch, *mismatchWorldStore_, 8, 8);
+    sm::spawn_macro_npcs(gsMismatch, *mismatchWorldStore_, mismatchedTerrain, 124u);
+    CHECK(count_macro_npcs(*mismatchWorldStore_) > 0,
           "terrain whose size disagrees with the map is treated as ABSENT "
           "terrain, not as a reason to spawn nobody");
-    CHECK(positions_inside_map(mismatchWorld, gsMismatch.mapW, gsMismatch.mapH),
+    CHECK(positions_inside_map(*mismatchWorldStore_, gsMismatch.mapW, gsMismatch.mapH),
           "...and its fallback positions stay inside the map too");
 
     sm::GameState invalidMap;
     invalidMap.mapW = 0;
     invalidMap.mapH = 0;
 
-    sm::ecs::World invalidMapWorld;
-
     auto invalidMapWorldStore_ = sm::make_macro_store();
 
-    sm::store_attach(invalidMapWorld, invalidMapWorldStore_.get());
-    add_settlement(invalidMap, sm::store_of(invalidMapWorld), 0, 0);
-    sm::spawn_macro_npcs(invalidMap, sm::store_of(invalidMapWorld), invalidTerrain, 125u);
+    add_settlement(invalidMap, *invalidMapWorldStore_, 0, 0);
+    sm::spawn_macro_npcs(invalidMap, *invalidMapWorldStore_, invalidTerrain, 125u);
     // THE NEGATIVE CONTROL of the two above, and the reason they are not
     // vacuous: a world with no dimensions has nowhere to put anybody, so the
     // spawner must refuse rather than fall back. If this ever passed by
     // spawning zero for the WRONG reason, the two "does not go empty" checks
     // above would be the ones to notice.
-    CHECK(count_macro_npcs(invalidMapWorld) == 0,
+    CHECK(count_macro_npcs(*invalidMapWorldStore_) == 0,
           "a map with no dimensions fails CLOSED — nobody is spawned at all");
 
     std::printf("npc_spawn_contract_test: ok spawned=%d mismatch=%d\n",
-                spawned, count_macro_npcs(mismatchWorld));
+                spawned, count_macro_npcs(*mismatchWorldStore_));
     return sm::test::report("npc_spawn_contract_test");
 }

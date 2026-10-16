@@ -177,11 +177,10 @@ void test_every_squad_body_is_a_whole_body() {
 // that keep a sixth one from inventing a third answer.
 
 // One macro entity, shaped the way the overworld shapes them.
-sm::MacroHandle make_macro_lord(entt::registry& reg, sm::NPCType type,
+sm::MacroHandle make_macro_lord(sm::MacroStore& st, sm::NPCType type,
                                 std::uint16_t faction, int level,
                                 int hp, int maxHp,
                                 std::uint32_t visualSeed) {
-    sm::MacroStore& st = sm::store_of(reg);
     const sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = sm::ecs::MacroCell{sm::ecs::cell_index(10, 12, 64)};
     st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), faction};
@@ -212,7 +211,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
 
     // Half dead on the map, with a face and belongings of his own.
     const sm::MacroHandle macro = make_macro_lord(
-        reg, NPCType::Guard, /*faction*/5, /*level*/4,
+        *worldStore_, NPCType::Guard, /*faction*/5, /*level*/4,
         /*hp*/15.0f, /*maxHp*/30.0f, /*visualSeed*/0xFEEDu);
 
     const entt::entity body =
@@ -233,7 +232,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     // быть ростом строки, умноженным на телосложение ЗАПИСИ (store —
     // истина). Ослабление против дословной копии названо при вердикте.
     {
-        const sm::MacroStore& st = sm::store_of(reg);
+        const sm::MacroStore& st = *worldStore_;
         const float want =
             sub::body_height_m(npc_def(NPCType::Guard))
             * sub::body_shape_height_scale(st.character[macro.slot].bodyShape);
@@ -270,7 +269,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
           "...and the door still answers with what its entity carries — it "
           "moved, it did not vanish");
     CHECK(sm::sub::state_of<ecs::NpcInventory>(reg, body)
-              == &sm::store_of(reg).inventory[macro.slot],
+              == &worldStore_->inventory[macro.slot],
           "LITERALLY the record's bag: pick a sword up down here and it is in "
           "his bag up there, with no trip to arrange");
     // The backlink is the ADDRESS of all of the above — and of his bars. Without
@@ -281,7 +280,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     // A whole entity arrives whole: the control that stops "arrives wounded"
     // from passing by wounding everyone.
     const sm::MacroHandle whole = make_macro_lord(
-        reg, NPCType::Bandit, /*faction*/2, /*level*/3,
+        *worldStore_, NPCType::Bandit, /*faction*/2, /*level*/3,
         /*hp*/9.0f, /*maxHp*/9.0f, /*visualSeed*/0xB0B0u);
     const entt::entity wholeBody =
         sub::spawn_tracked_body(reg, whole, 60.0f, 61.0f, 778u, true);
@@ -315,9 +314,9 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     // ПОЛНОЦЕННОЙ записью (слот store), иначе отказ пришёл бы по ФОРМЕ и это
     // утверждение стало бы проверять не то, что написано в его тексте.
     const sm::MacroHandle monster = make_macro_lord(
-        reg, NPCType::Peasant, /*faction*/1, /*level*/2,
+        *worldStore_, NPCType::Peasant, /*faction*/1, /*level*/2,
         /*hp*/10, /*maxHp*/10, /*visualSeed*/0u);
-    sm::store_of(reg).kind[monster.slot].type = std::uint16_t(0x103);
+    worldStore_->kind[monster.slot].type = std::uint16_t(0x103);
     CHECK(sub::spawn_tracked_body(reg, monster, 5.0f, 5.0f, 1u, false)
               == entt::null,
           "a monster id cannot pass for a humanoid row");
@@ -415,12 +414,12 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     auto& reg = world.reg;
 
     const sm::MacroHandle macro = make_macro_lord(
-        reg, NPCType::Guard, /*faction*/5, /*level*/4,
+        *worldStore_, NPCType::Guard, /*faction*/5, /*level*/4,
         /*hp*/30.0f, /*maxHp*/30.0f, /*visualSeed*/0xCAFEu);
-    sm::store_of(reg).spawnId[macro.slot] =
+    worldStore_->spawnId[macro.slot] =
         ecs::MacroSpawnId{std::uint32_t(9)};
     {
-        auto& mbag = sm::store_of(reg).inventory[macro.slot];
+        auto& mbag = worldStore_->inventory[macro.slot];
         creatures_push(mbag.inv, make_soldier(
             std::uint8_t(NPCType::Guard), 4, 77u));
         creatures_push(mbag.inv, make_soldier(
@@ -473,14 +472,14 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     // The return trip, end to end: a member's death pays the creature row, the
     // second death empties it — and an empty creatures around a LIVE leader is a
     // squad of one, alive and well, not a special case anyone must clean up.
-    MacroWorld w{.store = &sm::store_of(world)};
+    MacroWorld w{.store = worldStore_.get()};
     for (auto e : reg.view<ecs::ObjectSlot>()) {
         if (const auto* d = sm::sub::body_debt(reg, e))
             settle_macro_debt(w, *d, -1);
     }
-    CHECK(creatures_empty(sm::store_of(reg).inventory[macro.slot].inv),
+    CHECK(creatures_empty(worldStore_->inventory[macro.slot].inv),
           "both deaths below emptied the creatures above, by name");
-    CHECK(sm::store_of(reg).dead[macro.slot] == 0,
+    CHECK(worldStore_->dead[macro.slot] == 0,
           "the leader outlives his men: an empty creatures is a squad of one");
 }
 

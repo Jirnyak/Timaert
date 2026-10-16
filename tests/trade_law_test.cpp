@@ -17,7 +17,6 @@
 // real village and moves real stacks.)
 
 #include "check.h"
-#include "ecs/world.h"
 #include "macro/labour.h"   // settle_souls — двери душ
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "tables/faction.h"
@@ -48,10 +47,8 @@ int main() {
         // МЕСТО ЕСТЬ НЕПОДВИЖНЫЙ СКВАД (M-90 шаг 5): строка рождается ТОЛЬКО
         // вместе с телом, а плечо (склад, души) живёт колонками этого тела —
         // значит store стоит ДО первого места, а не после.
-        ecs::World w;
         auto wStore_ = sm::make_macro_store();
         MacroStore& st = *wStore_;
-        sm::store_attach(w, wStore_.get());
 
         // ОРДИНАЛЫ ВЫДАЁТ ЭМИТЕНТ (ломтик F), и это ПОЧИНКА фикстуры: первый
         // город носил рукописный `id = 0`, то есть ординал «никто» (ЗАКОН
@@ -80,7 +77,7 @@ int main() {
         // водил ИИ каравана, а род каравана снесён — караван оказался
         // сквадом, притворившимся видом существа. Дверь та же, что ведёт
         // рейсы сбыта артелей сегодня.
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w)};
+        MacroWorld mw{.gs = &gs, .store = wStore_.get()};
         TickContext ctx{};
         ctx.mw = mw;
         ctx.mapW = gs.mapW;

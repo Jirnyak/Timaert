@@ -16,7 +16,6 @@
 // стола катается броском; колонка получит свидетеля с первой авторской
 // анкетой. Testing law 7 — говорим это вслух.)
 #include "check.h"
-#include "ecs/world.h"
 #include "macro/world_row.h"   // raise_flock_into_container — души головами
 
 #include "core/rng.h"
@@ -102,9 +101,8 @@ GameState make_loaded_world() {
     return gs;
 }
 
-sm::MacroHandle find_design(ecs::World& w, std::int16_t ord) {
+sm::MacroHandle find_design(sm::MacroStore& st, std::int16_t ord) {
     // Тег стола — колонка store (6.3: население — живые слоты, голый цикл).
-    const sm::MacroStore& st = sm::store_of(w);
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0) continue;
@@ -131,15 +129,13 @@ void test_table_rows_resolve() {
 }
 
 void test_spawn_births_the_row() {
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     GameState gs = make_world(*wStore_);
     const TerrainData terrain = make_terrain();
     Rng rng(1234u);
-    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, *wStore_, terrain, rng, gs.nextMacroSpawnOrdinal);
 
-    const sm::MacroHandle e = find_design(w, 0);
+    const sm::MacroHandle e = find_design(*wStore_, 0);
     CHECK_OR_RETURN(wStore_->valid(e), "the preacher row became one body");
 
     const DesignCharacterDef& row = kDesignCharacterDefs[0];
@@ -181,7 +177,7 @@ void test_spawn_births_the_row() {
     // допущение «проповедник родился нулевым» и есть тот род надежды, который
     // §8 п.11 запрещает свидетелю.
     const std::uint32_t ord = wStore_->spawnId[e.slot].index;
-    CHECK(sm::order_squad_route(sm::store_of(w), ord, ecs::SquadOrders{}),
+    CHECK(sm::order_squad_route(*wStore_, ord, ecs::SquadOrders{}),
           "приказ снят дверью мира, а не компонентой мимо колонки");
     CHECK(wStore_->orders[e.slot].waypointCount == 0,
           "и снятие видно читателю: маршрута в колонке больше нет");
@@ -201,13 +197,11 @@ void test_spawn_births_the_row() {
 }
 
 void test_snapshot_carries_the_ordinal() {
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     GameState gs = make_world(*wStore_);
     const TerrainData terrain = make_terrain();
     Rng rng(777u);
-    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, *wStore_, terrain, rng, gs.nextMacroSpawnOrdinal);
     // Обычный сквад рядом — негативный контроль на −1. Через ту же одну
     // дверь создания (spawn_squad → make_npc).
     SquadSpec plain{};
@@ -215,8 +209,8 @@ void test_snapshot_carries_the_ordinal() {
     plain.x = 30;
     plain.y = 30;
     plain.factionIndex = faction_index("bandits");
-    CHECK_OR_RETURN(sm::store_of(w).valid(
-                        spawn_squad(gs, sm::store_of(w), terrain, plain)),
+    CHECK_OR_RETURN(wStore_->valid(
+                        spawn_squad(gs, *wStore_, terrain, plain)),
                     "the plain control squad spawned");
 
     const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(*wStore_);
@@ -233,16 +227,12 @@ void test_snapshot_carries_the_ordinal() {
     CHECK(plainRecords >= 1,
           "negative control: the plain squad rides with -1");
 
-    ecs::World w2;
-
     auto w2Store_ = sm::make_macro_store();
-
-    sm::store_attach(w2, w2Store_.get());
     GameState gs2 = make_loaded_world();
     // Тела мест приехали теми же записями блока — ровно так же, как на
     // загрузке игры (main.cpp): второй двери у них больше нет.
     restore_macro_ecs(snap, *w2Store_, gs2);
-    const sm::MacroHandle back = find_design(w2, 0);
+    const sm::MacroHandle back = find_design(*w2Store_, 0);
     CHECK_OR_RETURN(w2Store_->valid(back),
                     "restore re-stamped the design tag from the record");
     CHECK(owned_sheet(*w2Store_, back) != nullptr,
@@ -255,19 +245,17 @@ void test_king_peasant_births_by_home_faction() {
     // freefolk-города рядом, чтобы фильтр префикса был утверждением, а не
     // единственностью.
     const TerrainData terrain = make_terrain();
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     GameState gs = make_world(*wStore_);  // freefolk-города хватает Варнаве
     const sm::MacroHandle barb =
         settle(gs, *wStore_, SquadType::City, 50, 20,
                std::int16_t(faction_index("barbarian_north")));
     const int barbId = int(wStore_->spawnId[barb.slot].index);
     Rng rng(555u);
-    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, *wStore_, terrain, rng, gs.nextMacroSpawnOrdinal);
 
-    sm::MacroStore& stk = sm::store_of(w);
-    const sm::MacroHandle king = find_design(w, 1);
+    sm::MacroStore& stk = *wStore_;
+    const sm::MacroHandle king = find_design(stk, 1);
     CHECK_OR_RETURN(stk.valid(king),
                     "the king row became one body near the barbarian city");
     CHECK(stk.runtime[king.slot].homeSettlementId == barbId,
@@ -296,16 +284,14 @@ void test_king_needs_a_barbarian_city() {
     // Мир Варнавы (freefolk-город + деревни), варварского города НЕТ: царь
     // честно не рождается, проповедник рождается — фильтр режет ровно
     // одну строку, не весь стол.
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     GameState gs = make_world(*wStore_);
     const TerrainData terrain = make_terrain();
     Rng rng(556u);
-    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
-    CHECK(sm::store_of(w).valid(find_design(w, 0)),
+    spawn_design_characters(gs, *wStore_, terrain, rng, gs.nextMacroSpawnOrdinal);
+    CHECK(wStore_->valid(find_design(*wStore_, 0)),
           "Varnava is born in a world without barbarians");
-    CHECK(!sm::store_of(w).valid(find_design(w, 1)),
+    CHECK(!wStore_->valid(find_design(*wStore_, 1)),
           "the king is honestly NOT born without a barbarian city");
 }
 
@@ -316,9 +302,7 @@ void test_dragons_nest_on_mountain_peaks() {
     // Уровни, а не байты: прежние 250/230 канала означали ровно эти доли.
     constexpr float kPeak01 = 250.0f / 255.0f;
     constexpr float kMassif01 = 230.0f / 255.0f;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     GameState gs = make_world(*wStore_);
     TerrainData terrain = make_terrain();
     for (int y = 44; y <= 52; ++y) {
@@ -328,14 +312,14 @@ void test_dragons_nest_on_mountain_peaks() {
         }
     }
     Rng rng(999u);
-    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, *wStore_, terrain, rng, gs.nextMacroSpawnOrdinal);
 
     // Один массив = одна вершина: Dragon1 рождается, №2/№3 (вершины с
     // разносом ≥ mapW/8) — честно нет.
-    const sm::MacroHandle d1 = find_design(w, 2);
-    sm::MacroStore& std_ = sm::store_of(w);
+    const sm::MacroHandle d1 = find_design(*wStore_, 2);
+    sm::MacroStore& std_ = *wStore_;
     CHECK_OR_RETURN(std_.valid(d1), "Dragon1 nests on the one massif");
-    CHECK(!std_.valid(find_design(w, 3)) && !std_.valid(find_design(w, 4)),
+    CHECK(!std_.valid(find_design(std_, 3)) && !std_.valid(find_design(std_, 4)),
           "one massif births one dragon — spacing is honest");
 
     const auto& rt = std_.runtime[d1.slot];
@@ -362,15 +346,13 @@ void test_no_home_no_birth() {
     gs.mapW = kW;
     gs.mapH = kH;
     const TerrainData terrain = make_terrain();
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     Rng rng(42u);
-    spawn_design_characters(gs, sm::store_of(w), terrain, rng, gs.nextMacroSpawnOrdinal);
+    spawn_design_characters(gs, *wStore_, terrain, rng, gs.nextMacroSpawnOrdinal);
     int tags = 0;
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32)
-        if (sm::store_of(w).alive[s32] != 0
-            && sm::store_of(w).designTag[s32].ordinal >= 0)
+        if (wStore_->alive[s32] != 0
+            && wStore_->designTag[s32].ordinal >= 0)
             ++tags;
     CHECK(tags == 0, "a world without the row's home births nobody");
 }

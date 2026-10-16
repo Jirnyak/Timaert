@@ -8,7 +8,6 @@
 // non-macro entity would be a second squad representation growing beside the
 // real one.
 #include "check.h"
-#include "ecs/world.h"
 
 #include "ecs/components.h"
 #include "macro/npc_spawn.h"
@@ -47,10 +46,8 @@ void test_every_macro_npc_is_a_squad_of_one() {
     gs.mapH = 16;
 
     const sm::TerrainData terrain = absent_terrain();
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    make_settlement(gs, sm::store_of(world), 8, 8);
+    make_settlement(gs, *worldStore_, 8, 8);
 
     // ТЕЛА МЕСТ СТОЯТ В ТОМ ЖЕ STORE (M-90 шаг 5), и закон этого свидетеля —
     // про СПАВН-ДВЕРЬ, а не про всякое тело мира: город законно носит в
@@ -58,16 +55,16 @@ void test_every_macro_npc_is_a_squad_of_one() {
     // спрашиваются ровно те слоты, которые дверь родила.
     std::uint8_t before[sm::kUnifiedCap];
     {
-        const sm::MacroStore& st = sm::store_of(world);
+        const sm::MacroStore& st = *worldStore_;
         for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32)
             before[s32] = st.alive[s32];
     }
-    const int placeBodies = int(sm::store_of(world).aliveCount);
-    sm::spawn_macro_npcs(gs, sm::store_of(world), terrain, 123u);
+    const int placeBodies = int(worldStore_->aliveCount);
+    sm::spawn_macro_npcs(gs, *worldStore_, terrain, 123u);
 
     int macroNpcs = 0;
     {
-        const sm::MacroStore& st = sm::store_of(world);
+        const sm::MacroStore& st = *worldStore_;
         for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
             if (st.alive[s32] == 0 || before[s32] != 0) continue;
             ++macroNpcs;
@@ -79,10 +76,10 @@ void test_every_macro_npc_is_a_squad_of_one() {
     CHECK(macroNpcs > 0, "fixture must spawn macro NPCs to say anything");
 
     // Runtime door: the console/event spawner goes through the same make_npc.
-    CHECK(sm::spawn_npc_at(gs, sm::store_of(world), terrain, "bandit", 4, 4, /*level*/ 3),
+    CHECK(sm::spawn_npc_at(gs, *worldStore_, terrain, "bandit", 4, 4, /*level*/ 3),
           "runtime spawn door must accept a registry label");
     int containers = 0;
-    containers = int(sm::store_of(world).aliveCount) - placeBodies;
+    containers = int(worldStore_->aliveCount) - placeBodies;
     CHECK(containers == macroNpcs + 1,
           "both spawn doors must attach exactly one creatures per macro NPC");
 }

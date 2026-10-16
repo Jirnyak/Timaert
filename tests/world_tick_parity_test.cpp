@@ -7,7 +7,6 @@
 // where a verdict is not something a function can return, and a test that runs
 // zero checks fails by counting.
 #include "check.h"
-#include "ecs/world.h"
 #include <cmath>
 #include <memory>
 
@@ -136,10 +135,8 @@ void test_the_two_shares_are_independent() {
 void test_daily_processing_applies_player_upkeep_and_age() {
     sm::GameState gs{};
     // The purse rides his squad entity now; the daily tick is handed it.
-    sm::ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    sm::ensure_macro_player_entity(gs, sm::store_of(world));
+    sm::ensure_macro_player_entity(gs, *worldStore_);
     sm::player_inventory(gs, *worldStore_)->add("coin_empire_copper", 5);
     gs.player.ageDays = 1000;
     sm::player_sheet(gs, *worldStore_)->attributes[sm::AttributeId::Cha] = 0;
@@ -157,7 +154,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 79u));
     sm::MacroWorld mw{};
     mw.gs = &gs;
-    mw.store = &sm::store_of(world);
+    mw.store = worldStore_.get();
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 789u);

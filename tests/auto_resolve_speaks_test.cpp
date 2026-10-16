@@ -19,7 +19,6 @@
 //     a defeat pays the player nothing.
 
 #include "check.h"
-#include "ecs/world.h"
 #include "macro/squad.h"
 #include "macro/world_row.h"
 #include "macro/player_entity.h"
@@ -34,9 +33,9 @@ namespace {
 
 // The player's bag is an ordinary NpcInventory on his squad entity now; a
 // fixture raises that entity and reads the spoils from it.
-sm::Inventory& player_bag_of(const sm::GameState& gs, sm::ecs::World& w) {
+sm::Inventory& player_bag_of(const sm::GameState& gs, sm::MacroStore& st) {
     static sm::Inventory scratch{};
-    sm::Inventory* bag = sm::player_inventory(gs, sm::store_of(w));
+    sm::Inventory* bag = sm::player_inventory(gs, st);
     return bag ? *bag : scratch;
 }
 
@@ -52,10 +51,9 @@ void collect(void* user, const BattleFact& f) {
 
 // A macro squad: leader entity + creatures records, the shape every macro body
 // has (squad == leader, CANON S4).
-sm::MacroHandle squad(ecs::World& w, NPCType leaderType,
+sm::MacroHandle squad(sm::MacroStore& st, NPCType leaderType,
                       const char* factionId,
                       int level, int members, std::uint32_t spawnIndex) {
-    sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(leaderType),
                                    std::uint16_t(faction_index(factionId))};
@@ -73,13 +71,13 @@ sm::MacroHandle squad(ecs::World& w, NPCType leaderType,
 
 // An outcome that kills the whole enemy side: every creature row plus the
 // leader. Hand-built so the test states the law, not the resolver's dice.
-AutoBattleOutcome wipe_of(ecs::World& w, sm::MacroHandle loser,
+AutoBattleOutcome wipe_of(sm::MacroStore& st, sm::MacroHandle loser,
                           bool loserIsB) {
     AutoBattleOutcome o{};
     o.winner = loserIsB ? 0 : 1;
     auto& cas = loserIsB ? o.casualtiesB : o.casualtiesA;
     for (const CreatureRef r :
-         creatures_range(sm::store_of(w).inventory[loser.slot].inv)) {
+         creatures_range(st.inventory[loser.slot].inv)) {
         cas.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
     (loserIsB ? o.leaderFractionB : o.leaderFractionA) = 0.0f;
@@ -90,22 +88,20 @@ AutoBattleOutcome wipe_of(ecs::World& w, sm::MacroHandle loser,
 void test_every_death_is_reported_once() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     FactLog log{};
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.store = &sm::store_of(w);
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    mw.store = wStore_.get();
+    ensure_macro_player_entity(gs, *wStore_);
     mw.facts = &collect;
     mw.factsUser = &log;
 
-    const sm::MacroHandle a = 
-squad(w, NPCType::Guard, "empire", 3, 0, 1u);
-    const sm::MacroHandle b = 
-squad(w, NPCType::Bandit, "bandits", 2, 3, 2u);
-    settle_auto_battle(mw, a, b, wipe_of(w, b, /*loserIsB*/true));
+    const sm::MacroHandle a =
+squad(*wStore_, NPCType::Guard, "empire", 3, 0, 1u);
+    const sm::MacroHandle b =
+squad(*wStore_, NPCType::Bandit, "bandits", 2, 3, 2u);
+    settle_auto_battle(mw, a, b, wipe_of(*wStore_, b, /*loserIsB*/true));
 
     CHECK(log.facts.size() == 4,
           "three creature rows and the leader — four deaths, four facts");
@@ -131,18 +127,16 @@ squad(w, NPCType::Bandit, "bandits", 2, 3, 2u);
 void test_no_facts_when_nobody_listens() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     MacroWorld mw{};       // no sink: a headless fixture
     mw.gs = &gs;
-    mw.store = &sm::store_of(w);
-    const sm::MacroHandle a = 
-squad(w, NPCType::Guard, "empire", 3, 0, 1u);
-    const sm::MacroHandle b = 
-squad(w, NPCType::Bandit, "bandits", 2, 2, 2u);
-    settle_auto_battle(mw, a, b, wipe_of(w, b, true));
-    CHECK(sm::macro_dead(sm::store_of(w), b),
+    mw.store = wStore_.get();
+    const sm::MacroHandle a =
+squad(*wStore_, NPCType::Guard, "empire", 3, 0, 1u);
+    const sm::MacroHandle b =
+squad(*wStore_, NPCType::Bandit, "bandits", 2, 2, 2u);
+    settle_auto_battle(mw, a, b, wipe_of(*wStore_, b, true));
+    CHECK(sm::macro_dead(*wStore_, b),
           "the battle still settles with nobody listening — a null channel "
           "is the zero contribution, not a broken path");
 }
@@ -152,17 +146,14 @@ void test_kill_price_is_the_registry_column() {
     {
         GameState gs{};
         gs.mapW = gs.mapH = 64;
-        ecs::World w;
         auto wStore_ = sm::make_macro_store();
-        sm::store_attach(w, wStore_.get());
         MacroWorld mw{};
         mw.gs = &gs;
-        mw.store = &sm::store_of(w);
+        mw.store = wStore_.get();
         const sm::MacroHandle enemy =
-            
-squad(w, NPCType::Guard, "empire", 2, 2, 5u);
+squad(*wStore_, NPCType::Guard, "empire", 2, 2, 5u);
         const int before = player_reputation(&gs, "empire");
-        settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
+        settle_player_auto_battle(mw, enemy, wipe_of(*wStore_, enemy, true), true);
         const int after = player_reputation(&gs, "empire");
         CHECK(after == before + 3 * kKillRepPenalty,
               "three imperial dead cost three times the one kill price");
@@ -171,17 +162,14 @@ squad(w, NPCType::Guard, "empire", 2, 2, 5u);
     {
         GameState gs{};
         gs.mapW = gs.mapH = 64;
-        ecs::World w;
         auto wStore_ = sm::make_macro_store();
-        sm::store_attach(w, wStore_.get());
         MacroWorld mw{};
         mw.gs = &gs;
-        mw.store = &sm::store_of(w);
+        mw.store = wStore_.get();
         const sm::MacroHandle enemy =
-            
-squad(w, NPCType::Bandit, "bandits", 2, 2, 6u);
+squad(*wStore_, NPCType::Bandit, "bandits", 2, 2, 6u);
         const int before = player_reputation(&gs, "bandits");
-        settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
+        settle_player_auto_battle(mw, enemy, wipe_of(*wStore_, enemy, true), true);
         CHECK(player_reputation(&gs, "bandits") == before,
               "killing outlaws is no crime — the column says so, not the code");
     }
@@ -191,41 +179,39 @@ void test_spoils_are_rolled_not_scavenged() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
     gs.worldSeed = 4242u;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.store = &sm::store_of(w);
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    mw.store = wStore_.get();
+    ensure_macro_player_entity(gs, *wStore_);
     // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): чтобы спросить «дошла ли
     // добыча», у павшего должна БЫТЬ добыча. Раньше её рождал бросок
     // хардкод-профиля роли — и вопрос стоял «роняет ли контейнерная запись то,
     // чего у неё нет»; вердикт владельца 2026-09-26 (M-139) снёс и профили,
     // и кошельки, поэтому закон теперь ОДИН и честный: победителю достаётся
     // РОВНО то, что павший нёс. Кладём купцу настоящий товар руками.
-    const sm::MacroHandle enemy = 
-squad(w, NPCType::Merchant, "empire", 4, 3, 7u);
+    const sm::MacroHandle enemy =
+squad(*wStore_, NPCType::Merchant, "empire", 4, 3, 7u);
     {
-        Inventory& einv = sm::store_of(w).inventory[enemy.slot].inv;
+        Inventory& einv = wStore_->inventory[enemy.slot].inv;
         einv.add("misc_gem", 3);
         einv.add("coin_empire_silver", 5);
     }
-    const int coinBefore = coin_census_value(player_bag_of(gs, w));
-    settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
+    const int coinBefore = coin_census_value(player_bag_of(gs, *wStore_));
+    settle_player_auto_battle(mw, enemy, wipe_of(*wStore_, enemy, true), true);
 
     // ПЕРЕНОС, А НЕ ПЕЧАТЬ: самоцветы и серебро павшего лежат у победителя, и
     // ровно в том счёте, в каком были у павшего — сверх этого не появляется
     // ничего (негативный контроль сноса выдачи, §8 п.6: вернись бросок
     // профиля или кошелёк — счёт перестанет совпадать).
-    CHECK(player_bag_of(gs, w).count("misc_gem") == 3,
+    CHECK(player_bag_of(gs, *wStore_).count("misc_gem") == 3,
           "добыча павшего ПЕРЕНОСИТСЯ победителю, ровно своим счётом");
-    CHECK(coin_census_value(player_bag_of(gs, w)) == coinBefore + 5 * 10,
+    CHECK(coin_census_value(player_bag_of(gs, *wStore_)) == coinBefore + 5 * 10,
           "монеты павшего переходят как товар, и НИ ОДНОЙ сверх — выдача "
           "монет из воздуха снесена (M-139)");
     {
         int goods = 0;
-        for (const ItemRef& sl : player_bag_of(gs, w).slots) {
+        for (const ItemRef& sl : player_bag_of(gs, *wStore_).slots) {
             if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
         }
         CHECK(goods == 2,
@@ -237,22 +223,19 @@ squad(w, NPCType::Merchant, "empire", 4, 3, 7u);
     GameState gs2{};
     gs2.mapW = gs2.mapH = 64;
     gs2.worldSeed = 4242u;
-    ecs::World w2;
     auto w2Store_ = sm::make_macro_store();
-    sm::store_attach(w2, w2Store_.get());
     MacroWorld mw2{};
     mw2.gs = &gs2;
-    mw2.store = &sm::store_of(w2);
-    ensure_macro_player_entity(gs2, sm::store_of(w2));
+    mw2.store = w2Store_.get();
+    ensure_macro_player_entity(gs2, *w2Store_);
     const sm::MacroHandle enemy2 =
-        
-squad(w2, NPCType::Merchant, "empire", 4, 3, 8u);
+squad(*w2Store_, NPCType::Merchant, "empire", 4, 3, 8u);
     AutoBattleOutcome loss{};
     loss.winner = 1;                    // the enemy (side B) won
     loss.leaderFractionA = 0.0f;        // the player fell
     loss.leaderFractionB = 0.8f;
     settle_player_auto_battle(mw2, enemy2, loss, /*playerIsA*/true);
-    CHECK(coin_census_value(player_bag_of(gs, w2)) == 0,
+    CHECK(coin_census_value(player_bag_of(gs, *w2Store_)) == 0,
           "a defeat pays the player nothing");
 }
 
@@ -265,21 +248,19 @@ void test_empty_handed_fallen_pays_nothing() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
     gs.worldSeed = 99u;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.store = &sm::store_of(w);
-    ensure_macro_player_entity(gs, sm::store_of(w));
-    const sm::MacroHandle pack = 
-squad(w, NPCType::Wolf, "wildlife", 3, 0, 9u);
-    settle_player_auto_battle(mw, pack, wipe_of(w, pack, true), true);
-    CHECK(coin_census_value(player_bag_of(gs, w)) == 0,
+    mw.store = wStore_.get();
+    ensure_macro_player_entity(gs, *wStore_);
+    const sm::MacroHandle pack =
+squad(*wStore_, NPCType::Wolf, "wildlife", 3, 0, 9u);
+    settle_player_auto_battle(mw, pack, wipe_of(*wStore_, pack, true), true);
+    CHECK(coin_census_value(player_bag_of(gs, *wStore_)) == 0,
           "стая, не нёсшая ничего, не платит ни монеты — ни кошелька строки, "
           "ни броска профиля больше нет (M-139)");
     int goods = 0;
-    for (const ItemRef& sl : player_bag_of(gs, w).slots) {
+    for (const ItemRef& sl : player_bag_of(gs, *wStore_).slots) {
         if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
     }
     CHECK(goods == 0,

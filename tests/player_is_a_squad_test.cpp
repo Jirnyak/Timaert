@@ -16,7 +16,6 @@
 // ordinary NPC in the very same state, which MUST be picked up by the loop
 // that skips the player.
 #include "check.h"
-#include "ecs/world.h"
 
 #include "macro/player_entity.h"
 #include "macro/world_row.h"
@@ -34,9 +33,8 @@ namespace {
 using namespace sm;
 
 // An ordinary macro squad, spawned the shape the AI expects to drive.
-sm::MacroHandle npc_squad(ecs::World& w, float x, float y,
+sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
                           std::uint32_t ordinal, int members) {
-    sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     // 64 — the fixture map side every test in this file boots (gs.mapW).
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), 64)};
@@ -68,10 +66,8 @@ void test_player_carries_everything_a_squad_carries() {
     gs.mapW = gs.mapH = 64;
     // (No position scalar to seed since подпосадка 4: the creation door
     // derives the spawn cell from the world — map centre in a bare fixture.)
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
 
     const MacroHandle mineH = player_squad_handle(gs);
     CHECK(wStore_->valid(mineH), "the player's squad exists after the door");
@@ -106,10 +102,8 @@ void test_the_mark_survives_losing_the_flag() {
     gs.mapW = gs.mapH = 64;
     // (No position scalar to seed since подпосадка 4: the creation door
     // derives the spawn cell from the world — map centre in a bare fixture.)
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle mine = player_squad_handle(gs);
     CHECK(wStore_->valid(mine), "his squad is marked (playerSquadBits live)");
     CHECK(gs.playerFlagBits == gs.playerSquadBits,
@@ -117,9 +111,9 @@ void test_the_mark_survives_losing_the_flag() {
 
     // Possession: the flag walks onto a lord. Walking the door again must NOT
     // hand it back — and must not un-mark the squad it left behind.
-    const MacroHandle lordH = npc_squad(w, 30.0f, 30.0f, 7u, 2);
+    const MacroHandle lordH = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 2);
     sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lordH);
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
 
     CHECK(player_flag_handle(gs) == lordH,
           "the possessed lord keeps the flag");
@@ -141,10 +135,8 @@ void test_the_mark_survives_losing_the_flag() {
 void test_death_in_a_worn_body_wakes_him_at_home() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle mine = player_squad_handle(gs);
 
     // (a) В СЕБЕ. Возвращаться некуда, потому что незачем — умер ты сам, и
@@ -156,7 +148,7 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
           "and the flag did not wander");
 
     // (b) В ЧУЖОМ ТЕЛЕ, ОРИГИНАЛ ЖИВ. Флажок едет домой одним движением.
-    const MacroHandle lordH = npc_squad(w, 30.0f, 30.0f, 7u, 2);
+    const MacroHandle lordH = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 2);
     sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lordH);
     CHECK(player_wears_another_body(gs), "wearing a lord is asked of the flag");
     CHECK(wake_player_in_original_body(gs, *wStore_),
@@ -187,10 +179,8 @@ void test_ai_leaves_the_player_squad_standing() {
     gs.mapW = gs.mapH = 64;
     // (No position scalar to seed since подпосадка 4: the creation door
     // derives the spawn cell from the world — map centre in a bare fixture.)
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle mineH = player_squad_handle(gs);
     // Stand him on 20,20 the way any placement happens now: by writing the
     // squad's own cell (the jump door's core), not a scalar.
@@ -198,19 +188,19 @@ void test_ai_leaves_the_player_squad_standing() {
 
     // Possession, so the flag is NOT on his squad — the exact state in which
     // the old exclude-guard let the AI take the wheel.
-    const MacroHandle lord = npc_squad(w, 30.0f, 30.0f, 7u, 0);
-    sm::transfer_player_flag(sm::store_of(w), gs.playerFlagBits, lord);
+    const MacroHandle lord = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 0);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lord);
 
     // The negative control: an idle NPC standing where the player stands. If
     // the sweep is a no-op for everyone, this one's runtime never moves either
     // and the test proves nothing.
-    const MacroHandle other = npc_squad(w, 20.0f, 20.0f, 8u, 0);
+    const MacroHandle other = npc_squad(*wStore_, 20.0f, 20.0f, 8u, 0);
 
     const auto before = wStore_->runtime[mineH.slot];
     MacroNpcAiRuntime runtime;
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.store = &sm::store_of(w);
+    mw.store = wStore_.get();
     for (int i = 0; i < 8; ++i) tick_macro_npc_ai(mw, runtime, kAiTicks);
 
     const auto& after = wStore_->runtime[mineH.slot];
@@ -240,10 +230,8 @@ void test_ai_leaves_the_player_squad_standing() {
 void test_the_players_men_are_never_swept() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle mine = player_squad_handle(gs);
     Inventory* creatures = player_inventory(gs, *wStore_);
     CHECK(creatures != nullptr, "his creatures is there to lose");
@@ -257,7 +245,7 @@ void test_the_players_men_are_never_swept() {
     // is called unconditionally at the end of every auto-battle, and a rule
     // that holds only because nothing has broken yet is not a rule.
     sm::macro_mark_dead(*wStore_, mine);
-    const MacroHandle fallen = npc_squad(w, 30.0f, 30.0f, 7u, 3);
+    const MacroHandle fallen = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 3);
     sm::macro_mark_dead(*wStore_, fallen);
 
     // Мир нужен двери ПО ЗАКОНУ, а не для удобства: погибшая душа списывается
@@ -280,16 +268,14 @@ void test_the_players_men_are_never_swept() {
 void test_the_entity_numbers_are_not_stale() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     // The sheet is the OWNED component now (посадка Б): it exists only once
     // the body does, so the build is written through the door and the next
     // ensure walk (the per-tick refresh) moves the ceilings after it.
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     player_sheet(gs, *wStore_)->attributes[sm::AttributeId::End] = 5;
     player_sheet(gs, *wStore_)->levelData.level = 1;
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle e = player_squad_handle(gs);
 
     const int bornMaxSp = wStore_->pools[e.slot].maxSp;
@@ -314,7 +300,7 @@ void test_the_entity_numbers_are_not_stale() {
     // He marched to 33,44 (a cell write — what the walker does); the heal
     // pass below must rescale his numbers WITHOUT touching where he stands.
     wStore_->cell[e.slot].idx = ecs::cell_index(33, 44, 64);
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
 
     const auto& hp = wStore_->pools[e.slot];
     CHECK(hp.maxHp == bar_ceilings(player_sheet(gs, *wStore_)->attributes,
@@ -359,15 +345,13 @@ void test_the_entity_numbers_are_not_stale() {
 void test_one_door_assembles_every_battle_side() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     player_sheet(gs, *wStore_)->attributes[sm::AttributeId::Str] = 18;
     player_sheet(gs, *wStore_)->attributes[sm::AttributeId::End] = 18;
     player_sheet(gs, *wStore_)->levelData.level = 5;
     // The per-tick walk moves the ceilings after the build change.
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle e = player_squad_handle(gs);
     {
         auto& pools = wStore_->pools[e.slot];
@@ -378,7 +362,7 @@ void test_one_door_assembles_every_battle_side() {
     // A transient squad owns no sheet — the same door, the derive path.
     // Spawned BEFORE `mine` is assembled: the side carries a pointer into
     // the creatures pool, and a later spawn may reallocate it (ecs-ref grabla).
-    const sm::MacroHandle transient = npc_squad(w, 30.0f, 30.0f, 9u, 0);
+    const sm::MacroHandle transient = npc_squad(*wStore_, 30.0f, 30.0f, 9u, 0);
     // Транзиент по ЗАКОНУ владения — не именной род: Bandit из фикстуры
     // именной (kNamedKinds) и владел бы листом; крестьянин — деривирует.
     wStore_->kind[transient.slot].type = std::uint16_t(NPCType::Peasant);
@@ -409,20 +393,18 @@ void test_one_door_assembles_every_battle_side() {
 void test_the_players_wound_settles_through_the_one_door() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     player_sheet(gs, *wStore_)->attributes[sm::AttributeId::End] = 10;
     // The per-tick walk moves the ceilings after the build change.
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle mine = player_squad_handle(gs);
     const int maxHp = wStore_->pools[mine.slot].maxHp;
 
     MacroWorld mw{};
     mw.gs = &gs;
-    mw.store = &sm::store_of(w);
-    const MacroHandle foe = npc_squad(w, 10.0f, 10.0f, 7u, 2);
+    mw.store = wStore_.get();
+    const MacroHandle foe = npc_squad(*wStore_, 10.0f, 10.0f, 7u, 2);
 
     AutoBattleOutcome o{};
     o.winner = 0;                 // the player's side takes it
@@ -450,11 +432,9 @@ void test_the_players_wound_settles_through_the_one_door() {
 // buys, pinned with its negative controls: a worn bonus is IN the answer,
 // the BASE sheet never moves, and taking the item off leaves no residue.
 void test_the_sheet_door_reads_what_is_standing() {
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     GameState gs;
-    ensure_macro_player_entity(gs, sm::store_of(w));
+    ensure_macro_player_entity(gs, *wStore_);
     player_sheet(gs, *wStore_)->attributes[AttributeId::End] = 8;
 
     const CharacterSheet bare = player_effective_sheet(gs, *wStore_);
@@ -464,8 +444,8 @@ void test_the_sheet_door_reads_what_is_standing() {
     const MacroHandle squad = player_squad_handle(gs);
     CHECK_OR_RETURN(wStore_->valid(squad), "the player's squad exists");
     const std::uint16_t pslot = squad.slot;
-    auto& eq = sm::store_of(w).gear[pslot];
-    auto& bag = sm::store_of(w).inventory[pslot].inv;
+    auto& eq = wStore_->gear[pslot];
+    auto& bag = wStore_->inventory[pslot].inv;
     ItemRef plate{};
     plate.count = 1;
     plate.set_affix(0, {std::uint8_t(BonusId::End), +2});

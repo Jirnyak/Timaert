@@ -10,7 +10,6 @@
 //     record_deed) makes the two halves one action, and the raw chronicle
 //     door pays nothing (the negative control).
 #include "check.h"
-#include "ecs/world.h"
 
 #include "macro/journal.h"
 #include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
@@ -53,8 +52,7 @@ WorldFact fact(int day, FactKind kind, std::uint8_t subjKind,
 // что игра: ординал — от эмитента, дом — mark_player_home, флаг — дверь
 // переноса. Прибей он ординал литералом, как раньше, — и свидетель проверял бы
 // форму, которой в игре больше нет.
-void stand_at(sm::GameState& gs, ecs::World& w, int x, int y) {
-    sm::MacroStore& st = sm::store_of(w);
+void stand_at(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
     if (!st.valid(sm::player_squad_handle(gs))) {
         const sm::MacroHandle h = sm::store_birth(st);
         st.spawnId[h.slot] =
@@ -74,16 +72,14 @@ void test_participation_locality_and_silence() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    ecs::World w;
-    auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());   // the flag holder is nobody's LORD → he wears nobody
-    stand_at(gs, w, 10, 10);
+    auto wStore_ = sm::make_macro_store();   // the flag holder is nobody's LORD → he wears nobody
+    stand_at(gs, *wStore_, 10, 10);
 
     // (a) The player's own deed, far away — learned by PARTICIPATION.
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad, true),
-                          sm::player_home_ordinal(gs, sm::store_of(w)),
+                          sm::player_home_ordinal(gs, *wStore_),
                           50, 50));
     // (b) Somebody else's deed on the player's cell — learned by LOCALITY.
     chronicle_record(gs.chronicle,
@@ -96,16 +92,16 @@ void test_participation_locality_and_silence() {
                      fact(1, FactKind::Starved,
                           std::uint8_t(FactSubject::Landmark), 3u, 40, 40));
 
-    player_journal_capture(gs, sm::store_of(w));
+    player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 2,
           "participation and locality are learned; the far world is not");
     CHECK(gs.player.journal[0].subject
-                  == sm::player_home_ordinal(gs, sm::store_of(w))
+                  == sm::player_home_ordinal(gs, *wStore_)
               && gs.player.journal[1].subject == 777u,
           "the journal keeps the very records, in the order they happened");
 
     // Idempotence: the reader's cursor moved, so nothing is learned twice.
-    player_journal_capture(gs, sm::store_of(w));
+    player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 2,
           "re-asking the chronicle re-learns nothing");
 
@@ -114,22 +110,22 @@ void test_participation_locality_and_silence() {
                          fact_subject(FactSubject::Squad, false), 778u,
                          30, 30);
     hit.objectKind = fact_subject(FactSubject::Squad, true);
-    hit.object = sm::player_home_ordinal(gs, sm::store_of(w));
+    hit.object = sm::player_home_ordinal(gs, *wStore_);
     chronicle_record(gs.chronicle, hit);
-    player_journal_capture(gs, sm::store_of(w));
+    player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 3
               && gs.player.journal[2].object
-                     == sm::player_home_ordinal(gs, sm::store_of(w)),
+                     == sm::player_home_ordinal(gs, *wStore_),
           "being done-to is participation too");
 
     // Walking away changes what "here" means: the same foreign cell that was
     // silent above becomes his the tick he stands on it.
-    stand_at(gs, w, 40, 40);
+    stand_at(gs, *wStore_, 40, 40);
     chronicle_record(gs.chronicle,
                      fact(3, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false),
                           779u, 40, 40));
-    player_journal_capture(gs, sm::store_of(w));
+    player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 4,
           "locality follows the player, not a fixed home cell");
 }
@@ -139,10 +135,8 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    stand_at(gs, w, 5, 5);
+    stand_at(gs, *wStore_, 5, 5);
 
     // Fill to the cap in slices small enough that the ring never evicts
     // between captures (the live game captures every tick, so eviction
@@ -159,7 +153,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
                                   1000u + filed + i, 5, 5));
         }
         filed += slice;
-        player_journal_capture(gs, sm::store_of(w));
+        player_journal_capture(gs, *wStore_);
     }
     CHECK(gs.player.journal.size() == std::size_t(cap)
               && gs.player.journalFull == 0,
@@ -171,7 +165,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
                      fact(300, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false),
                           999999u, 5, 5));
-    player_journal_capture(gs, sm::store_of(w));
+    player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == std::size_t(cap)
               && gs.player.journalFull == 1,
           "the cap is loud, never a silent drop of his past");
@@ -185,24 +179,22 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    stand_at(gs, w, 5, 5);
+    stand_at(gs, *wStore_, 5, 5);
 
     // Not possessing: the lord's far-away deed is somebody else's.
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad, false),
                           42u, 50, 50));
-    player_journal_capture(gs, sm::store_of(w));
+    player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.empty(),
           "an unpossessed lord's deed far away is not the player's");
 
     // Possessing him: the same deed, wherever it happened, is HIS. «Whom do
     // I wear» is the flag on the lord himself (v87) — the world is asked, no
     // out-of-snapshot field.
-    sm::MacroStore& stL = sm::store_of(w);
+    sm::MacroStore& stL = *wStore_;
     const sm::MacroHandle hL = sm::store_birth(stL);
     stL.spawnId[hL.slot] = ecs::MacroSpawnId{42u};
     // Possession MOVES the one flag — дверью переноса (5б): колонка
@@ -212,7 +204,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
                      fact(2, FactKind::Killed,
                           fact_subject(FactSubject::Squad, false),
                           42u, 50, 50));
-    player_journal_capture(gs, sm::store_of(w));
+    player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 1
               && gs.player.journal[0].subject == 42u,
           "while possessed, the lord's ordinal is the player's participation");
@@ -227,10 +219,8 @@ void test_a_captured_copy_carries_no_ring_link() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    stand_at(gs, w, 5, 5);
+    stand_at(gs, *wStore_, 5, 5);
 
     // Two facts on one cell: the second's ring slot LINKS to the first.
     chronicle_record(gs.chronicle,
@@ -239,7 +229,7 @@ void test_a_captured_copy_carries_no_ring_link() {
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false), 8u, 5, 5));
-    player_journal_capture(gs, sm::store_of(w));
+    player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 2
               && gs.player.journal[0].nextInCell == 0u
               && gs.player.journal[1].nextInCell == 0u,
@@ -256,12 +246,10 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
 
     // A band with a save-stable identity and a renown store…
-    sm::MacroStore& stB = sm::store_of(w);
+    sm::MacroStore& stB = *wStore_;
     const sm::MacroHandle hB = sm::store_birth(stB);
     stB.spawnId[hB.slot] = ecs::MacroSpawnId{7u};
     auto& rt = stB.runtime[hB.slot];
@@ -285,7 +273,7 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     f.x = 10;
     f.y = 10;
     f.amount = 5;
-    const std::uint32_t seq = record_deed(sm::store_of(w), gs, f, hB);
+    const std::uint32_t seq = record_deed(*wStore_, gs, f, hB);
     const std::uint32_t worth = renown_for_deed(FactKind::Killed, 50u);
     CHECK(seq != 0u, "the door filed the fact");
     CHECK(rt.renown == worth,
@@ -302,7 +290,7 @@ void test_the_deed_door_files_and_pays_as_one_action() {
 
     // A figure's next deed wears the bit — still from PRE-deed renown.
     rt.renown = std::uint32_t(kRenownToBeNamed);
-    const std::uint32_t seq2 = record_deed(sm::store_of(w), gs, f, hB);
+    const std::uint32_t seq2 = record_deed(*wStore_, gs, f, hB);
     const WorldFact& filed2 =
         gs.chronicle.ring[std::size_t((seq2 - 1u) % kChronicleFacts)];
     CHECK(fact_subject_marked_named(filed2.subjectKind),

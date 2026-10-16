@@ -284,9 +284,8 @@ void test_malformed_receipts_do_nothing() {
 
 // One squad the way the overworld shapes them: the entity IS the leader, the
 // ordinal is its save-stable name, the creatures holds everyone else.
-sm::MacroHandle make_squad(sm::ecs::World& w, std::uint32_t ordinal,
+sm::MacroHandle make_squad(sm::MacroStore& st, std::uint32_t ordinal,
                            std::initializer_list<std::uint32_t> memberIds) {
-    sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     st.spawnId[h.slot] = sm::ecs::MacroSpawnId{ordinal};
     auto& bag = st.inventory[h.slot];
@@ -304,9 +303,9 @@ void test_the_creature_row_pays_by_name() {
     ecs::World world;
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    make_squad(world, 5, {11u, 22u, 0x80000021u});   // high-bit id: a garrison-
-    const auto other = make_squad(world, 6, {77u});  // born soldier's shape
-    MacroWorld w{.store = &sm::store_of(world)};
+    make_squad(*worldStore_, 5, {11u, 22u, 0x80000021u});   // high-bit id: a garrison-
+    const auto other = make_squad(*worldStore_, 6, {77u});  // born soldier's shape
+    MacroWorld w{.store = worldStore_.get()};
 
     const MacroStockKey member11{5, 0, 0, 11};
     CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 3,
@@ -374,16 +373,14 @@ void test_the_creature_row_pays_by_name() {
 // «Пул не вырос» — негативный контроль сноса: верни слив, и он краснеет.
 void test_the_fallen_squads_creatures_die() {
     using namespace sm;
-    ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    const auto fallen = make_squad(world, 10, {1u, 2u});
+    const auto fallen = make_squad(*worldStore_, 10, {1u, 2u});
     // ЗВЕРЬ В ТОМ ЖЕ КОНТЕЙНЕРЕ: свидетель рождает своё предусловие сам
     // (AGENTS §8 п.11) — без него «одна судьба на всех» нечем проверить.
-    sm::creatures_push_stack(sm::store_of(world).inventory[fallen.slot].inv,
+    sm::creatures_push_stack(worldStore_->inventory[fallen.slot].inv,
                              NPCType::Horse, 1, 1);
-    make_squad(world, 11, {3u});
-    sm::macro_mark_dead(sm::store_of(world), fallen);
+    make_squad(*worldStore_, 11, {3u});
+    sm::macro_mark_dead(*worldStore_, fallen);
 
     // ДВЕРЬ ТРЕБУЕТ МИР (v122), и это не удобство, а закон: погибшая душа
     // ПОКИНУЛА паству своего дома, и число фичи обязано упасть
@@ -399,7 +396,7 @@ void test_the_fallen_squads_creatures_die() {
         ++t->reports;
     };
 
-    CHECK(kill_fallen_squad_creatures(sm::store_of(world), gs, sink, &tally)
+    CHECK(kill_fallen_squad_creatures(*worldStore_, gs, sink, &tally)
               == 3,
           "гибнут ВСЕ головы павшего — два человека И конь, без ветки по роду");
     // (НЕГАТИВНЫЙ КОНТРОЛЬ M-228 «павшие НЕ дезертируют — пул не вырос ни на
@@ -410,13 +407,13 @@ void test_the_fallen_squads_creatures_die() {
     CHECK(tally.souls == 2 && tally.reports == 1,
           "ведомость склада душ назвала смерть ОДНИМ фактом и в ДУШАХ: конь "
           "паствой не был");
-    MacroWorld w{.store = &sm::store_of(world)};
+    MacroWorld w{.store = worldStore_.get()};
     CHECK(macro_stock_read(w, MacroStock::Creatures, MacroStockKey{10, 0, 0}) == 0,
           "контейнер павшего пуст: платить второй раз не из чего");
     CHECK(macro_stock_read(w, MacroStock::Creatures, MacroStockKey{11, 0, 0}) == 1,
           "a live leader keeps his men");
 
-    CHECK(kill_fallen_squad_creatures(sm::store_of(world), gs, sink, &tally)
+    CHECK(kill_fallen_squad_creatures(*worldStore_, gs, sink, &tally)
                   == 0
               && tally.reports == 1,
           "второй проход не убивает никого и НЕ докладывает: мёртвых дважды "
@@ -437,18 +434,16 @@ void test_the_fallen_squads_creatures_die() {
 // сам (AGENTS §8 п.11): аренда сдаётся дверью мира.
 void test_the_lease_holds_the_dead_record_against_the_sweep() {
     using namespace sm;
-    ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
     auto gsp = std::make_unique<sm::GameState>();
     sm::GameState& gs = *gsp;
     gs.mapW = gs.mapH = 64;
 
     // Два павших с ПУСТЫМ контейнером существ — то есть ровно те, кого свип
     // жнёт: один внутри арендованной рамки, один за ней.
-    const auto inside  = make_squad(world, 40, {});
-    const auto outside = make_squad(world, 41, {});
-    sm::MacroStore& st = sm::store_of(world);
+    const auto inside  = make_squad(*worldStore_, 40, {});
+    const auto outside = make_squad(*worldStore_, 41, {});
+    sm::MacroStore& st = *worldStore_;
     st.cell[inside.slot]  = ecs::MacroCell{cell_of(10, 10, gs.mapW)};
     st.cell[outside.slot] = ecs::MacroCell{cell_of(20, 20, gs.mapW)};
     sm::macro_mark_dead(st, inside);

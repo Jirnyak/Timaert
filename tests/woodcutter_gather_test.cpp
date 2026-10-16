@@ -9,7 +9,6 @@
 //   · CONSERVATION — wood gained by the store == wood lost by the layer,
 //     and the bag is empty after delivery: nothing minted, nothing dropped.
 #include "check.h"
-#include "ecs/world.h"
 #include "macro/labour.h"   // settle_souls — двери душ
 #include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
 
@@ -55,9 +54,8 @@ FactTally tally_facts(const Chronicle& c, FactKind kind, int x, int y) {
     return ctx.out;
 }
 
-sm::MacroHandle make_woodcutter(ecs::World& w, float x, float y,
+sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
                                 int homeVillageId) {
-    sm::MacroStore& st = sm::store_of(w);
     const sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), kMap)};
     st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
@@ -105,36 +103,34 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     TreeGrid grid;
     build_tree_grid(grid, trees, kMap, kMap);
 
-    ecs::World w;
-
     auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
 
-    sm::store_attach(w, wStore_.get());
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store: склад
     // — его колонка, ординал выдаёт эмитент ВНУТРИ двери рождения.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, sm::store_of(w), SquadType::Village, 10, 10);
-    const int vilId = int(sm::store_of(w).spawnId[vil.slot].index);
+        sm::birth_place(gs, st, SquadType::Village, 10, 10);
+    const int vilId = int(st.spawnId[vil.slot].index);
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
-    sm::settle_souls(gs, sm::store_of(w), vil.slot, 40);
-    const sm::MacroHandle wc = make_woodcutter(w, 10.0f, 10.0f, vilId);
+    sm::settle_souls(gs, st, vil.slot, 40);
+    const sm::MacroHandle wc = make_woodcutter(st, 10.0f, 10.0f, vilId);
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
 
     // Live a while: idle -> travel -> WORK (the chop) -> return (the haul).
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .trees = &layer, .store = &sm::store_of(w),
+        MacroWorld mw{.gs = &gs, .trees = &layer, .store = &st,
                       .treeGrid = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
     const int layerLost = 16 - int(layer.at(14, 10));
     const int storeGained =
-        sm::store_of(w).inventory[vil.slot].inv.count("wood");
+        st.inventory[vil.slot].inv.count("wood");
     const int inBag =
-        (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), wc)).inv.count("wood");
+        (*sm::body_state<ecs::NpcInventory>(st, wc)).inv.count("wood");
 
     CHECK(layerLost > 0, "the chop really fell trees in the layer");
     CHECK(storeGained > 0, "the haul reached the village store");
@@ -144,9 +140,9 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
           "the chop moved the grid revision - the map sprite and the save "
           "(which carries the grid whole) both see the stump");
     int placeCount = 0;
-    sm::for_each_place(sm::store_of(w),
+    sm::for_each_place(st,
                        [&](std::uint16_t) { ++placeCount; });
-    CHECK(sm::store_of(w).inventory[vil.slot].inv.count("wood") > 0
+    CHECK(st.inventory[vil.slot].inv.count("wood") > 0
               && placeCount == 1,
           "the village man hauls for the VILLAGE (no city even exists here)");
 
@@ -181,15 +177,12 @@ void test_the_farmer_works_the_field() {
         terrain.rgba[i] = sm::field_word_of(160.0f / 255.0f);   // G = fertility
     }
 
-    ecs::World w;
-
     auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
 
-    sm::store_attach(w, wStore_.get());
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, sm::store_of(w), SquadType::Village, 10, 10);
-    sm::MacroStore& st = sm::store_of(w);
+        sm::birth_place(gs, st, SquadType::Village, 10, 10);
     const sm::MacroHandle h = sm::store_birth(st);
     const sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
@@ -219,12 +212,12 @@ void test_the_farmer_works_the_field() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .terrain = &terrain,
+        MacroWorld mw{.gs = &gs, .store = &st, .terrain = &terrain,
                       .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     const int foodUnits = st.inventory[vil.slot].inv.count("food");
-    const int inBag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("food");
+    const int inBag = (*sm::body_state<ecs::NpcInventory>(st, e)).inv.count("food");
     CHECK(foodUnits > 0, "the farmer's haul reached the village store");
     // THE BATCH LAW THIS USED TO PIN IS GONE (owner, 2026-09-16). It read
     // `foodUnits % kGatherPerCycle == 0` — "the haul arrives in whole cycle
@@ -259,15 +252,12 @@ void test_farmer_without_terrain_conjures_nothing() {
     features.resize(kMap, kMap);
     features.set(12, 10, FT_Field);
 
-    ecs::World w;
-
     auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
 
-    sm::store_attach(w, wStore_.get());
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, sm::store_of(w), SquadType::Village, 10, 10);
-    sm::MacroStore& st = sm::store_of(w);
+        sm::birth_place(gs, st, SquadType::Village, 10, 10);
     const sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
@@ -296,7 +286,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
     for (int i = 0; i < 200; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .features = &features};
+        MacroWorld mw{.gs = &gs, .store = &st, .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     CHECK(st.inventory[vil.slot].inv.count("food") == 0,
@@ -314,21 +304,20 @@ void test_no_layer_no_chop() {
     const std::vector<TreePoint> trees{{14, 10}};
     TreeGrid grid;
     build_tree_grid(grid, trees, kMap, kMap);
-    ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
+    sm::MacroStore& st = *wStore_;
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, sm::store_of(w), SquadType::Village, 10, 10);
-    make_woodcutter(w, 10.0f, 10.0f,
-                    int(sm::store_of(w).spawnId[vil.slot].index));
+        sm::birth_place(gs, st, SquadType::Village, 10, 10);
+    make_woodcutter(st, 10.0f, 10.0f,
+                    int(st.spawnId[vil.slot].index));
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
     for (int i = 0; i < 200; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .treeGrid = &grid};
+        MacroWorld mw{.gs = &gs, .store = &st, .treeGrid = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
-    CHECK(sm::store_of(w).inventory[vil.slot].inv.count("wood") == 0,
+    CHECK(st.inventory[vil.slot].inv.count("wood") == 0,
           "no layer => no honest wood, and none minted from nothing");
 }
 
@@ -354,15 +343,12 @@ void test_the_mine_runs_while_the_player_is_away() {
     const std::uint32_t veinIdx = 10u * std::uint32_t(kMap) + 14u;
     deposits.grid(DepositKind::Iron).write(14, 10, 20);
 
-    ecs::World w;
-
     auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
 
-    sm::store_attach(w, wStore_.get());
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, sm::store_of(w), SquadType::Village, 10, 10);
-    sm::MacroStore& st = sm::store_of(w);
+        sm::birth_place(gs, st, SquadType::Village, 10, 10);
     const sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
@@ -391,7 +377,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .deposits = &deposits};
+        MacroWorld mw{.gs = &gs, .store = &st, .deposits = &deposits};
         tick_macro_npc_ai_budgeted(mw, art, kAiTicks,
                                    /*max_npc_ticks=*/64);
     }
@@ -427,12 +413,8 @@ void test_the_vendor_sells_at_the_nearest_city() {
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
 
-    ecs::World w;
-
     auto wStore_ = sm::make_macro_store();
-
-    sm::store_attach(w, wStore_.get());
-    sm::MacroStore& st = sm::store_of(w);
+    sm::MacroStore& st = *wStore_;
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store: склад
     // И счёт нужд — его колонки, ординал выдаёт эмитент. Хэндл слота живёт
@@ -510,11 +492,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 70u);
     for (int i = 0; i < 600; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w)};
+        MacroWorld mw{.gs = &gs, .store = &st};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
-    const auto& bag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
+    const auto& bag = (*sm::body_state<ecs::NpcInventory>(st, e)).inv;
     const int cityFood = st.inventory[city.slot].inv.count("food");
     const int vilFood = st.inventory[vil.slot].inv.count("food");
     CHECK(cityFood > 0,
@@ -592,15 +574,12 @@ void test_the_miner_works_the_vein() {
     const std::uint32_t veinIdx = 10u * std::uint32_t(kMap) + 14u;
     deposits.grid(DepositKind::Iron).write(14, 10, 20);
 
-    ecs::World w;
-
     auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
 
-    sm::store_attach(w, wStore_.get());
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, sm::store_of(w), SquadType::Village, 10, 10);
-    sm::MacroStore& st = sm::store_of(w);
+        sm::birth_place(gs, st, SquadType::Village, 10, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
     const sm::MacroHandle h = sm::store_birth(st);
     const sm::MacroHandle e = h;
@@ -631,7 +610,7 @@ void test_the_miner_works_the_vein() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .deposits = &deposits};
+        MacroWorld mw{.gs = &gs, .store = &st, .deposits = &deposits};
         tick_macro_npc_ai(mw, art, kAiTicks);
     }
 
@@ -639,7 +618,7 @@ void test_the_miner_works_the_vein() {
     const int veinLeft = int(ironCells.at_index(veinIdx));
     const int veinLost = 20 - veinLeft;
     const int storeGained = st.inventory[vil.slot].inv.count("iron");
-    const int inBag = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("iron");
+    const int inBag = (*sm::body_state<ecs::NpcInventory>(st, e)).inv.count("iron");
 
     CHECK(veinLost > 0, "the dig really drained the vein");
     CHECK(storeGained > 0, "the haul reached the village store");
@@ -675,10 +654,8 @@ void test_the_miner_works_the_vein() {
     GameState gs2{};
     gs2.mapW = kMap;
     gs2.mapH = kMap;
-    ecs::World w2;
     auto w2Store_ = sm::make_macro_store();
-    sm::store_attach(w2, w2Store_.get());
-    sm::MacroStore& st2 = sm::store_of(w2);
+    sm::MacroStore& st2 = *w2Store_;
     // У ВТОРОГО МИРА — СВОЁ ТЕЛО МЕСТА: место ЕСТЬ слот своего store
     // (ломтик F), и одно тело на два мира невыразимо. Деревня рождается
     // здесь заново, своим эмитентом.
@@ -701,7 +678,7 @@ void test_the_miner_works_the_vein() {
     MacroNpcAiRuntime art2{};
     reset_macro_npc_ai_runtime(art2, 71u);
     for (int i = 0; i < 200; ++i) {
-        MacroWorld mw2{.gs = &gs2, .store = &sm::store_of(w2)};
+        MacroWorld mw2{.gs = &gs2, .store = &st2};
         tick_macro_npc_ai(mw2, art2, kAiTicks);
     }
     CHECK(st2.inventory[vil2.slot].inv.count("iron") == 0,
@@ -751,15 +728,12 @@ void test_the_catch_lands_as_creatures() {
         terrain.rgba[i] = std::uint16_t(sm::kFieldWordMax);   // G = fertility
     }
 
-    ecs::World w;
-
     auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
 
-    sm::store_attach(w, wStore_.get());
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, sm::store_of(w), SquadType::Village, 10, 10);
-    sm::MacroStore& st = sm::store_of(w);
+        sm::birth_place(gs, st, SquadType::Village, 10, 10);
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
     sm::settle_souls(gs, st, vil.slot, 40);
@@ -798,7 +772,7 @@ void test_the_catch_lands_as_creatures() {
     // (`settle_souls` выше), и смысл ему задаёт её собственная фича.
     constexpr int kFoldX = 12, kFoldY = 10;
     features.set(kFoldX, kFoldY, sm::FT_Pasture);
-    MacroWorld seedWorld{.gs = &gs, .store = &sm::store_of(w), .terrain = &terrain,
+    MacroWorld seedWorld{.gs = &gs, .store = &st, .terrain = &terrain,
                          .features = &features};
     // Избыточная дельта: дверь ряда САМА зажимает в кап клетки, поэтому
     // число берётся из фертильности, а не из головы автора.
@@ -813,12 +787,12 @@ void test_the_catch_lands_as_creatures() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 77u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &sm::store_of(w), .terrain = &terrain,
+        MacroWorld mw{.gs = &gs, .store = &st, .terrain = &terrain,
                       .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
-    const Inventory& creatures = (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv;
+    const Inventory& creatures = (*sm::body_state<ecs::NpcInventory>(st, e)).inv;
     const int caught = creature_count_of(creatures, NPCType::Horse);
     // УБЫЛЬ ЧИТАЕТСЯ ТАМ, ГДЕ ТЕПЕРЬ ЖИВЁТ ЧИСЛО — на поле чисел фич, одной
     // дверью ряда. Шрамового поля у стада больше нет вовсе, и негативный
@@ -840,7 +814,7 @@ void test_the_catch_lands_as_creatures() {
           "НЕГАТИВНЫЙ КОНТРОЛЬ СНОСА (M-230): табун не принадлежит месту — "
           "дом не получает ни одной головы, потому что обоза больше нет");
     CHECK(st.inventory[vil.slot].inv.count("food") == 0
-              && (*sm::body_state<ecs::NpcInventory>(sm::store_of(w), e)).inv.count("food") == 0,
+              && (*sm::body_state<ecs::NpcInventory>(st, e)).inv.count("food") == 0,
           "a creature yield rides NO bag: nothing landed in the store");
     // (ЗДЕСЬ СТОЯЛИ ДВА СВИДЕТЕЛЯ ЗАКОНА «артель ставит загон ПЕРЕД ловлей».
     // Закон отменён вердиктом владельца 2026-09-22 — «СТРОИТЕЛЬСТВО
@@ -857,7 +831,7 @@ void test_the_catch_lands_as_creatures() {
     // число (AGENTS §8 п.4).
     {
         const auto& rtNow =
-            (*sm::body_state<ecs::MacroNpcRuntime>(sm::store_of(w), e));
+            (*sm::body_state<ecs::MacroNpcRuntime>(st, e));
         const float horseHaul = npc_def(NPCType::Horse).haulMult;
         const float leaderHaul = npc_def(NPCType::Peasant).haulMult;
         const float backs = 1.0f + horseHaul / leaderHaul * float(caught);

@@ -599,7 +599,7 @@ struct MacroSeeds {
     sm::MacroHandle far{};      // (50,50)                → OUTSIDE window
 };
 
-MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
+MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
     // Deterministic spawn ordinal, one per NPC, reset per call — exactly like
     // the shipping `spawn_macro_npcs`/`make_npc` counter: the save-stable
     // identity every persistent macro NPC carries (Inc 5e-2).
@@ -607,7 +607,6 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
     auto mk = [&](sm::NPCType type, std::uint16_t faction, int cx, int cy,
                   int hp, int maxHp, std::int16_t level,
                   std::uint32_t vseed) {
-        sm::MacroStore& st = sm::store_of(reg);
         const sm::MacroHandle h = sm::store_birth(st);
         st.spawnId[h.slot] = sm::ecs::MacroSpawnId{spawnIndex++};
         st.cell[h.slot] = sm::ecs::MacroCell{
@@ -656,7 +655,7 @@ bool run_beast_member_projection_case(
     sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
-    sm::MacroStore& stl = sm::store_of(reg);
+    sm::MacroStore& stl = *worldStore_;
     const sm::MacroHandle hl = sm::store_birth(stl);
     stl.spawnId[hl.slot] = sm::ecs::MacroSpawnId{std::uint32_t(0)};
     stl.cell[hl.slot] = sm::ecs::MacroCell{sm::ecs::cell_index(0, 0, 1024)};
@@ -773,7 +772,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::store_attach(world, worldStore_.get());
     sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
-    const MacroSeeds s = seed_macro_npcs(reg, kMapW);
+    const MacroSeeds s = seed_macro_npcs(*worldStore_, kMapW);
 
     // Ordinary fauna in the centre cell, so the reaper-skip check has non-
     // projection bodies to actually reap. Fauna carries no MacroNpcRuntime, so
@@ -795,7 +794,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // Macro records are UNTOUCHED: слоты живы, проекция их не трогает
     // (кластер 7: макро-сквад в реестре не живёт, судить теги не у кого).
     for (const sm::MacroHandle m : {s.bandit, s.peasant, s.wrap, s.far}) {
-        if (!sm::store_of(reg).valid(m)) return false;
+        if (!worldStore_->valid(m)) return false;
     }
 
     // Index projections by their origin; every backlink must point at a live
@@ -806,7 +805,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
         const sm::MacroHandle origin = sm::sub::body_macro_origin(reg, e);
         if (origin.slot == sm::kMacroNoSlot) continue;
         ++projCount;
-        if (!sm::store_of(reg).valid(origin)) {
+        if (!worldStore_->valid(origin)) {
             return false;
         }
         if (origin == s.bandit) pBandit = e;
@@ -855,7 +854,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // ЗАПИСИ (store — истина; ослабление против дословной копии названо
     // при вердикте).
     {
-        const sm::MacroStore& st = sm::store_of(reg);
+        const sm::MacroStore& st = *worldStore_;
         const float want =
             sm::sub::body_height_m(sm::npc_def(sm::NPCType::Bandit))
             * sm::sub::body_shape_height_scale(
@@ -924,7 +923,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     auto world2Store_ = sm::make_macro_store();
     sm::store_attach(world2, world2Store_.get());
     sm::test::arena_of(world2.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-    seed_macro_npcs(world2.reg, kMapW);
+    seed_macro_npcs(*world2Store_, kMapW);
     const int projected2 = sm::sub::project_macro_npcs_into_subworld(
         world2, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
         sm::sub::WATER_LEVEL);
@@ -971,8 +970,8 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::store_attach(world, storeMem.get());
     sm::test::arena_of(world.reg);   // арена — предусловие рождения тел
     auto& reg = world.reg;
-    const MacroSeeds s = seed_macro_npcs(reg, kMapW);
-    sm::MacroStore& st = sm::store_of(reg);
+    const MacroSeeds s = seed_macro_npcs(*storeMem, kMapW);
+    sm::MacroStore& st = *storeMem;
 
     // Трое в окне встают телами (четвёртый за окном) — как в кейсе проекции.
     if (sm::sub::project_macro_npcs_into_subworld(
@@ -1228,7 +1227,7 @@ int main() {
     sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         auto& reg = world.reg;
 
-        sm::MacroStore& stq = sm::store_of(reg);
+        sm::MacroStore& stq = *worldStore_;
         const sm::MacroHandle hq = sm::store_birth(stq);
         stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(11)};
         stq.kind[hq.slot] = sm::ecs::NPCKind{
@@ -1310,7 +1309,7 @@ int main() {
     sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         auto& reg = world.reg;
 
-        sm::MacroStore& stq = sm::store_of(reg);
+        sm::MacroStore& stq = *worldStore_;
         const sm::MacroHandle hq = sm::store_birth(stq);
         stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(12)};
         stq.kind[hq.slot] = sm::ecs::NPCKind{
@@ -1390,7 +1389,7 @@ int main() {
     sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         auto& reg = world.reg;
 
-        sm::MacroStore& stq = sm::store_of(reg);
+        sm::MacroStore& stq = *worldStore_;
         const sm::MacroHandle hq = sm::store_birth(stq);
         stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(13)};
         stq.kind[hq.slot] = sm::ecs::NPCKind{

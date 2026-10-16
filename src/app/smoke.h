@@ -10,7 +10,8 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include "ecs/components.h"   // sm::MacroHandle — the tracked-record probe
-#include "ecs/world.h"     // entt::entity for the tracked-body probes
+#include "sub/objects.h"   // sm::sub::ObjRef — ссылка сцены для проб
+                           // (ломоть B: entt из харнесс-состояния выметен)
 #include "ui/screens.h"    // sm::ui::ShellResult, the harness's frame verdict
 
 namespace sm::app {
@@ -153,7 +154,8 @@ struct SmokeScript {
     // sim tick) before arming the capture, so the photographed scene actually
     // contains the staged actor and its lighting. -1 = idle.
     int probeSettleFrames = -1;
-    entt::entity probeEntity = entt::null;
+    // Ссылка сцены {слот, ID}: протухает сама, когда актор умер/перерождён.
+    sm::sub::ObjRef probeRef{};
     float probeX = 0.0f, probeY = 0.0f;
     // city_gate_probe aims the camera at a gate it just measured, then holds
     // for the same reason light_probe_capture does — a teleport re-seats the
@@ -179,7 +181,7 @@ struct SmokeScript {
     // settlement), not in this script: wound → let a tick pass → read the map →
     // kill → let a tick pass → read the map.
     int trackedPhase = 0;
-    entt::entity trackedBody = entt::null;
+    sm::sub::ObjRef trackedBody{};
     // Запись — хэндлом store (шаг 2 1е): свидетель смерти слота обязан
     // тухнуть вместе с поколением, как всякая долгоживущая ссылка.
     sm::MacroHandle trackedMacro{};

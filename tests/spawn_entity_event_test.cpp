@@ -20,16 +20,15 @@
 #include "macro/state.h"
 #include "core/torus.h"
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "macro/store.h"
 
 #include <cstdio>
 
 namespace {
 
-int count_npcs(sm::ecs::World& w) {
+int count_npcs(const sm::MacroStore& st) {
     // 6.3: население — живые слоты store, моста нет.
-    return int(sm::store_of(w).aliveCount);
+    return int(st.aliveCount);
 }
 
 // The whole scenario lives in a VOID function so CHECK_OR_RETURN can bail
@@ -39,27 +38,25 @@ void run_spawn_contract() {
     gs.mapW = 64;
     gs.mapH = 64;
     gs.worldSeed = 777u;
-    sm::ecs::World w;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
     sm::TerrainData terrain{};  // no RGBA storage => everywhere is land
 
     // NEGATIVE CONTROL FIRST, and asserted in two halves: a token the
     // catalogue does not know must be REFUSED, and — the half that is easy to
     // forget — must leave nothing behind. A spawner that half-built a body
     // and then said no would pass the first check alone.
-    CHECK(!sm::spawn_npc_at(gs, sm::store_of(w), terrain, "grue", 10, 12, 3),
+    CHECK(!sm::spawn_npc_at(gs, *wStore_, terrain, "grue", 10, 12, 3),
           "a token the catalogue does not know is REFUSED");
-    CHECK(count_npcs(w) == 0, "...and left no half-built entity behind");
+    CHECK(count_npcs(*wStore_) == 0, "...and left no half-built entity behind");
 
     // Known token, case-insensitive, level pinned.
     CHECK_OR_RETURN(
-        sm::spawn_npc_at(gs, sm::store_of(w), terrain, "Bandit", 10, 12, 3),
+        sm::spawn_npc_at(gs, *wStore_, terrain, "Bandit", 10, 12, 3),
         "a known token spawns — and the lookup ignores case");
-    CHECK(count_npcs(w) == 1, "exactly one body was raised, not two");
+    CHECK(count_npcs(*wStore_) == 1, "exactly one body was raised, not two");
 
     std::uint32_t firstOrdinal = 0;
-    sm::MacroStore& st = sm::store_of(w);
+    sm::MacroStore& st = *wStore_;
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0) continue;
@@ -85,9 +82,9 @@ void run_spawn_contract() {
 
     // Second spawn: ordinal strictly continues (possession identity unique).
     CHECK_OR_RETURN(
-        sm::spawn_npc_at(gs, sm::store_of(w), terrain, "bandit", 40, 40, 2),
+        sm::spawn_npc_at(gs, *wStore_, terrain, "bandit", 40, 40, 2),
         "the same token spawns again in lower case");
-    CHECK(count_npcs(w) == 2, "two bodies stand, not one and not three");
+    CHECK(count_npcs(*wStore_) == 2, "two bodies stand, not one and not three");
     bool sawSecond = false;
     int wentBackwards = 0;
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
