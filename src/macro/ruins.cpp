@@ -118,14 +118,19 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         if (!st.valid(h)) continue;   // отказ капа уже прозвучал вслух
         // Born with its haunt: the row's born columns × the site's own
         // danger byte, a discrete bell around the mean — redder land, harder
-        // haunt. Its own stream per ruin ordinal, so placement draws above
-        // stay untangled from the roll.
+        // haunt. Its own stream per ruin CELL, so placement draws above stay
+        // untangled from the roll. КЛЕТКА, НЕ ОРДИНАЛ (M-220): эмитент
+        // монотонен через перерождение мира, и соль ординалом рожала бы
+        // РАЗНЫЕ миры с одного сида; позиция — факт генерации, одна руина
+        // на клетку (свидетель — spire_generation_test, детерминизм).
         //
         // ПЕРЕВОРОТ v122 (вердикт 3): души данжа — ГОЛОВАМИ, вид стака
         // ВЫВОДИТСЯ из полосы толпы (kHabRuin, слабейшая строка → CaveBat).
         {
             Rng popRng(gs.worldSeed ^ 0xB0125EEDu
-                       ^ (st.spawnId[h.slot].index * 2654435761u));
+                       ^ (std::uint32_t(ecs::cell_index(bestX, bestY,
+                                                        gs.mapW))
+                          * 2654435761u));
             settle_souls(gs, st, h.slot, landmark_born_population(
                 int(def.bornPopBase), int(def.bornPopPerScore),
                 int(zones.at(bestX, bestY)), popRng));

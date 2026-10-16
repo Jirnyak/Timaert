@@ -60,15 +60,15 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // side, its own casualty path and its own (absent) cap. Four
     // player-specific paths, which CANON S4 forbids by name.
     //
-    // «Кто оригинал» — биты GameState; протухшие после загрузки или пустые
-    // на буте биты резолвятся КОЛОНКОЙ ОДИН раз (граница, не тик: валидные
-    // биты — распаковка без скана). Ревалидация спрашивает ту же колонку:
-    // бит дома на том слоте, на который биты показывают.
+    // «Кто оригинал» — хэндл GameState; протухший после загрузки или пустой
+    // на буте хэндл резолвится КОЛОНКОЙ ОДИН раз (граница, не тик: валидный
+    // хэндл — чтение без скана). Ревалидация спрашивает ту же колонку:
+    // бит дома на том слоте, на который хэндл показывает.
     MacroHandle home = player_squad_handle(gs);
     if (!st.valid(home) || st.playerFlag[home.slot].home == 0) {
         home = find_player_home_column(st);
     }
-    if (home.slot == kMacroNoSlot) {
+    if (home.id == 0) {
         // THE spawn cell, derived from the world itself (подпосадка 4 — no
         // position scalar exists to seed from): the realm's first city, the
         // map centre when the world has none. A LOADED world never reaches
@@ -90,11 +90,10 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         });
         const MacroHandle h = store_birth(st);
         if (!st.valid(h)) return;   // отказ капа уже прозвучал вслух
-        // ОРДИНАЛ ОТ ЕДИНОГО ЭМИТЕНТА, КАК ВСЯКОМУ СКВАДУ (M-255): здесь
-        // стоял литерал 0x7FFFFFFF, делавший игрока единственной сущностью
-        // мира с идентичностью-литералом. Столкновения не бывает и без
-        // резерва — эмитент монотонен и ординалы не переиспользует.
-        st.spawnId[h.slot] = ecs::MacroSpawnId{gs.nextMacroSpawnOrdinal++};
+        // ОРДИНАЛ ВЫДАЛА ДВЕРЬ РОЖДЕНИЯ, КАК ВСЯКОМУ СКВАДУ (M-255/M-220):
+        // здесь стоял литерал 0x7FFFFFFF, делавший игрока единственной
+        // сущностью мира с идентичностью-литералом; ручная запись spawnId
+        // умерла вместе с эмитентом GameState.
         st.cell[h.slot]    = ecs::MacroCell{ecs::cell_index(sx, sy, gs.mapW)};
         st.visual[h.slot]  = ecs::MacroVisual{float(sx), float(sy), 0.0f};
         st.kind[h.slot]    = ecs::NPCKind{
@@ -154,7 +153,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // ДОМ СТАВИТСЯ ОДНОЙ ДВЕРЬЮ (M-255): колонка + кэш одним движением,
     // ровно как флажок выше. Звонок на уже отмеченном слоте идемпотентен,
     // невалидный хэндл — no-op (кэш не сжигается о протухшие биты).
-    mark_player_home(st, gs.playerSquadBits, home);
+    mark_player_home(st, gs.playerSquadRef, home);
 
     // ── No position projection any more ──────────────────────────────────
     // The MacroCell of this record IS where he stands (подпосадка 4): the
@@ -170,7 +169,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // (5б); носитель, не переживший мир (невалидные биты), честно
     // складывается домой ДВЕРЬЮ переноса — мира без флага не бывает.
     if (!st.valid(player_flag_handle(gs))) {
-        transfer_player_flag(st, gs.playerFlagBits, home);
+        transfer_player_flag(st, gs.playerFlagRef, home);
     }
 
     // The SAME door every lord's numbers go through (squad.h) — the sheet is
@@ -191,7 +190,7 @@ bool wake_player_in_original_body(GameState& gs, MacroStore& st) {
     // He was never wearing anyone — the man who died is himself. Оба хэндла
     // обязаны быть живыми: осиротевший флаг чинит ensure, не wake.
     if (!st.valid(flag) || !st.valid(home)
-        || gs.playerFlagBits == gs.playerSquadBits) return false;
+        || gs.playerFlagRef == gs.playerSquadRef) return false;
     // ВОЗВРАЩАТЬСЯ ЕСТЬ КУДА, ТОЛЬКО ПОКА ЖИВ ОРИГИНАЛ. Asked of the record
     // the same way the world asks it of every other body — the dead column
     // the reaper stamps, and the bars themselves, because a body can be at
@@ -200,7 +199,7 @@ bool wake_player_in_original_body(GameState& gs, MacroStore& st) {
     if (st.pools[home.slot].hp <= 0.0f) return false;
     // One displacement of one flag — вселение, проигранное назад, той же
     // дверью (колонка + кэш одним движением; sub/possess.h ходит ею же).
-    transfer_player_flag(st, gs.playerFlagBits, home);
+    transfer_player_flag(st, gs.playerFlagRef, home);
     return true;
 }
 
@@ -236,8 +235,8 @@ void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
         flag = home;
         if (st.valid(home)) st.playerFlag[home.slot].on = 1;
     }
-    gs.playerSquadBits = macro_handle_bits(home);
-    gs.playerFlagBits  = macro_handle_bits(flag);
+    gs.playerSquadRef = home;
+    gs.playerFlagRef  = flag;
 }
 
 // ── ВСЁ НИЖЕ СПРАШИВАЕТ ФЛАЖОК, А НЕ ОРДИНАЛ (2026-09-14) ────────────────

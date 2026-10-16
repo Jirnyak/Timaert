@@ -34,8 +34,7 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
                                const char* name = nullptr) {
     const MacroHandle h = store_birth(st);
     if (!st.valid(h)) return h;   // отказ капа уже прозвучал вслух
-    const int id = int(gs.nextMacroSpawnOrdinal++);   // единый эмитент (M-37)
-    st.spawnId[h.slot] = ecs::MacroSpawnId{std::uint32_t(id)};
+    const int id = int(h.id);     // ординал выдала дверь рождения (M-220)
     st.cell[h.slot]    = ecs::MacroCell{ecs::cell_index(x, y, gs.mapW)};
     st.visual[h.slot]  = ecs::MacroVisual{float(x), float(y), 0.0f};
     st.kind[h.slot]    = ecs::NPCKind{0u, std::uint16_t(factionIdx)};

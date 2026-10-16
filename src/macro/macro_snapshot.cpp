@@ -68,10 +68,12 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
 }
 
 void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
-                       MacroStore& st, GameState& gs) {
+                       MacroStore& st, std::uint32_t savedNextSpawnId) {
     std::uint32_t maxOrdinal = 0;
     bool any = false;
     for (const MacroNpcRecord& m : records) {
+        // Рождение выдаёт временный ординал (M-220) — restore тут же
+        // перезаписывает его сохранённым: идентичность записи — в файле.
         const MacroHandle h = store_birth(st);
         if (!st.valid(h)) break;   // отказ капа уже прозвучал вслух
         st.spawnId[h.slot]   = m.spawnId;
@@ -111,9 +113,11 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
     }
     // The counter must sit ABOVE every living ordinal or a future runtime
     // spawn would reissue an identity (problems.md 19.24). The save carries
-    // the counter; this is the self-heal for any drift.
-    if (any && gs.nextMacroSpawnOrdinal <= maxOrdinal)
-        gs.nextMacroSpawnOrdinal = maxOrdinal + 1u;
+    // the counter (M-220: полем стора); this is the self-heal for any drift
+    // — including the junk the restore births above just burned into it.
+    st.nextSpawnId = savedNextSpawnId;
+    if (any && st.nextSpawnId <= maxOrdinal)
+        st.nextSpawnId = maxOrdinal + 1u;
 }
 
 } // namespace sm

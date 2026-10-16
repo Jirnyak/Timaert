@@ -258,19 +258,18 @@ void spawn_possession(sub::SubObjects* objs, const SpellSpawnContext& c) {
     if (casterSlot < 0) return;
     // 1-hop ban: the hero husk mirrors his own squad's record; any other
     // record under the avatar means the caster is already wearing somebody.
-    // «Кто оригинал» — биты GameState (1е кластер 5): запись под аватаром
-    // пакуется той же дверью и сравнивается с `playerSquadBits`; derived-тело
-    // (записи нет) пакуется в сентинель и честно ловит тот же запрет.
+    // «Кто оригинал» — хэндл GameState (1е кластер 5, M-220): запись под
+    // аватаром сравнивается с `playerSquadRef` напрямую; derived-тело
+    // (записи нет) — пустой хэндл, честно ловит тот же запрет.
     if (c.gs) {
-        const MacroHandle home = macro_handle_from_bits(c.gs->playerSquadBits);
+        const MacroHandle home = c.gs->playerSquadRef;
         // Запись под аватаром — шовной слот-дверью: слот даёт сама ссылка
         // сцены (суд выше), стора у фикстуры может не быть — «записи нет»
         // (конверт несёт его полем store, ломоть E: ctx-мост умер).
         const MacroHandle avRec = c.store != nullptr
             ? sub::slot_macro_record(*objs, int(objs->avatar.slot), *c.store)
             : MacroHandle{};
-        if (home.slot != kMacroNoSlot
-            && macro_handle_bits(avRec) != c.gs->playerSquadBits) return;
+        if (home.id != 0 && !(avRec == c.gs->playerSquadRef)) return;
     }
     // The body under the reticle, within THIS row's reach. The row is this
     // function's own binding (kSpellEffects), so reading it back is the
@@ -289,7 +288,7 @@ void spawn_possession(sub::SubObjects* objs, const SpellSpawnContext& c) {
     const int targetLevel = int(sub::slot_level(*objs, targetSlot));
     if (targetLevel >= int(c.casterLevel) + int(c.schoolRank)) return;
     sub::possess_body(*objs, c.store, targetSlot,
-                      c.gs ? &c.gs->playerFlagBits : nullptr);
+                      c.gs ? &c.gs->playerFlagRef : nullptr);
 }
 
 // ── The binding table ──────────────────────────────────────────────────────

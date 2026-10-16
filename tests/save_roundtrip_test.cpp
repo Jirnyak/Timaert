@@ -386,8 +386,9 @@ sm::GameState make_state(sm::MacroStore& st) {
     // субъекте 70 проваливала не закон, а собственную несогласованность
     // (§8 п.11). Ломтиком F из этого счётчика берут ординал и ТРИ места
     // ниже — он дойдёт до kFixtureIssuerAfter, и ровно это число обязано
-    // вернуться из файла.
-    gs.nextMacroSpawnOrdinal = kFixtureIssuerBase;
+    // вернуться из файла. С M-220 эмитент — поле СТОРА (nextSpawnId),
+    // рождение выдаёт ординал само.
+    st.nextSpawnId = kFixtureIssuerBase;
     // World rhythms (v24) — every field non-default.
     gs.worldTickRt.pendingDailyTicks = 3;
     gs.worldTickRt.nextDailyTickDay = 13;
@@ -739,8 +740,8 @@ void run_roundtrip() {
         }
         macroFixture.insert(macroFixture.end(), places.begin(), places.end());
     }
-    if (!sm::save_game(gs, quests, macroFixture, treeCounts, deposits,
-                       path)) {
+    if (!sm::save_game(gs, store.nextSpawnId, quests, macroFixture,
+                       treeCounts, deposits, path)) {
         FAIL_BAIL("save_game returned false");
     }
 
@@ -758,12 +759,13 @@ void run_roundtrip() {
 
     auto loadedOwn = std::make_unique<sm::GameState>();
     sm::GameState& loaded = *loadedOwn;
+    std::uint32_t loadedNextSpawnId = 0;
     std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
     sm::DepositLayer loadedDeposits;
-    if (!sm::load_game(loaded, loadedQuests, loadedMacro, loadedTrees,
-                       loadedDeposits, path)) {
+    if (!sm::load_game(loaded, loadedNextSpawnId, loadedQuests, loadedMacro,
+                       loadedTrees, loadedDeposits, path)) {
         FAIL_BAIL("load_game failed");
     }
     if (loaded.version != sm::kSaveVersion) FAIL_BAIL("loaded version mismatch");
@@ -791,8 +793,8 @@ void run_roundtrip() {
     if (loaded.lastWorldRebakeDay != 9) {
         FAIL_BAIL("lastWorldRebakeDay (autosave phase) lost");
     }
-    if (loaded.nextMacroSpawnOrdinal != kFixtureIssuerAfter) {
-        FAIL_BAIL("nextMacroSpawnOrdinal (identity issuer) lost");
+    if (loadedNextSpawnId != kFixtureIssuerAfter) {
+        FAIL_BAIL("nextSpawnId (identity issuer, M-220) lost");
     }
     if (loaded.worldTickRt.pendingDailyTicks != 3
         || loaded.worldTickRt.nextDailyTickDay != 13
@@ -1092,7 +1094,7 @@ void run_roundtrip() {
     // выше спрашивает ровно то число, что лежит в файле.
     auto loadedStoreOwn = sm::make_macro_store();
     sm::MacroStore& loadedStore = *loadedStoreOwn;
-    sm::restore_macro_ecs(loadedMacro, loadedStore, loaded);
+    sm::restore_macro_ecs(loadedMacro, loadedStore, loadedNextSpawnId);
 
     const sm::MacroHandle cityLm = sm::place_handle_by_ordinal(
         loadedStore, std::uint32_t(kFixtureCityId));
@@ -1297,13 +1299,15 @@ void run_roundtrip() {
     auto sentinelOwn = std::make_unique<sm::GameState>();
     sm::GameState& sentinel = *sentinelOwn;
     sentinel.mapW = 11;
+    std::uint32_t sentinelNextSpawnId = 0;
     std::vector<sm::Quest> sentinelQuests;
     std::vector<sm::MacroNpcRecord> sentinelMacro;
     std::vector<std::uint16_t> sentinelTrees(3, 42u);
     sm::DepositLayer sentinelDeposits;
     sentinelQuests.push_back(make_quest());
     sentinelQuests[0].ordinal = 777u;
-    if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
+    if (sm::load_game(sentinel, sentinelNextSpawnId, sentinelQuests,
+                      sentinelMacro, sentinelTrees,
                       sentinelDeposits, truncatedPath)) {
         FAIL_BAIL("truncated payload accepted");
     }
@@ -1320,7 +1324,8 @@ void run_roundtrip() {
     }
     sentinel.mapW = 22;
     sentinelQuests[0].ordinal = 778u;
-    if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
+    if (sm::load_game(sentinel, sentinelNextSpawnId, sentinelQuests,
+                      sentinelMacro, sentinelTrees,
                       sentinelDeposits, corruptPath)) {
         FAIL_BAIL("corrupt payload accepted");
     }
@@ -1339,12 +1344,13 @@ void run_roundtrip() {
     }
     auto badStateOwn = std::make_unique<sm::GameState>();
     sm::GameState& badState = *badStateOwn;
+    std::uint32_t badNextSpawnId = 0;
     std::vector<sm::Quest> badQuests;
     std::vector<sm::MacroNpcRecord> badMacro;
     std::vector<std::uint16_t> badTrees;
     sm::DepositLayer badDeposits;
-    if (sm::load_game(badState, badQuests, badMacro, badTrees, badDeposits,
-                      badVersionPath)) {
+    if (sm::load_game(badState, badNextSpawnId, badQuests, badMacro, badTrees,
+                      badDeposits, badVersionPath)) {
         FAIL_BAIL("bad version accepted");
     }
     const sm::SaveSummary badSummary = sm::inspect_save(badVersionPath);
@@ -1377,8 +1383,8 @@ void run_roundtrip() {
         invalidMacro[0].inventory
             .slots[std::size_t(sm::kMaxInventorySlots - 1)] = rot;
     }
-    if (sm::save_game(invalidSquadState, quests, invalidMacro, treeCounts,
-                      deposits,
+    if (sm::save_game(invalidSquadState, store.nextSpawnId, quests,
+                      invalidMacro, treeCounts, deposits,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {
         FAIL_BAIL("invalid squad kind saved");
     }
@@ -1388,7 +1394,8 @@ void run_roundtrip() {
     {
         std::vector<sm::MacroNpcRecord> invalidMacro = make_macro_records();
         invalidMacro[0].kind.type = std::uint16_t(sm::NPCType::Count);
-        if (sm::save_game(gs, quests, invalidMacro, treeCounts, deposits,
+        if (sm::save_game(gs, store.nextSpawnId, quests, invalidMacro,
+                          treeCounts, deposits,
                           temp_save_path("timaert_invalid_macro_save.bin"))) {
             FAIL_BAIL("invalid macro npc kind saved");
         }
@@ -1468,18 +1475,20 @@ void run_every_sub_state_kind_survives() {
         const std::vector<sm::MacroNpcRecord> macro;
         const std::vector<std::uint16_t> trees(std::size_t(gs.mapW * gs.mapH), 0u);
         const sm::DepositLayer deposits{};
-        CHECK_OR_RETURN(sm::save_game(gs, quests, macro, trees, deposits,
-                                      path),
+        CHECK_OR_RETURN(sm::save_game(gs, /*storeNextSpawnId*/ 1u, quests,
+                                      macro, trees, deposits, path),
                         "a state in any live sub-state kind can be SAVED");
 
         auto loadedOwn = std::make_unique<sm::GameState>();
         sm::GameState& loaded = *loadedOwn;
+        std::uint32_t loadedNextSpawnId = 0;
         std::vector<sm::Quest> loadedQuests;
         std::vector<sm::MacroNpcRecord> loadedMacro;
         std::vector<std::uint16_t> loadedTrees;
         sm::DepositLayer loadedDeposits;
-        CHECK_OR_RETURN(sm::load_game(loaded, loadedQuests, loadedMacro,
-                                      loadedTrees, loadedDeposits, path),
+        CHECK_OR_RETURN(sm::load_game(loaded, loadedNextSpawnId, loadedQuests,
+                                      loadedMacro, loadedTrees,
+                                      loadedDeposits, path),
                         "...and LOADED — the reader's refusal bound is not "
                         "below the enum's highest live kind");
         CHECK(loaded.subState.kind == kind,
@@ -1585,7 +1594,8 @@ void run_payload_cap_is_a_fact() {
     const std::vector<std::uint16_t> noTrees;
     const sm::DepositLayer noDeposits;
     const std::vector<sm::Quest> noQuests;
-    if (!sm::save_game(gs, noQuests, placeBodies, noTrees, noDeposits, path)) {
+    if (!sm::save_game(gs, store.nextSpawnId, noQuests, placeBodies,
+                       noTrees, noDeposits, path)) {
         FAIL_BAIL("save_game refused a legal world at the census caps");
     }
 
@@ -1618,12 +1628,13 @@ void run_payload_cap_is_a_fact() {
     }
     auto overStateOwn = std::make_unique<sm::GameState>();
     sm::GameState& overState = *overStateOwn;
+    std::uint32_t overNextSpawnId = 0;
     std::vector<sm::Quest> overQuests;
     std::vector<sm::MacroNpcRecord> overMacro;
     std::vector<std::uint16_t> overTrees;
     sm::DepositLayer overDeposits;
-    CHECK(!sm::load_game(overState, overQuests, overMacro, overTrees,
-                         overDeposits, overPath),
+    CHECK(!sm::load_game(overState, overNextSpawnId, overQuests, overMacro,
+                         overTrees, overDeposits, overPath),
           "заголовок с payloadSize выше потолка обязан быть отвергнут");
     CHECK(sm::inspect_save(overPath).status
               == sm::SaveInspectStatus::Unreadable,

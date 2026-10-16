@@ -592,12 +592,13 @@ MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
     // Deterministic spawn ordinal, one per NPC, reset per call — exactly like
     // the shipping `spawn_macro_npcs`/`make_npc` counter: the save-stable
     // identity every persistent macro NPC carries (Inc 5e-2).
-    std::uint32_t spawnIndex = 0;
+    std::uint32_t spawnIndex = 1;   // выдача с 1: ординал 0 — «никто»
     auto mk = [&](sm::NPCType type, std::uint16_t faction, int cx, int cy,
                   int hp, int maxHp, std::int16_t level,
                   std::uint32_t vseed) {
-        const sm::MacroHandle h = sm::store_birth(st);
+        sm::MacroHandle h = sm::store_birth(st);
         st.spawnId[h.slot] = sm::ecs::MacroSpawnId{spawnIndex++};
+        h = sm::handle_at(st, h.slot);
         st.cell[h.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(cx, cy, 1024)};
         st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), faction};
@@ -642,7 +643,8 @@ bool run_beast_member_projection_case(
 
     sm::MacroStore& stl = *worldStore_;
     const sm::MacroHandle hl = sm::store_birth(stl);
-    stl.spawnId[hl.slot] = sm::ecs::MacroSpawnId{std::uint32_t(0)};
+    // (Пин ординала 0 снят с M-220: 0 — «никто» по закону нуля-ординала,
+    // рождение уже выдало законный ординал само.)
     stl.cell[hl.slot] = sm::ecs::MacroCell{sm::ecs::cell_index(0, 0, 1024)};
     stl.kind[hl.slot] = sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
                                          std::uint16_t(3)};
@@ -777,7 +779,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
                 continue;
             if ((objs.flags[std::size_t(slot)] & sm::sub::kObjProjectile) != 0u)
                 continue;
-            if (sm::sub::slot_macro_origin(objs, slot).slot != sm::kMacroNoSlot)
+            if (sm::sub::slot_macro_origin(objs, slot).id != 0)
                 continue;
             ++faunaBefore;
         }
@@ -802,13 +804,13 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // переменные ниже — сразу слоты, которыми читаются колонки, и перевода
     // между адресациями больше нет вовсе; «не нашли» — отрицательный слот.
     // Снарядного гейта здесь не нужно: отбор идёт по бэклинку шва, а слот
-    // снаряда рождается без него (`MacroHandle{}.slot == kMacroNoSlot`).
+    // снаряда рождается без него (`MacroHandle{}.id == 0`).
     int sBandit = -1, sPeasant = -1, sWrap = -1;
     int projCount = 0;
     for (int slot = 0; slot < int(sm::kMaxSubObjects); ++slot) {
         if ((objs.flags[std::size_t(slot)] & sm::sub::kObjAlive) == 0u) continue;
         const sm::MacroHandle origin = sm::sub::slot_macro_origin(objs, slot);
-        if (origin.slot == sm::kMacroNoSlot) continue;
+        if (origin.id == 0) continue;
         ++projCount;
         if (!worldStore_->valid(origin)) {
             return false;
@@ -905,7 +907,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
         for (int slot = 0; slot < int(sm::kMaxSubObjects); ++slot) {
             if ((objs.flags[std::size_t(slot)] & sm::sub::kObjAlive) == 0u)
                 continue;
-            if (sm::sub::slot_macro_origin(objs, slot).slot != sm::kMacroNoSlot)
+            if (sm::sub::slot_macro_origin(objs, slot).id != 0)
                 ++standing;
         }
         if (standing != 3) return false;   // и не удваивает уже стоящих
@@ -926,7 +928,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
                 continue;
             if ((objs.flags[std::size_t(slot)] & sm::sub::kObjProjectile) != 0u)
                 continue;
-            if (sm::sub::slot_macro_origin(objs, slot).slot != sm::kMacroNoSlot)
+            if (sm::sub::slot_macro_origin(objs, slot).id != 0)
                 ++projAfter;
             else ++faunaAfter;
         }
@@ -998,7 +1000,7 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
             if ((objs.flags[std::size_t(slot)] & sm::sub::kObjAlive) == 0u)
                 continue;
             const sm::MacroHandle h = sm::sub::slot_macro_origin(objs, slot);
-            if (h.slot == sm::kMacroNoSlot) continue;
+            if (h.id == 0) continue;
             if (st.valid(h) == wantValid) ++n;
         }
         return n;
@@ -1014,10 +1016,13 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // ПЕРЕРОЖДЕНИЕ ТОГО ЖЕ СЛОТА: фрилист — стек, значит слот возвращается
     // первым. Если это перестанет быть правдой, сценарий обязан сказать об
     // этом вслух, а не проверять пустоту.
-    const sm::MacroHandle reborn = sm::store_birth(st);
+    sm::MacroHandle reborn = sm::store_birth(st);
     if (reborn.slot != s.bandit.slot) return false;  // не тот слот — нет сценария
-    if (reborn.gen == s.bandit.gen) return false;    // поколение обязано отличаться
+    if (reborn.id == s.bandit.id) return false;      // ординал обязан отличаться
+    // Фикстура пинит ординал нового жильца (ожидаемая запись 77 ниже);
+    // хэндл `reborn` после этого валидность не несёт — колонки пишутся слотом.
     st.spawnId[reborn.slot] = sm::ecs::MacroSpawnId{77u};
+    reborn = sm::handle_at(st, reborn.slot);
     st.cell[reborn.slot] = sm::ecs::MacroCell{
         sm::ecs::cell_index(kCenterCx, kCenterCy, kMapW)};
     st.kind[reborn.slot] = sm::ecs::NPCKind{
@@ -1240,8 +1245,9 @@ int main() {
         sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
         sm::MacroStore& stq = *worldStore_;
-        const sm::MacroHandle hq = sm::store_birth(stq);
+        sm::MacroHandle hq = sm::store_birth(stq);
         stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(11)};
+        hq = sm::handle_at(stq, hq.slot);
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
         stq.pools[hq.slot] = sm::ecs::Pools{10, 10};
@@ -1317,8 +1323,9 @@ int main() {
         sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
         sm::MacroStore& stq = *worldStore_;
-        const sm::MacroHandle hq = sm::store_birth(stq);
+        sm::MacroHandle hq = sm::store_birth(stq);
         stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(12)};
+        hq = sm::handle_at(stq, hq.slot);
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
         stq.pools[hq.slot] = sm::ecs::Pools{40, 40};
@@ -1404,8 +1411,9 @@ int main() {
         sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
         sm::MacroStore& stq = *worldStore_;
-        const sm::MacroHandle hq = sm::store_birth(stq);
+        sm::MacroHandle hq = sm::store_birth(stq);
         stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(13)};
+        hq = sm::handle_at(stq, hq.slot);
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
         stq.pools[hq.slot] = sm::ecs::Pools{50, 50};

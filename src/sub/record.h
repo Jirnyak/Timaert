@@ -49,7 +49,7 @@ namespace sm::sub {
 inline MacroHandle slot_macro_record(const SubObjects& o, int s,
                                      const MacroStore& st) {
     const MacroHandle rec = slot_macro_origin(o, s);
-    if (rec.slot == kMacroNoSlot || !st.valid(rec)) return MacroHandle{};
+    if (rec.id == 0 || !st.valid(rec)) return MacroHandle{};
     return rec;
 }
 // Состояние записи (сумка/черты/гир/книга): ТОЛЬКО запись — самозаписи нет
@@ -57,14 +57,14 @@ inline MacroHandle slot_macro_record(const SubObjects& o, int s,
 template <class C>
 inline C* slot_state(const SubObjects& o, int s, MacroStore& st) {
     const MacroHandle rec = slot_macro_record(o, s, st);
-    if (rec.slot == kMacroNoSlot) return nullptr;
+    if (rec.id == 0) return nullptr;
     return body_state<C>(st, rec);
 }
 // Бары: store-первый (рана ложится на ЗАПИСЬ зеркального тела), фолбэк —
 // колонка арены (кусок 2).
 inline ecs::Pools* slot_pools_of(SubObjects& o, int s, MacroStore& st) {
     const MacroHandle rec = slot_macro_record(o, s, st);
-    if (rec.slot != kMacroNoSlot) {
+    if (rec.id != 0) {
         if (ecs::Pools* owned = body_state<ecs::Pools>(st, rec)) return owned;
     }
     return slot_pools(o, s);
@@ -79,7 +79,7 @@ inline ecs::Pools* slot_pools_of(SubObjects& o, int s, MacroStore& st) {
 // тронут — они состояние ЗАПИСИ и колонками арены не становятся никогда.
 inline CharacterSheet* slot_sheet_of(SubObjects& o, int s, MacroStore& st) {
     const MacroHandle rec = slot_macro_record(o, s, st);
-    if (rec.slot != kMacroNoSlot) {
+    if (rec.id != 0) {
         if (CharacterSheet* owned = body_state<CharacterSheet>(st, rec))
             return owned;
     }

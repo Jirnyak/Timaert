@@ -201,8 +201,7 @@ bool modal_overlay_active(const App& app);
 // MacroSpawnId means the same body for the life of the world. 0 = this body
 // has no identity — a creature row, a body below — and the chronicle will say
 // so by naming the place instead of a figure.
-std::uint32_t macro_identity_of(const App& app, std::uint32_t handleBits) {
-    const sm::MacroHandle h = sm::macro_handle_from_bits(handleBits);
+std::uint32_t macro_identity_of(const App& app, sm::MacroHandle h) {
     const auto* id =
         sm::body_state<sm::ecs::MacroSpawnId>((*app.macroStore), h);
     return id ? id->index : 0u;
@@ -211,8 +210,7 @@ std::uint32_t macro_identity_of(const App& app, std::uint32_t handleBits) {
 // Has this band done enough to be somebody? ONE number answers, and it lives
 // on the band (MacroNpcRuntime::renown — колонка store), so there is no flag
 // beside it to disagree. A stale handle — a creature row, a corpse — is nobody.
-bool squad_is_named(const App& app, std::uint32_t handleBits) {
-    const sm::MacroHandle h = sm::macro_handle_from_bits(handleBits);
+bool squad_is_named(const App& app, sm::MacroHandle h) {
     const auto* rt =
         sm::body_state<sm::ecs::MacroNpcRuntime>((*app.macroStore), h);
     return rt && sm::renown_is_named(rt->renown);
@@ -306,9 +304,9 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     // A fact with no place would be invisible to the only question the
     // chronicle exists to answer. Хэндлы (1г): протухший отвечает nullptr.
     const sm::MacroStore& st = (*app.macroStore);
-    const sm::MacroHandle killerH = sm::macro_handle_from_bits(fact.killer);
+    const sm::MacroHandle killerH = fact.killer;
     const sm::MacroHandle whereH = st.valid(killerH)
-        ? killerH : sm::macro_handle_from_bits(fact.victim);
+        ? killerH : fact.victim;
     if (const auto* c = sm::body_state<sm::ecs::MacroCell>(st, whereH)) {
         wf.x = std::int16_t(sm::ecs::cell_x(*c, app.gs.mapW));
         wf.y = std::int16_t(sm::ecs::cell_y(*c, app.gs.mapW));
@@ -860,7 +858,7 @@ void detect_forced_encounter(App& app) {
     sm::MacroStore& st = (*app.macroStore);
 
     // A graced squad stops gracing the moment the two part cells.
-    if (app.encounterGraceNpc.slot != sm::kMacroNoSlot) {
+    if (app.encounterGraceNpc.id != 0) {
         bool together = false;
         if (const auto* gc = sm::body_state<sm::ecs::MacroCell>(
                 st, app.encounterGraceNpc)) {
@@ -880,8 +878,7 @@ void detect_forced_encounter(App& app) {
         if (st.alive[slot] == 0) continue;
         if (slot == flagSlot || st.playerFlag[slot].home != 0)
             continue;
-        if (sm::MacroHandle{slot, st.generation[slot]}
-            == app.encounterGraceNpc) continue;
+        if (sm::handle_at(st, slot) == app.encounterGraceNpc) continue;
         if (st.dead[slot] != 0) continue;
         // ТЕЛО МЕСТА — НЕ ВСТРЕЧНЫЙ СКВАД (ось рода, M-90 шаг 5): шаг на
         // клетку шпиля не есть бой с его телом; осаду построит свой закон.
@@ -901,7 +898,7 @@ void detect_forced_encounter(App& app) {
                                    sm::faction_id_for_index(kind.factionIdx))) {
             continue;
         }
-        app.preBattleNpc = sm::MacroHandle{slot, st.generation[slot]};
+        app.preBattleNpc = sm::handle_at(st, slot);
         app.encounterTalkLine.clear();
         app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
         app.cursor.path.clear();
@@ -1378,9 +1375,9 @@ bool save_game_checked(App& app, bool autosave = false) {
         return false;
     }
     const std::string& path = autosave ? app.autosavePath : app.savePath;
-    const bool ok = sm::save_game(app.gs, app.activeQuests,
-                                  stage_save_state(app), app.treeLayer.data,
-                                  app.deposits, path);
+    const bool ok = sm::save_game(app.gs, app.macroStore->nextSpawnId,
+                                  app.activeQuests, stage_save_state(app),
+                                  app.treeLayer.data, app.deposits, path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
@@ -1763,19 +1760,21 @@ void boot_world(App& app, std::uint32_t seed,
 
 bool boot_world_from_save(App& app, const std::string& path) {
     sm::GameState fresh;
+    std::uint32_t loadedNextSpawnId = 1;
     std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
     sm::DepositLayer loadedDeposits;
-    if (!sm::load_game(fresh, loadedQuests, loadedMacro, loadedTrees,
-                       loadedDeposits, path)) {
+    if (!sm::load_game(fresh, loadedNextSpawnId, loadedQuests, loadedMacro,
+                       loadedTrees, loadedDeposits, path)) {
         return false;
     }
     // What the FILE says the world is, weighed before a single field of it is
     // applied. Compared against the living world at the bottom of this
     // function — see the fold witness there.
     const std::uint32_t fileFingerprint = sm::save_payload_fingerprint(
-        fresh, loadedQuests, loadedMacro, loadedTrees, loadedDeposits);
+        fresh, loadedNextSpawnId, loadedQuests, loadedMacro, loadedTrees,
+        loadedDeposits);
     // registerIntroStory=TRUE even on load (v25): node definitions are code
     // and must all exist before the saved story progress is replayed below.
     // The old `false` here was the 3-nodes -> 1 bug: a loaded game lost the
@@ -1863,15 +1862,27 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // anything — save_roundtrip_test proves file→GameState, which is the half
     // that worked, while five fields died right here, on the way in.
     //
+    // The macro snapshot (Session 17): boot_world above spawned no SQUADS
+    // (spawnMacroNpcs=false) — but с флипа M-90 генезис рожает ТЕЛА МЕСТ в
+    // store, а их строки файл только что заменил своими. Store умирает
+    // ЗДЕСЬ, по построению, а не по совпадению флага: записи файла несут
+    // ВСЕХ (сквады и тела мест), и restore вселяет их в пустой store. A
+    // killed lord stays killed, a levelled leader keeps his campaigns.
+    sm::store_reset(*app.macroStore);
+    sm::restore_macro_ecs(loadedMacro, *app.macroStore, loadedNextSpawnId);
+
     // So weigh the living world with the same writer that weighed the file,
     // on the same side vectors, and demand the two agree. The fields are
     // ENUMERATED BY THE WRITER: a truth added to write_payload is guarded from
     // the day it is added, and one dropped in this fold is a mismatch the same
-    // second. This must stand BEFORE settlementId is recomputed below — that
-    // line legitimately re-derives a field, and a witness must compare the
-    // fold, not the world's own thinking.
+    // second. This must stand AFTER the store restore just above (the emitter
+    // — MacroStore.nextSpawnId, M-220 — rides the save and is applied THERE)
+    // and BEFORE settlementId is recomputed below — that line legitimately
+    // re-derives a field, and a witness must compare the fold, not the
+    // world's own thinking.
     const std::uint32_t liveFingerprint = sm::save_payload_fingerprint(
-        app.gs, app.activeQuests, loadedMacro, loadedTrees, loadedDeposits);
+        app.gs, app.macroStore->nextSpawnId, app.activeQuests, loadedMacro,
+        loadedTrees, loadedDeposits);
     // A witness that answers "0" twice would agree with itself over a world it
     // never weighed: 0 is what the fingerprint returns when the writer FAILED.
     // Refuse that agreement out loud — a check that cannot fail is the defect
@@ -1892,15 +1903,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
         std::fflush(stderr);
         if (app.smoke.enabled) sm::app::smoke_fail(app, "load fold lost state");
     }
-
-    // The macro snapshot (Session 17): boot_world above spawned no SQUADS
-    // (spawnMacroNpcs=false) — but с флипа M-90 генезис рожает ТЕЛА МЕСТ в
-    // store, а их строки файл только что заменил своими. Store умирает
-    // ЗДЕСЬ, по построению, а не по совпадению флага: записи файла несут
-    // ВСЕХ (сквады и тела мест), и restore вселяет их в пустой store. A
-    // killed lord stays killed, a levelled leader keeps his campaigns.
-    sm::store_reset(*app.macroStore);
-    sm::restore_macro_ecs(loadedMacro, *app.macroStore, app.gs);
     // Сшивка строк мест с их телами — по ординалу (M-37: пространство одно);
     // строка без тела печатается ВСЛУХ внутри двери.
     // Кэши игрока — из колонок СВЕЖЕГО store (5б): слоты при restore
@@ -3756,7 +3758,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                 && app.macroStore->pools[homeH.slot].hp > 0
                 && app.macroStore->dead[homeH.slot] == 0;
             const bool flagHome =
-                app.gs.playerFlagBits == app.gs.playerSquadBits;
+                app.gs.playerFlagRef == app.gs.playerSquadRef;
             if (!(flagHome && homeAlive)) {
                 app.state = sm::ui::AppState::Dead;
             }
@@ -6083,7 +6085,7 @@ void frame(App& app, int simSteps) {
             draw_session_feed(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))
                 sm::ui::draw_character_panel(app.gs, *app.macroStore, app.sceneObjects.get(), &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
-            if (app.ui.settlement && app.subjectSquad.slot == sm::kMacroNoSlot)
+            if (app.ui.settlement && app.subjectSquad.id == 0)
                 refresh_available_settlement_quests(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelSettlement)) {
                 // ОДНА панель субъекта: сквад или ландмарк — окно, пауза и
@@ -6107,7 +6109,7 @@ void frame(App& app, int simSteps) {
                                         &attackReq,
                                         app.uiSettings.scale(sm::ui::UiElementId::PanelSettlement));
                 if (!app.ui.settlement) app.subjectSquad = {};
-                if (attackReq.slot != sm::kMacroNoSlot) {
+                if (attackReq.id != 0) {
                     // Клетка защитника — колонка store (прежний try_get у
                     // энтити молчал, и закон переноса не исполнялся).
                     sm::MacroStore& ast = (*app.macroStore);
@@ -6375,7 +6377,7 @@ void frame(App& app, int simSteps) {
                                                      app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));
                 // Клик по ряду = СРАЗУ панель субъекта («система меню
                 // единая»): одна и та же панель, у сквада своя ветка.
-                if (npcResult.openSquad.slot != sm::kMacroNoSlot) {
+                if (npcResult.openSquad.id != 0) {
                     app.subjectSquad = npcResult.openSquad;
                     app.ui.settlementId = 0;
                     app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;

@@ -2,6 +2,7 @@
 #pragma once
 #include "ecs/pools.h"
 #include "core/torus.h"        // cell_of — ОДИН адрес клетки мира
+#include "macro/macro_handle.h"   // MacroHandle {слот, ID} — через шов (M-220)
 #include "macro/anketa.h"
 #include "tables/commodity.h"   // kCommodityCount — счёт содержания контейнера
 #include "macro/upkeep.h"      // sm::Upkeep — ОДИН контейнер на место и на сквад
@@ -11,19 +12,10 @@
 
 namespace sm {
 
-// ── MacroHandle — долгоживущая ссылка на слот MacroStore (M-106, 1г/1е) ────
-// Живёт в слое ecs, потому что его несёт через шов миров компонента
-// ecs::MacroOrigin ниже (вердикт Б, с.19); двери — macro/store.h. Хэндл
-// слота: «нет элемента» — последнее значение типа (закон узкого индекса,
-// S26; кап 32768 в u16 умещается с запасом). Поколение — та же защита от
-// протухшей ссылки, что версия в хэндле EnTT, только своя.
-inline constexpr std::uint16_t kMacroNoSlot = 0xFFFFu;
-struct MacroHandle {
-    std::uint16_t slot = kMacroNoSlot;
-    std::uint16_t gen  = 0;
-    friend constexpr bool operator==(const MacroHandle&,
-                                     const MacroHandle&) = default;
-};
+// (MacroHandle {слот, ID} ПЕРЕЕХАЛ в macro/macro_handle.h с M-220: его
+// включает и сознательно лёгкий конверт мира macro_world.h, которому
+// ecs-слой запрещён шапкой. Здесь — транзитивное включение ради всех,
+// кто брал его отсюда; несёт его через шов компонента ecs::MacroOrigin.)
 
 } // namespace sm
 

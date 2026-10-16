@@ -31,8 +31,8 @@ void tick_npc_ai(SubObjects& objs, MacroStore* st,
                  void* threatUser,
                  GroundHeightFn heightFn,
                  void* heightUser,
-                 std::uint32_t playerFlagBits,
-                 std::uint32_t playerSquadBits) {
+                 MacroHandle playerFlagRef,
+                 MacroHandle playerSquadRef) {
 
     // БЕЗ СОЗНАНИЯ (вердикт владельца №6, 2026-09-17): у брошенного сквада
     // игрока нет флажка, и «без сознания» — не состояние, а ЕГО ОТСУТСТВИЕ,
@@ -45,11 +45,11 @@ void tick_npc_ai(SubObjects& objs, MacroStore* st,
     MacroHandle unconsciousRec{};
     {
         // Флаг НЕ на родном скваде = хозяин ходит в чужом теле, его сквад
-        // без чувств. Ответ — сравнение двух чисел GameState (1е кластер 5).
-        // Ординал дома СПРАШИВАЕТСЯ У ЕГО ЗАПИСИ (M-255): он выдан тем же
-        // эмитентом, что всякому скваду, а не зарезервированной константой.
-        const MacroHandle home = macro_handle_from_bits(playerSquadBits);
-        if (home.slot != kMacroNoSlot && playerFlagBits != playerSquadBits
+        // без чувств. Ответ — сравнение двух хэндлов GameState (1е кластер
+        // 5, M-220). Ординал дома СПРАШИВАЕТСЯ У ЕГО ЗАПИСИ (M-255): он
+        // выдан тем же эмитентом, что всякому скваду.
+        const MacroHandle home = playerSquadRef;
+        if (home.id != 0 && !(playerFlagRef == playerSquadRef)
             && st != nullptr) {
             unconsciousRec = home;
             unconsciousSubject = st->valid(home)
@@ -78,7 +78,7 @@ void tick_npc_ai(SubObjects& objs, MacroStore* st,
         if (objs.is_avatar_slot(s)) continue;
         // …и тело брошенного сквада стоит без чувств (предикат выше): сам
         // сквад — по записи, его люди — по контейнерному займу.
-        if (unconsciousRec.slot != kMacroNoSlot) {
+        if (unconsciousRec.id != 0) {
             if (st != nullptr
                 && slot_macro_record(objs, s, *st) == unconsciousRec) {
                 aiCol->wantVx = aiCol->wantVy = 0.0f;

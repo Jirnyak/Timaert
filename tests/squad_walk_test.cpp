@@ -21,19 +21,21 @@ int main() {
     MacroStore& st = *store;
 
     // Рождения 0..7 в порядке ординала — как единственная дверь make_npc.
+    // Пин с 1: ординал 0 — «никто» (закон нуля-ординала), хэндл с ним
+    // невалиден по построению; хэндл пересобирается за пином (M-220).
     auto born_one = [&](std::uint32_t ord) {
         const MacroHandle h = store_birth(st);
         st.spawnId[h.slot] = ecs::MacroSpawnId{ord};
-        return h;
+        return handle_at(st, h.slot);
     };
     std::vector<MacroHandle> born;
-    for (std::uint32_t ord = 0; ord < 8; ++ord) born.push_back(born_one(ord));
+    for (std::uint32_t ord = 1; ord <= 8; ++ord) born.push_back(born_one(ord));
     // Смерти в середине и в голове — freelist переиспользует их слоты, и
     // порядок рождения перестаёт совпадать с порядком слотов.
     store_death(st, born[0]);
     store_death(st, born[3]);
     // Дорождение после смертей (ординалы монотонны, слоты переиспользуются).
-    for (std::uint32_t ord = 8; ord < 11; ++ord) born_one(ord);
+    for (std::uint32_t ord = 9; ord < 12; ++ord) born_one(ord);
 
     // ── НЕГАТИВНЫЙ КОНТРОЛЬ: сырой слот-порядок НЕ ординальный ──────────
     std::vector<std::uint32_t> raw;

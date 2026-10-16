@@ -56,7 +56,7 @@ FactTally tally_facts(const Chronicle& c, FactKind kind, int x, int y) {
 
 sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
                                 int homeVillageId) {
-    const sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), kMap)};
     st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -79,6 +79,7 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Trees));
     st.runtime[h.slot] = rt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{11u};
+    h = sm::handle_at(st, h.slot);
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
@@ -183,8 +184,8 @@ void test_the_farmer_works_the_field() {
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
         sm::birth_place(gs, st, SquadType::Village, 10, 10);
-    const sm::MacroHandle h = sm::store_birth(st);
-    const sm::MacroHandle e = h;
+    sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -205,6 +206,8 @@ void test_the_farmer_works_the_field() {
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     st.runtime[h.slot] = prt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{12u};
+    h = sm::handle_at(st, h.slot);
+    e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;
@@ -258,7 +261,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
         sm::birth_place(gs, st, SquadType::Village, 10, 10);
-    const sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -279,6 +282,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     st.runtime[h.slot] = prt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{12u};
+    h = sm::handle_at(st, h.slot);
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;
@@ -349,7 +353,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
         sm::birth_place(gs, st, SquadType::Village, 10, 10);
-    const sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -370,6 +374,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     st.runtime[h.slot] = rt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
+    h = sm::handle_at(st, h.slot);
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
@@ -459,8 +464,8 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // точке сделки, а цена чужого рынка есть абсолютная стоимость строки.
     // Руками поднимать больше нечего.)
 
-    const sm::MacroHandle h = sm::store_birth(st);
-    const sm::MacroHandle e = h;
+    sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(16, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{16.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -485,6 +490,8 @@ void test_the_vendor_sells_at_the_nearest_city() {
     pools.sp = pools.maxSp;
     st.runtime[h.slot] = crt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
+    h = sm::handle_at(st, h.slot);
+    e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
     pools.hp = pools.maxHp = 25;
     st.pools[h.slot] = pools;
@@ -581,8 +588,8 @@ void test_the_miner_works_the_vein() {
     const sm::MacroHandle vil =
         sm::birth_place(gs, st, SquadType::Village, 10, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
-    const sm::MacroHandle h = sm::store_birth(st);
-    const sm::MacroHandle e = h;
+    sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -603,6 +610,8 @@ void test_the_miner_works_the_vein() {
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     st.runtime[h.slot] = rt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
+    h = sm::handle_at(st, h.slot);
+    e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
@@ -661,13 +670,14 @@ void test_the_miner_works_the_vein() {
     // здесь заново, своим эмитентом.
     const sm::MacroHandle vil2 =
         sm::birth_place(gs2, st2, SquadType::Village, 10, 10);
-    const sm::MacroHandle h2 = sm::store_birth(st2);
+    sm::MacroHandle h2 = sm::store_birth(st2);
     st2.cell[h2.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st2.visual[h2.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st2.kind[h2.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                      std::uint16_t(faction_index("timaert"))};
     st2.runtime[h2.slot] = rt;
     st2.spawnId[h2.slot] = ecs::MacroSpawnId{14u};
+    h2 = sm::handle_at(st2, h2.slot);
     st2.level[h2.slot] = ecs::NpcLevel{std::int16_t(3)};
     {
         ecs::Pools p2{};
@@ -737,8 +747,8 @@ void test_the_catch_lands_as_creatures() {
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
     sm::settle_souls(gs, st, vil.slot, 40);
-    const sm::MacroHandle h = sm::store_birth(st);
-    const sm::MacroHandle e = h;
+    sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.visual[h.slot] = ecs::MacroVisual{10.0f, 10.0f, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
@@ -763,6 +773,8 @@ void test_the_catch_lands_as_creatures() {
     prt.carryCap = 40.0f;
     st.runtime[h.slot] = prt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{77u};
+    h = sm::handle_at(st, h.slot);
+    e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;

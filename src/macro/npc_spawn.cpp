@@ -77,7 +77,7 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
 MacroHandle make_npc(MacroStore& st, NPCType type,
                      std::uint16_t factionIdx,
                      int x, int y, int mapW, int homeId, Rng& rng,
-                     std::uint32_t& spawnIndex, int levelOverride = -1) {
+                     int levelOverride = -1) {
     // 6.3 (M-106 1е): сквад рождается ТОЛЬКО колонками store — entt-моста
     // больше нет, единственная дверь рождения отвечает хэндлом.
     const MacroHandle h = store_birth(st);
@@ -103,11 +103,12 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     gear_init(st.gear[h.slot].gear, def.slots);
     const int hp = body_max_hp(sheet, def.combat);
 
-    // Stable identity for possession persistence (Inc 5e-2): the Nth macro NPC
-    // created gets ordinal N. Deterministic because spawn_macro_npcs walks a
-    // fixed spawn sequence seeded off `worldSeed`. Taken BEFORE the runtime
-    // block below because the march caches derive from it.
-    const std::uint32_t ordinal = spawnIndex++;
+    // Stable identity for possession persistence (Inc 5e-2): the ordinal is
+    // the handle's own id — issued by the birth door (M-220). Deterministic
+    // because spawn_macro_npcs walks a fixed spawn sequence seeded off
+    // `worldSeed`, and the store counter grows in birth order. Named here
+    // because the march caches derive from it.
+    const std::uint32_t ordinal = h.id;
 
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId   = homeId;   // ONE subject-ordinal space (M-37); 0 = без дома
@@ -147,8 +148,6 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     pools.sp = pools.maxSp;   // born rested
     st.pools[h.slot]   = pools;
     st.runtime[h.slot] = rt;
-
-    st.spawnId[h.slot] = ecs::MacroSpawnId{ordinal};
 
     // АНКЕТА ПО-ММОРПГ (владелец 2026-09-25, CANON): у КАЖДОГО сквада своя
     // анкета-данные, рождённая из шаблона; опыт и уровень идут в неё. Формула
@@ -232,7 +231,6 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
     // resetting it — a reset here would re-deal the garrisons' names to
     // walkers. The counter rides the save; an identity is never issued
     // twice in a world's whole life.
-    std::uint32_t& spawnIndex = gs.nextMacroSpawnOrdinal;
     const int mw = gs.mapW;
     const int mh = gs.mapH;
     if (mw <= 0 || mh <= 0)
@@ -258,7 +256,7 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
         if (rng.next_f01() > 0.4f) {
             // Residents are born ON the town cell (owner 2026-08-31).
             make_npc(st, NPCType::Merchant, fIdx, sx, sy, gs.mapW,
-                     int(st.spawnId[cslot].index), rng, spawnIndex);
+                     int(st.spawnId[cslot].index), rng);
         }
         // ГЕНЕЗИСНЫЕ ОДИНОЧКИ-СТРАЖНИКИ (1-2 на город) ВЫРЕЗАНЫ 2026-09-22
         // по вердикту владельца («пока никаких стражников, это усложняет
@@ -294,7 +292,7 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.3f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
-        make_npc(st, NPCType::Witch, f, p.x, p.y, gs.mapW, -1, rng, spawnIndex);
+        make_npc(st, NPCType::Witch, f, p.x, p.y, gs.mapW, -1, rng);
     }
 
     // Sorceresses: max(1, 0.05 * settlements)
@@ -310,7 +308,7 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.5f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
-        make_npc(st, NPCType::Sorceress, f, p.x, p.y, gs.mapW, -1, rng, spawnIndex);
+        make_npc(st, NPCType::Sorceress, f, p.x, p.y, gs.mapW, -1, rng);
     }
 
     // Villages seed no eternal gatherers either (owner 2026-08-30): the
@@ -321,7 +319,7 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
 
     // СТОЛ АНКЕТ — авторские фигуры мира, после массовки: их ординалы
     // продолжают тот же поток идентичности.
-    spawn_design_characters(gs, st, terrain, rng, spawnIndex);
+    spawn_design_characters(gs, st, terrain, rng);
 }
 
 // Вершины горных массивов — дома драконьих анкет: K высочайших клеток
@@ -366,8 +364,7 @@ static void resolve_mountain_peaks(const TerrainData& terrain,
 }
 
 void spawn_design_characters(GameState& gs, MacroStore& st,
-                             const TerrainData& terrain, Rng& rng,
-                             std::uint32_t& spawnIndex) {
+                             const TerrainData& terrain, Rng& rng) {
     const int mw = gs.mapW;
     const int mh = gs.mapH;
     if (mw <= 0 || mh <= 0) return;
@@ -436,7 +433,7 @@ void spawn_design_characters(GameState& gs, MacroStore& st,
                    : std::uint16_t(faction_index("freefolk")));
         const MacroHandle h = make_npc(
             st, row.body, factionIdx,
-            p.x, p.y, gs.mapW, homeId, rng, spawnIndex, int(row.level));
+            p.x, p.y, gs.mapW, homeId, rng, int(row.level));
         if (!st.valid(h)) continue;
         const std::uint16_t slot = h.slot;
 
@@ -523,7 +520,7 @@ bool spawn_npc_at(GameState& gs, MacroStore& st,
         : faction_index_for_cell(gs.cellOwner, gs.mapW, gs.mapH, p.x, p.y);
 
     return st.valid(make_npc(st, type, f, p.x, p.y, gs.mapW, /*homeId*/ 0,
-                             rng, gs.nextMacroSpawnOrdinal, level));
+                             rng, level));
 }
 
 MacroHandle spawn_squad(GameState& gs, MacroStore& store,
@@ -564,7 +561,7 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
 
     const MacroHandle leader =
         make_npc(store, spec.leaderType, f, p.x, p.y, gs.mapW,
-                 spec.homeSettlementId, rng, gs.nextMacroSpawnOrdinal,
+                 spec.homeSettlementId, rng,
                  spec.leaderLevel);
     if (!store.valid(leader)) return {};
 

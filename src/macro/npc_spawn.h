@@ -40,8 +40,7 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
 // эту анкету честно не рождает. Публична ради headless-свидетеля — тест
 // зовёт её на фикстуре напрямую, без полного генезиса.
 void spawn_design_characters(GameState& gs, MacroStore& st,
-                             const TerrainData& terrain, Rng& rng,
-                             std::uint32_t& spawnIndex);
+                             const TerrainData& terrain, Rng& rng);
 
 // Spawn ONE macro NPC of the named registry type near macro cell (x, y) —
 // the consumer half of the SpawnEntity event (quest onAccept is the producer:

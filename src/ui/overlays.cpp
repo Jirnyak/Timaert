@@ -1761,7 +1761,7 @@ namespace sm::ui
         // Same window, same pause law, same tab bar as a settlement —
         // «система меню единая» (владелец): only the banner and the tab
         // set differ, and both come from the subject.
-        if (squadSubject.slot != kMacroNoSlot)
+        if (squadSubject.id != 0)
         {
             // ФЛИП 1в/1г: субъект-сквад — хэндл store, гейт читает колонки.
             // Прежний гейт требовал entt-компоненты, которых у макро-сквада
@@ -1789,8 +1789,9 @@ namespace sm::ui
             // из nameIdx.
             const char *npcName = squad_name(st, squadSubject.slot);
             const FactionDef *fd = faction_def_by_index(kind.factionIdx);
-            g_squadTrade.sync_to(int(squadSubject.slot)
-                                 | (int(squadSubject.gen) << 16));
+            // Ключ сессии торга — ОРДИНАЛ сквада (M-220: уникален на мир,
+            // прежний слот|ген<<16 умер с поколением).
+            g_squadTrade.sync_to(int(squadSubject.id));
             if (g_squadTalkFor != squadSubject)
             {
                 g_squadTalkFor = MacroHandle{};

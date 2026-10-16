@@ -55,12 +55,11 @@ WorldFact fact(int day, FactKind kind, std::uint8_t subjKind,
 void stand_at(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
     if (!st.valid(sm::player_squad_handle(gs))) {
         const sm::MacroHandle h = sm::store_birth(st);
-        st.spawnId[h.slot] =
-            ecs::MacroSpawnId{gs.nextMacroSpawnOrdinal++};
-        // Оба носителя — СВОЕЙ дверью (5б + M-255): колонка playerFlag —
-        // истина, биты GameState — кэш, и каждая дверь пишет их вместе.
-        sm::mark_player_home(st, gs.playerSquadBits, h);
-        sm::transfer_player_flag(st, gs.playerFlagBits, h);
+        // Ординал выдала дверь рождения (M-220). Оба носителя — СВОЕЙ
+        // дверью (5б + M-255): колонка playerFlag — истина, хэндл GameState
+        // — кэш, и каждая дверь пишет их вместе.
+        sm::mark_player_home(st, gs.playerSquadRef, h);
+        sm::transfer_player_flag(st, gs.playerFlagRef, h);
     }
     // Клетка пишется НОСИТЕЛЮ ФЛАЖКА — локальность журнал мерит по нему.
     const sm::MacroHandle f = sm::player_flag_handle(gs);
@@ -195,11 +194,12 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     // I wear» is the flag on the lord himself (v87) — the world is asked, no
     // out-of-snapshot field.
     sm::MacroStore& stL = *wStore_;
-    const sm::MacroHandle hL = sm::store_birth(stL);
-    stL.spawnId[hL.slot] = ecs::MacroSpawnId{42u};
+    sm::MacroHandle hL = sm::store_birth(stL);
+    stL.spawnId[hL.slot] = ecs::MacroSpawnId{42u};   // пин ординала фикстуры
+    hL = sm::handle_at(stL, hL.slot);                // хэндл — за колонкой
     // Possession MOVES the one flag — дверью переноса (5б): колонка
-    // анкеты + кэш битов, запись нового = срыв старого.
-    sm::transfer_player_flag(stL, gs.playerFlagBits, hL);
+    // анкеты + кэш-хэндл, запись нового = срыв старого.
+    sm::transfer_player_flag(stL, gs.playerFlagRef, hL);
     chronicle_record(gs.chronicle,
                      fact(2, FactKind::Killed,
                           fact_subject(FactSubject::Squad, false),
@@ -250,8 +250,9 @@ void test_the_deed_door_files_and_pays_as_one_action() {
 
     // A band with a save-stable identity and a renown store…
     sm::MacroStore& stB = *wStore_;
-    const sm::MacroHandle hB = sm::store_birth(stB);
+    sm::MacroHandle hB = sm::store_birth(stB);
     stB.spawnId[hB.slot] = ecs::MacroSpawnId{7u};
+    hB = sm::handle_at(stB, hB.slot);
     auto& rt = stB.runtime[hB.slot];
     rt.renown = 0u;
     // …robs a town of some standing: the deed is worth its row's base plus a
@@ -260,7 +261,7 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     // жертва приходит в мир дверью рождения со слотом (ломтик F: строки
     // места больше нет). Эмитент поднимается ВЫШЕ рукописного ординала
     // банды (7): выдача с него столкнула бы два субъекта в одном ординале.
-    gs.nextMacroSpawnOrdinal = 8u;
+    stB.nextSpawnId = 8u;   // эмитент — у стора (M-220)
     const MacroHandle hTown =
         birth_place(gs, stB, SquadType::City, 10, 10);
     stB.runtime[hTown.slot].renown = 50u;

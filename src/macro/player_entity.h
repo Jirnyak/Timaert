@@ -11,9 +11,9 @@
 // it cannot be the thing that identifies his party, and why the two answers
 // are two carriers. С 5б (вердикт владельца 2026-09-29) ИСТИНА обоих —
 // анкета: биты ОДНОЙ колонки playerFlag — `on` («кем я на карте») и `home`
-// («кто оригинал», M-255); `GameState::playerFlagBits`/
-// `playerSquadBits` — КЭШИ-хэндлы этих колонок, и вопрос «где флажок»
-// остался распаковкой поля мира, скана нет. Перенос флажка — ОДНА дверь
+// («кто оригинал», M-255); `GameState::playerFlagRef`/
+// `playerSquadRef` — КЭШИ-хэндлы этих колонок, и вопрос «где флажок»
+// остался чтением поля мира, скана нет. Перенос флажка — ОДНА дверь
 // transfer_player_flag (store.h): колонка + кэш одним движением.
 //
 // This entity used to be a HUSK: `Position` + a tag, recreated every macro
@@ -55,15 +55,16 @@ namespace sm {
 // (that lifecycle is owned by SubworldEngine).
 void ensure_macro_player_entity(GameState& gs, MacroStore& st);
 
-// ── БИТОВЫЕ ДВЕРИ (1е кластер 5): истина — два поля GameState ────────────
-// «Кем я на карте» и «кто оригинал» — распаковка полей, ноль сканов.
-// Валидность хэндла (поколение) спрашивается у store читателем, которому
-// она нужна; сентинель «никого» распаковывается в kMacroNoSlot.
+// ── ДВЕРИ ХЭНДЛОВ (1е кластер 5): истина — два поля GameState ────────────
+// «Кем я на карте» и «кто оригинал» — чтение полей, ноль сканов (M-220:
+// поля несут MacroHandle {слот, ID} напрямую, распаковка битов умерла).
+// Валидность хэндла (совпадение ID) спрашивается у store читателем,
+// которому она нужна; «никого» — id == 0, закон нуля-ординала.
 inline MacroHandle player_flag_handle(const GameState& gs) {
-    return macro_handle_from_bits(gs.playerFlagBits);
+    return gs.playerFlagRef;
 }
 inline MacroHandle player_squad_handle(const GameState& gs) {
-    return macro_handle_from_bits(gs.playerSquadBits);
+    return gs.playerSquadRef;
 }
 
 // ОРДИНАЛ ЕГО РОДНОГО СКВАДА — «ПОД КАКИМ НОМЕРОМ ПОДШИТЫ ЕГО ДЕЛА» (M-255).
@@ -141,20 +142,16 @@ inline void player_jump_to_cell(GameState& gs, MacroStore& st, int x, int y) {
 // Returns FALSE when there is nothing to wake up in, and that is the end of the
 // game (owner, same day): «если оригинал жив то возвращает в него, если мёртв и
 // ты умираешь в посессии то гейм овер». The original is known without storing
-// anything — it is `gs.playerSquadBits`, the reserved-ordinal record.
+// anything — it is `gs.playerSquadRef`, the home-bit record.
 //
 // No-op returning false if he was never wearing anyone: then the man who died
 // is himself, and there is no return to make.
 bool wake_player_in_original_body(GameState& gs, MacroStore& st);
 
 // ── ДВА ХЭНДЛА ИГРОКА В GameState (M-106 1е кластер 5) ───────────────────
-// `gs.playerSquadBits` (родной сквад, зарезервированный ординал) и
-// `gs.playerFlagBits` («кем я на карте») — packed-хэндлы store. Сентинель
-// полей — литерал «все единицы» в state.h (state.h не включает store.h);
-// ассерт держит согласие с законом распаковки:
-static_assert(macro_handle_from_bits(0xFFFFFFFFu).slot == kMacroNoSlot,
-              "сентинель полей игрока GameState (все единицы) обязан "
-              "распаковываться в «никого» (macro_handle_from_bits, store.h)");
+// `gs.playerSquadRef` (родной сквад) и `gs.playerFlagRef` («кем я на
+// карте») — MacroHandle {слот, ID} напрямую (M-220: упаковка в биты и её
+// сентинель «все единицы» умерли; «никого» — дефолтный хэндл, id == 0).
 
 // Пересборка кэшей игрока — звать строго ПОСЛЕ restore_macro_ecs: истина
 // «кто игрок» приехала колонкой playerFlag записей снапшота (5б), и оба
@@ -173,8 +170,7 @@ void resolve_player_handles_after_load(GameState& gs, MacroStore& st);
 inline bool player_wears_another_body(const GameState& gs) {
     const MacroHandle flag = player_flag_handle(gs);
     const MacroHandle home = player_squad_handle(gs);
-    return flag.slot != kMacroNoSlot && home.slot != kMacroNoSlot
-        && gs.playerFlagBits != gs.playerSquadBits;
+    return flag.id != 0 && home.id != 0 && !(flag == home);
 }
 
 // (player_roster умер слиянием M-71: армия игрока — область существ его же

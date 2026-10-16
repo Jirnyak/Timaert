@@ -51,7 +51,7 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
                          int sp = 100,
                          int mapW = 128) {
     // 6.3: фикстура рождает слот store — тем же законом, что make_npc.
-    const sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle h = sm::store_birth(st);
     // ОРДИНАЛЫ ФИКСТУРЫ — СВОЙ ДИАПАЗОН, И ОН НЕ С НУЛЯ. Ломтиком F тело
     // места стоит в ТОМ ЖЕ store с ординалом от эмитента (1, 2, …), поэтому
     // выдача «с нуля» давала бы, во-первых, ординал «никто» (ЗАКОН СЛОВАРЯ
@@ -60,6 +60,7 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     // места этой фикстуры (их тут не больше двух).
     static std::uint32_t nextOrdinal = 1000u;
     st.spawnId[h.slot] = sm::ecs::MacroSpawnId{nextOrdinal++};
+    h = sm::handle_at(st, h.slot);
     st.cell[h.slot] = sm::ecs::MacroCell{
         sm::ecs::cell_index(int(x), int(y), mapW)};
     st.visual[h.slot] = sm::ecs::MacroVisual{x, y, 0.0f};
@@ -229,8 +230,8 @@ void test_aggressive_chases_visible_player() {
     {
         const sm::MacroHandle hp2 = sm::store_birth(st);
         // Носитель флажка — дверью переноса (5б): колонка анкеты — истина,
-        // биты GameState — кэш; make_tick_context читает кэш.
-        sm::transfer_player_flag(st, gs.playerFlagBits, hp2);
+        // хэндл GameState — кэш; make_tick_context читает кэш.
+        sm::transfer_player_flag(st, gs.playerFlagRef, hp2);
         st.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }
@@ -248,8 +249,7 @@ void test_aggressive_chases_visible_player() {
     auto player = spawn_ai(st, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
     (*sm::body_state<sm::ecs::NPCKind>(st, player)).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
-    gs.playerSquadBits =
-        sm::macro_handle_bits(player);
+    gs.playerSquadRef = player;
     // And pursuit is the one STRENGTH law (squad_threat_step): a fighter
     // closes only fights it wins with margin. The player is wounded to 10%
     // so the chase is the law's own verdict, not a leftover reflex.
@@ -316,8 +316,8 @@ void test_aggressive_spares_a_friend() {
     {
         const sm::MacroHandle hp2 = sm::store_birth(st);
         // Носитель флажка — дверью переноса (5б): колонка анкеты — истина,
-        // биты GameState — кэш; make_tick_context читает кэш.
-        sm::transfer_player_flag(st, gs.playerFlagBits, hp2);
+        // хэндл GameState — кэш; make_tick_context читает кэш.
+        sm::transfer_player_flag(st, gs.playerFlagRef, hp2);
         st.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }
@@ -331,8 +331,7 @@ void test_aggressive_spares_a_friend() {
     auto player = spawn_ai(st, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
     (*sm::body_state<sm::ecs::NPCKind>(st, player)).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
-    gs.playerSquadBits =
-        sm::macro_handle_bits(player);
+    gs.playerSquadRef = player;
     (*sm::body_state<sm::ecs::Pools>(st, player)).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
@@ -620,11 +619,12 @@ void test_rotation_does_not_dissolve_the_dead() {
     // (Peasant, артель горожан): патрульная строка Guard вырезана
     // 2026-09-21, и свидетель на ней проверял бы уже не закон, а пустоту —
     // rotate_worker_squads не считает крю то, чего место не поднимает.
-    const auto dead =
+    auto dead =
         spawn_ai(st, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
     {
         const std::uint16_t ds = dead.slot;
         st.spawnId[ds] = sm::ecs::MacroSpawnId{77u};
+        dead = sm::handle_at(st, ds);
         sm::creatures_push(
             st.inventory[ds].inv,
             sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 200u));

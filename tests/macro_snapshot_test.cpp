@@ -96,10 +96,10 @@ void test_snapshot_round_trips_the_living_map() {
     wStore_->pools[b.slot].hp = 0.0f;
     sm::macro_mark_dead(*wStore_, b);
     // …and the player POSSESSES lord A (5б): истина — колонка playerFlag
-    // анкеты, биты GameState — кэш, флажок двигает дверь переноса; загрузка
+    // анкеты, хэндл GameState — кэш, флажок двигает дверь переноса; загрузка
     // обязана вернуть флажок на ТОГО ЖЕ лорда (SAVE-5: второй склад «кем
     // управляю» вне снимка мёртв).
-    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, a);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagRef, a);
     // Имя анкеты — колонка (вердикт 3, ход 2): рождение кладёт непустой
     // дефолт генерации, МУТАЦИЯ колонки обязана пережить сейв (в этом весь
     // смысл колонки против перевывода из nameIdx).
@@ -125,23 +125,25 @@ void test_snapshot_round_trips_the_living_map() {
     const std::vector<Quest> noQuests;
     const std::vector<std::uint16_t> noTrees;
     const DepositLayer noDeposits;
-    CHECK_OR_RETURN(save_game(gs, noQuests, snapshot_macro_ecs(*wStore_), noTrees,
+    CHECK_OR_RETURN(save_game(gs, wStore_->nextSpawnId, noQuests,
+                              snapshot_macro_ecs(*wStore_), noTrees,
                               noDeposits, path),
                     "the snapshot saved");
 
     GameState gs2{};
+    std::uint32_t nextSpawnId2 = 0;
     std::vector<Quest> quests2;
     std::vector<MacroNpcRecord> records2;
     std::vector<std::uint16_t> trees2;
     DepositLayer deposits2;
-    CHECK_OR_RETURN(load_game(gs2, quests2, records2, trees2, deposits2,
-                              path),
+    CHECK_OR_RETURN(load_game(gs2, nextSpawnId2, quests2, records2, trees2,
+                              deposits2, path),
                     "the snapshot loaded");
-    CHECK(gs2.nextMacroSpawnOrdinal == gs.nextMacroSpawnOrdinal,
+    CHECK(nextSpawnId2 == wStore_->nextSpawnId,
           "the identity issuer survives the save");
 
     auto w2Store_ = sm::make_macro_store();
-    restore_macro_ecs(records2, *w2Store_, gs2);
+    restore_macro_ecs(records2, *w2Store_, nextSpawnId2);
     resolve_player_handles_after_load(gs2, *w2Store_);
 
     const MacroHandle a2 = find_by_ordinal(*w2Store_, ordinalA);
@@ -258,7 +260,7 @@ void test_resnapshot_is_byte_identical() {
     CHECK_OR_RETURN(snap1.size() == 2, "the snapshot names both squads");
 
     auto w2Store_ = sm::make_macro_store();
-    restore_macro_ecs(snap1, *w2Store_, gs);
+    restore_macro_ecs(snap1, *w2Store_, wStore_->nextSpawnId);
     std::vector<MacroNpcRecord> snap2 = snapshot_macro_ecs(*w2Store_);
     CHECK_OR_RETURN(snap2.size() == snap1.size(),
                     "the re-snapshot names the same count");

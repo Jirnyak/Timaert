@@ -83,7 +83,7 @@ void paint_bridge(PathCostData& g, int x, int y) {
 sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, float x, float y,
                             float tx, float ty,
                             int maxSp, int hp = 100) {
-    const sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), mapW)};
     st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
     // НОСИТЕЛЬ МАРША — ЖИВОЙ (2026-09-22). Прежде ходок ехал на роли
@@ -106,6 +106,7 @@ sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, float x, float y,
     rt.moveMult = 1.0f;
     st.runtime[h.slot] = rt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{7u};
+    h = sm::handle_at(st, h.slot);
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(1)};
     // Three bars, one block (pools landing): the legs' bar is filled here
     // beside the wound, not in the march runtime.
@@ -312,9 +313,9 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         auto e = make_walker(st, gs.mapW, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
                              /*hp*/30.0f);
         sm::MacroStore& std_ = st;
-        const sm::MacroHandle eh =
-            e;
+        sm::MacroHandle eh = e;
         std_.spawnId[eh.slot] = ecs::MacroSpawnId{55u};
+        eh = sm::handle_at(std_, eh.slot);
         auto& bag = std_.inventory[eh.slot];
         creatures_push(bag.inv, make_soldier(
             std::uint8_t(NPCType::Peasant), 1, 101u));
@@ -436,11 +437,11 @@ void test_a_map_of_marchers_survives_the_new_law() {
     walkers.reserve(kWalkers);
     for (int i = 0; i < kWalkers; ++i) {
         const float y = float(i % 100) + 8.0f;
-        const sm::MacroHandle e =
+        sm::MacroHandle e =
             make_walker(st, gs.mapW, 4.0f, y, 120.0f, y, /*maxSp*/110);
         // Each one hauls right across the map on its own line.
-        st.spawnId[e.slot] =
-            ecs::MacroSpawnId{std::uint32_t(100 + i)};
+        st.spawnId[e.slot] = ecs::MacroSpawnId{std::uint32_t(100 + i)};
+        e = sm::handle_at(st, e.slot);
         walkers.push_back(e);
     }
 
@@ -668,8 +669,8 @@ void test_a_laden_squad_pays_for_its_load() {
                              /*hp*/1e6f);
     auto heavy = make_walker(st, gs.mapW, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110,
                              /*hp*/1e6f);
-    st.spawnId[heavy.slot] =
-        ecs::MacroSpawnId{8u};
+    st.spawnId[heavy.slot] = ecs::MacroSpawnId{8u};
+    heavy = sm::handle_at(st, heavy.slot);
     (*sm::body_state<ecs::MacroNpcRuntime>(st, light)).targetY = 4.0f;
     (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy)).targetY = 6.0f;
 

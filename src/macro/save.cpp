@@ -99,7 +99,7 @@ constexpr std::uint64_t kPrefixBytes =
     + sizeof(GameState::mapH) + sizeof(GameState::mapParams)
     + sizeof(GameState::cityCountTarget) + sizeof(GameState::worldTime)
     + sizeof(GameState::lastWorldRebakeDay)
-    + sizeof(GameState::nextMacroSpawnOrdinal)
+    + sizeof(std::uint32_t)   // nextSpawnId стора — эмитент едет с миром (M-220)
     + sizeof(GameState::nextQuestOrdinal)
     + kStrBytes + kStrBytes;
     // (Скаляр v116 «ординал носителя флажка» умер в v117 — флаг едет
@@ -1162,6 +1162,7 @@ void read_quest(Reader& r, Quest& q) {
 
 void write_payload(Writer& w, const GameState& s,
                    const std::string& savedAt,
+                   std::uint32_t storeNextSpawnId,
                    const std::vector<Quest>& activeQuests,
                    const std::vector<MacroNpcRecord>& macroNpcs,
                    const std::vector<std::uint16_t>& treeCounts,
@@ -1173,7 +1174,7 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.cityCountTarget);
     w.pod(s.worldTime);
     w.pod(s.lastWorldRebakeDay);   // v22: autosave/re-bake phase survives a load
-    w.pod(s.nextMacroSpawnOrdinal); // v118: ЕДИНЫЙ эмитент ординалов субъектов
+    w.pod(storeNextSpawnId);        // v118/M-220: эмитент ординалов — у стора
     w.pod(s.nextQuestOrdinal);      // v63: the ONE quest-identity issuer
     w.str(s.saveName);
     w.str(savedAt);
@@ -1241,7 +1242,8 @@ void write_payload(Writer& w, const GameState& s,
     }
 }
 
-void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
+void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
+                  std::vector<Quest>& activeQuests,
                   std::vector<MacroNpcRecord>& macroNpcs,
                   std::vector<std::uint16_t>& treeCounts,
                   DepositLayer& deposits) {
@@ -1253,7 +1255,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.pod(s.cityCountTarget);
     r.pod(s.worldTime);
     r.pod(s.lastWorldRebakeDay);   // v22
-    r.pod(s.nextMacroSpawnOrdinal); // v118: единый эмитент (сквады и места)
+    r.pod(storeNextSpawnId);        // v118/M-220: эмитент — у стора
     r.pod(s.nextQuestOrdinal);      // v63
     r.str(s.saveName);
     r.str(s.savedAt);
@@ -1327,6 +1329,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
 }
 
 bool load_payload_from_file(const std::string& path, GameState& s,
+                            std::uint32_t& storeNextSpawnId,
                             std::vector<Quest>& activeQuests,
                             std::vector<MacroNpcRecord>& macroNpcs,
                             std::vector<std::uint16_t>& treeCounts,
@@ -1340,16 +1343,18 @@ bool load_payload_from_file(const std::string& path, GameState& s,
     if (!checksum_matches(file, h)) return false;
 
     GameState loaded;
+    std::uint32_t loadedNextSpawnId = 1;
     std::vector<Quest> loadedQuests;
     std::vector<MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
     DepositLayer loadedDeposits;
     Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
-    read_payload(r, loaded, loadedQuests, loadedMacro, loadedTrees,
-                 loadedDeposits);
+    read_payload(r, loaded, loadedNextSpawnId, loadedQuests, loadedMacro,
+                 loadedTrees, loadedDeposits);
     if (!r.ok || r.pos != r.size) return false;
 
     s = std::move(loaded);
+    storeNextSpawnId = loadedNextSpawnId;
     activeQuests = std::move(loadedQuests);
     macroNpcs = std::move(loadedMacro);
     treeCounts = std::move(loadedTrees);
@@ -1359,7 +1364,8 @@ bool load_payload_from_file(const std::string& path, GameState& s,
 
 } // namespace
 
-bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
+bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
+               const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
                const std::vector<std::uint16_t>& treeCounts,
                const DepositLayer& deposits,
@@ -1368,8 +1374,8 @@ bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
     payload.bytes.reserve(64u * 1024u);
     const std::string savedAt = save_timestamp_for(s);
     if (savedAt.empty()) return false;
-    write_payload(payload, s, savedAt, activeQuests, macroNpcs, treeCounts,
-                  deposits);
+    write_payload(payload, s, savedAt, storeNextSpawnId, activeQuests,
+                  macroNpcs, treeCounts, deposits);
     if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
 
     SaveHeader h;
@@ -1384,7 +1390,8 @@ bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
 std::uint64_t save_max_payload_bytes() { return kMaxPayloadBytes; }
 
 std::uint32_t save_payload_fingerprint(
-    const GameState& s, const std::vector<Quest>& activeQuests,
+    const GameState& s, std::uint32_t storeNextSpawnId,
+    const std::vector<Quest>& activeQuests,
     const std::vector<MacroNpcRecord>& macroNpcs,
     const std::vector<std::uint16_t>& treeCounts,
     const DepositLayer& deposits) {
@@ -1393,19 +1400,20 @@ std::uint32_t save_payload_fingerprint(
     // The stamp is held FIXED, and it is the only field that has to be: two
     // honest saves of one state differ in savedAt by construction (a fresh
     // UTC stamp per save, save.cpp:1272), and that is not state.
-    write_payload(payload, s, std::string(), activeQuests, macroNpcs,
-                  treeCounts, deposits);
+    write_payload(payload, s, std::string(), storeNextSpawnId,
+                  activeQuests, macroNpcs, treeCounts, deposits);
     if (!payload.ok) return 0u;   // 0 = "no answer", never a real fingerprint
     return checksum32(payload.bytes.data(), payload.bytes.size());
 }
 
-bool load_game(GameState& s, std::vector<Quest>& activeQuests,
+bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
+               std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
                std::vector<std::uint16_t>& treeCounts,
                DepositLayer& deposits,
                const std::string& path) {
-    return load_payload_from_file(path, s, activeQuests, macroNpcs,
-                                  treeCounts, deposits);
+    return load_payload_from_file(path, s, storeNextSpawnId, activeQuests,
+                                  macroNpcs, treeCounts, deposits);
 }
 
 SaveSummary inspect_save(const std::string& path) {

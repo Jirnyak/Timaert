@@ -36,10 +36,10 @@ using GroundHeightFn = float (*)(void* user, float x, float y);
 // steering pass's business. The SolidCanStandFn parameter died with the
 // private integrator.
 //
-// `playerFlagBits`/`playerSquadBits` — два packed-хэндла GameState (1е
-// кластер 5): «без сознания» = флаг стоит НЕ на родном скваде. Субмиру
-// даются числа, не мир; сентинели (все единицы) у фикстуры без игрока
-// честно значат «сознание не терялось».
+// `playerFlagRef`/`playerSquadRef` — два хэндла {слот, ID} GameState (1е
+// кластер 5, M-220): «без сознания» = флаг стоит НЕ на родном скваде.
+// Субмиру даются ссылки, не мир; пустые хэндлы (id 0 — «никто») у фикстуры
+// без игрока честно значат «сознание не терялось».
 // `playerZ` — ВЫСОТА ИГРОКА, и без неё закон изотропии нарушался молча:
 // гейт паники мерил «насколько он близко» в ПЛОСКОСТИ, то есть летящий игрок
 // на любой высоте пугал всякого зверя в 60 планарных метрах, а зверь на
@@ -55,7 +55,7 @@ void tick_npc_ai(SubObjects& objs, MacroStore* st,
                  void* threatUser = nullptr,
                  GroundHeightFn heightFn = nullptr,
                  void* heightUser = nullptr,
-                 std::uint32_t playerFlagBits = 0xFFFFFFFFu,
-                 std::uint32_t playerSquadBits = 0xFFFFFFFFu);
+                 MacroHandle playerFlagRef = {},
+                 MacroHandle playerSquadRef = {});
 
 } // namespace sm::sub

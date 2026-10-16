@@ -106,10 +106,11 @@ struct MacroNpcRecord {
 // payload bytes are deterministic for one same world state.
 std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st);
 
-// Re-embody the records in an (already cleared of macro NPCs) registry.
-// Also self-heals gs.nextMacroSpawnOrdinal to stay ABOVE every restored
-// ordinal — the counter must never reissue a living identity.
+// Re-embody the records in an (already reset) store. `savedNextSpawnId` —
+// эмитент из файла (M-220: поле стора): restore ставит его и самолечит
+// ВЫШЕ всякого восстановленного ординала — счётчик не смеет перевыдать
+// живую идентичность.
 void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
-                       MacroStore& st, GameState& gs);
+                       MacroStore& st, std::uint32_t savedNextSpawnId);
 
 } // namespace sm

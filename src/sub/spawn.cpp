@@ -726,7 +726,7 @@ bool refresh_body_strike(SubObjects& objs, const MacroStore* st, int s) {
     // гира и книги, гейт сравнивал бы нули).
     const MacroHandle rec = st != nullptr
         ? sub::slot_macro_record(objs, s, *st) : MacroHandle{};
-    if (rec.slot == kMacroNoSlot) return false;
+    if (rec.id == 0) return false;
     // A body with no row has no creature template to project a swing from —
     // the hero husk is exactly that, and his hands are assembled elsewhere
     // (hand_strike_fields), from the same effective sheet.
@@ -1186,7 +1186,7 @@ void clear_subworld_world_entities(SubObjects& objs) {
         // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
         // must leave them be, exactly like the player-side projections above.
         // On enter this is a no-op (projection runs after the clear).
-        if (slot_macro_origin(objs, s).slot != kMacroNoSlot)
+        if (slot_macro_origin(objs, s).id != 0)
             continue;
         objs.free(s);
     }
@@ -1466,10 +1466,10 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
-                                     std::uint32_t playerFlagBits) {
+                                     MacroHandle playerFlagRef) {
     return project_macro_npcs_into_subworld(objs, st, mgr.tiles(), centerCx,
                                             centerCy, mapW, mapH, seed,
-                                            seaLevel, solids, playerFlagBits);
+                                            seaLevel, solids, playerFlagRef);
 }
 
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
@@ -1478,7 +1478,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
-                                     std::uint32_t playerFlagBits) {
+                                     MacroHandle playerFlagRef) {
     const float seaM = sea_level_m(seaLevel);
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
@@ -1508,11 +1508,11 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
     // записи-назад умер с законом зеркала: проекция не владеет ничем, она
     // читает и пишет САМУ запись. Пока он ЦЕЛ — на его слоте стоит флажок, и
     // дважды не проецируется ничто.
-    // Флаг игрока — его слот; источник — биты GameState, пришедшие числом в
-    // параметре (1е кластер 5).
+    // Флаг игрока — его слот; источник — хэндл GameState, пришедший ссылкой
+    // в параметре (1е кластер 5, M-220).
     std::uint16_t flagSlot = kMacroNoSlot;
     {
-        const MacroHandle fh = macro_handle_from_bits(playerFlagBits);
+        const MacroHandle fh = playerFlagRef;
         if (st.valid(fh)) flagSlot = fh.slot;
     }
 

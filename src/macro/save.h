@@ -47,12 +47,18 @@ struct SaveSummary {
 // («Кем я на карте» едет колонкой playerFlag записи снапшота — 5б: провод
 // получает флаг даром вместе с анкетой; кэши GameState пересобирает
 // resolve_player_handles_after_load строго ПОСЛЕ restore_macro_ecs.)
-bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
+// `storeNextSpawnId` — эмитент идентичностей стора (MacroStore.nextSpawnId,
+// M-220): едет скаляром префикса, потому что max-over-living его НЕ выводит —
+// ординалы мертвецов живут в летописи и интересах, и отставший эмитент выдал
+// бы новое рождение под именем мертвеца (19.24).
+bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
+               const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
                const std::vector<std::uint16_t>& treeCounts,
                const DepositLayer& deposits,
                const std::string& path);
-bool load_game(GameState& s, std::vector<Quest>& activeQuests,
+bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
+               std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
                std::vector<std::uint16_t>& treeCounts,
                DepositLayer& deposits,
@@ -90,7 +96,8 @@ std::uint64_t save_max_payload_bytes();
 // and since SAVE-3 the ships), and the macro snapshot rides sorted by
 // ordinal (macro_snapshot.cpp:47).
 std::uint32_t save_payload_fingerprint(
-    const GameState& s, const std::vector<Quest>& activeQuests,
+    const GameState& s, std::uint32_t storeNextSpawnId,
+    const std::vector<Quest>& activeQuests,
     const std::vector<MacroNpcRecord>& macroNpcs,
     const std::vector<std::uint16_t>& treeCounts,
     const DepositLayer& deposits);

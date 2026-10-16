@@ -54,12 +54,13 @@ void collect(void* user, const BattleFact& f) {
 sm::MacroHandle squad(sm::MacroStore& st, NPCType leaderType,
                       const char* factionId,
                       int level, int members, std::uint32_t spawnIndex) {
-    const sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle h = sm::store_birth(st);
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(leaderType),
                                    std::uint16_t(faction_index(factionId))};
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(level)};
     st.pools[h.slot] = ecs::Pools{100, 100};
     st.spawnId[h.slot] = ecs::MacroSpawnId{spawnIndex};
+    h = sm::handle_at(st, h.slot);
     auto& bag = st.inventory[h.slot];
     for (int i = 0; i < members; ++i) {
         creatures_push(bag.inv,
@@ -119,7 +120,7 @@ squad(*wStore_, NPCType::Bandit, "bandits", 2, 3, 2u);
     // nothing. A settle that reported both sides regardless would double the
     // world's dead.
     for (const BattleFact& f : log.facts) {
-        CHECK(f.killer == sm::macro_handle_bits(a),
+        CHECK(f.killer == a,
               "every fact names the victor as the killer — хэндлом записи");
     }
 }

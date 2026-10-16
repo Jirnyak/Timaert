@@ -399,13 +399,10 @@ constexpr Row kGameStateRows[] = {
      "ГЕНЕРАТОРА и уехал локальным буфером генезиса, копия размера карты умерла "
      "как второй ответ на сторону мира"},
     {"player", Rod::Nested, "переписан своей таблицей ниже"},
-    {"playerSquadBits", Rod::Cache, "кэш носителя бита playerFlag.home (M-255)"},
-    {"playerFlagBits", Rod::Cache, "кэш носителя колонки playerFlag"},
+    {"playerSquadRef", Rod::Cache, "кэш носителя бита playerFlag.home (M-255; с M-220 — MacroHandle {слот, ID})"},
+    {"playerFlagRef", Rod::Cache, "кэш носителя колонки playerFlag (M-220: хэндл напрямую, биты умерли)"},
     {"worldTime", Rod::WorldVars, "время — частный случай мировой переменной"},
     {"lastWorldRebakeDay", Rod::WorldVars, "фаза перепёка/автосейва"},
-    {"nextMacroSpawnOrdinal", Rod::WorldVars,
-     "ЕДИНЫЙ эмитент ординалов субъектов — сквады и места (M-37); выдача с "
-     "1, 0 = «никто» (закон нуля-ординала)"},
     {"navEpoch", Rod::Cache, "счётчик события состава; в сейв не едет"},
     {"nextQuestOrdinal", Rod::WorldVars, "эмитент ординалов квестов"},
     {"worldTickRt", Rod::WorldVars, "очередь дневного тика + RNG"},
@@ -471,11 +468,14 @@ constexpr Row kMacroStoreRows[] = {
     {"designTag", Rod::Squads, ""},
     {"playerFlag", Rod::Squads, "истина «кто игрок» (5б)"},
     {"dead", Rod::Squads, ""},
-    {"generation", Rod::Squads, "обвязка слотов той же системы"},
     {"alive", Rod::Squads, "обвязка слотов"},
     {"freeSlots", Rod::Squads, "обвязка слотов"},
     {"freeCount", Rod::Squads, "обвязка слотов"},
     {"aliveCount", Rod::Squads, "обвязка слотов"},
+    {"nextSpawnId", Rod::Squads,
+     "ЕДИНЫЙ эмитент ординалов субъектов (M-37; с M-220 — поле стора): "
+     "выдача с 1, 0 = «никто», монотонен через перерождение мира — "
+     "валидность ссылки {слот, ID} судит он"},
 };
 
 // App@src/app/app_state.h — агрегат программы: оболочка, представление и

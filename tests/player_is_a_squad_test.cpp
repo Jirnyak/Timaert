@@ -35,7 +35,7 @@ using namespace sm;
 // An ordinary macro squad, spawned the shape the AI expects to drive.
 sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
                           std::uint32_t ordinal, int members) {
-    const sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle h = sm::store_birth(st);
     // 64 — the fixture map side every test in this file boots (gs.mapW).
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), 64)};
     st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
@@ -44,6 +44,7 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
     st.pools[h.slot] = ecs::Pools{50, 50};
     st.spawnId[h.slot] = ecs::MacroSpawnId{ordinal};
+    h = sm::handle_at(st, h.slot);
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = 0;
     rt.targetSettlementId = 0;
@@ -81,7 +82,7 @@ void test_player_carries_everything_a_squad_carries() {
     // зарезервированный номер — оба утверждения ниже покраснеют, потому что
     // литерал лежал ВЫШЕ любого выданного счётчиком значения.
     const std::uint32_t mineOrd = wStore_->spawnId[mineH.slot].index;
-    CHECK(mineOrd != 0u && mineOrd < gs.nextMacroSpawnOrdinal,
+    CHECK(mineOrd != 0u && mineOrd < wStore_->nextSpawnId,
           "его ординал выдан единым эмитентом, а не прибит литералом");
     CHECK(player_home_ordinal(gs, *wStore_) == mineOrd,
           "дверь ординала дома называет ту же запись, что бит колонки");
@@ -105,19 +106,19 @@ void test_the_mark_survives_losing_the_flag() {
     auto wStore_ = sm::make_macro_store();
     ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle mine = player_squad_handle(gs);
-    CHECK(wStore_->valid(mine), "his squad is marked (playerSquadBits live)");
-    CHECK(gs.playerFlagBits == gs.playerSquadBits,
+    CHECK(wStore_->valid(mine), "his squad is marked (playerSquadRef live)");
+    CHECK(gs.playerFlagRef == gs.playerSquadRef,
           "and holds the flag by default");
 
     // Possession: the flag walks onto a lord. Walking the door again must NOT
     // hand it back — and must not un-mark the squad it left behind.
     const MacroHandle lordH = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 2);
-    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lordH);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lordH);
     ensure_macro_player_entity(gs, *wStore_);
 
     CHECK(player_flag_handle(gs) == lordH,
           "the possessed lord keeps the flag");
-    CHECK(gs.playerFlagBits != gs.playerSquadBits,
+    CHECK(!(gs.playerFlagRef == gs.playerSquadRef),
           "the door does not steal the flag back mid-possession");
     CHECK(player_squad_handle(gs) == mine,
           "his squad is still HIS squad while he wears another man's face");
@@ -144,21 +145,21 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
     CHECK(!player_wears_another_body(gs), "by default he is himself");
     CHECK(!wake_player_in_original_body(gs, *wStore_),
           "dying as yourself is the end — there is no return to make");
-    CHECK(gs.playerFlagBits == gs.playerSquadBits,
+    CHECK(gs.playerFlagRef == gs.playerSquadRef,
           "and the flag did not wander");
 
     // (b) В ЧУЖОМ ТЕЛЕ, ОРИГИНАЛ ЖИВ. Флажок едет домой одним движением.
     const MacroHandle lordH = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 2);
-    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lordH);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lordH);
     CHECK(player_wears_another_body(gs), "wearing a lord is asked of the flag");
     CHECK(wake_player_in_original_body(gs, *wStore_),
           "a living original is woken up in");
-    CHECK(gs.playerFlagBits == gs.playerSquadBits,
+    CHECK(gs.playerFlagRef == gs.playerSquadRef,
           "exactly one flag, and it is home");
 
     // (c) В ЧУЖОМ ТЕЛЕ, ОРИГИНАЛ МЁРТВ. Просыпаться не в чем ⇒ конец игры.
     //     Негативный контроль к (b): та же расстановка, отличается ОДНО число.
-    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lordH);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lordH);
     wStore_->pools[mine.slot].hp = 0.0f;
     CHECK(!wake_player_in_original_body(gs, *wStore_),
           "a dead original is nothing to wake up in — that is the game over");
@@ -189,7 +190,7 @@ void test_ai_leaves_the_player_squad_standing() {
     // Possession, so the flag is NOT on his squad — the exact state in which
     // the old exclude-guard let the AI take the wheel.
     const MacroHandle lord = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 0);
-    sm::transfer_player_flag(*wStore_, gs.playerFlagBits, lord);
+    sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lord);
 
     // The negative control: an idle NPC standing where the player stands. If
     // the sweep is a no-op for everyone, this one's runtime never moves either

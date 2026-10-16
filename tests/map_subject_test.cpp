@@ -50,8 +50,8 @@ Fixture make_world(sm::MacroStore& st) {
     gs.mapH = 64;
     // Эмитент поднят ВЫШЕ рукописных ординалов сквадов этой фикстуры (5, 6):
     // выдача с единицы столкнула бы место и сквад в одном ординале, и дверь
-    // отвечала бы «тем же объектом» по совпадению.
-    gs.nextMacroSpawnOrdinal = 7u;
+    // отвечала бы «тем же объектом» по совпадению. С M-220 эмитент — у стора.
+    st.nextSpawnId = 7u;
     const sm::MacroHandle city = sm::birth_place(
         gs, st, sm::SquadType::City, 10, 10, -1, "Testholm");
     fx.cityId = int(st.spawnId[city.slot].index);
@@ -74,14 +74,15 @@ Fixture make_world(sm::MacroStore& st) {
     return fx;
 }
 
-// Шаг 1г: субъект несёт хэндл {slot,gen}, и двери отвечают колонками store
-// без entt вовсе — рождение сквада для этой двери есть рождение слота.
+// Субъект несёт хэндл {slot, id} (M-220), и двери отвечают колонками store.
+// Фикстура пинит рукописный ординал — хэндл пересобирается после записи
+// колонки, иначе он нёс бы выданный дверью ординал и протух бы на месте.
 sm::MacroHandle make_squad(sm::MacroStore& st, std::uint32_t ordinal) {
     const sm::MacroHandle h = sm::store_birth(st);
     st.spawnId[h.slot] = sm::ecs::MacroSpawnId{ordinal};
     sm::creatures_push(st.inventory[h.slot].inv,
         sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 21u));
-    return h;
+    return sm::handle_at(st, h.slot);
 }
 
 // The door answers with the SAME object the old path held — address equality,

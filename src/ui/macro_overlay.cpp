@@ -707,8 +707,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
             int dx = wrap_chebyshev(nx - px, W);
             int dy = wrap_chebyshev(ny - py, H);
             if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;
-            push_row(subject_of_squad(MacroHandle{slot, st.generation[slot]}),
-                     dx, dy);
+            push_row(subject_of_squad(handle_at(st, slot)), dx, dy);
         }
 
         // Landmarks pop the same panel (owner's verdict: «деревни, города,

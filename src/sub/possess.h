@@ -48,15 +48,15 @@ namespace sm::sub {
 // re-mirrors the position scalars from the new body afterwards (the engine
 // tick does it via pull_player_entity_to_scalars).
 //
-// `playerFlagBits` — адрес ОДНОГО числа `GameState::playerFlagBits` (1е
-// кластер 5): КЭШ макро-флажка; истина — колонка playerFlag анкеты (5б),
-// оба носителя пишет одна дверь переноса (transfer_player_flag). Субмиру
-// не даётся GameState — только это число (закон двух миров: канал узкий и
-// названный); звонящий без мира (фикстура) законно передаёт nullptr —
-// тогда двигается только сценический флаг (AvatarTag), макро-мира у
-// фикстуры нет.
+// `playerFlagRef` — адрес ОДНОГО хэндла `GameState::playerFlagRef` (1е
+// кластер 5, M-220): КЭШ макро-флажка; истина — колонка playerFlag анкеты
+// (5б), оба носителя пишет одна дверь переноса (transfer_player_flag).
+// Субмиру не даётся GameState — только эта ссылка (закон двух миров: канал
+// узкий и названный); звонящий без мира (фикстура) законно передаёт
+// nullptr — тогда двигается только сценический флаг (AvatarTag),
+// макро-мира у фикстуры нет.
 inline bool possess_body(SubObjects& objs, MacroStore* st, int targetSlot,
-                         std::uint32_t* playerFlagBits) {
+                         MacroHandle* playerFlagRef) {
     const int ts = targetSlot;
     // «Настоящее тело» — ЖИВОЙ слот, у которого есть БАРЫ (ломоть 5):
     // позицию несут и пламя пропа, и снаряд; бары — только тело.
@@ -109,11 +109,11 @@ inline bool possess_body(SubObjects& objs, MacroStore* st, int targetSlot,
     // which IS the exit reset.
     //
     // Exactly-one holds by the door itself (5б): истина — колонка playerFlag
-    // анкеты, биты — кэш; дверь переноса пишет оба носителя одним движением
-    // (запись нового = срыв старого через кэш). Store у сцены уже есть —
-    // тот же ctx-мост, которым macro_record_of ответил хэндлом.
-    if (recH.slot != kMacroNoSlot && playerFlagBits) {
-        transfer_player_flag(*st, *playerFlagBits, recH);
+    // анкеты, хэндл GameState — кэш; дверь переноса пишет оба носителя одним
+    // движением (запись нового = срыв старого через кэш). Store у сцены уже
+    // есть — тот же шов, которым macro_record_of ответил хэндлом.
+    if (recH.id != 0 && playerFlagRef) {
+        transfer_player_flag(*st, *playerFlagRef, recH);
     }
     return true;
 }

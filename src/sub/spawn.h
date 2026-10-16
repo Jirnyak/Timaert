@@ -524,17 +524,17 @@ void spawn_player_squad(SubObjects& objs,
 // scene_sea_level). Dry footing is a question about THIS world's water, so the
 // plane is an argument: projecting onto a seabed because the datum was a
 // remembered 0.40 is exactly the bug the plane's inheritance retires.
-// `playerFlagBits` — packed-хэндл «кем я на карте» (GameState, 1е кластер 5):
-// запись носителя флажка НЕ проецируется — его тело в сцене АВАТАР, не
-// проекция. Субмиру даётся число, не мир; сентинель (все единицы) у
-// фикстуры без игрока честно не пропускает никого.
+// `playerFlagRef` — хэндл {слот, ID} «кем я на карте» (GameState, 1е
+// кластер 5, M-220): запись носителя флажка НЕ проецируется — его тело в
+// сцене АВАТАР, не проекция. Субмиру даётся ссылка, не мир; пустой хэндл
+// (id 0) у фикстуры без игрока честно не пропускает никого.
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids = nullptr,
-                                     std::uint32_t playerFlagBits = 0xFFFFFFFFu);
+                                     MacroHandle playerFlagRef = {});
 
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const std::vector<std::uint8_t>& tiles,
@@ -542,7 +542,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids = nullptr,
-                                     std::uint32_t playerFlagBits = 0xFFFFFFFFu);
+                                     MacroHandle playerFlagRef = {});
 
 // (Вселение — перенос флажка — живёт в sub/possess.h: header-only дверь,
 // которую зовут эффект спелла possession и харнесс, без линковки слоя

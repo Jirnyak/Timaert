@@ -173,10 +173,10 @@ static bool smoke_projects_foreign_record(App& app, int s) {
     if (objs == nullptr || s < 0
         || !sm::sub::slot_flag(*objs, s, sm::sub::kObjAlive)) return false;
     const sm::MacroHandle origin = sm::sub::slot_macro_origin(*objs, s);
-    if (origin.slot == sm::kMacroNoSlot
+    if (origin.id == 0
         || !app.macroStore->valid(origin)) return false;
     const sm::MacroHandle psq = sm::player_squad_handle(app.gs);
-    return psq.slot == sm::kMacroNoSlot || !(origin == psq);
+    return psq.id == 0 || !(origin == psq);
 }
 
 // His book, through the one door (v89) — scratch like the main app's own
@@ -2103,7 +2103,7 @@ sm::MacroHandle smoke_find_macro_npc_trace_target(App& app) {
         const auto& hp = stf.pools[slot];
         if (hp.hp <= 0) continue;
         const auto& kind = stf.kind[slot];
-        if (fallback.slot == sm::kMacroNoSlot)
+        if (fallback.id == 0)
             fallback = sm::handle_at(stf, slot);
         if (kind.type == std::uint16_t(sm::NPCType::Merchant)) {
             return sm::handle_at(stf, slot);
@@ -5673,7 +5673,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: no live flag handle");
             return false;
         }
-        const std::uint32_t flagBefore = app.gs.playerFlagBits;
+        const sm::MacroHandle flagBefore = app.gs.playerFlagRef;
         const auto* mcell = sm::player_flag_cell(app.gs, *app.macroStore);
         if (!mcell
             || !near_half(float(sm::ecs::cell_x(*mcell, app.gs.mapW)), saveX)
@@ -5694,7 +5694,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: subworld enter failed");
             return false;
         }
-        if (!flag_live() || app.gs.playerFlagBits != flagBefore) {
+        if (!flag_live() || !(app.gs.playerFlagRef == flagBefore)) {
             app.subworld.leave(true);
             smoke_fail(app,
                 "macro_player_entity: the flag handle moved on enter");
@@ -5717,7 +5717,7 @@ bool run_console_smoke(App& app) {
             return false;
         }
         tick_playing_runtime(app, false);
-        if (!flag_live() || app.gs.playerFlagBits != flagBefore) {
+        if (!flag_live() || !(app.gs.playerFlagRef == flagBefore)) {
             smoke_fail(app,
                 "macro_player_entity: flag handle lost/moved on return");
             return false;
@@ -6391,8 +6391,8 @@ bool run_console_smoke(App& app) {
             restore(); smoke_fail(app, "possess: hero husk missing or not a hero body"); return false;
         }
         const sm::sub::ObjRef huskRef = sm::sub::ref_of(objs, huskSlot);
-        // Макро-флаг «до» — биты GameState (1е кластер 5).
-        const std::uint32_t macroFlagBefore = app.gs.playerFlagBits;
+        // Макро-флаг «до» — хэндл GameState (1е кластер 5, M-220).
+        const sm::MacroHandle macroFlagBefore = app.gs.playerFlagRef;
 
         // ── ПОЛОВИНА 1: гейт уровня — ровня устояла, мана сгорела ────
         // Порог ТЕМИ ЖЕ дверями, какими его читает каст: уровень — лист
@@ -6412,7 +6412,7 @@ bool run_console_smoke(App& app) {
         const bool manaBurned =
             int(player_pools(app).mp) == mpBefore - sm::kSpellDefs[possessionOrd].manaCost;
         // Устоявшая цель меняет НИЧЕГО: сценовый флажок на хаске, макро дома.
-        const bool macroFlagHeld = app.gs.playerFlagBits == macroFlagBefore;
+        const bool macroFlagHeld = app.gs.playerFlagRef == macroFlagBefore;
         std::fprintf(stderr,
                      "[smoke] possess_gate level_refused=%d mana_burned=%d "
                      "scene_flag_held=%d macro_flag_held=%d threshold=%d\n",
@@ -6442,7 +6442,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "possess: the spell did not take a derived body");
             return false;
         }
-        const bool macroFlagHome = app.gs.playerFlagBits == macroFlagBefore;
+        const bool macroFlagHome = app.gs.playerFlagRef == macroFlagBefore;
         std::fprintf(stderr,
                      "[smoke] possess_gate derived_taken=%d husk_gone=%d "
                      "macro_flag_home=%d\n",
@@ -6661,9 +6661,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "save underground is forbidden (Persistence)");
                 break;
             }
-            if (!sm::save_game(app.gs, app.activeQuests,
-                               stage_save_state(app), app.treeLayer.data,
-                               app.deposits, app.savePath)) {
+            if (!sm::save_game(app.gs, app.macroStore->nextSpawnId,
+                               app.activeQuests, stage_save_state(app),
+                               app.treeLayer.data, app.deposits,
+                               app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;
             }
@@ -6884,7 +6885,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                     const std::uint16_t slot = std::uint16_t(s32);
                     if (stn.alive[slot] == 0) continue;
-                    if (homeH.slot != sm::kMacroNoSlot
+                    if (homeH.id != 0
                         && slot == homeH.slot) continue;
                     const auto& c = stn.cell[slot];
                     const int nx = sm::ecs::cell_x(c, app.gs.mapW);
@@ -7288,9 +7289,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const sm::MacroHandle home = sm::player_squad_handle(app.gs);
             const bool homeLive = app.macroStore->valid(home);
             sm::MacroHandle worn = take_a_projected_body();
-            SMOKE_CHECK(app, worn.slot != sm::kMacroNoSlot && homeLive,
+            SMOKE_CHECK(app, worn.id != 0 && homeLive,
                         "в сцене есть живое чужое тело с записью — его и берут");
-            if (worn.slot == sm::kMacroNoSlot || !homeLive) break;
+            if (worn.id == 0 || !homeLive) break;
             // Где стоит ТВОЁ тело — оно всё это время стоит без сознания там,
             // где ты его оставил, и проснуться ты обязан именно там.
             const int homeX = int(sm::ecs::cell_x(
@@ -7327,9 +7328,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         "первой половины уже мёртв");
             if (!app.subworld.active()) break;
             worn = take_a_projected_body();
-            SMOKE_CHECK(app, worn.slot != sm::kMacroNoSlot,
+            SMOKE_CHECK(app, worn.id != 0,
                         "у второй половины есть своё живое тело с записью");
-            if (worn.slot == sm::kMacroNoSlot) break;
+            if (worn.id == 0) break;
             // Пока тебя нет, твоё тело убивают. Ты этого не замечаешь — дверь
             // смерти спрашивает про ТЕБЯ, а ты сейчас лорд.
             app.macroStore->pools[home.slot].hp = 0.0f;
@@ -7644,7 +7645,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          & sm::sub::kObjAlive) == 0u) continue;
                     const sm::MacroHandle bOrigin =
                         sm::sub::slot_macro_origin(*objs2, s);
-                    if (bOrigin.slot != sm::kMacroNoSlot && bOrigin == homeH
+                    if (bOrigin.id != 0 && bOrigin == homeH
                         && !objs2->is_avatar_slot(s)) {
                         abandonedSlot = s;
                         break;
@@ -7669,7 +7670,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // process: вернуть флажок домой (лорд снова автономный НПЦ) —
                 // дверью переноса (колонка + кэш, 5б), ensure подтверждает
                 // инварианты.
-                sm::transfer_player_flag(*app.macroStore, app.gs.playerFlagBits,
+                sm::transfer_player_flag(*app.macroStore, app.gs.playerFlagRef,
                                          sm::player_squad_handle(app.gs));
                 sm::ensure_macro_player_entity(app.gs, *app.macroStore);
             }

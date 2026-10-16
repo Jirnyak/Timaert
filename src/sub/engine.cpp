@@ -820,7 +820,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         (*objects_), *mw_.store, mgr_, cx, cy,
         gs.mapW, gs.mapH,
         cell_seed(gs.worldSeed, cx, cy) ^ kMacroProjectionSalt,
-        scene_sea_level(), &structIndex_, gs.playerFlagBits);
+        scene_sea_level(), &structIndex_, gs.playerFlagRef);
     if (projected > 0) {
         char msg[80];
         std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
@@ -967,7 +967,7 @@ void SubworldEngine::spawn_player_entity() {
         const MacroHandle psq = player_squad_handle(*gs_);
         if (pst.valid(psq)) {
             // Оба носителя одной дверью (5б): колонка анкеты + кэш битов.
-            transfer_player_flag(pst, gs_->playerFlagBits, psq);
+            transfer_player_flag(pst, gs_->playerFlagRef, psq);
             flagRec = psq;
         }
     }
@@ -993,7 +993,7 @@ void SubworldEngine::spawn_player_entity() {
     // things follow from this one emplace: the fold-up passes lose their
     // reason to exist, and no damage/spend path needs to know which kind of
     // body it is holding.
-    if (flagRec.slot != kMacroNoSlot)
+    if (flagRec.id != 0)
         sub::slot_set_origin(*objs, slot, flagRec);
     // Inc 4b: the player is a full combat participant, not an inert anchor.
     //  - Pools MIRROR the record the flag stands in (sub/record.h);
@@ -1229,7 +1229,7 @@ void SubworldEngine::sync_player_entity_position() {
                 // сцены никто не пишет ни BodyEquipment, ни SpellBook
                 // (перепись M-150 шаг 0), и снесённая entt-дверь
                 // standing_bonuses_of(reg, e) возвращала {} всегда.
-                const BonusTotals st = rec.slot != kMacroNoSlot
+                const BonusTotals st = rec.id != 0
                     ? standing_bonuses_of((*mw_.store), rec)
                     : BonusTotals{};
                 const CharacterSheet* base = gs_
@@ -1321,7 +1321,7 @@ void SubworldEngine::mirror_bodies_from_record() {
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
         if ((objs->flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         const MacroHandle originH = sub::slot_macro_origin(*objs, s);
-        if (originH.slot == kMacroNoSlot) continue;
+        if (originH.id == 0) continue;
         // Зеркало — колонка арены (кусок 2); тело без баров (слот без
         // pools) зеркалом не живёт.
         ecs::Pools* mirrorCol = sub::slot_pools(*objs, s);
@@ -1629,7 +1629,7 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
             (*objects_), *mw_.store, mgr_, cx, cy,
             gs_->mapW, gs_->mapH,
             cell_seed(gs_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
-            scene_sea_level(), &structIndex_, gs_->playerFlagBits);
+            scene_sea_level(), &structIndex_, gs_->playerFlagRef);
     }
 }
 
@@ -3003,13 +3003,14 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     // Same placement rule as a spawned encounter — the shared ring, so the
     // two paths cannot disagree about where a body may stand.
     // Both coordinates, through the door: the record's own cell salts the
-    // stream, and the packed handle diverges two lords on one cell.
+    // stream, and the record's own ordinal (unique per world, M-220)
+    // diverges two lords on one cell.
     const auto& mc = st.cell[macro.slot];
     const std::uint32_t seed =
         (gs_ ? cell_seed(gs_->worldSeed, ecs::cell_x(mc, gs_->mapW),
                          ecs::cell_y(mc, gs_->mapW))
              : 0u)
-        ^ (macro_handle_bits(macro) * 16777619u);
+        ^ (macro.id * 16777619u);
     Rng rng(seed);
     float fx = playerX_;
     float fy = playerY_;
@@ -3593,7 +3594,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // for (problems.md 19.13). The reaper above is the ONE place that
             // knows a body has died, so this is the only place that can be.
             if (const MacroHandle reaped = sub::slot_macro_origin(arena, ds);
-                reaped.slot != kMacroNoSlot) {
+                reaped.id != 0) {
                 MacroStore& st = (*mw_.store);
                 if (auto* mh = body_state<ecs::Pools>(st, reaped)) {
                     mh->hp = 0;
@@ -3653,7 +3654,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 MacroHandle leader{};
                 if (const MacroHandle killerOrigin =
                         sub::slot_macro_origin(arena, killerSlot);
-                    killerOrigin.slot != kMacroNoSlot) {
+                    killerOrigin.id != 0) {
                     leader = killerOrigin;
                 } else if (const auto* debt =
                                sub::slot_debt(arena, killerSlot);
@@ -5157,9 +5158,9 @@ void SubworldEngine::tick(float dt) {
                             ->mgr_.height_field().sample(x, y);
                     },
                     this,
-                    // Два хэндла игрока — числами из GameState (1е кл.5).
-                    gs_ ? gs_->playerFlagBits : 0xFFFFFFFFu,
-                    gs_ ? gs_->playerSquadBits : 0xFFFFFFFFu);
+                    // Два хэндла игрока — ссылками из GameState (1е кл.5).
+                    gs_ ? gs_->playerFlagRef : MacroHandle{},
+                    gs_ ? gs_->playerSquadRef : MacroHandle{});
         tick_subworld_bodies(dt);
         // The player's swing AFTER the combat gather: it asks the battle pick
         // grid the same way the spell contact does, and the grid it asks must

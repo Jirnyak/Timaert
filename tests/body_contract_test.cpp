@@ -422,11 +422,12 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     sub::SubObjects& arena =
         *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
-    const sm::MacroHandle macro = make_macro_lord(
+    sm::MacroHandle macro = make_macro_lord(
         *worldStore_, NPCType::Guard, /*faction*/5, /*level*/4,
         /*hp*/30.0f, /*maxHp*/30.0f, /*visualSeed*/0xCAFEu);
     worldStore_->spawnId[macro.slot] =
         ecs::MacroSpawnId{std::uint32_t(9)};
+    macro = sm::handle_at(*worldStore_, macro.slot);
     {
         auto& mbag = worldStore_->inventory[macro.slot];
         creatures_push(mbag.inv, make_soldier(
@@ -451,7 +452,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     // Свип арены по биту (ломоть D): бэклинк и займ отсекают не-тела.
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
         if ((arena.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
-        if (sm::sub::slot_macro_origin(arena, s).slot != sm::kMacroNoSlot) {
+        if (sm::sub::slot_macro_origin(arena, s).id != 0) {
             ++leaders;
             continue;
         }
@@ -517,7 +518,7 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     CHECK(sm::sub::slot_state<ecs::NpcInventory>(arena, slot, *worldStore_)
               == nullptr,
           "a derived body carries no bag: its loot is rolled when it dies");
-    CHECK(sm::sub::slot_macro_origin(arena, slot).slot == sm::kMacroNoSlot,
+    CHECK(sm::sub::slot_macro_origin(arena, slot).id == 0,
           "a derived body is nobody in particular up there");
     CHECK(sm::sub::slot_debt(arena, slot) == nullptr,
           "a body borrowed from nothing owes nothing");
@@ -658,7 +659,7 @@ void test_a_reused_slot_is_born_clean() {
     CHECK_OR_RETURN(b == a, "the freed slot is re-issued");
     CHECK(arena.debt[std::size_t(b)].amount == 0,
           "a reused slot owes nothing: the receipt died with the tenant");
-    CHECK(arena.origin[std::size_t(b)].macro.slot == kMacroNoSlot,
+    CHECK(arena.origin[std::size_t(b)].macro.id == 0,
           "a reused slot mirrors nobody: the backlink died with the tenant");
     CHECK(arena.pos[std::size_t(b)].x == 1.0f
               && arena.pos[std::size_t(b)].y == 2.0f

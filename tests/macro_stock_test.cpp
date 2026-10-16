@@ -282,8 +282,9 @@ void test_malformed_receipts_do_nothing() {
 // ordinal is its save-stable name, the creatures holds everyone else.
 sm::MacroHandle make_squad(sm::MacroStore& st, std::uint32_t ordinal,
                            std::initializer_list<std::uint32_t> memberIds) {
-    const sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle h = sm::store_birth(st);
     st.spawnId[h.slot] = sm::ecs::MacroSpawnId{ordinal};
+    h = sm::handle_at(st, h.slot);
     auto& bag = st.inventory[h.slot];
     for (std::uint32_t id : memberIds) {
         sm::creatures_push(bag.inv, sm::make_soldier(

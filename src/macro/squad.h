@@ -187,7 +187,7 @@ inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
                                             std::uint32_t index) {
     for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
         if (st.alive[slot] != 0 && st.spawnId[slot].index == index)
-            return MacroHandle{std::uint16_t(slot), st.generation[slot]};
+            return MacroHandle{std::uint16_t(slot), index};
     }
     return MacroHandle{};
 }
@@ -210,7 +210,7 @@ inline MacroHandle macro_handle_by_spawn_id(
     if (lo < order.size() && order[lo].ordinal == index) {
         const std::uint16_t slot = order[lo].slot;
         if (st.alive[slot] != 0 && st.spawnId[slot].index == index)
-            return MacroHandle{slot, st.generation[slot]};
+            return MacroHandle{slot, index};
     }
     return macro_handle_by_spawn_id(st, index);
 }
@@ -1001,20 +1001,21 @@ inline void report_death(const MacroWorld& mw, std::uint16_t npcType,
     BattleFact f{};
     f.kind = BattleFact::Kind::Death;
     f.npcType = npcType;
-    // Пакуется ХЭНДЛ (1г): сентинель «никого» — все единицы, потому что 0 —
-    // легальный слот store (шрам: сквад слота 0 умирал безымянным); пустой
-    // MacroHandle{} пакуется ровно в него. Согласие сентинелей — ассерт ниже.
-    f.victim = macro_handle_bits(victim);
-    f.killer = macro_handle_bits(killer);
+    // Конверт несёт ХЭНДЛ {слот, ID} напрямую (M-220: упаковка в биты
+    // умерла); «никого» — дефолтный MacroHandle{}, id == 0. Согласие
+    // дефолтов конверта и хэндла — ассерт ниже.
+    f.victim = victim;
+    f.killer = killer;
     f.detail = detail;
     f.level = level;
     f.factionId = factionId ? factionId : "";
     mw.facts(mw.factsUser, f);
 }
-// Дефолт конверта и пак-дверь store обязаны называть одно «никого».
-static_assert(BattleFact{}.victim == kMacroHandleNoneBits
-                  && BattleFact{}.killer == kMacroHandleNoneBits,
-              "сентинель BattleFact = kMacroHandleNoneBits (store.h)");
+// Дефолт конверта обязан называть «никого» законом нуля-ординала.
+static_assert(BattleFact{}.victim == MacroHandle{}
+                  && BattleFact{}.victim.id == 0
+                  && BattleFact{}.killer == MacroHandle{},
+              "сентинель BattleFact = пустой MacroHandle (id 0 — «никто»)");
 
 // The faction a macro body wears — its INSTANCE colours (Inc 2), not its row.
 inline const char* squad_faction_id(const MacroStore& st, MacroHandle h) {

@@ -42,9 +42,11 @@ namespace {
 using namespace sm;
 
 void test_issue_starts_at_one() {
-    GameState gs{};
-    CHECK(gs.nextMacroSpawnOrdinal == 1u,
-          "свежий мир: выдача ординалов начинается с 1 — 0 навсегда «никто»");
+    auto st = sm::make_macro_store();
+    CHECK(st->nextSpawnId == 1u,
+          "свежий стор: выдача ординалов начинается с 1 — 0 навсегда «никто»");
+    const MacroHandle h = store_birth(*st);
+    CHECK(h.id == 1u, "первое рождение получает ординал 1 от двери (M-220)");
 }
 
 // Сухая равнина целиком — spawn_squad нужна честная суша (образец

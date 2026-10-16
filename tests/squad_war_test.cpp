@@ -56,7 +56,7 @@ sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
                               std::uint32_t ordinal,
                               std::initializer_list<std::uint32_t> memberIds,
                               NPCType memberKind, int memberLevel) {
-    const sm::MacroHandle h = sm::store_birth(st);
+    sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), kMap)};
     st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(type),
@@ -79,6 +79,7 @@ sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
     st.pools[h.slot] = pools;
     st.runtime[h.slot] = rt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{ordinal};
+    h = sm::handle_at(st, h.slot);
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(level)};
     st.sheet[h.slot] = sheet;   // колонка листа — как make_npc рождает всем
     auto& bag = st.inventory[h.slot];
