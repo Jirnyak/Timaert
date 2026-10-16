@@ -102,16 +102,11 @@ verdict	SKELETON.md	До 2026-09-23 эта таблица утверждала: 
 verdict	SKELETON.md	Число агностично, смысл ему задаёт фича, стоящая РОВНО на той клетке; второго
 entt	src/app/main.cpp	entt
 entt	src/app/smoke.cpp	entt
-entt	src/content/spells/effects.cpp	entt
 entt	src/ecs/world.h	entt
 entt	src/sub/engine.cpp	entt
-entt	src/sub/engine.h	entt
-entt	src/sub/possess.h	entt
 entt	src/sub/record.h	entt
 entt	src/sub/spawn.cpp	entt
 entt	src/sub/spawn.h	entt
-entt	src/sub/targeting.cpp	entt
-entt	src/sub/targeting.h	entt
 subcap	src/sub/spawn.cpp	kUnifiedCap
 minus	src/macro/anketa.cpp	s.count -= 1;
 minus	src/macro/anketa.h	ld.exp -= ld.expToNext;

@@ -139,9 +139,15 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     int strengthDrift = 0;
     int offsetDrift = 0;
 
-    auto view = world.reg.view<sm::ecs::ObjectSlot>();
-    for (auto e : view) {
-        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+    // СВИП ПЛОСКОЙ АРЕНЫ (ломоть D): жилец сцены — бит kObjAlive. ПЕРЕПИСЬ
+    // ФОНАРЕЙ ОТ ЭТОГО НЕ ШИРЕ: оба прочих жильца со светом — снаряд-болт и
+    // ПЛАМЯ ПРОПА — рода не несут вовсе (kObjNoKind), а гейт рода стоит
+    // первой строкой, так что в счёт `nonGuardsLit` они не входили во вьюхе
+    // и не входят в свипе. (Пламёна рождает SubworldEngine::rebuild_prop_cache,
+    // которого этот свидетель не поднимает вообще — гейт держит закон и там,
+    // где предмета нет.)
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
         const auto* kindCol = sm::sub::slot_kind(objs, s);
         if (kindCol == nullptr) continue;
         const auto& kind = *kindCol;

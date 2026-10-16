@@ -2,7 +2,6 @@
 #include "sub/body.h"
 #include "sub/caps.h"       // kMaxSubObjects — the subworld scene ceiling
 #include "sub/doors.h"      // slot_* — слот-двери арены (ступень (iv))
-#include "sub/record.h"     // objects_find — мост арены (уедет фреймом, (vi))
 
 #include <cmath>
 
@@ -72,31 +71,29 @@ int melee_pick_target(const SubObjects& objs,
     return hostileBest >= 0 ? hostileBest : anyBest;
 }
 
-entt::entity aim_target(entt::registry& reg,
-                        float px, float py, float pz,
-                        float fx, float fy, float fz,
-                        float maxRange, float cosHalfAngle,
-                        entt::entity shooter) {
-    if (maxRange <= 0.0f) return entt::null;
+int aim_target(const SubObjects& objs,
+               float px, float py, float pz,
+               float fx, float fy, float fz,
+               float maxRange, float cosHalfAngle,
+               int shooterSlot) {
+    if (maxRange <= 0.0f) return -1;
 
     const float maxR2 = maxRange * maxRange;
 
-    entt::entity best = entt::null;
+    int best = -1;
     float bestD2 = maxR2; // start at the range boundary; nearer replaces it
 
     // Same candidate set as the shipped melee path: ОДИН кандидатский гейт
     // slot_npc_candidate (он же отсекает игрока — у его слота нет рода);
     // проекция игроцкой стороны — отдельной строкой, как у melee_candidate.
-    const SubObjects* objs = objects_find(reg);
-    if (objs == nullptr) return entt::null;   // сцены нет — целей нет
-    auto view = reg.view<ecs::ObjectSlot>();
-    for (auto e : view) {
-        if (e == shooter) continue;
-        const int s = int(view.get<ecs::ObjectSlot>(e).slot);
-        if (!slot_npc_candidate(*objs, s)) continue;
-        if (slot_flag(*objs, s, kObjPlayerSoldier)) continue;
+    // Свип арены по биту (ломоть D): снаряд и пламя отсекает гейт рода.
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & kObjAlive) == 0u) continue;
+        if (s == shooterSlot) continue;
+        if (!slot_npc_candidate(objs, s)) continue;
+        if (slot_flag(objs, s, kObjPlayerSoldier)) continue;
 
-        const ecs::Position& pos = objs->pos[std::size_t(s)];
+        const ecs::Position& pos = objs.pos[std::size_t(s)];
         const float dx = pos.x - px;
         const float dy = pos.y - py;
         // Eye to EYE, through the one door (slot_body_eye_m — the same height
@@ -104,7 +101,7 @@ entt::entity aim_target(entt::registry& reg,
         // Position.z is its FEET, and a bearing to feet drops a close target
         // out of a level cone — the possess smokes caught exactly that when
         // the cone first went 3D (2026-09-19).
-        const float eye = slot_body_eye_m(*objs, s);
+        const float eye = slot_body_eye_m(objs, s);
         const float dz = (pos.z + eye) - pz;
         const float d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > maxR2) continue;
@@ -136,7 +133,7 @@ entt::entity aim_target(entt::registry& reg,
 
         if (d2 <= bestD2) {
             bestD2 = d2;
-            best = e;
+            best = s;
         }
     }
     return best;

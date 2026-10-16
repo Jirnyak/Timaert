@@ -66,10 +66,10 @@ void tick_npc_ai(ecs::World& w, float px, float py, float pz,
     if (objsP == nullptr) return;   // сцены нет — думать некому
     SubObjects& objs = *objsP;
     MacroStore* const* stp = reg.ctx().find<MacroStore*>();
-    auto view = reg.view<ecs::ObjectSlot>();
-    for (auto e : view) {
-        // Слот-идиома (ii-б): слот один раз из вьюхи, дальше слот-двери.
-        const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+    // Свип арены по биту kObjAlive (ломоть D): гейт slot_ai сам отсекает
+    // снаряды, пламёна и реквизит — мозга у них нет.
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & kObjAlive) == 0u) continue;
         // Мозг — колонка арены (кусок 3); тело без мозга (игрок, реквизит)
         // здесь не живёт. «Идёт домой» — бит: его ведёт помпа дня, не мозг.
         ecs::SubworldAi* aiCol = slot_ai(objs, s);
@@ -105,8 +105,7 @@ void tick_npc_ai(ecs::World& w, float px, float py, float pz,
         // standing minds), and a coarse position bucket so a herd doesn't
         // turn in lockstep.
         const std::uint32_t salt =
-            objects_of(reg).id[view.get<ecs::ObjectSlot>(e).slot]
-            * 2654435761u;
+            objs.id[std::size_t(s)] * 2654435761u;
         Rng rng(salt ^ (a.seq * 0x9E3779B9u)
                 ^ std::uint32_t(p.x * 31.7f) ^ std::uint32_t(p.y * 17.3f));
 

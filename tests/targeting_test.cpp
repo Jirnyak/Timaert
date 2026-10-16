@@ -1,7 +1,8 @@
 // Unit tests for sm::sub::aim_target — the pure subworld targeting primitive
-// (Increment 5 possession groundwork). Builds a bare entt::registry, populates
-// candidates, and pins the selection contract: nearest live enemy within the
-// range AND the forward cone, excluding the player's own side and the shooter.
+// (Increment 5 possession groundwork). Builds a bare scene arena (ломоть D:
+// тело сцены есть СЛОТ, сущности у него нет вовсе), populates candidates, and
+// pins the selection contract: nearest live enemy within the range AND the
+// forward cone, excluding the player's own side and the shooter.
 //
 // Assertions go through tests/check.h — CHECK + sm::test::report.
 
@@ -16,15 +17,16 @@
 
 using namespace sm;
 
-// A live, targetable subworld enemy at (x,y,z).
-static entt::entity make_enemy(entt::registry& reg, float x, float y,
-                               float z = 0.0f) {
-    entt::entity e = reg.create();
-    sm::test::give_pos(reg, e, x, y, z);   // место — колонка арены (ломоть 5)
-    sm::test::give_pools(reg, e, ecs::Pools{10, 10});
-    sm::test::give_kind(reg, e,
+// A live, targetable subworld enemy at (x,y,z). Возврат — СЛОТ арены
+// (ломоть D): рождение тела есть выдача слота, -1 = кап.
+static int make_enemy(entt::registry& reg, float x, float y,
+                      float z = 0.0f) {
+    const int s = sm::test::give_body(reg);
+    sm::test::give_pos(reg, s, x, y, z);   // место — колонка арены (ломоть 5)
+    sm::test::give_pools(reg, s, ecs::Pools{10, 10});
+    sm::test::give_kind(reg, s,
         ecs::NPCKind{std::uint16_t(4), std::uint16_t(0)}); // any kind
-    return e;
+    return s;
 }
 
 // cos of a half-angle in degrees, for cone tests.
@@ -43,31 +45,34 @@ int main() {
     // ── nearest within a forward cone ─────────────────────────────────────
     {
         entt::registry reg;
-        entt::entity a = make_enemy(reg, 105, 100); // ahead, dist 5
+        const int a = make_enemy(reg, 105, 100);    // ahead, dist 5
         make_enemy(reg, 110, 100);                  // ahead, dist 10 (farther)
         make_enemy(reg, 95, 100);                   // behind, dist 5 (out of cone)
-        entt::entity picked = sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30);
+        sub::SubObjects& objs = sm::test::arena_of(reg);
+        const int picked = sub::aim_target(objs, 100, 100, 0, 1, 0, 0,50.0f, cone30);
         CHECK(picked == a, "picks nearest enemy inside the forward cone");
     }
 
     // ── range gate ────────────────────────────────────────────────────────
     {
         entt::registry reg;
-        entt::entity a = make_enemy(reg, 105, 100); // dist 5
+        const int a = make_enemy(reg, 105, 100);    // dist 5
         make_enemy(reg, 110, 100);                  // dist 10
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,8.0f, cone30) == a,
+        sub::SubObjects& objs = sm::test::arena_of(reg);
+        CHECK(sub::aim_target(objs, 100, 100, 0, 1, 0, 0,8.0f, cone30) == a,
               "range 8: near (5) selected, far (10) excluded");
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,3.0f, cone30) == entt::null,
+        CHECK(sub::aim_target(objs, 100, 100, 0, 1, 0, 0,3.0f, cone30) == -1,
               "range 3: everything out of range -> null");
     }
 
     // ── cone gate: a target directly behind ───────────────────────────────
     {
         entt::registry reg;
-        entt::entity behind = make_enemy(reg, 95, 100); // dist 5, bearing 180°
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == entt::null,
+        const int behind = make_enemy(reg, 95, 100); // dist 5, bearing 180°
+        sub::SubObjects& objs = sm::test::arena_of(reg);
+        CHECK(sub::aim_target(objs, 100, 100, 0, 1, 0, 0,50.0f, cone30) == -1,
               "narrow cone: target behind the shooter is not selected");
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, kFull) == behind,
+        CHECK(sub::aim_target(objs, 100, 100, 0, 1, 0, 0,50.0f, kFull) == behind,
               "full circle: behind target IS selected (reduces to melee)");
     }
 
@@ -75,62 +80,66 @@ int main() {
     {
         entt::registry reg;
         make_enemy(reg, 105, 100);                  // ahead, dist 5
-        entt::entity near = make_enemy(reg, 100, 103); // side, dist 3 (nearest)
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, kFull) == near,
+        const int near = make_enemy(reg, 100, 103); // side, dist 3 (nearest)
+        CHECK(sub::aim_target(sm::test::arena_of(reg),
+                              100, 100, 0, 1, 0, 0,50.0f, kFull) == near,
               "full circle: nearest overall selected irrespective of facing");
     }
 
     // ── player-side exclusion ─────────────────────────────────────────────
     {
         entt::registry reg;
-        entt::entity a = make_enemy(reg, 106, 100);  // ahead, dist 6
-        entt::entity soldier = make_enemy(reg, 101, 100); // ahead, dist 1
+        const int a = make_enemy(reg, 106, 100);     // ahead, dist 6
+        const int soldier = make_enemy(reg, 101, 100); // ahead, dist 1
         sm::test::give_flag(reg, soldier,
                             sub::kObjPlayerSoldier);  // player's own -> skip
-        entt::entity ptag = make_enemy(reg, 102, 100); // ahead, dist 2
+        const int ptag = make_enemy(reg, 102, 100);  // ahead, dist 2
         sm::test::make_avatar(reg, ptag);            // the player body -> skip
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
+        CHECK(sub::aim_target(sm::test::arena_of(reg),
+                              100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "player-side entities excluded even when nearer");
     }
 
     // ── dead exclusion ────────────────────────────────────────────────────
     {
         entt::registry reg;
-        entt::entity a = make_enemy(reg, 106, 100); // ahead, dist 6
-        entt::entity corpse = make_enemy(reg, 101, 100); // ahead, dist 1
+        const int a = make_enemy(reg, 106, 100);    // ahead, dist 6
+        const int corpse = make_enemy(reg, 101, 100); // ahead, dist 1
         sm::test::give_flag(reg, corpse, sub::kObjDead);
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
+        sub::SubObjects& objs = sm::test::arena_of(reg);
+        CHECK(sub::aim_target(objs, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "Dead entities excluded even when nearer");
         // Zero-HP but not yet tagged Dead is also excluded.
-        entt::entity downed = make_enemy(reg, 102, 100);
-        sub::SubObjects& objs = sm::test::arena_of(reg);
-        const int downedSlot = sm::test::slot_of(reg, downed);
-        (*sm::sub::slot_pools(objs, downedSlot)).hp = 0.0f;
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
+        const int downed = make_enemy(reg, 102, 100);
+        (*sm::sub::slot_pools(objs, downed)).hp = 0.0f;
+        CHECK(sub::aim_target(objs, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "zero-HP entities excluded even when nearer");
     }
 
     // ── shooter self-exclusion ────────────────────────────────────────────
     {
         entt::registry reg;
-        entt::entity self = make_enemy(reg, 100, 100); // co-located "body"
-        entt::entity a = make_enemy(reg, 105, 100);
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, kFull, self) == a,
+        const int self = make_enemy(reg, 100, 100); // co-located "body"
+        const int a = make_enemy(reg, 105, 100);
+        CHECK(sub::aim_target(sm::test::arena_of(reg),
+                              100, 100, 0, 1, 0, 0,50.0f, kFull, self) == a,
               "shooter entity is never its own target");
     }
 
     // ── co-located enemy is reachable (no NaN bearing) ────────────────────
     {
         entt::registry reg;
-        entt::entity onTop = make_enemy(reg, 100, 100); // exactly at shooter
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == onTop,
+        const int onTop = make_enemy(reg, 100, 100); // exactly at shooter
+        CHECK(sub::aim_target(sm::test::arena_of(reg),
+                              100, 100, 0, 1, 0, 0,50.0f, cone30) == onTop,
               "co-located enemy is selected (treated as in-front)");
     }
 
     // ── empty world ───────────────────────────────────────────────────────
     {
         entt::registry reg;
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, kFull) == entt::null,
+        CHECK(sub::aim_target(sm::test::arena_of(reg),
+                              100, 100, 0, 1, 0, 0,50.0f, kFull) == -1,
               "no candidates -> null");
     }
 
@@ -144,12 +153,12 @@ int main() {
         // XY-distance 3 (dead ahead), but 4 up (plus eye height): the 3D
         // bearing is ~62° off a level look — far outside the ±30° cone the
         // XY law would have passed.
-        entt::entity high = make_enemy(reg, 103, 100, 4);
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0, 50.0f, cone30)
-                  == entt::null,
+        const int high = make_enemy(reg, 103, 100, 4);
+        sub::SubObjects& objs = sm::test::arena_of(reg);
+        CHECK(sub::aim_target(objs, 100, 100, 0, 1, 0, 0, 50.0f, cone30) == -1,
               "a level look does not select a body far overhead");
         // Aim UP the actual 3-4-5 bearing and the same body is the target.
-        CHECK(sub::aim_target(reg, 100, 100, 0, 0.6f, 0, 0.8f, 50.0f, cone30)
+        CHECK(sub::aim_target(objs, 100, 100, 0, 0.6f, 0, 0.8f, 50.0f, cone30)
                   == high,
               "looking up finds it: the cone follows the 3D look vector");
     }
@@ -157,8 +166,8 @@ int main() {
         entt::registry reg;
         // XY-distance 3 fits a 4.0 range; the true 3-4-5 distance is 5.
         make_enemy(reg, 103, 100, 4);
-        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0, 4.0f, kFull)
-                  == entt::null,
+        CHECK(sub::aim_target(sm::test::arena_of(reg),
+                              100, 100, 0, 1, 0, 0, 4.0f, kFull) == -1,
               "range is 3D: the XY shadow of a high body does not reach");
     }
 
@@ -167,10 +176,8 @@ int main() {
     // возврат — слот, -1 = никого.
     {
         entt::registry reg;
-        const int peasant =
-            sm::test::slot_of(reg, make_enemy(reg, 102, 100)); // dist 2, NEUTRAL
-        int bandit =
-            sm::test::slot_of(reg, make_enemy(reg, 104, 100)); // dist 4, HOSTILE
+        const int peasant = make_enemy(reg, 102, 100); // dist 2, NEUTRAL
+        int bandit = make_enemy(reg, 104, 100);        // dist 4, HOSTILE
         sub::SubObjects& objs = sm::test::arena_of(reg);
         auto hostileIsBandit = [](void* user, int s) {
             return s == *static_cast<int*>(user);
@@ -191,7 +198,7 @@ int main() {
               "a hostile in reach beats a nearer neutral");
         // No hostile in reach -> nearest-any fallback (striking a neutral
         // deliberately stays possible; the reputation price handles it).
-        int far = sm::test::slot_of(reg, make_enemy(reg, 200, 200));
+        int far = make_enemy(reg, 200, 200);
         const int pick2 = sub::melee_pick_target(
             objs, 100, 100, 0, 25.0f, hostileIsBandit, &far,
             &sm::test::all_live_slots, &objs);

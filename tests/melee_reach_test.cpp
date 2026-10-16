@@ -29,15 +29,15 @@ namespace {
 using sm::NPCType;
 using sm::sub::melee_pick_target;
 
-// Тело фикстуры рождается сущностью (двери give_*), а СУДИТСЯ слотом:
-// груз и возврат выбора цели — слот арены (ступень (iv) ломтя 7).
+// Тело фикстуры И ЕСТЬ СЛОТ арены (ломоть D: сущности у тел сцены нет вовсе),
+// и тем же слотом оно судится: груз и возврат выбора цели — слот арены.
 int body(entt::registry& reg, NPCType type, float x, float y) {
-    const entt::entity e = reg.create();
-    sm::test::give_pos(reg, e, x, y, 0.0f);   // место — колонка арены (ломоть 5)
-    sm::test::give_pools(reg, e, sm::ecs::Pools{30, 30});
-    sm::test::give_kind(reg, e,
+    const int s = sm::test::give_body(reg);
+    sm::test::give_pos(reg, s, x, y, 0.0f);   // место — колонка арены (ломоть 5)
+    sm::test::give_pools(reg, s, sm::ecs::Pools{30, 30});
+    sm::test::give_kind(reg, s,
         sm::ecs::NPCKind{std::uint16_t(type), std::uint16_t{0}});
-    return sm::test::slot_of(reg, e);
+    return s;
 }
 
 bool never_hostile(void*, int) { return false; }
@@ -137,13 +137,13 @@ void test_grid_arm_parity() {
 
 void test_player_side_and_dead_are_invisible() {
     entt::registry reg;
-    const entt::entity soldier = reg.create();
+    const int soldier = sm::test::give_body(reg);
     sm::test::give_pos(reg, soldier, 2.0f, 0.0f, 0.0f);
     sm::test::give_pools(reg, soldier, sm::ecs::Pools{30, 30});
     sm::test::give_kind(reg, soldier,
         sm::ecs::NPCKind{std::uint16_t(NPCType::Guard), std::uint16_t{0}});
     sm::test::give_flag(reg, soldier, sm::sub::kObjPlayerSoldier);
-    const entt::entity corpse = reg.create();
+    const int corpse = sm::test::give_body(reg);
     sm::test::give_pos(reg, corpse, 2.5f, 0.0f, 0.0f);
     sm::test::give_pools(reg, corpse, sm::ecs::Pools{30, 30});
     sm::test::give_kind(reg, corpse,

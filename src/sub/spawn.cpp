@@ -27,7 +27,6 @@ namespace sm::sub {
 
 namespace {
 
-constexpr int kMaxSubworldSpawnReaps = 2048;
 // How fast a body's DRAWN position catches up to its logical one, and how much
 // of its walking speed it uses when it has nowhere in particular to be. One
 // value each, because two bodies of the same kind moved at different smoothing
@@ -296,10 +295,11 @@ ecs::Combat combat_from_sheet(const CharacterSheet& sheet,
 }
 
 // Everything below is the same for a peasant, a mercenary and a lord.
-entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
-                          const ecs::NpcCharacter& face,
-                          float healthFraction,
-                          const BonusTotals* squadBonuses = nullptr) {
+// Возврат — СЛОТ арены (ломоть D); -1 = честный отказ (арены нет / кап).
+int emplace_body(entt::registry& reg, const BodySpec& body,
+                 const ecs::NpcCharacter& face,
+                 float healthFraction,
+                 const BonusTotals* squadBonuses = nullptr) {
     const NpcTypeDef& def = npc_def(body.type);
     // WHO HE IS. A record the world keeps wins over a fresh roll of his row:
     // the projection used to call make_character_sheet with the CELL's seed,
@@ -330,21 +330,13 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     // СЛОТ ЕДИНОГО МАССИВА ОБЪЕКТОВ (M-150 ломоть 1а; ЧЕСТНЫЙ ОТКАЗ —
     // ломоть 5): позиция — колонка арены, и тело без слота было бы телом
     // БЕЗ КООРДИНАТ — его не сдвинул бы ребейз и не сжал бы жнец окна.
-    // Нет слота — нет тела: null, звонящий отказывается, как BodyCrowd::add.
-    // Фикстура без арены (objects_find == null) рождает тело без слота —
-    // ветка ТРАНЗИТА миграции, умирает с реестром (ломоть 7).
-    int slot = -1;
+    // Нет слота — нет тела: -1, звонящий отказывается, как BodyCrowd::add.
+    // Арены нет (голая фикстура) — тел нет ВОВСЕ: прежняя ветка «тело без
+    // слота» умерла с возвратом-слотом (ломоть D).
     SubObjects* objs = objects_find(reg);
-    if (objs != nullptr) {
-        slot = objs->alloc(ecs::Position{body.x, body.y, 0.0f});
-        if (slot < 0) return entt::null;
-    }
-    const auto e = reg.create();
-    // Ветка ТРАНЗИТА (фикстура без арены): тело без слота не несёт ни одной
-    // колонки — прежние entity-двери отвечали ему no-op ровно так же
-    // (slot < 0). Умирает с реестром (ломоть 7 (vi)).
-    if (slot < 0) return e;
-    reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
+    if (objs == nullptr) return -1;
+    const int slot = objs->alloc(ecs::Position{body.x, body.y, 0.0f});
+    if (slot < 0) return -1;
     sub::slot_set_visual(*objs, slot,
                          ecs::VisualPos{body.x, body.y, kBodyVisualCatchUp});
     sub::slot_set_kind(*objs, slot,
@@ -414,7 +406,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
         bodyRadius, std::uint8_t(def.sprite),
         body_height_m(def) * body_shape_height_scale(face.bodyShape)});
     maybe_emplace_carried_light(*objs, slot, def);
-    return e;
+    return slot;
 }
 
 // ── ГОЛОВА → ТЕЛО: один закон на улицу, интерьер и дверь рассвета ────────
@@ -632,28 +624,23 @@ int toroidal_cell_offset(int a, int c, int n) {
 
 // ── The two forms of birth (declared in spawn.h) ─────────────────────────
 
-entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
-                                std::uint32_t faceSalt, const BodyLoan& loan,
-                                const BonusTotals* squadBonuses) {
-    const entt::entity e =
+int spawn_derived_body(entt::registry& reg, const BodySpec& body,
+                       std::uint32_t faceSalt, const BodyLoan& loan,
+                       const BonusTotals* squadBonuses) {
+    const int s =
         emplace_body(reg, body, derive_face(body.seed, body.type, faceSalt),
                      /*healthFraction*/1.0f, squadBonuses);
     // The receipt, stamped by the birth rather than by the caller: borrowing is
     // part of coming into being, not a line a spawner might remember to add.
     // Nothing lent means nothing to stamp — a body drawn from thin air is honest
-    // about owing the map nothing. Отказ арены (null, ломоть 5) займа не
+    // about owing the map nothing. Отказ арены (-1, ломоть 5) займа не
     // штампует: душа не воплотилась — квитанции возврата не будет, и список
     // места не должен уменьшаться.
-    if (e != entt::null && loan.stock != MacroStock::Count) {
-        // Слот-идиома (ii-б): слот один раз, дальше слот-дверь; s < 0 —
-        // прежний честный no-op (тело без слота займа не получает).
-        const int s = sub::body_slot(reg, e);
-        if (s >= 0) {
-            sub::stamp_macro_debt(sub::objects_of(reg), s,
-                                  loan.stock, loan.key, 1);
-        }
+    if (s >= 0 && loan.stock != MacroStock::Count) {
+        sub::stamp_macro_debt(sub::objects_of(reg), s,
+                              loan.stock, loan.key, 1);
     }
-    return e;
+    return s;
 }
 
 // (Предикат «tracked body owns nothing» и фолд OwnedState умерли 0a ломтя 7:
@@ -662,20 +649,20 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
 // контрабандой положенная на тело, двери НЕВИДИМА. Свидетель —
 // subworld_spawn_parity_test, живой контроль контрабандой.)
 
-entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
-                                float x, float y, std::uint32_t seed,
-                                bool combatant) {
+int spawn_tracked_body(entt::registry& reg, MacroHandle macro,
+                       float x, float y, std::uint32_t seed,
+                       bool combatant) {
     // ЗАПИСЬ ЕСТЬ СЛОТ STORE, и другой формы больше нет (шаг 2 1е):
     // идентичность — хэндл, протухший хэндл честно отказывает.
     MacroStore& st = store_of(reg);
-    if (!st.valid(macro)) return entt::null;
+    if (!st.valid(macro)) return -1;
     const auto& kind = st.kind[macro.slot];
     // A kind that names no row at all is refused; a kind that names one is
     // trackable, whatever it is. The extra refusal that stood here — "not a
     // creature" — died with the second birth: a pack leader is a macro record
     // like a lord, and his body copies his face and his wounds down the same
     // way (CANON.md S4).
-    if (!valid_npc_kind(kind.type)) return entt::null;
+    if (!valid_npc_kind(kind.type)) return -1;
 
     const auto& health = st.pools[macro.slot];
     const float fraction = health.maxHp > 0
@@ -704,7 +691,7 @@ entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
         effective_sheet(sheet_of(st, macro), standing);
     body.sheet = &macroSheet;
 
-    const entt::entity e =
+    const int s =
         emplace_body(reg, body, st.character[macro.slot], fraction);
 
     // The belongings, the personality, the gear and the book are STATE up
@@ -721,9 +708,9 @@ entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
     // it is the ADDRESS — of the bars he spends, the bag he carries and the
     // plate he wears. It used to be described as «where the return trip writes»;
     // there is no return trip any more, because there is no copy to return.
-    // Слот-идиома (ii-б): рождение выше уже отказало без арены (entt::null)
-    // либо выдало слот — бэклинк и зеркало пишутся слот-дверями.
-    if (const int s = sub::body_slot(reg, e); s >= 0) {
+    // Рождение выше уже отказало без арены (-1) либо выдало слот — бэклинк
+    // и зеркало пишутся слот-дверями.
+    if (s >= 0) {
         SubObjects& objs = objects_of(reg);
         sub::slot_set_origin(objs, s, macro);
         // What stood on him when the numbers above were derived — the
@@ -731,43 +718,35 @@ entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
         // (standing@src/sub/objects.h).
         sub::slot_set_standing(objs, s, standing);
     }
-    return e;
+    return s;
 }
 
-bool refresh_body_strike(entt::registry& reg, entt::entity body) {
-    if (!reg.valid(body)) return false;
-    // Слот-идиома (ii-б): слот один раз, дальше слот-двери одной арены.
-    SubObjects* objs = objects_find(reg);
-    if (objs == nullptr) return false;
-    const int s = sub::body_slot(reg, body);
-    if (s < 0) return false;
-    BonusTotals* cache = sub::slot_standing(*objs, s);
+bool refresh_body_strike(SubObjects& objs, const MacroStore* st, int s) {
+    BonusTotals* cache = sub::slot_standing(objs, s);
     if (!cache) return false;                  // not a mirror; nothing to track
     // Зеркало без живой записи не пере-деривится: протухший бэклинк —
     // мертвец, чей клинок больше никого не касается (шаг 2 1е: запись —
     // хэндлом, деградация в тело здесь бессмысленна — у зеркала нет своего
     // гира и книги, гейт сравнивал бы нули).
-    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
-    const MacroHandle rec = stp != nullptr
-        ? sub::slot_macro_record(*objs, s, **stp) : MacroHandle{};
+    const MacroHandle rec = st != nullptr
+        ? sub::slot_macro_record(objs, s, *st) : MacroHandle{};
     if (rec.slot == kMacroNoSlot) return false;
     // A body with no row has no creature template to project a swing from —
     // the hero husk is exactly that, and his hands are assembled elsewhere
     // (hand_strike_fields), from the same effective sheet.
-    const auto* kind = sub::slot_kind(*objs, s);
+    const auto* kind = sub::slot_kind(objs, s);
     if (!kind || !valid_npc_kind(kind->type)) return false;
-    auto* combat = sub::slot_combat(*objs, s);
+    auto* combat = sub::slot_combat(objs, s);
     if (!combat) return false;
 
     // THE GATE. Everything below it is the expensive half (CANON's 0.00196 ms);
     // everything above is the 0.00041 ms the owner accepted paying every tick.
-    const MacroStore& st = store_of(reg);
-    const BonusTotals now = standing_bonuses_of(st, rec);
+    const BonusTotals now = standing_bonuses_of(*st, rec);
     if (now == *cache) return false;
     *cache = now;
 
     const NpcTypeDef& def = npc_def(NPCType(std::uint8_t(kind->type)));
-    const CharacterSheet eff = effective_sheet(sheet_of(st, rec), now);
+    const CharacterSheet eff = effective_sheet(sheet_of(*st, rec), now);
     // His own clock survives the re-derive: it says how busy the hand is, not
     // how strong it is (ecs::Combat::recoverySteps).
     const std::uint32_t recovering = combat->recoverySteps;
@@ -1199,31 +1178,24 @@ int spawn_dungeon_vermin(ecs::World& w,
 // ── Per-cell population + seamless persistence helpers ───────────────────
 
 void clear_subworld_world_entities(ecs::World& w) {
-    auto& reg = w.reg;
-    std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
-    SubObjects* objs = objects_find(reg);
-    for (;;) {
-        int doomedCount = 0;
-        auto view = reg.view<ecs::ObjectSlot>();
-        for (auto e : view) {
-            if (objs == nullptr) break;   // арены нет — нет и тел (транзит)
-            const int s = int(view.get<ecs::ObjectSlot>(e).slot);
-            if (objs->is_avatar_slot(s)
-                || slot_flag(*objs, s, kObjPlayerSoldier)) continue;
-            // Projected macro NPCs (Inc 5d) mirror persistent overworld bodies,
-            // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
-            // must leave them be, exactly like the player-side projections above.
-            // On enter this is a no-op (projection runs after the clear).
-            if (slot_macro_origin(*objs, s).slot != kMacroNoSlot)
-                continue;
-            if (doomedCount >= kMaxSubworldSpawnReaps) break;
-            doomed[std::size_t(doomedCount++)] = e;
-        }
-        if (doomedCount == 0) break;
-        for (int i = 0; i < doomedCount; ++i) {
-            const entt::entity e = doomed[std::size_t(i)];
-            if (reg.valid(e)) reg.destroy(e);
-        }
+    // Свип арены по биту (ломоть D): сносится процедурная набивка клеток.
+    // Снаряд НЕ трогается — он не набивка клетки, а летящее дело сцены
+    // (entity-жнец его не видел никогда: болт пережил бы и этот путь).
+    SubObjects* objs = objects_find(w.reg);
+    if (objs == nullptr) return;   // арены нет — нет и тел
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        const std::uint16_t f = objs->flags[std::size_t(s)];
+        if ((f & kObjAlive) == 0u) continue;
+        if ((f & kObjProjectile) != 0u) continue;
+        if (objs->is_avatar_slot(s)
+            || slot_flag(*objs, s, kObjPlayerSoldier)) continue;
+        // Projected macro NPCs (Inc 5d) mirror persistent overworld bodies,
+        // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
+        // must leave them be, exactly like the player-side projections above.
+        // On enter this is a no-op (projection runs after the clear).
+        if (slot_macro_origin(*objs, s).slot != kMacroNoSlot)
+            continue;
+        objs->free(s);
     }
 }
 
@@ -1371,29 +1343,22 @@ void rebase_subworld_entities(ecs::World& w, float dxTiles, float dyTiles) {
 }
 
 void despawn_subworld_entities_outside_window(ecs::World& w) {
-    auto& reg = w.reg;
-    std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
-    SubObjects* objs = objects_find(reg);
-    for (;;) {
-        int doomedCount = 0;
-        auto view = reg.view<ecs::ObjectSlot>();
-        for (auto e : view) {
-            if (objs == nullptr) break;   // арены нет — нет и тел (транзит)
-            const int s = int(view.get<ecs::ObjectSlot>(e).slot);
-            if (objs->is_avatar_slot(s)
-                || slot_flag(*objs, s, kObjPlayerSoldier)) continue;
-            const ecs::Position& p = objs->pos[std::size_t(s)];
-            const bool inside = p.x >= 0.0f && p.x < float(kFullSize)
-                             && p.y >= 0.0f && p.y < float(kFullSize);
-            if (inside) continue;
-            if (doomedCount >= kMaxSubworldSpawnReaps) break;
-            doomed[std::size_t(doomedCount++)] = e;
-        }
-        if (doomedCount == 0) break;
-        for (int i = 0; i < doomedCount; ++i) {
-            const entt::entity e = doomed[std::size_t(i)];
-            if (reg.valid(e)) reg.destroy(e);
-        }
+    // Свип арены по биту (ломоть D): эвакуация уехавших за окно при
+    // ре-центре. Снаряд НЕ трогается — его вылет за окно судит потолок и
+    // жнец спелл-тика, entity-жнец его не видел никогда.
+    SubObjects* objs = objects_find(w.reg);
+    if (objs == nullptr) return;   // арены нет — нет и тел
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        const std::uint16_t f = objs->flags[std::size_t(s)];
+        if ((f & kObjAlive) == 0u) continue;
+        if ((f & kObjProjectile) != 0u) continue;
+        if (objs->is_avatar_slot(s)
+            || slot_flag(*objs, s, kObjPlayerSoldier)) continue;
+        const ecs::Position& p = objs->pos[std::size_t(s)];
+        const bool inside = p.x >= 0.0f && p.x < float(kFullSize)
+                         && p.y >= 0.0f && p.y < float(kFullSize);
+        if (inside) continue;
+        objs->free(s);
     }
 }
 
@@ -1482,7 +1447,7 @@ void spawn_player_squad(ecs::World& w,
         // HIS stock, A2 2026-09-17) and this member's entityId, so his death
         // strikes the creatures through THE one settle door
         // (macro_stock.cpp "creatures"), exactly as every other army pays.
-        const auto e = spawn_derived_body(reg,
+        const int ss = spawn_derived_body(reg,
             BodySpec{
                 type, fx, fy, faction, level,
                 (std::uint32_t(i) * 2654435761u)
@@ -1498,9 +1463,8 @@ void spawn_player_squad(ecs::World& w,
                                    : -1,
                                soldier.kind, soldier.level}),
             squadBonuses);
-        // Слот-идиома (ii-б): отказ арены (null, слота нет) бит не ставит —
-        // ровно прежний no-op entity-двери.
-        if (const int ss = sub::body_slot(reg, e); ss >= 0) {
+        // Отказ арены (-1) бит не ставит — прежний честный no-op.
+        if (ss >= 0) {
             slot_flag_set(objects_of(reg), ss, kObjPlayerSoldier);
         }
     }
@@ -1588,10 +1552,11 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     std::array<std::uint64_t, kUnifiedCap / 64u> projectedSlots{};
     {
         SubObjects* apObjs = objects_find(reg);
-        auto apView = reg.view<ecs::ObjectSlot>();
-        for (auto body : apView) {
-            if (apObjs == nullptr) break;   // арены нет — нет и проекций
-            const int s = int(apView.get<ecs::ObjectSlot>(body).slot);
+        // Свип арены по биту (ломоть D): у снаряда и пламени origin зануляет
+        // alloc — бит ставит только годный хэндл, лишних жильцов гейт отсёк
+        // и прежде.
+        for (int s = 0; apObjs != nullptr && s < int(kMaxSubObjects); ++s) {
+            if ((apObjs->flags[std::size_t(s)] & kObjAlive) == 0u) continue;
             const MacroHandle h = slot_macro_origin(*apObjs, s);
             // Бит ставит ТОЛЬКО годный хэндл, и `valid` есть ровно то
             // равенство, которое искал `std::find`: слот жив И поколение
@@ -1679,10 +1644,10 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // hand — the sheet, the combat template, the hostility from the row, the
         // copied identity — is the one birth now, so a lord and a townsman can
         // no longer differ in anything but what the axis says they differ in.
-        const entt::entity leaderBody =
+        const int leaderSlot =
             spawn_tracked_body(reg, macro, fx, fy, seed ^ salt ^ 0x5D0F11u,
                                /*combatant*/false);
-        if (leaderBody == entt::null) {
+        if (leaderSlot < 0) {
             continue;   // not a body-shaped macro entity; nothing was created
         }
         ++projected;
@@ -1694,11 +1659,9 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // hand-authored or persistent leader with a Leader-class perk buffs
         // its troops through this same line with no further change anywhere.
         BonusTotals leaderBonuses{};
-        if (const int ls = sub::body_slot(reg, leaderBody); ls >= 0) {
-            if (const auto* leaderSheet =
-                    sub::slot_sheet(objects_of(reg), ls)) {
-                leaderBonuses = squad_bonuses(*leaderSheet);
-            }
+        if (const auto* leaderSheet =
+                sub::slot_sheet(objects_of(reg), leaderSlot)) {
+            leaderBonuses = squad_bonuses(*leaderSheet);
         }
 
         // The leader's troops. Each creature row is one unit of the squad's

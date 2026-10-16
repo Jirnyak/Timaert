@@ -68,17 +68,15 @@ void test_every_squad_body_is_a_whole_body() {
     sub::spawn_player_squad(world, mixed_squad(), ground,
                             512.0f, 512.0f, 123u, playerFaction);
 
-    auto& reg = world.reg;
-    auto view = reg.view<ecs::ObjectSlot>();
-
     int bodies = 0;
     int missingCombat = 0, missingHealth = 0, missingSheet = 0;
     int missingAi = 0, missingSprite = 0, missingLevel = 0, missingTag = 0;
     int wrongFaction = 0, wrongSpriteKind = 0, offTableRadius = 0, deadOnArrival = 0;
     int offTableHeight = 0;
 
-    for (auto e : view) {
-        const int slot = int(view.get<ecs::ObjectSlot>(e).slot);
+    // Свип арены по биту (ломоть D): гейт займа отсекает не-тела.
+    for (int slot = 0; slot < int(kMaxSubObjects); ++slot) {
+        if ((arena.flags[std::size_t(slot)] & sub::kObjAlive) == 0u) continue;
         const auto* loan = sm::sub::slot_debt(arena, slot);
         if (loan == nullptr
             || loan->stock != std::uint8_t(MacroStock::Creatures)) continue;
@@ -217,12 +215,11 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         *worldStore_, NPCType::Guard, /*faction*/5, /*level*/4,
         /*hp*/15.0f, /*maxHp*/30.0f, /*visualSeed*/0xFEEDu);
 
-    const entt::entity body =
+    const int slot =
         sub::spawn_tracked_body(reg, macro, 40.0f, 41.0f, 777u,
                                 /*combatant*/true);
-    CHECK_OR_RETURN(body != entt::null && reg.valid(body),
+    CHECK_OR_RETURN(slot >= 0,
                     "a body-shaped macro entity can be embodied");
-    const int slot = sm::test::slot_of(reg, body);
 
     CHECK((slot >= 0
            && sm::sub::slot_pos(arena, slot) != nullptr
@@ -262,13 +259,10 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     }
     // Belongings and personality are STATE up there, and they STAY up there
     // (mirror law, 2026-09-12 — sub/record.h): the body holds none of it and
-    // reads all of it through the door. This assertion is the inverse of the
-    // one it replaced («a tracked body carries what its entity carries»), and
-    // the inversion is the point: a copy is what let a lord be stripped down
-    // here and climb out dressed.
-    CHECK(!reg.all_of<ecs::NpcInventory>(body)
-              && !reg.all_of<ecs::NpcTraits>(body),
-          "a tracked body owns neither bag nor personality of its own");
+    // reads all of it through the door. «Сумка на теле» стала НЕВЫРАЗИМОЙ
+    // ломтём D: у арены нет колонок сумки и черт, и утверждать их отсутствие
+    // больше не у чего — закон несут двери ниже (копия, которую можно было
+    // снять и забыть прочитать назад, не существует как форма).
     CHECK(slot >= 0
               && sm::sub::slot_state<ecs::NpcInventory>(arena, slot,
                                                         *worldStore_)
@@ -294,10 +288,9 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     const sm::MacroHandle whole = make_macro_lord(
         *worldStore_, NPCType::Bandit, /*faction*/2, /*level*/3,
         /*hp*/9.0f, /*maxHp*/9.0f, /*visualSeed*/0xB0B0u);
-    const entt::entity wholeBody =
+    const int wholeSlot =
         sub::spawn_tracked_body(reg, whole, 60.0f, 61.0f, 778u, true);
-    CHECK_OR_RETURN(wholeBody != entt::null, "the control body was embodied");
-    const int wholeSlot = sm::test::slot_of(reg, wholeBody);
+    CHECK_OR_RETURN(wholeSlot >= 0, "the control body was embodied");
     {
         const auto& h = (*sm::sub::slot_pools(arena, wholeSlot));
         CHECK(h.maxHp > 0.0f && h.hp == h.maxHp,
@@ -319,7 +312,7 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     // (Кластер 7: «полу-запись» невыразима — записью адресует только
     // хэндл, и не-запись есть невалидный хэндл; отказ ниже покрывает оба.)
     CHECK(sub::spawn_tracked_body(reg, sm::MacroHandle{}, 5.0f, 5.0f, 1u, false)
-              == entt::null,
+              < 0,
           "nothing embodies nothing");
 
     // A monster id (0x100 | index) is not a humanoid row and must never alias
@@ -331,7 +324,7 @@ void test_a_body_that_is_not_an_entity_is_refused() {
         /*hp*/10, /*maxHp*/10, /*visualSeed*/0u);
     worldStore_->kind[monster.slot].type = std::uint16_t(0x103);
     CHECK(sub::spawn_tracked_body(reg, monster, 5.0f, 5.0f, 1u, false)
-              == entt::null,
+              < 0,
           "a monster id cannot pass for a humanoid row");
 }
 
@@ -388,14 +381,17 @@ void test_a_leaders_aura_reaches_his_men() {
                             f);
 
     int compared = 0;
-    for (auto eLed : led.reg.view<ecs::ObjectSlot>()) {
-        const int sLed = int(led.reg.get<ecs::ObjectSlot>(eLed).slot);
+    // Свипы двух арен по биту (ломоть D): гейт займа отсекает не-тела.
+    for (int sLed = 0; sLed < int(kMaxSubObjects); ++sLed) {
+        if ((ledArena.flags[std::size_t(sLed)] & sub::kObjAlive) == 0u)
+            continue;
         const auto* loanLedP = sm::sub::slot_debt(ledArena, sLed);
         if (loanLedP == nullptr) continue;
         const auto& loanLed = *loanLedP;
         if (loanLed.stock != std::uint8_t(MacroStock::Creatures)) continue;
-        for (auto eAlone : alone.reg.view<ecs::ObjectSlot>()) {
-            const int sAlone = int(alone.reg.get<ecs::ObjectSlot>(eAlone).slot);
+        for (int sAlone = 0; sAlone < int(kMaxSubObjects); ++sAlone) {
+            if ((aloneArena.flags[std::size_t(sAlone)] & sub::kObjAlive) == 0u)
+                continue;
             const auto* loanAloneP = sm::sub::slot_debt(aloneArena, sAlone);
             if (loanAloneP == nullptr) continue;
             const auto& loanAlone = *loanAloneP;
@@ -427,7 +423,6 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     sm::store_attach(world, worldStore_.get());
     sub::SubObjects& arena =
         sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-    auto& reg = world.reg;
 
     const sm::MacroHandle macro = make_macro_lord(
         *worldStore_, NPCType::Guard, /*faction*/5, /*level*/4,
@@ -455,8 +450,9 @@ void test_a_squad_on_the_map_projects_its_creatures() {
 
     int leaders = 0, members = 0, wrongFaction = 0, wholeMembers = 0;
     bool saw77 = false, saw88 = false;
-    for (auto e : reg.view<ecs::ObjectSlot>()) {
-        const int s = int(reg.get<ecs::ObjectSlot>(e).slot);
+    // Свип арены по биту (ломоть D): бэклинк и займ отсекают не-тела.
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((arena.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         if (sm::sub::slot_macro_origin(arena, s).slot != sm::kMacroNoSlot) {
             ++leaders;
             continue;
@@ -490,8 +486,8 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     // second death empties it — and an empty creatures around a LIVE leader is a
     // squad of one, alive and well, not a special case anyone must clean up.
     MacroWorld w{.store = worldStore_.get()};
-    for (auto e : reg.view<ecs::ObjectSlot>()) {
-        const int s = int(reg.get<ecs::ObjectSlot>(e).slot);
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((arena.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         if (const auto* d = sm::sub::slot_debt(arena, s))
             settle_macro_debt(w, *d, -1);
     }
@@ -515,31 +511,29 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     // (macro/items.h — one registry, one door), so carrying a pre-rolled bag
     // would cost a city of five thousand people five thousand allocations to
     // say what one integer says.
-    const entt::entity e = sub::spawn_derived_body(reg,
+    const int slot = sub::spawn_derived_body(reg,
         sub::BodySpec{NPCType::Peasant, 8.0f, 9.0f, /*faction*/1,
                           /*level*/2, /*seed*/4242u, /*combatant*/false},
         /*faceSalt*/7u);
-    CHECK_OR_RETURN(e != entt::null && reg.valid(e), "a derived body is born");
-    CHECK(!reg.all_of<ecs::NpcInventory>(e),
+    CHECK_OR_RETURN(slot >= 0, "a derived body is born");
+    // «Сумка на теле» невыразима (ломоть D): колонки сумки у арены нет —
+    // дверь шва отвечает за тело честным «записи нет» строкой ниже.
+    CHECK(sm::sub::slot_state<ecs::NpcInventory>(arena, slot, *worldStore_)
+              == nullptr,
           "a derived body carries no bag: its loot is rolled when it dies");
-    const int slot = sm::test::slot_of(reg, e);
-    CHECK((slot < 0 ? sm::MacroHandle{}
-                     : sm::sub::slot_macro_origin(arena, slot)).slot
-              == sm::kMacroNoSlot,
+    CHECK(sm::sub::slot_macro_origin(arena, slot).slot == sm::kMacroNoSlot,
           "a derived body is nobody in particular up there");
-    CHECK(slot < 0 || sm::sub::slot_debt(arena, slot) == nullptr,
+    CHECK(sm::sub::slot_debt(arena, slot) == nullptr,
           "a body borrowed from nothing owes nothing");
 
     // Borrowed, and it says so. The receipt is stamped BY the birth, so a
     // spawner cannot draw on a stock and forget to write it down.
-    const entt::entity borrowed = sub::spawn_derived_body(reg,
+    const int borrowedSlot = sub::spawn_derived_body(reg,
         sub::BodySpec{NPCType::Guard, 8.0f, 9.0f, 1, 2, 99u, false},
         /*faceSalt*/1u,
         sub::BodyLoan::from(MacroStock::Population, MacroStockKey{7, 3, 4}));
-    CHECK_OR_RETURN(borrowed != entt::null, "a borrowed body is born");
-    const int borrowedSlot = sm::test::slot_of(reg, borrowed);
-    const auto* debt = borrowedSlot < 0
-        ? nullptr : sm::sub::slot_debt(arena, borrowedSlot);
+    CHECK_OR_RETURN(borrowedSlot >= 0, "a borrowed body is born");
+    const auto* debt = sm::sub::slot_debt(arena, borrowedSlot);
     CHECK(debt != nullptr
               && debt->stock == std::uint8_t(MacroStock::Population)
               && debt->subject == 7 && debt->amount == 1,
@@ -569,13 +563,12 @@ void test_two_bodies_of_one_kind_can_differ_in_height() {
     float shortest = 1e9f, tallest = 0.0f;
     int seen = 0;
     for (std::uint32_t i = 0; i < 64u; ++i) {
-        const entt::entity e = sub::spawn_derived_body(reg,
+        const int slot = sub::spawn_derived_body(reg,
             sub::BodySpec{NPCType::Peasant, 5.0f, 5.0f, 1, 2,
                               /*seed*/1000u + i, false},
             /*faceSalt*/i * 7919u);
-        if (e == entt::null) continue;
-        const int slot = sm::test::slot_of(reg, e);
-        const auto* spr = slot < 0 ? nullptr : sm::sub::slot_sprite(arena, slot);
+        if (slot < 0) continue;
+        const auto* spr = sm::sub::slot_sprite(arena, slot);
         if (!spr) continue;
         ++seen;
         shortest = std::min(shortest, spr->height);
@@ -683,20 +676,25 @@ void test_a_reused_slot_is_born_clean() {
           "a reused slot was hit by nobody: the wound died with the tenant");
 }
 
-// БИЕКЦИЯ АРЕНЫ — закон, на котором стоит ломоть 6 (ключ «жилец сцены»
-// переезжает с тега SubworldTag на слот): живой НЕ-СНАРЯДНЫЙ слот ⟷ ровно
-// одна сущность с ObjectSlot. Ступень (v) внесла единственное изъятие и
-// оно само — закон: СНАРЯД есть чистый жилец арены БЕЗ сущности (рождение
-// слот-дверью birth_projectile, жатва — arena.free), так что снарядный
-// слот с сущностью — то же нарушение, что тело без неё. Рождение тела
-// прод-дверью даёт пару слот+сущность атомарно (слот раньше сущности,
-// отказ честный — ломоть 5); смерть сущности возвращает слот через
-// ЕДИНСТВЕННУЮ точку освобождения — on_destroy-хук
-// (objects_attach@src/sub/record.h). Свидетель считает ОБЕ стороны и ловит
-// дубль слота. Мутация «хук отвязан» обязана КРАСНИТЬ счётом после смерти;
-// «жнец не зовёт destroy» биекцию НЕ рвёт (слот и сущность живы оба) —
-// это не её закон, у того свой свидетель.
-void test_live_slots_and_slot_entities_are_a_bijection() {
+// СЧЁТ АРЕНЫ — закон, оставшийся от биекции ломтя 6. Сама биекция «живой
+// слот ⟷ сущность с ObjectSlot» УМЕРЛА ломтём D вместе со второй половиной:
+// у тела больше нет сущности, снаряд ею не был никогда, и «тело без
+// сущности» перестало быть выразимым нарушением. Что осталось законом и
+// охраняется здесь: (1) прод-дверь рождения отвечает живым слотом и двигает
+// count; (2) смерть возвращает слот ЕДИНСТВЕННОЙ рукой arena.free, и она
+// ИДЕМПОТЕНТНА — двойное освобождение не искажает счёт (на этом стоит весь
+// транзит дверей смерти ломтя D); (3) снаряд — такой же жилец без изъятий;
+// (4) count на каждом шаге равен счёту живых по маске — у вопроса «сколько
+// жильцов» нет второго ответа.
+//
+// ТАБЛИЦА МУТАЦИЙ (прогнано 2026-10-16, числа записаны, снято Edit'ом):
+//   free() теряет --count              → КРАСНЫЙ, 3 of 172 (обе руки + болт)
+//   free() теряет гейт идемпотентности → КРАСНЫЙ, 2 of 172 (double free)
+//   alloc() не двигает бегунок cursor  → МОЛЧИТ, 0 of 172 — порядок выдачи
+//                                        не закон счёта, детектор не краснеет
+//                                        на всякую правку арены
+//   немутированное дерево              → 172 checks, 0 failed
+void test_arena_count_follows_births_and_deaths() {
     using namespace sm;
     ecs::World world{};
     auto store_ = sm::make_macro_store();
@@ -704,29 +702,18 @@ void test_live_slots_and_slot_entities_are_a_bijection() {
     sub::SubObjects& arena = sm::test::arena_of(world.reg);
     auto& reg = world.reg;
 
-    std::array<entt::entity, 5> born{};
+    std::array<int, 5> born{};
     for (int i = 0; i < 5; ++i) {
         born[std::size_t(i)] = sub::spawn_derived_body(reg,
             sub::BodySpec{NPCType::Peasant, 8.0f + float(i), 9.0f, 1, 2,
                           4000u + std::uint32_t(i), false},
             /*faceSalt*/std::uint32_t(i) * 7919u);
-        CHECK_OR_RETURN(born[std::size_t(i)] != entt::null,
+        CHECK_OR_RETURN(born[std::size_t(i)] >= 0,
                         "a production door births a body");
     }
 
-    const auto bijectionHolds = [&](const char* when) {
-        int entities = 0;
-        bool dup = false, deadSlot = false, entOnBolt = false;
-        std::vector<bool> seen(std::size_t(kMaxSubObjects), false);
-        for (auto e : reg.view<ecs::ObjectSlot>()) {
-            ++entities;
-            const std::size_t s =
-                std::size_t(reg.get<ecs::ObjectSlot>(e).slot);
-            if (seen[s]) dup = true;
-            seen[s] = true;
-            if (!(arena.flags[s] & sub::kObjAlive)) deadSlot = true;
-            if (arena.flags[s] & sub::kObjProjectile) entOnBolt = true;
-        }
+    const auto countsAgree = [&](int wantBodies, int wantBolts,
+                                 const char* when) {
         int aliveBodies = 0, aliveBolts = 0;
         for (int s = 0; s < int(kMaxSubObjects); ++s) {
             const std::uint16_t f = arena.flags[std::size_t(s)];
@@ -734,33 +721,33 @@ void test_live_slots_and_slot_entities_are_a_bijection() {
             if ((f & sub::kObjProjectile) != 0u) ++aliveBolts;
             else ++aliveBodies;
         }
-        CHECK(!dup, "no slot is named by two entities");
-        CHECK(!deadSlot, "no entity points at a dead slot");
-        CHECK(!entOnBolt,
-              "a projectile slot carries NO entity (ступень (v))");
-        CHECK(entities == aliveBodies
+        CHECK(aliveBodies == wantBodies && aliveBolts == wantBolts
                   && aliveBodies + aliveBolts == arena.count,
               when);
     };
-    bijectionHolds("after five births: body slots == entities == count");
+    countsAgree(5, 0, "after five births: five body slots, count agrees");
 
-    // Снаряд — чистый жилец арены: живых слотов становится на один больше,
-    // сущностей — ровно столько же.
+    // Снаряд — чистый жилец арены: живых слотов на один больше.
     const int boltSlot = sm::test::give_projectile(
         reg, ecs::Projectile{}, ecs::Position{1.0f, 1.0f, 0.0f});
     CHECK_OR_RETURN(boltSlot >= 0, "the projectile door births a slot");
-    bijectionHolds("a slot-only bolt widens alive slots, not entities");
+    countsAgree(5, 1, "a bolt widens alive slots by exactly one");
 
-    reg.destroy(born[1]);
-    reg.destroy(born[3]);
-    bijectionHolds("after two deaths: the hook returned both slots");
+    arena.free(born[1]);
+    arena.free(born[3]);
+    countsAgree(3, 1, "after two deaths: the one hand returned both slots");
+
+    // Идемпотентность — несущая транзита ломтя D: вторая рука на том же
+    // слоте (хук при живом destroy, добивающий свип сцены) не крадёт чужого.
+    arena.free(born[1]);
+    countsAgree(3, 1, "a double free is a no-op: the count did not move");
 
     arena.free(boltSlot);
-    bijectionHolds("the spell reaper's free() returns the bolt's slot");
+    countsAgree(3, 0, "the spell reaper's free() returns the bolt's slot");
 }
 
 int main() {
-    test_live_slots_and_slot_entities_are_a_bijection();
+    test_arena_count_follows_births_and_deaths();
     test_a_reused_slot_is_born_clean();
     test_every_squad_body_is_a_whole_body();
     test_two_bodies_of_one_kind_can_differ_in_height();

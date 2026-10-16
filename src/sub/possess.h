@@ -27,13 +27,6 @@
 
 namespace sm::sub {
 
-// current_player_body: тело, на которое смотрит ссылка сцены «активное
-// тело» (вердикт 2026-10-05 — активность есть ССЫЛКА, не свойство тела);
-// entt::null = ссылки нет (между сценами).
-inline entt::entity current_player_body(ecs::World& w) {
-    return avatar_entity(w.reg);
-}
-
 // Move the player flag onto `target` (must be a live, positioned scene body).
 // «Одержимость — не более чем перенос флажка» (owner 2026-09-12) — flags move
 // in one movement, so there is no span in which the scene says one man and
@@ -63,21 +56,18 @@ inline entt::entity current_player_body(ecs::World& w) {
 // названный); звонящий без мира (фикстура) законно передаёт nullptr —
 // тогда двигается только сценический флаг (AvatarTag), макро-мира у
 // фикстуры нет.
-inline bool possess_entity(ecs::World& w, entt::entity target,
-                           std::uint32_t* playerFlagBits) {
+inline bool possess_body(ecs::World& w, int targetSlot,
+                         std::uint32_t* playerFlagBits) {
     auto& reg = w.reg;
-    if (target == entt::null || !reg.valid(target)) return false;
     SubObjects* objs = objects_find(reg);
     if (objs == nullptr) return false;       // сцены нет — вселяться некуда
-    // Слот-идиома (ii-б): слот цели один раз, дальше слот-двери.
-    const int ts = body_slot(reg, target);
-    // «Настоящее тело» — у которого есть БАРЫ (ломоть 5): прежний гейт
-    // all_of<Position> этого не проверял никогда — позицию несут и пламя
-    // пропа, и снаряд; переносить его на kObjAlive значило бы переписать
-    // ту же ложь на новый носитель.
-    if (ts < 0 || slot_pools(*objs, ts) == nullptr) return false;
-    const entt::entity cur = current_player_body(w);
-    if (cur == target) return false;                      // already inhabiting it
+    const int ts = targetSlot;
+    // «Настоящее тело» — ЖИВОЙ слот, у которого есть БАРЫ (ломоть 5):
+    // позицию несут и пламя пропа, и снаряд; бары — только тело.
+    if (ts < 0 || ts >= int(kMaxSubObjects)) return false;
+    if ((objs->flags[std::size_t(ts)] & kObjAlive) == 0u) return false;
+    if (slot_pools(*objs, ts) == nullptr) return false;
+    if (objs->is_avatar_slot(ts)) return false;        // already inhabiting it
 
     // ЗАКОН ШВА (вердикт владельца 2026-09-17) — record.h's two honest births
     // read out loud, each getting exactly the possession it can carry:
@@ -98,19 +88,19 @@ inline bool possess_entity(ecs::World& w, entt::entity target,
     const MacroHandle recH = stp != nullptr
         ? slot_macro_record(*objs, ts, **stp) : MacroHandle{};
 
-    if (reg.valid(cur)) {
-        // Hero husk (no NPCKind) has no independent existence — since the
-        // mirror law it is a projection of his macro record like any other
-        // body, so destroying it loses nothing and strands no inert,
-        // un-rendered, un-AI'd zombie in the scene. A vacated FOREIGN body
-        // keeps every component; with the reference gone its AI / draw /
-        // targetability all resume by construction (each is is_avatar-gated).
-        const int cs = body_slot(reg, cur);
-        if (cs < 0 || slot_kind(*objs, cs) == nullptr) reg.destroy(cur);
+    // Hero husk (no NPCKind) has no independent existence — since the
+    // mirror law it is a projection of his macro record like any other
+    // body, so freeing its slot loses nothing and strands no inert,
+    // un-rendered, un-AI'd zombie in the scene. A vacated FOREIGN body
+    // keeps its slot untouched; with the reference gone its AI / draw /
+    // targetability all resume by construction (each is avatar-gated).
+    const int cs = avatar_slot(*objs);
+    if (cs >= 0 && slot_kind(*objs, cs) == nullptr) {
+        objs->free(cs);
     }
     // Перенос — ОДНА перезапись ссылки: полуперенесённого состояния («тег
     // снят, тег не поставлен») больше не существует по построению.
-    set_avatar(reg, target);
+    set_avatar_slot(*objs, ts);
 
     // …AND THE MACRO FLAG RIDES THE SAME MOVEMENT — when it has a record to
     // ride to. It used to be deferred to leave() — AvatarTag moved here,

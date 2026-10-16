@@ -42,11 +42,12 @@ using sm::ecs::Projectile;
 
 constexpr int kBodyHp = 100;
 
-entt::entity add_body(entt::registry& reg, float x, float y, float z) {
-    const auto e = reg.create();
-    sm::test::give_pos(reg, e, x, y, z);   // место — колонка арены (ломоть 5)
-    sm::test::give_pools(reg, e, Pools{kBodyHp, kBodyHp});
-    return e;
+// Тело сцены — СЛОТ арены (ломоть D): сущностей у тел больше нет, рождение
+// идёт слот-дверью фикстуры, место и бары — колонки того же слота.
+void add_body(entt::registry& reg, float x, float y, float z) {
+    const int s = sm::test::give_body(reg);
+    sm::test::give_pos(reg, s, x, y, z);   // место — колонка арены (ломоть 5)
+    sm::test::give_pools(reg, s, Pools{kBodyHp, kBodyHp});
 }
 
 // One deterministic scene per scenario: the acting bodies first, then a
@@ -93,18 +94,21 @@ void build_scene(entt::registry& reg, int scenario) {
     }
 }
 
-std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
-    std::vector<entt::entity> v;
+// ПОРЯДОК РОЖДЕНИЯ ЕСТЬ ВОСХОДЯЩИЙ ПОРЯДОК СЛОТОВ (ломоть D), и реверса
+// больше нет: бегунок арены стартует с нуля, `alloc` отдаёт первый свободный
+// слот от бегунка, а эта фикстура не освобождает ни одного — значит тела
+// легли слотами 0,1,2,… ровно в том порядке, в каком их позвал `build_scene`,
+// и сортировать нечего. Снаряд в счёт не идёт по той же колонке, что и
+// прежде (баров у него нет: maxHp 0), да и рождается он ПОЗЖЕ этого обхода.
+std::vector<int> bodies_in_creation_order(entt::registry& reg) {
+    std::vector<int> v;
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    auto view = reg.view<sm::ecs::ObjectSlot>();
-    for (auto e : view) {
-        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
         if (sm::sub::slot_pools(objs, s) == nullptr) continue;
-        v.push_back(e);
+        v.push_back(s);
     }
-    // EnTT iterates newest-first; reverse for stable creation order.
-    std::vector<entt::entity> r(v.rbegin(), v.rend());
-    return r;
+    return v;
 }
 
 // ── The grid broad phase under test — the engine callback's twin ───────────
@@ -123,9 +127,15 @@ struct GridBroadPhase {
         units->clear();
         slots.clear();
         sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-        auto view = reg.view<sm::ecs::ObjectSlot>();
-        for (auto e : view) {
-            const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        // СВИП ПЛОСКОЙ АРЕНЫ (ломоть D): жилец — бит kObjAlive, и это тот же
+        // обход, которым сетку кормит `spell_neighbors_callback` движка.
+        // Снарядные слоты сюда не попадают по той же колонке, что и прежде
+        // (баров у снаряда нет: maxHp 0), а порядок выдачи стал ВОСХОДЯЩИМ
+        // по слоту — тем же, что у эталонного `all_live_slots`, то есть
+        // сетка сверяется с полным проходом в одном порядке, а не в обратном.
+        for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+            if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
+                continue;
             if (sm::sub::slot_pools(objs, s) == nullptr) continue;
             const Position& p = objs.pos[std::size_t(s)];
             sm::sub::BodyDesc d{};
@@ -195,9 +205,9 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     Position boltAt{};
     switch (scenario) {
     case 0: {
-        // Владелец — ссылка сцены (iii-б): пара {slot, id} тела bodies[0].
-        const sm::sub::ObjRef owner = sm::sub::ref_of(
-            objs, sm::test::slot_of(reg, bodies[0]));
+        // Владелец — ссылка сцены (iii-б): пара {slot, id} тела bodies[0],
+        // и слот у него теперь ПРЯМОЙ — перевода из сущности нет (ломоть D).
+        const sm::sub::ObjRef owner = sm::sub::ref_of(objs, bodies[0]);
         boltAt = Position{98.5f, 100.0f, 1.0f};
         boltP = Projectile{
             .vx = 400.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
@@ -289,8 +299,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
 
     std::vector<float> hp;
     hp.reserve(bodies.size());
-    for (auto e : bodies) {
-        const int s = sm::test::slot_of(reg, e);
+    for (const int s : bodies) {
         hp.push_back(float(sm::sub::slot_pools(objs, s)->hp));
     }
     return hp;

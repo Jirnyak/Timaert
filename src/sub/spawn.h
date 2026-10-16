@@ -132,7 +132,7 @@ inline void stamp_macro_debt(SubObjects& objs, int s,
 // from it. Ruling №2, never a second multiplier beside the sheet; and since
 // 2026-08-27 not a second SYSTEM either. nullptr (every non-squad body)
 // applies nothing.
-entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
+int spawn_derived_body(entt::registry& reg, const BodySpec& body,
                                 std::uint32_t faceSalt,
                                 const BodyLoan& loan = BodyLoan::none(),
                                 const BonusTotals* squadBonuses = nullptr);
@@ -142,7 +142,7 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
 // back its `MacroOrigin` backlink so the return trip — wounds up, death up — has
 // somewhere to write. Returns entt::null if `macro` is not a live record with a
 // body-shaped kind: a caller cannot accidentally get a half-tracked body.
-entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
+int spawn_tracked_body(entt::registry& reg, MacroHandle macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant);
 
@@ -163,7 +163,8 @@ entt::entity spawn_tracked_body(entt::registry& reg, MacroHandle macro,
 // No-ops for anything that is not a tracked body: no cache, no record, no
 // creature row (the hero husk — his hands are assembled from the same effective
 // sheet by the engine, since a husk has no row to project from).
-bool refresh_body_strike(entt::registry& reg, entt::entity body);
+// Слот-форма — ЕДИНСТВЕННОЕ тело закона (ломоть D).
+bool refresh_body_strike(SubObjects& objs, const MacroStore* st, int s);
 
 // ── Per-cell population (seamless persistence) ───────────────────────────
 //

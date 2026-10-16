@@ -177,10 +177,10 @@ struct MissileAttack {
 // view<...> — ответ стал распаковкой поля мира.
 // (AvatarTag УМЕР 2026-10-05, M-150 ломоть 2 кусок 2 — вердикт владельца
 // «активность — ссылка, не свойство тела»: «моё тело в сцене» — ССЫЛКА
-// сцены {слот, ID} в SubObjects (avatarSlot/avatarId), двери
-// set_avatar/is_avatar/avatar_entity (sub/record.h). Одержимость и будущее
-// переключение сквадов фракции — перезапись одной ссылки; «двух аватаров»
-// не существует по построению.)
+// сцены {слот, ID} в SubObjects.avatar, пишет её одна дверь
+// set_avatar_slot@sub/doors.h. Одержимость и будущее переключение сквадов
+// фракции — перезапись одной ссылки; «двух аватаров» не существует по
+// построению.)
 // (SubworldTag умер ломтём 6 M-150: «жилец сцены» = слот арены, биекция
 // «живой слот ⟷ сущность с ObjectSlot» — свидетель в body_contract_test;
 // тег был вторым ответом на вопрос, на который уже отвечал слот.)
@@ -193,10 +193,9 @@ struct Airborne { float vz = 0.0f; };
 // NPC link to type registry (NPCType enum value).
 struct NPCKind { std::uint16_t type; std::uint16_t factionIdx; };
 
-// Слот тела в ЕДИНОМ МАССИВЕ ОБЪЕКТОВ СЦЕНЫ (sub/objects.h, M-150).
-// ТРАНЗИТ МИГРАЦИИ: умирает вместе с реестром (ломоть 7), когда слот
-// станет самой идентичностью тела, а не его компонентой.
-struct ObjectSlot { std::uint16_t slot; };
+// (ObjectSlot УМЕР ломтём D M-150, 2026-10-16: слот стал САМОЙ
+// идентичностью тела — жильцы сцены живут в едином массиве sub/objects.h,
+// сущностей у тел больше нет, адрес = слот, идентичность = ID рождения.)
 
 // Subworld behaviour state (mirrors `subworld/ai.ts`). Scene bodies only
 // (жильцы арены); engine dispatches Wander/Flee/Combat by `kind`.
@@ -757,7 +756,6 @@ static_assert(sizeof(Projectile) == 68, "снаряд — 68 Б");
 // Новая структура в этом файле обязана появиться и в этом списке — за полнотой
 // списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
 TIMAERT_ROW(sm::MacroHandle);
-TIMAERT_ROW(sm::ecs::ObjectSlot);
 TIMAERT_ROW(sm::ecs::Position);
 TIMAERT_ROW(sm::ecs::VisualPos);
 TIMAERT_ROW(sm::ecs::MacroVisual);

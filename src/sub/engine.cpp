@@ -82,7 +82,6 @@ constexpr int kBattleGridMaxDim = 256;
 // for the step, not the frame — the world runs on a fixed tick, so a frame may
 // carry several steps or none.
 constexpr int kMaxSubworldDeathsPerStep = 512;
-constexpr int kMaxSubworldEntityReaps = 2048;
 
 // ONE sentence for the danger gate, because it guards ONE law from two sides.
 // The gate refuses to let the player disengage while enemies are on him — and
@@ -484,29 +483,12 @@ void spawn_npc_missile(entt::registry& reg,
 
 void clear_subworld_entities(ecs::World& w) {
     auto& reg = w.reg;
-    std::array<entt::entity, kMaxSubworldEntityReaps> doomed{};
-    for (;;) {
-        int doomedCount = 0;
-        // Полный снос сцены: сущностные жильцы арены (тела; биекция по
-        // НЕ-снарядным слотам — свидетель в body_contract_test), ключ — слот.
-        auto view = reg.view<ecs::ObjectSlot>();
-        for (auto e : view) {
-            if (doomedCount >= kMaxSubworldEntityReaps) break;
-            doomed[std::size_t(doomedCount++)] = e;
-        }
-        if (doomedCount == 0) break;
-        for (int i = 0; i < doomedCount; ++i) {
-            const entt::entity e = doomed[std::size_t(i)];
-            if (reg.valid(e)) reg.destroy(e);
-        }
-    }
-    // Слот-жильцы БЕЗ сущности — снаряды (ступень (v)): сущностный цикл выше
-    // их не видит, иначе болт пережил бы сцену и прилетел в следующую.
+    // Полный снос сцены (ломоть D): все жильцы — тела, снаряды, пламёна —
+    // слоты ОДНОЙ арены, и смерть сцены есть свип free по биту. Сущностных
+    // батчей больше нет: рождений в реестр не делает никто.
     if (sub::SubObjects* objs = sub::objects_find(reg)) {
         for (int s = 0; s < int(kMaxSubObjects); ++s) {
-            const std::uint16_t f = objs->flags[std::size_t(s)];
-            if ((f & sub::kObjAlive) != 0u
-                && (f & sub::kObjProjectile) != 0u) {
+            if ((objs->flags[std::size_t(s)] & sub::kObjAlive) != 0u) {
                 objs->free(s);
             }
         }
@@ -546,9 +528,10 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     // their kind (and are not the avatar) and read as fully allied (+1).
     sub::SubObjects* objs = sub::objects_find(reg);
     if (objs == nullptr) return minimapBlips_;
-    auto view = reg.view<ecs::ObjectSlot>();
-    for (auto e : view) {
-        const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+    // Свип арены по биту kObjAlive (ломоть D): slot_npc_candidate сам
+    // отсекает снаряды и пламёна — рода у них нет.
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs->flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         if (!sub::slot_npc_candidate(*objs, s)) continue;
         const ecs::Position& pos = objs->pos[std::size_t(s)];
         minimapBlips_.push_back(
@@ -579,9 +562,9 @@ float SubworldEngine::crosshair_stance() const {
     int best = -1;
     float bestT = kMaxRange;
 
-    auto view = reg.view<ecs::ObjectSlot>();
-    for (auto e : view) {
-        const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+    // Свип арены по биту (ломоть D): кандидатский гейт отсекает не-тела.
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs->flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         if (!sub::slot_npc_candidate(*objs, s)) continue;
         const ecs::Position& pos = objs->pos[std::size_t(s)];
         const float r = sub::slot_body_radius(*objs, s);
@@ -958,23 +941,15 @@ void SubworldEngine::sync_macro_player_to_center() {
 void SubworldEngine::clear_player_entity() {
     if (!ecs_) return;
     auto& reg = ecs_->reg;
-    // Collect then destroy — never mutate the registry while iterating a view.
-    // Normally there is exactly one AvatarTag entity; the small fixed cap is a
-    // defensive backstop against a hypothetical leak, never expected to fill.
-    // AvatarTag is SCENE ONLY (scale split, 2026-09-10), so every holder here
-    // is a scene body and dies whole — the old «strip only, if macro» branch
-    // fell away with the question it answered: the macro flag (AvatarTag)
-    // never enters this function's world any more.
-    std::array<entt::entity, 8> doomed{};
-    int n = 0;
-    if (const entt::entity e = sub::avatar_entity(reg); e != entt::null) {
-        doomed[std::size_t(n++)] = e;
-    }
-    sub::set_avatar(reg, entt::null);
-    for (int i = 0; i < n; ++i) {
-        const entt::entity e = doomed[std::size_t(i)];
-        if (reg.valid(e)) reg.destroy(e);
-    }
+    // Тушка игрока — обычный жилец арены (ломоть D): снять ссылку активного
+    // тела и освободить слот — вся смерть. Exactly one avatar reference is
+    // live while a subworld is live; both ends of that law are here and in
+    // spawn_player_entity.
+    sub::SubObjects* objs = sub::objects_find(reg);
+    if (objs == nullptr) return;
+    const int s = sub::avatar_slot(*objs);
+    sub::set_avatar_slot(*objs, -1);
+    if (s >= 0) objs->free(s);
 }
 
 void SubworldEngine::spawn_player_entity() {
@@ -1001,25 +976,19 @@ void SubworldEngine::spawn_player_entity() {
             flagRec = psq;
         }
     }
-    const entt::entity e = reg.create();
     // Слот единого массива объектов (M-150 1а; ЧЕСТНЫЙ ОТКАЗ — ломоть 5):
     // тело игрока — обычный жилец арены. Позиция — колонка арены, и тушка
     // без слота была бы телом БЕЗ КООРДИНАТ (фантом угла окна). На входе в
     // сцену арена свежая и игрок рождается среди первых — отказ значит, что
     // сцена сломана целиком; говорим вслух и не рождаем фантома.
     sub::SubObjects* objs = sub::objects_find(reg);
-    // Ветка ТРАНЗИТА (фикстура без арены): тело остаётся бесслотным и
-    // колонок не несёт — ровно прежний исход, где слот не эмплейсился, а
-    // четыре сеттера ниже отвечали no-op (и set_avatar тоже).
-    if (objs == nullptr) return;
+    if (objs == nullptr) return;   // арены нет (голая фикстура) — тел нет
     const int slot = objs->alloc(ecs::Position{playerX_, playerY_, 0.0f});
     if (slot < 0) {
         std::fprintf(stderr, "[sub] WARN avatar refused: arena full\n");
-        reg.destroy(e);
         return;
     }
-    reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
-    sub::set_avatar(reg, e);   // активное тело — ссылка сцены (2026-10-05)
+    sub::set_avatar_slot(*objs, slot);   // активное тело — ссылка сцены
     // WHOSE BODY THIS IS (mirror law, 2026-09-12 — sub/record.h): the same
     // backlink every projected body carries — pointing at the FLAG record,
     // the one that holds the bars, bag, gear and sheet of the man he IS.
@@ -1140,26 +1109,15 @@ void SubworldEngine::rebuild_prop_cache() {
             interactProps_.push_back(s);
         }
     }
-    // Отставка прошлого набора: ссылки судит ref_slot (протухшие после
-    // чужих жнецов отваливаются сами — дыра ре-центра закрыта законом ID,
-    // а не порядком clear'ов). Живые — убиваются СУЩНОСТЬЮ одним проходом
-    // вьюхи: ТРАНЗИТ до (vi), слот освобождает только on_destroy-хук
-    // (убийство по слоту при живой сущности — названный дефект).
+    // Отставка прошлого набора (ломоть D): пламя — чистый слотовый жилец,
+    // ссылки судит ref_slot (протухшие после чужих жнецов отваливаются сами
+    // — дыра ре-центра закрыта законом ID, а не порядком clear'ов), смерть —
+    // прямой free той же рукой, что у болта.
     if (!propLights_.empty()) {
         if (sub::SubObjects* objs = sub::objects_find(reg)) {
-            std::vector<std::uint16_t> doomed;
-            doomed.reserve(propLights_.size());
             for (const sub::ObjRef r : propLights_) {
                 const int s = sub::ref_slot(*objs, r);
-                if (s >= 0) doomed.push_back(std::uint16_t(s));
-            }
-            std::sort(doomed.begin(), doomed.end());
-            auto view = reg.view<ecs::ObjectSlot>();
-            for (entt::entity e : view) {
-                if (std::binary_search(doomed.begin(), doomed.end(),
-                                       view.get<ecs::ObjectSlot>(e).slot)) {
-                    reg.destroy(e);
-                }
+                if (s >= 0) objs->free(s);
             }
         }
     }
@@ -1180,8 +1138,6 @@ void SubworldEngine::rebuild_prop_cache() {
         const float seatM = mgr_.height_field().sample(s.x, s.y);
         const int slot = objs->alloc(ecs::Position{s.x, s.y, seatM});
         if (slot < 0) continue;
-        const entt::entity e = reg.create();
-        reg.emplace<ecs::ObjectSlot>(e, std::uint16_t(slot));
         sub::slot_set_light(*objs, slot, ecs::LightEmitter{
             0.0f, row.lightHeightM, 0.0f,
             float((row.lightRgb >> 16) & 0xFFu) / 255.0f,
@@ -1370,9 +1326,10 @@ void SubworldEngine::mirror_bodies_from_record() {
     // ((ii-б)); слот тела берётся из вьюхи.
     sub::SubObjects* objs = sub::objects_find(reg);
     if (objs == nullptr) return;
-    auto mirrorView = reg.view<ecs::ObjectSlot>();
-    for (auto body : mirrorView) {
-        const int s = int(mirrorView.get<ecs::ObjectSlot>(body).slot);
+    // Свип арены по биту (ломоть D): зеркалом живёт только носитель
+    // бэклинка, у снаряда и пламени origin нулевой по alloc.
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs->flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         const MacroHandle originH = sub::slot_macro_origin(*objs, s);
         if (originH.slot == kMacroNoSlot) continue;
         // Зеркало — колонка арены (кусок 2); тело без баров (слот без
@@ -1388,7 +1345,7 @@ void SubworldEngine::mirror_bodies_from_record() {
         // ...and the other half of what a record decides: the body's SWING.
         // Gated on «did what stands on him change», because the bars are a
         // block copy and a swing is a sheet re-roll (sub/spawn.h).
-        refresh_body_strike(reg, body);
+        refresh_body_strike(*objs, &st, s);
     }
 }
 
@@ -1760,12 +1717,14 @@ void SubworldEngine::tick_day_pump(float dt) {
     // that is written here is the INTENT it already had a field for.
     {
         sub::SubObjects* walkObjs = sub::objects_find(reg);
-        auto walking = reg.view<ecs::ObjectSlot>();
-        std::array<entt::entity, 256> arrived{};
+        std::array<int, 256> arrived{};
         int arrivedCount = 0;
-        for (auto e : walking) {
-            if (walkObjs == nullptr) break;   // арены нет — тел тоже нет
-            const int s = int(walking.get<ecs::ObjectSlot>(e).slot);
+        // Свип арены по биту (ломоть D): гейт «идёт домой» отсекает всех,
+        // кто не ходок.
+        for (int s = 0;
+             walkObjs != nullptr && s < int(kMaxSubObjects); ++s) {
+            if ((walkObjs->flags[std::size_t(s)] & sub::kObjAlive) == 0u)
+                continue;
             // «Идёт домой» — бит + колонка (кусок 3); мозг — колонка.
             const ecs::GoingHome* hCol = sub::slot_going_home(*walkObjs, s);
             if (hCol == nullptr) continue;
@@ -1781,7 +1740,7 @@ void SubworldEngine::tick_day_pump(float dt) {
             // and a body that has to hit a point exactly never gets there.
             if (d <= a.radius + 1.0f) {
                 if (arrivedCount < int(arrived.size())) {
-                    arrived[std::size_t(arrivedCount++)] = e;
+                    arrived[std::size_t(arrivedCount++)] = s;
                 }
                 continue;
             }
@@ -1793,9 +1752,8 @@ void SubworldEngine::tick_day_pump(float dt) {
         // walked through his own door owes his town nothing, and opening that
         // door finds him inside because the interior draws on the same stock.
         for (int i = 0; i < arrivedCount; ++i) {
-            if (reg.valid(arrived[std::size_t(i)])) {
-                reg.destroy(arrived[std::size_t(i)]);
-            }
+            // Дверь смерти слота — СВОЯ (ломоть D): одна рука arena.free.
+            if (walkObjs != nullptr) walkObjs->free(arrived[std::size_t(i)]);
         }
     }
     (void)dt;
@@ -1877,7 +1835,8 @@ void SubworldEngine::tick_day_pump(float dt) {
     sub::SubObjects* objsP = sub::objects_find(reg);
     if (objsP == nullptr) return;
     sub::SubObjects& objs = *objsP;
-    auto crowd = reg.view<ecs::ObjectSlot>();
+    // Проходы ниже — свипы арены по биту (ломоть D): townsman гейтится
+    // мозгом и займом, снаряды и пламёна не проходят.
     // ОДИН предикат «этот слот — горожанин ЭТОГО места» на все проходы:
     // второго ответа на этот вопрос в помпе нет.
     const auto townsman = [&](int s) {
@@ -1892,8 +1851,8 @@ void SubworldEngine::tick_day_pump(float dt) {
 
     int staying = 0;
     int leavingCount = 0;
-    for (auto e : crowd) {
-        const int s = int(crowd.get<ecs::ObjectSlot>(e).slot);
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         if (!townsman(s)) continue;
         if (sub::slot_flag(objs, s, sub::kObjGoingHome)) ++leavingCount;
         else                                             ++staying;
@@ -1903,9 +1862,9 @@ void SubworldEngine::tick_day_pump(float dt) {
     if (surplus > 0) {
         // Home is the NEAREST door — a man does not cross his town to sleep.
         int sent = 0;
-        for (auto e : crowd) {
+        for (int s = 0; s < int(kMaxSubObjects); ++s) {
             if (sent >= surplus) break;
-            const int s = int(crowd.get<ecs::ObjectSlot>(e).slot);
+            if ((objs.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
             if (!townsman(s)) continue;
             if (sub::slot_flag(objs, s, sub::kObjGoingHome)) continue;
             const ecs::Position& p = objs.pos[std::size_t(s)];
@@ -1925,14 +1884,14 @@ void SubworldEngine::tick_day_pump(float dt) {
 
     // The sun is climbing: doors open. A man already on his way home turns
     // round first — cheaper than birth, and truer, since he never left.
-    // Порядок разворота стал прямым по вьюхе вместо обратного по списку: КТО
-    // именно повернёт, законом не задано (уходящие равноправны), а
-    // детерминизм держится тем же порядком вьюхи, что и прежде.
+    // КТО именно повернёт, законом не задано (уходящие равноправны);
+    // детерминизм держится порядком СЛОТОВ арены (ломоть D — прежний
+    // порядок вьюхи был такой же случайностью истории рождений).
     int deficit = target - staying;
     if (deficit > 0 && leavingCount > 0) {
-        for (auto e : crowd) {
+        for (int s = 0; s < int(kMaxSubObjects); ++s) {
             if (deficit <= 0) break;
-            const int s = int(crowd.get<ecs::ObjectSlot>(e).slot);
+            if ((objs.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
             if (!townsman(s)) continue;
             if (!sub::slot_flag(objs, s, sub::kObjGoingHome)) continue;
             if (sub::slot_flag(objs, s, sub::kObjAlive)) {
@@ -1960,8 +1919,8 @@ void SubworldEngine::tick_day_pump(float dt) {
     std::array<int, std::size_t(NPCType::Count)> liveByKind{};
     std::array<std::uint32_t, std::size_t(kMaxInventorySlots)> liveNamed{};
     int liveNamedCount = 0;
-    for (auto e : crowd) {
-        const int s = int(crowd.get<ecs::ObjectSlot>(e).slot);
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         if (!townsman(s)) continue;
         if (sub::slot_flag(objs, s, sub::kObjGoingHome)) continue;
         if (!sub::slot_flag(objs, s, sub::kObjAlive)) continue;
@@ -3084,10 +3043,10 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     // встаёт в то же кольцо, куда встало бы рождённое, той же рукой
     // (place_body_ring выше) — а второго тела для одного лорда не бывает.
     sub::SubObjects* objs = sub::objects_find(reg);
-    auto standingView = reg.view<ecs::ObjectSlot>();
-    for (auto e : standingView) {
-        if (objs == nullptr) break;        // арены нет — тел тоже нет
-        const int s = int(standingView.get<ecs::ObjectSlot>(e).slot);
+    // Свип арены по биту (ломоть D): гейт — бэклинк на ЭТУ запись, у
+    // снаряда и пламени origin нулевой по alloc.
+    for (int s = 0; objs != nullptr && s < int(kMaxSubObjects); ++s) {
+        if ((objs->flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         if (sub::slot_macro_origin(*objs, s) != macro) continue;
         if (ecs::Position* p = sub::slot_pos(*objs, s)) {
             p->x = fx;
@@ -3100,14 +3059,12 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
         return true;
     }
 
-    const entt::entity body =
+    const int bodySlot =
         spawn_tracked_body(reg, macro, fx, fy, seed, /*combatant*/true);
-    if (body == entt::null) return false;
+    if (bodySlot < 0) return false;
 
     char msg[160]{};
-    // Род — колонка арены свежего тела; slot >= 0 по построению (рождение
-    // без арены отдаёт entt::null, отсев строкой выше).
-    const int bodySlot = sub::body_slot(reg, body);
+    // Род — колонка арены свежего тела; рождение вернуло слот (ломоть D).
     const auto& kind = *sub::slot_kind(sub::objects_of(reg), bodySlot);
     std::snprintf(msg, sizeof(msg), "Encounter: %s",
                   npc_def(static_cast<NPCType>(kind.type)).label);
@@ -3328,14 +3285,12 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // is exactly the staleness the spell broad phase must pad its queries by.
     float maxDrive = 0.0f;
 
-    // Сбор боя (ломоть 5): позиция — колонка арены, слот уже в вьюхе; карта
-    // толпы — СЛОТЫ (ступень (iv)); сама вьюха умирает в (vi).
+    // Сбор боя — свип арены по биту (ломоть D): карта толпы — СЛОТЫ
+    // (ступень (iv)); гейт slot_pools ниже отсекает снаряды и пламёна.
     sub::SubObjects& arena = sub::objects_of(reg);
-    auto actorView = reg.view<ecs::ObjectSlot>();
-    for (auto e : actorView) {
-        // Слот-идиома (ii-б): слот первым, гейты — по колонкам арены.
-        const std::uint16_t slot = actorView.get<ecs::ObjectSlot>(e).slot;
-        const int s = int(slot);
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((arena.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
+        const std::uint16_t slot = std::uint16_t(s);
         if (sub::slot_flag(arena, s, sub::kObjDead)) continue;
         const ecs::Position& p = arena.pos[std::size_t(slot)];
         const auto* hpCol = sub::slot_pools(arena, s);
@@ -3609,39 +3564,30 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
     if (!ecs_ || !gs_) return;
     auto& reg = ecs_->reg;
     int deadCount = 0;
-    // ЖНЕЦ НА ФЛАГАХ (ломоть 6): жертву находит БИТ kObjDead колонки арены
-    // по слоту из вьюхи — арена хойстнута, прежние два лукапа на тело
-    // (try_get<ObjectSlot> + ctx.find в object_flag) умерли. Убийство —
-    // по-прежнему сущностью: слот освобождает ЕДИНСТВЕННЫЙ on_destroy-хук,
-    // жать по слоту при живой сущности значило бы протухшие ObjectSlot.
+    // ЖНЕЦ НА ФЛАГАХ — свип арены (ломоть D): жертву находит БИТ kObjDead,
+    // слот освобождает САМ ЖНЕЦ рукой arena.free — хук умер с ObjectSlot,
+    // и «жать по слоту» перестало быть дефектом вместе с сущностью.
     sub::SubObjects& arena = sub::objects_of(reg);
     do {
-        std::array<entt::entity, kMaxSubworldDeathsPerStep> dead{};
+        std::array<int, kMaxSubworldDeathsPerStep> dead{};
         deadCount = 0;
-        auto view = reg.view<ecs::ObjectSlot>();
-        for (auto e : view) {
-            const std::uint16_t f = arena.flags[std::size_t(
-                view.get<ecs::ObjectSlot>(e).slot)];
+        for (int s = 0; s < int(kMaxSubObjects); ++s) {
+            const std::uint16_t f = arena.flags[std::size_t(s)];
+            if ((f & sub::kObjAlive) == 0u) continue;
             if ((f & sub::kObjDead) == 0u) continue;
+            // The player is a combat entity but never a corpse: its death is
+            // a game-over read off THE RECORD (report_player_damage — the
+            // record's hp at 0 -> AppState::Dead), not a loot/XP/removal
+            // event; the body is reset on the next subworld enter().
+            if (arena.is_avatar_slot(s)) continue;
             if (deadCount >= kMaxSubworldDeathsPerStep) break;
-            dead[std::size_t(deadCount++)] = e;
+            dead[std::size_t(deadCount++)] = s;
         }
 
         for (int i = 0; i < deadCount; ++i) {
-            const entt::entity e = dead[std::size_t(i)];
-            if (!reg.valid(e)) continue;
-            // Слот-идиома (ii-б): слот мертвеца один раз — все книги ниже
-            // (займ, бэклинк, род, уровень, lastHitBy) читаются по нему.
-            // Сборщик нашёл тело ПО ФЛАГУ АРЕНЫ, так что слот есть по
-            // построению; try_get — пояс транзита.
-            const auto* osDead = reg.try_get<ecs::ObjectSlot>(e);
-            if (osDead == nullptr) { reg.destroy(e); continue; }
-            const int ds = int(osDead->slot);
-            // The player is a combat entity but never a corpse: its death is a
-            // game-over read off THE RECORD (report_player_damage — the record's
-            // hp at 0 -> AppState::Dead), not a loot/XP/removal event, and the
-            // entity is reset on the next subworld enter().
-            if (arena.is_avatar_slot(ds)) continue;
+            // Все книги ниже (займ, бэклинк, род, уровень, lastHitBy)
+            // читаются по слоту мертвеца.
+            const int ds = dead[std::size_t(i)];
             // The fall is HEARD (SfxId queue, 2026-09-09) — but only on the
             // fight tick: the drainAll sweeps (leave, teardown) settle books,
             // and a chorus of death-thuds over a door closing would be noise
@@ -3701,7 +3647,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // Инк 6): the player's soldier carries the same Creatures loan
                 // as any lord's man, so the hand-written removal that stood
                 // here — the player being special one last time — is dead.
-                reg.destroy(e);
+                arena.free(ds);   // дверь смерти слота — своя (ломоть D)
                 continue;
             }
 
@@ -3777,7 +3723,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // мёртвая запись уйдёт своим жнецом вместе со всем, что на ней.
             // Когда пул лута встанет, он будет читать запись ЖИВУЮ, той же
             // дверью шва, — а не разбирать оставленный ею мусор.
-            reg.destroy(e);
+            arena.free(ds);   // дверь смерти слота — своя (ломоть D)
         }
     } while (drainAll && deadCount == kMaxSubworldDeathsPerStep);
 }
@@ -4690,12 +4636,6 @@ float SubworldEngine::player_muzzle_z() const {
     return playerZ_ + kBodyEyeM;
 }
 
-entt::entity SubworldEngine::player_entity() const {
-    if (!ecs_) return entt::null;
-    // Ссылка сцены вместо скана по тегу: O(1) (вердикт 2026-10-05).
-    return sub::avatar_entity(ecs_->reg);
-}
-
 // How wide the body he is CURRENTLY IN is — asked of the one door every other
 // body is measured by. A constant could not answer this: possession moves him
 // into a foreign body, and the walls he fits through are that body's business,
@@ -4986,12 +4926,11 @@ int SubworldEngine::dev_kill_all_hostiles() {
     do {
         std::array<int, kMaxSubworldDeathsPerStep> victims{};
         batch = 0;
-        auto view = reg.view<ecs::ObjectSlot>();
-        for (auto e : view) {
-            // Слот-идиома ((ii-б)): слот первым, и гейт враждебности идёт
-            // ПРЯМО слот-формой — entity-адаптер делал три лишних лукапа
-            // на каждого кандидата.
-            const int s = int(view.get<ecs::ObjectSlot>(e).slot);
+        // Свип арены по биту (ломоть D): гейт slot_pools отсекает не-тела,
+        // гейт враждебности идёт ПРЯМО слот-формой.
+        for (int s = 0; s < int(kMaxSubObjects); ++s) {
+            if ((objs->flags[std::size_t(s)] & sub::kObjAlive) == 0u)
+                continue;
             if (sub::slot_pools(*objs, s) == nullptr) continue;
             if (sub::slot_flag(*objs, s, sub::kObjDead)) continue;
             if (batch >= kMaxSubworldDeathsPerStep) break;
@@ -5147,14 +5086,16 @@ void SubworldEngine::tick(float dt) {
         {
             sub::SubObjects& arena = sub::objects_of(ecs_->reg);
             MacroStore* const* stp = ecs_->reg.ctx().find<MacroStore*>();
-            auto gv = ecs_->reg.view<ecs::ObjectSlot>();
-            for (auto e : gv) {
-                // Снарядов в этой вьюхе НЕТ по построению (ступень (v):
-                // снаряд — чистый жилец арены, сущности у него нет), так что
-                // прежний отсев роли умер вместе с транзитом.
-                const int s = int(gv.get<ecs::ObjectSlot>(e).slot);
+            // Свип арены по биту (ломоть D). ОТСЕВ РОЛИ СНАРЯДА ВЕРНУЛСЯ:
+            // свип видит снарядные слоты, которых entity-вьюха не видела по
+            // построению, — а снаряд летит своим интегратором
+            // (tick_spell_projectiles), земля его не держит.
+            for (int s = 0; s < int(kMaxSubObjects); ++s) {
+                const std::uint16_t f = arena.flags[std::size_t(s)];
+                if ((f & sub::kObjAlive) == 0u) continue;
+                if ((f & sub::kObjProjectile) != 0u) continue;
                 if (arena.is_avatar_slot(s)) continue;
-                if (sub::slot_flag(arena, s, sub::kObjFlying)) continue;
+                if ((f & sub::kObjFlying) != 0u) continue;
                 ecs::Position& p = arena.pos[std::size_t(s)];
                 float supportZ = mgr_.height_field().sample(p.x, p.y);
                 if (!structIndex_.empty()) {
@@ -5198,11 +5139,13 @@ void SubworldEngine::tick(float dt) {
             const float ceilZ = mgr_.height_field().max_m()
                               + kFlightMaxAboveTerrainM;
             sub::SubObjects& arena = sub::objects_of(ecs_->reg);
-            auto fv = ecs_->reg.view<ecs::ObjectSlot>();
-            for (auto e : fv) {
-                const int s = int(fv.get<ecs::ObjectSlot>(e).slot);
+            // Свип арены по биту (ломоть D): конверт держит только носителей
+            // kObjFlying — ни снаряд, ни пламя его не несут.
+            for (int s = 0; s < int(kMaxSubObjects); ++s) {
+                const std::uint16_t f = arena.flags[std::size_t(s)];
+                if ((f & sub::kObjAlive) == 0u) continue;
                 if (arena.is_avatar_slot(s)) continue;
-                if (!sub::slot_flag(arena, s, sub::kObjFlying)) continue;
+                if ((f & sub::kObjFlying) == 0u) continue;
                 ecs::Position& p = arena.pos[std::size_t(s)];
                 // Вертикальное НАМЕРЕНИЕ мозга (SubworldAi.wantVz, третья
                 // ось — полёт-посадка 2026-09-10) интегрируется здесь, тем

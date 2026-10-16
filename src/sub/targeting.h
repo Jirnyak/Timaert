@@ -1,15 +1,14 @@
 // Pure subworld targeting primitive (Increment 5 possession groundwork).
 //
-// aim_target() selects the entity a shooter standing at (px,py) and facing
-// `yaw` would strike within a forward cone. It generalises the shipped
-// player-melee selection (SubworldEngine::tick_player_melee, engine.cpp): the
+// aim_target() selects the arena SLOT a shooter standing at (px,py) and
+// facing the look vector would strike within a forward cone. It generalises
+// the shipped player-melee selection (SubworldEngine::tick_player_melee): the
 // candidate set is the live subworld hostiles —
-//   живые слоты арены с назначенным родом (body_kind,
-//   колонка арены — кусок 1) minus Dead
-// — excluding the player's own side (AvatarTag / PlayerSoldierTag, i.e. the
-// is_player_side predicate at engine.cpp) and the shooter entity itself. Among
-// those it returns the NEAREST candidate that is both within `maxRange` and
-// inside the aim cone (cos(angle to target) >= cosHalfAngle).
+//   живые слоты арены с назначенным родом (slot_npc_candidate)
+// — excluding the player's own side (PlayerSoldier bit; the avatar carries no
+// kind) and the shooter slot itself. Among those it returns the NEAREST
+// candidate that is both within `maxRange` and inside the aim cone
+// (cos(angle to target) >= cosHalfAngle).
 //
 // With cosHalfAngle == -1 the cone is the full circle, so the result matches
 // melee's omnidirectional nearest-in-range; a narrower cone (e.g. cos 15° for a
@@ -19,7 +18,6 @@
 // unit-testable in isolation and can back both the first-person reticle and the
 // macro `control <id>` debug aim without duplication.
 #pragma once
-#include "ecs/world.h"   // entt::registry/entity + ecs components (aim_target)
 #include "sub/caps.h"    // kMaxSubObjects — длина буфера кандидатов В ТИПЕ
 #include "sub/objects.h" // SubObjects — арена сцены (melee_pick_target)
 
@@ -30,9 +28,9 @@ namespace sm::sub {
 // shot agree by construction. Distance and cone are 3D (CANON S13 «всё в бою
 // трёхмерно», session Е 2026-09-19: the XY-flat cone let a body far overhead
 // steal a level shot, and a dive-bombing caster could not aim down at all).
-// `shooter` is excluded from the candidate set (pass entt::null if there is
-// no self entity). Returns entt::null when no live enemy lies within both
-// range and cone.
+// `shooterSlot` is excluded from the candidate set (-1 = нет своего тела).
+// Возврат — слот арены; -1 = в конусе и досягаемости никого (ломоть D:
+// сущность из выбора цели ушла, форма двери — АРЕНА).
 // The player-melee auto-aim (owner ruling 2026-08-05): HOSTILES FIRST — the
 // nearest body the `isHostile` oracle confirms wins; only when no hostile is
 // in reach does the swing fall back to the nearest body of any stripe, so
@@ -76,10 +74,10 @@ int melee_pick_target(const SubObjects& objs,
                       MeleeNeighborsFn neighborsFn,
                       void* neighborsUser);
 
-entt::entity aim_target(entt::registry& reg,
-                        float px, float py, float pz,
-                        float fx, float fy, float fz,
-                        float maxRange, float cosHalfAngle,
-                        entt::entity shooter = entt::null);
+int aim_target(const SubObjects& objs,
+               float px, float py, float pz,
+               float fx, float fy, float fz,
+               float maxRange, float cosHalfAngle,
+               int shooterSlot = -1);
 
 } // namespace sm::sub

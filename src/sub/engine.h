@@ -578,7 +578,6 @@ public:
     bool  player_attack_held() const { return playerAttackHeld_; }
     void  set_flying(bool enabled);
     bool  flying() const;
-    entt::entity player_entity() const;
     // The half-width of the body he is in right now (sub/body.h body_radius).
     float player_body_radius() const;
     void  rotate_camera(float dyaw, float dpitch);

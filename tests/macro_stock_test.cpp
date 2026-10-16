@@ -202,9 +202,7 @@ void test_debts_bill_their_own_subject() {
 
     entt::registry reg;
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);   // квитанция — колонка слота арены (ломоть 4)
-    const auto citizen = reg.create();
-    sm::test::give_slot(reg, citizen);
-    const int sCitizen = sm::test::slot_of(reg, citizen);
+    const int sCitizen = sm::test::give_body(reg);   // тело = слот (ломоть D)
     sub::stamp_macro_debt(objs, sCitizen,
                           MacroStock::Population,
                           MacroStockKey{wld.cityId, 10, 10}, 1);
@@ -220,9 +218,7 @@ void test_debts_bill_their_own_subject() {
 
     // A village is a named place with people too, on the SAME id space (v54):
     // the id alone names it, no register bit rides the receipt.
-    const auto villager = reg.create();
-    sm::test::give_slot(reg, villager);
-    const int sVillager = sm::test::slot_of(reg, villager);
+    const int sVillager = sm::test::give_body(reg);
     sub::stamp_macro_debt(objs, sVillager,
                           MacroStock::Population,
                           MacroStockKey{wld.hamletId, 20, 20}, 3);
@@ -233,9 +229,7 @@ void test_debts_bill_their_own_subject() {
     // THE NEGATIVE CONTROL for the one-space law: killing two villagers of
     // Twinvale must leave every CITY exactly where the earlier checks
     // left them — the id alone finds the village, never a city.
-    const auto twinVillager = reg.create();
-    sm::test::give_slot(reg, twinVillager);
-    const int sTwinVillager = sm::test::slot_of(reg, twinVillager);
+    const int sTwinVillager = sm::test::give_body(reg);
     sub::stamp_macro_debt(objs, sTwinVillager,
                           MacroStock::Population,
                           MacroStockKey{wld.twinId, 40, 40}, 2);
@@ -345,10 +339,8 @@ void test_the_creature_row_pays_by_name() {
 
     // The full settle path — the same door a subworld death actually uses.
     entt::registry& reg = world.reg;
-    const auto body = reg.create();
-    sm::test::give_slot(reg, body);
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    const int sBody = sm::test::slot_of(reg, body);
+    const int sBody = sm::test::give_body(reg);   // тело = слот (ломоть D)
     sub::stamp_macro_debt(objs, sBody,
                           MacroStock::Creatures,
                           MacroStockKey{5, 0, 0, 22}, 1);

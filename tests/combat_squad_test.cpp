@@ -161,10 +161,13 @@ int main() {
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u,
                                 playerFaction);
-    auto view = world.reg.view<sm::ecs::ObjectSlot>();
     int projected = 0;
-    for (auto e : view) {
-        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+    // СВИП ПЛОСКОЙ АРЕНЫ (ломоть D): жильца сцены называет бит kObjAlive, а
+    // не вьюха по ObjectSlot. Своей строки отсева снарядов цикл не требует —
+    // их отсекают ТЕ ЖЕ колонки тел, что и прежде (у снарядного слота бары
+    // maxHp 0, лист без бита kObjHasCombat, квитанция amount 0).
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
         // Бары и лист — колонки арены (кусок 2): полнота тела спрашивается
         // дверьми, не составом entt-компонент.
         if (sm::sub::slot_pools(objs, s) == nullptr
@@ -214,10 +217,12 @@ int main() {
     std::vector<std::uint8_t> malformedTiles(1, 0u);
     sm::sub::spawn_player_squad(malformedWorld, player, malformedTiles,
                                 512.0f, 512.0f, 100u, playerFaction);
-    auto malformedView = malformedWorld.reg.view<sm::ecs::ObjectSlot>();
     int malformedProjected = 0;
-    for (auto e : malformedView) {
-        const int ms = int(malformedView.get<sm::ecs::ObjectSlot>(e).slot);
+    // Тот же свип арены (ломоть D): квитанция — колонка слота, и «квитанции
+    // нет» = amount 0, поэтому снарядный слот сюда не попадает.
+    for (int ms = 0; ms < int(sm::kMaxSubObjects); ++ms) {
+        if ((malformedObjs.flags[std::size_t(ms)] & sm::sub::kObjAlive) == 0u)
+            continue;
         const auto* d = sm::sub::slot_debt(malformedObjs, ms);
         if (d != nullptr
             && d->stock == std::uint8_t(sm::MacroStock::Creatures))
@@ -227,7 +232,7 @@ int main() {
     CHECK(ok20, "malformed tile buffer blocked squad projection");
     if (!ok20) return 1;
 
-    auto hostile = world.reg.create();
+    const int hostile = sm::test::give_body(world.reg);
     sm::test::give_pos(world.reg, hostile, 100.0f, 100.0f, 0.0f);
     sm::test::give_combat(world.reg, hostile, sm::ecs::Combat{
         sm::Dice{5, 1}, std::int16_t(0), std::int16_t(100),
@@ -237,9 +242,8 @@ int main() {
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 4.0f, 4.0f, 8.0f, 1.0f});
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0.0f, 0u, 0.5f);
-    const int hostileSlot = sm::test::slot_of(world.reg, hostile);
-    const auto& combatPos = *sm::sub::slot_pos(objs, hostileSlot);
-    const auto& combatAi = *sm::sub::slot_ai(objs, hostileSlot);
+    const auto& combatPos = *sm::sub::slot_pos(objs, hostile);
+    const auto& combatAi = *sm::sub::slot_ai(objs, hostile);
     // Ownership contract, TIGHTENED. tick_npc_ai must not touch a combat body at
     // ALL — neither its position nor its velocity. The mass-battle pass
     // (sub/movement.h) owns both, and it READS the stored velocity as the body's
@@ -253,14 +257,13 @@ int main() {
     CHECK(ok21, "tick_npc_ai must leave ecs::Combat actors untouched");
     if (!ok21) return 1;
 
-    auto fallback = world.reg.create();
+    const int fallback = sm::test::give_body(world.reg);
     sm::test::give_pos(world.reg, fallback, 100.0f, 100.0f, 0.0f);
     sm::test::give_ai(world.reg, fallback,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 0.0f, 0.0f, 8.0f, 1.0f});
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0.0f, 0u, 0.5f);
-    const int fallbackSlot = sm::test::slot_of(world.reg, fallback);
-    const auto& fallbackPos = *sm::sub::slot_pos(objs, fallbackSlot);
+    const auto& fallbackPos = *sm::sub::slot_pos(objs, fallback);
     // A body with combat AI but NO ecs::Combat has no damage, no speed and no
     // reach — it cannot fight. The old code still walked it at the player
     // scalar ("degrade to chase-only movement"), which was a hidden global
@@ -279,21 +282,20 @@ int main() {
     // folds in SubworldAi.seq, because entity⊕position alone froze a standing
     // body — its position stopped changing, so it re-rolled the same "stand"
     // forever, and deer petrified on their first idle roll.
-    auto wanderer = world.reg.create();
+    const int wanderer = sm::test::give_body(world.reg);
     sm::test::give_pos(world.reg, wanderer, 200.0f, 200.0f, 0.0f);
     sm::test::give_ai(world.reg, wanderer,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
                                           0.0f, 0.0f, 0.0f, 8.0f, 0.6f});
-    const int wandererSlot = sm::test::slot_of(world.reg, wanderer);
     bool decidedToWalk = false;
     bool decidedToStand = false;
     for (int i = 0; i < 400; ++i) {
         sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0.0f, 0u, 0.5f);
-        const auto& wai = *sm::sub::slot_ai(objs, wandererSlot);
+        const auto& wai = *sm::sub::slot_ai(objs, wanderer);
         if (wai.wantVx != 0.0f || wai.wantVy != 0.0f) decidedToWalk = true;
         else decidedToStand = true;
     }
-    const auto& wpos = *sm::sub::slot_pos(objs, wandererSlot);
+    const auto& wpos = *sm::sub::slot_pos(objs, wanderer);
     const bool ok23 = !(wpos.x != 200.0f || wpos.y != 200.0f);
     CHECK(ok23, "a wander brain must never write Position");
     if (!ok23) return 1;

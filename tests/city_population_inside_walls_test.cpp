@@ -215,11 +215,14 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
 
     std::array<int, 8> sector{};
     int outerHalf = 0;
-    // Место тела — колонка арены (ломоть 5): вьюха отбирает ЖИЛЬЦОВ сцены
-    // (слот), координаты отвечает слот-дверь slot_pos.
-    auto view = world.reg.view<sm::ecs::ObjectSlot>();
-    for (auto e : view) {
-        const int slot = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+    // Место тела — колонка арены (ломоть 5): ЖИЛЬЦОВ сцены называет бит
+    // kObjAlive (свип плоской арены, ломоть D), координаты отвечает
+    // слот-дверь slot_pos. Перепись горожан от смены обхода не шире:
+    // род — колонка слота, и ни снаряд, ни пламя пропа рода не несут
+    // (kObjNoKind), то есть гейт ниже отсекает их так же, как отсекала вьюха.
+    for (int slot = 0; slot < int(sm::kMaxSubObjects); ++slot) {
+        if ((objs.flags[std::size_t(slot)] & sm::sub::kObjAlive) == 0u)
+            continue;
         const auto* kindCol = sm::sub::slot_kind(objs, slot);
         if (kindCol == nullptr) continue;
         const auto& kind = *kindCol;

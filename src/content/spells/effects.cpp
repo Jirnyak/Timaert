@@ -258,10 +258,10 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     sub::SubObjects* objs = sub::objects_find(reg);
     if (objs == nullptr) return;
     if (c.caster.id == 0u || c.caster != objs->avatar) return;
-    // ТРАНЗИТ до (vi): aim_target берёт стрелка СУЩНОСТЬЮ — её даёт дверь
-    // аватара, та же ссылка, что судила строкой выше.
-    const entt::entity caster = sub::avatar_entity(reg);
-    if (caster == entt::null) return;
+    // Стрелок — СЛОТ аватара (ломоть D): та же ссылка, что судила строкой
+    // выше, разыменованная одной дверью.
+    const int casterSlot = sub::avatar_slot(*objs);
+    if (casterSlot < 0) return;
     // 1-hop ban: the hero husk mirrors his own squad's record; any other
     // record under the avatar means the caster is already wearing somebody.
     // «Кто оригинал» — биты GameState (1е кластер 5): запись под аватаром
@@ -285,19 +285,17 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     const float reach = row ? row->beamLength : 0.0f;
     // The cast's own 3D look vector, verbatim — the old atan2(ny, nx)
     // flattened the aim to XY against S13 «всё в бою трёхмерно».
-    const entt::entity target = sub::aim_target(
-        reg, c.px, c.py, c.pz, c.nx, c.ny, c.nz,
-        reach, kTargetedConeCosHalfAngle, caster);
-    if (target == entt::null) return;          // poured into empty air
+    const int targetSlot = sub::aim_target(
+        *objs, c.px, c.py, c.pz, c.nx, c.ny, c.nz,
+        reach, kTargetedConeCosHalfAngle, casterSlot);
+    if (targetSlot < 0) return;                // poured into empty air
     // THE GATE: strictly weaker in level, each trained rank of the school
     // raising the threshold by one (owner formula, 2026-09-17). A body with
     // no level is a nobody — level 0, ровно дефолт колонки (кусок 1).
-    const int targetSlot = sub::body_slot(reg, target);
-    const int targetLevel =
-        targetSlot >= 0 ? int(sub::slot_level(*objs, targetSlot)) : 0;
+    const int targetLevel = int(sub::slot_level(*objs, targetSlot));
     if (targetLevel >= int(c.casterLevel) + int(c.schoolRank)) return;
-    sub::possess_entity(w, target,
-                        c.gs ? &c.gs->playerFlagBits : nullptr);
+    sub::possess_body(w, targetSlot,
+                      c.gs ? &c.gs->playerFlagBits : nullptr);
 }
 
 // ── The binding table ──────────────────────────────────────────────────────

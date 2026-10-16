@@ -47,16 +47,16 @@ using sm::sub::DamageSource;
 
 constexpr std::uint16_t kTestNpcType = 7;
 
-entt::entity make_body(entt::registry& reg, int hp, bool withKind = true) {
-    const entt::entity e = reg.create();
-    // Слот арены — как выдала бы дверь спавна (fx — колонки, M-150 1а).
-    sm::test::give_slot(reg, e);
-    sm::test::give_pools(reg, e, sm::ecs::Pools{hp, hp});
+// Тело — СЛОТ арены (ломоть D: сущностей у тел сцены больше нет вовсе).
+// Рождение — та же дверь, что у спавна; -1 = кап (fx — колонки, M-150 1а).
+int make_body(entt::registry& reg, int hp, bool withKind = true) {
+    const int s = sm::test::give_body(reg);
+    sm::test::give_pools(reg, s, sm::ecs::Pools{hp, hp});
     // Род — колонка арены (кусок 1); без give_kind слот честно несёт
     // kObjNoKind — прежнее «тело без компоненты».
     if (withKind) sm::test::give_kind(
-        reg, e, sm::ecs::NPCKind{kTestNpcType, std::uint16_t{0}});
-    return e;
+        reg, s, sm::ecs::NPCKind{kTestNpcType, std::uint16_t{0}});
+    return s;
 }
 
 using sm::test::fx_of;
@@ -84,13 +84,12 @@ void test_death_is_indistinguishable() {
     for (const DamageKind kind : kinds) {
         entt::registry reg;
         sm::EventBus bus;
-        // Жертва — НЕ сущность 0: у свежего реестра to_integral первой
-        // сущности равен нулю, и пин пустоты a/b был бы слеп к воскрешению
-        // битов (мутация «вернуть ev.a» прошла зелёной, 2026-10-10).
-        (void)reg.create();
-        const entt::entity e = make_body(reg, 10.0f);
+        // Жертва — НЕ слот 0: у свежей арены первое тело садится в нулевой
+        // слот, и пин пустоты a/b был бы слеп к воскрешению битов ссылки
+        // (мутация «вернуть ev.a» прошла зелёной, 2026-10-10).
+        (void)sm::test::give_body(reg);
+        const int s = make_body(reg, 10.0f);
         sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-        const int s = sm::test::slot_of(reg, e);
         // Атакер — синтетическая ссылка сцены: писатель хранит её ДОСЛОВНО
         // (суд протухания — у читателя, ref_slot), так что свидетелю
         // хватает различимых битов {слот, id}.
@@ -102,11 +101,11 @@ void test_death_is_indistinguishable() {
 
         CHECK(hit.applied == 25.0f, "lethal blow applies its full amount");
         CHECK(hit.lethal, "a blow past remaining hp is lethal");
-        CHECK(sm::test::flag_of(reg, e, sm::sub::kObjDead),
+        CHECK(sm::test::flag_of(reg, s, sm::sub::kObjDead),
               "every kind stamps the Dead bit");
-        CHECK((fx_of(reg, e) & sm::sub::kDmgFxPending) != 0,
+        CHECK((fx_of(reg, s) & sm::sub::kDmgFxPending) != 0,
               "every kind stamps DamageFx");
-        CHECK((fx_of(reg, e) & sm::sub::kDmgFxLethal) != 0,
+        CHECK((fx_of(reg, s) & sm::sub::kDmgFxLethal) != 0,
               "the killing blow's DamageFx is lethal");
         CHECK(death_events(bus) == 1, "every kind emits exactly one NpcDeath");
         if (const sm::GameEvent* ev = last_death(bus)) {
@@ -126,10 +125,10 @@ void test_death_is_indistinguishable() {
         // Attribution is the kind row's DATA, not a per-site omission.
         const bool wantsKiller =
             sm::sub::kDamageKinds[std::size_t(kind)].attributesKiller;
-        CHECK((last_hit_of(reg, e).id != 0u) == wantsKiller,
+        CHECK((last_hit_of(reg, s).id != 0u) == wantsKiller,
               "LastHit follows the kind row's attributesKiller column");
         if (wantsKiller) {
-            CHECK(last_hit_of(reg, e) == (sm::sub::ObjRef{9, 42u}),
+            CHECK(last_hit_of(reg, s) == (sm::sub::ObjRef{9, 42u}),
                   "LastHit names the attacker the source named");
         }
     }
@@ -146,8 +145,8 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // The Guard row wears plate; the test's own kind (7) wears nothing. Same
     // door, same blow, two rows — this is the negative control that says the
     // number is READ and not assumed.
-    const entt::entity bare = make_body(reg, 100.0f);
-    const entt::entity plated = reg.create();
+    const int bare = make_body(reg, 100.0f);
+    const int plated = sm::test::give_body(reg);
     sm::test::give_pools(reg, plated, sm::ecs::Pools{100, 100});
     sm::test::give_kind(
         reg, plated,
@@ -155,11 +154,11 @@ void test_armour_softens_by_the_row_and_the_kind() {
 
     const float blow = 20.0f;
     const DamageResult onBare =
-        apply_damage(objs, nullptr, sm::test::slot_of(reg, bare),
+        apply_damage(objs, nullptr, bare,
                      DamageSource{}, blow, DamageKind::Melee,
                      sm::DamageType::Blunt, &bus);
     const DamageResult onPlate =
-        apply_damage(objs, nullptr, sm::test::slot_of(reg, plated),
+        apply_damage(objs, nullptr, plated,
                      DamageSource{}, blow, DamageKind::Melee,
                      sm::DamageType::Blunt, &bus);
 
@@ -186,15 +185,13 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // bleeding, and the result says `blocked` so the striker can speak.
     // The silence here was the shipped «как будто не попадаю» feel: every
     // early-game fist swing against mail vanished without a trace.
-    const entt::entity turtle = reg.create();
-    sm::test::give_slot(reg, turtle);
+    const int turtle = sm::test::give_body(reg);
     sm::test::give_pools(reg, turtle, sm::ecs::Pools{100, 100});
     sm::test::give_kind(
         reg, turtle,
         sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Guard), std::uint16_t{0}});
-    const int turtleSlot = sm::test::slot_of(reg, turtle);
     const DamageResult tink =
-        apply_damage(objs, nullptr, turtleSlot, DamageSource{},
+        apply_damage(objs, nullptr, turtle, DamageSource{},
                      float(guard.block_of(sm::DamageType::Blunt)),
                      DamageKind::Melee, sm::DamageType::Blunt, &bus);
     CHECK(guard.block_of(sm::DamageType::Blunt) > 0,
@@ -203,7 +200,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
           "a blow the plate's block eats never lands — 100% reduction is real");
     CHECK(tink.blocked && !tink.lethal,
           "and the result names it BLOCKED, distinct from a dead-target no-op");
-    CHECK((*sm::sub::slot_pools(objs, turtleSlot)).hp == 100,
+    CHECK((*sm::sub::slot_pools(objs, turtle)).hp == 100,
           "the flesh under the plate is untouched");
     CHECK((fx_of(reg, turtle) & sm::sub::kDmgFxPending) != 0,
           "a blocked blow still shows: DamageFx is stamped");
@@ -218,13 +215,13 @@ void test_armour_softens_by_the_row_and_the_kind() {
           "a landing blow never reads as blocked");
 
     // ...and whether armour is in the way at all is the KIND's column.
-    const entt::entity falling = reg.create();
+    const int falling = sm::test::give_body(reg);
     sm::test::give_pools(reg, falling, sm::ecs::Pools{100, 100});
     sm::test::give_kind(
         reg, falling,
         sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Guard), std::uint16_t{0}});
     const DamageResult fell =
-        apply_damage(objs, nullptr, sm::test::slot_of(reg, falling),
+        apply_damage(objs, nullptr, falling,
                      DamageSource{}, blow, DamageKind::Fall,
                      sm::DamageType::Blunt, &bus);
     CHECK(fell.applied == blow,
@@ -248,7 +245,7 @@ void test_players_worn_plate_stands_underground() {
     // the player is. It asks an address now, so the fixture must give the body
     // the address the game gives it. Same claim, one less thing the damage door
     // has to know about.
-    const entt::entity body = make_body(reg, 100.0f, /*withKind*/false);
+    const int body = make_body(reg, 100.0f, /*withKind*/false);
     sm::test::make_avatar(reg, body);
     // His squad on the map: the gear's one home — СЛОТ STORE (шаг 2 1е:
     // запись есть хэндл по построению, entt-двойник фикстуре не нужен).
@@ -287,21 +284,20 @@ void test_players_worn_plate_stands_underground() {
     CHECK_OR_RETURN(armour > 0 && block > 0, "and the coat is worth something");
 
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    const int bodySlot = sm::test::slot_of(reg, body);
 
     // A poke the coat's BLOCK column eats never reaches the flesh — three
     // cells of separation between the body hit and the entity wearing it. The
     // full block is the BLOCK column's job now: the percent armour column
     // alone never zeroes a blow (M-193 split the two jobs apart).
     const DamageResult tink =
-        apply_damage(objs, store.get(), bodySlot, DamageSource{},
+        apply_damage(objs, store.get(), body, DamageSource{},
                      float(block), DamageKind::Melee, sm::DamageType::Blunt,
                      nullptr);
     CHECK(tink.applied == 0,
           "the map-side coat blocks the dungeon-side poke in full");
     // ...and a big blow is softened by exactly THE law over the coat's columns.
     const DamageResult big =
-        apply_damage(objs, store.get(), bodySlot, DamageSource{}, 20,
+        apply_damage(objs, store.get(), body, DamageSource{}, 20,
                      DamageKind::Melee, sm::DamageType::Blunt, nullptr);
     CHECK(big.applied == sm::mitigate_amount(20, armour, block),
           "the worn columns meet the defence law like any other defence");
@@ -309,9 +305,9 @@ void test_players_worn_plate_stands_underground() {
     // Negative control: an ordinary body beside the same squad wears nothing
     // of it — the read is keyed to the ADDRESS this body carries, not to
     // proximity and not to who the player is.
-    const entt::entity bystander = make_body(reg, 100.0f, /*withKind*/false);
+    const int bystander = make_body(reg, 100.0f, /*withKind*/false);
     const DamageResult bare =
-        apply_damage(objs, store.get(), sm::test::slot_of(reg, bystander),
+        apply_damage(objs, store.get(), bystander,
                      DamageSource{}, 20, DamageKind::Melee,
                      sm::DamageType::Blunt, nullptr);
     CHECK(bare.applied == 20,
@@ -323,7 +319,7 @@ void test_players_worn_plate_stands_underground() {
 // которой ЕСТЬ вес и ЕСТЬ обе колонки защиты, и только потом спрашивает.
 void test_armor_downtime() {
     entt::registry reg;
-    const entt::entity body = make_body(reg, 10000.0f, /*withKind*/false);
+    const int body = make_body(reg, 10000.0f, /*withKind*/false);
     sm::test::make_avatar(reg, body);
     sm::test::give_combat(reg, body, sm::ecs::Combat{});
 
@@ -360,8 +356,7 @@ void test_armor_downtime() {
                     "без веса простою не из чего взяться");
 
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    const int bodySlot = sm::test::slot_of(reg, body);
-    auto& clock = *sm::sub::slot_combat(objs, bodySlot);
+    auto& clock = *sm::sub::slot_combat(objs, body);
     CHECK(clock.armorSteps == 0u, "броня рождается В СТРОЮ: простой есть факт "
                                   "удара, а не свойство рождения");
 
@@ -370,7 +365,7 @@ void test_armor_downtime() {
     //    рековери». Это НЕГАТИВНЫЙ КОНТРОЛЬ всей механики: если бы простой
     //    ставил любой удар, он покраснел бы здесь.
     const DamageResult poke =
-        apply_damage(objs, store.get(), bodySlot, DamageSource{},
+        apply_damage(objs, store.get(), body, DamageSource{},
                      float(block), DamageKind::Melee, sm::DamageType::Blunt,
                      nullptr);
     CHECK(poke.applied == 0.0f && poke.blocked,
@@ -379,21 +374,21 @@ void test_armor_downtime() {
           "и броня осталась В СТРОЮ — блок простоя не вызывает НИКОГДА");
 
     // 2. УДАР СКВОЗЬ БЛОК ВЫБИВАЕТ БРОНЮ, и часы берутся от ВЕСА надетого.
-    apply_damage(objs, store.get(), bodySlot, DamageSource{}, 200.0f,
+    apply_damage(objs, store.get(), body, DamageSource{}, 200.0f,
                  DamageKind::Melee, sm::DamageType::Blunt, nullptr);
     const std::uint16_t charged = clock.armorSteps;
     CHECK(charged > 0u, "удар сквозь блок выбил броню из строя");
 
     // 3. ПОКА ПРОСТОЙ ИДЁТ — ПРОЦЕНТ ВЫКЛЮЧЕН, А БЛОК В СТРОЮ. Мера: тот же
     //    удар проходит БОЛЬШЕ, но ровно на величину блока меньше сырого.
-    const int hp0 = int(sm::sub::slot_pools_of(objs, bodySlot, *store)->hp);
+    const int hp0 = int(sm::sub::slot_pools_of(objs, body, *store)->hp);
     const DamageResult naked =
-        apply_damage(objs, store.get(), bodySlot, DamageSource{}, 200.0f,
+        apply_damage(objs, store.get(), body, DamageSource{}, 200.0f,
                      DamageKind::Melee, sm::DamageType::Blunt, nullptr);
     CHECK(naked.applied == float(200 - block),
           "в простое проходит удар МИНУС блок: процентная колонка выключена, "
           "плоская осталась");
-    CHECK(int(sm::sub::slot_pools_of(objs, bodySlot, *store)->hp)
+    CHECK(int(sm::sub::slot_pools_of(objs, body, *store)->hp)
               == hp0 - (200 - block),
           "и это легло на запись, а не на копию");
 
@@ -407,7 +402,7 @@ void test_armor_downtime() {
     //    восстановления, а не две.
     sm::ecs::World w{};
     w.reg.ctx().insert_or_assign(store.get());
-    const entt::entity drained = w.reg.create();
+    const int drained = sm::test::give_body(w.reg);
     sm::test::give_pools(w.reg, drained, sm::ecs::Pools{100, 100});
     sm::ecs::Combat c{};
     c.armorSteps = 64;
@@ -415,8 +410,7 @@ void test_armor_downtime() {
     sm::test::give_combat(w.reg, drained, c);
     sm::sub::SubObjects& objsW = sm::test::arena_of(w.reg);
     sm::sub::tick_body_recovery(objsW, 64u);
-    const auto& after =
-        *sm::sub::slot_combat(objsW, sm::test::slot_of(w.reg, drained));
+    const auto& after = *sm::sub::slot_combat(objsW, drained);
     CHECK(after.armorSteps == 0u && after.recoverySteps == 0u,
           "один tick_body_recovery сливает ОБА субъекта закона");
 
@@ -424,12 +418,11 @@ void test_armor_downtime() {
     //    существа не сбивают (владелец: «0 для строки существа»). Это не
     //    ветка в коде, а предельный случай: вес надетого нулевой, значит и
     //    база нулевая.
-    const entt::entity hide = make_body(reg, 1000.0f, /*withKind*/true);
+    const int hide = make_body(reg, 1000.0f, /*withKind*/true);
     sm::test::give_combat(reg, hide, sm::ecs::Combat{});
-    const int hideSlot = sm::test::slot_of(reg, hide);
-    apply_damage(objs, store.get(), hideSlot, DamageSource{}, 200.0f,
+    apply_damage(objs, store.get(), hide, DamageSource{}, 200.0f,
                  DamageKind::Melee, sm::DamageType::Blunt, nullptr);
-    CHECK(sm::sub::slot_combat(objs, hideSlot)->armorSteps == 0u,
+    CHECK(sm::sub::slot_combat(objs, hide)->armorSteps == 0u,
           "шкура строки существа простоя не знает: надетого веса ноль");
 }
 
@@ -508,9 +501,8 @@ void test_mitigation_law_shape() {
 void test_survivor_protocol() {
     entt::registry reg;
     sm::EventBus bus;
-    const entt::entity e = make_body(reg, 30.0f);
+    const int s = make_body(reg, 30.0f);
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    const int s = sm::test::slot_of(reg, e);
     const DamageResult hit = apply_damage(
         objs, nullptr, s, DamageSource{sm::sub::ObjRef{5, 7u}, true},
         10.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
@@ -520,14 +512,14 @@ void test_survivor_protocol() {
     CHECK(!hit.lethal, "a survivable blow is not lethal");
     CHECK((*sm::sub::slot_pools(objs, s)).hp == 20.0f,
           "hp drops by exactly the applied amount");
-    CHECK(!sm::test::flag_of(reg, e, sm::sub::kObjDead),
+    CHECK(!sm::test::flag_of(reg, s, sm::sub::kObjDead),
           "a survivor is not Dead");
     CHECK(death_events(bus) == 0, "a survivor emits nothing");
-    CHECK((fx_of(reg, e) & sm::sub::kDmgFxPending) != 0,
+    CHECK((fx_of(reg, s) & sm::sub::kDmgFxPending) != 0,
           "DamageFx is stamped on every hit that lands");
-    CHECK((fx_of(reg, e) & sm::sub::kDmgFxLethal) == 0,
+    CHECK((fx_of(reg, s) & sm::sub::kDmgFxLethal) == 0,
           "a survivable blow's DamageFx is not lethal");
-    CHECK(last_hit_of(reg, e) == (sm::sub::ObjRef{5, 7u}),
+    CHECK(last_hit_of(reg, s) == (sm::sub::ObjRef{5, 7u}),
           "LastHit carries the killer's BODY — the reaper resolves its "
           "leader through the one kill-XP door (§41 root 5)");
 }
@@ -540,17 +532,16 @@ void test_player_death_is_not_an_npc_kill() {
     for (const DamageKind kind : kinds) {
         entt::registry reg;
         sm::EventBus bus;
-        const entt::entity e = make_body(reg, 5.0f);
-        sm::test::make_avatar(reg, e);
+        const int s = make_body(reg, 5.0f);
+        sm::test::make_avatar(reg, s);
         sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-        const int s = sm::test::slot_of(reg, e);
         const DamageResult hit =
             apply_damage(objs, nullptr, s,
                          DamageSource{sm::sub::ObjRef{3, 3u}, false},
                          50.0f, kind,
                          sm::DamageType::Blunt, &bus);
         CHECK(hit.lethal, "the player body does die");
-        CHECK(sm::test::flag_of(reg, e, sm::sub::kObjDead),
+        CHECK(sm::test::flag_of(reg, s, sm::sub::kObjDead),
               "Dead is stamped so the reconcile sees the death");
         CHECK(death_events(bus) == 0,
               "no NpcDeath for a player death, whatever the weapon");
@@ -562,9 +553,8 @@ void test_player_death_is_not_an_npc_kill() {
 void test_kindless_body_still_reports() {
     entt::registry reg;
     sm::EventBus bus;
-    const entt::entity e = make_body(reg, 5.0f, /*withKind=*/false);
+    const int s = make_body(reg, 5.0f, /*withKind=*/false);
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    const int s = sm::test::slot_of(reg, e);
     apply_damage(objs, nullptr, s,
                  DamageSource{sm::sub::ObjRef{1, 21u}, false, 33u},
                  50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
@@ -579,9 +569,8 @@ void test_kindless_body_still_reports() {
 void test_no_second_blow() {
     entt::registry reg;
     sm::EventBus bus;
-    const entt::entity e = make_body(reg, 10.0f);
+    const int s = make_body(reg, 10.0f);
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    const int s = sm::test::slot_of(reg, e);
     apply_damage(objs, nullptr, s, DamageSource{sm::sub::ObjRef{1, 1u}, false},
                  50.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
     const float hpAfterDeath = (*sm::sub::slot_pools(objs, s)).hp;
@@ -593,7 +582,7 @@ void test_no_second_blow() {
     CHECK((*sm::sub::slot_pools(objs, s)).hp == hpAfterDeath,
           "a corpse's hp does not move");
     CHECK(death_events(bus) == 1, "a corpse dies once — one event, ever");
-    CHECK(last_hit_of(reg, e) == (sm::sub::ObjRef{1, 1u}),
+    CHECK(last_hit_of(reg, s) == (sm::sub::ObjRef{1, 1u}),
           "the kill stays attributed to the killer, not the corpse-kicker");
 }
 
@@ -603,9 +592,8 @@ void test_execution_helper() {
     // Whole hp: every combat writer is integer now (phase 3), so a whole bar
     // is the world's own case. The fractional-bar edge (ceil = overkill by
     // under a point, still one blow) is asserted separately below.
-    const entt::entity e = make_body(reg, 37.0f);
+    const int s = make_body(reg, 37.0f);
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    const int s = sm::test::slot_of(reg, e);
     const DamageResult hit = apply_lethal_damage(
         objs, nullptr, s, DamageSource{.playerOwned = true}, DamageKind::Dev,
         &bus);
@@ -621,9 +609,9 @@ void test_execution_helper() {
 
     // The bar is INTEGER now (4г): the execution blow is exactly what is
     // left, and one blow is always enough — no ceil, no survivor.
-    const entt::entity odd = make_body(reg, 13);
+    const int odd = make_body(reg, 13);
     const DamageResult oddHit = apply_lethal_damage(
-        objs, nullptr, sm::test::slot_of(reg, odd),
+        objs, nullptr, odd,
         DamageSource{.playerOwned = true}, DamageKind::Dev, &bus);
     CHECK(oddHit.lethal && oddHit.applied == 13,
           "the whole remaining bar is one lethal blow, never a survivor");
@@ -637,18 +625,17 @@ void test_execution_helper() {
 void test_stale_attacker_ref_resolves_to_nobody() {
     entt::registry reg;
     sm::EventBus bus;
-    const entt::entity killer = make_body(reg, 10);
-    const entt::entity victim = make_body(reg, 30);
+    const int killer = make_body(reg, 10);
+    const int victim = make_body(reg, 30);
     sm::sub::SubObjects& arena = sm::test::arena_of(reg);
-    const int killerSlot = sm::test::slot_of(reg, killer);
-    CHECK(killerSlot >= 0, "предусловие своё: у убийцы есть слот арены");
-    const sm::sub::ObjRef killerRef = sm::sub::ref_of(arena, killerSlot);
-    apply_damage(arena, nullptr, sm::test::slot_of(reg, victim),
+    CHECK(killer >= 0, "предусловие своё: у убийцы есть слот арены");
+    const sm::sub::ObjRef killerRef = sm::sub::ref_of(arena, killer);
+    apply_damage(arena, nullptr, victim,
                  DamageSource{killerRef, false}, 10.0f,
                  DamageKind::Melee, sm::DamageType::Blunt, &bus);
     CHECK(last_hit_of(reg, victim) == killerRef,
           "живая ссылка хранится дословно");
-    CHECK(sm::sub::ref_slot(arena, killerRef) == killerSlot,
+    CHECK(sm::sub::ref_slot(arena, killerRef) == killer,
           "и разыменуется в слот убийцы, пока тот жив");
 
     // Убийца умирает — слот свободен. У двух дверей РАЗНЫЕ ответы, и оба —
@@ -656,19 +643,24 @@ void test_stale_attacker_ref_resolves_to_nobody() {
     // (чья это запись) живёт до перерождения — ПОСМЕРТНАЯ ОПЛАТА килла
     // (вердикт владельца 2026-10-10: «если член сквада лидера убил то
     // лидер получает экспу а что он сам умер какая разница»).
-    reg.destroy(killer);
+    // Слот освобождает РУКА (ломоть D: хук on_destroy умер вместе с
+    // ObjectSlot, и каждый путь смерти зовёт arena.free сам; она
+    // идемпотентна). Утверждения ниже охраняли не хук, а РАЗНЫЕ ответы двух
+    // дверей на мёртвый слот: жив-дверь судит бит kObjAlive, посмертная —
+    // только ID. Оба носителя живы и мимо free не достигаются.
+    arena.free(killer);
     CHECK(sm::sub::ref_slot(arena, killerRef) == -1,
           "мёртвый убийца протух для жив-двери (HUD, владение снарядом)");
-    CHECK(sm::sub::ref_slot_identity(arena, killerRef) == killerSlot,
+    CHECK(sm::sub::ref_slot_identity(arena, killerRef) == killer,
           "но запись ещё ЕГО: посмертная дверь платит лидеру за килл, "
           "сделанный живым (взаимное убийство в одном пакете жнеца)");
 
     // ФОРС КУРСОРА (прецедент body_contract_test): перерождаем РОВНО его
     // слот новым жильцом — сценарные пути дошли бы сюда лишь после 65536
     // рождений, и закон остался бы без носителя.
-    arena.cursor = killerSlot;
-    const entt::entity reborn = make_body(reg, 10);
-    CHECK(sm::test::slot_of(reg, reborn) == killerSlot,
+    arena.cursor = killer;
+    const int reborn = make_body(reg, 10);
+    CHECK(reborn == killer,
           "предусловие своё: слот перерождён (форс курсора)");
     CHECK(sm::sub::ref_slot(arena, killerRef) == -1,
           "перерождённый жилец ЧУЖОЙ килл не наследует: ID слота сменился");
@@ -681,17 +673,20 @@ void test_stale_attacker_ref_resolves_to_nobody() {
 void test_zero_and_missing_target() {
     entt::registry reg;
     sm::EventBus bus;
-    const entt::entity e = make_body(reg, 10.0f);
+    const int s = make_body(reg, 10.0f);
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
     const DamageResult zero =
-        apply_damage(objs, nullptr, sm::test::slot_of(reg, e), DamageSource{},
+        apply_damage(objs, nullptr, s, DamageSource{},
                      0.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
     CHECK(zero.applied == 0.0f, "a zero blow is a no-op");
-    CHECK(fx_of(reg, e) == 0u,
+    CHECK(fx_of(reg, s) == 0u,
           "a no-op stamps nothing — zero is a silent contribution");
-    const entt::entity bare = reg.create();  // no Health at all
+    // Тело БЕЗ баров — слот без give_pools: «баров нет» = maxHp 0 (ломоть D;
+    // прежде это была сущность без компоненты Pools), и дверь слышит ровно
+    // тот же nullptr от slot_pools.
+    const int bare = sm::test::give_body(reg);
     const DamageResult none =
-        apply_damage(objs, nullptr, sm::test::slot_of(reg, bare),
+        apply_damage(objs, nullptr, bare,
                      DamageSource{}, 10.0f, DamageKind::Melee,
                      sm::DamageType::Blunt, &bus);
     CHECK(none.applied == 0.0f, "a body without Health cannot be struck");
@@ -718,19 +713,18 @@ void test_the_blow_lands_on_the_record() {
     const sm::MacroHandle record = sm::store_birth(*store);
     store->pools[record.slot].hp = 100;
     store->pools[record.slot].maxHp = 100;
-    const entt::entity body = make_body(reg, 100);
+    const int body = make_body(reg, 100);
     sm::test::give_origin(reg, body, record);
 
     sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    const int bodySlot = sm::test::slot_of(reg, body);
     const DamageResult hit =
-        apply_damage(objs, store.get(), bodySlot, DamageSource{}, 30,
+        apply_damage(objs, store.get(), body, DamageSource{}, 30,
                      DamageKind::Script, sm::DamageType::Blunt, &bus);
     CHECK(hit.applied == 30, "the blow landed");
     CHECK((*sm::body_state<sm::ecs::Pools>(*store, record)).hp == 70,
           "a projected body's wound is its RECORD's wound, in the tick it "
           "lands — there is nothing left to fold up");
-    CHECK((*sm::sub::slot_pools(objs, bodySlot)).hp == 100,
+    CHECK((*sm::sub::slot_pools(objs, body)).hp == 100,
           "...and the body's own block is untouched: it is the scene's copy, "
           "not a second memory the world must reconcile");
 
@@ -745,18 +739,17 @@ void test_the_blow_lands_on_the_record() {
     // NEGATIVE CONTROL: no backlink, no record — the very same call spends the
     // body's own bar. Without this, the assertion above could be passing for
     // any reason at all.
-    const entt::entity orphan = make_body(reg, 100);
-    const int orphanSlot = sm::test::slot_of(reg, orphan);
-    apply_damage(objs, store.get(), orphanSlot, DamageSource{}, 30,
+    const int orphan = make_body(reg, 100);
+    apply_damage(objs, store.get(), orphan, DamageSource{}, 30,
                  DamageKind::Script, sm::DamageType::Blunt, &bus);
-    CHECK((*sm::sub::slot_pools(objs, orphanSlot)).hp == 70,
+    CHECK((*sm::sub::slot_pools(objs, orphan)).hp == 70,
           "a body nothing above remembers spends its own bar — the detector "
           "above reads a real difference");
 
     // A LETHAL blow judges by the record: the door must not read one bar and
     // kill by another. Three more Script blows of 30 leave the record at -20.
     for (int i = 0; i < 3; ++i) {
-        apply_damage(objs, store.get(), bodySlot, DamageSource{}, 30,
+        apply_damage(objs, store.get(), body, DamageSource{}, 30,
                      DamageKind::Script, sm::DamageType::Blunt, &bus);
     }
     CHECK(sm::test::flag_of(reg, body, sm::sub::kObjDead)

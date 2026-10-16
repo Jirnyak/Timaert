@@ -91,25 +91,11 @@ inline CharacterSheet* slot_sheet_of(SubObjects& o, int s, MacroStore& st) {
 
 
 
-// ── СЛОТ ТЕЛА — ПРЕАМБУЛА ОСТАВШИХСЯ ДВЕРЕЙ (ломоть 7, ступень ii) ──────
-// FIELD-адаптеры умерли ломтём C (2026-10-16): звонящие зовут слот-формы
-// doors.h сами. Здесь остались ТОЛЬКО двери, которым нужна сущность по
-// существу транзита: body_slot (перевод сущность → слот; умирает с
-// ObjectSlot, ломоть D) и три двери аватара ниже (их держат engine/possess —
-// aim_target и одержимость пока адресуют тела сущностью). -1 значит «тела
-// на арене нет»: сущность нулевая/мертва ИЛИ слота у неё нет.
-inline int body_slot(const entt::registry& reg, entt::entity e) {
-    if (e == entt::null || !reg.valid(e)) return -1;
-    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
-    return os != nullptr ? int(os->slot) : -1;
-}
-
 // ── МОСТ ЕДИНОГО МАССИВА ОБЪЕКТОВ (M-150, транзит миграции) ─────────────
 // Тот же ctx-приём, что у MacroStore: указатель живёт в реестре и умирает
-// вместе с ним (ломоть 7). on_destroy-хук — ЕДИНСТВЕННАЯ точка
-// освобождения слота на весь период миграции: любой путь смерти сущности
-// (жнец, уход домой на рассвете, clear сцены или мира) проходит через
-// него, и забытый путь невыразим.
+// вместе с ним (ломоть E). Хук on_destroy УМЕР ломтём D вместе с
+// ObjectSlot: слот освобождает КАЖДЫЙ путь смерти сам, рукой arena.free
+// (она идемпотентна — добивающие свипы сцены безвредны по построению).
 inline SubObjects& objects_of(entt::registry& reg) {
     return *reg.ctx().get<SubObjects*>();
 }
@@ -117,57 +103,13 @@ inline SubObjects* objects_find(entt::registry& reg) {
     auto* p = reg.ctx().find<SubObjects*>();
     return p != nullptr ? *p : nullptr;
 }
-// Арена приходит ПЭЙЛОАДОМ соединения, а не из ctx: деструктор реестра
-// стреляет on_destroy, когда ctx уже мёртв (vars объявлены после пулов и
-// умирают первыми) — хук, читавший ctx, ловил ноль (куплено SIGSEGV
-// damage_door_test 2026-10-05).
-inline void on_object_slot_destroy(SubObjects& objs, entt::registry& reg,
-                                   entt::entity e) {
-    objs.free(int(reg.get<ecs::ObjectSlot>(e).slot));
-}
 inline void objects_attach(entt::registry& reg, SubObjects* o) {
     reg.ctx().insert_or_assign(o);
-    reg.on_destroy<ecs::ObjectSlot>().connect<&on_object_slot_destroy>(*o);
 }
 
-// (FIELD-адаптеры — object_flag*, body_kind/level/pools/combat/sheet/
-// standing/sprite/light/macro_origin/debt/ai/pos/visual/missile,
-// going_home/airborne, set_*, clear_*, state_of<C>, macro_record_of,
-// pools_of — умерли ломтём C 2026-10-16: их законы живут ОДНИМ телом в
-// слот-формах sub/doors.h и в шовных слот-дверях выше; звонящие берут слот
-// сами. Entity-двери снаряда умерли раньше, в ступени (v).)
-
-// ── АКТИВНОЕ ТЕЛО — ДВЕРИ ОДНОЙ ССЫЛКИ (вердикт 2026-10-05) ─────────────
-// «Это игрок?» — сравнение со ссылкой; «какое тело игрока?» — чтение
-// ссылки O(1) (прежний view<AvatarTag> сканировал реестр на каждый
-// вопрос). Запись — ОДНА дверь: одержимость переносит тело одной
-// перезаписью, половинчатое состояние «тег снят, тег не поставлен»
-// невыразимо по построению.
-inline void set_avatar(entt::registry& reg, entt::entity e) {
-    SubObjects* objs = objects_find(reg);
-    if (objs == nullptr) return;          // фикстура без арены — транзит
-    if (e == entt::null) {
-        objs->avatar = ObjRef{};          // ссылки нет (id == 0)
-        objs->avatarEnttBits = 0xFFFFFFFFu;
-        return;
-    }
-    const auto* os = reg.try_get<ecs::ObjectSlot>(e);
-    if (os == nullptr) return;            // тело без слота — транзит
-    objs->avatar = ObjRef{os->slot, objs->id[std::size_t(os->slot)]};
-    objs->avatarEnttBits = std::uint32_t(entt::to_integral(e));
-}
-inline bool avatar_ref_live(const SubObjects& o) {
-    return o.avatar.id != 0u
-        && o.id[std::size_t(o.avatar.slot)] == o.avatar.id
-        && (o.flags[std::size_t(o.avatar.slot)] & kObjAlive) != 0u;
-}
-// (is_avatar умер ломтём C — ноль звонящих: вопрос «это игрок?» задаётся
-// слотом, `SubObjects::is_avatar_slot`, или сравнением ссылок ObjRef.)
-inline entt::entity avatar_entity(const entt::registry& reg) {
-    SubObjects* const* po = reg.ctx().find<SubObjects*>();
-    if (po == nullptr || !avatar_ref_live(**po)) return entt::null;
-    const entt::entity e = entt::entity((*po)->avatarEnttBits);
-    return reg.valid(e) ? e : entt::null;
-}
+// (body_slot и entity-двери аватара — set_avatar/avatar_entity — умерли
+// ломтём D вместе с ObjectSlot: тело адресуется слотом, активное тело —
+// ссылка ObjRef, пишет её одна дверь set_avatar_slot@sub/doors.h, живость
+// судит avatar_ref_live там же. FIELD-адаптеры умерли раньше, ломтём C.)
 
 } // namespace sm::sub

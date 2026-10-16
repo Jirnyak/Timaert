@@ -55,6 +55,20 @@ inline ObjRef ref_of(const SubObjects& o, int slot) {
 inline int avatar_slot(const SubObjects& o) {
     return ref_slot(o, o.avatar);
 }
+// Жива ли ссылка активного тела (гейты HUD/смоуков): тот же суд, что у
+// ref_slot, но булев — ссылка есть, ID совпал, слот жив.
+inline bool avatar_ref_live(const SubObjects& o) {
+    return o.avatar.id != 0u
+        && o.id[std::size_t(o.avatar.slot)] == o.avatar.id
+        && (o.flags[std::size_t(o.avatar.slot)] & kObjAlive) != 0u;
+}
+// Запись ссылки активного тела — ОДНА дверь переноса (вердикт 2026-10-05:
+// активность — ссылка, не свойство тела; ломоть D: entt-носитель умер,
+// адрес пишется СЛОТОМ). Отрицательный слот = ссылки нет (между сценами);
+// перенос — одна перезапись, половинчатого состояния не существует.
+inline void set_avatar_slot(SubObjects& o, int s) {
+    o.avatar = s >= 0 ? ref_of(o, s) : ObjRef{};
+}
 
 // ── Биты маски ───────────────────────────────────────────────────────────
 inline bool slot_flag(const SubObjects& o, int s, std::uint16_t bit) {

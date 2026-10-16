@@ -71,43 +71,41 @@ bool find_projectile_pose_by_spell(sm::ecs::World& w, const char* spellId,
     return true;
 }
 
-entt::entity add_target(sm::ecs::World& w, float x, float y,
-                        int hp, bool playerSide) {
-    auto e = w.create();
-    // Слот арены объектов: атрибуция «кем ранен» — колонка lastHitBy (1а).
-    sm::test::give_slot(w.reg, e);
-    sm::test::give_pos(w.reg, e, x, y, 0.0f);
-    sm::test::give_pools(w.reg, e, sm::ecs::Pools{hp, hp});
-    sm::test::give_sprite(w.reg, e, sm::ecs::Sprite{std::uint16_t(0),
+// Тело — СЛОТ арены (ломоть D: сущностей у тел сцены нет). Атрибуция
+// «кем ранен» — колонка lastHitBy того же слота (1а).
+int add_target(sm::ecs::World& w, float x, float y,
+               int hp, bool playerSide) {
+    const int s = sm::test::give_body(w.reg);
+    sm::test::give_pos(w.reg, s, x, y, 0.0f);
+    sm::test::give_pools(w.reg, s, sm::ecs::Pools{hp, hp});
+    sm::test::give_sprite(w.reg, s, sm::ecs::Sprite{std::uint16_t(0),
         std::uint8_t(255), std::uint8_t(255), std::uint8_t(255), 6.0f});
     if (playerSide) {
-        sm::test::give_flag(w.reg, e, sm::sub::kObjPlayerSoldier);
+        sm::test::give_flag(w.reg, s, sm::sub::kObjPlayerSoldier);
     } else {
-        sm::test::give_kind(w.reg, e, sm::ecs::NPCKind{2, 2});
+        sm::test::give_kind(w.reg, s, sm::ecs::NPCKind{2, 2});
     }
-    return e;
+    return s;
 }
 
-// A real player-tagged entity to own player-cast projectiles. Inc 4d retired
-// the ownerId==0 sentinel — ownership/faction now key off the owner entity's
-// tags, exactly as production does via the avatar scene reference (iii-б).
+// A real player-tagged body to own player-cast projectiles. Inc 4d retired
+// the ownerId==0 sentinel — ownership/faction now key off the owner body's
+// columns, exactly as production does via the avatar scene reference (iii-б).
 // Placed far from targets so it is never itself in a blast/line by accident.
 sm::sub::ObjRef add_player(sm::ecs::World& w, float x, float y) {
     // Кастер — НЕ слот 0: на фикстуре, где игрок — первый жилец арены,
     // мутация «писатель кладёт чужой слот 0» прошла бы зелёной (слепота
     // слота 0 — родня слепоты сущности 0, пойманной в (iii-д)).
     (void)sm::test::arena_of(w.reg).alloc(sm::ecs::Position{});
-    auto e = w.create();
-    sm::test::give_slot(w.reg, e);
-    sm::test::give_pos(w.reg, e, x, y, 0.0f);
-    sm::test::give_pools(w.reg, e, sm::ecs::Pools{1000, 1000});
-    sm::test::make_avatar(w.reg, e);
+    const int s = sm::test::give_body(w.reg);
+    sm::test::give_pos(w.reg, s, x, y, 0.0f);
+    sm::test::give_pools(w.reg, s, sm::ecs::Pools{1000, 1000});
+    sm::test::make_avatar(w.reg, s);
     return sm::sub::objects_of(w.reg).avatar;
 }
 
-float hp_of(sm::ecs::World& w, entt::entity e) {
+float hp_of(sm::ecs::World& w, int s) {
     sm::sub::SubObjects& objs = sm::test::arena_of(w.reg);
-    const int s = sm::test::slot_of(w.reg, e);
     const auto* hp = s >= 0 ? sm::sub::slot_pools(objs, s) : nullptr;
     return hp ? hp->hp : -1.0f;
 }
@@ -115,14 +113,13 @@ float hp_of(sm::ecs::World& w, entt::entity e) {
 // Атрибуция «кем убит/ранен» — колонка lastHitBy единого массива объектов,
 // ссылка сцены ObjRef (ступень (iii); §41 корень 5: жнец резолвит лидера
 // по телу). Ожидание строится ТОЙ ЖЕ дверью ref_of, что у писателя.
-bool last_hit_by(sm::ecs::World& w, entt::entity e, entt::entity attacker) {
-    const int slot = sm::test::slot_of(w.reg, attacker);
-    return slot >= 0
-        && sm::test::last_hit_of(w.reg, e)
-               == sm::sub::ref_of(sm::sub::objects_of(w.reg), slot);
+bool last_hit_by(sm::ecs::World& w, int s, int attackerSlot) {
+    return attackerSlot >= 0
+        && sm::test::last_hit_of(w.reg, s)
+               == sm::sub::ref_of(sm::sub::objects_of(w.reg), attackerSlot);
 }
-bool last_hit_by(sm::ecs::World& w, entt::entity e, sm::sub::ObjRef owner) {
-    return owner.id != 0u && sm::test::last_hit_of(w.reg, e) == owner;
+bool last_hit_by(sm::ecs::World& w, int s, sm::sub::ObjRef owner) {
+    return owner.id != 0u && sm::test::last_hit_of(w.reg, s) == owner;
 }
 
 struct SeqRng {
@@ -461,11 +458,15 @@ int main() {
                         // the same constant that, through ecs::BodyRadius, had become the
                         // player's physical width. The shell belongs to the body now, so an
                         // expectation that names a width names the wrong thing.
+                        //
+                        // ЭТОТ каст — БЕЗ кастера (ObjRef{}), и шелл берётся из того же
+                        // имени, из которого его берёт продакшен в этом случае
+                        // (`casterSlot >= 0 ? slot_body_radius(...) : kBodyRadiusFallback`,
+                        // spell_book.cpp). Прежний носитель — `slot_of(reg, entt::entity(0))`
+                        // — умер с сущностями тел (ломоть D), а сущности 0 в этом мире и не
+                        // было: дверь читалась по слоту −1.
                         || !(magicBoltPos.x - 100.0f
-                             > sm::sub::slot_body_radius(
-                                   sm::sub::objects_of(world.reg),
-                                   sm::test::slot_of(world.reg, entt::entity(0)))
-                                   + magicBolt.radius)
+                             > sm::sub::kBodyRadiusFallback + magicBolt.radius)
                         || !nearf(magicBoltPos.y, 100.0f)
                         || !nearf(magicBoltPos.y, 100.0f)
                         || !nearf(magicBolt.maxLifeTimer, 3.0f));
@@ -485,12 +486,11 @@ int main() {
     // through the S14 door. No per-spell timer exists anywhere, and a busy
     // body starts NO action, whatever occupied it.
     sm::spellbook_learn(book, sm::spell_ordinal("fireball"));
-    const auto casterBody = world.create();
-    sm::test::give_pos(world.reg, casterBody, 100.0f, 100.0f, 0.0f);
-    sm::test::give_combat(world.reg, casterBody, sm::ecs::Combat{});
+    const int casterSlot = sm::test::give_body(world.reg);
+    sm::test::give_pos(world.reg, casterSlot, 100.0f, 100.0f, 0.0f);
+    sm::test::give_combat(world.reg, casterSlot, sm::ecs::Combat{});
     // Кастер — ссылка сцены (iii-б): слот тела через ту же дверь, что у
     // прод-писателя.
-    const int casterSlot = sm::test::slot_of(world.reg, casterBody);
     const sm::sub::ObjRef casterId = sm::sub::ref_of(
         sm::sub::objects_of(world.reg), casterSlot);
     const bool ok38 = !(!sm::spellbook_cast(world, book, combat, attributes, skills,
@@ -716,11 +716,10 @@ int main() {
                         || !nearf(beamDesc.radius, 1.5f)
                         // The beam's origin obeys the same muzzle law as a bolt, and is
                         // asserted as that law rather than as the number it came to.
+                        // Кастера у этого каста нет (ObjRef{}) — шелл тем же именем, что
+                        // у болта выше (ломоть D: сущности 0 больше не существует).
                         || !(beamDesc.originX - 100.0f
-                             > sm::sub::slot_body_radius(
-                                   sm::sub::objects_of(world.reg),
-                                   sm::test::slot_of(world.reg, entt::entity(0)))
-                                   + beamDesc.radius)
+                             > sm::sub::kBodyRadiusFallback + beamDesc.radius)
                         || !nearf(beamDesc.originY, 100.0f));
     CHECK(ok56,
           "the beam is born OUTSIDE the caster body - muzzle clear of body_radius plus its own");
@@ -1157,14 +1156,12 @@ int main() {
         // Арена — предусловие снарядов (ступень (v): чистые жильцы
         // арены; §8 п.11 — свидетель сам рожает предусловие).
         sm::test::arena_of(selfWorld.reg);
-        auto selfPlayer = selfWorld.create();
-        sm::test::give_slot(selfWorld.reg, selfPlayer);
+        const int selfPlayer = sm::test::give_body(selfWorld.reg);
         sm::test::give_pos(selfWorld.reg, selfPlayer, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(selfWorld.reg, selfPlayer, sm::ecs::Pools{100, 100});
         sm::test::make_avatar(selfWorld.reg, selfPlayer);
         const sm::sub::ObjRef selfRef = sm::sub::ref_of(
-            sm::sub::objects_of(selfWorld.reg),
-            sm::test::slot_of(selfWorld.reg, selfPlayer));
+            sm::sub::objects_of(selfWorld.reg), selfPlayer);
         // Снаряд — чистый жилец арены (ступень (v)): слот без сущности.
         sm::test::give_projectile(selfWorld.reg,
             sm::ecs::Projectile{
@@ -1202,14 +1199,12 @@ int main() {
         // Арена — предусловие снарядов (ступень (v): чистые жильцы
         // арены; §8 п.11 — свидетель сам рожает предусловие).
         sm::test::arena_of(shieldWorld.reg);
-        auto shieldPlayer = shieldWorld.create();
-        sm::test::give_slot(shieldWorld.reg, shieldPlayer);
+        const int shieldPlayer = sm::test::give_body(shieldWorld.reg);
         sm::test::give_pos(shieldWorld.reg, shieldPlayer, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(shieldWorld.reg, shieldPlayer, sm::ecs::Pools{100, 100});
         sm::test::make_avatar(shieldWorld.reg, shieldPlayer);
         const sm::sub::ObjRef shieldRef = sm::sub::ref_of(
-            sm::sub::objects_of(shieldWorld.reg),
-            sm::test::slot_of(shieldWorld.reg, shieldPlayer));
+            sm::sub::objects_of(shieldWorld.reg), shieldPlayer);
         sm::test::give_projectile(shieldWorld.reg,
             sm::ecs::Projectile{
                 .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
@@ -1243,14 +1238,12 @@ int main() {
         // Арена — предусловие снарядов (ступень (v): чистые жильцы
         // арены; §8 п.11 — свидетель сам рожает предусловие).
         sm::test::arena_of(npcWorld.reg);
-        auto npcCaster = npcWorld.create();
-        sm::test::give_slot(npcWorld.reg, npcCaster);
+        const int npcCaster = sm::test::give_body(npcWorld.reg);
         sm::test::give_pos(npcWorld.reg, npcCaster, 0.0f, 0.0f, 0.0f);
         sm::test::give_pools(npcWorld.reg, npcCaster, sm::ecs::Pools{100, 100});
         sm::test::give_kind(npcWorld.reg, npcCaster, sm::ecs::NPCKind{2, 2});
         const sm::sub::ObjRef npcRef = sm::sub::ref_of(
-            sm::sub::objects_of(npcWorld.reg),
-            sm::test::slot_of(npcWorld.reg, npcCaster));
+            sm::sub::objects_of(npcWorld.reg), npcCaster);
         sm::test::give_projectile(npcWorld.reg,
             sm::ecs::Projectile{
                 .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 2.5f,
@@ -1318,11 +1311,11 @@ int main() {
             // margin is exactly what keeps the muzzle clear of that shell.
             const auto sweepCaster = add_player(sweepWorld, 0.0f, 0.0f);
             sm::test::give_ai(
-                sweepWorld.reg, sm::sub::avatar_entity(sweepWorld.reg),
+                sweepWorld.reg,
+                sm::sub::avatar_slot(sm::test::arena_of(sweepWorld.reg)),
                 sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
                                     0.0f, 0.0f, 0.0f, 0.0f, 1.5f});
-            auto sweepTarget = sweepWorld.create();
-            sm::test::give_slot(sweepWorld.reg, sweepTarget);
+            const int sweepTarget = sm::test::give_body(sweepWorld.reg);
             sm::test::give_pos(sweepWorld.reg, sweepTarget, range, 0.0f, 0.0f);
             sm::test::give_pools(sweepWorld.reg, sweepTarget, sm::ecs::Pools{100, 100});
             sm::test::give_ai(
@@ -1366,9 +1359,10 @@ int main() {
             if (!ok100) return 1;
             // The caster stands at the origin, behind the muzzle: the stretch
             // swept back to his hand must never wound him.
-            const bool ok101 = !(!nearf(hp_of(sweepWorld,
-                                              sm::sub::avatar_entity(sweepWorld.reg)),
-                                        1000.0f));
+            const bool ok101 = !(!nearf(
+                hp_of(sweepWorld,
+                      sm::sub::avatar_slot(sm::test::arena_of(sweepWorld.reg))),
+                1000.0f));
             CHECK(ok101, "sweep: muzzle stretch wounded its own caster");
             if (!ok101) return 1;
         }
@@ -1442,12 +1436,10 @@ int main() {
     // entt-битов и свидетеля не имел.
     {
         sm::ecs::World orphanWorld;
-        auto orphanCaster = orphanWorld.create();
-        sm::test::give_slot(orphanWorld.reg, orphanCaster);
+        const int orphanCaster = sm::test::give_body(orphanWorld.reg);
         sm::test::make_avatar(orphanWorld.reg, orphanCaster);
         const sm::sub::ObjRef ownerRef = sm::sub::ref_of(
-            sm::sub::objects_of(orphanWorld.reg),
-            sm::test::slot_of(orphanWorld.reg, orphanCaster));
+            sm::sub::objects_of(orphanWorld.reg), orphanCaster);
         sm::ecs::Projectile orphanBolt{};
         orphanBolt.ownerSlot = ownerRef.slot;
         orphanBolt.ownerId = ownerRef.id;
@@ -1456,7 +1448,9 @@ int main() {
                                                        orphanBolt),
               "живой аватар-владелец опознан по ссылке");
         const int ownerSlot = int(ownerRef.slot);
-        orphanWorld.reg.destroy(orphanCaster);
+        // Смерть тела — ЗАНУЛЕНИЕ СЛОТА (ломоть D): reg.destroy сносить было
+        // некого, слот освобождает та же дверь, что у всех путей смерти.
+        sm::test::arena_of(orphanWorld.reg).free(ownerSlot);
         CHECK(!sm::sub::projectile_owner_is_player_side(
                   sm::sub::objects_of(orphanWorld.reg),
                                                         orphanBolt),
@@ -1465,11 +1459,10 @@ int main() {
         // жильцом, который БЫЛ БЫ на стороне игрока, — только сверка ID
         // отличает его от погибшего кастера.
         sm::sub::objects_of(orphanWorld.reg).cursor = ownerSlot;
-        auto reborn = orphanWorld.create();
-        sm::test::give_slot(orphanWorld.reg, reborn);
+        const int reborn = sm::test::give_body(orphanWorld.reg);
         sm::test::give_flag(orphanWorld.reg, reborn,
                             sm::sub::kObjPlayerSoldier);
-        CHECK(sm::test::slot_of(orphanWorld.reg, reborn) == ownerSlot,
+        CHECK(reborn == ownerSlot,
               "предусловие своё: слот владельца перерождён (форс курсора)");
         CHECK(!sm::sub::projectile_owner_is_player_side(
                   sm::sub::objects_of(orphanWorld.reg),

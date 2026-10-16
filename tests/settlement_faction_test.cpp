@@ -165,9 +165,12 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     int citizens = 0;
     int wrongFaction = 0;
     int imperial = 0;
-    auto view = world.reg.view<sm::ecs::ObjectSlot>();
-    for (auto e : view) {
-        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+    // СВИП ПЛОСКОЙ АРЕНЫ (ломоть D): жилец сцены — бит kObjAlive. Отбор
+    // ГОРОЖАН не изменился ни на строку: род — колонка слота, «рода нет» =
+    // kObjNoKind, поэтому ни снаряд, ни пламя пропа (у обоих рода нет вовсе)
+    // в счёт не входят — ровно как они не входили и во вьюхе.
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
         const auto* kind = sm::sub::slot_kind(objs, s);
         if (kind == nullptr) continue;
         if (kind->type >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
@@ -220,9 +223,9 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
 
     int citizens = 0;
     int foreign = 0;
-    auto view = world.reg.view<sm::ecs::ObjectSlot>();
-    for (auto e : view) {
-        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+    // Тот же свип арены по kObjAlive (ломоть D); гейт рода тот же.
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
         const auto* kind = sm::sub::slot_kind(objs, s);
         if (kind == nullptr) continue;
         if (kind->type >= std::uint16_t(sm::NPCType::Count)) continue;

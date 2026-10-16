@@ -1329,6 +1329,10 @@ void destroy_world(App& app) {
     app.activeQuests.clear();
     app.questMarkerSig = 0;   // invalidate derived quest-marker cache
     app.ecs.reg.clear();
+    // Арена сцены умирает вместе с миром (ломоть D): прежде её слоты
+    // свободил on_destroy-хук изнутри reg.clear() выше — дверь теперь своя,
+    // no-op при живом хуке.
+    if (app.sceneObjects) app.sceneObjects->clear();
     // Store умирает вместе с миром (store_reset@src/macro/store.h): без
     // этого каждая загрузка оставляла население прошлого мира живыми
     // слотами-призраками, и restore рожал поверх (смоук SAVE-5 поймал два
@@ -5108,21 +5112,22 @@ void draw_debug_panels(App& app) {
                 ImGui::TableSetupColumn("tags");
                 ImGui::TableSetupScrollFreeze(0, 1);
                 ImGui::TableHeadersRow();
-                // Слот-идиома (ii-б): слот один раз из вьюхи, арена хойстом,
-                // дальше слот-двери; сущность остаётся только колонкой id.
-                // Арены нет — нет и тел (слот эмплейсит только рождение),
-                // поэтому пустой гейт честен, а не ветка-заглушка.
+                // Свип арены по биту (ломоть D): это таблица ТЕЛ — снарядные
+                // слоты отсекает роль (их счёт даёт Projectile(col) ниже), а
+                // колонка id несёт ID рождения арены (сущность из строки
+                // ушла). Арены нет — нет и тел, пустой гейт честен.
                 sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
-                auto entView = reg.view<sm::ecs::ObjectSlot>();
-                for (auto e : entView) {
-                    if (objs == nullptr) break;
+                for (int s = 0;
+                     objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
+                    const std::uint16_t f = objs->flags[std::size_t(s)];
+                    if ((f & sm::sub::kObjAlive) == 0u) continue;
+                    if ((f & sm::sub::kObjProjectile) != 0u) continue;
                     ++total;
                     if (shown >= kMaxRows) continue;
-                    const int s = int(entView.get<sm::ecs::ObjectSlot>(e).slot);
                     const sm::ecs::Position& pos = objs->pos[std::size_t(s)];
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
-                    ImGui::Text("%u", unsigned(entt::to_integral(e)));
+                    ImGui::Text("%u", unsigned(objs->id[std::size_t(s)]));
                     ImGui::TableNextColumn();
                     if (const auto* k = sm::sub::slot_kind(*objs, s)) {
                         ImGui::TextUnformatted(
@@ -5225,8 +5230,6 @@ void draw_debug_panels(App& app) {
                 {"Dead(col)",       maskCnt(sm::sub::kObjDead)},
                 {"PlayerSoldier(col)", maskCnt(sm::sub::kObjPlayerSoldier)},
                 {"TempHostile(col)",   maskCnt(sm::sub::kObjTempHostile)},
-                {"ObjectSlots",     std::size_t(
-                     sm::sub::objects_of(reg).count)},
             };
             if (ImGui::BeginTable("ecs", 2,
                                   ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
