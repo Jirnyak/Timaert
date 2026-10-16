@@ -1,32 +1,27 @@
 // Арена объектов сцены ДЛЯ ФИКСТУР (M-150 ломоть 1а): свидетель обязан САМ
-// рожать своё предусловие (§8 п.11) — телу, рождённому мимо двери спавна
-// (голым reg.create в фикстуре), слот единого массива выдаёт эта обвязка.
-// Чтение колонок — те же выражения, что у продакшена, никакой второй копии
-// закона: helpers лишь избавляют тесты от повторения try_get-цепочки.
+// рожать своё предусловие (§8 п.11) — телу, рождённому мимо двери спавна,
+// слот единого массива выдаёт эта обвязка. Чтение колонок — те же выражения,
+// что у продакшена, никакой второй копии закона: helpers лишь избавляют
+// тесты от повторения слот-цепочки.
+//
+// АРЕНА — НА ТЕСТ, НЕ НА МИР (ломоть E). Прежняя форма вешала арену на
+// entt-реестр ctx-мостом и копила все арены процесса в статическом векторе
+// «до конца процесса»: SubObjects = 38.3 МиБ, и паритетные тесты с
+// несколькими мирами держали ~0.5 ГиБ резидента мёртвым грузом. Реестр умер
+// (ломоть E), носитель арены — uptr В КАДРЕ ТЕСТА: умирает со своим блоком,
+// как в игре арена умирает со своим миром. SubObjects в стек не влезает —
+// потому фабрика, не значение (та же причина, что у `make_body_crowd`).
 #pragma once
 
 #include <memory>
-#include <vector>
-
-#include <entt/entt.hpp>
 
 #include "ecs/components.h"
-#include "sub/record.h"   // objects_attach / objects_of / objects_find
+#include "sub/record.h"   // слот-двери арены (slot_set_* / birth_projectile)
 
 namespace sm::test {
 
-// Носители живут до конца процесса: реестров у тестов много, арена — на
-// каждый, по требованию.
-inline std::vector<std::unique_ptr<sm::sub::SubObjects>>& scene_arenas() {
-    static std::vector<std::unique_ptr<sm::sub::SubObjects>> arenas;
-    return arenas;
-}
-
-inline sm::sub::SubObjects& arena_of(entt::registry& reg) {
-    if (sm::sub::SubObjects* o = sm::sub::objects_find(reg)) return *o;
-    scene_arenas().push_back(std::make_unique<sm::sub::SubObjects>());
-    sm::sub::objects_attach(reg, scene_arenas().back().get());
-    return *scene_arenas().back();
+inline std::unique_ptr<sm::sub::SubObjects> make_scene_arena() {
+    return std::make_unique<sm::sub::SubObjects>();
 }
 
 // ШИРОКАЯ ФАЗА ДЛЯ СВИДЕТЕЛЕЙ (§8 п.11: предусловие рождает сам свидетель).
@@ -42,7 +37,7 @@ inline sm::sub::SubObjects& arena_of(entt::registry& reg) {
 // свидетель тиком не является (§8 п.8 — приоритет игра, тест прибор).
 // Настоящую `UnitGrid` держит и сверяет с этим перечислителем
 // `spell_broadphase_parity_test` — там она и есть предмет проверки.
-// `user` — АРЕНА (`&arena_of(reg)`), подпись годится обеим дверям разом.
+// `user` — АРЕНА (`&objs`), подпись годится обеим дверям разом.
 inline std::uint32_t all_live_slots(void* user, float, float, float,
                                     std::uint16_t (&out)[sm::kMaxSubObjects]) {
     const auto* objs = static_cast<const sm::sub::SubObjects*>(user);
@@ -56,85 +51,86 @@ inline std::uint32_t all_live_slots(void* user, float, float, float,
 
 // Тело фикстуры — СЛОТ арены (ломоть D: сущностей у тел больше нет).
 // Рождение — как выдала бы дверь спавна; -1 = кап. Все give_* ниже берут
-// СЛОТ и пишут колонку той же слот-дверью, что продакшен.
-inline int give_body(entt::registry& reg) {
-    return arena_of(reg).alloc(sm::ecs::Position{});
+// АРЕНУ и СЛОТ и пишут колонку той же слот-дверью, что продакшен (ломоть E:
+// реестра-посредника больше не существует).
+inline int give_body(sm::sub::SubObjects& objs) {
+    return objs.alloc(sm::ecs::Position{});
 }
 
 // Позиция телу фикстуры (ломоть 5) — как записало бы рождение.
-inline void give_pos(entt::registry& reg, int s,
+inline void give_pos(sm::sub::SubObjects& objs, int s,
                      float x, float y, float z = 0.0f) {
     if (s >= 0) {
-        arena_of(reg).pos[std::size_t(s)] = sm::ecs::Position{x, y, z};
+        objs.pos[std::size_t(s)] = sm::ecs::Position{x, y, z};
     }
 }
 
 // Бит маски телу фикстуры — как поставила бы боевая дверь.
-inline void give_flag(entt::registry& reg, int s, std::uint16_t bit) {
-    if (s >= 0) sm::sub::slot_flag_set(arena_of(reg), s, bit);
+inline void give_flag(sm::sub::SubObjects& objs, int s, std::uint16_t bit) {
+    if (s >= 0) sm::sub::slot_flag_set(objs, s, bit);
 }
-inline bool flag_of(entt::registry& reg, int s, std::uint16_t bit) {
-    return s >= 0 && sm::sub::slot_flag(arena_of(reg), s, bit);
+inline bool flag_of(const sm::sub::SubObjects& objs, int s,
+                    std::uint16_t bit) {
+    return s >= 0 && sm::sub::slot_flag(objs, s, bit);
 }
 // Активное тело фикстуре — как поставила бы дверь входа (ссылка сцены,
 // вердикт 2026-10-05): перезапись ссылки той же прод-дверью.
-inline void make_avatar(entt::registry& reg, int s) {
-    sm::sub::set_avatar_slot(arena_of(reg), s);
+inline void make_avatar(sm::sub::SubObjects& objs, int s) {
+    sm::sub::set_avatar_slot(objs, s);
 }
 
 // Род/уровень телу фикстуры — как записала бы дверь рождения (кусок 1).
-inline void give_kind(entt::registry& reg, int s, sm::ecs::NPCKind k) {
-    if (s >= 0) sm::sub::slot_set_kind(arena_of(reg), s, k);
+inline void give_kind(sm::sub::SubObjects& objs, int s, sm::ecs::NPCKind k) {
+    if (s >= 0) sm::sub::slot_set_kind(objs, s, k);
 }
-inline void give_level(entt::registry& reg, int s, std::int16_t v) {
-    if (s >= 0) sm::sub::slot_set_level(arena_of(reg), s, v);
+inline void give_level(sm::sub::SubObjects& objs, int s, std::int16_t v) {
+    if (s >= 0) sm::sub::slot_set_level(objs, s, v);
 }
 // Бэклинк телу фикстуры — как записала бы дверь tracked-рождения (ломоть 4).
 // Снятие — give_origin с MacroHandle{} (бита нет, «записи нет» = невалидный
 // хэндл в самой колонке).
-inline void give_origin(entt::registry& reg, int s, sm::MacroHandle h) {
-    if (s >= 0) sm::sub::slot_set_origin(arena_of(reg), s, h);
+inline void give_origin(sm::sub::SubObjects& objs, int s, sm::MacroHandle h) {
+    if (s >= 0) sm::sub::slot_set_origin(objs, s, h);
 }
 // Вид телу фикстуры — как записала бы дверь рождения (ломоть 3).
-inline void give_sprite(entt::registry& reg, int s,
+inline void give_sprite(sm::sub::SubObjects& objs, int s,
                         const sm::ecs::Sprite& sp) {
-    if (s >= 0) sm::sub::slot_set_sprite(arena_of(reg), s, sp);
+    if (s >= 0) sm::sub::slot_set_sprite(objs, s, sp);
 }
 // Бары/лист/снарядные — колонки арены (кусок 2).
-inline void give_pools(entt::registry& reg, int s, sm::ecs::Pools p) {
-    if (s >= 0) sm::sub::slot_set_pools(arena_of(reg), s, p);
+inline void give_pools(sm::sub::SubObjects& objs, int s, sm::ecs::Pools p) {
+    if (s >= 0) sm::sub::slot_set_pools(objs, s, p);
 }
-inline void give_combat(entt::registry& reg, int s,
+inline void give_combat(sm::sub::SubObjects& objs, int s,
                         const sm::ecs::Combat& c) {
-    if (s >= 0) sm::sub::slot_set_combat(arena_of(reg), s, c);
+    if (s >= 0) sm::sub::slot_set_combat(objs, s, c);
 }
-inline void give_missile(entt::registry& reg, int s,
+inline void give_missile(sm::sub::SubObjects& objs, int s,
                          sm::ecs::MissileAttack m) {
-    if (s >= 0) sm::sub::slot_set_missile(arena_of(reg), s, m);
+    if (s >= 0) sm::sub::slot_set_missile(objs, s, m);
 }
-inline void give_ai(entt::registry& reg, int s,
+inline void give_ai(sm::sub::SubObjects& objs, int s,
                     const sm::ecs::SubworldAi& a) {
-    if (s >= 0) sm::sub::slot_set_ai(arena_of(reg), s, a);
+    if (s >= 0) sm::sub::slot_set_ai(objs, s, a);
 }
-inline void give_visual(entt::registry& reg, int s, sm::ecs::VisualPos v) {
-    if (s >= 0) sm::sub::slot_set_visual(arena_of(reg), s, v);
+inline void give_visual(sm::sub::SubObjects& objs, int s,
+                        sm::ecs::VisualPos v) {
+    if (s >= 0) sm::sub::slot_set_visual(objs, s, v);
 }
 // Снаряд-фикстура (ступень (v) ломтя 7): такой же жилец арены — слот, ровно
-// той же дверью, что стреляет продакшен (birth_projectile). Арена рожается
-// по надобности — закон «свидетель рожает своё предусловие» (§8 п.11).
-// Возврат — слот (-1 = кап).
-inline int give_projectile(entt::registry& reg,
+// той же дверью, что стреляет продакшен (birth_projectile). Возврат — слот
+// (-1 = кап).
+inline int give_projectile(sm::sub::SubObjects& objs,
                            const sm::ecs::Projectile& p,
                            const sm::ecs::Position& at) {
-    return sm::sub::birth_projectile(arena_of(reg), p, at);
+    return sm::sub::birth_projectile(objs, p, at);
 }
 
-inline std::uint8_t fx_of(entt::registry& reg, int s) {
-    return s >= 0 ? arena_of(reg).damageFx[std::size_t(s)] : std::uint8_t{0};
+inline std::uint8_t fx_of(const sm::sub::SubObjects& objs, int s) {
+    return s >= 0 ? objs.damageFx[std::size_t(s)] : std::uint8_t{0};
 }
-inline sm::sub::ObjRef last_hit_of(entt::registry& reg, int s) {
-    return s >= 0 ? arena_of(reg).lastHitBy[std::size_t(s)]
-                  : sm::sub::ObjRef{};
+inline sm::sub::ObjRef last_hit_of(const sm::sub::SubObjects& objs, int s) {
+    return s >= 0 ? objs.lastHitBy[std::size_t(s)] : sm::sub::ObjRef{};
 }
 
 } // namespace sm::test

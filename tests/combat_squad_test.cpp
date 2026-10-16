@@ -4,7 +4,6 @@
 #include "tables/npc.h"
 #include "macro/world_row.h"
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "sub/ai.h"
 #include "sub/spawn.h"
 #include "macro/store.h"
@@ -150,16 +149,15 @@ int main() {
                 "merge, souls must double");
     if (!ok14) return 1;
 
-    sm::ecs::World world{};
-
     auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // слоты телам — иначе бит некуда класть
+    // Арена сцены — предусловие рождения тел (§8 п.11); 38.3 МиБ, потому
+    // фабрика-uptr. Store едет в tick_npc_ai ЯВНЫМ аргументом (ломоть E).
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;   // слоты телам — иначе бит некуда класть
     std::vector<std::uint8_t> emptyTiles;
     const std::uint16_t playerFaction =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
-    sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u,
+    sm::sub::spawn_player_squad(objs, player, emptyTiles, 512.0f, 512.0f, 99u,
                                 playerFaction);
     int projected = 0;
     // СВИП ПЛОСКОЙ АРЕНЫ (ломоть D): жильца сцены называет бит kObjAlive, а
@@ -207,15 +205,13 @@ int main() {
           "subworld projection did not create exactly one soldier entity");
     if (!ok19) return 1;
 
-    sm::ecs::World malformedWorld{};
-
-    auto malformedWorldStore_ = sm::make_macro_store();
-
-    sm::store_attach(malformedWorld, malformedWorldStore_.get());
-    sm::test::arena_of(malformedWorld.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-    sm::sub::SubObjects& malformedObjs = sm::test::arena_of(malformedWorld.reg);
+    // Вторая сцена — ВТОРАЯ арена (кусок 1, §8 п.11: предусловие рождает сам
+    // свидетель), иначе тела кривого прогона считались бы вместе с первым.
+    // Store ей не нужен: дверь спавна его не просит.
+    auto malformedArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& malformedObjs = *malformedArena_;
     std::vector<std::uint8_t> malformedTiles(1, 0u);
-    sm::sub::spawn_player_squad(malformedWorld, player, malformedTiles,
+    sm::sub::spawn_player_squad(malformedObjs, player, malformedTiles,
                                 512.0f, 512.0f, 100u, playerFaction);
     int malformedProjected = 0;
     // Тот же свип арены (ломоть D): квитанция — колонка слота, и «квитанции
@@ -232,16 +228,16 @@ int main() {
     CHECK(ok20, "malformed tile buffer blocked squad projection");
     if (!ok20) return 1;
 
-    const int hostile = sm::test::give_body(world.reg);
-    sm::test::give_pos(world.reg, hostile, 100.0f, 100.0f, 0.0f);
-    sm::test::give_combat(world.reg, hostile, sm::ecs::Combat{
+    const int hostile = sm::test::give_body(objs);
+    sm::test::give_pos(objs, hostile, 100.0f, 100.0f, 0.0f);
+    sm::test::give_combat(objs, hostile, sm::ecs::Combat{
         sm::Dice{5, 1}, std::int16_t(0), std::int16_t(100),
         std::uint8_t(0), std::uint8_t(sm::DamageType::Blunt),
         20.0f, 3.0f, 1.0f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
-    sm::test::give_ai(world.reg, hostile,
+    sm::test::give_ai(objs, hostile,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 4.0f, 4.0f, 8.0f, 1.0f});
-    sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0.0f, 0u, 0.5f);
+    sm::sub::tick_npc_ai(objs, worldStore_.get(), 140.0f, 100.0f, 0.0f, 0.5f);
     const auto& combatPos = *sm::sub::slot_pos(objs, hostile);
     const auto& combatAi = *sm::sub::slot_ai(objs, hostile);
     // Ownership contract, TIGHTENED. tick_npc_ai must not touch a combat body at
@@ -257,12 +253,12 @@ int main() {
     CHECK(ok21, "tick_npc_ai must leave ecs::Combat actors untouched");
     if (!ok21) return 1;
 
-    const int fallback = sm::test::give_body(world.reg);
-    sm::test::give_pos(world.reg, fallback, 100.0f, 100.0f, 0.0f);
-    sm::test::give_ai(world.reg, fallback,
+    const int fallback = sm::test::give_body(objs);
+    sm::test::give_pos(objs, fallback, 100.0f, 100.0f, 0.0f);
+    sm::test::give_ai(objs, fallback,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 0.0f, 0.0f, 8.0f, 1.0f});
-    sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0.0f, 0u, 0.5f);
+    sm::sub::tick_npc_ai(objs, worldStore_.get(), 140.0f, 100.0f, 0.0f, 0.5f);
     const auto& fallbackPos = *sm::sub::slot_pos(objs, fallback);
     // A body with combat AI but NO ecs::Combat has no damage, no speed and no
     // reach — it cannot fight. The old code still walked it at the player
@@ -282,15 +278,15 @@ int main() {
     // folds in SubworldAi.seq, because entity⊕position alone froze a standing
     // body — its position stopped changing, so it re-rolled the same "stand"
     // forever, and deer petrified on their first idle roll.
-    const int wanderer = sm::test::give_body(world.reg);
-    sm::test::give_pos(world.reg, wanderer, 200.0f, 200.0f, 0.0f);
-    sm::test::give_ai(world.reg, wanderer,
+    const int wanderer = sm::test::give_body(objs);
+    sm::test::give_pos(objs, wanderer, 200.0f, 200.0f, 0.0f);
+    sm::test::give_ai(objs, wanderer,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
                                           0.0f, 0.0f, 0.0f, 8.0f, 0.6f});
     bool decidedToWalk = false;
     bool decidedToStand = false;
     for (int i = 0; i < 400; ++i) {
-        sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0.0f, 0u, 0.5f);
+        sm::sub::tick_npc_ai(objs, worldStore_.get(), 140.0f, 100.0f, 0.0f, 0.5f);
         const auto& wai = *sm::sub::slot_ai(objs, wanderer);
         if (wai.wantVx != 0.0f || wai.wantVy != 0.0f) decidedToWalk = true;
         else decidedToStand = true;

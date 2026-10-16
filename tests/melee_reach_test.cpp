@@ -31,11 +31,12 @@ using sm::sub::melee_pick_target;
 
 // Тело фикстуры И ЕСТЬ СЛОТ арены (ломоть D: сущности у тел сцены нет вовсе),
 // и тем же слотом оно судится: груз и возврат выбора цели — слот арены.
-int body(entt::registry& reg, NPCType type, float x, float y) {
-    const int s = sm::test::give_body(reg);
-    sm::test::give_pos(reg, s, x, y, 0.0f);   // место — колонка арены (ломоть 5)
-    sm::test::give_pools(reg, s, sm::ecs::Pools{30, 30});
-    sm::test::give_kind(reg, s,
+// Груз — САМА АРЕНА (ломоть E): реестра-посредника больше не существует.
+int body(sm::sub::SubObjects& objs, NPCType type, float x, float y) {
+    const int s = sm::test::give_body(objs);
+    sm::test::give_pos(objs, s, x, y, 0.0f);  // место — колонка арены (ломоть 5)
+    sm::test::give_pools(objs, s, sm::ecs::Pools{30, 30});
+    sm::test::give_kind(objs, s,
         sm::ecs::NPCKind{std::uint16_t(type), std::uint16_t{0}});
     return s;
 }
@@ -53,22 +54,22 @@ void test_wide_body_is_struck_from_farther() {
     const float d = range + (trollR + frogR) * 0.5f;
 
     {
-        entt::registry reg;
-        const int troll = body(reg, NPCType::Troll, d, 0.0f);
-        CHECK(melee_pick_target(sm::test::arena_of(reg), 0, 0, 0, range,
+        auto arena_ = sm::test::make_scene_arena();
+        sm::sub::SubObjects& objs = *arena_;
+        const int troll = body(objs, NPCType::Troll, d, 0.0f);
+        CHECK(melee_pick_target(objs, 0, 0, 0, range,
                                 &never_hostile, nullptr,
-                                &sm::test::all_live_slots,
-                                &sm::test::arena_of(reg))
+                                &sm::test::all_live_slots, &objs)
                   == troll,
               "the troll's flank is in reach at a distance its centre is not");
     }
     {
-        entt::registry reg;
-        body(reg, NPCType::Frog, d, 0.0f);
-        CHECK(melee_pick_target(sm::test::arena_of(reg), 0, 0, 0, range,
+        auto arena_ = sm::test::make_scene_arena();
+        sm::sub::SubObjects& objs = *arena_;
+        body(objs, NPCType::Frog, d, 0.0f);
+        CHECK(melee_pick_target(objs, 0, 0, 0, range,
                                 &never_hostile, nullptr,
-                                &sm::test::all_live_slots,
-                                &sm::test::arena_of(reg))
+                                &sm::test::all_live_slots, &objs)
                   == -1,
               "the frog at the same distance is out of reach — the width is "
               "the whole difference");
@@ -76,10 +77,10 @@ void test_wide_body_is_struck_from_farther() {
 }
 
 void test_hostiles_first_by_surface_gap() {
-    entt::registry reg;
-    const int nearFrog = body(reg, NPCType::Frog, 2.0f, 0.0f);
-    const int farTroll = body(reg, NPCType::Troll, 5.5f, 0.0f);
-    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
+    auto arena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *arena_;
+    const int nearFrog = body(objs, NPCType::Frog, 2.0f, 0.0f);
+    const int farTroll = body(objs, NPCType::Troll, 5.5f, 0.0f);
     struct Ctx { int hostile; } ctx{farTroll};
     const auto oracle = [](void* user, int s) {
         return s == static_cast<Ctx*>(user)->hostile;
@@ -100,10 +101,10 @@ void test_hostiles_first_by_surface_gap() {
 // не закон (§8 п.5). Негативный контроль остаётся и усилен: сетка, ПОТЕРЯВШАЯ
 // тело, обязана менять исход — иначе утверждение о паритете ничего не стоит.
 void test_grid_arm_parity() {
-    entt::registry reg;
-    const int troll = body(reg, NPCType::Troll, 5.5f, 0.0f);
-    body(reg, NPCType::Frog, 9.0f, 0.0f);   // out of reach either way
-    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
+    auto arena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *arena_;
+    const int troll = body(objs, NPCType::Troll, 5.5f, 0.0f);
+    body(objs, NPCType::Frog, 9.0f, 0.0f);   // out of reach either way
 
     struct Feed { std::uint16_t ids[8]; std::uint32_t n; };
     Feed feed{};
@@ -136,23 +137,23 @@ void test_grid_arm_parity() {
 }
 
 void test_player_side_and_dead_are_invisible() {
-    entt::registry reg;
-    const int soldier = sm::test::give_body(reg);
-    sm::test::give_pos(reg, soldier, 2.0f, 0.0f, 0.0f);
-    sm::test::give_pools(reg, soldier, sm::ecs::Pools{30, 30});
-    sm::test::give_kind(reg, soldier,
+    auto arena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *arena_;
+    const int soldier = sm::test::give_body(objs);
+    sm::test::give_pos(objs, soldier, 2.0f, 0.0f, 0.0f);
+    sm::test::give_pools(objs, soldier, sm::ecs::Pools{30, 30});
+    sm::test::give_kind(objs, soldier,
         sm::ecs::NPCKind{std::uint16_t(NPCType::Guard), std::uint16_t{0}});
-    sm::test::give_flag(reg, soldier, sm::sub::kObjPlayerSoldier);
-    const int corpse = sm::test::give_body(reg);
-    sm::test::give_pos(reg, corpse, 2.5f, 0.0f, 0.0f);
-    sm::test::give_pools(reg, corpse, sm::ecs::Pools{30, 30});
-    sm::test::give_kind(reg, corpse,
+    sm::test::give_flag(objs, soldier, sm::sub::kObjPlayerSoldier);
+    const int corpse = sm::test::give_body(objs);
+    sm::test::give_pos(objs, corpse, 2.5f, 0.0f, 0.0f);
+    sm::test::give_pools(objs, corpse, sm::ecs::Pools{30, 30});
+    sm::test::give_kind(objs, corpse,
         sm::ecs::NPCKind{std::uint16_t(NPCType::Frog), std::uint16_t{0}});
-    sm::test::give_flag(reg, corpse, sm::sub::kObjDead);
-    CHECK(melee_pick_target(sm::test::arena_of(reg), 0, 0, 0, 5.0f,
+    sm::test::give_flag(objs, corpse, sm::sub::kObjDead);
+    CHECK(melee_pick_target(objs, 0, 0, 0, 5.0f,
                             &never_hostile, nullptr,
-                            &sm::test::all_live_slots,
-                            &sm::test::arena_of(reg))
+                            &sm::test::all_live_slots, &objs)
               == -1,
           "the swing sees neither the player's own soldier nor a corpse");
 }

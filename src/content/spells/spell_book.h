@@ -61,7 +61,11 @@ int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
 // gs — мир для эффектов, чей закон спорит с положением игрока (вселение:
 // однохоповый запрет + перенос флажка; SpellSpawnContext, 1е кластер 5);
 // nullptr у конвертов без мира.
-bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
+// objs/st — арена сцены и гладкая память макро-сквадов ЯВНО (ломоть E:
+// ctx-мосты умерли). Оба nullable: каст с макро-карты живёт без сцены,
+// фикстура без store — честный новичок (нулевой лист).
+bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
+                    SpellBook& sb, ecs::Pools& combat,
                     const Attributes& attributes, const Skills& skills,
                     int spellOrd,
                     sub::ObjRef caster, float px, float py, float pz,

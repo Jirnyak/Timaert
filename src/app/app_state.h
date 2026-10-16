@@ -25,7 +25,6 @@
 #include "gpu/vk_gpu_timer.h"
 #include "gpu/vk_renderer.h"
 #include "core/torus.h"
-#include "ecs/world.h"
 #include "ecs/components.h"
 #include "events/event_bus.h"
 #include "events/effect_applicator.h"
@@ -192,16 +191,16 @@ struct App {
     // travel harness's frozen spRegen was the victim, 2026-09-06). Runtime
     // cache: zeroed on load, so a loaded coat re-registers on step one.
     sm::BonusTotals      lastStandingBonuses{};
-    sm::ecs::World       ecs;
+    // (`sm::ecs::World ecs` умер ломтём E вместе с реестром: тела сцены —
+    // слоты `sceneObjects` ниже, store и арена ходят явными параметрами.)
     // ГЛАДКАЯ ПАМЯТЬ МАКРОМИРА (macro/store.h, M-106): колонки состояния
-    // макро-сквадов; entt выше остаётся движком СЦЕНЫ и мостом связей до
-    // шага 1е. Родится один раз на старте приложения — преаллокация мира
-    // (1460 МиБ по капу, вердикт владельца 2026-09-25).
+    // макро-сквадов. Родится один раз на старте приложения — преаллокация
+    // мира (1460 МиБ по капу, вердикт владельца 2026-09-25).
     std::unique_ptr<sm::MacroStore> macroStore;
     // ЕДИНЫЙ МАССИВ ОБЪЕКТОВ СЦЕНЫ (sub/objects.h, M-150): постоянный
     // носитель слотов тел/трупов/снарядов окна; транзиент сессии — в сейв
     // не едет (сейв — только макро-слой, §10). Родится на старте рядом со
-    // store, мост в реестр — objects_attach (умирает с реестром, ломоть 7).
+    // store; ходит ЯВНО (ломоть E: ctx-мост objects_attach умер с реестром).
     std::unique_ptr<sm::sub::SubObjects> sceneObjects;
     sm::EventBus         bus;
     sm::LogicNodeEngine  logic;

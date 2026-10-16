@@ -23,7 +23,6 @@
 #include "check.h"
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "tables/faction.h"
 #include "macro/politik.h"
 #include "macro/world_row.h"   // raise_flock_into_container — души головами
@@ -134,18 +133,16 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     const std::uint16_t magica = std::uint16_t(sm::faction_index("old_magica"));
     const std::uint16_t empire = std::uint16_t(sm::faction_index("empire"));
 
-    sm::ecs::World world{};
-
-    auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    // Арена сцены — предусловие рождения тел (кусок 1, §8 п.11), и она НА
+    // ТЕСТ, а не на реестр (ломоть E): дверь спавна берёт её явно.
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;
     // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122), поэтому предусловие свидетеля — не число,
     // а контейнер душ места: он рождает его САМ (§8 п.11), тем же законом,
     // которым его наполняет генезис.
     sm::Inventory homeSouls{};
     sm::raise_flock_into_container(homeSouls, 2000);
-    sm::sub::spawn_cell_npcs(world,
+    sm::sub::spawn_cell_npcs(objs,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
                              sm::SquadType::City,
@@ -196,15 +193,12 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
 void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mgr) {
     const std::uint16_t empire = std::uint16_t(sm::faction_index("empire"));
 
-    sm::ecs::World world{};
-
-    auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    // Та же арена-на-тест (ломоть E): свой носитель тел у каждого прогона.
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;
     sm::Inventory homeSouls{};
     sm::raise_flock_into_container(homeSouls, 400);
-    sm::sub::spawn_cell_npcs(world,
+    sm::sub::spawn_cell_npcs(objs,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
                              sm::SquadType::Village,

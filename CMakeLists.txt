@@ -65,10 +65,9 @@ include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL
     "Use already populated FetchContent dependencies without network updates during incremental builds" FORCE)
-FetchContent_Declare(EnTT
-    GIT_REPOSITORY https://github.com/skypjack/entt.git
-    GIT_TAG v3.14.0 GIT_SHALLOW TRUE)
-FetchContent_MakeAvailable(EnTT)
+# СТЕНА M-188 (ломоть E): зависимость EnTT ВЫПИЛЕНА. Пути включения entt не
+# существует ни у одного таргета — `#include <entt/...>` есть fatal error по
+# построению, а не по ревью (ЗАКОН ФРЕЙМА п.7: стену ставит компилятор).
 
 # stb (single-header image / etc.) — needed for sprite PNG loading.
 FetchContent_Declare(stb
@@ -202,8 +201,6 @@ add_custom_target(timaert_git_hash
     COMMENT "Stamping git hash")
 add_dependencies(${PROJECT_NAME} timaert_git_hash)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/generated)
-target_link_libraries(${PROJECT_NAME} PRIVATE EnTT::EnTT)
-target_compile_definitions(${PROJECT_NAME} PRIVATE ENTT_NOEXCEPTION)
 if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
     target_compile_definitions(${PROJECT_NAME} PRIVATE TIMAERT_HAS_SDL_MIXER=1)
 endif()
@@ -434,8 +431,7 @@ set_target_properties(balance_run PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF)
 target_include_directories(balance_run PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(balance_run PRIVATE ENTT_NOEXCEPTION)
-target_link_libraries(balance_run PRIVATE timaert_build_flags EnTT::EnTT)
+target_link_libraries(balance_run PRIVATE timaert_build_flags)
 
 # Height census (наряд M-192, ход 0, 2026-10-01): измерить ПОЛЕ высот
 # макромира — долю дисперсии по масштабам, уклоны между соседями, перцентили
@@ -550,23 +546,19 @@ target_link_libraries(relief_census PRIVATE timaert_build_flags)
 # который конфигурацию и сборку делает сам.
 #
 #   timaert_test(<name> [PIN <regex>] [SOURCES ...] [LINK_SDL] [LINK_MIXER]
-#                [LINK_IMGUI] [LINK_ENTT])
+#                [LINK_IMGUI])
 enable_testing()
 function(timaert_test _name)
-    cmake_parse_arguments(_t "LINK_SDL;LINK_MIXER;LINK_IMGUI;LINK_ENTT" "PIN" "SOURCES" ${ARGN})
+    cmake_parse_arguments(_t "LINK_SDL;LINK_MIXER;LINK_IMGUI" "PIN" "SOURCES" ${ARGN})
     add_executable(${_name} tests/${_name}.cpp ${_t_SOURCES})
     set_target_properties(${_name} PROPERTIES
         CXX_STANDARD 23
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF)
     target_include_directories(${_name} PRIVATE ${CMAKE_SOURCE_DIR}/src)
-    target_compile_definitions(${_name} PRIVATE ENTT_NOEXCEPTION)
     target_link_libraries(${_name} PRIVATE timaert_build_flags)
     if(_t_LINK_IMGUI)
         target_include_directories(${_name} PRIVATE ${imgui_SOURCE_DIR})
-    endif()
-    if(_t_LINK_ENTT)
-        target_link_libraries(${_name} PRIVATE EnTT::EnTT)
     endif()
     if(_t_LINK_SDL OR _t_LINK_MIXER)
         target_link_libraries(${_name} PRIVATE SDL2::SDL2)
@@ -598,8 +590,8 @@ timaert_test(quest_lifecycle_test
         src/macro/anketa.cpp
         src/tables/items.cpp
     # M-150 шаг 0: quest_engine.cpp → squad.h → macro_stock.h — печать займа
-    # на ТЕЛО сцены (stamp_macro_debt, entt); умрёт с переездом тел
-    LINK_SDL LINK_ENTT)
+    # на ТЕЛО сцены (stamp_macro_debt); умрёт с переездом тел
+    LINK_SDL)
 
 timaert_test(world_tick_parity_test
     SOURCES
@@ -632,7 +624,7 @@ timaert_test(world_tick_parity_test
         # spire_orb@src/macro/spires.h): раньше дневной тик писал его САМ,
         # поэтому модуль шпиля ему и не был нужен.
         src/macro/spires.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 # ЗАКОН ПАРЫ ДУШИ: у паствы поселения ДВА носителя (число worked и головы
 # контейнера), и всякая убыль обязана снять ОБА. Свой таргет, а не строка в
@@ -661,7 +653,7 @@ timaert_test(flock_pairing_law_test
         src/macro/threat_field.cpp
         src/macro/scent_field.cpp
         src/macro/npc_spawn.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 timaert_test(recovery_law_test
     SOURCES
@@ -673,8 +665,7 @@ timaert_test(ordinal_space_test
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/anketa.cpp
-        src/tables/items.cpp
-    LINK_ENTT)
+        src/tables/items.cpp)
 
 timaert_test(save_roundtrip_test
     SOURCES
@@ -698,7 +689,7 @@ timaert_test(save_roundtrip_test
         # макро-сквадов, поэтому круг сейва снимает тела (snapshot_macro_ecs)
         # и возвращает их (restore_macro_ecs + relink_place_bodies).
         src/macro/macro_snapshot.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 # Sight-as-light: the knowledge layer's law (Unknown/Explored/Visible, decay,
 # reveal) over the shared optical sweep — relations against the cost table.
@@ -726,7 +717,7 @@ timaert_test(macro_snapshot_test
         src/tables/items.cpp
         # npc.h now answers for BOTH halves of the kind id space.
         src/macro/fauna.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 # Header-only on purpose: the spell DATA registry (macro/spells.h) is a
 # constexpr table with no TU — the test guards its append-only ordinals.
@@ -742,8 +733,7 @@ timaert_test(damage_door_test
         # сколько стоит каждая надетая строка (tables/items.cpp)
         src/macro/anketa.cpp
         src/tables/items.cpp
-        src/events/event_bus.cpp
-    LINK_ENTT)
+        src/events/event_bus.cpp)
 
 timaert_test(spell_casting_effects_test
     SOURCES
@@ -763,7 +753,6 @@ timaert_test(spell_casting_effects_test
         # that asks the catalog what each worn row is worth (tables/items.cpp)
         src/macro/anketa.cpp
         src/tables/items.cpp
-    LINK_ENTT
     PIN "OK spell_casting_effects_test .205 checks.")
 
 timaert_test(combat_squad_test
@@ -780,7 +769,6 @@ timaert_test(combat_squad_test
         # one solidity authority linked, exactly as the game does.
         src/sub/collide.cpp
         src/macro/fauna.cpp
-    LINK_ENTT
     PIN "OK combat_squad_test .24 checks.")
 
 # The melee reach law: range + body_radius(target), hostiles-first by surface
@@ -788,8 +776,7 @@ timaert_test(combat_squad_test
 # is header data.
 timaert_test(melee_reach_test
     SOURCES
-        src/sub/targeting.cpp
-    LINK_ENTT)
+        src/sub/targeting.cpp)
 
 timaert_test(audio_contract_test
     SOURCES
@@ -807,14 +794,14 @@ timaert_test(spawn_entity_event_test
         src/macro/npc_spawn.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 timaert_test(npc_spawn_contract_test
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 # THE macro entity is a squad (Session 15): every macro NPC carries a
 # SquadRoster and is born a squad of one. Same links as the spawn contract
@@ -824,7 +811,7 @@ timaert_test(squad_creatures_test
         src/macro/npc_spawn.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 # The caravan↔village package deal (owner 2026-08-30): conservation, the
 # price-law clamp corridor, and the no-coin-no-confiscation negative control.
@@ -843,8 +830,7 @@ timaert_test(caravan_deal_test
         src/macro/tree_layer.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
-        src/macro/econ_day.cpp
-    LINK_ENTT)
+        src/macro/econ_day.cpp)
 
 timaert_test(macro_npc_ai_parity_test
     SOURCES
@@ -876,8 +862,7 @@ timaert_test(macro_npc_ai_parity_test
         # ONE recovery law (CANON S14): the parity check asks the player's own
         # door for its answer and compares it to the lord's, so the two cannot
         # drift into two laws again.
-        src/macro/recovery.cpp
-    LINK_ENTT)
+        src/macro/recovery.cpp)
 
 # Squad↔squad war on the macro map (Session 15 Inc 5): perception, flee /
 # pursue by the one strength law, and same-cell battles settled through the
@@ -908,13 +893,11 @@ timaert_test(world_row_test
 
 # Закон порядка обхода сквадов (эпик 2 шаг 1а): дверь чисто заголовочная,
 # тест — реестр + сортировка, продакшен-TU не нужны.
-timaert_test(squad_walk_test
-    LINK_ENTT)
+timaert_test(squad_walk_test)
 
 # Гладкая память макромира (эпик 2 шаг 1б, M-106): хранилище заголовочное,
 # тест — рождение/смерть/переиспользование под gen-защитой.
-timaert_test(macro_store_test
-    LINK_ENTT)
+timaert_test(macro_store_test)
 
 timaert_test(squad_war_test
     SOURCES
@@ -942,7 +925,7 @@ timaert_test(squad_war_test
         # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
         # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
         src/macro/econ_day.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 timaert_test(macro_travel_parity_test
     SOURCES
@@ -969,7 +952,7 @@ timaert_test(design_characters_test
         src/macro/macro_snapshot.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 # The macro march pays the map (Session 21): greedy steering on the baked
 # cost grid, water avoided / forded / drowning by data, the 8-hour road
@@ -998,8 +981,7 @@ timaert_test(squad_travel_test
         src/tables/items.cpp
         # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
         # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
-        src/macro/econ_day.cpp
-    LINK_ENTT)
+        src/macro/econ_day.cpp)
 
 timaert_test(item_use_parity_test
     SOURCES
@@ -1015,8 +997,8 @@ timaert_test(nav_region_test SOURCES
     # фикстура, селящая их дверью мира, обязана знать каталог.
     src/tables/items.cpp
     # M-150 шаг 0: сам тест включает squad.h → macro_stock.h — печать займа
-    # на ТЕЛО сцены (stamp_macro_debt, entt); умрёт с переездом тел
-    LINK_ENTT)
+    # на ТЕЛО сцены (stamp_macro_debt); умрёт с переездом тел
+    )
 
 timaert_test(pathfinding_parity_test
     SOURCES
@@ -1031,7 +1013,7 @@ timaert_test(road_river_generation_test
         src/macro/politik.cpp
         src/macro/language.cpp
         # R2: city placement prices candidates through the settlement score,
-        # so politik.cpp now carries the score chain (and entt via the
+        # so politik.cpp now carries the score chain (and macro state via the
         # macro_stock context envelope) even where the test passes no site.
         src/macro/settlement_score.cpp
         src/macro/macro_stock.cpp
@@ -1040,7 +1022,7 @@ timaert_test(road_river_generation_test
         src/macro/tree_layer.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 # River generation invariants (macro heap-A* trace + below-sea carve) and the
 # honest subworld river descent. Pure CPU synth: generate_terrain() and
 # generate_heightmap() need no GPU, so this target links neither SDL2 nor Vulkan.
@@ -1089,7 +1071,7 @@ timaert_test(biome_cascade_test
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/sub/base_generator.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 # ВТОРАЯ ПОЛОВИНА той же плоскости (M-109, П-6): микромир её НАСЛЕДУЕТ. Гоняет
 # настоящий генератор высот без GameState и без рендерера — плоскость входит
@@ -1102,7 +1084,7 @@ timaert_test(subworld_sea_plane_test
         src/sub/tree_atlas.cpp)
 
 # The field stamp reads fertility through the resource-field registry (R2),
-# so spawners.cpp now carries the registry chain (and entt via the
+# so spawners.cpp now carries the registry chain (and macro state via the
 # macro_stock context envelope).
 
 timaert_test(feature_layer_parity_test
@@ -1113,7 +1095,7 @@ timaert_test(feature_layer_parity_test
         src/macro/chronicle.cpp
         src/macro/tree_layer.cpp
         src/macro/fauna.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 # Header-only classifier test (biomes.h): mountains are a biome by elevation.
 
 timaert_test(biome_classifier_test
@@ -1342,7 +1324,6 @@ timaert_test(subworld_spawn_parity_test
         # anatomy what is worn and the catalog what each row is worth.
         src/macro/anketa.cpp
         src/tables/items.cpp
-    LINK_ENTT
     # Та же история, что у subworld_generator_parity (M-250): гейт в
     # `compare_records` бил по разу на ТВАРЬ, поэтому счёт прибора был числом
     # тварей, накатанных сидом. Замер 2026-10-12: смена сида фикстуры двигала
@@ -1351,7 +1332,7 @@ timaert_test(subworld_spawn_parity_test
     PIN "OK subworld_spawn_parity_test .52 checks.")
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
-# functions live in items.cpp (self-contained — no SDL2/EnTT, same as
+# functions live in items.cpp (self-contained — no SDL2, same as
 # item_use_parity_test).
 
 timaert_test(rpg_loot_test
@@ -1360,7 +1341,7 @@ timaert_test(rpg_loot_test
         src/tables/items.cpp)
 # РЕЖИССЁР ЛУТА: стоимость на входе, вещи на выходе. Дверь агностична — она не
 # знает ни мира, ни сцены, ни чья это казна, — поэтому свидетелю хватает самой
-# двери и таблицы объектов, которую она читает. Ни SDL2, ни EnTT, ни состояния
+# двери и таблицы объектов, которую она читает. Ни SDL2, ни состояния
 # мира: ровно тот набор, что и у rpg_loot_test, плюс сам режиссёр.
 
 timaert_test(loot_pool_test
@@ -1374,15 +1355,14 @@ timaert_test(loot_pool_test
         # иначе тест проверял бы копию закона, а не закон.
         src/macro/fauna.cpp)
 # Pure targeting primitive (Inc 5 possession groundwork). Links only the new
-# targeting TU + EnTT — no engine/render code, so it stays independent of the
+# targeting TU — no engine/render code, so it stays independent of the
 # subworld renderer.
 
 timaert_test(targeting_test
     SOURCES
-        src/sub/targeting.cpp
-    LINK_ENTT)
+        src/sub/targeting.cpp)
 # Global creature-registry contract (fauna.cpp). Self-contained data + lookups;
-# no SDL2/EnTT, same as rpg_loot_test.
+# no SDL2, same as rpg_loot_test.
 
 timaert_test(fauna_registry_test
     SOURCES
@@ -1406,7 +1386,7 @@ timaert_test(homeland_choice_test
 # forgiving text-KV load/save round-trip, unknown-key / out-of-range tolerance,
 # and reset_defaults(). Pure logic — it never opens a window, so it links only
 # ui_settings.cpp plus the ImGui core TUs whose symbols that TU references
-# (draw_ui_settings_panel is compiled but never called). No SDL2/Vulkan/EnTT.
+# (draw_ui_settings_panel is compiled but never called). No SDL2/Vulkan.
 
 timaert_test(ui_settings_test
     SOURCES
@@ -1449,7 +1429,7 @@ timaert_test(macro_lighting_test
         # (M-233 п.8, spire_orb@src/macro/spires.h) — у `LandmarkView` своего
         # написания больше нет.
         src/macro/spires.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 # Faction-relations data contract behind the universal subworld hostility
 # relation (sub/engine.cpp entities_hostile). Links macro/state.cpp + its
 # generation deps; no renderer/SDL. Proves demons/bandits are hostile to
@@ -1464,8 +1444,7 @@ timaert_test(faction_relations_test
         src/macro/politik.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
-        src/macro/economy.cpp
-    LINK_ENTT)
+        src/macro/economy.cpp)
 # Феодальный пул рёбер (macro/factions.h, v121). Header-only: инвариант
 # отрезков counting-sort формы, идемпотентность вставки, закон нуля-ординала,
 # громкий отказ капа; негативный контроль детектора — руками сломанный
@@ -1514,14 +1493,13 @@ timaert_test(trade_law_test
         # a landmark's famine and revolt are facts of the world
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 timaert_test(rpg_rules_test
     SOURCES
-        src/macro/economy.cpp
-    LINK_ENTT)
+        src/macro/economy.cpp)
 
-timaert_test(econ_v1_test LINK_ENTT
+timaert_test(econ_v1_test
     SOURCES
         src/macro/econ_day.cpp
         # Ранжирование рук спрашивает ОДИН закон цены (stock_price).
@@ -1585,16 +1563,14 @@ timaert_test(settlement_placement_test
         src/macro/anketa.cpp
         src/tables/items.cpp
         src/macro/economy.cpp
-        src/macro/econ_day.cpp
-    LINK_ENTT)
+        src/macro/econ_day.cpp)
 
 timaert_test(price_law_test
     SOURCES
         src/macro/economy.cpp
         src/macro/econ_day.cpp
         src/macro/anketa.cpp
-        src/tables/items.cpp
-    LINK_ENTT)
+        src/tables/items.cpp)
 
 # ПАМЯТЬ МИРА — header-only закон (macro/memory.h над seasons.h), поэтому у
 # свидетеля нет ни одной единицы трансляции: он пинит арифметику горизонта и
@@ -1630,8 +1606,7 @@ timaert_test(crop_stock_test
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
         src/macro/anketa.cpp
-        src/tables/items.cpp
-    LINK_ENTT)
+        src/tables/items.cpp)
 
 # Spire placement is pure macro worldgen: the generator TU alone, fixtures
 # hand-build terrain and zones (no state.cpp, no content layer — the spell
@@ -1675,7 +1650,7 @@ timaert_test(fauna_stock_test
         src/tables/items.cpp
         # world_tick's daily step raises deserter bands (npc_spawn.h).
         src/macro/npc_spawn.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 timaert_test(woodcutter_gather_test
     SOURCES
@@ -1699,7 +1674,7 @@ timaert_test(woodcutter_gather_test
         src/macro/anketa.cpp
         src/tables/items.cpp
         src/macro/econ_day.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 # (goal_auction_test СНЕСЁН вердиктом владельца 2026-10-04: «глупо гонять
 # 100 дней экономику, которой ещё нет». Свидетель охранял аукцион поручений
@@ -1716,8 +1691,7 @@ timaert_test(threat_field_test
         src/macro/nav_field.cpp
         src/macro/chronicle.cpp
         src/macro/anketa.cpp
-        src/tables/items.cpp
-    LINK_ENTT)
+        src/tables/items.cpp)
 
 # Поля следов и охота (CANON S10 «хищник-жертва»): физика клеточного яруса
 # (квант, изотропная диффузия на торе, распад по календарю), писатель следа
@@ -1744,7 +1718,7 @@ timaert_test(scent_field_test
         src/macro/anketa.cpp
         src/tables/items.cpp
         src/macro/econ_day.cpp
-    LINK_SDL LINK_ENTT)
+    LINK_SDL)
 
 # Стража (CANON S10 «стража + поле угрозы»): факты → вылазка душами из
 # гарнизона, тишина → гарнизон, возврат → души назад, страх артелей —
@@ -1788,8 +1762,7 @@ timaert_test(settlement_faction_test
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
-        src/macro/player_entity.cpp
-    LINK_ENTT)
+        src/macro/player_entity.cpp)
 
 timaert_test(carried_light_spawn_test
     SOURCES
@@ -1814,8 +1787,7 @@ timaert_test(carried_light_spawn_test
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
-        src/macro/player_entity.cpp
-    LINK_ENTT)
+        src/macro/player_entity.cpp)
 # A settlement's people live inside the settlement: the citizen spawner must
 # fill the generated town's built-up disk (sub/city_layout.h), not scatter the
 # population uniformly over the whole 1024×1024 macro cell. Same link set as the
@@ -1845,7 +1817,6 @@ timaert_test(city_population_inside_walls_test
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
-    LINK_ENTT
     PIN "OK city_population_inside_walls_test .45 checks.")
 # Particle-sim contract (FX Inc A): the transient-VFX pool is Vulkan-free by
 # design, so it links only particles.cpp + core and asserts every numeric
@@ -1876,13 +1847,12 @@ timaert_test(body_contract_test
         # 2026-09-12): spawn.cpp asks standing_bonuses_of, which asks the
         # anatomy what is worn and the catalog what each row is worth.
         src/macro/anketa.cpp
-        src/tables/items.cpp
-    LINK_ENTT)
+        src/tables/items.cpp)
 
 # The ledger between the layers (macro/macro_stock.{h,cpp}): what the subworld
 # borrows from the map above it and how it pays back. Pure state + table, no
 # renderer and no SDL — it links the stock rows, the tree layer they write
-# through, and EnTT for the receipt component.
+# through (квитанция — колонка арены, ломоть 4).
 # The ONE growth/diffusion law of the resource fields (R2): forest plants
 # the forest, beasts breed where beasts are, iron is born where scarce —
 # one walker, rows for context, pure calendar determinism.
@@ -1893,8 +1863,7 @@ timaert_test(resource_growth_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
-        src/macro/tree_layer.cpp
-    LINK_ENTT)
+        src/macro/tree_layer.cpp)
 
 timaert_test(macro_stock_test
     SOURCES
@@ -1907,8 +1876,7 @@ timaert_test(macro_stock_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
-        src/macro/tree_layer.cpp
-    LINK_ENTT)
+        src/macro/tree_layer.cpp)
 
 # The interaction menu's ONE addressing door (macro/map_subject.h): a squad's
 # and a landmark's store/roster answer through store_of/roster_of, kind-blind.
@@ -1916,8 +1884,7 @@ timaert_test(macro_stock_test
 timaert_test(map_subject_test
     SOURCES
         src/macro/anketa.cpp
-        src/tables/items.cpp
-    LINK_ENTT)
+        src/tables/items.cpp)
 
 # Mass-battle AI contract: the steering module is Vulkan-free and ECS-free by
 # design (that is what makes 16k-body combat testable headless), so it links
@@ -1943,8 +1910,7 @@ timaert_test(spell_broadphase_parity_test
         src/tables/items.cpp
         src/sub/movement.cpp
         src/macro/fauna.cpp
-        src/events/event_bus.cpp
-    LINK_ENTT)
+        src/events/event_bus.cpp)
 
 # The agreement between the two laws of battle (macro/auto_battle.h): the
 # resolver is header-only sheet math; movement.cpp is linked so the fought
@@ -1972,8 +1938,7 @@ timaert_test(auto_resolve_speaks_test
         # a struck vein is a chronicle fact now (v58)
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
-        src/macro/fauna.cpp
-    LINK_ENTT)
+        src/macro/fauna.cpp)
 
 # The player is an ordinary squad — and the one party no "another party" scan
 # may ever choose. PlayerSquadTag vs PlayerTag, each guard with its control.
@@ -2001,8 +1966,7 @@ timaert_test(player_is_a_squad_test
         src/tables/items.cpp
         # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
         # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
-        src/macro/econ_day.cpp
-    LINK_ENTT)
+        src/macro/econ_day.cpp)
 
 # Gear (M-183): слот адресуется тип×16+n, «есть ли слот» — бит маски тела,
 # надетое — ИНДЕКС в инвентарь; маска предмета по-прежнему называет ТИПЫ, so a
@@ -2028,8 +1992,7 @@ timaert_test(journal_test
         # сравнением ординала с константой — и дверь живёт в .cpp. Обычная цена
         # обобщения закона: заголовок, который был самодостаточным, тянет
         # символ. См. ту же графу в mirror-треке.
-        src/macro/player_entity.cpp
-    LINK_ENTT)
+        src/macro/player_entity.cpp)
 
 # ONE table every modifier is a row of: a bonus names an address the sheet
 # already has, and a STANDING one is removable because it is read through a
@@ -2058,7 +2021,7 @@ timaert_test(air_law_test)
 # решение уже видно в дифе `core/stacks.h` — точный пин добавил бы второе место
 # правки и ни одной новой видимости. Класс цифр при этом требует, чтобы граница
 # в строке СТОЯЛА: PASS без неё не напечатать.
-timaert_test(stack_census_test LINK_ENTT
+timaert_test(stack_census_test
     PIN "OK stack_census_test .13 checks. .штабелей [0-9]+ · по капам [0-9]+ МиБ · резидентное НЕ судит")
 
 # THE PROFILE TABLE is the same arrangement one layer up: one CSV generated
@@ -2131,7 +2094,6 @@ file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/generated/header_probe.args CONTENT
 $<JOIN:$<TARGET_PROPERTY:timaert_build_flags,INTERFACE_COMPILE_OPTIONS>,\n>
 -D$<JOIN:$<TARGET_PROPERTY:${PROJECT_NAME},COMPILE_DEFINITIONS>,\n-D>
 -I$<JOIN:$<TARGET_PROPERTY:${PROJECT_NAME},INCLUDE_DIRECTORIES>,\n-I>
-$<$<BOOL:$<TARGET_PROPERTY:EnTT::EnTT,INTERFACE_INCLUDE_DIRECTORIES>>:-I$<JOIN:$<TARGET_PROPERTY:EnTT::EnTT,INTERFACE_INCLUDE_DIRECTORIES>,\n-I>>
 $<$<BOOL:$<TARGET_PROPERTY:Vulkan::Vulkan,INTERFACE_INCLUDE_DIRECTORIES>>:-I$<JOIN:$<TARGET_PROPERTY:Vulkan::Vulkan,INTERFACE_INCLUDE_DIRECTORIES>,\n-I>>
 ")
 

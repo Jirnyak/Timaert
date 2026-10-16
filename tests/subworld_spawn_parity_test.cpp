@@ -1,5 +1,4 @@
 #include "check.h"
-#include "ecs/world.h"
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "tables/faction.h"
 #include "macro/world_row.h"
@@ -203,9 +202,8 @@ std::vector<SpawnRecord> expected_cell_fauna(
     return out;
 }
 
-std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
+std::vector<SpawnRecord> actual_fauna(sm::sub::SubObjects& objs) {
     std::vector<SpawnRecord> out;
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);
     // СВИП ПЛОСКОЙ АРЕНЫ (ломоть D): сущности у тела больше нет, живой слот
     // называет сам себя битом kObjAlive. Снарядного гейта здесь не нужно —
     // отбор идёт колонками тела (вид/род/бары/лист/думка), а у снаряда нет
@@ -315,11 +313,11 @@ int compare_records(const std::vector<SpawnRecord>& expected,
 // (absCx,absCy) — the seed is taken from that absolute coord so a crossing that
 // re-maps the same window offset to a different macro cell reproduces the right
 // creatures, exactly like SubworldEngine::spawn_cell resolving center+offset.
-void spawn_cell_at(sm::ecs::World& world,
+void spawn_cell_at(sm::sub::SubObjects& objs,
                    const sm::sub::SeamlessSubworldManager& mgr,
                    int ox, int oy, int absCx, int absCy) {
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
-    sm::sub::spawn_cell_npcs(world, c.biome, c.feature,
+    sm::sub::spawn_cell_npcs(objs, c.biome, c.feature,
                              sm::SquadType::None, /*danger*/0, /*depositsNear*/0, mgr,
                              ox, oy, c.seed, /*worldSeed*/c.seed,
                              std::uint16_t(sm::faction_index("empire")),
@@ -332,11 +330,11 @@ void spawn_cell_at(sm::ecs::World& world,
 
 // Fill all nine window cells for a manager centred on macro (0,0): window offset
 // (ox,oy) IS absolute cell (ox,oy) here.
-void spawn_all_cells(sm::ecs::World& world,
+void spawn_all_cells(sm::sub::SubObjects& objs,
                      const sm::sub::SeamlessSubworldManager& mgr) {
     for (int oy = -1; oy <= 1; ++oy)
         for (int ox = -1; ox <= 1; ++ox)
-            spawn_cell_at(world, mgr, ox, oy, ox, oy);
+            spawn_cell_at(objs, mgr, ox, oy, ox, oy);
 }
 
 bool run_water_blocked_squad_case() {
@@ -344,16 +342,12 @@ bool run_water_blocked_squad_case() {
     sm::creatures_push(squad, sm::make_soldier(
         std::uint8_t(sm::NPCType::Guard), 4, 77u));
 
-    sm::ecs::World world{};
-
-    auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     std::vector<std::uint8_t> water(
         std::size_t(sm::sub::kFullSize) * sm::sub::kFullSize,
         sm::sub::TILE_WATER);
-    sm::sub::spawn_player_squad(world, squad, water, 512.0f, 512.0f, 123u,
+    sm::sub::spawn_player_squad(objs, squad, water, 512.0f, 512.0f, 123u,
                                 std::uint16_t(sm::faction_index(sm::kPlayerFactionId)));
 
     int projected = 0;
@@ -370,10 +364,8 @@ bool run_water_blocked_squad_case() {
 
 bool run_city_population_projection_case(
     const sm::sub::SeamlessSubworldManager& mgr) {
-    sm::ecs::World world{};
-    auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // City in the CENTRE window cell (ox=oy=0) — off-centre cities are covered
     // by the carry-across case; here we lock the citizen role mix.
     //
@@ -391,7 +383,7 @@ bool run_city_population_projection_case(
             sm::npc_def(sm::NPCType::Guard).baseLevel,
             4000u + std::uint32_t(i)));
     }
-    sm::sub::spawn_cell_npcs(world,
+    sm::sub::spawn_cell_npcs(objs,
                              sm::Biome::Meadow,
                              sm::FT_None,
                              sm::SquadType::City,
@@ -466,10 +458,8 @@ bool run_population_does_not_scale_bodies_case(
     Town towns[2] = {{40, 0}, {4000, 0}};
 
     for (Town& t : towns) {
-        sm::ecs::World world{};
-        auto worldStore_ = sm::make_macro_store();
-        sm::store_attach(world, worldStore_.get());
-        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+        auto townArena_ = sm::test::make_scene_arena();
+        sm::sub::SubObjects& objs = *townArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122), и предмет этого контроля от того лишь
         // ЖЁСТЧЕ: уровень тела теперь ФАКТ его головы, а головы обоих
         // городов рождены одной дверью — значит размер города не может
@@ -477,7 +467,7 @@ bool run_population_does_not_scale_bodies_case(
         // сам (§8 п.11).
         sm::Inventory homeSouls{};
         sm::raise_flock_into_container(homeSouls, t.pop);
-        sm::sub::spawn_cell_npcs(world,
+        sm::sub::spawn_cell_npcs(objs,
                                  sm::Biome::Meadow, sm::FT_None,
                                  sm::SquadType::City, /*danger*/0, /*depositsNear*/0, mgr,
                                  /*ox*/0, /*oy*/0,
@@ -517,23 +507,19 @@ bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr) {
     const float kCell = float(sm::sub::kCellSize);
     const float kFull = float(sm::sub::kFullSize);
 
-    sm::ecs::World world{};
-
-    auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-    spawn_all_cells(world, mgr);
-    const std::vector<SpawnRecord> before = actual_fauna(world);
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    spawn_all_cells(objs, mgr);
+    const std::vector<SpawnRecord> before = actual_fauna(objs);
     if (before.empty()) return false;
 
     // ── Cross +x (dx=1): shift left one cell, evict what left, spawn column that
     // entered. Window offset ox=1 now maps to absolute cell 2. ──
-    sm::sub::rebase_subworld_entities(world, -kCell, 0.0f);
-    sm::sub::despawn_subworld_entities_outside_window(world);
+    sm::sub::rebase_subworld_entities(objs, -kCell, 0.0f);
+    sm::sub::despawn_subworld_entities_outside_window(objs);
     for (int oy = -1; oy <= 1; ++oy)
-        spawn_cell_at(world, mgr, /*ox*/1, oy, /*absCx*/2, oy);
-    const std::vector<SpawnRecord> after = actual_fauna(world);
+        spawn_cell_at(objs, mgr, /*ox*/1, oy, /*absCx*/2, oy);
+    const std::vector<SpawnRecord> after = actual_fauna(objs);
 
     // Invariant 1: nothing drifted outside the composite window.
     for (const SpawnRecord& a : after) {
@@ -564,11 +550,11 @@ bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // Invariant 3: cross back -x (dx=-1). Carried cells return to their exact
     // original positions (net-zero shift) and the re-entered column respawns
     // deterministically from its seed, so the whole scene equals `before`.
-    sm::sub::rebase_subworld_entities(world, kCell, 0.0f);
-    sm::sub::despawn_subworld_entities_outside_window(world);
+    sm::sub::rebase_subworld_entities(objs, kCell, 0.0f);
+    sm::sub::despawn_subworld_entities_outside_window(objs);
     for (int oy = -1; oy <= 1; ++oy)
-        spawn_cell_at(world, mgr, /*ox*/-1, oy, /*absCx*/-1, oy);
-    const std::vector<SpawnRecord> roundTrip = actual_fauna(world);
+        spawn_cell_at(objs, mgr, /*ox*/-1, oy, /*absCx*/-1, oy);
+    const std::vector<SpawnRecord> roundTrip = actual_fauna(objs);
     return compare_records(before, roundTrip) == 0;
 }
 
@@ -577,19 +563,13 @@ bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr) {
 // future per-macro-cell visitation counter will perturb on purpose.
 bool run_reentry_determinism_case(
     const sm::sub::SeamlessSubworldManager& mgr) {
-    sm::ecs::World a{};
-    auto aStore_ = sm::make_macro_store();
-    sm::store_attach(a, aStore_.get());
-    sm::test::arena_of(a.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    auto aArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& a = *aArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     spawn_cell_at(a, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3);
     const std::vector<SpawnRecord> first = actual_fauna(a);
 
-    sm::ecs::World b{};
-
-    auto bStore_ = sm::make_macro_store();
-
-    sm::store_attach(b, bStore_.get());
-    sm::test::arena_of(b.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    auto bArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& b = *bArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     spawn_cell_at(b, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3);
     const std::vector<SpawnRecord> second = actual_fauna(b);
 
@@ -656,12 +636,9 @@ bool run_beast_member_projection_case(
     constexpr int kMapW = 1024, kMapH = 1024;
     constexpr std::uint16_t kBeast = std::uint16_t(sm::NPCType::Wolf);
 
-    sm::ecs::World world{};
-
     auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
     sm::MacroStore& stl = *worldStore_;
     const sm::MacroHandle hl = sm::store_birth(stl);
@@ -679,7 +656,7 @@ bool run_beast_member_projection_case(
     }
 
     const int projected = sm::sub::project_macro_npcs_into_subworld(
-        world, mgr, /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u,
+        objs, stl, mgr, /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u,
         sm::sub::WATER_LEVEL);
     if (projected != 3) return false;   // the leader and both of his members
 
@@ -717,9 +694,8 @@ bool run_beast_member_projection_case(
 // spawner: every wild body must carry a sheet, must be worth at least the raw
 // line its row authors, and must scale with its own level rather than with
 // where it was met.
-bool sheet_lifts_every_body(sm::ecs::World& world) {
+bool sheet_lifts_every_body(sm::sub::SubObjects& objs) {
     int checked = 0;
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);
     // Свип плоской арены (ломоть D): гейт — колонка рода.
     for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
         if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
@@ -749,9 +725,9 @@ bool sheet_lifts_every_body(sm::ecs::World& world) {
 
 // Sorted (faction,x,y) fingerprint of the projected bodies — handle-independent,
 // so it compares cleanly across two worlds for the determinism check.
-std::vector<std::array<float, 3>> projection_fingerprint(sm::ecs::World& world) {
+std::vector<std::array<float, 3>> projection_fingerprint(
+    sm::sub::SubObjects& objs) {
     std::vector<std::array<float, 3>> out;
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);
     // Свип плоской арены (ломоть D): гейт — ГОДНЫЙ бэклинк шва.
     for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
         if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
@@ -780,18 +756,15 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     constexpr std::uint32_t kSeed = 0x5D5D5D5Du;
     const float kC = float(sm::sub::kCellSize);
 
-    sm::ecs::World world{};
-
     auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     const MacroSeeds s = seed_macro_npcs(*worldStore_, kMapW);
 
     // Ordinary fauna in the centre cell, so the reaper-skip check has non-
     // projection bodies to actually reap. Fauna carries no MacroNpcRuntime, so
     // the projection's source view never sees it.
-    spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
+    spawn_cell_at(objs, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
     int faunaBefore = 0;
     {
         // Свип плоской арены (ломоть D). ЗДЕСЬ ГЕЙТ ОБЯЗАТЕЛЕН И ОН НЕ
@@ -812,7 +785,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     if (faunaBefore <= 0) return false;   // sanity: fauna actually present
 
     const int projected = sm::sub::project_macro_npcs_into_subworld(
-        world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+        objs, *worldStore_, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
         sm::sub::WATER_LEVEL);
     if (projected != 3) return false;     // three in-window, the far one skipped
 
@@ -924,7 +897,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // прогон не звал дверь по одному миру дважды (замер M-260, 2026-10-13).
     {
         const int again = sm::sub::project_macro_npcs_into_subworld(
-            world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            objs, *worldStore_, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
             sm::sub::WATER_LEVEL);
         if (again != 0) return false;   // второй зов не рождает ни одного тела
         int standing = 0;
@@ -938,11 +911,11 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
         if (standing != 3) return false;   // и не удваивает уже стоящих
     }
 
-    const std::vector<std::array<float, 3>> fp1 = projection_fingerprint(world);
+    const std::vector<std::array<float, 3>> fp1 = projection_fingerprint(objs);
 
     // Reaper skip: clear_subworld_world_entities wipes ordinary fauna but SPARES
     // the projections (they mirror persistent macro state, like the player squad).
-    sm::sub::clear_subworld_world_entities(world);
+    sm::sub::clear_subworld_world_entities(objs);
     int faunaAfter = 0, projAfter = 0;
     {
         // Свип плоской арены (ломоть D). Снарядный гейт обязателен: ветка
@@ -962,16 +935,15 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
 
     // Determinism: an identical macro set + same centre + same seed reproduces
     // the same projected scene bit-for-bit (the re-entry guarantee).
-    sm::ecs::World world2{};
     auto world2Store_ = sm::make_macro_store();
-    sm::store_attach(world2, world2Store_.get());
-    sm::test::arena_of(world2.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    auto world2Arena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs2 = *world2Arena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     seed_macro_npcs(*world2Store_, kMapW);
     const int projected2 = sm::sub::project_macro_npcs_into_subworld(
-        world2, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+        objs2, *world2Store_, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
         sm::sub::WATER_LEVEL);
     if (projected2 != 3) return false;
-    const std::vector<std::array<float, 3>> fp2 = projection_fingerprint(world2);
+    const std::vector<std::array<float, 3>> fp2 = projection_fingerprint(objs2);
     if (fp1 != fp2) return false;
 
     return true;
@@ -1008,16 +980,15 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     constexpr int kCenterCx = 0, kCenterCy = 0;
     constexpr std::uint32_t kSeed = 0x9A17C0DEu;
 
-    sm::ecs::World world{};
     auto storeMem = sm::make_macro_store();
-    sm::store_attach(world, storeMem.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена — предусловие рождения тел
+    auto arena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *arena_;   // арена — предусловие рождения тел
     const MacroSeeds s = seed_macro_npcs(*storeMem, kMapW);
     sm::MacroStore& st = *storeMem;
 
     // Трое в окне встают телами (четвёртый за окном) — как в кейсе проекции.
     if (sm::sub::project_macro_npcs_into_subworld(
-            world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            objs, st, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
             sm::sub::WATER_LEVEL) != 3) return false;
 
     auto count_origins = [&](bool wantValid) {
@@ -1063,7 +1034,7 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // ЗАКОН: новая запись воплощается, призрак её не прикрыл. Двое уже
     // стоящих при этом не удваиваются — тот же гейт идемпотентности.
     if (sm::sub::project_macro_npcs_into_subworld(
-            world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            objs, st, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
             sm::sub::WATER_LEVEL) != 1) return false;
     if (count_origins(/*wantValid*/true) != 3) return false;
     if (count_origins(/*wantValid*/false) != 1) return false;   // призрак так и стоит
@@ -1079,17 +1050,15 @@ int main() {
     // ── Per-cell fauna parity: the centre cell's ECS entities must match the
     // TS-derived roll, now scattered within the centre sub-region only. ──
     const sm::sub::CellContext centre = meadow_cell(0, 0);
-    sm::ecs::World world{};
-    auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-    spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
+    auto centreArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& centreObjs = *centreArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    spawn_cell_at(centreObjs, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
 
     const std::vector<SpawnRecord> expected =
         expected_cell_fauna(mgr, sm::Biome::Meadow,
                             sm::SquadType::None, /*danger*/0, 0, 0,
                             centre.seed, 0);
-    const std::vector<SpawnRecord> actual = actual_fauna(world);
+    const std::vector<SpawnRecord> actual = actual_fauna(centreObjs);
     const int cmp = compare_records(expected, actual);
     if (cmp != 0) {
         sm::sub::clear_saved_subworlds();
@@ -1103,7 +1072,7 @@ int main() {
     CHECK(ok1, "player squad spawned on an all-water traversability grid");
     if (!ok1) return 1;
 
-    const bool ok2 = !(!sheet_lifts_every_body(world));
+    const bool ok2 = !(!sheet_lifts_every_body(centreObjs));
     if (!ok2) {
         sm::sub::clear_saved_subworlds();
     }
@@ -1266,11 +1235,9 @@ int main() {
     // forget, which is the bug class SAVE-1 and the frozen-AI fold both came
     // from.
     {
-        sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
-        sm::store_attach(world, worldStore_.get());
-        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-        auto& reg = world.reg;
+        auto worldArena_ = sm::test::make_scene_arena();
+        sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
         sm::MacroStore& stq = *worldStore_;
         const sm::MacroHandle hq = sm::store_birth(stq);
@@ -1290,7 +1257,7 @@ int main() {
         stq.sheet[hq.slot] = own;
 
         const int sBody = sm::sub::spawn_tracked_body(
-            reg, hq, 100.0f, 100.0f, /*seed*/0xD1FFu,
+            objs, stq, hq, 100.0f, 100.0f, /*seed*/0xD1FFu,
             /*combatant*/true);
         CHECK(sBody >= 0,
               "the fixture must actually project a body");
@@ -1322,7 +1289,7 @@ int main() {
         anon.level = 7;
         anon.seed = 0xD1FFu;
         const int sStranger =
-            sm::sub::spawn_derived_body(reg, anon, /*faceSalt*/0u);
+            sm::sub::spawn_derived_body(objs, anon, /*faceSalt*/0u);
         const auto* strangerSheet = sStranger >= 0
             ? sm::sub::slot_sheet(objs, sStranger) : nullptr;
         CHECK(strangerSheet != nullptr, "a derived body has a sheet");
@@ -1345,11 +1312,9 @@ int main() {
     // answers and a test that only exercised one would not notice the day it
     // grew a third.
     {
-        sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
-        sm::store_attach(world, worldStore_.get());
-        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-        auto& reg = world.reg;
+        auto worldArena_ = sm::test::make_scene_arena();
+        sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
         sm::MacroStore& stq = *worldStore_;
         const sm::MacroHandle hq = sm::store_birth(stq);
@@ -1363,14 +1328,14 @@ int main() {
         // reallocates component storage, and a reference held across one is
         // the project's standing grabla (ecs-ref-not-across-tick).
         const int sBody = sm::sub::spawn_tracked_body(
-            reg, hq, 64.0f, 64.0f, /*seed*/0x5EEDu,
+            objs, stq, hq, 64.0f, 64.0f, /*seed*/0x5EEDu,
             /*combatant*/false);
         sm::sub::BodySpec anon{};
         anon.type = sm::NPCType::Bandit;
         anon.level = 5;
         anon.seed = 0x5EEDu;
         const int sCitizen =
-            sm::sub::spawn_derived_body(reg, anon, /*faceSalt*/1u);
+            sm::sub::spawn_derived_body(objs, anon, /*faceSalt*/1u);
 
         CHECK(sBody >= 0 && sCitizen >= 0,
               "the fixture must project both kinds of body");
@@ -1434,11 +1399,9 @@ int main() {
     // the record changed. Both arms can fail — an always-yes gate is the
     // expensive bug, an always-no gate is the stale one.
     {
-        sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
-        sm::store_attach(world, worldStore_.get());
-        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-        auto& reg = world.reg;
+        auto worldArena_ = sm::test::make_scene_arena();
+        sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
         sm::MacroStore& stq = *worldStore_;
         const sm::MacroHandle hq = sm::store_birth(stq);
@@ -1449,7 +1412,7 @@ int main() {
         stq.level[hq.slot] = sm::ecs::NpcLevel{std::int16_t(6)};
 
         const int sBody = sm::sub::spawn_tracked_body(
-            reg, hq, 32.0f, 32.0f,
+            objs, stq, hq, 32.0f, 32.0f,
             /*seed*/0xBEEFu, /*combatant*/true);
         CHECK(sBody >= 0, "the fixture projects a body");
         if (sBody < 0) return sm::test::report(
@@ -1506,10 +1469,8 @@ int main() {
     // (creatures_range — это определение последовательности, не копия
     // логики под судом: судятся прогулка отрезка, род и займ).
     {
-        sm::ecs::World world{};
-        auto segStore = sm::make_macro_store();
-        sm::store_attach(world, segStore.get());
-        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+        auto segArena_ = sm::test::make_scene_arena();
+        sm::sub::SubObjects& objs = *segArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         sm::Inventory inv{};
         CHECK(sm::creatures_push_stack(inv, sm::NPCType::Wolf,  2, 1)
                   && sm::creatures_push_stack(inv, sm::NPCType::Witch, 5, 1)
@@ -1535,7 +1496,7 @@ int main() {
         sm::MacroStockKey segKey{};
         segKey.subject = 77;
         const int placed = sm::sub::spawn_dungeon_residents(
-            world, 0xD00Au, /*faction*/0, /*count*/2, /*segmentStart*/1,
+            objs, 0xD00Au, /*faction*/0, /*count*/2, /*segmentStart*/1,
             &inv, floorCat, 0.0f, 0.0f, segKey, /*combatant*/false);
         CHECK(placed == 2, "отрезок [1, 3) дал ровно два тела");
         int bodies = 0;

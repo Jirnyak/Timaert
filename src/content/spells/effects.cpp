@@ -11,8 +11,7 @@
 #include <cstdint>
 
 #include "ecs/components.h"
-#include "ecs/world.h"
-#include "sub/record.h"   // is_avatar — активное тело есть ссылка сцены
+#include "sub/record.h"   // slot_macro_record — шовная слот-дверь записи
 #include "macro/state.h"   // GameState — поля игрока (вселение, 1е кл.5)
 #include "macro/store.h"
 #include "sub/body.h"      // body_radius — the caster shell the muzzle clears
@@ -97,10 +96,11 @@ float spawn_random01(const SpellSpawnContext& c, std::uint32_t fallbackSeed) {
     return armageddon_hash01(fallbackSeed);
 }
 
-void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
+void emplace_projectile(sub::SubObjects* objs, const SpellSpawnContext& c,
                         float speed, float radius, float life,
                         float blast,
                         std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+    if (objs == nullptr) return;   // сцены нет — снаряду негде жить
     const float spawnOffset = caster_spawn_offset(c, radius);
     // Поля НАЗВАНЫ (0b ломтя 7): перестановка полей при том же sizeof была
     // невидима ассерту; designated-форму красит -Wreorder-init-list -Werror.
@@ -119,8 +119,6 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
     // Снаряд — ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ (ступень (v) ломтя 7): сущности нет,
     // рождение — слот-дверь; нет слота (кап) — нет снаряда, и каст остаётся
     // оплаченным, как промах. Позиция — аргумент рождения (ломоть 5).
-    sub::SubObjects* objs = sub::objects_find(w.reg);
-    if (objs == nullptr) return;   // сцены нет — снаряду негде жить
     const ecs::Position boltAt{c.px + c.nx * spawnOffset,
                                c.py + c.ny * spawnOffset,
                                c.pz + c.nz * spawnOffset};
@@ -133,34 +131,34 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
     sub::slot_set_light(*objs, s, bolt_light(radius, r, g, b));
 }
 
-void spawn_fireball(ecs::World& w, const SpellSpawnContext& c) {
+void spawn_fireball(sub::SubObjects* objs, const SpellSpawnContext& c) {
     const float speed = c.speed > 0.0f ? c.speed : 280.0f;
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 2.5f;
-    emplace_projectile(w, c, speed, radius, kDefaultProjectileLifeS,
+    emplace_projectile(objs, c, speed, radius, kDefaultProjectileLifeS,
                        c.effectRadius, 0xFF, 0xCC, 0x00);
 }
 
-void spawn_ice_shard(ecs::World& w, const SpellSpawnContext& c) {
+void spawn_ice_shard(sub::SubObjects* objs, const SpellSpawnContext& c) {
     const float speed = c.speed > 0.0f ? c.speed : 350.0f;
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
-    emplace_projectile(w, c, speed, radius, kDefaultProjectileLifeS, 0.0f,
+    emplace_projectile(objs, c, speed, radius, kDefaultProjectileLifeS, 0.0f,
                        0xFF, 0xFF, 0xFF);
 }
 
-void spawn_magic_bolt(ecs::World& w, const SpellSpawnContext& c) {
+void spawn_magic_bolt(sub::SubObjects* objs, const SpellSpawnContext& c) {
     const float speed = c.speed > 0.0f ? c.speed : 400.0f;
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
-    emplace_projectile(w, c, speed, radius, kDefaultProjectileLifeS, 0.0f,
+    emplace_projectile(objs, c, speed, radius, kDefaultProjectileLifeS, 0.0f,
                        0xE0, 0xC0, 0xFF);
 }
 
-void spawn_lightning_chain(ecs::World& w, const SpellSpawnContext& c) {
+void spawn_lightning_chain(sub::SubObjects* objs, const SpellSpawnContext& c) {
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
-    emplace_projectile(w, c, 300.0f, radius, kDefaultProjectileLifeS, 0.0f,
+    emplace_projectile(objs, c, 300.0f, radius, kDefaultProjectileLifeS, 0.0f,
                        0xFF, 0xEE, 0x44);
 }
 
-void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
+void spawn_energy_beam(sub::SubObjects* objs, const SpellSpawnContext& c) {
     constexpr float kBeamLen = 300.0f;
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
     const float spawnOffset = caster_spawn_offset(c, radius);
@@ -179,7 +177,6 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
         .visualOnly = true,
         .explodeOnExpiry = true, .dmgType = c.dmgType,
         .critical = c.critical};
-    sub::SubObjects* objs = sub::objects_find(w.reg);
     if (objs == nullptr) return;   // сцены нет — лучу негде жить
     const ecs::Position beamAt{c.px + c.nx * (kBeamLen * 0.5f),
                                c.py + c.ny * (kBeamLen * 0.5f),
@@ -191,14 +188,13 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
         1.0f});
 }
 
-void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
+void spawn_armageddon(sub::SubObjects* objs, const SpellSpawnContext& c) {
     const float spread = c.effectRadius > 0.0f ? c.effectRadius : 160.0f;
     int count = int(std::ceil(spread * 0.2f));
     if (count < kArmageddonMinMeteors) count = kArmageddonMinMeteors;
 
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 40.0f;
     const std::uint32_t baseSeed = armageddon_seed(c);
-    sub::SubObjects* objs = sub::objects_find(w.reg);
     if (objs == nullptr) return;   // сцены нет — дождю негде идти
     for (int i = 0; i < count; ++i) {
         const std::uint32_t seed =
@@ -249,13 +245,11 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
 // misses (owner verdict 2026-09-17). Refusal changes no flag.
 constexpr float kTargetedConeCosHalfAngle = 0.70710678f; // the ~45° reticle
 
-void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
-    auto& reg = w.reg;
+void spawn_possession(sub::SubObjects* objs, const SpellSpawnContext& c) {
     // Only a body that IS someone's control flag has a flag to move. An NPC
     // casting this row fires and transfers nothing — the cast is generic, the
     // effect argues with a flag the caster does not carry. Суд — ссылкой
     // сцены (iii-б): кастер конверта обязан БЫТЬ аватаром (ObjRef ==).
-    sub::SubObjects* objs = sub::objects_find(reg);
     if (objs == nullptr) return;
     if (c.caster.id == 0u || c.caster != objs->avatar) return;
     // Стрелок — СЛОТ аватара (ломоть D): та же ссылка, что судила строкой
@@ -270,10 +264,10 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     if (c.gs) {
         const MacroHandle home = macro_handle_from_bits(c.gs->playerSquadBits);
         // Запись под аватаром — шовной слот-дверью: слот даёт сама ссылка
-        // сцены (суд выше), стора у фикстуры может не быть — «записи нет».
-        MacroStore* const* stp = reg.ctx().find<MacroStore*>();
-        const MacroHandle avRec = stp != nullptr
-            ? sub::slot_macro_record(*objs, int(objs->avatar.slot), **stp)
+        // сцены (суд выше), стора у фикстуры может не быть — «записи нет»
+        // (конверт несёт его полем store, ломоть E: ctx-мост умер).
+        const MacroHandle avRec = c.store != nullptr
+            ? sub::slot_macro_record(*objs, int(objs->avatar.slot), *c.store)
             : MacroHandle{};
         if (home.slot != kMacroNoSlot
             && macro_handle_bits(avRec) != c.gs->playerSquadBits) return;
@@ -294,7 +288,7 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     // no level is a nobody — level 0, ровно дефолт колонки (кусок 1).
     const int targetLevel = int(sub::slot_level(*objs, targetSlot));
     if (targetLevel >= int(c.casterLevel) + int(c.schoolRank)) return;
-    sub::possess_body(w, targetSlot,
+    sub::possess_body(*objs, c.store, targetSlot,
                       c.gs ? &c.gs->playerFlagBits : nullptr);
 }
 
@@ -336,13 +330,13 @@ static_assert(spell_effects_rows_match(),
 
 } // namespace
 
-bool cast_spell(ecs::World& w, const SpellDef& spell,
+bool cast_spell(sub::SubObjects* objs, const SpellDef& spell,
                 const SpellSpawnContext& ctx) {
     const int ord = spell_ordinal(spell.id);
     if (ord < 0) return false;
     const SpellSpawnFn fn = kSpellEffects[ord].spawn;
     if (!fn) return false;
-    fn(w, ctx);
+    fn(objs, ctx);
     return true;
 }
 

@@ -5,7 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <vector>
-#include "ecs/world.h"
+#include "sub/objects.h"   // SubObjects — арена сцены, явный параметр (ломоть E)
 #include "sub/collide.h"
 #include "sub/height.h"
 #include "sub/doors.h"    // slot_set_debt — колонка квитанции (ломоть 4; слот-форма (ii-б))
@@ -132,7 +132,7 @@ inline void stamp_macro_debt(SubObjects& objs, int s,
 // from it. Ruling №2, never a second multiplier beside the sheet; and since
 // 2026-08-27 not a second SYSTEM either. nullptr (every non-squad body)
 // applies nothing.
-int spawn_derived_body(entt::registry& reg, const BodySpec& body,
+int spawn_derived_body(SubObjects& objs, const BodySpec& body,
                                 std::uint32_t faceSalt,
                                 const BodyLoan& loan = BodyLoan::none(),
                                 const BonusTotals* squadBonuses = nullptr);
@@ -140,9 +140,11 @@ int spawn_derived_body(entt::registry& reg, const BodySpec& body,
 // Form 2 — TRACKED. Reads WHAT this body is (type, faction, rank), WHO it is
 // (face) and HOW HURT it is straight from the macro record, and hands the body
 // back its `MacroOrigin` backlink so the return trip — wounds up, death up — has
-// somewhere to write. Returns entt::null if `macro` is not a live record with a
+// somewhere to write. Returns -1 if `macro` is not a live record with a
 // body-shaped kind: a caller cannot accidentally get a half-tracked body.
-int spawn_tracked_body(entt::registry& reg, MacroHandle macro,
+// `st` — гладкая память макро-сквадов ЯВНО (ломоть E): запись И ЕСТЬ слот
+// store, без него tracked-рождение невыразимо.
+int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant);
 
@@ -202,7 +204,7 @@ bool refresh_body_strike(SubObjects& objs, const MacroStore* st, int s);
 // purpose: a settlement's allegiance must be an answered question at every call
 // site, never a silent "empire". Fauna is unaffected — a creature's faction
 // comes from its own FaunaEntry row.
-void spawn_cell_npcs(ecs::World& w,
+void spawn_cell_npcs(SubObjects& objs,
                      Biome biome,
                      int treeCount,
                      SquadType landmark,
@@ -336,7 +338,7 @@ int home_creatures(const Inventory& homeSouls);
 // an empty catalog refuses out loud. `originX/originY` map the catalog's
 // cell-local tiles into window tiles. Deterministic from `seed`. Returns
 // the number actually placed.
-int spawn_dungeon_residents(ecs::World& w,
+int spawn_dungeon_residents(SubObjects& objs,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
                             // СВОЙ ОТРЕЗОК ГОЛОВ того же инвентаря (вердикт
@@ -366,7 +368,7 @@ int spawn_dungeon_residents(ecs::World& w,
 // (`liveNamed`). Рождение — та же дверь тела с тем же займом, что у улицы;
 // лицо выводится из головы, поэтому житель больше не меняет лицо каждый
 // рассвет. Возвращает число вставших.
-int spawn_street_arrivals(ecs::World& w,
+int spawn_street_arrivals(SubObjects& objs,
                           std::uint32_t seed,
                           std::uint16_t faction,
                           const Inventory& homeSouls,
@@ -386,7 +388,7 @@ int spawn_street_arrivals(ecs::World& w,
 // macro/fauna.h) brings it back. `budget` is that stock: nothing embodies
 // beyond what still stands. Placement is the scene's floor catalog, exactly
 // as for residents above. Deterministic from `seed`; returns how many stood up.
-int spawn_dungeon_vermin(ecs::World& w,
+int spawn_dungeon_vermin(SubObjects& objs,
                          std::uint32_t seed,
                          SquadType tableKind,
                          std::uint8_t danger,
@@ -401,13 +403,13 @@ int spawn_dungeon_vermin(ecs::World& w,
 // player-side projections (AvatarTag / PlayerSoldierTag) that follow the player
 // across re-centres rather than belonging to a cell. Used for a clean slate on
 // enter / leave; the per-cell path above avoids it on ordinary seam crossings.
-void clear_subworld_world_entities(ecs::World& w);
+void clear_subworld_world_entities(SubObjects& objs);
 
 // Shift every live arena slot's pos + visual columns by (dxTiles,dyTiles).
 // Applied on a seam re-centre with (-dx*kCellSize, -dy*kCellSize) so that fixed
 // physical content — and the player's own squad — track the recentred composite
 // window instead of drifting by one macro cell each crossing.
-void rebase_subworld_entities(ecs::World& w, float dxTiles, float dyTiles);
+void rebase_subworld_entities(SubObjects& objs, float dxTiles, float dyTiles);
 
 // Signed toroidal offset of macro cell `a` from window centre `c` on a torus of
 // circumference `n`. A result in {-1,0,1} means `a` is in the loaded 3×3 window
@@ -419,7 +421,7 @@ int toroidal_cell_offset(int a, int c, int n);
 // Destroy world-owned subworld creatures whose Position now lies outside the
 // composite window [0,kFullSize)²; player-side projections are never evicted.
 // Run after rebase on a re-centre to evict exactly the cells that left the 3×3.
-void despawn_subworld_entities_outside_window(ecs::World& w);
+void despawn_subworld_entities_outside_window(SubObjects& objs);
 
 // Project a macro squad into the current subworld as real ECS NPC entities.
 // The macro container's creature area remains the persistent source of truth.
@@ -447,7 +449,7 @@ void despawn_subworld_entities_outside_window(ecs::World& w);
 // скваду ДО того, как звонящий сказал, чей он. Фикстуре без макромира
 // расписку класть некуда, и ноль говорит это честно; единственный боевой
 // звонящий (sub/engine.cpp) передаёт ординал носителя флажка явно.
-void spawn_player_squad(ecs::World& w,
+void spawn_player_squad(SubObjects& objs,
                         const Inventory& squad,
                         const SeamlessSubworldManager& mgr,
                         float playerX,
@@ -459,7 +461,7 @@ void spawn_player_squad(ecs::World& w,
                         std::int16_t creaturesCx = 0,
                         std::int16_t creaturesCy = 0);
 
-void spawn_player_squad(ecs::World& w,
+void spawn_player_squad(SubObjects& objs,
                         const Inventory& squad,
                         const std::vector<std::uint8_t>& tiles,
                         float playerX,
@@ -526,7 +528,7 @@ void spawn_player_squad(ecs::World& w,
 // запись носителя флажка НЕ проецируется — его тело в сцене АВАТАР, не
 // проекция. Субмиру даётся число, не мир; сентинель (все единицы) у
 // фикстуры без игрока честно не пропускает никого.
-int project_macro_npcs_into_subworld(ecs::World& w,
+int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
@@ -534,7 +536,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      const StructureIndex* solids = nullptr,
                                      std::uint32_t playerFlagBits = 0xFFFFFFFFu);
 
-int project_macro_npcs_into_subworld(ecs::World& w,
+int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,

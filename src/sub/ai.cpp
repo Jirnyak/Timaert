@@ -25,15 +25,14 @@ static constexpr float kFleeSpeedMult = 2.2f;
 // remains back, so wander was a 0.1 s twitch per decision — and its
 // wall-handling was a near-verbatim copy of steering's. Both are gone.
 
-void tick_npc_ai(ecs::World& w, float px, float py, float pz,
-                 std::uint32_t /*playerEnt*/, float dt,
+void tick_npc_ai(SubObjects& objs, MacroStore* st,
+                 float px, float py, float pz, float dt,
                  PlayerThreatFn threatFn,
                  void* threatUser,
                  GroundHeightFn heightFn,
                  void* heightUser,
                  std::uint32_t playerFlagBits,
                  std::uint32_t playerSquadBits) {
-    auto& reg = w.reg;
 
     // БЕЗ СОЗНАНИЯ (вердикт владельца №6, 2026-09-17): у брошенного сквада
     // игрока нет флажка, и «без сознания» — не состояние, а ЕГО ОТСУТСТВИЕ,
@@ -50,11 +49,11 @@ void tick_npc_ai(ecs::World& w, float px, float py, float pz,
         // Ординал дома СПРАШИВАЕТСЯ У ЕГО ЗАПИСИ (M-255): он выдан тем же
         // эмитентом, что всякому скваду, а не зарезервированной константой.
         const MacroHandle home = macro_handle_from_bits(playerSquadBits);
-        if (home.slot != kMacroNoSlot && playerFlagBits != playerSquadBits) {
-            const MacroStore& st = store_of(w);
+        if (home.slot != kMacroNoSlot && playerFlagBits != playerSquadBits
+            && st != nullptr) {
             unconsciousRec = home;
-            unconsciousSubject = st.valid(home)
-                ? std::int32_t(st.spawnId[home.slot].index) : -1;
+            unconsciousSubject = st->valid(home)
+                ? std::int32_t(st->spawnId[home.slot].index) : -1;
         }
     }
 
@@ -62,10 +61,6 @@ void tick_npc_ai(ecs::World& w, float px, float py, float pz,
     // not by its own errands — excluded here so the two never write the same
     // intent in one step. The exclusion is the WHOLE integration: no new brain
     // kind, no branch inside Wander.
-    SubObjects* objsP = objects_find(reg);
-    if (objsP == nullptr) return;   // сцены нет — думать некому
-    SubObjects& objs = *objsP;
-    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
     // Свип арены по биту kObjAlive (ломоть D): гейт slot_ai сам отсекает
     // снаряды, пламёна и реквизит — мозга у них нет.
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
@@ -84,8 +79,8 @@ void tick_npc_ai(ecs::World& w, float px, float py, float pz,
         // …и тело брошенного сквада стоит без чувств (предикат выше): сам
         // сквад — по записи, его люди — по контейнерному займу.
         if (unconsciousRec.slot != kMacroNoSlot) {
-            if (stp != nullptr
-                && slot_macro_record(objs, s, **stp) == unconsciousRec) {
+            if (st != nullptr
+                && slot_macro_record(objs, s, *st) == unconsciousRec) {
                 aiCol->wantVx = aiCol->wantVy = 0.0f;
                 continue;
             }

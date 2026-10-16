@@ -22,7 +22,6 @@
 #include "macro/fauna.h"
 #include "macro/state.h"
 #include "ecs/components.h"
-#include "ecs/world.h"
 
 #include <SDL.h>
 
@@ -1281,7 +1280,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
 }
 
 
-void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
+void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, sub::SubObjects* objs,
                                   const sm::vec3& camPos) {
     // New frame ⇒ next staging-arena slot (its fence was waited in acquire).
     arenaSlot_ = (arenaSlot_ + 1u) % std::uint32_t(kFramesInFlight);
@@ -1305,8 +1304,8 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
 
     // The light field refresh (its own cadence gate lives inside). Must run
     // before the render pass opens — it records a staged image copy.
-    if (ecs && uploaded_) {
-        rebuild_light_field(cmd, ecs, camPos,
+    if (objs && uploaded_) {
+        rebuild_light_field(cmd, objs, camPos,
                             lightFieldFrame_ % std::uint32_t(kFramesInFlight));
     }
 
@@ -1319,7 +1318,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
     //    pipelines keyed on `archetype == 0xFF` — a question about WHAT SORT OF
     //    THING a body is, which is exactly the question the law abolishes. ──
     bodyCount_ = 0;
-    if (ecs && uploaded_) {
+    if (objs && uploaded_) {
         // Reused scratch: a fresh 512 KiB vector per frame was a measurable
         // slice of the city's `rec` column.
         static thread_local std::vector<gpu::BbInstance> bodies;
@@ -1330,7 +1329,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         // no sprite bit and never matched anyway.
         // ЧИСТО СЛОТОВЫЙ проход (ломоть 5): спрайт, позиция и аватар —
         // колонки и ссылка арены, сущность биллборду не нужна вовсе.
-        SubObjects* sprObjs = objects_find(ecs->reg);
+        SubObjects* sprObjs = objs;
         for (int s = 0; sprObjs != nullptr && s < int(kMaxSubObjects); ++s) {
             const std::size_t sprSlot = std::size_t(s);
             const std::uint16_t f = sprObjs->flags[sprSlot];
@@ -3466,7 +3465,7 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
 void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                const Camera& cam, const WorldTime& time,
                                const SeamlessSubworldManager* /*mgr*/,
-                               ecs::World* ecs, bool /*haste*/,
+                               sub::SubObjects* objs, bool /*haste*/,
                                bool /*flight*/, float /*px*/, float /*py*/,
                                float elapsed, std::uint32_t frameIndex) {
     if (!uploaded_ || dev_ == nullptr || indexCount_ == 0) return;
@@ -3552,7 +3551,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // kSubworldMaxLights emitters are live, the nearest to the camera survive,
     // so the player's own light (riding the camera) is never dropped — and the
     // eye every lit pass measures its aerial distance from.
-    gather_point_lights(ecs, slot, cam.pos, skyParams, sun.sunDir, haze);
+    gather_point_lights(objs, slot, cam.pos, skyParams, sun.sunDir, haze);
 
     mat4 lightMvp = lightMvp_;
 
@@ -4012,7 +4011,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 // pixels onto the frame's command buffer through the frames-in-flight ring.
 // Cadence-gated: torches walk slowly, ~4 Hz is invisible; a rebuild is a
 // 4 MB memset + a few hundred small splats — well under a millisecond.
-void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
+void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, sub::SubObjects* objs,
                                        const sm::vec3& camPos,
                                        std::uint32_t slot) {
     (void)camPos; // the split is by nature now; kept for future prioritising
@@ -4028,7 +4027,6 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
     const float spanM = float(kFullSize) * kTileMeters;
     const float cellM = spanM / float(kLightFieldDim);
 
-    SubObjects* objs = objects_find(ecs->reg);
     if (objs == nullptr) return;
     // ЧИСТО СЛОТОВЫЙ проход (ломоть 5): свет, позиция, роль снаряда и
     // аватар — биты, колонки и ссылка арены; сущность полю не нужна.
@@ -4137,7 +4135,7 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
 // vWorld (tile_to_world for XZ, the height field for the ground Y), then the
 // emitter's world-space offset is added — so a light lines up exactly with the
 // surface the shader lights. Count is clamped to the SSBO budget.
-void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
+void Renderer3DVk::gather_point_lights(sub::SubObjects* objs, std::uint32_t slot,
                                        const sm::vec3& camPos,
                                        const float (&skyParams)[4],
                                        const sm::vec3& sunDir,
@@ -4196,10 +4194,9 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     // light-clip from vWorld (lighting.glsl far_light_clip).
     std::memcpy(buf->lightMvpFar, lightMvpFar_.m, sizeof(buf->lightMvpFar));
     std::uint32_t n = 0;
-    if (ecs != nullptr && uploaded_) {
+    if (objs != nullptr && uploaded_) {
         // ЧИСТО СЛОТОВЫЙ проход (ломоть 5): фонарь игрока — такой же живой
         // слот арены, его собирает тот же свип без спецслучая.
-        SubObjects* objs = objects_find(ecs->reg);
         // Gather EVERY candidate first (each is one GpuLight built exactly as
         // before), with NO upper bound while collecting, then cull to the SSBO
         // budget by nearest-to-camera (cull_nearest_lights, a pure Vulkan-free

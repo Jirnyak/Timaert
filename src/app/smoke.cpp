@@ -35,60 +35,56 @@
 // дверью, какой рожает дверь спавна. Прежние smoke_give_slot/smoke_slot_of
 // переводили сущность в слот и умерли вместе с компонентой-носителем.
 // −1 = арены нет или кап исчерпан; звонящий обязан отказаться честно.
-static int smoke_give_body(entt::registry& reg) {
-    sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
-    if (objs == nullptr) return -1;
-    return objs->alloc(sm::ecs::Position{});
+static int smoke_give_body(sm::sub::SubObjects& objs) {
+    return objs.alloc(sm::ecs::Position{});
 }
 // Позиция телу-фикстуре (ломоть 5) — как записало бы рождение: колонка
 // арены по слоту, который звонящий уже держит.
-static void smoke_give_pos(entt::registry& reg, int s,
+static void smoke_give_pos(sm::sub::SubObjects& objs, int s,
                            float x, float y, float z) {
     if (s < 0) return;
-    sm::sub::objects_of(reg).pos[std::size_t(s)] =
-        sm::ecs::Position{x, y, z};
+    objs.pos[std::size_t(s)] = sm::ecs::Position{x, y, z};
 }
 // Бары/лист/снарядные телу-фикстуре — как записала бы дверь рождения
 // (кусок 2); отрицательный слот отказывает молча, как отказала бы
 // неудавшаяся выдача арены (шрам ломтя 1б).
-static void smoke_give_pools(entt::registry& reg, int s,
+static void smoke_give_pools(sm::sub::SubObjects& objs, int s,
                              sm::ecs::Pools p) {
     if (s < 0) return;
-    sm::sub::slot_set_pools(sm::sub::objects_of(reg), s, p);
+    sm::sub::slot_set_pools(objs, s, p);
 }
-static void smoke_give_combat(entt::registry& reg, int s,
+static void smoke_give_combat(sm::sub::SubObjects& objs, int s,
                               const sm::ecs::Combat& c) {
     if (s < 0) return;
-    sm::sub::slot_set_combat(sm::sub::objects_of(reg), s, c);
+    sm::sub::slot_set_combat(objs, s, c);
 }
-static void smoke_give_missile(entt::registry& reg, int s,
+static void smoke_give_missile(sm::sub::SubObjects& objs, int s,
                                sm::ecs::MissileAttack m) {
     if (s < 0) return;
-    sm::sub::slot_set_missile(sm::sub::objects_of(reg), s, m);
+    sm::sub::slot_set_missile(objs, s, m);
 }
-static void smoke_give_ai(entt::registry& reg, int s,
+static void smoke_give_ai(sm::sub::SubObjects& objs, int s,
                           const sm::ecs::SubworldAi& a) {
     if (s < 0) return;
-    sm::sub::slot_set_ai(sm::sub::objects_of(reg), s, a);
+    sm::sub::slot_set_ai(objs, s, a);
 }
-static void smoke_give_kind(entt::registry& reg, int s,
+static void smoke_give_kind(sm::sub::SubObjects& objs, int s,
                             sm::ecs::NPCKind k) {
     if (s < 0) return;
-    sm::sub::slot_set_kind(sm::sub::objects_of(reg), s, k);
+    sm::sub::slot_set_kind(objs, s, k);
 }
-static void smoke_give_sprite(entt::registry& reg, int s,
+static void smoke_give_sprite(sm::sub::SubObjects& objs, int s,
                               const sm::ecs::Sprite& sp) {
     if (s < 0) return;
-    sm::sub::slot_set_sprite(sm::sub::objects_of(reg), s, sp);
+    sm::sub::slot_set_sprite(objs, s, sp);
 }
 // СКОЛЬКО СНАРЯДОВ СТОИТ В СЦЕНЕ (ломоть 4): роль снаряда — бит слота, значит
 // счёт есть проход по колонке арены, а не по множеству реестра. Тринадцать
 // смоуков считали его одинаковым четырёхстрочным циклом по `view<Projectile>`;
 // четырнадцатый спрашивал ДРУГОЕ (снаряды со светом) и потому остался СВОИМ
 // свипом арены — сплошная замена съела бы эту разницу молча (§5 п.5).
-static int smoke_projectile_count(entt::registry& reg) {
-    const sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
-    if (objs == nullptr) return 0;
+static int smoke_projectile_count(const sm::sub::SubObjects& arena) {
+    const sm::sub::SubObjects* objs = &arena;
     int n = 0;
     // kMaxSubObjects, не kUnifiedCap: кап АРЕНЫ (развод капов, шаг 0 M-150;
     // после подъёма до 65536 скан по макро-капу считал бы четверть слотов).
@@ -102,10 +98,10 @@ static int smoke_projectile_count(entt::registry& reg) {
     return n;
 }
 
-static void smoke_give_visual(entt::registry& reg, int s,
+static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
                               sm::ecs::VisualPos v) {
     if (s < 0) return;
-    sm::sub::slot_set_visual(sm::sub::objects_of(reg), s, v);
+    sm::sub::slot_set_visual(objs, s, v);
 }
 #include "tables/codex.h"
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
@@ -173,7 +169,7 @@ static void smoke_settle_on_foot(App& app) {
 static bool smoke_projects_foreign_record(App& app, int s) {
     // Слот-идиома (ломоть B): бэклинк — колонка арены по слоту тела; прежний
     // гейт reg.valid(body) стал битом жизни слота.
-    sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
+    sm::sub::SubObjects* objs = app.sceneObjects.get();
     if (objs == nullptr || s < 0
         || !sm::sub::slot_flag(*objs, s, sm::sub::kObjAlive)) return false;
     const sm::MacroHandle origin = sm::sub::slot_macro_origin(*objs, s);
@@ -206,7 +202,7 @@ static sm::SpellBook& smoke_player_book(App& app) {
 // взведена, котёл полон, рука свободна (гейт рекавери — чужой закон). Это
 // ФИКСТУРА; сам перенос флажка идёт только через каст.
 static void smoke_stage_possession_cast(App& app, int targetSlot) {
-    auto& reg = app.ecs.reg;
+    sm::sub::SubObjects& sceneArena = *app.sceneObjects;
     const int ord = sm::spell_ordinal("possession");
     sm::spellbook_learn(smoke_player_book(app), ord);
     sm::spellbook_set_active(smoke_player_book(app), ord);
@@ -215,7 +211,7 @@ static void smoke_stage_possession_cast(App& app, int targetSlot) {
     const float fx = std::cos(yaw), fy = std::sin(yaw);
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
-    sm::sub::SubObjects* objsP = sm::sub::objects_find(reg);
+    sm::sub::SubObjects* objsP = &sceneArena;
     if (objsP == nullptr) return;          // арены нет — стенда тоже нет
     sm::sub::SubObjects& objs = *objsP;
     {
@@ -251,8 +247,8 @@ static void smoke_stage_possession_cast(App& app, int targetSlot) {
 }
 
 static bool smoke_possess_via_spell(App& app, int targetSlot) {
-    auto& reg = app.ecs.reg;
-    sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+    sm::sub::SubObjects& sceneArena = *app.sceneObjects;
+    sm::sub::SubObjects* objs = &sceneArena;
     if (objs == nullptr || targetSlot < 0
         || !sm::sub::slot_flag(*objs, targetSlot, sm::sub::kObjAlive)
         || !app.subworld.active()) return false;
@@ -774,7 +770,7 @@ bool run_subworld_walk_smoke(App& app) {
         + app.subworld.debug_player_vy() * app.subworld.debug_player_vy());
     int near = 0;
     {
-        const sm::sub::SubObjects& nObjs = sm::sub::objects_of(app.ecs.reg);
+        const sm::sub::SubObjects& nObjs = (*app.sceneObjects);
         for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
             if ((nObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                 continue;
@@ -878,7 +874,7 @@ bool run_subworld_time_smoke(App& app) {
         int macroProjected = 0;
         // Свип арены по биту жизни (ломоть D): бэклинк — колонка слота, и
         // гейт записи сам отсекает снаряды — чужой записи у них нет.
-        const sm::sub::SubObjects* pObjs = sm::sub::objects_find(app.ecs.reg);
+        const sm::sub::SubObjects* pObjs = app.sceneObjects.get();
         for (int s = 0; pObjs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((pObjs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                 continue;
@@ -894,7 +890,7 @@ bool run_subworld_time_smoke(App& app) {
         // slot_clear_combat не двигает слоты (прежний массив entity хранил
         // отложенный remove компоненты). Свип арены по биту жизни (ломоть D):
         // бит листа снаряду не ставит никто, значит дверь сама его отсекает.
-        sm::sub::SubObjects& dObjs = sm::sub::objects_of(app.ecs.reg);
+        sm::sub::SubObjects& dObjs = (*app.sceneObjects);
         for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
             if ((dObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                 continue;
@@ -1116,7 +1112,7 @@ bool run_subworld_recovery_smoke(App& app) {
         // разоружаются слот-формами; буфер отложенной записи не нужен —
         // slot_clear_combat не двигает слоты. Свип арены по биту жизни
         // (ломоть D): бит листа снаряду не ставит никто.
-        sm::sub::SubObjects& dObjs = sm::sub::objects_of(app.ecs.reg);
+        sm::sub::SubObjects& dObjs = (*app.sceneObjects);
         for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
             if ((dObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                 continue;
@@ -2523,7 +2519,7 @@ bool run_dungeon_house_smoke(App& app) {
     auto playerTags = [&]() {
         // Активное тело — ссылка сцены: «двух аватаров» больше не бывает по
         // построению, счёт выродился в «жива ли ссылка».
-        const sm::sub::SubObjects* o = sm::sub::objects_find(app.ecs.reg);
+        const sm::sub::SubObjects* o = app.sceneObjects.get();
         return o != nullptr && sm::sub::avatar_slot(*o) >= 0 ? 1 : 0;
     };
     auto hashTiles = [&]() {
@@ -2794,7 +2790,7 @@ bool run_dungeon_house_smoke(App& app) {
         // fauna_count, so a kill down here thins the cell for good.
         int beastSlot = -1;
         sm::ecs::MacroDebt beastDebt{};
-        sm::sub::SubObjects* bObjs = sm::sub::objects_find(app.ecs.reg);
+        sm::sub::SubObjects* bObjs = app.sceneObjects.get();
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; bObjs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((bObjs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
@@ -2832,7 +2828,7 @@ bool run_dungeon_house_smoke(App& app) {
         // отрезана, пока он жив. Раньше гейт молчал в данжах (байт зоны
         // пуст = выключен), и сценарий поднимался сквозь бой; теперь он
         // уважает закон: подвал зачищается ЦЕЛИКОМ до подъёма.
-        sm::sub::SubObjects* cObjs = sm::sub::objects_find(app.ecs.reg);
+        sm::sub::SubObjects* cObjs = app.sceneObjects.get();
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; cObjs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((cObjs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
@@ -2965,7 +2961,7 @@ bool run_dungeon_house_smoke(App& app) {
     int residents = 0;
     int victimSlot = -1;
     sm::ecs::MacroDebt victimDebt{};
-    sm::sub::SubObjects* rObjs = sm::sub::objects_find(app.ecs.reg);
+    sm::sub::SubObjects* rObjs = app.sceneObjects.get();
     // Свип арены по биту жизни (ломоть D).
     for (int s = 0; rObjs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
         if ((rObjs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
@@ -3320,7 +3316,7 @@ bool run_dungeon_cave_smoke(App& app) {
     {
         // Свип арены по биту жизни (ломоть D): квитанция стока — колонка
         // тела, у снаряда её нет.
-        const sm::sub::SubObjects& vObjs = sm::sub::objects_of(app.ecs.reg);
+        const sm::sub::SubObjects& vObjs = (*app.sceneObjects);
         for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
             if ((vObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                 continue;
@@ -3447,7 +3443,7 @@ bool run_prologue_road_smoke(App& app) {
     // барами. Дверь одна — slot_npc_candidate@src/sub/doors.h.
     auto scene_bodies = [&]() {
         int n = 0;
-        sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
+        sm::sub::SubObjects* objs = app.sceneObjects.get();
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
@@ -3484,7 +3480,7 @@ bool run_prologue_road_smoke(App& app) {
     int ambushers = 0;
     float nearestAmbush2 = 1e18f;
     {
-        sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
+        sm::sub::SubObjects* objs = app.sceneObjects.get();
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
@@ -3509,7 +3505,7 @@ bool run_prologue_road_smoke(App& app) {
     // tuned spawn.
     int ambushMaxHp = 0;
     {
-        sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
+        sm::sub::SubObjects* objs = app.sceneObjects.get();
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
@@ -3530,7 +3526,7 @@ bool run_prologue_road_smoke(App& app) {
     advance_sim_seconds(app, 4.0f, false);
     float closed2 = 1e18f;
     {
-        sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg);
+        sm::sub::SubObjects* objs = app.sceneObjects.get();
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
@@ -3896,7 +3892,7 @@ bool run_spire_climb_smoke(App& app) {
         int n = 0;
         // Свип арены по биту жизни (ломоть D): квитанция стока — колонка
         // тела, у снаряда её нет.
-        const sm::sub::SubObjects& gObjs = sm::sub::objects_of(app.ecs.reg);
+        const sm::sub::SubObjects& gObjs = (*app.sceneObjects);
         for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
             if ((gObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                 continue;
@@ -4155,28 +4151,28 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         return false;
     }
 
-    auto& reg = app.ecs.reg;
+    sm::sub::SubObjects& sceneArena = *app.sceneObjects;
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     // Тело-фикстура — слот арены (ломоть D): не родилось, смоук падает здесь
     // и называет причину, а не молча недосчитывает спрайты ниже.
-    const int hostileSlot = smoke_give_body(reg);
+    const int hostileSlot = smoke_give_body(sceneArena);
     if (hostileSlot < 0) {
         smoke_fail(app, "subworld_enemy_feedback hostile body: arena full");
         return false;
     }
-    smoke_give_pos(reg, hostileSlot,
+    smoke_give_pos(sceneArena, hostileSlot,
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
-    smoke_give_visual(reg, hostileSlot, sm::ecs::VisualPos{std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f});
+    smoke_give_visual(sceneArena, hostileSlot, sm::ecs::VisualPos{std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f});
     smoke_give_kind(
-        reg, hostileSlot, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
-    smoke_give_pools(reg, hostileSlot, sm::ecs::Pools{18, 18});
-    smoke_give_combat(reg, hostileSlot, sm::ecs::Combat{
+        sceneArena, hostileSlot, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
+    smoke_give_pools(sceneArena, hostileSlot, sm::ecs::Pools{18, 18});
+    smoke_give_combat(sceneArena, hostileSlot, sm::ecs::Combat{
         sm::Dice{7, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
         std::uint8_t(sm::DamageType::Blunt),
         0.0f, 8.0f, 0.30f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
-    smoke_give_ai(reg, hostileSlot, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
-    smoke_give_sprite(reg, hostileSlot, sm::ecs::Sprite{
+    smoke_give_ai(sceneArena, hostileSlot, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
+    smoke_give_sprite(sceneArena, hostileSlot, sm::ecs::Sprite{
         std::uint16_t(0x1FE),
         std::uint8_t(255), std::uint8_t(60), std::uint8_t(45),
         1.2f});
@@ -4185,7 +4181,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     // прежний фильтр «без NpcCharacter» отделял куклу от спрайта и умер
     // вместе с компонентой лица (кусок 1).
     int spriteOnlyVisible = 0;
-    sm::sub::SubObjects* sprObjs = sm::sub::objects_find(reg);
+    sm::sub::SubObjects* sprObjs = &sceneArena;
     // Свип арены по биту жизни (ломоть D): спрайт есть и у снаряда, но
     // гейт баров ниже его отсекает — снарядных пулов не бывает.
     for (int s = 0; sprObjs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
@@ -4273,7 +4269,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         return false;
     }
 
-    auto& reg = app.ecs.reg;
+    sm::sub::SubObjects& sceneArena = *app.sceneObjects;
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     // The witch stands at the PLAYER'S OWN Z. Z is world elevation in metres, so
@@ -4283,26 +4279,26 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     // shot.
     const float pz = app.subworld.player_z();
     // Тело-фикстура — слот арены (ломоть D).
-    const int hostileSlot = smoke_give_body(reg);
+    const int hostileSlot = smoke_give_body(sceneArena);
     if (hostileSlot < 0) {
         smoke_fail(app, "subworld_missile_feedback hostile body: arena full");
         return false;
     }
-    smoke_give_pos(reg, hostileSlot,
+    smoke_give_pos(sceneArena, hostileSlot,
         std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz);
-    smoke_give_visual(reg, hostileSlot, sm::ecs::VisualPos{std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz});
+    smoke_give_visual(sceneArena, hostileSlot, sm::ecs::VisualPos{std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz});
     // "bandits" ASKED OF THE REGISTRY, not the literal 3 this used to carry.
     // Under the ONE faction registry index 3 is `cults`, whose standing with the
     // player is -10 — above kHostileThreshold, so the witch had no quarrel with
     // anyone and simply never drew. Bandits sit at -100: hostile by construction,
     // which is the whole premise of a scenario about being shot at.
     smoke_give_kind(
-        reg, hostileSlot,
+        sceneArena, hostileSlot,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Witch),
             std::uint16_t(sm::faction_index("bandits"))});
-    smoke_give_pools(reg, hostileSlot, sm::ecs::Pools{30, 30});
-    smoke_give_combat(reg, hostileSlot, sm::ecs::Combat{
+    smoke_give_pools(sceneArena, hostileSlot, sm::ecs::Pools{30, 30});
+    smoke_give_combat(sceneArena, hostileSlot, sm::ecs::Combat{
         sm::Dice{6, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
         std::uint8_t(sm::DamageType::Blunt),
         0.0f,
@@ -4310,19 +4306,19 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         0.30f,
         0u,
         sm::ecs::Combat::Missile, /*armorSteps*/std::uint16_t{0}});
-    smoke_give_missile(reg, hostileSlot,
+    smoke_give_missile(sceneArena, hostileSlot,
         sm::ecs::MissileAttack{160.0f, 0.0f, std::uint32_t{0xFFA070D0u}});
-    smoke_give_ai(reg, hostileSlot, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
+    smoke_give_ai(sceneArena, hostileSlot, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
         0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
-    smoke_give_sprite(reg, hostileSlot, sm::ecs::Sprite{
+    smoke_give_sprite(sceneArena, hostileSlot, sm::ecs::Sprite{
         std::uint16_t(sm::NPCType::Witch),
         std::uint8_t(160), std::uint8_t(112), std::uint8_t(208),
         1.2f});
 
-    const int beforeProjectiles = smoke_projectile_count(reg);
+    const int beforeProjectiles = smoke_projectile_count(sceneArena);
     const int beforeHp = player_pools(app).hp;
     advance_sim_seconds(app, 0.10f, false);
-    const int afterProjectiles = smoke_projectile_count(reg);
+    const int afterProjectiles = smoke_projectile_count(sceneArena);
     const int afterHp = player_pools(app).hp;
     const float flash = app.subworldHitFlashTimer;
     const int combatLogCount = app.subworld.combat_log_count();
@@ -4369,7 +4365,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
 // click and charge the same ecs::Combat::recoverySteps a swing does) — what
 // a scenario prints to show the fight's clock honestly.
 static std::uint32_t smoke_player_recovery_steps(App& app) {
-    if (sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg)) {
+    if (sm::sub::SubObjects* objs = app.sceneObjects.get()) {
         if (const int s = sm::sub::avatar_slot(*objs); s >= 0)
             if (const auto* c = sm::sub::slot_combat(*objs, s))
                 return c->recoverySteps;
@@ -4400,7 +4396,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
         return false;
     }
 
-    auto& reg = app.ecs.reg;
+    sm::sub::SubObjects& sceneArena = *app.sceneObjects;
     // Isolate the muzzle geometry: kill every combat actor except the player so
     // the fireball has no legitimate target and any HP loss can only be a
     // self-hit at the muzzle.
@@ -4411,7 +4407,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
     {
         // (Гард сквада игрока умер с мостом: макро-сквад в реестре не
         // живёт, арена несёт только тела сцены — кластер 7.)
-        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+        sm::sub::SubObjects* objs = &sceneArena;
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                 continue;
@@ -4439,13 +4435,13 @@ bool run_subworld_self_fireball_smoke(App& app) {
     app.subworld.rotate_camera(0.0f, 0.9f);
 
     const int beforeHp = player_pools(app).hp;
-    const int beforeProjectiles = smoke_projectile_count(reg);
+    const int beforeProjectiles = smoke_projectile_count(sceneArena);
 
     if (!cast_active_spell(app)) {
         smoke_fail(app, "subworld_self_fireball cast failed");
         return false;
     }
-    const int spawnedProjectiles = smoke_projectile_count(reg);
+    const int spawnedProjectiles = smoke_projectile_count(sceneArena);
     if (spawnedProjectiles <= beforeProjectiles) {
         smoke_fail(app, "subworld_self_fireball projectile not spawned");
         return false;
@@ -4458,7 +4454,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
     const int afterHp = player_pools(app).hp;
 
     bool playerDead = false;
-    if (sm::sub::SubObjects* pObjs = sm::sub::objects_find(reg)) {
+    if (sm::sub::SubObjects* pObjs = &sceneArena) {
         if (const int ps = sm::sub::avatar_slot(*pObjs); ps >= 0)
             playerDead = sm::sub::slot_flag(*pObjs, ps, sm::sub::kObjDead);
     }
@@ -4510,7 +4506,7 @@ bool run_turn_based_cycle_smoke(App& app) {
     // A bandit within arm's reach, exactly the melee smoke's rig — the swing
     // must LAND so it charges the gate the way a played turn does.
     {
-        auto& reg = app.ecs.reg;
+        sm::sub::SubObjects& sceneArena = *app.sceneObjects;
         const float px = app.subworld.player_x();
         const float py = app.subworld.player_y();
         const float armX = std::min(
@@ -4518,19 +4514,19 @@ bool run_turn_based_cycle_smoke(App& app) {
             float(sm::sub::kFullSize - 2));
         const float armZ = app.subworld.ground_height_at(armX, py);
         // Тело-фикстура — слот арены (ломоть D).
-        const int targetSlot = smoke_give_body(reg);
+        const int targetSlot = smoke_give_body(sceneArena);
         if (targetSlot < 0) {
             smoke_fail(app, "turn_based_cycle target body: arena full");
             return false;
         }
-        smoke_give_pos(reg, targetSlot, armX, py, armZ);
-        smoke_give_visual(reg, targetSlot, sm::ecs::VisualPos{armX, py, armZ});
+        smoke_give_pos(sceneArena, targetSlot, armX, py, armZ);
+        smoke_give_visual(sceneArena, targetSlot, sm::ecs::VisualPos{armX, py, armZ});
         smoke_give_kind(
-            reg, targetSlot,
+            sceneArena, targetSlot,
             sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
                              std::uint16_t(3)});
-        smoke_give_pools(reg, targetSlot, sm::ecs::Pools{4000, 4000});
-        smoke_give_sprite(reg, targetSlot, sm::ecs::Sprite{
+        smoke_give_pools(sceneArena, targetSlot, sm::ecs::Pools{4000, 4000});
+        smoke_give_sprite(sceneArena, targetSlot, sm::ecs::Sprite{
             std::uint16_t(sm::NPCType::Bandit),
             std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
             1.2f});
@@ -4711,7 +4707,7 @@ bool run_subworld_player_melee_smoke(App& app) {
         return false;
     }
 
-    auto& reg = app.ecs.reg;
+    sm::sub::SubObjects& sceneArena = *app.sceneObjects;
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     // ВНУТРИ ДАЛЬНОСТИ РУКИ, спрошенной у той же двери, что меряет замах
@@ -4726,25 +4722,25 @@ bool run_subworld_player_melee_smoke(App& app) {
     const float armZ = app.subworld.ground_height_at(armX, py);
     // Слот цели — ОДИН раз, и он ЕСТЬ тело (ломоть D): рождение арены, а не
     // сущность с колонкой-носителем.
-    const int targetSlot = smoke_give_body(reg);
+    const int targetSlot = smoke_give_body(sceneArena);
     if (targetSlot < 0) {
         smoke_fail(app, "subworld_player_melee target body: arena full");
         return false;
     }
-    smoke_give_pos(reg, targetSlot, armX, py, armZ);
-    smoke_give_visual(reg, targetSlot, sm::ecs::VisualPos{armX, py, armZ});
+    smoke_give_pos(sceneArena, targetSlot, armX, py, armZ);
+    smoke_give_visual(sceneArena, targetSlot, sm::ecs::VisualPos{armX, py, armZ});
     smoke_give_kind(
-        reg, targetSlot,
+        sceneArena, targetSlot,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit),
             std::uint16_t(3)});
-    smoke_give_pools(reg, targetSlot, sm::ecs::Pools{40, 40});
-    smoke_give_sprite(reg, targetSlot, sm::ecs::Sprite{
+    smoke_give_pools(sceneArena, targetSlot, sm::ecs::Pools{40, 40});
+    smoke_give_sprite(sceneArena, targetSlot, sm::ecs::Sprite{
         std::uint16_t(sm::NPCType::Bandit),
         std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
         1.2f});
 
-    sm::sub::SubObjects& tObjs = sm::sub::objects_of(reg);
+    sm::sub::SubObjects& tObjs = sceneArena;
     const float beforeHp = (*sm::sub::slot_pools(tObjs, targetSlot)).hp;
     const int beforeCombatLog = app.subworld.combat_log_count();
     app.subworld.set_player_attack_held(true);
@@ -4780,7 +4776,7 @@ bool run_subworld_player_melee_smoke(App& app) {
     // no armour, so what was rolled is what landed; a crit changes nothing
     // against a bare target).
     const sm::ecs::Combat* playerCombat = nullptr;
-    if (sm::sub::SubObjects* pco = sm::sub::objects_find(reg)) {
+    if (sm::sub::SubObjects* pco = &sceneArena) {
         if (const int ps = sm::sub::avatar_slot(*pco); ps >= 0) {
             playerCombat = sm::sub::slot_combat(*pco, ps);
         }
@@ -4809,7 +4805,7 @@ bool run_subworld_player_melee_smoke(App& app) {
                  double(minStrike),
                  double(maxStrike),
                  combatRouted ? 1 : 0,
-                 meleeLastBy == sm::sub::objects_of(reg).avatar ? 1 : 0,
+                 meleeLastBy == sceneArena.avatar ? 1 : 0,
                  combatLogVisible ? combatLog->text : "",
                  statusSet ? status : "");
     std::fflush(stderr);
@@ -4839,7 +4835,7 @@ bool run_subworld_player_melee_smoke(App& app) {
     }
     SMOKE_CHECK(app, meleeLastBy.id != 0u,
                 "the struck body remembers who hit it");
-    SMOKE_CHECK(app, meleeLastBy == sm::sub::objects_of(reg).avatar,
+    SMOKE_CHECK(app, meleeLastBy == sceneArena.avatar,
                 "attribution names the PLAYER'S BODY — the hand that swung");
     SMOKE_CHECK(app, afterCombatLog > beforeCombatLog,
                 "the strike appended a combat log line");
@@ -4878,7 +4874,7 @@ bool run_subworld_player_bow_smoke(App& app) {
         return false;
     }
 
-    auto& reg = app.ecs.reg;
+    sm::sub::SubObjects& sceneArena = *app.sceneObjects;
     // Clear the line of fire (the cast_spell idiom): a swept arrow honestly
     // strikes the first body in its path, so an ambient bystander on the
     // ray would make this a referendum on the seed's foot traffic.
@@ -4887,7 +4883,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     {
         // (Гард сквада игрока умер с мостом: макро-сквад в реестре не
         // живёт, арена несёт только тела сцены — кластер 7.)
-        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+        sm::sub::SubObjects* objs = &sceneArena;
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                 continue;
@@ -5019,27 +5015,27 @@ bool run_subworld_player_bow_smoke(App& app) {
     app.subworld.rotate_camera(wantYaw - app.subworld.cam_yaw(),
                                wantPitch - app.subworld.cam_pitch());
     // Слот цели — ОДИН раз, как у мили-близнеца (ломоть D: слот И ЕСТЬ тело).
-    const int targetSlot = smoke_give_body(reg);
+    const int targetSlot = smoke_give_body(sceneArena);
     if (targetSlot < 0) {
         smoke_fail(app, "subworld_player_bow target body: arena full");
         return false;
     }
-    smoke_give_pos(reg, targetSlot, tx, ty, tz);
-    smoke_give_visual(reg, targetSlot, sm::ecs::VisualPos{tx, ty, tz});
+    smoke_give_pos(sceneArena, targetSlot, tx, ty, tz);
+    smoke_give_visual(sceneArena, targetSlot, sm::ecs::VisualPos{tx, ty, tz});
     smoke_give_kind(
-        reg, targetSlot,
+        sceneArena, targetSlot,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit),
             std::uint16_t(sm::faction_index("bandits"))});
-    smoke_give_pools(reg, targetSlot, sm::ecs::Pools{40, 40});
-    smoke_give_sprite(reg, targetSlot, sm::ecs::Sprite{
+    smoke_give_pools(sceneArena, targetSlot, sm::ecs::Pools{40, 40});
+    smoke_give_sprite(sceneArena, targetSlot, sm::ecs::Sprite{
         std::uint16_t(sm::NPCType::Bandit),
         std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
         1.2f});
 
-    sm::sub::SubObjects& tObjs = sm::sub::objects_of(reg);
+    sm::sub::SubObjects& tObjs = sceneArena;
     const float beforeHp = (*sm::sub::slot_pools(tObjs, targetSlot)).hp;
-    const int beforeProjectiles = smoke_projectile_count(reg);
+    const int beforeProjectiles = smoke_projectile_count(sceneArena);
 
     app.subworld.set_player_attack_held(true);
     RuntimeFrameStats frameStats = advance_sim_seconds(app, 0.05f, false);
@@ -5049,12 +5045,12 @@ bool run_subworld_player_bow_smoke(App& app) {
         return false;
     }
 
-    const int loosedProjectiles = smoke_projectile_count(reg);
+    const int loosedProjectiles = smoke_projectile_count(sceneArena);
     const std::uint32_t gateSteps = smoke_player_recovery_steps(app);
     // The press routed as a SHOT because the weapon row said Missile — the
     // white-box guard that the delivery column reached the body's Combat.
     const sm::ecs::Combat* playerCombat = nullptr;
-    if (sm::sub::SubObjects* pco = sm::sub::objects_find(reg)) {
+    if (sm::sub::SubObjects* pco = &sceneArena) {
         if (const int ps = sm::sub::avatar_slot(*pco); ps >= 0) {
             playerCombat = sm::sub::slot_combat(*pco, ps);
         }
@@ -5080,7 +5076,7 @@ bool run_subworld_player_bow_smoke(App& app) {
                  missileRouted ? 1 : 0,
                  unsigned(gateSteps),
                  double(beforeHp), double(afterHp),
-                 bowLastBy == sm::sub::objects_of(reg).avatar ? 1 : 0,
+                 bowLastBy == sceneArena.avatar ? 1 : 0,
                  headingDeg);
     std::fflush(stderr);
 
@@ -5091,7 +5087,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     if (!missileRouted
         || gateSteps == 0u
         || !hp || dealt <= 0.0f
-        || bowLastBy != sm::sub::objects_of(reg).avatar) {
+        || bowLastBy != sceneArena.avatar) {
         smoke_fail(app, "subworld_player_bow invariant");
         return false;
     }
@@ -5120,7 +5116,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         return false;
     }
 
-    auto& reg = app.ecs.reg;
+    sm::sub::SubObjects& sceneArena = *app.sceneObjects;
     sm::add_player_reputation(app.gs, "empire",
                               -sm::player_reputation(&app.gs, "empire"));
     const float px = app.subworld.player_x();
@@ -5141,13 +5137,13 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // a slope, which is most of the time on most worlds.
     const float pz = app.subworld.ground_height_at(tx, py);
     // Слот цели — ОДИН раз (ломоть D); им живут позиция, бары и ниже болт.
-    const int targetSlot = smoke_give_body(reg);
+    const int targetSlot = smoke_give_body(sceneArena);
     if (targetSlot < 0) {
         smoke_fail(app, "subworld_reputation_hit target body: arena full");
         return false;
     }
-    smoke_give_pos(reg, targetSlot, tx, py, pz);
-    smoke_give_visual(reg, targetSlot, sm::ecs::VisualPos{tx, py, pz});
+    smoke_give_pos(sceneArena, targetSlot, tx, py, pz);
+    smoke_give_visual(sceneArena, targetSlot, sm::ecs::VisualPos{tx, py, pz});
     // ASK THE REGISTRY for the empire's index instead of spelling a literal.
     // This used to read `0`, from the days of the per-vocabulary faction
     // dictionaries; under the ONE registry (macro/faction.h) index 0 is
@@ -5155,24 +5151,24 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // reputation of the local wolves while the scenario watched `empire` and
     // saw nothing move.
     smoke_give_kind(
-        reg, targetSlot,
+        sceneArena, targetSlot,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Peasant),
             std::uint16_t(sm::faction_index("empire"))});
-    smoke_give_pools(reg, targetSlot, sm::ecs::Pools{40, 40});
-    smoke_give_combat(reg, targetSlot, sm::ecs::Combat{
+    smoke_give_pools(sceneArena, targetSlot, sm::ecs::Pools{40, 40});
+    smoke_give_combat(sceneArena, targetSlot, sm::ecs::Combat{
         sm::Dice{3, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
         std::uint8_t(sm::DamageType::Blunt),
         20.0f, 2.0f, 1.5f, 0u,
         sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
-    smoke_give_ai(reg, targetSlot, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Flee,
+    smoke_give_ai(sceneArena, targetSlot, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Flee,
         3.0f, 0.0f, 0.0f, 8.0f, 0.55f});
-    smoke_give_sprite(reg, targetSlot, sm::ecs::Sprite{
+    smoke_give_sprite(sceneArena, targetSlot, sm::ecs::Sprite{
         std::uint16_t(sm::NPCType::Peasant),
         std::uint8_t(190), std::uint8_t(150), std::uint8_t(120),
         0.8f});
 
-    sm::sub::SubObjects& tObjs = sm::sub::objects_of(reg);
+    sm::sub::SubObjects& tObjs = sceneArena;
     const int beforeRep = sm::player_reputation(&app.gs, "empire");
     const float neutralX = tObjs.pos[std::size_t(targetSlot)].x;
     const float neutralY = tObjs.pos[std::size_t(targetSlot)].y;
@@ -5213,7 +5209,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // reputation (spell_effects.cpp apply_spell_damage).
     // Поля НАЗВАНЫ (0b ломтя 7): позиционный список переживал перестановку
     // полей молча; designated-форму красит -Wreorder-init-list -Werror.
-    const sm::sub::ObjRef smokeCaster = sm::sub::objects_of(reg).avatar;
+    const sm::sub::ObjRef smokeCaster = sceneArena.avatar;
     const sm::ecs::Projectile friendlyBolt{
         .vx = 0.0f, .vy = 0.0f, .vz = 0.0f,
         .radius = 1.5f, .lifeTimer = 1.0f, .maxLifeTimer = 1.0f,
@@ -5233,13 +5229,13 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // выстрела, сущности нет. Уборку несёт ССЫЛКА сцены: слот кросс-тиковый
     // (жнец спелл-тика мог освободить и переродить его), голый номер соврал бы.
     const int friendlySlot = sm::sub::birth_projectile(
-        sm::sub::objects_of(reg), friendlyBolt, sm::ecs::Position{tx, py, pz});
+        sceneArena, friendlyBolt, sm::ecs::Position{tx, py, pz});
     if (friendlySlot < 0) {
         smoke_fail(app, "subworld_reputation_hit friendly bolt: arena full");
         return false;
     }
     const sm::sub::ObjRef friendlyRef =
-        sm::sub::ref_of(sm::sub::objects_of(reg), friendlySlot);
+        sm::sub::ref_of(sceneArena, friendlySlot);
     RuntimeFrameStats friendlySpellFrame =
         advance_sim_seconds(app, 0.05f, false);
     if (!friendlySpellFrame.ticked || !friendlySpellFrame.subworldActive) {
@@ -5258,7 +5254,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         // Болт обычно уже сжат спелл-тиком (попадание = queue_reap → free);
         // ссылка отвечает «моя ли это ещё запись» — перерождённый слот не
         // трогаем.
-        sm::sub::SubObjects& sobjs = sm::sub::objects_of(reg);
+        sm::sub::SubObjects& sobjs = sceneArena;
         const int fs = sm::sub::ref_slot(sobjs, friendlyRef);
         if (fs >= 0) sobjs.free(fs);
     }
@@ -5655,7 +5651,7 @@ bool run_console_smoke(App& app) {
     // Self-contained: it restores the macro anchor the enter/leave cycle
     // moves.
     {
-        auto& reg = app.ecs.reg;
+        sm::sub::SubObjects& sceneArena = *app.sceneObjects;
         const float saveX = smoke_player_x(app);
         const float saveY = smoke_player_y(app);
         auto near_half = [](float a, float b) {
@@ -5667,7 +5663,7 @@ bool run_console_smoke(App& app) {
         auto count_avatar_tags = [&]() {
             // Вопрос выродился в «жива ли ссылка сцены» ((ii-б)): сущность
             // ему не нужна вовсе.
-            sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+            sm::sub::SubObjects* objs = &sceneArena;
             return objs != nullptr && sm::sub::avatar_slot(*objs) >= 0 ? 1 : 0;
         };
 
@@ -5963,10 +5959,10 @@ bool run_console_smoke(App& app) {
     // store (landing 4). It is still NOT an NPC: рода и думки у него нет,
     // so no AI, loot, XP, or squad-removal path can ever fire on it.
     {
-        auto& reg = app.ecs.reg;
+        sm::sub::SubObjects& sceneArena = *app.sceneObjects;
         // Слот аватара — ОДИН раз ((ii-б)): шесть вопросов об ОДНОМ теле
         // шли шестью entity-дверями, каждая со своим лукапом.
-        sm::sub::SubObjects* pObjs = sm::sub::objects_find(reg);
+        sm::sub::SubObjects* pObjs = &sceneArena;
         const int ps = pObjs ? sm::sub::avatar_slot(*pObjs) : -1;
         if (ps < 0) {
             restore();
@@ -6031,9 +6027,9 @@ bool run_console_smoke(App& app) {
     }
 
     auto count_live_bandits = [&]() {
-        auto& reg = app.ecs.reg;
+        sm::sub::SubObjects& sceneArena = *app.sceneObjects;
         int n = 0;
-        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+        sm::sub::SubObjects* objs = &sceneArena;
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
@@ -6064,12 +6060,12 @@ bool run_console_smoke(App& app) {
     // законен голый слот»).
     std::vector<int> preexistingBandits;
     {
-        auto& reg = app.ecs.reg;
+        sm::sub::SubObjects& sceneArena = *app.sceneObjects;
         // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт владельца 2026-10-11): снимок «кто
         // уже стоял» идёт ТОЙ ЖЕ дверью, что отбор ниже. Мёртвые в нём и
         // были бесполезны — отбор «наш спавн» их всё равно не берёт, так
         // что полнота снимка ничего не охраняла.
-        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+        sm::sub::SubObjects* objs = &sceneArena;
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                 continue;
@@ -6103,7 +6099,7 @@ bool run_console_smoke(App& app) {
     // template floor — i.e. combat is now DERIVED from the sheet, not the
     // authored template alone.
     {
-        auto& reg = app.ecs.reg;
+        sm::sub::SubObjects& sceneArena = *app.sceneObjects;
         auto attr_sum = [](const sm::Attributes& a) {
             // Walk the NAMED scores, not a hand-listed nine: an attribute the
             // game names later joins this sum by existing, and the reserved
@@ -6116,7 +6112,7 @@ bool run_console_smoke(App& app) {
         // Слот отобранного тела запоминается ВМЕСТО сущности ((ii-б)):
         // четыре вопроса ниже (лист, уровень, бары, бой) — о нём.
         int bs = -1;
-        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+        sm::sub::SubObjects* objs = &sceneArena;
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
@@ -6209,9 +6205,9 @@ bool run_console_smoke(App& app) {
     // maps back to the wolf catalog row. Killing it grants XP through the shared
     // death path (fauna route), proving spawn-any-creature + creature XP.
     auto count_live_creatures = [&]() {
-        auto& reg = app.ecs.reg;
+        sm::sub::SubObjects& sceneArena = *app.sceneObjects;
         int n = 0;
-        sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+        sm::sub::SubObjects* objs = &sceneArena;
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
@@ -6233,9 +6229,9 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console spawn wolf produced no monster"); return false;
     }
     {
-        auto& reg = app.ecs.reg;
+        sm::sub::SubObjects& sceneArena = *app.sceneObjects;
         const sm::FaunaEntry* wolf = sm::creature_def("wolf");
-        sm::sub::SubObjects* wObjs = sm::sub::objects_find(reg);
+        sm::sub::SubObjects* wObjs = &sceneArena;
         int wolfSlot = -1;
         // Свип арены по биту жизни (ломоть D).
         for (int s = 0; wObjs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
@@ -6343,11 +6339,11 @@ bool run_console_smoke(App& app) {
     // Isolated here after killall: it spawns its own target so it perturbs none
     // of the earlier hostile-count checks.
     {
-        auto& reg = app.ecs.reg;
+        sm::sub::SubObjects& sceneArena = *app.sceneObjects;
         con.execute("spawn bandit 3");
         // A fresh, non-player-side bandit. Идентичность — ссылкой сцены
         // (ломоть B): слот+ID переживают тики каста, голый слот — нет.
-        sm::sub::SubObjects* tObjs = sm::sub::objects_find(reg);
+        sm::sub::SubObjects* tObjs = &sceneArena;
         int targetSlot = -1;
         {
             // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): здесь стояла
@@ -6529,7 +6525,7 @@ bool run_console_smoke(App& app) {
             // одного и того же слота спрашивались ДВАЖДЫ (гейт и возврат).
             const auto authoritative_pools = [&]() -> sm::ecs::Pools* {
                 sm::sub::SubObjects* objs =
-                    sm::sub::objects_find(app.ecs.reg);
+                    app.sceneObjects.get();
                 const int s = objs ? sm::sub::avatar_slot(*objs) : -1;
                 if (s >= 0) {
                     sm::ecs::Pools* body = sm::sub::slot_pools(*objs, s);
@@ -7056,7 +7052,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                             // кандидат», а перепись сцены. Дверь гейта здесь
                             // съела бы половину ответа.
                             sm::sub::SubObjects* sObjs =
-                                sm::sub::objects_find(app.ecs.reg);
+                                app.sceneObjects.get();
                             // Свип арены по биту жизни (ломоть D): гейт
                             // баров ниже отсекает снаряды — пулов у них нет.
                             for (int sl = 0;
@@ -7183,7 +7179,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // Свип арены по биту жизни (ломоть D): гейт записи сам
                 // отсекает снаряды — чужой записи у них нет.
                 const sm::sub::SubObjects* pObjs =
-                    sm::sub::objects_find(app.ecs.reg);
+                    app.sceneObjects.get();
                 for (int s = 0;
                      pObjs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
                     if ((pObjs->flags[std::size_t(s)]
@@ -7259,10 +7255,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // которую половина проверяла. Свидетельница, взявшая мертвеца,
             // проверяет не то, что написано в её названии.
             auto take_a_projected_body = [&]() -> sm::MacroHandle {
-                auto& reg = app.ecs.reg;
+                sm::sub::SubObjects& sceneArena = *app.sceneObjects;
                 sm::MacroStore& st = *app.macroStore;
                 const sm::sub::SubObjects& objs =
-                    sm::sub::objects_of(reg);
+                    sceneArena;
                 // Свип арены по биту жизни (ломоть D): гейт записи сам
                 // отсекает снаряды — чужой записи у них нет.
                 for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
@@ -7398,7 +7394,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             {
-                auto& reg = app.ecs.reg;
+                sm::sub::SubObjects& sceneArena = *app.sceneObjects;
                 // The window centre BEFORE any remap — the default landing cell a
                 // non-possessed exit would snap to.
                 const int ccx = int(smoke_player_x(app));
@@ -7407,7 +7403,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // Арена берётся ПОСЛЕ enter и переберётся после каждого
                 // следующего enter: leave() сбрасывает конверт (шрам
                 // 2026-10-15, exit 139).
-                sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+                sm::sub::SubObjects* objs = &sceneArena;
                 int bodySlot = -1;
                 sm::MacroHandle origin{};
                 // Свип арены по биту жизни (ломоть D).
@@ -7598,7 +7594,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     sm::player_flag_handle(app.gs) == origin;
                 // НОВАЯ сцена — арена перебрана заново (leave() сбросил
                 // конверт; старый objs мёртв).
-                sm::sub::SubObjects* objs2 = sm::sub::objects_find(reg);
+                sm::sub::SubObjects* objs2 = &sceneArena;
                 const int avSlot = objs2 != nullptr
                     ? sm::sub::avatar_slot(*objs2) : -1;
                 // Двери говорят про ЛОРДА и под землёй: полосы — его блок
@@ -7765,7 +7761,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto countHostiles = [&]() {
                 int n = 0;
                 sm::sub::SubObjects* hObjs =
-                    sm::sub::objects_find(app.ecs.reg);
+                    app.sceneObjects.get();
                 // Свип арены по биту жизни (ломоть D).
                 for (int s = 0;
                      hObjs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
@@ -7788,7 +7784,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto countSubworldEntities = [&]() {
                 int n = 0;
                 const sm::sub::SubObjects* lkObjs =
-                    sm::sub::objects_find(app.ecs.reg);
+                    app.sceneObjects.get();
                 // Свип арены по биту жизни (ломоть D). Перепись идёт БЕЗ
                 // гейта колонок, поэтому снаряд отсекается строкой: свип
                 // видит снаряды — вьюха их не видела.
@@ -7803,7 +7799,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             };
             auto findSmokeHostile = [&]() -> int {
                 sm::sub::SubObjects* hObjs =
-                    sm::sub::objects_find(app.ecs.reg);
+                    app.sceneObjects.get();
                 // Свип арены по биту жизни (ломоть D).
                 for (int s = 0;
                      hObjs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
@@ -7864,7 +7860,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "battle_start hostile not found for death flush");
                 break;
             }
-            sm::sub::SubObjects& hObjs = sm::sub::objects_of(app.ecs.reg);
+            sm::sub::SubObjects& hObjs = (*app.sceneObjects);
             if (sm::sub::slot_kind(hObjs, smokeHostile) == nullptr) {
                 smoke_fail(app, "battle_start hostile missing body kind");
                 break;
@@ -8097,7 +8093,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // ЕДИНАЯ СИСТЕМА ГЕЙТА (вердикт 2026-10-11): обрезок «есть род»
             // считал горожанами и трупы.
             sm::sub::SubObjects* cityObjs =
-                sm::sub::objects_find(app.ecs.reg);
+                app.sceneObjects.get();
             // Свип арены по биту жизни (ломоть D).
             for (int cs = 0;
                  cityObjs != nullptr && cs < int(sm::kMaxSubObjects); ++cs) {
@@ -8239,7 +8235,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const float qr = sm::sub::city_upper_radius(lmPop);
                 int watch = 0, inQuarter = 0;
                 const sm::sub::SubObjects& gObjs =
-                    sm::sub::objects_of(app.ecs.reg);
+                    (*app.sceneObjects);
                 // Свип арены по биту жизни (ломоть D): квитанция стока —
                 // колонка тела, у снаряда её нет.
                 for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
@@ -8448,7 +8444,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto street = [&app]() {
                 int n = 0;
                 sm::sub::SubObjects* stObjs =
-                    sm::sub::objects_find(app.ecs.reg);
+                    app.sceneObjects.get();
                 // Свип арены по биту жизни (ломоть D).
                 for (int ss = 0;
                      stObjs != nullptr && ss < int(sm::kMaxSubObjects); ++ss) {
@@ -8758,12 +8754,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "fauna_kill_writeback outside the subworld");
                 break;
             }
-            auto& reg = app.ecs.reg;
+            sm::sub::SubObjects& sceneArena = *app.sceneObjects;
             sm::MacroWorld faunaMw = macro_world(app);
             if (app.smoke.trackedPhase == 0) {
                 int bodySlot = -1;
                 const sm::ecs::MacroDebt* debt = nullptr;
-                sm::sub::SubObjects* fObjs = sm::sub::objects_find(reg);
+                sm::sub::SubObjects* fObjs = &sceneArena;
                 // Свип арены по биту жизни (ломоть D).
                 for (int fs = 0;
                      fObjs != nullptr && fs < int(sm::kMaxSubObjects); ++fs) {
@@ -8845,9 +8841,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "macro_kill_writeback outside the subworld");
                 break;
             }
-            auto& reg = app.ecs.reg;
+            sm::sub::SubObjects& sceneArena = *app.sceneObjects;
             sm::MacroStore& st = *app.macroStore;
-            sm::sub::SubObjects& wObjs = sm::sub::objects_of(reg);
+            sm::sub::SubObjects& wObjs = sceneArena;
             if (app.smoke.trackedPhase == 0) {
                 int bodySlot = -1;
                 // Свип арены по биту жизни (ломоть D): гейт записи сам
@@ -9388,7 +9384,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             {
                 // (Гард сквада игрока умер с мостом — кластер 7.)
                 sm::sub::SubObjects& dObjs =
-                    sm::sub::objects_of(app.ecs.reg);
+                    (*app.sceneObjects);
                 for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
                     if ((dObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
                         continue;
@@ -9440,30 +9436,30 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const float spellTargetZ = muzzleZ;
             // Мишень — слот арены (ломоть D): не родилась, свидетельница
             // падает здесь и называет причину.
-            const int spellTargetSlot = smoke_give_body(app.ecs.reg);
+            const int spellTargetSlot = smoke_give_body(*app.sceneObjects);
             if (spellTargetSlot < 0) {
                 smoke_fail(app, "cast_spell target body: arena full");
                 break;
             }
-            smoke_give_pos(app.ecs.reg, spellTargetSlot,
+            smoke_give_pos(*app.sceneObjects, spellTargetSlot,
                            spellTargetX, spellTargetY, spellTargetZ);
-            smoke_give_visual(app.ecs.reg, spellTargetSlot, sm::ecs::VisualPos{spellTargetX, spellTargetY, spellTargetZ});
+            smoke_give_visual(*app.sceneObjects, spellTargetSlot, sm::ecs::VisualPos{spellTargetX, spellTargetY, spellTargetZ});
             // Ask the registry: the literal 3 predates the ONE faction registry
             // and now means `cults`, so this body called itself a Bandit while
             // wearing a cultist's colours. Projectiles are faction-agnostic, so
             // it never blocked the hit — but a target that lies about its side
             // is a trap for the next person to read this.
             smoke_give_kind(
-                app.ecs.reg, spellTargetSlot,
+                *app.sceneObjects, spellTargetSlot,
                 sm::ecs::NPCKind{
                     std::uint16_t(sm::NPCType::Bandit),
                     std::uint16_t(sm::faction_index("bandits"))});
-            smoke_give_pools(app.ecs.reg, spellTargetSlot, sm::ecs::Pools{30, 30});
-            smoke_give_sprite(app.ecs.reg, spellTargetSlot, sm::ecs::Sprite{
+            smoke_give_pools(*app.sceneObjects, spellTargetSlot, sm::ecs::Pools{30, 30});
+            smoke_give_sprite(*app.sceneObjects, spellTargetSlot, sm::ecs::Sprite{
                 std::uint16_t(sm::NPCType::Bandit),
                 std::uint8_t(255), std::uint8_t(72), std::uint8_t(48),
                 1.2f});
-            const int beforeProjectiles = smoke_projectile_count(app.ecs.reg);
+            const int beforeProjectiles = smoke_projectile_count(*app.sceneObjects);
             const int beforeCombatLog = app.subworld.combat_log_count();
             const int beforeSpellCastEvents =
                 count_tick_events(app.bus, sm::EventTag::SpellCast);
@@ -9485,7 +9481,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "SpellCast event was not emitted honestly");
                 break;
             }
-            const int afterProjectiles = smoke_projectile_count(app.ecs.reg);
+            const int afterProjectiles = smoke_projectile_count(*app.sceneObjects);
             if (afterProjectiles <= beforeProjectiles) {
                 smoke_fail(app, "projectile was not spawned");
                 break;
@@ -9511,9 +9507,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // the load-bearing one — a bolt that is gone without a hit was reaped
             // in flight (it struck the ground or a wall), which is a different
             // story from one that arrived and did nothing.
-            const int liveProjectiles = smoke_projectile_count(app.ecs.reg);
+            const int liveProjectiles = smoke_projectile_count(*app.sceneObjects);
             const auto* targetHp =
-                sm::sub::slot_pools(sm::sub::objects_of(app.ecs.reg),
+                sm::sub::slot_pools((*app.sceneObjects),
                                     spellTargetSlot);
             const auto& book = smoke_player_book(app);
             std::fprintf(stderr,
@@ -9574,17 +9570,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // Refill mana so the cast cannot fail on cost in a fresh smoke run.
             player_pools(app).mp =
                 player_pools(app).maxMp;
-            const int beforeProjectiles = smoke_projectile_count(app.ecs.reg);
+            const int beforeProjectiles = smoke_projectile_count(*app.sceneObjects);
             if (!cast_active_spell(app)) {
                 smoke_fail(app, "cast_bolt_capture cast failed");
                 break;
             }
-            const int afterProjectiles = smoke_projectile_count(app.ecs.reg);
+            const int afterProjectiles = smoke_projectile_count(*app.sceneObjects);
             // «Несёт ли болт свет» — вопрос к МАСКЕ слота (ступень (v):
             // снаряд — чистый жилец арены, сущностной вьюхе он не виден).
             int litProjectiles = 0;
             if (const sm::sub::SubObjects* lo =
-                    sm::sub::objects_find(app.ecs.reg)) {
+                    app.sceneObjects.get()) {
                 for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
                     const std::uint16_t f = lo->flags[std::size_t(s)];
                     if ((f & sm::sub::kObjAlive) != 0u
@@ -9617,7 +9613,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             int flownProjectiles = afterProjectiles;
             if (boltFlight > 0.0f) {
                 (void)advance_sim_seconds(app, boltFlight, false);
-                flownProjectiles = smoke_projectile_count(app.ecs.reg);
+                flownProjectiles = smoke_projectile_count(*app.sceneObjects);
             }
             std::fprintf(stderr,
                          "[smoke] cast_bolt_capture projectiles=%d->%d lit=%d flight=%.3f alive=%d\n",
@@ -9647,7 +9643,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (app.smoke.probeSettleFrames >= 0) {
                 if (app.smoke.probeRef.id != 0u) {
                     sm::sub::SubObjects& sObjs =
-                        sm::sub::objects_of(app.ecs.reg);
+                        (*app.sceneObjects);
                     const int s =
                         sm::sub::ref_slot(sObjs, app.smoke.probeRef);
                     if (s >= 0) {
@@ -9715,7 +9711,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // 0xFF), so the same probe can stage a wolf to prove the flat-sprite
             // creature light term OR a guard to prove its data-driven carried
             // torch (Inc 9). Widened from creature-only; wolves still match.
-            sm::sub::SubObjects& prObjs = sm::sub::objects_of(app.ecs.reg);
+            sm::sub::SubObjects& prObjs = (*app.sceneObjects);
             auto is_probe_actor = [&](int s) {
                 if (!sm::sub::slot_flag(prObjs, s, sm::sub::kObjHasSprite))
                     return false;
@@ -9930,13 +9926,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal("flight"));
             sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal("flight"));
-            const int beforeProjectiles = smoke_projectile_count(app.ecs.reg);
+            const int beforeProjectiles = smoke_projectile_count(*app.sceneObjects);
             const int beforeMp = player_pools(app).mp;
             if (!cast_active_spell(app)) {
                 smoke_fail(app, "flight toggle failed");
                 break;
             }
-            const int afterProjectiles = smoke_projectile_count(app.ecs.reg);
+            const int afterProjectiles = smoke_projectile_count(*app.sceneObjects);
             if (afterProjectiles != beforeProjectiles) {
                 smoke_fail(app, "flight spawned projectile");
                 break;

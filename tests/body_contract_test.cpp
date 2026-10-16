@@ -14,7 +14,6 @@
 // restated in this file: retuning a soldier must never require editing a test,
 // and a spawner that invents its own numbers must fail.
 #include "check.h"
-#include "ecs/world.h"
 
 #include "sub/spawn.h"
 #include "sub/record.h"   // state_of — whose bag/gear/book is this body's
@@ -29,7 +28,6 @@
 #include "tables/npc.h"
 #include "macro/store.h"
 
-#include <entt/entt.hpp>
 #include <algorithm>
 #include <vector>
 
@@ -56,16 +54,14 @@ void test_every_squad_body_is_a_whole_body() {
     const std::uint16_t playerFaction =
         std::uint16_t(faction_index(kPlayerFactionId));
 
-    ecs::World world{};
-
-    auto worldStore_ = sm::make_macro_store();
-
-    sm::store_attach(world, worldStore_.get());
-    sub::SubObjects& arena =
-        sm::test::arena_of(world.reg);   // слоты телам — бит стороны игрока
+    // Арена сцены — предусловие рождения тел (§8 п.11); 38.3 МиБ, потому
+    // фабрика-uptr, а не значение в стеке. Store этой проверке не нужен:
+    // ни одна дверь ниже его не просит.
+    auto worldArena_ = sm::test::make_scene_arena();
+    sub::SubObjects& arena = *worldArena_;   // слоты телам — бит стороны игрока
     std::vector<std::uint8_t> ground(
         std::size_t(sub::kFullSize) * sub::kFullSize, sub::TILE_GRASS);
-    sub::spawn_player_squad(world, mixed_squad(), ground,
+    sub::spawn_player_squad(arena, mixed_squad(), ground,
                             512.0f, 512.0f, 123u, playerFaction);
 
     int bodies = 0;
@@ -203,12 +199,10 @@ sm::MacroHandle make_macro_lord(sm::MacroStore& st, sm::NPCType type,
 
 void test_a_tracked_body_is_the_entity_it_embodies() {
     using namespace sm;
-    ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
+    auto worldArena_ = sm::test::make_scene_arena();
     sub::SubObjects& arena =
-        sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-    auto& reg = world.reg;
+        *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
     // Half dead on the map, with a face and belongings of his own.
     const sm::MacroHandle macro = make_macro_lord(
@@ -216,7 +210,8 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         /*hp*/15.0f, /*maxHp*/30.0f, /*visualSeed*/0xFEEDu);
 
     const int slot =
-        sub::spawn_tracked_body(reg, macro, 40.0f, 41.0f, 777u,
+        sub::spawn_tracked_body(arena, *worldStore_, macro,
+                                40.0f, 41.0f, 777u,
                                 /*combatant*/true);
     CHECK_OR_RETURN(slot >= 0,
                     "a body-shaped macro entity can be embodied");
@@ -289,7 +284,8 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         *worldStore_, NPCType::Bandit, /*faction*/2, /*level*/3,
         /*hp*/9.0f, /*maxHp*/9.0f, /*visualSeed*/0xB0B0u);
     const int wholeSlot =
-        sub::spawn_tracked_body(reg, whole, 60.0f, 61.0f, 778u, true);
+        sub::spawn_tracked_body(arena, *worldStore_, whole,
+                                60.0f, 61.0f, 778u, true);
     CHECK_OR_RETURN(wholeSlot >= 0, "the control body was embodied");
     {
         const auto& h = (*sm::sub::slot_pools(arena, wholeSlot));
@@ -300,18 +296,18 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
 
 void test_a_body_that_is_not_an_entity_is_refused() {
     using namespace sm;
-    ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-    auto& reg = world.reg;
+    auto worldArena_ = sm::test::make_scene_arena();
+    sub::SubObjects& arena =
+        *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
     // Half-tracked is the failure mode the two forms exist to make impossible:
     // an entity missing what a body is made of yields NO body, never a body with
     // a hole in it.
     // (Кластер 7: «полу-запись» невыразима — записью адресует только
     // хэндл, и не-запись есть невалидный хэндл; отказ ниже покрывает оба.)
-    CHECK(sub::spawn_tracked_body(reg, sm::MacroHandle{}, 5.0f, 5.0f, 1u, false)
+    CHECK(sub::spawn_tracked_body(arena, *worldStore_, sm::MacroHandle{},
+                                  5.0f, 5.0f, 1u, false)
               < 0,
           "nothing embodies nothing");
 
@@ -323,7 +319,8 @@ void test_a_body_that_is_not_an_entity_is_refused() {
         *worldStore_, NPCType::Peasant, /*faction*/1, /*level*/2,
         /*hp*/10, /*maxHp*/10, /*visualSeed*/0u);
     worldStore_->kind[monster.slot].type = std::uint16_t(0x103);
-    CHECK(sub::spawn_tracked_body(reg, monster, 5.0f, 5.0f, 1u, false)
+    CHECK(sub::spawn_tracked_body(arena, *worldStore_, monster,
+                                  5.0f, 5.0f, 1u, false)
               < 0,
           "a monster id cannot pass for a humanoid row");
 }
@@ -370,15 +367,17 @@ void test_a_leaders_aura_reaches_his_men() {
     const std::uint16_t f = std::uint16_t(faction_index(kPlayerFactionId));
     std::vector<std::uint8_t> ground(
         std::size_t(sub::kFullSize) * sub::kFullSize, sub::TILE_GRASS);
-    ecs::World led{}, alone{};
     // Арена сцены — предусловие рождения тел (§8 п.11): без неё дверь
     // спавна рожает тела без слотов, и колонки рода/баров некуда класть.
-    sub::SubObjects& ledArena = sm::test::arena_of(led.reg);
-    sub::SubObjects& aloneArena = sm::test::arena_of(alone.reg);
-    sub::spawn_player_squad(led, mixed_squad(), ground, 512.0f, 512.0f, 123u,
-                            f, &gift);
-    sub::spawn_player_squad(alone, mixed_squad(), ground, 512.0f, 512.0f, 123u,
-                            f);
+    // Два прогона — ДВЕ арены: одна сцена не смеет видеть тела другой.
+    auto ledArena_ = sm::test::make_scene_arena();
+    auto aloneArena_ = sm::test::make_scene_arena();
+    sub::SubObjects& ledArena = *ledArena_;
+    sub::SubObjects& aloneArena = *aloneArena_;
+    sub::spawn_player_squad(ledArena, mixed_squad(), ground,
+                            512.0f, 512.0f, 123u, f, &gift);
+    sub::spawn_player_squad(aloneArena, mixed_squad(), ground,
+                            512.0f, 512.0f, 123u, f);
 
     int compared = 0;
     // Свипы двух арен по биту (ломоть D): гейт займа отсекает не-тела.
@@ -418,11 +417,10 @@ void test_a_leaders_aura_reaches_his_men() {
 // one-door law as every other borrowed thing.
 void test_a_squad_on_the_map_projects_its_creatures() {
     using namespace sm;
-    ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
+    auto worldArena_ = sm::test::make_scene_arena();
     sub::SubObjects& arena =
-        sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+        *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
     const sm::MacroHandle macro = make_macro_lord(
         *worldStore_, NPCType::Guard, /*faction*/5, /*level*/4,
@@ -442,7 +440,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     // The lord stands at macro cell (10,12) — the helper's position — so
     // centre the window there.
     const int projected = sub::project_macro_npcs_into_subworld(
-        world, ground, /*centerCx*/10, /*centerCy*/12,
+        arena, *worldStore_, ground, /*centerCx*/10, /*centerCy*/12,
         /*mapW*/64, /*mapH*/64, /*seed*/5u,
         sm::sub::WATER_LEVEL);
     CHECK(projected == 3,
@@ -499,19 +497,17 @@ void test_a_squad_on_the_map_projects_its_creatures() {
 
 void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     using namespace sm;
-    ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
+    auto worldArena_ = sm::test::make_scene_arena();
     sub::SubObjects& arena =
-        sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-    auto& reg = world.reg;
+        *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
     // THE RULE (owner, 2026-08-06): a derived body stores nothing its seed
     // already decides. Its loot is rolled from its row at the moment it dies
     // (macro/items.h — one registry, one door), so carrying a pre-rolled bag
     // would cost a city of five thousand people five thousand allocations to
     // say what one integer says.
-    const int slot = sub::spawn_derived_body(reg,
+    const int slot = sub::spawn_derived_body(arena,
         sub::BodySpec{NPCType::Peasant, 8.0f, 9.0f, /*faction*/1,
                           /*level*/2, /*seed*/4242u, /*combatant*/false},
         /*faceSalt*/7u);
@@ -528,7 +524,7 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
 
     // Borrowed, and it says so. The receipt is stamped BY the birth, so a
     // spawner cannot draw on a stock and forget to write it down.
-    const int borrowedSlot = sub::spawn_derived_body(reg,
+    const int borrowedSlot = sub::spawn_derived_body(arena,
         sub::BodySpec{NPCType::Guard, 8.0f, 9.0f, 1, 2, 99u, false},
         /*faceSalt*/1u,
         sub::BodyLoan::from(MacroStock::Population, MacroStockKey{7, 3, 4}));
@@ -549,12 +545,10 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
 
 void test_two_bodies_of_one_kind_can_differ_in_height() {
     using namespace sm;
-    ecs::World world{};
-    auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
+    // Store этой проверке не нужен: рождение derived-тела его не просит.
+    auto worldArena_ = sm::test::make_scene_arena();
     sub::SubObjects& arena =
-        sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
-    auto& reg = world.reg;
+        *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
 
     // A crowd of one kind, drawn from one row: the row fixes what a peasant is,
     // the face's shape byte decides how tall THIS peasant is. Before this, the
@@ -563,7 +557,7 @@ void test_two_bodies_of_one_kind_can_differ_in_height() {
     float shortest = 1e9f, tallest = 0.0f;
     int seen = 0;
     for (std::uint32_t i = 0; i < 64u; ++i) {
-        const int slot = sub::spawn_derived_body(reg,
+        const int slot = sub::spawn_derived_body(arena,
             sub::BodySpec{NPCType::Peasant, 5.0f, 5.0f, 1, 2,
                               /*seed*/1000u + i, false},
             /*faceSalt*/i * 7919u);
@@ -650,8 +644,8 @@ void test_a_creature_is_as_tall_as_its_own_row() {
 // тест самого alloc(), двери тут не предмет проверки.
 void test_a_reused_slot_is_born_clean() {
     using namespace sm;
-    ecs::World world{};
-    sub::SubObjects& arena = sm::test::arena_of(world.reg);
+    auto worldArena_ = sm::test::make_scene_arena();
+    sub::SubObjects& arena = *worldArena_;
     const int a = arena.alloc(ecs::Position{5.0f, 6.0f, 7.0f});
     CHECK_OR_RETURN(a >= 0, "the arena lends a slot");
     arena.debt[std::size_t(a)] = ecs::MacroDebt{
@@ -696,15 +690,14 @@ void test_a_reused_slot_is_born_clean() {
 //   немутированное дерево              → 172 checks, 0 failed
 void test_arena_count_follows_births_and_deaths() {
     using namespace sm;
-    ecs::World world{};
-    auto store_ = sm::make_macro_store();
-    sm::store_attach(world, store_.get());
-    sub::SubObjects& arena = sm::test::arena_of(world.reg);
-    auto& reg = world.reg;
+    // Счёт жильцов — вопрос к АРЕНЕ и только к ней: store ни одна дверь
+    // этой проверки не просит (ломоть E).
+    auto worldArena_ = sm::test::make_scene_arena();
+    sub::SubObjects& arena = *worldArena_;
 
     std::array<int, 5> born{};
     for (int i = 0; i < 5; ++i) {
-        born[std::size_t(i)] = sub::spawn_derived_body(reg,
+        born[std::size_t(i)] = sub::spawn_derived_body(arena,
             sub::BodySpec{NPCType::Peasant, 8.0f + float(i), 9.0f, 1, 2,
                           4000u + std::uint32_t(i), false},
             /*faceSalt*/std::uint32_t(i) * 7919u);
@@ -729,7 +722,7 @@ void test_arena_count_follows_births_and_deaths() {
 
     // Снаряд — чистый жилец арены: живых слотов на один больше.
     const int boltSlot = sm::test::give_projectile(
-        reg, ecs::Projectile{}, ecs::Position{1.0f, 1.0f, 0.0f});
+        arena, ecs::Projectile{}, ecs::Position{1.0f, 1.0f, 0.0f});
     CHECK_OR_RETURN(boltSlot >= 0, "the projectile door births a slot");
     countsAgree(5, 1, "a bolt widens alive slots by exactly one");
 

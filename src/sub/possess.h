@@ -22,7 +22,6 @@
 // flag.
 #pragma once
 
-#include "ecs/world.h"
 #include "sub/record.h"
 
 namespace sm::sub {
@@ -56,18 +55,15 @@ namespace sm::sub {
 // названный); звонящий без мира (фикстура) законно передаёт nullptr —
 // тогда двигается только сценический флаг (AvatarTag), макро-мира у
 // фикстуры нет.
-inline bool possess_body(ecs::World& w, int targetSlot,
+inline bool possess_body(SubObjects& objs, MacroStore* st, int targetSlot,
                          std::uint32_t* playerFlagBits) {
-    auto& reg = w.reg;
-    SubObjects* objs = objects_find(reg);
-    if (objs == nullptr) return false;       // сцены нет — вселяться некуда
     const int ts = targetSlot;
     // «Настоящее тело» — ЖИВОЙ слот, у которого есть БАРЫ (ломоть 5):
     // позицию несут и пламя пропа, и снаряд; бары — только тело.
     if (ts < 0 || ts >= int(kMaxSubObjects)) return false;
-    if ((objs->flags[std::size_t(ts)] & kObjAlive) == 0u) return false;
-    if (slot_pools(*objs, ts) == nullptr) return false;
-    if (objs->is_avatar_slot(ts)) return false;        // already inhabiting it
+    if ((objs.flags[std::size_t(ts)] & kObjAlive) == 0u) return false;
+    if (slot_pools(objs, ts) == nullptr) return false;
+    if (objs.is_avatar_slot(ts)) return false;         // already inhabiting it
 
     // ЗАКОН ШВА (вердикт владельца 2026-09-17) — record.h's two honest births
     // read out loud, each getting exactly the possession it can carry:
@@ -83,10 +79,10 @@ inline bool possess_body(ecs::World& w, int targetSlot,
     //     body dies with the scene while your macro flag never left you.
     // Запись — хэндлом: с 1е кластера 5 макро-флаг ЕСТЬ биты GameState,
     // entt-носитель записи флажку больше не нужен вовсе. Шовная слот-дверь:
-    // стора у фикстуры может не быть — тот же честный «записи нет».
-    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
-    const MacroHandle recH = stp != nullptr
-        ? slot_macro_record(*objs, ts, **stp) : MacroHandle{};
+    // стора у фикстуры может не быть (st == nullptr) — тот же честный
+    // «записи нет» (ломоть E: store — явный параметр, ctx-мост умер).
+    const MacroHandle recH = st != nullptr
+        ? slot_macro_record(objs, ts, *st) : MacroHandle{};
 
     // Hero husk (no NPCKind) has no independent existence — since the
     // mirror law it is a projection of his macro record like any other
@@ -94,13 +90,13 @@ inline bool possess_body(ecs::World& w, int targetSlot,
     // un-rendered, un-AI'd zombie in the scene. A vacated FOREIGN body
     // keeps its slot untouched; with the reference gone its AI / draw /
     // targetability all resume by construction (each is avatar-gated).
-    const int cs = avatar_slot(*objs);
-    if (cs >= 0 && slot_kind(*objs, cs) == nullptr) {
-        objs->free(cs);
+    const int cs = avatar_slot(objs);
+    if (cs >= 0 && slot_kind(objs, cs) == nullptr) {
+        objs.free(cs);
     }
     // Перенос — ОДНА перезапись ссылки: полуперенесённого состояния («тег
     // снят, тег не поставлен») больше не существует по построению.
-    set_avatar_slot(*objs, ts);
+    set_avatar_slot(objs, ts);
 
     // …AND THE MACRO FLAG RIDES THE SAME MOVEMENT — when it has a record to
     // ride to. It used to be deferred to leave() — AvatarTag moved here,
@@ -117,7 +113,7 @@ inline bool possess_body(ecs::World& w, int targetSlot,
     // (запись нового = срыв старого через кэш). Store у сцены уже есть —
     // тот же ctx-мост, которым macro_record_of ответил хэндлом.
     if (recH.slot != kMacroNoSlot && playerFlagBits) {
-        transfer_player_flag(store_of(w), *playerFlagBits, recH);
+        transfer_player_flag(*st, *playerFlagBits, recH);
     }
     return true;
 }

@@ -1,7 +1,6 @@
 #include "content/spells/spell_book.h"
 #include "core/time.h"
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "macro/store.h"
 #include "macro/anketa.h"  // the record's sheet — casterLevel
 #include "sub/body.h"   // body_radius — the caster shell the muzzle clears
@@ -145,7 +144,8 @@ int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
     return d->manaCost;
 }
 
-bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
+bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
+                    SpellBook& sb, ecs::Pools& combat,
                     const Attributes& attributes, const Skills& skills,
                     int spellOrd,
                     sub::ObjRef caster, float px, float py, float pz,
@@ -159,7 +159,6 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     // bolt (iii-б: кастер — ссылка сцены, разыменование — ref_slot) — the
     // field a sword swing charges and tick_body_recovery drains. A harness
     // world with no such body (or the world map) carries no gate.
-    sub::SubObjects* objs = sub::objects_find(w.reg);
     const int casterSlot =
         objs != nullptr ? sub::ref_slot(*objs, caster) : -1;
     ecs::Combat* gate =
@@ -218,6 +217,7 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     ctx.dmgType = std::uint8_t(spell_damage_type(*d));
     ctx.critical = strike.critical;
     ctx.gs = gs;   // мир для законов о положении игрока (вселение, 1е кл.5)
+    ctx.store = st; // запись тела — шовной слот-дверью (вселение, ломоть E)
     // Who casts, for person-arguing effects (possession's level gate): the
     // trained rank in this spell's own school from the same effective skills
     // the damage law reads, and the level of the RECORD the casting body
@@ -225,18 +225,19 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     const SkillId school = spell_school(*d);
     ctx.schoolRank = std::uint8_t(
         school != SkillId::Count ? skills.of(school) : 0);
-    if (casterSlot >= 0) {
+    if (casterSlot >= 0 && st != nullptr) {
         // Дверь листа ОДНА (slot_sheet_of, (ii-б)): запись store первой,
         // фолбэк — колонка листа арены; fixture body с пустыми руками —
         // новичок (нулевой лист, уровень 0). Прежняя ручная пара здесь
-        // была вторым телом того же закона (DOD п.6).
+        // была вторым телом того же закона (DOD п.6). Store без мира
+        // (nullptr) — тот же новичок: записи, чей лист можно спросить, нет.
         const CharacterSheet* cs =
-            sub::slot_sheet_of(*objs, casterSlot, store_of(w.reg));
+            sub::slot_sheet_of(*objs, casterSlot, *st);
         ctx.casterLevel =
             std::int16_t(cs != nullptr ? cs->levelData.level : 0);
     }
 
-    if (!cast_spell(w, *d, ctx)) return false;
+    if (!cast_spell(objs, *d, ctx)) return false;
     spellbook_start_cast(sb, combat, spellOrd);
     charge_gate();
     return true;

@@ -9,7 +9,6 @@
 #include <vector>
 #include "core/rng.h"
 #include "core/time.h"
-#include "ecs/world.h"
 #include "macro/audio.h"     // SfxId — the one sound vocabulary (pending sfx)
 #include "macro/chronicle.h"
 #include "sub/seamless_manager.h"
@@ -167,14 +166,16 @@ public:
     // an exact spot instead of the entry-side placement — the dungeon exit
     // walks back out to the very tile the door was opened from, BEFORE the
     // squad ring / macro projections spawn around the player.
-    void enter(const MacroWorld& mw, ecs::World& scene, EventBus& bus,
+    // `scene` — АРЕНА объектов сцены (ломоть E: ecs::World умер, носитель
+    // тел — SubObjects у приложения; реестра сцены больше не существует).
+    void enter(const MacroWorld& mw, SubObjects& scene, EventBus& bus,
                const float* posOverride = nullptr);
     // Raise a POCKET scene directly — no street door, no overworld session
     // underneath (the prologue's entry: character creation drops the player
     // here). The scene has no doorstep and no walked exit; it ends by the
     // plot's teardown (leave(true)). `floorHeight` is the pocket's macro
     // height in the normalised [0,1] range the heightmap law reads.
-    void enter_pocket_scene(const MacroWorld& mw, ecs::World& scene,
+    void enter_pocket_scene(const MacroWorld& mw, SubObjects& scene,
                             EventBus& bus,
                             const DungeonRef& ref, float floorHeight);
     void leave(bool force = false);
@@ -731,7 +732,10 @@ private:
     // читателя — дефект по DOD п.9, а не мелочь: следующий принимает её за
     // закон и пишет под неё код. Фичи окну по-прежнему нужны, но их читает
     // `cell_facts` через конверт `mw_`, у которого они и живут.
-    ecs::World*         ecs_      = nullptr;
+    // АРЕНА СЦЕНЫ (ломоть E): прежний `ecs::World* ecs_` умер вместе с
+    // реестром — движок держит сам единый массив объектов, store идёт
+    // конвертом mw_ (шаг «курьер»).
+    SubObjects*         objects_  = nullptr;
     EventBus*           bus_      = nullptr;
     const ZoneLayer*    zones_    = nullptr;
     TreeLayer*          treeLayer_ = nullptr;
@@ -885,7 +889,7 @@ private:
     // mw_, so a scene raised with only the named views left the deposit and
     // population rows fail-closed — a house with no residents and kills that
     // never thinned the town (found by the dungeon_house smoke, 2026-08-24).
-    void enter_dungeon_scene(const MacroWorld& mw, ecs::World& scene,
+    void enter_dungeon_scene(const MacroWorld& mw, SubObjects& scene,
                              EventBus& bus);
     // Rebuild what the engine keeps ABOUT props, from the one composite:
     // the lights of lit props (hung as ordinary `LightEmitter` bodies, so a

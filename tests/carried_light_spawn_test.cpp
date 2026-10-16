@@ -25,7 +25,6 @@
 #include "check.h"
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "tables/faction.h"
 #include "macro/world_row.h"
 #include "tables/npc.h"
@@ -93,10 +92,8 @@ void run_type_table_contract() {
 // Populate a City cell (guarantees guards) and assert every guard — and ONLY the
 // guards — carries an ecs::LightEmitter equal to its type row, seated on +Y.
 void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
-    sm::ecs::World world{};
-    auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // Street guards are the place's GARRISON records now (§42 Инк 7) — the
     // fixture brings a three-man wall, and every one of them must be lit.
     sm::Inventory wall{};
@@ -106,7 +103,7 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
             sm::npc_def(sm::NPCType::Guard).baseLevel,
             7000u + std::uint32_t(i)));
     }
-    sm::sub::spawn_cell_npcs(world,
+    sm::sub::spawn_cell_npcs(objs,
                              sm::Biome::Meadow,
                              sm::FT_None,
                              sm::SquadType::City,

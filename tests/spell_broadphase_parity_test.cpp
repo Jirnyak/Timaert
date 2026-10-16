@@ -1,9 +1,10 @@
 // The spell broad phase is a STRUCTURAL move, and this test is its proof of
 // identity: for the same scene and the same projectile, the grid-backed
 // candidate enumeration must produce EXACTLY the hits of the full O(N·M)
-// registry scan it replaced. The full scan is kept alive in the shipping code
-// as the nullptr arm of for_each_spell_candidate, so the reference here is the
-// real code path, not a copy.
+// arena scan it replaced. В ИГРЕ полного скана больше нет (M-261 снёс
+// nullptr-ветку for_each_spell_candidate): эталон здесь — перечислитель
+// фикстуры all_live_slots, то есть тот же обход «все живые слоты», ПЕРЕЕХАВШИЙ
+// из симуляции в прибор (§8 п.8) — см. комментарий у run_scenario ниже.
 //
 // Four scenarios, one per scan that was replaced: the swept bolt (plus its
 // muzzle stretch), the blast sphere, the beam, and the chain. Each runs on
@@ -21,7 +22,6 @@
 // закон мира (§8 п.5). Оба входа в тот путь были недостижимы по построению:
 // кап сцены ОДИН на арену, толпу и этот буфер, а слот у каждого тела СВОЙ.
 #include "check.h"
-#include "ecs/world.h"
 #include "scene_objects_fixture.h"  // арена: бары — колонки (кусок 2)
 
 #include "sub/spell_effects.h"
@@ -32,6 +32,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -44,44 +45,44 @@ constexpr int kBodyHp = 100;
 
 // Тело сцены — СЛОТ арены (ломоть D): сущностей у тел больше нет, рождение
 // идёт слот-дверью фикстуры, место и бары — колонки того же слота.
-void add_body(entt::registry& reg, float x, float y, float z) {
-    const int s = sm::test::give_body(reg);
-    sm::test::give_pos(reg, s, x, y, z);   // место — колонка арены (ломоть 5)
-    sm::test::give_pools(reg, s, Pools{kBodyHp, kBodyHp});
+void add_body(sm::sub::SubObjects& objs, float x, float y, float z) {
+    const int s = sm::test::give_body(objs);
+    sm::test::give_pos(objs, s, x, y, z);  // место — колонка арены (ломоть 5)
+    sm::test::give_pools(objs, s, Pools{kBodyHp, kBodyHp});
 }
 
 // One deterministic scene per scenario: the acting bodies first, then a
 // pseudo-random crowd far from the action so the broad phase has something
 // real to exclude. The LCG is the test's own — no world seed, no clock.
-void build_scene(entt::registry& reg, int scenario) {
+void build_scene(sm::sub::SubObjects& objs, int scenario) {
     switch (scenario) {
-    case 0:                                   // swept bolt + muzzle stretch
-        add_body(reg, 96.0f, 100.0f, 0.5f);   // caster (owner of the bolt)
-        add_body(reg, 120.0f, 100.5f, 1.0f);  // first victim on the path
-        add_body(reg, 140.0f, 99.0f, 1.2f);   // behind the first — must survive
-        add_body(reg, 120.0f, 108.0f, 1.0f);  // near the path, out of reach
+    case 0:                                    // swept bolt + muzzle stretch
+        add_body(objs, 96.0f, 100.0f, 0.5f);   // caster (owner of the bolt)
+        add_body(objs, 120.0f, 100.5f, 1.0f);  // first victim on the path
+        add_body(objs, 140.0f, 99.0f, 1.2f);   // behind the first — must survive
+        add_body(objs, 120.0f, 108.0f, 1.0f);  // near the path, out of reach
         break;
     case 1:                                   // blast
         for (int i = 0; i < 8; ++i) {         // inside the 12-unit sphere
             const float a = float(i) * 0.7853982f;
-            add_body(reg, 500.0f + std::cos(a) * 8.0f,
+            add_body(objs, 500.0f + std::cos(a) * 8.0f,
                      500.0f + std::sin(a) * 8.0f, 1.0f + float(i % 3));
         }
         // Inside the 2D circle, OUTSIDE the 3D sphere: the broad phase must
         // offer it and the exact check must refuse it.
-        add_body(reg, 511.0f, 500.0f, 8.0f);
-        add_body(reg, 516.0f, 500.0f, 1.0f);  // outside both
+        add_body(objs, 511.0f, 500.0f, 8.0f);
+        add_body(objs, 516.0f, 500.0f, 1.0f);  // outside both
         break;
-    case 2:                                   // beam
-        add_body(reg, 615.0f, 600.5f, 4.0f);  // on the beam line
-        add_body(reg, 610.0f, 606.0f, 4.0f);  // near, off the line
-        add_body(reg, 650.0f, 600.0f, 4.0f);  // past the beam's end
+    case 2:                                    // beam
+        add_body(objs, 615.0f, 600.5f, 4.0f);  // on the beam line
+        add_body(objs, 610.0f, 606.0f, 4.0f);  // near, off the line
+        add_body(objs, 650.0f, 600.0f, 4.0f);  // past the beam's end
         break;
-    case 3:                                   // chain
-        add_body(reg, 815.0f, 800.0f, 1.0f);  // struck by the bolt
-        add_body(reg, 824.0f, 803.0f, 1.0f);  // hop 1 (9.5 away)
-        add_body(reg, 836.0f, 801.0f, 1.0f);  // hop 2 (12.2 further)
-        add_body(reg, 860.0f, 820.0f, 1.0f);  // beyond chainRadius — safe
+    case 3:                                    // chain
+        add_body(objs, 815.0f, 800.0f, 1.0f);  // struck by the bolt
+        add_body(objs, 824.0f, 803.0f, 1.0f);  // hop 1 (9.5 away)
+        add_body(objs, 836.0f, 801.0f, 1.0f);  // hop 2 (12.2 further)
+        add_body(objs, 860.0f, 820.0f, 1.0f);  // beyond chainRadius — safe
         break;
     }
     std::uint32_t lcg = 0xC0FFEEu;
@@ -90,7 +91,7 @@ void build_scene(entt::registry& reg, int scenario) {
         const float x = 1000.0f + float(lcg >> 20);          // 1000..5095
         lcg = lcg * 1664525u + 1013904223u;
         const float y = 1000.0f + float(lcg >> 20);
-        add_body(reg, x, y, 1.0f);
+        add_body(objs, x, y, 1.0f);
     }
 }
 
@@ -100,9 +101,8 @@ void build_scene(entt::registry& reg, int scenario) {
 // легли слотами 0,1,2,… ровно в том порядке, в каком их позвал `build_scene`,
 // и сортировать нечего. Снаряд в счёт не идёт по той же колонке, что и
 // прежде (баров у него нет: maxHp 0), да и рождается он ПОЗЖЕ этого обхода.
-std::vector<int> bodies_in_creation_order(entt::registry& reg) {
+std::vector<int> bodies_in_creation_order(const sm::sub::SubObjects& objs) {
     std::vector<int> v;
-    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
     for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
         if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
         if (sm::sub::slot_pools(objs, s) == nullptr) continue;
@@ -123,10 +123,9 @@ struct GridBroadPhase {
     std::vector<std::uint16_t> slots;
     float pad = 0.0f;
 
-    void build(entt::registry& reg) {
+    void build(const sm::sub::SubObjects& objs) {
         units->clear();
         slots.clear();
-        sm::sub::SubObjects& objs = sm::test::arena_of(reg);
         // СВИП ПЛОСКОЙ АРЕНЫ (ломоть D): жилец — бит kObjAlive, и это тот же
         // обход, которым сетку кормит `spell_neighbors_callback` движка.
         // Снарядные слоты сюда не попадают по той же колонке, что и прежде
@@ -189,13 +188,14 @@ enum class Mode { Full, Grid, Lossy };
 // Build the scene, fire the scenario's projectile, tick, and report every
 // body's hp in creation order.
 std::vector<float> run_scenario(int scenario, Mode mode) {
-    sm::ecs::World w{};
+    // АРЕНА — НА МИР ЭТОГО ПРОГОНА (ломоть E): носитель тел умирает со своим
+    // кадром, как в игре арена умирает со своим миром; реестра-посредника
+    // больше нет, store едет явным аргументом в дверь тика.
+    auto wArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *wArena_;
     auto wStore_ = sm::make_macro_store();
-    sm::store_attach(w, wStore_.get());
-    auto& reg = w.reg;
-    build_scene(reg, scenario);
-    const auto bodies = bodies_in_creation_order(reg);
-    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
+    build_scene(objs, scenario);
+    const auto bodies = bodies_in_creation_order(objs);
 
     const float dt = 1.0f / 64.0f;
     int ticks = 1;
@@ -275,10 +275,10 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         ticks = 10;
         break;
     }
-    sm::test::give_projectile(reg, boltP, boltAt);
+    sm::test::give_projectile(objs, boltP, boltAt);
 
     GridBroadPhase grid{};
-    grid.build(reg);
+    grid.build(objs);
 
     // ЭТАЛОН — ПЕРЕЧИСЛИТЕЛЬ ФИКСТУРЫ, А НЕ ПОЛНЫЙ СКАН ВНУТРИ ДВЕРИ
     // (M-261): ветки «сетки не дали» у двери больше нет, потому что она была
@@ -294,7 +294,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     }
 
     for (int t = 0; t < ticks; ++t) {
-        sm::sub::tick_spell_projectiles(w, nullptr, dt, fn, user);
+        sm::sub::tick_spell_projectiles(objs, wStore_.get(), nullptr, dt, fn, user);
     }
 
     std::vector<float> hp;

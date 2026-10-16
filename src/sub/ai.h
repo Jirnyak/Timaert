@@ -6,9 +6,11 @@
 // frame.
 #pragma once
 #include <cstdint>
-#include "ecs/world.h"
 #include "macro/anketa.h"
+#include "sub/objects.h"   // SubObjects — арена сцены, явный параметр (ломоть E)
 #include "tables/faction.h"
+
+namespace sm { struct MacroStore; }
 
 namespace sm::sub {
 
@@ -43,8 +45,12 @@ using GroundHeightFn = float (*)(void* user, float x, float y);
 // на любой высоте пугал всякого зверя в 60 планарных метрах, а зверь на
 // вершине утёса панировал от того, кто стоит под утёсом. Направление бегства
 // остаётся ПЛОСКИМ — ноги бегут по земле (законное 2D, оговорка закона).
-void tick_npc_ai(ecs::World& w, float playerX, float playerY, float playerZ,
-                 std::uint32_t playerEntityId, float dt,
+// `objs`/`st` — арена сцены и гладкая память макро-сквадов ЯВНО (ломоть E:
+// ctx-мосты умерли; st nullable — фикстура без мира законна, «без сознания»
+// тогда не судится). Мёртвый параметр playerEntityId умер с обвязкой: тело
+// звало его /*playerEnt*/, все звонящие передавали 0u.
+void tick_npc_ai(SubObjects& objs, MacroStore* st,
+                 float playerX, float playerY, float playerZ, float dt,
                  PlayerThreatFn threatFn = nullptr,
                  void* threatUser = nullptr,
                  GroundHeightFn heightFn = nullptr,

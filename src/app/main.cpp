@@ -25,7 +25,6 @@
 #include "gpu/vk_gpu_timer.h"
 #include "gpu/vk_renderer.h"
 #include "core/torus.h"
-#include "ecs/world.h"
 #include "ecs/components.h"
 #include "events/event_bus.h"
 #include "events/effect_applicator.h"
@@ -73,7 +72,7 @@
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
 #include "sub/damage.h"
-#include "sub/record.h"   // objects_find + шовные slot_pools_of/
+#include "sub/record.h"   // шовные slot_pools_of/
                           // slot_macro_record — the death check asks the
                           // body the player is STANDING IN, mirror-law wise
 #include "sub/dgn/dispatch.h"
@@ -1328,10 +1327,8 @@ void destroy_world(App& app) {
     app.gs = sm::GameState{};
     app.activeQuests.clear();
     app.questMarkerSig = 0;   // invalidate derived quest-marker cache
-    app.ecs.reg.clear();
-    // Арена сцены умирает вместе с миром (ломоть D): прежде её слоты
-    // свободил on_destroy-хук изнутри reg.clear() выше — дверь теперь своя,
-    // no-op при живом хуке.
+    // Арена сцены умирает вместе с миром (ломоть D; реестр умер ломтём E —
+    // смерть мира и есть SubObjects::clear()).
     if (app.sceneObjects) app.sceneObjects->clear();
     // Store умирает вместе с миром (store_reset@src/macro/store.h): без
     // этого каждая загрузка оставляла население прошлого мира живыми
@@ -1557,7 +1554,7 @@ void enter_subworld(App& app) {
     // сейва, — а вход ОДИН, и он гарантирует, что мир под ногами тикает,
     // руки пусты и ни одна панель не держит кадр.
     reset_scene_session_state(app);
-    app.subworld.enter(macro_world(app), app.ecs, app.bus);
+    app.subworld.enter(macro_world(app), *app.sceneObjects, app.bus);
 }
 
 // Raise an authored SCENE over the standing world (release.md §3, owner
@@ -1572,7 +1569,8 @@ void begin_scene(App& app, const sm::content::SceneDef& scene) {
     sm::sub::DungeonRef ref{};
     ref.kind = sm::sub::dungeon_kind_from_token(scene.pocketId);
     if (ref.kind != sm::sub::DungeonRef::None) {
-        app.subworld.enter_pocket_scene(macro_world(app), app.ecs, app.bus, ref,
+        app.subworld.enter_pocket_scene(macro_world(app), *app.sceneObjects,
+                                        app.bus, ref,
                                         scene.floorHeight);
     }
     if (!app.subworld.active()) {
@@ -2036,10 +2034,7 @@ bool gameplay_panel_open(const App& app) {
 // the hand is free, or when no body is on stage. Read-only: the turn stop
 // below derives from it, exactly as every action already charges into it.
 std::uint32_t player_gate_steps(const App& app) {
-    // const_cast — приём самих дверей (record.h): поиск арены в ctx реестр
-    // не меняет, читается только слот аватара.
-    if (sm::sub::SubObjects* objs = sm::sub::objects_find(
-            const_cast<entt::registry&>(app.ecs.reg))) {
+    if (sm::sub::SubObjects* objs = app.sceneObjects.get()) {
         const int s = sm::sub::avatar_slot(*objs);
         if (s >= 0)
             if (const auto* c = sm::sub::slot_combat(*objs, s))
@@ -2400,7 +2395,7 @@ bool cast_active_spell(App& app) {
     // the caster's own entity id. The world map has no fighting body.
     std::uint32_t gateSteps = 0u;
     if (inMicro) {
-        if (sm::sub::SubObjects* objs = sm::sub::objects_find(app.ecs.reg)) {
+        if (sm::sub::SubObjects* objs = app.sceneObjects.get()) {
             const int s = sm::sub::avatar_slot(*objs);
             if (s >= 0)
                 if (const auto* c = sm::sub::slot_combat(*objs, s))
@@ -2440,7 +2435,8 @@ bool cast_active_spell(App& app) {
     // The EFFECTIVE sheet casts (phase 4): a worn +INT circlet strengthens
     // the bolt the same way it strengthens every other read of him.
     const sm::CharacterSheet effCast = player_effective_sheet(app);
-    const bool ok = sm::spellbook_cast(app.ecs,
+    const bool ok = sm::spellbook_cast(app.sceneObjects.get(),
+        app.macroStore.get(),
         player_book(app),
         player_pools(app),
         effCast.attributes,
@@ -2448,7 +2444,7 @@ bool cast_active_spell(App& app) {
         ord,
         // Кастер — ссылка аватара (iii-б): нет аватара — ссылка пустая
         // (id 0), гейт и уровень честно отсутствуют.
-        sm::sub::objects_of(app.ecs.reg).avatar,
+        app.sceneObjects->avatar,
         app.subworld.player_x(),
         app.subworld.player_y(),
         // The MUZZLE, not the feet: this is the same point (nx, ny, nz) is
@@ -3707,7 +3703,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     int avatarSlot = -1;
     sm::sub::SubObjects* sceneObjs = nullptr;
     if (app.subworld.active()) {
-        sceneObjs = sm::sub::objects_find(app.ecs.reg);
+        sceneObjs = app.sceneObjects.get();
         if (sceneObjs != nullptr) {
             avatarSlot = sm::sub::avatar_slot(*sceneObjs);
             if (avatarSlot >= 0) {
@@ -5088,7 +5084,7 @@ void register_console_commands(App& app) {
 // GameState), so no per-content wiring is needed. Call once per frame in the
 // Playing state, next to draw_debug_console.
 void draw_debug_panels(App& app) {
-    auto& reg = app.ecs.reg;
+    sm::sub::SubObjects& arena = *app.sceneObjects;
 
     // ── Entity inspector ──────────────────────────────────────
     if (app.panels.entities) {
@@ -5116,7 +5112,7 @@ void draw_debug_panels(App& app) {
                 // слоты отсекает роль (их счёт даёт Projectile(col) ниже), а
                 // колонка id несёт ID рождения арены (сущность из строки
                 // ушла). Арены нет — нет и тел, пустой гейт честен.
-                sm::sub::SubObjects* objs = sm::sub::objects_find(reg);
+                sm::sub::SubObjects* objs = &arena;
                 for (int s = 0;
                      objs != nullptr && s < int(sm::kMaxSubObjects); ++s) {
                     const std::uint16_t f = objs->flags[std::size_t(s)];
@@ -5182,9 +5178,9 @@ void draw_debug_panels(App& app) {
         if (ImGui::Begin("ECS stats", &app.panels.ecsStats)) {
             // Теги тел — биты маски единого массива (ломоть 1б): счёт по
             // живым слотам, не по entt-популяции.
-            auto maskCnt = [&reg](std::uint16_t bit) {
+            auto maskCnt = [&arena](std::uint16_t bit) {
                 std::size_t n = 0;
-                const auto& objs = sm::sub::objects_of(reg);
+                const auto& objs = arena;
                 for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
                     const std::uint16_t f = objs.flags[std::size_t(s)];
                     if ((f & sm::sub::kObjAlive) != 0u && (f & bit) != 0u) ++n;
@@ -5194,14 +5190,14 @@ void draw_debug_panels(App& app) {
             struct Row { const char* name; std::size_t count; };
             const Row rows[] = {
                 {"AliveSlots(arena)", std::size_t(
-                     sm::sub::objects_of(reg).count)},
+                     arena.count)},
                 {"MacroSquads",     std::size_t(
                      (*app.macroStore).aliveCount)},
                 // Бары и лист — колонки арены (кусок 2): счёт по живым
                 // слотам, не по entt-популяции.
-                {"BodyPools(arena)", [&reg] {
+                {"BodyPools(arena)", [&arena] {
                      std::size_t n = 0;
-                     const auto& objs = sm::sub::objects_of(reg);
+                     const auto& objs = arena;
                      for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
                          if ((objs.flags[std::size_t(s)]
                               & sm::sub::kObjAlive) != 0u
@@ -5212,9 +5208,9 @@ void draw_debug_panels(App& app) {
                 {"BodyCombat(arena)", maskCnt(sm::sub::kObjHasCombat)},
                 // Род тела — колонка арены (кусок 1): счёт по живым слотам
                 // с назначенным родом, не по entt-популяции.
-                {"BodyKind(arena)", [&reg] {
+                {"BodyKind(arena)", [&arena] {
                      std::size_t n = 0;
-                     const auto& objs = sm::sub::objects_of(reg);
+                     const auto& objs = arena;
                      for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
                          if ((objs.flags[std::size_t(s)]
                               & sm::sub::kObjAlive) != 0u
@@ -6459,11 +6455,9 @@ int main(int /*argc*/, char* /*argv*/[]) {
     // аллокация на сборке, не в тике) — 1460 МиБ по капу, преаллокация
     // оплачена вердиктом владельца 2026-09-25 (M-106).
     app.macroStore = sm::make_macro_store();
-    sm::store_attach(app.ecs, app.macroStore.get());
     // Единый массив объектов сцены (M-150) — та же дисциплина: родился один
-    // раз, мост в реестр ctx-приёмом, слот освобождает on_destroy-хук.
+    // раз; ходит явными параметрами (ломоть E: ctx-мосты умерли с реестром).
     app.sceneObjects = std::make_unique<sm::sub::SubObjects>();
-    sm::sub::objects_attach(app.ecs.reg, app.sceneObjects.get());
     if (!parse_smoke_script(std::getenv(kSmokeScriptEnv), app.smoke)) return 2;
     if (!boot_window(app)) return 1;
     boot_audio(app);

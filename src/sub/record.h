@@ -31,7 +31,6 @@
 #pragma once
 
 #include "ecs/components.h"
-#include "ecs/world.h"      // store_of(reg) — ctx-мост (переехал из store.h, M-150 шаг 0)
 #include "macro/store.h"
 #include "sub/objects.h"    // SubObjects — единый массив объектов сцены (M-150);
                             // он же несёт macro/anketa.h (колонки листа и
@@ -39,8 +38,6 @@
 #include "sub/doors.h"      // слот-формы ВСЕХ дверей арены — ЕДИНСТВЕННОЕ тело
                             // каждого закона; двери ниже лишь переводят
                             // сущность в слот (ломоть 7, ступень ii)
-
-#include <entt/entt.hpp>
 
 namespace sm::sub {
 
@@ -91,21 +88,11 @@ inline CharacterSheet* slot_sheet_of(SubObjects& o, int s, MacroStore& st) {
 
 
 
-// ── МОСТ ЕДИНОГО МАССИВА ОБЪЕКТОВ (M-150, транзит миграции) ─────────────
-// Тот же ctx-приём, что у MacroStore: указатель живёт в реестре и умирает
-// вместе с ним (ломоть E). Хук on_destroy УМЕР ломтём D вместе с
-// ObjectSlot: слот освобождает КАЖДЫЙ путь смерти сам, рукой arena.free
-// (она идемпотентна — добивающие свипы сцены безвредны по построению).
-inline SubObjects& objects_of(entt::registry& reg) {
-    return *reg.ctx().get<SubObjects*>();
-}
-inline SubObjects* objects_find(entt::registry& reg) {
-    auto* p = reg.ctx().find<SubObjects*>();
-    return p != nullptr ? *p : nullptr;
-}
-inline void objects_attach(entt::registry& reg, SubObjects* o) {
-    reg.ctx().insert_or_assign(o);
-}
+// (Мост единого массива объектов — objects_of/objects_find/objects_attach —
+// УМЕР ломтём E вместе с реестром: арена ходит ЯВНЫМ параметром всюду, от
+// движка до фикстур. Хук on_destroy умер ещё ломтём D вместе с ObjectSlot:
+// слот освобождает каждый путь смерти сам, рукой arena.free — она
+// идемпотентна, добивающие свипы сцены безвредны по построению.)
 
 // (body_slot и entity-двери аватара — set_avatar/avatar_entity — умерли
 // ломтём D вместе с ObjectSlot: тело адресуется слотом, активное тело —

@@ -528,8 +528,8 @@ constexpr Row kAppRows[] = {
     {"lastSpellFlight", Rod::Session, ""},
     {"lastJumpHeld", Rod::Session, ""},
     {"lastStandingBonuses", Rod::Cache, "что стояло на теле прошлым шагом"},
-    {"ecs", Rod::Divergence,
-     "entt-мир сцены — легаси под снос: тела M-150, стена M-188"},
+    // (строка "ecs" умерла ломтём E вместе с членом App::ecs: entt-мира
+    // сцены больше нет, расхождение закрыто — M-150/M-188.)
     {"macroStore", Rod::Squads, "гладкая память рода 2"},
     {"sceneObjects", Rod::Session,
      "единый массив объектов сцены (M-150) — транзиент окна, в сейв не едет"},

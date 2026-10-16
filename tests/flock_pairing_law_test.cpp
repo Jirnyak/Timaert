@@ -24,7 +24,6 @@
 // расхождение в 275 тысяч голов никого не разбудило, потому что сравнивать
 // их было не велено.
 #include "check.h"
-#include "ecs/world.h"
 
 #include <cstdint>
 #include <memory>
@@ -48,7 +47,6 @@ namespace {
 // нужное место: мир здесь пуст, и всё, что судится, поставлено руками.
 struct World {
     sm::GameState gs{};
-    sm::ecs::World world;
     std::unique_ptr<sm::MacroStore> store = sm::make_macro_store();
 
     World() {
@@ -56,7 +54,6 @@ struct World {
         // потому что судится арифметика пары, а не размер тора.
         gs.mapW = 64;
         gs.mapH = 64;
-        sm::store_attach(world, store.get());
     }
 
     sm::MacroWorld envelope() {

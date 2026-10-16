@@ -32,12 +32,12 @@ namespace gpu { struct VulkanDevice; }
 
 namespace sm {
 struct WorldTime;
-namespace ecs { struct World; }
 namespace sub {
 
 struct Camera;
 struct CompositeDirty;
 class SeamlessSubworldManager;
+struct SubObjects;   // арена сцены — явный параметр кадра (ломоть E)
 
 class Renderer3DVk {
 public:
@@ -77,7 +77,7 @@ public:
     // camPos (world metres) splits lights between the hero loop and the
     // light field — see gather_point_lights and rebuild_light_field.
     // (`float elapsed` снят 2026-10-09: не читался в теле ни разу.)
-    void prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
+    void prepare_frame(VkCommandBuffer cmd, sub::SubObjects* objs,
                        const sm::vec3& camPos);
 
     // Upload the frame's live particle instances into the device-local particle
@@ -155,7 +155,7 @@ public:
     // just reset) so the buffer we write is GPU-idle. Range [0, kFramesInFlight).
     void record_main(VkCommandBuffer cmd, VkExtent2D ext, const Camera& cam,
                      const WorldTime& time,
-                     const SeamlessSubworldManager* mgr, ecs::World* ecs,
+                     const SeamlessSubworldManager* mgr, sub::SubObjects* objs,
                      bool haste, bool flight, float px, float py, float elapsed,
                      std::uint32_t frameIndex);
 
@@ -189,7 +189,7 @@ private:
     // `haze` is the air's own colour (sub/lighting.h haze_color); it rides the
     // same lane write as camPos, which every lit pass then measures its aerial
     // distance from.
-    void gather_point_lights(ecs::World* ecs, std::uint32_t slot,
+    void gather_point_lights(sub::SubObjects* objs, std::uint32_t slot,
                              const sm::vec3& camPos,
                              const float (&skyParams)[4],
                              const sm::vec3& sunDir,
@@ -355,7 +355,7 @@ private:
     // in here that needs to know where the water is. Default = the default
     // world's, for the frames a harness draws before any scene is uploaded.
     float seaLevel01_ = WATER_LEVEL;
-    void rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
+    void rebuild_light_field(VkCommandBuffer cmd, sub::SubObjects* objs,
                              const sm::vec3& camPos, std::uint32_t slot);
     // Absolute world-space origin (metres) of the current composite: the world
     // position that composite-local (0,0) maps to, up to a global constant.

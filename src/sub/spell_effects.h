@@ -3,10 +3,12 @@
 
 #include <cstdint>
 #include <limits>
-#include "ecs/world.h"
 #include "events/event_bus.h"
 #include "sub/caps.h"       // kMaxSubObjects — длина буфера кандидатов В ТИПЕ
 #include "sub/damage.h"
+#include "sub/objects.h"    // SubObjects — арена сцены, явный параметр (ломоть E)
+
+namespace sm { struct MacroStore; }
 
 namespace sm::sub {
 
@@ -96,7 +98,11 @@ bool projectile_owner_is_player_side(const SubObjects& objs,
 // ТРЕТЬИМ аргументом, к обязательным: теперь «забыл подать сетку» не
 // собирается, а не «не случается». Свидетелям перечислитель даёт фикстура
 // (`all_live_slots@tests/scene_objects_fixture.h`).
-void tick_spell_projectiles(ecs::World& w,
+// `objs` — арена сцены, `st` — гладкая память макро-сквадов (ломоть E:
+// ctx-мосты умерли, оба идут явно). st nullable: рана без записи ложится
+// на колонку арены (фолбэк slot_pools_of — безголовые свидетели).
+void tick_spell_projectiles(SubObjects& objs,
+                            MacroStore* st,
                             EventBus* bus,
                             float dt,
                             SpellNeighborsFn neighborsFn,

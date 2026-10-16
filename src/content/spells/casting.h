@@ -11,11 +11,10 @@
 #include "macro/anketa.h"
 #include "sub/objects.h" // ObjRef — ссылка сцены: кастер конверта (iii-б)
 
-namespace sm::ecs { struct World; }
-
 namespace sm {
 
 struct GameState;   // конверт несёт адрес; полный тип нужен читателям (.cpp)
+struct MacroStore;  // гладкая память макро-сквадов — шовная дверь записи
 
 using SpellRngFn = float (*)(void*);
 
@@ -56,9 +55,18 @@ struct SpellSpawnContext {
     // виден; в СУБМИР (possess_entity) уходит адрес одного числа, не мир.
     // nullptr у конверта без мира (фикстуры) законен.
     GameState* gs = nullptr;
+    // Гладкая память макро-сквадов — для эффектов, чей закон спорит с
+    // ЗАПИСЬЮ тела (вселение судит «кто оригинал» шовной слот-дверью
+    // slot_macro_record и двигает флажок transfer_player_flag). Тот же
+    // закон, что у gs выше: nullptr у конверта без мира (фикстуры) законен
+    // — «записи нет», тело отвечает за себя (шапка sub/record.h).
+    MacroStore* store = nullptr;
 };
 
-using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);
+// Арена сцены — ЯВНЫЙ параметр (ломоть E: ctx-мост objects_find умер).
+// nullptr — честное «сцены нет» (каст с макро-карты): эффекту негде жить,
+// но каст СЛУЧИЛСЯ — мана и восстановление уже в котле, как промах.
+using SpellSpawnFn = void (*)(sub::SubObjects*, const SpellSpawnContext&);
 
 // (`kSpellCasterRadius` lived here and is gone. It was introduced as the ONE
 // home of a caster's shell so the muzzle could clear it — but the subworld
@@ -71,7 +79,7 @@ using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);
 
 // (Строковая дверь cast_spell(w, id, playerId, …) снесена в (iii-б):
 // звонящих у неё не было ни одного — мёртвая дверь, мандат «обрезай лишнее».)
-bool cast_spell(ecs::World& w, const SpellDef& spell,
+bool cast_spell(sub::SubObjects* objs, const SpellDef& spell,
                 const SpellSpawnContext& ctx);
 
 } // namespace sm

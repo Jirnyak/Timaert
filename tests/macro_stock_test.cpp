@@ -14,7 +14,6 @@
 //   * a debt names its subject, so one town's dead never bill its neighbour;
 //   * a malformed receipt changes nothing (fail closed).
 #include "check.h"
-#include "ecs/world.h"
 #include <memory>
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
@@ -30,7 +29,6 @@
 #include "macro/tree_layer.h"
 #include "macro/store.h"
 
-#include <entt/entt.hpp>
 #include <cstdio>
 
 namespace {
@@ -200,9 +198,11 @@ void test_debts_bill_their_own_subject() {
     sm::GameState& gs = wld.gs;
     MacroWorld w{.gs = &gs, .store = wld.store.get()};
 
-    entt::registry reg;
-    sm::sub::SubObjects& objs = sm::test::arena_of(reg);   // квитанция — колонка слота арены (ломоть 4)
-    const int sCitizen = sm::test::give_body(reg);   // тело = слот (ломоть D)
+    // Арена — носитель квитанции (ломоть 4: колонка debt слота), и она НА
+    // ТЕСТ, а не на реестр (ломоть E): 38.3 МиБ умирают с этим кадром.
+    auto arena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *arena_;
+    const int sCitizen = sm::test::give_body(objs);   // тело = слот (ломоть D)
     sub::stamp_macro_debt(objs, sCitizen,
                           MacroStock::Population,
                           MacroStockKey{wld.cityId, 10, 10}, 1);
@@ -218,7 +218,7 @@ void test_debts_bill_their_own_subject() {
 
     // A village is a named place with people too, on the SAME id space (v54):
     // the id alone names it, no register bit rides the receipt.
-    const int sVillager = sm::test::give_body(reg);
+    const int sVillager = sm::test::give_body(objs);
     sub::stamp_macro_debt(objs, sVillager,
                           MacroStock::Population,
                           MacroStockKey{wld.hamletId, 20, 20}, 3);
@@ -229,7 +229,7 @@ void test_debts_bill_their_own_subject() {
     // THE NEGATIVE CONTROL for the one-space law: killing two villagers of
     // Twinvale must leave every CITY exactly where the earlier checks
     // left them — the id alone finds the village, never a city.
-    const int sTwinVillager = sm::test::give_body(reg);
+    const int sTwinVillager = sm::test::give_body(objs);
     sub::stamp_macro_debt(objs, sTwinVillager,
                           MacroStock::Population,
                           MacroStockKey{wld.twinId, 40, 40}, 2);
@@ -296,9 +296,7 @@ sm::MacroHandle make_squad(sm::MacroStore& st, std::uint32_t ordinal,
 // never "one of them" — and only from its own squad.
 void test_the_creature_row_pays_by_name() {
     using namespace sm;
-    ecs::World world;
     auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
     make_squad(*worldStore_, 5, {11u, 22u, 0x80000021u});   // high-bit id: a garrison-
     const auto other = make_squad(*worldStore_, 6, {77u});  // born soldier's shape
     MacroWorld w{.store = worldStore_.get()};
@@ -338,9 +336,9 @@ void test_the_creature_row_pays_by_name() {
           "a receipt against an unknown squad moves no creatures anywhere");
 
     // The full settle path — the same door a subworld death actually uses.
-    entt::registry& reg = world.reg;
-    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
-    const int sBody = sm::test::give_body(reg);   // тело = слот (ломоть D)
+    auto arena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *arena_;
+    const int sBody = sm::test::give_body(objs);   // тело = слот (ломоть D)
     sub::stamp_macro_debt(objs, sBody,
                           MacroStock::Creatures,
                           MacroStockKey{5, 0, 0, 22}, 1);

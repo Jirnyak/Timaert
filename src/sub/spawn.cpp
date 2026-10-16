@@ -296,7 +296,7 @@ ecs::Combat combat_from_sheet(const CharacterSheet& sheet,
 
 // Everything below is the same for a peasant, a mercenary and a lord.
 // Возврат — СЛОТ арены (ломоть D); -1 = честный отказ (арены нет / кап).
-int emplace_body(entt::registry& reg, const BodySpec& body,
+int emplace_body(SubObjects& arena, const BodySpec& body,
                  const ecs::NpcCharacter& face,
                  float healthFraction,
                  const BonusTotals* squadBonuses = nullptr) {
@@ -333,8 +333,7 @@ int emplace_body(entt::registry& reg, const BodySpec& body,
     // Нет слота — нет тела: -1, звонящий отказывается, как BodyCrowd::add.
     // Арены нет (голая фикстура) — тел нет ВОВСЕ: прежняя ветка «тело без
     // слота» умерла с возвратом-слотом (ломоть D).
-    SubObjects* objs = objects_find(reg);
-    if (objs == nullptr) return -1;
+    SubObjects* const objs = &arena;
     const int slot = objs->alloc(ecs::Position{body.x, body.y, 0.0f});
     if (slot < 0) return -1;
     sub::slot_set_visual(*objs, slot,
@@ -429,7 +428,7 @@ void name_creature_in_loan(MacroStockKey& key, const CreatureRef& head) {
     key.detailLevel = head.level;
 }
 
-void spawn_landmark_population(ecs::World& w,
+void spawn_landmark_population(SubObjects& objs,
                                SquadType landmark,
                                const SeamlessSubworldManager& mgr,
                                std::uint32_t seed,
@@ -476,7 +475,6 @@ void spawn_landmark_population(ecs::World& w,
     // the kind into the stream, which is context's job, not the seed's.
     Rng rng(seed ^ 0xC1712E55u);
     const auto& tiles = mgr.tiles();
-    auto& reg = w.reg;
 
     // Both settlement generators build on the CELL CENTRE, and the disk they
     // build in is defined once in sub/city_layout.h. The City/Village split
@@ -590,7 +588,7 @@ void spawn_landmark_population(ecs::World& w,
         // списывает её, а не первую подвернувшуюся.
         MacroStockKey key = populationKey;
         name_creature_in_loan(key, head);
-        spawn_derived_body(reg,
+        spawn_derived_body(objs,
             BodySpec{
                 type, fx, fy, settlementFaction,
                 normalize_soldier_level(head.level),
@@ -624,11 +622,11 @@ int toroidal_cell_offset(int a, int c, int n) {
 
 // ── The two forms of birth (declared in spawn.h) ─────────────────────────
 
-int spawn_derived_body(entt::registry& reg, const BodySpec& body,
+int spawn_derived_body(SubObjects& objs, const BodySpec& body,
                        std::uint32_t faceSalt, const BodyLoan& loan,
                        const BonusTotals* squadBonuses) {
     const int s =
-        emplace_body(reg, body, derive_face(body.seed, body.type, faceSalt),
+        emplace_body(objs, body, derive_face(body.seed, body.type, faceSalt),
                      /*healthFraction*/1.0f, squadBonuses);
     // The receipt, stamped by the birth rather than by the caller: borrowing is
     // part of coming into being, not a line a spawner might remember to add.
@@ -637,7 +635,7 @@ int spawn_derived_body(entt::registry& reg, const BodySpec& body,
     // штампует: душа не воплотилась — квитанции возврата не будет, и список
     // места не должен уменьшаться.
     if (s >= 0 && loan.stock != MacroStock::Count) {
-        sub::stamp_macro_debt(sub::objects_of(reg), s,
+        sub::stamp_macro_debt(objs, s,
                               loan.stock, loan.key, 1);
     }
     return s;
@@ -649,12 +647,11 @@ int spawn_derived_body(entt::registry& reg, const BodySpec& body,
 // контрабандой положенная на тело, двери НЕВИДИМА. Свидетель —
 // subworld_spawn_parity_test, живой контроль контрабандой.)
 
-int spawn_tracked_body(entt::registry& reg, MacroHandle macro,
+int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
                        float x, float y, std::uint32_t seed,
                        bool combatant) {
     // ЗАПИСЬ ЕСТЬ СЛОТ STORE, и другой формы больше нет (шаг 2 1е):
     // идентичность — хэндл, протухший хэндл честно отказывает.
-    MacroStore& st = store_of(reg);
     if (!st.valid(macro)) return -1;
     const auto& kind = st.kind[macro.slot];
     // A kind that names no row at all is refused; a kind that names one is
@@ -692,7 +689,7 @@ int spawn_tracked_body(entt::registry& reg, MacroHandle macro,
     body.sheet = &macroSheet;
 
     const int s =
-        emplace_body(reg, body, st.character[macro.slot], fraction);
+        emplace_body(objs, body, st.character[macro.slot], fraction);
 
     // The belongings, the personality, the gear and the book are STATE up
     // there, and they STAY up there: nothing is copied down. The line that
@@ -711,7 +708,6 @@ int spawn_tracked_body(entt::registry& reg, MacroHandle macro,
     // Рождение выше уже отказало без арены (-1) либо выдало слот — бэклинк
     // и зеркало пишутся слот-дверями.
     if (s >= 0) {
-        SubObjects& objs = objects_of(reg);
         sub::slot_set_origin(objs, s, macro);
         // What stood on him when the numbers above were derived — the
         // comparison the per-tick re-derive is gated on
@@ -1010,7 +1006,7 @@ struct FloorDraw {
 };
 } // namespace
 
-int spawn_dungeon_residents(ecs::World& w,
+int spawn_dungeon_residents(SubObjects& objs,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
                             int count,
@@ -1058,7 +1054,7 @@ int spawn_dungeon_residents(ecs::World& w,
         // garrisoned storey stands its ground.
         MacroStockKey key = populationKey;
         name_creature_in_loan(key, head);
-        spawn_derived_body(w.reg,
+        spawn_derived_body(objs,
             BodySpec{
                 NPCType(head.kind), fx, fy, settlementFaction,
                 normalize_soldier_level(head.level),
@@ -1071,7 +1067,7 @@ int spawn_dungeon_residents(ecs::World& w,
     return placed;
 }
 
-int spawn_street_arrivals(ecs::World& w,
+int spawn_street_arrivals(SubObjects& objs,
                           std::uint32_t seed,
                           std::uint16_t faction,
                           const Inventory& homeSouls,
@@ -1110,7 +1106,7 @@ int spawn_street_arrivals(ecs::World& w,
             doors[std::size_t(rng.next_u32() % std::uint32_t(doorCount))];
         MacroStockKey key = populationKey;
         name_creature_in_loan(key, head);
-        spawn_derived_body(w.reg,
+        spawn_derived_body(objs,
             BodySpec{NPCType(head.kind), d->x, d->y, faction,
                      normalize_soldier_level(head.level),
                      seed ^ (soulId * 2654435761u),
@@ -1122,7 +1118,7 @@ int spawn_street_arrivals(ecs::World& w,
     return placed;
 }
 
-int spawn_dungeon_vermin(ecs::World& w,
+int spawn_dungeon_vermin(SubObjects& objs,
                          std::uint32_t seed,
                          SquadType tableKind,
                          std::uint8_t danger,
@@ -1152,7 +1148,6 @@ int spawn_dungeon_vermin(ecs::World& w,
     if (picks.empty()) return 0;
 
     Rng pos(rngState);
-    auto& reg = w.reg;
     FloorDraw draw(floorCatalog.size());
     int placed = 0;
     for (const auto& p : picks) {
@@ -1163,7 +1158,7 @@ int spawn_dungeon_vermin(ecs::World& w,
         const float fy = originY + float(pt.y) + 0.5f;
         const int npcLevel = normalize_soldier_level(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
-        spawn_derived_body(reg,
+        spawn_derived_body(objs,
             BodySpec{f.type, fx, fy,
                      p.faction, npcLevel,
                      seed ^ (std::uint32_t(placed) * 2654435761u),
@@ -1177,29 +1172,27 @@ int spawn_dungeon_vermin(ecs::World& w,
 
 // ── Per-cell population + seamless persistence helpers ───────────────────
 
-void clear_subworld_world_entities(ecs::World& w) {
+void clear_subworld_world_entities(SubObjects& objs) {
     // Свип арены по биту (ломоть D): сносится процедурная набивка клеток.
     // Снаряд НЕ трогается — он не набивка клетки, а летящее дело сцены
     // (entity-жнец его не видел никогда: болт пережил бы и этот путь).
-    SubObjects* objs = objects_find(w.reg);
-    if (objs == nullptr) return;   // арены нет — нет и тел
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
-        const std::uint16_t f = objs->flags[std::size_t(s)];
+        const std::uint16_t f = objs.flags[std::size_t(s)];
         if ((f & kObjAlive) == 0u) continue;
         if ((f & kObjProjectile) != 0u) continue;
-        if (objs->is_avatar_slot(s)
-            || slot_flag(*objs, s, kObjPlayerSoldier)) continue;
+        if (objs.is_avatar_slot(s)
+            || slot_flag(objs, s, kObjPlayerSoldier)) continue;
         // Projected macro NPCs (Inc 5d) mirror persistent overworld bodies,
         // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
         // must leave them be, exactly like the player-side projections above.
         // On enter this is a no-op (projection runs after the clear).
-        if (slot_macro_origin(*objs, s).slot != kMacroNoSlot)
+        if (slot_macro_origin(objs, s).slot != kMacroNoSlot)
             continue;
-        objs->free(s);
+        objs.free(s);
     }
 }
 
-void spawn_cell_npcs(ecs::World& w,
+void spawn_cell_npcs(SubObjects& objs,
                      Biome biome,
                      int treeCount,
                      SquadType landmark,
@@ -1218,7 +1211,6 @@ void spawn_cell_npcs(ecs::World& w,
                      int faunaCount,
                      const Inventory* homeSouls,
                      const WorldTime& now) {
-    auto& reg = w.reg;
     const int originX = (ox + 1) * kCellSize;
     const int originY = (oy + 1) * kCellSize;
 
@@ -1245,7 +1237,7 @@ void spawn_cell_npcs(ecs::World& w,
     // тела на паству 6 272 (1.88×, 72 % капа тел одним городом), и ни один
     // свидетель этого не видел, потому что «citizens > 0» верно и при
     // двойном счёте.
-    spawn_landmark_population(w, landmark, mgr, cellSeed, worldSeed,
+    spawn_landmark_population(objs, landmark, mgr, cellSeed, worldSeed,
                               settlementFaction,
                               landmarkPop, homeSouls, originX, originY,
                               MacroStockKey{landmarkSubjectId,
@@ -1309,7 +1301,7 @@ void spawn_cell_npcs(ecs::World& w,
 
         const int npcLevel = normalize_soldier_level(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
-        spawn_derived_body(reg,
+        spawn_derived_body(objs,
             BodySpec{f.type, fx, fy,
                      p.faction, npcLevel,
                      cellSeed ^ (std::uint32_t(budget) * 2654435761u),
@@ -1325,44 +1317,40 @@ void spawn_cell_npcs(ecs::World& w,
     }
 }
 
-void rebase_subworld_entities(ecs::World& w, float dxTiles, float dyTiles) {
+void rebase_subworld_entities(SubObjects& objs, float dxTiles, float dyTiles) {
     // ЧИСТО СЛОТОВЫЙ сдвиг (ломоть 5): симуляционная и визуальная позиции —
     // обе колонки арены, сдвигается КАЖДЫЙ живой слот (игрок — такой же
     // жилец), сущность не нужна вовсе. Нулевой интерполятор (speed 0) сдвиг
     // не портит — его не читает никто. Без арены (фикстура) нет и окна —
     // сдвигать нечего.
-    SubObjects* objs = objects_find(w.reg);
-    if (objs == nullptr) return;
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
-        if ((objs->flags[std::size_t(s)] & kObjAlive) == 0u) continue;
-        objs->pos[std::size_t(s)].x += dxTiles;
-        objs->pos[std::size_t(s)].y += dyTiles;
-        objs->visual[std::size_t(s)].vx += dxTiles;
-        objs->visual[std::size_t(s)].vy += dyTiles;
+        if ((objs.flags[std::size_t(s)] & kObjAlive) == 0u) continue;
+        objs.pos[std::size_t(s)].x += dxTiles;
+        objs.pos[std::size_t(s)].y += dyTiles;
+        objs.visual[std::size_t(s)].vx += dxTiles;
+        objs.visual[std::size_t(s)].vy += dyTiles;
     }
 }
 
-void despawn_subworld_entities_outside_window(ecs::World& w) {
+void despawn_subworld_entities_outside_window(SubObjects& objs) {
     // Свип арены по биту (ломоть D): эвакуация уехавших за окно при
     // ре-центре. Снаряд НЕ трогается — его вылет за окно судит потолок и
     // жнец спелл-тика, entity-жнец его не видел никогда.
-    SubObjects* objs = objects_find(w.reg);
-    if (objs == nullptr) return;   // арены нет — нет и тел
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
-        const std::uint16_t f = objs->flags[std::size_t(s)];
+        const std::uint16_t f = objs.flags[std::size_t(s)];
         if ((f & kObjAlive) == 0u) continue;
         if ((f & kObjProjectile) != 0u) continue;
-        if (objs->is_avatar_slot(s)
-            || slot_flag(*objs, s, kObjPlayerSoldier)) continue;
-        const ecs::Position& p = objs->pos[std::size_t(s)];
+        if (objs.is_avatar_slot(s)
+            || slot_flag(objs, s, kObjPlayerSoldier)) continue;
+        const ecs::Position& p = objs.pos[std::size_t(s)];
         const bool inside = p.x >= 0.0f && p.x < float(kFullSize)
                          && p.y >= 0.0f && p.y < float(kFullSize);
         if (inside) continue;
-        objs->free(s);
+        objs.free(s);
     }
 }
 
-void spawn_player_squad(ecs::World& w,
+void spawn_player_squad(SubObjects& objs,
                         const Inventory& squad,
                         const SeamlessSubworldManager& mgr,
                         float playerX,
@@ -1373,11 +1361,12 @@ void spawn_player_squad(ecs::World& w,
                         std::int32_t creaturesSubject,
                         std::int16_t creaturesCx,
                         std::int16_t creaturesCy) {
-    spawn_player_squad(w, squad, mgr.tiles(), playerX, playerY, seed, faction,
-                       squadBonuses, creaturesSubject, creaturesCx, creaturesCy);
+    spawn_player_squad(objs, squad, mgr.tiles(), playerX, playerY, seed,
+                       faction, squadBonuses, creaturesSubject, creaturesCx,
+                       creaturesCy);
 }
 
-void spawn_player_squad(ecs::World& w,
+void spawn_player_squad(SubObjects& objs,
                         const Inventory& squad,
                         const std::vector<std::uint8_t>& tiles,
                         float playerX,
@@ -1390,7 +1379,6 @@ void spawn_player_squad(ecs::World& w,
                         std::int16_t creaturesCy) {
     if (creatures_empty(squad)) return;
 
-    auto& reg = w.reg;
     Rng rng(seed ^ 0x51AD5A11u);
     constexpr float kPi = 3.1415926535f;
     constexpr float kTau = kPi * 2.0f;
@@ -1447,7 +1435,7 @@ void spawn_player_squad(ecs::World& w,
         // HIS stock, A2 2026-09-17) and this member's entityId, so his death
         // strikes the creatures through THE one settle door
         // (macro_stock.cpp "creatures"), exactly as every other army pays.
-        const int ss = spawn_derived_body(reg,
+        const int ss = spawn_derived_body(objs,
             BodySpec{
                 type, fx, fy, faction, level,
                 (std::uint32_t(i) * 2654435761u)
@@ -1465,33 +1453,32 @@ void spawn_player_squad(ecs::World& w,
             squadBonuses);
         // Отказ арены (-1) бит не ставит — прежний честный no-op.
         if (ss >= 0) {
-            slot_flag_set(objects_of(reg), ss, kObjPlayerSoldier);
+            slot_flag_set(objs, ss, kObjPlayerSoldier);
         }
     }
 }
 
 // ── Macro→subworld projection (Inc 5d) ───────────────────────────────────
 
-int project_macro_npcs_into_subworld(ecs::World& w,
+int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
                                      std::uint32_t playerFlagBits) {
-    return project_macro_npcs_into_subworld(w, mgr.tiles(), centerCx, centerCy,
-                                            mapW, mapH, seed, seaLevel, solids,
-                                            playerFlagBits);
+    return project_macro_npcs_into_subworld(objs, st, mgr.tiles(), centerCx,
+                                            centerCy, mapW, mapH, seed,
+                                            seaLevel, solids, playerFlagBits);
 }
 
-int project_macro_npcs_into_subworld(ecs::World& w,
+int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
                                      std::uint32_t playerFlagBits) {
-    auto& reg = w.reg;
     const float seaM = sea_level_m(seaLevel);
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
@@ -1521,7 +1508,6 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // записи-назад умер с законом зеркала: проекция не владеет ничем, она
     // читает и пишет САМУ запись. Пока он ЦЕЛ — на его слоте стоит флажок, и
     // дважды не проецируется ничто.
-    MacroStore& st = store_of(reg);
     // Флаг игрока — его слот; источник — биты GameState, пришедшие числом в
     // параметре (1е кластер 5).
     std::uint16_t flagSlot = kMacroNoSlot;
@@ -1551,7 +1537,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                   "делиться на ширину слова без остатка");
     std::array<std::uint64_t, kUnifiedCap / 64u> projectedSlots{};
     {
-        SubObjects* apObjs = objects_find(reg);
+        SubObjects* const apObjs = &objs;
         // Свип арены по биту (ломоть D): у снаряда и пламени origin зануляет
         // alloc — бит ставит только годный хэндл, лишних жильцов гейт отсёк
         // и прежде.
@@ -1645,7 +1631,8 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // copied identity — is the one birth now, so a lord and a townsman can
         // no longer differ in anything but what the axis says they differ in.
         const int leaderSlot =
-            spawn_tracked_body(reg, macro, fx, fy, seed ^ salt ^ 0x5D0F11u,
+            spawn_tracked_body(objs, st, macro, fx, fy,
+                               seed ^ salt ^ 0x5D0F11u,
                                /*combatant*/false);
         if (leaderSlot < 0) {
             continue;   // not a body-shaped macro entity; nothing was created
@@ -1660,7 +1647,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // its troops through this same line with no further change anywhere.
         BonusTotals leaderBonuses{};
         if (const auto* leaderSheet =
-                sub::slot_sheet(objects_of(reg), leaderSlot)) {
+                sub::slot_sheet(objs, leaderSlot)) {
             leaderBonuses = squad_bonuses(*leaderSheet);
         }
 
@@ -1721,7 +1708,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                 // spawn_derived_body (leader's bonuses applied in it), and every
                 // body carries the same creatures receipt, so a wolf's death pays
                 // the pack back exactly like a spearman's.
-                spawn_derived_body(reg,
+                spawn_derived_body(objs,
                     BodySpec{
                         static_cast<NPCType>(rec.kind), mfx, mfy,
                         kind.factionIdx,

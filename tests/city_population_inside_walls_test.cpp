@@ -29,7 +29,6 @@
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "macro/world_row.h"   // raise_flock_into_container — души головами
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "tables/faction.h"
 #include "sub/city_layout.h"
 #include "sub/map_data.h"
@@ -164,16 +163,14 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                sm::SquadType landmark, int pop, std::uint32_t seed,
                const sm::WorldTime& now) {
     Spread s{};
-    sm::ecs::World world{};
-    auto worldStore_ = sm::make_macro_store();
-    sm::store_attach(world, worldStore_.get());
-    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    auto worldArena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *worldArena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122): предусловие свидетеля — контейнер душ
     // места, и он рождает его САМ (§8 п.11). Паства (число `pop` ниже)
     // осталась мерой ГЕОМЕТРИИ: стены строились на всех, включая ушедших.
     sm::Inventory homeSouls{};
     sm::raise_flock_into_container(homeSouls, pop);
-    sm::sub::spawn_cell_npcs(world,
+    sm::sub::spawn_cell_npcs(objs,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
                              landmark,

@@ -168,10 +168,10 @@ constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 // THE player's bag — his squad entity's ordinary NpcInventory. The engine
 // reaches it through the same door the macro layer does; a scene without a
 // macro world (a bare harness) gets a scratch pack rather than a null.
-Inventory& player_bag_of(const GameState* gs, ecs::World* ecs) {
+Inventory& player_bag_of(const GameState* gs, MacroStore* st) {
     static Inventory scratch{};
-    Inventory* bag = (gs && ecs)
-        ? player_inventory(*gs, store_of(*ecs)) : nullptr;
+    Inventory* bag = (gs && st)
+        ? player_inventory(*gs, *st) : nullptr;
     return bag ? *bag : scratch;
 }
 
@@ -386,7 +386,7 @@ const char* compass_from_delta(float dx, float dy) {
     return dx >= 0.0f ? "SE" : "SW";
 }
 
-void spawn_npc_missile(entt::registry& reg,
+void spawn_npc_missile(sub::SubObjects& objs,
                        int attackerSlot,
                        const ecs::Position& origin,
                        const ecs::Combat& combat,
@@ -396,7 +396,6 @@ void spawn_npc_missile(entt::registry& reg,
                        float targetZ,
                        int targetSlot = -1) {
     if (attackerSlot < 0) return;   // тела на арене нет — выстрела нет
-    sub::SubObjects& objs = sub::objects_of(reg);
     const auto* missile = sub::slot_missile(objs, attackerSlot);
     const float speed = missile && missile->speed > 0.0f
         ? missile->speed
@@ -481,12 +480,11 @@ void spawn_npc_missile(entt::registry& reg,
                          ecs::Sprite{std::uint16_t(0x1FD), r, g, b, 1.2f});
 }
 
-void clear_subworld_entities(ecs::World& w) {
-    auto& reg = w.reg;
+void clear_subworld_entities(sub::SubObjects& scene) {
     // Полный снос сцены (ломоть D): все жильцы — тела, снаряды, пламёна —
     // слоты ОДНОЙ арены, и смерть сцены есть свип free по биту. Сущностных
     // батчей больше нет: рождений в реестр не делает никто.
-    if (sub::SubObjects* objs = sub::objects_find(reg)) {
+    if (sub::SubObjects* objs = &scene) {
         for (int s = 0; s < int(kMaxSubObjects); ++s) {
             if ((objs->flags[std::size_t(s)] & sub::kObjAlive) != 0u) {
                 objs->free(s);
@@ -519,14 +517,13 @@ float player_stance(const sub::SubObjects& objs, int s, const GameState* gs) {
 
 const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     minimapBlips_.clear();
-    if (!ecs_) return minimapBlips_;
-    entt::registry& reg = ecs_->reg;
+    if (!objects_) return minimapBlips_;
     // Same candidate set as targeting/melee: live, current-scene NPCs/monsters.
     // The hero body carries no NPCKind, but a POSSESSED foreign body does (Inc
     // 5c), so exclude the avatar explicitly — the player is the map centre /
     // its own heading triangle, never a blip. Projected player soldiers keep
     // their kind (and are not the avatar) and read as fully allied (+1).
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return minimapBlips_;
     // Свип арены по биту kObjAlive (ломоть D): slot_npc_candidate сам
     // отсекает снаряды и пламёна — рода у них нет.
@@ -541,8 +538,7 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
 }
 
 float SubworldEngine::crosshair_stance() const {
-    if (!ecs_ || !gs_) return std::numeric_limits<float>::quiet_NaN();
-    entt::registry& reg = ecs_->reg;
+    if (!objects_ || !gs_) return std::numeric_limits<float>::quiet_NaN();
 
     // Camera aim ray in 3D (tile/metre space — kTileMeters = 1).
     const float cp = std::cos(cam_.pitch);
@@ -557,7 +553,7 @@ float SubworldEngine::crosshair_stance() const {
     // describes exactly this class of gap). One door answers the height.
     const float ax = playerX_, ay = playerY_, az = player_muzzle_z();
 
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return std::numeric_limits<float>::quiet_NaN();
     int best = -1;
     float bestT = kMaxRange;
@@ -604,7 +600,7 @@ void SubworldEngine::destroy(const gpu::VulkanDevice& dev) {
     dev_ = nullptr;
 }
 
-void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
+void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
                            EventBus& bus,
                            const float* posOverride) {
     statusLine_.clear();
@@ -626,7 +622,7 @@ void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
         mw_ = {};
         gs_ = nullptr;
         terrain_ = nullptr;
-        ecs_ = nullptr;
+        objects_ = nullptr;
         bus_ = nullptr;
         zones_ = nullptr;
         treeLayer_ = nullptr;
@@ -643,9 +639,9 @@ void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
     // nobody read was simply a column with no reader (DOD п.9, снесён M-152).
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
-    ecs_ = &scene; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
+    objects_ = &scene; bus_ = &bus; zones_ = mw_.zones;
+    treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
-    ecs::World& ecs = *ecs_;   // shadows the namespace, as the old parameter did
     // The scene raises around the FLAG HOLDER's cell — «кем я на карте» is
     // where "here" is (подпосадка 4). The entry-side context reads the same
     // holder's runtime below.
@@ -653,7 +649,7 @@ void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
     std::uint8_t entryDir = kEntryDirNone;
     std::uint8_t entryTicks = 0;
     {
-        MacroStore& st = store_of(ecs);
+        MacroStore& st = (*mw_.store);
         const MacroHandle fh = player_flag_handle(gs);
         if (st.valid(fh)) {
             const auto& fc = st.cell[fh.slot];
@@ -776,7 +772,7 @@ void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
     // whoever leads this squad buffs every soldier born here — the EFFECTIVE
     // sheet (phase 4), which already follows the flag by its door.
     const BonusTotals playerBonuses =
-        squad_bonuses(player_effective_sheet(gs, store_of(ecs)));
+        squad_bonuses(player_effective_sheet(gs, (*mw_.store)));
     const MacroHandle flagRec = player_flag_handle(gs);
     // 0 — «НИКТО» (закон нуля-ординала): если флажок невалиден, мира с
     // игроком ещё нет, и расписке некуда ложиться. Здесь стоял литерал
@@ -786,7 +782,7 @@ void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
     std::int16_t creaturesCx = 0, creaturesCy = 0;
     std::uint16_t squadFaction = std::uint16_t(faction_index(kPlayerFactionId));
     {
-        MacroStore& st = store_of(ecs);
+        MacroStore& st = (*mw_.store);
         if (st.valid(flagRec)) {
             creaturesSubject = std::int32_t(st.spawnId[flagRec.slot].index);
             const auto& mc = st.cell[flagRec.slot];
@@ -795,9 +791,9 @@ void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
             squadFaction = st.kind[flagRec.slot].factionIdx;
         }
     }
-    spawn_player_squad(ecs,
-                       player_inventory(gs, store_of(ecs))
-                           ? *player_inventory(gs, store_of(ecs))
+    spawn_player_squad((*objects_),
+                       player_inventory(gs, (*mw_.store))
+                           ? *player_inventory(gs, (*mw_.store))
                            : Inventory{},
                        mgr_, playerX_, playerY_,
         cell_seed(gs.worldSeed, cx, cy) ^ kSquadSpawnSalt,
@@ -820,7 +816,8 @@ void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
     //
     // Runs AFTER the world fill and BEFORE the player entity so projections
     // are part of the scene the player enters.
-    const int projected = project_macro_npcs_into_subworld(ecs, mgr_, cx, cy,
+    const int projected = project_macro_npcs_into_subworld(
+        (*objects_), *mw_.store, mgr_, cx, cy,
         gs.mapW, gs.mapH,
         cell_seed(gs.worldSeed, cx, cy) ^ kMacroProjectionSalt,
         scene_sea_level(), &structIndex_, gs.playerFlagBits);
@@ -836,8 +833,8 @@ void SubworldEngine::enter(const MacroWorld& mw, ecs::World& scene,
     spawn_player_entity();
     if (gs_) {
         {
-        const SpellBook* book = (ecs_ && gs_)
-            ? player_spellbook(*gs_, store_of(*ecs_)) : nullptr;
+        const SpellBook* book = (objects_ && gs_)
+            ? player_spellbook(*gs_, (*mw_.store)) : nullptr;
         set_flying(book
                    && spellbook_rule_active(*book, SpellRuleId::Flight));
     }
@@ -898,7 +895,7 @@ void SubworldEngine::sync_macro_player_to_center() {
     // The remap is a jump, not a walk — the jump door erases the entry edge,
     // so the next enter() falls back to the centre until the player actually
     // crosses a macro cell boundary again.
-    if (ecs_) player_jump_to_cell(*gs_, store_of(*ecs_), nx, ny);
+    if (objects_) player_jump_to_cell(*gs_, (*mw_.store), nx, ny);
 }
 
 // (follow_flag_to_its_record stood here until 2026-09-14. It moved the macro
@@ -939,13 +936,12 @@ void SubworldEngine::sync_macro_player_to_center() {
 // (It was inert only until Inc 4c wired it, which the comment twelve lines
 // below has described as done for as long as this line has denied it.)
 void SubworldEngine::clear_player_entity() {
-    if (!ecs_) return;
-    auto& reg = ecs_->reg;
+    if (!objects_) return;
     // Тушка игрока — обычный жилец арены (ломоть D): снять ссылку активного
     // тела и освободить слот — вся смерть. Exactly one avatar reference is
     // live while a subworld is live; both ends of that law are here and in
     // spawn_player_entity.
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return;
     const int s = sub::avatar_slot(*objs);
     sub::set_avatar_slot(*objs, -1);
@@ -953,11 +949,10 @@ void SubworldEngine::clear_player_entity() {
 }
 
 void SubworldEngine::spawn_player_entity() {
-    if (!ecs_) return;
+    if (!objects_) return;
     // Defensive: never leave a stale flag behind (e.g. an enter without a prior
     // leave). Exactly one AvatarTag entity must exist while a subworld is live.
     clear_player_entity();
-    auto& reg = ecs_->reg;
     // ФЛАЖОК ПЕРЕЖИВАЕТ ШОВ (A2, закон шва 2026-09-17): вход в субмир больше
     // НЕ срывает макро-флаг с носимого лорда. Дыра была ровно здесь: срыв
     // оставлял мир вовсе без AvatarTag до следующего макро-тика, и под землёй
@@ -966,7 +961,7 @@ void SubworldEngine::spawn_player_entity() {
     // его собственный сквад как собой, анкета лорда — пока он лорд. Един-
     // ственный дефенсив: мира без флага не бывает — потерянный флаг
     // возвращается на собственный сквад.
-    MacroStore& pst = store_of(*ecs_);
+    MacroStore& pst = (*mw_.store);
     MacroHandle flagRec = gs_ ? player_flag_handle(*gs_) : MacroHandle{};
     if (gs_ && !pst.valid(flagRec)) {
         const MacroHandle psq = player_squad_handle(*gs_);
@@ -981,7 +976,7 @@ void SubworldEngine::spawn_player_entity() {
     // без слота была бы телом БЕЗ КООРДИНАТ (фантом угла окна). На входе в
     // сцену арена свежая и игрок рождается среди первых — отказ значит, что
     // сцена сломана целиком; говорим вслух и не рождаем фантома.
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return;   // арены нет (голая фикстура) — тел нет
     const int slot = objs->alloc(ecs::Position{playerX_, playerY_, 0.0f});
     if (slot < 0) {
@@ -1022,7 +1017,7 @@ void SubworldEngine::spawn_player_entity() {
         // property, and the seam pulls/pushes this same block each tick.
         ecs::Pools pools{};
         if (const ecs::Pools* squadPools = gs_
-                ? player_pools(*gs_, store_of(*ecs_)) : nullptr) {
+                ? player_pools(*gs_, (*mw_.store)) : nullptr) {
             pools = *squadPools;
         }
         pools.maxHp = std::max(1, pools.maxHp);
@@ -1046,7 +1041,7 @@ void SubworldEngine::spawn_player_entity() {
     const BonusTotals standing = (gs_ && pst.valid(flagRec))
         ? standing_bonuses_of(pst, flagRec) : BonusTotals{};
     const CharacterSheet* baseSheet =
-        gs_ ? player_sheet(*gs_, store_of(*ecs_)) : nullptr;
+        gs_ ? player_sheet(*gs_, (*mw_.store)) : nullptr;
     const CharacterSheet effBody = baseSheet
         ? effective_sheet(*baseSheet, standing) : CharacterSheet{};
     const ecs::NpcInventory* flagBag =
@@ -1098,8 +1093,7 @@ void SubworldEngine::spawn_player_entity() {
 }
 
 void SubworldEngine::rebuild_prop_cache() {
-    if (!ecs_) return;
-    auto& reg = ecs_->reg;
+    if (!objects_) return;
     // The interactive shortlist: doors and stairs among tens of thousands of
     // trees, so the per-frame aim scan (and the HUD prompt that runs it) walks
     // a handful of records instead of the whole composite.
@@ -1114,7 +1108,7 @@ void SubworldEngine::rebuild_prop_cache() {
     // — дыра ре-центра закрыта законом ID, а не порядком clear'ов), смерть —
     // прямой free той же рукой, что у болта.
     if (!propLights_.empty()) {
-        if (sub::SubObjects* objs = sub::objects_find(reg)) {
+        if (sub::SubObjects* objs = objects_) {
             for (const sub::ObjRef r : propLights_) {
                 const int s = sub::ref_slot(*objs, r);
                 if (s >= 0) objs->free(s);
@@ -1130,7 +1124,7 @@ void SubworldEngine::rebuild_prop_cache() {
     // исчерпан) честно не рождается — как BodyCrowd::add.
     // Арена — ОДИН лукап на пересборку, не на пламя ((ii-б)): ctx-поиск
     // внутри цикла был налогом на каждую лампу.
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     for (const Structure& s : mgr_.structures()) {
         if (objs == nullptr) break;        // арены нет — пламени негде жить
         if (!structure_is_lit(s.kind)) continue;
@@ -1158,14 +1152,13 @@ void SubworldEngine::rebuild_prop_cache() {
 }
 
 void SubworldEngine::pull_player_entity_to_scalars() {
-    if (!ecs_) return;
-    auto& reg = ecs_->reg;
+    if (!objects_) return;
     // Колонка pos авторитетна (Inc 5a, с ломтя 5 — колонка арены); копия на
     // скалярное зеркало.
     // Активное тело одно — ССЫЛКА сцены (2026-10-05), поэтому вырожденного
     // цикла по одному элементу здесь больше нет ((ii-б)): слот аватара даёт
     // ref_slot, позиция — колонка арены.
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return;
     const int s = sub::avatar_slot(*objs);
     if (s < 0) return;
@@ -1176,13 +1169,12 @@ void SubworldEngine::pull_player_entity_to_scalars() {
 }
 
 void SubworldEngine::push_scalars_to_player_entity() {
-    if (!ecs_) return;
-    auto& reg = ecs_->reg;
+    if (!objects_) return;
     // Fold a scalar change (a seam rewrap, or a move_player/set_player_pos edit)
     // back onto the authoritative entity Position. Assignment, so it is a no-op
     // when already equal and idempotent w.r.t. the seam rebase that likewise
     // shifts the player slot's pos column by the same ∓cell amount.
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return;
     const int s = sub::avatar_slot(*objs);
     if (s < 0) return;
@@ -1194,8 +1186,7 @@ void SubworldEngine::push_scalars_to_player_entity() {
 }
 
 void SubworldEngine::sync_player_entity_position() {
-    if (!ecs_) return;
-    auto& reg = ecs_->reg;
+    if (!objects_) return;
     // Inc 5a: the player entity's Position is AUTHORITATIVE; propagate it onto the
     // scalar mirror that every legacy reader (camera / melee origin / proximity /
     // seam / HUD) still uses, so a possession that hopped the flag to a body at a
@@ -1207,12 +1198,12 @@ void SubworldEngine::sync_player_entity_position() {
     // his hands hold. Any other body — worn or not — already has a row, and its
     // numbers come from its own record through the ordinary mirror
     // (mirror_bodies_from_record / refresh_body_strike).
-    sub::SubObjects* objsP = sub::objects_find(reg);
+    sub::SubObjects* objsP = objects_;
     if (objsP == nullptr) return;
     sub::SubObjects& objs = *objsP;
     const int s = sub::avatar_slot(objs);
     if (s < 0) return;
-    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    MacroStore* const* stp = mw_.store != nullptr ? &mw_.store : nullptr;
     {
         const ecs::Position* p = sub::slot_pos(objs, s);
         if (p == nullptr) return;
@@ -1239,10 +1230,10 @@ void SubworldEngine::sync_player_entity_position() {
                 // (перепись M-150 шаг 0), и снесённая entt-дверь
                 // standing_bonuses_of(reg, e) возвращала {} всегда.
                 const BonusTotals st = rec.slot != kMacroNoSlot
-                    ? standing_bonuses_of(store_of(reg), rec)
+                    ? standing_bonuses_of((*mw_.store), rec)
                     : BonusTotals{};
                 const CharacterSheet* base = gs_
-                    ? player_sheet(*gs_, store_of(*ecs_)) : nullptr;
+                    ? player_sheet(*gs_, (*mw_.store)) : nullptr;
                 const CharacterSheet eff = base
                     ? effective_sheet(*base, st) : CharacterSheet{};
                 const DerivedBonuses d = calculate_derived(
@@ -1296,8 +1287,7 @@ void SubworldEngine::sync_player_entity_position() {
 }
 
 void SubworldEngine::mirror_bodies_from_record() {
-    if (!ecs_) return;
-    auto& reg = ecs_->reg;
+    if (!objects_) return;
     // THE RULE (owner, 2026-08-06) is unchanged: every subworld act with
     // consequences owes a macro return, paid in the tick it happens. What
     // changed is that it costs NOTHING to honour — the act lands on the record
@@ -1321,10 +1311,10 @@ void SubworldEngine::mirror_bodies_from_record() {
     // Store берётся ОДИН раз на проход, не на тело: это ctx-поиск, а цикл
     // считает свой бюджет в 0.00041 мс на тело (шапка ниже) — lookup на
     // каждое тело был бы налогом того же порядка, что вся работа.
-    const MacroStore& st = store_of(reg);
+    const MacroStore& st = (*mw_.store);
     // Арена — ОДИН лукап на проход, тем же доводом, что и стор выше
     // ((ii-б)); слот тела берётся из вьюхи.
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return;
     // Свип арены по биту (ломоть D): зеркалом живёт только носитель
     // бэклинка, у снаряда и пламени origin нулевой по alloc.
@@ -1350,8 +1340,7 @@ void SubworldEngine::mirror_bodies_from_record() {
 }
 
 void SubworldEngine::report_player_damage() {
-    if (!ecs_ || !gs_) return;
-    auto& reg = ecs_->reg;
+    if (!objects_ || !gs_) return;
     // What is left here after the write-back died: FEEDBACK, and the two rules
     // that were never bookkeeping. The wound itself already landed on the
     // record when the blow was struck (sub/damage.cpp through sub/record.h),
@@ -1363,17 +1352,17 @@ void SubworldEngine::report_player_damage() {
     // THE STORE still matters for exactly one rule, stated below: dying inside
     // a body you wear is your own death.
     ecs::Pools* squadPools =
-        gs_ ? player_pools(*gs_, store_of(*ecs_)) : nullptr;
+        gs_ ? player_pools(*gs_, (*mw_.store)) : nullptr;
     if (!squadPools) return;
     // Слот аватара — ОДИН раз ((ii-б)): ниже его же держал try_get ради
     // колонки lastHitBy, то есть функция уже брала слот, но позже четырёх
     // entity-дверей.
-    sub::SubObjects* objsP = sub::objects_find(reg);
+    sub::SubObjects* objsP = objects_;
     if (objsP == nullptr) return;
     sub::SubObjects& objsHit = *objsP;
     const int s = sub::avatar_slot(objsHit);
     if (s < 0) return;
-    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    MacroStore* const* stp = mw_.store != nullptr ? &mw_.store : nullptr;
     {
         const ecs::Pools* mirrorCol = sub::slot_pools(objsHit, s);
         if (mirrorCol == nullptr) return;
@@ -1523,7 +1512,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
 // to run per spawned crowd is gone with it.)
 
 void SubworldEngine::spawn_cell(int ox, int oy) {
-    if (!ecs_ || !gs_ || !terrain_ || terrain_->width <= 0
+    if (!objects_ || !gs_ || !terrain_ || terrain_->width <= 0
         || terrain_->height <= 0) {
         return;
     }
@@ -1560,7 +1549,8 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const MacroHandle lmRec = (ctx.landmark.id >= 0 && mw_.store)
         ? place_handle_by_ordinal(*mw_.store, std::uint32_t(ctx.landmark.id))
         : MacroHandle{};
-    spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, ctx.landmark.kind,
+    spawn_cell_npcs((*objects_),
+                    ctx.biome, ctx.treeCount, ctx.landmark.kind,
                     ctx.zone, ctx.depositsNear, mgr_,
                     ox, oy, ctx.seed, ctx.worldSeed,
                     settlementFaction, ctx.landmark.size,
@@ -1582,8 +1572,8 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
 // projected squad + player entity are preserved by the clear step's AvatarTag /
 // PlayerSoldierTag skip, so they are not wiped here.
 void SubworldEngine::spawn_all_cells() {
-    if (!ecs_) return;
-    clear_subworld_world_entities(*ecs_);
+    if (!objects_) return;
+    clear_subworld_world_entities((*objects_));
     // The reaper above takes prop lights with everything else world-owned.
     // С (iii-в) двойное освобождение НЕВЫРАЗИМО (протухшую ссылку отсеивает
     // ref_slot) — clear здесь лишь гигиена: не держать мёртвые ссылки.
@@ -1606,10 +1596,10 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
     // клеток мир забирает назад (и это один из двух равноправных концов
     // аренды), новые сдаёт — ТОЙ ЖЕ дверью.
     lease_window_here_();
-    if (!ecs_) return;
-    rebase_subworld_entities(*ecs_,
+    if (!objects_) return;
+    rebase_subworld_entities((*objects_),
         float(-dx * kCellSize), float(-dy * kCellSize));
-    despawn_subworld_entities_outside_window(*ecs_);
+    despawn_subworld_entities_outside_window((*objects_));
     for (int oy = -1; oy <= 1; ++oy) {
         for (int ox = -1; ox <= 1; ++ox) {
             const int oldOx = ox + dx;
@@ -1635,7 +1625,8 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
     if (gs_ && sceneKind_ != SceneKind::Dungeon) {
         const int cx = mgr_.center_cx();
         const int cy = mgr_.center_cy();
-        project_macro_npcs_into_subworld(*ecs_, mgr_, cx, cy,
+        project_macro_npcs_into_subworld(
+            (*objects_), *mw_.store, mgr_, cx, cy,
             gs_->mapW, gs_->mapH,
             cell_seed(gs_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
             scene_sea_level(), &structIndex_, gs_->playerFlagBits);
@@ -1708,15 +1699,14 @@ void SubworldEngine::add_sub_zone(int cellX, int cellY,
 // stands in one of them; a neighbour's street settles the moment the window
 // re-centres on it, through the spawner's own use of the same law.
 void SubworldEngine::tick_day_pump(float dt) {
-    if (!gs_ || !ecs_) return;
+    if (!gs_ || !objects_) return;
     if (sceneKind_ == SceneKind::Dungeon) return;   // an interior has no street
-    auto& reg = ecs_->reg;
 
     // ── Every step: walk the leavers home. ──
     // The body keeps its own legs, its own mover and its own ground law; all
     // that is written here is the INTENT it already had a field for.
     {
-        sub::SubObjects* walkObjs = sub::objects_find(reg);
+        sub::SubObjects* walkObjs = objects_;
         std::array<int, 256> arrived{};
         int arrivedCount = 0;
         // Свип арены по биту (ломоть D): гейт «идёт домой» отсекает всех,
@@ -1773,7 +1763,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     // (worked) считает и ушедших в поле, и помпа, меренная ею, рождала бы на
     // улицу тела БЕЗ голов — тот же класс двойного счёта, что «6272 паствы →
     // 11774 тела». Воплощаются только домашние души; улица = головы − резерв.
-    const MacroStore& st = store_of(*ecs_);
+    const MacroStore& st = (*mw_.store);
     const MacroHandle ph = place_handle_by_ordinal(
         st, std::uint32_t(ctx.landmark.id));
     const Inventory* souls =
@@ -1832,7 +1822,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     //
     // Голый слот законен внутри тика (вердикт (ii-б)), а живость судит бит
     // kObjAlive, а не reg.valid: вопрос о ТЕЛЕ, не о сущности.
-    sub::SubObjects* objsP = sub::objects_find(reg);
+    sub::SubObjects* objsP = objects_;
     if (objsP == nullptr) return;
     sub::SubObjects& objs = *objsP;
     // Проходы ниже — свипы арены по биту (ломоть D): townsman гейтится
@@ -1954,7 +1944,8 @@ void SubworldEngine::tick_day_pump(float dt) {
     const MacroStockKey popKey{ctx.landmark.id,
                                std::int16_t(mgr_.center_cx()),
                                std::int16_t(mgr_.center_cy())};
-    spawn_street_arrivals(*ecs_, ctx.seed ^ std::uint32_t(nowTick),
+    spawn_street_arrivals((*objects_),
+                          ctx.seed ^ std::uint32_t(nowTick),
                           faction, *souls, reserve, deficit,
                           liveByKind, liveNamed.data(), liveNamedCount,
                           pumpDoors_.data(), int(pumpDoors_.size()), popKey);
@@ -2019,7 +2010,7 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     // HIS squad», A2 2026-09-17). Ординал выдан ЕДИНЫМ эмитентом (M-255) и
     // спрашивается у записи; здесь стоял литерал 0x7FFFFFFF.
     f.subjectKind = std::uint8_t(FactSubject::Squad);
-    f.subject = ecs_ ? player_flag_ordinal(*gs_, store_of(*ecs_)) : 0u;
+    f.subject = objects_ ? player_flag_ordinal(*gs_, (*mw_.store)) : 0u;
     // When the deed was done TO a named place, the place rides as the object
     // by its landmark ordinal (v54: one id space names it alone).
     if (objectLandmarkId > 0) {
@@ -2085,8 +2076,8 @@ int SubworldEngine::take_pending_sfx(SfxId* out, int cap) {
 void SubworldEngine::push_player_hit_log(int targetSlot,
                                          int damage,
                                          bool lethal) {
-    if (!ecs_ || damage <= 0 || targetSlot < 0) return;
-    sub::SubObjects& objs = sub::objects_of(ecs_->reg);
+    if (!objects_ || damage <= 0 || targetSlot < 0) return;
+    sub::SubObjects& objs = (*objects_);
     // Протухший слот жив-гейтом не пускается: лог и репутация — о теле,
     // которое ЕСТЬ (прежний reg.valid, слот-формой).
     if (!sub::slot_flag(objs, targetSlot, sub::kObjAlive)) return;
@@ -2118,10 +2109,9 @@ bool SubworldEngine::spell_can_hit_callback(void* user,
     // handled by the damage log callback, not here.
     (void)projectile;
     auto* engine = static_cast<SubworldEngine*>(user);
-    if (!engine || !engine->ecs_) return true;
-    const sub::SubObjects* objs = sub::objects_find(engine->ecs_->reg);
-    return objs != nullptr
-        && sub::slot_flag(*objs, int(targetSlot), sub::kObjAlive);
+    if (!engine || !engine->objects_) return true;
+    const sub::SubObjects* objs = engine->objects_;
+    return sub::slot_flag(*objs, int(targetSlot), sub::kObjAlive);
 }
 
 float SubworldEngine::spell_height_callback(void* user, float x, float y) {
@@ -2136,8 +2126,7 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
                                             float bx, float by, float bz,
                                             float blastRadius) {
     auto* engine = static_cast<SubworldEngine*>(user);
-    if (!engine || !engine->ecs_) return;
-    auto& reg = engine->ecs_->reg;
+    if (!engine || !engine->objects_) return;
 
     // Colour every VFX from the bolt's OWN Sprite tint — the universal rule: a
     // bolt's colour drives both its trail and its impact (fireball warm, magic
@@ -2147,7 +2136,7 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
     // hue. No Sprite (e.g. a bare meteor) ⇒ fall back to the preset colour.
     vec3 tint{};
     bool haveTint = false;
-    const sub::SubObjects& objs = sub::objects_of(reg);
+    const sub::SubObjects& objs = *engine->objects_;
     if (sub::slot_flag(objs, int(boltSlot), sub::kObjAlive)) {
         if (const auto* spr = sub::slot_sprite(objs, int(boltSlot))) {
             const float rf = float(spr->r);
@@ -2206,11 +2195,11 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
 // его эффект зовёт sub/possess.h; скаляры тянет за флажком обычный тик.)
 
 float SubworldEngine::player_arm_reach() const {
-    if (ecs_) {
+    if (objects_) {
         // const_cast — приём самих дверей (record.h): ctx-поиск арены
         // реестра не меняет, читается колонка слота аватара.
         if (sub::SubObjects* objs =
-                sub::objects_find(const_cast<entt::registry&>(ecs_->reg))) {
+                objects_) {
             const int s = sub::avatar_slot(*objs);
             if (s >= 0) {
                 if (const auto* c = sub::slot_combat(*objs, s)) {
@@ -2223,17 +2212,16 @@ float SubworldEngine::player_arm_reach() const {
 }
 
 int SubworldEngine::player_display_hp() const {
-    if (ecs_) {
+    if (objects_) {
         // The flagged body's RECORD is the display truth — his own squad while
         // he is himself, the lord's while he wears one — so the HUD follows
         // possession without a branch, and shows this tick's wound rather than
         // the mirror's tick-top value. (The player's own squad stays frozen as
         // the revert target while possessed: it is simply not the record being
         // read.)
-        entt::registry& reg = const_cast<entt::registry&>(ecs_->reg);
-        if (sub::SubObjects* objs = sub::objects_find(reg)) {
+        if (sub::SubObjects* objs = objects_) {
             const int s = sub::avatar_slot(*objs);
-            MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+            MacroStore* const* stp = mw_.store != nullptr ? &mw_.store : nullptr;
             if (s >= 0 && sub::slot_pools(*objs, s) != nullptr) {
                 const ecs::Pools* p = stp != nullptr
                     ? sub::slot_pools_of(*objs, s, **stp)
@@ -2242,7 +2230,7 @@ int SubworldEngine::player_display_hp() const {
             }
         }
         if (const ecs::Pools* squadPools = gs_
-                ? player_pools(*gs_, store_of(*ecs_)) : nullptr) {
+                ? player_pools(*gs_, (*mw_.store)) : nullptr) {
             return squadPools->hp;
         }
     }
@@ -2251,27 +2239,24 @@ int SubworldEngine::player_display_hp() const {
 
 bool SubworldEngine::player_threat_callback(void* user, int slot) {
     auto* engine = static_cast<SubworldEngine*>(user);
-    if (!engine || !engine->ecs_ || !engine->gs_) return true;
+    if (!engine || !engine->objects_ || !engine->gs_) return true;
     // Слот-ключ ((ii-б)): зовётся из живого цикла мозга — голый слот внутри
     // тика законен; живость судит сама слот-форма (alive_subworld_slot).
-    sub::SubObjects* objs = sub::objects_find(engine->ecs_->reg);
-    if (objs == nullptr) return false;
-    return hostile_to_player_slot(*objs, slot, engine->gs_);
+    return hostile_to_player_slot(*engine->objects_, slot, engine->gs_);
 }
 
 void SubworldEngine::tick_player_melee() {
-    if (!ecs_ || !gs_) return;
+    if (!objects_ || !gs_) return;
     if (player_display_hp() <= 0) return;
     if (!playerAttackHeld_) return;
 
-    auto& reg = ecs_->reg;
     // Inc 4c: the player's outgoing melee identity lives on its ECS Combat
     // (damage/range/cooldown), refreshed from the sheet by
     // sync_player_entity_position — read it here instead of recomputing. Capture
     // the scalars up front so later component emplaces can't dangle the pointer.
     // Слот аватара — ОДИН раз ((ii-б)): им же ниже заряжается выстрел, так
     // что прежний вырожденный цикл по сущности и body_slot у дула умерли.
-    sub::SubObjects* objsP = sub::objects_find(reg);
+    sub::SubObjects* objsP = objects_;
     if (objsP == nullptr) return;
     const int playerSlot = sub::avatar_slot(*objsP);
     if (playerSlot < 0) return;
@@ -2309,7 +2294,7 @@ void SubworldEngine::tick_player_melee() {
         const float dirX = std::cos(cam_.yaw) * cp;
         const float dirY = std::sin(cam_.yaw) * cp;
         const float dirZ = std::sin(cam_.pitch);
-        spawn_npc_missile(reg, playerSlot,
+        spawn_npc_missile(*objects_, playerSlot,
                           ecs::Position{playerX_, playerY_, playerZ_},
                           strikeStats, combatRng_,
                           playerX_ + dirX * strikeStats.attackRange,
@@ -2330,7 +2315,7 @@ void SubworldEngine::tick_player_melee() {
     // behind him, while deliberately striking a neutral (and paying its
     // reputation price) stays possible. Reach is surface-honest (Inc 4):
     // range + body_radius(target), through the battle pick grid.
-    sub::SubObjects& objs = sub::objects_of(reg);
+    sub::SubObjects& objs = (*objects_);
     struct HostileCtx { const sub::SubObjects* objs; const GameState* gs; };
     HostileCtx hostileCtx{&objs, gs_};
     const int target = melee_pick_target(
@@ -2363,7 +2348,7 @@ void SubworldEngine::tick_player_melee() {
     // Убийца — ССЫЛКА АВАТАРА (ObjRef, ступень (iii)), не «ничей ноль»
     // (§41 корень 5): жнец резолвит лидера по телу, а id == 0 платил бы XP
     // никому. Байт playerOwned остаётся правдой лога, атрибуция — ссылка.
-    MacroStore* const* meleeSt = reg.ctx().find<MacroStore*>();
+    MacroStore* const* meleeSt = mw_.store != nullptr ? &mw_.store : nullptr;
     const DamageResult hit = apply_damage(
         objs, meleeSt != nullptr ? *meleeSt : nullptr, target,
         DamageSource{.attacker = objs.avatar,
@@ -2412,9 +2397,8 @@ void SubworldEngine::tick_player_melee() {
 // тела через мирную дверь: у аватара он свой, и хаста ускоряет обыск ровно
 // так же, как замах.
 void SubworldEngine::charge_act(float baseSeconds) {
-    if (!ecs_ || baseSeconds <= 0.0f) return;
-    auto& reg = ecs_->reg;
-    sub::SubObjects* objs = sub::objects_find(reg);
+    if (!objects_ || baseSeconds <= 0.0f) return;
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return;
     const int s = sub::avatar_slot(*objs);
     if (s < 0) return;
@@ -2425,7 +2409,7 @@ void SubworldEngine::charge_act(float baseSeconds) {
     // тот же фолбэк ВТОРЫМ телом и умерла в (ii-б); голый слот-generic
     // фолбэка не имеет, и наивная подмена сделала бы голое тело пролога
     // новичком молча.
-    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    MacroStore* const* stp = mw_.store != nullptr ? &mw_.store : nullptr;
     const CharacterSheet* cs = stp != nullptr
         ? sub::slot_sheet_of(*objs, s, **stp)
         : sub::slot_sheet(*objs, s);
@@ -2438,9 +2422,8 @@ void SubworldEngine::charge_act(float baseSeconds) {
 }
 
 bool SubworldEngine::harvest_action(float reachOverride) {
-    if (!active_ || !ecs_ || !gs_) return false;
+    if (!active_ || !objects_ || !gs_) return false;
     if (player_display_hp() <= 0) return false;
-    auto& reg = ecs_->reg;
     // РУБКА — СПОСОБНОСТЬ, как всё в субмире (CANON S13, вердикт владельца
     // 2026-09-19). Гейт спрашивается ЗДЕСЬ, до всякой работы, и заряжается
     // только когда удар по дереву действительно состоялся (ниже, у самого
@@ -2448,7 +2431,7 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // жжёт, это граница закона способностей.
     // Слот аватара — ОДИН раз на всю жатву ((ii-б)): прежде он спрашивался
     // ТРЕМЯ вырожденными циклами (гейт, предел руки, оплата SP).
-    sub::SubObjects* objsP = sub::objects_find(reg);
+    sub::SubObjects* objsP = objects_;
     if (objsP == nullptr) return false;
     const int playerSlot = sub::avatar_slot(*objsP);
     if (playerSlot < 0) return false;
@@ -2476,7 +2459,7 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // branches that stood here — store for the hero, body-native for a
     // possessed body — was the «выборка власти полос» the mirror law retired:
     // whoever you are wearing, you spend what that record has.
-    MacroStore* const* payStp = reg.ctx().find<MacroStore*>();
+    MacroStore* const* payStp = mw_.store != nullptr ? &mw_.store : nullptr;
     ecs::Pools* pay = payStp != nullptr
         ? sub::slot_pools_of(*objsP, playerSlot, **payStp)
         : sub::slot_pools(*objsP, playerSlot);
@@ -2584,7 +2567,7 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
     // world's props carry no worn things to load dice for, and 0 keeps the
     // deterministic-per-place contract above exactly as cheap as it reads.
     const CharacterSheet* lootSheet =
-        gs_ ? player_sheet(*gs_, store_of(*ecs_)) : nullptr;
+        gs_ ? player_sheet(*gs_, (*mw_.store)) : nullptr;
     auto stacks = roll_loot_profile(lootId,
                                     lootSheet ? lootSheet->levelData.level : 1,
                                     &loot_rng_f01, /*affixPower*/ 0);
@@ -2602,7 +2585,7 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
         const ItemDef* def = item_def_at(int(s.def));
         // A full bag REFUSES (owner's ruling): the harvest stays in the world
         // rather than evaporating into a container with no room for it.
-        if (!player_bag_of(gs_, ecs_).add_ref(s)) {
+        if (!player_bag_of(gs_, mw_.store).add_ref(s)) {
             return picked.empty() ? std::string("Your pack is full.") : picked;
         }
         if (!picked.empty()) picked += ", ";
@@ -2613,8 +2596,7 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
 }
 
 void SubworldEngine::tick_damage_fx() {
-    if (!ecs_) return;
-    auto& reg = ecs_->reg;
+    if (!objects_) return;
     // Height above ground to seat the spray at roughly mid-body, so droplets arc
     // out from the torso rather than the feet. One constant, not per-creature —
     // the archetype only chooses blood vs dust, never geometry.
@@ -2622,7 +2604,7 @@ void SubworldEngine::tick_damage_fx() {
     // Событие «попали» — колонка damageFx единого массива (ломоть 1а):
     // ЧИСТО СЛОТОВЫЙ проход (ломоть 5) — сущность телу не нужна: позиция,
     // спрайт и аватар отвечают колонками и ссылкой сцены.
-    sub::SubObjects& objs = sub::objects_of(reg);
+    sub::SubObjects& objs = (*objects_);
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
         const std::uint16_t f = objs.flags[std::size_t(s)];
         if ((f & sub::kObjAlive) == 0u) continue;
@@ -2708,7 +2690,7 @@ bool SubworldEngine::has_hostile_near_player(float radius) const {
 }
 
 DangerLevel SubworldEngine::danger_level() const {
-    if (!active_ || !ecs_) return DangerLevel::Green;
+    if (!active_ || !objects_) return DangerLevel::Green;
     // What this measures is PROXIMITY OF THE NEAREST HOSTILE for the HUD gem
     // (and the exit gate below) — not any weapon's reach. The old name here
     // was kMeleeRange, a liar 8× the real melee identity (kPlayerMeleeRange
@@ -2820,7 +2802,7 @@ const Structure* SubworldEngine::aimed_prop(float reach, float& outScore) const 
 // нажатие не могли расходиться по построению.
 SubworldEngine::AimedTarget SubworldEngine::aimed_target() const {
     AimedTarget out{};
-    if (!active_ || !ecs_) return out;
+    if (!active_ || !objects_) return out;
     const float reach = player_arm_reach();
     // КАНДИДАТ ОСТАЛСЯ ОДИН (2026-10-05): труп-контейнер снят вердиктом
     // владельца — добычу убитых будет раздавать ПУЛ ЛУТА, «режиссёр лута всей
@@ -2854,13 +2836,12 @@ const char* SubworldEngine::interact_prompt() const {
 }
 
 bool SubworldEngine::interact() {
-    if (!active_ || !ecs_ || !gs_) return false;
-    auto& reg = ecs_->reg;
+    if (!active_ || !objects_ || !gs_) return false;
     // РУКА ЗАНЯТА — значит занята и для рычага (CANON S13). Та же дверь, тот
     // же гейт: обыскивать тело посреди замаха нельзя, и в пошаговом режиме
     // обыск честно отдаёт миру свой ход.
     {
-        sub::SubObjects* objs = sub::objects_find(reg);
+        sub::SubObjects* objs = objects_;
         const int s = objs ? sub::avatar_slot(*objs) : -1;
         const ecs::Combat* gate =
             s >= 0 ? sub::slot_combat(*objs, s) : nullptr;
@@ -2936,9 +2917,8 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
                                     std::uint32_t seed,
                                     const char* factionId,
                                     const float* positionOverride) {
-    if (!active_ || !ecs_) return false;
+    if (!active_ || !objects_) return false;
 
-    auto& reg = ecs_->reg;
     const NPCType type = npc_type_from_token(npcTypeId);
     const NpcTypeDef& def = npc_def(type);
     const int lvl = normalize_soldier_level(std::max(level, def.baseLevel));
@@ -2987,7 +2967,7 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         cell_seed(seed, int(fx), int(fy));
     // Хэндл не берётся: его единственным потребителем была мёртвая сумка ниже,
     // а рождение само вписывает тело и в реестр, и в арену (`emplace_body`).
-    spawn_derived_body(reg,
+    spawn_derived_body((*objects_),
         BodySpec{type, fx, fy, bodyFaction, lvl, bodySeed,
                      /*combatant*/true},
         /*faceSalt*/bodySeed);
@@ -3016,9 +2996,8 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
 }
 
 bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
-    if (!active_ || !ecs_) return false;
-    auto& reg = ecs_->reg;
-    MacroStore& st = store_of(reg);
+    if (!active_ || !objects_) return false;
+    MacroStore& st = (*mw_.store);
     if (!st.valid(macro)) return false;
 
     // Same placement rule as a spawned encounter — the shared ring, so the
@@ -3042,7 +3021,7 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     // в субмир»). Бой ОБЪЯВЛЕН — противник сошёлся: уже стоящее тело
     // встаёт в то же кольцо, куда встало бы рождённое, той же рукой
     // (place_body_ring выше) — а второго тела для одного лорда не бывает.
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     // Свип арены по биту (ломоть D): гейт — бэклинк на ЭТУ запись, у
     // снаряда и пламени origin нулевой по alloc.
     for (int s = 0; objs != nullptr && s < int(kMaxSubObjects); ++s) {
@@ -3060,12 +3039,13 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     }
 
     const int bodySlot =
-        spawn_tracked_body(reg, macro, fx, fy, seed, /*combatant*/true);
+        spawn_tracked_body((*objects_), *mw_.store, macro,
+                           fx, fy, seed, /*combatant*/true);
     if (bodySlot < 0) return false;
 
     char msg[160]{};
     // Род — колонка арены свежего тела; рождение вернуло слот (ломоть D).
-    const auto& kind = *sub::slot_kind(sub::objects_of(reg), bodySlot);
+    const auto& kind = *sub::slot_kind((*objects_), bodySlot);
     std::snprintf(msg, sizeof(msg), "Encounter: %s",
                   npc_def(static_cast<NPCType>(kind.type)).label);
     set_status(msg);
@@ -3248,8 +3228,7 @@ int SubworldEngine::battle_relation_callback(void* user, const FactionSet& set,
 }
 
 void SubworldEngine::tick_subworld_bodies(float dt) {
-    if (!ecs_ || dt <= 0.0f) return;
-    auto& reg = ecs_->reg;
+    if (!objects_ || dt <= 0.0f) return;
 
     // ── Gather: ECS → SoA, O(N) ────────────────────────────────────────────
     // Every living body enters the snapshot — the SAME set the spell pass
@@ -3287,7 +3266,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
 
     // Сбор боя — свип арены по биту (ломоть D): карта толпы — СЛОТЫ
     // (ступень (iv)); гейт slot_pools ниже отсекает снаряды и пламёна.
-    sub::SubObjects& arena = sub::objects_of(reg);
+    sub::SubObjects& arena = (*objects_);
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
         if ((arena.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         const std::uint16_t slot = std::uint16_t(s);
@@ -3495,7 +3474,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         }
     }
 
-    MacroStore* const* strikeSt = reg.ctx().find<MacroStore*>();
+    MacroStore* const* strikeSt = mw_.store != nullptr ? &mw_.store : nullptr;
     auto strike = [&](int attacker, int target,
                       ecs::Combat& c, bool playerOwned) {
         const StrikeRoll swing =
@@ -3551,7 +3530,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         if (c.kind == ecs::Combat::Missile) {
             const ecs::Position& p = arena.pos[std::size_t(s)];
             const ecs::Position& tp = arena.pos[std::size_t(targetSlot)];
-            spawn_npc_missile(reg, s, p, c, combatRng_, tp.x, tp.y, tp.z,
+            spawn_npc_missile(arena, s, p, c, combatRng_, tp.x, tp.y, tp.z,
                               targetSlot);
             c.recoverySteps = steps_from_seconds(c.cooldown);
             continue;
@@ -3561,13 +3540,12 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
 }
 
 void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
-    if (!ecs_ || !gs_) return;
-    auto& reg = ecs_->reg;
+    if (!objects_ || !gs_) return;
     int deadCount = 0;
     // ЖНЕЦ НА ФЛАГАХ — свип арены (ломоть D): жертву находит БИТ kObjDead,
     // слот освобождает САМ ЖНЕЦ рукой arena.free — хук умер с ObjectSlot,
     // и «жать по слоту» перестало быть дефектом вместе с сущностью.
-    sub::SubObjects& arena = sub::objects_of(reg);
+    sub::SubObjects& arena = (*objects_);
     do {
         std::array<int, kMaxSubworldDeathsPerStep> dead{};
         deadCount = 0;
@@ -3616,7 +3594,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // knows a body has died, so this is the only place that can be.
             if (const MacroHandle reaped = sub::slot_macro_origin(arena, ds);
                 reaped.slot != kMacroNoSlot) {
-                MacroStore& st = store_of(reg);
+                MacroStore& st = (*mw_.store);
                 if (auto* mh = body_state<ecs::Pools>(st, reaped)) {
                     mh->hp = 0;
                     macro_mark_dead(st, reaped);
@@ -3627,7 +3605,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     // beheaded warband stayed a live squad on the map for as
                     // long as the player kept exploring — and the pool that
                     // raises bandit bands was paid late by exactly that long.
-                    kill_fallen_squad_creatures(store_of(*ecs_), *gs_);
+                    kill_fallen_squad_creatures((*mw_.store), *gs_);
                 }
             }
             const auto* kind = sub::slot_kind(arena, ds);
@@ -3750,8 +3728,8 @@ void SubworldEngine::leave(bool force) {
         // moment; now its survivors stop being a squad and fall into the
         // deserter pool, out of which the macro sim later raises deserter and
         // bandit bands. First gameplay writer that pool has ever had.
-        if (ecs_ && gs_) {
-            kill_fallen_squad_creatures(store_of(*ecs_), *gs_);
+        if (objects_ && gs_) {
+            kill_fallen_squad_creatures((*mw_.store), *gs_);
         }
         // A dungeon is a pure projection — nothing below the door is worth
         // caching (the overworld cache carries felled trees etc.; an interior
@@ -3791,8 +3769,8 @@ void SubworldEngine::leave(bool force) {
             sync_macro_player_to_center();
         }
     }
-    if (ecs_) {
-        clear_subworld_entities(*ecs_);
+    if (objects_) {
+        clear_subworld_entities(*objects_);
         // Authoritative player teardown (symmetric with spawn_player_entity on
         // enter). The player carries SubworldTag, so the reaper above already
         // destroyed it; this explicit clear owns the player lifecycle regardless
@@ -3812,7 +3790,7 @@ void SubworldEngine::leave(bool force) {
     mw_ = {};
     gs_ = nullptr;
     terrain_ = nullptr;
-    ecs_ = nullptr;
+    objects_ = nullptr;
     bus_ = nullptr;
     zones_ = nullptr;
     treeLayer_ = nullptr;
@@ -3904,8 +3882,8 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // Отрезки голов интерьера — ПО ЯРУСАМ, пока город ещё в окне (см.
     // DungeonSession): единица партиции — головы инвентаря места, прогулка
     // долей — та же, которой улица считает свой резерв.
-    if (ses.settlementId > 0 && ecs_) {
-        const MacroStore& st = store_of(*ecs_);
+    if (ses.settlementId > 0 && objects_) {
+        const MacroStore& st = (*mw_.store);
         const MacroHandle ph = place_handle_by_ordinal(
             st, std::uint32_t(ses.settlementId));
         const int heads = st.valid(ph)
@@ -3931,7 +3909,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // runs the danger gate and every write-back — and RESETS the envelope, so
     // it is captured by copy first, exactly as the dungeon-exit re-enter does.
     const MacroWorld mwCopy = mw_;
-    ecs::World& scene = *ecs_;   // leave() resets the views — capture first
+    sub::SubObjects& scene = *objects_;   // leave() resets the views — capture first
     EventBus& bus = *bus_;
     leave();
     if (active_) return false;
@@ -3943,7 +3921,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
 }
 
 void SubworldEngine::enter_pocket_scene(const MacroWorld& mw,
-                                        ecs::World& scene, EventBus& bus,
+                                        sub::SubObjects& scene, EventBus& bus,
                                         const DungeonRef& ref,
                                         float floorHeight) {
     // A pocket is raised from the map or from boot, never over a live scene
@@ -3962,7 +3940,8 @@ void SubworldEngine::enter_pocket_scene(const MacroWorld& mw,
 }
 
 void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
-                                         ecs::World& scene, EventBus& bus) {
+                                         sub::SubObjects& scene,
+                                         EventBus& bus) {
     // NO `mw.features` HERE any more (наряд M-152): an interior's ground comes
     // from the synthetic resolver below, and the one thing that used to reach
     // the feature column from in here — the nine-cell step weight — is gone
@@ -3989,7 +3968,8 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // the town, vermin from the fauna stock) pay through mw_ like any scene.
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
-    ecs_ = &scene; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
+    objects_ = &scene; bus_ = &bus; zones_ = mw_.zones;
+    treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
 
     // Synthetic resolver: the door cell IS the interior, the ring is sealed
@@ -4109,7 +4089,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // is the vermin below). WHICH kinds keep a household is a column of the
     // kind table (dgn/dispatch.h) — the row read at the top of this scene.
     if (kindRow.householdAbove && ses.ref.level >= 0
-        && ses.settlementId > 0 && ecs_) {
+        && ses.settlementId > 0 && objects_) {
         MacroWorld mw = mw_;
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
@@ -4125,7 +4105,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         // пропускает; род/уровень/лицо — факт головы (D-хвост).
         const std::uint32_t dSeed = dungeon_scene_seed(
             worldSeed, ses.doorCx, ses.doorCy, ses.ref.ordinal, ses.ref.level);
-        const MacroStore& st = store_of(*ecs_);
+        const MacroStore& st = (*mw_.store);
         const MacroHandle ph = place_handle_by_ordinal(
             st, std::uint32_t(ses.settlementId));
         const Inventory* souls =
@@ -4141,7 +4121,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         // standable tile the generator emitted, not a rectangle guessed
         // from the door's footprint. The interior lives in the window's
         // centre cell; the catalog is cell-local, hence the kCellSize map.
-        spawn_dungeon_residents(*ecs_,
+        spawn_dungeon_residents((*objects_),
             dSeed ^ 0x5EEDD00Du,
             ses.faction, household, int(ses.segOffset[lvl]), souls,
             mgr_.cell_stand_points(4),
@@ -4158,7 +4138,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     const bool placeGarrison = kindRow.placeGarrison
         && ses.settlementId > 0
         && landmark_def(ses.landmarkKind).crowdHabitat != 0;
-    if (placeGarrison && ecs_) {
+    if (placeGarrison && objects_) {
         MacroWorld mw = mw_;
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
@@ -4167,7 +4147,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         // Ярус мансуется СВОИМ ОТРЕЗКОМ голов места — та же партиция, что у
         // очага: пикет снаружи + Σ ярусов == головы, всегда (D-хвост).
         // Отрезок снят на пороге (DungeonSession).
-        const MacroStore& st = store_of(*ecs_);
+        const MacroStore& st = (*mw_.store);
         const MacroHandle ph = place_handle_by_ordinal(
             st, std::uint32_t(ses.settlementId));
         const Inventory* souls =
@@ -4175,7 +4155,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const int lvl = std::clamp(int(ses.ref.level), 0,
                                    DungeonSession::kMaxInteriorStoreys - 1);
         const int share = std::min(popNow, int(ses.segShare[lvl]));
-        spawn_dungeon_residents(*ecs_,
+        spawn_dungeon_residents((*objects_),
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level) ^ 0x6A441501u,
             ses.faction, share, int(ses.segOffset[lvl]), souls,
@@ -4200,7 +4180,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // dark fill from the cell's fauna by the den law.
     const bool denOfBeasts =
         (ses.ref.level < 0 || kindRow.verminAbove) && !placeGarrison;
-    if (denOfBeasts && ecs_) {
+    if (denOfBeasts && objects_) {
         MacroWorld mw = mw_;
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
                                      std::int16_t(ses.doorCy)};
@@ -4212,7 +4192,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         // cave's whole gallery chain holds its creatures, never just the
         // mouth chamber the old rectangle described (CANON S28).
         const SquadType denKind = kindRow.denFamily;
-        spawn_dungeon_vermin(*ecs_,
+        spawn_dungeon_vermin((*objects_),
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level),
             denKind, doorFacts.zone, doorFacts.biome,
@@ -4222,8 +4202,8 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     }
     if (gs_) {
         {
-        const SpellBook* book = (ecs_ && gs_)
-            ? player_spellbook(*gs_, store_of(*ecs_)) : nullptr;
+        const SpellBook* book = (objects_ && gs_)
+            ? player_spellbook(*gs_, (*mw_.store)) : nullptr;
         set_flying(book
                    && spellbook_rule_active(*book, SpellRuleId::Flight));
     }
@@ -4448,14 +4428,14 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     }
 
     const MacroWorld mwCopy = mw_;
-    ecs::World& scene = *ecs_;
+    sub::SubObjects& scene = *objects_;
     EventBus& bus = *bus_;
 
     // Storey teardown: the same reaping as an exit (deaths settle their
     // ledgers, every scene body goes), but we never surface — the next scene
     // is the same interior identity one level along.
     resolve_subworld_deaths(true);
-    clear_subworld_entities(*ecs_);
+    clear_subworld_entities(*objects_);
     clear_player_entity();
     structIndex_.clear();
     structIndexDirty_ = true;
@@ -4553,7 +4533,7 @@ bool SubworldEngine::try_exit_dungeon() {
     // re-captures them exactly as the outside caller would.
     const MacroWorld mwCopy = mw_;
     GameState& gs = *gs_;
-    ecs::World& ecs = *ecs_;
+    sub::SubObjects& scene = *objects_;
     EventBus& bus = *bus_;
     const DungeonSession ses = dungeon_;
 
@@ -4562,7 +4542,7 @@ bool SubworldEngine::try_exit_dungeon() {
     // remap and no cache snapshot — we return to the overworld window, and a
     // projection has nothing worth caching.
     resolve_subworld_deaths(true);
-    clear_subworld_entities(ecs);
+    clear_subworld_entities(*objects_);
     clear_player_entity();
     structIndex_.clear();
     structIndexDirty_ = true;
@@ -4577,7 +4557,7 @@ bool SubworldEngine::try_exit_dungeon() {
     // at the very spot the door was opened from — or, through the hatch, ON
     // the tower's crown: the cylinder's centre, one tower height above the
     // ground the honest support physics already carries bodies on.
-    player_jump_to_cell(gs, store_of(ecs), ses.doorCx, ses.doorCy);
+    player_jump_to_cell(gs, (*mw_.store), ses.doorCx, ses.doorCy);
     // Out through the crown: you come up ON THE HATCH you climbed to, not on
     // the tower's axis — the axis is where the orb's plinth stands, and a body
     // put there materialised INSIDE the shrine, its eye in the burning head
@@ -4590,7 +4570,7 @@ bool SubworldEngine::try_exit_dungeon() {
     const float pos[2] = {
         float(kCellSize) + (roofExit ? crownX : ses.returnLocalX),
         float(kCellSize) + (roofExit ? crownY : ses.returnLocalY)};
-    enter(mwCopy, ecs, bus, pos);
+    enter(mwCopy, scene, bus, pos);
     if (roofExit && active_) {
         // enter() seated the player on the terrain 128 m below — and it has
         // already indexed the scene's solids, so ASK what is up here instead
@@ -4608,9 +4588,9 @@ bool SubworldEngine::try_exit_dungeon() {
         playerZ_ = support > expected - course ? support : expected;
         playerVz_ = 0.0f;
         playerGrounded_ = true;
-        if (ecs_) {
+        if (objects_) {
             // Слот аватара — ref_slot (жив-дверь); позиция — колонка арены.
-            if (sub::SubObjects* objs = sub::objects_find(ecs_->reg)) {
+            if (sub::SubObjects* objs = objects_) {
                 const int s = sub::avatar_slot(*objs);
                 if (s >= 0) {
                     if (ecs::Position* p = sub::slot_pos(*objs, s)) {
@@ -4627,8 +4607,8 @@ float SubworldEngine::player_muzzle_z() const {
     // The body he is IN answers, not a constant: possession puts him in a
     // wolf, and a wolf sights along a wolf's head. Слот аватара — ref_slot
     // (жив-дверь); между сценами тела нет, и константа — честный ответ.
-    if (ecs_) {
-        if (sub::SubObjects* objs = sub::objects_find(ecs_->reg)) {
+    if (objects_) {
+        if (sub::SubObjects* objs = objects_) {
             const int s = sub::avatar_slot(*objs);
             if (s >= 0) return playerZ_ + sub::slot_body_eye_m(*objs, s);
         }
@@ -4642,25 +4622,25 @@ float SubworldEngine::player_muzzle_z() const {
 // not the hero's. Between scenes there is no body, and the man-shaped default
 // is the honest stand-in for the scalars that still have to be placed.
 float SubworldEngine::player_body_radius() const {
-    if (!ecs_) return kBodyRadiusFallback;
-    sub::SubObjects* objs = sub::objects_find(ecs_->reg);
+    if (!objects_) return kBodyRadiusFallback;
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return kBodyRadiusFallback;
     const int s = sub::avatar_slot(*objs);
     return s < 0 ? kBodyRadiusFallback : sub::slot_body_radius(*objs, s);
 }
 
 bool SubworldEngine::flying() const {
-    if (!ecs_) return false;
+    if (!objects_) return false;
     sub::SubObjects* objs =
-        sub::objects_find(const_cast<entt::registry&>(ecs_->reg));
+        objects_;
     if (objs == nullptr) return false;
     const int s = sub::avatar_slot(*objs);
     return s >= 0 && sub::slot_flag(*objs, s, sub::kObjFlying);
 }
 
 void SubworldEngine::set_flying(bool enabled) {
-    if (!ecs_) return;
-    sub::SubObjects* objs = sub::objects_find(ecs_->reg);
+    if (!objects_) return;
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return;
     const int s = sub::avatar_slot(*objs);
     if (s < 0) return;
@@ -4768,12 +4748,12 @@ void SubworldEngine::sync_player_vertical(float dt) {
         // (apply_fall_damage) — honest kinetics, Dead tag and impact VFX
         // included, so a lethal fall dies like any other damage (reconcile
         // still drives the death screen).
-        if (playerGrounded_ && prevVz < 0.0f && !godMode_ && ecs_) {
+        if (playerGrounded_ && prevVz < 0.0f && !godMode_ && objects_) {
             // Слот аватара — ref_slot (жив-дверь); стор — тот же ctx-мост,
             // которым ходила entity-дверь урона.
-            sub::SubObjects* objs = sub::objects_find(ecs_->reg);
+            sub::SubObjects* objs = objects_;
             const int ps = objs ? sub::avatar_slot(*objs) : -1;
-            MacroStore* const* stp = ecs_->reg.ctx().find<MacroStore*>();
+            MacroStore* const* stp = mw_.store != nullptr ? &mw_.store : nullptr;
             const int dmg = ps >= 0
                 ? apply_fall_damage(*objs, stp != nullptr ? *stp : nullptr,
                                     ps, -prevVz, player_body_radius(), bus_)
@@ -4910,18 +4890,17 @@ void SubworldEngine::respawn_fauna() {
 }
 
 int SubworldEngine::dev_kill_all_hostiles() {
-    if (!active_ || !ecs_ || !gs_) return 0;
-    auto& reg = ecs_->reg;
+    if (!active_ || !objects_ || !gs_) return 0;
     int killed = 0;
     int batch = 0;
     // Batched drain mirroring resolve_subworld_deaths: collect a bounded set of
     // still-alive hostiles, tag them Dead (which drops them from the excl view),
     // repeat until a pass finds none. The normal death path then awards XP+loot.
-    sub::SubObjects* objs = sub::objects_find(reg);
+    sub::SubObjects* objs = objects_;
     if (objs == nullptr) return 0;         // сцены нет — убивать некого
     // Стор — как брал умерший entity-адаптер: из ctx, «нет» законен
     // (фикстура с голым реестром бьёт по колонке арены).
-    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    MacroStore* const* stp = mw_.store != nullptr ? &mw_.store : nullptr;
     MacroStore* st = stp != nullptr ? *stp : nullptr;
     do {
         std::array<int, kMaxSubworldDeathsPerStep> victims{};
@@ -5061,7 +5040,7 @@ void SubworldEngine::tick(float dt) {
         std::fflush(stderr);
     }
 
-    if (ecs_) {
+    if (objects_) {
         // Pull the authoritative macro scalars onto the player entity (Position
         // + Health) before combat runs; the entity then participates like any
         // other actor. It survives seamless re-centres because the respawn clear
@@ -5084,8 +5063,8 @@ void SubworldEngine::tick(float dt) {
         // never a support). AvatarTag is excluded — the player runs the same
         // integrator through sync_player_vertical below.
         {
-            sub::SubObjects& arena = sub::objects_of(ecs_->reg);
-            MacroStore* const* stp = ecs_->reg.ctx().find<MacroStore*>();
+            sub::SubObjects& arena = (*objects_);
+            MacroStore* const* stp = mw_.store != nullptr ? &mw_.store : nullptr;
             // Свип арены по биту (ломоть D). ОТСЕВ РОЛИ СНАРЯДА ВЕРНУЛСЯ:
             // свип видит снарядные слоты, которых entity-вьюха не видела по
             // построению, — а снаряд летит своим интегратором
@@ -5138,7 +5117,7 @@ void SubworldEngine::tick(float dt) {
         {
             const float ceilZ = mgr_.height_field().max_m()
                               + kFlightMaxAboveTerrainM;
-            sub::SubObjects& arena = sub::objects_of(ecs_->reg);
+            sub::SubObjects& arena = (*objects_);
             // Свип арены по биту (ломоть D): конверт держит только носителей
             // kObjFlying — ни снаряд, ни пламя его не несут.
             for (int s = 0; s < int(kMaxSubObjects); ++s) {
@@ -5168,7 +5147,8 @@ void SubworldEngine::tick(float dt) {
         // onto the authoritative entity so hostiles target the true altitude.
         sync_player_vertical(dt);
         push_scalars_to_player_entity();
-        tick_npc_ai(*ecs_, playerX_, playerY_, playerZ_, std::uint32_t{0}, dt,
+        tick_npc_ai((*objects_), mw_.store,
+                    playerX_, playerY_, playerZ_, dt,
                     &SubworldEngine::player_threat_callback, this,
                     // Восприятие земли под собой — для вертикального
                     // намерения летунов (третья ось мозга).
@@ -5186,9 +5166,9 @@ void SubworldEngine::tick(float dt) {
         // be THIS tick's (it used to run before the build and could only full-
         // scan the registry on every swing).
         tick_player_melee();
-        sub::tick_body_visual_interp(sub::objects_of(ecs_->reg), dt);
-        sub::tick_body_recovery(sub::objects_of(ecs_->reg), /*steps=*/1u);
-        tick_spell_projectiles(*ecs_, bus_, dt,
+        sub::tick_body_visual_interp((*objects_), dt);
+        sub::tick_body_recovery((*objects_), /*steps=*/1u);
+        tick_spell_projectiles((*objects_), mw_.store, bus_, dt,
                                // Broad phase: the battle contact grid, built
                                // by tick_subworld_bodies moments ago. ТРЕТЬИМ
                                // аргументом, к обязательным (M-261): полного
@@ -5243,7 +5223,7 @@ void SubworldEngine::tick(float dt) {
             smokeAccum_.assign(propLights_.size(), 0.0f);
         }
         constexpr float kFlameFxRangeM = 48.0f;
-        sub::SubObjects& flameArena = sub::objects_of(ecs_->reg);
+        sub::SubObjects& flameArena = (*objects_);
         for (std::size_t i = 0; i < propLights_.size(); ++i) {
             // Протухшую ссылку (чужой жнец) отсеивает ref_slot (iii-в).
             const int s = sub::ref_slot(flameArena, propLights_[i]);
@@ -5281,7 +5261,7 @@ void SubworldEngine::tick(float dt) {
         // слота арены (старый страж «SubworldTag, или кровь из угла сцены»
         // охранял единый реестр двух масштабов, SUB-1; реестр больше не
         // един, и страж стал ключом самого носителя).
-        sub::SubObjects& arena = sub::objects_of(ecs_->reg);
+        sub::SubObjects& arena = (*objects_);
         for (int s = 0; s < int(kMaxSubObjects); ++s) {
             const std::uint16_t f = arena.flags[std::size_t(s)];
             if ((f & sub::kObjAlive) == 0u) continue;
@@ -5359,7 +5339,9 @@ void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
                              scene_sea_level());
         pendingUpload3d_ = {};
     }
-    renderer3dVk_.prepare_frame(cmd, ecs_, cam_.pos);
+    renderer3dVk_.prepare_frame(
+        cmd, objects_ != nullptr ? objects_ : nullptr,
+        cam_.pos);
 
     // Pack the live particle pool into GPU instances and stage them for this
     // frame's two particle passes: energy at the head, matter at the tail
@@ -5435,13 +5417,16 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                  std::uint32_t frameIndex) {
     if (!active_ || !gs_) return;
     const SpellBook* hasteBook =
-        ecs_ ? player_spellbook(*gs_, store_of(*ecs_)) : nullptr;
+        objects_ ? player_spellbook(*gs_, (*mw_.store)) : nullptr;
     const bool hasteAura =
         (hasteBook
          && spellbook_has_sustained(*hasteBook, spell_ordinal("haste")));
     const bool flightAura = flying();
     renderer3dVk_.record_main(cmd, ext, cam_, render_time(),
-                              &mgr_, ecs_, hasteAura, flightAura,
+                              &mgr_,
+                              objects_ != nullptr ? objects_
+                                              : nullptr,
+                              hasteAura, flightAura,
                               playerX_, playerY_, elapsed_, frameIndex);
 }
 

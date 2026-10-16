@@ -22,7 +22,6 @@
 
 #include "core/time.h"
 #include "ecs/components.h"
-#include "ecs/world.h"
 #include "tables/commodity.h"
 #include "macro/currency.h"
 #include "macro/deposit_layer.h"
@@ -189,9 +188,7 @@ int main(int argc, char** argv) {
         sm::ZoneLayer zones;
         sm::TreeGrid treeGrid;
         sm::PathCostData pathCost;
-        sm::ecs::World ecs;
         auto macroStore = sm::make_macro_store();
-        sm::store_attach(ecs, macroStore.get());
 
         // Каркас клеток по сквадам живёт в рантайме АИ (носитель мира,
         // ломтик F); рантайм рождается ДО генезиса — генезис строит каркас.

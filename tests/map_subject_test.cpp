@@ -11,7 +11,7 @@
 #include "check.h"
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
-#include "ecs/world.h"
+#include "ecs/components.h"   // MacroSpawnId — ординал слота store
 #include "macro/map_subject.h"
 #include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/world_row.h"
@@ -19,7 +19,6 @@
 #include "macro/state.h"
 #include "macro/store.h"
 
-#include <entt/entt.hpp>
 #include <cstdio>
 
 namespace {
