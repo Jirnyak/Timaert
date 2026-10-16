@@ -95,9 +95,11 @@ void build_scene(entt::registry& reg, int scenario) {
 
 std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
     std::vector<entt::entity> v;
+    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
     auto view = reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        if (sm::sub::body_pools(reg, e) == nullptr) continue;
+        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        if (sm::sub::slot_pools(objs, s) == nullptr) continue;
         v.push_back(e);
     }
     // EnTT iterates newest-first; reverse for stable creation order.
@@ -120,7 +122,7 @@ struct GridBroadPhase {
     void build(entt::registry& reg) {
         units->clear();
         slots.clear();
-        sm::sub::SubObjects& objs = sm::sub::objects_of(reg);
+        sm::sub::SubObjects& objs = sm::test::arena_of(reg);
         auto view = reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
             const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
@@ -183,6 +185,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     auto& reg = w.reg;
     build_scene(reg, scenario);
     const auto bodies = bodies_in_creation_order(reg);
+    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
 
     const float dt = 1.0f / 64.0f;
     int ticks = 1;
@@ -194,7 +197,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     case 0: {
         // Владелец — ссылка сцены (iii-б): пара {slot, id} тела bodies[0].
         const sm::sub::ObjRef owner = sm::sub::ref_of(
-            sm::sub::objects_of(reg), sm::sub::body_slot(reg, bodies[0]));
+            objs, sm::test::slot_of(reg, bodies[0]));
         boltAt = Position{98.5f, 100.0f, 1.0f};
         boltP = Projectile{
             .vx = 400.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
@@ -273,7 +276,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     // «спроси у всех живых слотов» есть ровно то, что делал снесённый скан,
     // только теперь это код ПРИБОРА, а не симуляции (§8 п.8).
     sm::sub::SpellNeighborsFn fn = &sm::test::all_live_slots;
-    void* user = &sm::sub::objects_of(reg);
+    void* user = &objs;
     switch (mode) {
     case Mode::Full: break;
     case Mode::Grid:  fn = &GridBroadPhase::fn; user = &grid; break;
@@ -286,8 +289,10 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
 
     std::vector<float> hp;
     hp.reserve(bodies.size());
-    for (auto e : bodies)
-        hp.push_back(float(sm::sub::body_pools(reg, e)->hp));
+    for (auto e : bodies) {
+        const int s = sm::test::slot_of(reg, e);
+        hp.push_back(float(sm::sub::slot_pools(objs, s)->hp));
+    }
     return hp;
 }
 

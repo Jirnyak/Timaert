@@ -106,7 +106,9 @@ sm::sub::ObjRef add_player(sm::ecs::World& w, float x, float y) {
 }
 
 float hp_of(sm::ecs::World& w, entt::entity e) {
-    const auto* hp = sm::sub::body_pools(w.reg, e);
+    sm::sub::SubObjects& objs = sm::test::arena_of(w.reg);
+    const int s = sm::test::slot_of(w.reg, e);
+    const auto* hp = s >= 0 ? sm::sub::slot_pools(objs, s) : nullptr;
     return hp ? hp->hp : -1.0f;
 }
 
@@ -114,7 +116,7 @@ float hp_of(sm::ecs::World& w, entt::entity e) {
 // ссылка сцены ObjRef (ступень (iii); §41 корень 5: жнец резолвит лидера
 // по телу). Ожидание строится ТОЙ ЖЕ дверью ref_of, что у писателя.
 bool last_hit_by(sm::ecs::World& w, entt::entity e, entt::entity attacker) {
-    const int slot = sm::sub::body_slot(w.reg, attacker);
+    const int slot = sm::test::slot_of(w.reg, attacker);
     return slot >= 0
         && sm::test::last_hit_of(w.reg, e)
                == sm::sub::ref_of(sm::sub::objects_of(w.reg), slot);
@@ -462,7 +464,7 @@ int main() {
                         || !(magicBoltPos.x - 100.0f
                              > sm::sub::slot_body_radius(
                                    sm::sub::objects_of(world.reg),
-                                   sm::sub::body_slot(world.reg, entt::entity(0)))
+                                   sm::test::slot_of(world.reg, entt::entity(0)))
                                    + magicBolt.radius)
                         || !nearf(magicBoltPos.y, 100.0f)
                         || !nearf(magicBoltPos.y, 100.0f)
@@ -488,16 +490,16 @@ int main() {
     sm::test::give_combat(world.reg, casterBody, sm::ecs::Combat{});
     // Кастер — ссылка сцены (iii-б): слот тела через ту же дверь, что у
     // прод-писателя.
+    const int casterSlot = sm::test::slot_of(world.reg, casterBody);
     const sm::sub::ObjRef casterId = sm::sub::ref_of(
-        sm::sub::objects_of(world.reg),
-        sm::sub::body_slot(world.reg, casterBody));
+        sm::sub::objects_of(world.reg), casterSlot);
     const bool ok38 = !(!sm::spellbook_cast(world, book, combat, attributes, skills,
                                             sm::spell_ordinal("fireball"), casterId, 100.0f, 100.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok38, "fireball cast rejected");
     if (!ok38) return 1;
     const std::uint32_t fireGate =
-        sm::sub::body_combat(world.reg, casterBody)->recoverySteps;
+        sm::sub::slot_combat(sm::test::arena_of(world.reg), casterSlot)->recoverySteps;
     const auto wantGate = std::uint32_t(sm::recovery_steps(
         fireDef->recovery, attributes, skills, sm::SkillId::Spellcraft));
     const bool ok39 = !(fireGate == 0u || fireGate != wantGate);
@@ -522,7 +524,7 @@ int main() {
     // (проход по арене с куска 2).
     sm::sub::tick_body_recovery(sm::test::arena_of(world.reg), fireGate);
     const bool ok42 =
-        !(sm::sub::body_combat(world.reg, casterBody)->recoverySteps != 0u);
+        !(sm::sub::slot_combat(sm::test::arena_of(world.reg), casterSlot)->recoverySteps != 0u);
     CHECK(ok42, "tick_body_recovery did not drain the gate");
     if (!ok42) return 1;
 
@@ -717,7 +719,7 @@ int main() {
                         || !(beamDesc.originX - 100.0f
                              > sm::sub::slot_body_radius(
                                    sm::sub::objects_of(world.reg),
-                                   sm::sub::body_slot(world.reg, entt::entity(0)))
+                                   sm::test::slot_of(world.reg, entt::entity(0)))
                                    + beamDesc.radius)
                         || !nearf(beamDesc.originY, 100.0f));
     CHECK(ok56,
@@ -1162,7 +1164,7 @@ int main() {
         sm::test::make_avatar(selfWorld.reg, selfPlayer);
         const sm::sub::ObjRef selfRef = sm::sub::ref_of(
             sm::sub::objects_of(selfWorld.reg),
-            sm::sub::body_slot(selfWorld.reg, selfPlayer));
+            sm::test::slot_of(selfWorld.reg, selfPlayer));
         // Снаряд — чистый жилец арены (ступень (v)): слот без сущности.
         sm::test::give_projectile(selfWorld.reg,
             sm::ecs::Projectile{
@@ -1207,7 +1209,7 @@ int main() {
         sm::test::make_avatar(shieldWorld.reg, shieldPlayer);
         const sm::sub::ObjRef shieldRef = sm::sub::ref_of(
             sm::sub::objects_of(shieldWorld.reg),
-            sm::sub::body_slot(shieldWorld.reg, shieldPlayer));
+            sm::test::slot_of(shieldWorld.reg, shieldPlayer));
         sm::test::give_projectile(shieldWorld.reg,
             sm::ecs::Projectile{
                 .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 1.5f,
@@ -1248,7 +1250,7 @@ int main() {
         sm::test::give_kind(npcWorld.reg, npcCaster, sm::ecs::NPCKind{2, 2});
         const sm::sub::ObjRef npcRef = sm::sub::ref_of(
             sm::sub::objects_of(npcWorld.reg),
-            sm::sub::body_slot(npcWorld.reg, npcCaster));
+            sm::test::slot_of(npcWorld.reg, npcCaster));
         sm::test::give_projectile(npcWorld.reg,
             sm::ecs::Projectile{
                 .vx = 0.0f, .vy = 0.0f, .vz = 0.0f, .radius = 2.5f,
@@ -1445,7 +1447,7 @@ int main() {
         sm::test::make_avatar(orphanWorld.reg, orphanCaster);
         const sm::sub::ObjRef ownerRef = sm::sub::ref_of(
             sm::sub::objects_of(orphanWorld.reg),
-            sm::sub::body_slot(orphanWorld.reg, orphanCaster));
+            sm::test::slot_of(orphanWorld.reg, orphanCaster));
         sm::ecs::Projectile orphanBolt{};
         orphanBolt.ownerSlot = ownerRef.slot;
         orphanBolt.ownerId = ownerRef.id;
@@ -1467,7 +1469,7 @@ int main() {
         sm::test::give_slot(orphanWorld.reg, reborn);
         sm::test::give_flag(orphanWorld.reg, reborn,
                             sm::sub::kObjPlayerSoldier);
-        CHECK(sm::sub::body_slot(orphanWorld.reg, reborn) == ownerSlot,
+        CHECK(sm::test::slot_of(orphanWorld.reg, reborn) == ownerSlot,
               "предусловие своё: слот владельца перерождён (форс курсора)");
         CHECK(!sm::sub::projectile_owner_is_player_side(
                   sm::sub::objects_of(orphanWorld.reg),

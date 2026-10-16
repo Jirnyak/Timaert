@@ -205,23 +205,25 @@ std::vector<SpawnRecord> expected_cell_fauna(
 
 std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
     std::vector<SpawnRecord> out;
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);
     auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        if (sm::sub::body_sprite(world.reg, e) == nullptr) continue;
-        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        if (sm::sub::slot_sprite(objs, s) == nullptr) continue;
+        const auto* kindCol = sm::sub::slot_kind(objs, s);
         if (kindCol == nullptr) continue;
-        const auto* hpCol = sm::sub::body_pools(world.reg, e);
-        const auto* combatCol = sm::sub::body_combat(world.reg, e);
-        const auto* aiColF = sm::sub::body_ai(world.reg, e);
+        const auto* hpCol = sm::sub::slot_pools(objs, s);
+        const auto* combatCol = sm::sub::slot_combat(objs, s);
+        const auto* aiColF = sm::sub::slot_ai(objs, s);
         if (hpCol == nullptr || combatCol == nullptr
             || aiColF == nullptr) continue;
         const auto& kind = *kindCol;
-        const auto& pos = *sm::sub::body_pos(world.reg, e);
+        const auto& pos = *sm::sub::slot_pos(objs, s);
         const auto& hp = *hpCol;
         const auto& combat = *combatCol;
-        const std::int16_t level = sm::sub::body_level(world.reg, e);
+        const std::int16_t level = sm::sub::slot_level(objs, s);
         const auto& ai = *aiColF;
-        const auto& sprite = *sm::sub::body_sprite(world.reg, e);
+        const auto& sprite = *sm::sub::slot_sprite(objs, s);
 
         SpawnRecord r{};
         r.type = kind.type;
@@ -344,7 +346,7 @@ bool run_water_blocked_squad_case() {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     std::vector<std::uint8_t> water(
         std::size_t(sm::sub::kFullSize) * sm::sub::kFullSize,
         sm::sub::TILE_WATER);
@@ -354,7 +356,8 @@ bool run_water_blocked_squad_case() {
     int projected = 0;
     auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        const auto* d = sm::sub::body_debt(world.reg, e);
+        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        const auto* d = sm::sub::slot_debt(objs, s);
         if (d != nullptr
             && d->stock == std::uint8_t(sm::MacroStock::Creatures))
             ++projected;
@@ -367,7 +370,7 @@ bool run_city_population_projection_case(
     sm::ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // City in the CENTRE window cell (ox=oy=0) — off-centre cities are covered
     // by the carry-across case; here we lock the citizen role mix.
     //
@@ -413,9 +416,10 @@ bool run_city_population_projection_case(
     int others = 0;
     auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        const auto* kindCol = sm::sub::slot_kind(objs, s);
         if (kindCol == nullptr) continue;
-        const auto* aiCol = sm::sub::body_ai(world.reg, e);
+        const auto* aiCol = sm::sub::slot_ai(objs, s);
         if (aiCol == nullptr) continue;
         const auto& kind = *kindCol;
         const auto& ai = *aiCol;
@@ -434,8 +438,9 @@ bool run_city_population_projection_case(
     // 3×3 — proof the per-cell origin gate replaced the old centre-only window.
     auto posView = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : posView) {
-        if (sm::sub::body_kind(world.reg, e) == nullptr) continue;
-        const auto& p = *sm::sub::body_pos(world.reg, e);
+        const int s = int(posView.get<sm::ecs::ObjectSlot>(e).slot);
+        if (sm::sub::slot_kind(objs, s) == nullptr) continue;
+        const auto& p = *sm::sub::slot_pos(objs, s);
         if (p.x < float(sm::sub::kCellSize) || p.x >= float(2 * sm::sub::kCellSize)
             || p.y < float(sm::sub::kCellSize)
             || p.y >= float(2 * sm::sub::kCellSize)) {
@@ -462,7 +467,7 @@ bool run_population_does_not_scale_bodies_case(
         sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
         sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122), и предмет этого контроля от того лишь
         // ЖЁСТЧЕ: уровень тела теперь ФАКТ его головы, а головы обоих
         // городов рождены одной дверью — значит размер города не может
@@ -484,11 +489,12 @@ bool run_population_does_not_scale_bodies_case(
                                  sm::world_time_at(1, 12, 0));
         auto view = world.reg.view<sm::ecs::ObjectSlot>();
         for (auto e : view) {
-            const auto* kindCol = sm::sub::body_kind(world.reg, e);
+            const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            const auto* kindCol = sm::sub::slot_kind(objs, s);
             if (kindCol == nullptr) continue;
             const std::uint16_t typeId = kindCol->type;
             if (typeId >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
-            const int lvl = int(sm::sub::body_level(world.reg, e));
+            const int lvl = int(sm::sub::slot_level(objs, s));
             const int base = int(sm::npc_def(sm::NPCType(typeId)).baseLevel);
             const int ceiling = sm::normalize_soldier_level(base + 2);
             const int floorLvl = sm::normalize_soldier_level(base);
@@ -652,7 +658,7 @@ bool run_beast_member_projection_case(
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     sm::MacroStore& stl = *worldStore_;
@@ -676,8 +682,10 @@ bool run_beast_member_projection_case(
     if (projected != 3) return false;   // the leader and both of his members
 
     int beasts = 0, men = 0;
-    for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
-        const auto* kindCol = sm::sub::body_kind(reg, e);
+    auto view = reg.view<sm::ecs::ObjectSlot>();
+    for (auto e : view) {
+        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        const auto* kindCol = sm::sub::slot_kind(objs, s);
         if (kindCol == nullptr) continue;
         const std::uint16_t t = kindCol->type;
         if (t == kBeast) {
@@ -686,7 +694,7 @@ bool run_beast_member_projection_case(
             // proof — "a beast has no face" — died with the second birth: there
             // is one birth now and it gives every body the same components.)
             const sm::NpcTypeDef& wolf = sm::npc_def(sm::NPCType::Wolf);
-            const auto* spr = sm::sub::body_sprite(reg, e);
+            const auto* spr = sm::sub::slot_sprite(objs, s);
             if (!spr) return false;
             if (spr->spriteRow != std::uint8_t(wolf.sprite)) return false;
             if (!near(spr->scale, wolf.radius)) return false;
@@ -708,22 +716,24 @@ bool run_beast_member_projection_case(
 // where it was met.
 bool sheet_lifts_every_body(sm::ecs::World& world) {
     int checked = 0;
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);
     auto v = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : v) {
-        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
+        const auto* kindCol = sm::sub::slot_kind(objs, s);
         if (kindCol == nullptr) continue;
         const std::uint16_t t = kindCol->type;
         if (!sm::valid_npc_kind(t)) return false;
         const sm::NpcTypeDef& row = sm::npc_def(sm::NPCType(t));
-        const auto* hCol = sm::sub::body_pools(world.reg, e);
+        const auto* hCol = sm::sub::slot_pools(objs, s);
         if (hCol == nullptr) continue;
         const auto& h = *hCol;
-        if (sm::sub::body_sheet(world.reg, e) == nullptr) return false;
+        if (sm::sub::slot_sheet(objs, s) == nullptr) return false;
         if (!(h.maxHp >= float(row.combat.hp))) return false;
         // The recovery door's half of the same property (S14, 2026-09-07):
         // the sheet may only QUICKEN the row's authored tempo — Spd and the
         // generic skill divide, nothing multiplies — and never to zero.
-        if (const auto* c = sm::sub::body_combat(world.reg, e)) {
+        if (const auto* c = sm::sub::slot_combat(objs, s)) {
             if (!(c->cooldown > 0.0f
                   && c->cooldown <= row.combat.cooldown + 1.0e-4f)) {
                 return false;
@@ -738,13 +748,15 @@ bool sheet_lifts_every_body(sm::ecs::World& world) {
 // so it compares cleanly across two worlds for the determinism check.
 std::vector<std::array<float, 3>> projection_fingerprint(sm::ecs::World& world) {
     std::vector<std::array<float, 3>> out;
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);
     auto v = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : v) {
-        if (sm::sub::body_macro_origin(world.reg, e).slot
+        const int s = int(v.get<sm::ecs::ObjectSlot>(e).slot);
+        if (sm::sub::slot_macro_origin(objs, s).slot
             == sm::kMacroNoSlot) continue;
-        const auto* k = sm::sub::body_kind(world.reg, e);
+        const auto* k = sm::sub::slot_kind(objs, s);
         if (k == nullptr) continue;
-        const auto& p = *sm::sub::body_pos(world.reg, e);
+        const auto& p = *sm::sub::slot_pos(objs, s);
         out.push_back({float(k->factionIdx), p.x, p.y});
     }
     std::sort(out.begin(), out.end());
@@ -770,7 +782,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
     const MacroSeeds s = seed_macro_npcs(*worldStore_, kMapW);
 
@@ -779,10 +791,14 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // the projection's source view never sees it.
     spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
     int faunaBefore = 0;
-    for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
-        if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot)
-            continue;
-        ++faunaBefore;
+    {
+        auto view = reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : view) {
+            const int slot = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_macro_origin(objs, slot).slot != sm::kMacroNoSlot)
+                continue;
+            ++faunaBefore;
+        }
     }
     if (faunaBefore <= 0) return false;   // sanity: fauna actually present
 
@@ -801,30 +817,41 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // macro NPC, and the far one must never appear.
     entt::entity pBandit = entt::null, pPeasant = entt::null, pWrap = entt::null;
     int projCount = 0;
-    for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
-        const sm::MacroHandle origin = sm::sub::body_macro_origin(reg, e);
-        if (origin.slot == sm::kMacroNoSlot) continue;
-        ++projCount;
-        if (!worldStore_->valid(origin)) {
-            return false;
+    {
+        auto view = reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : view) {
+            const int slot = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            const sm::MacroHandle origin = sm::sub::slot_macro_origin(objs, slot);
+            if (origin.slot == sm::kMacroNoSlot) continue;
+            ++projCount;
+            if (!worldStore_->valid(origin)) {
+                return false;
+            }
+            if (origin == s.bandit) pBandit = e;
+            else if (origin == s.peasant) pPeasant = e;
+            else if (origin == s.wrap) pWrap = e;
+            else return false;   // far NPC or a stranger — must not be projected
         }
-        if (origin == s.bandit) pBandit = e;
-        else if (origin == s.peasant) pPeasant = e;
-        else if (origin == s.wrap) pWrap = e;
-        else return false;   // far NPC or a stranger — must not be projected
     }
     if (projCount != 3 || pBandit == entt::null || pPeasant == entt::null
         || pWrap == entt::null) {
         return false;
     }
 
+    // Slots of the three projections — computed once, by handle, same law as
+    // the rest of this ломоть (the entity stays the address until D; the
+    // column access below it goes through the slot).
+    const int sBandit = sm::test::slot_of(reg, pBandit);
+    const int sPeasant = sm::test::slot_of(reg, pPeasant);
+    const int sWrap = sm::test::slot_of(reg, pWrap);
+
     // Data-driven hostility via the shared subworld_ai_for(): the FIGHTING
     // rows are Aggressive (bandits) and Patrol (guards); every other type
     // flees. So the projected bandit AND the projected guard hold ground while
     // the peasant runs — the same one-column rule as settlement citizens.
-    if (sm::sub::body_ai(reg, pBandit)->kind != SubworldAi::Combat) return false;
-    if (sm::sub::body_ai(reg, pPeasant)->kind != SubworldAi::Flee) return false;
-    if (sm::sub::body_ai(reg, pWrap)->kind != SubworldAi::Combat) return false;
+    if (sm::sub::slot_ai(objs, sBandit)->kind != SubworldAi::Combat) return false;
+    if (sm::sub::slot_ai(objs, sPeasant)->kind != SubworldAi::Flee) return false;
+    if (sm::sub::slot_ai(objs, sWrap)->kind != SubworldAi::Combat) return false;
 
     // A wound travels as a FRACTION, not as a number of points: the two layers
     // never have to agree on how big a bar is, and the return trip needs no
@@ -832,7 +859,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // of whatever his sheet gives him down here — that is the invariant, and it
     // survives any rebalance of either side.
     {
-        const auto& h = (*sm::sub::body_pools(reg, pBandit));
+        const auto& h = (*sm::sub::slot_pools(objs, sBandit));
         if (!(h.maxHp > 0 && h.hp >= 1 && h.hp <= h.maxHp)) return false;
         const float frac = float(h.hp) / float(h.maxHp);
         if (!(frac > 0.4f && frac < 0.6f)) return false;
@@ -840,13 +867,13 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // The control: an untouched macro entity arrives untouched. Without this,
     // "wounded arrives wounded" would also pass if every body arrived at half.
     {
-        const auto& h = (*sm::sub::body_pools(reg, pWrap));
+        const auto& h = (*sm::sub::slot_pools(objs, sWrap));
         if (!(h.maxHp > 0.0f && h.hp == h.maxHp)) return false;
     }
     // Combat SYNTHESISED from the fresh sheet (capability): the row's dice
     // must be real and the sheet's add positive — a spent sheet always adds.
-    if (!(sm::sub::body_combat(reg, pBandit)->dice.n > 0)) return false;
-    if (!(sm::sub::body_combat(reg, pBandit)->flatAdd > 0)) return false;
+    if (!(sm::sub::slot_combat(objs, sBandit)->dice.n > 0)) return false;
+    if (!(sm::sub::slot_combat(objs, sBandit)->flatAdd > 0)) return false;
 
     // Identity + faction copied verbatim from the macro NPC. Лицо на теле не
     // хранится (кусок 1) — «лицо — факт головы» свидетельствуется ПРОДУКТОМ:
@@ -859,15 +886,15 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
             sm::sub::body_height_m(sm::npc_def(sm::NPCType::Bandit))
             * sm::sub::body_shape_height_scale(
                   st.character[s.bandit.slot].bodyShape);
-        const auto* spr = sm::sub::body_sprite(reg, pBandit);
+        const auto* spr = sm::sub::slot_sprite(objs, sBandit);
         if (!spr || spr->height != want) return false;
     }
     {
-        const auto* k = sm::sub::body_kind(reg, pBandit);
+        const auto* k = sm::sub::slot_kind(objs, sBandit);
         if (!k || k->factionIdx != 3) return false;
     }
     {
-        const auto* k = sm::sub::body_kind(reg, pWrap);
+        const auto* k = sm::sub::slot_kind(objs, sWrap);
         if (!k || k->factionIdx != 2) return false;
     }
 
@@ -876,11 +903,11 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // torus-wrapped -1,0 → [0,kC).
     auto in = [](float v, float lo, float hi) { return v >= lo && v < hi; };
     {
-        const auto& pb = *sm::sub::body_pos(reg, pBandit);
+        const auto& pb = *sm::sub::slot_pos(objs, sBandit);
         if (!in(pb.x, kC, 2 * kC) || !in(pb.y, kC, 2 * kC)) return false;
-        const auto& pp = *sm::sub::body_pos(reg, pPeasant);
+        const auto& pp = *sm::sub::slot_pos(objs, sPeasant);
         if (!in(pp.x, 2 * kC, 3 * kC) || !in(pp.y, kC, 2 * kC)) return false;
-        const auto& pw = *sm::sub::body_pos(reg, pWrap);
+        const auto& pw = *sm::sub::slot_pos(objs, sWrap);
         if (!in(pw.x, 0.0f, kC) || !in(pw.y, kC, 2 * kC)) return false;
     }
 
@@ -897,8 +924,10 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
             sm::sub::WATER_LEVEL);
         if (again != 0) return false;   // второй зов не рождает ни одного тела
         int standing = 0;
-        for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
-            if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot)
+        auto view = reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : view) {
+            const int slot = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_macro_origin(objs, slot).slot != sm::kMacroNoSlot)
                 ++standing;
         }
         if (standing != 3) return false;   // и не удваивает уже стоящих
@@ -910,10 +939,14 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // the projections (they mirror persistent macro state, like the player squad).
     sm::sub::clear_subworld_world_entities(world);
     int faunaAfter = 0, projAfter = 0;
-    for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
-        if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot)
-            ++projAfter;
-        else ++faunaAfter;
+    {
+        auto view = reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : view) {
+            const int slot = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            if (sm::sub::slot_macro_origin(objs, slot).slot != sm::kMacroNoSlot)
+                ++projAfter;
+            else ++faunaAfter;
+        }
     }
     if (faunaAfter != 0 || projAfter != 3) return false;
 
@@ -968,7 +1001,7 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
     auto storeMem = sm::make_macro_store();
     sm::store_attach(world, storeMem.get());
-    sm::test::arena_of(world.reg);   // арена — предусловие рождения тел
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена — предусловие рождения тел
     auto& reg = world.reg;
     const MacroSeeds s = seed_macro_npcs(*storeMem, kMapW);
     sm::MacroStore& st = *storeMem;
@@ -980,8 +1013,10 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
 
     auto count_origins = [&](bool wantValid) {
         int n = 0;
-        for (auto e : reg.view<sm::ecs::ObjectSlot>()) {
-            const sm::MacroHandle h = sm::sub::body_macro_origin(reg, e);
+        auto view = reg.view<sm::ecs::ObjectSlot>();
+        for (auto e : view) {
+            const int slot = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+            const sm::MacroHandle h = sm::sub::slot_macro_origin(objs, slot);
             if (h.slot == sm::kMacroNoSlot) continue;
             if (st.valid(h) == wantValid) ++n;
         }
@@ -1224,7 +1259,7 @@ int main() {
         sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
         sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         auto& reg = world.reg;
 
         sm::MacroStore& stq = *worldStore_;
@@ -1250,8 +1285,13 @@ int main() {
         CHECK(body != entt::null,
               "the fixture must actually project a body");
 
-        CHECK(sm::sub::state_of<sm::ecs::NpcInventory>(reg, body)
-                  == &stq.inventory[hq.slot],
+        // Слот тела (M-150 ломоть C): сущность остаётся адресом до
+        // ломтя D, чтение/запись колонок идёт слот-формами.
+        const int sBody = sm::test::slot_of(reg, body);
+
+        CHECK(sBody >= 0
+                  && sm::sub::slot_state<sm::ecs::NpcInventory>(objs, sBody, stq)
+                         == &stq.inventory[hq.slot],
               "a projected body owns none of it: the door answers with the "
               "RECORD's bag and nothing else");
 
@@ -1259,14 +1299,15 @@ int main() {
         // must NOT see it (0a ломтя 7). Владение телом не просто
         // отсутствует — оно НЕЧИТАЕМО: арм, который мог его прочесть, мёртв.
         reg.emplace<sm::ecs::NpcInventory>(body);
-        CHECK(sm::sub::state_of<sm::ecs::NpcInventory>(reg, body)
-                  == &stq.inventory[hq.slot],
+        CHECK(sBody >= 0
+                  && sm::sub::slot_state<sm::ecs::NpcInventory>(objs, sBody, stq)
+                         == &stq.inventory[hq.slot],
               "a bag smuggled onto the body is INVISIBLE to the door — the "
               "self-record arm is gone, the record keeps answering");
         reg.remove<sm::ecs::NpcInventory>(body);
 
-        const auto* carried = body != entt::null
-            ? sm::sub::body_sheet(reg, body) : nullptr;
+        const auto* carried = body != entt::null && sBody >= 0
+            ? sm::sub::slot_sheet(objs, sBody) : nullptr;
         CHECK(carried != nullptr, "a body always has a sheet");
         CHECK(carried && carried->attributes.of(sm::AttributeId::Str)
                   == own.attributes.of(sm::AttributeId::Str),
@@ -1282,7 +1323,9 @@ int main() {
         anon.seed = 0xD1FFu;
         const entt::entity stranger =
             sm::sub::spawn_derived_body(reg, anon, /*faceSalt*/0u);
-        const auto* strangerSheet = sm::sub::body_sheet(reg, stranger);
+        const int sStranger = sm::test::slot_of(reg, stranger);
+        const auto* strangerSheet = sStranger >= 0
+            ? sm::sub::slot_sheet(objs, sStranger) : nullptr;
         CHECK(strangerSheet != nullptr, "a derived body has a sheet");
         CHECK(strangerSheet && strangerSheet->attributes.of(sm::AttributeId::Str)
                   != own.attributes.of(sm::AttributeId::Str),
@@ -1306,7 +1349,7 @@ int main() {
         sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
         sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         auto& reg = world.reg;
 
         sm::MacroStore& stq = *worldStore_;
@@ -1333,17 +1376,28 @@ int main() {
         CHECK(body != entt::null && citizen != entt::null,
               "the fixture must project both kinds of body");
 
-        CHECK(sm::sub::macro_record_of(reg, body) == hq,
+        // Слоты обоих тел (M-150 ломоть C): взяты ПОСЛЕ обоих
+        // рождений как простые int, не указатели через спавн ("Both bodies
+        // are created BEFORE any pointer is taken" выше — int не указатель).
+        const int sBody = sm::test::slot_of(reg, body);
+        const int sCitizen = sm::test::slot_of(reg, citizen);
+
+        CHECK(sBody >= 0 && sm::sub::slot_macro_record(objs, sBody, stq) == hq,
               "a projected body's state belongs to the record it projects");
-        CHECK(sm::sub::macro_record_of(reg, citizen) == sm::MacroHandle{},
+        CHECK(sCitizen >= 0
+                  && sm::sub::slot_macro_record(objs, sCitizen, stq)
+                         == sm::MacroHandle{},
               "a body nothing above remembers answers for itself — the other "
               "honest birth, not a fallback");
 
-        CHECK(sm::sub::pools_of(reg, body) == &stq.pools[hq.slot],
+        CHECK(sBody >= 0
+                  && sm::sub::slot_pools_of(objs, sBody, stq)
+                         == &stq.pools[hq.slot],
               "the bars a projected body spends are LITERALLY the record's "
               "block — one memory, so there is nothing to fold back up");
-        CHECK(sm::sub::pools_of(reg, citizen)
-                  == &(*sm::sub::body_pools(reg, citizen)),
+        CHECK(sCitizen >= 0
+                  && sm::sub::slot_pools_of(objs, sCitizen, stq)
+                         == &(*sm::sub::slot_pools(objs, sCitizen)),
               "a derived body spends its own bars");
 
         // NEGATIVE CONTROL, asserted: strip the backlink and the very same
@@ -1351,9 +1405,11 @@ int main() {
         // equality above could be passing because both handles happen to name
         // the same storage, and nobody would know.
         sm::test::give_origin(reg, body, sm::MacroHandle{});
-        CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
-                  && sm::sub::pools_of(reg, body)
-                         == &(*sm::sub::body_pools(reg, body)),
+        CHECK(sBody >= 0
+                  && sm::sub::slot_macro_record(objs, sBody, stq)
+                         == sm::MacroHandle{}
+                  && sm::sub::slot_pools_of(objs, sBody, stq)
+                         == &(*sm::sub::slot_pools(objs, sBody)),
               "without the backlink the door answers SELF — the detector "
               "above is reading a real difference");
 
@@ -1364,9 +1420,11 @@ int main() {
         // поколение слота, и всякий старый хэндл мертвеет.
         sm::test::give_origin(reg, body, hq);
         sm::store_death(stq, hq);
-        CHECK(sm::sub::macro_record_of(reg, body) == sm::MacroHandle{}
-                  && sm::sub::pools_of(reg, body)
-                         == &(*sm::sub::body_pools(reg, body)),
+        CHECK(sBody >= 0
+                  && sm::sub::slot_macro_record(objs, sBody, stq)
+                         == sm::MacroHandle{}
+                  && sm::sub::slot_pools_of(objs, sBody, stq)
+                         == &(*sm::sub::slot_pools(objs, sBody)),
               "a stale backlink degrades to the body itself, not to null");
     }
 
@@ -1386,7 +1444,7 @@ int main() {
         sm::ecs::World world{};
         auto worldStore_ = sm::make_macro_store();
         sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         auto& reg = world.reg;
 
         sm::MacroStore& stq = *worldStore_;
@@ -1404,13 +1462,16 @@ int main() {
         if (body == entt::null) return sm::test::report(
             "subworld_spawn_parity_test");
 
+        // Слот тела (M-150 ломоть C).
+        const int sBody = sm::test::slot_of(reg, body);
+
         CHECK(!sm::sub::refresh_body_strike(reg, body),
               "nothing stood on him and nothing changed: the gate refuses, so "
               "a standing crowd costs one comparison and no sheet rolls");
 
         // His clock, set to something recognisable BEFORE the rebuild: a
         // re-derive must not hand a busy arm a free swing.
-        sm::sub::body_combat(reg, body)->recoverySteps = 7u;
+        sm::sub::slot_combat(objs, sBody)->recoverySteps = 7u;
 
         // Now something stands on him. An AFFIX carries the bonus rows
         // directly, so the claim does not rest on which catalog row happens to
@@ -1439,7 +1500,7 @@ int main() {
         CHECK(!sm::sub::refresh_body_strike(reg, body),
               "...and closes again immediately — it re-cached what it saw, so "
               "one change costs one rebuild, not one per tick");
-        CHECK(sm::sub::body_combat(reg, body)->recoverySteps == 7u,
+        CHECK(sm::sub::slot_combat(objs, sBody)->recoverySteps == 7u,
               "the rebuild kept his clock: how busy a hand is, is not one of "
               "the numbers a sheet decides");
     }
@@ -1458,7 +1519,7 @@ int main() {
         sm::ecs::World world{};
         auto segStore = sm::make_macro_store();
         sm::store_attach(world, segStore.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+        sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
         sm::Inventory inv{};
         CHECK(sm::creatures_push_stack(inv, sm::NPCType::Wolf,  2, 1)
                   && sm::creatures_push_stack(inv, sm::NPCType::Witch, 5, 1)
@@ -1494,9 +1555,10 @@ int main() {
         bool levelsAreHeadFacts = true;
         auto segView = world.reg.view<sm::ecs::ObjectSlot>();
         for (auto e : segView) {
-            const auto* debtP = sm::sub::body_debt(world.reg, e);
+            const int s = int(segView.get<sm::ecs::ObjectSlot>(e).slot);
+            const auto* debtP = sm::sub::slot_debt(objs, s);
             if (debtP == nullptr) continue;
-            const auto* kindCol = sm::sub::body_kind(world.reg, e);
+            const auto* kindCol = sm::sub::slot_kind(objs, s);
             if (kindCol == nullptr) continue;
             const auto& kind = *kindCol;
             ++bodies;
@@ -1508,7 +1570,7 @@ int main() {
             loansNameHeads &= debt.detailKind == std::uint8_t(kind.type);
             // Уровень — колонка арены (кусок 1): 0 значил бы «не назначен»
             // и валит проверку, как валило отсутствие компоненты.
-            const int lvl = int(sm::sub::body_level(world.reg, e));
+            const int lvl = int(sm::sub::slot_level(objs, s));
             const int wantLevel = kind.type == std::uint16_t(heads[1].kind)
                 ? int(heads[1].level) : int(heads[2].level);
             levelsAreHeadFacts &= lvl == wantLevel;

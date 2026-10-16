@@ -4979,8 +4979,12 @@ int SubworldEngine::dev_kill_all_hostiles() {
     // repeat until a pass finds none. The normal death path then awards XP+loot.
     sub::SubObjects* objs = sub::objects_find(reg);
     if (objs == nullptr) return 0;         // сцены нет — убивать некого
+    // Стор — как брал умерший entity-адаптер: из ctx, «нет» законен
+    // (фикстура с голым реестром бьёт по колонке арены).
+    MacroStore* const* stp = reg.ctx().find<MacroStore*>();
+    MacroStore* st = stp != nullptr ? *stp : nullptr;
     do {
-        std::array<entt::entity, kMaxSubworldDeathsPerStep> victims{};
+        std::array<int, kMaxSubworldDeathsPerStep> victims{};
         batch = 0;
         auto view = reg.view<ecs::ObjectSlot>();
         for (auto e : view) {
@@ -4992,16 +4996,15 @@ int SubworldEngine::dev_kill_all_hostiles() {
             if (sub::slot_flag(*objs, s, sub::kObjDead)) continue;
             if (batch >= kMaxSubworldDeathsPerStep) break;
             if (!hostile_to_player_slot(*objs, s, gs_)) continue;
-            victims[std::size_t(batch++)] = e;
+            victims[std::size_t(batch++)] = s;
         }
         for (int i = 0; i < batch; ++i) {
-            const entt::entity e = victims[std::size_t(i)];
             // «Ничей» чит-кил: attacker{} = id 0 = «никого» — XP не платится
             // никому ПО ПОСТРОЕНИЮ (ступень (iii)); прежний нулевой u32 был
             // битами законной сущности 0 и честность держалась совпадением.
             const DamageResult hit = apply_lethal_damage(
-                reg, e, DamageSource{.playerOwned = true}, DamageKind::Dev,
-                bus_);
+                *objs, st, victims[std::size_t(i)],
+                DamageSource{.playerOwned = true}, DamageKind::Dev, bus_);
             if (hit.lethal) ++killed;
         }
     } while (batch > 0);

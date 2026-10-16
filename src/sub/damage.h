@@ -33,7 +33,6 @@
 #include "tables/damage_types.h"
 
 #include <cstdint>
-#include <entt/entt.hpp>
 
 namespace sm {
 class EventBus;
@@ -118,17 +117,13 @@ struct DamageResult {
 // dead; the physics that PRODUCED a number — a fall's kinetics — stays float
 // and rounds once, at this threshold).
 //
-// СЛОТ-ФОРМА — КОНЕЧНАЯ (ломоть 7, ступень (iv)): тело закона здесь, у
-// арены и слота; entity-форма ниже — тонкий адаптер (преамбула record.h) и
-// умирает со ступенью (vi). Стор — указателем, потому что он может честно
-// ОТСУТСТВОВАТЬ (фикстура с голым реестром): бары тогда берутся колонкой
-// арены, лист и гир отвечают «записи нет» — ровно ответ entity-дверей при
-// пустом ctx. targetSlot < 0 («тела на арене нет», в т.ч. протухший
+// СЛОТ-ФОРМА — КОНЕЧНАЯ И ЕДИНСТВЕННАЯ (ломоть 7; entity-адаптеры умерли
+// ломтём C 2026-10-16 — последним звонящим был damage_door_test). Стор —
+// указателем, потому что он может честно ОТСУТСТВОВАТЬ (фикстура с голым
+// реестром): бары тогда берутся колонкой арены, лист и гир отвечают
+// «записи нет». targetSlot < 0 («тела на арене нет», в т.ч. протухший
 // ref_slot) — честный no-op, как невалидная сущность прежде.
 DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
-                          const DamageSource& src, int amount,
-                          DamageKind kind, DamageType type, EventBus* bus);
-DamageResult apply_damage(entt::registry& reg, entt::entity target,
                           const DamageSource& src, int amount,
                           DamageKind kind, DamageType type, EventBus* bus);
 
@@ -139,8 +134,5 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
 DamageResult apply_lethal_damage(SubObjects& objs, MacroStore* st,
                                  int targetSlot, const DamageSource& src,
                                  DamageKind kind, EventBus* bus);
-DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
-                                 const DamageSource& src, DamageKind kind,
-                                 EventBus* bus);
 
 } // namespace sm::sub

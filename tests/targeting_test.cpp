@@ -103,7 +103,9 @@ int main() {
               "Dead entities excluded even when nearer");
         // Zero-HP but not yet tagged Dead is also excluded.
         entt::entity downed = make_enemy(reg, 102, 100);
-        (*sm::sub::body_pools(reg, downed)).hp = 0.0f;
+        sub::SubObjects& objs = sm::test::arena_of(reg);
+        const int downedSlot = sm::test::slot_of(reg, downed);
+        (*sm::sub::slot_pools(objs, downedSlot)).hp = 0.0f;
         CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "zero-HP entities excluded even when nearer");
     }
@@ -166,9 +168,9 @@ int main() {
     {
         entt::registry reg;
         const int peasant =
-            sub::body_slot(reg, make_enemy(reg, 102, 100)); // dist 2, NEUTRAL
+            sm::test::slot_of(reg, make_enemy(reg, 102, 100)); // dist 2, NEUTRAL
         int bandit =
-            sub::body_slot(reg, make_enemy(reg, 104, 100)); // dist 4, HOSTILE
+            sm::test::slot_of(reg, make_enemy(reg, 104, 100)); // dist 4, HOSTILE
         sub::SubObjects& objs = sm::test::arena_of(reg);
         auto hostileIsBandit = [](void* user, int s) {
             return s == *static_cast<int*>(user);
@@ -189,7 +191,7 @@ int main() {
               "a hostile in reach beats a nearer neutral");
         // No hostile in reach -> nearest-any fallback (striking a neutral
         // deliberately stays possible; the reputation price handles it).
-        int far = sub::body_slot(reg, make_enemy(reg, 200, 200));
+        int far = sm::test::slot_of(reg, make_enemy(reg, 200, 200));
         const int pick2 = sub::melee_pick_target(
             objs, 100, 100, 0, 25.0f, hostileIsBandit, &far,
             &sm::test::all_live_slots, &objs);

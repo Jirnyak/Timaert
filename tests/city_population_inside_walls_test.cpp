@@ -167,7 +167,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
     sm::ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122): предусловие свидетеля — контейнер душ
     // места, и он рождает его САМ (§8 п.11). Паства (число `pop` ниже)
     // осталась мерой ГЕОМЕТРИИ: стены строились на всех, включая ушедших.
@@ -216,14 +216,15 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
     std::array<int, 8> sector{};
     int outerHalf = 0;
     // Место тела — колонка арены (ломоть 5): вьюха отбирает ЖИЛЬЦОВ сцены
-    // (слот), координаты отвечает дверь body_pos.
+    // (слот), координаты отвечает слот-дверь slot_pos.
     auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        const int slot = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        const auto* kindCol = sm::sub::slot_kind(objs, slot);
         if (kindCol == nullptr) continue;
         const auto& kind = *kindCol;
         if (kind.type >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
-        const sm::ecs::Position& p = *sm::sub::body_pos(world.reg, e);
+        const sm::ecs::Position& p = *sm::sub::slot_pos(objs, slot);
         ++s.citizens;
         const float dx = p.x - cx;
         const float dy = p.y - cy;

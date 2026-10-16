@@ -104,8 +104,6 @@ entt	src/app/main.cpp	entt
 entt	src/app/smoke.cpp	entt
 entt	src/content/spells/effects.cpp	entt
 entt	src/ecs/world.h	entt
-entt	src/sub/damage.cpp	entt
-entt	src/sub/damage.h	entt
 entt	src/sub/engine.cpp	entt
 entt	src/sub/engine.h	entt
 entt	src/sub/possess.h	entt

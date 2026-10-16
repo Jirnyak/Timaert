@@ -139,7 +139,7 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // ВОПЛОЩАЮТСЯ ГОЛОВЫ (v122), поэтому предусловие свидетеля — не число,
     // а контейнер душ места: он рождает его САМ (§8 п.11), тем же законом,
     // которым его наполняет генезис.
@@ -167,7 +167,8 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
     int imperial = 0;
     auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        const auto* kind = sm::sub::body_kind(world.reg, e);
+        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        const auto* kind = sm::sub::slot_kind(objs, s);
         if (kind == nullptr) continue;
         if (kind->type >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
         ++citizens;
@@ -197,7 +198,7 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     sm::Inventory homeSouls{};
     sm::raise_flock_into_container(homeSouls, 400);
     sm::sub::spawn_cell_npcs(world,
@@ -221,7 +222,8 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
     int foreign = 0;
     auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        const auto* kind = sm::sub::body_kind(world.reg, e);
+        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        const auto* kind = sm::sub::slot_kind(objs, s);
         if (kind == nullptr) continue;
         if (kind->type >= std::uint16_t(sm::NPCType::Count)) continue;
         ++citizens;

@@ -96,7 +96,7 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sm::sub::SubObjects& objs = sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     // Street guards are the place's GARRISON records now (§42 Инк 7) — the
     // fixture brings a three-man wall, and every one of them must be lit.
     sm::Inventory wall{};
@@ -141,19 +141,20 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
 
     auto view = world.reg.view<sm::ecs::ObjectSlot>();
     for (auto e : view) {
-        const auto* kindCol = sm::sub::body_kind(world.reg, e);
+        const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
+        const auto* kindCol = sm::sub::slot_kind(objs, s);
         if (kindCol == nullptr) continue;
         const auto& kind = *kindCol;
         const bool isGuard = kind.type == std::uint16_t(sm::NPCType::Guard);
         const bool hasLight =
-            sm::sub::object_flag(world.reg, e, sm::sub::kObjHasLight);
+            sm::sub::slot_flag(objs, s, sm::sub::kObjHasLight);
 
         if (isGuard) {
             ++guards;
             if (!hasLight) continue;       // counted below as an unlit guard
             ++guardsLit;
             // Verbatim copy of the type row → tuning is a one-row data edit.
-            const auto& le = *sm::sub::body_light(world.reg, e);
+            const auto& le = *sm::sub::slot_light(objs, s);
             if (!near(le.radius, guardDef.lightRadius)
                 || !near(le.intensity, guardDef.lightIntensity)) ++strengthDrift;
             if (!near(le.r, guardDef.lightR)

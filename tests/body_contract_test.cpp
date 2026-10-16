@@ -61,7 +61,8 @@ void test_every_squad_body_is_a_whole_body() {
     auto worldStore_ = sm::make_macro_store();
 
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // слоты телам — бит стороны игрока
+    sub::SubObjects& arena =
+        sm::test::arena_of(world.reg);   // слоты телам — бит стороны игрока
     std::vector<std::uint8_t> ground(
         std::size_t(sub::kFullSize) * sub::kFullSize, sub::TILE_GRASS);
     sub::spawn_player_squad(world, mixed_squad(), ground,
@@ -77,15 +78,16 @@ void test_every_squad_body_is_a_whole_body() {
     int offTableHeight = 0;
 
     for (auto e : view) {
-        const auto* loan = sm::sub::body_debt(reg, e);
+        const int slot = int(view.get<ecs::ObjectSlot>(e).slot);
+        const auto* loan = sm::sub::slot_debt(arena, slot);
         if (loan == nullptr
             || loan->stock != std::uint8_t(MacroStock::Creatures)) continue;
         ++bodies;
-        const auto* kind   = sm::sub::body_kind(reg, e);
-        const auto* health = sm::sub::body_pools(reg, e);
-        const auto* combat = sm::sub::body_combat(reg, e);
-        const auto* sprite = sm::sub::body_sprite(reg, e);
-        const auto* ai     = sm::sub::body_ai(reg, e);
+        const auto* kind   = sm::sub::slot_kind(arena, slot);
+        const auto* health = sm::sub::slot_pools(arena, slot);
+        const auto* combat = sm::sub::slot_combat(arena, slot);
+        const auto* sprite = sm::sub::slot_sprite(arena, slot);
+        const auto* ai     = sm::sub::slot_ai(arena, slot);
 
         // (Лицо на теле НЕ хранится — кусок 1, вердикт «не хранить, как
         // вспышку»: оно потребляется рождением в рост спрайта; законность
@@ -93,19 +95,19 @@ void test_every_squad_body_is_a_whole_body() {
         // Визуальная позиция — безусловная колонка слота (кусок 3):
         // «есть» = интерполятор заведён, скорость > 0 (фабрика пишет
         // kBodyVisualCatchUp).
-        const auto* vis = sm::sub::body_visual(reg, e);
+        const auto* vis = sm::sub::slot_visual(arena, slot);
         // Позиция — колонка арены (ломоть 5): «тело имеет место» = у тела
         // есть слот, дверь body_pos отвечает не-нулём.
-        if (sm::sub::body_pos(reg, e) == nullptr
+        if (sm::sub::slot_pos(arena, slot) == nullptr
             || vis == nullptr || !(vis->speed > 0.0f)
-            || !sm::sub::object_flag(reg, e, sm::sub::kObjPlayerSoldier))
+            || !sm::sub::slot_flag(arena, slot, sm::sub::kObjPlayerSoldier))
             ++missingTag;
         if (!health) ++missingHealth;
         if (!combat) ++missingCombat;
-        if (sm::sub::body_sheet(reg, e) == nullptr) ++missingSheet;
+        if (sm::sub::slot_sheet(arena, slot) == nullptr) ++missingSheet;
         if (!ai)     ++missingAi;
         if (!sprite) ++missingSprite;
-        if (sm::sub::body_level(reg, e) == 0)    ++missingLevel;
+        if (sm::sub::slot_level(arena, slot) == 0)    ++missingLevel;
 
         if (kind && kind->factionIdx != playerFaction) ++wrongFaction;
         // The sprite must name the SAME kind the body is, or the renderer draws
@@ -120,7 +122,7 @@ void test_every_squad_body_is_a_whole_body() {
         // hardcodes its own width shows up right here.
         if (kind && ai && kind->type < std::uint16_t(NPCType::Count)) {
             const NpcTypeDef& def = npc_def(NPCType(std::uint8_t(kind->type)));
-            const auto* sheet = sm::sub::body_sheet(reg, e);
+            const auto* sheet = sm::sub::slot_sheet(arena, slot);
             if (sheet) {
                 if (ai->radius != npc_body_radius(def)) ++offTableRadius;
                 if (sprite && sprite->scale != npc_body_radius(def))
@@ -206,7 +208,8 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sub::SubObjects& arena =
+        sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     // Half dead on the map, with a face and belongings of his own.
@@ -219,13 +222,15 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
                                 /*combatant*/true);
     CHECK_OR_RETURN(body != entt::null && reg.valid(body),
                     "a body-shaped macro entity can be embodied");
+    const int slot = sm::test::slot_of(reg, body);
 
-    CHECK((sm::sub::body_pos(reg, body) != nullptr
-           && sm::sub::body_sprite(reg, body) != nullptr
-           && sm::sub::body_sheet(reg, body) != nullptr
-           && sm::sub::body_pools(reg, body) != nullptr
-           && sm::sub::body_combat(reg, body) != nullptr
-           && sm::sub::body_ai(reg, body) != nullptr),
+    CHECK((slot >= 0
+           && sm::sub::slot_pos(arena, slot) != nullptr
+           && sm::sub::slot_sprite(arena, slot) != nullptr
+           && sm::sub::slot_sheet(arena, slot) != nullptr
+           && sm::sub::slot_pools(arena, slot) != nullptr
+           && sm::sub::slot_combat(arena, slot) != nullptr
+           && sm::sub::slot_ai(arena, slot) != nullptr),
           "a tracked body is as whole a body as a derived one");
     // Лицо на теле не хранится (кусок 1, вердикт «не хранить»); закон
     // «лицо — факт головы» свидетельствуется ПРОДУКТОМ: рост спрайта обязан
@@ -236,19 +241,20 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         const float want =
             sub::body_height_m(npc_def(NPCType::Guard))
             * sub::body_shape_height_scale(st.character[macro.slot].bodyShape);
-        CHECK((*sm::sub::body_sprite(reg, body)).height == want,
+        CHECK((*sm::sub::slot_sprite(arena, slot)).height == want,
               "the lord's height is his OWN record's face, both worlds agree");
     }
-    CHECK(sm::sub::body_kind(reg, body) != nullptr
-              && sm::sub::body_kind(reg, body)->factionIdx == 5,
+    CHECK(slot >= 0
+              && sm::sub::slot_kind(arena, slot) != nullptr
+              && sm::sub::slot_kind(arena, slot)->factionIdx == 5,
           "a tracked body wears its own allegiance, read from the entity itself");
-    CHECK(sm::sub::body_level(reg, body) == 4,
+    CHECK(slot >= 0 && sm::sub::slot_level(arena, slot) == 4,
           "a tracked body holds its own rank");
 
     // The wound crosses as a fraction, not as points: half above, half below,
     // whatever either layer thinks a health bar is worth.
     {
-        const auto& h = (*sm::sub::body_pools(reg, body));
+        const auto& h = (*sm::sub::slot_pools(arena, slot));
         const float frac =
             h.maxHp > 0 ? float(h.hp) / float(h.maxHp) : -1.0f;
         CHECK(frac > 0.4f && frac < 0.6f,
@@ -263,18 +269,24 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     CHECK(!reg.all_of<ecs::NpcInventory>(body)
               && !reg.all_of<ecs::NpcTraits>(body),
           "a tracked body owns neither bag nor personality of its own");
-    CHECK(sm::sub::state_of<ecs::NpcInventory>(reg, body) != nullptr
-              && sm::sub::state_of<ecs::NpcInventory>(reg, body)
+    CHECK(slot >= 0
+              && sm::sub::slot_state<ecs::NpcInventory>(arena, slot,
+                                                        *worldStore_)
+                     != nullptr
+              && sm::sub::slot_state<ecs::NpcInventory>(arena, slot,
+                                                        *worldStore_)
                      ->inv.count("wood") == 3,
           "...and the door still answers with what its entity carries — it "
           "moved, it did not vanish");
-    CHECK(sm::sub::state_of<ecs::NpcInventory>(reg, body)
-              == &worldStore_->inventory[macro.slot],
+    CHECK(slot >= 0
+              && sm::sub::slot_state<ecs::NpcInventory>(arena, slot,
+                                                        *worldStore_)
+                 == &worldStore_->inventory[macro.slot],
           "LITERALLY the record's bag: pick a sword up down here and it is in "
           "his bag up there, with no trip to arrange");
     // The backlink is the ADDRESS of all of the above — and of his bars. Without
     // it the encounter is a stranger who happens to look like him.
-    CHECK(sm::sub::body_macro_origin(reg, body) == macro,
+    CHECK(slot >= 0 && sm::sub::slot_macro_origin(arena, slot) == macro,
           "a tracked body knows which entity it is");
 
     // A whole entity arrives whole: the control that stops "arrives wounded"
@@ -285,8 +297,9 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     const entt::entity wholeBody =
         sub::spawn_tracked_body(reg, whole, 60.0f, 61.0f, 778u, true);
     CHECK_OR_RETURN(wholeBody != entt::null, "the control body was embodied");
+    const int wholeSlot = sm::test::slot_of(reg, wholeBody);
     {
-        const auto& h = (*sm::sub::body_pools(reg, wholeBody));
+        const auto& h = (*sm::sub::slot_pools(arena, wholeSlot));
         CHECK(h.maxHp > 0.0f && h.hp == h.maxHp,
               "an untouched entity arrives untouched");
     }
@@ -367,8 +380,8 @@ void test_a_leaders_aura_reaches_his_men() {
     ecs::World led{}, alone{};
     // Арена сцены — предусловие рождения тел (§8 п.11): без неё дверь
     // спавна рожает тела без слотов, и колонки рода/баров некуда класть.
-    sm::test::arena_of(led.reg);
-    sm::test::arena_of(alone.reg);
+    sub::SubObjects& ledArena = sm::test::arena_of(led.reg);
+    sub::SubObjects& aloneArena = sm::test::arena_of(alone.reg);
     sub::spawn_player_squad(led, mixed_squad(), ground, 512.0f, 512.0f, 123u,
                             f, &gift);
     sub::spawn_player_squad(alone, mixed_squad(), ground, 512.0f, 512.0f, 123u,
@@ -376,20 +389,22 @@ void test_a_leaders_aura_reaches_his_men() {
 
     int compared = 0;
     for (auto eLed : led.reg.view<ecs::ObjectSlot>()) {
-        const auto* loanLedP = sm::sub::body_debt(led.reg, eLed);
+        const int sLed = int(led.reg.get<ecs::ObjectSlot>(eLed).slot);
+        const auto* loanLedP = sm::sub::slot_debt(ledArena, sLed);
         if (loanLedP == nullptr) continue;
         const auto& loanLed = *loanLedP;
         if (loanLed.stock != std::uint8_t(MacroStock::Creatures)) continue;
         for (auto eAlone : alone.reg.view<ecs::ObjectSlot>()) {
-            const auto* loanAloneP = sm::sub::body_debt(alone.reg, eAlone);
+            const int sAlone = int(alone.reg.get<ecs::ObjectSlot>(eAlone).slot);
+            const auto* loanAloneP = sm::sub::slot_debt(aloneArena, sAlone);
             if (loanAloneP == nullptr) continue;
             const auto& loanAlone = *loanAloneP;
             if (loanAlone.stock != std::uint8_t(MacroStock::Creatures)
                 || loanAlone.detail != loanLed.detail) {
                 continue;
             }
-            const float withAura = (*sm::sub::body_pools(led.reg, eLed)).maxHp;
-            const float without  = (*sm::sub::body_pools(alone.reg, eAlone)).maxHp;
+            const float withAura = (*sm::sub::slot_pools(ledArena, sLed)).maxHp;
+            const float without  = (*sm::sub::slot_pools(aloneArena, sAlone)).maxHp;
             const float delta = withAura - without;
             CHECK(delta >= 9.0f && delta <= 61.0f,
                   "a led soldier is tougher by his leader's vit point - "
@@ -410,7 +425,8 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sub::SubObjects& arena =
+        sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     const sm::MacroHandle macro = make_macro_lord(
@@ -440,11 +456,12 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     int leaders = 0, members = 0, wrongFaction = 0, wholeMembers = 0;
     bool saw77 = false, saw88 = false;
     for (auto e : reg.view<ecs::ObjectSlot>()) {
-        if (sm::sub::body_macro_origin(reg, e).slot != sm::kMacroNoSlot) {
+        const int s = int(reg.get<ecs::ObjectSlot>(e).slot);
+        if (sm::sub::slot_macro_origin(arena, s).slot != sm::kMacroNoSlot) {
             ++leaders;
             continue;
         }
-        const auto* debt = sm::sub::body_debt(reg, e);
+        const auto* debt = sm::sub::slot_debt(arena, s);
         if (!debt) continue;
         ++members;
         CHECK(debt->stock == std::uint8_t(MacroStock::Creatures)
@@ -452,12 +469,12 @@ void test_a_squad_on_the_map_projects_its_creatures() {
               "a member's receipt names the creature row and its own squad");
         saw77 = saw77 || debt->detail == 77;
         saw88 = saw88 || debt->detail == 88;
-        const auto* kind = sm::sub::body_kind(reg, e);
+        const auto* kind = sm::sub::slot_kind(arena, s);
         if (kind && kind->factionIdx != 5) ++wrongFaction;
-        if (sm::sub::body_sprite(reg, e) != nullptr
-            && sm::sub::body_sheet(reg, e) != nullptr
-            && sm::sub::body_pools(reg, e) != nullptr
-            && sm::sub::body_combat(reg, e) != nullptr) {
+        if (sm::sub::slot_sprite(arena, s) != nullptr
+            && sm::sub::slot_sheet(arena, s) != nullptr
+            && sm::sub::slot_pools(arena, s) != nullptr
+            && sm::sub::slot_combat(arena, s) != nullptr) {
             ++wholeMembers;
         }
     }
@@ -474,7 +491,8 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     // squad of one, alive and well, not a special case anyone must clean up.
     MacroWorld w{.store = worldStore_.get()};
     for (auto e : reg.view<ecs::ObjectSlot>()) {
-        if (const auto* d = sm::sub::body_debt(reg, e))
+        const int s = int(reg.get<ecs::ObjectSlot>(e).slot);
+        if (const auto* d = sm::sub::slot_debt(arena, s))
             settle_macro_debt(w, *d, -1);
     }
     CHECK(creatures_empty(worldStore_->inventory[macro.slot].inv),
@@ -488,7 +506,8 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sub::SubObjects& arena =
+        sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     // THE RULE (owner, 2026-08-06): a derived body stores nothing its seed
@@ -503,9 +522,12 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     CHECK_OR_RETURN(e != entt::null && reg.valid(e), "a derived body is born");
     CHECK(!reg.all_of<ecs::NpcInventory>(e),
           "a derived body carries no bag: its loot is rolled when it dies");
-    CHECK(sm::sub::body_macro_origin(reg, e).slot == sm::kMacroNoSlot,
+    const int slot = sm::test::slot_of(reg, e);
+    CHECK((slot < 0 ? sm::MacroHandle{}
+                     : sm::sub::slot_macro_origin(arena, slot)).slot
+              == sm::kMacroNoSlot,
           "a derived body is nobody in particular up there");
-    CHECK(sm::sub::body_debt(reg, e) == nullptr,
+    CHECK(slot < 0 || sm::sub::slot_debt(arena, slot) == nullptr,
           "a body borrowed from nothing owes nothing");
 
     // Borrowed, and it says so. The receipt is stamped BY the birth, so a
@@ -515,7 +537,9 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
         /*faceSalt*/1u,
         sub::BodyLoan::from(MacroStock::Population, MacroStockKey{7, 3, 4}));
     CHECK_OR_RETURN(borrowed != entt::null, "a borrowed body is born");
-    const auto* debt = sm::sub::body_debt(reg, borrowed);
+    const int borrowedSlot = sm::test::slot_of(reg, borrowed);
+    const auto* debt = borrowedSlot < 0
+        ? nullptr : sm::sub::slot_debt(arena, borrowedSlot);
     CHECK(debt != nullptr
               && debt->stock == std::uint8_t(MacroStock::Population)
               && debt->subject == 7 && debt->amount == 1,
@@ -534,7 +558,8 @@ void test_two_bodies_of_one_kind_can_differ_in_height() {
     ecs::World world{};
     auto worldStore_ = sm::make_macro_store();
     sm::store_attach(world, worldStore_.get());
-    sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
+    sub::SubObjects& arena =
+        sm::test::arena_of(world.reg);   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     auto& reg = world.reg;
 
     // A crowd of one kind, drawn from one row: the row fixes what a peasant is,
@@ -549,7 +574,8 @@ void test_two_bodies_of_one_kind_can_differ_in_height() {
                               /*seed*/1000u + i, false},
             /*faceSalt*/i * 7919u);
         if (e == entt::null) continue;
-        const auto* spr = sm::sub::body_sprite(reg, e);
+        const int slot = sm::test::slot_of(reg, e);
+        const auto* spr = slot < 0 ? nullptr : sm::sub::slot_sprite(arena, slot);
         if (!spr) continue;
         ++seen;
         shortest = std::min(shortest, spr->height);

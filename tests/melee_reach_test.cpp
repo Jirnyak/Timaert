@@ -37,7 +37,7 @@ int body(entt::registry& reg, NPCType type, float x, float y) {
     sm::test::give_pools(reg, e, sm::ecs::Pools{30, 30});
     sm::test::give_kind(reg, e,
         sm::ecs::NPCKind{std::uint16_t(type), std::uint16_t{0}});
-    return sm::sub::body_slot(reg, e);
+    return sm::test::slot_of(reg, e);
 }
 
 bool never_hostile(void*, int) { return false; }

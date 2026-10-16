@@ -201,13 +201,14 @@ void test_debts_bill_their_own_subject() {
     MacroWorld w{.gs = &gs, .store = wld.store.get()};
 
     entt::registry reg;
-    sm::test::arena_of(reg);   // квитанция — колонка слота арены (ломоть 4)
+    sm::sub::SubObjects& objs = sm::test::arena_of(reg);   // квитанция — колонка слота арены (ломоть 4)
     const auto citizen = reg.create();
     sm::test::give_slot(reg, citizen);
-    sub::stamp_macro_debt(sub::objects_of(reg), sub::body_slot(reg, citizen),
+    const int sCitizen = sm::test::slot_of(reg, citizen);
+    sub::stamp_macro_debt(objs, sCitizen,
                           MacroStock::Population,
                           MacroStockKey{wld.cityId, 10, 10}, 1);
-    const auto* debt = sub::body_debt(reg, citizen);
+    const auto* debt = sub::slot_debt(objs, sCitizen);
     CHECK_OR_RETURN(debt != nullptr, "stamping leaves a receipt on the body");
 
     settle_macro_debt(w, *debt, -1);
@@ -221,10 +222,11 @@ void test_debts_bill_their_own_subject() {
     // the id alone names it, no register bit rides the receipt.
     const auto villager = reg.create();
     sm::test::give_slot(reg, villager);
-    sub::stamp_macro_debt(sub::objects_of(reg), sub::body_slot(reg, villager),
+    const int sVillager = sm::test::slot_of(reg, villager);
+    sub::stamp_macro_debt(objs, sVillager,
                           MacroStock::Population,
                           MacroStockKey{wld.hamletId, 20, 20}, 3);
-    settle_macro_debt(w, *sub::body_debt(reg, villager), -1);
+    settle_macro_debt(w, *sub::slot_debt(objs, sVillager), -1);
     CHECK(population_of(wld, wld.hamletId) == 37,
           "a village pays from its own people, by the amount the receipt says");
 
@@ -233,11 +235,11 @@ void test_debts_bill_their_own_subject() {
     // left them — the id alone finds the village, never a city.
     const auto twinVillager = reg.create();
     sm::test::give_slot(reg, twinVillager);
-    sub::stamp_macro_debt(sub::objects_of(reg),
-                          sub::body_slot(reg, twinVillager),
+    const int sTwinVillager = sm::test::slot_of(reg, twinVillager);
+    sub::stamp_macro_debt(objs, sTwinVillager,
                           MacroStock::Population,
                           MacroStockKey{wld.twinId, 40, 40}, 2);
-    settle_macro_debt(w, *sub::body_debt(reg, twinVillager), -1);
+    settle_macro_debt(w, *sub::slot_debt(objs, sTwinVillager), -1);
     CHECK(village_population_of(wld, wld.twinId) == 78,
           "a village pays its own dead through the one id space");
     CHECK(city_population_of(wld, wld.cityId) == 299
@@ -245,7 +247,7 @@ void test_debts_bill_their_own_subject() {
           "and no city is billed for them");
 
     // Signed both ways (owner's ruling): the same row settles creation.
-    settle_macro_debt(w, *sub::body_debt(reg, villager), +1);
+    settle_macro_debt(w, *sub::slot_debt(objs, sVillager), +1);
     CHECK(population_of(wld, wld.hamletId) == 40,
           "handing the borrowed thing back credits the same place");
 }
@@ -345,10 +347,12 @@ void test_the_creature_row_pays_by_name() {
     entt::registry& reg = world.reg;
     const auto body = reg.create();
     sm::test::give_slot(reg, body);
-    sub::stamp_macro_debt(sub::objects_of(reg), sub::body_slot(reg, body),
+    sm::sub::SubObjects& objs = sm::test::arena_of(reg);
+    const int sBody = sm::test::slot_of(reg, body);
+    sub::stamp_macro_debt(objs, sBody,
                           MacroStock::Creatures,
                           MacroStockKey{5, 0, 0, 22}, 1);
-    const auto* debt = sub::body_debt(reg, body);
+    const auto* debt = sub::slot_debt(objs, sBody);
     CHECK_OR_RETURN(debt != nullptr && debt->detail == 22,
                     "the receipt carries the member's name to the grave");
     settle_macro_debt(w, *debt, -1);

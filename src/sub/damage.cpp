@@ -215,22 +215,8 @@ DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
     return out;
 }
 
-// ── Entity-форма — тонкий адаптер (преамбула record.h): сущность → слот,
-// стор и арена из ctx; умирает со ступенью (vi). Тело без слота или реестр
-// без арены (фикстура транзита) — тот же честный no-op, что и прежде
-// (pools_of отвечал nullptr по той же цепочке). ─────────────────────────
-DamageResult apply_damage(entt::registry& reg, entt::entity target,
-                          const DamageSource& src, int amount,
-                          DamageKind kind, DamageType type, EventBus* bus) {
-    const int s = body_slot(reg, target);
-    if (s < 0) return {};
-    SubObjects* objs = objects_find(reg);
-    if (objs == nullptr) return {};
-    MacroStore* const* st = reg.ctx().find<MacroStore*>();
-    return apply_damage(*objs, st != nullptr ? *st : nullptr, s, src, amount,
-                        kind, type, bus);
-}
-
+// (Entity-формы обеих дверей умерли ломтём C 2026-10-16: последним звонящим
+// был damage_door_test, слот-форма — единственное тело закона.)
 DamageResult apply_lethal_damage(SubObjects& objs, MacroStore* st,
                                  int targetSlot, const DamageSource& src,
                                  DamageKind kind, EventBus* bus) {
@@ -242,18 +228,6 @@ DamageResult apply_lethal_damage(SubObjects& objs, MacroStore* st,
     // — the whole remaining number is exactly one lethal blow.
     return apply_damage(objs, st, targetSlot, src, hp->hp, kind,
                         DamageType::Blunt, bus);
-}
-
-DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
-                                 const DamageSource& src, DamageKind kind,
-                                 EventBus* bus) {
-    const int s = body_slot(reg, target);
-    if (s < 0) return {};
-    SubObjects* objs = objects_find(reg);
-    if (objs == nullptr) return {};
-    MacroStore* const* st = reg.ctx().find<MacroStore*>();
-    return apply_lethal_damage(*objs, st != nullptr ? *st : nullptr, s, src,
-                               kind, bus);
 }
 
 } // namespace sm::sub

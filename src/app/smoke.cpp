@@ -6226,9 +6226,9 @@ bool run_console_smoke(App& app) {
     {
         auto& reg = app.ecs.reg;
         const sm::FaunaEntry* wolf = sm::creature_def("wolf");
-        entt::entity wolfE = entt::null;
         auto view = reg.view<sm::ecs::ObjectSlot>();
         sm::sub::SubObjects* wObjs = sm::sub::objects_find(reg);
+        int wolfSlot = -1;
         for (auto e : view) {
             if (wObjs == nullptr) break;
             const int s = int(view.get<sm::ecs::ObjectSlot>(e).slot);
@@ -6237,10 +6237,10 @@ bool run_console_smoke(App& app) {
                 continue;
             const auto* k = sm::sub::slot_kind(*wObjs, s);
             if (sm::creature_def_from_kind(k->type) == wolf) {
-                wolfE = e; break;
+                wolfSlot = s; break;
             }
         }
-        if (!wolf || wolfE == entt::null) {
+        if (!wolf || wolfSlot < 0) {
             restore();
             smoke_fail(app, "console spawn wolf: kind did not resolve to wolf row");
             return false;
@@ -6249,9 +6249,9 @@ bool run_console_smoke(App& app) {
         // Убийца — ТЕЛО аватара (§41 корень 5): жнец резолвит лидера по
         // телу, и «ничей» чит-кил (attacker.id == 0) честно не платит никому.
         sm::sub::apply_lethal_damage(
-            reg, wolfE,
+            *wObjs, app.macroStore.get(), wolfSlot,
             sm::sub::DamageSource{
-                .attacker = sm::sub::objects_of(reg).avatar,
+                .attacker = wObjs->avatar,
                 .playerOwned = true},
             sm::sub::DamageKind::Dev, &app.bus);
         app.subworld.tick(0.016f);

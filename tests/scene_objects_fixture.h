@@ -60,13 +60,22 @@ inline void give_slot(entt::registry& reg, entt::entity e) {
     if (slot >= 0) reg.emplace<sm::ecs::ObjectSlot>(e, std::uint16_t(slot));
 }
 
+// Слот тела БЕЗ рождения (ломоть C ступени (ii-б)): запись колонок идёт
+// слот-формами doors.h, сущность остаётся лишь адресом для реестра до
+// ломтя D. −1 = тела на арене нет.
+inline int slot_of(const entt::registry& reg, entt::entity e) {
+    if (e == entt::null || !reg.valid(e)) return -1;
+    const auto* os = reg.try_get<sm::ecs::ObjectSlot>(e);
+    return os != nullptr ? int(os->slot) : -1;
+}
+
 // Позиция телу фикстуры (ломоть 5) — как записало бы рождение: слот
-// рожается по надобности (§8 п.11), колонка пишется дверью body_pos.
+// рожается по надобности (§8 п.11), колонка пишется по слоту.
 inline void give_pos(entt::registry& reg, entt::entity e,
                      float x, float y, float z = 0.0f) {
     if (!reg.all_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    if (sm::ecs::Position* p = sm::sub::body_pos(reg, e)) {
-        *p = sm::ecs::Position{x, y, z};
+    if (const int s = slot_of(reg, e); s >= 0) {
+        arena_of(reg).pos[std::size_t(s)] = sm::ecs::Position{x, y, z};
     }
 }
 
@@ -75,10 +84,12 @@ inline void give_pos(entt::registry& reg, entt::entity e,
 inline void give_flag(entt::registry& reg, entt::entity e,
                       std::uint16_t bit) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::object_flag_set(reg, e, bit);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_flag_set(arena_of(reg), s, bit);
 }
 inline bool flag_of(entt::registry& reg, entt::entity e, std::uint16_t bit) {
-    return sm::sub::object_flag(reg, e, bit);
+    const int s = slot_of(reg, e);
+    return s >= 0 && sm::sub::slot_flag(arena_of(reg), s, bit);
 }
 // Активное тело фикстуре — как поставила бы дверь входа (ссылка сцены,
 // вердикт 2026-10-05): слот по надобности + перезапись ссылки.
@@ -93,11 +104,13 @@ inline void make_avatar(entt::registry& reg, entt::entity e) {
 inline void give_kind(entt::registry& reg, entt::entity e,
                       sm::ecs::NPCKind k) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::set_body_kind(reg, e, k);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_set_kind(arena_of(reg), s, k);
 }
 inline void give_level(entt::registry& reg, entt::entity e, std::int16_t v) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::set_body_level(reg, e, v);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_set_level(arena_of(reg), s, v);
 }
 // Бэклинк телу фикстуры — как записала бы дверь tracked-рождения (ломоть 4),
 // слот по надобности. Снятие — give_origin с MacroHandle{} (бита нет,
@@ -105,39 +118,46 @@ inline void give_level(entt::registry& reg, entt::entity e, std::int16_t v) {
 inline void give_origin(entt::registry& reg, entt::entity e,
                         sm::MacroHandle h) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::set_body_origin(reg, e, h);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_set_origin(arena_of(reg), s, h);
 }
 // Вид телу фикстуры — как записала бы дверь рождения (ломоть 3), слот по
 // надобности.
 inline void give_sprite(entt::registry& reg, entt::entity e,
                         const sm::ecs::Sprite& sp) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::set_body_sprite(reg, e, sp);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_set_sprite(arena_of(reg), s, sp);
 }
 // Бары/лист/снарядные — колонки арены (кусок 2), слот по надобности.
 inline void give_pools(entt::registry& reg, entt::entity e, sm::ecs::Pools p) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::set_body_pools(reg, e, p);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_set_pools(arena_of(reg), s, p);
 }
 inline void give_combat(entt::registry& reg, entt::entity e,
                         const sm::ecs::Combat& c) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::set_body_combat(reg, e, c);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_set_combat(arena_of(reg), s, c);
 }
 inline void give_missile(entt::registry& reg, entt::entity e,
                          sm::ecs::MissileAttack m) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::set_body_missile(reg, e, m);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_set_missile(arena_of(reg), s, m);
 }
 inline void give_ai(entt::registry& reg, entt::entity e,
                     const sm::ecs::SubworldAi& a) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::set_body_ai(reg, e, a);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_set_ai(arena_of(reg), s, a);
 }
 inline void give_visual(entt::registry& reg, entt::entity e,
                         sm::ecs::VisualPos v) {
     if (!reg.any_of<sm::ecs::ObjectSlot>(e)) give_slot(reg, e);
-    sm::sub::set_body_visual(reg, e, v);
+    if (const int s = slot_of(reg, e); s >= 0)
+        sm::sub::slot_set_visual(arena_of(reg), s, v);
 }
 // Снаряд-фикстура (ступень (v) ломтя 7): ЧИСТЫЙ ЖИЛЕЦ АРЕНЫ — слот без
 // сущности, ровно той же дверью, что стреляет продакшен (birth_projectile).
