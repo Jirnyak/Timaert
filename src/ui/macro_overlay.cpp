@@ -11,6 +11,7 @@
 
 #include "ui/macro_overlay.h"
 #include "macro/player_entity.h"
+#include "macro/squad_index.h"  // squads_in_frame — кандидаты рамкой (ломоть 6)
 #include "ui/trade_widgets.h"
 #include "ecs/components.h"
 #include "macro/map_subject.h"   // MapSubject + actions_of — the menu's doors
@@ -613,12 +614,8 @@ NPCType npc_type_or_default(std::uint16_t raw) {
     return NPCType::Peasant;
 }
 
-inline int wrap_chebyshev(int d, int period) {
-    if (d >  period / 2) d -= period;
-    if (d < -period / 2) d += period;
-    return d;
-}
-
+// (wrap_chebyshev умер ломтём 6: короткую дельту рамки считает одна дверь
+// каркаса squads_in_frame — панель соседей больше не заворачивает сама.)
 
 // (The talk/trade popups, the squad window and their price/fact helpers
 // moved into the ONE subject panel — ui/overlays.cpp draw_settlement:
@@ -672,8 +669,6 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
         const ecs::MacroCell* pcell = player_flag_cell(gs, st);
         const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : 0;
         const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : 0;
-        const int W  = gs.mapW;
-        const int H  = gs.mapH;
 
         auto push_row = [&](MapSubject subject, int dx, int dy) {
             ++totalRows;
@@ -698,35 +693,25 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
             }
         };
 
-        for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
-            const std::uint16_t slot = std::uint16_t(s32);
-            if (st.alive[slot] == 0) continue;
-            if (slot == flagSlot || st.playerFlag[slot].home != 0)
-                continue;
-            // ТЕЛО МЕСТА — НЕ СОСЕД-СКВАД (тот же гейт, что у спрайтов).
-            if (squad_archetype(SquadType(st.runtime[slot].squadType)) == SquadArchetype::Place)
-                continue;
-            const auto& cell = st.cell[slot];
-            const auto& hp  = st.pools[slot];
-            if (hp.hp <= 0) continue;
-
-            int nx = ecs::cell_x(cell, W);
-            int ny = ecs::cell_y(cell, W);
-            int dx = wrap_chebyshev(nx - px, W);
-            int dy = wrap_chebyshev(ny - py, H);
-            if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;
-            push_row(subject_of_squad(handle_at(st, slot)), dx, dy);
-        }
-
+        // Соседи — РАМКОЙ 3×3 через каркас (ломоть 6, M-244): два скана —
+        // капа по сквадам и всех мест — умерли в одну дверь; место и отряд
+        // различает ось рода внутри колбэка, как их различал мир и прежде.
         // Landmarks pop the same panel (owner's verdict: «деревни, города,
         // ландмарки тоже — если маркер игрока рядом, выскакивают их
-        // попапы»). Same neighbourhood law as the squads above.
-        for_each_place(st, [&](std::uint16_t slot) {
-            const auto& lcell = st.cell[slot];
-            int dx = wrap_chebyshev(ecs::cell_x(lcell, W) - px, W);
-            int dy = wrap_chebyshev(ecs::cell_y(lcell, W) - py, H);
-            if (std::abs(dx) > 1 || std::abs(dy) > 1) return;
-            push_row(subject_of_landmark(int(st.spawnId[slot].index)), dx, dy);
+        // попапы»).
+        if (mw.squads)
+        squads_in_frame(*mw.squads, st, px, py, 1,
+                        [&](std::uint16_t slot, int dx, int dy) {
+            if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
+            if (squad_archetype(SquadType(st.runtime[slot].squadType))
+                == SquadArchetype::Place) {
+                push_row(subject_of_landmark(int(st.spawnId[slot].index)),
+                         dx, dy);
+                return;
+            }
+            if (slot == flagSlot || st.playerFlag[slot].home != 0) return;
+            if (st.pools[slot].hp <= 0) return;
+            push_row(subject_of_squad(handle_at(st, slot)), dx, dy);
         });
 
         if (totalRows > 0) {

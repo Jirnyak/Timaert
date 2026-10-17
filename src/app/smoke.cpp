@@ -5670,7 +5670,9 @@ bool run_chronicle_rate_smoke(App& app) {
                               int(float(sm::ecs::cell_y(hcell, app.gs.mapW))));
         app.cursor.path.clear();
         app.cursor.pathIdx = 0;
-        detect_forced_encounter(app);
+        // Кадр, как в игре (ломоть 6): свежий враг входит в каркас клеток
+        // пересборкой на драйве ИИ — см. force_encounter.
+        advance_sim_steps(app, 1, /*allowInput*/false);
         if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) {
             smoke_fail(app, "chronicle_rate: встреча не форсировалась");
             return false;
@@ -8798,7 +8800,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         smoke_teleport_player(app, int(float(sm::ecs::cell_x(hcell, app.gs.mapW))), int(float(sm::ecs::cell_y(hcell, app.gs.mapW))));
             app.cursor.path.clear();
             app.cursor.pathIdx = 0;
-            detect_forced_encounter(app);
+            // ОДИН КАДР, КАК В ИГРЕ (ломоть 6): кандидатов встрече даёт
+            // каркас клеток, а свежерождённый сквад входит в него пересборкой
+            // на драйве ИИ — кадр игры делает ровно это (тик ИИ → detect).
+            // Прямой вызов detect_forced_encounter тем же кадром спрашивал
+            // РАНЬШЕ пересборки и с ломтя 6 не видел свежего врага.
+            advance_sim_steps(app, 1, /*allowInput*/false);
             if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle
                 || app.preBattleNpc != hostile) {
                 smoke_fail(app, "hostile squad did not force the encounter");

@@ -100,6 +100,57 @@ struct SquadIndex {
 void build_squad_index(SquadIndex& g, const MacroStore& st, int mapW,
                        int mapH, int cellSize = 8);
 
+// ── «КТО В РАМКЕ (2r+1)² ВОКРУГ КЛЕТКИ» — КАНДИДАТЫ КАРКАСОМ ────────────
+//
+// Всякий локальный вопрос о сквадах отвечается ОКРЕСТНОСТЬЮ клетки, никогда
+// сканом капа (ЗАКОН КЛЕТОЧНОГО КАРКАСА п.1). Кольцо бакетов, покрывающее
+// рамку, затем точный отбор по КОРОТКОЙ клеточной дельте (заворот — маска
+// тора); колбэк получает слот и дельту (dx, dy) ∈ [−r, r]². Порядок — бакет
+// за бакетом, внутри бакета по ординалу (counting-sort). Fail-closed:
+// несобранный каркас не зовёт колбэк ни разу (как settlement_at ниже).
+// Цена — O(кольца), капонезависимая (§5 п.13: заголовку можно).
+template <typename Fn>
+inline void squads_in_frame(const SquadIndex& g, const MacroStore& st,
+                            int cx, int cy, int radiusCells, Fn&& fn) {
+    const CellBuckets& b = g.grid;
+    if (b.cols <= 0 || b.rows <= 0 || b.begin.empty()) return;
+    const int mapW = b.cols * b.cellSize;
+    const int wx = cx & (mapW - 1);
+    const int wy = cy & (mapW - 1);   // тор квадратен: одна маска у осей
+    // floor-деление, не трункация: у западного/северного края рамка уходит в
+    // минус, и (−2)/8 == 0 потерял бы завёрнутое кольцо бакетов (шрам ломтя
+    // 6: ровно так ходило кольцо сборщика фрейма).
+    const auto fdiv = [](int a, int b) {
+        return a >= 0 ? a / b : -((-a + b - 1) / b);
+    };
+    const int g0x = fdiv(wx - radiusCells, b.cellSize);
+    const int g1x = fdiv(wx + radiusCells, b.cellSize);
+    const int g0y = fdiv(wy - radiusCells, b.cellSize);
+    const int g1y = fdiv(wy + radiusCells, b.cellSize);
+    const int half = mapW / 2;
+    for (int gy = g0y; gy <= g1y; ++gy) {
+        for (int gx = g0x; gx <= g1x; ++gx) {
+            const int bx = ((gx % b.cols) + b.cols) % b.cols;
+            const int by = ((gy % b.rows) + b.rows) % b.rows;
+            for (const std::uint32_t* it = b.cell_begin(bx, by),
+                                    * end = b.cell_end(bx, by);
+                 it != end; ++it) {
+                const std::uint16_t slot = g.order[*it].slot;
+                const auto& c = st.cell[slot];
+                int dx = (ecs::cell_x(c, mapW) - wx) & (mapW - 1);
+                int dy = (ecs::cell_y(c, mapW) - wy) & (mapW - 1);
+                if (dx > half) dx = dx - mapW;
+                if (dy > half) dy = dy - mapW;
+                if (dx < -radiusCells || dx > radiusCells
+                    || dy < -radiusCells || dy > radiusCells) {
+                    continue;
+                }
+                fn(slot, dx, dy);
+            }
+        }
+    }
+}
+
 // ── «КТО ЗДЕСЬ ЖИВЁТ» — ТЕЛО НЕПОДВИЖНОГО СКВАДА КЛЕТКИ ─────────────────
 //
 // Ответ, который давала запечённая сетка мест (`LandmarkGrid::at`, умерла

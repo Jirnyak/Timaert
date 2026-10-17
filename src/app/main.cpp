@@ -34,6 +34,7 @@
 #include "macro/frame_fill.h"  // сборщик локального фрейма (M-171, ломоть 4)
 #include "macro/delta_apply.h"  // применение дельты шва (M-98, ломоть 5)
 #include "macro/state.h"
+#include "macro/squad_index.h"  // squads_in_frame — кандидаты рамкой (ломоть 6)
 #include "macro/knowledge.h"
 #include "ui/map_screen.h"
 #include "macro/map_generator.h"
@@ -437,30 +438,33 @@ sm::MacroHandle settlement_by_id(const sm::MacroStore& st, int id) {
 }
 
 int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
-                         float radius = 3.0f) {
+                         const sm::SquadIndex& idx, int radius = 3) {
     const sm::ecs::MacroCell* pc = sm::player_flag_cell(gs, st);
     if (!pc) return -1;
-    const float px = float(sm::ecs::cell_x(*pc, gs.mapW));
-    const float py = float(sm::ecs::cell_y(*pc, gs.mapW));
-    const float r2 = radius * radius;
+    const int px = sm::ecs::cell_x(*pc, gs.mapW);
+    const int py = sm::ecs::cell_y(*pc, gs.mapW);
+    // Место в радиусе — КАРКАСОМ (ломоть 6; скан всех мест умер): рамка
+    // (2r+1)², точный отбор евклидовым диском той же меры, что прежде.
+    // Ответ — БЛИЖАЙШЕЕ место (прежний скан отдавал первое по ординалу —
+    // при двух поселениях в диске выбор был порядком рождения, не миром).
+    const int r2 = radius * radius;
     int found = -1;
-    sm::for_each_place(st, [&](std::uint16_t slot) {
-        if (found >= 0) return;
-        const sm::SquadType kind =
-            sm::SquadType(st.runtime[slot].squadType);
+    int bestD2 = r2 + 1;
+    sm::squads_in_frame(idx, st, px, py, radius,
+                        [&](std::uint16_t slot, int dx, int dy) {
+        const sm::SquadType kind = sm::SquadType(st.runtime[slot].squadType);
         if (!sm::landmark_is_settlement(kind)) return;
-        const auto& c = st.cell[slot];
-        const float sx = float(sm::ecs::cell_x(c, gs.mapW));
-        const float sy = float(sm::ecs::cell_y(c, gs.mapW));
-        if (sm::torus_dist_sq(px, py, sx, sy,
-                              float(gs.mapW), float(gs.mapH)) <= r2)
-            found = int(st.spawnId[slot].index);
+        const int d2 = dx * dx + dy * dy;
+        if (d2 > r2 || d2 >= bestD2) return;
+        bestD2 = d2;
+        found = int(st.spawnId[slot].index);
     });
     return found;
 }
 
 void refresh_player_settlement(App& app) {
-    const int id = settlement_at_player(app.gs, *app.macroStore);
+    const int id = settlement_at_player(app.gs, *app.macroStore,
+                                        app.npcAi.squadIndex);
     const int previousId = app.gs.subState.settlementId;
     if (id == previousId) return;
     if (previousId >= 0) {
@@ -869,43 +873,65 @@ void detect_forced_encounter(App& app) {
         }
         if (!together) app.encounterGraceNpc = {};
     }
-    // Обход живых слотов store (1е, голый цикл — вердикт владельца);
-    // игрок исключается своими слотами, как в свипе ИИ.
+    // КАНДИДАТЫ — РАМКОЙ 3×3 ЧЕРЕЗ КАРКАС (вердикт владельца M-244
+    // 2026-10-15: «согласен 3х3»), скан капа умер этим ломтём. Гейт —
+    // ЦЕЛОЧИСЛЕННАЯ дистанция в мировом подкоординатном пространстве
+    // (клетка × kCellSubQuantum + sub, dx²+dy² ≤ R² в int32): работает
+    // через границу клетки и шов тора без флоата и веток. Прежний гейт
+    // «та же клетка» был отклонён владельцем поимённо: граница клетки —
+    // невидимая стена, а встреча через всю клетку — мгновенна.
+    //
+    // R — ПОЛКЛЕТКИ (128 квантов): сближение на осязаемую близость, не на
+    // «где-то в том же квадрате». ЧИСЛО — БАЛАНС (ЗАКОН ПРИОРИТЕТА
+    // СТРУКТУРЫ): двигать свободно, структуру гейта оно не держит.
+    constexpr int kEncounterReachSub = sm::ecs::kCellSubQuantum / 2;
     const std::uint16_t flagSlot = [&]() -> std::uint16_t {
         const sm::MacroHandle h = sm::player_flag_handle(app.gs);
         return app.macroStore->valid(h) ? h.slot : sm::kMacroNoSlot;
     }();
-    for (std::uint32_t slot32 = 0; slot32 < sm::kUnifiedCap; ++slot32) {
-        const std::uint16_t slot = std::uint16_t(slot32);
-        if (st.alive[slot] == 0) continue;
-        if (slot == flagSlot || st.playerFlag[slot].home != 0)
-            continue;
-        if (sm::handle_at(st, slot) == app.encounterGraceNpc) continue;
-        if (st.dead[slot] != 0) continue;
-        // ТЕЛО МЕСТА — НЕ ВСТРЕЧНЫЙ СКВАД (ось рода, M-90 шаг 5): шаг на
-        // клетку шпиля не есть бой с его телом; осаду построит свой закон.
-        if (sm::squad_archetype(sm::SquadType(st.runtime[slot].squadType)) == sm::SquadArchetype::Place)
-            continue;
-        const auto& hp = st.pools[slot];
-        if (hp.hp <= 0) continue;
-        const auto& cell = st.cell[slot];
-        if (sm::ecs::cell_x(cell, app.gs.mapW) != px
-            || sm::ecs::cell_y(cell, app.gs.mapW) != py) {
-            continue;
-        }
-        const auto& kind = st.kind[slot];
-        // Hostile to the PLAYER by the one relation law — the same predicate
-        // the battle masks bake and the AI wars ask.
-        if (!sm::player_hostile_to(&app.gs,
-                                   sm::faction_id_for_index(kind.factionIdx))) {
-            continue;
-        }
-        app.preBattleNpc = sm::handle_at(st, slot);
+    if (flagSlot == sm::kMacroNoSlot) return;
+    const sm::ecs::CellSub psub = st.sub[flagSlot];
+    sm::MacroHandle found{};
+    sm::squads_in_frame(
+        app.npcAi.squadIndex, st, px, py, 1,
+        [&](std::uint16_t slot, int dxCell, int dyCell) {
+            if (found.id != 0) return;
+            if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
+            if (slot == flagSlot || st.playerFlag[slot].home != 0) return;
+            if (sm::handle_at(st, slot) == app.encounterGraceNpc) return;
+            // ТЕЛО МЕСТА — НЕ ВСТРЕЧНЫЙ СКВАД (ось рода, M-90 шаг 5): шаг
+            // на клетку шпиля не есть бой с его телом; осаду построит свой
+            // закон.
+            if (sm::squad_archetype(
+                    sm::SquadType(st.runtime[slot].squadType))
+                == sm::SquadArchetype::Place) {
+                return;
+            }
+            if (st.pools[slot].hp <= 0) return;
+            const sm::ecs::CellSub nsub = st.sub[slot];
+            const int dx = dxCell * sm::ecs::kCellSubQuantum
+                         + int(nsub.x) - int(psub.x);
+            const int dy = dyCell * sm::ecs::kCellSubQuantum
+                         + int(nsub.y) - int(psub.y);
+            if (dx * dx + dy * dy
+                > kEncounterReachSub * kEncounterReachSub) {
+                return;
+            }
+            // Hostile to the PLAYER by the one relation law — the same
+            // predicate the battle masks bake and the AI wars ask.
+            if (!sm::player_hostile_to(
+                    &app.gs,
+                    sm::faction_id_for_index(st.kind[slot].factionIdx))) {
+                return;
+            }
+            found = sm::handle_at(st, slot);
+        });
+    if (found.id != 0) {
+        app.preBattleNpc = found;
         app.encounterTalkLine.clear();
         app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
         app.cursor.path.clear();
         app.cursor.pathIdx = 0;
-        break;
     }
 }
 
@@ -1790,7 +1816,8 @@ void boot_world(App& app, std::uint32_t seed,
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
         && app.gs.subState.settlementId <= 0) {
         boot_trace("settlement lookup start");
-        app.gs.subState.settlementId = settlement_at_player(app.gs, *app.macroStore);
+        app.gs.subState.settlementId = settlement_at_player(
+            app.gs, *app.macroStore, app.npcAi.squadIndex);
         boot_trace("settlement lookup done");
     }
     app.ui.settlementId = app.gs.subState.settlementId;
@@ -1974,7 +2001,8 @@ bool boot_world_from_save(App& app, const std::string& path) {
     }
     // Мир (пере)родился — глаза карты глайдить не от чего (M-244a).
     app.macroEyes.primed = false;
-    app.gs.subState.settlementId = settlement_at_player(app.gs, *app.macroStore);
+    app.gs.subState.settlementId = settlement_at_player(
+        app.gs, *app.macroStore, app.npcAi.squadIndex);
     app.ui.settlementId = app.gs.subState.settlementId;
 
     // boot_world() above derived every field from the SEED's virgin world; we

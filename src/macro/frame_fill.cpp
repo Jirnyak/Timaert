@@ -84,31 +84,18 @@ void fill_local_frame(const MacroWorld& w, std::uint32_t centerCell,
             return (ddy + half) * kFrameSpan + (ddx + half);
         };
         if (w.squads && !w.squads->grid.begin.empty()) {
-            const CellBuckets& b = w.squads->grid;
+            // Кольцо бакетов — ОДНОЙ дверью каркаса (squads_in_frame, ломоть
+            // 6): рукописный обход здесь делил отрицательный край трункацией
+            // ((−2)/8 == 0) и у начала мира терял завёрнутое кольцо — слот у
+            // западного/северного шва не попадал в род 2 фрейма.
             const int ccx = cell_x(centerCell, side);
             const int ccy = cell_y(centerCell, side);
-            // Бакеты крупные (kChronicle-подобный шаг 8), поэтому берём
-            // кольцо бакетов, покрывающее 5×5 клеток, и фильтруем по клетке.
-            const int g0x = (ccx - half) / b.cellSize;
-            const int g1x = (ccx + half) / b.cellSize;
-            const int g0y = (ccy - half) / b.cellSize;
-            const int g1y = (ccy + half) / b.cellSize;
-            for (int gy = g0y; gy <= g1y; ++gy) {
-                for (int gx = g0x; gx <= g1x; ++gx) {
-                    const int wx = ((gx % b.cols) + b.cols) % b.cols;
-                    const int wy = ((gy % b.rows) + b.rows) % b.rows;
-                    for (const std::uint32_t* it = b.cell_begin(wx, wy),
-                                            * end = b.cell_end(wx, wy);
-                         it != end; ++it) {
-                        const std::uint16_t slot = w.squads->order[*it].slot;
-                        if (st.alive[slot] == 0 || st.dead[slot] != 0)
-                            continue;
-                        if (on_frame_cell(st.cell[slot].idx) < 0) continue;
-                        if (out.squadCount < out.squads.size())
-                            out.squads[out.squadCount++] = handle_at(st, slot);
-                    }
-                }
-            }
+            squads_in_frame(*w.squads, st, ccx, ccy, half,
+                            [&](std::uint16_t slot, int, int) {
+                if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
+                if (out.squadCount < out.squads.size())
+                    out.squads[out.squadCount++] = handle_at(st, slot);
+            });
         } else {
             for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);

@@ -114,9 +114,9 @@ inline bool player_flag_point(const GameState& gs, const MacroStore& st,
     const MacroHandle h = player_flag_handle(gs);
     if (!st.valid(h)) return false;
     x = float(ecs::cell_x(st.cell[h.slot], gs.mapW))
-        + float(st.sub[h.slot].x) / 256.0f;
+        + float(st.sub[h.slot].x) / float(ecs::kCellSubQuantum);
     y = float(ecs::cell_y(st.cell[h.slot], gs.mapW))
-        + float(st.sub[h.slot].y) / 256.0f;
+        + float(st.sub[h.slot].y) / float(ecs::kCellSubQuantum);
     return true;
 }
 

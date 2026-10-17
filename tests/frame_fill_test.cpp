@@ -20,6 +20,7 @@
 #include "macro/macro_world.h"
 #include "macro/map_generator.h"
 #include "macro/resource_field.h"
+#include "macro/squad_index.h"
 #include "macro/state.h"
 #include "macro/store.h"
 
@@ -85,6 +86,11 @@ int main() {
     mw.gs = &gs;
     mw.store = &st;
     mw.terrain = &terrain;
+    // КАРКАС ОБЯЗАТЕЛЕН (шрам ломтя 6): без mw.squads сборщик честно падал
+    // на свип-фолбэк, и бакетный путь — вместе с его арифметикой кольца —
+    // не исполнялся ни разу; мутация трункационного деления прошла зелёной.
+    sm::SquadIndex idx{};
+    mw.squads = &idx;
 
     const int ccx = 64, ccy = 64;
     const std::uint32_t center = sm::cell_of(ccx, ccy, gs.mapW);
@@ -97,6 +103,7 @@ int main() {
     // свидетель рожает сам, а не надеется на мир).
     const sm::MacroHandle deadSquad = birth_at(st, ccx + 1, ccy, gs.mapW);
     st.dead[deadSquad.slot] = 1;
+    sm::build_squad_index(idx, st, gs.mapW, gs.mapH);
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     sm::WorldFact inFact{};
     inFact.day = gs.worldTime.day();
@@ -181,6 +188,21 @@ int main() {
     const sm::CellFacts wrapWant = sm::cell_facts(mw, -2, -2);
     CHECK(same_row(edge.cells[0], wrapWant),
           "the frame's corner row wraps the torus like the world does");
+    // ── …И СКВАДЫ ТОЖЕ (шрам ломтя 6): сквад за швом, в охвате центра (0,0)
+    // через заворот. Рукописное кольцо бакетов делило отрицательный край
+    // ТРУНКАЦИЕЙ ((−2)/8 == 0) и теряло завёрнутое кольцо — слот у
+    // северо-западного шва не попадал в род 2 фрейма; floor-деление двери
+    // squads_in_frame чинит, этот чек держит.
+    const sm::MacroHandle seamSquad =
+        birth_at(st, gs.mapW - 2, gs.mapH - 2, gs.mapW);
+    sm::build_squad_index(idx, st, gs.mapW, gs.mapH);   // каркас выводимый
+    sm::fill_local_frame(mw, sm::cell_of(0, 0, gs.mapW), edge);
+    bool sawSeam = false;
+    for (std::uint32_t i = 0; i < edge.squadCount; ++i) {
+        if (edge.squads[i] == seamSquad) sawSeam = true;
+    }
+    CHECK(sawSeam,
+          "a squad across the torus seam inside the 5x5 rides kind 2");
 
     return sm::test::report("frame_fill_test");
 }
