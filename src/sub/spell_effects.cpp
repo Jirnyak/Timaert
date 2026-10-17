@@ -5,7 +5,6 @@
 #include "sub/body.h"
 #include "sub/caps.h"       // kMaxSubObjects — the subworld scene ceiling
 #include "sub/record.h"     // object_flag — биты маски слота (ломоть 1б)
-#include "macro/store.h"
 
 #include <array>
 #include <cmath>

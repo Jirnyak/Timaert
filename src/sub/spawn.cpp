@@ -16,7 +16,6 @@
 #include "sub/record.h"
 #include "tables/squad_type.h"   // squad_archetype — ось рода (M-90)
 #include "sub/body.h"
-#include "macro/store.h"
 #include <algorithm>
 #include <array>
 #include <cmath>

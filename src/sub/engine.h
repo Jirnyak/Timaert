@@ -10,7 +10,7 @@
 #include "core/rng.h"
 #include "core/time.h"
 #include "macro/audio.h"     // SfxId — the one sound vocabulary (pending sfx)
-#include "macro/chronicle.h"
+#include "bus/fact.h"       // FactKind/WorldFact — строки рода 5
 #include "bus/delta.h"       // ДЕЛЬТА — обратный поток шва (член delta_)
 #include "macro/macro_world.h" // конверт MacroWorld — член mw_ (значением);
                                // прежде приезжал ТРАНЗИТОМ macro_stock.h —

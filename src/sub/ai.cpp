@@ -2,7 +2,6 @@
 #include "sub/map_data.h"
 #include "ecs/components.h"
 #include "core/rng.h"
-#include "macro/store.h"
 #include "macro/macro_stock.h" // MacroStock::Creatures — чьи люди стоят без чувств
 #include "tables/npc.h"   // cruiseM — крейсерская высота рода летуна
 #include "sub/record.h"  // objects_find + slot_macro_record — «без сознания»
@@ -52,8 +51,10 @@ void tick_npc_ai(SubObjects& objs, MacroStore* st,
         if (home.id != 0 && !(playerFlagRef == playerSquadRef)
             && st != nullptr) {
             unconsciousRec = home;
-            unconsciousSubject = st->valid(home)
-                ? std::int32_t(st->spawnId[home.slot].index) : -1;
+            // Ординал НЕСЁТ САМ ХЭНДЛ (M-220): `valid(h)` и есть проверка
+            // `spawnId[h.slot].index == h.id`, поэтому чтение колонки было
+            // вторым ответом на тот же вопрос — тождественным по построению.
+            unconsciousSubject = st->valid(home) ? std::int32_t(home.id) : -1;
         }
     }
 

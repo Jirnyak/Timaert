@@ -7,7 +7,6 @@
 #include <cmath>
 #include "events/event_bus.h"
 #include "events/event_types.h"
-#include "macro/store.h"
 
 namespace sm::sub {
 

@@ -109,7 +109,6 @@ SKELETON.md	:337
 SKELETON.md	:345
 SKELETON.md	:348
 SKELETON.md	:3480
-SKELETON.md	:3533
 SKELETON.md	:3541
 SKELETON.md	:355
 SKELETON.md	:356
@@ -129,7 +128,6 @@ SKELETON.md	:407
 SKELETON.md	:411
 SKELETON.md	:416-421
 SKELETON.md	:428
-SKELETON.md	:4326
 SKELETON.md	:4337
 SKELETON.md	:4339-4341
 SKELETON.md	:4417
@@ -181,7 +179,6 @@ SKELETON.md	:94-104
 SKELETON.md	:9512
 SKELETON.md	:96
 SKELETON.md	:99-100
-SKELETON.md	:990
 SKELETON.md	ai.cpp:109-118
 SKELETON.md	ai.cpp:93
 SKELETON.md	app/app_state.h:161
@@ -292,7 +289,6 @@ SKELETON.md	lighting.h:56-67
 SKELETON.md	logic_nodes.cpp:52
 SKELETON.md	macro/cell_facts.cpp:15-81
 SKELETON.md	macro/entry_context.h:29-85
-SKELETON.md	macro/player_entity.h:95-104
 SKELETON.md	macro/save.cpp:10
 SKELETON.md	macro/state.h:856
 SKELETON.md	macro_stock.cpp:221
@@ -498,24 +494,19 @@ SKELETON.md	sub/engine.cpp:2245
 SKELETON.md	sub/engine.cpp:2248
 SKELETON.md	sub/engine.cpp:2265-2266
 SKELETON.md	sub/engine.cpp:2658
-SKELETON.md	sub/engine.cpp:3289-3292
 SKELETON.md	sub/engine.cpp:3413
-SKELETON.md	sub/engine.cpp:3473-3565
 SKELETON.md	sub/engine.cpp:4501
 SKELETON.md	sub/engine.cpp:4644
-SKELETON.md	sub/engine.cpp:620-622
 SKELETON.md	sub/engine.cpp:636-638
 SKELETON.md	sub/engine.cpp:779-787
 SKELETON.md	sub/engine.cpp:841-842
 SKELETON.md	sub/engine.h:22
 SKELETON.md	sub/engine.h:252
-SKELETON.md	sub/engine.h:662-678
 SKELETON.md	sub/map_data.h:20-21
 SKELETON.md	sub/map_data.h:518-519
 SKELETON.md	sub/map_factory.cpp:27-28
 SKELETON.md	sub/seamless_manager.cpp:309
 SKELETON.md	sub/spawn.cpp:1489-1491
-SKELETON.md	sub/spawn.cpp:494
 SKELETON.md	sub/spawn.cpp:514
 SKELETON.md	sub/spawn.cpp:524
 SKELETON.md	sub/spell_effects.cpp:388

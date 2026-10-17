@@ -4,8 +4,8 @@
 #include "content/spells/casting.h"   // kSpellCasterRadius — the player body radius's one home
 #include "macro/macro_stock.h"
 #include "macro/cell_facts.h"
+#include "macro/chronicle.h"  // fact_kind_def + chronicle_record — тело, не заголовок
 #include "tables/faction.h"
-#include "macro/politik.h"
 #include "macro/squad.h"
 #include "macro/player_entity.h"
 #include "sub/vk_camera_math.h"
@@ -38,7 +38,6 @@
 #include "tables/seasons.h"
 #include "core/rng.h"
 #include "core/torus.h"
-#include "macro/store.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
