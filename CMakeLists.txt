@@ -143,7 +143,7 @@ endif()
 find_package(Vulkan REQUIRED)
 
 file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
-    src/app/*.cpp src/core/*.cpp src/gpu/*.cpp src/ecs/*.cpp
+    src/app/*.cpp src/core/*.cpp src/bus/*.cpp src/gpu/*.cpp src/ecs/*.cpp
     src/tables/*.cpp src/macro/*.cpp src/sub/*.cpp src/events/*.cpp
     src/content/*.cpp src/ui/*.cpp src/assets/*.cpp)
 
@@ -1861,6 +1861,22 @@ timaert_test(resource_growth_test
     SOURCES
         src/macro/macro_stock.cpp
         # a struck vein is a chronicle fact now (v58)
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp)
+
+timaert_test(frame_fill_test
+    SOURCES
+        # сборщик локального фрейма (M-171 ломоть 3) и двери, которыми он
+        # собирает рода: строка клетки, запас полей, каркас, летопись
+        src/macro/frame_fill.cpp
+        src/macro/cell_facts.cpp
+        src/macro/spires.cpp
+        src/macro/squad_index.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        src/macro/macro_stock.cpp
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp

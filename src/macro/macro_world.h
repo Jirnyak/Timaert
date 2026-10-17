@@ -16,7 +16,7 @@
 // dragging entt or GameState into their translation units.
 #pragma once
 #include <cstdint>
-#include "macro/macro_handle.h"   // MacroHandle {слот, ID} — нищий заголовок
+#include "core/macro_handle.h"   // MacroHandle {слот, ID} — нищий заголовок
 
 // A fact the macro layer produces about a fight it resolved. One kind so far;
 // it grows like every other row-shaped thing here. `victim` and `killer` are

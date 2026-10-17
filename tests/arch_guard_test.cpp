@@ -120,8 +120,11 @@ constexpr std::string_view kSkeleton = "SKELETON.md";
 // Расширяется ТОЛЬКО вердиктом владельца — новая строка здесь и есть запись
 // его решения.
 constexpr std::string_view kTopDirs[] = {
-    "app", "assets", "content", "core", "ecs", "events",
-    "gpu",  "macro",  "sub",     "tables", "ui",
+    // "bus" — вердикт владельца (M-171, дословно в реестре): «ШИНА ЖИВЁТ В
+    // src/bus/» — L0 рядом с core/, формы пакетов канонического фрейма;
+    // каталог рождён ломтём 3 эпика фрейма 2026-10-17.
+    "app", "assets", "bus",  "content", "core", "ecs", "events",
+    "gpu", "macro",  "sub",  "tables",  "ui",
 };
 
 std::string read_file(const fs::path& p) {

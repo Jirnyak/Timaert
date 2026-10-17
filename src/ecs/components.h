@@ -2,7 +2,7 @@
 #pragma once
 #include "ecs/pools.h"
 #include "core/torus.h"        // cell_of — ОДИН адрес клетки мира
-#include "macro/macro_handle.h"   // MacroHandle {слот, ID} — через шов (M-220)
+#include "core/macro_handle.h"   // MacroHandle {слот, ID} — через шов (M-220)
 #include "macro/anketa.h"
 #include "tables/commodity.h"   // kCommodityCount — счёт содержания контейнера
 #include "macro/upkeep.h"      // sm::Upkeep — ОДИН контейнер на место и на сквад
@@ -12,7 +12,8 @@
 
 namespace sm {
 
-// (MacroHandle {слот, ID} ПЕРЕЕХАЛ в macro/macro_handle.h с M-220: его
+// (MacroHandle {слот, ID} живёт в core/macro_handle.h (переезд из macro/
+// — ломоть 3 эпика фрейма: адресная форма ниже обоих миров, bus её несёт): его
 // включает и сознательно лёгкий конверт мира macro_world.h, которому
 // ecs-слой запрещён шапкой. Здесь — транзитивное включение ради всех,
 // кто брал его отсюда; несёт его через шов компонента ecs::MacroOrigin.)

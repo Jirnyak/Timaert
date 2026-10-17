@@ -22,9 +22,23 @@ InfluenceField фикс-колонками по капам, эпик M-150 ис�
 spawn.cpp×fauna.h обменяны на честных носителей); ломоть 2 `ebb0946a`
 (M-244a: колонка sub/CellSub построена, MacroVisual мёртв, сейв v139,
 глайд карты — кэш глаз ui/macro_eyes, свидетель «entryDir ⇒ sub» в
-macro_npc_trace). Дальше: ломоть 3 — типы фрейма src/bus/ + сборщик;
-4 — ВХОД по группам; 5 — ВЫХОД-дельта; 6 — встречи 3×3 (остаток M-244);
-7 — хвост канала.
+macro_npc_trace). Ломоть 3 СДАН:
+src/bus/ рождён (вердикт «шина живёт в src/bus/»; каркас каталогов
+arch_guard расширен вердиктом): local_frame.h (LocalContext 142 120 Б,
+пять родов, 5×5, static_assert sizeof+copyable), delta.h (StockOp 24 Б +
+WorldFact-строки, DeltaBuffer 32 780 Б), cell_row.h (CellFacts/LandmarkFacts
+переехали из macro/cell_facts.h), fact.h (WorldFact/FactKind/FactSubject из
+macro/chronicle.h); macro_handle.h переехал macro/ → core/; словарь
+FeatureType — macro/features.h → tables/feature_type.h; сборщик
+fill_local_frame@src/macro/frame_fill.cpp (роды 1/3 — 25×cell_facts +
+resource_field_read, род 2 — каркас SquadIndex с фолбэком честного свипа,
+род 5 — chronicle_near радиусом 1 индексной клетки + точный отбор 5×5,
+род 4 — скаляры gs; пины словарей static_assert у сборщика). Свидетель —
+frame_fill_test (9 проверок; фикстура ОБЯЗАНА нести рукотворный терраин:
+без него cell_facts отдаёт одинаковый дефолт и паритет строк слеп —
+мутация-транспозиция прошла зелёной, поймано вживую).
+Дальше: ломоть 4 — ВХОД по группам (субмир получает const LocalContext*);
+5 — ВЫХОД-дельта; 6 — встречи 3×3 (остаток M-244); 7 — хвост канала.
 
 Вердикты старта (записаны в M-171): порядок 1→7 одобрен; род 2 на выходе —
 WRITE-THROUGH дверью рода 2 (буферятся роды 3 и 5); род 5 вниз — окно фактов
